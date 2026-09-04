@@ -145,8 +145,7 @@ declare module '@deepseek-ai/cordis' {
     /**
      * Process-local goal activation changed for one session.
      * @mode emit
-     * @param payload.sessionId - session whose live goal activation changed.
-     * @param payload.goal - exact current activation, or absent without a current goal.
+     * @param payload - session id and the exact current goal activation, or no goal after a clear.
      */
     'goal/activation-changed'(payload: GoalActivationChanged): void
   }

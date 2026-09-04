@@ -5,7 +5,7 @@
  * (inline form in the same strip), and clear. Goal creation lives on the
  * `/goal` command, not here: loading (undefined), no goal (null), and complete
  * goals render nothing. Durable state arrives as the projected whole snapshot;
- * process-local activation arrives through the injected live read and event.
+ * process-local activation arrives through the injected activation hook.
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react'
@@ -14,8 +14,8 @@ import {
   IconCheckOutline16, IconCloseOutline16, IconEditOutline16, IconGoalOutline16,
   IconPauseOutline16, IconPlayOutline16, IconTrashOutline16, Tooltip,
 } from '@deepseek-ai/dsh-client-ui-primitives'
-import type { PropsLocale, TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
-import type { GoalActionResult, GoalBarActions, GoalBarData } from './slots.ts'
+import type { InjectFace, PropsLocale, TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
+import type { GoalActionResult, GoalBarActions, GoalBarInjected } from './slots.ts'
 import type { GoalKey } from './locales.ts'
 import css from './GoalBar.module.css'
 
@@ -179,44 +179,23 @@ export function GoalBar({ goal, activation, onEdit, onPause, onResume, onClear, 
   )
 }
 
-/** Full props of the dock entry: InputZone owner share + session standard kit + injected verbs + the locale seat. */
-export type GoalDockProps = import('@deepseek-ai/dsh-client-ui-slots').PropsRuntime<'conversation.input.dock'> & GoalBarActions & GoalBarData & PropsLocale<'goal'>
+/** Full props of the dock entry: InputZone owner share + injected verbs/activation hook + the locale seat. */
+export type GoalDockProps =
+  import('@deepseek-ai/dsh-client-ui-slots').PropsRuntime<'conversation.input.dock'>
+  & InjectFace<GoalBarInjected>
+  & PropsLocale<'goal'>
 
 /** Dock adapter: overlays process-local activation on the durable goal projection. */
 export function GoalDock({
-  useProjection, useSession, getGoal, subscribeActivation, onEdit, onPause, onResume, onClear, t,
+  useProjection, useGoalActivation, onEdit, onPause, onResume, onClear, t,
 }: GoalDockProps) {
   const projection = useProjection('goal')
   const goal = projection === undefined || projection === null ? projection : projection.goal
-  const running = useSession(snapshot => snapshot.running)
   const goalId = goal?.id
   const revision = goal?.revision
-  const phase = goal?.phase
-  const [activation, setActivation] = useState<GoalActivation | undefined>()
-
-  useEffect(() => {
-    if (goalId === undefined || phase !== 'active') {
-      setActivation(undefined)
-      return
-    }
-    let alive = true
-    setActivation(undefined)
-    void getGoal().then((result) => {
-      if (!alive || !result.ok) return
-      if (result.value?.id === goalId && result.value.revision === revision) {
-        setActivation(result.value.activation)
-      }
-    })
-    return () => { alive = false }
-  }, [getGoal, goalId, phase, revision, running])
-
-  useEffect(() => subscribeActivation((next) => {
-    if (next === undefined) {
-      setActivation(undefined)
-      return
-    }
-    if (next.id === goalId && next.revision === revision) setActivation(next.activation)
-  }), [goalId, revision, subscribeActivation])
+  const activation = useGoalActivation(next => (
+    next.id === goalId && next.revision === revision ? next.activation : undefined
+  ))
 
   return (
     <GoalBar

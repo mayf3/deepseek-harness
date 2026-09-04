@@ -3,11 +3,13 @@
  * declared (children table) and typed by ui-conversation; this package only
  * contributes the entry, so no SlotMap merge lives here. The durable goal
  * value arrives through `useProjection('goal')` (the framework standard kit);
- * the injected face carries process-local activation plus the mutation verbs.
+ * the injected face carries mutation verbs and a registrant-private
+ * activation hook source.
  */
 
 import type { RemoteResult } from '@deepseek-ai/dsh-api-remotes/client'
-import type { GoalActivationChanged, GoalView } from '@deepseek-ai/dsh-goal/client'
+import type { HostObservable, SnapshotSelectorHook } from '@deepseek-ai/dsh-client-ui-slots'
+import type { GoalActivation, GoalId } from '@deepseek-ai/dsh-goal/client'
 
 /**
  * The one failure the strip reports without a wire call: the session projects
@@ -25,22 +27,25 @@ export interface GoalLocalFailure {
  */
 export type GoalActionResult = RemoteResult<unknown> | GoalLocalFailure
 
-/** Remote read face for the goal's process-local activation. */
-export interface GoalBarData {
-  /**
-   * Read the current live goal view at call time.
-   * @returns the whole Goal view, or `undefined` before the first create and
-   * after a clear tombstone.
-   */
-  getGoal: () => Promise<RemoteResult<GoalView | undefined>>
-  /**
-   * Subscribe to process-local activation edges for the session.
-   * @param listener - receives the exact live goal activation, or `undefined`
-   * when no goal is current.
-   * @returns disposer owned by the caller's component lifetime.
-   */
-  subscribeActivation: (listener: (goal: GoalActivationChanged['goal']) => void) => () => void
+/** Process-local activation matched to one exact goal revision. */
+export interface GoalActivationSnapshot {
+  /** Exact current goal id, absent before create or after clear. */
+  readonly id?: GoalId
+  /** Exact current revision for the activation edge. */
+  readonly revision?: number
+  /** Process-local continuation state; absent while no matching edge is known. */
+  readonly activation?: GoalActivation
 }
+
+/** Registrant-private observable source bound by the slot renderer. */
+export interface GoalActivationInjected {
+  readonly hooks: {
+    readonly goalActivation: HostObservable<GoalActivationSnapshot>
+  }
+}
+
+/** Selector hook synthesized from the activation source. */
+export type UseGoalActivation = SnapshotSelectorHook<GoalActivationSnapshot>
 
 /** Injected business face of the GoalBar dock entry: the mutation verbs (function properties: the strip destructures them freely). */
 export interface GoalBarActions {
@@ -58,4 +63,4 @@ export interface GoalBarActions {
 }
 
 /** Injected business face of the GoalBar dock entry. */
-export type GoalBarInjected = GoalBarActions & GoalBarData
+export type GoalBarInjected = GoalBarActions & GoalActivationInjected

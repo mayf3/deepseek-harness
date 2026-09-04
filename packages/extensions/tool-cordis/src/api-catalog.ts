@@ -3110,7 +3110,7 @@ export const EVENT_API: readonly EventApiEntry[] = [
     signature: '\'goal/activation-changed\'(payload: GoalActivationChanged): void',
     summary: 'Process-local goal activation changed for one session.',
     description: 'Process-local goal activation changed for one session.',
-    parameters: [{ name: 'payload', description: '.goal - exact current activation, or absent without a current goal.' }],
+    parameters: [{ name: 'payload', description: 'session id and the exact current goal activation, or no goal after a clear.' }],
   },
   {
     name: 'goal/changed',

@@ -211,6 +211,9 @@ describe('goal projection unit', () => {
     const foreignKind = { type: 'goal/change', seq: 4, time: 5, data: { kind: 'not-a-goal-change' } } as never
     expect(applyGoalProjection(state, foreignKind).failure).toMatch(/invalid kind/)
 
+    const failed = { ...state, failure: 'stop replay' }
+    expect(applyGoalProjection(failed, foreignKind)).toBe(failed)
+
     const missingTimestamps = {
       ...state,
       current: { ...current, createdAt: undefined, updatedAt: undefined },

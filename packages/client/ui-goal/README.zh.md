@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-本包在 Web GUI 中渲染 goal 表面：composer 上下文堆栈里的一条条带，显示会话的当前目标，并提供编辑、暂停、恢复与清除动作。它从宿主计算的投影读取持久 goal，通过实时 goal Remote 刷新进程本地的 `activation`，把每次变更都经 goal 服务路由，并把拒绝内联呈现。它还把每条持久的 `/goal` 命令运行投影为聊天中的 `Command input` 气泡，让用户或模型输入的 goal 命令出现在文本记录中。goal 创建不归本插件。除 `minimal` 外，随附的 Web preset 都会在其 agent scope 中挂载 `/goal`。
+本包在 Web GUI 中渲染 goal 表面：composer 上下文堆栈里的一条条带，显示会话的当前目标，并提供编辑、暂停、恢复与清除动作。它从宿主计算的投影读取持久 goal，通过 registrant-private 的可观察 hook 叠加进程本地 `activation`，把每次变更都经 goal 服务路由，并把拒绝内联呈现。它还把每条持久的 `/goal` 命令运行投影为聊天中的 `Command input` 气泡，让用户或模型输入的 goal 命令出现在文本记录中。goal 创建不归本插件。除 `minimal` 外，随附的 Web preset 都会在其 agent scope 中挂载 `/goal`。
 
 ## 目录
 
@@ -43,7 +43,7 @@ kind: "package-reference"
 <details>
 <summary>实现细节——点击展开</summary>
 
-持久 goal 经 `useProjection('goal')` 到达（由历史尾页播种、`session/projection` 帧更新）。条带通过 `ctx.remote.goals.get` 和 `goal/activation-changed` 叠加并刷新进程本地 activation；它不持有领域 store 或跨插件缓存。注入面通过 `ctx.remote.goals` 携带实时读取与四个变更动词；每个变更在调用时从会话当前投影值读取 CAS ref，比较并交换（RPC 的 CAS）就是陈旧性护栏。由于 React 的 pending 渲染无法拦住同一帧内的点击，条带会同步为变更建立 single-flight 防护。指令输入投影是独立的 Conversation Definition，在通用命令结果 Node 之前构建 `command-input` Chat Node；它绝不创建 `user/message` 或模型轮次。
+持久 goal 经 `useProjection('goal')` 到达（由历史尾页播种、`session/projection` 帧更新）。注入面携带 registrant-private 的 activation hook source 与四个变更动词。该 source 仅在框架 hook 观察期间订阅，读取 `ctx.remote.goals.get`、订阅 `goal/activation-changed`，并在 running 状态或连接 reset 时刷新。live event epoch 会让在途读取失效，因此较旧的 HTTP 响应不能覆盖更新的 activation 边界；running 刷新会保留最后一次已知 activation，直到读取完成。条带不持有领域 store 或跨插件缓存。每个变更在调用时从会话当前投影值读取 CAS ref，比较并交换（RPC 的 CAS）就是陈旧性护栏。由于 React 的 pending 渲染无法拦住同一帧内的点击，条带会同步为变更建立 single-flight 防护。指令输入投影是独立的 Conversation Definition，在通用命令结果 Node 之前构建 `command-input` Chat Node；它绝不创建 `user/message` 或模型轮次。
 
 </details>
 
@@ -88,4 +88,4 @@ kind: "package-reference"
 
 </details>
 
-**运行时不变式：** 不发布伴生入口。插件只注册一个 GoalBar dock，HMR 测试覆盖释放；持久状态来自 goal projection，进程本地 activation 来自选定的 Remote 读取／事件，本包不持有跨插件可变状态。
+**运行时不变式：** 不发布伴生入口。插件只注册一个 GoalBar dock，HMR 测试覆盖释放；持久状态来自 goal projection，进程本地 activation 来自入口私有 hook source，且该 source 只在框架 hook 观察期间订阅。

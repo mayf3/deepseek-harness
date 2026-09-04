@@ -1778,6 +1778,7 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
     { sessionId: sid('fx-gamma'), updatedAt: Date.now() - 120_000, running: false, blank: false, cwd: '/tmp/fixture' },
   ]
   const logs = new Map<SessionId, SessionEvent[]>([[sid('fx-alpha'), buildAlphaLog()]])
+  const goalActivations = new Map<SessionId, 'armed' | 'disarmed'>()
   const modelSelections = new Map<SessionId, ModelSelection>(sessions.map(session => [
     session.sessionId,
     { provider: 'deepseek-official', model: 'deepseek-v4-flash' },
@@ -2082,6 +2083,23 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
     return backscanGoal(log) as FxGoalProjection
   }
 
+  /** Update process-local goal activation and publish the forwarded edge. */
+  const setGoalActivation = (id: SessionId, activation: 'armed' | 'disarmed'): void => {
+    const current = backscanGoal(logOf(id))
+    if (current === null) {
+      if (!goalActivations.delete(id)) return
+      emitRemote('goal/activation-changed', [{ sessionId: id }])
+      return
+    }
+    const previous = goalActivations.get(id)
+    goalActivations.set(id, activation)
+    if (previous === activation) return
+    emitRemote('goal/activation-changed', [{
+      sessionId: id,
+      goal: { id: current.goal.id, revision: current.goal.revision, activation },
+    }])
+  }
+
   type FxGoalRef = { id: string; revision: number }
   type FxGoalView = FxGoalProjection['goal'] & {
     roundsStarted: number
@@ -2184,6 +2202,7 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
             goal: { id: `fx-goal-${logOf(id).length}`, revision: 1, objective, phase: 'active', maxGoalRounds: 256 },
             roundsStarted: 0, createdAt: Date.now(), updatedAt: Date.now(),
           })
+          setGoalActivation(id, 'armed')
           text = `Goal created: ${created.goal.objective}`
         }
         const result: CommandResult = { kind: 'success', text }
@@ -2216,12 +2235,12 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
     },
   }
 
-  const goalView = (projection: FxGoalProjection): FxGoalView => ({
+  const goalView = (id: SessionId, projection: FxGoalProjection): FxGoalView => ({
     ...projection.goal,
     roundsStarted: projection.roundsStarted,
     createdAt: projection.createdAt,
     updatedAt: projection.updatedAt,
-    activation: projection.goal.phase === 'active' ? 'armed' : 'disarmed',
+    activation: goalActivations.get(id) ?? (projection.goal.phase === 'active' ? 'armed' : 'disarmed'),
   })
 
   /** Canonical fixture implementation of the generated Goal Remote contract. */
@@ -2324,7 +2343,7 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
       const missing = requireGoalSession(id)
       if (missing !== undefined) return missing
       const current = backscanGoal(logOf(id))
-      return { ok: true, value: current === null ? undefined : goalView(current) }
+      return { ok: true, value: current === null ? undefined : goalView(id, current) }
     },
     create(id: SessionId, request: { objective: string; maxGoalRounds?: number }): RpcResult<{ ref: FxGoalRef }> {
       const missing = requireGoalSession(id)
@@ -2345,6 +2364,7 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
         },
         roundsStarted: 0, createdAt: now, updatedAt: now,
       })
+      setGoalActivation(id, 'armed')
       return { ok: true, value: { ref: { id: projection.goal.id, revision: projection.goal.revision } } }
     },
     edit(id: SessionId, ref: FxGoalRef, request: { objective?: string; maxGoalRounds?: number }): RpcResult<FxGoalView> {
@@ -2384,6 +2404,7 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
       appendGoalChange(id, {
         kind: 'goal/change', version: 1, operation: 'clear', cleared: tombstone, clearedAt: Date.now(),
       })
+      setGoalActivation(id, 'disarmed')
       return { ok: true, value: tombstone }
     },
   }
@@ -2412,12 +2433,18 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
     if (goal === undefined) {
       return goalFailure(`invalid goal transition from "${current.goal.phase}"`)
     }
+    const currentActivation = goalActivations.get(id)
+      ?? (current.goal.phase === 'active' ? 'armed' : 'disarmed')
+    const activation = goal.phase === 'active'
+      ? current.goal.phase === 'active' ? currentActivation : 'armed'
+      : 'disarmed'
     const projection = appendGoalChange(id, {
       kind: 'goal/change', version: 1,
       operation: goal.phase === current.goal.phase ? 'edit' : goal.phase === 'paused' ? 'pause' : goal.phase === 'active' ? 'resume' : 'complete',
       goal, roundsStarted: current.roundsStarted, createdAt: current.createdAt, updatedAt: Date.now(),
     })
-    return { ok: true, value: goalView(projection) }
+    setGoalActivation(id, activation)
+    return { ok: true, value: goalView(id, projection) }
   }
 
   /** Canonical fixture implementation of the generated AgentPresets Remote contract. */
@@ -2528,6 +2555,19 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
       const log = logOf(sid(id))
       const messageSeqs = log.filter(event => event.type === 'user/message').map(event => event.seq)
       append(sid(id), { type: 'session/title', data: { title, messageSeqs, source: { kind: 'provider', provider: 'fixture' } } })
+    },
+    /** Disarm the single active goal without a durable phase change. */
+    disarmOnlyGoal(): void {
+      const active = [...logs.entries()].filter(([, log]) => {
+        const current = backscanGoal(log)
+        return current?.goal.phase === 'active'
+      })
+      if (active.length !== 1) {
+        throw new Error(`fixture: expected one active goal, found ${String(active.length)}`)
+      }
+      const [session] = active
+      if (session === undefined) return
+      setGoalActivation(session[0], 'disarmed')
     },
     /** Start an externally paced reasoning stream for the opt-in browser stress lane. */
     startReasoningChunkStorm(

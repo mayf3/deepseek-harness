@@ -11,17 +11,17 @@
  */
 import { Context, Service } from '@deepseek-ai/cordis'
 import { describe, expect, it, vi } from 'vitest'
-import { act, cleanup, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, render, screen, waitFor } from '@testing-library/react'
 import { afterEach } from 'vitest'
 import { SlotRegistry } from '@deepseek-ai/dsh-client-ui-renderer/client'
 import { UiConversation } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
-import type { GoalActivation, GoalProjection, GoalView } from '@deepseek-ai/dsh-goal/client'
+import type { GoalActivation, GoalId, GoalProjection, GoalView } from '@deepseek-ai/dsh-goal/client'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import { makeTranslate, RemoteError } from '@deepseek-ai/dsh-client-test-runtime'
 import type { RemoteFailure } from '@deepseek-ai/dsh-api-remotes/client'
 import { zh as commonZh } from '@deepseek-ai/dsh-client-locale/src/locales/zh.ts'
-import type { GoalBarActions, GoalBarInjected } from '../src/client/slots.ts'
+import type { GoalBarActions, GoalBarInjected, UseGoalActivation } from '../src/client/slots.ts'
 import { apply, inject } from '../src/client/index.ts'
 import { GoalDock } from '../src/client/GoalBar.tsx'
 import { zh } from '../src/client/locales.ts'
@@ -30,11 +30,12 @@ import { apply as nodeApply } from '../src/index.ts'
 afterEach(cleanup)
 
 const sid = (k: string): SessionId => k as SessionId
+const GOAL_ID = 'g-1' as GoalId
 
 function makeProjection(revision = 3): GoalProjection {
   return {
     goal: {
-      id: 'g-1' as GoalProjection['goal']['id'],
+      id: GOAL_ID,
       revision,
       objective: 'Ship it',
       phase: 'active',
@@ -55,12 +56,16 @@ async function bench(options: {
   const ctx = new Context()
   const calls: { method: string; args: unknown[] }[] = []
   const sessions = {
-    binding: (id: SessionId) => ({
+    binding: (id: SessionId) => id === sid('missing') ? undefined : ({
       sessionId: id,
-      session: { projections: { faceOf: (key: string) => ({
-        getSnapshot: () => (key === 'goal' ? options.projection : undefined),
+      session: {
+        getSnapshot: () => ({ running: false }),
         subscribe: () => () => {},
-      }) } },
+        projections: { faceOf: (key: string) => ({
+          getSnapshot: () => (key === 'goal' ? options.projection : undefined),
+          subscribe: () => () => {},
+        }) },
+      },
       ctx,
     }),
   }
@@ -163,6 +168,7 @@ describe('ui-goal browser plugin', () => {
     await b.fiber.await()
     expect(b.entry()).toMatchObject({ id: 'goal', order: 10, locale: 'goal' })
     expect(b.entry()?.inject).toBeTypeOf('function')
+    expect(() => b.entry()!.inject!(sid('missing'))).toThrow(/unavailable/)
     expect(b.definitions().map(definition => definition.kind)).toEqual(['goal-command-input'])
     expect(b.chatEntry()?.options).toMatchObject({ key: 'command-input' })
     expect(b.chatEntry()?.locale).toBe('goal')
@@ -197,30 +203,24 @@ describe('ui-goal browser plugin', () => {
     expect(b.calls).toMatchObject([{ method: 'remounted-goals/pause' }])
   })
 
-  it('reads the live goal and forwards only this session activation events', async () => {
+  it('binds the activation hook and forwards only this session activation events', async () => {
     const b = await bench({ projection: makeProjection(), activation: 'disarmed' })
     await b.fiber.await()
-    const verbs = b.entry()!.inject!(sid('s1'))
-
-    expect(await verbs.getGoal()).toMatchObject({
-      ok: true,
-      value: { id: 'g-1', revision: 3, activation: 'disarmed' },
+    const injected = b.entry()!.inject!(sid('s1'))
+    const source = injected.hooks.goalActivation
+    const seen: unknown[] = []
+    const dispose = source.subscribe(() => { seen.push(source.getSnapshot()) })
+    await waitFor(() => {
+      expect(source.getSnapshot()).toMatchObject({ id: 'g-1', revision: 3, activation: 'disarmed' })
     })
     expect(b.calls.at(-1)).toMatchObject({ method: 'goals/get', args: ['s1'] })
 
-    const seen: Array<{ id: string; revision: number; activation: GoalActivation } | undefined> = []
-    const dispose = verbs.subscribeActivation((goal) => { seen.push(goal) })
     b.emitActivation(sid('s2'), { id: 'g-1', revision: 3, activation: 'armed' })
-    expect(seen).toEqual([])
+    expect(source.getSnapshot().activation).toBe('disarmed')
     b.emitActivation(sid('s1'), { id: 'g-1', revision: 3, activation: 'armed' })
-    b.emitActivation(sid('s1'), undefined)
-    expect(seen).toEqual([
-      { id: 'g-1', revision: 3, activation: 'armed' },
-      undefined,
-    ])
+    expect(source.getSnapshot().activation).toBe('armed')
     dispose()
-    b.emitActivation(sid('s1'), { id: 'g-1', revision: 3, activation: 'disarmed' })
-    expect(seen).toHaveLength(2)
+    expect(seen.length).toBeGreaterThan(0)
   })
 
   it('rejects every verb once the Remote namespace is gone', async () => {
@@ -278,27 +278,16 @@ describe('GoalDock adapter', () => {
   it('renders the projected goal snapshot and nothing for absent/null', () => {
     const projection = makeProjection()
     const useProjection = vi.fn(() => projection)
-    const useSession = vi.fn((selector: (snapshot: { running: boolean }) => boolean) => selector({ running: true }))
+    const useGoalActivation: UseGoalActivation = selector => selector({ id: GOAL_ID, revision: 3, activation: 'armed' })
     const actions: GoalBarActions = {
       onEdit: () => Promise.resolve({ ok: true, value: undefined }),
       onPause: () => Promise.resolve({ ok: true, value: undefined }),
       onResume: () => Promise.resolve({ ok: true, value: undefined }),
       onClear: () => Promise.resolve({ ok: true, value: undefined }),
     }
-    const subscribeActivation = vi.fn(() => () => {})
-    const getGoal = vi.fn(() => Promise.resolve({
-      ok: true as const,
-      value: {
-        ...projection.goal,
-        roundsStarted: projection.roundsStarted,
-        createdAt: projection.createdAt,
-        updatedAt: projection.updatedAt,
-        activation: 'armed' as const,
-      },
-    }))
     const t = makeTranslate(zh, commonZh)
     const dockProps = (up: () => GoalProjection | null | undefined) =>
-      ({ useProjection: up, useSession, getGoal, subscribeActivation, ...actions, t }) as unknown as Parameters<typeof GoalDock>[0]
+      ({ useProjection: up, useGoalActivation, ...actions, t }) as unknown as Parameters<typeof GoalDock>[0]
     const shown = render(<GoalDock {...dockProps(useProjection)} />)
     expect(shown.getByText('Ship it')).toBeTruthy()
     cleanup()
@@ -311,8 +300,10 @@ describe('GoalDock adapter', () => {
     expect(absent.container.firstChild).toBeNull()
   })
 
-  it('overlays live activation from reads and subscriptions', async () => {
+  it('matches activation by goal id and revision from the injected hook', () => {
     const projection = makeProjection()
+    const useProjection = vi.fn(() => projection)
+    const useGoalActivation: UseGoalActivation = selector => selector({ id: GOAL_ID, revision: 3, activation: 'disarmed' })
     const actions: GoalBarActions = {
       onEdit: () => Promise.resolve({ ok: true, value: undefined }),
       onPause: () => Promise.resolve({ ok: true, value: undefined }),
@@ -320,83 +311,11 @@ describe('GoalDock adapter', () => {
       onClear: () => Promise.resolve({ ok: true, value: undefined }),
     }
     const t = makeTranslate(zh, commonZh)
-    const useProjection = vi.fn(() => projection)
-    const useSession = vi.fn((selector: (snapshot: { running: boolean }) => boolean) => selector({ running: false }))
-    let pushActivation: ((goal: { id: string; revision: number; activation: GoalActivation } | undefined) => void) | undefined
-    const subscribeActivation = vi.fn((
-      listener: (goal: { id: string; revision: number; activation: GoalActivation } | undefined) => void,
-    ) => {
-      pushActivation = listener
-      return () => { pushActivation = undefined }
-    })
-    const getGoal = vi.fn()
-    const props = () => ({
-      useProjection, useSession, getGoal, subscribeActivation, ...actions, t,
-    }) as unknown as Parameters<typeof GoalDock>[0]
-
-    let resolveRead!: (value: unknown) => void
-    getGoal.mockImplementationOnce(() => new Promise((resolve) => { resolveRead = resolve }))
-    const abandoned = render(<GoalDock {...props()} />)
-    abandoned.unmount()
-    await act(async () => {
-      resolveRead({ ok: true, value: undefined })
-    })
-
-    getGoal.mockResolvedValueOnce({
-      ok: false,
-      error: new RemoteError('gateway/internal', 'read failed', {}),
-    })
-    const failed = render(<GoalDock {...props()} />)
-    await waitFor(() => { expect(getGoal).toHaveBeenCalledTimes(2) })
-    expect(failed.getByText('进行中的目标')).toBeTruthy()
-    expect(screen.queryByRole('button', { name: '暂停目标' })).toBeNull()
-    failed.unmount()
-
-    getGoal.mockResolvedValueOnce({
-      ok: true,
-      value: {
-        ...projection.goal,
-        revision: 4,
-        roundsStarted: projection.roundsStarted,
-        createdAt: projection.createdAt,
-        updatedAt: projection.updatedAt,
-        activation: 'armed',
-      },
-    })
-    const stale = render(<GoalDock {...props()} />)
-    await waitFor(() => { expect(getGoal).toHaveBeenCalledTimes(3) })
-    expect(stale.queryByRole('button', { name: '暂停目标' })).toBeNull()
-    stale.unmount()
-
-    getGoal.mockResolvedValueOnce({
-      ok: true,
-      value: {
-        ...projection.goal,
-        roundsStarted: projection.roundsStarted,
-        createdAt: projection.createdAt,
-        updatedAt: projection.updatedAt,
-        activation: 'armed',
-      },
-    })
-    const rendered = render(<GoalDock {...props()} />)
-    await waitFor(() => { expect(screen.getByRole('button', { name: '暂停目标' })).toBeTruthy() })
-
-    act(() => {
-      pushActivation?.({ id: 'g-1', revision: 4, activation: 'disarmed' })
-    })
-    expect(rendered.getByRole('button', { name: '暂停目标' })).toBeTruthy()
-
-    act(() => {
-      pushActivation?.({ id: 'g-1', revision: 3, activation: 'disarmed' })
-    })
+    const props = { useProjection, useGoalActivation, ...actions, t } as unknown as Parameters<typeof GoalDock>[0]
+    const rendered = render(<GoalDock {...props} />)
     expect(rendered.getByText('未运行的目标')).toBeTruthy()
-    expect(rendered.getByRole('button', { name: '恢复目标' })).toBeTruthy()
-
-    act(() => {
-      pushActivation?.(undefined)
-    })
-    expect(rendered.getByText('进行中的目标')).toBeTruthy()
-    expect(rendered.queryByRole('button', { name: '恢复目标' })).toBeNull()
+    expect(screen.getByRole('button', { name: '恢复目标' })).toBeTruthy()
+    expect(rendered.queryByRole('button', { name: '暂停目标' })).toBeNull()
   })
 })
 

@@ -41,7 +41,7 @@ This matrix shows which packages dispatch each harness-owned event and which pac
 | `fs/edit-intent` | `waterfall` | [`packages/fs/fs/src/index.ts:66`](../packages/fs/fs/src/index.ts) | [`tool-fs`](../packages/fs/tool-fs) (`waterfall`), [`tool-str-replace-editor`](../packages/fs/tool-str-replace-editor) (`waterfall`) | [`fs-observation-policy`](../packages/fs/fs-observation-policy) |
 | `fs/observed` | `emit` | [`packages/fs/fs/src/index.ts:76`](../packages/fs/fs/src/index.ts) | [`tool-fs`](../packages/fs/tool-fs) (`emit`), [`tool-str-replace-editor`](../packages/fs/tool-str-replace-editor) (`emit`) | [`fs-observation-policy`](../packages/fs/fs-observation-policy), [`skill-filesystem`](../packages/skill/skill-filesystem) |
 | `fs/write-intent` | `waterfall` | [`packages/fs/fs/src/index.ts:58`](../packages/fs/fs/src/index.ts) | [`tool-fs`](../packages/fs/tool-fs) (`waterfall`), [`tool-str-replace-editor`](../packages/fs/tool-str-replace-editor) (`waterfall`) | [`fs-observation-policy`](../packages/fs/fs-observation-policy) |
-| `goal/activation-changed` | `emit` | [`packages/goal/goal/src/types.ts:151`](../packages/goal/goal/src/types.ts) | [`goal`](../packages/goal/goal) (`emit`) | `remotes` |
+| `goal/activation-changed` | `emit` | [`packages/goal/goal/src/types.ts:150`](../packages/goal/goal/src/types.ts) | [`goal`](../packages/goal/goal) (`emit`) | `remotes` |
 | `goal/changed` | `emit` | [`packages/goal/goal/src/domain.ts:114`](../packages/goal/goal/src/domain.ts) | [`goal`](../packages/goal/goal) (`emit`) | [`goal-round-driver`](../packages/goal/goal-round-driver) |
 | `llm/adapters-updated` | `emit` | [`packages/llm/llm/src/types.ts:23`](../packages/llm/llm/src/types.ts) | [`llm`](../packages/llm/llm) (`events.dispatch`) | [`acp`](../packages/acp/acp), [`llm`](../packages/llm/llm), `remotes` |
 | `llm/stream` | `waterfall` | [`packages/llm/llm/src/index.ts:67`](../packages/llm/llm/src/index.ts) | [`llm`](../packages/llm/llm) (`waterfall`) | [`agent-loop`](../packages/core/agent-loop), [`llm`](../packages/llm/llm), [`llm-replay`](../packages/test-support/llm-replay), [`session-checkpoint-policy`](../packages/session/session-checkpoint-policy), [`session-title`](../packages/session/session-title) |
@@ -78,9 +78,17 @@ This matrix shows which packages dispatch each harness-owned event and which pac
 
 | Event string | Dispatchers | Listeners |
 | --- | --- | --- |
+| `connection/reset` | `gateway` (`emit`) | `session-controller`, `ui-settings`, `ui-workspace` |
 | `internal/dispatch` | - | `agent-team`, [`commands`](../packages/interaction/commands), [`compaction`](../packages/compaction/compaction), [`fs`](../packages/fs/fs), [`goal`](../packages/goal/goal), [`goal-round-driver`](../packages/goal/goal-round-driver), [`hook-protocol`](../packages/hooks/hook-protocol), [`llm-retry`](../packages/llm/llm-retry), [`permission-presets`](../packages/interaction/permission-presets), [`plan-mode`](../packages/plan/plan-mode), [`sandbox-policy`](../packages/sandbox/sandbox-policy), [`schedule`](../packages/schedule/schedule), [`scope`](../packages/core/scope), [`session`](../packages/core/session), [`session-log-deepseek`](../packages/session/session-log-deepseek), [`session-title`](../packages/session/session-title), [`subagent`](../packages/subagent/subagent), [`terminal-bash`](../packages/terminal/terminal-bash), [`time-context`](../packages/context/time-context), [`tool-todo`](../packages/todo/tool-todo), [`tool-workflow`](../packages/workflow/tool-workflow), [`tools`](../packages/core/tools), [`user-approval`](../packages/interaction/user-approval), [`webhook`](../packages/webhook/webhook), [`workflow`](../packages/workflow/workflow) |
 | `internal/plugin` | - | `inspector`, `loader`, [`lsp-stdio`](../packages/lsp/lsp-stdio), `modules` |
 | `internal/service` | - | [`agent-presets`](../packages/preset/agent-presets), `gateway` |
 | `internal/status` | - | [`agent`](../packages/core/agent), `inspector` |
+| `locale/change` | `locale` (`emit`) | - |
+| `slash/input-begin-command` | - | `ui-conversation` |
+| `slash/input-consume-token` | - | `ui-conversation` |
+| `slash/input-insert-reference` | - | `ui-conversation` |
+| `slash/input-insert-text` | - | `ui-conversation` |
+| `slots/changed` | `ui-renderer` (`emit`) | - |
+| `theme/change` | `ui-theme` (`emit`) | `ui-layout`, `ui-theme` |
 
 Maintenance mode: generated: Cordis event declarations and producer/listener edges are resolved from the repository TypeScript Program.
