@@ -251,6 +251,63 @@ describe('background spawn failure (fake backend, every platform)', () => {
   })
 })
 
+describe('offer arm cancellation (fake backend, every platform)', () => {
+  /** A subprocess service whose process runs until the test settles it and ignores the spawn signal. */
+  class HangingSubprocessRuntime extends SubprocessRuntime {
+    settle: (outcome: { exitCode: number | null; signal: NodeJS.Signals | null }) => void = () => {}
+    override async resolveExecutable(command: string): Promise<string> { return command }
+    override spawnTerminal(): Promise<never> { throw new Error('pwsh spawns pipes, never terminals') }
+    private readonly reader: SubprocessOutputReader = {
+      readFrom: () => ({ text: '', lossy: false, nextOffset: 0 }),
+    }
+    override spawn(): SubprocessHandle {
+      return {
+        pid: -1,
+        stdin: undefined,
+        stdout: undefined,
+        stderr: undefined,
+        collected: { stdout: this.reader, stderr: this.reader },
+        done: new Promise((resolve) => { this.settle = resolve }),
+        terminate: () => {},
+        waitForExit: async () => true,
+      }
+    }
+  }
+
+  async function bench() {
+    const ctx = new Context()
+    const subprocess = new HangingSubprocessRuntime(ctx)
+    await ctx.plugin(PwshLocalExecutor)
+    return { ctx, subprocess }
+  }
+
+  it('relays a caller signal that was already aborted: no offer, aborted classification', async () => {
+    const { ctx, subprocess } = await bench()
+    const controller = new AbortController()
+    controller.abort()
+    const ex = ctx.shell.execute(ctx.shell.resolve({ command: 'Start-Sleep 30', timeoutMs: 20, signal: controller.signal, onExpiry: 'offer' }))
+    subprocess.settle({ exitCode: null, signal: 'SIGTERM' })
+    await expect(ex.promotion).resolves.toBeUndefined()
+    const result = await ex.result()
+    expect(ex.status).toBe('killed')
+    expect(result.aborted).toBe(true)
+    expect(result.timedOut).toBe(false)
+  })
+
+  it('a caller abort before the deadline yields no offer when the timer still fires', async () => {
+    const { ctx, subprocess } = await bench()
+    const controller = new AbortController()
+    const ex = ctx.shell.execute(ctx.shell.resolve({ command: 'Start-Sleep 30', timeoutMs: 20, signal: controller.signal, onExpiry: 'offer' }))
+    controller.abort()
+    // The fake ignores the relayed abort, so the process outlives the deadline the way a real one does inside its termination grace.
+    await expect(ex.promotion).resolves.toBeUndefined()
+    subprocess.settle({ exitCode: null, signal: 'SIGTERM' })
+    const result = await ex.result()
+    expect(result.aborted).toBe(true)
+    expect(result.timedOut).toBe(false)
+  })
+})
+
 describe.skipIf(!hasPwsh)('PwshLocalExecutor.run', () => {
   it('resolves with output and the effective timeout', { timeout: 15_000 }, async () => {
     const { bash } = await setup({ timeoutMs: 10_000 })

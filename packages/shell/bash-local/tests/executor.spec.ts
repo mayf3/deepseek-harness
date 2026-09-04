@@ -5,6 +5,8 @@ import { afterAll, describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { LocalBashExecutor } from '@deepseek-ai/dsh-bash-local'
 import LocalSubprocessRuntime from '@deepseek-ai/dsh-subprocess-local'
+import SubprocessRuntime from '@deepseek-ai/dsh-subprocess'
+import type { SubprocessHandle, SubprocessOutputReader } from '@deepseek-ai/dsh-subprocess'
 import { MAX_TIMER_DELAY_MS } from '@deepseek-ai/dsh-timeout'
 import type { ShellExecSpec, ShellExecution, ShellProcess, ShellRunResult } from '@deepseek-ai/dsh-shell'
 
@@ -303,6 +305,14 @@ describe('LocalBashExecutor.start (background process handles)', () => {
     expect(proc.signal).toBe('SIGTERM')
   })
 
+  it('observed readers delegate to the collectors once a process spawned', async () => {
+    const { bash } = await setup()
+    const proc = start(bash, bash.resolve({ command: 'echo err 1>&2' }))
+    await proc.done
+    expect(proc.observed.stderr.readFrom(0).text).toBe('err\n')
+    expect(proc.observed.stdout.readFrom(0).text).toBe('')
+  })
+
   it('a background spawn failure settles as killed with the error readable on stderr', async () => {
     const { bash } = await setup()
     const proc = start(bash, bash.resolve({ command: 'true', workdir: '/nonexistent-dsh' }))
@@ -368,6 +378,46 @@ describe('process lifecycle ownership (the subprocess service, not the executor)
     await trapping.done
     expect(trapping.status).toBe('killed')
     expect(trapping.signal).toBe('SIGKILL')
+  })
+})
+
+describe('offer arm cancellation against a hanging backend', () => {
+  /** A subprocess service whose process runs until the test settles it and ignores the spawn signal. */
+  class HangingSubprocessRuntime extends SubprocessRuntime {
+    settle: (outcome: { exitCode: number | null; signal: NodeJS.Signals | null }) => void = () => {}
+    override async resolveExecutable(command: string): Promise<string> { return command }
+    override spawnTerminal(): Promise<never> { throw new Error('bash spawns pipes, never terminals') }
+    private readonly reader: SubprocessOutputReader = {
+      readFrom: () => ({ text: '', lossy: false, nextOffset: 0 }),
+    }
+    override spawn(): SubprocessHandle {
+      return {
+        pid: -1,
+        stdin: undefined,
+        stdout: undefined,
+        stderr: undefined,
+        collected: { stdout: this.reader, stderr: this.reader },
+        done: new Promise((resolve) => { this.settle = resolve }),
+        terminate: () => {},
+        waitForExit: async () => true,
+      }
+    }
+  }
+
+  it('a caller abort before the deadline yields no offer when the timer still fires', async () => {
+    const ctx = new Context()
+    const subprocess = new HangingSubprocessRuntime(ctx)
+    await ctx.plugin(LocalBashExecutor)
+    const controller = new AbortController()
+    const ex = ctx.shell.execute(ctx.shell.resolve({ command: 'sleep 30', timeoutMs: 20, signal: controller.signal, onExpiry: 'offer' }))
+    controller.abort()
+    // The fake ignores the relayed abort, so the process outlives the deadline
+    // the way a real one does inside its termination grace: no offer.
+    await expect(ex.promotion).resolves.toBeUndefined()
+    subprocess.settle({ exitCode: null, signal: 'SIGTERM' })
+    const result = await ex.result()
+    expect(result.aborted).toBe(true)
+    expect(result.timedOut).toBe(false)
   })
 })
 
@@ -445,6 +495,24 @@ describe('execute() offer expiry', () => {
     const result = await ex.result()
     expect(result.aborted).toBe(true)
     expect(result.timedOut).toBe(false)
+  })
+
+  it('relays a caller signal that was already aborted: no offer, and the execution settles aborted', async () => {
+    const { bash } = await setup()
+    const controller = new AbortController()
+    controller.abort()
+    const ex = bash.execute(bash.resolve({
+      command: 'sleep 30',
+      timeoutMs: 50,
+      signal: controller.signal,
+      onExpiry: 'offer',
+    }))
+    await expect(ex.promotion).resolves.toBeUndefined()
+    await ex.done
+    expect(ex.status).toBe('killed')
+    // A spawn under an aborted signal is contained like every spawn failure:
+    // the projection rejects, and nothing reached the deadline to offer.
+    await expect(ex.result()).rejects.toThrow()
   })
 
   it('kill-policy executions settle the promotion undefined too', async () => {

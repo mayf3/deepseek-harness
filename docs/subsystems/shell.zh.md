@@ -36,7 +36,7 @@ interface ShellExecRequest {
    * tool does not expose it as a parameter.
    */
   stdoutMaxBytes?: number | undefined
-  /** Abort signal — implementations kill the command when it fires. */
+  /** Abort signal — implementations kill the command when it fires, and treat a signal that is already aborted as fired. */
   signal?: AbortSignal | undefined
   /**
    * Bytes to write to the command's stdin, then close it. Absent leaves stdin
@@ -84,7 +84,7 @@ interface ShellExecSpec {
    * stdout; stderr keeps the executor's own output cap.
    */
   stdoutMaxBytes: number
-  /** Abort signal — implementations kill the command when it fires. */
+  /** Abort signal — implementations kill the command when it fires, and treat a signal that is already aborted as fired. */
   signal?: AbortSignal | undefined
   /** Bytes to write to stdin before closing it; absent means no stdin. */
   stdin?: string | undefined

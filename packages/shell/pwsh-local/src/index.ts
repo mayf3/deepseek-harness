@@ -309,10 +309,19 @@ export class PwshLocalExecutor extends ShellExecutor {
         cause ??= 'aborted'
         relay.abort()
       }
-      spec.signal?.addEventListener('abort', onCallerAbort, { once: true })
+      // An already-aborted signal never fires again: relay it now, so the
+      // spawn sees the abort exactly as the kill arm's fused deadline would.
+      if (spec.signal?.aborted === true) onCallerAbort()
+      else spec.signal?.addEventListener('abort', onCallerAbort, { once: true })
       const detachCaller = (): void => { spec.signal?.removeEventListener('abort', onCallerAbort) }
       const timer = deadline(undefined, spec.timeoutMs, 'BASH_TIMEOUT')
       timer.signal.addEventListener('abort', () => {
+        // A caller abort before the deadline may leave the process in its
+        // termination grace: cancelled work is never offered.
+        if (cause !== undefined) {
+          settlePromotion(undefined)
+          return
+        }
         let answered = false
         const offer: ShellPromotionOffer = {
           accept: () => {

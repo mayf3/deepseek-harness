@@ -31,7 +31,7 @@ Update：[jobs seam 收敛](../architecture/2026-09-03-jobs-seam-consolidation.z
 
 ## 测试
 
-执行器层（真实进程）：deadline 处给出 offer；accept 解绑计时器与调用方信号（accept 后 abort 不杀、`kill()` 杀）；decline 归类 `timedOut`；先结束则 resolve `undefined`；未应答自动 decline；offer 前 abort 归类 `aborted`；`'none'` 策略归类；同步抛错收容且错误同一性穿过 `result()`（沙箱套件）。工具层：真实的 `printf …; sleep 30` 配 `timeoutMs: 250` 端到端转移——任务注册、环从提升偏移起填充、游标越过嵌入输出接续、`job_kill` 有效；准入饱和回落并告警；`promoteOnTimeout: false` 保持杀并撤掉描述句；pwsh 以脚本化 offer 镜像。渲染文本逐字钉死。
+执行器层（真实进程）：deadline 处给出 offer；accept 解绑计时器与调用方信号（accept 后 abort 不杀、`kill()` 杀）；decline 归类 `timedOut`；先结束则 resolve `undefined`；未应答自动 decline；offer 前 abort 归类 `aborted`；`execute()` 之前已 abort 的信号与终止宽限期内的 abort 都把 promotion 结算为 `undefined`（被取消的工作从不被 offer）；`'none'` 策略归类；同步抛错收容且错误同一性穿过 `result()`（沙箱套件）。工具层：真实的 `printf …; sleep 30` 配 `timeoutMs: 250` 端到端转移——任务注册、环从提升偏移起填充、游标越过嵌入输出接续、`job_kill` 有效；准入饱和回落并告警；`promoteOnTimeout: false` 保持杀并撤掉描述句；pwsh 以脚本化 offer 镜像。渲染文本逐字钉死。
 
 ## 后果
 
