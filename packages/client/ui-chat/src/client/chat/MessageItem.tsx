@@ -161,7 +161,8 @@ function TurnMaxTokensItem({ t }: {
 
 /** Right-aligned bubble shared by user and steering rows. */
 function UserStyleBubble({
-  content, renderMessageImages, actions, pending = false, echo = false, referenceLabels = [], previewAttachments, t,
+  content, renderMessageImages, actions, pending = false, echo = false, referenceLabels = [], skillNames = [],
+  previewAttachments, t,
 }: {
   content: readonly unknown[]
   renderMessageImages: ChatNodeOwnerProps['renderMessageImages']
@@ -173,6 +174,8 @@ function UserStyleBubble({
   echo?: boolean
   /** Exact session mention labels associated by the adjacent recall node. */
   referenceLabels?: readonly string[]
+  /** Skill names the step's `skill-invocation` injections loaded for this message. */
+  skillNames?: readonly string[]
   /** Local submission-echo attachments replacing the content-derived attachment sequence. */
   previewAttachments?: readonly PresentedAttachment[]
   t: ChatViewSlotProps['t']
@@ -216,7 +219,7 @@ function UserStyleBubble({
           </div>
         )}
         {showBubble && <div className={css.bubble}>
-          {projectUserText(text, referenceLabels)}
+          {projectUserText(text, referenceLabels, skillNames)}
           {rest.map((block, i) => <JsonBlock key={i} label={t('message.extraBlock')} payload={block} truncatedLabel={truncated} />)}
         </div>}
         {referenceLabels.length > 0 && (
@@ -323,6 +326,7 @@ export const UserMessageNodeView = memo(function UserMessageNodeView({
       content={data.content}
       renderMessageImages={renderMessageImages}
       {...data.referenceLabels === undefined ? {} : { referenceLabels: data.referenceLabels }}
+      {...data.skillNames === undefined ? {} : { skillNames: data.skillNames }}
       t={t}
       actions={text => (
         <MessageIconActions
