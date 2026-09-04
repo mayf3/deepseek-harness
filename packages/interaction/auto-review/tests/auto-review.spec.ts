@@ -1208,6 +1208,75 @@ describe('cancellation and integration teardown', () => {
     expect(probe.runs()).toBe(0)
   })
 
+  it('fuses lifecycle cancellation before an execute-stage checkpoint', async () => {
+    const checkpointEntered = Promise.withResolvers<undefined>()
+    const releaseCheckpoint = Promise.withResolvers<undefined>()
+    let checkpointSignal: AbortSignal | undefined
+    let checkpointExecution: { readonly signal: AbortSignal } | undefined
+    const { ctx, auto } = await harness([
+      decisionChunks('{"risk":"medium","decision":"allow"}'),
+    ])
+    const probe = registerProbe(ctx)
+    ctx.on('tools/execute', async (exec, next) => {
+      if (exec.name !== 'probe') return next()
+      checkpointExecution = exec
+      checkpointSignal = exec.signal
+      checkpointEntered.resolve(undefined)
+      await releaseCheckpoint.promise
+      return next()
+    })
+    const { session, agent } = autoSession(ctx, 'dispose-execute-checkpoint')
+    appendHeader(session, [{ name: 'probe', description: 'probe', parameters: { type: 'object' } }])
+    const callId = ToolCallId('dispose-execute-checkpoint-call')
+    appendAssistant(session, [{ type: 'tool-call', id: callId, name: 'probe', arguments: '{}' }])
+    appendNativeCall(session, callId, 'probe', '{}')
+    const controller = new AbortController()
+    const pending = ctx.tools.execute({
+      signal: controller.signal, callId, name: 'probe', arguments: {}, agent,
+    })
+    await checkpointEntered.promise
+    expect(checkpointSignal).not.toBe(controller.signal)
+
+    const disposal = auto.dispose()
+    await until(() => checkpointSignal?.aborted === true)
+    releaseCheckpoint.resolve(undefined)
+
+    await expect(pending).resolves.toMatchObject({
+      isError: true,
+      error: { info: { name: 'AbortError', code: TOOL_ABORTED_BEFORE_DISPATCH } },
+    })
+    await disposal
+    expect(probe.runs()).toBe(0)
+    expect(checkpointExecution?.signal).toBe(controller.signal)
+  })
+
+  it('cleans an admitted call that caller cancellation finalizes without dispatch', async () => {
+    const controller = new AbortController()
+    const { ctx, auto } = await harness([
+      decisionChunks('{"risk":"medium","decision":"allow"}'),
+    ])
+    const probe = registerProbe(ctx)
+    ctx.on('tools/pre-execute', async (exec, next): Promise<PreToolDecision> => {
+      const decision = await next()
+      if (exec.name === 'probe') controller.abort(new Error('caller stopped before dispatch'))
+      return decision
+    })
+    const { session, agent } = autoSession(ctx, 'caller-cancel-no-dispatch')
+    appendHeader(session, [{ name: 'probe', description: 'probe', parameters: { type: 'object' } }])
+    const callId = ToolCallId('caller-cancel-no-dispatch-call')
+    appendAssistant(session, [{ type: 'tool-call', id: callId, name: 'probe', arguments: '{}' }])
+    appendNativeCall(session, callId, 'probe', '{}')
+
+    await expect(ctx.tools.execute({
+      signal: controller.signal, callId, name: 'probe', arguments: {}, agent,
+    })).resolves.toMatchObject({
+      isError: true,
+      error: { info: { name: 'AbortError', code: TOOL_ABORTED_BEFORE_DISPATCH } },
+    })
+    expect(probe.runs()).toBe(0)
+    await expect(auto.dispose()).resolves.toBeUndefined()
+  })
+
   it('reinstall restores Auto availability without re-enabling a migrated session', async () => {
     const { ctx, auto } = await harness([])
     const { session } = autoSession(ctx, 'reinstall-after-dispose')

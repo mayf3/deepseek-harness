@@ -103,9 +103,10 @@ interface ReviewSnapshot {
   readonly action: PendingAction
 }
 
-/** Runtime facts owned by one in-flight review. */
-interface ActiveReview {
+/** Runtime facts owned until one admitted call cannot outlive lifecycle cancellation. */
+interface ActiveCall {
   readonly done: Promise<void>
+  readonly complete: () => void
 }
 
 /** Cordis plugin name used by loader diagnostics. */
@@ -587,9 +588,16 @@ export function apply(ctx: Context): void {
     throw new Error('auto-review: preset "read-only" must resolve to sandbox "read-only" and approval "ask"')
   }
   let accepting = true
-  const active = new Set<ActiveReview>()
+  const active = new Map<ToolExecution['token'], ActiveCall>()
   const retiring = new Set<Agent['session']>()
   const lifecycle = new AbortController()
+
+  const completeActive = (exec: Pick<ToolExecution, 'token'>): void => {
+    const call = active.get(exec.token)
+    if (call === undefined) return
+    active.delete(exec.token)
+    call.complete()
+  }
 
   ctx.effect(function* () {
     const stopListener = ctx.on('tools/pre-execute', async (exec, next): Promise<PreToolDecision> => {
@@ -606,8 +614,11 @@ export function apply(ctx: Context): void {
       }
 
       const completed = Promise.withResolvers<undefined>()
-      const activeReview: ActiveReview = { done: completed.promise }
-      active.add(activeReview)
+      active.set(exec.token, {
+        done: completed.promise,
+        complete: () => { completed.resolve(undefined) },
+      })
+      let admitted = false
       try {
         const signal = AbortSignal.any([exec.signal, lifecycle.signal])
         const decision = await classifyRisk(ctx, agent, exec, signal).catch(() => undefined)
@@ -615,13 +626,30 @@ export function apply(ctx: Context): void {
         if (decision === undefined) return denied(exec)
         if (decision.decision === 'deny') return denied(exec, decision.reason)
         const downstream = await next()
-        return isAborted(lifecycle.signal) ? { kind: 'cancel' } : downstream
+        if (isAborted(lifecycle.signal)) return { kind: 'cancel' }
+        admitted = downstream.kind === 'allow'
+        return downstream
       } finally {
-        active.delete(activeReview)
-        completed.resolve(undefined)
+        if (!admitted) completeActive(exec)
       }
     }, { prepend: true })
     yield stopListener
+    const stopDispatch = ctx.on('tools/execute', async (exec, next) => {
+      if (!active.has(exec.token)) return next()
+      const originalSignal = exec.signal
+      exec.signal = AbortSignal.any([originalSignal, lifecycle.signal])
+      completeActive(exec)
+      try {
+        return await next()
+      } finally {
+        exec.signal = originalSignal
+      }
+    }, { prepend: true })
+    yield stopDispatch
+    const stopResult = ctx.on('tools/result', (exec) => {
+      completeActive(exec)
+    })
+    yield stopResult
     const stopContribution = permissionPresets.registerAuto(() => {
       if (!accepting) throw new Error('auto-review: integration is closing')
     })
@@ -642,7 +670,7 @@ export function apply(ctx: Context): void {
         }
       }
       lifecycle.abort(new Error('auto-review integration disposed'))
-      await Promise.allSettled([...active].map(item => item.done))
+      await Promise.allSettled([...active.values()].map(item => item.done))
       if (errors.length > 0) throw new AggregateError(errors, 'auto-review: failed to migrate live Auto sessions')
     }
   }, 'auto-review lifecycle')
