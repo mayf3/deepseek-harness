@@ -60,9 +60,9 @@ jobs:
     if: >-
       github.event_name != 'pull_request'
       || !(github.event.pull_request.head.repo.fork || github.event.pull_request.user.login == 'dependabot[bot]')
-    # Credentialed e2e files share one provider key, so run files serially to
-    # avoid cross-file quota contention. Tests retain 120s/test and retry 2;
-    # 45m still bounds retry storms against a slow API.
+    # Isolate the 22-call certification before the remaining credentialed suite
+    # so it never contends for the shared provider key. The rest retains the
+    # tested four-worker process/PTY topology; 45m bounds both invocations.
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v6
@@ -118,9 +118,11 @@ jobs:
           DEEPSEEK_BASE_URL: https://api.deepseek.com
           DSH_AUTO_REVIEW_CERTIFICATION: '1'
           DSH_AUTO_REVIEW_CERTIFICATION_REPORT: ${{ runner.temp }}/auto-review-certification-report.json
-          DSH_E2E_MAX_WORKERS: 1
+          DSH_E2E_MAX_WORKERS: 4
           DSH_EXAMPLE_MODE: lib
-        run: pnpm run test:e2e
+        run: |
+          DSH_E2E_MAX_WORKERS=1 pnpm exec vitest run --config vitest.e2e.config.ts packages/interaction/auto-review/tests/auto-review.e2e.ts
+          DSH_AUTO_REVIEW_CERTIFICATION=0 pnpm run test:e2e
 
       - name: Upload Auto review certification report
         uses: actions/upload-artifact@v7
