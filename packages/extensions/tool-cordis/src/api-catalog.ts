@@ -1380,8 +1380,8 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       {
         signature: 'originOf(rowId: string): RowOrigin | undefined',
         description: 'Where one mounted row came from.',
-        parameters: [{ name: 'rowId', description: 'the row\'s tree-wide id.' }],
-        returns: 'the origin, or undefined for a row no bundle layer inserted (a user or overlay row).',
+        parameters: [{ name: 'rowId', description: 'the row\'s id as the composition declares it.' }],
+        returns: 'the origin, or undefined for a row no bundle layer owns (a user or overlay row, or a bundle left out by a conflict).',
       },
       {
         signature: 'userDisabledRowIds(): Set<string>',
@@ -1391,7 +1391,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       },
       {
         signature: 'async recompose(options: { reloadBundles?: boolean } = {}): Promise<void>',
-        description: 'Recompose the host tree from the profile\'s layers and the user patch files as they stand now. The root Include re-applies the stack transactionally: a row whose options changed is updated in place, a row that appeared is created, a row that vanished is disposed, and a failure rolls the whole update back with the previous tree still running.',
+        description: 'Recompose the host tree from the profile\'s layers and the user patch files as they stand now. The root Include re-applies the stack transactionally: a row whose options changed is updated in place, a row that appeared is created, a row that vanished is disposed, and a failure rolls the whole update back with the previous tree still running. The rows the stack left out replace the failure registry\'s conflict records once the update holds.',
         parameters: [{ name: 'options', description: '`reloadBundles` re-reads the profile manifest first, so a bundle enabled or installed since boot joins the stack.' }],
         throws: ['when the root include is not mounted, or the Loader rejected the update.'],
       },
@@ -4662,7 +4662,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'PluginPackageRowView',
-    declaration: 'export interface PluginPackageRowView {\n    readonly entryId: string;\n    readonly originalId?: string;\n    readonly moduleName: string;\n    readonly enabled: boolean;\n    readonly disabledBy?: \'user\' | \'composition\';\n    readonly phase: PluginRowPhase;\n    readonly failure?: {\n        readonly stage: string;\n        readonly message: string;\n    };\n}',
+    declaration: 'export interface PluginPackageRowView {\n    readonly entryId: string;\n    readonly rowId: string;\n    readonly moduleName: string;\n    readonly enabled: boolean;\n    readonly disabledBy?: \'user\' | \'composition\';\n    readonly phase: PluginRowPhase;\n    readonly failure?: {\n        readonly stage: string;\n        readonly message: string;\n    };\n}',
   },
   {
     name: 'PluginPackageStage',
@@ -4898,7 +4898,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'RowOrigin',
-    declaration: 'export interface RowOrigin {\n    readonly trust: BundleTrust;\n    readonly packageName: string;\n    readonly version?: string;\n    readonly originalId?: string;\n}',
+    declaration: 'export interface RowOrigin {\n    readonly trust: BundleTrust;\n    readonly packageName: string;\n    readonly version?: string;\n}',
   },
   {
     name: 'RunnerFailureRule',

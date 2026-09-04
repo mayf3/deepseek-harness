@@ -980,8 +980,8 @@ Facts and recomposition of the booted profile.
 ```ts cordis-catalog
 /**
  * Where one mounted row came from.
- * @param rowId - the row's tree-wide id.
- * @returns the origin, or undefined for a row no bundle layer inserted (a user or overlay row).
+ * @param rowId - the row's id as the composition declares it.
+ * @returns the origin, or undefined for a row no bundle layer owns (a user or overlay row, or a bundle left out by a conflict).
  */
 originOf(rowId: string): RowOrigin | undefined
 
@@ -998,7 +998,8 @@ userDisabledRowIds(): Set<string>
  * as they stand now. The root Include re-applies the stack transactionally:
  * a row whose options changed is updated in place, a row that appeared is
  * created, a row that vanished is disposed, and a failure rolls the whole
- * update back with the previous tree still running.
+ * update back with the previous tree still running. The rows the stack left
+ * out replace the failure registry's conflict records once the update holds.
  * @param options - `reloadBundles` re-reads the profile manifest first, so a
  * bundle enabled or installed since boot joins the stack.
  * @throws when the root include is not mounted, or the Loader rejected the update.

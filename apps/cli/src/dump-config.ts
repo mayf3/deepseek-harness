@@ -9,10 +9,13 @@
 import { existsSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import {
+  composeProfileStack,
+  formatRowConflict,
   loadOptionalPatches,
   loadOverlayPatches,
   renderConfigDump,
   type ConfigDumpLayer,
+  type StackUserLayer,
 } from '@deepseek-ai/dsh-app-boot'
 import { homePatchPath, prepareProfile, PROFILE_ROOT_FILENAME } from './profile-boot.ts'
 
@@ -29,24 +32,26 @@ const NAME = 'dsh'
  */
 export function runDumpConfig(profile: string, defaultOnly: boolean, patches: readonly string[]): void {
   const loaded = prepareProfile(profile, !defaultOnly)
-  const layers: ConfigDumpLayer[] = loaded.layers.map(layer => ({
-    label: layer.packageName,
-    patches: layer.patches,
-  }))
+  const userLayers: StackUserLayer[] = []
   if (!defaultOnly) {
     if (existsSync(loaded.patchPath)) {
-      layers.push({ label: loaded.patchPath, patches: loaded.patches })
+      userLayers.push({ label: loaded.patchPath, patches: loaded.patches })
     }
     const homePatchFile = homePatchPath()
     const homePatches = loadOptionalPatches(NAME, homePatchFile)
     if (homePatches !== undefined) {
-      layers.push({ label: homePatchFile, patches: homePatches })
+      userLayers.push({ label: homePatchFile, patches: homePatches })
     }
     for (const file of patches) {
       const absolute = resolve(file)
-      layers.push({ label: absolute, patches: loadOverlayPatches(NAME, absolute) })
+      userLayers.push({ label: absolute, patches: loadOverlayPatches(NAME, absolute) })
     }
   }
+  // The same composition boot mounts: external bundles as contained groups,
+  // a bundle or row left out by an id conflict reported, not shown.
+  const stack = composeProfileStack(NAME, loaded.layers, userLayers)
+  for (const conflict of stack.conflicts) process.stderr.write(`${NAME}: ${formatRowConflict(conflict)}\n`)
+  const layers: ConfigDumpLayer[] = stack.layers.map(layer => ({ label: layer.label, patches: layer.patches }))
   // The dump anchors on the same empty root file the boot includes.
   process.stdout.write(renderConfigDump(NAME, join(loaded.dir, PROFILE_ROOT_FILENAME), layers))
 }
