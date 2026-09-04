@@ -1,7 +1,8 @@
 /**
  * Live-progress mirror for background workflow runs: streams the engine's
  * `workflow/phase`, `workflow/log`, and member lifecycle events into the
- * owning job's output ring as text lines, and keeps the job's live progress
+ * owning job's output ring as `log` chunks — observer-only narration the
+ * model's `job_output` never renders — and keeps the job's live progress
  * line on the current phase. Appends against a settled job log and drop
  * inside the registry, so a straggling event after settlement is harmless.
  * @module @deepseek-ai/dsh-tool-workflow/record
@@ -40,16 +41,16 @@ export function createWorkflowRecordMirror(ctx: Context): WorkflowRecordMirror {
     const job = active.get(info.id)
     if (job === undefined) return
     job.updateProgress(title)
-    job.append(`▸ ${title}\n`)
+    job.append(`▸ ${title}\n`, { channel: 'log' })
   })
   ctx.on('workflow/log', (info, message) => {
-    active.get(info.id)?.append(`${message}\n`)
+    active.get(info.id)?.append(`${message}\n`, { channel: 'log' })
   })
   ctx.on('workflow/agent-start', (info, agent) => {
-    active.get(info.id)?.append(`agent #${agent.seq} ${agent.label} started\n`)
+    active.get(info.id)?.append(`agent #${agent.seq} ${agent.label} started\n`, { channel: 'log' })
   })
   ctx.on('workflow/agent-end', (info, agent) => {
-    active.get(info.id)?.append(`agent #${agent.seq} ${agent.outcome}\n`)
+    active.get(info.id)?.append(`agent #${agent.seq} ${agent.outcome}\n`, { channel: 'log' })
   })
 
   return {

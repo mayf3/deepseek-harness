@@ -484,6 +484,17 @@ describe('dsh-tool-workflow', () => {
       engine.agentEnd(runId, { seq: 1, label: 'scan a.ts', phase: 'Scan', childId: SessionId('child-1'), outcome: 'completed' })
       expect(retained(ctx, job.id, parent)).toBe('▸ Scan\n3/10 found\nagent #1 scan a.ts started\nagent #1 completed\n')
       expect(jobs.get(job.id).progress).toBe('Scan')
+      // Narration is observer-only: every chunk rides the log channel, so the
+      // model's job_output before settlement sees status only.
+      expect(jobs.readAt(job.id, 0).chunks.map(chunk => chunk.channel)).toEqual(['log', 'log', 'log', 'log'])
+      const early = await ctx.tools.execute({
+        signal: testToolSignal,
+        callId: ToolCallId('call-early-read'),
+        name: 'job_output',
+        arguments: { job_id: 'workflow-1' },
+        agent: parent,
+      })
+      expect((early.content[0] as { text: string }).text).toBe('(no new output)\n[status: running, Scan]')
 
       engine.settleRun(runId, { value: { findings: 2 }, stopReason: 'completed', agentsStarted: 4 })
       await vi.waitFor(() => { expect(jobs.get(job.id).status).toBe('completed') })
