@@ -11,7 +11,7 @@ import type {
 import type { FileUploadReceiptId } from '@deepseek-ai/dsh-client-file-upload/types'
 import type {} from '@deepseek-ai/dsh-client-file-upload'
 import {
-  ReasoningEffortId, createUserMessage, freezeMessage,
+  ReasoningEffortId, createUserMessage, expandAssistantStream, freezeMessage,
 } from '@deepseek-ai/dsh-llm'
 import type { MessageSource } from '@deepseek-ai/dsh-llm'
 import { SessionLogOffset, SessionSeq } from '@deepseek-ai/dsh-session'
@@ -583,7 +583,6 @@ function imageInEvent(
     readonly content?: unknown
     readonly message?: { readonly content?: unknown }
     readonly inserted?: readonly { readonly content?: unknown }[]
-    readonly chunk?: { readonly type?: unknown; readonly block?: unknown }
   }
   const direct = imageBlockIn(data.content, match)
   if (direct !== undefined) return direct
@@ -593,9 +592,14 @@ function imageInEvent(
     const found = imageBlockIn(inserted.content, match)
     if (found !== undefined) return found
   }
-  return event.type === 'assistant/chunk' && data.chunk?.type === 'block-end'
-    ? imageBlockIn([data.chunk.block], match)
-    : undefined
+  if (event.type === 'assistant/message' || event.type === 'assistant/attempt') {
+    for (const { chunk } of expandAssistantStream(event.data.stream)) {
+      if (chunk.type !== 'block-end') continue
+      const found = imageBlockIn([chunk.block], match)
+      if (found !== undefined) return found
+    }
+  }
+  return undefined
 }
 
 function referencedImage(
