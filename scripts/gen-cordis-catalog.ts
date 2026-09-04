@@ -361,6 +361,7 @@ export const LINK_MAP: Readonly<Record<string, string>> = {
   AskUserQuestionRequestEvent: 'user-questions.md',
   AdmittedPromptContentPart: 'attachment.md',
   AttachmentAdmissionPart: 'attachment.md',
+  AttachmentError: 'attachment.md',
   EncodedFileAttachment: 'attachment.md',
   EncodedImageAttachment: 'attachment.md',
   FileAttachmentRef: 'attachment.md',

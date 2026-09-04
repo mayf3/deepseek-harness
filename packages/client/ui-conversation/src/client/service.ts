@@ -363,10 +363,8 @@ export class ConversationController extends Service implements IConversation {
       try {
         if (controller.signal.aborted
           || this.fileUploadOperations.get(attachment.id)?.controller !== controller) return
-        const owner = this.requireSessions().scope(sessionId)
-        if (owner === undefined) throw new Error(`conversation: session "${sessionId}" resolved no Agent scope`)
         const result = await this.ctx.fileUpload.upload(
-          owner,
+          sessionId,
           attachment.file,
           attachment.file.name === '' ? undefined : attachment.file.name,
           controller.signal,

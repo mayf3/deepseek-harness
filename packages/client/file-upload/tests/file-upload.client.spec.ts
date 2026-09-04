@@ -1,4 +1,5 @@
 import { Context } from '@deepseek-ai/cordis'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { apply } from '../src/client/index.ts'
 import { fileUploadWorker, FileUploadRuntime } from '../src/client/runtime.ts'
@@ -378,22 +379,13 @@ describe('file upload service', () => {
   })
 })
 
-describe('Agent-scoped file upload', () => {
+describe('Session-addressed file upload', () => {
+  const SESSION_ID = 's1' as SessionId
+
   async function scopedService(options: {
-    readonly sessionId?: string
     readonly remote?: ReturnType<typeof vi.fn>
   } = {}) {
     const ctx = new Context()
-    ctx.provide('sessions', {
-      scopeOf: (candidate: Context) => Reflect.get(candidate, 'fixtureSessionId') as string | undefined,
-    } as never)
-    ctx.provide('typert', {
-      contexts: {
-        getClient: (kind: string) => kind === 'agent'
-          ? { identity: (candidate: Context) => Reflect.get(candidate, 'fixtureSessionId') as string | undefined }
-          : undefined,
-      },
-    } as never)
     const remote = options.remote ?? vi.fn(() => Promise.resolve({
       ok: true,
       value: {
@@ -404,10 +396,7 @@ describe('Agent-scoped file upload', () => {
     ctx.provide('remote', { fileUploads: { upload: remote } } as never)
     const fiber = ctx.plugin(FileUploadRuntime)
     await fiber
-    const owner = options.sessionId === undefined
-      ? ctx
-      : ctx.extend({ fixtureSessionId: options.sessionId })
-    return { ctx, fiber, owner, remote, service: ctx.fileUpload }
+    return { ctx, fiber, remote, service: ctx.fileUpload }
   }
 
   it('assembles the scoped streaming request and parses progress and receipt fields', async () => {
@@ -425,11 +414,11 @@ describe('Agent-scoped file upload', () => {
       }), { status: 200 }))
     })
     ;(globalThis as UploadGlobal).__DSH_FILE_UPLOAD__ = { fetch }
-    const { fiber, owner, service } = await scopedService({ sessionId: 's1' })
+    const { fiber, service } = await scopedService()
     const signal = new AbortController().signal
     const file = new Blob(['data'])
 
-    await expect(service.upload(owner, file, 'notes & refs.pdf', signal, progress)).resolves.toEqual({
+    await expect(service.upload(SESSION_ID, file, 'notes & refs.pdf', signal, progress)).resolves.toEqual({
       ok: true,
       value: {
         receiptId: 'receipt-1',
@@ -448,7 +437,7 @@ describe('Agent-scoped file upload', () => {
     await fiber.dispose()
   })
 
-  it('uses the scoped Remote fallback for exact bytes and fixture Blob bodies', async () => {
+  it('uses the direct Remote fallback for exact bytes and fixture Blob bodies', async () => {
     vi.stubGlobal('location', { origin: 'https://fixture.test', search: '?fixture' })
     const remote = vi.fn(() => Promise.resolve({
       ok: true,
@@ -457,28 +446,23 @@ describe('Agent-scoped file upload', () => {
         file: { attachmentId: 'remote-file', name: 'bytes.bin', bytes: 3 },
       },
     }))
-    const { fiber, owner, service } = await scopedService({ sessionId: 's1', remote })
-    await expect(service.upload(owner, Uint8Array.of(0, 0, 0), 'bytes.bin'))
+    const { fiber, service } = await scopedService({ remote })
+    await expect(service.upload(SESSION_ID, Uint8Array.of(0, 0, 0), 'bytes.bin'))
       .resolves.toMatchObject({ ok: true })
-    await expect(service.upload(owner, new Blob([Uint8Array.of(1)])))
+    await expect(service.upload(SESSION_ID, new Blob([Uint8Array.of(1)])))
       .resolves.toMatchObject({ ok: true })
     expect(remote.mock.calls).toEqual([
-      [{ data: 'AAAA', name: 'bytes.bin' }, undefined],
-      [{ data: 'AQ==' }, undefined],
+      [SESSION_ID, { data: 'AAAA', name: 'bytes.bin' }, undefined],
+      [SESSION_ID, { data: 'AQ==' }, undefined],
     ])
     await fiber.dispose()
   })
 
-  it('rejects an unscoped call, an unavailable stream, and malformed background results', async () => {
+  it('rejects an unavailable stream and malformed background results', async () => {
     vi.stubGlobal('location', { origin: 'https://fixture.test', search: '?fixture' })
-    const unscoped = await scopedService()
-    await expect(unscoped.service.upload(unscoped.owner, Uint8Array.of(1)))
-      .rejects.toThrow('fileUpload.upload requires an Agent-scoped context')
-    await unscoped.fiber.dispose()
-
-    const fixture = await scopedService({ sessionId: 's1' })
+    const fixture = await scopedService()
     const stream = new ReadableStream<Uint8Array>({ start(controller) { controller.close() } })
-    await expect(fixture.service.upload(fixture.owner, stream))
+    await expect(fixture.service.upload(SESSION_ID, stream))
       .rejects.toThrow('stream file upload requires a background carrier')
     await fixture.fiber.dispose()
 
@@ -486,8 +470,8 @@ describe('Agent-scoped file upload', () => {
     ;(globalThis as UploadGlobal).__DSH_FILE_UPLOAD__ = {
       fetch: () => Promise.resolve(new Response(null, { status: 413 })),
     }
-    const rejected = await scopedService({ sessionId: 's1' })
-    await expect(rejected.service.upload(rejected.owner, new Blob()))
+    const rejected = await scopedService()
+    await expect(rejected.service.upload(SESSION_ID, new Blob()))
       .rejects.toThrow('file upload transport failed with HTTP 413')
     await rejected.fiber.dispose()
 
@@ -505,8 +489,8 @@ describe('Agent-scoped file upload', () => {
       ;(globalThis as UploadGlobal).__DSH_FILE_UPLOAD__ = {
         fetch: () => Promise.resolve(new Response(JSON.stringify(body), { status: 200 })),
       }
-      const malformed = await scopedService({ sessionId: 's1' })
-      await expect(malformed.service.upload(malformed.owner, new Blob()))
+      const malformed = await scopedService()
+      await expect(malformed.service.upload(SESSION_ID, new Blob()))
         .rejects.toThrow(/file upload transport returned an invalid/)
       await malformed.fiber.dispose()
     }
@@ -517,8 +501,8 @@ describe('Agent-scoped file upload', () => {
         error: { code: 'session/attachment-invalid', message: 'denied', details: { reason: 'NOPE' } },
       }), { status: 200 })),
     }
-    const failed = await scopedService({ sessionId: 's1' })
-    await expect(failed.service.upload(failed.owner, new Blob())).resolves.toMatchObject({
+    const failed = await scopedService()
+    await expect(failed.service.upload(SESSION_ID, new Blob())).resolves.toMatchObject({
       ok: false,
       error: {
         code: 'session/attachment-invalid',

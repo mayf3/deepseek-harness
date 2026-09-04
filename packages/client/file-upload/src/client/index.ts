@@ -2,6 +2,7 @@
 
 import type { Context } from '@deepseek-ai/cordis'
 import { FileUploadRuntime } from './runtime.ts'
+import type { FileUploadService } from './contract.ts'
 
 export type {
   ClientFileUploadHooks,
@@ -14,13 +15,13 @@ export type { FileUploadReceiptId, FileUploadValue } from '../types.ts'
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
-    /** Agent-scoped browser service for staged file uploads. */
-    fileUpload: import('./contract.ts').FileUploadService
+    /** Session-addressed browser service for staged file uploads. */
+    fileUpload: FileUploadService
   }
 }
 
-/** The upload service resolves Agent identity and the generated Remote fallback. */
-export const inject = ['typert', 'remote']
+/** The upload service uses the generated Remote fallback. */
+export const inject = ['remote']
 
 /**
  * Provide the browser background-upload service.

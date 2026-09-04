@@ -28,6 +28,7 @@ import { createSlotRenderer as createRenderer } from '@deepseek-ai/dsh-client-ui
 import {
   apply as applyUiSession, inject as uiSessionInject,
 } from '@deepseek-ai/dsh-client-ui-session/client'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type {
   ChildrenDecl, ComposedProps, HostObservable, OwnerOf, SlotComponent, SlotMap, SlotRenderer,
   SlotRendererHost, SnapshotSelectorHook, StoreInstanceLike,
@@ -115,7 +116,7 @@ export interface TestFileUpload {
   /** Availability reported to the feature under test. */
   available: boolean
   /** Test-supplied upload behavior; the default rejects every call. */
-  upload: (owner: Context, ...args: unknown[]) => Promise<unknown>
+  upload: (sessionId: SessionId, ...args: unknown[]) => Promise<unknown>
 }
 
 /**

@@ -490,6 +490,19 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         throws: ['AttachmentError when the image batch is refused.'],
       },
       {
+        signature: 'admitEncodedFile(input: EncodedFileAttachment): Promise<FileAttachmentRef>',
+        description: 'Decode and durably commit one canonical base64 file upload.',
+        parameters: [{ name: 'input', description: 'canonical base64 bytes and optional display name.' }],
+        returns: 'the durable content-addressed file reference.',
+        throws: ['AttachmentError when the encoding or storage operation is refused.'],
+      },
+      {
+        signature: 'isAttachmentError(error: unknown): error is AttachmentError',
+        description: 'Identify a failure emitted by this attachment capability by its stable code.',
+        parameters: [{ name: 'error', description: 'value caught from an attachment operation.' }],
+        returns: 'whether the value is an attachment failure.',
+      },
+      {
         signature: 'abstract saveImage(input: SaveImageAttachment): Promise<ImageAttachmentRef>',
         description: 'Validate and durably commit one image before its owning session event is appended. The returned reference describes the persisted normalized image. When normalization reduces the raster, its `originalDimensions` records the orientation-applied input dimensions.',
         parameters: [{ name: 'input', description: 'encoded bytes, declared media type, and optional display name.' }],
@@ -3617,6 +3630,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type AttachmentAdmissionPart = PromptContentPart | {\n    readonly type: \'file\';\n    readonly attachment: FileAttachmentRef;\n};',
   },
   {
+    name: 'AttachmentError',
+    declaration: 'export class AttachmentError extends Error {\n    readonly code: AttachmentErrorCode;\n    constructor(message: string, code: AttachmentErrorCode, options?: ErrorOptions);\n}',
+  },
+  {
+    name: 'AttachmentErrorCode',
+    declaration: 'export type AttachmentErrorCode = typeof ATTACHMENT_ERROR_CODES[number];',
+  },
+  {
     name: 'AttachmentId',
     declaration: 'export type AttachmentId = Branded<\'AttachmentId\'>;',
   },
@@ -4063,6 +4084,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'EditGoalRequest',
     declaration: 'export interface EditGoalRequest {\n    readonly objective?: string;\n    readonly maxGoalRounds?: number;\n}',
+  },
+  {
+    name: 'EncodedFileAttachment',
+    declaration: 'export interface EncodedFileAttachment {\n    data: string;\n    name?: string;\n}',
   },
   {
     name: 'EncodedFileUploadRequest',

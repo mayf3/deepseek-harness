@@ -1,11 +1,12 @@
 /** Durable attachment storage seam (`ctx.attachments`). @module @deepseek-ai/dsh-attachment */
 
 import { Context, Service } from '@deepseek-ai/cordis'
-import { admitEncodedImages } from './admission.ts'
-import { AttachmentError } from './error.ts'
+import { admitEncodedFile as admitFileInput, admitEncodedImages } from './admission.ts'
+import { AttachmentError, isAttachmentError as matchesAttachmentError } from './error.ts'
 import type {
   AdmittedPromptContentPart,
   AttachmentAdmissionPart,
+  EncodedFileAttachment,
   FileAttachmentRef,
   ImageAttachmentLimits,
   ImageAttachmentRef,
@@ -124,6 +125,25 @@ export abstract class AttachmentStore extends Service {
       if (part.type === 'file') return { type: 'file', attachment: part.attachment }
       return { type: 'image', attachment: refs[next++] as ImageAttachmentRef }
     })
+  }
+
+  /**
+   * Decode and durably commit one canonical base64 file upload.
+   * @param input - canonical base64 bytes and optional display name.
+   * @returns the durable content-addressed file reference.
+   * @throws AttachmentError when the encoding or storage operation is refused.
+   */
+  admitEncodedFile(input: EncodedFileAttachment): Promise<FileAttachmentRef> {
+    return admitFileInput(this, input)
+  }
+
+  /**
+   * Identify a failure emitted by this attachment capability by its stable code.
+   * @param error - value caught from an attachment operation.
+   * @returns whether the value is an attachment failure.
+   */
+  isAttachmentError(error: unknown): error is AttachmentError {
+    return matchesAttachmentError(error)
   }
 
   /**

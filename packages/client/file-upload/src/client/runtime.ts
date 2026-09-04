@@ -3,9 +3,10 @@
 import { Service, type Context } from '@deepseek-ai/cordis'
 import { bytesToBase64 } from '@deepseek-ai/dsh-util-crypto'
 import { RemoteError } from '@deepseek-ai/dsh-typert-protocol'
-import type { RemoteResult, TypertContextRegistry } from '@deepseek-ai/dsh-typert-protocol'
+import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { FILE_UPLOAD_PATH } from '../protocol.ts'
-import type { FileUploadValue } from '../types.ts'
+import type { EncodedFileUploadRequest, FileUploadValue } from '../types.ts'
 import type {
   ClientFileUploadHooks,
   FileUploadBody,
@@ -26,19 +27,16 @@ interface FileUploadResponse {
   readonly body: string
 }
 
-interface AgentFileUploadContext extends Context {
+interface FileUploadRemoteContext extends Context {
   readonly remote: {
     readonly fileUploads: {
       upload(
-        request: import('../types.ts').EncodedFileUploadRequest,
+        sessionId: SessionId,
+        request: EncodedFileUploadRequest,
         signal?: AbortSignal,
       ): Promise<RemoteResult<FileUploadValue>>
     }
   }
-}
-
-interface FileUploadTypert {
-  readonly contexts: Pick<TypertContextRegistry, 'getClient'>
 }
 
 interface UploadWorkerStart {
@@ -187,8 +185,8 @@ export class FileUploadRuntime extends Service implements FileUploadService {
   }
 
   /**
-   * Store one file under an Agent scope.
-   * @param owner - Agent-scoped Client context that owns the staged receipt.
+   * Store one file for a Session.
+   * @param sessionId - Session that owns the staged receipt.
    * @param data - browser Blob, exact bytes, or a one-shot byte stream.
    * @param name - optional display name.
    * @param signal - optional cancellation for the active upload.
@@ -196,13 +194,12 @@ export class FileUploadRuntime extends Service implements FileUploadService {
    * @returns the staged receipt and durable file reference, or a business error.
    */
   async upload(
-    owner: Context,
+    sessionId: SessionId,
     data: Blob | Uint8Array | ReadableStream<Uint8Array>,
     name?: string,
     signal?: AbortSignal,
     onProgress?: (progress: { readonly loaded: number; readonly total?: number }) => void,
   ): Promise<RemoteResult<FileUploadValue>> {
-    const sessionId = this.sessionId(owner)
     if (!(data instanceof Uint8Array) && this.available) {
       const query = new URLSearchParams({ sessionId })
       if (name !== undefined) query.set('name', name)
@@ -222,19 +219,14 @@ export class FileUploadRuntime extends Service implements FileUploadService {
       throw new Error('stream file upload requires a background carrier')
     }
     const bytes = data instanceof Uint8Array ? data : new Uint8Array(await data.arrayBuffer())
-    return (owner as AgentFileUploadContext).remote.fileUploads.upload({
-      data: bytesToBase64(bytes),
-      ...(name === undefined ? {} : { name }),
-    }, signal)
-  }
-
-  private sessionId(owner: Context): string {
-    const typert = this.ctx.get('typert') as FileUploadTypert | undefined
-    const sessionId = typert?.contexts.getClient('agent')?.identity(owner)
-    if (typeof sessionId !== 'string' || sessionId === '') {
-      throw new Error('fileUpload.upload requires an Agent-scoped context')
-    }
-    return sessionId
+    return (this.ctx as FileUploadRemoteContext).remote.fileUploads.upload(
+      sessionId,
+      {
+        data: bytesToBase64(bytes),
+        ...(name === undefined ? {} : { name }),
+      },
+      signal,
+    )
   }
 }
 

@@ -10,6 +10,7 @@ import AttachmentStore, {
   type ImageMediaType,
   type ImageRequestPolicy,
   type RequestImageAttachment,
+  type SaveFileAttachment,
   type SaveImageAttachment,
   type StoredImageAttachment,
 } from '../src/index.ts'
@@ -86,6 +87,19 @@ class UnsupportedProjectionStore extends AttachmentStore {
 
   readImage(): Promise<StoredImageAttachment> {
     throw new Error('not used')
+  }
+}
+
+class RecordingFileStore extends RecordingStore {
+  fileInput: SaveFileAttachment | undefined
+
+  override saveFile(input: SaveFileAttachment) {
+    this.fileInput = input
+    return Promise.resolve({
+      attachmentId: AttachmentId(`sha256:${'cd'.repeat(32)}`),
+      name: input.name ?? 'unnamed',
+      bytes: input.data.byteLength,
+    })
   }
 }
 
@@ -175,6 +189,20 @@ describe('AttachmentStore.readImageRequest', () => {
     const reason = new Error('cancel unsupported file read')
     controller.abort(reason)
     await expect(read(controller.signal)).rejects.toBe(reason)
+  })
+})
+
+describe('AttachmentStore file admission', () => {
+  it('decodes encoded files through the service and exposes attachment errors', async () => {
+    const store = new RecordingFileStore(new Context())
+
+    await expect(store.admitEncodedFile({ data: 'AQID', name: 'notes.bin' })).resolves.toMatchObject({
+      name: 'notes.bin',
+      bytes: 3,
+    })
+    expect(store.fileInput).toEqual({ data: Uint8Array.of(1, 2, 3), name: 'notes.bin' })
+    expect(store.isAttachmentError(new AttachmentError('disk failed', 'ATTACHMENT_WRITE_FAILED'))).toBe(true)
+    expect(store.isAttachmentError(new Error('unknown failure'))).toBe(false)
   })
 })
 

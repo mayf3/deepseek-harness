@@ -1746,12 +1746,9 @@ importers:
 
   packages/client/file-upload:
     dependencies:
-      '@deepseek-ai/dsh-attachment':
+      '@deepseek-ai/dsh-brand':
         specifier: workspace:^
-        version: link:../../attachment/attachment
-      '@deepseek-ai/dsh-session':
-        specifier: workspace:^
-        version: link:../../core/session
+        version: link:../../util/brand
       '@deepseek-ai/dsh-typert-protocol':
         specifier: workspace:^
         version: link:../../typert/protocol
@@ -1768,9 +1765,9 @@ importers:
       '@deepseek-ai/dsh-api-remotes':
         specifier: workspace:^
         version: link:../../api/remotes
-      '@deepseek-ai/dsh-brand':
+      '@deepseek-ai/dsh-attachment':
         specifier: workspace:^
-        version: link:../../util/brand
+        version: link:../../attachment/attachment
       '@deepseek-ai/dsh-client-connection':
         specifier: workspace:^
         version: link:../connection
@@ -1780,6 +1777,9 @@ importers:
       '@deepseek-ai/dsh-scope':
         specifier: workspace:^
         version: link:../../core/scope
+      '@deepseek-ai/dsh-session':
+        specifier: workspace:^
+        version: link:../../core/session
       '@deepseek-ai/dsh-util-crypto':
         specifier: workspace:^
         version: link:../../util/crypto

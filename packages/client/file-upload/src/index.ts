@@ -3,13 +3,12 @@
 import { randomUUID } from 'node:crypto'
 import type { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
-import { admitEncodedFile, isAttachmentError } from '@deepseek-ai/dsh-attachment'
 import type { FileAttachmentRef } from '@deepseek-ai/dsh-attachment'
+import { brandString } from '@deepseek-ai/dsh-brand'
 import type {} from '@deepseek-ai/dsh-client-connection'
 import type { CommandFileReceiptResolver } from '@deepseek-ai/dsh-commands'
 import { scopeOf } from '@deepseek-ai/dsh-scope'
-import { SessionId } from '@deepseek-ai/dsh-session'
-import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
+import type { Session, SessionEvent, SessionId } from '@deepseek-ai/dsh-session'
 import { Remote, RemoteError, TypertRemoteService, remoteErrorOf } from '@deepseek-ai/dsh-typert-protocol'
 import { FILE_UPLOAD_PATH } from './protocol.ts'
 import type { EncodedFileUploadRequest, FileUploadReceiptId, FileUploadValue } from './types.ts'
@@ -114,7 +113,7 @@ export class FileUploads extends TypertRemoteService {
   @Remote('upload')
   upload(agent: Agent, request: EncodedFileUploadRequest, signal: AbortSignal): Promise<FileUploadValue> {
     signal.throwIfAborted()
-    return this.commit(agent, async () => admitEncodedFile(this.ctx.attachments, {
+    return this.commit(agent, async () => this.ctx.attachments.admitEncodedFile({
       data: request.data,
       ...(request.name === undefined ? {} : { name: request.name }),
     }))
@@ -195,7 +194,7 @@ export class FileUploads extends TypertRemoteService {
     try {
       file = await save()
     } catch (error) {
-      if (isAttachmentError(error)) {
+      if (this.ctx.attachments.isAttachmentError(error)) {
         throw new RemoteError('session/attachment-invalid' as never, error.message, { reason: error.code } as never)
       }
       throw new RemoteError(
@@ -288,7 +287,7 @@ export async function handleFileUploadHttp(service: FileUploads, request: Reques
     result = {
       ok: true,
       value: await service.uploadStream({
-        sessionId: SessionId(sessionId),
+        sessionId: brandString<SessionId>(sessionId),
         data: requestBodyChunks(request.body),
         signal: request.signal,
         ...(name === undefined ? {} : { name }),

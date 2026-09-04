@@ -17,6 +17,7 @@
     { "path": "../../util/brand" },
     { "path": "../../util/crypto" },
     { "path": "../../attachment/attachment" },
+    { "path": "../../core/session" },
     { "path": "../../typert/protocol" }
   ]
 }

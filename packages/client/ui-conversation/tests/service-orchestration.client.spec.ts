@@ -9,6 +9,7 @@ import { makeTranslate, RemoteError, SlotTestRuntime } from '@deepseek-ai/dsh-cl
 import type {
   BeginSubmissionInput, PendingSubmissionRetirement, QueuedMessage,
 } from '@deepseek-ai/dsh-api-session-controller/client'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { ComposerBlockRegistry } from '../src/client/input/blocks.ts'
 import { InputHub } from '../src/client/input/hub.ts'
 import { ConversationController } from '../src/client/service.ts'
@@ -17,11 +18,11 @@ import { zh } from '../src/client/locales.ts'
 async function bench(maxConcurrentFileUploads = 2) {
   const runtime = await SlotTestRuntime.create()
   runtime.fileUpload.available = true
-  runtime.fileUpload.upload = (owner: Context, ...args: unknown[]) => {
-    const session = runtime.sessions.sessionOf(owner) as {
+  runtime.fileUpload.upload = (sessionId: SessionId, ...args: unknown[]) => {
+    const session = runtime.sessions.behavior(sessionId) as {
       uploadFile?: (...input: unknown[]) => Promise<unknown>
-    } | undefined
-    if (session?.uploadFile === undefined) throw new Error('test file upload has no Session override')
+    }
+    if (session.uploadFile === undefined) throw new Error('test file upload has no Session override')
     return session.uploadFile(...args)
   }
   const prompt = vi.fn((

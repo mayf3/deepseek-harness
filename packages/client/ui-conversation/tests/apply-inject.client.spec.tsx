@@ -1,5 +1,4 @@
 // @vitest-environment jsdom
-import type { Context } from '@deepseek-ai/cordis'
 import { describe, expect, it, vi } from 'vitest'
 import type { ISession } from '@deepseek-ai/dsh-api-session-controller/client'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
@@ -43,10 +42,9 @@ async function bench() {
   }))
   const uploads = new Map<SessionId, (...args: unknown[]) => Promise<unknown>>([[ROOT, rootUpload]])
   runtime.fileUpload.available = true
-  runtime.fileUpload.upload = (owner: Context, ...args: unknown[]) => {
-    const id = runtime.sessions.scopeOf(owner)
-    const upload = id === undefined ? undefined : uploads.get(id)
-    if (upload === undefined) throw new Error('test file upload has no Agent-scope fixture')
+  runtime.fileUpload.upload = (sessionId: SessionId, ...args: unknown[]) => {
+    const upload = uploads.get(sessionId)
+    if (upload === undefined) throw new Error('test file upload has no Session fixture')
     return upload(...args)
   }
   runtime.ctx.provide('settingsScope', { bind: () => stubSettingsScope().scope } as never)
