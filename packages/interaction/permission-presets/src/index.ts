@@ -402,20 +402,27 @@ export class PermissionPresetService extends TypertRemoteService {
     this.apply(session, name, (policy) => { setApprovalPolicy(session, policy) })
   }
 
-  /** Apply one preset with the caller-selected live or initialization policy writer. */
+  /** Apply one preset; Auto teardown confines first so each durable prefix is safe. */
   private apply(session: Session, name: string, setApproval: (policy: ApprovalPolicy) => void): void {
     const spec = this.resolve(name)
     if (name === AUTO_PRESET) this.autoAdmit?.()
-    if (this.current(session) !== name) {
-      session.append('permission/preset', { preset: name })
-    }
+    const current = this.current(session)
     const knobs = this.permissionState(session)
-    if (spec.sandbox !== (knobs.sandbox ?? this.ctx.shell.sandboxMode)) {
-      setSandboxMode(session, spec.sandbox)
+    const updateKnobs = (): void => {
+      if (spec.sandbox !== (knobs.sandbox ?? this.ctx.shell.sandboxMode)) {
+        setSandboxMode(session, spec.sandbox)
+      }
+      if (spec.approval !== (knobs.approval ?? this.ctx.approval.config.policy ?? 'ask')) {
+        setApproval(spec.approval)
+      }
     }
-    if (spec.approval !== (knobs.approval ?? this.ctx.approval.config.policy ?? 'ask')) {
-      setApproval(spec.approval)
+    if (current === AUTO_PRESET && name === 'read-only') {
+      updateKnobs()
+      session.append('permission/preset', { preset: name })
+      return
     }
+    if (current !== name) session.append('permission/preset', { preset: name })
+    updateKnobs()
   }
 
   /**

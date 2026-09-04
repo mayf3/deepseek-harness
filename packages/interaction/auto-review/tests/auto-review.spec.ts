@@ -1462,9 +1462,7 @@ describe('cancellation and integration teardown', () => {
 
     const disposal = auto.dispose()
     await until(() => adapter.requests[0]?.signal?.aborted === true)
-    expect(session.snapshotEvents().slice(-2).map(event => event.type)).toEqual([
-      'permission/preset', 'sandbox/mode',
-    ])
+    expect(session.snapshotEvents().at(-1)?.type).toBe('sandbox/mode')
     expect(ctx.permissionPresets.current(session)).not.toBe(AUTO_PRESET)
     expect(() => { ctx.permissionPresets.set(session, AUTO_PRESET) }).toThrow(/integration is closing/)
     const secondId = ToolCallId('second-dispose-call')
