@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-09-04-plugin-manager-over-the-profile-runtime.md
-2026-09-04-plugin-manager-over-the-profile-runtime.md: 1622076cde78dc98becf27ec03de3141a8217fbe
-2026-09-04-plugin-manager-over-the-profile-runtime.zh.md: 3bafbf7902031b78933c6f2ee83da14bf407530b
+2026-09-04-plugin-manager-over-the-profile-runtime.md: 344cf2bc5c5c218c834112fc87412b49fb34413d
+2026-09-04-plugin-manager-over-the-profile-runtime.zh.md: 68f0e498a01f7702d1fab65b9b27e477c47529b8

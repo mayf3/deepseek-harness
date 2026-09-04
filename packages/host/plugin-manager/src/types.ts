@@ -116,10 +116,20 @@ export type PluginRowTarget =
   | { readonly kind: 'global' }
   | { readonly kind: 'preset'; readonly preset: string }
 
+/** A package pnpm installed that the run removed again, with the check it failed. */
+export interface PluginInstallRejection {
+  /** The package name. */
+  readonly name: string
+  /** Why it was removed: not a dsh package, or a row id another layer already owns. */
+  readonly reason: string
+}
+
 /** What one install run changed. */
 export interface PluginInstallResult {
-  /** Dependencies present after the run and absent before it, by name. */
+  /** Dependencies present after the run and absent before it that passed the post-install checks, by name. */
   readonly installed: readonly string[]
+  /** Dependencies pnpm added that the run removed again, each with its reason. */
+  readonly removed: readonly PluginInstallRejection[]
   /** Bundles newly enabled, when the caller asked for it. */
   readonly enabled: readonly string[]
   /** Newly installed bundles left disabled. */
@@ -199,6 +209,14 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
     'plugins/install-failed': { readonly spec: string; readonly exitCode: number | null; readonly log: string }
     /** The row id is already taken in the target user layer. */
     'plugins/row-conflict': { readonly rowId: string; readonly target: PluginRowTarget }
+    /** Another mutation is still running; the manager runs one at a time and refuses rather than queues. */
+    'plugins/busy': {
+      readonly operation: string
+      readonly subject: string
+      readonly active: { readonly operation: string; readonly subject: string }
+    }
+    /** `node_modules` cannot change while a session runs; `running` counts the agents in `running` status. */
+    'plugins/agents-running': { readonly operation: string; readonly running: number }
   }
 }
 

@@ -50,6 +50,7 @@
   "peerDependencies": {
     "@deepseek-ai/cordis": "workspace:^",
     "@deepseek-ai/cordis-plugin-loader": "workspace:^",
+    "@deepseek-ai/dsh-agent": "workspace:^",
     "@deepseek-ai/dsh-agent-presets": "workspace:^",
     "@deepseek-ai/dsh-app-boot": "workspace:^",
     "@deepseek-ai/dsh-patch-file": "workspace:^",
@@ -66,6 +67,7 @@
     "@deepseek-ai/cordis-plugin-group": "workspace:^",
     "@deepseek-ai/cordis-plugin-include": "workspace:^",
     "@deepseek-ai/cordis-plugin-loader": "workspace:^",
+    "@deepseek-ai/dsh-agent": "workspace:^",
     "@deepseek-ai/dsh-agent-presets": "workspace:^",
     "@deepseek-ai/dsh-app-boot": "workspace:^",
     "@deepseek-ai/dsh-patch-file": "workspace:^",

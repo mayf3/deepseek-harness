@@ -4656,8 +4656,12 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface PluginInstallLogChunk {\n    readonly jobId: string;\n    readonly spec: string;\n    readonly stream: \'stdout\' | \'stderr\';\n    readonly text: string;\n    readonly exitCode?: number | null;\n}',
   },
   {
+    name: 'PluginInstallRejection',
+    declaration: 'export interface PluginInstallRejection {\n    readonly name: string;\n    readonly reason: string;\n}',
+  },
+  {
     name: 'PluginInstallResult',
-    declaration: 'export interface PluginInstallResult {\n    readonly installed: readonly string[];\n    readonly enabled: readonly string[];\n    readonly installedOnly: readonly string[];\n    readonly plain: readonly string[];\n    readonly jobId: string;\n}',
+    declaration: 'export interface PluginInstallResult {\n    readonly installed: readonly string[];\n    readonly removed: readonly PluginInstallRejection[];\n    readonly enabled: readonly string[];\n    readonly installedOnly: readonly string[];\n    readonly plain: readonly string[];\n    readonly jobId: string;\n}',
   },
   {
     name: 'PluginPackageAddableView',

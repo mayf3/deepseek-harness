@@ -16,6 +16,8 @@ Status: implemented
 
 **pnpm 按 CLI 的方式运行。** 经 `node:child_process`、带父进程环境、Windows 上开 `shell`，而不经 subprocess seam：seam 会清洗 pnpm 访问 registry 与代理所需的形似密钥的变量，也没有解析 `.cmd` shim 的 shell 模式。输出以某个 job id 下的 `plugins/install-log` 分块流式发出；非零退出、spawn 错误或超时即带日志尾部的 `plugins/install-failed`。新包被探测并保持停用，除非调用方要求 `enable`。
 
+**`pnpm add` 成功不等于装好了插件。** 运行前先给 manifest 拍快照，pnpm 失败时恢复，失败的 add 不会留下依赖。之后逐个裁决 pnpm 加进来的包：既不声明组合包也不声明插件模块的，或者行 id 已被已组合层占有的组合包（对当前各层加候选层跑 `claimLayerIds`），再以 `pnpm remove` 移除并连同原因报在 `removed` 里；探针拒绝的包保留，因为视图能解释它、`retry` 还能再试。管理器一次只跑一个变更，第二个以 `plugins/busy` 拒绝而不是排队——否则每次写入都会在 manifest、用户层或 `node_modules` 上竞争——`add` 与 `uninstall` 在任一 agent 运行时以 `plugins/agents-running` 拒绝，因为 pnpm 会重写那些会话正在 import 的目录。这三道守卫来自社区的 `dshmarket` 管理器，它每一条都是从一个 bug 学来的。
+
 **行经补丁文件写入器落地。** `addRow` 把 `{ id, name, config }` 插入 profile 的 `cordis.patch.yml` 或某个 agent preset 的用户层（经 roster 的 `overlayPathFor`），id 由包名与子路径派生；`setRowDisabled` 只写拒绝，写入或移除 `disabled: true`，因此组合包的 `!!js` 门被恢复而不是被覆盖。全局层当场重新组合；preset 的层在其下一个常驻代际生效。
 
 **每个包一份视图。** `list` 把 manifest、探针记录（缓存在 `.dsh-plugins/` 下，版本变化即刷新）与在线树折叠成一个 `status`：按活跃行数是 `running`、`partial` 或 `failed`；`disabled`；带探针原因的 `not-enableable`；`startup` 重载的 profile 上 manifest 与树不一致时是 `restart-required`；库或插件模块是 `plain`。行在已组合时来自树，否则来自探针，并已带上 launcher 将使用的前缀 id；树外组合包的 trust 来自 `layerTrust`，这也是 `loadProfile` 所用的同一条规则。
@@ -30,8 +32,8 @@ Status: implemented
 
 ## 后果
 
-运行中的 Web 宿主可以在 live profile 上不重启地安装、启用、停用、重试与移除三方组合包，并把它们的模块加进全局层或某个 preset。更新已加载的包仍需重启（Node 的模块缓存）；`dependents` 止于注入边；`engines.dsh` 只报告不强制；客户端 UI 在后续 PR 到来。
+运行中的 Web 宿主可以在 live profile 上不重启地安装、启用、停用、重试与移除三方组合包，并把它们的模块加进全局层或某个 preset。更新已加载的包仍需重启（Node 的模块缓存）；`dependents` 止于注入边；`engines.dsh` 只报告不强制；客户端 UI 在后续 PR 到来。启用、停用与行编辑不受运行中会话限制：它们重组的是树，那是 Loader 的事务，不碰 `node_modules`。
 
 ## 测试
 
-`packages/host/plugin-manager/tests/plugin-manager.spec.ts` 经 `boot()` 启动一个临时 profile，带上 launcher 提供的 profile runtime 与一个按真实 pnpm 的方式编辑 manifest 的假 pnpm：视图折叠（已安装、已启用、已探测、等待中、用户停用、一方包、手写 manifest），带与不带启用的安装及其失败（退出码、spawn 错误、超时、日志尾部），live 与 `startup` profile 上的启用与停用，boot 阶段的回滚，不稳定隔离行的重试，全局层与 preset 层里的行及其冲突，按提供服务与按用户层引用的依赖检测，以及卸载。`packages/boot/app-boot/tests/contained-group.spec.ts` 钉住等待中的行记录跨重载保留。
+`packages/host/plugin-manager/tests/plugin-manager.spec.ts` 经 `boot()` 启动一个临时 profile，带上 launcher 提供的 profile runtime 与一个按真实 pnpm 的方式编辑 manifest 的假 pnpm：视图折叠（已安装、已启用、已探测、等待中、用户停用、一方包、手写 manifest），带与不带启用的安装及其失败（退出码、spawn 错误、超时、日志尾部、失败后恢复的 manifest），装后移除库包与行 id 被别的层占有的组合包而探针拒绝的包保留，一次只跑一个变更的拒绝与会话运行中的拒绝，live 与 `startup` profile 上的启用与停用，boot 阶段的回滚，不稳定隔离行的重试，全局层与 preset 层里的行及其冲突，按提供服务与按用户层引用的依赖检测，以及卸载。`packages/boot/app-boot/tests/contained-group.spec.ts` 钉住等待中的行记录跨重载保留。
