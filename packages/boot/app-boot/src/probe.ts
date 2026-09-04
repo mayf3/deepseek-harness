@@ -18,6 +18,13 @@ import { readProfileManifest, resolveBundleDir, type ProfileManifest } from './p
 /** Directory under a profile holding one probe record per package. */
 export const PLUGIN_PROBE_DIR = '.dsh-plugins'
 
+/**
+ * The probe record format. Bumped when the probe's verdicts change meaning,
+ * so a record an older probe wrote is re-probed instead of trusted: 2 made a
+ * bare function export a `library` rather than a `plugin`.
+ */
+export const PLUGIN_PROBE_FORMAT = 2
+
 /** One row a bundle's patch inserts, as its own patch declares it. */
 export interface PluginProbeRow {
   /** The row id the bundle declares, or undefined when the row leaves it to the Loader. */
@@ -341,17 +348,19 @@ function probeCachePath(profileDir: string, packageName: string): string {
  * @param profileDir - the profile directory.
  * @param packageName - the package.
  * @param version - when given, a record for a different version is treated as absent.
- * @returns the record, or undefined when none is cached.
+ * @returns the record, or undefined when none is cached or the cached one was written by another probe format.
  */
 export function readProbeCache(profileDir: string, packageName: string, version?: string): PluginProbe | undefined {
   const path = probeCachePath(profileDir, packageName)
   if (!existsSync(path)) return undefined
-  let record: PluginProbe
+  let stored: PluginProbe & { format?: number }
   try {
-    record = JSON.parse(readFileSync(path, 'utf8')) as PluginProbe
+    stored = JSON.parse(readFileSync(path, 'utf8')) as PluginProbe & { format?: number }
   } catch {
     return undefined
   }
+  const { format, ...record } = stored
+  if (format !== PLUGIN_PROBE_FORMAT) return undefined
   if (version !== undefined && record.version !== version) return undefined
   return record
 }
@@ -364,5 +373,5 @@ export function readProbeCache(profileDir: string, packageName: string, version?
 export function writeProbeCache(profileDir: string, probe: PluginProbe): void {
   const path = probeCachePath(profileDir, probe.packageName)
   mkdirSync(join(profileDir, PLUGIN_PROBE_DIR), { recursive: true })
-  writeFileSync(path, JSON.stringify(probe, undefined, 2) + '\n')
+  writeFileSync(path, JSON.stringify({ format: PLUGIN_PROBE_FORMAT, ...probe }, undefined, 2) + '\n')
 }

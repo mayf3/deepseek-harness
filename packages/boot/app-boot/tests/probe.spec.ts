@@ -8,7 +8,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import { PLUGIN_PROBE_DIR, probePackage, readProbeCache, writeProbeCache, type PluginProbe } from '../src/index.ts'
+import { PLUGIN_PROBE_DIR, PLUGIN_PROBE_FORMAT, probePackage, readProbeCache, writeProbeCache, type PluginProbe } from '../src/index.ts'
 
 const NAME = 'dsh-test-bin'
 
@@ -219,6 +219,11 @@ describe('probe cache', () => {
     expect(readProbeCache(profileDir, '@scope/pkg', '1.0.0')).toEqual(record)
     expect(readProbeCache(profileDir, '@scope/pkg', '2.0.0')).toBeUndefined()
     writeFileSync(join(profileDir, PLUGIN_PROBE_DIR, '@scope__pkg.json'), '{ not json')
+    expect(readProbeCache(profileDir, '@scope/pkg')).toBeUndefined()
+    // A record an older probe wrote — no format, or another one — is probed again, not trusted.
+    writeFileSync(join(profileDir, PLUGIN_PROBE_DIR, '@scope__pkg.json'), JSON.stringify(record))
+    expect(readProbeCache(profileDir, '@scope/pkg')).toBeUndefined()
+    writeFileSync(join(profileDir, PLUGIN_PROBE_DIR, '@scope__pkg.json'), JSON.stringify({ format: PLUGIN_PROBE_FORMAT - 1, ...record }))
     expect(readProbeCache(profileDir, '@scope/pkg')).toBeUndefined()
   })
 })
