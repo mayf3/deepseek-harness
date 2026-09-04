@@ -946,7 +946,11 @@ export interface Config {
   maxConcurrentJobsPerOwner?: number
   /** Live ring retention per job in UTF-8 bytes; omission defaults to 262144. */
   retainBytes?: number
-  /** Ring retention kept after a job settles, in UTF-8 bytes; omission defaults to 16384. */
+  /**
+   * Ring retention kept after a job settles, in UTF-8 bytes; omission defaults to 16384.
+   * Settlement keeps every byte the model cursor has not consumed on top of
+   * this cap; the first terminal model read then trims to it.
+   */
   settledRetainBytes?: number
   /** Poll interval for a job's pull sources, in milliseconds; omission defaults to 150. */
   pumpPollMs?: number
