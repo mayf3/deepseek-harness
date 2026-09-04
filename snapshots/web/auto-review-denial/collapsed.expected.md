@@ -17,6 +17,8 @@
 - textbox "Message or run a task... / commands, @ files or sessions"
 - button "Commands":
   - img
+- button "Add attachment":
+  - img
 - 'button "Access mode, current: Auto review EXP"':
   - text: Auto review
   - superscript: EXP
