@@ -16,7 +16,7 @@ Update：随 [jobs seam 收敛](../architecture/2026-09-03-jobs-seam-consolidati
 
 - **运行属于任务，不属于工具步骤。** 引擎运行在任务 starter 内启动且不带 `exec.signal`；取消路径是 `job_kill`、任务列表的停止控件与 owner 释放，各自把原因转发进 `run.cancel`。引擎的同步拒绝（meta／解析失败）从 starter 传播出去，因此什么都不注册，模型看到的是普通的可修正错误。
 - **结算即任务结算。** `done` 从 `run.result` 链起：先 dispose（释放失败只告警，绝不 reject 进注册表），再停掉镜像，最后映射结束原因——`completed` 在 `JobOutcome.output` 里携带与前台路径相同的渲染返回值（完成播报与 `job_output` 由此送达它），`cancelled` 结算为 `killed` 并把 detail 留给注册表的 kill 原因合并（转发的取消原因就是同一字符串），`error` 以脚本失败消息结算为 `failed`。
-- **record 镜像顶替被删的 activity 镜像。** `src/record.ts` 按插件订阅一次 `workflow/phase`、`workflow/log` 与成员生命周期事件，并把它们以 activity 镜像当年写下的同样文本行路由进被跟踪运行的 `RunningJob` 面；`updateDetail` 跟随当前 phase。这里没有收容错误的包装层：`append`／`updateDetail` 是不抛出的表面（结算后的 append 在注册表内丢弃），迟到的事件找不到被跟踪的运行。
+- **record 镜像顶替被删的 activity 镜像。** `src/record.ts` 按插件订阅一次 `workflow/phase`、`workflow/log` 与成员生命周期事件，并把它们以 activity 镜像当年写下的同样文本行路由进被跟踪运行的 `JobHandle` 面；`updateProgress` 跟随当前 phase。这里没有收容错误的包装层：`append`／`updateProgress` 是不抛出的表面（结算后的 append 在注册表内丢弃），迟到的事件找不到被跟踪的运行。
 - **输出 schema 变为 `kind` 判别联合**（`background` | `foreground`），与 bash 的形态一致；前台包络为对称获得 `kind: 'foreground'`。持久的 run-start／成员／run-end 会话记录在两条路径上都保留 `exec.parent === undefined` 门槛，后台的 run-end 从任务的 `done` 链写出。
 - **`workflow` 进入 `JobKindMap`**，由工具包声明合并，与 `pwsh`、`pty` 相同。
 

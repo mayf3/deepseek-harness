@@ -2,7 +2,7 @@
 
 状态：已实现
 
-Update：随 [jobs seam 收敛](../architecture/2026-09-03-jobs-seam-consolidation.zh.md)，被提升的 job 通过从观测流当前末尾开始的拉取源填充注册表的输出环。提升结果仍通过一次消耗式读取携带迄今为止的输出；环只保有提升之后产生的字节，因此模型的下一次 `job_output` 与 Web 面板都不会重复这段输出。
+Update：[jobs seam 收敛](../architecture/2026-09-03-jobs-seam-consolidation.zh.md)拥有被提升的 job 现在填充的输出环、游标与拉取源。
 
 [English](2026-08-26-shell-execute-timeout-promotion.md) | 中文
 
@@ -20,7 +20,7 @@ Update：随 [jobs seam 收敛](../architecture/2026-09-03-jobs-seam-consolidati
 
 **spawn 失败统一收容**：同步抛错与异步 rejection 都把句柄结算为 `killed`、说明进入读路径，而 `result()` 以原始错误 reject（保留同一性——沙箱执行器在其 `result()` 装饰里把可归因于 runner 的失败映射为 `SANDBOX_UNAVAILABLE`，并在 `onProcessDone` 里盖章句柄事实，两者都以同一个句柄实例为键）。
 
-**`tool-bash`/`tool-pwsh` 默认超时即转移**（`promoteOnTimeout: true`，要求 `enableRunInBackground` 与活的 `ctx.jobs`）。阈值就是现有的 `timeoutMs`——到期成为触发器，与 Kimi 和 Claude Code 的重定义完全一致；不存在第二个旋钮。收到 offer 时，工具用与 `run_in_background` 相同的三个钩子把在跑句柄注册为任务、镜像进 `ctx.activities`（Web 任务列表随即可流式观看，含停止控件）、做一次消费读嵌入结果，返回 `{ kind: 'promoted', jobId, timeoutMs, output }`，渲染为 `[still running after <ms>; moved to background job <id>]` 加交接指引。游标恰好从嵌入输出之后接续——Kimi 的形状；Claude Code 只回文件指针是因为其输出身份是文件，DSH 的是任务游标。任何转移失败（准入、控制器预检）都 decline 并回落到普通超时杀，且有日志。之后的完成经既有 tool-jobs 通知流动，模型无需轮询即被告知。
+**`tool-bash`/`tool-pwsh` 默认超时即转移**（`promoteOnTimeout: true`，要求 `enableRunInBackground` 与活的 `ctx.jobs`）。阈值就是现有的 `timeoutMs`——到期成为触发器，与 Kimi 和 Claude Code 的重定义完全一致；不存在第二个旋钮。收到 offer 时，工具用与 `run_in_background` 相同的三个钩子把在跑句柄注册为任务、把句柄的 observed 流从当前偏移起作为拉取源交给注册表（Web 任务列表经 `job.rows` 与 `job.observe` 随即可流式观看，含停止控件，且环只保有提升之后产生的字节）、做一次消费读嵌入结果，返回 `{ kind: 'promoted', jobId, timeoutMs, output }`，渲染为 `[still running after <ms>; moved to background job <id>]` 加交接指引。游标恰好从嵌入输出之后接续——Kimi 的形状；Claude Code 只回文件指针是因为其输出身份是文件，DSH 的是任务游标。任何转移失败（准入、控制器预检）都 decline 并回落到普通超时杀，且有日志。之后的完成经既有 tool-jobs 通知流动，模型无需轮询即被告知。
 
 ## 备选方案
 
@@ -31,7 +31,7 @@ Update：随 [jobs seam 收敛](../architecture/2026-09-03-jobs-seam-consolidati
 
 ## 测试
 
-执行器层（真实进程）：deadline 处给出 offer；accept 解绑计时器与调用方信号（accept 后 abort 不杀、`kill()` 杀）；decline 归类 `timedOut`；先结束则 resolve `undefined`；未应答自动 decline；offer 前 abort 归类 `aborted`；`'none'` 策略归类；同步抛错收容且错误同一性穿过 `result()`（沙箱套件）。工具层：真实的 `printf …; sleep 30` 配 `timeoutMs: 250` 端到端转移——任务注册、activity 带调用关联镜像、游标越过嵌入输出接续、`job_kill` 有效；准入饱和回落并告警；`promoteOnTimeout: false` 保持杀并撤掉描述句；pwsh 以脚本化 offer 镜像。渲染文本逐字钉死。
+执行器层（真实进程）：deadline 处给出 offer；accept 解绑计时器与调用方信号（accept 后 abort 不杀、`kill()` 杀）；decline 归类 `timedOut`；先结束则 resolve `undefined`；未应答自动 decline；offer 前 abort 归类 `aborted`；`'none'` 策略归类；同步抛错收容且错误同一性穿过 `result()`（沙箱套件）。工具层：真实的 `printf …; sleep 30` 配 `timeoutMs: 250` 端到端转移——任务注册、环从提升偏移起填充、游标越过嵌入输出接续、`job_kill` 有效；准入饱和回落并告警；`promoteOnTimeout: false` 保持杀并撤掉描述句；pwsh 以脚本化 offer 镜像。渲染文本逐字钉死。
 
 ## 后果
 

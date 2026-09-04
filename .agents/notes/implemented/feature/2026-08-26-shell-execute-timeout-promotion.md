@@ -2,7 +2,7 @@
 
 Status: implemented
 
-Update: with the [jobs seam consolidation](../architecture/2026-09-03-jobs-seam-consolidation.md) the promoted job feeds the registry's output ring through pull sources that start at the observed streams' current ends. The promoted result still carries the output so far through one consuming read; the ring holds only bytes produced after the promotion, so neither the model's next `job_output` nor the Web panel repeats that output.
+Update: the [jobs seam consolidation](../architecture/2026-09-03-jobs-seam-consolidation.md) owns the output ring, the cursors, and the pull sources the promoted job now feeds.
 
 English | [中文](2026-08-26-shell-execute-timeout-promotion.zh.md)
 
@@ -20,7 +20,7 @@ Peer evidence pointed one way. Kimi promotes on timeout by default (`bashAutoBac
 
 **Spawn failures are contained uniformly**: a synchronous spawn throw and an asynchronous rejection both settle the handle as `killed` with the note on the read path, while `result()` rejects with the original error (identity preserved — the sandbox executors map runner-attributed failures to `SANDBOX_UNAVAILABLE` in their `result()` decoration and stamp handle facts in `onProcessDone`, both keyed on the one handle instance).
 
-**`tool-bash`/`tool-pwsh` promote on timeout by default** (`promoteOnTimeout: true`, requiring `enableRunInBackground` and a live `ctx.jobs`). The threshold is the existing `timeoutMs` — expiry becomes the trigger, exactly as Kimi and Claude Code redefined it; no second knob exists. At the offer the tool registers the running handle as a job with the same three hooks as `run_in_background`, mirrors it into `ctx.activities` (so the Web task list streams it, stop control included), takes one consuming read for the result, and returns `{ kind: 'promoted', jobId, timeoutMs, output }` rendered as `[still running after <ms>; moved to background job <id>]` plus hand-off guidance. The cursor continues exactly after the embedded output — Kimi's shape; Claude Code returns only a file pointer because its output identity is a file, DSH's is the job cursor. Any promotion failure (admission, controller preflight) declines the offer and falls back to the plain timeout kill, logged. Completion later flows through the existing tool-jobs notice, so the model is told without polling.
+**`tool-bash`/`tool-pwsh` promote on timeout by default** (`promoteOnTimeout: true`, requiring `enableRunInBackground` and a live `ctx.jobs`). The threshold is the existing `timeoutMs` — expiry becomes the trigger, exactly as Kimi and Claude Code redefined it; no second knob exists. At the offer the tool registers the running handle as a job with the same three hooks as `run_in_background`, hands the registry the handle's observed streams as pull sources starting at their current offsets (so the Web task list streams it through `job.rows` and `job.observe`, stop control included, and the ring holds only bytes produced after the promotion), takes one consuming read for the result, and returns `{ kind: 'promoted', jobId, timeoutMs, output }` rendered as `[still running after <ms>; moved to background job <id>]` plus hand-off guidance. The cursor continues exactly after the embedded output — Kimi's shape; Claude Code returns only a file pointer because its output identity is a file, DSH's is the job cursor. Any promotion failure (admission, controller preflight) declines the offer and falls back to the plain timeout kill, logged. Completion later flows through the existing tool-jobs notice, so the model is told without polling.
 
 ## Alternatives considered
 
@@ -31,7 +31,7 @@ Peer evidence pointed one way. Kimi promotes on timeout by default (`bashAutoBac
 
 ## Testing
 
-Executor level (real processes): offer at deadline; accept detaches timer and caller signal (an abort after accept does not kill; `kill()` does); decline classifies `timedOut`; settle-first resolves `undefined`; unanswered auto-declines; pre-offer abort classifies `aborted`; `'none'`-policy classification; sync-throw containment with error identity through `result()` (sandbox suites). Tool level: a real `printf …; sleep 30` with `timeoutMs: 250` promotes end to end — job registered, activity mirrored with the call correlation, cursor continues past the embedded output, `job_kill` works; admission saturation falls back with the warn; `promoteOnTimeout: false` keeps the kill and drops the description sentence; pwsh mirrors via scripted offers. Render texts are pinned verbatim.
+Executor level (real processes): offer at deadline; accept detaches timer and caller signal (an abort after accept does not kill; `kill()` does); decline classifies `timedOut`; settle-first resolves `undefined`; unanswered auto-declines; pre-offer abort classifies `aborted`; `'none'`-policy classification; sync-throw containment with error identity through `result()` (sandbox suites). Tool level: a real `printf …; sleep 30` with `timeoutMs: 250` promotes end to end — job registered, ring fed from the promotion offsets, cursor continues past the embedded output, `job_kill` works; admission saturation falls back with the warn; `promoteOnTimeout: false` keeps the kill and drops the description sentence; pwsh mirrors via scripted offers. Render texts are pinned verbatim.
 
 ## Consequences
 
