@@ -544,7 +544,7 @@ async function readDecision(stream: AsyncIterable<StreamChunk>): Promise<AutoRev
   return parseDecision(final.text)
 }
 
-/** Private fixed-LLM risk-classifier seam for one frozen pending action. */
+/** Private deterministic fixed-LLM risk-classifier seam for one frozen pending action. */
 async function classifyRisk(
   ctx: Context,
   agent: Agent,
@@ -560,6 +560,7 @@ async function classifyRisk(
       content: [{ type: 'text', text: reviewUserText(snapshot) }],
       source: { kind: 'plugin', plugin: 'dsh-auto-review' },
     })],
+    temperature: 0,
     signal,
   })
   return readDecision(ctx.llm.stream(options))
