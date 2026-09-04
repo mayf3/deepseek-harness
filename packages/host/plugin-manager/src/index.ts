@@ -17,7 +17,7 @@
 
 import { spawn as spawnChild, type ChildProcess, type SpawnOptions } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
-import { readFileSync, rmSync } from 'node:fs'
+import { readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { Context, Fiber, FiberState } from '@deepseek-ai/cordis'
 import type { Entry } from '@deepseek-ai/cordis-plugin-loader'
@@ -25,6 +25,7 @@ import z from '@deepseek-ai/schemastery'
 import type { AgentPresets } from '@deepseek-ai/dsh-agent-presets'
 import {
   bundleGroupId,
+  claimLayerIds,
   disableBundle,
   enableBundle,
   healProfilesModuleFallback,
@@ -37,12 +38,14 @@ import {
   reconcileInstalledBundles,
   recordContainedStates,
   resolveBundleDir,
+  resolveProfileLayer,
   writeProbeCache,
   type BundleStage,
   type PluginProbe,
   type ProfileManifest,
   type ProfileRuntime,
 } from '@deepseek-ai/dsh-app-boot'
+import type {} from '@deepseek-ai/dsh-agent'
 import { mutatePatchFile, readPatchListFile, type PatchRow } from '@deepseek-ai/dsh-patch-file'
 import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 import { Remote, RemoteError, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
@@ -52,7 +55,7 @@ import type {
   PluginChangeReason,
   PluginDependents,
   PluginEnableResult,
-  PluginInstallResult,
+  PluginInstallRejection, PluginInstallResult,
   PluginPackageAddableView,
   PluginPackageRowView,
   PluginPackageStatus,
@@ -168,6 +171,46 @@ export class PluginManager extends TypertRemoteService {
     super(ctx, 'pluginManager', { namespace: 'plugins' })
     this.spawn = internals.spawn ?? spawnChild
     this.probeRunner = internals.probe ?? probePackage
+  }
+
+  /** The mutation in flight, while one is; a second caller is refused rather than queued. */
+  private active: { operation: string; subject: string } | undefined
+
+  /**
+   * Run one mutation with the manager to itself. Every write touches the
+   * profile manifest, the user layers, or `node_modules`, and two at once
+   * would race on those files, so a second call while one runs is refused.
+   * @throws {RemoteError} `plugins/busy` naming the operation in flight.
+   */
+  private async exclusive<T>(operation: string, subject: string, run: () => Promise<T>): Promise<T> {
+    if (this.active !== undefined) {
+      throw new RemoteError(
+        'plugins/busy',
+        `plugin-manager: ${operation} ${subject} refused while ${this.active.operation} ${this.active.subject} is still running`,
+        { operation, subject, active: this.active },
+      )
+    }
+    this.active = { operation, subject }
+    try {
+      return await run()
+    } finally {
+      this.active = undefined
+    }
+  }
+
+  /**
+   * Refuse a change to `node_modules` while a session is running: pnpm
+   * rewrites the directory the running agents import from.
+   * @throws {RemoteError} `plugins/agents-running` with the count.
+   */
+  private assertNoRunningAgents(operation: string): void {
+    const running = (this.ctx.get('agents')?.list() ?? []).filter(agent => agent.status === 'running').length
+    if (running === 0) return
+    throw new RemoteError(
+      'plugins/agents-running',
+      `plugin-manager: ${operation} waits for ${String(running)} running session(s) to go idle`,
+      { operation, running },
+    )
   }
 
   /** The profile runtime, or the failure a caller without one receives. */
@@ -361,40 +404,99 @@ export class PluginManager extends TypertRemoteService {
    */
   @Remote('install')
   async install(spec: string, options?: { enable?: boolean }): Promise<PluginInstallResult> {
+    return this.exclusive('install', spec, () => this.installNow(spec, options))
+  }
+
+  private async installNow(spec: string, options?: { enable?: boolean }): Promise<PluginInstallResult> {
     const runtime = this.runtime()
     if (spec.trim().length === 0) {
       throw new RemoteError('gateway/bad-request', 'plugin-manager: the package spec must not be empty', {})
     }
+    this.assertNoRunningAgents('install')
+    const manifestPath = join(runtime.dir, 'package.json')
+    const snapshot = readFileSync(manifestPath, 'utf8')
     const before = readProfileManifest(NAME, runtime.dir)
-    const jobId = await this.runPnpm(runtime, ['add', spec], spec)
+    let jobId: string
+    try {
+      jobId = await this.runPnpm(runtime, ['add', spec], spec)
+    } catch (error) {
+      // pnpm may have written the manifest before failing; the profile keeps
+      // the manifest it had, and what pnpm left under node_modules is not a
+      // dependency until a manifest names it.
+      if (readFileSync(manifestPath, 'utf8') !== snapshot) writeFileSync(manifestPath, snapshot)
+      throw error
+    }
     const outcome = reconcileInstalledBundles(NAME, runtime.dir, runtime.installAnchor, before, { autoEnable: false })
     const after = readProfileManifest(NAME, runtime.dir)
-    const installed = Object.keys(dependenciesOf(after)).filter(name => !(name in dependenciesOf(before)))
+    const added = Object.keys(dependenciesOf(after)).filter(name => !(name in dependenciesOf(before)))
     await healProfilesModuleFallback({ installAnchor: runtime.installAnchor, profile: runtime.current })
-    for (const name of installed) {
-      // A probe that cannot run leaves no record; the view reports the
-      // package as not enableable with the probe's own reason.
-      try {
-        await this.probe(runtime, name)
-      } catch {
-        // The failure is re-derived on every list and shown there.
+    const installed: string[] = []
+    const removed: PluginInstallRejection[] = []
+    for (const name of added) {
+      const reason = await this.rejection(runtime, name)
+      if (reason === undefined) {
+        installed.push(name)
+        continue
       }
+      await this.removeDependency(runtime, name)
+      removed.push({ name, reason })
     }
+    const kept = new Set(installed)
     const enabled: string[] = []
     if (options?.enable === true) {
       for (const name of outcome.installedOnly) {
-        await this.enable(name)
+        if (!kept.has(name)) continue
+        await this.enableNow(name)
         enabled.push(name)
       }
     }
     this.changed('install')
     return {
       installed,
+      removed,
       enabled,
-      installedOnly: outcome.installedOnly.filter(name => !enabled.includes(name)),
-      plain: outcome.plain,
+      installedOnly: outcome.installedOnly.filter(name => kept.has(name) && !enabled.includes(name)),
+      plain: outcome.plain.filter(name => kept.has(name)),
       jobId,
     }
+  }
+
+  /**
+   * The post-install check of one package pnpm added: a package that is
+   * neither a bundle nor a plugin module has no place in a profile, and a
+   * bundle whose row id another layer already owns could only mount as a
+   * conflict record. A package the probe cannot run stays installed: the
+   * view reports it as not enableable with the probe's own reason.
+   * @returns why the package is removed again, or undefined to keep it.
+   */
+  private async rejection(runtime: ProfileRuntime, name: string): Promise<string | undefined> {
+    let probe: PluginProbe
+    try {
+      probe = await this.probe(runtime, name)
+    } catch {
+      return undefined // the failure is re-derived on every list and shown there
+    }
+    // A refused probe (an import that throws, another cordis copy) keeps the
+    // package: the view shows it as not enableable with the probe's reason.
+    if (!probe.ok) return undefined
+    if (probe.kind === 'library') return 'declares neither a dsh bundle nor a plugin module'
+    if (probe.kind !== 'bundle') return undefined
+    try {
+      const layer = resolveProfileLayer(NAME, readProfileManifest(NAME, runtime.dir), name, runtime.installAnchor, runtime.dir)
+      const lost = claimLayerIds([...runtime.current.layers, layer]).skipped.get(name)
+      if (lost === undefined) return undefined
+      return lost.map(conflict => `row ${JSON.stringify(conflict.rowId)} is already declared by ${conflict.declaredBy}`).join('; ')
+    } catch (error) {
+      return messageOf(error)
+    }
+  }
+
+  /** Run `pnpm remove`, reconcile the layer list, and forget the probe record. */
+  private async removeDependency(runtime: ProfileRuntime, name: string): Promise<void> {
+    const before = readProfileManifest(NAME, runtime.dir)
+    await this.runPnpm(runtime, ['remove', name], name)
+    reconcileInstalledBundles(NAME, runtime.dir, runtime.installAnchor, before, { autoEnable: false })
+    rmSync(join(runtime.dir, PLUGIN_PROBE_DIR, `${name.replaceAll('/', '__')}.json`), { force: true })
   }
 
   /**
@@ -405,19 +507,21 @@ export class PluginManager extends TypertRemoteService {
    */
   @Remote('uninstall')
   async uninstall(packageName: string): Promise<void> {
+    return this.exclusive('uninstall', packageName, () => this.uninstallNow(packageName))
+  }
+
+  private async uninstallNow(packageName: string): Promise<void> {
     const runtime = this.runtime()
     this.assertInstalled(runtime, packageName)
+    this.assertNoRunningAgents('uninstall')
     const references = await this.rowReferences(runtime, packageName)
     if (bundlesOf(readProfileManifest(NAME, runtime.dir)).includes(packageName)) {
-      await this.disable(packageName)
+      await this.disableNow(packageName)
     }
     for (const reference of references) {
       await this.editLayer(runtime, reference.target, (document) => { document.removeInsert(reference.rowId) })
     }
-    const before = readProfileManifest(NAME, runtime.dir)
-    await this.runPnpm(runtime, ['remove', packageName], packageName)
-    reconcileInstalledBundles(NAME, runtime.dir, runtime.installAnchor, before, { autoEnable: false })
-    rmSync(join(runtime.dir, PLUGIN_PROBE_DIR, `${packageName.replaceAll('/', '__')}.json`), { force: true })
+    await this.removeDependency(runtime, packageName)
     if (references.some(reference => reference.target.kind === 'global') && runtime.patchReload === 'live') {
       await runtime.recompose()
     }
@@ -436,6 +540,10 @@ export class PluginManager extends TypertRemoteService {
    */
   @Remote('enable')
   async enable(packageName: string): Promise<PluginEnableResult> {
+    return this.exclusive('enable', packageName, () => this.enableNow(packageName))
+  }
+
+  private async enableNow(packageName: string): Promise<PluginEnableResult> {
     const runtime = this.runtime()
     this.assertInstalled(runtime, packageName)
     const probe = await this.probe(runtime, packageName).catch((error: unknown) => {
@@ -499,6 +607,10 @@ export class PluginManager extends TypertRemoteService {
    */
   @Remote('disable')
   async disable(packageName: string): Promise<PluginEnableResult> {
+    return this.exclusive('disable', packageName, () => this.disableNow(packageName))
+  }
+
+  private async disableNow(packageName: string): Promise<PluginEnableResult> {
     const runtime = this.runtime()
     let changed: boolean
     try {
@@ -524,12 +636,16 @@ export class PluginManager extends TypertRemoteService {
    */
   @Remote('retry')
   async retry(packageName: string): Promise<PluginEnableResult> {
+    return this.exclusive('retry', packageName, () => this.retryNow(packageName))
+  }
+
+  private async retryNow(packageName: string): Promise<PluginEnableResult> {
     const runtime = this.runtime()
     if (!bundlesOf(readProfileManifest(NAME, runtime.dir)).includes(packageName)) {
       throw new RemoteError('gateway/bad-request', `plugin-manager: ${packageName} is not enabled`, {})
     }
-    await this.disable(packageName)
-    const result = await this.enable(packageName)
+    await this.disableNow(packageName)
+    const result = await this.enableNow(packageName)
     this.changed('retry', packageName)
     return result
   }
@@ -548,6 +664,14 @@ export class PluginManager extends TypertRemoteService {
    */
   @Remote('addRow')
   async addRow(
+    packageName: string,
+    target: PluginRowTarget,
+    options?: { module?: string; id?: string; config?: JsonValue },
+  ): Promise<PluginRowAddition> {
+    return this.exclusive('addRow', packageName, () => this.addRowNow(packageName, target, options))
+  }
+
+  private async addRowNow(
     packageName: string,
     target: PluginRowTarget,
     options?: { module?: string; id?: string; config?: JsonValue },
@@ -582,6 +706,10 @@ export class PluginManager extends TypertRemoteService {
    */
   @Remote('removeRow')
   async removeRow(target: PluginRowTarget, rowId: string): Promise<void> {
+    return this.exclusive('removeRow', rowId, () => this.removeRowNow(target, rowId))
+  }
+
+  private async removeRowNow(target: PluginRowTarget, rowId: string): Promise<void> {
     const runtime = this.runtime()
     // A holder rather than a `let`: the assignment happens inside the edit
     // callback, which control-flow narrowing does not see.
@@ -603,6 +731,10 @@ export class PluginManager extends TypertRemoteService {
    */
   @Remote('setRowDisabled')
   async setRowDisabled(target: PluginRowTarget, rowId: string, disabled: boolean): Promise<void> {
+    return this.exclusive('setRowDisabled', rowId, () => this.setRowDisabledNow(target, rowId, disabled))
+  }
+
+  private async setRowDisabledNow(target: PluginRowTarget, rowId: string, disabled: boolean): Promise<void> {
     const runtime = this.runtime()
     await this.editLayer(runtime, target, (document) => {
       if (disabled) document.setRowField(rowId, 'disabled', true)
