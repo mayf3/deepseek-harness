@@ -8,7 +8,12 @@
 
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import type {
-  PluginDependents, PluginEnableResult, PluginInstallLogChunk, PluginInventorySnapshot, PluginPackageView,
+  PluginDependents,
+  PluginEnableResult,
+  PluginInstallLogChunk,
+  PluginInstallRejection,
+  PluginInventorySnapshot,
+  PluginPackageView,
   PluginRowTarget,
 } from '@deepseek-ai/dsh-api-remotes/client'
 import { createSnapshotStore, type SnapshotStore } from '@deepseek-ai/dsh-client-store'
@@ -43,8 +48,12 @@ export interface InstallState {
   readonly phase: 'idle' | 'running' | 'done' | 'failed'
   /** pnpm's output so far, stdout and stderr interleaved as they arrived. */
   readonly log: string
-  /** Dependencies the last run added, once it finished. */
+  /** Dependencies the last run added and kept, once it finished. */
   readonly installed: readonly string[]
+  /** Packages pnpm added that the Host removed again, each with its reason. */
+  readonly removed: readonly PluginInstallRejection[]
+  /** The Host's refusal, when the run failed before or after pnpm. */
+  readonly failure: { readonly code: string; readonly reason: string } | null
 }
 
 /** A destructive action waiting for the user's acknowledgement. */
@@ -135,7 +144,7 @@ export function rowKey(target: PluginRowTarget, rowId: string): string {
   return `${target.kind === 'global' ? 'global' : `preset:${target.preset}`}:${rowId}`
 }
 
-const IDLE_INSTALL: InstallState = { open: false, spec: '', enable: true, phase: 'idle', log: '', installed: [] }
+const IDLE_INSTALL: InstallState = { open: false, spec: '', enable: true, phase: 'idle', log: '', installed: [], removed: [], failure: null }
 
 /** Reads and mutates the profile's plugins through the `plugins` and `pluginInventory` Remotes. */
 export class PluginManagerController {
@@ -335,14 +344,14 @@ export class PluginManagerController {
     const install = this.getSnapshot().install
     const spec = install.spec.trim()
     if (install.phase === 'running' || spec === '') return
-    this.patchInstall({ phase: 'running', log: '', installed: [] })
+    this.patchInstall({ phase: 'running', log: '', installed: [], removed: [], failure: null })
     // The Host announces `plugins/changed` while the run is still on the
     // wire — enabling recomposes before the call answers — and every such
     // event reads again; those reads must not cancel the run's settlement.
     const result = await this.ctx.remote.plugins.add(spec, { enable: install.enable })
     if (this.disposed) return
     if (result.ok) {
-      this.patchInstall({ phase: 'done', installed: result.value.installed })
+      this.patchInstall({ phase: 'done', installed: result.value.installed, removed: result.value.removed })
     } else {
       // The Host's reason follows whatever streamed: pnpm's captured log when
       // no chunk arrived, else the refusal that followed a successful pnpm
@@ -350,7 +359,7 @@ export class PluginManagerController {
       const current = this.getSnapshot().install.log
       const reason = detailOf(result.error, 'reason') ?? detailOf(result.error, 'log') ?? result.error.message
       const log = current === '' || current.endsWith(reason) ? (current === '' ? reason : current) : `${current}\n${reason}`
-      this.patchInstall({ phase: 'failed', log })
+      this.patchInstall({ phase: 'failed', log, failure: { code: result.error.code, reason } })
     }
     void this.load()
   }

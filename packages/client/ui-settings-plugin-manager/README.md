@@ -29,7 +29,7 @@ Open the Plugins section in Settings and select the **Manage plugins** tab. The 
 
 ### Installing a package
 
-**Add plugin** opens the install dialog. Enter what pnpm accepts — `dsh-better-sidebar@latest`, `/path/to/plugin`, a git URL — and choose whether a newly installed bundle is enabled right away. The dialog streams the run's output and, once pnpm exits, names the dependencies the run added; a non-zero exit keeps the output for reading. The dialog cannot be closed while the run is in flight.
+**Add plugin** opens the install dialog. Enter what pnpm accepts — `dsh-better-sidebar@latest`, `/path/to/plugin`, a git URL — and choose whether a newly installed bundle is enabled right away. The dialog streams the run's output and, once pnpm exits, names the dependencies the run added; a non-zero exit keeps the output for reading. The dialog cannot be closed while the run is in flight. When the run finishes, the dialog lists the packages the Host removed again — one that is not a dsh package, or a bundle whose row id another layer owns — each with the Host's reason, under the installed names. A run or any other action the Host refuses because another change is still running, or because a session is running, shows that refusal in the Host's words.
 
 ### Switching a bundle
 

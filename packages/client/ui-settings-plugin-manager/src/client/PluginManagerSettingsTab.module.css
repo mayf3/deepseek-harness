@@ -426,6 +426,14 @@
   color: var(--dsw-alias-state-error-primary);
 }
 
+.removedList {
+  margin: 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
 .installBody {
   display: flex;
   flex-direction: column;

@@ -47,7 +47,7 @@ const READY: PluginManagerState = {
   selectedPreset: null,
   busy: [],
   notice: null,
-  install: { open: false, spec: '', enable: true, phase: 'idle', log: '', installed: [] },
+  install: { open: false, spec: '', enable: true, phase: 'idle', log: '', installed: [], removed: [], failure: null },
   confirm: null,
 }
 
@@ -302,7 +302,7 @@ describe('PluginManagerSettingsTab', () => {
   })
 
   it('drives the install dialog through its phases', () => {
-    const { actions, set } = renderTab({ install: { open: true, spec: '', enable: true, phase: 'idle', log: '', installed: [] } })
+    const { actions, set } = renderTab({ install: { open: true, spec: '', enable: true, phase: 'idle', log: '', installed: [], removed: [], failure: null } })
     const dialog = screen.getByRole('dialog', { name: en.installTitle })
     expect(dialog).toBeTruthy()
     const spec = screen.getByLabelText(en.installSpecLabel) as HTMLInputElement
@@ -313,33 +313,39 @@ describe('PluginManagerSettingsTab', () => {
     expect(screen.getByRole('button', { name: en.installRun })).toHaveProperty('disabled', true)
     expect(screen.queryByLabelText(en.installLogLabel)).toBeNull()
 
-    set({ install: { open: true, spec: 'pkg', enable: false, phase: 'idle', log: '', installed: [] } })
+    set({ install: { open: true, spec: 'pkg', enable: false, phase: 'idle', log: '', installed: [], removed: [], failure: null } })
     fireEvent.click(screen.getByRole('button', { name: en.installRun }))
     expect(actions.runInstall).toHaveBeenCalledTimes(1)
     fireEvent.click(screen.getByRole('button', { name: en.cancel }))
     expect(actions.closeInstall).toHaveBeenCalledTimes(1)
 
-    set({ install: { open: true, spec: 'pkg', enable: false, phase: 'running', log: 'Progress', installed: [] } })
+    set({ install: { open: true, spec: 'pkg', enable: false, phase: 'running', log: 'Progress', installed: [], removed: [], failure: null } })
     expect(screen.getByRole('button', { name: en.installRunning })).toHaveProperty('disabled', true)
     expect(screen.getByLabelText(en.installLogLabel).textContent).toBe('Progress')
     expect(screen.getByLabelText(en.installSpecLabel)).toHaveProperty('disabled', true)
 
-    set({ install: { open: true, spec: 'pkg', enable: false, phase: 'done', log: 'Progress', installed: ['pkg'] } })
+    set({ install: { open: true, spec: 'pkg', enable: false, phase: 'done', log: 'Progress', installed: ['pkg'], removed: [], failure: null } })
     expect(screen.getByRole('status').textContent).toBe('Installed: pkg')
-    set({ install: { open: true, spec: 'pkg', enable: false, phase: 'done', log: '', installed: [] } })
+    set({ install: { open: true, spec: 'pkg', enable: false, phase: 'done', log: '', installed: [], removed: [], failure: null } })
     expect(screen.getByRole('status').textContent).toBe(en.installDoneNothing)
+    set({ install: { open: true, spec: 'pkg', enable: false, phase: 'done', log: '', installed: [], removed: [{ name: 'lib', reason: 'declares neither a dsh bundle nor a plugin module' }], failure: null } })
+    expect(screen.getByLabelText(en.installRemovedLabel).textContent).toBe('Removed lib: declares neither a dsh bundle nor a plugin module')
     fireEvent.click(screen.getByRole('button', { name: en.installClose }))
     expect(actions.closeInstall).toHaveBeenCalledTimes(2)
 
-    set({ install: { open: true, spec: 'pkg', enable: false, phase: 'failed', log: 'ERR', installed: [] } })
+    set({ install: { open: true, spec: 'pkg', enable: false, phase: 'failed', log: 'ERR', installed: [], removed: [], failure: null } })
     expect(screen.getByRole('alert').textContent).toBe(en.installFailed)
+    set({ install: { open: true, spec: 'pkg', enable: false, phase: 'failed', log: 'ERR', installed: [], removed: [], failure: { code: 'plugins/busy', reason: 'add x is still running' } } })
+    expect(screen.getByRole('alert').textContent).toBe('Another change is still running; try again when it finishes: add x is still running')
+    set({ install: { open: true, spec: 'pkg', enable: false, phase: 'failed', log: 'ERR', installed: [], removed: [], failure: { code: 'plugins/agents-running', reason: '1 running' } } })
+    expect(screen.getByRole('alert').textContent).toBe('A session is running; change plugins once it is idle: 1 running')
     expect(screen.getByLabelText(en.installLogLabel).textContent).toBe('ERR')
     fireEvent.click(screen.getByRole('button', { name: en.close }))
     expect(actions.closeInstall).toHaveBeenCalledTimes(3)
     fireEvent.keyDown(document, { key: 'Escape' })
     expect(actions.closeInstall).toHaveBeenCalledTimes(4)
 
-    set({ install: { open: false, spec: '', enable: true, phase: 'idle', log: '', installed: [] } })
+    set({ install: { open: false, spec: '', enable: true, phase: 'idle', log: '', installed: [], removed: [], failure: null } })
     expect(screen.queryByRole('dialog')).toBeNull()
   })
 

@@ -14,7 +14,7 @@ Status: implemented
 
 **卡片按 scope 暂存，组件不知道 scope。** `ui-settings-plugins` 为配置标签页持有一个 `ScopeSelection`，每张卡片一个 `ScopedCardForms`：每个 scope 一个 `CardForm`，惰性绑定，草稿属于输入它时所在的 scope。卡片组件读同样的 hooks、调同样的 actions，后者在调用时路由到选中的表单。具名 scope 未覆盖而全局用户层携带的字段报告 `inherited`；重置暂存的是继承值。标签页的开关列出 roster 的预设，外加文档已有分区的任何 scope。文件系统技能提供方得到它的第一张卡片：额外目录的逐行列表。
 
-**管理另开一个标签页。** `ui-settings-plugin-manager` 在配置与只读列表之间注册**插件管理**标签页。它从 `plugins` Remote 读包、从 `pluginInventory` 读预设组合，在每次操作与每个 `plugins/changed` 之后重新读取，并把 `plugins/install-log` 流进安装对话框。破坏性操作等待一次已勾选确认，确认框列出宿主报告的依赖方。只读列表补上宿主早已携带的出处事实：哪一层插入了预设行、谁停用了某一行。
+**管理另开一个标签页。** `ui-settings-plugin-manager` 在配置与只读列表之间注册**插件管理**标签页。它从 `plugins` Remote 读包、从 `pluginInventory` 读预设组合，在每次操作与每个 `plugins/changed` 之后重新读取，并把 `plugins/install-log` 流进安装对话框。破坏性操作等待一次已勾选确认，确认框列出宿主报告的依赖方。只读列表补上宿主早已携带的出处事实：哪一层插入了预设行、谁停用了某一行。 安装对话框还会列出宿主在 `pnpm add` 之后又移除掉的包——不是 dsh 包的、行 id 已被别的层占有的组合包——并附宿主的原因；每个操作都会把任何变更都可能遇到的两种拒绝 `plugins/busy` 与 `plugins/agents-running` 按宿主的原话显示出来。
 
 **安装动词是 `add`。** 客户端的命名空间服务把 `install` 与 `remove` 留给自己的成员，并在页面加载时——所有单测都通过之后——拒绝同名的挂载方法。宿主的方法与 CLI 一样叫 `plugins/add`，`packages/api/remotes/tests/remote-method-names.host.spec.ts` 用网关源码自己保留的名字检查工作区里每一个 `@Remote('<name>')`。
 

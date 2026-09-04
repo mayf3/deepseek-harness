@@ -372,7 +372,18 @@ function InstallDialog({ install, t, onClose, onEditSpec, onToggleEnable, onRun 
             </p>
           )
           : null}
-        {install.phase === 'failed' ? <p className={css.reason} role="alert">{t('installFailed')}</p> : null}
+        {install.phase === 'done' && install.removed.length > 0
+          ? (
+            <ul className={css.removedList} aria-label={t('installRemovedLabel')}>
+              {install.removed.map(entry => (
+                <li key={entry.name} className={css.reason}>{t('installRemoved', { name: entry.name, reason: entry.reason })}</li>
+              ))}
+            </ul>
+          )
+          : null}
+        {install.phase === 'failed'
+          ? <p className={css.reason} role="alert">{install.failure === null ? t('installFailed') : refusalText(install.failure, t)}</p>
+          : null}
         {install.log === '' && install.phase === 'idle'
           ? null
           : <pre className={css.log} aria-label={t('installLogLabel')} aria-live="polite">{install.log}</pre>}
@@ -451,9 +462,18 @@ function noticeText(notice: ManagerNotice, t: Translate): string {
         case 'plugins/enable-failed': return t('enableFailed', { reason: notice.reason })
         case 'plugins/row-conflict': return t('rowConflict', { row: notice.rowId ?? '' })
         case 'plugins/not-installed': return t('notInstalled', { name: notice.packageName ?? '' })
-        default: return t('actionFailed', { reason: notice.reason })
+        default: return refusalText(notice, t)
       }
     }
+  }
+}
+
+/** The copy for a refusal every mutation can meet: the manager is busy, or a session is running. */
+function refusalText(failure: { readonly code: string; readonly reason: string }, t: Translate): string {
+  switch (failure.code) {
+    case 'plugins/busy': return t('busy', { reason: failure.reason })
+    case 'plugins/agents-running': return t('agentsRunning', { reason: failure.reason })
+    default: return failure.code === 'plugins/install-failed' ? t('installFailed') : t('actionFailed', { reason: failure.reason })
   }
 }
 

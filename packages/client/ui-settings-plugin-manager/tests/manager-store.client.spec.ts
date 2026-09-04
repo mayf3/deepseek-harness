@@ -32,7 +32,14 @@ const STANDARD: PresetGroup = {
 }
 
 /** What one install run answers. */
-type InstallValue = { installed: string[]; enabled: string[]; installedOnly: string[]; plain: string[]; jobId: string }
+type InstallValue = {
+  installed: string[]
+  removed: { name: string; reason: string }[]
+  enabled: string[]
+  installedOnly: string[]
+  plain: string[]
+  jobId: string
+}
 
 function ok<T>(value: T) {
   return { ok: true as const, value }
@@ -52,7 +59,7 @@ function deferred<T>() {
 function bench(overrides: Partial<Record<string, ReturnType<typeof vi.fn>>> = {}) {
   const plugins = {
     list: vi.fn(() => Promise.resolve(ok([BUNDLE]))),
-    add: vi.fn(() => Promise.resolve(ok({ installed: ['a'], enabled: [], installedOnly: [], plain: [], jobId: 'j1' }))),
+    add: vi.fn(() => Promise.resolve(ok({ installed: ['a'], removed: [], enabled: [], installedOnly: [], plain: [], jobId: 'j1' }))),
     uninstall: vi.fn(() => Promise.resolve(ok(undefined))),
     enable: vi.fn(() => Promise.resolve(ok({ changed: true, effect: 'live' }))),
     disable: vi.fn(() => Promise.resolve(ok({ changed: true, effect: 'restart' }))),
@@ -273,9 +280,10 @@ describe('PluginManagerController', () => {
     controller.appendLog({ jobId: 'j1', spec: 'dsh-better-sidebar', stream: 'stdout', text: 'Progress\n' })
     controller.appendLog({ jobId: 'j2', spec: 'other', stream: 'stdout', text: 'not mine' })
     expect(state().install.log).toBe('Progress\n')
-    gate.resolve(ok({ installed: ['dsh-better-sidebar'], enabled: [], installedOnly: [], plain: [], jobId: 'j1' }))
+    gate.resolve(ok({ installed: ['dsh-better-sidebar'], removed: [{ name: 'lib', reason: 'not a plugin' }], enabled: [], installedOnly: [], plain: [], jobId: 'j1' }))
     await vi.waitFor(() => { expect(state().install.phase).toBe('done') })
     expect(state().install.installed).toEqual(['dsh-better-sidebar'])
+    expect(state().install.removed).toEqual([{ name: 'lib', reason: 'not a plugin' }])
     controller.appendLog({ jobId: 'j1', spec: 'dsh-better-sidebar', stream: 'stdout', text: 'late', exitCode: 0 })
     expect(state().install.log).toBe('Progress\n')
     await vi.waitFor(() => { expect(plugins.list).toHaveBeenCalledTimes(2) })
@@ -296,7 +304,7 @@ describe('PluginManagerController', () => {
     face.runInstall()
     // The Host announces the change before the run answers; the read it triggers must not drop the answer.
     await controller.load()
-    addGate.resolve(ok({ installed: ['pkg'], enabled: ['pkg'], installedOnly: [], plain: [], jobId: 'j' }))
+    addGate.resolve(ok({ installed: ['pkg'], removed: [], enabled: ['pkg'], installedOnly: [], plain: [], jobId: 'j' }))
     await vi.waitFor(() => { expect(state().install.phase).toBe('done') })
 
     face.uninstall(BUNDLE.name)
@@ -320,6 +328,7 @@ describe('PluginManagerController', () => {
     face.runInstall()
     await vi.waitFor(() => { expect(state().install.phase).toBe('failed') })
     expect(state().install.log).toBe('ERR_PNPM')
+    expect(state().install.failure).toEqual({ code: 'plugins/install-failed', reason: 'ERR_PNPM' })
     face.runInstall()
     await vi.waitFor(() => { expect(plugins.add).toHaveBeenCalledTimes(2) })
     await vi.waitFor(() => { expect(state().install.log).toBe('offline') })
@@ -352,7 +361,7 @@ describe('PluginManagerController', () => {
     const before = state()
     controller.dispose()
     enableGate.resolve(ok({ changed: true, effect: 'live' }))
-    installGate.resolve(ok({ installed: [], enabled: [], installedOnly: [], plain: [], jobId: 'j' }))
+    installGate.resolve(ok({ installed: [], removed: [], enabled: [], installedOnly: [], plain: [], jobId: 'j' }))
     await Promise.resolve()
     await Promise.resolve()
     await Promise.resolve()
