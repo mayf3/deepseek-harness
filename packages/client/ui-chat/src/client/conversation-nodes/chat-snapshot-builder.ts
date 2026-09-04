@@ -1,15 +1,14 @@
 import type { Context } from '@deepseek-ai/cordis'
 import { notifySubscribers } from '@deepseek-ai/dsh-client-store'
 import type {
-  ConversationLocation, ConversationTimelineSnapshot, ConversationViewBuilder,
-  ConversationViewDefinition,
+  ConversationLocation, ConversationNode, ConversationTimelineSnapshot, ConversationViewBuilder,
+  ConversationViewDefinition, PartialAssistant, RunningToolCall,
 } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { ChatConversationViewNode, ChatNode } from '../contract/chat-nodes.ts'
 import { isRunningTool } from '../contract/chat-nodes.ts'
 import type {
   ChatLocationNodeIndex, ChatNodeProcessSource, ChatNodeSource, ChatNodeStore, ChatSnapshot,
-  ChatTurnNavigationIndex, ChatTurnProcessPresentation, ConversationNode, LegacyConversationSlice,
-  PartialAssistant, RunningToolCall, TurnNavigationItem,
+  ChatTurnNavigationIndex, ChatTurnProcessPresentation, LegacyConversationSlice, TurnNavigationItem,
 } from '../contract/snapshot.ts'
 import { TURN_PROCESS_INDEPENDENT_KINDS } from '../contract/turn-process.ts'
 import { sessionRecallLabels, skillInvocationName } from './event-projection.ts'
@@ -617,7 +616,12 @@ export class SkillNameProjector {
       const next = slashEntryOf(node)
       const previous = this.entries.get(node.key)
       if (previous !== undefined) {
-        if (next !== null && sameSlashEntry(previous, next)) continue
+        if (next !== null && sameSlashEntry(previous, next)) {
+          // A rebuilt message Node carries Definition state only, never the
+          // names a previous apply attached: re-read its batch.
+          if (next.kind === 'message') dirty.push(next.seq)
+          continue
+        }
         this.remove(previous)
         dirty.push(previous.seq)
       }
