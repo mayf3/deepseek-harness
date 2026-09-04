@@ -150,7 +150,7 @@ interface JobOutputSource {
   /**
    * Read everything captured since `fromByte` without consuming it.
    * @param fromByte - whole-stream offset to resume from (a prior read's `nextOffset`; 0 first).
-   * @returns the delta text, the next offset, and the lossy flag.
+   * @returns the delta text, the next offset, the lossy flag, and the spill path when one exists.
    */
   read(fromByte: number): JobSourceRead
 }
@@ -165,6 +165,8 @@ interface JobSourceRead {
   nextOffset: number
   /** True when the requested offset slid out of the source's retained window. */
   lossy: boolean
+  /** Path to a file holding the complete stream, when the source keeps one and this read is lossy. */
+  spillPath?: string
 }
 ```
 
@@ -183,6 +185,8 @@ interface JobChunk {
   readonly channel?: JobChannel
   /** Bytes immediately before this chunk were lost, at the producer or to retention. */
   readonly gapBefore?: true
+  /** Host path of a file holding the complete stream before the gap, when the producer keeps one; present only with `gapBefore`. */
+  readonly spillPath?: string
 }
 ```
 

@@ -14,6 +14,7 @@ interface RingChunk {
   bytes: number
   channel?: JobChannel
   gapBefore?: true
+  spillPath?: string
 }
 
 /**
@@ -61,6 +62,7 @@ export class OutputRing {
       bytes,
       ...options?.channel !== undefined ? { channel: options.channel } : {},
       ...options?.gapBefore !== undefined ? { gapBefore: options.gapBefore } : {},
+      ...options?.spillPath !== undefined ? { spillPath: options.spillPath } : {},
     })
     this.total += bytes
     this.retainedBytes += bytes
@@ -106,6 +108,7 @@ export class OutputRing {
         text: chunk.text,
         ...chunk.channel !== undefined ? { channel: chunk.channel } : {},
         ...chunk.gapBefore !== undefined ? { gapBefore: chunk.gapBefore } : {},
+        ...chunk.spillPath !== undefined ? { spillPath: chunk.spillPath } : {},
       })
     }
     return { chunks, next: this.total, lossy: from < this.earliest }

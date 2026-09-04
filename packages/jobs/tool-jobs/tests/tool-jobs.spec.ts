@@ -213,7 +213,7 @@ describe('tool-jobs setup', () => {
 
   it('renders a model delta as stdout, one stderr section, and a dropped-output notice', () => {
     expect(renderModelDelta([], false)).toBe('')
-    expect(renderModelDelta([], true)).toBe('[some output was dropped from memory before this read]')
+    expect(renderModelDelta([], true)).toBe('[some output was dropped from memory; full output: (unavailable)]')
     expect(renderModelDelta([
       { at: 0, text: 'a' },
       { at: 1, text: 'e1\n', channel: 'stderr' },
@@ -221,8 +221,24 @@ describe('tool-jobs setup', () => {
       { at: 13, text: 'b', channel: 'stdout' },
       { at: 14, text: 'e2', channel: 'stderr' },
     ], false)).toBe('ab\n[stderr]\ne1\ne2')
-    expect(renderModelDelta([{ at: 0, text: 'tail' }], true)).toBe('tail\n[some output was dropped from memory before this read]')
-    expect(renderModelDelta([{ at: 0, text: 'line\n' }], true)).toBe('line\n[some output was dropped from memory before this read]')
+    expect(renderModelDelta([{ at: 0, text: 'tail' }], true)).toBe('tail\n[some output was dropped from memory; full output: (unavailable)]')
+    expect(renderModelDelta([{ at: 0, text: 'line\n' }], true)).toBe('line\n[some output was dropped from memory; full output: (unavailable)]')
+  })
+
+  it('reports a producer-side gap as dropped output and names the spill files the gap chunks point at', () => {
+    // The ring itself lost nothing (`lossy: false`); the source did, between two pumps.
+    expect(renderModelDelta([{ at: 0, text: 'head' }, { at: 4, text: 'tail', gapBefore: true, spillPath: '/spill/out.log' }], false))
+      .toBe('headtail\n[some output was dropped from memory; full output: /spill/out.log]')
+    // Distinct spill files list once each, in offset order; a gap without a file yields the generic notice.
+    expect(renderModelDelta([
+      { at: 0, text: 'o', gapBefore: true, spillPath: '/spill/out.log' },
+      { at: 1, text: 'e', channel: 'stderr', gapBefore: true, spillPath: '/spill/err.log' },
+      { at: 2, text: 'o2', gapBefore: true, spillPath: '/spill/out.log' },
+    ], false)).toBe('oo2\n[stderr]\ne\n[some output was dropped from memory; full output: /spill/out.log, /spill/err.log]')
+    expect(renderModelDelta([{ at: 0, text: 'tail', gapBefore: true }], false))
+      .toBe('tail\n[some output was dropped from memory; full output: (unavailable)]')
+    // A gap on observer-only narration never reaches the model.
+    expect(renderModelDelta([{ at: 0, text: 'phase', channel: 'log', gapBefore: true, spillPath: '/spill/log' }], false)).toBe('')
   })
 
   it('applies the built-in wait bounds when apply() receives a bare config', async () => {
@@ -288,7 +304,7 @@ describe('job_output', () => {
     ctx.jobs.start(p.spec)
     p.append('x'.repeat(40))
     const first = text(await call(ctx, 'job_output', { job_id: 'bash-1' }))
-    expect(first).toContain('[some output was dropped from memory before this read]')
+    expect(first).toContain('[some output was dropped from memory; full output: (unavailable)]')
     expect(first).toContain('[status: running]')
     expect(first).not.toContain('x'.repeat(17))
     // The cursor now sits at the ring's end: the next read is clean.

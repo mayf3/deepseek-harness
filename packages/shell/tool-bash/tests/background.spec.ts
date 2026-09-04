@@ -144,6 +144,16 @@ describe('processSources', () => {
     // A missing stderr reader is an absent stream, not an error.
     expect(stderr!.read(0)).toEqual({ text: '', nextOffset: 0, lossy: false })
   })
+
+  it("passes a lossy read's spill file through, so the model's notice can name it", () => {
+    const proc = {
+      observed: {
+        stderr: { readFrom: (from: number) => ({ text: 'tail', nextOffset: from + 4, lossy: true, spillPath: '/spill/err.log' }) },
+      },
+    } as unknown as ShellProcess
+    const [, stderr] = processSources(() => proc)
+    expect(stderr!.read(0)).toEqual({ text: 'tail', nextOffset: 4, lossy: true, spillPath: '/spill/err.log' })
+  })
 })
 
 describe('owned background output', () => {

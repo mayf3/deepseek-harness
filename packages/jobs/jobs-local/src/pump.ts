@@ -2,7 +2,9 @@
  * The registry-owned pull pump: copies a job's {@link JobOutputSource}s into
  * its ring at a bounded cadence and drains them once more after the
  * producer settles, so the ring holds every byte before settlement trims and
- * closes it. Pure utility — no cordis, no timers retained past settlement.
+ * closes it. A lossy source read lands as a gap chunk that names the source's
+ * spill file when it keeps one. Pure utility — no cordis, no timers retained
+ * past settlement.
  * @module @deepseek-ai/dsh-jobs-local/pump
  */
 
@@ -52,6 +54,7 @@ export function startPump(
         append(read.text, {
           ...source.channel !== undefined ? { channel: source.channel } : {},
           ...read.lossy ? { gapBefore: true as const } : {},
+          ...read.lossy && read.spillPath !== undefined ? { spillPath: read.spillPath } : {},
         })
       }
     }

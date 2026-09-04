@@ -13,7 +13,7 @@ function sink() {
 
 /** A scripted source: each read() shifts the next scripted result. */
 function scriptedSource(
-  reads: { text: string; lossy?: boolean }[],
+  reads: { text: string; lossy?: boolean; spillPath?: string }[],
   channel?: 'stdout' | 'stderr',
 ): { source: JobOutputSource; offsets: number[] } {
   const offsets: number[] = []
@@ -24,7 +24,12 @@ function scriptedSource(
       offsets.push(fromByte)
       const next = reads.shift() ?? { text: '' }
       offset += Buffer.byteLength(next.text, 'utf8')
-      return { text: next.text, nextOffset: offset, lossy: next.lossy ?? false }
+      return {
+        text: next.text,
+        nextOffset: offset,
+        lossy: next.lossy ?? false,
+        ...next.spillPath !== undefined ? { spillPath: next.spillPath } : {},
+      }
     },
   }
   return { source, offsets }
@@ -64,6 +69,19 @@ describe('startPump', () => {
     const { source } = scriptedSource([{ text: 'tail', lossy: true }])
     await startPump([source], append, 1, Promise.resolve()).done
     expect(appends).toEqual([{ text: 'tail', options: { gapBefore: true } }])
+  })
+
+  it("names the source's spill file on a lossy read and ignores one on a clean read", async () => {
+    const { appends, append } = sink()
+    const { source } = scriptedSource([
+      { text: 'tail', lossy: true, spillPath: '/spill/out.log' },
+      { text: 'more', spillPath: '/spill/out.log' },
+    ], 'stdout')
+    await startPump([source], append, 1, Promise.resolve()).done
+    expect(appends).toEqual([
+      { text: 'tail', options: { channel: 'stdout', gapBefore: true, spillPath: '/spill/out.log' } },
+      { text: 'more', options: { channel: 'stdout' } },
+    ])
   })
 
   it('treats a rejected settlement as settlement and still drains the final bytes', async () => {

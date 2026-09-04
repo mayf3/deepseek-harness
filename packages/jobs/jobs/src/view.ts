@@ -46,6 +46,8 @@ export interface JobChunk {
   readonly channel?: JobChannel
   /** Bytes immediately before this chunk were lost, at the producer or to retention. */
   readonly gapBefore?: true
+  /** Host path of a file holding the complete stream before the gap, when the producer keeps one; present only with `gapBefore`. */
+  readonly spillPath?: string
 }
 
 /**
