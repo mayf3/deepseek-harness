@@ -351,8 +351,8 @@ describe('decorations: scanTextRefs', () => {
     expect(scanTextRefs('/goal/x /goal/ /goal.md', lexicon)).toEqual([])
   })
 
-  it('a "/" token may end at trailing punctuation before whitespace', () => {
-    expect(scanTextRefs('/goal。 then', lexicon)).toEqual([{ start: 0, end: 5, trigger: '/' }])
+  it('a "/" token glued to punctuation is not a reference: the host gesture is whitespace-bounded', () => {
+    expect(scanTextRefs('/goal。 then /goal, now', lexicon)).toEqual([])
   })
 
   it('word boundary: a trigger glued to text never matches', () => {

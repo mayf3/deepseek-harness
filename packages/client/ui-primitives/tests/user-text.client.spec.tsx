@@ -60,10 +60,11 @@ describe('projectUserText', () => {
     expect(host.querySelectorAll('[data-ref-chip="session"]').length).toBe(2)
   })
 
-  it('strips trailing punctuation and skips degenerate tokens', () => {
+  it('keeps a punctuation-glued slash token plain and skips degenerate tokens', () => {
+    // The host skill gesture ends at whitespace or the text end, so `/plan。`
+    // never loads a skill; the bubble must not suggest otherwise.
     const host = project('用 /plan。 试试 @。', [], ['plan'])
-    const chips = [...host.querySelectorAll('[data-ref-chip]')]
-    expect(chips.map(c => c.textContent)).toEqual(['/plan'])
+    expect(host.querySelectorAll('[data-ref-chip]').length).toBe(0)
     expect(host.textContent).toBe('用 /plan。 试试 @。')
   })
 
@@ -85,7 +86,7 @@ describe('projectUserText', () => {
     expect(host.textContent).toBe('/goal ship it\nsecond line')
   })
 
-  it('leaves slash paths undecorated even for a resolved name: a /name token ends at whitespace or trailing punctuation', () => {
+  it('leaves slash paths undecorated even for a resolved name: a /name token ends at whitespace', () => {
     const text = '测试一下ui，不用管我：\n/nfs-hg/xxx/yyy 与 /root-dir/ 和 /plan.md'
     const host = project(text, [], ['nfs-hg', 'root-dir', 'plan'])
     expect(host.querySelectorAll('[data-ref-chip]').length).toBe(0)

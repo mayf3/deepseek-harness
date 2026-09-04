@@ -2,17 +2,17 @@
  * Display projection of reference forms in sent user text (bubble and queue
  * rows). The logged model text remains the single truth; this is presentation
  * only, and every part renders inline so a single-line message never breaks
- * across lines. Three decoration sources, by precedence: the wire session form
+ * across lines. Four decoration sources, by precedence: the wire session form
  * `@[label](dsh-session:...)` folds to its label; exact session labels
  * supplied by an adjacent recall decorate their bare `@label` mention; plain
  * `@name` word-boundary tokens decorate by shape alone; and a plain `/name`
- * token decorates only when the caller names it: a skill the host actually
+ * token decorates only when the caller names it — a skill the host actually
  * loaded for that message (ui-chat reads the step's `skill-invocation`
- * injections) or the command a command-input bubble echoes, so `/123` or a
- * stray `/word` stays plain text. A `/name`
- * token is whitespace-bounded like the host skill gesture
- * (`dsh-tool-skill`), optionally before trailing sentence punctuation, so
- * slash paths (`/nfs-hg/xxx`, `/plan.md`) stay plain even for a loaded name.
+ * injections) or the command a command-input bubble echoes — so `/123` or a
+ * stray `/word` stays plain text. A `/name` token is whitespace-bounded like
+ * the host skill gesture (`dsh-tool-skill`): it ends at whitespace or the
+ * text end, so slash paths (`/nfs-hg/xxx`, `/plan.md`) and punctuation-glued
+ * tokens (`/plan。`) stay plain even for a loaded name.
  */
 import type { ReactNode } from 'react'
 import clsx from 'clsx'
@@ -71,9 +71,9 @@ export function projectUserText(
       start = text.indexOf(label, start + label.length)
     }
   }
-  // The `/` alternative's lookahead admits the same trailing punctuation set
-  // TRAILING_PUNCTUATION_RE strips.
-  const re = /(^|\s)(\/[\w-]+(?=[.,;:!?，。；：！？]*(?:\s|$))|@"[^"\n]+"|@[^\s]+)/gu
+  // A `/` token ends at whitespace or the text end like the host skill
+  // gesture; only `@` tokens shed sentence punctuation below.
+  const re = /(^|\s)(\/[\w-]+(?=\s|$)|@"[^"\n]+"|@[^\s]+)/gu
   let m: RegExpExecArray | null
   while ((m = re.exec(text)) !== null) {
     const tokenStart = m.index + (m[1] as string).length // (^|\s) captures '' at line start

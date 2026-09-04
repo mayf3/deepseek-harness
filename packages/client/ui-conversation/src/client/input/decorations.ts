@@ -24,19 +24,18 @@ export interface TextRefRange {
 const TEXT_REF_RE = /(^|\s)([/@])([\w-]+)/g
 const FOLDER_REF_RE = /(^|\s)(@(?:"[^"\n]*\/|[^\s"]+\/))/g
 /**
- * What may follow a `/name` token: whitespace or the draft end, optionally
- * after trailing sentence punctuation. The host skill gesture
- * (`dsh-tool-skill`) is whitespace-bounded, so `/nfs-hg/xxx` or `/plan.md`
- * is a path, never a reference.
+ * What may follow a `/name` token: whitespace or the draft end, the boundary
+ * the host skill gesture (`dsh-tool-skill`) requires, so `/nfs-hg/xxx`,
+ * `/plan.md`, and `/plan。` are prose, never a reference.
  */
-const SLASH_TOKEN_END_RE = /^[.,;:!?，。；：！？]*(?:\s|$)/
+const SLASH_TOKEN_END_RE = /^(?:\s|$)/
 
 /**
  * Scan the draft for plain-text reference tokens against the hot lexicons.
  * Word-boundary discipline: the trigger must sit at the draft
  * start or after whitespace ('x/name' never matches); the name must be an
- * exact lexicon member; a `/name` token must end at whitespace, the draft
- * end, or trailing sentence punctuation ('/name/x' is a path).
+ * exact lexicon member; a `/name` token must end at whitespace or the draft
+ * end ('/name/x' is a path, '/name。' is prose).
  * @param draft - draft text.
  * @param lexicon - per-trigger name lists (a missing trigger scans nothing).
  * @returns matched ranges in draft order.

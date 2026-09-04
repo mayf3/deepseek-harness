@@ -521,66 +521,191 @@ function withSkillNames(
   return { ...candidate, data }
 }
 
-/**
- * Skill names each direct message's step loaded, keyed by message Node key.
- *
- * A step's `skill-invocation` injections follow the direct messages the host
- * scanned for `/name` gestures and precede the step's first non-message Node
- * (the assistant step, a Turn error, a command); every Node of another kind
- * therefore closes the batch. Names attach to every direct message of the
- * batch: the bubble decorates only the tokens its own text carries.
- * @param nodes - every materialized Chat Node, in any order.
- * @returns the loaded skill names per direct message key; absent for none.
- */
-function skillNamesByMessage(nodes: readonly ChatConversationViewNode[]): Map<string, readonly string[]> {
-  const ordered = [...nodes].sort((left, right) => left.anchorSeq - right.anchorSeq)
-  const result = new Map<string, readonly string[]>()
-  let batchMessages: string[] = []
-  let batchNames: string[] = []
-  const flush = (): void => {
-    if (batchNames.length > 0) for (const key of batchMessages) result.set(key, batchNames)
-    batchMessages = []
-    batchNames = []
-  }
-  for (const node of ordered) {
-    const candidate = node as ChatNode
-    if (candidate.kind === 'user' || candidate.kind === 'steering') {
-      batchMessages.push(node.key)
-      continue
-    }
-    if (candidate.kind !== 'context') {
-      flush()
-      continue
-    }
-    const name = skillInvocationName(candidate.data.source)
-    if (name !== null && !batchNames.includes(name)) batchNames.push(name)
-  }
-  flush()
-  return result
+/** What skill-name batches are made of; every other Node is transparent. */
+type SlashEntryKind = 'message' | 'skill' | 'boundary'
+
+interface SlashEntry {
+  readonly key: string
+  readonly seq: number
+  readonly kind: SlashEntryKind
+  /** The injected skill name of a `skill` entry. */
+  readonly name: string | null
 }
 
-/** Attaches each direct message's step-loaded skill names to its Node. */
-class SkillNameProjector {
+/**
+ * Classify one Node for batching: a direct message, a `skill-invocation`
+ * context, or a boundary of any other kind. A context that injects no skill
+ * (workspace rules, the catalog, a recall) is transparent and yields null.
+ */
+function slashEntryOf(node: ChatConversationViewNode): SlashEntry | null {
+  const candidate = node as ChatNode
+  if (candidate.kind === 'user' || candidate.kind === 'steering') {
+    return { key: node.key, seq: node.anchorSeq, kind: 'message', name: null }
+  }
+  if (candidate.kind === 'context') {
+    const name = skillInvocationName(candidate.data.source)
+    return name === null ? null : { key: node.key, seq: node.anchorSeq, kind: 'skill', name }
+  }
+  return { key: node.key, seq: node.anchorSeq, kind: 'boundary', name: null }
+}
+
+function sameSlashEntry(left: SlashEntry, right: SlashEntry): boolean {
+  return left.seq === right.seq && left.kind === right.kind && left.name === right.name
+}
+
+/**
+ * Attaches each direct message's step-loaded skill names to its Node.
+ *
+ * A step's `skill-invocation` injections follow the direct messages the host
+ * scanned for `/name` gestures and precede the step's first Node of any other
+ * kind, so every non-message, non-context Node closes a batch. Every ended
+ * Turn publishes its `turn-tail` Node on `turn/end` whatever the reason, so a
+ * batch never spans Turns, and `step/start` precedes the direct message in
+ * the log, so no boundary separates a message from its injections. Names
+ * attach to every direct message of the batch: the bubble decorates only the
+ * tokens its own text carries.
+ *
+ * The index holds only messages, skill injections, and boundaries, ordered by
+ * `anchorSeq`. An apply re-reads just the batches around the Nodes whose
+ * classification changed and never scans the store, so an assistant
+ * streaming frame costs nothing here (the append hot path never scans the
+ * Chat Nodes).
+ */
+export class SkillNameProjector {
+  private readonly entries = new Map<string, SlashEntry>()
+  /** Every indexed entry in `anchorSeq` order. */
+  private sorted: SlashEntry[] = []
+
+  /**
+   * Rebuild the index from a whole Node set and attach names to its messages.
+   * @param nodes - every materialized Chat Node, in any order.
+   * @returns the same Nodes, direct messages carrying their batch's names.
+   */
   replace(nodes: readonly ChatConversationViewNode[]): readonly ChatConversationViewNode[] {
-    const names = skillNamesByMessage(nodes)
+    this.entries.clear()
+    this.sorted = []
+    for (const node of nodes) {
+      const entry = slashEntryOf(node)
+      if (entry === null) continue
+      this.entries.set(entry.key, entry)
+      this.sorted.push(entry)
+    }
+    this.sorted.sort((left, right) => left.seq - right.seq)
+    const names = new Map<string, readonly string[]>()
+    for (let index = 0; index < this.sorted.length; index++) {
+      if (this.sorted[index]?.kind === 'boundary') continue
+      const end = this.runEnd(index)
+      this.assignRun(index, end, names)
+      index = end
+    }
     return nodes.map(node => withSkillNames(node, names.get(node.key) ?? EMPTY_KEYS))
   }
 
+  /**
+   * Fold one incremental upsert set: re-read only the batches around the
+   * Nodes whose classification changed.
+   * @param upserts - the changed Nodes.
+   * @param store - the resident Nodes, read by key for the messages of an affected batch.
+   * @returns the upserts plus any resident message whose names changed.
+   */
   apply(
     upserts: readonly ChatConversationViewNode[],
     store: ChatNodeStore,
   ): readonly ChatConversationViewNode[] {
+    const dirty: number[] = []
+    for (const node of upserts) {
+      const next = slashEntryOf(node)
+      const previous = this.entries.get(node.key)
+      if (previous !== undefined) {
+        if (next !== null && sameSlashEntry(previous, next)) continue
+        this.remove(previous)
+        dirty.push(previous.seq)
+      }
+      if (next === null) continue
+      this.insert(next)
+      dirty.push(next.seq)
+    }
+    if (dirty.length === 0) return upserts
+    const names = new Map<string, readonly string[]>()
+    for (const seq of dirty) this.collectAround(seq, names)
     const byKey = new Map(upserts.map(node => [node.key, node]))
-    const all = new Map(store.values().map(node => [node.key, node]))
-    for (const [key, node] of byKey) all.set(key, node)
-    const names = skillNamesByMessage([...all.values()])
-    for (const [key, node] of all) {
-      const candidate = node as ChatNode
-      if (candidate.kind !== 'user' && candidate.kind !== 'steering') continue
-      const next = withSkillNames(node, names.get(key) ?? EMPTY_KEYS)
+    for (const [key, list] of names) {
+      const node = byKey.get(key) ?? store.get(key)
+      if (node === undefined) continue
+      const next = withSkillNames(node, list)
       if (next !== node || byKey.has(key)) byKey.set(key, next)
     }
     return [...byKey.values()]
+  }
+
+  private insert(entry: SlashEntry): void {
+    this.sorted.splice(this.lowerBound(entry.seq), 0, entry)
+    this.entries.set(entry.key, entry)
+  }
+
+  private remove(entry: SlashEntry): void {
+    this.sorted.splice(this.sorted.indexOf(entry), 1)
+    this.entries.delete(entry.key)
+  }
+
+  /** First index whose seq is at least `seq`. */
+  private lowerBound(seq: number): number {
+    let low = 0
+    let high = this.sorted.length
+    while (low < high) {
+      const middle = (low + high) >>> 1
+      if ((this.sorted[middle]?.seq ?? Number.POSITIVE_INFINITY) < seq) low = middle + 1
+      else high = middle
+    }
+    return low
+  }
+
+  /** Last index of the boundary-free run containing `index`. */
+  private runEnd(index: number): number {
+    let end = index
+    while (end + 1 < this.sorted.length && this.sorted[end + 1]?.kind !== 'boundary') end++
+    return end
+  }
+
+  /** First index of the boundary-free run containing `index`. */
+  private runStart(index: number): number {
+    let start = index
+    while (start - 1 >= 0 && this.sorted[start - 1]?.kind !== 'boundary') start--
+    return start
+  }
+
+  /** Record the names every message of the run `[start, end]` carries. */
+  private assignRun(start: number, end: number, names: Map<string, readonly string[]>): void {
+    const list: string[] = []
+    for (let index = start; index <= end; index++) {
+      const entry = this.sorted[index]
+      if (entry?.kind === 'skill' && entry.name !== null && !list.includes(entry.name)) list.push(entry.name)
+    }
+    for (let index = start; index <= end; index++) {
+      const entry = this.sorted[index]
+      if (entry?.kind === 'message') names.set(entry.key, list)
+    }
+  }
+
+  /**
+   * Re-read the run(s) around one changed seq: the run holding a message or
+   * skill entry, or — for a boundary, or a seq that left the index — the runs
+   * on both sides of that position.
+   */
+  private collectAround(seq: number, names: Map<string, readonly string[]>): void {
+    const at = this.lowerBound(seq)
+    const here = this.sorted[at]
+    if (here !== undefined && here.seq === seq && here.kind !== 'boundary') {
+      this.assignRun(this.runStart(at), this.runEnd(at), names)
+      return
+    }
+    if (at - 1 >= 0 && this.sorted[at - 1]?.kind !== 'boundary') {
+      this.assignRun(this.runStart(at - 1), at - 1, names)
+    }
+    const right = here !== undefined && here.seq === seq ? at + 1 : at
+    if (right < this.sorted.length && this.sorted[right]?.kind !== 'boundary') {
+      this.assignRun(right, this.runEnd(right), names)
+    }
   }
 }
 
