@@ -100,12 +100,19 @@ describe('probePackage', () => {
     expect(Date.parse(probe.checkedAt)).not.toBeNaN()
   })
 
-  it('classifies a plain plugin package and a library', async () => {
+  it('classifies a plugin by its declaration to dsh, and a library by the lack of one', async () => {
     const { profileDir, installAnchor } = stage({
-      'plain-plugin': { main: 'export function apply() {}\n' },
+      'peer-plugin': { main: 'export function apply() {}\n', manifest: { peerDependencies: { '@deepseek-ai/cordis': '*' } } },
+      'titled-plugin': { main: 'export default { apply() {} }\n', manifest: { dsh: { title: 'Titled' } } },
       'plain-lib': { main: 'export const helper = 1\n' },
+      // A function export alone is not a plugin: lodash exports one too.
+      'function-lib': { main: 'export default function _() {}\n' },
     })
-    expect((await probePackage({ binName: NAME, profileDir, installAnchor, packageName: 'plain-plugin' })).kind).toBe('plugin')
+    const kindOf = async (packageName: string): Promise<string> =>
+      (await probePackage({ binName: NAME, profileDir, installAnchor, packageName })).kind
+    expect(await kindOf('peer-plugin')).toBe('plugin')
+    expect(await kindOf('titled-plugin')).toBe('plugin')
+    expect(await kindOf('function-lib')).toBe('library')
     const lib = await probePackage({ binName: NAME, profileDir, installAnchor, packageName: 'plain-lib' })
     expect(lib.kind).toBe('library')
     expect(lib.ok).toBe(true)
