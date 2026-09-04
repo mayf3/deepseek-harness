@@ -19,7 +19,7 @@ Status: implemented
 
 ## Verification
 
-- 本地定向跑过全部改动单测 spec 通过（37 个改动的 `*.spec.ts` 文件，分组运行），含直接使用改动后产品源码的套件；2 个改动的 web `*.e2e.ts` 由 web e2e lane 承载。
+- 本地定向跑过全部改动单测 spec 通过（36 个改动的 `*.spec.ts` 文件，分组运行），含直接使用改动后产品源码的套件；2 个改动的 web `*.e2e.ts` 由 web e2e lane 承载。
 - CI 在 Linux 与 Windows coverage lane 跑改动 spec；一次全绿后，被修文件的残留模板（实测每两小时最多各约 5,000 个目录，如 `dsh-profile-`、`dsh-app-boot-`、`dsh-presets-*`、`dsh-upload-index-`）应不再出现在 CI 主机的新鲜 `/tmp` 残留里。
 
 ## Alternatives considered
