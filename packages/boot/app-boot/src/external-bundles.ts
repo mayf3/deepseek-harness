@@ -3,14 +3,13 @@
  * installing, enabling, and disabling bundles.
  *
  * An external (`runtime` stage) bundle never mounts its rows directly into the
- * built-in tree. Its inserted rows are wrapped in one contained group per
- * bundle, each row id is prefixed with the package name, and the bundle's own
- * patches that address those rows are rewritten to the prefixed ids. Two
- * facts of the vendored Loader make this necessary: entry ids are unique per
- * tree (`tree.store`), so two bundles inserting the same id would otherwise
- * make the second silently take over the first's entry; and a group is the
- * unit the Loader rolls back, so one group per bundle is what makes a bundle
- * fail as a whole rather than half-mount.
+ * built-in tree: its inserted rows are wrapped in one contained group per
+ * bundle, under the ids its patch declares. A group is the unit the Loader
+ * rolls back, so one group per bundle is what makes a bundle fail as a whole
+ * rather than half-mount, and the contained variant records a failed row
+ * instead of rejecting. Row ids stay as declared; entry ids are unique per
+ * tree (`tree.store`), and `compose-stack.ts` owns the tree-wide ownership
+ * check that shared id namespace requires.
  * @module @deepseek-ai/dsh-app-boot/external-bundles
  */
 
@@ -47,63 +46,49 @@ export function bundleGroupId(packageName: string): string {
   return `${BUNDLE_GROUP_PREFIX}${packageName}`
 }
 
-/**
- * The tree-wide id of one row an external bundle inserted.
- * @param packageName - the bundle's package name.
- * @param rowId - the id the bundle's own patch declares.
- * @returns the prefixed id the mounted tree uses.
- */
-export function externalRowId(packageName: string, rowId: string): string {
-  return `${packageName}/${rowId}`
-}
-
-/** Where one mounted row came from, keyed by its tree-wide id. */
-export interface ExternalRowOrigin {
-  /** The bundle that inserted the row. */
-  packageName: string
-  /** The id the bundle's own patch declared, before prefixing. */
-  originalId: string
-}
-
 /** One external layer rendered as the patches the tree mounts. */
 export interface ComposedExternalLayer {
-  /** Patches in application order: the group insert first, then the bundle's rewritten patches. */
+  /** Patches in application order: the group insert first, then the bundle's own patches. */
   patches: PatchOptions[]
-  /** Every row the bundle inserted, by prefixed id. */
-  rows: Map<string, ExternalRowOrigin>
-  /** Built-in row ids the bundle overrides; not containable, reported for visibility. */
+  /** Every id the layer introduces — its rows, its group, and any nested group — with the module each names. */
+  rows: Map<string, string>
+  /** Ids outside the bundle that its patch overrides; not containable, reported for visibility. */
   overrides: string[]
 }
 
-/** Deep-clone one entry row and prefix its id and, for a group, its children's ids. */
-function prefixRow(packageName: string, row: EntryOptions, rows: Map<string, ExternalRowOrigin>, ownIds: Set<string>): EntryOptions {
+/** Deep-clone one inserted row and index its id and, for a group, its children's ids. */
+function indexRow(row: EntryOptions, rows: Map<string, string>): EntryOptions {
   const cloned = structuredClone(row)
-  if (typeof cloned.id === 'string') {
-    ownIds.add(cloned.id)
-    const prefixed = externalRowId(packageName, cloned.id)
-    rows.set(prefixed, { packageName, originalId: cloned.id })
-    cloned.id = prefixed
-  }
+  if (typeof cloned.id === 'string') rows.set(cloned.id, cloned.name)
   if (cloned.group && Array.isArray(cloned.config)) {
-    cloned.config = (cloned.config as EntryOptions[]).map(child => prefixRow(packageName, child, rows, ownIds))
+    cloned.config = (cloned.config as EntryOptions[]).map(child => indexRow(child, rows))
   }
   return cloned
 }
 
 /**
- * Render one external bundle layer as contained, prefixed patches. Root
- * inserts become the children of the bundle's group; inserts into a named
- * group the bundle itself introduced follow the prefixed id; inserts into a
- * built-in group are nested in their own contained group inside that target;
- * an id-targeted patch is rewritten when it addresses a row this bundle
- * inserted and passed through unchanged when it addresses a built-in row.
+ * Whether a layer mounts isolated: an external bundle the profile does not
+ * stage at boot.
+ * @param layer - the resolved layer.
+ * @returns true when the layer mounts as a contained group.
+ */
+export function isContainedLayer(layer: ProfileLayer): boolean {
+  return layer.trust === 'external' && layer.stage === 'runtime'
+}
+
+/**
+ * Render one external bundle layer as contained patches. Root inserts become
+ * the children of the bundle's group; an insert into a group the bundle
+ * itself introduced passes through; an insert into a built-in group is nested
+ * in its own contained group inside that target; an id-targeted patch passes
+ * through unchanged and is reported as an override when it addresses a row
+ * the bundle did not insert.
  * @param layer - the resolved external layer.
- * @returns the patches to mount and the provenance of every inserted row.
+ * @returns the patches to mount and the ids the layer introduces.
  */
 export function composeExternalLayer(layer: ProfileLayer): ComposedExternalLayer {
   const { packageName } = layer
-  const rows = new Map<string, ExternalRowOrigin>()
-  const ownIds = new Set<string>()
+  const rows = new Map<string, string>()
   const groupRows: EntryOptions[] = []
   const trailing: PatchOptions[] = []
   const overrides: string[] = []
@@ -111,17 +96,17 @@ export function composeExternalLayer(layer: ProfileLayer): ComposedExternalLayer
   // its id-targeted patches are classified.
   for (const patch of layer.patches) {
     if (patch.insert === undefined) continue
-    const inserted = patch.insert.map(row => prefixRow(packageName, row, rows, ownIds))
+    const inserted = patch.insert.map(row => indexRow(row, rows))
     if (patch.id === undefined) {
       groupRows.push(...inserted)
       continue
     }
-    if (ownIds.has(patch.id)) {
-      trailing.push({ id: externalRowId(packageName, patch.id), insert: inserted })
+    if (rows.has(patch.id)) {
+      trailing.push({ id: patch.id, insert: inserted })
       continue
     }
     const nestedId = `${bundleGroupId(packageName)}/in/${patch.id}`
-    rows.set(nestedId, { packageName, originalId: nestedId })
+    rows.set(nestedId, CONTAINED_GROUP_MODULE)
     trailing.push({
       id: patch.id,
       insert: [{ id: nestedId, name: CONTAINED_GROUP_MODULE, group: true, config: inserted }],
@@ -129,17 +114,25 @@ export function composeExternalLayer(layer: ProfileLayer): ComposedExternalLayer
   }
   for (const patch of layer.patches) {
     if (patch.insert !== undefined || patch.id === undefined) continue
-    if (ownIds.has(patch.id)) {
-      trailing.push({ ...structuredClone(patch), id: externalRowId(packageName, patch.id) })
-      continue
-    }
-    overrides.push(patch.id)
+    if (!rows.has(patch.id)) overrides.push(patch.id)
     trailing.push(structuredClone(patch))
   }
   const groupId = bundleGroupId(packageName)
-  rows.set(groupId, { packageName, originalId: groupId })
+  rows.set(groupId, CONTAINED_GROUP_MODULE)
   const group: EntryOptions = { id: groupId, name: CONTAINED_GROUP_MODULE, group: true, config: groupRows }
   return { patches: [{ insert: [group] }, ...trailing], rows, overrides }
+}
+
+/**
+ * The patches one bundle layer contributes. A built-in layer, or an external
+ * layer the profile stages at boot, mounts its patches as written; every other
+ * external layer mounts as one contained group under its declared ids.
+ * @param layer - the resolved layer.
+ * @returns the layer's patches in application order.
+ */
+export function bundleLayerPatches(layer: ProfileLayer): PatchOptions[] {
+  if (isContainedLayer(layer)) return composeExternalLayer(layer).patches
+  return layer.patches
 }
 
 /**

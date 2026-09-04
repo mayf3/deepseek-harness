@@ -54,7 +54,7 @@ profile 是同一套 dsh 安装提供不同应用界面的方式：`web`、`head
 
 带 `patchReload: live` 的 profile 会监视两份用户 patch 文件：有效编辑无需重启即可重新组合，被拒绝的编辑则让最后一个可用应用继续运行。`startup` profile 既不安装这些监视器，也不安装 launcher 的仅监视 HMR 回退。
 
-用 `dsh plugin` 安装的组合包是**外部**组合包：它的行挂在一个名为 `bundle/<package>` 的受控组下，每个行 id 都加上 `<package>/<id>` 前缀，启动失败的行被隔离并记录而不是让进程停下——组和它的其他行继续运行，插件列表显示失败。模板组合包是内置的，仍然明确失败。若某个组合包提供内置行注入的服务，它必须像内置行一样挂载：作者在 `package.json` 里声明 `dsh.bundle.stage: boot`，或者你在 profile manifest 里设置 `dsh.profile.stages`，后者优先。即使没有这些声明，隔离的失败若让某个内置行停在等待服务的状态，启动仍会失败并点名那个被隔离的组合包。profile manifest 还有两个相关字段：`dsh.profile.firstParty` 列出按内置处理的已安装包（开发期 link 进来的一方包），`dependencies` 与 `dsh.profile.bundles` 的区别则把"只是装了"的包和"层已启用"的包分开。
+用 `dsh plugin` 安装的组合包是**外部**组合包：它的行挂在一个名为 `bundle/<package>` 的受控组下，id 保持它的 patch 所声明的样子，启动失败的行被隔离并记录而不是让进程停下——组和它的其他行继续运行，插件列表显示失败。模板组合包是内置的，仍然明确失败。若某个组合包提供内置行注入的服务，它必须像内置行一样挂载：作者在 `package.json` 里声明 `dsh.bundle.stage: boot`，或者你在 profile manifest 里设置 `dsh.profile.stages`，后者优先。即使没有这些声明，隔离的失败若让某个内置行停在等待服务的状态，启动仍会失败并点名那个被隔离的组合包。profile manifest 还有两个相关字段：`dsh.profile.firstParty` 列出按内置处理的已安装包（开发期 link 进来的一方包），`dependencies` 与 `dsh.profile.bundles` 的区别则把"只是装了"的包和"层已启用"的包分开。行 id 在整叠层里共用一个命名空间：内置层先占有自己的 id，外部组合包若声明了别的层已占有的 id 就整层被排除，并在 stderr 与插件列表里报告；用户层插入已被占用的 id 时该行被丢弃，同样报告。
 
 树起来之后 launcher 提供 `ctx.profileRuntime`：它持有已启动 profile 的事实，把每一行归属到插入它的层，读取用户 patch 文件停用了哪些行，并重新组合整棵树——patch 监视器走的正是这条路，运行时启用或安装组合包也走它。启动期的 fail-loud rejection 守卫在树起来后卸载：启动后未处理的 rejection 会被报告并兜住，未捕获的异常会被报告并退出。
 
@@ -86,7 +86,8 @@ profile 是同一套 dsh 安装提供不同应用界面的方式：`web`、`head
 
 - **与渠道无关的库。** 此包不包含 loader 钩子，也不提供开发模式接口；[`dsh` 应用](../../../apps/cli/README.zh.md) 持有自己的 Node 源码启动钩子，并在启动序列中使用这些 helper，构建后的消费方则使用普通 Node 包解析。
 - **三个 Loader builtin。** `mountRootInclude` 把 `cordis:include`、`cordis:group` 与 `cordis:contained-group` 注册为 Loader builtin：group 行能把一个提供方与它的消费方放进同一个 `isolate` realm，位于本工作区之外的 agent preset 无法按名称解析 `@deepseek-ai/cordis-plugin-group`，受控组则是外部组合包挂载的位置。三者都通过宿主的模块管线加载，而非被包含树自身的说明符解析。
-- **外部组合包即组。** vendored 的 `EntryGroup.update` 是整组事务，entry id 在整棵树内唯一，因此两个插入同名 id 的外部组合包会让第二个静默接管第一个的 entry。`composeExternalLayer` 把每个 `runtime` 阶段外部层的插入行包进一个 `cordis:contained-group`，给 id 加上包名前缀，并把组合包自己的 patch 改写到前缀后的 id；该组的 `create()` 把失败的行记录到根上的 `pluginFailures` 注册表而不是 reject，`assertEntriesActivated` 豁免已记录的行，但内置行停在 pending 时仍然失败。
+- **外部组合包即组。** vendored 的 `EntryGroup.update` 是整组事务，因此 `composeExternalLayer` 把每个 `runtime` 阶段外部层的插入行按组合包声明的 id 包进一个 `cordis:contained-group`；该组的 `create()` 把失败的行记录到根上的 `pluginFailures` 注册表而不是 reject，`assertEntriesActivated` 豁免已记录的行，但内置行停在 pending 时仍然失败。
+- **行 id 归属而非改写。** entry id 在整棵树内唯一，而 `create()` 遇到已有 id 时会把那个 entry 挪到自己名下而不是 reject，所以 `composeProfileStack` 在任何行挂载之前先判定归属：内置层与 boot 阶段的层先占有 id，它们之间重复即启动失败；撞名的受控组合包整层排除；用户层插入已被占用的 id 时该行丢弃；每一条被排除的行都是 `pluginFailures` 里的一条 `conflict` 记录。启动、运行时重组与 `--dump-config` 走同一个函数。
 - **fail-loud 只在启动期。** `installFailLoud` 对任何未处理 rejection 退出，因为启动期间它就是加载失败；树起来后 launcher 卸载它并安装 `installRuntimeGuards`：rejection 被报告并继续运行，未捕获异常被报告并退出。内置条目下失败的嵌套 fiber（`ctx.inject()` 的延续）由 `warnNestedFiberFailures` 以提示行报告。
 - **探针从不在宿主内运行包。** `probePackage` 在本进程读取已安装包的 manifest，在子进程里 import 它，因此抛错、退出、挂起或自带 cordis 副本的包只消耗一个子进程，得到一条带原因的记录。
 - **Profile 模块后备机制。** 裸插件 specifier 由 Loader 从配置目录解析。普通 Node 会为安装依赖闭包中的每个包维护一个符号链接。打包可执行文件无法让操作系统符号链接进入 pkg 的 `/snapshot` 树，因此会按 Node ESM 条件读取已安装包的 export map，并写入重新导出虚拟模块 URL 的真实代理包。缺失 export 保持不可用，错误 export map 会让启动失败，跨进程 writer lock 则会在不暴露部分代理的情况下替换陈旧条目。所选外部 bundle 若不在安装闭包中，则会获得 profile 本地的 `.dsh-module-fallback` 链接；已有 pnpm 条目优先，后续闭包发现会排除投影链接，清理也只删除 dsh 自有链接。
@@ -103,7 +104,8 @@ profile 是同一套 dsh 安装提供不同应用界面的方式：`web`、`head
 |---|---|
 | [`src/index.ts`](src/index.ts) | 启动 helper：配置解析、环境加载、fail-loud 守卫与运行时守卫、激活审计、patch 解析、配置 dump、harness 源码段落 |
 | [`src/profile.ts`](src/profile.ts) | profile 发现、初始化、带 trust 与 stage 的组合包解析、模块后备机制 |
-| [`src/external-bundles.ts`](src/external-bundles.ts) | 外部层组合（受控组、id 前缀、patch 改写）与安装、启用、停用背后的 manifest 操作 |
+| [`src/external-bundles.ts`](src/external-bundles.ts) | 外部层组合（受控组、覆盖报告）与安装、启用、停用背后的 manifest 操作 |
+| [`src/compose-stack.ts`](src/compose-stack.ts) | 整叠层的行 id 归属：`claimLayerIds`、`composeProfileStack`、冲突记录 |
 | [`src/contained-group.ts`](src/contained-group.ts) | `cordis:contained-group` builtin 与 `pluginFailures` 注册表 |
 | [`src/profile-runtime.ts`](src/profile-runtime.ts) | `profileRuntime` 服务：profile 事实、行来源、用户停用的行、重新组合 |
 | [`src/probe.ts`](src/probe.ts) | 子进程包探针及其按 profile 的缓存 |
@@ -149,7 +151,7 @@ profile 是同一套 dsh 安装提供不同应用界面的方式：`web`、`head
 - **环境发现以启动为界**——`loadLayeredEnv` 只读取一次调用目录与 harness home 中的 `.env`；它不搜索父目录，也不跟随之后选择的 workspace。`loadEnv` 仍是非产品 bin 使用的单目录 helper。
 - **用户 patch 会替换匹配到的整个配置**——按 id 定位的 patch 不做深度合并，因此 profile 覆盖必须重述需要保留的组合包字段。
 - **外部组合包的覆盖不被隔离**——它对内置行施加的 patch 原地修改那一行，所以即使该组合包自己的行失败，效果仍然保留；这是组合包唯一能在自己的组之外造成影响的地方。
-- **id 前缀不改写 `!!js` 字面量**——组合包的 disabled 表达式若拿 `e.options.id` 与自己未加前缀的 id 比较，字面量保持原样；请改为比较 `options.name`。
+- **冲突按顺序判定，不看是非**——外部组合包之间，`dsh.profile.bundles` 里靠前的那层保住争议 id，卸掉它之后靠后的那层在下次启动时挂上；插件列表显示谁输给了谁。
 - **嵌套 fiber 审计只是提示**——内置条目下失败的 `ctx.inject()` 延续会被报告而非致命，直到确认随附组合都没有这类失败。
 
 <a id="dev-note"></a>

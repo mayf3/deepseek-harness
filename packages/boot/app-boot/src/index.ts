@@ -55,14 +55,18 @@ export {
   type ProfileTemplate,
 } from './profile.ts'
 export {
-  ContainedFailureRegistry, ContainedGroup, ensurePluginFailures, isContainedEntry,
+  ContainedFailureRegistry, ContainedGroup, ensurePluginFailures, isContainedEntry, recordRowConflicts,
   type ContainedFailure, type ContainedFailureStage,
 } from './contained-group.ts'
 export {
-  BUNDLE_GROUP_PREFIX, bundleGroupId, composeExternalLayer, CONTAINED_GROUP_MODULE, disableBundle, enableBundle,
-  exportsBundlePatch, externalRowId, isJsDisabled, reconcileInstalledBundles,
-  type BundleReconciliation, type ComposedExternalLayer, type ExternalRowOrigin,
+  BUNDLE_GROUP_PREFIX, bundleGroupId, bundleLayerPatches, composeExternalLayer, CONTAINED_GROUP_MODULE, disableBundle,
+  enableBundle, exportsBundlePatch, isContainedLayer, isJsDisabled, reconcileInstalledBundles,
+  type BundleReconciliation, type ComposedExternalLayer,
 } from './external-bundles.ts'
+export {
+  claimLayerIds, composeProfileStack, formatRowConflict,
+  type ComposedStack, type LayerOwnership, type RowConflict, type StackUserLayer,
+} from './compose-stack.ts'
 export {
   ProfileRuntime, type ProfileRuntimeOptions, type RowOrigin,
 } from './profile-runtime.ts'

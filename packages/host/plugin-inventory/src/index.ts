@@ -27,11 +27,10 @@ function pluginEntryId(value: string): PluginEntryId {
 }
 
 /** The wire view of a row's package origin. */
-function packageRef(origin: { packageName: string; version?: string; originalId?: string }): PluginPackageRef {
+function packageRef(origin: { packageName: string; version?: string }): PluginPackageRef {
   return {
     name: origin.packageName,
     ...origin.version === undefined ? {} : { version: origin.version },
-    ...origin.originalId === undefined ? {} : { originalId: origin.originalId },
   }
 }
 

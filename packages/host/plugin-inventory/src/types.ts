@@ -24,14 +24,12 @@ export interface PluginPackageRef {
   readonly name: string
   /** The package version, when its manifest declares one. */
   readonly version?: string
-  /** For an external row: the id the bundle's own patch declared, before prefixing. */
-  readonly originalId?: string
 }
 
-/** A recorded startup failure of a row inside an isolated external bundle. */
+/** A recorded failure of a row inside an isolated external bundle, or a row the composition left out. */
 export interface PluginFailure {
-  /** The lifecycle step that failed. */
-  readonly stage: 'import' | 'apply' | 'inject-pending' | 'unknown'
+  /** The lifecycle step that failed; `conflict` is a row another layer already declares. */
+  readonly stage: 'import' | 'apply' | 'inject-pending' | 'conflict' | 'unknown'
   /** The failure text. */
   readonly message: string
 }

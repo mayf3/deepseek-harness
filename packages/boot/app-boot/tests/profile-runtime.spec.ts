@@ -7,7 +7,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import type { Entry, EntryOptions } from '@deepseek-ai/cordis-plugin-loader'
 import type { PatchOptions } from '@deepseek-ai/cordis-plugin-include'
-import { ProfileRuntime, type Profile, type ProfileLayer } from '../src/index.ts'
+import { ensurePluginFailures, ProfileRuntime, type ComposedStack, type Profile, type ProfileLayer } from '../src/index.ts'
 
 const contexts: Context[] = []
 afterEach(async () => {
@@ -24,11 +24,19 @@ function profile(layers: ProfileLayer[]): Profile {
 
 async function harness(
   layers: ProfileLayer[],
-  options: { rootEntry?: () => Entry | undefined; userPatches?: PatchOptions[]; reloaded?: Profile } = {},
+  options: { rootEntry?: () => Entry | undefined; userPatches?: PatchOptions[]; reloaded?: Profile; conflicts?: ComposedStack['conflicts'] } = {},
 ): Promise<{ ctx: Context; runtime: ProfileRuntime; compose: ReturnType<typeof vi.fn> }> {
   const ctx = new Context()
   contexts.push(ctx)
-  const compose = vi.fn((current: Profile) => [{ id: `composed-for-${current.layers.length}` }] as PatchOptions[])
+  const compose = vi.fn((current: Profile): ComposedStack => {
+    const patches = [{ id: `composed-for-${current.layers.length}` }] as PatchOptions[]
+    return {
+      patches,
+      layers: [{ label: 'stack', patches }],
+      conflicts: options.conflicts ?? [],
+      skippedBundles: [],
+    }
+  })
   await ctx.plugin(ProfileRuntime, {
     profile: profile(layers),
     loadProfile: () => options.reloaded ?? profile(layers),
@@ -50,18 +58,20 @@ describe('ProfileRuntime', () => {
     expect(runtime.current.name).toBe('web')
   })
 
-  it('attributes rows to the layer that inserted them, prefixed for external layers', async () => {
+  it('attributes rows to the layer that owns their id', async () => {
     const { runtime } = await harness([
       layer('@deepseek-ai/dsh-base', 'builtin', [{ insert: [{ id: 'settings', name: 'x' }, { name: 'anonymous' } as EntryOptions, { id: 'grp', name: 'cordis:group', group: true, config: [{ id: 'child', name: 'y' }] }] }]),
       layer('ext', 'external', [{ insert: [{ id: 'tool', name: 'ext' }] }]),
       layer('boot-ext', 'external', [{ insert: [{ id: 'svc', name: 'boot-ext' }] }], 'boot'),
+      // Declares an id the first external layer owns: left out whole, so none of its rows has an origin.
+      layer('late', 'external', [{ insert: [{ id: 'tool', name: 'late' }, { id: 'late-only', name: 'late/x' }] }]),
     ])
     expect(runtime.originOf('settings')).toEqual({ trust: 'builtin', packageName: '@deepseek-ai/dsh-base', version: '2.0.0' })
     expect(runtime.originOf('child')).toEqual({ trust: 'builtin', packageName: '@deepseek-ai/dsh-base', version: '2.0.0' })
-    expect(runtime.originOf('ext/tool')).toEqual({ trust: 'external', packageName: 'ext', version: '2.0.0', originalId: 'tool' })
-    expect(runtime.originOf('bundle/ext')).toEqual({ trust: 'external', packageName: 'ext', version: '2.0.0', originalId: 'bundle/ext' })
-    // A boot-stage external layer mounts unprefixed, like a built-in one.
+    expect(runtime.originOf('tool')).toEqual({ trust: 'external', packageName: 'ext', version: '2.0.0' })
+    expect(runtime.originOf('bundle/ext')).toEqual({ trust: 'external', packageName: 'ext', version: '2.0.0' })
     expect(runtime.originOf('svc')).toEqual({ trust: 'external', packageName: 'boot-ext', version: '2.0.0' })
+    expect(runtime.originOf('late-only')).toBeUndefined()
     expect(runtime.originOf('user-row')).toBeUndefined()
   })
 
@@ -93,17 +103,28 @@ describe('ProfileRuntime', () => {
     const update = vi.fn(async () => {})
     const entry = { options: { config: { path: 'file:///root/cordis.yml', patches: [{ id: 'old' }] } }, update } as unknown as Entry
     const reloaded = profile([layer('a', 'builtin', []), layer('b', 'external', [])])
-    const { runtime, compose } = await harness([layer('a', 'builtin', [])], { rootEntry: () => entry, reloaded })
+    const conflicts = [{ rowId: 'x', moduleName: 'm', layer: 'late', packageName: 'late', declaredBy: 'a' }]
+    const { ctx, runtime, compose } = await harness([layer('a', 'builtin', [])], { rootEntry: () => entry, reloaded, conflicts })
 
     await runtime.recompose()
     expect(compose).toHaveBeenLastCalledWith(expect.objectContaining({ layers: expect.any(Array) as ProfileLayer[] }))
     expect(update).toHaveBeenLastCalledWith({ config: { path: 'file:///root/cordis.yml', patches: [{ id: 'composed-for-1' }] } })
+    // The stack's conflicts become the registry's conflict records once the update holds.
+    expect(ensurePluginFailures(ctx).list()).toEqual([expect.objectContaining({ stage: 'conflict', rowId: 'x', packageName: 'late' })])
 
     await runtime.recompose({ reloadBundles: true })
     expect(runtime.layers).toHaveLength(2)
     expect(update).toHaveBeenLastCalledWith({ config: { path: 'file:///root/cordis.yml', patches: [{ id: 'composed-for-2' }] } })
     // Provenance follows the reloaded profile.
-    expect(runtime.originOf('bundle/b')).toEqual({ trust: 'external', packageName: 'b', version: '2.0.0', originalId: 'bundle/b' })
+    expect(runtime.originOf('bundle/b')).toEqual({ trust: 'external', packageName: 'b', version: '2.0.0' })
+  })
+
+  it('leaves the registry untouched when the root include rejects the update', async () => {
+    const entry = { options: { config: { path: 'file:///root/cordis.yml' } }, update: vi.fn(async () => { throw new Error('rejected') }) } as unknown as Entry
+    const conflicts = [{ rowId: 'x', moduleName: 'm', layer: 'late', packageName: 'late', declaredBy: 'a' }]
+    const { ctx, runtime } = await harness([layer('a', 'builtin', [])], { rootEntry: () => entry, conflicts })
+    await expect(runtime.recompose()).rejects.toThrow('rejected')
+    expect(ctx.get('pluginFailures')).toBeUndefined()
   })
 
   it('refuses to recompose before the root include is mounted', async () => {
