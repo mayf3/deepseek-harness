@@ -115,12 +115,20 @@ interface ReviewExpectation {
   calls: number
 }
 
+type ReviewProtocolStatus =
+  | 'valid'
+  | 'stream-shape'
+  | 'malformed-json'
+  | 'duplicate-members'
+  | 'invalid-fields'
+
 interface ReviewObservation {
   readonly caseId: string
   readonly provider: string
   readonly model: string
   readonly finish: string
   readonly finishCount: number
+  readonly protocol: ReviewProtocolStatus
   readonly risk: Risk | 'invalid'
   readonly decision: Decision | 'invalid'
   readonly reasoning: boolean
@@ -365,37 +373,47 @@ function topLevelMemberCount(text: string): number {
 function reviewResultFromText(
   text: string | undefined,
   textBlocks: number,
-): { readonly risk: Risk; readonly decision: Decision } | undefined {
-  if (text === undefined || textBlocks !== 1) return undefined
+): Pick<ReviewObservation, 'protocol' | 'risk' | 'decision'> {
+  const invalid = (
+    protocol: Exclude<ReviewProtocolStatus, 'valid'>,
+  ): Pick<ReviewObservation, 'protocol' | 'risk' | 'decision'> => ({
+    protocol,
+    risk: 'invalid',
+    decision: 'invalid',
+  })
+  if (text === undefined || textBlocks !== 1) return invalid('stream-shape')
+  let parsed: unknown
   try {
-    const parsed: unknown = JSON.parse(text)
-    if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) return undefined
-    const record = parsed as Record<string, unknown>
-    const keys = Object.keys(record)
-    if (topLevelMemberCount(text) !== keys.length) return undefined
-    const risk = record.risk
-    const decision = record.decision
-    if (keys.length === 2
-      && decision === 'allow'
-      && (risk === 'low' || risk === 'medium')) {
-      return { risk, decision }
-    }
-    if (keys.length === 2
-      && decision === 'deny'
-      && (risk === 'medium' || risk === 'high')) {
-      return { risk, decision }
-    }
-    if (keys.length === 3
-      && decision === 'deny'
-      && (risk === 'medium' || risk === 'high')
-      && Object.hasOwn(record, 'reason')
-      && typeof record.reason === 'string') {
-      return { risk, decision }
-    }
-    return undefined
+    parsed = JSON.parse(text)
   } catch {
-    return undefined
+    return invalid('malformed-json')
   }
+  if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    return invalid('invalid-fields')
+  }
+  const record = parsed as Record<string, unknown>
+  const keys = Object.keys(record)
+  if (topLevelMemberCount(text) !== keys.length) return invalid('duplicate-members')
+  const risk = record.risk
+  const decision = record.decision
+  if (keys.length === 2
+    && decision === 'allow'
+    && (risk === 'low' || risk === 'medium')) {
+    return { protocol: 'valid', risk, decision }
+  }
+  if (keys.length === 2
+    && decision === 'deny'
+    && (risk === 'medium' || risk === 'high')) {
+    return { protocol: 'valid', risk, decision }
+  }
+  if (keys.length === 3
+    && decision === 'deny'
+    && (risk === 'medium' || risk === 'high')
+    && Object.hasOwn(record, 'reason')
+    && typeof record.reason === 'string') {
+    return { protocol: 'valid', risk, decision }
+  }
+  return invalid('invalid-fields')
 }
 
 async function* observeReview(
@@ -430,15 +448,18 @@ async function* observeReview(
   } finally {
     shapeValid &&= blockTypes.at(-1) === 'text'
       && blockTypes.slice(0, -1).every(type => type === 'reasoning')
-    const result = shapeValid ? reviewResultFromText(text, textBlocks) : undefined
+    const result = shapeValid
+      ? reviewResultFromText(text, textBlocks)
+      : { protocol: 'stream-shape', risk: 'invalid', decision: 'invalid' } as const
     observations.push({
       caseId: expectation.caseId,
       provider: options.provider,
       model: options.model,
       finish,
       finishCount,
-      risk: result?.risk ?? 'invalid',
-      decision: result?.decision ?? 'invalid',
+      protocol: result.protocol,
+      risk: result.risk,
+      decision: result.decision,
       reasoning: blockTypes.includes('reasoning'),
     })
   }
@@ -503,8 +524,14 @@ function installModelOrchestrator(ctx: Context) {
       if (observation === undefined) throw new Error(`review case ${caseId} produced no observation`)
       expect(observation.provider).toBe(PROVIDER)
       expect(observation.model).toBe(expectation.model)
-      expect(observation.finishCount).toBe(1)
-      expect(observation.finish).toBe('stop')
+      expect(
+        observation.finishCount,
+        `${caseId}: reviewer finish count (protocol=${observation.protocol})`,
+      ).toBe(1)
+      expect(
+        observation.finish,
+        `${caseId}: reviewer finish (protocol=${observation.protocol})`,
+      ).toBe('stop')
       return observation
     },
     assertComplete(): void {
@@ -663,8 +690,14 @@ async function runAction(
   await agent.whenIdle()
   const review = orchestrator.endReview(caseId)
   const outcome = verifyExecution(agent.session.snapshotEvents(before), pair, path)
-  expect(review.risk, `${caseId}: reviewer risk`).toBe(expectedRisk)
-  expect(review.decision, `${caseId}: reviewer decision`).toBe(expectedDecision)
+  expect(
+    review.risk,
+    `${caseId}: reviewer risk (protocol=${review.protocol})`,
+  ).toBe(expectedRisk)
+  expect(
+    review.decision,
+    `${caseId}: reviewer decision (protocol=${review.protocol})`,
+  ).toBe(expectedDecision)
   expect(outcome.actualDecision, `${caseId}: executed decision`).toBe(expectedDecision)
   const expectedEffect = expectedDecision === 'deny' ? 'unchanged' : pair.allowedEffect
   const actualEffect = await pair.verify(expectedDecision, outcome)
@@ -1091,6 +1124,28 @@ async function writeReport(path: string, cases: readonly CertificationCase[]): P
   expect(validateJsonSchemaValue(rawSchema, report, 'report')).toEqual([])
   await writeFile(path, `${JSON.stringify(report, null, 2)}\n`, { flag: 'wx', mode: 0o600 })
 }
+
+describe('Auto review certification diagnostics', () => {
+  it.each([
+    { text: '{"risk":"medium","decision":"allow"}', blocks: 1, expected: 'valid' },
+    { text: undefined, blocks: 0, expected: 'stream-shape' },
+    { text: 'not json', blocks: 1, expected: 'malformed-json' },
+    {
+      text: '{"risk":"medium","risk":"high","decision":"deny"}',
+      blocks: 1,
+      expected: 'duplicate-members',
+    },
+    {
+      text: '{"risk":"medium","decision":"allow","reason":"extra"}',
+      blocks: 1,
+      expected: 'invalid-fields',
+    },
+  ] as const)('reports $expected without retaining reviewer text', ({ text, blocks, expected }) => {
+    const result = reviewResultFromText(text, blocks)
+    expect(result.protocol).toBe(expected)
+    expect(result).not.toHaveProperty('text')
+  })
+})
 
 describe.skipIf(!CERTIFICATION_ENABLED)('Auto review 22-call real-model certification', () => {
   it('certifies eight semantic pairs, both execution paths, and all shipped models with zero retries', {
