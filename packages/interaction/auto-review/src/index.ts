@@ -103,6 +103,19 @@ interface ReviewSnapshot {
   readonly action: PendingAction
 }
 
+type NativeCallEvent = Extract<SessionEvent, { type: 'tool/call' }>
+type PtcStartEvent = Extract<SessionEvent, { type: 'tool/code-dispatch-start' }>
+
+interface StepIdentity {
+  readonly turn: number
+  readonly step: number
+}
+
+interface ScopedPtcStart {
+  readonly event: PtcStartEvent
+  readonly step: StepIdentity
+}
+
 /** Runtime facts owned until one admitted call cannot outlive lifecycle cancellation. */
 interface ActiveCall {
   readonly done: Promise<void>
@@ -244,12 +257,55 @@ function filteredUserEntries(
   }))
 }
 
-/** Find every event matching one predicate, preserving log order. */
-function matchingEvents<T extends SessionEvent>(
-  events: readonly SessionEvent[],
-  predicate: (event: SessionEvent) => event is T,
-): T[] {
-  return events.filter(predicate)
+/** Copy the turn and step identity carried by one core execution event. */
+function stepIdentity(data: { readonly turn: number; readonly step: number }): StepIdentity {
+  return { turn: data.turn, step: data.step }
+}
+
+/** Compare two turn-and-step identities. */
+function sameStep(left: StepIdentity, right: StepIdentity): boolean {
+  return left.turn === right.turn && left.step === right.step
+}
+
+/** Key one call id inside the step that owns its lifecycle. */
+function scopedCallKey(step: StepIdentity, callId: ToolCallId): string {
+  return `${step.turn}\0${step.step}\0${callId}`
+}
+
+/** Assign each PTC start to its open step, retaining a narrow fixture fallback. */
+function scopePtcStarts(events: readonly SessionEvent[]): {
+  readonly starts: readonly ScopedPtcStart[]
+  readonly openStep: StepIdentity | undefined
+} {
+  const latestRoots = new Map<ToolCallId, NativeCallEvent>()
+  const starts: ScopedPtcStart[] = []
+  let openStep: StepIdentity | undefined
+  for (const event of events) {
+    if (event.type === 'turn/start' || event.type === 'turn/end') {
+      openStep = undefined
+      continue
+    }
+    if (event.type === 'step/start') {
+      openStep = stepIdentity(event.data)
+      continue
+    }
+    if (event.type === 'step/end') {
+      openStep = undefined
+      continue
+    }
+    if (event.type === 'tool/call') {
+      latestRoots.set(event.data.callId, event)
+      continue
+    }
+    if (event.type !== 'tool/code-dispatch-start') continue
+    const root = latestRoots.get(event.data.rootCallId)
+    const step = openStep ?? (root === undefined ? undefined : stepIdentity(root.data))
+    if (step === undefined) {
+      throw new Error('auto-review: a PTC call has no owning step in the session log')
+    }
+    starts.push({ event, step })
+  }
+  return { starts, openStep }
 }
 
 /** Resolve one native action from its visible call and latest request header. */
@@ -282,22 +338,17 @@ function nativeAction(
 /** Resolve one PTC inner action from its start-event snapshot. */
 function ptcAction(
   exec: ToolExecution,
-  starts: readonly Extract<SessionEvent, { type: 'tool/code-dispatch-start' }>[],
-  visibleParentIds: ReadonlySet<ToolCallId>,
+  start: ScopedPtcStart,
+  visibleParentKeys: ReadonlySet<string>,
 ): PendingAction {
-  const matches = starts.filter(event => event.data.subCallId === exec.callId)
-  if (matches.length !== 1) {
-    throw new Error('auto-review: the pending PTC call is missing or ambiguous in the session log')
-  }
-  const start = matches[0]
-  if (start === undefined
-    || !visibleParentIds.has(start.data.parentCallId)
-    || start.data.rootCallId !== exec.rootCallId
-    || start.data.name !== exec.name
-    || !sameJson(start.data.arguments, exec.arguments)) {
+  const { event } = start
+  if (!visibleParentKeys.has(scopedCallKey(start.step, event.data.parentCallId))
+    || event.data.rootCallId !== exec.rootCallId
+    || event.data.name !== exec.name
+    || !sameJson(event.data.arguments, exec.arguments)) {
     throw new Error('auto-review: the pending PTC call disagrees with its logged action')
   }
-  const schema = loggedSchema(start.data, exec.name, 'PTC')
+  const schema = loggedSchema(event.data, exec.name, 'PTC')
   return {
     mode: 'ptc-inner',
     name: schema.name,
@@ -326,35 +377,52 @@ function snapshotAutoReview(agent: Agent, exec: ToolExecution): ReviewSnapshot {
     throw new Error('auto-review: the session has no working directory')
   }
 
-  const nativeCalls = matchingEvents(events, (event): event is Extract<SessionEvent, { type: 'tool/call' }> =>
-    event.type === 'tool/call')
-  const starts = matchingEvents(events, (event): event is Extract<SessionEvent, { type: 'tool/code-dispatch-start' }> =>
-    event.type === 'tool/code-dispatch-start')
+  const nativeCalls = events.filter((event): event is NativeCallEvent => event.type === 'tool/call')
+  const { starts, openStep } = scopePtcStarts(events)
   const initialPromptSeq = directParentInitialPromptSeq(agent, events)
-  const nativeById = new Map<ToolCallId, Extract<SessionEvent, { type: 'tool/call' }>[]>()
+  const nativeByScopedId = new Map<string, NativeCallEvent[]>()
   for (const event of nativeCalls) {
-    const bucket = nativeById.get(event.data.callId)
-    if (bucket === undefined) nativeById.set(event.data.callId, [event])
+    const key = scopedCallKey(stepIdentity(event.data), event.data.callId)
+    const bucket = nativeByScopedId.get(key)
+    if (bucket === undefined) nativeByScopedId.set(key, [event])
     else bucket.push(event)
   }
-  const startsByParent = new Map<ToolCallId, Extract<SessionEvent, { type: 'tool/code-dispatch-start' }>[]>()
-  const seenSubCalls = new Set<ToolCallId>()
-  for (const event of starts) {
-    if (seenSubCalls.has(event.data.subCallId)) {
+  const startsByParent = new Map<string, ScopedPtcStart[]>()
+  const startsBySubCall = new Map<string, ScopedPtcStart>()
+  for (const start of starts) {
+    const subCallKey = scopedCallKey(start.step, start.event.data.subCallId)
+    if (startsBySubCall.has(subCallKey)) {
       throw new Error('auto-review: a PTC call identity is ambiguous in the session log')
     }
-    seenSubCalls.add(event.data.subCallId)
-    const bucket = startsByParent.get(event.data.parentCallId)
-    if (bucket === undefined) startsByParent.set(event.data.parentCallId, [event])
-    else bucket.push(event)
+    startsBySubCall.set(subCallKey, start)
+    const parentKey = scopedCallKey(start.step, start.event.data.parentCallId)
+    const bucket = startsByParent.get(parentKey)
+    if (bucket === undefined) startsByParent.set(parentKey, [start])
+    else bucket.push(start)
+  }
+
+  const latestRootCall = nativeCalls.findLast(event => event.data.callId === exec.rootCallId)
+  const currentStep = openStep
+    ?? (latestRootCall === undefined ? undefined : stepIdentity(latestRootCall.data))
+  if (currentStep === undefined) {
+    throw new Error('auto-review: the pending root call is missing from the session log')
+  }
+  const currentRootCalls = nativeByScopedId.get(scopedCallKey(currentStep, exec.rootCallId)) ?? []
+  const currentRootCall = currentRootCalls[0]
+  if (currentRootCall === undefined || currentRootCalls.length !== 1) {
+    throw new Error('auto-review: the pending root call is missing or ambiguous in the session log')
+  }
+  const currentPtcStart = exec.parent === undefined
+    ? undefined
+    : startsBySubCall.get(scopedCallKey(currentStep, exec.callId))
+  if (exec.parent !== undefined && currentPtcStart === undefined) {
+    throw new Error('auto-review: the pending PTC call is missing or ambiguous in the session log')
   }
 
   const projectInstructions: HistoricalUserMessage[] = []
   const history: HistoricalEntry[] = []
-  const visibleParentIds = new Set<ToolCallId>()
-  let currentNativeCall: Extract<SessionEvent, { type: 'tool/call' }> | undefined
+  const visibleParentKeys = new Set<string>()
   let passedCurrentRoot = false
-  let sawUnstartedSibling = false
   for (const seq of nodes) {
     // Surface nodes are event indexes produced by this Session's validated fold.
     // oxlint-disable-next-line typescript/no-non-null-assertion
@@ -383,20 +451,24 @@ function snapshotAutoReview(agent: Agent, exec: ToolExecution): ReviewSnapshot {
       continue
     }
     if (event.type !== 'assistant/message') continue
+    const messageStep = stepIdentity(event.data)
+    const isCurrentMessage = sameStep(messageStep, currentStep)
+    let sawUnstartedSibling = false
     for (const block of event.data.message.content) {
       if (block.type !== 'tool-call') continue
-      const isCurrentRoot = block.id === exec.rootCallId
+      const key = scopedCallKey(messageStep, block.id)
+      const isCurrentRoot = isCurrentMessage && block.id === exec.rootCallId
       if (isCurrentRoot && passedCurrentRoot) {
         throw new Error('auto-review: the pending root call is ambiguous in the current surface')
       }
-      const calls = nativeById.get(block.id) ?? []
+      const calls = nativeByScopedId.get(key) ?? []
       if (calls.length > 1) {
         throw new Error('auto-review: a native call identity is ambiguous in the session log')
       }
       const call = calls[0]
-      const startsForCall = startsByParent.get(block.id) ?? []
+      const startsForCall = startsByParent.get(key) ?? []
       if (call === undefined) {
-        if (!passedCurrentRoot) {
+        if (isCurrentMessage && !passedCurrentRoot) {
           throw new Error('auto-review: a visible call before the pending root is missing from the session log')
         }
         if (startsForCall.length > 0) {
@@ -411,9 +483,8 @@ function snapshotAutoReview(agent: Agent, exec: ToolExecution): ReviewSnapshot {
       if (call.data.name !== block.name || call.data.arguments !== block.arguments) {
         throw new Error('auto-review: a visible tool call disagrees with its logged action')
       }
-      visibleParentIds.add(block.id)
-      if (block.id === exec.callId) currentNativeCall = call
-      else {
+      visibleParentKeys.add(key)
+      if (call !== currentRootCall || exec.parent !== undefined) {
         history.push({
           kind: 'tool-call',
           role: 'fact',
@@ -423,13 +494,13 @@ function snapshotAutoReview(agent: Agent, exec: ToolExecution): ReviewSnapshot {
         })
       }
       for (const start of startsForCall) {
-        if (start.data.subCallId === exec.callId) continue
+        if (start === currentPtcStart) continue
         history.push({
           kind: 'tool-call',
           role: 'fact',
           mode: 'ptc-inner',
-          name: start.data.name,
-          arguments: json(start.data.arguments),
+          name: start.event.data.name,
+          arguments: json(start.event.data.arguments),
         })
       }
       if (isCurrentRoot) passedCurrentRoot = true
@@ -441,11 +512,10 @@ function snapshotAutoReview(agent: Agent, exec: ToolExecution): ReviewSnapshot {
   }
 
   const action = exec.parent === undefined
-    // A direct execution's root id is its call id. The validated root above
-    // therefore supplied exactly this logged event.
+    ? nativeAction(exec, header.tools, currentRootCall)
+    // The branch above established that every nested execution has one scoped start.
     // oxlint-disable-next-line typescript/no-non-null-assertion
-    ? nativeAction(exec, header.tools, currentNativeCall!)
-    : ptcAction(exec, starts, visibleParentIds)
+    : ptcAction(exec, currentPtcStart!, visibleParentKeys)
   return deepFreeze({
     provider: header.config.provider,
     model: header.config.model,

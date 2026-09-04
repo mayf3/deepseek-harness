@@ -473,6 +473,52 @@ describe('native review request', () => {
     expect(requestText).not.toContain('obsolete description')
   })
 
+  it('scopes reused native call ids and started prefixes to one assistant step', async () => {
+    const { ctx, adapter } = await harness([
+      decisionChunks('{"risk":"low","decision":"allow"}'),
+    ])
+    const probe = registerProbe(ctx)
+    const { session, agent } = autoSession(ctx, 'native-reused-call-id')
+    appendHeader(session, [{ name: 'probe', description: 'probe', parameters: { type: 'object' } }])
+    const callId = ToolCallId('reused-native-call')
+    appendAssistant(session, [
+      { type: 'tool-call', id: callId, name: 'probe', arguments: '{"path":"old"}' },
+      { type: 'tool-call', id: ToolCallId('old-unstarted'), name: 'probe', arguments: '{}' },
+    ], 1, 1)
+    appendNativeCall(session, callId, 'probe', '{"path":"old"}', 1, 1)
+    appendAssistant(session, [
+      { type: 'tool-call', id: callId, name: 'probe', arguments: '{"path":"current"}' },
+    ], 1, 2)
+    appendNativeCall(session, callId, 'probe', '{"path":"current"}', 1, 2)
+
+    const result = await ctx.tools.execute({
+      signal: new AbortController().signal,
+      callId,
+      name: 'probe',
+      arguments: { path: 'current' },
+      agent,
+    })
+
+    expect(result.isError).toBe(false)
+    expect(probe.runs()).toBe(1)
+    expect(adapter.requests).toHaveLength(1)
+    const sections = requestSections(adapter.requests[0]!)
+    expect(sections.FILTERED_HISTORY).toEqual(expect.arrayContaining([{
+      kind: 'tool-call',
+      role: 'fact',
+      mode: 'native',
+      name: 'probe',
+      arguments: '{"path":"old"}',
+    }]))
+    expect(sections.PENDING_ACTION).toEqual({
+      mode: 'native',
+      name: 'probe',
+      description: 'probe',
+      parameters: { type: 'object' },
+      arguments: { path: 'current' },
+    })
+  })
+
   it('assigns child creation, direct-parent, human, and forged-message roles without overriding human limits', async () => {
     const { ctx, adapter } = await harness([
       decisionChunks('{"risk":"medium","decision":"deny"}'),
@@ -944,6 +990,95 @@ describe('PTC and bypass semantics', () => {
     ]) {
       expect(entry).not.toHaveProperty('seq')
     }
+  })
+
+  it('scopes reused PTC root and sub-call ids to the open step', async () => {
+    const { ctx, adapter } = await harness([
+      decisionChunks('{"risk":"low","decision":"allow"}'),
+    ])
+    const probe = registerProbe(ctx)
+    const { session, agent } = autoSession(ctx, 'ptc-reused-call-id')
+    const outerCallId = ToolCallId('reused-outer')
+    const subCallId = ToolCallId('reused-outer:code:0')
+    session.append('turn/start', { turn: 1 })
+    appendHeader(session)
+    session.append('step/start', { turn: 1, step: 1 })
+    appendAssistant(session, [{
+      type: 'tool-call', id: outerCallId, name: RUN_CODE_NAME, arguments: '{"code":"old"}',
+    }], 1, 1)
+    appendNativeCall(session, outerCallId, RUN_CODE_NAME, '{"code":"old"}', 1, 1)
+    session.append('tool/code-dispatch-start', {
+      rootCallId: outerCallId,
+      parentCallId: outerCallId,
+      subCallId,
+      name: 'probe',
+      description: 'old inner description',
+      parameters: { type: 'object' },
+      arguments: { path: 'old' },
+    })
+    session.append('tool/code-dispatch', {
+      rootCallId: outerCallId,
+      parentCallId: outerCallId,
+      subCallId,
+      name: 'probe',
+      arguments: { path: 'old' },
+      isError: false,
+      content: [{ type: 'text', text: 'old result' }],
+    })
+    session.append('tool/result', {
+      turn: 1,
+      step: 1,
+      message: createToolResultMessage({
+        callId: outerCallId,
+        content: [{ type: 'text', text: 'old outer result' }],
+        isError: false,
+      }),
+    }, { surfaceOp: 'append' })
+    session.append('step/end', { turn: 1, step: 1 })
+    session.append('step/start', { turn: 1, step: 2 })
+    appendAssistant(session, [{
+      type: 'tool-call', id: outerCallId, name: RUN_CODE_NAME, arguments: '{"code":"current"}',
+    }], 1, 2)
+    appendNativeCall(session, outerCallId, RUN_CODE_NAME, '{"code":"current"}', 1, 2)
+    session.append('tool/code-dispatch-start', {
+      rootCallId: outerCallId,
+      parentCallId: outerCallId,
+      subCallId,
+      name: 'probe',
+      description: 'current inner description',
+      parameters: { type: 'object' },
+      arguments: { path: 'current' },
+    })
+
+    const result = await ctx.tools.execute({
+      signal: new AbortController().signal,
+      rootCallId: outerCallId,
+      parent: Symbol('outer execution') as ToolExecutionToken,
+      callId: subCallId,
+      name: 'probe',
+      arguments: { path: 'current' },
+      agent,
+    })
+
+    expect(result.isError).toBe(false)
+    expect(probe.runs()).toBe(1)
+    expect(adapter.requests).toHaveLength(1)
+    const sections = requestSections(adapter.requests[0]!)
+    expect((sections.FILTERED_HISTORY as Array<Record<string, unknown>>)
+      .filter(entry => entry['mode'] === 'ptc-inner')).toEqual([{
+      kind: 'tool-call',
+      role: 'fact',
+      mode: 'ptc-inner',
+      name: 'probe',
+      arguments: '{\n  "path": "old"\n}',
+    }])
+    expect(sections.PENDING_ACTION).toEqual({
+      mode: 'ptc-inner',
+      name: 'probe',
+      description: 'current inner description',
+      parameters: { type: 'object' },
+      arguments: { path: 'current' },
+    })
   })
 
   it('does not review unscoped, non-Auto, or outer run_code executions', async () => {
@@ -1438,6 +1573,7 @@ describe('logged-fact failures', () => {
       } },
       { id: 'missing-current-log', prepare: (session, callId) => {
         appendHeader(session, [{ name: 'probe', description: 'probe', parameters: { type: 'object' } }])
+        session.append('step/start', { turn: 1, step: 1 })
         appendAssistant(session, [{ type: 'tool-call', id: callId, name: 'probe', arguments: '{}' }])
       } },
       { id: 'duplicate-current-log', prepare: (session, callId) => {
@@ -1515,6 +1651,7 @@ describe('logged-fact failures', () => {
       } },
       { id: 'unstarted-call-with-ptc-log', prepare: (session, callId) => {
         appendHeader(session, [{ name: 'probe', description: 'probe', parameters: { type: 'object' } }])
+        session.append('step/start', { turn: 1, step: 1 })
         const later = ToolCallId('unstarted-with-ptc')
         appendAssistant(session, [
           { type: 'tool-call', id: callId, name: 'probe', arguments: '{}' },
