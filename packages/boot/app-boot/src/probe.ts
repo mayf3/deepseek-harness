@@ -53,7 +53,12 @@ export interface PluginProbe {
   readonly description?: string
   /** Display title from `dsh.title`, when declared. */
   readonly title?: string
-  /** `bundle` (declares `dsh.bundle`), `plugin` (its main export is a cordis plugin), else `library`. */
+  /**
+   * `bundle` (declares `dsh.bundle`); `plugin` (declares itself to dsh — a
+   * `dsh` section or a dependency on `@deepseek-ai/cordis` — and its main
+   * export is a cordis plugin); else `library`. A function export alone is
+   * not a plugin: `lodash` exports one too.
+   */
   readonly kind: 'bundle' | 'plugin' | 'library'
   /** Whether the package can be enabled or added: it imported and shares the harness's cordis. */
   readonly ok: boolean
@@ -201,6 +206,20 @@ function describeBundlePatch(binName: string, patchPath: string): { rows: Plugin
 }
 
 /**
+ * Whether a package declares itself to dsh: a `dsh` section in its manifest,
+ * or a dependency on `@deepseek-ai/cordis`. A cordis plugin needs at least
+ * cordis's types, and the harness's plugin conventions put display and
+ * composition metadata under `dsh`; a package with neither that happens to
+ * export a function (`lodash`, `debug`) is a library.
+ * @param manifest - the package manifest.
+ * @returns true for a package that declares itself to dsh.
+ */
+function declaresDsh(manifest: ProbedManifest): boolean {
+  if (manifest.dsh !== undefined) return true
+  return '@deepseek-ai/cordis' in (manifest.peerDependencies ?? {}) || '@deepseek-ai/cordis' in (manifest.dependencies ?? {})
+}
+
+/**
  * Probe one installed package: read its manifest, then import it in a child
  * process. The child never runs inside the host, so a package that throws at
  * import, exits, or hangs costs one child process and yields a `ok: false`
@@ -221,7 +240,9 @@ export async function probePackage(options: ProbeOptions): Promise<PluginProbe> 
   const report = await runChild(options, packageDir, hasMain ? options.packageName : '', declaredAddable.map(entry => entry.name))
   const harnessCordis = resolveHarnessCordis()
   const cordisSameCopy = report.cordis === null || harnessCordis === undefined ? null : report.cordis === harnessCordis
-  const kind: PluginProbe['kind'] = declaredBundle !== undefined ? 'bundle' : report.main.isPlugin ? 'plugin' : 'library'
+  const kind: PluginProbe['kind'] = declaredBundle !== undefined
+    ? 'bundle'
+    : report.main.isPlugin && declaresDsh(manifest) ? 'plugin' : 'library'
   const addable: PluginProbeAddable[] = declaredAddable.map((entry) => {
     // The child reports every declared name; a missing report is a child
     // that did not run the loop, which the report parse already rejected.
