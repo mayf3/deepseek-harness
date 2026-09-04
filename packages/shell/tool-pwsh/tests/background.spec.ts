@@ -12,6 +12,7 @@ import { ShellExecutor } from '@deepseek-ai/dsh-shell'
 import type { ShellExecRequest, ShellExecSpec, ShellProcess, ShellRunResult } from '@deepseek-ai/dsh-shell'
 import * as ToolPwsh from '@deepseek-ai/dsh-tool-pwsh'
 import * as BashEnvPlugin from '@deepseek-ai/dsh-shell-env'
+import { processSources } from '../src/background.ts'
 
 const testToolSignal = new AbortController().signal
 
@@ -24,8 +25,8 @@ function scriptedReader(state: { text: string }) {
   }
 }
 
-/** A running fake background handle with optional non-consuming observed streams. */
-function observableProcess(streams?: { stdout: { text: string }; stderr: { text: string } }) {
+/** A running fake background handle over scripted non-consuming observed streams. */
+function observableProcess(streams: { stdout: { text: string }; stderr: { text: string } } = { stdout: { text: '' }, stderr: { text: '' } }) {
   let resolveDone: () => void = () => {}
   const done = new Promise<void>((resolve) => { resolveDone = resolve })
   const proc: ShellProcess = {
@@ -35,9 +36,7 @@ function observableProcess(streams?: { stdout: { text: string }; stderr: { text:
     done,
     readOutput: () => ({ delta: '', lossy: false }),
     kill: () => false,
-    ...streams !== undefined
-      ? { observed: { stdout: scriptedReader(streams.stdout), stderr: scriptedReader(streams.stderr) } }
-      : {},
+    observed: { stdout: scriptedReader(streams.stdout), stderr: scriptedReader(streams.stderr) },
   }
   return {
     proc,
@@ -174,7 +173,7 @@ describe('background pwsh output', () => {
     expect(jobs.get(job!.id)).toMatchObject({ status: 'completed', detail: 'exit code: 0' })
   })
 
-  it('a backend without observed readers still settles with an empty ring', async () => {
+  it('a silent process settles with an empty ring', async () => {
     const { ctx, pwsh } = await setup()
     const scripted = observableProcess()
     pwsh.backgroundHandler = () => scripted.proc
@@ -217,5 +216,15 @@ describe('owned background output (pwsh)', () => {
     expect(owned.readAt(job!.id, 0).chunks).toEqual([])
     scripted.finish()
     await until(() => owned.get(job!.id).status === 'completed' ? true : undefined)
+  })
+})
+
+describe('processSources (pwsh)', () => {
+  it('reads nothing while the process is not spawned yet', () => {
+    const [stdout, stderr] = processSources(() => undefined)
+    expect(stdout!.channel).toBe('stdout')
+    expect(stderr!.channel).toBe('stderr')
+    expect(stdout!.read(0)).toEqual({ text: '', nextOffset: 0, lossy: false })
+    expect(stderr!.read(3)).toEqual({ text: '', nextOffset: 3, lossy: false })
   })
 })

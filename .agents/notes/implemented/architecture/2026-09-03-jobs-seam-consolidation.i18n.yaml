@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-09-03-jobs-seam-consolidation.md
-2026-09-03-jobs-seam-consolidation.md: 2aa575a124d75437c75b30b96337450704b2bf75
-2026-09-03-jobs-seam-consolidation.zh.md: 304e424d9936c4ab5b751b511dbd89ef71f409ed
+2026-09-03-jobs-seam-consolidation.md: 0524870826d9721897b6d1b568f49f2d5da6cd1b
+2026-09-03-jobs-seam-consolidation.zh.md: bdc74d820832635bab5fe805b9d0fe68112457d1

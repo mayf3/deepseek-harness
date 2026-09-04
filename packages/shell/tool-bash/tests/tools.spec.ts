@@ -26,6 +26,9 @@ import { escalationHintMarker, sandboxDenialMarker } from '@deepseek-ai/dsh-sand
 import { processOutcome } from '../src/background.ts'
 import { renderResult } from '../src/render.ts'
 
+/** Empty offset readers for fakes that never produce output. */
+const silentReader = { readFrom: (fromByte: number) => ({ text: '', nextOffset: fromByte, lossy: false }) }
+
 const testToolSignal = new AbortController().signal
 
 const spillDir = mkdtempSync(join(tmpdir(), 'dsh-tool-bash-spec-'))
@@ -149,6 +152,7 @@ class RecordingSandboxExecutor extends ShellExecutor {
       done: Promise.resolve(),
       sandbox: { mode: spec.sandboxPolicy?.mode ?? 'read-only', denied: false },
       readOutput: () => ({ delta: '', lossy: false }),
+      observed: { stdout: silentReader, stderr: silentReader },
       kill: () => false,
     }
   }
@@ -178,6 +182,7 @@ class CountingStartExecutor extends ShellExecutor {
       signal: null,
       done: Promise.resolve(),
       readOutput: () => ({ delta: '', lossy: false }),
+      observed: { stdout: silentReader, stderr: silentReader },
       kill: () => false,
     }
   }
@@ -740,6 +745,7 @@ describe('processOutcome', () => {
       signal: null,
       done: Promise.resolve(),
       readOutput: () => ({ delta: '', lossy: false }),
+      observed: { stdout: silentReader, stderr: silentReader },
       kill: () => false,
       ...over,
     }
@@ -1073,6 +1079,7 @@ describe('the model-facing bash tool builds its request from named args only (no
         signal: null,
         done: Promise.resolve(),
         readOutput: () => ({ delta: '', lossy: false }),
+        observed: { stdout: silentReader, stderr: silentReader },
         kill: () => false,
       }
     }

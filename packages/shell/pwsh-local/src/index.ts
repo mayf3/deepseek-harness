@@ -288,13 +288,23 @@ export class PwshLocalExecutor extends ShellExecutor {
     const running = this.ctx.subprocess.spawn(this.spawnSpec(spec, this.config.maxOutputBytes, spec.signal, argv))
     const collected = PwshLocalExecutor.collected(running)
 
-    // A spawn failure produces no process output, so the subprocess service has nothing
-    // to buffer; the note is delivered exactly once through the read path.
-    let spawnFailureNote: string | undefined
+    // A spawn failure produces no process output, so the subprocess service has
+    // nothing to buffer: once the spawn rejected, the note is the whole stderr
+    // stream for every reader. The observed reader serves it at offset 0 and
+    // the consuming read folds it in exactly once.
+    let spawnFailure: string | undefined
+    let spawnFailureReported = false
     const consumeSpawnFailure = (): string => {
-      const note = spawnFailureNote ?? ''
-      spawnFailureNote = undefined
-      return note
+      if (spawnFailure === undefined || spawnFailureReported) return ''
+      spawnFailureReported = true
+      return spawnFailure
+    }
+    const observedStderr: SubprocessOutputReader = {
+      readFrom: (fromByte) => {
+        if (spawnFailure === undefined) return collected.stderr.readFrom(fromByte)
+        const note = Buffer.from(spawnFailure, 'utf8')
+        return { text: note.subarray(Math.min(fromByte, note.length)).toString('utf8'), nextOffset: note.length, lossy: false }
+      },
     }
 
     let stdoutOffset = 0
@@ -303,7 +313,7 @@ export class PwshLocalExecutor extends ShellExecutor {
       status: 'running',
       exitCode: null,
       signal: null,
-      observed: collected,
+      observed: { stdout: collected.stdout, stderr: observedStderr },
       done: running.done.then((outcome) => {
         // Any signal termination is killed, including a command signaling itself.
         if (proc.status === 'running') {
@@ -313,10 +323,10 @@ export class PwshLocalExecutor extends ShellExecutor {
         proc.signal = outcome.signal
         this.onProcessDone(proc, collected.stderr.readFrom(0).text, false)
       }, (error: unknown) => {
-        // Background spawn failures settle as killed and surface through the read path.
+        // Background spawn failures settle as killed and surface on stderr for every reader.
         proc.status = 'killed'
-        spawnFailureNote = `spawn failed: ${String(error)}`
-        this.onProcessDone(proc, spawnFailureNote, true, error)
+        spawnFailure = `spawn failed: ${String(error)}`
+        this.onProcessDone(proc, spawnFailure, true, error)
       }),
       readOutput: (): ShellProcessRead => {
         const out = collected.stdout.readFrom(stdoutOffset)

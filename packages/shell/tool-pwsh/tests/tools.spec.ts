@@ -36,6 +36,9 @@ import { escalationHintMarker, sandboxDenialMarker } from '@deepseek-ai/dsh-sand
 import { processOutcome } from '../src/background.ts'
 import { renderPwshResult } from '../src/render.ts'
 
+/** Empty offset readers for fakes that never produce output. */
+const silentReader = { readFrom: (fromByte: number) => ({ text: '', nextOffset: fromByte, lossy: false }) }
+
 const testToolSignal = new AbortController().signal
 
 /**
@@ -117,6 +120,7 @@ function killableProcess(): ShellProcess {
     signal: null,
     done,
     readOutput: () => ({ delta: '', lossy: false }),
+    observed: { stdout: silentReader, stderr: silentReader },
     kill: () => {
       if (proc.status !== 'running') return false
       proc.status = 'killed'
@@ -1012,6 +1016,7 @@ describe('processOutcome', () => {
       signal: null,
       done: Promise.resolve(),
       readOutput: () => ({ delta: '', lossy: false }),
+      observed: { stdout: silentReader, stderr: silentReader },
       kill: () => false,
       ...over,
     }

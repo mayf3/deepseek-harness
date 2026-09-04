@@ -194,11 +194,11 @@ interface ShellProcess {
   readOutput(): ShellProcessRead
   /**
    * Non-consuming offset readers over the same captured streams the consuming
-   * {@link readOutput} cursor drains. Independent observers read here at their
-   * own offsets without stealing bytes from `readOutput`. Absent when the
-   * backend cannot expose offset reads; observers then see no stream.
+   * {@link readOutput} cursor drains, including the spawn-failure note a
+   * rejected spawn leaves on stderr. Independent observers read here at their
+   * own offsets without stealing bytes from `readOutput`.
    */
-  observed?: ShellObservedStreams
+  observed: ShellObservedStreams
   /**
    * Kill the process group. Returns false when it had already finished
    * (no-op); idempotent.

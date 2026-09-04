@@ -59,9 +59,9 @@ export function processOutcome(proc: ShellProcess, escalationModes: readonly San
 /**
  * The process's non-consuming stream readers as registry pull sources. They
  * bind lazily because the process is spawned inside the starter, after the
- * registry admitted the job; a backend without offset readers degrades to no
- * observation rather than an error, and the pump keeps the model's consuming
- * cursor untouched.
+ * registry admitted the job; a read before the spawn yields nothing, and the
+ * pump keeps the model's consuming cursor untouched. A rejected spawn's
+ * stderr reader carries the provider's `spawn failed: …` note.
  * @param proc - the started process, once the starter has spawned it.
  * @returns one source per stream, stdout first.
  */
@@ -69,8 +69,8 @@ export function processSources(proc: () => ShellProcess | undefined): JobOutputS
   const source = (channel: 'stdout' | 'stderr'): JobOutputSource => ({
     channel,
     read: (fromByte) => {
-      const reader = proc()?.observed?.[channel]
-      return reader === undefined ? { text: '', nextOffset: fromByte, lossy: false } : reader.readFrom(fromByte)
+      const live = proc()
+      return live === undefined ? { text: '', nextOffset: fromByte, lossy: false } : live.observed[channel].readFrom(fromByte)
     },
   })
   return [source('stdout'), source('stderr')]
