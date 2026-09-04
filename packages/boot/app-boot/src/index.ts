@@ -71,7 +71,7 @@ export {
   ProfileRuntime, type ProfileRuntimeOptions, type RowOrigin,
 } from './profile-runtime.ts'
 export {
-  PLUGIN_PROBE_DIR, probePackage, readProbeCache, writeProbeCache,
+  PLUGIN_PROBE_DIR, PLUGIN_PROBE_FORMAT, probePackage, readProbeCache, writeProbeCache,
   type PluginProbe, type PluginProbeRow, type ProbeOptions,
 } from './probe.ts'
 
