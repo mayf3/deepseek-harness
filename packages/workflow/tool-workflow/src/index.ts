@@ -423,6 +423,11 @@ export function apply(ctx: Context, config: Config): void {
         if (!enableRunInBackground) {
           throw new Error('run_in_background is disabled for this tool')
         }
+        // No pre-abort check here, unlike bash/pwsh: ToolRuntime re-reads the
+        // caller signal right before execute(), and this branch reaches
+        // jobs.start synchronously from there. The shell tools await a
+        // sandbox escalation approval before registering, which is the window
+        // their check covers.
         return startBackgroundRun(ctx, args, parent, exec.parent === undefined, {
           recorder,
           mirror,
