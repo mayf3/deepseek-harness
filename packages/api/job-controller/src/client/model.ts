@@ -185,7 +185,17 @@ export class ClientJobsModel implements JobsSource {
    */
   observeFailed(id: JobId, error: unknown): void {
     const state = this.observedStates.get(String(id))
-    if (state === undefined) return
+    if (state === undefined) {
+      // A failure before the anchor — a rejected request, a job gone between
+      // the click and the open — still owes the panel its notice; a later
+      // successful anchor replaces this view and resumes from no cursor.
+      this.observedStates.set(String(id), {
+        view: { jobId: id, text: '', gapBefore: false, streaming: false, error: String(error) },
+        cursor: undefined,
+      })
+      this.changed()
+      return
+    }
     state.view = { ...state.view, streaming: false, error: String(error) }
     this.changed()
   }

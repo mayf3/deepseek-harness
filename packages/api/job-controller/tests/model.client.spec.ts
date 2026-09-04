@@ -160,15 +160,20 @@ describe('ClientJobsModel observation', () => {
     model.observeStopped(ID)
   })
 
-  it('records a terminal stream failure on the live view', () => {
+  it('records a terminal stream failure on the live view, or on a fresh view before the anchor', () => {
     const model = new ClientJobsModel()
     opened(model)
     model.observeFailed(ID, new Error('carrier gone'))
     const live = model.getSnapshot().observed[String(ID)]
     expect(live?.streaming).toBe(false)
     expect(live?.error).toContain('carrier gone')
-    // A failure for an untracked id is inert.
-    model.observeFailed('bash-9' as JobId, new Error('ignored'))
+    // A failure before any anchor still surfaces: the panel gets the notice on
+    // an empty, non-streaming view, and a retry anchors from no cursor.
+    model.observeFailed('bash-9' as JobId, new Error('ended before its anchor'))
+    const early = model.getSnapshot().observed['bash-9']
+    expect(early).toMatchObject({ jobId: 'bash-9', text: '', gapBefore: false, streaming: false })
+    expect(early?.error).toContain('ended before its anchor')
+    expect(model.cursorOf('bash-9' as JobId)).toBeUndefined()
   })
 })
 
