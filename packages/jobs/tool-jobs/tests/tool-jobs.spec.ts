@@ -945,6 +945,21 @@ describe('completion notices', () => {
     expect(inject).not.toHaveBeenCalled()
   })
 
+  it('a timed-out wait withdraws only its own claim; a concurrent wait keeps the settlement covered', async () => {
+    const { ctx } = await setup({ waitTimeoutMs: 10, maxWaitTimeoutMs: 1000 })
+    const inject = vi.fn()
+    const owner = fakeAgent(ctx, 'sess-1', { inject })
+    const p = producer({ owner: owner.id })
+    ctx.jobs.start(p.spec)
+
+    const patient = call(ctx, 'job_output', { job_id: 'bash-1', wait: true, timeout_ms: 1000 }, owner)
+    expect(text(await call(ctx, 'job_output', { job_id: 'bash-1', wait: true, timeout_ms: 10 }, owner))).toBe('(no new output)\n[status: running]')
+    p.settle({ status: 'completed' })
+    expect(text(await patient)).toBe('(no new output)\n[status: completed]')
+    await tick()
+    expect(inject).not.toHaveBeenCalled()
+  })
+
   it('withdraws the wait claim when the wait times out, so the later settlement still notifies', async () => {
     const { ctx } = await setup({ waitTimeoutMs: 10, maxWaitTimeoutMs: 20 })
     const inject = vi.fn()
