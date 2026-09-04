@@ -274,7 +274,7 @@ function scopedCallKey(step: StepIdentity, callId: ToolCallId): string {
   return `${step.turn}\0${step.step}\0${callId}`
 }
 
-/** Assign each PTC start to its open step, retaining a narrow fixture fallback. */
+/** Assign each PTC start to its open step or its latest logged root's step. */
 function scopePtcStarts(events: readonly SessionEvent[]): {
   readonly starts: readonly ScopedPtcStart[]
   readonly openStep: StepIdentity | undefined

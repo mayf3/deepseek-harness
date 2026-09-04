@@ -36,7 +36,7 @@ Auto 拒绝会向主 agent 提供固定消息，其中会指明被拒绝的工�
 
 调用方取消沿用普通 Tool 的结算优先级：late allow 后观察到的取消会转为规范的 dispatch 前取消，而已经结算的拒绝或技术失败仍保持 Auto 拒绝。被拒绝的 PTC inner call 保留既有 `ToolCallError` 与程序 `catch` 行为，因此被处理的拒绝不会转成外层 `run_code` 失败。允许决定不产生事件、原因或持久 grant。
 
-发布与资源释放均以拒绝方式关闭。在发布任一注册前，integration 要求配置的 `read-only` 预设精确解析为沙箱 `read-only` 加审批策略 `ask`。存储的 Auto 会话只有在 Auto 注册为 live 状态并准入该 Session 时才能发布；服务不会把它改写为 Full access。资源释放期间，integration 会先关闭新的 Auto 选择与审查准入，并在改变任何预设前捕获正在退出 Auto 的精确 Session 对象身份。监听器会先检查该退役集合，再派生当前权限状态，因此即使部分迁移已经追加 `permission/preset` 或 `sandbox/mode`，也不能重新开放执行。integration 随后通过普通预设写入器把这些会话切换到 Read Only，中止生命周期，并等待每次在途审查或已准入调用完成，最后才移除监听器与 Auto 注册。允许的调用会保持 active 状态，直至进入 `tools/execute` 或 `tools/result`；execute 包装层会在继续分派前合并生命周期 signal 与调用方 signal，因此资源释放会取消任何尚未开始的已准入工具主体。若有 Session 无法迁移，integration 仍会中止并排空 active 调用，但会保留两项已关闭的注册，使新的 Auto 选择失败，并让退役会话的调用被拒绝，而不是留下未经审查的执行窗口。
+发布与资源释放均以拒绝方式关闭。在发布任一注册前，integration 要求配置的 `read-only` 预设精确解析为沙箱 `read-only` 加审批策略 `ask`。存储的 Auto 会话只有在 Auto 注册为 live 状态并准入该 Session 时才能发布；服务不会把它改写为 Full access。资源释放期间，integration 会先关闭新的 Auto 选择与审查准入，并在改变任何预设前捕获正在退出 Auto 的精确 Session 对象身份；监听器会先检查该退役集合，再派生当前权限状态。Auto 切换到 Read Only 的写入器依次持久化沙箱 `read-only`、审批 `ask` 和 `permission/preset: read-only`，使每个持久化失败前缀在进程重启后仍保留 Auto 身份或已受沙箱约束，而退役集合让存活进程继续以拒绝方式关闭。integration 通过该写入器切换这些会话，中止生命周期，并等待每次在途审查或已准入调用完成，最后才移除监听器与 Auto 注册。允许的调用会保持 active 状态，直至进入 `tools/execute` 或 `tools/result`；execute 包装层会在继续分派前合并生命周期 signal 与调用方 signal，因此资源释放会取消任何尚未开始的已准入工具主体。若有 Session 无法迁移，integration 仍会中止并排空 active 调用，但会保留两项已关闭的注册，使新的 Auto 选择失败，并让退役会话的调用被拒绝，而不是留下未经审查的执行窗口。
 
 ## 验证
 

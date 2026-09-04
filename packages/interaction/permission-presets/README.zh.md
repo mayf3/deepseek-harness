@@ -83,7 +83,7 @@ kind: "package-reference"
 
 ### 写入路径
 
-`set()` 解析预设，在适用时同步执行 Auto 准入检查，仅当有效预设变化时追加 `permission/preset`，然后通过各自的权威 setter——`dsh-sandbox-policy` 的 `setSandboxMode` 与 `dsh-user-approval` 的 `setApprovalPolicy`——写入每个变化的旋钮。选择事件先于旋钮事件，因此在两个预设共享同一组取值时保留用户意图；净变化为零的选择不追加任何内容。
+`set()` 解析预设，并在适用时同步执行 Auto 准入检查。普通切换仅在有效预设变化时追加 `permission/preset`，再通过各自的权威 setter——`dsh-sandbox-policy` 的 `setSandboxMode` 与 `dsh-user-approval` 的 `setApprovalPolicy`——写入每个变化的旋钮，因此两个预设共享同一组取值时仍能保留用户意图。Auto 切换到 Read Only 是例外：它依次写入沙箱 `read-only`、审批 `ask` 和 `permission/preset: read-only`，使每个持久化失败前缀在进程重启后仍保留 Auto 身份或已受沙箱约束。净变化为零的选择不追加任何内容。
 
 ### 读取侧与 `custom`
 
