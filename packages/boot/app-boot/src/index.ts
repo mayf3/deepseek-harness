@@ -74,6 +74,7 @@ export {
 export {
   ProfileRuntime, type ProfileRuntimeOptions, type RowOrigin,
 } from './profile-runtime.ts'
+export { awaitChildClose } from './child-close.ts'
 export {
   PLUGIN_PROBE_DIR, PLUGIN_PROBE_FORMAT, probePackage, readProbeCache, writeProbeCache,
   type PluginProbe, type PluginProbeRow, type ProbeOptions,

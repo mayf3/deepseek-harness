@@ -8,6 +8,7 @@
  */
 
 import { spawn } from 'node:child_process'
+import { awaitChildClose } from './child-close.ts'
 import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -153,45 +154,28 @@ process.stdout.write(JSON.stringify(report))
 `
 
 /** Run the child and parse its report. */
-function runChild(options: ProbeOptions, packageDir: string, mainSpecifier: string, addable: string[]): Promise<ChildReport> {
+async function runChild(options: ProbeOptions, packageDir: string, mainSpecifier: string, addable: string[]): Promise<ChildReport> {
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS
-  return new Promise((resolve, reject) => {
-    const child = spawn(
-      options.nodeExecutable ?? process.execPath,
-      ['--experimental-import-meta-resolve', '--input-type=module', '-e', CHILD_SCRIPT, '--', packageDir, mainSpecifier, JSON.stringify(addable)],
-      { cwd: options.profileDir, stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, NODE_NO_WARNINGS: '1' } },
+  const child = spawn(
+    options.nodeExecutable ?? process.execPath,
+    ['--experimental-import-meta-resolve', '--input-type=module', '-e', CHILD_SCRIPT, '--', packageDir, mainSpecifier, JSON.stringify(addable)],
+    { cwd: options.profileDir, stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, NODE_NO_WARNINGS: '1' } },
+  )
+  const out: Buffer[] = []
+  const err: Buffer[] = []
+  child.stdout.on('data', (chunk: Buffer) => out.push(chunk))
+  child.stderr.on('data', (chunk: Buffer) => err.push(chunk))
+  const code = await awaitChildClose(
+    child, timeoutMs, () => new Error(`${options.binName}: probe of ${options.packageName} timed out after ${String(timeoutMs)}ms`),
+  )
+  const stdout = Buffer.concat(out).toString('utf8')
+  try {
+    return JSON.parse(stdout) as ChildReport
+  } catch {
+    throw new Error(
+      `${options.binName}: probe of ${options.packageName} exited with ${String(code)} without a report: ${Buffer.concat(err).toString('utf8').trim()}`,
     )
-    const out: Buffer[] = []
-    const err: Buffer[] = []
-    child.stdout.on('data', (chunk: Buffer) => out.push(chunk))
-    child.stderr.on('data', (chunk: Buffer) => err.push(chunk))
-    // One settlement: a spawn failure emits `error` and then `close`, and a
-    // timeout kill emits `close` after the rejection below.
-    let settled = false
-    const settle = (outcome: () => void): void => {
-      if (settled) return
-      settled = true
-      clearTimeout(timer)
-      outcome()
-    }
-    const timer = setTimeout(() => {
-      child.kill('SIGKILL')
-      settle(() => { reject(new Error(`${options.binName}: probe of ${options.packageName} timed out after ${String(timeoutMs)}ms`)) })
-    }, timeoutMs)
-    child.on('error', (error) => { settle(() => { reject(error) }) })
-    child.on('close', (code) => {
-      settle(() => {
-        const stdout = Buffer.concat(out).toString('utf8')
-        try {
-          resolve(JSON.parse(stdout) as ChildReport)
-        } catch {
-          reject(new Error(
-            `${options.binName}: probe of ${options.packageName} exited with ${String(code)} without a report: ${Buffer.concat(err).toString('utf8').trim()}`,
-          ))
-        }
-      })
-    })
-  })
+  }
 }
 
 const DEFAULT_TIMEOUT_MS = 20_000

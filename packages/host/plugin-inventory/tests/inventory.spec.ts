@@ -117,6 +117,8 @@ describe('PluginInventoryGateway', () => {
     registry.record({ entryId: 'gone', rowId: 'gone', moduleName: 'cordis:throws', groupId: 'bundle/ext', stage: 'apply', message: 'boom' })
     // A record of a row that later mounted rides on the live entry and is not listed twice.
     registry.record({ entryId: bare, rowId: bare, moduleName: 'cordis:active', groupId: 'bundle/ext', stage: 'import', message: 'stale' })
+    // A failure the runtime cannot attribute belongs to no package.
+    registry.record({ entryId: 'orphan', rowId: 'orphan', moduleName: 'cordis:throws', groupId: 'bundle/gone', stage: 'apply', message: 'lost' })
     registry.record({
       entryId: 'conflict:bundle/late:versioned', rowId: versioned, moduleName: 'late', groupId: 'bundle/late',
       packageName: 'late', stage: 'conflict', message: 'row "versioned" is already declared by ext',
@@ -133,6 +135,7 @@ describe('PluginInventoryGateway', () => {
       { entryId: off, moduleName: 'cordis:active', enabled: false, fiberPhase: null, trust: 'external', package: { name: 'ext' }, disabledBy: 'user' },
       // A failed row the tree no longer holds is attributed through the runtime.
       { entryId: 'gone', moduleName: 'cordis:throws', enabled: true, fiberPhase: 'failed', trust: 'external', package: { name: 'ext' }, failure: { stage: 'apply', message: 'boom' } },
+      { entryId: 'orphan', moduleName: 'cordis:throws', enabled: true, fiberPhase: 'failed', trust: 'external', failure: { stage: 'apply', message: 'lost' } },
       // A conflict names the bundle that lost the id; the runtime would name the owner.
       { entryId: 'conflict:bundle/late:versioned', moduleName: 'late', enabled: true, fiberPhase: 'failed', trust: 'external', package: { name: 'late' }, failure: { stage: 'conflict', message: 'row "versioned" is already declared by ext' } },
       // A user-layer conflict belongs to no package.
