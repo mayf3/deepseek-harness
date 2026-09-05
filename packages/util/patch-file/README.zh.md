@@ -30,6 +30,9 @@ kind: "package-reference"
 通过 `mutatePatchFile` 写入。回调拿到一个 `PatchDocument`，按 Loader 寻址行的方式以行 id 编辑：
 
 ```ts
+import { mutatePatchFile } from '@deepseek-ai/dsh-patch-file'
+
+const file = '/home/me/.dsh/profiles/web/cordis.patch.yml'
 await mutatePatchFile(file, (document) => {
   document.setRowField('tool-web', 'disabled', true)      // the id-targeted patch is created when absent
   document.deleteRowField('tool-web', 'config')           // a patch reduced to its id is removed whole
