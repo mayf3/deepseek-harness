@@ -12,10 +12,11 @@ import { ClientJobsModel } from './model.ts'
 import { ClientJobs } from './service.ts'
 import type { JobsRemote } from './service.ts'
 
-export { ClientJobsModel } from './model.ts'
-export type { JobsSnapshot, JobsSource, ObservedJob } from './model.ts'
-export { ClientJobs } from './service.ts'
-export type { IJobs, JobRemote, JobsRemote } from './service.ts'
+export type { JobsSnapshot, ObservedJob } from './model.ts'
+// The `ctx.jobs` contract. Its module also carries the Context augmentation
+// that declares `ctx.jobs`, which reaches consumers only through this export:
+// declaration emit drops the value import above.
+export type { IJobs } from './service.ts'
 export type {
   JobChunk, JobKillRequest, JobKillValue, JobObserveFrame, JobObserveRequest, JobRowsFrame, JobRowsRequest, JobView,
 } from '../types.ts'

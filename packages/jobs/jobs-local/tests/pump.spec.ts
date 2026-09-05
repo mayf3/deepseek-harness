@@ -1,14 +1,17 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { JobAppendOptions, JobOutputSource } from '@deepseek-ai/dsh-jobs'
 import { startPump } from '../src/pump.ts'
+import type { PumpSink } from '../src/pump.ts'
 
-/** Record every append so pump behavior is observable without a registry. */
-function sink() {
+/** Record every append and spill report so pump behavior is observable without a registry. */
+function recorder() {
   const appends: { text: string; options?: JobAppendOptions }[] = []
-  return {
-    appends,
-    append: (text: string, options?: JobAppendOptions) => { appends.push({ text, ...options !== undefined ? { options } : {} }) },
+  const spills: [number, string | undefined][] = []
+  const sink: PumpSink = {
+    append: (text, options) => { appends.push({ text, ...options !== undefined ? { options } : {} }) },
+    spill: (index, path) => { spills.push([index, path]) },
   }
+  return { appends, spills, sink }
 }
 
 /** A scripted source: each read() shifts the next scripted result. */
@@ -39,12 +42,12 @@ describe('startPump', () => {
   it('copies labeled deltas at the poll cadence and resumes each source at its own offset', async () => {
     vi.useFakeTimers()
     try {
-      const { appends, append } = sink()
+      const { appends, sink } = recorder()
       let settle!: () => void
       const until = new Promise<void>((resolve) => { settle = resolve })
       const out = scriptedSource([{ text: 'a' }, { text: 'bc' }], 'stdout')
       const err = scriptedSource([{ text: '' }, { text: 'E' }], 'stderr')
-      const pump = startPump([out.source, err.source], append, 50, until)
+      const pump = startPump([out.source, err.source], sink, 50, until)
 
       await vi.advanceTimersByTimeAsync(50)
       settle()
@@ -65,36 +68,57 @@ describe('startPump', () => {
   })
 
   it('marks a lossy source read as a gap so observers see the discontinuity', async () => {
-    const { appends, append } = sink()
+    const { appends, sink } = recorder()
     const { source } = scriptedSource([{ text: 'tail', lossy: true }])
-    await startPump([source], append, 1, Promise.resolve()).done
+    await startPump([source], sink, 1, Promise.resolve()).done
     expect(appends).toEqual([{ text: 'tail', options: { gapBefore: true } }])
   })
 
-  it("names the source's spill file on a lossy read and ignores one on a clean read", async () => {
-    const { appends, append } = sink()
-    const { source } = scriptedSource([
-      { text: 'tail', lossy: true, spillPath: '/spill/out.log' },
-      { text: 'more', spillPath: '/spill/out.log' },
-    ], 'stdout')
-    await startPump([source], append, 1, Promise.resolve()).done
-    expect(appends).toEqual([
-      { text: 'tail', options: { channel: 'stdout', gapBefore: true, spillPath: '/spill/out.log' } },
-      { text: 'more', options: { channel: 'stdout' } },
-    ])
+  it("reports each source's spill file on every read and withdraws it once a read stops naming it", async () => {
+    vi.useFakeTimers()
+    try {
+      const { appends, spills, sink } = recorder()
+      let settle!: () => void
+      const until = new Promise<void>((resolve) => { settle = resolve })
+      const out = scriptedSource([
+        { text: 'tail', lossy: true, spillPath: '/spill/out.log' },
+        { text: 'more', spillPath: '/spill/out.log' },
+        { text: '' },
+      ], 'stdout')
+      const err = scriptedSource([{ text: '' }, { text: 'E', spillPath: '/spill/err.log' }], 'stderr')
+      const pump = startPump([out.source, err.source], sink, 50, until)
+
+      await vi.advanceTimersByTimeAsync(50)
+      settle()
+      await pump.done
+      // Chunks carry the gap marker only; the file reference is source metadata.
+      expect(appends).toEqual([
+        { text: 'tail', options: { channel: 'stdout', gapBefore: true } },
+        { text: 'more', options: { channel: 'stdout' } },
+        { text: 'E', options: { channel: 'stderr' } },
+      ])
+      // Every read reports, lossy or clean, empty or not: the third stdout read withdraws the file.
+      expect(spills).toEqual([
+        [0, '/spill/out.log'], [1, undefined],
+        [0, '/spill/out.log'], [1, '/spill/err.log'],
+        [0, undefined], [1, undefined],
+      ])
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('treats a rejected settlement as settlement and still drains the final bytes', async () => {
-    const { appends, append } = sink()
+    const { appends, sink } = recorder()
     const { source } = scriptedSource([{ text: 'last' }])
-    await startPump([source], append, 1, Promise.reject(new Error('producer broke'))).done
+    await startPump([source], sink, 1, Promise.reject(new Error('producer broke'))).done
     expect(appends).toEqual([{ text: 'last' }])
   })
 
   it('subscribes to the settlement once and holds one poll timer however long the job runs', async () => {
     vi.useFakeTimers()
     try {
-      const { append } = sink()
+      const { sink } = recorder()
       let subscriptions = 0
       let settle!: () => void
       const settled = new Promise<void>((resolve) => { settle = resolve })
@@ -105,7 +129,7 @@ describe('startPump', () => {
         },
       }) as unknown as Promise<unknown>
       const { source, offsets } = scriptedSource([])
-      const pump = startPump([source], append, 50, counting(settled))
+      const pump = startPump([source], sink, 50, counting(settled))
 
       const rounds = 10_000
       await vi.advanceTimersByTimeAsync(50 * rounds)
@@ -123,7 +147,7 @@ describe('startPump', () => {
   })
 
   it('rejects a non-positive poll interval before touching any source', () => {
-    const { append } = sink()
-    expect(() => startPump([], append, 0, Promise.resolve())).toThrow(/invalid pump pollMs/)
+    const { sink } = recorder()
+    expect(() => startPump([], sink, 0, Promise.resolve())).toThrow(/invalid pump pollMs/)
   })
 })

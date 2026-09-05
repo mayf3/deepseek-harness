@@ -21,9 +21,6 @@ import type {} from '@deepseek-ai/dsh-agent'
 import { publicJob, renderModelDelta, statusLine } from './render.ts'
 import type { PublicJobSnapshot } from './render.ts'
 
-export { publicJob, renderModelDelta, statusLine } from './render.ts'
-export type { PublicJobSnapshot } from './render.ts'
-
 export const name = 'tool-jobs'
 export const inject = ['tools', 'jobs', 'systemPrompt']
 
@@ -33,6 +30,17 @@ export const inject = ['tools', 'jobs', 'systemPrompt']
  * owner. A busy owner is injected either way.
  */
 export type CompletionDelivery = 'quiet' | 'wakeup'
+
+/**
+ * One model touch of a live job's settlement: a wait in flight or a kill the
+ * model requested. `live` says whether the tool result that made the claim
+ * will still carry the settlement; a wait's claim dies the moment its caller
+ * aborts, before the registry's rejection reaches the tool.
+ */
+interface Claim {
+  readonly id: JobId
+  live: boolean
+}
 
 /** Configures bounded `job_output` waits and completion-notice delivery. */
 export interface Config {
@@ -182,7 +190,7 @@ function isTerminal(job: JobView): boolean {
 /** The consuming read as the model sees it: the delta, then the result once, then the status line. */
 function readBody(jobs: CallerJobs, id: JobId): { text: string; job: PublicJobSnapshot } {
   const read = jobs.read(id)
-  const delta = renderModelDelta(read.chunks, read.lossy)
+  const delta = renderModelDelta(read.chunks, read.lossy, read.job.output.spillPaths ?? [])
   const text = read.result === undefined
     ? delta
     : `${delta}${delta.length > 0 && !delta.endsWith('\n') ? '\n' : ''}${read.result}`
@@ -257,23 +265,25 @@ export function apply(ctx: Context, config: Config): void {
   // a tool result: a terminal `job_output`, a wait that returned it, or a
   // `job_kill` it requested. A wait claims when it starts, not when it
   // returns — settlement releases waiters before it announces, but their
-  // continuations run after the event — and withdraws the claim if the job
-  // outlives the wait. Claims are counted per call, so a timed-out wait
-  // withdraws only its own claim while a concurrent wait on the same job
-  // keeps the settlement covered. The settlement event drops the entry, so
-  // the ledger holds only live jobs the model already touched.
-  const claims = new Map<JobId, number>()
-  const claim = (id: JobId): (() => void) => {
-    claims.set(id, (claims.get(id) ?? 0) + 1)
-    return () => {
-      // A withdraw runs only for a wait that returned or rejected while the
-      // job was live, so its own claim is still counted here; the fallback
-      // only discharges the Map's optional read.
-      /* v8 ignore next -- settlement hands every waiter the terminal view before dropping the entry; such waits never withdraw. */
-      const remaining = (claims.get(id) ?? 1) - 1
-      if (remaining > 0) claims.set(id, remaining)
-      else claims.delete(id)
+  // continuations run after the event. Each call holds its own claim, so a
+  // timed-out wait drops only its own while a concurrent wait on the same job
+  // keeps the settlement covered. The settlement event drops every claim on
+  // the job, so the ledger holds only live jobs the model already touched.
+  const claims = new Set<Claim>()
+  const claim = (id: JobId): Claim => {
+    const entry: Claim = { id, live: true }
+    claims.add(entry)
+    return entry
+  }
+  // Drop every claim on the job; true when one of them still covered the settlement.
+  const settleClaims = (id: JobId): boolean => {
+    let covered = false
+    for (const entry of claims) {
+      if (entry.id !== id) continue
+      claims.delete(entry)
+      if (entry.live) covered = true
     }
+    return covered
   }
 
   // A busy owner is injected: the notice waits in its next-step inbox, which
@@ -287,11 +297,11 @@ export function apply(ctx: Context, config: Config): void {
   // this listener owns delivery, not the choice of whom to deliver to.
   ctx.jobs.events.subscribe({ owners: 'scope' }, (event) => {
     if (event.type === 'removed') {
-      claims.delete(event.job.id)
+      settleClaims(event.job.id)
       return
     }
     if (event.type !== 'settled') return
-    const claimed = claims.delete(event.job.id)
+    const claimed = settleClaims(event.job.id)
     if (claimed || event.cause === 'teardown' || event.job.owner === undefined) return
     // The destination is the agent registered for the owner session now. An
     // owned job needed the agent registry to start, so the registry is only
@@ -352,13 +362,24 @@ export function apply(ctx: Context, config: Config): void {
       const jobs = ctx.jobs.forCaller(exec.agent?.id)
       if (args.wait === true) {
         const timeout = Math.min(args.timeout_ms ?? waitDefault, waitCap)
-        const withdraw = claim(id)
+        const entry = claim(id)
+        // The registry rejects an aborted wait on a later microtask, and a
+        // settlement announced in between must not find this claim live: the
+        // tool result carries the abort, so the notice is the model's only
+        // completion record. ToolRuntime never dispatches an aborted call, so
+        // the listener covers every abort. A timeout needs no such guard —
+        // the registry resolves it from a timer callback, and the wait's
+        // continuation runs before anything else can settle the job.
+        const abandon = (): void => { entry.live = false }
+        exec.signal.addEventListener('abort', abandon, { once: true })
         try {
           const view = await jobs.wait(id, timeout, exec.signal)
-          if (!isTerminal(view)) withdraw()
+          if (!isTerminal(view)) claims.delete(entry)
         } catch (error: unknown) {
-          withdraw()
+          claims.delete(entry)
           throw error
+        } finally {
+          exec.signal.removeEventListener('abort', abandon)
         }
       }
       return readBody(jobs, id)

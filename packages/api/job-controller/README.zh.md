@@ -26,7 +26,7 @@ Host 控制器要求活体 Agent 注册表与 job 注册表（已发布组合里
 
 `job.kill({ sessionId, jobId })` 以 `cancelled by the user` 为原因取消一个该会话看得到的 job，注册表把该原因合并进被杀 job 的 detail。它不在模型的播报台账里认领任何东西——台账在 `dsh-tool-jobs` 里，只有模型自己的 `job_kill` 与等待会认领——因此拥有者 agent 的完成通知照常送达，并带上原因。它回答 `{ outcome: 'requested' }` 或 `{ outcome: 'already-finished' }`，对该会话看不到的 id 以 `job/not-found` 拒绝，并与 `session.cancel` 一样施加 subagent 所有权围栏。
 
-Client 入口在 `ClientJobsModel` 之上提供 `ClientJobs`（`ctx.jobs`）。`kill(sessionId, jobId)` 转发到 `job.kill` 并把 Remote 结果交给调用方判定准入。`watchRows(sessionId)` 不论多少查看器持有都只为每个被关注的会话开一条名册流，最后一个释放后丢弃行；重连后的首帧已经是完整事实。`observe(sessionId, jobId)` 不论多少查看器展开同一 job 都只开一条 Gateway 流，按 job 保留有界的渲染尾部并用 `gapBefore` 标记淘汰或续读缺口，在终态帧上关闭视图或把流失败记到视图上，最后一个查看器释放后丢弃视图。插件在自己的上下文仍是当前上下文时解析 Gateway 流工厂与 `job` namespace，因为流的（重）开启跑在未声明 `remote.job` 的调用栈上。
+Client 入口安装 `ctx.jobs`（`IJobs`），由包内部的 `ClientJobsModel` 支撑。`kill(sessionId, jobId)` 转发到 `job.kill` 并把 Remote 结果交给调用方判定准入。`watchRows(sessionId)` 不论多少查看器持有都只为每个被关注的会话开一条名册流，最后一个释放后丢弃行；重连后的首帧已经是完整事实。`observe(sessionId, jobId)` 不论多少查看器展开同一 job 都只开一条 Gateway 流，按 job 保留有界的渲染尾部并用 `gapBefore` 标记淘汰或续读缺口，在终态帧上关闭视图或把流失败记到视图上，最后一个查看器释放后丢弃视图。插件在自己的上下文仍是当前上下文时解析 Gateway 流工厂与 `job` namespace，因为流的（重）开启跑在未声明 `remote.job` 的调用栈上。
 
 ### 配置
 

@@ -1194,6 +1194,35 @@ describe('LocalJobRegistry output ring', () => {
     expect(() => jobsOf(ctx).readAt(JobId('bash-99'), 0)).toThrow(/unknown job/)
   })
 
+  it('keeps the spill file each source currently reports as job metadata, beyond any chunk', async () => {
+    const ctx = await harness({ retainBytes: 4, pumpPollMs: 5 })
+    let withdrawn = false
+    const out: JobOutputSource = {
+      channel: 'stdout',
+      read: from => from === 0
+        ? { text: 'abcdefgh', nextOffset: 8, lossy: false, spillPath: '/spill/out.log' }
+        : { text: '', nextOffset: from, lossy: false, ...withdrawn ? {} : { spillPath: '/spill/out.log' } },
+    }
+    const err: JobOutputSource = {
+      channel: 'stderr',
+      read: from => ({ text: '', nextOffset: from, lossy: false, spillPath: '/spill/err.log' }),
+    }
+    const p = producer({ output: [out, err] })
+    const id = ctx.jobs.start(p.spec)
+    // The first drain ran inside start(): the live cap already evicted the head, yet the
+    // projection still names the files — no chunk carried them.
+    const view = jobsOf(ctx).get(id)
+    expect(view.output).toEqual({ total: 8, earliest: 4, spillPaths: ['/spill/out.log', '/spill/err.log'] })
+    expect(jobsOf(ctx).readAt(id, 0).chunks).toEqual([{ at: 4, text: 'efgh', channel: 'stdout', gapBefore: true }])
+
+    // A source that stops naming its file (a failed seal) withdraws it on the next drain.
+    withdrawn = true
+    await new Promise<void>(resolve => setTimeout(resolve, 20))
+    expect(jobsOf(ctx).get(id).output.spillPaths).toEqual(['/spill/err.log'])
+    p.settle({ status: 'completed' })
+    await tick()
+  })
+
   it('announces registration before the pump drains a source that is readable at once', async () => {
     const ctx = await harness({ pumpPollMs: 5 })
     const events = collect(ctx)

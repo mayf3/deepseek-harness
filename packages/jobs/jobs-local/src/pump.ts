@@ -2,9 +2,10 @@
  * The registry-owned pull pump: copies a job's {@link JobOutputSource}s into
  * its ring at a bounded cadence and drains them once more after the
  * producer settles, so the ring holds every byte before settlement trims and
- * closes it. A lossy source read lands as a gap chunk that names the source's
- * spill file when it keeps one. Pure utility — no cordis, no timers retained
- * past settlement.
+ * closes it. A lossy source read lands as a gap chunk; the spill file a source
+ * keeps is reported to the sink on every read, because that reference
+ * outlives any chunk. Pure utility — no cordis, no timers retained past
+ * settlement.
  * @module @deepseek-ai/dsh-jobs-local/pump
  */
 
@@ -13,6 +14,23 @@ import type { JobAppendOptions, JobOutputSource } from '@deepseek-ai/dsh-jobs'
 /** One pump run; `done` resolves after the final post-settlement drain. */
 export interface PumpHandle {
   done: Promise<void>
+}
+
+/** Where a pump delivers what it reads. */
+export interface PumpSink {
+  /**
+   * Append copied text to the ring.
+   * @param text - the chunk text, exactly as read.
+   * @param options - stream label and gap marker.
+   */
+  append(text: string, options?: JobAppendOptions): void
+  /**
+   * Record the spill file source `index` advertised on its latest read; called
+   * on every read, with `undefined` when the source keeps none or withdrew it.
+   * @param index - the source's position in the pump's source array.
+   * @param path - the host path the source reported, if any.
+   */
+  spill(index: number, path: string | undefined): void
 }
 
 /**
@@ -27,14 +45,14 @@ export interface PumpHandle {
  * The wait holds constant resources however long the job runs: one
  * subscription on `until` for the whole run and one pending timer at a time.
  * @param sources - producer streams, each pumped at its own offset.
- * @param append - the ring append; receives each copied chunk.
+ * @param sink - receives each copied chunk and each source's current spill file.
  * @param pollMs - poll interval in milliseconds; a positive finite number.
  * @param until - settles (or rejects, which counts as settlement) when the producer finished.
  * @returns the handle whose `done` resolves after the final drain.
  */
 export function startPump(
   sources: readonly JobOutputSource[],
-  append: (text: string, options?: JobAppendOptions) => void,
+  sink: PumpSink,
   pollMs: number,
   until: Promise<unknown>,
 ): PumpHandle {
@@ -43,18 +61,18 @@ export function startPump(
   }
   const states = sources.map(source => ({ source, cursor: 0 }))
   const drain = (): void => {
-    for (const state of states) {
+    for (const [index, state] of states.entries()) {
       const { source } = state
       const read = source.read(state.cursor)
       state.cursor = read.nextOffset
+      sink.spill(index, read.spillPath)
       if (read.text.length === 0) continue
       if (source.channel === undefined && !read.lossy) {
-        append(read.text)
+        sink.append(read.text)
       } else {
-        append(read.text, {
+        sink.append(read.text, {
           ...source.channel !== undefined ? { channel: source.channel } : {},
           ...read.lossy ? { gapBefore: true as const } : {},
-          ...read.lossy && read.spillPath !== undefined ? { spillPath: read.spillPath } : {},
         })
       }
     }

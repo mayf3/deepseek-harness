@@ -150,7 +150,7 @@ interface JobOutputSource {
   /**
    * Read everything captured since `fromByte` without consuming it.
    * @param fromByte - whole-stream offset to resume from (a prior read's `nextOffset`; 0 first).
-   * @returns the delta text, the next offset, the lossy flag, and the spill path when one exists.
+   * @returns the delta text, the next offset, the lossy flag, and the spill path the source currently keeps.
    */
   read(fromByte: number): JobSourceRead
 }
@@ -165,14 +165,18 @@ interface JobSourceRead {
   nextOffset: number
   /** True when the requested offset slid out of the source's retained window. */
   lossy: boolean
-  /** Path to a file holding the complete stream, when the source keeps one and this read is lossy. */
+  /**
+   * Host path of a file holding the complete stream, when the source
+   * currently keeps an intact one. Reported on every read, so the registry
+   * tracks it as source metadata: a later read without it withdraws the file.
+   */
   spillPath?: string
 }
 ```
 
 ## The output ring
 
-Every job owns one bounded ring. Pull sources are pumped into it and `JobHandle.append` pushes land whole; the model consumes the ring through a registry-kept cursor (`CallerJobs.read`), any number of observers read it at absolute byte offsets (`CallerJobs.readAt`), and neither disturbs the other. `JobChannel` labels `stdout`, `stderr`, and `log`; `log` is producer narration that reaches observers only, never the model's consuming read. Settlement ends the stream and trims retention to the settled cap — the ring has no separate lifecycle. Browsers reach the roster and the ring through `job.rows` and `job.observe`, the Remote streams of [`dsh-api-job-controller`](../../packages/api/job-controller/README.md), whose frames are listed under its Cordis API section below.
+Every job owns one bounded ring. Pull sources are pumped into it and `JobHandle.append` pushes land whole; the model consumes the ring through a registry-kept cursor (`CallerJobs.read`), any number of observers read it at absolute byte offsets (`CallerJobs.readAt`), and neither disturbs the other. `JobChannel` labels `stdout`, `stderr`, and `log`; `log` is producer narration that reaches observers only, never the model's consuming read. Settlement ends the stream and trims retention to the settled cap — the ring has no separate lifecycle. The spill file a pull source keeps is job metadata (`JobView.output.spillPaths`, refreshed by every pump read), not chunk provenance, so the model's dropped-output notice names it after the ring evicted the bytes and even after the gap chunk itself is gone. Browsers reach the roster and the ring through `job.rows` and `job.observe`, the Remote streams of [`dsh-api-job-controller`](../../packages/api/job-controller/README.md), whose frames are listed under its Cordis API section below.
 
 ```ts type-equiv
 /** One chunk of a job's output ring: absolute offset, text, and its provenance. */
@@ -185,8 +189,6 @@ interface JobChunk {
   readonly channel?: JobChannel
   /** Bytes immediately before this chunk were lost, at the producer or to retention. */
   readonly gapBefore?: true
-  /** Host path of a file holding the complete stream before the gap, when the producer keeps one; present only with `gapBefore`. */
-  readonly spillPath?: string
 }
 ```
 
@@ -243,11 +245,15 @@ interface JobView {
   /** Epoch ms when the job settled; absent while live. */
   readonly finishedAt?: number
   /**
-   * The output ring's absolute coordinates. `total` is the offset the next
-   * chunk starts at (0 while nothing was written); `earliest` is the oldest
-   * retained byte, greater than zero exactly when retention dropped the head.
+   * The output ring's absolute coordinates and the complete-stream files
+   * behind it. `total` is the offset the next chunk starts at (0 while
+   * nothing was written); `earliest` is the oldest retained byte, greater
+   * than zero exactly when retention dropped the head. `spillPaths` lists the
+   * spill files the job's pull sources currently keep, in source order and
+   * deduplicated, and is absent while no source keeps one: it outlives any
+   * chunk, so a reader below `earliest` can still name where the bytes went.
    */
-  readonly output: { readonly total: number; readonly earliest: number }
+  readonly output: { readonly total: number; readonly earliest: number; readonly spillPaths?: readonly string[] }
 }
 ```
 

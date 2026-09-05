@@ -46,8 +46,6 @@ export interface JobChunk {
   readonly channel?: JobChannel
   /** Bytes immediately before this chunk were lost, at the producer or to retention. */
   readonly gapBefore?: true
-  /** Host path of a file holding the complete stream before the gap, when the producer keeps one; present only with `gapBefore`. */
-  readonly spillPath?: string
 }
 
 /**
@@ -81,9 +79,13 @@ export interface JobView {
   /** Epoch ms when the job settled; absent while live. */
   readonly finishedAt?: number
   /**
-   * The output ring's absolute coordinates. `total` is the offset the next
-   * chunk starts at (0 while nothing was written); `earliest` is the oldest
-   * retained byte, greater than zero exactly when retention dropped the head.
+   * The output ring's absolute coordinates and the complete-stream files
+   * behind it. `total` is the offset the next chunk starts at (0 while
+   * nothing was written); `earliest` is the oldest retained byte, greater
+   * than zero exactly when retention dropped the head. `spillPaths` lists the
+   * spill files the job's pull sources currently keep, in source order and
+   * deduplicated, and is absent while no source keeps one: it outlives any
+   * chunk, so a reader below `earliest` can still name where the bytes went.
    */
-  readonly output: { readonly total: number; readonly earliest: number }
+  readonly output: { readonly total: number; readonly earliest: number; readonly spillPaths?: readonly string[] }
 }

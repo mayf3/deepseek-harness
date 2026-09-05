@@ -150,7 +150,7 @@ interface JobOutputSource {
   /**
    * Read everything captured since `fromByte` without consuming it.
    * @param fromByte - whole-stream offset to resume from (a prior read's `nextOffset`; 0 first).
-   * @returns the delta text, the next offset, the lossy flag, and the spill path when one exists.
+   * @returns the delta text, the next offset, the lossy flag, and the spill path the source currently keeps.
    */
   read(fromByte: number): JobSourceRead
 }
@@ -165,14 +165,18 @@ interface JobSourceRead {
   nextOffset: number
   /** True when the requested offset slid out of the source's retained window. */
   lossy: boolean
-  /** Path to a file holding the complete stream, when the source keeps one and this read is lossy. */
+  /**
+   * Host path of a file holding the complete stream, when the source
+   * currently keeps an intact one. Reported on every read, so the registry
+   * tracks it as source metadata: a later read without it withdraws the file.
+   */
   spillPath?: string
 }
 ```
 
 ## 输出环
 
-每个 job 拥有一个有界的环。拉取源被泵入其中，`JobHandle.append` 的推送整块落地；模型通过注册表保管的游标（`CallerJobs.read`）消耗该环，任意数量的观察者按绝对字节偏移读取它（`CallerJobs.readAt`），二者互不干扰。`JobChannel` 标记 `stdout`、`stderr` 与 `log`；`log` 是只到达观察者、从不进入模型消耗式读取的生产方叙述。结算即封流并把保留量裁剪到结算上限——环没有独立的生命周期。浏览器通过 [`dsh-api-job-controller`](../../packages/api/job-controller/README.zh.md) 的 Remote 流 `job.rows` 与 `job.observe` 触达名册与环，其帧列于下文的 Cordis API 一节。
+每个 job 拥有一个有界的环。拉取源被泵入其中，`JobHandle.append` 的推送整块落地；模型通过注册表保管的游标（`CallerJobs.read`）消耗该环，任意数量的观察者按绝对字节偏移读取它（`CallerJobs.readAt`），二者互不干扰。`JobChannel` 标记 `stdout`、`stderr` 与 `log`；`log` 是只到达观察者、从不进入模型消耗式读取的生产方叙述。结算即封流并把保留量裁剪到结算上限——环没有独立的生命周期。拉取源保留的 spill 文件是 job 元数据（`JobView.output.spillPaths`，每次泵读取都会刷新），不是 chunk 的来源信息，所以环淘汰了字节之后、甚至缺口 chunk 本身也被淘汰之后，模型的丢失输出提示仍能点名该文件。浏览器通过 [`dsh-api-job-controller`](../../packages/api/job-controller/README.zh.md) 的 Remote 流 `job.rows` 与 `job.observe` 触达名册与环，其帧列于下文的 Cordis API 一节。
 
 ```ts type-equiv
 /** One chunk of a job's output ring: absolute offset, text, and its provenance. */
@@ -185,8 +189,6 @@ interface JobChunk {
   readonly channel?: JobChannel
   /** Bytes immediately before this chunk were lost, at the producer or to retention. */
   readonly gapBefore?: true
-  /** Host path of a file holding the complete stream before the gap, when the producer keeps one; present only with `gapBefore`. */
-  readonly spillPath?: string
 }
 ```
 
@@ -243,11 +245,15 @@ interface JobView {
   /** Epoch ms when the job settled; absent while live. */
   readonly finishedAt?: number
   /**
-   * The output ring's absolute coordinates. `total` is the offset the next
-   * chunk starts at (0 while nothing was written); `earliest` is the oldest
-   * retained byte, greater than zero exactly when retention dropped the head.
+   * The output ring's absolute coordinates and the complete-stream files
+   * behind it. `total` is the offset the next chunk starts at (0 while
+   * nothing was written); `earliest` is the oldest retained byte, greater
+   * than zero exactly when retention dropped the head. `spillPaths` lists the
+   * spill files the job's pull sources currently keep, in source order and
+   * deduplicated, and is absent while no source keeps one: it outlives any
+   * chunk, so a reader below `earliest` can still name where the bytes went.
    */
-  readonly output: { readonly total: number; readonly earliest: number }
+  readonly output: { readonly total: number; readonly earliest: number; readonly spillPaths?: readonly string[] }
 }
 ```
 

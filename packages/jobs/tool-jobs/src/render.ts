@@ -66,20 +66,19 @@ export function statusLine(snapshot: Pick<PublicJobSnapshot, 'status' | 'detail'
  * narration for observers and never reach the model. Lost bytes — the cursor
  * fell behind the ring's retention, or a model-visible chunk carries a
  * producer-side gap — end the read with the shell tools' dropped-output
- * notice, naming the spill files the gap chunks point at.
+ * notice, naming the spill files the job's sources keep.
  * @param chunks - the chunks since the model cursor, in offset order.
  * @param lossy - whether bytes before `chunks` were evicted unread.
+ * @param spillPaths - the complete-stream files the job currently advertises (`JobView.output.spillPaths`).
  * @returns the delta text, possibly empty.
  */
-export function renderModelDelta(chunks: readonly JobChunk[], lossy: boolean): string {
+export function renderModelDelta(chunks: readonly JobChunk[], lossy: boolean, spillPaths: readonly string[]): string {
   const visible = chunks.filter(chunk => chunk.channel !== 'log')
   const out = visible.filter(chunk => chunk.channel !== 'stderr').map(chunk => chunk.text).join('')
   const err = visible.filter(chunk => chunk.channel === 'stderr').map(chunk => chunk.text).join('')
   const separator = out.length > 0 && !out.endsWith('\n') ? '\n' : ''
   const body = out + (err.length > 0 ? `${separator}[stderr]\n${err}` : '')
-  const gaps = visible.filter(chunk => chunk.gapBefore === true)
-  if (!lossy && gaps.length === 0) return body
-  const paths = [...new Set(gaps.flatMap(chunk => chunk.spillPath === undefined ? [] : [chunk.spillPath]))]
-  const notice = `[some output was dropped from memory; full output: ${paths.length > 0 ? paths.join(', ') : '(unavailable)'}]`
+  if (!lossy && !visible.some(chunk => chunk.gapBefore === true)) return body
+  const notice = `[some output was dropped from memory; full output: ${spillPaths.length > 0 ? spillPaths.join(', ') : '(unavailable)'}]`
   return `${body}${body.length > 0 && !body.endsWith('\n') ? '\n' : ''}${notice}`
 }
