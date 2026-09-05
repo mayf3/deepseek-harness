@@ -8,9 +8,8 @@
  */
 
 import { useEffect, useState, type ReactNode } from 'react'
-import clsx from 'clsx'
 import type { PluginPackageView } from '@deepseek-ai/dsh-api-remotes/client'
-import { IconTrashOutline16, Menu, type MenuItem } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Button, IconTrashOutline16, Menu, Switch, Tag, type MenuItem } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 // Type-only: the detail slot's declaration, owned by the roster.
 import type {} from '@deepseek-ai/dsh-client-ui-agent-preset/client'
@@ -48,10 +47,6 @@ function addChoices(packages: readonly PluginPackageView[], preset: PresetGroup,
   return items.length === 0 ? [{ id: 'none', label: t('capabilitiesAddEmpty'), disabled: true }] : items
 }
 
-function Tag({ kind, children }: { readonly kind: string; readonly children: ReactNode }): ReactNode {
-  return <span className={css.tag} data-kind={kind}>{children}</span>
-}
-
 /** One row of the preset's composition, as a card with its switch. */
 function PresetCard({ preset, row, packages, t, busy, onSetDisabled, onRemove }: {
   readonly preset: PresetGroup
@@ -71,8 +66,8 @@ function PresetCard({ preset, row, packages, t, busy, onSetDisabled, onRemove }:
         <div className={css.cardMain}>
           <div className={css.titleRow}>
             <span className={css.cardTitle}>{copy.title}</span>
-            {copy.local ? <Tag kind="local">{t('localTag')}</Tag> : null}
-            {row.fiberPhase === 'failed' ? <Tag kind="problem">{t('rowStateFailed')}</Tag> : null}
+            {copy.local ? <Tag tone="info">{t('localTag')}</Tag> : null}
+            {row.fiberPhase === 'failed' ? <Tag tone="danger">{t('rowStateFailed')}</Tag> : null}
           </div>
           {copy.description === undefined ? null : <span className={css.cardDesc}>{copy.description}</span>}
         </div>
@@ -95,18 +90,13 @@ function PresetCard({ preset, row, packages, t, busy, onSetDisabled, onRemove }:
                     </button>
                   )
                   : null}
-                <button
-                  type="button"
-                  role="switch"
-                  aria-checked={row.enabled !== false}
-                  aria-label={t('rowToggle', { name: copy.title })}
+                <Switch
+                  checked={row.enabled !== false}
+                  label={t('rowToggle', { name: copy.title })}
                   {...lockedOff ? { title: t('rowLockedByComposition') } : {}}
-                  className={clsx(css.switch, row.enabled !== false && css.switchOn)}
                   disabled={busy || preset.broken !== undefined || lockedOff}
-                  onClick={() => { onSetDisabled(id, row.enabled !== false) }}
-                >
-                  <span className={css.thumb} />
-                </button>
+                  onChange={() => { onSetDisabled(id, row.enabled !== false) }}
+                />
               </>
             )}
         </div>
@@ -144,9 +134,9 @@ export function PresetPluginsSection(props: PresetPluginsSectionProps): ReactNod
               align="end"
               portal
               anchor={(
-                <button
-                  type="button"
-                  className={css.addButton}
+                <Button
+                  variant="outline"
+                  size="sm"
                   aria-haspopup="menu"
                   aria-expanded={addMenu}
                   aria-label={t('capabilitiesAddLabel', { name: presetName })}
@@ -154,7 +144,7 @@ export function PresetPluginsSection(props: PresetPluginsSectionProps): ReactNod
                   onClick={() => { setAddMenu(current => !current) }}
                 >
                   {t('capabilitiesAdd')}
-                </button>
+                </Button>
               )}
             />
           )}
@@ -167,7 +157,7 @@ export function PresetPluginsSection(props: PresetPluginsSectionProps): ReactNod
         : (
           <p className={css.notice} data-kind={state.notice.kind} role={state.notice.kind === 'failed' ? 'alert' : 'status'}>
             <span>{noticeText(state.notice, t)}</span>
-            <button type="button" className={css.linkButton} onClick={props.dismissNotice}>{t('dismiss')}</button>
+            <Button variant="ghost" size="sm" onClick={props.dismissNotice}>{t('dismiss')}</Button>
           </p>
         )}
       {!loaded || preset !== undefined ? null : <p className={css.empty}>{t('presetMissing')}</p>}

@@ -109,42 +109,11 @@
   margin: -4px 0 4px;
 }
 
-.switcher {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  max-width: 320px;
-  height: 32px;
-  padding: 0 10px 0 12px;
-  border: 0;
-  border-radius: 16px;
-  corner-shape: round;
-  background: var(--dsw-alias-bg-module-platform);
-  color: var(--dsw-alias-label-primary);
-  font: inherit;
-  font-size: 13px;
-  cursor: pointer;
-}
-
-.switcher:hover {
-  background: var(--dsw-alias-interactive-bg-hover);
-}
-
-.switcher:focus-visible,
-.linkButton:focus-visible,
-.textButton:focus-visible,
-.addButton:focus-visible,
-.switch:focus-visible,
 .iconButton:focus-visible {
   outline: 2px solid var(--dsw-alias-brand-primary);
   outline-offset: 1px;
 }
 
-.switcherLabel {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
 
 .chevron {
   flex: none;
@@ -225,86 +194,11 @@
 }
 
 /* The pill the Agent preset section marks its cards with. */
-.tag {
-  display: inline-flex;
-  align-items: center;
-  border-radius: 999px;
-  corner-shape: round;
-  padding: 1px 8px;
-  background: var(--dsw-alias-bg-layer-1);
-  color: var(--dsw-alias-label-secondary);
-  font-size: 11px;
-  line-height: 17px;
-  font-weight: 500;
-  white-space: nowrap;
-}
-
-.tag[data-kind='builtin'] {
-  background: transparent;
-  border: 0.5px solid var(--dsw-alias-border-l4);
-  color: var(--dsw-alias-label-tertiary);
-}
-
-.tag[data-kind='off'] {
-  color: var(--dsw-alias-label-tertiary);
-}
-
-.tag[data-kind='restart'] {
-  background: color-mix(in srgb, var(--dsw-alias-state-warning-primary, var(--dsw-alias-state-business-primary)) 14%, transparent);
-  color: var(--dsw-alias-state-warning-primary, var(--dsw-alias-state-business-primary));
-}
-
-.tag[data-kind='problem'] {
-  background: color-mix(in srgb, var(--dsw-alias-state-error-primary) 10%, transparent);
-  color: var(--dsw-alias-state-error-primary);
-}
-
-.tag[data-kind='local'] {
-  background: color-mix(in srgb, var(--dsw-alias-state-business-primary) 12%, transparent);
-  color: var(--dsw-alias-state-business-primary);
-}
-
 .cardEnd {
   display: inline-flex;
   flex: none;
   align-items: center;
   gap: 8px;
-}
-
-.switch {
-  box-sizing: border-box;
-  position: relative;
-  flex: 0 0 auto;
-  width: 36px;
-  height: 20px;
-  padding: 2px;
-  border: 0;
-  border-radius: 10px;
-  background: var(--dsw-alias-border-l3);
-  cursor: pointer;
-}
-
-.switchOn {
-  background: var(--dsw-alias-brand-primary);
-}
-
-.switch:disabled {
-  cursor: default;
-  opacity: 0.5;
-}
-
-.thumb {
-  display: block;
-  width: 16px;
-  height: 16px;
-  border-radius: 50%;
-  corner-shape: round;
-  background: var(--dsw-alias-label-primary-foreground);
-  transition: transform 120ms ease;
-}
-
-.switchOn .thumb {
-  transform: translateX(16px);
 }
 
 .iconButton {
@@ -334,31 +228,9 @@
   display: inline-flex;
 }
 
-.textButton {
-  border: 0;
-  border-radius: 8px;
-  padding: 4px 8px;
-  background: transparent;
-  color: var(--dsw-alias-label-tertiary);
-  font: inherit;
-  font-size: 12.5px;
-  line-height: 18px;
-  cursor: pointer;
-}
-
-.textButton:hover:not(:disabled) {
-  background: var(--dsw-alias-interactive-bg-hover);
-  color: var(--dsw-alias-label-primary);
-}
-
-.textButton[data-danger='true']:hover:not(:disabled),
-.actions .textButton[data-danger='true'] {
+/* The destructive text action in a card body. */
+.danger {
   color: var(--dsw-alias-state-error-primary);
-}
-
-.textButton:disabled {
-  opacity: 0.5;
-  cursor: default;
 }
 
 .actions {
@@ -393,36 +265,6 @@
 .deleteButton:focus-visible {
   outline: 2px solid var(--dsw-alias-brand-primary);
   outline-offset: 1px;
-}
-
-.addButton,
-.linkButton {
-  border: 0.5px solid var(--dsw-alias-border-l3);
-  border-radius: 999px;
-  padding: 3px 12px;
-  background: transparent;
-  color: var(--dsw-alias-label-primary);
-  font: inherit;
-  font-size: 12.5px;
-  line-height: 18px;
-  cursor: pointer;
-}
-
-.linkButton {
-  border-radius: 8px;
-  padding: 3px 10px;
-  font-size: 12px;
-}
-
-.addButton:hover:not(:disabled),
-.linkButton:hover:not(:disabled) {
-  background: var(--dsw-alias-interactive-bg-hover);
-}
-
-.addButton:disabled,
-.linkButton:disabled {
-  opacity: 0.5;
-  cursor: default;
 }
 
 .rowNote {
@@ -501,7 +343,284 @@
   color: var(--dsw-alias-label-secondary);
 }
 
-.partsHead .linkButton {
+.partsToggle {
+  margin-left: auto;
+}
+
+.partExceptions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.partException {
+  display: grid;
+  grid-template-columns: 7px minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: 8px;
+  row-gap: 2px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-layer-1);
+  font-size: 12.5px;
+  line-height: 18px;
+}
+
+.partId {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--dsw-font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 12px;
+}
+
+.partWhy {
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.partGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.partFailure {
+  grid-column: 2 / -1;
+  margin: 0;
+  font-size: 12px;
+  color: var(--dsw-alias-state-error-primary);
+  overflow-wrap: anywhere;
+}
+
+.partsAll {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.partsFilter {
+  width: 200px;
+}
+
+.chips {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.cards {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.card {
+  min-width: 0;
+  border: 0.5px solid var(--dsw-alias-border-l4);
+  border-radius: 14px;
+  background: var(--dsw-alias-bg-layer-3);
+}
+
+.card[data-open='true'] {
+  background: var(--dsw-alias-bg-layer-2);
+  border-color: var(--dsw-alias-border-l3);
+  box-shadow: var(--dsw-elevation-panel, none);
+}
+
+.cardHead {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+}
+
+.cardMain {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.titleRow {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 0;
+}
+
+.cardTitle {
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cardDesc {
+  font-size: 12.5px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-tertiary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The pill the Agent preset section marks its cards with. */
+.cardEnd {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+}
+
+.iconButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--dsw-alias-label-tertiary);
+  cursor: pointer;
+}
+
+.iconButton:hover:not(:disabled) {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+.iconButton:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.iconWrap {
+  display: inline-flex;
+}
+
+/* The destructive text action in a card body. */
+.danger {
+  color: var(--dsw-alias-state-error-primary);
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* The delete of a row the person added: red on its own, not only on hover. */
+.deleteButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--dsw-alias-state-error-primary);
+  cursor: pointer;
+}
+
+.deleteButton:hover:not(:disabled) {
+  background: var(--dsw-alias-interactive-bg-hover-danger, var(--dsw-alias-interactive-bg-hover));
+}
+
+.deleteButton:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.deleteButton:focus-visible {
+  outline: 2px solid var(--dsw-alias-brand-primary);
+  outline-offset: 1px;
+}
+
+.rowNote {
+  font-size: 12px;
+  color: var(--dsw-alias-label-tertiary);
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cardBody {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0 14px;
+  padding: 10px 0 12px;
+  border-top: 0.5px solid var(--dsw-alias-border-l2);
+}
+
+.facts {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  column-gap: 14px;
+  row-gap: 4px;
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 18px;
+}
+
+.facts dt {
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.facts dd {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--dsw-alias-label-primary);
+}
+
+.subLabel {
+  margin: 2px 0 0;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.reason {
+  margin: 0;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-state-error-primary);
+  overflow-wrap: anywhere;
+}
+
+.parts {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.partsHead {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.partsHead .subLabel {
+  margin: 0;
+}
+
+.partsCount {
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.partsToggle {
   margin-left: auto;
 }
 
@@ -601,27 +720,9 @@
   color: var(--dsw-alias-label-tertiary);
 }
 
-.statusDot {
-  display: inline-block;
-  width: 7px;
-  height: 7px;
+.phase {
+  display: inline-flex;
   flex: none;
-  border-radius: 999px;
-  corner-shape: round;
-  background: var(--dsw-alias-label-tertiary);
-}
-
-.statusDot[data-phase='active'] {
-  background: var(--dsw-alias-state-success-primary);
-}
-
-.statusDot[data-phase='failed'] {
-  background: var(--dsw-alias-state-error-primary);
-}
-
-.statusDot[data-phase='loading'],
-.statusDot[data-phase='pending'] {
-  background: var(--dsw-alias-state-business-primary);
 }
 
 .installBody {

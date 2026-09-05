@@ -146,7 +146,7 @@ describe('PluginManagerSettingsTab', () => {
     expect(screen.getAllByText(en.statusRestart)).toHaveLength(2)
     expect(screen.getAllByText(en.builtinTag)).toHaveLength(3)
     expect(screen.getByText('A sidebar.')).toBeTruthy()
-    expect(document.querySelectorAll('[data-kind]')).toHaveLength(6)
+    expect(document.querySelectorAll('[data-tone]')).toHaveLength(6)
 
     const sidebar = screen.getByRole('switch', { name: 'Enable better-sidebar' }) as HTMLButtonElement
     expect(sidebar.getAttribute('aria-checked')).toBe('true')

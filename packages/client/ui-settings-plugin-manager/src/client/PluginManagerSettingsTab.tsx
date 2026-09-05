@@ -14,7 +14,8 @@ import { useEffect, useId, useState, type ReactNode } from 'react'
 import clsx from 'clsx'
 import type { PluginInstallRejection, PluginPackageView, PluginRowTarget } from '@deepseek-ai/dsh-api-remotes/client'
 import {
-  Button, IconChevronDownOutline14, IconRefreshOutline16, Menu, Modal, type MenuItem,
+  Button, IconChevronDownOutline14, IconRefreshOutline16, Input, Menu, Modal, StateDot, Switch, Tag,
+  type MenuItem, type StateDotState,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { PluginManagerLocaleKey } from './locales.ts'
@@ -58,13 +59,23 @@ const STATUS_KEYS = {
 } satisfies Record<CardStatus, PluginManagerLocaleKey>
 
 /** Status dot naming a live root-fiber phase. */
+/** Pending and unloading fibers do nothing; only loading is in progress. */
+const PHASE_STATES = {
+  pending: 'idle',
+  loading: 'ongoing',
+  active: 'done',
+  failed: 'error',
+  unloading: 'idle',
+} satisfies Record<RowPhase, StateDotState>
+
+/** One fiber phase as a state dot, named for assistive technology by the phase's copy. */
 function PhaseDot({ phase, t }: { readonly phase: RowPhase; readonly t: Translate }): ReactNode {
   const label = t(PHASE_KEYS[phase])
-  return <span className={css.statusDot} data-phase={phase} role="img" aria-label={label} title={label} />
-}
-
-function Tag({ kind, children }: { readonly kind: string; readonly children: ReactNode }): ReactNode {
-  return <span className={css.tag} data-kind={kind}>{children}</span>
+  return (
+    <span className={css.phase} role="img" aria-label={label} title={label}>
+      <StateDot state={PHASE_STATES[phase]} size={8} />
+    </span>
+  )
 }
 
 /** A component with a recorded startup failure or a failed fiber. */
@@ -122,14 +133,15 @@ function BundleParts({ rows, t }: { readonly rows: readonly RowView[]; readonly 
         {rest.length === 0
           ? null
           : (
-            <button
-              type="button"
-              className={css.linkButton}
+            <Button
+              variant="ghost"
+              size="sm"
+              className={css.partsToggle}
               aria-expanded={open}
               onClick={() => { setOpen(current => !current) }}
             >
               {t(open ? 'partsCollapse' : 'partsShowAll')}
-            </button>
+            </Button>
           )}
       </div>
       {rows.length === 0 ? <p className={css.status}>{t('partsEmpty')}</p> : null}
@@ -139,9 +151,9 @@ function BundleParts({ rows, t }: { readonly rows: readonly RowView[]; readonly 
           <ul className={css.partExceptions}>
             {failed.map(row => (
               <li key={row.entryId} className={css.partException} data-plugin-row={row.entryId}>
-                <span className={css.statusDot} data-phase="failed" aria-hidden="true" />
+                <StateDot state="error" size={8} />
                 <span className={css.partId}>{row.rowId}</span>
-                <Tag kind="problem">{t('rowStateFailed')}</Tag>
+                <Tag tone="danger">{t('rowStateFailed')}</Tag>
                 {row.failure === undefined ? null : <p className={css.partFailure}>{row.failure.message}</p>}
               </li>
             ))}
@@ -158,7 +170,7 @@ function BundleParts({ rows, t }: { readonly rows: readonly RowView[]; readonly 
       {open
         ? (
           <div className={css.partsAll}>
-            <input
+            <Input
               type="search"
               className={css.partsFilter}
               placeholder={t('partsFilter')}
@@ -177,51 +189,6 @@ function BundleParts({ rows, t }: { readonly rows: readonly RowView[]; readonly 
         )
         : null}
     </div>
-  )
-}
-
-function Switch({ checked, label, disabled, title, onChange }: {
-  readonly checked: boolean
-  readonly label: string
-  readonly disabled: boolean
-  readonly title?: string
-  readonly onChange: (checked: boolean) => void
-}): ReactNode {
-  return (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={checked}
-      aria-label={label}
-      title={title}
-      className={clsx(css.switch, checked && css.switchOn)}
-      disabled={disabled}
-      onClick={() => { onChange(!checked) }}
-    >
-      <span className={css.thumb} />
-    </button>
-  )
-}
-
-/** A text action: grey in a card head, red for a destructive one. */
-function TextButton({ label, disabled, danger, onClick, children }: {
-  readonly label: string
-  readonly disabled: boolean
-  readonly danger?: boolean
-  readonly onClick: () => void
-  readonly children: ReactNode
-}): ReactNode {
-  return (
-    <button
-      type="button"
-      className={css.textButton}
-      data-danger={danger === true ? 'true' : undefined}
-      aria-label={label}
-      disabled={disabled}
-      onClick={onClick}
-    >
-      {children}
-    </button>
   )
 }
 
@@ -296,8 +263,8 @@ function PackageCard({
         <div className={css.cardMain}>
           <div className={css.titleRow}>
             <span className={css.cardTitle}>{title}</span>
-            {builtin ? <Tag kind="builtin">{t('builtinTag')}</Tag> : null}
-            {status === null ? null : <Tag kind={status}>{t(STATUS_KEYS[status])}</Tag>}
+            {builtin ? <Tag>{t('builtinTag')}</Tag> : null}
+            {status === null ? null : <Tag tone={status === 'restart' ? 'warning' : 'danger'}>{t(STATUS_KEYS[status])}</Tag>}
           </div>
           {pkg.description === undefined ? null : <span className={css.cardDesc}>{pkg.description}</span>}
         </div>
@@ -329,16 +296,16 @@ function PackageCard({
                 align="end"
                 portal
                 anchor={(
-                  <button
-                    type="button"
-                    className={css.addButton}
+                  <Button
+                    variant="outline"
+                    size="sm"
                     aria-haspopup="menu"
                     aria-expanded={addMenu}
                     disabled={busy}
                     onClick={() => { setAddMenu(current => !current) }}
                   >
                     {t('addTo')}
-                  </button>
+                  </Button>
                 )}
               />
             )}
@@ -368,10 +335,21 @@ function PackageCard({
               ? (
                 <div className={css.actions}>
                   {retryable
-                    ? <TextButton label={t('retryPackage')} disabled={busy} onClick={onRetry}>{t('retryPackage')}</TextButton>
+                    ? <Button variant="ghost" size="sm" disabled={busy} onClick={onRetry}>{t('retryPackage')}</Button>
                     : null}
                   {removable
-                    ? <TextButton label={t('uninstallLabel', { name: title })} disabled={busy} danger onClick={onUninstall}>{t('uninstall')}</TextButton>
+                    ? (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className={css.danger}
+                        aria-label={t('uninstallLabel', { name: title })}
+                        disabled={busy}
+                        onClick={onUninstall}
+                      >
+                        {t('uninstall')}
+                      </Button>
+                    )
                     : null}
                 </div>
               )
@@ -557,7 +535,7 @@ export function PluginManagerSettingsTab(props: PluginManagerSettingsTabProps): 
         : (
           <p className={css.notice} data-kind={state.notice.kind} role={state.notice.kind === 'failed' ? 'alert' : 'status'}>
             <span>{noticeText(state.notice, t)}</span>
-            <button type="button" className={css.linkButton} onClick={props.dismissNotice}>{t('dismiss')}</button>
+            <Button variant="ghost" size="sm" onClick={props.dismissNotice}>{t('dismiss')}</Button>
           </p>
         )}
       {loaded

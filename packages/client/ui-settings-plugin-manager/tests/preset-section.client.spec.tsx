@@ -137,7 +137,7 @@ describe('PresetPluginsSection', () => {
     expect(screen.getByText('A tool')).toBeTruthy()
     expect(screen.getAllByText(en.localTag)).toHaveLength(5)
     expect(screen.getByText(en.rowStateFailed)).toBeTruthy()
-    expect(document.querySelectorAll('[data-preset-row] [data-kind]')).toHaveLength(6)
+    expect(document.querySelectorAll('[data-preset-row] [data-tone]')).toHaveLength(6)
     expect(screen.getByText(en.rowNoId)).toBeTruthy()
     expect(screen.queryByRole('switch', { name: `Enable ${en['name.tool-todo']}` })).toBeNull()
     expect(screen.getByRole('switch', { name: `Enable ${en['name.tool-pwsh']}` }).getAttribute('aria-checked')).toBe('true')
