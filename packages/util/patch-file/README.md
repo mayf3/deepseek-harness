@@ -30,6 +30,9 @@ Read a patch layer with `parsePatchList` (text in hand) or `readPatchListFile` (
 Write through `mutatePatchFile`. The callback receives a `PatchDocument` and edits it by row id, the way the Loader addresses rows:
 
 ```ts
+import { mutatePatchFile } from '@deepseek-ai/dsh-patch-file'
+
+const file = '/home/me/.dsh/profiles/web/cordis.patch.yml'
 await mutatePatchFile(file, (document) => {
   document.setRowField('tool-web', 'disabled', true)      // the id-targeted patch is created when absent
   document.deleteRowField('tool-web', 'config')           // a patch reduced to its id is removed whole

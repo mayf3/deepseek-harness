@@ -933,7 +933,7 @@ export interface Config {
 }
 ```
 
-来源：[`packages/host/plugin-manager/src/index.ts:98`](../packages/host/plugin-manager/src/index.ts)
+来源：[`packages/host/plugin-manager/src/index.ts:99`](../packages/host/plugin-manager/src/index.ts)
 
 <a id="deepseek-aidsh-host-webserver"></a>
 
