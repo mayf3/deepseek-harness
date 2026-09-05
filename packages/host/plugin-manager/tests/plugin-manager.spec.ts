@@ -238,7 +238,7 @@ describe('PluginManager', () => {
     const { manager } = await bootProfile(staged)
     expect(manager.typertRemote).toMatchObject({ serviceKey: 'pluginManager', namespace: 'plugins' })
     expect(remoteMethods(manager).map(marker => marker.method)).toEqual([
-      'list', 'install', 'uninstall', 'enable', 'disable', 'retry', 'addRow', 'removeRow', 'setRowDisabled', 'dependents',
+      'list', 'add', 'uninstall', 'enable', 'disable', 'retry', 'addRow', 'removeRow', 'setRowDisabled', 'dependents',
     ])
   })
 
@@ -442,7 +442,7 @@ describe('PluginManager', () => {
       const calls: string[][] = []
       const { manager } = await bootProfile(staged, { spawn: recordingPnpm(staged.profileDir, calls) })
 
-      const result = await manager.install('ext-lib')
+      const result = await manager.add('ext-lib')
 
       expect(result).toMatchObject({
         installed: [], plain: [], installedOnly: [],
@@ -465,7 +465,7 @@ describe('PluginManager', () => {
       const calls: string[][] = []
       const { manager } = await bootProfile(staged, { spawn: recordingPnpm(staged.profileDir, calls) })
 
-      const result = await manager.install('ext-two', { enable: true })
+      const result = await manager.add('ext-two', { enable: true })
 
       expect(result).toMatchObject({
         installed: [], enabled: [], installedOnly: [],
@@ -484,7 +484,7 @@ describe('PluginManager', () => {
       const calls: string[][] = []
       const { manager } = await bootProfile(staged, { spawn: recordingPnpm(staged.profileDir, calls) })
 
-      const result = await manager.install('ext-odd')
+      const result = await manager.add('ext-odd')
 
       expect(result).toMatchObject({
         installed: [], installedOnly: [],
@@ -499,7 +499,7 @@ describe('PluginManager', () => {
       stagePackage(staged.profileDir, 'ext-broken', { patch: BUNDLE_ONE_ROW, main: 'throw new Error("no import for you")\n' })
       const { manager } = await bootProfile(staged, { spawn: recordingPnpm(staged.profileDir) })
 
-      const result = await manager.install('ext-broken')
+      const result = await manager.add('ext-broken')
 
       expect(result).toMatchObject({ installed: ['ext-broken'], removed: [] })
       expect((await manager.list()).find(view => view.name === 'ext-broken')).toMatchObject({ status: 'not-enableable' })
@@ -514,7 +514,7 @@ describe('PluginManager', () => {
         return { code: 1, stderr: 'ERR_PNPM_FETCH_404\n' }
       }) })
 
-      await expect(manager.install('ext-ghost')).rejects.toMatchObject({ code: 'plugins/install-failed' })
+      await expect(manager.add('ext-ghost')).rejects.toMatchObject({ code: 'plugins/install-failed' })
 
       expect(readFileSync(manifestPath, 'utf8')).toBe(before)
     })
@@ -537,9 +537,9 @@ describe('PluginManager', () => {
       }
       const { manager } = await bootProfile(staged, { spawn })
 
-      const first = manager.install('ext-slow')
+      const first = manager.add('ext-slow')
       await expect(manager.enable('ext-slow')).rejects.toMatchObject({
-        code: 'plugins/busy', details: { operation: 'enable', active: { operation: 'install', subject: 'ext-slow' } },
+        code: 'plugins/busy', details: { operation: 'enable', active: { operation: 'add', subject: 'ext-slow' } },
       })
       release()
       await expect(first).resolves.toMatchObject({ installed: ['ext-slow'] })
@@ -555,7 +555,7 @@ describe('PluginManager', () => {
       const { ctx, manager } = await bootProfile(staged, { spawn: recordingPnpm(staged.profileDir, calls) })
       ctx.provide('agents', { list: () => [{ status: 'running' }, { status: 'idle' }] } as never)
 
-      await expect(manager.install('ext-new')).rejects.toMatchObject({ code: 'plugins/agents-running', details: { operation: 'install', running: 1 } })
+      await expect(manager.add('ext-new')).rejects.toMatchObject({ code: 'plugins/agents-running', details: { operation: 'add', running: 1 } })
       await expect(manager.uninstall('ext-bundle')).rejects.toMatchObject({ code: 'plugins/agents-running', details: { operation: 'uninstall' } })
       expect(calls).toEqual([])
       // Enabling recomposes the tree without touching node_modules.
@@ -568,7 +568,7 @@ describe('PluginManager', () => {
       const calls: string[][] = []
       const { manager, changes, log } = await bootProfile(staged, { spawn: recordingPnpm(staged.profileDir, calls) })
 
-      const result = await manager.install('github:acme/ext-new')
+      const result = await manager.add('github:acme/ext-new')
 
       expect(calls).toEqual([['pnpm', 'add', 'github:acme/ext-new']])
       // The fake pnpm records the spec itself as the dependency name, which
@@ -586,7 +586,7 @@ describe('PluginManager', () => {
       stagePackage(staged.profileDir, 'ext-new', { patch: BUNDLE_ONE_ROW })
       const { ctx, manager, changes } = await bootProfile(staged, { spawn: recordingPnpm(staged.profileDir) })
 
-      const result = await manager.install('ext-new', { enable: true })
+      const result = await manager.add('ext-new', { enable: true })
 
       expect(result).toMatchObject({ installed: ['ext-new'], enabled: ['ext-new'], installedOnly: [], plain: [] })
       expect(manifestOf(staged.profileDir).dsh.profile.bundles).toEqual(['ext-new'])
@@ -601,7 +601,7 @@ describe('PluginManager', () => {
       stagePackage(staged.profileDir, 'ext-lib', { main: 'export function apply() {}\n' })
       const { manager } = await bootProfile(staged, { spawn: recordingPnpm(staged.profileDir) })
 
-      expect(await manager.install('ext-lib')).toMatchObject({ installed: ['ext-lib'], plain: ['ext-lib'], installedOnly: [], removed: [] })
+      expect(await manager.add('ext-lib')).toMatchObject({ installed: ['ext-lib'], plain: ['ext-lib'], installedOnly: [], removed: [] })
       expect((await manager.list()).find(view => view.name === 'ext-lib')?.status).toBe('plain')
       await manager.uninstall('ext-lib')
       expect((await manager.list()).some(view => view.name === 'ext-lib')).toBe(false)
@@ -618,26 +618,26 @@ describe('PluginManager', () => {
         return { code: 0 }
       }) })
 
-      expect(await manager.install('ext-new')).toMatchObject({ installed: ['ext-new'], installedOnly: ['ext-new'] })
+      expect(await manager.add('ext-new')).toMatchObject({ installed: ['ext-new'], installedOnly: ['ext-new'] })
     })
 
     it('fails loud on a non-zero exit, a spawn error, a timeout, and an empty spec', async () => {
       const staged = await stageHome()
       const exits = await bootProfile(staged, { spawn: fakePnpm(staged.profileDir, () => ({ code: 1, stderr: 'ERR_PNPM_NO_MATCHING_VERSION\n' })) })
-      await expect(exits.manager.install('nope')).rejects.toMatchObject({
+      await expect(exits.manager.add('nope')).rejects.toMatchObject({
         code: 'plugins/install-failed', details: { spec: 'nope', exitCode: 1, log: 'ERR_PNPM_NO_MATCHING_VERSION\n' },
       })
       expect(exits.log.at(-1)).toMatchObject({ exitCode: 1 })
-      await expect(exits.manager.install('  ')).rejects.toMatchObject({ code: 'gateway/bad-request' })
+      await expect(exits.manager.add('  ')).rejects.toMatchObject({ code: 'gateway/bad-request' })
 
       const erroringHome = await stageHome()
       const erroring = await bootProfile(erroringHome, { spawn: fakePnpm(erroringHome.profileDir, () => ({ code: null, error: 'spawn pnpm ENOENT' })) })
-      await expect(erroring.manager.install('x')).rejects.toMatchObject({ code: 'plugins/install-failed', details: { exitCode: null } })
+      await expect(erroring.manager.add('x')).rejects.toMatchObject({ code: 'plugins/install-failed', details: { exitCode: null } })
       expect(erroring.log.some(chunk => chunk.text.includes('ENOENT'))).toBe(true)
 
       const hangingHome = await stageHome()
       const hanging = await bootProfile(hangingHome, { spawn: fakePnpm(hangingHome.profileDir, () => ({ code: null, hang: true })) })
-      await expect(hanging.manager.install('x')).rejects.toMatchObject({ code: 'plugins/install-failed' })
+      await expect(hanging.manager.add('x')).rejects.toMatchObject({ code: 'plugins/install-failed' })
       expect(hanging.log.some(chunk => chunk.text.includes('timed out'))).toBe(true)
     })
 
@@ -646,7 +646,7 @@ describe('PluginManager', () => {
       const { manager } = await bootProfile(staged, {
         spawn: fakePnpm(staged.profileDir, () => ({ code: 2, stdout: 'a'.repeat(300), stderr: 'b'.repeat(300) })),
       }, { installLogTailBytes: 256 })
-      await expect(manager.install('x')).rejects.toMatchObject({ details: { log: 'b'.repeat(300) } })
+      await expect(manager.add('x')).rejects.toMatchObject({ details: { log: 'b'.repeat(300) } })
     })
   })
 
