@@ -85,16 +85,18 @@ describe('web e2e: plugin manager', () => {
     await dialog.getByText('示例组合包', { exact: true }).waitFor({ timeout: 20_000 })
     expect(await dialog.getByText('示例插件', { exact: true }).count()).toBe(1)
     // The bundle is installed but not enabled; the plain plugin carries no
-    // switch, only its **Add to…** menu; both third-party packages offer uninstall.
+    // switch, only its **Add to…** menu; uninstall waits in the expanded card.
     const toggle = dialog.getByRole('switch', { name: '启用 示例组合包' })
     expect(await toggle.getAttribute('aria-checked')).toBe('false')
     expect(await dialog.getByRole('switch', { name: '启用 示例插件' }).count()).toBe(0)
     expect(await dialog.getByRole('button', { name: '加入到…' }).count()).toBe(1)
-    expect(await dialog.getByRole('button', { name: '卸载 示例插件' }).count()).toBe(1)
-    // The scaffold profile lists no built-in pack, so nothing is folded; the
-    // default preset's composition renders beside the packages under the
+    expect(await dialog.getByRole('button', { name: '卸载 示例插件' }).count()).toBe(0)
+    await dialog.getByRole('button', { name: '展开 示例插件' }).click()
+    await dialog.getByRole('button', { name: '卸载 示例插件' }).waitFor({ timeout: 5_000 })
+    await dialog.getByRole('button', { name: '收起 示例插件' }).click()
+    await expect.poll(() => dialog.getByRole('button', { name: '卸载 示例插件' }).count(), { timeout: 5_000 }).toBe(0)
+    // The default preset's composition renders beside the packages under the
     // harness dictionary's names.
-    expect(await dialog.locator('[data-builtin-count]').count()).toBe(0)
     expect(await dialog.getByRole('button', { name: '选择要管理的 Agent 预设' }).textContent()).toContain('默认')
     expect(await dialog.getByRole('switch', { name: '启用 终端' }).count()).toBe(1)
 
@@ -135,14 +137,14 @@ describe('web e2e: plugin manager', () => {
     await expect.poll(async () => (await overlay()).includes('@fixture/plain-plugin'), { timeout: 10_000 }).toBe(true)
     expect(await overlay()).toContain('id: fixture/plain-plugin')
     // The preset composition lists the new row under the package's title as
-    // the user's, switched on, with the third-party mark; the **Add to…** menu
+    // the user's, switched on, with the local mark; the **Add to…** menu
     // now marks that preset as joined.
     const presetRow = dialog.locator('[data-preset-row="fixture/plain-plugin"]')
     const rowToggle = presetRow.getByRole('switch', { name: '启用 示例插件' })
     await rowToggle.waitFor({ timeout: 10_000 })
     expect(await rowToggle.getAttribute('aria-checked')).toBe('true')
     expect(await presetRow.getAttribute('data-plugin-source')).toBe('user')
-    expect(await presetRow.getByText('第三方', { exact: true }).count()).toBe(1)
+    expect(await presetRow.getByText('本地', { exact: true }).count()).toBe(1)
     // Escape would close the settings dialog as well, so the menu closes
     // through its own anchor.
     await dialog.getByRole('button', { name: '加入到…' }).click()
@@ -153,7 +155,6 @@ describe('web e2e: plugin manager', () => {
     await rowToggle.click()
     await expect.poll(async () => (await overlay()).includes('disabled: true'), { timeout: 10_000 }).toBe(true)
     await expect.poll(() => rowToggle.getAttribute('aria-checked'), { timeout: 10_000 }).toBe('false')
-    expect(await presetRow.getByText('已停用', { exact: true }).count()).toBe(1)
 
     await presetRow.getByRole('button', { name: '从这个预设移出 示例插件' }).click()
     await expect.poll(async () => (await overlay()).includes('@fixture/plain-plugin'), { timeout: 10_000 }).toBe(false)

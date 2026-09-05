@@ -23,22 +23,18 @@
     - tab "插件配置"
     - tab "插件管理" [selected]
   - tabpanel "插件管理":
-    - paragraph: 插件包整体启停；插件安装后可加入到某个预设。
     - button "刷新"
-    - button "添加插件"
+    - button "添加"
     - heading "已安装" [level=3]
     - text: 2 个
-    - paragraph: 对所有会话生效的插件包，以及可加入预设的插件
     - list:
       - listitem:
-        - text: "示例组合包 插件包 已停用 Web e2e fixture: a bundle whose one row is an inert plugin."
-        - button "卸载 示例组合包": 卸载
+        - text: "示例组合包 Web e2e fixture: a bundle whose one row is an inert plugin."
         - switch "启用 示例组合包"
         - button "展开 示例组合包":
           - img
       - listitem:
-        - text: "示例插件 插件 Web e2e fixture: a plain plugin module with no bundle, added to a composition per row."
-        - button "卸载 示例插件": 卸载
+        - text: "示例插件 Web e2e fixture: a plain plugin module with no bundle, added to a composition per row."
         - button "加入到…"
         - button "展开 示例插件":
           - img
@@ -46,7 +42,7 @@
     - button "选择要管理的 Agent 预设":
       - text: 标准模式（默认）
       - img
-    - paragraph: 这个预设的会话会用到的插件；改动只影响它
+    - paragraph: 这个预设的会话会用到的插件
     - list:
       - listitem:
         - text: 人设 助手的身份与语气
@@ -58,7 +54,7 @@
         - text: 终端 运行 shell 命令
         - switch "启用 终端" [checked]
       - listitem:
-        - text: PowerShell 终端 未启用 在 Windows 上运行 PowerShell
+        - text: PowerShell 终端 在 Windows 上运行 PowerShell
         - switch "启用 PowerShell 终端" [disabled]
       - listitem:
         - text: 文件读写 读取、创建和修改文件
@@ -106,10 +102,10 @@
         - text: 分支子代理 复制当前上下文继续任务
         - switch "启用 分支子代理" [checked]
       - listitem:
-        - text: Codex 子代理 未启用 把任务交给 Codex 执行
+        - text: Codex 子代理 把任务交给 Codex 执行
         - switch "启用 Codex 子代理" [disabled]
       - listitem:
-        - text: Claude Code 子代理 未启用 把任务交给 Claude Code 执行
+        - text: Claude Code 子代理 把任务交给 Claude Code 执行
         - switch "启用 Claude Code 子代理" [disabled]
       - listitem:
         - text: 工作流引擎 在后台线程运行工作流
@@ -129,4 +125,3 @@
       - listitem:
         - text: 网页 搜索和抓取网页
         - switch "启用 网页" [checked]
-    - paragraph: 改动即时保存；已经打开的会话继续用原来的组合，新会话生效。

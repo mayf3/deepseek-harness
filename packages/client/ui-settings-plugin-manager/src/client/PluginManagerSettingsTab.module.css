@@ -1,4 +1,4 @@
-/* Plugin manager tab: toolbar, notices, the package cards, and the preset composition grid. */
+/* Plugin manager tab: toolbar, notices, and the package and preset cards. */
 
 .section {
   display: flex;
@@ -12,23 +12,14 @@
 .toolbar {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.toolbarEnd {
-  display: inline-flex;
-  flex: none;
-  align-items: center;
+  justify-content: flex-end;
   gap: 8px;
 }
 
-.hint,
 .status,
 .failure p,
 .empty,
-.groupSub,
-.presetNote {
+.groupSub {
   margin: 0;
   font-size: 12.5px;
   line-height: 18px;
@@ -118,10 +109,6 @@
   margin: -4px 0 4px;
 }
 
-.presetNote {
-  margin-top: 4px;
-}
-
 .switcher {
   display: inline-flex;
   align-items: center;
@@ -145,7 +132,7 @@
 
 .switcher:focus-visible,
 .linkButton:focus-visible,
-.quietButton:focus-visible,
+.textButton:focus-visible,
 .addButton:focus-visible,
 .switch:focus-visible,
 .iconButton:focus-visible {
@@ -170,7 +157,6 @@
 }
 
 .cards,
-.presetCards,
 .parts {
   margin: 0;
   padding: 0;
@@ -183,21 +169,7 @@
   gap: 10px;
 }
 
-.presetCards {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  align-items: start;
-  gap: 10px;
-}
-
-@media (max-width: 640px) {
-  .presetCards {
-    grid-template-columns: minmax(0, 1fr);
-  }
-}
-
-.card,
-.presetCard {
+.card {
   min-width: 0;
   border: 0.5px solid var(--dsw-alias-border-l4);
   border-radius: 14px;
@@ -210,17 +182,11 @@
   box-shadow: var(--dsw-elevation-panel, none);
 }
 
-.cardHead,
-.presetCard {
+.cardHead {
   display: flex;
   align-items: center;
   gap: 12px;
   padding: 12px 14px;
-}
-
-.cardHead:hover:not(.cardHeadStatic) {
-  background: var(--dsw-alias-interactive-bg-hover);
-  border-radius: 14px;
 }
 
 .cardMain {
@@ -257,32 +223,28 @@
   white-space: nowrap;
 }
 
+/* The pill the Agent preset section marks its cards with. */
 .tag {
   display: inline-flex;
   align-items: center;
-  min-height: 18px;
-  border-radius: 5px;
-  padding: 0 6px;
+  border-radius: 999px;
+  corner-shape: round;
+  padding: 1px 8px;
   background: var(--dsw-alias-bg-layer-1);
   color: var(--dsw-alias-label-secondary);
   font-size: 11px;
-  line-height: 16px;
+  line-height: 17px;
+  font-weight: 500;
   white-space: nowrap;
 }
 
-.tag[data-kind='kind'] {
+.tag[data-kind='builtin'] {
   background: transparent;
-  border: 0.5px solid var(--dsw-alias-border-l3);
+  border: 0.5px solid var(--dsw-alias-border-l4);
   color: var(--dsw-alias-label-tertiary);
 }
 
-.tag[data-kind='running'] {
-  background: color-mix(in srgb, var(--dsw-alias-state-success-primary) 12%, transparent);
-  color: var(--dsw-alias-state-success-primary);
-}
-
-.tag[data-kind='disabled'],
-.tag[data-kind='muted'] {
+.tag[data-kind='off'] {
   color: var(--dsw-alias-label-tertiary);
 }
 
@@ -296,7 +258,7 @@
   color: var(--dsw-alias-state-error-primary);
 }
 
-.tag[data-kind='external'] {
+.tag[data-kind='local'] {
   background: color-mix(in srgb, var(--dsw-alias-state-business-primary) 12%, transparent);
   color: var(--dsw-alias-state-business-primary);
 }
@@ -371,7 +333,7 @@
   display: inline-flex;
 }
 
-.quietButton {
+.textButton {
   border: 0;
   border-radius: 8px;
   padding: 4px 8px;
@@ -383,18 +345,25 @@
   cursor: pointer;
 }
 
-.quietButton:hover:not(:disabled) {
+.textButton:hover:not(:disabled) {
   background: var(--dsw-alias-interactive-bg-hover);
   color: var(--dsw-alias-label-primary);
 }
 
-.quietButton[data-danger='true']:hover:not(:disabled) {
+.textButton[data-danger='true']:hover:not(:disabled),
+.actions .textButton[data-danger='true'] {
   color: var(--dsw-alias-state-error-primary);
 }
 
-.quietButton:disabled {
+.textButton:disabled {
   opacity: 0.5;
   cursor: default;
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .addButton,
@@ -434,22 +403,6 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.builtinNote {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 6px 10px;
-  margin: 4px 2px 0;
-  font-size: 12.5px;
-  line-height: 18px;
-  color: var(--dsw-alias-label-tertiary);
-}
-
-.builtinNote span {
-  flex: 1;
-  min-width: 0;
 }
 
 .cardBody {

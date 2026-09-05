@@ -1,11 +1,13 @@
 /**
  * The Manage plugins tab: the profile's installed packages as cards — a
- * plugin pack with its switch, a plugin with its **Add to…** menu, uninstall
- * beside the switch — with the built-in packs folded away; the selected
- * agent preset's composition as a grid of cards with one switch each; the
- * install dialog streaming pnpm's output behind a fold; and the confirmation
- * a destructive action waits on, naming what still uses the package. Entry
- * ids, module names, and probe facts stay off the page.
+ * plugin pack with its switch, a plugin with its **Add to…** menu, a built-in
+ * pack with a locked switch — each a name, a one-liner, and a tag only when
+ * a restart is pending or something is wrong; the selected agent preset's
+ * composition as the same cards with one switch each; the install dialog
+ * streaming pnpm's output behind a fold; and the confirmation a destructive
+ * action waits on, naming what still uses the package. Entry ids, module
+ * names, kinds, and probe facts stay off the page; an expanded card shows
+ * the version, the source, a pack's components, and its uninstall.
  */
 
 import { useEffect, useId, useState, type ReactNode } from 'react'
@@ -40,22 +42,20 @@ const PHASE_KEYS = {
   unloading: 'rowPhaseUnloading',
 } satisfies Record<RowPhase, PluginManagerLocaleKey>
 
-/** The four states a card shows; a `plain` package shows none. */
-type CardStatus = 'running' | 'disabled' | 'restart' | 'problem'
+/** The two states a card tags; running and off are what the switch shows. */
+type CardStatus = 'restart' | 'problem'
 
 const STATUS_OF = {
-  'running': 'running',
+  'running': null,
   'partial': 'problem',
   'failed': 'problem',
   'not-enableable': 'problem',
-  'disabled': 'disabled',
+  'disabled': null,
   'restart-required': 'restart',
   'plain': null,
 } satisfies Record<PluginPackageView['status'], CardStatus | null>
 
 const STATUS_KEYS = {
-  running: 'statusRunning',
-  disabled: 'statusDisabled',
   restart: 'statusRestart',
   problem: 'statusProblem',
 } satisfies Record<CardStatus, PluginManagerLocaleKey>
@@ -110,22 +110,22 @@ function rowLabel(t: Translate, entryId: string): string {
   return key === undefined ? id : t(key)
 }
 
-/** What one preset row shows: a title, a one-liner, and whether it is third-party. */
+/** What one preset row shows: a title, a one-liner, and whether the person installed it. */
 function presetRowCopy(
   row: PresetRow, packages: readonly PluginPackageView[], t: Translate,
-): { title: string; description?: string; external: boolean } {
+): { title: string; description?: string; local: boolean } {
   const pkg = packageOf(row.moduleName, packages)
   if (pkg !== undefined) {
     const addable = pkg.addable.find(entry => entry.moduleName === row.moduleName)
     return {
       title: addable?.title ?? pkg.title ?? shortName(pkg.name),
       ...pkg.description === undefined ? {} : { description: pkg.description },
-      external: pkg.trust === 'external',
+      local: pkg.trust === 'external',
     }
   }
   const harness = harnessCopy(t, row.moduleName, rowIdOf(row.entryId))
-  if (harness !== undefined) return { ...harness, external: false }
-  return { title: shortName(row.moduleName), description: row.moduleName, external: !row.moduleName.startsWith(FIRST_PARTY_SCOPE) }
+  if (harness !== undefined) return { ...harness, local: false }
+  return { title: shortName(row.moduleName), description: row.moduleName, local: !row.moduleName.startsWith(FIRST_PARTY_SCOPE) }
 }
 
 /** The roster row shown when the switcher has no explicit choice. */
@@ -173,8 +173,8 @@ function Switch({ checked, label, disabled, title, onChange }: {
   )
 }
 
-/** A quiet text action in a card head: grey until hovered. */
-function QuietButton({ label, disabled, danger, onClick, children }: {
+/** A text action: grey in a card head, red for a destructive one. */
+function TextButton({ label, disabled, danger, onClick, children }: {
   readonly label: string
   readonly disabled: boolean
   readonly danger?: boolean
@@ -184,7 +184,7 @@ function QuietButton({ label, disabled, danger, onClick, children }: {
   return (
     <button
       type="button"
-      className={css.quietButton}
+      className={css.textButton}
       data-danger={danger === true ? 'true' : undefined}
       aria-label={label}
       disabled={disabled}
@@ -221,7 +221,7 @@ function addTargets(
   ]
 }
 
-/** One managed package: its head with the switch or the add menu, and its details once expanded. */
+/** One installed package: its head with the switch or the add menu, and its details once expanded. */
 function PackageCard({
   pkg, t, busy, open, presets, globalModules, presetName, onToggleOpen, onSetEnabled, onRetry, onUninstall, onAddRow,
 }: {
@@ -241,8 +241,8 @@ function PackageCard({
   const [addMenu, setAddMenu] = useState(false)
   const title = pkg.title ?? shortName(pkg.name)
   const bundle = pkg.kind === 'bundle'
+  const builtin = pkg.trust === 'builtin'
   const status: CardStatus | null = bundle ? STATUS_OF[pkg.status] : pkg.reason === undefined ? null : 'problem'
-  const kindKey: PluginManagerLocaleKey = bundle ? 'kindBundle' : pkg.kind === 'plugin' ? 'kindPlugin' : 'kindLibrary'
   const detailId = `plugin-package-${encodeURIComponent(pkg.name)}`
   const addable = pkg.addable.filter(entry => entry.ok)
   const [single] = addable
@@ -254,6 +254,7 @@ function PackageCard({
       submenu: addTargets(entry, presets, globalModules, t, presetName),
     }))
   const retryable = bundle && pkg.enabled && (pkg.status === 'failed' || pkg.status === 'partial')
+  const removable = pkg.installed && !builtin
   return (
     <li
       className={css.card}
@@ -265,24 +266,19 @@ function PackageCard({
         <div className={css.cardMain}>
           <div className={css.titleRow}>
             <span className={css.cardTitle}>{title}</span>
-            <Tag kind="kind">{t(kindKey)}</Tag>
+            {builtin ? <Tag kind="builtin">{t('builtinTag')}</Tag> : null}
             {status === null ? null : <Tag kind={status}>{t(STATUS_KEYS[status])}</Tag>}
           </div>
           {pkg.description === undefined ? null : <span className={css.cardDesc}>{pkg.description}</span>}
         </div>
         <div className={css.cardEnd}>
-          {retryable
-            ? <QuietButton label={t('retryPackage')} disabled={busy} onClick={onRetry}>{t('retryPackage')}</QuietButton>
-            : null}
-          {pkg.installed
-            ? <QuietButton label={t('uninstallLabel', { name: title })} disabled={busy} danger onClick={onUninstall}>{t('uninstall')}</QuietButton>
-            : null}
           {bundle
             ? (
               <Switch
                 checked={pkg.enabled}
                 label={t('enableToggle', { name: title })}
-                disabled={busy || (!pkg.enabled && pkg.status === 'not-enableable')}
+                disabled={busy || builtin || (!pkg.enabled && pkg.status === 'not-enableable')}
+                {...builtin ? { title: t('builtinLocked') } : {}}
                 onChange={onSetEnabled}
               />
             )
@@ -335,7 +331,7 @@ function PackageCard({
             <dl className={css.facts}>
               {pkg.version === undefined ? null : <><dt>{t('versionLabel')}</dt><dd>{pkg.version}</dd></>}
               <dt>{t('sourceLabel')}</dt>
-              <dd>{t('sourceExternal')}</dd>
+              <dd>{t(builtin ? 'sourceBuiltin' : 'sourceLocal')}</dd>
             </dl>
             {bundle
               ? (
@@ -351,7 +347,7 @@ function PackageCard({
                             <span className={css.partName}>{row.rowId}</span>
                             {row.enabled
                               ? null
-                              : <Tag kind="disabled">{t(row.disabledBy === 'user' ? 'partDisabledByUser' : 'partDisabledByComposition')}</Tag>}
+                              : <Tag kind="off">{t(row.disabledBy === 'user' ? 'partDisabledByUser' : 'partDisabledByComposition')}</Tag>}
                             {row.failure === undefined ? null : <p className={css.partFailure}>{row.failure.message}</p>}
                           </li>
                         ))}
@@ -360,46 +356,21 @@ function PackageCard({
                 </>
               )
               : null}
+            {retryable || removable
+              ? (
+                <div className={css.actions}>
+                  {retryable
+                    ? <TextButton label={t('retryPackage')} disabled={busy} onClick={onRetry}>{t('retryPackage')}</TextButton>
+                    : null}
+                  {removable
+                    ? <TextButton label={t('uninstallLabel', { name: title })} disabled={busy} danger onClick={onUninstall}>{t('uninstall')}</TextButton>
+                    : null}
+                </div>
+              )
+              : null}
           </div>
         )
         : null}
-    </li>
-  )
-}
-
-/** One built-in package: shown on request, its pack switch locked, never expanded. */
-function BuiltinCard({ pkg, t }: { readonly pkg: PluginPackageView; readonly t: Translate }): ReactNode {
-  const title = pkg.title ?? shortName(pkg.name)
-  const status = pkg.kind === 'bundle' ? STATUS_OF[pkg.status] : null
-  return (
-    <li className={css.card} data-plugin-package={pkg.name} data-plugin-status={pkg.status}>
-      <div className={clsx(css.cardHead, css.cardHeadStatic)}>
-        <div className={css.cardMain}>
-          <div className={css.titleRow}>
-            <span className={css.cardTitle}>{title}</span>
-            <Tag kind="kind">{t(pkg.kind === 'bundle' ? 'kindBuiltinBundle' : pkg.kind === 'plugin' ? 'kindPlugin' : 'kindLibrary')}</Tag>
-            {status === null ? null : <Tag kind={status}>{t(STATUS_KEYS[status])}</Tag>}
-          </div>
-          <span className={css.cardDesc}>{pkg.description ?? pkg.name}</span>
-        </div>
-        {pkg.kind === 'bundle'
-          ? (
-            <div className={css.cardEnd}>
-              <button
-                type="button"
-                role="switch"
-                aria-checked={pkg.enabled}
-                aria-label={t('enableToggle', { name: title })}
-                title={t('builtinLocked')}
-                className={clsx(css.switch, pkg.enabled && css.switchOn)}
-                disabled
-              >
-                <span className={css.thumb} />
-              </button>
-            </div>
-          )
-          : null}
-      </div>
     </li>
   )
 }
@@ -416,45 +387,40 @@ function PresetCard({ preset, row, packages, t, busy, onSetDisabled, onRemove }:
 }): ReactNode {
   const id = rowIdOf(row.entryId)
   const copy = presetRowCopy(row, packages, t)
-  const failed = row.fiberPhase === 'failed'
-  const off = row.enabled === false
-  const lockedOff = off && row.disabledBy === 'composition'
-  const stateTag = failed
-    ? <Tag kind="problem">{t('rowStateFailed')}</Tag>
-    : off
-      ? <Tag kind="disabled">{t(row.disabledBy === 'user' ? 'rowStateDisabledByUser' : 'rowStateDisabledByComposition')}</Tag>
-      : row.enabled === 'conditional' ? <Tag kind="muted">{t('rowStateConditional')}</Tag> : null
+  const lockedOff = row.enabled === false && row.disabledBy === 'composition'
   return (
-    <li className={css.presetCard} data-preset-row={row.entryId ?? undefined} data-plugin-source={row.source}>
-      <div className={css.cardMain}>
-        <div className={css.titleRow}>
-          <span className={css.cardTitle}>{copy.title}</span>
-          {copy.external ? <Tag kind="external">{t('thirdPartyTag')}</Tag> : null}
-          {stateTag}
+    <li className={css.card} data-preset-row={row.entryId ?? undefined} data-plugin-source={row.source}>
+      <div className={css.cardHead}>
+        <div className={css.cardMain}>
+          <div className={css.titleRow}>
+            <span className={css.cardTitle}>{copy.title}</span>
+            {copy.local ? <Tag kind="local">{t('localTag')}</Tag> : null}
+            {row.fiberPhase === 'failed' ? <Tag kind="problem">{t('rowStateFailed')}</Tag> : null}
+          </div>
+          {copy.description === undefined ? null : <span className={css.cardDesc}>{copy.description}</span>}
         </div>
-        {copy.description === undefined ? null : <span className={css.cardDesc}>{copy.description}</span>}
-      </div>
-      <div className={css.cardEnd}>
-        {id === null
-          ? <span className={css.rowNote} title={t('rowNoId')}>{t('rowNoId')}</span>
-          : (
-            <>
-              {row.source === 'user'
-                ? (
-                  <QuietButton label={t('rowRemoveLabel', { name: copy.title })} disabled={busy} danger onClick={() => { onRemove(id) }}>
-                    {t('rowRemove')}
-                  </QuietButton>
-                )
-                : null}
-              <Switch
-                checked={row.enabled !== false}
-                label={t('rowToggle', { name: copy.title })}
-                disabled={busy || preset.broken !== undefined || lockedOff}
-                {...lockedOff ? { title: t('rowLockedByComposition') } : {}}
-                onChange={(checked) => { onSetDisabled(id, !checked) }}
-              />
-            </>
-          )}
+        <div className={css.cardEnd}>
+          {id === null
+            ? <span className={css.rowNote} title={t('rowNoId')}>{t('rowNoId')}</span>
+            : (
+              <>
+                {row.source === 'user'
+                  ? (
+                    <TextButton label={t('rowRemoveLabel', { name: copy.title })} disabled={busy} danger onClick={() => { onRemove(id) }}>
+                      {t('rowRemove')}
+                    </TextButton>
+                  )
+                  : null}
+                <Switch
+                  checked={row.enabled !== false}
+                  label={t('rowToggle', { name: copy.title })}
+                  disabled={busy || preset.broken !== undefined || lockedOff}
+                  {...lockedOff ? { title: t('rowLockedByComposition') } : {}}
+                  onChange={(checked) => { onSetDisabled(id, !checked) }}
+                />
+              </>
+            )}
+        </div>
       </div>
     </li>
   )
@@ -629,25 +595,19 @@ export function PluginManagerSettingsTab(props: PluginManagerSettingsTabProps): 
   const state = props.usePluginManager(snapshot => snapshot)
   const [expanded, setExpanded] = useState<string | null>(null)
   const [switcherOpen, setSwitcherOpen] = useState(false)
-  const [showBuiltin, setShowBuiltin] = useState(false)
   useEffect(() => { ensure() }, [ensure])
 
   const selected = state.presets.find(preset => preset.id === state.selectedPreset) ?? fallbackPreset(state.presets)
-  const managed = state.packages.filter(pkg => pkg.trust !== 'builtin')
-  const builtins = state.packages.filter(pkg => pkg.trust === 'builtin')
   const restartPending = state.packages.filter(pkg => pkg.status === 'restart-required').map(pkg => pkg.title ?? shortName(pkg.name))
   const loaded = state.status === 'ready' || state.status === 'error'
 
   return (
     <div className={css.section} aria-busy={state.status === 'loading'}>
       <div className={css.toolbar}>
-        <p className={css.hint}>{t('hint')}</p>
-        <div className={css.toolbarEnd}>
-          <button type="button" className={css.iconButton} aria-label={t('refresh')} title={t('refresh')} disabled={!loaded} onClick={props.refresh}>
-            <span className={css.iconWrap} aria-hidden="true"><IconRefreshOutline16 /></span>
-          </button>
-          <Button variant="primary" size="sm" disabled={!loaded} onClick={props.openInstall}>{t('addPlugin')}</Button>
-        </div>
+        <button type="button" className={css.iconButton} aria-label={t('refresh')} title={t('refresh')} disabled={!loaded} onClick={props.refresh}>
+          <span className={css.iconWrap} aria-hidden="true"><IconRefreshOutline16 /></span>
+        </button>
+        <Button variant="primary" size="sm" disabled={!loaded} onClick={props.openInstall}>{t('addPlugin')}</Button>
       </div>
       {state.status === 'loading' ? <p className={css.status}>{t('loading')}</p> : null}
       {state.status === 'unavailable' ? <p className={css.status} role="status">{t('unavailable')}</p> : null}
@@ -676,14 +636,13 @@ export function PluginManagerSettingsTab(props: PluginManagerSettingsTabProps): 
             <section className={css.group} data-plugin-scope="global">
               <div className={css.groupTitleRow}>
                 <h3 className={css.groupTitle}>{t('installedTitle')}</h3>
-                <span className={css.count} data-plugin-count={managed.length}>{`${String(managed.length)} ${t('countUnit')}`}</span>
+                <span className={css.count} data-plugin-count={state.packages.length}>{`${String(state.packages.length)} ${t('countUnit')}`}</span>
               </div>
-              <p className={css.groupSub}>{t('installedSubtitle')}</p>
-              {managed.length === 0
+              {state.packages.length === 0
                 ? <p className={css.empty}>{t('empty')}</p>
                 : (
                   <ul className={css.cards}>
-                    {managed.map(pkg => (
+                    {state.packages.map(pkg => (
                       <PackageCard
                         key={pkg.name}
                         pkg={pkg}
@@ -701,21 +660,6 @@ export function PluginManagerSettingsTab(props: PluginManagerSettingsTabProps): 
                       />
                     ))}
                   </ul>
-                )}
-              {builtins.length === 0
-                ? null
-                : (
-                  <>
-                    <p className={css.builtinNote} data-builtin-count={builtins.length}>
-                      <span>{t('builtinHidden', { count: String(builtins.length), names: builtins.map(pkg => pkg.title ?? shortName(pkg.name)).join(', ') })}</span>
-                      <button type="button" className={css.linkButton} aria-expanded={showBuiltin} onClick={() => { setShowBuiltin(current => !current) }}>
-                        {t(showBuiltin ? 'builtinHide' : 'builtinShow')}
-                      </button>
-                    </p>
-                    {showBuiltin
-                      ? <ul className={css.cards} data-plugin-builtins="">{builtins.map(pkg => <BuiltinCard key={pkg.name} pkg={pkg} t={t} />)}</ul>
-                      : null}
-                  </>
                 )}
             </section>
             <section className={css.group} data-plugin-scope="preset" data-preset-id={selected?.id}>
@@ -759,23 +703,20 @@ export function PluginManagerSettingsTab(props: PluginManagerSettingsTabProps): 
                   : selected.rows.length === 0
                     ? <p className={css.empty}>{t('presetRowsEmpty')}</p>
                     : (
-                      <>
-                        <ul className={css.presetCards}>
-                          {selected.rows.map((row, index) => (
-                            <PresetCard
-                              key={`${row.entryId ?? row.moduleName}:${String(index)}`}
-                              preset={selected}
-                              row={row}
-                              packages={state.packages}
-                              t={t}
-                              busy={row.entryId !== null && state.busy.includes(rowKey({ kind: 'preset', preset: selected.id }, rowIdOf(row.entryId) as string))}
-                              onSetDisabled={(rowId, disabled) => { props.setRowDisabled({ kind: 'preset', preset: selected.id }, rowId, disabled) }}
-                              onRemove={(rowId) => { props.removeRow({ kind: 'preset', preset: selected.id }, rowId) }}
-                            />
-                          ))}
-                        </ul>
-                        <p className={css.presetNote}>{t('presetNote')}</p>
-                      </>
+                      <ul className={css.cards}>
+                        {selected.rows.map((row, index) => (
+                          <PresetCard
+                            key={`${row.entryId ?? row.moduleName}:${String(index)}`}
+                            preset={selected}
+                            row={row}
+                            packages={state.packages}
+                            t={t}
+                            busy={row.entryId !== null && state.busy.includes(rowKey({ kind: 'preset', preset: selected.id }, rowIdOf(row.entryId) as string))}
+                            onSetDisabled={(rowId, disabled) => { props.setRowDisabled({ kind: 'preset', preset: selected.id }, rowId, disabled) }}
+                            onRemove={(rowId) => { props.removeRow({ kind: 'preset', preset: selected.id }, rowId) }}
+                          />
+                        ))}
+                      </ul>
                     )}
             </section>
           </>

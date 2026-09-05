@@ -16,7 +16,7 @@ Status: implemented
 
 **管理另开一个标签页。** `ui-settings-plugin-manager` 在配置标签页之后注册**插件管理**标签页。它从 `plugins` Remote 读包、从 `pluginInventory` 读预设组合，在每次操作与每个 `plugins/changed` 之后重新读取，并把 `plugins/install-log` 流进安装对话框。破坏性操作等待一次确认，确认框点名宿主报告的依赖方。安装对话框还会列出宿主在 `pnpm add` 之后又移除掉的包——不是 dsh 包的、行 id 已被别的层占有的组合包——并附宿主的原因；每个操作都会把任何变更都可能遇到的两种拒绝 `plugins/busy` 与 `plugins/agents-running` 按宿主的原话显示出来。
 
-**页面只说两个名词、四种状态。** 不认识 Loader 的人看到的是*插件包*（整体启停、对所有会话生效）与*插件*（经**加入到…**加入某个预设或所有会话），每张卡片只有名字、一句话、四种状态之一——运行中、已停用、需重启、异常——以及开关旁边的卸载。内置插件包折叠成一行。预设里的 harness 模块按标签页自己的字典命名（`name.<行 id 或模块 slug>` / `desc.<…>`），第三方模块按 manifest 的标题与描述命名并带第三方标记。entry id、模块名、cordis 副本、探测时间、覆盖行都不再出现在页面上；只读的**插件列表**标签页连同其包 `ui-settings-plugin-inventory` 一起删除，`pluginInventory` Remote 保留，作为管理器读取预设组合与宿主树模块名的来源。
+**页面只说两个名词，且都不显示出来。** 不认识 Loader 的人看到的是*插件包*（整体启停、对所有会话生效）与*插件*（经**加入到…**加入某个预设或所有会话），每张卡片只有名字、一句话，以及开关或**加入到…**菜单；只有需重启或异常时才打标签，运行中与已停用由开关表达。内置插件包与其他卡片并列，带*内置*标记与锁定的开关；卸载、重试与插件包的组件都在展开区。预设里的 harness 模块按标签页自己的字典命名（`name.<行 id 或模块 slug>` / `desc.<…>`），自己装的模块按 manifest 的标题与描述命名并带*本地*标记。entry id、模块名、cordis 副本、探测时间、覆盖行都不再出现在页面上；只读的**插件列表**标签页连同其包 `ui-settings-plugin-inventory` 一起删除，`pluginInventory` Remote 保留，作为管理器读取预设组合与宿主树模块名的来源。
 
 **安装动词是 `add`。** 客户端的命名空间服务把 `install` 与 `remove` 留给自己的成员，并在页面加载时——所有单测都通过之后——拒绝同名的挂载方法。宿主的方法与 CLI 一样叫 `plugins/add`，`packages/api/remotes/tests/remote-method-names.host.spec.ts` 用网关源码自己保留的名字检查工作区里每一个 `@Remote('<name>')`。
 
