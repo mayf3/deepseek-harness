@@ -16,7 +16,7 @@ import type {
   RequestErrorAction,
 } from '@deepseek-ai/dsh-agent'
 import { Inbox, agentEvents, assembleContextFor } from '@deepseek-ai/dsh-agent'
-import type { GenerateOptions, LlmCallConfig, Message, PreparedLlmCall } from '@deepseek-ai/dsh-llm'
+import type { GenerateOptions, LlmCallConfig, PreparedLlmCall } from '@deepseek-ai/dsh-llm'
 import {
   LlmError,
   createAssistantMessage,
@@ -35,7 +35,6 @@ import type { Context } from '@deepseek-ai/cordis'
 import { RuntimeContextProjection } from './runtime-context.ts'
 import { AssistantStreamAttempt } from './assistant-stream.ts'
 import { SystemPromptProjection } from './runtime-context.ts'
-import type { SystemPromptCommit } from './runtime-context.ts'
 import { executeToolCalls } from './tool-calls.ts'
 
 type Phase =
@@ -57,8 +56,6 @@ type PreparedStep =
     messages: UserMessage[]
     startsRequestSeries?: true
     assembly: PromptAssembly
-    /** The system-prompt surface operation this step commits, when the rendered prompt changed. */
-    systemPrompt?: SystemPromptCommit
   }
 
 /** Remove adapter-derived values before plugins propose the next request config. */
@@ -258,16 +255,7 @@ export class ReactLoopAgent implements Agent {
     )
     signal.throwIfAborted()
     if (decision.kind === 'reject') return decision
-    // Decided after the waterfall: a listener may have compacted the surface or
-    // declared a series start, both of which change where the prompt goes.
-    const systemPrompt = this.systemPrompt.project(renderPrompt(assembly), {
-      inHistory: this.session.requestContext()?.systemPromptUpdate === 'in-history',
-      startsSeries: decision.startsRequestSeries === true
-        || this.requestSurfaceGeneration !== undefined
-        && this.requestSurfaceGeneration !== this.session.surface.replaceGeneration
-        || this.toolsChanged(assembly.tools),
-    })
-    return { ...decision, assembly, ...systemPrompt === undefined ? {} : { systemPrompt } }
+    return { ...decision, assembly }
   }
 
   /** Whether the assembled tool schemas differ from the logged request header's. */
@@ -314,17 +302,9 @@ export class ReactLoopAgent implements Agent {
         this.session.append('step/start', { turn, step })
         phase.step = step
         try {
-          // The system node precedes the step's user messages so log order is wire order.
-          if (decision.systemPrompt !== undefined) {
-            const { message, intent } = decision.systemPrompt
-            this.session.append('system/message', { turn, step, message }, intent)
-          }
-          for (const message of decision.messages) {
-            this.session.append('user/message', message, { surfaceOp: 'append' })
-          }
           // max-tokens is sticky: once any step hits the ceiling, later steps
           // that complete normally must not downgrade the turn outcome.
-          const stepEnd = await this.step(decision.assembly, decision.startsRequestSeries === true)
+          const stepEnd = await this.step(decision)
           // max-tokens stays sticky: a later completed step must not
           // downgrade the turn outcome.
           if (turnEnds === null || turnEnds.kind !== 'max-tokens') turnEnds = stepEnd
@@ -369,24 +349,34 @@ export class ReactLoopAgent implements Agent {
     return true
   }
 
-  private async step(assembly: PromptAssembly, startsRequestSeries: boolean): Promise<StepEndReason | null> {
+  private async step(decision: Extract<PreparedStep, { kind: 'enter' }>): Promise<StepEndReason | null> {
     /* v8 ignore next -- private callers establish the running phase before executing a step */
     if (this.phase.kind !== 'running') throw new Error(`agent "${this.id}": step outside running phase`)
     const { turn, step, abort: { signal } } = this.phase
     signal.throwIfAborted()
 
+    const { assembly } = decision
+    let firstAttempt = true
     while (true) {
-      const surfaceGeneration = this.session.surface.replaceGeneration
-      const { request, preparedCall } = await this.buildRequest(
-        turn,
-        step,
-        assembly.tools,
-        this.session.deriveMessages(),
-        startsRequestSeries,
-        surfaceGeneration,
-        signal,
-      )
-      startsRequestSeries = false
+      const { config, preparedCall } = await this.prepareRequest(turn, step, signal)
+      const startsRequestSeries = firstAttempt && decision.startsRequestSeries === true
+      if (firstAttempt) {
+        const commits = this.systemPrompt.project(renderPrompt(assembly), {
+          inHistory: preparedCall?.systemPromptUpdate === 'in-history',
+          startsSeries: startsRequestSeries
+            || this.requestSurfaceGeneration !== undefined
+            && this.requestSurfaceGeneration !== this.session.surface.replaceGeneration
+            || this.toolsChanged(assembly.tools),
+        })
+        for (const { message, intent } of commits) {
+          this.session.append('system/message', { turn, step, message }, intent)
+        }
+        for (const message of decision.messages) {
+          this.session.append('user/message', message, { surfaceOp: 'append' })
+        }
+      }
+      firstAttempt = false
+      const request = this.buildRequest(config, preparedCall, assembly.tools, startsRequestSeries, signal)
       const live = new AssistantStreamAttempt(
         this.session.id,
         ++this.assistantAttemptCounter,
@@ -507,19 +497,12 @@ export class ReactLoopAgent implements Agent {
     }
   }
 
-  /**
-   * Compose one frozen request and bind it to the adapter registration that
-   * resolved its exact-model defaults.
-   */
-  private async buildRequest(
+  /** Resolve request config and bind its adapter before admitting model-visible input. */
+  private async prepareRequest(
     turn: number,
     step: number,
-    tools: GenerateOptions['tools'] & object,
-    boundaryMessages: Message[],
-    startsRequestSeries: boolean,
-    surfaceGeneration: number,
     signal: AbortSignal,
-  ): Promise<{ request: GenerateOptions; preparedCall?: PreparedLlmCall }> {
+  ): Promise<{ config: LlmCallConfig; preparedCall?: PreparedLlmCall }> {
     const { session } = this
 
     // A loop instance starts from its declared route, restoring only an explicit
@@ -563,7 +546,19 @@ export class ReactLoopAgent implements Agent {
       config = proposedConfig
     }
     signal.throwIfAborted()
+    return { config, ...preparedCall === undefined ? {} : { preparedCall } }
+  }
 
+  /** Log the resolved envelope and derive a frozen request from the admitted surface. */
+  private buildRequest(
+    config: LlmCallConfig,
+    preparedCall: PreparedLlmCall | undefined,
+    tools: GenerateOptions['tools'] & object,
+    startsRequestSeries: boolean,
+    signal: AbortSignal,
+  ): GenerateOptions {
+    const { session } = this
+    const surfaceGeneration = session.surface.replaceGeneration
     const header = canonicalHeader({
       config,
       ...preparedCall === undefined ? {} : { adapterDefaults: preparedCall.adapterDefaults },
@@ -605,11 +600,11 @@ export class ReactLoopAgent implements Agent {
 
     const request = markAgentLoopRequest(deepFreeze({
       ...header.config,
-      messages: boundaryMessages,
+      messages: session.deriveMessages(),
       ...header.tools !== undefined ? { tools: header.tools } : {},
       sessionId: this.session.id,
       signal,
     }))
-    return { request, ...preparedCall === undefined ? {} : { preparedCall } }
+    return request
   }
 }

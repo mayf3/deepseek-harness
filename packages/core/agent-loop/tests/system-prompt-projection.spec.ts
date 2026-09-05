@@ -40,27 +40,27 @@ describe('SystemPromptProjection', () => {
     const session = ctx.sessions.create(SessionId('system-prompt-fresh'))
     const projection = new SystemPromptProjection(session)
 
-    const first = projection.project('v1', REPLACING)
+    const first = projection.project('v1', REPLACING)[0]
     expect(first?.intent).toEqual({ surfaceOp: 'append' })
     expect(first?.message.role).toBe('system')
     expect(first?.message.source).toEqual({ kind: 'plugin', plugin: SOURCE })
     const head = commit(session, 1, first)
     appendUser(session, 'hello')
 
-    expect(projection.project('v1', REPLACING)).toBeUndefined()
-    const second = projection.project('v2', REPLACING)
+    expect(projection.project('v1', REPLACING)[0]).toBeUndefined()
+    const second = projection.project('v2', REPLACING)[0]
     expect(second?.intent).toEqual(replaceOf(head.seq))
     const replaced = commit(session, 2, second)
     expect(session.surface.nodes[0]).toBe(replaced.seq)
-    expect(projection.project('v2', REPLACING)).toBeUndefined()
+    expect(projection.project('v2', REPLACING)[0]).toBeUndefined()
 
     // An emptied prompt keeps the head node with empty content, which projects to no wire message.
-    const emptied = projection.project('', REPLACING)
+    const emptied = projection.project('', REPLACING)[0]
     expect(emptied?.message.content).toEqual([])
     commit(session, 3, emptied)
     expect(session.deriveMessages().map(message => message.role)).toEqual(['user'])
-    expect(projection.project('', REPLACING)).toBeUndefined()
-    expect(projection.project('v3', REPLACING)?.intent).toMatchObject({ surfaceOp: { op: 'replace' } })
+    expect(projection.project('', REPLACING)[0]).toBeUndefined()
+    expect(projection.project('v3', REPLACING)[0]?.intent).toMatchObject({ surfaceOp: { op: 'replace' } })
   })
 
   it('reserves an empty head before user history and replaces it when a prompt appears', async () => {
@@ -68,16 +68,16 @@ describe('SystemPromptProjection', () => {
     try {
       const session = ctx.sessions.create(SessionId('system-prompt-empty-head'))
       const projection = new SystemPromptProjection(session)
-      const first = projection.project('', REPLACING)
+      const first = projection.project('', REPLACING)[0]
       expect(first?.intent).toEqual({ surfaceOp: 'append' })
       expect(first?.message.content).toEqual([])
       const head = session.append('system/message', { turn: 1, step: 1, message: first!.message }, first!.intent)
       const user = appendUser(session, 'hello')
       expect(session.surface.nodes).toEqual([head.seq, user.seq])
       expect(session.deriveMessages().map(message => message.role)).toEqual(['user'])
-      expect(projection.project('', REPLACING)).toBeUndefined()
+      expect(projection.project('', REPLACING)).toEqual([])
 
-      const next = projection.project('Follow this guidance.', REPLACING)
+      const next = projection.project('Follow this guidance.', REPLACING)[0]
       expect(next?.intent).toEqual({
         surfaceOp: { op: 'replace', start: head.seq, end: head.seq },
         sourceEventSeqs: [head.seq],
@@ -98,15 +98,15 @@ describe('SystemPromptProjection', () => {
     const current = session.append('system/message', { turn: 2, step: 1, message: createSystemMessage('current', SOURCE) }, replaceOf(stale.seq))
 
     const projection = new SystemPromptProjection(session)
-    expect(projection.project('current', REPLACING)).toBeUndefined()
-    expect(projection.project('next', REPLACING)?.intent).toEqual(replaceOf(current.seq))
+    expect(projection.project('current', REPLACING)[0]).toBeUndefined()
+    expect(projection.project('next', REPLACING)[0]?.intent).toEqual(replaceOf(current.seq))
 
     const emptySession = ctx.sessions.create(SessionId('system-prompt-empty-replay'))
     const empty = emptySession.append('system/message', { turn: 1, step: 1, message: createSystemMessage('', SOURCE) }, { surfaceOp: 'append' })
     appendUser(emptySession, 'hello')
     const emptyProjection = new SystemPromptProjection(emptySession)
-    expect(emptyProjection.project('', REPLACING)).toBeUndefined()
-    expect(emptyProjection.project('now present', REPLACING)?.intent).toEqual(replaceOf(empty.seq))
+    expect(emptyProjection.project('', REPLACING)[0]).toBeUndefined()
+    expect(emptyProjection.project('now present', REPLACING)[0]?.intent).toEqual(replaceOf(empty.seq))
   })
 
   it('appends again after a replacement shadowed a system node that was not the head', async () => {
@@ -114,37 +114,37 @@ describe('SystemPromptProjection', () => {
     const session = ctx.sessions.create(SessionId('system-prompt-shadowed'))
     const projection = new SystemPromptProjection(session)
     appendUser(session, 'before any prompt')
-    const late = projection.project('late prompt', REPLACING)
+    const late = projection.project('late prompt', REPLACING)[0]
     expect(late?.intent).toEqual({ surfaceOp: 'append' })
     const node = commit(session, 1, late)
     expect(session.surface.nodes.indexOf(node.seq)).toBe(1)
-    expect(projection.project('late prompt', REPLACING)).toBeUndefined()
+    expect(projection.project('late prompt', REPLACING)[0]).toBeUndefined()
 
     session.append('user/message', createUserMessage({
       content: [{ type: 'text', text: 'summary' }],
       source: { kind: 'plugin', plugin: 'test-compaction' },
     }), replaceOf(node.seq))
-    expect(projection.project('late prompt', REPLACING)?.intent).toEqual({ surfaceOp: 'append' })
+    expect(projection.project('late prompt', REPLACING)[0]?.intent).toEqual({ surfaceOp: 'append' })
   })
 
   it('appends a changed prompt after cached history on an in-history route while the series continues', async () => {
     const ctx = await sessionStore()
     const session = ctx.sessions.create(SessionId('system-prompt-in-history'))
     const projection = new SystemPromptProjection(session)
-    const head = commit(session, 1, projection.project('v1', CONTINUING))
+    const head = commit(session, 1, projection.project('v1', CONTINUING)[0])
     appendUser(session, 'hello')
 
-    expect(projection.project('v1', CONTINUING)).toBeUndefined()
-    const update = projection.project('v2', CONTINUING)
+    expect(projection.project('v1', CONTINUING)[0]).toBeUndefined()
+    const update = projection.project('v2', CONTINUING)[0]
     expect(update?.intent).toEqual({ surfaceOp: 'append' })
     const appended = commit(session, 2, update)
     expect(session.surface.nodes).toEqual([head.seq, expect.any(Number), appended.seq])
     expect(session.deriveMessages().map(message => message.role)).toEqual(['system', 'user', 'system'])
-    expect(projection.project('v2', CONTINUING)).toBeUndefined()
+    expect(projection.project('v2', CONTINUING)[0]).toBeUndefined()
 
     // The effective prompt is the latest surviving node: a further change compares against it.
     appendUser(session, 'more')
-    const third = projection.project('v3', CONTINUING)
+    const third = projection.project('v3', CONTINUING)[0]
     expect(third?.intent).toEqual({ surfaceOp: 'append' })
     commit(session, 3, third)
     expect(session.deriveMessages().flatMap(message => message.role === 'system' ? [message.content[0]] : []))
@@ -155,35 +155,35 @@ describe('SystemPromptProjection', () => {
     const ctx = await sessionStore()
     const session = ctx.sessions.create(SessionId('system-prompt-series-start'))
     const projection = new SystemPromptProjection(session)
-    const head = commit(session, 1, projection.project('v1', CONTINUING))
+    const head = commit(session, 1, projection.project('v1', CONTINUING)[0])
     appendUser(session, 'hello')
 
     // A new series already costs the cache, so the change folds into node 0.
-    const rebased = projection.project('v2', NEW_SERIES)
+    const rebased = projection.project('v2', NEW_SERIES)[0]
     expect(rebased?.intent).toEqual(replaceOf(head.seq))
     const newHead = commit(session, 2, rebased)
     expect(session.surface.nodes[0]).toBe(newHead.seq)
 
     // With a mid-history node surviving, node 0 stays and the new prompt appends.
     appendUser(session, 'again')
-    commit(session, 3, projection.project('v3', CONTINUING))
-    expect(projection.project('v4', NEW_SERIES)?.intent).toEqual({ surfaceOp: 'append' })
+    commit(session, 3, projection.project('v3', CONTINUING)[0])
+    expect(projection.project('v4', NEW_SERIES)[0]?.intent).toEqual({ surfaceOp: 'append' })
   })
 
   it('rewrites the surviving node when an in-history route clears the prompt or loses the capability', async () => {
     const ctx = await sessionStore()
     const session = ctx.sessions.create(SessionId('system-prompt-in-history-clear'))
     const projection = new SystemPromptProjection(session)
-    commit(session, 1, projection.project('v1', CONTINUING))
+    commit(session, 1, projection.project('v1', CONTINUING)[0])
     appendUser(session, 'hello')
-    const update = commit(session, 2, projection.project('v2', CONTINUING))
+    const update = commit(session, 2, projection.project('v2', CONTINUING)[0])
 
     // An empty node projects to no wire message, so clearing must rewrite the effective node.
-    const cleared = projection.project('', CONTINUING)
+    const cleared = projection.project('', CONTINUING)[0]
     expect(cleared?.intent).toEqual(replaceOf(update.seq))
     expect(cleared?.message.content).toEqual([])
 
-    // A route without the capability replaces the latest surviving node in place.
-    expect(projection.project('v3', REPLACING)?.intent).toEqual(replaceOf(update.seq))
+    // Incapable routes must not send older instructions through the converter as user text.
+    expect(projection.project('v3', REPLACING).map(commit => commit.message.content)).toEqual([[], [{ type: 'text', text: 'v3' }]])
   })
 })

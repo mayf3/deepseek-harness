@@ -85,12 +85,12 @@ turn/start
   assemble prompt sections + tool schemas; project runtime context
   -> agent/pre-step                   reject | enter(messages, startsRequestSeries?)
      reject, or a first enter rewritten empty -> close the turn with no step
-     project the rendered prompt against the surviving system/message nodes
      step/start
-     append a changed prompt as system/message (replace the latest system node, or append on an in-history route)
-     append entered messages as user/message
-     derive model history from the log
-     agent/request -> llm/stream -> agent/assistant-stream start
+     agent/request -> prepareCall (cancellation commits neither system nor users)
+     reconcile system/message using the prepared call capability
+     append entered messages as user/message; log request/header and request/context as needed
+     derive and freeze model history from the log
+     stream the bound prepared call -> llm/stream -> agent/assistant-stream start
        agent/assistant-stream chunk*
        assistant/message | assistant/attempt -> agent/assistant-stream end
      tool/call* -> tools/pre-execute -> tools/execute -> tools/post-execute -> tool/result*
@@ -104,7 +104,7 @@ turn/end
 
 输入通过同一个 inbox 到达驱动器。有些消息会立即唤醒它；注入的上下文会留在 inbox 中，直到另一条消息将其唤醒。
 
-`agent/pre-step` 决定模型看到什么。监听器可以改写已领取的消息，也可以直接拒绝它们；首次领取被拒绝或被改写为空时，仍会关闭一个不含步骤的持久轮次，因此日志会记录这次尝试。enter 决策还可以设置 `startsRequestSeries` 来开启独立的模型消息序列：loop 会随之记录一个新的 `request/header`（原因为 `series`，或在封装同时变化时为携带 `startsSeries: true` 的 `change`）。重建下游 enter 决策的监听器必须展开它（`{ ...decision, messages }`），该声明才能存活。每个步骤读取插件注册的提示词片段和工具 schema。渲染后的提示词是 surface 上的一个 `system/message` 事件：首个步骤在其用户消息之前把它作为 surface 第 0 号节点追加，即使提示词为空（不产生协议消息），渲染文本不同的后续步骤替换最新存活的系统节点，或者在 `request/context` 声明 `systemPromptUpdate: 'in-history'` 的路由上、同一请求序列延续期间把新文本追加到已缓存历史之后，请求不携带单独的 `system` 字段（[决策](../.agents/notes/implemented/architecture/2026-09-02-system-prompt-as-surface-node.zh.md)；[决策规则](../packages/core/agent-loop/README.zh.md#understand-the-implementation)）。
+`agent/pre-step` 决定接纳的输入。监听器可以改写或拒绝已领取消息；首次领取被拒绝或为空时，关闭不含步骤的持久轮次。enter 决策可设置 `startsRequestSeries`：循环记录新的 `request/header`（原因为 `series`，或在封装同时变化时为携带 `startsSeries: true` 的 `change`）。包装监听器通过 `{ ...decision, messages }` 保留该声明。组装与 `step/start` 之后，`agent/request` 和 `prepareCall()` 先解析实际路由，再提交系统提示词与已接纳用户消息；在任一异步阶段取消都不会提交这两者。提示词准入依据已准备调用的能力，而非先前的 `request/context`。循环同步协调提示词、追加用户消息、按需记录 header/context、派生并冻结请求，再通过绑定调用发起流式请求。首个接纳的步骤在用户消息之前预留系统头节点，即使提示词为空（不产生协议消息）。提示词仅通过 `system/message` 历史传递：具备能力的路由可在缓存前缀之后追加更新；不具备能力的路由将非空提示词文本归并到首个系统节点（[决策](../.agents/notes/implemented/architecture/2026-09-02-system-prompt-as-surface-node.zh.md)；[决策规则](../packages/core/agent-loop/README.zh.md#understand-the-implementation)）。
 
 详情见[时序图](agent-lifecycle.zh.md)、[工具流水线](tool-execution-pipeline.zh.md)和[取消与错误恢复](subsystems/core.zh.md#the-agent-handle)。
 

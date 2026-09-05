@@ -20,23 +20,23 @@ Status: implemented
 
 `dsh-llm` 定义 `SystemPromptUpdate = 'in-history'`，并把它作为可选的并列字段 `systemPromptUpdate` 放在 `LlmResolvedModelInfo` 与 `PreparedLlmCall` 上；`normalizeModelInfo` 用代码为 `INVALID_MODEL_INFO` 的 `LlmError` 拒绝任何其他值。DeepSeek 适配器的目录模型（`DeepSeekCatalogModel.systemPromptUpdate`，加载时由 zod 校验）与回放提供者的 `ReplayModelConfig.systemPromptUpdate` 逐模型声明它；缺省表示该模型需要重写消息 0。没有默认目录条目声明它；部署方通过 `cordis.yml` 的 `models` 列表启用，所有 `dsh-llm-pi-ai` 路由保持替换行为。
 
-循环把该模式记录进会话：`RequestContext.systemPromptUpdate` 与 provider、model、容量并列成为 `request/context` 的字段，其中任一项与最新快照不同时就记录一次。决策读取 `session.requestContext()?.systemPromptUpdate`，因此恢复后的循环实例沿用它上次请求所用路由的模式，路由变更从记录之后的第一个请求起生效。
+循环把该模式记录进会话：`RequestContext.systemPromptUpdate` 与 provider、model、容量并列成为 `request/context` 的字段，其中任一项与最新快照不同时就记录一次。准入读取 `agent/request` 之后实际准备调用的 `PreparedLlmCall.systemPromptUpdate`；先前快照不是准入输入。因此首次请求、恢复的会话、路由变更以及同一路由的能力变更，都使用将服务该调用的绑定适配器的能力。
 
 ### 决策规则
 
-`packages/core/agent-loop/src/runtime-context.ts` 中的 `SystemPromptProjection.project(rendered, { inHistory, startsSeries })` 每次调用都扫描当前 surface 上存活的 `system/message` 节点。没有存活的系统节点时，渲染后的提示词非空即追加；最新系统节点已持有渲染文本时不产生任何事件。其余情况：
+`packages/core/agent-loop/src/runtime-context.ts` 中的 `SystemPromptProjection.project(rendered, { inHistory, startsSeries })` 每次调用都扫描当前 surface 上存活的 `system/message` 节点。它返回有序的逐节点提交。没有存活的系统节点时，追加非空渲染文本。有效文本取自最新的非空系统节点，没有时回退到头节点；未生效的空尾节点既不提供有效文本，也无需再次以空内容替换。不具备能力的路由面对非空渲染文本时，即使有效文本未变也执行归并。除此之外，有效文本相同时不产生事件。具体操作如下：
 
 | 路由能力 | 前缀状态 | 操作 |
 |---|---|---|
-| 无 | 任意 | 替换最新存活的系统节点（没有更后节点时即第 0 号节点） |
-| `in-history` | 当前请求序列延续 | 在该步骤的 `user/message` 事件之前追加新的 `system/message`；不记录 `request/header` |
+| 无 | 非空渲染文本，任意前缀状态 | 为每个非空的后续系统节点记录空内容替换，随后按需用渲染文本重写首个系统节点 |
+| `in-history` | 当前请求序列延续 | 在该步骤的 `user/message` 事件之前追加新的 `system/message`；仅追加本身不需要记录 `request/header` |
 | `in-history` | 新序列开始且第 0 号节点是唯一存活的系统节点 | 用当前提示词替换第 0 号节点 |
 | `in-history` | 新序列开始且有更后的系统节点存活 | 追加新的 `system/message`；第 0 号节点保持原样 |
 | `in-history` | 渲染后的提示词为空 | 用空内容替换最新存活的系统节点，该节点投影为无消息 |
 
-`startsSeries` 在以下情况为真：`agent/pre-step` 决定声明了 `startsRequestSeries`、surface 的替换代数自上次请求以来发生了移动（压缩或任何其他替换）、可见工具 schema 集合发生了变化。仅 provider 或 model 切换对本规则不算序列开始：变更后的提示词被追加，这不花任何代价，因为路由变更本身已经使缓存未命中。第三行存在，是因为序列开始已经付出了缓存代价；把提示词折回第 0 号节点能让历史保持简短。第四行存在，是因为 surface 没有删除操作：在更后的系统节点仍存活时替换第 0 号节点，会让模型把更后、已过时的节点当作权威。历史内模式在任何更后的系统节点存活期间永不重写第 0 号节点。
+`startsSeries` 在以下情况为真：`agent/pre-step` 决定声明了 `startsRequestSeries`、surface 的替换代数自上次请求以来发生了移动（压缩或任何其他替换）、可见工具 schema 集合发生了变化。仅 provider 或 model 切换对本规则不算序列开始：目标路由具备能力时，变更后的提示词被追加，这不花任何代价，因为路由变更本身已经使缓存未命中。第三行存在，是因为序列开始已经付出了缓存代价；把提示词折回第 0 号节点能让历史保持简短。第四行存在，是因为 surface 没有删除操作：在更后的系统节点仍存活时替换第 0 号节点，会让模型把更后、已过时的节点当作权威。历史内模式在任何更后的系统节点存活期间永不重写第 0 号节点。
 
-`packages/core/agent-loop/src/agent.ts` 中的 `preStep` 在 `agent/pre-step` waterfall 之后投影提示词，因此在该 waterfall 内运行的压缩（`auto: true` 的 `compaction-basic`）对决策可见：当它遮蔽了所有更后的系统节点时，第 0 号节点成为唯一存活者，变更后的提示词替换它。恢复属于序列延续——`resume` header 不是序列开始——因此跨重启发生变化的提示词被追加；提供方缓存在进程边界之后可能仍是热的。
+首次尝试在组装、被接纳的 `agent/pre-step` 决策、`step/start`、`agent/request` waterfall 与 `prepareCall()` 之后才接纳提示词。被拒绝或为空的首次输入不打开步骤。两个异步请求阶段都不提交待处理的系统提示词与已接纳用户消息，在任一阶段取消都不会提交这两者。准入随后同步协调提示词、追加已接纳用户批次、按需记录 header/context、派生并冻结请求，再通过同一个已准备调用发起流式请求。`agent/pre-step` 内部的压缩（`auto: true` 的 `compaction-basic`）对协调过程可见：当它遮蔽了所有更后的系统节点时，第 0 号节点成为唯一存活者，变更后的提示词替换它。恢复属于序列延续——`resume` header 不是序列开始——因此跨重启发生变化的提示词被追加；提供方缓存在进程边界之后可能仍是热的。
 
 ### 呈现与记账
 
@@ -62,6 +62,8 @@ Web 在追加的历史内节点自己的位置呈现它。`SystemPromptNode` 携
 
 **在 `agent/pre-step` waterfall 之前投影提示词。** 投影将看不到在该 waterfall 内执行的压缩，刚追加的节点可能在同一步骤内被遮蔽，请求就会把第 0 号节点的过时提示词作为唯一的系统消息携带。在 waterfall 之后投影让规则保持为构建请求所用 surface 的纯函数。被否决。
 
+**用先前的请求上下文决定准入。** 它描述上一次调用，而非请求中间件之后绑定的适配器。在首次调用、恢复之后、路由或能力变更之后，它可能选错提示词表示。在提交提示词与用户消息之前解析，还能防止取消时接纳未发送的内容。被否决。
+
 **把 provider 或 model 切换视为序列开始。** 它会在每次路由变更时把提示词折回第 0 号节点，与 tools 的情形一致。header 已经记录了该变更，缓存无论如何都会未命中，因此这条额外规则除了在循环中多一个特例之外没有任何收益。被否决。
 
 **在明细的系统数字中报告所有存活的系统节点。** 对节点求和能直接显示被保留提示词版本的开销，但遮蔽某个已被取代版本的压缩认领就必须在系统数字与消息数字之间拆分。在追加时把被取代的提示词移入消息数字，让每次认领保持为简单的减法。被否决。
@@ -70,12 +72,13 @@ Web 在追加的历史内节点自己的位置呈现它。`SystemPromptNode` 携
 
 - 具备能力的路由上的提示词变更保住提供方前缀缓存；追加的节点在该序列的每个请求上付出自身的 token 开销，直到压缩遮蔽它。提示词在多数步骤都变化的部署，更适合把那个事实移入运行时上下文。
 - 请求头部不是系统提示词唯一可能的位置：「模型看到了什么」的读者折叠 surface 并取最新的系统节点，明细的系统数字遵循同一规则。
-- `request/context` 快照随声明的模式与路由一起变化，循环的决策取决于最新一条。
+- `request/context` 快照记录已准备的路由与声明模式；它描述准入结果，而不决定准入。不具备能力的路由逐系统节点记录归并，保留其间的用户、assistant 与工具历史。
 - 模型约定按所提供的内容记录。若发布的模型收窄了约定——例如只在有界窗口内兑现最新的系统消息——规则需要序列开始之外的重新基线化触发条件。
 - 重写或重排系统消息的代理会静默破坏替换语义；真实 API e2e 的缓存命中断言是探测器。
 
 ## Testing
 
+- `packages/core/agent-loop/tests/system-prompt-admission.spec.ts` 覆盖七种情形：文本变化或未变时从具备能力切换到不具备能力的路由、反向路由切换、恢复时的路由准入、请求中间件或准备阶段取消，以及已准备路由保持绑定时并发选择发生变化。循环测试集覆盖 389 个用例；`src/agent.ts` 与 `src/runtime-context.ts` 的聚焦覆盖率在语句、分支、函数和行四项均达到 100%。
 - `packages/core/agent-loop/tests/system-prompt-projection.spec.ts` 钉住序列延续时的追加、序列开始处对孤立第 0 号节点的重新基线化、序列开始处在有更后存活节点时的追加、空提示词的重写，以及不具备能力时只做替换的行为。
 - `packages/core/agent-loop/tests/request-reconstruction.spec.ts` 钉住继承 header 下追加的节点及携带 `systemPromptUpdate` 的 `request/context`、序列开始时折回第 0 号节点、由压缩驱动的重新基线化，以及在开启序列的 `change` header 下由工具 schema 变更驱动的重新基线化。
 - `packages/llm/llm/tests/service.spec.ts`、`packages/llm/llm-deepseek/tests/adapter.spec.ts` 与 `packages/test-support/llm-replay/tests/llm-replay.spec.ts` 钉住已解析模型信息上声明的模式，以及加载时对任何其他值的拒绝。

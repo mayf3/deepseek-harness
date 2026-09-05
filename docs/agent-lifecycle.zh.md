@@ -30,14 +30,19 @@ sequenceDiagram
   Driver->>Prompt: <code>system-prompt/assemble</code> waterfall
   Driver->>Hooks: <code>agent/pre-step</code> waterfall
   Hooks-->>Driver: authoritative reject or enter(messages)
-  alt proposed step rejected or pre-step failed
+  alt proposed step rejected, first batch empty, or pre-step failed
     Driver-->>Driver: claimed batch stays removed, the open turn spends no step
   else enter proposed step
-  Note over Driver,Prompt: project the rendered prompt against the surviving system/message nodes
   Driver->>Session: <code>step/start</code>
-  Driver->>Session: <code>system/message</code> when the rendered prompt changed: replace the latest system node, or append on an in-history route
+  Driver->>Hooks: <code>agent/request</code> waterfall
+  Driver->>LLM: prepareCall(config, signal)
+  Note over Driver,LLM: cancellation during either async phase commits neither system nor users
+  Note over Driver,Session: synchronous admission using the prepared call capability
+  Driver->>Session: <code>system/message</code> ordered per-node reconciliation
   Driver->>Session: <code>user/message</code> per entered message
-  Driver->>LLM: <code>agent/request</code> waterfall, then <code>llm/stream</code> waterfall
+  Driver->>Session: <code>request/header</code> and <code>request/context</code> as needed
+  Driver->>Driver: derive and freeze request from the log
+  Driver->>LLM: bound prepared call through <code>llm/stream</code> waterfall
   LLM-->>Driver: StreamChunk*
   Driver-->>SDK: <code>agent/assistant-stream</code> chunk*
   alt final adapter or terminal in-band request failure

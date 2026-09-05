@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-`dsh-system-prompt` 组装模型在每个步骤之前收到的系统提示词与工具 schema。插件贡献有序提示词段、动态 runtime 上下文、工具 schema 提供方与具名变量；循环每个步骤调用一次 `assemble()`，把结果渲染为完整模型提示词，并把该文本作为由其 `SystemPromptProjection` 拥有的 `system/message` surface 节点提交——首个步骤作为 surface 第 0 号节点追加，之后在渲染文本变化时原地替换，或者在 `request/context` 声明 `systemPromptUpdate: 'in-history'` 的路由上追加到已缓存历史之后（[决策](../../../.agents/notes/implemented/architecture/2026-09-02-system-prompt-as-surface-node.zh.md)；[决策规则](../agent-loop/README.zh.md#understand-the-implementation)）。该包提供固定 harness 身份与全局部署 persona，而 agent 作用域的贡献会为单个 agent 遮蔽全局默认值。配置控制 harness 身份开场白、动态 runtime 上下文、部署 persona 与显式的面向模型工具顺序。需要添加提示词段、提示词变量或工具 schema 来源时请选择本包——它是所有面向模型文案流经的组装点。
+`dsh-system-prompt` 组装模型在每个步骤之前收到的系统提示词与工具 schema。插件贡献有序提示词段、动态 runtime 上下文、工具 schema 提供方与具名变量；循环每个步骤调用一次 `assemble()`，把结果渲染为完整模型提示词，并把该文本作为由其 `SystemPromptProjection` 拥有的 `system/message` surface 节点提交——首个步骤作为 surface 第 0 号节点追加，之后在渲染文本变化时原地替换，或者当已准备调用声明 `systemPromptUpdate: 'in-history'` 时追加到已缓存历史之后（[决策](../../../.agents/notes/implemented/architecture/2026-09-02-system-prompt-as-surface-node.zh.md)；[决策规则](../agent-loop/README.zh.md#understand-the-implementation)）。该包提供固定 harness 身份与全局部署 persona，而 agent 作用域的贡献会为单个 agent 遮蔽全局默认值。配置控制 harness 身份开场白、动态 runtime 上下文、部署 persona 与显式的面向模型工具顺序。需要添加提示词段、提示词变量或工具 schema 来源时请选择本包——它是所有面向模型文案流经的组装点。
 
 ## 目录
 
@@ -144,7 +144,7 @@ You are an AI agent powered by DeepSeek Harness.
 
 #### KV Cache 影响
 
-只要身份、persona、变量、段文本与顺序的渲染完全相同，前缀就保持稳定：渲染未变时系统节点保持不动。在没有 `systemPromptUpdate` 的路由上，任何变更都会用新的 `system/message` 替换最新的系统节点，因此请求从第一个 token 起就不同，整个前缀的复用都会丢失；在 `request/context` 声明 `systemPromptUpdate: 'in-history'` 的路由上，agent loop（智能体循环）会在同一请求序列延续期间把变化后的提示词追加到已缓存历史之后，因此直到该历史末尾的前缀仍可复用（[决策规则](../agent-loop/README.zh.md#understand-the-implementation)）。
+只要身份、persona、变量、段文本与顺序的渲染完全相同，前缀就保持稳定：渲染未变时系统节点保持不动，除非不具备能力的路由必须归并保留的历史内提示词。没有 `systemPromptUpdate` 时，非空提示词文本通过有日志记录的逐节点替换归并到首个系统节点，因此头节点重写会从首个变化的 token 起失去前缀复用；当已准备调用声明 `systemPromptUpdate: 'in-history'` 时，agent loop（智能体循环）会在同一请求序列延续期间把变化后的提示词追加到已缓存历史之后，因此直到该历史末尾的前缀仍可复用（[决策规则](../agent-loop/README.zh.md#understand-the-implementation)）。
 
 ### 工具 schema
 

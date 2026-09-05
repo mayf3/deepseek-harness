@@ -298,13 +298,12 @@ export interface SessionEventMap {
   /**
    * The rendered system prompt on the model-visible surface. The loop appends
    * the first one as surface node 0 before the step's first `user/message`.
-   * When the rendered prompt changes it replaces the latest system node
-   * (`surfaceOp: { op: 'replace' }` over exactly that node) or, on a route
-   * whose `request/context` declares `systemPromptUpdate: 'in-history'` and
-   * inside a continuing request series, appends the changed prompt after the
-   * cached history, so the latest system node is the effective prompt and
-   * every request stays derived history. Empty `message.content` records "no
-   * system prompt" and projects to no message.
+   * A prepared in-history route can append changed text after cached history.
+   * An incapable route normalizes nonempty prompts to the first system node
+   * and replaces later nonempty nodes with empty content, each through a logged
+   * per-node replacement. Empty later nodes are dormant and project to no
+   * message; the latest nonempty system node supplies the effective prompt.
+   * Empty head content records "no system prompt" when no later prompt is active.
    */
   'system/message': { turn: number; step: number; message: SystemMessage }
   /**
@@ -369,8 +368,8 @@ export interface SessionEventMap {
   /**
    * Route metadata for the next request, logged only when the route, capacity,
    * or system prompt update mode changes. It does not participate in request
-   * reconstruction or header equality; the loop reads the latest snapshot's
-   * `systemPromptUpdate` when it decides how to commit a changed system prompt.
+   * reconstruction or header equality. Prompt admission uses the bound prepared
+   * call's capability, not this snapshot from an earlier request.
    */
   'request/context': RequestContext
   /**

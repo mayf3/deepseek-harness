@@ -81,12 +81,12 @@ turn/start
   assemble prompt sections + tool schemas; project runtime context
   -> agent/pre-step                   reject | enter(messages, startsRequestSeries?)
      reject, or a first enter rewritten empty -> close the turn with no step
-     project the rendered prompt against the surviving system/message nodes
      step/start
-     append a changed prompt as system/message (replace the latest system node, or append on an in-history route)
-     append entered messages as user/message
-     derive model history from the log
-     agent/request -> llm/stream -> agent/assistant-stream start
+     agent/request -> prepareCall (cancellation commits neither system nor users)
+     reconcile system/message using the prepared call capability
+     append entered messages as user/message; log request/header and request/context as needed
+     derive and freeze model history from the log
+     stream the bound prepared call -> llm/stream -> agent/assistant-stream start
        agent/assistant-stream chunk*
        assistant/message | assistant/attempt -> agent/assistant-stream end
      tool/call* -> tools/pre-execute -> tools/execute -> tools/post-execute -> tool/result*
@@ -100,7 +100,7 @@ turn/end
 
 Input reaches the driver through one inbox. Some messages wake it immediately; injected context waits in the inbox until another message does.
 
-`agent/pre-step` decides what the model sees. Listeners may rewrite the claimed messages or reject them outright; a rejected or empty first claim still closes a durable turn that spent no step, so the log records the attempt. An enter decision may also set `startsRequestSeries` to begin a distinct model-message series: the loop then logs a fresh `request/header` (reason `series`, or `change` carrying `startsSeries: true` when the envelope changed too). A listener that rebuilds a downstream enter decision must spread it (`{ ...decision, messages }`) so the declaration survives. Each step reads the prompt sections and tool schemas that plugins registered. The rendered prompt is a `system/message` event on the surface: the first step appends it as surface node 0 before its user messages even when empty (no wire message), a later step whose rendered text differs replaces the latest surviving system node or, on a route whose `request/context` declares `systemPromptUpdate: 'in-history'` inside a continuing request series, appends the new text after the cached history, and the request carries no separate `system` field ([decision](../.agents/notes/implemented/architecture/2026-09-02-system-prompt-as-surface-node.md); [decision rule](../packages/core/agent-loop/README.md#understand-the-implementation)).
+`agent/pre-step` decides the accepted input. Listeners may rewrite or reject claimed messages; a rejected or empty first claim closes a durable turn without a step. An enter decision may set `startsRequestSeries`: the loop logs a fresh `request/header` (reason `series`, or `change` with `startsSeries: true` when the envelope also changed). Wrapping listeners preserve that declaration with `{ ...decision, messages }`. After assembly and `step/start`, `agent/request` and `prepareCall()` resolve the actual route before the system prompt and accepted users are committed; cancellation during either async phase commits neither. The prepared call capability governs prompt admission, not the preceding `request/context`. The loop synchronously reconciles the prompt, appends users, logs header/context as needed, and derives and freezes the request before streaming the bound call. The first admitted step reserves the system head before user messages even for an empty prompt (no wire message). The prompt travels only as `system/message` history: capable routes can append updates after the cached prefix; incapable routes consolidate non-empty prompt text at the first system node ([decision](../.agents/notes/implemented/architecture/2026-09-02-system-prompt-as-surface-node.md); [decision rule](../packages/core/agent-loop/README.md#understand-the-implementation)).
 
 Details: the [sequence diagram](agent-lifecycle.md), the [tool pipeline](tool-execution-pipeline.md), and [cancellation and error recovery](subsystems/core.md#the-agent-handle).
 

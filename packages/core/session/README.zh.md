@@ -47,7 +47,7 @@ session.append('user/message', { role: 'user', content: [{ type: 'text', text: '
 session.deriveMessages()         // the derived model history
 ```
 
-表层事件（`system/message`、`user/message`、`assistant/message`、`tool/result`）必须声明如何进入有序 surface。Assistant message 会嵌入产生它的精确紧凑 provider stream；`assistant/attempt`、边界与其他仅日志事件从不产生消息。`system/message` 承载渲染后的系统提示词：第一条是 surface 第 0 号节点，变化后的提示词原地替换最新的系统节点，或者在 `request/context` 声明 `systemPromptUpdate: 'in-history'` 的路由上、同一请求序列延续期间追加到已缓存历史之后，使最新的系统节点成为有效提示词；当第 0 号节点是 `system/message` 时，surface 折叠拒绝覆盖它的替换，除非替换事件本身是恰好覆盖该节点的 `system/message`，而后续系统节点不受保护，压缩范围可以遮蔽它们（[决策](../../../.agents/notes/implemented/architecture/2026-09-02-system-prompt-as-surface-node.zh.md)）。
+表层事件（`system/message`、`user/message`、`assistant/message`、`tool/result`）必须声明如何进入有序 surface。Assistant message 会嵌入产生它的精确紧凑 provider stream；`assistant/attempt`、边界与其他仅日志事件从不产生消息。`system/message` 承载渲染后的系统提示词：第一条是 surface 第 0 号节点，准入依据已准备调用的能力，不具备能力的路由将非空渲染文本归并到首个系统节点，延续中的 `in-history` 序列则在缓存历史之后追加；空系统节点不投影为消息；当第 0 号节点是 `system/message` 时，surface 折叠拒绝覆盖它的替换，除非替换事件本身是恰好覆盖该节点的 `system/message`，而后续系统节点不受保护，压缩范围可以遮蔽它们（[决策](../../../.agents/notes/implemented/architecture/2026-09-02-system-prompt-as-surface-node.zh.md)）。
 
 ### 读取日志
 
@@ -105,7 +105,7 @@ session.deriveMessages()         // the derived model history
 
 ### 请求头
 
-循环在每个循环实例边界及变更时记录完整规范 `request/header` 快照（调用配置、适配器默认值、组装后的工具 schema——渲染后的系统提示词是 `system/message` surface 节点，不是 header 状态）；`foldRequestHeader(events)` 通过选择最新快照来重建它，使每个对话请求都成为日志的纯函数。路由元数据（`request/context`）是独立的已记录状态，仅在提供方、模型、容量或 `systemPromptUpdate` 模式变化时追加；循环在决定如何提交变化后的系统提示词时读取最新快照的模式。
+循环在每个循环实例边界及变更时记录完整规范 `request/header` 快照（调用配置、适配器默认值、组装后的工具 schema——渲染后的系统提示词是 `system/message` surface 节点，不是 header 状态）；`foldRequestHeader(events)` 通过选择最新快照来重建它，使每个对话请求都成为日志的纯函数。路由元数据（`request/context`）是独立的已记录状态，仅在提供方、模型、容量或 `systemPromptUpdate` 模式变化时追加；它在提示词与用户消息准入之后记录实际已准备调用的模式，而非提供准入决策。
 
 </details>
 
