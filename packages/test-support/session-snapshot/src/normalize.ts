@@ -384,19 +384,6 @@ export function normalizeSessionLog(
     if (Object.hasOwn(record, 'sourceEventSeqs')) {
       record.sourceEventSeqs = decodeSeqRanges(record.sourceEventSeqs)
     }
-    // The system prompt is a surface `system/message` node in the current
-    // vocabulary; retired generations also carry the removed `system` header
-    // member. Drop it so both sides of a comparison normalize identically.
-    if (record.type === 'request/header' && record.data !== null && typeof record.data === 'object') {
-      const data = record.data as Record<string, unknown>
-      const header = data.header
-      if (header !== null && typeof header === 'object' && !Array.isArray(header)
-        && 'system' in (header as Record<string, unknown>)) {
-        const copy = { ...header as Record<string, unknown> }
-        delete copy['system']
-        data.header = copy
-      }
-    }
     return scrubValue(record, ctx, cwdPathMode, identityMode) as Record<string, unknown>
   })
   return records.map(r => JSON.stringify(r)).join('\n') + '\n'

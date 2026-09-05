@@ -265,6 +265,18 @@ describe('normalizeSessionLog', () => {
   const header = (over: object) => JSON.stringify({ type: 'session', version: 0, id: 's', createdAt: 123, ...over })
   const event = (over: object) => JSON.stringify({ type: 'turn/start', seq: 1, time: 999, data: { turn: 1 }, ...over })
 
+  it('keeps unexpected request-header fields observable in comparisons', () => {
+    const request = (system: boolean) => event({
+      type: 'request/header',
+      data: { header: { config: { model: 'mock' }, ...(system ? { system: 'unexpected prompt' } : {}) } },
+    })
+    for (const normalize of [normalizeSessionLog, normalizeSessionSnapshot]) {
+      const actual = normalize(`${header({})}\n${request(true)}\n`, ctx)
+      expect(actual).toContain('"system":"unexpected prompt"')
+      expect(actual).not.toEqual(normalize(`${header({})}\n${request(false)}\n`, ctx))
+    }
+  })
+
   it('zeroes the header createdAt', () => {
     const out = normalizeSessionLog(`${header({})}\n`, ctx)
     expect(out).toContain('"createdAt":0')
@@ -789,6 +801,14 @@ describe('normalizeSessionSnapshot', () => {
       },
     })
     expect(opaqueEvent?.data).toEqual({ capturedFormatVersion: 5, sessionFormatVersion: 4 })
+  })
+
+  it('preserves an unexpected session-reference payload instead of omitting its fields', () => {
+    const raw = JSON.stringify({
+      type: 'user/message',
+      data: { source: { kind: 'session-reference', form: 'recall', version: 1, references: {} } },
+    })
+    expect(normalizeSessionFormatProvenance(raw)).toBe(raw)
   })
 
   it('keeps session-reference lookalikes outside Message source positions unchanged', () => {

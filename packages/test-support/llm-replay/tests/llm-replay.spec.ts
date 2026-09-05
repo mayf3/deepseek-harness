@@ -693,6 +693,22 @@ describe('parseSessionLog', () => {
 })
 
 describe('prepareSessionSnapshotFixtureForComparison', () => {
+  it('keeps unexpected request-header fields observable after current-format restoration', () => {
+    const source = projectSessionJsonl(replaySessionJsonl([TEXT_CHUNKS]))
+    const lines = source.trimEnd().split('\n')
+    const request = {
+      type: 'request/header',
+      data: { reason: 'initial', header: { config: { provider: 'mock', model: 'mock' }, system: 'unexpected prompt' } },
+    }
+    lines.splice(3, 0, JSON.stringify(request))
+    const prepared = prepareSessionSnapshotFixtureForComparison(`${lines.join('\n')}\n`)
+    const restored = prepared.trimEnd().split('\n').map(line => JSON.parse(line))
+    expect(restored.find(record => record.type === 'request/header')).toMatchObject(request)
+    delete (request.data.header as Record<string, unknown>).system
+    lines[3] = JSON.stringify(request)
+    expect(prepared).not.toEqual(prepareSessionSnapshotFixtureForComparison(`${lines.join('\n')}\n`))
+  })
+
   it('encodes a migrated fixture without inventing a trailing newline and retains its cwd token', () => {
     const projected = projectSessionJsonl(replaySessionJsonl([TEXT_CHUNKS])).trimEnd()
     const [headerLine, ...bodyLines] = projected.split('\n')
