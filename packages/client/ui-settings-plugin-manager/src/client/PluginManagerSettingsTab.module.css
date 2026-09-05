@@ -534,7 +534,14 @@
 
 .partWhy {
   font-size: 12px;
+  line-height: 18px;
   color: var(--dsw-alias-label-tertiary);
+}
+
+.partGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
 }
 
 .partFailure {
@@ -586,6 +593,12 @@
   color: var(--dsw-alias-label-secondary);
   font-family: var(--dsw-font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
   font-size: 11.5px;
+}
+
+.chip[data-state='off'] {
+  border: 0.5px dashed var(--dsw-alias-border-l4);
+  background: transparent;
+  color: var(--dsw-alias-label-tertiary);
 }
 
 .statusDot {

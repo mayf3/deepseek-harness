@@ -204,12 +204,14 @@ describe('PluginManagerSettingsTab', () => {
     expect(screen.getByText(`${en.reasonLabel}: one row failed`)).toBeTruthy()
     expect(screen.getByText('0.16.0')).toBeTruthy()
     expect(screen.getByText(en.sourceLocal)).toBeTruthy()
-    // The count line, then only the components that are off or failing, each
-    // with why; the running ones wait behind Show all.
+    // The count line; the failing components one line each; the off ones as
+    // chips under why they are off; the running ones wait behind Show all.
     expect(screen.getByText('6 total · 1 running · 2 off · 2 failed')).toBeTruthy()
     expect(document.querySelector('[data-plugin-row="include:better-sidebar"]')).toBeNull()
-    expect(document.querySelector('[data-plugin-row="include:off"]')?.textContent).toContain(en.partDisabledByUser)
-    expect(document.querySelector('[data-plugin-row="include:gated"]')?.textContent).toContain(en.partDisabledByComposition)
+    expect(screen.getByText(`${en.partDisabledByUser} (1)`)).toBeTruthy()
+    expect(screen.getByText(`${en.partDisabledByComposition} (1)`)).toBeTruthy()
+    expect(document.querySelector('[data-plugin-row="include:off"]')?.getAttribute('data-state')).toBe('off')
+    expect(document.querySelector('[data-plugin-row="include:gated"]')?.textContent).toBe('gated')
     expect(document.querySelector('[data-plugin-row="include:crash"]')?.textContent).toContain(en.rowStateFailed)
     expect(document.querySelector('[data-plugin-row="include:flaky"]')?.textContent).toBe(`flaky${en.rowStateFailed}`)
     expect(screen.getByText('boom')).toBeTruthy()
@@ -218,6 +220,7 @@ describe('PluginManagerSettingsTab', () => {
     // A component shows the id its pack declared, not the tree-wide entry id.
     expect(document.querySelector('[data-plugin-row="include:better-sidebar"]')?.textContent).toContain('better-sidebar')
     expect(document.querySelector('[data-plugin-row="include:idle"]')?.textContent).toBe('idle')
+    expect(document.querySelector('[data-plugin-row="include:idle"]')?.getAttribute('data-state')).toBeNull()
     const filter = screen.getByRole('searchbox', { name: en.partsFilter })
     fireEvent.change(filter, { target: { value: 'nope' } })
     expect(screen.getByText(en.partsFilterEmpty)).toBeTruthy()

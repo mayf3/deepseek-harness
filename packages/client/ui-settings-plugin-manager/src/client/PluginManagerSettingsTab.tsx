@@ -85,16 +85,32 @@ function partsSummary(rows: readonly RowView[], t: Translate): string {
   ].join(' · ')
 }
 
+/** One component as a chip: its declared id, with its fiber phase when it has one. */
+function PartChip({ row, off, t }: { readonly row: RowView; readonly off: boolean; readonly t: Translate }): ReactNode {
+  return (
+    <li className={css.chip} data-plugin-row={row.entryId} {...off ? { 'data-state': 'off' } : {}}>
+      {row.phase === null ? null : <PhaseDot phase={row.phase} t={t} />}
+      {row.rowId}
+    </li>
+  )
+}
+
 /**
- * The components of one plugin pack: a count line, the components that are
- * off or failing with why, and the rest as chips behind **Show all** with a
- * filter — a pack like base carries close to a hundred rows, of which the
- * few that are not running are the ones worth a line each.
+ * The components of one plugin pack: a count line; the failing components,
+ * one line each with the failure; the off ones as chips under why they are
+ * off; and the rest as chips behind **Show all** with a filter. A pack like
+ * base carries close to a hundred rows and switches dozens off by design,
+ * so only a failure earns a line of its own.
  */
 function BundleParts({ rows, t }: { readonly rows: readonly RowView[]; readonly t: Translate }): ReactNode {
   const [open, setOpen] = useState(false)
   const [filter, setFilter] = useState('')
-  const exceptions = rows.filter(row => isFailedRow(row) || !row.enabled)
+  const failed = rows.filter(isFailedRow)
+  const off = rows.filter(row => !isFailedRow(row) && !row.enabled)
+  const offGroups = [
+    { key: 'partDisabledByUser' as const, rows: off.filter(row => row.disabledBy === 'user') },
+    { key: 'partDisabledByComposition' as const, rows: off.filter(row => row.disabledBy !== 'user') },
+  ].filter(group => group.rows.length > 0)
   const rest = rows.filter(row => !isFailedRow(row) && row.enabled)
   const query = filter.trim().toLowerCase()
   const shown = query === '' ? rest : rest.filter(row => row.rowId.toLowerCase().includes(query))
@@ -117,22 +133,28 @@ function BundleParts({ rows, t }: { readonly rows: readonly RowView[]; readonly 
           )}
       </div>
       {rows.length === 0 ? <p className={css.status}>{t('partsEmpty')}</p> : null}
-      {exceptions.length === 0
+      {failed.length === 0
         ? null
         : (
           <ul className={css.partExceptions}>
-            {exceptions.map(row => (
+            {failed.map(row => (
               <li key={row.entryId} className={css.partException} data-plugin-row={row.entryId}>
-                <span className={css.statusDot} data-phase={isFailedRow(row) ? 'failed' : 'off'} aria-hidden="true" />
+                <span className={css.statusDot} data-phase="failed" aria-hidden="true" />
                 <span className={css.partId}>{row.rowId}</span>
-                {isFailedRow(row)
-                  ? <Tag kind="problem">{t('rowStateFailed')}</Tag>
-                  : <span className={css.partWhy}>{t(row.disabledBy === 'user' ? 'partDisabledByUser' : 'partDisabledByComposition')}</span>}
+                <Tag kind="problem">{t('rowStateFailed')}</Tag>
                 {row.failure === undefined ? null : <p className={css.partFailure}>{row.failure.message}</p>}
               </li>
             ))}
           </ul>
         )}
+      {offGroups.map(group => (
+        <div key={group.key} className={css.partGroup}>
+          <span className={css.partWhy}>{t('partsGroupLabel', { reason: t(group.key), count: String(group.rows.length) })}</span>
+          <ul className={css.chips}>
+            {group.rows.map(row => <PartChip key={row.entryId} row={row} off t={t} />)}
+          </ul>
+        </div>
+      ))}
       {open
         ? (
           <div className={css.partsAll}>
@@ -148,12 +170,7 @@ function BundleParts({ rows, t }: { readonly rows: readonly RowView[]; readonly 
               ? <p className={css.status}>{t('partsFilterEmpty')}</p>
               : (
                 <ul className={css.chips}>
-                  {shown.map(row => (
-                    <li key={row.entryId} className={css.chip} data-plugin-row={row.entryId}>
-                      {row.phase === null ? null : <PhaseDot phase={row.phase} t={t} />}
-                      {row.rowId}
-                    </li>
-                  ))}
+                  {shown.map(row => <PartChip key={row.entryId} row={row} off={false} t={t} />)}
                 </ul>
               )}
           </div>
