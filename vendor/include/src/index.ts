@@ -47,9 +47,14 @@ function retryableWriteError(error: unknown): boolean {
  * is never mutated and the result is always detached from it (even with no
  * patches): patching or mounting shared entry objects would bake earlier
  * values into the cached parse, so repeated application (config hot-reloads)
- * could never revert a removed or changed patch. Inserted entries are indexed
- * as they are added, so a later patch in the same list can target a row an
- * earlier patch inserted. A patch that matches nothing warns and is skipped.
+ * could never revert a removed or changed patch. Inserted rows are cloned
+ * before they join the list for the same reason: a later patch that inserts
+ * into or overrides a row an earlier patch inserted mutates the copy, so
+ * applying one patch list twice (the Loader rolling a rejected update back to
+ * the previous one) yields the same tree each time. Inserted entries are
+ * indexed as they are added, so a later patch in the same list can target a
+ * row an earlier patch inserted. A patch that matches nothing warns and is
+ * skipped.
  * @param data - the parsed entry list (JSON-safe plain data).
  * @param patches - the patch list to apply, in order.
  * @param warn - sink for skipped-patch diagnostics (printf-style, `%C` = code).
@@ -78,6 +83,7 @@ export function applyEntryPatches(
     const { id, insert, name, ...overrides } = patch
 
     if (insert) {
+      const inserted = structuredClone(insert)
       if (id) {
         const target = entryMap.get(id)
         if (!target) {
@@ -89,16 +95,16 @@ export function applyEntryPatches(
           continue
         }
         if (!Array.isArray(target.config)) target.config = []
-        target.config.push(...insert)
+        target.config.push(...inserted)
       } else {
-        data.push(...insert)
+        data.push(...inserted)
       }
       // Index what this patch added so a LATER patch in the same list can
       // target it. Patch lists compose one layer per source (each bundle
       // layer, then the user's, then `--patch` overlays), and a layer must be
       // able to configure or disable a row an earlier layer inserted; without
       // this, inserted rows were silently unpatchable.
-      buildMap(insert)
+      buildMap(inserted)
       continue
     }
 
