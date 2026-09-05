@@ -89,15 +89,14 @@ function foldedApprovalPolicy(ctx: Context, id: SessionId, events: readonly Sess
 
 describe('continuable policy inheritance', () => {
   it.each(['auto', 'danger-full-access'] as const)(
-    'persists the parent %s identity for a DSH in-process child',
+    'persists the delegated %s identity across cold resume without reading the parent again',
     { timeout: 20_000 },
     async (preset) => {
-      const { ctx, parent } = await setup([textResponse('child done')])
+      const { ctx, parent } = await setup([textResponse('child done'), textResponse('resumed child done')])
       parent.session.append('permission/preset', { preset })
       setSandboxMode(parent.session, 'danger-full-access')
-      ctx.provide('permissionPresets', {
-        current: (session: Session) => session === parent.session ? preset : 'custom',
-      } as never)
+      const current = vi.fn((session: Session) => session === parent.session ? preset : 'custom')
+      ctx.provide('permissionPresets', { current } as never)
 
       const started = await ctx.subagents.startContinuable(startSpec(parent))
       await waitNoActivation(ctx, started.childId)
@@ -112,29 +111,49 @@ describe('continuable policy inheritance', () => {
         { type: 'approval/policy', data: { policy: 'never', source: 'delegation' } },
         { type: 'permission/preset', data: { preset } },
       ])
+      expect(current).toHaveBeenCalledExactlyOnceWith(parent.session)
+      parent.session.append('permission/preset', { preset: preset === 'auto' ? 'danger-full-access' : 'auto' })
+      current.mockImplementation(() => { throw new Error('cold resume must not read parent permission') })
+      await queueHostSubagentPrompt(
+        ctx.subagents, parent, started.childId,
+        [{ type: 'text', text: 'continue please' }], { kind: 'user' }, new AbortController().signal,
+      )
+      await waitNoActivation(ctx, started.childId)
+      const resumed = await loadStoredSession(ctx.sessionPersistence, started.childId)
+      expect(resumed.events.filter(event => event.type === 'permission/preset')).toMatchObject([
+        { data: { preset } },
+      ])
+      expect(current).toHaveBeenCalledTimes(1)
     },
   )
 
-  it('places delegated Full access after an Auto fork prefix', { timeout: 20_000 }, async () => {
+  it.each([
+    { seedPreset: 'auto', preset: 'danger-full-access' },
+    { seedPreset: 'danger-full-access', preset: 'auto' },
+  ] as const)('captures $preset before child creation and overrides the $seedPreset fork prefix', { timeout: 20_000 }, async ({ seedPreset, preset }) => {
     const { ctx, parent } = await setup([textResponse('parent turn'), textResponse('forked child')])
-    parent.session.append('permission/preset', { preset: 'auto' })
+    parent.session.append('permission/preset', { preset: seedPreset })
     setSandboxMode(parent.session, 'danger-full-access')
     parent.followup(createUserMessage({
       content: [{ type: 'text', text: 'parent work' }],
       source: { kind: 'user' },
     }))
     await parent.whenIdle()
-    parent.session.append('permission/preset', { preset: 'danger-full-access' })
+    parent.session.append('permission/preset', { preset })
+    let currentPreset: 'auto' | 'danger-full-access' = preset
     ctx.provide('permissionPresets', {
-      current: (session: Session) => session === parent.session ? 'danger-full-access' : 'custom',
+      current: (session: Session) => session === parent.session ? currentPreset : 'custom',
     } as never)
 
-    const started = await ctx.subagents.startContinuable(startSpec(parent, 'fork'))
+    const starting = ctx.subagents.startContinuable(startSpec(parent, 'fork'))
+    currentPreset = seedPreset
+    parent.session.append('permission/preset', { preset: seedPreset })
+    const started = await starting
     await waitNoActivation(ctx, started.childId)
     const loaded = await loadStoredSession(ctx.sessionPersistence, started.childId)
     expect(loaded.events.filter(event => event.type === 'permission/preset')).toMatchObject([
-      { data: { preset: 'auto' } },
-      { data: { preset: 'danger-full-access' } },
+      { data: { preset: seedPreset } },
+      { data: { preset } },
     ])
   })
 

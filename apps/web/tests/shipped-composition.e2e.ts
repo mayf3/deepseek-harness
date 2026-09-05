@@ -22,6 +22,7 @@ import type {} from '@deepseek-ai/dsh-permission-presets'
 import type {} from '@deepseek-ai/dsh-agent-presets'
 import type {} from '@deepseek-ai/dsh-commands'
 import type {} from '@deepseek-ai/dsh-system-prompt'
+import type {} from '@deepseek-ai/dsh-terminal'
 import { launchWebScaffold, readPersistedEvents, type WebScaffold } from './scaffold.ts'
 import { REPO_ROOT } from './support.ts'
 
@@ -34,7 +35,7 @@ const AUTO_CHILD_OVERLAY_PATH = join(REPO_ROOT, 'apps/web/tests/auto-review-chil
 const AUTO_PROVIDER = 'shipped-auto-review-test'
 const AUTO_MODEL = 'same-route'
 const AUTO_CALL_ID = ToolCallId('shipped-auto-review-denied-delete')
-const AUTO_RAW_REASON = '  direct user authorized inspection only\ndeletion scope was not authorized  '
+const AUTO_RAW_REASON = `  direct user authorized inspection only\nTEST_ONLY_SECRET_${'x'.repeat(16_384)}  `
 const AUTO_FINAL_TEXT = 'SHIPPED_AUTO_REVIEW_DENIAL_OBSERVED'
 const AUTO_CHILD_ONE_SHOT = 'AUTO_CHILD_ONE_SHOT'
 const AUTO_CHILD_CONTINUABLE = 'AUTO_CHILD_CONTINUABLE'
@@ -769,6 +770,7 @@ it('routes one browser-authored Auto request through the same model before a rea
   const finalModelInput = JSON.stringify(finalMain?.messages)
   expect(finalModelInput).toContain('Auto review rejected tool \\"bash\\"; its body was not executed')
   expect(finalModelInput).not.toContain('direct user authorized inspection only')
+  expect(finalModelInput).not.toContain('TEST_ONLY_SECRET_')
 
   const events = agent.session.snapshotEvents()
   const prompt = events.find((event): event is Extract<SessionEvent, { type: 'user/message' }> => (
@@ -790,6 +792,7 @@ it('routes one browser-authored Auto request through the same model before a rea
   const durableModelResult = JSON.stringify(result?.data.message)
   expect(durableModelResult).toContain('Auto review rejected tool \\"bash\\"; its body was not executed')
   expect(durableModelResult).not.toContain('direct user authorized inspection only')
+  expect(durableModelResult).not.toContain('TEST_ONLY_SECRET_')
   expect(events.some(event => (
     event.type === 'assistant/message'
       && JSON.stringify(event.data.message).includes(AUTO_FINAL_TEXT)
@@ -1035,10 +1038,14 @@ it('withdraws Auto on shipped Loader unload and does not restore migrated live s
   if (autoEntry === undefined) throw new Error('shipped Auto review Loader entry is missing')
   const handle = await ctx.agents.create({
     sessionId: SessionId('shipped-auto-hot-plug'),
-    meta: { cwd: scaffold.workspaceCwd },
-    setup: agentCtx => ctx.agentPresets.mount(agentCtx).then(() => undefined),
+    meta: { cwd: scaffold.workspaceCwd, agentPreset: 'minimal' },
+    setup: agentCtx => ctx.agentPresets.mount(agentCtx, 'minimal').then(() => undefined),
   })
+  const terminals = ctx.agentPresets.serviceFor(handle.agent, 'terminals')
   try {
+    if (terminals === undefined) throw new Error('shipped minimal preset has no terminal registry')
+    ctx.permissionPresets.set(handle.agent.session, 'danger-full-access')
+    const terminal = await terminals.spawn(handle.agent, { type: 'shell', cwd: scaffold.workspaceCwd })
     ctx.permissionPresets.set(handle.agent.session, 'auto')
     expect(ctx.permissionPresets.current(handle.agent.session)).toBe('auto')
 
@@ -1046,6 +1053,16 @@ it('withdraws Auto on shipped Loader unload and does not restore migrated live s
     await ctx.loader.await()
     expect(ctx.permissionPresets.names).not.toContain('auto')
     expect(ctx.permissionPresets.current(handle.agent.session)).toBe('danger-full-access')
+    expect(ctx.sandboxPolicy.overrideOf(handle.agent.session)).toBe('danger-full-access')
+    expect(ctx.approval.overrideOf(handle.agent.session)).toBe('never')
+    expect(terminals.list(handle.agent)).toMatchObject([
+      { sessionId: terminal.sessionId, pid: terminal.pid, status: { kind: 'running' } },
+    ])
+    const sent = await terminals.startSend(handle.agent, terminal.sessionId, {
+      text: 'echo AUTO_TERMINAL_SURVIVED', submit: true,
+    }).done
+    expect(sent.sessionStatus).toEqual({ kind: 'running' })
+    expect(sent.viewport).toContain('AUTO_TERMINAL_SURVIVED')
 
     await autoEntry.update({ disabled: false })
     await ctx.loader.await()
@@ -1054,4 +1071,5 @@ it('withdraws Auto on shipped Loader unload and does not restore migrated live s
   } finally {
     await handle.dispose()
   }
+  expect(terminals?.hasOwnerActivity(handle.agent)).toBe(false)
 }, 120_000)

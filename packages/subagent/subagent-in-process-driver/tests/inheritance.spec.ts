@@ -107,23 +107,30 @@ describe('in-process policy inheritance', () => {
     },
   )
 
-  it('places delegated Full access after an Auto fork prefix', async () => {
+  it.each([
+    { seedPreset: 'auto', preset: 'danger-full-access' },
+    { seedPreset: 'danger-full-access', preset: 'auto' },
+  ] as const)('captures $preset before child creation and overrides the $seedPreset fork prefix', async ({ seedPreset, preset }) => {
     const { ctx, parent } = await setupWalled([textResponse('child done')])
-    parent.session.append('permission/preset', { preset: 'auto' })
+    parent.session.append('permission/preset', { preset: seedPreset })
     setSandboxMode(parent.session, 'danger-full-access')
     const seed = parent.session.snapshotEvents()
-    parent.session.append('permission/preset', { preset: 'danger-full-access' })
+    parent.session.append('permission/preset', { preset })
+    let currentPreset: 'auto' | 'danger-full-access' = preset
     ctx.provide('permissionPresets', {
-      current: (session: Session) => session === parent.session ? 'danger-full-access' : 'custom',
+      current: (session: Session) => session === parent.session ? currentPreset : 'custom',
     } as never)
 
-    const run = await startInProcessRun(spawnRequest(parent), { seed })
+    const starting = startInProcessRun(spawnRequest(parent), { seed })
+    currentPreset = seedPreset
+    parent.session.append('permission/preset', { preset: seedPreset })
+    const run = await starting
     try {
       await run.result
       const child = run.localAgent as Agent
       expect(child.session.snapshotEvents().filter(event => event.type === 'permission/preset')).toMatchObject([
-        { data: { preset: 'auto' } },
-        { data: { preset: 'danger-full-access' } },
+        { data: { preset: seedPreset } },
+        { data: { preset } },
       ])
     } finally {
       await run.dispose()

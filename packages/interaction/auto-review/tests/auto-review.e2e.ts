@@ -161,7 +161,7 @@ async function mount(ctx: Context, workspace: string, dshHome: string): Promise<
 
 function orchestrate(ctx: Context, real: boolean) {
   let script: StreamChunk[][] = []
-  let expected: Verdict | undefined
+  let expected: (Verdict & { reason?: string }) | undefined
   let mainAgent: Agent | undefined
   let offeredTool = ''
   let bodyStarts = 0
@@ -194,7 +194,7 @@ function orchestrate(ctx: Context, real: boolean) {
     calls: () => reviewCalls,
     async action(
       agent: Agent, name: string, args: Record<string, unknown>, path: Path,
-      prompt: string, verdict?: Verdict,
+      prompt: string, verdict?: Verdict & { reason?: string },
     ): Promise<{ events: readonly SessionEvent[]; bodies: number }> {
       expect(script).toHaveLength(0)
       mainAgent = agent
@@ -369,12 +369,19 @@ it.each(['native', 'ptc-inner'] as const)('feeds denial back, re-reviews a new c
     })
     try {
       ctx.permissionPresets.set(handle.agent.session, AUTO_PRESET)
+      const rawReason = `  TEST_ONLY_SECRET_${'x'.repeat(16_384)}\nexact deletion was not authorized  `
       for (let attempt = 0; attempt < 2; attempt += 1) {
         const result = await runner.action(handle.agent, 'bash', { command: `rm -- ${quote(target)}` }, path,
-          'Inspect only; do not delete existing files.', { risk: 'medium', decision: 'deny' })
+          'Inspect only; do not delete existing files.', { risk: 'medium', decision: 'deny', reason: rawReason })
         expect(result.bodies).toBe(0)
         expect(outcome(result.events, path).denied).toBe(true)
+        const denials = result.events
+          .filter(event => event.type === 'tool/result' || event.type === 'tool/code-dispatch')
+          .map(event => event.data.error)
+          .filter(error => error?.code === DENIED)
+        expect(denials).toEqual([{ name: 'AutoReviewDeniedError', code: DENIED, reason: rawReason }])
         expect(runner.postToolInputs.at(-1)?.includes('Auto review rejected tool \\"bash\\"; its body was not executed')).toBe(true)
+        expect(runner.postToolInputs.at(-1)).not.toContain('TEST_ONLY_SECRET_')
       }
       const result = await runner.action(handle.agent, 'write', { file_path: join(root, 'analysis.txt'), content: 'analysis\n' }, path,
         'Write the local analysis instead.', { risk: 'low', decision: 'allow' })
