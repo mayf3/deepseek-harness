@@ -104,11 +104,7 @@ export class PluginInventoryGateway extends TypertRemoteService {
     // registry is its only record, and the list must still show it.
     for (const failure of failures?.list() ?? []) {
       if (listed.has(failure.entryId)) continue
-      // A conflict record names the bundle that lost the id; asking the
-      // runtime would name the layer that owns it.
-      const origin = failure.stage === 'conflict'
-        ? failure.packageName === undefined ? undefined : { trust: 'external' as const, packageName: failure.packageName }
-        : runtime?.originOf(failure.rowId)
+      const origin = runtime?.originOf(failure.rowId)
       entries.push({
         entryId: pluginEntryId(failure.entryId),
         moduleName: failure.moduleName,
@@ -118,6 +114,24 @@ export class PluginInventoryGateway extends TypertRemoteService {
         ...origin === undefined ? {} : { package: packageRef(origin) },
         failure: { stage: failure.stage, message: failure.message },
       })
+    }
+    // A row the composition left out never reached the tree; the conflict
+    // names the layer that lost, so no lookup of the id's owner is needed.
+    if (runtime !== undefined) {
+      for (const conflict of runtime.conflicts) {
+        const version = runtime.layers.find(candidate => candidate.packageName === conflict.packageName)?.version
+        entries.push({
+          entryId: pluginEntryId(`conflict:${conflict.layer}:${conflict.rowId}`),
+          moduleName: conflict.moduleName,
+          enabled: true,
+          fiberPhase: 'failed',
+          trust: conflict.packageName === undefined ? 'builtin' : 'external',
+          ...conflict.packageName === undefined
+            ? {}
+            : { package: packageRef({ packageName: conflict.packageName, ...version === undefined ? {} : { version } }) },
+          failure: { stage: 'conflict', message: conflict.message },
+        })
+      }
     }
     const presets = this.ctx.get('agentPresets')
     if (presets === undefined) return { entries }

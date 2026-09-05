@@ -48,7 +48,7 @@ export interface PluginInventoryEntry {
   readonly package?: PluginPackageRef
   /** Present exactly when `enabled` is false. */
   readonly disabledBy?: PluginDisabledBy
-  /** Present for a row an isolated bundle failed to start. */
+  /** Present for a row an isolated bundle failed to start, or a row the composition left out. */
   readonly failure?: PluginFailure
 }
 

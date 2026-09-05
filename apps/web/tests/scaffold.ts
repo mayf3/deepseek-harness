@@ -56,7 +56,7 @@ import {
   type NormalizeContext,
 } from '@deepseek-ai/dsh-session-snapshot'
 import {
-  assertEntriesLoaded,
+  assertEntriesLoaded, claimLayerIds,
   composeEntries,
   healProfilesModuleFallback,
   loadOptionalPatches,
@@ -738,11 +738,16 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
       // recomposes a live-reload profile, and this one applies at startup.
       const readProfile = (): Profile => loadProfile('dsh', 'scaffold', INSTALL_ANCHOR, harnessHome)
       const profile = readProfile()
+      // The scaffold's own patches, with the id ownership the runtime answers `originOf` from.
+      const compose = (): ComposedStack => ({
+        patches, layers: [{ label: 'scaffold', patches }], owners: claimLayerIds(profile.layers).owners, conflicts: [], skippedBundles: [],
+      })
       await ctx.plugin(ProfileRuntime, {
         profile,
+        stack: compose(),
         installAnchor: INSTALL_ANCHOR,
         loadProfile: readProfile,
-        compose: (): ComposedStack => ({ patches, layers: [{ label: 'scaffold', patches }], conflicts: [], skippedBundles: [] }),
+        compose,
         rootEntry: () => [...ctx.loader.entries()].find(entry => entry.id === rootIncludeId),
         readUserPatches: () => loadOptionalPatches('dsh', profile.patchPath) ?? [],
       })

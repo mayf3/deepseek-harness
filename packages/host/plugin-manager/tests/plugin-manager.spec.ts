@@ -16,7 +16,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { Context, type Plugin } from '@deepseek-ai/cordis'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
 import {
-  boot, composeProfileStack, recordRowConflicts, loadOptionalPatches, loadProfile, ProfileRuntime, readProbeCache, rootIncludeEntry,
+  boot, composeProfileStack, loadOptionalPatches, loadProfile, ProfileRuntime, readProbeCache, rootIncludeEntry,
   type ComposedStack, type Profile,
 } from '@deepseek-ai/dsh-app-boot'
 import { remoteMethods, RemoteError } from '@deepseek-ai/dsh-typert-protocol'
@@ -205,14 +205,13 @@ async function bootProfile(staged: StagedHome, internals: PluginManagerInternals
   contexts.push(ctx)
   await ctx.plugin(ProfileRuntime, {
     profile,
+    stack: composeFor(profile),
     installAnchor: staged.anchor,
     loadProfile: load,
     compose: composeFor,
     rootEntry: () => rootIncludeEntry(ctx),
     readUserPatches: () => loadOptionalPatches(NAME, profile.patchPath) ?? [],
   })
-  // As the launcher does after boot: the runtime records conflicts only on its own recompositions.
-  recordRowConflicts(ctx, composeFor(profile).conflicts)
   class TestManager extends PluginManager {
     constructor(context: Context, managerConfig: PluginManager['config']) {
       super(context, managerConfig, internals)
@@ -318,7 +317,7 @@ describe('PluginManager', () => {
       expect(two).toMatchObject({ status: 'failed', enabled: true })
       expect(two?.reason).toContain('already declared by ext-one')
       expect(two?.rows).toEqual([{
-        entryId: 'conflict:bundle/ext-two:hello', rowId: 'hello', moduleName: 'cordis:good', enabled: true, phase: 'failed',
+        entryId: 'conflict:ext-two:hello', rowId: 'hello', moduleName: 'cordis:good', enabled: true, phase: 'failed',
         failure: { stage: 'conflict', message: 'row "hello" is already declared by ext-one' },
       }])
     })

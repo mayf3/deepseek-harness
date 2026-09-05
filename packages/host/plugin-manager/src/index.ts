@@ -41,11 +41,11 @@ import {
   resolveBundleDir,
   resolveProfileLayer,
   writeProbeCache,
-  type BundleStage,
   type PluginProbe,
   type ProfileManifest,
   type ProfileRuntime,
 } from '@deepseek-ai/dsh-app-boot'
+import type { BundleStage } from '@deepseek-ai/dsh-package-manifest'
 import type {} from '@deepseek-ai/dsh-agent'
 import { mutatePatchFile, readPatchListFile, type PatchRow } from '@deepseek-ai/dsh-patch-file'
 import type { JsonValue } from '@deepseek-ai/dsh-util-values'
@@ -336,9 +336,7 @@ export class PluginManager extends TypertRemoteService {
     /* v8 ignore next -- the root include provides the registry on every boot; the guard answers its optional type */
     for (const failure of failures?.list() ?? []) {
       if (listed.has(failure.entryId)) continue
-      // A conflict record names its bundle: the id's owner is the other layer.
-      const owner = failure.packageName ?? runtime.originOf(failure.rowId)?.packageName
-      if (owner !== name) continue
+      if (runtime.originOf(failure.rowId)?.packageName !== name) continue
       rows.push({
         entryId: failure.entryId,
         rowId: failure.rowId,
@@ -346,6 +344,19 @@ export class PluginManager extends TypertRemoteService {
         enabled: true,
         phase: 'failed',
         failure: { stage: failure.stage, message: failure.message },
+      })
+    }
+    // A row the composition left out never reached the tree; the runtime's
+    // conflicts name the bundle that lost, so nothing is looked up by id.
+    for (const conflict of runtime.conflicts) {
+      if (conflict.packageName !== name) continue
+      rows.push({
+        entryId: `conflict:${conflict.layer}:${conflict.rowId}`,
+        rowId: conflict.rowId,
+        moduleName: conflict.moduleName,
+        enabled: true,
+        phase: 'failed',
+        failure: { stage: 'conflict', message: conflict.message },
       })
     }
     return rows

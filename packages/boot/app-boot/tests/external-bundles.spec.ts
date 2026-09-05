@@ -9,10 +9,10 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import type { EntryOptions } from '@deepseek-ai/cordis-plugin-loader'
-import type { PatchOptions } from '@deepseek-ai/cordis-plugin-include'
+import { applyEntryPatches, type PatchOptions } from '@deepseek-ai/cordis-plugin-include'
 import {
-  bundleGroupId, bundleLayerPatches, composeExternalLayer, CONTAINED_GROUP_MODULE, disableBundle, enableBundle,
-  exportsBundlePatch, isContainedLayer, isJsDisabled, reconcileInstalledBundles, readProfileManifest, type ProfileLayer,
+  bundleGroupId, composeExternalLayer, CONTAINED_GROUP_MODULE, disableBundle, enableBundle,
+  exportsBundlePatch, isContainedLayer, reconcileInstalledBundles, readProfileManifest, type ProfileLayer,
 } from '../src/index.ts'
 
 const NAME = 'dsh-test-bin'
@@ -27,30 +27,34 @@ function layer(packageName: string, patches: PatchOptions[]): ProfileLayer {
 }
 
 describe('composeExternalLayer', () => {
-  it('wraps root inserts in one contained group and keeps every row id as declared', () => {
+  it('inserts an empty contained group first and re-targets root inserts into it, ids as declared', () => {
     const composed = composeExternalLayer(layer('pkg-a', [
       { insert: [{ id: 'tool', name: 'pkg-a' }, { name: 'pkg-a/anonymous' } as EntryOptions] },
       { insert: [{ id: 'grp', name: 'cordis:group', group: true, config: [{ id: 'inner', name: 'pkg-a/inner' }] }] },
     ]))
-    expect(composed.patches).toEqual([{
-      insert: [{
-        id: 'bundle/pkg-a',
-        name: CONTAINED_GROUP_MODULE,
-        group: true,
-        config: [
-          { id: 'tool', name: 'pkg-a' },
-          { name: 'pkg-a/anonymous' },
-          { id: 'grp', name: 'cordis:group', group: true, config: [{ id: 'inner', name: 'pkg-a/inner' }] },
-        ],
-      }],
+    expect(composed.patches).toEqual([
+      { insert: [{ id: 'bundle/pkg-a', name: CONTAINED_GROUP_MODULE, group: true, config: [] }] },
+      { id: 'bundle/pkg-a', insert: [{ id: 'tool', name: 'pkg-a' }, { name: 'pkg-a/anonymous' }] },
+      { id: 'bundle/pkg-a', insert: [{ id: 'grp', name: 'cordis:group', group: true, config: [{ id: 'inner', name: 'pkg-a/inner' }] }] },
+    ])
+    expect(applyEntryPatches([], composed.patches, () => {})).toEqual([{
+      id: 'bundle/pkg-a',
+      name: CONTAINED_GROUP_MODULE,
+      group: true,
+      config: [
+        { id: 'tool', name: 'pkg-a' },
+        { name: 'pkg-a/anonymous' },
+        { id: 'grp', name: 'cordis:group', group: true, config: [{ id: 'inner', name: 'pkg-a/inner' }] },
+      ],
     }])
     expect([...composed.rows]).toEqual([
       ['tool', 'pkg-a'], ['grp', 'cordis:group'], ['inner', 'pkg-a/inner'], ['bundle/pkg-a', CONTAINED_GROUP_MODULE],
     ])
+    expect(composed.duplicates).toEqual([])
     expect(composed.overrides).toEqual([])
   })
 
-  it('passes patches on the bundle\'s own rows through and reports patches on other rows as overrides', () => {
+  it('keeps the written order of inserts and id-targeted patches, reporting patches on other rows as overrides', () => {
     const composed = composeExternalLayer(layer('pkg-b', [
       { insert: [{ id: 'own', name: 'pkg-b' }] },
       { id: 'own', config: { flag: true } },
@@ -58,16 +62,32 @@ describe('composeExternalLayer', () => {
       { id: 'own', insert: [{ id: 'child', name: 'pkg-b/child' }] },
     ]))
     expect(composed.patches.slice(1)).toEqual([
-      { id: 'own', insert: [{ id: 'child', name: 'pkg-b/child' }] },
+      { id: 'bundle/pkg-b', insert: [{ id: 'own', name: 'pkg-b' }] },
       { id: 'own', config: { flag: true } },
       { id: 'settings', config: { path: '/x' } },
+      { id: 'own', insert: [{ id: 'child', name: 'pkg-b/child' }] },
     ])
     expect(composed.overrides).toEqual(['settings'])
   })
 
-  it('nests rows inserted into a built-in group inside their own contained group', () => {
+  it('mounts a group config replaced and then appended to the same way a built-in layer would', () => {
+    const written = (): PatchOptions[] => [
+      { insert: [{ id: 'g', name: 'cordis:group', group: true, config: [{ id: 'x', name: 'pkg-o/x' }] }] },
+      { id: 'g', config: [{ id: 'a', name: 'pkg-o/a' }] },
+      { id: 'g', insert: [{ id: 'b', name: 'pkg-o/b' }] },
+    ]
+    const asBuiltin = applyEntryPatches([], written(), () => {})
+    const contained = applyEntryPatches([], composeExternalLayer(layer('pkg-o', written())).patches, () => {})
+    const childrenOf = (rows: EntryOptions[]): string[] => (rows.find(row => row.id === 'g')?.config as EntryOptions[]).map(row => row.id)
+    expect(childrenOf(asBuiltin)).toEqual(['a', 'b'])
+    expect(childrenOf(contained[0]?.config as EntryOptions[])).toEqual(['a', 'b'])
+  })
+
+  it('nests rows inserted into a built-in group inside one contained group per target', () => {
     const composed = composeExternalLayer(layer('pkg-c', [
       { id: 'persistent-shell', insert: [{ id: 'extra', name: 'pkg-c/extra' }] },
+      { id: 'tools', insert: [{ id: 'tool-a', name: 'pkg-c/a' }] },
+      { id: 'persistent-shell', insert: [{ id: 'more', name: 'pkg-c/more' }] },
     ]))
     expect(composed.patches).toEqual([
       { insert: [{ id: 'bundle/pkg-c', name: CONTAINED_GROUP_MODULE, group: true, config: [] }] },
@@ -75,8 +95,30 @@ describe('composeExternalLayer', () => {
         id: 'persistent-shell',
         insert: [{ id: 'bundle/pkg-c/in/persistent-shell', name: CONTAINED_GROUP_MODULE, group: true, config: [{ id: 'extra', name: 'pkg-c/extra' }] }],
       },
+      { id: 'tools', insert: [{ id: 'bundle/pkg-c/in/tools', name: CONTAINED_GROUP_MODULE, group: true, config: [{ id: 'tool-a', name: 'pkg-c/a' }] }] },
+      { id: 'bundle/pkg-c/in/persistent-shell', insert: [{ id: 'more', name: 'pkg-c/more' }] },
     ])
-    expect(composed.rows.get('bundle/pkg-c/in/persistent-shell')).toBe(CONTAINED_GROUP_MODULE)
+    expect([...composed.rows.keys()].filter(id => id.includes('/in/'))).toEqual(['bundle/pkg-c/in/persistent-shell', 'bundle/pkg-c/in/tools'])
+    const tree = applyEntryPatches([
+      { id: 'persistent-shell', name: 'cordis:group', group: true, config: [] },
+      { id: 'tools', name: 'cordis:group', group: true, config: [] },
+    ], composed.patches, () => {})
+    const shell = tree.find(row => row.id === 'persistent-shell')?.config as EntryOptions[]
+    expect(shell.map(row => row.id)).toEqual(['bundle/pkg-c/in/persistent-shell'])
+    expect((shell[0]?.config as EntryOptions[]).map(row => row.id)).toEqual(['extra', 'more'])
+  })
+
+  it('reports an id the bundle inserts twice and keeps the first module for it', () => {
+    const composed = composeExternalLayer(layer('pkg-r', [
+      { insert: [{ id: 'dup', name: 'pkg-r/one' }] },
+      { insert: [{ id: 'g', name: 'cordis:group', group: true, config: [{ id: 'dup', name: 'pkg-r/two' }] }] },
+      { insert: [{ id: 'bundle/pkg-r', name: 'pkg-r/steals-the-group-id' }] },
+    ]))
+    expect(composed.duplicates).toEqual([
+      { rowId: 'dup', moduleName: 'pkg-r/two' },
+      { rowId: 'bundle/pkg-r', moduleName: CONTAINED_GROUP_MODULE },
+    ])
+    expect(composed.rows.get('dup')).toBe('pkg-r/one')
   })
 
   it('never mutates the layer\'s own patch objects', () => {
@@ -86,26 +128,30 @@ describe('composeExternalLayer', () => {
     expect(patches).toEqual(snapshot)
   })
 
+  it('mounts the same tree when its patches are applied twice, as a rolled-back update re-applies them', () => {
+    const composed = composeExternalLayer(layer('pkg-t', [
+      { insert: [{ id: 'row', name: 'pkg-t' }] },
+      { id: 'tools', insert: [{ id: 'tool', name: 'pkg-t/tool' }] },
+    ]))
+    const snapshot = structuredClone(composed.patches)
+    const base = (): EntryOptions[] => [{ id: 'tools', name: 'cordis:group', group: true, config: [] }]
+    const first = applyEntryPatches(base(), composed.patches, () => {})
+    const second = applyEntryPatches(base(), composed.patches, () => {})
+    expect(second).toEqual(first)
+    expect(composed.patches).toEqual(snapshot)
+    expect((first[1]?.config as EntryOptions[]).map(row => row.id)).toEqual(['row'])
+  })
+
   it('spells the group id without the Loader\'s nested-id separator', () => {
     expect(bundleGroupId('@scope/pkg')).toBe('bundle/@scope/pkg')
     expect(bundleGroupId('x')).not.toContain(':')
   })
 
-  it('mounts only runtime-staged external layers as contained groups', () => {
+  it('contains only runtime-staged external layers', () => {
     const contained = layer('pkg-e', [{ insert: [{ id: 'row', name: 'pkg-e' }] }])
-    const booted: ProfileLayer = { ...contained, stage: 'boot' }
-    const builtin: ProfileLayer = { ...contained, trust: 'builtin' }
     expect(isContainedLayer(contained)).toBe(true)
-    expect(bundleLayerPatches(contained)[0]?.insert?.[0]?.id).toBe('bundle/pkg-e')
-    for (const plain of [booted, builtin]) {
-      expect(isContainedLayer(plain)).toBe(false)
-      expect(bundleLayerPatches(plain)).toBe(plain.patches)
-    }
-  })
-
-  it('tells a !!js disabled node from a literal', () => {
-    expect(isJsDisabled({ __jsExpr: 'true' })).toBe(true)
-    expect(isJsDisabled(true)).toBe(false)
+    expect(isContainedLayer({ ...contained, stage: 'boot' })).toBe(false)
+    expect(isContainedLayer({ ...contained, trust: 'builtin' })).toBe(false)
   })
 })
 

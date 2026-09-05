@@ -23,11 +23,13 @@
   },
   "files": [
     "lib/index.js",
+    "lib/probe-child.js",
     "lib/types/**/*.d.ts"
   ],
   "license": "MIT",
   "dependencies": {
     "@deepseek-ai/dsh-atomic-write": "workspace:^",
+    "@deepseek-ai/dsh-package-manifest": "workspace:^",
     "@deepseek-ai/dsh-patch-file": "workspace:^",
     "js-yaml": "^4.2.0",
     "resolve.exports": "^2.0.3"

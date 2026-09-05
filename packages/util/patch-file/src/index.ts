@@ -16,7 +16,7 @@
  */
 
 import { mkdir, readFile } from 'node:fs/promises'
-import { dirname, resolve } from 'node:path'
+import { dirname, isAbsolute, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import * as yaml from 'js-yaml'
 import { Document, isMap, isSeq, parseDocument, YAMLMap, YAMLSeq } from 'yaml'
@@ -25,18 +25,18 @@ import type { EntryOptions } from '@deepseek-ai/cordis-plugin-loader'
 import { withFileLock, writeFileAtomic } from '@deepseek-ai/dsh-atomic-write'
 
 /**
- * Resolve relative plugin paths in one patch list's `insert` rows against the
- * file's own directory, without changing assertion names. A row naming
- * `./plugin.js` means the file beside the patch file, wherever the Loader's
- * root happens to be.
+ * Convert inserted filesystem paths in one patch list's `insert` rows to file
+ * URLs: an absolute path as it is, a `./` or `../` path anchored beside the
+ * patch file, wherever the Loader's root happens to be. Assertion names on
+ * id-targeted patches stay literal.
  * @param patches - the parsed patch list, mutated in place.
- * @param file - the patch file's path, whose directory anchors the names.
+ * @param file - the patch file's path, whose directory anchors relative names.
  * @returns the same list.
  */
 export function anchorInsertedPluginNames(patches: PatchOptions[], file: string): PatchOptions[] {
   const base = dirname(resolve(file))
   const visit = (entry: EntryOptions): void => {
-    if (typeof entry.name === 'string' && (entry.name.startsWith('./') || entry.name.startsWith('../'))) {
+    if (typeof entry.name === 'string' && (isAbsolute(entry.name) || entry.name.startsWith('./') || entry.name.startsWith('../'))) {
       entry.name = pathToFileURL(resolve(base, entry.name)).href
     }
     if (entry.group && Array.isArray(entry.config)) entry.config.forEach(visit)

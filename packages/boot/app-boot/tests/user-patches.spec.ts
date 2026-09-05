@@ -17,8 +17,9 @@ import Timer from '@deepseek-ai/cordis-plugin-timer'
 import {
   boot,
   loadOptionalPatches,
+  loadOverlayPatches,
   PROFILE_PATCH_FILENAME,
-  watchUserPatches,
+  watchUserPatches, rootIncludeEntry,
 } from '../src/index.ts'
 
 const NAME = 'dsh-test-bin'
@@ -72,6 +73,43 @@ describe('loadOptionalPatches', () => {
       config: { model: { __jsExpr: 'process.env.DSH_SPEC_MODEL' } },
     })
     expect(patches?.[1]?.insert).toHaveLength(1)
+  })
+
+  it.each([
+    { label: 'optional', load: loadOptionalPatches },
+    { label: 'overlay', load: loadOverlayPatches },
+  ])('loads absolute plugin paths from patch files as file URLs ($label)', async ({ load }) => {
+    const dir = tmp()
+    const pluginPath = join(dir, 'absolute #100%.mjs')
+    const pluginUrl = pathToFileURL(pluginPath).href
+    writeFileSync(pluginPath, 'export function apply(ctx) { ctx.provide("absolutePatchLoaded", true) }\n')
+    const patchPath = join(dir, PROFILE_PATCH_FILENAME)
+    writeFileSync(patchPath, JSON.stringify([
+      { id: 'existing', name: pluginPath },
+      { insert: [
+        { id: 'absolute', name: pluginPath },
+        { id: 'url', name: pluginUrl },
+        { id: 'bare', name: '@deepseek-ai/dsh-system-prompt' },
+        { id: 'nested', name: 'cordis:group', group: true, config: [
+          { id: 'child', name: pluginPath },
+        ] },
+      ] },
+    ]))
+    const patches = load(NAME, patchPath)!
+    expect(patches[0]?.name).toBe(pluginPath)
+    expect(patches[1]?.insert?.map(entry => entry.name)).toEqual([
+      pluginUrl, pluginUrl, '@deepseek-ai/dsh-system-prompt', 'cordis:group',
+    ])
+    expect((patches[1]?.insert?.[3]?.config as { name: string }[])[0]?.name).toBe(pluginUrl)
+
+    const configPath = join(dir, 'cordis.yml')
+    writeFileSync(configPath, '[]\n')
+    const ctx = await boot(NAME, configPath, [{ insert: [patches[1]!.insert![0]!] }])
+    try {
+      expect(ctx.get('absolutePatchLoaded')).toBe(true)
+    } finally {
+      await ctx.fiber.dispose()
+    }
   })
 
   it('anchors inserted relative plugins to the patch file and keeps assertion names literal', () => {
@@ -367,7 +405,12 @@ describe('boot with user patches', () => {
     const dispose = await watchUserPatches(ctx, {
       binName: NAME,
       filename,
-      compose: userPatches => [...basePatches, ...userPatches],
+      reapply: async () => {
+        const entry = rootIncludeEntry(ctx)
+        if (entry === undefined) throw new Error('no root include')
+        const { patches: _previous, ...config } = entry.options.config as Include.Config
+        await entry.update({ config: { ...config, patches: [...basePatches, ...loadOptionalPatches(NAME, filename) ?? []] } })
+      },
     })
     try {
       writeFileSync(filename, '- id: noop\n  config:\n    value: live\n')
@@ -395,13 +438,16 @@ describe('boot with user patches', () => {
       expect(failures).toHaveLength(2)
       await settleChokidarChangeThrottle()
 
-      // Default compose: the user layer IS the whole patch list, so a
+      // Default re-application: the user layer IS the whole patch list, so a
       // fresh generation replaces the app-owned layer instead of stacking on it.
       await dispose()
       const disposeDefault = await watchUserPatches(ctx, { binName: NAME, filename })
       try {
         writeFileSync(filename, '- id: noop\n  config:\n    value: identity\n')
         await eventually(() => (entryConfig(ctx, 'noop') as { value?: string }).value === 'identity', 'default-compose user patch was not applied')
+        await settleChokidarChangeThrottle()
+        unlinkSync(filename)
+        await eventually(() => (entryConfig(ctx, 'noop') as { value?: string }).value === 'base', 'default-compose removal did not empty the patch list')
       } finally {
         await disposeDefault()
       }

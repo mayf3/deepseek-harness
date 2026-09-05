@@ -987,8 +987,9 @@ originOf(rowId: string): RowOrigin | undefined
 
 /**
  * Row ids the user patch layers disable with a literal `disabled: true`.
- * A `!!js` gate in a user file is a condition, not a user decision, and is
- * left to the composition.
+ * A `!!js` gate in a user file stays an expression node when read from
+ * disk, so it is a condition, not a user decision, and is left to the
+ * composition.
  * @returns the ids, re-read from disk on every call.
  */
 userDisabledRowIds(): Set<string>
@@ -998,8 +999,10 @@ userDisabledRowIds(): Set<string>
  * as they stand now. The root Include re-applies the stack transactionally:
  * a row whose options changed is updated in place, a row that appeared is
  * created, a row that vanished is disposed, and a failure rolls the whole
- * update back with the previous tree still running. The rows the stack left
- * out replace the failure registry's conflict records once the update holds.
+ * update back with the previous tree still running. The candidate profile,
+ * its ownership, and its conflicts become the committed composition only
+ * once the update holds; until then, and after a rejection, `current`,
+ * `layers`, `originOf`, and `conflicts` keep describing the running tree.
  * @param options - `reloadBundles` re-reads the profile manifest first, so a
  * bundle enabled or installed since boot joins the stack.
  * @throws when the root include is not mounted, or the Loader rejected the update.
