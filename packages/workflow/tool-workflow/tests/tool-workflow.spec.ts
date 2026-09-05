@@ -458,7 +458,7 @@ describe('dsh-tool-workflow', () => {
 
     /** The ring's retained text from offset 0, read as the owner. */
     function retained(ctx: Context, jobId: JobId, owner: Agent): string {
-      return ctx.jobs.visibleTo(owner.id).readAt(jobId, 0).chunks.map(chunk => chunk.text).join('')
+      return ctx.jobs.forCaller(owner.id).readAt(jobId, 0).chunks.map(chunk => chunk.text).join('')
     }
 
     it('registers an owned job, mirrors progress into its ring, and settles with the rendered value', async () => {
@@ -472,7 +472,7 @@ describe('dsh-tool-workflow', () => {
       // The engine run carries no tool-step signal: the job owns cancellation.
       expect(engine.requests[0]!.signal).toBeUndefined()
 
-      const jobs = ctx.jobs.visibleTo(parent.id)
+      const jobs = ctx.jobs.forCaller(parent.id)
       const job = jobs.get('workflow-1' as never)
       expect(job).toMatchObject({ kind: 'workflow', label: 'audit', status: 'running', owner: parent.id })
       expect(job.output.total).toBe(0)
@@ -518,7 +518,7 @@ describe('dsh-tool-workflow', () => {
       const { ctx, engine, parent } = await setupBackground()
       const result = await execute(ctx, { script: SCRIPT, meta: META, run_in_background: true }, { agent: parent })
       if (result.isError) throw new Error('expected background acceptance')
-      const jobs = ctx.jobs.visibleTo(parent.id)
+      const jobs = ctx.jobs.forCaller(parent.id)
       const jobId = (result.value as { jobId: string }).jobId as JobId
       expect(jobs.kill(jobId, { reason: 'operator stop' })).toBe('requested')
       expect(engine.cancels).toEqual(['operator stop'])
@@ -541,7 +541,7 @@ describe('dsh-tool-workflow', () => {
       if (result.isError) throw new Error('expected background acceptance')
       expect(engine.requests[0]).toMatchObject({ args: { files: ['a.ts'] } })
       engine.settleRun(WorkflowRunId('run-1'), { value: null, stopReason: 'error', error: 'script exploded', agentsStarted: 2 })
-      const jobs = ctx.jobs.visibleTo(parent.id)
+      const jobs = ctx.jobs.forCaller(parent.id)
       await vi.waitFor(() => { expect(jobs.get('workflow-1' as never).status).toBe('failed') })
       expect(jobs.get('workflow-1' as never).detail).toBe('script exploded')
 
@@ -564,7 +564,7 @@ describe('dsh-tool-workflow', () => {
       )
       if (result.isError) throw new Error('expected background acceptance')
       engine.settleRun(WorkflowRunId('run-1'), { value: 'ok', stopReason: 'completed', agentsStarted: 1 })
-      const jobs = ctx.jobs.visibleTo(parent.id)
+      const jobs = ctx.jobs.forCaller(parent.id)
       await vi.waitFor(() => { expect(jobs.get('workflow-1' as never).status).toBe('completed') })
       expect(jobs.get('workflow-1' as never).detail).toBe('1 agent')
       expect(warn.mock.calls.map(args => String(args[0])).join('\n')).toContain('dispose failed')
@@ -577,7 +577,7 @@ describe('dsh-tool-workflow', () => {
       const result = await execute(ctx, { script: SCRIPT, meta: META, run_in_background: true }, { agent: parent })
       expect(result.isError).toBe(true)
       expect((result.content[0] as { text: string }).text).toContain('META_INVALID')
-      expect(ctx.jobs.visibleTo(parent.id).list()).toEqual([])
+      expect(ctx.jobs.forCaller(parent.id).list()).toEqual([])
     })
 
     it('fails loud without a job registry', async () => {
@@ -668,7 +668,7 @@ describe('dsh-tool-workflow', () => {
       expect(result.isError).toBe(false)
       if (result.isError) throw new Error('expected background acceptance')
       const { jobId } = result.value as { jobId: JobId }
-      const jobs = ctx.jobs.visibleTo(parent.id)
+      const jobs = ctx.jobs.forCaller(parent.id)
 
       await vi.waitFor(() => { expect(jobs.get(jobId).status).toBe('completed') }, { timeout: 10_000 })
       expect(jobs.get(jobId).detail).toBe('0 agents')

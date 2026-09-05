@@ -76,7 +76,7 @@ describe('JobController.kill', () => {
     // The kill reason is recorded for the killed detail; the notice ledger
     // lives in tool-jobs, which never learns of this kill, so the completion
     // notice stays due.
-    expect(ctx.jobs.visibleTo(agent.id).get(id)).toMatchObject({ status: 'stopping' })
+    expect(ctx.jobs.forCaller(agent.id).get(id)).toMatchObject({ status: 'stopping' })
   })
 
   it('reports an already-finished job instead of failing', async () => {
@@ -87,7 +87,7 @@ describe('JobController.kill', () => {
     await new Promise(resolve => setTimeout(resolve, 0))
 
     expect(controller.kill({ sessionId: session.id, jobId: id })).toEqual({ outcome: 'already-finished' })
-    expect(ctx.jobs.visibleTo(agent.id).get(id).status).toBe('completed')
+    expect(ctx.jobs.forCaller(agent.id).get(id).status).toBe('completed')
   })
 
   it('kills an unowned job from a session without a live agent', async () => {
@@ -114,7 +114,7 @@ describe('JobController.kill', () => {
 
     expect(failureCode(() => controller.kill({ sessionId: other.id, jobId: id })))
       .toBe('job/not-found')
-    expect(ctx.jobs.visibleTo(agent.id).get(id).status).toBe('running')
+    expect(ctx.jobs.forCaller(agent.id).get(id).status).toBe('running')
   })
 
   it('propagates a producer cancel throw instead of masking it as job/not-found', async () => {
@@ -131,7 +131,7 @@ describe('JobController.kill', () => {
     // The registry contract: a producer throw propagates with job state
     // unchanged — the Remote must not rewrite it into a lookup failure.
     expect(() => controller.kill({ sessionId: session.id, jobId: id })).toThrow('cancel boom')
-    expect(ctx.jobs.visibleTo(agent.id).get(id).status).toBe('running')
+    expect(ctx.jobs.forCaller(agent.id).get(id).status).toBe('running')
   })
 
   it('rejects a subagent-owned live session with the ownership fence', async () => {
@@ -143,6 +143,6 @@ describe('JobController.kill', () => {
 
     expect(failureCode(() => controller.kill({ sessionId: child.id, jobId: id })))
       .toBe('session/agent-busy')
-    expect(ctx.jobs.visibleTo(childAgent.id).get(id).status).toBe('running')
+    expect(ctx.jobs.forCaller(childAgent.id).get(id).status).toBe('running')
   })
 })

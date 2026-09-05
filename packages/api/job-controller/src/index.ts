@@ -112,7 +112,7 @@ export class JobController extends TypertRemoteService {
     if (agent !== undefined && hasApiSessionSubagentOwner(this.ctx, agent.session, agent)) {
       throw apiSessionSubagentOwnershipError(request.sessionId)
     }
-    const jobs = this.ctx.jobs.visibleTo(request.sessionId)
+    const jobs = this.ctx.jobs.forCaller(request.sessionId)
     try {
       jobs.get(request.jobId)
     } catch (error) {

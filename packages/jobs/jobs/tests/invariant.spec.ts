@@ -28,7 +28,7 @@ async function setup() {
   const reads = new Map<string, JobView>()
   let listener: JobEventListener | undefined
   const probe = {
-    visibleTo: (caller?: SessionId) => ({
+    forCaller: (caller?: SessionId) => ({
       get: (id: JobId) => {
         const view = reads.get(String(id))
         if (view === undefined || view.owner !== caller) throw new Error(`unknown job ${String(id)}`)

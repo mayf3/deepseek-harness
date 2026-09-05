@@ -3,7 +3,7 @@ import { Context } from '@deepseek-ai/cordis'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import { JobId, JobRegistry } from '@deepseek-ai/dsh-jobs'
 import type {
-  JobEvent, JobEventFilter, JobEventListener, JobHooks, JobOutputSource, JobRead, JobSpec, JobView, VisibleJobs,
+  JobEvent, JobEventFilter, JobEventListener, JobHooks, JobOutputSource, JobRead, JobSpec, JobView, CallerJobs,
 } from '@deepseek-ai/dsh-jobs'
 
 /** Compile-time probe: does `Shape` carry a `Key` member? */
@@ -45,7 +45,7 @@ class StubJobRegistry extends JobRegistry {
     return id
   }
 
-  visibleTo(caller?: SessionId): VisibleJobs {
+  forCaller(caller: SessionId | undefined): CallerJobs {
     const view = (id: JobId): JobView => this.view(id, caller)
     return {
       list: () => [view(JobId('bash-1'))],
@@ -73,7 +73,7 @@ describe('JobRegistry seam', () => {
     const id = ctx.jobs.start({ kind: 'bash', label: 'sleep 60', owner: caller, run: () => hooks })
     expect(id).toBe('bash-1')
 
-    const jobs = ctx.jobs.visibleTo(caller)
+    const jobs = ctx.jobs.forCaller(caller)
     expect(jobs.list()).toHaveLength(1)
     expect(jobs.get(id).status).toBe('running')
     expect(jobs.get(id).owner).toBe(caller)
@@ -82,7 +82,7 @@ describe('JobRegistry seam', () => {
     expect(jobs.kill(id, { reason: 'seam test' })).toBe('requested')
     await expect(jobs.wait(id, 5)).resolves.toMatchObject({ id })
     // A caller-less view is the unowned-only view.
-    expect(ctx.jobs.visibleTo().get(id).owner).toBeUndefined()
+    expect(ctx.jobs.forCaller(undefined).get(id).owner).toBeUndefined()
 
     const events: JobEvent[] = []
     const unsubscribe = ctx.jobs.events.subscribe({ owners: 'all' }, (event) => { events.push(event) })

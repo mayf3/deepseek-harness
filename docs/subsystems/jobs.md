@@ -122,14 +122,14 @@ interface JobOutcome {
   status: 'completed' | 'killed' | 'failed'
   /**
    * Terminal reason rendered into status lines (`exit code: 3`, `max-tokens`).
-   * When the job settles `killed` after a {@link VisibleJobs.kill} with a
+   * When the job settles `killed` after a {@link CallerJobs.kill} with a
    * reason, the registry appends that reason.
    */
   detail?: string
   /**
    * Return value for jobs whose result is a value rather than a stream (a
    * workflow's rendered result, a subagent's report). The output ring carries
-   * the stream; this is handed out once by the model's next {@link VisibleJobs.read}.
+   * the stream; this is handed out once by the model's next {@link CallerJobs.read}.
    */
   result?: string
 }
@@ -172,7 +172,7 @@ interface JobSourceRead {
 
 ## The output ring
 
-Every job owns one bounded ring. Pull sources are pumped into it and `JobHandle.append` pushes land whole; the model consumes the ring through a registry-kept cursor (`VisibleJobs.read`), any number of observers read it at absolute byte offsets (`VisibleJobs.readAt`), and neither disturbs the other. `JobChannel` labels `stdout`, `stderr`, and `log`; `log` is producer narration that reaches observers only, never the model's consuming read. Settlement ends the stream and trims retention to the settled cap — the ring has no separate lifecycle. Browsers reach the roster and the ring through `job.rows` and `job.observe`, the Remote streams of [`dsh-api-job-controller`](../../packages/api/job-controller/README.md), whose frames are listed under its Cordis API section below.
+Every job owns one bounded ring. Pull sources are pumped into it and `JobHandle.append` pushes land whole; the model consumes the ring through a registry-kept cursor (`CallerJobs.read`), any number of observers read it at absolute byte offsets (`CallerJobs.readAt`), and neither disturbs the other. `JobChannel` labels `stdout`, `stderr`, and `log`; `log` is producer narration that reaches observers only, never the model's consuming read. Settlement ends the stream and trims retention to the settled cap — the ring has no separate lifecycle. Browsers reach the roster and the ring through `job.rows` and `job.observe`, the Remote streams of [`dsh-api-job-controller`](../../packages/api/job-controller/README.md), whose frames are listed under its Cordis API section below.
 
 ```ts type-equiv
 /** One chunk of a job's output ring: absolute offset, text, and its provenance. */
@@ -191,7 +191,7 @@ interface JobChunk {
 ```
 
 ```ts type-equiv
-/** Result of one non-consuming {@link VisibleJobs.readAt}. */
+/** Result of one non-consuming {@link CallerJobs.readAt}. */
 interface JobOutputRead {
   /** Retained chunks overlapping `[from, total)`, in offset order. */
   chunks: readonly JobChunk[]
@@ -251,10 +251,10 @@ interface JobView {
 }
 ```
 
-`JobRegistry.visibleTo(caller)` binds one caller's identity and returns its operations; a caller sees its own jobs and every unowned job, and every operation throws for an id outside that set.
+`JobRegistry.forCaller(caller)` binds one caller's identity and returns its operations; a caller sees its own jobs and every unowned job, and every operation throws for an id outside that set.
 
 ```ts type-equiv
-/** Output and post-read state returned by the consuming {@link VisibleJobs.read}. */
+/** Output and post-read state returned by the consuming {@link CallerJobs.read}. */
 interface JobRead {
   /** Ring chunks appended since the model cursor, in offset order; every channel included. */
   chunks: readonly JobChunk[]
@@ -269,11 +269,11 @@ interface JobRead {
 
 ```ts type-equiv
 /**
- * The operations one caller may perform, bound by {@link JobRegistry.visibleTo}.
+ * The operations one caller may perform, bound by {@link JobRegistry.forCaller}.
  * A caller sees its own jobs and every unowned job; every method throws for
  * an id outside that set, without distinguishing unknown from foreign.
  */
-interface VisibleJobs {
+interface CallerJobs {
   /**
    * List the visible jobs in registration order.
    * @returns fresh projections.
@@ -334,7 +334,7 @@ The registry announces every commit through one filtered stream. Lifecycle event
 /**
  * One lifecycle or output event. Lifecycle events carry the job's projection
  * after the commit they announce; `output` carries only the id and the new
- * total, so an observer schedules a {@link VisibleJobs.readAt} from its own
+ * total, so an observer schedules a {@link CallerJobs.readAt} from its own
  * cursor and the registry never pushes payloads.
  */
 type JobEvent =
@@ -373,7 +373,7 @@ type JobEventFilter =
 
 ## Service behavior
 
-The abstract [`JobRegistry`](../../packages/jobs/jobs/src/index.ts) Service Definition specifies atomic `start`, caller-bound `visibleTo` (`list`, `get`, the consuming `read`, the non-consuming `readAt`, `kill`, and bounded `wait`), the filtered `events` stream, and `attachController`; [`LocalJobRegistry`](../../packages/jobs/jobs-local/src/index.ts) is the process-local Service Provider. Authorization compares owner sessions; owner cleanup and admission use the live `Agent` registered under the owner session when the job starts. The local provider's positive-safe-integer `maxConcurrentJobsPerOwner` config defaults to `10` and counts `running` plus `stopping` records per exact owner, with one shared bucket for unowned jobs; terminal producer settlement releases capacity; `retainBytes` (default 262144) and `settledRetainBytes` (default 16384) bound each ring's live and settled retention, and `pumpPollMs` (default 150) is the pull cadence. See [`dsh-jobs`](../../packages/jobs/jobs/README.md) for the Service Definition contract, [`dsh-jobs-local`](../../packages/jobs/jobs-local/README.md) for the registry lifecycle and admission policy, and [`dsh-tool-jobs`](../../packages/jobs/tool-jobs/README.md) for the model-facing Consumer.
+The abstract [`JobRegistry`](../../packages/jobs/jobs/src/index.ts) Service Definition specifies atomic `start`, caller-bound `forCaller` (`list`, `get`, the consuming `read`, the non-consuming `readAt`, `kill`, and bounded `wait`), the filtered `events` stream, and `attachController`; [`LocalJobRegistry`](../../packages/jobs/jobs-local/src/index.ts) is the process-local Service Provider. Authorization compares owner sessions; owner cleanup and admission use the live `Agent` registered under the owner session when the job starts. The local provider's positive-safe-integer `maxConcurrentJobsPerOwner` config defaults to `10` and counts `running` plus `stopping` records per exact owner, with one shared bucket for unowned jobs; terminal producer settlement releases capacity; `retainBytes` (default 262144) and `settledRetainBytes` (default 16384) bound each ring's live and settled retention, and `pumpPollMs` (default 150) is the pull cadence. See [`dsh-jobs`](../../packages/jobs/jobs/README.md) for the Service Definition contract, [`dsh-jobs-local`](../../packages/jobs/jobs-local/README.md) for the registry lifecycle and admission policy, and [`dsh-tool-jobs`](../../packages/jobs/tool-jobs/README.md) for the model-facing Consumer.
 
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 
@@ -455,13 +455,13 @@ abstract start(spec: JobSpec): JobId
 
 /**
  * Bind the caller's identity once and return its operations. A caller sees
- * its own jobs and every unowned job; a caller-less view sees unowned jobs
- * only. The view resolves visibility on every call, so it stays valid as
- * jobs come and go.
- * @param caller - the reading session, or undefined for an anonymous caller.
+ * its own jobs and every unowned job; an anonymous caller sees unowned jobs
+ * only. The operations resolve visibility on every call, so they stay valid
+ * as jobs come and go.
+ * @param caller - the calling session, or `undefined` for an anonymous caller.
  * @returns the operations available to that caller.
  */
-abstract visibleTo(caller?: SessionId): VisibleJobs
+abstract forCaller(caller: SessionId | undefined): CallerJobs
 
 /**
  * Attach an effect-scoped controller that can read and stop jobs. It serves the

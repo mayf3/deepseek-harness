@@ -12,7 +12,7 @@ Status: implemented
 
 `jobs/` 如今是一个 bash 三件套形态的三包能力家族：
 
-- **`@deepseek-ai/dsh-jobs`（Service Definition）**——抽象的 `JobRegistry extends Service`，拥有 `ctx.jobs`、约定（`start`、绑定调用方的 `visibleTo` 视图及其 `list`、`get`、`read`、`readAt`、`kill`、`wait`、`events` 事件流，以及 `attachController`）、全部词汇类型（`JobId`、`JobKindMap`、`JobSpec`、`JobHandle`、`JobHooks`、`JobOutcome`、`JobView`、`JobRead`、`JobEvent`），以及事件协议不变式配套插件。类级 JSDoc 陈述了每个 Service Provider 都必须兑现的语义：注册的存续期长于生产方与控制器的 fiber，有所有者的访问以会话为界，结算遵循首次结果优先且监听器错误被隔离，并且当没有任何已附加的任务控制器服务于 spec 的所有者时 `start` 拒绝启动工作（控制器与事件订阅按 scope 分层，因此一个进程级注册表能逐所有者地回答这两个问题）。
+- **`@deepseek-ai/dsh-jobs`（Service Definition）**——抽象的 `JobRegistry extends Service`，拥有 `ctx.jobs`、约定（`start`、绑定调用方的 `forCaller` 视图及其 `list`、`get`、`read`、`readAt`、`kill`、`wait`、`events` 事件流，以及 `attachController`）、全部词汇类型（`JobId`、`JobKindMap`、`JobSpec`、`JobHandle`、`JobHooks`、`JobOutcome`、`JobView`、`JobRead`、`JobEvent`），以及事件协议不变式配套插件。类级 JSDoc 陈述了每个 Service Provider 都必须兑现的语义：注册的存续期长于生产方与控制器的 fiber，有所有者的访问以会话为界，结算遵循首次结果优先且监听器错误被隔离，并且当没有任何已附加的任务控制器服务于 spec 的所有者时 `start` 拒绝启动工作（控制器与事件订阅按 scope 分层，因此一个进程级注册表能逐所有者地回答这两个问题）。
 - **`@deepseek-ai/dsh-jobs-local`（Service Provider）**——`LocalJobRegistry`，即进程内注册表：内存存储、按 kind 划分的 id 计数器、等待方簿记、`TASK_WAIT_TIMEOUT` deadline 代码、所有者清理 effect、强制失败的拆除，以及默认值为 10 且可配置的准入策略。准入从同一组记录中按确切 owner 派生 `running` 加 `stopping` 容量，并为无 owner 任务使用一个共享桶；它不新增公开计数或第二个状态 owner。`dsh-timeout` 依赖与由 Schemastery 管理的 Service Provider 配置都位于此包；Service Definition 包不含任何提供方依赖。
 - **`@deepseek-ai/dsh-tool-jobs`（Consumer）**——保持不变；它注入 `'jobs'`，从不导入提供方类型。
 

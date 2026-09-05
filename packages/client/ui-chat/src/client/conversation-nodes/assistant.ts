@@ -1,6 +1,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 import type {
-  AssistantBlock, AssistantMessageNode, ConversationLocation, ConversationMatch, ConversationNodeContext, ConversationNodeDefinition,
+  AssistantBlock, AssistantMessageNode, ConversationLocation, ConversationMatch,
+  ConversationNodeContext, ConversationNodeDefinition,
 } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { StreamChunk } from '@deepseek-ai/dsh-llm'
 import { expandAssistantStream } from '@deepseek-ai/dsh-llm/assistant-stream'

@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-09-01-jobs-absorb-activity-record.md
-2026-09-01-jobs-absorb-activity-record.md: a1da1ba6f47dd0f5d557542d6b9668d6723fd683
-2026-09-01-jobs-absorb-activity-record.zh.md: fd735f1d9764dc83c0469209e241d47176584f5a
+2026-09-01-jobs-absorb-activity-record.md: 3e39d62a99283529f7a867a808f97cd46f26afcb
+2026-09-01-jobs-absorb-activity-record.zh.md: a2904d01712213eff7f35075d732c3b318f04092

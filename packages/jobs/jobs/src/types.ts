@@ -18,14 +18,14 @@ export interface JobOutcome {
   status: 'completed' | 'killed' | 'failed'
   /**
    * Terminal reason rendered into status lines (`exit code: 3`, `max-tokens`).
-   * When the job settles `killed` after a {@link VisibleJobs.kill} with a
+   * When the job settles `killed` after a {@link CallerJobs.kill} with a
    * reason, the registry appends that reason.
    */
   detail?: string
   /**
    * Return value for jobs whose result is a value rather than a stream (a
    * workflow's rendered result, a subagent's report). The output ring carries
-   * the stream; this is handed out once by the model's next {@link VisibleJobs.read}.
+   * the stream; this is handed out once by the model's next {@link CallerJobs.read}.
    */
   result?: string
 }
@@ -155,7 +155,7 @@ export interface JobSpec {
   run(job: JobHandle): JobHooks
 }
 
-/** Options for {@link VisibleJobs.kill}. */
+/** Options for {@link CallerJobs.kill}. */
 export interface JobKillOptions {
   /**
    * Cancellation reason: forwarded verbatim to the producer's cancel hook, and
@@ -165,7 +165,7 @@ export interface JobKillOptions {
   reason?: string
 }
 
-/** Output and post-read state returned by the consuming {@link VisibleJobs.read}. */
+/** Output and post-read state returned by the consuming {@link CallerJobs.read}. */
 export interface JobRead {
   /** Ring chunks appended since the model cursor, in offset order; every channel included. */
   chunks: readonly JobChunk[]
@@ -177,7 +177,7 @@ export interface JobRead {
   job: JobView
 }
 
-/** Result of one non-consuming {@link VisibleJobs.readAt}. */
+/** Result of one non-consuming {@link CallerJobs.readAt}. */
 export interface JobOutputRead {
   /** Retained chunks overlapping `[from, total)`, in offset order. */
   chunks: readonly JobChunk[]
@@ -193,11 +193,11 @@ export interface JobOutputRead {
 }
 
 /**
- * The operations one caller may perform, bound by {@link JobRegistry.visibleTo}.
+ * The operations one caller may perform, bound by {@link JobRegistry.forCaller}.
  * A caller sees its own jobs and every unowned job; every method throws for
  * an id outside that set, without distinguishing unknown from foreign.
  */
-export interface VisibleJobs {
+export interface CallerJobs {
   /**
    * List the visible jobs in registration order.
    * @returns fresh projections.
@@ -251,7 +251,7 @@ export interface VisibleJobs {
 
 /**
  * Why a job settled: its producer finished (`producer`), a
- * {@link VisibleJobs.kill} ran first (`kill`), or owner or service teardown
+ * {@link CallerJobs.kill} ran first (`kill`), or owner or service teardown
  * cancelled it (`teardown`) — a settlement whose owner has no reader left.
  */
 export type JobSettleCause = 'producer' | 'kill' | 'teardown'
@@ -259,7 +259,7 @@ export type JobSettleCause = 'producer' | 'kill' | 'teardown'
 /**
  * One lifecycle or output event. Lifecycle events carry the job's projection
  * after the commit they announce; `output` carries only the id and the new
- * total, so an observer schedules a {@link VisibleJobs.readAt} from its own
+ * total, so an observer schedules a {@link CallerJobs.readAt} from its own
  * cursor and the registry never pushes payloads.
  */
 export type JobEvent =

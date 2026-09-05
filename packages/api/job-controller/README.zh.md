@@ -22,7 +22,7 @@ kind: "package-reference"
 <a id="use-this-package"></a>
 ## 使用本包
 
-Host 控制器要求活体 Agent 注册表与 job 注册表（已发布组合里是 `dsh-jobs-local`），缺少任一则不加载。`job.rows({ sessionId })` 产出该会话可见的集合——自己的 job 加上所有无主 job——打开时一次，之后每一轮聚合过的生命周期提交（注册、进度、停止中、结算、移除）后再一次；输出追加从不刷新名册，因为结算后的投影已经带着最终字节数。`job.observe({ sessionId?, jobId, from? })` 经 `visibleTo(sessionId)` 读取——无主 job 不需要 session——先产出一个携带 job 投影的 `opened` 锚帧，再是聚合的 `output` 帧，job 结算且环排干后产出一个终态 `status`，随后流正常关闭；流中若通告了移除（拥有者 teardown），则以被移除 job 的终态投影收尾。两种读取都是非消耗的：模型侧 `job_output` 游标与完成播报状态永远观察不到它们。
+Host 控制器要求活体 Agent 注册表与 job 注册表（已发布组合里是 `dsh-jobs-local`），缺少任一则不加载。`job.rows({ sessionId })` 产出该会话可见的集合——自己的 job 加上所有无主 job——打开时一次，之后每一轮聚合过的生命周期提交（注册、进度、停止中、结算、移除）后再一次；输出追加从不刷新名册，因为结算后的投影已经带着最终字节数。`job.observe({ sessionId?, jobId, from? })` 经 `forCaller(sessionId)` 读取——无主 job 不需要 session——先产出一个携带 job 投影的 `opened` 锚帧，再是聚合的 `output` 帧，job 结算且环排干后产出一个终态 `status`，随后流正常关闭；流中若通告了移除（拥有者 teardown），则以被移除 job 的终态投影收尾。两种读取都是非消耗的：模型侧 `job_output` 游标与完成播报状态永远观察不到它们。
 
 `job.kill({ sessionId, jobId })` 以 `cancelled by the user` 为原因取消一个该会话看得到的 job，注册表把该原因合并进被杀 job 的 detail。它不在模型的播报台账里认领任何东西——台账在 `dsh-tool-jobs` 里，只有模型自己的 `job_kill` 与等待会认领——因此拥有者 agent 的完成通知照常送达，并带上原因。它回答 `{ outcome: 'requested' }` 或 `{ outcome: 'already-finished' }`，对该会话看不到的 id 以 `job/not-found` 拒绝，并与 `session.cancel` 一样施加 subagent 所有权围栏。
 
@@ -54,7 +54,7 @@ Client 入口在 `ClientJobsModel` 之上提供 `ClientJobs`（`ctx.jobs`）。`
 
 - 环是尽力而为的实时预览，不是终端转录：生产者的拉取源按轮询轮次复制，同一轮询窗口内两条流的写入先 stdout 落地，客户端拼接 chunk 时也不区分 `channel`。
 - 两条流都是进程本地的：Host 重启丢失全部环与名册，续读的观测随后锚定在空注册表上，重开的名册从空开始。
-- 按 session 的围栏由注册表的 `visibleTo` 读取强制；Remote 层本身服务任何已连接浏览器。
+- 按 session 的围栏由注册表的 `forCaller` 读取强制；Remote 层本身服务任何已连接浏览器。
 
 <a id="dev-note"></a>
 ### 开发备注

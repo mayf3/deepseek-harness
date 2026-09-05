@@ -127,7 +127,7 @@ describe.skipIf(MODE === 'record')('web e2e: background job list', () => {
       () => page.getByRole('list', { name: 'Background jobs' }).textContent(),
       { timeout: 15_000 },
     ).toContain('cancelled by the user')
-    expect(scaffold.ctx.jobs.visibleTo(agent.id).get(jobId).status).toBe('killed')
+    expect(scaffold.ctx.jobs.forCaller(agent.id).get(jobId).status).toBe('killed')
 
     const settled = await captureStableAria(page, '[class*="menu"]', scaffold.workspaceCwd)
     await compareOrRefreshGolden(SETTLED_EXPECTED, settled, MODE)

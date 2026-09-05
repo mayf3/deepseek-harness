@@ -11,7 +11,7 @@
 
 import { Context, Service } from '@deepseek-ai/cordis'
 import type { SessionId } from '@deepseek-ai/dsh-session'
-import type { JobEvents, JobId, JobSpec, VisibleJobs } from './types.ts'
+import type { JobEvents, JobId, JobSpec, CallerJobs } from './types.ts'
 
 export { JobId } from './types.ts'
 export type {
@@ -36,7 +36,7 @@ export type {
   JobSpec,
   JobStatus,
   JobView,
-  VisibleJobs,
+  CallerJobs,
 } from './types.ts'
 
 declare module '@deepseek-ai/cordis' {
@@ -105,13 +105,13 @@ export abstract class JobRegistry extends Service {
 
   /**
    * Bind the caller's identity once and return its operations. A caller sees
-   * its own jobs and every unowned job; a caller-less view sees unowned jobs
-   * only. The view resolves visibility on every call, so it stays valid as
-   * jobs come and go.
-   * @param caller - the reading session, or undefined for an anonymous caller.
+   * its own jobs and every unowned job; an anonymous caller sees unowned jobs
+   * only. The operations resolve visibility on every call, so they stay valid
+   * as jobs come and go.
+   * @param caller - the calling session, or `undefined` for an anonymous caller.
    * @returns the operations available to that caller.
    */
-  abstract visibleTo(caller?: SessionId): VisibleJobs
+  abstract forCaller(caller: SessionId | undefined): CallerJobs
 
   /**
    * Attach an effect-scoped controller that can read and stop jobs. It serves the

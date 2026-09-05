@@ -22,7 +22,7 @@ English | [中文](README.zh.md)
 <a id="use-this-package"></a>
 ## Use this package
 
-The Host controller requires the live Agent registry and the job registry (`dsh-jobs-local` in the shipped compositions) and fails to load without them. `job.rows({ sessionId })` yields the session's visible set — its own jobs plus every unowned job — once on open and again after each coalesced burst of lifecycle commits (registration, progress, stopping, settlement, removal); output appends never refresh the roster, since a settled projection already carries the final byte count. `job.observe({ sessionId?, jobId, from? })` reads through `visibleTo(sessionId)` — an unowned job needs no session — and yields one `opened` anchor carrying the job projection, coalesced `output` frames, then one terminal `status` once the job has settled and its ring is drained, after which the stream closes normally; a removal announced mid-stream (the owner's teardown) closes it with the removed job's terminal projection. Both reads are non-consuming: the model's `job_output` cursor and notice state never observe them.
+The Host controller requires the live Agent registry and the job registry (`dsh-jobs-local` in the shipped compositions) and fails to load without them. `job.rows({ sessionId })` yields the session's visible set — its own jobs plus every unowned job — once on open and again after each coalesced burst of lifecycle commits (registration, progress, stopping, settlement, removal); output appends never refresh the roster, since a settled projection already carries the final byte count. `job.observe({ sessionId?, jobId, from? })` reads through `forCaller(sessionId)` — an unowned job needs no session — and yields one `opened` anchor carrying the job projection, coalesced `output` frames, then one terminal `status` once the job has settled and its ring is drained, after which the stream closes normally; a removal announced mid-stream (the owner's teardown) closes it with the removed job's terminal projection. Both reads are non-consuming: the model's `job_output` cursor and notice state never observe them.
 
 `job.kill({ sessionId, jobId })` cancels one job the session can see with the reason `cancelled by the user`, which the registry merges into the killed job's detail. It claims nothing in the model's notice ledger — that ledger lives in `dsh-tool-jobs`, where only the model's own `job_kill` and waits claim — so the owning agent's completion notice stays due, reason included. It answers `{ outcome: 'requested' }` or `{ outcome: 'already-finished' }`, rejects an id the session cannot see as `job/not-found`, and applies the subagent ownership fence exactly as `session.cancel` does.
 
@@ -54,7 +54,7 @@ No direct effect; observation reads never touch model requests.
 
 - The ring is a best-effort live preview, not a terminal transcript: producers' pull sources are copied per poll round, so two streams' writes inside one poll window land stdout first, and the client concatenates chunks regardless of `channel`.
 - Both streams are process-local: a Host restart loses every ring and roster; a resumed observation then anchors on an empty registry, and a re-opened roster starts empty.
-- Per-session fencing is enforced by the registry's `visibleTo` read; the Remote layer itself serves any connected browser.
+- Per-session fencing is enforced by the registry's `forCaller` read; the Remote layer itself serves any connected browser.
 
 <a id="dev-note"></a>
 ### Dev Note
