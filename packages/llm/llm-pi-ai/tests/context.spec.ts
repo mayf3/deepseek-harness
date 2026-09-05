@@ -480,6 +480,10 @@ describe('pi-ai system prompt source', () => {
     }
     expect(toPiContext(options)).toEqual(expected)
     await expect(toPiContext(options, imageContext(attachments))).resolves.toEqual(expected)
+    const fromOption: GenerateOptions = { ...base, system: 'lead rule', messages: [question] }
+    expect(toPiContext(options)).toEqual(toPiContext(fromOption))
+    expect(await toPiContext(options, imageContext(attachments)))
+      .toEqual(await toPiContext(fromOption, imageContext(attachments)))
   })
 
   it('sends no systemPrompt for an empty leading system message on both conversion paths', async () => {

@@ -249,7 +249,7 @@ describe('serializeRequest', () => {
     expect(wire.messages[1]).toEqual({ role: 'user', content: 'hi' })
   })
 
-  it('serializes a leading system message byte-for-byte like the same prompt passed as options.system', () => {
+  it('serializes a leading system message byte-for-byte like the same prompt passed as options.system', async () => {
     const systemMessage = createMessage({
       role: 'system',
       content: [{ type: 'text', text: 'be helpful' }],
@@ -260,6 +260,10 @@ describe('serializeRequest', () => {
     const fromOption = serializeRequest(request({ messages: history, system: 'be helpful', tools }))
     expect(fromHistory.messages[0]).toEqual({ role: 'system', content: 'be helpful' })
     expect(JSON.stringify(fromHistory)).toBe(JSON.stringify(fromOption))
+    const images = imageOptions([])
+    const imageHistory = await serializeRequestWithImages(request({ messages: [systemMessage, ...history], tools }), images)
+    const imageOption = await serializeRequestWithImages(request({ messages: history, system: 'be helpful', tools }), images)
+    expect(JSON.stringify(imageHistory)).toBe(JSON.stringify(imageOption))
   })
 
   it('maps sampling params and stop sequences', () => {

@@ -43,9 +43,9 @@ In `packages/core/agent-loop/src/agent.ts`, `preStep` renders the prompt with `r
 
 | Consumer | Reads |
 |---|---|
-| DeepSeek serializers (`serializeRequest`, `serializeRequestWithImages`) | `options.messages`, passing the `role: 'system'` history message through as wire message 0; `GenerateOptions.system` remains for direct one-shot callers such as the compaction summarizer and title providers |
+| DeepSeek serializers (`serializeRequest`, `serializeRequestWithImages`) | `options.messages`, passing the `role: 'system'` history message through as wire message 0; `GenerateOptions.system` remains for direct one-shot callers such as title providers |
 | `dsh-llm-pi-ai` | a leading system history message maps to pi-ai's `systemPrompt` |
-| `compaction-basic` `buildSummarizationInput` | node 0's text as the summarizer `system`, followed by the region messages, so the summarizer request is a genuine prefix of the routed request |
+| `compaction-basic` `buildSummarizationInput` | node 0's derived message prepended to the region in `SummarizationInput.messages`, with no separate `system` field; an empty-content head projects to no message while staying protected from compaction |
 | `compaction-basic` `selectCompactableRange` | anchors at the first non-system node; node 0 is never inside a compaction range |
 | `dsh-token-meter` | the system node is priced as a surface node under the `systemTokens` breakdown |
 | Web request-prompt card, trajectory request node, request inspection | the `system/message` node; a replaced node 0 is shown as a prompt change in a collapsed inspectable card, never a chat bubble |
@@ -81,5 +81,5 @@ In `packages/core/agent-loop/src/agent.ts`, `preStep` renders the prompt with `r
 - `packages/core/agent-loop/tests/system-prompt-projection.spec.ts` pins the append on first render, the no-op on an unchanged prompt, the replacement of the retained node on change, restoration from the log, and the tail append after a replacement shadowed a non-head system node.
 - `packages/core/agent-loop/tests/request-reconstruction.spec.ts` (`a system-prompt change replaces surface node 0 and starts a new series under the same header`) pins the `series` header that follows a prompt replacement.
 - `packages/core/agent-loop/tests/invariant.spec.ts` pins the companion's rejection of a loop request carrying a `system` field and its `messages` equality check against the boundary derivation.
-- `packages/llm/llm-deepseek/tests/serialize.spec.ts` (`serializes a leading system message byte-for-byte like the same prompt passed as options.system`) pins wire identity.
+- `packages/llm/llm-deepseek/tests/serialize.spec.ts` (`serializes a leading system message byte-for-byte like the same prompt passed as options.system`) pins wire identity. `packages/llm/llm-pi-ai/tests/context.spec.ts` compares both system sources on text and image paths. `packages/compaction/compaction-basic/tests/compaction-basic.spec.ts` pins the derived prefix, routed tools, absent separate `system` option, and protected non-empty or empty head through the region transaction and default summarizer.
 - The recorded snapshots under `snapshots/` pin the model-visible wire request of every shipped profile; a recorded session that renders a prompt carries the `system/message` event at surface node 0 in its `session.jsonl`, and a session with a mid-session prompt change carries the replacement of node 0.

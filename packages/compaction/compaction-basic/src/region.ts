@@ -17,7 +17,7 @@ import {
 import type { CompactionResult } from '@deepseek-ai/dsh-compaction'
 import type { CommandId } from '@deepseek-ai/dsh-commands/brand'
 import { createUserMessage, errorChain } from '@deepseek-ai/dsh-llm'
-import type { ContentBlock, Message, UserMessage } from '@deepseek-ai/dsh-llm'
+import type { Message, UserMessage } from '@deepseek-ai/dsh-llm'
 import type { TokenMeasurement, TokenMeter } from '@deepseek-ai/dsh-token-meter'
 import { SessionSeq, type Session, type SessionEvent } from '@deepseek-ai/dsh-session'
 import type { Agent } from '@deepseek-ai/dsh-agent'
@@ -520,7 +520,7 @@ function completeCompaction(
  * order. The summarizer appends only the compaction instruction after this, so
  * the call is a genuine prefix of the conversation and reuses the provider's
  * KV cache. A surface without a system head, or whose head projects to no
- * message, yields no `system`.
+ * message, contributes no leading system message.
  * @param session - session supplying the surface head, request header, and per-node projection.
  * @param shadowedSeqs - the surface-node seqs, in order, being compacted.
  * @returns the replayed conversation prefix to condense.
@@ -540,18 +540,9 @@ function buildSummarizationInput(
     .map(seq => session.deriveEventMessage(session.eventAt(seq)!))
     .filter((message): message is Message => message !== null)
   return {
-    ...system === null ? {} : { system: textContent(system) },
     ...header?.tools === undefined ? {} : { tools: header.tools },
-    messages: regionMessages,
+    messages: system === null ? regionMessages : [system, ...regionMessages],
   }
-}
-
-/** Join a message's text blocks into the one string the summarizer's `system` field carries. */
-function textContent(message: Message): string {
-  return message.content
-    .filter((block): block is Extract<ContentBlock, { type: 'text' }> => block.type === 'text')
-    .map(block => block.text)
-    .join('\n')
 }
 
 /** Inspect open-turn, unmatched-compaction, and latest seed-boundary state independently. */
