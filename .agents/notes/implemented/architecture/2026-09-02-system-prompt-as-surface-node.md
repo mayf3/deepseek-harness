@@ -39,6 +39,8 @@ The append row is exact about position: a prompt that first becomes non-empty af
 
 In `packages/core/agent-loop/src/agent.ts`, `preStep` renders the prompt with `renderPrompt(assembly)` and projects it; `turn()` commits the `system/message` immediately after `step/start` and before the step's `user/message` events, so log order is wire order. `buildRequest` sets no `system` on the request: the request is `header.config`, `session.deriveMessages()` (system message first), and `header.tools`. The loop step order is: claim inbox → `systemPrompt.assemble()` → project system prompt → project runtime context → `agent/pre-step` waterfall → `step/start` → commit `system/message` (when changed) → commit `user/message`s → `agent/request` waterfall → `request/header` → `request/context` → stream. The `dsh-agent-loop/invariant` companion (`packages/core/agent-loop/src/invariant.ts`) asserts that a loop-built request has `system === undefined` and `messages` equal to `deriveMessages()`.
 
+`dsh-token-meter` anchors usage to the priced surface immediately before the successful `assistant/message`, not to `step/start`. The loop admits the system prompt and user messages after step start, and retry recovery can replace nodes before rebuilding the request. Capturing that current surface includes every admitted input once; the embedded provider output remains separately priced so durable assistant rewrites retain their signed delta. The open step stores only turn and step for lifecycle validation, not a second node snapshot.
+
 ### Consumers
 
 | Consumer | Reads |
@@ -77,6 +79,7 @@ In `packages/core/agent-loop/src/agent.ts`, `preStep` renders the prompt with `r
 
 ## Testing
 
+- `packages/compaction/compaction-basic/tests/compaction-loop-repro.spec.ts` pins zero post-call surface delta with provider usage through initial, growing, shrinking, and empty prompts, same-step retry replacement, request middleware, and fresh replay.
 - `packages/core/session/tests/surface.spec.ts` (`system/message surface node` block) pins the leading system-role projection, the empty-content `null` projection, `assertSystemHeadRewrite`'s acceptance and rejection paths, the unprotected later system nodes, and the rejection of a seeded `system/message` with a non-system role or non-plugin source.
 - `packages/core/agent-loop/tests/system-prompt-projection.spec.ts` pins the append on first render, the no-op on an unchanged prompt, the replacement of the retained node on change, restoration from the log, and the tail append after a replacement shadowed a non-head system node.
 - `packages/core/agent-loop/tests/request-reconstruction.spec.ts` (`a system-prompt change replaces surface node 0 and starts a new series under the same header`) pins the `series` header that follows a prompt replacement.
