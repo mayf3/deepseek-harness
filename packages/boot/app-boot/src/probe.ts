@@ -10,9 +10,9 @@
 import { spawn } from 'node:child_process'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import type { EntryOptions } from '@deepseek-ai/cordis-plugin-loader'
 import { loadOverlayPatches } from './index.ts'
 import { readProfileManifest, resolveBundleDir, type ProfileManifest } from './profile.ts'
+import { visitInsertedRows } from './patch-rows.ts'
 
 /** Directory under a profile holding one probe record per package. */
 export const PLUGIN_PROBE_DIR = '.dsh-plugins'
@@ -195,13 +195,11 @@ const DEFAULT_TIMEOUT_MS = 20_000
 function describeBundlePatch(binName: string, patchPath: string): { rows: PluginProbeRow[]; overrides: string[] } {
   const rows: PluginProbeRow[] = []
   const own = new Set<string>()
-  const visit = (row: EntryOptions): void => {
+  const patches = loadOverlayPatches(binName, patchPath)
+  visitInsertedRows(patches, (row) => {
     if (typeof row.id === 'string') own.add(row.id)
     rows.push({ ...typeof row.id === 'string' ? { id: row.id } : {}, name: row.name, gated: row.disabled !== undefined })
-    if (row.group && Array.isArray(row.config)) (row.config as EntryOptions[]).forEach(visit)
-  }
-  const patches = loadOverlayPatches(binName, patchPath)
-  for (const patch of patches) patch.insert?.forEach(visit)
+  })
   const overrides = patches
     .filter(patch => patch.insert === undefined && typeof patch.id === 'string' && !own.has(patch.id))
     .map(patch => patch.id as string)

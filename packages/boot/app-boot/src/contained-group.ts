@@ -10,7 +10,7 @@
 
 import type { Context } from '@deepseek-ai/cordis'
 import { Group, type Entry, type EntryGroup, type EntryOptions } from '@deepseek-ai/cordis-plugin-loader'
-import type { RowConflict } from './compose-stack.ts'
+import { describeRowConflict, type RowConflict } from './compose-stack.ts'
 import { bundleGroupId } from './external-bundles.ts'
 
 /**
@@ -204,7 +204,7 @@ export function recordRowConflicts(ctx: Context, conflicts: readonly RowConflict
       groupId,
       ...conflict.packageName === undefined ? {} : { packageName: conflict.packageName },
       stage: 'conflict',
-      message: `row ${JSON.stringify(conflict.rowId)} is already declared by ${conflict.declaredBy}`,
+      message: describeRowConflict(conflict),
     })
   }
 }

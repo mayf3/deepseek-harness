@@ -1,8 +1,9 @@
 /**
  * Tree-wide row-id ownership across the profile stack: built-in layers claim
  * first and fail loud on a duplicate, an external bundle that collides is left
- * out and recorded, a user insert of a taken id is dropped, and the conflict
- * records replace the registry's earlier ones on every composition.
+ * out and recorded, a bundle that repeats one of its own ids is left out the
+ * same way, a user insert of a taken id is dropped, and the conflict records
+ * replace the registry's earlier ones on every composition.
  */
 
 import { afterEach, describe, expect, it } from 'vitest'
@@ -43,9 +44,24 @@ describe('claimLayerIds', () => {
     ])
   })
 
-  it('throws when two built-in or boot-staged layers declare one id', () => {
+  it('throws when two built-in or boot-staged layers declare one id, or one declares it twice', () => {
     const twin = layer('twin', 'external', [{ insert: [{ id: 'settings', name: 'twin' }] }], 'boot')
     expect(() => claimLayerIds([base, twin])).toThrow(/row "settings" is declared by both @deepseek-ai\/dsh-base and twin/)
+    const stutter = layer('stutter', 'builtin', [{ insert: [{ id: 'x', name: 'a' }] }, { insert: [{ id: 'x', name: 'b' }] }])
+    expect(() => claimLayerIds([stutter])).toThrow(/row "x" is declared twice by stutter/)
+  })
+
+  it('leaves out a bundle that declares one of its own ids twice and composes each mounted bundle once', () => {
+    const stutter = layer('stutter', 'external', [{ insert: [{ id: 'x', name: 'stutter/a' }, { id: 'x', name: 'stutter/b' }] }])
+    const clean = layer('clean', 'external', [{ insert: [{ id: 'y', name: 'clean' }] }])
+    const { owners, skipped, composed } = claimLayerIds([base, stutter, clean])
+    expect(skipped.get('stutter')).toEqual([
+      { rowId: 'x', moduleName: 'stutter/b', layer: 'stutter', packageName: 'stutter', declaredBy: 'stutter' },
+    ])
+    expect(owners.has('x')).toBe(false)
+    expect(owners.get('y')?.packageName).toBe('clean')
+    expect([...composed.keys()]).toEqual(['clean'])
+    expect(composed.get('clean')?.patches[1]).toEqual({ id: 'bundle/clean', insert: [{ id: 'y', name: 'clean' }] })
   })
 
   it('gives the earlier external bundle the id and leaves the later one out whole', () => {
@@ -75,6 +91,7 @@ describe('composeProfileStack', () => {
     ])
     expect(stack.layers.map(current => current.label)).toEqual(['@deepseek-ai/dsh-base', 'ext', '/p/cordis.patch.yml', '/home/cordis.patch.yml'])
     expect(stack.layers[1]?.patches[0]?.insert?.[0]).toMatchObject({ id: 'bundle/ext', name: CONTAINED_GROUP_MODULE })
+    expect([...stack.owners.keys()]).toEqual(['settings', 'tools', 'tool-bash', 'ext-tool', 'bundle/ext'])
     expect(stack.layers[2]?.patches).toEqual([
       { id: 'settings', config: { path: '/x' } },
       { insert: [{ id: 'mine', name: 'mine' }] },
@@ -112,6 +129,8 @@ describe('formatRowConflict', () => {
       .toBe('bundle pkg left out — row "x" is already declared by base')
     expect(formatRowConflict({ rowId: 'x', moduleName: 'm', layer: '/p/cordis.patch.yml', declaredBy: 'base' }))
       .toBe('/p/cordis.patch.yml: insert of m skipped — row "x" is already declared by base')
+    expect(formatRowConflict({ rowId: 'x', moduleName: 'm', layer: 'pkg', packageName: 'pkg', declaredBy: 'pkg' }))
+      .toBe('bundle pkg left out — row "x" is declared twice by pkg')
   })
 })
 

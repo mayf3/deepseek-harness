@@ -20,6 +20,7 @@ import { createLaunchEnvironmentSnapshot, type LaunchEnvironmentSnapshot } from 
 import type {} from '@deepseek-ai/cordis-plugin-hmr'
 import type {} from '@deepseek-ai/dsh-system-prompt'
 import { ContainedGroup, ensurePluginFailures, isContainedEntry } from './contained-group.ts'
+import { visitInsertedRows } from './patch-rows.ts'
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
@@ -54,12 +55,12 @@ export {
   type ContainedFailure, type ContainedFailureStage,
 } from './contained-group.ts'
 export {
-  BUNDLE_GROUP_PREFIX, bundleGroupId, bundleLayerPatches, composeExternalLayer, CONTAINED_GROUP_MODULE, disableBundle,
+  BUNDLE_GROUP_PREFIX, bundleGroupId, composeExternalLayer, CONTAINED_GROUP_MODULE, disableBundle,
   enableBundle, exportsBundlePatch, isContainedLayer, isJsDisabled, reconcileInstalledBundles,
-  type BundleReconciliation, type ComposedExternalLayer,
+  type BundleReconciliation, type ComposedExternalLayer, type DuplicateRow,
 } from './external-bundles.ts'
 export {
-  claimLayerIds, composeProfileStack, formatRowConflict,
+  claimLayerIds, composeProfileStack, describeRowConflict, formatRowConflict,
   type ComposedStack, type LayerOwnership, type RowConflict, type StackUserLayer,
 } from './compose-stack.ts'
 export {
@@ -346,13 +347,11 @@ export function loadOverlayPatches(binName: string, file: string): PatchOptions[
 /** Convert inserted filesystem paths to file URLs, anchoring relative paths beside the patch; keep assertion names literal. */
 function anchorInsertedPluginNames(patches: PatchOptions[], file: string): PatchOptions[] {
   const base = dirname(resolve(file))
-  const visit = (entry: EntryOptions): void => {
+  visitInsertedRows(patches, (entry) => {
     if (typeof entry.name === 'string' && (isAbsolute(entry.name) || entry.name.startsWith('./') || entry.name.startsWith('../'))) {
       entry.name = pathToFileURL(resolve(base, entry.name)).href
     }
-    if (entry.group && Array.isArray(entry.config)) entry.config.forEach(visit)
-  }
-  for (const patch of patches) patch.insert?.forEach(visit)
+  })
   return patches
 }
 /**

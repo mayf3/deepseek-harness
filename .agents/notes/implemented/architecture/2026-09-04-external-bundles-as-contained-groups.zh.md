@@ -10,9 +10,9 @@ Status: implemented
 
 ## 决定
 
-**每个外部组合包就是一个组。** profile launcher 按来源给每一层分类：作为 profile 的 pnpm 依赖存在的组合包是 `external`，模板组合包或 profile 在 `dsh.profile.firstParty` 下列出的是 `builtin`。`composeExternalLayer` 把 `runtime` 阶段的外部层渲染成一个 `cordis:contained-group` 条目 `bundle/<package>`，其中放着组合包插入的行，id 保持 patch 声明的样子；插入内置组的行在目标组内嵌套自己的受控组，组合包按 id 定位的 patch 原样通过，指向它没有插入的行时报告为覆盖。组 id 用 `/` 而不是 `:`，因为 `:` 是 Loader 的嵌套 id 分隔符。
+**每个外部组合包就是一个组。** profile launcher 按来源给每一层分类：作为 profile 的 pnpm 依赖存在的组合包是 `external`，模板组合包或 profile 在 `dsh.profile.firstParty` 下列出的是 `builtin`。`composeExternalLayer` 把 `runtime` 阶段的外部层渲染成一个 `cordis:contained-group` 条目 `bundle/<package>`，先空着插入，随后按书写顺序跟着组合包自己的 patch：根级插入改为插进这个组，插入同一个内置组的行全部落进目标组内嵌套的同一个受控包装组，按 id 定位的 patch 原样通过，指向它没有插入的行时报告为覆盖。保持书写顺序，才能让"先替换某个组的 config 再向它追加"这样的 patch 在两种 stage 下含义一致。组 id 用 `/` 而不是 `:`，因为 `:` 是 Loader 的嵌套 id 分隔符。
 
-**行 id 有归属，不改写。** `composeProfileStack` 在任何行挂载之前判定归属：内置层与 boot 阶段的层先占有 id，它们之间重复即启动失败；受控组合包声明了别的层已占有的 id 时整层排除；用户层插入已被占用的 id 时该行丢弃。每一条被排除的行都是 `pluginFailures` 里的一条 `conflict` 记录——启动时打到 stderr，每次重组时替换，在插件列表里按包显示——启动、运行时重组与 `--dump-config` 走同一个函数。
+**行 id 有归属，不改写。** `composeProfileStack` 在任何行挂载之前判定归属：内置层与 boot 阶段的层先占有 id，它们之间重复即启动失败；受控组合包声明了别的层已占有的 id、或把自己的某个 id 声明了两次时整层排除；用户层插入已被占用的 id 时该行丢弃。每一条被排除的行都是 `pluginFailures` 里的一条 `conflict` 记录——启动时打到 stderr，每次重组时替换，在插件列表里按包显示——启动、运行时重组与 `--dump-config` 走同一个函数，它把每个受控层只渲染一次，并一并返回 patch、每个 id 的归属与冲突。
 
 **受控组隔离行的失败。** `ContainedGroup extends Group` 覆盖 `create()`——这是事务性 `update()` 逐行等待的那一步：被拒的行记录到根上的 `pluginFailures` 注册表——树内 id、声明的行 id、模块、组、从 Loader 包装信息解析出的阶段、消息——组在没有它的情况下激活。`assertEntriesActivated` 豁免受控行（失败或 pending 的行变成一条记录），内置行保留致命路径。一条兜底规则封住"隔离反而藏起核心已坏"的 corner case：只要有组合包被隔离，而某个内置行停在 pending，启动仍然失败，诊断点名被隔离的组合包以及 `stage: boot` 这条出路。
 
@@ -38,4 +38,4 @@ harness 升级后损坏的社区组合包不再让 `dsh` 停下；插件列表�
 
 ## 测试
 
-`packages/boot/app-boot/tests/external-bundles.spec.ts` 钉住组合（分组、声明 id、覆盖、嵌套插入、不改动层自己的 patch）与 manifest 操作；`tests/compose-stack.spec.ts` 钉住归属：内置重复抛错，撞名的外部组合包整层排除，用户插入已占用 id 时丢弃，冲突记录替换上一次组合的记录。`tests/contained-group.spec.ts` 启动真实的树：受控行失败被记录而其兄弟行与内置行运行，pending 的受控行被记录，内置失败仍然 reject，被隔离组合包旁边停在 pending 的内置行 reject 并点名它，稍后重载时失败的受控行由审计记录。`tests/profile.spec.ts` 钉住 trust 与 stage 的解析，包括部署者覆盖与未知 stage 的拒绝；`tests/profile-runtime.spec.ts` 钉住来源与重新组合；`packages/host/plugin-inventory/tests/inventory.spec.ts` 钉住新的行字段。
+`packages/boot/app-boot/tests/external-bundles.spec.ts` 钉住组合（分组、声明 id、书写顺序、覆盖、每个内置目标一个包装组、重复 id、不改动层自己的 patch）与 manifest 操作；`tests/compose-stack.spec.ts` 钉住归属：内置重复抛错，撞名或重复声明 id 的外部组合包整层排除，用户插入已占用 id 时丢弃，冲突记录替换上一次组合的记录。`tests/contained-group.spec.ts` 启动真实的树：受控行失败被记录而其兄弟行与内置行运行，pending 的受控行被记录，内置失败仍然 reject，被隔离组合包旁边停在 pending 的内置行 reject 并点名它，稍后重载时失败的受控行由审计记录。`tests/profile.spec.ts` 钉住 trust 与 stage 的解析，包括部署者覆盖与未知 stage 的拒绝；`tests/profile-runtime.spec.ts` 钉住来源与重新组合；`packages/host/plugin-inventory/tests/inventory.spec.ts` 钉住新的行字段。

@@ -58,7 +58,7 @@ profile 是同一套 dsh 安装提供不同应用界面的方式：`web`、`head
 
 插入条目的插件名可以是绝对文件系统路径、文件 URL 或包标识符。patch 加载会把 `insert` 条目及其嵌套分组中的绝对路径以及相对于 patch 文件的 `./` 或 `../` 路径转换为文件 URL；对已有条目名称的断言及替换用的 `config` 值保持原样。
 
-用 `dsh plugin` 安装的组合包是**外部**组合包：它的行挂在一个名为 `bundle/<package>` 的受控组下，id 保持它的 patch 所声明的样子，启动失败的行被隔离并记录而不是让进程停下——组和它的其他行继续运行，插件列表显示失败。模板组合包是内置的，仍然明确失败。若某个组合包提供内置行注入的服务，它必须像内置行一样挂载：作者在 `package.json` 里声明 `dsh.bundle.stage: boot`，或者你在 profile manifest 里设置 `dsh.profile.stages`，后者优先。即使没有这些声明，隔离的失败若让某个内置行停在等待服务的状态，启动仍会失败并点名那个被隔离的组合包。profile manifest 还有两个相关字段：`dsh.profile.firstParty` 列出按内置处理的已安装包（开发期 link 进来的一方包），`dependencies` 与 `dsh.profile.bundles` 的区别则把"只是装了"的包和"层已启用"的包分开。行 id 在整叠层里共用一个命名空间：内置层先占有自己的 id，外部组合包若声明了别的层已占有的 id 就整层被排除，并在 stderr 与插件列表里报告；用户层插入已被占用的 id 时该行被丢弃，同样报告。
+用 `dsh plugin` 安装的组合包是**外部**组合包：它的行挂在一个名为 `bundle/<package>` 的受控组下，id 保持它的 patch 所声明的样子，启动失败的行被隔离并记录而不是让进程停下——组和它的其他行继续运行，插件列表显示失败。模板组合包是内置的，仍然明确失败。若某个组合包提供内置行注入的服务，它必须像内置行一样挂载：作者在 `package.json` 里声明 `dsh.bundle.stage: boot`，或者你在 profile manifest 里设置 `dsh.profile.stages`，后者优先。即使没有这些声明，隔离的失败若让某个内置行停在等待服务的状态，启动仍会失败并点名那个被隔离的组合包。profile manifest 还有两个相关字段：`dsh.profile.firstParty` 列出按内置处理的已安装包（开发期 link 进来的一方包），`dependencies` 与 `dsh.profile.bundles` 的区别则把"只是装了"的包和"层已启用"的包分开。行 id 在整叠层里共用一个命名空间：内置层先占有自己的 id，外部组合包若声明了别的层已占有的 id，或把自己的某个 id 声明了两次，就整层被排除，并在 stderr 与插件列表里报告；用户层插入已被占用的 id 时该行被丢弃，同样报告。
 
 树起来之后 launcher 提供 `ctx.profileRuntime`：它持有已启动 profile 的事实，把每一行归属到插入它的层，读取用户 patch 文件停用了哪些行，并重新组合整棵树——patch 监视器走的正是这条路，运行时启用或安装组合包也走它。启动期的 fail-loud rejection 守卫在树起来后卸载：启动后未处理的 rejection 会被报告并兜住，未捕获的异常会被报告并退出。
 
