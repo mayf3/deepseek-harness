@@ -47,7 +47,7 @@ session.append('user/message', { role: 'user', content: [{ type: 'text', text: '
 session.deriveMessages()         // the derived model history
 ```
 
-Surface events (`user/message`, `assistant/message`, `tool/result`) must declare how they join the ordered surface. An Assistant message embeds the exact compact provider stream that produced it; `assistant/attempt`, boundaries, and other log-only events never produce a message.
+Surface events (`system/message`, `user/message`, `assistant/message`, `tool/result`) must declare how they join the ordered surface. An Assistant message embeds the exact compact provider stream that produced it; `assistant/attempt`, boundaries, and other log-only events never produce a message. `system/message` holds the rendered system prompt at surface node 0; the surface fold rejects a replacement covering node 0 while it is a `system/message` unless the replacing event is itself a `system/message` over exactly that node ([decision](../../../.agents/notes/implemented/architecture/2026-09-02-system-prompt-as-surface-node.md)).
 
 ### Read the log
 
@@ -101,11 +101,11 @@ Every append uses the shared iterative `snapshotJsonValue()` pass, which reads, 
 
 ### Derived history
 
-`deriveMessages()` caches each surface node's projection once and returns a fresh array per call over shared, deep-frozen messages; each of the three surface event types (`user/message`, `assistant/message`, `tool/result`) projects its own message kind — user content verbatim, the assembled assistant message with its provider and model, or a user-role tool result. Embedded Assistant streams and `assistant/attempt` events remain replay and diagnostic data only. A surface rewrite rebuilds the projection — there is no raw-log fallback, so the surface is the single source of derived history.
+`deriveMessages()` caches each surface node's projection once and returns a fresh array per call over shared, deep-frozen messages; each of the four surface event types (`system/message`, `user/message`, `assistant/message`, `tool/result`) projects its own message kind — the system-role prompt (an empty-content system node projects to no message), user content verbatim, the assembled assistant message with its provider and model, or a user-role tool result. Embedded Assistant streams and `assistant/attempt` events remain replay and diagnostic data only. A surface rewrite rebuilds the projection — there is no raw-log fallback, so the surface is the single source of derived history.
 
 ### The request header
 
-The loop logs a full canonical `request/header` snapshot (call config, adapter defaults, rendered system prompt, assembled tool schemas) at each loop-instance boundary and on change; `foldRequestHeader(events)` reconstructs it by selecting the latest snapshot, making every conversation request a pure function of the log. Route metadata (`request/context`) is separate logged state appended only when the provider, model, or capacity differs.
+The loop logs a full canonical `request/header` snapshot (call config, adapter defaults, assembled tool schemas — the rendered system prompt is surface node 0, not header state) at each loop-instance boundary and on change; `foldRequestHeader(events)` reconstructs it by selecting the latest snapshot, making every conversation request a pure function of the log. Route metadata (`request/context`) is separate logged state appended only when the provider, model, or capacity differs.
 
 </details>
 
@@ -131,7 +131,7 @@ The package-level contract is enough for most consumers; read these when you nee
 
 #### What the model sees
 
-The model receives the complete messages from `user/message`, `assistant/message`, and `tool/result` surface entries verbatim — identities, roles, sources, and content blocks are the same values established at creation, and projections never mint identities. Direct prompts and injected context remain separate `user/message` events whose sources preserve their provenance. Embedded streams, `assistant/attempt`, boundaries, and other log-only facts add no message.
+The model receives the complete messages from `system/message`, `user/message`, `assistant/message`, and `tool/result` surface entries verbatim, the system prompt first — identities, roles, sources, and content blocks are the same values established at creation, and projections never mint identities. Direct prompts and injected context remain separate `user/message` events whose sources preserve their provenance. Embedded streams, `assistant/attempt`, boundaries, and other log-only facts add no message.
 
 #### Token effect
 
@@ -159,15 +159,15 @@ Append-only; newly visible content follows the reusable request prefix and does 
 
 #### What the model sees
 
-The session reconstructs the system prompt, tool schemas, call config, and session prefix that the loop actually sent. Header events do not add a second copy to message history; the prefix is prepended outside `deriveMessages()`.
+The session reconstructs the tool schemas and call config that the loop actually sent; the system prompt is part of `deriveMessages()` as surface node 0. Header events add no message to history and hold no copy of the prompt.
 
 #### Token effect
 
-Zero duplicate tokens from logging. The reconstructed prefix, system text, and schemas still incur their normal per-request cost.
+Zero duplicate tokens from logging. The system node and schemas still incur their normal per-request cost.
 
 #### KV Cache effect
 
-Logging causes no invalidation, and exact reconstruction preserves request-prefix identity. A later header with changed prefix, prompt, or schemas may invalidate reuse from its first difference.
+Logging causes no invalidation, and exact reconstruction preserves request-prefix identity. A later header with changed config or schemas may invalidate reuse from its first difference; a prompt change is a replacement of surface node 0 and invalidates reuse from the first token.
 
 ## Known Limitations and Deferred Work
 

@@ -6,6 +6,7 @@ import type {
   LlmCallConfig,
   LlmCallConfigAdapterDefaults,
   LlmFailure,
+  SystemMessage,
   TokenUsage,
   ToolResultMessage,
   ToolSchema,
@@ -222,8 +223,9 @@ export interface TurnEndReasonMap {
 export type TurnEndReason = TurnEndReasonMap[keyof TurnEndReasonMap]
 
 /**
- * Logged request state outside derived history: call config, system prompt, and
- * tools. The latest full `request/header` snapshot reconstructs it; canonical
+ * Logged request state outside derived history: call config and tools. The
+ * system prompt is derived history — surface node 0, a `system/message` event.
+ * The latest full `request/header` snapshot reconstructs the header; canonical
  * empty optional fields are absent.
  */
 export interface EpochHeader {
@@ -231,8 +233,6 @@ export interface EpochHeader {
   config: LlmCallConfig
   /** Effective config fields materialized from the exact adapter rather than proposed by a caller. */
   adapterDefaults?: LlmCallConfigAdapterDefaults
-  /** Rendered system prompt text; absent for a system-less request. */
-  system?: string
   /** Assembled tool schemas; absent for a tool-less request. */
   tools?: ToolSchema[]
 }
@@ -292,6 +292,15 @@ export interface SessionEventMap {
    * project their `content` verbatim; `source` tells them apart.
    */
   'user/message': UserMessage
+  /**
+   * The rendered system prompt on the model-visible surface. The loop appends
+   * the first one as surface node 0 before the step's first `user/message` and
+   * replaces that node (`surfaceOp: { op: 'replace' }` over exactly node 0)
+   * when the rendered prompt changes, so the head of every request is derived
+   * history like every other message. Empty `message.content` records "no
+   * system prompt" and projects to no message.
+   */
+  'system/message': { turn: number; step: number; message: SystemMessage }
   /**
    * Assembled assistant message for one step (derived history uses this).
    * Carries the step's `usage` when the adapter reported token accounting, so
@@ -391,6 +400,7 @@ export type SessionEventType = keyof SessionEventMap
  * earlier sources through {@link SessionEvent.sourceEventSeqs}.
  */
 export type SurfaceEventType =
+  | 'system/message'
   | 'user/message'
   | 'assistant/message'
   | 'tool/result'

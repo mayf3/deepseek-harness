@@ -32,10 +32,11 @@ import {
   redactSessionSnapshotIds,
   refreshFixtureReplacements,
   restorePinnedToolSchemas,
-  scrubRequestHeaders,
+  scrubModelRequestBulk,
   scrubSessionSnapshot,
   scrubSystemPrompts,
   sessionFixtureName,
+  systemPromptPrecedesRequests,
   sessionFixtureNames,
   sessionHeaderVersion,
   stabilizeFixtureMessageIds,
@@ -242,7 +243,12 @@ async function persistedLogs(sessionsRoot: string): Promise<PersistedLog[]> {
 
 interface LoggedRequestHeader {
   type?: string
-  data?: { header?: { system?: unknown; tools?: LoggedTool[] } }
+  data?: { header?: { tools?: LoggedTool[] } }
+}
+
+interface LoggedSystemMessage {
+  type?: string
+  data?: { message?: { content?: Array<{ type?: string; text?: unknown }> } }
 }
 
 interface LoggedTool {
@@ -271,12 +277,13 @@ function assembledToolDescriptions(log: PersistedLog): Record<string, string> {
   }))
 }
 
+/** The rendered system prompt of the root request: the text of the first `system/message` (surface node 0). */
 function assembledSystem(log: PersistedLog): string {
   const event = log.content.trimEnd().split('\n')
-    .map(line => JSON.parse(line) as LoggedRequestHeader)
-    .find(candidate => candidate.type === 'request/header')
-  const system = event?.data?.header?.system
-  if (typeof system !== 'string') throw new Error('session log has no request/header system')
+    .map(line => JSON.parse(line) as LoggedSystemMessage)
+    .find(candidate => candidate.type === 'system/message')
+  const system = event?.data?.message?.content?.[0]?.text
+  if (typeof system !== 'string') throw new Error('session log has no system/message text')
   return system
 }
 
@@ -343,7 +350,7 @@ function normalizeNotifications(notifications: readonly HarnessNotification[], c
     : eventLog
   const normalizedEvents = events.length === 0
     ? []
-    : scrubRequestHeaders(normalizeSessionLog(
+    : scrubModelRequestBulk(normalizeSessionLog(
       normalizeSessionFormatProvenance(typedLog),
       ctx,
       typedFeedback ? { identityMode: 'preserve' } : {},
@@ -734,8 +741,13 @@ async function verifyHeaders(
   }
 
   for (const [logIndex, log] of ordered.entries()) {
-    const headers = normalizedHeaders(scrubSystemPrompts(log.content), ctx)
+    const headers = normalizedHeaders(log.content, ctx)
     const prompts = normalizedSystemPrompts(log.content, ctx)
+    if (headers.length > 0) {
+      expect(systemPromptPrecedesRequests(log.content), `${scenario.name}: session ${logIndex} has a system/message before its first request/header`).toBe(true)
+      expect(prompts.length, `${scenario.name}: session ${logIndex} system/message count`)
+        .toBe(1 + (logIndex === 0 ? pin.manifest.header.promptChanges ?? 0 : 0))
+    }
     for (const [index, header] of headers.entries()) {
       const selectedSchemas = childSchemas.get(logIndex)?.[index]
       const base = reconstructed[index] ?? reconstructed[0]
@@ -746,7 +758,9 @@ async function verifyHeaders(
         ? configured
         : { ...configured as JsonObject, tools: selectedSchemas }
       expect(header, `${scenario.name}: session ${logIndex} header ${index + 1}`).toEqual(expected)
-      expect(formatSystemPromptSnapshot(prompts[index] as string), `${scenario.name}: session ${logIndex} prompt ${index + 1}`)
+    }
+    if (prompts.length > 0) {
+      expect(formatSystemPromptSnapshot(prompts[0] as string, prompts.slice(1)), `${scenario.name}: session ${logIndex} system prompts`)
         .toBe(childPrompts.get(logIndex) ?? prompt)
     }
   }
@@ -813,7 +827,7 @@ describe('TypeScript SDK snapshots over the jsonrpc runtime', () => {
       }
 
       for (const [index, expected] of expectedContents.entries()) {
-        expect(scrubRequestHeaders(expected), `${scenario.name} session fixture ${index} carries request-header bulk`)
+        expect(scrubModelRequestBulk(expected), `${scenario.name} session fixture ${index} carries prompt text or tool-schema bulk`)
           .toBe(expected)
       }
       expect(redactSessionSnapshotIds(expectedContents), `${scenario.name}: identity redaction fixed point`)

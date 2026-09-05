@@ -47,7 +47,7 @@ session.append('user/message', { role: 'user', content: [{ type: 'text', text: '
 session.deriveMessages()         // the derived model history
 ```
 
-表层事件（`user/message`、`assistant/message`、`tool/result`）必须声明如何进入有序 surface。Assistant message 会嵌入产生它的精确紧凑 provider stream；`assistant/attempt`、边界与其他仅日志事件从不产生消息。
+表层事件（`system/message`、`user/message`、`assistant/message`、`tool/result`）必须声明如何进入有序 surface。Assistant message 会嵌入产生它的精确紧凑 provider stream；`assistant/attempt`、边界与其他仅日志事件从不产生消息。`system/message` 在 surface 第 0 号节点承载渲染后的系统提示词；当第 0 号节点是 `system/message` 时，surface 折叠拒绝覆盖它的替换，除非替换事件本身是恰好覆盖该节点的 `system/message`（[决策](../../../.agents/notes/implemented/architecture/2026-09-02-system-prompt-as-surface-node.zh.md)）。
 
 ### 读取日志
 
@@ -101,11 +101,11 @@ session.deriveMessages()         // the derived model history
 
 ### 派生历史
 
-`deriveMessages()` 把每个 surface 节点的投影缓存一次，每次调用都返回共享、深度冻结消息之上的新数组；三种 surface 事件类型（`user/message`、`assistant/message`、`tool/result`）各自投影自己的消息种类——user 内容原样、带提供方与模型的组装 assistant 消息，或 user 角色的工具结果。嵌入式 Assistant stream 与 `assistant/attempt` 事件只保留重放和诊断数据。surface 重写会重建投影——不存在原始日志回退，因此 surface 是派生历史的唯一来源。
+`deriveMessages()` 把每个 surface 节点的投影缓存一次，每次调用都返回共享、深度冻结消息之上的新数组；四种 surface 事件类型（`system/message`、`user/message`、`assistant/message`、`tool/result`）各自投影自己的消息种类——system 角色的提示词（空内容的系统节点投影为无消息）、user 内容原样、带提供方与模型的组装 assistant 消息，或 user 角色的工具结果。嵌入式 Assistant stream 与 `assistant/attempt` 事件只保留重放和诊断数据。surface 重写会重建投影——不存在原始日志回退，因此 surface 是派生历史的唯一来源。
 
 ### 请求头
 
-循环在每个循环实例边界及变更时记录完整规范 `request/header` 快照（调用配置、适配器默认值、渲染后的系统提示词、组装后的工具 schema）；`foldRequestHeader(events)` 通过选择最新快照来重建它，使每个对话请求都成为日志的纯函数。路由元数据（`request/context`）是独立的已记录状态，仅在提供方、模型或容量变化时追加。
+循环在每个循环实例边界及变更时记录完整规范 `request/header` 快照（调用配置、适配器默认值、组装后的工具 schema——渲染后的系统提示词是 surface 第 0 号节点，不是 header 状态）；`foldRequestHeader(events)` 通过选择最新快照来重建它，使每个对话请求都成为日志的纯函数。路由元数据（`request/context`）是独立的已记录状态，仅在提供方、模型或容量变化时追加。
 
 </details>
 
@@ -131,7 +131,7 @@ session.deriveMessages()         // the derived model history
 
 #### 模型看到什么
 
-模型会原样接收 `user/message`、`assistant/message` 与 `tool/result` surface 条目中的完整消息——标识、角色、来源与内容块都与创建时确定的值相同，投影从不生成标识。直接提示词与注入上下文仍是彼此独立的 `user/message` 事件，各事件的来源会保留其出处。嵌入式 stream、`assistant/attempt`、边界与其他仅日志事实不会添加消息。
+模型会原样接收 `system/message`、`user/message`、`assistant/message` 与 `tool/result` surface 条目中的完整消息，系统提示词在先——标识、角色、来源与内容块都与创建时确定的值相同，投影从不生成标识。直接提示词与注入上下文仍是彼此独立的 `user/message` 事件，各事件的来源会保留其出处。嵌入式 stream、`assistant/attempt`、边界与其他仅日志事实不会添加消息。
 
 #### Token 影响
 
@@ -159,15 +159,15 @@ session.deriveMessages()         // the derived model history
 
 #### 模型看到什么
 
-会话会重建循环实际发送的系统提示词、工具 schema、调用配置与会话前缀。请求头事件不会向消息历史加入第二份副本；前缀在 `deriveMessages()` 外部前置。
+会话会重建循环实际发送的工具 schema 与调用配置；系统提示词作为 surface 第 0 号节点，属于 `deriveMessages()` 的一部分。请求头事件不向历史加入任何消息，也不持有提示词的副本。
 
 #### Token 影响
 
-日志记录不产生重复 token。重建的前缀、系统文本与 schema 仍会产生正常的逐请求开销。
+日志记录不产生重复 token。系统节点与 schema 仍会产生正常的逐请求开销。
 
 #### KV Cache 影响
 
-记录日志不会导致失效，精确重建会保持请求前缀一致。后续请求头若更改前缀、提示词或 schema，可能从第一处差异开始使复用失效。
+记录日志不会导致失效，精确重建会保持请求前缀一致。后续请求头若更改配置或 schema，可能从第一处差异开始使复用失效；提示词变更是对 surface 第 0 号节点的替换，会使复用从第一个 token 起失效。
 
 ## 已知限制与延期工作
 

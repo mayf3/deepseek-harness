@@ -1955,7 +1955,7 @@ def normalize_snapshot_value(
                 dt = member.get("dt")
                 if isinstance(dt, list):
                     member["dt"] = [0] * len(dt)
-    if isinstance(normalized.get("id"), str) and normalized.get("role") in ("assistant", "user"):
+    if isinstance(normalized.get("id"), str) and normalized.get("role") in ("assistant", "system", "user"):
         if not normalized["id"].startswith("{{message:"):
             normalized["id"] = "{{messageId}}"
     if normalized.get("type") in ("feedback/message-put", "feedback/message-delete"):
@@ -1967,11 +1967,12 @@ def normalize_snapshot_value(
                     item["createdAt"] = 0
                     item["updatedAt"] = 0
     scrub_snapshot_header(normalized)
+    scrub_snapshot_system_message(normalized)
     return normalized
 
 
 def scrub_snapshot_header(value: dict[object, object]) -> None:
-    """Tokenize full request-header bulk while retaining tool names."""
+    """Tokenize full request-header tool schemas while retaining tool names."""
     data = value.get("data")
     if not isinstance(data, dict):
         return
@@ -1979,14 +1980,26 @@ def scrub_snapshot_header(value: dict[object, object]) -> None:
         header = data.get("header")
         if not isinstance(header, dict):
             return
-        if "system" in header:
-            header["system"] = "{{system}}"
         tools = header.get("tools")
         if isinstance(tools, list):
             header["tools"] = [
                 tool.get("name") if isinstance(tool, dict) else "{{tools}}"
                 for tool in tools
             ]
+
+
+def scrub_snapshot_system_message(value: dict[object, object]) -> None:
+    """Tokenize the rendered prompt text of a `system/message` surface node."""
+    if value.get("type") != "system/message":
+        return
+    data = value.get("data")
+    message = data.get("message") if isinstance(data, dict) else None
+    content = message.get("content") if isinstance(message, dict) else None
+    if not isinstance(content, list):
+        return
+    for block in content:
+        if isinstance(block, dict) and block.get("type") == "text":
+            block["text"] = "{{system}}"
 
 
 def render_jsonl(records: list[object]) -> str:

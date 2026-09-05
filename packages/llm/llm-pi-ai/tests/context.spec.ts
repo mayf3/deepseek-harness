@@ -466,3 +466,51 @@ describe('pi-ai request context conversion', () => {
   })
 
 })
+
+describe('pi-ai system prompt source', () => {
+  const base = { provider: 'openai', model: 'gpt-4.1' }
+  const leading = history('system', [{ type: 'text', text: 'lead ' }, { type: 'text', text: 'rule' }])
+  const question = user([{ type: 'text', text: 'hi' }])
+
+  it('maps a leading system message to systemPrompt on both conversion paths', async () => {
+    const options: GenerateOptions = { ...base, messages: [leading, question] }
+    const expected = {
+      systemPrompt: 'lead rule',
+      messages: [{ role: 'user', content: 'hi', timestamp: 0 }],
+    }
+    expect(toPiContext(options)).toEqual(expected)
+    await expect(toPiContext(options, imageContext(attachments))).resolves.toEqual(expected)
+  })
+
+  it('sends no systemPrompt for an empty leading system message on both conversion paths', async () => {
+    const options: GenerateOptions = { ...base, messages: [history('system', []), question] }
+    const expected = { messages: [{ role: 'user', content: 'hi', timestamp: 0 }] }
+    expect(toPiContext(options)).toEqual(expected)
+    await expect(toPiContext(options, imageContext(attachments))).resolves.toEqual(expected)
+  })
+
+  it('folds a non-leading system message into a user message on both conversion paths', async () => {
+    const options: GenerateOptions = { ...base, messages: [question, leading] }
+    const expected = {
+      messages: [
+        { role: 'user', content: 'hi', timestamp: 0 },
+        { role: 'user', content: 'lead rule', timestamp: 0 },
+      ],
+    }
+    expect(toPiContext(options)).toEqual(expected)
+    await expect(toPiContext(options, imageContext(attachments))).resolves.toEqual(expected)
+  })
+
+  it('lets options.system win over a leading system message, which then folds, on both conversion paths', async () => {
+    const options: GenerateOptions = { ...base, system: 'direct', messages: [leading, question] }
+    const expected = {
+      systemPrompt: 'direct',
+      messages: [
+        { role: 'user', content: 'lead rule', timestamp: 0 },
+        { role: 'user', content: 'hi', timestamp: 0 },
+      ],
+    }
+    expect(toPiContext(options)).toEqual(expected)
+    await expect(toPiContext(options, imageContext(attachments))).resolves.toEqual(expected)
+  })
+})

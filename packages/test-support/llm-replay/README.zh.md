@@ -105,7 +105,7 @@ replay 把选定的投影 Session generation 视为 fixture。一个 parser 补�
 |---|---|
 | [`src/index.ts`](src/index.ts) | 类型、fixture 派生、override 校验、占位符解析、会话绑定、`installLlmReplay` 与插件导出 |
 | [`tests/session-format-corpus.spec.ts`](tests/session-format-corpus.spec.ts) | 完整已提交 generation restore burn-in；任何拒绝都是失败 |
-| — | 不发布运行时不变式伴生入口；流语法由 LLM 伴生插件与派生测试检验。 |
+| — | 不发布运行时不变式伴生入口；该仅测试适配器消费固定的回放脚本；其流语法由 LLM 伴生插件与 fixture 派生测试检验。 |
 
 ### 绑定与流式流程
 

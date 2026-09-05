@@ -276,7 +276,8 @@ describe('compactNow through the real loop', () => {
     const second = (adapter.requests[1] ?? []).map(message => message.content
       .map(block => block.type === 'text' ? block.text : '')
       .join(''))
-    expect(second[0]).toContain('checkpoint')
+    expect(adapter.requests[1]?.[0]?.role).toBe('system')
+    expect(second[1]).toContain('checkpoint')
     expect(second.at(-1)).toBe('after compaction')
     expect(second.some(text => text.includes(PROMPT))).toBe(false)
   })
@@ -311,7 +312,8 @@ describe('compactNow through the real loop', () => {
     }))
     await agent.whenIdle()
     const messages = derivedText(agent.session)
-    expect(messages[0]).toContain('checkpoint')
+    expect(agent.session.deriveMessages()[0]?.role).toBe('system')
+    expect(messages[1]).toContain('checkpoint')
     expect(messages.filter(text => text.includes('INJECTED CONTEXT'))).toHaveLength(1)
   })
 
@@ -333,7 +335,8 @@ describe('compactNow through the real loop', () => {
 
     expect(attempts).toEqual(['compaction/start', 'compaction/summary'])
     expect(result).not.toBeNull()
-    expect(derivedText(agent.session)[0]).toContain('checkpoint')
+    expect(agent.session.deriveMessages()[0]?.role).toBe('system')
+    expect(derivedText(agent.session)[1]).toContain('checkpoint')
     expect(agent.session.snapshotEvents().filter(event => event.type === 'user/message'
       && event.data.source.kind === 'plugin' && event.data.source.plugin === 'listener')).toHaveLength(0)
     const types = compactEvents(agent.session).map(event => event.type)

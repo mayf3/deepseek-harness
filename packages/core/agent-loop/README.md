@@ -70,7 +70,7 @@ const handle = await ctx.agents.create({
 
 ### What a step does
 
-Each step sends the agent's rendered system prompt, its visible tool schemas, and the session's derived history; the model's tool calls run through the guarded tool pipeline and every accepted fact is appended to the session log before the next step derives from it. Parallel-safe calls may overlap up to `maxParallelToolCalls`; exclusive calls run alone as ordering barriers. Cancellation is cooperative: `agent.cancel()` aborts the current activity and, unless `keepInbox` is set, clears pending work; a cancelled stream finalizes the text already delivered to the user.
+Each step sends the session's derived history — headed by the agent's rendered system prompt as surface node 0, a `system/message` event — and its visible tool schemas; the model's tool calls run through the guarded tool pipeline and every accepted fact is appended to the session log before the next step derives from it. Parallel-safe calls may overlap up to `maxParallelToolCalls`; exclusive calls run alone as ordering barriers. Cancellation is cooperative: `agent.cancel()` aborts the current activity and, unless `keepInbox` is set, clears pending work; a cancelled stream finalizes the text already delivered to the user.
 
 -----
 
@@ -88,7 +88,7 @@ The package is the one concrete implementation of the public `Agent` contract. I
 
 ### Request headers and adapter defaults
 
-After `agent/request`, `ctx.llm.prepareCall()` validates adapter-owned fields and resolves reasoning-effort and output-token defaults under the active turn signal. The loop retains that exact adapter through resolution, `request/header` logging, and dispatch. It writes a full header for the first request, a changed envelope, an explicit message-series start, a request after surface replacement, and resume; unchanged steps, retries, and ordinary later turns in the same series inherit the latest header. Before the next waterfall, the loop removes adapter-default fields so the current route resolves them again, while explicit settings persist. An unhandled route still fails with `NO_ADAPTER`.
+After `agent/request`, `ctx.llm.prepareCall()` validates adapter-owned fields and resolves reasoning-effort and output-token defaults under the active turn signal. The loop retains that exact adapter through resolution, `request/header` logging, and dispatch. It writes a full header for the first request, a changed envelope (config or tools — the prompt is not part of the header), an explicit message-series start, a request after surface replacement (a prompt change or compaction), and resume; unchanged steps, retries, and ordinary later turns in the same series inherit the latest header. Before the next waterfall, the loop removes adapter-default fields so the current route resolves them again, while explicit settings persist. An unhandled route still fails with `NO_ADAPTER`.
 
 ### Source map
 
@@ -111,7 +111,7 @@ The loop is the production acquisition point for session write handles. When `ct
 
 ### Turn and step flow
 
-The driver owns one agent for its lifetime and runs inside `ctx.agents.withInitiator(agent, ...)`. At a turn boundary it opens the durable turn, then atomically claims pending next-step input plus one queued prompt; between steps it claims only next-step input. `agent/pre-step` decides what enters the step. An entered decision appends its complete `user/message` batch before the driver can claim again, while a rejected decision appends none. Each model attempt emits one process-local `start`, emits every `chunk` only after the matching durable `assistant/chunk`, and emits exactly one terminal `end`; final assembly or message-append failure settles it as `aborted`, while `committed` follows the durable `assistant/message`. Each successful model call appends one message anchor citing its chunk seqs, and a cancelled stream appends an `interrupted: true` anchor with the delivered prefix so the next request contains what the user saw. Within a step, exclusive calls form barriers and parallel-safe calls use the bounded rolling pool; policy, durable results, and result context remain model-ordered.
+The driver owns one agent for its lifetime and runs inside `ctx.agents.withInitiator(agent, ...)`. At a turn boundary it opens the durable turn, then atomically claims pending next-step input plus one queued prompt; between steps it claims only next-step input. Before `agent/pre-step`, the driver assembles the prompt, renders it, and projects the text against the surviving `system/message` node (`SystemPromptProjection` in `runtime-context.ts`): no surviving node yields an append, a differing text yields a replacement of exactly that node, and an unchanged text yields nothing. `agent/pre-step` decides what enters the step. An entered decision appends the pending `system/message` right after `step/start` and then its complete `user/message` batch before the driver can claim again, so log order is wire order; a rejected decision appends none. The request is `header.config`, `deriveMessages()`, and `header.tools`; the request carries no `system` field. Each model attempt emits one process-local `start`, emits every `chunk` only after the matching durable assistant-frame settlement, and emits exactly one terminal `end`; final assembly or message-append failure settles it as `aborted`, while `committed` follows the durable `assistant/message`. Each successful model call appends one message anchor, and a cancelled stream appends an `interrupted: true` anchor with the delivered prefix so the next request contains what the user saw. Within a step, exclusive calls form barriers and parallel-safe calls use the bounded rolling pool; policy, durable results, and result context remain model-ordered.
 
 ### Failure and cancellation
 
@@ -142,7 +142,7 @@ The package-level contract is enough for most consumers; read these when you nee
 
 #### What the model sees
 
-For each step, the loop sends the rendered per-agent system prompt, the visible tool schemas, and the session's derived messages. It supplies `provider`, `model`, and `cwd` variable values but no additional fixed prose.
+For each step, the loop sends the session's derived messages, whose first message is the rendered per-agent system prompt held by surface node 0, and the visible tool schemas. It supplies `provider`, `model`, and `cwd` variable values but no additional fixed prose.
 
 #### Token effect
 
@@ -150,7 +150,7 @@ System text and schemas are paid again on every step. Per-agent scoping chooses 
 
 #### KV Cache effect
 
-Append-only only while system text, schemas, and earlier history remain byte-identical under the same provider and model route. A token-bearing assembly rewrite or composition change may invalidate reuse from the first altered request token.
+Append-only only while system text, schemas, and earlier history remain byte-identical under the same provider and model route. An unchanged rendered prompt leaves surface node 0 in place and keeps the cached prefix. A prompt change replaces node 0 with a new `system/message`, so the request differs from its first token and the provider prefix cache misses in full; a schema or composition change invalidates reuse from the first altered request token.
 
 ### Retained message history
 

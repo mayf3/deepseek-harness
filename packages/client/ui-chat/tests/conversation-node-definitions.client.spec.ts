@@ -22,7 +22,7 @@ import { unknownFallbackDefinition } from '../src/client/conversation-nodes/fall
 import { nextStepInboxDefinition } from '../src/client/conversation-nodes/inbox.ts'
 import { messageDefinition } from '../src/client/conversation-nodes/message.ts'
 import { inspectRequestPrompt } from '@deepseek-ai/dsh-client-ui-conversation/client'
-import { requestPromptDefinition } from '../src/client/conversation-nodes/request-prompt.ts'
+import { requestPromptDefinition, systemMessageDefinition } from '../src/client/conversation-nodes/request-prompt.ts'
 import { retryDefinition } from '../src/client/conversation-nodes/retry.ts'
 import { toolDefinition } from '../src/client/conversation-nodes/tool.ts'
 import { turnErrorDefinition } from '../src/client/conversation-nodes/turn-error.ts'
@@ -36,6 +36,7 @@ import type {
 const DEFINITIONS: readonly ConversationNodeDefinition[] = [
   nextStepInboxDefinition,
   messageDefinition,
+  systemMessageDefinition,
   requestPromptDefinition(inspectRequestPrompt),
   assistantDefinition,
   turnProcessDefinition,
@@ -172,6 +173,22 @@ function textMessage(id: string, text: string) {
   }
 }
 
+function systemMessage(text: string) {
+  return {
+    id: `system-${text}`,
+    role: 'system',
+    content: text === '' ? [] : [{ type: 'text', text }],
+    source: { kind: 'plugin', plugin: '@deepseek-ai/dsh-system-prompt' },
+  }
+}
+
+/** Append the first system prompt node or replace the node at `replaces`. */
+function systemAt(seq: number, text: string, replaces?: number): SessionLiveEventEntry {
+  return at(seq, 'system/message', { turn: 1, step: 1, message: systemMessage(text) }, replaces === undefined
+    ? { surfaceOp: 'append' }
+    : { surfaceOp: { op: 'replace', start: replaces, end: replaces }, sourceEventSeqs: [replaces] })
+}
+
 function assistantMessage(id: string, text: string) {
   return {
     id,
@@ -206,6 +223,20 @@ describe('built-in conversation node Definitions', () => {
 
     expect(() => requestPromptDefinition(inspectRequestPrompt).start({} as never, invalidStart, {} as never))
       .toThrow('request-prompt start requires request/header')
+  })
+
+  it('pins the system-message Definition edges the engine cannot reach', () => {
+    const input = at(1, 'turn/start', { turn: 1 })
+    const invalidStart = {
+      ...input,
+      role: 'start' as const,
+      location: { kind: 'session' as const },
+    }
+    const state = { seq: 1, time: 1, text: '# System' }
+
+    expect(() => systemMessageDefinition.start({} as never, invalidStart, {} as never))
+      .toThrow('system-message start requires system/message')
+    expect(systemMessageDefinition.update({ state } as never, invalidStart)).toBe(state)
   })
 
   it('keeps ordinary command-only history inactive for the Conversation shell', () => {
@@ -1353,69 +1384,63 @@ describe('built-in conversation node Definitions', () => {
     })
   })
 
-  it('materializes series starts and system changes but not unchanged resumes, config, or tool changes', () => {
+  it('materializes series starts and system node replacements but not same-series config or tool changes', () => {
     const tools = [{ name: 'read', description: 'Read', parameters: { type: 'object' } }]
     const expandedTools = [...tools, { name: 'write', description: 'Write', parameters: { type: 'object' } }]
     const value = assembler([
-      at(1, 'request/header', {
-        reason: 'initial',
-        header: { config: { provider: 'fake', model: 'fake' }, system: '# Initial', tools },
-      }),
+      systemAt(1, '# Initial'),
       at(2, 'request/header', {
-        reason: 'change',
-        header: {
-          config: { provider: 'fake', model: 'fake' },
-          system: '# Initial',
-          tools: expandedTools,
-        },
+        reason: 'initial',
+        header: { config: { provider: 'fake', model: 'fake' }, tools },
       }),
       at(3, 'request/header', {
         reason: 'change',
-        header: {
-          config: { provider: 'fake', model: 'fake', maxTokens: 1_024 },
-          system: '# Initial',
-          tools: expandedTools,
-        },
+        header: { config: { provider: 'fake', model: 'fake' }, tools: expandedTools },
       }),
       at(4, 'request/header', {
         reason: 'change',
-        startsSeries: true,
-        header: {
-          config: { provider: 'fake', model: 'fake', maxTokens: 2_048 },
-          system: '# Initial',
-          tools: expandedTools,
-        },
+        header: { config: { provider: 'fake', model: 'fake', maxTokens: 1_024 }, tools: expandedTools },
       }),
       at(5, 'request/header', {
-        reason: 'resume',
-        header: {
-          config: { provider: 'fake', model: 'fake', maxTokens: 2_048 },
-          system: '# Initial',
-          tools: expandedTools,
-        },
+        reason: 'change',
+        startsSeries: true,
+        header: { config: { provider: 'fake', model: 'fake', maxTokens: 2_048 }, tools: expandedTools },
       }),
       at(6, 'request/header', {
+        reason: 'resume',
+        header: { config: { provider: 'fake', model: 'fake', maxTokens: 2_048 }, tools: expandedTools },
+      }),
+      systemAt(7, '# Updated', 1),
+      at(8, 'request/header', {
         reason: 'change',
-        header: {
-          config: { provider: 'fake', model: 'fake', maxTokens: 2_048 },
-          system: '# Updated',
-          tools: expandedTools,
-        },
+        header: { config: { provider: 'fake', model: 'fake', maxTokens: 4_096 }, tools: expandedTools },
       }),
     ])
 
-    const prompts = snapshot(value).nodes.values()
+    const current = snapshot(value)
+    const prompts = current.nodes.values()
       .filter(candidate => candidate.kind === 'system-prompt')
     expect(prompts.map(prompt => ({ anchorSeq: prompt.anchorSeq, data: prompt.data }))).toEqual([
-      { anchorSeq: 1, data: { text: '# Initial' } },
-      { anchorSeq: 4, data: { text: '# Initial' } },
-      { anchorSeq: 6, data: { text: '# Updated' } },
+      { anchorSeq: 2, data: { text: '# Initial' } },
+      { anchorSeq: 5, data: { text: '# Initial' } },
+      { anchorSeq: 6, data: { text: '# Initial' } },
+      { anchorSeq: 8, data: { text: '# Updated' } },
     ])
+    expect(current.nodes.values().filter(candidate => candidate.kind === 'unknown')).toEqual([])
+  })
 
+  it('renders a windowed prompt from its in-window system node and fills a missing node after prepend', () => {
     const windowed = assembler([
-      at(10, 'request/header', {
+      systemAt(10, '# Resumed prompt', 5),
+      at(11, 'request/header', {
         reason: 'resume',
-        header: { config: { provider: 'fake', model: 'fake' }, system: '# Resumed prompt' },
+        header: { config: { provider: 'fake', model: 'fake' } },
+      }),
+    ], true)
+    const nodeless = assembler([
+      at(11, 'request/header', {
+        reason: 'resume',
+        header: { config: { provider: 'fake', model: 'fake' } },
       }),
     ], true)
     const systemless = assembler([
@@ -1425,40 +1450,44 @@ describe('built-in conversation node Definitions', () => {
       }),
     ])
     expect(node(snapshot(windowed), 'system-prompt')?.data).toEqual({ text: '# Resumed prompt' })
+    expect(node(snapshot(nodeless), 'system-prompt')).toBeUndefined()
     expect(node(snapshot(systemless), 'system-prompt')).toBeUndefined()
 
-    windowed.prepend([
-      at(5, 'request/header', {
+    const older = [
+      systemAt(5, '# Original prompt'),
+      at(6, 'request/header', {
         reason: 'initial',
-        header: { config: { provider: 'fake', model: 'fake' }, system: '# Resumed prompt' },
+        header: { config: { provider: 'fake', model: 'fake' } },
       }),
-    ], false)
+    ]
+    const promptTexts = (value: ConversationNodeAssembler) => {
+      const restored = snapshot(value)
+      return restored.order.flatMap((key) => {
+        const candidate = restored.nodes.get(key)
+        return candidate?.kind === 'system-prompt' ? [candidate.data] : []
+      })
+    }
+    windowed.prepend(older, false)
     windowed.flush()
-    const restored = snapshot(windowed)
-    const restoredPrompts = restored.nodes.values()
-      .filter(candidate => candidate.kind === 'system-prompt')
-    expect(restoredPrompts.map(prompt => ({
-      anchorSeq: prompt.anchorSeq,
-      visibility: prompt.visibility,
-      data: prompt.data,
-    })).sort((left, right) => left.anchorSeq - right.anchorSeq)).toEqual([
-      { anchorSeq: 5, visibility: 'visible', data: { text: '# Resumed prompt' } },
-      { anchorSeq: 10, visibility: 'hidden', data: { text: '# Resumed prompt' } },
-    ])
+    nodeless.prepend(older, false)
+    nodeless.flush()
+    expect(promptTexts(windowed)).toEqual([{ text: '# Original prompt' }, { text: '# Resumed prompt' }])
+    expect(promptTexts(nodeless)).toEqual([{ text: '# Original prompt' }, { text: '# Original prompt' }])
   })
 
-  it('orders the system field before the request messages while preserving message order', () => {
+  it('shows the system node text as the request prompt card before the request messages', () => {
     const value = assembler([
       at(1, 'turn/start', { turn: 1 }),
       at(2, 'step/start', { turn: 1, step: 1 }),
-      at(3, 'user/message', textMessage('direct-user', 'prompt'), { surfaceOp: 'append' }),
-      at(4, 'user/message', {
+      systemAt(3, '# System\n\nFollow instructions.'),
+      at(4, 'user/message', textMessage('direct-user', 'prompt'), { surfaceOp: 'append' }),
+      at(5, 'user/message', {
         ...textMessage('runtime-context', 'runtime facts'),
         source: { kind: 'plugin', plugin: '@deepseek-ai/dsh-system-prompt', form: 'snapshot' },
       }, { surfaceOp: 'append' }),
-      at(5, 'request/header', {
+      at(6, 'request/header', {
         reason: 'initial',
-        header: { config: { provider: 'fake', model: 'fake' }, system: '# System' },
+        header: { config: { provider: 'fake', model: 'fake' } },
       }),
     ])
 
@@ -1469,20 +1498,39 @@ describe('built-in conversation node Definitions', () => {
       'context',
     ])
     expect(node(current, 'system-prompt')?.anchorSeq).toBe(1)
+    expect(node(current, 'system-prompt')?.data).toEqual({ text: '# System\n\nFollow instructions.' })
+  })
+
+  it('never renders a system/message as a transcript bubble', () => {
+    const value = assembler([
+      at(1, 'turn/start', { turn: 1 }),
+      at(2, 'step/start', { turn: 1, step: 1 }),
+      systemAt(3, '# System'),
+      at(4, 'user/message', textMessage('direct-user', 'prompt'), { surfaceOp: 'append' }),
+    ])
+
+    const current = snapshot(value)
+    expect(current.order.map(key => current.nodes.get(key)?.kind)).toEqual(['user'])
+
+    value.append(systemAt(5, '# Replaced', 3))
+    value.flush()
+    const replaced = snapshot(value)
+    expect(replaced.order.map(key => replaced.nodes.get(key)?.kind)).toEqual(['user'])
   })
 
   it('keeps the initial system prompt before the opening User as Turn process state changes', () => {
     const value = assembler([
       at(1, 'turn/start', { turn: 1 }),
       at(2, 'step/start', { turn: 1, step: 1 }),
-      at(3, 'user/message', textMessage('direct-user', 'prompt'), { surfaceOp: 'append' }),
-      at(4, 'user/message', {
+      systemAt(3, '# System'),
+      at(4, 'user/message', textMessage('direct-user', 'prompt'), { surfaceOp: 'append' }),
+      at(5, 'user/message', {
         ...textMessage('runtime-context', 'runtime facts'),
         source: { kind: 'plugin', plugin: 'context' },
       }, { surfaceOp: 'append' }),
-      at(5, 'request/header', {
+      at(6, 'request/header', {
         reason: 'initial',
-        header: { config: { provider: 'fake', model: 'fake' }, system: '# System' },
+        header: { config: { provider: 'fake', model: 'fake' } },
       }),
     ])
     const kinds = () => {
@@ -1493,7 +1541,7 @@ describe('built-in conversation node Definitions', () => {
 
     expect(kinds()).toEqual(['system-prompt', 'user', 'context'])
 
-    value.append(at(6, 'assistant/live-chunk', {
+    value.append(at(7, 'assistant/live-chunk', {
       turn: 1, step: 1, chunk: { type: 'reasoning-delta', index: 0, text: 'thinking' },
     }))
     value.flush()
@@ -1501,13 +1549,13 @@ describe('built-in conversation node Definitions', () => {
       'system-prompt', 'user', 'turn-process', 'context', 'assistant-step',
     ])
 
-    value.append(at(7, 'step/end', { turn: 1, step: 1 }))
-    value.append(at(8, 'step/start', { turn: 1, step: 2 }))
-    value.append(at(9, 'assistant/message', {
+    value.append(at(8, 'step/end', { turn: 1, step: 1 }))
+    value.append(at(9, 'step/start', { turn: 1, step: 2 }))
+    value.append(at(10, 'assistant/message', {
       turn: 1, step: 2, message: assistantMessage('answer-1', 'answer'),
     }, { surfaceOp: 'append' }))
-    value.append(at(10, 'step/end', { turn: 1, step: 2 }))
-    value.append(at(11, 'turn/end', { turn: 1, reason: { kind: 'completed' } }))
+    value.append(at(11, 'step/end', { turn: 1, step: 2 }))
+    value.append(at(12, 'turn/end', { turn: 1, reason: { kind: 'completed' } }))
     value.flush()
 
     expect(kinds()).toEqual([
@@ -1520,16 +1568,17 @@ describe('built-in conversation node Definitions', () => {
     const value = assembler([
       at(1, 'turn/start', { turn: 1 }),
       at(2, 'step/start', { turn: 1, step: 1 }),
-      at(3, 'user/message', textMessage('first-user', 'first'), { surfaceOp: 'append' }),
-      at(4, 'request/header', {
+      systemAt(3, '# System'),
+      at(4, 'user/message', textMessage('first-user', 'first'), { surfaceOp: 'append' }),
+      at(5, 'request/header', {
         reason: 'initial',
-        header: { config: { provider: 'fake', model: 'fake' }, system: '# System' },
+        header: { config: { provider: 'fake', model: 'fake' } },
       }),
-      at(5, 'step/end', { turn: 1, step: 1 }),
-      at(6, 'turn/end', { turn: 1, reason: { kind: 'completed' } }),
-      at(7, 'turn/start', { turn: 2 }),
-      at(8, 'step/start', { turn: 2, step: 1 }),
-      at(9, 'user/message', textMessage('second-user', 'second'), { surfaceOp: 'append' }),
+      at(6, 'step/end', { turn: 1, step: 1 }),
+      at(7, 'turn/end', { turn: 1, reason: { kind: 'completed' } }),
+      at(8, 'turn/start', { turn: 2 }),
+      at(9, 'step/start', { turn: 2, step: 1 }),
+      at(10, 'user/message', textMessage('second-user', 'second'), { surfaceOp: 'append' }),
     ])
 
     const current = snapshot(value)
@@ -1545,12 +1594,13 @@ describe('built-in conversation node Definitions', () => {
     for (const reason of reasons) {
       const windowedSystem = reason === 'series' ? '# Original' : '# Windowed'
       const windowed = assembler([
-        at(5, 'turn/start', { turn: 2 }),
-        at(6, 'step/start', { turn: 2, step: 1 }),
-        at(7, 'user/message', textMessage(`second-user-${reason}`, 'second'), { surfaceOp: 'append' }),
-        at(8, 'request/header', {
+        at(6, 'turn/start', { turn: 2 }),
+        at(7, 'step/start', { turn: 2, step: 1 }),
+        systemAt(8, windowedSystem, 3),
+        at(9, 'user/message', textMessage(`second-user-${reason}`, 'second'), { surfaceOp: 'append' }),
+        at(10, 'request/header', {
           reason,
-          header: { config: { provider: 'fake', model: 'fake' }, system: windowedSystem },
+          header: { config: { provider: 'fake', model: 'fake' } },
         }),
       ], true)
 
@@ -1559,16 +1609,18 @@ describe('built-in conversation node Definitions', () => {
       const user = node(before, 'user')
       if (prompt === undefined || user === undefined) throw new Error('windowed prompt fixture is incomplete')
       const stableOrder = [user.key, prompt.key]
-      expect(prompt.anchorSeq).toBe(8)
+      expect(prompt.anchorSeq).toBe(10)
+      expect(prompt.data).toEqual({ text: windowedSystem })
       expect(before.order.filter(key => stableOrder.includes(key))).toEqual(stableOrder)
 
       windowed.prepend([
         at(1, 'turn/start', { turn: 1 }),
         at(2, 'step/start', { turn: 1, step: 1 }),
-        at(3, 'user/message', textMessage(`first-user-${reason}`, 'first'), { surfaceOp: 'append' }),
-        at(4, 'request/header', {
+        systemAt(3, '# Original'),
+        at(4, 'user/message', textMessage(`first-user-${reason}`, 'first'), { surfaceOp: 'append' }),
+        at(5, 'request/header', {
           reason: 'initial',
-          header: { config: { provider: 'fake', model: 'fake' }, system: '# Original' },
+          header: { config: { provider: 'fake', model: 'fake' } },
         }),
       ], false)
       windowed.flush()
@@ -1578,8 +1630,8 @@ describe('built-in conversation node Definitions', () => {
         const candidate = restored.nodes.get(key)
         return candidate?.kind === 'system-prompt' ? [candidate] : []
       })
-      expect(prompts.map(candidate => candidate.anchorSeq)).toEqual([1, 8])
-      expect(restored.nodes.get(prompt.key)?.anchorSeq).toBe(8)
+      expect(prompts.map(candidate => candidate.anchorSeq)).toEqual([1, 10])
+      expect(restored.nodes.get(prompt.key)?.anchorSeq).toBe(10)
       expect(restored.order.filter(key => stableOrder.includes(key))).toEqual(stableOrder)
     }
   })
@@ -1588,27 +1640,28 @@ describe('built-in conversation node Definitions', () => {
     const value = assembler([
       at(1, 'turn/start', { turn: 1 }),
       at(2, 'step/start', { turn: 1, step: 1 }),
-      at(3, 'user/message', textMessage('first-user', 'first'), { surfaceOp: 'append' }),
-      at(4, 'request/header', {
+      systemAt(3, '# Same'),
+      at(4, 'user/message', textMessage('first-user', 'first'), { surfaceOp: 'append' }),
+      at(5, 'request/header', {
         reason: 'initial',
-        header: { config: { provider: 'fake', model: 'fake' }, system: '# Same' },
+        header: { config: { provider: 'fake', model: 'fake' } },
       }),
-      at(5, 'user/message', {
+      at(6, 'user/message', {
         ...textMessage('compacted', 'summary'),
         source: { kind: 'plugin', plugin: 'compact' },
-      }, { surfaceOp: { op: 'replace', start: 3, end: 3 } }),
-      at(6, 'request/header', {
+      }, { surfaceOp: { op: 'replace', start: 4, end: 4 } }),
+      at(7, 'request/header', {
         reason: 'series',
-        header: { config: { provider: 'fake', model: 'fake' }, system: '# Same' },
+        header: { config: { provider: 'fake', model: 'fake' } },
       }),
-      at(7, 'step/end', { turn: 1, step: 1 }),
-      at(8, 'turn/end', { turn: 1, reason: { kind: 'completed' } }),
-      at(9, 'turn/start', { turn: 2 }),
-      at(10, 'step/start', { turn: 2, step: 1 }),
-      at(11, 'user/message', textMessage('second-user', 'second'), { surfaceOp: 'append' }),
-      at(12, 'request/header', {
+      at(8, 'step/end', { turn: 1, step: 1 }),
+      at(9, 'turn/end', { turn: 1, reason: { kind: 'completed' } }),
+      at(10, 'turn/start', { turn: 2 }),
+      at(11, 'step/start', { turn: 2, step: 1 }),
+      at(12, 'user/message', textMessage('second-user', 'second'), { surfaceOp: 'append' }),
+      at(13, 'request/header', {
         reason: 'series',
-        header: { config: { provider: 'fake', model: 'fake' }, system: '# Same' },
+        header: { config: { provider: 'fake', model: 'fake' } },
       }),
     ])
 
@@ -1621,7 +1674,7 @@ describe('built-in conversation node Definitions', () => {
       'system-prompt', 'user', 'system-prompt', 'system-prompt', 'user',
     ])
     expect(ordered.filter(candidate => candidate?.kind === 'system-prompt')
-      .map(candidate => candidate?.anchorSeq)).toEqual([1, 6, 9])
+      .map(candidate => candidate?.anchorSeq)).toEqual([1, 7, 10])
   })
 
   it('associates each direct message with its immediately following session recall', () => {

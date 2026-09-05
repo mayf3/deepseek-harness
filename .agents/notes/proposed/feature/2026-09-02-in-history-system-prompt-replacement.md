@@ -10,11 +10,11 @@ Every system prompt change costs the whole provider prefix cache. The loop rende
 
 A DeepSeek model, provided as an unpublished model fact for this proposal, removes that constraint: it accepts a `system` message at any position of the conversation and treats the latest one as the complete effective system prompt, replacing the leading one. Tool schemas remain part of the cached prefix, so a tool-set change still invalidates the cache. With that model the harness can append the new prompt after the cached history instead of rewriting message 0, and the prefix stays warm.
 
-The harness has the representation for this only after the [system prompt is surface node 0](../architecture/2026-09-02-system-prompt-as-surface-node.md): a prompt change is then an operation on `system/message` surface nodes, and the choice between "replace node 0" and "append a new node" is a per-model decision.
+The harness has the representation for this because the [system prompt is surface node 0](../../implemented/architecture/2026-09-02-system-prompt-as-surface-node.md): a prompt change is an operation on `system/message` surface nodes, and the choice between "replace node 0" and "append a new node" is a per-model decision.
 
 ## Proposal
 
-For a model route that declares the capability, the loop appends a new `system/message` surface node instead of replacing node 0 when the rendered prompt changes and the prefix would otherwise survive. Everything else in the [surface-node design](../architecture/2026-09-02-system-prompt-as-surface-node.md) is unchanged: the event type, the projection owner, the serializers, and the presentation.
+For a model route that declares the capability, the loop appends a new `system/message` surface node instead of replacing node 0 when the rendered prompt changes and the prefix would otherwise survive. Everything else in the shipped [surface-node decision](../../implemented/architecture/2026-09-02-system-prompt-as-surface-node.md) is unchanged: the event type, the projection owner, the serializers, and the presentation.
 
 ### Capability
 

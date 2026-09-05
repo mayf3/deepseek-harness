@@ -1,6 +1,6 @@
 import { describe, expect, expectTypeOf, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
-import { createUserMessage, ToolCallId, createMessage, createToolResultMessage, MessageId, ReasoningEffortId } from '@deepseek-ai/dsh-llm'
+import { createSystemMessage, createUserMessage, ToolCallId, createMessage, createToolResultMessage, MessageId, ReasoningEffortId } from '@deepseek-ai/dsh-llm'
 import SessionStore, {
   adoptSessionEvent,
   SESSION_FORMAT_VERSION,
@@ -356,6 +356,30 @@ describe('Session', () => {
         message: 'message must have tool source',
       },
       {
+        name: 'system role',
+        event: {
+          type: 'system/message', seq: 0, time: 1, surfaceOp: 'append',
+          data: {
+            turn: 1,
+            step: 1,
+            message: { ...user, id: 'system', source: { kind: 'plugin', plugin: 'prompt' } },
+          },
+        },
+        message: 'message must have role "system"',
+      },
+      {
+        name: 'system source',
+        event: {
+          type: 'system/message', seq: 0, time: 1, surfaceOp: 'append',
+          data: {
+            turn: 1,
+            step: 1,
+            message: { ...user, id: 'system', role: 'system', source: { kind: 'plugin', plugin: '' } },
+          },
+        },
+        message: 'message must have plugin source',
+      },
+      {
         name: 'tool tuple',
         event: {
           type: 'tool/result', seq: 0, time: 1, surfaceOp: 'append',
@@ -444,6 +468,23 @@ describe('Session', () => {
     expect(snapshot).not.toBe(source)
     expect(snapshot.data).not.toBe(source.data)
     expect(snapshot.data.content).not.toBe(source.data.content)
+  })
+
+  it('adopts a system/message by freezing its message', () => {
+    const event = {
+      type: 'system/message',
+      seq: SessionSeq(0),
+      time: 1,
+      surfaceOp: 'append',
+      data: {
+        turn: 1,
+        step: 1,
+        message: createSystemMessage('You are terse.', '@deepseek-ai/dsh-system-prompt'),
+      },
+    } as unknown as SessionEvent
+    const adopted = adoptSessionEvent(event)
+    expect(adopted.type === 'system/message' && Object.isFrozen(adopted.data.message)).toBe(true)
+    expect(adopted.type === 'system/message' && Object.isFrozen(adopted.data.message.content[0])).toBe(true)
   })
 
   it('validates message shape before adopting ownership', () => {

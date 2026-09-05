@@ -411,12 +411,16 @@ export interface GenerateOptions {
   /** Adapter-owned reasoning effort selected for this exact model. */
   reasoningEffort?: ReasoningEffortId
   /**
-   * Ordered conversation messages, exactly as the provider sees them (after
-   * the `system` slot). A loop-built request assembles them as
-   * the derived history (dsh-agent-loop); a hand-built one-shot passes any list.
+   * Ordered conversation messages, exactly as the provider sees them. A
+   * loop-built request passes the derived history (dsh-agent-loop), whose
+   * leading system-role message carries the system prompt; a hand-built
+   * one-shot passes any list.
    */
   messages: Message[]
-  /** System prompt text (adapters map to the provider's system slot). */
+  /**
+   * System prompt text for one-shot callers; adapters map it to the provider's
+   * system slot ahead of `messages`. Loop-built requests leave it undefined.
+   */
   system?: string
   /** Tool schemas (adapters map to the provider's `tools` field). */
   tools?: ToolSchema[]

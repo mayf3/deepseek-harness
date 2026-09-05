@@ -8,7 +8,7 @@ import {
   normalizeSessionSnapshot,
   normalizeSessionSnapshots,
   normalizeStdout,
-  scrubRequestHeaders,
+  scrubModelRequestBulk,
   type NormalizeContext,
 } from '@deepseek-ai/dsh-session-snapshot'
 import { prepareSessionEventNotificationsForComparison } from '@deepseek-ai/dsh-llm-replay'
@@ -150,7 +150,7 @@ function normalizeHeadlessStream(rawStdout: string, cwd: string): string {
     }
     return record.event as JsonObject
   })
-  const normalizedEvents = parseJsonl(scrubRequestHeaders(normalizeSessionLog(
+  const normalizedEvents = parseJsonl(scrubModelRequestBulk(normalizeSessionLog(
     `${events.map(event => JSON.stringify(event)).join('\n')}\n`,
     context,
   )))

@@ -25,14 +25,16 @@ sequenceDiagram
   Note over Agent,Driver: claim pending next-step input plus one queued prompt
   Driver-->>SDK: <code>agent/inbox/spliced</code> pure deletion
   Driver-->>SDK: <code>agent/inbox/claimed</code> { message, turn } per message
+  Driver->>Prompt: <code>system-prompt/assemble</code> waterfall
+  Note over Driver,Prompt: project the rendered prompt against surface node 0
   Driver->>Hooks: <code>agent/pre-step</code> waterfall
   Hooks-->>Driver: authoritative reject or enter(messages)
   alt proposed step rejected or pre-step failed
     Driver-->>Driver: claimed batch stays removed, the open turn spends no step
   else enter proposed step
   Driver->>Session: <code>step/start</code>
+  Driver->>Session: <code>system/message</code> when the rendered prompt changed
   Driver->>Session: <code>user/message</code> per entered message
-  Driver->>Prompt: <code>system-prompt/assemble</code> waterfall
   Driver->>LLM: <code>agent/request</code> waterfall, then <code>llm/stream</code> waterfall
   LLM-->>Driver: StreamChunk*
   Driver-->>SDK: <code>agent/assistant-stream</code> chunk*

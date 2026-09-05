@@ -15,7 +15,7 @@ import type { Browser, Page } from 'playwright'
 import { chromium } from 'playwright'
 import { afterAll, beforeAll, describe, expect, it, onTestFailed } from 'vitest'
 import { ToolCallId, expandAssistantStream } from '@deepseek-ai/dsh-llm'
-import type { SessionEvent, SessionId } from '@deepseek-ai/dsh-session'
+import type { Session, SessionEvent, SessionId } from '@deepseek-ai/dsh-session'
 import {
   assertFixtureInventory, captureExpandedTurnProcessAria, captureStableAria,
   compareOrRefreshGolden, fixtureUserPrompts,
@@ -39,6 +39,12 @@ const MODE = webSnapshotMode()
 // committed fixture recorded exactly it, so drive script and fixture cannot
 // drift apart.
 const PROMPT = 'Use the bash tool to run exactly: echo WEB_E2E_OK. Then reply with the single word DONE and stop.'
+
+/** Rendered text of the system prompt surface node, or undefined when the surface carries none. */
+function systemPromptText(session: Session): string | undefined {
+  const message = session.deriveMessages().find(candidate => candidate.role === 'system')
+  return message?.content.flatMap(block => block.type === 'text' ? [block.text] : []).join('')
+}
 
 describe('web e2e: fresh round trip through the real assembly', () => {
   let scaffold: WebScaffold
@@ -101,11 +107,11 @@ describe('web e2e: fresh round trip through the real assembly', () => {
     }
   }, 200_000)
 
-  it('records the Web surface, source checkout, and session cwd in the request header', async () => {
+  it('records the Web surface, source checkout, and session cwd in the system prompt', async () => {
     if (settledSessionId === undefined) throw new Error('the drive turn did not publish a session id')
     const agent = scaffold.ctx.agents.get(settledSessionId)
     if (agent === undefined) throw new Error(`the settled Web agent ${settledSessionId} is no longer live`)
-    const system = agent.session.requestHeader()?.system
+    const system = systemPromptText(agent.session)
     if (system === undefined) throw new Error('the settled Web request has no system prompt')
     const prefix = system.split('\n\n').slice(0, 4).join('\n\n')
       .split(REPO_ROOT).join('{{sourceRoot}}')

@@ -3,7 +3,7 @@
 
 import { describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
-import { createMessage, createUserMessage } from '@deepseek-ai/dsh-llm'
+import { createMessage, createSystemMessage, createUserMessage } from '@deepseek-ai/dsh-llm'
 import type { ContentBlock, ToolSchema } from '@deepseek-ai/dsh-llm'
 import SessionStore, { SessionSeq } from '@deepseek-ai/dsh-session'
 import type { Session, SessionEvent, SessionSeq as SessionSeqType } from '@deepseek-ai/dsh-session'
@@ -14,9 +14,8 @@ import { CompactionId } from '@deepseek-ai/dsh-compaction'
 import { contextBreakdownProjectionDefinition } from '../src/breakdown-projection.ts'
 import {
   estimateContent,
-  estimateHeader,
   estimateMessage,
-  estimateSystemTokens,
+  estimateSystemMessage,
   estimateToolsTokens,
 } from '../src/estimate.ts'
 
@@ -49,6 +48,26 @@ function appendUser(session: Session, text: string): SessionSeqType {
   }), { surfaceOp: 'append' }).seq
 }
 
+const SYSTEM_PLUGIN = '@deepseek-ai/dsh-system-prompt'
+
+/** Append the rendered system prompt as surface node 0, the way the loop does before the first user message. */
+function appendSystem(session: Session, text: string): SessionSeqType {
+  return session.append('system/message', {
+    turn: 1,
+    step: 1,
+    message: createSystemMessage(text, SYSTEM_PLUGIN),
+  }, { surfaceOp: 'append' }).seq
+}
+
+/** Replace the system node in place, the way the loop does when the rendered prompt changes. */
+function replaceSystem(session: Session, node: SessionSeqType, text: string): SessionSeqType {
+  return session.append('system/message', {
+    turn: 1,
+    step: 1,
+    message: createSystemMessage(text, SYSTEM_PLUGIN),
+  }, { surfaceOp: { op: 'replace', start: node, end: node }, sourceEventSeqs: [node] }).seq
+}
+
 /**
  * Meter one upcoming replacement the way compaction-basic does: price the
  * replaced span from the measurement service's own nodes and log the
@@ -76,14 +95,17 @@ describe('contextBreakdown session projection', () => {
     expect(projected(ctx, session)).toEqual({ systemTokens: 0, toolsTokens: 0, messageTokens: 0 })
   })
 
-  it('prices the newest envelope last-wins and pushes no change for a restated one', async () => {
+  it('prices the system node and the newest envelope last-wins and pushes no change for a restated envelope', async () => {
     const { ctx, session } = await harness()
+    const systemNode = appendSystem(session, 'You are terse.')
     session.append('request/header', {
-      header: { config: CONFIG, system: 'You are terse.', tools: TOOLS },
+      header: { config: CONFIG, tools: TOOLS },
       reason: 'initial',
     })
+    // 'You are terse.' prices to 8 (4 text + 4 role): the same figure the
+    // request envelope's former system field priced to.
     expect(projected(ctx, session)).toEqual({
-      systemTokens: estimateSystemTokens({ config: CONFIG, system: 'You are terse.' }),
+      systemTokens: 8,
       toolsTokens: estimateToolsTokens({ config: CONFIG, tools: TOOLS }),
       messageTokens: 0,
     })
@@ -91,15 +113,38 @@ describe('contextBreakdown session projection', () => {
     const changed: string[] = []
     ctx.sessionProjections.onChanged((_session, key) => { changed.push(key) })
     session.append('request/header', {
-      header: { config: CONFIG, system: 'You are terse.', tools: TOOLS },
+      header: { config: CONFIG, tools: TOOLS },
       reason: 'change',
     })
     session.append('session/end-seed', {})
     expect(changed).not.toContain('contextBreakdown')
 
-    // A system-less, tool-less envelope prices back to zero.
+    // A tool-less envelope prices the tools figure back to zero and leaves
+    // the system node's figure alone.
     session.append('request/header', { header: { config: CONFIG }, reason: 'change' })
+    expect(projected(ctx, session)).toEqual({ systemTokens: 8, toolsTokens: 0, messageTokens: 0 })
+
+    // Replacing node 0 follows the new prompt; an empty prompt records none.
+    const longer = replaceSystem(session, systemNode, 'You are terse and answer in one line.')
+    expect(projected(ctx, session).systemTokens).toBe(Math.ceil('You are terse and answer in one line.'.length / 4) + 4)
+    replaceSystem(session, longer, '')
     expect(projected(ctx, session)).toEqual({ systemTokens: 0, toolsTokens: 0, messageTokens: 0 })
+  })
+
+  it('keeps the system node out of the message figure across appends and a system replacement', async () => {
+    const { ctx, session } = await harness()
+    const systemNode = appendSystem(session, 'You are terse.')
+    appendUser(session, 'abcd')
+    expect(projected(ctx, session)).toMatchObject({ systemTokens: 8, messageTokens: 9 })
+    replaceSystem(session, systemNode, 'You are verbose and thorough.')
+    expect(projected(ctx, session)).toMatchObject({
+      systemTokens: Math.ceil('You are verbose and thorough.'.length / 4) + 4,
+      messageTokens: 9,
+    })
+    // The service prices the same system node identically, so the two
+    // figures partition its surface total.
+    const { systemTokens, messageTokens } = projected(ctx, session)
+    expect(systemTokens + messageTokens).toBe(ctx.tokenMeter.measure(session).surfaceTokens)
   })
 
   it('sums surface appends and skips an empty-content assistant message', async () => {
@@ -144,12 +189,13 @@ describe('contextBreakdown session projection', () => {
     // The panel's composition rows and `measure()` answer the same question in
     // the same vocabulary; one shared fold is what makes that true.
     const agree = (): number => {
-      const messageTokens = projected(ctx, session).messageTokens
-      expect(messageTokens).toBe(ctx.tokenMeter.measure(session).surfaceTokens)
+      const { systemTokens, messageTokens } = projected(ctx, session)
+      expect(systemTokens + messageTokens).toBe(ctx.tokenMeter.measure(session).surfaceTokens)
       return messageTokens
     }
+    appendSystem(session, 'You are terse.')
     session.append('request/header', {
-      header: { config: CONFIG, system: 'You are terse.', tools: TOOLS },
+      header: { config: CONFIG, tools: TOOLS },
       reason: 'initial',
     })
     expect(agree()).toBe(0)
@@ -271,10 +317,7 @@ describe('contextBreakdown session projection', () => {
     await ctx.plugin(SessionProjectionRegistry)
     const meterFiber = await ctx.plugin(TokenMeter)
     const session = ctx.sessions.create()
-    session.append('request/header', {
-      header: { config: CONFIG, system: 'You are terse.' },
-      reason: 'initial',
-    })
+    appendSystem(session, 'You are terse.')
     appendUser(session, 'abcd')
     const checkpoint = JSON.parse(JSON.stringify(
       ctx.sessionProjections.checkpoint(session),
@@ -285,7 +328,7 @@ describe('contextBreakdown session projection', () => {
 
     await ctx.plugin(TokenMeter)
     expect(ctx.sessionProjections.viewCheckpoint(checkpoint).contextBreakdown).toEqual({
-      systemTokens: estimateSystemTokens({ config: CONFIG, system: 'You are terse.' }),
+      systemTokens: 8,
       toolsTokens: 0,
       messageTokens: 9,
     })
@@ -305,16 +348,24 @@ describe('shared estimator', () => {
     expect(estimateContent([unknown])).toBe(4 + Math.ceil(JSON.stringify(unknown).length / 4))
   })
 
-  it('prices envelope parts independently and absent parts to zero', () => {
-    expect(estimateSystemTokens(undefined)).toBe(0)
-    expect(estimateSystemTokens({ config: CONFIG })).toBe(0)
-    expect(estimateSystemTokens({ config: CONFIG, system: 'abcdefgh' })).toBe(6)
+  it('prices the system node without block overhead and an empty prompt to zero', () => {
+    expect(estimateSystemMessage(createSystemMessage('', SYSTEM_PLUGIN))).toBe(0)
+    expect(estimateSystemMessage(createSystemMessage('abcdefgh', SYSTEM_PLUGIN))).toBe(6)
+    // estimateMessage routes the system role to the same figure.
+    expect(estimateMessage(createSystemMessage('abcdefgh', SYSTEM_PLUGIN))).toBe(6)
+    // A non-text block in a system message keeps a conservative JSON price.
+    const image = { type: 'image', attachment: { attachmentId: 'a' } } as unknown as ContentBlock
+    expect(estimateSystemMessage(createMessage({
+      role: 'system',
+      content: [{ type: 'text', text: 'abcd' }, image],
+      source: { kind: 'plugin', plugin: SYSTEM_PLUGIN },
+    }))).toBe(Math.ceil((4 + JSON.stringify(image).length) / 4) + 4)
+  })
+
+  it('prices the envelope tool schemas and absent tools to zero', () => {
     expect(estimateToolsTokens(undefined)).toBe(0)
     expect(estimateToolsTokens({ config: CONFIG, tools: [] })).toBe(0)
     expect(estimateToolsTokens({ config: CONFIG, tools: TOOLS }))
       .toBe(Math.ceil(JSON.stringify(TOOLS).length / 4) + 4)
-    expect(estimateHeader(undefined)).toBe(0)
-    expect(estimateHeader({ config: CONFIG, system: 'abcdefgh', tools: TOOLS }))
-      .toBe(6 + Math.ceil(JSON.stringify(TOOLS).length / 4) + 4)
   })
 })

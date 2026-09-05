@@ -5,6 +5,7 @@
 import {
   ToolCallId,
   createAssistantMessage,
+  createSystemMessage,
   createToolResultMessage,
   createUserMessage,
 } from '@deepseek-ai/dsh-llm'
@@ -64,11 +65,21 @@ function markerHelpers(prefix: string): ChatScrollMarkers {
   }
 }
 
+function appendSystemPrompt(session: Session, turn: number, step: number): void {
+  session.append('system/message', {
+    turn,
+    step,
+    message: createSystemMessage(
+      'Synthetic chat-scroll system prompt.',
+      '@deepseek-ai/dsh-system-prompt',
+    ),
+  }, { surfaceOp: 'append' })
+}
+
 function appendRequestHeader(session: Session, turn: number, step: number): void {
   session.append('request/header', {
     header: {
       config: { provider: 'deepseek-official', model: 'deepseek-v4-flash' },
-      system: `Synthetic chat-scroll request for turn ${String(turn)}, step ${String(step)}.`,
     },
     reason: turn === 1 && step === 1 ? 'initial' : 'change',
   })
@@ -204,6 +215,7 @@ export function createChatScrollFixture(options: ChatScrollFixtureOptions): Chat
     }
 
     session.append('step/start', { turn, step: 1 })
+    if (turn === 1) appendSystemPrompt(session, turn, 1)
     appendRequestHeader(session, turn, 1)
     if (turn % TOOL_INTERVAL === 0) {
       appendToolStep(session, markers, turn)

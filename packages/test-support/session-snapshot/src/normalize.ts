@@ -1,8 +1,8 @@
 /**
  * Pure ACP transcript and session-log normalizers. They scrub session ids, run cwd, RPC ids,
  * timestamps, goal lifecycle clocks, and hook duration while preserving semantic payload values.
- * Request-header scrubbers stay composable so one scenario per header class can pin prompt and
- * tool-schema sidecars.
+ * The prompt-text and tool-schema scrubbers stay composable so one scenario per header class can
+ * pin prompt and tool-schema sidecars.
  * @module @deepseek-ai/dsh-session-snapshot/normalize
  */
 
@@ -384,6 +384,19 @@ export function normalizeSessionLog(
     if (Object.hasOwn(record, 'sourceEventSeqs')) {
       record.sourceEventSeqs = decodeSeqRanges(record.sourceEventSeqs)
     }
+    // The system prompt is a surface `system/message` node in the current
+    // vocabulary; retired generations also carry the removed `system` header
+    // member. Drop it so both sides of a comparison normalize identically.
+    if (record.type === 'request/header' && record.data !== null && typeof record.data === 'object') {
+      const data = record.data as Record<string, unknown>
+      const header = data.header
+      if (header !== null && typeof header === 'object' && !Array.isArray(header)
+        && 'system' in (header as Record<string, unknown>)) {
+        const copy = { ...header as Record<string, unknown> }
+        delete copy['system']
+        data.header = copy
+      }
+    }
     return scrubValue(record, ctx, cwdPathMode, identityMode) as Record<string, unknown>
   })
   return records.map(r => JSON.stringify(r)).join('\n') + '\n'
@@ -523,54 +536,65 @@ function hasSessionFormatVersion(rawLog: string): boolean {
  * its complete tool schemas while every JSONL fixture omits the prompt text.
  * Lines without a system payload pass through byte-for-byte; the transform is
  * idempotent.
+||||||| parent of 842fdd6a51 (refactor(session): log the system prompt as surface node 0)
+ * Replace system-prompt content in request headers with `{{system}}` tokens
+ * while retaining field presence.
+ * Other header content stays verbatim, so a header-pinning fixture can keep
+ * its complete tool schemas while every JSONL fixture omits the prompt text.
+ * Lines without a system payload pass through byte-for-byte; the transform is
+ * idempotent.
+ * Replace the rendered prompt text of every `system/message` event with the
+ * `{{system}}` token. The text block keeps its position and type, so the
+ * fixture still shows one system node per prompt version; an empty `content`
+ * (no system prompt) stays empty. Request headers and every other line pass
+ * through byte-for-byte; the transform is idempotent.
  *
  * @param rawLog The raw session `.jsonl` content.
- * @returns The JSONL with system-prompt content tokenized.
+ * @returns The JSONL with system-prompt text tokenized.
  */
 export function scrubSystemPrompts(rawLog: string): string {
-  return scrubHeaderContent(rawLog, { system: true })
+  return scrubModelRequestContent(rawLog, { system: true })
 }
 
 /**
  * Replace tool schemas in full request-header snapshots with `{{tools}}`
- * tokens while retaining field presence. System prompts and session-prefix
- * messages stay verbatim so pinning fixtures can move only schema bulk into
- * their dedicated JSON sidecar. Lines without a tool payload pass through
- * byte-for-byte; the transform is idempotent.
+ * tokens while retaining field presence. System-prompt text stays verbatim so
+ * pinning fixtures can move only schema bulk into their dedicated JSON
+ * sidecar. Lines without a tool payload pass through byte-for-byte; the
+ * transform is idempotent.
  *
  * @param rawLog The raw session `.jsonl` content.
  * @returns The JSONL with tool-schema content tokenized.
  */
 export function scrubToolSchemas(rawLog: string): string {
-  return scrubHeaderContent(rawLog, { tools: true })
+  return scrubModelRequestContent(rawLog, { tools: true })
 }
 
 /**
- * Replace all bulky request-header content in a session JSONL with stable
- * tokens. This includes the system-prompt fields handled by
- * {@link scrubSystemPrompts}, tool schemas, and session-prefix messages. It
- * keeps prefix message counts, field presence, config, and reason. Lines
- * without content to scrub pass through byte-for-byte, and the transform is
- * idempotent.
+ * Replace all bulky model-request content in a session JSONL with stable
+ * tokens: the `system/message` prompt text handled by
+ * {@link scrubSystemPrompts} and the request-header tool schemas handled by
+ * {@link scrubToolSchemas}. Field presence, config, and reason are kept.
+ * Lines without content to scrub pass through byte-for-byte, and the
+ * transform is idempotent.
  *
  * @param rawLog The raw session `.jsonl` content.
- * @returns The JSONL with all header bulk tokenized, other lines byte-identical.
+ * @returns The JSONL with prompt text and schema bulk tokenized, other lines byte-identical.
  */
-export function scrubRequestHeaders(rawLog: string): string {
-  return scrubHeaderContent(rawLog, { system: true, tools: true })
+export function scrubModelRequestBulk(rawLog: string): string {
+  return scrubModelRequestContent(rawLog, { system: true, tools: true })
 }
 
 /**
- * Project a persisted session log while tokenizing all request-header bulk.
- * Each non-empty line is parsed at most once; the session header stays
- * byte-identical. Body records omit their persistence-only envelopes, and
- * request-header payloads are tokenized.
+ * Project a persisted session log while tokenizing prompt text and schema
+ * bulk. Each non-empty line is parsed at most once; the session header stays
+ * byte-identical. Body records omit their persistence-only envelopes.
  *
  * @param rawLog - persisted or already-projected session JSONL.
- * @returns committed snapshot JSONL with request headers tokenized.
+ * @returns committed snapshot JSONL with prompt text and tool schemas tokenized.
  */
 export function scrubSessionSnapshot(rawLog: string): string {
-  const scrubbed = scrubRequestHeaders(rawLog)
+  const scrubbed = scrubModelRequestBulk(rawLog)
   let recordIndex = 0
   return scrubbed.split('\n').map((line) => {
     if (line.trim().length === 0) return line
@@ -595,27 +619,41 @@ function normalizeFeedbackClocks(record: Record<string, unknown>): void {
   if ('updatedAt' in clocks) clocks.updatedAt = 0
 }
 
-/** Which independent request-header payloads a scrubber replaces. */
-interface HeaderScrubOptions {
+/** Which independent model-request payloads a scrubber replaces. */
+interface ModelRequestScrubOptions {
+  /** Tokenize the prompt text of every `system/message` event. */
   system?: boolean
+  /** Tokenize the `tools` field of every `request/header` event. */
   tools?: boolean
 }
 
-/** Transform the selected request-header payloads. */
-function scrubHeaderContent(rawLog: string, options: HeaderScrubOptions): string {
+/** Return the first text block of a `system/message` payload, or `undefined` when it carries none. */
+function systemPromptBlock(data: Record<string, unknown>): Record<string, unknown> | undefined {
+  const message = data.message as Record<string, unknown> | null | undefined
+  if (message === null || typeof message !== 'object' || !Array.isArray(message.content)) return undefined
+  const block = message.content[0] as Record<string, unknown> | null | undefined
+  return block !== null && typeof block === 'object' && typeof block.text === 'string' ? block : undefined
+}
+
+/** Transform the selected model-request payloads. */
+function scrubModelRequestContent(rawLog: string, options: ModelRequestScrubOptions): string {
   const lines = rawLog.split('\n')
   const out = lines.map((line) => {
     if (line.trim().length === 0) return line
     const record = JSON.parse(line) as Record<string, unknown>
     const data = record.data as Record<string, unknown> | null | undefined
     if (data === null || typeof data !== 'object') return line
-    if (record.type === 'request/header') {
+    if (options.system === true && record.type === 'system/message') {
+      const block = systemPromptBlock(data)
+      if (block === undefined) return line
+      block.text = SYSTEM
+      return JSON.stringify(record)
+    }
+    if (options.tools === true && record.type === 'request/header') {
       const header = data.header as Record<string, unknown> | null | undefined
-      if (header === null || typeof header !== 'object') return line
-      let touched = false
-      if (options.system === true && 'system' in header) { header.system = SYSTEM; touched = true }
-      if (options.tools === true && 'tools' in header) { header.tools = TOOLS; touched = true }
-      return touched ? JSON.stringify(record) : line
+      if (header === null || typeof header !== 'object' || !('tools' in header)) return line
+      header.tools = TOOLS
+      return JSON.stringify(record)
     }
     return line
   })

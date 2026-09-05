@@ -14,6 +14,7 @@ import {
 import { SurfaceManager } from '@deepseek-ai/dsh-session/surface'
 import {
   createMessage,
+  createSystemMessage,
   createToolResultMessage,
   createUserMessage,
   freezeMessage,
@@ -882,5 +883,82 @@ describe('SurfaceManager.replaceGeneration', () => {
       content: [{ type: 'text', text: 'summary' }], source: { kind: 'plugin', plugin: 'compact' },
     }), { surfaceOp: { op: 'replace', start: nodes[0]!, end: nodes[1]! }, sourceEventSeqs: [nodes[0]!, nodes[1]!] })
     expect(s.surface.replaceGeneration).toBe(1)
+  })
+})
+
+describe('system/message surface node', () => {
+  function systemEvent(seq: number, text: string, op: TestSurfaceOp = 'append', sources?: number[]): SessionEvent {
+    return {
+      type: 'system/message',
+      seq: SessionSeq(seq),
+      time: seq,
+      data: { turn: 1, step: 1, message: createSystemMessage(text, 'test-plugin') },
+      surfaceOp: surfaceOp(op),
+      ...sources === undefined ? {} : { sourceEventSeqs: sourceSeqs(...sources) },
+    }
+  }
+  function userEvent(seq: number, op: TestSurfaceOp = 'append', sources?: number[]): SessionEvent {
+    return {
+      type: 'user/message',
+      seq: SessionSeq(seq),
+      time: seq,
+      data: createUserMessage({ content: [{ type: 'text', text: `u${seq}` }], source: { kind: 'user' } }),
+      surfaceOp: surfaceOp(op),
+      ...sources === undefined ? {} : { sourceEventSeqs: sourceSeqs(...sources) },
+    }
+  }
+
+  it('projects a system node as the leading system-role message and an empty one as no message', () => {
+    const s = Session.create(SessionId('sys'))
+    s.append('turn/start', { turn: 1 })
+    s.append('step/start', { turn: 1, step: 1 })
+    s.append('system/message', { turn: 1, step: 1, message: createSystemMessage('be brief', 'p') }, { surfaceOp: 'append' })
+    s.append('user/message', createUserMessage({ content: [{ type: 'text', text: 'hi' }], source: { kind: 'user' } }), { surfaceOp: 'append' })
+    expect(s.deriveMessages().map(message => message.role)).toEqual(['system', 'user'])
+    expect(s.deriveMessages()[0]?.content).toEqual([{ type: 'text', text: 'be brief' }])
+
+    const head = s.surface.nodes[0] as SessionSeq
+    s.append('system/message', { turn: 1, step: 1, message: createSystemMessage('', 'p') }, {
+      surfaceOp: { op: 'replace', start: head, end: head },
+      sourceEventSeqs: [head],
+    })
+    expect(s.deriveMessages().map(message => message.role)).toEqual(['user'])
+    expect(s.surface.nodes).toHaveLength(2)
+  })
+
+  it('replaces node 0 with a new system node and rejects other rewrites of the head', () => {
+    const replaced = foldSurface([
+      systemEvent(0, 'v1'), userEvent(1), systemEvent(2, 'v2', { op: 'replace', start: 0, end: 0 }, [0]),
+    ])
+    expect(replaced.nodes).toEqual(sourceSeqs(2, 1))
+
+    expect(() => foldSurface([
+      systemEvent(0, 'v1'), userEvent(1),
+      userEvent(2, { op: 'replace', start: 0, end: 1 }, [0, 1]),
+    ])).toThrow(/node 0 holds the system prompt/)
+    expect(() => foldSurface([
+      systemEvent(0, 'v1'), userEvent(1), systemEvent(2, 'v2', { op: 'replace', start: 0, end: 1 }, [0, 1]),
+    ])).toThrow(/node 0 holds the system prompt/)
+  })
+
+  it('leaves later system nodes and a non-system head unprotected', () => {
+    const later = foldSurface([
+      systemEvent(0, 'v1'), userEvent(1), systemEvent(2, 'v2'), userEvent(3),
+      userEvent(4, { op: 'replace', start: 1, end: 3 }, [1, 2, 3]),
+    ])
+    expect(later.nodes).toEqual(sourceSeqs(0, 4))
+    const plainHead = foldSurface([
+      userEvent(0), userEvent(1),
+      userEvent(2, { op: 'replace', start: 0, end: 1 }, [0, 1]),
+    ])
+    expect(plainHead.nodes).toEqual(sourceSeqs(2))
+  })
+
+  it('rejects a seeded system/message with a non-system role or non-plugin source', () => {
+    const good = systemEvent(0, 'v1')
+    const badRole = { ...good, data: { ...good.data, message: { ...(good.data as { message: object }).message, role: 'user' } } }
+    expect(() => Session.create(SessionId('bad-role'), [badRole as SessionEvent])).toThrow(/role "system"/)
+    const badSource = { ...good, data: { ...good.data, message: { ...(good.data as { message: object }).message, source: { kind: 'user' } } } }
+    expect(() => Session.create(SessionId('bad-source'), [badSource as SessionEvent])).toThrow(/plugin source/)
   })
 })

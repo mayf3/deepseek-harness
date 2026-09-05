@@ -25,6 +25,8 @@ export interface SnapshotHeaderManifest {
   childToolSchemas?: number[]
   /** Legitimate changed-header count after the initial request header. */
   changes?: number
+  /** Legitimate `system/message` replacement count after the initial system prompt. */
+  promptChanges?: number
 }
 
 /** Replay facts that cannot be reconstructed from successful model chunks. */
@@ -248,12 +250,15 @@ export function parseSnapshotManifest(source: string, path = 'snapshot.yml'): Sn
         'childSystemPrompts',
         'childToolSchemas',
         'changes',
+        'promptChanges',
       ], 'manifest.header')
       if (value.pin !== undefined && value.pin !== true) {
         throw new Error('manifest.header.pin must equal true when present')
       }
-      if (value.changes !== undefined && (!Number.isInteger(value.changes) || Number(value.changes) < 0)) {
-        throw new Error('manifest.header.changes must be a non-negative integer')
+      for (const field of ['changes', 'promptChanges'] as const) {
+        if (value[field] !== undefined && (!Number.isInteger(value[field]) || Number(value[field]) < 0)) {
+          throw new Error(`manifest.header.${field} must be a non-negative integer`)
+        }
       }
       header = {
         class: name(value.class, 'manifest.header.class'),
@@ -271,6 +276,7 @@ export function parseSnapshotManifest(source: string, path = 'snapshot.yml'): Sn
           ? {}
           : { childToolSchemas: positiveIndexes(value.childToolSchemas, 'manifest.header.childToolSchemas') }),
         ...(value.changes === undefined ? {} : { changes: Number(value.changes) }),
+        ...(value.promptChanges === undefined ? {} : { promptChanges: Number(value.promptChanges) }),
       }
     }
 

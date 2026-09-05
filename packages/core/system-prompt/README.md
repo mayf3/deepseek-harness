@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-`dsh-system-prompt` assembles the system prompt and tool schemas the model receives before each step. Plugins contribute ordered prompt sections, dynamic runtime context, tool-schema providers, and named variables; the loop calls `assemble()` once per step and renders the result into the complete model prompt. The package provides the fixed harness identity and the global deployment persona, while an agent-scoped contribution shadows the global default for one agent. Config controls the harness identity opener, dynamic runtime context, the deployment persona, and an explicit model-facing tool order. Choose it when you need to add a prompt section, a prompt variable, or a tool-schema source — it is the assembly point all model-facing prose flows through.
+`dsh-system-prompt` assembles the system prompt and tool schemas the model receives before each step. Plugins contribute ordered prompt sections, dynamic runtime context, tool-schema providers, and named variables; the loop calls `assemble()` once per step, renders the result into the complete model prompt, and commits that text as the `system/message` surface node 0 owned by its `SystemPromptProjection` — appended on the first step, replaced in place when the rendered text changes ([decision](../../../.agents/notes/implemented/architecture/2026-09-02-system-prompt-as-surface-node.md)). The package provides the fixed harness identity and the global deployment persona, while an agent-scoped contribution shadows the global default for one agent. Config controls the harness identity opener, dynamic runtime context, the deployment persona, and an explicit model-facing tool order. Choose it when you need to add a prompt section, a prompt variable, or a tool-schema source — it is the assembly point all model-facing prose flows through.
 
 ## Table of Contents
 
@@ -130,7 +130,7 @@ The package-level contract is enough for most consumers; read these when you nee
 
 #### What the model sees
 
-By default every assembly starts with the harness identity below, then the configured persona and ordered plugin sections after strict variable interpolation. `includeHarnessIdentity: false` omits only that fixed opener. Empty sections disappear; scoped sections and variables can shadow globals for one agent. The `system-prompt/assemble` waterfall determines the delivered prompt and tool schemas unless one effective section declares itself complete — that exact section then becomes the whole system prompt while the waterfall's contexts, tools, and variables remain. Ordered dynamic contexts are separate from sections and become sourced user-role snapshots only when present; `includeRuntimeContext: false` or a scoped suppressor removes them all.
+By default every assembly starts with the harness identity below, then the configured persona and ordered plugin sections after strict variable interpolation. `includeHarnessIdentity: false` omits only that fixed opener. Empty sections disappear; scoped sections and variables can shadow globals for one agent. The `system-prompt/assemble` waterfall determines the delivered prompt and tool schemas unless one effective section declares itself complete — that exact section then becomes the whole system prompt while the waterfall's contexts, tools, and variables remain. The rendered prompt reaches the model as the leading system-role message of derived history (surface node 0), never as a separate request field. Ordered dynamic contexts are separate from sections and become sourced user-role snapshots only when present; `includeRuntimeContext: false` or a scoped suppressor removes them all.
 
 ##### Harness identity
 
@@ -144,7 +144,7 @@ Identity is a fixed per-request cost when enabled. Persona and plugin text are r
 
 #### KV Cache effect
 
-Prefix-stable while identity, persona, variables, section text, and order render identically. Any change may invalidate reuse from the first changed system-prompt token.
+Prefix-stable while identity, persona, variables, section text, and order render identically: an unchanged rendering leaves surface node 0 untouched. Any change replaces node 0 with a new `system/message`, so the request differs from its first token and reuse is lost for the whole prefix.
 
 ### Tool schemas
 

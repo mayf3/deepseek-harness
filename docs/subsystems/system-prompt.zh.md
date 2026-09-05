@@ -39,7 +39,7 @@ interface ToolProviderResult {
 
 ## 提示词段落
 
-`PromptSection` 是一份只读的同进程注册约定。其文本可以是静态的，也可以从当前组装上下文动态解析。各段先按 order 升序排列，再按名称的代码单元顺序排列；仓库贡献方通过 `getSectionOrder()` 解析服务持有的具名分配。Runtime-context 贡献方通过 `getContextOrder()` 解析独立分配。协作式组装完成后，一个有效的 `complete` 段会成为唯一的提示词段落。
+`PromptSection` 是一份只读的同进程注册约定。其文本可以是静态的，也可以从当前组装上下文动态解析。各段先按 order 升序排列，再按名称的代码单元顺序排列；仓库贡献方通过 `getSectionOrder()` 解析服务持有的具名分配。Runtime-context 贡献方通过 `getContextOrder()` 解析独立分配。协作式组装完成后，一个有效的 `complete` 段会成为唯一的提示词段落。agent loop（智能体循环）用 `renderPrompt` 渲染组装后的各段，并把文本作为 `system/message` surface 第 0 号节点提交——首个步骤追加，渲染文本变化时原地替换——因此提示词作为派生历史的开头消息而不是请求字段到达模型（[决策](../../.agents/notes/implemented/architecture/2026-09-02-system-prompt-as-surface-node.zh.md)）。
 
 ```ts type-equiv
 /** One contributed section of the system prompt (registry input). */

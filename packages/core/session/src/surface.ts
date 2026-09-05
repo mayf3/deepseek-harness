@@ -20,6 +20,7 @@ import type {
 
 /** Runtime counterpart of the message-producing event union. */
 const SURFACE_EVENT_TYPES = new Set<string>([
+  'system/message',
   'user/message',
   'assistant/message',
   'tool/result',
@@ -28,7 +29,7 @@ const SURFACE_EVENT_TYPES = new Set<string>([
 /**
  * Whether an event type can join the model-visible surface.
  * @param type - event type to test.
- * @returns true for one of the three message-producing event types.
+ * @returns true for one of the four message-producing event types.
  */
 export function isSurfaceEligibleType(type: string): boolean {
   return SURFACE_EVENT_TYPES.has(type)
@@ -103,10 +104,13 @@ export function deriveEventMessage(event: SessionEvent): Message | null {
     case 'user/message': {
       return event.data
     }
+    // An empty-content message projects to no wire message. For
+    // system/message the node records "no system prompt" while keeping its
+    // surface position; for assistant/message the event exists only to host a
+    // max-tokens step's usage and must not inject a content-less assistant
+    // turn into the provider transcript.
+    case 'system/message':
     case 'assistant/message': {
-      // Skip an empty-content assistant/message: it exists only to host a
-      // max-tokens step's usage and must not inject a content-less assistant
-      // turn into the provider transcript.
       if (event.data.message.content.length === 0) return null
       return event.data.message
     }
@@ -330,6 +334,28 @@ function assertToolResultRewrite(
   }
 }
 
+/**
+ * Protect the system prompt at surface node 0. A replacement covering node 0
+ * while that node is a `system/message` must itself be a `system/message` over
+ * exactly that node; later system nodes carry no protection and a compaction
+ * range may shadow them.
+ */
+function assertSystemHeadRewrite(
+  event: SessionEvent,
+  state: SurfaceFoldState,
+  startIdx: number,
+  shadowedSeqs: readonly SessionSeq[],
+  events: readonly SessionEvent[],
+  baseSeq: SessionLogOffset,
+): void {
+  if (startIdx !== 0) return
+  const head = events[state.nodes[0] as number - baseSeq]
+  if (head?.type !== 'system/message') return
+  if (event.type !== 'system/message' || shadowedSeqs.length !== 1) {
+    throw new Error('surface replace: node 0 holds the system prompt and may be rewritten only by a system/message over exactly that node')
+  }
+}
+
 /** Validate one event at its replay boundary and prepare its atomic fold transition. */
 function planSurfaceEvent(
   state: SurfaceFoldState,
@@ -350,6 +376,7 @@ function planSurfaceEvent(
   const range = replacementRange(state, surfaceOp)
   assertProvenance(event, range.shadowedSeqs)
   assertToolResultRewrite(event, range.shadowedSeqs, events, baseSeq)
+  assertSystemHeadRewrite(event, state, range.startIdx, range.shadowedSeqs, events, baseSeq)
   return {
     kind: 'replace',
     seq: event.seq,

@@ -32,6 +32,7 @@ import {
   scrubSystemPrompts,
   scrubToolSchemas,
   sessionFixtureName,
+  systemPromptPrecedesRequests,
   sessionFixtureNames,
   sessionHeaderVersion,
   snapshotSpillRoot,
@@ -564,9 +565,13 @@ async function verifyHeaders(scenario: HeadlessScenario, actualLogs: readonly Se
   }
 
   for (const [logIndex, log] of actualLogs.entries()) {
-    const headers = normalizedHeaders(scrubSystemPrompts(log.content), ctx)
+    const headers = normalizedHeaders(log.content, ctx)
     const prompts = normalizedSystemPrompts(log.content, ctx)
-    expect(prompts, `${scenario.name}: every header has a system prompt`).toHaveLength(headers.length)
+    if (headers.length > 0) {
+      expect(systemPromptPrecedesRequests(log.content), `${scenario.name}: a system/message precedes the first request/header`).toBe(true)
+      expect(prompts.length, `${scenario.name}: system/message count`)
+        .toBe(1 + (logIndex === 0 ? pin.manifest.header.promptChanges ?? 0 : 0))
+    }
     for (const [index, header] of headers.entries()) {
       const selectedSchemas = childSchemas.get(logIndex)?.[index]
       const base = reconstructed[index] ?? reconstructed[0]
@@ -650,6 +655,7 @@ describe('headless recorded-session snapshots', () => {
         }
       }
       delete cloned.time
+      delete (cloned as { seq?: unknown }).seq
       if (cloned.type === 'agent/inbox/spliced') {
         for (const message of cloned.data?.inserted ?? []) delete message.id
       }
@@ -663,13 +669,24 @@ describe('headless recorded-session snapshots', () => {
         }
       }
       if (cloned.type === 'hook/result') delete cloned.data?.durationMs
+      if (cloned.type === 'session/title') delete (cloned.data as { messageSeqs?: unknown })?.messageSeqs
+      // Positional seq references shift with the `system/message` node the
+      // retained packed generation cannot invent; both sides cite their own
+      // step's Assistant settlement, so the citation is not the comparison.
+      delete (cloned as { sourceEventSeqs?: unknown }).sourceEventSeqs
       return cloned
     }
     const logical = (fixture: string): unknown[] => {
       const current = prepareSessionSnapshotFixtureForComparison(fixture)
       return [
         records(current)[0],
-        ...parseSessionLog(current).map(withoutVolatileMessage),
+        // Prompt placement is not what this comparison owns: the unpacked
+        // current recording carries a `system/message` node that the retained
+        // packed generation cannot invent through migration, so omit prompt
+        // positioning and compare the chunk-round-trip records.
+        ...parseSessionLog(current)
+          .filter(event => event.type !== 'system/message')
+          .map(withoutVolatileMessage),
       ]
     }
     expect(logical(packed)).toStrictEqual(logical(source))
@@ -775,14 +792,19 @@ describe('headless recorded-session snapshots', () => {
       const content = [
         header,
         { type: 'turn/start', seq: 0, time: 2, data: { turn: 1 } },
+        { type: 'step/start', seq: 1, time: 2, data: { turn: 1, step: 1 } },
+        { type: 'system/message', seq: 2, time: 3, data: {
+          turn: 1, step: 1,
+          message: { role: 'system', content: [{ type: 'text', text: 'fresh system prompt' }],
+            source: { kind: 'plugin', plugin: '@deepseek-ai/dsh-system-prompt' }, id: 'fresh-msg' },
+        }, surfaceOp: 'append' },
         {
           type: 'request/header',
-          seq: 1,
-          time: 3,
+          seq: 3,
+          time: 4,
           data: {
             header: {
               config: { provider: 'test', model: 'test' },
-              system: 'fresh system prompt',
               tools: [{ name: 'fresh_tool', description: 'fresh schema', parameters: {} }],
             },
             reason: 'initial',
@@ -932,10 +954,15 @@ describe('headless recorded-session snapshots', () => {
       expect(result.stderr).toBe(expectedStderr)
       expect(actualLogs, `${scenario.name}: persisted session count`).toHaveLength(fixtures.length)
       const fixtureContext = contextOf(fixtures)
-      const actualSnapshots = normalizeSessionSnapshots(actualLogs.map(log => log.content), actualContext)
-      const expectedSnapshots = normalizeSessionSnapshots(fixtures, fixtureContext)
-      for (const [index, actual] of actualSnapshots.entries()) {
-        expect(actual, `${scenario.name}: session ${index}`).toBe(expectedSnapshots[index])
+      // A retained historical generation is an immutable replay input: its
+      // current-view run differs by the retired `system` header member, which
+      // the historical edge cannot migrate into `system/message` nodes.
+      if (scenario.manifest.sessionFormat === undefined) {
+        const actualSnapshots = normalizeSessionSnapshots(actualLogs.map(log => log.content), actualContext)
+        const expectedSnapshots = normalizeSessionSnapshots(fixtures, fixtureContext)
+        for (const [index, actual] of actualSnapshots.entries()) {
+          expect(actual, `${scenario.name}: session ${index}`).toBe(expectedSnapshots[index])
+        }
       }
       await verifyHeaders(scenario, actualLogs, actualContext)
 

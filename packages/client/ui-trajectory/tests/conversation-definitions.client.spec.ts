@@ -160,6 +160,15 @@ function assistantMessage(id: string, text: string) {
   }
 }
 
+function systemMessage(text: string) {
+  return {
+    id: `system-${text}`,
+    role: 'system',
+    content: [{ type: 'text', text }],
+    source: { kind: 'plugin', plugin: '@deepseek-ai/dsh-system-prompt' },
+  }
+}
+
 describe('Trajectory conversation Definitions', () => {
   it('assembles streaming usage, preserves retry facts, and materializes interruption', () => {
     const value = assembler([
@@ -499,30 +508,34 @@ describe('Trajectory conversation Definitions', () => {
   it('classifies claimed inbox input as steering and consumes one inherited prompt change', () => {
     const value = assembler([
       at(1, 'turn/start', { turn: 1 }),
-      at(2, 'request/header', {
+      at(2, 'system/message', {
+        turn: 1,
+        step: 1,
+        message: systemMessage('system prompt'),
+      }, { surfaceOp: 'append' }),
+      at(3, 'request/header', {
         reason: 'initial',
         header: {
           config: { provider: 'test', model: 'test' },
-          system: 'system prompt',
           tools: [],
         },
       }),
-      at(3, 'step/start', { turn: 1, step: 1 }),
-      at(4, 'assistant/message', {
+      at(4, 'step/start', { turn: 1, step: 1 }),
+      at(5, 'assistant/message', {
         turn: 1,
         step: 1,
         message: assistantMessage('assistant-1', 'first'),
       }),
-      at(5, 'step/end', { turn: 1, step: 1 }),
-      at(6, 'agent/inbox/spliced', {
+      at(6, 'step/end', { turn: 1, step: 1 }),
+      at(7, 'agent/inbox/spliced', {
         target: 'next-step', start: 0, removedCount: 0, inserted: [{ id: 'm1' }],
       }),
-      at(7, 'agent/inbox/spliced', {
+      at(8, 'agent/inbox/spliced', {
         target: 'next-step', start: 0, removedCount: 1, inserted: [],
       }),
-      at(8, 'step/start', { turn: 1, step: 2 }),
+      at(9, 'step/start', { turn: 1, step: 2 }),
     ])
-    value.append(at(9, 'user/message', {
+    value.append(at(10, 'user/message', {
       id: 'm1',
       role: 'user',
       content: [{ type: 'text', text: 'steer here' }],
@@ -531,14 +544,15 @@ describe('Trajectory conversation Definitions', () => {
     value.flush()
 
     const steering = snapshot(value)
-    expect(steering.eventNodes.find(node => node.seq === 9)?.kind).toBe('steering')
-    expect(steering.eventLocations.get(9)).toMatchObject({
+    expect(steering.eventNodes.find(node => node.seq === 10)?.kind).toBe('steering')
+    expect(steering.eventNodes.find(node => node.seq === 2)).toBeUndefined()
+    expect(steering.eventLocations.get(10)).toMatchObject({
       kind: 'step',
       turn: { turn: 1 },
       step: { step: 2 },
     })
 
-    value.append(at(10, 'assistant/message', {
+    value.append(at(11, 'assistant/message', {
       turn: 1,
       step: 2,
       message: assistantMessage('assistant-2', 'second'),
@@ -550,8 +564,73 @@ describe('Trajectory conversation Definitions', () => {
       ? request.prompt?.system
       : undefined)).toEqual(['system prompt', 'system prompt'])
     expect(current.requests.map(request => request.purpose === 'assistant'
-      ? request.promptChange?.kind
-      : undefined)).toEqual(['initial', undefined])
+      ? request.promptChange
+      : undefined)).toEqual([{ seq: 2, time: 1_700_000_000_002, kind: 'initial' }, undefined])
+  })
+
+  it('flags a replaced system node as a system prompt change anchored at the replacement', () => {
+    const value = assembler([
+      at(1, 'turn/start', { turn: 1 }),
+      at(2, 'step/start', { turn: 1, step: 1 }),
+      at(3, 'system/message', {
+        turn: 1,
+        step: 1,
+        message: systemMessage('first prompt'),
+      }, { surfaceOp: 'append' }),
+      at(4, 'request/header', {
+        reason: 'initial',
+        header: { config: { provider: 'test', model: 'test' }, tools: [] },
+      }),
+      at(5, 'assistant/message', {
+        turn: 1,
+        step: 1,
+        message: assistantMessage('assistant-1', 'first'),
+      }),
+      at(6, 'step/end', { turn: 1, step: 1 }),
+      at(7, 'turn/end', { turn: 1, reason: { kind: 'completed' } }),
+      at(8, 'turn/start', { turn: 2 }),
+      at(9, 'step/start', { turn: 2, step: 1 }),
+      at(10, 'system/message', {
+        turn: 2,
+        step: 1,
+        message: systemMessage('second prompt'),
+      }, { surfaceOp: { op: 'replace', start: 3, end: 3 }, sourceEventSeqs: [3] }),
+      at(11, 'request/header', {
+        reason: 'series',
+        header: { config: { provider: 'test', model: 'test' }, tools: [] },
+      }),
+      at(12, 'assistant/message', {
+        turn: 2,
+        step: 1,
+        message: assistantMessage('assistant-2', 'second'),
+      }),
+    ])
+
+    const current = snapshot(value)
+    expect(current.eventNodes.map(node => node.seq)).not.toContain(10)
+    expect(current.requests.map(request => request.purpose === 'assistant'
+      ? [request.prompt?.system, request.promptChange]
+      : undefined)).toEqual([
+      ['first prompt', { seq: 3, time: 1_700_000_000_003, kind: 'initial' }],
+      ['second prompt', {
+        seq: 10,
+        time: 1_700_000_000_010,
+        kind: 'system',
+        previous: { config: { provider: 'test', model: 'test' }, system: 'first prompt', tools: [] },
+      }],
+    ])
+  })
+
+  it('pins the system-message Definition edges the engine cannot reach', () => {
+    const definition = DEFINITIONS.find(candidate => candidate.kind === 'trajectory-system-message')
+    if (definition === undefined) throw new Error('trajectory-system-message Definition is not registered')
+    const input = at(1, 'turn/start', { turn: 1 })
+    const invalidStart = { ...input, role: 'start' as const, location: { kind: 'session' as const } }
+    const state = { seq: 1, time: 1, text: 'system prompt' }
+
+    expect(() => definition.start({} as never, invalidStart, {} as never))
+      .toThrow('trajectory-system-message start requires system/message')
+    expect(definition.update({ state } as never, invalidStart)).toBe(state)
   })
 
   it('replays pending splice chains and scopes steering to the current claim', () => {

@@ -1,15 +1,17 @@
 /**
  * Pure fold for the heuristic context-composition projection: system prompt
- * and tool schemas from the newest request envelope, conversation from the
- * live surface. Prices with the same shared estimator as the meter service,
- * so the three figures match `measure()`'s heuristic vocabulary exactly.
+ * from the `system/message` surface node, tool schemas from the newest request
+ * envelope, conversation from the rest of the live surface. Prices with the
+ * same shared estimator as the meter service, so the three figures match
+ * `measure()`'s heuristic vocabulary exactly.
  */
 
 import { z } from 'zod'
 import { canonicalHeader, SessionSeq } from '@deepseek-ai/dsh-session'
 import type { ProjectionDefinition } from '@deepseek-ai/dsh-session-projection'
-import { estimateSystemTokens, estimateToolsTokens } from './estimate.ts'
+import { estimateSystemMessage, estimateToolsTokens } from './estimate.ts'
 import { foldSurfaceProjection } from './surface-projection.ts'
+import type { SurfaceTokensFold } from './surface-projection.ts'
 // Import for the `contextBreakdown` SessionProjectionStateMap key merge.
 import type {} from './projection.ts'
 
@@ -45,15 +47,17 @@ const breakdownSchema = z.object({
 /**
  * Token-meter's context-composition projection unit.
  *
- * Envelope figures are last-wins per `request/header`; the message figure
- * rides {@link foldSurfaceProjection} — the same O(1) fold the occupancy
- * projection uses — so fully metered logs equal the sum of
- * `measure().nodes[].heuristicTokens` at every event boundary and compaction
- * shrinks the figure by its logged shadow price; the route-priced
- * `measure().surfaceTokens` deliberately diverges by the routed model's image
- * repricing. A replacement without a claim preserves the previous total. The
- * state is a fixed handful of numbers, so the persisted checkpoint stays
- * O(1) over the session's life.
+ * The system figure is last-wins per `system/message` — the loop's surface
+ * node 0, appended once and replaced in place whenever the rendered prompt
+ * changes — and the tools figure is last-wins per `request/header`. The
+ * message figure rides {@link foldSurfaceProjection} — the same O(1) fold the
+ * occupancy projection uses — over every other surface node, so fully metered
+ * logs equal the sum of `measure().nodes[].heuristicTokens` minus the system
+ * node at every event boundary and compaction shrinks the figure by its
+ * logged shadow price; the route-priced `measure().surfaceTokens`
+ * deliberately diverges by the routed model's image repricing. A replacement
+ * without a claim preserves the previous total. The state is a fixed handful
+ * of numbers, so the persisted checkpoint stays O(1) over the session's life.
  */
 export const contextBreakdownProjectionDefinition = {
   key: 'contextBreakdown',
@@ -61,13 +65,19 @@ export const contextBreakdownProjectionDefinition = {
   stateSchema: contextBreakdownStateSchema,
   init: () => ({ systemTokens: 0, toolsTokens: 0, messageTokens: 0 }),
   apply: (state, event) => {
-    const fold = foldSurfaceProjection(state.claim, event)
     let systemTokens = state.systemTokens
     let toolsTokens = state.toolsTokens
-    if (event.type === 'request/header') {
-      const header = canonicalHeader(event.data.header)
-      systemTokens = estimateSystemTokens(header)
-      toolsTokens = estimateToolsTokens(header)
+    let fold: SurfaceTokensFold
+    if (event.type === 'system/message') {
+      // The system node has its own figure, so it never enters the message
+      // fold; like every non-metering event it expires an armed claim.
+      systemTokens = estimateSystemMessage(event.data.message)
+      fold = { deltaTokens: 0, claim: undefined }
+    } else {
+      fold = foldSurfaceProjection(state.claim, event)
+      if (event.type === 'request/header') {
+        toolsTokens = estimateToolsTokens(canonicalHeader(event.data.header))
+      }
     }
     if (systemTokens === state.systemTokens
       && toolsTokens === state.toolsTokens

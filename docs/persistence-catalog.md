@@ -22,6 +22,7 @@ export type SessionEventType = keyof SessionEventMap
  * earlier sources through {@link SessionEvent.sourceEventSeqs}.
  */
 export type SurfaceEventType =
+  | 'system/message'
   | 'user/message'
   | 'assistant/message'
   | 'tool/result'
@@ -88,7 +89,7 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 }[T]
 ```
 
-Sources: [`packages/core/session/src/types.ts:385`](../packages/core/session/src/types.ts) · [`packages/core/session/src/types.ts:393`](../packages/core/session/src/types.ts) · [`packages/core/session/src/types.ts:422`](../packages/core/session/src/types.ts) · [`packages/core/session/src/types.ts:453`](../packages/core/session/src/types.ts)
+Sources: [`packages/core/session/src/types.ts:394`](../packages/core/session/src/types.ts) · [`packages/core/session/src/types.ts:402`](../packages/core/session/src/types.ts) · [`packages/core/session/src/types.ts:432`](../packages/core/session/src/types.ts) · [`packages/core/session/src/types.ts:463`](../packages/core/session/src/types.ts)
 
 ## Events
 
@@ -215,7 +216,7 @@ Source: [`packages/interaction/user-approval/src/index.ts:33`](../packages/inter
 'assistant/attempt': { turn: number; step: number; stream: AssistantStreamRecord[] }
 ```
 
-Source: [`packages/core/session/src/types.ts:319`](../packages/core/session/src/types.ts)
+Source: [`packages/core/session/src/types.ts:328`](../packages/core/session/src/types.ts)
 
 <a id="assistantmessage--surface"></a>
 
@@ -245,7 +246,7 @@ Source: [`packages/core/session/src/types.ts:319`](../packages/core/session/src/
 
 Types: [TokenUsage](subsystems/llm-streaming.md)
 
-Source: [`packages/core/session/src/types.ts:305`](../packages/core/session/src/types.ts)
+Source: [`packages/core/session/src/types.ts:314`](../packages/core/session/src/types.ts)
 
 ### `command/*`
 
@@ -593,7 +594,7 @@ Source: [`packages/plan/plan-mode/src/index.ts:46`](../packages/plan/plan-mode/s
 'request/context': RequestContext
 ```
 
-Source: [`packages/core/session/src/types.ts:358`](../packages/core/session/src/types.ts)
+Source: [`packages/core/session/src/types.ts:367`](../packages/core/session/src/types.ts)
 
 <a id="requestheader--log-only"></a>
 
@@ -612,7 +613,7 @@ Source: [`packages/core/session/src/types.ts:358`](../packages/core/session/src/
 }
 ```
 
-Source: [`packages/core/session/src/types.ts:348`](../packages/core/session/src/types.ts)
+Source: [`packages/core/session/src/types.ts:357`](../packages/core/session/src/types.ts)
 
 ### `sandbox/*`
 
@@ -687,7 +688,7 @@ Source: [`packages/schedule/schedule/src/types.ts:219`](../packages/schedule/sch
 'session/end-seed': { inherited?: true }
 ```
 
-Source: [`packages/core/session/src/types.ts:381`](../packages/core/session/src/types.ts)
+Source: [`packages/core/session/src/types.ts:390`](../packages/core/session/src/types.ts)
 
 <a id="sessiontitle--log-only"></a>
 
@@ -800,6 +801,26 @@ Source: [`packages/subagent/subagent/src/descriptor.ts:38`](../packages/subagent
 
 Source: [`packages/subagent/tool-subagent/src/model-selection-state.ts:17`](../packages/subagent/tool-subagent/src/model-selection-state.ts)
 
+### `system/*`
+
+<a id="systemmessage--surface"></a>
+
+#### `system/message` — surface
+
+```ts persistence-catalog
+/**
+ * The rendered system prompt on the model-visible surface. The loop appends
+ * the first one as surface node 0 before the step's first `user/message` and
+ * replaces that node (`surfaceOp: { op: 'replace' }` over exactly node 0)
+ * when the rendered prompt changes, so the head of every request is derived
+ * history like every other message. Empty `message.content` records "no
+ * system prompt" and projects to no message.
+ */
+'system/message': { turn: number; step: number; message: SystemMessage }
+```
+
+Source: [`packages/core/session/src/types.ts:303`](../packages/core/session/src/types.ts)
+
 ### `team/*`
 
 <a id="teammember--log-only"></a>
@@ -891,7 +912,7 @@ Source: [`packages/todo/tool-todo/src/types.ts:31`](../packages/todo/tool-todo/s
 
 Types: [ToolCallId](subsystems/core.md)
 
-Source: [`packages/core/session/src/types.ts:325`](../packages/core/session/src/types.ts)
+Source: [`packages/core/session/src/types.ts:334`](../packages/core/session/src/types.ts)
 
 <a id="toolcode-dispatch--log-only"></a>
 
@@ -966,7 +987,7 @@ Source: [`packages/core/tools/src/types.ts:40`](../packages/core/tools/src/types
 }
 ```
 
-Source: [`packages/core/session/src/types.ts:337`](../packages/core/session/src/types.ts)
+Source: [`packages/core/session/src/types.ts:346`](../packages/core/session/src/types.ts)
 
 ### `tool-workflow/*`
 

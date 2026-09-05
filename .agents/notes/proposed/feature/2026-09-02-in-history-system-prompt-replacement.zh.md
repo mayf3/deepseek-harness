@@ -10,11 +10,11 @@ Status: proposed
 
 一个 DeepSeek 模型——作为本提案所依据的未公开模型事实——移除了这一限制：它接受对话任意位置的 `system` 消息，并把最新一条视为完整的有效系统提示词，替换最前面那条。工具 schema 仍属于被缓存的前缀，因此工具集变更仍会使缓存失效。有了这样的模型，harness 可以把新提示词追加到已缓存的历史之后而不是重写消息 0，前缀就能保持热态。
 
-只有在[系统提示词成为 surface 第 0 号节点](../architecture/2026-09-02-system-prompt-as-surface-node.zh.md)之后，harness 才拥有实现这一点的表示：提示词变更随之成为对 `system/message` surface 节点的操作，而「替换第 0 号节点」与「追加新节点」之间的选择是逐模型的决定。
+因为[系统提示词是 surface 第 0 号节点](../../implemented/architecture/2026-09-02-system-prompt-as-surface-node.zh.md)，harness 拥有实现这一点的表示：提示词变更是对 `system/message` surface 节点的操作，而「替换第 0 号节点」与「追加新节点」之间的选择是逐模型的决定。
 
 ## Proposal
 
-对于声明了该能力的模型路由，当渲染后的提示词变化且前缀本可存活时，循环追加一个新的 `system/message` surface 节点而不是替换第 0 号节点。[surface 节点设计](../architecture/2026-09-02-system-prompt-as-surface-node.zh.md)中的其他一切不变：事件类型、投影的拥有者、序列化器和呈现。
+对于声明了该能力的模型路由，当渲染后的提示词变化且前缀本可存活时，循环追加一个新的 `system/message` surface 节点而不是替换第 0 号节点。已实现的[surface 节点决策](../../implemented/architecture/2026-09-02-system-prompt-as-surface-node.zh.md)中的其他一切不变：事件类型、投影的拥有者、序列化器和呈现。
 
 ### 能力
 

@@ -249,6 +249,19 @@ describe('serializeRequest', () => {
     expect(wire.messages[1]).toEqual({ role: 'user', content: 'hi' })
   })
 
+  it('serializes a leading system message byte-for-byte like the same prompt passed as options.system', () => {
+    const systemMessage = createMessage({
+      role: 'system',
+      content: [{ type: 'text', text: 'be helpful' }],
+      source: { kind: 'plugin', plugin: '@deepseek-ai/dsh-system-prompt' },
+    })
+    const tools = [{ name: 'f', description: 'F', parameters: { type: 'object', properties: {} } }]
+    const fromHistory = serializeRequest(request({ messages: [systemMessage, ...history], tools }))
+    const fromOption = serializeRequest(request({ messages: history, system: 'be helpful', tools }))
+    expect(fromHistory.messages[0]).toEqual({ role: 'system', content: 'be helpful' })
+    expect(JSON.stringify(fromHistory)).toBe(JSON.stringify(fromOption))
+  })
+
   it('maps sampling params and stop sequences', () => {
     const wire = serializeRequest(request({ messages: history, temperature: 0.2, maxTokens: 100, stop: ['END'] }))
     expect(wire.temperature).toBe(0.2)

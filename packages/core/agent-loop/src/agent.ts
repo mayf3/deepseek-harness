@@ -34,6 +34,8 @@ import type {} from '@deepseek-ai/dsh-session-projection'
 import type { Context } from '@deepseek-ai/cordis'
 import { RuntimeContextProjection } from './runtime-context.ts'
 import { AssistantStreamAttempt } from './assistant-stream.ts'
+import { SystemPromptProjection } from './runtime-context.ts'
+import type { SystemPromptCommit } from './runtime-context.ts'
 import { executeToolCalls } from './tool-calls.ts'
 
 type Phase =
@@ -55,6 +57,8 @@ type PreparedStep =
     messages: UserMessage[]
     startsRequestSeries?: true
     assembly: PromptAssembly
+    /** The system-prompt surface operation this step commits, when the rendered prompt changed. */
+    systemPrompt?: SystemPromptCommit
   }
 
 /** Remove adapter-derived values before plugins propose the next request config. */
@@ -87,6 +91,7 @@ export class ReactLoopAgent implements Agent {
   /** Process-local revision of assistant frames for this attached Session. */
   private assistantStreamRevision = 0
   private assistantAttemptCounter = 0
+  private readonly systemPrompt: SystemPromptProjection
 
   constructor(
     private loopCtx: Context,
@@ -106,6 +111,7 @@ export class ReactLoopAgent implements Agent {
     this.scope = createScope(loopCtx, this)
     this.ctx = this.scope.ctx.extend({ agent: this })
     this.runtimeContext = new RuntimeContextProjection(this.ctx, session)
+    this.systemPrompt = new SystemPromptProjection(this.ctx, session)
   }
 
   get status(): AgentStatus {
@@ -241,6 +247,7 @@ export class ReactLoopAgent implements Agent {
     const claimed = this.inbox.claim(target, position.turn)
     const assembly = await this.loopCtx.systemPrompt.assemble(assembleContextFor(this, signal))
     signal.throwIfAborted()
+    const systemPrompt = this.systemPrompt.project(renderPrompt(assembly))
     const sections = renderContextSections(assembly)
     const context = this.runtimeContext.project(joinContextSections(sections), sections)
     const decision = await this.dispatch.waterfall(
@@ -251,7 +258,9 @@ export class ReactLoopAgent implements Agent {
       }),
     )
     signal.throwIfAborted()
-    return decision.kind === 'reject' ? decision : { ...decision, assembly }
+    return decision.kind === 'reject'
+      ? decision
+      : { ...decision, assembly, ...systemPrompt === undefined ? {} : { systemPrompt } }
   }
 
   /** Open one turn before claiming its first proposed step. */
@@ -291,6 +300,11 @@ export class ReactLoopAgent implements Agent {
         this.session.append('step/start', { turn, step })
         phase.step = step
         try {
+          // The system node precedes the step's user messages so log order is wire order.
+          if (decision.systemPrompt !== undefined) {
+            const { message, intent } = decision.systemPrompt
+            this.session.append('system/message', { turn, step, message }, intent)
+          }
           for (const message of decision.messages) {
             this.session.append('user/message', message, { surfaceOp: 'append' })
           }
@@ -346,7 +360,6 @@ export class ReactLoopAgent implements Agent {
     if (this.phase.kind !== 'running') throw new Error(`agent "${this.id}": step outside running phase`)
     const { turn, step, abort: { signal } } = this.phase
     signal.throwIfAborted()
-    const system = renderPrompt(assembly)
 
     while (true) {
       const surfaceGeneration = this.session.surface.replaceGeneration
@@ -354,7 +367,6 @@ export class ReactLoopAgent implements Agent {
         turn,
         step,
         assembly.tools,
-        system,
         this.session.deriveMessages(),
         startsRequestSeries,
         surfaceGeneration,
@@ -489,7 +501,6 @@ export class ReactLoopAgent implements Agent {
     turn: number,
     step: number,
     tools: GenerateOptions['tools'] & object,
-    system: string,
     boundaryMessages: Message[],
     startsRequestSeries: boolean,
     surfaceGeneration: number,
@@ -542,7 +553,6 @@ export class ReactLoopAgent implements Agent {
     const header = canonicalHeader({
       config,
       ...preparedCall === undefined ? {} : { adapterDefaults: preparedCall.adapterDefaults },
-      ...system ? { system } : {},
       ...tools.length > 0 ? { tools } : {},
     })
     const baseline = this.session.requestHeader()
@@ -579,7 +589,6 @@ export class ReactLoopAgent implements Agent {
     const request = markAgentLoopRequest(deepFreeze({
       ...header.config,
       messages: boundaryMessages,
-      ...header.system !== undefined ? { system: header.system } : {},
       ...header.tools !== undefined ? { tools: header.tools } : {},
       sessionId: this.session.id,
       signal,

@@ -31,7 +31,7 @@ import type {
 } from './types.ts'
 import { contextBreakdownProjectionDefinition } from './breakdown-projection.ts'
 import { contextPressureProjectionDefinition, tokenUsageProjectionDefinition } from './usage-projection.ts'
-import { estimateContent, estimateHeader, estimateMessage, ROLE_OVERHEAD } from './estimate.ts'
+import { estimateContent, estimateMessage, estimateToolsTokens, ROLE_OVERHEAD } from './estimate.ts'
 import { commitSurfaceTokens, planSurfaceTokens } from './surface-fold.ts'
 import type { MeterSurfaceNode } from './surface-fold.ts'
 import { priceSurface } from './route-pricing.ts'
@@ -159,7 +159,7 @@ export class TokenMeter extends Service {
       // compares like with like.
       const anchorSurfaceTokens = priceSurface(anchor.nodes, pricing, fileText).surfaceTokens
         + anchor.assistantTokens
-      const estimatedAnchorTokens = estimateHeader(header) + anchorSurfaceTokens
+      const estimatedAnchorTokens = estimateToolsTokens(header) + anchorSurfaceTokens
       const usage = anchor.usage
       // Signed heuristic deltas remain conservative only from an anchor
       // that is at least as large as the matching full heuristic price.
@@ -173,7 +173,7 @@ export class TokenMeter extends Service {
     } else {
       baseline = {
         kind: 'estimated',
-        tokens: estimateHeader(header) + surface.surfaceTokens,
+        tokens: estimateToolsTokens(header) + surface.surfaceTokens,
       }
       surfaceDeltaTokens = 0
     }

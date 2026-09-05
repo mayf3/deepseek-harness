@@ -54,6 +54,15 @@ interface SessionEventMap {
    */
   'user/message': UserMessage
   /**
+   * The rendered system prompt on the model-visible surface. The loop appends
+   * the first one as surface node 0 before the step's first `user/message` and
+   * replaces that node (`surfaceOp: { op: 'replace' }` over exactly node 0)
+   * when the rendered prompt changes, so the head of every request is derived
+   * history like every other message. Empty `message.content` records "no
+   * system prompt" and projects to no message.
+   */
+  'system/message': { turn: number; step: number; message: SystemMessage }
+  /**
    * Assembled assistant message for one step (derived history uses this).
    * Carries the step's `usage` when the adapter reported token accounting, so
    * the model output and its accounting travel together (there is no separate
@@ -149,12 +158,13 @@ interface SessionEventMap {
 
 ### The request header event: `request/header`
 
-The request envelope — the `EpochHeader` (call config + markers for adapter-supplied defaults + rendered system prompt + assembled tool schemas) — is logged session state, so every conversation request is a pure function of the log (the reconstructability Agent Note). A full `request/header` snapshot with reason `'initial'` or `'resume'` records each loop-instance boundary; a changed request appends a snapshot with reason `'change'`; and an unchanged envelope beginning an explicitly declared message series or following a surface replacement appends a snapshot with reason `'series'`. A changed snapshot carries `startsSeries: true` when that request also begins a series. Ordinary append-only later Turns, further Steps, and retries in the same model-message series inherit the latest snapshot. `foldRequestHeader(events)` reconstructs the header by selecting the latest snapshot. The event is not a `SurfaceEventType`: it produces no LLM message.
+The request envelope — the `EpochHeader` (call config + markers for adapter-supplied defaults + assembled tool schemas) — is logged session state, so every conversation request is a pure function of the log (the reconstructability Agent Note). The rendered system prompt is not part of the header: it is derived history, the `system/message` event at surface node 0 ([decision](../../.agents/notes/implemented/architecture/2026-09-02-system-prompt-as-surface-node.md)), so a prompt change replaces that node and leaves the header unchanged. A full `request/header` snapshot with reason `'initial'` or `'resume'` records each loop-instance boundary; a changed request appends a snapshot with reason `'change'`; and an unchanged envelope beginning an explicitly declared message series or following a surface replacement appends a snapshot with reason `'series'`. A changed snapshot carries `startsSeries: true` when that request also begins a series. Ordinary append-only later Turns, further Steps, and retries in the same model-message series inherit the latest snapshot. `foldRequestHeader(events)` reconstructs the header by selecting the latest snapshot. The event is not a `SurfaceEventType`: it produces no LLM message.
 
 ```ts type-equiv
 /**
- * Logged request state outside derived history: call config, system prompt, and
- * tools. The latest full `request/header` snapshot reconstructs it; canonical
+ * Logged request state outside derived history: call config and tools. The
+ * system prompt is derived history — surface node 0, a `system/message` event.
+ * The latest full `request/header` snapshot reconstructs the header; canonical
  * empty optional fields are absent.
  */
 interface EpochHeader {
@@ -162,14 +172,12 @@ interface EpochHeader {
   config: LlmCallConfig
   /** Effective config fields materialized from the exact adapter rather than proposed by a caller. */
   adapterDefaults?: LlmCallConfigAdapterDefaults
-  /** Rendered system prompt text; absent for a system-less request. */
-  system?: string
   /** Assembled tool schemas; absent for a tool-less request. */
   tools?: ToolSchema[]
 }
 ```
 
-Canonical form represents an empty system prompt or tool list as an absent field, matching how requests are built. Legacy v0 logs containing the legacy `request/header-delta` event or its full-snapshot `fallback` reason are rejected at seed, append, and persistence-load boundaries rather than replayed incompletely.
+Canonical form represents an empty tool list as an absent field, matching how requests are built. Legacy v0 logs containing the legacy `request/header-delta` event or its full-snapshot `fallback` reason are rejected at seed, append, and persistence-load boundaries rather than replayed incompletely.
 
 ### The route capacity event: `request/context`
 
@@ -265,7 +273,7 @@ V2 `assistant/message` embeds its provider stream and cannot carry `sourceEventS
 
 ## Surface types
 
-The three message-producing types (`SurfaceEventType` — `user/message`, `assistant/message`, `tool/result`) carry surface metadata declaring how they join the ordered derived surface. See the [session surface Agent Note](../../.agents/notes/implemented/architecture/2026-06-18-session-surface.md).
+The four message-producing types (`SurfaceEventType` — `system/message`, `user/message`, `assistant/message`, `tool/result`) carry surface metadata declaring how they join the ordered derived surface. `system/message` holds the rendered system prompt: the loop appends the first one as surface node 0 and replaces exactly that node when the prompt changes; the surface fold rejects any other replacement covering a `system/message` at node 0. See the [session surface Agent Note](../../.agents/notes/implemented/architecture/2026-06-18-session-surface.md).
 
 ### `SurfaceEventType` — the message-producing subset of event types
 
@@ -277,6 +285,7 @@ The three message-producing types (`SurfaceEventType` — `user/message`, `assis
  * earlier sources through {@link SessionEvent.sourceEventSeqs}.
  */
 type SurfaceEventType =
+  | 'system/message'
   | 'user/message'
   | 'assistant/message'
   | 'tool/result'

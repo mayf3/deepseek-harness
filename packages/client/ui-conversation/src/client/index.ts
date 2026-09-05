@@ -32,6 +32,7 @@ export type {
 } from './contract/context-provenance.ts'
 export type {
   ConversationPromptSnapshot, RequestInspectionSnapshot, RequestPromptChange, RequestPromptInspection, RequestPromptInspector, RequestView,
+  SystemPromptNode,
 } from './contract/request-inspection.ts'
 export { inspectRequestPrompt } from './contract/request-inspection.ts'
 export type { ConversationStoreState, ConversationViewRequest, ViewTab } from './contract/views.ts'

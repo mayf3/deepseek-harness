@@ -1,0 +1,2 @@
+{"version":2,"isSeeded":false,"createdAt":0,"cwd":"{{cwd}}","delegationDepth":0,"type":"session","id":"{{session:1}}"}
+{"type":"request/header","data":{"header":{"config":{"provider":"fake","model":"fake"},"tools":"{{tools}}"},"reason":"initial"}}
