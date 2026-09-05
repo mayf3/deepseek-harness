@@ -67,6 +67,102 @@ function Tag({ kind, children }: { readonly kind: string; readonly children: Rea
   return <span className={css.tag} data-kind={kind}>{children}</span>
 }
 
+/** A component with a recorded startup failure or a failed fiber. */
+function isFailedRow(row: RowView): boolean {
+  return row.failure !== undefined || row.phase === 'failed'
+}
+
+/** The count line over a pack's components: the total, then only the states that occur. */
+function partsSummary(rows: readonly RowView[], t: Translate): string {
+  const failed = rows.filter(isFailedRow).length
+  const off = rows.filter(row => !row.enabled && !isFailedRow(row)).length
+  const running = rows.filter(row => row.enabled && row.phase === 'active').length
+  return [
+    t('partsCountTotal', { count: String(rows.length) }),
+    ...running > 0 ? [t('partsCountRunning', { count: String(running) })] : [],
+    ...off > 0 ? [t('partsCountOff', { count: String(off) })] : [],
+    ...failed > 0 ? [t('partsCountFailed', { count: String(failed) })] : [],
+  ].join(' · ')
+}
+
+/**
+ * The components of one plugin pack: a count line, the components that are
+ * off or failing with why, and the rest as chips behind **Show all** with a
+ * filter — a pack like base carries close to a hundred rows, of which the
+ * few that are not running are the ones worth a line each.
+ */
+function BundleParts({ rows, t }: { readonly rows: readonly RowView[]; readonly t: Translate }): ReactNode {
+  const [open, setOpen] = useState(false)
+  const [filter, setFilter] = useState('')
+  const exceptions = rows.filter(row => isFailedRow(row) || !row.enabled)
+  const rest = rows.filter(row => !isFailedRow(row) && row.enabled)
+  const query = filter.trim().toLowerCase()
+  const shown = query === '' ? rest : rest.filter(row => row.rowId.toLowerCase().includes(query))
+  return (
+    <div className={css.parts}>
+      <div className={css.partsHead}>
+        <span className={css.subLabel}>{t('partsLabel')}</span>
+        {rows.length === 0 ? null : <span className={css.partsCount}>{partsSummary(rows, t)}</span>}
+        {rest.length === 0
+          ? null
+          : (
+            <button
+              type="button"
+              className={css.linkButton}
+              aria-expanded={open}
+              onClick={() => { setOpen(current => !current) }}
+            >
+              {t(open ? 'partsCollapse' : 'partsShowAll')}
+            </button>
+          )}
+      </div>
+      {rows.length === 0 ? <p className={css.status}>{t('partsEmpty')}</p> : null}
+      {exceptions.length === 0
+        ? null
+        : (
+          <ul className={css.partExceptions}>
+            {exceptions.map(row => (
+              <li key={row.entryId} className={css.partException} data-plugin-row={row.entryId}>
+                <span className={css.statusDot} data-phase={isFailedRow(row) ? 'failed' : 'off'} aria-hidden="true" />
+                <span className={css.partId}>{row.rowId}</span>
+                {isFailedRow(row)
+                  ? <Tag kind="problem">{t('rowStateFailed')}</Tag>
+                  : <span className={css.partWhy}>{t(row.disabledBy === 'user' ? 'partDisabledByUser' : 'partDisabledByComposition')}</span>}
+                {row.failure === undefined ? null : <p className={css.partFailure}>{row.failure.message}</p>}
+              </li>
+            ))}
+          </ul>
+        )}
+      {open
+        ? (
+          <div className={css.partsAll}>
+            <input
+              type="search"
+              className={css.partsFilter}
+              placeholder={t('partsFilter')}
+              aria-label={t('partsFilter')}
+              value={filter}
+              onChange={(event) => { setFilter(event.target.value) }}
+            />
+            {shown.length === 0
+              ? <p className={css.status}>{t('partsFilterEmpty')}</p>
+              : (
+                <ul className={css.chips}>
+                  {shown.map(row => (
+                    <li key={row.entryId} className={css.chip} data-plugin-row={row.entryId}>
+                      {row.phase === null ? null : <PhaseDot phase={row.phase} t={t} />}
+                      {row.rowId}
+                    </li>
+                  ))}
+                </ul>
+              )}
+          </div>
+        )
+        : null}
+    </div>
+  )
+}
+
 function Switch({ checked, label, disabled, title, onChange }: {
   readonly checked: boolean
   readonly label: string
@@ -250,29 +346,7 @@ function PackageCard({
               <dt>{t('sourceLabel')}</dt>
               <dd>{t(builtin ? 'sourceBuiltin' : 'sourceLocal')}</dd>
             </dl>
-            {bundle
-              ? (
-                <>
-                  <p className={css.subLabel}>{t('partsLabel')}</p>
-                  {pkg.rows.length === 0
-                    ? <p className={css.status}>{t('partsEmpty')}</p>
-                    : (
-                      <ul className={css.parts}>
-                        {pkg.rows.map(row => (
-                          <li key={row.entryId} className={css.part} data-plugin-row={row.entryId}>
-                            {row.enabled && row.phase !== null ? <PhaseDot phase={row.phase} t={t} /> : null}
-                            <span className={css.partName}>{row.rowId}</span>
-                            {row.enabled
-                              ? null
-                              : <Tag kind="off">{t(row.disabledBy === 'user' ? 'partDisabledByUser' : 'partDisabledByComposition')}</Tag>}
-                            {row.failure === undefined ? null : <p className={css.partFailure}>{row.failure.message}</p>}
-                          </li>
-                        ))}
-                      </ul>
-                    )}
-                </>
-              )
-              : null}
+            {bundle ? <BundleParts rows={pkg.rows} t={t} /> : null}
             {retryable || removable
               ? (
                 <div className={css.actions}>

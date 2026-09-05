@@ -184,23 +184,48 @@ describe('PluginManagerSettingsTab', () => {
             { entryId: 'include:off', rowId: 'off', moduleName: 'dsh-better-sidebar/off', enabled: false, disabledBy: 'user', phase: null },
             { entryId: 'include:gated', rowId: 'gated', moduleName: 'dsh-better-sidebar/gated', enabled: false, disabledBy: 'composition', phase: null },
             { entryId: 'include:crash', rowId: 'crash', moduleName: 'dsh-better-sidebar/crash', enabled: true, phase: 'failed', failure: { stage: 'apply', message: 'boom' } },
+            { entryId: 'include:flaky', rowId: 'flaky', moduleName: 'dsh-better-sidebar/flaky', enabled: true, phase: 'failed' },
+            { entryId: 'include:idle', rowId: 'idle', moduleName: 'dsh-better-sidebar/idle', enabled: true, phase: null },
           ],
         }),
         pkg({ name: 'no-rows', enabled: false, status: 'disabled' }),
+        pkg({
+          name: 'all-off', enabled: false, status: 'disabled',
+          rows: [{ entryId: 'include:o1', rowId: 'o1', moduleName: 'all-off', enabled: false, disabledBy: 'composition', phase: null }],
+        }),
         pkg({ name: 'dsh-tool-foo', kind: 'plugin', status: 'plain' }),
-        pkg({ name: '@deepseek-ai/dsh-core-broken', title: 'Core', trust: 'builtin', status: 'failed' }),
+        pkg({
+          name: '@deepseek-ai/dsh-core-broken', title: 'Core', trust: 'builtin', status: 'failed',
+          rows: [{ entryId: 'include:core', rowId: 'core', moduleName: '@deepseek-ai/dsh-core-broken', enabled: true, phase: 'active' }],
+        }),
       ],
     })
     fireEvent.click(screen.getByRole('button', { name: 'Show better-sidebar' }))
     expect(screen.getByText(`${en.reasonLabel}: one row failed`)).toBeTruthy()
     expect(screen.getByText('0.16.0')).toBeTruthy()
     expect(screen.getByText(en.sourceLocal)).toBeTruthy()
+    // The count line, then only the components that are off or failing, each
+    // with why; the running ones wait behind Show all.
+    expect(screen.getByText('6 total · 1 running · 2 off · 2 failed')).toBeTruthy()
+    expect(document.querySelector('[data-plugin-row="include:better-sidebar"]')).toBeNull()
+    expect(document.querySelector('[data-plugin-row="include:off"]')?.textContent).toContain(en.partDisabledByUser)
+    expect(document.querySelector('[data-plugin-row="include:gated"]')?.textContent).toContain(en.partDisabledByComposition)
+    expect(document.querySelector('[data-plugin-row="include:crash"]')?.textContent).toContain(en.rowStateFailed)
+    expect(document.querySelector('[data-plugin-row="include:flaky"]')?.textContent).toBe(`flaky${en.rowStateFailed}`)
+    expect(screen.getByText('boom')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: en.partsShowAll }))
     expect(screen.getByRole('img', { name: en.rowPhaseActive })).toBeTruthy()
     // A component shows the id its pack declared, not the tree-wide entry id.
     expect(document.querySelector('[data-plugin-row="include:better-sidebar"]')?.textContent).toContain('better-sidebar')
-    expect(document.querySelector('[data-plugin-row="include:off"]')?.textContent).toContain(en.partDisabledByUser)
-    expect(document.querySelector('[data-plugin-row="include:gated"]')?.textContent).toContain(en.partDisabledByComposition)
-    expect(screen.getByText('boom')).toBeTruthy()
+    expect(document.querySelector('[data-plugin-row="include:idle"]')?.textContent).toBe('idle')
+    const filter = screen.getByRole('searchbox', { name: en.partsFilter })
+    fireEvent.change(filter, { target: { value: 'nope' } })
+    expect(screen.getByText(en.partsFilterEmpty)).toBeTruthy()
+    fireEvent.change(filter, { target: { value: 'SIDE' } })
+    expect(document.querySelector('[data-plugin-row="include:better-sidebar"]')).toBeTruthy()
+    expect(document.querySelector('[data-plugin-row="include:idle"]')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: en.partsCollapse }))
+    expect(document.querySelector('[data-plugin-row="include:better-sidebar"]')).toBeNull()
 
     fireEvent.click(screen.getByRole('button', { name: en.retryPackage }))
     expect(actions.retry).toHaveBeenCalledWith('dsh-better-sidebar')
@@ -217,12 +242,18 @@ describe('PluginManagerSettingsTab', () => {
     // and opening one card closes the other.
     fireEvent.click(screen.getByRole('button', { name: 'Show no-rows' }))
     expect(screen.getByText(en.partsEmpty)).toBeTruthy()
+    expect(screen.queryByRole('button', { name: en.partsShowAll })).toBeNull()
+    // The count line names only the states that occur.
+    fireEvent.click(screen.getByRole('button', { name: 'Show all-off' }))
+    expect(screen.getByText('1 total · 1 off')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: en.partsShowAll })).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: 'Show tool-foo' }))
     expect(screen.getByText(en.sourceLocal)).toBeTruthy()
     expect(screen.queryByText(en.partsEmpty)).toBeNull()
     // Only a pack with failing components offers a retry; a built-in one retries but never uninstalls.
     expect(screen.queryByRole('button', { name: en.retryPackage })).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: 'Show Core' }))
+    expect(screen.getByText('1 total · 1 running')).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: en.retryPackage }))
     expect(actions.retry).toHaveBeenLastCalledWith('@deepseek-ai/dsh-core-broken')
     expect(screen.queryByRole('button', { name: 'Uninstall Core' })).toBeNull()
