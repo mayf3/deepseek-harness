@@ -45,6 +45,8 @@ Web 在追加的历史内节点自己的位置呈现它。`SystemPromptNode` 携
 
 `dsh-token-meter` 把 surface 顺序中最后一个非空且存活的系统节点计入 `contextBreakdown.systemTokens`；其余可见节点（包括被取代的提示词）计入 `messageTokens`。休眠空节点被忽略。每次替换后，两者之和都等于固定启发式 surface 总量，无论是否存在影子价 claim。紧凑的保留条目复用测量服务的 surface 规划器：状态和转换成本为 O(当前保留 surface)，不是 O(1) 或 O(完整历史日志)。被替换条目和消息正文被丢弃，状态版本 3 拒绝标量检查点。后续 assistant 用量中的 `cacheReadTokens` 仍是可观察的提供方缓存效果。
 
+Trajectory 选择前一条真实 header 与前一条合成系统 header 中较新的一个作为比较状态。真实 header 拥有配置与工具；追加的提示词可以在没有另一条真实 header 时推进该状态。只比较真实 header 会在 A → B → C 序列中把 A 而不是 B 报告为先前提示词。
+
 ### 压缩
 
 `compaction-basic` 不变。`selectCompactableRange` 仍锚定在第一个非系统节点，因此第 0 号节点永不被遮蔽，更后的历史内节点则可能被遮蔽；`buildSummarizationInput` 把第 0 号节点的文本作为摘要器的 `system` 回放，并按 surface 顺序回放每个被遮蔽节点的派生消息，因此区域中途的系统节点在原位被回放，摘要调用仍是对话的真实前缀。

@@ -709,6 +709,42 @@ describe('Trajectory conversation Definitions', () => {
     ])
   })
 
+  it.each(['replay', 'live'] as const)('compares consecutive A → B → C updates against B (%s)', (mode) => {
+    const history = [
+      at(1, 'turn/start', { turn: 1 }),
+      at(2, 'step/start', { turn: 1, step: 1 }),
+      at(3, 'system/message', { turn: 1, step: 1, message: systemMessage('A') }, { surfaceOp: 'append' }),
+      at(4, 'request/header', {
+        reason: 'initial',
+        header: { config: { provider: 'test', model: 'test' }, tools: [] },
+      }),
+      at(5, 'assistant/message', { turn: 1, step: 1, message: assistantMessage('a', 'a') }),
+      at(6, 'step/end', { turn: 1, step: 1 }),
+      at(7, 'step/start', { turn: 1, step: 2 }),
+      at(8, 'system/message', { turn: 1, step: 2, message: systemMessage('B') }, { surfaceOp: 'append' }),
+      at(9, 'assistant/message', { turn: 1, step: 2, message: assistantMessage('b', 'b') }),
+      at(10, 'step/end', { turn: 1, step: 2 }),
+      at(11, 'step/start', { turn: 1, step: 3 }),
+      at(12, 'system/message', { turn: 1, step: 3, message: systemMessage('C') }, { surfaceOp: 'append' }),
+      at(13, 'assistant/message', { turn: 1, step: 3, message: assistantMessage('c', 'c') }),
+      at(14, 'step/end', { turn: 1, step: 3 }),
+    ]
+    const value = assembler(mode === 'replay' ? history : [])
+    if (mode === 'live') {
+      for (const entry of history) {
+        value.append(entry)
+        value.flush()
+      }
+    }
+    expect(snapshot(value).requests.map(request => request.purpose === 'assistant'
+      ? { system: request.prompt?.system, previous: request.promptChange?.previous?.system }
+      : null)).toEqual([
+      { system: 'A', previous: undefined },
+      { system: 'B', previous: 'A' },
+      { system: 'C', previous: 'B' },
+    ])
+  })
+
   it('retains an in-history update without a loaded header as a plain system node', () => {
     const value = assembler([
       at(1, 'turn/start', { turn: 1 }),

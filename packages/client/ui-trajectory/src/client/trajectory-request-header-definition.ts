@@ -47,9 +47,12 @@ export const trajectorySystemMessageDefinition: ConversationNodeDefinition<Traje
       update: match.event.surfaceOp === 'append'
         && reader.previous<TrajectorySystemMessageState>('trajectory-system-message') !== undefined,
     }
-    const previous = node.update
-      ? reader.previous<TrajectoryRequestHeaderState>('trajectory-request-header')?.state
-      : undefined
+    if (!node.update) return node
+    const header = reader.previous<TrajectoryRequestHeaderState>('trajectory-request-header')?.state
+    const systemHeader = reader.previous<TrajectorySystemMessageState>('trajectory-system-message')?.state.header
+    const previous = systemHeader !== undefined && (header === undefined || systemHeader.seq > header.seq)
+      ? systemHeader
+      : header
     if (previous === undefined) return node
     return {
       ...node,

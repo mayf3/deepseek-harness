@@ -45,6 +45,8 @@ kind: "package-reference"
 
 视图是纯投影：Trajectory 自有的 Definition 从共享 Session 窗口组装业务记录——包括持久化的取消定稿前缀、只能从分片恢复的打断前缀与被打断的工具记录——因此 Trajectory 既不读取也不改变 Chat 会话快照。其 steering 分类器通过持久 splice state 只保留 next-step Inbox ID，并让后续 Context 共享当前 claimed batch。
 
+历史中的系统提示词变更与最近的请求状态比较，包括没有新请求头的先前提示词更新。每个请求保留其所在位置生效的提示词与变更。
+
 ### 虚拟行
 
 长记录表最初只从挂载时尾部结束的 50 个 target Node 派生 React 数据。后续 Node 会扩展这个固定起点的窗口而不会逐出其前缀；现有加载控件会先显露更早的驻留 Node，再请求下一个 Session 页面。虚拟化只挂载可见行窗口加少量缓冲；仅含请求的分隔行并入下一个具备可测高度的虚拟项，语义行键与 ARIA 索引在向前补页后保持不变。虚拟化器负责结构性追加后的底部跟随；非虚拟记录表会直接写入末尾位置。仅含内容更新的流式帧会保持虚拟行的键与高度、复用测量结果，并且不会重复写入末尾滚动位置。已完成的回复会在 Trajectory target State 中保留组装后的 blocks、计时与用量，共享 Session 窗口则保留原始 Event。

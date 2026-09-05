@@ -45,6 +45,8 @@ Web presents an appended in-history node at its own position. `SystemPromptNode`
 
 `dsh-token-meter` prices the last nonempty surviving system node in surface order as `contextBreakdown.systemTokens`; every other visible node, including superseded prompts, contributes to `messageTokens`. Empty dormant nodes are ignored. The sum equals the fixed-heuristic surface total after every replacement, whether or not a shadow-price claim exists. Compact retained entries reuse the measurement surface planner: state and transitions cost O(current retained surface), not O(1) or O(total historical log). Replaced entries and message bodies are discarded, and state version 3 rejects scalar checkpoints. `cacheReadTokens` on subsequent assistant usage remains the observable provider-cache effect.
 
+Trajectory chooses the newer of the preceding real header and the preceding synthetic system header as the comparison state. A real header owns configuration and tools; an appended prompt can advance that state without another real header. Comparing only real headers would report A rather than B as the previous prompt for an A → B → C sequence.
+
 ### Compaction
 
 `compaction-basic` is unchanged. `selectCompactableRange` still anchors at the first non-system node, so node 0 is never shadowed and later in-history nodes can be; `buildSummarizationInput` replays node 0's text as the summarizer `system` and every shadowed node's derived message in surface order, so a mid-region system node is replayed in place and the summarization call remains a genuine prefix of the conversation.
