@@ -24,6 +24,7 @@ import type { Entry } from '@deepseek-ai/cordis-plugin-loader'
 import z from '@deepseek-ai/schemastery'
 import type { AgentPresets } from '@deepseek-ai/dsh-agent-presets'
 import {
+  awaitChildClose,
   bundleGroupId,
   claimLayerIds,
   disableBundle,
@@ -885,21 +886,10 @@ export class PluginManager extends TypertRemoteService {
     child.stderr?.setEncoding('utf8')
     child.stdout?.on('data', (text: string) => { record('stdout', text) })
     child.stderr?.on('data', (text: string) => { record('stderr', text) })
-    const exitCode = await new Promise<number | null>((resolve, reject) => {
-      let settled = false
-      const settle = (outcome: () => void): void => {
-        if (settled) return
-        settled = true
-        clearTimeout(timer)
-        outcome()
-      }
-      const timer = setTimeout(() => {
-        child.kill('SIGKILL')
-        settle(() => { reject(new Error(`${NAME}: pnpm ${args.join(' ')} timed out after ${String(this.config.installTimeoutMs)}ms`)) })
-      }, this.config.installTimeoutMs)
-      child.on('error', (error) => { settle(() => { reject(error) }) })
-      child.on('close', (code) => { settle(() => { resolve(code) }) })
-    }).catch((error: unknown) => {
+    const exitCode = await awaitChildClose(
+      child, this.config.installTimeoutMs,
+      () => new Error(`${NAME}: pnpm ${args.join(' ')} timed out after ${String(this.config.installTimeoutMs)}ms`),
+    ).catch((error: unknown) => {
       const message = messageOf(error)
       record('stderr', `${message}\n`)
       this.ctx.emit('plugins/install-log', { jobId, spec, stream: 'stderr', text: '', exitCode: null })
