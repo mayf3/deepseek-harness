@@ -10,7 +10,7 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import clsx from 'clsx'
 import type { PluginPackageView } from '@deepseek-ai/dsh-api-remotes/client'
-import { Menu, type MenuItem } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconTrashOutline16, Menu, type MenuItem } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 // Type-only: the detail slot's declaration, owned by the roster.
 import type {} from '@deepseek-ai/dsh-client-ui-agent-preset/client'
@@ -87,10 +87,11 @@ function PresetCard({ preset, row, packages, t, busy, onSetDisabled, onRemove }:
                       type="button"
                       className={css.deleteButton}
                       aria-label={t('rowRemoveLabel', { name: copy.title })}
+                      title={t('rowRemove')}
                       disabled={busy}
                       onClick={() => { onRemove(id) }}
                     >
-                      {t('rowRemove')}
+                      <IconTrashOutline16 />
                     </button>
                   )
                   : null}

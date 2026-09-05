@@ -242,13 +242,13 @@ describe('ui-settings-plugins apply', () => {
     const bashFace = (bash.inject as unknown as () => BashCardFace)()
     const tabBash = slots.entries('settings.plugin.item')[0]!
     expect((tabBash.inject as unknown as () => BashCardFace)().hooks.bashCard).toBe(bashFace.hooks.bashCard)
-    await vi.waitFor(() => { expect(bashFace.hooks.bashCard.getSnapshot()).toMatchObject({ scope: undefined, registered: true }) })
+    await vi.waitFor(() => { expect(bashFace.hooks.bashCard.getSnapshot()).toMatchObject({ scope: undefined }) })
     describeSettings.mockClear()
     face.selectScope('preset/standard')
     // The scoped mirror is read on first selection, and the card follows it.
     await vi.waitFor(() => { expect(describeSettings).toHaveBeenCalledWith('preset/standard') })
     await vi.waitFor(() => {
-      expect(bashFace.hooks.bashCard.getSnapshot()).toMatchObject({ scope: 'preset/standard', registered: false })
+      expect(bashFace.hooks.bashCard.getSnapshot()).toMatchObject({ scope: 'preset/standard' })
     })
     // A scoped commit reloads the scoped mirror only.
     describeSettings.mockClear()
@@ -257,7 +257,7 @@ describe('ui-settings-plugins apply', () => {
     expect(describeSettings).toHaveBeenCalledWith('preset/standard')
     // Leaving the page returns every card to the global instance.
     face.selectScope(null)
-    expect(bashFace.hooks.bashCard.getSnapshot()).toMatchObject({ scope: undefined, registered: true })
+    expect(bashFace.hooks.bashCard.getSnapshot()).toMatchObject({ scope: undefined })
   })
 
   it('registers into a declaration that arrives after apply', async () => {

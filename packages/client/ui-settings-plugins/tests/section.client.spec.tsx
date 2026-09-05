@@ -37,7 +37,6 @@ const t = (key: keyof typeof en, params?: Record<string, string>) =>
 const settled: CardShell = {
   available: true,
   scope: undefined,
-  registered: true,
   writable: true,
   dirty: false,
   invalid: false,
@@ -275,7 +274,6 @@ describe('SkillFilesystemCard', () => {
   it('edits the roots as one entry per line and marks an inherited value', () => {
     const actions = renderSkillFilesystemCard({
       scope: 'preset/research',
-      registered: false,
       customSkillDirs: field('/a\n/b', { inherited: true }),
     })
     fireEvent.click(screen.getByRole('button', { name: `${en.expand}: ${en.skillFilesystemTitle}` }))
@@ -284,7 +282,6 @@ describe('SkillFilesystemCard', () => {
     expect(roots.value).toBe('/a\n/b')
     expect(screen.getByText(en.inherited)).toBeTruthy()
     expect(screen.queryByRole('button', { name: en.reset })).toBeNull()
-    expect(screen.getByText(en.notMounted)).toBeTruthy()
     fireEvent.change(roots, { target: { value: '/c' } })
     expect(actions.edit).toHaveBeenCalledWith('customSkillDirs', '/c')
   })
@@ -296,7 +293,6 @@ describe('SkillFilesystemCard', () => {
     fireEvent.click(screen.getByRole('button', { name: en.reset }))
     expect(actions.resetField).toHaveBeenCalledWith('customSkillDirs')
     expect(screen.queryByText(en.inherited)).toBeNull()
-    expect(screen.queryByText(en.notMounted)).toBeNull()
   })
 
   it('marks an invalid root draft on the text area', () => {

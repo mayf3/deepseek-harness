@@ -72,12 +72,6 @@ export interface CardShell {
   available: boolean
   /** The named scope the form edits, such as `preset/<id>`; undefined for the global instance. */
   scope: string | undefined
-  /**
-   * Whether a live Host plugin registered the namespace under the form's
-   * scope. False under a named scope whose composition does not mount the
-   * plugin: edits are stored and take effect once one does.
-   */
-  registered: boolean
   /** Whether the Host document accepts writes. */
   writable: boolean
   /** Whether the form holds edits that a save would write. */
@@ -247,7 +241,6 @@ export class CardForm<T> {
     return {
       available: snapshot.status === 'ready',
       scope: snapshot.scope,
-      registered: snapshot.registered,
       writable: snapshot.writable,
       dirty: plan.length > 0,
       invalid: plan.some(item => item.run === undefined),

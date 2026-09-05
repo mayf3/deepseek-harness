@@ -2,7 +2,7 @@
 
 /** Locale keys these surfaces render. */
 export type PluginsSettingsLocaleKey =
-  | 'nav' | 'title' | 'intro' | 'tabs' | 'configurableTab' | 'empty' | 'presetSettingsTitle' | 'notMounted'
+  | 'nav' | 'title' | 'intro' | 'tabs' | 'configurableTab' | 'empty' | 'presetSettingsTitle'
   | 'overridden' | 'inherited' | 'reset' | 'readOnly' | 'expand' | 'collapse'
   | 'save' | 'saving' | 'discard' | 'unsaved' | 'saveFailed' | 'invalidNumber'
   | 'bashTitle' | 'bashDescription' | 'bashTimeoutMs' | 'bashTimeoutMsHint'
@@ -29,7 +29,6 @@ export const en: Record<PluginsSettingsLocaleKey, string> = {
   configurableTab: 'Plugin configuration',
   empty: 'This deployment exposes no plugin settings.',
   presetSettingsTitle: 'Settings',
-  notMounted: 'No running session composed from this preset has this plugin loaded; saved values apply to the sessions that load it.',
   overridden: 'Overridden',
   inherited: 'Inherited',
   reset: 'Reset to default',
@@ -92,7 +91,6 @@ export const zh: Record<PluginsSettingsLocaleKey, string> = {
   configurableTab: '插件配置',
   empty: '本部署没有开放任何插件设置。',
   presetSettingsTitle: '设置',
-  notMounted: '本预设当前没有运行中的会话加载这个插件；保存的值会在加载它的会话中生效。',
   overridden: '已覆盖',
   inherited: '继承',
   reset: '恢复默认',

@@ -1077,7 +1077,7 @@ describe('CardForm lines field', () => {
       user: { timeoutMs: 9000 }, revision: 1,
     })
     const subject = new CardForm(host.scope, [numberField('timeoutMs')])
-    expect(subject.shell()).toMatchObject({ scope: 'preset/research', registered: true })
+    expect(subject.shell()).toMatchObject({ scope: 'preset/research' })
     expect(subject.hasOverride('timeoutMs')).toBe(true)
     subject.actions().resetField('timeoutMs')
     expect(subject.field('timeoutMs')).toEqual({ text: '12000', overridden: false, inherited: false, invalid: false })
@@ -1245,7 +1245,7 @@ describe('SubagentModelSelectionCardController across scopes', () => {
     face.toggleEnabled()
     expect(state()).toMatchObject({ dirty: true, enabled: true, scope: undefined })
     selection.select('preset/research')
-    expect(state()).toMatchObject({ dirty: false, enabled: false, scope: 'preset/research', registered: true })
+    expect(state()).toMatchObject({ dirty: false, enabled: false, scope: 'preset/research' })
     // A save on the new scope writes that scope's instance.
     face.toggleEnabled()
     expect(state().dirty).toBe(true)

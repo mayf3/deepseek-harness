@@ -93,7 +93,8 @@
     - switch "启用 网页" [checked]
   - listitem:
     - text: "示例插件 本地 Web e2e fixture: a plain plugin module with no bundle, added to a composition per row."
-    - button "从这个预设删除 示例插件": 删除
+    - button "从这个预设删除 示例插件":
+      - img
     - switch "启用 示例插件" [checked]
 - heading "设置" [level=3]
 - list:

@@ -29,7 +29,7 @@ Open the Plugins section in Settings and select the **Plugin configuration** tab
 
 ### A preset's own values
 
-A preset's detail page — behind the gear on its card in the Agent presets section — carries a **Settings** section with the same cards, editing that preset's named scope (`preset/<id>`). There a field the preset does not override shows **Inherited** when the shared user layer carries it, a reset stages the inherited value rather than the composition default, and a card whose plugin no running session of the preset has loaded says so — its values are stored and apply to the sessions that load the plugin. Drafts belong to the scope they were typed under and survive leaving the page. The configuration tab always edits the shared values.
+A preset's detail page — behind the gear on its card in the Agent presets section — carries a **Settings** section with the same cards, editing that preset's named scope (`preset/<id>`). There a field the preset does not override shows **Inherited** when the shared user layer carries it, and a reset stages the inherited value rather than the composition default. Saved values land in the preset's own section: a running session composed from the preset picks them up at once, and later sessions read them when they start. Drafts belong to the scope they were typed under and survive leaving the page. The configuration tab always edits the shared values.
 
 ### What appears here
 
