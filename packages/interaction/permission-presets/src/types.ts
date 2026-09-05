@@ -9,9 +9,9 @@
  * @module @deepseek-ai/dsh-permission-presets/types
  */
 
-/** One selectable process-level permission preset. */
+/** Presentation for an available preset or the derived `custom` current value. */
 export interface PresetOption {
-  /** Stable option value: a configured preset key or the live `auto` contribution. */
+  /** Stable option value: a configured preset key, live `auto`, or derived `custom`. */
   value: string
   /** The display label. */
   name: string
@@ -30,7 +30,7 @@ export interface PermissionCatalog {
 
 /** Whole `permissions` Session projection: current durable selection only. */
 export interface PermissionSelection {
-  /** The effective current value: a preset table key, or `custom`. */
+  /** The effective current value: a configured preset key, `auto`, or `custom`. */
   currentValue: string
 }
 

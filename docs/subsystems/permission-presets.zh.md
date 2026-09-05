@@ -57,9 +57,9 @@ Auto integration 会在自身 effect 生命周期内调用 `registerAuto(admit)`
 `names` 先按声明顺序列出配置预设，再在 Auto integration 存活时列出 Auto。`catalog()` 把这些可选条目作为一份进程级快照返回。`optionOf(name)` 为可用条目（label 回退为该 key）或派生的 `custom` 展示构建选项，传入其他任何名称都会抛出异常。客户端把目录与 Session 投影合并；`custom` 可以标记当前值，但绝不会成为目录条目。
 
 ```ts type-equiv
-/** One selectable process-level permission preset. */
+/** Presentation for an available preset or the derived `custom` current value. */
 interface PresetOption {
-  /** Stable option value: a configured preset key or the live `auto` contribution. */
+  /** Stable option value: a configured preset key, live `auto`, or derived `custom`. */
   value: string
   /** The display label. */
   name: string

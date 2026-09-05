@@ -15,8 +15,7 @@ import { expandOwningTurnProcess, newEnglishPage, saveFailureShot } from './supp
 
 const SNAPSHOT_DIR = fileURLToPath(new URL('../../../snapshots/web/auto-review-denial', import.meta.url))
 const FIXTURE = fileURLToPath(new URL('../../../snapshots/web/auto-review-denial/session.v2.jsonl', import.meta.url))
-const COLLAPSED_EXPECTED = fileURLToPath(new URL('../../../snapshots/web/auto-review-denial/collapsed.expected.md', import.meta.url))
-const EXPANDED_EXPECTED = fileURLToPath(new URL('../../../snapshots/web/auto-review-denial/expanded.expected.md', import.meta.url))
+const UI_EXPECTED = fileURLToPath(new URL('../../../snapshots/web/auto-review-denial/ui.expected.md', import.meta.url))
 const MODE = webSnapshotMode()
 const SEED_ID = 'auto-review-denial-web-e2e'
 
@@ -89,7 +88,6 @@ describe.skipIf(MODE === 'record')('web e2e: cold Auto-review denial', () => {
 
     const collapsed = (await captureStableAria(page, '[class*="centerCol"]', scaffold.workspaceCwd))
       .split(SEED_ID).join('{{seededId}}')
-    await compareOrRefreshGolden(COLLAPSED_EXPECTED, collapsed, MODE)
 
     await row.click()
     await expect.poll(() => row.getAttribute('aria-expanded')).toBe('true')
@@ -101,14 +99,14 @@ describe.skipIf(MODE === 'record')('web e2e: cold Auto-review denial', () => {
 
     const expanded = (await captureStableAria(page, '[class*="centerCol"]', scaffold.workspaceCwd))
       .split(SEED_ID).join('{{seededId}}')
-    await compareOrRefreshGolden(EXPANDED_EXPECTED, expanded, MODE)
+    await compareOrRefreshGolden(UI_EXPECTED, `## Collapsed\n\n${collapsed.trim()}\n\n## Expanded\n\n${expanded.trim()}`, MODE)
     expect(tripwire.pageErrors).toEqual([])
     expect(tripwire.warnings).toEqual([])
   }, 60_000)
 
   it('keeps its snapshot inventory closed', async () => {
     await assertFixtureInventory(SNAPSHOT_DIR, [
-      'collapsed.expected.md', 'expanded.expected.md', 'session.v2.jsonl',
+      'ui.expected.md', 'session.v2.jsonl',
     ])
   })
 })

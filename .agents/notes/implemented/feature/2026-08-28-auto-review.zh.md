@@ -28,7 +28,7 @@ reviewer 使用最新记录在 `request/header` 中的提供方与模型。其�
 
 每个保留项都有固定来源角色。带自身持久 `rpcId` 的 durable human 文本（`source.kind === 'user'`）定义或替换当前任务及明确限制。对于进程内 child，既有创建 prompt 与后续 `senderSessionId` 匹配 `SessionHeader.parentSession` 的 `agent-message` 定义或调整委派任务，但不能覆盖 human 限制。当前 `agent-instructions` 只能约束；压缩 checkpoint 恢复有损语境但不会继承已被压缩文本的指令身份；图片、附件与历史原生或 PTC 调用只提供事实。请求排除 assistant 文本、推理、工具结果、Git 状态、环境变量、平台 metadata 与 shell 方言。
 
-reviewer 首先按待审动作的实际效果分类：本地非敏感且无副作用的观察是 low；边界明确、通常可恢复的本地副作用是 medium；破坏性、外部、敏感、安全、系统或 workspace 外效果是 high。low 必须 allow；medium 仅在当前 human／直接父级任务确实需要且不存在适用冲突时才可 allow；high 即使有精确 human 指令也必须 deny。最终 JSON 只接受满足这些组合的 `risk + decision`，并且只有 deny 可以携带可选字符串 `reason`。如果过滤后的请求超出模型上下文、提供方失败，或响应违反这项封闭协议，调用会被拒绝。
+固定策略采用 allow／soft-deny／hard-deny 语义。普通项目内工作，以及 agent 在同一 Session 创建对象的精确清理为 low，直接允许。不可逆删除既有状态、改写历史、生产访问、非敏感外部写入和安全／系统变更为 medium，需要 human 或直接父级明确授权动作、准确目标和必要范围。历史调用可以证明对象由本会话创建，但不能授权 medium 工作。敏感信息跨信任边界外泄为 high，始终拒绝。未解决冲突、含糊或扩大后的效果均以拒绝方式关闭。最终 JSON 只接受相应的 `risk` 与 `decision` 组合，并且只有 deny 可以携带可选字符串 `reason`；提供方、上下文或协议故障都会拒绝调用。
 
 ## 结果与生命周期
 
@@ -40,7 +40,7 @@ Auto 拒绝会向主 agent 提供固定消息，其中会指明被拒绝的工�
 
 ## 验证
 
-单元与集成测试固定五个请求分区、reviewer Session 身份与历史坐标的缺席、human／直接父级／约束／checkpoint／事实的来源角色与优先级、原生与 PTC 动作重建、一次审查基数、审查先于工具主体、严格 `risk + decision` 解析、技术故障拒绝、调用方取消、恢复失败、部分迁移时的资源释放顺序，以及 out-of-process child 的父级委派边界。Tool 与客户端套件固定结构化错误传播，以及通用拒绝相对内置、skill 和 Cordis-like keyed 视图的优先级。TypeScript 与 Python SDK fixture 固定原生和 PTC 投影事件中的 `name`、`code` 与 `reason`。显式启用的真实 DeepSeek 认证以零重试方式精确执行 22 次 reviewer 调用：Flash 运行 P01 low allow／allow、P02–P04 medium deny／allow 与 P05–P08 high deny／deny；P02 还会走另一条执行路径，Pro 与 Vision 各运行同一组安全 medium 配对。每个 case 都在进程内断言 risk 与 decision，并证明预期结果、精确修改或零副作用。脱敏 artifact 不包含 risk、prompt、reasoning、工具参数、raw output、credential、token 或耗时；测试会在写出前用 committed JSON Schema 校验其中的 case／model／path、预期与实际 decision 以及 side-effect 字段。
+聚焦单元与集成测试覆盖日志事实、来源权限、严格输出、native／PTC 调度、取消与 integration 资源释放。shipped Web 测试覆盖新建与冷恢复 child、权限目录生命周期和两种拒绝状态；SDK 测试保留结构化错误。[包级认证](../../../../packages/interaction/auto-review/README.zh.md#run-the-real-model-certification)把真实提供方证据限制为八次零重试调用，覆盖三种 shipped 模型上的清理、精确删除授权和硬拒绝。确定性测试负责拒绝恢复和更广的生命周期用例，使提供方调用与保留证据保持精简。
 
 ## 考虑过的替代方案
 

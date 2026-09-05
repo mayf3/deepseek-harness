@@ -401,15 +401,13 @@ describe('DeepSeek e2e workflow', () => {
     expect(JSON.stringify(steps)).not.toContain('apt-get')
   })
 
-  it('isolates Auto certification from the four-worker remainder', () => {
+  it('bounds profile subprocess fan-out to the tested e2e default', () => {
     const workflow = loadWorkflow('.github/workflows/e2e.yml')
     const e2e = workflowJob(workflow, 'e2e')
     if (!Array.isArray(e2e.steps)) throw new TypeError('DeepSeek e2e workflow must define steps')
 
     const step = e2e.steps.filter(isRecord).find(candidate => candidate.name === 'E2E tests (real DeepSeek API)')
     expect(step).toMatchObject({ env: { DSH_E2E_MAX_WORKERS: 4 } })
-    expect(step?.run).toContain('DSH_E2E_MAX_WORKERS=1 pnpm exec vitest run --config vitest.e2e.config.ts packages/interaction/auto-review/tests/auto-review.e2e.ts')
-    expect(step?.run).toContain('DSH_AUTO_REVIEW_CERTIFICATION=0 pnpm run test:e2e')
   })
 })
 

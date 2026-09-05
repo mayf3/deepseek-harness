@@ -57,9 +57,9 @@ Registering or removing Auto emits the payload-free `permission-presets/catalog-
 `names` lists configured presets in declaration order followed by Auto while its integration is live. `catalog()` returns those selectable entries as one process-level snapshot. `optionOf(name)` builds an available entry (its label falls back to the key) or the derived `custom` presentation, and throws for any other name. Clients join the catalog with the Session projection; `custom` may label the current value but never becomes a catalog entry.
 
 ```ts type-equiv
-/** One selectable process-level permission preset. */
+/** Presentation for an available preset or the derived `custom` current value. */
 interface PresetOption {
-  /** Stable option value: a configured preset key or the live `auto` contribution. */
+  /** Stable option value: a configured preset key, live `auto`, or derived `custom`. */
   value: string
   /** The display label. */
   name: string

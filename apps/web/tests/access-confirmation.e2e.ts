@@ -165,6 +165,43 @@ describe('web e2e: Full access confirmation', () => {
     expect(tripwire.pageErrors).toEqual([])
   }, 60_000)
 
+  it('keeps all permission names readable with a collapsed narrow trigger', async () => {
+    await page.setViewportSize({ width: 420, height: 1000 })
+    const access = page.locator('button[aria-label^="访问模式"]').first()
+    const composer = page.locator('[data-composer-card]').first()
+    await expect.poll(async () => (await composer.boundingBox())!.width).toBeLessThanOrEqual(460)
+    await expect.poll(async () => (await access.boundingBox())!.width).toBeLessThan(60)
+
+    await access.click()
+    const menu = page.getByRole('menu')
+    await menu.waitFor()
+    const menuBox = (await menu.boundingBox())!
+    expect(menuBox.width).toBeGreaterThanOrEqual(218)
+    expect(menuBox.width).toBeLessThanOrEqual(360)
+    for (const name of ['仅可查看', '工作区内修改', '完全权限', 'Auto review']) {
+      expect(await menu.getByText(name, { exact: true }).evaluate(node => node.scrollWidth <= node.clientWidth)).toBe(true)
+    }
+    await page.keyboard.press('Escape')
+
+    const input = page.locator('[data-composer-input]').first()
+    await writeComposerDraft(page, input, '/permission')
+    await input.press('Escape')
+    await input.press('Enter')
+    const slash = page.locator('[aria-label="/permission 选项"]')
+    await slash.waitFor()
+    const slashBox = (await slash.boundingBox())!
+    expect(slashBox.width).toBeGreaterThanOrEqual(220)
+    expect(slashBox.x).toBeGreaterThanOrEqual(0)
+    expect(slashBox.x + slashBox.width).toBeLessThanOrEqual(420)
+    expect(await slash.evaluate(node => getComputedStyle(node).minWidth)).toBe('min(220px, 100%)')
+    expect(await slash.evaluate(node => getComputedStyle(node).maxWidth)).toBe('100%')
+    for (const name of ['仅可查看', '工作区内修改', '完全权限', 'Auto review']) {
+      expect(await slash.getByText(name, { exact: true }).evaluate(node => node.scrollWidth <= node.clientWidth)).toBe(true)
+    }
+    await page.keyboard.press('Escape')
+    expect(tripwire.pageErrors).toEqual([])
+  })
+
   it('keeps its snapshot inventory closed', async () => {
     expect(tripwire.warnings).toEqual([])
     await assertFixtureInventory(SNAPSHOT_DIR, [
