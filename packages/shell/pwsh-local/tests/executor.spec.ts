@@ -565,17 +565,22 @@ describe.skipIf(!hasPwsh)('PwshLocalExecutor.start (background process handles)'
     expect(proc.readOutput().delta).toContain('spawn failed:')
   })
 
-  it('a SYNCHRONOUS spawn throw is contained, and the observed readers serve empty streams', async () => {
+  it('a SYNCHRONOUS spawn throw is contained, and the observed stderr serves the note', async () => {
     const { ctx, bash } = await setup()
     vi.spyOn(ctx.subprocess, 'spawn').mockImplementation(() => { throw new Error('sync spawn boom') })
     const proc = start(bash, bash.resolve({ command: 'Write-Output never' }))
     await expect(proc.done).resolves.toBeUndefined()
     expect(proc.status).toBe('killed')
-    // The never-spawned process substitutes empty non-consuming readers, so a
-    // record pump reads a clean empty stream instead of throwing.
-    expect(proc.observed?.stdout?.readFrom(0)).toEqual({ text: '', lossy: false, nextOffset: 0 })
-    expect(proc.observed?.stderr?.readFrom(0)).toEqual({ text: '', lossy: false, nextOffset: 0 })
-    expect(proc.readOutput().delta).toContain('spawn failed:')
+    // The process never ran, so observers read the note as the whole stderr
+    // stream at their own offsets and stdout stays empty.
+    const note = 'spawn failed: Error: sync spawn boom'
+    const first = proc.observed.stderr.readFrom(0)
+    expect(first).toEqual({ text: note, nextOffset: Buffer.byteLength(note, 'utf8'), lossy: false })
+    expect(proc.observed.stderr.readFrom(first.nextOffset)).toEqual({ text: '', nextOffset: first.nextOffset, lossy: false })
+    expect(proc.observed.stdout.readFrom(0)).toEqual({ text: '', lossy: false, nextOffset: 0 })
+    // The consuming read folds the same note in exactly once.
+    expect(proc.readOutput().delta).toBe(`[stderr]\n${note}`)
+    expect(proc.readOutput().delta).toBe('')
   })
 })
 
