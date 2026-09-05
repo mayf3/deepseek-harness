@@ -1,7 +1,7 @@
 {
   "name": "@deepseek-ai/dsh-global-tool-mask",
   "description": "Composition-authored global-tool mask for one agent preset: a row that hides named host tools from the sessions the preset composes",
-  "version": "0.1.2-rc.1",
+  "version": "0.1.3-alpha.1",
   "publishConfig": {
     "access": "public"
   },
