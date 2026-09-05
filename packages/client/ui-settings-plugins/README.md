@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-`dsh-client-ui-settings-plugins` is the **Plugins** settings section of the dsh web client: users edit host-plane plugin configuration on its **Plugin configuration** tab, and feature plugins contribute their own pages through `settings.plugins.tab`. This package's own tab shows one expandable card per Host plugin whose configuration a user owns: a card shows the plugin's name and what it governs, and expanding it reveals hand-written controls bound to that plugin's settings namespace, each field marking whether the user overrode it and offering a reset back to the value the deployment composed. One switch above the cards chooses the scope every card edits — the values shared by all agent presets, or one preset's own — and under a preset a field marks whether it inherits the shared value. Cards stage edits locally per scope and write only on save, with every write fenced by the namespace revision the form read.
+`dsh-client-ui-settings-plugins` is the **Plugins** settings section of the dsh web client: users edit host-plane plugin configuration on its **Plugin configuration** tab, and feature plugins contribute their own pages through `settings.plugins.tab`. This package's own tab shows one expandable card per Host plugin whose configuration a user owns: a card shows the plugin's name and what it governs, and expanding it reveals hand-written controls bound to that plugin's settings namespace, each field marking whether the user overrode it and offering a reset back to the value the deployment composed. The tab edits the values shared by all agent presets; the same cards form the **Settings** section of every preset's detail page in the Agent presets section, where they edit that preset's own values and a field marks whether it inherits the shared value. Cards stage edits locally per scope and write only on save, with every write fenced by the namespace revision the form read.
 
 ## Table of Contents
 
@@ -27,9 +27,9 @@ English | [中文](README.zh.md)
 
 Open the Plugins section in Settings and select the **Plugin configuration** tab to edit the host-plane plugins this deployment composes. The cards appear in this order: the shell executor (`bash`), the agent loop's tool-call parallelism (`agent-loop`), subagent model selection (`subagent-model-selection`), the DeepSeek search provider (`web-search-deepseek`), and the filesystem skill provider's extra roots (`skill-filesystem`).
 
-### Choosing the scope
+### A preset's own values
 
-The **Applies to** switch above the cards selects the settings scope every card edits: **All presets** is the global instance of each namespace, and each agent preset in the roster is that preset's named scope (`preset/<id>`). Under a preset, a field the preset does not override shows **Inherited** when the shared user layer carries it, a reset stages the inherited value rather than the composition default, and a card whose plugin the preset does not compose says so — its values are stored and take effect once a preset composes the plugin. Drafts belong to the scope they were typed under and survive a switch. A roster the Host refuses leaves the global instance editable and says the presets could not be listed.
+A preset's detail page — behind the gear on its card in the Agent presets section — carries a **Settings** section with the same cards, editing that preset's named scope (`preset/<id>`). There a field the preset does not override shows **Inherited** when the shared user layer carries it, a reset stages the inherited value rather than the composition default, and a card whose plugin no running session of the preset has loaded says so — its values are stored and apply to the sessions that load the plugin. Drafts belong to the scope they were typed under and survive leaving the page. The configuration tab always edits the shared values.
 
 ### What appears here
 
@@ -57,7 +57,7 @@ The section is one extension point and one dispatch rule: feature plugins own th
 
 ### The tab extension point
 
-The section declares `settings.plugins.tab`, a root list slot whose labels become ordered tabs; a tab stays mounted after its first selection so local drafts and read-only snapshots survive tab switches. The package registers its own `configurable` contribution, which declares the nested `settings.plugin.item` slot — keyed on the settings namespace a card edits. A plugin that ships a browser half registers its own card under its own namespace and owns every part of it: chrome, controls, and copy. Tabs follow the contribution's `order`; cards follow registration order.
+The section declares `settings.plugins.tab`, a root list slot whose labels become ordered tabs; a tab stays mounted after its first selection so local drafts and read-only snapshots survive tab switches. The package registers its own `configurable` contribution, which declares the nested `settings.plugin.item` slot — keyed on the settings namespace a card edits. A plugin that ships a browser half registers its own card under its own namespace and owns every part of it: chrome, controls, and copy. Tabs follow the contribution's `order`; cards follow registration order. The preset settings section registers into the roster's `settings.agentPreset.detail` slot and declares `settings.agentPreset.plugin.item`, keyed the same way; a card registers under both slots to appear on both surfaces. One scope selection serves every card — the global instance while the configuration tab shows, the preset's scope while its detail page is open; the settings shell mounts one section at a time, so the two never compete.
 
 ### The write path
 
@@ -98,6 +98,7 @@ These limits define which plugins appear and how fresh the list is; they are cur
 - **Only host-plane plugins appear** — a plugin an agent preset mounts carries its configuration inline in that preset's `agent.cordis.yml` and cannot register a settings namespace at all, so this section lists nothing for it. Editing those values remains the preset editor's job.
 - **A card still needs a browser bundle** — the browser half must be a `dsh.client` package built in the client module system's lazy-CJS factory format, and the `clientBundle` preset that emits it lives in `../../../packages/client/tsdown.client.ts` rather than a published package, so a plugin outside this repository has to reproduce that build itself.
 - **The served namespaces re-read on two signals only** — the wire announces settings-document commits and connection resets, not registrations, so a namespace whose owner registers after the tab's read joins the list on the next document commit or reconnect.
+- **An orphaned scope section has no surface** — a `scopes.<id>` section whose preset was deleted is edited nowhere: the detail page that would show it is gone, and the configuration tab edits only the shared values, so the section stays in the document until edited by hand.
 - **The shell card follows the composed executor** — the POSIX and PowerShell executor families share the `bash` namespace because a host composes exactly one of them, so the served schema differs by platform (PowerShell adds `pwshPath`) even though the card edits the same two fields on both.
 
 <a id="dev-note"></a>

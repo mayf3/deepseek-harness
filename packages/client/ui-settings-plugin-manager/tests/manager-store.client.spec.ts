@@ -238,8 +238,6 @@ describe('PluginManagerController', () => {
     face.removeRow(target, 'extra')
     await vi.waitFor(() => { expect(plugins.removeRow).toHaveBeenCalledWith(target, 'extra') })
     await vi.waitFor(() => { expect(state().busy).toEqual([]) })
-    face.selectPreset('research')
-    expect(state().selectedPreset).toBe('research')
   })
 
   it('reports a row conflict with the row id and a thrown transport failure generically', async () => {

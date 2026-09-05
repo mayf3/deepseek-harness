@@ -41,7 +41,7 @@ export class BashCardController {
   private readonly store: SnapshotStore<BashCardState>
 
   /**
-   * @param selection - the scope selection shared with the tab.
+   * @param selection - the scope selection shared with the card surfaces.
    * @param bindScope - binds the `bash` namespace under one scope.
    */
   constructor(selection: ScopeSelection, bindScope: BindScope<BashSettings>) {

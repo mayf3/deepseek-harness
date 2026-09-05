@@ -13,8 +13,9 @@ import type { ConfigurablePluginsTabProps } from '../src/client/ConfigurablePlug
 import { SkillFilesystemCard } from '../src/client/SkillFilesystemCard.tsx'
 import type { SkillFilesystemCardProps } from '../src/client/SkillFilesystemCard.tsx'
 import type { SkillFilesystemCardState } from '../src/client/skill-filesystem-card-controller.ts'
-import type { ScopeSwitcherState } from '../src/client/scope-switcher.ts'
 import { PluginsSettingsSection } from '../src/client/PluginsSettingsSection.tsx'
+import { PresetSettingsSection } from '../src/client/PresetSettingsSection.tsx'
+import type { PresetSettingsSectionProps } from '../src/client/PresetSettingsSection.tsx'
 import type { PluginsSettingsSectionProps, PluginsSettingsTabEntry } from '../src/client/PluginsSettingsSection.tsx'
 import { SubagentModelSelectionCard } from '../src/client/SubagentModelSelectionCard.tsx'
 import type { SubagentModelSelectionCardProps } from '../src/client/SubagentModelSelectionCard.tsx'
@@ -63,30 +64,36 @@ function renderSection(rows: readonly PluginsSettingsTabEntry[]) {
   render(<PluginsSettingsSection {...props} />)
 }
 
-function renderConfigurable(
-  namespaces: string[],
-  cards: Record<string, string> = {},
-  loaded = true,
-  switcher: Partial<ScopeSwitcherState> = {},
-) {
+function cardSlot(cards: Record<string, string>) {
+  return (_name: string, _owner: object, opts?: { entryKey?: string }) => {
+    const card = opts?.entryKey === undefined ? undefined : cards[opts.entryKey]
+    return card === undefined ? null : <li>{card}</li>
+  }
+}
+
+function renderConfigurable(namespaces: string[], cards: Record<string, string> = {}, loaded = true) {
   const store = createSnapshotStore<ConfigurablePluginsTabState>({ loaded, namespaces })
-  const switcherStore = createSnapshotStore<ScopeSwitcherState>({
-    scope: undefined, presets: [], extraScopes: [], status: 'ready', ...switcher,
-  })
-  const actions = { ensureScopes: vi.fn(), selectScope: vi.fn() }
   const props = {
     t,
-    ...actions,
-    presetName: (preset: { id: string; name?: string }) => preset.name ?? preset.id,
     useConfigurablePlugins: bindSnapshotSelector(store),
-    useScopeSwitcher: bindSnapshotSelector(switcherStore),
-    renderSlot: (_name: string, _owner: object, opts?: { entryKey?: string }) => {
-      const card = opts?.entryKey === undefined ? undefined : cards[opts.entryKey]
-      return card === undefined ? null : <li>{card}</li>
-    },
+    renderSlot: cardSlot(cards),
   } as unknown as ConfigurablePluginsTabProps
   render(<ConfigurablePluginsTab {...props} />)
-  return actions
+}
+
+function renderPresetSettings(namespaces: string[], cards: Record<string, string> = {}, loaded = true) {
+  const store = createSnapshotStore<ConfigurablePluginsTabState>({ loaded, namespaces })
+  const selectScope = vi.fn()
+  const props = {
+    t,
+    presetId: 'standard',
+    presetName: '标准模式',
+    selectScope,
+    useConfigurablePlugins: bindSnapshotSelector(store),
+    renderSlot: cardSlot(cards),
+  } as unknown as PresetSettingsSectionProps
+  const view = render(<PresetSettingsSection {...props} />)
+  return { selectScope, unmount: view.unmount }
 }
 
 function renderSkillFilesystemCard(state: Partial<SkillFilesystemCardState> = {}) {
@@ -238,50 +245,29 @@ describe('ConfigurablePluginsTab', () => {
   })
 })
 
-describe('ConfigurablePluginsTab scope switch', () => {
-  it('asks for the roster once mounted and offers the global instance plus every preset', () => {
-    const actions = renderConfigurable([], {}, true, {
-      presets: [
-        { id: 'standard', trust: 'system', name: '标准模式', isDefault: true },
-        { id: 'research', trust: 'user', name: 'Research', isDefault: false },
-        { id: 'broken', trust: 'user', isDefault: false, broken: 'bad yaml' },
-      ],
-      extraScopes: ['preset/deleted'],
-    })
-    expect(actions.ensureScopes).toHaveBeenCalledTimes(1)
-    const trigger = screen.getByRole('button', { name: en.scopeSwitcherLabel })
-    expect(trigger.textContent).toBe(en.scopeGlobal)
-    expect(trigger.getAttribute('data-settings-scope')).toBe('global')
-    expect(screen.getByText(en.scopeHintGlobal)).toBeTruthy()
+describe('PresetSettingsSection', () => {
+  it('holds the preset scope while mounted, dispatches the cards, and returns to the global instance on unmount', () => {
+    const { selectScope, unmount } = renderPresetSettings(['bash', 'agent-loop'], { bash: 'shell', 'agent-loop': 'loop' })
 
-    fireEvent.click(trigger)
-    fireEvent.keyDown(document, { key: 'Escape' })
-    expect(screen.queryByRole('menuitem')).toBeNull()
-    fireEvent.click(trigger)
-    fireEvent.click(screen.getByRole('menuitem', { name: 'Research' }))
-    expect(actions.selectScope).toHaveBeenCalledWith('preset/research')
-    fireEvent.click(trigger)
-    expect(screen.getByRole('menuitem', { name: '标准模式 (default)' })).toBeTruthy()
-    expect(screen.getByRole('menuitem', { name: 'broken (failed to load)' })).toBeTruthy()
-    expect(screen.getByRole('menuitem', { name: 'preset/deleted' })).toBeTruthy()
-    fireEvent.click(screen.getByRole('menuitem', { name: en.scopeGlobal }))
-    expect(actions.selectScope).toHaveBeenLastCalledWith(null)
+    expect(selectScope).toHaveBeenCalledTimes(1)
+    expect(selectScope).toHaveBeenCalledWith('preset/standard')
+    expect(screen.getByRole('heading', { name: en.presetSettingsTitle })).toBeTruthy()
+    expect(document.querySelector('[data-settings-scope="preset/standard"]')).toBeTruthy()
+    expect(screen.getAllByRole('listitem').map(item => item.textContent)).toEqual(['shell', 'loop'])
+    expect(screen.queryByText(en.empty)).toBeNull()
+
+    unmount()
+    expect(selectScope).toHaveBeenLastCalledWith(null)
   })
 
-  it('names the selected scope, keeps an unlisted one visible by id, and reports a roster failure', () => {
-    renderConfigurable([], {}, true, {
-      scope: 'preset/research',
-      presets: [{ id: 'research', trust: 'user', name: 'Research', isDefault: false }],
-    })
-    const trigger = screen.getByRole('button', { name: en.scopeSwitcherLabel })
-    expect(trigger.textContent).toBe('Research')
-    expect(trigger.getAttribute('data-settings-scope')).toBe('preset/research')
-    expect(screen.getByText(en.scopeHintPreset)).toBeTruthy()
+  it('withholds the empty line until the Host has answered once', () => {
+    renderPresetSettings([], { bash: 'shell' }, false)
+    expect(screen.queryByText(en.empty)).toBeNull()
     cleanup()
 
-    renderConfigurable([], {}, true, { scope: 'preset/gone', status: 'error' })
-    expect(screen.getByRole('button', { name: en.scopeSwitcherLabel }).textContent).toBe('preset/gone')
-    expect(screen.getByText(en.scopeRosterFailed)).toBeTruthy()
+    renderPresetSettings([], { bash: 'shell' })
+    expect(screen.getByText(en.empty)).toBeTruthy()
+    expect(screen.queryByText('shell')).toBeNull()
   })
 })
 

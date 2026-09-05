@@ -1,8 +1,9 @@
 /**
  * Plugin manager, browser half: the **Manage plugins** tab of the Plugins
- * settings section. It installs, enables, disables, retries, and uninstalls
- * the packages of the Host's profile through the `plugins` Remote, and
- * composes rows into the global user layer or one agent preset's.
+ * settings section, and the capabilities section of every agent preset's
+ * detail page. The tab installs, enables, disables, retries, and uninstalls
+ * the packages of the Host's profile through the `plugins` Remote; the
+ * section composes rows into one preset's user layer.
  */
 
 import type {} from '@deepseek-ai/dsh-client-locale/client'
@@ -17,16 +18,19 @@ import type {} from '@deepseek-ai/dsh-api-remotes/client'
 // Type-only: the forwarded events' own declaration (`$on`'s key face resolves
 // through the owning package's client-safe types subpath).
 import type {} from '@deepseek-ai/dsh-host-plugin-manager/types'
-// Type-only: pulls the 'settings.agentPreset' LocaleNamespaceMap merge, whose
-// dictionaries the shipped-preset name resolution below reads.
+// Type-only: the 'settings.agentPreset' LocaleNamespaceMap merge the
+// shipped-preset name resolution reads, and the `settings.agentPreset.detail`
+// slot the capabilities section registers into.
 import type {} from '@deepseek-ai/dsh-client-ui-agent-preset/client'
 // Inline-safe shared fold: shipped ids map to dictionary keys in one home.
 import { presetDisplayText } from '@deepseek-ai/dsh-agent-presets/display'
 import { PluginManagerSettingsTab } from './PluginManagerSettingsTab.tsx'
+import { PresetPluginsSection } from './PresetPluginsSection.tsx'
 import { PluginManagerController } from './manager-store.ts'
 import { en, zh, type PluginManagerLocaleKey } from './locales.ts'
 
 export type { PluginManagerSettingsTabProps } from './PluginManagerSettingsTab.tsx'
+export type { PresetPluginsSectionProps } from './PresetPluginsSection.tsx'
 export type {
   ConfirmState, InstallState, ManagerNotice, PluginManagerFace, PluginManagerState, PresetGroup, PresetRow,
 } from './manager-store.ts'
@@ -46,8 +50,9 @@ export const NS = 'settings.pluginManager'
 export const inject = ['slots', 'locale', 'remote', 'remote.plugins', 'remote.pluginInventory']
 
 /**
- * Contribute the manager tab to the Plugins settings section, and keep it
- * current on the Host's change events.
+ * Contribute the manager tab to the Plugins settings section and the
+ * capabilities section to every preset's detail page, and keep both current
+ * on the Host's change events.
  * @param ctx - the browser plugin context.
  */
 export function apply(ctx: ClientContext): void {
@@ -71,12 +76,21 @@ export function apply(ctx: ClientContext): void {
     return () => { for (const dispose of disposers) dispose() }
   }, 'ui-settings-plugin-manager: host invalidations')
 
+  // Before the configuration tab: what is installed comes before how it is configured.
   ctx.slots.inject('settings.plugins.tab', () => ctx.slots.register({
     name: 'settings.plugins.tab',
     id: 'manage',
-    order: 5,
+    order: -10,
     label: () => t('tab'),
     locale: NS,
     inject: () => controller.inject(),
   }, PluginManagerSettingsTab))
+
+  ctx.slots.inject('settings.agentPreset.detail', () => ctx.slots.register({
+    name: 'settings.agentPreset.detail',
+    id: 'plugins',
+    order: 0,
+    locale: NS,
+    inject: () => controller.inject(),
+  }, PresetPluginsSection))
 }

@@ -39,7 +39,7 @@ export class AgentLoopCardController {
   private readonly store: SnapshotStore<AgentLoopCardState>
 
   /**
-   * @param selection - the scope selection shared with the tab.
+   * @param selection - the scope selection shared with the card surfaces.
    * @param bindScope - binds the `agent-loop` namespace under one scope.
    */
   constructor(selection: ScopeSelection, bindScope: BindScope<AgentLoopSettings>) {

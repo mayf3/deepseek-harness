@@ -1,7 +1,8 @@
 /**
- * The plugin manager tab's state: the Host's package views and preset
- * compositions, the action in flight, the install run, and the confirmation
- * a destructive action waits on. Every fact comes from the Host — the store
+ * The plugin manager's state, shared by the Manage plugins tab and the
+ * capabilities section of a preset's detail page: the Host's package views
+ * and preset compositions, the action in flight, the install run, and the
+ * confirmation a destructive action waits on. Every fact comes from the Host — the store
  * re-reads after each action and after every `plugins/changed` event, so a
  * change made on another surface shows here without a manual refresh.
  */
@@ -79,8 +80,6 @@ export interface PluginManagerState {
   readonly presets: readonly PresetGroup[]
   /** Module names of the rows the host tree carries, for the **Add to…** menu's "added" marks. */
   readonly globalModules: readonly string[]
-  /** The preset whose composition the session group shows; null picks the default. */
-  readonly selectedPreset: string | null
   /** Package names and row keys with an action crossing the wire. */
   readonly busy: readonly string[]
   readonly notice: ManagerNotice | null
@@ -115,7 +114,6 @@ export interface PluginManagerFace {
   addRow: (packageName: string, declaredName: string, target: PluginRowTarget) => void
   removeRow: (target: PluginRowTarget, rowId: string) => void
   setRowDisabled: (target: PluginRowTarget, rowId: string, disabled: boolean) => void
-  selectPreset: (id: string) => void
   dismissNotice: () => void
   /** Display name for one preset, resolved through the agent-preset dictionaries. */
   presetName: (preset: PresetGroup) => string
@@ -174,7 +172,7 @@ export class PluginManagerController {
     private readonly presetName: (preset: PresetGroup) => string,
   ) {
     this.store = createSnapshotStore<PluginManagerState>({
-      status: 'idle', packages: [], presets: [], globalModules: [], selectedPreset: null, busy: [], notice: null,
+      status: 'idle', packages: [], presets: [], globalModules: [], busy: [], notice: null,
       install: IDLE_INSTALL, confirm: null,
     })
   }
@@ -235,7 +233,6 @@ export class PluginManagerController {
           this.answer(await this.ctx.remote.plugins.setRowDisabled(target, rowId, disabled))
         })
       },
-      selectPreset: (id) => { this.patch({ selectedPreset: id }) },
       dismissNotice: () => { this.patch({ notice: null }) },
       presetName: this.presetName,
     }

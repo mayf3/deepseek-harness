@@ -8,6 +8,7 @@ import { resolveSlotLabel } from '@deepseek-ai/dsh-client-ui-slots'
 import { TestRemote, usePinnedBrowserLanguages } from '@deepseek-ai/dsh-client-test-runtime'
 import { apply, inject, NS } from '../src/client/index.ts'
 import { PluginManagerSettingsTab } from '../src/client/PluginManagerSettingsTab.tsx'
+import { PresetPluginsSection } from '../src/client/PresetPluginsSection.tsx'
 import type { PluginManagerFace } from '../src/client/manager-store.ts'
 import { apply as hostApply } from '../src/index.ts'
 
@@ -37,7 +38,10 @@ async function bench() {
 function declare(slots: SlotRegistry): () => void {
   return slots.register({
     name: 'root',
-    children: { 'settings.plugins.tab': { kind: 'list', scope: 'root' } },
+    children: {
+      'settings.plugins.tab': { kind: 'list', scope: 'root' },
+      'settings.agentPreset.detail': { kind: 'list', scope: 'root' },
+    },
   } as never, () => null)
 }
 
@@ -58,12 +62,19 @@ describe('ui-settings-plugin-manager browser plugin', () => {
 
     const entry = b.slots.entries('settings.plugins.tab')[0]!
     expect(entry.component).toBe(PluginManagerSettingsTab)
-    expect(entry.options).toMatchObject({ id: 'manage', order: 5 })
+    expect(entry.options).toMatchObject({ id: 'manage', order: -10 })
     expect(entry.locale).toBe(NS)
     expect(resolveSlotLabel(entry.options.label)).toBe('插件管理')
+    // The same store feeds the capabilities section of every preset's detail page.
+    const section = b.slots.entries('settings.agentPreset.detail')[0]!
+    expect(section.component).toBe(PresetPluginsSection)
+    expect(section.options).toMatchObject({ id: 'plugins', order: 0 })
+    expect(section.locale).toBe(NS)
+    const sectionFace = (section.inject as unknown as () => PluginManagerFace)()
     expect(b.list).not.toHaveBeenCalled()
 
     const face = (entry.inject as unknown as () => PluginManagerFace)()
+    expect(sectionFace.hooks.pluginManager).toBe(face.hooks.pluginManager)
     // A Host change before the first render is not a reason to read.
     b.remote.emit('plugins/changed', [{ reason: 'install' }])
     b.ctx.emit('connection/reset')
@@ -91,6 +102,7 @@ describe('ui-settings-plugin-manager browser plugin', () => {
 
     await fiber.dispose()
     expect(b.slots.entries('settings.plugins.tab')).toHaveLength(0)
+    expect(b.slots.entries('settings.agentPreset.detail')).toHaveLength(0)
     b.remote.emit('plugins/changed', [{ reason: 'install' }])
     await Promise.resolve()
     expect(b.list).toHaveBeenCalledTimes(3)

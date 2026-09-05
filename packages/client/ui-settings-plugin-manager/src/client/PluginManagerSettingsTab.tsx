@@ -2,12 +2,12 @@
  * The Manage plugins tab: the profile's installed packages as cards — a
  * plugin pack with its switch, a plugin with its **Add to…** menu, a built-in
  * pack with a locked switch — each a name, a one-liner, and a tag only when
- * a restart is pending or something is wrong; the selected agent preset's
- * composition as the same cards with one switch each; the install dialog
- * streaming pnpm's output behind a fold; and the confirmation a destructive
- * action waits on, naming what still uses the package. Entry ids, module
- * names, kinds, and probe facts stay off the page; an expanded card shows
- * the version, the source, a pack's components, and its uninstall.
+ * a restart is pending or something is wrong; the install dialog streaming
+ * pnpm's output behind a fold; and the confirmation a destructive action
+ * waits on, naming what still uses the package. Entry ids, module names,
+ * kinds, and probe facts stay off the page; an expanded card shows the
+ * version, the source, a pack's components, and its uninstall. A preset's
+ * composition lives on the preset's own detail page (`PresetPluginsSection`).
  */
 
 import { useEffect, useId, useState, type ReactNode } from 'react'
@@ -17,11 +17,9 @@ import {
   Button, IconChevronDownOutline14, IconRefreshOutline16, Menu, Modal, type MenuItem,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
-import { zh, type PluginManagerLocaleKey } from './locales.ts'
-import type {
-  ConfirmState, InstallState, ManagerNotice, PluginManagerFace, PresetGroup, PresetRow,
-} from './manager-store.ts'
-import { rowKey } from './manager-store.ts'
+import type { PluginManagerLocaleKey } from './locales.ts'
+import type { ConfirmState, InstallState, PluginManagerFace, PresetGroup } from './manager-store.ts'
+import { noticeText, packageOf, refusalText, rowLabel, shortName, type Translate } from './presentation.ts'
 import css from './PluginManagerSettingsTab.module.css'
 
 /** Full component props assembled by the Settings slot renderer. */
@@ -30,7 +28,6 @@ export type PluginManagerSettingsTabProps =
   & PropsLocale<'settings.pluginManager'>
   & InjectFace<PluginManagerFace>
 
-type Translate = PluginManagerSettingsTabProps['t']
 type RowView = PluginPackageView['rows'][number]
 type RowPhase = NonNullable<RowView['phase']>
 
@@ -59,86 +56,6 @@ const STATUS_KEYS = {
   restart: 'statusRestart',
   problem: 'statusProblem',
 } satisfies Record<CardStatus, PluginManagerLocaleKey>
-
-/** The scope every harness module is published under. */
-const FIRST_PARTY_SCOPE = '@deepseek-ai/'
-
-/** Compact a package name to what a person calls it. */
-function shortName(name: string): string {
-  const unscoped = name.startsWith('@') ? name.slice(name.indexOf('/') + 1) : name
-  return unscoped.replace(/^dsh-(?:host-|client-)?/, '')
-}
-
-/** The dictionary key for one slug, when the dictionary carries it. */
-function copyKey(kind: 'name' | 'desc', slug: string): PluginManagerLocaleKey | undefined {
-  const key = `${kind}.${slug}`
-  return key in zh ? key as PluginManagerLocaleKey : undefined
-}
-
-/**
- * Display copy of one harness module: by the composition row id first (four
- * subagent rows share one module), then by the unscoped module name without
- * its `dsh-` prefix. Every `name.<slug>` key has its `desc.<slug>` partner.
- * Undefined for a module outside the harness scope or one the dictionary
- * does not name.
- */
-function harnessCopy(t: Translate, moduleName: string, rowId: string | null): { title: string; description: string } | undefined {
-  if (!moduleName.startsWith(FIRST_PARTY_SCOPE)) return undefined
-  const slugs = [...rowId === null ? [] : [rowId], moduleName.slice(FIRST_PARTY_SCOPE.length).replace(/^dsh-/, '')]
-  for (const slug of slugs) {
-    const name = copyKey('name', slug)
-    if (name === undefined) continue
-    return { title: t(name), description: t(`desc.${slug}` as PluginManagerLocaleKey) }
-  }
-  return undefined
-}
-
-/** The installed package a module belongs to: the package itself or one of its subpaths. */
-function packageOf(moduleName: string, packages: readonly PluginPackageView[]): PluginPackageView | undefined {
-  return packages.find(pkg => moduleName === pkg.name || moduleName.startsWith(`${pkg.name}/`))
-}
-
-/** The row id a tree entry id ends in: what a user layer addresses. */
-function rowIdOf(entryId: string | null): string | null {
-  return entryId === null ? null : entryId.slice(entryId.lastIndexOf(':') + 1)
-}
-
-/** What a person calls one tree entry: its harness name, else its row id. */
-function rowLabel(t: Translate, entryId: string): string {
-  const id = rowIdOf(entryId) as string
-  const key = copyKey('name', id)
-  return key === undefined ? id : t(key)
-}
-
-/** What one preset row shows: a title, a one-liner, and whether the person installed it. */
-function presetRowCopy(
-  row: PresetRow, packages: readonly PluginPackageView[], t: Translate,
-): { title: string; description?: string; local: boolean } {
-  const pkg = packageOf(row.moduleName, packages)
-  if (pkg !== undefined) {
-    const addable = pkg.addable.find(entry => entry.moduleName === row.moduleName)
-    return {
-      title: addable?.title ?? pkg.title ?? shortName(pkg.name),
-      ...pkg.description === undefined ? {} : { description: pkg.description },
-      local: pkg.trust === 'external',
-    }
-  }
-  const harness = harnessCopy(t, row.moduleName, rowIdOf(row.entryId))
-  if (harness !== undefined) return { ...harness, local: false }
-  return { title: shortName(row.moduleName), description: row.moduleName, local: !row.moduleName.startsWith(FIRST_PARTY_SCOPE) }
-}
-
-/** The roster row shown when the switcher has no explicit choice. */
-function fallbackPreset(presets: readonly PresetGroup[]): PresetGroup | undefined {
-  return presets.find(preset => preset.isDefault) ?? presets[0]
-}
-
-function presetLabel(preset: PresetGroup, t: Translate, presetName: (preset: PresetGroup) => string): string {
-  const name = presetName(preset)
-  if (preset.broken !== undefined) return t('presetOptionBroken', { name })
-  if (preset.isDefault) return t('presetOptionDefault', { name })
-  return name
-}
 
 /** Status dot naming a live root-fiber phase. */
 function PhaseDot({ phase, t }: { readonly phase: RowPhase; readonly t: Translate }): ReactNode {
@@ -375,57 +292,6 @@ function PackageCard({
   )
 }
 
-/** One row of the selected preset's composition, as a card with its switch. */
-function PresetCard({ preset, row, packages, t, busy, onSetDisabled, onRemove }: {
-  readonly preset: PresetGroup
-  readonly row: PresetRow
-  readonly packages: readonly PluginPackageView[]
-  readonly t: Translate
-  readonly busy: boolean
-  readonly onSetDisabled: (rowId: string, disabled: boolean) => void
-  readonly onRemove: (rowId: string) => void
-}): ReactNode {
-  const id = rowIdOf(row.entryId)
-  const copy = presetRowCopy(row, packages, t)
-  const lockedOff = row.enabled === false && row.disabledBy === 'composition'
-  return (
-    <li className={css.card} data-preset-row={row.entryId ?? undefined} data-plugin-source={row.source}>
-      <div className={css.cardHead}>
-        <div className={css.cardMain}>
-          <div className={css.titleRow}>
-            <span className={css.cardTitle}>{copy.title}</span>
-            {copy.local ? <Tag kind="local">{t('localTag')}</Tag> : null}
-            {row.fiberPhase === 'failed' ? <Tag kind="problem">{t('rowStateFailed')}</Tag> : null}
-          </div>
-          {copy.description === undefined ? null : <span className={css.cardDesc}>{copy.description}</span>}
-        </div>
-        <div className={css.cardEnd}>
-          {id === null
-            ? <span className={css.rowNote} title={t('rowNoId')}>{t('rowNoId')}</span>
-            : (
-              <>
-                {row.source === 'user'
-                  ? (
-                    <TextButton label={t('rowRemoveLabel', { name: copy.title })} disabled={busy} danger onClick={() => { onRemove(id) }}>
-                      {t('rowRemove')}
-                    </TextButton>
-                  )
-                  : null}
-                <Switch
-                  checked={row.enabled !== false}
-                  label={t('rowToggle', { name: copy.title })}
-                  disabled={busy || preset.broken !== undefined || lockedOff}
-                  {...lockedOff ? { title: t('rowLockedByComposition') } : {}}
-                  onChange={(checked) => { onSetDisabled(id, !checked) }}
-                />
-              </>
-            )}
-        </div>
-      </div>
-    </li>
-  )
-}
-
 /** The sentence for one package the Host removed again after the install. */
 function removedText(entry: PluginInstallRejection, t: Translate): string {
   return entry.reason.startsWith('row ')
@@ -564,40 +430,13 @@ function ConfirmDialog({ confirm, t, packages, presets, presetName, onConfirm, o
   )
 }
 
-function noticeText(notice: ManagerNotice, t: Translate): string {
-  switch (notice.kind) {
-    case 'restart': return t('restartNotice')
-    case 'done': return t('doneNotice')
-    case 'failed': {
-      switch (notice.code) {
-        case 'plugins/not-enableable': return t('notEnableable', { reason: notice.reason })
-        case 'plugins/enable-failed': return t('enableFailed', { reason: notice.reason })
-        case 'plugins/row-conflict': return t('rowConflict', { row: notice.rowId ?? '' })
-        case 'plugins/not-installed': return t('notInstalled', { name: notice.packageName ?? '' })
-        default: return refusalText(notice, t)
-      }
-    }
-  }
-}
-
-/** The copy for a refusal every mutation can meet: the manager is busy, or a session is running. */
-function refusalText(failure: { readonly code: string; readonly reason: string }, t: Translate): string {
-  switch (failure.code) {
-    case 'plugins/busy': return t('busy', { reason: failure.reason })
-    case 'plugins/agents-running': return t('agentsRunning', { reason: failure.reason })
-    default: return failure.code === 'plugins/install-failed' ? t('installFailed') : t('actionFailed', { reason: failure.reason })
-  }
-}
-
-/** Render the plugin manager: installed packages first, then the selected preset's composition. */
+/** Render the plugin manager: the installed packages, the install dialog, and the confirmation. */
 export function PluginManagerSettingsTab(props: PluginManagerSettingsTabProps): ReactNode {
   const { t, presetName, ensure } = props
   const state = props.usePluginManager(snapshot => snapshot)
   const [expanded, setExpanded] = useState<string | null>(null)
-  const [switcherOpen, setSwitcherOpen] = useState(false)
   useEffect(() => { ensure() }, [ensure])
 
-  const selected = state.presets.find(preset => preset.id === state.selectedPreset) ?? fallbackPreset(state.presets)
   const restartPending = state.packages.filter(pkg => pkg.status === 'restart-required').map(pkg => pkg.title ?? shortName(pkg.name))
   const loaded = state.status === 'ready' || state.status === 'error'
 
@@ -632,94 +471,35 @@ export function PluginManagerSettingsTab(props: PluginManagerSettingsTabProps): 
         )}
       {loaded
         ? (
-          <>
-            <section className={css.group} data-plugin-scope="global">
-              <div className={css.groupTitleRow}>
-                <h3 className={css.groupTitle}>{t('installedTitle')}</h3>
-                <span className={css.count} data-plugin-count={state.packages.length}>{`${String(state.packages.length)} ${t('countUnit')}`}</span>
-              </div>
-              {state.packages.length === 0
-                ? <p className={css.empty}>{t('empty')}</p>
-                : (
-                  <ul className={css.cards}>
-                    {state.packages.map(pkg => (
-                      <PackageCard
-                        key={pkg.name}
-                        pkg={pkg}
-                        t={t}
-                        busy={state.busy.includes(pkg.name)}
-                        open={expanded === pkg.name}
-                        presets={state.presets}
-                        globalModules={state.globalModules}
-                        presetName={presetName}
-                        onToggleOpen={() => { setExpanded(current => current === pkg.name ? null : pkg.name) }}
-                        onSetEnabled={(enabled) => { props.setEnabled(pkg.name, enabled) }}
-                        onRetry={() => { props.retry(pkg.name) }}
-                        onUninstall={() => { props.uninstall(pkg.name) }}
-                        onAddRow={(declaredName, target) => { props.addRow(pkg.name, declaredName, target) }}
-                      />
-                    ))}
-                  </ul>
-                )}
-            </section>
-            <section className={css.group} data-plugin-scope="preset" data-preset-id={selected?.id}>
-              <div className={css.groupTitleRow}>
-                <h3 className={css.groupTitle}>{t('presetTitle')}</h3>
-                {selected === undefined
-                  ? null
-                  : (
-                    <Menu
-                      open={switcherOpen}
-                      onClose={() => { setSwitcherOpen(false) }}
-                      items={state.presets.map(preset => ({ id: preset.id, label: presetLabel(preset, t, presetName) }))}
-                      selectedId={selected.id}
-                      onSelect={(id) => {
-                        setSwitcherOpen(false)
-                        props.selectPreset(id)
-                      }}
-                      align="end"
-                      portal
-                      anchor={(
-                        <button
-                          type="button"
-                          className={css.switcher}
-                          aria-haspopup="menu"
-                          aria-expanded={switcherOpen}
-                          aria-label={t('switcherLabel')}
-                          onClick={() => { setSwitcherOpen(value => !value) }}
-                        >
-                          <span className={css.switcherLabel}>{presetLabel(selected, t, presetName)}</span>
-                          <IconChevronDownOutline14 className={css.chevron} aria-hidden="true" />
-                        </button>
-                      )}
+          <section className={css.group} data-plugin-scope="global">
+            <div className={css.groupTitleRow}>
+              <h3 className={css.groupTitle}>{t('installedTitle')}</h3>
+              <span className={css.count} data-plugin-count={state.packages.length}>{`${String(state.packages.length)} ${t('countUnit')}`}</span>
+            </div>
+            {state.packages.length === 0
+              ? <p className={css.empty}>{t('empty')}</p>
+              : (
+                <ul className={css.cards}>
+                  {state.packages.map(pkg => (
+                    <PackageCard
+                      key={pkg.name}
+                      pkg={pkg}
+                      t={t}
+                      busy={state.busy.includes(pkg.name)}
+                      open={expanded === pkg.name}
+                      presets={state.presets}
+                      globalModules={state.globalModules}
+                      presetName={presetName}
+                      onToggleOpen={() => { setExpanded(current => current === pkg.name ? null : pkg.name) }}
+                      onSetEnabled={(enabled) => { props.setEnabled(pkg.name, enabled) }}
+                      onRetry={() => { props.retry(pkg.name) }}
+                      onUninstall={() => { props.uninstall(pkg.name) }}
+                      onAddRow={(declaredName, target) => { props.addRow(pkg.name, declaredName, target) }}
                     />
-                  )}
-              </div>
-              <p className={css.groupSub}>{t('presetSubtitle')}</p>
-              {selected === undefined
-                ? <p className={css.empty}>{t('presetNoRoster')}</p>
-                : selected.broken !== undefined
-                  ? <p className={css.reason} role="alert">{selected.broken}</p>
-                  : selected.rows.length === 0
-                    ? <p className={css.empty}>{t('presetRowsEmpty')}</p>
-                    : (
-                      <ul className={css.cards}>
-                        {selected.rows.map((row, index) => (
-                          <PresetCard
-                            key={`${row.entryId ?? row.moduleName}:${String(index)}`}
-                            preset={selected}
-                            row={row}
-                            packages={state.packages}
-                            t={t}
-                            busy={row.entryId !== null && state.busy.includes(rowKey({ kind: 'preset', preset: selected.id }, rowIdOf(row.entryId) as string))}
-                            onSetDisabled={(rowId, disabled) => { props.setRowDisabled({ kind: 'preset', preset: selected.id }, rowId, disabled) }}
-                            onRemove={(rowId) => { props.removeRow({ kind: 'preset', preset: selected.id }, rowId) }}
-                          />
-                        ))}
-                      </ul>
-                    )}
-            </section>
-          </>
+                  ))}
+                </ul>
+              )}
+          </section>
         )
         : null}
       <InstallDialog

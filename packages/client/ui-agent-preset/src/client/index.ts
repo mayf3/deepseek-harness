@@ -43,6 +43,7 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
   }
 }
 
+export type { AgentPresetDetailOwnerProps } from './slot-contract.ts'
 export type { AgentPresetLabelInjected, AgentPresetLabelProps } from './AgentPresetLabel.tsx'
 export type { AgentPresetSeatInjected, AgentPresetSeatProps } from './AgentPresetSeat.tsx'
 export type { AgentPresetSectionInjected, AgentPresetSectionProps } from './AgentPresetSection.tsx'
@@ -200,5 +201,9 @@ export function apply(ctx: ClientContext): void {
     label: () => ctx.locale.bind('settings.agentPreset')('nav'),
     locale: 'settings.agentPreset',
     inject: sectionInjected,
+    // A preset's detail page is assembled from sections other plugins
+    // contribute (the plugin manager's capabilities list); the roster only
+    // names the preset.
+    children: { 'settings.agentPreset.detail': { kind: 'list', scope: 'root' } },
   }, AgentPresetSection))
 }

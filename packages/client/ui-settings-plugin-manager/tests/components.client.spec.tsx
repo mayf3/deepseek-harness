@@ -6,7 +6,7 @@ import { bindSnapshotSelector } from '@deepseek-ai/dsh-client-test-runtime'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import { PluginManagerSettingsTab } from '../src/client/PluginManagerSettingsTab.tsx'
 import type { PluginManagerSettingsTabProps } from '../src/client/PluginManagerSettingsTab.tsx'
-import { rowKey, type InstallState, type PluginManagerState, type PresetGroup } from '../src/client/manager-store.ts'
+import type { InstallState, PluginManagerState, PresetGroup } from '../src/client/manager-store.ts'
 import { en, zh, type PluginManagerLocaleKey } from '../src/client/locales.ts'
 
 afterEach(cleanup)
@@ -49,14 +49,11 @@ const READY: PluginManagerState = {
   packages: [],
   presets: [],
   globalModules: [],
-  selectedPreset: null,
   busy: [],
   notice: null,
   install: IDLE_INSTALL,
   confirm: null,
 }
-
-const STANDARD_TARGET = { kind: 'preset', preset: 'standard' } as const
 
 function renderTab(state: Partial<PluginManagerState> = {}) {
   const store = createSnapshotStore<PluginManagerState>({ ...READY, ...state })
@@ -76,7 +73,6 @@ function renderTab(state: Partial<PluginManagerState> = {}) {
     addRow: vi.fn(),
     removeRow: vi.fn(),
     setRowDisabled: vi.fn(),
-    selectPreset: vi.fn(),
     dismissNotice: vi.fn(),
   }
   const props = {
@@ -117,7 +113,6 @@ describe('PluginManagerSettingsTab', () => {
     fireEvent.click(screen.getByRole('button', { name: en.retry }))
     expect(actions.refresh).toHaveBeenCalledTimes(1)
     expect(screen.getByText(en.empty)).toBeTruthy()
-    expect(screen.getByText(en.presetNoRoster)).toBeTruthy()
 
     set({ status: 'ready' })
     fireEvent.click(screen.getByRole('button', { name: en.refresh }))
@@ -279,77 +274,6 @@ describe('PluginManagerSettingsTab', () => {
     expect(screen.getByText('A tool')).toBeTruthy()
     expect(screen.getByText('./b')).toBeTruthy()
     expect(screen.queryByText('./c')).toBeNull()
-  })
-
-  it('renders the selected preset composition as cards with harness names, local marks, switches, and removal', () => {
-    const rows: PresetGroup['rows'] = [
-      { entryId: 'include:agent-presets:persona', moduleName: '@deepseek-ai/dsh-persona', enabled: true, fiberPhase: 'active', source: 'preset' },
-      { entryId: 'include:agent-presets:tool-subagent-fork', moduleName: '@deepseek-ai/dsh-tool-subagent', enabled: true, fiberPhase: null, source: 'preset' },
-      { entryId: 'nameless', moduleName: '@deepseek-ai/dsh-unknown-thing', enabled: true, fiberPhase: null, source: 'preset' },
-      { entryId: 'extra', moduleName: '@fixture/extra', enabled: false, fiberPhase: null, source: 'user', disabledBy: 'user' },
-      { entryId: 'gated', moduleName: '@fixture/gated', enabled: false, fiberPhase: null, source: 'preset', disabledBy: 'composition' },
-      { entryId: 'pwsh', moduleName: '@deepseek-ai/dsh-tool-pwsh', enabled: 'conditional', fiberPhase: null, source: 'preset' },
-      { entryId: 'crashy', moduleName: '@fixture/crashy', enabled: true, fiberPhase: 'failed', source: 'preset' },
-      { entryId: null, moduleName: '@deepseek-ai/dsh-tool-todo', enabled: true, fiberPhase: null, source: 'preset' },
-      { entryId: 'foo', moduleName: 'dsh-tool-foo', enabled: true, fiberPhase: null, source: 'user' },
-      { entryId: 'sub', moduleName: 'multi/a', enabled: true, fiberPhase: null, source: 'user' },
-    ]
-    const { actions, set } = renderTab({
-      packages: [
-        pkg({ name: 'dsh-tool-foo', kind: 'plugin', status: 'plain', title: 'Foo tool', description: 'A foo.' }),
-        pkg({ name: '@fixture/extra', kind: 'plugin', status: 'plain' }),
-        pkg({ name: 'multi', kind: 'plugin', status: 'plain', addable: [{ moduleName: 'multi/a', declaredName: './a', title: 'A tool', ok: true }] }),
-      ],
-      presets: [preset({ rows }), preset({ id: 'research', trust: 'user', name: 'Research', isDefault: false })],
-    })
-    const switcher = screen.getByRole('button', { name: en.switcherLabel })
-    expect(switcher.textContent).toBe('标准 (default)')
-    // Harness modules read by their dictionary names: the row id first, then the module.
-    expect(screen.getByText(en['name.persona'])).toBeTruthy()
-    expect(screen.getByText(en['desc.persona'])).toBeTruthy()
-    expect(screen.getByText(en['name.tool-subagent-fork'])).toBeTruthy()
-    expect(screen.getByText(en['name.tool-todo'])).toBeTruthy()
-    expect(screen.getByText('unknown-thing')).toBeTruthy()
-    expect(screen.getByText('@deepseek-ai/dsh-unknown-thing')).toBeTruthy()
-    // Installed packages read by their manifest title, an addable module by its own.
-    expect(screen.getAllByText('Foo tool')).toHaveLength(2)
-    expect(screen.getAllByText('A foo.')).toHaveLength(2)
-    expect(screen.getByText('A tool')).toBeTruthy()
-    // Only the local mark and the problem tag; off and conditional rows show through their switches.
-    expect(screen.getAllByText(en.localTag)).toHaveLength(5)
-    expect(screen.getByText(en.rowStateFailed)).toBeTruthy()
-    expect(document.querySelectorAll('[data-preset-row] [data-kind]')).toHaveLength(6)
-    expect(screen.getByText(en.rowNoId)).toBeTruthy()
-    expect(screen.queryByRole('switch', { name: `Enable ${en['name.tool-todo']}` })).toBeNull()
-    expect(screen.getByRole('switch', { name: `Enable ${en['name.tool-pwsh']}` }).getAttribute('aria-checked')).toBe('true')
-
-    fireEvent.click(screen.getByRole('switch', { name: `Enable ${en['name.persona']}` }))
-    expect(actions.setRowDisabled).toHaveBeenCalledWith(STANDARD_TARGET, 'persona', true)
-    const extra = screen.getByRole('switch', { name: 'Enable extra' })
-    expect(extra.getAttribute('aria-checked')).toBe('false')
-    fireEvent.click(extra)
-    expect(actions.setRowDisabled).toHaveBeenLastCalledWith(STANDARD_TARGET, 'extra', false)
-    const gated = screen.getByRole('switch', { name: 'Enable gated' }) as HTMLButtonElement
-    expect(gated.disabled).toBe(true)
-    expect(gated.title).toBe(en.rowLockedByComposition)
-    fireEvent.click(screen.getByRole('button', { name: 'Remove extra from this preset' }))
-    expect(actions.removeRow).toHaveBeenCalledWith(STANDARD_TARGET, 'extra')
-    expect(screen.queryByRole('button', { name: `Remove ${en['name.persona']} from this preset` })).toBeNull()
-
-    set({ busy: [rowKey(STANDARD_TARGET, 'persona')] })
-    expect(screen.getByRole('switch', { name: `Enable ${en['name.persona']}` })).toHaveProperty('disabled', true)
-
-    fireEvent.click(switcher)
-    fireEvent.keyDown(document, { key: 'Escape' })
-    expect(screen.queryByRole('menuitem')).toBeNull()
-    fireEvent.click(switcher)
-    fireEvent.click(screen.getByRole('menuitem', { name: 'Research' }))
-    expect(actions.selectPreset).toHaveBeenCalledWith('research')
-    set({ selectedPreset: 'research' })
-    expect(screen.getByText(en.presetRowsEmpty)).toBeTruthy()
-    set({ selectedPreset: 'broken', presets: [preset({ id: 'broken', trust: 'user', name: 'Broken', isDefault: false, broken: 'bad yaml' })] })
-    expect(screen.getByRole('button', { name: en.switcherLabel }).textContent).toBe('Broken (failed to load)')
-    expect(screen.getByRole('alert').textContent).toBe('bad yaml')
   })
 
   it('drives the install dialog through its phases and words each outcome', () => {

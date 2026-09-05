@@ -466,3 +466,79 @@
   opacity: 0.4;
   cursor: default;
 }
+
+/* The detail page: a breadcrumb back to the roster, the preset's name and
+   marks, then the sections other plugins contribute. */
+.crumb {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 0;
+  padding: 0;
+  background: none;
+  color: var(--dsw-alias-label-tertiary);
+  font: inherit;
+  font-size: 13px;
+  line-height: 20px;
+  cursor: pointer;
+}
+
+.crumb:hover {
+  color: var(--dsw-alias-label-primary);
+}
+
+.crumb:focus-visible {
+  outline: 2px solid var(--dsw-alias-brand-primary);
+  outline-offset: 2px;
+}
+
+.crumbIcon {
+  transform: rotate(90deg);
+}
+
+.crumbSep::before {
+  content: '›';
+}
+
+.crumbHere {
+  color: var(--dsw-alias-label-primary);
+  font-weight: 600;
+}
+
+.detailHead {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 12px 0 4px;
+}
+
+.detailHead .inUse {
+  margin-left: 0;
+}
+
+.detailTitle {
+  margin: 0;
+  font-size: 20px;
+  line-height: 28px;
+  font-weight: 600;
+}
+
+.detailDesc {
+  margin: 0 0 20px;
+  max-width: 64ch;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 14px;
+  line-height: 22px;
+}
+
+/* The sections other plugins contribute to the detail page, one under another. */
+.detailSections {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.detailSections > * + * {
+  padding-top: 18px;
+  border-top: 0.5px solid var(--dsw-alias-border-l2);
+}

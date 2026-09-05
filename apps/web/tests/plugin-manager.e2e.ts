@@ -19,6 +19,7 @@ import { ZH_BROWSER_LOCALE, saveFailureShot } from './support.ts'
 
 const SNAPSHOT_DIR = fileURLToPath(new URL('./expected/plugin-manager', import.meta.url))
 const MANAGER_EXPECTED = join(SNAPSHOT_DIR, 'manager.expected.md')
+const DETAIL_EXPECTED = join(SNAPSHOT_DIR, 'preset-detail.expected.md')
 const FIXTURE_PLUGINS = fileURLToPath(new URL('./fixtures/plugins', import.meta.url))
 const MODE = webSnapshotMode()
 
@@ -73,12 +74,27 @@ describe('web e2e: plugin manager', () => {
     return dialog
   }
 
+  /** Open the settings dialog on one preset's detail page. */
+  async function openPresetDetail(name: string) {
+    if (await page.getByRole('dialog', { name: '设置' }).count() > 0) {
+      await page.keyboard.press('Escape')
+      await expect.poll(() => page.getByRole('dialog', { name: '设置' }).count(), { timeout: 5_000 }).toBe(0)
+    }
+    await page.getByRole('button', { name: '设置', exact: true }).click()
+    const dialog = page.getByRole('dialog', { name: '设置' })
+    await dialog.waitFor({ timeout: 10_000 })
+    await dialog.getByRole('button', { name: 'Agent 预设', exact: true }).click()
+    await dialog.getByRole('button', { name: `配置: ${name}` }).click()
+    await dialog.getByRole('heading', { name }).waitFor({ timeout: 10_000 })
+    return dialog
+  }
+
   /** One file under the harness home, or the empty string while it does not exist. */
   async function homeFile(...segments: string[]): Promise<string> {
     return readFile(join(scaffold.harnessHome, ...segments), 'utf8').catch(() => '')
   }
 
-  it('lists the profile packages with their switches and the preset composition', async () => {
+  it('lists the profile packages with their switches', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-plugin-manager-list'))
     const dialog = await openPluginsTab('插件管理')
 
@@ -95,10 +111,6 @@ describe('web e2e: plugin manager', () => {
     await dialog.getByRole('button', { name: '卸载 示例插件' }).waitFor({ timeout: 5_000 })
     await dialog.getByRole('button', { name: '收起 示例插件' }).click()
     await expect.poll(() => dialog.getByRole('button', { name: '卸载 示例插件' }).count(), { timeout: 5_000 }).toBe(0)
-    // The default preset's composition renders beside the packages under the
-    // harness dictionary's names.
-    expect(await dialog.getByRole('button', { name: '选择要管理的 Agent 预设' }).textContent()).toContain('默认')
-    expect(await dialog.getByRole('switch', { name: '启用 终端' }).count()).toBe(1)
 
     const snapshot = await captureStableAria(page, '[role="dialog"]', scaffold.workspaceCwd)
     await compareOrRefreshGolden(MANAGER_EXPECTED, snapshot, MODE)
@@ -127,7 +139,7 @@ describe('web e2e: plugin manager', () => {
     expect(tripwire.pageErrors).toEqual([])
   }, 60_000)
 
-  it('adds a plain plugin to a preset, switches its row off there, and removes it again', async () => {
+  it('adds a plain plugin to a preset, then switches it off and deletes it on the preset\'s detail page', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-plugin-manager-preset-row'))
     const dialog = await openPluginsTab('插件管理')
     await dialog.getByRole('button', { name: '加入到…' }).click()
@@ -136,50 +148,52 @@ describe('web e2e: plugin manager', () => {
     const overlay = (): Promise<string> => readFile(join(presetRoot, 'standard', 'cordis.patch.yml'), 'utf8').catch(() => '')
     await expect.poll(async () => (await overlay()).includes('@fixture/plain-plugin'), { timeout: 10_000 }).toBe(true)
     expect(await overlay()).toContain('id: fixture/plain-plugin')
-    // The preset composition lists the new row under the package's title as
-    // the user's, switched on, with the local mark; the **Add to…** menu
-    // now marks that preset as joined.
+    // The **Add to…** menu now marks that preset as joined. Escape would
+    // close the settings dialog as well, so the menu closes through its anchor.
+    await dialog.getByRole('button', { name: '加入到…' }).click()
+    await page.getByRole('menuitem', { name: '预设：标准模式（已加入）' }).waitFor({ timeout: 5_000 })
+    await dialog.getByRole('button', { name: '加入到…' }).click()
+    await expect.poll(() => page.getByRole('menuitem').count(), { timeout: 5_000 }).toBe(0)
+
+    // The preset's detail page, behind the gear on its card, lists the new
+    // row under the package's title as the user's, switched on, with the
+    // local mark.
+    await dialog.getByRole('button', { name: 'Agent 预设', exact: true }).click()
+    await dialog.getByRole('button', { name: '配置: 标准模式' }).click()
+    await dialog.getByRole('heading', { name: '标准模式' }).waitFor({ timeout: 10_000 })
     const presetRow = dialog.locator('[data-preset-row="fixture/plain-plugin"]')
     const rowToggle = presetRow.getByRole('switch', { name: '启用 示例插件' })
     await rowToggle.waitFor({ timeout: 10_000 })
     expect(await rowToggle.getAttribute('aria-checked')).toBe('true')
     expect(await presetRow.getAttribute('data-plugin-source')).toBe('user')
     expect(await presetRow.getByText('本地', { exact: true }).count()).toBe(1)
-    // Escape would close the settings dialog as well, so the menu closes
-    // through its own anchor.
-    await dialog.getByRole('button', { name: '加入到…' }).click()
-    await page.getByRole('menuitem', { name: '预设：标准模式（已加入）' }).waitFor({ timeout: 5_000 })
-    await dialog.getByRole('button', { name: '加入到…' }).click()
-    await expect.poll(() => page.getByRole('menuitem').count(), { timeout: 5_000 }).toBe(0)
+    const detailSnapshot = await captureStableAria(page, '[data-preset-detail="standard"]', scaffold.workspaceCwd)
+    await compareOrRefreshGolden(DETAIL_EXPECTED, detailSnapshot, MODE)
 
     await rowToggle.click()
     await expect.poll(async () => (await overlay()).includes('disabled: true'), { timeout: 10_000 }).toBe(true)
     await expect.poll(() => rowToggle.getAttribute('aria-checked'), { timeout: 10_000 }).toBe('false')
 
-    await presetRow.getByRole('button', { name: '从这个预设移出 示例插件' }).click()
+    await presetRow.getByRole('button', { name: '从这个预设删除 示例插件' }).click()
     await expect.poll(async () => (await overlay()).includes('@fixture/plain-plugin'), { timeout: 10_000 }).toBe(false)
     await expect.poll(() => rowToggle.count(), { timeout: 10_000 }).toBe(0)
+    // The breadcrumb leads back to the roster.
+    await dialog.getByRole('button', { name: '返回 Agent 预设' }).click()
+    await dialog.getByRole('button', { name: '配置: 标准模式' }).waitFor({ timeout: 10_000 })
     expect(tripwire.pageErrors).toEqual([])
   }, 60_000)
 
   it('writes a configuration field under one preset scope and leaves the shared value alone', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-plugin-manager-scope'))
-    const dialog = await openPluginsTab('插件配置')
-    const scope = dialog.getByRole('button', { name: '选择这些设置生效的 Agent 预设' })
-    await scope.waitFor({ timeout: 10_000 })
-    expect(await scope.textContent()).toBe('所有预设')
-
-    await scope.click()
-    await page.getByRole('menuitem', { name: '标准模式（默认）' }).click()
-    await expect.poll(() => scope.getAttribute('data-settings-scope'), { timeout: 5_000 }).toBe('preset/standard')
-    await dialog.getByText('这里的值只对本预设生效；未覆盖的字段继承"所有预设"的值。').waitFor({ timeout: 5_000 })
-
-    await dialog.getByText('终端', { exact: true }).click()
-    const timeout = dialog.getByLabel('命令超时（毫秒）')
+    const dialog = await openPresetDetail('标准模式')
+    // The detail page's settings section edits the preset's own scope.
+    const settingsSection = dialog.locator('[data-settings-scope="preset/standard"]')
+    await settingsSection.getByRole('button', { name: '展开设置: 终端' }).click()
+    const timeout = settingsSection.getByLabel('命令超时（毫秒）')
     await timeout.waitFor({ timeout: 10_000 })
     expect(await timeout.inputValue()).toBe('60000')
     await timeout.fill('12000')
-    await dialog.getByRole('button', { name: '保存', exact: true }).click()
+    await settingsSection.getByRole('button', { name: '保存', exact: true }).click()
 
     const settings = (): Promise<string> => homeFile('settings.yaml')
     await expect.poll(async () => (await settings()).includes('timeoutMs: 12000'), { timeout: 10_000 }).toBe(true)
@@ -187,19 +201,16 @@ describe('web e2e: plugin manager', () => {
     expect(document).toContain('scopes:')
     expect(document).toContain('preset/standard:')
     expect(document.indexOf('scopes:')).toBeLessThan(document.indexOf('timeoutMs: 12000'))
-    // Back under the shared instance the field still shows the composed default.
-    await scope.click()
-    await page.getByRole('menuitem', { name: '所有预设' }).click()
-    await expect.poll(() => scope.getAttribute('data-settings-scope'), { timeout: 5_000 }).toBe('global')
-    const expandTerminal = dialog.getByRole('button', { name: '展开设置: 终端' })
-    if (await expandTerminal.count() > 0) await expandTerminal.click()
-    await expect.poll(() => dialog.getByLabel('命令超时（毫秒）').inputValue(), { timeout: 5_000 }).toBe('60000')
-    expect(await dialog.getByText('已覆盖').count()).toBe(0)
+    // On the configuration tab the shared instance still shows the composed default.
+    const plugins = await openPluginsTab('插件配置')
+    await plugins.getByRole('button', { name: '展开设置: 终端' }).click()
+    await expect.poll(() => plugins.getByLabel('命令超时（毫秒）').inputValue(), { timeout: 5_000 }).toBe('60000')
+    expect(await plugins.getByText('已覆盖').count()).toBe(0)
     expect(tripwire.pageErrors).toEqual([])
   }, 60_000)
 
   it.skipIf(MODE === 'record')('keeps the fixture inventory closed', async () => {
     expect(tripwire.warnings).toEqual([])
-    await assertFixtureInventory(SNAPSHOT_DIR, ['manager.expected.md'])
+    await assertFixtureInventory(SNAPSHOT_DIR, ['manager.expected.md', 'preset-detail.expected.md'])
   })
 })

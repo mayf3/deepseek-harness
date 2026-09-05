@@ -20,14 +20,9 @@
   - heading "插件" [level=2]
   - paragraph: 配置和查看本部署已安装的插件。
   - tablist "插件视图":
-    - tab "插件配置" [selected]
     - tab "插件管理"
+    - tab "插件配置" [selected]
   - tabpanel "插件配置":
-    - text: 生效范围
-    - button "选择这些设置生效的 Agent 预设":
-      - text: 所有预设
-      - img
-    - paragraph: 这里的值对所有 Agent 预设生效，除非某个预设单独覆盖。
     - list:
       - listitem:
         - 'button "展开设置: 终端"':

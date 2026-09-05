@@ -2,9 +2,7 @@
 
 /** Locale keys these surfaces render. */
 export type PluginsSettingsLocaleKey =
-  | 'nav' | 'title' | 'intro' | 'tabs' | 'configurableTab' | 'empty'
-  | 'scopeLabel' | 'scopeSwitcherLabel' | 'scopeGlobal' | 'scopePresetDefault' | 'scopePresetBroken'
-  | 'scopeHintGlobal' | 'scopeHintPreset' | 'scopeRosterFailed' | 'notMounted'
+  | 'nav' | 'title' | 'intro' | 'tabs' | 'configurableTab' | 'empty' | 'presetSettingsTitle' | 'notMounted'
   | 'overridden' | 'inherited' | 'reset' | 'readOnly' | 'expand' | 'collapse'
   | 'save' | 'saving' | 'discard' | 'unsaved' | 'saveFailed' | 'invalidNumber'
   | 'bashTitle' | 'bashDescription' | 'bashTimeoutMs' | 'bashTimeoutMsHint'
@@ -30,15 +28,8 @@ export const en: Record<PluginsSettingsLocaleKey, string> = {
   tabs: 'Plugin views',
   configurableTab: 'Plugin configuration',
   empty: 'This deployment exposes no plugin settings.',
-  scopeLabel: 'Applies to',
-  scopeSwitcherLabel: 'Choose which agent preset these settings apply to',
-  scopeGlobal: 'All presets',
-  scopePresetDefault: '{name} (default)',
-  scopePresetBroken: '{name} (failed to load)',
-  scopeHintGlobal: 'Values here apply to every agent preset unless a preset overrides them.',
-  scopeHintPreset: 'Values here apply to this preset only; a field it does not override inherits the value for all presets.',
-  scopeRosterFailed: 'Agent presets could not be listed; only the shared settings are editable.',
-  notMounted: 'This preset does not compose the plugin; saved values take effect once a preset does.',
+  presetSettingsTitle: 'Settings',
+  notMounted: 'No running session composed from this preset has this plugin loaded; saved values apply to the sessions that load it.',
   overridden: 'Overridden',
   inherited: 'Inherited',
   reset: 'Reset to default',
@@ -100,15 +91,8 @@ export const zh: Record<PluginsSettingsLocaleKey, string> = {
   tabs: '插件视图',
   configurableTab: '插件配置',
   empty: '本部署没有开放任何插件设置。',
-  scopeLabel: '生效范围',
-  scopeSwitcherLabel: '选择这些设置生效的 Agent 预设',
-  scopeGlobal: '所有预设',
-  scopePresetDefault: '{name}（默认）',
-  scopePresetBroken: '{name}（加载失败）',
-  scopeHintGlobal: '这里的值对所有 Agent 预设生效，除非某个预设单独覆盖。',
-  scopeHintPreset: '这里的值只对本预设生效；未覆盖的字段继承"所有预设"的值。',
-  scopeRosterFailed: '暂时无法列出 Agent 预设，只能编辑共用设置。',
-  notMounted: '本预设未组合这个插件；保存的值会在某个预设组合它之后生效。',
+  presetSettingsTitle: '设置',
+  notMounted: '本预设当前没有运行中的会话加载这个插件；保存的值会在加载它的会话中生效。',
   overridden: '已覆盖',
   inherited: '继承',
   reset: '恢复默认',

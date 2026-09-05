@@ -1,14 +1,15 @@
 /**
  * The scope a card edits, and the per-scope forms behind one card.
  *
- * The configurable tab offers one scope switch over every card: the global
- * instance, or one agent preset's named scope. A card controller stages
+ * The cards edit one scope at a time: the global instance on the
+ * configuration tab, or one agent preset's named scope while that preset's
+ * detail page is open. A card controller stages
  * edits through {@link ScopedCardForms}, which keeps one {@link CardForm} per
  * scope — drafts belong to the scope they were typed under and survive a
  * switch — and re-projects the selected scope's form whenever the selection
  * or that form moves. Card components stay unaware of scopes: they read the
  * same hooks and call the same actions, which route to the selected form at
- * call time.
+ * call time, so one registration serves both surfaces.
  */
 
 import { createSnapshotStore, type SnapshotStore } from '@deepseek-ai/dsh-client-store'
@@ -17,7 +18,7 @@ import {
   CardForm, type CardActions, type CardFieldSpec, type CardFieldState, type CardSecretSpec, type CardShell,
 } from './card-form.ts'
 
-/** The scope the configurable tab is editing. */
+/** The scope the cards are editing. */
 export interface ScopeSelectionState {
   /** The named settings scope, such as `preset/<id>`; undefined for the global instance. */
   scope: string | undefined
@@ -26,7 +27,7 @@ export interface ScopeSelectionState {
 /** Map key of the global instance inside {@link ScopedCardForms}. */
 const GLOBAL_KEY = ''
 
-/** The one scope selection the configurable tab and every card share. */
+/** The one scope selection the card surfaces and every card share. */
 export class ScopeSelection {
   private readonly store = createSnapshotStore<ScopeSelectionState>({ scope: undefined })
 
@@ -80,7 +81,7 @@ export class ScopedCardForms<T> {
   private readonly listeners = new Set<() => void>()
 
   /**
-   * @param selection - the scope selection shared with the tab.
+   * @param selection - the scope selection shared with the card surfaces.
    * @param bindScope - binds the card's namespace under one scope.
    * @param specs - the section fields the card edits.
    * @param secrets - the card's write-only controls, written outside the section.

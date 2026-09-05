@@ -9,7 +9,7 @@ import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import { apply as settingsApply, inject as settingsInject } from '@deepseek-ai/dsh-client-ui-settings/client'
 import { apply, inject } from '@deepseek-ai/dsh-client-ui-settings-plugins/client'
 import type {
-  BashCardFace, ConfigurablePluginsTabFace, PluginsSettingsSectionInjected, ScopeSwitcherFace,
+  BashCardFace, ConfigurablePluginsTabFace, PluginsSettingsSectionInjected, PresetSettingsFace,
 } from '@deepseek-ai/dsh-client-ui-settings-plugins/client'
 import { SubagentModelSelectionCardController } from '../src/client/subagent-model-selection-card-controller.ts'
 import { apply as hostApply } from '../src/index.ts'
@@ -48,29 +48,24 @@ async function bench(served?: string[]) {
         })),
       },
     }))
-  const listPresets = vi.fn(() => Promise.resolve({
-    ok: true as const,
-    value: {
-      authorable: true,
-      presets: [{ id: 'standard', trust: 'system' as const, isDefault: true }],
-    },
-  }))
   const remote = new TestRemote(ctx, {
-    agentPresets: { list: listPresets },
     credentials: { describe: describeCredentials, set: vi.fn() },
     session: { modelCatalog: models },
     settings: { describe: describeSettings },
   })
   await ctx.plugin({ inject: [...settingsInject], apply: settingsApply }).await()
   return {
-    ctx, slots: ctx.get('slots') as SlotRegistry, describeCredentials, describeSettings, listPresets, models, remote,
+    ctx, slots: ctx.get('slots') as SlotRegistry, describeCredentials, describeSettings, models, remote,
   }
 }
 
 function declareRoot(slots: SlotRegistry): () => void {
   return slots.register({
     name: 'root',
-    children: { 'settings.section': { kind: 'list', scope: 'root' } },
+    children: {
+      'settings.section': { kind: 'list', scope: 'root' },
+      'settings.agentPreset.detail': { kind: 'list', scope: 'root' },
+    },
   } as never, () => null)
 }
 
@@ -80,12 +75,10 @@ describe('ui-settings-plugins apply', () => {
   })
 
   it('declares the services it uses', () => {
-    expect(inject).toEqual([
-      'slots', 'locale', 'remote', 'remote.agentPresets', 'remote.credentials', 'remote.session', 'settingsScope',
-    ])
+    expect(inject).toEqual(['slots', 'locale', 'remote', 'remote.credentials', 'remote.session', 'settingsScope'])
   })
 
-  it('registers one Plugins section and declares the tab and card slots', async () => {
+  it('registers one Plugins section and one preset detail section, and declares the tab and card slots', async () => {
     const { ctx, slots } = await bench()
     declareRoot(slots)
 
@@ -100,6 +93,10 @@ describe('ui-settings-plugins apply', () => {
     expect(tab.options).toMatchObject({ id: 'configurable', order: 0 })
     expect(resolveSlotLabel(tab.options.label)).toBe('插件配置')
     expect(slots.spec('settings.plugin.item')).toMatchObject({ kind: 'keyed', scope: 'root' })
+    // The preset detail section follows the plugin manager's capabilities section.
+    const detail = slots.entries('settings.agentPreset.detail')[0]!
+    expect(detail.options).toMatchObject({ id: 'settings', order: 10 })
+    expect(slots.spec('settings.agentPreset.plugin.item')).toMatchObject({ kind: 'keyed', scope: 'root' })
   })
 
 
@@ -127,7 +124,7 @@ describe('ui-settings-plugins apply', () => {
 
     const tab = slots.entries('settings.plugins.tab')[0]!
     const tabFace = (tab.inject as unknown as () => ConfigurablePluginsTabFace)()
-    expect(Object.keys(tabFace.hooks)).toEqual(['configurablePlugins', 'scopeSwitcher'])
+    expect(Object.keys(tabFace.hooks)).toEqual(['configurablePlugins'])
     for (const entry of slots.entries('settings.plugin.item')) {
       const face = (entry as { inject?: () => unknown }).inject?.() as { hooks: Record<string, unknown> }
       // Each card injects exactly one snapshot store plus its own actions.
@@ -141,8 +138,9 @@ describe('ui-settings-plugins apply', () => {
 
     await ctx.plugin({ inject: [...inject], apply }).await()
 
-    expect(slots.entries('settings.plugin.item').map(entry => entry.options.key))
-      .toEqual(['shell', 'agent-loop', 'subagent-model-selection', 'web-search-deepseek', 'skill-filesystem'])
+    const keys = ['shell', 'agent-loop', 'subagent-model-selection', 'web-search-deepseek', 'skill-filesystem']
+    expect(slots.entries('settings.plugin.item').map(entry => entry.options.key)).toEqual(keys)
+    expect(slots.entries('settings.agentPreset.plugin.item').map(entry => entry.options.key)).toEqual(keys)
   })
 
   it('dispatches the served namespaces its cards claim, and no others', async () => {
@@ -231,27 +229,19 @@ describe('ui-settings-plugins apply', () => {
     expect(describeCredentials).not.toHaveBeenCalled()
   })
 
-  it('lists the roster on first use and switches every card to the selected preset scope', async () => {
-    const { ctx, slots, describeSettings, listPresets, remote } = await bench(['shell'])
+  it('switches every card to a preset scope while its detail page holds the selection', async () => {
+    const { ctx, slots, describeSettings, remote } = await bench(['shell'])
     declareRoot(slots)
     await ctx.plugin({ inject: [...inject], apply }).await()
-    const tab = slots.entries('settings.plugins.tab')[0]!
-    const face = (tab.inject as unknown as () => ConfigurablePluginsTabFace & ScopeSwitcherFace)()
-    expect(listPresets).not.toHaveBeenCalled()
-    face.ensureScopes()
-    await vi.waitFor(() => {
-      expect(face.hooks.scopeSwitcher.getSnapshot()).toMatchObject({
-        status: 'ready', presets: [{ id: 'standard', isDefault: true }],
-      })
-    })
-    // Shipped preset names resolve through the agent-preset dictionaries the
-    // real plugin registers; user-authored metadata stays as declared.
-    ctx.locale.register('settings.agentPreset', 'zh', { presetStandardName: '标准模式' } as never)
-    expect(face.presetName({ id: 'standard', trust: 'system', isDefault: true })).toBe('标准模式')
-    expect(face.presetName({ id: 'mine', trust: 'user', name: '我自己的', isDefault: false })).toBe('我自己的')
+    const section = slots.entries('settings.agentPreset.detail')[0]!
+    const face = (section.inject as unknown as () => PresetSettingsFace)()
+    await vi.waitFor(() => { expect(face.hooks.configurablePlugins.getSnapshot().namespaces).toEqual(['shell']) })
 
-    const bash = slots.entries('settings.plugin.item')[0]!
+    // One controller serves both slots: the card under the preset slot is the tab's card.
+    const bash = slots.entries('settings.agentPreset.plugin.item')[0]!
     const bashFace = (bash.inject as unknown as () => BashCardFace)()
+    const tabBash = slots.entries('settings.plugin.item')[0]!
+    expect((tabBash.inject as unknown as () => BashCardFace)().hooks.bashCard).toBe(bashFace.hooks.bashCard)
     await vi.waitFor(() => { expect(bashFace.hooks.bashCard.getSnapshot()).toMatchObject({ scope: undefined, registered: true }) })
     describeSettings.mockClear()
     face.selectScope('preset/standard')
@@ -260,35 +250,14 @@ describe('ui-settings-plugins apply', () => {
     await vi.waitFor(() => {
       expect(bashFace.hooks.bashCard.getSnapshot()).toMatchObject({ scope: 'preset/standard', registered: false })
     })
-    expect(face.hooks.scopeSwitcher.getSnapshot().scope).toBe('preset/standard')
     // A scoped commit reloads the scoped mirror only.
     describeSettings.mockClear()
     remote.emit('settings/document-updated', ['shell', 1, 'preset/standard'])
     await vi.waitFor(() => { expect(describeSettings).toHaveBeenCalledTimes(1) })
     expect(describeSettings).toHaveBeenCalledWith('preset/standard')
-    // A reconnect re-reads the roster on the next use.
-    ctx.emit('connection/reset')
-    expect(face.hooks.scopeSwitcher.getSnapshot().status).toBe('idle')
-    face.ensureScopes()
-    await vi.waitFor(() => { expect(listPresets).toHaveBeenCalledTimes(2) })
-  })
-
-  it('reports a roster the Host refused or a transport that failed without losing the global instance', async () => {
-    const { ctx, slots, listPresets } = await bench(['shell'])
-    listPresets
-      .mockResolvedValueOnce({ ok: false, error: new RemoteError('gateway/internal', 'no roster', {}) } as never)
-      .mockRejectedValueOnce(new Error('offline'))
-    declareRoot(slots)
-    await ctx.plugin({ inject: [...inject], apply }).await()
-    const tab = slots.entries('settings.plugins.tab')[0]!
-    const face = (tab.inject as unknown as () => ScopeSwitcherFace)()
-    face.ensureScopes()
-    await vi.waitFor(() => { expect(face.hooks.scopeSwitcher.getSnapshot().status).toBe('error') })
-    expect(face.hooks.scopeSwitcher.getSnapshot()).toMatchObject({ scope: undefined, presets: [] })
-    ctx.emit('connection/reset')
-    face.ensureScopes()
-    await vi.waitFor(() => { expect(listPresets).toHaveBeenCalledTimes(2) })
-    await vi.waitFor(() => { expect(face.hooks.scopeSwitcher.getSnapshot().status).toBe('error') })
+    // Leaving the page returns every card to the global instance.
+    face.selectScope(null)
+    expect(bashFace.hooks.bashCard.getSnapshot()).toMatchObject({ scope: undefined, registered: true })
   })
 
   it('registers into a declaration that arrives after apply', async () => {
@@ -306,11 +275,14 @@ describe('ui-settings-plugins apply', () => {
     const fiber = ctx.plugin({ inject: [...inject], apply })
     await fiber.await()
     expect(slots.entries('settings.plugin.item')).toHaveLength(5)
+    expect(slots.entries('settings.agentPreset.plugin.item')).toHaveLength(5)
 
     await fiber.dispose()
 
     expect(slots.entries('settings.section')).toHaveLength(0)
+    expect(slots.entries('settings.agentPreset.detail')).toHaveLength(0)
     expect(slots.spec('settings.plugins.tab')).toBeUndefined()
     expect(slots.spec('settings.plugin.item')).toBeUndefined()
+    expect(slots.spec('settings.agentPreset.plugin.item')).toBeUndefined()
   })
 })

@@ -37,9 +37,6 @@
     },
     {
       "path": "../ui-agent-preset"
-    },
-    {
-      "path": "../../preset/agent-presets"
     }
   ]
 }

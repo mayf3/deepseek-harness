@@ -1,12 +1,16 @@
 /**
  * Plugins settings surface, browser half — one section whose feature-owned
- * tabs include configurable Host plugin cards and read-only inventory.
+ * tabs include configurable Host plugin cards, and the settings section of
+ * every agent preset's detail page.
  *
  * The section declares `settings.plugins.tab`; its own `configurable` tab then
  * declares `settings.plugin.item` and renders whatever cards were registered
- * into it. The cards this package ships are the host-plane sections the
- * deployment already exposes; each binds its namespace through the client
- * settings scope, which keeps them unaware of one another and of other tabs.
+ * into it, editing the global instance of each namespace. The preset detail
+ * section declares `settings.agentPreset.plugin.item` and renders the cards
+ * registered there under the preset's own scope. The cards this package ships
+ * are the host-plane sections the deployment already exposes, registered under
+ * both slots; each binds its namespace through the client settings scope,
+ * which keeps them unaware of one another and of other surfaces.
  */
 
 // Type-only: pulls the locale plugin's Context merge (ctx.locale).
@@ -20,15 +24,14 @@ import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import { resolveSlotLabel } from '@deepseek-ai/dsh-client-ui-slots'
 // Type-only: the ctx.remote Context merge and the forwarded-event key face.
 import type {} from '@deepseek-ai/dsh-api-remotes/client'
-// Type-only: pulls the 'settings.agentPreset' LocaleNamespaceMap merge, whose
-// dictionaries the shipped-preset name resolution below reads.
+// Type-only: the `settings.agentPreset.detail` slot the preset settings
+// section registers into, declared by the roster.
 import type {} from '@deepseek-ai/dsh-client-ui-agent-preset/client'
-// Inline-safe shared fold: shipped ids map to dictionary keys in one home.
-import { presetDisplayText } from '@deepseek-ai/dsh-agent-presets/display'
 import { AgentLoopCard } from './AgentLoopCard.tsx'
 import { BashCard } from './BashCard.tsx'
 import { ConfigurablePluginsTab } from './ConfigurablePluginsTab.tsx'
 import { PluginsSettingsSection } from './PluginsSettingsSection.tsx'
+import { PresetSettingsSection, type PresetSettingsFace } from './PresetSettingsSection.tsx'
 import type { PluginsSettingsSectionInjected, PluginsSettingsTabEntry } from './PluginsSettingsSection.tsx'
 import { SkillFilesystemCard } from './SkillFilesystemCard.tsx'
 import { SubagentModelSelectionCard } from './SubagentModelSelectionCard.tsx'
@@ -37,7 +40,7 @@ import { AGENT_LOOP_NS, AgentLoopCardController } from './agent-loop-card-contro
 import { SHELL_NS, BashCardController } from './bash-card-controller.ts'
 import { ConfigurablePluginsTabController } from './tab-store.ts'
 import { ScopeSelection } from './scoped-form.ts'
-import { ScopeSwitcherController, type PresetScopeRow } from './scope-switcher.ts'
+import type { CardSlot } from './slot-contract.ts'
 import { SKILL_FILESYSTEM_NS, SkillFilesystemCardController } from './skill-filesystem-card-controller.ts'
 import {
   SUBAGENT_MODEL_SELECTION_NS, SubagentModelSelectionCardController,
@@ -47,11 +50,11 @@ import { en, zh } from './locales.ts'
 
 export type { PluginsSettingsSectionInjected, PluginsSettingsSectionProps } from './PluginsSettingsSection.tsx'
 export type { ConfigurablePluginsTabProps } from './ConfigurablePluginsTab.tsx'
+export type { PresetSettingsFace, PresetSettingsSectionProps } from './PresetSettingsSection.tsx'
 export type { ConfigurablePluginsTabFace, ConfigurablePluginsTabState } from './tab-store.ts'
 export type { BindScope, ScopeSelectionState } from './scoped-form.ts'
-export type { PresetScopeRow, ScopeSwitcherFace, ScopeSwitcherState } from './scope-switcher.ts'
 export type { PluginCardProps } from './PluginCard.tsx'
-export type { SettingsPluginItemOwnerProps } from './slot-contract.ts'
+export type { CardSlot, SettingsPluginItemOwnerProps } from './slot-contract.ts'
 export type { FieldProps } from './fields.tsx'
 export type {
   CardActions, CardFieldSpec, CardFieldState, CardSecretSpec, CardShell,
@@ -65,21 +68,22 @@ export type { WebSearchCardFace, WebSearchCardState } from './web-search-card-co
 const NS = 'settings.plugins'
 
 /** Required services (cordis fiber inject). */
-export const inject = [
-  'slots', 'locale', 'remote', 'remote.agentPresets', 'remote.credentials', 'remote.session', 'settingsScope',
-]
+export const inject = ['slots', 'locale', 'remote', 'remote.credentials', 'remote.session', 'settingsScope']
 
 /**
- * Mount the plugin configuration section and the cards this package ships.
+ * Mount the plugin configuration section, the settings section of every
+ * preset's detail page, and the cards this package ships under both.
  * @param ctx - the browser plugin context.
  */
 export function apply(ctx: ClientContext): void {
   const t = ctx.locale.bind(NS)
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-settings-plugins: section dictionaries')
 
-  // One scope selection over every card: the global instance, or one
-  // preset's named scope. A card binds its namespace under a scope the first
-  // time that scope is selected.
+  // One scope selection over every card: the global instance while the
+  // configuration tab shows, one preset's scope while that preset's detail
+  // page is open. The settings shell mounts one section at a time, so the two
+  // surfaces never hold the selection together. A card binds its namespace
+  // under a scope the first time that scope is selected.
   const selection = new ScopeSelection()
   const bindScope = <T>(namespace: string) => (scope: string | undefined) =>
     ctx.settingsScope.bind<T>({ namespace, ...scope === undefined ? {} : { scope } })
@@ -89,19 +93,6 @@ export function apply(ctx: ClientContext): void {
   const subagentModelSelection = new SubagentModelSelectionCardController(
     selection, bindScope(SUBAGENT_MODEL_SELECTION_NS), ctx)
   const skillFilesystem = new SkillFilesystemCardController(selection, bindScope(SKILL_FILESYSTEM_NS))
-
-  // A refused or failed roster is the switch's state to report; the Host's
-  // message belongs to the transport, not to a scope picker.
-  const roster = (): Promise<readonly PresetScopeRow[] | undefined> => ctx.remote.agentPresets.list()
-    .then(result => result.ok ? result.value.presets : undefined, () => undefined)
-  const agentPresetCopy = ctx.locale.bind('settings.agentPreset')
-  const switcher = new ScopeSwitcherController(
-    selection, ctx.settingsScope.describe(), roster, preset => presetDisplayText(preset, agentPresetCopy).name)
-  ctx.effect(() => () => { switcher.dispose() }, 'ui-settings-plugins: scope switch')
-  ctx.effect(
-    () => ctx.on('connection/reset', () => { switcher.reset() }),
-    'ui-settings-plugins: scope roster generation',
-  )
 
   // The credential a card reports is not part of any settings section, so its
   // scope publishes nothing when one is written. This is the only signal that
@@ -124,15 +115,18 @@ export function apply(ctx: ClientContext): void {
   )
   ctx.effect(() => () => { subagentModelSelection.dispose() }, 'ui-settings-plugins: subagent preference')
 
-  // The shared SettingsScope mirror updates after document commits and reconnects.
-  const configurable = new ConfigurablePluginsTabController(
-    ctx.settingsScope.describe(), () => ctx.slots.entries('settings.plugin.item'))
-  ctx.effect(() => () => { configurable.dispose() }, 'ui-settings-plugins: tab directory')
-  // A card registered after the first read joins the list without a wire call.
-  ctx.effect(
-    () => ctx.slots.subscribe('settings.plugin.item', () => { configurable.refresh() }),
-    'ui-settings-plugins: card ledger',
-  )
+  // One card directory per surface over the shared SettingsScope mirror, which
+  // updates after document commits and reconnects.
+  const describeFace = ctx.settingsScope.describe()
+  const directory = (slot: CardSlot): ConfigurablePluginsTabController => {
+    const controller = new ConfigurablePluginsTabController(describeFace, () => ctx.slots.entries(slot))
+    ctx.effect(() => () => { controller.dispose() }, `ui-settings-plugins: ${slot} directory`)
+    // A card registered after the first read joins the list without a wire call.
+    ctx.effect(() => ctx.slots.subscribe(slot, () => { controller.refresh() }), `ui-settings-plugins: ${slot} ledger`)
+    return controller
+  }
+  const configurable = directory('settings.plugin.item')
+  const presetSettings = directory('settings.agentPreset.plugin.item')
 
   let tabsVersion = -1
   let tabsRevision = -1
@@ -189,44 +183,36 @@ export function apply(ctx: ClientContext): void {
     order: 0,
     label: () => t('configurableTab'),
     locale: NS,
-    inject: () => {
-      const tab = configurable.inject()
-      const scope = switcher.inject()
-      return { ...tab, ...scope, hooks: { ...tab.hooks, ...scope.hooks } }
-    },
+    inject: () => configurable.inject(),
     children: { 'settings.plugin.item': { kind: 'keyed', scope: 'root' } },
   }, ConfigurablePluginsTab))
 
-  ctx.slots.inject('settings.plugin.item', function* () {
+  // The settings section of every preset's detail page: the same cards under
+  // the preset's scope, after the plugin manager's capabilities section.
+  ctx.slots.inject('settings.agentPreset.detail', () => ctx.slots.register({
+    name: 'settings.agentPreset.detail',
+    id: 'settings',
+    order: 10,
+    locale: NS,
+    inject: (): PresetSettingsFace => ({
+      ...presetSettings.inject(),
+      selectScope: (scope) => { selection.select(scope ?? undefined) },
+    }),
+    children: { 'settings.agentPreset.plugin.item': { kind: 'keyed', scope: 'root' } },
+  }, PresetSettingsSection))
+
+  // The shipped cards, under both surfaces.
+  const cards = (name: CardSlot) => function* () {
+    yield ctx.slots.register({ name, key: SHELL_NS, locale: NS, inject: () => bash.inject() }, BashCard)
+    yield ctx.slots.register({ name, key: AGENT_LOOP_NS, locale: NS, inject: () => agentLoop.inject() }, AgentLoopCard)
     yield ctx.slots.register({
-      name: 'settings.plugin.item',
-      key: SHELL_NS,
-      locale: NS,
-      inject: () => bash.inject(),
-    }, BashCard)
-    yield ctx.slots.register({
-      name: 'settings.plugin.item',
-      key: AGENT_LOOP_NS,
-      locale: NS,
-      inject: () => agentLoop.inject(),
-    }, AgentLoopCard)
-    yield ctx.slots.register({
-      name: 'settings.plugin.item',
-      key: SUBAGENT_MODEL_SELECTION_NS,
-      locale: NS,
-      inject: () => subagentModelSelection.inject(),
+      name, key: SUBAGENT_MODEL_SELECTION_NS, locale: NS, inject: () => subagentModelSelection.inject(),
     }, SubagentModelSelectionCard)
+    yield ctx.slots.register({ name, key: WEB_SEARCH_NS, locale: NS, inject: () => webSearch.inject() }, WebSearchCard)
     yield ctx.slots.register({
-      name: 'settings.plugin.item',
-      key: WEB_SEARCH_NS,
-      locale: NS,
-      inject: () => webSearch.inject(),
-    }, WebSearchCard)
-    yield ctx.slots.register({
-      name: 'settings.plugin.item',
-      key: SKILL_FILESYSTEM_NS,
-      locale: NS,
-      inject: () => skillFilesystem.inject(),
+      name, key: SKILL_FILESYSTEM_NS, locale: NS, inject: () => skillFilesystem.inject(),
     }, SkillFilesystemCard)
-  })
+  }
+  ctx.slots.inject('settings.plugin.item', cards('settings.plugin.item'))
+  ctx.slots.inject('settings.agentPreset.plugin.item', cards('settings.agentPreset.plugin.item'))
 }

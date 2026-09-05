@@ -13,12 +13,15 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import {
-  Button, IconBrowseOutline16, IconCopyOutline16, IconFolderOpenOutline16, IconPlusOutline16, IconTrashOutline16, Modal, Tooltip,
+  Button, IconBrowseOutline16, IconChevronDownOutline14, IconCopyOutline16, IconFolderOpenOutline16, IconPlusOutline16,
+  IconSettingsOutline16, IconTrashOutline16, Modal, Tooltip,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { SnapshotStore } from '@deepseek-ai/dsh-client-store'
-import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
+import type { InjectFace, PropsLocale, PropsRenderSlots, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import { draftBlocker, type AgentPresetSectionState } from './section-store.ts'
 import { presetDisplayText, type AgentPresetSettingsKey } from './locales.ts'
+// The detail page's child slot, declared by this section at registration.
+import type {} from './slot-contract.ts'
 import css from './AgentPresetSection.module.css'
 
 /** Registration-side business face for the management section. */
@@ -63,6 +66,7 @@ export interface AgentPresetSectionInjected {
 export type AgentPresetSectionProps =
   PropsRuntime<'settings.section'>
   & PropsLocale<'settings.agentPreset'>
+  & PropsRenderSlots<'settings.agentPreset.detail'>
   & InjectFace<AgentPresetSectionInjected>
 
 /** Copy-dialog sub-view props: the draft plus the actions that mutate it. */
@@ -178,6 +182,10 @@ function CardDescription({ text }: { text: string }): ReactNode {
 export function AgentPresetSection(props: AgentPresetSectionProps): ReactNode {
   const { useAgentPresetSection, t, load } = props
   const state = useAgentPresetSection(snapshot => snapshot)
+  // The preset whose detail page is open; a preset that leaves the roster
+  // while open (deleted from its files) drops back to the cards.
+  const [openId, setOpenId] = useState<string | null>(null)
+  const openRow = openId === null ? undefined : state.rows.find(row => row.id === openId)
   const viewedId = state.view?.id
   const viewedRow = viewedId === undefined ? undefined : state.rows.find(row => row.id === viewedId)
   const viewedTitle = state.view === null
@@ -226,6 +234,29 @@ export function AgentPresetSection(props: AgentPresetSectionProps): ReactNode {
       </button>
     )
     : null
+
+  if (openRow !== undefined) {
+    const text = presetDisplayText(openRow, t)
+    return (
+      <div className={css.section} data-preset-detail={openRow.id}>
+        <button type="button" className={css.crumb} aria-label={t('backToRoster')} onClick={() => { setOpenId(null) }}>
+          <IconChevronDownOutline14 className={css.crumbIcon} aria-hidden="true" />
+          <span>{t('nav')}</span>
+          <span className={css.crumbSep} aria-hidden="true" />
+          <span className={css.crumbHere}>{text.name}</span>
+        </button>
+        <div className={css.detailHead}>
+          <h2 className={css.detailTitle}>{text.name}</h2>
+          <span className={css.badge}>{openRow.trust === 'user' ? t('userTrust') : t('builtIn')}</span>
+          {openRow.isDefault ? <span className={css.inUse}>{t('inUse')}</span> : null}
+        </div>
+        <p className={css.detailDesc}>{text.description ?? t('noDescription')}</p>
+        <div className={css.detailSections}>
+          {props.renderSlot('settings.agentPreset.detail', { presetId: openRow.id, presetName: text.name })}
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className={css.section}>
@@ -312,6 +343,19 @@ export function AgentPresetSection(props: AgentPresetSectionProps): ReactNode {
                       <code className={css.cardId}>{row.id}</code>
                     </button>
                     <div className={css.cardFoot}>
+                      {/* The way into the preset's detail page — its
+                        capabilities and settings; a broken preset composes
+                        nothing, so there is nothing to configure. */}
+                      <button
+                        type="button"
+                        className={css.iconButton}
+                        disabled={row.broken !== undefined}
+                        data-tip={t('configure')}
+                        aria-label={`${t('configure')}: ${text.name}`}
+                        onClick={() => { setOpenId(row.id) }}
+                      >
+                        <IconSettingsOutline16 />
+                      </button>
                       {/* Shipped presets are the compositions a copy starts
                         from, so READING one is the point; a custom preset is
                         edited in its files instead, which the location action

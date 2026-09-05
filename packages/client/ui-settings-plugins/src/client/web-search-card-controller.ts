@@ -81,7 +81,7 @@ export class WebSearchCardController {
   private credential: CredentialState = { ref: '', configured: false, writable: true }
 
   /**
-   * @param selection - the scope selection shared with the tab.
+   * @param selection - the scope selection shared with the card surfaces.
    * @param bindScope - binds the `web-search-deepseek` namespace under one scope.
    * @param ctx - the card plugin's context, whose `remote.credentials` namespace
    * answers for the credential the section references.

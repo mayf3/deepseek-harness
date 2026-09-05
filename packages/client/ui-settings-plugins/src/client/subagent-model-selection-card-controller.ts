@@ -149,7 +149,7 @@ export class SubagentModelSelectionCardController {
   private readonly unsubscribe: () => void
 
   /**
-   * @param selection - the scope selection shared with the tab.
+   * @param selection - the scope selection shared with the card surfaces.
    * @param bindScope - binds the `subagent-model-selection` namespace under one scope.
    * @param ctx - the card plugin's context, whose `remote.session` namespace
    * answers the Host model catalog.

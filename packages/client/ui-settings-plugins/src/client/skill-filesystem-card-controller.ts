@@ -36,7 +36,7 @@ export class SkillFilesystemCardController {
   private readonly store: SnapshotStore<SkillFilesystemCardState>
 
   /**
-   * @param selection - the scope selection shared with the tab.
+   * @param selection - the scope selection shared with the card surfaces.
    * @param bindScope - binds the `skill-filesystem` namespace under one scope.
    */
   constructor(selection: ScopeSelection, bindScope: BindScope<SkillFilesystemSettings>) {
