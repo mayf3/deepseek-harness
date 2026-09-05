@@ -10,9 +10,9 @@ import { SessionId } from '@deepseek-ai/dsh-session'
 import { bindScopeParent, createScope, scopeOf } from '@deepseek-ai/dsh-scope'
 import { JobId } from '@deepseek-ai/dsh-jobs'
 import LocalJobRegistry from '@deepseek-ai/dsh-jobs-local'
-import type { JobAppendOptions, JobHandle, JobHooks, JobOutcome, JobSpec, JobView } from '@deepseek-ai/dsh-jobs'
+import type { JobAppendOptions, JobHandle, JobHooks, JobOutcome, JobOutputSource, JobSpec, JobView } from '@deepseek-ai/dsh-jobs'
 import * as ToolTasks from '@deepseek-ai/dsh-tool-jobs'
-import { publicJob, renderModelDelta, statusLine } from '@deepseek-ai/dsh-tool-jobs'
+import { publicJob, renderModelDelta, statusLine } from '../src/render.ts'
 
 const testToolSignal = new AbortController().signal
 
@@ -212,33 +212,60 @@ describe('tool-jobs setup', () => {
   })
 
   it('renders a model delta as stdout, one stderr section, and a dropped-output notice', () => {
-    expect(renderModelDelta([], false)).toBe('')
-    expect(renderModelDelta([], true)).toBe('[some output was dropped from memory; full output: (unavailable)]')
+    expect(renderModelDelta([], false, [])).toBe('')
+    expect(renderModelDelta([], true, [])).toBe('[some output was dropped from memory; full output: (unavailable)]')
     expect(renderModelDelta([
       { at: 0, text: 'a' },
       { at: 1, text: 'e1\n', channel: 'stderr' },
       { at: 4, text: 'narration', channel: 'log' },
       { at: 13, text: 'b', channel: 'stdout' },
       { at: 14, text: 'e2', channel: 'stderr' },
-    ], false)).toBe('ab\n[stderr]\ne1\ne2')
-    expect(renderModelDelta([{ at: 0, text: 'tail' }], true)).toBe('tail\n[some output was dropped from memory; full output: (unavailable)]')
-    expect(renderModelDelta([{ at: 0, text: 'line\n' }], true)).toBe('line\n[some output was dropped from memory; full output: (unavailable)]')
+    ], false, [])).toBe('ab\n[stderr]\ne1\ne2')
+    expect(renderModelDelta([{ at: 0, text: 'tail' }], true, [])).toBe('tail\n[some output was dropped from memory; full output: (unavailable)]')
+    expect(renderModelDelta([{ at: 0, text: 'line\n' }], true, [])).toBe('line\n[some output was dropped from memory; full output: (unavailable)]')
+    // Ring eviction names the files the job's sources keep, whether or not a retained chunk carries a gap.
+    expect(renderModelDelta([{ at: 8, text: 'tail' }], true, ['/spill/out.log', '/spill/err.log']))
+      .toBe('tail\n[some output was dropped from memory; full output: /spill/out.log, /spill/err.log]')
   })
 
-  it('reports a producer-side gap as dropped output and names the spill files the gap chunks point at', () => {
+  it('reports a producer-side gap as dropped output and names the spill files the job advertises', () => {
     // The ring itself lost nothing (`lossy: false`); the source did, between two pumps.
-    expect(renderModelDelta([{ at: 0, text: 'head' }, { at: 4, text: 'tail', gapBefore: true, spillPath: '/spill/out.log' }], false))
+    expect(renderModelDelta([{ at: 0, text: 'head' }, { at: 4, text: 'tail', gapBefore: true }], false, ['/spill/out.log']))
       .toBe('headtail\n[some output was dropped from memory; full output: /spill/out.log]')
-    // Distinct spill files list once each, in offset order; a gap without a file yields the generic notice.
     expect(renderModelDelta([
-      { at: 0, text: 'o', gapBefore: true, spillPath: '/spill/out.log' },
-      { at: 1, text: 'e', channel: 'stderr', gapBefore: true, spillPath: '/spill/err.log' },
-      { at: 2, text: 'o2', gapBefore: true, spillPath: '/spill/out.log' },
-    ], false)).toBe('oo2\n[stderr]\ne\n[some output was dropped from memory; full output: /spill/out.log, /spill/err.log]')
-    expect(renderModelDelta([{ at: 0, text: 'tail', gapBefore: true }], false))
+      { at: 0, text: 'o', gapBefore: true },
+      { at: 1, text: 'e', channel: 'stderr', gapBefore: true },
+    ], false, ['/spill/out.log', '/spill/err.log'])).toBe('o\n[stderr]\ne\n[some output was dropped from memory; full output: /spill/out.log, /spill/err.log]')
+    // A gap while no source keeps a file yields the generic notice.
+    expect(renderModelDelta([{ at: 0, text: 'tail', gapBefore: true }], false, []))
       .toBe('tail\n[some output was dropped from memory; full output: (unavailable)]')
     // A gap on observer-only narration never reaches the model.
-    expect(renderModelDelta([{ at: 0, text: 'phase', channel: 'log', gapBefore: true, spillPath: '/spill/log' }], false)).toBe('')
+    expect(renderModelDelta([{ at: 0, text: 'phase', channel: 'log', gapBefore: true }], false, ['/spill/log'])).toBe('')
+  })
+
+  it('names the spill file when the ring evicted output the model never read', async () => {
+    const { ctx } = await setup({}, { retainBytes: 8 })
+    const owner = fakeAgent(ctx, 'sess-1')
+    let settle!: (outcome: JobOutcome) => void
+    // The source never reads lossy: the pump keeps up, and only the ring's live cap drops bytes.
+    const source: JobOutputSource = {
+      channel: 'stdout',
+      read: from => from === 0
+        ? { text: 'x'.repeat(32), nextOffset: 32, lossy: false, spillPath: '/spill/out.log' }
+        : { text: '', nextOffset: from, lossy: false, spillPath: '/spill/out.log' },
+    }
+    ctx.jobs.start({
+      kind: 'bash',
+      label: 'noisy',
+      owner: owner.id,
+      output: [source],
+      run: () => ({ cancel() {}, done: new Promise<JobOutcome>((resolve) => { settle = resolve }) }),
+    })
+
+    expect(text(await call(ctx, 'job_output', { job_id: 'bash-1' }, owner)))
+      .toBe(`${'x'.repeat(8)}\n[some output was dropped from memory; full output: /spill/out.log]\n[status: running]`)
+    settle({ status: 'completed' })
+    await tick()
   })
 
   it('applies the built-in wait bounds when apply() receives a bare config', async () => {
@@ -1011,6 +1038,53 @@ describe('completion notices', () => {
     expect(text(result)).toContain('wait aborted')
 
     p.settle({ status: 'completed' })
+    await tick()
+    expect(inject).toHaveBeenCalledTimes(1)
+  })
+
+  it('delivers the notice when the wait aborts and the job settles before the rejection lands', async () => {
+    const { ctx } = await setup()
+    const inject = vi.fn()
+    const owner = fakeAgent(ctx, 'sess-1', { inject })
+    const p = producer({ owner: owner.id, kind: 'subagent' })
+    ctx.jobs.start(p.spec)
+
+    const aborter = new AbortController()
+    const pending = ctx.tools.execute({
+      signal: aborter.signal,
+      callId: ToolCallId('call-abort-then-settle'),
+      name: 'job_output',
+      arguments: { job_id: 'subagent-1', wait: true },
+      agent: owner,
+    })
+    await tick()
+    // One synchronous span: the registry rejects the aborted wait on a later
+    // microtask, and a push producer's settlement lands before that rejection
+    // reaches the tool. The tool result carries the abort, not the outcome, so
+    // the settlement notice is the model's only completion record.
+    aborter.abort()
+    p.settle({ status: 'completed', result: 'answer' })
+    const result = await pending
+    expect(result.isError).toBe(true)
+    expect(text(result)).toContain('wait aborted')
+    await tick()
+    expect(inject).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps a claim on one job while another job settles', async () => {
+    const { ctx } = await setup()
+    const inject = vi.fn()
+    const owner = fakeAgent(ctx, 'sess-1', { inject })
+    const killed = producer({ owner: owner.id })
+    const other = producer({ owner: owner.id })
+    ctx.jobs.start(killed.spec)
+    ctx.jobs.start(other.spec)
+
+    await call(ctx, 'job_kill', { job_id: 'bash-1' }, owner)
+    other.settle({ status: 'completed' })
+    await tick()
+    expect(inject).toHaveBeenCalledTimes(1)
+    killed.settle({ status: 'killed' })
     await tick()
     expect(inject).toHaveBeenCalledTimes(1)
   })

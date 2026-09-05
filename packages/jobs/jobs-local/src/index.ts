@@ -106,6 +106,13 @@ interface TrackedJob {
   waitResolvers: Set<() => void>
   /** The registry-owned pump over the spec's pull sources, when it named any. */
   pump: PumpHandle | undefined
+  /**
+   * The spill file each pull source reported on its latest read, by source
+   * index; an entry is undefined while that source keeps none. Source
+   * metadata rather than chunk provenance, so it survives ring eviction and
+   * follows a source that withdraws its file.
+   */
+  spillPaths: (string | undefined)[]
 }
 
 /** True for the three terminal {@link JobStatus} values. */
@@ -255,6 +262,7 @@ export class LocalJobRegistry extends JobRegistry {
       markSettled,
       waitResolvers: new Set(),
       pump: undefined,
+      spillPaths: [],
     }
     // Binding the shared producer state is the commit: writes staged inside
     // the starter are already in the ring and `state`, and every later handle
@@ -280,7 +288,10 @@ export class LocalJobRegistry extends JobRegistry {
     if (spec.output !== undefined && spec.output.length > 0) {
       job.pump = startPump(
         spec.output.map(source => this.guardSource(job, source)),
-        (text, options) => { this.appendRing(state, ring, text, options, 'pump') },
+        {
+          append: (text, options) => { this.appendRing(state, ring, text, options, 'pump') },
+          spill: (index, path) => { job.spillPaths[index] = path },
+        },
         this.pumpPollMs,
         Promise.race([producerDone, settled]),
       )
@@ -382,6 +393,7 @@ export class LocalJobRegistry extends JobRegistry {
   /** Project a fresh read-only view from the mutable record. */
   private view(job: TrackedJob): JobView {
     const owner = job.owner?.id
+    const spillPaths = [...new Set(job.spillPaths.filter((path): path is string => path !== undefined))]
     return {
       id: job.id,
       kind: job.kind,
@@ -393,7 +405,11 @@ export class LocalJobRegistry extends JobRegistry {
       ...job.detail !== undefined ? { detail: job.detail } : {},
       startedAt: job.startedAt,
       ...job.finishedAt !== undefined ? { finishedAt: job.finishedAt } : {},
-      output: { total: job.ring.total, earliest: job.ring.earliest },
+      output: {
+        total: job.ring.total,
+        earliest: job.ring.earliest,
+        ...spillPaths.length > 0 ? { spillPaths } : {},
+      },
     }
   }
 

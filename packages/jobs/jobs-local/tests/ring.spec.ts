@@ -6,14 +6,14 @@ describe('OutputRing', () => {
     const ring = new OutputRing()
     expect(ring.append('', undefined, 1024)).toBe(false)
     expect(ring.append('héllo', { channel: 'stdout' }, 1024)).toBe(true)
-    expect(ring.append('wörld', { channel: 'stderr', gapBefore: true, spillPath: '/spill/err.log' }, 1024)).toBe(true)
+    expect(ring.append('wörld', { channel: 'stderr', gapBefore: true }, 1024)).toBe(true)
     expect(ring.total).toBe(12)
     expect(ring.earliest).toBe(0)
     expect(ring.retainedBytes).toBe(12)
     expect(ring.readFrom(0)).toEqual({
       chunks: [
         { at: 0, text: 'héllo', channel: 'stdout' },
-        { at: 6, text: 'wörld', channel: 'stderr', gapBefore: true, spillPath: '/spill/err.log' },
+        { at: 6, text: 'wörld', channel: 'stderr', gapBefore: true },
       ],
       next: 12,
       lossy: false,
