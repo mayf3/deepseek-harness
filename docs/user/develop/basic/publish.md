@@ -43,6 +43,8 @@ Create `hello-plugin/package.json`:
 }
 ```
 
+Two more `dsh` keys describe the package to people: `dsh.title` names it in the plugin list, and `dsh.plugins` lists modules a user can add to a composition one at a time, beside the layer the bundle mounts as a whole — each entry names the module (`"name": "dsh-hello-plugin/extra"`) with an optional `title` and default `config`. Every `dsh` key is declared in [`@deepseek-ai/dsh-package-manifest`](../../../../packages/util/package-manifest/README.md).
+
 Create `hello-plugin/index.js` with the plugin entry point:
 
 ```js
@@ -109,7 +111,7 @@ dsh --profile demo
 
 `dsh plugin --profile demo remove dsh-hello-plugin` removes both the dependency and the layer.
 
-An installed bundle mounts as an external layer: the dump shows its rows inside one group named `bundle/dsh-hello-plugin`, and each row id carries the package prefix, so the row above is `dsh-hello-plugin/hello` in the mounted tree — a user patch that targets it names that id. A row of yours that fails to start is isolated and reported in the plugin list instead of stopping `dsh`; if your bundle provides a service the built-in rows inject, declare `dsh.bundle.stage: boot` so it mounts like a built-in one and fails loud. Prefixing does not rewrite string literals, so a `!!js` disabled expression that compares `e.options.id` to your own id should compare `e.options.name` instead.
+An installed bundle mounts as an external layer: the dump shows its rows inside one group named `bundle/dsh-hello-plugin`, and each row keeps the id your patch declares, so the row above is `hello` in the mounted tree and a user patch that targets it names that id. Row ids are shared across every layer: if another layer already declares one of yours, or your patch declares one twice, the whole bundle is left out and the reason is printed at boot and shown in the plugin list. A row of yours that fails to start is isolated and reported in the plugin list instead of stopping `dsh`; if your bundle provides a service the built-in rows inject, declare `dsh.bundle.stage: boot` so it mounts like a built-in one and fails loud.
 
 ## The loading order
 

@@ -8,6 +8,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { PLUGIN_PROBE_DIR, PLUGIN_PROBE_FORMAT, probePackage, readProbeCache, writeProbeCache, type PluginProbe } from '../src/index.ts'
+import { parseProbeRecord } from '../src/probe.ts'
+import { parseChildReport, type ChildReport } from '../src/probe-report.ts'
 
 const NAME = 'dsh-test-bin'
 
@@ -164,15 +166,30 @@ describe('probePackage', () => {
     expect(probe.addable[0]?.error).toBeDefined()
   })
 
-  it('kills a child that never reports and refuses an unresolvable package', async () => {
+  it('keeps probing a package that prints at import, and kills one that lingers once it reported', async () => {
     const { profileDir, installAnchor } = stage({
-      'hangs': { main: 'setInterval(() => {}, 1000)\nexport function apply() {}\n' },
+      'chatty': { main: 'console.log("initializing logging-plugin")\nexport function apply() {}\n', manifest: { dsh: { title: 'Chatty' } } },
+      'lingers': { main: 'setInterval(() => {}, 1000)\nexport function apply() {}\n', manifest: { dsh: { title: 'Lingers' } } },
+    })
+    const chatty = await probePackage({ binName: NAME, profileDir, installAnchor, packageName: 'chatty' })
+    expect(chatty).toMatchObject({ kind: 'plugin', ok: true })
+    const lingers = await probePackage({ binName: NAME, profileDir, installAnchor, packageName: 'lingers', timeoutMs: 5_000 })
+    expect(lingers).toMatchObject({ kind: 'plugin', ok: true })
+  })
+
+  it('kills a child that never reports, rejects an unrecognized report, and refuses an unresolvable package', async () => {
+    const { profileDir, installAnchor } = stage({
+      // Blocks the child's thread inside the import: an unsettled top-level await would make Node exit instead.
+      'hangs': { main: 'Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0)\nexport function apply() {}\n' },
       'exits': { main: 'process.stderr.write("refusing to report"); process.exit(3)\n' },
+      'spoofs': { main: 'process.send({ nope: true }); process.exit(0)\n' },
     })
     await expect(probePackage({ binName: NAME, profileDir, installAnchor, packageName: 'hangs', timeoutMs: 300 }))
       .rejects.toThrow(/timed out after 300ms/)
     await expect(probePackage({ binName: NAME, profileDir, installAnchor, packageName: 'exits' }))
       .rejects.toThrow(/exited with 3 without a report: refusing to report/)
+    await expect(probePackage({ binName: NAME, profileDir, installAnchor, packageName: 'spoofs' }))
+      .rejects.toThrow(/reported an unrecognized value/)
     await expect(probePackage({ binName: NAME, profileDir, installAnchor, packageName: 'ghost' }))
       .rejects.toThrow(/cannot resolve profile bundle "ghost"/)
     await expect(probePackage({ binName: NAME, profileDir, installAnchor, packageName: 'exits', nodeExecutable: '/no/such/node' }))
@@ -199,5 +216,46 @@ describe('probe cache', () => {
     expect(readProbeCache(profileDir, '@scope/pkg')).toBeUndefined()
     writeFileSync(join(profileDir, PLUGIN_PROBE_DIR, '@scope__pkg.json'), JSON.stringify({ format: PLUGIN_PROBE_FORMAT - 1, ...record }))
     expect(readProbeCache(profileDir, '@scope/pkg')).toBeUndefined()
+    // A file with the right format but not the fields of a record is probed again, not returned as one.
+    writeFileSync(join(profileDir, PLUGIN_PROBE_DIR, '@scope__pkg.json'), JSON.stringify({ format: PLUGIN_PROBE_FORMAT }))
+    expect(readProbeCache(profileDir, '@scope/pkg')).toBeUndefined()
+    writeFileSync(join(profileDir, PLUGIN_PROBE_DIR, '@scope__pkg.json'), JSON.stringify({ format: PLUGIN_PROBE_FORMAT, ...record, kind: 'weird' }))
+    expect(readProbeCache(profileDir, '@scope/pkg')).toBeUndefined()
+    writeFileSync(join(profileDir, PLUGIN_PROBE_DIR, '@scope__pkg.json'), JSON.stringify([record]))
+    expect(readProbeCache(profileDir, '@scope/pkg')).toBeUndefined()
+  })
+
+  it('accepts only a complete record', () => {
+    const record: PluginProbe = {
+      packageName: 'pkg', version: '1.0.0', description: 'd', title: 't', kind: 'bundle', ok: false, reason: 'r',
+      cordisSameCopy: false, enginesDsh: '>=1', rows: [{ id: 'a', name: 'm', gated: false }, { name: 'n', gated: true }],
+      overrides: ['x'], addable: [{ name: 'p', title: 'u', ok: false, error: 'e' }, { name: 'q', ok: true }],
+      configSchema: { type: 'object' }, checkedAt: '2026-09-05T00:00:00.000Z',
+    }
+    expect(parseProbeRecord(record)).toBe(record)
+    const broken: Record<string, unknown>[] = [
+      { packageName: 1 }, { checkedAt: 1 }, { version: 1 }, { kind: 1 }, { kind: 'weird' }, { ok: 'yes' },
+      { cordisSameCopy: 'no' }, { rows: {} }, { rows: [1] }, { rows: [{ id: 1, name: 'm', gated: false }] },
+      { rows: [{ name: 1, gated: false }] }, { rows: [{ name: 'm', gated: 'no' }] }, { overrides: 'x' }, { overrides: [1] },
+      { addable: {} }, { addable: [1] }, { addable: [{ name: 1, ok: true }] }, { addable: [{ name: 'p', title: 1, ok: true }] },
+      { addable: [{ name: 'p', ok: 'yes' }] }, { addable: [{ name: 'p', ok: true, error: 1 }] },
+    ]
+    for (const fields of broken) expect(parseProbeRecord({ ...record, ...fields }), JSON.stringify(fields)).toBeUndefined()
+    expect(parseProbeRecord('record')).toBeUndefined()
+  })
+})
+
+describe('parseChildReport', () => {
+  it('accepts the child\'s message only with every field in place', () => {
+    const inspection = { ok: true, isPlugin: true, configSchema: null }
+    const report: ChildReport = { cordis: null, main: inspection, addable: { 'pkg/x': { ...inspection, ok: false, error: 'boom' } } }
+    expect(parseChildReport(report)).toBe(report)
+    expect(parseChildReport({ ...report, cordis: 'file:///cordis/index.js' })).toBeDefined()
+    const broken: Record<string, unknown>[] = [
+      { cordis: 1 }, { main: undefined }, { main: { ...inspection, ok: 'yes' } }, { main: { ...inspection, isPlugin: 'no' } },
+      { main: { ok: true, isPlugin: true } }, { main: { ...inspection, error: 1 } }, { addable: [] }, { addable: { 'pkg/x': 1 } },
+    ]
+    for (const fields of broken) expect(parseChildReport({ ...report, ...fields }), JSON.stringify(fields)).toBeUndefined()
+    expect(parseChildReport('report')).toBeUndefined()
   })
 })

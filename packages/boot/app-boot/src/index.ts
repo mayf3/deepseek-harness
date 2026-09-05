@@ -20,8 +20,7 @@ import { dshHomePath, resolveDshHome } from '@deepseek-ai/dsh-home-paths'
 import { createLaunchEnvironmentSnapshot, type LaunchEnvironmentSnapshot } from '@deepseek-ai/dsh-launch-environment'
 import type {} from '@deepseek-ai/cordis-plugin-hmr'
 import type {} from '@deepseek-ai/dsh-system-prompt'
-import {
-  pendingMessage, ContainedGroup, ensurePluginFailures, isContainedEntry } from './contained-group.ts'
+import { ContainedGroup, ensurePluginFailures, isContainedEntry, pendingMessage } from './contained-group.ts'
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
@@ -46,26 +45,21 @@ export {
   resolveProfileDir,
   resolveProfileLayer,
   writeProfileManifest,
-  type BundleStage,
   type BundleTrust,
-  type DshBundleManifest,
-  type DshManifestSection,
-  type DshProfileManifest,
   type Profile,
   type ProfileLayer,
   type ProfileManifest,
   type ProfileModuleFallbackOptions,
-  type ProfilePatchReload,
   type ProfileTemplate,
 } from './profile.ts'
 export {
-  ContainedFailureRegistry, ContainedGroup, ensurePluginFailures, isContainedEntry, recordRowConflicts,
+  ContainedFailureRegistry, ContainedGroup, ensurePluginFailures, isContainedEntry,
   type ContainedFailure, type ContainedFailureStage,
 } from './contained-group.ts'
 export {
-  BUNDLE_GROUP_PREFIX, bundleGroupId, bundleLayerPatches, composeExternalLayer, CONTAINED_GROUP_MODULE, disableBundle,
-  enableBundle, exportsBundlePatch, isContainedLayer, isJsDisabled, reconcileInstalledBundles,
-  type BundleReconciliation, type ComposedExternalLayer,
+  BUNDLE_GROUP_PREFIX, bundleGroupId, composeExternalLayer, CONTAINED_GROUP_MODULE, disableBundle,
+  enableBundle, exportsBundlePatch, isContainedLayer, reconcileInstalledBundles,
+  type BundleReconciliation, type ComposedExternalLayer, type DuplicateRow,
 } from './external-bundles.ts'
 export {
   claimLayerIds, composeProfileStack, formatRowConflict,
@@ -255,19 +249,19 @@ export interface UserPatchWatchOptions {
   /** Absolute path of the watched patch file (a profile's `cordis.patch.yml`). */
   filename: string
   /**
-   * Compose the full patch list for a fresh user-layer generation —
-   * the same composition the app booted with, so a reload can interleave the
-   * new user patches between app-owned layers (bundle layers below,
-   * overlays above). Identity when omitted: the user layer
-   * is the whole patch list.
+   * Re-apply the composition after the watched file changed. When omitted,
+   * the file's patches are re-read and mounted as the whole patch list. A
+   * launcher with a profile runtime passes its `recompose`, so the user layer
+   * is interleaved between the app-owned layers and every recomposition,
+   * watched or requested, goes through that one entry point.
    */
-  compose?: (userPatches: PatchOptions[]) => PatchOptions[]
+  reapply?: () => Promise<void>
 }
 
 /**
  * Watch the user patch layer through Cordis HMR and transactionally reapply it to the boot include.
  * @param ctx - settled app context containing the root Include and an active HMR service.
- * @param options - diagnostic, file, and patch-composition inputs.
+ * @param options - diagnostic, file, and re-application inputs.
  * @returns an asynchronous disposer after the exact-path watcher is ready.
  * @throws when HMR or the root Include is absent, watcher setup fails, or initial path resolution fails.
  */
@@ -275,24 +269,23 @@ export async function watchUserPatches(
   ctx: Context,
   options: UserPatchWatchOptions,
 ): Promise<() => Promise<void>> {
-  const { binName, filename, compose = (patches: PatchOptions[]) => patches } = options
+  const { binName, filename } = options
   const hmr = ctx.get('hmr')
   if (hmr === undefined) throw new Error(`${binName}: user patch-layer watching requires the Cordis HMR service`)
   const entry = bootstrapIncludes.get(ctx)
   if (entry === undefined) throw new Error(`${binName}: user patch-layer watching requires the root Include entry`)
-  const register = hmr.registerConfig(filename, async () => {
+  const reapply = options.reapply ?? (async (): Promise<void> => {
     // Re-read the include's non-patch options per refresh so a writer that
     // updates another option between refreshes is not silently reverted.
     const { patches: _previousPatches, ...includeConfig } = entry.options.config as Include.Config
-    const userPatches = loadOptionalPatches(binName, filename) ?? []
-    const patches = compose(userPatches)
     await entry.update({
       config: {
         ...includeConfig,
-        patches,
+        patches: loadOptionalPatches(binName, filename) ?? [],
       },
     })
   })
+  const register = hmr.registerConfig(filename, reapply)
   try {
     return await register
   } catch (error) {
@@ -681,9 +674,12 @@ export interface RuntimeGuardProcess {
  * The post-boot replacement for {@link installFailLoud}. Once the tree is up,
  * an unhandled rejection is no longer a load failure: it is most likely a
  * plugin's stray continuation, and exiting would take every session down for
- * it. The rejection is reported and the process keeps running. An uncaught
- * exception leaves the process in an unknown state, so it is reported and
- * the process exits, as Node would — but with the origin named.
+ * it. The rejection is reported and the process keeps running; nothing is
+ * stopped or attributed to a plugin, built-in or external, so this is a
+ * process-level policy chosen over exiting, not an isolation of the plugin
+ * that produced it. An uncaught exception leaves the process in an unknown
+ * state, so it is reported and the process exits, as Node would — but with
+ * the origin named.
  * @param binName - the diagnostic prefix on each report.
  * @param report - sink for the report lines.
  * @param proc - the process slice to register on; defaults to `process`.
@@ -695,7 +691,7 @@ export function installRuntimeGuards(
   proc: RuntimeGuardProcess = process,
 ): () => void {
   const onRejection = (err: unknown): void => {
-    report(`${binName}: unhandled rejection after boot (contained; the process keeps running): ${formatActivationError(err)}`)
+    report(`${binName}: unhandled rejection after boot (not attributed to a plugin; the process keeps running): ${formatActivationError(err)}`)
   }
   const onException = (err: unknown): void => {
     report(`${binName}: uncaught exception after boot; exiting: ${formatActivationError(err)}`)

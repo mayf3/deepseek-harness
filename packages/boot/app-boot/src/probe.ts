@@ -2,18 +2,21 @@
  * The install-time probe: what an installed package is and whether this
  * harness can load it, answered in a child process so a package that throws,
  * hangs, or brings its own copy of cordis never runs inside the host. The
- * manifest facts (kind, rows, declared modules) are read here; the child only
- * imports.
+ * manifest facts (kind, rows, declared modules) are read here; the child
+ * (`probe-child.ts`) only imports and reports over IPC, and the report and
+ * the cached record are validated as the process and file boundaries they
+ * cross.
  * @module @deepseek-ai/dsh-app-boot/probe
  */
 
 import { spawn } from 'node:child_process'
-import { awaitChildClose } from './child-close.ts'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import type { EntryOptions } from '@deepseek-ai/cordis-plugin-loader'
+import { fileURLToPath } from 'node:url'
 import { loadOverlayPatches } from './index.ts'
 import { readProfileManifest, resolveBundleDir, type ProfileManifest } from './profile.ts'
+import { visitInsertedRows } from './patch-rows.ts'
+import { isRecord, parseChildReport, type ChildReport } from './probe-report.ts'
 
 /** Directory under a profile holding one probe record per package. */
 export const PLUGIN_PROBE_DIR = '.dsh-plugins'
@@ -68,9 +71,14 @@ export interface PluginProbe {
    * not a plugin: `lodash` exports one too.
    */
   readonly kind: 'bundle' | 'plugin' | 'library'
-  /** Whether the package can be enabled or added: it imported and shares the harness's cordis. */
+  /**
+   * Whether the main export imported and cordis is not a second copy. True
+   * for a `library`, for a package whose cordis resolution is unknown, and
+   * for one whose addable modules failed: `kind` and `addable[].ok` decide
+   * what can be enabled or added.
+   */
   readonly ok: boolean
-  /** Why it cannot, when `ok` is false. */
+  /** Why the import or the cordis check failed, when `ok` is false. */
   readonly reason?: string
   /** Whether the package resolves `@deepseek-ai/cordis` to the harness's own copy; null when unknown. */
   readonly cordisSameCopy: boolean | null
@@ -109,72 +117,69 @@ interface ProbedManifest extends ProfileManifest {
   main?: string
   exports?: unknown
   engines?: Record<string, string>
-  dsh?: ProfileManifest['dsh'] & {
-    title?: string
-    plugins?: { name: string; title?: string; config?: unknown }[]
-  }
-}
-
-/** What the child process reports. */
-interface ChildReport {
-  cordis: string | null
-  main: { ok: boolean; isPlugin: boolean; configSchema: unknown; error?: string }
-  addable: Record<string, { ok: boolean; isPlugin: boolean; configSchema: unknown; error?: string }>
 }
 
 /**
- * The script the child runs: resolve cordis from the package, import the main
- * export and every declared addable module, and report. Parameters arrive
- * as argv so no value is interpolated into code.
+ * The child entry beside this module: the TypeScript source under a source
+ * launch, run through tsx; the bundled `lib/probe-child.js` otherwise.
  */
-const CHILD_SCRIPT = `
-import { pathToFileURL } from 'node:url'
-const [dir, mainSpecifier, addableJson] = process.argv.slice(1)
-const base = pathToFileURL(dir + '/package.json').href
-const report = { cordis: null, main: { ok: false, isPlugin: false, configSchema: null }, addable: {} }
-try { report.cordis = import.meta.resolve('@deepseek-ai/cordis', base) } catch { report.cordis = null }
-const inspect = async (specifier) => {
-  try {
-    const mod = await import(import.meta.resolve(specifier, base))
-    const plugin = mod.default ?? mod
-    const schema = plugin?.Config ?? mod.Config
-    return {
-      ok: true,
-      isPlugin: typeof plugin === 'function' || typeof plugin?.apply === 'function',
-      configSchema: typeof schema?.toJSON === 'function' ? schema.toJSON() : null,
-    }
-  } catch (error) {
-    return { ok: false, isPlugin: false, configSchema: null, error: String(error?.stack ?? error) }
+function childEntryArgs(): string[] {
+  /* v8 ignore next 3 -- the built-output arm: tests run from src */
+  if (!import.meta.url.endsWith('.ts')) {
+    return [fileURLToPath(new URL('./probe-child.js', import.meta.url))]
   }
+  return ['--import', import.meta.resolve('tsx/esm'), fileURLToPath(new URL('./probe-child.ts', import.meta.url))]
 }
-if (mainSpecifier !== '') report.main = await inspect(mainSpecifier)
-for (const name of JSON.parse(addableJson)) report.addable[name] = await inspect(name)
-process.stdout.write(JSON.stringify(report))
-`
 
-/** Run the child and parse its report. */
-async function runChild(options: ProbeOptions, packageDir: string, mainSpecifier: string, addable: string[]): Promise<ChildReport> {
+/**
+ * Run the child and take its report from the IPC channel. The report is all
+ * the probe needs, so the child is killed once it arrived: a package that
+ * keeps a timer alive after import costs nothing more. stdout is not read
+ * at all, so whatever the imported modules print cannot corrupt the report.
+ */
+function runChild(options: ProbeOptions, packageDir: string, mainSpecifier: string, addable: string[]): Promise<ChildReport> {
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS
-  const child = spawn(
-    options.nodeExecutable ?? process.execPath,
-    ['--experimental-import-meta-resolve', '--input-type=module', '-e', CHILD_SCRIPT, '--', packageDir, mainSpecifier, JSON.stringify(addable)],
-    { cwd: options.profileDir, stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, NODE_NO_WARNINGS: '1' } },
-  )
-  const out: Buffer[] = []
-  const err: Buffer[] = []
-  child.stdout.on('data', (chunk: Buffer) => out.push(chunk))
-  child.stderr.on('data', (chunk: Buffer) => err.push(chunk))
-  const code = await awaitChildClose(
-    child, timeoutMs, () => new Error(`${options.binName}: probe of ${options.packageName} timed out after ${String(timeoutMs)}ms`),
-  )
-  const stdout = Buffer.concat(out).toString('utf8')
-  try {
-    return JSON.parse(stdout) as ChildReport
-  } catch {
-    throw new Error(
-      `${options.binName}: probe of ${options.packageName} exited with ${String(code)} without a report: ${Buffer.concat(err).toString('utf8').trim()}`,
+  return new Promise((resolve, reject) => {
+    const child = spawn(
+      options.nodeExecutable ?? process.execPath,
+      ['--experimental-import-meta-resolve', ...childEntryArgs(), packageDir, mainSpecifier, JSON.stringify(addable)],
+      { cwd: options.profileDir, stdio: ['ignore', 'ignore', 'pipe', 'ipc'], env: { ...process.env, NODE_NO_WARNINGS: '1' } },
     )
-  }
+    const err: Buffer[] = []
+    child.stderr?.on('data', (chunk: Buffer) => err.push(chunk))
+    // One settlement: a spawn failure emits `error` and then `close`, a
+    // timeout kill emits `close` after the rejection below, and the kill
+    // after a report emits `close` after the resolution.
+    let settled = false
+    let unrecognized = false
+    const settle = (outcome: () => void): void => {
+      if (settled) return
+      settled = true
+      clearTimeout(timer)
+      outcome()
+    }
+    const timer = setTimeout(() => {
+      child.kill('SIGKILL')
+      settle(() => { reject(new Error(`${options.binName}: probe of ${options.packageName} timed out after ${String(timeoutMs)}ms`)) })
+    }, timeoutMs)
+    child.on('message', (message) => {
+      const report = parseChildReport(message)
+      if (report === undefined) {
+        unrecognized = true
+        return
+      }
+      child.kill('SIGKILL')
+      settle(() => { resolve(report) })
+    })
+    child.on('error', (error) => { settle(() => { reject(error) }) })
+    child.on('close', (code) => {
+      settle(() => {
+        reject(new Error(unrecognized
+          ? `${options.binName}: probe of ${options.packageName} reported an unrecognized value`
+          : `${options.binName}: probe of ${options.packageName} exited with ${String(code)} without a report: ${Buffer.concat(err).toString('utf8').trim()}`))
+      })
+    })
+  })
 }
 
 const DEFAULT_TIMEOUT_MS = 20_000
@@ -183,13 +188,11 @@ const DEFAULT_TIMEOUT_MS = 20_000
 function describeBundlePatch(binName: string, patchPath: string): { rows: PluginProbeRow[]; overrides: string[] } {
   const rows: PluginProbeRow[] = []
   const own = new Set<string>()
-  const visit = (row: EntryOptions): void => {
+  const patches = loadOverlayPatches(binName, patchPath)
+  visitInsertedRows(patches, (row) => {
     if (typeof row.id === 'string') own.add(row.id)
     rows.push({ ...typeof row.id === 'string' ? { id: row.id } : {}, name: row.name, gated: row.disabled !== undefined })
-    if (row.group && Array.isArray(row.config)) (row.config as EntryOptions[]).forEach(visit)
-  }
-  const patches = loadOverlayPatches(binName, patchPath)
-  for (const patch of patches) patch.insert?.forEach(visit)
+  })
   const overrides = patches
     .filter(patch => patch.insert === undefined && typeof patch.id === 'string' && !own.has(patch.id))
     .map(patch => patch.id as string)
@@ -297,21 +300,58 @@ function probeCachePath(profileDir: string, packageName: string): string {
  * @param profileDir - the profile directory.
  * @param packageName - the package.
  * @param version - when given, a record for a different version is treated as absent.
- * @returns the record, or undefined when none is cached or the cached one was written by another probe format.
+ * @returns the record, or undefined when none is cached, the cached one was written by another probe format, or it is not a record.
  */
 export function readProbeCache(profileDir: string, packageName: string, version?: string): PluginProbe | undefined {
   const path = probeCachePath(profileDir, packageName)
   if (!existsSync(path)) return undefined
-  let stored: PluginProbe & { format?: number }
+  let stored: unknown
   try {
-    stored = JSON.parse(readFileSync(path, 'utf8')) as PluginProbe & { format?: number }
+    stored = JSON.parse(readFileSync(path, 'utf8'))
   } catch {
-    return undefined
+    return undefined // not JSON: a truncated or hand-edited file is probed again
   }
-  const { format, ...record } = stored
-  if (format !== PLUGIN_PROBE_FORMAT) return undefined
+  if (!isRecord(stored) || stored.format !== PLUGIN_PROBE_FORMAT) return undefined
+  const { format: _format, ...fields } = stored
+  const record = parseProbeRecord(fields)
+  if (record === undefined) return undefined
   if (version !== undefined && record.version !== version) return undefined
   return record
+}
+
+const PROBE_KINDS: ReadonlySet<string> = new Set<PluginProbe['kind']>(['bundle', 'plugin', 'library'])
+
+/** Whether a value is absent or a string. */
+function optionalString(value: unknown): boolean {
+  return value === undefined || typeof value === 'string'
+}
+
+/** Whether a value has the fields of one probed row. */
+function isProbeRow(value: unknown): value is PluginProbeRow {
+  return isRecord(value) && optionalString(value.id) && typeof value.name === 'string' && typeof value.gated === 'boolean'
+}
+
+/** Whether a value has the fields of one addable module. */
+function isProbeAddable(value: unknown): value is PluginProbeAddable {
+  return isRecord(value) && typeof value.name === 'string' && optionalString(value.title) && typeof value.ok === 'boolean' && optionalString(value.error)
+}
+
+/**
+ * Validate a stored probe record, as the cache file is a boundary this
+ * process does not control.
+ * @param value - the parsed file without its `format` field.
+ * @returns the record, or undefined when a field is missing or mistyped.
+ */
+export function parseProbeRecord(value: unknown): PluginProbe | undefined {
+  if (!isRecord(value)) return undefined
+  if (typeof value.packageName !== 'string' || typeof value.checkedAt !== 'string') return undefined
+  if (![value.version, value.description, value.title, value.reason, value.enginesDsh].every(optionalString)) return undefined
+  if (typeof value.kind !== 'string' || !PROBE_KINDS.has(value.kind) || typeof value.ok !== 'boolean') return undefined
+  if (value.cordisSameCopy !== null && typeof value.cordisSameCopy !== 'boolean') return undefined
+  if (!Array.isArray(value.rows) || !value.rows.every(isProbeRow)) return undefined
+  if (!Array.isArray(value.overrides) || !value.overrides.every(item => typeof item === 'string')) return undefined
+  if (!Array.isArray(value.addable) || !value.addable.every(isProbeAddable)) return undefined
+  return value as unknown as PluginProbe
 }
 
 /**

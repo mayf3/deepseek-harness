@@ -43,6 +43,8 @@ hello-plugin/
 }
 ```
 
+另有两个 `dsh` 键面向使用者描述这个包：`dsh.title` 是它在插件列表里的名字，`dsh.plugins` 列出使用者可以逐个加进组合的模块，与组合包整体挂载的层并列——每一项写模块名（`"name": "dsh-hello-plugin/extra"`），可选 `title` 与默认 `config`。所有 `dsh` 键都声明在 [`@deepseek-ai/dsh-package-manifest`](../../../../packages/util/package-manifest/README.zh.md) 里。
+
 创建 `hello-plugin/index.js`，写入插件入口：
 
 ```js
@@ -109,7 +111,7 @@ dsh --profile demo
 
 `dsh plugin --profile demo remove dsh-hello-plugin` 会同时移除依赖和对应的层。
 
-已安装的组合包作为外部层挂载：dump 会把它的行显示在一个名为 `bundle/dsh-hello-plugin` 的组里，每个行 id 带上包名前缀，因此上面那一行在挂载后的树里是 `dsh-hello-plugin/hello`——针对它的用户 patch 要写这个 id。你的某一行启动失败时会被隔离并在插件列表里报告，而不是让 `dsh` 停下；如果你的组合包提供内置行所注入的服务，请声明 `dsh.bundle.stage: boot`，让它像内置行一样挂载并明确失败。前缀不会改写字符串字面量，因此用 `e.options.id` 与自己 id 比较的 `!!js` disabled 表达式应改为比较 `e.options.name`。
+已安装的组合包作为外部层挂载：dump 会把它的行显示在一个名为 `bundle/dsh-hello-plugin` 的组里，每一行保持你的 patch 所声明的 id，因此上面那一行在挂载后的树里仍是 `hello`，针对它的用户 patch 就写这个 id。行 id 在所有层之间共用：如果别的层已经声明了你的某个 id，或者你的 patch 把一个 id 声明了两次，整个组合包会被排除，原因在启动时打印并显示在插件列表里。你的某一行启动失败时会被隔离并在插件列表里报告，而不是让 `dsh` 停下；如果你的组合包提供内置行所注入的服务，请声明 `dsh.bundle.stage: boot`，让它像内置行一样挂载并明确失败。
 
 ## 加载顺序
 

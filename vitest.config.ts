@@ -210,6 +210,8 @@ export default defineConfig({
         'packages/*/*/src/types.ts',
         'packages/*/*/src/bin.ts',
         'packages/*/*/src/worker.ts',
+        // The package probe's child entry runs only as a spawned process; probe.spec drives it.
+        'packages/boot/app-boot/src/probe-child.ts',
         // Dynamic Host/Client composition is covered by its focused lifecycle
         // tests and assembled application checks rather than per-file coverage.
         'packages/self-modification/*/src/**/*.{ts,tsx}',

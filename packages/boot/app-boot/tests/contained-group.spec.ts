@@ -191,6 +191,33 @@ describe('cordis:contained-group', () => {
     expect(registry.get('include:ext/flaky')?.message).toContain('flaky on reload')
   })
 
+  it('forgets its rows\' records when the group unmounts', async () => {
+    const ctx = await boot(NAME, stage(`
+- id: bundle/ext
+  name: cordis:contained-group
+  group: true
+  config:
+    - id: ext/bad
+      name: cordis:throws
+    - id: ext/ok
+      name: cordis:good
+- id: bundle/other
+  name: cordis:contained-group
+  group: true
+  config:
+    - id: other/bad
+      name: cordis:throws
+`), [], prepare)
+    contexts.push(ctx)
+    const registry = ctx.get('pluginFailures') as ContainedFailureRegistry
+    expect(registry.list().map(failure => failure.entryId).sort()).toEqual(['include:ext/bad', 'include:other/bad'])
+    // The group's row id keys the tree store; `Entry.id` carries the include prefix.
+    const group = ctx.loader.resolve('include:bundle/ext')
+    await group.parent.remove(group.options.id)
+    expect([...ctx.loader.entries()].some(entry => entry.id === 'include:ext/ok')).toBe(false)
+    expect(registry.list().map(failure => failure.entryId)).toEqual(['include:other/bad'])
+  })
+
   it('provides one registry per runtime', async () => {
     const ctx = new Context()
     contexts.push(ctx)
