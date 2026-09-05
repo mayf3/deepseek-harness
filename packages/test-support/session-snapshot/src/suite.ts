@@ -1146,6 +1146,31 @@ export function stabilizeRefreshLog(
 }
 
 /**
+ * Check the selected generation of every parent and child fixture against storage policy.
+ * @param dir Scenario directory containing canonical Session fixtures.
+ * @param scenarioName Scenario name used in failure diagnostics.
+ * @returns Resolves when all selected fixtures satisfy the storage checks.
+ */
+export async function assertSessionFixtureStorage(dir: string, scenarioName: string): Promise<void> {
+  const files = await sessionFixtures(dir)
+  for (const file of files) {
+    const fixture = await readFile(join(dir, file), 'utf8')
+    expect(unknownToolCallIds(fixture), `${scenarioName}/${file} contains UNKNOWN_TOOL`)
+      .toEqual([])
+    expect(fixture, `${scenarioName}/${file} carries a non-canonical macOS cwd token`)
+      .not.toContain('/private{{cwd}}')
+    expect(scrubSystemPrompts(fixture), `${scenarioName}/${file} carries an unscrubbed system prompt`)
+      .toEqual(fixture)
+    expect(scrubToolSchemas(fixture), `${scenarioName}/${file} carries unscrubbed tool schemas`)
+      .toEqual(fixture)
+    expect(systemPromptPrecedesRequests(fixture), `${scenarioName}/${file} has a request/header with no preceding system/message`)
+      .toBe(true)
+  }
+  const fixtures = await Promise.all(files.map(file => readFile(join(dir, file), 'utf8')))
+  expect(redactSessionSnapshotIds(fixtures), `${scenarioName}: identity redaction fixed point`).toEqual(fixtures)
+}
+
+/**
  * Register the suite: one test per scenario (the expected-output and log comparisons and
  * the header and prompt uniformity guard) plus the fixture guard block (no orphan
  * scenario dirs, required files present, exactly one pin per header class,
@@ -1684,31 +1709,7 @@ export function defineAcpSnapshotSuite(options: SnapshotSuiteOptions): void {
       // platform realpath prefix. Fixed-point checks make these storage rules
       // fail loud.
       for (const scenario of scenarios) {
-        const dir = join(snapshotsDir, scenario.name)
-        const files = await sessionFixtures(dir)
-        // A retained historical generation predates the `system/message` node
-        // vocabulary and cannot satisfy current-writer storage rules; only
-        // the selected current generation (highest fixture version) is a
-        // fixed point of the current prompt/schema scrub shape.
-        const currentFiles = files.filter(file => file === files[0])
-        for (const file of files) {
-          const fixture = await readFile(join(dir, file), 'utf8')
-          expect(unknownToolCallIds(fixture), `${scenario.name}/${file} contains UNKNOWN_TOOL`)
-            .toEqual([])
-          expect(fixture, `${scenario.name}/${file} carries a non-canonical macOS cwd token`)
-            .not.toContain('/private{{cwd}}')
-        }
-        for (const file of currentFiles) {
-          const fixture = await readFile(join(dir, file), 'utf8')
-          expect(scrubSystemPrompts(fixture), `${scenario.name}/${file} carries an unscrubbed system prompt`)
-            .toEqual(fixture)
-          expect(scrubToolSchemas(fixture), `${scenario.name}/${file} carries unscrubbed tool schemas`)
-            .toEqual(fixture)
-          expect(systemPromptPrecedesRequests(fixture), `${scenario.name}/${file} has a request/header with no preceding system/message`)
-            .toBe(true)
-        }
-        const fixtures = await Promise.all(files.map(file => readFile(join(dir, file), 'utf8')))
-        expect(redactSessionSnapshotIds(fixtures), `${scenario.name}: identity redaction fixed point`).toEqual(fixtures)
+        await assertSessionFixtureStorage(join(snapshotsDir, scenario.name), scenario.name)
       }
     })
   })
