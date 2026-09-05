@@ -89,7 +89,7 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 }[T]
 ```
 
-Sources: [`packages/core/session/src/types.ts:394`](../packages/core/session/src/types.ts) · [`packages/core/session/src/types.ts:402`](../packages/core/session/src/types.ts) · [`packages/core/session/src/types.ts:432`](../packages/core/session/src/types.ts) · [`packages/core/session/src/types.ts:463`](../packages/core/session/src/types.ts)
+Sources: [`packages/core/session/src/types.ts:402`](../packages/core/session/src/types.ts) · [`packages/core/session/src/types.ts:410`](../packages/core/session/src/types.ts) · [`packages/core/session/src/types.ts:440`](../packages/core/session/src/types.ts) · [`packages/core/session/src/types.ts:471`](../packages/core/session/src/types.ts)
 
 ## Events
 
@@ -216,7 +216,7 @@ Source: [`packages/interaction/user-approval/src/index.ts:33`](../packages/inter
 'assistant/attempt': { turn: number; step: number; stream: AssistantStreamRecord[] }
 ```
 
-Source: [`packages/core/session/src/types.ts:328`](../packages/core/session/src/types.ts)
+Source: [`packages/core/session/src/types.ts:334`](../packages/core/session/src/types.ts)
 
 <a id="assistantmessage--surface"></a>
 
@@ -246,7 +246,7 @@ Source: [`packages/core/session/src/types.ts:328`](../packages/core/session/src/
 
 Types: [TokenUsage](subsystems/llm-streaming.md)
 
-Source: [`packages/core/session/src/types.ts:314`](../packages/core/session/src/types.ts)
+Source: [`packages/core/session/src/types.ts:320`](../packages/core/session/src/types.ts)
 
 ### `command/*`
 
@@ -588,13 +588,15 @@ Source: [`packages/plan/plan-mode/src/index.ts:46`](../packages/plan/plan-mode/s
 
 ```ts persistence-catalog
 /**
- * Route metadata for the next request, logged only when the route or capacity
- * changes. It does not participate in request reconstruction or header equality.
+ * Route metadata for the next request, logged only when the route, capacity,
+ * or system prompt update mode changes. It does not participate in request
+ * reconstruction or header equality; the loop reads the latest snapshot's
+ * `systemPromptUpdate` when it decides how to commit a changed system prompt.
  */
 'request/context': RequestContext
 ```
 
-Source: [`packages/core/session/src/types.ts:367`](../packages/core/session/src/types.ts)
+Source: [`packages/core/session/src/types.ts:375`](../packages/core/session/src/types.ts)
 
 <a id="requestheader--log-only"></a>
 
@@ -613,7 +615,7 @@ Source: [`packages/core/session/src/types.ts:367`](../packages/core/session/src/
 }
 ```
 
-Source: [`packages/core/session/src/types.ts:357`](../packages/core/session/src/types.ts)
+Source: [`packages/core/session/src/types.ts:363`](../packages/core/session/src/types.ts)
 
 ### `sandbox/*`
 
@@ -688,7 +690,7 @@ Source: [`packages/schedule/schedule/src/types.ts:219`](../packages/schedule/sch
 'session/end-seed': { inherited?: true }
 ```
 
-Source: [`packages/core/session/src/types.ts:390`](../packages/core/session/src/types.ts)
+Source: [`packages/core/session/src/types.ts:398`](../packages/core/session/src/types.ts)
 
 <a id="sessiontitle--log-only"></a>
 
@@ -750,7 +752,7 @@ Source: [`packages/session/session-log-deepseek/src/types.ts:59`](../packages/se
 'step/end': { turn: number; step: number }
 ```
 
-Source: [`packages/core/session/src/types.ts:286`](../packages/core/session/src/types.ts)
+Source: [`packages/core/session/src/types.ts:289`](../packages/core/session/src/types.ts)
 
 <a id="stepstart--log-only"></a>
 
@@ -761,7 +763,7 @@ Source: [`packages/core/session/src/types.ts:286`](../packages/core/session/src/
 'step/start': { turn: number; step: number }
 ```
 
-Source: [`packages/core/session/src/types.ts:284`](../packages/core/session/src/types.ts)
+Source: [`packages/core/session/src/types.ts:287`](../packages/core/session/src/types.ts)
 
 ### `subagent/*`
 
@@ -810,16 +812,19 @@ Source: [`packages/subagent/tool-subagent/src/model-selection-state.ts:17`](../p
 ```ts persistence-catalog
 /**
  * The rendered system prompt on the model-visible surface. The loop appends
- * the first one as surface node 0 before the step's first `user/message` and
- * replaces that node (`surfaceOp: { op: 'replace' }` over exactly node 0)
- * when the rendered prompt changes, so the head of every request is derived
- * history like every other message. Empty `message.content` records "no
+ * the first one as surface node 0 before the step's first `user/message`.
+ * When the rendered prompt changes it replaces the latest system node
+ * (`surfaceOp: { op: 'replace' }` over exactly that node) or, on a route
+ * whose `request/context` declares `systemPromptUpdate: 'in-history'` and
+ * inside a continuing request series, appends the changed prompt after the
+ * cached history, so the latest system node is the effective prompt and
+ * every request stays derived history. Empty `message.content` records "no
  * system prompt" and projects to no message.
  */
 'system/message': { turn: number; step: number; message: SystemMessage }
 ```
 
-Source: [`packages/core/session/src/types.ts:303`](../packages/core/session/src/types.ts)
+Source: [`packages/core/session/src/types.ts:309`](../packages/core/session/src/types.ts)
 
 ### `team/*`
 
@@ -912,7 +917,7 @@ Source: [`packages/todo/tool-todo/src/types.ts:31`](../packages/todo/tool-todo/s
 
 Types: [ToolCallId](subsystems/core.md)
 
-Source: [`packages/core/session/src/types.ts:334`](../packages/core/session/src/types.ts)
+Source: [`packages/core/session/src/types.ts:340`](../packages/core/session/src/types.ts)
 
 <a id="toolptc-dispatch--log-only"></a>
 
@@ -987,7 +992,7 @@ Source: [`packages/core/tools/src/types.ts:40`](../packages/core/tools/src/types
 }
 ```
 
-Source: [`packages/core/session/src/types.ts:346`](../packages/core/session/src/types.ts)
+Source: [`packages/core/session/src/types.ts:352`](../packages/core/session/src/types.ts)
 
 ### `tool-workflow/*`
 
@@ -1067,7 +1072,7 @@ Source: [`packages/workflow/tool-workflow/src/types.ts:47`](../packages/workflow
 
 Types: [TurnEndReason](subsystems/session.md)
 
-Source: [`packages/core/session/src/types.ts:282`](../packages/core/session/src/types.ts)
+Source: [`packages/core/session/src/types.ts:285`](../packages/core/session/src/types.ts)
 
 <a id="turnstart--log-only"></a>
 
@@ -1083,7 +1088,7 @@ Source: [`packages/core/session/src/types.ts:282`](../packages/core/session/src/
 'turn/start': { turn: number }
 ```
 
-Source: [`packages/core/session/src/types.ts:273`](../packages/core/session/src/types.ts)
+Source: [`packages/core/session/src/types.ts:276`](../packages/core/session/src/types.ts)
 
 ### `user/*`
 
@@ -1102,7 +1107,7 @@ Source: [`packages/core/session/src/types.ts:273`](../packages/core/session/src/
 'user/message': UserMessage
 ```
 
-Source: [`packages/core/session/src/types.ts:294`](../packages/core/session/src/types.ts)
+Source: [`packages/core/session/src/types.ts:297`](../packages/core/session/src/types.ts)
 
 ### `web/*`
 

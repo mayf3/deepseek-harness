@@ -70,7 +70,7 @@ const handle = await ctx.agents.create({
 
 ### 一个步骤做什么
 
-每个步骤都会发送会话的派生历史——以该 agent 渲染后的系统提示词作为 surface 第 0 号节点（一个 `system/message` 事件）开头——及其可见工具 schema；模型的工具调用经过受守卫的工具流水线，每个被接纳的事实都会在下一步据此派生之前追加到会话日志。并行安全调用最多可重叠 `maxParallelToolCalls` 个；独占调用单独运行并构成排序屏障。取消是协作式的：`agent.cancel()` 中止当前活动，并在未设置 `keepInbox` 时清除待处理工作；被取消的流会终结已送达用户的文本。
+每个步骤都会发送会话的派生历史——以该 agent 渲染后的系统提示词作为 surface 第 0 号节点（一个 `system/message` 事件）开头，当 `in-history` 路由在后面追加了变化后的提示词时，最新的系统节点即为有效提示词——及其可见工具 schema；模型的工具调用经过受守卫的工具流水线，每个被接纳的事实都会在下一步据此派生之前追加到会话日志。并行安全调用最多可重叠 `maxParallelToolCalls` 个；独占调用单独运行并构成排序屏障。取消是协作式的：`agent.cancel()` 中止当前活动，并在未设置 `keepInbox` 时清除待处理工作；被取消的流会终结已送达用户的文本。
 
 -----
 
@@ -88,7 +88,7 @@ const handle = await ctx.agents.create({
 
 ### 请求 header 与适配器默认值
 
-`agent/request` 返回后，`ctx.llm.prepareCall()` 会在活跃轮次信号下校验适配器持有的字段，并解析推理强度和输出 token 默认值。循环会在解析、`request/header` 记录与分派期间保留同一个适配器。循环会为首次请求、变化的 envelope（config 或 tools——提示词不属于 header）、显式消息序列起点、surface 替换（提示词变更或压缩（compaction））后的请求及恢复写入完整 header；同一序列内内容未变的步骤、重试与普通后续轮次继承最新 header。在 header 之外，循环还会记录 `request/context`——提供方、模型与 `contextWindow`——且仅在其中任何一项与最新快照不同时记录。下一次 waterfall 前，循环移除适配器默认字段，使当前路由重新解析它们；显式设置则保留。未处理的路由仍以 `NO_ADAPTER` 失败。
+`agent/request` 返回后，`ctx.llm.prepareCall()` 会在活跃轮次信号下校验适配器持有的字段，并解析推理强度和输出 token 默认值。循环会在解析、`request/header` 记录与分派期间保留同一个适配器。循环会为首次请求、变化的 envelope（config 或 tools——提示词不属于 header）、显式消息序列起点、surface 替换（原地替换提示词或压缩（compaction））后的请求及恢复写入完整 header；同一序列内内容未变的步骤、重试与普通后续轮次继承最新 header，历史内追加提示词不是替换，因此紧随其后的请求同样继承 header。在 header 之外，循环还会记录 `request/context`——提供方、模型、`contextWindow` 以及来自 `prepareCall()` 的路由 `systemPromptUpdate` 模式——且仅在其中任何一项与最新快照不同时记录。下一次 waterfall 前，循环移除适配器默认字段，使当前路由重新解析它们；显式设置则保留。未处理的路由仍以 `NO_ADAPTER` 失败。
 
 ### 源码地图
 
@@ -111,7 +111,9 @@ const handle = await ctx.agents.create({
 
 ### 轮次与步骤流程
 
-驱动器在其整个生命周期内拥有一个 agent，并在 `ctx.agents.withInitiator(agent, ...)` 内运行。在轮次边界，它先打开持久轮次，再原子领取待处理的 next-step 输入与一条排队提示词；在步骤之间则只领取 next-step 输入。在 `agent/pre-step` 之前，驱动器组装并渲染提示词，再把渲染文本与存活的 `system/message` 节点比对投影（`runtime-context.ts` 中的 `SystemPromptProjection`）：没有存活节点时即使提示词为空也追加（预留第 0 号节点，但不产生协议消息），文本不同时恰好替换该节点，文本未变时不产生任何事件。`agent/pre-step` 决定什么进入该步骤。进入步骤的决定会紧接 `step/start` 之后追加待提交的 `system/message`，随后在驱动器再次领取消息前追加完整的 `user/message` 批次，因此日志顺序即协议顺序；被拒绝的决定则不追加任何消息。请求由 `header.config`、`deriveMessages()` 与 `header.tools` 构成；请求不携带 `system` 字段。每次模型尝试会发出一个进程本地 `start`，仅在匹配的持久 assistant-frame 结算之后发出各个 `chunk`，并恰好发出一个终态 `end`；最终组装或消息追加失败时以 `aborted` 结算，`committed` 则出现在持久 `assistant/message` 之后。每次成功的模型调用都恰好追加一个 message 锚点，被取消的流则追加带 `interrupted: true` 的锚点并携带已交付前缀，使下一次请求包含用户看到的内容。在步骤内，独占调用形成屏障，并行安全调用使用有界滚动池；策略、持久结果与结果上下文保持模型顺序。
+驱动器在其整个生命周期内拥有一个 agent，并在 `ctx.agents.withInitiator(agent, ...)` 内运行。在轮次边界，它先打开持久轮次，再原子领取待处理的 next-step 输入与一条排队提示词；在步骤之间则只领取 next-step 输入。驱动器组装并渲染提示词、投影 runtime 上下文、运行决定什么进入该步骤的 `agent/pre-step`，然后再把渲染文本与存活的 `system/message` 节点比对投影（`runtime-context.ts` 中的 `SystemPromptProjection`），因此 pre-step 监听器执行的压缩对投影可见。进入步骤的决定会紧接 `step/start` 之后追加待提交的 `system/message`，随后在驱动器再次领取消息前追加完整的 `user/message` 批次，因此日志顺序即协议顺序；被拒绝的决定则不追加任何消息。请求由 `header.config`、`deriveMessages()` 与 `header.tools` 构成；请求不携带 `system` 字段。每次模型尝试会发出一个进程本地 `start`，仅在匹配的持久 assistant-frame 结算之后发出各个 `chunk`，并恰好发出一个终态 `end`；最终组装或消息追加失败时以 `aborted` 结算，`committed` 则出现在持久 `assistant/message` 之后。每次成功的模型调用都恰好追加一个 message 锚点，被取消的流则追加带 `interrupted: true` 的锚点并携带已交付前缀，使下一次请求包含用户看到的内容。在步骤内，独占调用形成屏障，并行安全调用使用有界滚动池；策略、持久结果与结果上下文保持模型顺序。
+
+提示词决策规则：surface 上没有系统节点时，即使提示词为空也追加（预留第 0 号节点，但不产生协议消息）；最新系统节点的文本等于渲染后的提示词时，不产生任何事件；当最新的 `request/context` 快照声明 `systemPromptUpdate: 'in-history'` 时，变化后的非空提示词追加到当前历史之后，除非该步骤开启新的请求序列且只剩一个系统节点存活；其余情况下，变化后的提示词原地替换最新存活的系统节点。以下情形开启新序列：pre-step 决定声明 `startsRequestSeries`、surface 替换 generation 自上次请求以来发生变化（压缩或任何替换）、可见工具 schema 集合发生变化；恢复的会话以及单纯的提供方或模型切换都延续序列，因此在 `in-history` 路由上，跨重启发生变化的提示词会被追加。遮蔽了全部后续系统节点的压缩只留下第 0 号节点，变化后的提示词随即替换它。
 
 ### 失败与取消
 
@@ -142,15 +144,15 @@ const handle = await ctx.agents.create({
 
 #### 模型看到什么
 
-每个步骤中，循环会发送会话的派生消息（其首条消息是 surface 第 0 号节点承载的、针对该 agent 渲染的系统提示词）与可见工具 schema。它提供 `provider`、`model` 与 `cwd` 变量值，但不添加固定文案。
+每个步骤中，循环会发送会话的派生消息（其首条消息是 surface 第 0 号节点承载的、针对该 agent 渲染的系统提示词，其有效提示词是最新的 `system/message` 节点）与可见工具 schema。它提供 `provider`、`model` 与 `cwd` 变量值，但不添加固定文案。
 
 #### Token 影响
 
-系统文本与 schema 在每个步骤都会再次计入。逐 agent 作用域决定贡献，而权威组装 waterfall 可以改变最终请求，并使其监听器负责保持协议连贯。
+系统文本与 schema 在每个步骤都会再次计入，在 `in-history` 路由上，每个保留的提示词版本都会持续计入，直到压缩将其遮蔽。逐 agent 作用域决定贡献，而权威组装 waterfall 可以改变最终请求，并使其监听器负责保持协议连贯。
 
 #### KV Cache 影响
 
-只有在同一提供方与模型路由下，且系统文本、schema 与此前历史都保持逐字节一致时，请求才保持仅追加。渲染后的提示词未变时，surface 第 0 号节点保持原位，缓存前缀得以保留。提示词变更会用新的 `system/message` 替换第 0 号节点，因此请求从其第一个 token 起就不同，提供方前缀缓存整体未命中；schema 或组合变更则从第一个改变的请求 token 起使复用失效。
+只有在同一提供方与模型路由下，且系统文本、schema 与此前历史都保持逐字节一致时，请求才保持仅追加。渲染后的提示词未变时，系统节点保持原位，缓存前缀得以保留。原地替换某个系统节点的提示词变更会使请求从该节点的第一个 token 起就不同——该节点是第 0 号节点时则整个请求都不同——因此提供方前缀缓存从那里开始未命中；在 `request/context` 声明 `systemPromptUpdate: 'in-history'` 的路由上，同一请求序列延续期间的提示词变更会追加到已缓存历史之后，因此直到该历史末尾的前缀仍可复用。schema 或组合变更则从第一个改变的请求 token 起使复用失效。
 
 ### 保留的消息历史
 

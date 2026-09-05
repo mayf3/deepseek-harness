@@ -336,6 +336,14 @@ export interface LlmModelReasoningInfo {
   defaultEffort?: ReasoningEffortId
 }
 
+/**
+ * How a model applies a system prompt that changes mid-conversation.
+ * `'in-history'`: the model reads the latest `system` message at any position
+ * of `messages` as the complete effective system prompt, so a changed prompt
+ * can follow the cached history instead of rewriting message 0.
+ */
+export type SystemPromptUpdate = 'in-history'
+
 /** Exact-route model metadata resolved by its owning adapter. */
 export interface LlmResolvedModelInfo extends LlmModelInfo {
   /** Provider-owned context capacity when known. */
@@ -344,6 +352,8 @@ export interface LlmResolvedModelInfo extends LlmModelInfo {
   defaultMaxTokens?: number
   /** Adapter-owned selectable reasoning levels when exposed. */
   reasoning?: LlmModelReasoningInfo
+  /** Declared mid-conversation system prompt handling; absent means only a leading system message is read. */
+  systemPromptUpdate?: SystemPromptUpdate
 }
 
 /**

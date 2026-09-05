@@ -635,16 +635,118 @@ describe('Trajectory conversation Definitions', () => {
     ])
   })
 
+  it('carries an in-history prompt update into later requests as a system change at its own position', () => {
+    const value = assembler([
+      at(1, 'turn/start', { turn: 1 }),
+      at(2, 'step/start', { turn: 1, step: 1 }),
+      at(3, 'system/message', {
+        turn: 1,
+        step: 1,
+        message: systemMessage('first prompt'),
+      }, { surfaceOp: 'append' }),
+      at(4, 'request/header', {
+        reason: 'initial',
+        header: { config: { provider: 'test', model: 'test' }, tools: [] },
+      }),
+      at(5, 'assistant/message', {
+        turn: 1,
+        step: 1,
+        message: assistantMessage('assistant-1', 'first'),
+      }),
+      at(6, 'step/end', { turn: 1, step: 1 }),
+      at(7, 'turn/end', { turn: 1, reason: { kind: 'completed' } }),
+      at(8, 'turn/start', { turn: 2 }),
+      at(9, 'step/start', { turn: 2, step: 1 }),
+      // An in-history route appends the changed prompt and logs no new header.
+      at(10, 'system/message', {
+        turn: 2,
+        step: 1,
+        message: systemMessage('updated prompt'),
+      }, { surfaceOp: 'append' }),
+      at(11, 'assistant/message', {
+        turn: 2,
+        step: 1,
+        message: assistantMessage('assistant-2', 'second'),
+      }),
+      at(12, 'step/end', { turn: 2, step: 1 }),
+      at(13, 'step/start', { turn: 2, step: 2 }),
+      at(14, 'assistant/message', {
+        turn: 2,
+        step: 2,
+        message: assistantMessage('assistant-3', 'third'),
+      }),
+      at(15, 'step/end', { turn: 2, step: 2 }),
+      at(16, 'turn/end', { turn: 2, reason: { kind: 'completed' } }),
+      at(17, 'turn/start', { turn: 3 }),
+      at(18, 'step/start', { turn: 3, step: 1 }),
+      // A later series header carries the updated prompt without a second system change.
+      at(19, 'request/header', {
+        reason: 'series',
+        startsSeries: true,
+        header: { config: { provider: 'test', model: 'test' }, tools: [] },
+      }),
+      at(20, 'assistant/message', {
+        turn: 3,
+        step: 1,
+        message: assistantMessage('assistant-4', 'fourth'),
+      }),
+    ])
+
+    const current = snapshot(value)
+    expect(current.eventNodes.map(node => node.seq)).not.toContain(10)
+    expect(current.requests.map(request => request.purpose === 'assistant'
+      ? [request.prompt?.system, request.promptChange]
+      : undefined)).toEqual([
+      ['first prompt', { seq: 3, time: 1_700_000_000_003, kind: 'initial' }],
+      ['updated prompt', {
+        seq: 10,
+        time: 1_700_000_000_010,
+        kind: 'system',
+        previous: { config: { provider: 'test', model: 'test' }, system: 'first prompt', tools: [] },
+      }],
+      ['updated prompt', undefined],
+      ['updated prompt', undefined],
+    ])
+  })
+
+  it('retains an in-history update without a loaded header as a plain system node', () => {
+    const value = assembler([
+      at(1, 'turn/start', { turn: 1 }),
+      at(2, 'step/start', { turn: 1, step: 1 }),
+      at(3, 'system/message', { turn: 1, step: 1, message: systemMessage('first prompt') }, { surfaceOp: 'append' }),
+      at(4, 'system/message', { turn: 1, step: 1, message: systemMessage('updated prompt') }, { surfaceOp: 'append' }),
+      at(5, 'request/header', {
+        reason: 'initial',
+        header: { config: { provider: 'test', model: 'test' }, tools: [] },
+      }),
+      at(6, 'assistant/message', { turn: 1, step: 1, message: assistantMessage('assistant-1', 'first') }),
+    ])
+
+    expect(snapshot(value).requests.map(request => request.purpose === 'assistant'
+      ? [request.prompt?.system, request.promptChange]
+      : undefined)).toEqual([
+      ['updated prompt', { seq: 4, time: 1_700_000_000_004, kind: 'initial' }],
+    ])
+  })
+
   it('pins the system-message Definition edges the engine cannot reach', () => {
     const definition = DEFINITIONS.find(candidate => candidate.kind === 'trajectory-system-message')
     if (definition === undefined) throw new Error('trajectory-system-message Definition is not registered')
     const input = at(1, 'turn/start', { turn: 1 })
     const invalidStart = { ...input, role: 'start' as const, location: { kind: 'session' as const } }
-    const state = { seq: 1, time: 1, text: 'system prompt' }
+    const state = { seq: 1, time: 1, turn: 1, step: 1, text: 'system prompt', update: false }
 
     expect(() => definition.start({} as never, invalidStart, {} as never))
       .toThrow('trajectory-system-message start requires system/message')
     expect(definition.update({ state } as never, invalidStart)).toBe(state)
+
+    const header = DEFINITIONS.find(candidate => candidate.kind === 'trajectory-request-header')
+    if (header === undefined) throw new Error('trajectory-request-header Definition is not registered')
+    const headerState = { seq: 2, time: 2, prompt: { config: { provider: 'test', model: 'test' } }, location: invalidStart.location }
+    expect(() => header.start({} as never, invalidStart, {} as never))
+      .toThrow('trajectory-request-header start requires request/header')
+    expect(header.update({ state: headerState } as never, invalidStart)).toBe(headerState)
+    expect(header.buildViewNode?.({ state: undefined } as never)).toBeNull()
   })
 
   it('replays pending splice chains and scopes steering to the current claim', () => {

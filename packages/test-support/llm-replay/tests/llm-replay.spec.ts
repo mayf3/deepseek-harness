@@ -1328,6 +1328,7 @@ describe('installLlmReplay (through the real LlmRuntime)', () => {
               defaultMaxTokens: 64_000,
               reasoningEfforts: ['off', 'max'],
               defaultReasoningEffort: 'max',
+              systemPromptUpdate: 'in-history',
             },
             { id: 'pro', name: 'Pro', description: 'Larger model', reasoningEfforts: ['high'] },
           ],
@@ -1353,7 +1354,9 @@ describe('installLlmReplay (through the real LlmRuntime)', () => {
         efforts: [{ id: 'off', name: 'off' }, { id: 'max', name: 'max' }],
         defaultEffort: 'max',
       },
+      systemPromptUpdate: 'in-history',
     })
+    await expect(ctx.llm.resolveModelInfo('deepseek', 'pro')).resolves.not.toHaveProperty('systemPromptUpdate')
     await expect(ctx.llm.resolveModelInfo('deepseek', 'pro')).resolves.not.toHaveProperty('inputModalities')
     await expect(ctx.llm.resolveModelInfo('deepseek', 'pro')).resolves.not.toHaveProperty('context')
     // Efforts without a configured default preserve the provider's own default.
@@ -2119,6 +2122,15 @@ describe('apply (the plugin entry)', () => {
       NonNullable<Config['providers']>
     expect(() => { apply(ctx, { file, providers }) }).toThrow(
       'llm-replay: provider "m" model "m" imageRequestTokens must be a positive safe integer',
+    )
+  })
+
+  it('rejects an unknown systemPromptUpdate mode during load', () => {
+    const ctx = new Context()
+    const providers = [{ id: 'm', models: [{ id: 'm', systemPromptUpdate: 'leading' }] }] as unknown as
+      NonNullable<Config['providers']>
+    expect(() => { apply(ctx, { file, providers }) }).toThrow(
+      'llm-replay: provider "m" model "m" systemPromptUpdate must be "in-history" when present',
     )
   })
 

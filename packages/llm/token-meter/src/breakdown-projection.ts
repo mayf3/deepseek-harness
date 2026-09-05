@@ -69,10 +69,11 @@ export const contextBreakdownProjectionDefinition = {
     let toolsTokens = state.toolsTokens
     let fold: SurfaceTokensFold
     if (event.type === 'system/message') {
-      // The system node has its own figure, so it never enters the message
-      // fold; like every non-metering event it expires an armed claim.
+      // The newest system node has its own figure; an appended one supersedes
+      // the previous node, which stays in the history the message figure
+      // prices. Like every non-metering event it expires an armed claim.
       systemTokens = estimateSystemMessage(event.data.message)
-      fold = { deltaTokens: 0, claim: undefined }
+      fold = { deltaTokens: event.surfaceOp === 'append' ? state.systemTokens : 0, claim: undefined }
     } else {
       fold = foldSurfaceProjection(state.claim, event)
       if (event.type === 'request/header') {

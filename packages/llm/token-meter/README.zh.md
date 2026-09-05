@@ -138,6 +138,7 @@ const price = ctx.tokenMeter.estimateMessage(message)
 - **提供方用量只在规范 envelope 完全相同时可复用**——工具、提供方、模型或调用配置变化会刻意回退到完整启发式估算；系统提示词变更在下一次成功调用之前按带符号的表面增量计量。
 - **缺失遗留源 seq 时保守处理**——没有 `sourceEventSeqs` 的 assistant 消息无法区分提供方输出与监听器改写，因此 fold 不会声称已知空或精确分片流。
 - **system 提示词改写不带影子价**——循环替换 system 节点时没有紧邻的计量事件，因此 `contextPressure.projectedTokens` 以零增量折叠该替换，直到下一个用量样本；`contextBreakdown.systemTokens` 与 `measure()` 会立即按新提示词重新计价。
+- **压缩若遮蔽了最新的 in-history system 节点**，会从 `contextBreakdown.messageTokens` 中减去它的价格，而该节点原本由 system 数字承载，因此消息数字会偏移该提示词与被取代提示词之间的价差，直到下一次重新基线替换节点 0；`contextPressure` 与 `measure()` 保持精确。
 
 <a id="dev-note"></a>
 ### 开发备注

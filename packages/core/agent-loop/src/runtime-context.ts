@@ -1,7 +1,7 @@
 /**
  * Durable projection state for the two loop-owned surface messages the system
- * prompt plugin forms: the system prompt (surface node 0) and the dynamic
- * runtime-context snapshot.
+ * prompt plugin forms: the system prompt (surface node 0 and any in-history
+ * replacement) and the dynamic runtime-context snapshot.
  * @module @deepseek-ai/dsh-agent-loop/runtime-context
  */
 
@@ -27,8 +27,20 @@ function textOf(message: Message): string | undefined {
 export interface SystemPromptCommit {
   /** The rendered prompt as a system-role message; empty content records "no system prompt". */
   message: SystemMessage
-  /** `append` for the session's first system node, otherwise a replacement of the retained node. */
+  /** `append` for a new system node, otherwise a replacement of one surviving system node. */
   intent: SurfaceIntent
+}
+
+/** The request-series facts one prompt decision is made under. */
+export interface SystemPromptDecisionInput {
+  /** Whether the route that served the last request reads a later `system` message as the effective prompt. */
+  inHistory: boolean
+  /**
+   * Whether this step's request starts a new model-message series: a pre-step
+   * listener declared one, the surface was replaced since the last request, or
+   * the assembled tool schemas differ from the logged header.
+   */
+  startsSeries: boolean
 }
 
 /** Committed events from the newest backward; the restore scans stop at the first match. */
@@ -37,53 +49,50 @@ function eventsNewestFirst(session: Session): readonly SessionEvent[] {
 }
 
 /**
- * Tracks the retained `system/message` surface node without owning its commit.
- * The first rendered prompt, even empty, reserves surface node 0; every later change
- * replaces the retained node in place, so the model-visible head of the
- * request is derived history like every other message.
+ * Decides how a rendered system prompt reaches the surface without owning the
+ * commit. The first rendered prompt, even empty, reserves surface node 0. A later change
+ * replaces the latest surviving system node in place, except on an
+ * `in-history` route while the request series continues, where it appends a
+ * new `system/message` after the cached history; a series start folds the
+ * prompt back into node 0 when no later system node survives.
  */
 export class SystemPromptProjection {
-  /** The surviving system node, or `undefined` when the surface has none. */
-  private retained: { seq: SessionSeq; text: string } | undefined
+  constructor(private readonly session: Session) {}
 
-  /**
-   * Restore projection state once, then follow authoritative session events.
-   * @param ctx - agent-scoped event context.
-   * @param session - session receiving projected messages.
-   */
-  constructor(ctx: Context, session: Session) {
-    const surface = new Set(session.surface.nodes)
-    for (const event of eventsNewestFirst(session)) {
-      if (event.type !== 'system/message' || !surface.has(event.seq)) continue
-      this.retained = { seq: event.seq, text: textOf(event.data.message) ?? '' }
-      break
+  /** The surviving `system/message` nodes in surface order. */
+  private systemNodes(): { seq: SessionSeq; text: string }[] {
+    const nodes: { seq: SessionSeq; text: string }[] = []
+    for (const seq of this.session.surface.nodes) {
+      const event = this.session.eventAt(seq)
+      if (event?.type !== 'system/message') continue
+      nodes.push({ seq, text: textOf(event.data.message) ?? '' })
     }
-
-    ctx.on('session/event', (subject, event) => {
-      if (subject !== session) return
-      if (event.type === 'system/message') {
-        this.retained = { seq: event.seq, text: textOf(event.data.message) ?? '' }
-      } else if (this.retained
-        && isReplacementSurfaceEvent(event)
-        && event.sourceEventSeqs?.includes(this.retained.seq) === true) {
-        this.retained = undefined
-      }
-    })
+    return nodes
   }
 
   /**
    * Create an uncommitted system node when absent, even for an empty prompt, or changed.
    * @param rendered - the fully rendered system prompt; `''` when none is active.
+   * @param input - the route capability and series facts for this step.
    * @returns the message and its surface intent, or `undefined` when no update is needed.
    */
-  project(rendered: string): SystemPromptCommit | undefined {
-    if (this.retained === undefined) {
+  project(rendered: string, input: SystemPromptDecisionInput): SystemPromptCommit | undefined {
+    const nodes = this.systemNodes()
+    const latest = nodes.at(-1)
+    if (latest === undefined) {
       return { message: createSystemMessage(rendered, SOURCE), intent: { surfaceOp: 'append' } }
     }
-    if (this.retained.text === rendered) return
-    const { seq } = this.retained
+    if (latest.text === rendered) return
+    const message = createSystemMessage(rendered, SOURCE)
+    // An empty node projects to no message, so clearing the prompt must rewrite
+    // the surviving node; a series start with one system node re-baselines it.
+    const append = input.inHistory
+      && rendered.length > 0
+      && (!input.startsSeries || nodes.length > 1)
+    if (append) return { message, intent: { surfaceOp: 'append' } }
+    const { seq } = latest
     return {
-      message: createSystemMessage(rendered, SOURCE),
+      message,
       intent: { surfaceOp: { op: 'replace', start: seq, end: seq }, sourceEventSeqs: [seq] },
     }
   }

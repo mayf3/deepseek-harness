@@ -31,7 +31,7 @@ The adapter passes each `SessionEventLikeEntry` directly to the assembler. Its o
 
 A target becomes active when shell selection resolves it or when its source receives a first subscriber. The assembler replaces that target from current Contexts once and keeps it active for later incremental flushes; creating a source does not activate it and unsubscription does not deactivate it.
 
-Target packages declaration-merge their snapshot and Location data maps, then register with `ctx.uiConversation.events.register(...)` and `ctx.uiConversation.views.register(...)`. A target reads its Session-owned source with `ctx.uiConversation.binding(binding).target(targetId)`. Registrations are Cordis effects and their returned disposers remove the contribution from the same registry.
+Target packages declaration-merge their snapshot and Location data maps, then register with `ctx.uiConversation.events.register(...)` and `ctx.uiConversation.views.register(...)`. A target reads its Session-owned source with `ctx.uiConversation.binding(binding).target(targetId)`. Registrations are Cordis effects and their returned disposers remove the contribution from the same registry. The shared request-inspection contract serves every target: a `SystemPromptNode` retains one `system/message` node with its `turn`, `step`, `text`, and `update` flag — true for a prompt appended after an earlier loaded system node, an in-history update presented where it was committed rather than by the next request header — and `ctx.uiConversation.inspectRequestPrompt(previous, header, system)` classifies a header's initial, system, or tool change, reporting no system change for a header that follows an in-history update.
 
 <a id="shell-and-standard-props"></a>
 ## Shell and standard props

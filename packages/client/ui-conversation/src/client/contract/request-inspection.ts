@@ -32,15 +32,25 @@ export interface SystemPromptNode {
   seq: number
   /** Unix epoch ms of the `system/message` event. */
   time: number
+  /** Turn the loop committed the node in. */
+  turn: number
+  /** Step the loop committed the node in. */
+  step: number
   /** Rendered system prompt text; empty records "no system prompt". */
   text: string
+  /**
+   * True for a prompt appended after an earlier loaded system node: an
+   * in-history update the model reads at this position, presented where it
+   * was committed rather than by the next request header.
+   */
+  update: boolean
 }
 
-/** System/tool change introduced while preparing one ordinary request. */
+/** System/tool change introduced while preparing one ordinary request, or by an in-history prompt update. */
 export interface RequestPromptChange {
   /**
    * Sequence of the event that introduced this state: the `system/message`
-   * node when it introduced or replaced the system prompt, otherwise the
+   * node when it introduced, replaced, or updated the system prompt, otherwise the
    * `request/header` event.
    */
   seq: number
@@ -77,6 +87,7 @@ export type RequestPromptInspector = (
  * @param previous - Prompt from the preceding loaded request header, when available.
  * @param event - Durable full request header to inspect.
  * @param system - Latest `system/message` node before the header within the loaded window, when available.
+ * An in-history update already presented its text at its own position, so the header reports no system change for it.
  * @returns The canonical prompt and an initial/system/tool change when it can be established.
  */
 export function inspectRequestPrompt(
@@ -92,7 +103,7 @@ export function inspectRequestPrompt(
     tools: Array.isArray(rawTools) ? rawTools as readonly ToolSchema[] : [],
   }
   if (previous === undefined && event.data.reason !== 'initial') return { prompt }
-  const systemChanged = previous !== undefined && previous.system !== prompt.system
+  const systemChanged = previous !== undefined && previous.system !== prompt.system && system?.update !== true
   const toolsChanged = previous !== undefined
     && JSON.stringify(previous.tools) !== JSON.stringify(prompt.tools)
   if (previous !== undefined && !systemChanged && !toolsChanged) return { prompt }

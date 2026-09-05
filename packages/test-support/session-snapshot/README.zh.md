@@ -82,7 +82,7 @@ defineAcpSnapshotSuite({
 
 ### 固定请求 header 与系统提示
 
-每个 pin 默认拥有其生成的 `system-prompt.expected.md` 或 `tool-schemas.expected.json` sidecar；当完整的对应序列相同时，`systemPromptSource` 与 `toolSchemasSource` 指定另一个 pin 作为来源，因此每个不同版本只提交一次。系统提示是 surface 节点 0，作为 `system/message` 事件记录在该步骤第一个 `request/header` 之前；每个 fixture 把其文本块存储为 `"text":"{{system}}"`，提示词 sidecar 保留完整文本。该 pin 的 `request/header` 事件存储 `"tools":"{{tools}}"`，同时保留配置与原因，结构化 schema sidecar 保留完整目录。自身作用域组合出不同请求的 child Session 按 fixture 索引以 `pinsChildToolSchemas` 与 `pinsChildSystemPrompts` 单独声明。运行中改变请求 header 的场景声明 `expectedHeaderChanges`；运行中提示词替换节点 0 的场景声明 `expectedPromptChanges`，每次替换在提示词 sidecar 中增加一个 `<!-- system/message change N -->` 小节。manifest 中对应字段为 `header.changes` 与 `header.promptChanges`。
+每个 pin 默认拥有其生成的 `system-prompt.expected.md` 或 `tool-schemas.expected.json` sidecar；当完整的对应序列相同时，`systemPromptSource` 与 `toolSchemasSource` 指定另一个 pin 作为来源，因此每个不同版本只提交一次。系统提示是 surface 节点 0，作为 `system/message` 事件记录在该步骤第一个 `request/header` 之前；每个 fixture 把其文本块存储为 `"text":"{{system}}"`，提示词 sidecar 保留完整文本。该 pin 的 `request/header` 事件存储 `"tools":"{{tools}}"`，同时保留配置与原因，结构化 schema sidecar 保留完整目录。自身作用域组合出不同请求的 child Session 按 fixture 索引以 `pinsChildToolSchemas` 与 `pinsChildSystemPrompts` 单独声明。运行中改变请求 header 的场景声明 `expectedHeaderChanges`；运行中提示词发生变化的场景——替换节点 0，或在 `in-history` 路由上追加到已缓存历史之后——声明 `expectedPromptChanges`，每次变化在提示词 sidecar 中增加一个 `<!-- system/message change N -->` 小节。manifest 中对应字段为 `header.changes` 与 `header.promptChanges`。
 
 ### 平台与组合变体
 
@@ -106,7 +106,7 @@ defineAcpSnapshotSuite({
 
 ### 设计
 
-共享核心拥有 manifest、generation 限定角色选择、workspace 设置／比较、类型化身份映射、normalizer 与 fixture 不变式。ACP 适配器增加四个可组合层：launcher、场景 harness、normalizer 与 suite factory。`launchAcpTestAgent` 在 tsx 下启动源码 profile，或在普通 Node 下启动已构建 `lib` profile，通过原始字节 stdout tee 连接 SDK client，收集 Session update 与 stderr，默认拒绝未处理的权限请求，并负责关闭。`runScenario` 驱动 ACP JSON-RPC stdio，并收集每个 Session 目录中数值最高的持久原始 JSONL generation。纯 normalizer 把 cwd 路径与类型化身份变为稳定 token，将时间归零、展开物理来源区间，并擦除系统提示文本与工具 schema bulk。`defineAcpSnapshotSuite` 注册比较、generation 限定 fixture 回写与实时一致性保护。
+共享核心拥有 manifest、generation 限定角色选择、workspace 设置／比较、类型化身份映射、normalizer 与 fixture 不变式。ACP 适配器增加四个可组合层：launcher、场景 harness、normalizer 与 suite factory。`launchAcpTestAgent` 在 tsx 下启动源码 profile，或在普通 Node 下启动已构建 `lib` profile，通过原始字节 stdout tee 连接 SDK client，收集 Session update 与 stderr，默认拒绝未处理的权限请求，并负责关闭。`runScenario` 驱动 ACP JSON-RPC stdio，并收集每个 Session 目录中数值最高的持久原始 JSONL generation。纯 normalizer 把 cwd 路径与类型化身份变为稳定 token，将时间归零、展开物理来源区间，并擦除系统提示词文本与工具 schema bulk。`defineAcpSnapshotSuite` 注册比较、generation 限定 fixture 回写与实时一致性保护。
 
 ### 源码地图
 

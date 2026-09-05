@@ -136,6 +136,7 @@ These limits define where the measurement stops and future work begins. They are
 - **Provider usage is only reusable for an identical canonical envelope** — tools, provider, model, or call-config changes deliberately fall back to full heuristic estimation; system-prompt changes are signed surface deltas until the next successful call.
 - **Missing legacy source seqs are handled conservatively** — assistant messages without `sourceEventSeqs` cannot distinguish provider output from listener rewrites, so the fold avoids claiming a known empty or exact chunk stream.
 - **A system-prompt rewrite carries no shadow price** — the loop replaces a system node without an adjacent metering event, so `contextPressure.projectedTokens` folds that replacement at zero delta until the next usage sample; `contextBreakdown.systemTokens` and `measure()` reprice the new prompt immediately.
+- **A compaction that shadows the newest in-history system node** subtracts its price from `contextBreakdown.messageTokens` although that node was carried by the system figure, so the message figure drifts by the difference between that prompt and the superseded one until the next re-baseline replaces node 0; `contextPressure` and `measure()` stay exact.
 
 <a id="dev-note"></a>
 ### Dev Note

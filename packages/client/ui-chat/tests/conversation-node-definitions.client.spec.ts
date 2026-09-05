@@ -189,6 +189,11 @@ function systemAt(seq: number, text: string, replaces?: number): SessionLiveEven
     : { surfaceOp: { op: 'replace', start: replaces, end: replaces }, sourceEventSeqs: [replaces] })
 }
 
+/** Append an in-history prompt update the way the loop does on an `in-history` route. */
+function systemUpdateAt(seq: number, text: string, turn: number, step: number): SessionLiveEventEntry {
+  return at(seq, 'system/message', { turn, step, message: systemMessage(text) }, { surfaceOp: 'append' })
+}
+
 function assistantMessage(id: string, text: string) {
   return {
     id,
@@ -232,7 +237,7 @@ describe('built-in conversation node Definitions', () => {
       role: 'start' as const,
       location: { kind: 'session' as const },
     }
-    const state = { seq: 1, time: 1, text: '# System' }
+    const state = { seq: 1, time: 1, turn: 1, step: 1, text: '# System', update: false }
 
     expect(() => systemMessageDefinition.start({} as never, invalidStart, {} as never))
       .toThrow('system-message start requires system/message')
@@ -1565,6 +1570,81 @@ describe('built-in conversation node Definitions', () => {
     value.flush()
     const replaced = snapshot(value)
     expect(replaced.order.map(key => replaced.nodes.get(key)?.kind)).toEqual(['user'])
+  })
+
+  it('presents an in-history prompt update as its own card and lets no same-step header repeat it', () => {
+    const value = assembler([
+      at(1, 'turn/start', { turn: 1 }),
+      at(2, 'step/start', { turn: 1, step: 1 }),
+      systemAt(3, '# System'),
+      at(4, 'user/message', textMessage('first-user', 'first'), { surfaceOp: 'append' }),
+      at(5, 'request/header', {
+        reason: 'initial',
+        header: { config: { provider: 'fake', model: 'fake' }, tools: [] },
+      }),
+      at(6, 'step/end', { turn: 1, step: 1 }),
+      at(7, 'turn/end', { turn: 1, reason: { kind: 'completed' } }),
+      at(8, 'turn/start', { turn: 2 }),
+      at(9, 'step/start', { turn: 2, step: 1 }),
+      systemUpdateAt(10, '# Updated', 2, 1),
+      at(11, 'user/message', textMessage('second-user', 'second'), { surfaceOp: 'append' }),
+    ])
+    const cards = () => {
+      const current = snapshot(value)
+      return current.order.flatMap((key) => {
+        const candidate = current.nodes.get(key)
+        return candidate?.kind === 'system-prompt' ? [[candidate.anchorSeq, candidate.data]] : []
+      })
+    }
+
+    // The update is the model-visible change at its position; node 0 keeps its card.
+    expect(cards()).toEqual([
+      [1, { text: '# System' }],
+      [10, { text: '# Updated', update: true }],
+    ])
+
+    // A series header in the same step shows nothing more: the update card already carries the text.
+    value.append(at(12, 'request/header', {
+      reason: 'series',
+      startsSeries: true,
+      header: { config: { provider: 'fake', model: 'fake' }, tools: [] },
+    }))
+    value.flush()
+    expect(cards()).toHaveLength(2)
+
+    // A later series header presents the effective prompt again, as any series start does.
+    value.append(at(13, 'step/end', { turn: 2, step: 1 }))
+    value.append(at(14, 'step/start', { turn: 2, step: 2 }))
+    value.append(at(15, 'request/header', {
+      reason: 'series',
+      startsSeries: true,
+      header: { config: { provider: 'fake', model: 'fake' }, tools: [] },
+    }))
+    value.flush()
+    expect(cards()).toEqual([
+      [1, { text: '# System' }],
+      [10, { text: '# Updated', update: true }],
+      [14, { text: '# Updated' }],
+    ])
+  })
+
+  it('renders no card for an in-history update that clears the prompt', () => {
+    const value = assembler([
+      at(1, 'turn/start', { turn: 1 }),
+      at(2, 'step/start', { turn: 1, step: 1 }),
+      systemAt(3, '# System'),
+      at(4, 'user/message', textMessage('first-user', 'first'), { surfaceOp: 'append' }),
+      at(5, 'request/header', {
+        reason: 'initial',
+        header: { config: { provider: 'fake', model: 'fake' }, tools: [] },
+      }),
+      at(6, 'step/end', { turn: 1, step: 1 }),
+      at(7, 'step/start', { turn: 1, step: 2 }),
+      systemUpdateAt(8, '', 1, 2),
+    ])
+
+    const current = snapshot(value)
+    expect(current.order.map(key => current.nodes.get(key)?.kind)).toEqual(['system-prompt', 'user'])
   })
 
   it('keeps the initial system prompt before the opening User as Turn process state changes', () => {

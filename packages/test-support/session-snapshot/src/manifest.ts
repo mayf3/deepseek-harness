@@ -25,7 +25,7 @@ export interface SnapshotHeaderManifest {
   childToolSchemas?: number[]
   /** Legitimate changed-header count after the initial request header. */
   changes?: number
-  /** Legitimate `system/message` replacement count after the initial system prompt. */
+  /** Legitimate later `system/message` count (replacements or in-history appends) after the initial system prompt. */
   promptChanges?: number
 }
 

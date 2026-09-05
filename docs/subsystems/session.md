@@ -55,10 +55,13 @@ interface SessionEventMap {
   'user/message': UserMessage
   /**
    * The rendered system prompt on the model-visible surface. The loop appends
-   * the first one as surface node 0 before the step's first `user/message` and
-   * replaces that node (`surfaceOp: { op: 'replace' }` over exactly node 0)
-   * when the rendered prompt changes, so the head of every request is derived
-   * history like every other message. Empty `message.content` records "no
+   * the first one as surface node 0 before the step's first `user/message`.
+   * When the rendered prompt changes it replaces the latest system node
+   * (`surfaceOp: { op: 'replace' }` over exactly that node) or, on a route
+   * whose `request/context` declares `systemPromptUpdate: 'in-history'` and
+   * inside a continuing request series, appends the changed prompt after the
+   * cached history, so the latest system node is the effective prompt and
+   * every request stays derived history. Empty `message.content` records "no
    * system prompt" and projects to no message.
    */
   'system/message': { turn: number; step: number; message: SystemMessage }
@@ -122,8 +125,10 @@ interface SessionEventMap {
     startsSeries?: true
   }
   /**
-   * Route metadata for the next request, logged only when the route or capacity
-   * changes. It does not participate in request reconstruction or header equality.
+   * Route metadata for the next request, logged only when the route, capacity,
+   * or system prompt update mode changes. It does not participate in request
+   * reconstruction or header equality; the loop reads the latest snapshot's
+   * `systemPromptUpdate` when it decides how to commit a changed system prompt.
    */
   'request/context': RequestContext
   /**
@@ -158,7 +163,7 @@ interface SessionEventMap {
 
 ### The request header event: `request/header`
 
-The request envelope — the `EpochHeader` (call config + markers for adapter-supplied defaults + assembled tool schemas) — is logged session state, so every conversation request is a pure function of the log (the reconstructability Agent Note). The rendered system prompt is not part of the header: it is derived history, the `system/message` event at surface node 0 ([decision](../../.agents/notes/implemented/architecture/2026-09-02-system-prompt-as-surface-node.md)), so a prompt change replaces that node and leaves the header unchanged. A full `request/header` snapshot with reason `'initial'` or `'resume'` records each loop-instance boundary; a changed request appends a snapshot with reason `'change'`; and an unchanged envelope beginning an explicitly declared message series or following a surface replacement appends a snapshot with reason `'series'`. A changed snapshot carries `startsSeries: true` when that request also begins a series. Ordinary append-only later Turns, further Steps, and retries in the same model-message series inherit the latest snapshot. `foldRequestHeader(events)` reconstructs the header by selecting the latest snapshot. The event is not a `SurfaceEventType`: it produces no LLM message.
+The request envelope — the `EpochHeader` (call config + markers for adapter-supplied defaults + assembled tool schemas) — is logged session state, so every conversation request is a pure function of the log (the reconstructability Agent Note). The rendered system prompt is not part of the header: it is derived history, the `system/message` event at surface node 0 and any later in-history system node ([decision](../../.agents/notes/implemented/architecture/2026-09-02-system-prompt-as-surface-node.md)), so a prompt change replaces or appends a system node and leaves the header unchanged. A full `request/header` snapshot with reason `'initial'` or `'resume'` records each loop-instance boundary; a changed request appends a snapshot with reason `'change'`; and an unchanged envelope beginning an explicitly declared message series or following a surface replacement appends a snapshot with reason `'series'`. A changed snapshot carries `startsSeries: true` when that request also begins a series. Ordinary append-only later Turns, further Steps, and retries in the same model-message series inherit the latest snapshot. `foldRequestHeader(events)` reconstructs the header by selecting the latest snapshot. The event is not a `SurfaceEventType`: it produces no LLM message.
 
 ```ts type-equiv
 /**
@@ -181,7 +186,7 @@ Canonical form represents an empty tool list as an absent field, matching how re
 
 ### The route capacity event: `request/context`
 
-The context metadata of the route a request resolved to is separate logged state, appended beside `request/header` inside the same step and only when the provider, model, or capacity differs from the previous record. It stays outside `EpochHeader` because that type is the reconstruction contract compared field-wise by `headerEquals`: capacity describes a route, not a request input, so folding it in would let a capacity change register as a request-envelope `change` and would pull adapter metadata into the loop's reconstruction invariant. Like `request/header`, it is not a `SurfaceEventType` and produces no LLM message. `session.requestContext()` folds the latest record incrementally. A route whose adapter advertises no capacity is recorded with `contextWindow` absent, so the new record clears an older route's capacity.
+The context metadata of the route a request resolved to is separate logged state, appended beside `request/header` inside the same step and only when the provider, model, capacity, or `systemPromptUpdate` mode differs from the previous record. It stays outside `EpochHeader` because that type is the reconstruction contract compared field-wise by `headerEquals`: capacity and the update mode describe a route, not a request input, so folding them in would let a route change register as a request-envelope `change` and would pull adapter metadata into the loop's reconstruction invariant. Like `request/header`, it is not a `SurfaceEventType` and produces no LLM message. `session.requestContext()` folds the latest record incrementally; the agent loop reads that record's `systemPromptUpdate` when it decides whether a changed system prompt replaces the latest system node or is appended after the cached history ([decision rule](../../packages/core/agent-loop/README.md#understand-the-implementation)). A route whose adapter advertises no capacity is recorded with `contextWindow` absent, so the new record clears an older route's capacity; a route without a declared update mode likewise clears an older route's `systemPromptUpdate`.
 
 ```ts type-equiv
 /** Registration-bound metadata for one resolved model route. */
@@ -192,6 +197,8 @@ interface RequestContext {
   model: string
   /** Maximum combined request and response context in tokens, when advertised. */
   contextWindow?: number
+  /** `'in-history'` when the route reads the latest `system` message at any position as the effective system prompt. */
+  systemPromptUpdate?: SystemPromptUpdate
 }
 ```
 
@@ -273,7 +280,7 @@ V2 `assistant/message` embeds its provider stream and cannot carry `sourceEventS
 
 ## Surface types
 
-The four message-producing types (`SurfaceEventType` — `system/message`, `user/message`, `assistant/message`, `tool/result`) carry surface metadata declaring how they join the ordered derived surface. `system/message` holds the rendered system prompt: the loop appends the first one as surface node 0 and replaces exactly that node when the prompt changes; the surface fold rejects any other replacement covering a `system/message` at node 0. See the [session surface Agent Note](../../.agents/notes/implemented/architecture/2026-06-18-session-surface.md).
+The four message-producing types (`SurfaceEventType` — `system/message`, `user/message`, `assistant/message`, `tool/result`) carry surface metadata declaring how they join the ordered derived surface. `system/message` holds the rendered system prompt: the loop appends the first one as surface node 0 and, when the prompt changes, replaces exactly the latest system node or appends a new one on an in-history route; the surface fold rejects any other replacement covering a `system/message` at node 0, while a later system node is ordinary history that a compaction replacement may shadow. See the [session surface Agent Note](../../.agents/notes/implemented/architecture/2026-06-18-session-surface.md).
 
 ### `SurfaceEventType` — the message-producing subset of event types
 

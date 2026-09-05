@@ -153,10 +153,11 @@ export interface Scenario {
    */
   expectedHeaderChanges?: number
   /**
-   * How many `system/message` replacements of surface node 0 this PINNING
-   * scenario's primary fixture legitimately carries after the initial prompt
-   * (default 0). Each replacement's full prompt text is kept in the readable
-   * Markdown pin; any other count fails. Only valid on the pin.
+   * How many later `system/message` events — replacements of surface node 0
+   * or in-history appends — this PINNING scenario's primary fixture
+   * legitimately carries after the initial prompt (default 0). Each change's
+   * full prompt text is kept in the readable Markdown pin; any other count
+   * fails. Only valid on the pin.
    */
   expectedPromptChanges?: number
   /**
@@ -439,7 +440,8 @@ export function normalizedHeaders(rawLog: string, ctx: NormalizeContext): unknow
 /**
  * The normalized prompt text of every `system/message` event in a session
  * JSONL, in log order: the first is the initial system prompt (surface node 0)
- * and each later one replaced it. An empty `content` yields `''`; a
+ * and each later one replaced it or, on an in-history route, appended the
+ * changed prompt after the cached history. An empty `content` yields `''`; a
  * `system/message` without a text block is omitted.
  *
  * @param rawLog The session `.jsonl` content to inspect.
@@ -545,7 +547,7 @@ const SYSTEM_PROMPT_CHANGE_MARKER = '\n<!-- system/message change '
  * the committed file follows the repository newline contract.
  *
  * @param prompt The normalized initial system prompt (surface node 0).
- * @param changes Full normalized prompts from later `system/message` replacements of node 0.
+ * @param changes Full normalized prompts from later `system/message` events, replacements or in-history appends.
  * @returns Markdown snapshot text ending in a newline.
  */
 export function formatSystemPromptSnapshot(
@@ -561,11 +563,11 @@ export function formatSystemPromptSnapshot(
 }
 
 /**
- * Split a prompt sidecar into its initial prompt and each replacement, the
+ * Split a prompt sidecar into its initial prompt and each later change, the
  * inverse of {@link formatSystemPromptSnapshot}.
  *
  * @param snapshot The Markdown sidecar text.
- * @returns The initial prompt snapshot plus one entry per `system/message` replacement.
+ * @returns The initial prompt snapshot plus one entry per later `system/message`.
  */
 export function parseSystemPromptSnapshot(snapshot: string): { initial: string; changes: string[] } {
   const parts = snapshot.split(/\n<!-- system\/message change [1-9]\d* -->\n\n/)

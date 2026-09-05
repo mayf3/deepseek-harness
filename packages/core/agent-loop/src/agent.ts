@@ -111,7 +111,7 @@ export class ReactLoopAgent implements Agent {
     this.scope = createScope(loopCtx, this)
     this.ctx = this.scope.ctx.extend({ agent: this })
     this.runtimeContext = new RuntimeContextProjection(this.ctx, session)
-    this.systemPrompt = new SystemPromptProjection(this.ctx, session)
+    this.systemPrompt = new SystemPromptProjection(session)
   }
 
   get status(): AgentStatus {
@@ -247,7 +247,6 @@ export class ReactLoopAgent implements Agent {
     const claimed = this.inbox.claim(target, position.turn)
     const assembly = await this.loopCtx.systemPrompt.assemble(assembleContextFor(this, signal))
     signal.throwIfAborted()
-    const systemPrompt = this.systemPrompt.project(renderPrompt(assembly))
     const sections = renderContextSections(assembly)
     const context = this.runtimeContext.project(joinContextSections(sections), sections)
     const decision = await this.dispatch.waterfall(
@@ -258,9 +257,24 @@ export class ReactLoopAgent implements Agent {
       }),
     )
     signal.throwIfAborted()
-    return decision.kind === 'reject'
-      ? decision
-      : { ...decision, assembly, ...systemPrompt === undefined ? {} : { systemPrompt } }
+    if (decision.kind === 'reject') return decision
+    // Decided after the waterfall: a listener may have compacted the surface or
+    // declared a series start, both of which change where the prompt goes.
+    const systemPrompt = this.systemPrompt.project(renderPrompt(assembly), {
+      inHistory: this.session.requestContext()?.systemPromptUpdate === 'in-history',
+      startsSeries: decision.startsRequestSeries === true
+        || this.requestSurfaceGeneration !== undefined
+        && this.requestSurfaceGeneration !== this.session.surface.replaceGeneration
+        || this.toolsChanged(assembly.tools),
+    })
+    return { ...decision, assembly, ...systemPrompt === undefined ? {} : { systemPrompt } }
+  }
+
+  /** Whether the assembled tool schemas differ from the logged request header's. */
+  private toolsChanged(tools: PromptAssembly['tools']): boolean {
+    const baseline = this.session.requestHeader()
+    if (baseline === undefined) return false
+    return !headerEquals(baseline, canonicalHeader({ ...baseline, tools: [...tools] }))
   }
 
   /** Open one turn before claiming its first proposed step. */
@@ -573,15 +587,18 @@ export class ReactLoopAgent implements Agent {
     this.requestSurfaceGeneration = surfaceGeneration
 
     const contextWindow = preparedCall?.context?.contextWindow
+    const systemPromptUpdate = preparedCall?.systemPromptUpdate
     const requestContext: RequestContext = {
       provider: config.provider,
       model: config.model,
       ...contextWindow === undefined ? {} : { contextWindow },
+      ...systemPromptUpdate === undefined ? {} : { systemPromptUpdate },
     }
     const previousContext = session.requestContext()
     if (previousContext?.provider !== requestContext.provider
       || previousContext.model !== requestContext.model
-      || previousContext.contextWindow !== requestContext.contextWindow) {
+      || previousContext.contextWindow !== requestContext.contextWindow
+      || previousContext.systemPromptUpdate !== requestContext.systemPromptUpdate) {
       session.append('request/context', requestContext)
     }
     signal.throwIfAborted()

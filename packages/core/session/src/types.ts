@@ -7,6 +7,7 @@ import type {
   LlmCallConfigAdapterDefaults,
   LlmFailure,
   SystemMessage,
+  SystemPromptUpdate,
   TokenUsage,
   ToolResultMessage,
   ToolSchema,
@@ -245,6 +246,8 @@ export interface RequestContext {
   model: string
   /** Maximum combined request and response context in tokens, when advertised. */
   contextWindow?: number
+  /** `'in-history'` when the route reads the latest `system` message at any position as the effective system prompt. */
+  systemPromptUpdate?: SystemPromptUpdate
 }
 
 /**
@@ -294,10 +297,13 @@ export interface SessionEventMap {
   'user/message': UserMessage
   /**
    * The rendered system prompt on the model-visible surface. The loop appends
-   * the first one as surface node 0 before the step's first `user/message` and
-   * replaces that node (`surfaceOp: { op: 'replace' }` over exactly node 0)
-   * when the rendered prompt changes, so the head of every request is derived
-   * history like every other message. Empty `message.content` records "no
+   * the first one as surface node 0 before the step's first `user/message`.
+   * When the rendered prompt changes it replaces the latest system node
+   * (`surfaceOp: { op: 'replace' }` over exactly that node) or, on a route
+   * whose `request/context` declares `systemPromptUpdate: 'in-history'` and
+   * inside a continuing request series, appends the changed prompt after the
+   * cached history, so the latest system node is the effective prompt and
+   * every request stays derived history. Empty `message.content` records "no
    * system prompt" and projects to no message.
    */
   'system/message': { turn: number; step: number; message: SystemMessage }
@@ -361,8 +367,10 @@ export interface SessionEventMap {
     startsSeries?: true
   }
   /**
-   * Route metadata for the next request, logged only when the route or capacity
-   * changes. It does not participate in request reconstruction or header equality.
+   * Route metadata for the next request, logged only when the route, capacity,
+   * or system prompt update mode changes. It does not participate in request
+   * reconstruction or header equality; the loop reads the latest snapshot's
+   * `systemPromptUpdate` when it decides how to commit a changed system prompt.
    */
   'request/context': RequestContext
   /**

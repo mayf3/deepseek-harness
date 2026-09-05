@@ -147,6 +147,41 @@ describe('contextBreakdown session projection', () => {
     expect(systemTokens + messageTokens).toBe(ctx.tokenMeter.measure(session).surfaceTokens)
   })
 
+  it('moves a superseded in-history prompt into the message figure and subtracts it with a compaction', async () => {
+    const { ctx, session } = await harness()
+    const agree = (): ContextBreakdownProjection => {
+      const projection = projected(ctx, session)
+      expect(projection.systemTokens + projection.messageTokens).toBe(ctx.tokenMeter.measure(session).surfaceTokens)
+      return projection
+    }
+    appendSystem(session, 'You are terse.')
+    const question = appendUser(session, 'abcd')
+    expect(agree()).toMatchObject({ systemTokens: 8, messageTokens: 9 })
+
+    // An in-history route appends the changed prompt; node 0 stays model-visible history.
+    const verbose = 'You are verbose and thorough.'
+    const superseded = appendSystem(session, verbose)
+    expect(agree()).toMatchObject({ systemTokens: Math.ceil(verbose.length / 4) + 4, messageTokens: 9 + 8 })
+    const followUp = appendUser(session, 'efgh')
+    appendSystem(session, 'You are terse once more.')
+    expect(agree()).toMatchObject({
+      systemTokens: Math.ceil('You are terse once more.'.length / 4) + 4,
+      messageTokens: 9 + 8 + 9 + Math.ceil(verbose.length / 4) + 4,
+    })
+
+    // Compacting the span that holds the superseded mid-history prompt shrinks the message figure by it.
+    appendSummaryMeter(ctx, session, question, followUp)
+    const summary = createUserMessage({
+      content: [{ type: 'text', text: 'summary' }],
+      source: { kind: 'plugin', plugin: 'test' },
+    })
+    session.append('user/message', summary, {
+      surfaceOp: { op: 'replace', start: question, end: followUp },
+      sourceEventSeqs: [question, superseded, followUp],
+    })
+    expect(agree().messageTokens).toBe(8 + estimateMessage(summary))
+  })
+
   it('sums surface appends and skips an empty-content assistant message', async () => {
     const { ctx, session } = await harness()
     appendUser(session, 'abcd')

@@ -8,8 +8,8 @@ import { chatNode } from './common.ts'
 
 declare module '../contract/chat-nodes.ts' {
   interface ChatNodeDataMap {
-    /** Complete system prompt rendered for one model request. */
-    'system-prompt': { readonly text: string }
+    /** Complete system prompt rendered for one model request, or an in-history prompt update at its own position. */
+    'system-prompt': { readonly text: string; readonly update?: true }
   }
 }
 
@@ -51,9 +51,12 @@ function stableRequestPromptAnchor(
 /**
  * System-prompt surface node Definition for the Chat target. It owns every
  * `system/message` event on the Chat target so the unknown-surface fallback
- * never renders the prompt as a transcript row, and materializes no Node: the
- * request-prompt Definition reads its State through `reader.previous` and
- * presents the prompt as the request's `system-prompt` card.
+ * never renders the prompt as a transcript row. A node that introduces or
+ * replaces the prompt materializes no Node: the request-prompt Definition
+ * reads its State through `reader.previous` and presents the prompt as the
+ * request's `system-prompt` card. An in-history update — a prompt appended
+ * after an earlier loaded system node — is the model-visible change at that
+ * position, so it presents its own `system-prompt` card there.
  */
 export const systemMessageDefinition: ConversationNodeDefinition<SystemPromptNode> = {
   kind: 'system-message',
@@ -61,20 +64,28 @@ export const systemMessageDefinition: ConversationNodeDefinition<SystemPromptNod
   match: event => event.type === 'system/message'
     ? { id: String(event.seq), role: 'start' }
     : null,
-  start: (_context, match) => {
+  start: (_context, match, reader) => {
     if (match.event.type !== 'system/message') {
       throw new Error('system-message start requires system/message')
     }
     return {
       seq: match.event.seq,
       time: match.event.time,
+      turn: match.event.data.turn,
+      step: match.event.data.step,
       text: match.event.data.message.content
         .flatMap(block => block.type === 'text' ? [block.text] : [])
         .join(''),
+      update: match.event.surfaceOp === 'append'
+        && reader.previous<SystemPromptNode>('system-message') !== undefined,
     }
   },
   update: context => context.state,
-  buildViewNode: () => null,
+  buildViewNode: (context) => {
+    const state = context.state
+    if (state === undefined || !state.update || state.text === '') return null
+    return chatNode(context, 'system-prompt', state.seq, { text: state.text, update: true })
+  },
 }
 
 /**
@@ -102,6 +113,11 @@ export function requestPromptDefinition(inspect: RequestPromptInspector): Conver
         : {}
       const inspection = inspect(previous?.prompt, match.event, system)
       const change = inspection.change?.kind
+      // An in-history update committed in this same step already shows the
+      // prompt at its own position.
+      const shownByUpdate = system?.update === true
+        && system.turn === location.turn
+        && system.step === location.step
       return {
         anchorSeq: stableRequestPromptAnchor(
           context,
@@ -109,12 +125,11 @@ export function requestPromptDefinition(inspect: RequestPromptInspector): Conver
           previous,
           match.event.data.reason === 'initial',
         ),
-        showsPrompt: previous === undefined
-          || match.event.data.reason === 'resume'
-          || match.event.data.reason === 'series'
+        showsPrompt: !shownByUpdate && (previous === undefined
+          || match.event.data.reason !== 'change'
           || match.event.data.startsSeries === true
           || change === 'system'
-          || change === 'system-and-tools',
+          || change === 'system-and-tools'),
         ...location,
         ...inspection,
       }

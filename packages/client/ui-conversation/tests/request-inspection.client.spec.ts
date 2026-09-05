@@ -21,8 +21,8 @@ function header(
   }
 }
 
-function systemNode(seq: number, text: string): SystemPromptNode {
-  return { seq, time: 1_700_000_000_000 + seq, text }
+function systemNode(seq: number, text: string, update = false): SystemPromptNode {
+  return { seq, time: 1_700_000_000_000 + seq, turn: 1, step: seq, text, update }
 }
 
 describe('inspectRequestPrompt', () => {
@@ -92,6 +92,28 @@ describe('inspectRequestPrompt', () => {
     }), systemNode(3, ''))).toEqual({
       prompt: { config: CONFIG, system: '', tools: [] },
       change: { seq: 3, time: 1_700_000_000_003, kind: 'system', previous: initial },
+    })
+  })
+
+  it('reports no system change for an in-history update the model already read at its own position', () => {
+    const initial = inspectRequestPrompt(undefined, header(SessionSeq(2), 'initial', {
+      config: CONFIG,
+      tools: [READ_TOOL],
+    }), systemNode(1, 'first')).prompt
+
+    // A later series header carries the updated text without a system change…
+    const series = inspectRequestPrompt(initial, header(SessionSeq(4), 'series', {
+      config: CONFIG,
+      tools: [READ_TOOL],
+    }), systemNode(3, 'updated', true))
+    expect(series).toEqual({ prompt: { config: CONFIG, system: 'updated', tools: [READ_TOOL] } })
+
+    // …and a tools change alongside the update reports only the tools, anchored at the header.
+    expect(inspectRequestPrompt(initial, header(SessionSeq(5), 'change', {
+      config: CONFIG,
+      tools: [WRITE_TOOL],
+    }), systemNode(3, 'updated', true)).change).toEqual({
+      seq: 5, time: 1_700_000_000_005, kind: 'tools', previous: initial,
     })
   })
 

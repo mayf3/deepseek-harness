@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
 import AgentRegistry from '@deepseek-ai/dsh-agent'
-import LlmRuntime, { createUserMessage, ToolCallId, ReasoningEffortId, createMessage } from '@deepseek-ai/dsh-llm'
+import LlmRuntime, { createUserMessage, ToolCallId, ReasoningEffortId, createMessage, createSystemMessage } from '@deepseek-ai/dsh-llm'
 import type { Message, ToolSchema } from '@deepseek-ai/dsh-llm'
 import AttachmentStore, { AttachmentId, ImageVariantId } from '@deepseek-ai/dsh-attachment'
 import type {
@@ -37,6 +37,8 @@ import { assemble, type AssembledResult } from './assemble.ts'
 const FLASH = 'deepseek-v4-flash'
 const VISION = 'deepseek-v4-flash-vision-exp'
 const VISION_E2E_ENABLED = process.env.DEEPSEEK_VISION_E2E === '1'
+/** A model whose endpoint reads the latest `system` message at any position; unset skips the in-history smoke. */
+const IN_HISTORY_MODEL = process.env.DEEPSEEK_IN_HISTORY_MODEL
 const TEST_PNG = Uint8Array.from(readFileSync(
   new URL('../../llm-pi-ai/tests/fixtures/qr-code.png', import.meta.url),
 ))
@@ -315,6 +317,56 @@ describe.skipIf(!process.env.DEEPSEEK_API_KEY)('llm-deepseek e2e (real API)', ()
         `DeepSeek Flash tool-result turn finished as ${JSON.stringify(second.finish)}`,
       ).toBe('stop')
       expect(textOf(second).toLowerCase()).toMatch(/sunny|22/)
+    },
+  )
+
+  it.skipIf(IN_HISTORY_MODEL === undefined)(
+    'an in-history model follows a mid-history system message and keeps the cached prefix',
+    async () => {
+      const model = IN_HISTORY_MODEL as string
+      const ctx = await harness(model, {
+        thinking: 'disabled',
+        models: [{ id: model, systemPromptUpdate: 'in-history' }],
+      })
+      await expect(ctx.llm.resolveModelInfo('deepseek-official', model))
+        .resolves.toMatchObject({ systemPromptUpdate: 'in-history' })
+      const system = (text: string) => createSystemMessage(text, 'test')
+      // Long enough that the shared prefix spans several 64-token cache blocks.
+      const padding = Array.from({ length: 40 }, (_, index) => `Rule ${String(index + 1)}: keep every answer short and factual.`).join('\n')
+      const initial = `${padding}\nWhen the user says ping, reply with exactly the word: pong`
+      const history = [
+        system(initial),
+        ...ask('ping'),
+      ]
+      const first = await assemble(ctx, { model, messages: history, maxTokens: 50 })
+      expect(textOf(first).toLowerCase()).toContain('pong')
+
+      // Appending the changed prompt after the cached history: the latest system message wins…
+      const updated = await assemble(ctx, {
+        model,
+        messages: [
+          ...history,
+          createMessage({ role: 'assistant', content: first.message.content, source: { kind: 'plugin', plugin: 'test' } }),
+          system(`${padding}\nWhen the user says ping, reply with exactly the word: banana`),
+          ...ask('ping'),
+        ],
+        maxTokens: 50,
+      })
+      expect(textOf(updated).toLowerCase()).toContain('banana')
+      expect(textOf(updated).toLowerCase()).not.toContain('pong')
+
+      // …and it reads the shared prefix from the cache, unlike a rewritten leading prompt.
+      const replaced = await assemble(ctx, {
+        model,
+        messages: [
+          system(`Updated.\n${padding}\nWhen the user says ping, reply with exactly the word: banana`),
+          ...ask('ping'),
+          createMessage({ role: 'assistant', content: first.message.content, source: { kind: 'plugin', plugin: 'test' } }),
+          ...ask('ping'),
+        ],
+        maxTokens: 50,
+      })
+      expect(updated.usage?.cacheReadTokens ?? 0).toBeGreaterThan(replaced.usage?.cacheReadTokens ?? 0)
     },
   )
 

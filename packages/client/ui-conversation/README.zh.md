@@ -31,7 +31,7 @@ adapter 把每个 `SessionEventLikeEntry` 直接交给 assembler。外层 `type`
 
 shell 选择解析出 target 或 target source 收到首个 subscriber 时，该 target 进入 active 状态。assembler 从当前 Context 对它执行一次 replace，并使它参与后续增量 flush；创建 source 不会激活 target，取消订阅也不会停用 target。
 
-target package 通过 declaration merge 扩展 snapshot 与 Location data map，再调用 `ctx.uiConversation.events.register(...)` 和 `ctx.uiConversation.views.register(...)`。target 通过 `ctx.uiConversation.binding(binding).target(targetId)` 读取其 Session-owned source。注册属于 Cordis effect，返回的 disposer 从同一个 registry 移除 contribution。
+target package 通过 declaration merge 扩展 snapshot 与 Location data map，再调用 `ctx.uiConversation.events.register(...)` 和 `ctx.uiConversation.views.register(...)`。target 通过 `ctx.uiConversation.binding(binding).target(targetId)` 读取其 Session-owned source。注册属于 Cordis effect，返回的 disposer 从同一个 registry 移除 contribution。共享的请求检查约定服务于每个 target：`SystemPromptNode` 保留一个 `system/message` 节点及其 `turn`、`step`、`text` 与 `update` 标志——追加在较早的已加载系统节点之后的提示词为 true，即在其提交位置而非由下一个请求头呈现的历史内更新——`ctx.uiConversation.inspectRequestPrompt(previous, header, system)` 将请求头归类为初始、系统或工具变更，并对跟随历史内更新的请求头报告无系统变更。
 
 <a id="shell-and-standard-props"></a>
 ## Shell 与标准 props

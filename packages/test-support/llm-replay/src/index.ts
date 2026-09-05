@@ -29,6 +29,7 @@ import type {
   ResolvedRetryPolicy,
   RetryPolicyConfig,
   StreamChunk,
+  SystemPromptUpdate,
   TokenUsage,
 } from '@deepseek-ai/dsh-llm'
 import { LlmAdapter, LlmError, ReasoningEffortId, expandAssistantStream, requestImageHandleText, resolveRetryPolicy } from '@deepseek-ai/dsh-llm'
@@ -100,6 +101,8 @@ export interface ReplayModelConfig {
    * {@link reasoningEfforts} or call resolution rejects the route.
    */
   defaultReasoningEffort?: string
+  /** Optional in-history system prompt replacement for a keyless replay route. */
+  systemPromptUpdate?: SystemPromptUpdate
 }
 
 /** One provider route exposed by the replay adapter. */
@@ -889,6 +892,9 @@ class ReplayAdapter extends LlmAdapter {
       ...configuredModel?.defaultMaxTokens === undefined
         ? {}
         : { defaultMaxTokens: configuredModel.defaultMaxTokens },
+      ...configuredModel?.systemPromptUpdate === undefined
+        ? {}
+        : { systemPromptUpdate: configuredModel.systemPromptUpdate },
       ...configuredModel?.reasoningEfforts === undefined
         ? {}
         : {
@@ -1131,6 +1137,13 @@ function validateConfiguredModels(providers: ReplayProviderConfig[] | undefined)
         throw new Error(
           `llm-replay: provider "${provider.id}" model "${model.id}" imageRequestTokens `
           + 'requires inputModalities to include "image"',
+        )
+      }
+      const systemPromptUpdate: unknown = model.systemPromptUpdate
+      if (systemPromptUpdate !== undefined && systemPromptUpdate !== 'in-history') {
+        throw new Error(
+          `llm-replay: provider "${provider.id}" model "${model.id}" systemPromptUpdate `
+          + 'must be "in-history" when present',
         )
       }
     }

@@ -593,6 +593,147 @@ describe('request stability across the loop', () => {
     expect(adapter.requests[2]!.messages.length).toBeGreaterThan(adapter.requests[1]!.messages.length)
   })
 
+  it('on an in-history route a system-prompt change appends after the cached history under the same header', async () => {
+    const adapter = new MockAdapter([textResponse('one'), textResponse('two'), textResponse('three'), textResponse('four')])
+    adapter.systemPromptUpdate = 'in-history'
+    const ctx = await harness(adapter)
+    const agent = await ctx.agentLoop.create(SessionId('a1'), { provider: 'mock', model: 'mock' })
+
+    send(agent, 'first')
+    await waitForIdle(ctx, agent)
+    expect(agent.session.requestContext()).toEqual({ provider: 'mock', model: 'mock', systemPromptUpdate: 'in-history' })
+    send(agent, 'second')
+    await waitForIdle(ctx, agent)
+
+    ctx.systemPrompt.section({ name: 'extra', order: 2, text: 'new guidance' })
+    send(agent, 'third')
+    await waitForIdle(ctx, agent)
+
+    // No new series: the header stays, node 0 stays, and the prompt update follows the cached prefix.
+    expect(agent.session.snapshotEvents().flatMap(event =>
+      event.type === 'request/header' ? [event.data.reason] : [])).toEqual(['initial'])
+    const systemNodes = agent.session.snapshotEvents().filter(e => e.type === 'system/message')
+    expect(systemNodes).toHaveLength(2)
+    expect(systemNodes[1]?.surfaceOp).toBe('append')
+    expect(agent.session.surface.nodes[0]).toBe(systemNodes[0]?.seq)
+    expectPrefixExtension(adapter.requests[1]!, adapter.requests[2]!)
+    const appended = adapter.requests[2]!.messages.slice(adapter.requests[1]!.messages.length)
+    expect(appended.map(message => message.role)).toEqual(['assistant', 'system', 'user'])
+    expect(appended[1]?.content).toContainEqual({ type: 'text', text: expect.stringContaining('new guidance') as unknown })
+    expect(adapter.requests[2]!.messages[0]?.content).not.toContainEqual({ type: 'text', text: expect.stringContaining('new guidance') as unknown })
+
+    // An unchanged prompt adds nothing on the next step.
+    send(agent, 'fourth')
+    await waitForIdle(ctx, agent)
+    expect(agent.session.snapshotEvents().filter(e => e.type === 'system/message')).toHaveLength(2)
+    expectPrefixExtension(adapter.requests[2]!, adapter.requests[3]!)
+  })
+
+  it('on an in-history route a series start folds a prompt change back into node 0 unless a later system node survives', async () => {
+    const adapter = new MockAdapter([textResponse('one'), textResponse('two'), textResponse('three'), textResponse('four')])
+    adapter.systemPromptUpdate = 'in-history'
+    const ctx = await harness(adapter)
+    const agent = await ctx.agentLoop.create(SessionId('a1'), { provider: 'mock', model: 'mock' })
+    let startSeries = false
+    ctx.on('agent/pre-step', async (_payload, next) => {
+      const decision = await next()
+      return decision.kind === 'enter' && startSeries ? { ...decision, startsRequestSeries: true } : decision
+    })
+
+    send(agent, 'first')
+    await waitForIdle(ctx, agent)
+
+    // Series start with only node 0: the change rewrites node 0 (the cache is lost anyway).
+    let disposeSection = ctx.systemPrompt.section({ name: 'extra', order: 2, text: 'new guidance' })
+    startSeries = true
+    send(agent, 'second')
+    await waitForIdle(ctx, agent)
+    let systemNodes = agent.session.snapshotEvents().filter(e => e.type === 'system/message')
+    expect(systemNodes).toHaveLength(2)
+    expect(systemNodes[1]?.surfaceOp).toEqual({ op: 'replace', start: systemNodes[0]?.seq, end: systemNodes[0]?.seq })
+    expect(agent.session.snapshotEvents().flatMap(event =>
+      event.type === 'request/header' ? [event.data.reason] : [])).toEqual(['initial', 'series'])
+
+    // A continuing series appends a mid-history node…
+    startSeries = false
+    disposeSection()
+    disposeSection = ctx.systemPrompt.section({ name: 'extra', order: 2, text: 'newer guidance' })
+    send(agent, 'third')
+    await waitForIdle(ctx, agent)
+    systemNodes = agent.session.snapshotEvents().filter(e => e.type === 'system/message')
+    expect(systemNodes).toHaveLength(3)
+    expect(systemNodes[2]?.surfaceOp).toBe('append')
+
+    // …which keeps a later series start from touching node 0: the newest prompt appends again.
+    startSeries = true
+    disposeSection()
+    ctx.systemPrompt.section({ name: 'extra', order: 2, text: 'newest guidance' })
+    send(agent, 'fourth')
+    await waitForIdle(ctx, agent)
+    systemNodes = agent.session.snapshotEvents().filter(e => e.type === 'system/message')
+    expect(systemNodes).toHaveLength(4)
+    expect(systemNodes[3]?.surfaceOp).toBe('append')
+    expect(agent.session.surface.nodes[0]).toBe(systemNodes[1]?.seq)
+    const systemTexts = adapter.requests[3]!.messages.flatMap(message => message.role === 'system' ? [message.content[0]] : [])
+    expect(systemTexts).toEqual([
+      { type: 'text', text: expect.stringContaining('new guidance') as unknown },
+      { type: 'text', text: expect.stringContaining('newer guidance') as unknown },
+      { type: 'text', text: expect.stringContaining('newest guidance') as unknown },
+    ])
+  })
+
+  it('on an in-history route a compaction replace since the last request re-baselines node 0', async () => {
+    const adapter = new MockAdapter([textResponse('one'), textResponse('two')])
+    adapter.systemPromptUpdate = 'in-history'
+    const ctx = await harness(adapter)
+    const agent = await ctx.agentLoop.create(SessionId('a1'), { provider: 'mock', model: 'mock' })
+
+    send(agent, 'first')
+    await waitForIdle(ctx, agent)
+
+    // Node 0 is the system prompt; the compaction range starts after it.
+    const nodes = agent.session.surface.nodes
+    agent.session.append('user/message', createUserMessage({
+      content: [{ type: 'text', text: '[summary of turn 1]' }],
+      source: { kind: 'plugin', plugin: 'test-compact' },
+    }), {
+      surfaceOp: { op: 'replace', start: nodes[1]!, end: nodes[2]! },
+      sourceEventSeqs: [nodes[1]!, nodes[2]!],
+    })
+    ctx.systemPrompt.section({ name: 'extra', order: 2, text: 'new guidance' })
+    send(agent, 'second')
+    await waitForIdle(ctx, agent)
+
+    const systemNodes = agent.session.snapshotEvents().filter(e => e.type === 'system/message')
+    expect(systemNodes).toHaveLength(2)
+    expect(systemNodes[1]?.surfaceOp).toEqual({ op: 'replace', start: systemNodes[0]?.seq, end: systemNodes[0]?.seq })
+    expect(adapter.requests[1]!.messages.map(message => message.role)).toEqual(['system', 'user', 'user'])
+    expect(agent.session.snapshotEvents().flatMap(event =>
+      event.type === 'request/header' ? [event.data.reason] : [])).toEqual(['initial', 'series'])
+  })
+
+  it('on an in-history route a tool-schema change re-baselines node 0 together with the changed header', async () => {
+    const adapter = new MockAdapter([textResponse('one'), textResponse('two')])
+    adapter.systemPromptUpdate = 'in-history'
+    const ctx = await harness(adapter)
+    const agent = await ctx.agentLoop.create(SessionId('a1'), { provider: 'mock', model: 'mock' })
+
+    send(agent, 'first')
+    await waitForIdle(ctx, agent)
+
+    registerEcho(ctx)
+    ctx.systemPrompt.section({ name: 'extra', order: 2, text: 'new guidance' })
+    send(agent, 'second')
+    await waitForIdle(ctx, agent)
+
+    const headers = agent.session.snapshotEvents().filter(e => e.type === 'request/header')
+    expect(headers.map(event => [event.data.reason, event.data.startsSeries])).toEqual([['initial', undefined], ['change', true]])
+    const systemNodes = agent.session.snapshotEvents().filter(e => e.type === 'system/message')
+    expect(systemNodes).toHaveLength(2)
+    expect(systemNodes[1]?.surfaceOp).toEqual({ op: 'replace', start: systemNodes[0]?.seq, end: systemNodes[0]?.seq })
+    expect(adapter.requests[1]!.messages.filter(message => message.role === 'system')).toHaveLength(1)
+  })
+
   it('an inject() during the agent/request waterfall joins the NEXT request (the step/start boundary)', async () => {
     const adapter = new MockAdapter([textResponse('one'), textResponse('two')])
     const ctx = await harness(adapter)

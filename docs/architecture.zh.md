@@ -82,12 +82,12 @@ Python SDK 遵循相同的应用架构。其运行时 wheel 把普通 `dsh` CLI 
 ```text
 turn/start
   claim next-step input plus one queued message
-  assemble prompt sections + tool schemas
-  project the rendered prompt against surface node 0; project runtime context
+  assemble prompt sections + tool schemas; project runtime context
   -> agent/pre-step                   reject | enter(messages, startsRequestSeries?)
      reject, or a first enter rewritten empty -> close the turn with no step
+     project the rendered prompt against the surviving system/message nodes
      step/start
-     append a changed prompt as system/message (node 0 append or replace)
+     append a changed prompt as system/message (replace the latest system node, or append on an in-history route)
      append entered messages as user/message
      derive model history from the log
      agent/request -> llm/stream -> agent/assistant-stream start
@@ -104,7 +104,7 @@ turn/end
 
 输入通过同一个 inbox 到达驱动器。有些消息会立即唤醒它；注入的上下文会留在 inbox 中，直到另一条消息将其唤醒。
 
-`agent/pre-step` 决定模型看到什么。监听器可以改写已领取的消息，也可以直接拒绝它们；首次领取被拒绝或被改写为空时，仍会关闭一个不含步骤的持久轮次，因此日志会记录这次尝试。enter 决策还可以设置 `startsRequestSeries` 来开启独立的模型消息序列：loop 会随之记录一个新的 `request/header`（原因为 `series`，或在封装同时变化时为携带 `startsSeries: true` 的 `change`）。重建下游 enter 决策的监听器必须展开它（`{ ...decision, messages }`），该声明才能存活。每个步骤读取插件注册的提示词片段和工具 schema。渲染后的提示词是 surface 第 0 号节点，即一个 `system/message` 事件：首个步骤在其用户消息之前追加它，即使提示词为空（不产生协议消息），渲染文本不同的后续步骤替换该节点，请求不携带单独的 `system` 字段（[决策](../.agents/notes/implemented/architecture/2026-09-02-system-prompt-as-surface-node.zh.md)）。
+`agent/pre-step` 决定模型看到什么。监听器可以改写已领取的消息，也可以直接拒绝它们；首次领取被拒绝或被改写为空时，仍会关闭一个不含步骤的持久轮次，因此日志会记录这次尝试。enter 决策还可以设置 `startsRequestSeries` 来开启独立的模型消息序列：loop 会随之记录一个新的 `request/header`（原因为 `series`，或在封装同时变化时为携带 `startsSeries: true` 的 `change`）。重建下游 enter 决策的监听器必须展开它（`{ ...decision, messages }`），该声明才能存活。每个步骤读取插件注册的提示词片段和工具 schema。渲染后的提示词是 surface 上的一个 `system/message` 事件：首个步骤在其用户消息之前把它作为 surface 第 0 号节点追加，即使提示词为空（不产生协议消息），渲染文本不同的后续步骤替换最新存活的系统节点，或者在 `request/context` 声明 `systemPromptUpdate: 'in-history'` 的路由上、同一请求序列延续期间把新文本追加到已缓存历史之后，请求不携带单独的 `system` 字段（[决策](../.agents/notes/implemented/architecture/2026-09-02-system-prompt-as-surface-node.zh.md)；[决策规则](../packages/core/agent-loop/README.zh.md#understand-the-implementation)）。
 
 详情见[时序图](agent-lifecycle.zh.md)、[工具流水线](tool-execution-pipeline.zh.md)和[取消与错误恢复](subsystems/core.zh.md#the-agent-handle)。
 

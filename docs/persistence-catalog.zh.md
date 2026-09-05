@@ -91,7 +91,7 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 }[T]
 ```
 
-来源：[`packages/core/session/src/types.ts:394`](../packages/core/session/src/types.ts) · [`packages/core/session/src/types.ts:402`](../packages/core/session/src/types.ts) · [`packages/core/session/src/types.ts:432`](../packages/core/session/src/types.ts) · [`packages/core/session/src/types.ts:463`](../packages/core/session/src/types.ts)
+来源：[`packages/core/session/src/types.ts:402`](../packages/core/session/src/types.ts) · [`packages/core/session/src/types.ts:410`](../packages/core/session/src/types.ts) · [`packages/core/session/src/types.ts:440`](../packages/core/session/src/types.ts) · [`packages/core/session/src/types.ts:471`](../packages/core/session/src/types.ts)
 
 ## 事件
 
@@ -218,7 +218,7 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 'assistant/attempt': { turn: number; step: number; stream: AssistantStreamRecord[] }
 ```
 
-来源：[`packages/core/session/src/types.ts:328`](../packages/core/session/src/types.ts)
+来源：[`packages/core/session/src/types.ts:334`](../packages/core/session/src/types.ts)
 
 <a id="assistantmessage--surface"></a>
 
@@ -248,7 +248,7 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 
 类型：[TokenUsage](subsystems/llm-streaming.zh.md)
 
-来源：[`packages/core/session/src/types.ts:314`](../packages/core/session/src/types.ts)
+来源：[`packages/core/session/src/types.ts:320`](../packages/core/session/src/types.ts)
 
 ### `command/*`
 
@@ -590,13 +590,15 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 
 ```ts persistence-catalog
 /**
- * Route metadata for the next request, logged only when the route or capacity
- * changes. It does not participate in request reconstruction or header equality.
+ * Route metadata for the next request, logged only when the route, capacity,
+ * or system prompt update mode changes. It does not participate in request
+ * reconstruction or header equality; the loop reads the latest snapshot's
+ * `systemPromptUpdate` when it decides how to commit a changed system prompt.
  */
 'request/context': RequestContext
 ```
 
-来源：[`packages/core/session/src/types.ts:367`](../packages/core/session/src/types.ts)
+来源：[`packages/core/session/src/types.ts:375`](../packages/core/session/src/types.ts)
 
 <a id="requestheader--log-only"></a>
 
@@ -615,7 +617,7 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 }
 ```
 
-来源：[`packages/core/session/src/types.ts:357`](../packages/core/session/src/types.ts)
+来源：[`packages/core/session/src/types.ts:363`](../packages/core/session/src/types.ts)
 
 ### `sandbox/*`
 
@@ -690,7 +692,7 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 'session/end-seed': { inherited?: true }
 ```
 
-来源：[`packages/core/session/src/types.ts:390`](../packages/core/session/src/types.ts)
+来源：[`packages/core/session/src/types.ts:398`](../packages/core/session/src/types.ts)
 
 <a id="sessiontitle--log-only"></a>
 
@@ -752,7 +754,7 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 'step/end': { turn: number; step: number }
 ```
 
-来源：[`packages/core/session/src/types.ts:286`](../packages/core/session/src/types.ts)
+来源：[`packages/core/session/src/types.ts:289`](../packages/core/session/src/types.ts)
 
 <a id="stepstart--log-only"></a>
 
@@ -763,7 +765,7 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 'step/start': { turn: number; step: number }
 ```
 
-来源：[`packages/core/session/src/types.ts:284`](../packages/core/session/src/types.ts)
+来源：[`packages/core/session/src/types.ts:287`](../packages/core/session/src/types.ts)
 
 ### `subagent/*`
 
@@ -812,16 +814,19 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 ```ts persistence-catalog
 /**
  * The rendered system prompt on the model-visible surface. The loop appends
- * the first one as surface node 0 before the step's first `user/message` and
- * replaces that node (`surfaceOp: { op: 'replace' }` over exactly node 0)
- * when the rendered prompt changes, so the head of every request is derived
- * history like every other message. Empty `message.content` records "no
+ * the first one as surface node 0 before the step's first `user/message`.
+ * When the rendered prompt changes it replaces the latest system node
+ * (`surfaceOp: { op: 'replace' }` over exactly that node) or, on a route
+ * whose `request/context` declares `systemPromptUpdate: 'in-history'` and
+ * inside a continuing request series, appends the changed prompt after the
+ * cached history, so the latest system node is the effective prompt and
+ * every request stays derived history. Empty `message.content` records "no
  * system prompt" and projects to no message.
  */
 'system/message': { turn: number; step: number; message: SystemMessage }
 ```
 
-来源：[`packages/core/session/src/types.ts:303`](../packages/core/session/src/types.ts)
+来源：[`packages/core/session/src/types.ts:309`](../packages/core/session/src/types.ts)
 
 ### `team/*`
 
@@ -914,7 +919,7 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 
 类型：[ToolCallId](subsystems/core.zh.md)
 
-来源：[`packages/core/session/src/types.ts:334`](../packages/core/session/src/types.ts)
+来源：[`packages/core/session/src/types.ts:340`](../packages/core/session/src/types.ts)
 
 <a id="toolptc-dispatch--log-only"></a>
 
@@ -989,7 +994,7 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 }
 ```
 
-来源：[`packages/core/session/src/types.ts:346`](../packages/core/session/src/types.ts)
+来源：[`packages/core/session/src/types.ts:352`](../packages/core/session/src/types.ts)
 
 ### `tool-workflow/*`
 
@@ -1069,7 +1074,7 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 
 类型：[TurnEndReason](subsystems/session.zh.md)
 
-来源：[`packages/core/session/src/types.ts:282`](../packages/core/session/src/types.ts)
+来源：[`packages/core/session/src/types.ts:285`](../packages/core/session/src/types.ts)
 
 <a id="turnstart--log-only"></a>
 
@@ -1085,7 +1090,7 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 'turn/start': { turn: number }
 ```
 
-来源：[`packages/core/session/src/types.ts:273`](../packages/core/session/src/types.ts)
+来源：[`packages/core/session/src/types.ts:276`](../packages/core/session/src/types.ts)
 
 ### `user/*`
 
@@ -1104,7 +1109,7 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 'user/message': UserMessage
 ```
 
-来源：[`packages/core/session/src/types.ts:294`](../packages/core/session/src/types.ts)
+来源：[`packages/core/session/src/types.ts:297`](../packages/core/session/src/types.ts)
 
 ### `web/*`
 

@@ -47,7 +47,7 @@ session.append('user/message', { role: 'user', content: [{ type: 'text', text: '
 session.deriveMessages()         // the derived model history
 ```
 
-表层事件（`system/message`、`user/message`、`assistant/message`、`tool/result`）必须声明如何进入有序 surface。Assistant message 会嵌入产生它的精确紧凑 provider stream；`assistant/attempt`、边界与其他仅日志事件从不产生消息。`system/message` 在 surface 第 0 号节点承载渲染后的系统提示词；当第 0 号节点是 `system/message` 时，surface 折叠拒绝覆盖它的替换，除非替换事件本身是恰好覆盖该节点的 `system/message`（[决策](../../../.agents/notes/implemented/architecture/2026-09-02-system-prompt-as-surface-node.zh.md)）。
+表层事件（`system/message`、`user/message`、`assistant/message`、`tool/result`）必须声明如何进入有序 surface。Assistant message 会嵌入产生它的精确紧凑 provider stream；`assistant/attempt`、边界与其他仅日志事件从不产生消息。`system/message` 承载渲染后的系统提示词：第一条是 surface 第 0 号节点，变化后的提示词原地替换最新的系统节点，或者在 `request/context` 声明 `systemPromptUpdate: 'in-history'` 的路由上、同一请求序列延续期间追加到已缓存历史之后，使最新的系统节点成为有效提示词；当第 0 号节点是 `system/message` 时，surface 折叠拒绝覆盖它的替换，除非替换事件本身是恰好覆盖该节点的 `system/message`，而后续系统节点不受保护，压缩范围可以遮蔽它们（[决策](../../../.agents/notes/implemented/architecture/2026-09-02-system-prompt-as-surface-node.zh.md)）。
 
 ### 读取日志
 
@@ -105,7 +105,7 @@ session.deriveMessages()         // the derived model history
 
 ### 请求头
 
-循环在每个循环实例边界及变更时记录完整规范 `request/header` 快照（调用配置、适配器默认值、组装后的工具 schema——渲染后的系统提示词是 surface 第 0 号节点，不是 header 状态）；`foldRequestHeader(events)` 通过选择最新快照来重建它，使每个对话请求都成为日志的纯函数。路由元数据（`request/context`）是独立的已记录状态，仅在提供方、模型或容量变化时追加。
+循环在每个循环实例边界及变更时记录完整规范 `request/header` 快照（调用配置、适配器默认值、组装后的工具 schema——渲染后的系统提示词是 `system/message` surface 节点，不是 header 状态）；`foldRequestHeader(events)` 通过选择最新快照来重建它，使每个对话请求都成为日志的纯函数。路由元数据（`request/context`）是独立的已记录状态，仅在提供方、模型、容量或 `systemPromptUpdate` 模式变化时追加；循环在决定如何提交变化后的系统提示词时读取最新快照的模式。
 
 </details>
 
@@ -159,15 +159,15 @@ session.deriveMessages()         // the derived model history
 
 #### 模型看到什么
 
-会话会重建循环实际发送的工具 schema 与调用配置；系统提示词作为 surface 第 0 号节点，属于 `deriveMessages()` 的一部分。请求头事件不向历史加入任何消息，也不持有提示词的副本。
+会话会重建循环实际发送的工具 schema 与调用配置；系统提示词作为 surface 第 0 号节点、并在历史内更新之后作为最新的系统节点，属于 `deriveMessages()` 的一部分。请求头事件不向历史加入任何消息，也不持有提示词的副本。
 
 #### Token 影响
 
-日志记录不产生重复 token。系统节点与 schema 仍会产生正常的逐请求开销。
+日志记录不产生重复 token。各系统节点与 schema 仍会产生正常的逐请求开销。
 
 #### KV Cache 影响
 
-记录日志不会导致失效，精确重建会保持请求前缀一致。后续请求头若更改配置或 schema，可能从第一处差异开始使复用失效；提示词变更是对 surface 第 0 号节点的替换，会使复用从第一个 token 起失效。
+记录日志不会导致失效，精确重建会保持请求前缀一致。后续请求头若更改配置或 schema，可能从第一处差异开始使复用失效；替换 surface 第 0 号节点的提示词变更会从第一个 token 起使复用失效，而历史内追加则保持直到已缓存历史末尾的前缀可复用。
 
 ## 已知限制与延期工作
 
