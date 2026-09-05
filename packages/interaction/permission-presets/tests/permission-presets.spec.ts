@@ -139,19 +139,6 @@ describe('PermissionPresetService', () => {
       .toThrow(/already registered/)
   })
 
-  it('derives the fixed Auto bundle when no configured preset matches it', async () => {
-    const ctx = await mounted({ config: { presets: {
-      'workspace-write': { sandbox: 'workspace-write', approval: 'ask' },
-    } } })
-    await mountAuto(ctx)
-    const session = freshSession('sess-auto-derived')
-    session.append('sandbox/mode', { mode: 'danger-full-access' })
-    session.append('approval/policy', { policy: 'never' })
-    expect(ctx.permissionPresets.current(session)).toBe(AUTO_PRESET)
-    session.append('sandbox/mode', { mode: 'read-only' })
-    expect(ctx.permissionPresets.current(session)).toBe(CUSTOM_PRESET)
-  })
-
   it('runs Auto admission before any write, including a no-op selection', async () => {
     const ctx = await mounted()
     let admissions = 0

@@ -52,7 +52,7 @@ Registering or removing Auto emits the payload-free `permission-presets/catalog-
 
 ## Current preset and the derived `custom`
 
-`current(session)` derives the effective preset from the required `permissions` projection. The unit folds the session's sandbox mode, approval policy, and recorded selection; values absent within that state fall back to the executor's configured mode and the approval service config, then `ask`. A missing projection key fails explicitly. The service prefers a still-matching selection, then the first matching configured entry, then live Auto when its fixed bundle matches, and otherwise returns `CUSTOM_PRESET` (`'custom'`). `custom` is derived-only: clients may display it as the current value, but it is never a switch target or an event payload.
+`current(session)` derives the effective preset from the required `permissions` projection. The unit folds the session's sandbox mode, approval policy, and recorded selection; values absent within that state fall back to the executor's configured mode and the approval service config, then `ask`. A missing projection key fails explicitly. The service prefers a still-matching selection, then the first matching configured entry, and otherwise returns `CUSTOM_PRESET` (`'custom'`). `custom` is derived-only: clients may display it as the current value, but it is never a switch target or an event payload.
 
 `names` lists configured presets in declaration order followed by Auto while its integration is live. `catalog()` returns those selectable entries as one process-level snapshot. `optionOf(name)` builds an available entry (its label falls back to the key) or the derived `custom` presentation, and throws for any other name. Clients join the catalog with the Session projection; `custom` may label the current value but never becomes a catalog entry.
 
@@ -106,7 +106,7 @@ registerAuto(admit: () => void): () => Promise<void>
 /**
  * Resolve the preset matching the effective knob values. A still-matching
  * last selection wins shared-bundle ties; otherwise the first configured
- * match, then Auto when live, wins. Returns
+ * match wins. Returns
  * {@link CUSTOM_PRESET} when no available preset matches.
  * @param session - the session whose knob state is read.
  * @returns the effective preset name, or `custom` when nothing matches.

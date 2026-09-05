@@ -338,7 +338,7 @@ export class PermissionPresetService extends TypertRemoteService {
   /**
    * Resolve the preset matching the effective knob values. A still-matching
    * last selection wins shared-bundle ties; otherwise the first configured
-   * match, then Auto when live, wins. Returns
+   * match wins. Returns
    * {@link CUSTOM_PRESET} when no available preset matches.
    * @param session - the session whose knob state is read.
    * @returns the effective preset name, or `custom` when nothing matches.
@@ -359,7 +359,6 @@ export class PermissionPresetService extends TypertRemoteService {
     for (const [name, spec] of Object.entries(this.presets)) {
       if (matches(spec)) return name
     }
-    if (this.autoAdmit !== undefined && matches(AUTO_PRESET_SPEC)) return AUTO_PRESET
     return CUSTOM_PRESET
   }
 

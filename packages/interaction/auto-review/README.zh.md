@@ -72,7 +72,7 @@ DSH_AUTO_REVIEW_CERTIFICATION=1 pnpm exec vitest run --config vitest.e2e.config.
 
 Auto 拒绝使用固定模型可见消息，其中会指明被拒绝的工具并说明其主体未执行。其 `AutoReviewDeniedError`／`AUTO_REVIEW_DENIED` 身份与可选 raw reason 通过普通原生或 PTC 结构化错误字段传播。Web 树会在 keyed Tool 视图分派前识别该身份并渲染通用拒绝卡，因此专用或外部 Tool 视图都不能遮住拒绝结论。展示层只在渲染工具卡时归一化原因。
 
-发布与资源释放都以拒绝方式关闭。持久 Auto 会话在 live Auto 注册缺失时不能发布。资源释放在修改任何预设前，会先捕获所有正在退出 Auto 的精确 Session 对象身份，监听器也会先检查该集合，再派生当前权限状态。插件关闭新准入，通过既有预设写入器把每个已捕获会话切换到 `danger-full-access`，不改变 Auto 与 Full access 共用的沙箱／审批组合，也不关闭持久终端；随后中止生命周期并等待每次在途审查或已准入调用。允许的调用会保持 active 状态，直至进入 `tools/execute` 或 `tools/result`；execute 包装层会在继续分派前合并生命周期 signal 与调用方 signal，因此资源释放会取消任何尚未开始的已准入工具主体。如果全部迁移成功，资源释放会移除监听器与 Auto 注册；如果任一迁移失败，Cordis 会报告清理错误并让两者保留在已关闭状态，使退役会话的后续调用继续被拒绝、新的 Auto 选择继续失败。重新安装 integration 只恢复目录项；已经迁移的 live Session 会保持 Full access，直到用户再次选择 Auto。
+发布与资源释放都以拒绝方式关闭。持久 Auto 会话在 live Auto 注册缺失时不能发布。资源释放先关闭新准入，再通过既有预设写入器把 live Auto 会话切换到 `danger-full-access`，保留共用的沙箱／审批组合与持久终端。随后插件中止生命周期，并等待每次在途审查或已准入调用完成，最后才移除监听器与 Auto 注册。允许的调用会保持 active 状态，直至进入 `tools/execute` 或 `tools/result`；execute 包装层会在继续分派前合并生命周期 signal 与调用方 signal，因此资源释放会取消任何尚未开始的已准入工具主体。预设写入失败时也会执行取消与排空；Cordis 会报告清理错误并保留已关闭的注册，使新的 Auto 选择与仍处于 Auto 的会话调用被拒绝。重新安装 integration 只恢复目录项；已经迁移的 live Session 会保持 Full access，直到用户再次选择 Auto。
 
 ### 源码地图
 

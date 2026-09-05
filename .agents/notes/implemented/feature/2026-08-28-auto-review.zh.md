@@ -36,7 +36,7 @@ Auto 拒绝会向主 agent 提供固定消息，其中会指明被拒绝的工�
 
 调用方取消沿用普通 Tool 的结算优先级：late allow 后观察到的取消会转为规范的 dispatch 前取消，而已经结算的拒绝或技术失败仍保持 Auto 拒绝。被拒绝的 PTC inner call 保留既有 `ToolCallError` 与程序 `catch` 行为，因此被处理的拒绝不会转成外层 `run_code` 失败。允许决定不产生事件、原因或持久 grant。
 
-发布与资源释放均以拒绝方式关闭。存储的 Auto 会话只有在 Auto 注册为 live 状态并准入该 Session 时才能发布；服务不会把它改写为 Full access。资源释放期间，integration 会先关闭新的 Auto 选择与审查准入，并在改变任何预设前捕获正在退出 Auto 的精确 Session 对象身份；监听器会先检查该退役集合，再派生当前权限状态。integration 通过既有预设写入器把每个已捕获 Session 切换到 `danger-full-access`；由于 Auto 与 Full access 共用沙箱 `danger-full-access` 加审批策略 `never`，该切换只记录新的预设身份，执行旋钮与持久终端保持不变，也不会增加 terminal fence。随后 integration 中止生命周期，并等待每次在途审查或已准入调用完成，最后才移除监听器与 Auto 注册。允许的调用会保持 active 状态，直至进入 `tools/execute` 或 `tools/result`；execute 包装层会在继续分派前合并生命周期 signal 与调用方 signal，因此资源释放会取消任何尚未开始的已准入工具主体。若有 Session 无法迁移，integration 仍会中止并排空 active 调用，但会保留两项已关闭的注册，使新的 Auto 选择失败，并让退役会话的调用被拒绝，而不是留下未经审查的执行窗口。重新安装 integration 只会恢复 Auto 目录项；已经迁移的 live Session 会保持 Full access，直到用户再次显式选择 Auto。
+发布与资源释放均以拒绝方式关闭。存储的 Auto 会话只有在 Auto 注册为 live 状态并准入它时才能发布；服务不会把它改写为 Full access。资源释放期间，integration 先关闭新的 Auto 选择与审查准入，再通过既有预设写入器把 live Auto 会话切换到 `danger-full-access`。Auto 与 Full access 共用沙箱 `danger-full-access` 加审批策略 `never`，因此该切换只记录新的预设身份，执行旋钮与持久终端保持不变，也不会增加 terminal fence。规范权限状态仍是权威：单个预设 append 原子提交，Session 会隔离提交后的观察者错误。随后 integration 中止生命周期，并等待每次在途审查或已准入调用完成，最后才移除监听器与 Auto 注册。允许的调用会保持 active 状态，直至进入 `tools/execute` 或 `tools/result`；execute 包装层会在继续分派前合并生命周期 signal 与调用方 signal，因此资源释放会取消任何尚未开始的已准入工具主体。预设写入失败时也会执行取消与排空；已关闭的注册会继续拒绝新的 Auto 选择与仍处于 Auto 的会话调用。重新安装 integration 只恢复 Auto 目录项；已经迁移的 live Session 会保持 Full access，直到用户再次显式选择 Auto。
 
 ## 验证
 

@@ -653,12 +653,10 @@ function denied(exec: ToolExecution, reason?: string): PreToolDecision {
 
 /** Install the Auto preset and its prepended per-call review gate. */
 export function apply(ctx: Context): void {
-  // Failed disposal keeps the closed listener installed after this plugin
-  // context deactivates, so retain the dependency instance for that cancellation path.
+  // Retain the injected service while this context drains on disposal.
   const permissionPresets = ctx.permissionPresets
   let accepting = true
   const active = new Map<ToolExecution['token'], ActiveCall>()
-  const retiring = new Set<Agent['session']>()
   const lifecycle = new AbortController()
 
   const completeActive = (exec: Pick<ToolExecution, 'token'>): void => {
@@ -674,11 +672,10 @@ export function apply(ctx: Context): void {
       if (agent === undefined || (exec.parent === undefined && exec.name === RUN_CODE_NAME)) {
         return next()
       }
-      const isRetiring = retiring.has(agent.session)
-      if (!isRetiring && permissionPresets.current(agent.session) !== AUTO_PRESET) {
+      if (permissionPresets.current(agent.session) !== AUTO_PRESET) {
         return next()
       }
-      if (!accepting || isRetiring || lifecycle.signal.aborted) {
+      if (!accepting || lifecycle.signal.aborted) {
         return { kind: 'cancel' }
       }
 
@@ -725,22 +722,15 @@ export function apply(ctx: Context): void {
     yield stopContribution
     yield async () => {
       accepting = false
-      const errors: unknown[] = []
-      for (const session of ctx.sessions.list()) {
-        if (permissionPresets.current(session) !== AUTO_PRESET) continue
-        retiring.add(session)
-      }
-      for (const session of retiring) {
-        try {
+      try {
+        for (const session of ctx.sessions.list()) {
+          if (permissionPresets.current(session) !== AUTO_PRESET) continue
           permissionPresets.set(session, 'danger-full-access')
-          retiring.delete(session)
-        } catch (error: unknown) {
-          errors.push(error)
         }
+      } finally {
+        lifecycle.abort(new Error('auto-review integration disposed'))
+        await Promise.allSettled([...active.values()].map(item => item.done))
       }
-      lifecycle.abort(new Error('auto-review integration disposed'))
-      await Promise.allSettled([...active.values()].map(item => item.done))
-      if (errors.length > 0) throw new AggregateError(errors, 'auto-review: failed to migrate live Auto sessions')
     }
   }, 'auto-review lifecycle')
 }

@@ -22,11 +22,6 @@ import SessionStore, {
   SessionId,
   SessionLogOffset,
   type Session,
-  type SessionEvent,
-  type SessionEventMap,
-  type SessionEventType,
-  type SurfaceEventType,
-  type SurfaceIntent,
 } from '@deepseek-ai/dsh-session'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import SubagentRuntime, {
@@ -1310,6 +1305,53 @@ describe('cancellation and integration teardown', () => {
       expect(ctx.permissionPresets.names).not.toContain(AUTO_PRESET)
     })
 
+  it('closes Auto admission before migration observers can start another review', async () => {
+    const { ctx, adapter, auto } = await harness([
+      decisionChunks('{"risk":"low","decision":"allow"}'),
+    ])
+    const probe = registerProbe(ctx)
+    const first = autoSession(ctx, 'dispose-migration-first')
+    const second = autoSession(ctx, 'dispose-migration-second')
+    appendHeader(second.session, [{ name: 'probe', description: 'probe', parameters: { type: 'object' } }])
+    const callId = ToolCallId('dispose-migration-call')
+    appendAssistant(second.session, [{ type: 'tool-call', id: callId, name: 'probe', arguments: '{}' }])
+    appendNativeCall(second.session, callId, 'probe', '{}')
+    let observedPreset: string | undefined
+    let selectionFailure: unknown
+    let competingCall: ReturnType<typeof ctx.tools.execute> | undefined
+    ctx.on('session/event', (session, event) => {
+      if (session !== first.session || event.type !== 'permission/preset'
+        || event.data.preset !== 'danger-full-access') return
+      observedPreset = ctx.permissionPresets.current(second.session)
+      try {
+        ctx.permissionPresets.set(second.session, AUTO_PRESET)
+      } catch (error) {
+        selectionFailure = error
+      }
+      competingCall = ctx.tools.execute({
+        signal: new AbortController().signal,
+        callId,
+        name: 'probe',
+        arguments: {},
+        agent: second.agent,
+      })
+    })
+
+    await auto.dispose()
+
+    expect(observedPreset).toBe(AUTO_PRESET)
+    expect(selectionFailure).toEqual(new Error('auto-review: integration is closing'))
+    await expect(competingCall).resolves.toMatchObject({
+      isError: true,
+      error: { info: { name: 'AbortError', code: TOOL_ABORTED_BEFORE_DISPATCH } },
+    })
+    expect(adapter.requests).toHaveLength(0)
+    expect(probe.runs()).toBe(0)
+    expect(ctx.permissionPresets.current(first.session)).toBe('danger-full-access')
+    expect(ctx.permissionPresets.current(second.session)).toBe('danger-full-access')
+    expect(ctx.permissionPresets.names).not.toContain(AUTO_PRESET)
+  })
+
   it('cancels an allowed review when disposal starts during a downstream guard', async () => {
     const downstreamEntered = Promise.withResolvers<undefined>()
     const releaseDownstream = Promise.withResolvers<undefined>()
@@ -1427,91 +1469,6 @@ describe('cancellation and integration teardown', () => {
     expect(ctx.permissionPresets.names).toContain(AUTO_PRESET)
     expect(ctx.permissionPresets.current(session)).toBe('danger-full-access')
     await reinstalled.dispose()
-  })
-
-  it('retains the closed cancellation gate after draining when one session migration fails', async () => {
-    let release!: () => void
-    const held = new Promise<void>((resolve) => { release = resolve })
-    const controlled = async function* (): AsyncIterable<StreamChunk> {
-      await held
-      yield* decisionChunks('{"risk":"medium","decision":"allow"}')
-    }
-    const { ctx, adapter, auto } = await harness([controlled])
-    const probe = registerProbe(ctx)
-    const ordinarySession = ctx.sessions.create(SessionId('dispose-ordinary'), { meta: { cwd: '/workspace' } })
-    const ordinaryAgent = agentFor(ordinarySession)
-    const { session, agent } = autoSession(ctx, 'dispose-failure')
-    appendHeader(session, [{ name: 'probe', description: 'probe', parameters: { type: 'object' } }])
-    const firstId = ToolCallId('first-dispose-call')
-    appendAssistant(session, [{ type: 'tool-call', id: firstId, name: 'probe', arguments: '{}' }])
-    appendNativeCall(session, firstId, 'probe', '{}')
-    const first = ctx.tools.execute({
-      signal: new AbortController().signal, callId: firstId, name: 'probe', arguments: {}, agent,
-    })
-    await until(() => adapter.requests.length === 1)
-    const logged = vi.spyOn(ctx.logger, 'error').mockImplementation(() => undefined)
-    const append = session.append.bind(session)
-    function appendWithMigrationFailure<T extends SessionEventType>(
-      type: T,
-      data: SessionEventMap[T],
-      ...opts: T extends SurfaceEventType ? [opts: SurfaceIntent<T>] : []
-    ): SessionEvent<T> {
-      const event = append(type, data, ...opts)
-      if (type === 'permission/preset'
-        && (data as SessionEventMap['permission/preset']).preset === 'danger-full-access') {
-        throw new Error('migration failed after persisted identity')
-      }
-      return event
-    }
-    vi.spyOn(session, 'append').mockImplementation(appendWithMigrationFailure)
-
-    const disposal = auto.dispose()
-    await until(() => adapter.requests[0]?.signal?.aborted === true)
-    expect(session.snapshotEvents().at(-1)).toMatchObject({
-      type: 'permission/preset', data: { preset: 'danger-full-access' },
-    })
-    expect(ctx.permissionPresets.current(session)).toBe('danger-full-access')
-    expect(() => { ctx.permissionPresets.set(session, AUTO_PRESET) }).toThrow(/integration is closing/)
-    const secondId = ToolCallId('second-dispose-call')
-    appendAssistant(session, [{ type: 'tool-call', id: secondId, name: 'probe', arguments: '{}' }], 2, 1)
-    appendNativeCall(session, secondId, 'probe', '{}', 2, 1)
-    const second = await ctx.tools.execute({
-      signal: new AbortController().signal, callId: secondId, name: 'probe', arguments: {}, agent,
-    })
-    expect(second).toMatchObject({
-      isError: true,
-      error: { info: { code: TOOL_ABORTED_BEFORE_DISPATCH } },
-    })
-    expect(adapter.requests).toHaveLength(1)
-    await expect(ctx.tools.execute({
-      signal: new AbortController().signal,
-      callId: ToolCallId('ordinary-call-after-failed-dispose'),
-      name: 'probe',
-      arguments: {},
-      agent: ordinaryAgent,
-    })).resolves.toMatchObject({ isError: false })
-    release()
-    await expect(disposal).resolves.toBeUndefined()
-    expect(logged).toHaveBeenCalledWith(expect.objectContaining({
-      message: 'auto-review: failed to migrate live Auto sessions',
-    }))
-    await expect(first).resolves.toMatchObject({
-      isError: true,
-      error: { info: { code: TOOL_ABORTED_BEFORE_DISPATCH } },
-    })
-    const thirdId = ToolCallId('post-dispose-call')
-    appendAssistant(session, [{ type: 'tool-call', id: thirdId, name: 'probe', arguments: '{}' }], 3, 1)
-    appendNativeCall(session, thirdId, 'probe', '{}', 3, 1)
-    await expect(ctx.tools.execute({
-      signal: new AbortController().signal, callId: thirdId, name: 'probe', arguments: {}, agent,
-    })).resolves.toMatchObject({
-      isError: true,
-      error: { info: { code: TOOL_ABORTED_BEFORE_DISPATCH } },
-    })
-    expect(probe.runs()).toBe(1)
-    expect(adapter.requests).toHaveLength(1)
-    expect(ctx.permissionPresets.names).toContain(AUTO_PRESET)
-    expect(() => { ctx.permissionPresets.set(session, AUTO_PRESET) }).toThrow(/integration is closing/)
   })
 
   it('loads without a configured read-only preset', async () => {

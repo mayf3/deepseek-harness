@@ -52,7 +52,7 @@ Auto integration 会在自身 effect 生命周期内调用 `registerAuto(admit)`
 
 ## 当前预设与派生的 `custom`
 
-`current(session)` 从必需的 `permissions` 投影派生实际生效的预设。该单元折叠会话的沙箱模式、审批策略和已记录选择；状态内部的缺失值回退到执行器配置的模式与审批服务配置，最后回退到 `ask`。投影 key 缺失时会显式失败。服务优先取仍然匹配的选择，其次取第一个匹配的配置条目，再取固定组合匹配时的 live Auto，否则返回 `CUSTOM_PRESET`（`'custom'`）。`custom` 只是派生值：客户端可以把它显示为当前值，但它绝不是切换目标，也绝不出现在事件 payload 中。
+`current(session)` 从必需的 `permissions` 投影派生实际生效的预设。该单元折叠会话的沙箱模式、审批策略和已记录选择；状态内部的缺失值回退到执行器配置的模式与审批服务配置，最后回退到 `ask`。投影 key 缺失时会显式失败。服务优先取仍然匹配的选择，其次取第一个匹配的配置条目，否则返回 `CUSTOM_PRESET`（`'custom'`）。`custom` 只是派生值：客户端可以把它显示为当前值，但它绝不是切换目标，也绝不出现在事件 payload 中。
 
 `names` 先按声明顺序列出配置预设，再在 Auto integration 存活时列出 Auto。`catalog()` 把这些可选条目作为一份进程级快照返回。`optionOf(name)` 为可用条目（label 回退为该 key）或派生的 `custom` 展示构建选项，传入其他任何名称都会抛出异常。客户端把目录与 Session 投影合并；`custom` 可以标记当前值，但绝不会成为目录条目。
 
@@ -106,7 +106,7 @@ registerAuto(admit: () => void): () => Promise<void>
 /**
  * Resolve the preset matching the effective knob values. A still-matching
  * last selection wins shared-bundle ties; otherwise the first configured
- * match, then Auto when live, wins. Returns
+ * match wins. Returns
  * {@link CUSTOM_PRESET} when no available preset matches.
  * @param session - the session whose knob state is read.
  * @returns the effective preset name, or `custom` when nothing matches.
