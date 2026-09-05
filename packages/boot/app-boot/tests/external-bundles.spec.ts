@@ -128,6 +128,20 @@ describe('composeExternalLayer', () => {
     expect(patches).toEqual(snapshot)
   })
 
+  it('mounts the same tree when its patches are applied twice, as a rolled-back update re-applies them', () => {
+    const composed = composeExternalLayer(layer('pkg-t', [
+      { insert: [{ id: 'row', name: 'pkg-t' }] },
+      { id: 'tools', insert: [{ id: 'tool', name: 'pkg-t/tool' }] },
+    ]))
+    const snapshot = structuredClone(composed.patches)
+    const base = (): EntryOptions[] => [{ id: 'tools', name: 'cordis:group', group: true, config: [] }]
+    const first = applyEntryPatches(base(), composed.patches, () => {})
+    const second = applyEntryPatches(base(), composed.patches, () => {})
+    expect(second).toEqual(first)
+    expect(composed.patches).toEqual(snapshot)
+    expect((first[1]?.config as EntryOptions[]).map(row => row.id)).toEqual(['row'])
+  })
+
   it('spells the group id without the Loader\'s nested-id separator', () => {
     expect(bundleGroupId('@scope/pkg')).toBe('bundle/@scope/pkg')
     expect(bundleGroupId('x')).not.toContain(':')
