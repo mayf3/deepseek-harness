@@ -172,7 +172,7 @@ function BundleParts({ rows, t }: { readonly rows: readonly RowView[]; readonly 
           <div className={css.partsAll}>
             <Input
               type="search"
-              className={css.partsFilter}
+              className={css.partsFilter as string}
               placeholder={t('partsFilter')}
               aria-label={t('partsFilter')}
               value={filter}
