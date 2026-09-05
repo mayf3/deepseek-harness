@@ -1,7 +1,7 @@
 // contextBreakdown projection: heuristic system/tools/message composition,
 // plus the shared estimator's pricing branches.
 
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { createMessage, createSystemMessage, createUserMessage } from '@deepseek-ai/dsh-llm'
 import type { ContentBlock, ToolSchema } from '@deepseek-ai/dsh-llm'
@@ -19,6 +19,11 @@ import {
   estimateToolsTokens,
 } from '../src/estimate.ts'
 
+const contexts: Context[] = []
+afterEach(async () => {
+  await Promise.all(contexts.splice(0).map(ctx => ctx.fiber.dispose()))
+})
+
 const CONFIG = { provider: 'test', model: 'test-model' }
 
 const TOOLS: ToolSchema[] = [{
@@ -29,6 +34,7 @@ const TOOLS: ToolSchema[] = [{
 
 async function harness(): Promise<{ ctx: Context; session: Session }> {
   const ctx = new Context()
+  contexts.push(ctx)
   await ctx.plugin(SessionStore)
   await ctx.plugin(SessionProjectionRegistry)
   await ctx.plugin(TokenMeter)
@@ -182,6 +188,22 @@ describe('contextBreakdown session projection', () => {
     expect(agree().messageTokens).toBe(8 + estimateMessage(summary))
   })
 
+  it('restores the surviving head when compaction removes the newest large prompt', async () => {
+    const { ctx, session } = await harness()
+    appendSystem(session, 'head')
+    const question = appendUser(session, 'abcd')
+    const newest = appendSystem(session, 'x'.repeat(4000))
+    appendSummaryMeter(ctx, session, question, newest)
+    const summary = createUserMessage({ content: [{ type: 'text', text: 'summary' }], source: { kind: 'user' } })
+    session.append('user/message', summary, {
+      surfaceOp: { op: 'replace', start: question, end: newest },
+      sourceEventSeqs: [question, newest],
+    })
+    expect(projected(ctx, session)).toEqual({ systemTokens: 5, toolsTokens: 0, messageTokens: estimateMessage(summary) })
+    expect(projected(ctx, session).systemTokens + projected(ctx, session).messageTokens)
+      .toBe(ctx.tokenMeter.measure(session).nodes.reduce((sum, node) => sum + node.heuristicTokens, 0))
+  })
+
   it('sums surface appends and skips an empty-content assistant message', async () => {
     const { ctx, session } = await harness()
     appendUser(session, 'abcd')
@@ -265,85 +287,150 @@ describe('contextBreakdown session projection', () => {
     expect(agree()).toBeLessThan(grown)
   })
 
-  it('folds a replacement without a claim at zero and fails on a mismatched claim', () => {
+  it('prices unmetered replacements and rejects absent ranges without mutating prior state', async () => {
+    const { session } = await harness()
+    const first = appendUser(session, 'first message')
+    const last = appendUser(session, 'last message')
     const definition = contextBreakdownProjectionDefinition
-    const replace = (start: SessionSeq, end: SessionSeq): SessionEvent => ({
-      type: 'user/message',
-      seq: SessionSeq(9),
-      time: 0,
-      data: createUserMessage({ content: [{ type: 'text', text: 'x' }], source: { kind: 'user' } }),
-      surfaceOp: { op: 'replace', start, end },
-      sourceEventSeqs: [start, end],
-    } as unknown as SessionEvent)
-    const append = (seq: SessionSeq): SessionEvent => ({
-      type: 'user/message',
-      seq,
-      time: 0,
-      data: createUserMessage({ content: [{ type: 'text', text: 'x' }], source: { kind: 'user' } }),
-      surfaceOp: 'append',
-    } as unknown as SessionEvent)
-    const meter = (start: SessionSeq, end: SessionSeq, seq: SessionSeq): SessionEvent => ({
-      type: 'compaction/prune',
-      seq,
-      time: 0,
-      data: {
-        shadowedRange: { start, end },
-        shadowedSeqs: [start, end],
-        shadowedTokenCount: 5,
-      },
-    } as unknown as SessionEvent)
-    let state = definition.init()
-    state = definition.apply(state, append(SessionSeq(1)))
-    state = definition.apply(state, append(SessionSeq(3)))
-    // No metering event: the replacement contributes zero instead of throwing.
-    expect(definition.wire.view(definition.apply(state, replace(SessionSeq(1), SessionSeq(3)))).messageTokens)
-      .toBe(definition.wire.view(state).messageTokens)
-    // An adjacent claim for another range contradicts the replacement.
-    const mismatched = definition.apply(state, meter(SessionSeq(1), SessionSeq(1), SessionSeq(8)))
-    expect(() => definition.apply(mismatched, replace(SessionSeq(1), SessionSeq(3))))
-      .toThrow('no adjacent shadow price')
-    // A claim expires after one intervening event, so replacement delta is zero.
-    let expired = definition.apply(state, meter(SessionSeq(1), SessionSeq(3), SessionSeq(8)))
-    expired = definition.apply(expired, {
-      type: 'session/end-seed', seq: SessionSeq(9), time: 0, data: {},
-    })
-    expect(definition.wire.view(definition.apply(expired, replace(SessionSeq(1), SessionSeq(3)))).messageTokens)
-      .toBe(definition.wire.view(state).messageTokens)
-    // The armed claim prices exactly the next event's matching replacement.
-    const armed = definition.apply(state, meter(SessionSeq(1), SessionSeq(3), SessionSeq(8)))
-    expect(definition.wire.view(definition.apply(armed, replace(SessionSeq(1), SessionSeq(3)))).messageTokens)
-      .toBe(definition.wire.view(state).messageTokens - 5 + estimateMessage(
-        createUserMessage({ content: [{ type: 'text', text: 'x' }], source: { kind: 'user' } }),
-      ))
+    const state = session.snapshotEvents().reduce(definition.apply, definition.init())
+    const before = JSON.stringify(state)
+    const replacement = session.append('user/message', createUserMessage({
+      content: [{ type: 'text', text: 'summary' }], source: { kind: 'user' },
+    }), { surfaceOp: { op: 'replace', start: first, end: last }, sourceEventSeqs: [first, last] })
+    expect(definition.wire.view(definition.apply(state, replacement)).messageTokens).toBe(10)
+    expect(JSON.stringify(state)).toBe(before)
+    const invalid = { ...replacement, surfaceOp: { op: 'replace', start: SessionSeq(999), end: last } } as SessionEvent
+    expect(() => definition.apply(state, invalid)).toThrow('invalid current range')
+    expect(JSON.stringify(state)).toBe(before)
   })
 
-  it('keeps the persisted checkpoint O(1) as the surface grows and compacts', async () => {
+  it('classifies the last nonempty system by position despite rewrites and extra source citations', async () => {
+    const { ctx, session } = await harness()
+    let head = appendSystem(session, 'head')
+    let question = appendUser(session, 'question')
+    const middle = appendSystem(session, 'middle prompt')
+    const tail = appendSystem(session, 'last prompt in surface order')
+    head = replaceSystem(session, head, 'head rewritten at a newer event seq')
+    const agree = (text: string): void => {
+      const view = projected(ctx, session)
+      expect(view.systemTokens).toBe(estimateSystemMessage(createSystemMessage(text, SYSTEM_PLUGIN)))
+      expect(view.messageTokens).toBeGreaterThanOrEqual(0)
+      expect(view.systemTokens + view.messageTokens)
+        .toBe(ctx.tokenMeter.measure(session).nodes.reduce((total, node) => total + node.heuristicTokens, 0))
+    }
+    agree('last prompt in surface order')
+    question = session.append('user/message', createUserMessage({
+      content: [{ type: 'text', text: 'rewritten question' }], source: { kind: 'user' },
+    }), { surfaceOp: { op: 'replace', start: question, end: question }, sourceEventSeqs: [question] }).seq
+    expect(question).toBeGreaterThan(middle)
+    // Provenance can cite a surviving prompt outside the replaced span.
+    session.append('user/message', createUserMessage({
+      content: [{ type: 'text', text: 'middle summary' }], source: { kind: 'user' },
+    }), { surfaceOp: { op: 'replace', start: question, end: middle }, sourceEventSeqs: [question, middle, tail] })
+    agree('last prompt in surface order')
+    session.append('user/message', createUserMessage({
+      content: [{ type: 'text', text: 'tail summary' }], source: { kind: 'user' },
+    }), { surfaceOp: { op: 'replace', start: tail, end: tail }, sourceEventSeqs: [tail, head] })
+    agree('head rewritten at a newer event seq')
+    const repeated = appendSystem(session, 'head rewritten at a newer event seq')
+    agree('head rewritten at a newer event seq')
+    replaceSystem(session, repeated, '')
+    agree('head rewritten at a newer event seq')
+    replaceSystem(session, head, '')
+    agree('')
+  })
+
+  it('ignores dormant empty system tails across per-node clearing and head fallback', async () => {
+    const { ctx, session } = await harness()
+    let head = appendSystem(session, 'head')
+    appendUser(session, 'question')
+    const middle = appendSystem(session, 'middle')
+    const tail = appendSystem(session, 'tail')
+    appendSystem(session, '')
+    expect(projected(ctx, session).systemTokens).toBe(5)
+    replaceSystem(session, tail, '')
+    expect(projected(ctx, session).systemTokens).toBe(6)
+    replaceSystem(session, middle, '')
+    expect(projected(ctx, session)).toMatchObject({ systemTokens: 5, messageTokens: 10 })
+    head = replaceSystem(session, head, 'fallback head')
+    expect(projected(ctx, session)).toMatchObject({ systemTokens: 8, messageTokens: 10 })
+    replaceSystem(session, head, '')
+    expect(projected(ctx, session)).toMatchObject({ systemTokens: 0, messageTokens: 10 })
+  })
+
+  it('retains only compact current surface entries as history grows and compacts', async () => {
     const { ctx, session } = await harness()
     const first = appendUser(session, 'the first of many messages')
     for (let index = 0; index < 24; index += 1) appendUser(session, `message number ${index} with some text`)
     const last = appendUser(session, 'the last message before compaction')
-    const stateKeys = (): string[] => {
-      const row = ctx.sessionProjections.checkpoint(session)['contextBreakdown']
-      if (row === undefined) throw new Error('contextBreakdown checkpoint row is missing')
-      return Object.keys(row.val as Record<string, unknown>).sort()
-    }
-    // Growth adds no per-node bookkeeping to the durable state.
-    expect(stateKeys()).toEqual(['messageTokens', 'systemTokens', 'toolsTokens'])
-    const shadowed = session.surface.nodes.slice(
-      session.surface.nodes.indexOf(first),
-      session.surface.nodes.indexOf(last) + 1,
-    )
-    appendSummaryMeter(ctx, session, first, last)
+    const state = () => ctx.sessionProjections.stateOf(session, 'contextBreakdown')
+    expect(state().nodes).toHaveLength(26)
+    expect(Object.keys(state().nodes[0]!).sort()).toEqual(['heuristicTokens', 'seq', 'system'])
+    const shadowed = [...session.surface.nodes]
     session.append('user/message', createUserMessage({
-      content: [{ type: 'text', text: 'summary' }],
-      source: { kind: 'plugin', plugin: 'test' },
-    }), {
-      surfaceOp: { op: 'replace', start: first, end: last },
-      sourceEventSeqs: [...shadowed],
-    })
-    expect(stateKeys()).toEqual(['messageTokens', 'systemTokens', 'toolsTokens'])
-    expect(projected(ctx, session).messageTokens)
-      .toBe(ctx.tokenMeter.measure(session).surfaceTokens)
+      content: [{ type: 'text', text: 'summary' }], source: { kind: 'user' },
+    }), { surfaceOp: { op: 'replace', start: first, end: last }, sourceEventSeqs: shadowed })
+    expect(state().nodes).toHaveLength(1)
+    expect(projected(ctx, session).messageTokens).toBe(10)
+  })
+
+  it('retains wire identity when a same-price rewrite changes only checkpoint positions', async () => {
+    const { session } = await harness()
+    const head = appendSystem(session, 'head')
+    const definition = contextBreakdownProjectionDefinition
+    const state = session.snapshotEvents().reduce(definition.apply, definition.init())
+    replaceSystem(session, head, 'same')
+    const next = definition.apply(state, session.snapshotEvents().at(-1)!)
+    expect(next).not.toBe(state)
+    expect(definition.wire.view(next)).toBe(definition.wire.view(state))
+    expect(state.nodes[0]?.seq).toBe(head)
+  })
+
+  it('replays late registration, resumes a compact checkpoint, and discards scalar version 2', async () => {
+    const ctx = new Context()
+    contexts.push(ctx)
+    await ctx.plugin(SessionStore)
+    await ctx.plugin(SessionProjectionRegistry)
+    const session = ctx.sessions.create()
+    appendSystem(session, 'head')
+    const first = appendUser(session, 'question')
+    const last = appendSystem(session, 'x'.repeat(4000))
+    await ctx.plugin(TokenMeter)
+    expect(projected(ctx, session)).toMatchObject({ systemTokens: 1004, messageTokens: 15 })
+    const checkpoint = JSON.parse(JSON.stringify(
+      ctx.sessionProjections.checkpoint(session),
+    )) as ReturnType<typeof ctx.sessionProjections.checkpoint>
+    const row = checkpoint['contextBreakdown']!
+    expect(row.ver).toBe(3)
+    expect(ctx.sessionProjections.viewCheckpoint(checkpoint).contextBreakdown).toEqual(projected(ctx, session))
+    const replacement = session.append('user/message', createUserMessage({
+      content: [{ type: 'text', text: 'summary' }], source: { kind: 'user' },
+    }), { surfaceOp: { op: 'replace', start: first, end: last }, sourceEventSeqs: [first, last] })
+    const restored = ctx.sessionProjections.restore(
+      checkpoint, [replacement], SessionLogOffset(replacement.seq), session.header, session.inheritedEventCount,
+    )
+    expect(restored.snapshot.values.contextBreakdown).toEqual({ systemTokens: 5, toolsTokens: 0, messageTokens: 10 })
+    const stale = { ...checkpoint, contextBreakdown: { ...row, ver: 2, val: { systemTokens: 1004, toolsTokens: 0, messageTokens: -989 } } }
+    expect(ctx.sessionProjections.viewCheckpoint(stale).contextBreakdown).toBeUndefined()
+    expect(ctx.sessionProjections.restoreFloor(stale)).toBe(0)
+    expect(() => ctx.sessionProjections.restore(
+      stale, [replacement], SessionLogOffset(replacement.seq), session.header, session.inheritedEventCount,
+    )).toThrow('re-read from seq 0')
+    const replayed = ctx.sessionProjections.restore(
+      stale, session.snapshotEvents(), SessionLogOffset(0), session.header, session.inheritedEventCount,
+    )
+    expect(replayed.snapshot.values.contextBreakdown).toEqual(projected(ctx, session))
+    expect(replayed.checkpoint['contextBreakdown']?.ver).toBe(3)
+    const invalid = {
+      ...checkpoint,
+      contextBreakdown: {
+        ...row,
+        val: { nodes: [{ seq: 0, heuristicTokens: -1, system: true }], breakdown: { systemTokens: 0, toolsTokens: 0, messageTokens: 0 } },
+      },
+    }
+    expect(() => ctx.sessionProjections.restore(
+      invalid, session.snapshotEvents(), SessionLogOffset(0), session.header, session.inheritedEventCount,
+    )).toThrow()
   })
 
   it('discards version-2 cache values and refolds system messages from the full log', async () => {
@@ -377,6 +464,7 @@ describe('contextBreakdown session projection', () => {
 
   it('restores from a JSON checkpoint and unregisters with the token-meter fiber', async () => {
     const ctx = new Context()
+    contexts.push(ctx)
     await ctx.plugin(SessionStore)
     await ctx.plugin(SessionProjectionRegistry)
     const meterFiber = await ctx.plugin(TokenMeter)

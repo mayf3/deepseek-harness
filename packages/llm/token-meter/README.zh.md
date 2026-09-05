@@ -48,7 +48,7 @@ const price = ctx.tokenMeter.estimateMessage(message)
 
 当组合提供 `ctx.sessionProjections` 时，token-meter 注册三个投影单元。`tokenUsage` 携带完整持久日志中的 `uncachedInputTokens`、`outputTokens`、`cacheReadTokens` 与 `cacheWriteTokens`。最终 assistant 消息样本会替换同一次尝试的流式用量；`llm/retry-started` 会结束该替换范围，因此同一步骤中的重试会贡献另一次计费用量。`contextPressure` 携带可选 `pressureTokens`（提供方报告的最新提示词规模）、可选 `projectedTokens`（下一个请求的提示词将花费多少）与来自最新一条 `request/context` 记录的可选 `contextWindow`。`contextBreakdown` 携带启发式 `systemTokens`、`toolsTokens` 与 `messageTokens`——上下文的构成，而非提供方计费规模。卸载插件会移除全部三个键。
 
-`contextBreakdown` 携带启发式的 `systemTokens`、`toolsTokens` 与 `messageTokens`，描述上下文的组成而非提供方计费规模。system 数字在每条 `system/message` 上按后者胜重新计价——即 surface 节点 0，循环在渲染后的提示词变化时原位替换它——计价为提示词文本密度加角色开销，不含块开销；tools 数字在每条 `request/header` 上按后者胜重新计价；消息数字对其余所有 surface 节点重放与 `contextPressure` 相同的 O(1) 影子价折叠，因此在完整计量的日志上，system 数字与消息数字之和在每个事件边界都等于 `measure().nodes[].heuristicTokens` 之和，压缩会按记录的影子价缩小消息数字。请求定价的 `measure().surfaceTokens` 在路由模型重新为图片计价或请求组装把文件投影成 handle 文本时会与该值不同。若替换前没有紧邻的影子价声明，这个有界投影会保持不变，因为它无法重建被替换区间。三个数字都使用测量服务的固定启发式规则，属于估算值。它们加起来不等于 `projectedTokens`，后者的提供方锚点包含组成数据仍有的误差，其中按「4 字符约等于 1 token」计价会严重低估 CJK 文本与 JSON schema。请把它们当作近似的**组成**呈现，而不是总量。
+`contextBreakdown` 把 surface 顺序中最后一个非空且存活的 `system/message` 归入 `systemTokens`；休眠的空节点不贡献 token，没有非空系统消息时为零。`messageTokens` 包含其余所有可见节点，包括被取代的提示词。两者之和始终等于 `measure().nodes[].heuristicTokens`，未计量替换、压缩和逐节点清空提示词之后也成立。`toolsTokens` 跟随最新 `request/header`。三个数字都使用固定启发式规则，而非路由图片定价或文件 handle 投影；它们是近似构成，不是计费数据或 `projectedTokens`。
 
 `deriveTurnTokenUsage(events)` 为浏览器消费方把一个完整 Turn 折叠为精确的逐次尝试与整轮用量。生命周期证据缺失、计数不安全或精确总量矛盾时不返回结果；只有每次参与的尝试都报告可选缓存、推理或路由值时，相应汇总才会出现。
 
@@ -98,7 +98,7 @@ const price = ctx.tokenMeter.estimateMessage(message)
 
 ### 投影语义
 
-投影单元不共享完整表面 fold，因为其持久状态必须保持 O(1)。`surface-projection.ts` 为追加计价，并消费紧邻替换之前记录的影价；它只保留一个运行总量与至多一个待处理 claim，不保留逐节点价格。因此完全计量的日志在每个事件边界都与 `measure()` 的 plan/commit fold 一致。没有相邻匹配 claim 的替换保持有界投影不变，因为投影无法重建被替换范围。单一最后用量样本槽依赖一条会话日志顺序性质：一旦更晚的步骤报告用量，合法日志绝不会再为更早步骤报告用量。
+`contextBreakdown` 按 surface 顺序保留纯 JSON 的 `{ seq, heuristicTokens, system }` 条目，并复用测量服务的 plan/commit fold。其状态与 surface 转换成本为 O(当前保留 surface)，不是 O(1)，也不是 O(完整历史日志)；被替换条目和消息正文不保留。状态版本 3 使标量检查点失效并重放日志。`contextPressure` 仍是标量影子价消费方：没有相邻 claim 的替换贡献零增量。用量 fold 保留一个最后样本槽，因为合法日志不会在更晚步骤报告用量后再次报告更早步骤的用量。
 
 </details>
 
@@ -138,7 +138,7 @@ const price = ctx.tokenMeter.estimateMessage(message)
 - **提供方用量只在规范 envelope 完全相同时可复用**——工具、提供方、模型或调用配置变化会刻意回退到完整启发式估算；系统提示词变更在下一次成功调用之前按带符号的表面增量计量。
 - **缺失遗留源 seq 时保守处理**——没有 `sourceEventSeqs` 的 assistant 消息无法区分提供方输出与监听器改写，因此 fold 不会声称已知空或精确分片流。
 - **system 提示词改写不带影子价**——循环替换 system 节点时没有紧邻的计量事件，因此 `contextPressure.projectedTokens` 以零增量折叠该替换，直到下一个用量样本；`contextBreakdown.systemTokens` 与 `measure()` 会立即按新提示词重新计价。
-- **压缩若遮蔽了最新的 in-history system 节点**，会从 `contextBreakdown.messageTokens` 中减去它的价格，而该节点原本由 system 数字承载，因此消息数字会偏移该提示词与被取代提示词之间的价差，直到下一次重新基线替换节点 0；`contextPressure` 与 `measure()` 保持精确。
+- **构成检查点保留当前 surface**——精确的 system/message 分类需要位置条目；检查点大小和 surface 事件折叠成本为 O(当前保留 surface)。
 
 <a id="dev-note"></a>
 ### 开发备注
@@ -153,4 +153,4 @@ const price = ctx.tokenMeter.estimateMessage(message)
 
 </details>
 
-**运行时不变式：** 不发布伴生入口。token 估算是按调用输出，私有 Session cache 在其事件变更边界失效。本包的三个投影确实暴露观察流，但其 schema 固定了 JSON 载荷；用量 fold 会替换同一次尝试的样本，因此当最终样本修正更早的分片时，总量不必单调；构成 fold 与测量服务使用同一个 `estimate.ts` 启发式规则计价，并减去生产者记录的影价（由该服务自身固定启发式的节点价格派生），这使得其消息数字按构造即等于 `measure().nodes[].heuristicTokens` 之和，而非一项值得在运行时观察的关系；路由定价的 `surfaceTokens` 则因路由模型重新为图片计价而刻意与之偏离。
+**运行时不变式：** 不发布伴生入口。用量 fold 在每次尝试内替换样本，总量不必单调。构成和测量共享位置替换规划器与固定估算器，因此启发式 surface 总量按构造一致，而非需要比较的独立可变观测。路由定价总量有意与之不同。

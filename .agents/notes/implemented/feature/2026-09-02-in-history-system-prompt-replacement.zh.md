@@ -43,7 +43,7 @@ Status: implemented
 
 Web 在追加的历史内节点自己的位置呈现它。`SystemPromptNode` 携带 `{ seq, time, turn, step, text, update }`，其中 `update` 对已加载窗口内跟在更早系统节点之后的追加 `system/message` 为真。Chat 把非空的更新渲染为一张折叠的 `system-prompt` 卡片，标题取自 locale 键 `message.systemPromptUpdate`，同一 turn 与 step 内的 `request/header` 不会重复提示词卡片；`inspectRequestPrompt` 对跟在更新之后的 header 不报告系统变更。Trajectory 把跟在已加载请求 header 之后的更新折叠为一条合成的请求 header 事实，`promptChange.kind = 'system'`，因此之后的请求无需真实的 header 变更就能显示有效提示词。已加载窗口缺少更早的系统节点时，更新按初始提示词呈现。转录投影像对待所有 `system/message` 一样跳过它。
 
-`dsh-token-meter` 像对待任何 surface 节点一样为追加的节点计价。它的 `contextBreakdown` 把最新的系统节点报告为系统数字，并在追加时把被取代提示词的 token 移入消息数字，因此遮蔽某个已被取代提示词版本的压缩认领恰好减去追加所增加的量；`dsh-token-meter` README 记录了唯一的漂移情形——压缩遮蔽了最新的历史内节点——循环在下一步骤通过替换第 0 号节点修复它。随后 `assistant/message` 用量上的 `cacheReadTokens` 是可观察的效果：对具备能力的路由，该值覆盖到最后一条已缓存消息为止的前缀；被重写的第 0 号节点让它回落到公共前缀检测的下限。
+`dsh-token-meter` 把 surface 顺序中最后一个非空且存活的系统节点计入 `contextBreakdown.systemTokens`；其余可见节点（包括被取代的提示词）计入 `messageTokens`。休眠空节点被忽略。每次替换后，两者之和都等于固定启发式 surface 总量，无论是否存在影子价 claim。紧凑的保留条目复用测量服务的 surface 规划器：状态和转换成本为 O(当前保留 surface)，不是 O(1) 或 O(完整历史日志)。被替换条目和消息正文被丢弃，状态版本 3 拒绝标量检查点。后续 assistant 用量中的 `cacheReadTokens` 仍是可观察的提供方缓存效果。
 
 ### 压缩
 
@@ -69,7 +69,7 @@ Web 在追加的历史内节点自己的位置呈现它。`SystemPromptNode` 携
 
 **仅清除最新系统节点。** 空节点不投影为消息，因此更早的提示词会重新生效。清除所有生效版本才能保留空渲染文本的含义，同时不删除对话历史。被否决。
 
-**在明细的系统数字中报告所有存活的系统节点。** 对节点求和能直接显示被保留提示词版本的开销，但遮蔽某个已被取代版本的压缩认领就必须在系统数字与消息数字之间拆分。在追加时把被取代的提示词移入消息数字，让每次认领保持为简单的减法。被否决。
+**只保留标量总量或提示词祖先链。** 标量影子价无法判断最新提示词从哪个分类消失，也无法恢复其前一个版本。仅有提示词条目无法定位任意非提示词替换端点；`sourceEventSeqs` 还可能引用存活提示词，改写后的事件序号顺序也不同于 surface 顺序。保留紧凑的当前 surface 条目可以复用现有规划器，无需完整日志访问、第二套验证器或消费方专用持久事件。把所有存活提示词之和归入系统数字会改变有效提示词的含义，而不是修复分类。
 
 ## Consequences
 
@@ -85,7 +85,7 @@ Web 在追加的历史内节点自己的位置呈现它。`SystemPromptNode` 携
 - `packages/core/agent-loop/tests/system-prompt-projection.spec.ts` 钉住序列延续时的追加、序列开始时无论是否存在后续存活节点、有效文本是否变化都执行的重新基线化、空提示词对所有生效版本的清除，以及不具备能力时只做替换的行为。
 - `packages/core/agent-loop/tests/request-reconstruction.spec.ts` 钉住继承 header 下追加的节点及携带 `systemPromptUpdate` 的 `request/context`、序列开始时折回第 0 号节点、由压缩驱动的重新基线化，以及在开启序列的 `change` header 下由工具 schema 变更驱动的重新基线化。
 - `packages/llm/llm/tests/service.spec.ts`、`packages/llm/llm-deepseek/tests/adapter.spec.ts` 与 `packages/test-support/llm-replay/tests/llm-replay.spec.ts` 钉住已解析模型信息上声明的模式，以及加载时对任何其他值的拒绝。
-- `packages/llm/token-meter/tests/context-breakdown-projection.spec.ts` 钉住被取代的提示词移入消息数字，以及压缩认领对它的减法。
+- `packages/llm/token-meter/tests/context-breakdown-projection.spec.ts` 钉住最新与中间提示词移除、精确启发式总量、头部改写后的 surface 顺序、额外来源引用、休眠空节点与回退清空、不可变转换、紧凑保留检查点、延迟注册、重放和版本失效。
 - `packages/client/ui-conversation`、`ui-chat` 与 `ui-trajectory` 的客户端测试钉住更新卡片、同一步骤 header 的去重、更新之后不存在系统变更，以及合成的轨迹 header。
 - 无密钥的手写快照 `snapshots/session/system-prompt-in-history/` 在回放路由上声明该能力，通过 fixture 片段在第一次工具调用之后改变提示词，钉住追加的 `system/message`、未被触及的第 0 号节点、唯一一条 `request/header` 以及 `request/context` 中的模式。
 - `packages/llm/llm-deepseek/tests/adapter.e2e.ts` 针对 `DEEPSEEK_IN_HISTORY_MODEL` 指定的模型运行两个步骤并夹带一次提示词变更，断言回复遵循追加的提示词，并断言追加后的请求比同一对话在重写最前提示词时读取更多的缓存 token；该变量未设置时跳过。
