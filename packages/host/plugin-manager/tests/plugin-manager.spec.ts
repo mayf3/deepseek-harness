@@ -85,7 +85,8 @@ interface StagedPackage {
   /** `index.js` text, exported as the package main. */
   main?: string
   version?: string
-  stage?: 'boot' | 'runtime'
+  /** Any string: a staged manifest may declare a stage the profile refuses. */
+  stage?: string
   plugins?: { name: string; title?: string; config?: unknown }[]
   files?: Record<string, string>
 }
@@ -473,6 +474,24 @@ describe('PluginManager', () => {
       expect(calls).toEqual([['pnpm', 'add', 'ext-two'], ['pnpm', 'remove', 'ext-two']])
       expect(manifestOf(staged.profileDir)).toMatchObject({ dsh: { profile: { bundles: expect.not.arrayContaining(['ext-two']) as string[] } } })
       expect(manifestOf(staged.profileDir).dependencies).not.toHaveProperty('ext-two')
+    })
+
+    it('removes an installed bundle the profile cannot resolve and says why', async () => {
+      const staged = await stageHome()
+      // The probe reads the manifest without judging the stage; resolving the
+      // layer is what refuses it, and that refusal is the removal's reason.
+      stagePackage(staged.profileDir, 'ext-odd', { patch: BUNDLE_ONE_ROW, stage: 'weird' })
+      const calls: string[][] = []
+      const { manager } = await bootProfile(staged, { spawn: recordingPnpm(staged.profileDir, calls) })
+
+      const result = await manager.install('ext-odd')
+
+      expect(result).toMatchObject({
+        installed: [], installedOnly: [],
+        removed: [{ name: 'ext-odd', reason: expect.stringContaining('declares stage "weird"') as string }],
+      })
+      expect(calls).toEqual([['pnpm', 'add', 'ext-odd'], ['pnpm', 'remove', 'ext-odd']])
+      expect(manifestOf(staged.profileDir).dependencies).not.toHaveProperty('ext-odd')
     })
 
     it('keeps a package whose probe refused it, for the view to explain', async () => {
