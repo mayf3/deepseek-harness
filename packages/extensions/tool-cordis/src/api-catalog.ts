@@ -1412,7 +1412,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'one view per package, bundles first in layer order.',
       },
       {
-        signature: '@Remote(\'install\') async install(spec: string, options?: { enable?: boolean }): Promise<PluginInstallResult>',
+        signature: '@Remote(\'add\') async add(spec: string, options?: { enable?: boolean }): Promise<PluginInstallResult>',
         description: 'Install a package into the profile with pnpm, probe it, and leave it disabled unless asked otherwise. The run\'s output streams as `plugins/install-log` chunks carrying the returned `jobId`.',
         parameters: [{ name: 'spec', description: 'what to install, in pnpm\'s own vocabulary: a registry name, a `github:` or git URL, a tarball, or an absolute path.' }, { name: 'options', description: '`enable` puts every newly installed bundle into the layer list at once.' }],
         returns: 'what the run installed and enabled.',

@@ -898,7 +898,7 @@ Every method that changes the profile reads the manifest afresh and writes it th
  * or the run times out, `plugins/enable-failed` when enabling was asked
  * for and the tree rejected the bundle.
  */
-@Remote('install') async install(spec: string, options?: { enable?: boolean }): Promise<PluginInstallResult>
+@Remote('add') async add(spec: string, options?: { enable?: boolean }): Promise<PluginInstallResult>
 
 /**
  * Remove a package from the profile: disable it when enabled, drop every
