@@ -228,6 +228,16 @@ describe('defineAcpSnapshotSuite: refresh write-back', () => {
 })
 
 describe('defineAcpSnapshotSuite: record inventory write-back', () => {
+  it('uses complete UUIDs for the shared parent and child system message', () => {
+    const behavior = JSON.parse(readFileSync(join(RECORD_SRC, 'rec-child', 'behavior.json'), 'utf8')) as {
+      logs: { lines: { type: string; data?: { message?: { id: string } } }[] }[]
+    }
+    const ids = behavior.logs.map(log => log.lines.find(event => event.type === 'system/message')?.data?.message?.id)
+    expect(ids).toHaveLength(2)
+    for (const id of ids) expect(id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/)
+    expect(ids[0]).toBe(ids[1])
+  })
+
   it('creates a missing primary fixture and preserves generations for a retired child role', () => {
     const fixture = readFileSync(join(recordDir, 'rec-pin', 'session.v3.jsonl'), 'utf8')
     expect(fixture).toContain('"type":"session"')
