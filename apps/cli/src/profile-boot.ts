@@ -29,7 +29,6 @@ import {
   loadProfile,
   PROFILE_PATCH_FILENAME,
   ProfileRuntime,
-  recordRowConflicts,
   rootIncludeEntry,
   warnNestedFiberFailures,
   watchUserPatches,
@@ -275,17 +274,17 @@ export async function runProfile(options: RunProfileOptions): Promise<{ ctx: Con
     const stack = composeProfileStack(NAME, profile.layers, [...userLayersOf(profile), ...composed.overlays])
     return { ...stack, patches: structuredClone(stack.patches) }
   }
-  // Once the profile runtime is mounted its profile is the current one: a
-  // bundle enabled since boot lives only there. The watcher path has no
-  // runtime to record conflicts on beyond the registry the runtime shares, so
-  // it records them itself once the tree accepted the update.
-  const composeLive = (): PatchOptions[] => {
-    const stack = composeFor(app.runtime?.current ?? composed.profile)
-    if (app.current !== undefined) recordRowConflicts(app.current, stack.conflicts)
-    return stack.patches
+  // Every recomposition after boot — a watched user file, a bundle enabled
+  // or installed — goes through the profile runtime, which publishes the
+  // profile, the row ownership, and the conflicts only once the tree
+  // accepted the update.
+  const reapply = async (): Promise<void> => {
+    const runtime = app.runtime
+    if (runtime === undefined) throw new Error(`${NAME}: user patch reload needs the profile runtime`)
+    await runtime.recompose()
   }
   for (const conflict of composed.stack.conflicts) process.stderr.write(`${NAME}: ${formatRowConflict(conflict)}\n`)
-  // Cloned for the same insert-aliasing reason as composeLive: the boot
+  // Cloned for the same insert-aliasing reason as composeFor: the boot
   // application must not mutate the objects later reloads recompose from.
   const ctx = await boot(NAME, rootConfig, structuredClone(composed.stack.patches), (hostCtx) => {
     app.current = hostCtx
@@ -307,9 +306,9 @@ export async function runProfile(options: RunProfileOptions): Promise<{ ctx: Con
   uninstallRuntimeGuards = installRuntimeGuards(NAME, (line) => { process.stderr.write(`${line}\n`) })
   if (!signalShutdown.signal.aborted && ctx.fiber.state === FiberState.ACTIVE && ctx.get('loader') !== undefined) {
     warnNestedFiberFailures(ctx, NAME, (line) => { process.stderr.write(`${line}\n`) })
-    recordRowConflicts(ctx, composed.stack.conflicts)
     await ctx.plugin(ProfileRuntime, {
       profile: composed.profile,
+      stack: composed.stack,
       loadProfile: () => prepareProfile(options.profile),
       compose: composeFor,
       rootEntry: () => rootIncludeEntry(ctx),
@@ -343,16 +342,8 @@ export async function runProfile(options: RunProfileOptions): Promise<{ ctx: Con
         }
         await ctx.loader.create({ name: '@deepseek-ai/cordis-plugin-hmr', config: { root: [] } })
       }
-      await watchUserPatches(ctx, {
-        binName: NAME,
-        filename: composed.profile.patchPath,
-        compose: composeLive,
-      })
-      await watchUserPatches(ctx, {
-        binName: NAME,
-        filename: homePatchPath(),
-        compose: composeLive,
-      })
+      await watchUserPatches(ctx, { binName: NAME, filename: composed.profile.patchPath, reapply })
+      await watchUserPatches(ctx, { binName: NAME, filename: homePatchPath(), reapply })
     } catch (error) {
       suppressShutdownError(ctx, signalShutdown.signal, error)
     }

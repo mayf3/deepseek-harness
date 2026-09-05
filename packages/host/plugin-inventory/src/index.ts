@@ -115,6 +115,24 @@ export class PluginInventoryGateway extends TypertRemoteService {
         failure: { stage: failure.stage, message: failure.message },
       })
     }
+    // A row the composition left out never reached the tree; the conflict
+    // names the layer that lost, so no lookup of the id's owner is needed.
+    if (runtime !== undefined) {
+      for (const conflict of runtime.conflicts) {
+        const version = runtime.layers.find(candidate => candidate.packageName === conflict.packageName)?.version
+        entries.push({
+          entryId: pluginEntryId(`conflict:${conflict.layer}:${conflict.rowId}`),
+          moduleName: conflict.moduleName,
+          enabled: true,
+          fiberPhase: 'failed',
+          trust: conflict.packageName === undefined ? 'builtin' : 'external',
+          ...conflict.packageName === undefined
+            ? {}
+            : { package: packageRef({ packageName: conflict.packageName, ...version === undefined ? {} : { version } }) },
+          failure: { stage: 'conflict', message: conflict.message },
+        })
+      }
+    }
     const presets = this.ctx.get('agentPresets')
     if (presets === undefined) return { entries }
     const agentPresets: AgentPresetPluginGroup[] = (await presets.compositionInventory()).map(

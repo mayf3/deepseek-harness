@@ -2,18 +2,14 @@
  * Tree-wide row-id ownership across the profile stack: built-in layers claim
  * first and fail loud on a duplicate, an external bundle that collides is left
  * out and recorded, a bundle that repeats one of its own ids is left out the
- * same way, a user insert of a taken id is dropped, and the conflict records
- * replace the registry's earlier ones on every composition.
+ * same way, a user insert of a taken id is dropped, and every conflict
+ * carries its message.
  */
 
-import { afterEach, describe, expect, it } from 'vitest'
-import { Context } from '@deepseek-ai/cordis'
+import { describe, expect, it } from 'vitest'
 import type { EntryOptions } from '@deepseek-ai/cordis-plugin-loader'
 import type { PatchOptions } from '@deepseek-ai/cordis-plugin-include'
-import {
-  claimLayerIds, composeProfileStack, CONTAINED_GROUP_MODULE, ensurePluginFailures, formatRowConflict,
-  recordRowConflicts, type ProfileLayer,
-} from '../src/index.ts'
+import { claimLayerIds, composeProfileStack, CONTAINED_GROUP_MODULE, formatRowConflict, type ProfileLayer } from '../src/index.ts'
 
 const NAME = 'dsh-test-bin'
 
@@ -28,11 +24,6 @@ const base = layer('@deepseek-ai/dsh-base', 'builtin', [{ insert: [
   { id: 'tools', name: 'cordis:group', group: true, config: [{ id: 'tool-bash', name: 'bash' }] },
 ] }])
 
-const contexts: Context[] = []
-afterEach(async () => {
-  await Promise.all(contexts.splice(0).map(ctx => ctx.fiber.dispose()))
-})
-
 describe('claimLayerIds', () => {
   it('lets built-in layers own their ids, including group children, before any external layer', () => {
     const ext = layer('ext', 'external', [{ insert: [{ id: 'tool-bash', name: 'ext' }] }])
@@ -40,7 +31,10 @@ describe('claimLayerIds', () => {
     expect(owners.get('tool-bash')?.packageName).toBe('@deepseek-ai/dsh-base')
     expect(owners.get('tools')?.packageName).toBe('@deepseek-ai/dsh-base')
     expect(skipped.get('ext')).toEqual([
-      { rowId: 'tool-bash', moduleName: 'ext', layer: 'ext', packageName: 'ext', declaredBy: '@deepseek-ai/dsh-base' },
+      {
+        rowId: 'tool-bash', moduleName: 'ext', layer: 'ext', packageName: 'ext', declaredBy: '@deepseek-ai/dsh-base',
+        message: 'row "tool-bash" is already declared by @deepseek-ai/dsh-base',
+      },
     ])
   })
 
@@ -56,7 +50,7 @@ describe('claimLayerIds', () => {
     const clean = layer('clean', 'external', [{ insert: [{ id: 'y', name: 'clean' }] }])
     const { owners, skipped, composed } = claimLayerIds([base, stutter, clean])
     expect(skipped.get('stutter')).toEqual([
-      { rowId: 'x', moduleName: 'stutter/b', layer: 'stutter', packageName: 'stutter', declaredBy: 'stutter' },
+      { rowId: 'x', moduleName: 'stutter/b', layer: 'stutter', packageName: 'stutter', declaredBy: 'stutter', message: 'row "x" is declared twice by stutter' },
     ])
     expect(owners.has('x')).toBe(false)
     expect(owners.get('y')?.packageName).toBe('clean')
@@ -101,9 +95,15 @@ describe('composeProfileStack', () => {
     expect(stack.patches).toEqual(stack.layers.flatMap(current => current.patches))
     expect(stack.skippedBundles).toEqual([])
     expect(stack.conflicts).toEqual([
-      { rowId: 'ext-tool', moduleName: 'clash', layer: '/p/cordis.patch.yml', declaredBy: 'ext' },
-      { rowId: 'tool-bash', moduleName: 'cordis:group', layer: '/p/cordis.patch.yml', declaredBy: '@deepseek-ai/dsh-base' },
-      { rowId: 'mine', moduleName: 'twice', layer: '/home/cordis.patch.yml', declaredBy: '/p/cordis.patch.yml' },
+      { rowId: 'ext-tool', moduleName: 'clash', layer: '/p/cordis.patch.yml', declaredBy: 'ext', message: 'row "ext-tool" is already declared by ext' },
+      {
+        rowId: 'tool-bash', moduleName: 'cordis:group', layer: '/p/cordis.patch.yml', declaredBy: '@deepseek-ai/dsh-base',
+        message: 'row "tool-bash" is already declared by @deepseek-ai/dsh-base',
+      },
+      {
+        rowId: 'mine', moduleName: 'twice', layer: '/home/cordis.patch.yml', declaredBy: '/p/cordis.patch.yml',
+        message: 'row "mine" is already declared by /p/cordis.patch.yml',
+      },
     ])
   })
 
@@ -113,7 +113,10 @@ describe('composeProfileStack', () => {
     expect(stack.layers.map(current => current.label)).toEqual(['@deepseek-ai/dsh-base'])
     expect(stack.skippedBundles).toEqual(['clash'])
     expect(stack.conflicts).toEqual([
-      { rowId: 'settings', moduleName: 'clash', layer: 'clash', packageName: 'clash', declaredBy: '@deepseek-ai/dsh-base' },
+      {
+        rowId: 'settings', moduleName: 'clash', layer: 'clash', packageName: 'clash', declaredBy: '@deepseek-ai/dsh-base',
+        message: 'row "settings" is already declared by @deepseek-ai/dsh-base',
+      },
     ])
   })
 
@@ -125,37 +128,10 @@ describe('composeProfileStack', () => {
 
 describe('formatRowConflict', () => {
   it('names the bundle left out, or the user layer whose insert was skipped', () => {
-    expect(formatRowConflict({ rowId: 'x', moduleName: 'm', layer: 'pkg', packageName: 'pkg', declaredBy: 'base' }))
+    const message = 'row "x" is already declared by base'
+    expect(formatRowConflict({ rowId: 'x', moduleName: 'm', layer: 'pkg', packageName: 'pkg', declaredBy: 'base', message }))
       .toBe('bundle pkg left out — row "x" is already declared by base')
-    expect(formatRowConflict({ rowId: 'x', moduleName: 'm', layer: '/p/cordis.patch.yml', declaredBy: 'base' }))
+    expect(formatRowConflict({ rowId: 'x', moduleName: 'm', layer: '/p/cordis.patch.yml', declaredBy: 'base', message }))
       .toBe('/p/cordis.patch.yml: insert of m skipped — row "x" is already declared by base')
-    expect(formatRowConflict({ rowId: 'x', moduleName: 'm', layer: 'pkg', packageName: 'pkg', declaredBy: 'pkg' }))
-      .toBe('bundle pkg left out — row "x" is declared twice by pkg')
-  })
-})
-
-describe('recordRowConflicts', () => {
-  it('replaces the conflict records of the previous composition and keeps other stages', () => {
-    const ctx = new Context()
-    contexts.push(ctx)
-    const registry = ensurePluginFailures(ctx)
-    registry.record({ entryId: 'include:ext/bad', rowId: 'bad', moduleName: 'ext', groupId: 'include:bundle/ext', stage: 'apply', message: 'boom' })
-    recordRowConflicts(ctx, [
-      { rowId: 'hello', moduleName: 'second', layer: 'second', packageName: 'second', declaredBy: 'first' },
-      { rowId: 'mine', moduleName: 'twice', layer: '/home/cordis.patch.yml', declaredBy: '/p/cordis.patch.yml' },
-    ])
-    expect(registry.list()).toEqual([
-      expect.objectContaining({ entryId: 'include:ext/bad', stage: 'apply' }),
-      {
-        entryId: 'conflict:bundle/second:hello', rowId: 'hello', moduleName: 'second', groupId: 'bundle/second',
-        packageName: 'second', stage: 'conflict', message: 'row "hello" is already declared by first',
-      },
-      {
-        entryId: 'conflict:/home/cordis.patch.yml:mine', rowId: 'mine', moduleName: 'twice', groupId: '/home/cordis.patch.yml',
-        stage: 'conflict', message: 'row "mine" is already declared by /p/cordis.patch.yml',
-      },
-    ])
-    recordRowConflicts(ctx, [])
-    expect(registry.list().map(failure => failure.stage)).toEqual(['apply'])
   })
 })

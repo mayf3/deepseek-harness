@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-09-04-external-bundles-as-contained-groups.md
-2026-09-04-external-bundles-as-contained-groups.md: 4f5305177419abfa38054307dac4c29249fe27b8
-2026-09-04-external-bundles-as-contained-groups.zh.md: e4a35e4801244e3f40362ace9da10730396792ff
+2026-09-04-external-bundles-as-contained-groups.md: 3319394d56630eb90dbce18f54483e22ad8577a5
+2026-09-04-external-bundles-as-contained-groups.zh.md: f439f96f01827ae95ebe2cbe7f94a1acfe833a27

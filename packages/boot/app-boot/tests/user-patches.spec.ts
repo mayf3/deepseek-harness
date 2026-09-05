@@ -19,7 +19,7 @@ import {
   loadOptionalPatches,
   loadOverlayPatches,
   PROFILE_PATCH_FILENAME,
-  watchUserPatches,
+  watchUserPatches, rootIncludeEntry,
 } from '../src/index.ts'
 
 const NAME = 'dsh-test-bin'
@@ -405,7 +405,12 @@ describe('boot with user patches', () => {
     const dispose = await watchUserPatches(ctx, {
       binName: NAME,
       filename,
-      compose: userPatches => [...basePatches, ...userPatches],
+      reapply: async () => {
+        const entry = rootIncludeEntry(ctx)
+        if (entry === undefined) throw new Error('no root include')
+        const { patches: _previous, ...config } = entry.options.config as Include.Config
+        await entry.update({ config: { ...config, patches: [...basePatches, ...loadOptionalPatches(NAME, filename) ?? []] } })
+      },
     })
     try {
       writeFileSync(filename, '- id: noop\n  config:\n    value: live\n')
@@ -433,13 +438,16 @@ describe('boot with user patches', () => {
       expect(failures).toHaveLength(2)
       await settleChokidarChangeThrottle()
 
-      // Default compose: the user layer IS the whole patch list, so a
+      // Default re-application: the user layer IS the whole patch list, so a
       // fresh generation replaces the app-owned layer instead of stacking on it.
       await dispose()
       const disposeDefault = await watchUserPatches(ctx, { binName: NAME, filename })
       try {
         writeFileSync(filename, '- id: noop\n  config:\n    value: identity\n')
         await eventually(() => (entryConfig(ctx, 'noop') as { value?: string }).value === 'identity', 'default-compose user patch was not applied')
+        await settleChokidarChangeThrottle()
+        unlinkSync(filename)
+        await eventually(() => (entryConfig(ctx, 'noop') as { value?: string }).value === 'base', 'default-compose removal did not empty the patch list')
       } finally {
         await disposeDefault()
       }

@@ -12,15 +12,15 @@ Status: implemented
 
 **每个外部组合包就是一个组。** profile launcher 按来源给每一层分类：作为 profile 的 pnpm 依赖存在的组合包是 `external`，模板组合包或 profile 在 `dsh.profile.firstParty` 下列出的是 `builtin`。`composeExternalLayer` 把 `runtime` 阶段的外部层渲染成一个 `cordis:contained-group` 条目 `bundle/<package>`，先空着插入，随后按书写顺序跟着组合包自己的 patch：根级插入改为插进这个组，插入同一个内置组的行全部落进目标组内嵌套的同一个受控包装组，按 id 定位的 patch 原样通过，指向它没有插入的行时报告为覆盖。保持书写顺序，才能让"先替换某个组的 config 再向它追加"这样的 patch 在两种 stage 下含义一致。组 id 用 `/` 而不是 `:`，因为 `:` 是 Loader 的嵌套 id 分隔符。
 
-**行 id 有归属，不改写。** `composeProfileStack` 在任何行挂载之前判定归属：内置层与 boot 阶段的层先占有 id，它们之间重复即启动失败；受控组合包声明了别的层已占有的 id、或把自己的某个 id 声明了两次时整层排除；用户层插入已被占用的 id 时该行丢弃。每一条被排除的行都是 `pluginFailures` 里的一条 `conflict` 记录——启动时打到 stderr，每次重组时替换，在插件列表里按包显示——启动、运行时重组与 `--dump-config` 走同一个函数，它把每个受控层只渲染一次，并一并返回 patch、每个 id 的归属与冲突。
+**行 id 有归属，不改写。** `composeProfileStack` 在任何行挂载之前判定归属：内置层与 boot 阶段的层先占有 id，它们之间重复即启动失败；受控组合包声明了别的层已占有的 id、或把自己的某个 id 声明了两次时整层排除；用户层插入已被占用的 id 时该行丢弃。被排除的行就是这次组合的冲突，每条自带消息：启动时打到 stderr，由 `ProfileRuntime` 作为已提交组合的一部分持有，在插件列表里按包显示。它们从不进入 `pluginFailures`，那里的记录只指真正到达 Loader 的行。启动、运行时重组与 `--dump-config` 走同一个函数，它把每个受控层只渲染一次，并一并返回 patch、每个 id 的归属与冲突。
 
-**受控组隔离行的失败。** `ContainedGroup extends Group` 覆盖 `create()`——这是事务性 `update()` 逐行等待的那一步：被拒的行记录到根上的 `pluginFailures` 注册表——树内 id、声明的行 id、模块、组、从 Loader 包装信息解析出的阶段、消息——组在没有它的情况下激活。`assertEntriesActivated` 豁免受控行（失败或 pending 的行变成一条记录），内置行保留致命路径。一条兜底规则封住"隔离反而藏起核心已坏"的 corner case：只要有组合包被隔离，而某个内置行停在 pending，启动仍然失败，诊断点名被隔离的组合包以及 `stage: boot` 这条出路。
+**受控组隔离行的失败。** `ContainedGroup extends Group` 覆盖 `create()`——这是事务性 `update()` 逐行等待的那一步：被拒的行记录到根上的 `pluginFailures` 注册表——树内 id、声明的行 id、模块、组、从 Loader 包装信息解析出的阶段、消息——组在没有它的情况下激活。组卸载时——它的组合包被停用或卸载——会丢掉自己各行的记录，因此没有失败会比产生它的组合活得更久。`assertEntriesActivated` 豁免受控行（失败或 pending 的行变成一条记录），内置行保留致命路径。一条兜底规则封住"隔离反而藏起核心已坏"的 corner case：只要有组合包被隔离，而某个内置行停在 pending，启动仍然失败，诊断点名被隔离的组合包以及 `stage: boot` 这条出路。
 
 **`stage: boot` 是显式的退出隔离。** 若组合包的行提供内置行所注入的服务，作者在 manifest 里声明 `dsh.bundle.stage: boot`，或部署者在 profile manifest 里设置 `dsh.profile.stages`，后者优先；这样的层不包组、按致命语义挂载。未知的 stage 值让 profile 加载失败。
 
 **安装与启用是两件事。** `reconcileInstalledBundles` 不再无条件把每个声明了组合包的依赖追加进 `dsh.profile.bundles`；`autoEnable` 保留 CLI 装即启用的语义，`enableBundle`/`disableBundle` 是插件管理器调用的 manifest 操作。`dependencies` 记录安装，`bundles` 记录已启用的层。
 
-**来源是 launcher 的服务。** `ProfileRuntime`（`ctx.profileRuntime`）持有已启动的 profile，把每一行归属到占有其 id 的层（`originOf`），读取用户 patch 文件用字面量 `disabled: true` 停用了哪些行，并经根 include 重新组合整棵树——patch 监视器走的正是同一条路。插件清单读取它与失败注册表，为每一行提供 `trust`、`package`、`disabledBy` 与 `failure`，并列出只有注册表知道的行。
+**来源与重组是同一个 launcher 服务。** `ProfileRuntime`（`ctx.profileRuntime`）持有已提交的组合——profile、每个行 id 的归属（`originOf`）与冲突——读取用户 patch 文件用字面量 `disabled: true` 停用了哪些行，并且是重组整棵树的唯一入口：它先组合候选结果，经根 include 应用，只有 include 接受之后才发布候选结果，因此被拒的更新留下的事实仍然描述正在运行的树。patch 监视器调用它的 `recompose`，不再自己组合。插件清单读取它与失败注册表，为每一行提供 `trust`、`package`、`disabledBy` 与 `failure`，并列出冲突以及只有注册表知道的行。
 
 ## 考虑过的替代方案
 

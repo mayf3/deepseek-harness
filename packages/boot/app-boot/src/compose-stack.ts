@@ -42,6 +42,8 @@ export interface RowConflict {
    * layer's label, or the losing layer itself when it declares the id twice.
    */
   readonly declaredBy: string
+  /** The reason as diagnostics and the plugin list state it, without the layer that lost. */
+  readonly message: string
 }
 
 /** The stack as the root include should mount it, with what it left out. */
@@ -66,6 +68,15 @@ export interface LayerOwnership {
   readonly skipped: Map<string, RowConflict[]>
   /** The composition of each contained layer that owns its ids, by package name; rendered once and mounted as is. */
   readonly composed: Map<string, ComposedExternalLayer>
+}
+
+/** One conflict with its message: the id's other declarer, or the losing layer itself declaring it twice. */
+function rowConflict(fields: Omit<RowConflict, 'message'>): RowConflict {
+  const id = JSON.stringify(fields.rowId)
+  const message = fields.declaredBy === fields.layer
+    ? `row ${id} is declared twice by ${fields.layer}`
+    : `row ${id} is already declared by ${fields.declaredBy}`
+  return { ...fields, message }
 }
 
 /** The ids one inserted row carries: its own and, for a group, its children's. */
@@ -109,11 +120,13 @@ export function claimLayerIds(layers: readonly ProfileLayer[]): LayerOwnership {
     const { packageName } = layer
     const composition = composeExternalLayer(layer)
     const conflicts: RowConflict[] = composition.duplicates.map(({ rowId, moduleName }) => (
-      { rowId, moduleName, layer: packageName, packageName, declaredBy: packageName }
+      rowConflict({ rowId, moduleName, layer: packageName, packageName, declaredBy: packageName })
     ))
     for (const [rowId, moduleName] of composition.rows) {
       const owner = owners.get(rowId)
-      if (owner !== undefined) conflicts.push({ rowId, moduleName, layer: packageName, packageName, declaredBy: owner.packageName })
+      if (owner !== undefined) {
+        conflicts.push(rowConflict({ rowId, moduleName, layer: packageName, packageName, declaredBy: owner.packageName }))
+      }
     }
     if (conflicts.length > 0) {
       skipped.set(packageName, conflicts)
@@ -172,7 +185,7 @@ export function composeProfileStack(
         const ids = rowIds(row)
         const taken = ids.map(id => [id, claimed.get(id)] as const).find(([, owner]) => owner !== undefined)
         if (taken?.[1] !== undefined) {
-          conflicts.push({ rowId: taken[0], moduleName: row.name, layer: userLayer.label, declaredBy: taken[1] })
+          conflicts.push(rowConflict({ rowId: taken[0], moduleName: row.name, layer: userLayer.label, declaredBy: taken[1] }))
           continue
         }
         for (const id of ids) claimed.set(id, userLayer.label)
@@ -193,26 +206,12 @@ export function composeProfileStack(
 }
 
 /**
- * The reason one conflict states: the layer that already declares the id, or
- * the losing layer itself declaring it twice.
- * @param conflict - the conflict to describe.
- * @returns the reason clause, without the layer that lost.
- */
-export function describeRowConflict(conflict: RowConflict): string {
-  const id = JSON.stringify(conflict.rowId)
-  return conflict.declaredBy === conflict.layer
-    ? `row ${id} is declared twice by ${conflict.layer}`
-    : `row ${id} is already declared by ${conflict.declaredBy}`
-}
-
-/**
  * One diagnostic line for a conflict, as boot and the config dump print it.
  * @param conflict - the conflict to describe.
  * @returns the line, without a binary-name prefix.
  */
 export function formatRowConflict(conflict: RowConflict): string {
-  const reason = describeRowConflict(conflict)
   return conflict.packageName === undefined
-    ? `${conflict.layer}: insert of ${conflict.moduleName} skipped — ${reason}`
-    : `bundle ${conflict.packageName} left out — ${reason}`
+    ? `${conflict.layer}: insert of ${conflict.moduleName} skipped — ${conflict.message}`
+    : `bundle ${conflict.packageName} left out — ${conflict.message}`
 }
