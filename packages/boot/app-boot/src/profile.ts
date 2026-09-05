@@ -34,6 +34,7 @@ import { withFileLock } from '@deepseek-ai/dsh-atomic-write'
 import type { EntryOptions } from '@deepseek-ai/cordis-plugin-loader'
 import { applyEntryPatches, type PatchOptions } from '@deepseek-ai/cordis-plugin-include'
 import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
+import type { BundleStage, DshManifest, DshModuleFallbackManifest, ProfilePatchReload } from '@deepseek-ai/dsh-package-manifest'
 import { resolve as resolvePackage, type Package as ResolvePackageManifest } from 'resolve.exports'
 import { loadOverlayPatches } from './index.ts'
 
@@ -47,47 +48,11 @@ export const PROFILE_PATCH_FILENAME = 'cordis.patch.yml'
 const PROFILE_MODULE_FALLBACK_DIR = '.dsh-module-fallback'
 
 /**
- * When an external bundle's rows mount relative to the built-in tree.
- * `runtime` (the default) wraps the bundle's inserted rows in a contained
- * group whose failure is isolated and reported; `boot` mounts them like
- * built-in rows, so a failure stops the process — the choice for a bundle
- * that provides a service built-in rows inject.
- */
-export type BundleStage = 'boot' | 'runtime'
-
-/** The bundle half of the `dsh` manifest section: what a bundle package exports. */
-export interface DshBundleManifest {
-  /** The patch layer this bundle exports, relative to its package root. */
-  patch: string
-  /** Mount stage the bundle author asks for; the profile's `stages` overrides it. */
-  stage?: BundleStage
-}
-
-/** The profile half of the `dsh` manifest section: what a profile directory composes. */
-export interface DshProfileManifest {
-  /** Ordered bundle layer list (package names). */
-  bundles?: string[]
-  /** Whether user patch files reload while this profile remains active. */
-  patchReload?: ProfilePatchReload
-  /** Deployer overrides of each external bundle's mount stage, by package name. */
-  stages?: Record<string, BundleStage>
-  /**
-   * Installed packages treated as built-in: not wrapped, not prefixed, and
-   * fatal on failure. For first-party packages linked into a profile during
-   * development, where provenance alone would classify them external.
-   */
-  firstParty?: string[]
-}
-
-/**
  * Who supplied a bundle layer. `builtin` layers come with the installation
  * (template bundles) or are declared first-party by the profile; `external`
  * layers are pnpm-managed dependencies the user installed.
  */
 export type BundleTrust = 'builtin' | 'external'
-
-/** User patch-file lifecycle selected by a profile. */
-export type ProfilePatchReload = 'live' | 'startup'
 
 /** Installation-owned defaults used when a shipped profile is first opened. */
 export interface ProfileTemplate {
@@ -97,17 +62,6 @@ export interface ProfileTemplate {
   patchReload: ProfilePatchReload
 }
 
-/**
- * The profile-launcher slice of the `dsh`-owned package.json section. A
- * manifest may declare both roles; other consumers own additional keys.
- */
-export interface DshManifestSection {
-  /** Bundle metadata consumed by the profile launcher. */
-  bundle?: DshBundleManifest
-  /** Profile metadata consumed by the profile launcher. */
-  profile?: DshProfileManifest
-}
-
 /** The slice of package.json both profiles and bundles use. */
 export interface ProfileManifest {
   name?: string
@@ -115,7 +69,7 @@ export interface ProfileManifest {
   description?: string
   dependencies?: Record<string, string>
   peerDependencies?: Record<string, string>
-  dsh?: DshManifestSection
+  dsh?: DshManifest
 }
 
 /** One resolved bundle layer of a profile. */
@@ -369,7 +323,7 @@ interface ModuleProxyManifest {
   private: true
   type: 'module'
   exports: Record<string, string>
-  dsh: { moduleFallback: { targets: Record<string, string> } }
+  dsh: { moduleFallback: DshModuleFallbackManifest }
 }
 
 interface ModuleProxyRecord {

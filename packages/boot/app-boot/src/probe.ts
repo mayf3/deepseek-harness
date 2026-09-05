@@ -108,10 +108,6 @@ interface ProbedManifest extends ProfileManifest {
   main?: string
   exports?: unknown
   engines?: Record<string, string>
-  dsh?: ProfileManifest['dsh'] & {
-    title?: string
-    plugins?: { name: string; title?: string; config?: unknown }[]
-  }
 }
 
 /** What the child process reports. */

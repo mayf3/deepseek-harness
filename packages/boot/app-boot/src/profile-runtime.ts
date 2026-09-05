@@ -15,7 +15,8 @@ import type { PatchOptions } from '@deepseek-ai/cordis-plugin-include'
 import { claimLayerIds, type ComposedStack } from './compose-stack.ts'
 import { recordRowConflicts } from './contained-group.ts'
 import { isJsDisabled } from './external-bundles.ts'
-import type { BundleTrust, Profile, ProfileLayer, ProfilePatchReload } from './profile.ts'
+import type { ProfilePatchReload } from '@deepseek-ai/dsh-package-manifest'
+import type { BundleTrust, Profile, ProfileLayer } from './profile.ts'
 
 declare module '@deepseek-ai/cordis' {
   interface Context {

@@ -45,6 +45,8 @@ const ctx = await boot('dsh', resolveConfigPath(argv[2], process.env.DSH_SNAPSHO
 <a id="profiles"></a>
 ### Profile
 
+Profile 与 bundle 的声明类型从 [`@deepseek-ai/dsh-package-manifest`](../../util/package-manifest/README.zh.md) 导入。App-boot 负责 profile 加载、JSON 校验和解析后的运行时数据。
+
 profile 是同一套 dsh 安装提供不同应用界面的方式：`web`、`headless`、`acp`、`sdk` 与 `sdk-minimal` 从同一 launcher 启动不同组合。profile 位于 `$DSH_HOME/profiles/<name>`，由可安装 bundle、自身 `cordis.patch.yml` 与 `patchReload: live | startup` 组成；自定义 profile 省略 reload 策略时保留历史 `live` 默认值。随产品交付的 `web` 模板实时重载，其他随附模板只在启动时应用 patch。`sdk-minimal` 只列出自身的独立 bundle，其他模板保留 base 加模式 bundle 的栈。`dsh plugin` 创建自定义 profile；缺失 bundle 或未声明 patch 的 bundle 会让启动明确失败。
 
 你的机器本地偏好同样位于 harness home 中：
@@ -53,6 +55,8 @@ profile 是同一套 dsh 安装提供不同应用界面的方式：`web`、`head
 - **`cordis.patch.yml`**——你的 tweak 层，应用在所有组合包层之后（先应用逐 profile 的文件，再应用 home 级文件，因此后者优先级更高）：替换某个条目的整个 config（重述你要保留的字段）、插入新条目，或在启动时插值 `!!js` 表达式。patch 指定的条目不存在时输出 stderr 警告；空文件或仅含注释的文件会导致启动失败——如需禁用该层，请改用 `[]`。
 
 带 `patchReload: live` 的 profile 会监视两份用户 patch 文件：有效编辑无需重启即可重新组合，被拒绝的编辑则让最后一个可用应用继续运行。`startup` profile 既不安装这些监视器，也不安装 launcher 的仅监视 HMR 回退。
+
+插入条目的插件名可以是绝对文件系统路径、文件 URL 或包标识符。patch 加载会把 `insert` 条目及其嵌套分组中的绝对路径以及相对于 patch 文件的 `./` 或 `../` 路径转换为文件 URL；对已有条目名称的断言及替换用的 `config` 值保持原样。
 
 用 `dsh plugin` 安装的组合包是**外部**组合包：它的行挂在一个名为 `bundle/<package>` 的受控组下，id 保持它的 patch 所声明的样子，启动失败的行被隔离并记录而不是让进程停下——组和它的其他行继续运行，插件列表显示失败。模板组合包是内置的，仍然明确失败。若某个组合包提供内置行注入的服务，它必须像内置行一样挂载：作者在 `package.json` 里声明 `dsh.bundle.stage: boot`，或者你在 profile manifest 里设置 `dsh.profile.stages`，后者优先。即使没有这些声明，隔离的失败若让某个内置行停在等待服务的状态，启动仍会失败并点名那个被隔离的组合包。profile manifest 还有两个相关字段：`dsh.profile.firstParty` 列出按内置处理的已安装包（开发期 link 进来的一方包），`dependencies` 与 `dsh.profile.bundles` 的区别则把"只是装了"的包和"层已启用"的包分开。行 id 在整叠层里共用一个命名空间：内置层先占有自己的 id，外部组合包若声明了别的层已占有的 id 就整层被排除，并在 stderr 与插件列表里报告；用户层插入已被占用的 id 时该行被丢弃，同样报告。
 

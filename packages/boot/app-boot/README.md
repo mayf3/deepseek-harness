@@ -45,6 +45,8 @@ With that entry point, success looks like a running app with every plugin active
 <a id="profiles"></a>
 ### Profiles
 
+Import profile and bundle declaration types from [`@deepseek-ai/dsh-package-manifest`](../../util/package-manifest/README.md). App-boot owns profile loading, JSON validation, and resolved runtime data.
+
 A profile is how one dsh installation ships different app surfaces: `web`, `headless`, `acp`, `sdk`, and `sdk-minimal` start distinct compositions from the same launcher. A profile lives at `$DSH_HOME/profiles/<name>` and combines installable bundles, its own `cordis.patch.yml`, and `patchReload: live | startup`; omitted reload policy keeps the historical `live` default for custom profiles. The shipped `web` template uses live reload, while the other shipped templates apply patches only at startup. `sdk-minimal` names only its standalone bundle; the other templates retain base-plus-mode stacks. `dsh plugin` creates custom profiles, and a missing bundle or one without a patch declaration fails startup loudly.
 
 Your machine-local preferences also live in the Harness home:
@@ -53,6 +55,8 @@ Your machine-local preferences also live in the Harness home:
 - **`cordis.patch.yml`** — your tweak layer, applied after every bundle layer (per-profile first, then the home-level file, which therefore outranks it): replace one entry's whole config (restating the fields you keep), insert new entries, or interpolate `!!js` expressions at boot. A patch naming an entry that does not exist prints a stderr warning; an empty or comments-only file fails boot — disable the layer with `[]` instead.
 
 Profiles with `patchReload: live` watch both user patch files: a valid edit recomposes without restart, while a rejected edit leaves the last good app running. A `startup` profile installs neither those watchers nor the launcher's watch-only HMR fallback.
+
+Inserted plugin names may be absolute filesystem paths, file URLs, or package specifiers. Patch loading converts absolute paths and patch-relative `./` or `../` paths to file URLs within `insert` rows and their nested groups; existing-entry name assertions and replacement `config` values remain literal.
 
 A bundle you installed with `dsh plugin` is an **external** bundle: its rows mount under one contained group named `bundle/<package>` with the ids its patch declares, and a row that fails to start is isolated and recorded instead of stopping the process — the group and its other rows stay up, and the plugin list shows the failure. Template bundles are built in and keep failing loud. A bundle that provides a service built-in rows inject must mount like a built-in one: its author declares `dsh.bundle.stage: boot` in `package.json`, or you set `dsh.profile.stages` in the profile manifest, which wins. Even without that, an isolated failure that leaves a built-in row waiting for a service still stops the boot and names the isolated bundle. Two more profile-manifest fields shape this: `dsh.profile.firstParty` lists installed packages treated as built in (a first-party package linked in during development), and `dependencies` versus `dsh.profile.bundles` distinguishes a package that is merely installed from one whose layer is enabled. Row ids share one namespace across the stack: built-in layers own theirs first, an external bundle that declares an id another layer already owns is left out whole and reported on stderr and in the plugin list, and a user-layer insert of a taken id is dropped and reported the same way.
 
