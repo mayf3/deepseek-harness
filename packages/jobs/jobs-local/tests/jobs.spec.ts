@@ -7,7 +7,7 @@ import { bindScopeParent, createScope, scopeOf } from '@deepseek-ai/dsh-scope'
 import type { ScopeKey } from '@deepseek-ai/dsh-scope'
 import { JobId } from '@deepseek-ai/dsh-jobs'
 import type {
-  JobEvent, JobEventFilter, JobHandle, JobHooks, JobKind, JobOutcome, JobOutputSource, JobSpec, JobView, VisibleJobs,
+  JobEvent, JobEventFilter, JobHandle, JobHooks, JobKind, JobOutcome, JobOutputSource, JobSpec, JobView, CallerJobs,
 } from '@deepseek-ai/dsh-jobs'
 import LocalJobRegistry, { type Config as JobsConfig } from '@deepseek-ai/dsh-jobs-local'
 
@@ -112,8 +112,8 @@ async function harness(config: JobsConfig = {}) {
 }
 
 /** The caller-bound view for an agent, or the anonymous view. */
-function jobsOf(ctx: Context, agent?: Agent): VisibleJobs {
-  return ctx.jobs.visibleTo(agent?.id)
+function jobsOf(ctx: Context, agent?: Agent): CallerJobs {
+  return ctx.jobs.forCaller(agent?.id)
 }
 
 /** Collect events matching `filter`; `types` narrows what is recorded. */

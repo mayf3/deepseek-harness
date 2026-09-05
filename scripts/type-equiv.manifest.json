@@ -1078,7 +1078,7 @@
     },
     {
       "doc": "docs/subsystems/jobs.md",
-      "symbol": "VisibleJobs",
+      "symbol": "CallerJobs",
       "source": "packages/jobs/jobs/src/types.ts"
     },
     {

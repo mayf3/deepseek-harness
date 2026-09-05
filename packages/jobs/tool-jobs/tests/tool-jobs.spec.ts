@@ -558,7 +558,7 @@ describe('job_kill', () => {
     expect(result.isError).toBe(true)
     expect(Buffer.byteLength(text(result))).toBeLessThanOrEqual(64)
     expect(text(result)).toContain('[result truncated]')
-    expect(ctx.jobs.visibleTo().get(JobId('bash-1')).status).toBe('running')
+    expect(ctx.jobs.forCaller(undefined).get(JobId('bash-1')).status).toBe('running')
   })
 
   it('bounds single-text post policy while preserving structured policy results', async () => {

@@ -114,7 +114,7 @@ describe('background pwsh output', () => {
     pwsh.backgroundHandler = () => scripted.proc
 
     await call(ctx, { command: 'Get-Progress', description: 'test command', run_in_background: true })
-    const jobs = ctx.jobs.visibleTo()
+    const jobs = ctx.jobs.forCaller(undefined)
     const job = jobs.list()[0]
     expect(job).toBeDefined()
     expect(job!.kind).toBe('pwsh')
@@ -158,7 +158,7 @@ describe('background pwsh output', () => {
     }
     pwsh.backgroundHandler = () => proc
     await call(ctx, { command: 'Get-Broken', description: 'test command', run_in_background: true })
-    const jobs = ctx.jobs.visibleTo()
+    const jobs = ctx.jobs.forCaller(undefined)
     const job = jobs.list()[0]
     await until(() => warn.mock.calls.some(args => String(args[0]).includes('output source for')) ? true : undefined)
     // The reader already failed; the job must wait for real settlement rather
@@ -179,7 +179,7 @@ describe('background pwsh output', () => {
     pwsh.backgroundHandler = () => scripted.proc
 
     await call(ctx, { command: 'Start-Job', description: 'test command', run_in_background: true })
-    const jobs = ctx.jobs.visibleTo()
+    const jobs = ctx.jobs.forCaller(undefined)
     const job = jobs.list()[0]
     expect(jobs.readAt(job!.id, 0).chunks).toEqual([])
 
@@ -208,11 +208,11 @@ describe('owned background output (pwsh)', () => {
       arguments: { command: 'Get-Slow', description: 'test command', run_in_background: true },
       agent: owner,
     })
-    const owned = ctx.jobs.visibleTo(owner.id)
+    const owned = ctx.jobs.forCaller(owner.id)
     const job = owned.list()[0]
     expect(job).toBeDefined()
     expect(job!.owner).toBe(owner.id)
-    expect(() => ctx.jobs.visibleTo().readAt(job!.id, 0)).toThrow(/belongs to another session/)
+    expect(() => ctx.jobs.forCaller(undefined).readAt(job!.id, 0)).toThrow(/belongs to another session/)
     expect(owned.readAt(job!.id, 0).chunks).toEqual([])
     scripted.finish()
     await until(() => owned.get(job!.id).status === 'completed' ? true : undefined)

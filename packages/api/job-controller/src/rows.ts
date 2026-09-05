@@ -39,7 +39,7 @@ export async function* streamJobRows(
     if (owner === undefined || owner === request.sessionId) waiter.wake()
   })
   try {
-    const visible = registry.visibleTo(request.sessionId)
+    const visible = registry.forCaller(request.sessionId)
     yield { type: 'rows', jobs: visible.list() }
     while (true) {
       await waiter.wait(signal)

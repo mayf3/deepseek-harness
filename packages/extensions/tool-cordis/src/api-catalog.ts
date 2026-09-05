@@ -1162,9 +1162,9 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the registry-issued `<kind>-N` id.',
       },
       {
-        signature: 'abstract visibleTo(caller?: SessionId): VisibleJobs',
-        description: 'Bind the caller\'s identity once and return its operations. A caller sees its own jobs and every unowned job; a caller-less view sees unowned jobs only. The view resolves visibility on every call, so it stays valid as jobs come and go.',
-        parameters: [{ name: 'caller', description: 'the reading session, or undefined for an anonymous caller.' }],
+        signature: 'abstract forCaller(caller: SessionId | undefined): CallerJobs',
+        description: 'Bind the caller\'s identity once and return its operations. A caller sees its own jobs and every unowned job; an anonymous caller sees unowned jobs only. The operations resolve visibility on every call, so they stay valid as jobs come and go.',
+        parameters: [{ name: 'caller', description: 'the calling session, or `undefined` for an anonymous caller.' }],
         returns: 'the operations available to that caller.',
       },
       {
@@ -3702,6 +3702,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type BrandedNumber<B extends string> = number & {\n    readonly [BRAND]: B;\n};',
   },
   {
+    name: 'CallerJobs',
+    declaration: 'export interface CallerJobs {\n    list(): JobView[];\n    get(id: JobId): JobView;\n    read(id: JobId): JobRead;\n    readAt(id: JobId, from: number): JobOutputRead;\n    kill(id: JobId, options?: JobKillOptions): \'requested\' | \'already-finished\';\n    wait(id: JobId, timeoutMs: number, signal?: AbortSignal): Promise<JobView>;\n}',
+  },
+  {
     name: 'ClientArtifactBaseline',
     declaration: 'export interface ClientArtifactBaseline {\n    readonly path: string;\n    readonly mtimeMs: number;\n    readonly size: number;\n}',
   },
@@ -6164,10 +6168,6 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'VerifiedWebhookDelivery',
     declaration: 'export interface VerifiedWebhookDelivery<K extends string = string> {\n    readonly kind: K;\n    readonly source: WebhookSourceId;\n    readonly deliveryId: WebhookDeliveryId;\n    readonly event: WebhookEventOf<K>;\n    readonly receivedAt: number;\n}',
-  },
-  {
-    name: 'VisibleJobs',
-    declaration: 'export interface VisibleJobs {\n    list(): JobView[];\n    get(id: JobId): JobView;\n    read(id: JobId): JobRead;\n    readAt(id: JobId, from: number): JobOutputRead;\n    kill(id: JobId, options?: JobKillOptions): \'requested\' | \'already-finished\';\n    wait(id: JobId, timeoutMs: number, signal?: AbortSignal): Promise<JobView>;\n}',
   },
   {
     name: 'WebBootBatch',

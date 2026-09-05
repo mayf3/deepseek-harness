@@ -15,7 +15,7 @@ import { TextRetainer } from '@deepseek-ai/dsh-output-retention'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import type { GenericCallView, ToolDefinition, ToolExecution } from '@deepseek-ai/dsh-tools'
 import { JobId } from '@deepseek-ai/dsh-jobs'
-import type { JobView, VisibleJobs } from '@deepseek-ai/dsh-jobs'
+import type { JobView, CallerJobs } from '@deepseek-ai/dsh-jobs'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type {} from '@deepseek-ai/dsh-agent'
 import { publicJob, renderModelDelta, statusLine } from './render.ts'
@@ -158,7 +158,7 @@ function visibleOutputLimit(ctx: Context, exec: ToolExecution): number | undefin
   if (exec.name !== 'job_output' && exec.name !== 'job_kill') return undefined
   const jobId = (exec.arguments as { job_id?: unknown } | null | undefined)?.job_id
   if (typeof jobId !== 'string' || jobId.length === 0) return undefined
-  return ctx.jobs.visibleTo(exec.agent?.id).list().find(job => job.id === jobId)?.outputLimitBytes
+  return ctx.jobs.forCaller(exec.agent?.id).list().find(job => job.id === jobId)?.outputLimitBytes
 }
 
 /** Validate the non-empty constraint that ParameterSchemaSpec cannot express. */
@@ -180,7 +180,7 @@ function isTerminal(job: JobView): boolean {
 }
 
 /** The consuming read as the model sees it: the delta, then the result once, then the status line. */
-function readBody(jobs: VisibleJobs, id: JobId): { text: string; job: PublicJobSnapshot } {
+function readBody(jobs: CallerJobs, id: JobId): { text: string; job: PublicJobSnapshot } {
   const read = jobs.read(id)
   const delta = renderModelDelta(read.chunks, read.lossy)
   const text = read.result === undefined
@@ -349,7 +349,7 @@ export function apply(ctx: Context, config: Config): void {
     },
     async execute(args, exec) {
       const id = validateJobId(args.job_id)
-      const jobs = ctx.jobs.visibleTo(exec.agent?.id)
+      const jobs = ctx.jobs.forCaller(exec.agent?.id)
       if (args.wait === true) {
         const timeout = Math.min(args.timeout_ms ?? waitDefault, waitCap)
         const withdraw = claim(id)
@@ -380,7 +380,7 @@ export function apply(ctx: Context, config: Config): void {
       }],
     },
     execute(_args, exec) {
-      const jobs = ctx.jobs.visibleTo(exec.agent?.id).list()
+      const jobs = ctx.jobs.forCaller(exec.agent?.id).list()
       return Promise.resolve(jobs.map(publicJob))
     },
     presentCall: () => presentTaskCall('List background jobs', 'read'),
@@ -416,7 +416,7 @@ export function apply(ctx: Context, config: Config): void {
     },
     execute(args, exec) {
       const id = validateJobId(args.job_id)
-      const jobs = ctx.jobs.visibleTo(exec.agent?.id)
+      const jobs = ctx.jobs.forCaller(exec.agent?.id)
       const result = jobs.kill(id, args.reason === undefined ? {} : { reason: args.reason })
       // The model's own kill is its delivery: the settlement notice would only
       // repeat what this tool result already said.

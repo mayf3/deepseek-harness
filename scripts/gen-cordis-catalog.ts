@@ -545,7 +545,7 @@ export const LINK_MAP: Readonly<Record<string, string>> = {
   JobEventListener: 'jobs.md',
   JobEvents: 'jobs.md',
   JobSettleCause: 'jobs.md',
-  VisibleJobs: 'jobs.md',
+  CallerJobs: 'jobs.md',
   CreateTeamTaskRequest: 'agent-team.md',
   SendTeamMessageRequest: 'agent-team.md',
   SendTeamMessageResult: 'agent-team.md',

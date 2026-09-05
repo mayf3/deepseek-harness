@@ -111,7 +111,7 @@ describe.skipIf(MODE === 'record')('web e2e: background job list', () => {
     expect(tripwire.warnings).toEqual([])
 
     phase = 'settled'
-    expect(scaffold.ctx.jobs.visibleTo(agent.id).kill(jobId, { reason: 'web e2e cancellation' })).toBe('requested')
+    expect(scaffold.ctx.jobs.forCaller(agent.id).kill(jobId, { reason: 'web e2e cancellation' })).toBe('requested')
 
     const idle = page.getByRole('button', { name: '1 background job', exact: true })
     await idle.waitFor({ timeout: 20_000 })

@@ -22,7 +22,7 @@ kind: "package-reference"
 <a id="use-this-package"></a>
 ## 使用本包
 
-Host 控制器要求 job 注册表（已发布组合里是 `dsh-jobs-local`），缺少则不加载。`job.rows({ sessionId })` 产出该会话可见的集合——自己的 job 加上所有无主 job——打开时一次，之后每一轮聚合过的生命周期提交（注册、进度、停止中、结算、移除）后再一次；输出追加从不刷新名册，因为结算后的投影已经带着最终字节数。`job.observe({ sessionId?, jobId, from? })` 经 `visibleTo(sessionId)` 读取——无主 job 不需要 session——先产出一个携带 job 投影的 `opened` 锚帧，再是聚合的 `output` 帧，job 结算且环排干后产出一个终态 `status`，随后流正常关闭；流中若通告了移除（拥有者 teardown），则以被移除 job 的终态投影收尾。两种读取都是非消耗的：模型侧 `job_output` 游标与完成播报状态永远观察不到它们。
+Host 控制器要求 job 注册表（已发布组合里是 `dsh-jobs-local`），缺少则不加载。`job.rows({ sessionId })` 产出该会话可见的集合——自己的 job 加上所有无主 job——打开时一次，之后每一轮聚合过的生命周期提交（注册、进度、停止中、结算、移除）后再一次；输出追加从不刷新名册，因为结算后的投影已经带着最终字节数。`job.observe({ sessionId?, jobId, from? })` 经 `forCaller(sessionId)` 读取——无主 job 不需要 session——先产出一个携带 job 投影的 `opened` 锚帧，再是聚合的 `output` 帧，job 结算且环排干后产出一个终态 `status`，随后流正常关闭；流中若通告了移除（拥有者 teardown），则以被移除 job 的终态投影收尾。两种读取都是非消耗的：模型侧 `job_output` 游标与完成播报状态永远观察不到它们。
 
 Client 入口在 `ClientJobsModel` 之上提供 `ClientJobs`（`ctx.jobs`）。`watchRows(sessionId)` 不论多少查看器持有都只为每个被关注的会话开一条名册流，最后一个释放后丢弃行；重连后的首帧已经是完整事实。`observe(sessionId, jobId)` 不论多少查看器展开同一 job 都只开一条 Gateway 流，按 job 保留有界的渲染尾部并用 `gapBefore` 标记淘汰或续读缺口，在终态帧上关闭视图或把流失败记到视图上，最后一个查看器释放后丢弃视图。插件在自己的上下文仍是当前上下文时解析 Gateway 流工厂与 `job` namespace，因为流的（重）开启跑在未声明 `remote.job` 的调用栈上。
 
@@ -52,7 +52,7 @@ Client 入口在 `ClientJobsModel` 之上提供 `ClientJobs`（`ctx.jobs`）。`
 
 - 环是尽力而为的实时预览，不是终端转录：生产者的拉取源按轮询轮次复制，同一轮询窗口内两条流的写入先 stdout 落地，客户端拼接 chunk 时也不区分 `channel`。
 - 两条流都是进程本地的：Host 重启丢失全部环与名册，续读的观测随后锚定在空注册表上，重开的名册从空开始。
-- 按 session 的围栏由注册表的 `visibleTo` 读取强制；Remote 层本身服务任何已连接浏览器。
+- 按 session 的围栏由注册表的 `forCaller` 读取强制；Remote 层本身服务任何已连接浏览器。
 
 <a id="dev-note"></a>
 ### 开发备注

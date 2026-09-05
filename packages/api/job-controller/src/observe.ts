@@ -65,7 +65,7 @@ export async function* observeJobOutput(
     waiter.wake()
   })
   try {
-    const visible = registry.visibleTo(request.sessionId)
+    const visible = registry.forCaller(request.sessionId)
     let job = visible.get(id)
     let cursor = request.from ?? job.output.earliest
     yield { type: 'opened', job, from: cursor }

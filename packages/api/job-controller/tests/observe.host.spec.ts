@@ -194,7 +194,7 @@ describe('observeJobOutput', () => {
     await done
     expect(frames.map(frame => frame.type)).toEqual(['opened', 'output', 'status'])
     expect(frames.at(-1)).toMatchObject({ type: 'status', job: { id: job.id, status: 'killed' } })
-    expect(() => ctx.jobs.visibleTo(owner.id).get(job.id)).toThrow(/unknown job/)
+    expect(() => ctx.jobs.forCaller(owner.id).get(job.id)).toThrow(/unknown job/)
   })
 
   it('stops cleanly on abort while waiting for output', async () => {

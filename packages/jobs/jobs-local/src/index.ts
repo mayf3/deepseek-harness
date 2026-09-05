@@ -19,7 +19,7 @@ import { deadline, timeoutOf } from '@deepseek-ai/dsh-timeout'
 import { JobRegistry, JobId } from '@deepseek-ai/dsh-jobs'
 import type {
   JobAppendOptions, JobEvent, JobEvents, JobHandle, JobKillOptions, JobKind, JobOutcome, JobOutputRead, JobOutputSource,
-  JobRead, JobSettleCause, JobSpec, JobStatus, JobView, VisibleJobs,
+  JobRead, JobSettleCause, JobSpec, JobStatus, JobView, CallerJobs,
 } from '@deepseek-ai/dsh-jobs'
 import { JobEventHub, JobLayer } from './events.ts'
 import { startPump } from './pump.ts'
@@ -83,7 +83,7 @@ interface TrackedJob {
   cancel: (reason?: string) => void
   status: JobStatus
   ring: OutputRing
-  /** The model's consuming cursor; {@link VisibleJobs.readAt} never moves it. */
+  /** The model's consuming cursor; {@link CallerJobs.readAt} never moves it. */
   modelCursor: number
   /** Whether the first post-settlement read already handed out `result`. */
   resultDelivered: boolean
@@ -94,7 +94,7 @@ interface TrackedJob {
   result: string | undefined
   startedAt: number
   finishedAt: number | undefined
-  /** Reason recorded by {@link VisibleJobs.kill}, merged into a `killed` settlement's detail. */
+  /** Reason recorded by {@link CallerJobs.kill}, merged into a `killed` settlement's detail. */
   killReason: string | undefined
   /** Set once a kill or teardown cancel ran; settlement reports it as the cause. */
   settleCause: JobSettleCause | undefined
@@ -292,7 +292,7 @@ export class LocalJobRegistry extends JobRegistry {
     return id
   }
 
-  visibleTo(caller?: SessionId): VisibleJobs {
+  forCaller(caller: SessionId | undefined): CallerJobs {
     const reach = (id: JobId): TrackedJob => {
       const job = this.expect(id)
       this.assertAccess(job, caller)

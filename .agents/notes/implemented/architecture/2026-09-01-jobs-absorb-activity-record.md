@@ -2,7 +2,7 @@
 
 Status: implemented
 
-Superseded: the record declaration (`JobStart.record`, `RecordingJob`, `readRecord`, `pumpJobOutput`) and the split wire (`SessionJob.record` on the session control stream, `ctx.jobOutput`) described below were consolidated into one output ring, `VisibleJobs`, and `ctx.jobs` — see [the jobs seam consolidation](2026-09-03-jobs-seam-consolidation.md). The argument for absorbing the standalone activity seam into `ctx.jobs` still holds.
+Superseded: the record declaration (`JobStart.record`, `RecordingJob`, `readRecord`, `pumpJobOutput`) and the split wire (`SessionJob.record` on the session control stream, `ctx.jobOutput`) described below were consolidated into one output ring, `CallerJobs`, and `ctx.jobs` — see [the jobs seam consolidation](2026-09-03-jobs-seam-consolidation.md). The argument for absorbing the standalone activity seam into `ctx.jobs` still holds.
 
 English | [中文](2026-09-01-jobs-absorb-activity-record.zh.md)
 

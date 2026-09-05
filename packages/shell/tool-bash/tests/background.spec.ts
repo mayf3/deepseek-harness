@@ -63,7 +63,7 @@ async function until<T>(read: () => T | undefined, timeoutMs = 5_000): Promise<T
 }
 
 function retainedText(ctx: Context, id: JobId, caller?: Agent): string {
-  return ctx.jobs.visibleTo(caller?.id).readAt(id, 0).chunks.map(chunk => chunk.text).join('')
+  return ctx.jobs.forCaller(caller?.id).readAt(id, 0).chunks.map(chunk => chunk.text).join('')
 }
 
 describe('background bash output', () => {
@@ -75,7 +75,7 @@ describe('background bash output', () => {
       run_in_background: true,
     })
     expect(text(ack)).toContain('started background job')
-    const jobs = ctx.jobs.visibleTo()
+    const jobs = ctx.jobs.forCaller(undefined)
     const job = jobs.list()[0]
     expect(job).toBeDefined()
 
@@ -97,7 +97,7 @@ describe('background bash output', () => {
   it('a killed background job settles killed with the kill reason merged into its detail', async () => {
     const ctx = await setup()
     await call(ctx, { command: 'sleep 60', description: 'test command', run_in_background: true })
-    const jobs = ctx.jobs.visibleTo()
+    const jobs = ctx.jobs.forCaller(undefined)
     const job = jobs.list()[0]
     jobs.kill(job!.id, { reason: 'test cleanup' })
     await until(() => jobs.get(job!.id).status === 'killed' ? true : undefined)
@@ -113,7 +113,7 @@ describe('background bash output', () => {
       run_in_background: true,
     })
     expect(text(started)).toMatch(/^started background job bash-\d+$/)
-    const jobs = ctx.jobs.visibleTo()
+    const jobs = ctx.jobs.forCaller(undefined)
     const job = jobs.list()[0]
     await until(() => jobs.get(job!.id).status === 'killed' ? true : undefined)
     const read = text(await ctx.tools.execute({
@@ -132,7 +132,7 @@ describe('background bash output', () => {
       description: 'test command',
       run_in_background: true,
     })
-    const jobs = ctx.jobs.visibleTo()
+    const jobs = ctx.jobs.forCaller(undefined)
     const job = jobs.list()[0]
     await until(() => jobs.get(job!.id).status === 'completed' ? true : undefined)
     const chunks = jobs.readAt(job!.id, 0).chunks
@@ -190,7 +190,7 @@ describe('owned background output', () => {
       arguments: { command: 'echo owned', description: 'test command', run_in_background: true },
       agent: owner,
     })
-    const owned = ctx.jobs.visibleTo(owner.id)
+    const owned = ctx.jobs.forCaller(owner.id)
     const job = owned.list()[0]
     expect(job).toBeDefined()
     expect(job!.owner).toBe(owner.id)
