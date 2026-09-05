@@ -487,7 +487,7 @@ describe('PluginManager', () => {
       const calls: string[][] = []
       const { manager } = await bootProfile(staged, { spawn: recordingPnpm(staged.profileDir, calls) })
 
-      const result = await manager.install('ext-odd')
+      const result = await manager.add('ext-odd')
 
       expect(result).toMatchObject({
         installed: [], installedOnly: [],
