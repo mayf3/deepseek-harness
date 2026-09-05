@@ -1,7 +1,7 @@
 {
   "name": "@deepseek-ai/dsh-host-plugin-manager",
   "description": "Plugin management over the booted profile: install, enable, disable, and retry bundles, add rows to the global or a preset's user layer, and report each package's state through the plugins Remote",
-  "version": "0.1.2-rc.1",
+  "version": "0.1.3-alpha.1",
   "publishConfig": {
     "access": "public"
   },
