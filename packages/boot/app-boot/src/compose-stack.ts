@@ -3,16 +3,20 @@
  * are unique per Loader tree, and the vendored group `create()` re-parents an
  * existing id instead of rejecting it, so a shared id namespace needs its
  * check before anything mounts: built-in and boot-staged layers claim their
- * ids first and a duplicate among them fails loud; an external bundle whose
- * id is already claimed is skipped whole and recorded as a conflict; a user
- * layer's insert of a claimed id drops that row and records it. Boot, live
- * recomposition, and the config dump all compose through here, so they agree.
+ * ids first and a duplicate among or inside them fails loud; an external
+ * bundle whose id is already claimed, or which declares one of its own ids
+ * twice, is skipped whole and recorded as a conflict; a user layer's insert
+ * of a claimed id drops that row and records it. One composition yields the
+ * patches, the owner of every id, and the conflicts, and each contained
+ * layer is rendered once. Boot, live recomposition, and the config dump all
+ * compose through here, so they agree.
  * @module @deepseek-ai/dsh-app-boot/compose-stack
  */
 
 import type { EntryOptions } from '@deepseek-ai/cordis-plugin-loader'
 import type { PatchOptions } from '@deepseek-ai/cordis-plugin-include'
-import { bundleLayerPatches, composeExternalLayer, isContainedLayer } from './external-bundles.ts'
+import { composeExternalLayer, isContainedLayer, type ComposedExternalLayer } from './external-bundles.ts'
+import { visitInsertedRows, visitRowTree } from './patch-rows.ts'
 import type { ProfileLayer } from './profile.ts'
 
 /** One user-owned patch list in the stack: the profile file, the home file, or a `--patch` overlay. */
@@ -23,9 +27,9 @@ export interface StackUserLayer {
   readonly patches: PatchOptions[]
 }
 
-/** One row a layer could not mount because another layer already declares its id. */
+/** One row a layer could not mount because its id is already declared. */
 export interface RowConflict {
-  /** The id both layers declare. */
+  /** The id declared more than once. */
   readonly rowId: string
   /** The module the losing row named. */
   readonly moduleName: string
@@ -33,8 +37,13 @@ export interface RowConflict {
   readonly layer: string
   /** The external bundle that lost, when the loser is one; its whole layer is left out. */
   readonly packageName?: string
-  /** The layer that owns the id: a bundle's package name or a user layer's label. */
+  /**
+   * The layer that already declares the id: a bundle's package name or a user
+   * layer's label, or the losing layer itself when it declares the id twice.
+   */
   readonly declaredBy: string
+  /** The reason as diagnostics and the plugin list state it, without the layer that lost. */
+  readonly message: string
 }
 
 /** The stack as the root include should mount it, with what it left out. */
@@ -43,80 +52,90 @@ export interface ComposedStack {
   readonly patches: PatchOptions[]
   /** The same patches per layer, labelled by package name or user-layer label; a skipped bundle has no entry. */
   readonly layers: StackUserLayer[]
+  /** The bundle layer that owns each id a bundle layer introduces; rows user layers insert are not listed. */
+  readonly owners: ReadonlyMap<string, ProfileLayer>
   /** Every row left out, in stack order. */
   readonly conflicts: RowConflict[]
-  /** External bundles left out because a row id was already claimed. */
+  /** External bundles left out because a row id was already claimed or repeated. */
   readonly skippedBundles: string[]
 }
 
-/** Row-id ownership across the bundle layers: who owns each id, and which external bundles lost. */
+/** Row-id ownership across the bundle layers: who owns each id, which external bundles lost, and how the rest mount. */
 export interface LayerOwnership {
   /** The layer that owns each id a bundle layer introduces. */
   readonly owners: Map<string, ProfileLayer>
   /** The conflicts of each external bundle left out, by package name. */
   readonly skipped: Map<string, RowConflict[]>
+  /** The composition of each contained layer that owns its ids, by package name; rendered once and mounted as is. */
+  readonly composed: Map<string, ComposedExternalLayer>
 }
 
-/** Every `(id, module)` a patch list inserts, recursing into inserted groups. */
-function insertedRows(patches: readonly PatchOptions[]): Map<string, string> {
-  const rows = new Map<string, string>()
-  const visit = (row: EntryOptions): void => {
-    if (typeof row.id === 'string') rows.set(row.id, row.name)
-    if (row.group && Array.isArray(row.config)) (row.config as EntryOptions[]).forEach(visit)
-  }
-  for (const patch of patches) patch.insert?.forEach(visit)
-  return rows
+/** One conflict with its message: the id's other declarer, or the losing layer itself declaring it twice. */
+function rowConflict(fields: Omit<RowConflict, 'message'>): RowConflict {
+  const id = JSON.stringify(fields.rowId)
+  const message = fields.declaredBy === fields.layer
+    ? `row ${id} is declared twice by ${fields.layer}`
+    : `row ${id} is already declared by ${fields.declaredBy}`
+  return { ...fields, message }
 }
 
 /** The ids one inserted row carries: its own and, for a group, its children's. */
 function rowIds(row: EntryOptions): string[] {
   const ids: string[] = []
-  const visit = (entry: EntryOptions): void => {
+  visitRowTree(row, (entry) => {
     if (typeof entry.id === 'string') ids.push(entry.id)
-    if (entry.group && Array.isArray(entry.config)) (entry.config as EntryOptions[]).forEach(visit)
-  }
-  visit(row)
+  })
   return ids
 }
 
 /**
  * Decide row-id ownership across the bundle layers. Built-in and boot-staged
- * layers claim first, in manifest order; a duplicate among them is a defect
- * of the shipped composition and throws. Contained external layers then claim
- * in manifest order, and one whose id is already owned is left out whole.
+ * layers claim first, in manifest order; an id two of them declare, or one
+ * declares twice, is a defect of the shipped composition and throws.
+ * Contained external layers then claim in manifest order, each rendered once
+ * here; one whose id is already owned, or which declares an id twice, is left
+ * out whole.
  * @param layers - the profile's bundle layers, in manifest order.
- * @returns the owner of every claimed id and the conflicts of each skipped bundle.
- * @throws when two built-in or boot-staged layers declare the same id.
+ * @returns the owner of every claimed id, the conflicts of each skipped bundle, and the composition of each mounted one.
+ * @throws when two built-in or boot-staged layers declare the same id, or one of them declares an id twice.
  */
 export function claimLayerIds(layers: readonly ProfileLayer[]): LayerOwnership {
   const owners = new Map<string, ProfileLayer>()
   for (const layer of layers) {
     if (isContainedLayer(layer)) continue
-    for (const id of insertedRows(layer.patches).keys()) {
-      const owner = owners.get(id)
+    visitInsertedRows(layer.patches, (row) => {
+      if (typeof row.id !== 'string') return
+      const owner = owners.get(row.id)
+      if (owner === layer) throw new Error(`row ${JSON.stringify(row.id)} is declared twice by ${layer.packageName}`)
       if (owner !== undefined) {
-        throw new Error(`row ${JSON.stringify(id)} is declared by both ${owner.packageName} and ${layer.packageName}`)
+        throw new Error(`row ${JSON.stringify(row.id)} is declared by both ${owner.packageName} and ${layer.packageName}`)
       }
-      owners.set(id, layer)
-    }
+      owners.set(row.id, layer)
+    })
   }
   const skipped = new Map<string, RowConflict[]>()
+  const composed = new Map<string, ComposedExternalLayer>()
   for (const layer of layers) {
     if (!isContainedLayer(layer)) continue
-    const { rows } = composeExternalLayer(layer)
-    const conflicts: RowConflict[] = []
-    for (const [rowId, moduleName] of rows) {
+    const { packageName } = layer
+    const composition = composeExternalLayer(layer)
+    const conflicts: RowConflict[] = composition.duplicates.map(({ rowId, moduleName }) => (
+      rowConflict({ rowId, moduleName, layer: packageName, packageName, declaredBy: packageName })
+    ))
+    for (const [rowId, moduleName] of composition.rows) {
       const owner = owners.get(rowId)
-      if (owner === undefined) continue
-      conflicts.push({ rowId, moduleName, layer: layer.packageName, packageName: layer.packageName, declaredBy: owner.packageName })
+      if (owner !== undefined) {
+        conflicts.push(rowConflict({ rowId, moduleName, layer: packageName, packageName, declaredBy: owner.packageName }))
+      }
     }
     if (conflicts.length > 0) {
-      skipped.set(layer.packageName, conflicts)
+      skipped.set(packageName, conflicts)
       continue
     }
-    for (const id of rows.keys()) owners.set(id, layer)
+    for (const id of composition.rows.keys()) owners.set(id, layer)
+    composed.set(packageName, composition)
   }
-  return { owners, skipped }
+  return { owners, skipped, composed }
 }
 
 /**
@@ -127,8 +146,8 @@ export function claimLayerIds(layers: readonly ProfileLayer[]): LayerOwnership {
  * @param binName - the diagnostic prefix on a thrown built-in duplicate.
  * @param layers - the profile's bundle layers, in manifest order.
  * @param userLayers - the user-owned layers, in application order.
- * @returns the patches to mount, the conflicts, and the bundles left out.
- * @throws when two built-in or boot-staged layers declare the same id.
+ * @returns the patches to mount, the owner of every bundle id, the conflicts, and the bundles left out.
+ * @throws when two built-in or boot-staged layers declare the same id, or one of them declares an id twice.
  */
 export function composeProfileStack(
   binName: string, layers: readonly ProfileLayer[], userLayers: readonly StackUserLayer[],
@@ -149,7 +168,8 @@ export function composeProfileStack(
       skippedBundles.push(layer.packageName)
       continue
     }
-    composedLayers.push({ label: layer.packageName, patches: bundleLayerPatches(layer) })
+    const composition = ownership.composed.get(layer.packageName)
+    composedLayers.push({ label: layer.packageName, patches: composition === undefined ? layer.patches : composition.patches })
   }
   const claimed = new Map<string, string>()
   for (const [id, layer] of ownership.owners) claimed.set(id, layer.packageName)
@@ -165,7 +185,7 @@ export function composeProfileStack(
         const ids = rowIds(row)
         const taken = ids.map(id => [id, claimed.get(id)] as const).find(([, owner]) => owner !== undefined)
         if (taken?.[1] !== undefined) {
-          conflicts.push({ rowId: taken[0], moduleName: row.name, layer: userLayer.label, declaredBy: taken[1] })
+          conflicts.push(rowConflict({ rowId: taken[0], moduleName: row.name, layer: userLayer.label, declaredBy: taken[1] }))
           continue
         }
         for (const id of ids) claimed.set(id, userLayer.label)
@@ -176,7 +196,13 @@ export function composeProfileStack(
     }
     composedLayers.push({ label: userLayer.label, patches })
   }
-  return { patches: composedLayers.flatMap(layer => layer.patches), layers: composedLayers, conflicts, skippedBundles }
+  return {
+    patches: composedLayers.flatMap(layer => layer.patches),
+    layers: composedLayers,
+    owners: ownership.owners,
+    conflicts,
+    skippedBundles,
+  }
 }
 
 /**
@@ -185,8 +211,7 @@ export function composeProfileStack(
  * @returns the line, without a binary-name prefix.
  */
 export function formatRowConflict(conflict: RowConflict): string {
-  const owner = `row ${JSON.stringify(conflict.rowId)} is already declared by ${conflict.declaredBy}`
   return conflict.packageName === undefined
-    ? `${conflict.layer}: insert of ${conflict.moduleName} skipped — ${owner}`
-    : `bundle ${conflict.packageName} left out — ${owner}`
+    ? `${conflict.layer}: insert of ${conflict.moduleName} skipped — ${conflict.message}`
+    : `bundle ${conflict.packageName} left out — ${conflict.message}`
 }

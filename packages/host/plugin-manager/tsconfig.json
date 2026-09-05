@@ -37,6 +37,9 @@
     },
     {
       "path": "../../core/agent"
+    },
+    {
+      "path": "../../util/package-manifest"
     }
   ]
 }

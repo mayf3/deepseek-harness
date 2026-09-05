@@ -9,9 +9,7 @@
  */
 
 import type { Context, Fiber, FiberState } from '@deepseek-ai/cordis'
-import { Group, type Entry, type EntryGroup, type EntryOptions } from '@deepseek-ai/cordis-plugin-loader'
-import type { RowConflict } from './compose-stack.ts'
-import { bundleGroupId } from './external-bundles.ts'
+import { EntryUpdateError, Group, type Entry, type EntryGroup, type EntryOptions } from '@deepseek-ai/cordis-plugin-loader'
 
 /** Runtime mirror: FiberState is a cross-package const enum. */
 const FIBER_PENDING = 0 as FiberState.PENDING
@@ -28,11 +26,8 @@ export function pendingMessage(fiber: Fiber): string {
   return `pending (waiting for ${subject}: ${missing.join(', ') || 'unknown'})`
 }
 
-/**
- * The lifecycle step at which a contained row failed; `conflict` is a row the
- * composition left out because another layer already declares its id.
- */
-export type ContainedFailureStage = 'import' | 'apply' | 'inject-pending' | 'conflict' | 'unknown'
+/** The lifecycle step at which a contained row failed. */
+export type ContainedFailureStage = 'import' | 'apply' | 'inject-pending' | 'unknown'
 
 /** One recorded failure of a row inside a contained group. */
 export interface ContainedFailure {
@@ -42,10 +37,8 @@ export interface ContainedFailure {
   readonly rowId: string
   /** The module specifier the row named. */
   readonly moduleName: string
-  /** The contained group the row belongs to; for a conflict, the group the bundle would have mounted, or the user layer's label. */
+  /** The contained group the row belongs to, as the tree names it. */
   readonly groupId: string
-  /** The bundle the row belongs to, for a record made before any group mounted (a composition conflict). */
-  readonly packageName?: string
   /** Which lifecycle step failed. */
   readonly stage: ContainedFailureStage
   /** The failure text, with the Loader's per-row wrapper folded in. */
@@ -54,8 +47,10 @@ export interface ContainedFailure {
 
 /**
  * Failures recorded by contained groups of one runtime. Rows are keyed by
- * their tree-wide id; recording a row again replaces its earlier record, and a
- * row that later mounts clears it.
+ * their tree-wide id; recording a row again replaces its earlier record, a
+ * row that later mounts clears it, and a group that unmounts clears its rows'.
+ * Rows the composition left out never reach a group and are not recorded
+ * here; `ProfileRuntime.conflicts` holds them.
  */
 export class ContainedFailureRegistry {
   private readonly failures = new Map<string, ContainedFailure>()
@@ -77,12 +72,12 @@ export class ContainedFailureRegistry {
   }
 
   /**
-   * Forget every record of one stage, before the stage's records are remade.
-   * @param stage - the stage whose records to drop.
+   * Forget every record of one contained group, when the group unmounts.
+   * @param groupId - the group's tree-wide id.
    */
-  clearStage(stage: ContainedFailureStage): void {
+  clearGroup(groupId: string): void {
     for (const [entryId, failure] of this.failures) {
-      if (failure.stage === stage) this.failures.delete(entryId)
+      if (failure.groupId === groupId) this.failures.delete(entryId)
     }
   }
 
@@ -112,22 +107,25 @@ declare module '@deepseek-ai/cordis' {
 }
 
 /**
- * Parse the Loader's `failed to <stage> loader entry` wrapper into a stage.
- * Every row failure reaches {@link ContainedGroup.create} through that
- * wrapper, so `unknown` is the guard for a message shape this build has not
- * seen rather than a path a row can take.
+ * The stage a row failure reached, from the Loader's typed update error.
+ * A fresh row fails at import or apply; the wrapper's other stages replace
+ * an existing entry, which a contained row does not go through, and a value
+ * the Loader did not wrap has no stage.
  */
-function stageOf(message: string): ContainedFailureStage {
-  const match = /^failed to (import|apply) loader entry /.exec(message)
-  /* v8 ignore next -- the Loader wraps every row failure with one of the two stages, so the `unknown` arm is unreachable */
-  return match === null ? 'unknown' : match[1] === 'import' ? 'import' : 'apply'
+function stageOf(error: unknown): ContainedFailureStage {
+  /* v8 ignore next -- the Loader wraps every row failure; the arm keeps the type total */
+  if (!(error instanceof EntryUpdateError)) return 'unknown'
+  /* v8 ignore next -- dispose and rollback replace an existing entry, which a fresh contained row does not go through */
+  return error.stage === 'import' || error.stage === 'apply' ? error.stage : 'unknown'
 }
 
 /**
  * A group that contains its rows' startup failures. `create()` is the one
  * per-row step `EntryGroup.update` awaits, so catching there is what turns a
  * row failure from a group rejection into a record: the group activates, the
- * failed row is absent from the tree, and the record names it.
+ * failed row is absent from the tree, and the record names it. When the group
+ * unmounts — its bundle disabled or uninstalled — its rows' records go with
+ * it, so no failure outlives the composition that produced it.
  */
 export class ContainedGroup extends Group {
   override async create(options: Omit<EntryOptions, 'id'>): Promise<string> {
@@ -168,12 +166,17 @@ export class ContainedGroup extends Group {
         rowId,
         moduleName: options.name,
         groupId: this.groupId(),
-        stage: stageOf(message),
+        stage: stageOf(error),
         message,
       })
       this.ctx.logger.warn(`contained group ${this.groupId()}: row ${rowId} failed and was isolated: ${message}`)
       return rowId
     }
+  }
+
+  override async stop(): Promise<void> {
+    await super.stop()
+    this.registry()?.clearGroup(this.groupId())
   }
 
   /** The registry provided on the runtime root, if the boot glue provided one. */
@@ -214,29 +217,4 @@ export function ensurePluginFailures(ctx: Context): ContainedFailureRegistry {
   const registry = new ContainedFailureRegistry()
   ctx.root.provide('pluginFailures', registry)
   return registry
-}
-
-/**
- * Replace the registry's conflict records with the conflicts of one
- * composition: every earlier `conflict` record is dropped, so a conflict
- * resolved since (a bundle uninstalled, a user row renamed) disappears, and
- * each current one is recorded under an id no mounted row can carry.
- * @param ctx - any context of the runtime.
- * @param conflicts - the conflicts of the composition just applied.
- */
-export function recordRowConflicts(ctx: Context, conflicts: readonly RowConflict[]): void {
-  const registry = ensurePluginFailures(ctx)
-  registry.clearStage('conflict')
-  for (const conflict of conflicts) {
-    const groupId = conflict.packageName === undefined ? conflict.layer : bundleGroupId(conflict.packageName)
-    registry.record({
-      entryId: `conflict:${groupId}:${conflict.rowId}`,
-      rowId: conflict.rowId,
-      moduleName: conflict.moduleName,
-      groupId,
-      ...conflict.packageName === undefined ? {} : { packageName: conflict.packageName },
-      stage: 'conflict',
-      message: `row ${JSON.stringify(conflict.rowId)} is already declared by ${conflict.declaredBy}`,
-    })
-  }
 }

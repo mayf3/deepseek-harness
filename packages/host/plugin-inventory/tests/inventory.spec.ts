@@ -97,7 +97,7 @@ describe('PluginInventoryGateway', () => {
     expect((await inventory.list()).entries.some(entry => entry.entryId === pendingId)).toBe(false)
   })
 
-  it('attributes rows to their bundle through the profile runtime and lists recorded failures', async () => {
+  it('attributes rows to their bundle through the profile runtime and lists recorded failures and conflicts', async () => {
     const { ctx, inventory } = await harness()
     // A bare Loader assigns ids; without a root include they are also the tree-wide ids.
     const versioned = await ctx.loader.create({ name: 'cordis:active' })
@@ -112,21 +112,19 @@ describe('PluginInventoryGateway', () => {
     ctx.provide('profileRuntime', {
       originOf: (rowId: string) => origins.get(rowId),
       userDisabledRowIds: () => new Set([off]),
-    } as Partial<ProfileRuntime> as never)
+      layers: [{ packageName: 'late', version: '9.9.9' }],
+      conflicts: [
+        { rowId: 'tool', moduleName: 'late', layer: 'late', packageName: 'late', declaredBy: 'ext', message: 'row "tool" is already declared by ext' },
+        { rowId: 'mine', moduleName: 'twice', layer: '/p/cordis.patch.yml', declaredBy: 'ext', message: 'row "mine" is already declared by ext' },
+        { rowId: 'x', moduleName: 'gone/x', layer: 'gone', packageName: 'gone', declaredBy: 'gone', message: 'row "x" is declared twice by gone' },
+      ],
+    } as unknown as ProfileRuntime)
     const registry = ensurePluginFailures(ctx)
     registry.record({ entryId: 'gone', rowId: 'gone', moduleName: 'cordis:throws', groupId: 'bundle/ext', stage: 'apply', message: 'boom' })
     // A record of a row that later mounted rides on the live entry and is not listed twice.
     registry.record({ entryId: bare, rowId: bare, moduleName: 'cordis:active', groupId: 'bundle/ext', stage: 'import', message: 'stale' })
     // A failure the runtime cannot attribute belongs to no package.
     registry.record({ entryId: 'orphan', rowId: 'orphan', moduleName: 'cordis:throws', groupId: 'bundle/gone', stage: 'apply', message: 'lost' })
-    registry.record({
-      entryId: 'conflict:bundle/late:versioned', rowId: versioned, moduleName: 'late', groupId: 'bundle/late',
-      packageName: 'late', stage: 'conflict', message: 'row "versioned" is already declared by ext',
-    })
-    registry.record({
-      entryId: 'conflict:/home/cordis.patch.yml:bare', rowId: bare, moduleName: 'mine', groupId: '/home/cordis.patch.yml',
-      stage: 'conflict', message: 'row "bare" is already declared by ext',
-    })
 
     const { entries } = await inventory.list()
     expect(entries).toEqual([
@@ -136,10 +134,20 @@ describe('PluginInventoryGateway', () => {
       // A failed row the tree no longer holds is attributed through the runtime.
       { entryId: 'gone', moduleName: 'cordis:throws', enabled: true, fiberPhase: 'failed', trust: 'external', package: { name: 'ext' }, failure: { stage: 'apply', message: 'boom' } },
       { entryId: 'orphan', moduleName: 'cordis:throws', enabled: true, fiberPhase: 'failed', trust: 'external', failure: { stage: 'apply', message: 'lost' } },
-      // A conflict names the bundle that lost the id; the runtime would name the owner.
-      { entryId: 'conflict:bundle/late:versioned', moduleName: 'late', enabled: true, fiberPhase: 'failed', trust: 'external', package: { name: 'late' }, failure: { stage: 'conflict', message: 'row "versioned" is already declared by ext' } },
-      // A user-layer conflict belongs to no package.
-      { entryId: 'conflict:/home/cordis.patch.yml:bare', moduleName: 'mine', enabled: true, fiberPhase: 'failed', trust: 'external', failure: { stage: 'conflict', message: 'row "bare" is already declared by ext' } },
+      // A row the composition left out is listed from the runtime's conflicts, under the layer that lost.
+      {
+        entryId: 'conflict:late:tool', moduleName: 'late', enabled: true, fiberPhase: 'failed', trust: 'external',
+        package: { name: 'late', version: '9.9.9' }, failure: { stage: 'conflict', message: 'row "tool" is already declared by ext' },
+      },
+      {
+        entryId: 'conflict:/p/cordis.patch.yml:mine', moduleName: 'twice', enabled: true, fiberPhase: 'failed', trust: 'builtin',
+        failure: { stage: 'conflict', message: 'row "mine" is already declared by ext' },
+      },
+      // A bundle the layer list no longer names keeps its package, without a version.
+      {
+        entryId: 'conflict:gone:x', moduleName: 'gone/x', enabled: true, fiberPhase: 'failed', trust: 'external',
+        package: { name: 'gone' }, failure: { stage: 'conflict', message: 'row "x" is declared twice by gone' },
+      },
     ])
   })
 

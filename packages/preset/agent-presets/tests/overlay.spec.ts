@@ -235,7 +235,8 @@ describe('inventory', () => {
     expect(fromFile?.rows).toEqual([
       { entryId: 'alpha', moduleName: '../../plugins/contribute.js', enabled: false, source: 'preset', disabledBy: 'user' },
       { entryId: 'alpha-extra', moduleName: '../../plugins/contribute.js', enabled: false, source: 'preset', disabledBy: 'composition' },
-      { entryId: 'user-gamma', moduleName: CONTRIBUTE, enabled: true, source: 'user' },
+      // An absolute path in a user row mounts as a file URL, like a `./` path anchored beside the file.
+      { entryId: 'user-gamma', moduleName: pathToFileURL(CONTRIBUTE).href, enabled: true, source: 'user' },
     ])
 
     await agentOn(ctx, 'sess-inventory', 'standard')
@@ -243,7 +244,7 @@ describe('inventory', () => {
     expect(mounted?.rows).toEqual([
       { entryId: 'alpha', moduleName: '../../plugins/contribute.js', enabled: false, source: 'preset', disabledBy: 'user' },
       { entryId: 'alpha-extra', moduleName: '../../plugins/contribute.js', enabled: false, source: 'preset', disabledBy: 'composition' },
-      { entryId: 'user-gamma', moduleName: CONTRIBUTE, enabled: true, source: 'user', fiberState: FiberState.ACTIVE },
+      { entryId: 'user-gamma', moduleName: pathToFileURL(CONTRIBUTE).href, enabled: true, source: 'user', fiberState: FiberState.ACTIVE },
     ])
   })
 

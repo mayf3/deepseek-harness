@@ -12,15 +12,15 @@ Status: implemented
 
 ## 决定
 
-**fail-loud 在树起来时结束。** launcher 保留 `installFailLoud` 的卸载函数，在 `boot()` 返回后调用它，然后安装 `installRuntimeGuards`：启动后未处理的 rejection 以"已兜住"报告到 stderr，进程继续运行；未捕获的异常连同来源一起报告，进程退出，如 Node 所做，因为其状态未知。两个处理器在关闭时移除。
+**fail-loud 在树起来时结束。** launcher 保留 `installFailLoud` 的卸载函数，在 `boot()` 返回后调用它，然后安装 `installRuntimeGuards`：启动后未处理的 rejection 报告到 stderr，进程继续运行——守卫既不停止产生它的任务，也不把它归属到任何插件，内置或外部一视同仁，这是一条相对于退出而选择的进程级策略，不是隔离；未捕获的异常连同来源一起报告，进程退出，如 Node 所做，因为其状态未知。两个处理器在关闭时移除。
 
 **嵌套失败被报告，暂不致命。** `warnNestedFiberFailures` 遍历每个 runtime 的 fiber，报告属于内置条目却不是该条目根 fiber 的 `FAILED` fiber——抛错的 `ctx.inject()` 延续，Loader 给它盖了条目的章，而激活审计从未看见它。它在启动后以提示行运行；确认随附组合没有这类失败后再并入致命审计。
 
-**探针在伤不到宿主的地方运行包。** `probePackage` 在宿主里读取已安装包的 manifest——从 `dsh.bundle` 得到种类、其 patch 的行与覆盖、`dsh.plugins` 声明、`engines.dsh`、标题与描述——并生成一个 Node 子进程：从该包解析 `@deepseek-ai/cordis`，import 主导出与每个声明为可添加的模块，报告各自是否为插件以及携带的 `Config.toJSON()`。抛错、退出或挂起的子进程得到带原因的 `ok: false`，或点名超时的 rejection；cordis 解析到 harness 自有副本之外的包不可启用。记录缓存在 profile 的 `.dsh-plugins/` 下，按版本失效。
+**探针在伤不到宿主的地方运行包。** `probePackage` 在宿主里读取已安装包的 manifest——从 `dsh.bundle` 得到种类、其 patch 的行与覆盖、`dsh.plugins` 声明、`engines.dsh`、标题与描述——并生成一个 Node 子进程——`probe-child.ts`，探针旁边的独立模块，源码启动时经 tsx 运行，构建后是 `lib/probe-child.js`——从该包解析 `@deepseek-ai/cordis`，import 主导出与每个声明为可添加的模块，经 IPC 通道发出一份报告。stdout 与 stderr 仍归被 import 的模块自己，所以在 import 时打印的包照样能报告；报告一到子进程就被杀掉，因此让定时器一直活着的包不再多花任何代价。报告与缓存记录按各自跨越的进程边界与文件边界逐字段校验：无法识别的报告是一次 rejection，无法识别的记录重新探测。抛错、退出或挂起的子进程得到带原因的 `ok: false`，或点名超时的 rejection；`ok` 只表示主导出 import 成功且 cordis 不是第二份副本，能否启用或添加由 `kind` 与 `addable[].ok` 决定。记录缓存在 profile 的 `.dsh-plugins/` 下，按版本失效。
 
 ## 考虑过的替代方案
 
-**把运行时 rejection 归属到产生它的插件并把该插件标为失败。** 正确的终态，但 promise 不携带 fiber，cordis 的 effect 包装也只覆盖插件经由它注册的东西。延后：守卫现在只报告并兜住；归属需要一个 async-context seam。
+**把运行时 rejection 归属到产生它的插件并把该插件标为失败。** 正确的终态，但 promise 不携带 fiber，cordis 的 effect 包装也只覆盖插件经由它注册的东西。延后：守卫现在只报告并让进程继续；归属需要一个 async-context seam。
 
 **在宿主里 import 包来了解其形态。** 否决：import 会在用户启用任何东西之前以宿主权限运行代码，包的模块作用域里的一次挂起或 `process.exit` 就是宿主的。
 
