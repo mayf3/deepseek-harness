@@ -1,7 +1,7 @@
 {
   "name": "@deepseek-ai/dsh-client-ui-settings-plugin-manager",
   "description": "Plugin management tab in Web Plugins settings: install, enable, disable, retry, and compose installed plugin packages",
-  "version": "0.1.2-rc.1",
+  "version": "0.1.3-alpha.1",
   "publishConfig": {
     "access": "public"
   },
