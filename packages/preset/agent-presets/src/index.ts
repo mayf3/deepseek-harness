@@ -895,6 +895,7 @@ async function overlayDigest(overlayPath: string | undefined): Promise<string> {
     text = await readFile(overlayPath, 'utf8')
   } catch {
     // A layer deleted since discovery is a layer that applies nothing.
+    /* v8 ignore next -- a deletion between the layer read and this digest cannot be provoked deterministically */
     return ''
   }
   return createHash('sha1').update(text).digest('hex')
@@ -918,6 +919,8 @@ function stampKey(stamp: CompositionStamp): string {
 async function readOverlay(preset: AgentPreset): Promise<PatchOptions[]> {
   if (preset.overlayPath === undefined) return []
   try {
+    // The inventory re-discovers before it reads; a layer deleted between the two is a race no test can provoke.
+    /* v8 ignore next */
     return await readPatchListFile('agent-presets', preset.overlayPath, 'user patch layer') ?? []
   } catch {
     // Discovery already reported an unparsable layer as the preset's health;

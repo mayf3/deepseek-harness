@@ -7,7 +7,7 @@
  */
 
 import { existsSync } from 'node:fs'
-import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
@@ -26,6 +26,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import AgentPresets, {
   COMPOSITION_FILE, discoverPresets, livePresetMounts, overlayFacts, OVERLAY_FILE, scanRoot,
 } from '@deepseek-ai/dsh-agent-presets'
+import { fileComposition } from '../src/composition-inventory.ts'
 import type { Config } from '@deepseek-ai/dsh-agent-presets'
 
 const FIXTURES = join(dirname(fileURLToPath(import.meta.url)), 'fixtures')
@@ -246,6 +247,19 @@ describe('inventory', () => {
     ])
   })
 
+  it('answers from the composition alone when the layer disappears before the inventory reads it', async () => {
+    const root = await userRoot({ standard: { [OVERLAY_FILE]: overlayInserting('gamma') } })
+    const ctx = await harness(rosterOver(root))
+    await rm(join(root, 'standard', OVERLAY_FILE))
+
+    const fromFile = (await ctx.agentPresets.compositionInventory()).find(composition => composition.id === 'standard')
+
+    expect(fromFile?.rows.map(row => [row.entryId, row.source])).toEqual([
+      ['alpha', 'preset'],
+      ['alpha-extra', 'preset'],
+    ])
+  })
+
   it('answers from the composition alone when the layer stopped reading', async () => {
     const root = await userRoot({ standard: { [OVERLAY_FILE]: overlayInserting('gamma') } })
     const ctx = await harness(rosterOver(root))
@@ -267,7 +281,20 @@ describe('inventory', () => {
       { id: 'b', disabled: { __jsExpr: 'true' } as unknown as boolean },
       { id: 'c', config: {} },
       { insert: [{ id: 'd', name: 'x' }, { id: 'g', name: 'cordis:group', group: true, config: [{ id: 'e', name: 'y' }] }] },
-    ])).toEqual({ inserted: new Set(['d', 'g', 'e']), disabled: new Set(['a']) })
+      // A group inserted without members contributes its own id alone; an anonymous row contributes nothing.
+      { insert: [{ id: 'h', name: 'cordis:group', group: true }, { name: 'anonymous' } as never] },
+    ])).toEqual({ inserted: new Set(['d', 'g', 'e', 'h']), disabled: new Set(['a']) })
+  })
+
+  it('reads a composition file under a layer that targets a row it does not have', async () => {
+    // A patch matching no row is the Loader's warning at mount time; the
+    // inventory applies the rest and stays silent about it.
+    const dir = await mkdtemp(join(tmpdir(), 'dsh-preset-inventory-'))
+    const path = join(dir, COMPOSITION_FILE)
+    await writeFile(path, '- id: alpha\n  name: ../../plugins/contribute.js\n')
+    expect(await fileComposition(path, () => false, [{ id: 'missing', disabled: true }])).toEqual({
+      rows: [{ entryId: 'alpha', moduleName: '../../plugins/contribute.js', enabled: true, source: 'preset' }],
+    })
   })
 })
 

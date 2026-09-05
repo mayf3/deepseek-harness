@@ -291,6 +291,7 @@ async function overlayProblem(path: string, harnessBase: string): Promise<string
     return `the user patch layer ${OVERLAY_FILE} cannot be applied: ${full.replace(/\n[\s\S]*$/, '')}`
   }
   // The caller statted this file moments ago; gone in between reads as nothing to apply.
+  /* v8 ignore next -- a deletion between the stat and this read cannot be provoked deterministically */
   if (patches === undefined) return undefined
   const presetBase = new URL('.', pathToFileURL(path)).href
   for (const [index, patch] of patches.entries()) {
