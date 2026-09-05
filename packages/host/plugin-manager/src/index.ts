@@ -403,17 +403,17 @@ export class PluginManager extends TypertRemoteService {
    * or the run times out, `plugins/enable-failed` when enabling was asked
    * for and the tree rejected the bundle.
    */
-  @Remote('install')
-  async install(spec: string, options?: { enable?: boolean }): Promise<PluginInstallResult> {
-    return this.exclusive('install', spec, () => this.installNow(spec, options))
+  @Remote('add')
+  async add(spec: string, options?: { enable?: boolean }): Promise<PluginInstallResult> {
+    return this.exclusive('add', spec, () => this.addNow(spec, options))
   }
 
-  private async installNow(spec: string, options?: { enable?: boolean }): Promise<PluginInstallResult> {
+  private async addNow(spec: string, options?: { enable?: boolean }): Promise<PluginInstallResult> {
     const runtime = this.runtime()
     if (spec.trim().length === 0) {
       throw new RemoteError('gateway/bad-request', 'plugin-manager: the package spec must not be empty', {})
     }
-    this.assertNoRunningAgents('install')
+    this.assertNoRunningAgents('add')
     const manifestPath = join(runtime.dir, 'package.json')
     const snapshot = readFileSync(manifestPath, 'utf8')
     const before = readProfileManifest(NAME, runtime.dir)

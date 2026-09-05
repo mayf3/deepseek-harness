@@ -33,11 +33,11 @@ kind: "package-reference"
 
 ### 安装与启用
 
-`plugins/install` 接受一个 pnpm spec——registry 名字、`github:` 或 git URL、tarball、绝对路径——在 profile 目录运行 `pnpm add`，记录 pnpm 写进 `dependencies` 的内容，在子进程里探测每个新包，并让新组合包保持停用，除非调用方要求 `enable`。pnpm 的输出以带本次 `jobId` 的 `plugins/install-log` 分块到达；最后一块携带退出码。非零退出、spawn 失败或超时都以 `plugins/install-failed` 与日志尾部让调用失败，并把 profile manifest 恢复到运行前的样子。`pnpm add` 成功还不等于装好了插件：新包既不声明组合包也不声明插件模块，或者是某个行 id 已被已组合层占有的组合包，会再以 `pnpm remove` 移除并连同原因列在 `removed` 里；探针拒绝的包保留在原处，由视图说明它为何不能启用。管理器一次只跑一个变更——上一个还在跑时再调用会以 `plugins/busy` 失败并点名正在进行的操作——并且在有会话运行时拒绝改动 `node_modules`，报 `plugins/agents-running`。
+`plugins/add` 接受一个 pnpm spec——registry 名字、`github:` 或 git URL、tarball、绝对路径——在 profile 目录运行 `pnpm add`，记录 pnpm 写进 `dependencies` 的内容，在子进程里探测每个新包，并让新组合包保持停用，除非调用方要求 `enable`。pnpm 的输出以带本次 `jobId` 的 `plugins/install-log` 分块到达；最后一块携带退出码。非零退出、spawn 失败或超时都以 `plugins/install-failed` 与日志尾部让调用失败，并把 profile manifest 恢复到运行前的样子。`pnpm add` 成功还不等于装好了插件：新包既不声明组合包也不声明插件模块，或者是某个行 id 已被已组合层占有的组合包，会再以 `pnpm remove` 移除并连同原因列在 `removed` 里；探针拒绝的包保留在原处，由视图说明它为何不能启用。管理器一次只跑一个变更——上一个还在跑时再调用会以 `plugins/busy` 失败并点名正在进行的操作——并且在有会话运行时拒绝改动 `node_modules`，报 `plugins/agents-running`。
 
 `plugins/enable` 把已安装的组合包放进层列表，并在 live profile 上经 profile runtime 带着它重新组合树。这次重新组合就是 Loader 自己的事务：树拒绝的组合包——`boot` 阶段而行抛错的组合包——回滚，层列表恢复，调用以点名原因的 `plugins/enable-failed` 失败，而原本运行的树继续运行。`runtime` 阶段而行失败的组合包则被隔离：调用成功，视图报告该行的失败，`plugins/retry` 从头重新组合它。`plugins/disable` 是反向操作；模板组合包不是依赖，无法停用。在 `patchReload` 为 `startup` 的 profile 上，两者只写 manifest 并报告 `effect: 'restart'`。
 
-`plugins/uninstall` 在组合包已启用时先停用它，删除每一条点名该包模块的用户层行，运行 `pnpm remove`，并忘掉探针记录。与 `install` 一样，它等待运行中的会话：只要有 agent 在运行就报 `plugins/agents-running`。
+`plugins/uninstall` 在组合包已启用时先停用它，删除每一条点名该包模块的用户层行，运行 `pnpm remove`，并忘掉探针记录。与 `add` 一样，它等待运行中的会话：只要有 agent 在运行就报 `plugins/agents-running`。
 
 ### 用户层里的行
 
