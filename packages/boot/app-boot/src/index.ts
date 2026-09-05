@@ -56,7 +56,7 @@ export {
 } from './contained-group.ts'
 export {
   BUNDLE_GROUP_PREFIX, bundleGroupId, composeExternalLayer, CONTAINED_GROUP_MODULE, disableBundle,
-  enableBundle, exportsBundlePatch, isContainedLayer, isJsDisabled, reconcileInstalledBundles,
+  enableBundle, exportsBundlePatch, isContainedLayer, reconcileInstalledBundles,
   type BundleReconciliation, type ComposedExternalLayer, type DuplicateRow,
 } from './external-bundles.ts'
 export {
@@ -721,9 +721,12 @@ export interface RuntimeGuardProcess {
  * The post-boot replacement for {@link installFailLoud}. Once the tree is up,
  * an unhandled rejection is no longer a load failure: it is most likely a
  * plugin's stray continuation, and exiting would take every session down for
- * it. The rejection is reported and the process keeps running. An uncaught
- * exception leaves the process in an unknown state, so it is reported and
- * the process exits, as Node would — but with the origin named.
+ * it. The rejection is reported and the process keeps running; nothing is
+ * stopped or attributed to a plugin, built-in or external, so this is a
+ * process-level policy chosen over exiting, not an isolation of the plugin
+ * that produced it. An uncaught exception leaves the process in an unknown
+ * state, so it is reported and the process exits, as Node would — but with
+ * the origin named.
  * @param binName - the diagnostic prefix on each report.
  * @param report - sink for the report lines.
  * @param proc - the process slice to register on; defaults to `process`.
@@ -735,7 +738,7 @@ export function installRuntimeGuards(
   proc: RuntimeGuardProcess = process,
 ): () => void {
   const onRejection = (err: unknown): void => {
-    report(`${binName}: unhandled rejection after boot (contained; the process keeps running): ${formatActivationError(err)}`)
+    report(`${binName}: unhandled rejection after boot (not attributed to a plugin; the process keeps running): ${formatActivationError(err)}`)
   }
   const onException = (err: unknown): void => {
     report(`${binName}: uncaught exception after boot; exiting: ${formatActivationError(err)}`)

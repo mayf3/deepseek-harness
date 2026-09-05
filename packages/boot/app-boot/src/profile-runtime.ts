@@ -18,7 +18,6 @@ import type Include from '@deepseek-ai/cordis-plugin-include'
 import type { PatchOptions } from '@deepseek-ai/cordis-plugin-include'
 import type { ProfilePatchReload } from '@deepseek-ai/dsh-package-manifest'
 import type { ComposedStack, RowConflict } from './compose-stack.ts'
-import { isJsDisabled } from './external-bundles.ts'
 import type { BundleTrust, Profile, ProfileLayer } from './profile.ts'
 
 declare module '@deepseek-ai/cordis' {
@@ -121,15 +120,16 @@ export class ProfileRuntime extends Service {
 
   /**
    * Row ids the user patch layers disable with a literal `disabled: true`.
-   * A `!!js` gate in a user file is a condition, not a user decision, and is
-   * left to the composition.
+   * A `!!js` gate in a user file stays an expression node when read from
+   * disk, so it is a condition, not a user decision, and is left to the
+   * composition.
    * @returns the ids, re-read from disk on every call.
    */
   userDisabledRowIds(): Set<string> {
     const ids = new Set<string>()
     for (const patch of this.options.readUserPatches()) {
       if (patch.insert !== undefined || patch.id === undefined) continue
-      if (patch.disabled === true && !isJsDisabled(patch.disabled)) ids.add(patch.id)
+      if (patch.disabled === true) ids.add(patch.id)
     }
     return ids
   }

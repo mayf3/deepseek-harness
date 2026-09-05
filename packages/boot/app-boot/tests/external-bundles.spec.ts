@@ -12,7 +12,7 @@ import type { EntryOptions } from '@deepseek-ai/cordis-plugin-loader'
 import { applyEntryPatches, type PatchOptions } from '@deepseek-ai/cordis-plugin-include'
 import {
   bundleGroupId, composeExternalLayer, CONTAINED_GROUP_MODULE, disableBundle, enableBundle,
-  exportsBundlePatch, isContainedLayer, isJsDisabled, reconcileInstalledBundles, readProfileManifest, type ProfileLayer,
+  exportsBundlePatch, isContainedLayer, reconcileInstalledBundles, readProfileManifest, type ProfileLayer,
 } from '../src/index.ts'
 
 const NAME = 'dsh-test-bin'
@@ -138,11 +138,6 @@ describe('composeExternalLayer', () => {
     expect(isContainedLayer(contained)).toBe(true)
     expect(isContainedLayer({ ...contained, stage: 'boot' })).toBe(false)
     expect(isContainedLayer({ ...contained, trust: 'builtin' })).toBe(false)
-  })
-
-  it('tells a !!js disabled node from a literal', () => {
-    expect(isJsDisabled({ __jsExpr: 'true' })).toBe(true)
-    expect(isJsDisabled(true)).toBe(false)
   })
 })
 

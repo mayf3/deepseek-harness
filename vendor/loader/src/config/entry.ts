@@ -21,9 +21,19 @@ export interface EntryOptions {
   inject?: Inject | null
 }
 
-function updateError(stage: 'import' | 'dispose' | 'apply' | 'rollback', options: EntryOptions, cause: unknown) {
-  const detail = cause instanceof Error ? cause.message : String(cause)
-  return new Error(`failed to ${stage} loader entry ${options.id} (${options.name}): ${detail}`, { cause })
+/** The step of an entry update that failed. */
+export type EntryUpdateStage = 'import' | 'dispose' | 'apply' | 'rollback'
+
+/** The failure of one entry update, carrying the step that failed so callers need not parse the message. */
+export class EntryUpdateError extends Error {
+  constructor(readonly stage: EntryUpdateStage, options: EntryOptions, cause: unknown) {
+    const detail = cause instanceof Error ? cause.message : String(cause)
+    super(`failed to ${stage} loader entry ${options.id} (${options.name}): ${detail}`, { cause })
+  }
+}
+
+function updateError(stage: EntryUpdateStage, options: EntryOptions, cause: unknown) {
+  return new EntryUpdateError(stage, options, cause)
 }
 
 function takeEntries(object: {}, keys: string[]) {

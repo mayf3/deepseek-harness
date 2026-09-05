@@ -5,27 +5,18 @@
  * An external (`runtime` stage) bundle never mounts its rows directly into the
  * built-in tree: its inserted rows are wrapped in one contained group per
  * bundle, under the ids its patch declares. A group is the unit the Loader
- * rolls back, so one group per bundle is what makes a bundle fail as a whole
- * rather than half-mount, and the contained variant records a failed row
- * instead of rejecting. Row ids stay as declared; entry ids are unique per
- * tree (`tree.store`), and `compose-stack.ts` owns the tree-wide ownership
- * check that shared id namespace requires.
+ * updates transactionally, and the contained variant catches each row's
+ * failure inside that transaction: the failing row is recorded, its siblings
+ * mount, and the built-in tree never sees a rejection. Row ids stay as
+ * declared; entry ids are unique per tree (`tree.store`), and
+ * `compose-stack.ts` owns the tree-wide ownership check that shared id
+ * namespace requires.
  * @module @deepseek-ai/dsh-app-boot/external-bundles
  */
 
 import { join } from 'node:path'
-import { isJsExpr } from '@deepseek-ai/cordis-plugin-loader'
 import type { PatchOptions } from '@deepseek-ai/cordis-plugin-include'
 import { visitInsertedRows } from './patch-rows.ts'
-
-/**
- * Whether a `disabled` node is a `!!js` expression rather than a literal.
- * @param value - the raw `disabled` node of a row or patch.
- * @returns true for an expression node.
- */
-export function isJsDisabled(value: unknown): boolean {
-  return isJsExpr(value)
-}
 import {
   readProfileManifest, resolveBundleDir, writeProfileManifest, type ProfileLayer, type ProfileManifest,
 } from './profile.ts'

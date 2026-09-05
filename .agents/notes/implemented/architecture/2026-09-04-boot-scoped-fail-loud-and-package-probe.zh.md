@@ -12,7 +12,7 @@ Status: implemented
 
 ## 决定
 
-**fail-loud 在树起来时结束。** launcher 保留 `installFailLoud` 的卸载函数，在 `boot()` 返回后调用它，然后安装 `installRuntimeGuards`：启动后未处理的 rejection 以"已兜住"报告到 stderr，进程继续运行；未捕获的异常连同来源一起报告，进程退出，如 Node 所做，因为其状态未知。两个处理器在关闭时移除。
+**fail-loud 在树起来时结束。** launcher 保留 `installFailLoud` 的卸载函数，在 `boot()` 返回后调用它，然后安装 `installRuntimeGuards`：启动后未处理的 rejection 报告到 stderr，进程继续运行——守卫既不停止产生它的任务，也不把它归属到任何插件，内置或外部一视同仁，这是一条相对于退出而选择的进程级策略，不是隔离；未捕获的异常连同来源一起报告，进程退出，如 Node 所做，因为其状态未知。两个处理器在关闭时移除。
 
 **嵌套失败被报告，暂不致命。** `warnNestedFiberFailures` 遍历每个 runtime 的 fiber，报告属于内置条目却不是该条目根 fiber 的 `FAILED` fiber——抛错的 `ctx.inject()` 延续，Loader 给它盖了条目的章，而激活审计从未看见它。它在启动后以提示行运行；确认随附组合没有这类失败后再并入致命审计。
 
@@ -20,7 +20,7 @@ Status: implemented
 
 ## 考虑过的替代方案
 
-**把运行时 rejection 归属到产生它的插件并把该插件标为失败。** 正确的终态，但 promise 不携带 fiber，cordis 的 effect 包装也只覆盖插件经由它注册的东西。延后：守卫现在只报告并兜住；归属需要一个 async-context seam。
+**把运行时 rejection 归属到产生它的插件并把该插件标为失败。** 正确的终态，但 promise 不携带 fiber，cordis 的 effect 包装也只覆盖插件经由它注册的东西。延后：守卫现在只报告并让进程继续；归属需要一个 async-context seam。
 
 **在宿主里 import 包来了解其形态。** 否决：import 会在用户启用任何东西之前以宿主权限运行代码，包的模块作用域里的一次挂起或 `process.exit` 就是宿主的。
 

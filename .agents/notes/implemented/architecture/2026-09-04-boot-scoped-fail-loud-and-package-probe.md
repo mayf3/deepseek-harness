@@ -12,7 +12,7 @@ Separately, nothing could say what an installed package was without importing it
 
 ## Decision
 
-**Fail-loud ends when the tree is up.** The launcher keeps `installFailLoud`'s uninstaller and calls it once `boot()` returns, then installs `installRuntimeGuards`: an unhandled rejection after boot is reported to stderr as contained and the process keeps running; an uncaught exception is reported with its origin and the process exits, as Node would, because its state is unknown. Both handlers are removed on shutdown.
+**Fail-loud ends when the tree is up.** The launcher keeps `installFailLoud`'s uninstaller and calls it once `boot()` returns, then installs `installRuntimeGuards`: an unhandled rejection after boot is reported to stderr and the process keeps running — the guard neither stops the task that produced it nor attributes it to a plugin, built-in or external, so this is a process-level policy chosen over exiting, not isolation; an uncaught exception is reported with its origin and the process exits, as Node would, because its state is unknown. Both handlers are removed on shutdown.
 
 **Nested failures are reported, not yet fatal.** `warnNestedFiberFailures` walks every runtime's fibers and reports a `FAILED` fiber that belongs to a built-in entry but is not that entry's root fiber — a `ctx.inject()` continuation that threw, which the Loader stamps with the entry but the activation audit never sees. It runs after boot as advisory lines; it becomes part of the fatal audit once shipped compositions are known clean.
 
@@ -20,7 +20,7 @@ Separately, nothing could say what an installed package was without importing it
 
 ## Alternatives considered
 
-**Attribute a runtime rejection to the plugin that produced it and mark that plugin failed.** The right end state, but a promise carries no fiber, and cordis's effect wrappers cover only what plugins register through them. Deferred: the guard reports and contains now; attribution needs an async-context seam.
+**Attribute a runtime rejection to the plugin that produced it and mark that plugin failed.** The right end state, but a promise carries no fiber, and cordis's effect wrappers cover only what plugins register through them. Deferred: the guard reports and lets the process continue; attribution needs an async-context seam.
 
 **Import the package in the host to learn its shape.** Rejected: import runs code with the host's privileges before the user enabled anything, and a hang or a `process.exit` in a package's module scope would be the host's.
 

@@ -9,7 +9,7 @@
  */
 
 import type { Context } from '@deepseek-ai/cordis'
-import { Group, type Entry, type EntryGroup, type EntryOptions } from '@deepseek-ai/cordis-plugin-loader'
+import { EntryUpdateError, Group, type Entry, type EntryGroup, type EntryOptions } from '@deepseek-ai/cordis-plugin-loader'
 
 /** The lifecycle step at which a contained row failed. */
 export type ContainedFailureStage = 'import' | 'apply' | 'inject-pending' | 'unknown'
@@ -92,15 +92,16 @@ declare module '@deepseek-ai/cordis' {
 }
 
 /**
- * Parse the Loader's `failed to <stage> loader entry` wrapper into a stage.
- * Every row failure reaches {@link ContainedGroup.create} through that
- * wrapper, so `unknown` is the guard for a message shape this build has not
- * seen rather than a path a row can take.
+ * The stage a row failure reached, from the Loader's typed update error.
+ * A fresh row fails at import or apply; the wrapper's other stages replace
+ * an existing entry, which a contained row does not go through, and a value
+ * the Loader did not wrap has no stage.
  */
-function stageOf(message: string): ContainedFailureStage {
-  const match = /^failed to (import|apply) loader entry /.exec(message)
-  /* v8 ignore next -- the Loader wraps every row failure with one of the two stages, so the `unknown` arm is unreachable */
-  return match === null ? 'unknown' : match[1] === 'import' ? 'import' : 'apply'
+function stageOf(error: unknown): ContainedFailureStage {
+  /* v8 ignore next -- the Loader wraps every row failure; the arm keeps the type total */
+  if (!(error instanceof EntryUpdateError)) return 'unknown'
+  /* v8 ignore next -- dispose and rollback replace an existing entry, which a fresh contained row does not go through */
+  return error.stage === 'import' || error.stage === 'apply' ? error.stage : 'unknown'
 }
 
 /**
@@ -133,7 +134,7 @@ export class ContainedGroup extends Group {
         rowId,
         moduleName: options.name,
         groupId: this.groupId(),
-        stage: stageOf(message),
+        stage: stageOf(error),
         message,
       })
       this.ctx.logger.warn(`contained group ${this.groupId()}: row ${rowId} failed and was isolated: ${message}`)
