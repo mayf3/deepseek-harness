@@ -85,7 +85,8 @@ interface StagedPackage {
   /** `index.js` text, exported as the package main. */
   main?: string
   version?: string
-  stage?: 'boot' | 'runtime'
+  /** Any string: a staged manifest may declare a stage the profile refuses. */
+  stage?: string
   plugins?: { name: string; title?: string; config?: unknown }[]
   files?: Record<string, string>
 }
