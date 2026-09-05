@@ -517,19 +517,6 @@ function hasSessionFormatVersion(rawLog: string): boolean {
 }
 
 /**
- * Replace system-prompt content in request headers with `{{system}}` tokens
- * while retaining field presence.
- * Other header content stays verbatim, so a header-pinning fixture can keep
- * its complete tool schemas while every JSONL fixture omits the prompt text.
- * Lines without a system payload pass through byte-for-byte; the transform is
- * idempotent.
-||||||| parent of 842fdd6a51 (refactor(session): log the system prompt as surface node 0)
- * Replace system-prompt content in request headers with `{{system}}` tokens
- * while retaining field presence.
- * Other header content stays verbatim, so a header-pinning fixture can keep
- * its complete tool schemas while every JSONL fixture omits the prompt text.
- * Lines without a system payload pass through byte-for-byte; the transform is
- * idempotent.
  * Replace the rendered prompt text of every `system/message` event with the
  * `{{system}}` token. The text block keeps its position and type, so the
  * fixture still shows one system node per prompt version; an empty `content`
