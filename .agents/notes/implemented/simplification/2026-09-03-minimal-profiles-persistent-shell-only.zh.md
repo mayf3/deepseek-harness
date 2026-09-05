@@ -18,13 +18,13 @@ Status: implemented
 
 精确组合测试会断言单工具清单以及 preset 内不存在文件系统服务。`sdk-minimal` bundle 测试与构建后配置转储会断言配置项和依赖 allowlist 都不含 `fs-local` 或 `dsh-tool-str-replace-editor`。Web 与打包 Python 的模型可见快照会固定单工具 schema 清单。
 
-该决策部分取代[通用 preset 使用一种 editor](2026-08-10-default-presets-single-editor.zh.md)、[minimal preset 组合](../bug-fix/2026-08-10-minimal-preset-owns-rl-composition.zh.md)、[极简裸运行时](../feature/2026-08-11-minimal-profiles-bare-two-tool-runtime.zh.md)与[独立 sdk-minimal profile](../architecture/2026-08-24-standalone-sdk-minimal-profile.zh.md)中的极简例外。这些 Agent Note 继续负责独立 editor 包、提示词所有权、无 compaction 行为、profile 启动与 bundle 分层。
+本决策部分取代[极简裸运行时](../feature/2026-08-11-minimal-profiles-bare-two-tool-runtime.zh.md)中的工具选择，以及[base 编辑器决策](2026-09-05-base-default-file-editor.zh.md)中的极简例外。这些 Agent Note 继续负责提示词所有权、无 compaction 行为和基于 base 的文件编辑。[应用架构](../../../../docs/architecture.zh.md)负责 profile 启动与 bundle 分层。
 
 ## 考虑过的替代方案
 
 **保留 editor 配置项并隐藏其 schema。** 不予采用，因为呈现层或限制层会让该能力继续留在极简组合中，并使其缺失依赖另一项设置。
 
-**从发行物中删除 editor 包。** 不予采用，因为完整 profile 与显式自定义组合仍是有效消费方。本需求只涉及两份随附的极简默认组合。
+**从发行物中删除 editor 包。** 不予采用，因为显式自定义组合仍是有效消费方。本需求只涉及两份随附的极简默认组合。
 
 **只在 `sdk-minimal` 中保留 editor。** 不予采用，因为两条极简路径会向同类模型提供不同的工具约定，而且打包 SDK 路径仍会承担 schema 成本和未被其他配置项使用的文件系统服务。
 

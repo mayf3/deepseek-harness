@@ -77,7 +77,7 @@ kind: "package-reference"
 
 ### 主要流程
 
-外层 `agent/pre-step` 监听器接受步骤，从直接用户消息中解析规范 mention，再调用 `prepare`：规范化引用（保持首次 mention 顺序、去重、拒绝自引用与超限数量），并行读取每个表层，在 `maxReferenceBytes` 下逐源保留，并渲染聚合提示词。每份快照都插入到引用它的消息紧后，目标日志先记录可读的直接消息、再记录其带来源上下文，因此捕获后的源变更无法改变目标回放。
+外层 `agent/pre-step` 监听器接受步骤，从直接用户消息中解析规范 mention，再调用 `prepare`：规范化引用（保持首次 mention 顺序、去重、拒绝自引用与超限数量），并行读取每个表层，在 `maxReferenceBytes` 下逐源保留，并渲染聚合提示词。每条持久来源记录保留冻结的 `capturedThroughSeq` 并记录非零 `capturedFormatVersion`；字段缺失表示格式 v0。每份快照都插入到引用它的消息紧后，目标日志先记录可读的直接消息、再记录其带来源上下文，因此捕获后的源变更无法改变目标回放。
 
 </details>
 
@@ -89,7 +89,7 @@ kind: "package-reference"
 包级约定不够用时阅读以下页面。它们从共享引用表面进入设计决策与其背后的读取服务。
 
 - [会话引用子系统](../../../docs/subsystems/session-reference.zh.md)——规范 URI、投影规则与稳定的错误分类。
-- [跨会话引用决策记录](../../../.agents/notes/implemented/feature/2026-07-21-cross-session-references.zh.md)——引用约定的设计理由。
+- [跨会话引用决策记录](../../../.agents/notes/archived/feature/2026-07-21-cross-session-references.md)——引用约定的设计理由。
 - [会话查询子系统](../../../docs/subsystems/session-query.zh.md)——提供会话表层的读取服务。
 - [context 组地图](../README.zh.md)——相邻的请求上下文包。
 - [生成的配置目录](../../../docs/config-catalog.zh.md#deepseek-aidsh-session-reference)——每个受支持配置字段及其源声明。

@@ -18,13 +18,13 @@ The standalone editor package and its consumers outside the two minimal composit
 
 Exact composition tests assert the single tool and the absence of a preset-local filesystem service. The `sdk-minimal` bundle test and built config dump assert that its row and dependency allowlists contain neither `fs-local` nor `dsh-tool-str-replace-editor`. Web and packaged-Python model-visible snapshots pin the one-tool schema roster.
 
-This decision partially supersedes the minimal exceptions in [one editor family in general-purpose presets](2026-08-10-default-presets-single-editor.md), [the minimal preset composition](../bug-fix/2026-08-10-minimal-preset-owns-rl-composition.md), [the bare minimal runtime](../feature/2026-08-11-minimal-profiles-bare-two-tool-runtime.md), and [the standalone sdk-minimal profile](../architecture/2026-08-24-standalone-sdk-minimal-profile.md). Those notes retain authority for the independent editor package, prompt ownership, no-compaction behavior, profile launch, and bundle layering.
+This decision partially supersedes the tool selection in [the bare minimal runtime](../feature/2026-08-11-minimal-profiles-bare-two-tool-runtime.md) and the minimal exception in [the base editor decision](2026-09-05-base-default-file-editor.md). Those notes retain authority for prompt ownership, no-compaction behavior, and base-backed file editing. [The application architecture](../../../../docs/architecture.md) owns profile launch and bundle layering.
 
 ## Alternatives considered
 
 **Keep the editor row and hide its schema.** Rejected because a presentation or restriction layer would leave the capability in the minimal composition and make its absence depend on another setting.
 
-**Remove the editor package from the distribution.** Rejected because full profiles and explicit custom compositions remain valid consumers. The requirement concerns the two shipped minimal defaults.
+**Remove the editor package from the distribution.** Rejected because explicit custom compositions remain valid consumers. The requirement concerns the two shipped minimal defaults.
 
 **Keep the editor only in `sdk-minimal`.** Rejected because the two minimal paths would present different tool contracts to the same model class, and the packaged SDK path would retain the schema cost and unused filesystem service.
 

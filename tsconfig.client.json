@@ -38,6 +38,8 @@
     "packages/client/*/tests/**/*.host.spec.ts"
   ],
   "references": [
+    // Producer-to-UI spill tests execute the real nested dispatch worker.
+    { "path": "./packages/code-runtime/code-runtime-worker-thread" },
     // Shared leaf: web e2e boots the real host webserver (fixture + real-host
     // smoke policy). webserver has zero workspace deps and no cordis merge,
     // so it cannot drag host-side Context augmentation into this program.
@@ -54,6 +56,7 @@
     { "path": "./packages/experimental/inspector/tsconfig.client.json" },
     { "path": "./packages/client/hmr" },
     { "path": "./packages/client/connection/tsconfig.client.json" },
+    { "path": "./packages/client/file-upload/tsconfig.client.json" },
     { "path": "./packages/typert/registry" },
     { "path": "./packages/api/gateway/tsconfig.client.json" },
     { "path": "./packages/api/session-controller/tsconfig.client.json" },
