@@ -43,11 +43,16 @@ describe('CI workflow', () => {
       if (!Array.isArray(job.steps)) throw new TypeError(`${jobName} must define steps`)
       expect(job.steps[0]).toEqual({
         name: 'Use runner-owned temporary storage',
-        run: 'echo "TMPDIR=${{ runner.temp }}" >> "$GITHUB_ENV"',
+        run: [
+          'echo "TMPDIR=${{ runner.temp }}" >> "$GITHUB_ENV"',
+          'echo "npm_config_cache=${{ runner.temp }}/npm-cache" >> "$GITHUB_ENV"',
+          '',
+        ].join('\n'),
       })
       for (const step of job.steps) {
         if (isRecord(step) && isRecord(step.env)) {
           expect(step.env.TMPDIR).toBeUndefined()
+          expect(step.env.npm_config_cache).toBeUndefined()
         }
       }
     },
