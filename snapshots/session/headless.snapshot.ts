@@ -847,8 +847,7 @@ describe('headless recorded-session snapshots', () => {
       let actualLogs: SessionLog[] = []
       let initialWorkspace: WorkspaceSnapshotEntry[] | undefined
       let finalWorkspace: WorkspaceSnapshotEntry[] | undefined
-      const spillRoot = snapshotSpillRoot(join(scenario.dir, fixtureFiles[0] as string))
-      await rm(spillRoot, { recursive: true, force: true })
+      const spillRoot = await mkdtemp(join(tmpdir(), 'acp-snap-spill-'))
       let result: Awaited<ReturnType<typeof runLoaderSmoke>>
       try {
         result = await runLoaderSmoke({
@@ -872,6 +871,7 @@ describe('headless recorded-session snapshots', () => {
             DSH_SNAPSHOT_PROVIDER: model.provider,
             DSH_SNAPSHOT_MODEL: model.model,
             DSH_SNAPSHOT_SPILL_ROOT: spillRoot,
+            DSH_SNAPSHOT_SPILL_LOCATOR_ROOT: snapshotSpillRoot(join(scenario.dir, fixtureFiles[0] as string)),
             DSH_SNAPSHOT_FILE: join(scenario.dir, fixtureFiles[0] as string),
             ...(replaying && fixtureFiles.length > 1
               ? { DSH_SNAPSHOT_CHILD_FILES: fixtureFiles.slice(1).map(file => join(scenario.dir, file)).join(delimiter) }

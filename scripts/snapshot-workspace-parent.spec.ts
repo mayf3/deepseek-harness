@@ -14,7 +14,7 @@ import { assertWorkspaceOutsideTemp, outsideTempWorkspaceParent } from './snapsh
 describe('snapshot workspace parent', () => {
   // Windows directory permissions and root bypass do not enforce POSIX write bits.
   it.skipIf(process.platform === 'win32' || process.getuid?.() === 0)('uses home when the temp parent is not writable', async () => {
-    const base = await mkdtemp(join(homedir(), '.dsh-snapshot-readonly-'))
+    const base = await mkdtemp(join(outsideTempWorkspaceParent(), '.dsh-snapshot-readonly-'))
     try {
       const temporary = join(base, '_temp')
       await mkdir(temporary)

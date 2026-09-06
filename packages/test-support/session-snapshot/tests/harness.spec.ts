@@ -569,9 +569,9 @@ describe('runScenario', () => {
     expect(env.childFiles).toBe(childFiles.join(delimiter))
   })
 
-  it('gives concurrent scenarios distinct equal-length spill roots', { timeout: 20_000 }, async () => {
-    const [first, second] = await Promise.all([scenario({ echoEnv: true }), scenario({ echoEnv: true })])
-    const results = await Promise.all([first, second].map(({ fixtureFile }) => runScenario(
+  it('gives concurrent runs of the same scenario private temporary spill roots', { timeout: 20_000 }, async () => {
+    const fixture = await scenario({ echoEnv: true })
+    const results = await Promise.all([fixture, fixture].map(({ fixtureFile }) => runScenario(
       { steps: [...boot, { op: 'prompt', text: 'env?' }] },
       { agent: AGENT, mode: 'replay', fixtureFile },
     )))
@@ -579,10 +579,11 @@ describe('runScenario', () => {
     expect(roots.every(root => typeof root === 'string')).toBe(true)
     expect(new Set(roots).size).toBe(2)
     expect((roots[0] as string).length).toBe((roots[1] as string).length)
-    expect(roots).toEqual([
-      snapshotSpillRoot(first.fixtureFile),
-      snapshotSpillRoot(second.fixtureFile),
-    ])
+    for (const root of roots as string[]) {
+      expect(relative(tmpdir(), root)).toMatch(/^acp-snap-spill-[^/\\]+$/)
+      expect(root).not.toBe(snapshotSpillRoot(fixture.fixtureFile))
+      await expect(readdir(root)).rejects.toMatchObject({ code: 'ENOENT' })
+    }
   })
 
   it('seeds the workspace dir into the temp cwd before the run', { timeout: 20_000 }, async () => {
