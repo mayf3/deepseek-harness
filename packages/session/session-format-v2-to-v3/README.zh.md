@@ -1,5 +1,5 @@
 ---
-description: "将已发布的 v2 Session 日志恢复为 v3，保留所有事件。"
+description: "将已发布的 v2 系统提示恢复为受保护的 v3 消息，保留历史请求含义。"
 kind: "package-library"
 ---
 
@@ -9,7 +9,7 @@ kind: "package-library"
 
 ## 概述
 
-本库将已发布的 v2 Session 记录恢复为 v3，保留事件载荷、序列引用、时间戳、顺序和继承前缀。持久化通过静态 Session 格式目录使用本库。本库不发布或修改持久化文件。
+本库将已发布的 v2 系统提示恢复为受保护的 v3 消息，保留历史请求含义、源事件时序、时间戳、消息身份与继承归属。持久化通过静态 Session 格式目录使用本库。本库不发布或修改持久化文件。
 
 ## 目录
 
@@ -35,7 +35,7 @@ kind: "package-library"
 const targetHeader = sessionFormatV2ToV3.migrateHeader(sourceHeader)
 ```
 
-头部版本变为 3，其余头部字段保持不变。阶段同步转发事件和紧凑事件段，但拒绝 `sessionFormatVersion` 为 3 的源投递标记，因为升级会激活未经确认的目标代际水位。标量继承 end-seed 标记在 EOF 确定精确切点。V3 记录编码和校验复用冻结的已发布 v2 实现，不修改该实现。未知必需事件仍被拒绝；已安装事件类型和可忽略的未知事件保留其准入规则。
+Session 元数据仅将版本改为 3。阶段在首个 `step/start` 后立即插入空 `system/message`，随后在每次提示发生变化的 `request/header` 前替换受保护的头节点，包括清空提示。每个请求头的 `header.system` 均被移除，不移动任何源事件。仅含元数据的日志不添加头节点。V3 编码和恢复接受空系统头节点，并拒绝已退役的 `header.system`。
 
 -----
 
@@ -45,7 +45,9 @@ const targetHeader = sessionFormatV2ToV3.migrateHeader(sourceHeader)
 <details>
 <summary>实现细节 — 点击展开</summary>
 
-[阶段](src/migration.ts)跟踪继承切点和源投递归属，不改变事件值。[编解码器](src/codec.ts)改变物理头部版本并共享 v2 记录编码。[校验器](src/validation.ts)先检查 v3 版本，再执行已发布 v2 事件校验。本库不拥有可独立观察的运行时注册或状态副本，因此不发布运行时不变量伴随入口。
+[阶段](src/migration.ts)同步输出，保留坐标映射、消息身份集合与当前提示、生命周期状态，并增量展开紧凑事件段。它从最后一个继承 end-seed 标记推导目标继承切点，包括上游阶段在 EOF 前无法提供切点的情况。[引用映射器](src/references.ts)重映射本地信封溯源与替换范围、命令源引用、压缩范围与列表，以及标题消息列表。投递水位、会话引用捕获坐标、工作流计数器、嵌入的模型输入与消息 ID 保留原有含义。声称已获 V3 接收的 V2 投递标记会被拒绝。
+
+[校验器](src/validation.ts)独立检查系统载荷、开放步骤归属与受保护的头节点操作。原生 V3 也接受历史内系统消息追加、非头节点替换，以及非头系统节点的压缩。它通过私有视图复用冻结的普通关系校验，在结果中保留原始事件与 ID；生成的修复 ID 后缀仍是历史身份，而非当前序列坐标。[编解码器](src/codec.ts)共享冻结的 V2 物理信封与溯源编码。本库不拥有可独立观察的运行时注册或状态副本，因此不发布运行时不变量伴随入口。
 
 </details>
 
@@ -66,7 +68,7 @@ const targetHeader = sessionFormatV2ToV3.migrateHeader(sourceHeader)
 
 #### 模型看到什么
 
-`sessionFormatV2ToV3` 保留每个模型可见事件及其载荷。
+`sessionFormatV2ToV3` 在每个历史请求处保留提示文本与普通消息。空头节点不产生模型消息。
 
 #### Token 影响
 
@@ -81,7 +83,8 @@ const targetHeader = sessionFormatV2ToV3.migrateHeader(sourceHeader)
 <a id="known-limitations-and-deferred-work"></a>
 
 - **不发布文件** — 持久化负责不可变后继代的发布；本包绝不覆盖已发布代。
-- **仅恒等转换** — 阶段不引入结构性事件转换。
+- **保持时序的输入** — 首个步骤前出现表面事件，或在开放步骤之外更改提示时，以 `SessionFormatUnsupportedMigrationError` 拒绝；移动事件或虚构步骤外的系统消息会破坏重建。
+- **经过审计的迁移词汇** — 显式分类 V2 事件与已安装的消息反馈扩展。迁移拒绝未知事件（即使标为可忽略）及未知消息来源或内容种类，因为无法推断其序列依赖。原生同版本读取保留普通可忽略事件的准入规则。
 
 <a id="dev-note"></a>
 ### 开发备注

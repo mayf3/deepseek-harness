@@ -1,4 +1,4 @@
-/** V3 record encoding shares the unchanged released-v2 physical event language. */
+/** V3 physical envelopes retain V2 provenance encoding and validate native system/header payloads. */
 
 import { SessionFormatError, isSessionFormatJsonObject, snapshotSessionFormatJson } from '@deepseek-ai/dsh-session-format'
 import type {
@@ -8,8 +8,9 @@ import type {
 } from '@deepseek-ai/dsh-session-format'
 import { releasedV2SessionFormatCodec } from '@deepseek-ai/dsh-session-format-v1-to-v2'
 import { assertReleasedV3Header } from './validation.ts'
+import { assertEvent, assertV3StructuralRow } from './payload.ts'
 
-/** Physical v3 codec: only the header version differs from released v2. */
+/** Physical V3 codec with protected system-message payload admission and retired header.system refusal. */
 export const releasedV3SessionFormatCodec = Object.freeze({
   version: 3,
   decodeHeader(value: unknown) {
@@ -17,7 +18,19 @@ export const releasedV3SessionFormatCodec = Object.freeze({
   },
   createDecoder(value, recovery) {
     const decoder = releasedV2SessionFormatCodec.createDecoder(v2PhysicalHeader(value), recovery)
-    return { ...decoder, header: { ...decoder.header, version: 3 } }
+    return {
+      ...decoder, header: { ...decoder.header, version: 3 },
+      decodeRow(row, context) {
+        assertV3StructuralRow(row)
+        decoder.decodeRow(row, {
+          emitEvent(event) {
+            if (event.type === 'system/message' || event.type === 'request/header') assertEvent(event, 3)
+            context.emitEvent(event)
+          },
+          emitRun: run => context.emitRun(run),
+        })
+      },
+    }
   },
   encodeHeader(header, inheritedEventCount) {
     assertReleasedV3Header(header)
@@ -26,7 +39,10 @@ export const releasedV3SessionFormatCodec = Object.freeze({
       version: 3,
     }
   },
-  encodeEvent: releasedV2SessionFormatCodec.encodeEvent,
+  encodeEvent(event) {
+    if (event.type === 'system/message' || event.type === 'request/header') assertEvent(event, 3)
+    return releasedV2SessionFormatCodec.encodeEvent(event)
+  },
 } satisfies SessionFormatCodec & SessionFormatCurrentEncoder)
 
 function v2PhysicalHeader(value: unknown): SessionFormatHeader {

@@ -15,6 +15,9 @@
       "path": "../session-format"
     },
     {
+      "path": "../session-format-v0-to-v1"
+    },
+    {
       "path": "../session-format-v1-to-v2"
     }
   ]
