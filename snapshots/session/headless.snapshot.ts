@@ -565,6 +565,32 @@ function historicalComparison(log: string): string {
   return [records(current)[0], ...output].map(row => JSON.stringify(row)).join('\n') + '\n'
 }
 
+/** Require successful verification and the complete canonical event before refresh can write a fixture. */
+async function verifySessionQuerySpill(log: string): Promise<void> {
+  const events = parseSessionLog(log)
+  const results = events.flatMap(event => event.type === 'tool/result'
+    ? event.data.message.content.filter(block => block.type === 'tool-result')
+    : [])
+  const readResult = results.find(result => result.toolCallId === 'call_session_query_spill')
+  const verification = results.find(result => result.toolCallId === 'call_verify_session_query_spill')
+  expect(readResult?.isError).toBe(false)
+  expect(verification).toMatchObject({
+    isError: false,
+    content: [{ type: 'text', text: 'SPILL_CANONICAL_OK\n' }],
+  })
+  const preview = readResult?.content.flatMap(block => block.type === 'text' ? [block.text] : []).join('')
+  const locator = preview?.match(/Full formatted result stored at: (.+-session_event_read\.txt)\. Use read/)
+  expect(locator).not.toBeNull()
+  expect(locator?.[1]).toBeDefined()
+  const full = await readFile(locator![1]!, 'utf8')
+  const json = full.match(/```json\n([\s\S]+)\n```/)
+  expect(json).not.toBeNull()
+  const header = events.find(event => event.type === 'request/header')
+  expect(header).toBeDefined()
+  expect(JSON.parse(json![1]!)).toEqual(header)
+  expect(full).toContain('session_event_search')
+}
+
 async function verifyHeaders(scenario: HeadlessScenario, actualLogs: readonly SessionLog[], ctx: NormalizeContext): Promise<void> {
   const pin = pinOf(scenario)
   const fixture = await readFile(join(pin.dir, await primaryFixtureFile(pin.dir)), 'utf8')
@@ -972,6 +998,9 @@ describe('headless recorded-session snapshots', () => {
           },
           inspect: async (cwd) => {
             actualLogs = await persistedSessions(cwd)
+            if (scenario.name === 'session-query-spill') {
+              await verifySessionQuerySpill(actualLogs[0]!.content)
+            }
             finalWorkspace = await captureWorkspaceSnapshot(cwd, {
               ignoredRootEntries: RUNTIME_WORKSPACE_ENTRIES,
             })
