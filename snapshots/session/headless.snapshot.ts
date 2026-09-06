@@ -645,10 +645,10 @@ describe('headless recorded-session snapshots', () => {
       const header = rows.find(row => row.type === 'request/header')?.data as JsonObject
       ;((header.header as JsonObject).config as JsonObject).model = 'different-model'
     })).not.toEqual(baseline)
-    expect(changed(rows => {
+    expect(() => changed(rows => {
       const title = rows.find(row => row.type === 'session/title')?.data as JsonObject
       title.messageSeqs = [0]
-    })).not.toEqual(baseline)
+    })).toThrow('messageSeqs must cite earlier human user/message events')
   })
 
   it('recognizes the supported OS-assigned listener forms', () => {
