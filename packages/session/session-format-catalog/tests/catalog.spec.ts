@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { sessionFormatCatalog } from '../src/index.ts'
 
 describe('first-party Session format catalog', () => {
-  it('statically owns the complete adjacent v0 to v2 chain', () => {
+  it('statically owns the complete adjacent v0 to v3 chain', () => {
     const header = {
       type: 'session',
       version: 0,
@@ -12,13 +12,13 @@ describe('first-party Session format catalog', () => {
       delegationDepth: 0,
     }
 
-    expect(sessionFormatCatalog.currentVersion).toBe(2)
+    expect(sessionFormatCatalog.currentVersion).toBe(3)
     expect(sessionFormatCatalog.readHeader(header)).toEqual({
       status: 'migration-required',
       storedVersion: 0,
-      targetVersion: 2,
+      targetVersion: 3,
       header: {
-        version: 2,
+        version: 3,
         id: 'catalog',
         createdAt: 1,
         isSeeded: true,
@@ -32,13 +32,13 @@ describe('first-party Session format catalog', () => {
     })
     restore.decodeRow({ type: 'turn/start', seq: 0, time: 2, data: { turn: 1 } })
     expect(restore.finish()).toMatchObject({
-      header: { version: 2, id: 'catalog' },
+      header: { version: 3, id: 'catalog' },
     })
   })
 
   it('restores the installed current vocabulary without freezing ordinary payload additions', () => {
     const header = {
-      type: 'session', version: 2, id: 'current-growth', createdAt: 1, isSeeded: false, delegationDepth: 0,
+      type: 'session', version: 3, id: 'current-growth', createdAt: 1, isSeeded: false, delegationDepth: 0,
     }
     const restore = (rows: readonly unknown[]) => {
       const current = sessionFormatCatalog.createRestore(header, {
@@ -64,6 +64,42 @@ describe('first-party Session format catalog', () => {
     expect(extension.events).toEqual([{
       type: 'ordinary/external', seq: 0, time: 1, data: null, ignorable: true,
     }])
+  })
+
+  it.each([0, 1])('restores v%i empty and non-empty inherited prefixes through every adjacent edge', (version) => {
+    for (const seedLength of [0, 1]) {
+      const sourceHeader = {
+        type: 'session', version, id: 'seed-chain', createdAt: 1,
+        parentSession: 'parent', seedLength, delegationDepth: 0,
+      }
+      const restore = sessionFormatCatalog.createRestore(sourceHeader, { recovery: 'strict', validation: 'current' })
+      if (seedLength > 0) {
+        restore.decodeRow({ type: 'feedback/record', seq: 0, time: 1, data: { text: 'inherited' } })
+      }
+      const artifact = restore.finish()
+      expect(artifact.header.version).toBe(3)
+      expect(artifact.inheritedEventCount).toBe(seedLength)
+      expect(artifact.events.at(-1)).toEqual({
+        type: 'session/end-seed', seq: seedLength, time: 1, data: { inherited: true },
+      })
+      expect(sourceHeader.version).toBe(version)
+    }
+  })
+
+  it.each([false, true])('preserves decoded v2 events and the inherited cut (seeded=%s)', (isSeeded) => {
+    const header = { type: 'session', version: 2, id: 'v2-identity', createdAt: 1, isSeeded, delegationDepth: 0 }
+    const rows = [
+      { type: 'external/event', seq: 0, time: 1, data: { extra: ['unchanged'] }, ignorable: true },
+      ...(isSeeded ? [{ type: 'session/end-seed', seq: 1, time: 2, data: { inherited: true } }] : []),
+    ]
+    const before = JSON.stringify({ header, rows })
+    const restore = sessionFormatCatalog.createRestore(header, { recovery: 'strict', validation: 'current' })
+    for (const row of rows) restore.decodeRow(row)
+    expect(restore.finish()).toEqual({
+      header: { version: 3, id: 'v2-identity', createdAt: 1, isSeeded, delegationDepth: 0 },
+      inheritedEventCount: isSeeded ? 1 : 0, events: rows,
+    })
+    expect(JSON.stringify({ header, rows })).toBe(before)
   })
 
   it('validates complete relationships after streaming migration', () => {
