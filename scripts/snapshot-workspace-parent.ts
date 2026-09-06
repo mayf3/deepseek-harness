@@ -1,5 +1,6 @@
 /** Workspace placement for snapshots that must not inherit temporary-directory write grants. */
 
+import { accessSync, constants } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import { dirname, isAbsolute, parse, relative, sep } from 'node:path'
 import { canonicalPath, writableRoots } from '@deepseek-ai/dsh-sandbox'
@@ -10,19 +11,26 @@ function contains(root: string, path: string): boolean {
 }
 
 /**
- * Select a sibling parent of the platform temp directory, or home for the system temp root.
+ * Select a writable temp sibling parent, or home when that parent is unavailable for writes.
  * The caller atomically allocates and owns cleanup of the generated workspace.
  * @param tempRoot - platform temporary directory.
- * @param home - home directory used when a temp sibling would require a system directory.
+ * @param home - fallback when temp siblings require a system directory or a non-writable parent.
  * @returns existing parent outside the automatic temporary write grants.
  */
 export function outsideTempWorkspaceParent(tempRoot = tmpdir(), home = homedir()): string {
   const temporary = canonicalPath(tempRoot)
   const systemTemporary = canonicalPath('/tmp')
   const parent = dirname(temporary)
-  return temporary === systemTemporary || parent === parse(parent).root || contains(systemTemporary, parent)
-    ? home
-    : parent
+  if (temporary === systemTemporary || parent === parse(parent).root || contains(systemTemporary, parent)) return home
+  try {
+    accessSync(parent, constants.W_OK)
+  } catch (error) {
+    // A non-writable parent cannot host siblings; allocation failures still propagate from mkdtemp.
+    const code = (error as NodeJS.ErrnoException).code
+    if (code === 'EACCES' || code === 'EPERM' || code === 'EROFS') return home
+    throw error
+  }
+  return parent
 }
 
 /**

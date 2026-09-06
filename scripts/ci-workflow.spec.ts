@@ -49,6 +49,16 @@ describe('CI workflow', () => {
           '',
         ].join('\n'),
       })
+      const store: unknown = job.steps.find(step => isRecord(step) && step.name === 'Configure pnpm store path')
+      expect(store).toMatchObject({
+        run: [
+          'store_root="${RUNNER_TEMP%/*}/pnpm-store"',
+          'echo "PNPM_CONFIG_STORE_DIR=$store_root" >> "$GITHUB_ENV"',
+          'store_path=$(PNPM_CONFIG_STORE_DIR="$store_root" pnpm store path --silent)',
+          'echo "path=$store_path" >> "$GITHUB_OUTPUT"',
+          '',
+        ].join('\n'),
+      })
       for (const step of job.steps) {
         if (isRecord(step) && isRecord(step.env)) {
           expect(step.env.TMPDIR).toBeUndefined()

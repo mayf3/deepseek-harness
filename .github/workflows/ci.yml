@@ -73,7 +73,7 @@ jobs:
       - name: Configure pnpm store path
         id: pnpm-store
         run: |
-          store_root="$HOME/.local/share/pnpm/store"
+          store_root="${RUNNER_TEMP%/*}/pnpm-store"
           echo "PNPM_CONFIG_STORE_DIR=$store_root" >> "$GITHUB_ENV"
           store_path=$(PNPM_CONFIG_STORE_DIR="$store_root" pnpm store path --silent)
           echo "path=$store_path" >> "$GITHUB_OUTPUT"
@@ -136,14 +136,13 @@ jobs:
       - name: Configure pnpm store path
         id: pnpm-store
         run: |
-          store_root="$HOME/.local/share/pnpm/store"
+          store_root="${RUNNER_TEMP%/*}/pnpm-store"
           echo "PNPM_CONFIG_STORE_DIR=$store_root" >> "$GITHUB_ENV"
           store_path=$(PNPM_CONFIG_STORE_DIR="$store_root" pnpm store path --silent)
           echo "path=$store_path" >> "$GITHUB_OUTPUT"
 
-      # Skipped under failover: the self-hosted VM's persistent pnpm store
-      # already serves warm installs, while restoring the hosted archive
-      # would spend ~52 s pulling ~180 MB into that populated store.
+      # Self-hosted runners retain their own stores between jobs.
+      # Hosted runners restore the remote cache into their ephemeral store.
       - uses: actions/cache/restore@v4
         if: vars.DSH_CI_FAILOVER_LINUX != 'selfhosted' || github.event.pull_request.user.login == 'dependabot[bot]'
         with:
@@ -253,7 +252,7 @@ jobs:
       - name: Configure pnpm store path
         id: pnpm-store
         run: |
-          store_root="$HOME/.local/share/pnpm/store"
+          store_root="${RUNNER_TEMP%/*}/pnpm-store"
           echo "PNPM_CONFIG_STORE_DIR=$store_root" >> "$GITHUB_ENV"
           store_path=$(PNPM_CONFIG_STORE_DIR="$store_root" pnpm store path --silent)
           echo "path=$store_path" >> "$GITHUB_OUTPUT"
@@ -261,8 +260,8 @@ jobs:
       # Pull requests restore the pnpm store and Playwright caches without paying
       # compression and upload on the required path. No master job saves these
       # hosted cache keys, so each restore-keys fallback hits the matching archived
-      # entry until it evicts, after which the store is cold. Skipped under failover
-      # — the self-hosted VM's persistent store is already warm.
+      # entry until it evicts, after which the store is cold. Self-hosted runners
+      # keep their own persistent stores instead of restoring the remote archive.
       - uses: actions/cache/restore@v4
         if: vars.DSH_CI_FAILOVER_LINUX != 'selfhosted' || github.event.pull_request.user.login == 'dependabot[bot]'
         with:

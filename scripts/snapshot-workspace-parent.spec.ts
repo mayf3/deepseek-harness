@@ -1,5 +1,5 @@
 import { existsSync } from 'node:fs'
-import { mkdir, mkdtemp, readFile, rm, stat, symlink } from 'node:fs/promises'
+import { chmod, mkdir, mkdtemp, readFile, rm, stat, symlink } from 'node:fs/promises'
 import { homedir, tmpdir } from 'node:os'
 import { dirname, join, parse } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
@@ -12,9 +12,18 @@ import { assertWorkspaceOutsideTemp, outsideTempWorkspaceParent } from './snapsh
 
 // Host disk exhaustion is not simulated: placement and the real write fence are the regression oracles.
 describe('snapshot workspace parent', () => {
-  it.skipIf(process.platform === 'win32')('places runner-temp siblings on the runner data filesystem instead of home', () => {
-    expect(outsideTempWorkspaceParent('/data_local/ci/_work28/_temp', '/home/ubuntu'))
-      .toBe('/data_local/ci/_work28')
+  // Windows directory permissions and root bypass do not enforce POSIX write bits.
+  it.skipIf(process.platform === 'win32' || process.getuid?.() === 0)('uses home when the temp parent is not writable', async () => {
+    const base = await mkdtemp(join(homedir(), '.dsh-snapshot-readonly-'))
+    try {
+      const temporary = join(base, '_temp')
+      await mkdir(temporary)
+      await chmod(base, 0o500)
+      expect(outsideTempWorkspaceParent(temporary)).toBe(homedir())
+    } finally {
+      await chmod(base, 0o700)
+      await rm(base, { recursive: true, force: true })
+    }
   })
 
   it('uses home when a temp sibling would require a system directory or inherit its grant', () => {

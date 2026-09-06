@@ -12,7 +12,7 @@ Linux 故障切换池在同一台虚拟机上运行多个 runner 实例。PR 覆
 
 [PR CI](../../../../.github/workflows/ci.yml) 的静态检查、覆盖率和消费者作业在任何准备或测试进程启动前，在首个步骤通过 `GITHUB_ENV` 导出 `TMPDIR=runner.temp`。Node、Vite、tsx 和临时测试消费者继承 runner 管理的位置。每个 runner 管理自己的目录，GitHub Actions 在作业开始和完成时清除其中可删除的内容；测试夹具仍分配唯一子目录，并保留自身清理逻辑。
 
-这三个 worker 还将 `npm_config_cache` 设为 `runner.temp/npm-cache`。[发布工作流](../../../../.github/workflows/release.yml) 在既有临时存储准备步骤中采用相同缓存位置，[vendor 演练](../../../../.github/workflows/release-vendor.yml) 也如此。否则，无论 `TMPDIR` 如何设置，npm 都会在共享 home 目录中缓存注册表响应；仅使用临时消费者目录不能隔离这些写入。持久化 pnpm store 保持不变。
+这三个 worker 还将 `npm_config_cache` 设为 `runner.temp/npm-cache`。[发布工作流](../../../../.github/workflows/release.yml) 在既有临时存储准备步骤中采用相同缓存位置，[vendor 演练](../../../../.github/workflows/release-vendor.yml) 也如此。否则，无论 `TMPDIR` 如何设置，npm 都会在共享 home 目录中缓存注册表响应；仅使用临时消费者目录不能隔离这些写入。每个 worker 将持久化 pnpm store 放在 `RUNNER_TEMP` 旁的 runner 工作根目录下。这使 SQLite store 索引位于 workspace 所在卷，并隔离并发 runner 实例，而不删除共享 home store。每个 runner 的首次安装是冷启动；该 runner 的后续作业复用其 store。持久化 store 的容量仍由运维人员负责。
 
 [发布演练决策](../process/2026-09-06-release-rehearsal-selfhosted.zh.md) 对发布消费者采用相同的生命周期规则。[故障切换运行手册](../process/2026-07-26-ci-failover-runbook.zh.md) 继续负责 runner 选择和共享主机容量。本变更不调整作业目标、不降低并发、不重试测试、不修改断言，也不修改仅在 master 上执行的 CI。
 
@@ -22,7 +22,7 @@ Linux 故障切换池在同一台虚拟机上运行多个 runner 实例。PR 覆
 
 ## Workspace 授权夹具的位置
 
-Headless 的 `session-sandbox-root` 夹具声明 `workspace.parent: outside-temp`，而不是依赖 home 所在文件系统。分配器在无需使用系统目录时选择规范化平台临时根目录的同级目录，否则使用 home，并拒绝已被自动临时写授权覆盖的 cwd。在故障切换 runner 上，这让测试留在数据卷中，同时不会让写入借助临时目录豁免而成功。原子 workspace 分配、最终清理、录制的 Session 字节以及独立预期文件保持不变。
+Headless 的 `session-sandbox-root` 夹具声明 `workspace.parent: outside-temp`，而不是依赖 home 所在文件系统。分配器在父目录可写且避开系统临时授权时选择规范化平台临时根目录的同级目录，否则使用 home，并拒绝已被自动临时写授权覆盖的 cwd。在故障切换 runner 上，这让测试留在数据卷中，同时不会让写入借助临时目录豁免而成功。原子 workspace 分配、最终清理、录制的 Session 字节以及独立预期文件保持不变。
 
 ## 考虑过的替代方案
 
