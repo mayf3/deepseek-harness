@@ -48,7 +48,7 @@ sequenceDiagram
     Driver-->>SDK: <code>agent/assistant-stream</code> committed end
     Driver->>Hooks: <code>agent/request-error</code> waterfall
     Hooks-->>Driver: return retry action or preserve the original error
-    Note over Driver,LLM: retry in the open step: prepare and reconcile the same rendered assembly; no repeated pre-step or users
+    Note over Driver,LLM: retry in the open step: prepare and reconcile the same rendered assembly without repeating pre-step or users
   else model request succeeded
   Driver->>Session: <code>assistant/message</code>
   Driver-->>SDK: <code>agent/assistant-stream</code> committed end

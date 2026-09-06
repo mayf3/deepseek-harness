@@ -1347,7 +1347,7 @@ function renderLifecycle(): string {
     `    Driver-->>SDK: ${mermaidCode('agent/assistant-stream')} committed end`,
     `    Driver->>Hooks: ${mermaidCode('agent/request-error')} waterfall`,
     '    Hooks-->>Driver: return retry action or preserve the original error',
-    '    Note over Driver,LLM: retry in the open step: prepare and reconcile the same rendered assembly; no repeated pre-step or users',
+    '    Note over Driver,LLM: retry in the open step: prepare and reconcile the same rendered assembly without repeating pre-step or users',
     '  else model request succeeded',
     `  Driver->>Session: ${mermaidCode('assistant/message')}`,
     `  Driver-->>SDK: ${mermaidCode('agent/assistant-stream')} committed end`,
