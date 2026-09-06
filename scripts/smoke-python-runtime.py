@@ -1301,8 +1301,15 @@ def smoke_sdk_snapshot(base_url: str, executable: Path, update_snapshots: bool) 
         methods = [notification.method for notification in result.notifications]
         if methods.count("subagent.started") != 2 or methods.count("subagent.finished") != 2:
             raise AssertionError(f"advanced snapshot emitted unexpected subagent lifecycle: {methods}")
-        if not any(event.get("type") == "tool/code-dispatch" for event in result.events):
-            raise AssertionError("advanced snapshot emitted no tool/code-dispatch event")
+        ptc_events = [event for event in result.events
+                      if event.get("type") in ("tool/ptc-dispatch-start", "tool/ptc-dispatch")]
+        if [event["type"] for event in ptc_events] != ["tool/ptc-dispatch-start", "tool/ptc-dispatch"]:
+            raise AssertionError(f"advanced snapshot emitted unexpected PTC dispatch events: {ptc_events}")
+        for event in ptc_events:
+            data = event["data"]
+            identity = (data.get("rootCallId"), data.get("parentCallId"), data.get("subCallId"))
+            if identity != ("advanced-code", "advanced-code", "advanced-code:ptc:1"):
+                raise AssertionError(f"advanced snapshot emitted unexpected PTC dispatch identity: {identity}")
 
         logs = read_session_logs(sessions)
         child_ids = snapshot_child_ids(result)

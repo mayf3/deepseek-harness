@@ -4,12 +4,13 @@ import { SessionFormatError, isSessionFormatJsonObject, snapshotSessionFormatJso
 import type {
   SessionFormatCodec,
   SessionFormatCurrentEncoder,
+  SessionFormatMigrationContext,
   SessionFormatHeader,
 } from '@deepseek-ai/dsh-session-format'
 import { releasedV2SessionFormatCodec } from '@deepseek-ai/dsh-session-format-v1-to-v2'
-import { assertReleasedV3Header } from './validation.ts'
+import { assertReleasedV3Header, assertV3EventAdmission } from './validation.ts'
 
-/** Physical v3 codec: only the header version differs from released v2. */
+/** Physical v3 codec with current PTC event admission and released-v2 record encoding. */
 export const releasedV3SessionFormatCodec = Object.freeze({
   version: 3,
   decodeHeader(value: unknown) {
@@ -17,7 +18,19 @@ export const releasedV3SessionFormatCodec = Object.freeze({
   },
   createDecoder(value, recovery) {
     const decoder = releasedV2SessionFormatCodec.createDecoder(v2PhysicalHeader(value), recovery)
-    return { ...decoder, header: { ...decoder.header, version: 3 } }
+    return {
+      ...decoder,
+      header: { ...decoder.header, version: 3 },
+      decodeRow(row: unknown, context: SessionFormatMigrationContext) {
+        decoder.decodeRow(row, {
+          emitEvent(event) {
+            assertV3EventAdmission(event)
+            context.emitEvent(event)
+          },
+          emitRun: context.emitRun.bind(context),
+        })
+      },
+    }
   },
   encodeHeader(header, inheritedEventCount) {
     assertReleasedV3Header(header)

@@ -1,5 +1,5 @@
 ---
-description: "将已发布的 v2 Session 日志恢复为 v3，保留所有事件。"
+description: "将已发布的 v2 Session 日志恢复为 v3，采用当前 PTC 事件名称并保留历史标识。"
 kind: "package-library"
 ---
 
@@ -9,7 +9,7 @@ kind: "package-library"
 
 ## 概述
 
-本库将已发布的 v2 Session 记录恢复为 v3，保留事件载荷、序列引用、时间戳、顺序和继承前缀。持久化通过静态 Session 格式目录使用本库。本库不发布或修改持久化文件。
+本库通过转换持久化 PTC 事件名称和插件来源标签，将已发布的 v2 Session 记录恢复为 v3。它保留每个历史标识、事件顺序、序列引用、时间戳和继承切点。持久化通过静态 Session 格式目录使用本库。本库不发布或修改持久化文件。
 
 ## 目录
 
@@ -35,7 +35,9 @@ kind: "package-library"
 const targetHeader = sessionFormatV2ToV3.migrateHeader(sourceHeader)
 ```
 
-头部版本变为 3，其余头部字段保持不变。阶段同步转发事件和紧凑事件段。标量继承 end-seed 标记在 EOF 确定精确切点。V3 记录编码和校验复用冻结的已发布 v2 实现，不修改该实现。未知必需事件仍被拒绝；已安装事件类型和可忽略的未知事件保留其准入规则。
+头部版本变为 3，其余头部字段保持不变。阶段同步将 `tool/code-dispatch-start` 和 `tool/code-dispatch` 映射为 `tool/ptc-dispatch-start` 和 `tool/ptc-dispatch`。它仅在 `user/message.data.source`、`agent/inbox/spliced.data.inserted[].source` 和 `session/title-llm-request.data.messages[].source` 的 plugin 类型来源中，将精确匹配的 `tools-code-mode` 插件标签映射为 `tools-ptc`。其他所有值保持不变，包括含 `:code:` 的标识、消息内容、工具参数和不透明载荷。
+
+V3 校验接受当前 PTC 标签，不接受必需的旧别名。标记为 `ignorable` 的未知事件保留其准入规则，但源 v2 中的 `tool/ptc-dispatch` 和 `tool/ptc-dispatch-start` 事件即使可忽略也会被拒绝：这些名称在 v3 中保留，迁移不能将不透明扩展重新解释为 PTC 生命周期事件。物理记录编码仍为已发布的 v2 编码；仅头部版本和上述逻辑字段发生变化。
 
 -----
 
@@ -45,7 +47,7 @@ const targetHeader = sessionFormatV2ToV3.migrateHeader(sourceHeader)
 <details>
 <summary>实现细节 — 点击展开</summary>
 
-[阶段](src/migration.ts)跟踪继承切点和源投递归属，不改变事件值。[编解码器](src/codec.ts)改变物理头部版本并共享 v2 记录编码。[校验器](src/validation.ts)先检查 v3 版本，再执行已发布 v2 事件校验。本库不拥有可独立观察的运行时注册或状态副本，因此不发布运行时不变量伴随入口。
+[阶段](src/migration.ts)在跟踪继承切点和源投递归属的同时，执行限定范围的 PTC 转换。标量继承 end-seed 标记在 EOF 确定精确切点。[编解码器](src/codec.ts)共享冻结的 v2 物理记录编码。[校验器](src/validation.ts)检查 v3 事件准入和关联关系，不修改冻结的前代模块。本库不拥有可独立观察的运行时注册或状态副本，因此不发布运行时不变量伴随入口。
 
 </details>
 
@@ -66,22 +68,22 @@ const targetHeader = sessionFormatV2ToV3.migrateHeader(sourceHeader)
 
 #### 模型看到什么
 
-`sessionFormatV2ToV3` 保留每个模型可见事件及其载荷。
+`sessionFormatV2ToV3` 保留消息内容和工具结果。PTC 插件来源使用 `tools-ptc`；仅日志的分发事件不会添加模型消息。
 
 #### Token 影响
 
-不添加或删除模型可见内容。
+不添加或删除消息内容。
 
 #### KV Cache 影响
 
-模型消息前缀保持不变。
+阶段不改变消息内容或模型配置。
 
 ## 已知限制与后续工作
 
 <a id="known-limitations-and-deferred-work"></a>
 
 - **不发布文件** — 持久化负责不可变后继代的发布；本包绝不覆盖已发布代。
-- **仅恒等转换** — 阶段不引入结构性事件转换。
+- **仅限定范围的转换** — 只转换指定的事件标签和插件来源位置；不改写任意字符串、未知载荷和历史标识。
 
 <a id="dev-note"></a>
 ### 开发备注
