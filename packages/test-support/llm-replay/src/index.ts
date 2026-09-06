@@ -1,6 +1,6 @@
 /**
  * Keyless snapshot-test LLM replay. It derives one model-call script per
- * recorded session from v2 embedded Assistant streams and explicitly marked local
+ * recorded session from v3 embedded Assistant streams and explicitly marked local
  * compaction calls, then binds fresh live sessions to parent/child scripts by
  * first-call order. Throw and hang cases require an explicit override because
  * a session log cannot reconstruct them alone.
@@ -443,7 +443,7 @@ function migrateWrappedEventGroup(
 
 /**
  * Project v1 session-event notifications to current settlement cardinality in memory.
- * Non-event protocol rows retain their exact positions, and current v2 input passes through.
+ * Non-event protocol rows retain their exact positions, and current v3 input passes through.
  * @param text - headless `session_event` or SDK `session.event` JSONL.
  * @returns comparison JSONL using current Session events without modifying its source file.
  */

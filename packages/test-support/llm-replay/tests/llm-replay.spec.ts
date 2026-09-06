@@ -62,7 +62,7 @@ const COMPACTION_ID = CompactionId('replay-compaction')
 /** Build a minimal session-JSONL string: a header line + the given events. */
 function sessionJsonl(
   events: SessionEvent[],
-  header?: { id?: string; createdAt?: number; seedLength?: number; version?: 0 | 1 | 2 },
+  header?: { id?: string; createdAt?: number; seedLength?: number; version?: 0 | 1 | 2 | 3 },
 ): string {
   const version = header?.version ?? 0
   const headerLine = JSON.stringify({
@@ -70,7 +70,7 @@ function sessionJsonl(
     version,
     id: header?.id ?? 's1',
     createdAt: header?.createdAt ?? 0,
-    ...version === 2 ? { isSeeded: false } : {},
+    ...version >= 2 ? { isSeeded: false } : {},
     ...header?.seedLength !== undefined ? { seedLength: header.seedLength } : {},
     delegationDepth: 0,
   })
@@ -80,9 +80,9 @@ function sessionJsonl(
 /** Build a valid one-turn Session around recorded model calls. */
 function replaySessionJsonl(
   calls: readonly StreamChunk[][],
-  header?: { id?: string; createdAt?: number; seedLength?: number; version?: 0 | 1 | 2 },
+  header?: { id?: string; createdAt?: number; seedLength?: number; version?: 0 | 1 | 2 | 3 },
 ): string {
-  const version = header?.version ?? 2
+  const version = header?.version ?? SESSION_FORMAT_VERSION
   const events: SessionEvent[] = []
   let seq = 0
   const push = (type: string, data: SessionEvent['data']): void => {
@@ -92,7 +92,7 @@ function replaySessionJsonl(
   for (const [index, chunks] of calls.entries()) {
     const step = index + 1
     push('step/start', { turn: 1, step })
-    if (version === 2) {
+    if (version >= 2) {
       events.push(streamEvent(seq++, 1, step, chunks))
       for (const chunk of chunks) {
         if (chunk.type !== 'block-end' || chunk.block.type !== 'tool-call') continue
@@ -271,7 +271,7 @@ describe('fixture format diagnostics', () => {
           ...actual.sessionFormatCatalog,
           createRestore() {
             return {
-              header: { version: 2, id: 'fixture', createdAt: 0, isSeeded: false, delegationDepth: 0 },
+              header: { version: SESSION_FORMAT_VERSION, id: 'fixture', createdAt: 0, isSeeded: false, delegationDepth: 0 },
               decodeRow() {},
               finish(): never {
                 throw new Error('Session event 99 restore finalization failed')
@@ -302,7 +302,7 @@ describe('fixture format diagnostics', () => {
           ...actual.sessionFormatCatalog,
           createRestore() {
             return {
-              header: { version: 2, id: 'fixture', createdAt: 0, isSeeded: false, delegationDepth: 0 },
+              header: { version: SESSION_FORMAT_VERSION, id: 'fixture', createdAt: 0, isSeeded: false, delegationDepth: 0 },
               decodeRow() {},
               finish(): never {
                 throw new Error('sourceEventSeqs synthetic unmatched failure')
@@ -334,7 +334,7 @@ describe('fixture format diagnostics', () => {
           ...actual.sessionFormatCatalog,
           createRestore() {
             return {
-              header: { version: 2, id: 'fixture', createdAt: 0, isSeeded: false, delegationDepth: 0 },
+              header: { version: SESSION_FORMAT_VERSION, id: 'fixture', createdAt: 0, isSeeded: false, delegationDepth: 0 },
               decodeRow(): void {
                 row += 1
                 if (row === 2) throw 'row decoder exploded'
@@ -377,7 +377,7 @@ describe('fixture format diagnostics', () => {
           ...actual.sessionFormatCatalog,
           createRestore() {
             return {
-              header: { version: 2, id: 'fixture', createdAt: 0, isSeeded: false, delegationDepth: 0 },
+              header: { version: SESSION_FORMAT_VERSION, id: 'fixture', createdAt: 0, isSeeded: false, delegationDepth: 0 },
               decodeRow() {},
               finish(): never { throw new Error(message) },
             }
@@ -710,7 +710,7 @@ describe('prepareSessionSnapshotFixtureForComparison', () => {
     const source = [
       JSON.stringify({
         type: 'session',
-        version: 2,
+        version: SESSION_FORMAT_VERSION,
         id: 'invalid-current',
         createdAt: 0,
         cwd: '{{cwd}}',
@@ -1231,11 +1231,11 @@ describe('loadReplayScript', () => {
   })
 
   it('never rewrites a projected source fixture while migrating it in memory', () => {
-    const source = projectSessionJsonl(replaySessionJsonl([TEXT_CHUNKS]))
+    const source = projectSessionJsonl(replaySessionJsonl([TEXT_CHUNKS], { version: 2 }))
     writeFileSync(file, source, 'utf8')
 
     expect(loadReplayScript({ file })).toEqual([{ kind: 'chunks', chunks: TEXT_CHUNKS }])
-    expect(JSON.parse(prepareSessionSnapshotFixtureForComparison(source).split('\n')[0] as string)).toMatchObject({ version: 2 })
+    expect(JSON.parse(prepareSessionSnapshotFixtureForComparison(source).split('\n')[0] as string)).toMatchObject({ version: SESSION_FORMAT_VERSION })
     expect(readFileSync(file, 'utf8')).toBe(source)
   })
 

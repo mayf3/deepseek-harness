@@ -8,6 +8,7 @@ import { basename, delimiter, dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import ts from 'typescript'
+import { SESSION_FORMAT_VERSION } from '@deepseek-ai/dsh-session'
 import {
   assertPersistedSessionVersion,
   assertSessionFixtureVersion,
@@ -768,7 +769,7 @@ describe('headless recorded-session snapshots', () => {
         },
       }
       const header = {
-        type: 'session', version: 2, id: 'sidecar-session', createdAt: 1,
+        type: 'session', version: SESSION_FORMAT_VERSION, id: 'sidecar-session', createdAt: 1,
         cwd: '/tmp/sidecar-session', isSeeded: false, delegationDepth: 0,
       }
       const content = [
@@ -802,7 +803,7 @@ describe('headless recorded-session snapshots', () => {
       expect(await readFile(join(directory, 'tool-schemas.expected.json'), 'utf8'))
         .toContain('"name": "fresh_tool"')
       expect(await readFile(join(directory, 'session.v1.jsonl'), 'utf8')).toBe(retained)
-      expect(await readdir(directory)).not.toContain('session.v2.jsonl')
+      expect(sessionFixtureNames(await readdir(directory))).toEqual(['session.v1.jsonl'])
     } finally {
       await rm(directory, { recursive: true, force: true })
     }

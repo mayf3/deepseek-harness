@@ -390,7 +390,7 @@ export function normalizeSessionLog(
 }
 
 /**
- * Canonicalize projected v2 body records. Compact streams are nested event data,
+ * Canonicalize projected v3 body records. Compact streams are nested event data,
  * so persistence flush boundaries cannot change the row layout.
  */
 function projectSessionSnapshot(rawLog: string): string {
@@ -409,7 +409,7 @@ function projectSessionSnapshot(rawLog: string): string {
 /**
  * Normalize and project persisted session JSONL for a committed fixture.
  * This composes ordinary log normalization with request-header scrubbing and
- * persistence-envelope projection, then writes the v2 logical event stream as
+ * persistence-envelope projection, then writes the v3 logical event stream as
  * one record per event, independent of persistence flush boundaries.
  *
  * @param rawLog - persisted or already-projected session JSONL.

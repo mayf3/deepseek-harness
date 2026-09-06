@@ -1,7 +1,7 @@
 import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { createAssistantMessage } from '@deepseek-ai/dsh-llm'
-import { SessionSeq, type SessionEvent } from '@deepseek-ai/dsh-session'
+import { SESSION_FORMAT_VERSION, SessionSeq, type SessionEvent } from '@deepseek-ai/dsh-session'
 import { parseSessionLog } from '@deepseek-ai/dsh-llm-replay'
 import {
   canonicalSessionFixture,
@@ -9,7 +9,7 @@ import {
   isPhysicalSessionFixture,
 } from './session-fixture-layout.ts'
 
-const HEADER = '  {"type":"session","version":2,"id":"fixture","createdAt":1,"isSeeded":false,"delegationDepth":0}  '
+const HEADER = `  {"type":"session","version":${SESSION_FORMAT_VERSION},"id":"fixture","createdAt":1,"isSeeded":false,"delegationDepth":0}  `
 const root = resolve(import.meta.dirname, '..')
 const FIXTURE_MESSAGE = createAssistantMessage({
   content: [{ type: 'text', text: 'part-0part-1part-2part-3' }],

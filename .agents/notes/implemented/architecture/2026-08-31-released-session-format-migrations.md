@@ -58,16 +58,25 @@ JSONL record
   → released physical row decoder
   → v0-to-v1 stage
   → v1-to-v2 stage
+  → v2-to-v3 stage
   → current event collector
 ```
 
 The chain contains no `flatMap`, spread expansion, intermediate event array, or scheduler. The final event collector expands a compact run only after every migration stage has had the opportunity to consume it directly.
 
+### Adjacent version ownership
+
+V2→V3 provides an identity body stage and a distinct V3 codec, header validator, and restorer. The released V2 codec remains owned by V1→V2 and is reused, not copied. Identity preserves accepted logical events and the inherited cut; the header version and successor filename change. Its admission retains installed ordinary event additions and unknown ignorable events, while unknown required events refuse. Unchanged sequence numbers, references, payloads, and ordering make that preservation safe for the identity edge; structural extensions must reassess it rather than inherit an unconditional opaque-event promise. The [format-version cookbook](../../../../docs/cookbook/adding-a-session-format-version.md) owns package wiring, current consumers, snapshot successors, and validation commands.
+
+A source inherited count can be unknown before EOF: V2 derives it from seed markers, and V1→V2 can change cardinality. The chain passes that absence to the next stage instead of fabricating a count. V2→V3 validates and derives its cut from markers; older stages that require a header-supplied count still refuse when it is absent. This permits seeded multi-hop restoration without retaining an intermediate artifact array.
+
+A shared `release/*` base collects independent child changes in the one unreleased V2→V3 edge. Released generations and older edges retain their semantics; review order does not allocate extra format versions. The unreleased target can evolve until release, but an already-written V3 file does not rerun its incoming migration. Integration tests therefore use isolated disposable homes and unchanged historical inputs rather than rewriting committed generations.
+
 ### Physical codecs and packed runs
 
 Each released codec creates a row decoder with explicit `strict` or `recoverable` recovery. The decoder validates and emits one event or one codec-owned `SessionFormatEventRun` at a time through separate context methods. v0-to-v1 and v1-to-v2 implement both `transformEvent()` and `transformRun()`, so packed Assistant chunks can reach the folding edge without first becoming millions of ordinary events.
 
-The v0-to-v1 edge preserves logical headers, sequence numbers, references, timestamps, and payloads except for bounded released-v0 normalizations. It translates the retired `steering/message` and `compact/*` event names, accepts a released `llm/retry` after its matching `step/end`, deterministically supplies a missing `llm/retry.retryId` per turn/step/provider/policy chain, and supplies one deterministic `compactionId` across a legacy compaction group that omitted it. The v1-to-v2 edge owns attempt folding and reference remapping, and emits only settled current events. It splits a legacy goal-sourced user message into `goal/change` plus the original model-visible message. It also inserts an interrupted `turn/end` for the bounded released restart in which an open turn with no open step is followed by a non-empty `next-turn` inbox splice and the next numbered `turn/start`.
+The v0-to-v1 edge preserves logical headers, sequence numbers, references, timestamps, and payloads except for bounded released-v0 normalizations. It translates the retired `steering/message` and `compact/*` event names, accepts a released `llm/retry` after its matching `step/end`, deterministically supplies a missing `llm/retry.retryId` per turn/step/provider/policy chain, and supplies one deterministic `compactionId` across a legacy compaction group that omitted it. The v1-to-v2 edge owns attempt folding and reference remapping, and emits only settled v2 events. It splits a legacy goal-sourced user message into `goal/change` plus the original model-visible message. It also inserts an interrupted `turn/end` for the bounded released restart in which an open turn with no open step is followed by a non-empty `next-turn` inbox splice and the next numbered `turn/start`.
 
 The catalog exposes one `createRestore()` operation for production, Worker, fixture, and replay callers. Recovery policy and final validation policy are chosen once at restore creation. Historical production uses recoverable source parsing with transformed-current validation; this validates the released current result after migration, while input that is already current receives only codec validation. Worker and fixture verification use strict parsing with full installed current restoration. A migration-stage or transformed-current validation refusal remains `SessionFormatUnsupportedMigrationError`; physical decoding failures remain corruption. Test support keeps only fixture-specific token and envelope materialization.
 

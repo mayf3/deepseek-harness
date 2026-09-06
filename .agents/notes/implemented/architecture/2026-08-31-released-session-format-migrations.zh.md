@@ -58,16 +58,25 @@ JSONL record
   → released physical row decoder
   → v0-to-v1 stage
   → v1-to-v2 stage
+  → v2-to-v3 stage
   → current event collector
 ```
 
 Chain 中不存在 `flatMap`、spread expansion、中间 event array 或 scheduler。只有在每个 migration stage 都已获得直接消费 compact run 的机会后，最终 event collector 才会展开它。
 
+### 相邻版本所有权
+
+V2→V3 提供恒等正文 Stage，以及独立的 V3 codec、header 校验器与恢复器。已发布 V2 codec 仍归 V1→V2 所有，并被复用而非复制。恒等保留可接受的逻辑事件和继承截点；header 版本与后继文件名会变化。其准入保留已安装的普通事件新增项和未知可忽略事件，同时拒绝未知必需事件。序号、引用、payload 与顺序不变，使恒等迁移边可以安全保留这些数据；结构性扩展必须重新评估，而非继承无条件保留不透明事件的承诺。[格式版本实操手册](../../../../docs/cookbook/adding-a-session-format-version.zh.md)负责包接线、当前消费方、快照后继代际与验证命令。
+
+源继承数量在 EOF 前可能未知：V2 从种子标记推导它，而 V1→V2 可以改变事件数量。迁移链将这种缺失传递给下一个 Stage，而不伪造数量。V2→V3 校验并从标记推导截点；需要 header 提供数量的旧 Stage 仍在数量缺失时拒绝。这使有种子的多跳恢复无需保留中间产物数组。
+
+共享 `release/*` 基线把独立子变更汇入唯一且尚未发布的 V2→V3 迁移边。已发布代际与旧迁移边保持原有语义；评审顺序不分配额外格式版本。未发布的目标可以持续演化至发布，但已经写出的 V3 文件不会重新执行入边迁移。因此，集成测试使用隔离、可丢弃的 home 和未变更的历史输入，而非改写已提交代际。
+
 ### Physical codec 与 packed run
 
 每个 released codec 会用显式 `strict` 或 `recoverable` 策略创建 row decoder。Decoder 每次通过不同的 context 方法校验并 emit 一个 event 或 codec-owned `SessionFormatEventRun`。v0-to-v1 与 v1-to-v2 都实现 `transformEvent()` 和 `transformRun()`，因此 packed Assistant chunk 可以直接到达 folding edge，无需先变成数百万个普通事件。
 
-v0-to-v1 除了有限的 released-v0 归一化外，会保留逻辑 header、seq、引用、时间戳与 payload。它转换已移除的 `steering/message` 与 `compact/*` 事件名称，接受出现在对应 `step/end` 之后的已发布 `llm/retry`，按 turn／step／provider／policy chain 为缺失的 `llm/retry.retryId` 确定性补值，并为省略 id 的旧 compaction group 确定性补充同一个 `compactionId`。v1-to-v2 负责 attempt folding 与引用重写，并且只 emit 已结算的 current event。它会把旧的 goal 来源 user message 拆成 `goal/change` 与原本的模型可见 message。它还会为一种有限的已发布 restart 插入 interrupted `turn/end`：一个没有 open step 的 open turn 后出现非空 `next-turn` inbox splice，随后直接开始编号连续的下一轮。
+v0-to-v1 除了有限的 released-v0 归一化外，会保留逻辑 header、seq、引用、时间戳与 payload。它转换已移除的 `steering/message` 与 `compact/*` 事件名称，接受出现在对应 `step/end` 之后的已发布 `llm/retry`，按 turn／step／provider／policy chain 为缺失的 `llm/retry.retryId` 确定性补值，并为省略 id 的旧 compaction group 确定性补充同一个 `compactionId`。v1-to-v2 负责 attempt folding 与引用重写，并且只 emit 已结算的 v2 event。它会把旧的 goal 来源 user message 拆成 `goal/change` 与原本的模型可见 message。它还会为一种有限的已发布 restart 插入 interrupted `turn/end`：一个没有 open step 的 open turn 后出现非空 `next-turn` inbox splice，随后直接开始编号连续的下一轮。
 
 Catalog 为 production、Worker、fixture 与 replay 暴露同一个 `createRestore()`。Recovery policy 与最终 validation policy 在 restore 创建时一次确定。Historical production 使用 recoverable source parsing 与 transformed-current validation；这种策略会在迁移后校验已发布 current 结果，而已经是 current 的输入只接受 codec 校验。Worker 与 fixture verification 使用 strict parsing 与已安装 current 格式的完整 restoration。Migration stage 或 transformed-current validation 的拒绝会保持为 `SessionFormatUnsupportedMigrationError`；物理解码失败仍是 corruption。Test support 只保留 fixture 自身需要的 token 和 envelope materialization。
 

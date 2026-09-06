@@ -255,6 +255,47 @@ def test_snapshot_generation_names_select_highest_role_without_double_counting(
     }
 
 
+def test_snapshot_comparison_accepts_v3_output_against_v2_without_rewriting(tmp_path: Path) -> None:
+    predecessor = '{"type":"session","version":2}\n'
+    successor = '{"type":"session","version":3}\n'
+    old_path = tmp_path / "session.v2.jsonl"
+    old_path.write_text(predecessor, encoding="utf-8")
+    files = {"session.v3.jsonl": successor}
+
+    SMOKE["compare_snapshot_files"](files, False, tmp_path, ("session.v2.jsonl",))
+    assert old_path.read_text(encoding="utf-8") == predecessor
+    assert not (tmp_path / "session.v3.jsonl").exists()
+
+    SMOKE["compare_snapshot_files"](files, True, tmp_path, ("session.v2.jsonl",))
+    assert old_path.read_text(encoding="utf-8") == predecessor
+    assert (tmp_path / "session.v3.jsonl").read_text(encoding="utf-8") == successor
+    assert SMOKE["selected_snapshot_session_files"](tmp_path) == {0: tmp_path / "session.v3.jsonl"}
+
+
+@pytest.mark.parametrize("filenames", [
+    ("session.1.v2.jsonl", "session.v2.jsonl"),
+    ("session.v2.jsonl",),
+    ("session.v2.jsonl", "session.2.v2.jsonl"),
+])
+def test_snapshot_builder_checks_role_order_and_count_across_generations(
+    tmp_path: Path, filenames: tuple[str, ...],
+) -> None:
+    files = {"session.v3.jsonl": "", "session.1.v3.jsonl": ""}
+    with pytest.raises(AssertionError, match="snapshot builder produced"):
+        SMOKE["compare_snapshot_files"](files, False, tmp_path, filenames)
+
+
+def test_snapshot_generation_comparison_rejects_changed_payload(tmp_path: Path) -> None:
+    (tmp_path / "session.v2.jsonl").write_text(
+        '{"type":"session","version":2,"id":"expected"}\n', encoding="utf-8",
+    )
+    with pytest.raises(AssertionError, match="executable snapshot mismatch"):
+        SMOKE["compare_snapshot_files"](
+            {"session.v3.jsonl": '{"type":"session","version":3,"id":"changed"}\n'},
+            False, tmp_path, ("session.v2.jsonl",),
+        )
+
+
 def test_snapshot_generation_filename_must_match_header(tmp_path: Path) -> None:
     (tmp_path / "session.v1.jsonl").write_text(
         '{"type":"session","version":0}\n', encoding="utf-8",

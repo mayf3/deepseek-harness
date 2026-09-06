@@ -2152,9 +2152,14 @@ def compare_snapshot_files(
     directory: Path,
     filenames: tuple[str, ...],
 ) -> None:
-    """Write or exactly compare one scenario's expected snapshot files."""
+    """Compare ordered artifact roles and Session content across generations, or write generated filenames."""
     scenario = directory.name
-    if tuple(files) != filenames:
+
+    def role_name(name: str) -> str:
+        parsed = parse_snapshot_session_filename(name)
+        return name if parsed is None else snapshot_session_filename(parsed[0], 0)
+
+    if tuple(map(role_name, files)) != tuple(map(role_name, filenames)):
         raise AssertionError(f"{scenario} snapshot builder produced {tuple(files)}, expected {filenames}")
     if update:
         directory.mkdir(parents=True, exist_ok=True)
