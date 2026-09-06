@@ -174,7 +174,7 @@ describe('SystemPromptProjection', () => {
     expect(projection.project('v4', CONTINUING)).toEqual([])
   })
 
-  it('rewrites the surviving node when an in-history route clears the prompt or loses the capability', async () => {
+  it('empties all active nodes when clearing an in-history prompt', async () => {
     const ctx = await sessionStore()
     const session = ctx.sessions.create(SessionId('system-prompt-in-history-clear'))
     const projection = new SystemPromptProjection(session)
@@ -182,12 +182,15 @@ describe('SystemPromptProjection', () => {
     appendUser(session, 'hello')
     const update = commit(session, 2, projection.project('v2', CONTINUING)[0])
 
-    // An empty node projects to no wire message, so clearing must rewrite the effective node.
-    const cleared = projection.project('', CONTINUING)[0]
-    expect(cleared?.intent).toEqual(replaceOf(update.seq))
-    expect(cleared?.message.content).toEqual([])
-
-    // Incapable routes must not send older instructions through the converter as user text.
-    expect(projection.project('v3', REPLACING).map(commit => commit.message.content)).toEqual([[], [{ type: 'text', text: 'v3' }]])
+    const cleared = projection.project('', CONTINUING)
+    expect(cleared).toHaveLength(2)
+    expect(cleared[0]?.intent).toEqual(replaceOf(update.seq))
+    for (const empty of cleared) {
+      expect(empty.message.content).toEqual([])
+      commit(session, 3, empty)
+    }
+    expect(session.deriveMessages().map(message => message.role)).toEqual(['user'])
+    expect(projection.project('', CONTINUING)).toEqual([])
+    expect(projection.project('v3', REPLACING).map(commit => commit.message.content)).toEqual([[{ type: 'text', text: 'v3' }]])
   })
 })

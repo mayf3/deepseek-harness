@@ -23,9 +23,9 @@ function textOf(message: Message): string | undefined {
   return message.content.length === 1 && block?.type === 'text' ? block.text : undefined
 }
 
-/** One uncommitted system-prompt surface operation the loop commits before the step's user messages. */
+/** One uncommitted system-prompt surface operation for request admission or reconciliation. */
 export interface SystemPromptCommit {
-  /** The rendered prompt as a system-role message; empty content records "no system prompt". */
+  /** Rendered prompt or empty content: an empty head records no prompt; empty tails are dormant. */
   message: SystemMessage
   /** `append` for a new system node, otherwise a replacement of one surviving system node. */
   intent: SurfaceIntent
@@ -50,12 +50,11 @@ function eventsNewestFirst(session: Session): readonly SessionEvent[] {
 
 /**
  * Decides how a rendered system prompt reaches the surface without owning the
- * commit. The first rendered prompt, even empty, reserves surface node 0. A later change
- * replaces the latest surviving system node in place, except on an
- * `in-history` route while the request series continues, where it appends a
- * new `system/message` after the cached history; a series start folds the
- * prompt back into the first node and empties later active nodes. Incapable
- * routes use the same normalization for every nonempty prompt.
+ * commit. The first prompt, even empty, reserves surface node 0.
+ * A capable continuing series appends changed nonempty text after the
+ * cached history. An incapable route, broken series, or cleared prompt instead
+ * normalizes the first system node and empties later active nodes. Dormant empty
+ * tails do not supply effective text or require repeated replacements.
  */
 export class SystemPromptProjection {
   constructor(private readonly session: Session) {}
@@ -84,17 +83,14 @@ export class SystemPromptProjection {
       return [{ message: createSystemMessage(rendered, SOURCE), intent: { surfaceOp: 'append' } }]
     }
     const latest = nodes.findLast(node => node.text.length > 0) ?? head
-    if ((!input.inHistory || input.startsSeries) && rendered.length > 0) {
+    if (!input.inHistory || input.startsSeries || rendered.length === 0) {
       const updates = nodes.slice(1).filter(node => node.text.length > 0)
         .map(node => this.replace(node.seq, ''))
       if (head.text !== rendered) updates.push(this.replace(head.seq, rendered))
       return updates
     }
     if (latest.text === rendered) return []
-    const message = createSystemMessage(rendered, SOURCE)
-    const append = input.inHistory && rendered.length > 0
-    if (append) return [{ message, intent: { surfaceOp: 'append' } }]
-    return [this.replace(latest.seq, rendered)]
+    return [{ message: createSystemMessage(rendered, SOURCE), intent: { surfaceOp: 'append' } }]
   }
 
   private replace(seq: SessionSeq, text: string): SystemPromptCommit {

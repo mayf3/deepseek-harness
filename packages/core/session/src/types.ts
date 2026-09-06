@@ -298,12 +298,14 @@ export interface SessionEventMap {
   /**
    * The rendered system prompt on the model-visible surface. The loop appends
    * the first one as surface node 0 before the step's first `user/message`.
-   * A prepared in-history route can append changed text after cached history.
-   * An incapable route normalizes nonempty prompts to the first system node
-   * and replaces later nonempty nodes with empty content, each through a logged
-   * per-node replacement. Empty later nodes are dormant and project to no
-   * message; the latest nonempty system node supplies the effective prompt.
-   * Empty head content records "no system prompt" when no later prompt is active.
+   * A prepared in-history route can append nonempty changes in a continuing
+   * series. An incapable route or new series normalizes text to the first system
+   * node. Normalization empties nonempty later nodes, then rewrites the head if
+   * needed, through logged per-node replacements. An empty rendering always
+   * clears all active system nodes, leaving no older instructions model-visible.
+   * Empty later nodes are dormant and project to no message; an empty head with
+   * no active later node records "no system prompt". Restored nonempty text follows
+   * the same route and series rule; empty nodes never restore older text.
    */
   'system/message': { turn: number; step: number; message: SystemMessage }
   /**

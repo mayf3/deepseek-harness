@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-`dsh-system-prompt` 组装模型在每个步骤之前收到的系统提示词与工具 schema。插件贡献有序提示词段、动态 runtime 上下文、工具 schema 提供方与具名变量；循环每个步骤调用一次 `assemble()`，把结果渲染为完整模型提示词，并把该文本作为由其 `SystemPromptProjection` 拥有的 `system/message` surface 节点提交——首个步骤作为 surface 第 0 号节点追加，之后在渲染文本变化时原地替换，或者当已准备调用声明 `systemPromptUpdate: 'in-history'` 时追加到已缓存历史之后（[决策](../../../.agents/notes/implemented/architecture/2026-09-02-system-prompt-as-surface-node.zh.md)；[决策规则](../agent-loop/README.zh.md#understand-the-implementation)）。该包提供固定 harness 身份与全局部署 persona，而 agent 作用域的贡献会为单个 agent 遮蔽全局默认值。配置控制 harness 身份开场白、动态 runtime 上下文、部署 persona 与显式的面向模型工具顺序。需要添加提示词段、提示词变量或工具 schema 来源时请选择本包——它是所有面向模型文案流经的组装点。
+`dsh-system-prompt` 组装模型在每个步骤之前收到的系统提示词与工具 schema。插件贡献有序提示词段、动态 runtime 上下文、工具 schema 提供方与具名变量；循环每个步骤调用一次 `assemble()`，把结果渲染为完整模型提示词，并把该文本作为由其 `SystemPromptProjection` 拥有的 `system/message` surface 节点提交——首个步骤作为 surface 第 0 号节点追加，之后在渲染文本变化时原地替换，或者当已准备调用声明 `systemPromptUpdate: 'in-history'` 时，在序列延续期间把非空更新追加到已缓存历史之后（[决策](../../../.agents/notes/implemented/architecture/2026-09-02-system-prompt-as-surface-node.zh.md)；[决策规则](../agent-loop/README.zh.md#understand-the-implementation)）。该包提供固定 harness 身份与全局部署 persona，而 agent 作用域的贡献会为单个 agent 遮蔽全局默认值。配置控制 harness 身份开场白、动态 runtime 上下文、部署 persona 与显式的面向模型工具顺序。需要添加提示词段、提示词变量或工具 schema 来源时请选择本包——它是所有面向模型文案流经的组装点。
 
 ## 目录
 
@@ -130,7 +130,7 @@ ctx.systemPrompt.variable('cwd', ({ agent }) => agent?.session.header.cwd)
 
 #### 模型看到什么
 
-默认情况下，每次组装都从下方 harness 身份开始，然后在严格变量插值后追加已配置 persona 与有序插件段。`includeHarnessIdentity: false` 仅省略这个固定开场白。空段会消失；带作用域的段与变量可以为一个 agent 遮蔽全局项。`system-prompt/assemble` waterfall 决定交付的提示词与工具 schema，除非一个有效段声明自身为 complete——此时该确切段会成为完整的系统提示词，而 waterfall 得到的上下文、工具与变量保持不变。渲染后的提示词作为派生历史中的 system 角色消息——surface 第 0 号节点，或历史内更新之后最新的系统节点——到达模型，从不作为单独的请求字段。有序动态上下文与段分离，只在存在时才会成为带来源的 user 角色快照；`includeRuntimeContext: false` 或带作用域的抑制器会移除全部这类上下文。
+默认情况下，每次组装都从下方 harness 身份开始，然后在严格变量插值后追加已配置 persona 与有序插件段。`includeHarnessIdentity: false` 仅省略这个固定开场白。空段会消失；带作用域的段与变量可以为一个 agent 遮蔽全局项。`system-prompt/assemble` waterfall 决定交付的提示词与工具 schema，除非一个有效段声明自身为 complete——此时该确切段会成为完整的系统提示词，而 waterfall 得到的上下文、工具与变量保持不变。渲染后的提示词作为派生历史中的 system 角色消息——surface 第 0 号节点，或历史内更新之后最新的系统节点——到达模型，从不作为单独的请求字段。完整渲染结果为空时，循环通过有日志记录的空内容替换清除所有生效的系统节点，模型历史不再保留任何旧提示词。有序动态上下文与段分离，只在存在时才会成为带来源的 user 角色快照；`includeRuntimeContext: false` 或带作用域的抑制器会移除全部这类上下文。
 
 ##### harness 身份
 
@@ -144,7 +144,7 @@ You are an AI agent powered by DeepSeek Harness.
 
 #### KV Cache 影响
 
-只要身份、persona、变量、段文本与顺序的渲染完全相同，前缀就保持稳定：渲染未变时系统节点保持不动，除非不具备能力的路由或新请求序列必须归并保留的历史内提示词。没有 `systemPromptUpdate` 时，非空提示词文本通过有日志记录的逐节点替换归并到首个系统节点，因此头节点重写会从首个变化的 token 起失去前缀复用；当已准备调用声明 `systemPromptUpdate: 'in-history'` 时，agent loop（智能体循环）会在同一请求序列延续期间把变化后的提示词追加到已缓存历史之后，因此直到该历史末尾的前缀仍可复用（[决策规则](../agent-loop/README.zh.md#understand-the-implementation)）。
+只要身份、persona、变量、段文本与顺序的渲染完全相同，前缀就保持稳定：渲染未变时系统节点保持不动，除非不具备能力的路由或新请求序列必须归并保留的历史内提示词。没有 `systemPromptUpdate` 时，非空提示词文本通过有日志记录的逐节点替换归并到首个系统节点，因此头节点重写会从首个变化的 token 起失去前缀复用；当已准备调用声明 `systemPromptUpdate: 'in-history'` 时，agent loop（智能体循环）会在同一请求序列延续期间把变化后的非空提示词追加到已缓存历史之后，因此直到该历史末尾的前缀仍可复用（[决策规则](../agent-loop/README.zh.md#understand-the-implementation)）。
 
 ### 工具 schema
 

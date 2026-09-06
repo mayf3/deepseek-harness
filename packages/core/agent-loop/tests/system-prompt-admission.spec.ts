@@ -67,6 +67,45 @@ function expectPlain(request: GenerateOptions, prompt: string) {
 }
 
 describe('prepared-route prompt admission', () => {
+  it.each(['capable', 'plain'] as const)('clears every active prompt version on %s routes across repeated requests and resume', async (provider) => {
+    const h = await harness()
+    await send(h.agent, 'first')
+    h.setPrompt('prompt two')
+    await send(h.agent, 'second')
+    h.setPrompt('prompt three')
+    await send(h.agent, 'third')
+    expect(systemTexts(h.capable.requests[2]!)).toHaveLength(3)
+    h.selection.current = { provider, model: 'model' }
+    h.setPrompt('')
+    await send(h.agent, 'clear')
+    const adapter = provider === 'capable' ? h.capable : h.plain
+    const cleared = adapter.requests.at(-1)!
+    expect(systemTexts(cleared)).toEqual([])
+    expect(toPiContext(cleared).systemPrompt).toBeUndefined()
+    expect(JSON.stringify(toPiContext(cleared))).not.toContain('prompt ')
+    const clearEvents = h.agent.session.snapshotEvents().filter(event => event.type === 'system/message').filter(event => event.data.turn === 4)
+    expect(clearEvents).toHaveLength(3)
+    for (const event of clearEvents) {
+      expect(event.data.message.content).toEqual([])
+      expect(event.surfaceOp).toEqual({ op: 'replace', start: event.sourceEventSeqs?.[0], end: event.sourceEventSeqs?.[0] })
+    }
+    const count = h.agent.session.snapshotEvents().filter(event => event.type === 'system/message').length
+    await send(h.agent, 'still clear')
+    expect(h.agent.session.snapshotEvents().filter(event => event.type === 'system/message')).toHaveLength(count)
+    expect(systemTexts(adapter.requests.at(-1)!)).toEqual([])
+    const { agent: resumed } = await h.ctx.agents.create({
+      sessionId: SessionId('cleared-resume'), agentOptions: { provider, model: 'model' },
+      seed: [...h.agent.session.snapshotEvents()],
+    })
+    await send(resumed, 'resume clear')
+    expect(resumed.session.snapshotEvents().filter(event => event.type === 'system/message')).toHaveLength(count)
+    expect(systemTexts(adapter.requests.at(-1)!)).toEqual([])
+    h.setPrompt('restored instruction')
+    await send(resumed, 'restore')
+    expect(systemTexts(adapter.requests.at(-1)!)).toEqual([[{ type: 'text', text: 'restored instruction' }]])
+    expect(JSON.stringify(adapter.requests.at(-1)!)).not.toContain('prompt ')
+  })
+
   it.each(['explicit', 'tools'] as const)('normalizes surviving prompt versions with unchanged text at a %s series start', async (reason) => {
     const h = await harness()
     await send(h.agent, 'first')
@@ -131,7 +170,7 @@ describe('prepared-route prompt admission', () => {
     expect(events.filter(event => event.type === 'step/start')).toHaveLength(3)
     expect(events.filter(event => event.type === 'user/message' && event.data.source.kind === 'user')).toHaveLength(3)
     expect(events.filter(event => event.type === 'request/header').map(event => event.data.reason)).toEqual(['initial', 'series'])
-    expect(events.filter(event => event.type === 'system/message' && event.data.turn === 3).at(-1)?.surfaceOp).not.toBe('append')
+    expect(events.filter(event => event.type === 'system/message').filter(event => event.data.turn === 3).at(-1)?.surfaceOp).not.toBe('append')
   })
 
   it.each([false, true])('normalizes capable history on a plain route, changed=%s', async (changed) => {
@@ -145,7 +184,7 @@ describe('prepared-route prompt admission', () => {
     await send(h.agent, 'third')
     expectPlain(h.plain.requests[0]!, changed ? 'prompt three' : 'prompt two')
     const events = h.agent.session.snapshotEvents()
-    const replacements = events.filter(event => event.type === 'system/message' && event.surfaceOp !== 'append')
+    const replacements = events.filter(event => event.type === 'system/message').filter(event => event.surfaceOp !== 'append')
     expect(replacements).toHaveLength(2)
     expect(replacements[0]?.type === 'system/message' && replacements[0].data.message.content).toEqual([])
     for (const event of replacements) {
