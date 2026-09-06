@@ -183,8 +183,37 @@ function releasedV0Header(header: SessionHeader): Record<string, unknown> {
   }
 }
 
+/** Construct a supported historical turn with its first surface inside the step. */
+function migrationOneTurnLog(): SessionEvent[] {
+  const [turn, user, step, ...tail] = releasedV1OneTurnLog()
+  return [turn!, { ...step!, time: 2 }, { ...user!, time: 3 }, ...tail]
+    .map((event, seq) => ({ ...event, seq: SessionSeq(seq) }))
+}
+
+/** Expected V3 insertion for an append-only log beginning with turn/start and step/start. */
+function withMigratedEmptyHead(log: readonly SessionEvent[]): readonly unknown[] {
+  return [
+    ...log.slice(0, 2),
+    {
+      type: 'system/message', seq: 2, time: log[1]!.time, surfaceOp: 'append',
+      data: { turn: 1, step: 1, message: {
+        id: expect.stringMatching(/^v2-to-v3-system-[0-9a-f]{64}$/),
+        role: 'system', content: [], source: { kind: 'plugin', plugin: '@deepseek-ai/dsh-system-prompt' },
+      } },
+    },
+    ...log.slice(2).map(event => ({ ...event, seq: SessionSeq(event.seq + 1) })),
+  ]
+}
+
+function migratedOneTurnLog(): readonly unknown[] {
+  const [turn, user, step, ...tail] = oneTurnLog()
+  const log = [turn!, { ...step!, time: 2 }, { ...user!, time: 3 }, ...tail]
+    .map((event, seq) => ({ ...event, seq: SessionSeq(seq) }))
+  return withMigratedEmptyHead(log)
+}
+
 function releasedV1PackedPhysicalLog(header: SessionHeader): string {
-  const source = releasedV1OneTurnLog()
+  const source = migrationOneTurnLog()
   const extraChunks: SessionEvent[] = [
     {
       type: 'assistant/chunk', seq: SessionSeq(5), time: 3,
@@ -685,7 +714,7 @@ describe('JsonlSessionPersistence: immutable format generations', () => {
     const sourcePath = historicalLogPath(root, header.cwd, header.id)
     const currentPath = rawLogPath(root, header.cwd, header.id)
     const source = Buffer.from(
-      `${JSON.stringify(releasedV0Header(header))}\n${eventLines(releasedV1OneTurnLog())}\n`,
+      `${JSON.stringify(releasedV0Header(header))}\n${eventLines(migrationOneTurnLog())}\n`,
     )
     await mkdir(dirname(sourcePath), { recursive: true })
     await writeFile(sourcePath, source)
@@ -693,7 +722,7 @@ describe('JsonlSessionPersistence: immutable format generations', () => {
     const restored = await readAll(ctx.sessionPersistence, header.id)
     expect(restored).toEqual({
       meta: { ...header, delegationDepth: 0 },
-      events: oneTurnLog(),
+      events: migratedOneTurnLog(),
     })
     const userMessage = restored.events.find(event => event.type === 'user/message')
     expect(userMessage).toBeDefined()
@@ -762,7 +791,7 @@ describe('JsonlSessionPersistence: immutable format generations', () => {
 
     const firstOpening = ctx.sessionPersistence.open(header.id, 'read')
     await pause.entered
-    await appendFile(sourcePath, `${eventLines(releasedV1OneTurnLog())}\n`)
+    await appendFile(sourcePath, `${eventLines(migrationOneTurnLog())}\n`)
     const secondOpening = ctx.sessionPersistence.open(header.id, 'read')
     let tallyFailure: unknown
     try {
@@ -776,8 +805,8 @@ describe('JsonlSessionPersistence: immutable format generations', () => {
     const [first, second] = await Promise.all([firstOpening, secondOpening])
     try {
       if (tallyFailure !== undefined) throw tallyFailure
-      expect((await first.read()).events).toEqual(oneTurnLog())
-      expect((await second.read()).events).toEqual(oneTurnLog())
+      expect((await first.read()).events).toEqual(migratedOneTurnLog())
+      expect((await second.read()).events).toEqual(migratedOneTurnLog())
     } finally {
       await Promise.all([first.close(), second.close()])
     }
@@ -870,7 +899,7 @@ describe('JsonlSessionPersistence: immutable format generations', () => {
     const restored = await readAll(ctx.sessionPersistence, header.id)
     expect(restored.meta).toEqual({ ...header, delegationDepth: 0 })
     expect(restored.events.map(event => event.type)).toEqual([
-      'turn/start', 'user/message', 'step/start', 'assistant/message', 'step/end', 'turn/end',
+      'turn/start', 'step/start', 'system/message', 'user/message', 'assistant/message', 'step/end', 'turn/end',
     ])
     expect(restored.events.find(event => event.type === 'assistant/message'))
       .toMatchObject({ data: { message: { content: [{ type: 'text', text: 'hello' }] } } })
@@ -923,20 +952,20 @@ describe('JsonlSessionPersistence: immutable format generations', () => {
     const header = meta('released-v0-write', '/work')
     const sourcePath = historicalLogPath(root, header.cwd, header.id)
     const source = Buffer.from(
-      `${JSON.stringify(releasedV0Header(header))}\n${eventLines(releasedV1OneTurnLog())}\n`,
+      `${JSON.stringify(releasedV0Header(header))}\n${eventLines(migrationOneTurnLog())}\n`,
     )
     await mkdir(dirname(sourcePath), { recursive: true })
     await writeFile(sourcePath, source)
     const suffix: SessionEvent[] = [
-      { type: 'turn/start', seq: SessionSeq(6), time: 9, data: { turn: 2 } },
-      { type: 'turn/end', seq: SessionSeq(7), time: 10, data: { turn: 2, reason: { kind: 'completed' } } },
+      { type: 'turn/start', seq: SessionSeq(7), time: 9, data: { turn: 2 } },
+      { type: 'turn/end', seq: SessionSeq(8), time: 10, data: { turn: 2, reason: { kind: 'completed' } } },
     ]
 
     await appendBatch(ctx.sessionPersistence, header.id, suffix)
 
     expect(await readFile(sourcePath)).toEqual(source)
     expect((await readAll(ctx.sessionPersistence, header.id)).events).toEqual([
-      ...oneTurnLog(),
+      ...migratedOneTurnLog(),
       ...suffix,
     ])
   })
@@ -947,17 +976,17 @@ describe('JsonlSessionPersistence: immutable format generations', () => {
     await mkdir(dirname(sourcePath), { recursive: true })
     await writeFile(
       sourcePath,
-      `${JSON.stringify(releasedV0Header(header))}\n${eventLines(releasedV1OneTurnLog())}\n`,
+      `${JSON.stringify(releasedV0Header(header))}\n${eventLines(migrationOneTurnLog())}\n`,
     )
     const reader = await ctx.sessionPersistence.open(header.id, 'read')
     const suffix: SessionEvent[] = [
-      { type: 'turn/start', seq: SessionSeq(6), time: 9, data: { turn: 2 } },
-      { type: 'turn/end', seq: SessionSeq(7), time: 10, data: { turn: 2, reason: { kind: 'completed' } } },
+      { type: 'turn/start', seq: SessionSeq(7), time: 9, data: { turn: 2 } },
+      { type: 'turn/end', seq: SessionSeq(8), time: 10, data: { turn: 2, reason: { kind: 'completed' } } },
     ]
     try {
-      expect((await reader.read()).events).toEqual(oneTurnLog())
+      expect((await reader.read()).events).toEqual(migratedOneTurnLog())
       await appendBatch(ctx.sessionPersistence, header.id, suffix)
-      expect((await reader.read()).events).toEqual([...oneTurnLog(), ...suffix])
+      expect((await reader.read()).events).toEqual([...migratedOneTurnLog(), ...suffix])
     } finally {
       await reader.close()
     }
@@ -2207,24 +2236,25 @@ describe('JsonlSessionPersistence: nested v3 Assistant streams', () => {
     await mkdir(dirname(sourcePath), { recursive: true })
     await writeFile(sourcePath, source)
 
+    const expected = version === 2 ? withMigratedEmptyHead(log) : log
     const restored = await readAll(ctx.sessionPersistence, m.id)
     expect(restored.meta.version).toBe(3)
-    expect(restored.events).toEqual(log)
+    expect(restored.events).toEqual(expected)
     expect(await readFile(sourcePath)).toEqual(source)
     if (version === 2) await expect(readFile(currentPath)).rejects.toMatchObject({ code: 'ENOENT' })
     const secondTurn: SessionEvent[] = JSON.parse(JSON.stringify(log)) as SessionEvent[]
     for (const [k, e] of secondTurn.entries()) {
-      ;(e as { seq: number }).seq = log.length + k
+      ;(e as { seq: number }).seq = expected.length + k
       ;(e.data as { turn: number }).turn = 2
     }
     await appendBatch(ctx.sessionPersistence, m.id, secondTurn)
 
     const loaded = await readAll(ctx.sessionPersistence, m.id)
-    expect(loaded.events).toEqual([...log, ...secondTurn])
+    expect(loaded.events).toEqual([...expected, ...secondTurn])
     expect(currentPath).toBe(join(dirname(sourcePath), 'session.v3.jsonl'))
     const successor = (await readFile(currentPath, 'utf8')).trimEnd().split('\n')
     expect(JSON.parse(successor[0] as string)).toMatchObject({ version: 3 })
-    expect(successor.slice(1).map(row => JSON.parse(row) as unknown)).toEqual([...log, ...secondTurn])
+    expect(successor.slice(1).map(row => JSON.parse(row) as unknown)).toEqual([...expected, ...secondTurn])
     if (version === 2) expect(await readFile(sourcePath)).toEqual(source)
     // Compact tags stay nested; physical rows contain only current event tags.
     const tags = (await readFile(rawLogPath(root, '/work', m.id), 'utf8')).split('\n').filter(Boolean)
