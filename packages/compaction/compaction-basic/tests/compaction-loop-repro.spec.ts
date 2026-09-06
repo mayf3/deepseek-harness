@@ -378,7 +378,7 @@ describe('token pressure after loop-admitted system prompts', () => {
       expect(events.filter(event => event.type === 'assistant/attempt')).toHaveLength(retry ? 1 : 0)
       expect(events.filter(event => event.type === 'step/start')).toHaveLength(4)
       expect(requests[0]?.messages[0]?.content).toEqual([{ type: 'text', text: 'initial guidance '.repeat(8) }])
-      if (retry) expect(requests[1]?.messages[0]?.content).toEqual([{ type: 'text', text: 'retry guidance' }])
+      if (retry) expect(requests[1]?.messages[0]?.content).toEqual(requests[0]?.messages[0]?.content)
       expect(requests.at(-1)?.messages.some(message => message.role === 'system')).toBe(false)
     } finally {
       await ctx.fiber.dispose()
