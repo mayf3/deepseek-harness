@@ -9,6 +9,8 @@ import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import ts from 'typescript'
 import { SESSION_FORMAT_VERSION } from '@deepseek-ai/dsh-session'
+import { releasedV0SessionFormatCodec } from '@deepseek-ai/dsh-session-format-v0-to-v1'
+import type { SessionFormatEvent, SessionFormatMigrationContext } from '@deepseek-ai/dsh-session-format'
 import {
   assertPersistedSessionVersion,
   assertSessionFixtureVersion,
@@ -660,53 +662,34 @@ describe('headless recorded-session snapshots', () => {
   })
 
   it('keeps packed chunk rows logically equal to their unpacked recording', async () => {
-    const sourceDir = join(snapshotsRoot, 'hook-cc-pretool-deny')
     const packedDir = join(snapshotsRoot, 'packed-chunks')
-    const source = await readFile(join(sourceDir, 'session.jsonl'), 'utf8')
     const packed = await readFile(join(packedDir, await primaryFixtureFile(packedDir)), 'utf8')
-    const rowTypes = records(packed).flatMap((record) => {
-      const type = record.type
-      return type === 'text-chunks' || type === 'reasoning-chunks' || type === 'tool-call-chunks' ? [type] : []
-    })
-    expect([...new Set(rowTypes)].sort()).toStrictEqual(['reasoning-chunks', 'text-chunks', 'tool-call-chunks'])
-
-    const withoutVolatileMessage = (event: unknown): unknown => {
-      const cloned = structuredClone(event) as {
-        time?: unknown
-        type?: unknown
-        data?: {
-          durationMs?: unknown
-          id?: unknown
-          inserted?: Array<{ id?: unknown }>
-          message?: { id?: unknown }
-          stream?: Array<{ time?: number; time0?: number; dt?: number[] }>
-        }
-      }
-      delete cloned.time
-      delete (cloned as { seq?: unknown }).seq
-      if (cloned.type === 'agent/inbox/spliced') {
-        for (const message of cloned.data?.inserted ?? []) delete message.id
-      }
-      if (cloned.type === 'user/message') delete cloned.data?.id
-      if (cloned.type === 'assistant/message' || cloned.type === 'tool/result') delete cloned.data?.message?.id
-      if (cloned.type === 'assistant/message' || cloned.type === 'assistant/attempt') {
-        for (const record of cloned.data?.stream ?? []) {
-          if (record.time !== undefined) record.time = 0
-          if (record.time0 !== undefined) record.time0 = 0
-          if (record.dt !== undefined) record.dt = record.dt.map(() => 0)
-        }
-      }
-      if (cloned.type === 'hook/result') delete cloned.data?.durationMs
-      return cloned
+    const [header, ...rows] = records(packed)
+    const packedTypes = new Set(['text-chunks', 'reasoning-chunks', 'tool-call-chunks'])
+    expect([...new Set(rows.filter(row => packedTypes.has(String(row.type))).map(row => row.type))].sort())
+      .toStrictEqual(['reasoning-chunks', 'text-chunks', 'tool-call-chunks'])
+    const decoder = releasedV0SessionFormatCodec.createDecoder({ ...header, cwd: '/snapshot' }, 'strict')
+    const expanded: SessionFormatEvent[] = []
+    const output: SessionFormatMigrationContext = {
+      emitEvent: event => { expanded.push(event) },
+      emitRun: run => { expanded.push(...run.expand()) },
     }
-    const logical = (fixture: string): unknown[] => {
-      const current = prepareSessionSnapshotFixtureForComparison(fixture)
-      return [
-        records(current)[0],
-        ...parseSessionLog(current).map(withoutVolatileMessage),
-      ]
+    let seq = 0
+    for (const row of rows) {
+      if (packedTypes.has(String(row.type))) {
+        const data = row.data as JsonObject
+        const values = (row.type === 'tool-call-chunks' ? data.args : data.texts) as unknown[]
+        decoder.decodeRow({ ...row, seq0: seq, time0: 0 }, output)
+        seq += values.length
+      } else {
+        decoder.decodeRow({ ...row, seq: seq++, time: 0 }, output)
+      }
     }
-    expect(logical(packed)).toStrictEqual(logical(source))
+    decoder.finish(output)
+    const unpacked = [header, ...expanded.map(({ seq: _seq, time: _time, ...event }) => event)]
+      .map(row => JSON.stringify(row)).join('\n') + '\n'
+    const context = contextOf([packed])
+    expect(normalizeSessionSnapshots([packed], context)).toEqual(normalizeSessionSnapshots([unpacked], context))
   })
 
   it('replays original inbox mentions before normalized user messages', () => {
