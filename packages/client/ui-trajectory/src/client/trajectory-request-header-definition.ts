@@ -21,7 +21,7 @@ export interface TrajectorySystemMessageState extends SystemPromptState {
  * Definition retaining each `system/message` surface node for the Trajectory
  * request-header Definition, which reads it through `reader.previous` and
  * presents the prompt through the request's `system` cell. A node that
- * introduces or replaces the prompt contributes nothing itself; an in-history
+ * lacks a loaded header contributes known text without request config or tools; an in-history
  * update contributes a request-header fact at its own position, since no
  * `request/header` follows a prompt change that keeps the cached history.
  * Surface replacements also contribute prompt changes when they remove the
@@ -74,13 +74,17 @@ function trajectorySystemMessageDefinition(inspect: SystemPromptInspector): Conv
       }
     },
     update: context => context.state,
-    buildViewNode: context => context.state?.header === undefined
-      || context.state.header.seq !== context.start?.event.seq
-      ? null
-      : trajectoryNode(context, context.state.header.seq, {
-        kind: 'request-header',
-        header: context.state.header,
-      }),
+    buildViewNode: (context) => {
+      const state = context.state
+      if (state?.header !== undefined && state.header.seq === context.start?.event.seq) {
+        return trajectoryNode(context, state.header.seq, { kind: 'request-header', header: state.header })
+      }
+      const prompt = state?.introduced
+      return prompt !== undefined && prompt.text !== ''
+        && context.start?.event.type === 'system/message' && context.start.event.surfaceOp === 'append'
+        ? trajectoryNode(context, prompt.seq, { kind: 'system-prompt', prompt })
+        : null
+    },
   }
 }
 /* jscpd:ignore-end */

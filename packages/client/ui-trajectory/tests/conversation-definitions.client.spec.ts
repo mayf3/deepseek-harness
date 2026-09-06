@@ -637,6 +637,31 @@ describe('Trajectory conversation Definitions', () => {
     ])
   })
 
+  it('shows a complete appended prompt at the start of a headerless window', () => {
+    const value = assembler([
+      at(10, 'system/message', {
+        turn: 2, step: 1, message: systemMessage('known prompt'),
+      }, { surfaceOp: 'append' }),
+      at(11, 'step/end', { turn: 2, step: 1 }),
+      at(12, 'step/start', { turn: 2, step: 2 }),
+      at(13, 'assistant/message', {
+        turn: 2, step: 2, message: assistantMessage('window-assistant', 'answer'),
+      }),
+    ], true)
+    const request = snapshot(value).requests.find(request => request.purpose === 'assistant')
+    expect(request?.purpose === 'assistant' && request.prompt).toBeUndefined()
+    expect(request?.requestConfig).toBeUndefined()
+    expect(snapshot(value).systemPrompts).toMatchObject([{ seq: 10, text: 'known prompt', update: false }])
+    value.prepend([
+      at(1, 'system/message', { turn: 1, step: 1, message: systemMessage('original') }, { surfaceOp: 'append' }),
+      at(2, 'request/header', { reason: 'initial', header: { config: { provider: 'test', model: 'test' } } }),
+    ], false)
+    value.flush()
+    expect(snapshot(value).systemPrompts).toBeUndefined()
+    expect(snapshot(value).requests.find(request => request.purpose === 'assistant'))
+      .toMatchObject({ prompt: { system: 'known prompt', config: { provider: 'test', model: 'test' } } })
+  })
+
   it('carries an in-history prompt update into later requests as a system change at its own position', () => {
     const value = assembler([
       at(1, 'turn/start', { turn: 1 }),
@@ -804,6 +829,8 @@ describe('Trajectory conversation Definitions', () => {
       at(10, 'assistant/message', { turn: 1, step: 1, message: assistantMessage('reply', 'reply') }),
     ])
     expect(snapshot(value).requests.at(-1)).toMatchObject({ prompt: { system: '' } })
+    const uncertain = assembler([system(6, 'C', 3), system(7, 'Known but unordered')], true)
+    expect(snapshot(uncertain).systemPrompts).toBeUndefined()
     value.prepend([system(1, 'A'), system(3, 'B'), system(5, 'A2', 1)], false)
     value.flush()
     expect(snapshot(value).requests.at(-1)).toMatchObject({ prompt: { system: 'C' } })

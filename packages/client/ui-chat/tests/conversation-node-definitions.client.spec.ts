@@ -1475,12 +1475,31 @@ describe('built-in conversation node Definitions', () => {
     const prompts = current.nodes.values()
       .filter(candidate => candidate.kind === 'system-prompt')
     expect(prompts.map(prompt => ({ anchorSeq: prompt.anchorSeq, data: prompt.data }))).toEqual([
-      { anchorSeq: 2, data: { text: '# Initial' } },
+      { anchorSeq: 1, data: { text: '# Initial' } },
       { anchorSeq: 5, data: { text: '# Initial' } },
       { anchorSeq: 6, data: { text: '# Initial' } },
       { anchorSeq: 8, data: { text: '# Updated' } },
     ])
     expect(current.nodes.values().filter(candidate => candidate.kind === 'unknown')).toEqual([])
+  })
+
+  it('shows a complete appended prompt at the start of a headerless window', () => {
+    const value = assembler([
+      systemUpdateAt(10, '# Known prompt', 2, 1),
+      at(11, 'user/message', textMessage('window-user', 'continue'), { surfaceOp: 'append' }),
+    ], true)
+    const current = snapshot(value)
+    expect(current.nodes.values().filter(candidate => candidate.kind === 'system-prompt')
+      .map(candidate => candidate.data)).toEqual([{ text: '# Known prompt' }])
+    expect(current.nodes.values().filter(candidate => candidate.kind === 'unknown')).toEqual([])
+    value.prepend([
+      systemAt(1, '# Original'),
+      at(2, 'request/header', { reason: 'initial', header: { config: { provider: 'fake', model: 'fake' } } }),
+    ], false)
+    value.flush()
+    const restored = snapshot(value)
+    expect(restored.order.map(key => restored.nodes.get(key)).filter(candidate => candidate?.kind === 'system-prompt')
+      .map(candidate => candidate?.data)).toEqual([{ text: '# Original' }, { text: '# Known prompt', update: true }])
   })
 
   it('withholds windowed replacement prompts until prepend resolves their positions', () => {
@@ -1584,7 +1603,8 @@ describe('built-in conversation node Definitions', () => {
     if (mode === 'partial') {
       value.replaceWindow(history.slice(7), true)
       value.flush()
-      expect(snapshot(value).nodes.values().filter(candidate => candidate.kind === 'system-prompt')).toEqual([])
+      expect(snapshot(value).nodes.values().filter(candidate => candidate.kind === 'system-prompt').map(candidate => candidate.data))
+        .toEqual([{ text: 'B' }])
       value.prepend(history.slice(0, 7), false)
       value.flush()
     }
@@ -1594,8 +1614,9 @@ describe('built-in conversation node Definitions', () => {
         value.flush()
       }
     }
-    expect(snapshot(value).nodes.values().filter(candidate => candidate.kind === 'system-prompt')
-      .map(candidate => candidate.data)).toEqual([
+    const current = snapshot(value)
+    expect(current.order.map(key => current.nodes.get(key)).filter(candidate => candidate?.kind === 'system-prompt')
+      .map(candidate => candidate?.data)).toEqual([
       { text: 'A' }, { text: 'B', update: true }, { text: 'A' },
     ])
   })
@@ -1606,10 +1627,12 @@ describe('built-in conversation node Definitions', () => {
       at(8, 'request/header', { reason: 'resume', header: { config: { provider: 'test', model: 'test' } } }),
     ], true)
     expect(node(snapshot(value), 'system-prompt')).toBeUndefined()
+    const uncertain = assembler([systemAt(6, 'C', 3), systemUpdateAt(7, 'Known but unordered', 1, 2)], true)
+    expect(node(snapshot(uncertain), 'system-prompt')).toBeUndefined()
     value.prepend([systemAt(1, 'A'), systemAt(3, 'B'), systemAt(5, 'A2', 1)], false)
     value.flush()
     expect(snapshot(value).nodes.values().filter(candidate => candidate.kind === 'system-prompt')
-      .map(candidate => candidate.data)).toEqual([{ text: 'B', update: true }, { text: 'C' }])
+      .map(candidate => candidate.data)).toEqual([{ text: 'A' }, { text: 'B', update: true }, { text: 'C' }])
   })
 
   it('never renders a system/message as a transcript bubble', () => {
@@ -1621,12 +1644,12 @@ describe('built-in conversation node Definitions', () => {
     ])
 
     const current = snapshot(value)
-    expect(current.order.map(key => current.nodes.get(key)?.kind)).toEqual(['user'])
+    expect(current.order.map(key => current.nodes.get(key)?.kind)).toEqual(['system-prompt', 'user'])
 
     value.append(systemAt(5, '# Replaced', 3))
     value.flush()
     const replaced = snapshot(value)
-    expect(replaced.order.map(key => replaced.nodes.get(key)?.kind)).toEqual(['user'])
+    expect(replaced.order.map(key => replaced.nodes.get(key)?.kind)).toEqual(['system-prompt', 'user'])
   })
 
   it('presents an in-history prompt update as its own card and lets no same-step header repeat it', () => {

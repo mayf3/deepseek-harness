@@ -51,12 +51,10 @@ function stableRequestPromptAnchor(
 /**
  * System-prompt surface node Definition for the Chat target. It owns every
  * `system/message` event on the Chat target so the unknown-surface fallback
- * never renders the prompt as a transcript row. A node that introduces or
- * replaces the prompt materializes no Node: the request-prompt Definition
- * reads its State through `reader.previous` and presents the prompt as the
- * request's `system-prompt` card. An in-history update — a prompt appended
- * after an earlier loaded system node — is the model-visible change at that
- * position, so it presents its own `system-prompt` card there. Positional
+ * never renders the prompt as a transcript row. Each nonempty append owns a
+ * prompt card, even without a loaded request header. Initial cards precede
+ * their step's input; in-history updates stay at their own positions. The
+ * request-prompt Definition owns replacement and later-series cards. Positional
  * replacements advance the effective prompt without changing historical cards.
  * @param inspect - Pure surface interpretation supplied by uiConversation.
  * @returns The Chat system-prompt Definition.
@@ -75,8 +73,10 @@ export function systemMessageDefinition(inspect: SystemPromptInspector): Convers
     update: context => context.state,
     buildViewNode: (context) => {
       const state = context.state?.introduced
-      if (state === undefined || !state.update || state.text === '') return null
-      return chatNode(context, 'system-prompt', state.seq, { text: state.text, update: true })
+      if (state === undefined || state.text === ''
+        || context.start?.event.type !== 'system/message' || context.start.event.surfaceOp !== 'append') return null
+      const anchor = state.update ? state.seq : requestPromptAnchor(context.start, undefined, true)
+      return chatNode(context, 'system-prompt', anchor, { text: state.text, ...state.update ? { update: true } : {} })
     },
   }
 }
@@ -100,15 +100,18 @@ export function requestPromptDefinition(inspect: RequestPromptInspector): Conver
         throw new Error('request-prompt start requires request/header')
       }
       const previous = reader.previous<RequestPromptState>('request-prompt')?.state
-      const system = reader.previous<SystemPromptState>('system-message')?.state.effective
+      const systemContext = reader.previous<SystemPromptState>('system-message')
+      const system = systemContext?.state.effective
       const location = match.location.kind === 'step'
         ? { turn: match.location.turn.turn, step: match.location.step.step }
         : {}
       const inspection = inspect(previous?.prompt, match.event, system)
       const change = inspection.change?.kind
-      // An in-history update committed in this same step already shows the
-      // prompt at its own position.
-      const shownByUpdate = system?.update === true
+      // Appended prompts own their cards; a same-step header must not repeat them.
+      const systemEvent = systemContext?.matches[0]?.event
+      const shownByUpdate = system !== undefined
+        && systemEvent?.type === 'system/message' && systemEvent.surfaceOp === 'append'
+        && (system.update || previous === undefined)
         && system.turn === location.turn
         && system.step === location.step
       return {
