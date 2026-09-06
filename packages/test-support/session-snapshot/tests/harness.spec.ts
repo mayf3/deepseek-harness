@@ -8,12 +8,22 @@ import { PROTOCOL_VERSION } from '@agentclientprotocol/sdk'
 import { runScenario, snapshotSpillRoot, type AgentUnderTest, type InputStep } from '../src/harness.ts'
 import { launchAcpTestAgent } from '../src/launcher.ts'
 
-const fsControl = vi.hoisted(() => ({ cleanupFailure: undefined as Error | undefined }))
+const fsControl = vi.hoisted(() => ({
+  cleanupFailure: undefined as Error | undefined,
+  spillAllocationFailure: undefined as { error: Error; allocated: string[] } | undefined,
+}))
 
 vi.mock('node:fs/promises', async (importOriginal) => {
   const actual = await importOriginal<typeof import('node:fs/promises')>()
   return {
     ...actual,
+    async mkdtemp(prefix: string): Promise<string> {
+      const failure = fsControl.spillAllocationFailure
+      if (prefix.endsWith('acp-snap-spill-') && failure !== undefined) throw failure.error
+      const path = await actual.mkdtemp(prefix)
+      failure?.allocated.push(path)
+      return path
+    },
     async rm(...args: Parameters<typeof actual.rm>): Promise<void> {
       if (String(args[0]).includes('acp-snap-cwd-') && fsControl.cleanupFailure !== undefined) {
         const failure = fsControl.cleanupFailure
@@ -567,6 +577,25 @@ describe('runScenario', () => {
       childFiles: string | null
     }
     expect(env.childFiles).toBe(childFiles.join(delimiter))
+  })
+
+  it('cleans acquired workspace and session roots when spill allocation fails', async () => {
+    const { fixtureFile } = await scenario({})
+    const failure = { error: Object.assign(new Error('spill allocation failed'), { code: 'ENOSPC' }), allocated: [] as string[] }
+    fsControl.spillAllocationFailure = failure
+    try {
+      await expect(runScenario(
+        { steps: boot },
+        { agent: AGENT, mode: 'replay', fixtureFile },
+      )).rejects.toBe(failure.error)
+      expect(failure.allocated).toHaveLength(2)
+      for (const root of failure.allocated) {
+        await expect(readdir(root)).rejects.toMatchObject({ code: 'ENOENT' })
+      }
+    } finally {
+      fsControl.spillAllocationFailure = undefined
+      await Promise.all(failure.allocated.map(root => rm(root, { recursive: true, force: true })))
+    }
   })
 
   it('gives concurrent runs of the same scenario private temporary spill roots', { timeout: 20_000 }, async () => {
