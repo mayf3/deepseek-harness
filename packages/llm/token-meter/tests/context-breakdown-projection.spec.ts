@@ -405,7 +405,7 @@ describe('contextBreakdown session projection', () => {
       ctx.sessionProjections.checkpoint(session),
     )) as ReturnType<typeof ctx.sessionProjections.checkpoint>
     const row = checkpoint['contextBreakdown']!
-    expect(row.ver).toBe(3)
+    expect(row.ver).toBe(4)
     expect(ctx.sessionProjections.viewCheckpoint(checkpoint).contextBreakdown).toEqual(projected(ctx, session))
     const replacement = session.append('user/message', createUserMessage({
       content: [{ type: 'text', text: 'summary' }], source: { kind: 'user' },
@@ -424,7 +424,7 @@ describe('contextBreakdown session projection', () => {
       stale, session.snapshotEvents(), SessionLogOffset(0), session.header, session.inheritedEventCount,
     )
     expect(replayed.snapshot.values.contextBreakdown).toEqual(projected(ctx, session))
-    expect(replayed.checkpoint['contextBreakdown']?.ver).toBe(3)
+    expect(replayed.checkpoint['contextBreakdown']?.ver).toBe(4)
     const invalid = {
       ...checkpoint,
       contextBreakdown: {
@@ -437,19 +437,17 @@ describe('contextBreakdown session projection', () => {
     )).toThrow()
   })
 
-  it('discards version-2 cache values and refolds system messages from the full log', async () => {
+  it('discards lower-layer version-3 scalar caches and refolds the full surface', async () => {
     const { ctx, session } = await harness()
     try {
       appendSystem(session, 'You are terse.')
       session.append('request/header', { header: { config: CONFIG, tools: TOOLS }, reason: 'initial' })
       appendUser(session, 'abcd')
       const current = ctx.sessionProjections.checkpoint(session)
-      // The old fold's fields still validate, but its header-based system price is not reusable.
       const staleValue = { systemTokens: 0, toolsTokens: estimateToolsTokens({ config: CONFIG, tools: TOOLS }), messageTokens: 17 }
-      expect(contextBreakdownProjectionDefinition.stateSchema.parse(staleValue)).toEqual(staleValue)
       const checkpoint = {
         ...current,
-        contextBreakdown: { ver: 2, seq: SessionSeq(session.seq - 1), val: staleValue },
+        contextBreakdown: { ver: 3, seq: SessionSeq(session.seq - 1), val: staleValue },
       }
       expect.soft(ctx.sessionProjections.viewCheckpoint(checkpoint)).not.toHaveProperty('contextBreakdown')
       expect.soft(ctx.sessionProjections.restoreFloor(checkpoint)).toBe(0)
@@ -460,7 +458,7 @@ describe('contextBreakdown session projection', () => {
         systemTokens: 8, toolsTokens: staleValue.toolsTokens, messageTokens: 9,
       })
       expect(restored.checkpoint).toEqual(current)
-      expect(restored.checkpoint['contextBreakdown']?.ver).toBe(3)
+      expect(restored.checkpoint['contextBreakdown']?.ver).toBe(4)
     } finally {
       await ctx.fiber.dispose()
     }
