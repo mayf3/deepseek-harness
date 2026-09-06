@@ -28,7 +28,7 @@ Status: implemented
 | 有存活的 `system/message` 且渲染后的提示词与其文本不同（包括提示词变为空） | 恰好替换该节点：`surfaceOp: { op: 'replace', start: <该节点的 seq>, end: <同一值> }`，`sourceEventSeqs: [<该节点的 seq>]`；空提示词产生一个投影为无消息的空内容节点 |
 | 渲染后的提示词与存活节点的文本相同 | 无操作 |
 
-循环在初始接纳的用户消息之前预留空系统头部，使稍后首次变为非空的提示词仍替换第 0 号节点。省略该空节点会让后来的提示词追加在用户历史之后，pi-ai 会将其转换为用户消息，而不是 `systemPrompt`。替换第 0 号节点是头部重写在 surface 上的表达：提供方前缀从第一个 token 起改变，日志通过 `sourceEventSeqs` 记录被遮蔽的节点，`replaceGeneration` 与压缩替换时一样推进。因此循环的 `startsSeries` 检测（`requestSurfaceGeneration !== surfaceGeneration`）无需在 `headerEquals` 中比较 `system` 即可覆盖提示词变更。`request/header` 保留 `initial`、`resume`、`change`、`series` 四种 reason；`change` 表示 config 或 tools 变更，提示词替换之后跟随的未变 header 记为 `series`。
+当初始渲染的提示词为空时，循环在初始接纳的用户消息之前预留空系统头部，使稍后首次变为非空的提示词仍替换第 0 号节点。省略该空节点会让后来的提示词追加在用户历史之后，pi-ai 会将其转换为用户消息，而不是 `systemPrompt`。替换第 0 号节点是头部重写在 surface 上的表达：提供方前缀从第一个 token 起改变，日志通过 `sourceEventSeqs` 记录被遮蔽的节点，`replaceGeneration` 与压缩替换时一样推进。因此循环的 `startsSeries` 检测（`requestSurfaceGeneration !== surfaceGeneration`）无需在 `headerEquals` 中比较 `system` 即可覆盖提示词变更。`request/header` 保留 `initial`、`resume`、`change`、`series` 四种 reason；`change` 表示 config 或 tools 变更，提示词替换之后跟随的未变 header 记为 `series`。
 
 `packages/core/session/src/surface.ts` 在 `assertSystemHeadRewrite` 中强制头部不变量：当第 0 号节点是 `system/message` 时，范围覆盖第 0 号节点的替换会被拒绝，除非替换事件本身是恰好覆盖该节点的 `system/message`。位于更后位置的系统节点没有此类保护；压缩范围可以遮蔽它们。
 
@@ -55,6 +55,18 @@ Status: implemented
 | 人类 transcript（文本记录）投影 | 跳过 `system/message`；它是模型历史，不是对话 |
 
 `RuntimeContextProjection` 与 `SystemPromptProjection` 是对称的：两者都通过 `sourceEventSeqs` 观察自己拥有的 surface 节点及其被遮蔽的情况，都把一条未提交的消息交给循环由 `turn()` 提交。区别在于角色与操作集——运行时上下文只追加 user 角色快照，系统提示词追加一次之后只做替换。
+
+### V2-to-V3 结构转换
+
+[V2-to-V3 迁移](../../../../packages/session/session-format-v2-to-v3/README.zh.md)把每个 V2 `request/header.system` 转为受保护的 `system/message` 头节点，并删除已退役的 header 字段。它紧接首个 `step/start` 插入空头节点，再在提示词不同的 header 之前立即替换该节点。插入消息的 ID 是确定性的。转换保留源事件顺序、重建请求的含义，以及所有其他消息的精确 ID 和内容。原生 V3 writer 正常写出提示词头节点；迁移事件布局与原生记录语义等价，但并非逐字节相同。
+
+插入事件会移动本地序列位置。转换重映射本地序号引用、替换范围与继承截点；历史投递／版本事实，以及捕获的其他会话引用保留源值。这些历史坐标不得被重新标记为对转换后 V3 日志的确认。
+
+严格迁移拒绝无法安全转换载荷的未知事件、首个步骤前不受支持的 surface 历史，以及开放步骤之外的提示词转换。这样的 V2 源可以有效，但在当前核心步骤不变量下没有保持顺序的转换方式。拒绝不会改动原始文件；它不会重排源事件，也不会放宽不变量来强行转换。V3 读取器拒绝已退役的 `header.system` 字段，并校验系统消息载荷与受保护头节点的重写，而非依赖 TypeScript 省略字段。
+
+[已发布格式策略](2026-08-31-released-session-format-migrations.zh.md)保持 V0、V1、V2 代际字节冻结，并且只发布 V3 后继代际。V3 是一个尚未发布的目标，而不是每个功能一个新版本；它在发布前可以演化，因此集成必须使用可丢弃的 home。已有 V3 代际不会重跑 V2-to-V3。投影缓存版本 4 独立于 Session 格式，并不意味着 Session V4。
+
+[规范信封工作](https://github.com/deepseek-ai/deepseek-harness/pull/3636)独立开展，此处尚未集成。它在同一 V2-to-V3 迁移边中的组合顺序位于该结构转换之后，因此规范化的是转换后的事件，而不是替代该转换。
 
 ## Alternatives considered
 
