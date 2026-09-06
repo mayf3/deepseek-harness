@@ -78,7 +78,8 @@ export const systemMessageDefinition: ConversationNodeDefinition<SystemPromptNod
 }
 
 /**
- * Request-header prompt Definition for the Chat target.
+ * Request-header prompt Definition for the Chat target. Resume and explicit
+ * series starts retain a prompt card even when the system text is unchanged.
  * @param inspect - the shared prompt interpretation, supplied by the
  * uiConversation service (a client bundle cannot value-import it).
  * @returns the Chat request-prompt Definition.
@@ -109,6 +110,7 @@ export function requestPromptDefinition(inspect: RequestPromptInspector): Conver
           match.event.data.reason === 'initial',
         ),
         showsPrompt: previous === undefined
+          || match.event.data.reason === 'resume'
           || match.event.data.reason === 'series'
           || match.event.data.startsSeries === true
           || change === 'system'

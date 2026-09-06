@@ -25,7 +25,7 @@ Conversation 组装的浏览器 Chat target。本包注册 Chat event definition
 <a id="system-prompt-row"></a>
 ## 系统提示词行
 
-Chat 会为非空的初始请求、显式消息序列起点、文本发生变化的 `system/message` surface 节点替换（文本读取自 `request/header` 之前最近的 `system/message` 节点），或前序 header 尚未进入已加载历史窗口的非初始请求显示一行默认折叠的`系统提示词`。前序 header 到达后，内容未变的 resume 不会重复该行；同一序列内仅配置或仅工具变化、工具步骤与重试也不会重复，且 `system/message` 事件绝不会渲染为对话消息。该行位于请求的用户消息之前，与提供方 envelope 顺序一致；展开后显示保留原始换行的精确模型可见文本。系统节点为空或位于已加载窗口之外的请求不创建该行，直到包含该节点的分页到达。
+Chat 会为非空的初始请求、显式消息序列起点、文本发生变化的 `system/message` surface 节点替换（文本读取自 `request/header` 之前最近的 `system/message` 节点），或前序 header 尚未进入已加载历史窗口的非初始请求显示一行默认折叠的`系统提示词`。即使系统文本未变，resume 也会重复该行，包括分页补齐前序 header 和系统节点后；同一序列内仅配置或仅工具变化、工具步骤与重试不会重复，且 `system/message` 事件绝不会渲染为对话消息。该行位于请求的用户消息之前，与提供方 envelope 顺序一致；展开后显示保留原始换行的精确模型可见文本。系统节点为空或位于已加载窗口之外的请求不创建该行，直到包含该节点的分页到达。
 
 -----
 
