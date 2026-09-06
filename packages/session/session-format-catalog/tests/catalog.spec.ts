@@ -111,7 +111,6 @@ describe('first-party Session format catalog', () => {
     expect(JSON.stringify({ header, rows })).toBe(before)
   })
 
-
   it.each([0, 1, 2])('migrates frozen v%i PTC records and reopens the actual current representation without rewriting IDs', (version) => {
     const sourceHeader = deepFreeze({
       type: 'session', version, id: 'tools-code-mode:session', createdAt: 1, delegationDepth: 0,
@@ -167,7 +166,6 @@ describe('first-party Session format catalog', () => {
     expect(JSON.stringify({ sourceHeader, rows })).toBe(before)
     expect(JSON.stringify({ currentHeader, currentRows })).toBe(encodedBefore)
   })
-
 
   it.each(['current', 'transformed'] as const)('rejects native v3 obsolete required tags with %s validation and retains ignorable tags', (validation) => {
     const header = deepFreeze({ type: 'session', version: 3, id: 'native-ptc', createdAt: 1, isSeeded: false, delegationDepth: 0 })

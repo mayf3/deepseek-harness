@@ -29,7 +29,7 @@ function validateResult(
   }
 }
 
-/** Install monotonic pipeline, final-snapshot, and code-dispatch enclosure checks. */
+/** Install monotonic pipeline, final-snapshot, and PTC dispatch enclosure checks. */
 const install: InvariantInstaller = Object.assign((ctx: Context, fail: InvariantFailure) => {
   const stages = new WeakMap<object, ToolStage>()
   const openTurns = new WeakMap<Session, number | null>()

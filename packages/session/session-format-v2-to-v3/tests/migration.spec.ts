@@ -226,7 +226,6 @@ describe('v2 to v3 PTC migration', () => {
     expect(context.values).toEqual([first])
   })
 
-
   it.each(['tool/code-dispatch-start', 'tool/code-dispatch'])('keeps %s in the frozen v2 codec but rejects it as required native v3 input', (type) => {
     const row = deepFreeze({ type, seq: 0, time: 1, data: { text: 'tools-code-mode' } })
     const v2 = releasedV2SessionFormatCodec.createDecoder(releasedV2SessionFormatCodec.encodeHeader(header, 0), 'strict')

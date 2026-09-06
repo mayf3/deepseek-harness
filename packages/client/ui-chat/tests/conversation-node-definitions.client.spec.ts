@@ -2030,7 +2030,7 @@ describe('built-in conversation node Definitions', () => {
     expect(node(snapshot(value), 'compaction')).toBeUndefined()
   })
 
-  it('ignores legacy retry and code-dispatch events without correlation ids', () => {
+  it('ignores legacy retry and PTC dispatch events without correlation ids', () => {
     const value = assembler([
       at(10, 'llm/retry', {
         turn: 1,
