@@ -22,6 +22,7 @@ import { readFile, readdir, writeFile } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { isSurfaceEligibleType } from '@deepseek-ai/dsh-session/surface'
+import { SESSION_FORMAT_VERSION } from '@deepseek-ai/dsh-session'
 import { describe, expect, it } from 'vitest'
 import { type AgentUnderTest, type HarvestedLog, type InputScript, runScenario } from './harness.ts'
 import {
@@ -1146,19 +1147,24 @@ export function stabilizeRefreshLog(
 }
 
 /**
- * Check the selected generation of every parent and child fixture against storage policy.
+ * Check every selected role for tool/path defects and current generations for canonical prompt/identity storage.
+ * Historical roles retain their released bytes, including roles retired by the current writer.
  * @param dir Scenario directory containing canonical Session fixtures.
  * @param scenarioName Scenario name used in failure diagnostics.
  * @returns Resolves when all selected fixtures satisfy the storage checks.
  */
 export async function assertSessionFixtureStorage(dir: string, scenarioName: string): Promise<void> {
   const files = await sessionFixtures(dir)
+  const currentFixtures: string[] = []
   for (const file of files) {
     const fixture = await readFile(join(dir, file), 'utf8')
+    const version = assertSessionFixtureVersion(file, fixture)
     expect(unknownToolCallIds(fixture), `${scenarioName}/${file} contains UNKNOWN_TOOL`)
       .toEqual([])
     expect(fixture, `${scenarioName}/${file} carries a non-canonical macOS cwd token`)
       .not.toContain('/private{{cwd}}')
+    if (version !== SESSION_FORMAT_VERSION) continue
+    currentFixtures.push(fixture)
     expect(scrubSystemPrompts(fixture), `${scenarioName}/${file} carries an unscrubbed system prompt`)
       .toEqual(fixture)
     expect(scrubToolSchemas(fixture), `${scenarioName}/${file} carries unscrubbed tool schemas`)
@@ -1166,8 +1172,7 @@ export async function assertSessionFixtureStorage(dir: string, scenarioName: str
     expect(systemPromptPrecedesRequests(fixture), `${scenarioName}/${file} has a request/header with no preceding system/message`)
       .toBe(true)
   }
-  const fixtures = await Promise.all(files.map(file => readFile(join(dir, file), 'utf8')))
-  expect(redactSessionSnapshotIds(fixtures), `${scenarioName}: identity redaction fixed point`).toEqual(fixtures)
+  expect(redactSessionSnapshotIds(currentFixtures), `${scenarioName}: identity redaction fixed point`).toEqual(currentFixtures)
 }
 
 /**

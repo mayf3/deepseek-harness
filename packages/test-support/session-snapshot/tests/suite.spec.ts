@@ -128,13 +128,14 @@ const RECORD_SCENARIOS: Scenario[] = [
 // committed record fixtures and expected outputs in place.
 const BOOTSTRAP = process.env.ACP_SNAPSHOT_SPEC_BOOTSTRAP === '1'
 const recordDir = BOOTSTRAP ? RECORD_SRC : mkdtempSync(join(tmpdir(), 'acp-snap-record-suite-'))
-const retiredChildFixture = readFileSync(join(RECORD_SRC, 'rec-child', 'session.1.jsonl'), 'utf8')
+const retiredChildFixture = readFileSync(join(RECORD_SRC, 'rec-child', 'session.1.v3.jsonl'), 'utf8')
 if (!BOOTSTRAP) {
   cpSync(RECORD_SRC, recordDir, { recursive: true })
   // Record mode owns its output inventory: a new scenario has no primary yet,
   // while a changed child count can leave old numbered fixtures behind.
   rmSync(join(recordDir, 'rec-pin', 'session.jsonl'))
-  writeFileSync(join(recordDir, 'rec-child', 'session.2.jsonl'), retiredChildFixture)
+  rmSync(join(recordDir, 'rec-pin', 'session.v3.jsonl'))
+  writeFileSync(join(recordDir, 'rec-child', 'session.2.v3.jsonl'), retiredChildFixture)
 }
 const refreshDir = mkdtempSync(join(tmpdir(), 'acp-snap-refresh-suite-'))
 cpSync(REPLAY_DIR, refreshDir, { recursive: true })
@@ -244,7 +245,7 @@ describe('defineAcpSnapshotSuite: record inventory write-back', () => {
     expect(fixture).toContain('"type":"session"')
     expect(fixture).toContain('"cwd":"{{cwd}}"')
     if (!BOOTSTRAP) {
-      expect(readFileSync(join(recordDir, 'rec-child', 'session.2.jsonl'), 'utf8')).toBe(retiredChildFixture)
+      expect(readFileSync(join(recordDir, 'rec-child', 'session.2.v3.jsonl'), 'utf8')).toBe(retiredChildFixture)
     }
     expect(readFileSync(join(recordDir, 'rec-child', 'tool-schemas.1.expected.json'), 'utf8'))
       .toContain('"name": "t1"')
