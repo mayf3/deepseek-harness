@@ -24,7 +24,7 @@ Status: implemented
 
 ### 决策规则
 
-`packages/core/agent-loop/src/runtime-context.ts` 中的 `SystemPromptProjection.project(rendered, { inHistory, startsSeries })` 每次调用都扫描当前 surface 上存活的 `system/message` 节点。它返回有序的逐节点提交。没有存活的系统节点时，追加非空渲染文本。有效文本取自最新的非空系统节点，没有时回退到头节点；未生效的空尾节点既不提供有效文本，也无需再次以空内容替换。无论路由或序列状态如何，空渲染文本都会清除每个生效的系统节点。不具备能力的路由或新请求序列面对非空渲染文本时，即使有效文本未变也执行归并。除此之外，有效文本相同时不产生事件。具体操作如下：
+`packages/core/agent-loop/src/runtime-context.ts` 中的 `SystemPromptProjection.project(rendered, { inHistory, startsSeries })` 每次调用都扫描当前 surface 上存活的 `system/message` 节点。它返回有序的逐节点提交。没有存活的系统节点时，即使渲染文本为空也预留头节点。有效文本取自最新的非空系统节点，没有时回退到头节点；未生效的空尾节点既不提供有效文本，也无需再次以空内容替换。无论路由或序列状态如何，空渲染文本都会清除每个生效的系统节点。不具备能力的路由或新请求序列面对非空渲染文本时，即使有效文本未变也执行归并。除此之外，有效文本相同时不产生事件。具体操作如下：
 
 | 路由能力 | 前缀状态 | 操作 |
 |---|---|---|
@@ -51,7 +51,7 @@ Chat 与 Trajectory 通过纯操作 `uiConversation.inspectSystemPrompt` 解释�
 
 ### 压缩
 
-`compaction-basic` 不变。`selectCompactableRange` 仍锚定在第一个非系统节点，因此第 0 号节点永不被遮蔽，更后的历史内节点则可能被遮蔽；`buildSummarizationInput` 把第 0 号节点的文本作为摘要器的 `system` 回放，并按 surface 顺序回放每个被遮蔽节点的派生消息，因此区域中途的系统节点在原位被回放，摘要调用仍是对话的真实前缀。
+`compaction-basic` 不变。`selectCompactableRange` 仍锚定在第一个非系统节点，因此第 0 号节点永不被遮蔽，更后的历史内节点则可能被遮蔽；`buildSummarizationInput` 将派生的头节点前置到 `messages`，再按 surface 顺序加入每个被遮蔽节点的派生消息，因此区域中途的系统节点在原位被回放，摘要调用仍是对话的真实前缀。
 
 ## Alternatives considered
 

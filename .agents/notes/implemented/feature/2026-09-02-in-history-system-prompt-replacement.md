@@ -24,7 +24,7 @@ The loop records the mode in the session: `RequestContext.systemPromptUpdate` jo
 
 ### The decision rule
 
-`SystemPromptProjection.project(rendered, { inHistory, startsSeries })` in `packages/core/agent-loop/src/runtime-context.ts` scans the surviving `system/message` nodes of the current surface on every call. It returns ordered per-node commits. With no surviving system node it appends a non-empty rendering. Effective text comes from the latest non-empty system node, falling back to the head; dormant empty tails neither supply effective text nor need another empty replacement. An empty rendering clears every active system node, regardless of route or series state. For a non-empty rendering on an incapable route or at a new request series, consolidation applies even when the effective text is unchanged. Otherwise matching effective text emits nothing. The operations are:
+`SystemPromptProjection.project(rendered, { inHistory, startsSeries })` in `packages/core/agent-loop/src/runtime-context.ts` scans the surviving `system/message` nodes of the current surface on every call. It returns ordered per-node commits. With no surviving system node it reserves the head even for an empty rendering. Effective text comes from the latest non-empty system node, falling back to the head; dormant empty tails neither supply effective text nor need another empty replacement. An empty rendering clears every active system node, regardless of route or series state. For a non-empty rendering on an incapable route or at a new request series, consolidation applies even when the effective text is unchanged. Otherwise matching effective text emits nothing. The operations are:
 
 | Route capability | Prefix state | Operation |
 |---|---|---|
@@ -51,7 +51,7 @@ Chat and Trajectory interpret the effective prompt through the pure `uiConversat
 
 ### Compaction
 
-`compaction-basic` is unchanged. `selectCompactableRange` still anchors at the first non-system node, so node 0 is never shadowed and later in-history nodes can be; `buildSummarizationInput` replays node 0's text as the summarizer `system` and every shadowed node's derived message in surface order, so a mid-region system node is replayed in place and the summarization call remains a genuine prefix of the conversation.
+`compaction-basic` is unchanged. `selectCompactableRange` still anchors at the first non-system node, so node 0 is never shadowed and later in-history nodes can be; `buildSummarizationInput` prepends the derived head to `messages`, followed by every shadowed node's derived message in surface order, so a mid-region system node is replayed in place and the summarization call remains a genuine prefix of the conversation.
 
 ## Alternatives considered
 
