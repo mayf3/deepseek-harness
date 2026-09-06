@@ -495,7 +495,7 @@ describe('contextPressure session projection', () => {
       const target = endpoint === 'start' ? last : first
       session.append('user/message', createUserMessage({
         content: [{ type: 'text', text: 'summary' }], source: { kind: 'plugin', plugin: 'test' },
-      }), { surfaceOp: { op: 'replace', start: target, end: target }, sourceEventSeqs: [target] })
+      }), { surfaceOp: { op: 'replace', startSeq: target, endSeq: target }, sourceEventSeqs: [target] })
       expect(() => pressure(ctx, session)).toThrow('has no adjacent shadow price')
     } finally {
       await ctx.fiber.dispose()

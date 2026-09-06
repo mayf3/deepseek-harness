@@ -87,7 +87,7 @@ describe('prepared-route prompt admission', () => {
     expect(clearEvents).toHaveLength(3)
     for (const event of clearEvents) {
       expect(event.data.message.content).toEqual([])
-      expect(event.surfaceOp).toEqual({ op: 'replace', start: event.sourceEventSeqs?.[0], end: event.sourceEventSeqs?.[0] })
+      expect(event.surfaceOp).toEqual({ op: 'replace', startSeq: event.sourceEventSeqs?.[0], endSeq: event.sourceEventSeqs?.[0] })
     }
     const count = h.agent.session.snapshotEvents().filter(event => event.type === 'system/message').length
     await send(h.agent, 'still clear')
@@ -152,7 +152,7 @@ describe('prepared-route prompt admission', () => {
         const replaced = nodes.slice(nodes.indexOf(start), nodes.indexOf(latest) + 1)
         h.agent.session.append('user/message', createUserMessage({
           content: [{ type: 'text', text: 'compacted history' }], source: { kind: 'plugin', plugin: 'test-compaction' },
-        }), { surfaceOp: { op: 'replace', start, end: latest }, sourceEventSeqs: replaced })
+        }), { surfaceOp: { op: 'replace', startSeq: start, endSeq: latest }, sourceEventSeqs: replaced })
         // A retry must retain the assembly accepted for this step, not pick up new sections.
         h.setPrompt('not admitted until next step')
       }
@@ -188,7 +188,7 @@ describe('prepared-route prompt admission', () => {
     expect(replacements).toHaveLength(2)
     expect(replacements[0]?.type === 'system/message' && replacements[0].data.message.content).toEqual([])
     for (const event of replacements) {
-      expect(event.surfaceOp).toEqual({ op: 'replace', start: event.sourceEventSeqs?.[0], end: event.sourceEventSeqs?.[0] })
+      expect(event.surfaceOp).toEqual({ op: 'replace', startSeq: event.sourceEventSeqs?.[0], endSeq: event.sourceEventSeqs?.[0] })
     }
     await send(h.agent, 'fourth')
     expect(h.agent.session.snapshotEvents().filter(event => event.type === 'system/message')).toHaveLength(4)
@@ -237,7 +237,7 @@ describe('prepared-route prompt admission', () => {
         const seq = agent.session.surface.nodes.find(seq => agent.session.eventAt(seq)?.type === 'user/message')!
         agent.session.append('user/message', createUserMessage({
           content: [{ type: 'text', text: 'compacted history' }], source: { kind: 'plugin', plugin: 'test-compaction' },
-        }), { surfaceOp: { op: 'replace', start: seq, end: seq }, sourceEventSeqs: [seq] })
+        }), { surfaceOp: { op: 'replace', startSeq: seq, endSeq: seq }, sourceEventSeqs: [seq] })
       }
       return next()
     })

@@ -108,9 +108,8 @@ describe('incremental DeepSeek session-log upload', () => {
 
   it('uploads system append and replacement placement with unchanged data and provenance', async () => {
     const { ctx, session } = await harness('wire-system')
-    const head = session.append('system/message', {
-      turn: 1, step: 1, message: createSystemMessage('head', 'fixture'), extra: { retained: true },
-    }, { surfaceOp: 'append' })
+    const headData = { turn: 1, step: 1, message: createSystemMessage('head', 'fixture'), extra: { retained: true } }
+    const head = session.append('system/message', headData, { surfaceOp: 'append' })
     session.append('system/message', {
       turn: 1, step: 2, message: createSystemMessage('later', 'fixture'),
     }, { surfaceOp: 'append' })

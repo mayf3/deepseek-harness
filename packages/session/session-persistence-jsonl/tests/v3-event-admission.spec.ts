@@ -104,7 +104,13 @@ describe('native V3 event admission at EOF', () => {
     expect((await readFile(path)).subarray(0, bytes.length)).toEqual(bytes)
   })
 
-  it.each(['{not json', 'null'])('still recovers an ordinary malformed EOF row: %s', async (tail) => {
+  it.each([
+    '{not json',
+    'null',
+    JSON.stringify({ type: 'user/message', seq: 1, time: 2, data: {
+      id: 'missing-surface-op', role: 'user', content: [{ type: 'text', text: 'malformed canonical tail' }],
+    } }),
+  ])('still recovers an ordinary malformed EOF row: %s', async (tail) => {
     const bytes = Buffer.from(prefix + tail + '\n')
     expect(scanLog(bytes)).toMatchObject({ events: [start], committedBytes: Buffer.byteLength(prefix) })
     const path = await store(bytes)

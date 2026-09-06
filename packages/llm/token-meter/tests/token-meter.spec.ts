@@ -43,7 +43,7 @@ function replaceSystem(session: Session, node: SessionSeqType, text: string): Se
     turn: 1,
     step: 1,
     message: createSystemMessage(text, SYSTEM_PLUGIN),
-  }, { surfaceOp: { op: 'replace', start: node, end: node }, sourceEventSeqs: [node] }).seq
+  }, { surfaceOp: { op: 'replace', startSeq: node, endSeq: node }, sourceEventSeqs: [node] }).seq
 }
 
 const READ_TOOL = { name: 'read', description: 'read', parameters: { type: 'object' as const } }

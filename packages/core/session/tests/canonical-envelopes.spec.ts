@@ -112,7 +112,7 @@ describe('canonical event payload acceptance', () => {
       requestEvent({ header: { config, extra: { nested: [true, null] } }, reason: 'initial', extra: ['retained'] }),
       { type: 'system/message', seq: SessionSeq(0), time: 1, surfaceOp: 'append', data: {
         turn: 1, step: 1, message: { ...message, source: { ...message.source, extra: { nested: true } } }, extra: ['retained'],
-      } } as SessionEvent,
+      } } as unknown as SessionEvent,
     ]
     for (const event of events) {
       for (const [path, accept] of Object.entries(entryPaths)) {

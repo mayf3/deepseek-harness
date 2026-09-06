@@ -6,12 +6,12 @@ function system(seq: number, text: string, replaces?: number): SessionEvent {
   return {
     seq, time: seq, type: 'system/message',
     data: { turn: 1, step: seq, message: { role: 'system', content: [{ type: 'text', text }] } },
-    surfaceOp: replaces === undefined ? 'append' : { op: 'replace', start: replaces, end: replaces },
+    surfaceOp: replaces === undefined ? 'append' : { op: 'replace', startSeq: replaces, endSeq: replaces },
   } as SessionEvent
 }
 
 function replace(seq: number, start: number, end: number): SessionEvent {
-  return { seq, time: seq, type: 'user/message', surfaceOp: { op: 'replace', start, end } } as SessionEvent
+  return { seq, time: seq, type: 'user/message', surfaceOp: { op: 'replace', startSeq: start, endSeq: end } } as SessionEvent
 }
 
 function fold(events: readonly SessionEvent[]): SystemPromptState | undefined {
