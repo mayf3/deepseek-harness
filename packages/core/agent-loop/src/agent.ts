@@ -82,8 +82,8 @@ export class ReactLoopAgent implements Agent {
 
   /** Whether this loop instance has appended its initial/resume request anchor. */
   private requestHeaderLogged = false
-  /** Surface generation of the preceding built request. */
-  private requestSurfaceGeneration: number | undefined
+  /** Surface generation at attachment or the preceding built request. */
+  private requestSurfaceGeneration: number
   private readonly runtimeContext: RuntimeContextProjection
   /** Process-local revision of assistant frames for this attached Session. */
   private assistantStreamRevision = 0
@@ -96,6 +96,7 @@ export class ReactLoopAgent implements Agent {
     public readonly options: AgentOptions,
     public readonly session: Session,
   ) {
+    this.requestSurfaceGeneration = session.surface.replaceGeneration
     this.dispatch = agentEvents(loopCtx, this)
     this.inbox = new Inbox(session, {
       inserted: (message) => { this.dispatch.emit('agent/inbox/inserted', { message }) },
@@ -364,8 +365,7 @@ export class ReactLoopAgent implements Agent {
       const commits = this.systemPrompt.project(renderedPrompt, {
         inHistory: preparedCall?.systemPromptUpdate === 'in-history',
         startsSeries: startsRequestSeries
-          || this.requestSurfaceGeneration !== undefined
-          && this.requestSurfaceGeneration !== this.session.surface.replaceGeneration
+          || this.requestSurfaceGeneration !== this.session.surface.replaceGeneration
           || this.toolsChanged(assembly.tools),
       })
       for (const { message, intent } of commits) {

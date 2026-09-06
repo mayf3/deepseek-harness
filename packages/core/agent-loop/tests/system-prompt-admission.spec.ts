@@ -208,6 +208,32 @@ describe('prepared-route prompt admission', () => {
     expect(h.capable.requests[0]!.messages.map(message => message.role)).toEqual(['system', 'user', 'assistant', 'system', 'user'])
   })
 
+  it.each([false, true])('resumes capable history with first pre-step replacement=%s', async (replace) => {
+    const h = await harness()
+    await send(h.agent, 'first')
+    h.setPrompt('prompt two')
+    await send(h.agent, 'second')
+    const { agent: resumed } = await h.ctx.agents.create({
+      sessionId: SessionId('resumed-capable'), agentOptions: { provider: 'capable', model: 'model' },
+      seed: [...h.agent.session.snapshotEvents()],
+    })
+    h.ctx.on('agent/pre-step', ({ agent }, next) => {
+      if (agent === resumed && replace) {
+        const seq = agent.session.surface.nodes.find(seq => agent.session.eventAt(seq)?.type === 'user/message')!
+        agent.session.append('user/message', createUserMessage({
+          content: [{ type: 'text', text: 'compacted history' }], source: { kind: 'plugin', plugin: 'test-compaction' },
+        }), { surfaceOp: { op: 'replace', start: seq, end: seq }, sourceEventSeqs: [seq] })
+      }
+      return next()
+    })
+    await send(resumed, 'resume')
+    expect(systemTexts(h.capable.requests[2]!)).toEqual(replace
+      ? [[{ type: 'text', text: 'prompt two' }]]
+      : [[{ type: 'text', text: 'prompt one' }], [{ type: 'text', text: 'prompt two' }]])
+    expect(resumed.session.snapshotEvents().filter(event => event.type === 'request/header').map(event => event.data.reason))
+      .toEqual(['initial', 'resume'])
+  })
+
   it('normalizes restored history under the resumed instance route', async () => {
     const h = await harness()
     await send(h.agent, 'first')
