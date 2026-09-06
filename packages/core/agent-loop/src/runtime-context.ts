@@ -60,12 +60,14 @@ export class SystemPromptProjection {
   constructor(private readonly session: Session) {}
 
   /** The surviving `system/message` nodes in surface order. */
-  private systemNodes(): { seq: SessionSeq; text: string }[] {
-    const nodes: { seq: SessionSeq; text: string }[] = []
+  private systemNodes(): { seq: SessionSeq; text: string | undefined }[] {
+    const nodes: { seq: SessionSeq; text: string | undefined }[] = []
     for (const seq of this.session.surface.nodes) {
       const event = this.session.eventAt(seq)
       if (event?.type !== 'system/message') continue
-      nodes.push({ seq, text: textOf(event.data.message) ?? '' })
+      const content = event.data.message.content
+      const text = content.length === 0 ? '' : textOf(event.data.message)
+      nodes.push({ seq, text })
     }
     return nodes
   }
@@ -82,9 +84,9 @@ export class SystemPromptProjection {
     if (head === undefined) {
       return [{ message: createSystemMessage(rendered, SOURCE), intent: { surfaceOp: 'append' } }]
     }
-    const latest = nodes.findLast(node => node.text.length > 0) ?? head
+    const latest = nodes.findLast(node => node.text !== '') ?? head
     if (!input.inHistory || input.startsSeries || rendered.length === 0) {
-      const updates = nodes.slice(1).filter(node => node.text.length > 0)
+      const updates = nodes.slice(1).filter(node => node.text !== '')
         .map(node => this.replace(node.seq, ''))
       if (head.text !== rendered) updates.push(this.replace(head.seq, rendered))
       return updates

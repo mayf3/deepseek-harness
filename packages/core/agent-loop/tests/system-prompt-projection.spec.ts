@@ -35,6 +35,27 @@ function replaceOf(seq: number): SurfaceIntent {
 }
 
 describe('SystemPromptProjection', () => {
+  it('clears multiblock and nontext system nodes rather than treating them as dormant', async () => {
+    const ctx = await sessionStore()
+    try {
+      const session = ctx.sessions.create(SessionId('system-prompt-multiblock'))
+      const base = createSystemMessage('old', SOURCE)
+      session.append('system/message', { turn: 1, step: 1, message: {
+        ...base, content: [{ type: 'text', text: 'old ' }, { type: 'text', text: 'instructions' }],
+      } }, { surfaceOp: 'append' })
+      appendUser(session, 'hello')
+      session.append('system/message', { turn: 1, step: 1, message: {
+        ...createSystemMessage('tail', SOURCE), content: [{ type: 'reasoning', text: 'retained content' }],
+      } }, { surfaceOp: 'append' })
+      const projection = new SystemPromptProjection(session)
+      for (const update of projection.project('', CONTINUING)) commit(session, 2, update)
+      expect(session.deriveMessages().map(message => message.role)).toEqual(['user'])
+      expect(projection.project('', CONTINUING)).toEqual([])
+    } finally {
+      await ctx.fiber.dispose()
+    }
+  })
+
   it('appends the first rendered prompt, skips an unchanged one, and replaces the retained node on change', async () => {
     const ctx = await sessionStore()
     const session = ctx.sessions.create(SessionId('system-prompt-fresh'))
