@@ -1,9 +1,10 @@
-/** Identity adjacent stage; events and compact runs retain their values and ordering. */
+/** Adjacent PTC event and plugin-attribution migration with stable historical identities. */
 
-import { SessionFormatError, defineSessionFormatMigration, isSessionFormatJsonObject, sessionFormatCount } from '@deepseek-ai/dsh-session-format'
+import { SessionFormatError, SessionFormatUnsupportedMigrationError, defineSessionFormatMigration, isSessionFormatJsonObject, sessionFormatCount } from '@deepseek-ai/dsh-session-format'
 import type {
   SessionFormatEvent,
   SessionFormatEventRun,
+  SessionFormatJsonValue,
   SessionFormatMigrationContext,
   SessionFormatMigrationStage,
   SessionFormatMigrationStageInput,
@@ -11,7 +12,10 @@ import type {
 import { assertReleasedV2Header } from '@deepseek-ai/dsh-session-format-v1-to-v2'
 import { assertReleasedV3Header } from './validation.ts'
 
-/** Adjacent identity migration from released v2 to v3; refuses source delivery markers claiming v3 acceptance. */
+/**
+ * Rename released-v2 PTC dispatch events and owned plugin attribution without changing ids or content.
+ * Refuse source delivery markers claiming v3 acceptance.
+ */
 export const sessionFormatV2ToV3 = defineSessionFormatMigration({
   name: '@deepseek-ai/dsh-session-format-v2-to-v3',
   fromVersion: 2,
@@ -50,7 +54,7 @@ class ReleasedV2ToV3Stage implements SessionFormatMigrationStage {
         this.lastForeignDeliverySeq = event.seq
       }
     }
-    context.emitEvent(event)
+    context.emitEvent(renamePtcEvent(event))
   }
 
   transformRun(run: SessionFormatEventRun, context: SessionFormatMigrationContext): void {
@@ -71,4 +75,44 @@ class ReleasedV2ToV3Stage implements SessionFormatMigrationStage {
     }
     return cut
   }
+}
+
+function renamePtcEvent(event: SessionFormatEvent): SessionFormatEvent {
+  switch (event.type) {
+    case 'tool/ptc-dispatch-start':
+    case 'tool/ptc-dispatch':
+      throw new SessionFormatUnsupportedMigrationError(
+        'format v2 event collides with reserved v3 type ' + JSON.stringify(event.type) + ' at seq ' + String(event.seq),
+      )
+    case 'tool/code-dispatch-start':
+      return { ...event, type: 'tool/ptc-dispatch-start' }
+    case 'tool/code-dispatch':
+      return { ...event, type: 'tool/ptc-dispatch' }
+    case 'user/message': {
+      const data = renameMessageSource(event.data)
+      return data === event.data ? event : { ...event, data }
+    }
+    case 'agent/inbox/spliced':
+    case 'session/title-llm-request': {
+      if (!isSessionFormatJsonObject(event.data)) return event
+      const key = event.type === 'agent/inbox/spliced' ? 'inserted' : 'messages'
+      const messages = event.data[key]
+      if (!Array.isArray(messages)) return event
+      const renamed = messages.map(renameMessageSource)
+      return renamed.every((message, index) => message === messages[index])
+        ? event
+        : { ...event, data: { ...event.data, [key]: renamed } }
+    }
+    default:
+      // Other event payloads and merge-extensible content remain owner-opaque.
+      return event
+  }
+}
+
+function renameMessageSource(message: SessionFormatJsonValue): SessionFormatJsonValue {
+  if (!isSessionFormatJsonObject(message)) return message
+  const source = message['source']
+  if (!isSessionFormatJsonObject(source)
+    || source['kind'] !== 'plugin' || source['plugin'] !== 'tools-code-mode') return message
+  return { ...message, source: { ...source, plugin: 'tools-ptc' } }
 }

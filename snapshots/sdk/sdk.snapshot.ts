@@ -98,6 +98,10 @@ function dirOf(url: string): string {
 }
 
 interface SdkAssertions {
+  /** Additional profile patches applied after the shared composition. */
+  patches?: readonly string[]
+  /** Final response required from a completed turn before updating goldens. */
+  expectedFinalResponse?: string
   /** Environment overrides passed to the runtime subprocess. */
   environment?: Readonly<Record<string, string>>
   /** A separate DSH SDK child whose persisted session joins the evidence. */
@@ -118,6 +122,11 @@ interface SdkAssertions {
 }
 
 const SDK_ASSERTIONS: Readonly<Record<string, SdkAssertions>> = {
+  'ptc-turn': {
+    patches: [fileURLToPath(new URL('./ptc-turn/runtime.cordis.yml', import.meta.url))],
+    expectedFinalResponse: 'CODE_ONE+CODE_TWO',
+    expectedTools: { run_code: ['code', 'description'] },
+  },
   'subagent-dsh-sdk-diagnostic': {
     environment: { DSH_TEST_CHILD_PATCH: dshSdkDiagnosticChildPatch },
   },
@@ -517,9 +526,9 @@ async function runScenario(scenario: CorpusScenario): Promise<{
   const route = modelFromSession(primaryFixture)
   const patchRoot = join(cwd, '.snapshot-patches')
   await mkdir(patchRoot, { recursive: true })
-  const patches = authoredPatches(scenario, !recording)
-    .map((patch, index) => materializeProfilePatch(patch, cwd, patchRoot, index))
   const assertions = SDK_ASSERTIONS[scenario.name] ?? {}
+  const patches = [...authoredPatches(scenario, !recording), ...assertions.patches ?? []]
+    .map((patch, index) => materializeProfilePatch(patch, cwd, patchRoot, index))
   let childSessionsRoot: string | undefined
   let childEnvironment: Record<string, string> = {}
   if (assertions.dshSdkChild !== undefined) {
@@ -774,6 +783,14 @@ describe('TypeScript SDK snapshots over the jsonrpc runtime', () => {
         assertions.dshSdkChild !== undefined,
       )
       const actualContext = contextOf(ordered, cwd)
+      if (assertions.expectedFinalResponse !== undefined) {
+        expect(results.at(-1)?.finalResponse, `${scenario.name}: final response`).toBe(assertions.expectedFinalResponse)
+        const parent = ordered[0]
+        if (parent === undefined) throw new Error(`${scenario.name}: no primary session log`)
+        const turnEnds = records(parent.content).filter(record => record.type === 'turn/end')
+        expect(turnEnds, `${scenario.name}: completed turns`).toHaveLength(results.length)
+        for (const turnEnd of turnEnds) expect(turnEnd).toMatchObject({ data: { reason: { kind: 'completed' } } })
+      }
 
       let expectedContents = await Promise.all(files.map(file => readFile(file, 'utf8')))
 

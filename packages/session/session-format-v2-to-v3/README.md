@@ -1,5 +1,5 @@
 ---
-description: "Restore released-v2 Session logs as v3 without changing their events."
+description: "Restore released-v2 Session logs as v3 with current PTC event names and preserved historical identities."
 kind: "package-library"
 ---
 
@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-This library restores released-v2 Session records as v3 while preserving event payloads, sequence references, timestamps, ordering, and inherited prefixes. Persistence consumes it through the static Session format catalog. It does not publish or modify durable files.
+This library restores released-v2 Session records as v3 by translating durable PTC event names and plugin-source labels. It preserves every historical id, event order, sequence reference, timestamp, and inherited cut. Persistence consumes it through the static Session format catalog. It does not publish or modify durable files.
 
 ## Table of Contents
 
@@ -35,7 +35,11 @@ Use the [catalog](../session-format-catalog/README.md) for restoration. Direct i
 const targetHeader = sessionFormatV2ToV3.migrateHeader(sourceHeader)
 ```
 
-The header version becomes 3; all other header fields remain unchanged. The stage forwards events and compact runs synchronously, but refuses source delivery markers whose `sessionFormatVersion` is 3 because promotion would activate an unconfirmed target-generation watermark. Scalar inherited end-seed markers determine the exact cut at EOF. V3 record encoding and validation reuse the frozen released-v2 implementation without modifying it. Unknown required events remain refusals; installed event types and ignorable unknown events retain their admission rules.
+The header version becomes 3; all other header fields remain unchanged. The stage synchronously maps `tool/code-dispatch-start` and `tool/code-dispatch` to `tool/ptc-dispatch-start` and `tool/ptc-dispatch`. It maps the exact `tools-code-mode` plugin label to `tools-ptc` only in plugin-kind sources at `user/message.data.source`, `agent/inbox/spliced.data.inserted[].source`, and `session/title-llm-request.data.messages[].source`. Every other value remains unchanged, including ids containing `:code:`, message content, tool arguments, and opaque payloads.
+
+V3 validation accepts current PTC tags, not required legacy aliases. Unknown events marked `ignorable` retain their admission policy, except that source-v2 `tool/ptc-dispatch` and `tool/ptc-dispatch-start` events are rejected even when ignorable: these names are reserved in v3, so migration cannot reinterpret an opaque extension as a PTC lifecycle event. Physical record encoding remains the released-v2 encoding; only the header version and the named logical fields change.
+
+The stage refuses source delivery markers whose `sessionFormatVersion` is 3 because promotion would activate an unconfirmed target-generation watermark.
 
 -----
 
@@ -45,7 +49,7 @@ The header version becomes 3; all other header fields remain unchanged. The stag
 <details>
 <summary>Implementation internals — click to expand</summary>
 
-The [stage](src/migration.ts) tracks the inherited cut and source delivery ownership without changing event values. The [codec](src/codec.ts) changes physical header versions and shares v2 record encoding. The [validator](src/validation.ts) checks the v3 version before applying released-v2 event validation. No runtime invariant companion is published because this library owns no independently observable runtime registrations or state replicas.
+The [stage](src/migration.ts) applies the bounded PTC transformation while tracking inherited cuts and source delivery ownership. Scalar inherited end-seed markers determine the exact cut at EOF. The [codec](src/codec.ts) shares frozen v2 physical record encoding. The [validator](src/validation.ts) checks v3 event admission and relationships without modifying frozen predecessor modules. No runtime invariant companion is published because this library owns no independently observable runtime registrations or state replicas.
 
 </details>
 
@@ -66,22 +70,22 @@ The [stage](src/migration.ts) tracks the inherited cut and source delivery owner
 
 #### What the model sees
 
-`sessionFormatV2ToV3` preserves every model-visible event and its payload.
+`sessionFormatV2ToV3` preserves message content and tool results. PTC plugin-source attribution uses `tools-ptc`; log-only dispatch events do not add model messages.
 
 #### Token effect
 
-No model-visible content is added or removed.
+No message content is added or removed.
 
 #### KV Cache effect
 
-The model-message prefix remains unchanged.
+The stage does not change message content or model configuration.
 
 ## Known Limitations and Deferred Work
 
 <a id="known-limitations-and-deferred-work"></a>
 
 - **No file publication** — persistence owns immutable successor publication; this package never overwrites released generations.
-- **Identity conversion only** — the stage introduces no structural event transformations.
+- **Bounded conversion only** — only the named event tags and plugin-source slots are transformed; arbitrary strings, unknown payloads, and historical ids are not rewritten.
 
 <a id="dev-note"></a>
 ### Dev Note

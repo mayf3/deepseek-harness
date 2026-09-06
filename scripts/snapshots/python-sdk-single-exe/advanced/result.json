@@ -170,7 +170,7 @@
       "time": 0,
       "data": {
         "sessionId": "{{parent}}",
-        "sessionFormatVersion": 2,
+        "sessionFormatVersion": 3,
         "throughSeq": 11
       }
     },
@@ -338,7 +338,7 @@
       "time": 0,
       "data": {
         "sessionId": "{{parent}}",
-        "sessionFormatVersion": 2,
+        "sessionFormatVersion": 3,
         "throughSeq": 17
       }
     },
@@ -544,7 +544,7 @@
       "time": 0,
       "data": {
         "sessionId": "{{parent}}",
-        "sessionFormatVersion": 2,
+        "sessionFormatVersion": 3,
         "throughSeq": 24
       }
     },
@@ -651,13 +651,13 @@
       }
     },
     {
-      "type": "tool/code-dispatch-start",
+      "type": "tool/ptc-dispatch-start",
       "seq": 28,
       "time": 0,
       "data": {
         "rootCallId": "advanced-code",
         "parentCallId": "advanced-code",
-        "subCallId": "advanced-code:code:1",
+        "subCallId": "advanced-code:ptc:1",
         "name": "snapshot_double",
         "arguments": {
           "value": 21
@@ -665,13 +665,13 @@
       }
     },
     {
-      "type": "tool/code-dispatch",
+      "type": "tool/ptc-dispatch",
       "seq": 29,
       "time": 0,
       "data": {
         "rootCallId": "advanced-code",
         "parentCallId": "advanced-code",
-        "subCallId": "advanced-code:code:1",
+        "subCallId": "advanced-code:ptc:1",
         "name": "snapshot_double",
         "arguments": {
           "value": 21
@@ -743,7 +743,7 @@
       "time": 0,
       "data": {
         "sessionId": "{{parent}}",
-        "sessionFormatVersion": 2,
+        "sessionFormatVersion": 3,
         "throughSeq": 32
       }
     },
@@ -907,7 +907,7 @@
       "time": 0,
       "data": {
         "sessionId": "{{parent}}",
-        "sessionFormatVersion": 2,
+        "sessionFormatVersion": 3,
         "throughSeq": 38
       }
     },
@@ -1111,7 +1111,7 @@
       "time": 0,
       "data": {
         "sessionId": "{{parent}}",
-        "sessionFormatVersion": 2,
+        "sessionFormatVersion": 3,
         "throughSeq": 48
       }
     },
@@ -1311,7 +1311,7 @@
       "time": 0,
       "data": {
         "sessionId": "{{parent}}",
-        "sessionFormatVersion": 2,
+        "sessionFormatVersion": 3,
         "throughSeq": 55
       }
     },
@@ -1725,7 +1725,7 @@
           "time": 0,
           "data": {
             "sessionId": "{{parent}}",
-            "sessionFormatVersion": 2,
+            "sessionFormatVersion": 3,
             "throughSeq": 11
           }
         }
@@ -1929,7 +1929,7 @@
           "time": 0,
           "data": {
             "sessionId": "{{parent}}",
-            "sessionFormatVersion": 2,
+            "sessionFormatVersion": 3,
             "throughSeq": 17
           }
         }
@@ -2177,7 +2177,7 @@
           "time": 0,
           "data": {
             "sessionId": "{{parent}}",
-            "sessionFormatVersion": 2,
+            "sessionFormatVersion": 3,
             "throughSeq": 24
           }
         }
@@ -2302,13 +2302,13 @@
       "payload": {
         "sessionId": "{{parent}}",
         "event": {
-          "type": "tool/code-dispatch-start",
+          "type": "tool/ptc-dispatch-start",
           "seq": 28,
           "time": 0,
           "data": {
             "rootCallId": "advanced-code",
             "parentCallId": "advanced-code",
-            "subCallId": "advanced-code:code:1",
+            "subCallId": "advanced-code:ptc:1",
             "name": "snapshot_double",
             "arguments": {
               "value": 21
@@ -2322,13 +2322,13 @@
       "payload": {
         "sessionId": "{{parent}}",
         "event": {
-          "type": "tool/code-dispatch",
+          "type": "tool/ptc-dispatch",
           "seq": 29,
           "time": 0,
           "data": {
             "rootCallId": "advanced-code",
             "parentCallId": "advanced-code",
-            "subCallId": "advanced-code:code:1",
+            "subCallId": "advanced-code:ptc:1",
             "name": "snapshot_double",
             "arguments": {
               "value": 21
@@ -2424,7 +2424,7 @@
           "time": 0,
           "data": {
             "sessionId": "{{parent}}",
-            "sessionFormatVersion": 2,
+            "sessionFormatVersion": 3,
             "throughSeq": 32
           }
         }
@@ -2819,7 +2819,7 @@
           "time": 0,
           "data": {
             "sessionId": "{{child-1}}",
-            "sessionFormatVersion": 2,
+            "sessionFormatVersion": 3,
             "throughSeq": 12
           }
         }
@@ -3051,7 +3051,7 @@
           "time": 0,
           "data": {
             "sessionId": "{{parent}}",
-            "sessionFormatVersion": 2,
+            "sessionFormatVersion": 3,
             "throughSeq": 38
           }
         }
@@ -3478,7 +3478,7 @@
           "time": 0,
           "data": {
             "sessionId": "{{child-2}}",
-            "sessionFormatVersion": 2,
+            "sessionFormatVersion": 3,
             "throughSeq": 12
           }
         }
@@ -3741,7 +3741,7 @@
           "time": 0,
           "data": {
             "sessionId": "{{parent}}",
-            "sessionFormatVersion": 2,
+            "sessionFormatVersion": 3,
             "throughSeq": 48
           }
         }
@@ -3983,7 +3983,7 @@
           "time": 0,
           "data": {
             "sessionId": "{{parent}}",
-            "sessionFormatVersion": 2,
+            "sessionFormatVersion": 3,
             "throughSeq": 55
           }
         }

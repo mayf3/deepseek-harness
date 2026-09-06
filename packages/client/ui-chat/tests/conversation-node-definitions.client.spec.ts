@@ -1086,14 +1086,14 @@ describe('built-in conversation node Definitions', () => {
     })
 
     const history = assembler([
-      at(14, 'tool/code-dispatch-start', {
+      at(14, 'tool/ptc-dispatch-start', {
         rootCallId: 'history-root',
         parentCallId: 'history-root',
         subCallId: 'child',
         name: 'read',
         arguments: { path: 'README.md' },
       }),
-      at(15, 'tool/code-dispatch', {
+      at(15, 'tool/ptc-dispatch', {
         rootCallId: 'history-root',
         parentCallId: 'history-root',
         subCallId: 'child',
@@ -1133,7 +1133,7 @@ describe('built-in conversation node Definitions', () => {
     ])
 
     const firstChild = (after?.data as ToolChatData).root.subCalls[0]
-    history.append(at(17, 'tool/code-dispatch-start', {
+    history.append(at(17, 'tool/ptc-dispatch-start', {
       rootCallId: 'history-root',
       parentCallId: 'history-root',
       subCallId: 'second-child',
@@ -1143,6 +1143,55 @@ describe('built-in conversation node Definitions', () => {
     history.flush()
     const withSecondChild = node(snapshot(history), 'tool-call')
     expect((withSecondChild?.data as ToolChatData).root.subCalls[0]).toBe(firstChild)
+  })
+
+  it('joins mixed historical and current subcall IDs by explicit fields through replay', () => {
+    const historicalId = 'other-root:code:1'
+    const currentId = 'other-root:ptc:2'
+    const historical = {
+      rootCallId: 'root', parentCallId: 'root', subCallId: historicalId,
+      name: 'run_code', arguments: {},
+    }
+    const current = {
+      rootCallId: 'root', parentCallId: historicalId, subCallId: currentId,
+      name: 'read', arguments: { file_path: 'README.md' },
+    }
+    const events = [
+      at(1, 'turn/start', { turn: 1 }),
+      at(2, 'step/start', { turn: 1, step: 1 }),
+      at(3, 'tool/call', { turn: 1, step: 1, callId: 'root', name: 'run_code', arguments: '{}' }),
+      at(4, 'tool/call', { turn: 1, step: 1, callId: 'other-root', name: 'run_code', arguments: '{}' }),
+      at(5, 'tool/ptc-dispatch-start', historical),
+      at(6, 'tool/ptc-dispatch-start', current),
+      at(7, 'tool/ptc-dispatch', { ...current, isError: false, content: [{ type: 'text', text: 'contents' }] }),
+      at(8, 'tool/ptc-dispatch', { ...historical, isError: false, content: [] }),
+    ]
+    const expected = {
+      callId: 'root',
+      subCalls: [{
+        kind: 'tool-result', callId: historicalId, parentCallId: 'root', callTime: events[4]!.event.time,
+        subCalls: [{
+          kind: 'tool-result', callId: currentId, parentCallId: historicalId, callTime: events[5]!.event.time,
+          content: [{ type: 'text', text: 'contents' }], subCalls: [],
+        }],
+      }],
+    }
+    const live = assembler(events.slice(0, 4))
+    for (const event of events.slice(4)) live.append(event)
+    live.flush()
+    const replay = assembler(events.slice(4), true)
+    replay.prepend(events.slice(0, 4), false)
+    replay.flush()
+    for (const value of [live, replay]) {
+      const view = snapshot(value)
+      const roots = view.order.flatMap((key) => {
+        const entry = view.nodes.get(key)
+        return entry?.kind === 'tool-call' ? [(entry.data as ToolChatData).root] : []
+      })
+      expect(roots).toHaveLength(2)
+      expect(roots.find(root => root.callId === 'root')).toMatchObject(expected)
+      expect(roots.find(root => root.callId === 'other-root')?.subCalls).toEqual([])
+    }
   })
 
   it('prepends an older turn without replacing already materialized nodes', () => {
@@ -1981,7 +2030,7 @@ describe('built-in conversation node Definitions', () => {
     expect(node(snapshot(value), 'compaction')).toBeUndefined()
   })
 
-  it('ignores legacy retry and code-dispatch events without correlation ids', () => {
+  it('ignores legacy retry and PTC dispatch events without correlation ids', () => {
     const value = assembler([
       at(10, 'llm/retry', {
         turn: 1,
@@ -2006,13 +2055,13 @@ describe('built-in conversation node Definitions', () => {
         delayMs: 10,
         failure: { code: 'TRANSPORT', message: 'second legacy retry' },
       }),
-      at(30, 'tool/code-dispatch-start', {
+      at(30, 'tool/ptc-dispatch-start', {
         parentCallId: 'root',
         subCallId: 'child',
         name: 'legacy-subcall',
         arguments: {},
       }),
-      at(31, 'tool/code-dispatch', {
+      at(31, 'tool/ptc-dispatch', {
         parentCallId: 'root',
         subCallId: 'child',
         name: 'legacy-subcall',
@@ -2157,10 +2206,10 @@ describe('built-in conversation node Definitions', () => {
 
   it('preserves nested Tools and manual compaction evidence when their start events are outside the window', () => {
     const value = assembler([
-      at(12, 'tool/code-dispatch-start', {
+      at(12, 'tool/ptc-dispatch-start', {
         rootCallId: 'root', parentCallId: 'root', subCallId: 'child', name: 'read_file', arguments: { path: 'a' },
       }),
-      at(13, 'tool/code-dispatch', {
+      at(13, 'tool/ptc-dispatch', {
         rootCallId: 'root', parentCallId: 'root', subCallId: 'child', name: 'read_file', arguments: { path: 'a' },
         isError: false, content: [{ type: 'text', text: 'child result' }],
       }),

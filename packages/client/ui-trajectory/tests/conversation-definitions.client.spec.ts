@@ -390,7 +390,7 @@ describe('Trajectory conversation Definitions', () => {
     }])
   })
 
-  it('keeps parallel roots, raw Tool facts, and nested Code Dispatch results', () => {
+  it('keeps parallel roots, raw Tool facts, and mixed-ID PTC dispatch results', () => {
     const current = snapshot(assembler([
       at(1, 'turn/start', { turn: 1 }),
       at(2, 'step/start', { turn: 1, step: 1 }),
@@ -400,22 +400,31 @@ describe('Trajectory conversation Definitions', () => {
       at(4, 'tool/call', {
         turn: 1, step: 1, callId: 'root-b', name: 'parallel', arguments: '{}',
       }),
-      at(5, 'tool/code-dispatch-start', {
+      at(5, 'tool/ptc-dispatch-start', {
         rootCallId: 'root-a',
         parentCallId: 'root-a',
-        subCallId: 'child',
+        subCallId: 'root-b:code:1',
         name: 'read',
         arguments: { path: 'README.md' },
       }),
-      at(6, 'tool/code-dispatch', {
+      at(6, 'tool/ptc-dispatch', {
         rootCallId: 'root-a',
         parentCallId: 'root-a',
-        subCallId: 'child',
+        subCallId: 'root-b:code:1',
         name: 'read',
         arguments: { path: 'README.md' },
         content: [{ type: 'text', text: 'contents' }],
       }),
-      at(7, 'tool/result', {
+      at(7, 'tool/ptc-dispatch-start', {
+        rootCallId: 'root-a', parentCallId: 'root-b:code:1', subCallId: 'root-b:ptc:2',
+        name: 'read', arguments: { file_path: 'nested.txt' },
+      }),
+      at(8, 'tool/ptc-dispatch', {
+        rootCallId: 'root-a', parentCallId: 'root-b:code:1', subCallId: 'root-b:ptc:2',
+        name: 'read', arguments: { file_path: 'nested.txt' },
+        isError: false, content: [{ type: 'text', text: 'nested contents' }],
+      }),
+      at(9, 'tool/result', {
         turn: 1,
         step: 1,
         message: {
@@ -432,7 +441,7 @@ describe('Trajectory conversation Definitions', () => {
         error: { name: 'ToolError', code: 'failed' },
         meta: { presentation: 'raw' },
       }, { surfaceOp: 'append' }),
-      at(8, 'step/end', { turn: 1, step: 1 }),
+      at(10, 'step/end', { turn: 1, step: 1 }),
     ]))
 
     const tools = current.eventNodes.filter(node => node.kind === 'tool-result')
@@ -446,10 +455,15 @@ describe('Trajectory conversation Definitions', () => {
       error: { name: 'ToolError', code: 'failed' },
       meta: { presentation: 'raw' },
       subCalls: [{
-        kind: 'tool-result', callId: 'child', parentCallId: 'root-a', call: { name: 'read' },
+        kind: 'tool-result', callId: 'root-b:code:1', parentCallId: 'root-a', call: { name: 'read' },
+        subCalls: [{
+          kind: 'tool-result', callId: 'root-b:ptc:2', parentCallId: 'root-b:code:1',
+          callTime: 1_700_000_000_007, content: [{ type: 'text', text: 'nested contents' }], subCalls: [],
+        }],
       }],
     })
     expect(tools.find(node => node.callId === 'root-b')).toMatchObject({
+      subCalls: [],
       isError: true,
       error: { name: 'Interrupted', code: 'interrupted' },
     })

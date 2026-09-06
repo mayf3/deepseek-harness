@@ -19,7 +19,7 @@ import type {
   SessionId,
   SessionLogOffset as SessionLogOffsetType,
 } from '@deepseek-ai/dsh-session'
-import { parseSessionFormatLogFilename, sessionFormatLogFilename } from '@deepseek-ai/dsh-session-format'
+import { parseSessionFormatLogFilename, sessionFormatLogFilename, SessionFormatUnsupportedMigrationError } from '@deepseek-ai/dsh-session-format'
 import type { SessionFormatEvent } from '@deepseek-ai/dsh-session-format'
 import type { SessionFormatRecovery, SessionFormatRestore } from '@deepseek-ai/dsh-session-format'
 import { sessionFormatCatalog } from '@deepseek-ai/dsh-session-format-catalog'
@@ -492,6 +492,9 @@ export class SessionLogScanner {
     try {
       this.restore.decodeRow(decoded)
     } catch (error: unknown) {
+      if (error instanceof SessionFormatUnsupportedMigrationError) {
+        throw new SessionFormatUnsupportedError(error.message)
+      }
       /* v8 ignore next -- every production Session format decoder rejects with Error. */
       const detail = error instanceof Error ? error.message : String(error)
       const issue = new Error(`corrupt session log: invalid committed event at line ${this.eventLine}: ${detail}`, {
