@@ -833,7 +833,7 @@ describe('JsonlSessionPersistence: immutable format generations', () => {
     await retried.close()
   })
 
-  it('migrates released-v0 retry, repeated-compaction, provenance, and late-title shapes', async () => {
+  it.each(['read', 'write'] as const)('refuses the frozen pre-step V0 fixture on %s open without publishing a successor', async (access) => {
     const id = SessionId('released-v0-real-shapes')
     const sourcePath = historicalLogPath(root, '/work', id)
     const currentPath = rawLogPath(root, '/work', id)
@@ -842,33 +842,21 @@ describe('JsonlSessionPersistence: immutable format generations', () => {
     ))
     await mkdir(dirname(sourcePath), { recursive: true })
     await writeFile(sourcePath, source)
+    const before = await stat(sourcePath, { bigint: true })
 
-    const restored = await readAll(ctx.sessionPersistence, id)
-
-    expect(restored.meta).toMatchObject({ id, version: SESSION_FORMAT_VERSION, cwd: '/work' })
-    expect(restored.events.find(event => event.type === 'llm/retry'))
-      .toMatchObject({ data: { delayMs: 1.5 } })
-    expect(restored.events.find(event => event.type === 'compaction/summary')).toMatchObject({
-      data: {
-        shadowedRange: { start: 11, end: 4 },
-        shadowedSeqs: [11, 2, 3, 4],
-      },
+    await expect(ctx.sessionPersistence.open(id, access)).rejects.toMatchObject({
+      name: 'SessionFormatUnsupportedError',
+      message: expect.stringContaining('surface before first step'),
     })
-    const titleRequest = restored.events.find(event => event.type === 'session/title-llm-request')
-    expect(titleRequest?.data.messageSeqs).toEqual([16])
-    const titleBlock = titleRequest?.data.messages[0]?.content[0]
-    expect(titleBlock).toMatchObject({ type: 'text' })
-    if (titleBlock?.type !== 'text') throw new Error('fixture title request lacks its text block')
-    expect(titleBlock.text).toContain('{"seq":21,"text":"late"}')
-    expect(restored.events.find(event => event.type === 'user/message'
-      && (event.data as { source?: { plugin?: string } }).source?.plugin === 'compact'))
-      .toMatchObject({
-        seq: 14,
-        sourceEventSeqs: [12, 13, 11, 2, 3, 4],
-        surfaceOp: { op: 'replace', start: 11, end: 4 },
-      })
+    await ctx.sessionPersistence.flush()
+
+    const after = await stat(sourcePath, { bigint: true })
+    expect({ dev: after.dev, ino: after.ino, size: after.size, mtimeNs: after.mtimeNs, ctimeNs: after.ctimeNs })
+      .toEqual({ dev: before.dev, ino: before.ino, size: before.size, mtimeNs: before.mtimeNs, ctimeNs: before.ctimeNs })
     expect(await readFile(sourcePath)).toEqual(source)
     await expect(readFile(currentPath)).rejects.toMatchObject({ code: 'ENOENT' })
+    expect((await readdir(dirname(sourcePath))).filter(name => name !== 'session.lock'))
+      .toEqual(['session.jsonl'])
   })
 
   it('reads v1 packed chunk rows without publishing or changing the source', async () => {
