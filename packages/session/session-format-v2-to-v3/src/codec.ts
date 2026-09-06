@@ -27,7 +27,7 @@ export const releasedV3SessionFormatCodec = Object.freeze({
             if (event.type === 'system/message' || event.type === 'request/header') assertEvent(event, 3)
             context.emitEvent(event)
           },
-          emitRun: run => context.emitRun(run),
+          emitRun: context.emitRun.bind(context),
         })
       },
     }

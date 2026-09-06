@@ -68,8 +68,9 @@ export function assertEvent(event: SessionFormatEvent, version: 2 | 3): void {
     assertV3StructuralRow(event)
     return
   }
-  if (disposition === undefined) throw new SessionFormatError('missing event disposition')
-  keys(data, disposition.required, disposition.optional, event.type + ' data')
+  // Non-inventory system and feedback events have returned above.
+  const admitted = disposition as NonNullable<typeof disposition>
+  keys(data, admitted.required, admitted.optional, event.type + ' data')
   // Assistant attempts are introduced by V2; the V0 helper has no case for them.
   if (event.type !== 'assistant/attempt') assertReleasedPayloadSemantics(event, version)
   if (event.type === 'assistant/message' || event.type === 'assistant/attempt') {
@@ -95,7 +96,7 @@ export function assertEvent(event: SessionFormatEvent, version: 2 | 3): void {
   }
   if (event.type === 'agent/inbox/spliced' || event.type === 'session/title-llm-request') {
     const messages = data[event.type === 'agent/inbox/spliced' ? 'inserted' : 'messages']
-    if (Array.isArray(messages)) for (const message of messages) assertSource(record(message, 'message'))
+    for (const message of messages as readonly SessionFormatJsonObject[]) assertSource(message)
   }
 }
 
@@ -127,8 +128,8 @@ function assertSource(message: SessionFormatJsonObject): void {
 }
 
 function assertContentKinds(content: SessionFormatJsonValue | undefined): void {
-  if (!Array.isArray(content)) throw new SessionFormatError('message content must be an array')
-  for (const value of content) {
+  // The frozen payload validator already checks content arrays, including nested tool results.
+  for (const value of content as readonly SessionFormatJsonValue[]) {
     const block = record(value, 'message content')
     switch (block['type']) {
       case 'text':

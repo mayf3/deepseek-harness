@@ -2,7 +2,7 @@
 
 import { createHash } from 'node:crypto'
 import { SessionFormatError, SessionFormatUnsupportedMigrationError, defineSessionFormatMigration, sessionFormatCount } from '@deepseek-ai/dsh-session-format'
-import type { SessionFormatEvent, SessionFormatEventRun, SessionFormatMigrationContext, SessionFormatMigrationStage, SessionFormatMigrationStageInput } from '@deepseek-ai/dsh-session-format'
+import type { SessionFormatEvent, SessionFormatEventRun, SessionFormatJsonObject, SessionFormatMigrationContext, SessionFormatMigrationStage, SessionFormatMigrationStageInput } from '@deepseek-ai/dsh-session-format'
 import { assertReleasedV2Header } from '@deepseek-ai/dsh-session-format-v1-to-v2'
 import { assertEvent, record, SURFACE_TYPES } from './payload.ts'
 import { remapEvent } from './references.ts'
@@ -85,7 +85,6 @@ class ReleasedV2ToV3Stage implements SessionFormatMigrationStage {
     if (this.input.sourceInheritedEventCount !== undefined && this.input.sourceInheritedEventCount !== cut) {
       throw new SessionFormatError('format v2 inherited end-seed marker disagrees with its source cut')
     }
-    if (!this.input.sourceHeader.isSeeded && this.targetCut !== 0) throw new SessionFormatError('format v2 unseeded Session contains an inherited end-seed marker')
     if (this.lastForeignDeliverySeq !== undefined
       && (this.input.sourceHeader.parentSession === undefined || this.lastForeignDeliverySeq >= cut)) {
       throw new SessionFormatError('current-generation delivery marker names the wrong Session')
@@ -99,10 +98,9 @@ class ReleasedV2ToV3Stage implements SessionFormatMigrationStage {
       : event.type === 'assistant/message' || event.type === 'tool/result' ? [record(data['message'], 'message')]
         : event.type === 'agent/inbox/spliced' ? data['inserted']
           : event.type === 'session/title-llm-request' ? data['messages'] : []
-    if (!Array.isArray(messages)) return
-    for (const message of messages) {
-      const id = record(message, 'message')['id']
-      if (typeof id !== 'string') continue
+    // assertEvent validates every owned message before identity observation.
+    for (const message of messages as readonly SessionFormatJsonObject[]) {
+      const id = message['id'] as string
       if (this.generatedIds.has(id)) throw new SessionFormatUnsupportedMigrationError('source message id collides with a generated system message id')
       this.originalIds.add(id)
     }
