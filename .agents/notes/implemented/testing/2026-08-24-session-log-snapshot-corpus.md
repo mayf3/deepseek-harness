@@ -30,6 +30,8 @@ Every existing ACP scenario receives a behavior-preserving destination. Ordinary
 
 Workspace inputs remain scenario-local. A mutating scenario compares a complete expected final workspace that record and refresh never rewrite, so a model or tool self-report cannot satisfy the test. Existing intentional session reuse remains an explicit acyclic owner reference; the corpus adds no workspace inheritance or general fixture-merging mechanism.
 
+Current-writer request-header pins are separate from retained migration inputs: `tool-call-turn` pins the default composition, and `empty-response-retry-current` pins the retry composition. Their readable sidecars remain owned by `text-turn`. Headless historical comparisons represent the current system node as the historical header member and remap affected event citations in memory, then compare the complete normalized log. This test-only projection never changes persisted generations or current-writer comparisons; independent current header and prompt-sidecar assertions still reject missing or stale system nodes. Globally deleting `header.system`, skipping historical output equality, or replacing frozen fixtures would hide different regressions rather than repair their owners.
+
 ## Alternatives considered
 
 **Keep ACP as the universal driver.** This preserves the existing harness but continues coupling backend coverage to a low-priority protocol and cannot prove the supported headless, SDK, and Web launch paths.

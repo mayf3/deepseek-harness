@@ -30,6 +30,8 @@ Headless stderr 重建会同时展开 `assistant/message` 与仅写入日志的 
 
 Workspace 输入继续归各场景本地所有。变更文件的场景比较完整的预期最终 workspace，record 与 refresh 绝不改写该预期，因此模型或工具的自报结果无法满足测试。现有的有意会话复用继续使用显式、无环的所有者引用；语料不增加 workspace 继承或通用 fixture 合并机制。
 
+当前 writer 的 request-header pin 与保留的迁移输入分离：`tool-call-turn` 固定 default 组合，`empty-response-retry-current` 固定 retry 组合。可读 sidecar 仍由 `text-turn` 持有。Headless 历史比较在内存中将当前 system 节点表示为历史 header 字段，并重映射受影响的事件引用，再比较完整的规范化日志。这一测试专用投影不改变持久化 generation 或当前 writer 比较；独立的当前 header 与提示词 sidecar 断言仍会拒绝缺失或过期的 system 节点。全局删除 `header.system`、跳过历史输出相等断言或替换冻结 fixture 都会隐藏不同的回归，而不是修复其归属。
+
 ## Alternatives considered
 
 **继续将 ACP 作为通用驱动器。** 这会保留现有 harness，但继续把后端覆盖耦合到低优先级协议，也无法证明受支持的 headless、SDK 和 Web 启动路径。
