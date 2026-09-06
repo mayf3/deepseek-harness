@@ -271,7 +271,7 @@ describe('native V3 codec and restorer', () => {
     const decoder = releasedV3SessionFormatCodec.createDecoder({ type: 'session', ...header, version: 3 }, 'strict')
     const context = new SessionFormatEventCollector()
     for (const e of dense(opening())) decoder.decodeRow(e, context)
-    expect(() => decoder.decodeRow(bad, context)).toThrow(/header.system/)
+    expect(() =>{  decoder.decodeRow(bad, context) }).toThrow(/header.system/)
     const artifact = { header: { ...header, version: 3 }, inheritedEventCount: 0, events: [...dense(opening()), bad] }
     expect(() => restoreReleasedV3Artifact(artifact, new Set())).toThrow(/header.system/)
   })
@@ -294,7 +294,7 @@ describe('native V3 codec and restorer', () => {
     const collector = new SessionFormatEventCollector()
     for (const e of dense(opening())) decoder.decodeRow(e, collector)
     decoder.decodeRow(null, collector)
-    expect(() => decoder.decodeRow({ ...event('request/header', request('retired')), seq: 2 }, collector)).toThrow(/header.system/)
+    expect(() =>{  decoder.decodeRow({ ...event('request/header', request('retired')), seq: 2 }, collector) }).toThrow(/header.system/)
   })
 
   it('rejects system nodes outside the open step and mixed head replacements', () => {

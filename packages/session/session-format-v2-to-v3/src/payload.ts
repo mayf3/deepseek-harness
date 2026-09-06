@@ -87,7 +87,7 @@ export function assertEvent(event: SessionFormatEvent, version: 2 | 3): void {
   if (version === 3) return
   if (event.type === 'user/message') assertSource(data)
   if (event.type === 'assistant/message' || event.type === 'tool/result') assertSource(record(data['message'], 'message'))
-  if (version === 2 && event.type === 'tool/result' && isSessionFormatJsonObject(data['error']) && data['error']['code'] === 'TOOL_NOT_STARTED') {
+  if (event.type === 'tool/result' && isSessionFormatJsonObject(data['error']) && data['error']['code'] === 'TOOL_NOT_STARTED') {
     const message = record(data['message'], 'tool result message')
     const source = record(message['source'], 'tool result source')
     if (!isRepairIdentity(message['id'], source['callId'])) {
@@ -106,7 +106,8 @@ export function assertEvent(event: SessionFormatEvent, version: 2 | 3): void {
  * @param callId - advertised tool identity.
  * @returns whether the identity has the canonical historical repair form.
  */
-export function isRepairIdentity(id: SessionFormatJsonValue | undefined, callId: SessionFormatJsonValue | undefined): boolean {
+export function isRepairIdentity(id: SessionFormatJsonValue | undefined, callId: SessionFormatJsonValue | undefined): callId is string {
+  if (typeof callId !== 'string') return false
   const prefix = 'interrupted-tool-result-' + callId + '-'
   if (typeof id !== 'string' || !id.startsWith(prefix)) return false
   const suffix = id.slice(prefix.length)

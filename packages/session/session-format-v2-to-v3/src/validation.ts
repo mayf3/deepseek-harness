@@ -82,9 +82,10 @@ function relationshipEvent(event: SessionFormatEvent): SessionFormatEvent {
   if (error['code'] !== 'TOOL_NOT_STARTED') return event
   const message = record(data['message'], 'tool message')
   const source = record(message['source'], 'tool source')
-  const prefix = 'interrupted-tool-result-' + source['callId'] + '-'
+  const callId = source['callId']
   const id = message['id']
-  if (!isRepairIdentity(id, source['callId'])) return event
+  if (!isRepairIdentity(id, callId)) return event
+  const prefix = 'interrupted-tool-result-' + callId + '-'
   // Message identity survives promotion; only this private frozen repair check uses target seq.
-  return { ...event, data: { ...data, message: { ...message, id: prefix + event.seq } } }
+  return { ...event, data: { ...data, message: { ...message, id: `${prefix}${event.seq}` } } }
 }

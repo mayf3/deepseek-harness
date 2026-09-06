@@ -44,18 +44,18 @@ describe('durable V3 admission failures', () => {
 
   it('rejects non-dense source stage input rather than generating ambiguous identities', () => {
     const stage = sessionFormatV2ToV3.createStage({ sourceHeader: header, targetHeader: { ...header, version: 3 }, sourceInheritedEventCount: 0, sourceKind: 'decoded' })
-    expect(() => stage.transformEvent({ ...opening[0]!, seq: 1 }, new SessionFormatEventCollector())).toThrow(/dense/)
+    expect(() =>{  stage.transformEvent({ ...opening[0]!, seq: 1 }, new SessionFormatEventCollector()) }).toThrow(/dense/)
   })
 
   it('checks native metadata versions before applying released header validation', () => {
-    expect(() => assertReleasedV3Header(header)).toThrow(/format v3 header/)
+    expect(() =>{  assertReleasedV3Header(header) }).toThrow(/format v3 header/)
     expect(releasedV3SessionFormatCodec.decodeHeader({ type: 'session', ...header, version: 3 })).toEqual({ ...header, version: 3 })
   })
 
   it('retains native source extensions through payload validation without classifying their references', () => {
     const extension = event('user/message', { ...user, source: { kind: 'custom-source', localRef: 77 } }, { surfaceOp: 'append' })
-    expect(() => assertEvent(extension, 3)).not.toThrow()
-    expect(() => assertEvent(extension, 2)).toThrow(/unclassified/)
+    expect(() =>{  assertEvent(extension, 3) }).not.toThrow()
+    expect(() =>{  assertEvent(extension, 2) }).toThrow(/unclassified/)
   })
 
   it.each([0, -1, 1.5])('rejects invalid system step coordinates %s', (step) => {
@@ -110,6 +110,9 @@ describe('tool result restoration', () => {
   it('rejects untagged repair identities in native restoration instead of projecting arbitrary IDs', () => {
     const repair = event('tool/result', { ...result, error: { name: 'ToolNotStartedError', code: 'TOOL_NOT_STARTED' } }, { surfaceOp: 'append' })
     expect(() => native([...opening, assistant, repair])).toThrow(/exact TOOL_NOT_STARTED/)
+    const malformedSource = { ...result.message, source: { kind: 'tool', callId: 123 } }
+    const malformed = event('tool/result', { ...result, message: malformedSource, error: { name: 'ToolNotStartedError', code: 'TOOL_NOT_STARTED' } }, { surfaceOp: 'append' })
+    expect(() => native([...opening, assistant, malformed])).toThrow(/advertised tool/)
   })
 })
 
