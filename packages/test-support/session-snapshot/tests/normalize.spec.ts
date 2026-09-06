@@ -618,6 +618,20 @@ describe('normalizeSessionSnapshot', () => {
       JSON.stringify({ type: 'turn/start', data: { turn: 1 } }),
       JSON.stringify({ type: 'step/start', data: { turn: 1, step: 1 } }),
       JSON.stringify({
+        type: 'system/message',
+        data: {
+          turn: 1,
+          step: 1,
+          message: {
+            id: 'v2-to-v3-system-590b72aa4994fd6d3c6e61bb4bf5bf2f80bae0bc7564d388378ba4f51b816fd6',
+            role: 'system',
+            source: { kind: 'plugin', plugin: '@deepseek-ai/dsh-system-prompt' },
+            content: [],
+          },
+        },
+        surfaceOp: 'append',
+      }),
+      JSON.stringify({
         type: 'assistant/attempt',
         data: {
           turn: 1,
