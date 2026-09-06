@@ -893,6 +893,28 @@ describe('TypeScript SDK snapshots over the jsonrpc runtime', () => {
         expect(normalizedResult).toBe(await readFile(resultExpectedPath, 'utf8'))
       }
 
+      if (scenario.name === 'system-prompt-in-history') {
+        const events = notifications.flatMap(notification => {
+          const event = notificationEvent(notification)
+          return event === undefined ? [] : [event]
+        })
+        const systems = events.filter(event => event.type === 'system/message')
+        expect(systems).toHaveLength(2)
+        expect(systems.map(event => event.surfaceOp)).toEqual(['append', 'append'])
+        const prompts = systems.map(event => (event.data as {
+          message: { content: Array<{ text: string }> }
+        }).message.content[0]!.text)
+        expect(prompts[0]).not.toContain('Snapshot guidance added after the first read')
+        expect(prompts[1]).toContain('Snapshot guidance added after the first read')
+        expect(prompts[1]).not.toBe(prompts[0])
+        expect(events.indexOf(systems[1]!)).toBeGreaterThan(events.findIndex(event => event.type === 'tool/result'))
+        expect(events.filter(event => event.type === 'request/header')).toHaveLength(1)
+        expect(events.filter(event => event.type === 'request/context')).toMatchObject([
+          { data: { systemPromptUpdate: 'in-history' } },
+        ])
+        expect(events.filter(event => event.surfaceOp !== undefined).every(event => event.surfaceOp === 'append')).toBe(true)
+      }
+
       // Wire-shape invariants that must hold in every mode.
       if (scenario.manifest.workspace?.final === true) {
         const expectedWorkspace = await captureExpectedWorkspaceSnapshot(join(scenario.dir, 'workspace.expected'))

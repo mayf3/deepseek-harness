@@ -134,6 +134,10 @@ MINIMAL_SNAPSHOT_DIRECTORY = (
 if IS_WINDOWS:
     MINIMAL_SNAPSHOT_DIRECTORY /= "win-x64"
 MINIMAL_SNAPSHOT_FILENAMES = ("model-visible.json",)
+IN_HISTORY_SNAPSHOT_DIRECTORY = (
+    Path(__file__).resolve().parent / "snapshots" / "python-sdk-single-exe" / "minimal-in-history"
+)
+IN_HISTORY_SNAPSHOT_FILENAMES = ("prompt-history.json",)
 RESTART_SNAPSHOT_DIRECTORY = (
     Path(__file__).resolve().parent / "snapshots" / "python-sdk-single-exe" / "restart"
 )
@@ -313,7 +317,8 @@ def completion_chunks(body: dict[str, object]) -> list[dict[str, object]]:
     messages = body.get("messages")
     if not isinstance(messages, list) or not messages:
         raise AssertionError(f"model request has no messages: {body}")
-    latest = messages[-1]
+    # A system prompt update may follow the tool result without replacing it.
+    latest = next(message for message in reversed(messages) if message.get("role") != "system")
     if not isinstance(latest, dict):
         raise AssertionError(f"model request has an invalid latest message: {body}")
 
@@ -769,7 +774,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--scenario",
-        choices=("all", "sdk-default", "sdk-custom", "sdk-minimal", "sdk-fs-search", "sdk-spawn-node", "sdk-mcp", "sdk-snapshot", "sdk-restart", "sdk-profile-plugin", "sdk-live", "direct"),
+        choices=("all", "sdk-default", "sdk-custom", "sdk-minimal", "sdk-minimal-in-history", "sdk-fs-search", "sdk-spawn-node", "sdk-mcp", "sdk-snapshot", "sdk-restart", "sdk-profile-plugin", "sdk-live", "direct"),
         default="all",
     )
     parser.add_argument("--exe", type=Path)
@@ -788,10 +793,10 @@ def main() -> None:
         parser.error("--scenario sdk-profile-plugin requires --installed-wheel")
     if args.installed_wheel:
         args.exe = assert_installed_wheel_environment()
-    if args.scenario in {"all", "sdk-custom", "sdk-minimal", "sdk-fs-search", "sdk-spawn-node", "sdk-snapshot", "sdk-restart", "direct"} and args.exe is None:
+    if args.scenario in {"all", "sdk-custom", "sdk-minimal", "sdk-minimal-in-history", "sdk-fs-search", "sdk-spawn-node", "sdk-snapshot", "sdk-restart", "direct"} and args.exe is None:
         parser.error("--exe is required for custom, minimal, snapshot, and direct scenarios")
-    if args.update_snapshots and args.scenario not in {"all", "sdk-minimal", "sdk-snapshot", "sdk-restart"}:
-        parser.error("--update-snapshots requires --scenario sdk-minimal, sdk-snapshot, sdk-restart, or all")
+    if args.update_snapshots and args.scenario not in {"all", "sdk-minimal", "sdk-minimal-in-history", "sdk-snapshot", "sdk-restart"}:
+        parser.error("--update-snapshots requires --scenario sdk-minimal, sdk-minimal-in-history, sdk-snapshot, sdk-restart, or all")
     if args.exe is not None and not args.exe.is_file():
         parser.error(f"runtime executable does not exist: {args.exe}")
 
@@ -809,6 +814,9 @@ def main() -> None:
         if args.scenario in {"all", "sdk-minimal"}:
             assert args.exe is not None
             smoke_sdk_minimal(model.url, args.exe.resolve(), args.update_snapshots)
+        if args.scenario in {"all", "sdk-minimal-in-history"}:
+            assert args.exe is not None
+            smoke_sdk_minimal(model.url, args.exe.resolve(), args.update_snapshots, in_history=True)
         if args.scenario in {"all", "sdk-fs-search"}:
             assert args.exe is not None
             smoke_sdk_fs_search(model.url, args.exe.resolve())
@@ -1038,7 +1046,9 @@ def smoke_sdk_custom(base_url: str, executable: Path) -> None:
         assert_session_log(sessions, root, EXPECTED_TEXT, CODE_WORKER_TEXT, WORKFLOW_WORKER_TEXT)
 
 
-def smoke_sdk_minimal(base_url: str, executable: Path, update_snapshots: bool) -> None:
+def smoke_sdk_minimal(
+    base_url: str, executable: Path, update_snapshots: bool, *, in_history: bool = False,
+) -> None:
     """Exercise the shipped standalone minimal profile through the packaged executable."""
     from deepseek_harness import DeepSeekHarness
 
@@ -1050,6 +1060,19 @@ def smoke_sdk_minimal(base_url: str, executable: Path, update_snapshots: bool) -
         prompt = f"{MINIMAL_PROMPT}\n{MINIMAL_EDITOR_PATH_PREFIX}{editor_path}"
         dsh_home = root / "home"
         sessions = dsh_home / "sessions"
+        patches = ()
+        if in_history:
+            patch = root / "in-history.patch.yml"
+            patch.write_text(json.dumps([
+                {"id": "llm-deepseek", "config": {"models": [
+                    {"id": "smoke-model", "systemPromptUpdate": "in-history"},
+                ]}},
+                {"insert": [{
+                    "id": "in-history-prompt",
+                    "name": (Path(__file__).resolve().parent / "fixtures/python-sdk-in-history-prompt.mjs").as_uri(),
+                }]},
+            ]))
+            patches = (str(patch),)
         with DeepSeekHarness(
             provider="deepseek-official",
             model="smoke-model",
@@ -1057,6 +1080,7 @@ def smoke_sdk_minimal(base_url: str, executable: Path, update_snapshots: bool) -
             dsh_bin=str(executable),
             dsh_home=str(dsh_home),
             profile="sdk-minimal",
+            patches=patches,
             api_key="sk-keyless-smoke",
             base_url=base_url,
             request_timeout_seconds=60,
@@ -1070,10 +1094,18 @@ def smoke_sdk_minimal(base_url: str, executable: Path, update_snapshots: bool) -
             raise AssertionError(f"packaged editor wrote unexpected content: {editor_path.read_text()!r}")
         assert_session_log(sessions, root, MINIMAL_TEXT, "COUNT=1", "COUNT=2")
 
-        files = build_minimal_snapshot_files(MockModelHandler.requests[first_request:], root)
-        compare_snapshot_files(
-            files, update_snapshots, MINIMAL_SNAPSHOT_DIRECTORY, MINIMAL_SNAPSHOT_FILENAMES,
-        )
+        requests = MockModelHandler.requests[first_request:]
+        if in_history:
+            logs = read_session_logs(sessions)
+            files = build_in_history_snapshot_files(result, requests, logs[result.session_id])
+            compare_snapshot_files(
+                files, update_snapshots, IN_HISTORY_SNAPSHOT_DIRECTORY, IN_HISTORY_SNAPSHOT_FILENAMES,
+            )
+        else:
+            files = build_minimal_snapshot_files(requests, root)
+            compare_snapshot_files(
+                files, update_snapshots, MINIMAL_SNAPSHOT_DIRECTORY, MINIMAL_SNAPSHOT_FILENAMES,
+            )
 
 
 def smoke_sdk_fs_search(base_url: str, executable: Path) -> None:
@@ -1684,6 +1716,56 @@ def snapshot_child_ids(result: "RunResult") -> list[str]:
     if len(child_ids) != 2:
         raise AssertionError(f"advanced snapshot expected two child session ids: {child_ids}")
     return child_ids
+
+
+def build_in_history_snapshot_files(
+    result: "RunResult",
+    requests: list[dict[str, object]],
+    log: list[dict[str, object]],
+) -> dict[str, str]:
+    """Assert live requests, SDK subscriptions, and persistence retain both prompts."""
+    systems = [event for event in result.events if event.get("type") == "system/message"]
+    assert len(systems) == 2, systems
+    assert [event.get("surfaceOp") for event in systems] == ["append", "append"], systems
+    prompts = [message_text(event["data"]["message"]["content"]) for event in systems]
+    assert "Python SDK prompt version 1." in prompts[0], prompts
+    assert "Python SDK prompt version 2." not in prompts[0], prompts
+    assert "Python SDK prompt version 2." in prompts[1], prompts
+    assert "Python SDK prompt version 1." not in prompts[1], prompts
+    assert prompts[0] != prompts[1], prompts
+    assert [event for event in log if event.get("type") == "system/message"] == systems
+    subscribed = [
+        notification.payload["event"]
+        for notification in result.notifications
+        if notification.method == "session.event"
+        and notification.payload.get("event", {}).get("type") == "system/message"
+    ]
+    assert subscribed == systems, subscribed
+    contexts = [event["data"] for event in result.events if event.get("type") == "request/context"]
+    assert contexts and all(context.get("systemPromptUpdate") == "in-history" for context in contexts), contexts
+    assert len([event for event in result.events if event.get("type") == "request/header"]) == 1
+    assert all(event.get("surfaceOp") in (None, "append") for event in result.events)
+    first_tool = next(index for index, event in enumerate(result.events) if event.get("type") == "tool/result")
+    assert result.events.index(systems[1]) > first_tool
+    assert len(requests) == 4, requests
+    request_prompts = []
+    for index, request in enumerate(requests):
+        messages = request["messages"]
+        assert messages[0]["role"] == "system" and message_text(messages[0]["content"]) == prompts[0]
+        assert request["tools"] == requests[0]["tools"], "prompt update changed tool schemas"
+        positions = [position for position, message in enumerate(messages) if message["role"] == "system"]
+        texts = [message_text(messages[position]["content"]) for position in positions]
+        assert texts == (prompts[:1] if index == 0 else prompts), texts
+        if index > 0:
+            assert messages[positions[1] - 1]["role"] == "tool", messages
+        request_prompts.append(texts)
+    evidence = {
+        "requestSystemPrompts": request_prompts,
+        "systemMessageOperations": [event["surfaceOp"] for event in systems],
+        "subscribedSystemPrompts": prompts,
+        "requestContexts": contexts,
+    }
+    return {"prompt-history.json": json.dumps(evidence, indent=2, ensure_ascii=False) + "\n"}
 
 
 def build_minimal_snapshot_files(
