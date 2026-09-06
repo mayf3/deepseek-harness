@@ -702,7 +702,7 @@ describe('prepareSessionSnapshotFixtureForComparison', () => {
     }
     lines.splice(3, 0, JSON.stringify(request))
     const prepared = prepareSessionSnapshotFixtureForComparison(`${lines.join('\n')}\n`)
-    const restored = prepared.trimEnd().split('\n').map(line => JSON.parse(line))
+    const restored = prepared.trimEnd().split('\n').map(line => JSON.parse(line) as Record<string, unknown>)
     expect(restored.find(record => record.type === 'request/header')).toMatchObject(request)
     delete (request.data.header as Record<string, unknown>).system
     lines[3] = JSON.stringify(request)
