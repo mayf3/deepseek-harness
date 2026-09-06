@@ -106,6 +106,36 @@ describe('canonicalSessionFixture', () => {
     expect(canonicalSessionFixture(projected)).toBe(projected)
   })
 
+  it.each([0, 1, 2])('preserves physically valid v%i bytes without requiring migration to current', (version) => {
+    const header = { type: 'session', version, id: 'historical', createdAt: 1, delegationDepth: 0, ...(version === 2 ? { isSeeded: false } : {}) }
+    const content = [
+      JSON.stringify(header),
+      JSON.stringify({ type: 'user/message', data: { role: 'user', id: 'historical-user', source: { kind: 'user' }, content: [] }, surfaceOp: 'append' }),
+      '',
+    ].join('\n')
+    expect(canonicalSessionFixture(content)).toBe(content)
+  })
+
+  it.each([0, 1, 2])('rejects v%i sequence gaps and invalid provenance ranges with source line diagnostics', (version) => {
+    const header = JSON.stringify({ type: 'session', version, id: 'historical', createdAt: 1, delegationDepth: 0, ...(version === 2 ? { isSeeded: false } : {}) })
+    expect(() => canonicalSessionFixture(`${header}\n{"type":"feedback/record","seq":3,"data":{"text":"gap"}}\n`, 'gap.jsonl'))
+      .toThrow(/gap\.jsonl: session snapshot line 2:.*seq/)
+    expect(() => canonicalSessionFixture(`${header}\n{"type":"feedback/record","data":{},"sourceEventSeqs":[[2,0]]}\n`, 'range.jsonl'))
+      .toThrow(/range\.jsonl: session snapshot line 2:/)
+  })
+
+  it.each([0, 1, 2])('finalizes the v%i source inherited cut', (version) => {
+    const header = { type: 'session', version, id: 'historical', createdAt: 1, delegationDepth: 0, ...(version === 2 ? { isSeeded: true } : { seedLength: 1 }) }
+    expect(() => canonicalSessionFixture(`${JSON.stringify(header)}\n`, 'cut.jsonl'))
+      .toThrow(/cut\.jsonl: session snapshot line 1:.*(?:inherited|seed)/)
+  })
+
+  it('refuses unsupported generation headers', () => {
+    const header = { type: 'session', version: 99, id: 'future', createdAt: 1, isSeeded: false, delegationDepth: 0 }
+    expect(() => canonicalSessionFixture(`${JSON.stringify(header)}\n`, 'future.jsonl'))
+      .toThrow(/future\.jsonl: session snapshot line 1:.*99/)
+  })
+
   it('fails loud on malformed records after a session header', () => {
     expect(() => canonicalSessionFixture(`${HEADER}\n{not-json}\n`, 'broken.jsonl'))
       .toThrow(/broken\.jsonl: session snapshot line 2 contains invalid JSON/)
