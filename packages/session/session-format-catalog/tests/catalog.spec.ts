@@ -86,20 +86,47 @@ describe('first-party Session format catalog', () => {
     }
   })
 
-  it.each([false, true])('preserves decoded v2 events and the inherited cut (seeded=%s)', (isSeeded) => {
+  it.each([false, true])('inserts the v3 system head and remaps the inherited cut (seeded=%s)', (isSeeded) => {
     const header = { type: 'session', version: 2, id: 'v2-identity', createdAt: 1, isSeeded, delegationDepth: 0 }
     const rows = [
-      { type: 'external/event', seq: 0, time: 1, data: { extra: ['unchanged'] }, ignorable: true },
-      ...(isSeeded ? [{ type: 'session/end-seed', seq: 1, time: 2, data: { inherited: true } }] : []),
+      { type: 'turn/start', seq: 0, time: 1, data: { turn: 1 } },
+      { type: 'step/start', seq: 1, time: 2, data: { turn: 1, step: 1 } },
+      { type: 'feedback/record', seq: 2, time: 3, data: { text: 'unchanged' } },
+      ...(isSeeded ? [{ type: 'session/end-seed', seq: 3, time: 4, data: { inherited: true } }] : []),
     ]
     const before = JSON.stringify({ header, rows })
     const restore = sessionFormatCatalog.createRestore(header, { recovery: 'strict', validation: 'current' })
     for (const row of rows) restore.decodeRow(row)
     expect(restore.finish()).toEqual({
       header: { version: 3, id: 'v2-identity', createdAt: 1, isSeeded, delegationDepth: 0 },
-      inheritedEventCount: isSeeded ? 1 : 0, events: rows,
+      inheritedEventCount: isSeeded ? 4 : 0,
+      events: [
+        { type: 'turn/start', seq: 0, time: 1, data: { turn: 1 } },
+        { type: 'step/start', seq: 1, time: 2, data: { turn: 1, step: 1 } },
+        {
+          type: 'system/message', seq: 2, time: 2, surfaceOp: 'append',
+          data: {
+            turn: 1, step: 1,
+            message: {
+              id: 'v2-to-v3-system-9673c4ed630de6c21ea6bd6b573094ea8e5e216843a1b572a68657499ad9667b',
+              role: 'system', source: { kind: 'plugin', plugin: '@deepseek-ai/dsh-system-prompt' }, content: [],
+            },
+          },
+        },
+        { type: 'feedback/record', seq: 3, time: 3, data: { text: 'unchanged' } },
+        ...(isSeeded ? [{ type: 'session/end-seed', seq: 4, time: 4, data: { inherited: true } }] : []),
+      ],
     })
     expect(JSON.stringify({ header, rows })).toBe(before)
+  })
+
+  it.each(['current', 'transformed'] as const)('refuses unclassified ignorable v2 events (%s)', (validation) => {
+    const header = { type: 'session', version: 2, id: 'v2-unknown', createdAt: 1, isSeeded: false, delegationDepth: 0 }
+    const row = { type: 'external/event', seq: 0, time: 1, data: { extra: ['unchanged'] }, ignorable: true }
+    const before = JSON.stringify({ header, row })
+    const restore = sessionFormatCatalog.createRestore(header, { recovery: 'strict', validation })
+    expect(() => { restore.decodeRow(row) }).toThrow(/cannot safely transform unclassified event external\/event/)
+    expect(JSON.stringify({ header, row })).toBe(before)
   })
 
   it.each(['current', 'transformed'] as const)('refuses a v3 delivery marker in v2 input (%s)', (validation) => {
