@@ -102,6 +102,17 @@ describe('first-party Session format catalog', () => {
     expect(JSON.stringify({ header, rows })).toBe(before)
   })
 
+  it.each(['current', 'transformed'] as const)('refuses a v3 delivery marker in v2 input (%s)', (validation) => {
+    const header = { type: 'session', version: 2, id: 'future-delivery', createdAt: 1, isSeeded: false, delegationDepth: 0 }
+    const restore = sessionFormatCatalog.createRestore(header, { recovery: 'strict', validation })
+    restore.decodeRow({ type: 'feedback/record', seq: 0, time: 1, data: { text: 'unaccepted' } })
+    expect(() => {
+      restore.decodeRow({ type: 'session-log-deepseek/delivery-accepted', seq: 1, time: 2,
+        data: { sessionId: header.id, throughSeq: 0, sessionFormatVersion: 3 } })
+      restore.finish()
+    }).toThrow(/format v2 delivery marker claims target format v3/)
+  })
+
   it('validates complete relationships after streaming migration', () => {
     const stream = sessionFormatCatalog.createRestore({
       type: 'session', version: 1, id: 'invalid-stream', createdAt: 1, delegationDepth: 0,

@@ -35,7 +35,7 @@ Use the [catalog](../session-format-catalog/README.md) for restoration. Direct i
 const targetHeader = sessionFormatV2ToV3.migrateHeader(sourceHeader)
 ```
 
-The header version becomes 3; all other header fields remain unchanged. The stage forwards events and compact runs synchronously. Scalar inherited end-seed markers determine the exact cut at EOF. V3 record encoding and validation reuse the frozen released-v2 implementation without modifying it. Unknown required events remain refusals; installed event types and ignorable unknown events retain their admission rules.
+The header version becomes 3; all other header fields remain unchanged. The stage forwards events and compact runs synchronously, but refuses source delivery markers whose `sessionFormatVersion` is 3 because promotion would activate an unconfirmed target-generation watermark. Scalar inherited end-seed markers determine the exact cut at EOF. V3 record encoding and validation reuse the frozen released-v2 implementation without modifying it. Unknown required events remain refusals; installed event types and ignorable unknown events retain their admission rules.
 
 -----
 

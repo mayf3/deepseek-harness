@@ -102,6 +102,19 @@ describe('v2 to v3 identity migration', () => {
     expect(() => stage.finish(context)).toThrow(/wrong Session/)
   })
 
+  it.each([undefined, 0, 1, 2, 4])('preserves delivery marker generation %s verbatim', (version) => {
+    const stage = sessionFormatV2ToV3.createStage({
+      sourceHeader: header, targetHeader: { ...header, version: 3 },
+      sourceInheritedEventCount: 0, sourceKind: 'decoded',
+    })
+    const event = { type: 'session-log-deepseek/delivery-accepted', seq: 1, time: 2,
+      data: { sessionId: header.id, throughSeq: 0, ...(version === undefined ? {} : { sessionFormatVersion: version }) } }
+    const context = new SessionFormatEventCollector()
+    stage.transformEvent(event, context)
+    expect(stage.finish(context)).toBe(0)
+    expect(context.values).toEqual([event])
+  })
+
   it('checks native v3 delivery ownership without reinterpreting historical markers', () => {
     const artifact = (version: number) => ({
       header: { ...header, version: 3 }, inheritedEventCount: 0, events: [{

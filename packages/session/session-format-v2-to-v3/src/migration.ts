@@ -11,7 +11,7 @@ import type {
 import { assertReleasedV2Header } from '@deepseek-ai/dsh-session-format-v1-to-v2'
 import { assertReleasedV3Header } from './validation.ts'
 
-/** Adjacent identity migration from released v2 to v3. */
+/** Adjacent identity migration from released v2 to v3; refuses source delivery markers claiming v3 acceptance. */
 export const sessionFormatV2ToV3 = defineSessionFormatMigration({
   name: '@deepseek-ai/dsh-session-format-v2-to-v3',
   fromVersion: 2,
@@ -41,10 +41,14 @@ class ReleasedV2ToV3Stage implements SessionFormatMigrationStage {
       this.inheritedEventCount = event.seq
     }
     if (event.type === 'session-log-deepseek/delivery-accepted'
-      && isSessionFormatJsonObject(event.data)
-      && event.data['sessionFormatVersion'] === 2
-      && event.data['sessionId'] !== this.input.sourceHeader.id) {
-      this.lastForeignDeliverySeq = event.seq
+      && isSessionFormatJsonObject(event.data)) {
+      if (event.data['sessionFormatVersion'] === 3) {
+        throw new SessionFormatError('format v2 delivery marker claims target format v3')
+      }
+      if (event.data['sessionFormatVersion'] === 2
+        && event.data['sessionId'] !== this.input.sourceHeader.id) {
+        this.lastForeignDeliverySeq = event.seq
+      }
     }
     context.emitEvent(event)
   }
