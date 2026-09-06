@@ -114,8 +114,8 @@ describe('v2 to v3 identity migration', () => {
   })
 
   it('validates v3 metadata and event admission without mutating the artifact', () => {
-    expect(() => assertReleasedV3Header(header)).toThrow(/format v3 header/)
-    expect(() => assertReleasedV3Header({ ...header, version: 3, cwd: 'relative' })).toThrow(/absolute/)
+    expect(() => { assertReleasedV3Header(header) }).toThrow(/format v3 header/)
+    expect(() => { assertReleasedV3Header({ ...header, version: 3, cwd: 'relative' }) }).toThrow(/absolute/)
     const artifact = { header: { ...header, version: 3 }, inheritedEventCount: 0, events: [
       { type: 'external/event', seq: 0, time: 1, data: null, ignorable: true },
     ] }

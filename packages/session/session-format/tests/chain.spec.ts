@@ -220,7 +220,7 @@ describe('Session format chain', () => {
         transformEvent: () => { throw eventFailure },
       }),
     })).createStream(source, 0, discard)
-    expect(() => eventFailing.emitEvent(event)).toThrow(/event relationship is invalid/)
+    expect(() => { eventFailing.emitEvent(event) }).toThrow(/event relationship is invalid/)
 
     const runFailure = new Error('run relationship is invalid')
     const runFailing = chain(migration({
