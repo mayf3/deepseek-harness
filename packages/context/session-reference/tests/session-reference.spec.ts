@@ -386,6 +386,7 @@ describe('session reference spill outcomes', () => {
       const target = ctx.sessions.create(SessionId('target'))
       const source = ctx.sessions.create(SessionId('source'))
       appendConversation(source)
+      const capturedThroughSeq = source.seq - 1
       const read = vi.spyOn(ctx.sessionQuery, 'readSurface')
       const save = vi.spyOn(ctx.spillStore, 'saveText').mockImplementation(async (input) => {
         appendText(source, 'later mutation must not appear')
@@ -399,7 +400,7 @@ describe('session reference spill outcomes', () => {
         expect(full).not.toContain(text)
         expect(contextText(result)).not.toContain(text)
       }
-      expect(result.additionalContext?.source).toMatchObject({ references: [{ capturedThroughSeq: 13 }] })
+      expect(result.additionalContext?.source).toMatchObject({ references: [{ capturedThroughSeq }] })
     } finally { await ctx.fiber.dispose() }
   })
 
