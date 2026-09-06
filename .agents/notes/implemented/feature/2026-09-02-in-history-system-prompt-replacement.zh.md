@@ -43,7 +43,7 @@ Status: implemented
 
 Web 在追加的历史内节点自己的位置呈现它。`SystemPromptNode` 携带 `{ seq, time, turn, step, text, update }`，其中 `update` 对已加载窗口内跟在更早系统节点之后的追加 `system/message` 为真。Chat 把非空的更新渲染为一张折叠的 `system-prompt` 卡片，标题取自 locale 键 `message.systemPromptUpdate`，同一 turn 与 step 内的 `request/header` 不会重复提示词卡片；`inspectRequestPrompt` 对跟在更新之后的 header 不报告系统变更。Trajectory 把跟在已加载请求 header 之后的更新折叠为一条合成的请求 header 事实，`promptChange.kind = 'system'`，因此之后的请求无需真实的 header 变更就能显示有效提示词。已加载窗口缺少更早的系统节点时，更新按初始提示词呈现。转录投影像对待所有 `system/message` 一样跳过它。
 
-`dsh-token-meter` 把 surface 顺序中最后一个非空且存活的系统节点计入 `contextBreakdown.systemTokens`；其余可见节点（包括被取代的提示词）计入 `messageTokens`。休眠空节点被忽略。每次替换后，两者之和都等于固定启发式 surface 总量，无论是否存在影子价 claim。紧凑的保留条目复用测量服务的 surface 规划器：状态和转换成本为 O(当前保留 surface)，不是 O(1) 或 O(完整历史日志)。被替换条目和消息正文被丢弃，状态版本 3 拒绝标量检查点。后续 assistant 用量中的 `cacheReadTokens` 仍是可观察的提供方缓存效果。
+`dsh-token-meter` 把 surface 顺序中最后一个非空且存活的系统节点计入 `contextBreakdown.systemTokens`；其余可见节点（包括被取代的提示词）计入 `messageTokens`。休眠空节点被忽略。每次替换后，两者之和都等于固定启发式 surface 总量，无论是否存在影子价 claim。紧凑的保留条目复用测量服务的 surface 规划器：状态和转换成本为 O(当前保留 surface)，不是 O(1) 或 O(完整历史日志)。被替换条目和消息正文被丢弃，状态版本 4 拒绝标量检查点。后续 assistant 用量中的 `cacheReadTokens` 仍是可观察的提供方缓存效果。
 
 Trajectory 选择前一条真实 header 与前一条合成系统 header 中较新的一个作为比较状态。真实 header 拥有配置与工具；追加的提示词可以在没有另一条真实 header 时推进该状态。只比较真实 header 会在 A → B → C 序列中把 A 而不是 B 报告为先前提示词。
 
