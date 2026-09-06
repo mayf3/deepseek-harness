@@ -39,6 +39,8 @@ const targetHeader = sessionFormatV2ToV3.migrateHeader(sourceHeader)
 
 V3 校验接受当前 PTC 标签，不接受必需的旧别名。标记为 `ignorable` 的未知事件保留其准入规则，但源 v2 中的 `tool/ptc-dispatch` 和 `tool/ptc-dispatch-start` 事件即使可忽略也会被拒绝：这些名称在 v3 中保留，迁移不能将不透明扩展重新解释为 PTC 生命周期事件。物理记录编码仍为已发布的 v2 编码；仅头部版本和上述逻辑字段发生变化。
 
+阶段拒绝 `sessionFormatVersion` 为 3 的源投递标记，因为升级会激活未经确认的目标代际水位。
+
 -----
 
 <a id="understand-the-implementation"></a>

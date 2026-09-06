@@ -39,6 +39,8 @@ The header version becomes 3; all other header fields remain unchanged. The stag
 
 V3 validation accepts current PTC tags, not required legacy aliases. Unknown events marked `ignorable` retain their admission policy, except that source-v2 `tool/ptc-dispatch` and `tool/ptc-dispatch-start` events are rejected even when ignorable: these names are reserved in v3, so migration cannot reinterpret an opaque extension as a PTC lifecycle event. Physical record encoding remains the released-v2 encoding; only the header version and the named logical fields change.
 
+The stage refuses source delivery markers whose `sessionFormatVersion` is 3 because promotion would activate an unconfirmed target-generation watermark.
+
 -----
 
 <a id="understand-the-implementation"></a>

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import runpy
 from pathlib import Path
 
@@ -294,6 +295,33 @@ def test_snapshot_generation_comparison_rejects_changed_payload(tmp_path: Path) 
             {"session.v3.jsonl": '{"type":"session","version":3,"id":"changed"}\n'},
             False, tmp_path, ("session.v2.jsonl",),
         )
+
+
+@pytest.mark.parametrize("version", [2, 4])
+@pytest.mark.parametrize("update", [False, True])
+def test_snapshot_comparison_rejects_noncurrent_writer(
+    tmp_path: Path, version: int, update: bool,
+) -> None:
+    golden = '{"type":"session","version":2}\n'
+    (tmp_path / "session.v2.jsonl").write_text(golden, encoding="utf-8")
+    content = json.dumps({"type": "session", "version": version}) + "\n"
+    with pytest.raises(AssertionError, match="expected current Session format v3"):
+        SMOKE["compare_snapshot_files"](
+            {f"session.v{version}.jsonl": content}, update, tmp_path, ("session.v2.jsonl",),
+        )
+    assert (tmp_path / "session.v2.jsonl").read_text(encoding="utf-8") == golden
+    assert not (tmp_path / "session.v4.jsonl").exists()
+
+
+@pytest.mark.parametrize("version", [2, 3, 4])
+def test_persisted_session_requires_current_writer(version: int) -> None:
+    content = json.dumps({"type": "session", "version": version}) + "\n"
+    path = Path(f"session.v{version}.jsonl")
+    if version == 3:
+        assert SMOKE["assert_persisted_session_version"](path, content) == version
+    else:
+        with pytest.raises(AssertionError, match="expected current Session format v3"):
+            SMOKE["assert_persisted_session_version"](path, content)
 
 
 def test_snapshot_generation_filename_must_match_header(tmp_path: Path) -> None:

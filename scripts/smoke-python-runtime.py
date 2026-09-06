@@ -1549,8 +1549,25 @@ def session_header_version(content: str, label: str) -> int:
     return version
 
 
+def assert_current_session_version(version: int, label: str) -> None:
+    """Require generated logs to use the source writer generation, independent of goldens."""
+    source = Path(__file__).resolve().parents[1] / "packages/core/session/src/types.ts"
+    declarations = re.findall(
+        r"^export const SESSION_FORMAT_VERSION = ([0-9]+)$",
+        source.read_text(encoding="utf-8"),
+        re.MULTILINE,
+    )
+    if len(declarations) != 1:
+        raise AssertionError(f"{source}: expected one literal SESSION_FORMAT_VERSION declaration")
+    current_version = int(declarations[0])
+    if version != current_version:
+        raise AssertionError(
+            f"{label}: expected current Session format v{current_version}, got v{version}",
+        )
+
+
 def assert_persisted_session_version(path: Path, content: str) -> int:
-    """Require a raw persistence basename and header to name the same generation."""
+    """Require generated persistence filenames and headers to use the current generation."""
     filename_version = persisted_session_filename_version(path)
     if filename_version is None:
         raise AssertionError(f"non-canonical Session persistence filename: {path.name}")
@@ -1560,6 +1577,7 @@ def assert_persisted_session_version(path: Path, content: str) -> int:
             f"{path.name}: filename declares Session format v{filename_version}, "
             f"header declares v{header_version}",
         )
+    assert_current_session_version(header_version, path.name)
     return header_version
 
 
@@ -2168,6 +2186,9 @@ def compare_snapshot_files(
 
     if tuple(map(role_name, files)) != tuple(map(role_name, filenames)):
         raise AssertionError(f"{scenario} snapshot builder produced {tuple(files)}, expected {filenames}")
+    for name, content in files.items():
+        if parse_snapshot_session_filename(name) is not None:
+            assert_current_session_version(session_header_version(content, name), name)
     if update:
         directory.mkdir(parents=True, exist_ok=True)
         for name, content in files.items():
