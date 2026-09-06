@@ -97,14 +97,14 @@ This section explains the design of the replay plugin; the observable behavior i
 
 Replay treats the selected projected Session generation as the fixture. One parser completes projected envelopes, validates and migrates the whole artifact through `sessionFormatCatalog`, and returns the current header, inherited cut, and event list as one result. `deriveReplayScript` expands each `assistant/message` or `assistant/attempt` stream in log order, so each durable settlement becomes one `chunks` entry; a non-empty stream without a `finish` chunk is the fingerprint of a thrown `stream()` and must be expressed through an override sidecar. A `compaction/summary` carrying `llmStreamCall: true` and a complete `rawOutput` replays as one canonical successful stream at that event's position. Scripted strings may embed `{{fromRequest:<regex>}}`; at stream time each placeholder resolves against the live request's string leaves, taking the pattern's last match and its first capture group (or the whole match) in place.
 
-The committed-corpus test discovers every versioned `session*.jsonl` under `snapshots/`, `packages/`, and `scripts/snapshots/python-sdk-single-exe/`. Every artifact must restore to the current view through the real catalog. Any refusal fails with the artifact path, so the fixture owner must correct the invalid relationship before replay or comparison.
+The [committed-corpus test](tests/session-format-corpus.spec.ts) restores each versioned `session*.jsonl` under `snapshots/`, `packages/`, and `scripts/snapshots/python-sdk-single-exe/` through the real catalog without changing source bytes. Its [inventory](tests/session-format-corpus-inventory.ts) pins deliberate historical refusals by path, source generation, error type, and exact reason; a refusal that disappears or changes fails. Current-generation artifacts cannot receive an exception. Headerless snapshot-harness protocol examples have a separate explicit exemption. All other restoration errors fail with the artifact path; historical files remain unchanged, and native current fixtures require owner correction.
 
 ### Source map
 
 | File | Role |
 |---|---|
 | [`src/index.ts`](src/index.ts) | Types, fixture derivation, override validation, placeholder resolution, session binding, `installLlmReplay`, and the plugin export |
-| [`tests/session-format-corpus.spec.ts`](tests/session-format-corpus.spec.ts) | Complete committed-generation restoration burn-in; every refusal is a failure |
+| [`tests/session-format-corpus.spec.ts`](tests/session-format-corpus.spec.ts) | Committed-generation restoration and exact historical refusal checks |
 | — | No runtime invariant companion is published; this test-only adapter consumes a fixed replay script; its stream grammar is checked by the LLM companion and fixture derivation tests. |
 
 ### Binding and stream flow

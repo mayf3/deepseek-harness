@@ -74,6 +74,8 @@ V2→V3 负责[系统提示词结构转换](2026-09-02-system-prompt-as-surface-
 
 所有结构变更组合在唯一且尚未发布的 V2→V3 迁移边中；功能或评审顺序不分配额外 Session 格式版本。V0、V1、V2 代际保持字节冻结，迁移只发布最终 V3 后继代际。未发布的目标可以持续演化至发布，但已经写出的 V3 文件不会重新执行入边迁移。因此，集成测试必须使用隔离、可丢弃的 home 和未变更的历史输入，而非改写已提交代际。
 
+[已提交语料清单](../../../../packages/test-support/llm-replay/tests/session-format-corpus-inventory.ts) 按源路径、代际与精确拒绝原因标识有意不支持的历史转换。保留这些产物不能迫使迁移改变时序，也不能允许统一跳过：每个清单中的产物仍必须抛出类型化迁移拒绝，未列入的产物必须还原。原生当前代际 fixture 不经过入边，因此不能被归为不支持。没有版本 header 的测试框架协议示例保持为独立的显式类别。语料测试在还原成功和拒绝后都检查源字节；它不通过改写历史证据来满足当前 reader。
+
 ### Physical codec 与 packed run
 
 每个 released codec 会用显式 `strict` 或 `recoverable` 策略创建 row decoder。Decoder 每次通过不同的 context 方法校验并 emit 一个 event 或 codec-owned `SessionFormatEventRun`。v0-to-v1 与 v1-to-v2 都实现 `transformEvent()` 和 `transformRun()`，因此 packed Assistant chunk 可以直接到达 folding edge，无需先变成数百万个普通事件。
