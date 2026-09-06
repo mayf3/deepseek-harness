@@ -66,7 +66,7 @@ export function systemMessageDefinition(inspect: SystemPromptInspector): Convers
     kind: 'system-message',
     target: 'chat',
     match: event => event.type === 'system/message'
-      || ('surfaceOp' in event && event.surfaceOp !== undefined && event.surfaceOp !== 'append')
+      || ('surfaceOp' in event && event.surfaceOp !== 'append')
       ? { id: String(event.seq), role: 'start' }
       : null,
     start: (_context, match, reader) => {

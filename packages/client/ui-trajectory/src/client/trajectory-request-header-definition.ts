@@ -34,7 +34,7 @@ function trajectorySystemMessageDefinition(inspect: SystemPromptInspector): Conv
     kind: 'trajectory-system-message',
     target: 'trajectory',
     match: event => event.type === 'system/message'
-      || ('surfaceOp' in event && event.surfaceOp !== undefined && event.surfaceOp !== 'append')
+      || ('surfaceOp' in event && event.surfaceOp !== 'append')
       ? { id: String(event.seq), role: 'start' }
       : null,
     start: (_context, match, reader) => {
