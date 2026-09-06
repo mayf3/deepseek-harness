@@ -485,11 +485,11 @@ describe('pi-ai system prompt source', () => {
     },
   ])('rejects a leading system $label on both conversion paths', async ({ content }) => {
     const options: GenerateOptions = { ...base, messages: [history('system', content), question] }
-    const error = expect.objectContaining({
+    const error = {
       code: 'UNSUPPORTED_CONTENT',
       message: 'pi-ai cannot represent an image in an in-history system message',
-    })
-    expect(() => toPiContext(options)).toThrowError(error)
+    }
+    expect(() => toPiContext(options)).toThrow(error.message)
     const readImageRequest = vi.fn()
     await expect(toPiContext(options, imageContext(projectionStore(readImageRequest)))).rejects.toMatchObject(error)
     expect(readImageRequest).not.toHaveBeenCalled()
