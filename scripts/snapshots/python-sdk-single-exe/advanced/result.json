@@ -193,7 +193,7 @@
       "time": 0,
       "data": {
         "sessionId": "{{parent}}",
-        "sessionFormatVersion": 2,
+        "sessionFormatVersion": 3,
         "throughSeq": 12
       }
     },
@@ -361,7 +361,7 @@
       "time": 0,
       "data": {
         "sessionId": "{{parent}}",
-        "sessionFormatVersion": 2,
+        "sessionFormatVersion": 3,
         "throughSeq": 18
       }
     },
@@ -598,7 +598,7 @@
       "time": 0,
       "data": {
         "sessionId": "{{parent}}",
-        "sessionFormatVersion": 2,
+        "sessionFormatVersion": 3,
         "throughSeq": 26
       }
     },
@@ -797,7 +797,7 @@
       "time": 0,
       "data": {
         "sessionId": "{{parent}}",
-        "sessionFormatVersion": 2,
+        "sessionFormatVersion": 3,
         "throughSeq": 34
       }
     },
@@ -961,7 +961,7 @@
       "time": 0,
       "data": {
         "sessionId": "{{parent}}",
-        "sessionFormatVersion": 2,
+        "sessionFormatVersion": 3,
         "throughSeq": 40
       }
     },
@@ -1165,7 +1165,7 @@
       "time": 0,
       "data": {
         "sessionId": "{{parent}}",
-        "sessionFormatVersion": 2,
+        "sessionFormatVersion": 3,
         "throughSeq": 50
       }
     },
@@ -1396,7 +1396,7 @@
       "time": 0,
       "data": {
         "sessionId": "{{parent}}",
-        "sessionFormatVersion": 2,
+        "sessionFormatVersion": 3,
         "throughSeq": 58
       }
     },
@@ -1839,7 +1839,7 @@
           "time": 0,
           "data": {
             "sessionId": "{{parent}}",
-            "sessionFormatVersion": 2,
+            "sessionFormatVersion": 3,
             "throughSeq": 12
           }
         }
@@ -2043,7 +2043,7 @@
           "time": 0,
           "data": {
             "sessionId": "{{parent}}",
-            "sessionFormatVersion": 2,
+            "sessionFormatVersion": 3,
             "throughSeq": 18
           }
         }
@@ -2328,7 +2328,7 @@
           "time": 0,
           "data": {
             "sessionId": "{{parent}}",
-            "sessionFormatVersion": 2,
+            "sessionFormatVersion": 3,
             "throughSeq": 26
           }
         }
@@ -2575,7 +2575,7 @@
           "time": 0,
           "data": {
             "sessionId": "{{parent}}",
-            "sessionFormatVersion": 2,
+            "sessionFormatVersion": 3,
             "throughSeq": 34
           }
         }
@@ -2999,7 +2999,7 @@
           "time": 0,
           "data": {
             "sessionId": "{{child-1}}",
-            "sessionFormatVersion": 2,
+            "sessionFormatVersion": 3,
             "throughSeq": 13
           }
         }
@@ -3231,7 +3231,7 @@
           "time": 0,
           "data": {
             "sessionId": "{{parent}}",
-            "sessionFormatVersion": 2,
+            "sessionFormatVersion": 3,
             "throughSeq": 40
           }
         }
@@ -3687,7 +3687,7 @@
           "time": 0,
           "data": {
             "sessionId": "{{child-2}}",
-            "sessionFormatVersion": 2,
+            "sessionFormatVersion": 3,
             "throughSeq": 13
           }
         }
@@ -3950,7 +3950,7 @@
           "time": 0,
           "data": {
             "sessionId": "{{parent}}",
-            "sessionFormatVersion": 2,
+            "sessionFormatVersion": 3,
             "throughSeq": 50
           }
         }
@@ -4229,7 +4229,7 @@
           "time": 0,
           "data": {
             "sessionId": "{{parent}}",
-            "sessionFormatVersion": 2,
+            "sessionFormatVersion": 3,
             "throughSeq": 58
           }
         }
