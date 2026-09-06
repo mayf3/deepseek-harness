@@ -175,6 +175,7 @@ function appendAssistant(
 }
 
 function textOnlyContext(options: GenerateOptions, onReplayDegrade?: (reason: string) => void): PiContext {
+  assertSupportedImageRoles(options.messages)
   const split = splitSystemPrompt(options)
   const toolNames = new Map<ToolCallId, string>()
   const messages: PiMessage[] = []
@@ -231,6 +232,7 @@ export interface PiImageRequestContext {
  * @param images - absent; selects the synchronous conversion.
  * @param onReplayDegrade - forwarded to {@link toPiAssistant} for each assistant message.
  * @returns the pi-ai context; `tools` is omitted when the request declares none.
+ * @throws {LlmError} `UNSUPPORTED_CONTENT` for images in any history role, including a leading system message.
  */
 export function toPiContext(
   options: GenerateOptions,

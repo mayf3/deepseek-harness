@@ -472,6 +472,29 @@ describe('pi-ai system prompt source', () => {
   const leading = history('system', [{ type: 'text', text: 'lead ' }, { type: 'text', text: 'rule' }])
   const question = user([{ type: 'text', text: 'hi' }])
 
+  it.each<{ label: string; content: ContentBlock[] }>([
+    { label: 'image-only', content: [{ type: 'image', attachment: ref }] },
+    { label: 'text and image', content: [{ type: 'text', text: 'rule' }, { type: 'image', attachment: ref }] },
+    {
+      label: 'nested image',
+      content: [{
+        type: 'tool-result',
+        toolCallId: ToolCallId('system-image'),
+        content: [{ type: 'image', attachment: ref }],
+      }],
+    },
+  ])('rejects a leading system $label on both conversion paths', async ({ content }) => {
+    const options: GenerateOptions = { ...base, messages: [history('system', content), question] }
+    const error = expect.objectContaining({
+      code: 'UNSUPPORTED_CONTENT',
+      message: 'pi-ai cannot represent an image in an in-history system message',
+    })
+    expect(() => toPiContext(options)).toThrowError(error)
+    const readImageRequest = vi.fn()
+    await expect(toPiContext(options, imageContext(projectionStore(readImageRequest)))).rejects.toMatchObject(error)
+    expect(readImageRequest).not.toHaveBeenCalled()
+  })
+
   it('maps a leading system message to systemPrompt on both conversion paths', async () => {
     const options: GenerateOptions = { ...base, messages: [leading, question] }
     const expected = {
