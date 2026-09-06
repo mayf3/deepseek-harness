@@ -137,12 +137,12 @@ function packedInputs(entries: readonly SessionLiveEventEntry[]): SessionEventLi
   return output
 }
 
-function assembler(events: readonly SessionEventLikeEntry[]): ConversationNodeAssembler {
+function assembler(events: readonly SessionEventLikeEntry[], hasMore = false): ConversationNodeAssembler {
   const value = new ConversationNodeAssembler(
     new TestEventDefinitions(),
     new TestViewDefinitions(),
   )
-  value.replaceWindow(events, false)
+  value.replaceWindow(events, hasMore)
   value.activateTarget('trajectory')
   return value
 }
