@@ -5,6 +5,14 @@ import { releasedV0SessionFormatCodec, releasedV1SessionFormatCodec, sessionForm
 import { sessionFormatV1ToV2 } from '@deepseek-ai/dsh-session-format-v1-to-v2'
 import { assertReleasedV3Header, releasedV2SessionFormatCodec, releasedV3SessionFormatCodec, restoreReleasedV3Artifact, sessionFormatV2ToV3 } from '../src/index.ts'
 
+function deepFreeze<T>(value: T): T {
+  if (value !== null && typeof value === 'object') {
+    for (const child of Object.values(value)) deepFreeze(child)
+    Object.freeze(value)
+  }
+  return value
+}
+
 const header: SessionFormatHeader = { version: 2, id: 'identity', createdAt: 1, isSeeded: false, delegationDepth: 0 }
 const request = (system?: string) => ({ header: { config: { provider: 'mock', model: 'mock' }, ...(system === undefined ? {} : { system }) }, reason: 'initial' })
 const user = (id = 'user') => ({ role: 'user', id, source: { kind: 'user' }, content: [{ type: 'text', text: id }] })
@@ -349,5 +357,144 @@ describe('native V3 codec and restorer', () => {
   })
   it.each([null, [], false, { version: 2 }])('rejects non-v3 physical metadata %j', (value) => {
     expect(() => releasedV3SessionFormatCodec.decodeHeader(value)).toThrow(/format v3 physical/)
+  })
+})
+
+
+describe('composed V3 system and PTC migration', () => {
+  const message = (plugin: string, id = plugin) => ({ ...user(id), source: { kind: 'plugin', plugin } })
+  const dispatch = { rootCallId: 'tools-code-mode:root', parentCallId: 'tools-code-mode:root', subCallId: 'tools-code-mode:child', name: 'read', arguments: { text: 'tools-code-mode', type: 'tool/code-dispatch' } }
+
+  it('renames PTC after system insertion and remaps local references without touching tool JSON or identities', () => {
+    const input = dense([
+      ...opening(), event('user/message', message('tools-code-mode', 'tools-code-mode:message'), 'append'),
+      event('request/header', request('prompt')), event('tool/code-dispatch-start', dispatch),
+      event('tool/code-dispatch', { ...dispatch, isError: false, content: [{ type: 'text', text: 'tool/code-dispatch tools-code-mode' }] }),
+      event('command/run', { commandId: 'cmd', name: 'test', source: { kind: 'user' } }),
+      event('command/done', { commandId: 'cmd', kind: 'success', sourceEventSeq: 5 }),
+      { ...event('user/message', message('tools-ptc', 'tools-ptc:message'), { op: 'replace', start: 2, end: 2 }), sourceEventSeqs: [2, 5] },
+      event('request/header', request()),
+    ])
+    deepFreeze(input)
+    const before = JSON.stringify(input)
+    const output = migrate(input)
+    expect(output.events.find(e => e.type === 'tool/ptc-dispatch-start')?.data).toEqual(dispatch)
+    const settle = output.events.find(e => e.type === 'tool/ptc-dispatch')!
+    expect(settle.data).toEqual(input[5]?.data)
+    expect(output.events.find(e => e.type === 'command/done')?.data).toMatchObject({ sourceEventSeq: settle.seq })
+    const users = output.events.filter(e => e.type === 'user/message')
+    expect(users[0]?.data).toEqual(message('tools-ptc', 'tools-code-mode:message'))
+    expect(users[1]?.data).toEqual(message('tools-ptc', 'tools-ptc:message'))
+    expect(users[1]?.['sourceEventSeqs']).toEqual([users[0]?.seq, settle.seq])
+    expect(requests(output.events, 3)).toEqual(requests(input, 2))
+    expect(JSON.stringify(input)).toBe(before)
+  })
+
+  it('renames exact attribution slots in inbox and title messages but not similar plugin labels or text', () => {
+    const old = message('tools-code-mode')
+    const untouched = message('tools-code-mode-extra')
+    const input = [
+      event('agent/inbox/spliced', { target: 'next-turn', start: 0, inserted: [old, untouched] }),
+      ...opening(), event('user/message', user('human'), 'append'),
+      event('session/title-llm-request', { titleProvider: 'mock', messageSeqs: [3], route: { provider: 'mock', model: 'mock' }, system: 'tools-code-mode', messages: [old, untouched], maxTokens: 10 }),
+    ]
+    const h = stage()
+    for (const e of dense(input)) h.value.transformEvent(e, h.collector)
+    expect((h.collector.values[0]!.data as SessionFormatJsonObject)['inserted']).toEqual([message('tools-ptc', 'tools-code-mode'), untouched])
+    const title = h.collector.values.at(-1)!.data as SessionFormatJsonObject
+    expect(title['messages']).toEqual([message('tools-ptc', 'tools-code-mode'), untouched])
+    expect(title['system']).toBe('tools-code-mode')
+  })
+
+  it.each(['decoded', 'transformed'] as const)('refuses both required and ignorable reserved PTC tags in %s sources', (sourceKind) => {
+    for (const type of ['tool/ptc-dispatch-start', 'tool/ptc-dispatch']) {
+      for (const ignorable of [false, true]) {
+        const value = sessionFormatV2ToV3.createStage({
+          sourceHeader: header, targetHeader: { ...header, version: 3 }, sourceInheritedEventCount: 0, sourceKind,
+        })
+        expect(() => { value.transformEvent(event(type, null, undefined), new SessionFormatEventCollector()) }).toThrow(/unclassified/)
+        expect(() => migrate([{ ...event(type, null), ...(ignorable ? { ignorable: true } : {}) }])).toThrow(/unclassified/)
+      }
+    }
+  })
+
+  it.each(['tool/code-dispatch-start', 'tool/code-dispatch'])('refuses retired required %s after recoverable corruption', (type) => {
+    const decoder = releasedV3SessionFormatCodec.createDecoder({ type: 'session', ...header, version: 3 }, 'recoverable')
+    const collector = new SessionFormatEventCollector()
+    decoder.decodeRow(null, collector)
+    expect(() => { decoder.decodeRow({ type, seq: 0, time: 1, data: null }, collector) }).toThrow(/unknown event type/)
+    expect(() => releasedV3SessionFormatCodec.encodeEvent(event(type, null))).toThrow(/unknown event type/)
+  })
+})
+
+describe('v3 PTC event admission and relationships', () => {
+  const turn = { type: 'turn/start', seq: 0, time: 1, data: { turn: 1 } }
+  const dispatch = {
+    rootCallId: 'tools-code-mode:root', parentCallId: 'tools-code-mode:root', subCallId: 'tools-code-mode:child',
+    name: 'read', arguments: { path: 'tools-code-mode', nested: [1, { text: 'tool/code-dispatch' }] },
+  }
+  const start = { type: 'tool/ptc-dispatch-start', seq: 1, time: 2, data: dispatch }
+  const settle = {
+    type: 'tool/ptc-dispatch', seq: 2, time: 3,
+    data: { ...dispatch, isError: false, content: [{ type: 'text', text: 'tools-code-mode' }] },
+  }
+  const artifact = (events: SessionFormatEvent[]) => deepFreeze({
+    header: { ...header, version: 3 }, inheritedEventCount: 0, events,
+  })
+
+  it('validates a frozen complete PTC lifecycle and returns original names, IDs, and references', () => {
+    const source = artifact([turn, start, settle, { type: 'turn/end', seq: 3, time: 4, data: { turn: 1, reason: { kind: 'completed' } } }])
+    const before = JSON.stringify(source)
+    const restored = restoreReleasedV3Artifact(source, new Set(['tool/ptc-dispatch-start', 'tool/ptc-dispatch']))
+    expect(restored).toBe(source)
+    expect(restored.events).toBe(source.events)
+    for (const [index, event] of source.events.entries()) expect(restored.events[index]).toBe(event)
+    expect(JSON.stringify(source)).toBe(before)
+  })
+
+  it('accepts an unfinished PTC start without requiring a fabricated settlement', () => {
+    const source = artifact([turn, start])
+    expect(restoreReleasedV3Artifact(source, new Set())).toBe(source)
+  })
+
+  it('rejects an orphan PTC settlement', () => {
+    expect(() => restoreReleasedV3Artifact(artifact([turn, { ...settle, seq: 1 }]), new Set())).toThrow(/no unique start/)
+  })
+
+  it.each([
+    { name: 'other' }, { arguments: { path: 'different' } }, { subCallId: 'other-child' },
+    { parentCallId: 'missing-parent' }, { rootCallId: 'different-root' },
+  ])('rejects a PTC settlement whose identity or input disagrees with its start: %j', (override) => {
+    expect(() => restoreReleasedV3Artifact(artifact([turn, start, { ...settle, data: { ...settle.data, ...override } }]), new Set()))
+      .toThrow(/does not match|no unique start|parentCallId|rootCallId/)
+  })
+
+  it.each([start, settle])('rejects $type outside an open turn', (event) => {
+    expect(() => restoreReleasedV3Artifact(artifact([{ ...event, seq: 0 }]), new Set())).toThrow(/outside an open turn/)
+  })
+
+  it('rejects duplicate PTC starts and settlements', () => {
+    expect(() => restoreReleasedV3Artifact(artifact([turn, start, { ...start, seq: 2 }]), new Set())).toThrow(/repeats subCallId/)
+    expect(() => restoreReleasedV3Artifact(artifact([turn, start, settle, { ...settle, seq: 3 }]), new Set())).toThrow(/no unique start/)
+  })
+
+  it.each(['tool/code-dispatch-start', 'tool/code-dispatch'])('rejects required obsolete %s even when installed', (type) => {
+    expect(() => restoreReleasedV3Artifact(artifact([{ type, seq: 0, time: 1, data: null }]), new Set([type])))
+      .toThrow(/format v3 contains unknown event type/)
+  })
+
+  it.each(['tool/code-dispatch-start', 'tool/code-dispatch', 'external/future'])('preserves ignorable %s as opaque data outside a turn', (type) => {
+    const source = artifact([{
+      type, seq: 0, time: -5, ignorable: true,
+      data: { source: { kind: 'plugin', plugin: 'tools-code-mode' }, invalidLifecycle: true, content: ['tool/code-dispatch'] },
+      sourceEventSeqs: [17], surfaceOp: { unknown: ['tools-code-mode'] },
+    }])
+    expect(restoreReleasedV3Artifact(source, new Set())).toBe(source)
+    expect(source.events[0]?.type).toBe(type)
+  })
+
+  it('does not let an ignorable obsolete start satisfy a current PTC settlement', () => {
+    const obsolete = { ...start, type: 'tool/code-dispatch-start', ignorable: true }
+    expect(() => restoreReleasedV3Artifact(artifact([turn, obsolete, settle]), new Set())).toThrow(/no unique start/)
   })
 })

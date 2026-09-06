@@ -821,18 +821,31 @@ describe('JsonlSessionPersistence: immutable format generations', () => {
     readTally.enabled = true
     const controller = new AbortController()
     const reason = new Error('first historical waiter cancelled')
+    const secondController = new AbortController()
+    const firstListener = vi.spyOn(controller.signal, 'addEventListener')
+    const secondListener = vi.spyOn(secondController.signal, 'addEventListener')
 
     const first = ctx.sessionPersistence.open(header.id, 'read', { signal: controller.signal })
-    const second = ctx.sessionPersistence.open(header.id, 'read')
-    await pause.entered
-    await scheduler.yield()
-    controller.abort(reason)
-    await expect(first).rejects.toBe(reason)
-    pause.release()
-    const handle = await second
-    expect((await handle.read()).events).toEqual([])
-    expect(readTally.bySuffix.get(sourcePath)).toBe(1)
-    await handle.close()
+    const second = ctx.sessionPersistence.open(header.id, 'read', { signal: secondController.signal })
+    try {
+      await pause.entered
+      // Both callers must be waiting on preparation, not still discovering the source.
+      await vi.waitFor(() => {
+        expect(firstListener).toHaveBeenCalledWith('abort', expect.any(Function), { once: true })
+        expect(secondListener).toHaveBeenCalledWith('abort', expect.any(Function), { once: true })
+      })
+      controller.abort(reason)
+      await expect(first).rejects.toBe(reason)
+      pause.release()
+      const handle = await second
+      expect((await handle.read()).events).toEqual([])
+      expect(readTally.bySuffix.get(sourcePath)).toBe(1)
+    } finally {
+      pause.release()
+      for (const outcome of await Promise.allSettled([first, second])) {
+        if (outcome.status === 'fulfilled') await outcome.value.close()
+      }
+    }
   })
 
   it('cancels shared historical preparation after its last waiter leaves', async () => {

@@ -166,7 +166,7 @@ export function assertV3StructuralRow(value: unknown): void {
   if (row['type'] === 'request/header') {
     const data = record(row['data'], 'request/header data')
     if (Object.hasOwn(record(data['header'], 'request header'), 'system')) {
-      throw new SessionFormatError('format v3 request/header rejects retired header.system')
+      throw new SessionFormatUnsupportedMigrationError('format v3 request/header rejects retired header.system')
     }
   } else if (row['type'] === 'system/message') {
     const data = record(row['data'], 'system/message data')

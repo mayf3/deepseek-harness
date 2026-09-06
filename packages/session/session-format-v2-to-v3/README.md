@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-This library restores released-v2 system prompts as protected v3 messages while preserving historical request meaning, source-event chronology, timestamps, message identities, and inherited ownership. Persistence consumes it through the static Session format catalog. It does not publish or modify durable files.
+This library restores released-v2 system prompts as protected v3 messages and translates durable PTC vocabulary while preserving historical request meaning, source-event chronology, timestamps, message identities, and inherited ownership. Persistence consumes it through the static Session format catalog. It does not publish or modify durable files.
 
 ## Table of Contents
 
@@ -36,6 +36,8 @@ const targetHeader = sessionFormatV2ToV3.migrateHeader(sourceHeader)
 ```
 
 Session metadata changes only its version to 3. The stage inserts an empty `system/message` immediately after the first `step/start`, then replaces that protected head before each changed `request/header` prompt, including clears. It removes `header.system` from every request header without moving any source event. Metadata-only logs gain no head. V3 encoding and restoration accept empty system heads and reject retired `header.system`.
+
+The stage maps `tool/code-dispatch-start` and `tool/code-dispatch` to `tool/ptc-dispatch-start` and `tool/ptc-dispatch`. It replaces the exact `tools-code-mode` plugin attribution with `tools-ptc` in user messages, inbox insertions, and title-request messages, without rewriting IDs, tool arguments, or content. Native V3 rejects required predecessor PTC tags, including after recoverable row corruption; ignorable predecessor tags remain opaque and cannot satisfy current PTC relationships. Reserved V3 PTC tags in V2 source input are refused even when ignorable.
 
 -----
 
@@ -72,11 +74,11 @@ The [validator](src/validation.ts) checks system payloads, open-step ownership, 
 
 #### Token effect
 
-No model-visible content is added or removed.
+No message content is added or removed.
 
 #### KV Cache effect
 
-The model-message prefix remains unchanged.
+The stage does not change message content or model configuration.
 
 ## Known Limitations and Deferred Work
 
@@ -84,7 +86,7 @@ The model-message prefix remains unchanged.
 
 - **No file publication** — persistence owns immutable successor publication; this package never overwrites released generations.
 - **Chronology-preserving inputs** — a surface event before the first step, or a changed prompt outside an open step, is refused with `SessionFormatUnsupportedMigrationError`; moving events or inventing out-of-step system messages would violate reconstruction.
-- **Audited migration vocabulary** — V2 events, including log-only Assistant attempts, and the installed message-feedback additions are classified explicitly. Agent relay attribution and file attachment metadata are preserved without interpreting their identifiers or byte counts as sequence references. Unknown events, even ignorable ones, and unknown message-source or content kinds are refused during migration because sequence dependencies cannot be inferred. Native equal-version reads retain ordinary ignorable-event admission and request-header extensions; only the retired `header.system` field is prohibited.
+- **Audited migration vocabulary** — V2 events, including log-only Assistant attempts, and the installed message-feedback additions are classified explicitly. Agent relay attribution and file attachment metadata are preserved without interpreting their identifiers or byte counts as sequence references. Unknown events, even ignorable ones, and unknown message-source or content kinds are refused during migration because sequence dependencies cannot be inferred. Native equal-version reads retain ordinary ignorable-event admission and request-header extensions; retired `header.system` and required predecessor PTC tags are prohibited.
 
 <a id="dev-note"></a>
 ### Dev Note

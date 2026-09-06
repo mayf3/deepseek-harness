@@ -1,4 +1,4 @@
-/** Released-v2 codec and streaming system-prompt migration into the V3 protected message head. */
+/** Released-v2 codec and streaming system-prompt/PTC migration into V3. */
 
 export { releasedV2SessionFormatCodec } from '@deepseek-ai/dsh-session-format-v1-to-v2'
 export * from './codec.ts'

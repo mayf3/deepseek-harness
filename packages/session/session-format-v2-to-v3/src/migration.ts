@@ -2,7 +2,7 @@
 
 import { createHash } from 'node:crypto'
 import { SessionFormatError, SessionFormatUnsupportedMigrationError, defineSessionFormatMigration, sessionFormatCount } from '@deepseek-ai/dsh-session-format'
-import type { SessionFormatEvent, SessionFormatEventRun, SessionFormatJsonObject, SessionFormatMigrationContext, SessionFormatMigrationStage, SessionFormatMigrationStageInput } from '@deepseek-ai/dsh-session-format'
+import type { SessionFormatEvent, SessionFormatEventRun, SessionFormatJsonObject, SessionFormatJsonValue, SessionFormatMigrationContext, SessionFormatMigrationStage, SessionFormatMigrationStageInput } from '@deepseek-ai/dsh-session-format'
 import { assertReleasedV2Header } from '@deepseek-ai/dsh-session-format-v1-to-v2'
 import { assertEvent, record, SURFACE_TYPES } from './payload.ts'
 import { remapEvent } from './references.ts'
@@ -67,7 +67,7 @@ class ReleasedV2ToV3Stage implements SessionFormatMigrationStage {
     }
     const target = remapEvent(source, this.targetSeq, this.mapping)
     this.mapping.push(this.targetSeq++)
-    context.emitEvent(target)
+    context.emitEvent(renamePtcEvent(target))
     if (event.type === 'step/start') {
       this.step = { turn: data['turn'] as number, step: data['step'] as number }
       if (this.head === undefined) this.emitSystem('', event, context)
@@ -134,4 +134,37 @@ class ReleasedV2ToV3Stage implements SessionFormatMigrationStage {
     this.head = seq
     this.prompt = prompt
   }
+}
+
+/** Source admission precedes renaming, so these payloads have exact audited fields. */
+function renamePtcEvent(event: SessionFormatEvent): SessionFormatEvent {
+  switch (event.type) {
+    case 'tool/code-dispatch-start':
+      return { ...event, type: 'tool/ptc-dispatch-start' }
+    case 'tool/code-dispatch':
+      return { ...event, type: 'tool/ptc-dispatch' }
+    case 'user/message': {
+      const data = renameMessageSource(event.data as SessionFormatJsonObject)
+      return data === event.data ? event : { ...event, data }
+    }
+    case 'agent/inbox/spliced':
+    case 'session/title-llm-request': {
+      const data = event.data as SessionFormatJsonObject
+      const key = event.type === 'agent/inbox/spliced' ? 'inserted' : 'messages'
+      const messages = data[key] as readonly SessionFormatJsonObject[]
+      const renamed = messages.map(renameMessageSource)
+      return renamed.every((message, index) => message === messages[index])
+        ? event
+        : { ...event, data: { ...data, [key]: renamed } }
+    }
+    default:
+      // Content, tool arguments, message IDs, and other payloads are not plugin attribution slots.
+      return event
+  }
+}
+
+function renameMessageSource(message: SessionFormatJsonObject): SessionFormatJsonValue {
+  const source = message['source'] as SessionFormatJsonObject
+  if (source['kind'] !== 'plugin' || source['plugin'] !== 'tools-code-mode') return message
+  return { ...message, source: { ...source, plugin: 'tools-ptc' } }
 }

@@ -1,6 +1,6 @@
 /** Native V3 system-head validation with a private view for frozen non-system relationships. */
 
-import { SessionFormatError } from '@deepseek-ai/dsh-session-format'
+import { SessionFormatError, SessionFormatUnsupportedMigrationError } from '@deepseek-ai/dsh-session-format'
 import type { SessionFormatArtifact, SessionFormatEvent, SessionFormatHeader } from '@deepseek-ai/dsh-session-format'
 import { assertReleasedV2Header, restoreReleasedV2Artifact } from '@deepseek-ai/dsh-session-format-v1-to-v2'
 import { assertEvent, isRepairIdentity, record, SURFACE_TYPES } from './payload.ts'
@@ -69,7 +69,31 @@ export function restoreReleasedV3Artifact(artifact: SessionFormatArtifact, known
   return artifact
 }
 
+/**
+ * Refuse required predecessor PTC tags without interpreting native extension payloads.
+ * @param event - event envelope whose type and ignorable admission markers are available.
+ */
+export function assertV3EventAdmission(event: SessionFormatEvent): void {
+  if ((event.type === 'tool/code-dispatch-start' || event.type === 'tool/code-dispatch')
+    && event['ignorable'] !== true) {
+    throw new SessionFormatUnsupportedMigrationError(
+      'format v3 contains unknown event type ' + JSON.stringify(event.type) + ' at seq ' + String(event.seq),
+    )
+  }
+}
+
 function relationshipEvent(event: SessionFormatEvent): SessionFormatEvent {
+  switch (event.type) {
+    case 'tool/ptc-dispatch-start':
+      return { ...event, type: 'tool/code-dispatch-start' }
+    case 'tool/ptc-dispatch':
+      return { ...event, type: 'tool/code-dispatch' }
+    case 'tool/code-dispatch-start':
+    case 'tool/code-dispatch':
+      assertV3EventAdmission(event)
+      // Obsolete ignorable events do not participate in released PTC lifecycle validation.
+      return { ...event, type: 'v3/opaque-released-event' }
+  }
   if (event.type === 'system/message') {
     const message = record(record(event.data, 'system data')['message'], 'system message')
     // The frozen validator needs a surface-eligible event, not a model-visible substitute.
