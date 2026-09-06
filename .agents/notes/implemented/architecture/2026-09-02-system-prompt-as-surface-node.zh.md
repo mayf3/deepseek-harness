@@ -24,12 +24,11 @@ Status: implemented
 
 | 情形 | surface 操作 |
 |---|---|
-| surface 上没有存活的 `system/message` 且渲染后的提示词非空 | 追加 `system/message`；在会话的首个步骤中它是 surface 第 0 号节点，位于该步骤首条 `user/message` 之前 |
+| surface 上没有存活的 `system/message`（包括渲染后的提示词为空时） | 追加 `system/message`；在会话的首个步骤中它是 surface 第 0 号节点，位于该步骤首条 `user/message` 之前 |
 | 有存活的 `system/message` 且渲染后的提示词与其文本不同（包括提示词变为空） | 恰好替换该节点：`surfaceOp: { op: 'replace', start: <该节点的 seq>, end: <同一值> }`，`sourceEventSeqs: [<该节点的 seq>]`；空提示词产生一个投影为无消息的空内容节点 |
-| 没有存活的 `system/message` 且渲染后的提示词为空 | 不追加系统节点 |
 | 渲染后的提示词与存活节点的文本相同 | 无操作 |
 
-追加一行对位置的描述是精确的：在用户消息已存在之后才首次变为非空的提示词，把节点追加到 surface 尾部而不是第 0 号节点，下文的头部保护也不覆盖它。替换第 0 号节点是头部重写在 surface 上的表达：提供方前缀从第一个 token 起改变，日志通过 `sourceEventSeqs` 记录被遮蔽的节点，`replaceGeneration` 与压缩替换时一样推进。因此循环的 `startsSeries` 检测（`requestSurfaceGeneration !== surfaceGeneration`）无需在 `headerEquals` 中比较 `system` 即可覆盖提示词变更。`request/header` 保留 `initial`、`resume`、`change`、`series` 四种 reason；`change` 表示 config 或 tools 变更，提示词替换之后跟随的未变 header 记为 `series`。
+循环在初始接纳的用户消息之前预留空系统头部，使稍后首次变为非空的提示词仍替换第 0 号节点。省略该空节点会让后来的提示词追加在用户历史之后，pi-ai 会将其转换为用户消息，而不是 `systemPrompt`。替换第 0 号节点是头部重写在 surface 上的表达：提供方前缀从第一个 token 起改变，日志通过 `sourceEventSeqs` 记录被遮蔽的节点，`replaceGeneration` 与压缩替换时一样推进。因此循环的 `startsSeries` 检测（`requestSurfaceGeneration !== surfaceGeneration`）无需在 `headerEquals` 中比较 `system` 即可覆盖提示词变更。`request/header` 保留 `initial`、`resume`、`change`、`series` 四种 reason；`change` 表示 config 或 tools 变更，提示词替换之后跟随的未变 header 记为 `series`。
 
 `packages/core/session/src/surface.ts` 在 `assertSystemHeadRewrite` 中强制头部不变量：当第 0 号节点是 `system/message` 时，范围覆盖第 0 号节点的替换会被拒绝，除非替换事件本身是恰好覆盖该节点的 `system/message`。位于更后位置的系统节点没有此类保护；压缩范围可以遮蔽它们。
 
@@ -74,14 +73,14 @@ Status: implemented
 - 压缩带有一条不变量：第 0 号节点永不被压缩。`dsh-session` 的 surface 管理器在替换操作本身中强制它，因此除 `compaction-basic` 以外的压缩提供方无法通过锚定在 `surfaceNodes[0]` 来遮蔽提示词。更后位置的系统节点按设计不受保护。
 - `replaceGeneration` 在提示词替换时和压缩时一样推进；需要区分两者的读取方检查替换事件的类型。
 - 历史中途的系统节点拥有 surface 表示，这正是[历史内替换提案](../../proposed/feature/2026-09-02-in-history-system-prompt-replacement.zh.md)所依赖的基础。
-- 在用户消息已存在之后才首次变为非空的提示词落在 surface 尾部而不是第 0 号节点，不在头部保护之内；循环拥有的投影只在会话首个步骤渲染出空提示词时才会到达这种情形。
+- 初始空提示词占据受保护的头部，但不贡献协议消息；后来的非空提示词替换它，并保持为开头的系统消息。
 - 录制的快照 fixture 携带 `system/message` 事件而非 header 的 `system` 字段。快照归一化器把该事件的文本标记化为 `{{system}}`，提示词伴随文件从 `system/message` 序列采集（每个提示词版本一节，以 `header.promptChanges` 声明），`request/header` 的 pin 只比较 config 与 tools。
 
 ## Testing
 
 - `packages/compaction/compaction-basic/tests/compaction-loop-repro.spec.ts` 钉住提供方用量下调用后的表面增量为零，覆盖初始、增长、缩短与空提示词、同一步骤中的重试替换、请求中间件和全新回放。
 - `packages/core/session/tests/surface.spec.ts`（`system/message surface node` 块）钉住开头 system 角色的投影、空内容的 `null` 投影、`assertSystemHeadRewrite` 的接受与拒绝路径、更后位置系统节点不受保护，以及对 seed 中非 system 角色或非插件 source 的 `system/message` 的拒绝。
-- `packages/core/agent-loop/tests/system-prompt-projection.spec.ts` 钉住首次渲染时的追加、提示词未变时的无操作、变更时对所保留节点的替换、从日志恢复，以及替换遮蔽了非头部系统节点之后的尾部追加。
+- `packages/core/agent-loop/tests/system-prompt-projection.spec.ts` 钉住首次渲染时的追加（包括空提示词）、后来非空提示词位于派生历史头部、提示词未变时的无操作、变更时对所保留节点的替换、从日志恢复，以及替换遮蔽了非头部系统节点之后的尾部追加。
 - `packages/core/agent-loop/tests/request-reconstruction.spec.ts`（`a system-prompt change replaces surface node 0 and starts a new series under the same header`）钉住提示词替换之后跟随的 `series` header。
 - `packages/core/agent-loop/tests/invariant.spec.ts` 钉住伴随组件对携带 `system` 字段的循环请求的拒绝，以及其 `messages` 与边界派生结果的相等性检查。
 - `packages/llm/llm-deepseek/tests/serialize.spec.ts`（`serializes a leading system message byte-for-byte like the same prompt passed as options.system`）钉住协议一致性。 `packages/llm/llm-pi-ai/tests/context.spec.ts` 在文本与图片路径上比较两种系统提示词来源。`packages/compaction/compaction-basic/tests/compaction-basic.spec.ts` 通过区域事务与默认摘要器钉住派生前缀、已路由工具、不携带单独 `system` 选项，以及非空或空头节点的保护。

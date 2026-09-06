@@ -630,7 +630,43 @@ describe('agent loop', () => {
     expect(adapter.requests).toHaveLength(1)
     expect('system' in adapter.requests[0]!).toBe(false)
     expect(adapter.requests[0]!.messages.map(message => message.role)).toEqual(['user'])
-    expect(agent.session.snapshotEvents().some(event => event.type === 'system/message')).toBe(false)
+    expect(agent.session.snapshotEvents().filter(event => event.type === 'system/message')).toMatchObject([
+      { data: { message: { role: 'system', content: [] } }, surfaceOp: 'append' },
+    ])
+  })
+
+  it('keeps a later nonempty prompt ahead of history after an initially empty assembly', async () => {
+    const adapter = new MockAdapter([textResponse('one'), textResponse('two')])
+    const ctx = await harness(adapter)
+    try {
+      const emptyAssembly = ctx.on('system-prompt/assemble', async () => ({ sections: [], contexts: [], tools: [], variables: {} }))
+      const agent = await ctx.agentLoop.create(SessionId('a-empty-system-head'), { provider: 'mock', model: 'mock' })
+      const firstIdle = waitForIdle(ctx, agent)
+      send(agent, 'first')
+      await firstIdle
+      const head = agent.session.snapshotEvents().find(event => event.type === 'system/message')
+      expect(adapter.requests[0]?.messages.map(message => message.role)).toEqual(['user'])
+      expect(head).toMatchObject({ data: { message: { content: [] } }, surfaceOp: 'append' })
+      expect(agent.session.surface.nodes[0]).toBe(head?.seq)
+
+      emptyAssembly()
+      const secondIdle = waitForIdle(ctx, agent)
+      send(agent, 'second')
+      await secondIdle
+      expect(adapter.requests).toHaveLength(2)
+      expect(systemOf(adapter.requests[1])).toBe('You are an AI agent powered by DeepSeek Harness.')
+      expect(adapter.requests[1]?.messages.map(message => message.role)).toEqual(['system', 'user', 'assistant', 'user'])
+      const replacement = agent.session.snapshotEvents().findLast(event => event.type === 'system/message')
+      expect(replacement).toMatchObject({
+        surfaceOp: { op: 'replace', start: head?.seq, end: head?.seq },
+        sourceEventSeqs: [head?.seq],
+      })
+      expect(agent.session.surface.nodes[0]).toBe(replacement?.seq)
+      expect(agent.session.snapshotEvents().flatMap(event =>
+        event.type === 'request/header' ? [event.data.reason] : [])).toEqual(['initial', 'series'])
+    } finally {
+      await ctx.fiber.dispose()
+    }
   })
 
   it('materializes changed runtime context at the history tail without rewriting the system header', async () => {

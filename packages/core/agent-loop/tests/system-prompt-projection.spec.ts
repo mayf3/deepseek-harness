@@ -26,7 +26,6 @@ describe('SystemPromptProjection', () => {
     const session = ctx.sessions.create(SessionId('system-prompt-fresh'))
     const projection = new SystemPromptProjection(ctx, session)
 
-    expect(projection.project('')).toBeUndefined()
     const first = projection.project('v1')
     expect(first?.intent).toEqual({ surfaceOp: 'append' })
     expect(first?.message.role).toBe('system')
@@ -51,6 +50,33 @@ describe('SystemPromptProjection', () => {
     expect(session.deriveMessages().map(message => message.role)).toEqual(['user'])
     expect(projection.project('')).toBeUndefined()
     expect(projection.project('v3')?.intent).toMatchObject({ surfaceOp: { op: 'replace' } })
+  })
+
+  it('reserves an empty head before user history and replaces it when a prompt appears', async () => {
+    const ctx = await sessionStore()
+    try {
+      const session = ctx.sessions.create(SessionId('system-prompt-empty-head'))
+      const projection = new SystemPromptProjection(ctx, session)
+      const first = projection.project('')
+      expect(first?.intent).toEqual({ surfaceOp: 'append' })
+      expect(first?.message.content).toEqual([])
+      const head = session.append('system/message', { turn: 1, step: 1, message: first!.message }, first!.intent)
+      const user = appendUser(session, 'hello')
+      expect(session.surface.nodes).toEqual([head.seq, user.seq])
+      expect(session.deriveMessages().map(message => message.role)).toEqual(['user'])
+      expect(projection.project('')).toBeUndefined()
+
+      const next = projection.project('Follow this guidance.')
+      expect(next?.intent).toEqual({
+        surfaceOp: { op: 'replace', start: head.seq, end: head.seq },
+        sourceEventSeqs: [head.seq],
+      })
+      const replacement = session.append('system/message', { turn: 2, step: 1, message: next!.message }, next!.intent)
+      expect(session.surface.nodes).toEqual([replacement.seq, user.seq])
+      expect(session.deriveMessages()).toEqual([next!.message, user.data])
+    } finally {
+      await ctx.fiber.dispose()
+    }
   })
 
   it('restores the surviving system node from the log and ignores other sessions', async () => {

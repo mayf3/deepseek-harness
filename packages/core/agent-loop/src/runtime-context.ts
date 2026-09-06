@@ -38,7 +38,7 @@ function eventsNewestFirst(session: Session): readonly SessionEvent[] {
 
 /**
  * Tracks the retained `system/message` surface node without owning its commit.
- * The first rendered prompt appends surface node 0; every later change
+ * The first rendered prompt, even empty, reserves surface node 0; every later change
  * replaces the retained node in place, so the model-visible head of the
  * request is derived history like every other message.
  */
@@ -72,13 +72,12 @@ export class SystemPromptProjection {
   }
 
   /**
-   * Create an uncommitted system node only when the retained prompt differs.
+   * Create an uncommitted system node when absent, even for an empty prompt, or changed.
    * @param rendered - the fully rendered system prompt; `''` when none is active.
    * @returns the message and its surface intent, or `undefined` when no update is needed.
    */
   project(rendered: string): SystemPromptCommit | undefined {
     if (this.retained === undefined) {
-      if (rendered.length === 0) return
       return { message: createSystemMessage(rendered, SOURCE), intent: { surfaceOp: 'append' } }
     }
     if (this.retained.text === rendered) return
