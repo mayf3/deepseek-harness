@@ -84,7 +84,7 @@ The model-message prefix remains unchanged.
 
 - **No file publication** — persistence owns immutable successor publication; this package never overwrites released generations.
 - **Chronology-preserving inputs** — a surface event before the first step, or a changed prompt outside an open step, is refused with `SessionFormatUnsupportedMigrationError`; moving events or inventing out-of-step system messages would violate reconstruction.
-- **Audited migration vocabulary** — V2 events and the installed message-feedback additions are classified explicitly. Unknown events, even ignorable ones, and unknown message-source or content kinds are refused during migration because sequence dependencies cannot be inferred. Native equal-version reads retain ordinary ignorable-event admission.
+- **Audited migration vocabulary** — V2 events, including log-only Assistant attempts, and the installed message-feedback additions are classified explicitly. Agent relay attribution and file attachment metadata are preserved without interpreting their identifiers or byte counts as sequence references. Unknown events, even ignorable ones, and unknown message-source or content kinds are refused during migration because sequence dependencies cannot be inferred. Native equal-version reads retain ordinary ignorable-event admission and request-header extensions; only the retired `header.system` field is prohibited.
 
 <a id="dev-note"></a>
 ### Dev Note

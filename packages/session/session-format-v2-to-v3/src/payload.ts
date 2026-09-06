@@ -7,7 +7,7 @@ import { RELEASED_V2_EVENT_DISPOSITIONS } from '@deepseek-ai/dsh-session-format-
 
 /** Audited surface event names; all other admitted events are log-only. */
 export const SURFACE_TYPES: ReadonlySet<string> = new Set(['system/message', 'user/message', 'assistant/message', 'tool/result'])
-const SOURCE_KINDS = new Set(['user', 'plugin', 'model', 'tool', 'agent-instructions', 'session-reference', 'team-message', 'goal', 'skill-invocation', 'skill-catalog', 'coordinator', 'subagent-report', 'subagent-settled', 'webhook'])
+const SOURCE_KINDS = new Set(['user', 'plugin', 'model', 'tool', 'agent-instructions', 'session-reference', 'team-message', 'goal', 'skill-invocation', 'skill-catalog', 'coordinator', 'subagent-report', 'subagent-settled', 'webhook', 'agent-message'])
 
 /**
  * Require a JSON object at the durable input boundary.
@@ -64,12 +64,14 @@ export function assertEvent(event: SessionFormatEvent, version: 2 | 3): void {
     assertFeedback(event.type, data)
     return
   }
+  if (version === 3 && event.type === 'request/header') {
+    assertV3StructuralRow(event)
+    return
+  }
   if (disposition === undefined) throw new SessionFormatError('missing event disposition')
   keys(data, disposition.required, disposition.optional, event.type + ' data')
-  if (version === 3 && event.type === 'request/header' && Object.hasOwn(record(data['header'], 'request header'), 'system')) {
-    throw new SessionFormatError('format v3 request/header rejects retired header.system')
-  }
-  assertReleasedPayloadSemantics(event, version)
+  // Assistant attempts are introduced by V2; the V0 helper has no case for them.
+  if (event.type !== 'assistant/attempt') assertReleasedPayloadSemantics(event, version)
   if (event.type === 'assistant/message' || event.type === 'assistant/attempt') {
     if (!Array.isArray(data['stream'])) throw new SessionFormatError('assistant stream must be an array')
     for (const coordinate of ['turn', 'step']) {
@@ -115,6 +117,12 @@ function assertSource(message: SessionFormatJsonObject): void {
   if (typeof source['kind'] !== 'string' || !SOURCE_KINDS.has(source['kind'])) {
     throw new SessionFormatUnsupportedMigrationError('cannot safely transform unclassified message source')
   }
+  if (source['kind'] === 'agent-message') {
+    keys(source, ['kind', 'form', 'senderSessionId'], [], 'agent-message source')
+    if (source['form'] !== 'relay' || typeof source['senderSessionId'] !== 'string' || source['senderSessionId'].length === 0) {
+      throw new SessionFormatError('agent-message source requires relay form and senderSessionId')
+    }
+  }
   assertContentKinds(message['content'])
 }
 
@@ -128,6 +136,15 @@ function assertContentKinds(content: SessionFormatJsonValue | undefined): void {
       case 'image':
       case 'tool-call':
         break
+      case 'file': {
+        keys(block, ['type', 'attachment'], [], 'file content')
+        const attachment = record(block['attachment'], 'file attachment')
+        keys(attachment, ['attachmentId', 'name', 'bytes'], [], 'file attachment')
+        if (typeof attachment['attachmentId'] !== 'string' || attachment['attachmentId'].length === 0
+          || typeof attachment['name'] !== 'string') throw new SessionFormatError('file attachment requires attachmentId and name')
+        sessionFormatCount(attachment['bytes'], 'file attachment bytes')
+        break
+      }
       case 'tool-result':
         assertContentKinds(block['content'])
         break

@@ -211,6 +211,42 @@ describe('streaming V2 system prompt migration', () => {
     expect(() => migrate([...opening(), event('user/message', { ...user(), content: [{ type: 'future-block', seq: 1 }] }, 'append')])).toThrow(/unclassified message content/)
   })
 
+  it('migrates audited agent relay sources and file blocks verbatim, refusing unclassified members', () => {
+    const source = { kind: 'agent-message', form: 'relay', senderSessionId: 'other-session' }
+    const attachment = { attachmentId: 'sha256:content', name: 'poem.txt', bytes: 16 }
+    const message = { ...user('relay'), source, content: [{ type: 'file', attachment }] }
+    const inbox = event('agent/inbox/spliced', { target: 'next-turn', start: 0, inserted: [message] })
+    const output = migrate([inbox, ...opening(), event('user/message', message, 'append')])
+    expect(output.events[0]?.data).toEqual(inbox.data)
+    expect(output.events.at(-1)?.data).toEqual(message)
+    const badMessages = [
+      { ...message, source: { ...source, sourceEventSeq: 0 } },
+      { ...message, source: { ...source, form: 'notice' } },
+      { ...message, content: [{ type: 'file', attachment: { ...attachment, seq: 0 } }] },
+      { ...message, content: [{ type: 'file', attachment: { ...attachment, bytes: -1 } }] },
+    ]
+    for (const bad of badMessages) expect(() => migrate([...opening(), event('user/message', bad, 'append')])).toThrow()
+  })
+
+  it.each([0, 1, 2])('restores log-only failed attempts from V%s without invoking the V0 event inventory', (version) => {
+    const stream = [{ type: 'finish', reason: { kind: 'error', error: { name: 'ProviderError', message: 'failed' } } }]
+    const attempts = version === 2
+      ? [event('assistant/attempt', { turn: 1, step: 1, stream })]
+      : [event('assistant/chunk', { turn: 1, step: 1, chunk: stream[0]! })]
+    const source = dense([...opening(), ...attempts])
+    const physical = version === 2 ? { type: 'session', ...header } : { type: 'session', version, id: header.id, createdAt: 1, delegationDepth: 0 }
+    const restore = catalog.createRestore(physical, { recovery: 'strict', validation: 'current' })
+    for (const row of source) restore.decodeRow(row)
+    expect(restore.finish().events.at(-1)?.type).toBe('assistant/attempt')
+  })
+
+  it('rejects malformed V2 attempts and unaudited attempt fields', () => {
+    const invalid = [{ turn: 0, step: 1, stream: [] }, { turn: 1, step: 1, stream: null }, { turn: 1, step: 1, stream: [], seqRef: 0 }]
+    for (const data of invalid) {
+      expect(() => migrate([...opening(), event('assistant/attempt', data)])).toThrow()
+    }
+  })
+
   it('preserves message feedback identities and rejects unaudited feedback fields', () => {
     const feedback = event('feedback/message-put', { sessionId: 'other', item: { messageId: 'unchanged', rating: 'positive', version: 'opaque', createdAt: 1, updatedAt: 2 } })
     expect(migrate([...opening(), feedback]).events.at(-1)?.data).toEqual(feedback.data)
@@ -292,6 +328,18 @@ describe('native V3 codec and restorer', () => {
     const native = { ...target, events }
     expect(restoreReleasedV3Artifact(native, new Set())).toBe(native)
     expect(() => migrate([...opening(), event('user/message', { ...user(), installedExtension: true }, 'append')])).toThrow(/unexpected/)
+  })
+
+  it('round-trips native header extensions while refusing them as unclassified V2 input', () => {
+    const data = { ...request(), header: { ...request().header, messagePrefix: ['current extension'] } }
+    const target = migrate(opening())
+    const extended = { ...event('request/header', data), seq: target.events.length }
+    const artifact = { ...target, events: [...target.events, extended] }
+    const restore = catalog.createRestore(releasedV3SessionFormatCodec.encodeHeader(target.header, 0), { recovery: 'strict', validation: 'current' })
+    for (const row of artifact.events) restore.decodeRow(releasedV3SessionFormatCodec.encodeEvent(row))
+    expect(restore.finish()).toEqual(artifact)
+    expect(() => migrate([...opening(), event('request/header', data)])).toThrow(/unexpected/)
+    expect(() => releasedV3SessionFormatCodec.encodeEvent({ ...extended, data: { ...data, header: { ...data.header, system: 'retired' } } })).toThrow(/header.system/)
   })
 
   it('retains equal-generation ignorable events but rejects unknown required events', () => {
