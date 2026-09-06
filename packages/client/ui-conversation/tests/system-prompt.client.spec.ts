@@ -73,8 +73,10 @@ describe('loaded system surface interpretation', () => {
   it('extracts text blocks once and treats an empty initial node as no prompt', () => {
     const event = system(1, 'A')
     if (event.type !== 'system/message') throw new Error('expected system event')
-    event.data.message.content = [{ type: 'text', text: 'A' }, { type: 'text', text: 'B' }]
-    expect(inspectSystemPrompt(undefined, event).effective?.text).toBe('AB')
+    const multiBlock = { ...event, data: { ...event.data, message: {
+      ...event.data.message, content: [{ type: 'text' as const, text: 'A' }, { type: 'text' as const, text: 'B' }],
+    } } }
+    expect(inspectSystemPrompt(undefined, multiBlock).effective?.text).toBe('AB')
     expect(inspectSystemPrompt(undefined, system(2, '')).effective).toBeUndefined()
   })
 })
