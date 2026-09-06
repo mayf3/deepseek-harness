@@ -8,6 +8,7 @@ import type {
 } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import { ConversationNodeAssembler, inspectRequestPrompt } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { SessionEvent } from '@deepseek-ai/dsh-session/types'
+import { inspectSystemPrompt } from '../../ui-conversation/src/client/contract/system-prompt.ts'
 import { AssistantStreamAccumulator } from '@deepseek-ai/dsh-llm/assistant-stream'
 import type { StreamChunk } from '@deepseek-ai/dsh-llm'
 import { registerTrajectoryAssistantDefinition } from '../src/client/trajectory-assistant-definition.ts'
@@ -28,6 +29,7 @@ const registrationContext = {
       },
     },
     inspectRequestPrompt,
+    inspectSystemPrompt,
   },
 } as unknown as Context
 
@@ -745,6 +747,81 @@ describe('Trajectory conversation Definitions', () => {
     ])
   })
 
+  it.each(['replay', 'live', 'partial'] as const)('restores A when compaction shadows B without a new system event (%s)', (mode) => {
+    const history = [
+      at(1, 'turn/start', { turn: 1 }),
+      at(2, 'step/start', { turn: 1, step: 1 }),
+      at(3, 'system/message', { turn: 1, step: 1, message: systemMessage('A') }, { surfaceOp: 'append' }),
+      at(4, 'request/header', {
+        reason: 'initial', header: { config: { provider: 'test', model: 'test' }, tools: [] },
+      }),
+      at(5, 'assistant/message', { turn: 1, step: 1, message: assistantMessage('a', 'a') }),
+      at(6, 'step/end', { turn: 1, step: 1 }),
+      at(7, 'step/start', { turn: 1, step: 2 }),
+      at(8, 'system/message', { turn: 1, step: 2, message: systemMessage('B') }, { surfaceOp: 'append' }),
+      at(9, 'assistant/message', { turn: 1, step: 2, message: assistantMessage('b', 'b') }),
+      at(10, 'step/end', { turn: 1, step: 2 }),
+      at(11, 'step/start', { turn: 1, step: 3 }),
+      at(12, 'user/message', {
+        turn: 1, step: 3, id: 'summary', role: 'user',
+        content: [{ type: 'text', text: 'summary' }], source: { kind: 'plugin', plugin: 'compaction' },
+      }, { surfaceOp: { op: 'replace', start: 5, end: 9 }, sourceEventSeqs: [5, 8, 9] }),
+      at(13, 'request/header', {
+        reason: 'series', header: { config: { provider: 'test', model: 'test' }, tools: [] },
+      }),
+      at(14, 'assistant/message', { turn: 1, step: 3, message: assistantMessage('restored', 'restored') }),
+      at(15, 'step/end', { turn: 1, step: 3 }),
+    ]
+    const value = assembler(mode === 'replay' ? history : [])
+    if (mode === 'partial') {
+      value.replaceWindow(history.slice(7), true)
+      value.flush()
+      expect(snapshot(value).requests.at(-1)).toMatchObject({ prompt: { system: '' } })
+      value.prepend(history.slice(0, 7), false)
+      value.flush()
+    }
+    if (mode === 'live') {
+      for (const entry of history) {
+        value.append(entry)
+        value.flush()
+      }
+    }
+    expect(snapshot(value).requests.filter(request => request.purpose === 'assistant')
+      .map(request => [request.prompt?.system, request.promptChange?.previous?.system])).toEqual([
+      ['A', undefined], ['B', 'A'], ['A', 'B'],
+    ])
+    expect(snapshot(value).requests.at(-1)).toMatchObject({ promptChange: { seq: 12, kind: 'system' } })
+  })
+
+  it('withholds unknown replacement order in request headers until prepend', () => {
+    const system = (seq: number, text: string, replaces?: number) => at(seq, 'system/message', {
+      turn: 1, step: 1, message: systemMessage(text),
+    }, { surfaceOp: replaces === undefined ? 'append' : { op: 'replace', start: replaces, end: replaces } })
+    const value = assembler([
+      system(6, 'C', 3), system(7, 'D', 5),
+      at(8, 'step/start', { turn: 1, step: 1 }),
+      at(9, 'request/header', { reason: 'resume', header: { config: { provider: 'test', model: 'test' } } }),
+      at(10, 'assistant/message', { turn: 1, step: 1, message: assistantMessage('reply', 'reply') }),
+    ])
+    expect(snapshot(value).requests.at(-1)).toMatchObject({ prompt: { system: '' } })
+    value.prepend([system(1, 'A'), system(3, 'B'), system(5, 'A2', 1)], false)
+    value.flush()
+    expect(snapshot(value).requests.at(-1)).toMatchObject({ prompt: { system: 'C' } })
+  })
+
+  it('withholds inherited prompts when a replacement reaches an unloaded endpoint', () => {
+    const value = assembler([
+      at(5, 'step/start', { turn: 1, step: 1 }),
+      at(6, 'system/message', { turn: 1, step: 1, message: systemMessage('B') }, { surfaceOp: 'append' }),
+      at(7, 'request/header', { reason: 'resume', header: { config: { provider: 'test', model: 'test' } } }),
+      at(8, 'user/message', {
+        ...systemMessage('summary'), role: 'user', source: { kind: 'plugin', plugin: 'compaction' },
+      }, { surfaceOp: { op: 'replace', start: 2, end: 6 } }),
+      at(9, 'assistant/message', { turn: 1, step: 1, message: assistantMessage('reply', 'reply') }),
+    ])
+    expect(snapshot(value).requests.at(-1)).toMatchObject({ prompt: { system: '' } })
+  })
+
   it('retains an in-history update without a loaded header as a plain system node', () => {
     const value = assembler([
       at(1, 'turn/start', { turn: 1 }),
@@ -772,8 +849,7 @@ describe('Trajectory conversation Definitions', () => {
     const invalidStart = { ...input, role: 'start' as const, location: { kind: 'session' as const } }
     const state = { seq: 1, time: 1, turn: 1, step: 1, text: 'system prompt', update: false }
 
-    expect(() => definition.start({} as never, invalidStart, {} as never))
-      .toThrow('trajectory-system-message start requires system/message')
+    expect(definition.match(invalidStart.event)).toBeNull()
     expect(definition.update({ state } as never, invalidStart)).toBe(state)
 
     const header = DEFINITIONS.find(candidate => candidate.kind === 'trajectory-request-header')

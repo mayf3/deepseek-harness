@@ -1,7 +1,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 import type {
   ConversationMatch, ConversationNodeContext, ConversationNodeDefinition, RequestPromptInspector,
-  SystemPromptNode,
+  SystemPromptState, SystemPromptInspector,
 } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { ChatNode } from '../contract/chat-nodes.ts'
 import { chatNode } from './common.ts'
@@ -56,36 +56,29 @@ function stableRequestPromptAnchor(
  * reads its State through `reader.previous` and presents the prompt as the
  * request's `system-prompt` card. An in-history update — a prompt appended
  * after an earlier loaded system node — is the model-visible change at that
- * position, so it presents its own `system-prompt` card there.
+ * position, so it presents its own `system-prompt` card there. Positional
+ * replacements advance the effective prompt without changing historical cards.
+ * @param inspect - Pure surface interpretation supplied by uiConversation.
+ * @returns The Chat system-prompt Definition.
  */
-export const systemMessageDefinition: ConversationNodeDefinition<SystemPromptNode> = {
-  kind: 'system-message',
-  target: 'chat',
-  match: event => event.type === 'system/message'
-    ? { id: String(event.seq), role: 'start' }
-    : null,
-  start: (_context, match, reader) => {
-    if (match.event.type !== 'system/message') {
-      throw new Error('system-message start requires system/message')
-    }
-    return {
-      seq: match.event.seq,
-      time: match.event.time,
-      turn: match.event.data.turn,
-      step: match.event.data.step,
-      text: match.event.data.message.content
-        .flatMap(block => block.type === 'text' ? [block.text] : [])
-        .join(''),
-      update: match.event.surfaceOp === 'append'
-        && reader.previous<SystemPromptNode>('system-message') !== undefined,
-    }
-  },
-  update: context => context.state,
-  buildViewNode: (context) => {
-    const state = context.state
-    if (state === undefined || !state.update || state.text === '') return null
-    return chatNode(context, 'system-prompt', state.seq, { text: state.text, update: true })
-  },
+export function systemMessageDefinition(inspect: SystemPromptInspector): ConversationNodeDefinition<SystemPromptState> {
+  return {
+    kind: 'system-message',
+    target: 'chat',
+    match: event => event.type === 'system/message'
+      || ('surfaceOp' in event && event.surfaceOp !== undefined && event.surfaceOp !== 'append')
+      ? { id: String(event.seq), role: 'start' }
+      : null,
+    start: (_context, match, reader) => {
+      return inspect(reader.previous<SystemPromptState>('system-message')?.state, match.event)
+    },
+    update: context => context.state,
+    buildViewNode: (context) => {
+      const state = context.state?.introduced
+      if (state === undefined || !state.update || state.text === '') return null
+      return chatNode(context, 'system-prompt', state.seq, { text: state.text, update: true })
+    },
+  }
 }
 
 /**
@@ -107,7 +100,7 @@ export function requestPromptDefinition(inspect: RequestPromptInspector): Conver
         throw new Error('request-prompt start requires request/header')
       }
       const previous = reader.previous<RequestPromptState>('request-prompt')?.state
-      const system = reader.previous<SystemPromptNode>(systemMessageDefinition.kind)?.state
+      const system = reader.previous<SystemPromptState>('system-message')?.state.effective
       const location = match.location.kind === 'step'
         ? { turn: match.location.turn.turn, step: match.location.step.step }
         : {}
@@ -157,7 +150,9 @@ export function requestPromptDefinition(inspect: RequestPromptInspector): Conver
  * @param ctx - Owning UI Conversation context.
  */
 export function registerRequestPromptConversationNode(ctx: Context): void {
-  ctx.uiConversation.events.register(systemMessageDefinition)
+  ctx.uiConversation.events.register(systemMessageDefinition(
+    (previous, event) => ctx.uiConversation.inspectSystemPrompt(previous, event),
+  ))
   ctx.uiConversation.events.register(requestPromptDefinition(
     (previous, event, system) => ctx.uiConversation.inspectRequestPrompt(previous, event, system),
   ))

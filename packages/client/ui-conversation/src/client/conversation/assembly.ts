@@ -17,6 +17,7 @@ import type {
   ConversationPromptSnapshot, RequestPromptInspection, SystemPromptNode,
 } from '../contract/request-inspection.ts'
 import { inspectRequestPrompt } from '../contract/request-inspection.ts'
+import { inspectSystemPrompt, type SystemPromptState } from '../contract/system-prompt.ts'
 import { ConversationNodeAssembler } from './assembler.ts'
 import { ConversationEventRegistry } from './event-registry.ts'
 import { HistoricalImageCache } from './historical-images.ts'
@@ -272,6 +273,16 @@ export class UiConversation extends Service {
   }
 
   /**
+   * Interpret a system message or surface replacement for target-owned prompt Definitions.
+   * @param previous - System facts at the preceding relevant loaded event.
+   * @param event - Durable system message or positional replacement.
+   * @returns Immutable prompt interpretation at this event.
+   */
+  inspectSystemPrompt(previous: SystemPromptState | undefined, event: SessionEvent): SystemPromptState {
+    return inspectSystemPrompt(previous, event)
+  }
+
+  /**
    * Canonicalize one `request/header` event against the previous prompt state
    * and the `system/message` node in force.
    *
@@ -280,7 +291,7 @@ export class UiConversation extends Service {
    * client bundles.
    * @param previous - prompt recorded by the preceding loaded header, if any.
    * @param event - the `request/header` session event to interpret.
-   * @param system - latest loaded `system/message` node before the header, if any.
+   * @param system - effective prompt after loaded surface replacements, if any.
    * @returns the canonical prompt snapshot and any model-visible change.
    */
   inspectRequestPrompt(

@@ -26,11 +26,11 @@ export interface ConversationPromptSnapshot {
   tools: readonly ToolSchema[]
 }
 
-/** Facts a Definition retains from one `system/message` surface event. */
+/** Effective prompt or introduced system node, anchored at the event that establishes it. */
 export interface SystemPromptNode {
-  /** Sequence of the `system/message` event. */
+  /** Sequence of the system event or replacement that establishes this prompt. */
   seq: number
-  /** Unix epoch ms of the `system/message` event. */
+  /** Unix epoch ms of that event. */
   time: number
   /** Turn the loop committed the node in. */
   turn: number
@@ -86,7 +86,7 @@ export type RequestPromptInspector = (
  * classify the model-visible prompt change.
  * @param previous - Prompt from the preceding loaded request header, when available.
  * @param event - Durable full request header to inspect.
- * @param system - Latest `system/message` node before the header within the loaded window, when available.
+ * @param system - Effective nonempty system prompt after loaded surface replacements; empty when removed.
  * An in-history update already presented its text at its own position, so the header reports no system change for it.
  * @returns The canonical prompt and an initial/system/tool change when it can be established.
  */

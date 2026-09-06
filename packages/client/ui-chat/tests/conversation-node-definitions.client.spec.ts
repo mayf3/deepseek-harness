@@ -11,6 +11,7 @@ import {
   type ConversationViewDefinition,
 } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { SessionEvent } from '@deepseek-ai/dsh-session/types'
+import { inspectSystemPrompt } from '../../ui-conversation/src/client/contract/system-prompt.ts'
 import { AssistantStreamAccumulator } from '@deepseek-ai/dsh-llm/assistant-stream'
 import type { StreamChunk } from '@deepseek-ai/dsh-llm'
 import { hasAssistantReplyContent } from '../src/client/contract/assistant-content.ts'
@@ -36,7 +37,7 @@ import type {
 const DEFINITIONS: readonly ConversationNodeDefinition[] = [
   nextStepInboxDefinition,
   messageDefinition,
-  systemMessageDefinition,
+  systemMessageDefinition(inspectSystemPrompt),
   requestPromptDefinition(inspectRequestPrompt),
   assistantDefinition,
   turnProcessDefinition,
@@ -239,9 +240,8 @@ describe('built-in conversation node Definitions', () => {
     }
     const state = { seq: 1, time: 1, turn: 1, step: 1, text: '# System', update: false }
 
-    expect(() => systemMessageDefinition.start({} as never, invalidStart, {} as never))
-      .toThrow('system-message start requires system/message')
-    expect(systemMessageDefinition.update({ state } as never, invalidStart)).toBe(state)
+    expect(systemMessageDefinition(inspectSystemPrompt).match(invalidStart.event)).toBeNull()
+    expect(systemMessageDefinition(inspectSystemPrompt).update({ state } as never, invalidStart)).toBe(state)
   })
 
   it('keeps ordinary command-only history inactive for the Conversation shell', () => {
@@ -1483,7 +1483,7 @@ describe('built-in conversation node Definitions', () => {
     expect(current.nodes.values().filter(candidate => candidate.kind === 'unknown')).toEqual([])
   })
 
-  it('renders a windowed prompt from its in-window system node and fills a missing node after prepend', () => {
+  it('withholds windowed replacement prompts until prepend resolves their positions', () => {
     const windowed = assembler([
       systemAt(10, '# Resumed prompt', 5),
       at(11, 'request/header', {
@@ -1503,7 +1503,7 @@ describe('built-in conversation node Definitions', () => {
         header: { config: { provider: 'fake', model: 'fake' } },
       }),
     ])
-    expect(node(snapshot(windowed), 'system-prompt')?.data).toEqual({ text: '# Resumed prompt' })
+    expect(node(snapshot(windowed), 'system-prompt')).toBeUndefined()
     expect(node(snapshot(nodeless), 'system-prompt')).toBeUndefined()
     expect(node(snapshot(systemless), 'system-prompt')).toBeUndefined()
 
@@ -1553,6 +1553,63 @@ describe('built-in conversation node Definitions', () => {
     ])
     expect(node(current, 'system-prompt')?.anchorSeq).toBe(1)
     expect(node(current, 'system-prompt')?.data).toEqual({ text: '# System\n\nFollow instructions.' })
+  })
+
+  it.each(['replay', 'live', 'partial'] as const)('restores A when compaction shadows B without a new system event (%s)', (mode) => {
+    const history = [
+      at(1, 'turn/start', { turn: 1 }),
+      at(2, 'step/start', { turn: 1, step: 1 }),
+      at(3, 'system/message', { turn: 1, step: 1, message: systemMessage('A') }, { surfaceOp: 'append' }),
+      at(4, 'request/header', {
+        reason: 'initial', header: { config: { provider: 'test', model: 'test' }, tools: [] },
+      }),
+      at(5, 'assistant/message', { turn: 1, step: 1, message: assistantMessage('a', 'a') }),
+      at(6, 'step/end', { turn: 1, step: 1 }),
+      at(7, 'step/start', { turn: 1, step: 2 }),
+      at(8, 'system/message', { turn: 1, step: 2, message: systemMessage('B') }, { surfaceOp: 'append' }),
+      at(9, 'assistant/message', { turn: 1, step: 2, message: assistantMessage('b', 'b') }),
+      at(10, 'step/end', { turn: 1, step: 2 }),
+      at(11, 'step/start', { turn: 1, step: 3 }),
+      at(12, 'user/message', {
+        turn: 1, step: 3, id: 'summary', role: 'user',
+        content: [{ type: 'text', text: 'summary' }], source: { kind: 'plugin', plugin: 'compaction' },
+      }, { surfaceOp: { op: 'replace', start: 5, end: 9 }, sourceEventSeqs: [5, 8, 9] }),
+      at(13, 'request/header', {
+        reason: 'series', header: { config: { provider: 'test', model: 'test' }, tools: [] },
+      }),
+      at(14, 'assistant/message', { turn: 1, step: 3, message: assistantMessage('restored', 'restored') }),
+      at(15, 'step/end', { turn: 1, step: 3 }),
+    ]
+    const value = assembler(mode === 'replay' ? history : [])
+    if (mode === 'partial') {
+      value.replaceWindow(history.slice(7), true)
+      value.flush()
+      expect(snapshot(value).nodes.values().filter(candidate => candidate.kind === 'system-prompt')).toEqual([])
+      value.prepend(history.slice(0, 7), false)
+      value.flush()
+    }
+    if (mode === 'live') {
+      for (const entry of history) {
+        value.append(entry)
+        value.flush()
+      }
+    }
+    expect(snapshot(value).nodes.values().filter(candidate => candidate.kind === 'system-prompt')
+      .map(candidate => candidate.data)).toEqual([
+      { text: 'A' }, { text: 'B', update: true }, { text: 'A' },
+    ])
+  })
+
+  it('withholds reversed unknown replacement endpoints and resolves them after prepend', () => {
+    const value = assembler([
+      systemAt(6, 'C', 3), systemAt(7, 'D', 5),
+      at(8, 'request/header', { reason: 'resume', header: { config: { provider: 'test', model: 'test' } } }),
+    ], true)
+    expect(node(snapshot(value), 'system-prompt')).toBeUndefined()
+    value.prepend([systemAt(1, 'A'), systemAt(3, 'B'), systemAt(5, 'A2', 1)], false)
+    value.flush()
+    expect(snapshot(value).nodes.values().filter(candidate => candidate.kind === 'system-prompt')
+      .map(candidate => candidate.data)).toEqual([{ text: 'B', update: true }, { text: 'C' }])
   })
 
   it('never renders a system/message as a transcript bubble', () => {
@@ -1718,7 +1775,7 @@ describe('built-in conversation node Definitions', () => {
     expect(ordered.map(candidate => candidate.kind)).toEqual(['system-prompt', 'user', 'user'])
   })
 
-  it('keeps a windowed System prompt in place when prepend supplies the preceding header', () => {
+  it('places a withheld replacement prompt after prepend supplies its original node', () => {
     const reasons = ['change', 'resume', 'series'] as const
     for (const reason of reasons) {
       const windowedSystem = reason === 'series' ? '# Original' : '# Windowed'
@@ -1736,11 +1793,8 @@ describe('built-in conversation node Definitions', () => {
       const before = snapshot(windowed)
       const prompt = node(before, 'system-prompt')
       const user = node(before, 'user')
-      if (prompt === undefined || user === undefined) throw new Error('windowed prompt fixture is incomplete')
-      const stableOrder = [user.key, prompt.key]
-      expect(prompt.anchorSeq).toBe(10)
-      expect(prompt.data).toEqual({ text: windowedSystem })
-      expect(before.order.filter(key => stableOrder.includes(key))).toEqual(stableOrder)
+      expect(prompt).toBeUndefined()
+      if (user === undefined) throw new Error('windowed user fixture is incomplete')
 
       windowed.prepend([
         at(1, 'turn/start', { turn: 1 }),
@@ -1760,8 +1814,8 @@ describe('built-in conversation node Definitions', () => {
         return candidate?.kind === 'system-prompt' ? [candidate] : []
       })
       expect(prompts.map(candidate => candidate.anchorSeq)).toEqual([1, 10])
-      expect(restored.nodes.get(prompt.key)?.anchorSeq).toBe(10)
-      expect(restored.order.filter(key => stableOrder.includes(key))).toEqual(stableOrder)
+      expect(prompts.at(-1)?.data).toEqual({ text: windowedSystem })
+      expect(restored.nodes.get(user.key)).toBeDefined()
     }
   })
 

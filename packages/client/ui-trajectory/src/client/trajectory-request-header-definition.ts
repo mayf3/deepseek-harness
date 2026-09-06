@@ -1,16 +1,15 @@
 import type { Context } from '@deepseek-ai/cordis'
 import type {
-  ConversationNodeDefinition, RequestPromptInspector, SystemPromptNode,
+  ConversationNodeDefinition, RequestPromptInspector, SystemPromptState, SystemPromptInspector,
 } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import { trajectoryNode } from './trajectory-definition-common.ts'
 import type { TrajectoryRequestHeaderState } from './trajectory-contract.ts'
 
-/** A retained system node plus, for an in-history update, the request facts it changes. */
-export interface TrajectorySystemMessageState extends SystemPromptNode {
+/** Loaded system surface plus the latest request facts changed by an append or compaction. */
+export interface TrajectorySystemMessageState extends SystemPromptState {
   /**
-   * Present for an update that follows a loaded request header: that header's
-   * prompt with this node's text, so later requests in the ledger show the
-   * prompt the model read and the first of them carries the change.
+   * Latest synthetic header, retained across unrelated replacements. Only the
+   * Context whose start seq equals this header's seq contributes a view Node.
    */
   readonly header?: TrajectoryRequestHeaderState
 }
@@ -25,53 +24,64 @@ export interface TrajectorySystemMessageState extends SystemPromptNode {
  * introduces or replaces the prompt contributes nothing itself; an in-history
  * update contributes a request-header fact at its own position, since no
  * `request/header` follows a prompt change that keeps the cached history.
+ * Surface replacements also contribute prompt changes when they remove the
+ * effective node; earlier request facts remain historical.
+ * @param inspect - Pure surface interpretation supplied by uiConversation.
+ * @returns The Trajectory system-prompt Definition.
  */
-export const trajectorySystemMessageDefinition: ConversationNodeDefinition<TrajectorySystemMessageState> = {
-  kind: 'trajectory-system-message',
-  target: 'trajectory',
-  match: event => event.type === 'system/message'
-    ? { id: String(event.seq), role: 'start' }
-    : null,
-  start: (_context, match, reader) => {
-    if (match.event.type !== 'system/message') {
-      throw new Error('trajectory-system-message start requires system/message')
-    }
-    const node: SystemPromptNode = {
-      seq: match.event.seq,
-      time: match.event.time,
-      turn: match.event.data.turn,
-      step: match.event.data.step,
-      text: match.event.data.message.content
-        .flatMap(block => block.type === 'text' ? [block.text] : [])
-        .join(''),
-      update: match.event.surfaceOp === 'append'
-        && reader.previous<TrajectorySystemMessageState>('trajectory-system-message') !== undefined,
-    }
-    if (!node.update) return node
-    const header = reader.previous<TrajectoryRequestHeaderState>('trajectory-request-header')?.state
-    const systemHeader = reader.previous<TrajectorySystemMessageState>('trajectory-system-message')?.state.header
-    const previous = systemHeader !== undefined && (header === undefined || systemHeader.seq > header.seq)
-      ? systemHeader
-      : header
-    if (previous === undefined) return node
-    return {
-      ...node,
-      header: {
-        seq: node.seq,
-        time: node.time,
-        prompt: { ...previous.prompt, system: node.text },
-        change: { seq: node.seq, time: node.time, kind: 'system', previous: previous.prompt },
-        location: match.location,
-      },
-    }
-  },
-  update: context => context.state,
-  buildViewNode: context => context.state?.header === undefined
-    ? null
-    : trajectoryNode(context, context.state.seq, {
-      kind: 'request-header',
-      header: context.state.header,
-    }),
+function trajectorySystemMessageDefinition(inspect: SystemPromptInspector): ConversationNodeDefinition<TrajectorySystemMessageState> {
+  return {
+    kind: 'trajectory-system-message',
+    target: 'trajectory',
+    match: event => event.type === 'system/message'
+      || ('surfaceOp' in event && event.surfaceOp !== undefined && event.surfaceOp !== 'append')
+      ? { id: String(event.seq), role: 'start' }
+      : null,
+    start: (_context, match, reader) => {
+      const prior = reader.previous<TrajectorySystemMessageState>('trajectory-system-message')?.state
+      const state = inspect(prior, match.event)
+      const node = state.effective
+      if (state.uncertain) {
+        const header = reader.previous<TrajectoryRequestHeaderState>('trajectory-request-header')?.state
+        if (header === undefined) return state
+        return {
+          ...state,
+          header: {
+            seq: match.event.seq, time: match.event.time, location: match.location,
+            prompt: { ...header.prompt, system: '' },
+          },
+        }
+      }
+      if (node === undefined || node.text === prior?.effective?.text
+        || (state.introduced !== undefined && !state.introduced.update)) {
+        return { ...state, ...(prior?.header === undefined ? {} : { header: prior.header }) }
+      }
+      const header = reader.previous<TrajectoryRequestHeaderState>('trajectory-request-header')?.state
+      const systemHeader = prior?.header
+      const previous = systemHeader !== undefined && (header === undefined || systemHeader.seq > header.seq)
+        ? systemHeader
+        : header
+      if (previous === undefined) return state
+      return {
+        ...state,
+        header: {
+          seq: node.seq,
+          time: node.time,
+          prompt: { ...previous.prompt, system: node.text },
+          change: { seq: node.seq, time: node.time, kind: 'system', previous: previous.prompt },
+          location: match.location,
+        },
+      }
+    },
+    update: context => context.state,
+    buildViewNode: context => context.state?.header === undefined
+      || context.state.header.seq !== context.start?.event.seq
+      ? null
+      : trajectoryNode(context, context.state.header.seq, {
+        kind: 'request-header',
+        header: context.state.header,
+      }),
+  }
 }
 /* jscpd:ignore-end */
 
@@ -92,10 +102,17 @@ function trajectoryRequestHeaderDefinition(inspect: RequestPromptInspector): Con
       if (match.event.type !== 'request/header') {
         throw new Error('trajectory-request-header start requires request/header')
       }
-      const previous = reader.previous<TrajectoryRequestHeaderState>('trajectory-request-header')
-        ?.state.prompt
-      const system = reader.previous<SystemPromptNode>(trajectorySystemMessageDefinition.kind)?.state
-      const { prompt, change } = inspect(previous, match.event, system)
+      const header = reader.previous<TrajectoryRequestHeaderState>('trajectory-request-header')?.state
+      const state = reader.previous<TrajectorySystemMessageState>('trajectory-system-message')?.state
+      const systemHeader = state?.header
+      const previous = systemHeader !== undefined && (header === undefined || systemHeader.seq > header.seq)
+        ? systemHeader.prompt
+        : header?.prompt
+      const system = state?.effective
+      const inspection = inspect(previous, match.event, system)
+      const { prompt } = inspection
+      const change = inspection.change ?? (systemHeader !== undefined
+        && (header === undefined || systemHeader.seq > header.seq) ? systemHeader.change : undefined)
       return {
         seq: match.event.seq,
         time: match.event.time,
@@ -120,7 +137,9 @@ function trajectoryRequestHeaderDefinition(inspect: RequestPromptInspector): Con
  * @param ctx - Plugin context receiving the Definitions.
  */
 export function registerTrajectoryRequestHeaderDefinition(ctx: Context): void {
-  ctx.uiConversation.events.register(trajectorySystemMessageDefinition)
+  ctx.uiConversation.events.register(trajectorySystemMessageDefinition(
+    (previous, event) => ctx.uiConversation.inspectSystemPrompt(previous, event),
+  ))
   ctx.uiConversation.events.register(trajectoryRequestHeaderDefinition(
     (previous, event, system) => ctx.uiConversation.inspectRequestPrompt(previous, event, system),
   ))
