@@ -356,9 +356,9 @@ describe('JSONL immutable generation publication', () => {
     const source = Buffer.from(line(header(2)) + events.map(line).join(''))
     await writeFile(request.sourcePath, source)
     const prepared = await prepareJsonlMigration({ ...request, verifyCurrentFile: verifier() })
-    const canonical = [
+    const canonical: unknown[] = [
       events[0], events[1],
-      expect.objectContaining({ type: 'system/message', seq: 2, surfaceOp: 'append', data: expect.objectContaining({ message: expect.objectContaining({ role: 'system', content: [] }) }) }),
+      expect.objectContaining({ type: 'system/message', seq: 2, surfaceOp: 'append', data: expect.objectContaining({ message: expect.objectContaining({ role: 'system', content: [] }) as unknown }) as unknown }) as unknown,
       ...events.slice(2).map(event => event.seq === 3
         ? { ...event, seq: 4, surfaceOp: { op: 'replace', startSeq: 3, endSeq: 3 }, sourceEventSeqs: [3] }
         : event.seq === 4 ? { ...event, seq: 5, data: { header: { config }, reason: 'initial' } } : { ...event, seq: event.seq + 1 }),

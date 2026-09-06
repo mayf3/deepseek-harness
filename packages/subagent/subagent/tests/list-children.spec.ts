@@ -659,8 +659,8 @@ describe('SubagentRuntime.listChildren', () => {
 
   it('maps a child rejected by persistence validation to corrupt', async () => {
     const { ctx, parent } = await setup([])
-    // The surface-eligible user/message lacks its required surfaceOp, so the
-    // first-party inspection rejects before any projection fold can run.
+    // The canonical envelope contains a message without an id; persistence
+    // adoption rejects it before any projection fold can run.
     const invalid = await authorChild(ctx, '00000000-0000-4000-8000-0000000000ee', {
       parentSession: parent.id,
       origin: 'subagent',
@@ -670,9 +670,10 @@ describe('SubagentRuntime.listChildren', () => {
         type: 'user/message',
         seq: SessionSeq(1),
         time: 2,
-        data: createUserMessage({ content: [{ type: 'text', text: 'work' }], source: { kind: 'user' } }),
+        data: { role: 'user', content: [{ type: 'text', text: 'work' }], source: { kind: 'user' } },
+        surfaceOp: 'append',
       },
-      { type: 'subagent/descriptor', seq: SessionSeq(2), time: 3, data: descriptorPayload('broken surface') },
+      { type: 'subagent/descriptor', seq: SessionSeq(2), time: 3, data: descriptorPayload('broken message') },
     ] as SessionEvent[])
     const entries = await ctx.subagents.listChildren(parent.id)
     expect(entries).toEqual([{ kind: 'diagnostic', id: invalid, reason: 'corrupt' }])
