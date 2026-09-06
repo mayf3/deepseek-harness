@@ -20,6 +20,10 @@ The [release rehearsal decision](../process/2026-09-06-release-rehearsal-selfhos
 
 The [ACP diagnostic scenario](../../../../snapshots/session/subagent-acp-diagnostic/cordis.snapshot.yml) holds its scripted background response until `job_output` owns the completion wait. Without that synchronization, a fast child can publish a legitimate job notice between the recorded parent steps. A scenario-local wrapper releases the child after the jobs service registers the completion waiter; the mock watches an exclusive marker in the private test workspace and closes the watcher after release. The fixture restores the wrapped method on disposal. The recorded Session bytes and production job-notice behavior stay unchanged.
 
+## Workspace-grant fixture placement
+
+The headless `session-sandbox-root` fixture declares `workspace.parent: outside-temp`, not a home-filesystem dependency. Its allocator uses a sibling of the canonical platform temp root where that avoids system directories, otherwise home, and rejects a cwd already covered by automatic temporary write grants. On the failover runner this keeps the test on the data volume without making its write succeed through a temporary-directory exemption. Atomic workspace allocation, final cleanup, recorded Session bytes, and the independent expected file remain unchanged.
+
 ## Alternatives considered
 
 **Delete shared temporary files from a PR job.** Another runner may still own those files. Repository jobs must not reclaim a shared directory by pathname or age.

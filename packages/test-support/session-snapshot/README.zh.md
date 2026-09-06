@@ -84,7 +84,7 @@ defineAcpSnapshotSuite({
 
 ### 平台与组合变体
 
-需要非 Windows 主机的场景声明 `posixOnly`，在 Windows 上跳过运行测试，但 fixture 保护仍在所有平台覆盖其已提交文件；组合需要可用 `pwsh` 的场景声明 `pwshOnly`。当临时目录授权自身待测时，`workspaceParent` 将生成子级 cwd 移出平台临时区域；场景签入的 `workspace/` 会先复制到该子级，随后 `prepareWorkspace` 在 agent 启动前针对生成 cwd 运行。默认生成的 workspace 在会话 fixture 中存储为 `{{cwd}}`，使平台临时根目录与随机 basename 不影响录制。
+需要非 Windows 主机的场景声明 `posixOnly`，在 Windows 上跳过运行测试，但 fixture 保护仍在所有平台覆盖其已提交文件；组合需要可用 `pwsh` 的场景声明 `pwshOnly`。当临时目录授权自身待测时，`workspaceParent` 将生成子级 cwd 移出平台临时区域；场景签入的 `workspace/` 会先复制到该子级，随后 `prepareWorkspace` 在 agent 启动前针对生成 cwd 运行。默认生成的 workspace 在会话 fixture 中存储为 `{{cwd}}`，使平台临时根目录与随机 basename 不影响录制。 Headless manifest 在测试 Session workspace 授权本身时使用 `workspace.parent: outside-temp`。适配器优先在平台临时根目录旁分配目录，否则使用 home，并拒绝已被自动临时写授权覆盖的生成 cwd。
 
 ### 可能出什么问题
 

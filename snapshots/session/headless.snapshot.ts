@@ -3,11 +3,12 @@
 import { cp, copyFile, mkdir, mkdtemp, readFile, readdir, rm, utimes, writeFile } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
-import { homedir, tmpdir } from 'node:os'
+import { tmpdir } from 'node:os'
 import { basename, delimiter, dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import ts from 'typescript'
+import { assertWorkspaceOutsideTemp, outsideTempWorkspaceParent } from '../../scripts/snapshot-workspace-parent.ts'
 import {
   assertPersistedSessionVersion,
   assertSessionFixtureVersion,
@@ -853,7 +854,7 @@ describe('headless recorded-session snapshots', () => {
         result = await runLoaderSmoke({
           label: `${scenario.name} headless snapshot`,
           tempDirPrefix: 'dsh-log-snap-',
-          ...(scenario.manifest.workspace?.parent === 'home' ? { tempDirParent: homedir() } : {}),
+          ...(scenario.manifest.workspace?.parent === 'outside-temp' ? { tempDirParent: outsideTempWorkspaceParent() } : {}),
           binScript: dshBin,
           configPath: join(baseComposition.dir, 'cordis.yml'),
           binArgs: [
@@ -886,6 +887,7 @@ describe('headless recorded-session snapshots', () => {
             DSH_TELEMETRY_DISABLED: '1',
           },
           prepare: async (cwd) => {
+            if (scenario.manifest.workspace?.parent === 'outside-temp') assertWorkspaceOutsideTemp(cwd)
             await mkdir(join(cwd, patchRoot), { recursive: true })
             patchSources.forEach((source, index) => {
               if (source.endsWith('.snapshot.yml')) {
