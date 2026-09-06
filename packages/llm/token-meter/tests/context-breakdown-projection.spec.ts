@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { createMessage, createSystemMessage, createUserMessage } from '@deepseek-ai/dsh-llm'
 import type { ContentBlock, ToolSchema } from '@deepseek-ai/dsh-llm'
-import SessionStore, { SessionSeq } from '@deepseek-ai/dsh-session'
+import SessionStore, { SessionLogOffset, SessionSeq } from '@deepseek-ai/dsh-session'
 import type { Session, SessionEvent, SessionSeq as SessionSeqType } from '@deepseek-ai/dsh-session'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import TokenMeter from '@deepseek-ai/dsh-token-meter'
@@ -309,6 +309,35 @@ describe('contextBreakdown session projection', () => {
     expect(stateKeys()).toEqual(['messageTokens', 'systemTokens', 'toolsTokens'])
     expect(projected(ctx, session).messageTokens)
       .toBe(ctx.tokenMeter.measure(session).surfaceTokens)
+  })
+
+  it('discards version-2 cache values and refolds system messages from the full log', async () => {
+    const { ctx, session } = await harness()
+    try {
+      appendSystem(session, 'You are terse.')
+      session.append('request/header', { header: { config: CONFIG, tools: TOOLS }, reason: 'initial' })
+      appendUser(session, 'abcd')
+      const current = ctx.sessionProjections.checkpoint(session)
+      // The old fold's fields still validate, but its header-based system price is not reusable.
+      const staleValue = { systemTokens: 0, toolsTokens: estimateToolsTokens({ config: CONFIG, tools: TOOLS }), messageTokens: 17 }
+      expect(contextBreakdownProjectionDefinition.stateSchema.parse(staleValue)).toEqual(staleValue)
+      const checkpoint = {
+        ...current,
+        contextBreakdown: { ver: 2, seq: SessionSeq(session.seq - 1), val: staleValue },
+      }
+      expect.soft(ctx.sessionProjections.viewCheckpoint(checkpoint)).not.toHaveProperty('contextBreakdown')
+      expect.soft(ctx.sessionProjections.restoreFloor(checkpoint)).toBe(0)
+      const restored = ctx.sessionProjections.restore(
+        checkpoint, session.snapshotEvents(), SessionLogOffset(0), session.header, session.inheritedEventCount,
+      )
+      expect(restored.snapshot.values.contextBreakdown).toEqual({
+        systemTokens: 8, toolsTokens: staleValue.toolsTokens, messageTokens: 9,
+      })
+      expect(restored.checkpoint).toEqual(current)
+      expect(restored.checkpoint['contextBreakdown']?.ver).toBe(3)
+    } finally {
+      await ctx.fiber.dispose()
+    }
   })
 
   it('restores from a JSON checkpoint and unregisters with the token-meter fiber', async () => {
