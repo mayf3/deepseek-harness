@@ -7332,6 +7332,9 @@ importers:
       '@deepseek-ai/dsh-session-format':
         specifier: workspace:^
         version: link:../session-format
+      '@deepseek-ai/dsh-session-format-v0-to-v1':
+        specifier: workspace:^
+        version: link:../session-format-v0-to-v1
       '@deepseek-ai/dsh-session-format-v1-to-v2':
         specifier: workspace:^
         version: link:../session-format-v1-to-v2
