@@ -658,78 +658,16 @@ describe('normalizeSessionSnapshot', () => {
       .toThrow('session snapshot must start with a session header')
   })
 
-  it('compares migrated and fresh delivery watermarks without changing their raw generation identity', () => {
-    const id = '11111111-2222-3333-4444-555555555555'
-    const session = (version: 0 | 1, sessionFormatVersion?: number): string => [
-      JSON.stringify({ type: 'session', version, id, createdAt: 0, delegationDepth: 0 }),
-      JSON.stringify({ type: 'turn/start', data: { turn: 1 } }),
-      JSON.stringify({
-        type: 'session-log-deepseek/delivery-accepted',
-        data: {
-          sessionId: id,
-          throughSeq: 0,
-          ...sessionFormatVersion === undefined ? {} : { sessionFormatVersion },
-        },
-      }),
-      JSON.stringify({ type: 'turn/end', data: { turn: 1, reason: { kind: 'completed' } } }),
-      '',
-    ].join('\n')
-
-    const migratedV0 = normalizeSessionSnapshots([session(0)], { sessionIds: [], cwd: '/unused' })
-    const freshV1 = normalizeSessionSnapshots([session(1, 1)], { sessionIds: [], cwd: '/unused' })
-
-    expect(migratedV0).toEqual(freshV1)
-    expect(freshV1[0]).not.toContain('"sessionFormatVersion"')
+  it('preserves delivery and captured-source generations after artifact migration', () => {
+    const event = (version: number): string => JSON.stringify({
+      type: 'session-log-deepseek/delivery-accepted',
+      data: { sessionId: 's', throughSeq: 4, sessionFormatVersion: version },
+    })
+    expect(normalizeSessionFormatProvenance(event(0))).toBe(event(0))
+    expect(normalizeSessionFormatProvenance(event(3))).not.toBe(normalizeSessionFormatProvenance(event(0)))
   })
 
-  it('compares migrated and fresh session-reference captures without hiding other source fields', () => {
-    const id = '11111111-2222-3333-4444-555555555555'
-    const sourceId = '22222222-3333-4444-5555-666666666666'
-    const messageId = '33333333-4444-4555-8666-777777777777'
-    const session = (version: 0 | 1, capturedFormatVersion?: number): string => [
-      JSON.stringify({ type: 'session', version, id, createdAt: 0, delegationDepth: 0 }),
-      JSON.stringify({ type: 'turn/start', data: { turn: 1 } }),
-      JSON.stringify({
-        type: 'user/message',
-        data: {
-          id: messageId,
-          role: 'user',
-          content: [{ type: 'text', text: 'remember' }],
-          source: {
-            kind: 'session-reference',
-            form: 'recall',
-            version: 1,
-            references: [{
-              sessionId: sourceId,
-              label: 'Source',
-              capturedThroughSeq: 0,
-              ...capturedFormatVersion === undefined ? {} : { capturedFormatVersion },
-              compacted: false,
-              originalMessages: 1,
-              retainedMessages: 1,
-              omittedMessages: 0,
-              omittedBytes: 0,
-              truncated: false,
-              inputIndex: 0,
-            }],
-          },
-        },
-        surfaceOp: 'append',
-      }),
-      JSON.stringify({ type: 'turn/end', data: { turn: 1, reason: { kind: 'completed' } } }),
-      '',
-    ].join('\n')
-
-    const migratedV0 = normalizeSessionSnapshots([session(0)], { sessionIds: [], cwd: '/unused' })
-    const freshV1 = normalizeSessionSnapshots([session(1, 1)], { sessionIds: [], cwd: '/unused' })
-
-    expect(migratedV0).toEqual(freshV1)
-    expect(freshV1[0]).toContain('"label":"Source"')
-    expect(freshV1[0]).toContain('"version":1')
-    expect(freshV1[0]).not.toContain('"capturedFormatVersion"')
-  })
-
-  it('removes generation qualifiers only from their exact provenance positions', () => {
+  it('preserves opaque generation qualifiers and their lookalikes', () => {
     const raw = [
       JSON.stringify({
         type: 'session',
@@ -782,14 +720,14 @@ describe('normalizeSessionSnapshot', () => {
       .split('\n')
       .map(line => JSON.parse(line) as Record<string, unknown>) ?? []
 
-    expect(delivery?.data).toEqual({ throughSeq: 21, otherVersion: 8 })
+    expect(delivery?.data).toEqual({ sessionFormatVersion: 1, throughSeq: 21, otherVersion: 8 })
     expect(captured?.data).toMatchObject({
       source: {
         references: [
           null,
           'opaque',
           [{ capturedFormatVersion: 6 }],
-          { otherVersion: 9 },
+          { capturedFormatVersion: 1, otherVersion: 9 },
         ],
       },
     })

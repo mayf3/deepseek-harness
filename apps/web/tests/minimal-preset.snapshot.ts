@@ -22,7 +22,7 @@ import {
 import { newEnglishPage, saveFailureShot } from './support.ts'
 
 const SNAPSHOT_DIR = fileURLToPath(new URL('../../../snapshots/web/minimal-preset', import.meta.url))
-const FIXTURE = join(SNAPSHOT_DIR, 'session.v2.jsonl')
+const FIXTURE = join(SNAPSHOT_DIR, 'session.v3.jsonl')
 const UI_EXPECTED = join(SNAPSHOT_DIR, 'ui.expected.md')
 const MODE = webSnapshotMode()
 const PROMPT = "Use the bash tool to run exactly: printf 'MINIMAL_BASH_CARD_OK\\n'. Then reply exactly MINIMAL_PRESET_REQUEST_OK and stop."
@@ -189,7 +189,7 @@ describe('minimal agent preset', () => {
 
   it('keeps its snapshot inventory closed', async () => {
     await assertFixtureInventory(SNAPSHOT_DIR, [
-      'session.v2.jsonl',
+      'session.v3.jsonl',
       'system-prompt.expected.md',
       'tool-schemas.expected.json',
       'ui.expected.md',

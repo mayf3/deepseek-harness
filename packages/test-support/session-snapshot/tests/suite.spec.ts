@@ -15,6 +15,7 @@ import {
   sessionFixtureName,
   sessionFixtureNames,
   sessionHeaderVersion,
+  writerSnapshotName,
   stabilizeFixtureMessageIds,
   tokenizeSessionFixtureCwd,
   type HarvestedLog,
@@ -483,6 +484,19 @@ describe('shared snapshot content', () => {
         { path: 'two/system-prompt.expected.md', content: 'same\n' },
       ])
     }).toThrow(/identical prompt snapshots appear in one\/system-prompt\.expected\.md and two\/system-prompt\.expected\.md/)
+  })
+})
+
+describe('writerSnapshotName', () => {
+  it('keeps native writer expectations outside historical replay selection', () => {
+    expect(writerSnapshotName(0)).toBe('writer.expected.jsonl')
+    expect(writerSnapshotName(2)).toBe('writer.2.expected.jsonl')
+    expect(sessionFixtureNames(['session.v1.jsonl', writerSnapshotName(0), writerSnapshotName(1)]))
+      .toEqual(['session.v1.jsonl'])
+  })
+
+  it.each([-1, -0, 0.5, Number.MAX_SAFE_INTEGER + 1])('rejects invalid role %s', (index) => {
+    expect(() => writerSnapshotName(index)).toThrow('writer snapshot index must be a non-negative safe integer')
   })
 })
 

@@ -451,57 +451,19 @@ export function normalizeSessionSnapshots(
 }
 
 /**
- * Omit only generation-qualified operational provenance from expected-output comparison.
+ * Omit the artifact header generation after official migration for comparison.
+ * Delivery and captured-source generations retain their opaque recorded values.
  * @param rawLog - Session records or events as compact JSON lines.
- * @returns the same records without delivery or captured-source generation qualifiers.
+ * @returns the same records with only the Session header version omitted.
  */
 export function normalizeSessionFormatProvenance(rawLog: string): string {
   return rawLog.split('\n').map((line) => {
     if (line.trim().length === 0) return line
     const record = JSON.parse(line) as Record<string, unknown>
-    let changed = normalizeCapturedFormatProvenance(record)
-    if (record.type === 'session' && Object.hasOwn(record, 'version')) {
-      delete record.version
-      changed = true
-    }
-    if (record.type === 'session-log-deepseek/delivery-accepted'
-      && record.data !== null && typeof record.data === 'object' && !Array.isArray(record.data)) {
-      const data = { ...record.data as Record<string, unknown> }
-      if (Object.hasOwn(data, 'sessionFormatVersion')) {
-        delete data.sessionFormatVersion
-        record.data = data
-        changed = true
-      }
-    }
-    return changed ? JSON.stringify(record) : line
+    if (record.type !== 'session' || !Object.hasOwn(record, 'version')) return line
+    delete record.version
+    return JSON.stringify(record)
   }).join('\n')
-}
-
-/** Omit captured generations only from an actual current Message source position. */
-function normalizeCapturedFormatProvenance(event: Record<string, unknown>): boolean {
-  if (event.data === null || typeof event.data !== 'object' || Array.isArray(event.data)) return false
-  const data = event.data as Record<string, unknown>
-  const message = event.type === 'user/message'
-    ? data
-    : event.type === 'assistant/message' || event.type === 'tool/result'
-      ? data.message
-      : undefined
-  if (message === null || typeof message !== 'object' || Array.isArray(message)) return false
-  const source = (message as Record<string, unknown>).source
-  if (source === null || typeof source !== 'object' || Array.isArray(source)) return false
-  const record = source as Record<string, unknown>
-  if (record.kind !== 'session-reference' || record.form !== 'recall' || record.version !== 1
-    || !Array.isArray(record.references)) return false
-  let changed = false
-  for (const reference of record.references) {
-    if (reference === null || typeof reference !== 'object' || Array.isArray(reference)) continue
-    const captured = reference as Record<string, unknown>
-    if (Object.hasOwn(captured, 'capturedFormatVersion')) {
-      delete captured.capturedFormatVersion
-      changed = true
-    }
-  }
-  return changed
 }
 
 /** Whether a fixture declares a released Session format and therefore participates in migration burn-in. */

@@ -82,6 +82,7 @@ export {
   sessionFixtureName,
   sessionFixtureNames,
   sessionHeaderVersion,
+  writerSnapshotName,
   type PersistedSessionFile,
   type SessionFixtureFile,
 } from './session-files.ts'

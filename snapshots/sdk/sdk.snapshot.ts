@@ -39,6 +39,7 @@ import {
   systemPromptPrecedesRequests,
   sessionFixtureNames,
   sessionHeaderVersion,
+  writerSnapshotName,
   stabilizeFixtureMessageIds,
   stabilizeRefreshLog,
   tokenizeSessionFixtureCwd,
@@ -59,7 +60,7 @@ import {
   type RunResult,
   type SdkPromptContentBlock,
 } from '@deepseek-ai/dsh-sdk-client'
-import { prepareSessionEventNotificationsForComparison } from '@deepseek-ai/dsh-llm-replay'
+import { SESSION_FORMAT_VERSION } from '@deepseek-ai/dsh-session'
 
 const corpusRoot = fileURLToPath(new URL('../', import.meta.url))
 
@@ -235,7 +236,7 @@ async function persistedLogs(sessionsRoot: string): Promise<PersistedLog[]> {
   const files = await jsonlFiles(sessionsRoot)
   return Promise.all(files.map(async (path) => {
     const content = await readFile(path, 'utf8')
-    assertPersistedSessionVersion(basename(path), content)
+    expect(assertPersistedSessionVersion(basename(path), content), `${path}: current writer`).toBe(SESSION_FORMAT_VERSION)
     const header = JSON.parse(content.slice(0, content.indexOf('\n'))) as Record<string, unknown>
     return { path, content, header }
   }))
@@ -774,13 +775,20 @@ describe('TypeScript SDK snapshots over the jsonrpc runtime', () => {
       : it
     scenarioTest(`${mode}s ${scenario.name} through dsh --profile sdk`, async () => {
       const scenarioDir = scenario.dir
-      const notificationsExpectedPath = join(scenarioDir, 'notifications.expected.jsonl')
+      const retained = scenario.manifest.sessionFormat !== undefined
+      const notificationsExpectedPath = join(scenarioDir, retained ? 'notifications.current.expected.jsonl' : 'notifications.expected.jsonl')
       const resultExpectedPath = join(scenarioDir, 'result.expected.json')
       const hasWireGoldens = existsSync(notificationsExpectedPath) || existsSync(resultExpectedPath)
       const assertions = SDK_ASSERTIONS[scenario.name] ?? {}
       const writesSessionFixtures = writesCurrentSessionFixtures(scenario.manifest, sessionWriteMode)
 
       let files = await fixtureFiles(scenario)
+      const replayContents = await Promise.all(files.map(file => readFile(file, 'utf8')))
+      if (!recording && !refreshing) {
+        const writerFiles = (await readdir(scenarioDir)).filter(name => /^writer(?:\.[1-9]\d*)?\.expected\.jsonl$/u.test(name)).sort()
+        expect(writerFiles, 'native writer oracle inventory').toEqual(retained
+          ? files.map((_, index) => writerSnapshotName(index)).sort() : [])
+      }
       const { results, notifications, observedMethods, logs, initialWorkspace, finalWorkspace, cwd } = await runScenario(scenario)
       const ordered = orderLogs(
         logs,
@@ -789,7 +797,9 @@ describe('TypeScript SDK snapshots over the jsonrpc runtime', () => {
       )
       const actualContext = contextOf(ordered, cwd)
 
-      let expectedContents = await Promise.all(files.map(file => readFile(file, 'utf8')))
+      let expectedContents = retained && !refreshing
+        ? await Promise.all(files.map((_, index) => readFile(join(scenarioDir, writerSnapshotName(index)), 'utf8')))
+        : replayContents
 
       if (recording) {
         expectedContents = redactSessionSnapshotIds(stabilizeFixtureMessageIds(
@@ -798,7 +808,7 @@ describe('TypeScript SDK snapshots over the jsonrpc runtime', () => {
         ))
       }
 
-      if (refreshing && writesSessionFixtures) {
+      if (refreshing && (writesSessionFixtures || retained)) {
         const harvested = ordered.map((log): HarvestedLog => ({
           id: String(log.header.id),
           createdAt: Number(log.header.createdAt),
@@ -816,11 +826,10 @@ describe('TypeScript SDK snapshots over the jsonrpc runtime', () => {
         expectedContents = redactSessionSnapshotIds(stabilizeFixtureMessageIds(refreshed, expectedContents))
       }
 
-      if (writesSessionFixtures) {
-        const outputFiles = ordered.map((log, index) => join(scenarioDir, sessionFixtureName(
-          index,
-          sessionHeaderVersion(log.content, `harvested Session ${index}`),
-        )))
+      if (writesSessionFixtures || refreshing && retained) {
+        const outputFiles = ordered.map((log, index) => join(scenarioDir, retained
+          ? writerSnapshotName(index)
+          : sessionFixtureName(index, sessionHeaderVersion(log.content, `harvested Session ${index}`))))
         await Promise.all(expectedContents.map((stable, index) => writeFile(outputFiles[index] as string, stable)))
         files = outputFiles
         await writeHeaderSidecars(scenario, ordered, actualContext)
@@ -832,6 +841,14 @@ describe('TypeScript SDK snapshots over the jsonrpc runtime', () => {
       }
       expect(redactSessionSnapshotIds(expectedContents), `${scenario.name}: identity redaction fixed point`)
         .toEqual(expectedContents)
+
+      if (retained) {
+        expect(await Promise.all((await fixtureFiles(scenario)).map(file => readFile(file, 'utf8'))),
+          'historical replay input remains unchanged').toEqual(replayContents)
+        for (const [index, content] of expectedContents.entries()) {
+          expect(sessionHeaderVersion(content, writerSnapshotName(index))).toBe(SESSION_FORMAT_VERSION)
+        }
+      }
 
       // Persisted transcripts match the committed fixtures.
       const expectedContext = contextOfContents(expectedContents)
@@ -852,10 +869,10 @@ describe('TypeScript SDK snapshots over the jsonrpc runtime', () => {
         }
         const expectedNotifications = await readFile(notificationsExpectedPath, 'utf8')
         expect(
-          records(prepareSessionEventNotificationsForComparison(normalizedNotifications)),
+          records(normalizedNotifications),
           `${scenario.name}: notifications`,
         )
-          .toEqual(records(prepareSessionEventNotificationsForComparison(expectedNotifications)))
+          .toEqual(records(expectedNotifications))
         expect(normalizedResult).toBe(await readFile(resultExpectedPath, 'utf8'))
       }
 

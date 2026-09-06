@@ -126,7 +126,7 @@ ADVANCED_SNAPSHOT_DIRECTORY = (
     Path(__file__).resolve().parent / "snapshots" / "python-sdk-single-exe" / "advanced"
 )
 ADVANCED_SNAPSHOT_FILENAMES = (
-    "result.json", "session.v2.jsonl", "session.1.v2.jsonl", "session.2.v2.jsonl",
+    "result.json", "session.v3.jsonl", "session.1.v3.jsonl", "session.2.v3.jsonl",
 )
 MINIMAL_SNAPSHOT_DIRECTORY = (
     Path(__file__).resolve().parent / "snapshots" / "python-sdk-single-exe" / "minimal"
@@ -138,7 +138,7 @@ RESTART_SNAPSHOT_DIRECTORY = (
     Path(__file__).resolve().parent / "snapshots" / "python-sdk-single-exe" / "restart"
 )
 RESTART_SNAPSHOT_FILENAMES = (
-    "result.json", "requests.json", "session.1.v2.jsonl", "session.2.v2.jsonl",
+    "result.json", "requests.json", "session.1.v3.jsonl", "session.2.v3.jsonl",
 )
 MCP_SERVER_SCRIPT = """\
 import json
@@ -2139,19 +2139,6 @@ def normalize_session_format_comparison(
         normalized.pop("time", None)
     if source_session_version == 1 and normalized.get("type") == "assistant/message":
         normalized.pop("sourceEventSeqs", None)
-    if normalized.get("type") == "session-log-deepseek/delivery-accepted":
-        data = normalized.get("data")
-        if isinstance(data, dict):
-            data.pop("throughSeq", None)
-            data.pop("sessionFormatVersion", None)
-            data["sessionFormatVersion"] = SESSION_FORMAT_PROVENANCE
-    if normalized.get("kind") == "session-reference":
-        references = normalized.get("references")
-        if isinstance(references, list):
-            for reference in references:
-                if isinstance(reference, dict):
-                    reference.pop("capturedFormatVersion", None)
-                    reference["capturedFormatVersion"] = SESSION_FORMAT_PROVENANCE
     return normalized
 
 

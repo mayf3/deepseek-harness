@@ -75,7 +75,7 @@ def test_mcp_smoke_accepts_the_external_server_result() -> None:
     )
 
 
-def test_snapshot_comparison_normalizes_only_session_generation_provenance() -> None:
+def test_snapshot_comparison_preserves_opaque_generation_provenance() -> None:
     normalize = SMOKE["normalize_session_format_comparison"]
     expected = {
         "header": {"type": "session", "version": 0, "otherVersion": 7},
@@ -104,8 +104,24 @@ def test_snapshot_comparison_normalizes_only_session_generation_provenance() -> 
         },
     }
 
-    assert normalize(expected) == normalize(actual)
+    assert normalize(expected) != normalize(actual)
+    assert normalize(expected)["header"] == normalize(actual)["header"]
     assert normalize(expected)["header"]["otherVersion"] == 7
+    assert normalize(actual)["accepted"] == actual["accepted"]
+    assert normalize(actual)["source"] == actual["source"]
+
+
+def test_snapshot_value_scrubs_system_nodes_without_erasing_header_fields() -> None:
+    normalize = SMOKE["normalize_snapshot_value"]
+    system = {
+        "type": "system/message",
+        "data": {"message": {"role": "system", "content": [{"type": "text", "text": "prompt"}]}},
+    }
+    header = {"type": "request/header", "data": {"header": {"system": "unexpected"}}}
+    assert normalize(system, [])["data"]["message"]["content"] == [{"type": "text", "text": "{{system}}"}]
+    assert normalize(header, []) == header
+    empty = {"type": "system/message", "data": {"message": {"role": "system", "content": []}}}
+    assert normalize(empty, []) == empty
 
 
 def test_snapshot_value_normalizes_embedded_assistant_stream_timing() -> None:

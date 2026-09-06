@@ -35,6 +35,7 @@ import {
   systemPromptPrecedesRequests,
   sessionFixtureNames,
   sessionHeaderVersion,
+  writerSnapshotName,
   snapshotSpillRoot,
   stabilizeFixtureMessageIds,
   stabilizeRefreshLog,
@@ -168,7 +169,7 @@ async function persistedSessions(cwd: string): Promise<SessionLog[]> {
   const files = latestPersistedSessionPaths(await readdir(root, { recursive: true }))
   const logs = await Promise.all(files.map(async (file): Promise<SessionLog> => {
     const content = await readFile(join(root, file), 'utf8')
-    assertPersistedSessionVersion(basename(file), content)
+    expect(assertPersistedSessionVersion(basename(file), content), `${file}: current writer`).toBe(SESSION_FORMAT_VERSION)
     return { content, header: headerOf(content) }
   }))
   return logs.sort((left, right) => {
@@ -202,10 +203,9 @@ async function writeSessionFixtures(
   existing: readonly string[],
   ctx: NormalizeContext,
 ): Promise<string[]> {
-  const names = actualLogs.map((log, index) => sessionFixtureName(
-    index,
-    sessionHeaderVersion(log.content, `harvested Session ${index}`),
-  ))
+  const names = actualLogs.map((log, index) => scenario.manifest.sessionFormat === undefined
+    ? sessionFixtureName(index, sessionHeaderVersion(log.content, `harvested Session ${index}`))
+    : writerSnapshotName(index))
   const prior = names.map((_, index) => existing[index] ?? '')
   const replacements = mode === 'refresh'
     ? refreshFixtureReplacements(actualLogs.map(harvested), prior)
@@ -535,36 +535,6 @@ function pinOf(scenario: HeadlessScenario): HeadlessScenario {
   return pin
 }
 
-/** Compare retained prompt-in-header semantics without weakening current-writer snapshots. */
-function historicalComparison(log: string): string {
-  const current = prepareSessionSnapshotFixtureForComparison(log)
-  const events = parseSessionLog(current)
-  const retained = events.filter(event => event.type !== 'system/message')
-  const positions = new Map(retained.map((event, index) => [Number(event.seq), index]))
-  let system: string | undefined
-  const output: JsonObject[] = []
-  for (const event of events) {
-    if (event.type === 'system/message') {
-      system = event.data.message.content.flatMap(block => block.type === 'text' ? [block.text] : []).join('')
-      continue
-    }
-    const row = JSON.parse(JSON.stringify(event)) as JsonObject
-    row.seq = positions.get(Number(event.seq))
-    const data = row.data as JsonObject
-    if (event.type === 'request/header' && system !== undefined) {
-      data.header = { ...data.header as JsonObject, system }
-    }
-    if (Array.isArray(row.sourceEventSeqs)) {
-      row.sourceEventSeqs = row.sourceEventSeqs.map(seq => positions.get(Number(seq)))
-    }
-    if (event.type === 'session/title' && Array.isArray(data.messageSeqs)) {
-      data.messageSeqs = data.messageSeqs.map(seq => positions.get(Number(seq)))
-    }
-    output.push(row)
-  }
-  return [records(current)[0], ...output].map(row => JSON.stringify(row)).join('\n') + '\n'
-}
-
 /** Require successful verification and the complete canonical event before refresh can write a fixture. */
 async function verifySessionQuerySpill(log: string): Promise<void> {
   const events = parseSessionLog(log)
@@ -653,30 +623,6 @@ describe('headless recorded-session snapshots', () => {
     }
   })
 
-  it('preserves prompt, request, and citation differences in historical comparisons', async () => {
-    const fixture = await readFile(join(snapshotsRoot, 'tool-call-turn/session.v2.jsonl'), 'utf8')
-    const baseline = records(historicalComparison(fixture))
-    const changed = (mutate: (rows: JsonObject[]) => void): JsonObject[] => {
-      const rows = records(fixture)
-      mutate(rows)
-      return records(historicalComparison(rows.map(row => JSON.stringify(row)).join('\n') + '\n'))
-    }
-    expect(baseline.find(row => row.type === 'request/header')?.data).toMatchObject({ header: { system: '{{system}}' } })
-    expect(changed(rows => {
-      const data = rows.find(row => row.type === 'system/message')?.data as JsonObject
-      const message = data.message as JsonObject
-      message.content = [{ type: 'text', text: 'wrong system prompt' }]
-    })).not.toEqual(baseline)
-    expect(changed(rows => {
-      const header = rows.find(row => row.type === 'request/header')?.data as JsonObject
-      ;((header.header as JsonObject).config as JsonObject).model = 'different-model'
-    })).not.toEqual(baseline)
-    expect(() => changed(rows => {
-      const title = rows.find(row => row.type === 'session/title')?.data as JsonObject
-      title.messageSeqs = [0]
-    })).toThrow('messageSeqs must cite earlier human user/message events')
-  })
-
   it('recognizes the supported OS-assigned listener forms', () => {
     expect(listenerPortViolations('accepted.mjs', [
       "server.listen(0, '127.0.0.1')",
@@ -716,7 +662,7 @@ describe('headless recorded-session snapshots', () => {
   it('keeps packed chunk rows logically equal to their unpacked recording', async () => {
     const sourceDir = join(snapshotsRoot, 'hook-cc-pretool-deny')
     const packedDir = join(snapshotsRoot, 'packed-chunks')
-    const source = await readFile(join(sourceDir, await primaryFixtureFile(sourceDir)), 'utf8')
+    const source = await readFile(join(sourceDir, 'session.jsonl'), 'utf8')
     const packed = await readFile(join(packedDir, await primaryFixtureFile(packedDir)), 'utf8')
     const rowTypes = records(packed).flatMap((record) => {
       const type = record.type
@@ -751,15 +697,10 @@ describe('headless recorded-session snapshots', () => {
         }
       }
       if (cloned.type === 'hook/result') delete cloned.data?.durationMs
-      if (cloned.type === 'session/title') delete (cloned.data as { messageSeqs?: unknown })?.messageSeqs
-      // Positional seq references shift with the `system/message` node the
-      // retained packed generation cannot invent; both sides cite their own
-      // step's Assistant settlement, so the citation is not the comparison.
-      delete (cloned as { sourceEventSeqs?: unknown }).sourceEventSeqs
       return cloned
     }
     const logical = (fixture: string): unknown[] => {
-      const current = historicalComparison(fixture)
+      const current = prepareSessionSnapshotFixtureForComparison(fixture)
       return [
         records(current)[0],
         ...parseSessionLog(current).map(withoutVolatileMessage),
@@ -1032,12 +973,22 @@ describe('headless recorded-session snapshots', () => {
       expect(result.stdout).toBe(`${finalTextFromSession(fixtures[0] as string)}\n`)
       expect(result.stderr).toBe(expectedStderr)
       expect(actualLogs, `${scenario.name}: persisted session count`).toHaveLength(fixtures.length)
-      const fixtureContext = contextOf(fixtures)
-      const comparison = scenario.manifest.sessionFormat === undefined
-        ? (log: string): string => log
-        : (log: string): string => historicalComparison(scrubSystemPrompts(log))
-      const actualSnapshots = normalizeSessionSnapshots(actualLogs.map(log => comparison(log.content)), actualContext)
-      const expectedSnapshots = normalizeSessionSnapshots(fixtures.map(comparison), fixtureContext)
+      const writerFiles = (await readdir(scenario.dir)).filter(name => /^writer(?:\.[1-9]\d*)?\.expected\.jsonl$/u.test(name)).sort()
+      if (mode === 'replay') {
+        expect(writerFiles, 'native writer oracle inventory').toEqual(scenario.manifest.sessionFormat === undefined
+          ? [] : fixtures.map((_, index) => writerSnapshotName(index)).sort())
+      }
+      let expected = fixtures
+      if (scenario.manifest.sessionFormat !== undefined) {
+        if (mode === 'refresh') await writeSessionFixtures(scenario, actualLogs, fixtures, actualContext)
+        expected = await Promise.all(fixtures.map((_, index) => readFile(join(scenario.dir, writerSnapshotName(index)), 'utf8')))
+        for (const [index, content] of expected.entries()) {
+          expect(sessionHeaderVersion(content, writerSnapshotName(index))).toBe(SESSION_FORMAT_VERSION)
+        }
+        expect(await fixtureSessions(scenario), 'historical replay input remains unchanged').toEqual(fixtures)
+      }
+      const actualSnapshots = normalizeSessionSnapshots(actualLogs.map(log => log.content), actualContext)
+      const expectedSnapshots = normalizeSessionSnapshots(expected, contextOf(expected))
       for (const [index, actual] of actualSnapshots.entries()) {
         expect(records(actual), `${scenario.name}: session ${index}`).toEqual(records(expectedSnapshots[index] as string))
       }
