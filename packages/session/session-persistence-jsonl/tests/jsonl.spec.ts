@@ -197,7 +197,7 @@ function withMigratedEmptyHead(log: readonly SessionEvent[]): readonly unknown[]
     {
       type: 'system/message', seq: 2, time: log[1]!.time, surfaceOp: 'append',
       data: { turn: 1, step: 1, message: {
-        id: expect.stringMatching(/^v2-to-v3-system-[0-9a-f]{64}$/),
+        id: expect.stringMatching(/^v2-to-v3-system-[0-9a-f]{64}$/) as unknown,
         role: 'system', content: [], source: { kind: 'plugin', plugin: '@deepseek-ai/dsh-system-prompt' },
       } },
     },
@@ -875,7 +875,7 @@ describe('JsonlSessionPersistence: immutable format generations', () => {
 
     await expect(ctx.sessionPersistence.open(id, access)).rejects.toMatchObject({
       name: 'SessionFormatUnsupportedError',
-      message: expect.stringContaining('surface before first step'),
+      message: expect.stringContaining('surface before first step') as unknown,
     })
     await ctx.sessionPersistence.flush()
 

@@ -104,33 +104,35 @@ describe('corpus unsupported policy', () => {
   const refused = (): never => { throw new SessionFormatUnsupportedMigrationError(refusal.reason) }
 
   it('rejects an unlisted migration refusal', () => {
-    expect(() => assertRestoration('unlisted', 2, refused, undefined)).toThrow('current-format restoration')
+    expect(() => { assertRestoration('unlisted', 2, refused, undefined) }).toThrow('current-format restoration')
   })
 
   it('rejects an exception that starts restoring successfully', () => {
-    expect(() => assertRestoration('supported', 2, () => [], refusal)).toThrow('expected unsupported migration')
+    expect(() => { assertRestoration('supported', 2, () => [], refusal) }).toThrow('expected unsupported migration')
   })
 
   it('rejects a changed refusal reason', () => {
-    expect(() => assertRestoration('changed', 2, refused, { ...refusal, reason: 'different' })).toThrow('exact refusal reason')
+    expect(() => { assertRestoration('changed', 2, refused, { ...refusal, reason: 'different' }) }).toThrow('exact refusal reason')
   })
 
   it('rejects corruption masquerading as an unsupported migration', () => {
-    expect(() => assertRestoration('corrupt', 2, () => { throw new Error(refusal.reason) }, refusal))
+    expect(() => { assertRestoration('corrupt', 2, () => { throw new Error(refusal.reason) }, refusal) })
       .toThrow('expected unsupported migration')
   })
 
   it('rejects a mismatched source generation', () => {
-    expect(() => assertRestoration('wrong-version', 1, refused, refusal)).toThrow('inventoried source generation')
+    expect(() => { assertRestoration('wrong-version', 1, refused, refusal) }).toThrow('inventoried source generation')
   })
 
   it('never exempts a current-generation fixture', () => {
-    expect(() => assertRestoration('current', SESSION_FORMAT_VERSION, refused, {
-      ...refusal, sourceVersion: SESSION_FORMAT_VERSION,
-    })).toThrow('current-generation fixtures cannot be unsupported')
+    expect(() => {
+      assertRestoration('current', SESSION_FORMAT_VERSION, refused, {
+        ...refusal, sourceVersion: SESSION_FORMAT_VERSION,
+      })
+    }).toThrow('current-generation fixtures cannot be unsupported')
   })
 
   it('accepts only the exact typed historical refusal', () => {
-    expect(() => assertRestoration('historical', 2, refused, refusal)).not.toThrow()
+    expect(() => { assertRestoration('historical', 2, refused, refusal) }).not.toThrow()
   })
 })
