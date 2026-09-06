@@ -629,7 +629,7 @@ describe('request stability across the loop', () => {
     expectPrefixExtension(adapter.requests[2]!, adapter.requests[3]!)
   })
 
-  it('on an in-history route a series start folds a prompt change back into node 0 unless a later system node survives', async () => {
+  it('on an in-history route a series start folds a prompt change into node 0 and empties later system nodes', async () => {
     const adapter = new MockAdapter([textResponse('one'), textResponse('two'), textResponse('three'), textResponse('four')])
     adapter.systemPromptUpdate = 'in-history'
     const ctx = await harness(adapter)
@@ -664,20 +664,19 @@ describe('request stability across the loop', () => {
     expect(systemNodes).toHaveLength(3)
     expect(systemNodes[2]?.surfaceOp).toBe('append')
 
-    // …which keeps a later series start from touching node 0: the newest prompt appends again.
+    // A broken series normalizes every active prompt version, preserving intervening messages.
     startSeries = true
     disposeSection()
     ctx.systemPrompt.section({ name: 'extra', order: 2, text: 'newest guidance' })
     send(agent, 'fourth')
     await waitForIdle(ctx, agent)
     systemNodes = agent.session.snapshotEvents().filter(e => e.type === 'system/message')
-    expect(systemNodes).toHaveLength(4)
-    expect(systemNodes[3]?.surfaceOp).toBe('append')
-    expect(agent.session.surface.nodes[0]).toBe(systemNodes[1]?.seq)
+    expect(systemNodes).toHaveLength(5)
+    expect(systemNodes[3]?.data.message.content).toEqual([])
+    expect(systemNodes[3]?.surfaceOp).toEqual({ op: 'replace', start: systemNodes[2]?.seq, end: systemNodes[2]?.seq })
+    expect(agent.session.surface.nodes[0]).toBe(systemNodes[4]?.seq)
     const systemTexts = adapter.requests[3]!.messages.flatMap(message => message.role === 'system' ? [message.content[0]] : [])
     expect(systemTexts).toEqual([
-      { type: 'text', text: expect.stringContaining('new guidance') as unknown },
-      { type: 'text', text: expect.stringContaining('newer guidance') as unknown },
       { type: 'text', text: expect.stringContaining('newest guidance') as unknown },
     ])
   })

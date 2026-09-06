@@ -356,21 +356,22 @@ export class ReactLoopAgent implements Agent {
     signal.throwIfAborted()
 
     const { assembly } = decision
+    const renderedPrompt = renderPrompt(assembly)
     let firstAttempt = true
     while (true) {
       const { config, preparedCall } = await this.prepareRequest(turn, step, signal)
       const startsRequestSeries = firstAttempt && decision.startsRequestSeries === true
+      const commits = this.systemPrompt.project(renderedPrompt, {
+        inHistory: preparedCall?.systemPromptUpdate === 'in-history',
+        startsSeries: startsRequestSeries
+          || this.requestSurfaceGeneration !== undefined
+          && this.requestSurfaceGeneration !== this.session.surface.replaceGeneration
+          || this.toolsChanged(assembly.tools),
+      })
+      for (const { message, intent } of commits) {
+        this.session.append('system/message', { turn, step, message }, intent)
+      }
       if (firstAttempt) {
-        const commits = this.systemPrompt.project(renderPrompt(assembly), {
-          inHistory: preparedCall?.systemPromptUpdate === 'in-history',
-          startsSeries: startsRequestSeries
-            || this.requestSurfaceGeneration !== undefined
-            && this.requestSurfaceGeneration !== this.session.surface.replaceGeneration
-            || this.toolsChanged(assembly.tools),
-        })
-        for (const { message, intent } of commits) {
-          this.session.append('system/message', { turn, step, message }, intent)
-        }
         for (const message of decision.messages) {
           this.session.append('user/message', message, { surfaceOp: 'append' })
         }

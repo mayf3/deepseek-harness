@@ -151,7 +151,7 @@ describe('SystemPromptProjection', () => {
       .toEqual([{ type: 'text', text: 'v1' }, { type: 'text', text: 'v2' }, { type: 'text', text: 'v3' }])
   })
 
-  it('re-baselines node 0 at a series start only while no later system node survives', async () => {
+  it('re-baselines node 0 and empties later active nodes at a series start', async () => {
     const ctx = await sessionStore()
     const session = ctx.sessions.create(SessionId('system-prompt-series-start'))
     const projection = new SystemPromptProjection(session)
@@ -164,10 +164,14 @@ describe('SystemPromptProjection', () => {
     const newHead = commit(session, 2, rebased)
     expect(session.surface.nodes[0]).toBe(newHead.seq)
 
-    // With a mid-history node surviving, node 0 stays and the new prompt appends.
     appendUser(session, 'again')
-    commit(session, 3, projection.project('v3', CONTINUING)[0])
-    expect(projection.project('v4', NEW_SERIES)[0]?.intent).toEqual({ surfaceOp: 'append' })
+    const later = commit(session, 3, projection.project('v3', CONTINUING)[0])
+    const updates = projection.project('v4', NEW_SERIES)
+    expect(updates.map(update => update.intent)).toEqual([replaceOf(later.seq), replaceOf(newHead.seq)])
+    for (const update of updates) commit(session, 4, update)
+    expect(session.deriveMessages().filter(message => message.role === 'system').map(message => message.content))
+      .toEqual([[{ type: 'text', text: 'v4' }]])
+    expect(projection.project('v4', CONTINUING)).toEqual([])
   })
 
   it('rewrites the surviving node when an in-history route clears the prompt or loses the capability', async () => {

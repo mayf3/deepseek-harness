@@ -2,12 +2,12 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import AgentRegistry, { installModelSelection, type Agent, type ModelSelectionRef } from '@deepseek-ai/dsh-agent'
 import AgentLoop from '@deepseek-ai/dsh-agent-loop'
-import LlmRuntime, { createUserMessage, type GenerateOptions } from '@deepseek-ai/dsh-llm'
+import LlmRuntime, { createUserMessage, LlmError, type GenerateOptions } from '@deepseek-ai/dsh-llm'
 import { toPiContext } from '@deepseek-ai/dsh-llm-pi-ai/src/context.ts'
 import SessionStore, { Session, SessionId } from '@deepseek-ai/dsh-session'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
-import ToolRuntime from '@deepseek-ai/dsh-tools'
+import ToolRuntime, { defineContentToolFixture } from '@deepseek-ai/dsh-tools'
 import { MockAdapter, textResponse } from './mock-adapter.ts'
 
 const contexts: Context[] = []
@@ -15,7 +15,7 @@ afterEach(async () => {
   for (const ctx of contexts.splice(0)) await ctx.fiber.dispose()
 })
 
-async function harness() {
+async function harness(capable = new MockAdapter(Array.from({ length: 8 }, () => textResponse('ok')))) {
   const ctx = new Context()
   contexts.push(ctx)
   await ctx.plugin(LlmRuntime)
@@ -25,7 +25,6 @@ async function harness() {
   await ctx.plugin(ToolRuntime)
   await ctx.plugin(AgentRegistry)
   await ctx.plugin(AgentLoop, { agents: [] })
-  const capable = new MockAdapter(Array.from({ length: 8 }, () => textResponse('ok')))
   capable.systemPromptUpdate = 'in-history'
   const plain = new MockAdapter(Array.from({ length: 8 }, () => textResponse('ok')))
   ctx.llm.registerAdapter(['capable'], capable)
@@ -68,6 +67,73 @@ function expectPlain(request: GenerateOptions, prompt: string) {
 }
 
 describe('prepared-route prompt admission', () => {
+  it.each(['explicit', 'tools'] as const)('normalizes surviving prompt versions with unchanged text at a %s series start', async (reason) => {
+    const h = await harness()
+    await send(h.agent, 'first')
+    h.setPrompt('prompt two')
+    await send(h.agent, 'second')
+    if (reason === 'explicit') {
+      h.ctx.on('agent/pre-step', async (_payload, next) => {
+        const decision = await next()
+        return decision.kind === 'enter' ? { ...decision, startsRequestSeries: true } : decision
+      })
+    } else {
+      h.ctx.tools.register(defineContentToolFixture({
+        name: 'extra', description: 'extra tool', parameters: {},
+        execute: async () => [{ type: 'text', text: 'done' }],
+      }))
+    }
+    await send(h.agent, 'third')
+    expectPlain(h.capable.requests[2]!, 'prompt two')
+    const header = h.agent.session.snapshotEvents().filter(event => event.type === 'request/header').at(-1)
+    expect(header?.data.reason).toBe(reason === 'explicit' ? 'series' : 'change')
+    if (reason === 'tools') expect(header?.data.startsSeries).toBe(true)
+  })
+
+  it.each([false, true])('reconciles compaction retries without replaying admission, older tail survives=%s', async (retainOlder) => {
+    const overflow = () => { throw new LlmError('context window exceeded', 'CONTEXT_LENGTH') }
+    const adapter = new MockAdapter([textResponse('one'), textResponse('two'), overflow, overflow, textResponse('done')])
+    const h = await harness(adapter)
+    const resolve = vi.spyOn(adapter, 'resolveModel')
+    await send(h.agent, 'first')
+    h.setPrompt('prompt two')
+    await send(h.agent, 'second')
+    h.setPrompt('prompt three')
+    let assemblies = 0
+    let preSteps = 0
+    let attempts = 0
+    h.ctx.on('system-prompt/assemble', (_assembly, _context, next) => { assemblies++; return next() })
+    h.ctx.on('agent/pre-step', (_payload, next) => { preSteps++; return next() })
+    h.ctx.on('agent/request-error', ({ failure }) => {
+      expect(failure.code).toBe('CONTEXT_LENGTH')
+      if (attempts++ === 0) {
+        const nodes = h.agent.session.surface.nodes
+        const latest = nodes.findLast(seq => h.agent.session.eventAt(seq)?.type === 'system/message')!
+        const start = retainOlder ? latest : nodes[1]!
+        const replaced = nodes.slice(nodes.indexOf(start), nodes.indexOf(latest) + 1)
+        h.agent.session.append('user/message', createUserMessage({
+          content: [{ type: 'text', text: 'compacted history' }], source: { kind: 'plugin', plugin: 'test-compaction' },
+        }), { surfaceOp: { op: 'replace', start, end: latest }, sourceEventSeqs: replaced })
+        // A retry must retain the assembly accepted for this step, not pick up new sections.
+        h.setPrompt('not admitted until next step')
+      }
+      return Promise.resolve({ kind: 'retry' as const })
+    })
+    await send(h.agent, 'third')
+    expect(adapter.requests).toHaveLength(5)
+    expect(assemblies).toBe(1)
+    expect(preSteps).toBe(1)
+    expect(resolve).toHaveBeenCalledTimes(5)
+    expectPlain(adapter.requests[3]!, 'prompt three')
+    expect(adapter.requests[4]!.messages).toEqual(adapter.requests[3]!.messages)
+    expect(adapter.requests[3]!.messages.at(-1)?.content).toEqual([{ type: 'text', text: 'third' }])
+    const events = h.agent.session.snapshotEvents()
+    expect(events.filter(event => event.type === 'step/start')).toHaveLength(3)
+    expect(events.filter(event => event.type === 'user/message' && event.data.source.kind === 'user')).toHaveLength(3)
+    expect(events.filter(event => event.type === 'request/header').map(event => event.data.reason)).toEqual(['initial', 'series'])
+    expect(events.filter(event => event.type === 'system/message' && event.data.turn === 3).at(-1)?.surfaceOp).not.toBe('append')
+  })
+
   it.each([false, true])('normalizes capable history on a plain route, changed=%s', async (changed) => {
     const h = await harness()
     await send(h.agent, 'first')

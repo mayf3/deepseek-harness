@@ -54,8 +54,8 @@ function eventsNewestFirst(session: Session): readonly SessionEvent[] {
  * replaces the latest surviving system node in place, except on an
  * `in-history` route while the request series continues, where it appends a
  * new `system/message` after the cached history; a series start folds the
- * prompt back into node 0 when no later system node survives. Incapable routes
- * normalize nonempty prompts to the first node and empty all later active nodes.
+ * prompt back into the first node and empties later active nodes. Incapable
+ * routes use the same normalization for every nonempty prompt.
  */
 export class SystemPromptProjection {
   constructor(private readonly session: Session) {}
@@ -72,7 +72,7 @@ export class SystemPromptProjection {
   }
 
   /**
-   * Create an uncommitted system node when absent, even for an empty prompt, or changed.
+   * Reconcile effective text and retained nodes with the prepared route and series.
    * @param rendered - the fully rendered system prompt; `''` when none is active.
    * @param input - the route capability and series facts for this step.
    * @returns ordered per-node updates; an empty list means no update is needed.
@@ -84,7 +84,7 @@ export class SystemPromptProjection {
       return [{ message: createSystemMessage(rendered, SOURCE), intent: { surfaceOp: 'append' } }]
     }
     const latest = nodes.findLast(node => node.text.length > 0) ?? head
-    if (!input.inHistory && rendered.length > 0) {
+    if ((!input.inHistory || input.startsSeries) && rendered.length > 0) {
       const updates = nodes.slice(1).filter(node => node.text.length > 0)
         .map(node => this.replace(node.seq, ''))
       if (head.text !== rendered) updates.push(this.replace(head.seq, rendered))
@@ -92,11 +92,7 @@ export class SystemPromptProjection {
     }
     if (latest.text === rendered) return []
     const message = createSystemMessage(rendered, SOURCE)
-    // An empty node projects to no message, so clearing the prompt must rewrite
-    // the surviving node; a series start with one system node re-baselines it.
-    const append = input.inHistory
-      && rendered.length > 0
-      && (!input.startsSeries || nodes.length > 1)
+    const append = input.inHistory && rendered.length > 0
     if (append) return [{ message, intent: { surfaceOp: 'append' } }]
     return [this.replace(latest.seq, rendered)]
   }
