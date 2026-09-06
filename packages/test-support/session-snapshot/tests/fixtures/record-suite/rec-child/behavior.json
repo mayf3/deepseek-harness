@@ -4,7 +4,7 @@
     {
       "file": "b/parent/session.v3.jsonl",
       "lines": [
-        {"type":"session","version":2,"id":"{{SID}}","createdAt":700,"cwd":"{{CWD}}","isSeeded":false,"delegationDepth":0},
+        {"type":"session","version":3,"id":"{{SID}}","createdAt":700,"cwd":"{{CWD}}","isSeeded":false,"delegationDepth":0},
         {"type":"turn/start","seq":0,"time":2,"data":{"turn":1}},
         {"type":"step/start","seq":1,"time":3,"data":{"turn":1,"step":1}},
         {"type":"system/message","seq":2,"time":3,"data":{"turn":1,"step":1,"message":{"id":"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa2","role":"system","content":[{"type":"text","text":"SYS PROMPT"}],"source":{"kind":"plugin","plugin":"@deepseek-ai/dsh-system-prompt"}}},"surfaceOp":"append"},
@@ -15,7 +15,7 @@
     {
       "file": "b/child/session.v3.jsonl",
       "lines": [
-        {"type":"session","version":2,"id":"abababab-cdcd-4efe-8ada-badabadabada","createdAt":800,"cwd":"{{CWD}}","parentSession":"{{SID}}","isSeeded":false,"delegationDepth":1},
+        {"type":"session","version":3,"id":"abababab-cdcd-4efe-8ada-badabadabada","createdAt":800,"cwd":"{{CWD}}","parentSession":"{{SID}}","isSeeded":false,"delegationDepth":1},
         {"type":"turn/start","seq":0,"time":1,"data":{"turn":1}},
         {"type":"step/start","seq":1,"time":2,"data":{"turn":1,"step":1}},
         {"type":"system/message","seq":2,"time":2,"data":{"turn":1,"step":1,"message":{"id":"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa2","role":"system","content":[{"type":"text","text":"SYS PROMPT"}],"source":{"kind":"plugin","plugin":"@deepseek-ai/dsh-system-prompt"}}},"surfaceOp":"append"},
