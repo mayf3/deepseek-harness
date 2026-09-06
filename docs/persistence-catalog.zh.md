@@ -91,7 +91,7 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 }[T]
 ```
 
-来源：[`packages/core/session/src/types.ts:402`](../packages/core/session/src/types.ts) · [`packages/core/session/src/types.ts:410`](../packages/core/session/src/types.ts) · [`packages/core/session/src/types.ts:440`](../packages/core/session/src/types.ts) · [`packages/core/session/src/types.ts:471`](../packages/core/session/src/types.ts)
+来源：[`packages/core/session/src/types.ts:403`](../packages/core/session/src/types.ts) · [`packages/core/session/src/types.ts:411`](../packages/core/session/src/types.ts) · [`packages/core/session/src/types.ts:441`](../packages/core/session/src/types.ts) · [`packages/core/session/src/types.ts:472`](../packages/core/session/src/types.ts)
 
 ## 事件
 
@@ -218,7 +218,7 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 'assistant/attempt': { turn: number; step: number; stream: AssistantStreamRecord[] }
 ```
 
-来源：[`packages/core/session/src/types.ts:334`](../packages/core/session/src/types.ts)
+来源：[`packages/core/session/src/types.ts:335`](../packages/core/session/src/types.ts)
 
 <a id="assistantmessage--surface"></a>
 
@@ -248,7 +248,7 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 
 类型：[TokenUsage](subsystems/llm-streaming.zh.md)
 
-来源：[`packages/core/session/src/types.ts:320`](../packages/core/session/src/types.ts)
+来源：[`packages/core/session/src/types.ts:321`](../packages/core/session/src/types.ts)
 
 ### `command/*`
 
@@ -592,13 +592,13 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 /**
  * Route metadata for the next request, logged only when the route, capacity,
  * or system prompt update mode changes. It does not participate in request
- * reconstruction or header equality; the loop reads the latest snapshot's
- * `systemPromptUpdate` when it decides how to commit a changed system prompt.
+ * reconstruction or header equality. Prompt admission uses the bound prepared
+ * call's capability, not this snapshot from an earlier request.
  */
 'request/context': RequestContext
 ```
 
-来源：[`packages/core/session/src/types.ts:375`](../packages/core/session/src/types.ts)
+来源：[`packages/core/session/src/types.ts:376`](../packages/core/session/src/types.ts)
 
 <a id="requestheader--log-only"></a>
 
@@ -617,7 +617,7 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 }
 ```
 
-来源：[`packages/core/session/src/types.ts:363`](../packages/core/session/src/types.ts)
+来源：[`packages/core/session/src/types.ts:364`](../packages/core/session/src/types.ts)
 
 ### `sandbox/*`
 
@@ -692,7 +692,7 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 'session/end-seed': { inherited?: true }
 ```
 
-来源：[`packages/core/session/src/types.ts:398`](../packages/core/session/src/types.ts)
+来源：[`packages/core/session/src/types.ts:399`](../packages/core/session/src/types.ts)
 
 <a id="sessiontitle--log-only"></a>
 
@@ -815,18 +815,19 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 /**
  * The rendered system prompt on the model-visible surface. The loop appends
  * the first one as surface node 0 before the step's first `user/message`.
- * When the rendered prompt changes it replaces the latest system node
- * (`surfaceOp: { op: 'replace' }` over exactly that node) or, on a route
- * whose `request/context` declares `systemPromptUpdate: 'in-history'` and
- * inside a continuing request series, appends the changed prompt after the
- * cached history, so the latest system node is the effective prompt and
- * every request stays derived history. Empty `message.content` records "no
- * system prompt" and projects to no message.
+ * A prepared in-history route can append nonempty changes in a continuing
+ * series. An incapable route or new series normalizes text to the first system
+ * node. Normalization empties nonempty later nodes, then rewrites the head if
+ * needed, through logged per-node replacements. An empty rendering always
+ * clears all active system nodes, leaving no older instructions model-visible.
+ * Empty later nodes are dormant and project to no message; an empty head with
+ * no active later node records "no system prompt". Restored nonempty text follows
+ * the same route and series rule; empty nodes never restore older text.
  */
 'system/message': { turn: number; step: number; message: SystemMessage }
 ```
 
-来源：[`packages/core/session/src/types.ts:309`](../packages/core/session/src/types.ts)
+来源：[`packages/core/session/src/types.ts:310`](../packages/core/session/src/types.ts)
 
 ### `team/*`
 
@@ -919,7 +920,7 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 
 类型：[ToolCallId](subsystems/core.zh.md)
 
-来源：[`packages/core/session/src/types.ts:340`](../packages/core/session/src/types.ts)
+来源：[`packages/core/session/src/types.ts:341`](../packages/core/session/src/types.ts)
 
 <a id="toolptc-dispatch--log-only"></a>
 
@@ -994,7 +995,7 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 }
 ```
 
-来源：[`packages/core/session/src/types.ts:352`](../packages/core/session/src/types.ts)
+来源：[`packages/core/session/src/types.ts:353`](../packages/core/session/src/types.ts)
 
 ### `tool-workflow/*`
 
