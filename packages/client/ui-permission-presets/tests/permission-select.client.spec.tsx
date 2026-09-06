@@ -178,6 +178,44 @@ describe('PermissionSelect', () => {
     expect(missingSelection.view.container.innerHTML).toBe('')
   })
 
+  it('revokes Auto confirmation and its optimistic label when the catalog withdraws it', async () => {
+    const submitted = Promise.withResolvers<boolean>()
+    const { catalog, select, selection } = setup({ select: () => submitted.promise })
+    const withoutAuto = { options: CATALOG.options.filter(option => option.value !== 'auto') }
+    const chooseAuto = () => {
+      fireEvent.click(trigger())
+      fireEvent.click(screen.getByRole('menuitem', { name: 'Auto review EXP' }))
+    }
+    try {
+      chooseAuto()
+      fireEvent.click(screen.getByRole('checkbox'))
+      act(() => { catalog.set({ value: withoutAuto }) })
+      expect(screen.queryByRole('dialog')).toBeNull()
+      expect(select).not.toHaveBeenCalled()
+      expect(trigger().disabled).toBe(false)
+
+      act(() => { catalog.set({ value: CATALOG }) })
+      expect(screen.queryByRole('dialog')).toBeNull()
+      chooseAuto()
+      expect(screen.getByRole<HTMLInputElement>('checkbox').checked).toBe(false)
+      fireEvent.click(screen.getByRole('checkbox'))
+      fireEvent.click(screen.getByRole('button', { name: '启用 Auto review' }))
+      expect(select).toHaveBeenCalledExactlyOnceWith('auto')
+      expect(trigger().textContent).toBe('Auto reviewEXP')
+
+      act(() => {
+        selection.set({ value: { currentValue: 'danger-full-access' } })
+        catalog.set({ value: withoutAuto })
+      })
+      expect(trigger().textContent).toBe('完全权限')
+      expect(trigger().disabled).toBe(true)
+    } finally {
+      submitted.resolve(false)
+      await act(async () => { await submitted.promise })
+    }
+    expect(trigger().disabled).toBe(false)
+  })
+
   it('falls back to an unknown current value and clears a rejected optimistic choice', async () => {
     const select = vi.fn(() => Promise.reject(new Error('rejected')))
     const { selection } = setup({ selection: { currentValue: 'custom' }, select })

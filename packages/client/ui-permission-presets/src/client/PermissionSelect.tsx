@@ -103,15 +103,17 @@ export function PermissionSelect({
   const [acknowledged, setAcknowledged] = useState(false)
 
   useEffect(() => {
-    if (!locked && selection !== undefined && catalog !== null) return
+    if (!locked && selection !== undefined && catalog !== null
+      && (confirmation === null || catalog.options.some(option => option.value === confirmation))) return
     setOpen(false)
     setAcknowledged(false)
     setConfirmation(null)
-  }, [catalog, locked, selection])
+  }, [catalog, confirmation, locked, selection])
 
   if (selection === undefined || catalog === null) return null
 
-  const currentValue = pick ?? selection.currentValue
+  const currentValue = pick !== null && catalog.options.some(option => option.value === pick)
+    ? pick : selection.currentValue
   const current = catalog.options.find(option => option.value === currentValue)
   const currentLabel = current === undefined
     ? permissionLabel(currentValue, currentValue, t)
