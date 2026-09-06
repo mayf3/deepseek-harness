@@ -129,22 +129,8 @@
       "surfaceOp": "append"
     },
     {
-      "type": "session/title",
-      "seq": 10,
-      "time": 0,
-      "data": {
-        "title": "Run the advanced packaged-runtime snapsh",
-        "messageSeqs": [
-          8
-        ],
-        "source": {
-          "kind": "fallback"
-        }
-      }
-    },
-    {
       "type": "request/header",
-      "seq": 11,
+      "seq": 10,
       "time": 0,
       "data": {
         "header": {
@@ -179,12 +165,26 @@
     },
     {
       "type": "request/context",
-      "seq": 12,
+      "seq": 11,
       "time": 0,
       "data": {
         "provider": "deepseek-official",
         "model": "smoke-model",
         "contextWindow": 1000000
+      }
+    },
+    {
+      "type": "session/title",
+      "seq": 12,
+      "time": 0,
+      "data": {
+        "title": "Run the advanced packaged-runtime snapsh",
+        "messageSeqs": [
+          8
+        ],
+        "source": {
+          "kind": "fallback"
+        }
       }
     },
     {
@@ -1757,28 +1757,8 @@
       "payload": {
         "sessionId": "{{parent}}",
         "event": {
-          "type": "session/title",
-          "seq": 10,
-          "time": 0,
-          "data": {
-            "title": "Run the advanced packaged-runtime snapsh",
-            "messageSeqs": [
-              8
-            ],
-            "source": {
-              "kind": "fallback"
-            }
-          }
-        }
-      }
-    },
-    {
-      "method": "session.event",
-      "payload": {
-        "sessionId": "{{parent}}",
-        "event": {
           "type": "request/header",
-          "seq": 11,
+          "seq": 10,
           "time": 0,
           "data": {
             "header": {
@@ -1819,12 +1799,32 @@
         "sessionId": "{{parent}}",
         "event": {
           "type": "request/context",
-          "seq": 12,
+          "seq": 11,
           "time": 0,
           "data": {
             "provider": "deepseek-official",
             "model": "smoke-model",
             "contextWindow": 1000000
+          }
+        }
+      }
+    },
+    {
+      "method": "session.event",
+      "payload": {
+        "sessionId": "{{parent}}",
+        "event": {
+          "type": "session/title",
+          "seq": 12,
+          "time": 0,
+          "data": {
+            "title": "Run the advanced packaged-runtime snapsh",
+            "messageSeqs": [
+              8
+            ],
+            "source": {
+              "kind": "fallback"
+            }
           }
         }
       }
@@ -2917,28 +2917,8 @@
       "payload": {
         "sessionId": "{{child-1}}",
         "event": {
-          "type": "session/title",
-          "seq": 11,
-          "time": 0,
-          "data": {
-            "title": "Reply with exactly DIRECT_CHILD_OK and",
-            "messageSeqs": [
-              9
-            ],
-            "source": {
-              "kind": "fallback"
-            }
-          }
-        }
-      }
-    },
-    {
-      "method": "session.event",
-      "payload": {
-        "sessionId": "{{child-1}}",
-        "event": {
           "type": "request/header",
-          "seq": 12,
+          "seq": 11,
           "time": 0,
           "data": {
             "header": {
@@ -2979,12 +2959,32 @@
         "sessionId": "{{child-1}}",
         "event": {
           "type": "request/context",
-          "seq": 13,
+          "seq": 12,
           "time": 0,
           "data": {
             "provider": "deepseek-official",
             "model": "smoke-model",
             "contextWindow": 1000000
+          }
+        }
+      }
+    },
+    {
+      "method": "session.event",
+      "payload": {
+        "sessionId": "{{child-1}}",
+        "event": {
+          "type": "session/title",
+          "seq": 13,
+          "time": 0,
+          "data": {
+            "title": "Reply with exactly DIRECT_CHILD_OK and",
+            "messageSeqs": [
+              9
+            ],
+            "source": {
+              "kind": "fallback"
+            }
           }
         }
       }
@@ -3605,28 +3605,8 @@
       "payload": {
         "sessionId": "{{child-2}}",
         "event": {
-          "type": "session/title",
-          "seq": 11,
-          "time": 0,
-          "data": {
-            "title": "Reply with exactly WORKFLOW_CHILD_OK and",
-            "messageSeqs": [
-              9
-            ],
-            "source": {
-              "kind": "fallback"
-            }
-          }
-        }
-      }
-    },
-    {
-      "method": "session.event",
-      "payload": {
-        "sessionId": "{{child-2}}",
-        "event": {
           "type": "request/header",
-          "seq": 12,
+          "seq": 11,
           "time": 0,
           "data": {
             "header": {
@@ -3667,12 +3647,32 @@
         "sessionId": "{{child-2}}",
         "event": {
           "type": "request/context",
-          "seq": 13,
+          "seq": 12,
           "time": 0,
           "data": {
             "provider": "deepseek-official",
             "model": "smoke-model",
             "contextWindow": 1000000
+          }
+        }
+      }
+    },
+    {
+      "method": "session.event",
+      "payload": {
+        "sessionId": "{{child-2}}",
+        "event": {
+          "type": "session/title",
+          "seq": 13,
+          "time": 0,
+          "data": {
+            "title": "Reply with exactly WORKFLOW_CHILD_OK and",
+            "messageSeqs": [
+              9
+            ],
+            "source": {
+              "kind": "fallback"
+            }
           }
         }
       }
