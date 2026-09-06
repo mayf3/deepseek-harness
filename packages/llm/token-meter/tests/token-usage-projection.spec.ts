@@ -275,7 +275,7 @@ describe('tokenUsage session projection', () => {
       content: [{ type: 'text', text: 'compacted' }],
       source: { kind: 'plugin', plugin: 'test' },
     }), {
-      surfaceOp: { op: 'replace', start: before.seq, end: before.seq },
+      surfaceOp: { op: 'replace', startSeq: before.seq, endSeq: before.seq },
       sourceEventSeqs: [before.seq],
     })
 
@@ -478,7 +478,7 @@ describe('contextPressure session projection', () => {
       content: [{ type: 'text', text: 'summary' }],
       source: { kind: 'plugin', plugin: 'test' },
     }), {
-      surfaceOp: { op: 'replace', start: question, end: grown },
+      surfaceOp: { op: 'replace', startSeq: question, endSeq: grown },
       sourceEventSeqs: [question, answer, grown],
     })
     const compacted = pressure(ctx, session)
@@ -514,7 +514,7 @@ describe('contextPressure session projection', () => {
       content: [{ type: 'text', text: 'summary without a preceding claim' }],
       source: { kind: 'plugin', plugin: 'test' },
     }), {
-      surfaceOp: { op: 'replace', start: question, end: question },
+      surfaceOp: { op: 'replace', startSeq: question, endSeq: question },
       sourceEventSeqs: [question],
     })
 
@@ -535,7 +535,7 @@ describe('contextPressure session projection', () => {
       content: [{ type: 'text', text: '.' }],
       source: { kind: 'plugin', plugin: 'test' },
     }), {
-      surfaceOp: { op: 'replace', start: question, end: question },
+      surfaceOp: { op: 'replace', startSeq: question, endSeq: question },
       sourceEventSeqs: [question],
     })
     expect(pressure(ctx, session).projectedTokens).toBe(0)

@@ -553,9 +553,9 @@ describe('parseSessionLog', () => {
     ])
   })
 
-  it('materializes tokenized request tools before released-format validation', () => {
+  it.each([0, 1, 2] as const)('derives system messages and omits tokenized request tools during v%i validation', (version) => {
     const source = [
-      JSON.stringify({ type: 'session', version: 0, id: 'tokens', createdAt: 7, delegationDepth: 0 }),
+      JSON.stringify({ type: 'session', version, id: 'tokens', createdAt: 7, delegationDepth: 0, ...version >= 2 ? { isSeeded: false } : {} }),
       JSON.stringify({ type: 'turn/start', data: { turn: 1 } }),
       JSON.stringify({ type: 'step/start', data: { turn: 1, step: 1 } }),
       JSON.stringify({
@@ -576,14 +576,75 @@ describe('parseSessionLog', () => {
           ...emptySystemHead.data,
           message: { ...emptySystemHead.data.message, content: [{ type: 'text', text: '{{system}}' }] },
         },
-        surfaceOp: { op: 'replace', start: 2, end: 2 },
+        surfaceOp: { op: 'replace', startSeq: 2, endSeq: 2 },
         sourceEventSeqs: [2],
       },
       {
         type: 'request/header', seq: 4, time: 0,
-        data: { reason: 'initial', header: { config: { provider: 'mock', model: 'mock' }, tools: [] } },
+        data: { reason: 'initial', header: { config: { provider: 'mock', model: 'mock' } } },
       },
     ])
+    const comparison = prepareSessionSnapshotFixtureForComparison(source)
+    const header = JSON.parse(comparison.split('\n').at(-1)!) as { data: { header: object } }
+    expect(header.data.header).toEqual({ config: { provider: 'mock', model: 'mock' }, tools: '{{tools}}' })
+    expect(header.data.header).not.toHaveProperty('system')
+    expect(parseSessionLog(comparison)).toEqual(parseSessionLog(source))
+  })
+
+  it('preserves the current system envelope and tool sidecar token during comparison', () => {
+    const source = [
+      sessionJsonl([], { version: 3 }).trimEnd(),
+      JSON.stringify({ type: 'turn/start', data: { turn: 1 } }),
+      JSON.stringify({ type: 'step/start', data: { turn: 1, step: 1 } }),
+      JSON.stringify({
+        ...emptySystemHead,
+        data: {
+          ...emptySystemHead.data,
+          message: { ...emptySystemHead.data.message, id: 'current-system', content: [{ type: 'text', text: '{{system}}' }] },
+        },
+        seq: undefined,
+        time: undefined,
+      }),
+      JSON.stringify({
+        type: 'request/header',
+        data: { reason: 'initial', header: { config: { provider: 'mock', model: 'mock' }, tools: '{{tools}}' } },
+      }),
+    ].join('\n')
+    const events = parseSessionLog(source)
+    expect(events[2]).toMatchObject({ type: 'system/message', surfaceOp: 'append', data: { message: { content: [{ type: 'text', text: '{{system}}' }] } } })
+    expect(events[3]).not.toHaveProperty('data.header.tools')
+    expect(events[3]).not.toHaveProperty('data.header.system')
+    const comparison = prepareSessionSnapshotFixtureForComparison(source)
+    expect(parseSessionLog(comparison)).toEqual(events)
+    expect(JSON.parse(comparison.split('\n').at(-1)!)).toMatchObject({ data: { header: { tools: '{{tools}}' } } })
+  })
+
+  it('derives current replay calls from a fixture with tokenized request tools', () => {
+    const rows = projectSessionJsonl(replaySessionJsonl([TEXT_CHUNKS])).split('\n')
+    rows.splice(2, 0, JSON.stringify({
+      type: 'request/header',
+      data: {
+        header: { config: { provider: 'mock', model: 'mock' }, tools: '{{tools}}' },
+        reason: 'initial',
+      },
+    }))
+    const source = rows.join('\n')
+    expect(deriveReplayScript(parseSessionLog(source))).toEqual([{ kind: 'chunks', chunks: TEXT_CHUNKS }])
+  })
+
+  it('rejects genuine empty current tools instead of treating them as a placeholder', () => {
+    const tools: unknown[] = []
+    const source = [
+      sessionJsonl([], { version: 3 }).trimEnd(),
+      JSON.stringify({ type: 'turn/start', data: { turn: 1 } }),
+      JSON.stringify({
+        type: 'request/header',
+        data: { header: { config: { provider: 'mock', model: 'mock' }, tools }, reason: 'initial' },
+      }),
+    ].join('\n')
+    expect(() => parseSessionLog(source)).toThrow(/session snapshot line 3:.*empty optional header fields must be omitted/)
+    expect(() => prepareSessionSnapshotFixtureForComparison(source))
+      .toThrow(/session snapshot line 3:.*empty optional header fields must be omitted/)
   })
 
   it('materializes Python snapshot tool-name projections before format validation', () => {

@@ -3,7 +3,7 @@
 import { SessionFormatError, SessionFormatUnsupportedMigrationError } from '@deepseek-ai/dsh-session-format'
 import type { SessionFormatArtifact, SessionFormatEvent, SessionFormatHeader } from '@deepseek-ai/dsh-session-format'
 import { assertReleasedV2Header, restoreReleasedV2Artifact } from '@deepseek-ai/dsh-session-format-v1-to-v2'
-import { assertEvent, isRepairIdentity, record, SURFACE_TYPES } from './payload.ts'
+import { assertV3Event, isRepairIdentity, record, SURFACE_TYPES } from './payload.ts'
 
 /**
  * Validate v3 logical metadata with the released-v2 fields.
@@ -27,8 +27,9 @@ export function restoreReleasedV3Artifact(artifact: SessionFormatArtifact, known
   let head: number | undefined
   let hasSurface = false
   const events = artifact.events.map((event): SessionFormatEvent => {
+    assertV3EventAdmission(event)
+    assertV3Event(event, knownEventTypes)
     const system = event.type === 'system/message'
-    if (system || event.type === 'request/header') assertEvent(event, 3)
     if (event.type === 'step/start') {
       const data = record(event.data, event.type)
       step = { turn: data['turn'], step: data['step'] }
@@ -44,8 +45,8 @@ export function restoreReleasedV3Artifact(artifact: SessionFormatArtifact, known
         if (!hasSurface) head = event.seq
       } else {
         const replace = record(operation, 'system replacement')
-        if (replace['start'] === head || replace['end'] === head) {
-          if (replace['start'] !== head || replace['end'] !== head) {
+        if (replace['startSeq'] === head || replace['endSeq'] === head) {
+          if (replace['startSeq'] !== head || replace['endSeq'] !== head) {
             throw new SessionFormatError('system/message must replace exactly the current system head')
           }
           head = event.seq
@@ -53,7 +54,7 @@ export function restoreReleasedV3Artifact(artifact: SessionFormatArtifact, known
       }
     } else if (SURFACE_TYPES.has(event.type) && event['surfaceOp'] !== 'append') {
       const replace = record(event['surfaceOp'], 'surface replacement')
-      if (replace['start'] === head || replace['end'] === head) throw new SessionFormatError('surface replacement cannot shadow the protected system head')
+      if (replace['startSeq'] === head || replace['endSeq'] === head) throw new SessionFormatError('surface replacement cannot shadow the protected system head')
     }
     if (event.type === 'compaction/prune' || event.type === 'compaction/summary') {
       const data = record(event.data, event.type)
@@ -63,7 +64,11 @@ export function restoreReleasedV3Artifact(artifact: SessionFormatArtifact, known
       }
     }
     if (SURFACE_TYPES.has(event.type)) hasSurface = true
-    return relationshipEvent(event)
+    const projected = relationshipEvent(event)
+    if (!SURFACE_TYPES.has(event.type) || event['surfaceOp'] === 'append') return projected
+    const replacement = event['surfaceOp'] as { readonly startSeq: number; readonly endSeq: number }
+    // Only the frozen relationship view uses released endpoint names.
+    return { ...projected, surfaceOp: { op: 'replace', start: replacement.startSeq, end: replacement.endSeq } }
   })
   restoreReleasedV2Artifact({ ...artifact, header: { ...artifact.header, version: 2 }, events }, knownEventTypes, 3)
   return artifact

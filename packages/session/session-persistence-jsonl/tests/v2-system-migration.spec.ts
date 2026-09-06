@@ -123,9 +123,9 @@ describe('V2 system prompts through current Session and JSONL persistence', () =
         surfaceOp: event.surfaceOp, sourceEventSeqs: event.sourceEventSeqs,
       }))).toEqual([
         { seq: 2, content: [], surfaceOp: 'append', sourceEventSeqs: undefined },
-        { seq: 4, content: prompt('initial').content, surfaceOp: { op: 'replace', start: 2, end: 2 }, sourceEventSeqs: [2] },
-        { seq: 6, content: prompt('changed').content, surfaceOp: { op: 'replace', start: 4, end: 4 }, sourceEventSeqs: [4] },
-        { seq: 8, content: [], surfaceOp: { op: 'replace', start: 6, end: 6 }, sourceEventSeqs: [6] },
+        { seq: 4, content: prompt('initial').content, surfaceOp: { op: 'replace', startSeq: 2, endSeq: 2 }, sourceEventSeqs: [2] },
+        { seq: 6, content: prompt('changed').content, surfaceOp: { op: 'replace', startSeq: 4, endSeq: 4 }, sourceEventSeqs: [4] },
+        { seq: 8, content: [], surfaceOp: { op: 'replace', startSeq: 6, endSeq: 6 }, sourceEventSeqs: [6] },
       ])
       assertRequestHistory(prepared, reader)
       const session = await restore(reader)
@@ -198,7 +198,7 @@ describe('V2 system prompts through current Session and JSONL persistence', () =
       prepared = (await reader.read()).events
       expect(reader.inheritedEventCount).toBe(14)
       expect(prepared[7]).toMatchObject({ type: 'compaction/prune', data: { shadowedRange: { start: 3, end: 6 }, shadowedSeqs: [3, 6] } })
-      expect(prepared[8]).toMatchObject({ type: 'user/message', surfaceOp: { op: 'replace', start: 3, end: 6 }, sourceEventSeqs: [3, 6] })
+      expect(prepared[8]).toMatchObject({ type: 'user/message', surfaceOp: { op: 'replace', startSeq: 3, endSeq: 6 }, sourceEventSeqs: [3, 6] })
       expect(prepared[10]).toMatchObject({ type: 'command/done', data: { sourceEventSeq: 8 } })
       expect(prepared[11]).toMatchObject({ type: 'session/title', data: { messageSeqs: [3, 6] } })
       expect(prepared[14]).toMatchObject({ type: 'session/end-seed', seq: 14, data: { inherited: true } })
@@ -224,7 +224,7 @@ describe('V2 system prompts through current Session and JSONL persistence', () =
       session.append('system/message', {
         turn: 2, step: 1,
         message: freezeMessage({ role: 'system', id: MessageId('resumed-system'), content: [{ type: 'text', text: 'resumed prompt' }], source: { kind: 'plugin', plugin: '@deepseek-ai/dsh-system-prompt' } }),
-      }, { surfaceOp: { op: 'replace', start: SessionSeq(4), end: SessionSeq(4) }, sourceEventSeqs: [SessionSeq(4)] })
+      }, { surfaceOp: { op: 'replace', startSeq: SessionSeq(4), endSeq: SessionSeq(4) }, sourceEventSeqs: [SessionSeq(4)] })
       session.append('step/end', { turn: 2, step: 1 })
       session.append('turn/end', { turn: 2, reason: { kind: 'completed' } })
       expected = session.snapshotEvents()

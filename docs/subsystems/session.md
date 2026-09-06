@@ -112,6 +112,7 @@ interface SessionEventMap {
     turn: number
     step: number
     message: ToolResultMessage
+    /** Optional failure identity; allowed only when the tool-result block has `isError: true`. */
     error?: { name: string; code: string }
     meta?: JsonValue
   }
@@ -183,7 +184,7 @@ interface EpochHeader {
 }
 ```
 
-Canonical form represents an empty tool list as an absent field, matching how requests are built. Legacy v0 logs containing the legacy `request/header-delta` event or its full-snapshot `fallback` reason are rejected at seed, append, and persistence-load boundaries rather than replayed incompletely.
+Current event acceptance requires canonical `request/header.header`: any `system` field is forbidden, and `tools: []` and `adapterDefaults: {}` must be omitted. Whitespace-only system-message content, `config.stop: []`, and nested extensions remain unchanged. Seed, append, and current persistence reads reject noncanonical headers rather than silently normalizing them; [the V3 envelope decision](../../.agents/notes/implemented/architecture/2026-09-06-v3-canonical-session-envelopes.md) owns historical conversion. Legacy v0 logs containing `request/header-delta` or its full-snapshot `fallback` reason are rejected rather than replayed incompletely.
 
 ### The route capacity event: `request/context`
 
@@ -237,7 +238,7 @@ type OptionalSessionSeq = SessionSeq | null
  * unions), so `switch (event.type)` narrows `event.data` without casts.
  *
  * The {@link sourceEventSeqs} and {@link surfaceOp} fields are conditional:
- * they only exist on {@link SurfaceEventType} variants (`user/message`,
+ * they only exist on {@link SurfaceEventType} variants (`system/message`, `user/message`,
  * `assistant/message`, `tool/result`).
  * Non-surface events (boundary markers, attempts, errors) never carry
  * surface metadata — the compiler enforces this at `Session.append()`
@@ -262,22 +263,16 @@ type SessionEvent<T extends SessionEventType = SessionEventType> = {
      * inconvenience) rather than silently resuming a gutted session.
      */
     ignorable?: true
-  } & (K extends SurfaceEventType ? {
-    /**
-     * Seq numbers of earlier events that this event cites as sources, such as
-     * the surface nodes shadowed by a compaction replacement. A v2
-     * `assistant/message` embeds its provider stream and cannot carry this field.
-     */
-    sourceEventSeqs?: SessionSeq[]
-    /** How this event entered the surface; absent for non-surface events. */
-    surfaceOp?: SurfaceOp
-  } : object)
+  } & (K extends SurfaceEventType ? SurfaceIntent<K> : {
+    surfaceOp?: never
+    sourceEventSeqs?: never
+  })
 }[T]
 ```
 
 `SessionEventType = keyof SessionEventMap`. Because `SessionEventMap` is merge-extensible, switches over `SessionEvent` must NOT use `assertNever` — a plugin-added variant is a valid unknown value; handle the known cases and fall through `default`.
 
-V2 `assistant/message` embeds its provider stream and cannot carry `sourceEventSeqs`. User and tool surface events may cite a complete non-empty set of unique earlier events when their provenance or replacement operation requires it.
+Every surface event requires `surfaceOp`; known log-only events forbid both surface metadata fields. Native unknown or obsolete ignorable envelopes remain opaque. `assistant/message` embeds its provider stream and forbids `sourceEventSeqs`. System, user, and tool surface events may cite a complete non-empty set of unique earlier events when their provenance or replacement operation requires it. A `tool/result` may carry `data.error` only when its tool-result block has `isError: true`; failure identity remains optional for failed results.
 
 ## Surface types
 
@@ -289,7 +284,7 @@ The four message-producing types (`SurfaceEventType` — `system/message`, `user
 /**
  * The subset of {@link SessionEventType} values whose events produce LLM
  * messages and are eligible to appear on the ordered surface. Only these
- * event types may carry {@link SurfaceOp}; user and tool events may also cite
+ * event types may carry {@link SurfaceOp}; system, user, and tool events may also cite
  * earlier sources through {@link SessionEvent.sourceEventSeqs}.
  */
 type SurfaceEventType =
@@ -308,19 +303,19 @@ type SurfaceEventType =
  *
  * - `'append'`: added to the tail — normal path for user/assistant/tool
  *   messages.
- * - `{ op: 'replace', start, end }`: replaces surface nodes from `start`
- *   (inclusive) through `end` (inclusive) with this node. Both must exist as
- *   surface nodes in the current surface. `start === end` replaces a single
+ * - `{ op: 'replace', startSeq, endSeq }`: replaces surface nodes from `startSeq`
+ *   (inclusive) through `endSeq` (inclusive) with this node. Both must exist as
+ *   surface nodes in the current surface. `startSeq === endSeq` replaces a single
  *   node. The node's {@link SessionEvent.sourceEventSeqs} must include every
  *   shadowed surface node. Used by compaction; any surface-replacing producer
  *   may use it.
  */
 type SurfaceOp =
   | 'append'
-  | { op: 'replace'; start: SessionSeq; end: SessionSeq }
+  | { op: 'replace'; startSeq: SessionSeq; endSeq: SessionSeq }
 ```
 
-`'append'` is the normal tail-append path. `replace` shadows surface entries from `start` through `end` inclusive (both must be valid surface seqs; `start === end` replaces a single entry) and inserts the new event in their place.
+`'append'` is the normal tail-append path. `replace` contains exactly `op`, `startSeq`, and `endSeq`, with no aliases or extra keys. It shadows the inclusive span between those current surface event sequences and inserts the new event in their place; equal endpoints replace one entry. Endpoints must precede the replacing event, but their relative order is surface order, not numeric sequence order.
 
 ### `SurfaceIntent` — the parameter to `session.append()`
 
@@ -332,7 +327,7 @@ type SurfaceOp =
 type SurfaceIntent<T extends SurfaceEventType = SurfaceEventType> = {
   surfaceOp: SurfaceOp
 } & (T extends 'assistant/message' ? {
-  /** V2 Assistant messages embed their provider stream instead of citing source events. */
+  /** Assistant messages embed their provider stream instead of citing source events. */
   sourceEventSeqs?: never
 } : {
   /** Complete non-empty set of known earlier source-event seqs. */
@@ -533,6 +528,7 @@ declare class Session {
    *   (BigInt, function, symbol, undefined, negative zero, non-finite number,
    *   circular reference, sparse array, or an exotic object such as
    *   Map/Set/Date/class instance), or when the candidate violates the
+   *   request-header empty-field or tool-error consistency rules, or the
    *   canonical surface contract (marker shape and eligibility, unique
    *   earlier source-event references, positional replacement validity, and complete
    *   shadowed-node coverage). One iterative pass reads, validates, and

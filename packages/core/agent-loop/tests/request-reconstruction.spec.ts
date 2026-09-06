@@ -510,7 +510,7 @@ describe('request stability across the loop', () => {
       content: [{ type: 'text', text: '[summary of turn 1]' }],
       source: { kind: 'plugin', plugin: 'test-compact' },
     }), {
-      surfaceOp: { op: 'replace', start: nodes[1]!, end: nodes[2]! },
+      surfaceOp: { op: 'replace', startSeq: nodes[1]!, endSeq: nodes[2]! },
       sourceEventSeqs: [nodes[1]!, nodes[2]!],
     })
 
@@ -546,7 +546,7 @@ describe('request stability across the loop', () => {
         content: [{ type: 'text', text: '[summary for retry]' }],
         source: { kind: 'plugin', plugin: 'test-compact' },
       }), {
-        surfaceOp: { op: 'replace', start: first, end: first },
+        surfaceOp: { op: 'replace', startSeq: first, endSeq: first },
         sourceEventSeqs: [first],
       })
       return { kind: 'retry' }
@@ -583,7 +583,7 @@ describe('request stability across the loop', () => {
     expect(snapshots.map(event => event.data.reason)).toEqual(['initial', 'series'])
     const systemNodes = agent.session.snapshotEvents().filter(e => e.type === 'system/message')
     expect(systemNodes).toHaveLength(2)
-    expect(systemNodes[1]?.surfaceOp).toEqual({ op: 'replace', start: systemNodes[0]?.seq, end: systemNodes[0]?.seq })
+    expect(systemNodes[1]?.surfaceOp).toEqual({ op: 'replace', startSeq: systemNodes[0]?.seq, endSeq: systemNodes[0]?.seq })
     expect(systemNodes[1]?.sourceEventSeqs).toEqual([systemNodes[0]?.seq])
     const head = adapter.requests[2]!.messages[0]!
     expect(head.role).toBe('system')
@@ -650,7 +650,7 @@ describe('request stability across the loop', () => {
     await waitForIdle(ctx, agent)
     let systemNodes = agent.session.snapshotEvents().filter(e => e.type === 'system/message')
     expect(systemNodes).toHaveLength(2)
-    expect(systemNodes[1]?.surfaceOp).toEqual({ op: 'replace', start: systemNodes[0]?.seq, end: systemNodes[0]?.seq })
+    expect(systemNodes[1]?.surfaceOp).toEqual({ op: 'replace', startSeq: systemNodes[0]?.seq, endSeq: systemNodes[0]?.seq })
     expect(agent.session.snapshotEvents().flatMap(event =>
       event.type === 'request/header' ? [event.data.reason] : [])).toEqual(['initial', 'series'])
 
@@ -673,7 +673,7 @@ describe('request stability across the loop', () => {
     systemNodes = agent.session.snapshotEvents().filter(e => e.type === 'system/message')
     expect(systemNodes).toHaveLength(5)
     expect(systemNodes[3]?.data.message.content).toEqual([])
-    expect(systemNodes[3]?.surfaceOp).toEqual({ op: 'replace', start: systemNodes[2]?.seq, end: systemNodes[2]?.seq })
+    expect(systemNodes[3]?.surfaceOp).toEqual({ op: 'replace', startSeq: systemNodes[2]?.seq, endSeq: systemNodes[2]?.seq })
     expect(agent.session.surface.nodes[0]).toBe(systemNodes[4]?.seq)
     const systemTexts = adapter.requests[3]!.messages.flatMap(message => message.role === 'system' ? [message.content[0]] : [])
     expect(systemTexts).toEqual([
@@ -696,7 +696,7 @@ describe('request stability across the loop', () => {
       content: [{ type: 'text', text: '[summary of turn 1]' }],
       source: { kind: 'plugin', plugin: 'test-compact' },
     }), {
-      surfaceOp: { op: 'replace', start: nodes[1]!, end: nodes[2]! },
+      surfaceOp: { op: 'replace', startSeq: nodes[1]!, endSeq: nodes[2]! },
       sourceEventSeqs: [nodes[1]!, nodes[2]!],
     })
     ctx.systemPrompt.section({ name: 'extra', order: 2, text: 'new guidance' })
@@ -705,7 +705,7 @@ describe('request stability across the loop', () => {
 
     const systemNodes = agent.session.snapshotEvents().filter(e => e.type === 'system/message')
     expect(systemNodes).toHaveLength(2)
-    expect(systemNodes[1]?.surfaceOp).toEqual({ op: 'replace', start: systemNodes[0]?.seq, end: systemNodes[0]?.seq })
+    expect(systemNodes[1]?.surfaceOp).toEqual({ op: 'replace', startSeq: systemNodes[0]?.seq, endSeq: systemNodes[0]?.seq })
     expect(adapter.requests[1]!.messages.map(message => message.role)).toEqual(['system', 'user', 'user'])
     expect(agent.session.snapshotEvents().flatMap(event =>
       event.type === 'request/header' ? [event.data.reason] : [])).toEqual(['initial', 'series'])
@@ -729,7 +729,7 @@ describe('request stability across the loop', () => {
     expect(headers.map(event => [event.data.reason, event.data.startsSeries])).toEqual([['initial', undefined], ['change', true]])
     const systemNodes = agent.session.snapshotEvents().filter(e => e.type === 'system/message')
     expect(systemNodes).toHaveLength(2)
-    expect(systemNodes[1]?.surfaceOp).toEqual({ op: 'replace', start: systemNodes[0]?.seq, end: systemNodes[0]?.seq })
+    expect(systemNodes[1]?.surfaceOp).toEqual({ op: 'replace', startSeq: systemNodes[0]?.seq, endSeq: systemNodes[0]?.seq })
     expect(adapter.requests[1]!.messages.filter(message => message.role === 'system')).toHaveLength(1)
   })
 

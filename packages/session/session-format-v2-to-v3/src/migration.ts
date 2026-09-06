@@ -1,14 +1,14 @@
-/** Streaming promotion of request-header prompts into one protected system-message head. */
+/** Streaming system-prompt promotion followed by canonical V3 envelope conversion. */
 
 import { createHash } from 'node:crypto'
 import { SessionFormatError, SessionFormatUnsupportedMigrationError, defineSessionFormatMigration, sessionFormatCount } from '@deepseek-ai/dsh-session-format'
 import type { SessionFormatEvent, SessionFormatEventRun, SessionFormatJsonObject, SessionFormatJsonValue, SessionFormatMigrationContext, SessionFormatMigrationStage, SessionFormatMigrationStageInput } from '@deepseek-ai/dsh-session-format'
 import { assertReleasedV2Header } from '@deepseek-ai/dsh-session-format-v1-to-v2'
-import { assertEvent, record, SURFACE_TYPES } from './payload.ts'
+import { assertEvent, canonicalizeTransformedEvent, record, SURFACE_TYPES } from './payload.ts'
 import { remapEvent } from './references.ts'
 import { assertReleasedV3Header } from './validation.ts'
 
-/** Promote system prompts and rename legacy PTC presets; refuse unclassified payloads and chronology changes. */
+/** Promote system prompts, remap audited references, and canonicalize envelopes and PTC vocabulary. */
 export const sessionFormatV2ToV3 = defineSessionFormatMigration({
   name: '@deepseek-ai/dsh-session-format-v2-to-v3',
   fromVersion: 2,
@@ -67,7 +67,7 @@ class ReleasedV2ToV3Stage implements SessionFormatMigrationStage {
     }
     const target = remapEvent(source, this.targetSeq, this.mapping)
     this.mapping.push(this.targetSeq++)
-    context.emitEvent(renamePtcEvent(target))
+    context.emitEvent(canonicalizeTransformedEvent(renamePtcEvent(target)))
     if (event.type === 'step/start') {
       this.step = { turn: data['turn'] as number, step: data['step'] as number }
       if (this.head === undefined) this.emitSystem('', event, context)
@@ -117,7 +117,7 @@ class ReleasedV2ToV3Stage implements SessionFormatMigrationStage {
     }
     this.generatedIds.add(id)
     const seq = this.targetSeq++
-    context.emitEvent({
+    context.emitEvent(canonicalizeTransformedEvent({
       type: 'system/message', seq, time: anchor.time,
       data: {
         ...this.step,
@@ -130,7 +130,7 @@ class ReleasedV2ToV3Stage implements SessionFormatMigrationStage {
       ...(this.head === undefined
         ? { surfaceOp: 'append' }
         : { surfaceOp: { op: 'replace', start: this.head, end: this.head }, sourceEventSeqs: [this.head] }),
-    })
+    }))
     this.head = seq
     this.prompt = prompt
   }

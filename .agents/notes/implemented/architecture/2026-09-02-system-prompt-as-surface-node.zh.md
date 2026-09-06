@@ -25,7 +25,7 @@ Status: implemented
 | 情形 | surface 操作 |
 |---|---|
 | surface 上没有存活的 `system/message`（包括渲染后的提示词为空时） | 追加 `system/message`；在会话的首个步骤中它是 surface 第 0 号节点，位于该步骤首条 `user/message` 之前 |
-| 有存活的 `system/message` 且渲染后的提示词与其文本不同（包括提示词变为空） | 恰好替换该节点：`surfaceOp: { op: 'replace', start: <该节点的 seq>, end: <同一值> }`，`sourceEventSeqs: [<该节点的 seq>]`；空提示词产生一个投影为无消息的空内容节点 |
+| 有存活的 `system/message` 且渲染后的提示词与其文本不同（包括提示词变为空） | 恰好替换该节点：`surfaceOp: { op: 'replace', startSeq: <该节点的 seq>, endSeq: <同一值> }`，`sourceEventSeqs: [<该节点的 seq>]`；空提示词产生一个投影为无消息的空内容节点 |
 | 渲染后的提示词与存活节点的文本相同 | 无操作 |
 
 当初始渲染的提示词为空时，循环在初始接纳的用户消息之前预留空系统头部，使稍后首次变为非空的提示词仍替换第 0 号节点。省略该空节点会让后来的提示词追加在用户历史之后，pi-ai 会将其转换为用户消息，而不是 `systemPrompt`。替换第 0 号节点是头部重写在 surface 上的表达：提供方前缀从第一个 token 起改变，日志通过 `sourceEventSeqs` 记录被遮蔽的节点，`replaceGeneration` 与压缩替换时一样推进。因此循环的 `startsSeries` 检测（`requestSurfaceGeneration !== surfaceGeneration`）无需在 `headerEquals` 中比较 `system` 即可覆盖提示词变更。`request/header` 保留 `initial`、`resume`、`change`、`series` 四种 reason；`change` 表示 config 或 tools 变更，提示词替换之后跟随的未变 header 记为 `series`。
@@ -66,7 +66,7 @@ Status: implemented
 
 [已发布格式策略](2026-08-31-released-session-format-migrations.zh.md)保持 V0、V1、V2 代际字节冻结，并且只发布 V3 后继代际。V3 是一个尚未发布的目标，而不是每个功能一个新版本；它在发布前可以演化，因此集成必须使用可丢弃的 home。已有 V3 代际不会重跑 V2-to-V3。投影缓存版本 4 独立于 Session 格式，并不意味着 Session V4。
 
-[规范信封工作](https://github.com/deepseek-ai/deepseek-harness/pull/3636)独立开展，此处尚未集成。它在同一 V2-to-V3 迁移边中的组合顺序位于该结构转换之后，因此规范化的是转换后的事件，而不是替代该转换。
+[规范信封转换](2026-09-06-v3-canonical-session-envelopes.zh.md)在同一 V2-to-V3 迁移边中位于结构插入与引用重映射之后。它规范化原始与合成事件的替换端点；只有这个最终阶段保留其输入事件数与序列坐标，而不是整个迁移都保留。
 
 ## Alternatives considered
 

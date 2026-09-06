@@ -16,7 +16,7 @@ import type { Message } from '@deepseek-ai/dsh-llm'
 import { SESSION_FORMAT_VERSION, SessionLogOffset, SessionSeq } from './types.ts'
 import type { TypertLookup } from '@deepseek-ai/dsh-typert-protocol'
 import type { CreateSessionOptions, EpochHeader, PrepareSessionOptions, RequestContext, SessionEvent, SessionEventMap, SessionEventType, SessionHeader, SessionId, SessionSeedEventState, SurfaceIntent, SurfaceEventType } from './types.ts'
-import { deriveEventMessage, SurfaceManager } from './surface.ts'
+import { deriveEventMessage, SurfaceManager, validateSessionEventData, validateSurfaceMetadata } from './surface.ts'
 import type { SessionSurface } from './surface.ts'
 import { foldRequestHeader } from './request-header.ts'
 
@@ -161,8 +161,11 @@ function snapshotSessionHeader(id: SessionId, source?: SessionHeader): SessionHe
  * Use {@link snapshotSessionEvent} when exclusive ownership is not guaranteed.
  * @param event - exclusively owned event imported across a trusted boundary.
  * @returns the same event object with a validated, deeply frozen message.
+ * @throws when event-local surface metadata, request-header fields, or message invariants are invalid; history relations are not checked.
  */
 export function adoptSessionEvent<T extends SessionEvent>(event: T): T {
+  validateSessionEventData(event, `session event at seq ${event.seq}`)
+  validateSurfaceMetadata(event)
   assertMessageEventShape(
     event,
     `session event at seq ${event.seq}`,
@@ -193,8 +196,11 @@ export function snapshotSessionEvent<T extends SessionEvent>(event: T): T {
 }
 
 /** Validate the fixed event envelope after one-pass JSON materialization. */
-function assertSessionEventEnvelope(value: Record<string, unknown>, index: number): asserts value is SessionEvent {
-  const event = value
+function assertSessionEventEnvelope(value: unknown, index: number): asserts value is SessionEvent {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error(`seed event at index ${index} has an invalid event envelope`)
+  }
+  const event = value as Record<string, unknown>
   for (const key in event) {
     switch (key) {
       case 'type':
@@ -219,6 +225,7 @@ function assertSessionEventEnvelope(value: Record<string, unknown>, index: numbe
     || (event['ignorable'] !== undefined && event['ignorable'] !== true)) {
     throw new Error(`seed event at index ${index} has an invalid event envelope`)
   }
+  validateSessionEventData(event as SessionEvent, `seed ${type} at index ${index}`)
   switch (type) {
     case 'request/header':
     case 'system/message':
@@ -238,11 +245,8 @@ function assertCurrentLlmShape(event: Record<string, unknown>, index: number): v
     ? data as Record<string, unknown>
     : undefined
   if (event['type'] === 'request/header') {
-    const header = record?.['header']
-    const headerRecord = typeof header === 'object' && header !== null && !Array.isArray(header)
-      ? header as Record<string, unknown>
-      : undefined
-    const config = headerRecord?.['config']
+    const headerRecord = record?.['header'] as Record<string, unknown>
+    const config = headerRecord['config']
     if (!hasProviderModel(config)) throw new Error(`seed request/header at index ${index} lacks provider/model`)
     const configRecord = config as Record<string, unknown>
     const reasoningEffort = configRecord['reasoningEffort']
@@ -250,7 +254,7 @@ function assertCurrentLlmShape(event: Record<string, unknown>, index: number): v
       && (typeof reasoningEffort !== 'string' || reasoningEffort.length === 0)) {
       throw new Error(`seed request/header at index ${index} has an invalid reasoningEffort`)
     }
-    assertAdapterDefaults(headerRecord?.['adapterDefaults'], configRecord, index)
+    assertAdapterDefaults(headerRecord['adapterDefaults'], configRecord, index)
     const reason = record?.['reason']
     if (reason !== 'initial' && reason !== 'resume' && reason !== 'change' && reason !== 'series') {
       throw new Error(`seed request/header at index ${index} has an invalid reason`)
@@ -685,6 +689,7 @@ export class Session {
    *   (BigInt, function, symbol, undefined, negative zero, non-finite number,
    *   circular reference, sparse array, or an exotic object such as
    *   Map/Set/Date/class instance), or when the candidate violates the
+   *   request-header empty-field or tool-error consistency rules, or the
    *   canonical surface contract (marker shape and eligibility, unique
    *   earlier source-event references, positional replacement validity, and complete
    *   shadowed-node coverage). One iterative pass reads, validates, and
@@ -724,6 +729,7 @@ export class Session {
       data: dataSnapshot,
       ...(surfaceMetadataSnapshot as { surfaceOp?: unknown; sourceEventSeqs?: unknown }),
     } as unknown as SessionEvent<T>)
+    validateSessionEventData(event, `session event "${type}" at seq ${event.seq}`)
     this.surfaceManager.validateNext(event as SessionEvent)
 
     if (entry !== undefined) entry.appending = true

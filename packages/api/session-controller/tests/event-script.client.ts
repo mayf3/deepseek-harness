@@ -145,7 +145,7 @@ export const ev = {
   ): SessionEvent =>
     at(seq, {
       type: 'user/message',
-      surfaceOp: { op: 'replace', start, end },
+      surfaceOp: { op: 'replace', startSeq: start, endSeq: end },
       sourceEventSeqs: [summarySeq, start, end],
       data: createUserMessage({
         content: text('<context_checkpoint>model only</context_checkpoint>'),

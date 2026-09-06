@@ -556,7 +556,7 @@ describe('SubagentRuntime.listChildren', () => {
       seq: SessionSeq(3),
       time: 3,
       data: { version: SUBAGENT_DESCRIPTOR_VERSION, mode: 'continuable', provider: 7 },
-    } as SessionEvent)
+    } as unknown as SessionEvent)
     events[4] = { ...events[4]!, seq: SessionSeq(4) }
     const invalidated = await authorChild(ctx, '00000000-0000-4000-8000-00000000ad01', {
       parentSession: parent.id,
@@ -836,7 +836,7 @@ describe('SubagentRuntime.listChildren', () => {
         content: [{ type: 'text', text: 'summary of everything' }],
         source: { kind: 'plugin', plugin: 'compact' },
       }),
-      surfaceOp: { op: 'replace', start: SessionSeq(1), end: SessionSeq(1) },
+      surfaceOp: { op: 'replace', startSeq: SessionSeq(1), endSeq: SessionSeq(1) },
       sourceEventSeqs: [SessionSeq(1)],
     })
     const compacted = await authorChild(ctx, '00000000-0000-4000-8000-00000000c1de', {

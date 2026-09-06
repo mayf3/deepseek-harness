@@ -499,7 +499,7 @@ describe('compactNow transaction and failure classification', () => {
         content: [{ type: 'text', text: 'competing replacement' }],
         source: { kind: 'plugin', plugin: 'rival' },
       }), {
-        surfaceOp: { op: 'replace', start: head!, end: head! },
+        surfaceOp: { op: 'replace', startSeq: head!, endSeq: head! },
         sourceEventSeqs: [head!],
       })
     }
@@ -520,7 +520,7 @@ describe('compactNow transaction and failure classification', () => {
         content: [{ type: 'text', text: 'rewritten middle node' }],
         source: { kind: 'plugin', plugin: 'rival' },
       }), {
-        surfaceOp: { op: 'replace', start: middle!, end: middle! },
+        surfaceOp: { op: 'replace', startSeq: middle!, endSeq: middle! },
         sourceEventSeqs: [middle!],
       })
     }
@@ -551,7 +551,7 @@ describe('compactNow transaction and failure classification', () => {
           content: [{ type: 'text', text: 'late competing replacement' }],
           source: { kind: 'plugin', plugin: 'rival' },
         }), {
-          surfaceOp: { op: 'replace', start: head, end: head },
+          surfaceOp: { op: 'replace', startSeq: head, endSeq: head },
           sourceEventSeqs: [head],
         })
       })

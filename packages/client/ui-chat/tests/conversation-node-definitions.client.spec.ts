@@ -187,7 +187,7 @@ function systemMessage(text: string) {
 function systemAt(seq: number, text: string, replaces?: number): SessionLiveEventEntry {
   return at(seq, 'system/message', { turn: 1, step: 1, message: systemMessage(text) }, replaces === undefined
     ? { surfaceOp: 'append' }
-    : { surfaceOp: { op: 'replace', start: replaces, end: replaces }, sourceEventSeqs: [replaces] })
+    : { surfaceOp: { op: 'replace', startSeq: replaces, endSeq: replaces }, sourceEventSeqs: [replaces] })
 }
 
 /** Append an in-history prompt update the way the loop does on an `in-history` route. */
@@ -1592,7 +1592,7 @@ describe('built-in conversation node Definitions', () => {
       at(12, 'user/message', {
         turn: 1, step: 3, id: 'summary', role: 'user',
         content: [{ type: 'text', text: 'summary' }], source: { kind: 'plugin', plugin: 'compaction' },
-      }, { surfaceOp: { op: 'replace', start: 5, end: 9 }, sourceEventSeqs: [5, 8, 9] }),
+      }, { surfaceOp: { op: 'replace', startSeq: 5, endSeq: 9 }, sourceEventSeqs: [5, 8, 9] }),
       at(13, 'request/header', {
         reason: 'series', header: { config: { provider: 'test', model: 'test' }, tools: [] },
       }),
@@ -1855,7 +1855,7 @@ describe('built-in conversation node Definitions', () => {
       at(6, 'user/message', {
         ...textMessage('compacted', 'summary'),
         source: { kind: 'plugin', plugin: 'compact' },
-      }, { surfaceOp: { op: 'replace', start: 4, end: 4 } }),
+      }, { surfaceOp: { op: 'replace', startSeq: 4, endSeq: 4 } }),
       at(7, 'request/header', {
         reason: 'series',
         header: { config: { provider: 'fake', model: 'fake' } },
@@ -2036,18 +2036,18 @@ describe('built-in conversation node Definitions', () => {
       at(3, 'user/message', {
         ...textMessage('replacement-user', 'model-only context'),
         source: { kind: 'plugin', plugin: 'foreign' },
-      }, { surfaceOp: { op: 'replace', start: 1, end: 1 } }),
+      }, { surfaceOp: { op: 'replace', startSeq: 1, endSeq: 1 } }),
       at(4, 'assistant/message', {
         turn: 1,
         step: 1,
         message: assistantMessage('replacement-assistant', 'rewritten answer'),
-      }, { surfaceOp: { op: 'replace', start: 2, end: 2 } }),
+      }, { surfaceOp: { op: 'replace', startSeq: 2, endSeq: 2 } }),
       at(5, 'tool/call', { turn: 1, step: 1, callId: 'root', name: 'read', arguments: '{}' }),
       at(6, 'tool/result', {
         turn: 1,
         step: 1,
         message: toolResult('root', 'pruned result'),
-      }, { surfaceOp: { op: 'replace', start: 3, end: 3 } }),
+      }, { surfaceOp: { op: 'replace', startSeq: 3, endSeq: 3 } }),
     ])
 
     const current = snapshot(value)
@@ -2128,7 +2128,7 @@ describe('built-in conversation node Definitions', () => {
           compactionId: 'manual-1',
           sourceCommandId: 'command-1',
         },
-      }, { surfaceOp: { op: 'replace', start: 1, end: 2 } }),
+      }, { surfaceOp: { op: 'replace', startSeq: 1, endSeq: 2 } }),
       at(14, 'compaction/end', {
         compactionId: 'manual-1',
         sourceCommandId: 'command-1',
@@ -2149,7 +2149,7 @@ describe('built-in conversation node Definitions', () => {
       at(22, 'user/message', {
         ...textMessage('automatic-checkpoint', 'checkpoint'),
         source: { kind: 'plugin', plugin: 'compact', compactionId: 'automatic-1' },
-      }, { surfaceOp: { op: 'replace', start: 3, end: 4 } }),
+      }, { surfaceOp: { op: 'replace', startSeq: 3, endSeq: 4 } }),
       at(23, 'compaction/end', { compactionId: 'automatic-1', turn: null }),
     ])
 
@@ -2168,7 +2168,7 @@ describe('built-in conversation node Definitions', () => {
       at(13, 'user/message', {
         ...textMessage('checkpoint', 'checkpoint'),
         source: { kind: 'plugin', plugin: 'compact', compactionId: 'compact-1' },
-      }, { surfaceOp: { op: 'replace', start: 1, end: 8 } }),
+      }, { surfaceOp: { op: 'replace', startSeq: 1, endSeq: 8 } }),
     ], true)
     const before = node(snapshot(value), 'compaction')
     expect(before?.data).toMatchObject({ summary: null, summaryEventSeq: null })
@@ -2209,7 +2209,7 @@ describe('built-in conversation node Definitions', () => {
       at(11, 'user/message', {
         ...textMessage('checkpoint-windowed', 'checkpoint'),
         source: { kind: 'plugin', plugin: 'compact', compactionId: 'compact-windowed' },
-      }, { surfaceOp: { op: 'replace', start: 1, end: 3 } }),
+      }, { surfaceOp: { op: 'replace', startSeq: 1, endSeq: 3 } }),
     ], true)
 
     expect(node(snapshot(value), 'compaction')?.data).toMatchObject({
@@ -2233,7 +2233,7 @@ describe('built-in conversation node Definitions', () => {
       at(22, 'user/message', {
         ...textMessage('legacy-checkpoint', 'checkpoint'),
         source: { kind: 'plugin', plugin: 'compact' },
-      }, { surfaceOp: { op: 'replace', start: 1, end: 3 } }),
+      }, { surfaceOp: { op: 'replace', startSeq: 1, endSeq: 3 } }),
       at(23, 'compaction/end', { turn: null }),
     ], true)
 
@@ -2443,7 +2443,7 @@ describe('built-in conversation node Definitions', () => {
           compactionId: 'manual-1',
           sourceCommandId: 'command-1',
         },
-      }, { surfaceOp: { op: 'replace', start: 1, end: 2 } }),
+      }, { surfaceOp: { op: 'replace', startSeq: 1, endSeq: 2 } }),
       at(22, 'command/done', {
         commandId: 'command-1',
         kind: 'success',

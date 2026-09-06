@@ -180,7 +180,7 @@ describe('first-party Session format catalog', () => {
       { ...rows[4], seq: 5, data: { target: 'next-turn', start: 0, inserted: [renamedMessage(oldId), renamedMessage(newId)] } },
       { ...rows[5], seq: 6, type: 'tool/ptc-dispatch-start' },
       { ...rows[6], seq: 7, type: 'tool/ptc-dispatch' },
-      { ...rows[7], seq: 8, sourceEventSeqs: [3, 4], surfaceOp: { op: 'replace', start: 3, end: 4 }, data: renamedMessage('tools-code-mode:replacement') },
+      { ...rows[7], seq: 8, sourceEventSeqs: [3, 4], surfaceOp: { op: 'replace', startSeq: 3, endSeq: 4 }, data: renamedMessage('tools-code-mode:replacement') },
       { ...rows[8], seq: 9 }, { ...rows[9], seq: 10 },
     ]
     expect(artifact).toEqual({

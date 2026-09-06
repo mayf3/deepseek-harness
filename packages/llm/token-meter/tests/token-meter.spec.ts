@@ -332,7 +332,7 @@ describe('replay anchors and surface folds', () => {
       content: [{ type: 'text', text: 'short' }],
       source: { kind: 'plugin', plugin: 'test' },
     }), {
-      surfaceOp: { op: 'replace', start: assistant, end: assistant },
+      surfaceOp: { op: 'replace', startSeq: assistant, endSeq: assistant },
       sourceEventSeqs: [assistant],
     })
 
@@ -433,7 +433,7 @@ describe('replay anchors and surface folds', () => {
     seeded.append('user/message', createUserMessage({
       content: [{ type: 'text', text: 'replacement' }],
       source: { kind: 'plugin', plugin: 'test' },
-    }), { surfaceOp: { op: 'replace', start: first, end: first }, sourceEventSeqs: [first] })
+    }), { surfaceOp: { op: 'replace', startSeq: first, endSeq: first }, sourceEventSeqs: [first] })
     const after = service.measure(seeded)
     expect(after.nodes).toHaveLength(2)
     expect(after.nodes[0]!.seq).toBe(seeded.snapshotEvents().length - 1)
@@ -581,8 +581,7 @@ describe('malformed replay and listener lifecycle', () => {
           },
         }),
       },
-      surfaceOp: { op: 'replace', start: head, end: head },
-      sourceEventSeqs: [head],
+      surfaceOp: { op: 'replace', startSeq: head, endSeq: head },
     })
     expectRepeatedFailure(
       meter(),
@@ -605,7 +604,7 @@ describe('malformed replay and listener lifecycle', () => {
         content: [{ type: 'text', text: 'bad' }],
         source: { kind: 'user' },
       }),
-      surfaceOp: { op: 'replace', start: SessionSeq(99), end: SessionSeq(99) },
+      surfaceOp: { op: 'replace', startSeq: SessionSeq(99), endSeq: SessionSeq(99) },
       sourceEventSeqs: [head],
     })
     expectRepeatedFailure(meter(), session, /invalid current range/)

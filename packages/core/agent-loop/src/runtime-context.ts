@@ -28,7 +28,7 @@ export interface SystemPromptCommit {
   /** Rendered prompt or empty content: an empty head records no prompt; empty tails are dormant. */
   message: SystemMessage
   /** `append` for a new system node, otherwise a replacement of one surviving system node. */
-  intent: SurfaceIntent
+  intent: SurfaceIntent<'system/message'>
 }
 
 /** The request-series facts one prompt decision is made under. */
@@ -98,7 +98,7 @@ export class SystemPromptProjection {
   private replace(seq: SessionSeq, text: string): SystemPromptCommit {
     return {
       message: createSystemMessage(text, SOURCE),
-      intent: { surfaceOp: { op: 'replace', start: seq, end: seq }, sourceEventSeqs: [seq] },
+      intent: { surfaceOp: { op: 'replace', startSeq: seq, endSeq: seq }, sourceEventSeqs: [seq] },
     }
   }
 }

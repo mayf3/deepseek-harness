@@ -31,7 +31,7 @@ function commit(session: Session, turn: number, decision: SystemPromptCommit | u
 
 function replaceOf(seq: number): SurfaceIntent {
   const at = SessionSeq(seq)
-  return { surfaceOp: { op: 'replace', start: at, end: at }, sourceEventSeqs: [at] }
+  return { surfaceOp: { op: 'replace', startSeq: at, endSeq: at }, sourceEventSeqs: [at] }
 }
 
 describe('SystemPromptProjection', () => {
@@ -100,7 +100,7 @@ describe('SystemPromptProjection', () => {
 
       const next = projection.project('Follow this guidance.', REPLACING)[0]
       expect(next?.intent).toEqual({
-        surfaceOp: { op: 'replace', start: head.seq, end: head.seq },
+        surfaceOp: { op: 'replace', startSeq: head.seq, endSeq: head.seq },
         sourceEventSeqs: [head.seq],
       })
       const replacement = session.append('system/message', { turn: 2, step: 1, message: next!.message }, next!.intent)

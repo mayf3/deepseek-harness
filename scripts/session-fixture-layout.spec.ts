@@ -100,10 +100,37 @@ describe('canonicalSessionFixture', () => {
     const projected = [
       HEADER,
       '{"type":"turn/start","data":{"turn":1}}',
-      '{"type":"request/header","data":{"header":{"config":{"provider":"mock","model":"mock"},"system":"{{system}}","tools":"{{tools}}"},"reason":"initial"}}',
+      '{"type":"request/header","data":{"header":{"config":{"provider":"mock","model":"mock"},"tools":"{{tools}}"},"reason":"initial"}}',
       '',
     ].join('\n')
     expect(canonicalSessionFixture(projected)).toBe(projected)
+    expect(decodedBody(projected)[1]).not.toHaveProperty('data.header.tools')
+  })
+
+  it.each([0, 1, 2])('preserves v%i request-header tokens and source bytes after validation', (version) => {
+    const source = [
+      JSON.stringify({ type: 'session', version, id: 'fixture', createdAt: 1, delegationDepth: 0, ...version >= 2 ? { isSeeded: false } : {} }),
+      '{"type":"turn/start","data":{"turn":1}}',
+      '{"type":"step/start","data":{"turn":1,"step":1}}',
+      '{"type":"request/header","data":{"header":{"config":{"provider":"mock","model":"mock"},"system":"{{system}}","tools":"{{tools}}"},"reason":"initial"}}',
+      '',
+    ].join('\n')
+    expect(canonicalSessionFixture(source)).toBe(source)
+    const request = decodedBody(source).find(event => event.type === 'request/header')
+    expect(request).not.toHaveProperty('data.header.tools')
+    expect(request).not.toHaveProperty('data.header.system')
+  })
+
+  it('keeps genuine empty current tools for semantic replay to reject', () => {
+    const source = [
+      HEADER,
+      '{"type":"turn/start","data":{"turn":1}}',
+      '{"type":"request/header","data":{"header":{"config":{"provider":"mock","model":"mock"},"tools":[]},"reason":"initial"}}',
+      '',
+    ].join('\n')
+    const canonical = canonicalSessionFixture(source)
+    expect(canonical).toBe(source)
+    expect(() => decodedBody(canonical!)).toThrow(/session snapshot line 3:.*empty optional header fields must be omitted/)
   })
 
   it.each([0, 1, 2])('preserves physically valid v%i bytes without requiring migration to current', (version) => {
