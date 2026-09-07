@@ -12,7 +12,7 @@
  * author wrote them, and {@link mutatePatchFile} commits one edit under the
  * cross-process writer lock, through an atomic replace, and reads the result
  * back through the parser before reporting success.
- * @module @deepseek-ai/dsh-patch-file
+ * @module @deepseek-ai/dsh-app-boot/patch-file
  */
 
 import { mkdir, readFile } from 'node:fs/promises'

@@ -30,9 +30,6 @@
       "path": "../../util/atomic-write"
     },
     {
-      "path": "../../util/patch-file"
-    },
-    {
       "path": "../../util/launch-environment"
     },
     {

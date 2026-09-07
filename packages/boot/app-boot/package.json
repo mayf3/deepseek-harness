@@ -18,21 +18,26 @@
       "types": "./lib/types/index.d.ts",
       "default": "./lib/index.js"
     },
+    "./patch-file": {
+      "types": "./lib/types/patch-file.d.ts",
+      "default": "./lib/patch-file.js"
+    },
     "./src/*": "./src/*",
     "./package.json": "./package.json"
   },
   "files": [
     "lib/index.js",
     "lib/probe-child.js",
+    "lib/patch-file.js",
     "lib/types/**/*.d.ts"
   ],
   "license": "MIT",
   "dependencies": {
     "@deepseek-ai/dsh-atomic-write": "workspace:^",
     "@deepseek-ai/dsh-package-manifest": "workspace:^",
-    "@deepseek-ai/dsh-patch-file": "workspace:^",
     "js-yaml": "^4.2.0",
-    "resolve.exports": "^2.0.3"
+    "resolve.exports": "^2.0.3",
+    "yaml": "^2.9.0"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis-plugin-group": "workspace:^",

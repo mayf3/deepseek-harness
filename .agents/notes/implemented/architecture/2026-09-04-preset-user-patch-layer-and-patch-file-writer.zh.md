@@ -14,7 +14,7 @@ Status: implemented
 
 **代际跟随层的内容。** 常驻挂载的印记现在覆盖组合文件的 stat 与层文本的摘要。层变化即为之后创建的会话开启下一代，一如组合被编辑时的既有行为；层被改回某个早先代际组合过的内容时，回到那一代，因此一行关掉再打开不会堆出第三棵在线子树。
 
-**`dsh-patch-file` 拥有这种格式。** `parsePatchList` 从 `dsh-app-boot` 搬出，成为唯一的解析器（js-yaml 配 include 的 `!!js` 方言，相对名字锚定到文件）；`PatchDocument` 通过 `yaml` 包保留注释的 document 在键级编辑文件，它把未解析的 `!!js` 标签留在标量上并原样打印；`mutatePatchFile` 拿 `dsh-atomic-write` 的锁，读取、编辑、在 document 变脏时原子替换，并把写出的文本回读解析。被移除行上方的注释块移到邻居或文档尾注释，而不是消失。
+**`dsh-app-boot/patch-file` 拥有这种格式。** 解析器与写入器是 `dsh-app-boot` 的同一个模块，以 `./patch-file` 导出，roster 与插件管理器加载它时不经过启动入口；`parsePatchList` 是唯一的解析器（js-yaml 配 include 的 `!!js` 方言，相对名字锚定到文件）；`PatchDocument` 通过 `yaml` 包保留注释的 document 在键级编辑文件，它把未解析的 `!!js` 标签留在标量上并原样打印；`mutatePatchFile` 拿 `dsh-atomic-write` 的锁，读取、编辑、在 document 变脏时原子替换，并把写出的文本回读解析。被移除行上方的注释块移到邻居或文档尾注释，而不是消失。
 
 ## 考虑过的替代方案
 
@@ -22,7 +22,7 @@ Status: implemented
 
 **原地编辑随附组合。** 否决：升级会覆盖它，而正在运行的会话会读到写了一半的文件。
 
-**在 `dsh-agent-presets` 里再写一个解析器以避免依赖 `dsh-app-boot`。** 否决：同一格式的两个解析器会漂移；改为让格式拥有自己的包，两者都依赖它。
+**在 `dsh-agent-presets` 里再写一个解析器以避免依赖 `dsh-app-boot`。** 否决：同一格式的两个解析器会漂移。曾先做成独立的 `dsh-patch-file` util 包，后折回 `dsh-app-boot` 作为它的 `./patch-file` 导出：这种格式属于 Loader 与 include，不是机械原语，而且已有十几个插件包依赖 `dsh-app-boot`，roster 加入其中不增加任何代价。
 
 **一个 `dsh-global-tool-mask` 行：把 `tools.restrict()` 写成组合行，让 preset 的层能遮蔽宿主工具。** 做出来后在合并前移除：随附 preset、插件管理器与设置 UI 都不会组合它，它是一个只有 README 没有消费者的包。层负责加行和关掉组装自己的行；对某个 preset 隐藏宿主工具属于下一层按 scope 解析的设置里的一条 preset 级设置，不是手写的行。
 
@@ -32,4 +32,4 @@ Status: implemented
 
 ## 测试
 
-`packages/preset/agent-presets/tests/overlay.spec.ts` 钉住 discovery（附着、自有层、孤儿槽位、不可解析、畸形、不可解析的插入、组合判定优先）、施加层的挂载、编辑之间的代际及退役代际的复用、清单从文件与从挂载得到的 `source` 与 `disabledBy`、随附与自作 preset 的层路径、复制携带层，以及移除。`packages/util/patch-file/tests/patch-file.spec.ts` 钉住解析器、保留注释与 `!!js` 的文档编辑，以及带回读的加锁原子变更。
+`packages/preset/agent-presets/tests/overlay.spec.ts` 钉住 discovery（附着、自有层、孤儿槽位、不可解析、畸形、不可解析的插入、组合判定优先）、施加层的挂载、编辑之间的代际及退役代际的复用、清单从文件与从挂载得到的 `source` 与 `disabledBy`、随附与自作 preset 的层路径、复制携带层，以及移除。`packages/boot/app-boot/tests/patch-file.spec.ts` 钉住解析器、保留注释与 `!!js` 的文档编辑，以及带回读的加锁原子变更。

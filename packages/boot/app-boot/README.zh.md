@@ -62,6 +62,32 @@ profile 是同一套 dsh 安装提供不同应用界面的方式：`web`、`head
 
 树起来之后 launcher 提供 `ctx.profileRuntime`：它持有树正在运行的组合——profile、安装锚点、每一行的归属层、被组合排除的行——读取用户 patch 文件停用了哪些行，并且是重组整棵树的唯一入口：patch 监视器与启用或重试组合包的[插件管理器](../../host/plugin-manager/README.zh.md)都调用它，重组一次只跑一个，被拒的更新留下的事实仍然描述正在运行的树；这样的调用方之后会运行 `recordContainedStates`，因为启动审计不会再跑一次。启动期的 fail-loud rejection 守卫在树起来后卸载：启动后未处理的 rejection 会被报告，进程继续运行，不停止任何任务也不归属到任何插件；未捕获的异常会被报告并退出。
 
+<a id="patch-files"></a>
+### 补丁文件
+
+上面的每一层都是一个 `cordis.patch.yml`：一个顶层 YAML 序列，元素是 include 插件的 `PatchOptions`——按 id 定位的覆盖与 `insert` 列表——采用 Loader 的方言，其中 `!!js` 标记一个由该行 fiber 求值的表达式。`./patch-file` 导出是读写这种文件的唯一地方，因此启动接受的文件就是 agent preset roster 与插件管理器接受的文件。
+
+用 `parsePatchList`（已有文本）或 `readPatchListFile`（文件不存在时读到 `undefined`）读取一层。两者都把 `insert` 行中相对的名字（如 `./plugin.js`）锚定到文件自己的目录，并对任何不是"映射序列"的内容直接报错，因为一个完全无法施加的补丁文件就是配置错误；而目标行不存在的单条补丁仍然只是 Loader 的逐条警告。
+
+通过 `mutatePatchFile` 写入。回调拿到一个 `PatchDocument`，按 Loader 寻址行的方式以行 id 编辑：
+
+```ts
+import { mutatePatchFile } from '@deepseek-ai/dsh-app-boot/patch-file'
+
+const file = '/home/me/.dsh/profiles/web/cordis.patch.yml'
+await mutatePatchFile(file, (document) => {
+  document.setRowField('tool-web', 'disabled', true)      // the id-targeted patch is created when absent
+  document.deleteRowField('tool-web', 'config')           // a patch reduced to its id is removed whole
+  document.appendInsert({ id: 'tool-foo', name: 'dsh-tool-foo' })          // into the root list
+  document.appendInsert({ id: 'sql', name: 'dsh-sql' }, 'agents')          // into the group with that id
+  document.removeInsert('tool-foo')                       // an emptied insert patch is removed whole
+}, { binName: 'dsh', mode: 0o600, dirMode: 0o700 })
+```
+
+`setRowField` 永远不接受 `id` 与 `insert`；`rowField` 读回一个键，`!!js` 标量以其源文本返回。`appendInsert` 拒绝文件已插入的 id；`insertedRow`/`removeInsert` 也能找到插入组内部的行。写入的值都是普通数据；别的键上的 `!!js` 标量原样不动，这正是用户层能撤回自己写的 `disabled: true` 而不惊动组合包在另一行上的 `!!js` 门的原因。
+
+`mutatePatchFile` 像 `dsh-atomic-write` 一样占用 `<file>.lock` 兄弟文件，读取文件（不存在按空处理），施加编辑，在文本有变化时以声明的权限位原子替换文件，然后返回从写入文本重新读出的补丁列表。什么都没改的编辑什么都不写。
+
 ### 预览生效配置
 
 启动前，你可以打印应用将挂载的确切配置：dump 会以 `!!js` 表达式原样展示组合后的条目列表，并按注释分组标明每个源文件及其 patch 层，输出是一份可加载的 YAML 文档。未匹配到任何行的 patch 会连同其层标签一起报告；配置缺失、无法解析或字段无效都会使 dump 失败。
@@ -102,16 +128,25 @@ profile 是同一套 dsh 安装提供不同应用界面的方式：`web`、`head
 
 每个导出各负责启动的一个阶段：配置解析与快照回放、分层环境加载、明确报错的保护机制、激活审计、patch 解析、根 include 挂载、配置 dump 渲染、活动 patch 监视、profile 组合，以及 harness 源码段落。各导出的约定在代码中，不在本 README——见 [`src/index.ts`](src/index.ts) 与 [`src/profile.ts`](src/profile.ts)。
 
+### 两个解析器，一种方言
+
+读取补丁文件用 `js-yaml` 配 include 的 `entryListSchema`，于是 `!!js` 标量成为 Loader 插值的表达式节点，与 include 挂载时完全一致。写入用 `yaml` 包保留注释的 `Document`：它在所修饰的标量上保留未解析的 `!!js` 标签（报告为 `TAG_RESOLVE_FAILED` 警告而非错误）并原样打印回去，因此对一个键的编辑绝不会改写另一个键的表达式。写出的文本再用读取解析器解析一遍，这就是写入器契约承诺的回读。
+
+### 寻址
+
+按 id 定位的补丁是 `id` 匹配且不带 `insert` 的顶层项。插入的行在每个 `insert` 列表中查找，并递归进入插入的组（`group: true` 且带 `config` 列表）。顶层项不是映射，或 `insert` 的值不是列表，都会让解析失败。
+
 ### 源码地图
 
 | 文件 | 职责 |
 |---|---|
-| [`src/index.ts`](src/index.ts) | 启动 helper：配置解析、环境加载、fail-loud 守卫与运行时守卫、激活审计与 `recordContainedStates`、经 `dsh-patch-file` 加载 patch 文件、配置 dump、harness 源码段落 |
+| [`src/index.ts`](src/index.ts) | 启动 helper：配置解析、环境加载、fail-loud 守卫与运行时守卫、激活审计与 `recordContainedStates`、经 `./patch-file` 加载 patch 文件、配置 dump、harness 源码段落 |
 | [`src/profile.ts`](src/profile.ts) | profile 发现、初始化、带 `layerTrust` 与 stage 的组合包解析、模块后备机制 |
 | [`src/external-bundles.ts`](src/external-bundles.ts) | 外部层组合（受控组、覆盖报告）、`bundleLayerPatches`，与安装、启用、停用背后的 manifest 操作 |
 | [`src/compose-stack.ts`](src/compose-stack.ts) | 整叠层的行 id 归属：`claimLayerIds`、`composeProfileStack`、冲突记录 |
 | [`src/contained-group.ts`](src/contained-group.ts) | `cordis:contained-group` builtin 与 `pluginFailures` 注册表 |
 | [`src/profile-runtime.ts`](src/profile-runtime.ts) | `profileRuntime` 服务：已提交的组合（profile、行来源、冲突）、用户停用的行、重新组合 |
+| [`src/patch-file.ts`](src/patch-file.ts) | `./patch-file` 导出：`parsePatchList` 与 `readPatchListFile`、保留注释的 `PatchDocument`，以及持写入锁的 `mutatePatchFile` |
 | [`src/probe.ts`](src/probe.ts) | 包探针及其按 profile 的缓存；[`src/probe-child.ts`](src/probe-child.ts) 是它生成的子进程入口，[`src/probe-report.ts`](src/probe-report.ts) 是它校验的报告 |
 | — | 不发布运行时不变式伴生入口；边界与回放测试覆盖其协议映射。 |
 
@@ -157,6 +192,9 @@ profile 是同一套 dsh 安装提供不同应用界面的方式：`web`、`head
 - **外部组合包的覆盖不被隔离**——它对内置行施加的 patch 原地修改那一行，所以即使该组合包自己的行失败，效果仍然保留；这是组合包唯一能在自己的组之外造成影响的地方。
 - **冲突按顺序判定，不看是非**——外部组合包之间，`dsh.profile.bundles` 里靠前的那层保住争议 id，卸掉它之后靠后的那层在下次启动时挂上；插件列表显示谁输给了谁。
 - **嵌套 fiber 审计只是提示**——内置条目下失败的 `ctx.inject()` 延续会被报告而非致命，直到确认随附组合都没有这类失败。
+- **补丁编辑按键级而非行级合并**——`setRowField('x', 'config', value)` 替换该补丁的整个 `config` 映射；只想改一个嵌套字段的调用方先用 `rowField` 读出当前值，再把合并后的映射写回。
+- **补丁写入器不生成表达式**——它只输出普通数据；`!!js` 门是作者敲进文件的东西，从不是某个 API 调用的产物。
+- **锁孤儿由操作者处理**——补丁写入器崩溃留下的锁文件不会被竞争者移除，竞争者等待超时后失败；`dsh-atomic-write` 记录了同样的选择。
 
 <a id="dev-note"></a>
 ### 开发备注
