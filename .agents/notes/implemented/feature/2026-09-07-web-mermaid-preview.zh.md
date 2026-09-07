@@ -10,13 +10,15 @@ Assistant 回复可以在 Mermaid 代码 fence 中描述图表，但读者必须
 
 ## 决策
 
-Chat 通过 `MarkdownLabels.mermaid` 启用已定稿 fence 预览。共享 Markdown 渲染器使用解析后的 fence 语言；流式 fence 和未传入这些 label 的调用方保留代码显示。静态 [UI primitives 包](../../../../packages/client/ui-primitives/README.zh.md)拥有 `MermaidPreview`，它接收源码与本地化 label，不依赖 Session、文件或 Cordis。`CodeBlock.preview` 复用标题栏和复制操作；复制始终读取源码 prop。
+Chat 通过 `MarkdownLabels.mermaid` 启用已定稿 fence 预览。共享 Markdown 渲染器使用解析后的 fence 语言；流式 fence 和未传入这些 label 的调用方保留代码显示。静态 [UI primitives 包](../../../../packages/client/ui-primitives/README.zh.md)拥有 `MermaidPreview`，它接收源码与本地化 label，不依赖 Session、文件或 Cordis。`CodeBlock.preview` 拥有视图切换与源码复制。预览省略语言标题栏，悬停或键盘聚焦时显示紧凑的图标操作；触屏上保持操作可见。源码与预览使用同一个已聚焦的切换按钮，复制始终读取源码 prop。
 
 Mermaid 按需加载。它的公开 render API 串行执行图表工作，每次调用在 `finally` 中移除临时测量 DOM。图表配置无法覆盖严格安全模式、禁用 HTML label、中性主题和错误渲染策略。生成的 SVG 以图片显示，不安装图内链接或脚本。固有尺寸取自 SVG viewBox；大图缩小以适应宽度，画布在两种应用主题下均保持浅色。
 
 替换源码与卸载组件会取消结果发布。在运行时加载完成前取消可阻止渲染；已经开始的 Mermaid 渲染会完成并释放 DOM，但无法向已取消的组件发布结果。失败时显示本地化错误和原始源码。用有效图表替换非法源码可恢复预览。
 
 ## 考虑过的替代方案
+
+**在图表上方保留代码标题栏。** 语言标记和常驻的文字操作分散了对图表的注意力。浮层操作无需占用标题行即可保留源码入口。
 
 **渲染每个流式分片。** 不完整的图表经常无效，反复布局也会与文本流式输出竞争。已有的消息定稿边界提供完整源码值。
 

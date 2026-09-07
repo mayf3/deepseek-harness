@@ -2,7 +2,7 @@
   overflow: auto;
   padding: 16px;
   background: var(--dsw-static-neutral-00);
-  border-radius: 0 0 12px 12px;
+  border-radius: 12px;
 }
 
 .diagram {

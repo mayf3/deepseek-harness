@@ -76,7 +76,7 @@ kind: "package-library"
 
 `MermaidPreview` 在浅色画布上渲染完整的 Mermaid 源码。渲染按需加载 Mermaid、使用严格安全模式，并把生成的 SVG 显示为图片，不绑定图内链接处理器。渲染失败时显示原始源码与传入的错误文案；替换源码后会丢弃前一次渲染的延迟结果。图表保留固有尺寸，并在可用宽度不足时缩小。
 
-为 Markdown 调用方传入 `MarkdownLabels.mermaid` 即可启用 `mermaid` fence 预览；未传入时，fence 保持代码显示。预览在消息定稿后开始。`CodeBlock.preview` 提供可选的替代正文和本地化的「源码／预览」切换文案，现有「复制」按钮始终复制源码。[Mermaid 决策](../../../.agents/notes/implemented/feature/2026-09-07-web-mermaid-preview.zh.md)记录了渲染与复用选择。
+为 Markdown 调用方传入 `MarkdownLabels.mermaid` 即可启用 `mermaid` fence 预览；未传入时，fence 保持代码显示。预览在消息定稿后开始。`CodeBlock.preview` 提供无标题栏的替代正文，以及切换源码和复制的图标操作。操作在悬停或键盘聚焦时出现，触屏上保持可见；复制始终保留源码。[Mermaid 决策](../../../.agents/notes/implemented/feature/2026-09-07-web-mermaid-preview.zh.md)记录了渲染与复用选择。
 
 ### 本地化文案
 

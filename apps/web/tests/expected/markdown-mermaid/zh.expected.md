@@ -4,6 +4,8 @@
   - button "Session 日志":
     - text: Session 日志
     - img
+  - button "展开侧栏":
+    - img
   - tablist:
     - tab "对话" [selected]
     - tab "轨迹"
@@ -11,20 +13,16 @@
 - button "复制":
   - img
 - heading "Mermaid previews" [level=1]
-- text: mermaid
 - button "源码"
 - button "复制"
 - img "Mermaid 图表"
-- text: mermaid
 - button "源码"
 - button "复制"
 - img "Mermaid 图表"
-- text: mermaid
 - button "源码"
 - button "复制"
 - status: 无法渲染此图表，源码如下。
 - code: flowchart LR A[unfinished
-- text: mermaid
 - button "源码"
 - button "复制"
 - img "Mermaid 图表"

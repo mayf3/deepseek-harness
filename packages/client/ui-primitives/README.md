@@ -76,7 +76,7 @@ The catalog above lists what each export is for; this section covers the behavio
 
 `MermaidPreview` renders complete Mermaid source on a light canvas. Rendering loads Mermaid on demand, uses strict security, and exposes the generated SVG as an image with no diagram link handlers. A render failure shows the original source with the supplied error label; replacing the source discards late results from the previous render. The diagram keeps its intrinsic size and shrinks to fit the available width.
 
-Supply `MarkdownLabels.mermaid` to enable `mermaid` fence previews in a Markdown consumer; without it, fences remain code. Previews start after the message settles. `CodeBlock.preview` supplies an optional alternate body and localized Source/Preview switch labels while the existing Copy button always copies the source. [The Mermaid decision](../../../.agents/notes/implemented/feature/2026-09-07-web-mermaid-preview.md) records the rendering and reuse choices.
+Supply `MarkdownLabels.mermaid` to enable `mermaid` fence previews in a Markdown consumer; without it, fences remain code. Previews start after the message settles. `CodeBlock.preview` supplies an optional headerless body with icon actions for source switching and copying. Actions appear on hover or keyboard focus, and stay visible on touch devices; copying always retains the source. [The Mermaid decision](../../../.agents/notes/implemented/feature/2026-09-07-web-mermaid-preview.md) records the rendering and reuse choices.
 
 ### Localizing copy
 

@@ -4,6 +4,8 @@
   - button "Session log":
     - text: Session log
     - img
+  - button "Open the sidebar":
+    - img
   - tablist:
     - tab "Chat" [selected]
     - tab "Trajectory"
@@ -11,20 +13,17 @@
 - button "Copy":
   - img
 - heading "Mermaid previews" [level=1]
-- text: mermaid
+- button "Source"
+- button "Copy"
+- tooltip "Copy"
+- img "Mermaid diagram"
 - button "Source"
 - button "Copy"
 - img "Mermaid diagram"
-- text: mermaid
-- button "Source"
-- button "Copy"
-- img "Mermaid diagram"
-- text: mermaid
 - button "Source"
 - button "Copy"
 - status: Unable to render this diagram. The source is shown below.
 - code: flowchart LR A[unfinished
-- text: mermaid
 - button "Source"
 - button "Copy"
 - img "Mermaid diagram"

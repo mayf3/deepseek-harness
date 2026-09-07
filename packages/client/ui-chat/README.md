@@ -33,7 +33,7 @@ Each nonempty appended `system/message` owns a collapsed prompt row, including a
 <a id="mermaid-previews"></a>
 ## Mermaid previews
 
-Settled Assistant Markdown shows `mermaid` code fences as diagrams. Each fence offers Source/Preview switching and copies the original Mermaid source in either view. Streaming fences remain code until the message settles; invalid diagrams show an error and their source without disrupting other blocks. Chat enables the shared [Mermaid preview primitive](../ui-primitives/README.md) through localized labels. This is a presentation change and adds no model prompt, tool, or Session event.
+Settled Assistant Markdown shows `mermaid` code fences as diagrams. Diagrams have no language banner. Source/Preview and Copy icon actions appear on hover or keyboard focus and remain visible on touch devices; both views copy the original Mermaid source. Streaming fences remain code until the message settles; invalid diagrams show an error and their source without disrupting other blocks. Chat enables the shared [Mermaid preview primitive](../ui-primitives/README.md) through localized labels. This is a presentation change and adds no model prompt, tool, or Session event.
 
 -----
 
