@@ -187,9 +187,6 @@ importers:
       '@deepseek-ai/dsh-fs-local':
         specifier: workspace:^
         version: link:../../packages/fs/fs-local
-      '@deepseek-ai/dsh-global-tool-mask':
-        specifier: workspace:^
-        version: link:../../packages/preset/global-tool-mask
       '@deepseek-ai/dsh-goal':
         specifier: workspace:^
         version: link:../../packages/goal/goal
@@ -6837,25 +6834,6 @@ importers:
       '@deepseek-ai/dsh-typert-protocol':
         specifier: workspace:^
         version: link:../../typert/protocol
-
-  packages/preset/global-tool-mask:
-    dependencies:
-      '@deepseek-ai/schemastery':
-        specifier: link:../../../vendor/schemastery
-        version: link:../../../vendor/schemastery
-    devDependencies:
-      '@deepseek-ai/cordis':
-        specifier: workspace:^
-        version: link:../../../vendor/cordis
-      '@deepseek-ai/dsh-scope':
-        specifier: workspace:^
-        version: link:../../core/scope
-      '@deepseek-ai/dsh-system-prompt':
-        specifier: workspace:^
-        version: link:../../core/system-prompt
-      '@deepseek-ai/dsh-tools':
-        specifier: workspace:^
-        version: link:../../core/tools
 
   packages/preset/persona:
     dependencies:

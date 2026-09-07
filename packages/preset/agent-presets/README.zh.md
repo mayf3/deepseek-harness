@@ -82,10 +82,10 @@ agent-presets:
 - id: tool-web
   disabled: true
 - insert:
-    - id: hide-fetch
-      name: '@deepseek-ai/dsh-global-tool-mask'
+    - id: sql
+      name: '@acme/dsh-sql-tool'
       config:
-        deny: [web_fetch]
+        dsn: sqlite://local.db
 ```
 
 这一层与组装一起判定：无法解析的层、插入了畸形行、或插入了引用无法解析模块的行，都会让 preset 带着该原因变为 broken；没有任何根目录提供其 id 的层会被列为损坏的槽位。在层变化之后创建的会话组合新内容；运行中的会话保持各自的。组合清单报告每一行的 `source`（`preset` 或 `user`），以及被关掉的行是组装还是这一层关掉的。复制会把这一层带到新组装旁边，`removeOverlay` 删除它。[插件管理器](../../host/plugin-manager/README.zh.md) 经 `overlayPathFor` 写入这个文件。
