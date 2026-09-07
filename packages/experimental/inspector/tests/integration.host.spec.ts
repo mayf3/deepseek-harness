@@ -370,6 +370,13 @@ describe('experimental Inspector real Worker', () => {
     await Promise.all([cdp.call('Runtime.enable'), secondCdp.call('Runtime.enable')])
     const firstContext = await clientContext(cdp)
     const secondContext = await clientContext(secondCdp)
+    // Context announcements do not acknowledge Client consumption of console-enable frames.
+    // Round-trip the ordered ingest socket before logging over the fixture's separate MessagePort.
+    for (const [connection, contextId] of [[cdp, firstContext], [secondCdp, secondContext]] as const) {
+      await expect(connection.call('Runtime.evaluate', { contextId, expression: '0' })).resolves.toMatchObject({
+        result: { result: { type: 'number', value: 0 } },
+      })
+    }
     const value = { owner: 'client-console' }
     const marker = 'client-console-event'
     await client.log(value, marker)

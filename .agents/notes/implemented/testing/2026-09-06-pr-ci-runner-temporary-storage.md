@@ -24,6 +24,10 @@ The [ACP diagnostic scenario](../../../../snapshots/session/subagent-acp-diagnos
 
 The headless `session-sandbox-root` fixture declares `workspace.parent: outside-temp`, not a home-filesystem dependency. Its allocator uses a sibling of the canonical platform temp root where the parent is writable and avoids system temporary grants, otherwise home, and rejects a cwd already covered by automatic temporary write grants. On the failover runner this keeps the test on the data volume without making its write succeed through a temporary-directory exemption. The filesystem-sandbox containment tests use the same allocator for their workspace and denied sibling; they register cleanup immediately after successful acquisition. Atomic workspace allocation, recorded Session bytes, and the independent expected file remain unchanged.
 
+## Retry-exposed fixture synchronization
+
+The Inspector console integration test waits for a Client `Runtime.evaluate` round trip after enablement before issuing its separate fixture log command. Worker-side context announcements alone do not prove that the client has consumed its console-enable message. The installed-wheel live SDK test externally replaces the created file with a fresh host-only challenge before asking the model to verify it; the verification prompt does not reveal that value. Both turns must still contain model-requested tool calls, and the verifier compares the returned value and actual file bytes.
+
 ## Alternatives considered
 
 **Delete shared temporary files from a PR job.** Another runner may still own those files. Repository jobs must not reclaim a shared directory by pathname or age.
