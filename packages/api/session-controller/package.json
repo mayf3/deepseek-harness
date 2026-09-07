@@ -47,7 +47,8 @@
         "@deepseek-ai/dsh-api-gateway/client"
       ],
       "inject": [
-        "@deepseek-ai/dsh-api-gateway"
+        "@deepseek-ai/dsh-api-gateway",
+        "@deepseek-ai/dsh-client-file-upload"
       ],
       "platform": "web"
     }
