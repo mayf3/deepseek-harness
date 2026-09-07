@@ -427,11 +427,17 @@ function projectSessionSnapshot(rawLog: string): string {
   const lines = rawLog.split('\n').filter(line => line.trim().length > 0)
   const header = lines.shift() as string
 
-  const records = canonicalizeCatalogRuns(lines.map((line) => {
+  const original = lines.map((line) => {
     return JSON.parse(line) as Record<string, unknown> & { type: string }
-  }))
+  })
+  const records = canonicalizeCatalogRuns(original)
+  const positions = new Map(records.map((record, seq) => [record, seq]))
+  const sourcePositions = original.map(record => positions.get(record) as number)
   const body = records.map((record) => {
     const projected = { ...record }
+    if (Array.isArray(record.sourceEventSeqs)) {
+      projected.sourceEventSeqs = record.sourceEventSeqs.map((seq: number) => sourcePositions[seq] ?? seq)
+    }
     omitFixtureEnvelope(projected)
     return JSON.stringify(projected)
   })

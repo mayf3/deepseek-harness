@@ -22,7 +22,7 @@ child header 与 `subagent/descriptor` 继续拥有恢复与 composition 权威�
 
 fork 隔离使用 projection 初始化时提供的精确 `Session.inheritedEventCount`。fold 忽略该 offset 之前的 `subagent/catalog` 事件。state 保存 inherited offset，但不保存每条 event seq，因为接受判定已在 fold 时完成。
 
-snapshot normalizer 会把 `childCreatedAt` 归零，因为它来自 process clock。TypeScript normalizer 还会按不同 child id 排序相邻 catalog fact，因为并行成功创建的 append 顺序可能不同。非 catalog event 继续作为顺序 barrier。
+snapshot normalizer 会把 `childCreatedAt` 归零，因为它来自 process clock。TypeScript normalizer 还会按不同 child id 排序相邻 catalog fact，因为并行成功创建的 append 顺序可能不同。非 catalog event 继续作为顺序 barrier。来源事件引用会重映射到排序后的位置，使每个引用仍指向原来的事实。
 
 ## 考虑过的替代方案
 
@@ -38,6 +38,6 @@ snapshot normalizer 会把 `childCreatedAt` 归零，因为它来自 process clo
 
 ## 后果
 
-调用方可以向 `observeSession` 请求 `projectionStateKeys: ['subagentCatalog']`。实时观察克隆 registry 维护中的 state；冷观察 hydrate 已准备的 Session，并在观察 cursor 处分离出同一 state。直接子级和后代列表仍使用 Session 语料库与子级身份 projection。
+调用方可以向 `observeSession` 请求 `projectionStateKeys: ['subagentCatalog']`。实时观察克隆 registry 维护中的 state；冷观察 hydrate 已准备的 Session，并在观察 cursor 处分离出同一 state。仅读取 host state 时，空视图选择会传递到检查点 hydration，包括缓存复用和损坏 row 的恢复；无关 wire view 不会被计算或校验。直接子级和后代列表仍使用 Session 语料库与子级身份 projection。
 
 不认识该 required event 的 backend 会按既有 Session event 机制拒绝日志。pre-release format policy 不要求为旧日志保留 fallback scan。

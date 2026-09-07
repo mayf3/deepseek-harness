@@ -163,9 +163,10 @@ cachedPredecessorTitle( meta: SessionHeader, inheritedEventCount: SessionLogOffs
  * because the logical observation may contain recovery events not yet durable.
  * @param session - exact unpublished Session retained by persistence.
  * @param events - exact logical event prefix represented by the observation.
- * @returns all projection values at the event cut.
+ * @param keys - optional client-visible outputs; an empty list hydrates states without computing or validating views.
+ * @returns selected projection values at the event cut, defaulting to all views.
  */
-hydratePrepared( session: Session, events: readonly SessionEvent[], ): ProjectionSnapshot
+hydratePrepared( session: Session, events: readonly SessionEvent[], keys?: readonly Extract<keyof SessionProjectionMap, string>[], ): ProjectionSnapshot
 
 /**
  * Durably checkpoint one live session NOW (all mandatory points call
@@ -329,11 +330,12 @@ viewCheckpoint( checkpoint: ProjectionCheckpoint, keys?: readonly Extract<keyof 
  * @param baseSeq - the seq `events` starts at (its first event's seq when non-empty).
  * @param header - immutable metadata for the Session being restored.
  * @param inheritedEventCount - exact fork-inherited prefix length supplied to unit initialization.
+ * @param keys - optional client-visible outputs; an empty list restores every state without computing or validating views.
  * @returns the snapshot cut at the supplied log end (`asOfSeq` is the last
  *   supplied event's seq, `baseSeq - 1` for an empty tail) plus the
  *   refreshed checkpoint rows at that cut, ready for a durable write-back.
  */
-restore( checkpoint: ProjectionCheckpoint, events: readonly SessionEvent[], baseSeq: SessionLogOffset, header: SessionHeader, inheritedEventCount: SessionLogOffset, ): { snapshot: ProjectionSnapshot; checkpoint: ProjectionCheckpoint }
+restore( checkpoint: ProjectionCheckpoint, events: readonly SessionEvent[], baseSeq: SessionLogOffset, header: SessionHeader, inheritedEventCount: SessionLogOffset, keys?: readonly Extract<keyof SessionProjectionMap, string>[], ): { snapshot: ProjectionSnapshot; checkpoint: ProjectionCheckpoint }
 
 /**
  * Restore an exact cut and install its states on the supplied prepared Session.
@@ -343,9 +345,10 @@ restore( checkpoint: ProjectionCheckpoint, events: readonly SessionEvent[], base
  * @param checkpoint - persisted rows for this Session lifecycle.
  * @param events - exact events at the observation cut.
  * @param baseSeq - first supplied event sequence.
- * @returns all projection values at the supplied cut.
+ * @param keys - optional client-visible outputs; an empty list installs every state without computing or validating views.
+ * @returns selected projection values at the supplied cut, defaulting to all views.
  */
-hydrate( session: Session, checkpoint: ProjectionCheckpoint, events: readonly SessionEvent[], baseSeq: SessionLogOffset, ): ProjectionSnapshot
+hydrate( session: Session, checkpoint: ProjectionCheckpoint, events: readonly SessionEvent[], baseSeq: SessionLogOffset, keys?: readonly Extract<keyof SessionProjectionMap, string>[], ): ProjectionSnapshot
 ```
 
 Types: [Session](session.md) · [SessionEvent](session.md) · [SessionHeader](persistence.md) · [SessionLogOffset](session.md)

@@ -657,6 +657,28 @@ describe('normalizeSessionSnapshot', () => {
     expect(normalized).toContain('"childId":3')
   })
 
+  it.each([
+    { sources: [0, 1], remapped: [0, 2] },
+    { sources: [0, 2], remapped: [0, 1] },
+  ])('preserves cited children when adjacent catalog facts change position: $sources', ({ sources, remapped }) => {
+    const records = [
+      { type: 'session', version: 2 },
+      { type: 'tool/call', data: { callId: 'parallel' } },
+      { type: 'subagent/catalog', data: { childId: 'child-z', childCreatedAt: 1, version: 0, mode: 'one-shot' } },
+      { type: 'subagent/catalog', data: { childId: 'child-a', childCreatedAt: 2, version: 0, mode: 'one-shot' } },
+      { type: 'tool/result', data: { callId: 'parallel' }, sourceEventSeqs: sources, surfaceOp: 'append' },
+    ]
+    const normalized = normalizeSessionSnapshot(records.map(record => JSON.stringify(record)).join('\n'), ctx)
+    expect(normalized).toBe([
+      records[0],
+      records[1],
+      { ...records[3], data: { ...records[3]?.data, childCreatedAt: 0 } },
+      { ...records[2], data: { ...records[2]?.data, childCreatedAt: 0 } },
+      { ...records[4], sourceEventSeqs: remapped },
+    ].map(record => JSON.stringify(record)).join('\n') + '\n')
+    expect(normalizeSessionSnapshot(normalized, ctx)).toBe(normalized)
+  })
+
   it('omits current catalog facts and rebases source references for historical comparison', () => {
     const normalized = [
       JSON.stringify({ type: 'session', id: '{{session:1}}' }),

@@ -762,7 +762,7 @@ describe('SessionObservationReader cold projections', () => {
     await ctx.fiber.dispose()
   })
 
-  it('hydrates prepared projections through a mounted projection cache', async () => {
+  it.each(['all', 'none'] as const)('hydrates prepared projections through a mounted projection cache in %s mode', async (projectionMode) => {
     const ctx = await readerContext()
     await ctx.plugin(SessionProjectionRegistry)
     const meta = header('cold-cache')
@@ -772,10 +772,14 @@ describe('SessionObservationReader cold projections', () => {
     const hydratePrepared = vi.fn().mockReturnValue(snapshot)
     ctx.provide('sessionProjectionCache', { hydratePrepared } as never)
 
-    using observed = await new SessionObservationReader(ctx).read(meta.id)
+    using observed = await new SessionObservationReader(ctx).read(meta.id, {
+      projectionMode,
+      projectionStateKeys: ['title'],
+    })
 
-    expect(observed.projections).toBe(snapshot)
+    expect(observed.projections).toBe(projectionMode === 'all' ? snapshot : undefined)
     expect(hydratePrepared).toHaveBeenCalledOnce()
+    expect(hydratePrepared.mock.calls[0]?.[2]).toEqual(projectionMode === 'all' ? undefined : [])
     await ctx.fiber.dispose()
   })
 
@@ -835,6 +839,33 @@ describe('SessionObservationReader host projection states', () => {
     expect(observed.projectionStates).toEqual({ title: 'Cold title' })
     expect(hydrate).toHaveBeenCalledOnce()
     await ctx.fiber.dispose()
+  })
+
+  it('omits wire views on fresh and reused cold host-state reads', async () => {
+    const ctx = await readerContext()
+    try {
+      await ctx.plugin(SessionProjectionRegistry)
+      const view = vi.fn(titleProjectionDefinition.wire.view)
+      ctx.sessionProjections.register({
+        ...titleProjectionDefinition,
+        wire: { ...titleProjectionDefinition.wire, view },
+      })
+      const meta = header('cold-host-only')
+      const store = new Map([[meta.id, { header: meta, events: [titleEvent(0, 'Cold title')], revision: 'r1' }]])
+      ctx.provide('sessionPersistence', stubPersistence(store, { stat: 0, open: 0, read: 0 }))
+      const reader = new SessionObservationReader(ctx)
+      for (let read = 0; read < 2; read++) {
+        using observed = await reader.read(meta.id, { projectionMode: 'none', projectionStateKeys: ['title'] })
+        expect(observed.projections).toBeUndefined()
+        expect(observed.projectionStates).toEqual({ title: 'Cold title' })
+        expect(view).not.toHaveBeenCalled()
+      }
+      using full = await reader.read(meta.id)
+      expect(full.projections?.values).toEqual({ title: 'Cold title' })
+      expect(view).toHaveBeenCalledOnce()
+    } finally {
+      await ctx.fiber.dispose()
+    }
   })
 
   it('omits unregistered keys and the whole map when no registry is mounted', async () => {

@@ -50,7 +50,7 @@ export interface SessionObservation extends Disposable {
 export interface SessionObservationOptions {
   /** Optional cancellation while resolving a cold source. */
   readonly signal?: AbortSignal
-  /** Whether to compute every projection or leave projection state untouched. */
+  /** Whether to compute client views; requested host states are still materialized. */
   readonly projectionMode?: 'all' | 'none'
   /**
    * Host projection states to detach from the same exact cut, independent of
@@ -103,7 +103,7 @@ export class SessionObservationReader {
   /**
    * Observe one live-preferred Session and retain a cold preparation until disposal.
    * @param sessionId - logical Session identity.
-   * @param options - cancellation and all-or-none projection computation for this read.
+   * @param options - cancellation, client views, and requested host states for this read.
    * @returns one exact immutable observation.
    */
   async read(
@@ -167,7 +167,7 @@ export class SessionObservationReader {
         if (projectionMode === 'all' || projectionStateKeys !== undefined) {
           // Hydration installs every unit's cell on the prepared Session, so a
           // requested host state reads the same cut the views were taken from.
-          const snapshot = this.preparedProjections(entry)
+          const snapshot = this.preparedProjections(entry, projectionMode)
           projections = projectionMode === 'all' ? snapshot : undefined
           projectionStates = this.projectionStates(entry.session, projectionStateKeys)
         }
@@ -330,13 +330,17 @@ export class SessionObservationReader {
     return lease()
   }
 
-  private preparedProjections(entry: PreparedEntry): ProjectionSnapshot | undefined {
+  private preparedProjections(
+    entry: PreparedEntry,
+    projectionMode: NonNullable<SessionObservationOptions['projectionMode']>,
+  ): ProjectionSnapshot | undefined {
     const registry = this.ctx.get('sessionProjections')
     if (registry === undefined) return undefined
     const cache = this.ctx.get('sessionProjectionCache')
+    const keys = projectionMode === 'none' ? [] : undefined
     return cache === undefined
-      ? registry.hydrate(entry.session, {}, entry.events, SessionLogOffset(0))
-      : cache.hydratePrepared(entry.session, entry.events)
+      ? registry.hydrate(entry.session, {}, entry.events, SessionLogOffset(0), keys)
+      : cache.hydratePrepared(entry.session, entry.events, keys)
   }
 
   /**

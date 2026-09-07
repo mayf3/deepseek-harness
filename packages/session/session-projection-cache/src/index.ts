@@ -207,18 +207,20 @@ export class SessionProjectionCache extends Service {
    * because the logical observation may contain recovery events not yet durable.
    * @param session - exact unpublished Session retained by persistence.
    * @param events - exact logical event prefix represented by the observation.
-   * @returns all projection values at the event cut.
+   * @param keys - optional client-visible outputs; an empty list hydrates states without computing or validating views.
+   * @returns selected projection values at the event cut, defaulting to all views.
    */
   hydratePrepared(
     session: Session,
     events: readonly SessionEvent[],
+    keys?: readonly Extract<keyof SessionProjectionMap, string>[],
   ): ProjectionSnapshot {
     const record = this.recordFor(
       session.id,
       identityOf(session.header, session.inheritedEventCount),
     )
     if (record === undefined) {
-      return this.ctx.sessionProjections.hydrate(session, {}, events, SessionLogOffset(0))
+      return this.ctx.sessionProjections.hydrate(session, {}, events, SessionLogOffset(0), keys)
     }
     try {
       return this.ctx.sessionProjections.hydrate(
@@ -226,11 +228,12 @@ export class SessionProjectionCache extends Service {
         record.rows,
         events,
         SessionLogOffset(0),
+        keys,
       )
     } catch {
       // Cached rows are disposable derived data. Retry from the exact log so a
       // stale schema cannot make a valid Session unreadable.
-      return this.ctx.sessionProjections.hydrate(session, {}, events, SessionLogOffset(0))
+      return this.ctx.sessionProjections.hydrate(session, {}, events, SessionLogOffset(0), keys)
     }
   }
 

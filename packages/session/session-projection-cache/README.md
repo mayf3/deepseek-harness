@@ -52,6 +52,8 @@ The cache opens its domain through the storage stack, so base mounts `storage`, 
 
 The plugin injects `storageDomain`, `sessionProjections`, and `sessions`. The generated [configuration catalog](../../../docs/config-catalog.md#deepseek-aidsh-session-projection-cache) is the exhaustive source for every accepted field and its JSDoc.
 
+`hydratePrepared` accepts optional view keys and restores every state from the checkpoint and event tail. An empty key list suppresses client view computation and validation, including when a malformed checkpoint requires a full refold.
+
 ### How checkpoints are written
 
 Three mandatory points always write: session creation persists the seed-derived cut, `turn/end` persists the value that listing reads want, and session disposal persists the final live cut. Between them, the configured count and interval throttles write as events accumulate. Every write atomically replaces the session's complete record through the domain write chain; a failure logs a warning and keeps the cache stale, and the next write self-heals.

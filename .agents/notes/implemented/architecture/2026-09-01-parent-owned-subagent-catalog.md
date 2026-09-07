@@ -22,7 +22,7 @@ The registered host-only `subagentCatalog` projection materializes the parent fa
 
 Fork isolation uses the exact `Session.inheritedEventCount` supplied to projection initialization. The fold ignores `subagent/catalog` events below that offset. The state stores the inherited offset but not each event seq because acceptance is decided during folding.
 
-Snapshot normalizers zero `childCreatedAt` because it originates from the process clock. The TypeScript normalizer also sorts adjacent catalog facts by distinct child id because parallel successful creations may append in either order. Non-catalog events remain ordering barriers.
+Snapshot normalizers zero `childCreatedAt` because it originates from the process clock. The TypeScript normalizer also sorts adjacent catalog facts by distinct child id because parallel successful creations may append in either order. Non-catalog events remain ordering barriers. Source-event references are remapped to the sorted positions so each citation retains its original fact.
 
 ## Alternatives considered
 
@@ -38,6 +38,6 @@ Snapshot normalizers zero `childCreatedAt` because it originates from the proces
 
 ## Consequences
 
-A caller can request `projectionStateKeys: ['subagentCatalog']` from `observeSession`. Live observations clone the maintained registry state; cold observations hydrate their prepared Session and detach the same state at the observation cursor. Direct-child and descendant listing still use the Session corpus and child identity projection.
+A caller can request `projectionStateKeys: ['subagentCatalog']` from `observeSession`. Live observations clone the maintained registry state; cold observations hydrate their prepared Session and detach the same state at the observation cursor. A host-state-only read passes an empty view selection through checkpoint hydration, including cache reuse and malformed-row recovery; unrelated wire views are neither computed nor validated. Direct-child and descendant listing still use the Session corpus and child identity projection.
 
 Backends that do not know the required event refuse the log under the existing Session event mechanism. Pre-release format policy requires no fallback scan for old logs.
