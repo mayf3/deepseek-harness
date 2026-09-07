@@ -22,7 +22,7 @@ interface ProfileInvocation {
   mode: 'profile'
   profile: string
   /** Shipped template used once to initialize a missing profile. */
-  fromDefaultProfile?: string
+  fromDefaultProfile?: string | undefined
   /** Extra patch-list overlays applied after the profile's own layer, in argv order. */
   patches: string[]
   /** Everything after the launcher's own flags, verbatim, for injected app plugins. */
@@ -34,7 +34,7 @@ interface DumpConfigInvocation {
   mode: 'dump-config'
   profile: string
   /** Shipped template used once to initialize a missing profile. */
-  fromDefaultProfile?: string
+  fromDefaultProfile?: string | undefined
   /** Omit the profile's user layer and --patch overlays; print bundle layers only. */
   defaultOnly: boolean
   patches: string[]
@@ -91,11 +91,8 @@ function resolveBoot(program: Command, profile: string, options: BootOptions, ar
   const patches = options.patch ?? []
   if (patches.includes('')) program.error('error: --patch needs a path')
   if (options.fromDefaultProfile === '') program.error('error: --from-default-profile needs a name')
-  const creation = options.fromDefaultProfile === undefined
-    ? {}
-    : { fromDefaultProfile: options.fromDefaultProfile }
   if (options.dumpConfig !== true && options.dumpDefaultConfig !== true) {
-    return { mode: 'profile', profile, ...creation, patches, args }
+    return { mode: 'profile', profile, fromDefaultProfile: options.fromDefaultProfile, patches, args }
   }
   if (options.dumpConfig === true && options.dumpDefaultConfig === true) {
     program.error('error: --dump-config and --dump-default-config are mutually exclusive')
@@ -110,7 +107,7 @@ function resolveBoot(program: Command, profile: string, options: BootOptions, ar
   if (defaultOnly && patches.length > 0) {
     program.error('error: --dump-default-config prints the bundle layers and takes no --patch')
   }
-  return { mode: 'dump-config', profile, ...creation, defaultOnly, patches }
+  return { mode: 'dump-config', profile, fromDefaultProfile: options.fromDefaultProfile, defaultOnly, patches }
 }
 
 /**
