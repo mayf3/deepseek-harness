@@ -14,7 +14,7 @@ Linux 故障切换池在同一台虚拟机上运行多个 runner 实例。PR 覆
 
 这三个 worker 还将 `npm_config_cache` 设为 `runner.temp/npm-cache`。[发布工作流](../../../../.github/workflows/release.yml) 在既有临时存储准备步骤中采用相同缓存位置，[vendor 演练](../../../../.github/workflows/release-vendor.yml) 也如此。否则，无论 `TMPDIR` 如何设置，npm 都会在共享 home 目录中缓存注册表响应；仅使用临时消费者目录不能隔离这些写入。每个 worker 将持久化 pnpm store 放在 `RUNNER_TEMP` 旁的 runner 工作根目录下。这使 SQLite store 索引位于 workspace 所在卷，并隔离并发 runner 实例，而不删除共享 home store。每个 runner 的首次安装是冷启动；该 runner 的后续作业复用其 store。消费者作业还将 Playwright 浏览器下载和安装锁放在 `RUNNER_TEMP` 旁；托管缓存恢复使用同一位置。持久化缓存的容量仍由运维人员负责。
 
-[发布演练决策](../process/2026-09-06-release-rehearsal-selfhosted.zh.md) 对发布消费者采用相同的生命周期规则。[故障切换运行手册](../process/2026-07-26-ci-failover-runbook.zh.md) 继续负责 runner 选择和共享主机容量。本变更不调整作业目标、不降低并发、不重试测试、不修改断言，也不修改仅在 master 上执行的 CI。
+[发布演练决策](../process/2026-09-06-release-rehearsal-selfhosted.zh.md) 对发布消费者采用相同的生命周期规则。[故障切换运行手册](../process/2026-07-26-ci-failover-runbook.zh.md) 继续负责 runner 选择和共享主机容量。本变更不调整作业目标、不降低并发、不重试测试、不削弱断言，也不修改仅在 master 上执行的 CI。
 
 ## ACP 完成顺序的录制
 
@@ -27,6 +27,10 @@ Headless 的 `session-sandbox-root` 夹具声明 `workspace.parent: outside-temp
 ## 重跑暴露的夹具同步问题
 
 Inspector console 集成测试在启用后等待 Client 的 `Runtime.evaluate` 往返，再发出独立的夹具日志命令。仅有 Worker 侧的 context 公告不能证明客户端已消费 console-enable 消息。已安装 wheel 的在线 SDK 测试在要求模型验证前，由外部将创建的文件替换为新的、仅主机知道的挑战值；验证提示不暴露该值。两个 turn 仍必须包含模型请求的工具调用，验证器同时比较返回值及真实文件字节。
+
+两个最小 PowerShell 快照显式排除无关的继承工具和 permission-preset 初始化，并禁用 runtime-context 注入。其既有录制 Session generation 保持不变；一次性执行的 header sidecar 跟随当前工具描述及预期的本地 executor。
+
+持久化 PowerShell 测试将静默观察与命令完成区分开。在 `inferred_idle` 后，它在既有时间界限内通过空提交刷新提示符证据，仍要求精确的 `stdin_read` 以及独立写入的完成标记。带阻塞标记的命令证明静默可能先于修改完成；修改命令本身绝不重放。
 
 ## 考虑过的替代方案
 

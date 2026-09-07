@@ -14,7 +14,7 @@ The static, coverage, and consumer jobs in [PR CI](../../../../.github/workflows
 
 The three workers also set `npm_config_cache` to `runner.temp/npm-cache`. The [release workflows](../../../../.github/workflows/release.yml) apply the same cache location in their existing temporary-storage setup, including [vendor rehearsals](../../../../.github/workflows/release-vendor.yml). npm otherwise caches registry responses under the shared home directory regardless of `TMPDIR`; a temporary consumer alone does not isolate those writes. Each worker keeps its persistent pnpm store beside `RUNNER_TEMP`, under its runner work root. This places the SQLite store index on the workspace volume and separates concurrent runner instances without deleting the shared home store. The first install per runner is cold; subsequent jobs on that runner reuse its store. The consumer job also places Playwright browser downloads and installation locks beside `RUNNER_TEMP`; hosted cache restore uses that same location. Operators retain responsibility for persistent-cache capacity.
 
-The [release rehearsal decision](../process/2026-09-06-release-rehearsal-selfhosted.md) applies the same lifetime rule to release consumers. The [failover runbook](../process/2026-07-26-ci-failover-runbook.md) continues to own runner selection and shared-host capacity. This change does not retarget jobs, reduce concurrency, retry tests, change assertions, or modify master-only CI.
+The [release rehearsal decision](../process/2026-09-06-release-rehearsal-selfhosted.md) applies the same lifetime rule to release consumers. The [failover runbook](../process/2026-07-26-ci-failover-runbook.md) continues to own runner selection and shared-host capacity. This change does not retarget jobs, reduce concurrency, retry tests, weaken assertions, or modify master-only CI.
 
 ## Recorded ACP completion order
 
@@ -27,6 +27,10 @@ The headless `session-sandbox-root` fixture declares `workspace.parent: outside-
 ## Retry-exposed fixture synchronization
 
 The Inspector console integration test waits for a Client `Runtime.evaluate` round trip after enablement before issuing its separate fixture log command. Worker-side context announcements alone do not prove that the client has consumed its console-enable message. The installed-wheel live SDK test externally replaces the created file with a fresh host-only challenge before asking the model to verify it; the verification prompt does not reveal that value. Both turns must still contain model-requested tool calls, and the verifier compares the returned value and actual file bytes.
+
+The two minimal PowerShell snapshots explicitly exclude unrelated inherited tools and permission-preset initialization, and disable runtime-context injection. Their existing recorded Session generations remain unchanged; the one-shot header sidecar tracks current tool descriptions and its intended local executor.
+
+The persistent PowerShell test distinguishes the silence observation from command completion. It refreshes prompt evidence with empty submissions after `inferred_idle`, within the existing bound, and still requires exact `stdin_read` plus an independently written completion marker. A gated command proves that silence can occur before mutation; the mutation itself is never replayed.
 
 ## Alternatives considered
 
