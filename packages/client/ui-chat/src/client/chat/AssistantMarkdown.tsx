@@ -6,9 +6,24 @@ import type { ChatNodeOwnerProps, ChatViewSlotProps } from '../contract/slots.ts
 import type { AssistantBlock } from '../contract/snapshot.ts'
 import { markdownLabels } from '../markdown-labels.ts'
 import { ReasoningRow } from './ReasoningRow.tsx'
-import { localPathMediaUrl } from './local-path-media.ts'
 import { useSearchableHidden } from './searchable-hidden.ts'
 import css from './AssistantMarkdown.module.css'
+
+/**
+ * Map one authored media destination to the same-origin workspace-file URL.
+ * @param protocol - `window.location.protocol` at render time.
+ * @param origin - `window.location.origin` at render time.
+ * @param value - The authored markdown destination, exactly as written.
+ * @returns The API URL for an absolute POSIX path on an HTTP(S) page, or
+ * undefined when the destination cannot be a Host-served local file
+ * (non-HTTP transport such as Electron `file://`, protocol-relative or
+ * relative destinations).
+ */
+export function localPathMediaUrl(protocol: string, origin: string, value: string): string | undefined {
+  if (protocol !== 'http:' && protocol !== 'https:') return undefined
+  if (value.length === 0 || !value.startsWith('/') || value.startsWith('//')) return undefined
+  return `${origin}/api/file?path=${encodeURIComponent(value)}`
+}
 
 export interface AssistantMarkdownProps {
   blocks: readonly AssistantBlock[]
