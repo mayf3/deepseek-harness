@@ -42,7 +42,7 @@ export interface MarkdownCodeLabels {
 export interface MarkdownLabels {
   code: MarkdownCodeLabels
   footnotes: string
-  /** Opt into settled Mermaid fence previews by supplying their complete localized chrome. */
+  /** Opt into settled Mermaid fence previews by supplying their complete localized labels. */
   mermaid?: MermaidPreviewLabels & { preview: string; source: string }
 }
 

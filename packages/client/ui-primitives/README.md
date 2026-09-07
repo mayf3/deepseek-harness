@@ -76,7 +76,7 @@ The catalog above lists what each export is for; this section covers the behavio
 
 `MermaidPreview` renders complete Mermaid source on a light canvas. Rendering loads Mermaid on demand, uses strict security, and exposes the generated SVG as an image with no diagram link handlers. A render failure shows the original source with the supplied error label; replacing the source discards late results from the previous render. The diagram keeps its intrinsic size and shrinks to fit the available width.
 
-Supply `MarkdownLabels.mermaid` to enable `mermaid` fence previews in a Markdown consumer; without it, fences remain code. Previews start after the message settles. `CodeBlock.preview` supplies an optional headerless body with icon actions for source switching and copying. Actions appear on hover or keyboard focus, and stay visible on touch devices; copying always retains the source. [The Mermaid decision](../../../.agents/notes/implemented/feature/2026-09-07-web-mermaid-preview.md) records the rendering and reuse choices.
+Supply `MarkdownLabels.mermaid` to enable `mermaid` fence previews in a Markdown consumer; without it, fences remain code. Previews start after the message settles. `CodeBlock.preview` supplies an optional headerless body with icon actions for source switching and copying. Actions appear on hover or keyboard focus, and stay visible below the diagram whenever a touchscreen is available, including with a mouse attached. Switching to source keeps the preview mounted, so returning reuses its result; copying always retains the source. [The Mermaid decision](../../../.agents/notes/implemented/feature/2026-09-07-web-mermaid-preview.md) records the rendering and reuse choices.
 
 ### Localizing copy
 
@@ -145,6 +145,7 @@ None; this package neither assembles nor sends a provider request.
 
 These limits define how the atoms behave at the edges; they are current package constraints, not a component roadmap.
 
+- **Mermaid rendering runs on the browser thread** — every mounted settled preview starts rendering, including off-screen diagrams. Mermaid serializes layouts; work already submitted to it cannot be interrupted. Preview virtualization and worker rendering are not provided.
 - **Streaming defers cross-boundary reference resolution** — a reference-style link or footnote whose definition sits on the other side of the incremental freeze boundary renders as literal text while the reply streams; the settled full parse at finalize resolves it.
 - **A long highlighted fence retains its complete token DOM** — streaming avoids re-parsing, re-tokenizing, and reconciling the completed prefix, but it does not discard old colors or virtualize token spans. Final DOM cardinality therefore still follows the fence's token count; nested/container fences and a pathological single long line remain on the general tail path.
 - **Glyph-level icons are redrawn approximations** — the fish logo and the sparkle mark come from font glyphs whose vector geometry is not exportable from the local design data; hand-authored recreations stand in until an exact export path exists.

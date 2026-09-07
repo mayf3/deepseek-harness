@@ -76,7 +76,7 @@ kind: "package-library"
 
 `MermaidPreview` 在浅色画布上渲染完整的 Mermaid 源码。渲染按需加载 Mermaid、使用严格安全模式，并把生成的 SVG 显示为图片，不绑定图内链接处理器。渲染失败时显示原始源码与传入的错误文案；替换源码后会丢弃前一次渲染的延迟结果。图表保留固有尺寸，并在可用宽度不足时缩小。
 
-为 Markdown 调用方传入 `MarkdownLabels.mermaid` 即可启用 `mermaid` fence 预览；未传入时，fence 保持代码显示。预览在消息定稿后开始。`CodeBlock.preview` 提供无标题栏的替代正文，以及切换源码和复制的图标操作。操作在悬停或键盘聚焦时出现，触屏上保持可见；复制始终保留源码。[Mermaid 决策](../../../.agents/notes/implemented/feature/2026-09-07-web-mermaid-preview.zh.md)记录了渲染与复用选择。
+为 Markdown 调用方传入 `MarkdownLabels.mermaid` 即可启用 `mermaid` fence 预览；未传入时，fence 保持代码显示。预览在消息定稿后开始。`CodeBlock.preview` 提供无标题栏的替代正文，以及切换源码和复制的图标操作。操作在悬停或键盘聚焦时出现；只要设备具备触屏，就在图表下方保持可见，包括同时连接鼠标的情况。切换到源码时保留已挂载的预览，返回时复用其结果；复制始终保留源码。[Mermaid 决策](../../../.agents/notes/implemented/feature/2026-09-07-web-mermaid-preview.zh.md)记录了渲染与复用选择。
 
 ### 本地化文案
 
@@ -145,6 +145,7 @@ kind: "package-library"
 
 这些限制说明原子组件在边缘情况下的行为；它们是当前包约束，不是组件路线图。
 
+- **Mermaid 渲染在浏览器线程上执行**：每个已挂载的定稿预览都会开始渲染，包括视口外的图表。Mermaid 串行执行布局，已提交给它的工作无法中断。当前不提供预览虚拟化或 worker 渲染。
 - **流式期间跨边界引用解析被推迟**：定义落在增量冻结边界另一侧的引用式链接或脚注，在回复流式输出期间渲染为字面文本；定稿时的全量解析会将其解析。
 - **长高亮 fence 会保留完整 token DOM**：流式路径避免重新解析、重新 tokenize 和 reconcile 已完成前缀，但不会丢弃旧颜色或虚拟化 token span。因此最终 DOM 数量仍随 fence 的 token 数增长；嵌套／容器内 fence 与病态的单个超长行仍走通用尾部路径。
 - **字形级图标是重新绘制的近似版本**：鱼形标志与闪光标记来自字体字形，而本地设计数据无法导出其矢量几何；在获得精确导出路径前，使用手工重建版本代替。

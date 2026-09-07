@@ -10,7 +10,7 @@ Assistant 回复可以在 Mermaid 代码 fence 中描述图表，但读者必须
 
 ## 决策
 
-Chat 通过 `MarkdownLabels.mermaid` 启用已定稿 fence 预览。共享 Markdown 渲染器使用解析后的 fence 语言；流式 fence 和未传入这些 label 的调用方保留代码显示。静态 [UI primitives 包](../../../../packages/client/ui-primitives/README.zh.md)拥有 `MermaidPreview`，它接收源码与本地化 label，不依赖 Session、文件或 Cordis。`CodeBlock.preview` 拥有视图切换与源码复制。预览省略语言标题栏，悬停或键盘聚焦时显示紧凑的图标操作；触屏上保持操作可见。源码与预览使用同一个已聚焦的切换按钮，复制始终读取源码 prop。
+Chat 通过 `MarkdownLabels.mermaid` 启用已定稿 fence 预览。共享 Markdown 渲染器使用解析后的 fence 语言；流式 fence 和未传入这些 label 的调用方保留代码显示。静态 [UI primitives 包](../../../../packages/client/ui-primitives/README.zh.md)拥有 `MermaidPreview`，它接收源码与本地化 label，不依赖 Session、文件或 Cordis。`CodeBlock.preview` 拥有视图切换与源码复制。预览省略语言标题栏，悬停或键盘聚焦时显示紧凑的图标操作；具备任何触控输入的设备均在图表下方保持操作可见。切换到源码时隐藏已挂载的预览，因此返回时保留已完成的渲染与进行中的工作。源码与预览使用同一个已聚焦的切换按钮，复制始终读取源码 prop。
 
 Mermaid 按需加载。它的公开 render API 串行执行图表工作，每次调用在 `finally` 中移除临时测量 DOM。图表配置无法覆盖严格安全模式、禁用 HTML label、中性主题和错误渲染策略。生成的 SVG 以图片显示，不安装图内链接或脚本。固有尺寸取自 SVG viewBox；大图缩小以适应宽度，画布在两种应用主题下均保持浅色。
 

@@ -94,6 +94,7 @@ describe('web e2e: Mermaid chat previews', () => {
     expect(await page.locator('pre code').allTextContents()).toContain(INVALID)
     expect(await images.first().evaluate(node => decodeURIComponent((node as HTMLImageElement).src))).toContain('共享渲染器')
     const first = page.locator('.md-code-block').first()
+    const diagram = await first.getByRole('img').elementHandle()
     const controls = first.locator('[class*="bannerWrap"]')
     expect(await first.getByText('mermaid', { exact: true }).count()).toBe(0)
     await page.mouse.move(0, 0)
@@ -109,8 +110,10 @@ describe('web e2e: Mermaid chat previews', () => {
     expect(await first.getByRole('button', { name: 'Preview', exact: true })
       .evaluate(node => node === document.activeElement)).toBe(true)
     expect(await first.locator('pre code').textContent()).toBe(FLOW)
+    expect(await diagram!.evaluate(node => node.isConnected)).toBe(true)
+    expect(await diagram!.isVisible()).toBe(false)
     await first.getByRole('button', { name: 'Preview', exact: true }).click()
-    await first.getByRole('img').waitFor()
+    expect(await diagram!.isVisible()).toBe(true)
     await first.getByRole('button', { name: 'Copy', exact: true }).waitFor()
     expect(await page.locator('body').evaluate(node => getComputedStyle(node).display)).not.toBe('none')
     expect(await page.locator('[id^="dsh-mermaid-"]').count()).toBe(0)
@@ -144,5 +147,32 @@ describe('web e2e: Mermaid chat previews', () => {
     await compareOrRefreshGolden(join(SNAPSHOT_DIR, 'zh.expected.md'), snapshot, MODE)
     await assertFixtureInventory(SNAPSHOT_DIR, ['ui.expected.md', 'zh.expected.md'])
     await page.close()
+  }, 60_000)
+
+  it.skipIf(MODE === 'record')('keeps actions visible when a mouse and touchscreen are both available', async () => {
+    const hybridBrowser = await chromium.launch({
+      args: ['--blink-settings=availablePointerTypes=6,primaryPointerType=4,availableHoverTypes=2,primaryHoverType=2'],
+    })
+    try {
+      const page = await newEnglishPage(hybridBrowser)
+      expect(await page.evaluate(() =>
+        matchMedia('(hover: hover) and (pointer: fine) and (any-pointer: coarse)').matches)).toBe(true)
+      await openConversation(page, scaffold)
+      const first = page.locator('.md-code-block').first()
+      const diagram = first.getByRole('img', { name: 'Mermaid diagram' })
+      await expect.poll(() => diagram.evaluate(node => (node as HTMLImageElement).naturalWidth)).toBeGreaterThan(0)
+      await page.mouse.move(0, 0)
+      const controls = first.locator('[class*="bannerWrap"]')
+      expect(await controls.evaluate(node => getComputedStyle(node).opacity)).toBe('1')
+      expect(await controls.evaluate(node => getComputedStyle(node).pointerEvents)).toBe('auto')
+      expect(await first.getByRole('button', { name: 'Source', exact: true })
+        .evaluate(node => node.getBoundingClientRect().width)).toBe(44)
+      expect(await controls.evaluate(node => node.getBoundingClientRect().top))
+        .toBeGreaterThanOrEqual(await diagram.evaluate(node => node.getBoundingClientRect().bottom))
+      await first.getByRole('button', { name: 'Source', exact: true }).click()
+      expect(await first.locator('pre code').textContent()).toBe(FLOW)
+    } finally {
+      await hybridBrowser.close()
+    }
   }, 60_000)
 })

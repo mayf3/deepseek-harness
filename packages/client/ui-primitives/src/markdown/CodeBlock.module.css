@@ -184,7 +184,7 @@
   }
 }
 
-@media (pointer: coarse) {
+@media (any-pointer: coarse) {
   .preview {
     padding-bottom: 56px;
   }
@@ -192,6 +192,8 @@
   .preview .bannerWrap {
     top: auto;
     bottom: 8px;
+    opacity: 1;
+    pointer-events: auto;
   }
 
   .preview .iconButton {

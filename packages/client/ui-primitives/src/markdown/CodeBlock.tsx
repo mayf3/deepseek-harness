@@ -217,7 +217,8 @@ export function CodeBlock({ code, lang, streaming, className, lineNumbers = fals
           </div>
         </div>
       </div>
-      {showingPreview ? preview.content : body}
+      {previewAvailable && <div hidden={!showingPreview}>{preview.content}</div>}
+      {!showingPreview && body}
     </div>
   )
 }

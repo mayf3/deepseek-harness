@@ -86,7 +86,7 @@ describe('Markdown Mermaid fences', () => {
     expect(renderMermaid).not.toHaveBeenCalled()
     expect(screen.queryByRole('button', { name: labels.source })).toBeNull()
     view.rerender(<MarkdownText {...props} />)
-    await screen.findByRole('img', { name: labels.diagram })
+    const diagram = await screen.findByRole('img', { name: labels.diagram })
     expect(screen.queryByText('mermaid')).toBeNull()
     expect(screen.getByRole('button', { name: labels.source }).textContent).toBe('')
     expect(screen.getByRole('button', { name: markdownLabels.code.copyLabel }).textContent).toBe('')
@@ -96,9 +96,12 @@ describe('Markdown Mermaid fences', () => {
     fireEvent.click(screen.getByRole('button', { name: labels.source }))
     expect(view.container.querySelector('pre code')?.textContent).toBe(source)
     expect(screen.queryByRole('img')).toBeNull()
+    expect(diagram.isConnected).toBe(true)
     expect(screen.queryByText('mermaid')).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: labels.preview }))
-    await screen.findByRole('img', { name: labels.diagram })
+    expect(screen.getByRole('img', { name: labels.diagram })).toBe(diagram)
+    expect(screen.queryByRole('status')).toBeNull()
+    expect(renderMermaid).toHaveBeenCalledOnce()
   })
 
   it('leaves other languages and consumers without preview labels as code', () => {
