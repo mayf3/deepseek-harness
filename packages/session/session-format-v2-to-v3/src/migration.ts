@@ -8,14 +8,14 @@ import { assertEvent, record, SURFACE_TYPES } from './payload.ts'
 import { remapEvent } from './references.ts'
 import { assertReleasedV3Header } from './validation.ts'
 
-/** Adjacent structural migration; refuses unclassified payloads and prompts that cannot retain source chronology. */
+/** Promote system prompts and rename legacy PTC presets; refuse unclassified payloads and chronology changes. */
 export const sessionFormatV2ToV3 = defineSessionFormatMigration({
   name: '@deepseek-ai/dsh-session-format-v2-to-v3',
   fromVersion: 2,
   toVersion: 3,
   migrateHeader(header) {
     assertReleasedV2Header(header)
-    return { ...header, version: 3 }
+    return { ...header, version: 3, ...(header.agentPreset === 'code' ? { agentPreset: 'ptc' } : {}) }
   },
   createStage(input) { return new ReleasedV2ToV3Stage(input) },
   validateTargetHeader: assertReleasedV3Header,
@@ -139,6 +139,9 @@ class ReleasedV2ToV3Stage implements SessionFormatMigrationStage {
 /** Source admission precedes renaming, so these payloads have exact audited fields. */
 function renamePtcEvent(event: SessionFormatEvent): SessionFormatEvent {
   switch (event.type) {
+    case 'agent-preset/selected':
+      return (event.data as SessionFormatJsonObject)['agentPreset'] === 'code'
+        ? { ...event, data: { ...event.data as SessionFormatJsonObject, agentPreset: 'ptc' } } : event
     case 'tool/code-dispatch-start':
       return { ...event, type: 'tool/ptc-dispatch-start' }
     case 'tool/code-dispatch':

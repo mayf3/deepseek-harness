@@ -35,7 +35,7 @@ kind: "package-library"
 const targetHeader = sessionFormatV2ToV3.migrateHeader(sourceHeader)
 ```
 
-Session 元数据仅将版本改为 3。阶段在首个 `step/start` 后立即插入空 `system/message`，随后在每次提示发生变化的 `request/header` 前替换受保护的头节点，包括清空提示。每个请求头的 `header.system` 均被移除，不移动任何源事件。仅含元数据的日志不添加头节点。V3 编码和恢复接受空系统头节点，并拒绝已退役的 `header.system`。
+头部版本变为 3。`header.agentPreset` 和每条 `agent-preset/selected.data.agentPreset` 中精确匹配的旧预设标识 `code` 变为 `ptc`，包括继承的选择事件。其他预设标识以及缺失的头部预设保持不变；选择事件缺少字符串预设标识时会被拒绝。阶段在首个 `step/start` 后立即插入空 `system/message`，随后在每次提示发生变化的 `request/header` 前替换受保护的头节点，包括清空提示。每个请求头的 `header.system` 均被移除，不移动任何源事件。仅含元数据的日志不添加头节点。V3 编码和恢复接受空系统头节点，并拒绝已退役的 `header.system`。
 
 阶段将 `tool/code-dispatch-start` 和 `tool/code-dispatch` 映射为 `tool/ptc-dispatch-start` 和 `tool/ptc-dispatch`。它在用户消息、收件箱插入消息与标题请求消息中，将精确匹配的 `tools-code-mode` 插件归属替换为 `tools-ptc`，不改写 ID、工具参数或内容。原生 V3 拒绝必需的前代 PTC 标签，包括出现在可恢复行损坏之后的标签；可忽略的前代标签保持不透明，不能满足当前 PTC 关系。V2 源输入中的 V3 保留 PTC 标签即使可忽略也会被拒绝。
 
@@ -84,6 +84,7 @@ Session 元数据仅将版本改为 3。阶段在首个 `step/start` 后立即�
 
 <a id="known-limitations-and-deferred-work"></a>
 
+- **历史预设归属** — 已发布 V0/V1/V2 的预设引用中，`code` 表示旧内置预设。这些日志无法区分同名的自定义预设；原生 V3 引用不会被重新解释。本库不迁移 `settings.yaml`。
 - **不发布文件** — 持久化负责不可变后继代的发布；本包绝不覆盖已发布代。
 - **保持时序的输入** — 首个步骤前出现表面事件，或在开放步骤之外更改提示时，以 `SessionFormatUnsupportedMigrationError` 拒绝；移动事件或虚构步骤外的系统消息会破坏重建。
 - **经过审计的迁移词汇** — 显式分类 V2 事件（包括仅日志 Assistant 尝试）与已安装的消息反馈扩展。Agent 中继归属与文件附件元数据保持不变，其标识符与字节计数不被解释为序列引用。迁移拒绝未知事件（即使标为可忽略）及未知消息来源或内容种类，因为无法推断其序列依赖。原生同版本读取保留普通可忽略事件的准入规则及请求头扩展，禁止已退役的 `header.system` 与必需的前代 PTC 标签。

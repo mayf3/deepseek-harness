@@ -25,6 +25,7 @@ const profiles = ['acp', 'sdk', 'session', 'web'] as const
 const snapshotAdapters = [
   'apps/web/tests/message-feedback-protocol.snapshot.ts',
   'apps/web/tests/minimal-preset.snapshot.ts',
+  'apps/web/tests/preset-migration.snapshot.ts',
   'snapshots/acp/acp.snapshot.ts',
   'snapshots/sdk/sdk.snapshot.ts',
   'snapshots/session/headless.snapshot.ts',
@@ -201,7 +202,7 @@ it('keeps a current-writer majority plus bounded declared historical migration c
   })))
 
   expect(assertSnapshotCorpusPolicy(inventory)).toMatchObject({
-    retainedRoles: 8,
-    retainedScenarios: 6,
+    retainedRoles: 9,
+    retainedScenarios: 7,
   })
 })
