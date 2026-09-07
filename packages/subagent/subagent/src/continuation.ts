@@ -49,7 +49,6 @@ import {
 } from './child-agent.ts'
 import type { DelegatedPolicyOverrides } from './child-agent.ts'
 import { assertSubagentMaxDepth } from './depth.ts'
-import { seedDescriptorTurn } from './descriptor-seed.ts'
 import type { ContinuableCreateRequest, ContinuableCreateSpec, SubagentResult, SubagentStartRequest } from './types.ts'
 import type { ActivationObserver, ActivationTerminal } from './lifecycle.ts'
 import { SubagentError } from './error.ts'
@@ -247,12 +246,14 @@ interface MaterializeInputs {
    * so a resume never re-captures the parent's policy.
    */
   create?: {
-    seed: readonly SessionEvent[]
+    seed: readonly SessionEvent[] | undefined
     meta: NonNullable<CreateAgentOptions['meta']>
     /** Exact parent-log prefix length inside {@link seed}. */
     inheritedEventCount: SessionLogOffsetType
     /** Policy captured at the delegation boundary: the parent's sandbox override plus the approval pin. */
     delegatedPolicies: DelegatedPolicyOverrides
+    /** Child-owned composition record appended after the inherited marker. */
+    descriptor: SubagentDescriptorData
   }
   agentOptions: AgentOptions
   composition: { persona?: string | undefined; toolFilter?: ToolRestriction | undefined }
@@ -293,7 +294,7 @@ function agentMessageSource(sender: Agent): AgentMessageSource {
 function agentMessage(sender: Agent, content: ContentBlock[]) {
   return createUserMessage({
     content: [
-      { type: 'text' as const, text: `Agent ${sender.id} sent a message:` },
+      { type: 'text' as const, text: `Agent ${sender.id} sent a message: ` },
       ...content,
     ],
     source: agentMessageSource(sender),
@@ -479,7 +480,7 @@ export class SubagentContinuationManager {
       this.assertAdmitting(parent)
 
       const inheritedEventCount = SessionLogOffset(prepared.seed?.length ?? 0)
-      const seed = seedDescriptorTurn(childId, prepared.seed, descriptor)
+      const seed = prepared.seed
       const messageId = await this.locks.run(childId, async () => {
         spec.signal.throwIfAborted()
         this.assertAdmitting(parent)
@@ -497,7 +498,13 @@ export class SubagentContinuationManager {
           childId,
           provider: spec.provider,
           parent,
-          create: { seed, meta: childSessionMeta(parent, childDepth, prepared.seed !== undefined), inheritedEventCount, delegatedPolicies },
+          create: {
+            seed,
+            meta: childSessionMeta(parent, childDepth, prepared.seed !== undefined),
+            inheritedEventCount,
+            delegatedPolicies,
+            descriptor,
+          },
           agentOptions,
           composition: { persona: request.persona, toolFilter: request.toolFilter },
           signal: spec.signal,
@@ -1215,10 +1222,10 @@ export class SubagentContinuationManager {
     // some other owner holds — a duplicate would reject there with rollback.
     inputs.signal.throwIfAborted()
     const setup = (childCtx: Context, child: Agent): void => {
-      // Only fresh creation seeds the delegation policy onto the child's own
-      // log (after any fork seed, so fresh policy wins stale seed state); a
-      // cold resume replays those persisted events instead.
+      // Only fresh creation appends the descriptor and delegated policy after
+      // the inherited marker; a cold resume replays those persisted events.
       if (create !== undefined) {
+        child.session.append('subagent/descriptor', create.descriptor)
         appendDelegatedPolicyOverrides(child.session, create.delegatedPolicies)
       }
       applyChildComposition(childCtx, parent, inputs.composition)
@@ -1238,7 +1245,7 @@ export class SubagentContinuationManager {
         sessionId: childId,
         parentAgent: parent,
         meta: create.meta,
-        seed: create.seed,
+        ...(create.seed === undefined ? {} : { seed: create.seed }),
         inheritedEventCount: create.inheritedEventCount,
         agentOptions: inputs.agentOptions,
         signal: inputs.signal,
