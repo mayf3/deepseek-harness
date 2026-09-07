@@ -92,6 +92,8 @@ export class ReactLoopAgent implements Agent {
   private assistantStreamRevision = 0
   private assistantAttemptCounter = 0
   private readonly systemPrompt: SystemPromptProjection
+  /** Identities fully frozen by this loop; weak references do not retain replaced history. */
+  private readonly frozenMessages = new WeakSet<Message>()
 
   constructor(
     private loopCtx: Context,
@@ -495,7 +497,8 @@ export class ReactLoopAgent implements Agent {
 
   /**
    * Compose one frozen request and bind it to the adapter registration that
-   * resolved its exact-model defaults.
+   * resolved its exact-model defaults. Message identities retain their first
+   * successful deep freeze; each local header is frozen afresh. The signal stays live.
    */
   private async buildRequest(
     turn: number,
@@ -586,7 +589,15 @@ export class ReactLoopAgent implements Agent {
     }
     signal.throwIfAborted()
 
-    const request = markAgentLoopRequest(deepFreeze({
+    // canonicalHeader is shallow; append logs a detached snapshot, not these local values.
+    deepFreeze(header)
+    for (const message of boundaryMessages) {
+      if (this.frozenMessages.has(message)) continue
+      deepFreeze(message)
+      this.frozenMessages.add(message)
+    }
+    Object.freeze(boundaryMessages)
+    const request = markAgentLoopRequest(Object.freeze({
       ...header.config,
       messages: boundaryMessages,
       ...header.tools !== undefined ? { tools: header.tools } : {},
