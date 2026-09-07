@@ -30,6 +30,8 @@ The installed-wheel live SDK test externally replaces the created file with a fr
 
 The reference-composer fixture maps the known home-abbreviated workspace display to its existing cwd token and waits for the current exact suggestion set before selecting; neither host paths nor stale suggestions determine its result. The shared browser timezone, Inspector subscription synchronization, and PowerShell completion behavior follow the [existing platform-test decision](2026-09-07-pwsh-ci-observable-completion.md).
 
+The advanced Python snapshot pauses only its matching workflow child’s first pre-step until the parent’s durable workflow membership event is observed. The fixture supports either event-arrival order and cancels pending waits on abort or disposal. This pins the scenario’s cross-session ordering without sorting notifications or changing production scheduling.
+
 ## Alternatives considered
 
 **Delete shared temporary files from a PR job.** Another runner may still own those files. Repository jobs must not reclaim a shared directory by pathname or age.
