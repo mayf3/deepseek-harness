@@ -20,8 +20,8 @@ function toolInput(raw: string): Record<string, unknown> {
   return object(value, 'INVALID_REQUEST')
 }
 
-function assistant(message: Message, model: string): WireBlock[] {
-  const replay = readReplay(message, model)
+function assistant(message: Message, model: string, onReplayDegrade?: (reason: string) => void): WireBlock[] {
+  const replay = readReplay(message, model, onReplayDegrade)
   return message.content.map((block, index): WireBlock => {
     switch (block.type) {
       case 'text': return { type: 'text', text: block.text }
@@ -41,11 +41,13 @@ function assistant(message: Message, model: string): WireBlock[] {
  * @param history - image-projected history, still ordered by durable occurrence.
  * @param images - request versions for retained images.
  * @param access - execution-world paths for image descriptions.
+ * @param onReplayDegrade - diagnostic for discarded native replay metadata.
  * @returns the Messages API JSON body.
  */
 export function serialize(
   options: GenerateOptions, connection: Connection, history: readonly Message[],
   images: ReadonlyMap<ImageAttachmentRef['attachmentId'], RequestImageAttachment>, access: ImageAttachmentAccessResolver,
+  onReplayDegrade?: (reason: string) => void,
 ): WireRequest {
   const input = (blocks: readonly ContentBlock[]): WireInput[] => blocks.flatMap((block): WireInput[] => {
     if (block.type === 'text') return block.text ? [{ type: 'text', text: block.text }] : []
@@ -66,7 +68,7 @@ export function serialize(
       system.push(texts.map(block => block.text).join(''))
       continue
     }
-    const content: WireBlock[] = message.role === 'assistant' ? assistant(message, options.model) : message.content.flatMap((block): WireBlock[] => {
+    const content: WireBlock[] = message.role === 'assistant' ? assistant(message, options.model, onReplayDegrade) : message.content.flatMap((block): WireBlock[] => {
       if (block.type !== 'tool-result') return input([block])
       return [{ type: 'tool_result', tool_use_id: block.toolCallId, content: input(block.content), ...block.isError === undefined ? {} : { is_error: block.isError } }]
     })

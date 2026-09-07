@@ -3,7 +3,7 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { Context } from '@deepseek-ai/cordis'
+import { Context, LoggerLevel } from '@deepseek-ai/cordis'
 import LocalAttachments from '@deepseek-ai/dsh-attachment-local'
 import LlmRuntime, { createToolResultMessage, ReasoningEffortId } from '@deepseek-ai/dsh-llm'
 import type { Message } from '@deepseek-ai/dsh-llm'
@@ -81,5 +81,26 @@ describe.skipIf(!process.env.DEEPSEEK_API_KEY)('DeepSeek Messages real API', () 
     }
     expect(cancelled).toBe(true)
     expect(finish).toMatchObject({ kind: 'aborted' })
+  })
+
+  it('continues a thinking/tool turn after degrading unusable persisted replay metadata', async () => {
+    const ctx = await boot()
+    const warnings: unknown[][] = []
+    ctx.logger.exporter({ levels: { default: LoggerLevel.WARN }, export: (message) => { if (message.type === 'warn') warnings.push(message.args) } })
+    const history: Message[] = [user('Use lookup_value with key secret. Then reply with the exact tool result and stop.')]
+    const request = options({ messages: history, tools: [tool], reasoningEffort: ReasoningEffortId('high') })
+    const first = await assemble(ctx.llm.stream(request))
+    expect(first.assembler.finish.kind).toBe('tool-calls')
+    const calls = first.message.content.filter(block => block.type === 'tool-call')
+    expect(calls).toHaveLength(1)
+    const restored = JSON.parse(JSON.stringify(first.message)) as typeof first.message
+    restored.source.replayState = { response: { kind: 'deepseek-messages', version: 2 }, blocks: [] }
+    const saved = JSON.stringify(restored)
+    history.push(restored, ...calls.map(call => createToolResultMessage({ callId: call.id, content: [{ type: 'text', text: 'REPLAY_RECOVERED_731' }], isError: false })))
+    const second = await assemble(ctx.llm.stream({ ...request, messages: history }))
+    expect(second.assembler.finish.kind).toBe('stop')
+    expect(second.message.content.filter(block => block.type === 'text').map(block => block.text).join('')).toContain('REPLAY_RECOVERED_731')
+    expect(warnings).toEqual([[expect.stringContaining('unsupported kind or version')]])
+    expect(JSON.stringify(restored)).toBe(saved)
   })
 })

@@ -24,6 +24,8 @@ export interface AdapterDependencies {
   attachments(): AttachmentStore | undefined
   /** Current execution-world attachment path. */
   imageAccess: ImageAttachmentAccessResolver
+  /** Report discarded replay metadata without exposing durable content or signatures. */
+  onReplayDegrade?: (detail: { provider: string; model: string; reason: string }) => void
 }
 
 /** DeepSeek provider using Messages content and native thinking replay. */
@@ -81,7 +83,9 @@ export class DeepSeekMessagesAdapter extends LlmAdapter {
     const { messages, versions } = await prepareImages(
       options.messages, connection, options.model, this.dependencies.attachments(), this.dependencies.imageAccess, signal,
     )
-    const body = serialize(options, connection, messages, versions, this.dependencies.imageAccess)
+    const body = serialize(options, connection, messages, versions, this.dependencies.imageAccess, (reason) => {
+      this.dependencies.onReplayDegrade?.({ provider: options.provider, model: options.model, reason })
+    })
     const key = await this.dependencies.apiKey(connection)
     signal.throwIfAborted()
     const response = await fetch(`${connection.baseURL}/v1/messages`, {

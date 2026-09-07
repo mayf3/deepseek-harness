@@ -14,7 +14,7 @@ Status: implemented
 
 适配器遵循 [DeepSeek 兼容文档](https://api-docs.deepseek.com/zh-cn/guides/anthropic_api) 和 [Anthropic 流协议](https://platform.claude.com/docs/en/build-with-claude/streaming)。pi-ai 的 Anthropic 实现为相邻用户消息、累计用量、工具参数分片和可选思考签名的处理提供参考。DeepSeek 通过 `output_config.effort` 设置思考强度；Anthropic 思考 token 预算不控制 DeepSeek 思考强度。
 
-助手内容块保留持久化的模型可见内容。带版本的 `ReplayEnvelope` 仅保存模型标识、对齐的块类型以及内容块未包含的签名。同模型续接原样恢复签名，包括空签名；外部历史不生成虚构签名。提供者回放数据对循环保持不透明，同时能够随 Session 持久化和内容块裁剪保留。
+助手内容块保留持久化的模型可见内容。带版本的 `ReplayEnvelope` 仅保存模型标识、对齐的块类型以及内容块未包含的签名。同模型续接原样恢复签名，包括空签名；外部历史不生成虚构签名。不可用的元数据遵循现有[回放降级规则](../architecture/2026-07-14-provider-routed-llm-adapters.zh.md)：请求省略签名并记录警告，保留持久化内容；工具参数等内容校验仍会正常报错。提供者回放数据对循环保持不透明，同时能够随 Session 持久化和内容块裁剪保留。
 
 图片请求使用附件服务生成的、有预算限制的内联 base64 版本。共享附件卸载机制和 DeepSeek token 计量使请求与计量策略保持一致。此适配器不负责 Files 上传，因为其端点和缓存所有权与 chat-completions 不同；增加上传支持需要定义 Messages 专属的生命周期和错误策略。
 
@@ -32,4 +32,4 @@ Web profile 选择 Messages 适配器并禁用 Chat Completions 适配器。配�
 
 该包负责协议校验、停止原因映射、取消和错误分类，因此协议变化需要维护适配器。不支持的内容和不完整的流会明确报错。现有重试消费者负责重试；现有装配器在输出达到上限时丢弃未完成的工具调用。共享 base 保留 Chat Completions，Web 覆盖层拥有 Messages 默认值。
 
-验证覆盖协议夹具、真实 Loader 组合、逐文件单元覆盖率、[已记录 Session 回放](../../../../snapshots/session/deepseek-messages-replay/snapshot.yml)，Web Messages Session 回放，以及凭证控制的文本、思考、工具续接、图片和取消请求。真实网关检查证明与已配置网关的兼容性，不能证明与所有 Anthropic 代理兼容。
+验证覆盖协议夹具、真实 Loader 组合、逐文件单元覆盖率、[已记录 Session 回放](../../../../snapshots/session/deepseek-messages-replay/snapshot.yml)与[未知回放版本](../../../../snapshots/session/deepseek-messages-degraded-replay/snapshot.yml)，Web Messages Session 回放，以及凭证控制的文本、思考、工具续接、图片和取消请求。真实网关检查证明与已配置网关的兼容性，不能证明与所有 Anthropic 代理兼容。

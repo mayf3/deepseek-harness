@@ -4,12 +4,13 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { Context, Service } from '@deepseek-ai/cordis'
+import { Context, LoggerLevel, Service } from '@deepseek-ai/cordis'
 import LocalAttachments from '@deepseek-ai/dsh-attachment-local'
 import { AttachmentId } from '@deepseek-ai/dsh-attachment'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
 import Include from '@deepseek-ai/cordis-plugin-include'
-import LlmRuntime from '@deepseek-ai/dsh-llm'
+import LlmRuntime, { createAssistantMessage } from '@deepseek-ai/dsh-llm'
+import type { Message } from '@deepseek-ai/dsh-llm'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import LocalCredentials from '@deepseek-ai/dsh-credentials-local'
 import FileSettings from '@deepseek-ai/dsh-settings-file'
@@ -39,6 +40,20 @@ async function context() {
 }
 
 describe('direct Messages HTTP', () => {
+  it('continues without a diagnostic callback when replay metadata is unusable', async () => {
+    const http = await endpoint()
+    const message = createAssistantMessage({ content: [{ type: 'text', text: 'Remember 731.' }], source: {
+      provider: 'deepseek-messages', model: MODEL, replayState: { response: {}, blocks: [] },
+    } })
+    const response = await assemble(adapter({ baseURL: http.url }).stream(options({ messages: [user(), message, user()] })))
+    expect(response.assembler.finish.kind).toBe('stop')
+    expect(http.requests[0]?.body.messages).toEqual([
+      { role: 'user', content: [{ type: 'text', text: 'hello' }] },
+      { role: 'assistant', content: [{ type: 'text', text: 'Remember 731.' }] },
+      { role: 'user', content: [{ type: 'text', text: 'hello' }] },
+    ])
+  })
+
   it('uses the Messages endpoint, authentication, attribution and final usage', async () => {
     const http = await endpoint()
     const llm = adapter({ baseURL: http.url })
@@ -154,6 +169,30 @@ describe('Cordis provider composition', () => {
     await ctx.loader.await()
     return { ctx, http }
   }
+
+  it('continues a recorded tool turn with a warning when its native replay version is unknown', async () => {
+    const { ctx, http } = await boot()
+    const warnings: unknown[][] = []
+    ctx.logger.exporter({ levels: { default: LoggerLevel.WARN }, export: (message) => { if (message.type === 'warn') warnings.push(message.args) } })
+    const fixture = await readFile(new URL('../../../../snapshots/session/deepseek-messages-degraded-replay/session.v2.jsonl', import.meta.url), 'utf8')
+    const records = fixture.trim().split('\n').map(line => JSON.parse(line) as { type: string; data: { message?: Message } })
+    const assistant = records.find(record => record.type === 'assistant/message')!.data.message!
+    const result = records.find(record => record.type === 'tool/result')!.data.message!
+    const saved = JSON.stringify([assistant, result])
+    const response = await assemble(ctx.llm.stream(options({ messages: [user(), assistant, result] })))
+    expect(response.assembler.finish.kind).toBe('stop')
+    expect(warnings).toEqual([[`llm-deepseek-messages: unusable replay state on assistant history for route "deepseek-messages/${MODEL}"; sending that message as provider-neutral content (DeepSeek Messages replay: unsupported kind or version)`]])
+    expect(http.requests).toHaveLength(1)
+    expect(http.requests[0]?.body.messages).toEqual([
+      { role: 'user', content: [{ type: 'text', text: 'hello' }] },
+      { role: 'assistant', content: [
+        { type: 'thinking', thinking: 'The user wants me to run a simple bash command and then reply with "DONE".' },
+        { type: 'tool_use', id: 'call_00_fkbBRJsUrGKd1pWVc4Gn8233', name: 'bash', input: { command: 'echo TERMINAL_OK', description: 'Echo TERMINAL_OK to verify terminal access' } },
+      ] },
+      { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'call_00_fkbBRJsUrGKd1pWVc4Gn8233', content: [{ type: 'text', text: 'TERMINAL_OK\n' }], is_error: false }] },
+    ])
+    expect(JSON.stringify([assistant, result])).toBe(saved)
+  })
 
   it('loads both routes from YAML, rotates settings and credentials, then removes disposed registrations', async () => {
     const { ctx, http } = await boot()

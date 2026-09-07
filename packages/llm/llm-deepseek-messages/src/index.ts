@@ -37,6 +37,9 @@ export function apply(ctx: Context, config: Config): void {
   let userId: string | undefined
   const adapter = new DeepSeekMessagesAdapter({
     connection,
+    onReplayDegrade: ({ provider, model, reason }) => {
+      ctx.logger.warn(`llm-deepseek-messages: unusable replay state on assistant history for route "${provider}/${model}"; sending that message as provider-neutral content (${reason})`)
+    },
     async apiKey(snapshot) {
       const credentials = ctx.get('credentials')
       const value = credentials === undefined

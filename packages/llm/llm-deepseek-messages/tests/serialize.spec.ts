@@ -1,5 +1,5 @@
 /** Request conversion and durable replay validation. */
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { createAssistantMessage, createMessage, createToolResultMessage, ReasoningEffortId, ToolCallId } from '@deepseek-ai/dsh-llm'
 import type { ContentBlock, GenerateOptions, Message } from '@deepseek-ai/dsh-llm'
 import { AttachmentId, ImageVariantId } from '@deepseek-ai/dsh-attachment'
@@ -88,15 +88,61 @@ describe('Messages request conversion', () => {
   })
 
   it.each([
+    null,
+    [],
+    { response: null, blocks: [] },
     { response: { kind: 'other', version: 1 }, blocks: [] },
     { response: { kind: 'deepseek-messages', version: 2 }, blocks: [] },
     { response: { kind: 'deepseek-messages', version: 1, model: 'wrong' }, blocks: [] },
     { response: { kind: 'deepseek-messages', version: 1, model: MODEL }, blocks: [] },
+    { response: { kind: 'deepseek-messages', version: 1, model: MODEL }, blocks: null },
+    { response: { kind: 'deepseek-messages', version: 1, model: MODEL }, blocks: [null] },
     { response: { kind: 'deepseek-messages', version: 1, model: MODEL }, blocks: [{ type: 'tool-call' }] },
     { response: { kind: 'deepseek-messages', version: 1, model: MODEL }, blocks: [{ type: 'reasoning', signature: 3 }] },
-  ])('rejects unusable replay state %#', (state) => {
+  ].map(state => ({ state })))('degrades unusable replay state with a diagnostic %#', ({ state }) => {
     const message = createAssistantMessage({ content: [{ type: 'reasoning', text: 'think' }], source: { provider: 'deepseek-messages', model: MODEL, replayState: state } })
-    expect(() => readReplay(message, MODEL)).toThrow(/replay/)
+    const onDegrade = vi.fn()
+    expect(readReplay(message, MODEL, onDegrade)).toBeUndefined()
+    expect(onDegrade).toHaveBeenCalledExactlyOnceWith(expect.any(String))
+    expect(body([message]).messages[0]?.content).toEqual([{ type: 'thinking', thinking: 'think' }])
+  })
+
+  it.each([MODEL, 'different-model'])('keeps durable content when replay degrades for %s', async (model) => {
+    const message = createAssistantMessage({
+      content: [{ type: 'reasoning', text: 'Read the file.' }, { type: 'text', text: 'Checking a.' }, call()],
+      source: { provider: 'deepseek-messages', model: MODEL, replayState: replayState(MODEL, [
+        { type: 'reasoning', signature: 'do-not-send' }, { type: 'text', signature: 'invalid-for-text' }, { type: 'tool-call' },
+      ]) },
+    })
+    const saved = JSON.stringify(message)
+    const restored = JSON.parse(saved) as Message
+    const messages = [user(), restored, result()]
+    const onDegrade = vi.fn()
+    const request = serialize(options({ model }), connection, messages, new Map(), () => undefined, onDegrade)
+    expect(onDegrade).toHaveBeenCalledExactlyOnceWith('DeepSeek Messages replay: invalid signature')
+    await expect(JSON.stringify(request.messages, null, 2) + '\n').toMatchFileSnapshot('expected/degraded-replay.json')
+    expect(JSON.stringify(restored)).toBe(saved)
+  })
+
+  it('keeps valid cross-model and foreign history quiet and propagates diagnostic failures', () => {
+    const onDegrade = vi.fn()
+    const message = createAssistantMessage({ content: [{ type: 'reasoning', text: 'think' }], source: {
+      provider: 'deepseek-messages', model: MODEL, replayState: replayState(MODEL, [{ type: 'reasoning', signature: '' }]),
+    } })
+    expect(readReplay(message, MODEL, onDegrade)).toEqual([{ type: 'reasoning', signature: '' }])
+    expect(readReplay(message, 'different-model', onDegrade)).toBeUndefined()
+    expect(readReplay(assistant([{ type: 'text', text: 'foreign' }]), MODEL, onDegrade)).toBeUndefined()
+    expect(onDegrade).not.toHaveBeenCalled()
+    const damaged = { ...message, source: { ...message.source, replayState: { response: {}, blocks: [] } } }
+    const failure = new Error('diagnostic failed')
+    expect(() => readReplay(damaged, MODEL, () => { throw failure })).toThrow(failure)
+  })
+
+  it('still rejects invalid tool JSON after discarding unusable replay metadata', () => {
+    const message = createAssistantMessage({ content: [{ type: 'tool-call', id: ToolCallId('a'), name: 'read', arguments: '{' }], source: {
+      provider: 'deepseek-messages', model: MODEL, replayState: { response: {}, blocks: [] },
+    } })
+    expect(() => body([message, result()])).toThrow(/historical tool input is invalid JSON/)
   })
 })
 

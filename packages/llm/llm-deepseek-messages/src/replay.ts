@@ -30,12 +30,22 @@ export function replayState(model: string, blocks: ReplayBlock[]): ReplayEnvelop
   return { response: { kind: 'deepseek-messages', version: 1, model }, blocks }
 }
 
-/** Validate native replay before using any signature on the wire.
+/** Validate native replay, discarding unusable metadata before serializing durable content.
  * @param message - durable assistant content and provenance.
  * @param model - target model; cross-model signatures are not portable.
- * @returns index-aligned metadata, absent for foreign or cross-model history.
+ * @param onDegrade - diagnostic for unusable metadata; receives no message content or signatures.
+ * @returns index-aligned metadata, absent for foreign, cross-model or degraded history.
  */
-export function readReplay(message: Message, model: string): ReplayBlock[] | undefined {
+export function readReplay(message: Message, model: string, onDegrade?: (reason: string) => void): ReplayBlock[] | undefined {
+  try { return validateReplay(message, model) } catch (error) {
+    /* v8 ignore next -- the validator only throws INVALID_REPLAY_STATE; preserve future non-replay failures. */
+    if (!(error instanceof LlmError) || error.code !== 'INVALID_REPLAY_STATE') throw error
+    onDegrade?.(error.message)
+    return undefined
+  }
+}
+
+function validateReplay(message: Message, model: string): ReplayBlock[] | undefined {
   if (message.source.kind !== 'model' || message.source.replayState === undefined) return undefined
   const fail = (detail: string): never => { throw new LlmError(`DeepSeek Messages replay: ${detail}`, 'INVALID_REPLAY_STATE') }
   const envelope = object(message.source.replayState, 'INVALID_REPLAY_STATE')
