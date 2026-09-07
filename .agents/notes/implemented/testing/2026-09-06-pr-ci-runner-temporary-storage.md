@@ -32,6 +32,8 @@ The two minimal PowerShell snapshots explicitly exclude unrelated inherited tool
 
 The persistent PowerShell test distinguishes the silence observation from command completion. It refreshes prompt evidence with empty submissions after `inferred_idle`, within the existing bound, and still requires exact `stdin_read` plus an independently written completion marker. A gated command proves that silence can occur before mutation; the mutation itself is never replayed.
 
+The Cordis browser-tool fixture pins its recorded `Asia/Shanghai` browser timezone instead of inheriting the runner timezone; the persisted user-message timezone remains asserted.
+
 ## Alternatives considered
 
 **Delete shared temporary files from a PR job.** Another runner may still own those files. Repository jobs must not reclaim a shared directory by pathname or age.
