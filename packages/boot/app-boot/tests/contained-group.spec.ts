@@ -218,6 +218,49 @@ describe('cordis:contained-group', () => {
     expect(registry.list().map(failure => failure.entryId)).toEqual(['include:other/bad'])
   })
 
+  it('drops the record of a row its configuration no longer names, while the group stays', async () => {
+    const ctx = await boot(NAME, stage(`
+- id: bundle/ext
+  name: cordis:contained-group
+  group: true
+  config:
+    - id: ext/bad
+      name: cordis:throws
+    - id: ext/ok
+      name: cordis:good
+`), [], prepare)
+    contexts.push(ctx)
+    const registry = ctx.get('pluginFailures') as ContainedFailureRegistry
+    expect(registry.get('include:ext/bad')).toBeDefined()
+    const group = ctx.loader.resolve('include:bundle/ext')
+    // The bundle updates to a version without the failing row: the group is updated, not unmounted.
+    await group.update({ config: [{ id: 'ext/ok', name: 'cordis:good' }] })
+    expect(registry.get('include:ext/bad')).toBeUndefined()
+    expect([...ctx.loader.entries()].some(entry => entry.id === 'include:ext/ok')).toBe(true)
+  })
+
+  it('records a pending row of a nested plain group under the contained group that isolates it, so unmounting the bundle clears it', async () => {
+    const ctx = await boot(NAME, stage(`
+- id: bundle/ext
+  name: cordis:contained-group
+  group: true
+  config:
+    - id: ext/inner
+      name: cordis:group
+      group: true
+      config:
+        - id: ext/waiting
+          name: cordis:pending
+        - name: cordis:good
+`), [], prepare)
+    contexts.push(ctx)
+    const registry = ctx.get('pluginFailures') as ContainedFailureRegistry
+    expect(registry.get('include:ext/waiting')).toEqual(expect.objectContaining({ stage: 'inject-pending', groupId: 'include:bundle/ext' }))
+    const group = ctx.loader.resolve('include:bundle/ext')
+    await group.parent.remove(group.options.id)
+    expect(registry.get('include:ext/waiting')).toBeUndefined()
+  })
+
   it('provides one registry per runtime', async () => {
     const ctx = new Context()
     contexts.push(ctx)

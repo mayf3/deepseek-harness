@@ -177,6 +177,18 @@ describe('parsePatchList', () => {
     expect(anchorInsertedPluginNames(patches, '/tmp/dir/x.yml')).toBe(patches)
     expect(patches[0]?.insert[0]?.name).toBe(pathToFileURL('/tmp/dir/a.js').href)
   })
+
+  it('anchors the rows a config override sets, and leaves other patches and non-row items alone', () => {
+    const patches = [
+      { id: 'g', config: [{ id: 'c', name: './c.js' }, 'not a row', { flag: true }] },
+      { id: 'other', disabled: true },
+      { disabled: true },
+      { id: 'scalar', config: { name: './not-a-row.js' } },
+    ]
+    anchorInsertedPluginNames(patches, '/tmp/dir/x.yml')
+    expect(patches[0]?.config).toEqual([{ id: 'c', name: pathToFileURL('/tmp/dir/c.js').href }, 'not a row', { flag: true }])
+    expect(patches[3]?.config).toEqual({ name: './not-a-row.js' })
+  })
 })
 
 describe('readPatchListFile', () => {

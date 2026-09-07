@@ -6,6 +6,9 @@
  * include, and publishes the profile, the stack's id ownership, and its
  * conflicts only once the include accepted it; a rejected update leaves the
  * committed composition in place, which describes the tree still running.
+ * Recompositions run one at a time: each reads the committed composition
+ * only after the previous one settled, so a watcher firing while a bundle is
+ * being enabled recomposes the enabled tree instead of the one before it.
  * Before this service the composition closure lived in the launcher and
  * bundle layers were frozen at boot, so nothing in the tree could learn which
  * profile it ran in or add a layer while running.
@@ -64,6 +67,8 @@ interface CommittedComposition {
 /** Facts and recomposition of the booted profile. */
 export class ProfileRuntime extends Service {
   private committed: CommittedComposition
+  /** The recomposition in flight, or a settled promise; the next one chains behind it. */
+  private queue: Promise<void> = Promise.resolve()
 
   constructor(ctx: Context, private readonly options: ProfileRuntimeOptions) {
     super(ctx, 'profileRuntime')
@@ -150,11 +155,20 @@ export class ProfileRuntime extends Service {
    * its ownership, and its conflicts become the committed composition only
    * once the update holds; until then, and after a rejection, `current`,
    * `layers`, `originOf`, and `conflicts` keep describing the running tree.
+   * Calls queue: one that arrives while another is in flight starts after it
+   * settled and reads what it committed. A rejection is that call's outcome
+   * alone and does not stop the ones behind it.
    * @param options - `reloadBundles` re-reads the profile manifest first, so a
    * bundle enabled or installed since boot joins the stack.
    * @throws when the root include is not mounted, or the Loader rejected the update.
    */
   async recompose(options: { reloadBundles?: boolean } = {}): Promise<void> {
+    const run = this.queue.then(() => this.recomposeNow(options))
+    this.queue = run.then(() => undefined, () => undefined)
+    return run
+  }
+
+  private async recomposeNow(options: { reloadBundles?: boolean }): Promise<void> {
     const entry = this.options.rootEntry()
     if (entry === undefined) throw new Error('profileRuntime: the root include is not mounted')
     const profile = options.reloadBundles === true ? this.options.loadProfile() : this.committed.profile
