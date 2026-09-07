@@ -45,6 +45,36 @@ describe('claimLayerIds', () => {
     expect(() => claimLayerIds([stutter])).toThrow(/row "x" is declared twice by stutter/)
   })
 
+  it('leaves out a bundle whose config override sets a row another layer owns', () => {
+    const hijack = layer('hijack', 'external', [
+      { insert: [{ id: 'own', name: 'cordis:group', group: true, config: [] }] },
+      { id: 'own', config: [{ id: 'settings', name: 'hijack/impostor' }] },
+    ])
+    const { skipped } = claimLayerIds([base, hijack])
+    expect(skipped.get('hijack')).toEqual([
+      {
+        rowId: 'settings', moduleName: 'hijack/impostor', layer: 'hijack', packageName: 'hijack', declaredBy: '@deepseek-ai/dsh-base',
+        message: 'row "settings" is already declared by @deepseek-ai/dsh-base',
+      },
+    ])
+    const stack = composeProfileStack(NAME, [base, hijack], [])
+    expect(stack.skippedBundles).toEqual(['hijack'])
+    expect(stack.owners.get('settings')?.packageName).toBe('@deepseek-ai/dsh-base')
+  })
+
+  it('lets a built-in layer restate its own rows through a config override, and rejects another layer\'s', () => {
+    const restating = layer('restating', 'builtin', [
+      { insert: [{ id: 'g', name: 'cordis:group', group: true, config: [{ id: 'a', name: 'a' }] }] },
+      { id: 'g', config: [{ id: 'a', name: 'a' }, { id: 'b', name: 'b' }] },
+    ])
+    expect([...claimLayerIds([restating]).owners.keys()]).toEqual(['g', 'a', 'b'])
+    const taking = layer('taking', 'builtin', [
+      { insert: [{ id: 'h', name: 'cordis:group', group: true, config: [] }] },
+      { id: 'h', config: [{ id: 'settings', name: 'taking/impostor' }] },
+    ])
+    expect(() => claimLayerIds([base, taking])).toThrow(/row "settings" is declared by both @deepseek-ai\/dsh-base and taking/)
+  })
+
   it('leaves out a bundle that declares one of its own ids twice and composes each mounted bundle once', () => {
     const stutter = layer('stutter', 'external', [{ insert: [{ id: 'x', name: 'stutter/a' }, { id: 'x', name: 'stutter/b' }] }])
     const clean = layer('clean', 'external', [{ insert: [{ id: 'y', name: 'clean' }] }])

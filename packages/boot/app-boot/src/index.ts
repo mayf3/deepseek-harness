@@ -20,7 +20,7 @@ import { dshHomePath, resolveDshHome } from '@deepseek-ai/dsh-home-paths'
 import { createLaunchEnvironmentSnapshot, type LaunchEnvironmentSnapshot } from '@deepseek-ai/dsh-launch-environment'
 import type {} from '@deepseek-ai/cordis-plugin-hmr'
 import type {} from '@deepseek-ai/dsh-system-prompt'
-import { ContainedGroup, ensurePluginFailures, isContainedEntry, pendingMessage } from './contained-group.ts'
+import { ContainedGroup, containingGroup, ensurePluginFailures, isContainedEntry, pendingMessage } from './contained-group.ts'
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
@@ -53,7 +53,7 @@ export {
   type ProfileTemplate,
 } from './profile.ts'
 export {
-  ContainedFailureRegistry, ContainedGroup, ensurePluginFailures, isContainedEntry,
+  ContainedFailureRegistry, ContainedGroup, containingGroup, ensurePluginFailures, isContainedEntry,
   type ContainedFailure, type ContainedFailureStage,
 } from './contained-group.ts'
 export {
@@ -735,10 +735,10 @@ function formatActivationError(error: unknown): string {
   return error instanceof Error ? error.stack ?? error.message : String(error)
 }
 
-/** The tree-wide id of the group entry that owns a contained row. */
+/** The tree-wide id of the contained group that isolates a row, whatever plain groups sit between. */
 function owningGroupId(entry: Entry): string {
-  /* v8 ignore next -- a contained entry is by definition inside a group entry; the fallback keeps the type total */
-  return entry.parent.ctx.fiber.entry?.id ?? ''
+  /* v8 ignore next -- only contained entries are recorded and their group runs as a Loader entry; the fallback keeps the type total */
+  return containingGroup(entry)?.ctx.fiber.entry?.id ?? ''
 }
 
 /**

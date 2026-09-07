@@ -125,6 +125,44 @@ describe('ProfileRuntime', () => {
     expect(runtime.conflicts).toEqual(conflicts)
   })
 
+  it('runs recompositions one at a time, each from what the previous one committed', async () => {
+    let release = (): void => {}
+    const gate = new Promise<void>((resolve) => { release = resolve })
+    const applied: string[] = []
+    const update = vi.fn(async (options: { config: { patches: PatchOptions[] } }) => {
+      applied.push(options.config.patches[0]?.id ?? '')
+      if (applied.length === 1) await gate
+    })
+    const entry = { options: { config: { path: 'file:///root/cordis.yml' } }, update } as unknown as Entry
+    const reloaded = profile([layer('a', 'builtin', []), layer('b', 'external', [])])
+    const { runtime, compose } = await harness([layer('a', 'builtin', [])], { rootEntry: () => entry, reloaded })
+    // Enabling a bundle re-reads the profile and waits on the tree; a watcher fires meanwhile.
+    const enabling = runtime.recompose({ reloadBundles: true })
+    const watching = runtime.recompose()
+    await Promise.resolve()
+    expect(applied).toEqual(['composed-for-2'])
+    release()
+    await Promise.all([enabling, watching])
+    // The watcher composed from the profile the enable committed, not the one before it.
+    expect(applied).toEqual(['composed-for-2', 'composed-for-2'])
+    expect(compose.mock.calls.at(-1)?.[0]).toBe(reloaded)
+    expect(runtime.layers.map(current => current.packageName)).toEqual(['a', 'b'])
+  })
+
+  it('lets a rejected recomposition fail its own caller without blocking the next', async () => {
+    let calls = 0
+    const update = vi.fn(async () => {
+      calls += 1
+      if (calls === 1) throw new Error('rejected')
+    })
+    const entry = { options: { config: { path: 'file:///root/cordis.yml' } }, update } as unknown as Entry
+    const { runtime } = await harness([layer('a', 'builtin', [])], { rootEntry: () => entry })
+    const first = runtime.recompose()
+    const second = runtime.recompose()
+    await expect(first).rejects.toThrow('rejected')
+    await expect(second).resolves.toBeUndefined()
+  })
+
   it('keeps the committed profile, provenance, and conflicts when the root include rejects the update', async () => {
     const entry = { options: { config: { path: 'file:///root/cordis.yml' } }, update: vi.fn(async () => { throw new Error('rejected') }) } as unknown as Entry
     const reloaded = profile([layer('a', 'builtin', []), layer('b', 'external', [])])
