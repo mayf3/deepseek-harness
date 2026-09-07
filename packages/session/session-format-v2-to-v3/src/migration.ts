@@ -1,4 +1,4 @@
-/** Adjacent PTC event and plugin-attribution migration with stable historical identities. */
+/** Adjacent PTC preset, event, and plugin-attribution migration with stable historical identities. */
 
 import { SessionFormatError, SessionFormatUnsupportedMigrationError, defineSessionFormatMigration, isSessionFormatJsonObject, sessionFormatCount } from '@deepseek-ai/dsh-session-format'
 import type {
@@ -13,7 +13,8 @@ import { assertReleasedV2Header } from '@deepseek-ai/dsh-session-format-v1-to-v2
 import { assertReleasedV3Header } from './validation.ts'
 
 /**
- * Rename released-v2 PTC dispatch events and owned plugin attribution without changing ids or content.
+ * Rename released-v2 PTC preset references, dispatch events, and owned plugin attribution.
+ * Preserve historical Session, message, and call ids and model content.
  * Refuse source delivery markers claiming v3 acceptance.
  */
 export const sessionFormatV2ToV3 = defineSessionFormatMigration({
@@ -22,7 +23,7 @@ export const sessionFormatV2ToV3 = defineSessionFormatMigration({
   toVersion: 3,
   migrateHeader(header) {
     assertReleasedV2Header(header)
-    return { ...header, version: 3 }
+    return { ...header, version: 3, ...(header.agentPreset === 'code' ? { agentPreset: 'ptc' } : {}) }
   },
   createStage(input) {
     return new ReleasedV2ToV3Stage(input)
@@ -79,6 +80,14 @@ class ReleasedV2ToV3Stage implements SessionFormatMigrationStage {
 
 function renamePtcEvent(event: SessionFormatEvent): SessionFormatEvent {
   switch (event.type) {
+    case 'agent-preset/selected': {
+      if (!isSessionFormatJsonObject(event.data) || typeof event.data['agentPreset'] !== 'string') {
+        throw new SessionFormatError('format v2 agent-preset/selected requires a string agentPreset')
+      }
+      return event.data['agentPreset'] === 'code'
+        ? { ...event, data: { ...event.data, agentPreset: 'ptc' } }
+        : event
+    }
     case 'tool/ptc-dispatch-start':
     case 'tool/ptc-dispatch':
       throw new SessionFormatUnsupportedMigrationError(

@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-This library restores released-v2 Session records as v3 by translating durable PTC event names and plugin-source labels. It preserves every historical id, event order, sequence reference, timestamp, and inherited cut. Persistence consumes it through the static Session format catalog. It does not publish or modify durable files.
+This library restores released-v2 Session records as v3 by translating durable PTC preset references, event names, and plugin-source labels. It preserves every historical Session, message, and call id, event order, sequence reference, timestamp, and inherited cut. Persistence consumes it through the static Session format catalog. It does not publish or modify durable files.
 
 ## Table of Contents
 
@@ -35,7 +35,7 @@ Use the [catalog](../session-format-catalog/README.md) for restoration. Direct i
 const targetHeader = sessionFormatV2ToV3.migrateHeader(sourceHeader)
 ```
 
-The header version becomes 3; all other header fields remain unchanged. The stage synchronously maps `tool/code-dispatch-start` and `tool/code-dispatch` to `tool/ptc-dispatch-start` and `tool/ptc-dispatch`. It maps the exact `tools-code-mode` plugin label to `tools-ptc` only in plugin-kind sources at `user/message.data.source`, `agent/inbox/spliced.data.inserted[].source`, and `session/title-llm-request.data.messages[].source`. Every other value remains unchanged, including ids containing `:code:`, message content, tool arguments, and opaque payloads.
+The header version becomes 3. The exact legacy preset id `code` becomes `ptc` in `header.agentPreset` and every `agent-preset/selected.data.agentPreset`, including inherited selections. Other preset ids and absent header presets remain unchanged; a selection without a string preset id is refused. The stage synchronously maps `tool/code-dispatch-start` and `tool/code-dispatch` to `tool/ptc-dispatch-start` and `tool/ptc-dispatch`. It maps the exact `tools-code-mode` plugin label to `tools-ptc` only in plugin-kind sources at `user/message.data.source`, `agent/inbox/spliced.data.inserted[].source`, and `session/title-llm-request.data.messages[].source`. Every other value remains unchanged, including ids containing `:code:`, message content, tool arguments, and opaque payloads.
 
 V3 validation accepts current PTC tags, not required legacy aliases. Unknown events marked `ignorable` retain their admission policy, except that source-v2 `tool/ptc-dispatch` and `tool/ptc-dispatch-start` events are rejected even when ignorable: these names are reserved in v3, so migration cannot reinterpret an opaque extension as a PTC lifecycle event. Physical record encoding remains the released-v2 encoding; only the header version and the named logical fields change.
 
@@ -84,8 +84,9 @@ The stage does not change message content or model configuration.
 
 <a id="known-limitations-and-deferred-work"></a>
 
+- **Historical preset ownership** — `code` in released V0/V1/V2 preset references denotes the legacy built-in preset. Those logs cannot distinguish a custom preset with the same id; native V3 references are not reinterpreted. This library does not migrate `settings.yaml`.
 - **No file publication** — persistence owns immutable successor publication; this package never overwrites released generations.
-- **Bounded conversion only** — only the named event tags and plugin-source slots are transformed; arbitrary strings, unknown payloads, and historical ids are not rewritten.
+- **Bounded conversion only** — only the named preset references, event tags, and plugin-source slots are transformed; arbitrary strings, unknown payloads, and historical ids are not rewritten.
 
 <a id="dev-note"></a>
 ### Dev Note

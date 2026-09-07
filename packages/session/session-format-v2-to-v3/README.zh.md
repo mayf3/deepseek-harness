@@ -9,7 +9,7 @@ kind: "package-library"
 
 ## 概述
 
-本库通过转换持久化 PTC 事件名称和插件来源标签，将已发布的 v2 Session 记录恢复为 v3。它保留每个历史标识、事件顺序、序列引用、时间戳和继承切点。持久化通过静态 Session 格式目录使用本库。本库不发布或修改持久化文件。
+本库通过转换持久化 PTC 预设引用、事件名称和插件来源标签，将已发布的 v2 Session 记录恢复为 v3。它保留每个历史 Session、消息和调用标识、事件顺序、序列引用、时间戳和继承切点。持久化通过静态 Session 格式目录使用本库。本库不发布或修改持久化文件。
 
 ## 目录
 
@@ -35,7 +35,7 @@ kind: "package-library"
 const targetHeader = sessionFormatV2ToV3.migrateHeader(sourceHeader)
 ```
 
-头部版本变为 3，其余头部字段保持不变。阶段同步将 `tool/code-dispatch-start` 和 `tool/code-dispatch` 映射为 `tool/ptc-dispatch-start` 和 `tool/ptc-dispatch`。它仅在 `user/message.data.source`、`agent/inbox/spliced.data.inserted[].source` 和 `session/title-llm-request.data.messages[].source` 的 plugin 类型来源中，将精确匹配的 `tools-code-mode` 插件标签映射为 `tools-ptc`。其他所有值保持不变，包括含 `:code:` 的标识、消息内容、工具参数和不透明载荷。
+头部版本变为 3。`header.agentPreset` 和每条 `agent-preset/selected.data.agentPreset` 中精确匹配的旧预设标识 `code` 变为 `ptc`，包括继承的选择事件。其他预设标识以及缺失的头部预设保持不变；选择事件缺少字符串预设标识时会被拒绝。阶段同步将 `tool/code-dispatch-start` 和 `tool/code-dispatch` 映射为 `tool/ptc-dispatch-start` 和 `tool/ptc-dispatch`。它仅在 `user/message.data.source`、`agent/inbox/spliced.data.inserted[].source` 和 `session/title-llm-request.data.messages[].source` 的 plugin 类型来源中，将精确匹配的 `tools-code-mode` 插件标签映射为 `tools-ptc`。其他所有值保持不变，包括含 `:code:` 的标识、消息内容、工具参数和不透明载荷。
 
 V3 校验接受当前 PTC 标签，不接受必需的旧别名。标记为 `ignorable` 的未知事件保留其准入规则，但源 v2 中的 `tool/ptc-dispatch` 和 `tool/ptc-dispatch-start` 事件即使可忽略也会被拒绝：这些名称在 v3 中保留，迁移不能将不透明扩展重新解释为 PTC 生命周期事件。物理记录编码仍为已发布的 v2 编码；仅头部版本和上述逻辑字段发生变化。
 
@@ -84,8 +84,9 @@ V3 校验接受当前 PTC 标签，不接受必需的旧别名。标记为 `igno
 
 <a id="known-limitations-and-deferred-work"></a>
 
+- **历史预设归属** — 已发布 V0/V1/V2 的预设引用中，`code` 表示旧内置预设。这些日志无法区分同名的自定义预设；原生 V3 引用不会被重新解释。本库不迁移 `settings.yaml`。
 - **不发布文件** — 持久化负责不可变后继代的发布；本包绝不覆盖已发布代。
-- **仅限定范围的转换** — 只转换指定的事件标签和插件来源位置；不改写任意字符串、未知载荷和历史标识。
+- **仅限定范围的转换** — 只转换指定的预设引用、事件标签和插件来源位置；不改写任意字符串、未知载荷和历史标识。
 
 <a id="dev-note"></a>
 ### 开发备注
