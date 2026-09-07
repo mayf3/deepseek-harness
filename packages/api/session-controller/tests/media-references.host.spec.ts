@@ -8,7 +8,6 @@ import {
   serveMediaReference,
   mediaTypeForPath,
   parseByteRange,
-  sniffImageMediaType,
   type MediaReferenceRegistry,
 } from '../src/media-references.ts'
 
@@ -29,28 +28,19 @@ function apiRequest(path: string, init?: RequestInit): Request {
   return new Request(url, init)
 }
 
-describe('sniffImageMediaType and mediaTypeForPath', () => {
-  it('identifies supported image signatures', () => {
-    expect(sniffImageMediaType(PNG_BYTES)).toBe('image/png')
-    expect(sniffImageMediaType(new Uint8Array([0xff, 0xd8, 0xff, 0xe0]))).toBe('image/jpeg')
-    expect(sniffImageMediaType(new TextEncoder().encode('GIF89a...'))).toBe('image/gif')
-    expect(sniffImageMediaType(new TextEncoder().encode('RIFF0000WEBPVP8 '))).toBe('image/webp')
-    expect(sniffImageMediaType(TEXT_BYTES)).toBeUndefined()
+describe('mediaTypeForPath', () => {
+  it('maps allowlisted media extensions', () => {
+    expect(mediaTypeForPath('/w/graph.png')).toBe('image/png')
+    expect(mediaTypeForPath('/w/graph.jpg')).toBe('image/jpeg')
+    expect(mediaTypeForPath('/w/clip.mp4')).toBe('video/mp4')
+    expect(mediaTypeForPath('/w/clip.webm')).toBe('video/webm')
+    expect(mediaTypeForPath('/w/song.mp3')).toBe('audio/mpeg')
   })
 
-  it('maps allowlisted media extensions, sniffing image extensions', () => {
-    expect(mediaTypeForPath('/w/graph.png', PNG_BYTES)).toBe('image/png')
-    expect(mediaTypeForPath('/w/graph.jpg', new Uint8Array([0xff, 0xd8, 0xff]))).toBe('image/jpeg')
-    expect(mediaTypeForPath('/w/clip.mp4', MP4_BYTES)).toBe('video/mp4')
-    expect(mediaTypeForPath('/w/clip.webm', MP4_BYTES)).toBe('video/webm')
-    expect(mediaTypeForPath('/w/song.mp3', TEXT_BYTES)).toBe('audio/mpeg')
-  })
-
-  it('refuses non-media extensions and mislabeled image bytes', () => {
-    expect(mediaTypeForPath('/w/note.txt', TEXT_BYTES)).toBeUndefined()
-    expect(mediaTypeForPath('/w/app.exe', TEXT_BYTES)).toBeUndefined()
-    expect(mediaTypeForPath('/w/shell.svg', TEXT_BYTES)).toBeUndefined()
-    expect(mediaTypeForPath('/w/fake.png', TEXT_BYTES)).toBeUndefined()
+  it('refuses non-media extensions', () => {
+    expect(mediaTypeForPath('/w/note.txt')).toBeUndefined()
+    expect(mediaTypeForPath('/w/app.exe')).toBeUndefined()
+    expect(mediaTypeForPath('/w/shell.svg')).toBeUndefined()
   })
 })
 
@@ -179,17 +169,23 @@ describe('serveMediaReference', () => {
     }
   })
 
-  it('refuses directories and non-allowlisted or mislabeled content', async () => {
+  it('refuses directories and non-allowlisted extensions', async () => {
     const directory = await serveMediaReference(apiRequest(root), registry(root))
     expect(directory.status).toBe(403)
 
     const text = join(root, 'note.txt')
     await writeFile(text, TEXT_BYTES)
     expect((await serveMediaReference(apiRequest(text), registry(root))).status).toBe(415)
+  })
 
+  it('serves allowlisted extensions regardless of payload bytes', async () => {
+    // Media bytes are not sniffed here: the extension allowlist decides what
+    // is served, and a corrupt image payload stays a browser-side failure.
     const fake = join(root, 'fake.png')
     await writeFile(fake, TEXT_BYTES)
-    expect((await serveMediaReference(apiRequest(fake), registry(root))).status).toBe(415)
+    const response = await serveMediaReference(apiRequest(fake), registry(root))
+    expect(response.status).toBe(200)
+    expect(response.headers.get('content-type')).toBe('image/png')
   })
 
   it('follows a symlink into the workspace for the containment check', async () => {

@@ -23,13 +23,14 @@ Assistant 正文有时用本地文件系统路径引用图片（markdown `![](/U
 - **注册到 Typert gateway**：gateway 负责 Remote RPC 分发（endpoint 认领、WebSocket mux、转发事件），不负责文件服务；把路由放那里等于把 workspace 文件的 HTTP 呈现塞进 RPC 传输层。否决并完整回滚。
 - **注册到 `workspace-controller`**：该包负责 workspace 注册表生命周期（CRUD、排序、feed），与文件呈现只共享 registry 这一政策数据源。否决并完整回滚。
 - **经会话 RPC 取字节后显示 blob/data URL**：附件图片已如此工作，但 markdown 重写需要渲染时确定性同步 URL（流式冻结缓存、memo 化）；异步往返不能成为渲染缝。否决。
-- **逐图片或仅图片专用路由**：媒体类型共享同一条「路径 + 包含」政策，视频/音频本就需要 Range 流式；一条 `/api/file` 路由加扩展名 allowlist（图片另验签名）即可覆盖现有与后续媒体类型。作为更窄的方案被否决。
+- **逐图片或仅图片专用路由**：媒体类型共享同一条「路径 + 包含」政策，视频/音频本就需要 Range 流式；一条 `/api/file` 路由加扩展名 allowlist 即可覆盖现有与后续媒体类型。作为更窄的方案被否决。
+- **图片扩展的字节签名校验**：否决。相同检查已在 `fs/tool-fs` 的 `read_image` 工具内实现，仓库的跨文件克隆门禁止在此复制，而为单个辅助函数加宽 attachment 包公开 API 没有共享归属。扩展名 allowlist 已把非媒体内容挡在门外，损坏的图片载荷失败发生在浏览器侧而不是路由上。
 - **每请求交互授权、客户端协商端点或任意 Host 路径**：重写只是呈现；路由对每次请求复验，可读字节限制在注册 workspace 根与 allowlist 媒体内；同源端点是固定通道契约而非协商能力。出于安全与确定性否决。
 
 ## Consequences
 
 - 引用 workspace 内图片文件的 Assistant 正文现在可在 Web 聊天中显示；原先惰性的 alt 文本只在 Host 无法提供字节时保留。
-- 政策在 Host 端每次请求强制；客户端词表不会扩大路由放行的范围。
+- 政策在 Host 端每次请求强制；客户端词表不会扩大路由放行的范围。媒体类型判定信任扩展名 allowlist；字节签名校验保留在其所有者 `read_image` 工具中。
 - 范围刻意收窄：只服务注册 workspace 根内、媒体 allowlist 内的文件；其它一律保持作者原样的回退。Trajectory 与工具卡片等 markdown 消费方尚未传词表，视频/音频 markdown 节点也尚未渲染为 `<video>`/`<audio>`——URL 层已为它们准备好。
 - 客户端把 `/api/file` 硬编码为同源通道契约；由于页面与挂载路由的 Host 同源，该契约按构造稳定。
 - 相关历史：已归档笔记 [model-readable image paths](../../archived/feature/2026-08-21-model-readable-image-paths.md) 决定本地图片路径面向模型的一侧；本笔记拥有面向用户展示的一侧，不构成对其的取代。
