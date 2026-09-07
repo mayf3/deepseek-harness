@@ -12,7 +12,7 @@ Linux 故障切换池在同一台虚拟机上运行多个 runner 实例。PR 覆
 
 [PR CI](../../../../.github/workflows/ci.yml) 的静态检查、覆盖率和消费者作业在任何准备或测试进程启动前，在首个步骤通过 `GITHUB_ENV` 导出 `TMPDIR=runner.temp`。Node、Vite、tsx 和临时测试消费者继承 runner 管理的位置。每个 runner 管理自己的目录，GitHub Actions 在作业开始和完成时清除其中可删除的内容；测试夹具仍分配唯一子目录，并保留自身清理逻辑。
 
-这三个 worker 还将 `npm_config_cache` 设为 `runner.temp/npm-cache`。[发布工作流](../../../../.github/workflows/release.yml) 在既有临时存储准备步骤中采用相同缓存位置，[vendor 演练](../../../../.github/workflows/release-vendor.yml) 也如此。否则，无论 `TMPDIR` 如何设置，npm 都会在共享 home 目录中缓存注册表响应；仅使用临时消费者目录不能隔离这些写入。每个 worker 将持久化 pnpm store 放在 `RUNNER_TEMP` 旁的 runner 工作根目录下。这使 SQLite store 索引位于 workspace 所在卷，并隔离并发 runner 实例，而不删除共享 home store。每个 runner 的首次安装是冷启动；该 runner 的后续作业复用其 store。消费者作业还将 Playwright 浏览器下载和安装锁放在 `RUNNER_TEMP` 旁；托管缓存恢复使用同一位置。持久化缓存的容量仍由运维人员负责。
+这三个 worker 还将 `npm_config_cache` 设为 `runner.temp/npm-cache`。[发布工作流](../../../../.github/workflows/release.yml) 在既有临时存储准备步骤中采用相同缓存位置，[vendor 演练](../../../../.github/workflows/release-vendor.yml) 也如此。否则，无论 `TMPDIR` 如何设置，npm 都会在共享 home 目录中缓存注册表响应；仅使用临时消费者目录不能隔离这些写入。pnpm store 保持共享于 `$HOME/.local/share/pnpm/store`，依靠 pnpm 的并发访问支持保留跨 runner 复用。本变更不隔离其 SQLite 索引，也不解决该共享 store 的容量故障。消费者作业还将 Playwright 浏览器下载和安装锁放在 `RUNNER_TEMP` 旁；托管缓存恢复使用同一位置。持久化缓存的容量仍由运维人员负责。
 
 [发布演练决策](../process/2026-09-06-release-rehearsal-selfhosted.zh.md) 对发布消费者采用相同的生命周期规则。[故障切换运行手册](../process/2026-07-26-ci-failover-runbook.zh.md) 继续负责 runner 选择和共享主机容量。本变更不调整作业目标、不降低并发、不重试测试、不削弱断言，也不修改仅在 master 上执行的 CI。
 

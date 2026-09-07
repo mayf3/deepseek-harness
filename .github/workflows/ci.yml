@@ -79,7 +79,7 @@ jobs:
       - name: Configure pnpm store path
         id: pnpm-store
         run: |
-          store_root="${RUNNER_TEMP%/*}/pnpm-store"
+          store_root="$HOME/.local/share/pnpm/store"
           echo "PNPM_CONFIG_STORE_DIR=$store_root" >> "$GITHUB_ENV"
           store_path=$(PNPM_CONFIG_STORE_DIR="$store_root" pnpm store path --silent)
           echo "path=$store_path" >> "$GITHUB_OUTPUT"
@@ -148,12 +148,12 @@ jobs:
       - name: Configure pnpm store path
         id: pnpm-store
         run: |
-          store_root="${RUNNER_TEMP%/*}/pnpm-store"
+          store_root="$HOME/.local/share/pnpm/store"
           echo "PNPM_CONFIG_STORE_DIR=$store_root" >> "$GITHUB_ENV"
           store_path=$(PNPM_CONFIG_STORE_DIR="$store_root" pnpm store path --silent)
           echo "path=$store_path" >> "$GITHUB_OUTPUT"
 
-      # Self-hosted runners retain their own stores between jobs.
+      # Self-hosted runners reuse the shared persistent pnpm store.
       # Hosted runners restore the remote cache into their ephemeral store.
       - uses: actions/cache/restore@v4
         if: vars.DSH_CI_FAILOVER_LINUX != 'selfhosted' || github.event.pull_request.user.login == 'dependabot[bot]'
@@ -274,7 +274,7 @@ jobs:
       - name: Configure pnpm store path
         id: pnpm-store
         run: |
-          store_root="${RUNNER_TEMP%/*}/pnpm-store"
+          store_root="$HOME/.local/share/pnpm/store"
           echo "PNPM_CONFIG_STORE_DIR=$store_root" >> "$GITHUB_ENV"
           store_path=$(PNPM_CONFIG_STORE_DIR="$store_root" pnpm store path --silent)
           echo "path=$store_path" >> "$GITHUB_OUTPUT"
@@ -283,7 +283,7 @@ jobs:
       # compression and upload on the required path. No master job saves these
       # hosted cache keys, so each restore-keys fallback hits the matching archived
       # entry until it evicts, after which the store is cold. Self-hosted runners
-      # keep their own persistent stores instead of restoring the remote archive.
+      # reuse the shared persistent store instead of restoring the remote archive.
       - uses: actions/cache/restore@v4
         if: vars.DSH_CI_FAILOVER_LINUX != 'selfhosted' || github.event.pull_request.user.login == 'dependabot[bot]'
         with:

@@ -47,8 +47,8 @@ function assertEarlyNpmCacheExport(steps: Step[]): void {
   expect(steps[cacheIndex]?.if).toBeUndefined()
 }
 
-function assertRunnerPrivateStore(run: string | undefined): void {
-  expect(run).toContain('store_root="${RUNNER_TEMP%/*}/pnpm-store"')
+function assertSharedPersistentStore(run: string | undefined): void {
+  expect(run).toContain('store_root="$HOME/.local/share/pnpm/store"')
   expect(run).toContain('echo "PNPM_CONFIG_STORE_DIR=$store_root" >> "$GITHUB_ENV"')
   expect(run).toContain('store_path=$(PNPM_CONFIG_STORE_DIR="$store_root" pnpm store path --silent)')
 }
@@ -147,15 +147,15 @@ for (const [file, jobIds] of [['release.yml', ['dependencies', 'pack']], ['relea
           steps.push({ run: npmCacheExport })
           expect(() => { assertEarlyNpmCacheExport(steps) }).toThrow()
         })
-        it.each(['', 'store_root="$HOME/.local/share/pnpm/store"', 'store_root="$RUNNER_TEMP/pnpm-store"'])(
-          'rejects missing, shared-home, or job-temporary store placement: %s', (replacement) => {
+        it.each(['', 'store_root="${RUNNER_TEMP%/*}/pnpm-store"', 'store_root="$RUNNER_TEMP/pnpm-store"'])(
+          'rejects missing, runner-private, or job-temporary store placement: %s', (replacement) => {
             const run = job.steps.find(step => step.name === 'Configure pnpm store path')?.run
-              ?.replace('store_root="${RUNNER_TEMP%/*}/pnpm-store"', replacement)
-            expect(() => { assertRunnerPrivateStore(run) }).toThrow()
+              ?.replace('store_root="$HOME/.local/share/pnpm/store"', replacement)
+            expect(() => { assertSharedPersistentStore(run) }).toThrow()
           },
         )
-        it('uses a runner-private persistent store without remote cache reads or writes on self-hosted', () => {
-          assertRunnerPrivateStore(job.steps.find(step => step.name === 'Configure pnpm store path')?.run)
+        it('uses the shared persistent store without remote cache reads or writes on self-hosted', () => {
+          assertSharedPersistentStore(job.steps.find(step => step.name === 'Configure pnpm store path')?.run)
           const caches = job.steps.filter(step => step.uses?.startsWith('actions/cache'))
           expect(caches.map(step => step.uses)).toEqual(['actions/cache/restore@v4'])
           for (const step of caches) {
