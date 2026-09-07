@@ -45,6 +45,7 @@ function pathTable(entries: Record<string, string> = {}): (name: string) => Prom
 
 /** Boot webserver + open-in-app rows through the real Loader. */
 async function boot(): Promise<string> {
+  internals.catalog = { env: {}, ...internals.catalog }
   root = await mkdtemp(join(tmpdir(), 'dsh-open-in-app-loader-'))
   const configPath = join(root, 'cordis.yml')
   await writeFile(configPath, [
@@ -125,6 +126,31 @@ async function cursorBundle(home: string): Promise<void> {
 }
 
 describe('open-in-app host routes (real Loader composition)', () => {
+  it.each([
+    { SSH_CONNECTION: '10.0.0.2 55000 10.0.0.9 22' },
+    { SSH_TTY: '/dev/pts/3' },
+  ])('returns an empty catalog and refuses icons and launches over SSH: %j', async (env) => {
+    const run = vi.fn<NativeCommandRunner>()
+    const launch = vi.fn<OpenInAppLauncher>()
+    const resolveExecutable = vi.fn(pathTable())
+    internals.catalog = { platform: 'darwin', env, run, launch, resolveExecutable }
+    const base = await boot()
+
+    const apps = await fetch(`${base}/open-in-app/apps`)
+    expect(apps.status).toBe(200)
+    expect(await apps.json()).toEqual({ apps: [] })
+    expect((await fetch(`${base}/open-in-app/icon/finder`)).status).toBe(404)
+    const open = await fetch(`${base}/open-in-app/open`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ app: 'finder', path: root }),
+    })
+    expect(open.status).toBe(400)
+    expect(run).not.toHaveBeenCalled()
+    expect(resolveExecutable).not.toHaveBeenCalled()
+    expect(launch).not.toHaveBeenCalled()
+  })
+
   it('keeps the function-plugin runtime surface to Loader exports', () => {
     expect(Object.keys(OpenInApp).sort()).toEqual(['Config', 'apply', 'inject', 'name'])
   })

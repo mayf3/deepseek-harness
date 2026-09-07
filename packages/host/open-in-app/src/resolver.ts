@@ -648,6 +648,7 @@ async function resolveWithRegistry(
  * The returned map is the mutable authority the caller owns — the routes
  * serve its keys and launch from its values, and a stale entry is replaced
  * or removed in place after an `ENOENT` launch.
+ * A non-empty SSH_CONNECTION or SSH_TTY returns an empty map without probing.
  * @param probeTimeoutMs - per-command deadline for resolution host commands.
  * @param internals - platform and runner hooks for deterministic tests.
  * @returns catalog id to verified launch, in catalog order.
@@ -656,6 +657,9 @@ export async function resolveOpenInAppApps(
   probeTimeoutMs: number, internals: OpenInAppInternals = {},
 ): Promise<Map<string, OpenInAppResolvedLaunch>> {
   const resolved = resolveInternals(internals)
+  if ([resolved.env.SSH_CONNECTION, resolved.env.SSH_TTY].some(value => value !== undefined && value !== '')) {
+    return new Map()
+  }
   const registry = new RegistryViewOnce(probeTimeoutMs, resolved)
   const entries = await Promise.all(OPEN_IN_APP_CATALOG.map(async app =>
     [app.id, await resolveWithRegistry(app, probeTimeoutMs, registry, resolved)] as const))

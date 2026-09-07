@@ -12,6 +12,8 @@ The community plugin `@dsh-plugins/open-anywhere` (gitlab.deepseek.com/Ciyou/dsh
 
 The first-party feature is named `open-in-app`: it selects the application that opens a workspace directory on the Harness host, not another machine or destination.
 
+An environment with non-empty `SSH_CONNECTION` or `SSH_TTY` produces an empty application catalog before any probe. The client hides the action even when it remembers a choice, and the existing availability checks reject icon and launch requests. SSH port forwarding changes HTTP reachability, not which machine owns the workspace or applications.
+
 The feature's first-party owners are `@deepseek-ai/dsh-host-open-in-app` at `packages/host/open-in-app/` (the probe, catalog, and launch routes) and `@deepseek-ai/dsh-client-ui-open-in-app` at `packages/client/ui-open-in-app/` (the split button), mounted in the Web profile by the `dsh-web-app` bundle rows `open-in-app` and `ui-open-in-app`. The promotion is a rewrite, not a vendoring:
 
 - **A host/client package pair, following the `directory-picker-browse`/`ui-directory-picker-browse` pairing**: the host package's `src/index.ts` registers the three HTTP routes on `ctx.webServer` (`GET /open-in-app/apps`, `GET /open-in-app/icon/<id>`, `POST /open-in-app/open`); the ui package's `src/client/index.ts` registers the split button into `conversation.session.header.utilities` through the standard slot/inject currency, with copy in a typed `open-in-app` locale namespace and styling in CSS Modules over `--dsw-*` tokens (the original's hand-injected style tag and inline dropdown are replaced by the `Menu` primitive), over an empty-apply node half that keeps the plugin on the host roster. Route paths and wire payload types have one home, the host package's browser-safe `./shared` subpath (constants and types only); the client bundle inlines it through an `INLINE_SAFE` entry in the client tsdown preset, the same channel `dsh-session`'s wire slices use. The host root exports only the Loader-required plugin values and types; catalog, resolver, launcher, and icon helpers remain source-internal.
@@ -27,6 +29,8 @@ The feature's first-party owners are `@deepseek-ai/dsh-host-open-in-app` at `pac
 The pair lives in `packages/host/` and `packages/client/` because that is what the halves are: the probe/launch side is host infrastructure beside the webserver it consumes, and the button is a client surface beside the other `ui-*` packages. Review moved it there from a single dual-half package in `packages/workspace/` (see Alternatives).
 
 ## Alternatives considered
+
+**Offer VS Code's remote CLI during SSH sessions.** Its installed executable does not prove a usable editor connection: the inherited IPC socket belongs to a live VS Code connection and can disappear while Harness keeps running. Browser-side SSH-target configuration and local editor handoff remain outside this host-application feature.
 
 **Vendor the plugin's `lib/` as-is under `packages/`.** Fastest, but the hand-authored JavaScript fails typecheck, coverage, i18n, JSDoc, and invariant gates wholesale; keeping it exempt would create a package class the repository deliberately does not have.
 
@@ -50,7 +54,7 @@ The pair lives in `packages/host/` and `packages/client/` because that is what t
 
 ## Consequences
 
-- The Web profile gains the header button wherever the host probes at least one installed catalog application on macOS, Windows, or Linux, with zero rendering elsewhere (empty probed catalog → the component returns null).
+- Outside SSH sessions, the Web profile gains the header button wherever the host probes at least one installed catalog application on macOS, Windows, or Linux, with zero rendering elsewhere (empty probed catalog → the component returns null).
 - The community plugin's install path remains valid but redundant; its original routes and browser choice key are separate from `open-in-app`, so installations using the first-party feature should remove the community plugin to avoid duplicate header controls.
 - Resolution and icons run lazily, once per host process, so an application installed while dsh runs appears only after restart — accepted; the uninstall direction self-heals through the `ENOENT` single-entry refresh.
 - The catalog is compile-time fixed; extending it means editing `OPEN_IN_APP_CATALOG` and both locale dictionaries together (README Known Limitations). Platform coverage is uneven — several Git GUIs and terminals are macOS-only entries, Windows icons are limited to the 32px stock .NET extraction, Linux follows hicolor rather than the active theme, and CLI-only entries without a desktop record keep the generic icon.
