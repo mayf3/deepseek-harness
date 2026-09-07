@@ -85,15 +85,13 @@ test('registers into the sidebar', async ({ remote, start }) => {
 
 两档测试的所有命名空间都使用[通用 Remote Proxy](../remote-mock/README.zh.md#remote-proxy)。装配测试使用 `remote` fixture；局部 `TestRemote` 可以接收 `{ settings: mock.remote.settings }`。直接配置返回数据，并读取原生 `.mock.calls`。mutation 应答不会自动更新后续 describe 应答：场景发布新数据时，显式修改 `remote.settings.describe.mockResolvedValue(...)`。Proxy 文档拥有无构建类型说明和必需的构建后本地类型检查规则。
 
-### 浏览器模块加载
-
-浏览器页面导入 `src/assembly/browser.ts`，提供已解析的 `ClientRoster` 行，并在 `TestClient.start` 选项中传入 `loadClientModule(name)`。importer 在该页面 realm 内返回源码模块命名空间；`provide` 替换和 bootstrap 模块仍有原来的优先级。Node 侧 bundle 读取与 Vitest fixture 留在 `src/assembly/index.ts`。函数 handler、原生 mock 队列和 promise 在 mock 所在 realm 创建，不经过 Playwright 序列化。[共享 settings 场景](tests/assembly-settings-scenario.client.ts) 同时在 jsdom 和[两个并发 Chromium 页面](../../../apps/web/tests/client-assembly.e2e.ts)中运行，独立分配的静态服务器使用 web 构建的源码别名与定义，不启动业务 Host。源码装配不验证已发布 bundle 加载或生成的 Remote 客户端。
+### Roster 与启动行为
 
 `webApp` 是 `web` profile 的浏览器 roster，首次 import 装配入口时从它的 bundle（先 `dsh-base`、再 `dsh-web-app`）按启动器的方式现读，只是匹配不到任何行的补丁在这里抛错、启动器只警告：每个 bundle 的 `dsh.bundle.patch` 列表用 include 插件的 YAML 方言解析、用它的 `applyEntryPatches` 合成，每个未禁用且其包声明 `dsh.client.platform === 'web'` 的行成为一行，带上该声明的 `inject` 与 `immediately`；`bundleRoster(bundles)` 对任意 bundle 列表做同样的事。没有任何东西从 bundle 拷贝出来，bundle 一改下次跑测试就能看见。`webApp.closure(names)` 保留点名的行及其传递注入的全部行（即按 bundle 组合方式起这些插件所需的行），`webApp.pick(names)` 与 `webApp.without(names)` 手工裁剪，三者都对未知名字抛错，`ClientRoster.of(rows)` 内联构造一份。`remoteDefaultResponses` 是 roster 在没有 session、没有 workspace、默认设置下启动时恰好会打的那些 Remote 端点的默认响应；测试用 `mock.load(table)` 在其上叠加自己的 `RemoteTable`，任何没有规则的调用都会在 `dispose()` 时经 `mock.assertNoUnmatched()` 让测试失败。`mount` 要求 roster 提供 `uiRenderer`；否则 `start` 响亮失败而不是返回一个空容器。`client.connection` 是 roster 的 Connection 服务（没有任何 `Context` 增强声明它），`connectTimeoutMs` 限定等就绪的时长，超时消息列出 mock log。`reload(name)` 按 client-hmr 的方式重建一个 Loader entry（先拆 registry，再 `entry.refresh()`），并在 worker 的启动轮次内装上本客户端的载体，重建的 `connection` 行因此读到自己的 mock；`unload(name)` 移除它；`flush()` 在 `act` 内让 React 落定。jsdom 既没有 `EventSource`（client-hmr 在 apply 时打开一个）也没有 `ResizeObserver`（布局组件挂载时观察尺寸），所以 `start` 对缺失的全局装惰性桩、`dispose` 只移除它装的那些——这是 jsdom 的缺口，不是产品需求。每个 roster 里的 `@deepseek-ai/dsh-api-remotes` 行都会被去掉：它生成的 Remote 客户端只存在于构建后的 `lib/`，而 `remote.<ns>` 正是本档要替掉的东西。`start` 改为给 roster 注入的每个 `remote.<ns>` 服务（加上此刻 mock 登记过规则的命名空间；之后才首次登记的命名空间没有代理）提供一个无契约代理；`ctx.remote.<ns>.<method>(...args)` 变成对端点 `<ns>/<method>` 的调用，携带位置参数，mock 登记了 `stream()` 脚本的走流、否则走一元，并沿用生成客户端的结果折叠（载体抛错折成 `gateway/internal`，中止折成 `gateway/cancelled`）。没有规则的端点照样发出，所以 mock 会记下它、`dispose()` 让测试失败。
 
 ### 何时使用
 
-当功能套件要在真实运行时下检验 slot、存储、渲染与销毁时使用本测试台——生产 `SlotRegistry`、渲染器与 provide bundle 物化都会被挂载，绝不重实现。它是浏览器侧测试基础设施：永远不触及模型请求，功能包仅以 `devDependencies` 依赖之。
+当功能套件要在真实运行时下检验 slot、存储、渲染与销毁时使用本测试台——生产 `SlotRegistry`、渲染器与 provide bundle 物化都会被挂载，绝不重实现。它是客户端测试基础设施：永远不触及模型请求，功能包仅以 `devDependencies` 依赖之。
 
 ### 可能出什么问题
 
@@ -130,7 +128,6 @@ test('registers into the sidebar', async ({ remote, start }) => {
 | [`src/assembly/modules.ts`](src/assembly/modules.ts) | 源码 `/client` 导入及替换，通过生产模块 facade 的待注册工厂队列登记 |
 | [`src/assembly/test-client.ts`](src/assembly/test-client.ts) | `TestClient`：装传输、jsdom 桩、`bootClient`、挂载、等就绪、`reload`/`unload`/`dispose` |
 | [`src/assembly/vitest.ts`](src/assembly/vitest.ts) | 测试级 `mock` 与懒启动 `start` fixture |
-| [`src/assembly/browser.ts`](src/assembly/browser.ts) | 不读取 bundle 文件、不引入 Vitest fixture 的 realm 内启动入口 |
 | [`src/assembly/remote-default-responses.ts`](src/assembly/remote-default-responses.ts) | `remoteDefaultResponses`：roster 启动期 Remote 端点的默认响应 |
 | [`src/assembly/remote-proxies.ts`](src/assembly/remote-proxies.ts) | 经 Connection 的无契约 `remote.<ns>` 代理：`remoteNamespacesOf`、`remoteProxiesPlugin` |
 | [`src/assembly/bundle-roster.ts`](src/assembly/bundle-roster.ts) | `bundleRoster` 与 `webApp`：用 include 插件自己的 schema 与补丁应用从 bundle 补丁文件读出浏览器 roster |
@@ -173,7 +170,6 @@ test('registers into the sidebar', async ({ remote, start }) => {
 
 这些限制说明本测试台如何被消费。它们是当前包约束，不是任务积压。
 
-- **runner 入口分开**——slot 档与原生 fixture 使用 Vitest；浏览器装配导入 `src/assembly/browser.ts` 并提供源码 importer。两档都不启动 Host，也不验证 HTTP/WebSocket 编码。
 - **整体档不运行生成的 Remote 客户端**——`remote.<ns>` 代理转发位置参数，不经过生成的 zod 校验、wire 名映射或 scoped 身份注入；mock handler 直接接收这些参数，生成客户端仍由 built-artifact e2e 车道覆盖。
 - **代理调用绕过 Gateway 客户端的 `invoke` 与 `invokeStream`**——不做 `$mount` 生命周期检查，流失败不经 `normalizeConnectionStream` 重新标记，一元拒绝由代理自己用 Gateway 客户端导出的 `carrierFailure` 与 `cancelledFailure` 折叠。`ctx.remote.$stream`、`$on`、`$host` 是真 Gateway 客户端的。
 - **未声明的端点按一元调用发出**——代理从 mock 的登记学到每个端点的模式；spec 既没给脚本也没声明（`RemoteTable.streams`、`mock.stream(endpoint)`）的流端点记为 `unary` 漏配，产品代码收到的是折叠结果而不是失败的流。`remoteDefaultResponses` 声明了 roster 启动后才打开的流；无论哪种，`dispose()` 都会让测试失败。
