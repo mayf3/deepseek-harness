@@ -97,16 +97,11 @@ describe('Recorded widget calls', () => {
 
     expect(authority.authorizePrompt(agent, {
       resultSeq: FIRST_RESULT_SEQ, text: 'continue',
-    }, 1)).toEqual({
-      callId: 'widget-1',
-      title: 'Status',
-      kind: 'html',
-      text: 'Widget-authored follow-up from widget "Status". It carries no user authorization.\n\ncontinue',
-    })
+    }, 1)).toBe('Widget-authored follow-up from widget "Status". It carries no user authorization.\n\ncontinue')
     expect(eventAt.mock.calls.map(([seq]) => seq)).toEqual([SessionSeq(3), SessionSeq(2)])
     expect(authority.authorizePrompt(agent, {
       resultSeq: FIRST_RESULT_SEQ, text: 'again',
-    }, 2)).toMatchObject({ callId: 'widget-1', title: 'Status', kind: 'html' })
+    }, 2)).toBe('Widget-authored follow-up from widget "Status". It carries no user authorization.\n\nagain')
     expect(eventAt).toHaveBeenCalledTimes(4)
   })
 
@@ -117,7 +112,7 @@ describe('Recorded widget calls', () => {
     }])
     expect(authority.authorizePrompt(agent, {
       resultSeq: FIRST_RESULT_SEQ, text: 'before reuse',
-    }, 1)).toMatchObject({ callId: 'widget-1', title: 'First', kind: 'html' })
+    }, 1)).toContain('widget "First"')
 
     agent.session.append('step/end', { turn: 1, step: 1 })
     agent.session.append('step/start', { turn: 1, step: 2 })
@@ -137,10 +132,10 @@ describe('Recorded widget calls', () => {
 
     expect(authority.authorizePrompt(agent, {
       resultSeq: FIRST_RESULT_SEQ, text: 'after reuse',
-    }, 2)).toMatchObject({ callId: 'widget-1', title: 'First', kind: 'html' })
+    }, 2)).toContain('widget "First"')
     expect(authority.authorizePrompt(agent, {
       resultSeq: secondResult.seq, text: 'second',
-    }, 3)).toMatchObject({ callId: 'widget-1', title: 'Second', kind: 'html' })
+    }, 3)).toContain('widget "Second"')
   })
 
   it.each([-1, -0, 1.5, Number.NaN, Number.POSITIVE_INFINITY])(
@@ -293,14 +288,14 @@ describe('Recorded widget calls', () => {
     expect(() => authority.authorizePrompt(agent, { resultSeq: FIRST_RESULT_SEQ, text: '' }, 0))
       .toThrow('widget follow-up must be a non-empty string')
     const exact = authority.authorizePrompt(agent, { resultSeq: FIRST_RESULT_SEQ, text: '汉'.repeat(15) }, 0)
-    expect(Buffer.byteLength(exact.text, 'utf8')).toBe(128)
+    expect(Buffer.byteLength(exact, 'utf8')).toBe(128)
     expect(() => authority.authorizePrompt(agent, { resultSeq: FIRST_RESULT_SEQ, text: '汉'.repeat(16) }, 0))
       .toThrow('widget follow-up is 131 UTF-8 bytes; limit is 128')
     authority.authorizePrompt(agent, { resultSeq: FIRST_RESULT_SEQ, text: 'one' }, 0)
     authority.authorizePrompt(agent, { resultSeq: FIRST_RESULT_SEQ, text: 'two' }, 60_001)
     expect(authority.authorizePrompt(agent, {
       resultSeq: FIRST_RESULT_SEQ, text: 'three',
-    }, 60_002)).toMatchObject({ title: 'Status' })
+    }, 60_002)).toContain('widget "Status"')
   })
 
   it('denies follow-ups from successful raw SVG results', () => {

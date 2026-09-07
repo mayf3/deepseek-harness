@@ -2747,10 +2747,9 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         parameters: [{ name: 'modelCtx', description: 'Preset-scoped context that owns the prompt and tool effects.' }],
       },
       {
-        signature: '@Remote(\'sendPrompt\') remoteSendPrompt(agent: Agent, request: WidgetPromptRequest): WidgetPromptResult',
+        signature: '@Remote(\'sendPrompt\') remoteSendPrompt(agent: Agent, request: WidgetPromptRequest): void',
         description: 'Queue a widget-authored message after Host-side authorization and rate limiting.',
         parameters: [{ name: 'agent', description: 'Exact live Agent resolved from the Remote session scope.' }, { name: 'request', description: 'Follow-up for one successful interactive widget call.' }],
-        returns: 'Receipt confirming that the follow-up was queued.',
       },
     ],
   },
@@ -6324,10 +6323,6 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'WidgetPromptRequest',
     declaration: 'export interface WidgetPromptRequest {\n    readonly resultSeq: number;\n    readonly text: string;\n}',
-  },
-  {
-    name: 'WidgetPromptResult',
-    declaration: 'export interface WidgetPromptResult {\n    readonly queued: true;\n}',
   },
   {
     name: 'WorkflowAgentEndInfo',

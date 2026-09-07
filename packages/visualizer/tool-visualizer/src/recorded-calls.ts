@@ -7,15 +7,10 @@ import type { WidgetKind, WidgetPromptRequest } from './types.ts'
 const PROMPT_WINDOW_MS = 60_000
 
 /** Recorded identity needed to frame an authorized widget follow-up. */
-export interface RecordedWidgetCall {
+interface RecordedWidgetCall {
   readonly callId: ToolCallId
   readonly title: string
   readonly kind: WidgetKind
-}
-
-/** Authorized widget follow-up after framing and admission. */
-export interface AuthorizedWidgetFollowup extends RecordedWidgetCall {
-  readonly text: string
 }
 
 interface AgentAuthority {
@@ -118,9 +113,9 @@ export class RecordedWidgetCalls {
    * @param agent - Live Agent that owns the recorded widget result.
    * @param request - Follow-up from the exact persisted widget result.
    * @param now - Admission timestamp used for rolling-window accounting.
-   * @returns The recorded widget call authorized to send the follow-up.
+   * @returns The fully labelled follow-up text authorized for insertion.
    */
-  authorizePrompt(agent: Agent, request: WidgetPromptRequest, now = Date.now()): AuthorizedWidgetFollowup {
+  authorizePrompt(agent: Agent, request: WidgetPromptRequest, now = Date.now()): string {
     const authority = this.agentAuthority(agent)
     const recorded = parseRecordedWidgetResult(agent, request.resultSeq, this.limits.maxTitleBytes)
     if (recorded.kind !== 'html') {
@@ -139,7 +134,7 @@ export class RecordedWidgetCalls {
       throw new Error('visualizer: Agent widget follow-up rate limit reached')
     }
     authority.promptAdmissions.push(now)
-    return { ...recorded, text }
+    return text
   }
 
   private agentAuthority(agent: Agent): AgentAuthority {

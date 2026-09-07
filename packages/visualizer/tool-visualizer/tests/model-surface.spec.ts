@@ -1,3 +1,4 @@
+import { Buffer } from 'node:buffer'
 import { Context } from '@deepseek-ai/cordis'
 import AgentRegistry from '@deepseek-ai/dsh-agent'
 import type { Agent } from '@deepseek-ai/dsh-agent'
@@ -11,7 +12,6 @@ import * as VisualizerClient from '../src/client.ts'
 import VisualizerService from '../src/index.ts'
 import * as VisualizerModel from '../src/model.ts'
 import { visualizerSystemPrompt } from '../src/prompt.ts'
-import type { Config } from '../src/types.ts'
 
 const SIGNAL = new AbortController().signal
 const SCOPED_BASES = new WeakMap<Context, Context>()
@@ -22,12 +22,12 @@ async function captureScopedBase(ctx: Context): Promise<void> {
   }, { inject: ['systemPrompt', 'tools'] }))
 }
 
-async function mount(config: Config = {}) {
+async function mount() {
   const ctx = new Context()
   await ctx.plugin(AgentRegistry)
   await ctx.plugin(SystemPrompt)
   await ctx.plugin(ToolRuntime)
-  const authorityFiber = await ctx.plugin(VisualizerService, config)
+  const authorityFiber = await ctx.plugin(VisualizerService)
   await captureScopedBase(ctx)
   const base = SCOPED_BASES.get(ctx)
   if (base === undefined) throw new Error('missing scoped test base')
@@ -37,18 +37,6 @@ async function mount(config: Config = {}) {
   const agent = recordedAgent(ctx, 'surface-agent', undefined, undefined, presetKey)
   ctx.agents.register(agent)
   return { ctx, authorityFiber, modelFiber, presetScope, agent }
-}
-
-async function construct(config: Config) {
-  const ctx = new Context()
-  await ctx.plugin(AgentRegistry)
-  await ctx.plugin(SystemPrompt)
-  await ctx.plugin(ToolRuntime)
-  await captureScopedBase(ctx)
-  return {
-    ctx,
-    service: new VisualizerService(ctx, config),
-  }
 }
 
 async function modelFace(ctx: Context, agent: Agent) {
@@ -171,7 +159,7 @@ describe('Visualizer model surface', () => {
       .toBe('Render one temporary inline graphic or interactive widget from conversation content or completed tool results. Source beginning with <svg uses SVG; anything else uses HTML. Pass one small, complete source in this call; validation occurs after submission.')
     const staticReceipt = show.output.render?.(
       { title: 'Static', widget_code: '<svg></svg>' },
-      { accepted: true, kind: 'svg' },
+      { kind: 'svg' },
     )[0]
     expect(staticReceipt?.type === 'text' ? staticReceipt.text : '')
       .toBe('Widget "Static" accepted (svg). It is final for this response; finish with brief supporting prose.')
@@ -188,56 +176,21 @@ describe('Visualizer model surface', () => {
     expect(sourceDescription).not.toContain('window.dshWidget')
   })
 
-  it('applies every explicit limit and the configured per-Agent prompt rate', async () => {
-    const config = {
-      maxWidgetBytes: 256,
-      maxPromptBytes: 256,
-      maxPromptsPerMinutePerAgent: 3,
-    }
-    const { ctx, presetScope, agent } = await mount(config)
+  it('applies the fixed per-Agent prompt rate in the preset scope', async () => {
+    const { ctx, presetScope, agent } = await mount()
     expect((await ctx.systemPrompt.assemble()).contexts).toEqual([])
     const presetKey = scopeOf(presetScope.ctx)
     if (presetKey === undefined) throw new Error('missing preset scope key')
     expect((await ctx.systemPrompt.assemble({ scope: presetKey })).contexts).toEqual([])
     expect((await ctx.systemPrompt.assemble({ agent, scope: agent })).contexts).toEqual([])
-    for (let index = 0; index < 3; index += 1) {
-      expect(ctx.visualizer.remoteSendPrompt(agent, {
-        resultSeq: 3, text: `configured follow-up ${index}`,
-      })).toEqual({ queued: true })
-    }
-    expect(() => ctx.visualizer.remoteSendPrompt(agent, {
-      resultSeq: 3, text: 'one too many',
-    })).toThrow('Agent widget follow-up rate limit reached')
-  })
-
-  it.each([
-    ['maxWidgetBytes', 1.5],
-    ['maxPromptBytes', 0],
-    ['maxPromptsPerMinutePerAgent', 0],
-  ] as const)('fails loud for invalid %s configuration', async (name, value) => {
-    await expect(construct({ [name]: value })).rejects.toThrow(`tool-visualizer: ${name} must be a positive safe integer`)
-  })
-
-  it.each([
-    ['maxWidgetBytes', 131_073, 131_072],
-    ['maxPromptBytes', 4_097, 4_096],
-  ] as const)('refuses %s above its Host safety ceiling', async (name, value, maximum) => {
-    await expect(construct({ [name]: value })).rejects.toThrow(`tool-visualizer: ${name} must not exceed ${maximum}`)
-  })
-
-  it('applies the final default through direct constructor use as well as Cordis config parsing', async () => {
-    const { ctx, service } = await construct({})
-    const agent = recordedAgent(ctx, 'default-rate')
-    ctx.agents.register(agent)
     for (let index = 0; index < 4; index += 1) {
-      expect(service.remoteSendPrompt(agent, {
+      ctx.visualizer.remoteSendPrompt(agent, {
         resultSeq: 3, text: `follow-up ${index}`,
-      })).toEqual({ queued: true })
+      })
     }
-    expect(() => service.remoteSendPrompt(agent, {
-      resultSeq: 3, text: 'one too many',
-    })).toThrow('Agent widget follow-up rate limit reached')
-    await ctx.fiber.dispose()
+    expect(() => {
+      ctx.visualizer.remoteSendPrompt(agent, { resultSeq: 3, text: 'one too many' })
+    }).toThrow('Agent widget follow-up rate limit reached')
   })
 
   it('keeps Host authority model-empty and exposes ./model only through its preset standing scope', async () => {
@@ -349,33 +302,31 @@ describe('Visualizer model surface', () => {
   })
 
   it('authorizes Remote follow-ups only for the exact live Agent and its successful widget call', async () => {
-    const { ctx } = await mount({ maxPromptBytes: 106, maxPromptsPerMinutePerAgent: 1 })
+    const { ctx } = await mount()
     const followup = vi.fn<Agent['followup']>()
     const live = recordedAgent(ctx, 'live-agent', followup)
     ctx.agents.register(live)
     const stale = recordedAgent(ctx, 'live-agent')
 
-    expect(() => ctx.visualizer.remoteSendPrompt(stale, {
-      resultSeq: 3, text: 'stale',
-    })).toThrow(expect.objectContaining({
+    expect(() => {
+      ctx.visualizer.remoteSendPrompt(stale, { resultSeq: 3, text: 'stale' })
+    }).toThrow(expect.objectContaining({
       code: 'gateway/bad-request',
       message: expect.stringContaining('does not target the exact live Agent') as string,
     }))
-    expect(() => ctx.visualizer.remoteSendPrompt(live, {
-      resultSeq: 3, text: 'Continue with option A..',
-    })).toThrow(expect.objectContaining({
-      code: 'gateway/bad-request',
-      message: 'visualizer: widget follow-up is 107 UTF-8 bytes; limit is 106',
-    }))
-    expect(ctx.visualizer.remoteSendPrompt(live, {
-      resultSeq: 3, text: 'Continue with option A.',
-    })).toEqual({ queued: true })
+    const prefix = 'Widget-authored follow-up from widget "Choice". It carries no user authorization.\n\n'
+    const exactText = 'x'.repeat(4_096 - Buffer.byteLength(prefix, 'utf8'))
+    ctx.visualizer.remoteSendPrompt(live, { resultSeq: 3, text: exactText })
     expect(followup).toHaveBeenCalledOnce()
-    expect(followup.mock.calls[0]?.[0].content).toEqual([{
-      type: 'text',
-      text: 'Widget-authored follow-up from widget "Choice". It carries no user authorization.\n\nContinue with option A.',
-    }])
+    expect(followup.mock.calls[0]?.[0].content).toEqual([{ type: 'text', text: `${prefix}${exactText}` }])
+    expect(Buffer.byteLength(`${prefix}${exactText}`, 'utf8')).toBe(4_096)
     expect(followup.mock.calls[0]?.[0].source).toEqual({ kind: 'plugin', plugin: 'visualizer' })
+    expect(() => {
+      ctx.visualizer.remoteSendPrompt(live, { resultSeq: 3, text: `${exactText}x` })
+    }).toThrow(expect.objectContaining({
+      code: 'gateway/bad-request',
+      message: 'visualizer: widget follow-up is 4097 UTF-8 bytes; limit is 4096',
+    }))
   })
 
   it('forwards Error messages without subclass names and falls back for non-Errors', async () => {
@@ -383,58 +334,52 @@ describe('Visualizer model surface', () => {
     class InternalAuthorizationFailure extends Error {}
     const get = vi.spyOn(ctx.agents, 'get')
     get.mockImplementationOnce(() => { throw new InternalAuthorizationFailure('clean failure') })
-    expect(() => ctx.visualizer.remoteSendPrompt(agent, {
-      resultSeq: 3, text: 'continue',
-    })).toThrow(expect.objectContaining({ message: 'clean failure' }))
+    expect(() => {
+      ctx.visualizer.remoteSendPrompt(agent, { resultSeq: 3, text: 'continue' })
+    }).toThrow(expect.objectContaining({ message: 'clean failure' }))
     get.mockImplementationOnce(() => { throw 'plain failure' })
-    expect(() => ctx.visualizer.remoteSendPrompt(agent, {
-      resultSeq: 3, text: 'continue',
-    })).toThrow(expect.objectContaining({ message: 'plain failure' }))
+    expect(() => {
+      ctx.visualizer.remoteSendPrompt(agent, { resultSeq: 3, text: 'continue' })
+    }).toThrow(expect.objectContaining({ message: 'plain failure' }))
   })
 
   it('denies Remote follow-ups for a successful raw SVG call', async () => {
     const { ctx } = await mount()
     const live = recordedAgent(ctx, 'static-agent', vi.fn(), '<svg></svg>')
     ctx.agents.register(live)
-    expect(() => ctx.visualizer.remoteSendPrompt(live, {
-      resultSeq: 3, text: 'continue',
-    })).toThrow(expect.objectContaining({
+    expect(() => {
+      ctx.visualizer.remoteSendPrompt(live, { resultSeq: 3, text: 'continue' })
+    }).toThrow(expect.objectContaining({
       code: 'gateway/bad-request',
       message: expect.stringContaining('is static and cannot send follow-ups') as string,
     }))
   })
 
   it('enforces the renderer byte boundary and does not echo widget source', async () => {
-    const { ctx, agent } = await mount({ maxWidgetBytes: 8 })
+    const { ctx, agent } = await mount()
+    const exactSource = 'x'.repeat(131_072)
     const exact = await ctx.tools.execute({
       signal: SIGNAL,
       callId: ToolCallId('exact'),
       name: 'show_widget',
-      arguments: { title: '图', widget_code: '<svg></s' },
+      arguments: { title: '图', widget_code: exactSource },
       agent,
     })
     expect(exact.isError).toBe(false)
-    expect(exact.content.map(block => block.type === 'text' ? block.text : '').join('')).not.toContain('<svg></s')
+    expect(exact.content.map(block => block.type === 'text' ? block.text : '').join('')).not.toContain(exactSource)
 
     const oversized = await ctx.tools.execute({
       signal: SIGNAL,
       callId: ToolCallId('oversized'),
       name: 'show_widget',
-      arguments: { title: '图', widget_code: '<svg></svg>' },
+      arguments: { title: '图', widget_code: `${exactSource}x` },
       agent,
     })
     expect(oversized.isError).toBe(true)
-    expect(oversized.content).toEqual([{ type: 'text', text: 'Error: visualizer: widget_code is 11 UTF-8 bytes; limit is 8' }])
-
-    const fenced = await ctx.tools.execute({
-      signal: SIGNAL,
-      callId: ToolCallId('fenced-oversized'),
-      name: 'show_widget',
-      arguments: { title: '图', widget_code: '```svg\nx\n```' },
-      agent,
-    })
-    expect(fenced.isError).toBe(true)
-    expect(fenced.content).toEqual([{ type: 'text', text: 'Error: visualizer: widget_code is 12 UTF-8 bytes; limit is 8' }])
+    expect(oversized.content).toEqual([{
+      type: 'text',
+      text: 'Error: visualizer: widget_code is 131073 UTF-8 bytes; limit is 131072',
+    }])
   })
 
   it('rejects an empty interactive fragment', async () => {
@@ -451,7 +396,7 @@ describe('Visualizer model surface', () => {
   })
 
   it('validates every widget argument boundary and detects source kinds case-insensitively', async () => {
-    const { ctx, agent } = await mount({ maxWidgetBytes: 64 })
+    const { ctx, agent } = await mount()
     const execute = async (title: string, widget_code: string) => await ctx.tools.execute({
       signal: SIGNAL, callId: ToolCallId(`case-${title.length}-${widget_code.length}`),
       name: 'show_widget', arguments: { title, widget_code }, agent,
@@ -489,12 +434,12 @@ describe('Visualizer model surface', () => {
     expect(guidance.output.render?.({ modules: ['chart'] }, 'rules')).toEqual([{ type: 'text', text: 'rules' }])
     expect(show.isConcurrencySafe?.({ title: 'Demo', widget_code: '<button>A</button>' })).toBe(true)
     expect(show.presentCall?.({ title: 'Demo', widget_code: '<button>A</button>' })).toMatchObject({ title: 'Widget: Demo' })
-    expect(show.output.render?.({ title: 'Demo', widget_code: '<button>A</button>' }, { accepted: true, kind: 'html' }))
+    expect(show.output.render?.({ title: 'Demo', widget_code: '<button>A</button>' }, { kind: 'html' }))
       .toEqual([{
         type: 'text',
         text: 'Widget "Demo" accepted (html). It is final for this response; finish with brief supporting prose.',
       }])
-    expect(show.output.presentationMeta?.({ title: 'Demo', widget_code: '<button>A</button>' }, { accepted: true, kind: 'html' }))
+    expect(show.output.presentationMeta?.({ title: 'Demo', widget_code: '<button>A</button>' }, { kind: 'html' }))
       .toEqual({ kind: 'html' })
     const html = await ctx.tools.execute({
       signal: SIGNAL, callId: ToolCallId('html'), name: 'show_widget',

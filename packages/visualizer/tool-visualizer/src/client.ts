@@ -3,5 +3,4 @@
 export type {
   WidgetKind,
   WidgetPromptRequest,
-  WidgetPromptResult,
 } from './types.ts'

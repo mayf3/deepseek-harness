@@ -590,9 +590,8 @@ installModelSurface(modelCtx: Context): void
  * Queue a widget-authored message after Host-side authorization and rate limiting.
  * @param agent - Exact live Agent resolved from the Remote session scope.
  * @param request - Follow-up for one successful interactive widget call.
- * @returns Receipt confirming that the follow-up was queued.
  */
-@Remote('sendPrompt') remoteSendPrompt(agent: Agent, request: WidgetPromptRequest): WidgetPromptResult
+@Remote('sendPrompt') remoteSendPrompt(agent: Agent, request: WidgetPromptRequest): void
 ```
 
 Types: [Agent](core.md)

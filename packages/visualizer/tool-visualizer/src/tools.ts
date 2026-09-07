@@ -1,10 +1,10 @@
 import { Buffer } from 'node:buffer'
 import type { Context } from '@deepseek-ai/cordis'
 import { defineTool } from '@deepseek-ai/dsh-tools'
-import { composeGuidelines } from './guidelines.ts'
-import type { WidgetGuidelineModule, WidgetKind } from './types.ts'
-
-const MODULES = ['diagram', 'mockup', 'interactive', 'chart', 'illustration'] as const
+import {
+  composeGuidelines, WIDGET_GUIDELINE_MODULES, type WidgetGuidelineModule,
+} from './guidelines.ts'
+import type { WidgetKind } from './types.ts'
 
 const WIDGET_CODE_FENCE = /^\s*(?:`{3,}|~{3,})/
 const HTML_DOCUMENT_WRAPPER = /^(?:<!--[\s\S]*?-->\s*)*<(?:!doctype|html|head|body)(?=[\s/>])/i
@@ -58,7 +58,7 @@ export function registerVisualizerTools(
       modules: {
         type: 'array',
         required: true,
-        items: { type: 'string', enum: MODULES },
+        items: { type: 'string', enum: WIDGET_GUIDELINE_MODULES },
         description: 'Choose every module that fits the requested result. diagram: a fixed view of nodes and relationships. chart: quantitative data. illustration: a scene or image. interactive: an adjustable calculation, simulation, or animated demonstration. mockup: a product surface shown to explain one interaction.',
       },
     },
@@ -86,7 +86,6 @@ export function registerVisualizerTools(
         type: 'object',
         additionalProperties: false,
         properties: {
-          accepted: { type: 'boolean', required: true },
           kind: { type: 'string', required: true, enum: ['svg', 'html'] },
         },
       },
@@ -97,8 +96,8 @@ export function registerVisualizerTools(
       presentationMeta: (_args, value) => ({ kind: value.kind }),
     },
     isConcurrencySafe: () => true,
-    execute(args): Promise<{ accepted: true; kind: WidgetKind }> {
-      return Promise.resolve({ accepted: true, kind: validateWidgetArgs(args.title, args.widget_code, limits) })
+    execute(args): Promise<{ kind: WidgetKind }> {
+      return Promise.resolve({ kind: validateWidgetArgs(args.title, args.widget_code, limits) })
     },
     presentCall: args => ({ card: 'generic', kind: 'execute', title: `Widget: ${args.title}` }),
   }))

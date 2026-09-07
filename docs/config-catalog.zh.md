@@ -3085,26 +3085,6 @@ export interface Config {
 
 来源：[`packages/todo/tool-todo/src/index.ts:29`](../packages/todo/tool-todo/src/index.ts)
 
-<a id="deepseek-aidsh-tool-visualizer"></a>
-
-## `@deepseek-ai/dsh-tool-visualizer`
-
-需要：`agents`
-
-```ts config-catalog
-/** Deployment-varying limits for the Visualizer extension. */
-export interface Config {
-  /** Maximum UTF-8 bytes accepted for one widget source argument. At most 131072. */
-  maxWidgetBytes?: number
-  /** Maximum UTF-8 bytes accepted for one complete labelled widget follow-up. At most 4096. */
-  maxPromptBytes?: number
-  /** Per-Agent widget follow-ups admitted during one rolling minute. Defaults to 4. */
-  maxPromptsPerMinutePerAgent?: number
-}
-```
-
-来源：[`packages/visualizer/tool-visualizer/src/types.ts:2`](../packages/visualizer/tool-visualizer/src/types.ts)
-
 <a id="deepseek-aidsh-tool-web"></a>
 
 ## `@deepseek-ai/dsh-tool-web`
@@ -3518,6 +3498,7 @@ export interface Config {
 - `@deepseek-ai/dsh-tool-call-timeout-policy` — 需要 `tools`（[`packages/guard/timeout-policy/src/index.ts`](../packages/guard/timeout-policy/src/index.ts)）
 - `@deepseek-ai/dsh-tool-cordis` — 需要 `tools` · `systemPrompt` · `dynamicCordisRunner` · `cordisInspect`（[`packages/extensions/tool-cordis/src/index.ts`](../packages/extensions/tool-cordis/src/index.ts)）
 - `@deepseek-ai/dsh-tool-subagent-control` — 需要 `tools` · `subagents`（[`packages/subagent/tool-subagent-control/src/index.ts`](../packages/subagent/tool-subagent-control/src/index.ts)）
+- `@deepseek-ai/dsh-tool-visualizer` — 需要 `agents`（[`packages/visualizer/tool-visualizer/src/index.ts`](../packages/visualizer/tool-visualizer/src/index.ts)）
 - `@deepseek-ai/dsh-user-questions`（[`packages/interaction/user-questions/src/index.ts`](../packages/interaction/user-questions/src/index.ts)）
 - `@deepseek-ai/dsh-webhook` — 需要 `agents` · `agentDefaultModel` · `agentPresets` · `permissionPresets` · `sessionTitle` · `workspaceRegistry`（[`packages/webhook/webhook/src/index.ts`](../packages/webhook/webhook/src/index.ts)）
 - `@deepseek-ai/dsh-workspace` — 需要 `storageDomain` · `sessionPersistence`（[`packages/workspace/workspace/src/index.ts`](../packages/workspace/workspace/src/index.ts)）

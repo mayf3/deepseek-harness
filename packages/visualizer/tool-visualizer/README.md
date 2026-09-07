@@ -37,11 +37,9 @@ Mount the root service only in a composition that supplies a compatible Client:
 
 The wrapper waits recoverably for root authority. It contributes no prompt or tools while authority is absent, activates the inherited preset surface when authority appears, withdraws it when authority leaves, and can activate again later. Child `toolFilter` restrictions continue to apply throughout that lifecycle.
 
-The generated [configuration catalog](../../../docs/config-catalog.md#deepseek-aidsh-tool-visualizer) is the exhaustive source for accepted limits.
-
 ### Authority and follow-ups
 
-The generated Remote accepts a follow-up only for the exact live Agent and the exact persisted HTML `show_widget` result identified by `resultSeq`. The result must be an appended success whose single source event is a same-turn, same-step `show_widget` call with the matching tool-call ID. The Host derives the title from that source call and the widget kind from the result's presentation metadata, bounds the complete labelled follow-up, and applies the authoritative per-Agent rate limit, which defaults to four admissions per rolling minute.
+The generated Remote accepts a follow-up only for the exact live Agent and the exact persisted HTML `show_widget` result identified by `resultSeq`. The result must be an appended success whose single source event is a same-turn, same-step `show_widget` call with the matching tool-call ID. The Host derives the title from that source call and the widget kind from the result's presentation metadata, bounds the complete labelled follow-up to 4096 UTF-8 bytes, and applies a fixed limit of four admissions per Agent per rolling minute. Widget source is limited to 128 KiB.
 
 Authorization follows that retained immutable Session result rather than the lifetime of any Client iframe. Closing or recreating a presentation document neither revokes nor creates Host authority.
 
@@ -50,7 +48,7 @@ An authorized follow-up enters the Agent inbox as an untrusted plugin-authored m
 <a id="dev-note"></a>
 ## Dev Note
 
-Keep source and follow-up limits, Agent/call authorization, per-Agent rate limiting, and follow-up insertion in the root Host service. Keep tools and prompt policy in the same package's preset-scoped `./model` contribution. The generated Remote and `./client` types are the boundary for a separately supplied Client; session/core types are not an inter-plane transport. Client rendering limits are independent security ceilings rather than Host configuration transported over Remote.
+Keep source and follow-up limits, Agent/call authorization, per-Agent rate limiting, and follow-up insertion in the root Host service. Keep tools and prompt policy in the same package's preset-scoped `./model` contribution. The generated Remote and `./client` types are the boundary for a separately supplied Client; session/core types are not an inter-plane transport. Client rendering limits are independent security ceilings.
 
 No runtime invariant companion is published. Exact result identity is revalidated from immutable Session events on every request; only follow-up admissions remain private service state with no independent event or snapshot view to compare.
 
@@ -81,7 +79,7 @@ The routing section and two-tool surface remain prefix-stable while their defini
 
 #### What the model sees
 
-The mounted model surface exposes the generated [`widget_guidelines` and `show_widget` schemas](../../../docs/tool-catalog.md#deepseek-aidsh-tool-visualizer). `widget_guidelines` returns Delivery when `show_widget` is visible to the calling Agent, a shared Foundation, and only the requested construction modules; the Foundation owns compact host-native composition, responsive flow, theme use, and cross-type accessibility. `show_widget` accepts raw SVG or an HTML fragment and reports the detected kind.
+The mounted model surface exposes the generated [`widget_guidelines` and `show_widget` schemas](../../../docs/tool-catalog.md#deepseek-aidsh-tool-visualizer). `widget_guidelines` returns Delivery when `show_widget` is visible to the calling Agent, a shared Foundation, and only the requested construction modules; the Foundation owns compact composition, responsive flow, theme use, and cross-type accessibility. `show_widget` accepts raw SVG or an HTML fragment and reports the detected kind.
 
 #### Token effect
 

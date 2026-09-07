@@ -11,14 +11,14 @@ exports[`Visualizer model surface > ships one neutral SVG and HTML model surface
 
 ## Foundation
 - Theme variables available: --dsw-alias-bg-base, --dsw-alias-bg-layer-1, --dsw-alias-bg-layer-2, --dsw-alias-border-l1, --dsw-alias-border-l2, --dsw-alias-brand-primary, --dsw-alias-button-primary-fill, --dsw-alias-interactive-bg-hover, --dsw-alias-interactive-bg-active, --dsw-alias-label-primary, --dsw-alias-label-primary-inverted, --dsw-alias-label-secondary, --dsw-alias-label-tertiary, --dsw-alias-state-error-primary.
-- The host provides readable defaults for controls and owns placement and title. Keep those defaults or restyle controls and the visual surface to suit the subject; avoid a second outer frame or repeated panels.
+- Use readable controls and a visual surface suited to the subject; avoid wrapping the result in an extra outer frame or giving every item its own panel.
 - Center the task's primary result or relationship; leave secondary explanation to the reply.
 - For a broad request, choose one representative scenario and leave alternatives to the reply.
 - Keep related inputs and primary results in one compact flow; reserve separate panels for distinct tasks.
 - Keep labels in the user's language.
 - Keep content inside its coordinate space or normal document flow. At narrow widths, reflow controls, legends, comparison layouts, and exact-value rows instead of clipping, shrinking labels, or adding nested scrolling; let flexible grid and flex children shrink with min-width: 0.
 - Pair color with a label, shape, or pattern.
-- Give every primary visual a concise accessible name and summary without repeating the host title.
+- Give every primary visual a concise accessible name and summary.
 
 ## Diagram
 - Use raw SVG for a fixed diagram, beginning the source with <svg> and putting any styles inside it. Give it one responsive viewBox that fills the available width; do not assume a fixed card width.
@@ -38,7 +38,7 @@ exports[`Visualizer model surface > ships one neutral SVG and HTML model surface
 - Use motion only when change over time carries the explanation. Otherwise start stable; continuous motion waits for a user action unless immediate motion is the requested content. Honor reduced-motion preferences.
 - Reuse a bounded set of DOM or SVG nodes for recurring updates; change textContent or attributes in place instead of rebuilding markup, and stop scheduling while idle, paused, or settled.
 - Keep changing numeric readouts from shifting the layout by using tabular numerals and reserving enough width for expected values.
-- Call window.dshWidget.sendPrompt(text) only from a user gesture and only when the next step genuinely needs the model. The message enters the conversation immediately, labelled as widget-authored; there is no confirmation step.
+- Call window.dshWidget.sendPrompt(text, event) directly from a trusted click or keydown handler, at most once per event, and only when the next step genuinely needs the model. The message enters the conversation immediately, labelled as widget-authored; there is no confirmation step.
 - Recover from non-fatal errors. Keep behavior deterministic; when variation is meaningful, make it reproducible and resettable.
 
 ## Chart
@@ -67,9 +67,6 @@ exports[`Visualizer model surface > ships one neutral SVG and HTML model surface
       "output": {
         "additionalProperties": false,
         "properties": {
-          "accepted": {
-            "type": "boolean",
-          },
           "kind": {
             "enum": [
               "svg",
@@ -79,7 +76,6 @@ exports[`Visualizer model surface > ships one neutral SVG and HTML model surface
           },
         },
         "required": [
-          "accepted",
           "kind",
         ],
         "type": "object",

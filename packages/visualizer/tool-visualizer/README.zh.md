@@ -37,11 +37,9 @@ kind: "package-reference"
 
 wrapper 会可恢复地等待根权威。权威不存在时它不贡献提示词或工具；权威出现时激活继承的 preset 模型面，权威撤销时移除该模型面，之后权威再次出现仍可重新激活。child `toolFilter` 限制在整个生命周期中都会继续生效。
 
-生成式[配置目录](../../../docs/config-catalog.zh.md#deepseek-aidsh-tool-visualizer)是全部可接受限额的完整来源。
-
 ### 权威与 follow-up
 
-生成式 Remote 只接纳命中准确 live Agent，且由 `resultSeq` 标识的准确已持久化 HTML `show_widget` result。该 result 必须是 append 成功的事件，其唯一 source event 必须是同 turn、同 step 且 tool-call ID 匹配的 `show_widget` call。Host 从该 source call 派生标题，从 result 的 presentation metadata 派生 widget kind，限制完整已标记 follow-up 的大小，并应用权威的每 Agent 频控；其默认值为每个滚动分钟接纳 4 次。
+生成式 Remote 只接纳命中准确 live Agent，且由 `resultSeq` 标识的准确已持久化 HTML `show_widget` result。该 result 必须是 append 成功的事件，其唯一 source event 必须是同 turn、同 step 且 tool-call ID 匹配的 `show_widget` call。Host 从该 source call 派生标题，从 result 的 presentation metadata 派生 widget kind，将完整已标记 follow-up 限制在 4096 UTF-8 字节以内，并固定为每个 Agent 每个滚动分钟最多接纳 4 次。Widget 源码限制为 128 KiB。
 
 授权跟随该已保留的不可变 Session result，而非任何 Client iframe 的生命周期。关闭或重建展示 document 既不会撤销 Host 权威，也不会创建 Host 权威。
 
@@ -50,7 +48,7 @@ wrapper 会可恢复地等待根权威。权威不存在时它不贡献提示词
 <a id="dev-note"></a>
 ## 开发备注
 
-源码与 follow-up 限额、Agent/call 授权、每 Agent 频控与 follow-up 写入留在根 Host service；工具与提示词策略留在同一包的 preset-scoped `./model` contribution。生成式 Remote 与 `./client` type 是单独提供的 Client 所用的边界；不要把 session/core type 当作跨运行面传输层。Client 渲染限额是独立的安全上限，不通过 Remote 传输 Host 配置。
+源码与 follow-up 限额、Agent/call 授权、每 Agent 频控与 follow-up 写入留在根 Host service；工具与提示词策略留在同一包的 preset-scoped `./model` contribution。生成式 Remote 与 `./client` type 是单独提供的 Client 所用的边界；不要把 session/core type 当作跨运行面传输层。Client 渲染限额是独立的安全上限。
 
 本包不发布运行时 invariant companion。每次请求都会从不可变 Session event 重新校验准确 result 身份；只有 follow-up 准入仍是 service 的私有状态，没有可供比较的独立 event 或 snapshot view。
 
@@ -81,7 +79,7 @@ Use show_widget for a temporary inline visual that belongs to the reply: when as
 
 #### 模型看到什么
 
-挂载后的模型面会公开生成式 [`widget_guidelines` 与 `show_widget` schema](../../../docs/tool-catalog.zh.md#deepseek-aidsh-tool-visualizer)。`widget_guidelines` 在 `show_widget` 对调用 Agent 可见时返回 Delivery，并返回共享 Foundation 与所请求的构建模块；Foundation 拥有紧凑的宿主原生构图、响应式流、主题使用与跨类型可访问性。`show_widget` 接纳 raw SVG 或 HTML fragment，并返回检测出的 kind。
+挂载后的模型面会公开生成式 [`widget_guidelines` 与 `show_widget` schema](../../../docs/tool-catalog.zh.md#deepseek-aidsh-tool-visualizer)。`widget_guidelines` 在 `show_widget` 对调用 Agent 可见时返回 Delivery，并返回共享 Foundation 与所请求的构建模块；Foundation 负责紧凑构图、响应式流、主题使用与跨类型可访问性。`show_widget` 接纳 raw SVG 或 HTML fragment，并返回检测出的 kind。
 
 #### Token 影响
 
