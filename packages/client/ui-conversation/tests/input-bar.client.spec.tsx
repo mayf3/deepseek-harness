@@ -215,7 +215,9 @@ function bench(over?: BenchOptions) {
   // A running steer-capable composer (ordinary session or continuable child
   // with its parent online) labels Send by the delivery mode it performs over
   // a plain message draft; idle sessions, one-shot children, locked
-  // composers, empty drafts, and `/` command lines keep plain Send.
+  // composers, empty drafts, drafts with a pending upload, and `/` command
+  // lines keep plain Send. The mirror models plain-phase drafts only: cases
+  // that claim a command or freeze the machine query the DOM directly.
   const steeringAvailable = over?.subagent === undefined || over.subagent.address.mode === 'continuable'
   const composerLocked = over?.disabled === true || over?.inert === true || over?.blocked !== undefined
     || (over?.subagent?.address.mode === 'continuable' && over.subagent.parentAvailable !== true)
@@ -794,6 +796,14 @@ describe('running and lock semantics', () => {
     })
     expect(pending.button.getAttribute('aria-label')).toBe('发送消息')
     expect(pending.button.disabled).toBe(true)
+
+    // A failed upload holds the same gate until it is retried or removed.
+    const failed = bench({
+      running: true, busyEnter: 'steer', draft: '带附件', attachments: [file],
+      fileUploads: { [file.id]: { status: 'error', message: 'upload failed' } },
+    })
+    expect(failed.button.getAttribute('aria-label')).toBe('发送消息')
+    expect(failed.button.disabled).toBe(true)
 
     const ready = bench({
       running: true, busyEnter: 'steer', draft: '带附件', attachments: [file],
