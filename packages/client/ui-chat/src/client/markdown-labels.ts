@@ -12,5 +12,12 @@ export function markdownLabels(t: ChatViewSlotProps['t']): MarkdownLabels {
   return {
     code: { copyLabel: t('copy'), copiedLabel: t('copied') },
     footnotes: t('markdown.footnotes'),
+    mermaid: {
+      diagram: t('markdown.mermaid.diagram'),
+      preview: t('markdown.mermaid.preview'),
+      source: t('markdown.mermaid.source'),
+      loading: t('markdown.mermaid.loading'),
+      error: t('markdown.mermaid.error'),
+    },
   }
 }

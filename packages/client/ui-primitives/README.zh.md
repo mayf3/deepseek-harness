@@ -53,6 +53,7 @@ kind: "package-library"
 | `Toast` | 顶部居中的瞬时横幅，保持时长由所有者的 `holdMs` 决定。 |
 | `JsonTree`、`JsonBlock` | 只读 JSON 查看。 |
 | `MarkdownText`、`CodeBlock` | 不可信 GFM 与 TeX 数学，以及高亮代码。`CodeBlock` 可通过 `lineNumbers` 开启行号；复制的源码不含行号栏。 |
+| `MermaidPreview` | 只读 Mermaid 图表图片，包含加载状态与源码回退状态。 |
 | `TerminalBlock`、`ReadBlock`、`DiffBlock`、`SearchBlock`、`WebBlock` | 与各类工具结果意图对应的 agent 输出卡片。 |
 | `icons/*`、`FishLogo`、`BrandWordmark`、`ReferenceIcon`、`LinkIcon`、`DocumentFileIcon` | 字形与品牌标识，全部随 `currentColor`。 |
 | `FileTypeIcon` | 彩色文件类型纸片（code、html、image、markdown、pdf、sheet、slides、document、other）；`classifyFileType` 按路径扩展名选出类型。 |
@@ -73,6 +74,9 @@ kind: "package-library"
 
 `MarkdownText` 渲染不可信的 GFM 与 TeX 公式、阻止不安全的链接与图片，并可把已解析的文件提及转换为显式控件。当 owner 传入 `pathImages` 词表时，本地媒体路径的图片目标只在落定渲染阶段重写为可展示 URL（与 file mentions 相同的流式门）；不传词表时本地目标保持惰性 alt 文本。加载或解码失败后，图片替换为作者的 alt 文本；alt 为空时显示原始目标路径。图片源变化后可重新加载。回复流式输出时，它冻结已完成的块、按已完成行推进顶层未闭合 fence，并从保存的 Shiki grammar state 为该 fence 增量高亮。已完成的 token 行进入固定大小的 React 分组，后续分片只 reconcile 正在增长的分组；最终全量解析解决跨文档语法时，未变化的 fence 会保留该 DOM。`TerminalBlock`、`ReadBlock`、`DiffBlock`、`SearchBlock` 与 `WebBlock` 把对应的工具结果意图渲染为带复制控件、溢出处理及适用时 ANSI 处理的卡片。`JsonTree` 与 `JsonBlock` 以只读方式检查 JSON 值；`projectUserText` 把已发送的用户文本投影为行内普通文本段与引用 chip，供消息气泡和排队行使用。
 
+`MermaidPreview` 在浅色画布上渲染完整的 Mermaid 源码。渲染按需加载 Mermaid、使用严格安全模式，并把生成的 SVG 显示为图片，不绑定图内链接处理器。渲染失败时显示原始源码与传入的错误文案；替换源码后会丢弃前一次渲染的延迟结果。图表保留固有尺寸，并在可用宽度不足时缩小。
+
+为 Markdown 调用方传入 `MarkdownLabels.mermaid` 即可启用 `mermaid` fence 预览；未传入时，fence 保持代码显示。预览在消息定稿后开始。`CodeBlock.preview` 提供可选的替代正文和本地化的「源码／预览」切换文案，现有「复制」按钮始终复制源码。[Mermaid 决策](../../../.agents/notes/implemented/feature/2026-09-07-web-mermaid-preview.zh.md)记录了渲染与复用选择。
 
 ### 本地化文案
 

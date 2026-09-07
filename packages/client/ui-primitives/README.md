@@ -53,6 +53,7 @@ Check this table before writing a control in a feature package. A plugin cannot 
 | `Toast` | Transient top-center banner held for the owner's `holdMs`. |
 | `JsonTree`, `JsonBlock` | Read-only JSON inspection. |
 | `MarkdownText`, `CodeBlock` | Untrusted GFM with TeX math, and highlighted code. `CodeBlock` accepts opt-in `lineNumbers`; copied source excludes the gutter. |
+| `MermaidPreview` | Read-only Mermaid diagram image with loading and source fallback states. |
 | `TerminalBlock`, `ReadBlock`, `DiffBlock`, `SearchBlock`, `WebBlock` | The agent-output card matching each tool-result intent. |
 | `icons/*`, `FishLogo`, `BrandWordmark`, `ReferenceIcon`, `LinkIcon`, `DocumentFileIcon` | Glyphs and brand marks, all riding `currentColor`. |
 | `FileTypeIcon` | The coloured file-type sheet (code, html, image, markdown, pdf, sheet, slides, document, other); `classifyFileType` picks the kind from a path's extension. |
@@ -73,6 +74,9 @@ The catalog above lists what each export is for; this section covers the behavio
 
 `MarkdownText` renders untrusted GFM and TeX math, blocks unsafe links and images, and can turn resolved file mentions into explicit controls. When the owner passes a `pathImages` vocabulary, image destinations that are local media paths rewrite to displayable URLs on settled renders only (the same streaming gate as file mentions); without a vocabulary, local destinations remain inert alt text. A load or decode failure replaces the image with its authored alt text, or the original destination when alt is empty. Changing the image source permits a fresh load. While a reply streams, it freezes completed blocks, advances a top-level open fence by completed lines, and highlights that fence from saved Shiki grammar state. Completed token lines enter fixed-size React groups, so later chunks reconcile only the growing group; an unchanged fence retains that DOM when the final full parse resolves cross-document syntax. `TerminalBlock`, `ReadBlock`, `DiffBlock`, `SearchBlock`, and `WebBlock` render the matching tool-result intent with copy controls, overflow handling, and ANSI processing where applicable. `JsonTree` and `JsonBlock` inspect JSON values read-only, while `projectUserText` projects sent user text into inline plain runs and reference chips for the message bubble and queue rows.
 
+`MermaidPreview` renders complete Mermaid source on a light canvas. Rendering loads Mermaid on demand, uses strict security, and exposes the generated SVG as an image with no diagram link handlers. A render failure shows the original source with the supplied error label; replacing the source discards late results from the previous render. The diagram keeps its intrinsic size and shrinks to fit the available width.
+
+Supply `MarkdownLabels.mermaid` to enable `mermaid` fence previews in a Markdown consumer; without it, fences remain code. Previews start after the message settles. `CodeBlock.preview` supplies an optional alternate body and localized Source/Preview switch labels while the existing Copy button always copies the source. [The Mermaid decision](../../../.agents/notes/implemented/feature/2026-09-07-web-mermaid-preview.md) records the rendering and reuse choices.
 
 ### Localizing copy
 

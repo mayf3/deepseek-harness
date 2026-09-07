@@ -31,6 +31,8 @@ export interface CodeBlockProps {
   copyLabel: string
   /** Copy-button label during the post-copy confirmation window. */
   copiedLabel: string
+  /** Optional settled preview with localized switch labels; copying always retains the source text. */
+  preview?: { content: ReactNode; previewLabel: string; sourceLabel: string } | undefined
 }
 
 /**
@@ -59,7 +61,7 @@ function renderLine(line: readonly HighlightSpan[], index: number): ReactNode {
   )
 }
 
-export function CodeBlock({ code, lang, streaming, className, lineNumbers = false, copyLabel, copiedLabel }: CodeBlockProps) {
+export function CodeBlock({ code, lang, streaming, className, lineNumbers = false, copyLabel, copiedLabel, preview }: CodeBlockProps) {
   const trimmed = code.endsWith('\n') ? code.slice(0, -1) : code
   const sourceLines = lineNumbers ? trimmed.split('\n') : undefined
   const rootRef = useRef<HTMLDivElement>(null)
@@ -143,13 +145,13 @@ export function CodeBlock({ code, lang, streaming, className, lineNumbers = fals
     [streaming, highlighting, streamedBody, trimmed, lang, loaded],
   )
   const [copied, setCopied] = useState(false)
+  const [showSource, setShowSource] = useState(false)
+  const previewAvailable = preview !== undefined && streaming !== true
+  const showingPreview = previewAvailable && !showSource
 
   const onCopy = useCallback(() => {
     if (copied) return
-    /* v8 ignore next -- both arms always mount a <pre>; trimmed is the
-       typed fallback if the DOM shape ever diverges. */
-    const text = rootRef.current?.querySelector('pre')?.textContent ?? trimmed
-    void writeClipboard(text).then((ok) => {
+    void writeClipboard(trimmed).then((ok) => {
       if (!ok) return
       setCopied(true)
       window.setTimeout(() => { setCopied(false) }, 1000)
@@ -181,13 +183,18 @@ export function CodeBlock({ code, lang, streaming, className, lineNumbers = fals
         <div className={css.banner}>
           <div className={css.infostring}>{lang ?? ''}</div>
           <div className={css.action}>
+            {previewAvailable && (
+              <button type="button" className={css.copyButton} onClick={() => { setShowSource(!showSource) }}>
+                {showingPreview ? preview.sourceLabel : preview.previewLabel}
+              </button>
+            )}
             <button type="button" className={css.copyButton} onClick={onCopy}>
               {copied ? copiedLabel : copyLabel}
             </button>
           </div>
         </div>
       </div>
-      {body}
+      {showingPreview ? preview.content : body}
     </div>
   )
 }

@@ -23,6 +23,8 @@ import type * as Md from 'mdast'
 import type {} from 'mdast-util-math'
 import { normalizeUri } from 'micromark-util-sanitize-uri'
 import { CodeBlock } from './CodeBlock.tsx'
+import { MermaidPreview } from './MermaidPreview.tsx'
+import type { MermaidPreviewLabels } from './MermaidPreview.tsx'
 import { renderTexToReact } from './katex.tsx'
 import { LinkIcon, classifyLinkPath } from '../LinkIcon.tsx'
 import type { PositionedBlock } from './incremental.ts'
@@ -40,6 +42,8 @@ export interface MarkdownCodeLabels {
 export interface MarkdownLabels {
   code: MarkdownCodeLabels
   footnotes: string
+  /** Opt into settled Mermaid fence previews by supplying their complete localized chrome. */
+  mermaid?: MermaidPreviewLabels & { preview: string; source: string }
 }
 
 function sanitizeUrl(url: string): string {
@@ -394,6 +398,11 @@ function renderCode(node: Md.Code, key: Key, context: MarkdownRenderContext): Re
       streaming={context.streaming}
       copyLabel={context.labels.code.copyLabel}
       copiedLabel={context.labels.code.copiedLabel}
+      preview={lang === 'mermaid' && !context.streaming && context.labels.mermaid !== undefined ? {
+        content: <MermaidPreview code={node.value} labels={context.labels.mermaid} />,
+        previewLabel: context.labels.mermaid.preview,
+        sourceLabel: context.labels.mermaid.source,
+      } : undefined}
     />
   )
 }

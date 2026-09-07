@@ -1,0 +1,26 @@
+.canvas {
+  overflow: auto;
+  padding: 16px;
+  background: var(--dsw-static-neutral-00);
+  border-radius: 0 0 12px 12px;
+}
+
+.diagram {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin: 0 auto;
+}
+
+.status {
+  padding: 16px;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.staging {
+  position: fixed;
+  top: 0;
+  left: -100000px;
+  visibility: hidden;
+  pointer-events: none;
+}

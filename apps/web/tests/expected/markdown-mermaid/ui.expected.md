@@ -1,0 +1,53 @@
+- banner:
+  - navigation "Session hierarchy":
+    - button "Mermaid previews" [disabled]
+  - button "Session log":
+    - text: Session log
+    - img
+  - tablist:
+    - tab "Chat" [selected]
+    - tab "Trajectory"
+- text: Preview these Mermaid diagrams. {{clock}}
+- button "Copy":
+  - img
+- heading "Mermaid previews" [level=1]
+- text: mermaid
+- button "Source"
+- button "Copy"
+- img "Mermaid diagram"
+- text: mermaid
+- button "Source"
+- button "Copy"
+- img "Mermaid diagram"
+- text: mermaid
+- button "Source"
+- button "Copy"
+- status: Unable to render this diagram. The source is shown below.
+- code: flowchart LR A[unfinished
+- text: mermaid
+- button "Source"
+- button "Copy"
+- img "Mermaid diagram"
+- button "Copy":
+  - img
+- button "Good response":
+  - img
+- button "Bad response":
+  - img
+- button "Branch into a new conversation":
+  - img
+- button "Ran for {{duration}}":
+  - img
+  - text: Ran for {{duration}}
+- text: {{clock}}
+- textbox "Message or run a task... / commands, @ files or sessions"
+- button "Commands":
+  - img
+- button "Add attachment":
+  - img
+- 'button "Access mode, current: Workspace Write"': Workspace Write
+- button "Select model, current DeepSeek-V4-Flash":
+  - text: DeepSeek-V4-Flash
+  - img
+- button "Send message" [disabled]
+- text: 1 turns · 1 steps LLM {{duration}}
