@@ -61,7 +61,7 @@ function start(args: string[], signal: AbortSignal, cwd = repositoryRoot) {
     stripFinalNewline: false,
   })
   // `error` is an outcome, not the completion edge for the process and its pipes.
-  const closed = new Promise<void>(resolve => child.nodeChildProcess.once('close', () => resolve()))
+  const closed = new Promise<void>(resolve => child.nodeChildProcess.once('close', () => { resolve() }))
   const result = Promise.all([child, closed]).then(([result]) => result)
   children.push({ kill: () => { child.kill('SIGKILL') }, closed: result })
   return { child, result }
@@ -102,16 +102,16 @@ describe('publint package runner', () => {
     await Promise.all(active.map(({ child }) => once(child.stdout, 'data', { signal })))
     expect(closed).toEqual([false, false])
     // Start the deadline only after both children announce readiness; startup speed is not the oracle.
-    const timer = setTimeout(() => deadline.abort(new DOMException('fixture deadline expired', 'TimeoutError')), 0)
+    const timer = setTimeout(() => { deadline.abort(new DOMException('fixture deadline expired', 'TimeoutError')) }, 0)
     try {
       const results = await Promise.all(active.map(({ result }) => result))
       expect(closed).toEqual([true, true])
       for (const [index, result] of results.entries()) {
         expect(result.isCanceled).toBe(true)
-        expect(() => expectCompleted(result)).toThrow(/publint subprocess: error=TimeoutError: fixture deadline expired; signal=/)
-        expect(() => expectCompleted(result)).toThrow(/canceled=true/)
-        expect(() => expectCompleted(result)).toThrow(/ready/)
-        expect(() => expectCompleted(result)).toThrow(/probe stderr/)
+        expect(() => { expectCompleted(result) }).toThrow(/publint subprocess: error=TimeoutError: fixture deadline expired; signal=/)
+        expect(() => { expectCompleted(result) }).toThrow(/canceled=true/)
+        expect(() => { expectCompleted(result) }).toThrow(/ready/)
+        expect(() => { expectCompleted(result) }).toThrow(/probe stderr/)
         expect(() => process.kill(active[index]!.child.pid!, 0)).toThrow(/ESRCH/)
       }
     } finally {
@@ -123,7 +123,7 @@ describe('publint package runner', () => {
     const { result } = start(['-e', ''], signal, join(fixture(), 'missing-cwd'))
     const completed = await result
     expect(completed.cause).toMatchObject({ code: 'ENOENT' })
-    expect(() => expectCompleted(completed)).toThrow(/publint subprocess: error=.*ENOENT.*; signal=undefined/)
+    expect(() => { expectCompleted(completed) }).toThrow(/publint subprocess: error=.*ENOENT.*; signal=undefined/)
   })
 
   it('lints recursively declared files from an in-memory publication view', async ({ signal }) => {
