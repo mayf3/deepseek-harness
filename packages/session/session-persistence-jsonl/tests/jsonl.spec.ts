@@ -821,19 +821,17 @@ describe('JsonlSessionPersistence: immutable format generations', () => {
     readTally.enabled = true
     const controller = new AbortController()
     const reason = new Error('first historical waiter cancelled')
-    const secondController = new AbortController()
-    const firstListener = vi.spyOn(controller.signal, 'addEventListener')
-    const secondListener = vi.spyOn(secondController.signal, 'addEventListener')
 
+    const internals = ctx.sessionPersistence as unknown as {
+      migrationPreparations: Map<SessionId, { waiters: number }>
+    }
     const first = ctx.sessionPersistence.open(header.id, 'read', { signal: controller.signal })
-    const second = ctx.sessionPersistence.open(header.id, 'read', { signal: secondController.signal })
+    const second = ctx.sessionPersistence.open(header.id, 'read')
+    const settled = Promise.allSettled([first, second])
     try {
       await pause.entered
-      // Both callers must be waiting on preparation, not still discovering the source.
-      await vi.waitFor(() => {
-        expect(firstListener).toHaveBeenCalledWith('abort', expect.any(Function), { once: true })
-        expect(secondListener).toHaveBeenCalledWith('abort', expect.any(Function), { once: true })
-      })
+      // Both callers must join the preparation before either caller leaves it.
+      await expect.poll(() => internals.migrationPreparations.get(header.id)?.waiters).toBe(2)
       controller.abort(reason)
       await expect(first).rejects.toBe(reason)
       pause.release()
@@ -841,9 +839,10 @@ describe('JsonlSessionPersistence: immutable format generations', () => {
       expect((await handle.read()).events).toEqual([])
       expect(readTally.bySuffix.get(sourcePath)).toBe(1)
     } finally {
+      controller.abort(reason)
       pause.release()
-      for (const outcome of await Promise.allSettled([first, second])) {
-        if (outcome.status === 'fulfilled') await outcome.value.close()
+      for (const result of await settled) {
+        if (result.status === 'fulfilled') await result.value.close()
       }
     }
   })
