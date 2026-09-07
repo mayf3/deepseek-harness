@@ -15,7 +15,7 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { loadOverlayPatches } from './index.ts'
 import { readProfileManifest, resolveBundleDir, type ProfileManifest } from './profile.ts'
-import { visitInsertedRows } from './patch-rows.ts'
+import { visitPatchRows } from './patch-rows.ts'
 import { isRecord, parseChildReport, type ChildReport } from './probe-report.ts'
 
 /** Directory under a profile holding one probe record per package. */
@@ -84,7 +84,7 @@ export interface PluginProbe {
   readonly cordisSameCopy: boolean | null
   /** The harness version range the package declares in `engines.dsh`. */
   readonly enginesDsh?: string
-  /** Rows the bundle's patch inserts (unprefixed), empty for a non-bundle. */
+  /** Rows the bundle's patch introduces, inserted or set as a group's config, empty for a non-bundle. */
   readonly rows: readonly PluginProbeRow[]
   /** Ids of rows outside the bundle that its patch overrides. */
   readonly overrides: readonly string[]
@@ -184,12 +184,12 @@ function runChild(options: ProbeOptions, packageDir: string, mainSpecifier: stri
 
 const DEFAULT_TIMEOUT_MS = 20_000
 
-/** The rows a bundle patch inserts, flattened from nested groups, with the ids of overrides on other rows. */
+/** The rows a bundle patch introduces, flattened from nested groups, with the ids of overrides on other rows. */
 function describeBundlePatch(binName: string, patchPath: string): { rows: PluginProbeRow[]; overrides: string[] } {
   const rows: PluginProbeRow[] = []
   const own = new Set<string>()
   const patches = loadOverlayPatches(binName, patchPath)
-  visitInsertedRows(patches, (row) => {
+  visitPatchRows(patches, (row) => {
     if (typeof row.id === 'string') own.add(row.id)
     rows.push({ ...typeof row.id === 'string' ? { id: row.id } : {}, name: row.name, gated: row.disabled !== undefined })
   })

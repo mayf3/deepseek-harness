@@ -47,11 +47,12 @@ function retryableWriteError(error: unknown): boolean {
  * is never mutated and the result is always detached from it (even with no
  * patches): patching or mounting shared entry objects would bake earlier
  * values into the cached parse, so repeated application (config hot-reloads)
- * could never revert a removed or changed patch. Inserted rows are cloned
- * before they join the list for the same reason: a later patch that inserts
- * into or overrides a row an earlier patch inserted mutates the copy, so
- * applying one patch list twice (the Loader rolling a rejected update back to
- * the previous one) yields the same tree each time. Inserted entries are
+ * could never revert a removed or changed patch. Inserted rows and override
+ * values are cloned before they join the list for the same reason: a later
+ * patch that inserts into or overrides a row an earlier patch introduced
+ * mutates the copy, never the patch, so applying one patch list twice (the
+ * Loader rolling a rejected update back to the previous one) yields the same
+ * tree each time. Inserted entries are
  * indexed as they are added, so a later patch in the same list can target a
  * row an earlier patch inserted. A patch that matches nothing warns and is
  * skipped.
@@ -126,7 +127,7 @@ export function applyEntryPatches(
 
     for (const [key, value] of Object.entries(overrides)) {
       if (key === 'id') continue
-      target[key] = value
+      target[key] = typeof value === 'object' && value !== null ? structuredClone(value) : value
     }
   }
 

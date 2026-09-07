@@ -25,10 +25,11 @@ import type { EntryOptions } from '@deepseek-ai/cordis-plugin-loader'
 import { withFileLock, writeFileAtomic } from '@deepseek-ai/dsh-atomic-write'
 
 /**
- * Convert inserted filesystem paths in one patch list's `insert` rows to file
- * URLs: an absolute path as it is, a `./` or `../` path anchored beside the
- * patch file, wherever the Loader's root happens to be. Assertion names on
- * id-targeted patches stay literal.
+ * Convert the filesystem paths of the rows a patch list introduces — its
+ * `insert` rows and the rows an id-targeted patch sets as a group's config —
+ * to file URLs: an absolute path as it is, a `./` or `../` path anchored
+ * beside the patch file, wherever the Loader's root happens to be. Assertion
+ * names on id-targeted patches stay literal.
  * @param patches - the parsed patch list, mutated in place.
  * @param file - the patch file's path, whose directory anchors relative names.
  * @returns the same list.
@@ -41,7 +42,15 @@ export function anchorInsertedPluginNames(patches: PatchOptions[], file: string)
     }
     if (entry.group && Array.isArray(entry.config)) entry.config.forEach(visit)
   }
-  for (const patch of patches) patch.insert?.forEach(visit)
+  for (const patch of patches) {
+    patch.insert?.forEach(visit)
+    // The rows an id-targeted patch sets as a group's config mount as children like inserted ones.
+    if (patch.insert === undefined && patch.id !== undefined && Array.isArray(patch.config)) {
+      for (const item of patch.config as unknown[]) {
+        if (typeof item === 'object' && item !== null && !Array.isArray(item) && typeof (item as { name?: unknown }).name === 'string') visit(item as EntryOptions)
+      }
+    }
+  }
   return patches
 }
 

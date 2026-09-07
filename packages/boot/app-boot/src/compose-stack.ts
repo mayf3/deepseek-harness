@@ -16,7 +16,7 @@
 import type { EntryOptions } from '@deepseek-ai/cordis-plugin-loader'
 import type { PatchOptions } from '@deepseek-ai/cordis-plugin-include'
 import { composeExternalLayer, isContainedLayer, type ComposedExternalLayer } from './external-bundles.ts'
-import { visitInsertedRows, visitRowTree } from './patch-rows.ts'
+import { visitPatchRows, visitRowTree } from './patch-rows.ts'
 import type { ProfileLayer } from './profile.ts'
 
 /** One user-owned patch list in the stack: the profile file, the home file, or a `--patch` overlay. */
@@ -89,12 +89,14 @@ function rowIds(row: EntryOptions): string[] {
 }
 
 /**
- * Decide row-id ownership across the bundle layers. Built-in and boot-staged
- * layers claim first, in manifest order; an id two of them declare, or one
- * declares twice, is a defect of the shipped composition and throws.
- * Contained external layers then claim in manifest order, each rendered once
- * here; one whose id is already owned, or which declares an id twice, is left
- * out whole.
+ * Decide row-id ownership across the bundle layers. A layer introduces the
+ * rows it inserts and the rows its config overrides set as a group's
+ * children. Built-in and boot-staged layers claim first, in manifest order;
+ * an id two of them declare, or one inserts twice, is a defect of the shipped
+ * composition and throws, while a config override restating a row the same
+ * layer declared is that layer keeping its own child. Contained external
+ * layers then claim in manifest order, each rendered once here; one whose id
+ * is already owned, or which declares an id twice, is left out whole.
  * @param layers - the profile's bundle layers, in manifest order.
  * @returns the owner of every claimed id, the conflicts of each skipped bundle, and the composition of each mounted one.
  * @throws when two built-in or boot-staged layers declare the same id, or one of them declares an id twice.
@@ -103,10 +105,13 @@ export function claimLayerIds(layers: readonly ProfileLayer[]): LayerOwnership {
   const owners = new Map<string, ProfileLayer>()
   for (const layer of layers) {
     if (isContainedLayer(layer)) continue
-    visitInsertedRows(layer.patches, (row) => {
+    visitPatchRows(layer.patches, (row, source) => {
       if (typeof row.id !== 'string') return
       const owner = owners.get(row.id)
-      if (owner === layer) throw new Error(`row ${JSON.stringify(row.id)} is declared twice by ${layer.packageName}`)
+      if (owner === layer) {
+        if (source === 'insert') throw new Error(`row ${JSON.stringify(row.id)} is declared twice by ${layer.packageName}`)
+        return
+      }
       if (owner !== undefined) {
         throw new Error(`row ${JSON.stringify(row.id)} is declared by both ${owner.packageName} and ${layer.packageName}`)
       }

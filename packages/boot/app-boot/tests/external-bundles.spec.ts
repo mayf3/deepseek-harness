@@ -60,12 +60,17 @@ describe('composeExternalLayer', () => {
       { id: 'own', config: { flag: true } },
       { id: 'settings', config: { path: '/x' } },
       { id: 'own', insert: [{ id: 'child', name: 'pkg-b/child' }] },
+      { id: 'own', disabled: true },
+      { disabled: true },
     ]))
+    // A patch with no config, or no id at all, passes through as written; the include reports the latter.
     expect(composed.patches.slice(1)).toEqual([
       { id: 'bundle/pkg-b', insert: [{ id: 'own', name: 'pkg-b' }] },
       { id: 'own', config: { flag: true } },
       { id: 'settings', config: { path: '/x' } },
       { id: 'own', insert: [{ id: 'child', name: 'pkg-b/child' }] },
+      { id: 'own', disabled: true },
+      { disabled: true },
     ])
     expect(composed.overrides).toEqual(['settings'])
   })
@@ -108,6 +113,43 @@ describe('composeExternalLayer', () => {
     expect((shell[0]?.config as EntryOptions[]).map(row => row.id)).toEqual(['extra', 'more'])
   })
 
+  it('counts the rows a config override sets as the bundle\'s own, without calling a restated row a repeat', () => {
+    const composed = composeExternalLayer(layer('pkg-v', [
+      { insert: [{ id: 'own', name: 'cordis:group', group: true, config: [{ id: 'kept', name: 'pkg-v/kept' }] }] },
+      { id: 'own', config: [{ id: 'kept', name: 'pkg-v/kept' }, { id: 'core', name: 'pkg-v/impostor' }, 'not a row' as never] },
+      { id: 'own', insert: [{ id: 'child', name: 'pkg-v/child' }] },
+    ]))
+    expect([...composed.rows.keys()]).toEqual(['own', 'kept', 'core', 'child', 'bundle/pkg-v'])
+    expect(composed.duplicates).toEqual([])
+    expect(composed.overrides).toEqual([])
+  })
+
+  it('creates a new wrapper after a patch replaced the target group\'s config', () => {
+    const composed = composeExternalLayer(layer('pkg-w', [
+      { id: 'tools', insert: [{ id: 'first', name: 'pkg-w/a' }] },
+      { id: 'tools', config: [] },
+      { id: 'tools', insert: [{ id: 'last', name: 'pkg-w/b' }] },
+    ]))
+    expect(composed.patches.slice(1)).toEqual([
+      { id: 'tools', insert: [{ id: 'bundle/pkg-w/in/tools', name: CONTAINED_GROUP_MODULE, group: true, config: [{ id: 'first', name: 'pkg-w/a' }] }] },
+      { id: 'tools', config: [] },
+      { id: 'tools', insert: [{ id: 'bundle/pkg-w/in/tools', name: CONTAINED_GROUP_MODULE, group: true, config: [{ id: 'last', name: 'pkg-w/b' }] }] },
+    ])
+    expect(composed.duplicates).toEqual([])
+    const tree = applyEntryPatches([{ id: 'tools', name: 'cordis:group', group: true, config: [] }], composed.patches, () => {})
+    const tools = tree.find(row => row.id === 'tools')?.config as EntryOptions[]
+    expect(tools.map(row => row.id)).toEqual(['bundle/pkg-w/in/tools'])
+    expect((tools[0]?.config as EntryOptions[]).map(row => row.id)).toEqual(['last'])
+  })
+
+  it('reports a declared row that spells a wrapper\'s id as a repeat', () => {
+    const composed = composeExternalLayer(layer('pkg-i', [
+      { insert: [{ id: 'bundle/pkg-i/in/tools', name: 'pkg-i/impostor' }] },
+      { id: 'tools', insert: [{ id: 'tool', name: 'pkg-i/tool' }] },
+    ]))
+    expect(composed.duplicates).toEqual([{ rowId: 'bundle/pkg-i/in/tools', moduleName: CONTAINED_GROUP_MODULE }])
+  })
+
   it('reports an id the bundle inserts twice and keeps the first module for it', () => {
     const composed = composeExternalLayer(layer('pkg-r', [
       { insert: [{ id: 'dup', name: 'pkg-r/one' }] },
@@ -132,14 +174,19 @@ describe('composeExternalLayer', () => {
     const composed = composeExternalLayer(layer('pkg-t', [
       { insert: [{ id: 'row', name: 'pkg-t' }] },
       { id: 'tools', insert: [{ id: 'tool', name: 'pkg-t/tool' }] },
+      { id: 'tools', config: [] },
+      { id: 'tools', insert: [{ id: 'later', name: 'pkg-t/later' }] },
     ]))
     const snapshot = structuredClone(composed.patches)
     const base = (): EntryOptions[] => [{ id: 'tools', name: 'cordis:group', group: true, config: [] }]
     const first = applyEntryPatches(base(), composed.patches, () => {})
     const second = applyEntryPatches(base(), composed.patches, () => {})
     expect(second).toEqual(first)
+    // Neither the inserted rows nor the override values were mutated by either application.
     expect(composed.patches).toEqual(snapshot)
     expect((first[1]?.config as EntryOptions[]).map(row => row.id)).toEqual(['row'])
+    const tools = first[0]?.config as EntryOptions[]
+    expect((tools[0]?.config as EntryOptions[]).map(row => row.id)).toEqual(['later'])
   })
 
   it('spells the group id without the Loader\'s nested-id separator', () => {
