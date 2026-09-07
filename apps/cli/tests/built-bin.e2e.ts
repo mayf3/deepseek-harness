@@ -679,7 +679,7 @@ describe.skipIf(!existsSync(dshBin))('dsh BUILT bin (node lib/bin.js, no tsx)', 
       expect(repeated.code).toBe(1)
       expect(repeated.stdout).toBe('')
       expect(repeated.stderr).toContain('profile "rescue" already exists')
-      expect(repeated.stderr).toContain('omit --from-default-profile to boot it')
+      expect(repeated.stderr).toContain('omit --from-default-profile to use it')
 
       const reopened = await runBuiltBin(
         ['--profile', 'rescue', '--help'],
@@ -692,6 +692,29 @@ describe.skipIf(!existsSync(dshBin))('dsh BUILT bin (node lib/bin.js, no tsx)', 
       rmSync(home, { recursive: true, force: true })
     }
   }, SPAWN_TIMEOUT_MS * 3 + 30_000)
+
+  it('keeps a newly created profile when application boot rejects its arguments', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'dsh-from-default-profile-failed-boot-'))
+    try {
+      const failed = await runBuiltBin(
+        ['--profile', 'rescue', '--from-default-profile', 'web', '--port', 'not-a-number'],
+        { DSH_HOME: home, DSH_TELEMETRY_DISABLED: '1' },
+      )
+      expect(failed.code).toBe(1)
+      expect(failed.stderr).toContain('--port must be a number')
+      expect(existsSync(join(home, 'profiles', 'rescue', 'package.json'))).toBe(true)
+
+      const retried = await runBuiltBin(
+        ['--profile', 'rescue', '--help'],
+        { DSH_HOME: home, DSH_TELEMETRY_DISABLED: '1' },
+      )
+      expect(retried.code).toBe(0)
+      expect(retried.stderr).toBe('')
+      expect(retried.stdout).toContain('Usage: dsh --profile web')
+    } finally {
+      rmSync(home, { recursive: true, force: true })
+    }
+  }, SPAWN_TIMEOUT_MS * 2 + 30_000)
 
   it('uses the launching endpoint and managed credential through the published entry', async () => {
     const apiKey = 'built-home-layer-key'

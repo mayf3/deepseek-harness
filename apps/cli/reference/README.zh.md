@@ -14,9 +14,9 @@
 
 `web`、`headless`、`sdk`、`sdk-minimal` 和 `acp` profile 首次使用时会从随附模板自动初始化（`web`：base + web-app，实时应用 patch；`headless`：base + headless，只在启动时应用 patch；`sdk`：base + sdk-app，只在启动时应用 patch；`sdk-minimal`：独立组合包，只在启动时应用 patch；`acp`：base + acp-app，只在启动时应用 patch）。其他缺失的 profile 会显式报错，并提示运行 `dsh plugin --profile <name> add <package>`。
 
-`dsh --profile <name> --from-default-profile <template>` 会在启动前，从上述五个随附模板之一初始化缺失的目标。它把模板当前的 bundle 列表和 `patchReload` 值复制进一份依赖为空、用户 patch 为空的新 manifest。它不会读取 `<template>` 指定的本地同名 profile，不会复制其依赖或 patch，也不会持久化继承字段；模板列表之后的变化不会改写新 profile。复制列表中指名的内置 bundle 仍从当前 dsh 安装目录解析。初始化成功不会增加 launcher 输出。
+`dsh --profile <name> --from-default-profile <template>` 会在启动前，从上述五个随附模板之一初始化新的自定义目标。目标名称不能是随附 profile 名称，并且完整的目标 profile 目录必须不存在。launcher 会以独占方式领取该目录，因此残留文件和另一个并发创建者都会在不作修改的情况下被拒绝。它把模板当前的 bundle 列表和 `patchReload` 值复制进一份依赖为空、用户 patch 为空的新 manifest。它不会读取 `<template>` 指定的本地同名 profile，不会复制其依赖或 patch，也不会持久化继承字段；模板列表之后的变化不会改写新 profile。复制列表中指名的内置 bundle 仍从当前 dsh 安装目录解析。初始化成功不会增加 launcher 输出。
 
-目标已经存在时，`--from-default-profile` 会被拒绝，且不会修改或启动该 profile；去掉该选项即可启动它。未知模板会在创建目标之前失败，并列出有效模板。初始化在 bundle 解析和应用启动之前提交，因此后续失败仍会把新 profile 留在磁盘上，重试时需要去掉创建选项。`--dump-config` 和 `--dump-default-config` 接受该选项：它们初始化目标并打印所请求的配置树，但不启动应用。
+profile 已经存在时，`--from-default-profile` 会被拒绝，且不会修改或启动它；去掉该选项即可使用它。残留的目标目录同样会被原样保留，此时必须改用另一个 profile 名称。未知模板或随附目标名称会在创建目标之前失败；未知模板的诊断会列出有效模板。初始化在 bundle 解析和应用启动之前提交，因此后续失败仍会把新 profile 留在磁盘上，重试时需要去掉创建选项。`--dump-config` 和 `--dump-default-config` 接受该选项：它们初始化目标并打印所请求的配置树，但不启动应用。
 
 ```sh
 dsh --profile rescue --from-default-profile web

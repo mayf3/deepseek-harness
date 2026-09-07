@@ -1,8 +1,9 @@
 /** One-time custom-profile initialization from shipped templates. */
 
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import {
   initProfile,
   PROFILE_PATCH_FILENAME,
@@ -12,7 +13,21 @@ import {
   writeProfileManifest,
 } from '@deepseek-ai/dsh-app-boot'
 import { describe, expect, it } from 'vitest'
+import { execa } from 'execa'
 import { initializeProfileFromDefault } from '../src/profile-boot.ts'
+
+const childEntry = fileURLToPath(new URL('./fixtures/initialize-profile-from-default.ts', import.meta.url))
+const tsxLoader = import.meta.resolve('tsx/esm')
+const CHILD_TIMEOUT_MS = 30_000
+
+/** Wait until a child has reached the shared creation barrier. */
+async function waitForFile(file: string): Promise<void> {
+  const deadline = Date.now() + CHILD_TIMEOUT_MS
+  while (!existsSync(file)) {
+    if (Date.now() >= deadline) throw new Error(`profile initialization marker did not appear: ${file}`)
+    await new Promise(resolve => setTimeout(resolve, 20))
+  }
+}
 
 /** Run one assertion against a private Harness home and remove it afterwards. */
 function withHome(assertion: (home: string) => void): void {
@@ -82,6 +97,33 @@ describe('initializeProfileFromDefault', () => {
     })
   })
 
+  it('rejects a residual target directory without changing its contents', () => {
+    withHome((home) => {
+      const dir = resolveProfileDir('rescue', home)
+      mkdirSync(dir, { recursive: true })
+      const residual = join(dir, PROFILE_PATCH_FILENAME)
+      writeFileSync(residual, '- id: residual\n  disabled: true\n')
+      const before = readFileSync(residual)
+
+      expect(() => {
+        initializeProfileFromDefault('rescue', 'web', home)
+      })
+        .toThrow('profile directory')
+      expect(readFileSync(residual)).toEqual(before)
+      expect(existsSync(join(dir, 'package.json'))).toBe(false)
+    })
+  })
+
+  it.each(Object.keys(PROFILE_TEMPLATES))('rejects shipped target name %s without creating it', (name) => {
+    withHome((home) => {
+      expect(() => {
+        initializeProfileFromDefault(name, 'web', home)
+      })
+        .toThrow(`profile ${JSON.stringify(name)} is shipped`)
+      expect(existsSync(resolveProfileDir(name, home))).toBe(false)
+    })
+  })
+
   it.each(['unknown', 'toString'])('rejects unknown template %s without creating the target', (source) => {
     withHome((home) => {
       expect(() => {
@@ -91,4 +133,26 @@ describe('initializeProfileFromDefault', () => {
       expect(existsSync(resolveProfileDir('rescue', home))).toBe(false)
     })
   })
+
+  it('allows only one of two synchronized processes to create the target', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'dsh-profile-from-default-race-'))
+    const gate = join(home, 'start')
+    const ready = [join(home, 'ready-1'), join(home, 'ready-2')]
+    const children = ready.map(marker => execa(
+      process.execPath,
+      ['--import', tsxLoader, childEntry, home, 'rescue', 'web', marker, gate],
+      { reject: false, timeout: CHILD_TIMEOUT_MS },
+    ))
+    try {
+      await Promise.all(ready.map(waitForFile))
+      writeFileSync(gate, '')
+      const results = await Promise.all(children)
+      expect(results.map(result => result.exitCode).sort()).toEqual([0, 1])
+      expect(readProfileManifest('test', resolveProfileDir('rescue', home)).dsh?.profile)
+        .toEqual(PROFILE_TEMPLATES.web)
+    } finally {
+      for (const child of children) child.kill('SIGKILL')
+      rmSync(home, { recursive: true, force: true })
+    }
+  }, CHILD_TIMEOUT_MS + 10_000)
 })

@@ -11,8 +11,8 @@
  * @module @deepseek-ai/dsh/profile-boot
  */
 
-import { existsSync, writeFileSync } from 'node:fs'
-import { join, resolve } from 'node:path'
+import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
+import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { FiberState, type Context } from '@deepseek-ai/cordis'
 import type { PatchOptions } from '@deepseek-ai/cordis-plugin-include'
@@ -94,11 +94,12 @@ export const PROFILE_ROOT_FILENAME = 'cordis.yml'
  * Initialize a missing profile from one shipped template. This copies only
  * the template's bundle list and patch-reload policy; local state from the
  * same-named shipped profile is not read, and no inheritance metadata is
- * persisted. An existing manifest is never changed.
+ * persisted. Shipped profile names are reserved, and the target directory is
+ * claimed exclusively so existing or concurrent state is never reused.
  * @param name - the new profile name.
  * @param fromDefaultProfile - shipped profile template to copy.
  * @param home - Harness home containing the profile directory.
- * @throws when the template is unknown or the target profile already exists.
+ * @throws when the template is unknown, the target name is shipped, or the target directory exists.
  */
 export function initializeProfileFromDefault(
   name: string,
@@ -115,14 +116,41 @@ export function initializeProfileFromDefault(
       `${NAME}: unknown default profile ${JSON.stringify(fromDefaultProfile)}; expected one of ${expected}`,
     )
   }
-  const manifestPath = join(dir, 'package.json')
-  if (existsSync(manifestPath)) {
+  if (Object.hasOwn(PROFILE_TEMPLATES, name)) {
     throw new Error(
-      `${NAME}: profile ${JSON.stringify(name)} already exists at ${manifestPath}; `
-      + 'omit --from-default-profile to boot it',
+      `${NAME}: profile ${JSON.stringify(name)} is shipped and cannot be a custom profile target; `
+      + 'omit --from-default-profile to use it',
     )
   }
-  initProfile(dir, template.bundles, template.patchReload)
+  mkdirSync(dirname(dir), { recursive: true })
+  try {
+    mkdirSync(dir)
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error
+    const manifestPath = join(dir, 'package.json')
+    if (existsSync(manifestPath)) {
+      throw new Error(
+        `${NAME}: profile ${JSON.stringify(name)} already exists at ${manifestPath}; `
+        + 'omit --from-default-profile to use it',
+      )
+    }
+    throw new Error(
+      `${NAME}: profile directory ${dir} already exists; choose an unused profile name`,
+    )
+  }
+  try {
+    initProfile(dir, template.bundles, template.patchReload)
+  } catch (error) {
+    try {
+      rmSync(dir, { recursive: true, force: true })
+    } catch (cleanupError) {
+      throw new AggregateError(
+        [error, cleanupError],
+        `${NAME}: profile initialization failed and ${dir} could not be removed`,
+      )
+    }
+    throw error
+  }
 }
 
 /**
@@ -222,7 +250,7 @@ export interface RunProfileOptions {
   /** The profile name to boot. */
   profile: string
   /** Shipped template used once to initialize a missing profile. */
-  fromDefaultProfile?: string
+  fromDefaultProfile?: string | undefined
   /** `--patch` overlay paths, in argv order. */
   patchFiles: readonly string[]
   /** The invocation's inner arguments, handed to the tree through `ctx.cmdlineArgs`. */

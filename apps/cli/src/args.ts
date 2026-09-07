@@ -140,7 +140,7 @@ export function parseDshArgs(argv: readonly string[], version: string): DshInvoc
     .enablePositionalOptions()
     .argument('[args...]', 'arguments for the booted profile\'s app (see: dsh --profile <name> --help)')
     .option('--profile <name>', 'the profile under $DSH_HOME/profiles to boot')
-    .option('--from-default-profile <name>', 'initialize a missing profile from a shipped profile template')
+    .option('--from-default-profile <name>', 'initialize a new custom profile from a shipped profile template')
     .option('--patch <path>', 'extra patch-list overlay applied after the profile layer (repeatable)', collect)
     .option('--dump-config', 'print the composed profile tree and exit')
     .option('--dump-default-config', 'print the profile tree without its user layer or --patch overlays and exit')
