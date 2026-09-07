@@ -21,7 +21,7 @@ import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import { makeTranslate, RemoteError } from '@deepseek-ai/dsh-client-test-runtime'
 import type { RemoteFailure } from '@deepseek-ai/dsh-api-remotes/client'
 import { zh as commonZh } from '@deepseek-ai/dsh-client-locale/src/locales/zh.ts'
-import type { GoalBarActions, GoalBarInjected, UseGoalActivation } from '../src/client/slots.ts'
+import type { GoalActivationSnapshot, GoalBarActions, GoalBarInjected } from '../src/client/slots.ts'
 import { apply, inject } from '../src/client/index.ts'
 import { GoalDock } from '../src/client/GoalBar.tsx'
 import { zh } from '../src/client/locales.ts'
@@ -278,7 +278,9 @@ describe('GoalDock adapter', () => {
   it('renders the projected goal snapshot and nothing for absent/null', () => {
     const projection = makeProjection()
     const useProjection = vi.fn(() => projection)
-    const useGoalActivation: UseGoalActivation = selector => selector({ id: GOAL_ID, revision: 3, activation: 'armed' })
+    const useGoalActivation = (
+      selector: (snapshot: GoalActivationSnapshot) => unknown,
+    ) => selector({ id: GOAL_ID, revision: 3, activation: 'armed' })
     const actions: GoalBarActions = {
       onEdit: () => Promise.resolve({ ok: true, value: undefined }),
       onPause: () => Promise.resolve({ ok: true, value: undefined }),
@@ -303,7 +305,9 @@ describe('GoalDock adapter', () => {
   it('matches activation by goal id and revision from the injected hook', () => {
     const projection = makeProjection()
     const useProjection = vi.fn(() => projection)
-    const useGoalActivation: UseGoalActivation = selector => selector({ id: GOAL_ID, revision: 3, activation: 'disarmed' })
+    const useGoalActivation = (
+      selector: (snapshot: GoalActivationSnapshot) => unknown,
+    ) => selector({ id: GOAL_ID, revision: 3, activation: 'disarmed' })
     const actions: GoalBarActions = {
       onEdit: () => Promise.resolve({ ok: true, value: undefined }),
       onPause: () => Promise.resolve({ ok: true, value: undefined }),

@@ -34,8 +34,7 @@ import { en, zh, type GoalKey } from './locales.ts'
 
 export { GoalBar, GoalDock } from './GoalBar.tsx'
 export type {
-  GoalActionResult, GoalActivationInjected, GoalActivationSnapshot, GoalBarActions,
-  GoalBarInjected, UseGoalActivation,
+  GoalActionResult, GoalBarActions,
 } from './slots.ts'
 export type { GoalKey } from './locales.ts'
 

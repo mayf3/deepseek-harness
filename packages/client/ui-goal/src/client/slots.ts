@@ -8,7 +8,7 @@
  */
 
 import type { RemoteResult } from '@deepseek-ai/dsh-api-remotes/client'
-import type { HostObservable, SnapshotSelectorHook } from '@deepseek-ai/dsh-client-ui-slots'
+import type { HostObservable } from '@deepseek-ai/dsh-client-ui-slots'
 import type { GoalActivation, GoalId } from '@deepseek-ai/dsh-goal/client'
 
 /**
@@ -43,9 +43,6 @@ export interface GoalActivationInjected {
     readonly goalActivation: HostObservable<GoalActivationSnapshot>
   }
 }
-
-/** Selector hook synthesized from the activation source. */
-export type UseGoalActivation = SnapshotSelectorHook<GoalActivationSnapshot>
 
 /** Injected business face of the GoalBar dock entry: the mutation verbs (function properties: the strip destructures them freely). */
 export interface GoalBarActions {
