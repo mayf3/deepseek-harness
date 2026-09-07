@@ -8,13 +8,13 @@ Status: implemented
 
 随附 Web `minimal` preset 与独立 `sdk-minimal` profile 在持久 shell 之外还提供 `str_replace_editor`。Shell 已经可以检查和修改文件，editor 仍会为每个极简模型请求增加第二种文件修改接口及其完整 schema。它还要求挂载一个专用 `fs-local` 服务，而两份极简组合中的其他配置项都不使用该服务。
 
-下一代模型的极简运行时要求只提供一个面向模型的工具。如果保留 editor 的挂载，只通过呈现层过滤隐藏它，那么呈现配置变化时，该能力仍可能重新出现。
+只使用持久 shell 可以为模型提供一致的文件操作接口，并让 harness 组合与这一接口保持一致。如果保留 editor 的挂载，只通过呈现层过滤隐藏它，那么呈现配置变化时，该能力仍可能重新出现。
 
 ## 决策
 
 随附的极简组合只提供一个按平台选择的持久 shell：Linux 与 macOS 使用 `bash`，Windows 使用 `pwsh`。两份组合都不挂载 `@deepseek-ai/dsh-tool-str-replace-editor`、文件系统工具或支撑 editor 的 `fs-local` 服务。固定的 complete persona、运行时上下文与 compaction 的缺失、shell 超时和各启动路径的宿主服务保持不变。
 
-独立 editor 包及其在两份极简组合之外的消费方继续受支持。受信任的用户自定义 preset 或更高优先级的 profile patch 可以显式挂载它；随附的 `minimal` 与 `sdk-minimal` 默认组合不会插入它。
+独立 editor 包在短期内仍可用于显式自定义组合。受信任的用户自定义 preset 或更高优先级的 profile patch 必须将 editor 插入 Cordis tree，并在同一服务作用域内提供文件系统后端；随附的 `minimal` 与 `sdk-minimal` 默认组合不会插入它。[Python SDK 指南](../../../../docs/user/guide/python-sdk.zh.md#opt-in-to-str_replace_editor)提供可执行的 patch 示例。
 
 精确组合测试会断言单工具清单以及 preset 内不存在文件系统服务。`sdk-minimal` bundle 测试与构建后配置转储会断言配置项和依赖 allowlist 都不含 `fs-local` 或 `dsh-tool-str-replace-editor`。Web 与打包 Python 的模型可见快照会固定单工具 schema 清单。
 
