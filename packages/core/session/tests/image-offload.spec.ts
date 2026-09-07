@@ -44,15 +44,14 @@ function seeded(): Session {
 
 function offloadedNames(session: Session): string[] {
   const names: string[] = []
-  for (const message of session.deriveMessages()) {
-    for (const block of message.content) {
+  const visit = (content: readonly ContentBlock[]): void => {
+    for (const block of content) {
       if (block.type === 'image' && block.offloaded === true) names.push(block.attachment.name ?? '')
-      if (block.type === 'tool-result') {
-        for (const inner of block.content) {
-          if (inner.type === 'image' && inner.offloaded === true) names.push(inner.attachment.name ?? '')
-        }
-      }
+      if (block.type === 'tool-result') visit(block.content)
     }
+  }
+  for (const message of session.deriveMessages()) {
+    visit(message.content)
   }
   return names
 }
@@ -71,6 +70,40 @@ describe('image/offload append validation', () => {
     expect(() => session.append('image/offload', 7 as never))
       .toThrow('names an invalid image offload watermark')
     expect(session.imageOffloadWatermark()).toBeUndefined()
+  })
+
+  it('requires the watermark path to identify a current surface image', () => {
+    const session = seeded()
+    expect(() => session.append('image/offload', { turn: 1, step: 1, watermark: { seq: SessionSeq(2), path: [0] } }))
+      .toThrow('watermark does not identify an image on the current surface')
+    expect(() => session.append('image/offload', { turn: 1, step: 1, watermark: { seq: SessionSeq(3), path: [9] } }))
+      .toThrow('watermark does not identify an image on the current surface')
+    session.append('user/message', createUserMessage({
+      content: [{ type: 'text', text: 'replacement' }], source: { kind: 'user' },
+    }), {
+      surfaceOp: { op: 'replace', start: SessionSeq(3), end: SessionSeq(3) },
+      sourceEventSeqs: [SessionSeq(3)],
+    })
+    expect(() => session.append('image/offload', { turn: 1, step: 1, watermark: { seq: SessionSeq(3), path: [0] } }))
+      .toThrow('watermark does not identify an image on the current surface')
+  })
+
+  it('rejects request-only offload markers from appended and restored messages', () => {
+    const session = seeded()
+    expect(() => session.append('user/message', createUserMessage({
+      content: [{ ...image('marked'), offloaded: true }], source: { kind: 'user' },
+    }), { surfaceOp: 'append' }))
+      .toThrow('stores the request-only image offload marker')
+
+    const events = [...session.snapshotEvents()]
+    const event = events[3]!
+    const marked = {
+      ...event,
+      data: { ...event.data, content: [{ ...image('restored-marked'), offloaded: true }] },
+    }
+    events[3] = marked as never
+    expect(() => Session.create(SessionId('offload-marked-seed'), events))
+      .toThrow('seed user/message at index 3 stores the request-only image offload marker')
   })
 
   it('accepts only strictly advancing positions', () => {
@@ -113,6 +146,28 @@ describe('image/offload surface derivation', () => {
     expect(offloadedNames(session)).toEqual(['first', 'second', 'third'])
     session.append('image/offload', { turn: 1, step: 1, watermark: { seq: SessionSeq(4), path: [1] } })
     expect(offloadedNames(session)).toEqual(['first', 'second', 'third', 'fourth'])
+  })
+
+  it('marks images below two nested tool-result levels', () => {
+    const session = seeded()
+    const deep = session.append('user/message', createUserMessage({
+      content: [{
+        type: 'tool-result',
+        toolCallId: ToolCallId('outer'),
+        content: [{
+          type: 'tool-result',
+          toolCallId: ToolCallId('middle'),
+          content: [{ type: 'tool-result', toolCallId: ToolCallId('inner'), content: [image('deep')] }],
+        }],
+      }],
+      source: { kind: 'user' },
+    }), { surfaceOp: 'append' })
+    session.append('image/offload', {
+      turn: 1,
+      step: 1,
+      watermark: { seq: deep.seq, path: [0, 0, 0, 0] },
+    })
+    expect(offloadedNames(session)).toContain('deep')
   })
 
   it('freezes marked copies, keeps the durable event content untouched, and matches a scratch replay', () => {

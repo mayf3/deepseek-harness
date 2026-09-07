@@ -1,10 +1,13 @@
 version: 1
 scenario: inline-image-prompt
 profile: sdk
-composition: image
+composition: image-offload-sdk
 recording: authored
 header:
   class: image
+  pin: true
+  systemPromptSource: session/read-image
+  toolSchemasSource: session/text-turn
 input:
   attachments:
     - id: sha256:b1ff9c8ea3a780bad09b346c423d2d0e46815926879b18e841d928376a946640

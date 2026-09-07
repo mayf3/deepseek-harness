@@ -6,8 +6,8 @@
 
 import { Context, Service } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
-import { BlockAssembler } from '@deepseek-ai/dsh-llm'
-import type { LlmImageRequestPricing, Message, TokenUsage } from '@deepseek-ai/dsh-llm'
+import { assembleAssistantStream } from '@deepseek-ai/dsh-llm'
+import type { LlmImageRequestPricing, LlmRuntime, Message, TokenUsage } from '@deepseek-ai/dsh-llm'
 import { deepFreeze } from '@deepseek-ai/dsh-util-values'
 import type {
   ImageOccurrencePosition,
@@ -15,9 +15,14 @@ import type {
   Session,
   SessionEvent,
   SessionLogOffset as SessionLogOffsetType,
-  SessionSeq as SessionSeqType,
 } from '@deepseek-ai/dsh-session'
-import { canonicalHeader, headerEquals, isSurfaceEvent, SessionLogOffset, SessionSeq } from '@deepseek-ai/dsh-session'
+import {
+  canonicalHeader,
+  headerEquals,
+  isSurfaceEvent,
+  SessionLogOffset,
+  SessionSeq,
+} from '@deepseek-ai/dsh-session'
 // Type-only: activates the `ctx.sessionProjections` Context declaration.
 import type {} from '@deepseek-ai/dsh-session-projection'
 import type {
@@ -147,7 +152,8 @@ export class TokenMeter extends Service {
       ? state.header
       : canonicalHeader(requestHeader)
     const pricing = this._routeImagePricing(header)
-    const surface = priceSurface(state.surface, pricing, state.watermark)
+    const fileText = this._fileRequestText()
+    const surface = priceSurface(state.surface, pricing, fileText, state.watermark)
     const anchor = state.anchor
 
     let baseline: TokenMeasurementBaseline
@@ -156,7 +162,7 @@ export class TokenMeter extends Service {
       // Matching headers share one route, so the anchored snapshot reprices
       // under the same pricing as the current surface and the signed delta
       // compares like with like.
-      const anchorSurfaceTokens = priceSurface(anchor.nodes, pricing, anchor.watermark).surfaceTokens
+      const anchorSurfaceTokens = priceSurface(anchor.nodes, pricing, fileText, anchor.watermark).surfaceTokens
         + anchor.assistantTokens
       const estimatedAnchorTokens = estimateHeader(header) + anchorSurfaceTokens
       const usage = anchor.usage
@@ -194,6 +200,14 @@ export class TokenMeter extends Service {
     return this.ctx.get('llm')?.imageRequestPricing(config.provider, config.model)
   }
 
+  /** Resolve request-time file projection when an LLM service is mounted. */
+  private _fileRequestText(): (
+    (ref: Parameters<LlmRuntime['fileRequestText']>[0]) => string
+  ) | undefined {
+    const llm = this.ctx.get('llm')
+    return llm === undefined ? undefined : ref => llm.fileRequestText(ref)
+  }
+
   /**
    * Heuristically price one model-visible message (instance face of the pure
    * `estimateMessage` export from `estimate.ts`).
@@ -222,7 +236,7 @@ export class TokenMeter extends Service {
     while (state.consumedEvents < session.seq) {
       // oxlint-disable-next-line typescript/no-non-null-assertion -- contiguous session seqs index the durable log
       const event = session.eventAt(SessionSeq(state.consumedEvents))!
-      this._foldEvent(session, state, event)
+      this._foldEvent(state, event)
       state.consumedEvents = SessionLogOffset(state.consumedEvents + 1)
     }
     return state
@@ -233,7 +247,7 @@ export class TokenMeter extends Service {
    * mutating replay state, so a malformed event remains unread on every
    * retry instead of half-applying.
    */
-  private _foldEvent(session: Session, state: ReplayState, event: SessionEvent): void {
+  private _foldEvent(state: ReplayState, event: SessionEvent): void {
     let nextHeader = state.header
     let nextWatermark = state.watermark
     let nextStepStart = state.stepStart
@@ -286,7 +300,7 @@ export class TokenMeter extends Service {
           header: nextHeader,
           nodes: stepStart.nodes,
           watermark: nextWatermark,
-          assistantTokens: this._estimateProviderAssistant(session, event, eventTokens),
+          assistantTokens: this._estimateProviderAssistant(event),
           usage: event.data.usage,
         }
       } else {
@@ -310,42 +324,12 @@ export class TokenMeter extends Service {
   }
 
   /**
-   * Reassemble provider output from the exact cited chunk seqs for a usage anchor.
-   * Missing legacy source seqs conservatively treat the durable output as the
-   * provider output; an explicit empty list prices a known empty stream.
+   * Reassemble provider output from the message's exact embedded stream.
    */
   private _estimateProviderAssistant(
-    session: Session,
     event: SessionEvent<'assistant/message'>,
-    durableEventTokens: number,
   ): number {
-    const sourceSeqs = event.sourceEventSeqs
-    if (sourceSeqs === undefined) return durableEventTokens
-
-    const assembler = new BlockAssembler()
-    const seen = new Set<SessionSeqType>()
-    for (const seq of sourceSeqs) {
-      if (seq >= event.seq) {
-        throw new Error(`token meter: assistant/message at seq ${event.seq} source seq ${seq} is not earlier`)
-      }
-      if (seen.has(seq)) {
-        throw new Error(`token meter: assistant/message at seq ${event.seq} repeats source seq ${seq}`)
-      }
-      seen.add(seq)
-      // Session construction validates contiguous seqs, and the explicit
-      // earlier-than-assistant check above therefore guarantees existence.
-      const source = session.eventAt(seq)
-      // oxlint-disable-next-line typescript/no-non-null-assertion
-      const sourceEvent = source!
-      if (sourceEvent.type !== 'assistant/chunk') {
-        throw new Error(`token meter: assistant/message at seq ${event.seq} source seq ${seq} is not assistant/chunk`)
-      }
-      if (sourceEvent.data.turn !== event.data.turn || sourceEvent.data.step !== event.data.step) {
-        throw new Error(`token meter: assistant/message at seq ${event.seq} source seq ${seq} belongs to another step`)
-      }
-      assembler.push(sourceEvent.data.chunk)
-    }
-    const providerContent = assembler.blocks()
+    const providerContent = assembleAssistantStream(event.data.stream).blocks()
     return providerContent.length === 0 ? 0 : estimateContent(providerContent) + ROLE_OVERHEAD
   }
 }

@@ -124,6 +124,7 @@ function conversation(turns = 4, text = 'fixture '.repeat(40).trim()): Session {
       })
     }
     session.append('assistant/message', {
+      stream: [],
       turn,
       step: 1,
       message: createMessage({
@@ -161,6 +162,7 @@ function toolConversation(): Session {
       })
     }
     session.append('assistant/message', {
+      stream: [],
       turn,
       step: 1,
       message: createMessage({
@@ -209,6 +211,7 @@ function oversizedToolResult(chars = 3_000, withCompactablePrompt = false): Sess
     reason: 'initial',
   })
   session.append('assistant/message', {
+    stream: [],
     turn: 1,
     step: 1,
     message: createMessage({
@@ -583,6 +586,7 @@ describe('pressure measurement and retention', () => {
       reason: 'initial',
     })
     session.append('assistant/message', {
+      stream: [],
       turn: 1,
       step: 1,
       message: createMessage({
@@ -745,6 +749,7 @@ describe('pressure measurement and retention', () => {
     session.append('turn/start', { turn: 1 })
     session.append('step/start', { turn: 1, step: 1 })
     session.append('assistant/message', {
+      stream: [],
       turn: 1,
       step: 1,
       message: createMessage({
@@ -901,6 +906,46 @@ describe('compaction region transaction', () => {
     expect(input.system).toBe('CONVERSATION SYSTEM')
     expect(input.tools).toEqual(tools)
     expect(summarizedText(input)).toContain('fixture user 1')
+  })
+
+  it('applies the durable image watermark to the replayed summarization prefix', async () => {
+    const compact = service()
+    const session = conversation(3)
+    const replaced = session.surface.nodes[0]!
+    const replacement = session.append('user/message', createUserMessage({
+      content: [
+        { type: 'text', text: 'large image context '.repeat(100) },
+        {
+          type: 'image',
+          attachment: {
+            attachmentId: AttachmentId(`sha256:${'d'.repeat(64)}`),
+            mediaType: 'image/png',
+            bytes: 1,
+            width: 1,
+            height: 1,
+          },
+        },
+      ],
+      source: { kind: 'user' },
+    }), {
+      surfaceOp: { op: 'replace', start: replaced, end: replaced },
+      sourceEventSeqs: [replaced],
+    })
+    session.append('image/offload', {
+      turn: 4,
+      step: 1,
+      watermark: { seq: replacement.seq, path: [1] },
+    })
+
+    await compact.compactRegion(replacement.seq, replacement.seq, agent(session, MODEL), SIGNAL)
+
+    expect(compact.calls[0]!.input.messages[0]!.content[1]).toMatchObject({
+      type: 'image',
+      offloaded: true,
+    })
+    const durable = session.eventAt(replacement.seq)!
+    expect(durable.type === 'user/message' ? durable.data.content[1] : undefined)
+      .not.toHaveProperty('offloaded')
   })
 
   it.each([
@@ -1095,6 +1140,7 @@ describe('compaction region transaction', () => {
     }), { surfaceOp: 'append' })
     session.append('step/start', { turn: 1, step: 1 })
     session.append('assistant/message', {
+      stream: [],
       turn: 1,
       step: 1,
       message: createMessage({
@@ -1944,6 +1990,7 @@ describe('route-priced image pressure', () => {
         })
       }
       session.append('assistant/message', {
+        stream: [],
         turn,
         step: 1,
         message: createMessage({

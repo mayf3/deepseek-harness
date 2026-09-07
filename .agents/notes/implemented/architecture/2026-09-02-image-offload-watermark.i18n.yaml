@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-09-02-image-offload-watermark.md
-2026-09-02-image-offload-watermark.md: b525554a31100a19f2ff27df178dc7c5b1b8d392
-2026-09-02-image-offload-watermark.zh.md: abe44a9c18d619ca877a4adfe33bef7017913338
+2026-09-02-image-offload-watermark.md: 618446d823b1c7393f6088f780f67aa2d8f5f284
+2026-09-02-image-offload-watermark.zh.md: 26bbe8b21293ae1e7a60eb14c0ea410b13b49b94

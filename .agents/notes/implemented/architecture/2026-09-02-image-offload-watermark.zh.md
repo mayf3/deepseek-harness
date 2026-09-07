@@ -8,25 +8,25 @@ Status: implemented
 
 请求级图片 offload 过去在每次请求时都从头重算。每条路由按最老优先的顺序收集派生表层上的全部图片出现位置，累计字节一旦超过预算，就把超出部分向上取整到整个删除量子，把这么多最老的出现位置替换为占位文本，见[统一图片请求管线](../feature/2026-08-20-unified-image-request-pipeline.zh.md)。没有任何东西记住上一次请求停在哪里，前缀稳定只是因为对 append-only 历史做同样的算术会得到同样的结果。
 
-算术的输入一动，这种稳定就失效。[Files 内联回退](../bug-fix/2026-08-21-deepseek-files-inline-fallback.zh.md)会用 20 MiB 内联预算和 10 MiB 量子重建请求，那一次省略多得多的图片，下一次 file 模式的请求又把它们带回来。pi-ai 路由的量子是一个字节，前缀几乎每次请求都会移动。compaction 降低总量，让先前省略的图片回归。切换路由会移动每个台阶边界。每一次移动都改变模型可见前缀，并让 provider 的缓存前缀失效。
+算术的输入一动，这种稳定就失效。[Files 内联回退](../../archived/bug-fix/2026-08-21-deepseek-files-inline-fallback.md)会用 20 MiB 内联预算和 10 MiB 量子重建请求，那一次省略多得多的图片，下一次 file 模式的请求又把它们带回来。pi-ai 路由的量子是一个字节，前缀几乎每次请求都会移动。compaction 降低总量，让先前省略的图片回归。切换路由会移动每个台阶边界。每一次移动都改变模型可见前缀，并让 provider 的缓存前缀失效。
 
-同样的重算也破坏了仓库不变量：模型可见输入必须能从 session log 重建。实际发出的表示方式、派生请求版本的精确字节长度、路由预算和量子都是运行时或配置事实，从不进入日志，`request/header` 只记录调用配置、系统提示词和工具。provider usage 只锚定 token 总量，恢复不了图片集合，[按路由定价的估计](../feature/2026-08-24-route-priced-image-request-pressure.zh.md)也写明它不复现回退预算。没有任何消费方能把一条已记录的助手响应和它的请求携带的图片集合配对。
+同样的重算也破坏了仓库不变量：模型可见输入必须能从 session log 重建。实际发出的表示方式、派生请求版本的精确字节长度、路由预算和量子都是运行时或配置事实，从不进入日志，`request/header` 只记录调用配置、系统提示词和工具。provider usage 只锚定 token 总量，恢复不了图片集合，[按路由定价的估计](../../archived/feature/2026-08-24-route-priced-image-request-pressure.md)也写明它不复现回退预算。没有任何消费方能把一条已记录的助手响应和它的请求携带的图片集合配对。
 
 ## 决定
 
 offload 位置是持久的会话事实：核心事件 `image/offload` 记录一条只会前进的图片 offload 水位，派生表层、每条路由和 token meter 都从它读取省略集合。
 
-**事件。** `image/offload` 携带 `{ turn, step, watermark }`，其中 `watermark` 是一个 `ImageOccurrencePosition`：承载最后一个被省略出现位置的事件序号，以及它在该事件内容中的块路径（顶层块下标，再是工具结果块内的下标）。位置先按序号再按路径排序，所以无论表层如何替换，较新的事件总在较老的之后。`Session.deriveMessages()` 把位于水位及之前的每个出现位置在 `ImageBlock` 上标为 `offloaded: true`；标记后的副本被冻结，持久事件内容不受影响。`Session.append` 与 seed 拒绝畸形、指向日志之外事件或没有严格越过前一条的水位；`session.imageOffloadWatermark()` 折叠最新值。该事件改变派生表层，因此读取时必须识别；日志结构没有变化，`SESSION_FORMAT_VERSION` 保持不变。
+**事件。** `image/offload` 携带 `{ turn, step, watermark }`，其中 `watermark` 是一个 `ImageOccurrencePosition`：承载最后一个被省略出现位置的事件序号，以及它在该事件内容中的完整嵌套块路径。位置先按序号再按路径排序，所以无论表层如何替换，较新的事件总在较老的之后。`Session.deriveMessages()` 与 `Session.deriveEventMessage()` 把位于水位及之前的每个出现位置在 `ImageBlock` 上标为 `offloaded: true`；标记后的副本被冻结，持久事件内容不受影响。`Session.append` 与 seed 拒绝畸形或没有严格前进的水位，并要求路径指向当前表层中的图片。它们还会拒绝包含请求专用 `offloaded` 标记的持久消息。`session.imageOffloadWatermark()` 折叠最新的冻结位置。该事件改变派生表层，因此读取时必须识别；增加该事件不改变日志信封结构。
 
 **只前进。** 预算变大、路由切换或 compaction 降低总量时水位永不回退，所以模型可见前缀和 provider 缓存前缀只向前移动。水位之下的出现位置后来被 compaction 遮蔽也不影响水位有效性，因为比较是按位置进行的。
 
-**决定权在循环，预算由路由声明。** 支持图片的路由在其 `LlmResolvedModelInfo` 上以 `imageRequest` 声明一个 `LlmImageRequestBudget`（`representation`、`maxBytes`、`maxImages`、两个量子与请求版本字节目标）；`LlmRuntime` 校验它并通过 `PreparedLlmCall` 暴露。`request/header` 之后，`buildRequest` 按日志顺序从表层收集保留的出现位置，用纯函数 `planImageOffload()` 规划推进（表示字节是归一化字节数按版本目标截断后的值，内联路由再按 base64 展开，按整量子删除），追加事件，然后才派生请求消息。DeepSeek adapter 声明其 file 模式预算，pi-ai adapter 声明其 base64 上限，replay adapter 为 keyless 场景声明可选的 `imageRequestMaxBytes`。
+**决定权在循环，预算由路由声明。** 支持图片的路由在其 `LlmResolvedModelInfo` 上以 `imageRequest` 声明一个 `LlmImageRequestBudget`（`representation`、`maxBytes`、`maxImages`、两个量子与请求版本字节目标）；`LlmRuntime` 校验它并通过 `PreparedLlmCall` 暴露。`request/header` 之后，`buildRequest` 按模型请求顺序收集保留的出现位置，用纯函数 `planImageOffload()` 规划删除前缀（表示字节是归一化字节数按版本目标截断后的值，内联路由再按 base64 展开，按整量子删除）。表层替换可能把较新的事件放到较老事件之前；循环把请求前缀换算成其中最大的持久位置，因此可能额外省略一些出现位置，但一定满足要求的删除量。循环追加事件，然后才派生请求消息。DeepSeek adapter 声明其 file 模式预算，pi-ai adapter 声明其 base64 上限，replay adapter 为 keyless 场景声明可选的 `imageRequestMaxBytes`。
 
 **adapter 只投影，不决定。** 序列化把每个 `offloaded` 块渲染为带当前已解析访问路径的 `offloadedImageText`，只准备保留的出现位置。当保留的出现位置按精确请求版本字节仍超过路由预算，无论是 file 模式、内联回退更紧的预算还是 pi-ai 上限，adapter 都以 `IMAGE_OFFLOAD_REQUIRED` 让本次尝试失败，并在 `LlmFailure.offloadImages` 中用 `offloadedImagePrefixCount()` 算出还需省略多少最老的出现位置。循环按该数量推进水位并在 `agent/request-error` 运行前重建请求；没有可省略的出现位置时，失败进入普通恢复路径。
 
 **token 记账。** `priceImages` 接收表层的 `ImageBlock`，把 `offloaded` 的按占位文本定价；DeepSeek 和 replay 的定价不再复现任何 offload 算术。meter 把 `image/offload` 折进其重放状态，按当前水位为当前表层定价，按每个 usage 锚点的请求派生时的水位为该锚点定价。已完成请求仍以 provider usage 为锚点。
 
-**其他消费方。** compaction 摘要和其他所有 `ctx.llm.stream` 调用方都从同一表层派生，因此只读取水位、从不推进。resume、fork 和重放从日志复现表层。纯文本路由保留各自的全历史替换。
+**其他消费方。** compaction 在直接调用 `ctx.llm.stream` 之前，通过 `Session.deriveEventMessage()` 重建每个选中事件，因此会应用与 `deriveMessages()` 相同的当前水位。resume、fork 和重放从日志复现表层。纯文本路由保留各自的全历史替换。
 
 ## 考虑过的替代方案
 
@@ -50,4 +50,4 @@ offload 位置是持久的会话事实：核心事件 `image/offload` 记录一�
 
 ## 测试
 
-`packages/llm/llm/tests/content.spec.ts` 钉住图片遍历、位置排序、表示字节、标记、投影和水位规划器，包括 129 到 64 MiB 的量子示例。`packages/core/session/tests/image-offload.spec.ts` 钉住追加与 seed 校验、严格推进、嵌套标记、冻结副本、缓存重建和从头重放的一致性。`packages/core/agent-loop/tests/image-offload.spec.ts` 钉住发送前推进、不回退的水位、`IMAGE_OFFLOAD_REQUIRED` 的推进并重建路径以及耗尽的情况。adapter 测试钉住占位投影、只读取保留图片以及带数量的精确字节失败；`route-pricing.spec.ts` 钉住水位定价；replay adapter 测试钉住 `imageRequestMaxBytes`。`image-offload` ACP 快照通过发布的 profile、在一条 base64 预算只容纳三帧的 replay 路由下重放一段人工编写的六帧会话，钉住第一次 `request/header` 之后追加的 `image/offload` 水位和保持不变的第二轮。
+`packages/llm/llm/tests/content.spec.ts` 钉住任意深度的图片遍历、表示字节、投影和水位规划器，包括 129 到 64 MiB 的量子示例。`packages/core/session/tests/image-offload.spec.ts` 钉住追加与 seed 校验、当前表层图片路径、拒绝持久化派生标记、严格推进、任意深度标记、冻结副本、缓存重建和从头重放的一致性。`packages/core/agent-loop/tests/image-offload.spec.ts` 钉住发送前推进、不回退的水位、表层替换后的请求顺序计数、`IMAGE_OFFLOAD_REQUIRED` 的推进并重建路径以及耗尽的情况。compaction 测试钉住直接摘要输入中的水位应用。adapter 测试钉住占位投影、只读取保留图片以及带数量的精确字节失败；`route-pricing.spec.ts` 钉住水位定价；replay adapter 测试钉住 `imageRequestMaxBytes`。`image-offload` ACP 快照与 `inline-image-prompt` TypeScript SDK 快照通过发布的 profile，在带 base64 图片请求上限的 replay 路由下重放六帧会话。Python SDK 通知测试钉住新事件及其嵌套水位的无损转发。

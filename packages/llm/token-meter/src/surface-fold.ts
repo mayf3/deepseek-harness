@@ -10,8 +10,8 @@
  * fallible step read-only and {@link commitSurfaceTokens} mutates in place,
  * so a throw leaves the caller's state untouched and the same malformed
  * event fails identically on every retry.
- * Nodes also carry their durable image occurrences and image-free heuristic
- * price, so `measure()` can reprice image content for the routed model.
+ * Nodes also carry durable attachment occurrences and their structural prices,
+ * so `measure()` can price the request representation sent to the model.
  *
  * @module @deepseek-ai/dsh-token-meter/surface-fold
  */
@@ -31,16 +31,22 @@ export interface MeterImageOccurrence {
   readonly path: ImageBlockPath
 }
 
+type FileAttachmentRef = Extract<ContentBlock, { type: 'file' }>['attachment']
+
 /** One priced surface node with the image occurrences route pricing replaces. */
 export interface MeterSurfaceNode {
   /** Durable sequence number of the surface event. */
   readonly seq: SessionSeq
   /** Fixed-heuristic price of the node's exact message. */
   readonly heuristicTokens: number
-  /** Fixed-heuristic price with every image occurrence's structural price removed. */
-  readonly imageFreeTokens: number
+  /** Structural JSON price replaced when the routed request projects images. */
+  readonly imageStructuralTokens: number
+  /** Structural JSON price replaced when request assembly projects files to text. */
+  readonly fileStructuralTokens: number
   /** Durable image occurrences in message order; empty for image-free nodes. */
   readonly images: readonly MeterImageOccurrence[]
+  /** Durable file occurrences in message order; empty for file-free nodes. */
+  readonly files: readonly FileAttachmentRef[]
 }
 
 /** One validated surface transition that has not mutated the priced surface yet. */
@@ -65,17 +71,44 @@ function collectImages(blocks: readonly ContentBlock[], images: MeterImageOccurr
   return structuralTokens
 }
 
+/** Collect file occurrences recursively and total their structural prices. */
+function collectFiles(blocks: readonly ContentBlock[], files: FileAttachmentRef[]): number {
+  let fileTokens = 0
+  for (const block of blocks) {
+    if (block.type === 'file') {
+      files.push(block.attachment)
+      fileTokens += estimateStructuralBlock(block)
+    } else if (block.type === 'tool-result') {
+      fileTokens += collectFiles(block.content, files)
+    }
+  }
+  return fileTokens
+}
+
 /** Build one priced node from a surface event's derived message. */
 function analyzeNode(seq: SessionSeq, message: Message | null): MeterSurfaceNode {
-  if (message === null) return { seq, heuristicTokens: 0, imageFreeTokens: 0, images: [] }
+  if (message === null) {
+    return {
+      seq,
+      heuristicTokens: 0,
+      imageStructuralTokens: 0,
+      fileStructuralTokens: 0,
+      images: [],
+      files: [],
+    }
+  }
   const heuristicTokens = estimateMessage(message)
   const images: MeterImageOccurrence[] = []
   const imageStructuralTokens = collectImages(message.content, images)
+  const files: FileAttachmentRef[] = []
+  const fileStructuralTokens = collectFiles(message.content, files)
   return {
     seq,
     heuristicTokens,
-    imageFreeTokens: heuristicTokens - imageStructuralTokens,
+    imageStructuralTokens,
+    fileStructuralTokens,
     images,
+    files,
   }
 }
 

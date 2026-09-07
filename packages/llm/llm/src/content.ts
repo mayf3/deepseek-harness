@@ -2,7 +2,9 @@
 
 import type { ContentBlock, ImageBlock, LlmImageRequestBudget } from './types.ts'
 import type { Message } from './message.ts'
-import type { AttachmentStore, ImageAttachmentRef, ImageMediaType, RequestImageAttachment } from '@deepseek-ai/dsh-attachment'
+import type {
+  AttachmentStore, FileAttachmentRef, ImageAttachmentRef, ImageMediaType, RequestImageAttachment,
+} from '@deepseek-ai/dsh-attachment'
 import { assertNever } from '@deepseek-ai/dsh-util-values'
 
 /** Execution-world path that model tools can use to read one normalized attachment. */
@@ -126,40 +128,106 @@ export function contentHasImage(content: readonly ContentBlock[]): boolean {
     || (block.type === 'tool-result' && contentHasImage(block.content)))
 }
 
+/**
+ * True when typed model content contains a file block, walking nested
+ * tool-result content on the same recursion every file policy shares.
+ * @param content - typed model content blocks.
+ * @returns whether any nested block is a file.
+ */
+export function contentHasFile(content: readonly ContentBlock[]): boolean {
+  return content.some(block => block.type === 'file'
+    || (block.type === 'tool-result' && contentHasFile(block.content)))
+}
+
+/**
+ * Stable model-facing handle for one durable file reference: the address of
+ * the verbatim stored copy and the instruction to read it on demand. This is
+ * the only representation a provider ever receives for a file.
+ * @param ref - durable verbatim file reference.
+ * @param readonlyPath - execution-world path of the stored copy, when resolvable.
+ * @returns deterministic handle text naming the file, its size, and its address.
+ */
+export function fileHandleText(ref: FileAttachmentRef, readonlyPath: string | undefined): string {
+  const digest = String(ref.attachmentId).slice('sha256:'.length, 'sha256:'.length + 8)
+  const identity = `File ${quoted(ref.name)} (${ref.bytes} bytes, sha256:${digest})`
+  if (readonlyPath === undefined) {
+    return `[${identity} was uploaded, but the current execution environment cannot access a readable path. Report that limitation if its contents are needed; do not claim to have read it.]`
+  }
+  return `[${identity}: verbatim read-only copy saved at ${quoted(readonlyPath)}. Read that path with your file tools when its contents are needed; copy it to a writable location before modifying it. When delegating file work, include this saved path in the delegation prompt; only subagents sharing this execution environment can read it.]`
+}
+
+/** Replace every file occurrence, including nested tool results, with handle text. */
+function replaceFilesWithHandles(
+  blocks: readonly ContentBlock[],
+  resolvePath: (ref: FileAttachmentRef) => string | undefined,
+): ContentBlock[] {
+  let next: ContentBlock[] | undefined
+  for (const [index, block] of blocks.entries()) {
+    if (block.type === 'file') {
+      next ??= blocks.slice(0, index)
+      next.push({ type: 'text', text: fileHandleText(block.attachment, resolvePath(block.attachment)) })
+      continue
+    }
+    if (block.type === 'tool-result') {
+      const content = replaceFilesWithHandles(block.content, resolvePath)
+      if (content !== block.content) {
+        next ??= blocks.slice(0, index)
+        next.push({ ...block, content })
+        continue
+      }
+    }
+    next?.push(block)
+  }
+  return next ?? blocks as ContentBlock[]
+}
+
+/**
+ * Project durable file history into deterministic handle text for every model
+ * route. Unlike images, no provider receives file blocks natively, so this
+ * projection is unconditional in request assembly.
+ * @param messages - complete request history.
+ * @param resolvePath - resolve one reference's current execution-world read path.
+ * @returns the original list without files, otherwise shallow message copies with handle text.
+ */
+export function projectFilesToText(
+  messages: readonly Message[],
+  resolvePath: (ref: FileAttachmentRef) => string | undefined,
+): readonly Message[] {
+  if (!messages.some(message => contentHasFile(message.content))) return messages
+  return messages.map((message) => {
+    const content = replaceFilesWithHandles(message.content, resolvePath)
+    return content === message.content ? message : { ...message, content }
+  })
+}
+
 /** Base64 length of raw image bytes, including padding. */
 function base64Length(bytes: number): number {
   return Math.ceil(bytes / 3) * 4
 }
 
 /**
- * Block index path of one image occurrence inside message content: the
- * top-level block index alone, or that index followed by the position inside
- * a tool-result block's content. Paths compare lexicographically in message
- * order.
+ * Block index path of one image occurrence inside message content. Each
+ * nested tool-result contributes another index. Paths compare
+ * lexicographically in message order.
  */
 export type ImageBlockPath = readonly number[]
 
-/**
- * Compare two block paths in message order.
- * @param a - first path.
- * @param b - second path.
- * @returns negative, zero, or positive as `a` sorts before, at, or after `b`.
- */
-export function compareImageBlockPaths(a: ImageBlockPath, b: ImageBlockPath): number {
-  const length = Math.min(a.length, b.length)
-  for (let index = 0; index < length; index += 1) {
-    // oxlint-disable-next-line typescript/no-non-null-assertion -- index is below both lengths
-    const delta = a[index]! - b[index]!
-    if (delta !== 0) return delta
+function visitImageBlocksAt(
+  content: readonly ContentBlock[],
+  prefix: ImageBlockPath,
+  visit: (block: ImageBlock, path: ImageBlockPath) => void,
+): void {
+  for (const [index, block] of content.entries()) {
+    const path = [...prefix, index]
+    if (block.type === 'image') visit(block, path)
+    else if (block.type === 'tool-result') visitImageBlocksAt(block.content, path, visit)
   }
-  return a.length - b.length
 }
 
 /**
  * Visit every image occurrence of typed content in message order, including
- * nested tool-result content, with the block path that identifies it. This is
- * the one image walk shared by surface derivation, watermark planning, and
- * pricing, so no consumer can diverge on nesting depth or occurrence order.
+ * nested tool-result content, with the block path that identifies it. Budget
+ * planning, adapter validation, and pricing share this request-content walk.
  * @param content - typed model content blocks.
  * @param visit - called once per occurrence with the block and its path.
  */
@@ -167,15 +235,7 @@ export function visitImageBlocks(
   content: readonly ContentBlock[],
   visit: (block: ImageBlock, path: ImageBlockPath) => void,
 ): void {
-  for (const [index, block] of content.entries()) {
-    if (block.type === 'image') {
-      visit(block, [index])
-    } else if (block.type === 'tool-result') {
-      for (const [nested, inner] of block.content.entries()) {
-        if (inner.type === 'image') visit(inner, [index, nested])
-      }
-    }
-  }
+  visitImageBlocksAt(content, [], visit)
 }
 
 /**
@@ -192,40 +252,6 @@ export function representedImageBytes(
 ): number {
   const clamped = budget.versionMaxBytes === undefined ? bytes : Math.min(bytes, budget.versionMaxBytes)
   return budget.representation === 'base64' ? base64Length(clamped) : clamped
-}
-
-/**
- * Mark image occurrences as offloaded without mutating durable content.
- * @param content - typed model content blocks.
- * @param offloaded - whether the occurrence at `path` lies at or before the watermark.
- * @returns the original array when nothing changes, otherwise a copy whose marked blocks carry `offloaded: true`.
- */
-export function markOffloadedImages(
-  content: readonly ContentBlock[],
-  offloaded: (path: ImageBlockPath) => boolean,
-): readonly ContentBlock[] {
-  let next: ContentBlock[] | undefined
-  for (const [index, block] of content.entries()) {
-    if (block.type === 'image') {
-      if (block.offloaded !== true && offloaded([index])) {
-        next ??= content.slice(0, index)
-        next.push({ ...block, offloaded: true })
-        continue
-      }
-    } else if (block.type === 'tool-result') {
-      const inner = markOffloadedImages(
-        block.content,
-        path => offloaded([index, ...path]),
-      )
-      if (inner !== block.content) {
-        next ??= content.slice(0, index)
-        next.push({ ...block, content: inner as ContentBlock[] })
-        continue
-      }
-    }
-    next?.push(block)
-  }
-  return next ?? content
 }
 
 /** Replace every offloaded occurrence, including nested tool results, with its placeholder. */
@@ -315,12 +341,12 @@ export interface RetainedImageOccurrence<Position> {
 
 /**
  * Plan the next durable watermark for one route budget: with the retained
- * occurrences oldest first, the budget removes a whole-quantum prefix and the
+ * occurrences in request order, the budget removes a whole-quantum prefix and the
  * last removed occurrence's position becomes the watermark. Under a 128 MiB
  * bound with a 64 MiB quantum, 129 retained one-megabyte images offload the
  * oldest 65 so 64 MiB remain, and the watermark then holds until the retained
  * total again exceeds the bound.
- * @param retained - retained occurrences in log order, oldest first.
+ * @param retained - retained occurrences in request order.
  * @param budget - route representation, budgets, and removal quanta.
  * @returns the position of the last occurrence to offload, or undefined when the budget holds.
  */

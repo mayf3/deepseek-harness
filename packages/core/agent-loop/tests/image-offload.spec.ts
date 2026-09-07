@@ -86,13 +86,14 @@ describe('image/offload in the agent loop', () => {
     expect(events[0]).toMatchObject({ turn: 1, step: 1, path: [1, 0] })
     const dispatchOrder = agent.session.snapshotEvents().map(event => event.type)
     expect(dispatchOrder.indexOf('image/offload')).toBeGreaterThan(dispatchOrder.indexOf('request/header'))
-    expect(dispatchOrder.indexOf('image/offload')).toBeLessThan(dispatchOrder.indexOf('assistant/chunk'))
+    expect(dispatchOrder.indexOf('image/offload')).toBeLessThan(dispatchOrder.indexOf('assistant/message'))
 
     // An empty-content assistant node derives no message and carries no occurrence.
     agent.session.append('assistant/message', {
       turn: 1,
       step: 1,
       message: createAssistantMessage({ content: [], source: { provider: 'mock', model: 'mock' } }),
+      stream: [],
     }, { surfaceOp: 'append' })
     // The next turn adds no bytes beyond the bound, so the watermark holds, and the first
     // request's offloaded set is still what the second request sends.
@@ -138,6 +139,36 @@ describe('image/offload in the agent loop', () => {
     expect(offloadEvents(agent.session)[0]).toMatchObject({ turn: 1, step: 1, path: [1] })
     expect(recoveries).toEqual([])
     expect(agent.session.snapshotEvents().filter(event => event.type === 'assistant/message')).toHaveLength(1)
+  })
+
+  it('interprets an adapter count in request order after a surface replacement', async () => {
+    const adapter = new MockAdapter([
+      () => {
+        throw new LlmError('inline budget exceeded', IMAGE_OFFLOAD_REQUIRED_CODE, { offloadImages: 1 })
+      },
+      textResponse('sent'),
+    ])
+    const ctx = await harness(adapter)
+    const agent = await ctx.agentLoop.create(SessionId('offload-reordered'), { provider: 'mock', model: 'mock' })
+    const first = agent.session.append('user/message', createUserMessage({
+      content: [image('first', 1)], source: { kind: 'user' },
+    }), { surfaceOp: 'append' })
+    agent.session.append('user/message', createUserMessage({
+      content: [image('second', 1)], source: { kind: 'user' },
+    }), { surfaceOp: 'append' })
+    agent.session.append('user/message', createUserMessage({
+      content: [image('replacement', 1)], source: { kind: 'user' },
+    }), {
+      surfaceOp: { op: 'replace', start: first.seq, end: first.seq },
+      sourceEventSeqs: [first.seq],
+    })
+
+    agent.followup(createUserMessage({ content: [{ type: 'text', text: 'send' }], source: { kind: 'user' } }))
+    await agent.whenIdle()
+
+    expect(adapter.requests).toHaveLength(2)
+    expect(offloadedNames(adapter.requests[1]!)).toEqual(['replacement', 'second'])
+    expect(offloadEvents(agent.session).at(-1)).toMatchObject({ seq: 2, path: [0] })
   })
 
   it('surfaces IMAGE_OFFLOAD_REQUIRED as an ordinary failure once nothing remains to offload', async () => {
