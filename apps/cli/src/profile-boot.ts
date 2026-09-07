@@ -11,7 +11,7 @@
  * @module @deepseek-ai/dsh/profile-boot
  */
 
-import { writeFileSync } from 'node:fs'
+import { existsSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { FiberState, type Context } from '@deepseek-ai/cordis'
@@ -21,11 +21,14 @@ import {
   boot,
   composeEntries,
   healProfilesModuleFallback,
+  initProfile,
   installFailLoud,
   loadOptionalPatches,
   loadOverlayPatches,
   loadProfile,
   PROFILE_PATCH_FILENAME,
+  PROFILE_TEMPLATES,
+  resolveProfileDir,
   watchUserPatches,
   type Profile,
 } from '@deepseek-ai/dsh-app-boot'
@@ -88,6 +91,41 @@ const PROFILE_ROOT_CONFIG = `# dsh profile root — an empty entry list. The tre
 export const PROFILE_ROOT_FILENAME = 'cordis.yml'
 
 /**
+ * Initialize a missing profile from one shipped template. This copies only
+ * the template's bundle list and patch-reload policy; local state from the
+ * same-named shipped profile is not read, and no inheritance metadata is
+ * persisted. An existing manifest is never changed.
+ * @param name - the new profile name.
+ * @param fromDefaultProfile - shipped profile template to copy.
+ * @param home - Harness home containing the profile directory.
+ * @throws when the template is unknown or the target profile already exists.
+ */
+export function initializeProfileFromDefault(
+  name: string,
+  fromDefaultProfile: string,
+  home: string = resolveDshHome(),
+): void {
+  const dir = resolveProfileDir(name, home)
+  const template = Object.hasOwn(PROFILE_TEMPLATES, fromDefaultProfile)
+    ? PROFILE_TEMPLATES[fromDefaultProfile]
+    : undefined
+  if (template === undefined) {
+    const expected = Object.keys(PROFILE_TEMPLATES).sort().map(value => JSON.stringify(value)).join(', ')
+    throw new Error(
+      `${NAME}: unknown default profile ${JSON.stringify(fromDefaultProfile)}; expected one of ${expected}`,
+    )
+  }
+  const manifestPath = join(dir, 'package.json')
+  if (existsSync(manifestPath)) {
+    throw new Error(
+      `${NAME}: profile ${JSON.stringify(name)} already exists at ${manifestPath}; `
+      + 'omit --from-default-profile to boot it',
+    )
+  }
+  initProfile(dir, template.bundles, template.patchReload)
+}
+
+/**
  * Resolve the telemetry opt-out switch into its boot patch. ANY non-empty
  * value (including `'0'`/`'false'`) disables: a privacy switch prefers
  * off-by-mistake over on-by-mistake. A composition without the telemetry row
@@ -114,9 +152,12 @@ export function resolveTelemetryPatch(disabledEnv: string | undefined, hasRow: b
  * the identical base).
  * @param name - the profile name.
  * @param userLayer - `false` skips parsing `cordis.patch.yml` (the default dump).
+ * @param fromDefaultProfile - shipped template used once to initialize a missing profile.
  * @returns the loaded profile.
+ * @throws when explicit initialization names an unknown template or an existing profile.
  */
-export function prepareProfile(name: string, userLayer = true): Profile {
+export function prepareProfile(name: string, userLayer = true, fromDefaultProfile?: string): Profile {
+  if (fromDefaultProfile !== undefined) initializeProfileFromDefault(name, fromDefaultProfile)
   const profile = loadProfile(NAME, name, INSTALL_ANCHOR, undefined, { userLayer })
   writeFileSync(join(profile.dir, PROFILE_ROOT_FILENAME), PROFILE_ROOT_CONFIG)
   return profile
@@ -157,8 +198,9 @@ function allPatches(composed: ComposedProfile): PatchOptions[] {
 async function composeProfile(
   name: string,
   patchFiles: readonly string[],
+  fromDefaultProfile?: string,
 ): Promise<ComposedProfile> {
-  const profile = prepareProfile(name)
+  const profile = prepareProfile(name, true, fromDefaultProfile)
   await healProfilesModuleFallback({ installAnchor: INSTALL_ANCHOR, profile })
   const homePatches = loadOptionalPatches(NAME, homePatchPath()) ?? []
   const overlays = patchFiles.flatMap(file => loadOverlayPatches(NAME, resolve(file)))
@@ -179,6 +221,8 @@ export interface RunProfileOptions {
   environment: LaunchEnvironmentSnapshot
   /** The profile name to boot. */
   profile: string
+  /** Shipped template used once to initialize a missing profile. */
+  fromDefaultProfile?: string
   /** `--patch` overlay paths, in argv order. */
   patchFiles: readonly string[]
   /** The invocation's inner arguments, handed to the tree through `ctx.cmdlineArgs`. */
@@ -217,7 +261,7 @@ export async function runProfile(options: RunProfileOptions): Promise<{ ctx: Con
     (message) => { process.stderr.write(`${NAME}: ${message}\n`) },
   )
 
-  const composed = await composeProfile(options.profile, options.patchFiles)
+  const composed = await composeProfile(options.profile, options.patchFiles, options.fromDefaultProfile)
   const app: { current?: Context } = {}
   const appReady = createAppReady()
   const shutdown = createProcessShutdown(async () => {

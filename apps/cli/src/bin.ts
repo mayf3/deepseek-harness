@@ -34,6 +34,9 @@ export async function runCli(): Promise<void> {
       await runProfile({
         environment: loadLayeredEnv('dsh'),
         profile: invocation.profile,
+        ...invocation.fromDefaultProfile === undefined
+          ? {}
+          : { fromDefaultProfile: invocation.fromDefaultProfile },
         patchFiles: invocation.patches,
         args: invocation.args,
       })
@@ -46,7 +49,12 @@ export async function runCli(): Promise<void> {
     }
     case 'dump-config': {
       const { runDumpConfig } = await import('./dump-config.ts')
-      runDumpConfig(invocation.profile, invocation.defaultOnly, invocation.patches)
+      runDumpConfig(
+        invocation.profile,
+        invocation.defaultOnly,
+        invocation.patches,
+        invocation.fromDefaultProfile,
+      )
       break
     }
     default:

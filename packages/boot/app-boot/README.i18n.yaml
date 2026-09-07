@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write packages/boot/app-boot/README.md
-README.md: e6afceaebf7fc94f5a6d708639de128cb9005d72
-README.zh.md: a98be1fd5d0624f971af5d0ce5a81fdc0cafab54
+README.md: b13fd2d241476ca9d49492a0bebc3e9fea6605d4
+README.zh.md: 41f5c1ffbe4cde30943f60ae061f230f5be7eeea
