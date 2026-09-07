@@ -167,7 +167,7 @@ export async function serveMediaReference(
     'Cache-Control': 'private, no-store',
     'X-Content-Type-Options': 'nosniff',
   }
-  if (partial) headers['Content-Range'] = 'bytes ' + start + '-' + end + '/' + String(info.size)
+  if (partial) headers['Content-Range'] = 'bytes ' + String(start) + '-' + String(end) + '/' + String(info.size)
   const head = request.method === 'HEAD'
   return new Response(head ? null : body, { status: partial ? 206 : 200, headers })
 }
