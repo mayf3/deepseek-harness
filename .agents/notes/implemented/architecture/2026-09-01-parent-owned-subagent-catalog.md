@@ -18,7 +18,7 @@ Creation publishes only successful facts. A one-shot run appends the catalog eve
 
 The child header and `subagent/descriptor` remain authoritative for recovery and composition. An Activation and the exact parent relationship remain authoritative for authorization and delivery. Mode and label are snapshotted once and the same detached values reach the parent catalog fact and child descriptor.
 
-The registered host-only `subagentCatalog` projection materializes the parent facts. It stores facts in a persistent stack of 64-entry chunks, so an append copies at most the head chunk in bounded O(1) work. Materialization visits D facts and sorts them by `childCreatedAt`, then child id, in O(D log D). A projection checkpoint clones the state once in O(D); projection-cache writes remain asynchronous and use the existing mandatory creation, turn-end, and disposal points.
+The registered host-only `subagentCatalog` projection materializes the parent facts. It stores facts in a persistent stack of 64-entry chunks, so an append copies at most the head chunk in bounded O(1) work. Materialization visits chunks from oldest to newest and preserves parent catalog event order in O(D) time for D facts. Concurrent creation is ordered by successful catalog append, independent of child timestamps and ids. A projection checkpoint clones the state once in O(D); projection-cache writes remain asynchronous and use the existing mandatory creation, turn-end, and disposal points.
 
 Fork isolation uses the exact `Session.inheritedEventCount` supplied to projection initialization. The fold ignores `subagent/catalog` events below that offset. The state stores the inherited offset but not each event seq because acceptance is decided during folding.
 

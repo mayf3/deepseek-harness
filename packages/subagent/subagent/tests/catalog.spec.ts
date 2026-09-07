@@ -48,14 +48,14 @@ function fact(
 }
 
 describe('subagent catalog projection', () => {
-  it('preserves earlier checkpoints across chunk rollover and restores every fact', () => {
+  it('preserves event order across chunk rollover and checkpoint restoration', () => {
     const first = fold(Array.from({ length: 64 }, (_, i) =>
-      fact(i, `child-${i}`, i, { mode: 'one-shot' })))
+      fact(i, `child-${i}`, 130 - i, { mode: 'one-shot' })))
     const checkpoint = JSON.stringify(first)
     let state = first
     for (let i = 64; i < 130; i += 1) {
       state = subagentCatalogProjectionDefinition.apply(
-        state, fact(i, `child-${i}`, i, { mode: 'one-shot' }),
+        state, fact(i, `child-${i}`, 130 - i, { mode: 'one-shot' }),
       )
     }
     const restored = subagentCatalogProjectionDefinition.stateSchema.parse(
@@ -68,7 +68,7 @@ describe('subagent catalog projection', () => {
       .toEqual(Array.from({ length: 130 }, (_, i) => SessionId(`child-${i}`)))
   })
 
-  it('validates recursive chunk state and materializes every label variant in stable order', () => {
+  it('validates recursive chunk state and materializes every label variant in event order', () => {
     const events: SessionEvent[] = [
       fact(0, 'child-b', 1, { mode: 'one-shot' }),
       fact(1, 'child-a', 1, { mode: 'one-shot', label: 'once' }),
@@ -90,8 +90,8 @@ describe('subagent catalog projection', () => {
     expect(subagentCatalogProjectionDefinition.stateSchema.parse(JSON.parse(JSON.stringify(state))))
       .toEqual(state)
     expect(subagentCatalogEntries(state)).toEqual([
-      { id: SessionId('child-a'), createdAt: 1, mode: 'one-shot', label: 'once' },
       { id: SessionId('child-b'), createdAt: 1, mode: 'one-shot' },
+      { id: SessionId('child-a'), createdAt: 1, mode: 'one-shot', label: 'once' },
       { id: SessionId('child-d'), createdAt: 3, mode: 'continuable', label: 'later' },
     ])
   })

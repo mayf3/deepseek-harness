@@ -116,11 +116,13 @@ function appendFact(state: SubagentCatalogState, fact: SubagentCatalogEvent): Su
 /**
  * Materialize direct children from their parent's successful creation facts.
  * @param state - parent catalog fold state.
- * @returns current direct-child rows in creation order.
+ * @returns current direct-child rows in parent catalog event order.
  */
 export function subagentCatalogEntries(state: SubagentCatalogState): SubagentCatalogEntry[] {
+  const chunks: CatalogChunk[] = []
+  for (let chunk = state.head; chunk !== undefined; chunk = chunk.previous) chunks.push(chunk)
   const entries: SubagentCatalogEntry[] = []
-  for (let chunk = state.head; chunk !== undefined; chunk = chunk.previous) {
+  for (const chunk of chunks.reverse()) {
     for (const data of chunk.facts) {
       entries.push(data.mode === 'one-shot'
         ? {
@@ -137,7 +139,6 @@ export function subagentCatalogEntries(state: SubagentCatalogState): SubagentCat
         })
     }
   }
-  entries.sort((left, right) => left.createdAt - right.createdAt || left.id.localeCompare(right.id))
   return entries
 }
 
