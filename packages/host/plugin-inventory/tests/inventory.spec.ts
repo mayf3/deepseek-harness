@@ -127,7 +127,10 @@ describe('PluginInventoryGateway', () => {
     registry.record({ entryId: 'orphan', rowId: 'orphan', moduleName: 'cordis:throws', groupId: 'bundle/gone', stage: 'apply', message: 'lost' })
 
     const { entries } = await inventory.list()
-    expect(entries).toEqual([
+    // Compared in id order: the Loader assigns ids, and one that comes out all
+    // digits is listed first by the entry store regardless of creation order.
+    const byId = (left: { entryId: string }, right: { entryId: string }): number => left.entryId.localeCompare(right.entryId)
+    expect([...entries].sort(byId)).toEqual([
       { entryId: versioned, moduleName: 'cordis:active', enabled: true, fiberPhase: 'active', trust: 'external', package: { name: 'ext', version: '1.2.3' } },
       { entryId: bare, moduleName: 'cordis:active', enabled: true, fiberPhase: 'active', trust: 'external', package: { name: 'ext' }, failure: { stage: 'import', message: 'stale' } },
       { entryId: off, moduleName: 'cordis:active', enabled: false, fiberPhase: null, trust: 'external', package: { name: 'ext' }, disabledBy: 'user' },
@@ -148,7 +151,7 @@ describe('PluginInventoryGateway', () => {
         entryId: 'conflict:gone:x', moduleName: 'gone/x', enabled: true, fiberPhase: 'failed', trust: 'external',
         package: { name: 'gone' }, failure: { stage: 'conflict', message: 'row "x" is declared twice by gone' },
       },
-    ])
+    ].sort(byId))
   })
 
   it('carries each composed preset with root-fiber states mapped to phases', async () => {
