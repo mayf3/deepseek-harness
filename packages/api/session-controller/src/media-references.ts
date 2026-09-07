@@ -126,20 +126,16 @@ export async function serveMediaReference(
   }
   if (registry === undefined) return new Response('file serving is unavailable', { status: 403 })
   let canonical: string
+  let info
   try {
     canonical = await realpath(path)
+    info = await stat(canonical)
   } catch {
     return new Response('not found', { status: 404 })
   }
   const insideWorkspace = registry.list().some(root =>
     canonical === root.path || canonical.startsWith(root.path + sep))
   if (!insideWorkspace) return new Response('outside workspace roots', { status: 403 })
-  let info
-  try {
-    info = await stat(canonical)
-  } catch {
-    return new Response('not found', { status: 404 })
-  }
   if (!info.isFile()) return new Response('not a regular file', { status: 403 })
   const mediaType = mediaTypeForPath(canonical)
   if (mediaType === undefined) {

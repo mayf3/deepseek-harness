@@ -55,6 +55,8 @@ describe('parseByteRange', () => {
 
   it('refuses malformed and unsatisfiable ranges', () => {
     expect(parseByteRange('bytes=abc', 100)).toBeUndefined()
+    expect(parseByteRange('bytes=-', 100)).toBeUndefined()
+    expect(parseByteRange('bytes=-0', 100)).toBeUndefined()
     expect(parseByteRange('bytes=5-2', 100)).toBeUndefined()
     expect(parseByteRange('bytes=100-', 100)).toBeUndefined()
     expect(parseByteRange('bytes=0-', 0)).toBeUndefined()
