@@ -14,6 +14,8 @@ Lifecycle events have a separate cost: an approval, comment, push, label change,
 
 [Issue policy](../../../../.github/workflows/issue-policy.yml) keeps its required job and trusted default-branch implementation. Enforcement eligibility precedes reference reads and Project App token creation: draft PRs, Bot/App authors, and human PRs with neither review requests nor submitted reviews do not require policy validation.
 
+The workflow checks the trusted checkout for a selective-preflight capability marker before invoking the command. A checkout without the marker uses full legacy validation for human PRs and preserves the legacy Bot/App exemption. This supports PR workflow YAML running against default-branch code that lacks preflight; execution errors never select the fallback.
+
 Eligible PRs resolve references through repository REST reads. Informational references prove Issue identity without Project access. Only actual Issues named by resolving references require Project Priority reads; a PR number cannot satisfy the Issue requirement or cause a Project query. [The owner reference](../../../../.github/issue-management/README.md) defines metadata validation and failure behavior.
 
 [Issue lifecycle](../../../../.github/workflows/issue-lifecycle.yml) subscribes to status-relevant PR events and filters title-only edits. It does not subscribe to PR pushes or label changes, or Issue assignment changes. Its job condition rejects approved/commented reviews before runner allocation. Changes-requested reviews retain their status command.

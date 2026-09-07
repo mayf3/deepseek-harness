@@ -981,10 +981,12 @@ describe('Issue lifecycle workflow', () => {
     const tokenStep = steps.find(step => step.name === 'Create Project read token')
     const validateStep = steps.find(step => step.name === 'Validate pull request')
     const preflightStep = steps.find(step => step.id === 'preflight')
-    expect(preflightStep).toMatchObject({ run: 'node .github/issue-management/policy.mjs pr-preflight' })
+    expect(preflightStep).toMatchObject({ shell: 'bash' })
+    expect(preflightStep?.run).toContain('if [ -f .github/issue-management/selective-preflight.json ]; then')
+    expect(preflightStep?.run).toContain('node .github/issue-management/policy.mjs pr-preflight')
     expect(preflightStep?.if).toBeUndefined()
     expect(policyJob.if).toBeUndefined()
-    expect(validateStep?.if).toBeUndefined()
+    expect(validateStep?.if).toBe("${{ steps.preflight.outputs.legacy-automated != 'true' }}")
 
     expect(tokenStep).toMatchObject({
       id: 'app-token',

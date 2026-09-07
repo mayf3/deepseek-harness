@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
-import { mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { spawnSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import test from 'node:test'
@@ -903,13 +904,56 @@ test('keeps trusted preflight before token minting and required policy unconditi
   assert.doesNotMatch(source, /pull_request\.head|pull_request_target/)
   assert.ok(steps[1].includes('id: preflight'))
   assert.ok(steps[1].includes('GITHUB_TOKEN: ${{ github.token }}'))
-  assert.ok(steps[1].includes('run: node .github/issue-management/policy.mjs pr-preflight'))
+  assert.ok(steps[1].includes('node .github/issue-management/policy.mjs pr-preflight'))
+  assert.ok(steps[1].includes('if [ -f .github/issue-management/selective-preflight.json ]; then'))
   assert.doesNotMatch(steps[1], /secrets\.|PROJECT_TOKEN|if:/)
   assert.ok(steps[2].includes("if: ${{ steps.preflight.outputs.needs-project == 'true' }}"))
   assert.ok(steps[2].includes('permission-organization-projects: read'))
   assert.ok(steps[3].includes('PROJECT_TOKEN: ${{ steps.app-token.outputs.token }}'))
   assert.ok(steps[3].includes('run: node .github/issue-management/policy.mjs pr'))
-  assert.ok(!steps[3].includes('if:'))
+  assert.ok(steps[3].includes("if: ${{ steps.preflight.outputs.legacy-automated != 'true' }}"))
+})
+
+test('runs trusted rollout selection with absent and present capability markers', { skip: process.platform === 'win32' ? 'The policy workflow executes under hosted Ubuntu bash' : false }, (t) => {
+  const directory = mkdtempSync(join(tmpdir(), 'dsh-policy-rollout-'))
+  t.after(() => rmSync(directory, { recursive: true, force: true }))
+  const source = readFileSync(new URL('../workflows/issue-policy.yml', import.meta.url), 'utf8')
+  const script = source.split('        run: |\n')[1].split('      - name: Create Project read token')[0]
+    .split('\n').map((line) => line.slice(10)).join('\n')
+  assert.deepEqual(JSON.parse(readFileSync(new URL('./selective-preflight.json', import.meta.url), 'utf8')), { version: 1 })
+  const cases = [
+    { name: 'legacy human draft', type: 'User', draft: true, marker: false, expected: 'legacy-automated=false\nneeds-project=true\n' },
+    { name: 'legacy human ready', type: 'User', draft: false, marker: false, expected: 'legacy-automated=false\nneeds-project=true\n' },
+    { name: 'legacy bot', type: 'Bot', marker: false, expected: 'legacy-automated=true\nneeds-project=false\n' },
+    { name: 'legacy app', type: 'App', marker: false, expected: 'legacy-automated=true\nneeds-project=false\n' },
+    { name: 'modern exempt', type: 'Bot', marker: true, expected: 'exempt=true\nneeds-project=false\n' },
+    { name: 'modern failure', type: 'User', marker: true, failure: true, expected: '' },
+  ]
+  for (const [index, fixture] of cases.entries()) {
+    const cwd = join(directory, String(index))
+    const policyDirectory = join(cwd, '.github', 'issue-management')
+    mkdirSync(policyDirectory, { recursive: true })
+    const eventPath = join(cwd, 'event.json')
+    const outputPath = join(cwd, 'output')
+    writeFileSync(eventPath, JSON.stringify({ pull_request: { user: { type: fixture.type }, draft: fixture.draft } }))
+    writeFileSync(outputPath, '')
+    if (fixture.marker) writeFileSync(join(policyDirectory, 'selective-preflight.json'), '{"version":1}\n')
+    writeFileSync(join(policyDirectory, 'policy.mjs'), fixture.marker && !fixture.failure
+      ? "import fs from 'node:fs'; if (process.argv[2] !== 'pr-preflight') throw Error('wrong command'); fs.appendFileSync(process.env.GITHUB_OUTPUT, 'exempt=true\\nneeds-project=false\\n')\n"
+      : "throw new Error('preflight unavailable or failed')\n")
+    const result = spawnSync('bash', ['--noprofile', '--norc', '-eo', 'pipefail', '-c', script], {
+      cwd,
+      env: { PATH: process.env.PATH, GITHUB_EVENT_PATH: eventPath, GITHUB_OUTPUT: outputPath },
+      encoding: 'utf8',
+      timeout: 30_000,
+    })
+    assert.equal(result.error, undefined, fixture.name)
+    assert.equal(result.signal, null, fixture.name)
+    assert.equal(result.status, fixture.failure ? 1 : 0, fixture.name + ': ' + result.stderr)
+    assert.equal(readFileSync(outputPath, 'utf8'), fixture.expected, fixture.name)
+    if (fixture.marker) assert.doesNotMatch(result.stdout, /preserving legacy/)
+    else assert.match(result.stdout, /preserving legacy policy enforcement/)
+  }
 })
 
 test('allocates lifecycle runners only for relevant reviews and PR body edits', () => {

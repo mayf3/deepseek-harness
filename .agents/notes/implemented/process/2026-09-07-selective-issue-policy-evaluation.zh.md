@@ -14,6 +14,8 @@ Status: implemented
 
 [Issue policy](../../../../.github/workflows/issue-policy.yml)保留必需 job 与受信任的默认分支实现。强制范围判定先于引用读取与 Project App token 创建：草稿 PR、Bot/App 作者，以及既无评审请求也无已提交评审的人类 PR 均不需要策略校验。
 
+工作流在调用命令前检查受信任检出中的选择性预检能力标记。缺少标记的检出对人类 PR 执行完整旧版校验，并保留旧版 Bot/App 豁免。这支持 PR 工作流 YAML 与缺少预检功能的默认分支代码配合执行；执行错误不会触发回退。
+
 强制范围内的 PR 通过仓库 REST 读取解析引用。信息型引用无需 Project 访问即可证明 Issue 身份。只有解决型引用指向的实际 Issue 需要读取 Project Priority；PR 编号既不能满足 Issue 引用要求，也不会引发 Project 查询。[所属参考文档](../../../../.github/issue-management/README.zh.md)定义元数据校验与失败行为。
 
 [Issue lifecycle](../../../../.github/workflows/issue-lifecycle.yml)订阅与状态相关的 PR 事件，并过滤仅标题编辑。它不订阅 PR 推送、PR 标签变更或 Issue 指派变更。job 条件在 runner 分配前排除 approved/commented 评审。请求修改的评审保留其状态命令。

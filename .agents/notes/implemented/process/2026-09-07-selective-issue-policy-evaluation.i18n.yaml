@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/process/2026-09-07-selective-issue-policy-evaluation.md
-2026-09-07-selective-issue-policy-evaluation.md: 72f217a64a841eff99d3314e52dd6e6f547d4a4f
-2026-09-07-selective-issue-policy-evaluation.zh.md: 0caca4554f2f29493b9c778675a53125256fa94d
+2026-09-07-selective-issue-policy-evaluation.md: a044e1d12c64d1736c0520d8a3f73713f22294d4
+2026-09-07-selective-issue-policy-evaluation.zh.md: 0c4c8d27d214a861f14cd3455f22a1007bf95bab
