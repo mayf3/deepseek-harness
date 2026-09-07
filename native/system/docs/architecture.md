@@ -1,34 +1,25 @@
 # Architecture
 
-This repository owns confinement *mechanism*, not policy: consumers (agent harnesses and sandbox capabilities) decide which paths a run may read or write; this package family provides the launcher that enforces those grants and the JavaScript API that resolves and speaks to it. The packaging follows the per-platform-package model of [`node-addon-require-builtin`](https://www.npmjs.com/package/@esplus/node-addon-require-builtin) (and esbuild), adapted from Node addons to standalone static executables.
+The system package family supplies native mechanisms to Node callers: a Linux confinement executable and a POSIX file-lock binding. Consumers own sandbox policy and Session lifecycle.
 
-## Two-layer package family
+## Package family
 
-The family is one entry package plus per-platform binary packages:
+The ESM entry `@deepseek-ai/node-addon-system` and its optional platform packages share one version. Platform metadata chooses the operating system and CPU; each package's `prebuilds.json` declares the files it must contain.
 
-- **Entry package** (`@deepseek-ai/node-addon-system`): ESM JavaScript. Owns the tool's CLI contract — path resolution (`launcherPath`), the functional probe (`probe`), grant-argv construction (`grantArgs`), and the contract constants. Ships the C source in its tarball for auditability. Lists every platform package as an `optionalDependency`.
-- **Platform packages** (`@deepseek-ai/node-addon-system-linux-{x64,arm64}`): one prebuilt static binary under `bin/`, a `prebuilds.json` declaring it, and no JavaScript at all. npm's `os`/`cpu` fields select the matching one at install time; the entry package resolves it to a file path — there is nothing to import.
+The root entry owns the existing Landlock path resolution, grant argv, and functional probe. It does not load native addons. The `./flock` entry lazily loads `system.node` only when `tryLockExclusive(fd)` is called. Importing either JavaScript entry therefore works without a matching native payload.
 
-Because the CLI parser and binary are versioned together in one package family, the parser cannot fall behind that binary version. Preventing that mismatch is why the package split exists.
+## Separate mechanisms
 
-There is no shared loader package: platform packages have nothing to load. If a second tool ever needs shared JS, extract it then, not preemptively.
+`landlock-run` remains a static musl executable with the [existing CLI contract](cli-contract.md). It installs confinement on itself before exec, and refuses to exec if enforcement is unavailable. A missing launcher or unsupported kernel produces an unusable probe.
 
-## Resolution and availability
+`system.node` uses stable Node-API v8. Its flock operation follows [fs-ext's asynchronous callback model](https://github.com/baudehlo/node-fs-ext/blob/v2.1.1/fs-ext.cc): it runs `flock(fd, LOCK_EX | LOCK_NB)` in asynchronous work and records errno on that worker. The native callback receives zero or positive errno; JavaScript owns the promise and syscall error construction. Setup errors throw into that promise. Callback exceptions are reported through Node's uncaught-exception handler; unexpected Node-API failures terminate the process. A terminating environment may suppress JavaScript completion, but its cleanup waits for queued or running native work before freeing storage.
 
-`launcherPath()` resolves `@deepseek-ai/node-addon-system-<platform>-<arch>` and returns `<package>/bin/landlock-run`. When the package is not resolvable it returns a deterministic fallback path inside the entry package's own `node_modules` that simply never exists. Existence is deliberately unchecked either way: `probe()` is the single availability signal, and a missing binary probes `unusable` exactly like an unenforcing kernel. Consumers get one degradation path, not two.
+The descriptor belongs to the caller and must stay open through completion. The binding neither opens nor closes it; closing the final descriptor for its open file description releases the lock.
 
-The probe is functional — the launcher builds and enforces a real maximal ruleset in a short-lived child — because version checks would miss a kernel that has the syscalls but refuses enforcement.
+The JSONL backend retains its inode check, materialization timing, and close lifecycle. Windows uses its existing koffi semaphore and never calls this POSIX binding. The browser worker supplies a single-process replacement for the flock entry, while running the Landlock JavaScript API unchanged.
 
-## Fail-closed everywhere
+## Builds and release
 
-The launcher exits `125` without exec'ing the command on any launcher-level failure: usage error, unenforcing kernel, unopenable grant root, failed exec. Partial enforcement (an older Landlock ABI governing only a subset of accesses) is accepted, reported on stderr, and surfaced by the probe as `partial` — the consumer decides what its mode vocabulary promises at each level. Neither the binary nor the entry package reads environment variables: which binary confines a process is never decidable by the ambient environment.
+Repository builds and `build:bench` explicitly build the host addon before running consumers. Each platform builds natively on its CI runner. Landlock is static-musl; Linux addons are separately built for glibc and musl, and macOS uses a Mach-O bundle. Stable Node-API removes the Node-major build dimension, not OS, CPU, or libc differences. CI exercises identical addon bytes under Node 20, 22, 24, and 26; Linux also runs the musl addon in Alpine containers.
 
-## Build and release model
-
-Builds are native-only. `scripts/build.ts` compiles the running architecture's binaries with the distro `musl-gcc` (static: no loader or libc expectations on consumers, one binary for glibc and musl distros); CI's per-architecture runners are the builders of record, and no cross toolchain exists in the repo. Review covers the C source and the CI job that built each binary, enforced by three gates: platform prepack refuses missing/wrong-ELF binaries, entry prepack refuses unbuilt `lib/`, and the release pipeline byte-pins installed binaries against the workspace builds they were packed from.
-
-The package matrix is checked-in metadata (`prebuilds.json` + `os`/`cpu` fields); `scripts/github-matrix.mjs` derives the CI and Release matrices from it, so adding a platform extends automation without editing workflows.
-
-## Adding a platform
-
-A new platform adds one `packages/<platform>/` package (`package.json` with `os`/`cpu`, `prebuilds.json`, README, LICENSE), a runner entry in `scripts/github-matrix.mjs`, and a row in [support-matrix.md](support-matrix.md) — added only together with a native GitHub runner that builds and proves it (the no-cross-toolchain rule). Sibling launchers for other confinement mechanisms belong in their own repositories on this same template, not as second tools here.
+Platform prepack validates file formats, architecture, payload completeness, and Node-API exports. The packed-install rehearsal installs local tarballs, checks their bytes, and exercises the installed mechanisms. Missing capabilities fail explicitly; no consumer install runs a compiler. [Packaging](packaging.md) and [release](release.md) own the operational details.

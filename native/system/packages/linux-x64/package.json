@@ -1,7 +1,7 @@
 {
   "name": "@deepseek-ai/node-addon-system-linux-x64",
   "version": "0.1.1",
-  "description": "Prebuilt landlock-run Landlock launcher binary for linux-x64 (static musl) — resolved as a file path by @deepseek-ai/node-addon-system, never imported",
+  "description": "Linux x64 system binaries: static Landlock launcher and glibc/musl Node-API flock addons",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/deepseek-harness/deepseek-harness.git",

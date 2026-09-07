@@ -16,7 +16,10 @@ import path from 'node:path';
 const packageDir = process.cwd();
 const manifest = JSON.parse(fs.readFileSync(path.join(packageDir, 'package.json'), 'utf8'));
 
-for (const file of ['lib/index.js', 'lib/index.d.ts']) {
+const exportedFiles = Object.values(manifest.exports)
+  .flatMap((entry) => typeof entry === 'string' ? [entry] : Object.values(entry))
+  .filter((file) => typeof file === 'string' && file.startsWith('./lib/'));
+for (const file of exportedFiles) {
   if (!fs.existsSync(path.join(packageDir, file))) {
     console.error(`verify-entry-lib: ${manifest.name} has no ${file} — run \`pnpm build:ts\` before packing.`);
     process.exit(1);

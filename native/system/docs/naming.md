@@ -9,11 +9,11 @@ The public package family belongs to the `@deepseek-ai` scope and uses the `node
 @deepseek-ai/node-addon-system-<platform>
 ```
 
-Platform suffixes carry no libc component (binaries are static musl) and no variant component — variants stay inside `prebuilds.json` and binary filenames.
+Platform suffixes carry OS and CPU. Linux libc variants live inside the same platform package and are declared in `prebuilds.json`.
 
 ## Binaries
 
-The launcher executable is `landlock-run`, shipped at `bin/landlock-run` inside each platform package.
+The Linux launcher remains `bin/landlock-run`. The Node-API addon is `system.node`: `bin/glibc/system.node` and `bin/musl/system.node` on Linux, `bin/system.node` on macOS.
 
 ## Environment variables
 

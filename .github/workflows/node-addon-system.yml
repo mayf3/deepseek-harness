@@ -46,11 +46,14 @@ jobs:
     runs-on: ubuntu-24.04
     outputs:
       ci: ${{ steps.matrix.outputs.ci }}
+      compatibility: ${{ steps.matrix.outputs.compatibility }}
     steps:
       - uses: actions/checkout@v4
 
       - id: matrix
-        run: echo "ci=$(node ./scripts/github-matrix.mjs ci)" >> "$GITHUB_OUTPUT"
+        run: |
+          echo "ci=$(node ./scripts/github-matrix.mjs ci)" >> "$GITHUB_OUTPUT"
+          echo "compatibility=$(node ./scripts/github-matrix.mjs compatibility)" >> "$GITHUB_OUTPUT"
 
   native:
     name: ${{ matrix.platform }}
@@ -76,6 +79,7 @@ jobs:
         run: pnpm install --filter @deepseek-ai/node-addon-system-workspace... --frozen-lockfile
 
       - name: Install musl toolchain
+        if: runner.os == 'Linux'
         run: |
           sudo apt-get update -q
           sudo apt-get install -yq musl-tools
@@ -96,6 +100,7 @@ jobs:
       # prove enforcement would be a false green, so an unenforcing kernel
       # fails the leg instead of skipping.
       - name: Launcher tests (real kernel enforcement)
+        if: runner.os == 'Linux'
         run: node ./test/launcher.test.js
         env:
           NALR_REQUIRE_LANDLOCK: 1
@@ -105,40 +110,70 @@ jobs:
           node ./scripts/pack-release.mjs .release/npm --current-platform-only
           node ./scripts/verify-packed-install.mjs .release/npm --current-platform-only
         env:
-          NALR_REQUIRE_LANDLOCK: 1
+          NALR_REQUIRE_LANDLOCK: ${{ runner.os == 'Linux' && '1' || '0' }}
 
-  darwin:
-    name: darwin (no platform package — degradation proof)
-    runs-on: macos-latest
+      - name: Verify platform payload rules
+        run: pnpm test:packaging
+
+      - name: Flock behavior (built addon)
+        run: |
+          pnpm build:test-oracle
+          pnpm test:flock
+
+      - name: Upload this platform's built addon and entry
+        uses: actions/upload-artifact@v4
+        with:
+          name: system-compat-${{ matrix.platform }}
+          path: |
+            native/system/packages/*/bin/**
+            native/system/packages/entry/lib/**
+          if-no-files-found: error
+
+      - name: Upload independent syscall test oracle
+        uses: actions/upload-artifact@v4
+        with:
+          name: system-oracle-${{ matrix.platform }}
+          path: native/system/test/bin/**
+          if-no-files-found: error
+
+  compatibility:
+    name: ${{ matrix.platform }} / Node ${{ matrix.node }} (same binary)
+    needs: [matrix, native]
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJson(needs.matrix.outputs.compatibility) }}
+    runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4
 
-      - uses: pnpm/action-setup@v4
-        with:
-          package_json_file: package.json
-
       - uses: actions/setup-node@v4
         with:
-          node-version: 24
-          cache: pnpm
-          cache-dependency-path: pnpm-lock.yaml
+          node-version: ${{ matrix.node }}
 
-      - name: Install dependencies
-        run: pnpm install --filter @deepseek-ai/node-addon-system-workspace... --frozen-lockfile
+      - name: Download the original platform build
+        uses: actions/download-artifact@v4
+        with:
+          name: system-compat-${{ matrix.platform }}
+          path: native/system/packages
 
-      - name: Build TypeScript
-        run: pnpm build:ts
+      - name: Download independent syscall test oracle
+        uses: actions/download-artifact@v4
+        with:
+          name: system-oracle-${{ matrix.platform }}
+          path: native/system/test/bin
 
-      - name: Typecheck
-        run: pnpm typecheck
+      - name: Restore oracle executable permissions
+        run: find ./test/bin -type f -name flock-oracle -exec chmod +x {} +
 
-      - name: Entry tests (keyless)
-        run: node ./test/entry.test.js
-
-      - name: Launcher tests (must self-skip cleanly)
-        run: node ./test/launcher.test.js
-
-      - name: Pack rehearsal (entry only — fallback resolution + unusable probe)
+      - name: Test without rebuilding or installing dependencies
         run: |
-          node ./scripts/pack-release.mjs .release/npm --current-platform-only
-          node ./scripts/verify-packed-install.mjs .release/npm --current-platform-only
+          node ./test/link-platform.mjs
+          node --test ./test/flock.test.js ./test/package-matrix.test.js
+
+      - name: Test the same musl addon without a compiler
+        if: runner.os == 'Linux'
+        run: >-
+          docker run --rm -v "$PWD:$PWD" -w "$PWD"
+          node:${{ matrix.node }}-alpine
+          node --test ./test/flock.test.js ./test/package-matrix.test.js

@@ -41,6 +41,8 @@ const DEV_ONLY_AREAS = [
 /** First-party public native packages: reachable at runtime but not third-party. */
 const FIRST_PARTY = new Set([
   '@deepseek-ai/node-addon-system',
+  '@deepseek-ai/node-addon-system-darwin-arm64',
+  '@deepseek-ai/node-addon-system-darwin-x64',
   '@deepseek-ai/node-addon-system-linux-arm64',
   '@deepseek-ai/node-addon-system-linux-x64',
 ])
@@ -75,7 +77,6 @@ const OVERRIDES: Record<string, { license?: string; repo?: string }> = {
   // No repository field in the published manifest.
   'node-addon-require-builtin': { repo: 'https://www.npmjs.com/package/node-addon-require-builtin' },
   // No `license` field in the published manifest; the tarball's LICENSE.txt is the MIT text.
-  'fs-ext': { license: 'MIT' },
 }
 
 /**

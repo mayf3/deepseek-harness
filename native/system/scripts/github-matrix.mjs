@@ -15,6 +15,8 @@ import { platformDirs, readJson, root } from './repo.mjs';
 const RUNNERS = {
   'linux-x64': 'ubuntu-24.04',
   'linux-arm64': 'ubuntu-24.04-arm',
+  'darwin-x64': 'macos-15-intel',
+  'darwin-arm64': 'macos-latest',
 };
 
 function runnerFor(platform) {
@@ -56,6 +58,7 @@ const target = process.argv[2];
 const matrices = {
   ci: ciMatrix,
   'release-prebuild': releasePrebuildMatrix,
+  compatibility: () => ciMatrix().include.flatMap((row) => [20, 22, 24, 26].map((node) => ({ ...row, node }))),
 };
 
 if (!target || !matrices[target]) {

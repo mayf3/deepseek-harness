@@ -1,9 +1,11 @@
+---
+description: "为 Linux arm64 提供预编译 Landlock 启动器和 POSIX flock addon。"
+kind: "package-library"
+---
 # @deepseek-ai/node-addon-system-linux-arm64
 
 [English](README.md) | 中文
 
-面向 linux-arm64 的预构建 `bin/landlock-run` Landlock 启动器：一个由 [`@deepseek-ai/node-addon-system`](https://www.npmjs.com/package/@deepseek-ai/node-addon-system) 包所附的 C 源码原生编译而成的静态 musl 二进制文件（不使用交叉工具链）。npm 的 `os`/`cpu` 字段在安装时选择此包；入口包将其定位到文件路径。该包不包含 JavaScript，也绝不会被导入。
+此平台包包含静态 musl 可执行文件 `bin/landlock-run`，以及 Node-API v8 addon `bin/glibc/system.node` 和 `bin/musl/system.node`。入口包按运行 Node 进程的 libc 选择 addon；Landlock 可执行文件在两种 libc 系统上共用。
 
-该二进制文件被 git 忽略，并通过 `files` 列表进入 npm tarball；如果文件缺失或 ELF 架构错误，`prepack` 门禁会拒绝打包，发布流水线则会按字节核验打包的二进制文件与其来源 CI 构建产物一致。静态 musl 链接使同一个二进制文件同时适用于 glibc 和 musl 发行版，因此名称中没有 libc 后缀。
-
-同级包：`@deepseek-ai/node-addon-system-linux-x64`。
+包中没有 JavaScript 或安装编译脚本。平台 prepack 检查完整产物、ELF 架构、Node-API 导出和启动器可执行权限；安装演练核对字节并执行原生行为。参见工作区[支持矩阵](../../docs/support-matrix.md)。

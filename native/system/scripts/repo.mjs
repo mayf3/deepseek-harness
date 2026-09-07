@@ -44,45 +44,79 @@ export function packageDirs() {
 }
 
 /**
- * Verify one platform package's binaries against its `prebuilds.json`:
- * every declared binary exists, nothing undeclared sits in `bin/`, and each
- * file's ELF `e_machine` matches the package's declared `cpu`. Throws with
- * a remediation message on the first mismatch.
+ * Verify platform metadata, complete bin/ payloads, executable permissions,
+ * and native file formats before packing. Node addons must export Node-API.
  */
 export function verifyPlatformBinaries(packageDir) {
   const manifest = readJson(path.join(packageDir, 'package.json'));
   const prebuilds = readJson(path.join(packageDir, 'prebuilds.json'));
   const cpu = manifest.cpu?.[0];
-  if (cpu === undefined || !(cpu in E_MACHINE)) {
-    throw new Error(`${manifest.name}: unsupported or missing "cpu" in package.json (expected one of: ${Object.keys(E_MACHINE).join(', ')})`);
+  const os = manifest.os?.[0];
+  if (!(cpu in E_MACHINE) || !['linux', 'darwin'].includes(os)) {
+    throw new Error(`${manifest.name}: unsupported or missing os/cpu metadata`);
+  }
+  if (prebuilds.platform !== `${os}-${cpu}`) {
+    throw new Error(`${manifest.name}: prebuild platform disagrees with package os/cpu`);
   }
 
+  const declared = new Set();
   for (const binary of prebuilds.binaries) {
+    if (typeof binary.path !== 'string' || !/^bin\/(?:[a-z0-9-]+\/)?[a-z0-9._-]+$/.test(binary.path)) {
+      throw new Error(`${manifest.name}: binary path must name a file inside bin/`);
+    }
+    if (declared.has(binary.path)) throw new Error(`${manifest.name}: duplicate binary path ${binary.path}`);
+    declared.add(binary.path);
+    const executable = binary.kind === 'static-musl' && binary.tool === 'landlock-run' && os === 'linux';
+    const addon = binary.kind === 'node-api' && binary.tool === 'flock' && binary.napi === 8;
+    if (!executable && !addon) throw new Error(`${manifest.name}: unsupported binary kind/tool/NAPI for ${binary.path}`);
+    if (addon && os === 'linux' && !['glibc', 'musl'].includes(binary.libc)) {
+      throw new Error(`${manifest.name}: Linux addon must declare glibc or musl`);
+    }
+    if (addon && os === 'darwin' && binary.libc !== undefined) {
+      throw new Error(`${manifest.name}: macOS addon must not declare a Linux libc`);
+    }
+
     const file = path.join(packageDir, binary.path);
-    if (!fs.existsSync(file)) {
-      throw new Error(`${manifest.name}: missing ${binary.path} — run \`pnpm build:native\` on a ${prebuilds.platform} host (or assemble release artifacts) before packing.`);
+    if (!fs.existsSync(file)) throw new Error(`${manifest.name}: missing ${binary.path} — build this platform before packing`);
+    if (!fs.lstatSync(file).isFile()) throw new Error(`${manifest.name}: ${binary.path} is not a regular file`);
+    if (executable) {
+      try { fs.accessSync(file, fs.constants.X_OK); }
+      catch { throw new Error(`${manifest.name}: ${binary.path} is not executable`); }
     }
-    try {
-      fs.accessSync(file, fs.constants.X_OK);
-    } catch {
-      // Only reachable when the mode was mangled somewhere between build and
-      // here (e.g. an archive step that normalized permissions) — the build
-      // itself always produces 755.
-      throw new Error(`${manifest.name}: ${binary.path} is not executable — a pack/extract step stripped the mode bit.`);
+    const data = fs.readFileSync(file);
+    if (os === 'linux') {
+      if (data.length < 64 || data.readUInt32LE(0) !== 0x464c457f || data[4] !== 2 || data[5] !== 1) {
+        throw new Error(`${manifest.name}: ${binary.path} is not a little-endian ELF64 binary`);
+      }
+      if (data.readUInt16LE(18) !== E_MACHINE[cpu]) {
+        throw new Error(`${manifest.name}: ${binary.path} has the wrong ELF architecture`);
+      }
+      if (data.readUInt16LE(16) !== (executable ? 2 : 3)) {
+        throw new Error(`${manifest.name}: ${binary.path} has the wrong ELF file type`);
+      }
+    } else {
+      const expectedCpu = cpu === 'x64' ? 0x01000007 : 0x0100000c;
+      if (data.length < 32 || data.readUInt32LE(0) !== 0xfeedfacf) {
+        throw new Error(`${manifest.name}: ${binary.path} is not a Mach-O 64-bit bundle`);
+      }
+      if (data.readUInt32LE(4) !== expectedCpu || data.readUInt32LE(12) !== 8) {
+        throw new Error(`${manifest.name}: ${binary.path} has the wrong Mach-O architecture or file type`);
+      }
     }
-    const machine = fs.readFileSync(file).readUInt16LE(18);
-    if (machine !== E_MACHINE[cpu]) {
-      throw new Error(`${manifest.name}: ${binary.path} has ELF e_machine ${machine}, expected ${E_MACHINE[cpu]} for ${cpu} — the binary was built for a different architecture.`);
+    if (addon && (!data.includes(Buffer.from('napi_register_module_v1'))
+      || !data.includes(Buffer.from('node_api_module_get_api_version_v1')))) {
+      throw new Error(`${manifest.name}: ${binary.path} does not export the Node-API entry points`);
     }
   }
 
-  const declared = prebuilds.binaries.map((binary) => path.basename(binary.path)).sort();
-  const binDir = path.join(packageDir, 'bin');
-  const actual = fs.existsSync(binDir) ? fs.readdirSync(binDir).sort() : [];
-  const extra = actual.filter((name) => !declared.includes(name));
-  if (extra.length) {
-    throw new Error(`${manifest.name}: bin/ contains files not declared in prebuilds.json: ${extra.join(', ')}`);
+  function files(dir, prefix) {
+    if (!fs.existsSync(dir)) return [];
+    return fs.readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+      const name = prefix + '/' + entry.name;
+      return entry.isDirectory() ? files(path.join(dir, entry.name), name) : [name];
+    });
   }
-
-  return { name: manifest.name, count: prebuilds.binaries.length };
+  const extra = files(path.join(packageDir, 'bin'), 'bin').filter((name) => !declared.has(name));
+  if (extra.length) throw new Error(`${manifest.name}: undeclared bin/ files: ${extra.join(', ')}`);
+  return { name: manifest.name, count: declared.size };
 }

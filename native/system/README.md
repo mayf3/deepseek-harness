@@ -1,60 +1,41 @@
+---
+description: "Prebuilt system primitives for Linux confinement and POSIX Session write locks."
+kind: "package-library"
+---
 # @deepseek-ai/node-addon-system
 
 English | [中文](README.zh.md)
 
-A [Landlock](https://landlock.io/) self-restrict-then-exec launcher for confining subprocesses on Linux, distributed as prebuilt per-platform npm packages plus a thin JS entry package that resolves the binary and speaks its CLI contract. Built for agent harnesses and other hosts that need to run untrusted commands under a filesystem allow-list without confining themselves.
+## Summary
 
-The tool is **`landlock-run`** — a self-restrict-then-exec [Landlock](https://landlock.io/) launcher (~300 lines of C11 over the raw kernel UAPI, statically linked against musl). It installs a Landlock ruleset on itself and `exec`s the wrapped command; the ruleset is inherited across `execve`, so the command and every process it spawns run confined while the invoking process stays unrestricted. Fail-closed: if the kernel cannot enforce, it exits without running the command.
+Use the Linux `landlock-run` executable to confine subprocesses, or the `./flock` entry to acquire a POSIX write lock. Platform packages contain the precompiled binaries; consumer installation never builds native code. Landlock policy and Session lifecycle remain with callers.
 
-## Install
+## Table of Contents
 
-```sh
-npm install @deepseek-ai/node-addon-system
-```
+- [Use](#use)
+- [Support](#support)
+- [Development](#development)
 
-Published packages use an entry package plus platform optional packages:
+## Use
 
-```text
-@deepseek-ai/node-addon-system
-@deepseek-ai/node-addon-system-linux-x64
-@deepseek-ai/node-addon-system-linux-arm64
-```
+The root entry exports `launcherPath`, `probe`, and `grantArgs` for Landlock. Its executable name, flags, and failure semantics are defined by the [CLI contract](docs/cli-contract.md).
 
-npm's `os`/`cpu` fields make installers fetch only the matching platform package. There is no install-time build fallback on purpose: on a host without a platform package the resolved path never exists, the probe reports `unusable`, and the consumer falls closed.
+The [flock behavior contract](docs/flock-contract.md) maps descriptor, process, and advisory-lock semantics to independent native tests.
 
-## Usage
+`@deepseek-ai/node-addon-system/flock` exports `tryLockExclusive(fd): Promise<void>`. Keep the descriptor open until completion. Acquisition uses nonblocking exclusive flock; contention rejects with `EAGAIN` or `EWOULDBLOCK`, and closing the final descriptor for the open file description releases the lock. See the [entry README](packages/entry/README.md).
 
-```js
-import { grantArgs, launcherPath, probe } from '@deepseek-ai/node-addon-system';
-
-const launcher = launcherPath();
-if (probe(launcher) !== 'unusable') {
-  const argv = [launcher, ...grantArgs({ readOnly: ['/'], readWrite: ['/tmp/work'] }), '--', 'bash', '-c', command];
-  // spawn argv with your process runner of choice
-}
-```
-
-The public API is intentionally small:
-
-- `launcherPath()`: absolute path of this host's launcher (existence deliberately unchecked — the probe is the availability signal).
-- `probe(launcher?, { timeoutMs? })`: functional enforcement probe — `'full' | 'partial' | 'unusable'`.
-- `grantArgs({ readOnly?, readWrite? })`: the launcher's grant argv; everything not granted is denied.
-- `LAUNCHER_BIN` and `LAUNCHER_FAILURE_EXIT` (125): contract constants. A successfully exec'd child may also return 125, so consumers need the fatal diagnostic as well as the status to attribute launcher failure.
-
-The full binary contract (argv grammar, exit codes, report lines) is pinned in [docs/cli-contract.md](docs/cli-contract.md).
+Importing either entry does not load an addon. A missing Landlock executable probes unusable; a missing flock binding rejects acquisition. Neither path compiles or silently grants unsupported behavior.
 
 ## Support
 
-linux-x64 and linux-arm64, kernel with Landlock enabled (5.13+; ABI level determines `full` vs `partial` enforcement — see [docs/support-matrix.md](docs/support-matrix.md)). Other platforms deliberately have no package: consumers run different confinement backends there.
+Linux x64/arm64 packages contain the static Landlock executable and separate glibc/musl `system.node` files. macOS x64/arm64 packages contain `system.node` only. Landlock additionally needs an enforcing Linux kernel; Windows uses the Harness's existing locking implementation. The [support matrix](docs/support-matrix.md) names builders and verification owners.
 
 ## Development
 
-```sh
-corepack enable
-pnpm install
-pnpm build:ts        # entry packages → lib/
-pnpm build:native    # this Linux architecture's binaries (apt-get install musl-tools)
-pnpm test
-```
+From this directory, `pnpm build:ts` builds the entry, `pnpm build:native` builds the host's declared native payload, and `pnpm build:test-oracle` builds an independent flock syscall fixture. Then `pnpm test` exercises entry, lock, packaging, and available kernel behavior. Linux requires musl-gcc for a complete build; macOS uses cc. The root `pnpm run build:native-system` builds only the current host addon for source tests.
 
-Binaries are git-ignored and built natively per architecture — locally for your own machine, by CI's per-arch runners as the builders of record. Release flow: [docs/release.md](docs/release.md).
+The [architecture](docs/architecture.md), [packaging](docs/packaging.md), and [release procedure](docs/release.md) own implementation and publication details.
+
+### Dev Note
+
+None.

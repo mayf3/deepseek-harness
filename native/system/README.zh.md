@@ -1,60 +1,41 @@
+---
+description: "为 Linux 进程隔离与 POSIX Session 写锁提供预编译系统原语。"
+kind: "package-library"
+---
 # @deepseek-ai/node-addon-system
 
 [English](README.md) | 中文
 
-一个 [Landlock](https://landlock.io/)「先限制自身、再执行」启动器，用于在 Linux 上限制子进程。它以按平台预构建的 npm 包以及一个轻量 JS 入口包的形式发布；入口包负责解析二进制文件并遵循其 CLI（命令行界面）约定。该启动器面向需要让不可信命令在文件系统允许清单约束下运行、同时保持自身不受限制的 agent harness（智能体框架）和其他宿主。
+## Summary
 
-该工具是 **`landlock-run`**：一个「先限制自身、再执行」的 [Landlock](https://landlock.io/) 启动器（基于原始内核 UAPI 编写，约 300 行 C11，并与 musl 静态链接）。它在自身上安装 Landlock 规则集，再 `exec` 被包装的命令；该规则集会跨 `execve` 继承，因此命令及其产生的每个进程都在限制下运行，调用进程仍不受限制。它采用失败闭合：如果内核无法强制执行，则不运行命令并直接退出。
+使用 Linux `landlock-run` 可执行文件限制子进程，或通过 `./flock` 入口获取 POSIX 写锁。平台包包含预编译二进制；用户安装时不会构建原生代码。Landlock 策略与 Session 生命周期仍由调用方负责。
 
-## 安装
+## Table of Contents
 
-```sh
-npm install @deepseek-ai/node-addon-system
-```
+- [使用](#use)
+- [支持范围](#support)
+- [开发](#development)
 
-已发布包由一个入口包和可选平台包组成：
+## Use
 
-```text
-@deepseek-ai/node-addon-system
-@deepseek-ai/node-addon-system-linux-x64
-@deepseek-ai/node-addon-system-linux-arm64
-```
+根入口为 Landlock 导出 `launcherPath`、`probe` 和 `grantArgs`。其可执行文件名、参数和失败语义由 [CLI 约定](docs/cli-contract.md) 定义。
 
-npm 的 `os`/`cpu` 字段使安装器只拉取匹配的平台包。系统有意不提供安装时构建回退：在没有对应平台包的宿主上，解析后的路径绝不存在，探测会报告 `unusable`，消费方以失败闭合方式处理。
+[flock 行为约定](docs/flock-contract.md) 将描述符、进程和咨询式锁语义对应到独立原生测试。
 
-## 用法
+`@deepseek-ai/node-addon-system/flock` 导出 `tryLockExclusive(fd): Promise<void>`。在调用完成前保持描述符打开。获取操作使用非阻塞独占 flock；竞争以 `EAGAIN` 或 `EWOULDBLOCK` 拒绝，关闭该打开文件描述的最后一个描述符即释放锁。参见[入口 README](packages/entry/README.zh.md)。
 
-```js
-import { grantArgs, launcherPath, probe } from '@deepseek-ai/node-addon-system';
+导入任一入口都不会加载 addon。Landlock 可执行文件缺失时探测为不可用；flock 绑定缺失时拒绝获取。两条路径都不会编译或静默授予不受支持的行为。
 
-const launcher = launcherPath();
-if (probe(launcher) !== 'unusable') {
-  const argv = [launcher, ...grantArgs({ readOnly: ['/'], readWrite: ['/tmp/work'] }), '--', 'bash', '-c', command];
-  // spawn argv with your process runner of choice
-}
-```
+## Support
 
-公开 API 有意保持精简：
+Linux x64/arm64 包包含静态 Landlock 可执行文件，以及分别用于 glibc/musl 的 `system.node` 文件。macOS x64/arm64 包仅包含 `system.node`。Landlock 还需要支持强制执行的 Linux 内核；Windows 使用 Harness 既有锁实现。[支持矩阵](docs/support-matrix.md) 指定构建者与验证负责人。
 
-- `launcherPath()`：当前宿主启动器的绝对路径（有意不检查是否存在；探测结果才是可用性信号）。
-- `probe(launcher?, { timeoutMs? })`：功能性强制执行探测，返回 `'full' | 'partial' | 'unusable'`。
-- `grantArgs({ readOnly?, readWrite? })`：启动器的授权 argv；未授予的一切都被拒绝。
-- `LAUNCHER_BIN` 和 `LAUNCHER_FAILURE_EXIT`（125）：约定常量。成功完成 exec 的子进程也可能返回 125，因此消费方必须同时看到致命诊断和该状态，才能将结果归因为启动器失败。
+## Development
 
-完整的二进制约定（argv 语法、退出码、报告行）锁定在 [docs/cli-contract.md](docs/cli-contract.md) 中。
+在本目录运行 `pnpm build:ts` 构建入口、`pnpm build:native` 构建当前宿主声明的原生产物、`pnpm build:test-oracle` 构建独立的 flock 系统调用 fixture。随后用 `pnpm test` 验证入口、锁、打包及可用的内核行为。Linux 完整构建需要 musl-gcc；macOS 使用 cc。根目录 `pnpm run build:native-system` 只构建源码测试所需的当前宿主 addon。
 
-## 支持范围
+[架构](docs/architecture.md)、[打包](docs/packaging.md)和[发布流程](docs/release.md)分别负责实现与发布细节。
 
-支持 linux-x64 和 linux-arm64，且内核已启用 Landlock（5.13+；ABI 级别决定强制执行为 `full` 还是 `partial`，详见 [docs/support-matrix.md](docs/support-matrix.md)）。其他平台有意不提供对应包：消费方会在这些平台上运行其他限制后端。
+### Dev Note
 
-## 开发
-
-```sh
-corepack enable
-pnpm install
-pnpm build:ts        # entry packages → lib/
-pnpm build:native    # this Linux architecture's binaries (apt-get install musl-tools)
-pnpm test
-```
-
-二进制文件被 git 忽略，并且按架构原生构建：本地只构建当前机器的版本，CI 各架构 runner 产出的构建则作为正式发布依据。发布流程详见 [docs/release.md](docs/release.md)。
+无。

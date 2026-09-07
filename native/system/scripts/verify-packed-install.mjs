@@ -4,15 +4,14 @@
  * exactly what a consumer install needs. `pnpm pack` already produced the
  * bytes `pnpm publish` would upload; this script checks the payload
  * (coverage, concrete dependency versions, NO lifecycle install scripts —
- * this family has no install fallback on purpose), unpacks the entry plus
+ * this family has no install fallback on purpose), installs the entry plus
  * THIS host's platform tarball into a throwaway consumer OUTSIDE the repo,
  * byte-pins the installed binary against the workspace build it was packed
  * from, and drives the INSTALLED entry under plain `node` — resolution,
  * probe, and a real confinement world-proof through the installed launcher.
  *
- * On non-Linux hosts (no platform package exists) it instead proves the
- * documented degradation: resolution falls back to a nonexistent path and
- * the probe reports `unusable`.
+ * On non-Linux hosts it proves that Landlock remains unavailable, while
+ * supported POSIX hosts independently exercise the flock binding.
  *
  * Usage: `node scripts/verify-packed-install.mjs [tarball-dir] [--current-platform-only]`.
  * The flag skips the all-platforms tarball-presence check for
@@ -56,7 +55,7 @@ function run(command, commandArgs, options = {}) {
   });
   if (result.error) throw result.error;
   if (result.status !== 0) {
-    process.exit(result.status ?? 1);
+    throw new Error(`${command} failed (status=${result.status}, signal=${result.signal})`);
   }
 }
 
@@ -98,19 +97,6 @@ function packageInstallDir(packageName) {
   return path.join(tempRoot, 'node_modules', ...packageName.split('/'));
 }
 
-function unpackTarball(manifest) {
-  const extractRoot = fs.mkdtempSync(path.join(tempRoot, 'extract-'));
-  run('tar', ['-xzf', tarballPath(manifest), '-C', extractRoot]);
-
-  const source = path.join(extractRoot, 'package');
-  const destination = packageInstallDir(manifest.name);
-  fs.rmSync(destination, { recursive: true, force: true });
-  fs.mkdirSync(path.dirname(destination), { recursive: true });
-  fs.renameSync(source, destination);
-  fs.rmSync(extractRoot, { recursive: true, force: true });
-  console.log(`Unpacked ${manifest.name} -> ${path.relative(tempRoot, destination)}`);
-}
-
 const manifests = packageDirs().map((dir) => ({ dir, manifest: readJson(path.join(root, dir, 'package.json')) }));
 const entryManifest = manifests.find(({ manifest }) => manifest.name === entryPackageName)?.manifest;
 if (!entryManifest) throw new Error(`missing source manifest for ${entryPackageName}`);
@@ -144,16 +130,16 @@ for (const { manifest } of expectedTarballs) {
 }
 
 // Throwaway ESM consumer, built from local tarballs only — no registry.
-const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'nalr-packed-install-'));
+const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'native-system-packed-'));
+try {
 fs.writeFileSync(
   path.join(tempRoot, 'package.json'),
-  `${JSON.stringify({ name: 'nalr-packed-install-check', version: '0.0.0', private: true, type: 'module' }, null, 2)}\n`,
+  `${JSON.stringify({ name: 'native-system-packed-check', version: '0.0.0', private: true, type: 'module', dependencies: Object.fromEntries([entryManifest, ...(currentPlatformEntry ? [currentPlatformEntry.manifest] : [])].map((manifest) => [manifest.name, `file:${tarballPath(manifest)}`])) }, null, 2)}\n`,
 );
 console.log(`Verifying packed install in ${tempRoot}`);
 
-unpackTarball(entryManifest);
+run('npm', ['install', '--offline', '--no-audit', '--no-fund', '--package-lock=false'], { cwd: tempRoot });
 if (currentPlatformEntry) {
-  unpackTarball(currentPlatformEntry.manifest);
 
   // Byte-pin: the installed binary must be the workspace build it was packed
   // from — any divergence means the tarball did not carry the built bytes.
@@ -181,6 +167,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { grantArgs, launcherPath, probe } from '@deepseek-ai/node-addon-system';
+import { tryLockExclusive } from '@deepseek-ai/node-addon-system/flock';
 
 const requireLandlock = process.env.NALR_REQUIRE_LANDLOCK === '1';
 const platformPackage = '@deepseek-ai/node-addon-system-' + process.platform + '-' + process.arch;
@@ -213,11 +200,35 @@ if (process.platform === 'linux') {
     console.log('confinement world-proof passed through the installed launcher');
   }
 } else {
-  assert.ok(!fs.existsSync(resolved), 'no platform package exists for this host — the fallback path must not exist');
+  assert.ok(!fs.existsSync(resolved), 'Landlock has no executable for this host');
   assert.equal(probe(resolved), 'unusable');
   console.log('non-linux host: fallback resolution and unusable probe verified');
+}
+
+if (process.platform === 'linux' || process.platform === 'darwin') {
+  const lockRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'native-system-flock-'));
+  const handles = [];
+  try {
+    const lock = path.join(lockRoot, 'lock');
+    const a = fs.openSync(lock, 'wx+', 0o600);
+    handles.push(a);
+    const b = fs.openSync(lock, 'r+');
+    handles.push(b);
+    await tryLockExclusive(a);
+    await assert.rejects(tryLockExclusive(b), { code: 'EAGAIN' });
+    fs.closeSync(a);
+    handles.splice(handles.indexOf(a), 1);
+    await tryLockExclusive(b);
+    console.log('installed Node-API flock: exclusion and close release verified');
+  } finally {
+    for (const fd of handles) fs.closeSync(fd);
+    fs.rmSync(lockRoot, { recursive: true, force: true });
+  }
 }
 `);
 run(process.execPath, [driver], { cwd: tempRoot });
 
 console.log('Packed install verification passed.');
+} finally {
+  fs.rmSync(tempRoot, { recursive: true, force: true });
+}

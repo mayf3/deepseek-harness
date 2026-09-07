@@ -2,7 +2,7 @@
   "name": "@deepseek-ai/node-addon-system",
   "version": "0.1.1",
   "type": "module",
-  "description": "Landlock self-restrict-then-exec launcher for sandboxing subprocesses on Linux: per-platform prebuilt static binaries plus the JS seam that resolves, probes, and speaks their CLI contract",
+  "description": "Prebuilt system primitives: a Linux Landlock launcher and asynchronous POSIX flock through stable Node-API",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/deepseek-harness/deepseek-harness.git",
@@ -15,13 +15,18 @@
       "types": "./lib/index.d.ts",
       "default": "./lib/index.js"
     },
+    "./flock": {
+      "types": "./lib/flock.d.ts",
+      "default": "./lib/flock.js"
+    },
     "./package.json": "./package.json"
   },
   "files": [
     "README.md",
     "lib/",
     "!lib/*.tsbuildinfo",
-    "src/main.c"
+    "src/main.c",
+    "src/flock.c"
   ],
   "scripts": {
     "build:js": "tsc -b",
@@ -35,6 +40,8 @@
     "access": "public"
   },
   "optionalDependencies": {
+    "@deepseek-ai/node-addon-system-darwin-arm64": "workspace:*",
+    "@deepseek-ai/node-addon-system-darwin-x64": "workspace:*",
     "@deepseek-ai/node-addon-system-linux-arm64": "workspace:*",
     "@deepseek-ai/node-addon-system-linux-x64": "workspace:*"
   }

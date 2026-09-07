@@ -4,7 +4,7 @@ Pre-1.0: treat this as a release checklist, not a stability policy.
 
 ## Versioning
 
-The launcher workspace root and its three public packages share one version. Run the bump helper from the repository root:
+The native workspace root and every platform/entry package share one version. Run the bump helper from the repository root:
 
 ```sh
 pnpm --dir native/system release:bump patch          # or minor / major / x.y.z
@@ -28,11 +28,14 @@ pnpm --dir native/system typecheck
 pnpm --dir native/system test:entry
 ```
 
-On a Linux host, also rehearse the pack path locally:
+On a supported Linux or macOS host, also rehearse the pack path locally:
 
 ```sh
 pnpm --dir native/system build:native
+pnpm --dir native/system build:test-oracle
 pnpm --dir native/system test:launcher
+pnpm --dir native/system test:flock
+pnpm --dir native/system test:packaging
 node native/system/scripts/pack-release.mjs native/system/.release/npm --current-platform-only
 node native/system/scripts/verify-packed-install.mjs native/system/.release/npm --current-platform-only
 ```
@@ -45,9 +48,9 @@ Use the main repository's `Node Addon System Release` workflow so every binary i
 2. Create and push the `node-addon-system-vX.Y.Z` tag matching the package versions.
 3. Run the same workflow from that tag with `publish=true`.
 
-The workflow publishes only from the final packed tarballs, in `publish-order.txt` order (platform packages before the entry that optionally depends on them). A current-platform rehearsal can still query npm for metadata about an incompatible optional platform package; that package cannot supply the host launcher, which comes from the matching local tarball. Publishing every platform package before the entry ensures a public entry version never points ahead of its platform packages. The workflow supports npm trusted publishing through GitHub OIDC; without it, provide an `NPM_TOKEN` secret in the `npm-publish` environment. Packages publish with `--access public`.
+The workflow publishes only from the final packed tarballs, in `publish-order.txt` order (platform packages before the entry that optionally depends on them). The current-platform rehearsal uses offline npm installation; the current entry and platform package come from local tarballs. Publishing every platform package before the entry ensures a public entry version never points ahead of its platform packages. The workflow supports npm trusted publishing through GitHub OIDC; without it, provide an `NPM_TOKEN` secret in the `npm-publish` environment. Packages publish with `--access public`.
 
-The three scoped package names must be bootstrapped with an `@deepseek-ai` organization token through the `NPM_TOKEN` fallback: npm [requires a package to exist before a trusted publisher can be configured](https://docs.npmjs.com/cli/v11/commands/npm-trust/). After the first release creates all three packages, configure each package to trust `node-addon-system-release.yml` in this repository with the `npm-publish` environment, then remove the fallback token when organization policy permits it.
+New scoped package names must be bootstrapped with an `@deepseek-ai` organization token through the `NPM_TOKEN` fallback: npm [requires a package to exist before a trusted publisher can be configured](https://docs.npmjs.com/cli/v11/commands/npm-trust/). After the first release creates the packages, configure each package to trust `node-addon-system-release.yml` in this repository with the `npm-publish` environment, then remove the fallback token when organization policy permits it.
 
 Manual local fallback (current platform's packages only) — always through `pack-release.mjs`, never `pnpm publish` directly (pnpm's pack path strips the launcher's executable bit; see [packaging.md](packaging.md)):
 

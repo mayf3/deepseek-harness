@@ -4,7 +4,7 @@
  * verify the result. The Release workflow's build legs upload one
  * `prebuild-<package>` artifact per platform package (its `bin/` payload);
  * this script copies each into `packages/<package>/bin/` and then checks
- * every declared binary for presence and ELF architecture.
+ * every declared binary for presence and native architecture.
  *
  * Usage: `node scripts/assemble-prebuilds.mjs <artifact-root>`.
  */
@@ -39,13 +39,16 @@ for (const artifactName of fs.readdirSync(artifactRoot)) {
   for (const file of fs.readdirSync(artifactDir)) {
     const source = path.join(artifactDir, file);
     const destination = path.join(root, 'packages', name, 'bin', file);
-    fs.copyFileSync(source, destination);
-    fs.chmodSync(destination, 0o755);
+    fs.cpSync(source, destination, { recursive: true, preserveTimestamps: true });
     console.log(`Copied ${path.relative(root, source)} -> ${path.relative(root, destination)}`);
   }
 }
 
 for (const dir of platformDirs()) {
+  const metadata = JSON.parse(fs.readFileSync(path.join(root, dir, 'prebuilds.json'), 'utf8'));
+  for (const binary of metadata.binaries) {
+    if (binary.kind === 'static-musl') fs.chmodSync(path.join(root, dir, binary.path), 0o755);
+  }
   const { name, count } = verifyPlatformBinaries(path.join(root, dir));
   console.log(`Verified ${name}: ${count} binaries`);
 }

@@ -1,18 +1,15 @@
+---
+description: "预编译 Landlock 启动器与异步 POSIX flock 的 JavaScript 入口。"
+kind: "package-library"
+---
 # @deepseek-ai/node-addon-system
 
 [English](README.md) | 中文
 
-用于在 Linux 上限制子进程的 Landlock「先限制自身、再执行」启动器：此入口包定位对应平台的预构建二进制文件，运行功能性强制执行探测，并构建其授权 argv。消费方无需自行拼写启动器标志或解析启动器输出。
+根入口导出 Landlock 启动器路径、强制执行探测、授权参数和协议常量。独立的 `./flock` 入口导出 `tryLockExclusive(fd): Promise<void>`；导入任一入口都不会加载 `system.node`。
 
-```js
-import { grantArgs, launcherPath, probe } from '@deepseek-ai/node-addon-system';
+锁操作异步尝试 `LOCK_EX | LOCK_NB`。在完成前保持调用方拥有的描述符打开；竞争以 `EAGAIN`/`EWOULDBLOCK` 拒绝，其他系统调用失败也会拒绝，错误携带 code、正 errno 和 `syscall: 'flock'`。原生调用准备阶段的错误也会拒绝同一个 promise。关闭该打开文件描述的最后一个描述符即释放锁。绑定不打开、复制、关闭或显式解锁描述符。
 
-const launcher = launcherPath();
-if (probe(launcher) !== 'unusable') {
-  const argv = [launcher, ...grantArgs({ readOnly: ['/'], readWrite: ['/tmp/work'] }), '--', 'bash', '-c', command];
-}
-```
+可选操作系统/CPU 平台包携带二进制。Linux 包含 `bin/landlock-run` 和分别用于两种 libc 的 `bin/glibc/system.node` / `bin/musl/system.node`；macOS 包含 `bin/system.node`。flock 绑定缺失或无法加载时拒绝获取，不在安装时编译。Landlock 仍是遵循既有失败关闭协议的独立可执行文件；不支持的内核或平台探测为不可用。
 
-启动器在自身上安装 Landlock 规则集，再 `exec` 被包装的命令；该规则集会跨 `execve` 继承，因此整个进程树都在限制下运行。未授予的一切都被拒绝；启动器失败时以 `125` 退出且不运行命令：采用失败闭合策略，绝不在失败时放行。二进制约定锁定在仓库的 `docs/cli-contract.md` 中；C 源码作为 `src/main.c` 随该 tarball 分发，便于审计。
-
-平台包（由 `os`/`cpu` 选择的可选依赖，内部不含 JavaScript）：`@deepseek-ai/node-addon-system-linux-x64`、`@deepseek-ai/node-addon-system-linux-arm64`。在缺少对应包的宿主上，`launcherPath()` 返回一个固定但不存在的路径，`probe()` 报告 `'unusable'`；系统有意不提供安装时编译回退。
+两个 C 源文件随包分发以供审计。参见工作区[架构](../../docs/architecture.md)、[支持矩阵](../../docs/support-matrix.md)和 [CLI 约定](../../docs/cli-contract.md)。
