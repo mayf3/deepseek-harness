@@ -3,7 +3,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { ToolCallId } from '@deepseek-ai/dsh-llm'
-import { Session, SessionId } from '@deepseek-ai/dsh-session'
+import { Session, SESSION_FORMAT_VERSION, SessionId } from '@deepseek-ai/dsh-session'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import { bindScopeParent, createScope, scopeOf, scopeTarget } from '@deepseek-ai/dsh-scope'
 import { SettingsProvider } from '@deepseek-ai/dsh-settings'
@@ -424,7 +424,7 @@ describe('SubagentModelSelectionConfig', () => {
       await ctx.plugin(SubagentRuntime)
       const childId = SessionId('child-without-session-registry')
       const child = Session.create(childId, undefined, {
-        version: 0,
+        version: SESSION_FORMAT_VERSION,
         id: childId,
         createdAt: 1,
         isSeeded: false,
