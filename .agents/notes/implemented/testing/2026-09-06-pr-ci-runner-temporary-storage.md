@@ -24,15 +24,11 @@ The [ACP diagnostic scenario](../../../../snapshots/session/subagent-acp-diagnos
 
 The headless `session-sandbox-root` fixture declares `workspace.parent: outside-temp`, not a home-filesystem dependency. Its allocator uses a sibling of the canonical platform temp root where the parent is writable and avoids system temporary grants, otherwise home, and rejects a cwd already covered by automatic temporary write grants. On the failover runner this keeps the test on the data volume without making its write succeed through a temporary-directory exemption. The filesystem-sandbox containment tests use the same allocator for their workspace and denied sibling; they register cleanup immediately after successful acquisition. Atomic workspace allocation, recorded Session bytes, and the independent expected file remain unchanged.
 
-## Retry-exposed fixture synchronization
+## Live verification and browser fixture inputs
 
-The Inspector console integration test waits for a Client `Runtime.evaluate` round trip after enablement before issuing its separate fixture log command. Worker-side context announcements alone do not prove that the client has consumed its console-enable message. The installed-wheel live SDK test externally replaces the created file with a fresh host-only challenge before asking the model to verify it; the verification prompt does not reveal that value. Both turns must still contain model-requested tool calls, and the verifier compares the returned value and actual file bytes.
+The installed-wheel live SDK test externally replaces the created file with a fresh host-only challenge before asking the model to verify it; the verification prompt does not reveal that value. Both turns must contain model-requested tool calls, and the verifier compares the returned value and actual file bytes.
 
-The two minimal PowerShell snapshots explicitly exclude unrelated inherited tools and permission-preset initialization, and disable runtime-context injection. Their existing recorded Session generations remain unchanged; the one-shot header sidecar tracks current tool descriptions and its intended local executor.
-
-The persistent PowerShell test distinguishes the silence observation from command completion. It refreshes prompt evidence with empty submissions after `inferred_idle`, within the existing bound, and still requires exact `stdin_read` plus an independently written completion marker. A gated command proves that silence can occur before mutation; the mutation itself is never replayed.
-
-The shared browser fixture pins its recorded `Asia/Shanghai` timezone instead of inheriting the runner timezone; dedicated timezone scenarios retain their explicit overrides, and persisted user-message timezone remains asserted. The reference-composer fixture maps the known home-abbreviated workspace display to its existing cwd token and waits for the current exact suggestion set before selecting; neither host paths nor stale suggestions determine its result.
+The reference-composer fixture maps the known home-abbreviated workspace display to its existing cwd token and waits for the current exact suggestion set before selecting; neither host paths nor stale suggestions determine its result. The shared browser timezone, Inspector subscription synchronization, and PowerShell completion behavior follow the [existing platform-test decision](2026-09-07-pwsh-ci-observable-completion.md).
 
 ## Alternatives considered
 

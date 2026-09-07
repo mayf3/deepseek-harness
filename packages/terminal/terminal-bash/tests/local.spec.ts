@@ -8,7 +8,7 @@ import { Session, SessionId } from '@deepseek-ai/dsh-session'
 import AgentRegistry, { Inbox } from '@deepseek-ai/dsh-agent'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import TerminalSessionService from '@deepseek-ai/dsh-terminal'
-import type { TerminalSendOperation, TerminalSessionId } from '@deepseek-ai/dsh-terminal'
+import type { TerminalSendOperation } from '@deepseek-ai/dsh-terminal'
 import SandboxProvider from '@deepseek-ai/dsh-sandbox'
 import type { ConfinedArgv, SandboxPolicy } from '@deepseek-ai/dsh-sandbox'
 import SandboxPolicyService from '@deepseek-ai/dsh-sandbox-policy'
@@ -312,39 +312,13 @@ describe.skipIf(process.platform === 'win32')('terminal-bash real shell', () => 
   }, 35_000)
 })
 
-// Empty submissions request fresh prompt evidence without replaying the command.
-// A no-input poll can miss a prompt emitted between settled operations.
-async function waitForPwshPrompt(
-  ctx: Context, agent: Agent, sessionId: TerminalSessionId, operation: TerminalSendOperation,
-): Promise<void> {
-  const deadline = Date.now() + 8_000
-  let timer: NodeJS.Timeout | undefined
-  const wait = async (): Promise<void> => {
-    let result = await operation.done
-    while (result.waitReason === 'inferred_idle' && Date.now() < deadline) {
-      result = await ctx.terminals.startSend(agent, sessionId, { text: '', submit: true }).done
-    }
-    expect(result.waitReason).toBe('stdin_read')
-  }
-  try {
-    await Promise.race([
-      wait(),
-      new Promise<never>((_resolve, reject) => {
-        timer = setTimeout(() => { reject(new Error('pwsh did not reach its prompt')) }, 8_000)
-      }),
-    ])
-  } finally {
-    clearTimeout(timer)
-  }
-}
-
 const hasPwsh = spawnSync(
   resolvePwshPath(), ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', '$true'],
   { encoding: 'utf8' },
 ).status === 0
 
 describe.skipIf(!hasPwsh)('terminal-bash pwsh real shell', () => {
-  it.each([false, true])('bootstraps a persistent pwsh, persists state, and scrubs secrets (gated=%s)', async (gated) => {
+  it.each([false, true])('bootstraps a persistent pwsh, persists state, and scrubs secrets (hold command: %s)', async (holdCommand) => {
     const previous = process.env.DSH_TEST_SECRET
     process.env.DSH_TEST_SECRET = 'must-not-leak'
     try {
@@ -356,35 +330,33 @@ describe.skipIf(!hasPwsh)('terminal-bash pwsh real shell', () => {
       const created = await ctx.terminals.spawn(agent, { type: 'shell', name: 'main', cwd: root })
       expect(created.motd).toContain('dsh> ')
 
-      const release = join(root, 'release')
-      const completed = join(root, 'completed')
-      const gate = gated
-        ? `while (-not [IO.File]::Exists('${release.replaceAll("'", "''")}')) { [Threading.Thread]::Sleep(10) };`
+      const releaseFile = join(root, 'release-command')
+      // Hold the command across the silence settlement without relying on host load.
+      const barrier = holdCommand
+        ? `while (-not [IO.File]::Exists('${releaseFile.replaceAll("'", "''")}')) { [Threading.Thread]::Sleep(10) }; `
         : ''
-      const command = gate + '$env:KEEP = "ok"; Set-Location /; '
-        + `[IO.File]::WriteAllText('${completed.replaceAll("'", "''")}', 'done'); Write-Output ('STATE_' + 'READY')`
-      const first = ctx.terminals.startSend(agent, created.sessionId, { text: command, submit: true })
-      if (gated) {
-        // The command cannot complete before the test observes the silence tier.
-        expect((await first.done).waitReason).toBe('inferred_idle')
-        expect(existsSync(completed)).toBe(false)
-      }
-      const ready = waitForPwshPrompt(ctx, agent, created.sessionId, first)
-      if (gated) writeFileSync(release, '')
-      await ready
-      expect(readFileSync(completed, 'utf8')).toBe('done')
-      expect(ctx.terminals.read(agent, created.sessionId, { offset: 0, count: 40 }).text).toContain('STATE_READY')
-
-      const second = ctx.terminals.startSend(agent, created.sessionId, {
-        text: 'Write-Output "keep=$env:KEEP secret=$env:DSH_TEST_SECRET"',
+      const first = ctx.terminals.startSend(agent, created.sessionId, {
+        text: barrier + '$env:KEEP = "ok"; Set-Location /',
         submit: true,
       })
-      await waitForPwshPrompt(ctx, agent, created.sessionId, second)
-      const output = ctx.terminals.read(agent, created.sessionId, { offset: 0, count: 40 }).text
-      expect(output).toContain('keep=ok')
-      expect(output).toContain('secret=')
-      expect(output).not.toContain('must-not-leak')
+      expect(['stdin_read', 'inferred_idle']).toContain((await first.done).waitReason)
+      const expected = 'keep=ok cwd=/ secret=END'
+      const command = "Write-Output ('keep={0} cwd={1} secret={2}END' -f $env:KEEP, (Get-Location).Path, $env:DSH_TEST_SECRET)"
+      expect(command).not.toContain(expected)
+      const second = ctx.terminals.startSend(agent, created.sessionId, { text: command, submit: true })
+      const result = await second.done
+      expect(['stdin_read', 'inferred_idle']).toContain(result.waitReason)
+      if (holdCommand) {
+        expect(result.waitReason).toBe('inferred_idle')
+        expect(result.viewport).not.toContain(expected)
+        writeFileSync(releaseFile, '')
+      }
 
+      // A silence-settled send stops collecting output; scrollback still receives
+      // the command's later output. Only the child can produce this formatted token.
+      const read = () => ctx.terminals.read(agent, created.sessionId, { offset: 0, count: 100 }).text
+      await expect.poll(read, { timeout: 8_000 }).toContain(expected)
+      expect(read()).not.toContain('must-not-leak')
       expect(await ctx.terminals.kill(agent, created.sessionId)).toBe(true)
       expect(ctx.terminals.list(agent)).toEqual([])
     } finally {

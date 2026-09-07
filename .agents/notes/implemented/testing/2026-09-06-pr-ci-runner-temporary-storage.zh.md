@@ -24,15 +24,11 @@ Linux 故障切换池在同一台虚拟机上运行多个 runner 实例。PR 覆
 
 Headless 的 `session-sandbox-root` 夹具声明 `workspace.parent: outside-temp`，而不是依赖 home 所在文件系统。分配器在父目录可写且避开系统临时授权时选择规范化平台临时根目录的同级目录，否则使用 home，并拒绝已被自动临时写授权覆盖的 cwd。在故障切换 runner 上，这让测试留在数据卷中，同时不会让写入借助临时目录豁免而成功。文件系统沙箱的包含关系测试使用同一分配器创建 workspace 及被拒绝的同级目录，并在成功获取目录后立即注册清理。原子 workspace 分配、录制的 Session 字节以及独立预期文件保持不变。
 
-## 重跑暴露的夹具同步问题
+## 在线验证与浏览器夹具输入
 
-Inspector console 集成测试在启用后等待 Client 的 `Runtime.evaluate` 往返，再发出独立的夹具日志命令。仅有 Worker 侧的 context 公告不能证明客户端已消费 console-enable 消息。已安装 wheel 的在线 SDK 测试在要求模型验证前，由外部将创建的文件替换为新的、仅主机知道的挑战值；验证提示不暴露该值。两个 turn 仍必须包含模型请求的工具调用，验证器同时比较返回值及真实文件字节。
+已安装 wheel 的在线 SDK 测试在要求模型验证前，由外部将创建的文件替换为新的、仅主机知道的挑战值；验证提示不暴露该值。两个 turn 必须包含模型请求的工具调用，验证器同时比较返回值及真实文件字节。
 
-两个最小 PowerShell 快照显式排除无关的继承工具和 permission-preset 初始化，并禁用 runtime-context 注入。其既有录制 Session generation 保持不变；一次性执行的 header sidecar 跟随当前工具描述及预期的本地 executor。
-
-持久化 PowerShell 测试将静默观察与命令完成区分开。在 `inferred_idle` 后，它在既有时间界限内通过空提交刷新提示符证据，仍要求精确的 `stdin_read` 以及独立写入的完成标记。带阻塞标记的命令证明静默可能先于修改完成；修改命令本身绝不重放。
-
-共享浏览器夹具固定录制时的 `Asia/Shanghai` 时区，而不继承 runner 时区；专用时区场景保留显式覆盖，持久化用户消息的时区断言保持不变。Reference-composer 夹具将已知的 home 缩写 workspace 显示映射到既有 cwd token，并在选择前等待当前精确建议集；主机路径或过时建议都不决定测试结果。
+Reference-composer 夹具将已知的 home 缩写 workspace 显示映射到既有 cwd token，并在选择前等待当前精确建议集；主机路径或过时建议都不决定测试结果。共享浏览器时区、Inspector 订阅同步及 PowerShell 完成行为遵循[既有平台测试决策](2026-09-07-pwsh-ci-observable-completion.zh.md)。
 
 ## 考虑过的替代方案
 
