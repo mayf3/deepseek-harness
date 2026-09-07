@@ -11,6 +11,7 @@ import json
 import os
 import queue
 import re
+import secrets
 import shutil
 import subprocess
 import sys
@@ -904,12 +905,9 @@ def smoke_sdk_live() -> None:
         session_id = "installed-wheel-live-api"
         shell_tool = "pwsh" if IS_WINDOWS else "bash"
         create_prompt = (
-            f"Use the {shell_tool} tool to create the file at the absolute path below with exactly one line "
-            f"containing {LIVE_API_SENTINEL}. Then reply with exactly {LIVE_API_SENTINEL}.\n{marker}"
-        )
-        verify_prompt = (
-            "Use a tool to read the file created in the previous turn. "
-            f"If its only line is {LIVE_API_SENTINEL}, reply with exactly {LIVE_API_SENTINEL}."
+            f"Use the {shell_tool} tool to create the file at the absolute path below with exact UTF-8 "
+            f"content {LIVE_API_SENTINEL}, with no newline or byte-order mark. "
+            f"Then reply with exactly {LIVE_API_SENTINEL}.\n{marker}"
         )
         with DeepSeekHarness(
             provider="deepseek-official",
@@ -925,33 +923,55 @@ def smoke_sdk_live() -> None:
             request_timeout_seconds=180,
         ) as harness:
             created = harness.run(create_prompt, session_id=session_id)
-            verified = harness.run(verify_prompt, session_id=session_id)
+            assert_live_turn("create", created)
+            if not marker.is_file():
+                raise AssertionError(f"create turn did not create {marker}")
+            if marker.read_bytes() != LIVE_API_SENTINEL.encode("utf-8"):
+                raise AssertionError(f"create turn wrote unexpected bytes to {marker}")
 
-        for label, result in (("create", created), ("verify", verified)):
-            if result.finish_reason != "completed":
-                event_types = [event.get("type") for event in result.events]
-                turn_end_data = next(
-                    (event.get("data") for event in reversed(result.events) if event.get("type") == "turn/end"),
-                    None,
+            # The challenge is absent from the prior turn and the verification prompt.
+            challenge = secrets.token_hex(32).encode("ascii")
+            marker.write_bytes(challenge)
+            with tempfile.TemporaryDirectory(prefix="receipt-", dir=root) as receipt_directory:
+                receipt = Path(receipt_directory) / "receipt.txt"
+                verify_prompt = (
+                    "The file created in the previous turn has changed externally. "
+                    "Use a tool to read that same file and copy its exact current content to the "
+                    "new receipt path below, without changing the source file. "
+                    "Preserve every byte; do not add a newline or byte-order mark. "
+                    f"Then reply with exactly {LIVE_API_SENTINEL}.\n{receipt}"
                 )
-                turn_end = safe_turn_end(turn_end_data)
-                raise AssertionError(
-                    f"{label} turn ended with {result.finish_reason!r}; "
-                    f"final={result.final_response!r}; turn_end={turn_end!r}; events={event_types}"
-                )
-            if not any(event.get("type") == "tool/call" for event in result.events):
-                raise AssertionError(
-                    f"{label} turn made no model-requested tool call; "
-                    f"final={result.final_response!r}"
-                )
-            if result.final_response.strip() != LIVE_API_SENTINEL:
-                raise AssertionError(f"{label} turn returned {result.final_response!r}")
-        if not marker.is_file():
-            raise AssertionError(f"real-model tool turn did not create {marker}")
-        if marker.read_text(encoding="utf-8").splitlines() != [LIVE_API_SENTINEL]:
-            raise AssertionError(f"real-model tool turn wrote unexpected text to {marker}")
+                verified = harness.run(verify_prompt, session_id=session_id)
+                assert_live_turn("verify", verified)
+                if not receipt.is_file():
+                    raise AssertionError(f"verify turn did not create receipt {receipt}")
+                if receipt.read_bytes() != challenge:
+                    raise AssertionError(f"verify turn wrote unexpected bytes to receipt {receipt}")
+                if not marker.is_file() or marker.read_bytes() != challenge:
+                    raise AssertionError(f"verify turn changed source file {marker}")
         assert_zstd_session_log(sessions)
 
+
+def assert_live_turn(label: str, result: RunResult) -> None:
+    """Require completed model tool use and the exact smoke answer for each live turn."""
+    if result.finish_reason != "completed":
+        event_types = [event.get("type") for event in result.events]
+        turn_end_data = next(
+            (event.get("data") for event in reversed(result.events) if event.get("type") == "turn/end"),
+            None,
+        )
+        turn_end = safe_turn_end(turn_end_data)
+        raise AssertionError(
+            f"{label} turn ended with {result.finish_reason!r}; "
+            f"final={result.final_response!r}; turn_end={turn_end!r}; events={event_types}"
+        )
+    if not any(event.get("type") == "tool/call" for event in result.events):
+        raise AssertionError(
+            f"{label} turn made no model-requested tool call; "
+            f"final={result.final_response!r}"
+        )
+    if result.final_response.strip() != LIVE_API_SENTINEL:
+        raise AssertionError(f"{label} turn returned {result.final_response!r}")
 
 def safe_turn_end(value: object) -> object:
     """Project a live-provider failure without retaining credential-bearing text."""
