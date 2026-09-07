@@ -253,6 +253,7 @@ export const LINK_MAP: Readonly<Record<string, string>> = {
   ContentBlock: 'llm-streaming.md',
   CreateAgentOptions: 'core.md',
   GenerateOptions: 'llm-streaming.md',
+  Inbox: 'core.md',
   InboxItem: 'core.md',
   InboxPlacement: 'core.md',
   InspectorJsonValue: 'extensions.md',
@@ -670,6 +671,9 @@ export const FOUNDATION_TYPE_NAMES: ReadonlySet<string> = new Set([
   'Promise',
   'Record',
   'Readonly',
+  'ReadonlyMap',
+  'Request',
+  'Response',
   'Uint8Array',
 ])
 
