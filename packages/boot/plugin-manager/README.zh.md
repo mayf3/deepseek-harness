@@ -94,7 +94,12 @@ Loader 的事务性更新不会碰未改变的行，因此一条失败的隔离�
 
 | 文件 | 职责 |
 |---|---|
-| [`src/index.ts`](src/index.ts) | `PluginInstaller`（pnpm 运行、探测、装后检查）与 `PluginManager`（已启动 profile 上的每项操作、互斥与视图折叠） |
+| [`src/index.ts`](src/index.ts) | 包 API：类、选项、类型与失败码的 re-export |
+| [`src/installer.ts`](src/installer.ts) | `PluginInstaller`：流式输出的 pnpm 运行、探针记录缓存与装后检查 |
+| [`src/manager.ts`](src/manager.ts) | `PluginManager`：已启动 profile 上的每项操作、一次一个的互斥、用户层编辑与依赖查询 |
+| [`src/view.ts`](src/view.ts) | 视图折叠：把 manifest、探针与在线树的行折成一份 `PluginPackageView`，以及行归属遍历 |
+| [`src/modules.ts`](src/modules.ts) | 声明的 `dsh.plugins` 模块：行命名、派生行 id 及其 wire 视图 |
+| [`src/helpers.ts`](src/helpers.ts) | 共享词汇：诊断前缀、工具边界、spawn 测试缝与 manifest 读取器 |
 | [`src/types.ts`](src/types.ts) | 载荷、`plugins/changed` 与 `plugins/install-log` 事件，以及 `plugins/*` 失败码及其 details |
 | [`src/errors.ts`](src/errors.ts) | `PluginOperationError` 与按码区分的失败联合 |
 | — | 不发布运行时不变量伴随件；每份视图都在每次调用时从 manifest、探针缓存与 Loader 持有的状态折叠而来。 |

@@ -94,7 +94,12 @@ The manager reads the Loader tree, the reflect store, and the `pluginFailures` r
 
 | File | Role |
 |---|---|
-| [`src/index.ts`](src/index.ts) | `PluginInstaller` (pnpm runs, probing, post-install checks) and `PluginManager` (every operation over the booted profile, the mutex, and the view fold) |
+| [`src/index.ts`](src/index.ts) | The package API: re-exports of the classes, options, types, and failure codes |
+| [`src/installer.ts`](src/installer.ts) | `PluginInstaller`: pnpm runs with streamed output, the probe record cache, and the post-install checks |
+| [`src/manager.ts`](src/manager.ts) | `PluginManager`: every operation over the booted profile, the one-at-a-time mutex, user-layer edits, and dependents |
+| [`src/view.ts`](src/view.ts) | The view fold: manifest, probe, and live-tree rows into one `PluginPackageView`, and the row-ownership walk |
+| [`src/modules.ts`](src/modules.ts) | Declared `dsh.plugins` modules: row naming, derived row ids, and their wire view |
+| [`src/helpers.ts`](src/helpers.ts) | Shared vocabulary: the diagnostic prefix, tooling bounds, the spawn seam, and the manifest readers |
 | [`src/types.ts`](src/types.ts) | Payloads, the `plugins/changed` and `plugins/install-log` events, and the `plugins/*` failure codes with their details |
 | [`src/errors.ts`](src/errors.ts) | `PluginOperationError` and the code-discriminated failure union |
 | — | No runtime invariant companion is published; every view is folded from the manifest, the probe cache, and Loader-owned state on each call. |
