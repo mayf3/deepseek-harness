@@ -1062,6 +1062,66 @@ Depends on: [`ModelModality`](../packages/llm/llm/src/index.ts) · [`RetryPolicy
 
 Source: [`packages/llm/llm-deepseek/src/index.ts:125`](../packages/llm/llm-deepseek/src/index.ts)
 
+<a id="deepseek-aidsh-llm-deepseek-messages"></a>
+
+## `@deepseek-ai/dsh-llm-deepseek-messages`
+
+Requires: `llm`
+
+```ts config-catalog
+/** Composition configuration and the `llm-deepseek-messages` settings section. */
+export interface Config {
+  /** Credential reference resolved per request; defaults to DEEPSEEK_API_KEY. */
+  apiKeyEnv?: string
+  /** Messages protocol root, without /v1/messages; defaults to DEEPSEEK_MESSAGES_BASE_URL, then https://api.deepseek.com/anthropic. */
+  baseURL?: string
+  /** Deployment policy; disabled permits only off. */
+  thinking?: 'enabled' | 'disabled'
+  /** Default effort; high unless thinking is disabled. */
+  reasoningEffort?: 'off' | 'low' | 'high' | 'max'
+  /** Default output cap, including thinking tokens; defaults to 256000. */
+  maxTokens?: number
+  /** Context capacity for models without an explicit entry; defaults to 1000000. */
+  defaultContextWindow?: number
+  /** Advisory catalog; omission advertises V4 Flash, Pro, and Flash Vision Exp. */
+  models?: CatalogModel[]
+  /** Maximum idle time while waiting on the provider; defaults to 300000 ms. */
+  streamIdleTimeoutMs?: number
+  /** Maximum aggregate base64 image bytes; defaults to 20 MiB. */
+  maxInlineRequestImageBytes?: number
+  /** Maximum retained image occurrences; defaults to 600. */
+  maxImagesPerRequest?: number
+  /** Oldest-image byte removal quantum; defaults to 10 MiB. */
+  inlineImageOffloadByteQuantum?: number
+  /** Oldest-image count removal quantum; defaults to 20. */
+  imageOffloadCountQuantum?: number
+  /** Provider retry policy executed by llm-retry. */
+  retryPolicy?: RetryPolicyConfig
+}
+
+/** One advisory model entry; unlisted models remain callable as text-only models. */
+export interface CatalogModel {
+  /** Model id sent unchanged to the provider. */
+  id: string
+  /** Display label; omission uses the model id. */
+  name?: string
+  /** Exact-model context capacity in tokens. */
+  contextWindow?: number
+  /** Exact-model default output cap. */
+  maxTokens?: number
+  /** Accepted input modalities; omission advertises text only. */
+  inputModalities?: ('text' | 'image')[]
+  /** Total-pixel target used to normalize request images. */
+  imagePixelBudget?: number
+  /** Encoded-byte target used to normalize each request image. */
+  imageMaxBytes?: number
+}
+```
+
+Depends on: [`RetryPolicyConfig`](../packages/llm/llm/src/index.ts)
+
+Source: [`packages/llm/llm-deepseek-messages/src/config.ts:29`](../packages/llm/llm-deepseek-messages/src/config.ts)
+
 <a id="deepseek-aidsh-llm-pi-ai"></a>
 
 ## `@deepseek-ai/dsh-llm-pi-ai`

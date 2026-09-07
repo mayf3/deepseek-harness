@@ -1,0 +1,33 @@
+# Agent Note: DeepSeek through the Anthropic Messages protocol
+
+Status: implemented
+
+English | [中文](2026-09-07-deepseek-messages-adapter.zh.md)
+
+## Problem
+
+Deployments expose DeepSeek through Anthropic Messages gateways as well as chat-completions. Messages represents thinking, signatures, tool calls, tool results, and cumulative usage differently. Translating only the endpoint or flattening assistant history loses information needed by subsequent tool turns.
+
+## Decision
+
+The [Messages adapter](../../../../packages/llm/llm-deepseek-messages/README.md) owns a separate provider route and configuration namespace. It sends one HTTP request per attempt, delegates SSE framing to `eventsource-parser`, and translates content-block events into the existing LLM stream protocol. The [twin-adapter decision](../architecture/2026-06-13-twin-llm-adapters.md) continues to govern the direct-fetch and library-backed implementations; Messages adds a direct protocol implementation without changing the agent loop.
+
+The adapter follows the [DeepSeek compatibility documentation](https://api-docs.deepseek.com/zh-cn/guides/anthropic_api) and [Anthropic streaming protocol](https://platform.claude.com/docs/en/build-with-claude/streaming). The pi-ai Anthropic implementation informed the handling of adjacent user messages, cumulative usage, fragmented tool arguments, and optional thinking signatures. DeepSeek effort uses `output_config.effort`; an Anthropic thinking token budget does not control DeepSeek effort.
+
+Assistant blocks remain the durable model-visible content. A versioned `ReplayEnvelope` stores only the model identity, aligned block kinds, and signatures absent from those blocks. Same-model continuation restores signatures verbatim, including empty signatures; foreign history carries no invented signature. This keeps provider replay data opaque to the loop while preserving it through Session persistence and block pruning.
+
+Image requests use bounded inline base64 versions from the attachment service. Shared attachment offload and DeepSeek token measurement keep request and measurement policy consistent. Files uploads remain outside this adapter because their endpoints and cache ownership differ from chat-completions; adding them requires a Messages-specific lifetime and error policy.
+
+## Alternatives considered
+
+**Add a protocol switch to `llm-deepseek`.** This couples two serializers, endpoint roots, and replay formats under one route. Separate registration allows deployments to select the protocol explicitly and mount both adapters.
+
+**Delegate the new route to pi-ai or the Anthropic SDK.** Both provide maintained protocol implementations, but the requested direct adapter needs DeepSeek-specific configuration, attachment policy, credential resolution, and retry ownership. A small stream translator with a maintained SSE parser keeps these responsibilities explicit; the library-backed adapter remains available independently.
+
+**Persist complete native responses or flatten thinking into text.** Full responses duplicate logged content and complicate truncation alignment. Flattening changes the next model input. Minimal aligned replay metadata preserves the missing protocol information without a new Session format.
+
+## Consequences
+
+The package owns wire validation, stop-reason mapping, cancellation, and error classification, so protocol changes require adapter maintenance. Unsupported content and incomplete streams fail explicitly. The existing retry consumer owns retries; the existing assembler drops incomplete tool calls at the output limit. Default compositions retain their selected provider.
+
+Verification covers wire fixtures, real Loader composition, per-file unit coverage, a [recorded Session replay](../../../../snapshots/session/deepseek-messages-replay/snapshot.yml), and credential-gated text, thinking, tool continuation, image, and cancellation requests. Live gateway checks establish compatibility with the configured gateway; they do not establish compatibility with every Anthropic proxy.

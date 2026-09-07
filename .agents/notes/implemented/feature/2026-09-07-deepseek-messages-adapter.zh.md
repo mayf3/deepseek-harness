@@ -1,0 +1,33 @@
+# Agent Note: 通过 Anthropic Messages 协议调用 DeepSeek
+
+Status: implemented
+
+[English](2026-09-07-deepseek-messages-adapter.md) | 中文
+
+## 问题
+
+部署可以通过 Anthropic Messages 网关或 chat-completions 调用 DeepSeek。Messages 对思考、签名、工具调用、工具结果和累计用量的表示不同。仅替换端点或压平助手历史会丢失后续工具轮次需要的信息。
+
+## 决策
+
+[Messages 适配器](../../../../packages/llm/llm-deepseek-messages/README.zh.md) 拥有独立的提供者路由和配置命名空间。每次尝试发送一个 HTTP 请求，将 SSE 分帧委托给 `eventsource-parser`，并把内容块事件转换为现有 LLM 流协议。[双适配器决策](../architecture/2026-06-13-twin-llm-adapters.zh.md) 继续约束直接 fetch 和库实现；Messages 增加直接协议实现，无需修改代理循环。
+
+适配器遵循 [DeepSeek 兼容文档](https://api-docs.deepseek.com/zh-cn/guides/anthropic_api) 和 [Anthropic 流协议](https://platform.claude.com/docs/en/build-with-claude/streaming)。pi-ai 的 Anthropic 实现为相邻用户消息、累计用量、工具参数分片和可选思考签名的处理提供参考。DeepSeek 通过 `output_config.effort` 设置思考强度；Anthropic 思考 token 预算不控制 DeepSeek 思考强度。
+
+助手内容块保留持久化的模型可见内容。带版本的 `ReplayEnvelope` 仅保存模型标识、对齐的块类型以及内容块未包含的签名。同模型续接原样恢复签名，包括空签名；外部历史不生成虚构签名。提供者回放数据对循环保持不透明，同时能够随 Session 持久化和内容块裁剪保留。
+
+图片请求使用附件服务生成的、有预算限制的内联 base64 版本。共享附件卸载机制和 DeepSeek token 计量使请求与计量策略保持一致。此适配器不负责 Files 上传，因为其端点和缓存所有权与 chat-completions 不同；增加上传支持需要定义 Messages 专属的生命周期和错误策略。
+
+## 考虑过的替代方案
+
+**在 `llm-deepseek` 中增加协议开关。** 这会把两套序列化、端点根路径和回放格式绑定到同一路由。独立注册使部署能够明确选择协议并同时挂载两个适配器。
+
+**把新路由委托给 pi-ai 或 Anthropic SDK。** 两者均提供持续维护的协议实现，但所需的直接适配器需要 DeepSeek 专属配置、附件策略、凭证解析和重试所有权。小型流转换器配合持续维护的 SSE 解析器使这些职责保持明确；库实现适配器仍可独立使用。
+
+**持久化完整原生响应，或把思考压平为文本。** 完整响应重复已记录内容，并使截断对齐复杂化。压平会改变下一次模型输入。最小化的对齐回放元数据可以保留缺失的协议信息，无需新增 Session 格式。
+
+## 结果
+
+该包负责协议校验、停止原因映射、取消和错误分类，因此协议变化需要维护适配器。不支持的内容和不完整的流会明确报错。现有重试消费者负责重试；现有装配器在输出达到上限时丢弃未完成的工具调用。默认组合保留已选择的提供者。
+
+验证覆盖协议夹具、真实 Loader 组合、逐文件单元覆盖率、[已记录 Session 回放](../../../../snapshots/session/deepseek-messages-replay/snapshot.yml)，以及凭证控制的文本、思考、工具续接、图片和取消请求。真实网关检查证明与已配置网关的兼容性，不能证明与所有 Anthropic 代理兼容。
