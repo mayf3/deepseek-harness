@@ -16,7 +16,7 @@ DSH 缺少一方 Host 契约，让模型请求临时内联视觉内容、渐进�
 
 每个 `widget_guidelines` result 都会在 `show_widget` 可见时包含 Delivery，再把一个共享 Foundation 与所请求的类型模块组合起来。Foundation 拥有宿主原生构图、响应式流、主题使用与跨类型可访问性；类型模块分别拥有 diagram 结构、交互生命周期、chart 语义与 illustration 例外。
 
-挂载根权威后会同时公开 raw SVG 与 HTML fragment；源码前缀检测只选择已记录的 kind，不把 renderer 部署策略泄漏成模型词汇。本次变更不提供展示 Client，也不在 Web、headless 或 TUI 中激活该能力。Host 不提供可变状态上报、恢复或模型读取面。实现不新增 Visualizer session event、Agent loop 规则或 core schema。
+挂载根权威后会同时公开 raw SVG 与 HTML fragment；源码前缀检测记录 kind，而不在模型可见 schema 中暴露 renderer 部署策略。本次变更不提供展示 Client，也不在 Web、headless 或 TUI 中激活该能力。Host 不提供可变状态上报、恢复或模型读取面。实现不新增 Visualizer session event、Agent loop 规则或 core schema。
 
 ## 验证
 

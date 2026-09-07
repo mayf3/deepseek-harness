@@ -81,7 +81,7 @@ The routing section and two-tool surface remain prefix-stable while their defini
 
 #### What the model sees
 
-The mounted model surface exposes the generated [`widget_guidelines` and `show_widget` schemas](../../../docs/tool-catalog.md#deepseek-aidsh-tool-visualizer). `widget_guidelines` returns Delivery when `show_widget` is visible, a shared Foundation, and only the requested construction modules; the Foundation owns compact host-native composition, responsive flow, theme use, and cross-type accessibility. `show_widget` accepts raw SVG or an HTML fragment and reports the detected kind.
+The mounted model surface exposes the generated [`widget_guidelines` and `show_widget` schemas](../../../docs/tool-catalog.md#deepseek-aidsh-tool-visualizer). `widget_guidelines` returns Delivery when `show_widget` is visible to the calling Agent, a shared Foundation, and only the requested construction modules; the Foundation owns compact host-native composition, responsive flow, theme use, and cross-type accessibility. `show_widget` accepts raw SVG or an HTML fragment and reports the detected kind.
 
 #### Token effect
 

@@ -81,7 +81,7 @@ Use show_widget for a temporary inline visual that belongs to the reply: when as
 
 #### 模型看到什么
 
-挂载后的模型面会公开生成式 [`widget_guidelines` 与 `show_widget` schema](../../../docs/tool-catalog.zh.md#deepseek-aidsh-tool-visualizer)。`widget_guidelines` 在 `show_widget` 可见时返回 Delivery，并返回共享 Foundation 与所请求的构建模块；Foundation 拥有紧凑的宿主原生构图、响应式流、主题使用与跨类型可访问性。`show_widget` 接纳 raw SVG 或 HTML fragment，并返回检测出的 kind。
+挂载后的模型面会公开生成式 [`widget_guidelines` 与 `show_widget` schema](../../../docs/tool-catalog.zh.md#deepseek-aidsh-tool-visualizer)。`widget_guidelines` 在 `show_widget` 对调用 Agent 可见时返回 Delivery，并返回共享 Foundation 与所请求的构建模块；Foundation 拥有紧凑的宿主原生构图、响应式流、主题使用与跨类型可访问性。`show_widget` 接纳 raw SVG 或 HTML fragment，并返回检测出的 kind。
 
 #### Token 影响
 

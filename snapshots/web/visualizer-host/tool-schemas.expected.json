@@ -406,7 +406,7 @@
     },
     {
       "name": "show_widget",
-      "description": "Render one temporary inline graphic or interactive widget from conversation content or completed tool results. Source beginning with <svg uses SVG; anything else uses HTML. Pass one small, complete source in this call; the host validates and renders it afterward.",
+      "description": "Render one temporary inline graphic or interactive widget from conversation content or completed tool results. Source beginning with <svg uses SVG; anything else uses HTML. Pass one small, complete source in this call; validation occurs after submission.",
       "parameters": {
         "type": "object",
         "properties": {

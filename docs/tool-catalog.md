@@ -2085,7 +2085,7 @@ todo_write is session-owned state; UIs render the latest todo/write event as a c
 
 ### `show_widget`
 
-Render one temporary inline graphic or interactive widget from conversation content or completed tool results. Source beginning with <svg uses SVG; anything else uses HTML. Pass one small, complete source in this call; the host validates and renders it afterward.
+Render one temporary inline graphic or interactive widget from conversation content or completed tool results. Source beginning with <svg uses SVG; anything else uses HTML. Pass one small, complete source in this call; validation occurs after submission.
 
 ```json
 {

@@ -16,7 +16,7 @@ The package's `./model` function-plugin requires `systemPrompt` and `tools`, the
 
 Each `widget_guidelines` result includes Delivery when `show_widget` is visible, then combines one shared Foundation with only the requested type modules. The Foundation owns host-native composition, responsive flow, theme use, and cross-type accessibility; the type modules own diagram structure, interaction lifecycle, chart semantics, and illustration exceptions.
 
-Mounting the root authority exposes both raw SVG and HTML fragments; source-prefix detection selects the recorded kind without turning rendering policy into model-facing deployment vocabulary. This change supplies no presentation Client and does not activate the capability in Web, headless, or TUI. The Host exposes no mutable-state report, recovery, or model-read surface. No Visualizer session event, Agent-loop rule, or core schema is added.
+Mounting the root authority exposes both raw SVG and HTML fragments; source-prefix detection records the kind without exposing renderer deployment policy in the model-visible schema. This change supplies no presentation Client and does not activate the capability in Web, headless, or TUI. The Host exposes no mutable-state report, recovery, or model-read surface. No Visualizer session event, Agent-loop rule, or core schema is added.
 
 ## Verification
 

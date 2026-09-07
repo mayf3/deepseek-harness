@@ -7,6 +7,7 @@ import type { WidgetGuidelineModule, WidgetKind } from './types.ts'
 const MODULES = ['diagram', 'mockup', 'interactive', 'chart', 'illustration'] as const
 
 const WIDGET_CODE_FENCE = /^\s*(?:`{3,}|~{3,})/
+const HTML_DOCUMENT_WRAPPER = /^(?:<!--[\s\S]*?-->\s*)*<(?:!doctype|html|head|body)(?=[\s/>])/i
 
 function widgetKind(source: string): WidgetKind {
   const trimmed = source.trimStart()
@@ -33,7 +34,7 @@ function validateWidgetArgs(
     throw new Error('visualizer: widget_code must be raw source without Markdown code fences')
   }
   const trimmed = source.trimStart()
-  if (/^<(?:!doctype|html|head|body)(?:\s|>)/i.test(trimmed)) {
+  if (HTML_DOCUMENT_WRAPPER.test(trimmed)) {
     throw new Error('visualizer: widget_code must be a fragment without document wrappers')
   }
   return widgetKind(source)
@@ -75,7 +76,7 @@ export function registerVisualizerTools(
 
   ctx.tools.register(defineTool({
     name: 'show_widget',
-    description: 'Render one temporary inline graphic or interactive widget from conversation content or completed tool results. Source beginning with <svg uses SVG; anything else uses HTML. Pass one small, complete source in this call; the host validates and renders it afterward.',
+    description: 'Render one temporary inline graphic or interactive widget from conversation content or completed tool results. Source beginning with <svg uses SVG; anything else uses HTML. Pass one small, complete source in this call; validation occurs after submission.',
     parameters: {
       title: { type: 'string', required: true, description: 'Short user-facing title in the user\'s language.' },
       widget_code: { type: 'string', required: true, description: sourceDescription },
@@ -91,7 +92,7 @@ export function registerVisualizerTools(
       },
       render: (args, value) => [{
         type: 'text',
-        text: `Widget "${args.title}" accepted (${value.kind}) and displayed inline. It is final for this response; finish with brief supporting prose.`,
+        text: `Widget "${args.title}" accepted (${value.kind}). It is final for this response; finish with brief supporting prose.`,
       }],
       presentationMeta: (_args, value) => ({ kind: value.kind }),
     },

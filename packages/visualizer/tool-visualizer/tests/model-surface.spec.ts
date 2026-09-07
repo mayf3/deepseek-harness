@@ -168,13 +168,13 @@ describe('Visualizer model surface', () => {
       required: ['modules'],
     })
     expect(show.description)
-      .toBe('Render one temporary inline graphic or interactive widget from conversation content or completed tool results. Source beginning with <svg uses SVG; anything else uses HTML. Pass one small, complete source in this call; the host validates and renders it afterward.')
+      .toBe('Render one temporary inline graphic or interactive widget from conversation content or completed tool results. Source beginning with <svg uses SVG; anything else uses HTML. Pass one small, complete source in this call; validation occurs after submission.')
     const staticReceipt = show.output.render?.(
       { title: 'Static', widget_code: '<svg></svg>' },
       { accepted: true, kind: 'svg' },
     )[0]
     expect(staticReceipt?.type === 'text' ? staticReceipt.text : '')
-      .toBe('Widget "Static" accepted (svg) and displayed inline. It is final for this response; finish with brief supporting prose.')
+      .toBe('Widget "Static" accepted (svg). It is final for this response; finish with brief supporting prose.')
     expect((show.output.schema as { properties: { kind: { enum: string[] } } }).properties.kind.enum)
       .toEqual(['svg', 'html'])
     const sourceDescription = JSON.stringify(show.parameters)
@@ -463,6 +463,9 @@ describe('Visualizer model surface', () => {
     expect(await errorText(' ', '<svg></svg>')).toContain('title must be non-empty')
     expect(await errorText('汉'.repeat(86), '<svg></svg>')).toContain('title is 258 UTF-8 bytes')
     expect(await errorText('A', '<html></html>')).toContain('document wrappers')
+    expect(await errorText('A', '<html/>')).toContain('document wrappers')
+    expect(await errorText('A', '<body/>')).toContain('document wrappers')
+    expect(await errorText('A', '<!--note--><html lang="en">')).toContain('document wrappers')
     expect(await errorText('A', '```html\n<html></html>\n```')).toContain('raw source without Markdown code fences')
     expect(await errorText('A', '```html\n  \n```')).toContain('raw source without Markdown code fences')
     expect(await errorText('A', '```html5\n<button>A</button>\n```')).toContain('raw source without Markdown code fences')
@@ -489,7 +492,7 @@ describe('Visualizer model surface', () => {
     expect(show.output.render?.({ title: 'Demo', widget_code: '<button>A</button>' }, { accepted: true, kind: 'html' }))
       .toEqual([{
         type: 'text',
-        text: 'Widget "Demo" accepted (html) and displayed inline. It is final for this response; finish with brief supporting prose.',
+        text: 'Widget "Demo" accepted (html). It is final for this response; finish with brief supporting prose.',
       }])
     expect(show.output.presentationMeta?.({ title: 'Demo', widget_code: '<button>A</button>' }, { accepted: true, kind: 'html' }))
       .toEqual({ kind: 'html' })
