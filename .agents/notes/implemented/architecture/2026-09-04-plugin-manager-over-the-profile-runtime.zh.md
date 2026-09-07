@@ -10,7 +10,7 @@ Status: implemented
 
 ## 决定
 
-**一个服务，一份 manifest。** `dsh-host-plugin-manager` 提供 `pluginManager` 与 `plugins` Remote：`list`、`add`、`uninstall`、`enable`、`disable`、`retry`、`addRow`、`removeRow`、`setRowDisabled`、`dependents`。安装动词与 CLI 一样是 `add`：客户端的命名空间服务把 `install` 与 `remove` 留给自己的成员，挂载会拒绝同名方法。每个操作都重新读取 profile manifest，并通过 CLI 所用的同一组 app-boot 助手——`reconcileInstalledBundles`、`enableBundle`、`disableBundle`——写回，因此 CLI 与管理器不可能对这个文件有分歧：`dependencies` 说装了什么，`dsh.profile.bundles` 说启用了什么。profile runtime 按调用解析而非注入，于是 web 组合包的这一行在不经 profile launcher 启动的组合里也能启动，并回答 `plugins/unavailable`。
+**一个管理器，一个 Remote。** boot 组里与 `app-boot` 并列的 `dsh-plugin-manager` 拥有插件管理做什么：`PluginInstaller` 只需要磁盘上的 profile（pnpm 运行、探针、装后检查），`PluginManager` 在其上加上已启动树的每项操作，每次拒绝都是带 `plugins/*` 码的 `PluginOperationError`。`dsh-host-plugin-manager` 提供 `pluginManager` 与 `plugins` Remote——`list`、`add`、`uninstall`、`enable`、`disable`、`retry`、`addRow`、`removeRow`、`setRowDisabled`、`dependents`——作为转接层：一个 Remote 方法对应一个管理器方法，一个穷尽的 switch 把失败转成同码的 Remote 错误（`plugins/bad-request` 转成 Gateway 的 `gateway/bad-request`）。管理器把 profile runtime、preset roster 与运行中 agent 数当作按调用读取的读取器接入，roster 只以 `PresetLayers`（层路径、preset 列表、组合行）的形态接入，因此既不依赖 roster 也不依赖 agent 注册表；`dsh plugin add` 与 `remove` 跑同一个安装器，CLI 与 Web 宿主共用一套准入规则，终端里不必启动 profile。每个操作都重新读取 profile manifest，并通过 CLI 所用的同一组 app-boot 助手——`reconcileInstalledBundles`、`enableBundle`、`disableBundle`——写回，因此 CLI 与管理器不可能对这个文件有分歧：`dependencies` 说装了什么，`dsh.profile.bundles` 说启用了什么。profile runtime 按调用解析而非注入，于是 web 组合包的这一行在不经 profile launcher 启动的组合里也能启动，并回答 `plugins/unavailable`。
 
 **启用就是 Loader 的事务。** `enable` 把组合包放进层列表，在 `healProfilesModuleFallback` 链接好该组合包携带的包之后调用 `profileRuntime.recompose({ reloadBundles: true })`。被拒绝的重新组合——`boot` 阶段而行抛错的组合包——就是 Loader 回滚到原本运行的树；管理器恢复层列表并报告 `plugins/enable-failed`。`runtime` 阶段而行失败的组合包由受控组隔离并逐行报告。由于启动审计不会再跑一次，管理器在在线重新组合之后调用 `recordContainedStates`，而 `ContainedGroup.create` 现在把以 pending 状态完成创建的行记录下来而不是清除——重载会重新创建组里的每一行，等待中的行必须带着记录穿过这一过程。`retry` 是先停用再启用：Loader 的更新不碰未改变的行，只有离开再回来才能重启一条失败的隔离行。
 
@@ -30,10 +30,12 @@ Status: implemented
 
 **不探测就启用组合包。** 否决：正是探针把无法 import、或解析到自己那份 cordis 副本的包，在树被要求挂载之前变成带原因的 `not-enableable` 视图。
 
+**把操作留在宿主包里。** 评审后否决：`host/` 是 Web GUI 的那一半，`dsh plugin` 命令要复用安装路径就只能依赖一个 Web 宿主包，于是它一直保留着自己的、没有装后检查的 pnpm 转发器。放进 `app-boot` 一个文件的变体也被否决：每个 `dsh` 表面启动时都加载 `app-boot`，上千行的 pnpm 流式输出、探测与依赖检测应该与它并列，而不是塞进它。
+
 ## 后果
 
 运行中的 Web 宿主可以在 live profile 上不重启地安装、启用、停用、重试与移除三方组合包，并把它们的模块加进全局层或某个 preset。更新已加载的包仍需重启（Node 的模块缓存）；`dependents` 止于注入边；`engines.dsh` 只报告不强制；客户端 UI 在后续 PR 到来。启用、停用与行编辑不受运行中会话限制：它们重组的是树，那是 Loader 的事务，不碰 `node_modules`。
 
 ## 测试
 
-`packages/host/plugin-manager/tests/plugin-manager.spec.ts` 经 `boot()` 启动一个临时 profile，带上 launcher 提供的 profile runtime 与一个按真实 pnpm 的方式编辑 manifest 的假 pnpm：视图折叠（已安装、已启用、已探测、等待中、用户停用、一方包、手写 manifest），带与不带启用的安装及其失败（退出码、spawn 错误、超时、日志尾部、失败后恢复的 manifest），装后移除库包与行 id 被别的层占有的组合包而探针拒绝的包保留，一次只跑一个变更的拒绝与会话运行中的拒绝，live 与 `startup` profile 上的启用与停用，boot 阶段的回滚，不稳定隔离行的重试，全局层与 preset 层里的行及其冲突，按提供服务与按用户层引用的依赖检测，以及卸载。`packages/boot/app-boot/tests/contained-group.spec.ts` 钉住等待中的行记录跨重载保留。
+`packages/boot/plugin-manager/tests/plugin-manager.spec.ts` 经 `boot()` 启动一个临时 profile，带上 launcher 提供的 profile runtime 与一个按真实 pnpm 的方式编辑 manifest 的假 pnpm：视图折叠（已安装、已启用、已探测、等待中、用户停用、一方包、手写 manifest），带与不带启用的安装及其失败（退出码、spawn 错误、超时、日志尾部、失败后恢复的 manifest），装后移除库包与行 id 被别的层占有的组合包而探针拒绝的包保留，一次只跑一个变更的拒绝与会话运行中的拒绝，live 与 `startup` profile 上的启用与停用，boot 阶段的回滚，不稳定隔离行的重试，全局层与 preset 层里的行及其冲突，按提供服务与按用户层引用的依赖检测，以及卸载。`packages/host/plugin-manager/tests/plugin-manager.spec.ts` 钉住转接层：每个 Remote 方法及其参数、每个 `plugins/*` 码以失败为 cause 过线成 Remote 错误、通用拒绝过线成 `gateway/bad-request`，以及读向上下文的读取器。`apps/cli/tests/plugin.spec.ts` 用假 pnpm 与假探针钉住经安装器的 `dsh plugin add` 与 `remove`：新组合包被启用、普通库带原因被再移除，以及 pnpm 失败或缺失时的退出码。`packages/boot/app-boot/tests/contained-group.spec.ts` 钉住等待中的行记录跨重载保留。

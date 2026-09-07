@@ -36,7 +36,7 @@ switch (invocation.mode) {
   }
   case 'plugin': {
     const { runPlugin } = await import('./plugin.ts')
-    process.exit(runPlugin(invocation.profile, invocation.args))
+    process.exit(await runPlugin(invocation.profile, invocation.args))
     break
   }
   case 'dump-config': {

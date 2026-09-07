@@ -1,5 +1,5 @@
 ---
-description: "Plugin management over the booted profile: the pluginManager service and the plugins Remote that install, enable, disable, and retry bundles, edit user-layer rows, and report every package's state."
+description: "The plugins Remote of the Web host: pluginManager as a Typert service that relays each call to the shared plugin manager over the booted profile and maps its failures onto Remote error codes."
 kind: "package-reference"
 ---
 
@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-`dsh-host-plugin-manager` is the one place that changes what a running profile is composed of. The profile launcher composes the host tree from bundle layers and user patch files and, through `profileRuntime`, can recompose it while it runs; this service drives that: it runs pnpm in the profile directory to install or remove a package, moves a bundle in and out of the profile's layer list and recomposes the tree with the outcome, composes a bundle again when its rows failed at boot, adds and removes rows in the profile's global user layer or one agent preset's, and folds the manifest, the probe record, and the live tree into one view per package. The `plugins` Remote exposes each operation; every change is followed by a `plugins/changed` event and an install run streams pnpm's output as `plugins/install-log`. Client packages consume the Remote through the [`api-remotes`](../../api/remotes/README.md) assembly.
+`dsh-host-plugin-manager` is the Web host's face of plugin management. It mounts `pluginManager` as a Typert service and exposes the `plugins` Remote — `list`, `add`, `uninstall`, `enable`, `disable`, `retry`, `addRow`, `removeRow`, `setRowDisabled`, `dependents` — each method relaying to the [`dsh-plugin-manager`](../../boot/plugin-manager/README.md) `PluginManager` built over this context, and each `plugins/*` failure crossing the wire as a `RemoteError` of the same code. What the operations do, and the `plugins/changed` and `plugins/install-log` events that follow them, belong to that package; this one reads the profile runtime, the preset roster, and the agent registry off the context and hands them over. Client packages consume the Remote through the [`api-remotes`](../../api/remotes/README.md) assembly.
 
 ## Table of Contents
 
@@ -27,23 +27,13 @@ English | [中文](README.zh.md)
 
 Mount the row in a host composition beside the plugin inventory; the web bundle does. The row injects only the Loader and resolves the profile runtime per call, so a composition booted without the profile launcher still starts and answers every call with `plugins/unavailable`.
 
-### What a package view says
+### The Remote
 
-`plugins/list` returns one view per package the profile knows: its template and installed bundles and every other installed dependency. A view carries the manifest facts (name, version, title, description, `engines.dsh`), what the package is (`bundle`, `plugin`, or `library`), who supplied it (`builtin` or `external`), when its rows mount (`boot` or `runtime`), whether it is installed and enabled, and a folded `status`: `running`, `partial`, or `failed` for an enabled bundle by how many of its rows are active; `disabled` for an installed bundle outside the layer list; `not-enableable` when the probe refused it, with the reason; `restart-required` when the manifest and the live tree disagree on a profile that applies changes at its next start; `plain` for a library or plugin module, which is added to a composition rather than enabled. Rows come from the live tree while the bundle is composed — phase, disabled-by, and the recorded failure of an isolated row — and from the probe record otherwise, under the ids their patches declare. `addable` lists the modules the package declares in `dsh.plugins`, each with its default config and the probe's verdict, and for a plugin module its main export as `.` — the entry `addRow` accepts without a declaration.
+`plugins/list`, `plugins/add`, `plugins/uninstall`, `plugins/enable`, `plugins/disable`, `plugins/retry`, `plugins/addRow`, `plugins/removeRow`, `plugins/setRowDisabled`, and `plugins/dependents` carry the arguments and answers the manager's methods of the same names define; the [manager README](../../boot/plugin-manager/README.md#use-this-package) documents each. The `./types` export re-exports the manager's payload types unchanged, so a client imports one vocabulary.
 
-### Installing and enabling
+### Failure codes
 
-`plugins/add` takes a pnpm spec — a registry name, a `github:` or git URL, a tarball, an absolute path — runs `pnpm add` in the profile directory, records what pnpm wrote to `dependencies`, probes every new package in a child process, and leaves new bundles disabled unless `enable` was asked for. pnpm's output arrives as `plugins/install-log` chunks carrying the run's `jobId`; the last chunk carries the exit code. A non-zero exit, a spawn failure, or the timeout fails the call with `plugins/install-failed` and the tail of the log, and the profile manifest is restored to what it was before the run. A successful `pnpm add` is not yet an installed plugin: a new package that declares neither a bundle nor a plugin module, or a bundle whose row id a composed layer already owns, is removed again with `pnpm remove` and listed under `removed` with the reason; a package the probe refused stays installed and the view reports why it cannot be enabled. The manager runs one mutation at a time — a second call while one runs fails with `plugins/busy` naming the operation in flight — and refuses to change `node_modules` while a session is running, with `plugins/agents-running`.
-
-`plugins/enable` puts an installed bundle into the layer list and, on a live profile, recomposes the tree with it through the profile runtime. The recomposition is the Loader's own transaction: a bundle the tree rejects — a `boot`-stage bundle whose row throws — rolls back, the layer list is restored, and the call fails with `plugins/enable-failed` naming the reason, while the tree that was running keeps running. A `runtime`-stage bundle whose row fails is isolated instead: the call succeeds, the view reports the row's failure, and `plugins/retry` composes the bundle again from scratch. `plugins/disable` is the reverse; a template bundle, which is not a dependency, cannot be disabled. On a profile whose `patchReload` is `startup`, both write the manifest and report `effect: 'restart'`.
-
-`plugins/uninstall` disables the bundle when enabled, drops every user-layer row that names one of the package's modules, runs `pnpm remove`, and forgets the probe record. Like `add`, it waits for running sessions: `plugins/agents-running` while any agent is running.
-
-### Rows in user layers
-
-`plugins/addRow` inserts a row naming one of the package's modules — its main export for a `plugin` package, or a `dsh.plugins` entry — into the profile's global `cordis.patch.yml` (`target: { kind: 'global' }`) or an agent preset's user layer (`{ kind: 'preset', preset }`, through the roster's `overlayPathFor`). The row id derives from the package name and subpath unless given; a taken id fails with `plugins/row-conflict`. `plugins/removeRow` removes an inserted row and `plugins/setRowDisabled` writes or removes a `disabled: true` for any row — deny-only, so a bundle's own `!!js` gate is restored rather than overridden. The global layer is recomposed live on the spot; a preset's layer reaches its next standing generation.
-
-`plugins/dependents` says what disabling or removing a package would strand: services its rows provide that rows outside it inject, and user-layer rows naming its modules.
+A manager failure reaches the client as a `RemoteError` with the same `code` and `details`: `plugins/unavailable`, `plugins/not-installed`, `plugins/not-enableable`, `plugins/enable-failed`, `plugins/install-failed`, `plugins/row-conflict`, `plugins/busy`, and `plugins/agents-running`, each declared in the Remote failure map with the manager's details type. The manager's generic refusal, `plugins/bad-request`, crosses as the Gateway's `gateway/bad-request`. Any other error the manager throws propagates untouched, which the Gateway reports as `gateway/internal`.
 
 ### Configuration
 
@@ -62,25 +52,17 @@ Mount the row in a host composition beside the plugin inventory; the web bundle 
 <details>
 <summary>Implementation internals — click to expand</summary>
 
-### One manifest, two writers
+### A relay, not a second manager
 
-Every change reads the profile manifest afresh and writes it through the same app-boot helpers the `dsh plugin` command uses (`reconcileInstalledBundles`, `enableBundle`, `disableBundle`), so the CLI and the manager never disagree on the file. `dependencies` records what is installed; `dsh.profile.bundles` records what is enabled.
-
-### pnpm runs through `node:child_process`
-
-The subprocess seam scrubs secret-shaped variables and has no shell mode, and pnpm needs both the user's registry, proxy, and auth settings and, on Windows, the shell that resolves its `.cmd` shim. The manager therefore spawns pnpm the way the CLI does, with the parent environment and `shell` on Windows, and streams the child's output itself.
-
-### Retry is disable then enable
-
-The Loader's transactional update leaves an unchanged row alone, so a failed isolated row would not restart on a plain recomposition. Retry takes the bundle out of the layer list and puts it back: two recompositions, and the manifest ends as it began.
+The constructor builds one `PluginManager` with readers into the context — `ctx.get('profileRuntime')`, `ctx.get('agentPresets')`, and the running-agent count from `ctx.get('agents')` — so what is composed is read when a call arrives, not when the row mounts. Every Remote method is `relay(() => this.manager.x(...))`: a `PluginOperationError` becomes the Remote error of its code through one exhaustive switch, and anything else is rethrown. Tests hand a manager in through `PluginManagerInternals.manager`; the spawn and probe seams pass through to the manager.
 
 ### Source map
 
 | File | Role |
 |---|---|
-| [`src/index.ts`](src/index.ts) | `PluginManager`: the `pluginManager` service, the `plugins` Remote methods, the pnpm runner, and the view fold |
-| [`src/types.ts`](src/types.ts) | Wire payloads, the `plugins/changed` and `plugins/install-log` events, and the `plugins/*` failure codes |
-| — | No runtime invariant companion is published; every view is folded from the manifest, the probe cache, and Loader-owned state on each call. |
+| [`src/index.ts`](src/index.ts) | `PluginManagerRemote`: the `pluginManager` service, the ten `plugins` Remote methods, and `remoteErrorOf` |
+| [`src/types.ts`](src/types.ts) | The manager's types re-exported, and the `plugins/*` codes declared in the Remote failure map |
+| — | No runtime invariant companion is published; the row holds no state of its own. |
 
 Typert generates the Host and Client Remote artifacts exposed by `./typert` and `./remote`.
 
@@ -91,11 +73,10 @@ Typert generates the Host and Client Remote artifacts exposed by `./typert` and 
 <a id="further-exploration"></a>
 ## Further Exploration
 
-Read these when the manager's contract is not enough: the runtime it drives, the files it edits, and the surface that renders it.
+Read these when the relay's contract is not enough: the manager behind it and the surface that renders it.
 
-- [App boot](../../boot/app-boot/README.md) — the profile runtime, external bundle isolation, and the package probe.
-- [Patch files](../../util/patch-file/README.md) — how user-layer rows are written.
-- [Agent presets](../../preset/agent-presets/README.md) — the per-preset user layer a preset target writes.
+- [Plugin manager](../../boot/plugin-manager/README.md) — what every operation does, the events, and the failure codes.
+- [App boot](../../boot/app-boot/README.md) — the profile runtime the manager drives.
 - [Plugin inventory](../plugin-inventory/README.md) — the row-level read-only projection beside this service.
 
 -----
@@ -103,7 +84,7 @@ Read these when the manager's contract is not enough: the runtime it drives, the
 <a id="model-experience"></a>
 ## Model Experience
 
-None, as the host-side plugin manager registers nothing model-facing; the rows it composes own every registration they make.
+None, as the Remote registers nothing model-facing; the rows the manager composes own every registration they make.
 
 #### KV Cache effect
 
@@ -114,12 +95,9 @@ None; this package neither assembles nor sends a provider request.
 <a id="known-limitations-and-deferred-work"></a>
 
 
-These limits define what the manager will not do for a client. They are current package constraints, not a task backlog.
+These limits define what the Remote will not do for a client. They are current package constraints, not a task backlog.
 
-- **Updating a loaded package needs a restart** — Node caches ESM modules by URL and a hoisted install keeps the path; `pnpm update` through `add` rewrites the files but the running tree keeps the old modules until the process restarts.
-- **Dependents stop at injection** — a registry-type dependency (a tool, an LLM adapter) has no `inject` edge, so `dependents` cannot name a row that only reads what the package registered.
-- **A preset row is not composed live** — the manager writes the preset's layer; sessions created afterwards compose it, sessions already running keep their generation.
-- **No `engines.dsh` check yet** — the range is reported, not enforced against the running harness version.
+- **What the manager cannot do, the Remote cannot either** — the [manager's limits](../../boot/plugin-manager/README.md#known-limitations-and-deferred-work) apply unchanged: a loaded package updates at the next restart, dependents stop at injection, a preset row composes for later sessions, `engines.dsh` is reported and not enforced.
 
 <a id="dev-note"></a>
 ### Dev Note
