@@ -98,15 +98,22 @@ async function serveMediaReference(
       return new Response('file changed during validation', { status: 403 })
     }
     const total = after.size
-    const rangeHeader = request.headers.get('range')
-    const ranges = rangeHeader === null ? undefined : rangeParser(total, rangeHeader)
-    if (ranges === -1 || ranges === -2) {
-      // Unsatisfiable and malformed ranges answer the same way.
+    const rangeHeader = request.headers.get('range')?.trim() ?? null
+    // range-parser never validates the range unit, so only a `bytes` header is
+    // parsed here; malformed, unknown-unit, and multi-range headers are ignored
+    // per RFC 9110 and get the full 200 body below.
+    const ranges = rangeHeader !== null && rangeHeader.toLowerCase().startsWith('bytes=')
+      ? rangeParser(total, rangeHeader)
+      : undefined
+    if (ranges === -1) {
+      // Only an unsatisfiable range answers 416 with the total size. Malformed
+      // (-2) and unknown-unit or multi-range headers are ignored per RFC 9110
+      // and get the full 200 body below.
       const headers = { ...BASE_HEADERS, 'Content-Range': `bytes */${total}` }
       return new Response(null, { status: 416, headers })
     }
     // Only a single range is honored; a multi-range header gets the full body.
-    const slice = ranges?.length === 1 ? ranges[0] : undefined
+    const slice = Array.isArray(ranges) && ranges.length === 1 ? ranges[0] : undefined
     const { start, end } = slice ?? { start: 0, end: total - 1 }
     const headers: Record<string, string> = {
       ...BASE_HEADERS,

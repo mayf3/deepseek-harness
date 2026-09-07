@@ -162,14 +162,25 @@ describe('SessionMediaReferences /api/file', () => {
     expect(await responseBytes(clamped)).toEqual(PNG_BYTES.slice(6))
   })
 
-  it('answers unsatisfiable and malformed ranges with 416 and the total size', async () => {
+  it('answers unsatisfiable ranges with 416 and the total size', async () => {
     const route = await mount()
     const path = join(root, 'graph.png')
     await writeFile(path, PNG_BYTES)
-    for (const range of ['bytes=999-', 'bytes=abc']) {
+    const response = await route.call(path, { headers: { range: 'bytes=999-' } })
+    expect(response.status).toBe(416)
+    expect(response.headers.get('content-range')).toBe(`bytes */${PNG_BYTES.length}`)
+  })
+
+  it('ignores malformed and unknown-unit ranges for a full 200 body', async () => {
+    const route = await mount()
+    const path = join(root, 'graph.png')
+    await writeFile(path, PNG_BYTES)
+    for (const range of ['bytes=abc', 'items=0-0']) {
       const response = await route.call(path, { headers: { range } })
-      expect(response.status, range).toBe(416)
-      expect(response.headers.get('content-range')).toBe(`bytes */${PNG_BYTES.length}`)
+      expect(response.status, range).toBe(200)
+      expect(response.headers.get('content-range')).toBeNull()
+      expect(response.headers.get('content-length')).toBe(String(PNG_BYTES.length))
+      expect(await responseBytes(response), range).toEqual(PNG_BYTES)
     }
   })
 
@@ -250,14 +261,20 @@ describe('SessionMediaReferences /api/file', () => {
     expect(await response.text()).toBe('not a regular file')
   })
 
-  it('serves files when the registered workspace is the filesystem root', async () => {
-    const route = await mount(sep)
-    const path = join(root, 'graph.png')
-    await writeFile(path, PNG_BYTES)
-    const response = await route.call(path)
-    expect(response.status).toBe(200)
-    expect(await responseBytes(response)).toEqual(PNG_BYTES)
-  })
+  // A POSIX filesystem root is the separator itself; the Windows drive-root
+  // spelling cannot be produced portably, so the case stays POSIX-only. The
+  // containment code treats any separator-terminated root the same way.
+  it.skipIf(process.platform === 'win32')(
+    'serves files when the registered workspace is the filesystem root',
+    async () => {
+      const route = await mount(sep)
+      const path = join(root, 'graph.png')
+      await writeFile(path, PNG_BYTES)
+      const response = await route.call(path)
+      expect(response.status).toBe(200)
+      expect(await responseBytes(response)).toEqual(PNG_BYTES)
+    },
+  )
 
   it('follows symlinks for the containment check', async () => {
     const route = await mount()
