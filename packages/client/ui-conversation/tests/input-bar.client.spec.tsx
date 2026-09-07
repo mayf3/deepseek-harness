@@ -24,7 +24,7 @@ import type { SubmitOutcome } from '../src/client/contract/input.ts'
 import { SessionInputShell } from '../src/client/input/facade.ts'
 import { $replaceDetectSpanWithText, $selectDetectSpan } from '../src/client/input/editor/span-map.ts'
 import type {
-  ComposerAttachment, ComposerAttachmentsOwnerProps,
+  ComposerAttachment, ComposerAttachmentsOwnerProps, DraftFileUploads,
 } from '../src/client/contract/slots.ts'
 import type { DraftAttachmentId } from '../src/client/contract/input.ts'
 import { InputBar } from '../src/client/skeleton/InputBar.tsx'
@@ -89,6 +89,8 @@ interface BenchOptions {
   rightItems?: React.ReactNode
   footer?: React.ReactNode
   attachments?: readonly ComposerAttachment[]
+  /** Upload states served for file-kind drafts (absent = every file is ready). */
+  fileUploads?: DraftFileUploads
   addFiles?: (files: readonly File[]) => string | null
   commandMenuOpen?: boolean
   busyEnter?: 'queue' | 'steer'
@@ -180,7 +182,7 @@ function bench(over?: BenchOptions) {
     inputActions: shell.actions,
     keyboard: shell,
     addFiles: over?.addFiles ?? (() => null),
-    useFileUploads: bindSnapshotSelector(createSnapshotStore({})),
+    useFileUploads: bindSnapshotSelector(createSnapshotStore<DraftFileUploads>(over?.fileUploads ?? {})),
     retryFileUpload: undefined,
     removeAttachment,
     resolveDraftAttachments: ids => ids.flatMap((id) => {
@@ -217,7 +219,9 @@ function bench(over?: BenchOptions) {
   const steeringAvailable = over?.subagent === undefined || over.subagent.address.mode === 'continuable'
   const composerLocked = over?.disabled === true || over?.inert === true || over?.blocked !== undefined
     || (over?.subagent?.address.mode === 'continuable' && over.subagent.parentAvailable !== true)
-  const plainMessageDraft = sendableDraft && !(over?.draft?.trimStart().startsWith('/') ?? false)
+  const uploadsPending = (over?.attachments ?? []).some(attachment =>
+    attachment.kind === 'file' && over?.fileUploads?.[attachment.id]?.status !== 'ready')
+  const plainMessageDraft = sendableDraft && !uploadsPending && !(over?.draft?.trimStart().startsWith('/') ?? false)
   const primaryLabel = primaryStops
     ? '停止生成'
     : over?.running === true && steeringAvailable && !composerLocked && plainMessageDraft
@@ -780,6 +784,23 @@ describe('running and lock semantics', () => {
     const button = claimed.view.container.querySelector<HTMLButtonElement>('button[aria-label="发送消息"]')
     expect(button).not.toBeNull()
     expect(claimed.view.container.querySelector('button[aria-label="插话发送"]')).toBeNull()
+  })
+
+  it('running Send keeps the plain label while a file upload is still pending', () => {
+    const file = { kind: 'file' as const, id: 'file-1' as DraftAttachmentId, file: new File(['x'], 'note.txt', { type: 'text/plain' }) }
+    const pending = bench({
+      running: true, busyEnter: 'steer', draft: '带附件', attachments: [file],
+      fileUploads: { [file.id]: { status: 'uploading', loaded: 0 } },
+    })
+    expect(pending.button.getAttribute('aria-label')).toBe('发送消息')
+    expect(pending.button.disabled).toBe(true)
+
+    const ready = bench({
+      running: true, busyEnter: 'steer', draft: '带附件', attachments: [file],
+      fileUploads: { [file.id]: { status: 'ready', receiptId: 'receipt-1' as never, file: { kind: 'file' } as never } },
+    })
+    expect(ready.button.getAttribute('aria-label')).toBe('插话发送')
+    expect(ready.button.disabled).toBe(false)
   })
 
   it('idle Send keeps the plain label regardless of the busy-state preference', () => {
