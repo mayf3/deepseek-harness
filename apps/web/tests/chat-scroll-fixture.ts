@@ -199,6 +199,9 @@ export function createChatScrollFixture(options: ChatScrollFixtureOptions): Chat
     session.append('turn/start', {
       turn,
     })
+    session.append('step/start', { turn, step: 1 })
+    // Native V3 installs the protected system head before any user surface.
+    if (turn === 1) appendSystemPrompt(session, turn, 1)
     const user = session.append('user/message', createUserMessage({
       content: text(
         `${markers.user(turn)} Review the long-running conversation state for turn ${String(turn)}. `
@@ -214,8 +217,6 @@ export function createChatScrollFixture(options: ChatScrollFixtureOptions): Chat
       })
     }
 
-    session.append('step/start', { turn, step: 1 })
-    if (turn === 1) appendSystemPrompt(session, turn, 1)
     appendRequestHeader(session, turn, 1)
     if (turn % TOOL_INTERVAL === 0) {
       appendToolStep(session, markers, turn)
