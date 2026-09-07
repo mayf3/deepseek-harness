@@ -2,7 +2,7 @@
 /**
  * Release verification. Always: every published package carries one shared
  * version, and — when running from a tag or publishing — the
- * `landlock-run-vX.Y.Z` tag matches it. With `--prebuilds`: every platform package's declared
+ * `node-addon-system-vX.Y.Z` tag matches it. With `--prebuilds`: every platform package's declared
  * binaries exist with the right ELF architecture (run after
  * `assemble-prebuilds.mjs` or a local `build:native`).
  */
@@ -10,7 +10,7 @@
 import path from 'node:path';
 import { packageDirs, platformDirs, readJson, root, verifyPlatformBinaries } from './repo.mjs';
 
-const TAG_PREFIX = 'refs/tags/landlock-run-v';
+const TAG_PREFIX = 'refs/tags/node-addon-system-v';
 
 function verifyVersions() {
   const packages = packageDirs().map((dir) => ({
@@ -29,12 +29,12 @@ function verifyVersions() {
   const ref = process.env.GITHUB_REF || '';
   const publish = process.env.RELEASE_PUBLISH === 'true';
   if (publish && !ref.startsWith(TAG_PREFIX)) {
-    throw new Error('publishing requires running the workflow from a landlock-run-v* tag');
+    throw new Error('publishing requires running the workflow from a node-addon-system-v* tag');
   }
   if (ref.startsWith(TAG_PREFIX)) {
     const tagVersion = ref.slice(TAG_PREFIX.length);
     if (tagVersion !== version) {
-      throw new Error(`tag/version mismatch: tag landlock-run-v${tagVersion}, packages ${version}`);
+      throw new Error(`tag/version mismatch: tag node-addon-system-v${tagVersion}, packages ${version}`);
     }
   }
 

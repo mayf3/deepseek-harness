@@ -37,6 +37,6 @@ run('git', [
   'packages/*/package.json',
   '../../pnpm-lock.yaml',
 ]);
-run('git', ['commit', '-m', `release(landlock-run): ${version}`]);
+run('git', ['commit', '-m', `release(node-addon-system): ${version}`]);
 
-console.log(`Committed release ${version}. Create the tag manually: git tag landlock-run-v${version}`);
+console.log(`Committed release ${version}. Create the tag manually: git tag node-addon-system-v${version}`);

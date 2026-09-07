@@ -739,9 +739,9 @@ importers:
         specifier: ^1.49.0
         version: 1.61.1
 
-  native/landlock-run:
+  native/system:
     devDependencies:
-      '@deepseek-ai/node-addon-landlock-run':
+      '@deepseek-ai/node-addon-system':
         specifier: workspace:*
         version: link:packages/entry
       '@types/node':
@@ -754,18 +754,18 @@ importers:
         specifier: ^6.0.3
         version: 6.0.3
 
-  native/landlock-run/packages/entry:
+  native/system/packages/entry:
     optionalDependencies:
-      '@deepseek-ai/node-addon-landlock-run-linux-arm64':
+      '@deepseek-ai/node-addon-system-linux-arm64':
         specifier: workspace:*
         version: link:../linux-arm64
-      '@deepseek-ai/node-addon-landlock-run-linux-x64':
+      '@deepseek-ai/node-addon-system-linux-x64':
         specifier: workspace:*
         version: link:../linux-x64
 
-  native/landlock-run/packages/linux-arm64: {}
+  native/system/packages/linux-arm64: {}
 
-  native/landlock-run/packages/linux-x64: {}
+  native/system/packages/linux-x64: {}
 
   packages/acp/acp:
     dependencies:
@@ -5658,9 +5658,9 @@ importers:
       '@deepseek-ai/dsh-subprocess-local':
         specifier: workspace:^
         version: link:../../subprocess/subprocess-local
-      '@deepseek-ai/node-addon-landlock-run':
+      '@deepseek-ai/node-addon-system':
         specifier: workspace:^
-        version: link:../../../native/landlock-run/packages/entry
+        version: link:../../../native/system/packages/entry
       '@types/picomatch':
         specifier: ^3.0.2
         version: 3.0.2
@@ -7432,9 +7432,9 @@ importers:
       '@deepseek-ai/dsh-util-values':
         specifier: workspace:^
         version: link:../../util/values
-      '@deepseek-ai/node-addon-landlock-run':
+      '@deepseek-ai/node-addon-system':
         specifier: workspace:^
-        version: link:../../../native/landlock-run/packages/entry
+        version: link:../../../native/system/packages/entry
       '@deepseek-ai/schemastery':
         specifier: link:../../../vendor/schemastery
         version: link:../../../vendor/schemastery
@@ -8447,9 +8447,9 @@ importers:
       '@deepseek-ai/dsh-subprocess-local':
         specifier: workspace:^
         version: link:../../subprocess/subprocess-local
-      '@deepseek-ai/node-addon-landlock-run':
+      '@deepseek-ai/node-addon-system':
         specifier: workspace:^
-        version: link:../../../native/landlock-run/packages/entry
+        version: link:../../../native/system/packages/entry
 
   packages/shell/pwsh-local:
     dependencies:

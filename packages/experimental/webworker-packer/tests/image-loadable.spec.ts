@@ -35,7 +35,7 @@ const repoRoot = fileURLToPath(new URL('../../../../', import.meta.url))
 
 /** A leaf workspace package: real build output, no dependencies to drag in. */
 const SUBJECT = '@deepseek-ai/dsh-timeout'
-const LANDLOCK = '@deepseek-ai/node-addon-landlock-run'
+const LANDLOCK = '@deepseek-ai/node-addon-system'
 const PLUGIN_INVENTORY = '@deepseek-ai/dsh-plugin-package-inventory-deepseek'
 const WEB_SERVER = '@deepseek-ai/dsh-host-webserver'
 
@@ -86,7 +86,7 @@ const subjectBuilt = [
   'vendor/loader/lib/index.js',
   'packages/host/webserver/lib/index.js',
   'packages/llm/plugin-package-inventory-deepseek/lib/index.js',
-  'native/landlock-run/packages/entry/lib/index.js',
+  'native/system/packages/entry/lib/index.js',
   'packages/preset/agent-presets/lib/typert.host.js',
   'packages/preset/agent-presets/lib/typert.remote-client.js',
 ].every(path => existsSync(join(repoRoot, path)))

@@ -1,12 +1,12 @@
 {
-  "name": "@deepseek-ai/node-addon-landlock-run",
+  "name": "@deepseek-ai/node-addon-system",
   "version": "0.1.1",
   "type": "module",
   "description": "Landlock self-restrict-then-exec launcher for sandboxing subprocesses on Linux: per-platform prebuilt static binaries plus the JS seam that resolves, probes, and speaks their CLI contract",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/deepseek-harness/deepseek-harness.git",
-    "directory": "native/landlock-run/packages/entry"
+    "directory": "native/system/packages/entry"
   },
   "main": "lib/index.js",
   "types": "lib/index.d.ts",
@@ -35,7 +35,7 @@
     "access": "public"
   },
   "optionalDependencies": {
-    "@deepseek-ai/node-addon-landlock-run-linux-arm64": "workspace:*",
-    "@deepseek-ai/node-addon-landlock-run-linux-x64": "workspace:*"
+    "@deepseek-ai/node-addon-system-linux-arm64": "workspace:*",
+    "@deepseek-ai/node-addon-system-linux-x64": "workspace:*"
   }
 }
