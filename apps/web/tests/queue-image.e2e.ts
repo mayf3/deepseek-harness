@@ -100,12 +100,13 @@ describe('web e2e: queued image submission', () => {
     await input.fill(QUEUED_TEXT)
     await input.press('Enter')
 
-    // The queued row renders the durable thumbnail beside the text preview.
-    const dockThumb = page.locator('[data-queue-dock] img[alt="Queued message image"]')
+    // Admission replaces the local preview; the durable row loads its own thumbnail.
+    await page.getByRole('button', { name: 'Remove queued message', disabled: false }).waitFor({ timeout: 15_000 })
+    const dockThumb = page.locator('[data-queue-dock] li:not([data-submission-echo]) img[alt="Queued message image"]')
     await dockThumb.waitFor({ timeout: 15_000 })
     await expect.poll(() => dockThumb.getAttribute('src')).toMatch(/^blob:/)
+    await expect.poll(() => dockThumb.evaluate((image: HTMLImageElement) => image.complete && image.naturalWidth > 0)).toBe(true)
     await page.getByText(QUEUED_TEXT, { exact: true }).waitFor()
-    await page.getByRole('button', { name: 'Remove queued message', disabled: false }).waitFor({ timeout: 15_000 })
     const queuedSnapshot = await captureStableAria(page, '[class*="centerCol"]', scaffold.workspaceCwd)
     await compareOrRefreshGolden(QUEUED_EXPECTED, queuedSnapshot, MODE)
 
