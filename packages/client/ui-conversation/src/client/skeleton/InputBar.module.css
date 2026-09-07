@@ -196,11 +196,16 @@
 }
 
 /* figma 34:10434: #ADB2B8 light / #81858C dark — the caption pair exactly.
-   Insets mirror .input's pads (the other right 4px sits on .scroll). */
+   Insets mirror .input's pads (the other right 4px sits on .scroll). One
+   ellipsized line: a wrapped second line would clip against the docked
+   36px floor. */
 .placeholder {
   position: absolute;
   inset: 4px 8px auto 14px;
   color: var(--dsw-alias-label-caption);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
   pointer-events: none;
   user-select: none;
 }
@@ -218,6 +223,16 @@
    line + 4pt); the docked composer collapses to the content height. */
 .hero .input {
   min-height: 52px;
+}
+
+/* The hero's 52px floor fits two lines, so its placeholder clamps at two
+   instead of the docked single line. */
+.hero .placeholder {
+  white-space: normal;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
 }
 
 /* Toolbar: attach + Plan + Read-only on the left; model + send on the right
