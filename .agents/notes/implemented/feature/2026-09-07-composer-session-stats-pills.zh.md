@@ -13,7 +13,7 @@ Status: implemented
 `StatsPills`（packages/client/ui-chat/src/client/chat/StatsPills.tsx）在同一 `conversation.composer.dock` 插槽上取代 `StatsLine`；落选变体已删除，其共享工具函数（`deriveStats`、`formatDuration`、`cacheHitPercent`、`billedInputTokens`）并入新模块，废弃的 `stats.elapsed` / `stats.tps` 文案键一并移除。
 
 - **两个图标 pill、两个弹层。** 仪表盘 pill（新增 `IconGaugeOutline16`，因下开口圆弧视觉偏高而把表盘中心光学下移到 y=8.75）展示 `{turns} 轮 {steps} 步` 加输出 TPS，点击打开「会话统计」弹层（模型用时、工具调用用时、首 token 平均、输出速度）。数据库 pill（`IconDatabaseOutline16`）展示紧凑计费总量加缓存命中率，点击打开「Token 用量」弹层（缓存命中、未缓存输入、缓存读取、缓存写入、输出——精确计数）。两个弹层共用为这两处消费者抽出的 `stat-dialog` 模块（portal 面板、锚定定位、点击外部关闭）。
-- **数据来源架构不变。** 计数与用时优先读取持久的 `sessionStats` 投影，窗口折叠仅作无该单元装配时的回退（[全会话计数](../bug-fix/2026-08-12-full-session-turn-step-counts.zh.md)）；token 数字只走 `tokenUsage`，投影缺席时直接不渲染用量 pill，而非展示窗口推算的计费。缓存写入仍计入计费总量与缓存命中分母（[投影决定](../architecture/2026-07-29-projected-token-usage-and-request-context.zh.md)）。上下文占用彻底离开统计条——由输入框旁的 ContextMeter 圆环独占。
+- **数据来源架构不变。** 计数与用时优先读取持久的 `sessionStats` 投影，窗口折叠仅作无该单元装配时的回退（[全会话计数](../../archived/bug-fix/2026-08-12-full-session-turn-step-counts.md)）；token 数字只走 `tokenUsage`，投影缺席时直接不渲染用量 pill，而非展示窗口推算的计费。缓存写入仍计入计费总量与缓存命中分母（[投影决定](../architecture/2026-07-29-projected-token-usage-and-request-context.zh.md)）。上下文占用彻底离开统计条——由输入框旁的 ContextMeter 圆环独占。
 - **渲染纪律。** 该行只折叠已定稿节点（`chat.legacy.nodes` 身份），流式 chunk 帧零重渲染——由渲染计数单测钉住。无已完成步且无计费 token 的会话什么都不渲染。
 - **`data-composer-stats` 是跨包属性契约。** pill 行根元素携带它；ui-conversation 的 `InputBar.module.css` 用 `:has([data-composer-stats])` 在该行挂载时把输入框底部留白收紧到 4px。生产方在单测里钉住该属性，沿用 `data-trigger-menu` 先例。
 
