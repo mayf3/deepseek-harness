@@ -36,7 +36,7 @@ Session 对象还承载本地提交回显：`session.beginSubmission` 在调用�
 <a id="session-media-references"></a>
 ## 会话媒体引用
 
-当 `connection` 与 `workspaceRegistry` 均被组合时，`SessionMediaReferences` 在鉴权 `connection.fetch` 通道上挂载 `GET|HEAD /api/file?path=<绝对路径>`，使会话正文可以引用 workspace 内的本地媒体（图片今天可用；视频/音频后续同一条 URL）。每次请求 fail-closed：路径必须绝对、其 `realpath` 必须落在已注册 workspace 根内（按路径组件判定包含，含文件系统根目录作为 workspace）、文件必须是常规文件、其 `mime-types` 类别必须属于 image/video/audio（排除 `image/svg+xml`）；该路由从不嗅探媒体字节。校验与读取绑定同一个已打开文件，替换/重链接竞态会被拒绝。单段 `bytes` Range 请求由 `range-parser` 解析后流式返回 206 分片；畸形、未知单位与多段 Range 头被忽略并返回完整 200；HEAD 从不打开文件流；客户端中止即销毁流。响应携带 `private, no-store` 与 `nosniff`；失败返回 400/403/404/415/416。客户端侧的重写词表位于 `ui-chat`（`AssistantMarkdown`）；本包只拥有服务契约。
+当 `connection` 与 `workspaceRegistry` 均被组合时，`SessionMediaReferences` 在鉴权 `connection.fetch` 通道上挂载 `GET|HEAD /api/file?path=<绝对路径>`，使会话正文可以引用 workspace 内的本地媒体（图片今天可用；视频/音频后续同一条 URL）。每次请求 fail-closed：路径必须绝对、其 `realpath` 必须落在已注册 workspace 根内（按路径组件判定包含，含文件系统根目录作为 workspace）、文件必须是常规文件、其 `mime-types` 类别必须属于 image/video/audio（排除 `image/svg+xml`）；该路由从不嗅探媒体字节。常规文件检查在打开前执行，命名管道与设备节点会被拒绝而不是阻塞打开；读取绑定已打开文件，并与打开前的 stat 做身份比较，收窄（而非完全消除）并发替换窗口。单段 `bytes` Range 请求由 `range-parser` 解析后流式返回 206 分片；畸形、未知单位与多段 Range 头被忽略并返回完整 200；HEAD 从不打开文件流；客户端中止即销毁流。响应携带 `private, no-store` 与 `nosniff`；失败返回 400/403/404/415/416。客户端侧的重写词表位于 `ui-chat`（`AssistantMarkdown`）；本包只拥有服务契约。
 
 -----
 

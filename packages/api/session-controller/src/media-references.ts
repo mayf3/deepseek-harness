@@ -12,10 +12,11 @@
  * - its MIME type (resolved by `mime-types`) must belong to the served
  *   categories image/video/audio, excluding `image/svg+xml`; media bytes are
  *   never sniffed here, and a corrupt payload fails in the browser;
- * - the file must exist and be a regular file; validation and reading bind to
- *   the same opened file (a replacement or re-linking race between the
- *   containment check and the read is detected by comparing the pre-open and
- *   opened stat identities and refused);
+ * - the file must exist and be a regular file (checked before opening, so a
+ *   named pipe or device node is refused instead of blocking the open);
+ *   reading binds to the opened file, and comparing its stat identity with
+ *   the pre-open stat narrows (does not fully close) a concurrent
+ *   replacement window;
  * - multi-range requests are answered with the full 200 body (no Range is
  *   honored) rather than a mislabeled single-segment 206;
  * - responses are private, uncached, sniff-proof, and stream with HTTP range
@@ -58,44 +59,57 @@ async function serveMediaReference(
   request: Request,
   roots: readonly { path: string }[],
 ): Promise<Response> {
+  // Error responses carry a text body for GET debugging; HEAD responses must
+  // never carry one.
+  const fail = (status: number, text: string): Response =>
+    new Response(request.method === 'HEAD' ? null : text, { status })
   const path = new URL(request.url).searchParams.get('path')
-  if (path === null || path.length === 0) return new Response('missing path', { status: 400 })
+  if (path === null || path.length === 0) return fail(400, 'missing path')
   if (path.includes('\0') || !isAbsolute(path)) {
-    return new Response('absolute path required', { status: 400 })
+    return fail(400, 'absolute path required')
   }
   let canonical: string
   try {
     canonical = await realpath(path)
   } catch {
-    return new Response('not found', { status: 404 })
+    return fail(404, 'not found')
   }
   // Containment compares path components; a filesystem root already ends in
   // the separator and prefixes every absolute path.
   const contained = roots.some(({ path: root }) =>
     canonical === root || canonical.startsWith(root.endsWith(sep) ? root : root + sep))
-  if (!contained) return new Response('outside workspace roots', { status: 403 })
+  if (!contained) return fail(403, 'outside workspace roots')
   const mediaType = mime.lookup(canonical)
   if (mediaType === false || mediaType === 'image/svg+xml' || !SERVED_MEDIA_TYPE.test(mediaType)) {
-    return new Response('not an allowlisted media type', { status: 415 })
+    return fail(415, 'not an allowlisted media type')
   }
-  // The stat identity of the validated path is compared with the identity of
-  // the file actually opened, so a replacement or re-linking race between the
-  // containment check and the read is refused instead of followed.
+  // Open only after proving the validated path is a regular file: opening a
+  // FIFO or device node first would block or read unbounded data.
   let before
-  let handle
   try {
     before = await stat(canonical)
+  } catch {
+    /* v8 ignore next 1 -- the path cannot vanish between the realpath above and this stat except in a concurrent deletion race */
+    return fail(404, 'not found')
+  }
+  if (!before.isFile()) return fail(403, 'not a regular file')
+  let handle
+  try {
     handle = await open(canonical, 'r')
   } catch {
-    return new Response('not found', { status: 404 })
+    return fail(404, 'not found')
   }
   let streamed = false
   try {
     const after = await handle.stat()
-    if (!after.isFile()) return new Response('not a regular file', { status: 403 })
+    /* v8 ignore next 1 -- only a concurrent replacement could make the opened file non-regular after the pre-open check */
+    if (!after.isFile()) return fail(403, 'not a regular file')
+    // The opened handle's identity must match the validated stat; this only
+    // narrows a replacement race between the stat and the open, it does not
+    // eliminate the earlier realpath-to-stat window.
     /* v8 ignore next 2 -- the replacement race cannot be produced deterministically; this arm refuses it when it happens */
     if (after.dev !== before.dev || after.ino !== before.ino) {
-      return new Response('file changed during validation', { status: 403 })
+      return fail(403, 'file changed during validation')
     }
     const total = after.size
     const rangeHeader = request.headers.get('range')?.trim() ?? null
@@ -129,7 +143,10 @@ async function serveMediaReference(
       return new Response(null, { status, headers })
     }
     streamed = true
-    const source = addAbortSignal(request.signal, handle.createReadStream(slice))
+    // Bound the full-body stream to the stat'ed size so concurrent appends
+    // cannot push the payload past the declared Content-Length.
+    const stream = handle.createReadStream(slice ?? { start: 0, end: total - 1 })
+    const source = addAbortSignal(request.signal, stream)
     return new Response(Readable.toWeb(source) as ReadableStream<Uint8Array>, { status, headers })
   } finally {
     if (!streamed) await handle.close()

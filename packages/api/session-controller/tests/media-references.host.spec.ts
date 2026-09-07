@@ -212,6 +212,13 @@ describe('SessionMediaReferences /api/file', () => {
     expect(ranged.body).toBeNull()
   })
 
+  it('answers HEAD errors without a body', async () => {
+    const route = await mount()
+    const response = await route.raw('http://127.0.0.1:3080/api/file', { method: 'HEAD' })
+    expect(response.status).toBe(400)
+    expect(response.body).toBeNull()
+  })
+
   it('denies malformed, missing, empty, and uncontained requests', async () => {
     const route = await mount()
     expect((await route.raw('http://127.0.0.1:3080/api/file')).status).toBe(400)
@@ -233,6 +240,23 @@ describe('SessionMediaReferences /api/file', () => {
       await rm(outside, { recursive: true, force: true })
     }
   })
+
+  // A FIFO would block a plain open; the pre-open regular-file check refuses
+  // it first. POSIX-only because Windows has no named-pipe path construction
+  // here.
+  it.skipIf(process.platform === 'win32')(
+    'refuses a FIFO named as media without blocking on the open',
+    async () => {
+      const route = await mount()
+      const pipe = join(root, 'stream.png')
+      const { execFile } = await import('node:child_process')
+      const { promisify } = await import('node:util')
+      await promisify(execFile)('mkfifo', [pipe])
+      const response = await route.call(pipe)
+      expect(response.status).toBe(403)
+      expect(await response.text()).toBe('not a regular file')
+    },
+  )
 
   it('answers 404 when an existing file cannot be opened for reading', async () => {
     // A permission-less file passes realpath/stat but fails the open; the
