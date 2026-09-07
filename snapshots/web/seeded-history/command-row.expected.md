@@ -58,7 +58,7 @@
   - text: Context injection AGENTS.md
 - img
 - text: permission preset read-only
-- textbox "Message or run a task, run / commands, @ files or sessions"
+- textbox "Message or run a task, / commands, @ files or sessions"
 - button "Commands":
   - img
 - button "Add attachment":
@@ -68,4 +68,9 @@
   - text: DeepSeek-V4-Flash
   - img
 - button "Send message" [disabled]
-- text: 1 turns · 2 steps LLM {{duration}} · Tool call {{duration}} TTFT avg {{duration}} · {{throughput}} tok/s Cache hit 98% Input 15.8K tok · Output 135 tok
+- button "1 turns 2 steps{{throughput}} tok/s":
+  - img
+  - text: 1 turns 2 steps{{throughput}} tok/s
+- button "16K tokCache hit 98%":
+  - img
+  - text: 16K tokCache hit 98%

@@ -10,6 +10,13 @@
   padding: 0 var(--dsh-composer-side-clearance) 8px;
 }
 
+/* A mounted stats row in the composer dock (data-composer-stats, ui-chat
+   StatsPills) brings its own 4px top pad, so the root's bottom clearance
+   tightens to keep the drawn B8 rhythm. */
+.root:has([data-composer-stats]) {
+  padding-bottom: 4px;
+}
+
 .hero {
   /* No bottom pad in the centered hero, but the side clearance must survive:
      the hero wrapper is full-width on narrow viewports, so this padding is
@@ -158,7 +165,10 @@
    bar inset. */
 .input {
   box-sizing: border-box;
-  padding: 2px 8px 0 14px;
+  /* Docked floor: one 24px line + 4px top pad = 28 content height; 36 leaves
+     an 8px breath below the line (the hero keeps its own 52px floor below). */
+  min-height: 36px;
+  padding: 4px 8px 0 14px;
   font-family: var(--dsw-font-family);
   font-size: inherit;
   line-height: inherit;
@@ -189,7 +199,7 @@
    Insets mirror .input's pads (the other right 4px sits on .scroll). */
 .placeholder {
   position: absolute;
-  inset: 2px 8px auto 14px;
+  inset: 4px 8px auto 14px;
   color: var(--dsw-alias-label-caption);
   pointer-events: none;
   user-select: none;
@@ -219,8 +229,8 @@
   justify-content: space-between;
   gap: 12px;
   /* 2px moved from the bottom pad to the top: the whole control row sits 2px
-     lower in the card (it read too high against the textarea) while the card
-     height and the controls' own centering stay untouched. */
+     lower in the card (it read too high against the textarea) while the
+     controls' own centering stays untouched. */
   padding: 2px 8px 6px;
   min-width: 0;
   /* Size container so the chips inside can collapse to icon-only when the

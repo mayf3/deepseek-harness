@@ -23,7 +23,7 @@ const SEED_ID = 'stats-paged-history-web-e2e'
 
 /** Turn count: 2 surface messages per turn, so 28 turns overflow one 50-message page. */
 const TURNS = 28
-const FULL_COUNTS = `${TURNS} turns · ${TURNS} steps`
+const FULL_COUNTS = `${TURNS} turns ${TURNS} steps`
 
 /**
  * Generate the seed: TURNS closed single-step turns of one short user prompt

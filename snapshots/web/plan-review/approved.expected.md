@@ -38,7 +38,7 @@
   - img
   - text: Ran for {{duration}}
 - text: {{clock}}
-- textbox "Message or run a task, run / commands, @ files or sessions"
+- textbox "Message or run a task, / commands, @ files or sessions"
 - button "Commands":
   - img
 - button "Add attachment":
@@ -48,5 +48,11 @@
   - text: DeepSeek-V4-Flash
   - img
 - button "4% of context used"
+- tooltip "4% of context used"
 - button "Send message" [disabled]
-- text: 1 turns · 2 steps LLM {{duration}} · Tool call {{duration}} TTFT avg {{duration}} · {{throughput}} tok/s Cache hit 51% Input 10.2K tok · Output 346 tok
+- button "1 turns 2 steps{{throughput}} tok/s":
+  - img
+  - text: 1 turns 2 steps{{throughput}} tok/s
+- button "10.6K tokCache hit 51%":
+  - img
+  - text: 10.6K tokCache hit 51%
