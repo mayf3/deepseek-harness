@@ -54,7 +54,7 @@ export function apply(ctx: Context, config: Config): void {
       return attachments === undefined ? undefined : resolveImageAttachmentAccess(attachments, path => ctx.get('fs')?.processPathFromHostPath(path), ref)
     },
   })
-  ctx.llm.registerConfigurableProviders([{ provider: PROVIDER, displayName: 'DeepSeek Messages', settingsNs: name, settingsPath: [] }])
+  ctx.llm.registerConfigurableProviders([{ provider: PROVIDER, displayName: 'DeepSeek', settingsNs: name, settingsPath: [] }])
   const registration = ctx.llm.registerAdapter([PROVIDER], adapter)
   let retryPolicy = current.retryPolicy
   ctx.inject(['settings'], (child) => {

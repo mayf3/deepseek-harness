@@ -246,11 +246,14 @@ class RouteOnlyAdapter extends LlmAdapter {
   }
 }
 
-function replayProviders(contextWindow: number | undefined): typeof REPLAY_PROVIDERS {
-  if (contextWindow === undefined) return REPLAY_PROVIDERS
+function replayProviders(contextWindow: number | undefined, messages: boolean): typeof REPLAY_PROVIDERS {
   return REPLAY_PROVIDERS.map(provider => ({
     ...provider,
-    models: provider.models.map(model => ({ ...model, contextWindow })),
+    id: messages ? 'deepseek-messages' : provider.id,
+    models: provider.models.map(model => ({
+      ...model,
+      ...contextWindow === undefined ? {} : { contextWindow },
+    })),
   }))
 }
 
@@ -358,7 +361,7 @@ export interface LaunchOptions {
    * keyless first-run configuration lane; the default disables the adapter.
    */
   deepSeekMissingCredential?: boolean
-  /** Keep the shipped Messages adapter mounted for configuration scenarios; disabled in ordinary keyless replays. */
+  /** Record or replay a Messages scenario; older scenarios explicitly retain their recorded Chat Completions route. */
   deepSeekMessages?: boolean
   /** Leave the current welcome notice pending; ordinary scenarios pre-acknowledge it before browser boot. */
   welcomeNoticePending?: boolean
@@ -441,6 +444,7 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
     throw new Error('deepSeekMissingCredential is a keyless replay/refresh option')
   }
   const maskDeepSeekCredential = mode !== 'record' && options.deepSeekMissingCredential === true
+  const messages = options.deepSeekMessages === true || options.deepSeekMissingCredential === true
   const originalDeepSeekCredential = process.env.DEEPSEEK_API_KEY
   let credentialEnvironmentRestored = false
   const restoreCredentialEnvironment = (): void => {
@@ -514,6 +518,12 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
   const patches: PatchOptions[] = [
     ...basePatches,
     ...surfacePatches,
+    // Historical Session fixtures retain their provider identity. Shipped
+    // configuration scenarios and new Messages recordings use the Web default.
+    ...messages ? [] : [{
+      id: 'agent-default-model',
+      config: { provider: 'deepseek-official', model: 'deepseek-v4-flash' },
+    }],
     ...extraOverlayPatches,
     // The roster's shipped presets are the plugin's own, bundled inside
     // `dsh-agent-presets` and prepended by it. Pin only the machine-local
@@ -631,12 +641,8 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
           baseURL: options.deepSeekSearch.baseURL,
         },
       }],
-    ...mode === 'record' || options.deepSeekMissingCredential === true
-      ? []
-      : [{ id: 'llm-deepseek', disabled: true }],
-    ...options.deepSeekMessages === true
-      ? []
-      : [{ id: 'llm-deepseek-messages', disabled: true }],
+    { id: 'llm-deepseek', disabled: messages || mode !== 'record' },
+    { id: 'llm-deepseek-messages', disabled: !messages || (mode !== 'record' && !maskDeepSeekCredential) },
   ]
 
   // Sessions inherit the gateway's process.cwd() default; run the boot from
@@ -724,7 +730,7 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
     port = boundPort
 
     // Fill the open llm seam on the settled root ctx. Ordinary keyless modes
-    // disable both direct adapters; the first-run lane keeps llm-deepseek but has no
+    // disable both direct adapters; the first-run lane keeps Messages but has no
     // replay fixture and never streams. The direct install, unlike the plugin
     // row, returns the ReplayHandle for the teardown consumption check.
     if (options.replayProvidersOnly) {
@@ -761,7 +767,7 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
     if (mode !== 'record' && replayFixture !== undefined) {
       replayHandle = installLlmReplay(ctx, {
         file: replayFixture,
-        providers: (options.replayProviders ?? replayProviders(options.replayContextWindow)).map(provider => ({
+        providers: (options.replayProviders ?? replayProviders(options.replayContextWindow, messages)).map(provider => ({
           ...provider,
           ...(options.replayRetryPolicy === undefined ? {} : { retryPolicy: options.replayRetryPolicy }),
         })),
@@ -776,8 +782,8 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
       // a fixture would, with streaming that still fails loud: the scenario
       // issues no model calls, and one that slipped in must not pass quietly.
       ctx.effect(() => ctx.llm.registerAdapter(
-        replayProviders(options.replayContextWindow).map(provider => provider.id),
-        new RouteOnlyAdapter(replayProviders(options.replayContextWindow)),
+        replayProviders(options.replayContextWindow, messages).map(provider => provider.id),
+        new RouteOnlyAdapter(replayProviders(options.replayContextWindow, messages)),
       ), 'web e2e scaffold: route-only adapter')
     }
     baseUrl = `http://${browserHost}:${String(port)}`

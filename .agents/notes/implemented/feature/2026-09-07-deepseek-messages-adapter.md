@@ -18,7 +18,7 @@ Assistant blocks remain the durable model-visible content. A versioned `ReplayEn
 
 Image requests use bounded inline base64 versions from the attachment service. Shared attachment offload and DeepSeek token measurement keep request and measurement policy consistent. Files uploads remain outside this adapter because their endpoints and cache ownership differ from chat-completions; adding them requires a Messages-specific lifetime and error policy.
 
-The Web profile mounts both direct adapters and leaves its selected default unchanged. Its Messages row uses `DEEPSEEK_MESSAGES_API_KEY`, so the two configuration cards can store different credentials. The shared DeepSeek editor dispatches writes by settings namespace and displays the appropriate protocol root; model identity remains provider-qualified in the composer.
+The Web profile selects the Messages adapter and disables the Chat Completions adapter. Both its settings card and model group display DeepSeek, while the provider id remains `deepseek-messages` and settings remain under `llm-deepseek-messages`. First-run onboarding targets that route and reuses `DEEPSEEK_API_KEY`. Separating display names from provider ids preserves explicit protocol selection and recorded request identity. Saved selections remain user-owned; the composer switches them without rewriting Session history.
 
 ## Alternatives considered
 
@@ -30,6 +30,6 @@ The Web profile mounts both direct adapters and leaves its selected default unch
 
 ## Consequences
 
-The package owns wire validation, stop-reason mapping, cancellation, and error classification, so protocol changes require adapter maintenance. Unsupported content and incomplete streams fail explicitly. The existing retry consumer owns retries; the existing assembler drops incomplete tool calls at the output limit. Default compositions retain their selected provider.
+The package owns wire validation, stop-reason mapping, cancellation, and error classification, so protocol changes require adapter maintenance. Unsupported content and incomplete streams fail explicitly. The existing retry consumer owns retries; the existing assembler drops incomplete tool calls at the output limit. The shared base keeps Chat Completions; the Web overlay owns the Messages default.
 
-Verification covers wire fixtures, real Loader composition, per-file unit coverage, a [recorded Session replay](../../../../snapshots/session/deepseek-messages-replay/snapshot.yml), and credential-gated text, thinking, tool continuation, image, and cancellation requests. Live gateway checks establish compatibility with the configured gateway; they do not establish compatibility with every Anthropic proxy.
+Verification covers wire fixtures, real Loader composition, per-file unit coverage, a [recorded Session replay](../../../../snapshots/session/deepseek-messages-replay/snapshot.yml), a Web Messages Session replay, and credential-gated text, thinking, tool continuation, image, and cancellation requests. Live gateway checks establish compatibility with the configured gateway; they do not establish compatibility with every Anthropic proxy.

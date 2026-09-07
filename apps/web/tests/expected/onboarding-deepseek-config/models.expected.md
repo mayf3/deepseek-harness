@@ -23,14 +23,14 @@
     - listitem:
       - text: DeepSeek
       - img "API 密钥已配置"
-      - button "编辑 DeepSeek (deepseek-official)": 编辑
-      - text: DeepSeek deepseek-official API 密钥
+      - button "编辑 DeepSeek (deepseek-messages)": 编辑
+      - text: DeepSeek deepseek-messages API 密钥
       - textbox "API 密钥":
         - /placeholder: 已配置——输入新值可替换
       - group:
         - text: 自定义设置 API 地址
         - textbox "API 地址":
-          - /placeholder: https://api.deepseek.com
+          - /placeholder: https://api.deepseek.com/anthropic
         - region "模型目录":
           - text: 模型目录 已自定义模型目录
           - button "恢复默认模型"

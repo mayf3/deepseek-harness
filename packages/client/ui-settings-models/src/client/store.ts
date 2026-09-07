@@ -304,8 +304,8 @@ export function onboardingReadiness(state: ModelsSettingsState): OnboardingReadi
   }
   if (state.rows.some(providerUsable)) return { kind: 'provider-ready' }
   const row = state.rows.find(candidate =>
-    candidate.entry.provider === 'deepseek-official'
-    && candidate.entry.settingsNs === 'llm-deepseek'
+    candidate.entry.provider === 'deepseek-messages'
+    && candidate.entry.settingsNs === 'llm-deepseek-messages'
     && candidate.entry.settingsPath.length === 0)
   if (row === undefined) return { kind: 'adapter-absent' }
   if (!row.entry.active) {

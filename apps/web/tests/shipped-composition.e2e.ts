@@ -84,7 +84,7 @@ it('assembles the shipped Web transport, catalog, guidance, and defaults', async
   expect(index.headers.get('content-encoding')).toBe('gzip')
   expect(index.headers.get('vary')).toContain('Accept-Encoding')
   await index.body?.cancel()
-  expect(ctx.llm.providerRetryPolicy('deepseek-official')).toMatchInlineSnapshot(`
+  expect(ctx.llm.providerRetryPolicy('deepseek-messages')).toMatchInlineSnapshot(`
     {
       "initialDelayMs": 500,
       "jitterRatio": 0.1,
@@ -100,10 +100,10 @@ it('assembles the shipped Web transport, catalog, guidance, and defaults', async
       ],
     }
   `)
-  await ctx.settings.update('llm-deepseek', {
+  await ctx.settings.update('llm-deepseek-messages', {
     retryPolicy: { mode: 'always', maxRetries: 5 },
   })
-  expect(ctx.llm.providerRetryPolicy('deepseek-official')).toMatchInlineSnapshot(`
+  expect(ctx.llm.providerRetryPolicy('deepseek-messages')).toMatchInlineSnapshot(`
     {
       "initialDelayMs": 500,
       "jitterRatio": 0.1,
@@ -178,7 +178,7 @@ it('assembles the shipped Web transport, catalog, guidance, and defaults', async
   const commandHandle = await scaffold.ctx.agents.create({
     sessionId: SessionId('shipped-command-catalog'),
     meta: { cwd: scaffold.workspaceCwd },
-    agentOptions: { provider: 'deepseek-official', model: 'deepseek-v4-flash' },
+    agentOptions: { provider: 'deepseek-messages', model: 'deepseek-v4-flash' },
   })
   try {
     expect(scaffold.ctx.commands.list(commandHandle.agent)).toContainEqual({

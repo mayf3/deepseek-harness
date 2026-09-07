@@ -27,7 +27,7 @@ Use DeepSeek through an Anthropic Messages endpoint while retaining Harness tool
 
 Mount this plugin beside `dsh-llm` in a Cordis composition and select `provider: deepseek-messages`. Model ids pass through unchanged; the catalog is advisory.
 
-The [Web profile](../../bundle/web-app/README.md) mounts this adapter beside Chat Completions. In **Settings → Models**, configure **DeepSeek Messages**, then select its model in the composer. Web uses the independent `DEEPSEEK_MESSAGES_API_KEY` credential reference; entering a key on this card does not replace `DEEPSEEK_API_KEY`. Its endpoint and model edits apply live under `llm-deepseek-messages`. The default selected provider remains `deepseek-official`.
+The [Web profile](../../bundle/web-app/README.md) uses this adapter as its default DeepSeek provider and disables Chat Completions. The **DeepSeek** card and first-run prompt use `DEEPSEEK_API_KEY`; endpoint and model edits apply live under `llm-deepseek-messages`. The provider id remains `deepseek-messages` independently of its display name.
 
 ### Minimal configuration
 

@@ -13,6 +13,14 @@
 
 # ── surface-specific values the base deliberately omits ─────────────────────
 
+- id: llm-deepseek
+  disabled: true
+
+- id: agent-default-model
+  config:
+    provider: deepseek-messages
+    model: deepseek-v4-flash
+
 - id: system-prompt
   config:
     personaSuffix: Your working directory is {{cwd}}.
@@ -42,11 +50,10 @@
 # `dsh.client` rows are the browser roster the modules node half scans into
 # window.__DSH_BOOT__; the modules row is simultaneously a host row.
 - insert:
-    # Keep Messages credentials independent from the Chat Completions route.
     - id: llm-deepseek-messages
       name: '@deepseek-ai/dsh-llm-deepseek-messages'
       config:
-        apiKeyEnv: DEEPSEEK_MESSAGES_API_KEY
+        apiKeyEnv: DEEPSEEK_API_KEY
 
     # Host-owned opt-in sampled when a new Web session receives its preset
     # delegation tools. The Plugins page edits this settings namespace.

@@ -27,7 +27,7 @@ kind: "package-reference"
 
 在 Cordis 组合中将本插件与 `dsh-llm` 一起挂载，并选择 `provider: deepseek-messages`。模型 ID 原样发送，目录仅供发现使用。
 
-[Web profile](../../bundle/web-app/README.zh.md) 同时挂载本适配器与 Chat Completions。在**设置 → 模型**中配置 **DeepSeek Messages**，然后在输入框的模型选择器中选择它的模型。Web 使用独立的 `DEEPSEEK_MESSAGES_API_KEY` 凭据引用；在此卡片输入密钥不会替换 `DEEPSEEK_API_KEY`。端点和模型修改通过 `llm-deepseek-messages` 即时生效。默认选择的提供方仍为 `deepseek-official`。
+[Web profile](../../bundle/web-app/README.zh.md) 默认使用本适配器作为 DeepSeek 提供方，并禁用 Chat Completions。**DeepSeek** 卡片和首次启动引导使用 `DEEPSEEK_API_KEY`；端点和模型修改通过 `llm-deepseek-messages` 即时生效。提供方 ID 保持为 `deepseek-messages`，与显示名称相互独立。
 
 ### 最小配置
 

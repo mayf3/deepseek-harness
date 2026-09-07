@@ -9,9 +9,9 @@ const missingCredential: CredentialInfo = { configured: false, writable: true }
 function row(overrides: Partial<ProviderRow> = {}): ProviderRow {
   return {
     entry: {
-      provider: 'deepseek-official',
+      provider: 'deepseek-messages',
       displayName: 'DeepSeek',
-      settingsNs: 'llm-deepseek',
+      settingsNs: 'llm-deepseek-messages',
       settingsPath: [],
       active: true,
     },

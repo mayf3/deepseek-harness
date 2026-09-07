@@ -36,7 +36,9 @@ dsh --profile web --no-open --port 8080
 
 启动后你会看到 `dsh web:` 行，其根 URL 携带新的进程 token。除非 `--no-open` 或 SSH 会话抑制，否则默认浏览器会打开该 URL、取得签名 cookie，再重定向到干净的根页面。页面加载且你可以与 agent（智能体）对话，就说明成功了。两种可预期的失败：前端未构建时，启动会以构建提示停止（checkout 中运行 `pnpm run build`）；浏览器无法打开时，stderr 会打印不含凭据的诊断，但服务器会继续运行——请自行打开已打印的启动 URL。
 
-**设置 → 模型**提供独立的 DeepSeek 与 [DeepSeek Messages](../../llm/llm-deepseek-messages/README.zh.md) 卡片。两种协议可以同时配置，在模型选择器中切换提供方。
+**设置 → 模型**显示由 [Messages 适配器](../../llm/llm-deepseek-messages/README.zh.md) 提供的 **DeepSeek**。Web 默认选择 `deepseek-messages` / `deepseek-v4-flash`，使用 `DEEPSEEK_API_KEY`；Web 补丁禁用 Chat Completions 适配器，其他 profile 保持各自组合。
+
+已保存的模型选择优先于组合默认值。要切换已保存的 `deepseek-official` 默认值或已有会话，在输入框的 **DeepSeek** 分组下选择模型即可；此操作会保存后续会话的默认模型，不改写此前的请求头。Messages 端点和模型设置属于 `llm-deepseek-messages`，不会复制 Chat Completions 的端点覆盖值。
 
 ### 配置
 

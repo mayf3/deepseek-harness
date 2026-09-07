@@ -47,7 +47,7 @@ const useSessionPendingInteraction: DeepSeekOnboardingDialogProps['useSessionPen
 function deepSeekNamespace(apiKeyEnv: string | null): SettingsNamespaceView {
   const value = apiKeyEnv === null ? {} : { apiKeyEnv }
   return {
-    ns: 'llm-deepseek',
+    ns: 'llm-deepseek-messages',
     schema: JSON.parse(JSON.stringify(DeepSeekConfig.toJSON())) as JsonValue,
     value,
     base: value,
@@ -92,16 +92,16 @@ function harness(options: {
         return Promise.resolve(remoteOk(
           options.provider === false || options.providerActive === false
             ? []
-            : [{ id: 'deepseek-official', name: 'DeepSeek' }],
+            : [{ id: 'deepseek-messages', name: 'DeepSeek' }],
         ))
       },
       listConfigurableProviders: () => Promise.resolve(remoteOk(
         options.provider === false
           ? []
           : [{
-            provider: 'deepseek-official',
+            provider: 'deepseek-messages',
             displayName: 'DeepSeek',
-            settingsNs: options.providerSettingsNs ?? 'llm-deepseek',
+            settingsNs: options.providerSettingsNs ?? 'llm-deepseek-messages',
             settingsPath: [],
           }],
       )),
@@ -138,7 +138,7 @@ function harness(options: {
   const complete = vi.fn()
   const unusedHook = (() => { throw new Error('unused standard hook') }) as never
   const props: DeepSeekOnboardingDialogProps = {
-    stepId: 'deepseek-official',
+    stepId: 'deepseek-messages',
     complete,
     openSection,
     useSessions: unusedHook,

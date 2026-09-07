@@ -30,7 +30,7 @@ export interface AdapterDependencies {
 export class DeepSeekMessagesAdapter extends LlmAdapter {
   constructor(private readonly dependencies: AdapterDependencies) { super() }
 
-  override providerInfo(provider: string) { return { id: provider, name: 'DeepSeek Messages' } }
+  override providerInfo(provider: string) { return { id: provider, name: 'DeepSeek' } }
   override providerRetryPolicy(_provider: string) { return this.dependencies.connection().retryPolicy }
   override listModels(provider: string) {
     const connection = this.dependencies.connection()

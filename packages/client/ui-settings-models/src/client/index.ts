@@ -147,7 +147,7 @@ export function apply(ctx: ClientContext): void {
   }, WelcomeNotice))
   ctx.slots.inject('settings.onboarding', () => ctx.slots.register({
     name: 'settings.onboarding',
-    id: 'deepseek-official',
+    id: 'deepseek-messages',
     order: 0,
     inject: deepSeekOnboardingInjected,
   }, DeepSeekOnboardingDialog))

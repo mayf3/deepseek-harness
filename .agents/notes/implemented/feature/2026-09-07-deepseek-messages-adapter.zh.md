@@ -18,7 +18,7 @@ Status: implemented
 
 图片请求使用附件服务生成的、有预算限制的内联 base64 版本。共享附件卸载机制和 DeepSeek token 计量使请求与计量策略保持一致。此适配器不负责 Files 上传，因为其端点和缓存所有权与 chat-completions 不同；增加上传支持需要定义 Messages 专属的生命周期和错误策略。
 
-Web profile 同时挂载两个直接适配器，保留已选择的默认模型。Messages 行使用 `DEEPSEEK_MESSAGES_API_KEY`，使两张配置卡片可以存储不同凭据。共享 DeepSeek 编辑器按设置命名空间写入，并展示相应协议根地址；输入框中的模型标识仍包含提供方。
+Web profile 选择 Messages 适配器并禁用 Chat Completions 适配器。配置卡片和模型分组均显示 DeepSeek，提供方 ID 保持为 `deepseek-messages`，设置仍位于 `llm-deepseek-messages`。首次启动引导面向该路由并复用 `DEEPSEEK_API_KEY`。显示名称与提供方 ID 分离，使协议选择和已记录的请求标识保持明确。已保存的选择仍由用户控制，输入框可以切换它们而不改写 Session 历史。
 
 ## 考虑过的替代方案
 
@@ -30,6 +30,6 @@ Web profile 同时挂载两个直接适配器，保留已选择的默认模型�
 
 ## 结果
 
-该包负责协议校验、停止原因映射、取消和错误分类，因此协议变化需要维护适配器。不支持的内容和不完整的流会明确报错。现有重试消费者负责重试；现有装配器在输出达到上限时丢弃未完成的工具调用。默认组合保留已选择的提供者。
+该包负责协议校验、停止原因映射、取消和错误分类，因此协议变化需要维护适配器。不支持的内容和不完整的流会明确报错。现有重试消费者负责重试；现有装配器在输出达到上限时丢弃未完成的工具调用。共享 base 保留 Chat Completions，Web 覆盖层拥有 Messages 默认值。
 
-验证覆盖协议夹具、真实 Loader 组合、逐文件单元覆盖率、[已记录 Session 回放](../../../../snapshots/session/deepseek-messages-replay/snapshot.yml)，以及凭证控制的文本、思考、工具续接、图片和取消请求。真实网关检查证明与已配置网关的兼容性，不能证明与所有 Anthropic 代理兼容。
+验证覆盖协议夹具、真实 Loader 组合、逐文件单元覆盖率、[已记录 Session 回放](../../../../snapshots/session/deepseek-messages-replay/snapshot.yml)，Web Messages Session 回放，以及凭证控制的文本、思考、工具续接、图片和取消请求。真实网关检查证明与已配置网关的兼容性，不能证明与所有 Anthropic 代理兼容。

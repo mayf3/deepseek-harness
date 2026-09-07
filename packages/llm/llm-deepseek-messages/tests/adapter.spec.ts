@@ -49,7 +49,7 @@ describe('direct Messages HTTP', () => {
       'user-agent': expect.stringContaining('deepseek-harness/') as string, 'x-deepseek-harness-user-id': 'test-user',
       'x-deepseek-harness-session-id': 'session-test', 'x-deepseek-harness-compact': '1',
     }, body: { thinking: { type: 'enabled' }, output_config: { effort: 'high' } } })
-    expect(llm.providerInfo('deepseek-messages')).toEqual({ id: 'deepseek-messages', name: 'DeepSeek Messages' })
+    expect(llm.providerInfo('deepseek-messages')).toEqual({ id: 'deepseek-messages', name: 'DeepSeek' })
     expect(await llm.listModels('deepseek-messages')).toHaveLength(3)
     expect(await llm.resolveModel('deepseek-messages', MODEL)).toMatchObject({ id: MODEL })
     expect(llm.imageRequestPricing('deepseek-messages', MODEL)).toBeDefined()
