@@ -38,10 +38,7 @@ const ACTIVE_STATUS_ORDER = config.statuses.filter((status) => !TERMINAL_STATUSE
 const IMPLEMENTATION_PULL_REQUEST_ACTIONS = new Set([
   'opened',
   'edited',
-  'synchronize',
   'reopened',
-  'labeled',
-  'unlabeled',
 ])
 
 for (const status of ['In progress', 'In review']) {
@@ -79,11 +76,12 @@ export function requiresPullRequestPolicy({
 /**
  * Translate a repository event into one resolving-Issue lifecycle command.
  * @param {string} eventName GitHub event name.
- * @param {{action?: string, review?: {state?: string}}} event GitHub event payload.
+ * @param {{action?: string, changes?: {body?: object}, review?: {state?: string}}} event GitHub event payload.
  * @returns {'implementation'|'review-requested'|'changes-requested'|null} Lifecycle command.
  */
 export function resolvingIssueStatusCommand(eventName, event) {
   if (eventName === 'pull_request') {
+    if (event.action === 'edited' && !event.changes?.body) return null
     if (event.action === 'review_requested') return 'review-requested'
     return IMPLEMENTATION_PULL_REQUEST_ACTIONS.has(event.action) ? 'implementation' : null
   }
@@ -264,7 +262,9 @@ export function validatePullRequest(input) {
   const priorities = input.labels.filter((label) => PRIORITIES.includes(label))
   const areas = input.labels.filter((label) => label.startsWith('area/'))
 
-  if (input.references.all.length === 0) errors.push('PR 正文必须引用至少一个同仓库 Issue')
+  if (input.references.all.length === 0) {
+    errors.push('PR 正文必须引用至少一个同仓库 Issue；PR 编号（包括堆叠依赖 PR）不算 Issue 引用')
+  }
   if (kinds.length !== 1) {
     errors.push(`PR 必须恰好有一个允许的 kind/*，当前为 ${kinds.length}`)
   }
@@ -650,8 +650,10 @@ async function resolvingReferencesSnapshot(number, pull) {
   })
   const issues = new Map()
   for (const issueNumber of references.all) {
-    const issue = await issueSnapshot(issueNumber, null)
-    if (issue) issues.set(issueNumber, issue)
+    const issue = await api(
+      `/repos/${config.organization}/${config.repository}/issues/${issueNumber}`,
+    )
+    if (!issue.pull_request) issues.set(issueNumber, { priority: null })
   }
   return {
     number,
@@ -660,21 +662,34 @@ async function resolvingReferencesSnapshot(number, pull) {
   }
 }
 
-async function pullRequestSnapshot(number) {
-  const [pull, reviewRequests, reviews] = await Promise.all([
-    api(`/repos/${config.organization}/${config.repository}/pulls/${number}`),
+async function pullRequestSnapshot(number, includeProject = true) {
+  const pull = await api(`/repos/${config.organization}/${config.repository}/pulls/${number}`)
+  const snapshot = {
+    number,
+    isDraft: pull.draft,
+    authorType: pull.user?.type ?? 'User',
+    reviewRequestCount: 0,
+    reviewCount: 0,
+    labels: pull.labels.map((label) => label.name),
+    references: { all: [], resolving: [], related: [] },
+    issues: new Map(),
+  }
+  if (snapshot.isDraft || ['Bot', 'App'].includes(snapshot.authorType)) return snapshot
+  const [reviewRequests, reviews] = await Promise.all([
     api(`/repos/${config.organization}/${config.repository}/pulls/${number}/requested_reviewers`),
     api(`/repos/${config.organization}/${config.repository}/pulls/${number}/reviews?per_page=100`),
   ])
-  const resolving = await resolvingReferencesSnapshot(number, pull)
-  return {
-    ...resolving,
-    isDraft: pull.draft,
-    authorType: pull.user?.type ?? 'User',
-    reviewRequestCount: reviewRequests.users.length + reviewRequests.teams.length,
-    reviewCount: reviews.length,
-    labels: pull.labels.map((label) => label.name),
+  snapshot.reviewRequestCount = reviewRequests.users.length + reviewRequests.teams.length
+  snapshot.reviewCount = reviews.length
+  if (!requiresPullRequestPolicy(snapshot)) return snapshot
+  Object.assign(snapshot, await resolvingReferencesSnapshot(number, pull))
+  if (includeProject) {
+    for (const issueNumber of snapshot.references.resolving) {
+      const context = await projectContext(issueNumber)
+      snapshot.issues.get(issueNumber).priority = context.item?.priorityValue?.name ?? null
+    }
   }
+  return snapshot
 }
 
 async function lifecyclePullRequestSnapshot(number) {
@@ -701,7 +716,34 @@ async function transitionResolvingIssues(pull, command) {
   }
 }
 
-async function runPullRequestCheck(event) {
+const EXEMPT_MESSAGE =
+  'Issue policy exempt：当前 PR 不在强制范围（Draft、Bot/App 或尚无 review request/review）。\n'
+
+/**
+ * Determine current policy eligibility and Project access needs without Project credentials.
+ * @param {{pull_request: {number: number}}} event GitHub event identifying the PR.
+ * @returns {Promise<{eligible: boolean, needsProject: boolean}>} Trusted workflow decisions.
+ */
+export async function runPullRequestPreflight(event) {
+  const pull = await pullRequestSnapshot(event.pull_request.number, false)
+  const eligible = requiresPullRequestPolicy(pull)
+  const needsProject = eligible && pull.references.resolving.length > 0
+  if (process.env.GITHUB_OUTPUT) {
+    fs.appendFileSync(
+      process.env.GITHUB_OUTPUT,
+      `eligible=${eligible}\nexempt=${!eligible}\nneeds-project=${needsProject}\n`,
+    )
+  }
+  process.stdout.write(eligible ? 'Issue policy applicable；执行完整校验。\n' : EXEMPT_MESSAGE)
+  return { eligible, needsProject }
+}
+
+/**
+ * Enforce all PR rules against current GitHub state, independently of preflight.
+ * @param {{pull_request: {number: number}}} event GitHub event identifying the PR.
+ * @returns {Promise<void>} Resolves on success or exemption; rejects policy failures.
+ */
+export async function runPullRequestCheck(event) {
   const pull = await pullRequestSnapshot(event.pull_request.number)
   const errors = validatePullRequest(pull)
   if (errors.length > 0) {
@@ -709,11 +751,17 @@ async function runPullRequestCheck(event) {
     throw new Error(`Issue policy 未通过，共 ${errors.length} 项`)
   }
   process.stdout.write(
-    requiresPullRequestPolicy(pull) ? 'Issue policy 通过。\n' : 'PR 尚未进入 Issue policy 强制范围。\n',
+    requiresPullRequestPolicy(pull) ? 'Issue policy 通过。\n' : EXEMPT_MESSAGE,
   )
 }
 
-async function runLifecycle(eventName, event) {
+/**
+ * Apply repository lifecycle events; irrelevant PR events perform no requests.
+ * @param {string} eventName GitHub event name.
+ * @param {object} event GitHub event payload.
+ * @returns {Promise<void>} Resolves after lifecycle updates and audits.
+ */
+export async function runLifecycle(eventName, event) {
   if (eventName === 'issues') {
     const number = event.issue.number
     if (event.action === 'opened') await setStatus(number, 'Inbox')
@@ -747,9 +795,10 @@ function readEvent() {
 
 async function main(argv) {
   const [command] = argv
-  if (command === 'pr') await runPullRequestCheck(readEvent())
+  if (command === 'pr-preflight') await runPullRequestPreflight(readEvent())
+  else if (command === 'pr') await runPullRequestCheck(readEvent())
   else if (command === 'lifecycle') await runLifecycle(process.env.GITHUB_EVENT_NAME, readEvent())
-  else throw new Error('用法：policy.mjs pr|lifecycle')
+  else throw new Error('用法：policy.mjs pr-preflight|pr|lifecycle')
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
