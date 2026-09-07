@@ -18,6 +18,8 @@ Assistant blocks remain the durable model-visible content. A versioned `ReplayEn
 
 Image requests use bounded inline base64 versions from the attachment service. Shared attachment offload and DeepSeek token measurement keep request and measurement policy consistent. Files uploads remain outside this adapter because their endpoints and cache ownership differ from chat-completions; adding them requires a Messages-specific lifetime and error policy.
 
+The Web profile mounts both direct adapters and leaves its selected default unchanged. Its Messages row uses `DEEPSEEK_MESSAGES_API_KEY`, so the two configuration cards can store different credentials. The shared DeepSeek editor dispatches writes by settings namespace and displays the appropriate protocol root; model identity remains provider-qualified in the composer.
+
 ## Alternatives considered
 
 **Add a protocol switch to `llm-deepseek`.** This couples two serializers, endpoint roots, and replay formats under one route. Separate registration allows deployments to select the protocol explicitly and mount both adapters.

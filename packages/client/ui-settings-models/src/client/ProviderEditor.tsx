@@ -42,8 +42,11 @@ import styles from './ModelsSection.module.css'
 /** Per-adapter-family curated field sets (unknown namespaces get the hint alone). */
 type EditorLayout = 'deepseek' | 'pi-ai' | 'unknown'
 
-/** The public DeepSeek endpoint shown as the deepseek base-URL placeholder. */
-const DEEPSEEK_PUBLIC_BASE_URL = 'https://api.deepseek.com'
+/** Public protocol roots shown independently of launch-environment overrides. */
+const DEEPSEEK_PUBLIC_BASE_URLS = {
+  'llm-deepseek': 'https://api.deepseek.com',
+  'llm-deepseek-messages': 'https://api.deepseek.com/anthropic',
+}
 
 /** Props of {@link ProviderEditor}. */
 export interface ProviderEditorProps {
@@ -131,7 +134,7 @@ export function pathOps(
 
 /** The editor layout the owning namespace selects. */
 function layoutOf(ns: string): EditorLayout {
-  if (ns === 'llm-deepseek') return 'deepseek'
+  if (ns === 'llm-deepseek' || ns === 'llm-deepseek-messages') return 'deepseek'
   if (ns === 'llm-pi-ai') return 'pi-ai'
   return 'unknown'
 }
@@ -414,7 +417,7 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
                 type="text"
                 value={stringAt(draft, 'baseURL') ?? ''}
                 placeholder={family === 'deepseek'
-                  ? DEEPSEEK_PUBLIC_BASE_URL
+                  ? DEEPSEEK_PUBLIC_BASE_URLS[namespace.ns as keyof typeof DEEPSEEK_PUBLIC_BASE_URLS]
                   : stringAt(fallback, 'baseURL') ?? t('baseUrlDefault')}
                 aria-label={t('baseUrl')}
                 disabled={disabled}
@@ -423,6 +426,9 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
                 }}
               />
             </div>
+            {namespace.ns === 'llm-deepseek-messages'
+              ? <p className={styles['intro']}>{t('messagesBaseUrlHint')}</p>
+              : null}
             {/* The protocol sits beside the endpoint it describes, as it does
                 on the create card. */}
             {ownsIdentity

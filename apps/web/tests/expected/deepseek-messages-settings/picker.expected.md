@@ -1,0 +1,13 @@
+- menu "模型与推理等级":
+  - group "DeepSeek":
+    - text: DeepSeek
+    - menuitemradio "DeepSeek-V4-Flash" [checked]:
+      - text: DeepSeek-V4-Flash
+      - img
+    - menuitemradio "DeepSeek-V4-Pro"
+    - menuitemradio "DeepSeek-V4-Flash-Vision-Exp"
+  - group "DeepSeek Messages":
+    - text: DeepSeek Messages
+    - menuitemradio "Messages Flash"
+    - menuitemradio "DeepSeek-V4-Pro"
+    - menuitemradio "DeepSeek-V4-Flash-Vision-Exp"
