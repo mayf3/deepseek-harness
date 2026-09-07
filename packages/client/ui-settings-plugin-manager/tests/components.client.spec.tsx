@@ -161,24 +161,27 @@ describe('PluginManagerSettingsTab', () => {
     expect(screen.queryByRole('switch', { name: 'Enable unknown' })).toBeNull()
     expect(screen.queryByRole('switch', { name: 'Enable tool-foo' })).toBeNull()
 
-    // Uninstall lives in the expanded card, for installed packages the person added.
-    fireEvent.click(screen.getByRole('button', { name: 'Show better-sidebar' }))
+    // Uninstall lives on the package's page, for installed packages the person added.
+    fireEvent.click(screen.getByRole('button', { name: 'View better-sidebar' }))
     fireEvent.click(screen.getByRole('button', { name: 'Uninstall better-sidebar' }))
     expect(actions.uninstall).toHaveBeenCalledWith('dsh-better-sidebar')
-    fireEvent.click(screen.getByRole('button', { name: 'Show untitled' }))
+    fireEvent.click(screen.getByRole('button', { name: en.backToList }))
+    fireEvent.click(screen.getByRole('button', { name: 'View untitled' }))
     expect(screen.queryByRole('button', { name: 'Uninstall untitled' })).toBeNull()
-    fireEvent.click(screen.getByRole('button', { name: 'Show First party' }))
-    expect(document.querySelector('[data-plugin-package="@deepseek-ai/dsh-bundle-first-party"] dd')?.textContent).toBe(en.sourceBuiltin)
+    fireEvent.click(screen.getByRole('button', { name: en.backToList }))
+    fireEvent.click(screen.getByRole('button', { name: 'View First party' }))
+    expect(document.querySelector('[data-plugin-detail="@deepseek-ai/dsh-bundle-first-party"] dd')?.textContent).toBe(en.sourceBuiltin)
     expect(screen.queryByRole('button', { name: 'Uninstall First party' })).toBeNull()
     expect(screen.queryByText(en.versionLabel)).toBeNull()
   })
 
-  it('expands a plugin pack into its facts and components, and retries a failing one', () => {
+  it('opens a plugin pack\'s page with its facts, rows, and overrides, and retries a failing one', () => {
     const { actions, set } = renderTab({
       packages: [
         pkg({
           status: 'partial',
           reason: 'one row failed',
+          overrides: ['directory-picker'],
           rows: [
             { entryId: 'include:better-sidebar', rowId: 'better-sidebar', moduleName: 'dsh-better-sidebar', enabled: true, phase: 'active' },
             { entryId: 'include:off', rowId: 'off', moduleName: 'dsh-better-sidebar/off', enabled: false, disabledBy: 'user', phase: null },
@@ -189,10 +192,6 @@ describe('PluginManagerSettingsTab', () => {
           ],
         }),
         pkg({ name: 'no-rows', enabled: false, status: 'disabled' }),
-        pkg({
-          name: 'all-off', enabled: false, status: 'disabled',
-          rows: [{ entryId: 'include:o1', rowId: 'o1', moduleName: 'all-off', enabled: false, disabledBy: 'composition', phase: null }],
-        }),
         pkg({ name: 'dsh-tool-foo', kind: 'plugin', status: 'plain' }),
         pkg({
           name: '@deepseek-ai/dsh-core-broken', title: 'Core', trust: 'builtin', status: 'failed',
@@ -200,70 +199,67 @@ describe('PluginManagerSettingsTab', () => {
         }),
       ],
     })
-    fireEvent.click(screen.getByRole('button', { name: 'Show better-sidebar' }))
+    // The list and its toolbar give way to the page; the crumb leads back.
+    fireEvent.click(screen.getByRole('button', { name: 'View better-sidebar' }))
+    expect(screen.queryByRole('button', { name: en.addPlugin })).toBeNull()
+    expect(screen.getByRole('heading', { name: 'better-sidebar' })).toBeTruthy()
     expect(screen.getByText(`${en.reasonLabel}: one row failed`)).toBeTruthy()
     expect(screen.getByText('0.16.0')).toBeTruthy()
-    expect(screen.getByText(en.sourceLocal)).toBeTruthy()
-    // The count line; the failing components one line each; the off ones as
-    // chips under why they are off; the running ones wait behind Show all.
+    expect(screen.getByText(en.sourceExternal)).toBeTruthy()
+    // Every row on one line, in the pack's order, saying its state; a failure adds its message.
     expect(screen.getByText('6 total · 1 running · 2 off · 2 failed')).toBeTruthy()
-    expect(document.querySelector('[data-plugin-row="include:better-sidebar"]')).toBeNull()
-    expect(screen.getByText(`${en.partDisabledByUser} (1)`)).toBeTruthy()
-    expect(screen.getByText(`${en.partDisabledByComposition} (1)`)).toBeTruthy()
+    const rowText = (id: string): string | undefined => document.querySelector(`[data-plugin-row="include:${id}"]`)?.textContent
+    expect(rowText('better-sidebar')).toBe(`better-sidebar${en.rowPhaseActive}`)
+    expect(rowText('off')).toBe(`off${en.partDisabledByUser}`)
+    expect(rowText('gated')).toBe(`gated${en.partDisabledByComposition}`)
+    expect(rowText('crash')).toBe(`crash${en.rowStateFailed}boom`)
+    expect(rowText('flaky')).toBe(`flaky${en.rowStateFailed}`)
+    expect(rowText('idle')).toBe(`idle${en.rowStateIdle}`)
     expect(document.querySelector('[data-plugin-row="include:off"]')?.getAttribute('data-state')).toBe('off')
-    expect(document.querySelector('[data-plugin-row="include:gated"]')?.textContent).toBe('gated')
-    expect(document.querySelector('[data-plugin-row="include:crash"]')?.textContent).toContain(en.rowStateFailed)
-    expect(document.querySelector('[data-plugin-row="include:flaky"]')?.textContent).toBe(`flaky${en.rowStateFailed}`)
-    expect(screen.getByText('boom')).toBeTruthy()
-    fireEvent.click(screen.getByRole('button', { name: en.partsShowAll }))
-    expect(screen.getByRole('img', { name: en.rowPhaseActive })).toBeTruthy()
-    // A component shows the id its pack declared, not the tree-wide entry id.
-    expect(document.querySelector('[data-plugin-row="include:better-sidebar"]')?.textContent).toContain('better-sidebar')
-    expect(document.querySelector('[data-plugin-row="include:idle"]')?.textContent).toBe('idle')
-    expect(document.querySelector('[data-plugin-row="include:idle"]')?.getAttribute('data-state')).toBeNull()
-    const filter = screen.getByRole('searchbox', { name: en.partsFilter })
-    fireEvent.change(filter, { target: { value: 'nope' } })
-    expect(screen.getByText(en.partsFilterEmpty)).toBeTruthy()
-    fireEvent.change(filter, { target: { value: 'SIDE' } })
-    expect(document.querySelector('[data-plugin-row="include:better-sidebar"]')).toBeTruthy()
-    expect(document.querySelector('[data-plugin-row="include:idle"]')).toBeNull()
-    fireEvent.click(screen.getByRole('button', { name: en.partsCollapse }))
-    expect(document.querySelector('[data-plugin-row="include:better-sidebar"]')).toBeNull()
+    expect(document.querySelector('[data-plugin-row="include:crash"]')?.getAttribute('data-state')).toBe('failed')
+    // A short list has no filter; the built-in rows the pack changes are named.
+    expect(screen.queryByRole('searchbox', { name: en.partsFilter })).toBeNull()
+    expect(document.querySelector('[data-plugin-overrides]')?.textContent).toContain('directory-picker')
+    expect(screen.queryByText(en.modulesLabel)).toBeNull()
 
     fireEvent.click(screen.getByRole('button', { name: en.retryPackage }))
     expect(actions.retry).toHaveBeenCalledWith('dsh-better-sidebar')
-
+    fireEvent.click(screen.getByRole('switch', { name: 'Enable better-sidebar' }))
+    expect(actions.setEnabled).toHaveBeenCalledWith('dsh-better-sidebar', false)
     // A busy package keeps its controls inert.
     set({ busy: ['dsh-better-sidebar'] })
     expect(screen.getByRole('button', { name: en.retryPackage })).toHaveProperty('disabled', true)
     expect(screen.getByRole('button', { name: 'Uninstall better-sidebar' })).toHaveProperty('disabled', true)
     expect(screen.getByRole('switch', { name: 'Enable better-sidebar' })).toHaveProperty('disabled', true)
-    fireEvent.click(screen.getByRole('button', { name: 'Hide better-sidebar' }))
+    fireEvent.click(screen.getByRole('button', { name: en.backToList }))
     expect(screen.queryByText(en.partsLabel)).toBeNull()
+    expect(screen.getByRole('button', { name: en.addPlugin })).toBeTruthy()
 
-    // A pack without components says so; a plugin expands into its facts alone,
-    // and opening one card closes the other.
-    fireEvent.click(screen.getByRole('button', { name: 'Show no-rows' }))
+    // A pack without rows says so; a plugin's page has no rows section; a
+    // built-in pack retries but never uninstalls.
+    fireEvent.click(screen.getByRole('button', { name: 'View no-rows' }))
     expect(screen.getByText(en.partsEmpty)).toBeTruthy()
-    expect(screen.queryByRole('button', { name: en.partsShowAll })).toBeNull()
-    // The count line names only the states that occur.
-    fireEvent.click(screen.getByRole('button', { name: 'Show all-off' }))
-    expect(screen.getByText('1 total · 1 off')).toBeTruthy()
-    expect(screen.queryByRole('button', { name: en.partsShowAll })).toBeNull()
-    fireEvent.click(screen.getByRole('button', { name: 'Show tool-foo' }))
-    expect(screen.getByText(en.sourceLocal)).toBeTruthy()
-    expect(screen.queryByText(en.partsEmpty)).toBeNull()
-    // Only a pack with failing components offers a retry; a built-in one retries but never uninstalls.
+    expect(screen.getByText(en.noDescription)).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: en.backToList }))
+    fireEvent.click(screen.getByRole('button', { name: 'View tool-foo' }))
+    expect(screen.queryByText(en.partsLabel)).toBeNull()
     expect(screen.queryByRole('button', { name: en.retryPackage })).toBeNull()
-    fireEvent.click(screen.getByRole('button', { name: 'Show Core' }))
+    fireEvent.click(screen.getByRole('button', { name: en.backToList }))
+    fireEvent.click(screen.getByRole('button', { name: 'View Core' }))
     expect(screen.getByText('1 total · 1 running')).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: en.retryPackage }))
     expect(actions.retry).toHaveBeenLastCalledWith('@deepseek-ai/dsh-core-broken')
     expect(screen.queryByRole('button', { name: 'Uninstall Core' })).toBeNull()
+    // A package that leaves the list while its page is open drops back to the cards.
+    set({ packages: [] })
+    expect(screen.getByText(en.empty)).toBeTruthy()
   })
 
-  it('switches the components of a live external pack, and locks what the pack itself keeps off', () => {
+  it('switches the rows of a live external pack, filters a long list, and locks what the pack itself keeps off', () => {
     const userOff = { enabled: false, disabledBy: 'user', phase: null } as const
+    const many = Array.from({ length: 11 }, (_, index) => ({
+      entryId: `include:row-${String(index)}`, rowId: `row-${String(index)}`, moduleName: 'many', enabled: true, phase: 'active' as const,
+    }))
     const { actions, set } = renderTab({
       packages: [
         pkg({
@@ -276,14 +272,15 @@ describe('PluginManagerSettingsTab', () => {
             { entryId: 'conflict:x:taken', rowId: 'taken', moduleName: 'dsh-better-sidebar/taken', enabled: true, phase: null, failure: { stage: 'conflict', message: 'x owns taken' } },
           ],
         }),
+        pkg({ name: 'many', rows: many }),
         pkg({ name: 'frozen', liveReload: false, rows: [{ entryId: 'include:frozen', rowId: 'frozen', moduleName: 'frozen', ...userOff }] }),
         pkg({ name: 'parked', enabled: false, status: 'disabled', rows: [{ entryId: 'include:parked', rowId: 'parked', moduleName: 'parked', ...userOff }] }),
         pkg({ name: '@deepseek-ai/dsh-core', title: 'Core', trust: 'builtin', rows: [{ entryId: 'include:core', rowId: 'core', moduleName: '@deepseek-ai/dsh-core', ...userOff }] }),
       ],
     })
     const target = { kind: 'global' } as const
-    fireEvent.click(screen.getByRole('button', { name: 'Show better-sidebar' }))
-    // A component the user switched off switches back on; one the pack itself keeps off is locked and says why.
+    fireEvent.click(screen.getByRole('button', { name: 'View better-sidebar' }))
+    // A row the person switched off switches back on; one the pack itself keeps off is locked and says why.
     const off = screen.getByRole('switch', { name: 'Enable component off' })
     expect(off.getAttribute('aria-checked')).toBe('false')
     fireEvent.click(off)
@@ -291,29 +288,92 @@ describe('PluginManagerSettingsTab', () => {
     const gated = screen.getByRole('switch', { name: 'Enable component gated' })
     expect(gated).toHaveProperty('disabled', true)
     expect(gated.getAttribute('title')).toBe(en.partLockedByComposition)
-    // A failing component can be switched off; a row another layer owns has nothing mounted to switch.
+    // A failing row can be switched off; a row another layer owns has nothing mounted to switch.
     fireEvent.click(screen.getByRole('switch', { name: 'Enable component crash' }))
     expect(actions.setRowDisabled).toHaveBeenLastCalledWith(target, 'crash', true)
     expect(screen.queryByRole('switch', { name: 'Enable component taken' })).toBeNull()
-    fireEvent.click(screen.getByRole('button', { name: en.partsShowAll }))
     const sidebar = screen.getByRole('switch', { name: 'Enable component better-sidebar' })
     expect(sidebar.getAttribute('aria-checked')).toBe('true')
     fireEvent.click(sidebar)
     expect(actions.setRowDisabled).toHaveBeenLastCalledWith(target, 'better-sidebar', true)
-    // Only the row with a write in flight goes inert; a busy package takes every component with it.
+    // Only the row with a write in flight goes inert; a busy package takes every row with it.
     set({ busy: [rowKey(target, 'better-sidebar')] })
     expect(screen.getByRole('switch', { name: 'Enable component better-sidebar' })).toHaveProperty('disabled', true)
     expect(screen.getByRole('switch', { name: 'Enable component off' })).toHaveProperty('disabled', false)
     set({ busy: ['dsh-better-sidebar'] })
     expect(screen.getByRole('switch', { name: 'Enable component off' })).toHaveProperty('disabled', true)
-    fireEvent.click(screen.getByRole('button', { name: 'Hide better-sidebar' }))
-    // Components stay read-only where a switch would not act now: a profile that
+    fireEvent.click(screen.getByRole('button', { name: en.backToList }))
+    // A long list gets a filter over the row ids.
+    fireEvent.click(screen.getByRole('button', { name: 'View many' }))
+    const filter = screen.getByRole('searchbox', { name: en.partsFilter })
+    expect(document.querySelectorAll('[data-plugin-row]')).toHaveLength(11)
+    fireEvent.change(filter, { target: { value: 'ROW-1' } })
+    expect(document.querySelectorAll('[data-plugin-row]')).toHaveLength(2)
+    fireEvent.change(filter, { target: { value: 'nope' } })
+    expect(screen.getByText(en.partsFilterEmpty)).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: en.backToList }))
+    // Rows stay read-only where a switch would not act now: a profile that
     // applies patches at its next start, a pack that is off, and a built-in pack.
     for (const [name, rowId] of [['frozen', 'frozen'], ['parked', 'parked'], ['Core', 'core']] as const) {
-      fireEvent.click(screen.getByRole('button', { name: `Show ${name}` }))
-      expect(document.querySelector(`[data-plugin-row="include:${rowId}"]`)?.textContent).toBe(rowId)
+      fireEvent.click(screen.getByRole('button', { name: `View ${name}` }))
+      expect(document.querySelector(`[data-plugin-row="include:${rowId}"]`)?.textContent).toBe(`${rowId}${en.partDisabledByUser}`)
       expect(screen.queryByRole('switch', { name: `Enable component ${rowId}` })).toBeNull()
+      fireEvent.click(screen.getByRole('button', { name: en.backToList }))
     }
+  })
+
+  it('opens a plugin\'s page with its modules, where each is composed, and an Add to… per module', () => {
+    const { actions } = renderTab({
+      packages: [
+        pkg({
+          name: 'dsh-tool-foo', kind: 'plugin', status: 'plain', title: 'Foo tools', reason: 'one module refused',
+          addable: [
+            { moduleName: 'dsh-tool-foo', declaredName: '.', ok: true },
+            { moduleName: 'dsh-tool-foo/bar', declaredName: 'bar', title: 'Bar', ok: true },
+            { moduleName: 'dsh-tool-foo/broken', declaredName: 'broken', ok: false, error: 'no default export' },
+            { moduleName: 'dsh-tool-foo/silent', declaredName: 'silent', ok: false },
+          ],
+        }),
+        pkg({ name: 'dsh-tool-bare', kind: 'plugin', status: 'plain', addable: [{ moduleName: 'dsh-tool-bare', declaredName: '.', ok: true }] }),
+      ],
+      presets: [
+        preset({ rows: [{ entryId: 'preset:foo', moduleName: 'dsh-tool-foo', source: 'user', enabled: true, fiberPhase: null }] }),
+        preset({ id: 'other', name: 'Other', isDefault: false }),
+      ],
+      globalModules: ['dsh-tool-foo'],
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'View Foo tools' }))
+    expect(screen.getByText(en.statusProblem)).toBeTruthy()
+    expect(screen.getByText(`${en.reasonLabel}: one module refused`)).toBeTruthy()
+    // The main export reads by the package title; a module by its own title;
+    // each names where it is composed, or why it cannot be.
+    const moduleText = (name: string): string | undefined => document.querySelector(`[data-plugin-module="${name}"]`)?.textContent
+    expect(moduleText('dsh-tool-foo')).toContain(`Foo tools${en.moduleJoined.replace('{targets}', `${en.joinedGlobal}, 标准`)}`)
+    expect(moduleText('dsh-tool-foo/bar')).toContain(`Bar${en.moduleNotJoined}`)
+    expect(moduleText('dsh-tool-foo/broken')).toContain(en.moduleBroken.replace('{error}', 'no default export'))
+    expect(moduleText('dsh-tool-foo/silent')).toContain(en.moduleBroken.replace('{error}', ''))
+    // Only an importable module offers Add to…; the menu marks the targets it joined.
+    const menus = screen.getAllByRole('button', { name: en.addTo })
+    expect(menus).toHaveLength(2)
+    fireEvent.click(menus[0] as HTMLElement)
+    expect(screen.getByRole('menuitem', { name: en.addToGlobalAdded })).toBeTruthy()
+    expect(screen.getByRole('menuitem', { name: en.addToPresetAdded.replace('{name}', '标准') })).toBeTruthy()
+    fireEvent.click(screen.getByRole('menuitem', { name: en.addToPreset.replace('{name}', 'Other') }))
+    expect(actions.addRow).toHaveBeenLastCalledWith('dsh-tool-foo', '.', { kind: 'preset', preset: 'other' })
+    fireEvent.click(menus[1] as HTMLElement)
+    fireEvent.click(screen.getByRole('menuitem', { name: en.addToGlobal }))
+    expect(actions.addRow).toHaveBeenLastCalledWith('dsh-tool-foo', 'bar', { kind: 'global' })
+    // The anchor closes its own menu; so does Escape.
+    fireEvent.click(menus[1] as HTMLElement)
+    fireEvent.click(menus[1] as HTMLElement)
+    expect(screen.queryByRole('menuitem', { name: en.addToGlobal })).toBeNull()
+    fireEvent.click(menus[1] as HTMLElement)
+    fireEvent.keyDown(document, { key: 'Escape' })
+    expect(screen.queryByRole('menuitem', { name: en.addToGlobal })).toBeNull()
+    // A package without a title reads by its short name.
+    fireEvent.click(screen.getByRole('button', { name: en.backToList }))
+    fireEvent.click(screen.getByRole('button', { name: 'View tool-bare' }))
+    expect(moduleText('dsh-tool-bare')).toContain(`tool-bare${en.moduleNotJoined}`)
   })
 
   it('offers Add to… for a plugin with importable modules, marking the targets it already joined', () => {

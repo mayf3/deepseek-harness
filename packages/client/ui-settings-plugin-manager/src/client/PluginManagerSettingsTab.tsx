@@ -5,14 +5,14 @@
  * a restart is pending or something is wrong; the install dialog streaming
  * pnpm's output behind a fold; and the confirmation a destructive action
  * waits on, naming what still uses the package. Entry ids, module names,
- * kinds, and probe facts stay off the page; an expanded card shows the
- * version, the source, a pack's components — each with its own switch on an
- * external pack composed on a live-reload profile — and its uninstall. A preset's
+ * kinds, and probe facts stay off the page. A card opens the package's own
+ * page: its version and source, its rows — each with its own switch on an
+ * external pack composed on a live-reload profile — the built-in rows it
+ * changes, the modules it declares addable, and its uninstall. A preset's
  * composition lives on the preset's own detail page (`PresetPluginsSection`).
  */
 
 import { useEffect, useId, useState, type ReactNode } from 'react'
-import clsx from 'clsx'
 import type { PluginInstallRejection, PluginPackageView, PluginRowTarget } from '@deepseek-ai/dsh-api-remotes/client'
 import {
   Button, IconChevronDownOutline14, IconRefreshOutline16, Input, Menu, Modal, StateDot, Switch, Tag,
@@ -72,16 +72,6 @@ const PHASE_STATES = {
   unloading: 'idle',
 } satisfies Record<RowPhase, StateDotState>
 
-/** One fiber phase as a state dot, named for assistive technology by the phase's copy. */
-function PhaseDot({ phase, t }: { readonly phase: RowPhase; readonly t: Translate }): ReactNode {
-  const label = t(PHASE_KEYS[phase])
-  return (
-    <span className={css.phase} role="img" aria-label={label} title={label}>
-      <StateDot state={PHASE_STATES[phase]} size={8} />
-    </span>
-  )
-}
-
 /** A component with a recorded startup failure or a failed fiber. */
 function isFailedRow(row: RowView): boolean {
   return row.failure !== undefined || row.phase === 'failed'
@@ -100,24 +90,26 @@ function partsSummary(rows: readonly RowView[], t: Translate): string {
   ].join(' · ')
 }
 
-/** The switch one component renders: whether a write is in flight for it, and the write it asks for. */
-interface PartToggle {
+/** The switch one row renders: whether a write is in flight for it, and the write it asks for. */
+interface RowToggle {
   readonly busy: boolean
   readonly onChange: (disabled: boolean) => void
 }
 
-/** Switching for a pack's components: which rows have a write in flight, and the write. */
-interface PartToggles {
+/** Switching for a pack's rows: which rows have a write in flight, and the write. */
+interface RowToggles {
   readonly busy: (rowId: string) => boolean
   readonly onSetDisabled: (rowId: string, disabled: boolean) => void
 }
 
-/** A component's switch: off when the user switched it off; locked, saying why, when the pack itself keeps it off. */
-function PartSwitch({ row, t, toggle }: { readonly row: RowView; readonly t: Translate; readonly toggle: PartToggle }): ReactNode {
+/** Rows beyond this count get a filter box above the list. */
+const ROW_FILTER_THRESHOLD = 10
+
+/** A row's switch: off when the person switched it off; locked, saying why, when the pack itself keeps it off. */
+function RowSwitch({ row, t, toggle }: { readonly row: RowView; readonly t: Translate; readonly toggle: RowToggle }): ReactNode {
   const locked = row.disabledBy === 'composition'
   return (
     <Switch
-      className={css.chipSwitch}
       checked={row.enabled}
       label={t('partToggle', { name: row.rowId })}
       disabled={toggle.busy || locked}
@@ -127,117 +119,176 @@ function PartSwitch({ row, t, toggle }: { readonly row: RowView; readonly t: Tra
   )
 }
 
-/** One component as a chip: its declared id, its fiber phase when it has one, and its switch when it has one. */
-function PartChip({ row, off, t, toggle }: {
-  readonly row: RowView
-  readonly off: boolean
-  readonly t: Translate
-  readonly toggle?: PartToggle | undefined
-}): ReactNode {
-  return (
-    <li className={css.chip} data-plugin-row={row.entryId} {...off ? { 'data-state': 'off' } : {}}>
-      {row.phase === null ? null : <PhaseDot phase={row.phase} t={t} />}
-      {row.rowId}
-      {toggle === undefined ? null : <PartSwitch row={row} t={t} toggle={toggle} />}
-    </li>
-  )
+/** What a row's state line says: the failure, why it is off, or the phase its fiber is in. */
+function rowStateText(row: RowView, t: Translate): string {
+  if (isFailedRow(row)) return t('rowStateFailed')
+  if (!row.enabled) return t(row.disabledBy === 'user' ? 'partDisabledByUser' : 'partDisabledByComposition')
+  return row.phase === null ? t('rowStateIdle') : t(PHASE_KEYS[row.phase])
+}
+
+/** The dot beside a row: its failure, its fiber phase, or idle. */
+function rowDotState(row: RowView): StateDotState {
+  if (isFailedRow(row)) return 'error'
+  if (!row.enabled || row.phase === null) return 'idle'
+  return PHASE_STATES[row.phase]
 }
 
 /**
- * The components of one plugin pack: a count line; the failing components,
- * one line each with the failure; the off ones as chips under why they are
- * off; and the rest as chips behind **Show all** with a filter. A pack like
- * base carries close to a hundred rows and switches dozens off by design,
- * so only a failure earns a line of its own. With `toggle`, every component
- * carries a switch, except a row another layer owns: nothing of it mounted.
+ * A pack's rows as a list in the order the pack declares them: a state dot,
+ * the row id, one line saying its state, the failure when one is recorded,
+ * and, when the pack is switchable, a switch — except on a row another layer
+ * owns, of which nothing mounted. A pack like base carries close to a hundred
+ * rows, so a long list gets a filter.
  */
-function BundleParts({ rows, t, toggle }: {
+function RowsSection({ rows, t, toggle }: {
   readonly rows: readonly RowView[]
   readonly t: Translate
-  readonly toggle?: PartToggles | undefined
+  readonly toggle?: RowToggles | undefined
 }): ReactNode {
-  const partToggle = (row: RowView): PartToggle | undefined => toggle === undefined || row.failure?.stage === 'conflict'
-    ? undefined
-    : { busy: toggle.busy(row.rowId), onChange: (disabled) => { toggle.onSetDisabled(row.rowId, disabled) } }
-  const [open, setOpen] = useState(false)
   const [filter, setFilter] = useState('')
-  const failed = rows.filter(isFailedRow)
-  const off = rows.filter(row => !isFailedRow(row) && !row.enabled)
-  const offGroups = [
-    { key: 'partDisabledByUser' as const, rows: off.filter(row => row.disabledBy === 'user') },
-    { key: 'partDisabledByComposition' as const, rows: off.filter(row => row.disabledBy !== 'user') },
-  ].filter(group => group.rows.length > 0)
-  const rest = rows.filter(row => !isFailedRow(row) && row.enabled)
   const query = filter.trim().toLowerCase()
-  const shown = query === '' ? rest : rest.filter(row => row.rowId.toLowerCase().includes(query))
+  const shown = query === '' ? rows : rows.filter(row => row.rowId.toLowerCase().includes(query))
   return (
-    <div className={css.parts}>
-      <div className={css.partsHead}>
-        <span className={css.subLabel}>{t('partsLabel')}</span>
-        {rows.length === 0 ? null : <span className={css.partsCount}>{partsSummary(rows, t)}</span>}
-        {rest.length === 0
-          ? null
-          : (
-            <Button
-              variant="ghost"
-              size="sm"
-              className={css.partsToggle}
-              aria-expanded={open}
-              onClick={() => { setOpen(current => !current) }}
-            >
-              {t(open ? 'partsCollapse' : 'partsShowAll')}
-            </Button>
-          )}
+    <section className={css.detailSection} data-plugin-rows>
+      <div className={css.sectionHead}>
+        <h4 className={css.sectionTitle}>{t('partsLabel')}</h4>
+        {rows.length === 0 ? null : <span className={css.sectionCount}>{partsSummary(rows, t)}</span>}
       </div>
       {rows.length === 0 ? <p className={css.status}>{t('partsEmpty')}</p> : null}
-      {failed.length === 0
+      {rows.length > ROW_FILTER_THRESHOLD
+        ? (
+          <Input
+            type="search"
+            className={css.partsFilter as string}
+            placeholder={t('partsFilter')}
+            aria-label={t('partsFilter')}
+            value={filter}
+            onChange={(event) => { setFilter(event.target.value) }}
+          />
+        )
+        : null}
+      {rows.length > 0 && shown.length === 0 ? <p className={css.status}>{t('partsFilterEmpty')}</p> : null}
+      {shown.length === 0
         ? null
         : (
-          <ul className={css.partExceptions}>
-            {failed.map((row) => {
-              const rowToggle = partToggle(row)
+          <ul className={css.rows}>
+            {shown.map((row) => {
+              const rowToggle = toggle === undefined || row.failure?.stage === 'conflict'
+                ? undefined
+                : { busy: toggle.busy(row.rowId), onChange: (disabled: boolean) => { toggle.onSetDisabled(row.rowId, disabled) } }
               return (
-                <li key={row.entryId} className={css.partException} data-plugin-row={row.entryId}>
-                  <StateDot state="error" size={8} />
-                  <span className={css.partId}>{row.rowId}</span>
-                  <Tag tone="danger">{t('rowStateFailed')}</Tag>
-                  {rowToggle === undefined ? null : <PartSwitch row={row} t={t} toggle={rowToggle} />}
-                  {row.failure === undefined ? null : <p className={css.partFailure}>{row.failure.message}</p>}
+                <li
+                  key={row.entryId}
+                  className={css.row}
+                  data-plugin-row={row.entryId}
+                  {...isFailedRow(row) ? { 'data-state': 'failed' } : row.enabled ? {} : { 'data-state': 'off' }}
+                >
+                  <StateDot state={rowDotState(row)} size={8} />
+                  <div className={css.rowMain}>
+                    <span className={css.rowId}>{row.rowId}</span>
+                    <span className={css.rowState}>{rowStateText(row, t)}</span>
+                    {row.failure === undefined ? null : <p className={css.rowFailure}>{row.failure.message}</p>}
+                  </div>
+                  {rowToggle === undefined ? null : <RowSwitch row={row} t={t} toggle={rowToggle} />}
                 </li>
               )
             })}
           </ul>
         )}
-      {offGroups.map(group => (
-        <div key={group.key} className={css.partGroup}>
-          <span className={css.partWhy}>{t('partsGroupLabel', { reason: t(group.key), count: String(group.rows.length) })}</span>
-          <ul className={css.chips}>
-            {group.rows.map(row => <PartChip key={row.entryId} row={row} off t={t} toggle={partToggle(row)} />)}
-          </ul>
-        </div>
-      ))}
-      {open
-        ? (
-          <div className={css.partsAll}>
-            <Input
-              type="search"
-              className={css.partsFilter as string}
-              placeholder={t('partsFilter')}
-              aria-label={t('partsFilter')}
-              value={filter}
-              onChange={(event) => { setFilter(event.target.value) }}
-            />
-            {shown.length === 0
-              ? <p className={css.status}>{t('partsFilterEmpty')}</p>
-              : (
-                <ul className={css.chips}>
-                  {shown.map(row => <PartChip key={row.entryId} row={row} off={false} t={t} toggle={partToggle(row)} />)}
-                </ul>
-              )}
-          </div>
-        )
-        : null}
-    </div>
+    </section>
+  )
+}
+
+/** The built-in rows the pack's patch changes, by id: the one thing a pack does outside its own rows. */
+function OverridesSection({ overrides, t }: { readonly overrides: readonly string[]; readonly t: Translate }): ReactNode {
+  return (
+    <section className={css.detailSection} data-plugin-overrides>
+      <div className={css.sectionHead}>
+        <h4 className={css.sectionTitle}>{t('overridesLabel')}</h4>
+      </div>
+      <ul className={css.chips}>
+        {overrides.map(id => <li key={id} className={css.chip}>{id}</li>)}
+      </ul>
+    </section>
+  )
+}
+
+/** Where one module is composed already: every session, then the presets that carry it. */
+function joinedTargets(
+  entry: PluginPackageView['addable'][number], presets: readonly PresetGroup[], globalModules: readonly string[],
+  t: Translate, presetName: (preset: PresetGroup) => string,
+): string[] {
+  return [
+    ...globalModules.includes(entry.moduleName) ? [t('joinedGlobal')] : [],
+    ...presets.filter(preset => preset.rows.some(row => row.moduleName === entry.moduleName)).map(presetName),
+  ]
+}
+
+/** The modules a package declares addable: each with where it is composed, or why it cannot be, and its **Add to…** menu. */
+function ModulesSection({ pkg, t, busy, presets, globalModules, presetName, onAddRow }: {
+  readonly pkg: PluginPackageView
+  readonly t: Translate
+  readonly busy: boolean
+  readonly presets: readonly PresetGroup[]
+  readonly globalModules: readonly string[]
+  readonly presetName: (preset: PresetGroup) => string
+  readonly onAddRow: (declaredName: string, target: PluginRowTarget) => void
+}): ReactNode {
+  const [openMenu, setOpenMenu] = useState<string | null>(null)
+  const title = pkg.title ?? shortName(pkg.name)
+  return (
+    <section className={css.detailSection} data-plugin-modules>
+      <div className={css.sectionHead}>
+        <h4 className={css.sectionTitle}>{t('modulesLabel')}</h4>
+      </div>
+      <ul className={css.rows}>
+        {pkg.addable.map((entry) => {
+          const joined = joinedTargets(entry, presets, globalModules, t, presetName)
+          const open = openMenu === entry.moduleName
+          return (
+            <li key={entry.moduleName} className={css.row} data-plugin-module={entry.moduleName}>
+              <StateDot state={entry.ok ? joined.length > 0 ? 'done' : 'idle' : 'error'} size={8} />
+              <div className={css.rowMain}>
+                <span className={css.rowId}>{entry.title ?? (entry.declaredName === '.' ? title : entry.declaredName)}</span>
+                <span className={css.rowState}>
+                  {entry.ok
+                    ? joined.length > 0 ? t('moduleJoined', { targets: joined.join(t('joinedSeparator')) }) : t('moduleNotJoined')
+                    : t('moduleBroken', { error: entry.error ?? '' })}
+                </span>
+              </div>
+              {entry.ok
+                ? (
+                  <Menu
+                    open={open}
+                    onClose={() => { setOpenMenu(null) }}
+                    items={addTargets(entry, presets, globalModules, t, presetName)}
+                    onSelect={(id) => {
+                      setOpenMenu(null)
+                      const choice = JSON.parse(id) as AddChoice
+                      onAddRow(choice.declaredName, choice.target)
+                    }}
+                    align="end"
+                    portal
+                    anchor={(
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        aria-haspopup="menu"
+                        aria-expanded={open}
+                        disabled={busy}
+                        onClick={() => { setOpenMenu(open ? null : entry.moduleName) }}
+                      >
+                        {t('addTo')}
+                      </Button>
+                    )}
+                  />
+                )
+                : null}
+            </li>
+          )
+        })}
+      </ul>
+    </section>
   )
 }
 
@@ -267,33 +318,23 @@ function addTargets(
   ]
 }
 
-/** One installed package: its head with the switch or the add menu, and its details once expanded. */
-function PackageCard({
-  pkg, t, busy, open, presets, globalModules, presetName,
-  onToggleOpen, onSetEnabled, onRetry, onUninstall, onAddRow, rowBusy, onSetRowDisabled,
-}: {
+/** One installed package as a card: its name, its one-liner, its tags, its switch or its **Add to…** menu, and the way into its page. */
+function PackageCard({ pkg, t, busy, presets, globalModules, presetName, onOpen, onSetEnabled, onAddRow }: {
   readonly pkg: PluginPackageView
   readonly t: Translate
   readonly busy: boolean
-  readonly open: boolean
   readonly presets: readonly PresetGroup[]
   readonly globalModules: readonly string[]
   readonly presetName: (preset: PresetGroup) => string
-  readonly onToggleOpen: () => void
+  readonly onOpen: () => void
   readonly onSetEnabled: (enabled: boolean) => void
-  readonly onRetry: () => void
-  readonly onUninstall: () => void
   readonly onAddRow: (declaredName: string, target: PluginRowTarget) => void
-  /** Whether a component's row has a write in flight. */
-  readonly rowBusy: (rowId: string) => boolean
-  readonly onSetRowDisabled: (rowId: string, disabled: boolean) => void
 }): ReactNode {
   const [addMenu, setAddMenu] = useState(false)
   const title = pkg.title ?? shortName(pkg.name)
   const bundle = pkg.kind === 'bundle'
   const builtin = pkg.trust === 'builtin'
   const status: CardStatus | null = bundle ? STATUS_OF[pkg.status] : pkg.reason === undefined ? null : 'problem'
-  const detailId = `plugin-package-${encodeURIComponent(pkg.name)}`
   const addable = pkg.addable.filter(entry => entry.ok)
   const [single] = addable
   const menuItems: MenuItem[] = single !== undefined && addable.length === 1
@@ -303,18 +344,8 @@ function PackageCard({
       label: entry.title ?? entry.declaredName,
       submenu: addTargets(entry, presets, globalModules, t, presetName),
     }))
-  const retryable = bundle && pkg.enabled && (pkg.status === 'failed' || pkg.status === 'partial')
-  const removable = pkg.installed && !builtin
-  // A component's switch acts at once only on an external pack composed on a
-  // profile that applies patches while it runs; elsewhere the chips stay read-only.
-  const switchable = bundle && !builtin && pkg.enabled && pkg.liveReload
   return (
-    <li
-      className={css.card}
-      data-plugin-package={pkg.name}
-      data-plugin-status={pkg.status}
-      data-open={open ? 'true' : undefined}
-    >
+    <li className={css.card} data-plugin-package={pkg.name} data-plugin-status={pkg.status}>
       <div className={css.cardHead}>
         <div className={css.cardMain}>
           <div className={css.titleRow}>
@@ -368,60 +399,136 @@ function PackageCard({
           <button
             type="button"
             className={css.iconButton}
-            aria-expanded={open}
-            aria-controls={detailId}
-            aria-label={t(open ? 'collapse' : 'expand', { name: title })}
-            onClick={onToggleOpen}
+            aria-label={t('openDetail', { name: title })}
+            title={t('openDetailTip')}
+            onClick={onOpen}
           >
-            <IconChevronDownOutline14 className={clsx(css.chevron, open && css.chevronOpen)} aria-hidden="true" />
+            <IconChevronDownOutline14 className={css.chevronRight} aria-hidden="true" />
           </button>
         </div>
       </div>
-      {open
-        ? (
-          <div className={css.cardBody} id={detailId}>
-            {pkg.reason === undefined ? null : <p className={css.reason} role="status">{t('reasonLabel')}: {pkg.reason}</p>}
-            <dl className={css.facts}>
-              {pkg.version === undefined ? null : <><dt>{t('versionLabel')}</dt><dd>{pkg.version}</dd></>}
-              <dt>{t('sourceLabel')}</dt>
-              <dd>{t(builtin ? 'sourceBuiltin' : 'sourceLocal')}</dd>
-            </dl>
-            {bundle
-              ? (
-                <BundleParts
-                  rows={pkg.rows}
-                  t={t}
-                  toggle={switchable ? { busy: rowId => busy || rowBusy(rowId), onSetDisabled: onSetRowDisabled } : undefined}
-                />
-              )
-              : null}
-            {retryable || removable
-              ? (
-                <div className={css.actions}>
-                  {retryable
-                    ? <Button variant="ghost" size="sm" disabled={busy} onClick={onRetry}>{t('retryPackage')}</Button>
-                    : null}
-                  {removable
-                    ? (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className={css.danger}
-                        aria-label={t('uninstallLabel', { name: title })}
-                        disabled={busy}
-                        onClick={onUninstall}
-                      >
-                        {t('uninstall')}
-                      </Button>
-                    )
-                    : null}
-                </div>
-              )
-              : null}
-          </div>
-        )
-        : null}
     </li>
+  )
+}
+
+/**
+ * One package's page: the crumb back to the list; its name, tags, one-liner,
+ * and its switch; the reason when one applies; its version and source; its
+ * rows with their switches; the built-in rows it changes; the modules it
+ * declares addable with where each is composed; and retry and uninstall.
+ */
+function PackageDetail({
+  pkg, t, busy, rowBusy, presets, globalModules, presetName,
+  onBack, onSetEnabled, onRetry, onUninstall, onAddRow, onSetRowDisabled,
+}: {
+  readonly pkg: PluginPackageView
+  readonly t: Translate
+  readonly busy: boolean
+  /** Whether a row has a write in flight. */
+  readonly rowBusy: (rowId: string) => boolean
+  readonly presets: readonly PresetGroup[]
+  readonly globalModules: readonly string[]
+  readonly presetName: (preset: PresetGroup) => string
+  readonly onBack: () => void
+  readonly onSetEnabled: (enabled: boolean) => void
+  readonly onRetry: () => void
+  readonly onUninstall: () => void
+  readonly onAddRow: (declaredName: string, target: PluginRowTarget) => void
+  readonly onSetRowDisabled: (rowId: string, disabled: boolean) => void
+}): ReactNode {
+  const title = pkg.title ?? shortName(pkg.name)
+  const bundle = pkg.kind === 'bundle'
+  const builtin = pkg.trust === 'builtin'
+  const status: CardStatus | null = bundle ? STATUS_OF[pkg.status] : pkg.reason === undefined ? null : 'problem'
+  const retryable = bundle && pkg.enabled && (pkg.status === 'failed' || pkg.status === 'partial')
+  const removable = pkg.installed && !builtin
+  // A row's switch acts at once only on an external pack composed on a
+  // profile that applies patches while it runs; elsewhere the rows stay read-only.
+  const switchable = bundle && !builtin && pkg.enabled && pkg.liveReload
+  return (
+    <div className={css.detail} data-plugin-detail={pkg.name}>
+      <button type="button" className={css.crumb} aria-label={t('backToList')} onClick={onBack}>
+        <IconChevronDownOutline14 className={css.crumbIcon} aria-hidden="true" />
+        <span>{t('crumbRoot')}</span>
+        <span className={css.crumbSep} aria-hidden="true" />
+        <span className={css.crumbHere}>{title}</span>
+      </button>
+      <div className={css.detailHead}>
+        <div className={css.detailMain}>
+          <div className={css.titleRow}>
+            <h3 className={css.detailTitle}>{title}</h3>
+            {builtin ? <Tag>{t('builtinTag')}</Tag> : null}
+            {status === null ? null : <Tag tone={status === 'restart' ? 'warning' : 'danger'}>{t(STATUS_KEYS[status])}</Tag>}
+          </div>
+          <p className={css.detailDesc}>{pkg.description ?? t('noDescription')}</p>
+        </div>
+        {bundle
+          ? (
+            <Switch
+              checked={pkg.enabled}
+              label={t('enableToggle', { name: title })}
+              disabled={busy || builtin || (!pkg.enabled && pkg.status === 'not-enableable')}
+              {...builtin ? { title: t('builtinLocked') } : {}}
+              onChange={onSetEnabled}
+            />
+          )
+          : null}
+      </div>
+      {pkg.reason === undefined ? null : <p className={css.reason} role="status">{t('reasonLabel')}: {pkg.reason}</p>}
+      <dl className={css.facts}>
+        {pkg.version === undefined ? null : <><dt>{t('versionLabel')}</dt><dd>{pkg.version}</dd></>}
+        <dt>{t('sourceLabel')}</dt>
+        <dd>{t(builtin ? 'sourceBuiltin' : 'sourceExternal')}</dd>
+      </dl>
+      <div className={css.detailSections}>
+        {bundle
+          ? (
+            <RowsSection
+              rows={pkg.rows}
+              t={t}
+              toggle={switchable ? { busy: rowId => busy || rowBusy(rowId), onSetDisabled: onSetRowDisabled } : undefined}
+            />
+          )
+          : null}
+        {pkg.overrides.length === 0 ? null : <OverridesSection overrides={pkg.overrides} t={t} />}
+        {pkg.addable.length === 0
+          ? null
+          : (
+            <ModulesSection
+              pkg={pkg}
+              t={t}
+              busy={busy}
+              presets={presets}
+              globalModules={globalModules}
+              presetName={presetName}
+              onAddRow={onAddRow}
+            />
+          )}
+        {retryable || removable
+          ? (
+            <div className={css.actions}>
+              {retryable
+                ? <Button variant="ghost" size="sm" disabled={busy} onClick={onRetry}>{t('retryPackage')}</Button>
+                : null}
+              {removable
+                ? (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className={css.danger}
+                    aria-label={t('uninstallLabel', { name: title })}
+                    disabled={busy}
+                    onClick={onUninstall}
+                  >
+                    {t('uninstall')}
+                  </Button>
+                )
+                : null}
+            </div>
+          )
+          : null}
+      </div>
+    </div>
   )
 }
 
@@ -567,20 +674,26 @@ function ConfirmDialog({ confirm, t, packages, presets, presetName, onConfirm, o
 export function PluginManagerSettingsTab(props: PluginManagerSettingsTabProps): ReactNode {
   const { t, presetName, ensure } = props
   const state = props.usePluginManager(snapshot => snapshot)
-  const [expanded, setExpanded] = useState<string | null>(null)
+  // The package whose page is open; one that leaves the list (uninstalled) drops back to the cards.
+  const [openPackage, setOpenPackage] = useState<string | null>(null)
   useEffect(() => { ensure() }, [ensure])
 
   const restartPending = state.packages.filter(pkg => pkg.status === 'restart-required').map(pkg => pkg.title ?? shortName(pkg.name))
   const loaded = state.status === 'ready' || state.status === 'error'
+  const openPkg = openPackage === null ? undefined : state.packages.find(pkg => pkg.name === openPackage)
 
   return (
     <div className={css.section} aria-busy={state.status === 'loading'}>
-      <div className={css.toolbar}>
-        <button type="button" className={css.iconButton} aria-label={t('refresh')} title={t('refresh')} disabled={!loaded} onClick={props.refresh}>
-          <span className={css.iconWrap} aria-hidden="true"><IconRefreshOutline16 /></span>
-        </button>
-        <Button variant="primary" size="sm" disabled={!loaded} onClick={props.openInstall}>{t('addPlugin')}</Button>
-      </div>
+      {openPkg === undefined
+        ? (
+          <div className={css.toolbar}>
+            <button type="button" className={css.iconButton} aria-label={t('refresh')} title={t('refresh')} disabled={!loaded} onClick={props.refresh}>
+              <span className={css.iconWrap} aria-hidden="true"><IconRefreshOutline16 /></span>
+            </button>
+            <Button variant="primary" size="sm" disabled={!loaded} onClick={props.openInstall}>{t('addPlugin')}</Button>
+          </div>
+        )
+        : null}
       {state.status === 'loading' ? <p className={css.status}>{t('loading')}</p> : null}
       {state.status === 'unavailable' ? <p className={css.status} role="status">{t('unavailable')}</p> : null}
       {state.status === 'error'
@@ -602,7 +715,26 @@ export function PluginManagerSettingsTab(props: PluginManagerSettingsTabProps): 
             <Button variant="ghost" size="sm" onClick={props.dismissNotice}>{t('dismiss')}</Button>
           </p>
         )}
-      {loaded
+      {loaded && openPkg !== undefined
+        ? (
+          <PackageDetail
+            pkg={openPkg}
+            t={t}
+            busy={state.busy.includes(openPkg.name)}
+            rowBusy={rowId => state.busy.includes(rowKey(GLOBAL, rowId))}
+            presets={state.presets}
+            globalModules={state.globalModules}
+            presetName={presetName}
+            onBack={() => { setOpenPackage(null) }}
+            onSetEnabled={(enabled) => { props.setEnabled(openPkg.name, enabled) }}
+            onRetry={() => { props.retry(openPkg.name) }}
+            onUninstall={() => { props.uninstall(openPkg.name) }}
+            onAddRow={(declaredName, target) => { props.addRow(openPkg.name, declaredName, target) }}
+            onSetRowDisabled={(rowId, disabled) => { props.setRowDisabled(GLOBAL, rowId, disabled) }}
+          />
+        )
+        : null}
+      {loaded && openPkg === undefined
         ? (
           <section className={css.group} data-plugin-scope="global">
             <div className={css.groupTitleRow}>
@@ -619,17 +751,12 @@ export function PluginManagerSettingsTab(props: PluginManagerSettingsTabProps): 
                       pkg={pkg}
                       t={t}
                       busy={state.busy.includes(pkg.name)}
-                      open={expanded === pkg.name}
                       presets={state.presets}
                       globalModules={state.globalModules}
                       presetName={presetName}
-                      onToggleOpen={() => { setExpanded(current => current === pkg.name ? null : pkg.name) }}
+                      onOpen={() => { setOpenPackage(pkg.name) }}
                       onSetEnabled={(enabled) => { props.setEnabled(pkg.name, enabled) }}
-                      onRetry={() => { props.retry(pkg.name) }}
-                      onUninstall={() => { props.uninstall(pkg.name) }}
                       onAddRow={(declaredName, target) => { props.addRow(pkg.name, declaredName, target) }}
-                      rowBusy={rowId => state.busy.includes(rowKey(GLOBAL, rowId))}
-                      onSetRowDisabled={(rowId, disabled) => { props.setRowDisabled(GLOBAL, rowId, disabled) }}
                     />
                   ))}
                 </ul>

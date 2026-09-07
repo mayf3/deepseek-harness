@@ -101,15 +101,17 @@ describe('web e2e: plugin manager', () => {
     await dialog.getByText('示例组合包', { exact: true }).waitFor({ timeout: 20_000 })
     expect(await dialog.getByText('示例插件', { exact: true }).count()).toBe(1)
     // The bundle is installed but not enabled; the plain plugin carries no
-    // switch, only its **Add to…** menu; uninstall waits in the expanded card.
+    // switch, only its **Add to…** menu; uninstall waits on the plugin's page,
+    // which names the module and where it is composed, and the crumb leads back.
     const toggle = dialog.getByRole('switch', { name: '启用 示例组合包' })
     expect(await toggle.getAttribute('aria-checked')).toBe('false')
     expect(await dialog.getByRole('switch', { name: '启用 示例插件' }).count()).toBe(0)
     expect(await dialog.getByRole('button', { name: '加入到…' }).count()).toBe(1)
     expect(await dialog.getByRole('button', { name: '卸载 示例插件' }).count()).toBe(0)
-    await dialog.getByRole('button', { name: '展开 示例插件' }).click()
+    await dialog.getByRole('button', { name: '查看 示例插件' }).click()
     await dialog.getByRole('button', { name: '卸载 示例插件' }).waitFor({ timeout: 5_000 })
-    await dialog.getByRole('button', { name: '收起 示例插件' }).click()
+    await dialog.getByText('尚未加入', { exact: true }).waitFor({ timeout: 5_000 })
+    await dialog.getByRole('button', { name: '返回插件列表' }).click()
     await expect.poll(() => dialog.getByRole('button', { name: '卸载 示例插件' }).count(), { timeout: 5_000 }).toBe(0)
 
     const snapshot = await captureStableAria(page, '[role="dialog"]', scaffold.workspaceCwd)
@@ -136,13 +138,12 @@ describe('web e2e: plugin manager', () => {
     await expect.poll(() => toggle.getAttribute('aria-checked'), { timeout: 10_000 }).toBe('true')
     await dialog.getByText('以下更改会在下次启动生效：示例组合包').waitFor({ timeout: 10_000 })
     expect(await dialog.getByText('需重启', { exact: true }).count()).toBe(1)
-    // The pack's components list from its probe. A profile that applies
-    // patches at its next start keeps them read-only: no component switch.
-    await dialog.getByRole('button', { name: '展开 示例组合包' }).click()
-    await dialog.getByRole('button', { name: '显示全部' }).click()
+    // The pack's page lists its rows from the probe. A profile that applies
+    // patches at its next start keeps them read-only: no row switch.
+    await dialog.getByRole('button', { name: '查看 示例组合包' }).click()
     await dialog.locator('[data-plugin-row]', { hasText: 'fixture-row' }).waitFor({ timeout: 10_000 })
     expect(await dialog.getByRole('switch', { name: '启用组件 fixture-row' }).count()).toBe(0)
-    await dialog.getByRole('button', { name: '收起 示例组合包' }).click()
+    await dialog.getByRole('button', { name: '返回插件列表' }).click()
     expect(tripwire.pageErrors).toEqual([])
   }, 60_000)
 

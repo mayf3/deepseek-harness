@@ -31,10 +31,10 @@
       - listitem:
         - text: "示例组合包 Web e2e fixture: a bundle whose one row is an inert plugin."
         - switch "启用 示例组合包"
-        - button "展开 示例组合包":
+        - button "查看 示例组合包":
           - img
       - listitem:
         - text: "示例插件 Web e2e fixture: a plain plugin module with no bundle, added to a composition per row."
         - button "加入到…"
-        - button "展开 示例插件":
+        - button "查看 示例插件":
           - img
