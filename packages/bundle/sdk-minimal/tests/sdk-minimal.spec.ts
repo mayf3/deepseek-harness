@@ -81,8 +81,6 @@ describe('dsh-sdk-minimal bundle', () => {
       disabled: { __jsExpr: "process.platform !== 'win32'" },
       config: { shellDialect: 'pwsh', timeoutMs: 300000 },
     })
-    expect(manifest.dependencies).not.toHaveProperty('@deepseek-ai/dsh-fs-local')
-    expect(manifest.dependencies).not.toHaveProperty('@deepseek-ai/dsh-tool-str-replace-editor')
     expect(Object.keys(manifest.dependencies ?? {}).sort()).toEqual(
       [...new Set(rows.map(row => row.name).filter((name): name is string => name !== undefined).map(packageName))].sort(),
     )

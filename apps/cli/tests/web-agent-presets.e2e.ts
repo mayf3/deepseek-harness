@@ -189,9 +189,7 @@ describe('the shipped Web composition', () => {
   it('leaves the global tool layer empty', () => {
     // Every model-facing tool belongs to a preset, `ask_user_question`
     // included: a tool in the global layer reaches EVERY agent regardless of
-    // which preset composed it, so a single-tool benchmark surface would really
-    // present two. A regression here means an agent-plane row came back to
-    // the host composition.
+    // which preset composed it, expanding that preset's tool list.
     expect(toolNames(ctx)).toEqual([])
   })
 
@@ -300,7 +298,10 @@ describe('the shipped Web composition', () => {
       expect(assembly.tools.map(tool => tool.name)).toEqual(['bash'])
       expect(assembly.tools.find(tool => tool.name === 'bash')?.description).toBe(MINIMAL_BASH_DESCRIPTION)
       expect(ctx.commands.find(handle.agent, 'goal')).toBeUndefined()
+      // serviceFor reports preset-owned providers; unisolated consumers inherit the host fs.
       expect(ctx.agentPresets.serviceFor(handle.agent, 'fs')).toBeUndefined()
+      expect(ctx.get('fs')?.sandboxMode).toBeDefined()
+      expect(handle.agent.ctx.get('fs')?.sandboxMode).toBe(ctx.get('fs')?.sandboxMode)
       expect(ctx.agentPresets.serviceFor(handle.agent, 'compaction')).toBeUndefined()
       expect(handle.agent.ctx.get('compaction')).toBeUndefined()
     } finally {

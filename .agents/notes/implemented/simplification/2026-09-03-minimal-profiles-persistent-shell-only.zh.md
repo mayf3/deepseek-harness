@@ -16,7 +16,7 @@ Status: implemented
 
 独立 editor 包在短期内仍可用于显式自定义组合。受信任的用户自定义 preset 或更高优先级的 profile patch 必须将 editor 插入 Cordis tree，并在同一服务作用域内提供文件系统后端；随附的 `minimal` 与 `sdk-minimal` 默认组合不会插入它。[Python SDK 指南](../../../../docs/user/guide/python-sdk.zh.md#opt-in-to-str_replace_editor)提供可执行的 patch 示例。
 
-精确组合测试会断言单工具清单以及 preset 内不存在文件系统服务。`sdk-minimal` bundle 测试与构建后配置转储会断言配置项和依赖 allowlist 都不含 `fs-local` 或 `dsh-tool-str-replace-editor`。Web 与打包 Python 的模型可见快照会固定单工具 schema 清单。
+精确组合测试会断言单工具清单以及 preset 内不存在文件系统服务。`sdk-minimal` bundle 测试与构建后配置转储会断言配置项和依赖 allowlist 都不含 `fs-local` 或 `dsh-tool-str-replace-editor`。Web 与打包 Python 的模型可见快照会固定单工具 schema 清单。SDK profile 冒烟测试会执行指南中的 editor patch，并验证文件创建和查看。
 
 本决策部分取代[极简裸运行时](../feature/2026-08-11-minimal-profiles-bare-two-tool-runtime.zh.md)中的工具选择，以及[base 编辑器决策](2026-09-05-base-default-file-editor.zh.md)中的极简例外。这些 Agent Note 继续负责提示词所有权、无 compaction 行为和基于 base 的文件编辑。[应用架构](../../../../docs/architecture.zh.md)负责 profile 启动与 bundle 分层。
 

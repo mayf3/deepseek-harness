@@ -16,7 +16,7 @@ The shipped minimal compositions expose exactly one platform-selected persistent
 
 The standalone editor package remains available in the short term for explicit custom compositions. A trusted user-authored preset or higher profile patch must insert the editor into the Cordis tree with a filesystem provider in the same service scope; the shipped `minimal` and `sdk-minimal` defaults never insert it. The [Python SDK guide](../../../../docs/user/guide/python-sdk.md#opt-in-to-str_replace_editor) provides an executable patch example.
 
-Exact composition tests assert the single tool and the absence of a preset-local filesystem service. The `sdk-minimal` bundle test and built config dump assert that its row and dependency allowlists contain neither `fs-local` nor `dsh-tool-str-replace-editor`. Web and packaged-Python model-visible snapshots pin the one-tool schema roster.
+Exact composition tests assert the single tool and the absence of a preset-local filesystem service. The `sdk-minimal` bundle test and built config dump assert that its row and dependency allowlists contain neither `fs-local` nor `dsh-tool-str-replace-editor`. Web and packaged-Python model-visible snapshots pin the one-tool schema roster. SDK profile smoke tests execute the guide's editor patch and verify file creation and viewing.
 
 This decision partially supersedes the tool selection in [the bare minimal runtime](../feature/2026-08-11-minimal-profiles-bare-two-tool-runtime.md) and the minimal exception in [the base editor decision](2026-09-05-base-default-file-editor.md). Those notes retain authority for prompt ownership, no-compaction behavior, and base-backed file editing. [The application architecture](../../../../docs/architecture.md) owns profile launch and bundle layering.
 
