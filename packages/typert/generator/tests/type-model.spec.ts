@@ -754,6 +754,64 @@ describe('WorkspaceAnalyzer', { timeout: 60_000 }, () => {
       })
     })
 
+    it('prefers an explicit re-export over a star edge that loops back', () => {
+      const root = copyFixture('typert-forward-cycle-explicit-')
+      addSameFacePackage(root, './outer.ts', 'Payload', {
+        'outer.ts': "export * from './inner.ts'\n",
+        'inner.ts': "export * from './outer.ts'\nexport type { Payload } from '@fixture/host/models'\n",
+      })
+
+      expect(consumerPayloadTarget(root)).toEqual({ kind: 'declaration', symbol: hostPayload })
+    })
+
+    it('rejects a forwarding cycle whose only exit crosses a package by relative path', () => {
+      const root = copyFixture('typert-forward-cycle-relative-')
+      addSameFacePackage(root, './outer.ts', 'Payload', {
+        'outer.ts': "export * from './inner.ts'\n",
+        'inner.ts': "export * from './outer.ts'\nexport type { Payload } from '../../host/src/models.ts'\n",
+      })
+
+      expect(() => new WorkspaceAnalyzer({ root }).analyze()).toThrow(
+        'reference to Payload crosses a package without an explicit package import',
+      )
+    })
+
+    it('rejects a namespace re-export in a forwarding module', () => {
+      const root = copyFixture('typert-forward-namespace-export-')
+      addSameFacePackage(root, '@fixture/host/models', 'Payload', {
+        'forward.ts': "export * as models from '@fixture/host/models'\n",
+      })
+      const sourcePath = join(root, 'packages/consumer/src/index.ts')
+      writeFileSync(
+        sourcePath,
+        readFileSync(sourcePath, 'utf8')
+          .replace("import type { Payload } from '@fixture/host/models'", "import type * as Forward from './forward.ts'")
+          .replace('readonly value: Payload', 'readonly value: Forward.models.Payload'),
+      )
+
+      expect(() => new WorkspaceAnalyzer({ root }).analyze()).toThrow(
+        'reference to Payload crosses a package without an explicit package import',
+      )
+    })
+
+    it('rejects a forwarding module that exports a namespace import binding', () => {
+      const root = copyFixture('typert-forward-namespace-binding-')
+      addSameFacePackage(root, '@fixture/host/models', 'Payload', {
+        'forward.ts': "import type * as Models from '@fixture/host/models'\nexport type { Models }\n",
+      })
+      const sourcePath = join(root, 'packages/consumer/src/index.ts')
+      writeFileSync(
+        sourcePath,
+        readFileSync(sourcePath, 'utf8')
+          .replace("import type { Payload } from '@fixture/host/models'", "import type { Models } from './forward.ts'")
+          .replace('readonly value: Payload', 'readonly value: Models.Payload'),
+      )
+
+      expect(() => new WorkspaceAnalyzer({ root }).analyze()).toThrow(
+        'reference to Payload crosses a package without an explicit package import',
+      )
+    })
+
     it('produces one model regardless of batch size or package order', () => {
       const root = copyFixture('typert-forward-batches-')
       addSameFacePackage(root, './forward.ts', 'Payload', {
