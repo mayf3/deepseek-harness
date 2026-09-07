@@ -51,8 +51,8 @@ export interface LlmFailure {
   /**
    * With code `IMAGE_OFFLOAD_REQUIRED`: how many more of the oldest retained
    * image occurrences the route needs offloaded before the same request fits
-   * its exact byte accounting. The `dsh-llm-image-offload` plugin advances the
-   * durable watermark by this count and retries the step.
+   * its exact byte accounting. `dsh-llm-retry` advances the session's durable
+   * `image/offload` watermark by this count and retries the step.
    */
   readonly offloadImages?: number
 }
@@ -330,13 +330,10 @@ export interface LlmModelContext {
 }
 
 /**
- * Request-image budget one exact image-capable route declares, so the
- * `dsh-llm-image-offload` plugin can advance the session's durable
- * `image/offload` watermark before a step from logged facts alone. Byte
- * accounting clamps each occurrence's
- * normalized byte count to {@link versionMaxBytes} and, for the `base64`
- * representation, expands it to its encoded length. A route whose exact
- * request accounting still exceeds the budget fails the request with
+ * Request-image budget one exact image-capable route enforces over the
+ * retained occurrences' exact request-version bytes; for the `base64`
+ * representation each byte count expands to its encoded length. A route whose
+ * retained occurrences exceed the budget fails the request with
  * `IMAGE_OFFLOAD_REQUIRED` naming the additional occurrences to offload.
  */
 export interface LlmImageRequestBudget {
@@ -350,8 +347,6 @@ export interface LlmImageRequestBudget {
   byteQuantum?: number
   /** Occurrences removed as one deterministic advance step; absent removes the minimum. */
   countQuantum?: number
-  /** Encoded-byte target of the route's derived request version; absent accounts normalized bytes. */
-  versionMaxBytes?: number
 }
 
 /** Display metadata for one adapter-owned reasoning effort. */
@@ -383,8 +378,6 @@ export interface LlmResolvedModelInfo extends LlmModelInfo {
   defaultMaxTokens?: number
   /** Adapter-owned selectable reasoning levels when exposed. */
   reasoning?: LlmModelReasoningInfo
-  /** Request-image budget the route enforces; absent for routes that never offload. */
-  imageRequest?: LlmImageRequestBudget
 }
 
 /**

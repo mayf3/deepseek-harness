@@ -629,30 +629,6 @@ describe('DeepSeekAdapter against a mock server', () => {
     })
   })
 
-  it('declares the file-mode request-image budget only for image-capable catalog routes', async () => {
-    const adapter = adapterOf({
-      maxRequestFilesBytes: 4096,
-      maxImagesPerRequest: 40,
-      imageOffloadByteQuantum: 1024,
-      imageOffloadCountQuantum: 20,
-      models: [
-        { id: 'vision', inputModalities: ['text', 'image'], imageMaxBytes: 2048 },
-        { id: 'text-only' },
-      ],
-    })
-    await expect(adapter.resolveModel('deepseek-official', 'vision')).resolves.toMatchObject({
-      imageRequest: {
-        representation: 'raw',
-        maxBytes: 4096,
-        maxImages: 40,
-        byteQuantum: 1024,
-        countQuantum: 20,
-        versionMaxBytes: 2048,
-      },
-    })
-    const textOnly = await adapter.resolveModel('deepseek-official', 'text-only')
-    expect(textOnly.imageRequest).toBeUndefined()
-  })
   it('projects nested tool-result images with route-owned request budgets', async () => {
     const server = await mockServer([
       { kind: 'sse', events: textEvents },

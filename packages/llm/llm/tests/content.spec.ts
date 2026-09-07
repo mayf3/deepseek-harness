@@ -62,11 +62,10 @@ describe('visitImageBlocks', () => {
 })
 
 describe('representedImageBytes', () => {
-  it('clamps to the request-version target and expands inline representations', () => {
+  it('expands inline representations to their encoded length', () => {
     expect(representedImageBytes(100, { representation: 'raw' })).toBe(100)
-    expect(representedImageBytes(100, { representation: 'raw', versionMaxBytes: 60 })).toBe(60)
     expect(representedImageBytes(3, { representation: 'base64' })).toBe(4)
-    expect(representedImageBytes(4, { representation: 'base64', versionMaxBytes: 60 })).toBe(8)
+    expect(representedImageBytes(4, { representation: 'base64' })).toBe(8)
   })
 })
 

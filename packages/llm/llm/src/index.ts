@@ -782,7 +782,6 @@ export class LlmRuntime extends TypertRemoteService {
         'INVALID_MODEL_MAX_TOKENS',
       )
     }
-    const imageRequest = resolved.imageRequest === undefined ? undefined : { ...resolved.imageRequest }
     const info: LlmResolvedModelInfo = {
       provider,
       id: model,
@@ -791,7 +790,6 @@ export class LlmRuntime extends TypertRemoteService {
       ...inputModalities === undefined ? {} : { inputModalities },
       ...context === undefined ? {} : { context: { contextWindow: context.contextWindow } },
       ...defaultMaxTokens === undefined ? {} : { defaultMaxTokens },
-      ...imageRequest === undefined ? {} : { imageRequest },
     }
     const reasoning = resolved.reasoning
     if (reasoning === undefined) return info

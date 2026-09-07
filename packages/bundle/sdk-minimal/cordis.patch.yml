@@ -104,9 +104,6 @@
     - id: llm-retry
       name: '@deepseek-ai/dsh-llm-retry'
 
-    - id: llm-image-offload
-      name: '@deepseek-ai/dsh-llm-image-offload'
-
     - id: jobs
       name: '@deepseek-ai/dsh-jobs-local'
 

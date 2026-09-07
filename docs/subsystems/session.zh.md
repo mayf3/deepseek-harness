@@ -200,7 +200,7 @@ interface RequestContext {
 
 ### 图片 offload 事件：`image/offload`
 
-`dsh-llm-image-offload` 插件在打开的轮次内追加 `image/offload`：step 进入前，表层上保留的图片出现位置超过最新 `request/header` 所指路由的请求图片预算时追加一次；adapter 以 `IMAGE_OFFLOAD_REQUIRED` 让一次尝试失败时，在 `agent/request-error` waterfall 上、step 重试前再追加一次。其 `watermark` 指向最后一个被省略的出现位置；`deriveMessages()` 与 Session 实例的 `deriveEventMessage()` 把位于它及之前的每个出现位置标为 `offloaded: true`，每条路由把这些标记渲染为占位文本。`Session.append` 与 seed 要求水位指向当前表层的图片，拒绝畸形和没有严格前进的位置，并拒绝持久消息中的请求专用 `offloaded` 标记。`session.imageOffloadWatermark()` 折叠最新的冻结位置。它和 `request/header` 一样不是 `SurfaceEventType`；与之不同的是它改变派生表层，因此读取时必须识别（[决定](../../.agents/notes/implemented/architecture/2026-09-02-image-offload-watermark.zh.md)）。
+adapter 以 `IMAGE_OFFLOAD_REQUIRED` 让一次尝试失败时，`dsh-llm-retry` 在 `agent/request-error` waterfall 上、step 重试前追加 `image/offload`。其 `watermark` 指向最后一个被省略的出现位置；`deriveMessages()` 与 Session 实例的 `deriveEventMessage()` 把位于它及之前的每个出现位置标为 `offloaded: true`，每条路由把这些标记渲染为占位文本。`Session.append` 与 seed 要求水位指向当前表层的图片，拒绝畸形和没有严格前进的位置，并拒绝持久消息中的请求专用 `offloaded` 标记。`session.imageOffloadWatermark()` 折叠最新的冻结位置。它和 `request/header` 一样不是 `SurfaceEventType`；与之不同的是它改变派生表层，因此读取时必须识别（[决定](../../.agents/notes/implemented/architecture/2026-09-02-image-offload-watermark.zh.md)）。
 
 ```ts type-equiv
 /**

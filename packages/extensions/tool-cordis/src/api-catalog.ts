@@ -4430,10 +4430,6 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface LlmFailure {\n    readonly message: string;\n    readonly code: string;\n    readonly status?: number;\n    readonly providerRetryAfterMs?: number;\n    readonly requestId?: ProviderRequestId;\n    readonly offloadImages?: number;\n}',
   },
   {
-    name: 'LlmImageRequestBudget',
-    declaration: 'export interface LlmImageRequestBudget {\n    representation: \'raw\' | \'base64\';\n    maxBytes?: number;\n    maxImages?: number;\n    byteQuantum?: number;\n    countQuantum?: number;\n    versionMaxBytes?: number;\n}',
-  },
-  {
     name: 'LlmImageRequestPrice',
     declaration: 'export interface LlmImageRequestPrice {\n    visualTokens: number;\n    text: string;\n}',
   },
@@ -4467,7 +4463,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'LlmResolvedModelInfo',
-    declaration: 'export interface LlmResolvedModelInfo extends LlmModelInfo {\n    context?: LlmModelContext;\n    defaultMaxTokens?: number;\n    reasoning?: LlmModelReasoningInfo;\n    imageRequest?: LlmImageRequestBudget;\n}',
+    declaration: 'export interface LlmResolvedModelInfo extends LlmModelInfo {\n    context?: LlmModelContext;\n    defaultMaxTokens?: number;\n    reasoning?: LlmModelReasoningInfo;\n}',
   },
   {
     name: 'LlmRuntime',

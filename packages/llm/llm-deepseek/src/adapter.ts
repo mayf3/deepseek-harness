@@ -19,7 +19,8 @@ import type {
   LlmResolvedModelInfo,
   ModelModality,
   ResolvedRetryPolicy,
-  StreamChunk, LlmImageRequestBudget } from '@deepseek-ai/dsh-llm'
+  StreamChunk,
+} from '@deepseek-ai/dsh-llm'
 import type {
   AttachmentId,
   AttachmentStore,
@@ -209,18 +210,6 @@ function collectImageRefs(
     } else if (block.type === 'tool-result') {
       collectImageRefs(block.content, refs)
     }
-  }
-}
-
-/** The file-mode request-image budget one image-capable catalog route declares to the agent loop. */
-function imageRequestBudget(connection: DeepSeekConnectionOptions, model: DeepSeekCatalogModel): LlmImageRequestBudget {
-  return {
-    representation: 'raw',
-    maxBytes: connection.maxRequestFilesBytes,
-    maxImages: connection.maxImagesPerRequest,
-    byteQuantum: connection.imageOffloadByteQuantum,
-    countQuantum: connection.imageOffloadCountQuantum,
-    versionMaxBytes: resolveRequestImagePolicy(model).maxBytes,
   }
 }
 
@@ -421,9 +410,6 @@ export class DeepSeekAdapter extends LlmAdapter {
         : modelInfo(provider, configured),
       context: { contextWindow },
       defaultMaxTokens: configured?.maxTokens ?? connection.maxTokens,
-      ...configured?.inputModalities?.includes('image') === true
-        ? { imageRequest: imageRequestBudget(connection, configured) }
-        : {},
       ...connection.defaults.thinking === 'disabled'
         ? {
           reasoning: {

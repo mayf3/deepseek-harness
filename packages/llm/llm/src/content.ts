@@ -240,18 +240,16 @@ export function visitImageBlocks(
 
 /**
  * Represented byte length of one image occurrence under a route budget: the
- * normalized byte count clamped to the route's request-version target, then
- * base64-expanded for an inline representation.
- * @param bytes - normalized attachment byte count.
- * @param budget - route representation and request-version target.
+ * request-version byte count, base64-expanded for an inline representation.
+ * @param bytes - request-version byte count.
+ * @param budget - route representation.
  * @returns the byte length the route's request accounting charges.
  */
 export function representedImageBytes(
   bytes: number,
-  budget: Pick<LlmImageRequestBudget, 'representation' | 'versionMaxBytes'>,
+  budget: Pick<LlmImageRequestBudget, 'representation'>,
 ): number {
-  const clamped = budget.versionMaxBytes === undefined ? bytes : Math.min(bytes, budget.versionMaxBytes)
-  return budget.representation === 'base64' ? base64Length(clamped) : clamped
+  return budget.representation === 'base64' ? base64Length(bytes) : bytes
 }
 
 /** Replace every offloaded occurrence, including nested tool results, with its placeholder. */
@@ -300,9 +298,8 @@ export function projectOffloadedImages(
 /**
  * Number of oldest retained image occurrences one route budget removes, in
  * whole count and byte quanta, once the budget is exceeded. The result depends
- * only on the represented lengths, so the image-offload plugin plans the
- * durable watermark from logged facts and an adapter names the same count
- * when its exact accounting still overflows.
+ * only on the represented lengths, so every route names the count the same
+ * way.
  * @param lengths - represented byte length of every retained occurrence, oldest first.
  * @param budget - count/byte budgets and removal quanta; unbounded when absent.
  * @returns how many leading occurrences to offload.

@@ -10,9 +10,11 @@ import type { Context, Events } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { z as zod } from 'zod'
 import type { Agent, RequestErrorAction } from '@deepseek-ai/dsh-agent'
+import { IMAGE_OFFLOAD_REQUIRED_CODE } from '@deepseek-ai/dsh-llm'
 import type { LlmFailure, ResolvedRetryPolicy } from '@deepseek-ai/dsh-llm'
 import type {} from '@deepseek-ai/dsh-session-projection'
 import { RetryId } from './brand.ts'
+import { advanceImageOffload } from './image-offload.ts'
 import type { LlmRetryEventData } from './types.ts'
 
 export type { LlmRetryEventData, LlmRetryStartedEventData } from './types.ts'
@@ -195,6 +197,11 @@ export function apply(ctx: Context, config: Config = {}, internals: RetryInterna
     { agent, turn, step, provider, failure, retryPolicy: policy, signal }: Parameters<Events['agent/request-error']>[0],
     next: () => Promise<RequestErrorAction>,
   ): Promise<RequestErrorAction> {
+    // A durable surface repair, not a provider retry: it spends no retry budget and logs no retry event.
+    if (failure.code === IMAGE_OFFLOAD_REQUIRED_CODE && failure.offloadImages !== undefined
+      && advanceImageOffload(agent.session, turn, step, failure.offloadImages)) {
+      return { kind: 'retry' }
+    }
     if (policy === undefined) return next()
     if (policy.mode === 'always') {
       if (signal.aborted || lifetime.signal.aborted) return

@@ -219,10 +219,7 @@ describe('request-level dynamic configuration', () => {
 
     await assemble(ctx, { model: 'deepseek-v4-flash-vision-exp', messages })
     await ctx.settings.update(NS, { maxRequestFilesBytes: 4, imageOffloadByteQuantum: 2 })
-    // The tightened budget reaches the agent loop through the resolved route metadata...
-    await expect(ctx.llm.resolveModelInfo('deepseek-official', 'deepseek-v4-flash-vision-exp'))
-      .resolves.toMatchObject({ imageRequest: { representation: 'raw', maxBytes: 4, byteQuantum: 2 } })
-    // ...and a request whose retained exact bytes still exceed it names the occurrences to offload.
+    // A request whose retained exact bytes exceed the tightened budget names the occurrences to offload.
     const rejected = await assemble(ctx, { model: 'deepseek-v4-flash-vision-exp', messages })
     expect(rejected.finish).toMatchObject({
       kind: 'error',

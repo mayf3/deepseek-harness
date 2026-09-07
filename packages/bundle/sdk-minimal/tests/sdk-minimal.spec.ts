@@ -48,7 +48,6 @@ describe('dsh-sdk-minimal bundle', () => {
       ['tools', '@deepseek-ai/dsh-tools'],
       ['agent', '@deepseek-ai/dsh-agent'],
       ['llm-retry', '@deepseek-ai/dsh-llm-retry'],
-      ['llm-image-offload', '@deepseek-ai/dsh-llm-image-offload'],
       ['jobs', '@deepseek-ai/dsh-jobs-local'],
       ['invariants', '@deepseek-ai/dsh-invariants'],
       ['session-invariant', '@deepseek-ai/dsh-session/invariant'],

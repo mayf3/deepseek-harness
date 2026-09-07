@@ -247,8 +247,8 @@ interface LlmFailure {
   /**
    * With code `IMAGE_OFFLOAD_REQUIRED`: how many more of the oldest retained
    * image occurrences the route needs offloaded before the same request fits
-   * its exact byte accounting. The `dsh-llm-image-offload` plugin advances the
-   * durable watermark by this count and retries the step.
+   * its exact byte accounting. `dsh-llm-retry` advances the session's durable
+   * `image/offload` watermark by this count and retries the step.
    */
   readonly offloadImages?: number
 }
@@ -570,8 +570,6 @@ interface LlmResolvedModelInfo extends LlmModelInfo {
   defaultMaxTokens?: number
   /** Adapter-owned selectable reasoning levels when exposed. */
   reasoning?: LlmModelReasoningInfo
-  /** Request-image budget the route enforces; absent for routes that never offload. */
-  imageRequest?: LlmImageRequestBudget
 }
 ```
 

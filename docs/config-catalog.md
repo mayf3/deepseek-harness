@@ -1031,19 +1031,6 @@ Depends on: [`ModelModality`](../packages/llm/llm/src/index.ts) · [`RetryPolicy
 
 Source: [`packages/llm/llm-deepseek/src/index.ts:125`](../packages/llm/llm-deepseek/src/index.ts)
 
-<a id="deepseek-aidsh-llm-image-offload"></a>
-
-## `@deepseek-ai/dsh-llm-image-offload`
-
-Requires: `llm` · `agents`
-
-```ts config-catalog
-/** The plugin has no configuration; image-capable routes declare their budgets. */
-export type Config = Readonly<Record<string, never>>
-```
-
-Source: [`packages/llm/llm-image-offload/src/index.ts:25`](../packages/llm/llm-image-offload/src/index.ts)
-
 <a id="deepseek-aidsh-llm-pi-ai"></a>
 
 ## `@deepseek-ai/dsh-llm-pi-ai`
@@ -1407,7 +1394,7 @@ Requires: `agents` · `sessionProjections`
 export type Config = Readonly<Record<string, never>>
 ```
 
-Source: [`packages/llm/llm-retry/src/index.ts:25`](../packages/llm/llm-retry/src/index.ts)
+Source: [`packages/llm/llm-retry/src/index.ts:27`](../packages/llm/llm-retry/src/index.ts)
 
 <a id="deepseek-aidsh-lsp-stdio"></a>
 
