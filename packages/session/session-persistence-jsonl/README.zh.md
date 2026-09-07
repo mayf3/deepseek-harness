@@ -73,6 +73,8 @@ kind: "package-reference"
 
 会话延迟实体化：`create(header)` 不写入任何内容并返回持有的写句柄，句柄的第一次 `append` 通过无覆盖发布写入并 `fsync` 编码后的 header 与第一批——因此已创建但从未 append 的会话不留下任何磁盘内容，除非其所有者调用 `handle.flush()`，以无事件的单个 header 帧发布它。后续每个批次追加行或一个压缩帧，并在 append 完成前 `fsync`；捕获到写入或同步失败时把文件回滚到之前的字节长度。已提交事件绝不重写。崩溃后，已存储日志保留被中断的最终轮次——已提交前缀中的每条记录都保留下来，由执行恢复的读方通过其写句柄追加合成 closer。不完整的最终原始行会被丢弃。撕裂的最终 Zstandard 帧只贡献其中完整解码出的 JSONL 记录；写句柄会截掉撕裂字节，并在第一次新批次之前持久重写这些恢复出的记录。完整已提交帧中的校验和、解压或结构失败以损坏拒绝。
 
+当前代际扫描器在处理可恢复尾部之前，执行当前编解码器所有者的结构准入检查。已退役的必需 PTC 标签与 `request/header.header.system` 即使出现在较早的畸形行之后也会导致文件被拒绝；恢复绝不将它们作为普通损坏尾部数据截断。
+
 ### 读取日志
 
 `open(id, 'read'|'write')` 选择最高规范 generation。当前格式输入走普通快速路径。对于历史输入，只读 open 会单遍解码并迁移源、校验当前逻辑结果，然后在不发布后继的情况下返回。写 open 会在可用时复用按 revision 为键的 preparation，否则执行同一套 preparation，再按有界分片编码同目录临时文件、在 Worker Thread 中校验、复查源修订，并在返回前以不覆盖方式发布当前后继。源保持逐字节不变。如果源在 preparation 后发生变化，该次写 open 会失败，已经返回给读方的逻辑历史不会被替换；后续写 open 会针对新的 revision 重新执行 preparation。Backend 在 memo 化前冻结已解码的 event graph，并在此时将其标记为 `shared-frozen`；句柄读取和 slice 即使为空也保留该状态。只有尚未实体化的 pending 空日志报告 `detached`。`stat(id)` 与 `list()` 只选择并转换最高 generation 的 header，不读取事件行，也不启动迁移；快照携带所选文件的 `sizeBytes` 与尽力而为的 stat 派生修订号。选择 `compression: 'none'` 后，日志是外部读取方可直接消费的换行分隔文本；压缩默认值必须经后端读取。

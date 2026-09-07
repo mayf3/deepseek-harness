@@ -1,5 +1,5 @@
 ---
-description: "将已发布的 v2 Session 日志恢复为 v3，采用当前 PTC 事件名称并保留历史标识。"
+description: "将已发布的 v2 系统提示恢复为受保护的 v3 消息，保留历史请求含义。"
 kind: "package-library"
 ---
 
@@ -9,7 +9,7 @@ kind: "package-library"
 
 ## 概述
 
-本库通过转换持久化 PTC 预设引用、事件名称和插件来源标签，将已发布的 v2 Session 记录恢复为 v3。它保留每个历史 Session、消息和调用标识、事件顺序、序列引用、时间戳和继承切点。持久化通过静态 Session 格式目录使用本库。本库不发布或修改持久化文件。
+本库将已发布的 v2 系统提示恢复为受保护的 v3 消息，并转换持久化 PTC 词汇，保留历史请求含义、源事件时序、时间戳、消息身份与继承归属。持久化通过静态 Session 格式目录使用本库。本库不发布或修改持久化文件。
 
 ## 目录
 
@@ -35,11 +35,9 @@ kind: "package-library"
 const targetHeader = sessionFormatV2ToV3.migrateHeader(sourceHeader)
 ```
 
-头部版本变为 3。`header.agentPreset` 和每条 `agent-preset/selected.data.agentPreset` 中精确匹配的旧预设标识 `code` 变为 `ptc`，包括继承的选择事件。其他预设标识以及缺失的头部预设保持不变；选择事件缺少字符串预设标识时会被拒绝。阶段同步将 `tool/code-dispatch-start` 和 `tool/code-dispatch` 映射为 `tool/ptc-dispatch-start` 和 `tool/ptc-dispatch`。它仅在 `user/message.data.source`、`agent/inbox/spliced.data.inserted[].source` 和 `session/title-llm-request.data.messages[].source` 的 plugin 类型来源中，将精确匹配的 `tools-code-mode` 插件标签映射为 `tools-ptc`。其他所有值保持不变，包括含 `:code:` 的标识、消息内容、工具参数和不透明载荷。
+头部版本变为 3。`header.agentPreset` 和每条 `agent-preset/selected.data.agentPreset` 中精确匹配的旧预设标识 `code` 变为 `ptc`，包括继承的选择事件。其他预设标识以及缺失的头部预设保持不变；选择事件缺少字符串预设标识时会被拒绝。阶段在首个 `step/start` 后立即插入空 `system/message`，随后在每次提示发生变化的 `request/header` 前替换受保护的头节点，包括清空提示。每个请求头的 `header.system` 均被移除，不移动任何源事件。仅含元数据的日志不添加头节点。V3 编码和恢复接受空系统头节点，并拒绝已退役的 `header.system`。
 
-V3 校验接受当前 PTC 标签，不接受必需的旧别名。标记为 `ignorable` 的未知事件保留其准入规则，但源 v2 中的 `tool/ptc-dispatch` 和 `tool/ptc-dispatch-start` 事件即使可忽略也会被拒绝：这些名称在 v3 中保留，迁移不能将不透明扩展重新解释为 PTC 生命周期事件。物理记录编码仍为已发布的 v2 编码；仅头部版本和上述逻辑字段发生变化。
-
-阶段拒绝 `sessionFormatVersion` 为 3 的源投递标记，因为升级会激活未经确认的目标代际水位。
+阶段将 `tool/code-dispatch-start` 和 `tool/code-dispatch` 映射为 `tool/ptc-dispatch-start` 和 `tool/ptc-dispatch`。它在用户消息、收件箱插入消息与标题请求消息中，将精确匹配的 `tools-code-mode` 插件归属替换为 `tools-ptc`，不改写 ID、工具参数或内容。原生 V3 拒绝必需的前代 PTC 标签，包括出现在可恢复行损坏之后的标签；可忽略的前代标签保持不透明，不能满足当前 PTC 关系。V2 源输入中的 V3 保留 PTC 标签即使可忽略也会被拒绝。
 
 -----
 
@@ -49,7 +47,9 @@ V3 校验接受当前 PTC 标签，不接受必需的旧别名。标记为 `igno
 <details>
 <summary>实现细节 — 点击展开</summary>
 
-[阶段](src/migration.ts)在跟踪继承切点和源投递归属的同时，执行限定范围的 PTC 转换。标量继承 end-seed 标记在 EOF 确定精确切点。[编解码器](src/codec.ts)共享冻结的 v2 物理记录编码。[校验器](src/validation.ts)检查 v3 事件准入和关联关系，不修改冻结的前代模块。本库不拥有可独立观察的运行时注册或状态副本，因此不发布运行时不变量伴随入口。
+[阶段](src/migration.ts)同步输出，保留坐标映射、消息身份集合与当前提示、生命周期状态，并增量展开紧凑事件段。它从最后一个继承 end-seed 标记推导目标继承切点，包括上游阶段在 EOF 前无法提供切点的情况。[引用映射器](src/references.ts)重映射本地信封溯源与替换范围、命令源引用、压缩范围与列表，以及标题消息列表。投递水位、会话引用捕获坐标、工作流计数器、嵌入的模型输入与消息 ID 保留原有含义。声称已获 V3 接收的 V2 投递标记会被拒绝。
+
+[校验器](src/validation.ts)独立检查系统载荷、开放步骤归属与受保护的头节点操作。原生 V3 也接受历史内系统消息追加、非头节点替换，以及非头系统节点的压缩。它通过私有视图复用冻结的普通关系校验，在结果中保留原始事件与 ID；生成的修复 ID 后缀仍是历史身份，而非当前序列坐标。[编解码器](src/codec.ts)共享冻结的 V2 物理信封与溯源编码。[准入测试](tests/admission.spec.ts)覆盖畸形持久化载荷、修复身份、受保护头节点违规与压缩引用重映射。本库不拥有可独立观察的运行时注册或状态副本，因此不发布运行时不变量伴随入口。
 
 </details>
 
@@ -70,7 +70,7 @@ V3 校验接受当前 PTC 标签，不接受必需的旧别名。标记为 `igno
 
 #### 模型看到什么
 
-`sessionFormatV2ToV3` 保留消息内容和工具结果。PTC 插件来源使用 `tools-ptc`；仅日志的分发事件不会添加模型消息。
+`sessionFormatV2ToV3` 在每个历史请求处保留提示文本与普通消息。空头节点不产生模型消息。
 
 #### Token 影响
 
@@ -86,7 +86,8 @@ V3 校验接受当前 PTC 标签，不接受必需的旧别名。标记为 `igno
 
 - **历史预设归属** — 已发布 V0/V1/V2 的预设引用中，`code` 表示旧内置预设。这些日志无法区分同名的自定义预设；原生 V3 引用不会被重新解释。本库不迁移 `settings.yaml`。
 - **不发布文件** — 持久化负责不可变后继代的发布；本包绝不覆盖已发布代。
-- **仅限定范围的转换** — 只转换指定的预设引用、事件标签和插件来源位置；不改写任意字符串、未知载荷和历史标识。
+- **保持时序的输入** — 首个步骤前出现表面事件，或在开放步骤之外更改提示时，以 `SessionFormatUnsupportedMigrationError` 拒绝；移动事件或虚构步骤外的系统消息会破坏重建。
+- **经过审计的迁移词汇** — 显式分类 V2 事件（包括仅日志 Assistant 尝试）与已安装的消息反馈扩展。Agent 中继归属与文件附件元数据保持不变，其标识符与字节计数不被解释为序列引用。迁移拒绝未知事件（即使标为可忽略）及未知消息来源或内容种类，因为无法推断其序列依赖。原生同版本读取保留普通可忽略事件的准入规则及请求头扩展，禁止已退役的 `header.system` 与必需的前代 PTC 标签。
 
 <a id="dev-note"></a>
 ### 开发备注

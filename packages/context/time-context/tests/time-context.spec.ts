@@ -503,9 +503,13 @@ describe('real agent-loop request history', () => {
     expect(secondRequestText).toContain('Time sampled while preparing turn 1, step 2:')
     expect(secondRequestText).toContain('Elapsed since the preceding step context: 1m 1s.')
 
-    for (const request of adapter.requests) expect(request.system).not.toContain('Time sampled while preparing')
-    const headers = agent.session.snapshotEvents().filter(event => event.type === 'request/header')
-    expect(JSON.stringify(headers)).not.toContain('Time sampled while preparing')
+    for (const request of adapter.requests) {
+      expect(request.system).toBeUndefined()
+      expect(request.messages[0]?.role).toBe('system')
+      expect(JSON.stringify(request.messages[0])).not.toContain('Time sampled while preparing')
+    }
+    const systemNodes = agent.session.snapshotEvents().filter(event => event.type === 'system/message')
+    expect(JSON.stringify(systemNodes)).not.toContain('Time sampled while preparing')
     await ctx.fiber.dispose()
   })
 })

@@ -1,6 +1,6 @@
 {
   "name": "@deepseek-ai/dsh-session-format-v2-to-v3",
-  "description": "Released-v2 Session codec and durable PTC streaming migration to v3",
+  "description": "Streaming migration of released-v2 system prompts and durable PTC vocabulary into v3",
   "version": "0.1.3-alpha.1",
   "publishConfig": {
     "access": "public"
@@ -40,6 +40,7 @@
   },
   "dependencies": {
     "@deepseek-ai/dsh-session-format": "workspace:^",
+    "@deepseek-ai/dsh-session-format-v0-to-v1": "workspace:^",
     "@deepseek-ai/dsh-session-format-v1-to-v2": "workspace:^"
   },
   "peerDependencies": {

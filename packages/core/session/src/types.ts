@@ -6,6 +6,8 @@ import type {
   LlmCallConfig,
   LlmCallConfigAdapterDefaults,
   LlmFailure,
+  SystemMessage,
+  SystemPromptUpdate,
   TokenUsage,
   ToolResultMessage,
   ToolSchema,
@@ -222,8 +224,9 @@ export interface TurnEndReasonMap {
 export type TurnEndReason = TurnEndReasonMap[keyof TurnEndReasonMap]
 
 /**
- * Logged request state outside derived history: call config, system prompt, and
- * tools. The latest full `request/header` snapshot reconstructs it; canonical
+ * Logged request state outside derived history: call config and tools. The
+ * system prompt is derived history — surface node 0, a `system/message` event.
+ * The latest full `request/header` snapshot reconstructs the header; canonical
  * empty optional fields are absent.
  */
 export interface EpochHeader {
@@ -231,8 +234,6 @@ export interface EpochHeader {
   config: LlmCallConfig
   /** Effective config fields materialized from the exact adapter rather than proposed by a caller. */
   adapterDefaults?: LlmCallConfigAdapterDefaults
-  /** Rendered system prompt text; absent for a system-less request. */
-  system?: string
   /** Assembled tool schemas; absent for a tool-less request. */
   tools?: ToolSchema[]
 }
@@ -245,6 +246,8 @@ export interface RequestContext {
   model: string
   /** Maximum combined request and response context in tokens, when advertised. */
   contextWindow?: number
+  /** `'in-history'` when the route reads the latest `system` message at any position as the effective system prompt. */
+  systemPromptUpdate?: SystemPromptUpdate
 }
 
 /**
@@ -292,6 +295,19 @@ export interface SessionEventMap {
    * project their `content` verbatim; `source` tells them apart.
    */
   'user/message': UserMessage
+  /**
+   * The rendered system prompt on the model-visible surface. The loop appends
+   * the first one as surface node 0 before the step's first `user/message`.
+   * A prepared in-history route can append nonempty changes in a continuing
+   * series. An incapable route or new series normalizes text to the first system
+   * node. Normalization empties nonempty later nodes, then rewrites the head if
+   * needed, through logged per-node replacements. An empty rendering always
+   * clears all active system nodes, leaving no older instructions model-visible.
+   * Empty later nodes are dormant and project to no message; an empty head with
+   * no active later node records "no system prompt". Restored nonempty text follows
+   * the same route and series rule; empty nodes never restore older text.
+   */
+  'system/message': { turn: number; step: number; message: SystemMessage }
   /**
    * Assembled assistant message for one step (derived history uses this).
    * Carries the step's `usage` when the adapter reported token accounting, so
@@ -352,8 +368,10 @@ export interface SessionEventMap {
     startsSeries?: true
   }
   /**
-   * Route metadata for the next request, logged only when the route or capacity
-   * changes. It does not participate in request reconstruction or header equality.
+   * Route metadata for the next request, logged only when the route, capacity,
+   * or system prompt update mode changes. It does not participate in request
+   * reconstruction or header equality. Prompt admission uses the bound prepared
+   * call's capability, not this snapshot from an earlier request.
    */
   'request/context': RequestContext
   /**
@@ -391,6 +409,7 @@ export type SessionEventType = keyof SessionEventMap
  * earlier sources through {@link SessionEvent.sourceEventSeqs}.
  */
 export type SurfaceEventType =
+  | 'system/message'
   | 'user/message'
   | 'assistant/message'
   | 'tool/result'

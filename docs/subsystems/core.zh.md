@@ -298,7 +298,7 @@ type SessionStartSource = 'startup' | 'resume' | 'clear' | 'compact'
 
 `Session` 是一份类型化 `SessionEvent` 的**仅追加日志**——唯一的真源。LLM 消息历史从日志*派生*（`deriveMessages()`），而非单独存储。每个条目携带单调的 `seq`、`time` 与按 `type` 判别的 `data` payload；surface 变体还可以在 `sourceEventSeqs` 中列出被引用的较早事件，并携带 `surfaceOp`。
 
-`SessionEvent` 信封的确切条件字段、十二种核心事件变体（`turn/start`、`turn/end`、`step/start`、`step/end`、`user/message`、`assistant/message`、`assistant/attempt`、`tool/call`、`tool/result`、`request/header`、`request/context`、`session/end-seed`）、`deriveMessages()` 投影规则、`TurnEndReason` 原因以及执行封闭和独立事件规则都在 **[session.md](session.zh.md)** 中。日志如何持久化——`SessionPersistence` 接口、JSONL provider、`session/flush` 检查点、崩溃恢复与 `SessionHeader`——则在 **[persistence.md](persistence.zh.md)** 中。
+`SessionEvent` 信封的确切条件字段、十三种核心事件变体（`turn/start`、`turn/end`、`step/start`、`step/end`、`user/message`、`system/message`、`assistant/message`、`assistant/attempt`、`tool/call`、`tool/result`、`request/header`、`request/context`、`session/end-seed`）、`deriveMessages()` 投影规则、`TurnEndReason` 原因以及执行封闭和独立事件规则都在 **[session.md](session.zh.md)** 中。日志如何持久化——`SessionPersistence` 接口、JSONL provider、`session/flush` 检查点、崩溃恢复与 `SessionHeader`——则在 **[persistence.md](persistence.zh.md)** 中。
 
 ## `ToolDefinition`
 
@@ -1040,14 +1040,18 @@ Source: [`packages/core/agent/src/runtime-types.ts`](../../packages/core/agent/s
 
 #### `agent/request` — waterfall
 
-Replace the frozen call configuration. `await next()` yields the config the machine would use (agent options on the first request, the logged header afterwards); return a replacement to switch. Model-visible content must use logged channels; this waterfall cannot mutate messages.
+Replace the frozen call configuration. `await next()` yields the config the machine would use (agent options on the first request, the logged header afterwards); return a replacement to switch. On step admission, this runs after assembly and `step/start`, before the system prompt and accepted user batch are committed. Cancellation here or during subsequent `prepareCall()` resolution commits neither. The prepared call capability governs prompt admission. Model-visible content must use logged channels; this waterfall cannot mutate messages.
 
 ```ts cordis-catalog
 /**
  * Replace the frozen call configuration. `await next()` yields the config
  * the machine would use (agent options on the first request, the logged
- * header afterwards); return a replacement to switch. Model-visible
- * content must use logged channels; this waterfall cannot mutate messages.
+ * header afterwards); return a replacement to switch. On step admission,
+ * this runs after assembly and `step/start`, before the system prompt and
+ * accepted user batch are committed. Cancellation here or during subsequent
+ * `prepareCall()` resolution commits neither. The prepared call capability
+ * governs prompt admission. Model-visible content must use logged channels;
+ * this waterfall cannot mutate messages.
  * @param payload.agent - the agent making the model call.
  * @param payload.turn - the open turn number.
  * @param payload.step - the step whose request this is.

@@ -54,6 +54,19 @@ interface SessionEventMap {
    */
   'user/message': UserMessage
   /**
+   * The rendered system prompt on the model-visible surface. The loop appends
+   * the first one as surface node 0 before the step's first `user/message`.
+   * A prepared in-history route can append nonempty changes in a continuing
+   * series. An incapable route or new series normalizes text to the first system
+   * node. Normalization empties nonempty later nodes, then rewrites the head if
+   * needed, through logged per-node replacements. An empty rendering always
+   * clears all active system nodes, leaving no older instructions model-visible.
+   * Empty later nodes are dormant and project to no message; an empty head with
+   * no active later node records "no system prompt". Restored nonempty text follows
+   * the same route and series rule; empty nodes never restore older text.
+   */
+  'system/message': { turn: number; step: number; message: SystemMessage }
+  /**
    * Assembled assistant message for one step (derived history uses this).
    * Carries the step's `usage` when the adapter reported token accounting, so
    * the model output and its accounting travel together (there is no separate
@@ -113,8 +126,10 @@ interface SessionEventMap {
     startsSeries?: true
   }
   /**
-   * Route metadata for the next request, logged only when the route or capacity
-   * changes. It does not participate in request reconstruction or header equality.
+   * Route metadata for the next request, logged only when the route, capacity,
+   * or system prompt update mode changes. It does not participate in request
+   * reconstruction or header equality. Prompt admission uses the bound prepared
+   * call's capability, not this snapshot from an earlier request.
    */
   'request/context': RequestContext
   /**
@@ -149,12 +164,13 @@ interface SessionEventMap {
 
 ### The request header event: `request/header`
 
-The request envelope — the `EpochHeader` (call config + markers for adapter-supplied defaults + rendered system prompt + assembled tool schemas) — is logged session state, so every conversation request is a pure function of the log (the reconstructability Agent Note). A full `request/header` snapshot with reason `'initial'` or `'resume'` records each loop-instance boundary; a changed request appends a snapshot with reason `'change'`; and an unchanged envelope beginning an explicitly declared message series or following a surface replacement appends a snapshot with reason `'series'`. A changed snapshot carries `startsSeries: true` when that request also begins a series. Ordinary append-only later Turns, further Steps, and retries in the same model-message series inherit the latest snapshot. `foldRequestHeader(events)` reconstructs the header by selecting the latest snapshot. The event is not a `SurfaceEventType`: it produces no LLM message.
+The request envelope — the `EpochHeader` (call config + markers for adapter-supplied defaults + assembled tool schemas) — is logged session state, so every conversation request is a pure function of the log (the reconstructability Agent Note). The rendered system prompt is not part of the header: it is derived history, the `system/message` event at surface node 0 and any later in-history system node ([decision](../../.agents/notes/implemented/architecture/2026-09-02-system-prompt-as-surface-node.md)), so a prompt change replaces or appends a system node and leaves the header unchanged. A full `request/header` snapshot with reason `'initial'` or `'resume'` records each loop-instance boundary; a changed request appends a snapshot with reason `'change'`; and an unchanged envelope beginning an explicitly declared message series or following a surface replacement appends a snapshot with reason `'series'`. A changed snapshot carries `startsSeries: true` when that request also begins a series. Ordinary append-only later Turns, further Steps, and retries in the same model-message series inherit the latest snapshot. `foldRequestHeader(events)` reconstructs the header by selecting the latest snapshot. The event is not a `SurfaceEventType`: it produces no LLM message.
 
 ```ts type-equiv
 /**
- * Logged request state outside derived history: call config, system prompt, and
- * tools. The latest full `request/header` snapshot reconstructs it; canonical
+ * Logged request state outside derived history: call config and tools. The
+ * system prompt is derived history — surface node 0, a `system/message` event.
+ * The latest full `request/header` snapshot reconstructs the header; canonical
  * empty optional fields are absent.
  */
 interface EpochHeader {
@@ -162,18 +178,16 @@ interface EpochHeader {
   config: LlmCallConfig
   /** Effective config fields materialized from the exact adapter rather than proposed by a caller. */
   adapterDefaults?: LlmCallConfigAdapterDefaults
-  /** Rendered system prompt text; absent for a system-less request. */
-  system?: string
   /** Assembled tool schemas; absent for a tool-less request. */
   tools?: ToolSchema[]
 }
 ```
 
-Canonical form represents an empty system prompt or tool list as an absent field, matching how requests are built. Legacy v0 logs containing the legacy `request/header-delta` event or its full-snapshot `fallback` reason are rejected at seed, append, and persistence-load boundaries rather than replayed incompletely.
+Canonical form represents an empty tool list as an absent field, matching how requests are built. Legacy v0 logs containing the legacy `request/header-delta` event or its full-snapshot `fallback` reason are rejected at seed, append, and persistence-load boundaries rather than replayed incompletely.
 
 ### The route capacity event: `request/context`
 
-The context metadata of the route a request resolved to is separate logged state, appended beside `request/header` inside the same step and only when the provider, model, or capacity differs from the previous record. It stays outside `EpochHeader` because that type is the reconstruction contract compared field-wise by `headerEquals`: capacity describes a route, not a request input, so folding it in would let a capacity change register as a request-envelope `change` and would pull adapter metadata into the loop's reconstruction invariant. Like `request/header`, it is not a `SurfaceEventType` and produces no LLM message. `session.requestContext()` folds the latest record incrementally. A route whose adapter advertises no capacity is recorded with `contextWindow` absent, so the new record clears an older route's capacity.
+The context metadata of the route a request resolved to is separate logged state, appended beside `request/header` inside the same step and only when the provider, model, capacity, or `systemPromptUpdate` mode differs from the previous record. It stays outside `EpochHeader` because that type is the reconstruction contract compared field-wise by `headerEquals`: capacity and the update mode describe a route, not a request input, so folding them in would let a route change register as a request-envelope `change` and would pull adapter metadata into the loop's reconstruction invariant. Like `request/header`, it is not a `SurfaceEventType` and produces no LLM message. `session.requestContext()` folds the latest record incrementally; the agent loop reads that record's `systemPromptUpdate` when it decides whether a changed system prompt replaces the latest system node or is appended after the cached history ([decision rule](../../packages/core/agent-loop/README.md#understand-the-implementation)). A route whose adapter advertises no capacity is recorded with `contextWindow` absent, so the new record clears an older route's capacity; a route without a declared update mode likewise clears an older route's `systemPromptUpdate`.
 
 ```ts type-equiv
 /** Registration-bound metadata for one resolved model route. */
@@ -184,6 +198,8 @@ interface RequestContext {
   model: string
   /** Maximum combined request and response context in tokens, when advertised. */
   contextWindow?: number
+  /** `'in-history'` when the route reads the latest `system` message at any position as the effective system prompt. */
+  systemPromptUpdate?: SystemPromptUpdate
 }
 ```
 
@@ -265,7 +281,7 @@ V2 `assistant/message` embeds its provider stream and cannot carry `sourceEventS
 
 ## Surface types
 
-The three message-producing types (`SurfaceEventType` — `user/message`, `assistant/message`, `tool/result`) carry surface metadata declaring how they join the ordered derived surface. See the [session surface Agent Note](../../.agents/notes/implemented/architecture/2026-06-18-session-surface.md).
+The four message-producing types (`SurfaceEventType` — `system/message`, `user/message`, `assistant/message`, `tool/result`) carry surface metadata declaring how they join the ordered derived surface. `system/message` holds the rendered system prompt: the loop appends the first one as surface node 0 and, when the prompt changes, replaces exactly the latest system node or appends a new one on an in-history route; the surface fold rejects any other replacement covering a `system/message` at node 0, while a later system node is ordinary history that a compaction replacement may shadow. See the [session surface Agent Note](../../.agents/notes/implemented/architecture/2026-06-18-session-surface.md).
 
 ### `SurfaceEventType` — the message-producing subset of event types
 
@@ -277,6 +293,7 @@ The three message-producing types (`SurfaceEventType` — `user/message`, `assis
  * earlier sources through {@link SessionEvent.sourceEventSeqs}.
  */
 type SurfaceEventType =
+  | 'system/message'
   | 'user/message'
   | 'assistant/message'
   | 'tool/result'

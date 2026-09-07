@@ -4,7 +4,8 @@ import { Context } from '@deepseek-ai/cordis'
 import { Session, SessionId } from '@deepseek-ai/dsh-session'
 import type { SessionFormatEvent } from '@deepseek-ai/dsh-session-format'
 import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
-import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
+import { createHash } from 'node:crypto'
+import { mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
@@ -126,12 +127,13 @@ describe('JSONL V2 PTC publication and restore', () => {
     const successor = join(dirname(predecessor), 'session.v3.jsonl')
     await mkdir(dirname(predecessor), { recursive: true })
     await writeFile(predecessor, source)
+    const sourceStat = await stat(predecessor)
 
     const reader = await ctx.sessionPersistence.open(id, 'read')
     try {
       expect(reader.header).toEqual({ version: 3, id, createdAt: 1000, isSeeded: false, delegationDepth: 0 })
       expect((await reader.read()).events.map(event => event.type)).toEqual([
-        'turn/start', 'step/start', 'user/message', 'assistant/message', 'tool/call',
+        'turn/start', 'step/start', 'system/message', 'user/message', 'assistant/message', 'tool/call',
         'tool/ptc-dispatch-start', 'tool/ptc-dispatch', 'tool/result', 'agent/inbox/spliced',
         'user/message', 'session/title-llm-request', 'step/end', 'turn/end',
       ])
@@ -139,6 +141,7 @@ describe('JSONL V2 PTC publication and restore', () => {
       await reader.close()
     }
     expect(await readFile(predecessor)).toEqual(source)
+    expect(await stat(predecessor)).toMatchObject({ dev: sourceStat.dev, ino: sourceStat.ino })
     await expect(readFile(successor)).rejects.toMatchObject({ code: 'ENOENT' })
 
     const writer = await ctx.sessionPersistence.open(id, 'write')
@@ -151,15 +154,28 @@ describe('JSONL V2 PTC publication and restore', () => {
     const [publishedHeader, ...publishedEvents] = published.toString('utf8').trimEnd().split('\n')
       .map((row): unknown => JSON.parse(row))
     expect(publishedHeader).toEqual({ ...header, version: 3 })
-    const expectedEvents = events.map(event => ({ ...event }))
-    expectedEvents[5] = { ...events[5], type: 'tool/ptc-dispatch-start' } as SessionFormatEvent
-    expectedEvents[6] = { ...events[6], type: 'tool/ptc-dispatch' } as SessionFormatEvent
-    expectedEvents[8] = { ...events[8], data: {
+    const expectedEvents: SessionFormatEvent[] = events.map(event => ({ ...event, seq: event.seq < 2 ? event.seq : event.seq + 1 }))
+    expectedEvents[5] = { ...expectedEvents[5], type: 'tool/ptc-dispatch-start' } as SessionFormatEvent
+    expectedEvents[6] = { ...expectedEvents[6], type: 'tool/ptc-dispatch' } as SessionFormatEvent
+    expectedEvents[8] = { ...expectedEvents[8], data: {
       target: 'next-step', start: 0, removedCount: 0, inserted: [currentImageMessage],
     } } as SessionFormatEvent
-    expectedEvents[9] = { ...events[9], data: currentImageMessage } as SessionFormatEvent
+    expectedEvents[9] = { ...expectedEvents[9], data: currentImageMessage } as SessionFormatEvent
+    expectedEvents[10] = { ...expectedEvents[10], data: {
+      ...(events[10]?.data as Record<string, unknown>), messageSeqs: [3],
+    } } as SessionFormatEvent
+    const systemMessage = {
+      id: 'v2-to-v3-system-' + createHash('sha256')
+        .update(JSON.stringify(['session-format-v2-to-v3', id, 1, 'step/start'])).digest('hex'),
+      role: 'system', source: { kind: 'plugin', plugin: '@deepseek-ai/dsh-system-prompt' }, content: [],
+    }
+    expectedEvents.splice(2, 0, {
+      type: 'system/message', seq: 2, time: 1002, surfaceOp: 'append',
+      data: { turn: 1, step: 1, message: systemMessage },
+    })
     expect(publishedEvents).toEqual(expectedEvents)
     expect(await readFile(predecessor)).toEqual(source)
+    expect(await stat(predecessor)).toMatchObject({ dev: sourceStat.dev, ino: sourceStat.ino })
 
     await ctx.fiber.dispose()
     ctx = new Context()
@@ -182,6 +198,7 @@ describe('JSONL V2 PTC publication and restore', () => {
       await reloaded.close()
     }
     expect(await readFile(predecessor)).toEqual(source)
+    expect(await stat(predecessor)).toMatchObject({ dev: sourceStat.dev, ino: sourceStat.ino })
     expect(await readFile(successor)).toEqual(published)
     expect((await readdir(dirname(predecessor))).filter(name => name.endsWith('.jsonl')).sort())
       .toEqual(['session.v2.jsonl', 'session.v3.jsonl'])

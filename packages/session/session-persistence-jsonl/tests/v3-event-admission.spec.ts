@@ -2,7 +2,7 @@ import { Context } from '@deepseek-ai/cordis'
 import { SessionId, SessionSeq } from '@deepseek-ai/dsh-session'
 import { SessionFormatUnsupportedError } from '@deepseek-ai/dsh-session-persistence'
 import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
@@ -53,15 +53,37 @@ describe('native V3 event admission at EOF', () => {
     expect(() => scanLog(bytes)).toThrow('format v3 contains unknown event type')
   })
 
-  it.each(obsoleteTypes)('read and write opens refuse required %s without changing bytes', async (type) => {
-    const bytes = Buffer.from(prefix + JSON.stringify(obsoleteEvent(type)) + '\n')
+  it.each(obsoleteTypes.flatMap(type => ['', '{not json\n', 'null\n'].map(corruption => ({ type, corruption }))))(
+    'scan, read and write refuse required $type after "$corruption" without changing bytes or inode', async ({ type, corruption }) => {
+      const bytes = Buffer.from(prefix + corruption + JSON.stringify(obsoleteEvent(type)) + '\n')
+      expect(() => scanLog(bytes)).toThrow(SessionFormatUnsupportedError)
+      expect(() => scanLog(bytes)).toThrow('format v3 contains unknown event type')
+      const path = await store(bytes)
+      const sourceStat = await stat(path)
+      for (const access of ['read', 'write'] as const) {
+        const opened = ctx.sessionPersistence.open(id, access).then(async (handle) => {
+          await handle.close()
+        })
+        await expect(opened).rejects.toThrow(SessionFormatUnsupportedError)
+        expect(await readFile(path)).toEqual(bytes)
+        expect(await stat(path)).toMatchObject({ dev: sourceStat.dev, ino: sourceStat.ino })
+      }
+    },
+  )
+
+  it.each(['', '{not json\n', 'null\n'])('refuses malformed system payloads after %j without modifying storage', async (corruption) => {
+    const malformed = { type: 'system/message', seq: 1, time: 2, data: null, surfaceOp: 'append' }
+    const bytes = Buffer.from(prefix + corruption + JSON.stringify(malformed) + '\n')
+    expect(() => scanLog(bytes)).toThrow('system/message data must be an object')
     const path = await store(bytes)
+    const sourceStat = await stat(path)
     for (const access of ['read', 'write'] as const) {
       const opened = ctx.sessionPersistence.open(id, access).then(async (handle) => {
         await handle.close()
       })
-      await expect(opened).rejects.toThrow(SessionFormatUnsupportedError)
+      await expect(opened).rejects.toThrow('system/message data must be an object')
       expect(await readFile(path)).toEqual(bytes)
+      expect(await stat(path)).toMatchObject({ dev: sourceStat.dev, ino: sourceStat.ino })
     }
   })
 

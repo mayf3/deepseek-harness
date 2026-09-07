@@ -486,6 +486,22 @@ describe('contextPressure session projection', () => {
     expect(compacted.projectedTokens).toBeLessThan(beforeCompaction!)
   })
 
+  it.each(['start', 'end'] as const)('rejects a shadow claim with a mismatched %s endpoint', async (endpoint) => {
+    const { ctx, session } = await harness()
+    try {
+      const first = appendUser(session, 'first')
+      const last = appendUser(session, 'last')
+      appendSummaryMeter(ctx, session, first, last)
+      const target = endpoint === 'start' ? last : first
+      session.append('user/message', createUserMessage({
+        content: [{ type: 'text', text: 'summary' }], source: { kind: 'plugin', plugin: 'test' },
+      }), { surfaceOp: { op: 'replace', start: target, end: target }, sourceEventSeqs: [target] })
+      expect(() => pressure(ctx, session)).toThrow('has no adjacent shadow price')
+    } finally {
+      await ctx.fiber.dispose()
+    }
+  })
+
   it('folds a replacement without a claim at zero', async () => {
     const { ctx, session } = await harness()
     const question = appendUser(session, 'a question from an unmetered log')

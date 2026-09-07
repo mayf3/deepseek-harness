@@ -4,12 +4,155 @@ import json
 import runpy
 import subprocess
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
+
+from deepseek_harness import RunResult
 
 
 ROOT = Path(__file__).resolve().parents[3]
 SMOKE = runpy.run_path(ROOT / "scripts" / "smoke-python-runtime.py")
+
+
+def live_result(**overrides: object) -> RunResult:
+    values = {
+        "session_id": "installed-wheel-live-api",
+        "final_response": SMOKE["LIVE_API_SENTINEL"],
+        "finish_reason": "completed",
+        "events": [{"type": "tool/call", "data": {"name": "unrelated_tool"}}],
+        "notifications": [],
+    }
+    values.update(overrides)
+    return RunResult(**values)
+
+
+@pytest.fixture
+def live_smoke(monkeypatch: pytest.MonkeyPatch) -> SimpleNamespace:
+    import deepseek_harness
+
+    state = SimpleNamespace(
+        prompts=[], session_ids=[], challenges=[], checked_logs=[], closed=False,
+        create_bytes=SMOKE["LIVE_API_SENTINEL"].encode("utf-8"),
+        create_result=live_result(), verify_result=live_result(), receipt_mode="copy",
+    )
+    globals_ = SMOKE["smoke_sdk_live"].__globals__
+    token_hex = globals_["secrets"].token_hex
+
+    def fresh_challenge(size: int) -> str:
+        assert len(state.prompts) == 1
+        value = token_hex(size)
+        state.challenges.append(value)
+        return value
+
+    class ScriptedHarness:
+        def __init__(self, **kwargs: object) -> None:
+            state.root = Path(kwargs["cwd"])
+            assert "toolChoice" not in kwargs
+
+        def __enter__(self) -> ScriptedHarness:
+            return self
+
+        def __exit__(self, *args: object) -> None:
+            state.closed = True
+
+        def run(self, prompt: str, *, session_id: str) -> RunResult:
+            state.prompts.append(prompt)
+            state.session_ids.append(session_id)
+            if len(state.prompts) == 1:
+                state.marker = Path(prompt.splitlines()[-1])
+                assert state.marker.parent == state.root
+                if state.create_bytes is not None:
+                    state.marker.write_bytes(state.create_bytes)
+                return state.create_result
+
+            assert len(state.prompts) == 2
+            assert len(state.challenges) == 1
+            challenge = state.challenges[0]
+            assert all(challenge not in sent for sent in state.prompts)
+            assert str(state.marker) not in prompt
+            assert "previous turn" in prompt and "changed externally" in prompt
+            assert state.marker.read_bytes() == challenge.encode("ascii")
+            receipt = Path(prompt.splitlines()[-1])
+            assert receipt != state.marker and not receipt.exists()
+            if state.receipt_mode == "copy":
+                receipt.write_bytes(state.marker.read_bytes())
+            elif state.receipt_mode == "stale":
+                receipt.write_bytes(state.create_bytes)
+            elif state.receipt_mode == "wrong":
+                receipt.write_bytes(b"wrong")
+            elif state.receipt_mode == "newline":
+                receipt.write_bytes(state.marker.read_bytes() + b"\n")
+            elif state.receipt_mode == "changed-source":
+                receipt.write_bytes(state.marker.read_bytes())
+                state.marker.write_bytes(b"changed")
+            elif state.receipt_mode != "missing":
+                raise AssertionError(state.receipt_mode)
+            return state.verify_result
+
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "unit-test-key")
+    monkeypatch.setenv("DEEPSEEK_BASE_URL", "https://api.invalid")
+    monkeypatch.setattr(deepseek_harness, "DeepSeekHarness", ScriptedHarness)
+    monkeypatch.setattr(globals_["secrets"], "token_hex", fresh_challenge)
+    monkeypatch.setitem(globals_, "assert_zstd_session_log", state.checked_logs.append)
+    return state
+
+
+def test_live_smoke_requires_fresh_external_content(live_smoke: SimpleNamespace) -> None:
+    SMOKE["smoke_sdk_live"]()
+    assert len(live_smoke.prompts) == 2
+    assert live_smoke.session_ids == ["installed-wheel-live-api"] * 2
+    assert len(live_smoke.checked_logs) == 1
+    assert live_smoke.closed and not live_smoke.root.exists()
+
+
+@pytest.mark.parametrize("label", ["create", "verify"])
+@pytest.mark.parametrize(("overrides", "message"), [
+    ({"finish_reason": "error"}, "turn ended with 'error'"),
+    ({"events": []}, "turn made no model-requested tool call"),
+    ({"final_response": "PYTHON_SDK_LIVE_OK extra"}, "turn returned"),
+])
+def test_live_smoke_rejects_invalid_turn_before_continuing(
+    live_smoke: SimpleNamespace, label: str, overrides: dict[str, object], message: str,
+) -> None:
+    setattr(live_smoke, f"{label}_result", live_result(**overrides))
+    with pytest.raises(AssertionError, match=f"{label} {message}"):
+        SMOKE["smoke_sdk_live"]()
+    assert len(live_smoke.prompts) == (1 if label == "create" else 2)
+    assert not live_smoke.checked_logs
+    assert live_smoke.closed
+    if label == "create":
+        assert not live_smoke.challenges
+
+
+@pytest.mark.parametrize("content", [None, b"wrong", b"PYTHON_SDK_LIVE_OK\n"])
+def test_live_smoke_rejects_bad_create_before_host_overwrite(
+    live_smoke: SimpleNamespace, content: bytes | None,
+) -> None:
+    live_smoke.create_bytes = content
+    with pytest.raises(AssertionError, match="create turn (did not create|wrote unexpected bytes)"):
+        SMOKE["smoke_sdk_live"]()
+    assert len(live_smoke.prompts) == 1
+    assert not live_smoke.challenges and not live_smoke.checked_logs
+    assert live_smoke.closed
+
+
+@pytest.mark.parametrize(("mode", "message"), [
+    ("missing", "did not create receipt"),
+    ("stale", "wrote unexpected bytes to receipt"),
+    ("wrong", "wrote unexpected bytes to receipt"),
+    ("newline", "wrote unexpected bytes to receipt"),
+    ("changed-source", "changed source file"),
+])
+def test_live_smoke_rejects_unrelated_tool_without_exact_receipt(
+    live_smoke: SimpleNamespace, mode: str, message: str,
+) -> None:
+    live_smoke.receipt_mode = mode
+    with pytest.raises(AssertionError, match=f"verify turn {message}"):
+        SMOKE["smoke_sdk_live"]()
+    assert len(live_smoke.prompts) == 2
+    assert not live_smoke.checked_logs
+    assert live_smoke.closed
 
 
 @pytest.mark.parametrize(
@@ -75,7 +218,7 @@ def test_mcp_smoke_accepts_the_external_server_result() -> None:
     )
 
 
-def test_snapshot_comparison_normalizes_only_session_generation_provenance() -> None:
+def test_snapshot_comparison_preserves_opaque_generation_provenance() -> None:
     normalize = SMOKE["normalize_session_format_comparison"]
     expected = {
         "header": {"type": "session", "version": 0, "otherVersion": 7},
@@ -104,8 +247,24 @@ def test_snapshot_comparison_normalizes_only_session_generation_provenance() -> 
         },
     }
 
-    assert normalize(expected) == normalize(actual)
+    assert normalize(expected) != normalize(actual)
+    assert normalize(expected)["header"] == normalize(actual)["header"]
     assert normalize(expected)["header"]["otherVersion"] == 7
+    assert normalize(actual)["accepted"] == actual["accepted"]
+    assert normalize(actual)["source"] == actual["source"]
+
+
+def test_snapshot_value_scrubs_system_nodes_without_erasing_header_fields() -> None:
+    normalize = SMOKE["normalize_snapshot_value"]
+    system = {
+        "type": "system/message",
+        "data": {"message": {"role": "system", "content": [{"type": "text", "text": "prompt"}]}},
+    }
+    header = {"type": "request/header", "data": {"header": {"system": "unexpected"}}}
+    assert normalize(system, [])["data"]["message"]["content"] == [{"type": "text", "text": "{{system}}"}]
+    assert normalize(header, []) == header
+    empty = {"type": "system/message", "data": {"message": {"role": "system", "content": []}}}
+    assert normalize(empty, []) == empty
 
 
 def test_snapshot_value_normalizes_embedded_assistant_stream_timing() -> None:

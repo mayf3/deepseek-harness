@@ -23,7 +23,7 @@ import { foldRequestHeader } from './request-header.ts'
 export * from './types.ts'
 export { SessionPreparation } from './preparation.ts'
 export type { SessionPreparationOptions } from './preparation.ts'
-export type { AssistantMessage, ToolResultMessage, UserMessage } from '@deepseek-ai/dsh-llm'
+export type { AssistantMessage, SystemMessage, ToolResultMessage, UserMessage } from '@deepseek-ai/dsh-llm'
 export { interruptedTurnClosers, TOOL_NOT_STARTED, TOOL_OUTCOME_UNKNOWN } from './repair.ts'
 export type { SessionSurface, SurfaceFoldReplacement, SurfaceFoldResult } from './surface.ts'
 export { deriveEventMessage, foldSurface, isAppendSurfaceEvent, isReplacementSurfaceEvent, isSurfaceEvent, isSurfaceEligibleType } from './surface.ts'
@@ -171,6 +171,7 @@ export function adoptSessionEvent<T extends SessionEvent>(event: T): T {
     case 'user/message':
       deepFreeze(event.data)
       break
+    case 'system/message':
     case 'assistant/message':
     case 'tool/result':
       deepFreeze(event.data.message)
@@ -220,6 +221,7 @@ function assertSessionEventEnvelope(value: Record<string, unknown>, index: numbe
   }
   switch (type) {
     case 'request/header':
+    case 'system/message':
     case 'user/message':
     case 'assistant/attempt':
     case 'assistant/message':
@@ -262,8 +264,7 @@ function assertCurrentLlmShape(event: Record<string, unknown>, index: number): v
     assertAssistantSettlementShape(record, type, index)
     return
   }
-  if (type !== 'user/message' && type !== 'assistant/message'
-    && type !== 'tool/result') return
+  if (!isMessageEventType(type)) return
   assertMessageEventShape(event, `seed ${type} at index ${index}`)
   if (type === 'assistant/message') {
     assertAssistantSettlementShape(record, type, index)
@@ -306,11 +307,23 @@ function assertAdapterDefaults(
   }
 }
 
+/** The four surface event types whose payload carries an identified message. */
+function isMessageEventType(type: unknown): type is SurfaceEventType {
+  return type === 'system/message' || type === 'user/message'
+    || type === 'assistant/message' || type === 'tool/result'
+}
+
+const MESSAGE_ROLE_BY_TYPE: Record<SurfaceEventType, Message['role']> = {
+  'system/message': 'system',
+  'user/message': 'user',
+  'assistant/message': 'assistant',
+  'tool/result': 'user',
+}
+
 /** Validate only the event-specific invariants needed to safely replay a message. */
 function assertMessageEventShape(event: Record<string, unknown>, subject: string): void {
   const type = event['type']
-  if (type !== 'user/message' && type !== 'assistant/message'
-    && type !== 'tool/result') return
+  if (!isMessageEventType(type)) return
   const data = event['data']
   const record = typeof data === 'object' && data !== null
     ? data as Record<string, unknown>
@@ -322,7 +335,7 @@ function assertMessageEventShape(event: Record<string, unknown>, subject: string
     throw new Error(`${subject} lacks an identified message`)
   }
   const messageRecord = message as Record<string, unknown>
-  const expectedRole = type === 'assistant/message' ? 'assistant' : 'user'
+  const expectedRole = MESSAGE_ROLE_BY_TYPE[type]
   if (messageRecord['role'] !== expectedRole) {
     throw new Error(`${subject} message must have role "${expectedRole}"`)
   }
@@ -336,6 +349,13 @@ function assertMessageEventShape(event: Record<string, unknown>, subject: string
     throw new Error(`${subject} message has invalid content`)
   }
   const sourceRecord = source as Record<string, unknown>
+  if (type === 'system/message') {
+    if (sourceRecord['kind'] !== 'plugin' || typeof sourceRecord['plugin'] !== 'string'
+      || sourceRecord['plugin'] === '') {
+      throw new Error(`${subject} message must have plugin source`)
+    }
+    return
+  }
   if (type === 'assistant/message') {
     if (sourceRecord['kind'] !== 'model' || !hasProviderModel(sourceRecord)) {
       throw new Error(`${subject} message must have model source`)

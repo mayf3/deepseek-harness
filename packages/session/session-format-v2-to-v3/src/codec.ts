@@ -1,16 +1,17 @@
-/** V3 record encoding shares the unchanged released-v2 physical event language. */
+/** V3 physical envelopes retain V2 provenance encoding and validate native system/header payloads. */
 
 import { SessionFormatError, isSessionFormatJsonObject, snapshotSessionFormatJson } from '@deepseek-ai/dsh-session-format'
 import type {
   SessionFormatCodec,
   SessionFormatCurrentEncoder,
-  SessionFormatMigrationContext,
+  SessionFormatEvent,
   SessionFormatHeader,
 } from '@deepseek-ai/dsh-session-format'
 import { releasedV2SessionFormatCodec } from '@deepseek-ai/dsh-session-format-v1-to-v2'
 import { assertReleasedV3Header, assertV3EventAdmission } from './validation.ts'
+import { assertEvent, assertV3StructuralRow } from './payload.ts'
 
-/** Physical v3 codec with current PTC event admission and released-v2 record encoding. */
+/** Physical V3 codec with protected system-message payload admission and retired header.system refusal. */
 export const releasedV3SessionFormatCodec = Object.freeze({
   version: 3,
   decodeHeader(value: unknown) {
@@ -19,12 +20,13 @@ export const releasedV3SessionFormatCodec = Object.freeze({
   createDecoder(value, recovery) {
     const decoder = releasedV2SessionFormatCodec.createDecoder(v2PhysicalHeader(value), recovery)
     return {
-      ...decoder,
-      header: { ...decoder.header, version: 3 },
-      decodeRow(row: unknown, context: SessionFormatMigrationContext) {
+      ...decoder, header: { ...decoder.header, version: 3 },
+      decodeRow(row, context) {
+        assertV3RowAdmission(row)
+
         decoder.decodeRow(row, {
           emitEvent(event) {
-            assertV3EventAdmission(event)
+            if (event.type === 'system/message' || event.type === 'request/header') assertEvent(event, 3)
             context.emitEvent(event)
           },
           emitRun: context.emitRun.bind(context),
@@ -39,8 +41,22 @@ export const releasedV3SessionFormatCodec = Object.freeze({
       version: 3,
     }
   },
-  encodeEvent: releasedV2SessionFormatCodec.encodeEvent,
+  encodeEvent(event) {
+    assertV3EventAdmission(event)
+    if (event.type === 'system/message' || event.type === 'request/header') assertEvent(event, 3)
+    return releasedV2SessionFormatCodec.encodeEvent(event)
+  },
 } satisfies SessionFormatCodec & SessionFormatCurrentEncoder)
+
+/**
+ * Validate owned V3 admission rules before a scanner or codec can discard a recoverable tail.
+ * This checks only identified structural payloads; physical provenance still belongs to decoding.
+ * @param row - parsed physical row, before envelope or compressed-range decoding.
+ */
+export function assertV3RowAdmission(row: unknown): void {
+  assertV3StructuralRow(row)
+  if (typeof row === 'object' && row !== null && !Array.isArray(row)) assertV3EventAdmission(row as SessionFormatEvent)
+}
 
 function v2PhysicalHeader(value: unknown): SessionFormatHeader {
   const header = snapshotSessionFormatJson(value, 'format v3 physical header')

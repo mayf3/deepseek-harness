@@ -4519,6 +4519,9 @@ importers:
       '@deepseek-ai/dsh-llm':
         specifier: workspace:^
         version: link:../../llm/llm
+      '@deepseek-ai/dsh-llm-pi-ai':
+        specifier: workspace:^
+        version: link:../../llm/llm-pi-ai
       '@deepseek-ai/dsh-scope':
         specifier: workspace:^
         version: link:../scope
@@ -7426,6 +7429,9 @@ importers:
       '@deepseek-ai/dsh-session-format':
         specifier: workspace:^
         version: link:../session-format
+      '@deepseek-ai/dsh-session-format-v0-to-v1':
+        specifier: workspace:^
+        version: link:../session-format-v0-to-v1
       '@deepseek-ai/dsh-session-format-v1-to-v2':
         specifier: workspace:^
         version: link:../session-format-v1-to-v2
@@ -7516,6 +7522,9 @@ importers:
       '@deepseek-ai/dsh-session-format-catalog':
         specifier: workspace:^
         version: link:../session-format-catalog
+      '@deepseek-ai/dsh-session-format-v2-to-v3':
+        specifier: workspace:^
+        version: link:../session-format-v2-to-v3
       '@deepseek-ai/schemastery':
         specifier: link:../../../vendor/schemastery
         version: link:../../../vendor/schemastery

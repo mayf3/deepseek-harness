@@ -54,6 +54,19 @@ interface SessionEventMap {
    */
   'user/message': UserMessage
   /**
+   * The rendered system prompt on the model-visible surface. The loop appends
+   * the first one as surface node 0 before the step's first `user/message`.
+   * A prepared in-history route can append nonempty changes in a continuing
+   * series. An incapable route or new series normalizes text to the first system
+   * node. Normalization empties nonempty later nodes, then rewrites the head if
+   * needed, through logged per-node replacements. An empty rendering always
+   * clears all active system nodes, leaving no older instructions model-visible.
+   * Empty later nodes are dormant and project to no message; an empty head with
+   * no active later node records "no system prompt". Restored nonempty text follows
+   * the same route and series rule; empty nodes never restore older text.
+   */
+  'system/message': { turn: number; step: number; message: SystemMessage }
+  /**
    * Assembled assistant message for one step (derived history uses this).
    * Carries the step's `usage` when the adapter reported token accounting, so
    * the model output and its accounting travel together (there is no separate
@@ -113,8 +126,10 @@ interface SessionEventMap {
     startsSeries?: true
   }
   /**
-   * Route metadata for the next request, logged only when the route or capacity
-   * changes. It does not participate in request reconstruction or header equality.
+   * Route metadata for the next request, logged only when the route, capacity,
+   * or system prompt update mode changes. It does not participate in request
+   * reconstruction or header equality. Prompt admission uses the bound prepared
+   * call's capability, not this snapshot from an earlier request.
    */
   'request/context': RequestContext
   /**
@@ -149,12 +164,13 @@ interface SessionEventMap {
 
 ### 请求头事件：`request/header`
 
-请求信封（即 `EpochHeader`：调用配置 + 适配器所提供默认值的标记 + 渲染后的系统提示词 + 已组装的工具 schema）会作为会话状态写入日志，因此每个对话请求都是日志的纯函数（见可重建性 Agent Note）。带有 reason `'initial'` 或 `'resume'` 的完整 `request/header` 快照记录每个 agent loop 实例的边界；请求变化时会追加 reason 为 `'change'` 的快照；未变的信封显式开启消息序列或跟随 surface 替换时，会追加 reason 为 `'series'` 的快照。如果发生变化的快照所属请求同时开启序列，它会携带 `startsSeries: true`。普通的仅追加后续 Turn，以及同一模型消息序列内的后续 Step 与重试沿用最新快照。`foldRequestHeader(events)` 通过选择最新快照重建请求头。该事件不是 `SurfaceEventType`，不产生 LLM 消息。
+请求信封（即 `EpochHeader`：调用配置 + 适配器所提供默认值的标记 + 已组装的工具 schema）会作为会话状态写入日志，因此每个对话请求都是日志的纯函数（见可重建性 Agent Note）。渲染后的系统提示词不属于请求头：它是派生历史，即 surface 第 0 号节点上的 `system/message` 事件以及任何后续的历史内系统节点（[决策](../../.agents/notes/implemented/architecture/2026-09-02-system-prompt-as-surface-node.zh.md)），因此提示词变更替换或追加一个系统节点，而请求头保持不变。带有 reason `'initial'` 或 `'resume'` 的完整 `request/header` 快照记录每个 agent loop 实例的边界；请求变化时会追加 reason 为 `'change'` 的快照；未变的信封显式开启消息序列或跟随 surface 替换时，会追加 reason 为 `'series'` 的快照。如果发生变化的快照所属请求同时开启序列，它会携带 `startsSeries: true`。普通的仅追加后续 Turn，以及同一模型消息序列内的后续 Step 与重试沿用最新快照。`foldRequestHeader(events)` 通过选择最新快照重建请求头。该事件不是 `SurfaceEventType`，不产生 LLM 消息。
 
 ```ts type-equiv
 /**
- * Logged request state outside derived history: call config, system prompt, and
- * tools. The latest full `request/header` snapshot reconstructs it; canonical
+ * Logged request state outside derived history: call config and tools. The
+ * system prompt is derived history — surface node 0, a `system/message` event.
+ * The latest full `request/header` snapshot reconstructs the header; canonical
  * empty optional fields are absent.
  */
 interface EpochHeader {
@@ -162,18 +178,16 @@ interface EpochHeader {
   config: LlmCallConfig
   /** Effective config fields materialized from the exact adapter rather than proposed by a caller. */
   adapterDefaults?: LlmCallConfigAdapterDefaults
-  /** Rendered system prompt text; absent for a system-less request. */
-  system?: string
   /** Assembled tool schemas; absent for a tool-less request. */
   tools?: ToolSchema[]
 }
 ```
 
-规范形式：空系统提示词和空工具列表都表示为字段缺失，与请求构建方式一致。包含旧版 `request/header-delta` 事件或完整快照原因为 `fallback` 的旧版 v0 日志，会在 seed、append 和持久化加载边界被拒绝，而不会以不完整方式回放。
+规范形式：空工具列表表示为字段缺失，与请求构建方式一致。包含旧版 `request/header-delta` 事件或完整快照原因为 `fallback` 的旧版 v0 日志，会在 seed、append 和持久化加载边界被拒绝，而不会以不完整方式回放。
 
 ### 路由容量事件：`request/context`
 
-请求所解析到的路由的上下文元数据是独立的已记录状态，在同一步骤内紧随 `request/header` 追加，且仅在提供方、模型或容量与上一条记录不同时追加。它保持在 `EpochHeader` 之外，因为该类型是 `headerEquals` 逐字段比较的重建约定。容量描述的是路由，不是请求输入，把它折叠进去会让一次容量变化被登记为请求信封的 `change`，也会把适配器元数据拉进 loop 的重建不变式。与 `request/header` 一样，它不是 `SurfaceEventType`，也不产生 LLM 消息。`session.requestContext()` 以增量方式归并最新一条记录。适配器不公布容量的路由会以缺失 `contextWindow` 的形式记录，因此新记录可以清除较早路由的容量。
+请求所解析到的路由的上下文元数据是独立的已记录状态，在同一步骤内紧随 `request/header` 追加，且仅在提供方、模型、容量或 `systemPromptUpdate` 模式与上一条记录不同时追加。它保持在 `EpochHeader` 之外，因为该类型是 `headerEquals` 逐字段比较的重建约定。容量与更新模式描述的是路由，不是请求输入，把它们折叠进去会让一次路由变化被登记为请求信封的 `change`，也会把适配器元数据拉进 loop 的重建不变式。与 `request/header` 一样，它不是 `SurfaceEventType`，也不产生 LLM 消息。`session.requestContext()` 以增量方式归并最新一条记录；agent loop 在决定变化后的系统提示词是替换最新的系统节点还是追加到已缓存历史之后时，读取该记录的 `systemPromptUpdate`（[决策规则](../../packages/core/agent-loop/README.zh.md#understand-the-implementation)）。适配器不公布容量的路由会以缺失 `contextWindow` 的形式记录，因此新记录可以清除较早路由的容量；未声明更新模式的路由同样会清除较早路由的 `systemPromptUpdate`。
 
 ```ts type-equiv
 /** Registration-bound metadata for one resolved model route. */
@@ -184,6 +198,8 @@ interface RequestContext {
   model: string
   /** Maximum combined request and response context in tokens, when advertised. */
   contextWindow?: number
+  /** `'in-history'` when the route reads the latest `system` message at any position as the effective system prompt. */
+  systemPromptUpdate?: SystemPromptUpdate
 }
 ```
 
@@ -267,7 +283,7 @@ V2 `assistant/message` 嵌入 provider stream，不能携带 `sourceEventSeqs`�
 
 ## Surface 类型
 
-三种产生消息的类型（`SurfaceEventType`：`user/message`、`assistant/message`、`tool/result`）携带 surface 元数据，用来声明它们如何加入有序的派生 surface。见 [session surface Agent Note](../../.agents/notes/implemented/architecture/2026-06-18-session-surface.zh.md)。
+四种产生消息的类型（`SurfaceEventType`：`system/message`、`user/message`、`assistant/message`、`tool/result`）携带 surface 元数据，用来声明它们如何加入有序的派生 surface。`system/message` 承载渲染后的系统提示词：循环把第一条追加为 surface 第 0 号节点，并在提示词变化时恰好替换最新的系统节点，或在历史内路由上追加一条新的；surface 折叠拒绝任何其他覆盖第 0 号节点 `system/message` 的替换，而后续系统节点是普通历史，压缩替换可以遮蔽它。见 [session surface Agent Note](../../.agents/notes/implemented/architecture/2026-06-18-session-surface.zh.md)。
 
 ### `SurfaceEventType`：事件类型中产生消息的子集
 
@@ -279,6 +295,7 @@ V2 `assistant/message` 嵌入 provider stream，不能携带 `sourceEventSeqs`�
  * earlier sources through {@link SessionEvent.sourceEventSeqs}.
  */
 type SurfaceEventType =
+  | 'system/message'
   | 'user/message'
   | 'assistant/message'
   | 'tool/result'

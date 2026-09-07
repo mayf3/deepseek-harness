@@ -11,6 +11,7 @@ import json
 import os
 import queue
 import re
+import secrets
 import shutil
 import subprocess
 import sys
@@ -126,7 +127,7 @@ ADVANCED_SNAPSHOT_DIRECTORY = (
     Path(__file__).resolve().parent / "snapshots" / "python-sdk-single-exe" / "advanced"
 )
 ADVANCED_SNAPSHOT_FILENAMES = (
-    "result.json", "session.v2.jsonl", "session.1.v2.jsonl", "session.2.v2.jsonl",
+    "result.json", "session.v3.jsonl", "session.1.v3.jsonl", "session.2.v3.jsonl",
 )
 MINIMAL_SNAPSHOT_DIRECTORY = (
     Path(__file__).resolve().parent / "snapshots" / "python-sdk-single-exe" / "minimal"
@@ -134,11 +135,15 @@ MINIMAL_SNAPSHOT_DIRECTORY = (
 if IS_WINDOWS:
     MINIMAL_SNAPSHOT_DIRECTORY /= "win-x64"
 MINIMAL_SNAPSHOT_FILENAMES = ("model-visible.json",)
+IN_HISTORY_SNAPSHOT_DIRECTORY = (
+    Path(__file__).resolve().parent / "snapshots" / "python-sdk-single-exe" / "minimal-in-history"
+)
+IN_HISTORY_SNAPSHOT_FILENAMES = ("prompt-history.json",)
 RESTART_SNAPSHOT_DIRECTORY = (
     Path(__file__).resolve().parent / "snapshots" / "python-sdk-single-exe" / "restart"
 )
 RESTART_SNAPSHOT_FILENAMES = (
-    "result.json", "requests.json", "session.1.v2.jsonl", "session.2.v2.jsonl",
+    "result.json", "requests.json", "session.1.v3.jsonl", "session.2.v3.jsonl",
 )
 MCP_SERVER_SCRIPT = """\
 import json
@@ -313,7 +318,8 @@ def completion_chunks(body: dict[str, object]) -> list[dict[str, object]]:
     messages = body.get("messages")
     if not isinstance(messages, list) or not messages:
         raise AssertionError(f"model request has no messages: {body}")
-    latest = messages[-1]
+    # A system prompt update may follow the tool result without replacing it.
+    latest = next(message for message in reversed(messages) if message.get("role") != "system")
     if not isinstance(latest, dict):
         raise AssertionError(f"model request has an invalid latest message: {body}")
 
@@ -769,7 +775,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--scenario",
-        choices=("all", "sdk-default", "sdk-custom", "sdk-minimal", "sdk-fs-search", "sdk-spawn-node", "sdk-mcp", "sdk-snapshot", "sdk-restart", "sdk-profile-plugin", "sdk-live", "runner", "direct"),
+        choices=("all", "sdk-default", "sdk-custom", "sdk-minimal", "sdk-minimal-in-history", "sdk-fs-search", "sdk-spawn-node", "sdk-mcp", "sdk-snapshot", "sdk-restart", "sdk-profile-plugin", "sdk-live", "runner", "direct"),
         default="all",
     )
     parser.add_argument("--exe", type=Path)
@@ -788,10 +794,10 @@ def main() -> None:
         parser.error("--scenario sdk-profile-plugin requires --installed-wheel")
     if args.installed_wheel:
         args.exe = assert_installed_wheel_environment()
-    if args.scenario in {"all", "sdk-custom", "sdk-minimal", "sdk-fs-search", "sdk-spawn-node", "sdk-snapshot", "sdk-restart", "runner", "direct"} and args.exe is None:
+    if args.scenario in {"all", "sdk-custom", "sdk-minimal", "sdk-minimal-in-history", "sdk-fs-search", "sdk-spawn-node", "sdk-snapshot", "sdk-restart", "runner", "direct"} and args.exe is None:
         parser.error("--exe is required for custom, minimal, fs-search, spawn-node, snapshot, restart, runner, and direct scenarios")
-    if args.update_snapshots and args.scenario not in {"all", "sdk-minimal", "sdk-snapshot", "sdk-restart"}:
-        parser.error("--update-snapshots requires --scenario sdk-minimal, sdk-snapshot, sdk-restart, or all")
+    if args.update_snapshots and args.scenario not in {"all", "sdk-minimal", "sdk-minimal-in-history", "sdk-snapshot", "sdk-restart"}:
+        parser.error("--update-snapshots requires --scenario sdk-minimal, sdk-minimal-in-history, sdk-snapshot, sdk-restart, or all")
     if args.exe is not None and not args.exe.is_file():
         parser.error(f"runtime executable does not exist: {args.exe}")
 
@@ -816,6 +822,9 @@ def main() -> None:
         if args.scenario in {"all", "sdk-minimal"}:
             assert args.exe is not None
             smoke_sdk_minimal(model.url, args.exe.resolve(), args.update_snapshots)
+        if args.scenario in {"all", "sdk-minimal-in-history"}:
+            assert args.exe is not None
+            smoke_sdk_minimal(model.url, args.exe.resolve(), args.update_snapshots, in_history=True)
         if args.scenario in {"all", "sdk-fs-search"}:
             assert args.exe is not None
             smoke_sdk_fs_search(model.url, args.exe.resolve())
@@ -911,12 +920,9 @@ def smoke_sdk_live() -> None:
         session_id = "installed-wheel-live-api"
         shell_tool = "pwsh" if IS_WINDOWS else "bash"
         create_prompt = (
-            f"Use the {shell_tool} tool to create the file at the absolute path below with exactly one line "
-            f"containing {LIVE_API_SENTINEL}. Then reply with exactly {LIVE_API_SENTINEL}.\n{marker}"
-        )
-        verify_prompt = (
-            "Use a tool to read the file created in the previous turn. "
-            f"If its only line is {LIVE_API_SENTINEL}, reply with exactly {LIVE_API_SENTINEL}."
+            f"Use the {shell_tool} tool to create the file at the absolute path below with exact UTF-8 "
+            f"content {LIVE_API_SENTINEL}, with no newline or byte-order mark. "
+            f"Then reply with exactly {LIVE_API_SENTINEL}.\n{marker}"
         )
         with DeepSeekHarness(
             provider="deepseek-official",
@@ -932,33 +938,55 @@ def smoke_sdk_live() -> None:
             request_timeout_seconds=180,
         ) as harness:
             created = harness.run(create_prompt, session_id=session_id)
-            verified = harness.run(verify_prompt, session_id=session_id)
+            assert_live_turn("create", created)
+            if not marker.is_file():
+                raise AssertionError(f"create turn did not create {marker}")
+            if marker.read_bytes() != LIVE_API_SENTINEL.encode("utf-8"):
+                raise AssertionError(f"create turn wrote unexpected bytes to {marker}")
 
-        for label, result in (("create", created), ("verify", verified)):
-            if result.finish_reason != "completed":
-                event_types = [event.get("type") for event in result.events]
-                turn_end_data = next(
-                    (event.get("data") for event in reversed(result.events) if event.get("type") == "turn/end"),
-                    None,
+            # The challenge is absent from the prior turn and the verification prompt.
+            challenge = secrets.token_hex(32).encode("ascii")
+            marker.write_bytes(challenge)
+            with tempfile.TemporaryDirectory(prefix="receipt-", dir=root) as receipt_directory:
+                receipt = Path(receipt_directory) / "receipt.txt"
+                verify_prompt = (
+                    "The file created in the previous turn has changed externally. "
+                    "Use a tool to read that same file and copy its exact current content to the "
+                    "new receipt path below, without changing the source file. "
+                    "Preserve every byte; do not add a newline or byte-order mark. "
+                    f"Then reply with exactly {LIVE_API_SENTINEL}.\n{receipt}"
                 )
-                turn_end = safe_turn_end(turn_end_data)
-                raise AssertionError(
-                    f"{label} turn ended with {result.finish_reason!r}; "
-                    f"final={result.final_response!r}; turn_end={turn_end!r}; events={event_types}"
-                )
-            if not any(event.get("type") == "tool/call" for event in result.events):
-                raise AssertionError(
-                    f"{label} turn made no model-requested tool call; "
-                    f"final={result.final_response!r}"
-                )
-            if result.final_response.strip() != LIVE_API_SENTINEL:
-                raise AssertionError(f"{label} turn returned {result.final_response!r}")
-        if not marker.is_file():
-            raise AssertionError(f"real-model tool turn did not create {marker}")
-        if marker.read_text(encoding="utf-8").splitlines() != [LIVE_API_SENTINEL]:
-            raise AssertionError(f"real-model tool turn wrote unexpected text to {marker}")
+                verified = harness.run(verify_prompt, session_id=session_id)
+                assert_live_turn("verify", verified)
+                if not receipt.is_file():
+                    raise AssertionError(f"verify turn did not create receipt {receipt}")
+                if receipt.read_bytes() != challenge:
+                    raise AssertionError(f"verify turn wrote unexpected bytes to receipt {receipt}")
+                if not marker.is_file() or marker.read_bytes() != challenge:
+                    raise AssertionError(f"verify turn changed source file {marker}")
         assert_zstd_session_log(sessions)
 
+
+def assert_live_turn(label: str, result: RunResult) -> None:
+    """Require completed model tool use and the exact smoke answer for each live turn."""
+    if result.finish_reason != "completed":
+        event_types = [event.get("type") for event in result.events]
+        turn_end_data = next(
+            (event.get("data") for event in reversed(result.events) if event.get("type") == "turn/end"),
+            None,
+        )
+        turn_end = safe_turn_end(turn_end_data)
+        raise AssertionError(
+            f"{label} turn ended with {result.finish_reason!r}; "
+            f"final={result.final_response!r}; turn_end={turn_end!r}; events={event_types}"
+        )
+    if not any(event.get("type") == "tool/call" for event in result.events):
+        raise AssertionError(
+            f"{label} turn made no model-requested tool call; "
+            f"final={result.final_response!r}"
+        )
+    if result.final_response.strip() != LIVE_API_SENTINEL:
+        raise AssertionError(f"{label} turn returned {result.final_response!r}")
 
 def safe_turn_end(value: object) -> object:
     """Project a live-provider failure without retaining credential-bearing text."""
@@ -1045,7 +1073,9 @@ def smoke_sdk_custom(base_url: str, executable: Path) -> None:
         assert_session_log(sessions, root, EXPECTED_TEXT, CODE_WORKER_TEXT, WORKFLOW_WORKER_TEXT)
 
 
-def smoke_sdk_minimal(base_url: str, executable: Path, update_snapshots: bool) -> None:
+def smoke_sdk_minimal(
+    base_url: str, executable: Path, update_snapshots: bool, *, in_history: bool = False,
+) -> None:
     """Exercise the shipped standalone minimal profile through the packaged executable."""
     from deepseek_harness import DeepSeekHarness
 
@@ -1057,6 +1087,19 @@ def smoke_sdk_minimal(base_url: str, executable: Path, update_snapshots: bool) -
         prompt = f"{MINIMAL_PROMPT}\n{MINIMAL_EDITOR_PATH_PREFIX}{editor_path}"
         dsh_home = root / "home"
         sessions = dsh_home / "sessions"
+        patches = ()
+        if in_history:
+            patch = root / "in-history.patch.yml"
+            patch.write_text(json.dumps([
+                {"id": "llm-deepseek", "config": {"models": [
+                    {"id": "smoke-model", "systemPromptUpdate": "in-history"},
+                ]}},
+                {"insert": [{
+                    "id": "in-history-prompt",
+                    "name": (Path(__file__).resolve().parent / "fixtures/python-sdk-in-history-prompt.mjs").as_uri(),
+                }]},
+            ]))
+            patches = (str(patch),)
         with DeepSeekHarness(
             provider="deepseek-official",
             model="smoke-model",
@@ -1064,6 +1107,7 @@ def smoke_sdk_minimal(base_url: str, executable: Path, update_snapshots: bool) -
             dsh_bin=str(executable),
             dsh_home=str(dsh_home),
             profile="sdk-minimal",
+            patches=patches,
             api_key="sk-keyless-smoke",
             base_url=base_url,
             request_timeout_seconds=60,
@@ -1077,10 +1121,18 @@ def smoke_sdk_minimal(base_url: str, executable: Path, update_snapshots: bool) -
             raise AssertionError(f"packaged editor wrote unexpected content: {editor_path.read_text()!r}")
         assert_session_log(sessions, root, MINIMAL_TEXT, "COUNT=1", "COUNT=2")
 
-        files = build_minimal_snapshot_files(MockModelHandler.requests[first_request:], root)
-        compare_snapshot_files(
-            files, update_snapshots, MINIMAL_SNAPSHOT_DIRECTORY, MINIMAL_SNAPSHOT_FILENAMES,
-        )
+        requests = MockModelHandler.requests[first_request:]
+        if in_history:
+            logs = read_session_logs(sessions)
+            files = build_in_history_snapshot_files(result, requests, logs[result.session_id])
+            compare_snapshot_files(
+                files, update_snapshots, IN_HISTORY_SNAPSHOT_DIRECTORY, IN_HISTORY_SNAPSHOT_FILENAMES,
+            )
+        else:
+            files = build_minimal_snapshot_files(requests, root)
+            compare_snapshot_files(
+                files, update_snapshots, MINIMAL_SNAPSHOT_DIRECTORY, MINIMAL_SNAPSHOT_FILENAMES,
+            )
 
 
 def smoke_sdk_fs_search(base_url: str, executable: Path) -> None:
@@ -1791,6 +1843,56 @@ def snapshot_child_ids(result: "RunResult") -> list[str]:
     return child_ids
 
 
+def build_in_history_snapshot_files(
+    result: "RunResult",
+    requests: list[dict[str, object]],
+    log: list[dict[str, object]],
+) -> dict[str, str]:
+    """Assert live requests, SDK subscriptions, and persistence retain both prompts."""
+    systems = [event for event in result.events if event.get("type") == "system/message"]
+    assert len(systems) == 2, systems
+    assert [event.get("surfaceOp") for event in systems] == ["append", "append"], systems
+    prompts = [message_text(event["data"]["message"]["content"]) for event in systems]
+    assert "Python SDK prompt version 1." in prompts[0], prompts
+    assert "Python SDK prompt version 2." not in prompts[0], prompts
+    assert "Python SDK prompt version 2." in prompts[1], prompts
+    assert "Python SDK prompt version 1." not in prompts[1], prompts
+    assert prompts[0] != prompts[1], prompts
+    assert [event for event in log if event.get("type") == "system/message"] == systems
+    subscribed = [
+        notification.payload["event"]
+        for notification in result.notifications
+        if notification.method == "session.event"
+        and notification.payload.get("event", {}).get("type") == "system/message"
+    ]
+    assert subscribed == systems, subscribed
+    contexts = [event["data"] for event in result.events if event.get("type") == "request/context"]
+    assert contexts and all(context.get("systemPromptUpdate") == "in-history" for context in contexts), contexts
+    assert len([event for event in result.events if event.get("type") == "request/header"]) == 1
+    assert all(event.get("surfaceOp") in (None, "append") for event in result.events)
+    first_tool = next(index for index, event in enumerate(result.events) if event.get("type") == "tool/result")
+    assert result.events.index(systems[1]) > first_tool
+    assert len(requests) == 4, requests
+    request_prompts = []
+    for index, request in enumerate(requests):
+        messages = request["messages"]
+        assert messages[0]["role"] == "system" and message_text(messages[0]["content"]) == prompts[0]
+        assert request["tools"] == requests[0]["tools"], "prompt update changed tool schemas"
+        positions = [position for position, message in enumerate(messages) if message["role"] == "system"]
+        texts = [message_text(messages[position]["content"]) for position in positions]
+        assert texts == (prompts[:1] if index == 0 else prompts), texts
+        if index > 0:
+            assert messages[positions[1] - 1]["role"] == "tool", messages
+        request_prompts.append(texts)
+    evidence = {
+        "requestSystemPrompts": request_prompts,
+        "systemMessageOperations": [event["surfaceOp"] for event in systems],
+        "subscribedSystemPrompts": prompts,
+        "requestContexts": contexts,
+    }
+    return {"prompt-history.json": json.dumps(evidence, indent=2, ensure_ascii=False) + "\n"}
+
+
 def build_minimal_snapshot_files(
     requests: list[dict[str, object]],
     cwd: Path,
@@ -2067,7 +2169,7 @@ def normalize_snapshot_value(
                 dt = member.get("dt")
                 if isinstance(dt, list):
                     member["dt"] = [0] * len(dt)
-    if isinstance(normalized.get("id"), str) and normalized.get("role") in ("assistant", "user"):
+    if isinstance(normalized.get("id"), str) and normalized.get("role") in ("assistant", "system", "user"):
         if not normalized["id"].startswith("{{message:"):
             normalized["id"] = "{{messageId}}"
     if normalized.get("type") in ("feedback/message-put", "feedback/message-delete"):
@@ -2079,11 +2181,12 @@ def normalize_snapshot_value(
                     item["createdAt"] = 0
                     item["updatedAt"] = 0
     scrub_snapshot_header(normalized)
+    scrub_snapshot_system_message(normalized)
     return normalized
 
 
 def scrub_snapshot_header(value: dict[object, object]) -> None:
-    """Tokenize full request-header bulk while retaining tool names."""
+    """Tokenize full request-header tool schemas while retaining tool names."""
     data = value.get("data")
     if not isinstance(data, dict):
         return
@@ -2091,14 +2194,26 @@ def scrub_snapshot_header(value: dict[object, object]) -> None:
         header = data.get("header")
         if not isinstance(header, dict):
             return
-        if "system" in header:
-            header["system"] = "{{system}}"
         tools = header.get("tools")
         if isinstance(tools, list):
             header["tools"] = [
                 tool.get("name") if isinstance(tool, dict) else "{{tools}}"
                 for tool in tools
             ]
+
+
+def scrub_snapshot_system_message(value: dict[object, object]) -> None:
+    """Tokenize the rendered prompt text of a `system/message` surface node."""
+    if value.get("type") != "system/message":
+        return
+    data = value.get("data")
+    message = data.get("message") if isinstance(data, dict) else None
+    content = message.get("content") if isinstance(message, dict) else None
+    if not isinstance(content, list):
+        return
+    for block in content:
+        if isinstance(block, dict) and block.get("type") == "text":
+            block["text"] = "{{system}}"
 
 
 def render_jsonl(records: list[object]) -> str:
@@ -2238,19 +2353,6 @@ def normalize_session_format_comparison(
         normalized.pop("time", None)
     if source_session_version == 1 and normalized.get("type") == "assistant/message":
         normalized.pop("sourceEventSeqs", None)
-    if normalized.get("type") == "session-log-deepseek/delivery-accepted":
-        data = normalized.get("data")
-        if isinstance(data, dict):
-            data.pop("throughSeq", None)
-            data.pop("sessionFormatVersion", None)
-            data["sessionFormatVersion"] = SESSION_FORMAT_PROVENANCE
-    if normalized.get("kind") == "session-reference":
-        references = normalized.get("references")
-        if isinstance(references, list):
-            for reference in references:
-                if isinstance(reference, dict):
-                    reference.pop("capturedFormatVersion", None)
-                    reference["capturedFormatVersion"] = SESSION_FORMAT_PROVENANCE
     return normalized
 
 

@@ -31,6 +31,9 @@
     },
     {
       "path": "../session-format-catalog"
+    },
+    {
+      "path": "../session-format-v2-to-v3"
     }
   ]
 }

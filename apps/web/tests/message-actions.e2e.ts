@@ -19,7 +19,7 @@ import { newEnglishPage, saveFailureShot } from './support.ts'
 const SNAPSHOT_DIR = fileURLToPath(new URL('../../../snapshots/web/message-actions', import.meta.url))
 // Borrowed read-only: this scenario needs any settled user+assistant pair, not
 // a new recording (workspace-management / sidebar-scrollbar pattern).
-const SEED = fileURLToPath(new URL('../../../snapshots/web/seeded-history/session.v2.jsonl', import.meta.url))
+const SEED = fileURLToPath(new URL('../../../snapshots/web/seeded-history/session.v3.jsonl', import.meta.url))
 const UI_EXPECTED = join(SNAPSHOT_DIR, 'ui.expected.md')
 const FORK_EXPECTED = join(SNAPSHOT_DIR, 'fork.expected.md')
 const MODE = webSnapshotMode()
@@ -184,7 +184,7 @@ describe('web e2e: message IconActions and clocks on settled history', () => {
     await expect.poll(
       () => page.getByRole('button', { name: 'System prompt', exact: true }).count(),
       { timeout: 10_000 },
-    ).toBe(1)
+    ).toBe(2)
 
     // Focus-reveal the footers (hover:hover keeps them opacity-hidden until
     // hover/focus-within). Branch renders only under assistant answers — user
