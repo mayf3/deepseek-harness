@@ -92,6 +92,11 @@ describe('image/offload append validation', () => {
 
   it('rejects request-only offload markers from appended and restored messages', () => {
     const session = seeded()
+    expect(() => session.append('assistant/message', {
+      turn: 1,
+      step: 1,
+      message: {},
+    } as never, { surfaceOp: 'append' })).not.toThrow()
     expect(() => session.append('user/message', createUserMessage({
       content: [{ ...image('marked'), offloaded: true }], source: { kind: 'user' },
     }), { surfaceOp: 'append' }))
