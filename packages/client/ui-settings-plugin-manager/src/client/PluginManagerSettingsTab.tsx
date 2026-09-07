@@ -6,7 +6,8 @@
  * pnpm's output behind a fold; and the confirmation a destructive action
  * waits on, naming what still uses the package. Entry ids, module names,
  * kinds, and probe facts stay off the page; an expanded card shows the
- * version, the source, a pack's components, and its uninstall. A preset's
+ * version, the source, a pack's components — each with its own switch on an
+ * external pack composed on a live-reload profile — and its uninstall. A preset's
  * composition lives on the preset's own detail page (`PresetPluginsSection`).
  */
 
@@ -19,7 +20,7 @@ import {
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { PluginManagerLocaleKey } from './locales.ts'
-import type { ConfirmState, InstallState, PluginManagerFace, PresetGroup } from './manager-store.ts'
+import { rowKey, type ConfirmState, type InstallState, type PluginManagerFace, type PresetGroup } from './manager-store.ts'
 import { noticeText, packageOf, refusalText, rowLabel, shortName, type Translate } from './presentation.ts'
 import css from './PluginManagerSettingsTab.module.css'
 
@@ -31,6 +32,9 @@ export type PluginManagerSettingsTabProps =
 
 type RowView = PluginPackageView['rows'][number]
 type RowPhase = NonNullable<RowView['phase']>
+
+/** The layer a pack's components are switched in: a row override always lands in the profile's global user layer. */
+const GLOBAL: PluginRowTarget = { kind: 'global' }
 
 const PHASE_KEYS = {
   pending: 'rowPhasePending',
@@ -96,12 +100,45 @@ function partsSummary(rows: readonly RowView[], t: Translate): string {
   ].join(' · ')
 }
 
-/** One component as a chip: its declared id, with its fiber phase when it has one. */
-function PartChip({ row, off, t }: { readonly row: RowView; readonly off: boolean; readonly t: Translate }): ReactNode {
+/** The switch one component renders: whether a write is in flight for it, and the write it asks for. */
+interface PartToggle {
+  readonly busy: boolean
+  readonly onChange: (disabled: boolean) => void
+}
+
+/** Switching for a pack's components: which rows have a write in flight, and the write. */
+interface PartToggles {
+  readonly busy: (rowId: string) => boolean
+  readonly onSetDisabled: (rowId: string, disabled: boolean) => void
+}
+
+/** A component's switch: off when the user switched it off; locked, saying why, when the pack itself keeps it off. */
+function PartSwitch({ row, t, toggle }: { readonly row: RowView; readonly t: Translate; readonly toggle: PartToggle }): ReactNode {
+  const locked = row.disabledBy === 'composition'
+  return (
+    <Switch
+      className={css.chipSwitch}
+      checked={row.enabled}
+      label={t('partToggle', { name: row.rowId })}
+      disabled={toggle.busy || locked}
+      {...locked ? { title: t('partLockedByComposition') } : {}}
+      onChange={(next) => { toggle.onChange(!next) }}
+    />
+  )
+}
+
+/** One component as a chip: its declared id, its fiber phase when it has one, and its switch when it has one. */
+function PartChip({ row, off, t, toggle }: {
+  readonly row: RowView
+  readonly off: boolean
+  readonly t: Translate
+  readonly toggle?: PartToggle | undefined
+}): ReactNode {
   return (
     <li className={css.chip} data-plugin-row={row.entryId} {...off ? { 'data-state': 'off' } : {}}>
       {row.phase === null ? null : <PhaseDot phase={row.phase} t={t} />}
       {row.rowId}
+      {toggle === undefined ? null : <PartSwitch row={row} t={t} toggle={toggle} />}
     </li>
   )
 }
@@ -111,9 +148,17 @@ function PartChip({ row, off, t }: { readonly row: RowView; readonly off: boolea
  * one line each with the failure; the off ones as chips under why they are
  * off; and the rest as chips behind **Show all** with a filter. A pack like
  * base carries close to a hundred rows and switches dozens off by design,
- * so only a failure earns a line of its own.
+ * so only a failure earns a line of its own. With `toggle`, every component
+ * carries a switch, except a row another layer owns: nothing of it mounted.
  */
-function BundleParts({ rows, t }: { readonly rows: readonly RowView[]; readonly t: Translate }): ReactNode {
+function BundleParts({ rows, t, toggle }: {
+  readonly rows: readonly RowView[]
+  readonly t: Translate
+  readonly toggle?: PartToggles | undefined
+}): ReactNode {
+  const partToggle = (row: RowView): PartToggle | undefined => toggle === undefined || row.failure?.stage === 'conflict'
+    ? undefined
+    : { busy: toggle.busy(row.rowId), onChange: (disabled) => { toggle.onSetDisabled(row.rowId, disabled) } }
   const [open, setOpen] = useState(false)
   const [filter, setFilter] = useState('')
   const failed = rows.filter(isFailedRow)
@@ -149,21 +194,25 @@ function BundleParts({ rows, t }: { readonly rows: readonly RowView[]; readonly 
         ? null
         : (
           <ul className={css.partExceptions}>
-            {failed.map(row => (
-              <li key={row.entryId} className={css.partException} data-plugin-row={row.entryId}>
-                <StateDot state="error" size={8} />
-                <span className={css.partId}>{row.rowId}</span>
-                <Tag tone="danger">{t('rowStateFailed')}</Tag>
-                {row.failure === undefined ? null : <p className={css.partFailure}>{row.failure.message}</p>}
-              </li>
-            ))}
+            {failed.map((row) => {
+              const rowToggle = partToggle(row)
+              return (
+                <li key={row.entryId} className={css.partException} data-plugin-row={row.entryId}>
+                  <StateDot state="error" size={8} />
+                  <span className={css.partId}>{row.rowId}</span>
+                  <Tag tone="danger">{t('rowStateFailed')}</Tag>
+                  {rowToggle === undefined ? null : <PartSwitch row={row} t={t} toggle={rowToggle} />}
+                  {row.failure === undefined ? null : <p className={css.partFailure}>{row.failure.message}</p>}
+                </li>
+              )
+            })}
           </ul>
         )}
       {offGroups.map(group => (
         <div key={group.key} className={css.partGroup}>
           <span className={css.partWhy}>{t('partsGroupLabel', { reason: t(group.key), count: String(group.rows.length) })}</span>
           <ul className={css.chips}>
-            {group.rows.map(row => <PartChip key={row.entryId} row={row} off t={t} />)}
+            {group.rows.map(row => <PartChip key={row.entryId} row={row} off t={t} toggle={partToggle(row)} />)}
           </ul>
         </div>
       ))}
@@ -182,7 +231,7 @@ function BundleParts({ rows, t }: { readonly rows: readonly RowView[]; readonly 
               ? <p className={css.status}>{t('partsFilterEmpty')}</p>
               : (
                 <ul className={css.chips}>
-                  {shown.map(row => <PartChip key={row.entryId} row={row} off={false} t={t} />)}
+                  {shown.map(row => <PartChip key={row.entryId} row={row} off={false} t={t} toggle={partToggle(row)} />)}
                 </ul>
               )}
           </div>
@@ -220,7 +269,8 @@ function addTargets(
 
 /** One installed package: its head with the switch or the add menu, and its details once expanded. */
 function PackageCard({
-  pkg, t, busy, open, presets, globalModules, presetName, onToggleOpen, onSetEnabled, onRetry, onUninstall, onAddRow,
+  pkg, t, busy, open, presets, globalModules, presetName,
+  onToggleOpen, onSetEnabled, onRetry, onUninstall, onAddRow, rowBusy, onSetRowDisabled,
 }: {
   readonly pkg: PluginPackageView
   readonly t: Translate
@@ -234,6 +284,9 @@ function PackageCard({
   readonly onRetry: () => void
   readonly onUninstall: () => void
   readonly onAddRow: (declaredName: string, target: PluginRowTarget) => void
+  /** Whether a component's row has a write in flight. */
+  readonly rowBusy: (rowId: string) => boolean
+  readonly onSetRowDisabled: (rowId: string, disabled: boolean) => void
 }): ReactNode {
   const [addMenu, setAddMenu] = useState(false)
   const title = pkg.title ?? shortName(pkg.name)
@@ -252,6 +305,9 @@ function PackageCard({
     }))
   const retryable = bundle && pkg.enabled && (pkg.status === 'failed' || pkg.status === 'partial')
   const removable = pkg.installed && !builtin
+  // A component's switch acts at once only on an external pack composed on a
+  // profile that applies patches while it runs; elsewhere the chips stay read-only.
+  const switchable = bundle && !builtin && pkg.enabled && pkg.liveReload
   return (
     <li
       className={css.card}
@@ -330,7 +386,15 @@ function PackageCard({
               <dt>{t('sourceLabel')}</dt>
               <dd>{t(builtin ? 'sourceBuiltin' : 'sourceLocal')}</dd>
             </dl>
-            {bundle ? <BundleParts rows={pkg.rows} t={t} /> : null}
+            {bundle
+              ? (
+                <BundleParts
+                  rows={pkg.rows}
+                  t={t}
+                  toggle={switchable ? { busy: rowId => busy || rowBusy(rowId), onSetDisabled: onSetRowDisabled } : undefined}
+                />
+              )
+              : null}
             {retryable || removable
               ? (
                 <div className={css.actions}>
@@ -564,6 +628,8 @@ export function PluginManagerSettingsTab(props: PluginManagerSettingsTabProps): 
                       onRetry={() => { props.retry(pkg.name) }}
                       onUninstall={() => { props.uninstall(pkg.name) }}
                       onAddRow={(declaredName, target) => { props.addRow(pkg.name, declaredName, target) }}
+                      rowBusy={rowId => state.busy.includes(rowKey(GLOBAL, rowId))}
+                      onSetRowDisabled={(rowId, disabled) => { props.setRowDisabled(GLOBAL, rowId, disabled) }}
                     />
                   ))}
                 </ul>

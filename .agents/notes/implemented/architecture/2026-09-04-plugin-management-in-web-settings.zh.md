@@ -18,6 +18,8 @@ Status: implemented
 
 **页面只说两个名词，且都不显示出来。** 不认识 Loader 的人看到的是*插件包*（整体启停、对所有会话生效）与*插件*（经**加入到…**加入某个预设或所有会话），每张卡片只有名字、一句话，以及开关或**加入到…**菜单；只有需重启或异常时才打标签，运行中与已停用由开关表达。内置插件包与其他卡片并列，带*内置*标记与锁定的开关；卸载、重试与插件包的组件都在展开区。预设的组合不在这个标签页上：Agent 预设分区声明 `settings.agentPreset.detail` 槽位，每张预设卡片带一个打开详情页的齿轮，管理器把**能力**段注册到那里——预设的行仍是同样的卡片，用户添加的行带**删除**，段头的**添加**菜单列出预设还没有的已安装模块——于是标签页只说装了什么，预设页说一个预设能做什么。插件配置标签页出于同样的理由去掉了作用域切换：它编辑所有预设共用的值，而同样的卡片构成详情页的**设置**段，注册在第二个键控槽位（`settings.agentPreset.plugin.item`）下，在页面打开期间编辑该预设自己的作用域；设置外壳一次只挂载一个分区，因此一个作用域选择服务两个表面。管理标签页排在配置标签页之前。两个表面都建立在 `ui-primitives` 的共享控件之上——`Switch`、`Tag`、`Button`、`Input`、`StateDot`——只保留目录里没有答案的部分：28px 图标按钮、用户添加行上的红色垃圾桶图标、组件标签。预设里的 harness 模块按标签页自己的字典命名（`name.<行 id 或模块 slug>` / `desc.<…>`），自己装的模块按 manifest 的标题与描述命名并带*本地*标记。entry id、模块名、cordis 副本、探测时间、覆盖行都不再出现在页面上；只读的**插件列表**标签页连同其包 `ui-settings-plugin-inventory` 一起删除，`pluginInventory` Remote 保留，作为管理器读取预设组合与宿主树模块名的来源。
 
+**插件包的组件逐个切换，只在立即生效的地方给开关。** 外部插件包在实时应用补丁的 profile 上组合时，每个组件标签带一个 `Switch`，以全局用户层为目标调用 `plugins.setRowDisabled`——关闭往 profile 的 `cordis.patch.yml` 写入该行 id 的 `disabled: true`，打开删掉这个键——该行的宿主半区随之卸下或挂上，插件包其余部分照常运行。内置插件包、已关闭的插件包，以及下次启动才应用补丁的 profile 保持只读标签：开关在那里只会写文件而页面上什么都不变。插件包自己关掉的组件带原因锁定，因为用户层只能拒绝；异常的组件可以关掉；被别的层占用 id 的行无从切换。像 dsh-web 聚合包那样由自己的客户端 bundle 挂载全部组件浏览器半区的插件包，那一半会留在页面上直到重载；它需要的行状态信号就是 `plugins` Remote 已按行给出的 `enabled` 与 `disabledBy`。
+
 **安装动词是 `add`。** 客户端的命名空间服务把 `install` 与 `remove` 留给自己的成员，并在页面加载时——所有单测都通过之后——拒绝同名的挂载方法。宿主的方法与 CLI 一样叫 `plugins/add`，`packages/api/remotes/tests/remote-method-names.host.spec.ts` 用网关源码自己保留的名字检查工作区里每一个 `@Remote('<name>')`。
 
 **web e2e 脚手架可以挂 profile runtime。** `launchWebScaffold({ profileRuntime })` 把 fixture 包链接进脚手架 profile，并以 `patchReload: 'startup'` 在其上挂载 `ProfileRuntime`，于是管理器有 profile 可管，而启动好的树在场景之下绝不重新组合。
@@ -36,4 +38,4 @@ Status: implemented
 
 ## 测试
 
-`packages/client/ui-settings/tests` 钉住 registry 的路由与 scoped 绑定；`packages/client/ui-settings-plugins/tests` 钉住 scoped 表单、开关、技能卡片与继承标记；`packages/client/ui-settings-plugin-manager/tests` 钉住 store 的读取、操作、安装运行、确认、标签页渲染与名称字典的配对。`apps/web/tests/plugin-manager.e2e.ts` 在脚手架 profile runtime 上驱动管理器并在某个预设 scope 下写一个字段；`plugin-config` 与 `settings-chrome` 的 golden 为两个标签页的分区与 scope 行重录。
+`packages/client/ui-settings/tests` 钉住 registry 的路由与 scoped 绑定；`packages/client/ui-settings-plugins/tests` 钉住 scoped 表单、开关、技能卡片与继承标记；`packages/client/ui-settings-plugin-manager/tests` 钉住 store 的读取、操作、安装运行、确认、标签页渲染及其组件开关与名称字典的配对。`apps/web/tests/plugin-manager.e2e.ts` 在脚手架 profile runtime 上驱动管理器并在某个预设 scope 下写一个字段；`plugin-config` 与 `settings-chrome` 的 golden 为两个标签页的分区与 scope 行重录。

@@ -6,7 +6,7 @@ import { bindSnapshotSelector } from '@deepseek-ai/dsh-client-test-runtime'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import { PluginManagerSettingsTab } from '../src/client/PluginManagerSettingsTab.tsx'
 import type { PluginManagerSettingsTabProps } from '../src/client/PluginManagerSettingsTab.tsx'
-import type { InstallState, PluginManagerState, PresetGroup } from '../src/client/manager-store.ts'
+import { rowKey, type InstallState, type PluginManagerState, type PresetGroup } from '../src/client/manager-store.ts'
 import { en, zh, type PluginManagerLocaleKey } from '../src/client/locales.ts'
 
 afterEach(cleanup)
@@ -260,6 +260,60 @@ describe('PluginManagerSettingsTab', () => {
     fireEvent.click(screen.getByRole('button', { name: en.retryPackage }))
     expect(actions.retry).toHaveBeenLastCalledWith('@deepseek-ai/dsh-core-broken')
     expect(screen.queryByRole('button', { name: 'Uninstall Core' })).toBeNull()
+  })
+
+  it('switches the components of a live external pack, and locks what the pack itself keeps off', () => {
+    const userOff = { enabled: false, disabledBy: 'user', phase: null } as const
+    const { actions, set } = renderTab({
+      packages: [
+        pkg({
+          status: 'partial',
+          rows: [
+            { entryId: 'include:better-sidebar', rowId: 'better-sidebar', moduleName: 'dsh-better-sidebar', enabled: true, phase: 'active' },
+            { entryId: 'include:off', rowId: 'off', moduleName: 'dsh-better-sidebar/off', ...userOff },
+            { entryId: 'include:gated', rowId: 'gated', moduleName: 'dsh-better-sidebar/gated', enabled: false, disabledBy: 'composition', phase: null },
+            { entryId: 'include:crash', rowId: 'crash', moduleName: 'dsh-better-sidebar/crash', enabled: true, phase: 'failed', failure: { stage: 'apply', message: 'boom' } },
+            { entryId: 'conflict:x:taken', rowId: 'taken', moduleName: 'dsh-better-sidebar/taken', enabled: true, phase: null, failure: { stage: 'conflict', message: 'x owns taken' } },
+          ],
+        }),
+        pkg({ name: 'frozen', liveReload: false, rows: [{ entryId: 'include:frozen', rowId: 'frozen', moduleName: 'frozen', ...userOff }] }),
+        pkg({ name: 'parked', enabled: false, status: 'disabled', rows: [{ entryId: 'include:parked', rowId: 'parked', moduleName: 'parked', ...userOff }] }),
+        pkg({ name: '@deepseek-ai/dsh-core', title: 'Core', trust: 'builtin', rows: [{ entryId: 'include:core', rowId: 'core', moduleName: '@deepseek-ai/dsh-core', ...userOff }] }),
+      ],
+    })
+    const target = { kind: 'global' } as const
+    fireEvent.click(screen.getByRole('button', { name: 'Show better-sidebar' }))
+    // A component the user switched off switches back on; one the pack itself keeps off is locked and says why.
+    const off = screen.getByRole('switch', { name: 'Enable component off' })
+    expect(off.getAttribute('aria-checked')).toBe('false')
+    fireEvent.click(off)
+    expect(actions.setRowDisabled).toHaveBeenLastCalledWith(target, 'off', false)
+    const gated = screen.getByRole('switch', { name: 'Enable component gated' })
+    expect(gated).toHaveProperty('disabled', true)
+    expect(gated.getAttribute('title')).toBe(en.partLockedByComposition)
+    // A failing component can be switched off; a row another layer owns has nothing mounted to switch.
+    fireEvent.click(screen.getByRole('switch', { name: 'Enable component crash' }))
+    expect(actions.setRowDisabled).toHaveBeenLastCalledWith(target, 'crash', true)
+    expect(screen.queryByRole('switch', { name: 'Enable component taken' })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: en.partsShowAll }))
+    const sidebar = screen.getByRole('switch', { name: 'Enable component better-sidebar' })
+    expect(sidebar.getAttribute('aria-checked')).toBe('true')
+    fireEvent.click(sidebar)
+    expect(actions.setRowDisabled).toHaveBeenLastCalledWith(target, 'better-sidebar', true)
+    // Only the row with a write in flight goes inert; a busy package takes every component with it.
+    set({ busy: [rowKey(target, 'better-sidebar')] })
+    expect(screen.getByRole('switch', { name: 'Enable component better-sidebar' })).toHaveProperty('disabled', true)
+    expect(screen.getByRole('switch', { name: 'Enable component off' })).toHaveProperty('disabled', false)
+    set({ busy: ['dsh-better-sidebar'] })
+    expect(screen.getByRole('switch', { name: 'Enable component off' })).toHaveProperty('disabled', true)
+    fireEvent.click(screen.getByRole('button', { name: 'Hide better-sidebar' }))
+    // Components stay read-only where a switch would not act now: a profile that
+    // applies patches at its next start, a pack that is off, and a built-in pack.
+    for (const [name, rowId] of [['frozen', 'frozen'], ['parked', 'parked'], ['Core', 'core']] as const) {
+      fireEvent.click(screen.getByRole('button', { name: `Show ${name}` }))
+      expect(document.querySelector(`[data-plugin-row="include:${rowId}"]`)?.textContent).toBe(rowId)
+      expect(screen.queryByRole('switch', { name: `Enable component ${rowId}` })).toBeNull()
+    }
   })
 
   it('offers Add to… for a plugin with importable modules, marking the targets it already joined', () => {

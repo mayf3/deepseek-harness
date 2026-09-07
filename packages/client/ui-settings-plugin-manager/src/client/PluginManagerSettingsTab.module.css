@@ -432,6 +432,10 @@
   flex: none;
 }
 
+.chipSwitch {
+  margin: 0 -4px 0 2px;
+}
+
 .installBody {
   display: flex;
   flex-direction: column;

@@ -136,6 +136,13 @@ describe('web e2e: plugin manager', () => {
     await expect.poll(() => toggle.getAttribute('aria-checked'), { timeout: 10_000 }).toBe('true')
     await dialog.getByText('以下更改会在下次启动生效：示例组合包').waitFor({ timeout: 10_000 })
     expect(await dialog.getByText('需重启', { exact: true }).count()).toBe(1)
+    // The pack's components list from its probe. A profile that applies
+    // patches at its next start keeps them read-only: no component switch.
+    await dialog.getByRole('button', { name: '展开 示例组合包' }).click()
+    await dialog.getByRole('button', { name: '显示全部' }).click()
+    await dialog.locator('[data-plugin-row]', { hasText: 'fixture-row' }).waitFor({ timeout: 10_000 })
+    expect(await dialog.getByRole('switch', { name: '启用组件 fixture-row' }).count()).toBe(0)
+    await dialog.getByRole('button', { name: '收起 示例组合包' }).click()
     expect(tripwire.pageErrors).toEqual([])
   }, 60_000)
 
