@@ -600,6 +600,13 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
       { id: 'directory-picker-browse', name: '@deepseek-ai/dsh-host-directory-picker-browse' },
       { id: 'ui-directory-picker-browse', name: '@deepseek-ai/dsh-client-ui-directory-picker-browse' },
     ] },
+    // The open-in-app header button reflects the host application probe —
+    // whatever editors and terminals the RUNNING machine has installed — so
+    // its presence and label would vary per host and platform. Pin both rows
+    // off (routes and surface); the packages' own composition and jsdom tests
+    // cover the button.
+    { id: 'open-in-app', disabled: true },
+    { id: 'ui-open-in-app', disabled: true },
     ...options.agentPresets === undefined
       ? []
       // Never the derived harness-home root: a developer's own presets must not
@@ -869,19 +876,15 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
  * in-memory record-mode harvest, so the on-disk zstd default never matters.
  */
 function rawSessionLog(session: Session): string {
-  const encoded = sessionFormatCatalog.encodeCurrent({
-    header: {
-      ...session.header,
-      delegationDepth: session.header.delegationDepth ?? 0,
-    },
-    inheritedEventCount: session.inheritedEventCount,
-    // Session validates durable payloads as JSON; its closed event unions do
-    // not carry the index signature used by the format package's JSON types.
-    events: session.snapshotEvents() as unknown as readonly SessionFormatEvent[],
-  })
+  const encodedEvents = (session.snapshotEvents() as unknown as readonly SessionFormatEvent[])
+    .map(event => sessionFormatCatalog.encodeCurrentEvent(event))
+  const header = sessionFormatCatalog.encodeCurrentHeader({
+    ...session.header,
+    delegationDepth: session.header.delegationDepth ?? 0,
+  }, session.inheritedEventCount)
   return [
-    JSON.stringify(encoded.header),
-    ...encoded.rows.map(record => JSON.stringify(record)),
+    JSON.stringify(header),
+    ...encodedEvents.map(record => JSON.stringify(record)),
     '',
   ].join('\n')
 }
@@ -1333,7 +1336,7 @@ async function persistSeedSession(
 export async function readPersistedEvents(scaffold: WebScaffold, id: SessionId): Promise<readonly SessionEvent[]> {
   const handle = await scaffold.ctx.sessionPersistence.open(id, 'read')
   try {
-    return await handle.read()
+    return (await handle.read()).events
   } finally {
     await handle.close()
   }
