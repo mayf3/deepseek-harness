@@ -32,6 +32,8 @@ The reference-composer fixture maps the known home-abbreviated workspace display
 
 The advanced Python snapshot pauses only its matching workflow child’s first pre-step until the parent’s durable workflow membership event is observed. The fixture supports either event-arrival order and cancels pending waits on abort or disposal. This pins the scenario’s cross-session ordering without sorting notifications or changing production scheduling.
 
+The queue snapshot moves the pointer away from the Stop/Send control and waits for its Send tooltip to close before capture. Workspace-management tests select the sole non-blank Session by its actions affordance, not row position, and select that Session before asserting that archiving it removes the empty Ungrouped bucket. Hover behavior, queue contents, durable archive identity, and reload assertions remain unchanged.
+
 ## Alternatives considered
 
 **Delete shared temporary files from a PR job.** Another runner may still own those files. Repository jobs must not reclaim a shared directory by pathname or age.
