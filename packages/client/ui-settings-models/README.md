@@ -35,7 +35,7 @@ The primary field on an editor card is a single **API key** input — the page n
 
 The collapsed 自定义设置 fold carries the curated extras: `baseURL` for both families (the deepseek placeholder shows the public endpoint), each adapter's model catalog, and the **display name** and **API protocol** of a pi-ai route the adapter does not ship. Profile `headers` remain deployment configuration in `settings.yaml` or Cordis config and have no Models-page editor. The Provider ID stays fixed: it is the settings key, the name every other namespace and every logged session references, and the stem of a credential reference the page cannot read back to move. Reasoning effort is deliberately not among the editable fields: it is a per-model capability, so a provider-scoped control could only be set to a value some models reject. Each DeepSeek row edits `id`, optional display `name`, and optional `contextWindow`/`maxTokens`; existing fields outside that curated set survive edits.
 
-`llm-deepseek` and `llm-deepseek-messages` share the DeepSeek editor fields while retaining separate settings and credential references. The Messages card shows `https://api.deepseek.com/anthropic` as its public endpoint and explains the automatically appended `/v1/messages` path.
+`llm-deepseek` and `llm-deepseek-messages` share the DeepSeek editor fields while retaining separate settings and credential references. The Messages card shows `https://api.deepseek.com/anthropic` as its public endpoint placeholder.
 
 ### Adding and deleting providers
 

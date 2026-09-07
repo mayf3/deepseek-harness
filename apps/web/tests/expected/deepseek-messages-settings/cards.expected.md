@@ -35,7 +35,6 @@
         - text: 自定义设置 API 地址
         - textbox "API 地址":
           - /placeholder: https://api.deepseek.com/anthropic
-        - paragraph: 填写 Anthropic 协议根地址，请求会自动追加 /v1/messages。
         - region "模型目录":
           - text: 模型目录 正在使用适配器默认模型
           - textbox "模型 ID 1":

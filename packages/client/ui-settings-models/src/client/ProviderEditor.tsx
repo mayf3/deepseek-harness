@@ -426,9 +426,6 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
                 }}
               />
             </div>
-            {namespace.ns === 'llm-deepseek-messages'
-              ? <p className={styles['intro']}>{t('messagesBaseUrlHint')}</p>
-              : null}
             {/* The protocol sits beside the endpoint it describes, as it does
                 on the create card. */}
             {ownsIdentity
