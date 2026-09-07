@@ -103,6 +103,8 @@ Input reaches the driver through one inbox. Some messages wake it immediately; i
 
 `image/offload` records the durable image offload watermark. After `request/header`, when the prepared route declares a request-image budget that the retained image occurrences exceed, the loop appends the advance and only then derives the request, so the history the model receives is exactly the log's projection. An adapter whose exact byte accounting still overflows fails the attempt with `IMAGE_OFFLOAD_REQUIRED` naming the additional oldest occurrences; the loop advances by that count and rebuilds the request before any `agent/request-error` listener runs. The watermark never retreats ([decision](../.agents/notes/implemented/architecture/2026-09-02-image-offload-watermark.md)).
 
+The loop sends immutable requests while keeping cancellation live. It reuses message-freeze provenance only for identities it has fully frozen; [agent-loop](../packages/core/agent-loop/README.md) owns the request construction rules.
+
 Details: the [sequence diagram](agent-lifecycle.md), the [tool pipeline](tool-execution-pipeline.md), and [cancellation and error recovery](subsystems/core.md#the-agent-handle).
 
 ## Session log

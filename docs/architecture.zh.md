@@ -107,6 +107,8 @@ turn/end
 
 `image/offload` 记录持久的图片 offload 水位。`request/header` 之后，若已准备的路由声明了请求图片预算且保留的图片出现位置超过该预算，循环先追加推进再派生请求，因此模型收到的历史正是日志的投影。若 adapter 按精确字节计量后仍超预算，会以 `IMAGE_OFFLOAD_REQUIRED` 让本次尝试失败并说明还需省略多少最老的出现位置；循环按该数量推进并在任何 `agent/request-error` 监听器运行之前重建请求。水位永不回退（[决定](../.agents/notes/implemented/architecture/2026-09-02-image-offload-watermark.zh.md)）。
 
+循环发送不可变请求，同时保留实时取消能力。只有已由该循环完整冻结的消息对象身份才能复用冻结证明；[agent-loop](../packages/core/agent-loop/README.zh.md)拥有请求构造规则。
+
 详情见[时序图](agent-lifecycle.zh.md)、[工具流水线](tool-execution-pipeline.zh.md)和[取消与错误恢复](subsystems/core.zh.md#the-agent-handle)。
 
 ## 会话日志

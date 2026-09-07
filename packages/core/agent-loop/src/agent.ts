@@ -16,7 +16,7 @@ import type {
   RequestErrorAction,
 } from '@deepseek-ai/dsh-agent'
 import { Inbox, agentEvents, assembleContextFor } from '@deepseek-ai/dsh-agent'
-import type { GenerateOptions, LlmCallConfig, LlmImageRequestBudget, PreparedLlmCall, RetainedImageOccurrence } from '@deepseek-ai/dsh-llm'
+import type { GenerateOptions, LlmCallConfig, LlmImageRequestBudget, Message, PreparedLlmCall, RetainedImageOccurrence } from '@deepseek-ai/dsh-llm'
 import {
   IMAGE_OFFLOAD_REQUIRED_CODE,
   LlmError,
@@ -90,6 +90,8 @@ export class ReactLoopAgent implements Agent {
   /** Process-local revision of assistant frames for this attached Session. */
   private assistantStreamRevision = 0
   private assistantAttemptCounter = 0
+  /** Identities fully frozen by this loop; weak references do not retain replaced history. */
+  private readonly frozenMessages = new WeakSet<Message>()
 
   constructor(
     private loopCtx: Context,
@@ -496,7 +498,8 @@ export class ReactLoopAgent implements Agent {
 
   /**
    * Compose one frozen request and bind it to the adapter registration that
-   * resolved its exact-model defaults.
+   * resolved its exact-model defaults. Message identities retain their first
+   * successful deep freeze; each local header is frozen afresh. The signal stays live.
    */
   private async buildRequest(
     turn: number,
@@ -591,9 +594,18 @@ export class ReactLoopAgent implements Agent {
     }
     signal.throwIfAborted()
 
-    const request = markAgentLoopRequest(deepFreeze({
+    // canonicalHeader is shallow; append logs a detached snapshot, not these local values.
+    deepFreeze(header)
+    const messages = session.deriveMessages()
+    for (const message of messages) {
+      if (this.frozenMessages.has(message)) continue
+      deepFreeze(message)
+      this.frozenMessages.add(message)
+    }
+    Object.freeze(messages)
+    const request = markAgentLoopRequest(Object.freeze({
       ...header.config,
-      messages: session.deriveMessages(),
+      messages,
       ...header.system !== undefined ? { system: header.system } : {},
       ...header.tools !== undefined ? { tools: header.tools } : {},
       sessionId: this.session.id,
