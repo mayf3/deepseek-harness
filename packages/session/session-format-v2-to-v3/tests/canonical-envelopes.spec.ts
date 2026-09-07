@@ -439,6 +439,24 @@ describe('native V3 physical admission', () => {
 })
 
 describe('V3 full artifact relationships', () => {
+  it.each([{ surfaceOp: 'append' }, { sourceEventSeqs: [] }])('defers unclassified required metadata %j until vocabulary-aware restoration', (metadata) => {
+    const required = event('future/required', 0, {}, metadata)
+    const output = new SessionFormatEventCollector()
+    const decoder = releasedV3SessionFormatCodec.createDecoder({ type: 'session', ...header, version: 3 }, 'recoverable')
+    decoder.decodeRow(required, output)
+    expect(decoder.finish(output)).toBe(0)
+    expect(output.values).toEqual([required])
+    expect(() => restore(artifact(output.values))).toThrow(/unknown event type/)
+    expect(() => restoreReleasedV3Artifact(artifact(output.values), new Set(['future/required'])))
+      .toThrow(/unexpected field/)
+  })
+
+  it('admits installed required extension payloads without surface metadata', () => {
+    const required = event('future/required', 0, { extension: true })
+    const value = artifact([required])
+    expect(restoreReleasedV3Artifact(value, new Set(['future/required']))).toBe(value)
+  })
+
   it('accepts repeated replacement whose endpoints reverse numeric order', () => {
     const source = [
       ...opening(), user(2), user(3), user(4),

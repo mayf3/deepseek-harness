@@ -203,7 +203,7 @@ function assertFeedback(type: string, data: SessionFormatJsonObject): void {
 
 /**
  * Validate one canonical V3 event without interpreting plugin-owned payloads or log relationships.
- * Unknown ignorable types retain opaque surface metadata without contributing to the surface.
+ * Unclassified metadata is deferred to vocabulary-aware restoration; unknown required types must not become recoverable corruption.
  * @param event - decoded logical event.
  * @param knownEventTypes - additional installed event types whose envelopes are interpreted.
  */
@@ -216,7 +216,7 @@ export function assertV3Event(event: SessionFormatEvent, knownEventTypes?: Reado
     || event.type === 'tool/ptc-dispatch-start' || event.type === 'tool/ptc-dispatch'
     || event.type === 'feedback/message-put' || event.type === 'feedback/message-delete'
     || knownEventTypes?.has(event.type) === true)
-  const opaque = value['ignorable'] === true && !known
+  const opaque = !known
   keys(value, ['type', 'seq', 'time', 'data'],
     SURFACE_TYPES.has(event.type) || opaque ? ['ignorable', 'surfaceOp', 'sourceEventSeqs'] : ['ignorable'], subject)
   if (typeof event.type !== 'string') throw new SessionFormatError(`${subject} type must be a string`)

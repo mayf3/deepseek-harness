@@ -47,6 +47,28 @@ describe('native V3 event admission at EOF', () => {
     return path
   }
 
+  it.each([{ surfaceOp: 'append' }, { sourceEventSeqs: [] }])('refuses unknown required metadata %j without truncating a provider append', async (metadata) => {
+    const event = { type: 'future/required', seq: 0, time: 1, data: {}, ...metadata }
+    const bytes = Buffer.from([header, event].map(row => JSON.stringify(row)).join('\n') + '\n')
+    expect(scanLog(bytes)).toMatchObject({ events: [event], committedBytes: bytes.length })
+    const path = await store(bytes)
+    const sourceStat = await stat(path)
+    for (const access of ['read', 'write'] as const) {
+      const operation = async () => {
+        const handle = await ctx.sessionPersistence.open(id, access)
+        try {
+          if (access === 'read') await handle.read()
+          else await handle.append([{ type: 'turn/start', seq: SessionSeq(1), time: 2, data: { turn: 1 } }])
+        } finally {
+          await handle.close()
+        }
+      }
+      await expect(operation()).rejects.toThrow('unknown to this harness and not marked ignorable')
+      expect(await readFile(path)).toEqual(bytes)
+      expect(await stat(path)).toMatchObject({ dev: sourceStat.dev, ino: sourceStat.ino })
+    }
+  })
+
   it.each(obsoleteTypes)('scanLog refuses a complete required %s EOF row', (type) => {
     const bytes = Buffer.from(prefix + JSON.stringify(obsoleteEvent(type)) + '\n')
     expect(() => scanLog(bytes)).toThrow(SessionFormatUnsupportedError)
