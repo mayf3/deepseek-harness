@@ -6,7 +6,7 @@
 import { describe, expect, it } from 'vitest'
 import { createUserMessage, ToolCallId } from '@deepseek-ai/dsh-llm'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
-import { compareImagePositions, foldImageOffloadWatermark, Session, SessionId, SessionSeq } from '@deepseek-ai/dsh-session'
+import { compareImagePositions, foldImageOffloadWatermark, markImageOffload, Session, SessionId, SessionSeq } from '@deepseek-ai/dsh-session'
 
 function image(name: string): Extract<ContentBlock, { type: 'image' }> {
   return {
@@ -78,6 +78,8 @@ describe('image/offload append validation', () => {
       .toThrow('watermark does not identify an image on the current surface')
     expect(() => session.append('image/offload', { turn: 1, step: 1, watermark: { seq: SessionSeq(3), path: [9] } }))
       .toThrow('watermark does not identify an image on the current surface')
+    expect(() => session.append('image/offload', { turn: 1, step: 1, watermark: { seq: SessionSeq(3), path: [0, 0] } }))
+      .toThrow('watermark does not identify an image on the current surface')
     session.append('user/message', createUserMessage({
       content: [{ type: 'text', text: 'replacement' }], source: { kind: 'user' },
     }), {
@@ -99,7 +101,7 @@ describe('image/offload append validation', () => {
     const event = events[3]!
     const marked = {
       ...event,
-      data: { ...event.data, content: [{ ...image('restored-marked'), offloaded: true }] },
+      data: { ...event.data, content: [null, { ...image('restored-marked'), offloaded: true }] },
     }
     events[3] = marked as never
     expect(() => Session.create(SessionId('offload-marked-seed'), events))
@@ -201,6 +203,16 @@ describe('image/offload surface derivation', () => {
 })
 
 describe('image offload helpers', () => {
+  it('preserves a nested block when only an earlier sibling is offloaded', () => {
+    const message = createUserMessage({
+      content: [image('first'), toolResult('later')],
+      source: { kind: 'user' },
+    })
+    const projected = markImageOffload(message, SessionSeq(3), { seq: SessionSeq(3), path: [0] })
+    expect(projected.content[0]).toEqual({ ...image('first'), offloaded: true })
+    expect(projected.content[1]).toBe(message.content[1])
+  })
+
   it('orders positions by seq then path and folds the latest watermark', () => {
     expect(compareImagePositions({ seq: SessionSeq(1), path: [5] }, { seq: SessionSeq(3), path: [0] })).toBeLessThan(0)
     expect(compareImagePositions({ seq: SessionSeq(4), path: [1] }, { seq: SessionSeq(3), path: [0, 3] })).toBeGreaterThan(0)

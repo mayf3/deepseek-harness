@@ -21,17 +21,16 @@ function compareImageBlockPaths(a: ImageBlockPath, b: ImageBlockPath): number {
   return a.length - b.length
 }
 
-/** Return whether a nested block path identifies an image occurrence. */
-function pathIdentifiesImage(content: readonly ContentBlock[], path: ImageBlockPath): boolean {
-  let blocks = content
-  for (const [depth, index] of path.entries()) {
-    const block = blocks[index]
-    if (block === undefined) return false
-    if (depth === path.length - 1) return block.type === 'image'
-    if (block.type !== 'tool-result') return false
-    blocks = block.content
-  }
-  return false
+/** Return whether a non-empty nested block path identifies an image occurrence. */
+function pathIdentifiesImage(
+  content: readonly ContentBlock[],
+  [index, ...rest]: readonly [number, ...number[]],
+): boolean {
+  const block = content[index]
+  if (block === undefined) return false
+  if (rest.length === 0) return block.type === 'image'
+  if (block.type !== 'tool-result') return false
+  return pathIdentifiesImage(block.content, rest as [number, ...number[]])
 }
 
 /** Mark matching image occurrences while preserving unchanged durable content by identity. */
@@ -128,11 +127,11 @@ export function assertImageOffloadAdvance(
     && compareImagePositions(positionValue, prior) <= 0) {
     throw new Error(`${location} does not advance the image offload watermark`)
   }
-  const event = log[seq]
-  const message = event === undefined ? null : deriveEventMessage(event)
+  // oxlint-disable-next-line typescript/no-non-null-assertion -- accepted logs are contiguous and seq is range-checked
+  const message = deriveEventMessage(log[seq]!)
   if (!surfaceNodes.includes(positionValue.seq)
     || message === null
-    || !pathIdentifiesImage(message.content, positionValue.path)) {
+    || !pathIdentifiesImage(message.content, positionValue.path as [number, ...number[]])) {
     throw new Error(`${location} watermark does not identify an image on the current surface`)
   }
 }

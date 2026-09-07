@@ -366,13 +366,10 @@ function assertMessageEventShape(event: Record<string, unknown>, subject: string
 /** Reject the request-only image marker from durable message content at every nesting depth. */
 function assertNoLoggedImageOffloadMarker(type: string, data: unknown, subject: string): void {
   if (type !== 'user/message' && type !== 'assistant/message' && type !== 'tool/result') return
-  const dataRecord = typeof data === 'object' && data !== null
-    ? data as Record<string, unknown>
-    : undefined
-  const message = type === 'user/message' ? dataRecord : dataRecord?.['message']
-  if (typeof message !== 'object' || message === null) return
-  const content = (message as Record<string, unknown>)['content']
-  if (!Array.isArray(content)) return
+  // Both callers supply a message envelope with array content: append by type and seed by validation.
+  const dataRecord = data as Record<string, unknown>
+  const message = (type === 'user/message' ? dataRecord : dataRecord['message']) as Record<string, unknown>
+  const content = message['content'] as unknown[]
   const visit = (blocks: readonly unknown[]): void => {
     for (const value of blocks) {
       if (typeof value !== 'object' || value === null || Array.isArray(value)) continue

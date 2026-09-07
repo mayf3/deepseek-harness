@@ -144,7 +144,7 @@ describe('image/offload in the agent loop', () => {
   it('interprets an adapter count in request order after a surface replacement', async () => {
     const adapter = new MockAdapter([
       () => {
-        throw new LlmError('inline budget exceeded', IMAGE_OFFLOAD_REQUIRED_CODE, { offloadImages: 1 })
+        throw new LlmError('inline budget exceeded', IMAGE_OFFLOAD_REQUIRED_CODE, { offloadImages: 2 })
       },
       textResponse('sent'),
     ])
