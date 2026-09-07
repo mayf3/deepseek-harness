@@ -35,7 +35,7 @@ Use the [catalog](../session-format-catalog/README.md) for restoration. Direct i
 const targetHeader = sessionFormatV2ToV3.migrateHeader(sourceHeader)
 ```
 
-Session metadata changes only its version to 3. The stage inserts an empty `system/message` immediately after the first `step/start`, then replaces that protected head before each changed `request/header` prompt, including clears. It removes `header.system` from every request header without moving any source event. Metadata-only logs gain no head. V3 encoding and restoration accept empty system heads and reject retired `header.system`.
+The header version becomes 3. The exact legacy preset id `code` becomes `ptc` in `header.agentPreset` and every `agent-preset/selected.data.agentPreset`, including inherited selections. Other preset ids and absent header presets remain unchanged; a selection without a string preset id is refused. The stage inserts an empty `system/message` immediately after the first `step/start`, then replaces that protected head before each changed `request/header` prompt, including clears. It removes `header.system` from every request header without moving any source event. Metadata-only logs gain no head. V3 encoding and restoration accept empty system heads and reject retired `header.system`.
 
 The stage maps `tool/code-dispatch-start` and `tool/code-dispatch` to `tool/ptc-dispatch-start` and `tool/ptc-dispatch`. It replaces the exact `tools-code-mode` plugin attribution with `tools-ptc` in user messages, inbox insertions, and title-request messages, without rewriting IDs, tool arguments, or content. Native V3 rejects required predecessor PTC tags, including after recoverable row corruption; ignorable predecessor tags remain opaque and cannot satisfy current PTC relationships. Reserved V3 PTC tags in V2 source input are refused even when ignorable.
 
@@ -84,6 +84,7 @@ The stage does not change message content or model configuration.
 
 <a id="known-limitations-and-deferred-work"></a>
 
+- **Historical preset ownership** — `code` in released V0/V1/V2 preset references denotes the legacy built-in preset. Those logs cannot distinguish a custom preset with the same id; native V3 references are not reinterpreted. This library does not migrate `settings.yaml`.
 - **No file publication** — persistence owns immutable successor publication; this package never overwrites released generations.
 - **Chronology-preserving inputs** — a surface event before the first step, or a changed prompt outside an open step, is refused with `SessionFormatUnsupportedMigrationError`; moving events or inventing out-of-step system messages would violate reconstruction.
 - **Audited migration vocabulary** — V2 events, including log-only Assistant attempts, and the installed message-feedback additions are classified explicitly. Agent relay attribution and file attachment metadata are preserved without interpreting their identifiers or byte counts as sequence references. Unknown events, even ignorable ones, and unknown message-source or content kinds are refused during migration because sequence dependencies cannot be inferred. Native equal-version reads retain ordinary ignorable-event admission and request-header extensions; retired `header.system` and required predecessor PTC tags are prohibited.
