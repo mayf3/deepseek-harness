@@ -251,8 +251,8 @@ export interface RequestContext {
  * Durable position of one image occurrence on the model-visible surface: the
  * seq of the event carrying it and the block path inside that event's
  * content. Every nested tool-result contributes another path index. Positions
- * order by seq, then by path, so a newer
- * event always lies after an older one regardless of surface replacements.
+ * order by seq, then by path, so a newer event always lies after an older one
+ * regardless of surface replacements.
  */
 export interface ImageOccurrencePosition {
   /** Seq of the surface message event carrying the occurrence. */

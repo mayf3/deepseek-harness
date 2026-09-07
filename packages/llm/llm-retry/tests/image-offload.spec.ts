@@ -9,7 +9,7 @@ import { Context } from '@deepseek-ai/cordis'
 import AgentLoop from '@deepseek-ai/dsh-agent-loop'
 import { mountAgentLoopTestDependencies } from '@deepseek-ai/dsh-agent-loop-testkit'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
-import { createUserMessage, IMAGE_OFFLOAD_REQUIRED_CODE, LlmAdapter, LlmError, ToolCallId } from '@deepseek-ai/dsh-llm'
+import { createAssistantMessage, createUserMessage, IMAGE_OFFLOAD_REQUIRED_CODE, LlmAdapter, LlmError, ToolCallId } from '@deepseek-ai/dsh-llm'
 import type { ContentBlock, GenerateOptions, StreamChunk } from '@deepseek-ai/dsh-llm'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import type { Session } from '@deepseek-ai/dsh-session'
@@ -127,6 +127,13 @@ describe('image offload recovery', () => {
     agent.session.append('user/message', createUserMessage({
       content: [image('second')], source: { kind: 'user' },
     }), { surfaceOp: 'append' })
+    // An empty-content assistant node derives no message and carries no occurrence.
+    agent.session.append('assistant/message', {
+      turn: 0,
+      step: 0,
+      message: createAssistantMessage({ content: [], source: { provider: 'mock', model: 'mock' } }),
+      stream: [],
+    }, { surfaceOp: 'append' })
     agent.session.append('user/message', createUserMessage({
       content: [image('replacement')], source: { kind: 'user' },
     }), {
@@ -139,7 +146,8 @@ describe('image offload recovery', () => {
 
     expect(adapter.requests).toHaveLength(2)
     expect(offloadedNames(adapter.requests[1]!)).toEqual(['replacement', 'second'])
-    expect(offloadEvents(agent.session).at(-1)).toMatchObject({ seq: 2, path: [0] })
+    // The replacement node carries the newest seq, so it is the greatest position in the prefix.
+    expect(offloadEvents(agent.session).at(-1)).toMatchObject({ seq: 3, path: [0] })
   })
 
   it('delegates IMAGE_OFFLOAD_REQUIRED once nothing remains to offload', async () => {

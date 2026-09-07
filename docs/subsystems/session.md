@@ -200,15 +200,15 @@ interface RequestContext {
 
 ### The image offload event: `image/offload`
 
-`dsh-llm-retry` appends `image/offload` on the `agent/request-error` waterfall when an adapter fails an attempt with `IMAGE_OFFLOAD_REQUIRED`, before the step retries. Its `watermark` names the last offloaded occurrence; `deriveMessages()` and the Session instance's `deriveEventMessage()` mark every occurrence positioned at or before it `offloaded: true`, and each route renders those marks as placeholder text. `Session.append` and seeding require the watermark to identify an image on the current surface, reject malformed and non-advancing positions, and reject request-only `offloaded` markers in durable messages. `session.imageOffloadWatermark()` folds the latest frozen position. Like `request/header`, it is not a `SurfaceEventType`; unlike it, it changes the derived surface, so it stays required-on-read ([decision](../../.agents/notes/implemented/architecture/2026-09-02-image-offload-watermark.md)).
+`dsh-llm-retry` appends `image/offload` on the `agent/request-error` waterfall when an adapter fails an attempt with `IMAGE_OFFLOAD_REQUIRED`, before the step retries. Its `watermark` names the last offloaded occurrence; `deriveMessages()` and the Session instance's `deriveEventMessage()` mark every occurrence positioned at or before it `offloaded: true`, and each route renders those marks as placeholder text. `Session.append` and seeding require the watermark to identify an image on the current surface, reject malformed and non-advancing positions, and reject request-only `offloaded` markers in durable messages. Like `request/header`, it is not a `SurfaceEventType`; unlike it, it changes the derived surface, so it stays required-on-read ([decision](../../.agents/notes/implemented/architecture/2026-09-02-image-offload-watermark.md)).
 
 ```ts type-equiv
 /**
  * Durable position of one image occurrence on the model-visible surface: the
  * seq of the event carrying it and the block path inside that event's
  * content. Every nested tool-result contributes another path index. Positions
- * order by seq, then by path, so a newer
- * event always lies after an older one regardless of surface replacements.
+ * order by seq, then by path, so a newer event always lies after an older one
+ * regardless of surface replacements.
  */
 interface ImageOccurrencePosition {
   /** Seq of the surface message event carrying the occurrence. */
@@ -577,13 +577,6 @@ declare class Session {
    * @returns the latest immutable route metadata.
    */
   requestContext(): RequestContext | undefined;
-  /**
-   * The durable image offload watermark in force: every image occurrence
-   * positioned at or before it derives as offloaded. Undefined until the
-   * first `image/offload` event.
-   * @returns the frozen latest watermark, or undefined when nothing is offloaded.
-   */
-  imageOffloadWatermark(): ImageOccurrencePosition | undefined;
   /**
    * Derive the LLM message history by walking the ordered sequences of
    * message-producing events maintained by `surfaceOp` markers. The

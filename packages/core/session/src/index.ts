@@ -364,33 +364,25 @@ function assertMessageEventShape(event: Record<string, unknown>, subject: string
 /** Reject the request-only image marker from durable message content at every nesting depth. */
 function assertNoLoggedImageOffloadMarker(type: string, data: unknown, subject: string): void {
   if (type !== 'user/message' && type !== 'assistant/message' && type !== 'tool/result') return
-  const dataRecord = data as Record<string, unknown>
-  const message = (type === 'user/message' ? dataRecord : dataRecord['message']) as Record<string, unknown>
-  const content = message['content']
-  if (!Array.isArray(content)) return
-  const visit = (blocks: readonly unknown[]): void => {
-    for (const value of blocks) {
-      if (typeof value !== 'object' || value === null || Array.isArray(value)) continue
-      const block = value as Record<string, unknown>
-      if (block['type'] === 'image' && Object.hasOwn(block, 'offloaded')) {
+  const message = (type === 'user/message' ? data : (data as { message: unknown }).message) as { content?: unknown }
+  const visit = (blocks: unknown): void => {
+    if (!Array.isArray(blocks)) return
+    for (const block of blocks as ({ type?: unknown; content?: unknown } | null)[]) {
+      if (block?.type === 'image' && 'offloaded' in block) {
         throw new Error(`${subject} stores the request-only image offload marker`)
       }
-      if (block['type'] === 'tool-result' && Array.isArray(block['content'])) visit(block['content'])
+      if (block?.type === 'tool-result') visit(block.content)
     }
   }
-  visit(content)
+  visit(message.content)
 }
 
-/** Return whether a non-empty nested block path identifies an image occurrence. */
-function pathIdentifiesImage(
-  content: readonly ContentBlock[],
-  [index, ...rest]: readonly [number, ...number[]],
-): boolean {
-  const block = content[index]
+/** Return whether a block path identifies an image occurrence. */
+function pathIdentifiesImage(content: readonly ContentBlock[], [index, ...rest]: readonly number[]): boolean {
+  const block = index === undefined ? undefined : content[index]
   if (block === undefined) return false
   if (rest.length === 0) return block.type === 'image'
-  if (block.type !== 'tool-result') return false
-  return pathIdentifiesImage(block.content, rest as [number, ...number[]])
+  return block.type === 'tool-result' && pathIdentifiesImage(block.content, rest)
 }
 
 /**
@@ -405,30 +397,18 @@ function assertImageOffloadAdvance(
   prior: ImageOccurrencePosition | undefined,
   location: string,
 ): void {
-  const record = data !== null && typeof data === 'object' && !Array.isArray(data)
-    ? data as Record<string, unknown>
-    : undefined
-  const watermark = record?.['watermark']
-  const position = watermark !== null && typeof watermark === 'object' && !Array.isArray(watermark)
-    ? watermark as Record<string, unknown>
-    : undefined
-  const seq = position?.['seq']
-  const path = position?.['path']
-  if (typeof seq !== 'number' || !Number.isSafeInteger(seq) || seq < 0 || seq >= log.length
-    || !Array.isArray(path) || path.length === 0
-    || path.some(index => typeof index !== 'number' || !Number.isSafeInteger(index) || index < 0)) {
+  const watermark = (data as { watermark?: { seq?: unknown; path?: unknown } } | null)?.watermark
+  if (typeof watermark?.seq !== 'number' || !Array.isArray(watermark.path)
+    || !watermark.path.every(index => Number.isInteger(index) && index >= 0)) {
     throw new Error(`${location} names an invalid image offload watermark`)
   }
-  const positionValue = { seq: seq as SessionSeq, path: path as number[] }
-  if (prior !== undefined
-    && compareImagePositions(positionValue, prior) <= 0) {
+  const position = { seq: watermark.seq as SessionSeq, path: watermark.path as number[] }
+  if (prior !== undefined && compareImagePositions(position, prior) <= 0) {
     throw new Error(`${location} does not advance the image offload watermark`)
   }
-  // oxlint-disable-next-line typescript/no-non-null-assertion -- accepted logs are contiguous and seq is range-checked
-  const message = deriveEventMessage(log[seq]!)
-  if (!surfaceNodes.includes(positionValue.seq)
-    || message === null
-    || !pathIdentifiesImage(message.content, positionValue.path as [number, ...number[]])) {
+  // oxlint-disable-next-line typescript/no-non-null-assertion -- surface nodes index the accepted log
+  const message = surfaceNodes.includes(position.seq) ? deriveEventMessage(log[position.seq]!) : null
+  if (message === null || !pathIdentifiesImage(message.content, position.path)) {
     throw new Error(`${location} watermark does not identify an image on the current surface`)
   }
 }
@@ -863,16 +843,6 @@ export class Session {
     this.imageOffloadFold = deepFreeze({ seq: watermark.seq, path: [...watermark.path] })
   }
 
-  /**
-   * The durable image offload watermark in force: every image occurrence
-   * positioned at or before it derives as offloaded. Undefined until the
-   * first `image/offload` event.
-   * @returns the frozen latest watermark, or undefined when nothing is offloaded.
-   */
-  imageOffloadWatermark(): ImageOccurrencePosition | undefined {
-    return this.imageOffloadFold
-  }
-
   /** The derived-message cache: frozen projections, extended per unseen node. */
   private derived: Message[] = []
   /** Surface position (nodes projected) the cache has reached. */
@@ -927,12 +897,6 @@ export class Session {
     return [...this.derived]
   }
 
-  /** Apply the watermark to one derived node, freezing any marked copy like the durable original. */
-  private markImageOffload(message: Message, seq: SessionSeq, watermark: ImageOccurrencePosition | undefined): Message {
-    const marked = markImageOffload(message, seq, watermark)
-    return marked === message ? message : deepFreeze(marked)
-  }
-
   /**
    * Derive one event under the session's current image offload watermark.
    * Direct model consumers use this instance method so their per-event
@@ -942,9 +906,10 @@ export class Session {
    */
   deriveEventMessage(event: SessionEvent): Message | null {
     const message = deriveEventMessage(event)
-    return message === null
-      ? null
-      : this.markImageOffload(message, event.seq, this.imageOffloadFold)
+    if (message === null) return null
+    // A marked copy is frozen like the durable original it derives from.
+    const marked = markImageOffload(message, event.seq, this.imageOffloadFold)
+    return marked === message ? message : deepFreeze(marked)
   }
 }
 

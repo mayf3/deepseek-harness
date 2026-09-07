@@ -238,20 +238,6 @@ export function visitImageBlocks(
   visitImageBlocksAt(content, [], visit)
 }
 
-/**
- * Represented byte length of one image occurrence under a route budget: the
- * request-version byte count, base64-expanded for an inline representation.
- * @param bytes - request-version byte count.
- * @param budget - route representation.
- * @returns the byte length the route's request accounting charges.
- */
-export function representedImageBytes(
-  bytes: number,
-  budget: Pick<LlmImageRequestBudget, 'representation'>,
-): number {
-  return budget.representation === 'base64' ? base64Length(bytes) : bytes
-}
-
 /** Replace every offloaded occurrence, including nested tool results, with its placeholder. */
 function replaceOffloadedImages(
   blocks: readonly ContentBlock[],
@@ -304,7 +290,7 @@ export function projectOffloadedImages(
  * @param budget - count/byte budgets and removal quanta; unbounded when absent.
  * @returns how many leading occurrences to offload.
  */
-export function offloadedImagePrefixCount(
+function offloadedImagePrefixCount(
   lengths: readonly number[],
   budget: Pick<LlmImageRequestBudget, 'maxImages' | 'maxBytes' | 'countQuantum' | 'byteQuantum'>,
 ): number {
@@ -346,7 +332,9 @@ export function requiredImageOffload(
   const lengths: number[] = []
   for (const message of messages) {
     visitImageBlocks(message.content, (block) => {
-      if (block.offloaded !== true) lengths.push(representedImageBytes(versionBytes(block), budget))
+      if (block.offloaded === true) return
+      const bytes = versionBytes(block)
+      lengths.push(budget.representation === 'base64' ? base64Length(bytes) : bytes)
     })
   }
   return offloadedImagePrefixCount(lengths, budget)

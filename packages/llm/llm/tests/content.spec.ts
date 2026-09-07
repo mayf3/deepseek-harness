@@ -8,10 +8,9 @@ import {
   fileHandleText,
   projectFilesToText,
   offloadedImageText,
-  offloadedImagePrefixCount,
   projectImagesForTextModel,
   projectOffloadedImages,
-  representedImageBytes,
+  requiredImageOffload,
   resolveImageAttachmentAccess,
   requestImageHandleText,
   visitImageBlocks,
@@ -61,14 +60,6 @@ describe('visitImageBlocks', () => {
   })
 })
 
-describe('representedImageBytes', () => {
-  it('expands inline representations to their encoded length', () => {
-    expect(representedImageBytes(100, { representation: 'raw' })).toBe(100)
-    expect(representedImageBytes(3, { representation: 'base64' })).toBe(4)
-    expect(representedImageBytes(4, { representation: 'base64' })).toBe(8)
-  })
-})
-
 describe('projectOffloadedImages', () => {
   it('keeps messages without offloaded occurrences by identity', () => {
     const messages = [createUserMessage({ content: [image(300)], source })]
@@ -108,19 +99,32 @@ describe('projectOffloadedImages', () => {
   })
 })
 
-describe('offloadedImagePrefixCount', () => {
+describe('requiredImageOffload', () => {
+  const request = (lengths: number[], offloaded: number[] = []) => [createUserMessage({
+    content: lengths.map((bytes, index) => image(bytes, offloaded.includes(index) ? true : undefined)),
+    source,
+  })]
+  const bytesOf = (block: Extract<ContentBlock, { type: 'image' }>): number => block.attachment.bytes
+  const raw = { representation: 'raw' as const }
+
   it('removes nothing under unbounded budgets and whole quanta past them', () => {
     const lengths = [4, 4, 4, 4]
-    expect(offloadedImagePrefixCount(lengths, {})).toBe(0)
-    expect(offloadedImagePrefixCount(lengths, { maxBytes: 16 })).toBe(0)
-    expect(offloadedImagePrefixCount(lengths, { maxImages: 4 })).toBe(0)
+    expect(requiredImageOffload(request(lengths), raw, bytesOf)).toBe(0)
+    expect(requiredImageOffload(request(lengths), { ...raw, maxBytes: 16 }, bytesOf)).toBe(0)
+    expect(requiredImageOffload(request(lengths), { ...raw, maxImages: 4 }, bytesOf)).toBe(0)
     // One excess image rounds up to the whole count quantum.
-    expect(offloadedImagePrefixCount([...lengths, 4], { maxImages: 4, countQuantum: 2 })).toBe(2)
+    expect(requiredImageOffload(request([...lengths, 4]), { ...raw, maxImages: 4, countQuantum: 2 }, bytesOf)).toBe(2)
     // One excess byte removes a whole byte quantum, crossing the second image.
-    expect(offloadedImagePrefixCount([...lengths, 1], { maxBytes: 16, byteQuantum: 5 })).toBe(2)
+    expect(requiredImageOffload(request([...lengths, 1]), { ...raw, maxBytes: 16, byteQuantum: 5 }, bytesOf)).toBe(2)
     // 129 one-mebibyte images under a 128 MiB bound with a 64 MiB quantum offload the oldest 65.
     const mib = 1024 * 1024
-    expect(offloadedImagePrefixCount(Array.from({ length: 129 }, () => mib), { maxBytes: 128 * mib, byteQuantum: 64 * mib })).toBe(65)
+    const budget = { ...raw, maxBytes: 128 * mib, byteQuantum: 64 * mib }
+    expect(requiredImageOffload(request(Array.from({ length: 129 }, () => mib)), budget, bytesOf)).toBe(65)
+  })
+
+  it('skips offloaded occurrences and accounts inline bytes by their base64 length', () => {
+    expect(requiredImageOffload(request([3, 3, 3]), { representation: 'base64', maxBytes: 8 }, bytesOf)).toBe(1)
+    expect(requiredImageOffload(request([3, 3, 3], [0]), { representation: 'base64', maxBytes: 8 }, bytesOf)).toBe(0)
   })
 })
 

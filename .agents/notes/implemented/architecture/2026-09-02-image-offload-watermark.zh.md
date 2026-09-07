@@ -16,7 +16,7 @@ Status: implemented
 
 offload 位置是持久的会话事实：核心事件 `image/offload` 记录一条只会前进的图片 offload 水位，派生表层、每条路由和 token meter 都从它读取省略集合。
 
-**事件。** `image/offload` 携带 `{ turn, step, watermark }`，其中 `watermark` 是一个 `ImageOccurrencePosition`：承载最后一个被省略出现位置的事件序号，以及它在该事件内容中的完整嵌套块路径。位置先按序号再按路径排序，所以无论表层如何替换，较新的事件总在较老的之后。`Session.deriveMessages()` 与 `Session.deriveEventMessage()` 把位于水位及之前的每个出现位置在 `ImageBlock` 上标为 `offloaded: true`；标记后的副本被冻结，持久事件内容不受影响。`Session.append` 与 seed 拒绝畸形或没有严格前进的水位，并要求路径指向当前表层中的图片。它们还会拒绝包含请求专用 `offloaded` 标记的持久消息。`session.imageOffloadWatermark()` 折叠最新的冻结位置。该事件改变派生表层，因此读取时必须识别；增加该事件不改变日志信封结构。
+**事件。** `image/offload` 携带 `{ turn, step, watermark }`，其中 `watermark` 是一个 `ImageOccurrencePosition`：承载最后一个被省略出现位置的事件序号，以及它在该事件内容中的完整嵌套块路径。位置先按序号再按路径排序，所以无论表层如何替换，较新的事件总在较老的之后。`Session.deriveMessages()` 与 `Session.deriveEventMessage()` 把位于水位及之前的每个出现位置在 `ImageBlock` 上标为 `offloaded: true`；标记后的副本被冻结，持久事件内容不受影响。`Session.append` 与 seed 拒绝畸形或没有严格前进的水位，并要求路径指向当前表层中的图片。它们还会拒绝包含请求专用 `offloaded` 标记的持久消息。该事件改变派生表层，因此读取时必须识别；增加该事件不改变日志信封结构。
 
 **只前进。** 预算变大、路由切换或 compaction 降低总量时水位永不回退，所以模型可见前缀和 provider 缓存前缀只向前移动。水位之下的出现位置后来被 compaction 遮蔽也不影响水位有效性，因为比较是按位置进行的。
 

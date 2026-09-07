@@ -60,16 +60,16 @@ describe('image/offload append validation', () => {
   it('rejects a malformed or out-of-range watermark', () => {
     const session = seeded()
     expect(() => session.append('image/offload', { turn: 1, step: 1, watermark: { seq: SessionSeq(99), path: [0] } }))
-      .toThrow('names an invalid image offload watermark')
+      .toThrow('watermark does not identify an image on the current surface')
     expect(() => session.append('image/offload', { turn: 1, step: 1, watermark: { seq: SessionSeq(3), path: [] } }))
-      .toThrow('names an invalid image offload watermark')
+      .toThrow('watermark does not identify an image on the current surface')
     expect(() => session.append('image/offload', { turn: 1, step: 1, watermark: { seq: SessionSeq(3), path: [-1] } }))
       .toThrow('names an invalid image offload watermark')
     expect(() => session.append('image/offload', { turn: 1, step: 1, watermark: null as never }))
       .toThrow('names an invalid image offload watermark')
     expect(() => session.append('image/offload', 7 as never))
       .toThrow('names an invalid image offload watermark')
-    expect(session.imageOffloadWatermark()).toBeUndefined()
+    expect(offloadedNames(session)).toEqual([])
   })
 
   it('requires the watermark path to identify a current surface image', () => {
@@ -116,21 +116,20 @@ describe('image/offload append validation', () => {
   it('accepts only strictly advancing positions', () => {
     const session = seeded()
     session.append('image/offload', { turn: 1, step: 1, watermark: { seq: SessionSeq(3), path: [1] } })
-    expect(session.imageOffloadWatermark()).toEqual({ seq: 3, path: [1] })
+    expect(offloadedNames(session)).toEqual(['first', 'second'])
     expect(() => session.append('image/offload', { turn: 1, step: 1, watermark: { seq: SessionSeq(3), path: [1] } }))
       .toThrow('does not advance the image offload watermark')
     expect(() => session.append('image/offload', { turn: 1, step: 1, watermark: { seq: SessionSeq(3), path: [0] } }))
       .toThrow('does not advance the image offload watermark')
     session.append('image/offload', { turn: 1, step: 1, watermark: { seq: SessionSeq(4), path: [0, 1] } })
-    expect(session.imageOffloadWatermark()).toEqual({ seq: 4, path: [0, 1] })
-    expect(Object.isFrozen(session.imageOffloadWatermark())).toBe(true)
+    expect(offloadedNames(session)).toEqual(['first', 'second', 'third'])
   })
 
   it('validates a seed with the same rules and folds its watermark', () => {
     const session = seeded()
     session.append('image/offload', { turn: 1, step: 1, watermark: { seq: SessionSeq(3), path: [0] } })
     const replayed = Session.create(SessionId('offload-replay'), session.snapshotEvents())
-    expect(replayed.imageOffloadWatermark()).toEqual({ seq: 3, path: [0] })
+    expect(offloadedNames(replayed)).toEqual(['first'])
     expect(replayed.deriveMessages()).toEqual(session.deriveMessages())
 
     const events = session.snapshotEvents().map(event => (
@@ -139,7 +138,7 @@ describe('image/offload append validation', () => {
         : event
     ))
     expect(() => Session.create(SessionId('offload-bad-seed'), events as never))
-      .toThrow('seed event at index 5 names an invalid image offload watermark')
+      .toThrow('seed event at index 5 watermark does not identify an image on the current surface')
   })
 })
 
@@ -227,10 +226,9 @@ describe('image offload helpers', () => {
     expect(compareImagePositions({ seq: SessionSeq(1), path: [5] }, { seq: SessionSeq(3), path: [0] })).toBeLessThan(0)
     expect(compareImagePositions({ seq: SessionSeq(4), path: [1] }, { seq: SessionSeq(3), path: [0, 3] })).toBeGreaterThan(0)
     const session = seeded()
-    expect(session.imageOffloadWatermark()).toBeUndefined()
     session.append('image/offload', { turn: 1, step: 1, watermark: { seq: SessionSeq(3), path: [0] } })
-    expect(session.imageOffloadWatermark()).toEqual({ seq: 3, path: [0] })
+    expect(offloadedNames(session)).toEqual(['first'])
     session.append('image/offload', { turn: 1, step: 1, watermark: { seq: SessionSeq(4), path: [1] } })
-    expect(session.imageOffloadWatermark()).toEqual({ seq: 4, path: [1] })
+    expect(offloadedNames(session)).toEqual(['first', 'second', 'third', 'fourth'])
   })
 })

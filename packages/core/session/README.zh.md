@@ -107,7 +107,7 @@ session.deriveMessages()         // the derived model history
 
 ### 请求头
 
-循环在每个循环实例边界及变更时记录完整规范 `request/header` 快照（调用配置、适配器默认值、渲染后的系统提示词、组装后的工具 schema）；`foldRequestHeader(events)` 通过选择最新快照来重建它，使每个对话请求都成为日志的纯函数。路由元数据（`request/context`）是独立的已记录状态，仅在提供方、模型或容量变化时追加。图片 offload 水位（`image/offload`）是持久的表层状态：位于水位及之前的每个图片出现位置派生时带 `offloaded: true`，每条事件必须严格越过前一条，`session.imageOffloadWatermark()` 折叠最新位置。
+循环在每个循环实例边界及变更时记录完整规范 `request/header` 快照（调用配置、适配器默认值、渲染后的系统提示词、组装后的工具 schema）；`foldRequestHeader(events)` 通过选择最新快照来重建它，使每个对话请求都成为日志的纯函数。路由元数据（`request/context`）是独立的已记录状态，仅在提供方、模型或容量变化时追加。图片 offload 水位（`image/offload`）是持久的表层状态：位于水位及之前的每个图片出现位置派生时带 `offloaded: true`，每条事件必须严格越过前一条。
 
 </details>
 

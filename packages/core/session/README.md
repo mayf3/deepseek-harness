@@ -107,7 +107,7 @@ Every append uses the shared iterative `snapshotJsonValue()` pass, which reads, 
 
 ### The request header
 
-The loop logs a full canonical `request/header` snapshot (call config, adapter defaults, rendered system prompt, assembled tool schemas) at each loop-instance boundary and on change; `foldRequestHeader(events)` reconstructs it by selecting the latest snapshot, making every conversation request a pure function of the log. Route metadata (`request/context`) is separate logged state appended only when the provider, model, or capacity differs. The image offload watermark (`image/offload`) is durable surface state: every image occurrence positioned at or before it derives with `offloaded: true`, each event must advance strictly past the previous one, and `session.imageOffloadWatermark()` folds the latest position.
+The loop logs a full canonical `request/header` snapshot (call config, adapter defaults, rendered system prompt, assembled tool schemas) at each loop-instance boundary and on change; `foldRequestHeader(events)` reconstructs it by selecting the latest snapshot, making every conversation request a pure function of the log. Route metadata (`request/context`) is separate logged state appended only when the provider, model, or capacity differs. The image offload watermark (`image/offload`) is durable surface state: every image occurrence positioned at or before it derives with `offloaded: true`, each event must advance strictly past the previous one.
 
 </details>
 
