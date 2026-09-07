@@ -16,7 +16,7 @@
 
 import { join } from 'node:path'
 import type { PatchOptions } from '@deepseek-ai/cordis-plugin-include'
-import { visitInsertedRows } from './patch-rows.ts'
+import { visitPatchRows } from './patch-rows.ts'
 import {
   readProfileManifest, resolveBundleDir, writeProfileManifest, type ProfileLayer, type ProfileManifest,
 } from './profile.ts'
@@ -38,7 +38,7 @@ export function bundleGroupId(packageName: string): string {
   return `${BUNDLE_GROUP_PREFIX}${packageName}`
 }
 
-/** One row id an external bundle's own patch inserts more than once. */
+/** One id an external bundle's patch introduces twice: a row inserted again, or a row spelling the group's or a wrapper's id. */
 export interface DuplicateRow {
   /** The repeated id. */
   readonly rowId: string
@@ -54,11 +54,12 @@ export interface ComposedExternalLayer {
    */
   patches: PatchOptions[]
   /**
-   * Every id the layer introduces — its rows, its group, and each wrapper
-   * group — with the module each names; a repeated id keeps its first module.
+   * Every id the layer introduces — its inserted rows, the rows its config
+   * overrides set, its group, and each wrapper group — with the module each
+   * names; a repeated id keeps its first module.
    */
   rows: Map<string, string>
-  /** Ids the bundle's own inserts declare more than once, in order of repetition. */
+  /** Ids the layer introduces more than once, in order of repetition; a config override restating a row is not one. */
   duplicates: DuplicateRow[]
   /** Ids outside the bundle that its patch overrides; not containable, reported for visibility. */
   overrides: string[]
@@ -77,13 +78,18 @@ export function isContainedLayer(layer: ProfileLayer): boolean {
 /**
  * Render one external bundle layer as contained patches in the order written.
  * The bundle's group is inserted empty first; each root insert becomes an
- * insert into that group, an insert into a row the bundle itself inserts
+ * insert into that group, an insert into a row the bundle itself introduces
  * passes through, and every insert into one built-in group lands in one
  * wrapper group nested inside that target — the first insert creates it,
- * later ones insert into it. An id-targeted patch passes through unchanged
- * and is reported as an override when it addresses a row the bundle did not
- * insert. Ids are indexed before any patch is emitted, so an insert into a
- * group the bundle inserts later in its list still counts as its own.
+ * later ones insert into it, and a patch that replaces the target's config
+ * has removed the wrapper, so the next insert creates a new one under the
+ * same id. An id-targeted patch passes through unchanged and is reported as
+ * an override when it addresses a row the bundle did not introduce; the rows
+ * it sets as a group's config count as the bundle's own, since they mount
+ * as children like inserted ones. Every id, declared or generated, goes
+ * through one registration, so a row spelling a wrapper's id is a duplicate.
+ * Ids are indexed before any patch is emitted, so an insert into a group the
+ * bundle introduces later in its list still counts as its own.
  * @param layer - the resolved external layer.
  * @returns the patches to mount, the ids the layer introduces, and the ids it repeats.
  */
@@ -91,19 +97,32 @@ export function composeExternalLayer(layer: ProfileLayer): ComposedExternalLayer
   const groupId = bundleGroupId(layer.packageName)
   const rows = new Map<string, string>()
   const duplicates: DuplicateRow[] = []
-  visitInsertedRows(layer.patches, (row) => {
+  const claim = (rowId: string, moduleName: string): void => {
+    if (rows.has(rowId)) duplicates.push({ rowId, moduleName })
+    else rows.set(rowId, moduleName)
+  }
+  visitPatchRows(layer.patches, (row, source) => {
     if (typeof row.id !== 'string') return
-    if (rows.has(row.id)) duplicates.push({ rowId: row.id, moduleName: row.name })
-    else rows.set(row.id, row.name)
+    // A config override restates the children it keeps: the id counts as
+    // the bundle's own without being a repeat.
+    if (source === 'config') {
+      if (!rows.has(row.id)) rows.set(row.id, row.name)
+      return
+    }
+    claim(row.id, row.name)
   })
-  if (rows.has(groupId)) duplicates.push({ rowId: groupId, moduleName: CONTAINED_GROUP_MODULE })
-  rows.set(groupId, CONTAINED_GROUP_MODULE)
+  claim(groupId, CONTAINED_GROUP_MODULE)
   const wrappers = new Map<string, string>()
+  const generated = new Set<string>()
   const overrides: string[] = []
   const patches: PatchOptions[] = [{ insert: [{ id: groupId, name: CONTAINED_GROUP_MODULE, group: true, config: [] }] }]
   for (const patch of layer.patches) {
     if (patch.insert === undefined) {
-      if (patch.id !== undefined && !rows.has(patch.id)) overrides.push(patch.id)
+      if (patch.id !== undefined) {
+        if (!rows.has(patch.id)) overrides.push(patch.id)
+        // The target's children are replaced, wrapper included.
+        if (patch.config !== undefined) wrappers.delete(patch.id)
+      }
       patches.push(structuredClone(patch))
       continue
     }
@@ -119,8 +138,11 @@ export function composeExternalLayer(layer: ProfileLayer): ComposedExternalLayer
       continue
     }
     const wrapperId = `${groupId}/in/${target}`
+    if (!generated.has(wrapperId)) {
+      generated.add(wrapperId)
+      claim(wrapperId, CONTAINED_GROUP_MODULE)
+    }
     wrappers.set(target, wrapperId)
-    rows.set(wrapperId, CONTAINED_GROUP_MODULE)
     patches.push({ id: target, insert: [{ id: wrapperId, name: CONTAINED_GROUP_MODULE, group: true, config: inserted }] })
   }
   return { patches, rows, duplicates, overrides }

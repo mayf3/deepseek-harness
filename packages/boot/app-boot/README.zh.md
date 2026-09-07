@@ -58,9 +58,9 @@ profile 是同一套 dsh 安装提供不同应用界面的方式：`web`、`head
 
 插入条目的插件名可以是绝对文件系统路径、文件 URL 或包标识符。patch 加载会把 `insert` 条目及其嵌套分组中的绝对路径以及相对于 patch 文件的 `./` 或 `../` 路径转换为文件 URL；对已有条目名称的断言及替换用的 `config` 值保持原样。
 
-用 `dsh plugin` 安装的组合包是**外部**组合包：它的行挂在一个名为 `bundle/<package>` 的受控组下，id 保持它的 patch 所声明的样子，启动失败的行被隔离并记录而不是让进程停下——组和它的其他行继续运行，插件列表显示失败。模板组合包是内置的，仍然明确失败。若某个组合包提供内置行注入的服务，它必须像内置行一样挂载：作者在 `package.json` 里声明 `dsh.bundle.stage: boot`，或者你在 profile manifest 里设置 `dsh.profile.stages`，后者优先。即使没有这些声明，隔离的失败若让某个内置行停在等待服务的状态，启动仍会失败并点名那个被隔离的组合包。profile manifest 还有两个相关字段：`dsh.profile.firstParty` 列出按内置处理的已安装包（开发期 link 进来的一方包），`dependencies` 与 `dsh.profile.bundles` 的区别则把"只是装了"的包和"层已启用"的包分开。行 id 在整叠层里共用一个命名空间：内置层先占有自己的 id，外部组合包若声明了别的层已占有的 id，或把自己的某个 id 声明了两次，就整层被排除，并在 stderr 与插件列表里报告；用户层插入已被占用的 id 时该行被丢弃，同样报告。
+用 `dsh plugin` 安装的组合包是**外部**组合包：它的行挂在一个名为 `bundle/<package>` 的受控组下，id 保持它的 patch 所声明的样子，启动失败的行被隔离并记录而不是让进程停下——组和它的其他行继续运行，插件列表显示失败。模板组合包是内置的，仍然明确失败。若某个组合包提供内置行注入的服务，它必须像内置行一样挂载：作者在 `package.json` 里声明 `dsh.bundle.stage: boot`，或者你在 profile manifest 里设置 `dsh.profile.stages`，后者优先。即使没有这些声明，隔离的失败若让某个内置行停在等待服务的状态，启动仍会失败并点名那个被隔离的组合包。profile manifest 还有两个相关字段：`dsh.profile.firstParty` 列出按内置处理的已安装包（开发期 link 进来的一方包），`dependencies` 与 `dsh.profile.bundles` 的区别则把"只是装了"的包和"层已启用"的包分开。行 id 在整叠层里共用一个命名空间，既算一层插入的行也算它的 patch 设为某个组 config 的行：内置层先占有自己的 id，外部组合包若声明了别的层已占有的 id，或把自己的某个 id 声明了两次，就整层被排除，并在 stderr 与插件列表里报告；用户层插入已被占用的 id 时该行被丢弃，同样报告。
 
-树起来之后 launcher 提供 `ctx.profileRuntime`：它持有树正在运行的组合——profile、每一行的归属层、被组合排除的行——读取用户 patch 文件停用了哪些行，并且是重组整棵树的唯一入口：patch 监视器、运行时启用或安装组合包都调用它，被拒的更新留下的事实仍然描述正在运行的树。启动期的 fail-loud rejection 守卫在树起来后卸载：启动后未处理的 rejection 会被报告，进程继续运行，不停止任何任务也不归属到任何插件；未捕获的异常会被报告并退出。
+树起来之后 launcher 提供 `ctx.profileRuntime`：它持有树正在运行的组合——profile、每一行的归属层、被组合排除的行——读取用户 patch 文件停用了哪些行，并且是重组整棵树的唯一入口：patch 监视器、运行时启用或安装组合包都调用它，重组一次只跑一个，被拒的更新留下的事实仍然描述正在运行的树。启动期的 fail-loud rejection 守卫在树起来后卸载：启动后未处理的 rejection 会被报告，进程继续运行，不停止任何任务也不归属到任何插件；未捕获的异常会被报告并退出。
 
 ### 预览生效配置
 
@@ -90,7 +90,7 @@ profile 是同一套 dsh 安装提供不同应用界面的方式：`web`、`head
 
 - **与渠道无关的库。** 此包不包含 loader 钩子，也不提供开发模式接口；[`dsh` 应用](../../../apps/cli/README.zh.md) 持有自己的 Node 源码启动钩子，并在启动序列中使用这些 helper，构建后的消费方则使用普通 Node 包解析。
 - **三个 Loader builtin。** `mountRootInclude` 把 `cordis:include`、`cordis:group` 与 `cordis:contained-group` 注册为 Loader builtin：group 行能把一个提供方与它的消费方放进同一个 `isolate` realm，位于本工作区之外的 agent preset 无法按名称解析 `@deepseek-ai/cordis-plugin-group`，受控组则是外部组合包挂载的位置。三者都通过宿主的模块管线加载，而非被包含树自身的说明符解析。
-- **外部组合包即组。** vendored 的 `EntryGroup.update` 是整组事务，因此 `composeExternalLayer` 把每个 `runtime` 阶段外部层的插入行按组合包声明的 id 包进一个 `cordis:contained-group`；该组的 `create()` 把失败的行记录到根上的 `pluginFailures` 注册表而不是 reject，组卸载时丢掉自己各行的记录，`assertEntriesActivated` 豁免已记录的行，但内置行停在 pending 时仍然失败。
+- **外部组合包即组。** vendored 的 `EntryGroup.update` 是整组事务，因此 `composeExternalLayer` 把每个 `runtime` 阶段外部层的插入行按组合包声明的 id 包进一个 `cordis:contained-group`；该组的 `create()` 把失败的行记录到根上的 `pluginFailures` 注册表而不是 reject，组更新时丢掉配置里不再有的行的记录，卸载时全部丢掉，`assertEntriesActivated` 豁免已记录的行，但内置行停在 pending 时仍然失败。
 - **行 id 归属而非改写。** entry id 在整棵树内唯一，而 `create()` 遇到已有 id 时会把那个 entry 挪到自己名下而不是 reject，所以 `composeProfileStack` 在任何行挂载之前先判定归属：内置层与 boot 阶段的层先占有 id，它们之间重复即启动失败；撞名的受控组合包整层排除；用户层插入已被占用的 id 时该行丢弃；每一条被排除的行都是 `pluginFailures` 里的一条 `conflict` 记录。启动、运行时重组与 `--dump-config` 走同一个函数。
 - **fail-loud 只在启动期。** `installFailLoud` 对任何未处理 rejection 退出，因为启动期间它就是加载失败；树起来后 launcher 卸载它并安装 `installRuntimeGuards`：rejection 被报告并继续运行，未捕获异常被报告并退出。内置条目下失败的嵌套 fiber（`ctx.inject()` 的延续）由 `warnNestedFiberFailures` 以提示行报告。
 - **探针从不在宿主内运行包。** `probePackage` 在本进程读取已安装包的 manifest，在子进程里 import 它并经 IPC 通道接收报告，因此抛错、退出、挂起、import 时打印或自带 cordis 副本的包只消耗一个子进程，得到一条带原因的记录；子进程的报告与缓存记录都逐字段校验之后才被信任。只有包向 dsh 声明了自己——有 `dsh` 段或依赖 `@deepseek-ai/cordis`——且主导出是插件形状时才判为 `plugin`；光是导出一个函数（`lodash`）的包是 `library`。记录缓存在 profile 的 `.dsh-plugins/` 下并带格式号，旧版探针写的记录会重新探测而不是被信任。

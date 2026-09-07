@@ -10,6 +10,7 @@
 
 import type { Context } from '@deepseek-ai/cordis'
 import { EntryUpdateError, Group, type Entry, type EntryGroup, type EntryOptions } from '@deepseek-ai/cordis-plugin-loader'
+import { visitRowTree } from './patch-rows.ts'
 
 /** The lifecycle step at which a contained row failed. */
 export type ContainedFailureStage = 'import' | 'apply' | 'inject-pending' | 'unknown'
@@ -33,7 +34,10 @@ export interface ContainedFailure {
 /**
  * Failures recorded by contained groups of one runtime. Rows are keyed by
  * their tree-wide id; recording a row again replaces its earlier record, a
- * row that later mounts clears it, and a group that unmounts clears its rows'.
+ * row that later mounts clears it, a group that updates drops the records of
+ * rows it no longer configures, and a group that unmounts clears its rows'.
+ * A record's `groupId` names the contained group that isolates the row, at
+ * any nesting depth, so those two cleanups reach every row of a bundle.
  * Rows the composition left out never reach a group and are not recorded
  * here; `ProfileRuntime.conflicts` holds them.
  */
@@ -63,6 +67,18 @@ export class ContainedFailureRegistry {
   clearGroup(groupId: string): void {
     for (const [entryId, failure] of this.failures) {
       if (failure.groupId === groupId) this.failures.delete(entryId)
+    }
+  }
+
+  /**
+   * Forget the records of one contained group's rows that its configuration
+   * no longer names, after the group updated.
+   * @param groupId - the group's tree-wide id.
+   * @param rowIds - the row ids the group still configures, at any depth.
+   */
+  retain(groupId: string, rowIds: ReadonlySet<string>): void {
+    for (const [entryId, failure] of this.failures) {
+      if (failure.groupId === groupId && !rowIds.has(failure.rowId)) this.failures.delete(entryId)
     }
   }
 
@@ -109,10 +125,19 @@ function stageOf(error: unknown): ContainedFailureStage {
  * per-row step `EntryGroup.update` awaits, so catching there is what turns a
  * row failure from a group rejection into a record: the group activates, the
  * failed row is absent from the tree, and the record names it. When the group
- * unmounts — its bundle disabled or uninstalled — its rows' records go with
- * it, so no failure outlives the composition that produced it.
+ * updates, the records of rows its configuration dropped go; when it unmounts
+ * — its bundle disabled or uninstalled — all its rows' records go with it, so
+ * no failure outlives the composition that produced it.
  */
 export class ContainedGroup extends Group {
+  override async update(config: EntryOptions[]): Promise<void> {
+    await super.update(config)
+    const configured = new Set<string>()
+    // `ensureId` named every row, nested ones included, while the update mounted it.
+    for (const row of config) visitRowTree(row, (entry) => { configured.add(entry.id) })
+    this.registry()?.retain(this.groupId(), configured)
+  }
+
   override async create(options: Omit<EntryOptions, 'id'>): Promise<string> {
     try {
       const id = await super.create(options)
@@ -160,17 +185,27 @@ export class ContainedGroup extends Group {
 }
 
 /**
+ * The contained group that isolates an entry: the nearest owning group, at
+ * any depth, that is a {@link ContainedGroup}.
+ * @param entry - the Loader entry to classify.
+ * @returns the group, or undefined for an entry outside every contained group.
+ */
+export function containingGroup(entry: Entry): ContainedGroup | undefined {
+  let group: EntryGroup | undefined = entry.parent
+  while (group !== undefined) {
+    if (group instanceof ContainedGroup) return group
+    group = group.ctx.fiber.entry?.parent
+  }
+  return undefined
+}
+
+/**
  * Whether an entry sits inside a contained group, at any depth.
  * @param entry - the Loader entry to classify.
  * @returns true when some owning group is a {@link ContainedGroup}.
  */
 export function isContainedEntry(entry: Entry): boolean {
-  let group: EntryGroup | undefined = entry.parent
-  while (group !== undefined) {
-    if (group instanceof ContainedGroup) return true
-    group = group.ctx.fiber.entry?.parent
-  }
-  return false
+  return containingGroup(entry) !== undefined
 }
 
 /**

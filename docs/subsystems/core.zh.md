@@ -880,6 +880,9 @@ userDisabledRowIds(): Set<string>
  * its ownership, and its conflicts become the committed composition only
  * once the update holds; until then, and after a rejection, `current`,
  * `layers`, `originOf`, and `conflicts` keep describing the running tree.
+ * Calls queue: one that arrives while another is in flight starts after it
+ * settled and reads what it committed. A rejection is that call's outcome
+ * alone and does not stop the ones behind it.
  * @param options - `reloadBundles` re-reads the profile manifest first, so a
  * bundle enabled or installed since boot joins the stack.
  * @throws when the root include is not mounted, or the Loader rejected the update.
