@@ -6,7 +6,6 @@ import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import { WorkflowRunId } from '@deepseek-ai/dsh-workflow'
 import AgentLoop from '@deepseek-ai/dsh-agent-loop'
 import { mountAgentLoopTestDependencies } from '@deepseek-ai/dsh-agent-loop-testkit'
-import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import SubagentRuntime from '@deepseek-ai/dsh-subagent'
 import * as spawn from '@deepseek-ai/dsh-subagent-spawn-in-process'
 import { MockAdapter, textResponse } from '../packages/core/agent-loop/tests/mock-adapter.ts'
@@ -60,7 +59,6 @@ describe('advanced Python snapshot workflow ordering', () => {
       async apply(inner: Context) {
         await mountAgentLoopTestDependencies(inner)
         await inner.plugin(AgentLoop, { agents: [] })
-        await inner.plugin(SessionProjectionRegistry)
         await inner.plugin(SubagentRuntime)
         await inner.plugin(spawn, { providerName: 'spawn' })
         inner.on('agent/pre-step', ({ agent }, next) => {
