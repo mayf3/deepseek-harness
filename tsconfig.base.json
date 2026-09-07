@@ -281,7 +281,6 @@
       "@deepseek-ai/dsh-fs-local": ["./packages/fs/fs-local/src"],
       "@deepseek-ai/dsh-fs-observation-policy": ["./packages/fs/fs-observation-policy/src"],
       "@deepseek-ai/dsh-fs-sandbox": ["./packages/fs/fs-sandbox/src"],
-      "@deepseek-ai/dsh-global-tool-mask": ["./packages/preset/global-tool-mask/src"],
       "@deepseek-ai/dsh-goal": ["./packages/goal/goal/src"],
       "@deepseek-ai/dsh-goal/invariant": ["./packages/goal/goal/src/invariant.ts"],
       "@deepseek-ai/dsh-goal-round-driver": ["./packages/goal/goal-round-driver/src"],

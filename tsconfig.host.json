@@ -323,7 +323,6 @@
     { "path": "./packages/plan/plan-mode" },
     { "path": "./packages/preset/agent-presets" },
     { "path": "./packages/preset/persona" },
-    { "path": "./packages/preset/global-tool-mask" },
     { "path": "./packages/guard/repeat-tool-reminder" },
     { "path": "./packages/extensions/cordis-host-runner" },
     { "path": "./packages/extensions/tool-cordis" },

@@ -82,10 +82,10 @@ Every preset accepts a user patch layer: a `cordis.patch.yml` in the Loader's pa
 - id: tool-web
   disabled: true
 - insert:
-    - id: hide-fetch
-      name: '@deepseek-ai/dsh-global-tool-mask'
+    - id: sql
+      name: '@acme/dsh-sql-tool'
       config:
-        deny: [web_fetch]
+        dsn: sqlite://local.db
 ```
 
 The layer is judged with the composition: a layer that does not parse, inserts a malformed row, or inserts a row naming a module that cannot resolve makes the preset broken with that reason, and a layer whose id no root supplies is listed as a broken slot. Sessions created after the layer changes compose the new content; running sessions keep theirs. The composition inventory reports each row's `source` (`preset` or `user`) and, for a row that is off, whether the composition or the layer switched it off. A copy carries the layer in beside the new composition, and `removeOverlay` deletes it. The [plugin manager](../../host/plugin-manager/README.md) writes this file through `overlayPathFor`.

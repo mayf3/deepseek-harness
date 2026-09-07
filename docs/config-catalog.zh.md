@@ -768,24 +768,6 @@ export type Config = LocalConfig
 
 来源：[`packages/fs/fs-sandbox/src/index.ts:45`](../packages/fs/fs-sandbox/src/index.ts)
 
-<a id="deepseek-aidsh-global-tool-mask"></a>
-
-## `@deepseek-ai/dsh-global-tool-mask`
-
-需要：`tools`
-
-```ts config-catalog
-/** Plugin config: the global-tool mask, in `tools.restrict()`'s own vocabulary. */
-export interface Config {
-  /** Global tool names that stay visible; everything else is hidden. Empty means no allow list. */
-  allow: string[]
-  /** Global tool names hidden from this scope. Empty means no deny list. */
-  deny: string[]
-}
-```
-
-来源：[`packages/preset/global-tool-mask/src/index.ts:28`](../packages/preset/global-tool-mask/src/index.ts)
-
 <a id="deepseek-aidsh-goal"></a>
 
 ## `@deepseek-ai/dsh-goal`

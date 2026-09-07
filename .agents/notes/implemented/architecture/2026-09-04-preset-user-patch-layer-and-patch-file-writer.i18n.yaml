@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-09-04-preset-user-patch-layer-and-patch-file-writer.md
-2026-09-04-preset-user-patch-layer-and-patch-file-writer.md: 6610e28584b57a91443b1bde2e7d81b345ef853d
-2026-09-04-preset-user-patch-layer-and-patch-file-writer.zh.md: 62a92eb366263407b8122bda29a2caaad65fd706
+2026-09-04-preset-user-patch-layer-and-patch-file-writer.md: 6f31e45ddf8aae56af56d7b30bccc36a23b42073
+2026-09-04-preset-user-patch-layer-and-patch-file-writer.zh.md: 38e8ac614743984636fcf869acb33ed3cd0d1549
