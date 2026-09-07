@@ -15,6 +15,7 @@ description: "面向仓库维护者的 Issue 策略强制范围、Project 访问
 - [PR 策略](#pull-request-policy)
 - [生命周期事件](#lifecycle-events)
 - [配置与限制](#configuration-and-limitations)
+- [模块归属](#module-ownership)
 - [验证](#verification)
 - [开发备注](#dev-note)
 
@@ -54,6 +55,22 @@ PR 打开时，工作流按配置时区中的 PR 创建日期，为每个被引�
 [config.json](config.json)选择仓库、Project、字段名、状态、生命周期操作者和时区。策略读取 Project 自定义单选 `Priority` 字段，而非组织原生 Issue Priority 字段。维护者手动设置 Project Priority；指引编辑原生 Issue 字段的 skill 不会填充该值。Issue 审计先移除 PR 专用 kind 标签和已停用的标签别名，再校验其余元数据。不提供字段迁移或 Priority 同步。
 
 生命周期处理由事件驱动，不是协调器。被省略的事件不会修复 Project 状态，并发 Project mutation 也没有原子比较并交换保护。选择性求值不重新设计必需检查的权威来源，也不保证已测得的 Actions 分钟节省。[选择性求值决策](../../.agents/notes/implemented/process/2026-09-07-selective-issue-policy-evaluation.zh.md)记录取舍。
+
+-----
+
+<a id="module-ownership"></a>
+## 模块归属
+
+维护者直接复用所属模块；[policy.mjs](policy.mjs)仅负责读取事件文件、分派命令并报告命令失败。[模块归属决策](../../.agents/notes/implemented/process/2026-09-07-issue-policy-module-ownership.zh.md)解释此职责分离。
+
+<details>
+<summary>实现职责</summary>
+
+[rules.mjs](rules.mjs)拥有纯校验、引用解析、状态决策和日期转换。[github.mjs](github.mjs)拥有凭据选择、REST/GraphQL 传输、Issue/Project 读取，以及 Project 归属与字段写入。
+
+[pull-request.mjs](pull-request.mjs)组装只读 PR 快照，并执行策略预检和校验，包括其工作流输出。[lifecycle.mjs](lifecycle.mjs)复用 PR 引用读取器与共享规则，协调 Project mutation、Issue 标签修复和审计评论。快照读取器不修改 GitHub；共享传输也支持写入，因此导入该模块不会限制调用方权限。
+
+</details>
 
 -----
 

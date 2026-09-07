@@ -15,6 +15,7 @@ Contributors can link Issues as context without coupling pull-request validation
 - [Pull-request policy](#pull-request-policy)
 - [Lifecycle events](#lifecycle-events)
 - [Configuration and limitations](#configuration-and-limitations)
+- [Module ownership](#module-ownership)
 - [Verification](#verification)
 - [Dev Note](#dev-note)
 
@@ -54,6 +55,22 @@ PR opening initializes an empty Project `Start Date` for every referenced Issue,
 [config.json](config.json) selects the repository, Project, field names, statuses, lifecycle actor, and time zone. The policy reads the Project custom single-select `Priority` field, not a native organization Issue Priority field. Maintainers set Project Priority manually; skill guidance that directs edits to native Issue fields does not populate this value. Issue audits remove PR-only kinds and retired label aliases before validating the remaining metadata. There is no field migration or Priority synchronization.
 
 Lifecycle processing is event-driven, not a reconciler. Omitted events do not repair Project state, and concurrent Project mutations have no atomic compare-and-swap. Selective evaluation does not redesign required-check authority or guarantee measured Actions-minute savings. The [selective-evaluation decision](../../.agents/notes/implemented/process/2026-09-07-selective-issue-policy-evaluation.md) records the trade-offs.
+
+-----
+
+<a id="module-ownership"></a>
+## Module ownership
+
+Maintainers reuse the owning module directly; [policy.mjs](policy.mjs) only reads the event file, dispatches commands, and reports command failures. The [module-ownership decision](../../.agents/notes/implemented/process/2026-09-07-issue-policy-module-ownership.md) explains this separation.
+
+<details>
+<summary>Implementation owners</summary>
+
+[rules.mjs](rules.mjs) owns pure validation, reference parsing, status decisions, and date conversion. [github.mjs](github.mjs) owns credential selection, REST/GraphQL transport, Issue/Project reads, and Project membership and field writes.
+
+[pull-request.mjs](pull-request.mjs) assembles read-only PR snapshots and runs policy preflight and validation, including their workflow outputs. [lifecycle.mjs](lifecycle.mjs) reuses the PR reference reader and shared rules to coordinate Project mutations, Issue label repairs, and audit comments. Snapshot readers do not mutate GitHub; the shared transport also supports writes, so importing it does not restrict a caller's permissions.
+
+</details>
 
 -----
 

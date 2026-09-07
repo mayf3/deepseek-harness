@@ -5,24 +5,24 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import test from 'node:test'
 
+import { api, graphql, initializeIssueStartDate, issueSnapshot } from './github.mjs'
+import { auditIssue, initializePullRequestStartDates, repairIssueLabels, runLifecycle } from './lifecycle.mjs'
 import {
-  auditIssue,
-  initializeIssueStartDate,
-  initializePullRequestStartDates,
-  issueSnapshot,
+  lifecyclePullRequestSnapshot,
+  pullRequestSnapshot,
+  runPullRequestCheck,
+  runPullRequestPreflight,
+} from './pull-request.mjs'
+import {
   nextResolvingIssueStatus,
   parseReferences,
   projectDate,
-  repairIssueLabels,
   retainIssueReferences,
   resolvingIssueStatusCommand,
   requiresPullRequestPolicy,
-  runLifecycle,
-  runPullRequestCheck,
-  runPullRequestPreflight,
   validateIssue,
   validatePullRequest,
-} from './policy.mjs'
+} from './rules.mjs'
 
 const projectGraphqlData = ({
   projectItem = true,
@@ -970,6 +970,87 @@ test('allocates lifecycle runners only for relevant reviews and PR body edits', 
   assert.ok(beforeSteps.includes("(github.event_name != 'pull_request' || github.event.action != 'edited' || github.event.changes.body != null)"))
   assert.ok(source.includes('ref: ${{ github.event.repository.default_branch }}'))
   assert.ok(source.includes('persist-credentials: false'))
+})
+
+test('keeps REST headers, null responses, and transport errors unchanged', async (t) => {
+  mockPolicyApi(t)
+  process.env.GH_TOKEN = 'preferred-token'
+  process.env.PROJECT_TOKEN = 'project-token'
+  process.env.GITHUB_API_URL = 'https://github.example/api/v3'
+  const requests = []
+  const responses = [
+    Response.json({ ok: true }),
+    new Response(null, { status: 204 }),
+    new Response('missing', { status: 404 }),
+    new Response('denied', { status: 403 }),
+    Response.json({ errors: [{ message: 'first' }, { message: 'second' }] }),
+  ]
+  t.mock.method(globalThis, 'fetch', async (url, options) => {
+    requests.push({ url, options })
+    return responses.shift()
+  })
+  assert.deepEqual(await api('/example'), { ok: true })
+  assert.deepEqual(requests[0], {
+    url: 'https://github.example/api/v3/example',
+    options: { headers: {
+      Accept: 'application/vnd.github+json',
+      Authorization: 'Bearer preferred-token',
+      'X-GitHub-Api-Version': '2026-03-10',
+      'User-Agent': 'dsh-issue-policy',
+    } },
+  })
+  assert.equal(await api('/empty'), null)
+  assert.equal(await api('/missing', { allow404: true }), null)
+  await assert.rejects(api('/denied', { method: 'PATCH' }), { message: 'PATCH /denied: 403 denied' })
+  await assert.rejects(graphql('query { viewer { login } }', {}), { message: 'first; second' })
+  assert.equal(requests[4].options.headers.Authorization, 'Bearer project-token')
+  assert.equal(requests[4].options.method, 'POST')
+  assert.equal(requests[4].options.body, JSON.stringify({ query: 'query { viewer { login } }', variables: {} }))
+  assert.equal(requests.length, 5)
+})
+
+test('reads policy snapshots in reference order and only resolving Project priorities', async (t) => {
+  const fixture = mockPolicyApi(t, {
+    pull: { body: 'Refs #4; Fixes #3; Fixes #2' },
+    issues: { 2: {}, 3: { pull_request: {} }, 4: {} },
+  })
+  assert.deepEqual(await pullRequestSnapshot(10), {
+    number: 10,
+    isDraft: false,
+    authorType: 'User',
+    reviewRequestCount: 1,
+    reviewCount: 0,
+    labels: ['kind/cleanup', 'area/infra'],
+    references: { all: [2, 4], resolving: [2], related: [4] },
+    issues: new Map([[2, { priority: 'P1' }], [4, { priority: null }]]),
+  })
+  const repo = '/repos/deepseek-harness/deepseek-harness'
+  assert.deepEqual(fixture.requests, [
+    repo + '/pulls/10',
+    repo + '/pulls/10/requested_reviewers',
+    repo + '/pulls/10/reviews?per_page=100',
+    repo + '/issues/2',
+    repo + '/issues/3',
+    repo + '/issues/4',
+    '/graphql',
+  ])
+  assert.deepEqual(fixture.output, [])
+})
+
+test('reads lifecycle references for draft Bot PRs without review or Project requests', async (t) => {
+  const fixture = mockPolicyApi(t, {
+    pull: { draft: true, user: { type: 'Bot' }, body: 'Fixes #2; Refs #4', created_at: '2026-08-27T16:00:00Z' },
+    issues: { 2: {}, 4: {} },
+  })
+  assert.deepEqual(await lifecyclePullRequestSnapshot(10), {
+    number: 10,
+    references: { all: [2, 4], resolving: [2], related: [4] },
+    issues: new Map([[2, { priority: null }], [4, { priority: null }]]),
+    createdAt: '2026-08-27T16:00:00Z',
+  })
+  const repo = '/repos/deepseek-harness/deepseek-harness'
+  assert.deepEqual(fixture.requests, [repo + '/pulls/10', repo + '/issues/2', repo + '/issues/4'])
+  assert.deepEqual(fixture.output, [])
 })
 
 test('allows missing Priority only when resolving Issues are also unprioritized', () => {
