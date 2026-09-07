@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-09-07-typert-package-local-forwarding-imports.md
+2026-09-07-typert-package-local-forwarding-imports.md: bcae7e6c6e3ccca9c1b67d7d925501199dce4854
+2026-09-07-typert-package-local-forwarding-imports.zh.md: 828343af3f7c0b45257248c7e678ef912bbaa10f
