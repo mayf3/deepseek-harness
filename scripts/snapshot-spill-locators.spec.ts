@@ -9,13 +9,16 @@ import { join, resolve } from 'node:path'
 import { expect, it } from 'vitest'
 import * as locators from './snapshot-spill-locators.ts'
 
-it('keeps concurrent physical spill files private while retaining logical locator length and bytes', async () => {
+it.each([false, true])('keeps concurrent physical spill files private while retaining logical locator length and bytes (reverse allocation=%s)', async (reverseAllocation) => {
   const roots: string[] = []
   const disposers: (() => Promise<void>)[] = []
+  const secondAllocated = Promise.withResolvers<undefined>()
   try {
     const runs = await Promise.all([0, 1].map(async (index) => {
+      if (reverseAllocation && index === 0) await secondAllocated.promise
       const root = await mkdtemp(join(tmpdir(), 'snapshot-locator-'))
       roots.push(root)
+      if (index === 1) secondAllocated.resolve(undefined)
       const ctx = new Context()
       const storeFiber = ctx.plugin(LocalSpillStore, { root, cleanupPeriodDays: 0 })
       disposers.push(() => storeFiber.dispose())
@@ -51,11 +54,12 @@ it('keeps concurrent physical spill files private while retaining logical locato
       const restored = await ctx.fs.resolve(ref.locator)
       expect(ctx.fs.processPath(restored)).not.toBe(physicalPath)
       expect(await ctx.fs.stat(restored)).toBeUndefined()
-      return { physicalPath, locator: ref.locator, content }
+      return { root, physicalPath, locator: ref.locator, content }
     }))
     expect(runs[0]?.physicalPath).not.toBe(runs[1]?.physicalPath)
     expect(runs[0]?.locator.length).toBe(runs[1]?.locator.length)
-    await rm(roots[0] as string, { recursive: true, force: true })
+    // Promise.all preserves input order; allocation completion order may differ.
+    await rm(runs[0]!.root, { recursive: true, force: true })
     expect(await readFile(runs[1]?.physicalPath as string, 'utf8')).toBe(runs[1]?.content)
   } finally {
     for (const dispose of disposers.reverse()) await dispose()

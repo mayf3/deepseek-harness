@@ -32,7 +32,7 @@ Reference-composer 夹具将已知的 home 缩写 workspace 显示映射到既�
 
 高级 Python 快照仅暂停其匹配的 workflow 子进程首次 pre-step，直到观察到父 Session 的持久化 workflow 成员事件。夹具支持事件先到或等待先建立两种顺序，并在取消或销毁时结束未完成等待。这固定了场景的跨 Session 顺序，而不排序通知或改变生产调度。
 
-Queue 快照在捕获前将指针移离 Stop/Send 控件，并等待其 Send tooltip 关闭。Workspace-management 测试通过操作按钮定位唯一非空 Session，而不依赖行位置；在断言归档会移除空的 Ungrouped 分组前，先选中该 Session。Hover 行为、队列内容、持久化归档身份及重载断言保持不变。
+Queue 快照在捕获前将指针移离 Stop/Send 控件，并等待其 Send tooltip 关闭。Workspace-management 测试通过操作按钮定位唯一非空 Session，而不依赖行位置；在断言归档会移除空的 Ungrouped 分组前，先选中该 Session。Hover 行为、队列内容、持久化归档身份及重载断言保持不变。并发 spill 隔离测试将每个根目录与其运行结果关联，而不假设文件系统分配完成顺序与输入顺序一致。
 
 ## 考虑过的替代方案
 
