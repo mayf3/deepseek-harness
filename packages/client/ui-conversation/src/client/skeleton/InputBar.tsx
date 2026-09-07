@@ -336,17 +336,19 @@ export const InputBar = memo(function InputBar({
 
   // An ordinary running session keeps Stop while the composer is empty or
   // owner-blocked; an actionable draft gets the busy Send action, delivered
-  // through the same mode plain Enter resolves to. While that delivery is
-  // available the label names the mode, so the button never hides which
-  // delivery it performs; a locked composer (parent offline) keeps plain
-  // Send because no delivery is possible. A continuable child keeps Send
-  // primary and exposes Stop independently.
+  // through the same mode plain Enter resolves to. The label names that mode
+  // only when the click would deliver a plain message right now — an enabled
+  // button over a non-empty draft that is neither a claimed command nor a
+  // `/` line headed for adjudication — so it never describes a delivery the
+  // click cannot or does not perform; every other state keeps plain Send. A
+  // continuable child keeps Send primary and exposes Stop independently.
   const primaryStops = running && subagent === null && (empty || blocked !== undefined)
   const interruptible = running && continuable
   const primarySubmitMode = resolveSubmitMode(busyEnter, running, 'enter', steeringAvailable)
+  const plainMessageDraft = !empty && input?.phase === 'plain' && !draft.trimStart().startsWith('/')
   const primaryLabel = primaryStops
     ? t('input.stop')
-    : running && steeringAvailable && !disabled
+    : running && steeringAvailable && !disabled && plainMessageDraft
       ? t(primarySubmitMode === 'steer' ? 'input.send.steer' : 'input.send.queue')
       : t('input.send')
   const onPrimary = (): void => {

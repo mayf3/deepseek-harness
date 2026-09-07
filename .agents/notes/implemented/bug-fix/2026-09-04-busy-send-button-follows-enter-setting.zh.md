@@ -10,7 +10,7 @@ Web composer 为 agent（智能体）运行期间的提交只提供一个面向�
 
 ## 决策
 
-运行中的 Send 按钮按与 plain Enter 相同的模式投递。`InputBar` 每次渲染计算一次 `resolveSubmitMode(busyEnter, running, 'enter', steeringAvailable)`，其中 `steeringAvailable` 与键盘路径使用同一个"普通 Session 或可继续 child"判定；用它通过 `ComposerKeyboard.submit(mode)` 执行主按钮点击，也用它决定主按钮标签：带可提交草稿、运行中且可 steering 的 composer 把 `input.send.queue`（"Queue message" / "排队发送"）或 `input.send.steer`（"Steer message" / "插话发送"）同时用作 tooltip 与可访问名称，而空闲会话和 one-shot subagent composer 保留 `input.send`（"Send message"）。Cmd/Ctrl+Enter 仍解析为相反模式，空草稿下的加速手势仍对整个队列执行 steering（中途引导）。
+运行中的 Send 按钮按与 plain Enter 相同的模式投递。`InputBar` 每次渲染计算一次 `resolveSubmitMode(busyEnter, running, 'enter', steeringAvailable)`，其中 `steeringAvailable` 与键盘路径使用同一个"普通 Session 或可继续 child"判定；用它通过 `ComposerKeyboard.submit(mode)` 执行主按钮点击，并且仅在点击会投递一条普通消息时用它决定主按钮标签：composer 运行中且可 steering、按钮可用、草稿非空、未被认领且不是将进入命令 adjudication 的 `/` 行。该状态把 `input.send.queue`（"Queue message" / "排队发送"）或 `input.send.steer`（"Steer message" / "插话发送"）同时用作 tooltip 与可访问名称；其余所有状态——空闲会话、one-shot child、锁定的 composer、空草稿，以及点击会执行命令而非投递消息的命令草稿——保留 `input.send`（"Send message"）。Cmd/Ctrl+Enter 仍解析为相反模式，空草稿下的加速手势仍对整个队列执行 steering（中途引导）。
 
 composer bar 的 inject 接口携带实时偏好，而不是解析闭包。`ComposerBarInjected.hooks.busyEnter` 发布 `ComposerSubmissionPolicy.busyEnter`，因此 bar 获得 `useBusyEnter` 选择器 hook，并在设置行或 Host 设置更新改变该值时重新渲染标签。`resolveSubmitMode` 是 `submission-policy.ts` 中导出的纯函数，显式接收偏好值；policy 类只保留 store 及其 Host 采纳与写回。
 
@@ -18,7 +18,7 @@ composer bar 的 inject 接口携带实时偏好，而不是解析闭包。`Comp
 
 ## 验证
 
-`input-bar.client.spec.tsx` 断言运行中草稿的按钮在两种偏好下都按模式标注并以该模式提交，切换偏好 store 会在下一次点击前重新标注已挂载的按钮，空闲 Send 无论偏好如何都保留普通标签与 Queue 投递，可继续 subagent 的 Send 与普通 Session 遵循同一模式与标签，而 one-shot child 保留普通 Send。`submission-policy.client.spec.ts` 钉住 `resolveSubmitMode` 在偏好、运行状态、手势与 steering 可用性所有组合下的结果。`enter-behavior-row.client.spec.tsx` 与 `settings-chrome` ARIA golden 携带新的设置文案。无密钥的 `live-interactions` Web 场景在停住的运行中草稿上等待"Queue message"，并断言此刻不存在"Send message"按钮，其 `running-draft.expected.md` golden 记录了新名称。
+`input-bar.client.spec.tsx` 断言运行中草稿的按钮在两种偏好下都按模式标注并以该模式提交，切换偏好 store 会在下一次点击前重新标注已挂载的按钮，空闲 Send 无论偏好如何都保留普通标签与 Queue 投递，可继续 subagent 的 Send 与普通 Session 遵循同一模式与标签，而其空草稿下的禁用按钮与 one-shot child 保留普通 Send，运行中的 `/` 行与已认领命令也保留普通 Send。`submission-policy.client.spec.ts` 钉住 `resolveSubmitMode` 在偏好、运行状态、手势与 steering 可用性所有组合下的结果。`enter-behavior-row.client.spec.tsx` 与 `settings-chrome` ARIA golden 携带新的设置文案。无密钥的 `live-interactions` Web 场景在停住的运行中草稿上等待"Queue message"，并断言此刻不存在"Send message"按钮，其 `running-draft.expected.md` golden 记录了新名称。
 
 ## 备选方案
 
