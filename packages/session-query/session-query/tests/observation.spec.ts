@@ -17,6 +17,7 @@ import type {
   SessionPersistenceStatOptions,
 } from '@deepseek-ai/dsh-session-persistence'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
+import { titleProjectionDefinition } from '@deepseek-ai/dsh-session-title'
 import { describe, expect, it, vi } from 'vitest'
 import { SessionObservationReader } from '../src/observation.ts'
 
@@ -33,6 +34,15 @@ function messageEvent(seq: number, text: string): SessionEvent {
       content: [{ type: 'text', text }], source: { kind: 'user' },
     }),
     surfaceOp: 'append',
+  }
+}
+
+function titleEvent(seq: number, title: string): SessionEvent {
+  return {
+    type: 'session/title',
+    seq: SessionSeq(seq),
+    time: seq + 1,
+    data: { title, messageSeqs: [], source: { kind: 'user' } },
   }
 }
 
@@ -784,5 +794,69 @@ describe('SessionObservationReader cold projections', () => {
       message: expect.stringContaining('failed to project') as string,
     })
     await ctx.fiber.dispose()
+  })
+})
+
+describe('SessionObservationReader host projection states', () => {
+  it('detaches a live registry state at the observed cut without computing views', async () => {
+    const ctx = await readerContext()
+    await ctx.plugin(SessionProjectionRegistry)
+    ctx.sessionProjections.register(titleProjectionDefinition)
+    const session = ctx.sessions.create(SessionId('live-host-state'))
+    session.append('session/title', { title: 'Live title', messageSeqs: [], source: { kind: 'user' } })
+    const reader = new SessionObservationReader(ctx)
+
+    using observed = await reader.read(session.id, { projectionMode: 'none', projectionStateKeys: ['title'] })
+    session.append('session/title', { title: 'Later title', messageSeqs: [], source: { kind: 'user' } })
+    using later = await reader.read(session.id, { projectionMode: 'none', projectionStateKeys: ['title'] })
+
+    expect(observed.projections).toBeUndefined()
+    expect(observed.projectionStates).toEqual({ title: 'Live title' })
+    expect(later.projectionStates).toEqual({ title: 'Later title' })
+    await ctx.fiber.dispose()
+  })
+
+  it('hydrates a prepared Session once and serves the requested state from its cells', async () => {
+    const ctx = await readerContext()
+    await ctx.plugin(SessionProjectionRegistry)
+    ctx.sessionProjections.register(titleProjectionDefinition)
+    const meta = header('cold-host-state')
+    const store = new Map([[meta.id, { header: meta, events: [titleEvent(0, 'Cold title')], revision: 'r1' }]])
+    ctx.provide('sessionPersistence', stubPersistence(store, { stat: 0, open: 0, read: 0 }))
+    const hydrate = vi.spyOn(ctx.sessionProjections, 'hydrate')
+
+    using observed = await new SessionObservationReader(ctx).read(meta.id, {
+      projectionMode: 'none',
+      projectionStateKeys: ['title'],
+    })
+
+    expect(observed.source).toBe('prepared')
+    expect(observed.projections).toBeUndefined()
+    expect(observed.projectionStates).toEqual({ title: 'Cold title' })
+    expect(hydrate).toHaveBeenCalledOnce()
+    await ctx.fiber.dispose()
+  })
+
+  it('omits unregistered keys and the whole map when no registry is mounted', async () => {
+    const withRegistry = await readerContext()
+    await withRegistry.plugin(SessionProjectionRegistry)
+    const registered = withRegistry.sessions.create(SessionId('unregistered-key'))
+    using partial = await new SessionObservationReader(withRegistry).read(registered.id, {
+      projectionMode: 'none',
+      projectionStateKeys: ['title'],
+    })
+    expect(partial.projectionStates).toEqual({})
+    await withRegistry.fiber.dispose()
+
+    const withoutRegistry = await readerContext()
+    const meta = header('no-registry')
+    const store = new Map([[meta.id, { header: meta, events: [titleEvent(0, 'Cold title')], revision: 'r1' }]])
+    withoutRegistry.provide('sessionPersistence', stubPersistence(store, { stat: 0, open: 0, read: 0 }))
+    using absent = await new SessionObservationReader(withoutRegistry).read(meta.id, {
+      projectionMode: 'none',
+      projectionStateKeys: ['title'],
+    })
+    expect(absent.projectionStates).toBeUndefined()
+    await withoutRegistry.fiber.dispose()
   })
 })

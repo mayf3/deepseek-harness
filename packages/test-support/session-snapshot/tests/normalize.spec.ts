@@ -7,6 +7,7 @@ import {
   normalizeSessionSnapshot,
   normalizeSessionSnapshots,
   normalizeStdout,
+  omitSubagentCatalogForHistoricalComparison,
   scrubModelRequestBulk,
   scrubSessionSnapshot,
   scrubSystemPrompts,
@@ -523,12 +524,35 @@ describe('normalizeSessionLog', () => {
     expect(out).toContain('"operation":"resume"')
   })
 
+  it('normalizes subagent catalog child creation clocks', () => {
+    const catalog = JSON.stringify({
+      type: 'subagent/catalog',
+      seq: 2,
+      time: 5,
+      data: {
+        version: 0,
+        childId: 'child',
+        childCreatedAt: 123,
+        mode: 'one-shot',
+      },
+    })
+    const out = normalizeSessionLog(`${header({})}\n${catalog}\n`, ctx)
+    expect(out).toContain('"childCreatedAt":0')
+  })
+
   it('handles complete envelopes when optional normalized fields are absent', () => {
     const bareHeader = JSON.stringify({ type: 'session', id: 's' })
     const bareHook = JSON.stringify({ type: 'hook/result', seq: 2, time: 5, data: { decision: 'allow' } })
     const nullDataHook = JSON.stringify({ type: 'hook/result', seq: 3, time: 6, data: null })
-    const out = normalizeSessionLog(`${bareHeader}\n${bareHook}\n${nullDataHook}\n`, ctx)
+    const bareCatalog = JSON.stringify({
+      type: 'subagent/catalog',
+      seq: 4,
+      time: 7,
+      data: { version: 0 },
+    })
+    const out = normalizeSessionLog(`${bareHeader}\n${bareHook}\n${nullDataHook}\n${bareCatalog}\n`, ctx)
     expect(out).toContain('"decision":"allow"')
+    expect(out).toContain('"version":0')
     expect(out).not.toContain('durationMs')
   })
 })
@@ -593,6 +617,69 @@ describe('normalizeSessionSnapshot', () => {
         type: 'text-chunks',
         data: { turn: 1, step: 1, index: 0, dt: [0, 0], texts: ['d', 'e', 'f'] },
       }),
+      '',
+    ].join('\n'))
+  })
+
+  it('orders adjacent catalog facts by child id', () => {
+    const raw = [
+      JSON.stringify({ type: 'session', version: 0 }),
+      JSON.stringify({ type: 'tool/call', data: { callId: 'parallel' } }),
+      JSON.stringify({
+        type: 'subagent/catalog',
+        data: { version: 0, childId: '{{session:3}}', childCreatedAt: 123, mode: 'one-shot' },
+      }),
+      JSON.stringify({
+        type: 'subagent/catalog',
+        data: { version: 0, childId: '{{session:2}}', childCreatedAt: 124, mode: 'one-shot' },
+      }),
+      JSON.stringify({ type: 'tool/result', data: { callId: 'parallel' } }),
+    ].join('\n') + '\n'
+    const normalized = normalizeSessionSnapshot(raw, ctx)
+    expect(normalized.indexOf('{{session:2}}')).toBeLessThan(normalized.indexOf('{{session:3}}'))
+    expect(normalized).toContain('"childCreatedAt":0')
+  })
+
+  it('treats malformed catalog facts as ordering barriers', () => {
+    const raw = [
+      JSON.stringify({ type: 'session', version: 0 }),
+      JSON.stringify({
+        type: 'subagent/catalog',
+        data: { version: 0, childId: '{{session:2}}', childCreatedAt: 1, mode: 'one-shot' },
+      }),
+      JSON.stringify({
+        type: 'subagent/catalog',
+        data: { version: 0, childId: 3, childCreatedAt: 3, mode: 'one-shot' },
+      }),
+    ].join('\n') + '\n'
+    const normalized = normalizeSessionSnapshot(raw, ctx)
+    expect(normalized).toContain('{{session:2}}')
+    expect(normalized).toContain('"childId":3')
+  })
+
+  it('omits current catalog facts and rebases source references for historical comparison', () => {
+    const normalized = [
+      JSON.stringify({ type: 'session', id: '{{session:1}}' }),
+      JSON.stringify({ type: 'tool/call', data: { callId: 'first' } }),
+      JSON.stringify({
+        type: 'subagent/catalog',
+        data: { version: 0, childId: '{{session:2}}', childCreatedAt: 0, mode: 'one-shot' },
+      }),
+      JSON.stringify({ type: 'tool/result', data: { callId: 'first' }, sourceEventSeqs: [0] }),
+      JSON.stringify({ type: 'tool/call', data: { callId: 'second' } }),
+      JSON.stringify({
+        type: 'subagent/catalog',
+        data: { version: 0, childId: '{{session:3}}', childCreatedAt: 0, mode: 'one-shot' },
+      }),
+      JSON.stringify({ type: 'tool/result', data: { callId: 'second' }, sourceEventSeqs: [3] }),
+      '',
+    ].join('\n')
+    expect(omitSubagentCatalogForHistoricalComparison(normalized)).toBe([
+      JSON.stringify({ type: 'session', id: '{{session:1}}' }),
+      JSON.stringify({ type: 'tool/call', data: { callId: 'first' } }),
+      JSON.stringify({ type: 'tool/result', data: { callId: 'first' }, sourceEventSeqs: [0] }),
+      JSON.stringify({ type: 'tool/call', data: { callId: 'second' } }),
+      JSON.stringify({ type: 'tool/result', data: { callId: 'second' }, sourceEventSeqs: [2] }),
       '',
     ].join('\n'))
   })

@@ -761,6 +761,20 @@ Source: [`packages/core/session/src/types.ts:287`](../packages/core/session/src/
 
 ### `subagent/*`
 
+<a id="subagentcatalog--log-only"></a>
+
+#### `subagent/catalog` — log-only
+
+```ts persistence-catalog
+/**
+ * A direct child's complete discovery fact.
+ * @param data - versioned parent-owned catalog entry.
+ */
+'subagent/catalog': SubagentCatalogEvent
+```
+
+Source: [`packages/subagent/subagent/src/catalog.ts:37`](../packages/subagent/subagent/src/catalog.ts)
+
 <a id="subagentdescriptor--log-only"></a>
 
 #### `subagent/descriptor` — log-only

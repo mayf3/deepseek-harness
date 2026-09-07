@@ -26,6 +26,7 @@ import {
   normalizedHeaders,
   normalizedSystemPrompts,
   normalizedToolSchemas,
+  omitSubagentCatalogForHistoricalComparison,
   parseSnapshotManifest,
   parseToolSchemasSnapshot,
   redactSessionSnapshotIds,
@@ -975,6 +976,9 @@ describe('headless recorded-session snapshots', () => {
         expect(await fixtureSessions(scenario), 'historical replay input remains unchanged').toEqual(fixtures)
       }
       const actualSnapshots = normalizeSessionSnapshots(actualLogs.map(log => log.content), actualContext)
+        .map(snapshot => scenario.manifest.sessionFormat === undefined
+          ? snapshot
+          : omitSubagentCatalogForHistoricalComparison(snapshot))
       const expectedSnapshots = normalizeSessionSnapshots(expected, contextOf(expected))
       for (const [index, actual] of actualSnapshots.entries()) {
         expect(records(actual), `${scenario.name}: session ${index}`).toEqual(records(expectedSnapshots[index] as string))

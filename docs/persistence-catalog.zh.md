@@ -763,6 +763,20 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 
 ### `subagent/*`
 
+<a id="subagentcatalog--log-only"></a>
+
+#### `subagent/catalog` — log-only
+
+```ts persistence-catalog
+/**
+ * A direct child's complete discovery fact.
+ * @param data - versioned parent-owned catalog entry.
+ */
+'subagent/catalog': SubagentCatalogEvent
+```
+
+来源：[`packages/subagent/subagent/src/catalog.ts:37`](../packages/subagent/subagent/src/catalog.ts)
+
 <a id="subagentdescriptor--log-only"></a>
 
 #### `subagent/descriptor` — log-only

@@ -74,6 +74,7 @@ import { listChildren as listSubagentChildren, listDescendants as listSubagentDe
 import type { SubagentDescendantListEntry, SubagentListEntry } from './list-children.ts'
 import { snapshotSubagentDescriptor } from './descriptor.ts'
 import { subagentIdentityProjectionDefinition, subagentTimingProjectionDefinition } from './projection.ts'
+import { establishCatalogChild, subagentCatalogProjectionDefinition } from './catalog.ts'
 import { deliverSubagentPrompt } from './internal.ts'
 
 export * from './out-of-process.ts'
@@ -208,6 +209,7 @@ export class SubagentRuntime extends TypertRemoteService {
       }, 'subagents.continuationBinding()')
     })
     ctx.inject(['sessionProjections'], (projectionCtx) => {
+      projectionCtx.sessionProjections.register(subagentCatalogProjectionDefinition)
       projectionCtx.sessionProjections.register(subagentTimingProjectionDefinition)
       projectionCtx.sessionProjections.register(subagentIdentityProjectionDefinition)
     })
@@ -559,7 +561,23 @@ export class SubagentRuntime extends TypertRemoteService {
       ...request.label !== undefined ? { label: request.label } : {},
     })
     const resolved: ResolvedSubagentStartRequest = { ...request, descriptor }
-    return observeRun(this.emitLifecycle, name, request.parent, await provider.start(resolved))
+    const run = await provider.start(resolved)
+    const child = run.localAgent?.session
+    if (child !== undefined) {
+      try {
+        establishCatalogChild(request.parent.session, child.header, descriptor)
+      } catch (error: unknown) {
+        try {
+          await run.dispose()
+        } catch (cleanupError: unknown) {
+          this.ctx.logger.warn(
+            `subagent: disposal after catalog append failure also failed: ${String(cleanupError)}`,
+          )
+        }
+        throw error
+      }
+    }
+    return observeRun(this.emitLifecycle, name, request.parent, run)
   }
 
   /**

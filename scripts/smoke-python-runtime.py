@@ -2158,6 +2158,10 @@ def normalize_snapshot_value(
     }
     if normalized.get("type") == "session" and "createdAt" in normalized:
         normalized["createdAt"] = 0
+    if normalized.get("type") == "subagent/catalog":
+        data = normalized.get("data")
+        if isinstance(data, dict) and "childCreatedAt" in data:
+            data["childCreatedAt"] = 0
     if "seq" in normalized and "time" in normalized:
         normalized["time"] = 0
     if normalized.get("type") in ("assistant/message", "assistant/attempt"):

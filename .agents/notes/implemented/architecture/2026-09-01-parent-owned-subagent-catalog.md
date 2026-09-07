@@ -1,0 +1,43 @@
+# Agent Note: Parent-owned subagent catalog events
+
+Status: implemented
+
+English | [中文](2026-09-01-parent-owned-subagent-catalog.zh.md)
+
+## Problem
+
+Direct-child discovery once reconstructed a catalog from the global Session corpus and each selected child's log. Creation already knows the direct parent, child id, mode, and label, so repository-wide enumeration and child-log reads duplicated an owned fact and made browser refresh cost depend on unrelated Sessions.
+
+The child descriptor remains necessary for recovery and composition, but it cannot be the discovery source because a reader must find and open the child before it can read the descriptor. Forks add a separate requirement: a seeded copy of a parent log must not inherit the original Session's children.
+
+## Decision
+
+The parent Session's required `subagent/catalog` events are the persistent authority for direct-child discovery. Each event is one successful creation fact containing `childId`, `childCreatedAt`, mode, and the mode-discriminated label. Remote one-shot runs without a local Session remain outside this catalog.
+
+Creation publishes only successful facts. A one-shot run appends the catalog event after its provider returns a local child and before the run reaches its caller. A continuable run admits the initial prompt, appends the catalog event, then returns the child id. If admission or catalog append fails, creation fails and releases the activation; there is no compensating catalog event or rollback protocol.
+
+The child header and `subagent/descriptor` remain authoritative for recovery and composition. An Activation and the exact parent relationship remain authoritative for authorization and delivery. Mode and label are snapshotted once and the same detached values reach the parent catalog fact and child descriptor.
+
+The registered host-only `subagentCatalog` projection materializes the parent facts. It stores facts in a persistent stack of 64-entry chunks, so an append copies at most the head chunk in bounded O(1) work. Materialization visits D facts and sorts them by `childCreatedAt`, then child id, in O(D log D). A projection checkpoint clones the state once in O(D); projection-cache writes remain asynchronous and use the existing mandatory creation, turn-end, and disposal points.
+
+Fork isolation uses the exact `Session.inheritedEventCount` supplied to projection initialization. The fold ignores `subagent/catalog` events below that offset. The state stores the inherited offset but not each event seq because acceptance is decided during folding.
+
+Snapshot normalizers zero `childCreatedAt` because it originates from the process clock. The TypeScript normalizer also sorts adjacent catalog facts by distinct child id because parallel successful creations may append in either order. Non-catalog events remain ordering barriers.
+
+## Alternatives considered
+
+**A flat immutable array.** Appending with `[...facts, fact]` copies D facts, so creation is O(D). Mutating a shared array would violate projection state ownership and checkpoint safety.
+
+**A node-per-fact linked list.** It provides O(1) append and O(D) read, but persisted projection checkpoints form JSON nested D levels deep. Sixty-four-entry chunks preserve the asymptotic costs while reducing nesting.
+
+**A client-visible projection.** Publishing the complete catalog after every creation would turn constant-time folding into O(D²) cumulative materialization. The Session Controller already owns the observation needed for a cold read.
+
+**A durable SQLite child index.** An index would create another write path, reconciliation protocol, schema, and corruption surface for a fact already ordered in the parent Session log.
+
+**A compensating failure event.** Recording catalog membership before initial prompt admission requires a second operation, pairing rules, rollback cleanup, and client reconciliation. Delaying the success fact until admission completes removes that protocol.
+
+## Consequences
+
+A caller can request `projectionStateKeys: ['subagentCatalog']` from `observeSession`. Live observations clone the maintained registry state; cold observations hydrate their prepared Session and detach the same state at the observation cursor. Direct-child and descendant listing still use the Session corpus and child identity projection.
+
+Backends that do not know the required event refuse the log under the existing Session event mechanism. Pre-release format policy requires no fallback scan for old logs.

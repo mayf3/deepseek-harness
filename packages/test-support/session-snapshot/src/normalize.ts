@@ -33,6 +33,31 @@ function omitFixtureEnvelope(record: Record<string, unknown>): void {
   delete record.time0
 }
 
+/** Return a catalog event's child id, or undefined for every ordering barrier. */
+function catalogChildId(event: { readonly type: string; readonly data?: unknown }): string | undefined {
+  if (event.type !== 'subagent/catalog' || event.data === null || typeof event.data !== 'object') return undefined
+  const data = event.data as { childId?: unknown }
+  return typeof data.childId === 'string' ? data.childId : undefined
+}
+
+/** Sort commutative adjacent catalog facts without crossing another event. */
+function canonicalizeCatalogRuns<T extends { readonly type: string; readonly data?: unknown }>(events: readonly T[]): T[] {
+  const canonical = [...events]
+  let start = 0
+  while (start < canonical.length) {
+    if (catalogChildId(canonical[start] as T) === undefined) {
+      start += 1
+      continue
+    }
+    let end = start + 1
+    while (end < canonical.length && catalogChildId(canonical[end] as T) !== undefined) end += 1
+    canonical.splice(start, end - start, ...canonical.slice(start, end).sort((left, right) =>
+      (catalogChildId(left) as string).localeCompare(catalogChildId(right) as string)))
+    start = end
+  }
+  return canonical
+}
+
 /** A cwd-rooted path after volatile cwd replacement, through its last separator-delimited segment. */
 const CWD_ROOTED_PATH_RE = /\{\{cwd\}\}(?:[\\/][^\s<>"'`]+)+/g
 const PATH_TAG_RE = /(<path>)([^<]*)(<\/path>)/g
@@ -325,8 +350,9 @@ export function normalizeStdout(
 /**
  * Normalize a session JSONL log into a stable expected output: the header line's
  * volatile fields (`createdAt`, `id`, `cwd`) are zeroed/scrubbed; event,
- * historical packed-row, embedded Assistant-stream, and goal lifecycle clocks
- * are zeroed; and all volatile strings are scrubbed. Projected inputs remain
+ * historical packed-row, embedded Assistant-stream, goal lifecycle, and
+ * catalog child-creation clocks are zeroed; and all volatile strings are
+ * scrubbed. Projected inputs remain
  * projected. Packed `data.dt` gaps are normalized even when the projected row
  * omits its `time0` anchor.
  * Output is JSONL in the same shape as the input — one compact record per
@@ -381,6 +407,10 @@ export function normalizeSessionLog(
       if ('createdAt' in data) data.createdAt = 0
       if ('updatedAt' in data) data.updatedAt = 0
     }
+    if (record.type === 'subagent/catalog' && record.data !== null && typeof record.data === 'object') {
+      const data = record.data as Record<string, unknown>
+      if ('childCreatedAt' in data) data.childCreatedAt = 0
+    }
     if (Object.hasOwn(record, 'sourceEventSeqs')) {
       record.sourceEventSeqs = decodeSeqRanges(record.sourceEventSeqs)
     }
@@ -397,8 +427,10 @@ function projectSessionSnapshot(rawLog: string): string {
   const lines = rawLog.split('\n').filter(line => line.trim().length > 0)
   const header = lines.shift() as string
 
-  const body = lines.map((line) => {
-    const record = JSON.parse(line) as Record<string, unknown>
+  const records = canonicalizeCatalogRuns(lines.map((line) => {
+    return JSON.parse(line) as Record<string, unknown> & { type: string }
+  }))
+  const body = records.map((record) => {
     const projected = { ...record }
     omitFixtureEnvelope(projected)
     return JSON.stringify(projected)
@@ -448,6 +480,44 @@ export function normalizeSessionSnapshots(
       { ...options, identityMode: 'preserve' },
     )),
   ))
+}
+
+/**
+ * Omit current subagent discovery facts when comparing a fresh run with an
+ * immutable historical Session generation. The remaining source-event
+ * references are rebased to the projected stream and refuse to cite an
+ * omitted catalog event.
+ *
+ * @param rawLog - normalized current-format snapshot JSONL.
+ * @returns the snapshot without `subagent/catalog` events.
+ */
+export function omitSubagentCatalogForHistoricalComparison(rawLog: string): string {
+  const lines = rawLog.split('\n').filter(line => line.trim().length > 0)
+  const header = lines.shift()
+  if (header === undefined) throw new Error('session snapshot must start with a session header')
+  const events = lines.map(line => JSON.parse(line) as Record<string, unknown>)
+  const omitted = new Set(events.flatMap((event, seq) => event.type === 'subagent/catalog' ? [seq] : []))
+  if (omitted.size === 0) return `${[header, ...lines].join('\n')}\n`
+
+  const retained = events.flatMap((event, seq) => {
+    if (omitted.has(seq)) return []
+    if (!Array.isArray(event.sourceEventSeqs)) return [event]
+    const sourceEventSeqs = event.sourceEventSeqs.map((source) => {
+      if (typeof source !== 'number' || !Number.isSafeInteger(source) || source < 0) {
+        throw new Error('normalized sourceEventSeqs must contain non-negative safe integers')
+      }
+      if (omitted.has(source)) {
+        throw new Error(`historical comparison cannot omit cited catalog event ${source}`)
+      }
+      let preceding = 0
+      for (const omittedSeq of omitted) {
+        if (omittedSeq < source) preceding += 1
+      }
+      return source - preceding
+    })
+    return [{ ...event, sourceEventSeqs }]
+  })
+  return [header, ...retained.map(event => JSON.stringify(event)), ''].join('\n')
 }
 
 /**
