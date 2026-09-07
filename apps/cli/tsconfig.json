@@ -21,6 +21,9 @@
       "path": "../../packages/boot/app-boot"
     },
     {
+      "path": "../../packages/boot/plugin-manager"
+    },
+    {
       "path": "../../packages/boot/cmdline"
     },
     {

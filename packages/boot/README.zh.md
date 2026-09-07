@@ -9,7 +9,7 @@ kind: "package-group"
 
 ## 概述
 
-boot 组提供每个 dsh app bin 启动所需的全部能力：`app-boot` 把 `cordis.yml` 连同你的环境与 patch 层变成运行中的应用，并给出清晰的失败信息；`cmdline` 让应用持有自己的命令行 flag 与 `--help`。借助这些包，你可以运行 `dsh`，也可以编写以同样方式启动的新应用或测试 fixture。两者都是 `apps/cli` 与测试专用 Loader fixture 导入的库，绝不是组合加载的插件。本页是组的映射；各包 README 负责各自的包级约定。
+boot 组提供每个 dsh app bin 启动以及管理所启动之物所需的全部能力：`app-boot` 把 `cordis.yml` 连同你的环境与 patch 层变成运行中的应用，并给出清晰的失败信息；`cmdline` 让应用持有自己的命令行 flag 与 `--help`；`plugin-manager` 为 `dsh plugin` 命令与 Web 宿主安装、启用与编辑 profile 的插件。借助这些包，你可以运行 `dsh`，也可以编写以同样方式启动的新应用或测试 fixture。三者都是 `apps/cli`、宿主包与测试专用 Loader fixture 导入的库，绝不是组合加载的插件。本页是组的映射；各包 README 负责各自的包级约定。
 
 ## 目录
 
@@ -24,6 +24,7 @@ boot 组提供每个 dsh app bin 启动所需的全部能力：`app-boot` 把 `c
 |---|---|---|
 | [`app-boot`](app-boot/README.zh.md) | 从 `cordis.yml` 启动 dsh 应用：加载 `.env`、应用 profile 与 patch 层，并清晰报告启动失败 | （供各 bin 使用的库） |
 | [`cmdline`](cmdline/README.zh.md) | 让应用持有自己的 flag、`--help` 与退出码；启动器自身 flag 之后的一切原样传入 | `cmdlineArgs`、`appExit` |
+| [`plugin-manager`](plugin-manager/README.zh.md) | 不启动即可安装与探测包，在已启动 profile 上启用、停用、重试并编辑用户层的行；`dsh plugin` 命令与 Web 宿主的 `plugins` Remote 共用 | （供各 bin 与宿主使用的库） |
 
 <a id="related-documentation"></a>
 ## 相关文档

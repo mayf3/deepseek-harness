@@ -860,85 +860,63 @@ roots(): Agent[]
 
 Source: [`packages/core/agent/src/index.ts`](../../packages/core/agent/src/index.ts)
 
-<a id="ctxpluginmanager--pluginmanager"></a>
+<a id="ctxpluginmanager--pluginmanagerremote"></a>
 
-### `ctx.pluginManager` — `PluginManager`
+### `ctx.pluginManager` — `PluginManagerRemote`
 
 The `pluginManager` service and the `plugins` Remote.
 
-Every method that changes the profile reads the manifest afresh and writes it through the app-boot helpers the `dsh plugin` command uses, so the CLI and the manager never disagree on the file. The profile runtime is resolved per call: a composition without it (a test, a launcher other than the profile launcher) still mounts this service, and every call then reports `plugins/unavailable` rather than the service failing to start.
+The row injects only the Loader; the profile runtime, the preset roster, and the agent registry are read off the context per call, so a composition without them (a test, a launcher other than the profile launcher) still mounts this service and every call then reports `plugins/unavailable` rather than the service failing to start.
 
 ```ts cordis-catalog
 /**
- * Every package the profile knows: its template and installed bundles,
- * and every other installed dependency.
- * @returns one view per package, bundles first in layer order.
+ * Every package the profile knows, one view each.
+ * @returns the views, bundles first in layer order.
  */
 @Remote('list') async list(): Promise<PluginPackageView[]>
 
 /**
- * Install a package into the profile with pnpm, probe it, and leave it
- * disabled unless asked otherwise. The run's output streams as
- * `plugins/install-log` chunks carrying the returned `jobId`.
- * @param spec - what to install, in pnpm's own vocabulary: a registry
- * name, a `github:` or git URL, a tarball, or an absolute path.
+ * Install a package with pnpm, probe it, and leave it disabled unless asked otherwise.
+ * @param spec - what to install, in pnpm's own vocabulary.
  * @param options - `enable` puts every newly installed bundle into the layer list at once.
  * @returns what the run installed and enabled.
- * @throws {RemoteError} `plugins/install-failed` when pnpm exits non-zero
- * or the run times out, `plugins/enable-failed` when enabling was asked
- * for and the tree rejected the bundle.
  */
 @Remote('add') async add(spec: string, options?: { enable?: boolean }): Promise<PluginInstallResult>
 
 /**
- * Remove a package from the profile: disable it when enabled, drop every
- * user-layer row that names it, run `pnpm remove`, and forget its probe.
+ * Remove a package from the profile with its user-layer rows and probe record.
  * @param packageName - the installed dependency to remove.
- * @throws {RemoteError} `plugins/not-installed`, or `plugins/install-failed` when pnpm exits non-zero.
  */
 @Remote('uninstall') async uninstall(packageName: string): Promise<void>
 
 /**
- * Put an installed bundle into the layer list and, on a live profile,
- * recompose the tree with it. A rejected recomposition restores the list
- * and reports the tree's reason; the tree that was running keeps running.
+ * Put an installed bundle into the layer list and, on a live profile, recompose the tree with it.
  * @param packageName - the installed bundle.
  * @returns whether the list changed and whether the change is live.
- * @throws {RemoteError} `plugins/not-installed`, `plugins/not-enableable`
- * for a package that declares no bundle or whose probe refused it, or
- * `plugins/enable-failed`.
  */
 @Remote('enable') async enable(packageName: string): Promise<PluginEnableResult>
 
 /**
- * Take a bundle out of the layer list and, on a live profile, recompose
- * the tree without it.
+ * Take a bundle out of the layer list and, on a live profile, recompose the tree without it.
  * @param packageName - the enabled bundle.
  * @returns whether the list changed and whether the change is live.
- * @throws {RemoteError} `gateway/bad-request` for a template bundle, which is not a dependency.
  */
 @Remote('disable') async disable(packageName: string): Promise<PluginEnableResult>
 
 /**
- * Compose an enabled bundle again from scratch: its group leaves the tree
- * and returns, so rows that failed at boot get another start.
+ * Compose an enabled bundle again from scratch.
  * @param packageName - the enabled bundle.
  * @returns the enable outcome of the second step.
- * @throws {RemoteError} `gateway/bad-request` when the bundle is not enabled, or the enable failures.
  */
 @Remote('retry') async retry(packageName: string): Promise<PluginEnableResult>
 
 /**
- * Add a row naming one of the package's modules to a user layer: the
- * profile's global `cordis.patch.yml`, or an agent preset's.
+ * Add a row naming one of the package's modules to a user layer.
  * @param packageName - the installed package.
  * @param target - which layer.
  * @param options - `module` selects a declared `dsh.plugins[]` name (default `.`),
  * `id` overrides the derived row id, `config` overrides the declared default.
  * @returns where the row landed.
- * @throws {RemoteError} `plugins/not-installed`, `plugins/not-enableable`
- * when the module is not one the probe found addable, `plugins/row-conflict`,
- * or `plugins/unavailable` for a preset target without a roster.
  */
 @Remote('addRow') async addRow( packageName: string, target: PluginRowTarget, options?: { module?: string; id?: string; config?: JsonValue }, ): Promise<PluginRowAddition>
 
@@ -946,14 +924,11 @@ Every method that changes the profile reads the manifest afresh and writes it th
  * Remove a row a user layer inserted.
  * @param target - which layer.
  * @param rowId - the inserted row's id.
- * @throws {RemoteError} `gateway/bad-request` when the layer inserts no such row.
  */
 @Remote('removeRow') async removeRow(target: PluginRowTarget, rowId: string): Promise<void>
 
 /**
- * Switch one row off or on in a user layer. Deny-only: `true` writes
- * `disabled: true` for the row, `false` removes that key, so a bundle's
- * own `!!js` gate is restored rather than overridden.
+ * Switch one row off or on in a user layer; deny-only.
  * @param target - which layer.
  * @param rowId - the row's id as the composition declares it.
  * @param disabled - whether the layer should switch the row off.
@@ -961,8 +936,7 @@ Every method that changes the profile reads the manifest afresh and writes it th
 @Remote('setRowDisabled') async setRowDisabled(target: PluginRowTarget, rowId: string, disabled: boolean): Promise<void>
 
 /**
- * What disabling or removing a package would strand: services its rows
- * provide that rows outside it inject, and user-layer rows naming its modules.
+ * What disabling or removing a package would strand.
  * @param packageName - the package.
  * @returns the dependents.
  */
@@ -1403,7 +1377,7 @@ The manager changed what is installed, enabled, or composed.
 'plugins/changed'(change: { readonly reason: PluginChangeReason; readonly packageName?: string }): void
 ```
 
-Source: [`packages/host/plugin-manager/src/types.ts`](../../packages/host/plugin-manager/src/types.ts)
+Source: [`packages/boot/plugin-manager/src/types.ts`](../../packages/boot/plugin-manager/src/types.ts)
 
 <a id="pluginsinstall-log--emit"></a>
 
@@ -1420,5 +1394,5 @@ One chunk of an install run's output, in order; the last chunk carries the exit 
 'plugins/install-log'(chunk: PluginInstallLogChunk): void
 ```
 
-Source: [`packages/host/plugin-manager/src/types.ts`](../../packages/host/plugin-manager/src/types.ts)
+Source: [`packages/boot/plugin-manager/src/types.ts`](../../packages/boot/plugin-manager/src/types.ts)
 <!-- END GENERATED cordis-surface -->

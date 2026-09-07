@@ -902,7 +902,7 @@ export interface Config {
 需要：`loader`
 
 ```ts config-catalog
-/** Plugin config: the pnpm command and the bounds on the child processes this service runs. */
+/** Plugin config: the pnpm command and the bounds on the child processes plugin management runs. */
 export interface Config {
   /** The pnpm executable name or path; resolved through `PATH` like the `dsh plugin` command. */
   pnpmCommand: string
@@ -915,7 +915,7 @@ export interface Config {
 }
 ```
 
-来源：[`packages/host/plugin-manager/src/index.ts:99`](../packages/host/plugin-manager/src/index.ts)
+来源：[`packages/host/plugin-manager/src/index.ts:42`](../packages/host/plugin-manager/src/index.ts)
 
 <a id="deepseek-aidsh-host-webserver"></a>
 
@@ -3503,6 +3503,7 @@ export interface Config {
 - `@deepseek-ai/dsh-output-retention`（[`packages/util/output-retention/src/index.ts`](../packages/util/output-retention/src/index.ts)）
 - `@deepseek-ai/dsh-package-manifest` ([`packages/util/package-manifest/src/index.ts`](../packages/util/package-manifest/src/index.ts))
 - `@deepseek-ai/dsh-patch-file`（[`packages/util/patch-file/src/index.ts`](../packages/util/patch-file/src/index.ts)）
+- `@deepseek-ai/dsh-plugin-manager`（[`packages/boot/plugin-manager/src/index.ts`](../packages/boot/plugin-manager/src/index.ts)）
 - `@deepseek-ai/dsh-sandbox-windows-acl`（[`packages/sandbox/sandbox-windows-acl/src/index.ts`](../packages/sandbox/sandbox-windows-acl/src/index.ts)）
 - `@deepseek-ai/dsh-scope`（[`packages/core/scope/src/index.ts`](../packages/core/scope/src/index.ts)）
 - `@deepseek-ai/dsh-sdk-client`（[`packages/sdk/client/src/index.ts`](../packages/sdk/client/src/index.ts)）
