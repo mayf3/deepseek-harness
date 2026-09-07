@@ -104,7 +104,8 @@ describe('render branch tails', () => {
       />,
     )
     expect(view.container.textContent).toBe('2 轮 3 步')
-    expect(view.getAllByRole('button')).toHaveLength(1)
+    // Window-fold counts carry no timed figure, so the pill is a static reading.
+    expect(view.queryAllByRole('button')).toHaveLength(0)
   })
 
   it('AssistantMarkdown reasoning as the streaming tail renders the running ring', () => {

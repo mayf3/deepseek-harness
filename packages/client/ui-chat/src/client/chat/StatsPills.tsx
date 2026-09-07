@@ -5,7 +5,7 @@
 // Mounted on 'conversation.composer.dock' so it sticks with the composer in the
 // active conversation scrollport (see ConversationRoot data-conversation-scroll).
 
-import { memo, useMemo } from 'react'
+import { memo, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { IconDatabaseOutline16, IconGaugeOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { UseProjection } from '@deepseek-ai/dsh-api-session-controller/client'
@@ -132,8 +132,44 @@ function exactCount(value: number, t: ChatViewSlotProps['t']): string {
   return t('message.turnUsage.count', { count: formatExactTokens(value, t) })
 }
 
-function TimePill({ stats, t }: { stats: WindowStats; t: ChatViewSlotProps['t'] }) {
-  const { open, setOpen, rootRef, panelRef, pos } = useStatDialog()
+/** External open state one pill's dialog reads and writes (the row's exclusive slot). */
+type PillDialog = Pick<ReturnType<typeof useStatDialog>, 'open' | 'setOpen'>
+
+function TimePill({ stats, t, dialog }: {
+  stats: WindowStats
+  t: ChatViewSlotProps['t']
+  dialog: PillDialog
+}) {
+  const { open, setOpen, rootRef, panelRef, pos } = useStatDialog(dialog)
+  const counts = t('stats.counts', { turns: stats.turns, steps: stats.steps })
+  const tps = stats.decodeMs > 0
+    ? t('message.tokensPerSecond', {
+      tps: formatTokensPerSecond(stats.decodeTokens / (stats.decodeMs / 1_000)),
+    })
+    : null
+  const label = (
+    <span className={css.label}>
+      {counts}
+      {tps !== null && (
+        <>
+          <span className={css.sep} aria-hidden>·</span>
+          {tps}
+        </>
+      )}
+    </span>
+  )
+  // A window without one timed figure has no dialog rows to show, so the pill
+  // stays a plain reading instead of a button opening an empty dialog.
+  if (stats.llmMs <= 0 && stats.toolMs <= 0 && stats.ttftSteps <= 0 && stats.decodeMs <= 0) {
+    return (
+      <span className={css.anchor}>
+        <span className={css.pill}>
+          <IconGaugeOutline16 />
+          {label}
+        </span>
+      </span>
+    )
+  }
   return (
     <span ref={rootRef} className={css.anchor}>
       <button
@@ -141,20 +177,11 @@ function TimePill({ stats, t }: { stats: WindowStats; t: ChatViewSlotProps['t'] 
         className={css.pill}
         aria-haspopup="dialog"
         aria-expanded={open}
+        aria-label={tps === null ? counts : `${counts} · ${tps}`}
         onClick={() => { setOpen(!open) }}
       >
         <IconGaugeOutline16 />
-        <span className={css.label}>
-          {t('stats.counts', { turns: stats.turns, steps: stats.steps })}
-          {stats.decodeMs > 0 && (
-            <>
-              <span className={css.sep} aria-hidden>·</span>
-              {t('message.tokensPerSecond', {
-                tps: formatTokensPerSecond(stats.decodeTokens / (stats.decodeMs / 1_000)),
-              })}
-            </>
-          )}
-        </span>
+        {label}
       </button>
       {open && createPortal(
         <div
@@ -206,11 +233,17 @@ function TimePill({ stats, t }: { stats: WindowStats; t: ChatViewSlotProps['t'] 
   )
 }
 
-function UsagePill({ usage, t }: { usage: TokenUsageProjection; t: ChatViewSlotProps['t'] }) {
-  const { open, setOpen, rootRef, panelRef, pos } = useStatDialog()
+function UsagePill({ usage, t, dialog }: {
+  usage: TokenUsageProjection
+  t: ChatViewSlotProps['t']
+  dialog: PillDialog
+}) {
+  const { open, setOpen, rootRef, panelRef, pos } = useStatDialog(dialog)
   // Same aggregate as the Turn pill's totalTokens: every prompt-side billing bucket plus output.
   const total = billedInputTokens(usage) + usage.outputTokens
+  const totalText = t('message.turnUsage.count', { count: formatTokens(total, t) })
   const cacheHit = cacheHitPercent(usage)
+  const cacheHitText = cacheHit !== null ? t('stats.cacheHit', { percent: cacheHit }) : null
   return (
     <span ref={rootRef} className={css.anchor}>
       <button
@@ -218,15 +251,16 @@ function UsagePill({ usage, t }: { usage: TokenUsageProjection; t: ChatViewSlotP
         className={css.pill}
         aria-haspopup="dialog"
         aria-expanded={open}
+        aria-label={cacheHitText === null ? totalText : `${totalText} · ${cacheHitText}`}
         onClick={() => { setOpen(!open) }}
       >
         <IconDatabaseOutline16 />
         <span className={css.label}>
-          {t('message.turnUsage.count', { count: formatTokens(total, t) })}
-          {cacheHit !== null && (
+          {totalText}
+          {cacheHitText !== null && (
             <>
               <span className={css.sep} aria-hidden>·</span>
-              {t('stats.cacheHit', { percent: cacheHit })}
+              {cacheHitText}
             </>
           )}
         </span>
@@ -277,6 +311,8 @@ function UsagePill({ usage, t }: { usage: TokenUsageProjection; t: ChatViewSlotP
 export const StatsPills = memo(function StatsPills({ useChat, useProjection, t }: StatsPillsProps) {
   const settledNodes = useChat(s => s.legacy.nodes)
   const usage = useProjection('tokenUsage')
+  // One exclusive slot for both dialogs: opening either pill closes the other.
+  const [openPill, setOpenPill] = useState<'time' | 'usage' | null>(null)
   // Every figure rides the durable sessionStats projection, so paging and
   // compaction cannot change any of them; an assembly without the unit falls
   // back to the window-scoped fold wholesale (same field names), paid only
@@ -292,8 +328,26 @@ export const StatsPills = memo(function StatsPills({ useChat, useProjection, t }
   // tightens the composer's bottom clearance only while this row renders.
   return (
     <div className={css.root} data-composer-stats>
-      {stats.steps > 0 && <TimePill stats={stats} t={t} />}
-      {hasTokens && <UsagePill usage={usage} t={t} />}
+      {stats.steps > 0 && (
+        <TimePill
+          stats={stats}
+          t={t}
+          dialog={{
+            open: openPill === 'time',
+            setOpen: (open) => { setOpenPill(open ? 'time' : null) },
+          }}
+        />
+      )}
+      {hasTokens && (
+        <UsagePill
+          usage={usage}
+          t={t}
+          dialog={{
+            open: openPill === 'usage',
+            setOpen: (open) => { setOpenPill(open ? 'usage' : null) },
+          }}
+        />
+      )}
     </div>
   )
 })

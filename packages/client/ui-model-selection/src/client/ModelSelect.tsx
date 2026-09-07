@@ -127,9 +127,9 @@ export function ModelSelect(
   // anchor rect, measured before paint, clamped inside the viewport): above
   // the trigger, right edges aligned. Depends on pane and directory state
   // because pane switches and async catalog loads resize the card.
-  /* jscpd:ignore-start -- deliberate mirror of ui-primitives Menu's clamped fixed
-     placement; this select keeps its own pane/reload lifecycle instead of adopting
-     Menu's item model, so only the measure-and-clamp plumbing repeats. */
+  /* jscpd:ignore-start -- deliberate mirror of ui-primitives useAnchoredPosition:
+     that hook only places from the anchor's LEFT edge, while this card aligns
+     right edges (x = rect.right - width), so the measure-and-clamp plumbing repeats. */
   useLayoutEffect(() => {
     if (!open) { setMenuPos(null); return }
     const place = (): void => {

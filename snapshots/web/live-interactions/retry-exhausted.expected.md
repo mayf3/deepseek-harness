@@ -35,6 +35,5 @@
   - text: DeepSeek-V4-Flash
   - img
 - button "Send message" [disabled]
-- button "1 turns 1 steps":
-  - img
-  - text: 1 turns 1 steps
+- img
+- text: 1 turns 1 steps

@@ -48,9 +48,9 @@
   - text: DeepSeek-V4-Flash
   - img
 - button "Send message" [disabled]
-- button "1 turns 2 steps{{throughput}} tok/s":
+- button "1 turns 2 steps · {{throughput}} tok/s":
   - img
   - text: 1 turns 2 steps{{throughput}} tok/s
-- button "16K tokCache hit 98%":
+- button "16K tok · Cache hit 98%":
   - img
   - text: 16K tokCache hit 98%

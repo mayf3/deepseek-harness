@@ -43,9 +43,9 @@
   - img
 - button "8% of context used"
 - button "Send message" [disabled]
-- button "1 turns 1 steps{{throughput}} tok/s":
+- button "1 turns 1 steps · {{throughput}} tok/s":
   - img
   - text: 1 turns 1 steps{{throughput}} tok/s
-- button "10K tokCache hit 99.5%":
+- button "10K tok · Cache hit 99.5%":
   - img
   - text: 10K tokCache hit 99.5%

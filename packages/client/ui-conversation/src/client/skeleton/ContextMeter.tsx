@@ -135,10 +135,10 @@ export function ContextMeter({ useProjection, t }: ContextMeterProps) {
             <span className={css.headline}>{headBefore}</span>
             <span className={css.percent}>{reading}</span>
             <span className={css.headline}>{headAfter}</span>
-            {/* No `~`: the headline figure is anchored to provider-reported
-                usage, unlike the heuristic composition rows below. */}
+            {/* `~`: usedTokens prefers projectedTokens, whose surface delta is
+                heuristically repriced on top of the provider-anchored sample. */}
             <span className={css.figures}>
-              {`${formatTokens(context.usedTokens, t)} / ${formatTokens(context.contextWindow, t)}`}
+              {`~${formatTokens(context.usedTokens, t)} / ${formatTokens(context.contextWindow, t)}`}
             </span>
           </div>
           <div className={css.bar}>

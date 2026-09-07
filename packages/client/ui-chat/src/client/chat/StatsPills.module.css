@@ -36,7 +36,6 @@
   font-variant-numeric: tabular-nums;
   line-height: inherit;
   white-space: nowrap;
-  cursor: pointer;
 }
 
 .pill svg {
@@ -45,8 +44,14 @@
   flex: none;
 }
 
-.pill:hover,
-.pill[aria-expanded='true'] {
+/* Only the button form (a pill with dialog rows to open) invites interaction;
+   the static span form keeps the resting tertiary reading. */
+button.pill {
+  cursor: pointer;
+}
+
+button.pill:hover,
+button.pill[aria-expanded='true'] {
   background: var(--dsw-alias-interactive-bg-hover);
   color: var(--dsw-alias-label-secondary);
 }

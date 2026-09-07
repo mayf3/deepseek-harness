@@ -28,10 +28,14 @@ export interface StatDialogSeat {
 
 /**
  * One trigger-anchored dialog seat: open state, viewport-clamped placement, outside-close.
+ * @param controlled - external open state; when given the seat reads and writes
+ * it instead of owning its own, letting sibling dialogs share one exclusive slot.
  * @returns the seat; spread `pos ?? MEASURE_STYLE` onto the portaled panel.
  */
-export function useStatDialog(): StatDialogSeat {
-  const [open, setOpen] = useState(false)
+export function useStatDialog(controlled?: Pick<StatDialogSeat, 'open' | 'setOpen'>): StatDialogSeat {
+  const [ownOpen, setOwnOpen] = useState(false)
+  const open = controlled?.open ?? ownOpen
+  const setOpen = controlled?.setOpen ?? setOwnOpen
   const rootRef = useRef<HTMLSpanElement | null>(null)
   const panelRef = useRef<HTMLDivElement | null>(null)
 
@@ -56,7 +60,7 @@ export function useStatDialog(): StatDialogSeat {
     }
     document.addEventListener('keydown', onKeyDown)
     return () => { document.removeEventListener('keydown', onKeyDown) }
-  }, [open])
+  }, [open, setOpen])
 
   return { open, setOpen, rootRef, panelRef, pos }
 }

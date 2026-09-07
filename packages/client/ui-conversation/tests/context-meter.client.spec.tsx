@@ -54,7 +54,7 @@ describe('ContextMeter', () => {
     expect(view.container.querySelector('[role="dialog"]')).toBeNull()
     fireEvent.click(trigger)
     const panel = view.container.querySelector('[role="dialog"]')!
-    expect(panel.textContent).toContain('32K / 128K')
+    expect(panel.textContent).toContain('~32K / 128K')
     expect(panel.textContent).toContain('25%')
     expect(panel.textContent).toContain('上下文已用')
     expect(panel.textContent).toContain('系统提示词~120')
@@ -94,7 +94,7 @@ describe('ContextMeter', () => {
     // `.segment` carries a min-width, so a zero-width part would still paint a
     // filled sliver over an empty context.
     expect(panel.getElementsByClassName(segmentClass)).toHaveLength(0)
-    expect(panel.textContent).toContain('0 / 128K')
+    expect(panel.textContent).toContain('~0 / 128K')
   })
 
   it('reads the ring from the projected figure so a compaction shows at once', () => {
@@ -106,14 +106,14 @@ describe('ContextMeter', () => {
     })
     const trigger = view.getByRole('button', { name: '上下文已用 2%' })
     fireEvent.click(trigger)
-    expect(view.container.querySelector('[role="dialog"]')!.textContent).toContain('3K / 128K')
+    expect(view.container.querySelector('[role="dialog"]')!.textContent).toContain('~3K / 128K')
   })
 
   it('omits the composition rows while the contextBreakdown projection is absent', () => {
     const view = meter({ contextPressure: { pressureTokens: 32_000, contextWindow: 128_000 } })
     fireEvent.click(view.getByRole('button', { name: '上下文已用 25%' }))
     const panel = view.container.querySelector('[role="dialog"]')!
-    expect(panel.textContent).toContain('32K / 128K')
+    expect(panel.textContent).toContain('~32K / 128K')
     expect(panel.textContent).not.toContain('系统提示词')
     expect(panel.textContent).not.toContain('对话消息')
     // Without composition shares, the bar falls back to one plain segment.
