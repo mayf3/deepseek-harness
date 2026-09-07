@@ -30,6 +30,12 @@ English | [中文](README.zh.md)
 Build a `PluginInstaller` from the profile directory, the install anchor (the dsh app's `package.json`), a `loadProfile` that answers the profile's composed layers, the tooling bounds, and a sink for pnpm's output; then `add(spec)` or `remove(name)`:
 
 ```ts
+import { loadProfile } from '@deepseek-ai/dsh-app-boot'
+import { PluginInstaller } from '@deepseek-ai/dsh-plugin-manager'
+
+declare const profileDir: string
+declare const installAnchor: string
+
 const installer = new PluginInstaller({
   profileDir, profileName: 'web', installAnchor,
   loadProfile: () => loadProfile('dsh', 'web', installAnchor, undefined, { userLayer: false }),
@@ -37,6 +43,7 @@ const installer = new PluginInstaller({
   installLog: (chunk) => process.stdout.write(chunk.text),
 })
 const outcome = await installer.add('@acme/dsh-sql-tool')
+console.log(outcome.installed, outcome.removed)
 ```
 
 `add` takes a pnpm spec — a registry name, a `github:` or git URL, a tarball, an absolute path — runs `pnpm add`, records what pnpm wrote to `dependencies`, and probes every new package. A successful `pnpm add` is not yet an installed plugin: a package that declares neither a bundle nor a plugin module, or a bundle whose row id a composed layer already owns, is removed again with `pnpm remove` and listed under `removed` with the reason; a package the probe refused stays installed for a view to explain. New bundles are left disabled and listed under `installedOnly`, so the caller decides whether to enable them — the CLI always does, the Web host only when asked. A non-zero exit, a spawn failure, or the timeout fails the call with `plugins/install-failed` and the tail of the log, and the profile manifest is restored to what it was before the run.
@@ -46,12 +53,22 @@ const outcome = await installer.add('@acme/dsh-sql-tool')
 Build a `PluginManager` over the Cordis context and readers for what it needs per call — the profile runtime, the preset roster's layers, and the running-agent count — so a composition that gains or lacks one of them is answered at call time rather than at mount:
 
 ```ts
+import type { Context } from '@deepseek-ai/cordis'
+import type {} from '@deepseek-ai/dsh-agent'
+import type {} from '@deepseek-ai/dsh-agent-presets'
+import type {} from '@deepseek-ai/dsh-app-boot'
+import { PluginManager, type PluginToolingConfig } from '@deepseek-ai/dsh-plugin-manager'
+
+declare const ctx: Context
+declare const config: PluginToolingConfig
+
 const manager = new PluginManager(ctx, {
   config,
   runtime: () => ctx.get('profileRuntime'),
   presets: () => ctx.get('agentPresets'),
   runningAgents: () => (ctx.get('agents')?.list() ?? []).filter(agent => agent.status === 'running').length,
 })
+console.log(await manager.list())
 ```
 
 `list` returns one view per package the profile knows: its template and installed bundles and every other installed dependency. A view carries the manifest facts (name, version, title, description, `engines.dsh`), what the package is (`bundle`, `plugin`, or `library`), who supplied it (`builtin` or `external`), when its rows mount (`boot` or `runtime`), whether it is installed and enabled, and a folded `status`: `running`, `partial`, or `failed` for an enabled bundle by how many of its rows are active; `disabled` for an installed bundle outside the layer list; `not-enableable` when the probe refused it, with the reason; `restart-required` when the manifest and the live tree disagree on a profile that applies changes at its next start; `plain` for a library or plugin module, which is added to a composition rather than enabled. Rows come from the live tree while the bundle is composed — phase, disabled-by, and the recorded failure of an isolated row — and from the probe record otherwise, under the ids their patches declare. `addable` lists the modules the package declares in `dsh.plugins`, each with its default config and the probe's verdict.

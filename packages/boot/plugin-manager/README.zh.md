@@ -30,6 +30,12 @@ kind: "package-reference"
 用 profile 目录、安装锚点（dsh 应用的 `package.json`）、一个回答 profile 已组合层列表的 `loadProfile`、工具边界，以及 pnpm 输出的去处构造 `PluginInstaller`，然后 `add(spec)` 或 `remove(name)`：
 
 ```ts
+import { loadProfile } from '@deepseek-ai/dsh-app-boot'
+import { PluginInstaller } from '@deepseek-ai/dsh-plugin-manager'
+
+declare const profileDir: string
+declare const installAnchor: string
+
 const installer = new PluginInstaller({
   profileDir, profileName: 'web', installAnchor,
   loadProfile: () => loadProfile('dsh', 'web', installAnchor, undefined, { userLayer: false }),
@@ -37,6 +43,7 @@ const installer = new PluginInstaller({
   installLog: (chunk) => process.stdout.write(chunk.text),
 })
 const outcome = await installer.add('@acme/dsh-sql-tool')
+console.log(outcome.installed, outcome.removed)
 ```
 
 `add` 接受一个 pnpm spec——registry 名字、`github:` 或 git URL、tarball、绝对路径——运行 `pnpm add`，记录 pnpm 写进 `dependencies` 的内容，并探测每个新包。`pnpm add` 成功还不等于装好了插件：既不声明组合包也不声明插件模块的包，或者某个行 id 已被已组合层占有的组合包，会再以 `pnpm remove` 移除并连同原因列在 `removed` 里；探针拒绝的包保留在原处，留给视图说明。新组合包保持停用并列在 `installedOnly` 里，由调用方决定是否启用——CLI 一律启用，Web 宿主只在被要求时启用。非零退出、spawn 失败或超时都以 `plugins/install-failed` 与日志尾部让调用失败，并把 profile manifest 恢复到运行前的样子。
@@ -46,12 +53,22 @@ const outcome = await installer.add('@acme/dsh-sql-tool')
 在 Cordis 上下文之上构造 `PluginManager`，并交给它按调用读取所需之物的读取器——profile runtime、preset roster 的层、运行中的 agent 数——这样一个后来才有或始终没有其中之一的组合在调用时得到回答，而不是在挂载时：
 
 ```ts
+import type { Context } from '@deepseek-ai/cordis'
+import type {} from '@deepseek-ai/dsh-agent'
+import type {} from '@deepseek-ai/dsh-agent-presets'
+import type {} from '@deepseek-ai/dsh-app-boot'
+import { PluginManager, type PluginToolingConfig } from '@deepseek-ai/dsh-plugin-manager'
+
+declare const ctx: Context
+declare const config: PluginToolingConfig
+
 const manager = new PluginManager(ctx, {
   config,
   runtime: () => ctx.get('profileRuntime'),
   presets: () => ctx.get('agentPresets'),
   runningAgents: () => (ctx.get('agents')?.list() ?? []).filter(agent => agent.status === 'running').length,
 })
+console.log(await manager.list())
 ```
 
 `list` 为 profile 知道的每个包返回一份视图：模板组合包与已安装的组合包，以及其他每个已安装的依赖。视图携带 manifest 事实（名字、版本、标题、描述、`engines.dsh`），这个包是什么（`bundle`、`plugin` 或 `library`），谁提供它（`builtin` 或 `external`），它的行何时挂载（`boot` 或 `runtime`），是否已安装与已启用，以及折叠出的 `status`：已启用的组合包按活跃行的多少是 `running`、`partial` 或 `failed`；已安装但不在层列表中的组合包是 `disabled`；探针拒绝时是 `not-enableable` 并附原因；在启动时才应用变更的 profile 上 manifest 与在线树不一致时是 `restart-required`；库或插件模块是 `plain`，它们被添加进组合而不是被启用。组合包已组合时行来自在线树——阶段、被谁停用，以及隔离行记录的失败——否则来自探针记录，id 保持各自 patch 声明的样子。`addable` 列出包在 `dsh.plugins` 里声明的模块，各自带默认配置与探针的判定。
