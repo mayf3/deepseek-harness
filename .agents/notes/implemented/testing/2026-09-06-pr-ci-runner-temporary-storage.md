@@ -32,7 +32,7 @@ The two minimal PowerShell snapshots explicitly exclude unrelated inherited tool
 
 The persistent PowerShell test distinguishes the silence observation from command completion. It refreshes prompt evidence with empty submissions after `inferred_idle`, within the existing bound, and still requires exact `stdin_read` plus an independently written completion marker. A gated command proves that silence can occur before mutation; the mutation itself is never replayed.
 
-The Cordis browser-tool fixture pins its recorded `Asia/Shanghai` browser timezone instead of inheriting the runner timezone; the persisted user-message timezone remains asserted.
+The shared browser fixture pins its recorded `Asia/Shanghai` timezone instead of inheriting the runner timezone; dedicated timezone scenarios retain their explicit overrides, and persisted user-message timezone remains asserted. The reference-composer fixture maps the known home-abbreviated workspace display to its existing cwd token and waits for the current exact suggestion set before selecting; neither host paths nor stale suggestions determine its result.
 
 ## Alternatives considered
 

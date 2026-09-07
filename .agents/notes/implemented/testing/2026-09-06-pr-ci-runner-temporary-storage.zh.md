@@ -32,7 +32,7 @@ Inspector console 集成测试在启用后等待 Client 的 `Runtime.evaluate` �
 
 持久化 PowerShell 测试将静默观察与命令完成区分开。在 `inferred_idle` 后，它在既有时间界限内通过空提交刷新提示符证据，仍要求精确的 `stdin_read` 以及独立写入的完成标记。带阻塞标记的命令证明静默可能先于修改完成；修改命令本身绝不重放。
 
-Cordis 浏览器工具夹具固定录制时的 `Asia/Shanghai` 浏览器时区，而不继承 runner 时区；持久化用户消息的时区断言保持不变。
+共享浏览器夹具固定录制时的 `Asia/Shanghai` 时区，而不继承 runner 时区；专用时区场景保留显式覆盖，持久化用户消息的时区断言保持不变。Reference-composer 夹具将已知的 home 缩写 workspace 显示映射到既有 cwd token，并在选择前等待当前精确建议集；主机路径或过时建议都不决定测试结果。
 
 ## 考虑过的替代方案
 
