@@ -20,7 +20,7 @@ import { Include } from '@deepseek-ai/cordis-plugin-include'
 import type { EntryTree } from '@deepseek-ai/cordis-plugin-loader'
 import { scopeOf, scopeParentOf, type ScopeKey } from '@deepseek-ai/dsh-scope'
 import { RemoteError } from '@deepseek-ai/dsh-typert-protocol'
-import { readPatchListFile } from '@deepseek-ai/dsh-patch-file'
+import { readPatchListFile } from '@deepseek-ai/dsh-app-boot/patch-file'
 import type { AgentPreset } from './preset.ts'
 import { classifyRowSpecifier } from './specifier.ts'
 

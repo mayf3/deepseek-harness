@@ -11,7 +11,7 @@ import {
   parsePatchList,
   PatchDocument,
   readPatchListFile,
-} from '../src/index.ts'
+} from '../src/patch-file.ts'
 
 const SAMPLE = `# top comment
 - id: message-feedback # trailing

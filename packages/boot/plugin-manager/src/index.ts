@@ -46,7 +46,7 @@ import {
   type ProfileRuntime,
 } from '@deepseek-ai/dsh-app-boot'
 import type { BundleStage } from '@deepseek-ai/dsh-package-manifest'
-import { mutatePatchFile, readPatchListFile, type PatchRow } from '@deepseek-ai/dsh-patch-file'
+import { mutatePatchFile, readPatchListFile, type PatchRow } from '@deepseek-ai/dsh-app-boot/patch-file'
 import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 import { PluginOperationError } from './errors.ts'
 import type {

@@ -1048,15 +1048,15 @@ importers:
       '@deepseek-ai/dsh-package-manifest':
         specifier: workspace:^
         version: link:../../util/package-manifest
-      '@deepseek-ai/dsh-patch-file':
-        specifier: workspace:^
-        version: link:../../util/patch-file
       js-yaml:
         specifier: ^4.2.0
         version: 4.2.0
       resolve.exports:
         specifier: ^2.0.3
         version: 2.0.3
+      yaml:
+        specifier: ^2.9.0
+        version: 2.9.0
     devDependencies:
       '@deepseek-ai/cordis':
         specifier: workspace:^
@@ -1121,9 +1121,6 @@ importers:
       '@deepseek-ai/dsh-package-manifest':
         specifier: workspace:^
         version: link:../../util/package-manifest
-      '@deepseek-ai/dsh-patch-file':
-        specifier: workspace:^
-        version: link:../../util/patch-file
       '@deepseek-ai/dsh-util-values':
         specifier: workspace:^
         version: link:../../util/values
@@ -6819,6 +6816,9 @@ importers:
       '@deepseek-ai/dsh-agent-loop':
         specifier: workspace:^
         version: link:../../core/agent-loop
+      '@deepseek-ai/dsh-app-boot':
+        specifier: workspace:^
+        version: link:../../boot/app-boot
       '@deepseek-ai/dsh-atomic-write':
         specifier: workspace:^
         version: link:../../util/atomic-write
@@ -6831,9 +6831,6 @@ importers:
       '@deepseek-ai/dsh-llm':
         specifier: workspace:^
         version: link:../../llm/llm
-      '@deepseek-ai/dsh-patch-file':
-        specifier: workspace:^
-        version: link:../../util/patch-file
       '@deepseek-ai/dsh-scope':
         specifier: workspace:^
         version: link:../../core/scope
@@ -9641,31 +9638,6 @@ importers:
       '@deepseek-ai/cordis':
         specifier: workspace:^
         version: link:../../../vendor/cordis
-
-  packages/util/patch-file:
-    dependencies:
-      '@deepseek-ai/dsh-atomic-write':
-        specifier: workspace:^
-        version: link:../atomic-write
-      js-yaml:
-        specifier: ^4.2.0
-        version: 4.3.1
-      yaml:
-        specifier: ^2.9.0
-        version: 2.9.0
-    devDependencies:
-      '@deepseek-ai/cordis':
-        specifier: workspace:^
-        version: link:../../../vendor/cordis
-      '@deepseek-ai/cordis-plugin-include':
-        specifier: workspace:^
-        version: link:../../../vendor/include
-      '@deepseek-ai/cordis-plugin-loader':
-        specifier: workspace:^
-        version: link:../../../vendor/loader
-      '@types/js-yaml':
-        specifier: ^4.0.9
-        version: 4.0.9
 
   packages/util/time:
     devDependencies:

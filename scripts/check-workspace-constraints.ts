@@ -170,7 +170,7 @@ const packageFileExtras: Readonly<Record<string, readonly string[]>> = {
   '@deepseek-ai/dsh-experimental-webworker-packer': ['bin.js', 'lib/repository-*.js'],
   '@deepseek-ai/dsh-subprocess-local': ['scripts/ensure-spawn-helper.mjs'],
   // The package probe's child process entry, path-loaded beside the lib.
-  '@deepseek-ai/dsh-app-boot': ['lib/probe-child.js'],
+  '@deepseek-ai/dsh-app-boot': ['lib/probe-child.js', 'lib/patch-file.js'],
 }
 
 function sameStringList(actual: readonly string[] | undefined, expected: readonly string[]): boolean {
