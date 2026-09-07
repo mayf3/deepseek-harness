@@ -115,8 +115,7 @@ function guidance(blockedAfter: number): string {
     + 'create a goal for routine single-turn work. Call get_goal before update_goal and copy its '
     + 'exact goal_id and revision. After session resume or fork, an active goal is disarmed: when '
     + 'a human asks to continue or resume in any wording or language, use update_goal action '
-    + 'resume to rearm it. Do not call update_goal resume for a durable paused goal; the user '
-    + 'resumes that state from a user-facing goal control. Mark complete only when the objective is actually achieved. Mark '
+    + 'resume to rearm it. Mark complete only when the objective is actually achieved. Mark '
     + `blocked only after the same blocking condition persists for at least ${blockedAfter} `
     + 'consecutive goal rounds, and report that concrete condition in blocked_reason; difficulty, uncertainty, '
     + 'or useful remaining work is not blocked.'
@@ -235,8 +234,7 @@ export function apply(ctx: Context, config: Config): void {
     name: 'update_goal',
     description: 'Update the exact current goal revision. edit, pause, and resume require a direct '
       + 'top-level human request. During an automatic continuation of the current goal, complete '
-      + 'and blocked are also allowed. resume cannot lift a durable paused state; the user does that through a '
-      + 'user-facing goal control. blocked is rejected before the configured minimum round count; the model remains '
+      + 'and blocked are also allowed. blocked is rejected before the configured minimum round count; the model remains '
       + 'responsible for judging that the same condition persisted across those rounds and must explain it in blocked_reason.',
     parameters: {
       goal_id: { type: 'string', required: true, description: 'Exact id returned by get_goal.' },
