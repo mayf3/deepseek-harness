@@ -10,7 +10,7 @@ Web composer 为 agent（智能体）运行期间的提交只提供一个面向�
 
 ## 决策
 
-运行中的 Send 按钮按与 plain Enter 相同的模式投递。`InputBar` 每次渲染计算一次 `resolveSubmitMode(busyEnter, running, 'enter', steeringAvailable)`，其中 `steeringAvailable` 与键盘路径使用同一个"普通 Session 或可继续 child"判定；用它通过 `ComposerKeyboard.submit(mode)` 执行主按钮点击，并且仅在点击会投递一条普通消息时用它决定主按钮标签：composer 运行中且可 steering、按钮可用（没有仍在上传的文件）、草稿非空、未被认领且不是将进入命令 adjudication 的 `/` 行。该状态把 `input.send.queue`（"Queue message" / "排队发送"）或 `input.send.steer`（"Steer message" / "插话发送"）同时用作 tooltip 与可访问名称；其余所有状态——空闲会话、one-shot child、锁定的 composer、空草稿、带待上传附件的草稿，以及点击会执行命令而非投递消息的命令草稿——保留 `input.send`（"Send message"）。Cmd/Ctrl+Enter 仍解析为相反模式，空草稿下的加速手势仍对整个队列执行 steering（中途引导）。
+运行中的 Send 按钮按与 plain Enter 相同的模式投递。`InputBar` 每次渲染计算一次 `resolveSubmitMode(busyEnter, running, 'enter', steeringAvailable)`，其中 `steeringAvailable` 与键盘路径使用同一个"普通 Session 或可继续 child"判定；用它通过 `ComposerKeyboard.submit(mode)` 执行主按钮点击，并且仅在点击会投递一条普通消息时用它决定主按钮标签：composer 运行中且可 steering、按钮可用（没有仍在上传的文件）、草稿非空、未被认领且不是将进入命令 adjudication 的 `/` 行。该状态把 `input.send.queue`（"Queue message" / "排队发送"）或 `input.send.steer`（"Steer message" / "插话发送"）同时用作 tooltip 与可访问名称；该位置仍为 Send 按钮的其余所有状态——空闲会话、one-shot child、锁定的 composer、可继续 child 的空草稿、带待上传附件的草稿，以及点击会执行命令而非投递消息的命令草稿——保留 `input.send`（"Send message"）；普通运行中会话在空草稿或 owner block 时该位置显示的是 Stop。Cmd/Ctrl+Enter 仍解析为相反模式，空草稿下的加速手势仍对整个队列执行 steering（中途引导）。[可继续 subagent 中断 Agent Note](../feature/2026-08-06-continuable-subagent-interrupt.zh.md)以此投递方式描述 child 的 Send。
 
 composer bar 的 inject 接口携带实时偏好，而不是解析闭包。`ComposerBarInjected.hooks.busyEnter` 发布 `ComposerSubmissionPolicy.busyEnter`，因此 bar 获得 `useBusyEnter` 选择器 hook，并在设置行或 Host 设置更新改变该值时重新渲染标签。`resolveSubmitMode` 是 `submission-policy.ts` 中导出的纯函数，显式接收偏好值；policy 类只保留 store 及其 Host 采纳与写回。
 
