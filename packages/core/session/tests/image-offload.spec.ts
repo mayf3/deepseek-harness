@@ -6,7 +6,7 @@
 import { describe, expect, it } from 'vitest'
 import { createUserMessage, ToolCallId } from '@deepseek-ai/dsh-llm'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
-import { compareImagePositions, foldImageOffloadWatermark, markImageOffload, Session, SessionId, SessionSeq } from '@deepseek-ai/dsh-session'
+import { compareImagePositions, Session, SessionId, SessionSeq } from '@deepseek-ai/dsh-session'
 
 function image(name: string): Extract<ContentBlock, { type: 'image' }> {
   return {
@@ -208,26 +208,29 @@ describe('image/offload surface derivation', () => {
 })
 
 describe('image offload helpers', () => {
-  it('preserves a nested block when only an earlier sibling is offloaded', () => {
+  it('preserves a nested block by identity when only an earlier sibling is offloaded', () => {
+    const session = Session.create(SessionId('offload-sibling'))
+    session.append('turn/start', { turn: 1 })
     const message = createUserMessage({
       content: [image('first'), toolResult('later')],
       source: { kind: 'user' },
     })
-    const projected = markImageOffload(message, SessionSeq(3), { seq: SessionSeq(3), path: [0] })
+    const seq = session.append('user/message', message, { surfaceOp: 'append' }).seq
+    const before = session.deriveMessages()[0]!
+    session.append('image/offload', { turn: 1, step: 1, watermark: { seq, path: [0] } })
+    const projected = session.deriveMessages()[0]!
     expect(projected.content[0]).toEqual({ ...image('first'), offloaded: true })
-    expect(projected.content[1]).toBe(message.content[1])
+    expect(projected.content[1]).toBe(before.content[1])
   })
 
   it('orders positions by seq then path and folds the latest watermark', () => {
     expect(compareImagePositions({ seq: SessionSeq(1), path: [5] }, { seq: SessionSeq(3), path: [0] })).toBeLessThan(0)
     expect(compareImagePositions({ seq: SessionSeq(4), path: [1] }, { seq: SessionSeq(3), path: [0, 3] })).toBeGreaterThan(0)
     const session = seeded()
-    expect(foldImageOffloadWatermark(session.snapshotEvents())).toBeUndefined()
+    expect(session.imageOffloadWatermark()).toBeUndefined()
     session.append('image/offload', { turn: 1, step: 1, watermark: { seq: SessionSeq(3), path: [0] } })
-    const prior = foldImageOffloadWatermark(session.snapshotEvents())
-    expect(prior).toEqual({ seq: 3, path: [0] })
+    expect(session.imageOffloadWatermark()).toEqual({ seq: 3, path: [0] })
     session.append('image/offload', { turn: 1, step: 1, watermark: { seq: SessionSeq(4), path: [1] } })
-    expect(foldImageOffloadWatermark(session.snapshotEvents().slice(6), prior)).toEqual({ seq: 4, path: [1] })
-    expect(foldImageOffloadWatermark([], prior)).toEqual(prior)
+    expect(session.imageOffloadWatermark()).toEqual({ seq: 4, path: [1] })
   })
 })

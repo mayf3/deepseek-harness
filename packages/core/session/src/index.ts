@@ -12,14 +12,13 @@ import { brandString } from '@deepseek-ai/dsh-brand'
 import { assertNever, deepFreeze, snapshotJsonValue } from '@deepseek-ai/dsh-util-values'
 import { scopeOf, scopeTarget } from '@deepseek-ai/dsh-scope'
 import type { Scoped } from '@deepseek-ai/dsh-scope'
-import type { Message } from '@deepseek-ai/dsh-llm'
+import type { ContentBlock, Message } from '@deepseek-ai/dsh-llm'
 import { SESSION_FORMAT_VERSION, SessionLogOffset, SessionSeq } from './types.ts'
 import type { TypertLookup } from '@deepseek-ai/dsh-typert-protocol'
 import type { CreateSessionOptions, EpochHeader, ImageOccurrencePosition, PrepareSessionOptions, RequestContext, SessionEvent, SessionEventMap, SessionEventType, SessionHeader, SessionId, SessionSeedEventState, SurfaceIntent, SurfaceEventType } from './types.ts'
-import { deriveEventMessage, SurfaceManager } from './surface.ts'
+import { compareImagePositions, deriveEventMessage, markImageOffload, SurfaceManager } from './surface.ts'
 import type { SessionSurface } from './surface.ts'
 import { foldRequestHeader } from './request-header.ts'
-import { assertImageOffloadAdvance, foldImageOffloadWatermark, markImageOffload } from './image-offload.ts'
 
 export * from './types.ts'
 export { SessionPreparation } from './preparation.ts'
@@ -27,9 +26,8 @@ export type { SessionPreparationOptions } from './preparation.ts'
 export type { AssistantMessage, ToolResultMessage, UserMessage } from '@deepseek-ai/dsh-llm'
 export { interruptedTurnClosers, TOOL_NOT_STARTED, TOOL_OUTCOME_UNKNOWN } from './repair.ts'
 export type { SessionSurface, SurfaceFoldReplacement, SurfaceFoldResult } from './surface.ts'
-export { deriveEventMessage, foldSurface, isAppendSurfaceEvent, isReplacementSurfaceEvent, isSurfaceEvent, isSurfaceEligibleType } from './surface.ts'
+export { compareImagePositions, deriveEventMessage, foldSurface, isAppendSurfaceEvent, isReplacementSurfaceEvent, isSurfaceEvent, isSurfaceEligibleType } from './surface.ts'
 export { canonicalHeader, foldRequestHeader, headerEquals } from './request-header.ts'
-export { assertImageOffloadAdvance, compareImagePositions, foldImageOffloadWatermark, markImageOffload } from './image-offload.ts'
 export { KNOWN_SESSION_EVENT_TYPES } from './known-event-types.ts'
 
 declare module '@deepseek-ai/cordis' {
@@ -381,6 +379,58 @@ function assertNoLoggedImageOffloadMarker(type: string, data: unknown, subject: 
     }
   }
   visit(content)
+}
+
+/** Return whether a non-empty nested block path identifies an image occurrence. */
+function pathIdentifiesImage(
+  content: readonly ContentBlock[],
+  [index, ...rest]: readonly [number, ...number[]],
+): boolean {
+  const block = content[index]
+  if (block === undefined) return false
+  if (rest.length === 0) return block.type === 'image'
+  if (block.type !== 'tool-result') return false
+  return pathIdentifiesImage(block.content, rest as [number, ...number[]])
+}
+
+/**
+ * Validate one `image/offload` payload at the append or seed boundary: the
+ * position must name an image occurrence on the current surface and lie
+ * strictly after the watermark in force.
+ */
+function assertImageOffloadAdvance(
+  data: unknown,
+  log: readonly SessionEvent[],
+  surfaceNodes: readonly SessionSeq[],
+  prior: ImageOccurrencePosition | undefined,
+  location: string,
+): void {
+  const record = data !== null && typeof data === 'object' && !Array.isArray(data)
+    ? data as Record<string, unknown>
+    : undefined
+  const watermark = record?.['watermark']
+  const position = watermark !== null && typeof watermark === 'object' && !Array.isArray(watermark)
+    ? watermark as Record<string, unknown>
+    : undefined
+  const seq = position?.['seq']
+  const path = position?.['path']
+  if (typeof seq !== 'number' || !Number.isSafeInteger(seq) || seq < 0 || seq >= log.length
+    || !Array.isArray(path) || path.length === 0
+    || path.some(index => typeof index !== 'number' || !Number.isSafeInteger(index) || index < 0)) {
+    throw new Error(`${location} names an invalid image offload watermark`)
+  }
+  const positionValue = { seq: seq as SessionSeq, path: path as number[] }
+  if (prior !== undefined
+    && compareImagePositions(positionValue, prior) <= 0) {
+    throw new Error(`${location} does not advance the image offload watermark`)
+  }
+  // oxlint-disable-next-line typescript/no-non-null-assertion -- accepted logs are contiguous and seq is range-checked
+  const message = deriveEventMessage(log[seq]!)
+  if (!surfaceNodes.includes(positionValue.seq)
+    || message === null
+    || !pathIdentifiesImage(message.content, positionValue.path as [number, ...number[]])) {
+    throw new Error(`${location} watermark does not identify an image on the current surface`)
+  }
 }
 
 /** Whether an unknown value carries the current provider/model pair. */
@@ -808,8 +858,8 @@ export class Session {
 
   /** Record an accepted `image/offload` event as the watermark in force. */
   private foldImageOffload(event: SessionEvent): void {
-    const watermark = foldImageOffloadWatermark([event], this.imageOffloadFold)
-    if (watermark === this.imageOffloadFold || watermark === undefined) return
+    if (event.type !== 'image/offload') return
+    const { watermark } = event.data
     this.imageOffloadFold = deepFreeze({ seq: watermark.seq, path: [...watermark.path] })
   }
 

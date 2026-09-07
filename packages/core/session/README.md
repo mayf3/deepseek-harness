@@ -91,9 +91,8 @@ The package is built on event sourcing: a `Session` is an append-only log of typ
 |---|---|
 | [`src/index.ts`](src/index.ts) | Plugin entry: `SessionStore` service, store lifecycle, `fork`, `flush` |
 | [`src/types.ts`](src/types.ts) | `SessionEventMap`, `SessionEvent`, `UserMessage`, `SessionHeader`, `TurnEndReasonMap` |
-| [`src/surface.ts`](src/surface.ts) | Ordered surface projection, replacement validation, `deriveEventMessage` |
+| [`src/surface.ts`](src/surface.ts) | Ordered surface projection, replacement validation, `deriveEventMessage`, `image/offload` marking |
 | [`src/request-header.ts`](src/request-header.ts) | `request/header` folding and reconstruction |
-| [`src/image-offload.ts`](src/image-offload.ts) | `image/offload` watermark validation, folding, and surface marking |
 | [`dsh-util-values`](../../util/values/README.md) | Shared lossless JSON validation and detached snapshots |
 | [`src/repair.ts`](src/repair.ts) | Cold repair of crash-orphaned logs |
 | [`src/invariant.ts`](src/invariant.ts) | Invariant companion: seq, turn/step enclosure, tool call/result pairing |

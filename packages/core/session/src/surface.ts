@@ -8,9 +8,10 @@
  * @module @deepseek-ai/dsh-session/surface
  */
 
-import type { Message } from '@deepseek-ai/dsh-llm'
+import type { ContentBlock, ImageBlockPath, Message } from '@deepseek-ai/dsh-llm'
 import { SessionLogOffset, SessionSeq } from './types.ts'
 import type {
+  ImageOccurrencePosition,
   SessionEvent,
   SessionSeqCursor,
   SurfaceEvent,
@@ -118,6 +119,76 @@ export function deriveEventMessage(event: SessionEvent): Message | null {
       // no message. Merge-extensible union: no assertNever here.
       return null
   }
+}
+
+/** Compare two nested block paths in message order. */
+function compareImageBlockPaths(a: ImageBlockPath, b: ImageBlockPath): number {
+  const length = Math.min(a.length, b.length)
+  for (let index = 0; index < length; index += 1) {
+    // oxlint-disable-next-line typescript/no-non-null-assertion -- index is below both lengths
+    const delta = a[index]! - b[index]!
+    if (delta !== 0) return delta
+  }
+  return a.length - b.length
+}
+
+/**
+ * Compare two image occurrence positions in log order: by event seq, then by
+ * block path inside the event's content.
+ * @param a - first position.
+ * @param b - second position.
+ * @returns negative, zero, or positive as `a` lies before, at, or after `b`.
+ */
+export function compareImagePositions(a: ImageOccurrencePosition, b: ImageOccurrencePosition): number {
+  return a.seq === b.seq ? compareImageBlockPaths(a.path, b.path) : a.seq - b.seq
+}
+
+/** Mark matching image occurrences while preserving unchanged durable content by identity. */
+function markOffloadedImages(
+  content: readonly ContentBlock[],
+  offloaded: (path: ImageBlockPath) => boolean,
+  prefix: ImageBlockPath = [],
+): readonly ContentBlock[] {
+  let next: ContentBlock[] | undefined
+  for (const [index, block] of content.entries()) {
+    const path = [...prefix, index]
+    if (block.type === 'image' && block.offloaded !== true && offloaded(path)) {
+      next ??= content.slice(0, index)
+      next.push({ ...block, offloaded: true })
+      continue
+    }
+    if (block.type === 'tool-result') {
+      const inner = markOffloadedImages(block.content, offloaded, path)
+      if (inner !== block.content) {
+        next ??= content.slice(0, index)
+        next.push({ ...block, content: inner as ContentBlock[] })
+        continue
+      }
+    }
+    next?.push(block)
+  }
+  return next ?? content
+}
+
+/**
+ * Project one derived surface message under the `image/offload` watermark:
+ * every image occurrence positioned at or before it carries `offloaded: true`.
+ * @param message - the node's derived message.
+ * @param seq - the node's event seq.
+ * @param watermark - watermark in force, or undefined when nothing is offloaded.
+ * @returns the same message when nothing changes, otherwise a shallow copy with marked content.
+ */
+export function markImageOffload(
+  message: Message,
+  seq: SessionSeq,
+  watermark: ImageOccurrencePosition | undefined,
+): Message {
+  if (watermark === undefined || seq > watermark.seq) return message
+  const content = markOffloadedImages(
+    message.content,
+    path => seq < watermark.seq || compareImageBlockPaths(path, watermark.path) <= 0,
+  )
+  return content === message.content ? message : { ...message, content: content as Message['content'] }
 }
 
 /** One replacement operation observed while folding a session surface. */

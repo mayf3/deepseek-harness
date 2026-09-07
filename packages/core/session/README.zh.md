@@ -91,9 +91,8 @@ session.deriveMessages()         // the derived model history
 |---|---|
 | [`src/index.ts`](src/index.ts) | 插件入口：`SessionStore` 服务、存储生命周期、`fork`、`flush` |
 | [`src/types.ts`](src/types.ts) | `SessionEventMap`、`SessionEvent`、`UserMessage`、`SessionHeader`、`TurnEndReasonMap` |
-| [`src/surface.ts`](src/surface.ts) | 有序 surface 投影、替换校验、`deriveEventMessage` |
+| [`src/surface.ts`](src/surface.ts) | 有序 surface 投影、替换校验、`deriveEventMessage`、`image/offload` 标记 |
 | [`src/request-header.ts`](src/request-header.ts) | `request/header` 折叠与重建 |
-| [`src/image-offload.ts`](src/image-offload.ts) | `image/offload` 水位校验、折叠与表层标记 |
 | [`dsh-util-values`](../../util/values/README.zh.md) | 共享无损 JSON 校验与分离式快照 |
 | [`src/repair.ts`](src/repair.ts) | 崩溃遗留日志的冷修复 |
 | [`src/invariant.ts`](src/invariant.ts) | 不变式配套：序号、轮次／步骤闭合、工具调用／结果配对 |
