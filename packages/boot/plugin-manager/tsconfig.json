@@ -21,9 +21,6 @@
       "path": "../app-boot"
     },
     {
-      "path": "../../util/patch-file"
-    },
-    {
       "path": "../../util/values"
     },
     {

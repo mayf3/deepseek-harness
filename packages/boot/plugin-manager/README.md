@@ -88,7 +88,7 @@ The Loader's transactional update leaves an unchanged row alone, so a failed iso
 
 ### What the manager reads and what it is handed
 
-The manager reads the Loader tree, the reflect store, and the `pluginFailures` registry through the context it is built over. Everything that belongs to another package — the profile runtime, the preset roster, the agent registry — arrives through `PluginManagerOptions` as a reader called per call, and the roster only as `PresetLayers`: the layer path, the preset list, and the composition rows the row operations need. The package therefore depends on app-boot and the patch-file writer and on nothing that composes presets or agents.
+The manager reads the Loader tree, the reflect store, and the `pluginFailures` registry through the context it is built over. Everything that belongs to another package — the profile runtime, the preset roster, the agent registry — arrives through `PluginManagerOptions` as a reader called per call, and the roster only as `PresetLayers`: the layer path, the preset list, and the composition rows the row operations need. The package therefore depends on app-boot alone, whose `./patch-file` export reads and writes the layers, and on nothing that composes presets or agents.
 
 ### Source map
 
@@ -109,7 +109,7 @@ The manager reads the Loader tree, the reflect store, and the `pluginFailures` r
 Read these when the manager's contract is not enough: the runtime it drives, the files it edits, and the surfaces that call it.
 
 - [App boot](../app-boot/README.md) — the profile runtime, external bundle isolation, and the package probe.
-- [Patch files](../../util/patch-file/README.md) — how user-layer rows are written.
+- [Patch files](../app-boot/README.md#patch-files) — how user-layer rows are read and written.
 - [Agent presets](../../preset/agent-presets/README.md) — the per-preset user layer a preset target writes.
 - [Host plugin manager](../../host/plugin-manager/README.md) — the `plugins` Remote over this manager.
 - [dsh app](../../../apps/cli/README.md) — the `dsh plugin` command over the installer.

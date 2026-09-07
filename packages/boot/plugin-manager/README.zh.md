@@ -88,7 +88,7 @@ Loader 的事务性更新不会碰未改变的行，因此一条失败的隔离�
 
 ### 管理器自己读什么，别人交给它什么
 
-管理器经它所在的上下文读取 Loader 树、reflect store 与 `pluginFailures` 注册表。属于别的包的东西——profile runtime、preset roster、agent 注册表——都经 `PluginManagerOptions` 以按调用读取的读取器交进来，roster 只以 `PresetLayers` 的形态交进来：层文件路径、preset 列表，以及行操作需要的组合行。因此本包只依赖 app-boot 与补丁文件写入器，不依赖任何组合 preset 或 agent 的包。
+管理器经它所在的上下文读取 Loader 树、reflect store 与 `pluginFailures` 注册表。属于别的包的东西——profile runtime、preset roster、agent 注册表——都经 `PluginManagerOptions` 以按调用读取的读取器交进来，roster 只以 `PresetLayers` 的形态交进来：层文件路径、preset 列表，以及行操作需要的组合行。因此本包只依赖 app-boot（其 `./patch-file` 导出负责读写各层），不依赖任何组合 preset 或 agent 的包。
 
 ### 源码地图
 
@@ -109,7 +109,7 @@ Loader 的事务性更新不会碰未改变的行，因此一条失败的隔离�
 当管理器的契约还不够时读这些：它驱动的运行时、它编辑的文件，以及调用它的表面。
 
 - [App boot](../app-boot/README.zh.md)——profile runtime、外部组合包隔离与包探针。
-- [补丁文件](../../util/patch-file/README.zh.md)——用户层的行如何写入。
+- [补丁文件](../app-boot/README.zh.md#patch-files)——用户层的行如何读写。
 - [Agent presets](../../preset/agent-presets/README.zh.md)——preset 目标所写的每预设用户层。
 - [宿主插件管理器](../../host/plugin-manager/README.zh.md)——本管理器之上的 `plugins` Remote。
 - [dsh 应用](../../../apps/cli/README.zh.md)——安装器之上的 `dsh plugin` 命令。

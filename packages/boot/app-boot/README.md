@@ -62,6 +62,32 @@ A bundle you installed with `dsh plugin` is an **external** bundle: its rows mou
 
 After the tree is up the launcher provides `ctx.profileRuntime`, which holds the composition the tree runs — the profile, the installation anchor, the layer that owns each row, and the rows the composition left out — reads which rows the user patch files disable, and is the one entry point that recomposes the tree: the patch watchers and the [plugin manager](../../host/plugin-manager/README.md), enabling or retrying a bundle, all call it, recompositions run one at a time, and a rejected update leaves its facts describing the tree still running; `recordContainedStates` is what such a caller runs afterwards, because the boot audit does not run again. Startup's fail-loud rejection guard is uninstalled once the tree is up: an unhandled rejection after boot is reported and the process keeps running, with nothing stopped or attributed to a plugin; an uncaught exception is reported and exits.
 
+<a id="patch-files"></a>
+### Patch files
+
+Every layer above is a `cordis.patch.yml`: a top-level YAML sequence of the include plugin's `PatchOptions` — id-targeted overrides and `insert` lists — in the Loader's dialect, where `!!js` marks an expression the row's fiber evaluates. The `./patch-file` export is the one place that reads and writes such a file, so a file the boot accepts is a file the agent-preset roster and the plugin manager accept.
+
+Read a layer with `parsePatchList` (text in hand) or `readPatchListFile` (an absent file reads as `undefined`). Both anchor a relative `insert` row name such as `./plugin.js` to the file's own directory and fail loud on anything that is not a sequence of mappings, because a patch file that cannot be applied at all is a misconfiguration; a patch whose target row is absent stays a per-entry Loader warning.
+
+Write through `mutatePatchFile`. The callback receives a `PatchDocument` and edits it by row id, the way the Loader addresses rows:
+
+```ts
+import { mutatePatchFile } from '@deepseek-ai/dsh-app-boot/patch-file'
+
+const file = '/home/me/.dsh/profiles/web/cordis.patch.yml'
+await mutatePatchFile(file, (document) => {
+  document.setRowField('tool-web', 'disabled', true)      // the id-targeted patch is created when absent
+  document.deleteRowField('tool-web', 'config')           // a patch reduced to its id is removed whole
+  document.appendInsert({ id: 'tool-foo', name: 'dsh-tool-foo' })          // into the root list
+  document.appendInsert({ id: 'sql', name: 'dsh-sql' }, 'agents')          // into the group with that id
+  document.removeInsert('tool-foo')                       // an emptied insert patch is removed whole
+}, { binName: 'dsh', mode: 0o600, dirMode: 0o700 })
+```
+
+`setRowField` never accepts `id` or `insert`; `rowField` reads one key back, with a `!!js` scalar returned as its source text. `appendInsert` refuses an id the file already inserts, and `insertedRow`/`removeInsert` find rows inside inserted groups too. Values written are plain data; a `!!js` scalar on another key is left untouched, which is what lets a user layer revert a `disabled: true` it wrote without disturbing a bundle's `!!js` gate on a different row.
+
+`mutatePatchFile` takes the `<file>.lock` sibling the way `dsh-atomic-write` does, reads the file (absent reads as empty), applies the edit, replaces the file atomically with the stated permission bits when the text changed, and returns the patch list as re-read from the written text. An edit that changes nothing writes nothing.
+
 ### Previewing the effective configuration
 
 Before you boot, you can print the exact configuration the app will mount: the dump shows the composed entry list with `!!js` expressions verbatim, grouped under comments naming each source file and the patch layers that changed it, as one loadable YAML document. Patches that match no row are reported with their layer label; a missing, unparsable, or invalid config fails the dump.
@@ -102,16 +128,25 @@ This section explains how the outcomes above are realized and points at the code
 
 The exports each own one stage of the boot: config resolution and snapshot replay, layered environment loading, fail-loud reporting, activation auditing, patch parsing, root-include mounting, config dump rendering, live patch watching, profile composition, and the harness-source section. Per-export contracts live in the code, not this README — see [`src/index.ts`](src/index.ts) and [`src/profile.ts`](src/profile.ts).
 
+### Two parsers, one dialect
+
+Reading a patch file uses `js-yaml` with the include's `entryListSchema`, so `!!js` scalars become the expression nodes the Loader interpolates, exactly as the include mounts them. Writing uses the `yaml` package's comment-preserving `Document`: it keeps the unresolved `!!js` tag on the scalar it decorates (reported as a `TAG_RESOLVE_FAILED` warning, not an error) and prints it back verbatim, so an edit to one key never rewrites another key's expression. The written text is parsed back with the reading parser, which is the readback the writer's contract promises.
+
+### Addressing
+
+An id-targeted patch is the top-level item whose `id` matches and that carries no `insert`. An inserted row is searched in every `insert` list, recursing into inserted groups (`group: true` with a `config` list). A top-level item that is not a mapping, or an `insert` whose value is not a list, fails the parse.
+
 ### Source map
 
 | File | Role |
 |---|---|
-| [`src/index.ts`](src/index.ts) | Boot helpers: config resolution, environment loading, fail-loud guard and runtime guards, activation audit and `recordContainedStates`, patch-file loading through `dsh-patch-file`, config dump, harness-source section |
+| [`src/index.ts`](src/index.ts) | Boot helpers: config resolution, environment loading, fail-loud guard and runtime guards, activation audit and `recordContainedStates`, patch-file loading through `./patch-file`, config dump, harness-source section |
 | [`src/profile.ts`](src/profile.ts) | Profile discovery, initialization, bundle resolution with `layerTrust` and stage, module fallback |
 | [`src/external-bundles.ts`](src/external-bundles.ts) | External layer composition (contained group, overrides), `bundleLayerPatches`, and the manifest operations behind install, enable, and disable |
 | [`src/compose-stack.ts`](src/compose-stack.ts) | Row-id ownership across the stack: `claimLayerIds`, `composeProfileStack`, conflict records |
 | [`src/contained-group.ts`](src/contained-group.ts) | The `cordis:contained-group` builtin and the `pluginFailures` registry |
 | [`src/profile-runtime.ts`](src/profile-runtime.ts) | The `profileRuntime` service: the committed composition (profile, row provenance, conflicts), user-disabled rows, recomposition |
+| [`src/patch-file.ts`](src/patch-file.ts) | The `./patch-file` export: `parsePatchList` and `readPatchListFile`, the comment-preserving `PatchDocument`, and `mutatePatchFile` under the writer lock |
 | [`src/probe.ts`](src/probe.ts) | The package probe and its per-profile cache; [`src/probe-child.ts`](src/probe-child.ts) is the child entry it spawns and [`src/probe-report.ts`](src/probe-report.ts) the report it validates |
 | — | No runtime invariant companion is published; this presentation adapter owns no durable package-local event stream; boundary and replay tests cover its protocol mapping. |
 
@@ -157,6 +192,9 @@ These limits describe when this boot library is a poor fit or needs special care
 - **An external bundle's overrides are not isolated** — a patch it applies to a built-in row edits that row in place, so its effect stays when the bundle's own rows fail and it is the one thing a bundle can break outside its group.
 - **A conflict is decided by order, not merit** — among external bundles the earlier layer in `dsh.profile.bundles` keeps a contested id, so uninstalling that bundle lets the later one mount on the next boot; the plugin list shows which bundle lost and to whom.
 - **The nested-fiber audit is advisory** — a failed `ctx.inject()` continuation under a built-in entry is reported, not fatal, until shipped compositions are known clean.
+- **Patch edits merge at the key level, not the row level** — `setRowField('x', 'config', value)` replaces the whole `config` mapping of that patch; a caller that wants one nested field changed reads the current value with `rowField` and writes the merged mapping back.
+- **The patch writer authors no expressions** — it emits plain data only; a `!!js` gate is something an author types into the file, never something an API call produces.
+- **Lock orphans are an operator action** — a lock file left by a crashed patch writer is never removed by a contender, which fails after the wait instead; `dsh-atomic-write` documents the same choice.
 
 <a id="dev-note"></a>
 ### Dev Note

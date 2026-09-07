@@ -36,7 +36,6 @@
     "@deepseek-ai/cordis-plugin-loader": "workspace:^",
     "@deepseek-ai/dsh-app-boot": "workspace:^",
     "@deepseek-ai/dsh-package-manifest": "workspace:^",
-    "@deepseek-ai/dsh-patch-file": "workspace:^",
     "@deepseek-ai/dsh-util-values": "workspace:^"
   },
   "devDependencies": {
@@ -45,7 +44,6 @@
     "@deepseek-ai/dsh-agent": "workspace:^",
     "@deepseek-ai/dsh-app-boot": "workspace:^",
     "@deepseek-ai/dsh-package-manifest": "workspace:^",
-    "@deepseek-ai/dsh-patch-file": "workspace:^",
     "@deepseek-ai/dsh-util-values": "workspace:^"
   }
 }
