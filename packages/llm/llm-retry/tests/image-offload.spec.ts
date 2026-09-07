@@ -121,12 +121,6 @@ describe('image offload recovery', () => {
     const adapter = new ScriptedAdapter([offloadRequired(2), textResponse('sent')])
     const ctx = await harness(adapter)
     const agent = await ctx.agentLoop.create(SessionId('offload-reordered'), { provider: 'mock', model: 'mock' })
-    const first = agent.session.append('user/message', createUserMessage({
-      content: [image('first')], source: { kind: 'user' },
-    }), { surfaceOp: 'append' })
-    agent.session.append('user/message', createUserMessage({
-      content: [image('second')], source: { kind: 'user' },
-    }), { surfaceOp: 'append' })
     // An empty-content assistant node derives no message and carries no occurrence.
     agent.session.append('assistant/message', {
       turn: 0,
@@ -134,6 +128,12 @@ describe('image offload recovery', () => {
       message: createAssistantMessage({ content: [], source: { provider: 'mock', model: 'mock' } }),
       stream: [],
     }, { surfaceOp: 'append' })
+    const first = agent.session.append('user/message', createUserMessage({
+      content: [image('first')], source: { kind: 'user' },
+    }), { surfaceOp: 'append' })
+    agent.session.append('user/message', createUserMessage({
+      content: [image('second')], source: { kind: 'user' },
+    }), { surfaceOp: 'append' })
     agent.session.append('user/message', createUserMessage({
       content: [image('replacement')], source: { kind: 'user' },
     }), {
