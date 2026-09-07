@@ -169,6 +169,7 @@ External packages **directly declared** for development, tests, types, or toolin
 | [`@types/ws`](https://github.com/DefinitelyTyped/DefinitelyTyped) | MIT |
 | [`@vitejs/plugin-react`](https://github.com/vitejs/vite-plugin-react) | MIT |
 | [`@vitest/coverage-v8`](https://github.com/vitest-dev/vitest) | MIT |
+| [`@vitest/spy`](https://github.com/vitest-dev/vitest) | MIT |
 | [`@yao-pkg/pkg`](https://github.com/yao-pkg/pkg) | MIT |
 | [`@yarnpkg/cli-dist`](https://github.com/yarnpkg/berry) | BSD-2-Clause |
 | [`app-builder-lib`](https://github.com/electron-userland/electron-builder) | MIT |
