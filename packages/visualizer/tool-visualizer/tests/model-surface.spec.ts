@@ -171,7 +171,9 @@ describe('Visualizer model surface', () => {
     expect(sourceDescription).toContain('<canvas> using 2D or WebGL')
     expect(sourceDescription).toContain('inline <script>')
     expect(sourceDescription).toContain('For SVG: raw SVG')
-    expect(sourceDescription).toContain('External resources are blocked; inline everything')
+    expect(sourceDescription).toContain(
+      'Keep the widget self-contained: include all required styles, scripts, data, and assets in the source',
+    )
     expect(sourceDescription).not.toContain('load and follow the interactive widget_guidelines module')
     expect(sourceDescription).not.toContain('window.dshWidget')
   })

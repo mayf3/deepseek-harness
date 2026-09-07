@@ -49,7 +49,7 @@ export function registerVisualizerTools(
   ctx: Context,
   limits: { readonly maxTitleBytes: number; readonly maxWidgetBytes: number },
 ): void {
-  const sourceDescription = 'For HTML: one fragment. Put any inline <style> first, content next (semantic HTML, inline <svg>, <canvas> using 2D or WebGL, or native controls), and any inline <script> last. For SVG: raw SVG beginning with <svg>, with a viewBox that declares its aspect ratio. External resources are blocked; inline everything.'
+  const sourceDescription = 'For HTML: one fragment. Put any inline <style> first, content next (semantic HTML, inline <svg>, <canvas> using 2D or WebGL, or native controls), and any inline <script> last. For SVG: raw SVG beginning with <svg>, with a viewBox that declares its aspect ratio. Keep the widget self-contained: include all required styles, scripts, data, and assets in the source.'
 
   ctx.tools.register(defineTool({
     name: 'widget_guidelines',
