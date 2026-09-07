@@ -502,9 +502,7 @@ export class SessionLogScanner {
     try {
       this.restore.decodeRow(decoded)
     } catch (error: unknown) {
-      if (error instanceof SessionFormatUnsupportedMigrationError) {
-        throw new SessionFormatUnsupportedError(error.message)
-      }
+      // Unsupported V3 rows have already been refused before recovery.
       /* v8 ignore next -- every production Session format decoder rejects with Error. */
       const detail = error instanceof Error ? error.message : String(error)
       const issue = new Error(`corrupt session log: invalid committed event at line ${this.eventLine}: ${detail}`, {

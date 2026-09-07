@@ -71,6 +71,22 @@ describe('native V3 event admission at EOF', () => {
     },
   )
 
+  it.each(['', '{not json\n', 'null\n'])('refuses malformed system payloads after %j without modifying storage', async (corruption) => {
+    const malformed = { type: 'system/message', seq: 1, time: 2, data: null, surfaceOp: 'append' }
+    const bytes = Buffer.from(prefix + corruption + JSON.stringify(malformed) + '\n')
+    expect(() => scanLog(bytes)).toThrow('system/message data must be an object')
+    const path = await store(bytes)
+    const sourceStat = await stat(path)
+    for (const access of ['read', 'write'] as const) {
+      const opened = ctx.sessionPersistence.open(id, access).then(async (handle) => {
+        await handle.close()
+      })
+      await expect(opened).rejects.toThrow('system/message data must be an object')
+      expect(await readFile(path)).toEqual(bytes)
+      expect(await stat(path)).toMatchObject({ dev: sourceStat.dev, ino: sourceStat.ino })
+    }
+  })
+
   it.each(obsoleteTypes)('retains ignorable %s through scanning and a provider append', async (type) => {
     const event = obsoleteEvent(type, true)
     const bytes = Buffer.from(prefix + JSON.stringify(event) + '\n')
