@@ -45,7 +45,6 @@ describe('CI workflow', () => {
         name: 'Use runner-owned temporary storage',
         run: [
           'echo "TMPDIR=${{ runner.temp }}" >> "$GITHUB_ENV"',
-          'echo "npm_config_cache=${{ runner.temp }}/npm-cache" >> "$GITHUB_ENV"',
           ...(jobName === 'node-24-consumers'
             ? ['echo "PLAYWRIGHT_BROWSERS_PATH=${RUNNER_TEMP%/*}/ms-playwright" >> "$GITHUB_ENV"']
             : []),

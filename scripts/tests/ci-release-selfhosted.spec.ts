@@ -9,7 +9,6 @@ const root = resolve(import.meta.dirname, '../..')
 const repository = 'deepseek-harness/deepseek-harness'
 const selfhosted = ['self-hosted', 'linux', 'x64', 'vm-backup']
 const hosted = 'ubuntu-24.04'
-const npmCacheExport = 'echo "npm_config_cache=${{ runner.temp }}/npm-cache" >> "$GITHUB_ENV"'
 
 interface Step {
   name?: string
@@ -37,14 +36,6 @@ function evaluate(expression: string, context: Record<string, string | boolean>)
     .replace(/\b(?:github|vars|runner)(?:\.[a-zA-Z_][a-zA-Z_0-9]*)+/g,
       key => JSON.stringify(context[key] ?? ''))
   return runInNewContext(source, { fromJSON: JSON.parse }, { timeout: 1000 }) as unknown
-}
-
-function assertEarlyNpmCacheExport(steps: Step[]): void {
-  const cacheIndex = steps.findIndex(step => step.run?.split('\n').includes(npmCacheExport))
-  const pnpmIndex = steps.findIndex(step => step.uses?.startsWith('pnpm/') || /\bpnpm\b/.test(step.run ?? ''))
-  expect(cacheIndex).toBeGreaterThanOrEqual(0)
-  expect(cacheIndex).toBeLessThan(pnpmIndex)
-  expect(steps[cacheIndex]?.if).toBeUndefined()
 }
 
 function assertSharedPersistentStore(run: string | undefined): void {
@@ -123,29 +114,8 @@ for (const [file, jobIds] of [['release.yml', ['dependencies', 'pack']], ['relea
             .toBe('${{ runner.temp }}/setup-pnpm-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}')
           expect(job.steps.find(step => step.name === 'Install (immutable)')?.run).toBe('pnpm install --frozen-lockfile')
         })
-        it('exports a runner-private npm cache before package-manager setup', () => {
-          assertEarlyNpmCacheExport(job.steps)
-        })
-        it.each([
-          ['missing', ''],
-          ['shared home', 'echo "npm_config_cache=$HOME/.npm" >> "$GITHUB_ENV"'],
-          ['step-local', 'export npm_config_cache="${{ runner.temp }}/npm-cache"'],
-        ])('rejects a %s npm cache export', (_name, replacement) => {
-          const steps = job.steps.map(step => step.run === undefined
-            ? step
-            : { ...step, run: step.run.replace(npmCacheExport, replacement) })
-          expect(() => { assertEarlyNpmCacheExport(steps) }).toThrow()
-        })
-        it('rejects a conditional npm cache export', () => {
-          const steps = job.steps.map(step => step.run?.includes(npmCacheExport) ? { ...step, if: 'false' } : step)
-          expect(() => { assertEarlyNpmCacheExport(steps) }).toThrow()
-        })
-        it('rejects an npm cache export after package-manager setup', () => {
-          const steps = job.steps.map(step => step.run === undefined
-            ? step
-            : { ...step, run: step.run.replace(npmCacheExport, '') })
-          steps.push({ run: npmCacheExport })
-          expect(() => { assertEarlyNpmCacheExport(steps) }).toThrow()
+        it('retains the configured shared npm cache', () => {
+          expect(JSON.stringify(release)).not.toMatch(/npm_config_cache/i)
         })
         it.each(['', 'store_root="${RUNNER_TEMP%/*}/pnpm-store"', 'store_root="$RUNNER_TEMP/pnpm-store"'])(
           'rejects missing, runner-private, or job-temporary store placement: %s', (replacement) => {

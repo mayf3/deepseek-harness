@@ -54,7 +54,6 @@ jobs:
       - name: Use runner-owned temporary storage
         run: |
           echo "TMPDIR=${{ runner.temp }}" >> "$GITHUB_ENV"
-          echo "npm_config_cache=${{ runner.temp }}/npm-cache" >> "$GITHUB_ENV"
 
       # Fetch complete history so the archive gate can read the trusted PR base from a reused shallow checkout.
       - uses: actions/checkout@v6
@@ -125,7 +124,6 @@ jobs:
       - name: Use runner-owned temporary storage
         run: |
           echo "TMPDIR=${{ runner.temp }}" >> "$GITHUB_ENV"
-          echo "npm_config_cache=${{ runner.temp }}/npm-cache" >> "$GITHUB_ENV"
 
       - uses: actions/checkout@v6
         with:
@@ -250,7 +248,6 @@ jobs:
       - name: Use runner-owned temporary storage
         run: |
           echo "TMPDIR=${{ runner.temp }}" >> "$GITHUB_ENV"
-          echo "npm_config_cache=${{ runner.temp }}/npm-cache" >> "$GITHUB_ENV"
           echo "PLAYWRIGHT_BROWSERS_PATH=${RUNNER_TEMP%/*}/ms-playwright" >> "$GITHUB_ENV"
 
       - uses: actions/checkout@v6

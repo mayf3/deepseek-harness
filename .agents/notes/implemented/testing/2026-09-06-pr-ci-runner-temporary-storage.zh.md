@@ -12,7 +12,7 @@ Linux 故障切换池在同一台虚拟机上运行多个 runner 实例。PR 覆
 
 [PR CI](../../../../.github/workflows/ci.yml) 的静态检查、覆盖率和消费者作业在任何准备或测试进程启动前，在首个步骤通过 `GITHUB_ENV` 导出 `TMPDIR=runner.temp`。Node、Vite、tsx 和临时测试消费者继承 runner 管理的位置。每个 runner 管理自己的目录，GitHub Actions 在作业开始和完成时清除其中可删除的内容；测试夹具仍分配唯一子目录，并保留自身清理逻辑。
 
-这三个 worker 还将 `npm_config_cache` 设为 `runner.temp/npm-cache`。[发布工作流](../../../../.github/workflows/release.yml) 在既有临时存储准备步骤中采用相同缓存位置，[vendor 演练](../../../../.github/workflows/release-vendor.yml) 也如此。否则，无论 `TMPDIR` 如何设置，npm 都会在共享 home 目录中缓存注册表响应；仅使用临时消费者目录不能隔离这些写入。pnpm store 保持共享于 `$HOME/.local/share/pnpm/store`，依靠 pnpm 的并发访问支持保留跨 runner 复用。本变更不隔离其 SQLite 索引，也不解决该共享 store 的容量故障。消费者作业还将 Playwright 浏览器下载和安装锁放在 `RUNNER_TEMP` 旁；托管缓存恢复使用同一位置。持久化缓存的容量仍由运维人员负责。
+npm 保留配置的持久化缓存，在 POSIX 上通常为 `$HOME/.npm`；主 CI 和发布工作流不设置每作业覆盖。pnpm store 保持共享于 `$HOME/.local/share/pnpm/store`。两者依靠包管理器的并发访问支持保留跨 runner 复用；共享缓存容量及文件系统故障仍由运维负责。消费者作业将 Playwright 浏览器下载和安装锁放在 `RUNNER_TEMP` 旁；托管缓存恢复使用同一位置。
 
 [发布演练决策](../process/2026-09-06-release-rehearsal-selfhosted.zh.md) 对发布消费者采用相同的生命周期规则。[故障切换运行手册](../process/2026-07-26-ci-failover-runbook.zh.md) 继续负责 runner 选择和共享主机容量。本变更不调整作业目标、不降低并发、不重试测试、不削弱断言，也不修改仅在 master 上执行的 CI。
 
@@ -42,7 +42,7 @@ Reference-composer 夹具将已知的 home 缩写 workspace 显示映射到既�
 
 ## 影响
 
-遵循临时目录和缓存配置的输出随作业生命周期清理，而不累积于无人管理的主机存储。本方案不回收既有共享临时文件、不保证文件系统容量，也不清理 runner 账号无权删除的文件。历史残留、磁盘配置以及本 PR 工作流以外的作业仍由运维人员负责。
+遵循 `TMPDIR` 的输出随作业生命周期清理，而不累积于无人管理的主机存储。包管理器和浏览器缓存保持持久化。本方案不回收既有共享临时文件、不保证文件系统容量，也不清理 runner 账号无权删除的文件。历史残留、磁盘配置以及本 PR 工作流以外的作业仍由运维人员负责。
 
 Linux bwrap 和 Landlock 的 workspace-write profile 允许写入字面路径 `/tmp` 和 workspace，而不允许写入其外部继承的 `TMPDIR`；受限测试夹具必须将临时写入放在这些已授权路径中。[快照 spill helper](../../../../packages/test-support/session-snapshot/src/harness.ts) 将固定长度的逻辑定位符与原子分配的实际存储分开。仅用于夹具的适配器将保存操作委托给真实的本地 spill provider，并仅将本次运行已保存的定位符解析到实际文件。录制的预览长度、省略计数及检索断言保持不变；逻辑 `/tmp/dsh-acp-snap-*` 前缀下不分配文件。本变更不扩大产品沙箱授权。
 
