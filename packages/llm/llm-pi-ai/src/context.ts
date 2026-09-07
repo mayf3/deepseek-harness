@@ -5,7 +5,7 @@
  */
 
 import { brandString } from '@deepseek-ai/dsh-brand'
-import { contentHasImage, IMAGE_OFFLOAD_REQUIRED_CODE, LlmError, offloadedImageText, offloadedImagePrefixCount, projectOffloadedImages, representedImageBytes, requestImageHandleText, visitImageBlocks } from '@deepseek-ai/dsh-llm'
+import { contentHasImage, IMAGE_OFFLOAD_REQUIRED_CODE, LlmError, offloadedImageText, projectOffloadedImages, requestImageHandleText, requiredImageOffload } from '@deepseek-ai/dsh-llm'
 import type { ContentBlock, GenerateOptions, ImageAttachmentAccessResolver, Message, ToolCallId } from '@deepseek-ai/dsh-llm'
 import type {
   AttachmentId,
@@ -220,7 +220,7 @@ export function toPiContext(
  * occurrences the surface marks offloaded become text placeholders; when the
  * retained occurrences' exact base64 payload still exceeds
  * `maxRequestImageBytes`, the call fails with `IMAGE_OFFLOAD_REQUIRED` naming
- * how many more oldest occurrences the agent loop must offload.
+ * how many more oldest occurrences must be offloaded.
  * @param options - the harness request; `options.system` maps to pi-ai's single `systemPrompt` slot.
  * @param images - attachment provider, current path resolver, and request limits.
  * @param onReplayDegrade - forwarded to {@link toPiAssistant} for each assistant message.
@@ -254,15 +254,11 @@ async function toPiContextWithImages(
   assertSupportedImageRoles(options.messages)
   const requestImages = await prepareRequestImages(options.messages, attachments, requestImagePolicy, options.signal)
   if (maxRequestImageBytes !== undefined) {
-    const lengths: number[] = []
-    for (const message of options.messages) {
-      visitImageBlocks(message.content, (block) => {
-        if (block.offloaded === true) return
-        const version = requestImages.get(block.attachment.attachmentId) as RequestImageAttachment
-        lengths.push(representedImageBytes(version.bytes, { representation: 'base64' }))
-      })
-    }
-    const offloadImages = offloadedImagePrefixCount(lengths, { maxBytes: maxRequestImageBytes })
+    const offloadImages = requiredImageOffload(
+      options.messages,
+      { representation: 'base64', maxBytes: maxRequestImageBytes },
+      block => (requestImages.get(block.attachment.attachmentId) as RequestImageAttachment).bytes,
+    )
     if (offloadImages > 0) {
       throw new LlmError(
         `pi-ai request images exceed the ${maxRequestImageBytes}-byte base64 bound; ${offloadImages} more oldest occurrence(s) must be offloaded.`,

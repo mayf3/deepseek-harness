@@ -6,7 +6,7 @@
  * @module dsh-llm-deepseek/serialize
  */
 
-import { contentHasImage, IMAGE_OFFLOAD_REQUIRED_CODE, LlmError, offloadedImageText, offloadedImagePrefixCount, projectOffloadedImages, representedImageBytes, requestImageHandleText, visitImageBlocks } from '@deepseek-ai/dsh-llm'
+import { contentHasImage, IMAGE_OFFLOAD_REQUIRED_CODE, LlmError, offloadedImageText, projectOffloadedImages, requestImageHandleText, requiredImageOffload } from '@deepseek-ai/dsh-llm'
 import type { ContentBlock, GenerateOptions, ImageAttachmentAccessResolver, Message } from '@deepseek-ai/dsh-llm'
 import type { ImageAttachmentRef, RequestImageAttachment } from '@deepseek-ai/dsh-attachment'
 import type {
@@ -399,22 +399,18 @@ export function serializeRequest(
  */
 function assertRetainedImagesFit(messages: readonly Message[], images: ImageSerializationOptions): void {
   const representation = images.representation.kind === 'file' ? 'raw' : 'base64'
-  const lengths: number[] = []
-  for (const message of messages) {
-    visitImageBlocks(message.content, (block) => {
-      if (block.offloaded === true) return
-      const version = images.requestImages.get(block.attachment.attachmentId)
-      if (version === undefined) {
-        throw new LlmError(`DeepSeek request image ${block.attachment.attachmentId} was not prepared.`, 'INVALID_REQUEST')
-      }
-      lengths.push(representedImageBytes(version.bytes, { representation }))
-    })
-  }
-  const offloadImages = offloadedImagePrefixCount(lengths, {
+  const offloadImages = requiredImageOffload(messages, {
+    representation,
     maxBytes: images.maxRequestImageBytes,
     ...images.maxImagesPerRequest === undefined ? {} : { maxImages: images.maxImagesPerRequest },
     ...images.byteQuantum === undefined ? {} : { byteQuantum: images.byteQuantum },
     ...images.countQuantum === undefined ? {} : { countQuantum: images.countQuantum },
+  }, (block) => {
+    const version = images.requestImages.get(block.attachment.attachmentId)
+    if (version === undefined) {
+      throw new LlmError(`DeepSeek request image ${block.attachment.attachmentId} was not prepared.`, 'INVALID_REQUEST')
+    }
+    return version.bytes
   })
   if (offloadImages > 0) {
     throw new LlmError(

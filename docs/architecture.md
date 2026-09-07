@@ -83,9 +83,8 @@ turn/start
      reject, or a first enter rewritten empty -> close the turn with no step
      step/start
      append entered messages as user/message
-     agent/request -> request/header? -> image/offload?
      derive model history from the log
-     llm/stream -> agent/assistant-stream start
+     agent/request -> llm/stream -> agent/assistant-stream start
        agent/assistant-stream chunk*
        assistant/message | assistant/attempt -> agent/assistant-stream end
      tool/call* -> tools/pre-execute -> tools/execute -> tools/post-execute -> tool/result*
@@ -95,13 +94,11 @@ turn/start
 turn/end
 ```
 
-`turn/*`, `step/*`, `user/message`, `assistant/message`, `assistant/attempt`, `tool/*`, `request/header`, `request/context`, and `image/offload` are durable session events; the rest are live extension points across three domains. `agent/assistant-stream` publishes process-local start, transient chunk, and end frames. The loop commits the complete compact stream as one message or log-only attempt before a committed end frame, and the Web Session-follow adapter is the live event's only remote consumer. `agent/pre-step`, `agent/request`, `llm/stream`, and the three `tools/*` events are waterfalls, whose listeners must call `next()` to delegate; `agent/turn-stopping` is serial and has no `next()`.
+`turn/*`, `step/*`, `user/message`, `assistant/message`, `assistant/attempt`, and `tool/*` are durable session events; the rest are live extension points across three domains. `agent/assistant-stream` publishes process-local start, transient chunk, and end frames. The loop commits the complete compact stream as one message or log-only attempt before a committed end frame, and the Web Session-follow adapter is the live event's only remote consumer. `agent/pre-step`, `agent/request`, `llm/stream`, and the three `tools/*` events are waterfalls, whose listeners must call `next()` to delegate; `agent/turn-stopping` is serial and has no `next()`.
 
 Input reaches the driver through one inbox. Some messages wake it immediately; injected context waits in the inbox until another message does.
 
 `agent/pre-step` decides what the model sees. Listeners may rewrite the claimed messages or reject them outright; a rejected or empty first claim still closes a durable turn that spent no step, so the log records the attempt. An enter decision may also set `startsRequestSeries` to begin a distinct model-message series: the loop then logs a fresh `request/header` (reason `series`, or `change` carrying `startsSeries: true` when the envelope changed too). A listener that rebuilds a downstream enter decision must spread it (`{ ...decision, messages }`) so the declaration survives. Each step reads the prompt sections and tool schemas that plugins registered.
-
-`image/offload` records the durable image offload watermark. After `request/header`, when the prepared route declares a request-image budget that the retained image occurrences exceed, the loop appends the advance and only then derives the request, so the history the model receives is exactly the log's projection. An adapter whose exact byte accounting still overflows fails the attempt with `IMAGE_OFFLOAD_REQUIRED` naming the additional oldest occurrences; the loop advances by that count and rebuilds the request before any `agent/request-error` listener runs. The watermark never retreats ([decision](../.agents/notes/implemented/architecture/2026-09-02-image-offload-watermark.md)).
 
 The loop sends immutable requests while keeping cancellation live. It reuses message-freeze provenance only for identities it has fully frozen; [agent-loop](../packages/core/agent-loop/README.md) owns the request construction rules.
 

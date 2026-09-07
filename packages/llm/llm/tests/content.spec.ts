@@ -9,7 +9,6 @@ import {
   projectFilesToText,
   offloadedImageText,
   offloadedImagePrefixCount,
-  planImageOffload,
   projectImagesForTextModel,
   projectOffloadedImages,
   representedImageBytes,
@@ -120,29 +119,9 @@ describe('offloadedImagePrefixCount', () => {
     expect(offloadedImagePrefixCount([...lengths, 4], { maxImages: 4, countQuantum: 2 })).toBe(2)
     // One excess byte removes a whole byte quantum, crossing the second image.
     expect(offloadedImagePrefixCount([...lengths, 1], { maxBytes: 16, byteQuantum: 5 })).toBe(2)
-  })
-})
-
-describe('planImageOffload', () => {
-  const mib = 1024 * 1024
-  const retained = (count: number) => Array.from({ length: count }, (_, index) => ({ position: index, bytes: mib }))
-
-  it('drops 129 retained MiB to 64 MiB and holds until the retained total exceeds the bound again', () => {
-    const budget = { representation: 'raw' as const, maxBytes: 128 * mib, byteQuantum: 64 * mib }
-    expect(planImageOffload(retained(128), budget)).toBeUndefined()
-    expect(planImageOffload(retained(129), budget)).toBe(64)
-    expect(planImageOffload(retained(64), budget)).toBeUndefined()
-  })
-
-  it('rounds a count excess up to a 20-image advance', () => {
-    const budget = { representation: 'raw' as const, maxImages: 600, countQuantum: 20 }
-    expect(planImageOffload(retained(601), budget)).toBe(19)
-  })
-
-  it('accounts inline representations by base64 length after the version clamp', () => {
-    const budget = { representation: 'base64' as const, maxBytes: 8, versionMaxBytes: 3 }
-    expect(planImageOffload([{ position: 'a', bytes: 3 }, { position: 'b', bytes: 3 }], budget)).toBeUndefined()
-    expect(planImageOffload([{ position: 'a', bytes: 300 }, { position: 'b', bytes: 3 }, { position: 'c', bytes: 3 }], budget)).toBe('a')
+    // 129 one-mebibyte images under a 128 MiB bound with a 64 MiB quantum offload the oldest 65.
+    const mib = 1024 * 1024
+    expect(offloadedImagePrefixCount(Array.from({ length: 129 }, () => mib), { maxBytes: 128 * mib, byteQuantum: 64 * mib })).toBe(65)
   })
 })
 

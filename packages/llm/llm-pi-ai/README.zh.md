@@ -83,7 +83,7 @@ kind: "package-reference"
 | `defaultMaxTokens` | `32,768` | 未描述模型的输出上限回退 |
 | `requestImagePixelBudget` | `4,194,304` | 每张确定性请求图片的总像素预算 |
 | `requestImageMaxBytes` | `1 MiB` | 每张请求图片在 base64 扩展前的编码字节目标 |
-| `maxRequestImageBytes` | `20 MiB` | 向 agent loop 的 `image/offload` 水位声明的 base64 图片载荷总上限 |
+| `maxRequestImageBytes` | `20 MiB` | 向 `dsh-llm-image-offload` 插件的 `image/offload` 水位规划声明的 base64 图片载荷总上限 |
 | `retryPolicy` | normal，5 次重试 | 由 `dsh-llm-retry` 执行的提供方自有重试策略 |
 
 生成的[配置目录](../../../docs/config-catalog.zh.md#deepseek-aidsh-llm-pi-ai)是每个受支持字段及其 JSDoc 的穷尽式真源。
@@ -176,7 +176,7 @@ pi-ai 不提供的路由需要 `api`、`baseURL` 与非空 `models` 列表；无
 
 #### 模型看到什么
 
-所选目录模型会收到 `GenerateOptions.system`、历史、工具与 pi-ai 通用流式 API 支持的采样字段。每张保留图片前都会有文本，注明其完整附件 id 与实际请求尺寸。当前执行文件系统可以映射附件提供方的宿主对象时，该文本还会携带只读规范化对象路径，并警告规范化或请求投影可能缩放或重新编码上传内容。会话 `image/offload` 水位标记为已卸载的每个出现位置都会在替换文本中保留自己的身份与当前已解析访问方式，其规范化附件不会读取或变换。当保留的出现位置按精确 base64 载荷仍超过路由的 `maxRequestImageBytes` 时，调用以 `IMAGE_OFFLOAD_REQUIRED` 失败，由 agent loop 推进水位并重建请求。提供方原生回放元数据只在适配器针对历史内容校验通过后恢复。
+所选目录模型会收到 `GenerateOptions.system`、历史、工具与 pi-ai 通用流式 API 支持的采样字段。每张保留图片前都会有文本，注明其完整附件 id 与实际请求尺寸。当前执行文件系统可以映射附件提供方的宿主对象时，该文本还会携带只读规范化对象路径，并警告规范化或请求投影可能缩放或重新编码上传内容。会话 `image/offload` 水位标记为已卸载的每个出现位置都会在替换文本中保留自己的身份与当前已解析访问方式，其规范化附件不会读取或变换。当保留的出现位置按精确 base64 载荷仍超过路由的 `maxRequestImageBytes` 时，调用以 `IMAGE_OFFLOAD_REQUIRED` 失败，由 `dsh-llm-image-offload` 插件推进水位并重试 step。提供方原生回放元数据只在适配器针对历史内容校验通过后恢复。
 
 #### Token 影响
 

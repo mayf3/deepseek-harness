@@ -87,9 +87,8 @@ turn/start
      reject, or a first enter rewritten empty -> close the turn with no step
      step/start
      append entered messages as user/message
-     agent/request -> request/header? -> image/offload?
      derive model history from the log
-     llm/stream -> agent/assistant-stream start
+     agent/request -> llm/stream -> agent/assistant-stream start
        agent/assistant-stream chunk*
        assistant/message | assistant/attempt -> agent/assistant-stream end
      tool/call* -> tools/pre-execute -> tools/execute -> tools/post-execute -> tool/result*
@@ -99,13 +98,11 @@ turn/start
 turn/end
 ```
 
-`turn/*`、`step/*`、`user/message`、`assistant/message`、`assistant/attempt`、`tool/*`、`request/header`、`request/context` 和 `image/offload` 是持久会话事件；其余是分属三个事件域的实时扩展点。`agent/assistant-stream` 发布进程本地 start、瞬态 chunk 与 end frame。loop 会在 committed end frame 前把完整紧凑 stream 提交为一个 message 或仅日志 attempt；Web Session-follow adapter 是该 live event 唯一的远程消费方。`agent/pre-step`、`agent/request`、`llm/stream` 和三个 `tools/*` 事件是 waterfall（瀑布式事件），其监听器必须调用 `next()` 才能委托下去；`agent/turn-stopping` 是 serial 事件，没有 `next()`。
+`turn/*`、`step/*`、`user/message`、`assistant/message`、`assistant/attempt` 和 `tool/*` 是持久会话事件；其余是分属三个事件域的实时扩展点。`agent/assistant-stream` 发布进程本地 start、瞬态 chunk 与 end frame。loop 会在 committed end frame 前把完整紧凑 stream 提交为一个 message 或仅日志 attempt；Web Session-follow adapter 是该 live event 唯一的远程消费方。`agent/pre-step`、`agent/request`、`llm/stream` 和三个 `tools/*` 事件是 waterfall（瀑布式事件），其监听器必须调用 `next()` 才能委托下去；`agent/turn-stopping` 是 serial 事件，没有 `next()`。
 
 输入通过同一个 inbox 到达驱动器。有些消息会立即唤醒它；注入的上下文会留在 inbox 中，直到另一条消息将其唤醒。
 
 `agent/pre-step` 决定模型看到什么。监听器可以改写已领取的消息，也可以直接拒绝它们；首次领取被拒绝或被改写为空时，仍会关闭一个不含步骤的持久轮次，因此日志会记录这次尝试。enter 决策还可以设置 `startsRequestSeries` 来开启独立的模型消息序列：loop 会随之记录一个新的 `request/header`（原因为 `series`，或在封装同时变化时为携带 `startsSeries: true` 的 `change`）。重建下游 enter 决策的监听器必须展开它（`{ ...decision, messages }`），该声明才能存活。每个步骤读取插件注册的提示词片段和工具 schema。
-
-`image/offload` 记录持久的图片 offload 水位。`request/header` 之后，若已准备的路由声明了请求图片预算且保留的图片出现位置超过该预算，循环先追加推进再派生请求，因此模型收到的历史正是日志的投影。若 adapter 按精确字节计量后仍超预算，会以 `IMAGE_OFFLOAD_REQUIRED` 让本次尝试失败并说明还需省略多少最老的出现位置；循环按该数量推进并在任何 `agent/request-error` 监听器运行之前重建请求。水位永不回退（[决定](../.agents/notes/implemented/architecture/2026-09-02-image-offload-watermark.zh.md)）。
 
 循环发送不可变请求，同时保留实时取消能力。只有已由该循环完整冻结的消息对象身份才能复用冻结证明；[agent-loop](../packages/core/agent-loop/README.zh.md)拥有请求构造规则。
 

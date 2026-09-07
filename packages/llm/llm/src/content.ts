@@ -300,9 +300,9 @@ export function projectOffloadedImages(
 /**
  * Number of oldest retained image occurrences one route budget removes, in
  * whole count and byte quanta, once the budget is exceeded. The result depends
- * only on the represented lengths, so the agent loop plans the durable
- * watermark from logged facts and an adapter names the same count when its
- * exact accounting still overflows.
+ * only on the represented lengths, so the image-offload plugin plans the
+ * durable watermark from logged facts and an adapter names the same count
+ * when its exact accounting still overflows.
  * @param lengths - represented byte length of every retained occurrence, oldest first.
  * @param budget - count/byte budgets and removal quanta; unbounded when absent.
  * @returns how many leading occurrences to offload.
@@ -331,36 +331,28 @@ export function offloadedImagePrefixCount(
   return count
 }
 
-/** One retained image occurrence the watermark planner may offload. */
-export interface RetainedImageOccurrence<Position> {
-  /** Durable position of the occurrence, used as the watermark when it becomes the last offloaded one. */
-  position: Position
-  /** Normalized attachment byte count. */
-  bytes: number
-}
-
 /**
- * Plan the next durable watermark for one route budget: with the retained
- * occurrences in request order, the budget removes a whole-quantum prefix and the
- * last removed occurrence's position becomes the watermark. Under a 128 MiB
- * bound with a 64 MiB quantum, 129 retained one-megabyte images offload the
- * oldest 65 so 64 MiB remain, and the watermark then holds until the retained
- * total again exceeds the bound.
- * @param retained - retained occurrences in request order.
+ * Number of oldest retained occurrences a route must still offload before a
+ * derived request fits its budget at the exact byte length the route sends;
+ * zero when the request fits. A route fails with `IMAGE_OFFLOAD_REQUIRED`
+ * carrying this count instead of offloading on its own.
+ * @param messages - derived request history carrying the surface's `offloaded` marks.
  * @param budget - route representation, budgets, and removal quanta.
- * @returns the position of the last occurrence to offload, or undefined when the budget holds.
+ * @param versionBytes - exact request-version byte length of one retained occurrence.
+ * @returns how many more leading retained occurrences to offload.
  */
-export function planImageOffload<Position>(
-  retained: readonly RetainedImageOccurrence<Position>[],
-  budget: LlmImageRequestBudget,
-): Position | undefined {
-  const count = offloadedImagePrefixCount(
-    retained.map(occurrence => representedImageBytes(occurrence.bytes, budget)),
-    budget,
-  )
-  if (count === 0) return undefined
-  // oxlint-disable-next-line typescript/no-non-null-assertion -- the prefix count never exceeds the retained length
-  return retained[count - 1]!.position
+export function requiredImageOffload(
+  messages: readonly Message[],
+  budget: Pick<LlmImageRequestBudget, 'representation' | 'maxBytes' | 'maxImages' | 'byteQuantum' | 'countQuantum'>,
+  versionBytes: (block: ImageBlock) => number,
+): number {
+  const lengths: number[] = []
+  for (const message of messages) {
+    visitImageBlocks(message.content, (block) => {
+      if (block.offloaded !== true) lengths.push(representedImageBytes(versionBytes(block), budget))
+    })
+  }
+  return offloadedImagePrefixCount(lengths, budget)
 }
 
 /** Replace every image occurrence, including nested tool results, for a text-only model. */

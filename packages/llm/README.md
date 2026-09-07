@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-The llm group provides the harness's model-call capability: one provider-neutral service through which any composition streams requests to a model provider, plus adapters, provider-specific request metadata, retry execution, and measurement. The core `llm` package defines the message, content-block, and stream-chunk vocabulary every plugin and the session log use; provider adapters translate a provider's wire format into that vocabulary; DeepSeek request-extension plugins contribute lifecycle-owned metadata outside model input; `llm-retry` re-runs failed requests at durable agent-step boundaries; and `token-meter` measures request and context pressure from the durable log. This page maps the group; each package README owns its per-package contract.
+The llm group provides the harness's model-call capability: one provider-neutral service through which any composition streams requests to a model provider, plus adapters, provider-specific request metadata, retry execution, and measurement. The core `llm` package defines the message, content-block, and stream-chunk vocabulary every plugin and the session log use; provider adapters translate a provider's wire format into that vocabulary; DeepSeek request-extension plugins contribute lifecycle-owned metadata outside model input; `llm-retry` re-runs failed requests at durable agent-step boundaries; `llm-image-offload` advances the durable `image/offload` watermark that keeps request images within each route's budget; and `token-meter` measures request and context pressure from the durable log. This page maps the group; each package README owns its per-package contract.
 
 ## Table of Contents
 
@@ -30,6 +30,7 @@ The llm group provides the harness's model-call capability: one provider-neutral
 | [`deepseek-llm-api-extensions/`](deepseek-llm-api-extensions/README.md) | Registers lifecycle-owned top-level fields on official DeepSeek requests | `ctx.deepseekLlmApiExtensions` |
 | [`plugin-package-inventory-deepseek/`](plugin-package-inventory-deepseek/README.md) | Contributes the active Loader package inventory to official DeepSeek requests | contributes `dsh_plugin_packages` |
 | [`llm-retry/`](llm-retry/README.md) | Retries failed model requests under each provider's policy at durable agent-step boundaries | listens to `agent/request-error` |
+| [`llm-image-offload/`](llm-image-offload/README.md) | Advances the session's durable `image/offload` watermark from route budgets and adapter failures | listens to `agent/pre-step`, `agent/request-error` |
 | [`token-meter/`](token-meter/README.md) | Measures request and context pressure from the durable session log with a fixed heuristic | `ctx.tokenMeter` |
 
 -----

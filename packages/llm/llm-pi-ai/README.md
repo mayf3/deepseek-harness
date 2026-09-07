@@ -83,7 +83,7 @@ Each profile may set a `retryPolicy`; omission uses normal mode with five retrie
 | `defaultMaxTokens` | `32,768` | Output-cap fallback for undescribed models |
 | `requestImagePixelBudget` | `4,194,304` | Total-pixel budget for each deterministic request image |
 | `requestImageMaxBytes` | `1 MiB` | Encoded-byte target for each request image before base64 expansion |
-| `maxRequestImageBytes` | `20 MiB` | Aggregate base64 image-payload bound declared to the agent loop's `image/offload` watermark |
+| `maxRequestImageBytes` | `20 MiB` | Aggregate base64 image-payload bound declared to the `dsh-llm-image-offload` plugin's `image/offload` watermark planning |
 | `retryPolicy` | normal, 5 retries | Provider-owned retry policy executed by `dsh-llm-retry` |
 
 The generated [configuration catalog](../../../docs/config-catalog.md#deepseek-aidsh-llm-pi-ai) is the exhaustive source for every accepted field and its JSDoc.
@@ -176,7 +176,7 @@ Read these pages when the package-level contract is not enough. They move from t
 
 #### What the model sees
 
-The selected catalog model receives `GenerateOptions.system`, history, tools, and sampling fields supported by pi-ai's common streaming API. Each retained image is preceded by text naming its complete attachment id and actual request dimensions. When the current execution filesystem maps the attachment provider's host object, the text also carries a read-only normalized-object path and warns that normalization or request projection may have resized or re-encoded the upload. Each occurrence the session's `image/offload` watermark marks offloaded keeps its own identity and currently resolved access in replacement text, and its normalized attachment is not read or transformed. When the retained occurrences' exact base64 payload still exceeds the route's `maxRequestImageBytes`, the call fails with `IMAGE_OFFLOAD_REQUIRED` so the agent loop advances the watermark and rebuilds the request. Provider-native replay metadata is restored only when the adapter validates it for the historical content.
+The selected catalog model receives `GenerateOptions.system`, history, tools, and sampling fields supported by pi-ai's common streaming API. Each retained image is preceded by text naming its complete attachment id and actual request dimensions. When the current execution filesystem maps the attachment provider's host object, the text also carries a read-only normalized-object path and warns that normalization or request projection may have resized or re-encoded the upload. Each occurrence the session's `image/offload` watermark marks offloaded keeps its own identity and currently resolved access in replacement text, and its normalized attachment is not read or transformed. When the retained occurrences' exact base64 payload still exceeds the route's `maxRequestImageBytes`, the call fails with `IMAGE_OFFLOAD_REQUIRED` so the `dsh-llm-image-offload` plugin advances the watermark and retries the step. Provider-native replay metadata is restored only when the adapter validates it for the historical content.
 
 #### Token effect
 

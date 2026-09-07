@@ -247,8 +247,8 @@ interface LlmFailure {
   /**
    * With code `IMAGE_OFFLOAD_REQUIRED`: how many more of the oldest retained
    * image occurrences the route needs offloaded before the same request fits
-   * its exact byte accounting. The agent loop advances the durable watermark
-   * by this count and rebuilds the request.
+   * its exact byte accounting. The `dsh-llm-image-offload` plugin advances the
+   * durable watermark by this count and retries the step.
    */
   readonly offloadImages?: number
 }
@@ -760,8 +760,6 @@ interface PreparedLlmCall {
   readonly context?: LlmModelContext
   /** Exact model modalities captured with the adapter dispatch generation. */
   readonly inputModalities?: readonly ModelModality[]
-  /** Detached request-image budget the route enforces, when it declares one. */
-  readonly imageRequest?: LlmImageRequestBudget
   /** Config fields materialized by the captured adapter rather than proposed by the caller. */
   readonly adapterDefaults: LlmCallConfigAdapterDefaults
   /**

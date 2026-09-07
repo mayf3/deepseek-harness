@@ -4679,7 +4679,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'PreparedLlmCall',
-    declaration: 'export interface PreparedLlmCall {\n    readonly config: LlmCallConfig;\n    readonly retryPolicy: ResolvedRetryPolicy;\n    readonly context?: LlmModelContext;\n    readonly inputModalities?: readonly ModelModality[];\n    readonly imageRequest?: LlmImageRequestBudget;\n    readonly adapterDefaults: LlmCallConfigAdapterDefaults;\n    stream(options: GenerateOptions): AsyncIterable<StreamChunk>;\n}',
+    declaration: 'export interface PreparedLlmCall {\n    readonly config: LlmCallConfig;\n    readonly retryPolicy: ResolvedRetryPolicy;\n    readonly context?: LlmModelContext;\n    readonly inputModalities?: readonly ModelModality[];\n    readonly adapterDefaults: LlmCallConfigAdapterDefaults;\n    stream(options: GenerateOptions): AsyncIterable<StreamChunk>;\n}',
   },
   {
     name: 'PreparedReferencedMessage',

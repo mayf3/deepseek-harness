@@ -58,7 +58,7 @@ kind: "package-reference"
 | `defaultContextWindow` | `1,000,000` | 无精确值模型的容量回退 |
 | `models` | V4 Flash + V4 Pro + V4 Flash Vision Exp | 供发现消费方查看的建议性目录 |
 | `streamIdleTimeoutMs` | `300,000` | 单次流读取未完成的最大提供方空闲时间 |
-| `maxRequestFilesBytes` | `128 MiB` | 向 agent loop 的 `image/offload` 水位声明的 file 模式请求图片字节预算 |
+| `maxRequestFilesBytes` | `128 MiB` | 向 `dsh-llm-image-offload` 插件的 `image/offload` 水位规划声明的 file 模式请求图片字节预算 |
 | `maxInlineRequestImageBytes` | `20 MiB` | 独立的 base64 回退高水位 |
 | `maxImagesPerRequest` | `600` | 保留请求图片数量的高水位 |
 | `imageOffloadByteQuantum` | `64 MiB` | Files 模式最旧前缀移除量子 |
@@ -156,7 +156,7 @@ Files 模式通过 `maxRequestFilesBytes` 与 `maxImagesPerRequest` 限制保留
 
 #### Token 影响
 
-提供方分词决定精确的文本与图片 token 输入。适配器声明按路由的 `imageRequestPricing`：把会话 `image/offload` 水位标记为已省略的每个出现位置按其占位文本计价，并按投影后的尺寸使用官方公布的 v4 视觉计量（14px patch 网格、3:1 降采样、单图 384 token 上限、最坏对齐 pad）为每张保留图片计价。这使 token 计量服务可以在请求发出前为图片压力定价；上报的 usage 仍是权威值。推理回传会把每个推理轮次的思维链带进后续请求，而已省略的图片不再消耗视觉 token。每条支持图片的目录路由还会把 file 模式预算（`maxRequestFilesBytes`、`maxImagesPerRequest`、两个量子与请求版本字节目标）作为 `imageRequest` 声明在其解析后的模型信息上，供 agent loop 仅凭已记录事实推进水位；保留的出现位置按精确请求版本字节仍超过 file 模式或内联回退预算的请求，以 `IMAGE_OFFLOAD_REQUIRED` 失败并说明还需省略多少最老的出现位置。可用时报告缓存读取用量。`totalTokens` 是精确的 `prompt_tokens + completion_tokens` 汇总值；提供方给出的 `total_tokens` 不一致时省略该值。
+提供方分词决定精确的文本与图片 token 输入。适配器声明按路由的 `imageRequestPricing`：把会话 `image/offload` 水位标记为已省略的每个出现位置按其占位文本计价，并按投影后的尺寸使用官方公布的 v4 视觉计量（14px patch 网格、3:1 降采样、单图 384 token 上限、最坏对齐 pad）为每张保留图片计价。这使 token 计量服务可以在请求发出前为图片压力定价；上报的 usage 仍是权威值。推理回传会把每个推理轮次的思维链带进后续请求，而已省略的图片不再消耗视觉 token。每条支持图片的目录路由还会把 file 模式预算（`maxRequestFilesBytes`、`maxImagesPerRequest`、两个量子与请求版本字节目标）作为 `imageRequest` 声明在其解析后的模型信息上，供 `dsh-llm-image-offload` 插件仅凭已记录事实推进水位；保留的出现位置按精确请求版本字节仍超过 file 模式或内联回退预算的请求，以 `IMAGE_OFFLOAD_REQUIRED` 失败并说明还需省略多少最老的出现位置。可用时报告缓存读取用量。`totalTokens` 是精确的 `prompt_tokens + completion_tokens` 汇总值；提供方给出的 `total_tokens` 不一致时省略该值。
 
 #### KV Cache 影响
 

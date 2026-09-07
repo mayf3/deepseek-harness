@@ -1033,6 +1033,19 @@ export interface DeepSeekCatalogModel {
 
 来源：[`packages/llm/llm-deepseek/src/index.ts:125`](../packages/llm/llm-deepseek/src/index.ts)
 
+<a id="deepseek-aidsh-llm-image-offload"></a>
+
+## `@deepseek-ai/dsh-llm-image-offload`
+
+需要：`llm` · `agents`
+
+```ts config-catalog
+/** The plugin has no configuration; image-capable routes declare their budgets. */
+export type Config = Readonly<Record<string, never>>
+```
+
+来源：[`packages/llm/llm-image-offload/src/index.ts:25`](../packages/llm/llm-image-offload/src/index.ts)
+
 <a id="deepseek-aidsh-llm-pi-ai"></a>
 
 ## `@deepseek-ai/dsh-llm-pi-ai`
@@ -1371,13 +1384,6 @@ export interface ReplayModelConfig {
    * no image pricing.
    */
   imageRequestTokens?: number
-  /**
-   * Optional accumulated base64 image-byte bound the replay route declares,
-   * so the agent loop advances the durable `image/offload` watermark in
-   * keyless scenarios exactly as a live image-capable route would. Requires
-   * {@link inputModalities} to include `image`. Absent declares no budget.
-   */
-  imageRequestMaxBytes?: number
   /** Optional reasoning-effort ids the replay route accepts, in display order. */
   reasoningEfforts?: string[]
   /**
@@ -1390,7 +1396,7 @@ export interface ReplayModelConfig {
 
 依赖：[`ModelModality`](../packages/llm/llm/src/index.ts) · [`RetryPolicyConfig`](../packages/llm/llm/src/index.ts)
 
-来源：[`packages/test-support/llm-replay/src/index.ts:1287`](../packages/test-support/llm-replay/src/index.ts)
+来源：[`packages/test-support/llm-replay/src/index.ts:1277`](../packages/test-support/llm-replay/src/index.ts)
 
 <a id="deepseek-aidsh-llm-retry"></a>
 

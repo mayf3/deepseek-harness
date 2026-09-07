@@ -51,8 +51,8 @@ export interface LlmFailure {
   /**
    * With code `IMAGE_OFFLOAD_REQUIRED`: how many more of the oldest retained
    * image occurrences the route needs offloaded before the same request fits
-   * its exact byte accounting. The agent loop advances the durable watermark
-   * by this count and rebuilds the request.
+   * its exact byte accounting. The `dsh-llm-image-offload` plugin advances the
+   * durable watermark by this count and retries the step.
    */
   readonly offloadImages?: number
 }
@@ -330,9 +330,10 @@ export interface LlmModelContext {
 }
 
 /**
- * Request-image budget one exact image-capable route declares, so the agent
- * loop can advance the session's durable `image/offload` watermark before
- * dispatch from logged facts alone. Byte accounting clamps each occurrence's
+ * Request-image budget one exact image-capable route declares, so the
+ * `dsh-llm-image-offload` plugin can advance the session's durable
+ * `image/offload` watermark before a step from logged facts alone. Byte
+ * accounting clamps each occurrence's
  * normalized byte count to {@link versionMaxBytes} and, for the `base64`
  * representation, expands it to its encoded length. A route whose exact
  * request accounting still exceeds the budget fails the request with

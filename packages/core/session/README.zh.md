@@ -83,7 +83,7 @@ session.deriveMessages()         // the derived model history
 
 `request/header` 存储非历史请求 envelope 的完整规范快照，原因为 `initial`、`resume`、`change` 或 `series`。显式消息序列起点或表层替换会在 envelope 不变时写入 `series` 快照；同时发生变化时使用 `startsSeries: true`。同一序列内的步骤、重试与普通后续轮次继承最新快照。`adapterDefaults` 区分由适配器解析的值与显式设置，`foldRequestHeader()` 选择最新快照。这种自包含记录以每个消息序列增加存储为代价，支持局部窗口渲染与精确重建；细节由[可重建请求 Agent Note](../../../.agents/notes/implemented/architecture/2026-07-05-reconstructable-requests.zh.md)负责。
 
-`image/offload` 记录 agent loop 在路由请求图片预算被超过时于分派前推进的持久图片 offload 水位：一个以事件序号加完整嵌套块路径指向最后一个被省略出现位置的 `ImageOccurrencePosition`。派生把位于水位及之前的每个出现位置标为 `offloaded: true`，于是每条路由发送其占位文本而不是图片。位置只会推进；`Session.append` 与 seed 要求它指向当前表层图片，并拒绝持久消息中的请求专用 `offloaded` 标记。该事件改变派生表层，因此读取时必须识别：不认识该类型的构建拒绝这份日志，而不是带着模型从未见过的图片重放（[决定](../../../.agents/notes/implemented/architecture/2026-09-02-image-offload-watermark.zh.md)）。
+`image/offload` 记录 `dsh-llm-image-offload` 插件在路由请求图片预算被超过时推进的持久图片 offload 水位：一个以事件序号加完整嵌套块路径指向最后一个被省略出现位置的 `ImageOccurrencePosition`。派生把位于水位及之前的每个出现位置标为 `offloaded: true`，于是每条路由发送其占位文本而不是图片。位置只会推进；`Session.append` 与 seed 要求它指向当前表层图片，并拒绝持久消息中的请求专用 `offloaded` 标记。该事件改变派生表层，因此读取时必须识别：不认识该类型的构建拒绝这份日志，而不是带着模型从未见过的图片重放（[决定](../../../.agents/notes/implemented/architecture/2026-09-02-image-offload-watermark.zh.md)）。
 
 ### 源码地图
 

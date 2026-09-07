@@ -93,13 +93,6 @@ export interface ReplayModelConfig {
    * no image pricing.
    */
   imageRequestTokens?: number
-  /**
-   * Optional accumulated base64 image-byte bound the replay route declares,
-   * so the agent loop advances the durable `image/offload` watermark in
-   * keyless scenarios exactly as a live image-capable route would. Requires
-   * {@link inputModalities} to include `image`. Absent declares no budget.
-   */
-  imageRequestMaxBytes?: number
   /** Optional reasoning-effort ids the replay route accepts, in display order. */
   reasoningEfforts?: string[]
   /**
@@ -1082,9 +1075,6 @@ class ReplayAdapter extends LlmAdapter {
       ...configuredModel?.defaultMaxTokens === undefined
         ? {}
         : { defaultMaxTokens: configuredModel.defaultMaxTokens },
-      ...configuredModel?.imageRequestMaxBytes === undefined
-        ? {}
-        : { imageRequest: { representation: 'base64' as const, maxBytes: configuredModel.imageRequestMaxBytes } },
       ...configuredModel?.reasoningEfforts === undefined
         ? {}
         : {
@@ -1326,20 +1316,6 @@ function validateConfiguredModels(providers: ReplayProviderConfig[] | undefined)
       if (imageRequestTokens !== undefined && model.inputModalities?.includes('image') !== true) {
         throw new Error(
           `llm-replay: provider "${provider.id}" model "${model.id}" imageRequestTokens `
-          + 'requires inputModalities to include "image"',
-        )
-      }
-      const imageRequestMaxBytes: unknown = model.imageRequestMaxBytes
-      if (imageRequestMaxBytes !== undefined
-        && (!Number.isSafeInteger(imageRequestMaxBytes) || (imageRequestMaxBytes as number) <= 0)) {
-        throw new Error(
-          `llm-replay: provider "${provider.id}" model "${model.id}" imageRequestMaxBytes `
-          + 'must be a positive safe integer',
-        )
-      }
-      if (imageRequestMaxBytes !== undefined && model.inputModalities?.includes('image') !== true) {
-        throw new Error(
-          `llm-replay: provider "${provider.id}" model "${model.id}" imageRequestMaxBytes `
           + 'requires inputModalities to include "image"',
         )
       }
