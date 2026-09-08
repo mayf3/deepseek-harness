@@ -6,7 +6,6 @@ import { Context } from '@deepseek-ai/cordis'
 import { FsError, FsTargetKey, FsVersion } from '@deepseek-ai/dsh-fs'
 import { LocalFileSystem } from '@deepseek-ai/dsh-fs-local'
 import { SessionMediaReferences } from '../src/media-references.ts'
-import { SessionController } from '../src/index.ts'
 
 const PNG_BYTES = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3, 4])
 const DEFAULT_LIMIT = 20 * 1024 * 1024
@@ -28,7 +27,7 @@ describe('SessionMediaReferences /api/file', () => {
     await rm(root, { recursive: true, force: true })
   })
 
-  async function mount(config: { maxImageBytes?: number; maxFileBytes?: number } = {}, defaultLimit = DEFAULT_LIMIT) {
+  async function mount(maxBytes = DEFAULT_LIMIT) {
     const ctx = new Context()
     contexts.push(ctx)
     let handler: ((request: Request) => Promise<Response>) | undefined
@@ -41,9 +40,9 @@ describe('SessionMediaReferences /api/file', () => {
         },
       },
     } as never)
-    ctx.provide('attachments', { imageLimits: { maxImageBytes: defaultLimit } } as never)
+    ctx.provide('attachments', { imageLimits: { maxImageBytes: maxBytes } } as never)
     await ctx.plugin(LocalFileSystem, { cwd: root }).await()
-    await ctx.plugin(SessionMediaReferences, config).await()
+    await ctx.plugin(SessionMediaReferences).await()
     const raw = (url: string, init?: RequestInit) => {
       if (handler === undefined) throw new Error('route not registered')
       return handler(new Request(url, init))
@@ -57,23 +56,8 @@ describe('SessionMediaReferences /api/file', () => {
     }
   }
 
-  it('inherits attachment limits unless configured and rejects invalid overrides', async () => {
-    expect(SessionController.Config({}).maxImageBytes).toBeUndefined()
-    expect(SessionController.Config({}).maxFileBytes).toBeUndefined()
-    for (const field of ['maxImageBytes', 'maxFileBytes']) {
-      expect(SessionController.Config({ [field]: 1 })).toMatchObject({ [field]: 1 })
-      for (const value of [0, -1, 1.5, Infinity, NaN, Number.MAX_SAFE_INTEGER + 1]) {
-        expect(() => SessionController.Config({ [field]: value })).toThrow()
-      }
-    }
-    const route = await mount({}, PNG_BYTES.length - 1)
-    const path = join(root, 'image.png')
-    await writeFile(path, PNG_BYTES)
-    expect((await route.call(path)).status).toBe(413)
-  })
-
   it('serves the inclusive image cap and refuses larger images for GET, HEAD and Range', async () => {
-    const route = await mount({ maxImageBytes: PNG_BYTES.length })
+    const route = await mount(PNG_BYTES.length)
     const path = join(root, 'bounded.png')
     await writeFile(path, PNG_BYTES)
     expect(await responseBytes(await route.call(path))).toEqual(PNG_BYTES)
@@ -101,7 +85,7 @@ describe('SessionMediaReferences /api/file', () => {
   })
 
   it('uses the filesystem byte reader to reject post-stat image growth', async () => {
-    const route = await mount({ maxImageBytes: PNG_BYTES.length })
+    const route = await mount(PNG_BYTES.length)
     const path = join(root, 'growing.png')
     await writeFile(path, PNG_BYTES)
     route.fs.internals.inspectReadBytesAfterStat = async () => {
@@ -127,8 +111,8 @@ describe('SessionMediaReferences /api/file', () => {
     expect(await responseBytes(response)).toEqual(PNG_BYTES)
   })
 
-  it.each(['mp4', 'mp3', 'bin'])('allows a separate byte cap for .%s files', async (extension) => {
-    const route = await mount({ maxImageBytes: 1, maxFileBytes: PNG_BYTES.length })
+  it.each(['mp4', 'mp3', 'bin'])('applies the attachment byte cap to .%s files', async (extension) => {
+    const route = await mount(PNG_BYTES.length)
     const path = join(root, `file.${extension}`)
     await writeFile(path, PNG_BYTES)
     expect(await responseBytes(await route.call(path))).toEqual(PNG_BYTES)

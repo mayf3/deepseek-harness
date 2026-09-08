@@ -19,7 +19,7 @@ const BASE_HEADERS = {
   'Content-Security-Policy': "sandbox; default-src 'none'",
 }
 
-async function serveFile(request: Request, fs: FileSystem, limits: { image: number; file: number }): Promise<Response> {
+async function serveFile(request: Request, fs: FileSystem, maxBytes: number): Promise<Response> {
   const fail = (status: number, text: string): Response =>
     new Response(request.method === 'HEAD' ? null : text, { status, headers: BASE_HEADERS })
   const path = new URL(request.url).searchParams.get('path')
@@ -28,7 +28,6 @@ async function serveFile(request: Request, fs: FileSystem, limits: { image: numb
   try {
     const target = await fs.resolve(path, { signal: request.signal })
     const mediaType = mime.lookup(target.displayPath) || 'application/octet-stream'
-    const maxBytes = mediaType.startsWith('image/') ? limits.image : limits.file
     const headers: Record<string, string> = {
       ...BASE_HEADERS,
       'Content-Type': mediaType,
@@ -66,14 +65,13 @@ async function serveFile(request: Request, fs: FileSystem, limits: { image: numb
  */
 export const SessionMediaReferences = {
   inject: ['connection', 'fs', 'attachments'],
-  apply(ctx: Context, config: { maxImageBytes?: number; maxFileBytes?: number }): void {
-    const defaults = ctx.attachments.imageLimits.maxImageBytes
-    const limits = { image: config.maxImageBytes ?? defaults, file: config.maxFileBytes ?? defaults }
+  apply(ctx: Context): void {
+    const maxBytes = ctx.attachments.imageLimits.maxImageBytes
     ctx.effect(() => ctx.connection.fetch.register({
       path: '/api/file',
       methods: ['GET', 'HEAD'],
       requestBody: 'buffered',
-      fetch: request => serveFile(request, ctx.fs, limits),
+      fetch: request => serveFile(request, ctx.fs, maxBytes),
     }), 'session-controller: /api/file')
   },
 }

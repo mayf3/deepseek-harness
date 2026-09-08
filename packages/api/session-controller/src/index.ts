@@ -70,10 +70,6 @@ declare module '@deepseek-ai/cordis' {
 export interface Config {
   /** Override platform desktop-opener detection. */
   readonly nativeOpen?: boolean
-  /** Inclusive byte limit for images served by `/api/file`. Defaults to `ctx.attachments.imageLimits.maxImageBytes`. */
-  readonly maxImageBytes?: number
-  /** Inclusive byte limit for other files served by `/api/file`. Defaults to `ctx.attachments.imageLimits.maxImageBytes`. */
-  readonly maxFileBytes?: number
 }
 
 /** Host integrations replaceable by direct unit tests. */
@@ -101,8 +97,6 @@ export class SessionController extends TypertRemoteService {
 
   static Config: z<Config> = z.object({
     nativeOpen: z.boolean(),
-    maxImageBytes: z.number().step(1).min(1).max(Number.MAX_SAFE_INTEGER),
-    maxFileBytes: z.number().step(1).min(1).max(Number.MAX_SAFE_INTEGER),
   })
 
   private readonly agents: ApiSessionAgentController
@@ -116,7 +110,7 @@ export class SessionController extends TypertRemoteService {
 
   /**
    * @param ctx - Host context containing the Session capability assembly.
-   * @param config - native-opener and media-read deployment policy.
+   * @param config - native-opener deployment policy.
    * @param internals - host integrations replaceable by direct unit tests.
    */
   constructor(ctx: Context, config: Config, internals: SessionControllerInternals = {}) {
@@ -141,7 +135,7 @@ export class SessionController extends TypertRemoteService {
     this.canOpenPath = internals.canOpenPath
       ?? (() => config.nativeOpen ?? (internals.openPath !== undefined || canOpenNativePath()))
     ctx.plugin(SessionFileReferences)
-    ctx.plugin(SessionMediaReferences, config)
+    ctx.plugin(SessionMediaReferences)
     ctx.plugin(SessionSkillCatalog)
 
     ctx.on('session/created', (session) => {

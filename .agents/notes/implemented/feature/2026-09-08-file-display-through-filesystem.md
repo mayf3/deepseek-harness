@@ -14,7 +14,7 @@ The authenticated `/api/file` route reads ordinary files through `ctx.fs`. Authe
 
 GET calls the existing `readBytes(target, signal, maxBytes)`: providers reject known oversized files before content I/O and enforce the limit while reading. HEAD uses metadata without reading content. `FS_TOO_LARGE` becomes 413. MIME lookup supplies response metadata without sniffing file contents; unknown extensions use `application/octet-stream`. A sandbox CSP prevents directly opened HTML/SVG from executing with the authenticated API origin.
 
-`maxImageBytes` bounds images; `maxFileBytes` independently bounds audio, video, and other files. Both configuration overrides default to the resolved attachment image limit, normally 20 MiB. Separate overrides let deployments raise the non-image limit without weakening image admission. All responses contain complete files; Range is ignored and no range support is advertised.
+All files use the resolved `ctx.attachments.imageLimits.maxImageBytes` limit, normally 20 MiB. The attachment service owns this deployment setting. All responses contain complete files; Range is ignored and no range support is advertised.
 
 ## Alternatives considered
 
@@ -32,4 +32,4 @@ Each GET buffers the complete file in Host memory. Audio/video work as complete 
 
 ## Testing
 
-Route tests cover sparse 1 GiB rejection before content I/O, post-stat growth, separate byte limits, ordinary MIME types, temporary paths and symlinks, opaque remote targets, provider failures, metadata-only HEAD, ignored Range, and disposal. Browser expectations cover rendered images, 413/404 and corrupt-image fallbacks, and an image outside the workspace. Remote byte transfer remains owned by the existing filesystem provider tests.
+Route tests cover sparse 1 GiB rejection before content I/O, post-stat growth, the shared attachment byte limit, ordinary MIME types, temporary paths and symlinks, opaque remote targets, provider failures, metadata-only HEAD, ignored Range, and disposal. Browser expectations cover rendered images, 413/404 and corrupt-image fallbacks, and an image outside the workspace. Remote byte transfer remains owned by the existing filesystem provider tests.

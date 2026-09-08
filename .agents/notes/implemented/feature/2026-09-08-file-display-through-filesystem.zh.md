@@ -14,7 +14,7 @@ Status: implemented
 
 GET 调用现有 `readBytes(target, signal, maxBytes)`：提供方在内容 I/O 前拒绝已知超限文件，并在读取过程中执行上限。HEAD 使用元数据，不读取内容。`FS_TOO_LARGE` 转换为 413。MIME 查询提供响应元数据，不嗅探文件内容；未知扩展名使用 `application/octet-stream`。sandbox CSP 阻止直接打开的 HTML/SVG 以鉴权 API 源身份执行脚本。
 
-`maxImageBytes` 限制图片；`maxFileBytes` 独立限制音视频及其他文件。两个配置覆盖项均默认使用已解析的附件图片上限，通常为 20 MiB。独立覆盖项让部署可以提高非图片上限而不削弱图片准入。所有响应均包含完整文件；忽略 Range，也不声明支持 Range。
+所有文件均使用已解析的 `ctx.attachments.imageLimits.maxImageBytes` 上限，通常为 20 MiB。附件服务拥有此部署配置。所有响应均包含完整文件；忽略 Range，也不声明支持 Range。
 
 ## Alternatives considered
 
@@ -32,4 +32,4 @@ GET 调用现有 `readBytes(target, signal, maxBytes)`：提供方在内容 I/O 
 
 ## Testing
 
-路由测试覆盖内容 I/O 前拒绝稀疏 1 GiB 文件、stat 后增长、独立字节上限、普通 MIME 类型、临时路径与符号链接、不透明远程目标、提供方失败、仅元数据 HEAD、忽略 Range 和释放。浏览器期望覆盖图片渲染、413/404 及损坏图片回退，以及工作区之外的图片。远程字节传输仍由现有文件系统提供方测试负责。
+路由测试覆盖内容 I/O 前拒绝稀疏 1 GiB 文件、stat 后增长、共用附件字节上限、普通 MIME 类型、临时路径与符号链接、不透明远程目标、提供方失败、仅元数据 HEAD、忽略 Range 和释放。浏览器期望覆盖图片渲染、413/404 及损坏图片回退，以及工作区之外的图片。远程字节传输仍由现有文件系统提供方测试负责。
