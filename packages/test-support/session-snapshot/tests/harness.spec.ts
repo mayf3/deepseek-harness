@@ -984,7 +984,19 @@ describe('runScenario', () => {
     )).rejects.toThrow(/did not persist goal phase "blocked" within 20ms/)
   })
 
-  it('waitForSubagentTurnEnd requires a closed child work turn', { timeout: 20_000 }, async () => {
+  it('waitForSubagentTurnEnd requires a closed child work turn', { timeout: 20_000 }, async ({ onTestFinished }) => {
+    const waitFor = vi.waitFor
+    const wait = vi.spyOn(vi, 'waitFor')
+    onTestFinished(() => { wait.mockRestore() })
+    // These immutable child logs exercise the diagnostic, not filesystem completion within 20ms.
+    wait.mockImplementation(async (callback, options) => {
+      if (typeof options !== 'object' || options.timeout !== 20) return waitFor(callback, options)
+      try {
+        return await callback()
+      } catch (error) {
+        return waitFor(() => { throw error }, options)
+      }
+    })
     const closed = await scenario({
       prompt: 'hang-until-cancel',
       persistLogsOnCancel: true,
