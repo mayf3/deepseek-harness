@@ -62,6 +62,8 @@ async function bootWeb(
     // back on the next run, so a stored document from any other build decides
     // this test's boot. Same reason the settings row above is pinned.
     { id: 'storage-json', config: { root: storageRoot } },
+    // Fixed Session IDs must stay inside this boot's temporary profile root.
+    { id: 'session-persistence-jsonl', config: { root: join(dirname(settingsFile), 'sessions') } },
     // Host rows with side effects outside this process: a bound port, a served
     // asset tree, a telemetry exporter. `api-gateway` and `directory-picker`
     // stay ENABLED on purpose — the api-proxy is the host row that injects
@@ -240,7 +242,7 @@ describe('the shipped Web composition', () => {
       // depend on ripgrep being present on the machine.
       expect(toolNames(ctx, handle.agent).filter(name => name !== 'glob' && name !== 'grep')).toEqual([
         'ask_user_question', 'bash', 'create_goal', 'edit', 'exit_plan_mode',
-        'get_goal', 'interrupt_agent', 'job_kill', 'job_list', 'job_output', 'list_agents', 'ralph', 'read', 'read_image', 'send_message', 'skill',
+        'get_goal', 'interrupt_agent', 'job_kill', 'job_list', 'job_output', 'list_agents', 'present', 'ralph', 'read', 'read_image', 'send_message', 'skill',
         'subagent', 'subagent_fork', 'todo_write', 'update_goal', 'web_fetch', 'web_search',
         'workflow', 'write',
       ])
