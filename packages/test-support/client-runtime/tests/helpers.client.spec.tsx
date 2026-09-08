@@ -46,6 +46,35 @@ function entry(seq: number): SessionLiveEventEntry {
 }
 
 describe('fixture helpers', () => {
+  it.each([false, true])('retracts default root sources without removing replacements (release first: %s)', async (releaseFirst) => {
+    const runtime = await SlotTestRuntime.create()
+    const hooks = { workspaces: runtime.workspaces.list, panelInfo: runtime.panelInfo }
+    let releaseReplacement: (() => void) | undefined
+    try {
+      if (releaseFirst) {
+        runtime.releaseWorkspaceSource()
+        runtime.releasePanelInfoSource()
+      } else {
+        await runtime.dispose()
+      }
+      releaseReplacement = runtime.slots.provideRoot({ hooks })
+      await runtime.dispose()
+      await runtime.dispose()
+      for (const key of ['workspaces', 'panelInfo'] as const) {
+        expect(() => runtime.slots.provideRoot({ hooks: { [key]: hooks[key] } }))
+          .toThrow(`duplicate root standard hook '${key}'`)
+      }
+    } finally {
+      try {
+        releaseReplacement?.()
+        runtime.releaseWorkspaceSource()
+        runtime.releasePanelInfoSource()
+      } finally {
+        await runtime.dispose()
+      }
+    }
+  })
+
   it('drives panel hooks, retains keyed selection on owner updates, and releases the default source', async () => {
     const runtime = await SlotTestRuntime.create()
     try {

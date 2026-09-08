@@ -423,7 +423,7 @@ export class SlotTestRuntime {
 
   /**
    * Tear down: unmount React trees first, then dispose feature fibers, the
-   * root registration, minted session scopes, and persisted test state.
+   * root registration and standard sources, minted session scopes, and persisted test state.
    * Idempotent.
    * @returns completion of the teardown.
    */
@@ -434,6 +434,7 @@ export class SlotTestRuntime {
     for (const view of this.views.splice(0)) view.unmount()
     for (const handle of this.handles.splice(0)) await handle.dispose()
     this.root.release()
+    this.disposeWorkspaceSource()
     this.disposePanelInfoSource()
     await this.sessions.disposeScopes()
     localStorage.clear()
