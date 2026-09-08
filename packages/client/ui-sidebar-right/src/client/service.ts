@@ -24,8 +24,8 @@
  * hand the store one settled intent and record the navigation in the Tab
  * domain. Placement is the caller's option, never a type's property.
  *
- * Wiring follows `LayoutController.attachPanels`: the registration hands the
- * service its store actions, and the service is the face other plugins hold.
+ * The registration adopts Session stores and injects the mounted seat binding;
+ * callers use the service's navigation methods.
  */
 import type { FloatRect, PaneId, TabId, TabRecord } from '@deepseek-ai/dsh-client-ui-dockkit'
 import { activeDockPaneId, canSplit, dockPaneIds, findTabPane, getPane } from '@deepseek-ai/dsh-client-ui-dockkit'

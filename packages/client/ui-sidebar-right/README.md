@@ -54,6 +54,8 @@ While the panel is hidden, one button in the conversation header's corner seat (
 
 The panel takes the conversation's ground colour and content font sizes rather than a raised layer of its own: it is a column of the page, not a card over it.
 
+The `rightbar` entry is a root-scoped controller. It reads `usePanelInfo` and mounts the Session-scoped `rightbar.session` subtree only while the Conversation is selected. Switching to a global panel hides the right Sidebar and releases its frame track without deleting the Session's tab state.
+
 <a id="state"></a>
 ## State
 
