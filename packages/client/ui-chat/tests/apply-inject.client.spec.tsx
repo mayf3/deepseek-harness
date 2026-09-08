@@ -16,6 +16,7 @@ import {
   apply as applyChat, inject as injectChat, type ChatViewInjected,
 } from '@deepseek-ai/dsh-client-ui-chat/client'
 import { SessionSeq, type SessionId } from '@deepseek-ai/dsh-session/types'
+import type { WorkspaceId } from '@deepseek-ai/dsh-workspace/types'
 import { createChatStore } from '../src/client/stores.ts'
 
 usePinnedBrowserLanguages('zh-CN')
@@ -57,7 +58,10 @@ async function bench() {
   )
   new TestRemote(runtime.ctx, { session: { openWorkspacePath } })
   runtime.ctx.provide('uiWorkspace', {
-    connectWorkspace: vi.fn(async () => ROOT),
+    openWorkspace: vi.fn(async (_workspaceId: WorkspaceId, beforeOpen: (id: SessionId) => void) => {
+      beforeOpen(ROOT)
+      runtime.sessions.open(ROOT)
+    }),
     openSession: (id: SessionId) => { runtime.sessions.open(id) },
   } as never)
   const session = sessionFakeFor()

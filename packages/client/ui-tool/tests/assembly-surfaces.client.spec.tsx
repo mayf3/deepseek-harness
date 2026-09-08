@@ -6,6 +6,7 @@ import { cleanup, fireEvent, waitFor } from '@testing-library/react'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import type { ISession } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import type { WorkspaceId } from '@deepseek-ai/dsh-workspace/types'
 import type { TodoItem } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import {
   apply as applyChat, inject as injectChat, type ToolResultNode,
@@ -79,7 +80,10 @@ async function bench(nodes: ToolResultNode[]) {
   runtime.ctx.provide('layout', { openDetails: vi.fn(), closeDetails: vi.fn() })
   runtime.ctx.provide('sidebarRight', { openResource: vi.fn() } as never)
   runtime.ctx.provide('uiWorkspace', {
-    connectWorkspace: vi.fn(async () => SID),
+    openWorkspace: vi.fn(async (_workspaceId: WorkspaceId, beforeOpen: (id: SessionId) => void) => {
+      beforeOpen(SID)
+      runtime.sessions.open(SID)
+    }),
     openSession: (id: SessionId) => { runtime.sessions.open(id) },
   } as never)
   const locale = new LocaleRuntime(runtime.ctx)

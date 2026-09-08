@@ -86,9 +86,10 @@ const ABSENT_FILE_UPLOADS = {
 
 interface WorkspaceNavigation {
   openSession(sessionId: SessionId): void
-  connectWorkspace(
+  openWorkspace(
     workspaceId: Parameters<ConversationInjected['selectWorkspace']>[0],
-  ): Promise<SessionId>
+    beforeOpen: (sessionId: SessionId) => void,
+  ): Promise<void>
 }
 
 /** Resolve the session-scoped Conversation action face, failing loud. */
@@ -232,8 +233,7 @@ export function apply(ctx: Context, config: Config = Config({})): void {
       hooks: {
         composerBlock: sessionId === undefined ? ABSENT_BLOCK : composerBlocks.storeFor(sessionId),
       },
-      selectWorkspace: async (workspaceId) => {
-        const nextId = await workspaceNavigation.connectWorkspace(workspaceId)
+      selectWorkspace: workspaceId => workspaceNavigation.openWorkspace(workspaceId, (nextId) => {
         if (sessionId !== undefined && nextId !== sessionId) {
           const from = inputHub.shell(sessionId)
           const draft = from.snapshot.draft
@@ -253,8 +253,7 @@ export function apply(ctx: Context, config: Config = Config({})): void {
             }
           }
         }
-        workspaceNavigation.openSession(nextId)
-      },
+      }),
     }),
   }, ConversationRoot)
 

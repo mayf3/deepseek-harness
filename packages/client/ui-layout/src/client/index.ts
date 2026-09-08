@@ -133,7 +133,8 @@ export function apply(ctx: ClientContext): void {
     const handle = createLayoutStore()
     const instance = handle.create()
     const store: typeof handle = { ...handle, create: () => instance }
-    const layout = new LayoutController(instance.actions)
+    const layout = new LayoutController(instance.actions, id =>
+      ctx.slots.entries('main').some(entry => entry.options.key === id))
     const retainMainPanels = (): void => {
       instance.actions.retainMainPanels(ctx.slots.entries('main').flatMap(entry =>
         entry.options.key === undefined ? [] : [entry.options.key]))
@@ -158,6 +159,7 @@ export function apply(ctx: ClientContext): void {
     const disposePanels = ctx.slots.subscribe('main', retainMainPanels)
     retainMainPanels()
     return () => {
+      layout.dispose()
       disposePanels()
       disposeRegistration()
       disposePanelInfo()

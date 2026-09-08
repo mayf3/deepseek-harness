@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { cleanup } from '@testing-library/react'
 import type { ISession } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import type { WorkspaceId } from '@deepseek-ai/dsh-workspace/types'
 import {
   apply as applyChat, inject as injectChat, type ToolResultNode,
 } from '@deepseek-ai/dsh-client-ui-chat/client'
@@ -66,7 +67,10 @@ async function bench(nodes: ToolResultNode[]) {
   const sidebarRight = { openResource: vi.fn<(address: string) => void>() }
   runtime.ctx.provide('sidebarRight', sidebarRight as never)
   runtime.ctx.provide('uiWorkspace', {
-    connectWorkspace: vi.fn(async () => SID),
+    openWorkspace: vi.fn(async (_workspaceId: WorkspaceId, beforeOpen: (id: SessionId) => void) => {
+      beforeOpen(SID)
+      runtime.sessions.open(SID)
+    }),
     openSession: (id: SessionId) => { runtime.sessions.open(id) },
   } as never)
   const locale = new LocaleRuntime(runtime.ctx)
@@ -213,7 +217,10 @@ describe('registrant declaration injection', () => {
     runtime.ctx.provide('layout', { openDetails: vi.fn(), closeDetails: vi.fn() })
     runtime.ctx.provide('sidebarRight', { openResource: vi.fn() } as never)
     runtime.ctx.provide('uiWorkspace', {
-      connectWorkspace: vi.fn(async () => SID),
+      openWorkspace: vi.fn(async (_workspaceId: WorkspaceId, beforeOpen: (id: SessionId) => void) => {
+        beforeOpen(SID)
+        runtime.sessions.open(SID)
+      }),
       openSession: (id: SessionId) => { runtime.sessions.open(id) },
     } as never)
     const locale = new LocaleRuntime(runtime.ctx)

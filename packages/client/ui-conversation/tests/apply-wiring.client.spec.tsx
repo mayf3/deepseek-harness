@@ -15,7 +15,10 @@ const SID = 'session-1' as SessionId
 async function bench(options: { declareConversation?: boolean } = {}) {
   const runtime = await SlotTestRuntime.create()
   runtime.ctx.provide('uiWorkspace', {
-    connectWorkspace: vi.fn(async () => SID),
+    openWorkspace: vi.fn(async (_workspaceId: unknown, beforeOpen: (id: SessionId) => void) => {
+      beforeOpen(SID)
+      runtime.sessions.open(SID)
+    }),
     openSession: (id: SessionId) => { runtime.sessions.open(id) },
   } as never)
   runtime.ctx.provide('settingsScope', { bind: () => stubSettingsScope().scope } as never)

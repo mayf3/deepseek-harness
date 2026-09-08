@@ -115,8 +115,7 @@ export function apply(ctx: Context): void {
       if (!result.ok) throw new Error(result.error.message)
     },
     forkSession: (sessionId) => {
-      sessions.fork({ sessionId, increaseTitle: true })
-        .then(openSession)
+      uiWorkspace.forkSession(sessionId)
         .catch(() => {
           // Fork or child-rename failure keeps the current selection.
         })

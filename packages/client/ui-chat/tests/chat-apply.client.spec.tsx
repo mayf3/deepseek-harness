@@ -9,6 +9,7 @@ import { resolveSlotLabel } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ObservableSnapshot } from '@deepseek-ai/dsh-client-store'
 import type { SessionBinding } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import type { WorkspaceId } from '@deepseek-ai/dsh-workspace/types'
 import {
   apply as applyConversation, inject as injectConversation,
 } from '@deepseek-ai/dsh-client-ui-conversation/client'
@@ -44,7 +45,10 @@ async function bench() {
   runtime.ctx.provide('layout', { openRightbar: vi.fn(), closeRightbar: vi.fn() } as never)
   runtime.ctx.provide('sidebarRight', { openResource: vi.fn() } as never)
   runtime.ctx.provide('uiWorkspace', {
-    connectWorkspace: vi.fn(async () => SID),
+    openWorkspace: vi.fn(async (_workspaceId: WorkspaceId, beforeOpen: (id: SessionId) => void) => {
+      beforeOpen(SID)
+      runtime.sessions.open(SID)
+    }),
     openSession: (id: SessionId) => { runtime.sessions.open(id) },
   } as never)
   new TestRemote(runtime.ctx, {

@@ -12,6 +12,7 @@ import {
 import { InputHub } from '../src/client/input/hub.ts'
 import { apply, inject, type EmptyWorkspaceOwnerProps } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import type { WorkspaceId } from '@deepseek-ai/dsh-workspace/types'
 
 // jsdom implements no Range geometry (Lexical's scroll-into-view measures the
 // caret with one once the surface is genuinely contenteditable).
@@ -61,7 +62,10 @@ function WorkspaceProbe({ open }: EmptyWorkspaceOwnerProps) {
 async function bench(opts?: { blank?: boolean }) {
   const runtime = await SlotTestRuntime.create()
   runtime.ctx.provide('uiWorkspace', {
-    connectWorkspace: vi.fn(async () => SID),
+    openWorkspace: vi.fn(async (_workspaceId: WorkspaceId, beforeOpen: (id: SessionId) => void) => {
+      beforeOpen(SID)
+      runtime.sessions.open(SID)
+    }),
     openSession: (id: SessionId) => { runtime.sessions.open(id) },
   } as never)
   runtime.ctx.provide('settingsScope', { bind: () => stubSettingsScope().scope } as never)
@@ -86,7 +90,10 @@ describe('resident composer', () => {
   it('renders the locked view state while no session exists at all', async () => {
     const runtime = await SlotTestRuntime.create()
     runtime.ctx.provide('uiWorkspace', {
-      connectWorkspace: vi.fn(async () => SID),
+      openWorkspace: vi.fn(async (_workspaceId: WorkspaceId, beforeOpen: (id: SessionId) => void) => {
+        beforeOpen(SID)
+        runtime.sessions.open(SID)
+      }),
       openSession: (id: SessionId) => { runtime.sessions.open(id) },
     } as never)
     runtime.ctx.provide('settingsScope', { bind: () => stubSettingsScope().scope } as never)
@@ -116,7 +123,10 @@ describe('resident composer', () => {
   it('keeps the complete Hero tree mounted when the first Workspace session appears', async () => {
     const runtime = await SlotTestRuntime.create()
     runtime.ctx.provide('uiWorkspace', {
-      connectWorkspace: vi.fn(async () => SID),
+      openWorkspace: vi.fn(async (_workspaceId: WorkspaceId, beforeOpen: (id: SessionId) => void) => {
+        beforeOpen(SID)
+        runtime.sessions.open(SID)
+      }),
       openSession: (id: SessionId) => { runtime.sessions.open(id) },
     } as never)
     runtime.ctx.provide('settingsScope', { bind: () => stubSettingsScope().scope } as never)
@@ -184,7 +194,10 @@ describe('prompt rejection through the assembled composer', () => {
   it('renders the promptError alert strip and keeps the draft in the machine', async () => {
     const runtime = await SlotTestRuntime.create()
     runtime.ctx.provide('uiWorkspace', {
-      connectWorkspace: vi.fn(async () => SID),
+      openWorkspace: vi.fn(async (_workspaceId: WorkspaceId, beforeOpen: (id: SessionId) => void) => {
+        beforeOpen(SID)
+        runtime.sessions.open(SID)
+      }),
       openSession: (id: SessionId) => { runtime.sessions.open(id) },
     } as never)
     runtime.ctx.provide('settingsScope', { bind: () => stubSettingsScope().scope } as never)

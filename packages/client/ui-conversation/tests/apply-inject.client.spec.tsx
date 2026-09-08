@@ -50,7 +50,11 @@ async function bench() {
   runtime.ctx.provide('settingsScope', { bind: () => stubSettingsScope().scope } as never)
   const connectWorkspace = vi.fn(async () => ROOT)
   runtime.ctx.provide('uiWorkspace', {
-    connectWorkspace,
+    openWorkspace: async (_workspaceId: WorkspaceId, beforeOpen: (id: SessionId) => void) => {
+      const id = await connectWorkspace()
+      beforeOpen(id)
+      runtime.sessions.open(id)
+    },
     openSession: (id: SessionId) => { runtime.sessions.open(id) },
   } as never)
   const sessionFake = sessionFakeFor()

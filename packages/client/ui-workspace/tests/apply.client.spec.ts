@@ -22,7 +22,7 @@ async function bench() {
   const open = vi.fn()
   const clear = vi.fn()
   const selectPanel = vi.fn()
-  ctx.provide('layout', { selectPanel })
+  ctx.provide('layout', { selectPanel, beginNavigation: () => new AbortController().signal })
   const search = vi.fn(async () => ({
     ok: true as const,
     value: { items: [{ sessionId: 'session' as never, snippet: 'match' }], hasMore: false },

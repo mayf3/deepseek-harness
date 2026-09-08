@@ -29,8 +29,14 @@ export interface ILayout {
   /**
    * Select a global central panel without changing the current Session.
    * @param panelId - registered main key, or null to show the Conversation.
+   * @throws if the selected main key is not registered; preserves the current selection.
    */
   selectPanel(panelId: MainPanelId | null): void
+  /**
+   * Start an asynchronous navigation, superseding any earlier pending navigation.
+   * @returns a signal aborted by the next navigation or layout disposal; check it before committing UI state.
+   */
+  beginNavigation(): AbortSignal
   /** Toggle the sidebar panel (closed ⟷ contract default width). */
   toggleSidebar(): void
   /**
@@ -47,12 +53,36 @@ export interface ILayout {
 
 /** Cross-plugin panel-action face (ctx.layout). */
 export class LayoutController implements ILayout {
-  /** @param panels - actions of the instance shared with the root entry. */
-  constructor(private readonly panels: PanelActions) {}
+  private navigation = new AbortController()
+
+  /**
+   * @param panels - actions of the instance shared with the root entry.
+   * @param hasMainPanel - checks the live main-slot registry for a panel id.
+   */
+  constructor(
+    private readonly panels: PanelActions,
+    private readonly hasMainPanel: (id: MainPanelId) => boolean,
+  ) {}
 
   /** Select a global panel or return to the Conversation. */
   selectPanel(panelId: MainPanelId | null): void {
+    if (panelId !== null && !this.hasMainPanel(panelId)) {
+      throw new Error(`layout.selectPanel: main panel "${panelId}" is not registered`)
+    }
+    this.navigation.abort()
     this.panels.selectPanel(panelId)
+  }
+
+  /** @returns the new pending navigation's cancellation signal. */
+  beginNavigation(): AbortSignal {
+    this.navigation.abort()
+    this.navigation = new AbortController()
+    return this.navigation.signal
+  }
+
+  /** Invalidate pending navigations when the layout owner is unloaded. */
+  dispose(): void {
+    this.navigation.abort()
   }
 
   /** Toggle the sidebar panel (closed ⟷ contract default width). */

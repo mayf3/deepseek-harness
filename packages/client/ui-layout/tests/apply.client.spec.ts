@@ -101,6 +101,7 @@ describe('ui-layout client apply', () => {
     const instance = handle.create()
     expect(handle.create()).toBe(instance)
     const layout = ctx.get('layout') as LayoutController
+    expect(() => { layout.selectPanel('missing' as MainPanelId) }).toThrow('main panel "missing" is not registered')
     layout.toggleSidebar()
     expect(instance.getSnapshot().layoutInfo.sidebar).toBe(0)
     const host = rendererHost()
@@ -113,7 +114,11 @@ describe('ui-layout client apply', () => {
     expect(panelInfo.getSnapshot()).toEqual({ activePanelId: panelId })
     disposePanel()
     await vi.waitFor(() => { expect(panelInfo.getSnapshot()).toEqual({ activePanelId: null }) })
+    expect(() => { layout.selectPanel(panelId) }).toThrow('main panel "panel-a" is not registered')
     expect(instance.getSnapshot().layoutInfo.sidebar).toBe(0)
+    const pending = layout.beginNavigation()
+    await fiber.dispose()
+    expect(pending.aborted).toBe(true)
   })
 
   it('theme presenter applies the initial snapshot, follows theme/change, and unwinds on dispose', async () => {
