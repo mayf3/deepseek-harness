@@ -924,7 +924,7 @@ export interface Config {
 }
 ```
 
-来源：[`packages/host/open-in-app/src/index.ts:49`](../packages/host/open-in-app/src/index.ts)
+来源：[`packages/host/open-in-app/src/index.ts:50`](../packages/host/open-in-app/src/index.ts)
 
 <a id="deepseek-aidsh-host-webserver"></a>
 

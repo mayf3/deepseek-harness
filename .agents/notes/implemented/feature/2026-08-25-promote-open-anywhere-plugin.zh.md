@@ -12,7 +12,7 @@ Status: implemented
 
 第一方功能命名为 `open-in-app`：它选择在 Harness 主机上打开 workspace 目录的应用，不表示另一台机器或目的位置。
 
-环境中的 `SSH_CONNECTION` 或 `SSH_TTY` 非空时，任何探测开始前就返回空应用目录。即使客户端记住了应用选择，也会隐藏操作入口；已有的可用性检查会拒绝图标和启动请求。SSH 端口转发只改变 HTTP 可达性，不改变工作区或应用所属的机器。
+[launch-environment](../../../../packages/util/launch-environment/README.zh.md) 中共用的 `launchedThroughSsh()` 只从继承的进程层读取非空 `SSH_CONNECTION` 或 `SSH_TTY`。SSH 启动时会在任何探测开始前返回空应用目录。项目与用户 `.env` 中的值不能作为 SSH 启动的依据；Web 浏览器唤起和自适应目录选择器共用此判断。即使客户端记住了应用选择，也会隐藏操作入口；已有的可用性检查会拒绝图标和启动请求。SSH 端口转发只改变 HTTP 可达性，不改变工作区或应用所属的机器。
 
 该功能的第一方归属是一对包：`@deepseek-ai/dsh-host-open-in-app` 位于 `packages/host/open-in-app/`（探测、目录与启动路由），`@deepseek-ai/dsh-client-ui-open-in-app` 位于 `packages/client/ui-open-in-app/`（分体按钮），由 `dsh-web-app` bundle 的 `open-in-app` 与 `ui-open-in-app` 两行挂载进 Web profile。转正是重写，不是 vendoring：
 
@@ -58,4 +58,4 @@ Status: implemented
 - 社区插件的安装路径仍然有效但已冗余；其原始路由与浏览器选择键独立于 `open-in-app`，因此使用第一方功能的安装应移除社区插件，避免出现重复的头部控件。
 - 解析与图标每主机进程惰性执行一次，dsh 运行期间安装的应用要重启后才出现——接受；卸载方向经 `ENOENT` 单条目刷新自愈。
 - 目录在编译期固定；扩展它意味着同时编辑 `OPEN_IN_APP_CATALOG` 与两份 locale 词典（README 已知限制）。平台覆盖不均——若干 Git GUI 与终端仅有 macOS 条目；Windows 图标受限于 .NET 标准接口的 32px 提取，Linux 跟随 hicolor 而非当前主题，没有 desktop 记录的纯 CLI 条目则保留通用图标。
-- 覆盖：resolver 逻辑（每种 locator 在临时文件系统上、注册表转储与 desktop 条目 fixture、注入的 env/home/PATH 表）、逐平台图标提取、三条路由（真实 Loader + 真实 WebServer 组合，含单趟缓存、`ENOENT` 刷新与 HMR 安全处置）、controller wire 行为和组件呈现都以逐文件 100% 门禁做了单元测试；不新增 snapshot，因为随仓库发布的免密 snapshot fixture 断言会话驱动的输出，而这个纯浏览器侧控件不触及它。Web ARIA golden 禁用 `open-in-app` 与 `ui-open-in-app` 两行，Host-only 的 preset e2e 组合禁用 host 行：按钮反映运行机器实际安装了哪些应用，其出现与否和标签都是主机事实，跨平台 golden 无法钉住。
+- 解析器、图标、路由、控制器与组件测试覆盖平台探测、启动结果、可用性缓存和 HMR 处置。[SSH Web 快照](../../../../snapshots/web/open-in-app-ssh/snapshot.yml) 在启用两个 Open In 配置项并记住应用选择的条件下渲染共享的录制会话；继承的 SSH 标记使空应用目录在不同平台上保持确定。普通 Web 快照仍禁用依赖主机的应用探测。
