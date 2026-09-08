@@ -3,8 +3,9 @@ name: weighted-approval
 on:
   pull_request_target:
     types: [opened, synchronize, reopened, ready_for_review, converted_to_draft]
-  pull_request_review:
-    types: [submitted, edited, dismissed]
+  workflow_run:
+    workflows: [weighted-approval-review-event]
+    types: [completed]
 
 permissions:
   contents: read
@@ -12,11 +13,12 @@ permissions:
   statuses: write
 
 concurrency:
-  group: weighted-approval-${{ github.event.pull_request.number }}
-  cancel-in-progress: true
+  group: weighted-approval-${{ github.event.pull_request.number || github.event.workflow_run.head_sha }}
+  cancel-in-progress: false
 
 jobs:
   publish-status:
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     name: publish weighted approval status
     runs-on: ubuntu-latest
     timeout-minutes: 5

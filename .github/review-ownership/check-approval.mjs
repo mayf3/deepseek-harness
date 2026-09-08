@@ -13,6 +13,14 @@ const WRITABLE_PERMISSIONS = new Set(['admin', 'write'])
 const REVIEW_STATES = new Set(['APPROVED', 'CHANGES_REQUESTED', 'COMMENTED', 'DISMISSED', 'PENDING'])
 const LOGIN = /^[A-Za-z0-9-]+(?:\[bot\])?$/u
 
+class GitHubApiError extends Error {
+  constructor(message, status) {
+    super(message)
+    this.name = 'GitHubApiError'
+    this.status = status
+  }
+}
+
 /**
  * Parse the approval score policy.
  * @param {string} source Approval policy JSON.
@@ -39,14 +47,16 @@ export function parseApprovalPolicy(source) {
 }
 
 /**
- * Select each reviewer's latest non-comment review decision.
+ * Select each reviewer's current approval or change-request decision.
  * @param {unknown[]} reviews Pull-request review records in GitHub's chronological order.
  * @returns {Array<{login: string, state: 'APPROVED' | 'CHANGES_REQUESTED'}>} Effective review decisions.
  */
 export function effectiveReviewDecisions(reviews) {
   const decisions = new Map()
   for (const review of reviews) {
-    if (!isRecord(review) || !isRecord(review.user) || typeof review.user.login !== 'string') {
+    if (!isRecord(review)) throw new Error('pull-request review is not an object')
+    if (review.user === null) continue
+    if (!isRecord(review.user) || typeof review.user.login !== 'string') {
       throw new Error('pull-request review has no reviewer login')
     }
     const login = validateLogin(review.user.login, 'pull-request reviewer')
@@ -54,8 +64,11 @@ export function effectiveReviewDecisions(reviews) {
       throw new Error(`pull-request review by @${login} has an invalid state`)
     }
     const state = review.state.toUpperCase()
-    if (state === 'APPROVED' || state === 'CHANGES_REQUESTED') {
-      decisions.set(login.toLowerCase(), { login, state })
+    const key = login.toLowerCase()
+    if (state === 'DISMISSED') {
+      decisions.delete(key)
+    } else if (state === 'APPROVED' || state === 'CHANGES_REQUESTED') {
+      decisions.set(key, { login, state })
     }
   }
   return [...decisions.values()]
@@ -84,7 +97,10 @@ export function createGitHubApi({ token, apiUrl = 'https://api.github.com', fetc
     })
     if (!response.ok) {
       const responseBody = await response.text()
-      throw new Error(`GitHub API ${method} ${path} returned ${response.status}: ${JSON.stringify(responseBody)}`)
+      throw new GitHubApiError(
+        `GitHub API ${method} ${path} returned ${response.status}: ${JSON.stringify(responseBody)}`,
+        response.status,
+      )
     }
     if (response.status === 204) return undefined
     return response.json()
@@ -193,6 +209,32 @@ export async function runApprovalCheck({ event, policySource, api, runUrl, write
   return result
 }
 
+/**
+ * Resolve the reviewed pull request from a completed review-event workflow run.
+ * @param {{event: unknown, api: (path: string, options?: {method?: string, body?: unknown}) => Promise<unknown>}} options Trusted workflow inputs.
+ * @returns {Promise<Record<string, unknown> | null>} Event with a current pull request, or null after the pull-request head changes.
+ */
+export async function approvalEventFromWorkflowRun({ event, api }) {
+  const repository = repositoryFromEvent(event)
+  if (!isRecord(event.workflow_run) || event.workflow_run.name !== 'weighted-approval-review-event'
+    || event.workflow_run.event !== 'pull_request_review' || event.workflow_run.conclusion !== 'success') {
+    throw new Error('event has no successful weighted approval review workflow run')
+  }
+  const expectedHeadSha = validateHeadSha(event.workflow_run.head_sha, 'workflow run')
+  const pullNumber = parsePullNumber(event.workflow_run.display_title)
+  if (!Array.isArray(event.workflow_run.pull_requests)) {
+    throw new Error('workflow run has no pull_requests array')
+  }
+  if (event.workflow_run.pull_requests.length > 0
+    && !event.workflow_run.pull_requests.some(pull => isRecord(pull) && pull.number === pullNumber)) {
+    throw new Error(`workflow run is not associated with pull request #${pullNumber}`)
+  }
+  const pull = await api(`/repos/${repository}/pulls/${pullNumber}`)
+  if (!isRecord(pull) || !isRecord(pull.head)) throw new Error(`pull request #${pullNumber} response is invalid`)
+  if (pull.head.sha !== expectedHeadSha) return null
+  return { ...event, pull_request: pull }
+}
+
 function approvalResult(pull, requiredPoints, approvals, blockers, ignoredReviewers, state, detail) {
   return {
     pull: { repository: pull.repository, number: pull.number, headSha: pull.headSha },
@@ -207,7 +249,13 @@ function approvalResult(pull, requiredPoints, approvals, blockers, ignoredReview
 }
 
 async function reviewerPermission(api, repository, login) {
-  const response = await api(`/repos/${repository}/collaborators/${encodeURIComponent(login)}/permission`)
+  let response
+  try {
+    response = await api(`/repos/${repository}/collaborators/${encodeURIComponent(login)}/permission`)
+  } catch (error) {
+    if (error instanceof GitHubApiError && error.status === 404) return 'none'
+    throw error
+  }
   if (!isRecord(response) || typeof response.permission !== 'string') {
     throw new Error(`collaborator permission response for @${login} has no permission`)
   }
@@ -229,10 +277,7 @@ async function publishStatus(api, pull, state, description, runUrl) {
 }
 
 function pullRequestFromEvent(event) {
-  if (!isRecord(event) || !isRecord(event.repository) || typeof event.repository.full_name !== 'string'
-    || !/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/u.test(event.repository.full_name)) {
-    throw new Error('event has no valid repository.full_name')
-  }
+  const repository = repositoryFromEvent(event)
   if (!isRecord(event.pull_request) || !isRecord(event.pull_request.user)
     || !isRecord(event.pull_request.head)) {
     throw new Error('event has no pull_request')
@@ -241,16 +286,38 @@ function pullRequestFromEvent(event) {
   if (!Number.isSafeInteger(pull.number) || pull.number <= 0) throw new Error('pull request has no valid number')
   if (typeof pull.draft !== 'boolean') throw new Error('pull request has no draft flag')
   const author = validateLogin(pull.user.login, 'pull-request author')
-  if (typeof pull.head.sha !== 'string' || !/^[0-9a-f]{40}$/u.test(pull.head.sha)) {
-    throw new Error('pull request has no valid head SHA')
-  }
+  const headSha = validateHeadSha(pull.head.sha, 'pull request')
   return {
-    repository: event.repository.full_name,
+    repository,
     number: pull.number,
     draft: pull.draft,
     author,
-    headSha: pull.head.sha,
+    headSha,
   }
+}
+
+function repositoryFromEvent(event) {
+  if (!isRecord(event) || !isRecord(event.repository) || typeof event.repository.full_name !== 'string'
+    || !/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/u.test(event.repository.full_name)) {
+    throw new Error('event has no valid repository.full_name')
+  }
+  return event.repository.full_name
+}
+
+function validateHeadSha(value, subject) {
+  if (typeof value !== 'string' || !/^[0-9a-f]{40}$/u.test(value)) {
+    throw new Error(`${subject} has no valid head SHA`)
+  }
+  return value
+}
+
+function parsePullNumber(source) {
+  if (typeof source !== 'string') throw new Error('review event has no valid run title')
+  const match = /^weighted-approval-review-event:([1-9][0-9]*)$/u.exec(source)
+  if (!match) throw new Error('review event has no valid run title')
+  const pullNumber = Number(match[1])
+  if (!Number.isSafeInteger(pullNumber)) throw new Error('review event pull request number is not a safe integer')
+  return pullNumber
 }
 
 function positiveInteger(value, field) {
@@ -276,12 +343,24 @@ function isRecord(value) {
 async function main() {
   const eventPath = process.env.GITHUB_EVENT_PATH
   if (!eventPath) throw new Error('GITHUB_EVENT_PATH is not set')
-  const event = JSON.parse(readFileSync(eventPath, 'utf8'))
+  let event = JSON.parse(readFileSync(eventPath, 'utf8'))
   const policySource = readFileSync(new URL('approval-policy.json', import.meta.url), 'utf8')
   const api = createGitHubApi({
     token: process.env.GITHUB_TOKEN ?? '',
     apiUrl: process.env.GITHUB_API_URL,
   })
+  if (isRecord(event) && isRecord(event.workflow_run)) {
+    const resolved = await approvalEventFromWorkflowRun({
+      event,
+      api,
+    })
+    if (resolved === null) {
+      process.stdout.write(`${STATUS_PREFIX}\n`)
+      process.stdout.write('Skipped a review event for a superseded pull-request head.\n')
+      return
+    }
+    event = resolved
+  }
   await runApprovalCheck({
     event,
     policySource,

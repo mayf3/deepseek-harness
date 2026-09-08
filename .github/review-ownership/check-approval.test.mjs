@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs'
 import test from 'node:test'
 
 import {
+  approvalEventFromWorkflowRun,
   createGitHubApi,
   effectiveReviewDecisions,
   evaluateApproval,
@@ -55,20 +56,59 @@ test('rejects invalid approval score policies', () => {
   }
 })
 
-test('uses each reviewer latest approval or change request while ignoring comments and dismissed reviews', () => {
+test('uses each reviewer current decision and clears it on dismissal', () => {
   assert.deepEqual(effectiveReviewDecisions([
     review('first', 'APPROVED'),
+    review('first', 'APPROVED'),
     review('first', 'COMMENTED'),
+    review('first', 'DISMISSED'),
     review('second', 'CHANGES_REQUESTED'),
     review('second', 'APPROVED'),
     review('third', 'APPROVED'),
     review('third', 'CHANGES_REQUESTED'),
     review('dismissed', 'DISMISSED'),
+    { user: null, state: 'APPROVED' },
   ]), [
-    { login: 'first', state: 'APPROVED' },
     { login: 'second', state: 'APPROVED' },
     { login: 'third', state: 'CHANGES_REQUESTED' },
   ])
+})
+
+test('resolves a review workflow run to the current pull request and rejects stale heads', async () => {
+  const workflowRunEvent = {
+    repository: { full_name: 'deepseek-harness/deepseek-harness' },
+    workflow_run: {
+      name: 'weighted-approval-review-event',
+      event: 'pull_request_review',
+      conclusion: 'success',
+      head_sha: HEAD_SHA,
+      display_title: 'weighted-approval-review-event:42',
+      pull_requests: [],
+    },
+  }
+  const current = await approvalEventFromWorkflowRun({
+    event: workflowRunEvent,
+    api: async path => {
+      assert.equal(path, '/repos/deepseek-harness/deepseek-harness/pulls/42')
+      return pullRequestEvent().pull_request
+    },
+  })
+  assert.equal(current.pull_request.number, 42)
+
+  assert.equal(await approvalEventFromWorkflowRun({
+    event: workflowRunEvent,
+    api: async () => ({
+      ...pullRequestEvent().pull_request,
+      head: { sha: 'abcdef1234567890abcdef1234567890abcdef12' },
+    }),
+  }), null)
+  await assert.rejects(approvalEventFromWorkflowRun({
+    event: {
+      ...workflowRunEvent,
+      workflow_run: { ...workflowRunEvent.workflow_run, display_title: '../42' },
+    },
+    api: async () => { throw new Error('invalid number must not call GitHub') },
+  }), /valid run title/u)
 })
 
 test('fetches every pull-request review and rejects an unbounded history', async () => {
@@ -131,6 +171,39 @@ test('accepts two one-point approvals and ignores reviews without write access',
     { login: 'writer-b', points: 1 },
   ])
   assert.deepEqual(result.ignoredReviewers, ['reader'])
+})
+
+test('keeps one one-point approval pending without failing the status', async () => {
+  const result = await evaluateApproval({
+    event: pullRequestEvent(),
+    policySource,
+    api: async (path) => {
+      if (path.includes('/reviews?')) return [review('writer', 'APPROVED')]
+      if (path.includes('/collaborators/writer/permission')) return { permission: 'write' }
+      throw new Error(`unexpected API path ${path}`)
+    },
+  })
+  assert.equal(result.state, 'pending')
+  assert.equal(result.points, 1)
+})
+
+test('ignores a reviewer whose collaborator permission lookup returns 404', async () => {
+  const api = createGitHubApi({
+    token: 'secret',
+    fetchImpl: async (url) => {
+      if (url.includes('/reviews?')) {
+        return new Response(JSON.stringify([review('former-writer', 'APPROVED')]), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      }
+      if (url.includes('/collaborators/former-writer/permission')) return new Response('Not Found', { status: 404 })
+      throw new Error(`unexpected API URL ${url}`)
+    },
+  })
+  const result = await evaluateApproval({ event: pullRequestEvent(), policySource, api })
+  assert.equal(result.state, 'pending')
+  assert.deepEqual(result.ignoredReviewers, ['former-writer'])
 })
 
 test('blocks on a write-capable change request but ignores the author and read-only blockers', async () => {
