@@ -148,6 +148,7 @@
     { "path": "./packages/util/timeout" },
     { "path": "./packages/util/crypto" },
     { "path": "./packages/util/deque" },
+    { "path": "./packages/util/chunked-list" },
     { "path": "./packages/util/values" },
     { "path": "./packages/util/workspace-path" },
     { "path": "./packages/util/output-retention" },
