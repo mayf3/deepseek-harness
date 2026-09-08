@@ -26,6 +26,10 @@ Status: implemented
 
 [宽表格测试](../../../../apps/web/tests/markdown-wide-table.e2e.ts)等待请求的框架轨道与渲染轨道一致，并等待会话 ResizeObserver 发布当前渲染宽度。两次相同的中间表格宽度不能证明这些输入已稳定。暂停原生过渡和延迟观察回调能够复现过期的溢出读数；故意破坏溢出布局时，未修改的几何断言仍然失败。
 
+[生命周期命令菜单快照](../../../../apps/web/tests/lifecycle-chrome.e2e.ts)在捕获英文或中文输出前等待目录选项；可见列表框仍可能包含稳定的加载占位内容。[独立启动测试](../../../../packages/host/open-in-app/tests/launch-detached.spec.ts)通过真实启动器直接控制观察时间和延迟进程事件，检查延迟成功、失败及错误事件既不会重复 unref，也不会终止子进程。真实进程的环境和提前退出用例仍独立保留。spawn 后 sleep 无法证明延迟回调在覆盖率收集前已执行。
+
+[LSP 背压测试](../../../../packages/lsp/lsp-stdio/tests/instance.spec.ts)在 `didOpen` 处 cork 真实 stdin 流，写入完整文档，并在中止前观察待完成写入。测试立即观察查询拒绝并等待释放，不依赖短启动标记期限，也不通过 sleep 推断背压。
+
 ### 已构建客户端的导入分类
 
 [master Windows 运行](https://github.com/deepseek-harness/deepseek-harness/actions/runs/34204779455/job/101996934534)还拒绝了 `ui-dockkit` 有意暴露的 CSS 导入。[Node 导入检查](../../../../packages/experimental/webworker-runtime/tests/compile/transform-corpus-check.ts)仅在 Node 针对其 `dockkit.module.css` 报告 `ERR_UNKNOWN_FILE_EXTENSION` 时，才允许这个精确的 bundle。相同入口的其他错误仍然失败，成功导入则报告豁免已过期。这保留了导入检查，同时不要求仅面向浏览器的组件库在裸 Node 中加载样式表。

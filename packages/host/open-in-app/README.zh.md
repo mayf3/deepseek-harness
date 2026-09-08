@@ -79,6 +79,8 @@ kind: "package-reference"
 
 [`src/index.ts`](src/index.ts) 在 `ctx.webServer` 上注册三条路由：`GET /open-in-app/apps`（解析映射的 keys）、`GET /open-in-app/icon/<id>`（提取的图标，进程内内存缓存）、`POST /open-in-app/open`（直接使用映射中已验证的启动器——绝不重新检测）。每条路由都先向组合的 `connection` 服务询问是否拒绝；完整的信任叙述——Host/Origin 栅栏与浏览器认证——唯一的出处在 [`src/index.ts`](src/index.ts) 的模块注释。在该栅栏之上，open 路由在 wire 边界校验请求体：`application/json` 媒体类型、64 KiB 上限、解析为可用的目录 id、指向现存目录的绝对路径。解析与图标命令经 [`@deepseek-ai/dsh-native-command`](../../util/native-command/README.zh.md)（argv，绝不走 shell）在各自期限内执行；PATH 名称走 `ctx.subprocess.resolveExecutable()` 进程内解析。
 
+[启动结算测试](tests/launch-detached.spec.ts)使用受控观察时间和延迟进程事件验证仅结算一次，不依赖子进程启动速度；真实进程启动用例仍保留在[解析器测试](tests/resolver.spec.ts)中。
+
 </details>
 
 -----
