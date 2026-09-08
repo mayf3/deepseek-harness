@@ -7,9 +7,11 @@ import { pathToFileURL } from 'node:url'
 const API_VERSION = '2026-03-10'
 const MAX_OWNERS_PER_RULE = 2
 const MAX_PULL_REQUEST_FILES = 3_000
+const MAX_PULL_REQUEST_REVIEWS = 3_000
 const MAX_COUNTED_REQUESTED_REVIEWERS = 1
 const MAX_TIMELINE_EVENTS = 3_000
 const PAGE_SIZE = 100
+const PULL_REQUEST_REVIEW_STATES = new Set(['APPROVED', 'CHANGES_REQUESTED', 'COMMENTED', 'DISMISSED', 'PENDING'])
 const UNCOUNTED_REVIEWER = 'turtle1999'
 const WORKFLOW_REVIEW_REQUESTER = 'github-actions[bot]'
 const TEST_DIRECTORY_NAMES = new Set(['__snapshots__', '__tests__', 'benches', 'stress-tests', 'test', 'tests'])
@@ -385,6 +387,47 @@ export async function listPullRequestFiles(api, repository, pullNumber, expected
 }
 
 /**
+ * Fetch the complete chronological pull-request review list.
+ * @param {(path: string, options?: {method?: string, body?: unknown}) => Promise<unknown>} api GitHub API caller.
+ * @param {string} repository Owner/name repository identifier.
+ * @param {number} pullNumber Pull-request number.
+ * @returns {Promise<unknown[]>} Complete review list within the supported limit.
+ */
+export async function listPullRequestReviews(api, repository, pullNumber) {
+  const reviews = []
+  for (let page = 1; ; page++) {
+    const response = await api(`/repos/${repository}/pulls/${pullNumber}/reviews?per_page=${PAGE_SIZE}&page=${page}`)
+    if (!Array.isArray(response)) throw new Error('pull-request reviews response is not an array')
+    reviews.push(...response)
+    if (response.length < PAGE_SIZE) return reviews
+    if (reviews.length >= MAX_PULL_REQUEST_REVIEWS) {
+      throw new Error(`pull-request reviews exceed ${MAX_PULL_REQUEST_REVIEWS} entries`)
+    }
+  }
+}
+
+/**
+ * Return users whose latest undismissed decisive review approves the pull request.
+ * @param {unknown[]} reviews Chronological GitHub pull-request review records.
+ * @returns {string[]} Approved reviewer logins in stable order.
+ */
+export function approvedReviewerLogins(reviews) {
+  const approved = new Map()
+  for (const review of reviews) {
+    if (!isRecord(review) || !isRecord(review.user) || typeof review.user.login !== 'string') {
+      throw new Error('pull-request reviews response contains an invalid reviewer')
+    }
+    if (typeof review.state !== 'string' || !PULL_REQUEST_REVIEW_STATES.has(review.state)) {
+      throw new Error('pull-request reviews response contains an invalid state')
+    }
+    const key = review.user.login.toLowerCase()
+    if (review.state === 'APPROVED') approved.set(key, review.user.login)
+    else if (review.state === 'CHANGES_REQUESTED') approved.delete(key)
+  }
+  return [...approved.values()].sort((left, right) => left.localeCompare(right, 'en'))
+}
+
+/**
  * Fetch the pull request timeline used to identify workflow-authored review requests.
  * @param {(path: string, options?: {method?: string, body?: unknown}) => Promise<unknown>} api GitHub API caller.
  * @param {string} repository Owner/name repository identifier.
@@ -472,7 +515,7 @@ export async function requestReviews({ event, ownershipSource, api, write = line
     plan.reviewers.map(({ login, changedLines }) => `@${login}: ${changedLines}`),
   )
 
-  const candidates = plan.reviewers.filter(({ login }) => login.toLowerCase() !== pull.author.toLowerCase())
+  const ownerCandidates = plan.reviewers.filter(({ login }) => login.toLowerCase() !== pull.author.toLowerCase())
   if (pull.draft) {
     const existing = await api(`/repos/${pull.repository}/pulls/${pull.number}/requested_reviewers`)
     const requestedReviewers = requestedReviewerLogins(existing)
@@ -493,6 +536,16 @@ export async function requestReviews({ event, ownershipSource, api, write = line
     write(`Cancelled review ${requestLabel} for ${reviewers.map(login => `@${login}`).join(' ')}.`)
     return { ...classified, requestedReviewers: [], cancelledReviewers: reviewers }
   }
+
+  const approvedReviewerKeys = new Set(
+    (ownerCandidates.length === 0
+      ? []
+      : approvedReviewerLogins(await listPullRequestReviews(api, pull.repository, pull.number)))
+      .map(login => login.toLowerCase()),
+  )
+  const approvedOwners = ownerCandidates.filter(({ login }) => approvedReviewerKeys.has(login.toLowerCase()))
+  const candidates = ownerCandidates.filter(({ login }) => !approvedReviewerKeys.has(login.toLowerCase()))
+  writeList(write, 'Approved owners omitted from review requests', approvedOwners.map(({ login }) => `@${login}`))
 
   const existing = await api(`/repos/${pull.repository}/pulls/${pull.number}/requested_reviewers`)
   const currentReviewers = requestedReviewerLogins(existing).sort((left, right) => left.localeCompare(right, 'en'))

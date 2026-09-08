@@ -4,12 +4,14 @@ import { existsSync, readFileSync } from 'node:fs'
 import test from 'node:test'
 
 import {
+  approvedReviewerLogins,
   classifyChangedFiles,
   createGitHubApi,
   isCommentOnlyChange,
   isDocumentationPath,
   isTestPath,
   listPullRequestFiles,
+  listPullRequestReviews,
   listPullRequestTimeline,
   normalizeRepositoryPath,
   parseOwnership,
@@ -333,6 +335,57 @@ test('fails closed when GitHub cannot provide the complete file list', async () 
   )
 })
 
+test('fetches pull-request reviews across pages', async () => {
+  const calls = []
+  const pageOne = Array.from({ length: 100 }, (_, index) => ({
+    user: { login: `reviewer-${index}` },
+    state: 'COMMENTED',
+  }))
+  const pageTwo = [{ user: { login: 'approver' }, state: 'APPROVED' }]
+  const reviews = await listPullRequestReviews(async (path) => {
+    calls.push(path)
+    return calls.length === 1 ? pageOne : pageTwo
+  }, 'owner/repo', 42)
+
+  assert.equal(reviews.length, 101)
+  assert.deepEqual(calls, [
+    '/repos/owner/repo/pulls/42/reviews?per_page=100&page=1',
+    '/repos/owner/repo/pulls/42/reviews?per_page=100&page=2',
+  ])
+})
+
+test('tracks each reviewer\'s latest undismissed approval decision', () => {
+  assert.deepEqual(approvedReviewerLogins([
+    { user: { login: 'commented-after' }, state: 'APPROVED' },
+    { user: { login: 'commented-after' }, state: 'COMMENTED' },
+    { user: { login: 'changes-after' }, state: 'APPROVED' },
+    { user: { login: 'changes-after' }, state: 'CHANGES_REQUESTED' },
+    { user: { login: 'dismissed' }, state: 'DISMISSED' },
+    { user: { login: 'approved-after' }, state: 'CHANGES_REQUESTED' },
+    { user: { login: 'approved-after' }, state: 'APPROVED' },
+    { user: { login: 'pending-after' }, state: 'APPROVED' },
+    { user: { login: 'pending-after' }, state: 'PENDING' },
+  ]), ['approved-after', 'commented-after', 'pending-after'])
+
+  assert.throws(
+    () => approvedReviewerLogins([{ user: { login: 'reviewer' }, state: 'UNKNOWN' }]),
+    /invalid state/u,
+  )
+  assert.throws(() => approvedReviewerLogins([{ state: 'APPROVED' }]), /invalid reviewer/u)
+})
+
+test('fails closed when the pull-request review list exceeds its limit', async () => {
+  let calls = 0
+  await assert.rejects(
+    listPullRequestReviews(async () => {
+      calls++
+      return Array.from({ length: 100 }, () => ({ user: { login: 'reviewer' }, state: 'COMMENTED' }))
+    }, 'owner/repo', 42),
+    /exceed 3000 entries/u,
+  )
+  assert.equal(calls, 30)
+})
+
 test('fails closed when the review-request timeline exceeds its limit', async () => {
   let calls = 0
   await assert.rejects(
@@ -358,6 +411,7 @@ test('prints changed code files and requests the highest-ranked counted owner', 
   const api = async (path, options = {}) => {
     trace.push({ type: 'api', path, options })
     if (path.endsWith('/files?per_page=100&page=1')) return files
+    if (path.endsWith('/reviews?per_page=100&page=1')) return []
     if (path.endsWith('/requested_reviewers') && options.method !== 'POST') {
       return { users: [], teams: [] }
     }
@@ -409,6 +463,67 @@ test('prints changed code files and requests the highest-ranked counted owner', 
   })
 })
 
+test('does not request an owner again after that owner approves', async () => {
+  const calls = []
+  const output = []
+  const result = await requestReviews({
+    event: pullRequestEvent(),
+    ownershipSource: '/packages/typert/ @imccyu\n',
+    api: async (path, options = {}) => {
+      calls.push({ path, options })
+      if (path.endsWith('/files?per_page=100&page=1')) {
+        return [{ filename: 'packages/typert/generator/src/analyzer.ts', additions: 150, deletions: 47 }]
+      }
+      if (path.endsWith('/reviews?per_page=100&page=1')) {
+        return [
+          { user: { login: 'imccyu' }, state: 'APPROVED' },
+          { user: { login: 'imccyu' }, state: 'COMMENTED' },
+        ]
+      }
+      if (path.endsWith('/requested_reviewers') && options.method === undefined) {
+        return { users: [], teams: [] }
+      }
+      throw new Error(`unexpected API path ${path}`)
+    },
+    write: line => output.push(line),
+  })
+
+  assert.deepEqual(result.requestedReviewers, [])
+  assert.equal(calls.some(call => call.options.method === 'POST'), false)
+  const approvedHeading = output.indexOf('Approved owners omitted from review requests:')
+  assert.ok(approvedHeading >= 0)
+  assert.equal(output[approvedHeading + 1], '- @imccyu')
+})
+
+test('fills the counted slot with the next owner after omitting an approved owner', async () => {
+  const calls = []
+  const result = await requestReviews({
+    event: pullRequestEvent(),
+    ownershipSource: '/packages/core/ @imccyu @mektpoy\n',
+    api: async (path, options = {}) => {
+      calls.push({ path, options })
+      if (path.endsWith('/files?per_page=100&page=1')) {
+        return [{ filename: 'packages/core/agent/src/index.ts', additions: 20, deletions: 10 }]
+      }
+      if (path.endsWith('/reviews?per_page=100&page=1')) {
+        return [{ user: { login: 'imccyu' }, state: 'APPROVED' }]
+      }
+      if (path.endsWith('/requested_reviewers') && options.method === undefined) {
+        return { users: [], teams: [] }
+      }
+      if (path.endsWith('/requested_reviewers') && options.method === 'POST') return {}
+      throw new Error(`unexpected API path ${path}`)
+    },
+    write: () => {},
+  })
+
+  assert.deepEqual(result.requestedReviewers, ['mektpoy'])
+  assert.deepEqual(calls.find(call => call.options.method === 'POST'), {
+    path: '/repos/deepseek-harness/deepseek-harness/pulls/42/requested_reviewers',
+    options: { method: 'POST', body: { reviewers: ['mektpoy'] } },
+  })
+})
+
 test('does not add another counted owner when one is already requested', async () => {
   const calls = []
   const output = []
@@ -420,6 +535,7 @@ test('does not add another counted owner when one is already requested', async (
       if (path.endsWith('/files?per_page=100&page=1')) {
         return [{ filename: 'packages/core/agent/src/index.ts', additions: 20, deletions: 10 }]
       }
+      if (path.endsWith('/reviews?per_page=100&page=1')) return []
       if (path.endsWith('/requested_reviewers') && options.method === undefined) {
         return { users: [{ login: 'first' }], teams: [] }
       }
@@ -455,6 +571,7 @@ test('requests at most one owner per run when turtle ranks first', async () => {
           { filename: 'packages/client/store/src/index.ts', additions: 8, deletions: 2 },
         ]
       }
+      if (path.endsWith('/reviews?per_page=100&page=1')) return []
       if (path.endsWith('/requested_reviewers') && options.method === undefined) {
         return { users: [], teams: [] }
       }
@@ -481,6 +598,7 @@ test('does not add turtle when one counted reviewer is already requested', async
       if (path.endsWith('/files?per_page=100&page=1')) {
         return [{ filename: 'packages/core/agent/src/index.ts', additions: 20, deletions: 10 }]
       }
+      if (path.endsWith('/reviews?per_page=100&page=1')) return []
       if (path.endsWith('/requested_reviewers') && options.method === undefined) {
         return { users: [{ login: 'first' }], teams: [] }
       }
@@ -504,6 +622,7 @@ test('keeps the counted slot available when turtle is already requested', async 
       if (path.endsWith('/files?per_page=100&page=1')) {
         return [{ filename: 'packages/core/agent/src/index.ts', additions: 20, deletions: 10 }]
       }
+      if (path.endsWith('/reviews?per_page=100&page=1')) return []
       if (path.endsWith('/requested_reviewers') && options.method === undefined) {
         return { users: [{ login: 'turtle1999' }], teams: [] }
       }
@@ -531,6 +650,7 @@ test('replaces a workflow reviewer that no longer matches current ownership', as
       if (path.endsWith('/files?per_page=100&page=1')) {
         return [{ filename: 'packages/core/agent/src/index.ts', additions: 20, deletions: 10 }]
       }
+      if (path.endsWith('/reviews?per_page=100&page=1')) return []
       if (path.endsWith('/requested_reviewers') && options.method === undefined) {
         return { users: [{ login: 'Dudu-0223' }], teams: [] }
       }
@@ -583,6 +703,7 @@ test('removes excess workflow reviewers using current relevance order', async ()
           { filename: 'packages/subagent/subagent/src/index.ts', additions: 8, deletions: 2 },
         ]
       }
+      if (path.endsWith('/reviews?per_page=100&page=1')) return []
       if (path.endsWith('/requested_reviewers') && options.method === undefined) {
         return { users: [{ login: 'Dudu-0223' }, { login: 'mektpoy' }], teams: [] }
       }

@@ -631,7 +631,8 @@ function coverageGates(): Gate[] {
       streamOutput: true,
     })
   return [
-    instrumented,
+    pnpmScript('native-system', 'build:native-system'),
+    { ...instrumented, needs: ['native-system'] },
     pnpmExec('coverage-exempt-heavy', [
       'vitest',
       'run',
@@ -640,6 +641,7 @@ function coverageGates(): Gate[] {
       ...timeouts,
     ], {
       label: 'test:coverage-exempt-heavy',
+      needs: ['native-system'],
     }),
   ]
 }
