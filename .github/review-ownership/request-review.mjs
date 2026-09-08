@@ -7,6 +7,7 @@ import { pathToFileURL } from 'node:url'
 const API_VERSION = '2026-03-10'
 const MAX_OWNERS_PER_RULE = 2
 const MAX_PULL_REQUEST_FILES = 3_000
+const MAX_REQUESTED_REVIEWERS = 2
 const MAX_TIMELINE_EVENTS = 3_000
 const PAGE_SIZE = 100
 const WORKFLOW_REVIEW_REQUESTER = 'github-actions[bot]'
@@ -460,7 +461,10 @@ export async function requestReviews({ event, ownershipSource, api, write = line
   }
   const existing = await api(`/repos/${pull.repository}/pulls/${pull.number}/requested_reviewers`)
   const alreadyRequested = new Set(requestedReviewerLogins(existing).map(login => login.toLowerCase()))
-  const reviewers = candidates.filter(login => !alreadyRequested.has(login.toLowerCase()))
+  const availableSlots = Math.max(0, MAX_REQUESTED_REVIEWERS - alreadyRequested.size)
+  const reviewers = candidates
+    .filter(login => !alreadyRequested.has(login.toLowerCase()))
+    .slice(0, availableSlots)
   writeList(write, 'Reviewers to request', reviewers.map(login => `@${login}`))
   if (reviewers.length === 0) return { ...classified, requestedReviewers: [], cancelledReviewers: [] }
 

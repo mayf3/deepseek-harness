@@ -22,7 +22,7 @@ Status: implemented
 
 扫描器会在匹配 owner 之前排除纯测试路径。排除范围包括名为 `test`、`tests`、`__tests__`、`__snapshots__`、`benches` 或 `stress-tests` 的目录，顶层 `benchmarks` 和 `snapshots` 目录树，`packages/test-support`、`scripts/fixtures` 和 `scripts/snapshots`，以 `.bench.<ext>`、`.corpus.<ext>`、`.e2e.<ext>`、`.perf.<ext>`、`.snapshot.<ext>`、`.spec.<ext>`、`.stress.<ext>` 或 `.test.<ext>` 结尾的文件名，以及 Python 的 `test_*.py`、`*_test.py` 或 `*_tests.py` 文件。`vitest*.config.ts` 和门禁实现等测试基础设施仍需评审，因为它们会改变仓库证据的生成方式。[纯注释路由决策](2026-09-08-comment-only-review-routing.zh.md)记录额外的文档和注释排除规则。
 
-Workflow 会在发出任何评审请求变更之前，依次打印变更代码路径、每类排除项、逐文件 owner 匹配结果和最终评审操作。对于非草稿 PR，它会合并匹配到的个人 owner，并排除 PR 作者和已经收到评审请求的用户。对于草稿，它会读取完整的评审请求时间线，并取消最近一次请求者为 `github-actions[bot]` 的当前请求；由人员发出的请求保持不变。
+Workflow 会在发出任何评审请求变更之前，依次打印变更代码路径、每类排除项、逐文件 owner 匹配结果和最终评审操作。对于非草稿 PR，它会从按登录名排序并合并的个人 owner 中排除 PR 作者和已经收到评审请求的用户，然后填充最多两个当前个人评审请求名额。现有个人请求即使不匹配所有权映射，也会占用名额。当可用名额无法覆盖剩余候选集合时，登录名顺序会确定性地选择候选人。Workflow 不会从非草稿 PR 移除请求。对于草稿，它会读取完整的评审请求时间线，并取消最近一次请求者为 `github-actions[bot]` 的当前请求；由人员发出的请求保持不变。
 
 ## 验证
 

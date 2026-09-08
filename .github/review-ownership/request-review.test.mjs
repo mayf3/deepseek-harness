@@ -303,7 +303,7 @@ test('fails closed when the review-request timeline exceeds its limit', async ()
   assert.equal(calls, 30)
 })
 
-test('prints changed code files before requesting missing owners', async () => {
+test('prints changed code files and limits current review requests to two people', async () => {
   const trace = []
   const files = [
     { filename: 'packages/core/agent/src/index.ts' },
@@ -340,7 +340,7 @@ test('prints changed code files before requesting missing owners', async () => {
     excludedTestFiles: ['packages/core/agent/tests/index.spec.ts'],
     excludedDocumentationFiles: ['AGENTS.md'],
     excludedCommentOnlyFiles: [],
-    requestedReviewers: ['Dudu-0223', 'LegGasai', 'mektpoy'],
+    requestedReviewers: ['Dudu-0223'],
     cancelledReviewers: [],
   })
   assert.equal(trace[0].type, 'log')
@@ -353,9 +353,31 @@ test('prints changed code files before requesting missing owners', async () => {
     path: '/repos/deepseek-harness/deepseek-harness/pulls/42/requested_reviewers',
     options: {
       method: 'POST',
-      body: { reviewers: ['Dudu-0223', 'LegGasai', 'mektpoy'] },
+      body: { reviewers: ['Dudu-0223'] },
     },
   })
+})
+
+test('does not add an owner when two people are already requested', async () => {
+  const calls = []
+  const result = await requestReviews({
+    event: pullRequestEvent(),
+    ownershipSource: '/packages/core/ @turtle1999 @mektpoy\n',
+    api: async (path, options = {}) => {
+      calls.push({ path, options })
+      if (path.endsWith('/files?per_page=100&page=1')) {
+        return [{ filename: 'packages/core/agent/src/index.ts' }]
+      }
+      if (path.endsWith('/requested_reviewers') && options.method === undefined) {
+        return { users: [{ login: 'first' }, { login: 'second' }], teams: [] }
+      }
+      throw new Error(`unexpected API path ${path}`)
+    },
+    write: () => {},
+  })
+
+  assert.deepEqual(result.requestedReviewers, [])
+  assert.equal(calls.some(call => call.options.method === 'POST'), false)
 })
 
 test('does not request reviewers for test, documentation, or comment-only changes', async () => {
