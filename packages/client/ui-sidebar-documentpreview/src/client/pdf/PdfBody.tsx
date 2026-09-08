@@ -1,11 +1,11 @@
 /** PDF page presentation; binary content and tab information come from the document owner. */
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { Button } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsLocale, PropsStore } from '@deepseek-ai/dsh-client-ui-slots'
 import type { TabId } from '@deepseek-ai/dsh-client-ui-dockkit'
 import type { DocumentPreviewProps } from '../document/contract.ts'
 import { LoadingIndicator } from '../LoadingIndicator.tsx'
-import type { PdfStore } from './store.ts'
+import { DEFAULT_PDF_VIEW, type PdfStore } from './store.ts'
 import { renderPdfPage, type PdfDocument } from './document.ts'
 import { openPdf } from './runtime.ts'
 import { PdfWorkerFailure } from './errors.ts'
@@ -36,10 +36,14 @@ type LoadState =
  */
 export function PdfBody(props: PdfBodyProps): ReactNode {
   const { tab } = props.useTabInfo()
+  const view = props.useStore(state => state.byTab[tab.id] ?? DEFAULT_PDF_VIEW)
   const data = props.content.kind === 'bytes' ? props.content.data : undefined
   const [load, setLoad] = useState<LoadState>()
   const [attempt, setAttempt] = useState(0)
-  const { retainTab, t } = props
+  const { retainTab, actions, t } = props
+  const pageVisible = useCallback((page: number): void => {
+    actions.page(tab.id, page)
+  }, [actions, tab.id])
 
   useEffect(() => { retainTab(tab.id, tab.signal) }, [retainTab, tab.id, tab.signal])
   useEffect(() => {
@@ -70,38 +74,45 @@ export function PdfBody(props: PdfBodyProps): ReactNode {
   }
   return <section className={css.body} data-pdf-preview>
     {Array.from({ length: load.document.numPages }, (_, index) => (
-      <PdfPage key={index} document={load.document} page={index + 1} signal={tab.signal} t={t} />
+      <PdfPage key={index} document={load.document} page={index + 1}
+        requested={index === 0 || view.page === index + 1} onVisible={pageVisible} signal={tab.signal} t={t} />
     ))}
   </section>
 }
 
-function PdfPage({ document, page, signal, t }: {
+function PdfPage({ document, page, requested: initiallyRequested, onVisible, signal, t }: {
   readonly document: PdfDocument
   readonly page: number
+  readonly requested: boolean
+  readonly onVisible: (page: number) => void
   readonly signal: AbortSignal
 } & PropsLocale<'sidebarPdf'>): ReactNode {
   const host = useRef<HTMLDivElement>(null)
   const canvas = useRef<HTMLCanvasElement>(null)
-  const [requested, setRequested] = useState(page === 1)
+  const [requested, setRequested] = useState(initiallyRequested)
   const [state, setState] = useState<'loading' | 'ready'>('loading')
   const [failure, setFailure] = useState<{ readonly error: unknown }>()
   const [attempt, setAttempt] = useState(0)
   useEffect(() => {
-    if (requested) return
     const node = host.current as HTMLDivElement
     if (typeof IntersectionObserver === 'undefined') {
       setRequested(true)
       return
     }
+    let disposed = false
     let observer: IntersectionObserver | undefined
     observer = new IntersectionObserver((entries) => {
-      if (!entries.some(entry => entry.isIntersecting)) return
+      if (disposed || !entries.some(entry => entry.isIntersecting)) return
       setRequested(true)
+      onVisible(page)
       observer?.disconnect()
     }, { rootMargin: '100% 0px' })
     observer.observe(node)
-    return () => { observer?.disconnect() }
-  }, [requested])
+    return () => {
+      disposed = true
+      observer?.disconnect()
+    }
+  }, [page, onVisible])
   useEffect(() => {
     if (!requested) return
     // The canvas is unconditional; this effect runs after its ref is committed.
@@ -117,8 +128,9 @@ function PdfPage({ document, page, signal, t }: {
     return () => { lifetime.abort() }
   }, [document, page, requested, signal, attempt])
   return <div ref={host} className={css.page} data-pdf-page={page}>
-    {!requested && <div className={css.placeholder} />}
-    {requested && failure === undefined && state === 'loading' && <LoadingIndicator className={css.status} label={t('rendering')} />}
+    {failure === undefined && state !== 'ready' && <div className={css.placeholder}>
+      {requested && <LoadingIndicator className={css.status} label={t('rendering')} />}
+    </div>}
     {failure !== undefined && <div className={css.status} role="alert">
       <span>{failureText(failure.error, t)}</span>
       <Button size="sm" onClick={() => { setAttempt(value => value + 1) }}>{t('retry')}</Button>

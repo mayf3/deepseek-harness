@@ -33,7 +33,28 @@ beforeEach(() => {
   engine.render.mockReset().mockResolvedValue({ width: 100, height: 100 })
 })
 
-afterEach(() => { cleanup() })
+afterEach(() => {
+  cleanup()
+  vi.unstubAllGlobals()
+})
+
+class IntersectionObserverStub {
+  static instances: IntersectionObserverStub[] = []
+  readonly observed = new Set<Element>()
+  disconnected = false
+
+  constructor(private readonly callback: IntersectionObserverCallback) {
+    IntersectionObserverStub.instances.push(this)
+  }
+
+  observe(element: Element): void { this.observed.add(element) }
+  unobserve(element: Element): void { this.observed.delete(element) }
+  disconnect(): void { this.disconnected = true; this.observed.clear() }
+  takeRecords(): IntersectionObserverEntry[] { return [] }
+  intersect(element: Element, isIntersecting: boolean): void {
+    this.callback([{ target: element, isIntersecting } as IntersectionObserverEntry], this as unknown as IntersectionObserver)
+  }
+}
 
 function harness() {
   const instance = createPdfStore().create()
@@ -75,25 +96,19 @@ describe('PDF body', () => {
     expect(engine.open).not.toHaveBeenCalled()
   })
 
-  it('shows loading, navigates pages, zooms, and restores the tab view after remount', async () => {
+  it('shows loading, omits the paging toolbar, and renders a continuous page sequence', async () => {
     const h = harness()
-    const mounted = render(<h.View />)
+    const view = render(<h.View />)
     expect(screen.getByRole('status').textContent).toBe('Opening PDF…')
     expect(screen.getByRole('status').hasAttribute('data-document-loading')).toBe(true)
     await act(async () => { loads[0]!.deferred.resolve(documentOf()) })
-    expect(screen.getByRole('button', { name: 'Previous page' }).hasAttribute('disabled')).toBe(true)
-    fireEvent.click(screen.getByRole('button', { name: 'Next page' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Zoom in' }))
-    expect(h.instance.getSnapshot().byTab[h.tabId]).toEqual({ page: 2, zoom: 1.25 })
-    mounted.unmount()
-    expect(loads[0]!.dispose).toHaveBeenCalledOnce()
-    render(<h.View />)
-    await act(async () => { loads[1]!.deferred.resolve(documentOf()) })
-    expect(screen.getByRole('spinbutton', { name: 'Page' }).getAttribute('value')).toBe('2')
-    expect(screen.getByRole('button', { name: 'Reset zoom' }).textContent).toBe('125%')
-    fireEvent.change(screen.getByRole('spinbutton', { name: 'Page' }), { target: { value: '99' } })
-    expect(h.instance.getSnapshot().byTab[h.tabId]?.page).toBe(3)
-    expect(screen.getByRole('button', { name: 'Next page' }).hasAttribute('disabled')).toBe(true)
+    await act(async () => {})
+    expect(view.container.querySelector('[role="toolbar"]')).toBeNull()
+    expect([...view.container.querySelectorAll('[data-pdf-page]')].map(page => page.getAttribute('data-pdf-page')))
+      .toEqual(['1', '2', '3'])
+    expect(screen.getAllByRole('img').map(image => image.getAttribute('aria-label')))
+      .toEqual(['PDF page 1', 'PDF page 2', 'PDF page 3'])
+    expect(engine.render.mock.calls.map(([, page, zoom]) => [page, zoom])).toEqual([[1, 1], [2, 1], [3, 1]])
   })
 
   it('keeps the replacement document when the previous load settles late', async () => {
@@ -104,7 +119,7 @@ describe('PDF body', () => {
     const latest = documentOf(2)
     await act(async () => { loads[1]!.deferred.resolve(latest) })
     await act(async () => { loads[0]!.deferred.resolve(documentOf(99)) })
-    expect(screen.getByText('of 2')).toBeTruthy()
+    expect(screen.getAllByRole('img')).toHaveLength(2)
     expect(engine.render.mock.calls.every(([document]) => document === latest)).toBe(true)
   })
 
@@ -129,37 +144,23 @@ describe('PDF body', () => {
     expect(screen.getByRole('alert').textContent).toContain(en.password)
   })
 
-  it('cancels an old page render on navigation and ignores its late rejection', async () => {
-    const drawing = Promise.withResolvers<{ width: number; height: number }>()
-    engine.render.mockImplementationOnce(() => drawing.promise)
+  it('renders later pages only when they approach the viewport and records the reached page', async () => {
+    IntersectionObserverStub.instances = []
+    vi.stubGlobal('IntersectionObserver', IntersectionObserverStub)
     const h = harness()
-    render(<h.View />)
-    await act(async () => { loads[0]!.deferred.resolve(documentOf(2)) })
-    const oldSignal = engine.render.mock.calls[0]![4]
-    fireEvent.click(screen.getByRole('button', { name: 'Next page' }))
-    expect(oldSignal.aborted).toBe(true)
-    await act(async () => { drawing.reject(new Error('cancelled old page')) })
-    expect(screen.queryByRole('alert')).toBeNull()
-    expect(screen.getByRole('img', { name: 'PDF page 2' })).toBeTruthy()
-  })
-
-  it('handles previous page, blank page input, zoom-out, reset, and the zoom limits', async () => {
-    const h = harness()
-    render(<h.View />)
+    const view = render(<h.View />)
     await act(async () => { loads[0]!.deferred.resolve(documentOf(3)) })
-    fireEvent.click(screen.getByRole('button', { name: 'Next page' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Previous page' }))
-    fireEvent.change(screen.getByRole('spinbutton', { name: 'Page' }), { target: { value: '' } })
-    expect(h.instance.getSnapshot().byTab[h.tabId]?.page).toBe(1)
-    for (let i = 0; i < 3; i++) fireEvent.click(screen.getByRole('button', { name: 'Zoom out' }))
-    expect(h.instance.getSnapshot().byTab[h.tabId]?.zoom).toBe(0.25)
-    expect(screen.getByRole('button', { name: 'Zoom out' }).hasAttribute('disabled')).toBe(true)
-    fireEvent.click(screen.getByRole('button', { name: 'Reset zoom' }))
-    expect(h.instance.getSnapshot().byTab[h.tabId]?.zoom).toBe(1)
-    for (let i = 0; i < 12; i++) fireEvent.click(screen.getByRole('button', { name: 'Zoom in' }))
-    expect(h.instance.getSnapshot().byTab[h.tabId]?.zoom).toBe(4)
-    expect(screen.getByRole('button', { name: 'Zoom in' }).hasAttribute('disabled')).toBe(true)
-    await act(async () => {})
+    expect(engine.render.mock.calls.map(([, page]) => page)).toEqual([1])
+    const second = view.container.querySelector('[data-pdf-page="2"]') as HTMLElement
+    const observer = IntersectionObserverStub.instances.find(instance => instance.observed.has(second))!
+    act(() => { observer.intersect(second, false) })
+    expect(engine.render.mock.calls.map(([, page]) => page)).toEqual([1])
+    await act(async () => { observer.intersect(second, true) })
+    expect(engine.render.mock.calls.map(([, page]) => page)).toEqual([1, 2])
+    expect(h.instance.getSnapshot().byTab[h.tabId]?.page).toBe(2)
+    expect(screen.getByRole('img', { name: 'PDF page 2' })).toBeTruthy()
+    view.unmount()
+    expect(IntersectionObserverStub.instances.every(instance => instance.disconnected)).toBe(true)
   })
 
   it('renders a structured Worker failure through its own locale', async () => {
@@ -181,19 +182,7 @@ describe('PDF body', () => {
       engine.open.mock.calls[0]![2](new PdfWorkerFailure(new ErrorEvent('error')))
     })
     expect(screen.queryByRole('alert')).toBeNull()
-    expect(screen.getByText('of 2')).toBeTruthy()
-  })
-
-  it('keeps a newer page visible when the cancelled render resolves late', async () => {
-    const drawing = Promise.withResolvers<{ width: number; height: number }>()
-    engine.render.mockImplementationOnce(() => drawing.promise)
-    const h = harness()
-    render(<h.View />)
-    await act(async () => { loads[0]!.deferred.resolve(documentOf(2)) })
-    fireEvent.click(screen.getByRole('button', { name: 'Next page' }))
-    await act(async () => { drawing.resolve({ width: 100, height: 100 }) })
-    expect(screen.queryByRole('img', { name: 'PDF page 1' })).toBeNull()
-    expect(screen.getByRole('img', { name: 'PDF page 2' })).toBeTruthy()
+    expect(screen.getAllByRole('img')).toHaveLength(2)
   })
 
   it('shows a foreign render rejection and retries that page', async () => {

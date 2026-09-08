@@ -253,29 +253,28 @@ describe.skipIf(MODE === 'record')('web e2e: document preview through Files', ()
     await expect.poll(() => viewer.innerText()).toBe('PDF')
     const canvas = preview.getByRole('img', { name: 'PDF page 1', exact: true })
     await canvas.waitFor({ state: 'visible', timeout: 30_000 })
-    expect(await preview.getByRole('spinbutton', { name: 'Page', exact: true }).inputValue()).toBe('1')
-    expect(await preview.getByText('of 2', { exact: true }).isVisible()).toBe(true)
+    expect(await preview.locator('[role="toolbar"]').count()).toBe(0)
+    expect(await preview.locator('[data-pdf-page]').count()).toBe(2)
     await expect.poll(() => canvasColor(canvas), { timeout: 30_000 }).toBe('red')
     const firstColor = await canvasColor(canvas)
     expect(firstColor).toBe('red')
     const workerNames = await Promise.all(page.workers().map(worker => worker.evaluate(() => self.name)))
     expect(workerNames).toContain('dsh-pdf')
-    await preview.getByRole('button', { name: 'Next page', exact: true }).click()
+    await preview.locator('[data-pdf-page="2"]').scrollIntoViewIfNeeded()
     const secondPage = preview.getByRole('img', { name: 'PDF page 2', exact: true })
     await secondPage.waitFor({ state: 'visible', timeout: 30_000 })
     await expect.poll(() => canvasColor(secondPage), { timeout: 30_000 }).toBe('blue')
     const secondColor = await canvasColor(secondPage)
     expect(secondColor).toBe('blue')
-    expect(await preview.getByRole('spinbutton', { name: 'Page', exact: true }).inputValue()).toBe('2')
+    expect(await body.evaluate(node => node.scrollWidth <= node.clientWidth)).toBe(true)
     const pdfTab = column.locator('[data-dockkit-tab]').filter({ has: page.getByText('smoke.pdf', { exact: true }) })
     const pdfTabId = await pdfTab.getAttribute('data-dockkit-tab')
     expect(pdfTabId).not.toBeNull()
     await filesTab.click()
     await column.locator('[data-files-state="tree"]').waitFor({ state: 'visible' })
     await pdfTab.click()
+    await preview.locator('[data-pdf-page="2"]').scrollIntoViewIfNeeded()
     await secondPage.waitFor({ state: 'visible', timeout: 30_000 })
-    const restoredPage = await preview.getByRole('spinbutton', { name: 'Page', exact: true }).inputValue()
-    expect(restoredPage).toBe('2')
     await expect.poll(() => canvasColor(secondPage), { timeout: 30_000 }).toBe('blue')
     const restoredColor = await canvasColor(secondPage)
     expect(restoredColor).toBe('blue')
@@ -285,9 +284,9 @@ describe.skipIf(MODE === 'record')('web e2e: document preview through Files', ()
       '## PDF', '',
       `- Viewer: ${await viewer.innerText()}`,
       `- Worker: ${workerNames.find(name => name === 'dsh-pdf')}`,
-      `- Page count: ${await preview.getByText('of 2', { exact: true }).innerText()}`,
+      `- Continuous pages: ${await preview.locator('[data-pdf-page]').count()}`,
+      `- Horizontal overflow: ${String(await body.evaluate(node => node.scrollWidth > node.clientWidth))}`,
       `- Canvas fills: ${[firstColor, secondColor, restoredColor].join(' -> ')}`,
-      `- Page after Files round trip: ${restoredPage}`,
       `- Same tab: ${String(await pdfTab.getAttribute('data-dockkit-tab') === pdfTabId)}`,
     ].join('\n'))
 
