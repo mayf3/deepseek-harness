@@ -38,19 +38,16 @@ test('loads the repository ownership policy without test-only directory rules', 
   assert.equal(rules.some(rule => rule.pattern === '/packages/test-support/'), false)
   assert.deepEqual(ownersByPattern.get('/apps/cli/'), ['@turtle1999'])
   assert.deepEqual(ownersByPattern.get('/docs/'), ['@turtle1999'])
-  assert.deepEqual(ownersByPattern.get('/packages/core/'), ['@tianyicui', '@turtle1999', '@mektpoy'])
+  assert.deepEqual(ownersByPattern.get('/packages/core/'), ['@turtle1999', '@mektpoy'])
   assert.deepEqual(ownersByPattern.get('/packages/llm/'), ['@LegGasai'])
   assert.deepEqual(ownersByPattern.get('/packages/preset/'), ['@LegGasai', '@turtle1999'])
-  assert.deepEqual(ownersByPattern.get('/packages/session/'), ['@tianyicui', '@turtle1999', '@mektpoy'])
+  assert.deepEqual(ownersByPattern.get('/packages/session/'), ['@turtle1999', '@mektpoy'])
   assert.deepEqual(ownersByPattern.get('/packages/subagent/'), ['@Dudu-0223'])
   assert.deepEqual(ownersByPattern.get('/packages/web/'), ['@imccyu'])
   assert.deepEqual(ownersByPattern.get('/python/'), ['@LegGasai'])
   assert.deepEqual(ownersByPattern.get('/website/'), ['@LegGasai'])
-  assert.deepEqual(
-    rules.filter(rule => rule.owners.includes('@tianyicui')).map(rule => rule.pattern),
-    ['/packages/core/', '/packages/session/'],
-  )
-  for (const excludedOwner of ['@kermeanx', '@pkh-xht']) {
+  assert.equal(rules.every(rule => rule.owners.length <= 2), true)
+  for (const excludedOwner of ['@tianyicui', '@kermeanx', '@pkh-xht']) {
     assert.equal(rules.some(rule => rule.owners.some(owner => owner.toLowerCase() === excludedOwner)), false)
   }
 })
@@ -87,6 +84,7 @@ test('rejects ownership forms the requester cannot apply safely', () => {
     ['/packages/*/ @owner\n', /explicit absolute directory/u],
     ['/packages/core/\n', /at least one owner/u],
     ['/packages/core/ @org/team\n', /individual GitHub users/u],
+    ['/packages/core/ @one @two @three\n', /at most 2 owners/u],
     ['/packages/core/ @owner @OWNER\n', /duplicate owner/u],
     ['/packages/core/ @owner\n/packages/core/ @other\n', /duplicate pattern/u],
   ]) {
@@ -342,7 +340,7 @@ test('prints changed code files before requesting missing owners', async () => {
     excludedTestFiles: ['packages/core/agent/tests/index.spec.ts'],
     excludedDocumentationFiles: ['AGENTS.md'],
     excludedCommentOnlyFiles: [],
-    requestedReviewers: ['Dudu-0223', 'LegGasai', 'mektpoy', 'tianyicui'],
+    requestedReviewers: ['Dudu-0223', 'LegGasai', 'mektpoy'],
     cancelledReviewers: [],
   })
   assert.equal(trace[0].type, 'log')
@@ -355,7 +353,7 @@ test('prints changed code files before requesting missing owners', async () => {
     path: '/repos/deepseek-harness/deepseek-harness/pulls/42/requested_reviewers',
     options: {
       method: 'POST',
-      body: { reviewers: ['Dudu-0223', 'LegGasai', 'mektpoy', 'tianyicui'] },
+      body: { reviewers: ['Dudu-0223', 'LegGasai', 'mektpoy'] },
     },
   })
 })

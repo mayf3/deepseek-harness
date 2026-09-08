@@ -5,6 +5,7 @@ import process from 'node:process'
 import { pathToFileURL } from 'node:url'
 
 const API_VERSION = '2026-03-10'
+const MAX_OWNERS_PER_RULE = 2
 const MAX_PULL_REQUEST_FILES = 3_000
 const MAX_TIMELINE_EVENTS = 3_000
 const PAGE_SIZE = 100
@@ -40,6 +41,9 @@ export function parseOwnership(source) {
     if (pattern.startsWith('/.')) throw new Error(`${location}: hidden-directory patterns are not allowed`)
     if (patterns.has(pattern)) throw new Error(`${location}: duplicate pattern ${JSON.stringify(pattern)}`)
     if (owners.length === 0) throw new Error(`${location}: expected at least one owner`)
+    if (owners.length > MAX_OWNERS_PER_RULE) {
+      throw new Error(`${location}: expected at most ${MAX_OWNERS_PER_RULE} owners`)
+    }
     const normalizedOwners = []
     const seenOwners = new Set()
     for (const owner of owners) {

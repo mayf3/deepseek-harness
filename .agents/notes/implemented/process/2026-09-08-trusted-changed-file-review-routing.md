@@ -12,7 +12,7 @@ Review routing needs an observable changed-file input, explicit owner rules, com
 
 ## Decision
 
-The repository keeps a CODEOWNERS-compatible map at [`.github/review-ownership/CODEOWNERS`](../../../../.github/review-ownership/CODEOWNERS), outside GitHub's native CODEOWNERS locations. The map accepts only explicit absolute directory patterns and individual GitHub users. It rejects wildcards, hidden-directory patterns, teams, duplicate patterns, and duplicate owners. Later matching patterns replace earlier matches.
+The repository keeps a CODEOWNERS-compatible map at [`.github/review-ownership/CODEOWNERS`](../../../../.github/review-ownership/CODEOWNERS), outside GitHub's native CODEOWNERS locations. The map accepts only explicit absolute directory patterns with one or two individual GitHub users. It rejects wildcards, hidden-directory patterns, teams, more than two owners, duplicate patterns, and duplicate owners. Later matching patterns replace earlier matches.
 
 The policy test counts non-test tracked lines in directories that match an ownership rule. It rejects a map in which `@turtle1999` owns more than one third of that eligible owned codebase.
 
@@ -42,6 +42,6 @@ The workflow prints the changed code paths, each exclusion class, per-file owner
 
 Reviewer mutations are reproducible from a trusted policy, the file classifications printed in the workflow log, and review-request provenance in the pull-request timeline. Excluded changes do not request owners, and draft pull requests do not retain workflow-authored requests. Ownership changes become effective only after merge, so the pull request that changes policy cannot apply its untrusted policy to itself.
 
-The workflow requests every matched owner rather than choosing one owner nondeterministically. Shared ownership on large directories therefore produces multiple requests. GitHub-generated review-request events may not start other workflows that depend on recursively triggered events from `GITHUB_TOKEN`; those workflows must not rely on this request as their only trigger.
+The workflow requests every matched owner rather than choosing one owner nondeterministically. Shared ownership therefore produces at most two requests for each changed module. GitHub-generated review-request events may not start other workflows that depend on recursively triggered events from `GITHUB_TOKEN`; those workflows must not rely on this request as their only trigger.
 
 Any change that does not match an explicit exclusion remains eligible under an owned directory. Unmatched paths are logged and request nobody. Pull requests above the file or timeline API limit fail without applying a partial reviewer mutation.

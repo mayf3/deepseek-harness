@@ -12,7 +12,7 @@ Status: implemented
 
 ## 决策
 
-仓库在 GitHub 原生 CODEOWNERS 路径之外的 [`.github/review-ownership/CODEOWNERS`](../../../../.github/review-ownership/CODEOWNERS) 中保存兼容 CODEOWNERS 格式的映射。该映射只接受显式绝对目录模式和 GitHub 个人用户。通配符、隐藏目录模式、团队、重复模式和重复 owner 都会被拒绝。靠后的匹配模式会替换靠前的匹配结果。
+仓库在 GitHub 原生 CODEOWNERS 路径之外的 [`.github/review-ownership/CODEOWNERS`](../../../../.github/review-ownership/CODEOWNERS) 中保存兼容 CODEOWNERS 格式的映射。该映射只接受显式绝对目录模式，每条模式配置一至两名 GitHub 个人用户。通配符、隐藏目录模式、团队、超过两名 owner、重复模式和重复 owner 都会被拒绝。靠后的匹配模式会替换靠前的匹配结果。
 
 策略测试会统计匹配所有权规则的目录中的非测试跟踪文件行数。如果 `@turtle1999` 拥有的有效代码库超过三分之一，测试就会拒绝该映射。
 
@@ -42,6 +42,6 @@ Workflow 会在发出任何评审请求变更之前，依次打印变更代码�
 
 评审请求修改可以根据受信任的策略、workflow 日志中打印的文件分类，以及 PR 时间线中的请求来源复现。被排除的变更不会请求 owner，草稿 PR 不会保留 workflow 发出的请求。所有权变更只有合并后才会生效，因此修改策略的 PR 无法对自身应用其中不受信任的策略。
 
-Workflow 会请求所有匹配的 owner，不会随机选择一人。因此，大目录上的共享所有权会产生多个请求。GitHub 使用 `GITHUB_TOKEN` 生成的评审请求事件可能不会启动依赖递归触发事件的其他 workflow；这些 workflow 不得把此请求作为唯一触发条件。
+Workflow 会请求所有匹配的 owner，不会随机选择一人。因此，共享所有权对每个变更模块最多产生两个请求。GitHub 使用 `GITHUB_TOKEN` 生成的评审请求事件可能不会启动依赖递归触发事件的其他 workflow；这些 workflow 不得把此请求作为唯一触发条件。
 
 已分配目录下不符合任何显式排除规则的变更仍符合请求条件。未匹配的路径会被记录，但不会请求任何人。超过文件或时间线 API 上限的 PR 会失败，并且不会执行不完整的评审者修改。
