@@ -10,6 +10,10 @@ export const DESKTOP_IPC = {
   pluginsAdd: 'dsh-desktop:plugins-add',
   pluginsRemove: 'dsh-desktop:plugins-remove',
   pluginsUpdate: 'dsh-desktop:plugins-update',
+  pluginsToggle: 'dsh-desktop:plugins-toggle',
+  pluginsDisableAll: 'dsh-desktop:plugins-disable-all',
+  backendStatus: 'dsh-desktop:backend-status',
+  backendRetry: 'dsh-desktop:backend-retry',
   updatesCheck: 'dsh-desktop:updates-check',
   updatesInstall: 'dsh-desktop:updates-install',
   updatesState: 'dsh-desktop:updates-state',
@@ -31,6 +35,12 @@ export interface DshDesktopApi {
     add(spec: string): Promise<void>
     remove(name: string): Promise<void>
     update(name: string, version: string): Promise<void>
+    toggle(name: string, enabled: boolean): Promise<void>
+    disableAll(): Promise<void>
+  }
+  readonly backend: {
+    status(): Promise<{ readonly ready: boolean; readonly error?: string }>
+    retry(): Promise<void>
   }
   readonly updates: {
     check(): Promise<DesktopUpdateState>

@@ -1,3 +1,10 @@
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join, relative } from 'node:path'
+import { createRequire } from 'node:module'
+import { FileMatcher } from 'app-builder-lib/out/fileMatcher.js'
+import { runtimeFixture } from './runtime-fixture.ts'
+import { verifyDesktopRuntime } from '../src/runtime-tree.ts'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import type { NotarizeOptions } from '@electron/notarize'
 import {
@@ -7,9 +14,14 @@ import {
 } from '../scripts/desktop-release-environment.mjs'
 import { notarizeMacOSDiskImageArtifact } from '../scripts/notarize-macos-disk-images.mjs'
 import {
-  assertMacOSSeedSignatureDetails,
+  assertMacOSRuntimeSignatureDetails,
   assertMacOSSignatureDetails,
 } from '../scripts/verify-macos-signature.mjs'
+
+// app-builder-lib omits this internal copier from its declarations; the regression exercises its actual file filter.
+const { copyFiles } = createRequire(import.meta.url)('app-builder-lib/out/fileMatcher.js') as {
+  copyFiles: (matchers: FileMatcher[]) => Promise<void>
+}
 
 const RELEASE_ENVIRONMENT = {
   DSH_DESKTOP_APP_ID: 'com.example.desktop',
@@ -40,17 +52,18 @@ describe('desktop macOS release signature', () => {
     const { createElectronBuilderConfig } = await import('../electron-builder.config.mjs')
     const config = createElectronBuilderConfig(RELEASE_ENVIRONMENT, 'darwin', 'arm64')
     expect(portablePath(config.directories.output)).toContain('/.desktop-build/targets/mac-arm64/artifacts')
-    expect(config.extraResources).toHaveLength(2)
+    expect(config.extraResources).toHaveLength(3)
     expect(config.extraResources[0]?.to).toBe('runtime')
-    expect(config.extraResources[1]?.to).toBe('seed')
+    expect(config.extraResources[1]?.to).toBe('dsh')
     expect(portablePath(config.extraResources[0]?.from ?? '')).toContain('/.desktop-build/targets/mac-arm64/runtime')
-    expect(portablePath(config.extraResources[1]?.from ?? '')).toContain('/.desktop-build/targets/mac-arm64/seed')
+    expect(portablePath(config.extraResources[1]?.from ?? '')).toContain('/.desktop-build/targets/mac-arm64/dsh')
     expect(config).toMatchObject({
       appId: RELEASE_ENVIRONMENT.DSH_DESKTOP_APP_ID,
       mac: {
         identity: RELEASE_ENVIRONMENT.DSH_DESKTOP_MACOS_SIGNING_IDENTITY,
         forceCodeSigning: true,
         notarize: true,
+        signIgnore: ['/Contents/Resources/dsh(?:/|$)'],
       },
       dmg: {
         sign: true,
@@ -62,6 +75,26 @@ describe('desktop macOS release signature', () => {
       }],
     })
     expect(typeof config.artifactBuildCompleted).toBe('function')
+  })
+
+  it('copies the complete runtime despite electron-builder excluding root node_modules', async () => {
+    const { createElectronBuilderConfig } = await import('../electron-builder.config.mjs')
+    const config = createElectronBuilderConfig(RELEASE_ENVIRONMENT, 'darwin', 'arm64')
+    const root = mkdtempSync(join(tmpdir(), 'desktop-resource-copy-'))
+    try {
+      const source = join(root, 'source')
+      const destination = join(root, 'resources')
+      runtimeFixture(source)
+      const sourceRoot = config.extraResources[1].from
+      const matchers = config.extraResources.slice(1).map(entry => new FileMatcher(
+        join(source, relative(sourceRoot, entry.from)), join(destination, entry.to), value => value,
+      ))
+      await copyFiles(matchers.slice(0, 1))
+      expect(() => verifyDesktopRuntime(join(destination, 'dsh'), '1.0.0')).toThrow(/integrity/u)
+      rmSync(destination, { recursive: true })
+      await copyFiles(matchers)
+      expect(() => verifyDesktopRuntime(join(destination, 'dsh'), '1.0.0')).not.toThrow()
+    } finally { rmSync(root, { recursive: true, force: true }) }
   })
 
   it('validates Windows signing without requiring macOS identifiers for a Windows target', async () => {
@@ -82,7 +115,7 @@ describe('desktop macOS release signature', () => {
     }).not.toThrow()
   })
 
-  it('requires a secure timestamp and hardened runtime for seed code', () => {
+  it('requires a secure timestamp and hardened runtime for runtime code', () => {
     const expected = resolveMacOSSigningEnvironment(RELEASE_ENVIRONMENT)
     const details = [
       `Authority=Developer ID Application: ${expected.signingIdentity}`,
@@ -90,12 +123,12 @@ describe('desktop macOS release signature', () => {
       'Timestamp=31 Aug 2026 at 20:00:00',
       'CodeDirectory v=20500 size=773 flags=0x10000(runtime) hashes=13+7 location=embedded',
     ].join('\n')
-    expect(() => { assertMacOSSeedSignatureDetails(details, expected) }).not.toThrow()
+    expect(() => { assertMacOSRuntimeSignatureDetails(details, expected) }).not.toThrow()
     expect(() => {
-      assertMacOSSeedSignatureDetails(details.replace(/^Timestamp=.*\n/um, ''), expected)
+      assertMacOSRuntimeSignatureDetails(details.replace(/^Timestamp=.*\n/um, ''), expected)
     }).toThrow(/secure timestamp/u)
     expect(() => {
-      assertMacOSSeedSignatureDetails(details.replace('flags=0x10000(runtime)', 'flags=0x0(none)'), expected)
+      assertMacOSRuntimeSignatureDetails(details.replace('flags=0x10000(runtime)', 'flags=0x0(none)'), expected)
     }).toThrow(/hardened runtime/u)
   })
 

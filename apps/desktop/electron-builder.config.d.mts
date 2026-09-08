@@ -6,12 +6,14 @@ export interface DesktopElectronBuilderConfig {
   }
   readonly extraResources: readonly [
     { readonly from: string, readonly to: 'runtime' },
-    { readonly from: string, readonly to: 'seed' },
+    { readonly from: string, readonly to: 'dsh' },
+    { readonly from: string, readonly to: 'dsh/node_modules' },
   ]
   readonly mac: {
     readonly identity: string | undefined
     readonly forceCodeSigning: boolean
     readonly notarize: boolean
+    readonly signIgnore: readonly string[]
   }
   readonly dmg: {
     readonly sign: boolean

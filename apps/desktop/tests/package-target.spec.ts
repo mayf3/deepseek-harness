@@ -56,7 +56,7 @@ describe('desktop package target', () => {
     expect(desktopElectronBuilderArguments(target, true)).toContain('--dir')
   })
 
-  it('keeps Windows signing fields out of build and seed preparation subprocesses', () => {
+  it('keeps Windows signing fields out of build and runtime preparation subprocesses', () => {
     expect(withoutWindowsSigningEnvironment({
       DSH_DESKTOP_WINDOWS_CER_FILE: 'C:\\release\\server.cer',
       DSH_DESKTOP_WINDOWS_TOKEN_PIN: 'token-secret',

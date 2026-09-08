@@ -49,7 +49,7 @@ const MIME: Readonly<Record<string, string>> = {
 interface RuntimeResources {
   readonly node: string
   readonly pnpm: string
-  readonly seed: string
+  readonly dsh: string
 }
 
 function runtimeResources(): RuntimeResources {
@@ -58,8 +58,8 @@ function runtimeResources(): RuntimeResources {
     ?? join(process.resourcesPath, 'runtime', 'node', process.platform === 'win32' ? 'node.exe' : 'node')
   const pnpm = (development ? process.env.DSH_DESKTOP_PNPM_ENTRY : undefined)
     ?? join(process.resourcesPath, 'runtime', 'pnpm', 'bin', 'pnpm.mjs')
-  const seed = (development ? process.env.DSH_DESKTOP_SEED_DIR : undefined) ?? join(process.resourcesPath, 'seed')
-  return { node, pnpm, seed }
+  const dsh = (development ? process.env.DSH_DESKTOP_DSH_DIR : undefined) ?? join(process.resourcesPath, 'dsh')
+  return { node, pnpm, dsh }
 }
 
 function developmentProject(): string | undefined {
@@ -137,8 +137,8 @@ async function main(): Promise<void> {
   const activeProject = development ?? paths.profile
   const hostInspectPort = developmentHostInspectPort(development !== undefined)
   const manager = new DesktopProjectManager(paths, resources)
-  if (development === undefined) manager.recover()
   let host: DesktopHostProcess | undefined
+  let startupError: string | undefined
   let mainWindow: BrowserWindow | undefined
   let pluginWindow: BrowserWindow | undefined
   let shellInstallerOwnsQuit = false
@@ -157,9 +157,15 @@ async function main(): Promise<void> {
   }
 
   const startHost = async (projectDir = activeProject): Promise<DesktopHostProcess> => {
-    const next = new DesktopHostProcess(resources.node, projectDir, hostInspectPort)
-    await next.start()
-    return next
+    if (development === undefined) manager.assertProfileRuntime(projectDir)
+    const next = new DesktopHostProcess(resources.node, development ?? resources.dsh, projectDir, hostInspectPort)
+    try {
+      await next.start()
+      return next
+    } catch (error) {
+      await next.stop()
+      throw error
+    }
   }
   const hooks: DesktopProjectHooks = {
     healthCheck: async (projectDir) => {
@@ -202,14 +208,18 @@ async function main(): Promise<void> {
     },
   }
 
-  if (development === undefined) {
-    await manager.applyRelease(resources.seed, app.getVersion(), {
-      ...hooks,
-      beforeActivate: async () => {},
-      afterActivate: async () => {},
-    })
+  const reconcileBackend = async (): Promise<void> => {
+    try {
+      if (development === undefined) {
+        await manager.applyRelease(app.getVersion(), { ...hooks, beforeActivate: async () => {}, afterActivate: async () => {} })
+      }
+      host = await startHost()
+      startupError = undefined
+    } catch (error) {
+      startupError = errorOf(error, messages.startupFailed).message
+      throw error
+    }
   }
-  host = await startHost()
 
   const updates = new DesktopUpdateCoordinator(
     publishUpdate,
@@ -236,7 +246,9 @@ async function main(): Promise<void> {
       throw new Error('dsh desktop: plugin package changes require a packaged application')
     }
     await manager.mutate(mutation, hooks)
+    startupError = undefined
     if (mainWindow !== undefined && !mainWindow.isDestroyed()) mainWindow.webContents.reload()
+    else focusPrimaryWindow()
   }
   ipcMain.handle(DESKTOP_IPC.localeGet, (event) => {
     assertDesktopSender(event, ['shell'])
@@ -260,6 +272,20 @@ async function main(): Promise<void> {
       throw new Error('dsh desktop: plugin name and version must be strings')
     }
     return mutate(event, { type: 'plugin-update', name, version })
+  })
+  ipcMain.handle(DESKTOP_IPC.pluginsToggle, (event, name: unknown, enabled: unknown) => {
+    if (typeof name !== 'string' || typeof enabled !== 'boolean') throw new Error('dsh desktop: invalid plugin activation request')
+    return mutate(event, { type: 'plugin-toggle', name, enabled })
+  })
+  ipcMain.handle(DESKTOP_IPC.pluginsDisableAll, event => mutate(event, { type: 'plugins-disable-all' }))
+  ipcMain.handle(DESKTOP_IPC.backendStatus, (event) => {
+    assertDesktopSender(event, ['shell'])
+    return { ready: host !== undefined, ...(startupError === undefined ? {} : { error: startupError }) }
+  })
+  ipcMain.handle(DESKTOP_IPC.backendRetry, async (event) => {
+    assertDesktopSender(event, ['shell'])
+    if (host === undefined) await reconcileBackend()
+    focusPrimaryWindow()
   })
   ipcMain.handle(DESKTOP_IPC.updatesCheck, async (event) => {
     assertDesktopSender(event, ['shell'])
@@ -348,6 +374,7 @@ async function main(): Promise<void> {
     return window
   }
   focusPrimaryWindow = () => {
+    if (host === undefined) { openPluginWindow(); return }
     const window = mainWindow
     if (window === undefined || window.isDestroyed()) {
       const replacement = createMainWindow()
@@ -359,9 +386,13 @@ async function main(): Promise<void> {
     window.focus()
   }
 
-  mainWindow = createMainWindow()
-  await mainWindow.loadURL(`${SCHEME}://app/index.html`)
-  if (development !== undefined && process.env.DSH_DESKTOP_OPEN_DEVTOOLS !== '0') {
+  await reconcileBackend().catch(() => undefined)
+  if (host === undefined) openPluginWindow()
+  else {
+    mainWindow = createMainWindow()
+    await mainWindow.loadURL(`${SCHEME}://app/index.html`)
+  }
+  if (mainWindow !== undefined && development !== undefined && process.env.DSH_DESKTOP_OPEN_DEVTOOLS !== '0') {
     mainWindow.webContents.openDevTools({ mode: 'detach' })
   }
   publishUpdate(updateState)

@@ -86,28 +86,33 @@ export class DesktopHostProcess {
 
   /**
    * @param node - absolute bundled upstream Node.js executable.
-   * @param projectDir - active or staged desktop npm project.
+   * @param runtimeDir - immutable packages carried by the current application.
+   * @param projectDir - active or staged desktop plugin profile.
    * @param inspectPort - optional loopback inspector port for workspace development.
+   * @param environment - Child environment; runtime and package-manager overrides are removed.
    */
   constructor(
     private readonly node: string,
+    private readonly runtimeDir: string,
     private readonly projectDir: string,
     private readonly inspectPort?: number,
+    private readonly environment: NodeJS.ProcessEnv = process.env,
   ) {}
 
   /** Start the child once and resolve only after its complete composition is active. */
   async start(): Promise<DesktopHostReady> {
     if (this.child !== undefined) return this.readyPromise
-    const entry = join(this.projectDir, 'node_modules', '@deepseek-ai', 'dsh-desktop-host', 'lib', 'index.js')
+    const entry = join(this.runtimeDir, 'node_modules', '@deepseek-ai', 'dsh-desktop-host', 'lib', 'index.js')
     const child = spawn(this.node, [
       ...(this.inspectPort === undefined ? [] : [`--inspect=127.0.0.1:${String(this.inspectPort)}`]),
       entry,
+      this.runtimeDir,
       this.projectDir,
       ...(this.inspectPort === undefined ? [] : ['--allow-linked-profile']),
     ], {
       cwd: this.projectDir,
-      env: Object.fromEntries(Object.entries(process.env).filter(([name]) => (
-        name !== 'NODE_OPTIONS' && !/^DSH_DESKTOP_/u.test(name) && !/^(?:npm|pnpm|corepack)_/iu.test(name)
+      env: Object.fromEntries(Object.entries(this.environment).filter(([name]) => (
+        name !== 'NODE_OPTIONS' && name !== 'NODE_PATH' && !/^DSH_DESKTOP_/u.test(name) && !/^(?:npm|pnpm|corepack)_/iu.test(name)
       ))),
       stdio: ['ignore', 'pipe', 'pipe', 'pipe', 'pipe', 'ipc'],
     })

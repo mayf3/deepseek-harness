@@ -1,3 +1,4 @@
+import { join } from 'node:path'
 import {
   resolveDesktopAppId,
   resolveMacOSNotarizationEnvironment,
@@ -59,13 +60,17 @@ export function createElectronBuilderConfig(
     ],
     extraResources: [
       { from: buildPaths.runtime, to: 'runtime' },
-      { from: buildPaths.seed, to: 'seed' },
+      { from: buildPaths.dsh, to: 'dsh' },
+      // electron-builder excludes a source directory's root node_modules.
+      { from: join(buildPaths.dsh, 'node_modules'), to: 'dsh/node_modules' },
     ],
     mac: {
       category: 'public.app-category.developer-tools',
       identity: macOSSigning?.signingIdentity,
       forceCodeSigning: true,
       hardenedRuntime: true,
+      // Runtime files are signed before their integrity inventory is sealed.
+      signIgnore: ['/Contents/Resources/dsh(?:/|$)'],
       notarize: true,
       target: ['dmg', 'zip'],
     },
@@ -73,8 +78,16 @@ export function createElectronBuilderConfig(
       sign: true,
       writeUpdateInfo: false,
     },
-    afterSign: context => {
+    afterPack: async context => {
+      const { verifyDesktopRuntime } = await import('./lib/types/runtime-tree.js')
+      verifyDesktopRuntime(join(context.packager.getResourcesDir(context.appOutDir), 'dsh'),
+        context.packager.appInfo.version, { platform: resolvedPlatform, arch: resolvedArch })
+    },
+    afterSign: async context => {
       if (context.electronPlatformName !== 'darwin') return
+      const { verifyDesktopRuntime } = await import('./lib/types/runtime-tree.js')
+      verifyDesktopRuntime(join(context.appOutDir, `${context.packager.appInfo.productFilename}.app`, 'Contents', 'Resources', 'dsh'),
+        context.packager.appInfo.version, { platform: 'darwin', arch: resolvedArch })
       verifyMacOSSignatureAfterSign(context, macOSSigning ?? resolveMacOSSigningEnvironment(env))
     },
     artifactBuildCompleted: artifact => {

@@ -1,4 +1,4 @@
-/** Build one release target with matching Electron, Node.js, and seed architecture. */
+/** Build one release target with matching Electron, Node.js, and dsh architecture. */
 
 import { spawn } from 'node:child_process'
 import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
@@ -276,7 +276,7 @@ async function main(): Promise<void> {
   ], buildEnv, REPOSITORY_ROOT)
   await runPnpm(['run', 'prepare:runtime'], targetEnv)
   await runPnpm(['run', 'prepare:packages'], targetEnv)
-  await runPnpm(['run', 'prepare:seed'], targetEnv)
+  await runPnpm(['run', 'prepare:dsh'], targetEnv)
   if (invocation.prepareOnly) return
   await runPnpm(desktopElectronBuilderArguments(target, invocation.directory), electronBuilderEnv)
   if (!invocation.directory) writeReleaseRecord(target, electronBuilderEnv, buildPaths.artifacts)
