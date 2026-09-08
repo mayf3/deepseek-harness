@@ -3,10 +3,9 @@
     - button "Use the bash tool to" [disabled]
   - img
   - text: Minimal mode
-  - button "Session log":
-    - text: Session log
+  - button "More actions":
     - img
-  - button "Open the sidebar":
+  - button "Open sidebar":
     - img
   - tablist:
     - tab "Chat" [selected]
