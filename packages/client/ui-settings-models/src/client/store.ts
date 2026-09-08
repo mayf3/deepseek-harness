@@ -30,7 +30,7 @@ export interface ProviderDirectoryEntry {
   readonly settingsPath: readonly string[]
   readonly active: boolean
   readonly declared?: boolean
-  readonly configurationError?: string
+  readonly error?: string
 }
 
 /**
@@ -44,20 +44,16 @@ export function joinProviderDirectory(
   directory: readonly LlmConfigurableProvider[],
 ): ProviderDirectoryEntry[] {
   const active = new Set(registered.map(provider => provider.id))
-  const errors = new Map(registered.map(provider => [provider.id, provider.configurationError]))
   const declared = new Set(directory.map(entry => entry.provider))
-  const rows: ProviderDirectoryEntry[] = directory.map((entry) => {
-    const configurationError = errors.get(entry.provider)
-    return {
-      provider: entry.provider,
-      displayName: entry.displayName,
-      settingsNs: entry.settingsNs,
-      settingsPath: [...entry.settingsPath],
-      active: active.has(entry.provider),
-      ...entry.declared === undefined ? {} : { declared: entry.declared },
-      ...configurationError === undefined ? {} : { configurationError },
-    }
-  })
+  const rows: ProviderDirectoryEntry[] = directory.map(entry => ({
+    provider: entry.provider,
+    displayName: entry.displayName,
+    settingsNs: entry.settingsNs,
+    settingsPath: [...entry.settingsPath],
+    active: active.has(entry.provider),
+    ...entry.declared === undefined ? {} : { declared: entry.declared },
+    ...entry.error === undefined ? {} : { error: entry.error },
+  }))
   for (const provider of registered) {
     if (declared.has(provider.id)) continue
     rows.push({
@@ -66,7 +62,6 @@ export function joinProviderDirectory(
       settingsNs: '',
       settingsPath: [],
       active: true,
-      ...provider.configurationError === undefined ? {} : { configurationError: provider.configurationError },
     })
   }
   return rows

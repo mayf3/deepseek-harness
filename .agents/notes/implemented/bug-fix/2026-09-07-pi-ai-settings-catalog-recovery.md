@@ -16,7 +16,7 @@ Initial profile resolution retains catalog diagnostics, while schema and self-co
 
 Profile resolution keeps valid models beside per-model errors. A missing override retains its diagnostic without disabling the remaining catalog. A route-level catalog failure retains its provider and editable settings but supplies no callable models. The adapter checks the selected model's recorded failure before credentials or network I/O and reports `INVALID_CONFIG`. No protocol is guessed and no user configuration is rewritten during loading. Immutable snapshots still keep an in-flight request on its captured configuration.
 
-`LlmProviderInfo.configurationError` carries the first diagnostic for the provider row. Registration facts include that diagnostic so configuration repair refreshes the browser. Failed model ids remain in settings, while the model selector receives serviceable entries. Models settings displays the diagnostic and retains edit/delete controls. Both add actions require their owning settings namespace; the ordinary add menu filters out unavailable namespaces.
+`LlmConfigurableProvider.error` carries the first diagnostic for the provider row. The configurable-provider directory publishes diagnostic changes so configuration repair refreshes the browser without re-registering the adapter. Failed model ids remain in settings, while the model selector receives serviceable entries. Models settings displays the diagnostic and retains edit/delete controls. Both add actions require their owning settings namespace; the ordinary add menu filters out unavailable namespaces.
 
 This extends the [provider-routed adapter decision](../architecture/2026-07-14-provider-routed-llm-adapters.md): provider ownership and request snapshots remain unchanged, while catalog validity does not determine whether settings can be managed. That note remains active for routing, ownership, and replay rationale.
 
@@ -32,7 +32,7 @@ This extends the [provider-routed adapter decision](../architecture/2026-07-14-p
 
 ## Consequences
 
-Upgrade-dependent errors remain visible and repairable without weakening validation of new provider edits. Configuration errors remain distinct from remote model existence: a catalog-external id with an explicit protocol is accepted, and its endpoint decides whether that id exists. Scalar or document errors still fail early. No settings API, storage format, or session event is added; provider metadata gains one optional diagnostic field.
+Upgrade-dependent errors remain visible and repairable without weakening validation of new provider edits. Configuration errors remain distinct from remote model existence: a catalog-external id with an explicit protocol is accepted, and its endpoint decides whether that id exists. Scalar or document errors still fail early. No settings API, storage format, or session event is added; configurable-provider entries gain one optional diagnostic field.
 
 ## Testing
 

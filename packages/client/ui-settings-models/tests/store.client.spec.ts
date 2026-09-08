@@ -6,12 +6,14 @@ import { SettingsDescribeMirror } from '@deepseek-ai/dsh-client-ui-settings/src/
 import { settingsSchema } from './settings-schema.client.ts'
 import { joinProviderDirectory, ModelsSettingsStore } from '../src/client/store.ts'
 
-it('retains diagnostics for a live provider without a configurable directory entry', () => {
-  expect(joinProviderDirectory([{ id: 'orphan', name: 'Orphan', configurationError: 'catalog unavailable' }], []))
-    .toEqual([{
-      provider: 'orphan', displayName: 'Orphan', settingsNs: '', settingsPath: [], active: true,
-      configurationError: 'catalog unavailable',
-    }])
+it.each([false, true])('retains configuration diagnostics when the route is active: %s', (active) => {
+  expect(joinProviderDirectory(active ? [{ id: 'openai', name: 'openai' }] : [], [{
+    provider: 'openai', displayName: 'openai', settingsNs: 'llm-pi-ai', settingsPath: ['providers', 'openai'],
+    error: 'catalog unavailable',
+  }])).toEqual([{
+    provider: 'openai', displayName: 'openai', settingsNs: 'llm-pi-ai', settingsPath: ['providers', 'openai'],
+    active, error: 'catalog unavailable',
+  }])
 })
 
 let nextRpc = 0

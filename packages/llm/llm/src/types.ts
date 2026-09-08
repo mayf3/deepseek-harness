@@ -198,8 +198,6 @@ export interface LlmProviderInfo {
   id: string
   /** Human-readable provider name for selectors and diagnostics. */
   name: string
-  /** Configuration diagnostic; the route stays registered for inspection and repair. */
-  configurationError?: string
 }
 
 /** Merge-extensible provider model modality vocabulary. */
@@ -238,6 +236,8 @@ export interface LlmConfigurableProvider {
    * from outside.
    */
   declared?: boolean
+  /** Configuration diagnostic for repair; unaffected models may remain serviceable. */
+  error?: string
 }
 
 /**

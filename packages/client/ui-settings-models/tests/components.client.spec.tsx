@@ -331,8 +331,8 @@ describe('ModelsSection', () => {
   it('shows a catalog diagnostic while keeping the provider editable', async () => {
     const scripted = scriptedFace()
     const failure = 'llm-pi-ai: provider "openai" model "111" needs an api'
-    scripted.face.llm.listProviders.mockResolvedValue(remoteOk([
-      { id: 'openai', name: 'openai', configurationError: failure },
+    scripted.face.llm.listConfigurableProviders.mockResolvedValue(remoteOk([
+      { provider: 'openai', displayName: 'openai', settingsNs: 'llm-pi-ai', settingsPath: ['providers', 'openai'], error: failure },
     ]))
     await mountFace(scripted)
     expect(screen.getByRole('alert').textContent).toBe(failure)

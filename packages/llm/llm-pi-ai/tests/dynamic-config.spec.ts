@@ -113,7 +113,11 @@ describe('request-level dynamic profiles', () => {
       + 'the installed catalog does not describe it, so set the route\'s api to the wire protocol its endpoint speaks'
 
     expect(ctx.settings.describe().map(section => section.ns)).toContain(NS)
-    expect(ctx.llm.listProviders()).toContainEqual({ id: 'openrouter', name: 'openrouter', configurationError: failure })
+    expect(ctx.llm.listProviders()).toEqual([{ id: 'openrouter', name: 'openrouter' }])
+    expect(ctx.llm.listConfigurableProviders()).toContainEqual({
+      provider: 'openrouter', displayName: 'openrouter', settingsNs: NS,
+      settingsPath: ['providers', 'openrouter'], declared: false, error: failure,
+    })
     expect(await readFile(path, 'utf8')).toBe(stored)
     expect((await ctx.llm.listModels('openrouter')).map(model => model.id)).toEqual([known.id])
     const bad = await assemble(ctx, { provider: 'openrouter', model: '111', messages: [] })
@@ -128,7 +132,12 @@ describe('request-level dynamic profiles', () => {
     await expect(ctx.settings.update(NS, { providers: { openrouter: { displayName: 'Edited' } } })).rejects.toThrow(failure)
     expect(await readFile(path, 'utf8')).toBe(beforeRejected)
 
+    const diagnostics: Array<string | undefined> = []
+    ctx.on('llm/adapters-updated', () => {
+      diagnostics.push(ctx.llm.listConfigurableProviders().find(entry => entry.provider === 'openrouter')?.error)
+    })
     await ctx.settings.mutate(NS, [{ op: 'set', path: ['providers', 'openrouter', 'api'], value: 'openai-completions' }])
+    expect(diagnostics).toEqual([undefined])
     expect(ctx.llm.listProviders()[0]).toEqual({ id: 'openrouter', name: 'openrouter' })
     const repaired = await assemble(ctx, { provider: 'openrouter', model: '111', messages: [] })
     expect(repaired.message.content).toEqual([{ type: 'text', text: 'hello' }])
@@ -143,16 +152,18 @@ describe('request-level dynamic profiles', () => {
     } } }))
     const ctx = await boot(dir, {})
     expect(ctx.settings.describe().map(section => section.ns)).toContain(NS)
-    expect(ctx.llm.listProviders().map(provider => provider.configurationError)).toEqual([
-      expect.stringContaining('modelOverrides names "removed-model"'),
-      expect.stringContaining('resolves no models'),
-    ])
+    expect(ctx.llm.listConfigurableProviders().find(entry => entry.provider === 'anthropic')?.error)
+      .toContain('modelOverrides names "removed-model"')
+    expect(ctx.llm.listConfigurableProviders().find(entry => entry.provider === 'retired-route')?.error)
+      .toContain('resolves no models')
     expect((await ctx.llm.listModels('anthropic')).length).toBeGreaterThan(0)
     await expect(ctx.llm.resolveModelInfo('anthropic', 'removed-model')).rejects.toThrow('modelOverrides names "removed-model"')
     await expect(ctx.llm.resolveModelInfo('retired-route', 'anything')).rejects.toThrow('resolves no models')
     await ctx.settings.mutate(NS, [{ op: 'unset', path: ['providers', 'retired-route'] }])
     await ctx.settings.mutate(NS, [{ op: 'unset', path: ['providers', 'anthropic', 'modelOverrides', 'removed-model'] }])
     expect(ctx.llm.listProviders()).toEqual([{ id: 'anthropic', name: 'anthropic' }])
+    expect(ctx.llm.listConfigurableProviders().find(entry => entry.provider === 'retired-route')).toBeUndefined()
+    expect(ctx.llm.listConfigurableProviders().find(entry => entry.provider === 'anthropic')?.error).toBeUndefined()
   })
 
   it('mounts bare and dormant, then registers routes the moment settings supply providers', async () => {
