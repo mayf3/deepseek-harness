@@ -132,10 +132,13 @@ export class SettingsScopeController<T> implements SettingsScope<T> {
     return this.enqueue(async () => {
       const revision = expectedRevision ?? this.pendingRevision ?? this.getSnapshot().revision
       // The wire method takes an optional trailing scope; the global instance
-      // sends three arguments rather than an explicit undefined.
-      const response = this.spec.scope === undefined
-        ? await this.ctx.remote.settings.mutate(this.spec.namespace, ownedOps, revision)
-        : await this.ctx.remote.settings.mutate(this.spec.namespace, ownedOps, revision, this.spec.scope)
+      // sends three arguments rather than an explicit undefined. One await
+      // after the choice: awaiting inside each arm splits the continuation so
+      // that v8 counts the branch below it negative.
+      const request = this.spec.scope === undefined
+        ? this.ctx.remote.settings.mutate(this.spec.namespace, ownedOps, revision)
+        : this.ctx.remote.settings.mutate(this.spec.namespace, ownedOps, revision, this.spec.scope)
+      const response = await request
       if (!response.ok) {
         await this.recover(generation)
         return
