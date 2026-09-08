@@ -266,6 +266,7 @@ describe('LlmRuntime', () => {
       expect(projected, fixture.name).toMatchObject({ type: 'text' })
       if (projected?.type !== 'text') throw new Error(`expected projected text for ${fixture.name}`)
       expect(projected.text, fixture.name).toContain(fixture.expected)
+      expect(ctx.llm.fileRequestText(attachment), fixture.name).toBe(projected.text)
       if (fixture.fs !== undefined) {
         expect(projected.text, fixture.name).toContain('include this saved path in the delegation prompt')
       }

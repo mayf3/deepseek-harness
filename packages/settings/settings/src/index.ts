@@ -71,6 +71,14 @@ export interface SettingsRegisterOptions<T> {
    * @param value - the resolved section, schema-valid by construction.
    */
   validate?: (value: T) => void
+  /**
+   * Check an in-process write after resolution and before persistence. Stored
+   * values do not run this check on registration or external reload, allowing
+   * the owner to expose repairable configuration after dependencies change.
+   * @param value - next resolved section.
+   * @param previous - current resolved section, including the composition base.
+   */
+  validateWrite?: (value: T, previous: T) => void
 }
 
 /** One registered namespace as surfaced to configuration UIs. */
@@ -311,6 +319,7 @@ interface SettingsRegistration {
   applies: SettingsApplies
   /** Owner-supplied check for constraints the schema cannot express. */
   validate?: (value: unknown) => void
+  validateWrite?: (value: unknown, previous: unknown) => void
   resolved: unknown
   /**
    * Monotonic counter over this namespace's RAW user section — bumped by any
@@ -433,6 +442,9 @@ export abstract class SettingsProvider extends Service {
       ...options?.validate === undefined
         ? {}
         : { validate: options.validate as (value: unknown) => void },
+      ...options?.validateWrite === undefined
+        ? {}
+        : { validateWrite: options.validateWrite as (value: unknown, previous: unknown) => void },
       resolved: deepFreeze(this.resolve(schema, options?.base, this.section(parsedNs), options?.validate)),
       revision: 0,
       watchers: new Set(),
@@ -479,6 +491,7 @@ export abstract class SettingsProvider extends Service {
     const scope = this.register<Namespace, T>(ns, schema, {
       base: entry,
       ...hooks.validate === undefined ? {} : { validate: hooks.validate },
+      ...hooks.validateWrite === undefined ? {} : { validateWrite: hooks.validateWrite },
     })
     hooks.setSource(() => scope.get())
     this.ctx.effect(() => () => {
@@ -674,6 +687,7 @@ export abstract class SettingsProvider extends Service {
           ? snapshot
           : (snapshot['ops'] as SettingsPathOp[]).reduce(applyPathOp, current)
       const next = deepFreeze(this.resolve(registration.schema, registration.base, section, registration.validate))
+      registration.validateWrite?.(next, registration.resolved)
       await this.persist(ns, section)
       // The write reached storage either way; the cache must say so. Commit
       // only when this registration is still the namespace owner — a fiber
@@ -888,6 +902,12 @@ export interface SettingsSectionHooks<T> {
    * @param value - the resolved section, schema-valid by construction.
    */
   validate?: (value: T) => void
+  /**
+   * Validate only in-process writes; see {@link SettingsRegisterOptions.validateWrite}.
+   * @param value - next resolved section.
+   * @param previous - current resolved section.
+   */
+  validateWrite?: (value: T, previous: T) => void
 }
 
 export default SettingsProvider

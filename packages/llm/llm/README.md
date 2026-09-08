@@ -54,7 +54,7 @@ for await (const chunk of ctx.llm.stream({
 }
 ```
 
-After a successful mount, `ctx.llm.listProviders()` reports the registered routes in registration order.
+After a successful mount, `ctx.llm.listProviders()` reports the registered routes in registration order. Adapters may include `configurationError` in provider metadata to keep a failed configuration visible for repair; this diagnostic does not unregister its route.
 
 ### What you can do
 

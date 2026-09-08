@@ -4,7 +4,15 @@ import type { RpcResponse } from '@deepseek-ai/dsh-api-remotes/client'
 import { RemoteError } from '@deepseek-ai/dsh-client-test-runtime'
 import { SettingsDescribeMirror } from '@deepseek-ai/dsh-client-ui-settings/src/client/settings-mirror.ts'
 import { settingsSchema } from './settings-schema.client.ts'
-import { ModelsSettingsStore } from '../src/client/store.ts'
+import { joinProviderDirectory, ModelsSettingsStore } from '../src/client/store.ts'
+
+it('retains diagnostics for a live provider without a configurable directory entry', () => {
+  expect(joinProviderDirectory([{ id: 'orphan', name: 'Orphan', configurationError: 'catalog unavailable' }], []))
+    .toEqual([{
+      provider: 'orphan', displayName: 'Orphan', settingsNs: '', settingsPath: [], active: true,
+      configurationError: 'catalog unavailable',
+    }])
+})
 
 let nextRpc = 0
 function ok<T>(value: T): RpcResponse<T> {

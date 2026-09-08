@@ -65,7 +65,7 @@ import { deepEqualJson } from '@deepseek-ai/dsh-util-values'
 import { PiAiAdapter } from './adapter.ts'
 import { authContextFrom, credentialStoreFrom } from './auth.ts'
 import { catalogProviderIds } from './catalog.ts'
-import { assertServiceable, Config, resolveProfiles } from './config.ts'
+import { assertReadable, assertServiceable, Config, resolveProfiles } from './config.ts'
 import type { ResolvedPiAiProviderProfile } from './config.ts'
 import { discoverModels } from './discovery.ts'
 import type { StoredModelDiscoveryProfile } from './discovery.ts'
@@ -106,6 +106,7 @@ function registrationFacts(profiles: ReadonlyMap<string, ResolvedPiAiProviderPro
       provider,
       displayName: profile.displayName,
       retryPolicy: profile.retryPolicy,
+      catalogError: profile.catalogError,
     }))
     .sort((left, right) => left.provider.localeCompare(right.provider))
 }
@@ -150,16 +151,14 @@ export function apply(ctx: Context, config: Config): void {
    * snapshot's identity — which is also what makes the adapter's own snapshot
    * stable across operations that observe no change.
    *
-   * No fallback for an unserviceable snapshot lives here: the section schema
-   * resolves the whole profile set, so a write that could not be served is
-   * refused where it is written, and the settings seam keeps a namespace's
-   * last good value for a stored section that fails. Anything reaching this
-   * point has already resolved once.
+   * Catalog diagnostics stay in the snapshot beside serviceable models, so
+   * stored configuration remains visible after an installed catalog changes.
+   * Scalar configuration errors still reject resolution.
    */
   const profiles = (): ReadonlyMap<string, ResolvedPiAiProviderProfile> => {
     const raw = current()
     if (raw === lastRaw && memoized !== undefined) return memoized
-    const next = resolveProfiles(raw.providers)
+    const next = resolveProfiles(raw.providers, 'deferred')
     lastRaw = raw
     memoized = next
     return next
@@ -295,10 +294,10 @@ export function apply(ctx: Context, config: Config): void {
 
   ctx.inject(['settings'], (settingsCtx) => {
     settingsCtx.settings.installSection(ctx, NS, Config, config, {
-      // Refuse an unserviceable section where it is written: without this a
-      // schema-valid profile the adapter cannot serve would be stored and then
-      // silently disable every route in this namespace.
-      validate: assertServiceable,
+      // Reading stored catalog drift keeps the repair UI; writes still refuse
+      // any changed provider whose catalog cannot be served.
+      validate: assertReadable,
+      validateWrite: assertServiceable,
       setSource: (source) => {
         current = source
       },

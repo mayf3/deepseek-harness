@@ -1,0 +1,39 @@
+# Agent Note: Repairable pi-ai settings after catalog changes
+
+Status: implemented
+
+English | [中文](2026-09-07-pi-ai-settings-catalog-recovery.zh.md)
+
+## Problem
+
+An installed pi-ai catalog can change the validity of unchanged user settings. OpenRouter models outside the catalog can inherit a protocol while all shipped models agree; adding a second protocol removes that inference. Removing a catalog model also invalidates an override keyed by its former id. Rejecting the entire settings namespace at registration makes unrelated providers disappear and removes the controls needed to repair the configuration.
+
+## Decision
+
+Settings separates shared `validate` checks from `validateWrite(next, previous)`. The latter runs inside the namespace's write queue, after resolution and before persistence, for update, replacement, and path mutation. Both values include the composition base. Registration and external reload do not invoke write-only checks; existing consumers retain their shared-validation behavior.
+
+The pi-ai consumer retains catalog diagnostics when reading stored profiles, while schema and self-contained profile constraints still reject loading. Writes strictly resolve each new or changed provider, comparing effective provider values against the committed snapshot. Unchanged failed providers do not block another provider's edit, and deletion remains possible. Editing a provider-wide setting validates all models it affects.
+
+Profile resolution keeps valid models beside per-model errors. A missing override retains its diagnostic without disabling the remaining catalog. A route-level catalog failure retains its provider and editable settings but supplies no callable models. The adapter checks the selected model's recorded failure before credentials or network I/O and reports `INVALID_CONFIG`. No protocol is guessed and no user configuration is rewritten during loading. Immutable snapshots still keep an in-flight request on its captured configuration.
+
+`LlmProviderInfo.configurationError` carries the first diagnostic for the provider row. Registration facts include that diagnostic so configuration repair refreshes the browser. Failed model ids remain in settings, while the model selector receives serviceable entries. Models settings displays the diagnostic and retains edit/delete controls. Both add actions require their owning settings namespace; the ordinary add menu filters out unavailable namespaces.
+
+This extends the [provider-routed adapter decision](../architecture/2026-07-14-provider-routed-llm-adapters.md): provider ownership and request snapshots remain unchanged, while catalog validity does not determine whether settings can be managed. That note remains active for routing, ownership, and replay rationale.
+
+## Alternatives considered
+
+**Reject catalog errors at registration.** This prevents users from repairing an otherwise parseable configuration and lets an unused stale model disable unrelated providers.
+
+**Relax save validation too.** A newly entered model with no inferable protocol can be rejected immediately with the offending provider and model named. Accepting it creates an avoidable request-time failure.
+
+**Strictly revalidate the entire namespace on every save.** An unrelated provider's old error would block adding a healthy provider or repairing providers independently.
+
+**Assign OpenRouter a fixed route protocol.** A route override replaces every model's protocol and can change working catalog entries that intentionally use another API.
+
+## Consequences
+
+Upgrade-dependent errors remain visible and repairable without weakening validation of new provider edits. Configuration errors remain distinct from remote model existence: a catalog-external id with an explicit protocol is accepted, and its endpoint decides whether that id exists. Scalar or document errors still fail early. The settings write hook adds no storage format or session event; provider metadata gains one optional diagnostic field.
+
+## Testing
+
+Settings tests cover write-only validation, persistence refusal, resolved previous values, and external reload. Adapter tests cover mixed valid/invalid models, deleted override referents, independent provider edits, route deletion, pre-network failure, and repair. The assembled Web expectation boots with stale OpenRouter settings, preserves zai and both add controls, rejects an invalid save without changing the file, and repairs the route by removing the stale model. Existing snapshot tests continue to own request freezing and replay behavior.

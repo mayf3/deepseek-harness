@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
-import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import LlmRuntime, { LlmAdapter } from '@deepseek-ai/dsh-llm'
@@ -9,6 +9,7 @@ import { LocalCredentialProvider } from '@deepseek-ai/dsh-credentials-local'
 import { FileSettingsProvider } from '@deepseek-ai/dsh-settings-file'
 import * as LlmPiAi from '@deepseek-ai/dsh-llm-pi-ai'
 import AuthorizationService from '@deepseek-ai/dsh-authorization'
+import { getBuiltinModels } from '@earendil-works/pi-ai/providers/all'
 import { assemble } from './assemble.ts'
 import { closeMockServers, mockServer, textEvents } from './mock-server.ts'
 
@@ -74,6 +75,67 @@ describe('login flows in a real composition', () => {
 })
 
 describe('request-level dynamic profiles', () => {
+  it('keeps stored catalog failures editable while isolating requests and validating changed providers', async () => {
+    vi.stubEnv('PI_DYNAMIC_KEY', '')
+    const dir = await home()
+    const server = await mockServer([{ events: textEvents }, { events: textEvents }])
+    const known = getBuiltinModels('openrouter').find(model => model.api === 'openai-completions')!
+    const path = join(dir, 'settings.yaml')
+    const stored = JSON.stringify({
+      [NS]: { providers: { openrouter: {
+        apiKeyEnv: 'PI_DYNAMIC_KEY', baseURL: server.url,
+        models: [{ id: known.id }, { id: '111' }],
+      } } },
+    })
+    await writeFile(path, stored)
+    await writeFile(join(dir, '.credentials.yaml'), 'version: 1\nrefs:\n  PI_DYNAMIC_KEY: fake-key\n', { mode: 0o600 })
+    const ctx = await boot(dir, {})
+    const failure = 'llm-pi-ai: provider "openrouter" model "111" needs an api; '
+      + 'the installed catalog does not describe it, so set the route\'s api to the wire protocol its endpoint speaks'
+
+    expect(ctx.settings.describe().map(section => section.ns)).toContain(NS)
+    expect(ctx.llm.listProviders()).toContainEqual({ id: 'openrouter', name: 'openrouter', configurationError: failure })
+    expect(await readFile(path, 'utf8')).toBe(stored)
+    expect((await ctx.llm.listModels('openrouter')).map(model => model.id)).toEqual([known.id])
+    const bad = await assemble(ctx, { provider: 'openrouter', model: '111', messages: [] })
+    expect(bad.finish).toMatchObject({ kind: 'error', failure: { code: 'INVALID_CONFIG', message: failure } })
+    expect(server.requests).toHaveLength(0)
+    const good = await assemble(ctx, { provider: 'openrouter', model: known.id, messages: [] })
+    expect(good.message.content).toEqual([{ type: 'text', text: 'hello' }])
+
+    await ctx.settings.update(NS, { providers: { deepseek: { apiKeyEnv: 'PI_DYNAMIC_KEY', baseURL: server.url } } })
+    expect(ctx.llm.listProviders().map(provider => provider.id)).toEqual(['openrouter', 'deepseek'])
+    const beforeRejected = await readFile(path, 'utf8')
+    await expect(ctx.settings.update(NS, { providers: { openrouter: { displayName: 'Edited' } } })).rejects.toThrow(failure)
+    expect(await readFile(path, 'utf8')).toBe(beforeRejected)
+
+    await ctx.settings.mutate(NS, [{ op: 'set', path: ['providers', 'openrouter', 'api'], value: 'openai-completions' }])
+    expect(ctx.llm.listProviders()[0]).toEqual({ id: 'openrouter', name: 'openrouter' })
+    const repaired = await assemble(ctx, { provider: 'openrouter', model: '111', messages: [] })
+    expect(repaired.message.content).toEqual([{ type: 'text', text: 'hello' }])
+    expect(server.requests).toHaveLength(2)
+  })
+
+  it('allows removing an obsolete override and deleting a route whose catalog cannot be built', async () => {
+    const dir = await home()
+    await writeFile(join(dir, 'settings.yaml'), JSON.stringify({ [NS]: { providers: {
+      anthropic: { modelOverrides: { 'removed-model': { maxTokens: 4096 } } },
+      'retired-route': {},
+    } } }))
+    const ctx = await boot(dir, {})
+    expect(ctx.settings.describe().map(section => section.ns)).toContain(NS)
+    expect(ctx.llm.listProviders().map(provider => provider.configurationError)).toEqual([
+      expect.stringContaining('modelOverrides names "removed-model"'),
+      expect.stringContaining('resolves no models'),
+    ])
+    expect((await ctx.llm.listModels('anthropic')).length).toBeGreaterThan(0)
+    await expect(ctx.llm.resolveModelInfo('anthropic', 'removed-model')).rejects.toThrow('modelOverrides names "removed-model"')
+    await expect(ctx.llm.resolveModelInfo('retired-route', 'anything')).rejects.toThrow('resolves no models')
+    await ctx.settings.mutate(NS, [{ op: 'unset', path: ['providers', 'retired-route'] }])
+    await ctx.settings.mutate(NS, [{ op: 'unset', path: ['providers', 'anthropic', 'modelOverrides', 'removed-model'] }])
+    expect(ctx.llm.listProviders()).toEqual([{ id: 'anthropic', name: 'anthropic' }])
+  })
+
   it('mounts bare and dormant, then registers routes the moment settings supply providers', async () => {
     vi.stubEnv('PI_DYNAMIC_KEY', '')
     const dir = await home()

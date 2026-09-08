@@ -54,7 +54,7 @@ for await (const chunk of ctx.llm.stream({
 }
 ```
 
-挂载成功后，`ctx.llm.listProviders()` 会按注册顺序报告已注册路由。
+挂载成功后，`ctx.llm.listProviders()` 会按注册顺序报告已注册路由。适配器可以在提供方元数据中携带 `configurationError`，保留错误配置的可见性以供修复；此诊断不会注销路由。
 
 ### 你可以做什么
 
