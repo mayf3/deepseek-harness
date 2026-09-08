@@ -67,8 +67,6 @@ Literal namespace arguments are checked by TypeScript against the lowercase lett
 
 Every write rejects non-JSON-compatible data (a `Date`, `Map`, `BigInt`, non-finite number, or circular reference fails with its `$`-rooted path before anything persists), rejects on a read-only provider, and accepts an optional `expectedRevision`: pass back the `revision` from a descriptor, and a namespace that moved past it refuses the write with `SettingsConflictError` instead of overwriting the writer that landed first.
 
-Owners can supply `validate` for checks shared by registration, reload, and writes, plus `validateWrite(next, previous)` for checks that apply only to in-process writes. Both arguments of the write check are resolved values, including composition defaults; the previous value is the current committed snapshot when the queued write runs. A thrown write check prevents persistence and notifications. Consumers that retain dependency-dependent errors on read can use this hook to reject new mistakes while keeping old settings editable.
-
 ### Configuration surfaces
 
 `describe()` returns one descriptor per registered namespace: the serialized schema, the resolved value, the detached `base` and `user` layers (a field's presence in `user` marks it user-overridden), the effect timing, and the namespace's revision. Pass `redactSecrets: true` on every wire surface: it strips `role('secret')` fields from every layer and enumerates them as `{ path, set }` slots so a page can render write-only inputs without ever receiving a secret. `documentPath` and `prepareDocument()` expose the provider's user-editable file to a native editor when one exists.

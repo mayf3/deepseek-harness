@@ -46,14 +46,6 @@ interface SettingsRegisterOptions<T> {
    * @param value - the resolved section, schema-valid by construction.
    */
   validate?: (value: T) => void
-  /**
-   * Check an in-process write after resolution and before persistence. Stored
-   * values do not run this check on registration or external reload, allowing
-   * the owner to expose repairable configuration after dependencies change.
-   * @param value - next resolved section.
-   * @param previous - current resolved section, including the composition base.
-   */
-  validateWrite?: (value: T, previous: T) => void
 }
 ```
 

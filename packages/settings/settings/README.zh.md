@@ -67,8 +67,6 @@ TypeScript 会按小写字母、数字与连字符文法检查字面量 namespac
 
 每次写入都会拒绝与 JSON 不兼容的数据（`Date`、`Map`、`BigInt`、非有限数或循环引用会在任何内容持久化前以 `$` 为根的路径报错）、拒绝只读提供方上的写入，并可接受可选的 `expectedRevision`：把 descriptor 中的 `revision` 传回，namespace 已越过该值时写入会被 `SettingsConflictError` 拒绝，而不是覆盖先完成写入的一方。
 
-Owner 可以用 `validate` 定义注册、重载与写入共用的校验，并用 `validateWrite(next, previous)` 定义仅用于进程内写入的校验。写入校验的两个参数都是包含组合默认值的已解析配置；前值是排队写入执行时当前已提交的快照。写入校验抛错会阻止持久化与通知。读取时保留依赖相关错误的消费者，可以通过此钩子拒绝新增错误，同时保持旧设置可编辑。
-
 ### 配置界面
 
 `describe()` 为每个已注册 namespace 返回一条 descriptor：序列化 schema、解析值、分离的 `base` 与 `user` 层（字段出现在 `user` 中即标记为用户覆盖）、生效时机与 namespace 的 revision。每个协议接口都必须传入 `redactSecrets: true`：它从每一层剥离 `role('secret')` 字段，并把它们枚举为 `{ path, set }` slot，让页面可以渲染只写输入而不接触任何机密。`documentPath` 与 `prepareDocument()` 在提供方拥有用户可编辑文件时把它暴露给原生编辑器。

@@ -84,35 +84,6 @@ describe('settings namespace validation', () => {
 })
 
 describe('registration', () => {
-  it('runs write-only validation before persistence while retaining repairable stored values', async () => {
-    const { ctx, provider } = await boot({ doc: { 'ui-theme': { fontSize: 27 } } })
-    const validateWrite = vi.fn((next: ThemeConfig, _previous: ThemeConfig) => {
-      if (next.fontSize > 16) throw new Error('font size exceeds current limit')
-    })
-    try {
-      const scope = ctx.settings.register('ui-theme', ThemeSchema, { base: { theme: 'light' }, validateWrite })
-      expect(scope.get()).toEqual({ theme: 'light', fontSize: 27 })
-      expect(validateWrite).not.toHaveBeenCalled()
-      await expect(scope.update({ fontSize: 28 })).rejects.toThrow('current limit')
-      expect(provider.persisted).toEqual([])
-      expect(scope.get().fontSize).toBe(27)
-      provider.pushExternal({ 'ui-theme': { fontSize: 29 } })
-      expect(scope.get().fontSize).toBe(29)
-      expect(validateWrite).toHaveBeenCalledTimes(1)
-      await ctx.settings.mutate('ui-theme', [{ op: 'set', path: ['fontSize'], value: 16 }])
-      expect(validateWrite).toHaveBeenLastCalledWith(
-        { theme: 'light', fontSize: 16 }, { theme: 'light', fontSize: 29 },
-      )
-      await scope.replace({ fontSize: 15 })
-      expect(validateWrite).toHaveBeenLastCalledWith(
-        { theme: 'light', fontSize: 15 }, { theme: 'light', fontSize: 16 },
-      )
-      expect(provider.persisted).toHaveLength(2)
-    } finally {
-      await ctx.fiber.dispose()
-    }
-  })
-
   it('resolves schema defaults, then composition base, then the user layer', async () => {
     const { ctx } = await boot({ doc: { 'ui-theme': { theme: 'light' } } })
     const scope = ctx.settings.register('ui-theme', ThemeSchema, {

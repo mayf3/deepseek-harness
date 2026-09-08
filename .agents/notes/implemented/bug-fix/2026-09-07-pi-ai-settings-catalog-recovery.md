@@ -10,9 +10,9 @@ An installed pi-ai catalog can change the validity of unchanged user settings. O
 
 ## Decision
 
-Settings separates shared `validate` checks from `validateWrite(next, previous)`. The latter runs inside the namespace's write queue, after resolution and before persistence, for update, replacement, and path mutation. Both values include the composition base. Registration and external reload do not invoke write-only checks; existing consumers retain their shared-validation behavior.
+The pi-ai consumer uses the existing settings `validate` callback. During namespace registration it tolerates catalog diagnostics; after registration it strictly checks changed providers against the current resolved section. Settings invokes this callback before persistence for update, replacement, and path mutation. External reload uses the same strict check and retains the last accepted section on failure. The settings service and its public API remain unchanged.
 
-The pi-ai consumer retains catalog diagnostics when reading stored profiles, while schema and self-contained profile constraints still reject loading. Writes strictly resolve each new or changed provider, comparing effective provider values against the committed snapshot. Unchanged failed providers do not block another provider's edit, and deletion remains possible. Editing a provider-wide setting validates all models it affects.
+Initial profile resolution retains catalog diagnostics, while schema and self-contained profile constraints still reject loading. Writes strictly resolve each new or changed provider, comparing effective provider values against the committed snapshot. Unchanged failed providers do not block another provider's edit, and deletion remains possible. Editing a provider-wide setting validates all models it affects.
 
 Profile resolution keeps valid models beside per-model errors. A missing override retains its diagnostic without disabling the remaining catalog. A route-level catalog failure retains its provider and editable settings but supplies no callable models. The adapter checks the selected model's recorded failure before credentials or network I/O and reports `INVALID_CONFIG`. No protocol is guessed and no user configuration is rewritten during loading. Immutable snapshots still keep an in-flight request on its captured configuration.
 
@@ -32,8 +32,8 @@ This extends the [provider-routed adapter decision](../architecture/2026-07-14-p
 
 ## Consequences
 
-Upgrade-dependent errors remain visible and repairable without weakening validation of new provider edits. Configuration errors remain distinct from remote model existence: a catalog-external id with an explicit protocol is accepted, and its endpoint decides whether that id exists. Scalar or document errors still fail early. The settings write hook adds no storage format or session event; provider metadata gains one optional diagnostic field.
+Upgrade-dependent errors remain visible and repairable without weakening validation of new provider edits. Configuration errors remain distinct from remote model existence: a catalog-external id with an explicit protocol is accepted, and its endpoint decides whether that id exists. Scalar or document errors still fail early. No settings API, storage format, or session event is added; provider metadata gains one optional diagnostic field.
 
 ## Testing
 
-Settings tests cover write-only validation, persistence refusal, resolved previous values, and external reload. Adapter tests cover mixed valid/invalid models, deleted override referents, independent provider edits, route deletion, pre-network failure, and repair. The assembled Web expectation boots with stale OpenRouter settings, preserves zai and both add controls, rejects an invalid save without changing the file, and repairs the route by removing the stale model. Existing snapshot tests continue to own request freezing and replay behavior.
+Adapter tests cover mixed valid/invalid models, deleted override referents, independent provider edits, route deletion, pre-network failure, and repair. A file-watcher regression verifies that invalid external edits retain the last accepted profiles and a repaired file takes effect. The assembled Web expectation boots with stale OpenRouter settings, preserves zai and both add controls, rejects an invalid save without changing the file, and repairs the route by removing the stale model. Existing snapshot tests continue to own request freezing and replay behavior.

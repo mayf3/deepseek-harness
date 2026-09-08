@@ -40,14 +40,14 @@ async function home(): Promise<string> {
 async function boot(
   dir: string,
   config: LlmPiAi.Config,
-  options: { authorization?: boolean } = {},
+  options: { authorization?: boolean; watchSettings?: boolean } = {},
 ): Promise<Context> {
   const ctx = new Context()
   cleanups.push(async () => {
     await ctx.fiber.dispose()
   })
   await ctx.plugin(LlmRuntime)
-  await ctx.plugin(FileSettingsProvider, { path: join(dir, 'settings.yaml'), watch: false })
+  await ctx.plugin(FileSettingsProvider, { path: join(dir, 'settings.yaml'), watch: options.watchSettings ?? false })
   await ctx.plugin(LocalCredentialProvider, { path: join(dir, '.credentials.yaml'), watch: false })
   if (options.authorization === true) await ctx.plugin(AuthorizationService)
   await ctx.plugin(LlmPiAi, config)
@@ -75,6 +75,25 @@ describe('login flows in a real composition', () => {
 })
 
 describe('request-level dynamic profiles', () => {
+  it('retains the last accepted profiles after an invalid external edit and accepts a repaired file', async () => {
+    const dir = await home()
+    const path = join(dir, 'settings.yaml')
+    await writeFile(path, JSON.stringify({ [NS]: { providers: { deepseek: {} } } }))
+    const ctx = await boot(dir, {}, { watchSettings: true })
+
+    await writeFile(path, JSON.stringify({ [NS]: { providers: { openrouter: { models: [{ id: '111' }] } } } }))
+    // The raw section proves the watcher processed the edit even though validation kept the old resolved value.
+    await expect.poll(() => ctx.settings.describe().find(section => section.ns === NS)?.user)
+      .toEqual({ providers: { openrouter: { models: [{ id: '111' }] } } })
+    expect(ctx.llm.listProviders()).toEqual([{ id: 'deepseek', name: 'deepseek' }])
+
+    await writeFile(path, JSON.stringify({ [NS]: { providers: {
+      openrouter: { api: 'openai-completions', models: [{ id: '111' }] },
+    } } }))
+    await expect.poll(() => ctx.llm.listProviders()).toEqual([{ id: 'openrouter', name: 'openrouter' }])
+    expect((await ctx.llm.listModels('openrouter')).map(model => model.id)).toEqual(['111'])
+  })
+
   it('keeps stored catalog failures editable while isolating requests and validating changed providers', async () => {
     vi.stubEnv('PI_DYNAMIC_KEY', '')
     const dir = await home()

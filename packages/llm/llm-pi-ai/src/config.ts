@@ -363,14 +363,6 @@ export function assertServiceable(config: Config, previous?: Config): void {
   resolveProfiles(changed)
 }
 
-/**
- * Check self-contained profile requirements without rejecting stored catalog drift.
- * @param config - schema-resolved section read from settings.
- */
-export function assertReadable(config: Config): void {
-  resolveProfiles(config.providers, 'deferred')
-}
-
 /** Reject removed pre-release profile fields and name their replacements. */
 function rejectRemovedFields(provider: string, source: PiAiProviderProfile): void {
   const legacy = source as PiAiProviderProfile & {

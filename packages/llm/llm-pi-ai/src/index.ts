@@ -65,7 +65,7 @@ import { deepEqualJson } from '@deepseek-ai/dsh-util-values'
 import { PiAiAdapter } from './adapter.ts'
 import { authContextFrom, credentialStoreFrom } from './auth.ts'
 import { catalogProviderIds } from './catalog.ts'
-import { assertReadable, assertServiceable, Config, resolveProfiles } from './config.ts'
+import { assertServiceable, Config, resolveProfiles } from './config.ts'
 import type { ResolvedPiAiProviderProfile } from './config.ts'
 import { discoverModels } from './discovery.ts'
 import type { StoredModelDiscoveryProfile } from './discovery.ts'
@@ -293,11 +293,16 @@ export function apply(ctx: Context, config: Config): void {
   ensureRegistrationFacts()
 
   ctx.inject(['settings'], (settingsCtx) => {
+    let registering = true
     settingsCtx.settings.installSection(ctx, NS, Config, config, {
-      // Reading stored catalog drift keeps the repair UI; writes still refuse
-      // any changed provider whose catalog cannot be served.
-      validate: assertReadable,
-      validateWrite: assertServiceable,
+      validate: (value) => {
+        // Stored catalog drift must not prevent registration of the repair UI.
+        if (registering) {
+          resolveProfiles(value.providers, 'deferred')
+        } else {
+          assertServiceable(value, current())
+        }
+      },
       setSource: (source) => {
         current = source
       },
@@ -327,5 +332,6 @@ export function apply(ctx: Context, config: Config): void {
         }
       },
     })
+    registering = false
   })
 }
