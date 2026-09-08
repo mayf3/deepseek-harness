@@ -51,6 +51,8 @@ The value is intentionally best effort for cold Sessions. An identity-matching u
 
 -----
 
+`ctx.uiWorkspace.openSession(id)` selects the Session and returns the main area to the Conversation as one UI navigation action, including when that Session was already current. New Session uses the same path after resolving its target; selection failure leaves a global panel visible. Session rows read `usePanelInfo` to suppress their selected appearance while a global panel is active.
+
 <a id="understand-the-implementation"></a>
 ## Understand the implementation
 

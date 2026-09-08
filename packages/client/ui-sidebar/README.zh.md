@@ -31,6 +31,10 @@ dsh Web 客户端的侧边栏让用户识别当前构建、启动新会话、将
 
 展开的品牌行把 `sidebar.brand.mark` 与 `sidebar.brand.name` 渲染为两个独立的 single slot；收起轨道则渲染同一个 mark slot。没有占位者时，外壳使用鱼形标记和本地化的本地构建标签。完整构建会在标签下方显示代码徽标；该徽标使用 `DSH_CLIENT_VERSION`、可选的 7 位 `DSH_CLIENT_COMMIT_HASH` 与 `DSH_CLIENT_GIT_DIRTY=true` 组装成 `version[-commit][-dirty]`；缺少版本元数据时不显示徽标。New Session 优先使用作用域操作明确指定的 Workspace，否则使用当前 Session 所属 Workspace，再否则使用最近活跃 Workspace；一个 Workspace 都没有时则清空选择，进入空白 New Session 页面。
 
+### 全局面板入口
+
+插件在 root 作用域的 `sidebar.panellist` list 中注册图标组件，提供 `id`、可选 `order`，以及字符串或随语言变化的 `label`。同一个 id 寻址布局中 root 作用域 `main` keyed slot 的组件。可选的 `sidebar.panellist.title` keyed 注册替换标签的可见内容；`label` 仍用作无障碍名称。每一行通过 `usePanelInfo` 读取自己的选中态。没有注册项时，列表及其间距均不渲染。默认组合不注册示例面板。
+
 ### 折叠行为
 
 实时收起时，展开内容在当前宽度淡出，上方控件共用一次淡入并左移进入 56px 轨道，由布局的栏滑动结束整段动画。页面初始即为收起状态时会静态渲染轨道；减少动态效果模式会禁用两段过渡。固定在底部的 `sidebar.settings` 控件只共用淡入时序，不发生横向位移。
@@ -47,7 +51,7 @@ dsh Web 客户端的侧边栏让用户识别当前构建、启动新会话、将
 <details>
 <summary>实现细节——点击展开</summary>
 
-外壳是纯组合：`SidebarRootComponentProps` 组合布局 owner share、全局 `useSessions` 与 `useWorkspaces` 钩子、已声明的品牌、`sidebar.workspaces` 与 `sidebar.settings` 子 slot，以及注入的 `startSession` 与侧边栏切换回调。这里没有插件 store。
+外壳是纯组合：`SidebarRootComponentProps` 组合布局 owner share、全局 `useSessions` 与 `useWorkspaces` 钩子、已声明的品牌、`sidebar.workspaces` 与 `sidebar.settings` 子 slot，以及注入的导航回调。面板入口及其可选标题使用相同的组合方式。面板元数据由列表注册和语言变化派生；选中态属于布局存储。
 
 ### Slot 纪律
 

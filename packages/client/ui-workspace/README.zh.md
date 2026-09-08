@@ -51,6 +51,8 @@ Session 行渲染运行时的实时 `pendingInteraction` 分类：审批显示**
 
 -----
 
+`ctx.uiWorkspace.openSession(id)` 将选中会话与中央区域返回会话界面作为一次 UI 导航操作，包括目标会话已经是当前会话的情况。新会话操作解析目标后使用同一路径；选中失败时保留当前全局面板。会话行读取 `usePanelInfo`，在全局面板活跃时不显示会话选中样式。
+
 <a id="understand-the-implementation"></a>
 ## 理解实现
 
