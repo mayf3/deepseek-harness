@@ -32,8 +32,11 @@ async function bench() {
   ctx.provide('sessions', {
     scope: (id: SessionId) => scopes.get(id),
     scopeOf: (c: Context) => scopeOf(c),
+    subagentAddress: (id: SessionId) => id === sid('child')
+      ? { parentSessionId: sid('parent'), childSessionId: id, mode: 'continuable' as const }
+      : undefined,
   })
-  const commandsRemote = { list: () => Promise.resolve([]) }
+  const commandsRemote = { list: () => Promise.resolve({ ok: true as const, value: [] }) }
   // The service subscribes its cache-invalidation events on construction, so
   // the Remote face needs `$on` even where this spec dispatches none.
   ctx.provide('remote', { commands: commandsRemote, $on: () => () => {} })
@@ -71,6 +74,25 @@ describe('apply', () => {
     await fiber.dispose()
     expect(sources.size).toBe(0)
     expect(slots.entries('conversation.input.overlay')).toHaveLength(0)
+  })
+
+  it('registers the File row: an action that consumes the token and opens the scoped file picker; absent on a subagent', async () => {
+    const { sources, mint } = await bench()
+    const source = sources.get('/ command')!
+    const req = { query: '', position: 'leading' as const, drilled: false, signal: new AbortController().signal }
+    const rows = await source.candidates({ sessionId: sid('s1') }, req)
+    expect(rows).toEqual([{ name: 'file', label: 'File', icon: expect.any(Function) as never, section: 'Add' }])
+    expect(await source.candidates({ sessionId: sid('child') }, req)).toEqual([])
+    const scope = mint('s1')
+    const picks: string[] = []
+    scope.ctx.on('slash/input-consume-token', () => { picks.push('consume'); return true })
+    scope.ctx.on('slash/input-pick-files', () => { picks.push('pick-files'); return true })
+    const span = { start: 0, end: 5, draftRev: 1 }
+    expect(source.onPick({ candidate: rows[0]!, session: { sessionId: sid('s1') }, position: 'leading', via: 'menu', action: 'pick', span })).toBe('handled')
+    expect(picks).toEqual(['consume', 'pick-files'])
+    // A session without a live scope runs nothing and throws nothing.
+    expect(source.onPick({ candidate: rows[0]!, session: { sessionId: sid('gone') }, position: 'leading', via: 'menu', action: 'pick', span })).toBe('handled')
+    expect(picks).toHaveLength(2)
   })
 
   it('the overlay inject resolves the per-session popup controller by sessionId and fails loud on an unknown id', async () => {

@@ -7,8 +7,10 @@
  * rows only while it has none; pointer picks route back through
  * the service (combobox pattern — focus never leaves the textarea, so rows
  * are mousedown-handled and the highlight is exposed via
- * aria-activedescendant on the listbox). A source publishing crumbs gets a
- * breadcrumb header pinned above the scrolling list.
+ * aria-activedescendant on the listbox). A row reads title, then the
+ * command-name alias when the title is not the name in another letter case
+ * (a localized title), then the description right-aligned. A source publishing crumbs gets a breadcrumb
+ * header pinned above the scrolling list.
  */
 import { Fragment, useEffect, useRef, useSyncExternalStore } from 'react'
 import clsx from 'clsx'
@@ -150,10 +152,15 @@ export function MenuView({ menu, headers, onPick, onCrumb, onHover, onDismiss, t
                       >
                         {item.icon !== undefined && (
                           <span className={css.itemIcon} aria-hidden>
-                            <ReferenceIcon kind={item.icon} size={16} />
+                            {typeof item.icon === 'string'
+                              ? <ReferenceIcon kind={item.icon} size={16} />
+                              : <item.icon size={16} />}
                           </span>
                         )}
-                        <span className={css.itemName}>{item.name}</span>
+                        <span className={css.itemName}>{item.label ?? item.name}</span>
+                        {item.label !== undefined && item.label.toLowerCase() !== item.name.toLowerCase() && (
+                          <span className={css.itemAlias}>{item.name}</span>
+                        )}
                         {item.description !== undefined && <span className={css.itemDescription}>{item.description}</span>}
                         {item.drill === true && (
                           <span className={css.trailing}>

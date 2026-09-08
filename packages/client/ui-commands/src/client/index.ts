@@ -15,6 +15,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type {} from '@deepseek-ai/dsh-client-ui-session/client'
+import { IconPaperclipOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
 import { CommandUiRuntime } from './service.ts'
 import type { PopupSelectInjected } from './PopupSelectView.tsx'
 import { PopupSelectView } from './PopupSelectView.tsx'
@@ -27,9 +28,12 @@ export { filterOptions, PopupSelectController } from './popup.ts'
 export type { PopupSelectDeps, PopupSpec, PopupState, TokenSegment } from './popup.ts'
 export type { PopupSelectInjected, PopupSelectViewProps } from './PopupSelectView.tsx'
 export type {
-  CommandContribution, CommandDecoration, CommandUiContract, CommandUiSpec, SelectConfirmation, SelectOption,
+  ActionSpec, CommandContribution, CommandDecoration, CommandUiContract, CommandUiSpec, PopupSelectSpec,
+  SelectConfirmation, SelectOption,
 } from './contract.ts'
 export type { CommandKey } from './locales.ts'
+export { SECTION_ROWS, resolveCommandName } from './presentation.ts'
+export type { MenuSection } from './presentation.ts'
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
@@ -39,7 +43,7 @@ declare module '@deepseek-ai/cordis' {
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface LocaleNamespaceMap {
-    /** The popupSelect shell's copy. */
+    /** The menu rows' and the popupSelect shell's copy. */
     command: CommandKey
   }
 }
@@ -51,13 +55,33 @@ const NS = 'command'
 export const inject = ['inputTriggers', 'sessions', 'remote', 'remote.commands', 'locale']
 
 /**
- * Client plugin body: mount the service, then register the popupSelect shell
- * into the input overlay once its declarer is up.
+ * Client plugin body: mount the service, register the menu's File row (an
+ * action opening the composer's file picker wherever the composer accepts
+ * files — never on a subagent), then register the popupSelect shell into the
+ * input overlay once its declarer is up.
  * @param ctx - client root context.
  */
 export function apply(ctx: ClientContext): void {
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-commands: dictionaries')
   ctx.plugin(CommandUiRuntime)
+  const t = ctx.locale.bind(NS)
+  ctx.inject(['commandUi', 'sessions'], (scope: ClientContext) => {
+    const command = scope.commandUi
+    const sessions = scope.get('sessions') as ISessions
+    scope.effect(() => command.register({
+      name: 'file',
+      label: () => t('label.file'),
+      icon: IconPaperclipOutline16,
+      available: session => sessions.subagentAddress(session.sessionId) === undefined,
+      ui: {
+        kind: 'action',
+        run: (session) => {
+          const actx = sessions.scope(session.sessionId)
+          if (actx !== undefined) actx.bail(actx, 'slash/input-pick-files')
+        },
+      },
+    }), 'ui-commands: File row')
+  })
   ctx.inject(['slots', 'commandUi', 'sessions'], (scope: ClientContext) => {
     const command = scope.commandUi
     const sessions = scope.get('sessions') as ISessions

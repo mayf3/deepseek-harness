@@ -86,12 +86,26 @@
   white-space: nowrap;
 }
 
+/* The command name beside a localized title, in the description's ink so
+   the row reads title first. */
+.itemAlias {
+  flex: none;
+  max-width: 20%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+/* Right-aligned so every description ends at the same edge and the titles
+   read as one left column. */
 .itemDescription {
   flex: 1;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  text-align: right;
   color: var(--dsw-alias-label-tertiary);
 }
 

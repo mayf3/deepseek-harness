@@ -17,7 +17,7 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ChangeEvent, CSSProperties, KeyboardEvent, MouseEvent, ReactNode } from 'react'
 import clsx from 'clsx'
 import {
-  IconPaperclipOutline16, IconPlusOutline16, IconWarningOutline16, Toast, Tooltip,
+  IconPlusOutline16, IconWarningOutline16, Toast, Tooltip,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 // Type-only: the `plan` projection key merge (the TodoDock posture — the
 // composer reads a host-computed value; the domain owns the key).
@@ -266,12 +266,21 @@ export const InputBar = memo(function InputBar({
   // registration survives re-renders without re-arming per keystroke.
   const gate = useRef({
     locked, machineBusy, canSteerQueue, running, steeringAvailable, busyEnter,
-    intakeFiles, uploadsPending, showToast, t,
+    intakeFiles, uploadsPending, showToast, t, canAcceptDrop,
   })
   gate.current = {
     locked, machineBusy, canSteerQueue, running, steeringAvailable, busyEnter,
-    intakeFiles, uploadsPending, showToast, t,
+    intakeFiles, uploadsPending, showToast, t, canAcceptDrop,
   }
+
+  // The menu's File row opens the same hidden input the drop path feeds,
+  // under the drop gate the row itself cannot see.
+  useEffect(() => {
+    if (keyboard === undefined) return
+    return keyboard.bindFilePicker(() => {
+      if (gate.current.canAcceptDrop) fileInputRef.current?.click()
+    })
+  }, [keyboard])
 
   useEffect(() => {
     if (editor === null || keyboard === undefined) return
@@ -489,18 +498,6 @@ export const InputBar = memo(function InputBar({
                 onClick={onToggleCommandMenu}
               >
                 <IconPlusOutline16 size={14} />
-              </button>
-            </Tooltip>
-            <Tooltip label={t('file.attach')} side="top" delayMs={500}>
-              <button
-                type="button"
-                className={css.add}
-                aria-label={t('file.attach')}
-                disabled={subagent !== null || locked || machineBusy || addFiles === undefined}
-                onMouseDown={keepFocus}
-                onClick={() => { fileInputRef.current?.click() }}
-              >
-                <IconPaperclipOutline16 size={14} />
               </button>
             </Tooltip>
             <input

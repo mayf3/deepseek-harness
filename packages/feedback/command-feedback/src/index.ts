@@ -60,7 +60,7 @@ function executeFeedbackCommand(invocation: CommandInvocation): CommandResult {
 export function apply(ctx: Context): void {
   ctx.commands.register({
     name: 'feedback',
-    description: 'record feedback about this session',
+    description: 'Record feedback about this session',
     input: { hint: '<text>' },
     recordInput: false,
     handler: executeFeedbackCommand,

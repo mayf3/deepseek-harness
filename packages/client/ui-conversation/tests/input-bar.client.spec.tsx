@@ -873,7 +873,7 @@ describe('running and lock semantics', () => {
   })
 
   it('running continuable subagent keeps Send beside an independent Stop', () => {
-    const { button, interruptButton, textarea, sink, stop, view, slotCalls } = bench({
+    const { button, interruptButton, textarea, sink, stop, view, slotCalls, shell } = bench({
       running: true,
       draft: '后续消息',
       subagent: {
@@ -888,9 +888,13 @@ describe('running and lock semantics', () => {
     expect(button.getAttribute('aria-label')).toBe('排队发送')
     expect(interruptButton).not.toBeNull()
     expect(textarea.getAttribute('aria-disabled')).not.toBe('true')
-    expect((view.getByLabelText('添加附件') as HTMLButtonElement).disabled).toBe(true)
     expect(view.container.querySelector<HTMLInputElement>('input[type="file"]')?.disabled).toBe(true)
     expect(attachmentOwner(slotCalls).canAcceptDrop).toBe(false)
+    // The menu's File row reaches the same gate: a bound picker stays shut.
+    const click = vi.spyOn(HTMLInputElement.prototype, 'click')
+    expect(shell.pickFiles()).toBe(true)
+    expect(click).not.toHaveBeenCalled()
+    click.mockRestore()
     fireEvent.click(button)
     expect(sink).toHaveBeenCalledWith('后续消息', [], 'queue', expect.any(AbortSignal))
     fireEvent.click(interruptButton!)
@@ -923,10 +927,14 @@ describe('running and lock semantics', () => {
     ['active goal', { goal: { phase: 'active' as const, objective: 'inspect files' } }],
   ])('%s keeps ordinary generic-file intake enabled', (_name, projection) => {
     const added = vi.fn(() => null)
-    const { view, slotCalls } = bench({ ...projection, addFiles: added })
-    expect((view.getByLabelText('添加附件') as HTMLButtonElement).disabled).toBe(false)
+    const { view, slotCalls, shell } = bench({ ...projection, addFiles: added })
     expect(view.container.querySelector<HTMLInputElement>('input[type="file"]')?.disabled).toBe(false)
     expect(attachmentOwner(slotCalls).canAcceptDrop).toBe(true)
+    // The menu's File row opens the hidden input through the bound picker.
+    const click = vi.spyOn(HTMLInputElement.prototype, 'click')
+    expect(shell.pickFiles()).toBe(true)
+    expect(click).toHaveBeenCalledOnce()
+    click.mockRestore()
   })
 
   it('parent-offline running continuable locks Send but keeps independent Stop usable', () => {
@@ -944,7 +952,7 @@ describe('running and lock semantics', () => {
     })
     expect(textarea.getAttribute('aria-disabled')).toBe('true')
     expect(placeholderOf(view.container)).toBe('父会话已离线，无法继续发送；仍可停止当前运行')
-    expect((view.getByLabelText('指令') as HTMLButtonElement).disabled).toBe(true)
+    expect((view.getByLabelText('添加文件或调用指令') as HTMLButtonElement).disabled).toBe(true)
     expect(button.getAttribute('aria-label')).toBe('发送消息')
     expect(button.disabled).toBe(true)
     expect(interruptButton?.disabled).toBe(false)
@@ -996,7 +1004,7 @@ describe('running and lock semantics', () => {
     const { textarea, view } = bench({ disabled: true })
     expect(textarea.getAttribute('aria-disabled')).toBe('true')
     expect(placeholderOf(view.container)).toBe('会话不可用')
-    expect((view.getByLabelText('指令') as HTMLButtonElement).disabled).toBe(true)
+    expect((view.getByLabelText('添加文件或调用指令') as HTMLButtonElement).disabled).toBe(true)
   })
 
   it('idle primary sends and disables on empty draft', () => {
@@ -1129,7 +1137,7 @@ describe('running and lock semantics', () => {
     expect(editableOf(textarea)).toBe(false)
     expect(textarea.getAttribute('aria-haspopup')).toBe('menu')
     expect(textarea.getAttribute('aria-expanded')).toBe('false')
-    expect((view.getByLabelText('指令') as HTMLButtonElement).disabled).toBe(true)
+    expect((view.getByLabelText('添加文件或调用指令') as HTMLButtonElement).disabled).toBe(true)
 
     fireEvent.click(textarea)
     fireEvent.keyDown(textarea, { key: 'Enter' })
@@ -1432,7 +1440,7 @@ describe('strips and variants', () => {
 describe('command launcher chrome and control seats', () => {
   it('renders the command launcher; the Access chip is absent without the permissions projection; the control seats render EMPTY without entries', () => {
     const { view, slotCalls } = bench()
-    expect(view.getByLabelText('指令')).toBeTruthy()
+    expect(view.getByLabelText('添加文件或调用指令')).toBeTruthy()
     // Capability absent (no projection value): the chip renders nothing.
     expect(view.queryByLabelText(/^访问模式/)).toBeNull()
     // Every seat dispatched, nothing rendered (render passes may repeat; the
@@ -1451,7 +1459,7 @@ describe('command launcher chrome and control seats', () => {
     const toggleCommandMenu = vi.fn()
     const { view, shell, menuLauncher } = bench({ draft: 'draft text', toggleCommandMenu })
     act(() => { shell.editor.update(() => { $selectDetectSpan({ start: 2, end: 7 }) }, { discrete: true }) })
-    const launcher = view.getByLabelText('指令')
+    const launcher = view.getByLabelText('添加文件或调用指令')
     expect(launcher.getAttribute('aria-expanded')).toBe('false')
     fireEvent.click(launcher)
     expect(toggleCommandMenu).toHaveBeenCalledExactlyOnceWith({ start: 2, end: 7 })
@@ -1621,7 +1629,7 @@ describe('command launcher chrome and control seats', () => {
   it('disabled locks the Access chip and command launcher (running does not)', () => {
     const permissions = { options: [{ value: 'workspace-write', name: 'workspace-write' }], currentValue: 'workspace-write' }
     const { view } = bench({ disabled: true, permissions })
-    expect((view.getByLabelText('指令') as HTMLButtonElement).disabled).toBe(true)
+    expect((view.getByLabelText('添加文件或调用指令') as HTMLButtonElement).disabled).toBe(true)
     expect((view.getByLabelText(/^访问模式/) as HTMLButtonElement).disabled).toBe(true)
     cleanup()
     const live = bench({ running: true, permissions })

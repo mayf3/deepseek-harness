@@ -25,7 +25,7 @@ This package powers the input trigger pipeline of the Web GUI: it detects `/` an
 <a id="use-this-package"></a>
 ## Use this package
 
-Mount this plugin alongside `ui-conversation`; the menu then appears in the input overlay when the user types a trigger under the caret. Grouped candidates render under title rows; a pick routes to the source, and the consuming surface applies the result — a slash command opens its popup or executes, a reference inserts its inline token.
+Mount this plugin alongside `ui-conversation`; the menu then appears in the input overlay when the user types a trigger under the caret. Grouped candidates render under title rows, or under the section headings a source attaches to its own rows; a pick routes to the source, and the consuming surface applies the result — a slash command opens its popup or executes, a reference inserts its inline token. A row shows its icon, its title (the candidate `label`, or the `name` when no label is given), the `name` as a trailing alias when the label is not the name in another letter case, and the description right-aligned; a query matches either the name or the label.
 
 ### Keyboard and mouse
 
@@ -74,7 +74,6 @@ None; this package neither assembles nor sends a provider request.
 These limits define the current trigger pipeline. They are current package constraints, not a general menu comparison or a task backlog.
 
 - **Global source layer only** — session-scope source registration (per-session shadowing) is designed but not enabled; the ledger tracks the trigger condition, a real per-session source need.
-- **`InputTriggerCandidate.icon` renders as text** — `MenuView` drops the string into the icon slot verbatim; wiring to the design-system icon enum lands when that enum ships.
 - **Overlay SlotMap merge home is split from slot ownership** — the sole `conversation.input.overlay` merge lives here, while ui-conversation owns its anchor, children declaration, and lifecycle because the dependency direction is ui-conversation → ui-input-trigger.
 
 <a id="dev-note"></a>

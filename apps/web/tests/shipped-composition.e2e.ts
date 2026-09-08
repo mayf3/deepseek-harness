@@ -183,7 +183,7 @@ it('assembles the shipped Web transport, catalog, guidance, and defaults', async
   try {
     expect(scaffold.ctx.commands.list(commandHandle.agent)).toContainEqual({
       name: 'feedback',
-      description: 'record feedback about this session',
+      description: 'Record feedback about this session',
       input: { hint: '<text>' },
     })
   } finally {

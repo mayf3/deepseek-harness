@@ -89,7 +89,7 @@ describe('@deepseek-ai/dsh-command-feedback registration', () => {
 
     expect(test.ctx.commands.list(test.agent)).toContainEqual({
       name: 'feedback',
-      description: 'record feedback about this session',
+      description: 'Record feedback about this session',
       input: { hint: '<text>' },
     })
     expect(test.ctx.commands.find(test.agent, 'feedback')).toMatchObject({ recordInput: false })

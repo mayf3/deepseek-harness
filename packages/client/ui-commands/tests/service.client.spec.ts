@@ -13,8 +13,9 @@ import type { CommandResult } from '@deepseek-ai/dsh-commands/types'
 import { createScope, scopeOf } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { RemoteError, TestRemote } from '@deepseek-ai/dsh-client-test-runtime'
+import { IconGoalOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ClientSessionContext, ConsumeTokenRequest, InputTriggerPick, InputTriggerSource, SubmitAttachment } from '@deepseek-ai/dsh-client-ui-input-trigger/client'
-import type { CommandContribution, CommandDecoration, CommandUiSpec, SelectOption } from '../src/client/contract.ts'
+import type { CommandContribution, CommandDecoration, PopupSelectSpec, SelectOption } from '../src/client/contract.ts'
 import type { CommandDescriptor } from '../src/client/directory.ts'
 import { CommandUiRuntime } from '../src/client/service.ts'
 
@@ -155,7 +156,7 @@ function menuPick(source: InputTriggerSource, name: string, session: ClientSessi
   return source.onPick(pick)
 }
 
-const themeUi = (over: Partial<CommandUiSpec> = {}): CommandUiSpec => ({
+const themeUi = (over: Partial<PopupSelectSpec> = {}): PopupSelectSpec => ({
   kind: 'popupSelect',
   options: () => Promise.resolve([{ id: 'dark', label: 'Dark' }]),
   onSelect: () => undefined,
@@ -164,7 +165,7 @@ const themeUi = (over: Partial<CommandUiSpec> = {}): CommandUiSpec => ({
 
 const themeContribution = (over: Partial<CommandContribution> = {}): CommandContribution => ({
   name: 'theme',
-  description: 'client popup kind',
+  description: () => 'client popup kind',
   available: () => true,
   ui: themeUi(),
   ...over,
@@ -224,7 +225,7 @@ describe('candidates', () => {
     const { source, listCalls } = await bench()
     const names = (await source.candidates(proj('s2'), req(''))).map(c => c.name)
     expect(listCalls).toEqual([{ sessionId: sid('s2') }])
-    expect(names).toEqual(['plan', 'goal', 'attach'])
+    expect(names).toEqual(['goal', 'plan', 'attach'])
   })
 
   it('hides leadingInput commands at inline position', async () => {
@@ -238,7 +239,7 @@ describe('candidates', () => {
     const available = vi.fn((session: ClientSessionContext) => session.sessionId === sid('s1'))
     command.register(themeContribution({ available }))
     const s1Names = (await source.candidates(proj('s1'), req(''))).map(c => c.name)
-    expect(s1Names).toEqual(['plan', 'goal', 'theme'])
+    expect(s1Names).toEqual(['goal', 'plan', 'theme'])
     expect(available).toHaveBeenLastCalledWith(proj('s1'))
     const s2Names = (await source.candidates(proj('s2'), req(''))).map(c => c.name)
     expect(s2Names).not.toContain('theme')
@@ -257,6 +258,132 @@ describe('candidates', () => {
     await expect(source.candidates(proj('s1'), req(''))).rejects.toThrow('collides with a host command')
   })
 
+  describe('menu presentation (design doc for #3567)', () => {
+    /** The shipped catalog in Host registration order, with the canonical English descriptions. */
+    const SHIPPED: CommandDescriptor[] = [
+      { name: 'compact', description: 'Compact older conversation history' },
+      { name: 'export', description: 'Download this Session log as a ZIP archive' },
+      { name: 'feedback', description: 'Record feedback about this session', input: { hint: '<text>' } },
+      { name: 'goal', description: 'Set or view the goal for a long-running task', input: { hint: '<objective>', attachments: true } },
+      { name: 'permission', description: 'Switch the permission preset (sandbox mode + approval policy)', input: { hint: '<preset>' } },
+      { name: 'plan', description: 'Enter or leave plan mode', input: { hint: '[off|message]', attachments: true } },
+      { name: 'deploy', description: 'third-party command' },
+    ]
+    const Glyph = () => null
+    const fileContribution = (run = vi.fn()): CommandContribution => ({
+      name: 'file',
+      label: () => 'command:label.file',
+      icon: Glyph,
+      available: () => true,
+      ui: { kind: 'action', run },
+    })
+    const modelContribution = (): CommandContribution => ({
+      name: 'model',
+      label: () => '模型',
+      description: () => '选择本会话使用的模型',
+      icon: Glyph,
+      available: () => true,
+      ui: themeUi(),
+    })
+
+    it('an empty query lists Add then Commands in usage order; built-in rows carry their localized face, other rows their own text', async () => {
+      const { command, source } = await bench({ commands: () => Promise.resolve({ commands: SHIPPED }) })
+      command.register(modelContribution())
+      command.register(fileContribution())
+      const rows = await source.candidates(proj('s1'), req(''))
+      expect(rows.map(row => row.name)).toEqual([
+        'file', 'goal', 'plan', 'feedback', 'compact', 'permission', 'model', 'export', 'deploy',
+      ])
+      expect(rows.map(row => row.section)).toEqual([
+        ...Array<string>(4).fill('command:section.add'),
+        ...Array<string>(5).fill('command:section.commands'),
+      ])
+      expect(rows[1]).toEqual({
+        name: 'goal',
+        label: 'command:label.goal',
+        description: 'command:description.goal',
+        icon: IconGoalOutline16,
+        hint: '<objective>',
+        section: 'command:section.add',
+      })
+      expect(rows[0]).toEqual({ name: 'file', label: 'command:label.file', icon: Glyph, section: 'command:section.add' })
+      expect(rows[6]).toMatchObject({ name: 'model', label: '模型', description: '选择本会话使用的模型', icon: Glyph })
+      // A third-party command keeps its catalog text and gets no glyph.
+      expect(rows[8]).toEqual({ name: 'deploy', description: 'third-party command', section: 'command:section.commands' })
+    })
+
+    it('a Host row of a built-in name with another description is not the built-in command', async () => {
+      const commands: CommandDescriptor[] = [{ name: 'goal', description: 'scoped goal', input: { hint: 'x' } }]
+      const { source } = await bench({ commands: () => Promise.resolve({ commands }) })
+      const [row] = await source.candidates(proj('s1'), req(''))
+      expect(row).toEqual({ name: 'goal', description: 'scoped goal', hint: 'x', section: 'command:section.add' })
+    })
+
+    it('a typed query ranks rows flat by name or label and drops the section headings', async () => {
+      const { command, source } = await bench({ commands: () => Promise.resolve({ commands: SHIPPED }) })
+      command.register(modelContribution())
+      const names = async (query: string) => (await source.candidates(proj('s1'), req(query))).map(c => c.name)
+      await expect(names('模型')).resolves.toEqual(['model'])
+      await expect(names('label.goal')).resolves.toEqual(['goal'])
+      await expect(names('ex')).resolves.toEqual(['export'])
+      // Prefix hits lead; the empty-query section order no longer applies.
+      await expect(names('pl')).resolves.toEqual(['plan', 'deploy'])
+      const rows = await source.candidates(proj('s1'), req('pl'))
+      expect(rows.every(row => row.section === undefined)).toBe(true)
+    })
+
+    it('an action contribution: the menu pick consumes the span and runs it; bare enter runs it even with attachments; an argued line misses', async () => {
+      const run = vi.fn()
+      const { command, source, mint, warm } = await bench({ commands: () => Promise.resolve({ commands: SHIPPED }) })
+      command.register(fileContribution(run))
+      const scope = mint('s1')
+      const consumes: ConsumeTokenRequest[] = []
+      scope.ctx.on('slash/input-consume-token', (r) => { consumes.push(r); return true })
+      await warm(proj('s1'))
+      expect(menuPick(source, 'file', proj('s1'))).toBe('handled')
+      expect(consumes).toEqual([{ guard: { kind: 'span', span: { start: 0, end: 5, draftRev: 3 } } }])
+      expect(run).toHaveBeenCalledExactlyOnceWith(proj('s1'))
+      expect(await source.matchEnter!(proj('s1'), '/file', new AbortController().signal, { attachments: 2 })).toBe('handled')
+      expect(consumes[1]).toEqual({ guard: { kind: 'bare-token', token: '/file' } })
+      expect(run).toHaveBeenCalledTimes(2)
+      expect(await source.matchEnter!(proj('s1'), '/file now', new AbortController().signal, { attachments: 0 })).toBeUndefined()
+      expect(source.matchSpace!(proj('s1'), '/file')).toBeUndefined()
+    })
+
+    it('a built-in claim shows the localized token and submits the catalog name', async () => {
+      const { source, warm, executeCalls } = await bench({ commands: () => Promise.resolve({ commands: SHIPPED }) })
+      await warm(proj('s1'))
+      const outcome = menuPick(source, 'plan', proj('s1'))
+      if (outcome === undefined || outcome === 'handled' || !('claim' in outcome)) throw new Error('expected the claim')
+      expect(outcome.claim.token).toBe('/command:token.plan ')
+      await outcome.claim.submit('do x', new Context(), [])
+      expect(executeCalls).toEqual([{ sessionId: sid('s1'), line: '/plan do x', images: [] }])
+    })
+
+    it('a typed localized token resolves to the built-in command on space and enter; the Host line carries the catalog name', async () => {
+      const { source, mint, warm, executeCalls } = await bench({ commands: () => Promise.resolve({ commands: SHIPPED }) })
+      mint('s1')
+      await warm(proj('s1'))
+      const space = source.matchSpace!(proj('s1'), '/计划')
+      if (space === undefined || space === 'handled' || !('claim' in space)) throw new Error('expected the plan claim')
+      expect(space.claim.hint).toBe('[off|message]')
+      // The claim keeps the typed spelling (the draft carries it and the
+      // arguments are read after it); the submission sends the catalog name.
+      expect(space.claim.token).toBe('/计划 ')
+      const enter = await source.matchEnter!(proj('s1'), '/目标 ship it', new AbortController().signal, { attachments: 0 })
+      if (enter === undefined || enter === 'handled' || !('claim' in enter)) throw new Error('expected the goal claim')
+      expect(enter.claim.attachments).toBe(true)
+      expect(enter.claim.token).toBe('/目标 ')
+      await enter.claim.submit('ship it', new Context(), [])
+      expect(executeCalls).toEqual([{ sessionId: sid('s1'), line: '/goal ship it', images: [] }])
+      const typed = await source.matchEnter!(proj('s1'), '/plan now', new AbortController().signal, { attachments: 0 })
+      if (typed === undefined || typed === 'handled' || !('claim' in typed)) throw new Error('expected the plan claim')
+      expect(typed.claim.token).toBe('/plan ')
+      executeCalls.length = 0
+      expect(await source.matchEnter!(proj('s1'), '/压缩', new AbortController().signal, { attachments: 0 })).toBe('handled')
+      await vi.waitFor(() => { expect(executeCalls).toEqual([{ sessionId: sid('s1'), line: '/compact', images: [] }]) })
+    })
+  })
 })
 
 describe('decorations (bare-invocation UI on host commands)', () => {
@@ -271,7 +398,7 @@ describe('decorations (bare-invocation UI on host commands)', () => {
     const { command, source } = await bench()
     command.decorate(goalDecoration())
     const names = (await source.candidates(proj('s1'), req(''))).map(c => c.name)
-    expect(names).toEqual(['plan', 'goal'])
+    expect(names).toEqual(['goal', 'plan'])
   })
 
   it('bare enter opens the popup; an argued line never consults the decoration (host claim)', async () => {

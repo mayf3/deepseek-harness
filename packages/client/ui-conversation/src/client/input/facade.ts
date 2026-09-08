@@ -154,6 +154,8 @@ export class SessionInputShell implements SessionInput {
   private disposed = false
   /** Draft persistence mirror (Conversation store write; receives the clipboard projection). */
   private mirrorFn: ((text: string) => void) | undefined
+  /** The mounted composer's file-picker opener (scoped pick-files event target). */
+  private filePickerFn: (() => void) | undefined
   /** Live lexicon subscription disposer; undefined until the controller resolves. */
   private lexiconOff: (() => void) | undefined
   /** Default sends retained until admission settles or scope disposal releases their attachments. */
@@ -605,6 +607,28 @@ export class SessionInputShell implements SessionInput {
     return () => {
       if (this.mirrorFn === write) this.mirrorFn = undefined
     }
+  }
+
+  /**
+   * Bind the composer's file-picker opener (ComposerKeyboard face; unbind on unmount).
+   * @param open - opens the native file dialog.
+   * @returns the unbind disposer.
+   */
+  bindFilePicker(open: () => void): () => void {
+    this.filePickerFn = open
+    return () => {
+      if (this.filePickerFn === open) this.filePickerFn = undefined
+    }
+  }
+
+  /**
+   * Open the bound file picker (scoped pick-files event listener body).
+   * @returns whether a composer was bound to open it.
+   */
+  pickFiles(): boolean {
+    if (this.filePickerFn === undefined) return false
+    this.filePickerFn()
+    return true
   }
 
   // ---- effect executor ----
