@@ -8,7 +8,7 @@
 
 ## 定位与归属
 
-每个会话恰有一个停靠面，保存在会话作用域的 slot store 里、由 `rightbar` 席位绘制；刷新页面后每个会话回到折叠的默认态，切换会话时各自的面保持原状（[状态](../../packages/client/ui-sidebar-right/README.zh.md#state)）。面的每一次变化都是 kit 纯规划器算出的一条历史记录；停靠的 pane 从不空着，最后一个 pane 会重新种入引导 tab。
+每个会话恰有一个停靠面，保存在会话作用域的 slot store 里、由 `rightbar.session` 绘制。root 作用域的 `rightbar` 控制器仅在选中 Conversation 时挂载该席位；刷新页面后每个会话回到折叠的默认态，切换会话时各自的面保持原状（[状态](../../packages/client/ui-sidebar-right/README.zh.md#state)）。面的每一次变化都是 kit 纯规划器算出的一条历史记录；停靠的 pane 从不空着，最后一个 pane 会重新种入引导 tab。
 
 一个 tab 类型是共用一个 `kind` 的两次注册：在 `ctx.sidebarRightTabs` 里的静态定义说明该类型打开哪些地址，一次 keyed slot 注册提供它的正文。框架注入 `useTabInfo()` 以读取 Sidebar、窗格和标签的实时信息；各类型把自身状态放在 slot store 里。各包之间只以类型形式引用彼此的声明。
 
