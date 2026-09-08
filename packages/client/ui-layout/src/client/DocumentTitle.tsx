@@ -16,7 +16,7 @@ export type DocumentTitleProps = Pick<PropsRuntime<'root'>, 'useSessions' | 'use
  */
 export function DocumentTitle({ useSessions, usePanelInfo, productTitle }: DocumentTitleProps): null {
   const showSessionTitle = usePanelInfo(info => info.activePanelId === null)
-  const title = useSessions(state => {
+  const title = useSessions((state) => {
     const current = state.current
     return !showSessionTitle || current === undefined ? undefined : state.byId[current]?.title
   })

@@ -23,7 +23,7 @@ beforeEach(() => {
   originalBodyStyle = document.body.getAttribute('style')
   originalDarkTheme = document.body.getAttribute('data-ds-dark-theme')
   originalThemeMetadata = [...document.head.querySelectorAll('meta[name="theme-color"]')]
-  originalThemeMetadata.forEach(node => { node.remove() })
+  originalThemeMetadata.forEach((node) => { node.remove() })
   vi.stubGlobal('innerWidth', 1920)
 })
 
@@ -35,7 +35,7 @@ afterEach(async () => {
     restoreAttribute(document.documentElement, 'style', originalRootStyle)
     restoreAttribute(document.body, 'style', originalBodyStyle)
     restoreAttribute(document.body, 'data-ds-dark-theme', originalDarkTheme)
-    document.head.querySelectorAll('meta[name="theme-color"]').forEach(node => { node.remove() })
+    document.head.querySelectorAll('meta[name="theme-color"]').forEach((node) => { node.remove() })
     document.head.append(...originalThemeMetadata)
     vi.unstubAllGlobals()
   }
@@ -65,7 +65,7 @@ async function bench() {
   await slotsFiber.await()
   const slots = ctx.get('slots') as SlotRegistry
   let host: SlotRendererHost | undefined
-  slots.install({ renderRoot: value => { host = value; return null } })
+  slots.install({ renderRoot: (value) => { host = value; return null } })
   const rendererHost = (): SlotRendererHost => {
     slots.renderSlot('root', {})
     if (host === undefined) throw new Error('the root renderer did not receive its host')

@@ -52,7 +52,7 @@ export function apply(ctx: ClientContext): void {
     }).sort((a, b) => a.order - b.order)
     const previous = panels.getSnapshot()
     if (previous.length === next.length && previous.every((panel, index) => {
-      const candidate = next[index]!
+      const candidate = next[index] as SidebarPanelMetadata
       return panel.id === candidate.id && panel.order === candidate.order && panel.label === candidate.label
     })) return
     panels.set(next)
