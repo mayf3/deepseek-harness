@@ -1748,7 +1748,7 @@ describe('workspace context request injection', () => {
         content: [{ type: 'text', text: 'compacted summary' }],
         source: { kind: 'plugin', plugin: 'compact' },
       }), {
-        surfaceOp: { op: 'replace', start: baseline!.seq, end: baseline!.seq },
+        surfaceOp: { op: 'replace', startSeq: baseline!.seq, endSeq: baseline!.seq },
         sourceEventSeqs: [baseline!.seq],
       })
 
@@ -1781,7 +1781,7 @@ describe('workspace context request injection', () => {
         content: [{ type: 'text', text: 'compacted summary' }],
         source: { kind: 'plugin', plugin: 'compact' },
       }), {
-        surfaceOp: { op: 'replace', start: baseline!.seq, end: baseline!.seq },
+        surfaceOp: { op: 'replace', startSeq: baseline!.seq, endSeq: baseline!.seq },
         sourceEventSeqs: [baseline!.seq],
       })
       const prompt = createUserMessage({
@@ -3712,7 +3712,7 @@ describe('dynamic nested workspace context injection', () => {
         content: [{ type: 'text', text: 'compacted summary' }],
         source: { kind: 'plugin', plugin: 'compact' },
       }), {
-        surfaceOp: { op: 'replace', start: SessionSeq(contextSeq), end: SessionSeq(contextSeq) },
+        surfaceOp: { op: 'replace', startSeq: SessionSeq(contextSeq), endSeq: SessionSeq(contextSeq) },
         sourceEventSeqs: [SessionSeq(contextSeq)],
       })
 
@@ -3759,7 +3759,7 @@ describe('dynamic nested workspace context injection', () => {
         content: [{ type: 'text', text: 'compacted summary' }],
         source: { kind: 'plugin', plugin: 'compact' },
       }), {
-        surfaceOp: { op: 'replace', start: baseline!.seq, end: baseline!.seq },
+        surfaceOp: { op: 'replace', startSeq: baseline!.seq, endSeq: baseline!.seq },
         sourceEventSeqs: [baseline!.seq],
       })
 

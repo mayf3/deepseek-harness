@@ -7,9 +7,12 @@ import { pathToFileURL } from 'node:url'
 const API_VERSION = '2026-03-10'
 const MAX_OWNERS_PER_RULE = 2
 const MAX_PULL_REQUEST_FILES = 3_000
-const MAX_REQUESTED_REVIEWERS = 2
+const MAX_PULL_REQUEST_REVIEWS = 3_000
+const MAX_COUNTED_REQUESTED_REVIEWERS = 1
 const MAX_TIMELINE_EVENTS = 3_000
 const PAGE_SIZE = 100
+const PULL_REQUEST_REVIEW_STATES = new Set(['APPROVED', 'CHANGES_REQUESTED', 'COMMENTED', 'DISMISSED', 'PENDING'])
+const UNCOUNTED_REVIEWER = 'turtle1999'
 const WORKFLOW_REVIEW_REQUESTER = 'github-actions[bot]'
 const TEST_DIRECTORY_NAMES = new Set(['__snapshots__', '__tests__', 'benches', 'stress-tests', 'test', 'tests'])
 const TEST_FILE_MARKER = /\.(?:bench|corpus|e2e|perf|snapshot|spec|stress|test)\.[^./]+$/u
@@ -240,55 +243,87 @@ function stripComments(source, syntax) {
 /**
  * Expand changed-file records into reviewable, test, documentation, and comment-only paths.
  * @param {unknown[]} files Pull-request file records from GitHub.
- * @returns {{changedCodeFiles: string[], excludedTestFiles: string[], excludedDocumentationFiles: string[], excludedCommentOnlyFiles: string[]}} Classified paths.
+ * @returns {{changedCodeFiles: string[], reviewableChanges: Array<{paths: string[], changedLines: number}>, excludedTestFiles: string[], excludedDocumentationFiles: string[], excludedCommentOnlyFiles: string[]}} Classified paths and their GitHub-reported changed-line counts.
  */
 export function classifyChangedFiles(files) {
   const changedCodeFiles = new Set()
+  const reviewableChanges = []
   const excludedTestFiles = new Set()
   const excludedDocumentationFiles = new Set()
   const excludedCommentOnlyFiles = new Set()
   for (const entry of files) {
     if (!isRecord(entry)) throw new Error('changed-file response contains a non-object entry')
+    const changedLines = changedLineCount(entry)
     const paths = [normalizeRepositoryPath(entry.filename)]
     const commentOnly = isCommentOnlyChange(entry)
     if (entry.previous_filename !== undefined) {
       paths.unshift(normalizeRepositoryPath(entry.previous_filename))
     }
-    for (const file of paths) {
+    const reviewablePaths = []
+    for (const file of new Set(paths)) {
       if (isTestPath(file)) excludedTestFiles.add(file)
       else if (isDocumentationPath(file)) excludedDocumentationFiles.add(file)
       else if (commentOnly) excludedCommentOnlyFiles.add(file)
-      else changedCodeFiles.add(file)
+      else {
+        changedCodeFiles.add(file)
+        reviewablePaths.push(file)
+      }
+    }
+    if (reviewablePaths.length > 0) {
+      reviewableChanges.push({ paths: reviewablePaths.sort(), changedLines })
     }
   }
   return {
     changedCodeFiles: [...changedCodeFiles].sort(),
+    reviewableChanges,
     excludedTestFiles: [...excludedTestFiles].sort(),
     excludedDocumentationFiles: [...excludedDocumentationFiles].sort(),
     excludedCommentOnlyFiles: [...excludedCommentOnlyFiles].sort(),
   }
 }
 
+function changedLineCount(entry) {
+  for (const field of ['additions', 'deletions']) {
+    if (!Number.isSafeInteger(entry[field]) || entry[field] < 0) {
+      throw new Error(`changed-file ${field} must be a non-negative integer`)
+    }
+  }
+  const changedLines = entry.additions + entry.deletions
+  if (!Number.isSafeInteger(changedLines)) throw new Error('changed-file LOC exceeds the safe integer range')
+  return changedLines
+}
+
 /**
- * Match changed paths to owners with CODEOWNERS last-match semantics.
+ * Match changed paths and rank owners by their reviewable changed LOC.
  * @param {Array<{prefix: string, owners: string[]}>} rules Ordered ownership rules.
- * @param {string[]} changedCodeFiles Reviewable repository paths.
- * @returns {{matches: Array<{file: string, owners: string[]}>, reviewers: string[]}} Routing plan.
+ * @param {Array<{paths: string[], changedLines: number}>} reviewableChanges Reviewable GitHub file records.
+ * @returns {{matches: Array<{file: string, changedLines: number, owners: string[]}>, reviewers: Array<{login: string, changedLines: number}>}} Routing plan.
  */
-export function planReviewers(rules, changedCodeFiles) {
+export function planReviewers(rules, reviewableChanges) {
   const matches = []
   const reviewers = new Map()
-  for (const file of changedCodeFiles) {
-    let owners = []
-    for (const rule of rules) {
-      if (file.startsWith(rule.prefix)) owners = rule.owners
+  for (const change of reviewableChanges) {
+    const changeOwners = new Map()
+    for (const file of change.paths) {
+      let owners = []
+      for (const rule of rules) {
+        if (file.startsWith(rule.prefix)) owners = rule.owners
+      }
+      matches.push({ file, changedLines: change.changedLines, owners })
+      for (const owner of owners) changeOwners.set(owner.toLowerCase(), owner.slice(1))
     }
-    matches.push({ file, owners })
-    for (const owner of owners) reviewers.set(owner.toLowerCase(), owner.slice(1))
+    for (const [key, login] of changeOwners) {
+      const changedLines = (reviewers.get(key)?.changedLines ?? 0) + change.changedLines
+      if (!Number.isSafeInteger(changedLines)) throw new Error(`changed LOC for @${login} exceeds the safe integer range`)
+      reviewers.set(key, { login, changedLines })
+    }
   }
   return {
-    matches,
-    reviewers: [...reviewers.values()].sort((left, right) => left.localeCompare(right, 'en')),
+    matches: matches.sort((left, right) => left.file.localeCompare(right.file, 'en')),
+    reviewers: [...reviewers.values()].sort((left, right) => {
+      if (left.changedLines !== right.changedLines) return left.changedLines < right.changedLines ? 1 : -1
+      return left.login.localeCompare(right.login, 'en')
+    }),
   }
 }
 
@@ -352,6 +387,47 @@ export async function listPullRequestFiles(api, repository, pullNumber, expected
 }
 
 /**
+ * Fetch the complete chronological pull-request review list.
+ * @param {(path: string, options?: {method?: string, body?: unknown}) => Promise<unknown>} api GitHub API caller.
+ * @param {string} repository Owner/name repository identifier.
+ * @param {number} pullNumber Pull-request number.
+ * @returns {Promise<unknown[]>} Complete review list within the supported limit.
+ */
+export async function listPullRequestReviews(api, repository, pullNumber) {
+  const reviews = []
+  for (let page = 1; ; page++) {
+    const response = await api(`/repos/${repository}/pulls/${pullNumber}/reviews?per_page=${PAGE_SIZE}&page=${page}`)
+    if (!Array.isArray(response)) throw new Error('pull-request reviews response is not an array')
+    reviews.push(...response)
+    if (response.length < PAGE_SIZE) return reviews
+    if (reviews.length >= MAX_PULL_REQUEST_REVIEWS) {
+      throw new Error(`pull-request reviews exceed ${MAX_PULL_REQUEST_REVIEWS} entries`)
+    }
+  }
+}
+
+/**
+ * Return users whose latest undismissed decisive review approves the pull request.
+ * @param {unknown[]} reviews Chronological GitHub pull-request review records.
+ * @returns {string[]} Approved reviewer logins in stable order.
+ */
+export function approvedReviewerLogins(reviews) {
+  const approved = new Map()
+  for (const review of reviews) {
+    if (!isRecord(review) || !isRecord(review.user) || typeof review.user.login !== 'string') {
+      throw new Error('pull-request reviews response contains an invalid reviewer')
+    }
+    if (typeof review.state !== 'string' || !PULL_REQUEST_REVIEW_STATES.has(review.state)) {
+      throw new Error('pull-request reviews response contains an invalid state')
+    }
+    const key = review.user.login.toLowerCase()
+    if (review.state === 'APPROVED') approved.set(key, review.user.login)
+    else if (review.state === 'CHANGES_REQUESTED') approved.delete(key)
+  }
+  return [...approved.values()].sort((left, right) => left.localeCompare(right, 'en'))
+}
+
+/**
  * Fetch the pull request timeline used to identify workflow-authored review requests.
  * @param {(path: string, options?: {method?: string, body?: unknown}) => Promise<unknown>} api GitHub API caller.
  * @param {string} repository Owner/name repository identifier.
@@ -404,8 +480,8 @@ function requestedReviewerLogins(response) {
 }
 
 /**
- * Print changed paths, request missing owners on reviewable pull requests, and
- * cancel workflow-authored requests on drafts.
+ * Print changed paths, reconcile workflow-authored requests with current
+ * ownership, and cancel workflow-authored requests on drafts.
  * @param {{event: unknown, ownershipSource: string, api: (path: string, options?: {method?: string, body?: unknown}) => Promise<unknown>, write?: (line: string) => void}} options Runtime inputs.
  * @returns {Promise<{changedCodeFiles: string[], excludedTestFiles: string[], excludedDocumentationFiles: string[], excludedCommentOnlyFiles: string[], requestedReviewers: string[], cancelledReviewers: string[]}>} Applied routing result.
  */
@@ -413,8 +489,8 @@ export async function requestReviews({ event, ownershipSource, api, write = line
   const pull = pullRequestFromEvent(event)
   write('This is by automated Angry Turtle Cyborg, not a human')
   const files = await listPullRequestFiles(api, pull.repository, pull.number, pull.changedFileCount)
-  const classified = classifyChangedFiles(files)
-  const plan = planReviewers(parseOwnership(ownershipSource), classified.changedCodeFiles)
+  const { reviewableChanges, ...classified } = classifyChangedFiles(files)
+  const plan = planReviewers(parseOwnership(ownershipSource), reviewableChanges)
   writeList(write, 'Changed code files', classified.changedCodeFiles.map(file => JSON.stringify(file)))
   writeList(write, 'Excluded test files', classified.excludedTestFiles.map(file => JSON.stringify(file)))
   writeList(
@@ -430,10 +506,16 @@ export async function requestReviews({ event, ownershipSource, api, write = line
   writeList(
     write,
     'Owners by changed file',
-    plan.matches.map(({ file, owners }) => `${JSON.stringify(file)}: ${owners.length ? owners.join(' ') : '(none)'}`),
+    plan.matches.map(({ file, changedLines, owners }) =>
+      `${JSON.stringify(file)} (${changedLines} LOC): ${owners.length ? owners.join(' ') : '(none)'}`),
+  )
+  writeList(
+    write,
+    'Owner relevance by changed LOC',
+    plan.reviewers.map(({ login, changedLines }) => `@${login}: ${changedLines}`),
   )
 
-  const candidates = plan.reviewers.filter(login => login.toLowerCase() !== pull.author.toLowerCase())
+  const ownerCandidates = plan.reviewers.filter(({ login }) => login.toLowerCase() !== pull.author.toLowerCase())
   if (pull.draft) {
     const existing = await api(`/repos/${pull.repository}/pulls/${pull.number}/requested_reviewers`)
     const requestedReviewers = requestedReviewerLogins(existing)
@@ -455,25 +537,77 @@ export async function requestReviews({ event, ownershipSource, api, write = line
     return { ...classified, requestedReviewers: [], cancelledReviewers: reviewers }
   }
 
-  if (candidates.length === 0) {
-    writeList(write, 'Reviewers to request', [])
-    return { ...classified, requestedReviewers: [], cancelledReviewers: [] }
-  }
-  const existing = await api(`/repos/${pull.repository}/pulls/${pull.number}/requested_reviewers`)
-  const alreadyRequested = new Set(requestedReviewerLogins(existing).map(login => login.toLowerCase()))
-  const availableSlots = Math.max(0, MAX_REQUESTED_REVIEWERS - alreadyRequested.size)
-  const reviewers = candidates
-    .filter(login => !alreadyRequested.has(login.toLowerCase()))
-    .slice(0, availableSlots)
-  writeList(write, 'Reviewers to request', reviewers.map(login => `@${login}`))
-  if (reviewers.length === 0) return { ...classified, requestedReviewers: [], cancelledReviewers: [] }
+  const approvedReviewerKeys = new Set(
+    (ownerCandidates.length === 0
+      ? []
+      : approvedReviewerLogins(await listPullRequestReviews(api, pull.repository, pull.number)))
+      .map(login => login.toLowerCase()),
+  )
+  const approvedOwners = ownerCandidates.filter(({ login }) => approvedReviewerKeys.has(login.toLowerCase()))
+  const candidates = ownerCandidates.filter(({ login }) => !approvedReviewerKeys.has(login.toLowerCase()))
+  writeList(write, 'Approved owners omitted from review requests', approvedOwners.map(({ login }) => `@${login}`))
 
-  await api(`/repos/${pull.repository}/pulls/${pull.number}/requested_reviewers`, {
-    method: 'POST',
-    body: { reviewers },
-  })
-  write(`Requested ${reviewers.map(login => `@${login}`).join(' ')}.`)
-  return { ...classified, requestedReviewers: reviewers, cancelledReviewers: [] }
+  const existing = await api(`/repos/${pull.repository}/pulls/${pull.number}/requested_reviewers`)
+  const currentReviewers = requestedReviewerLogins(existing).sort((left, right) => left.localeCompare(right, 'en'))
+  const workflowReviewers = currentReviewers.length === 0
+    ? []
+    : workflowRequestedReviewers(
+        await listPullRequestTimeline(api, pull.repository, pull.number),
+        currentReviewers,
+      )
+  const workflowReviewerKeys = new Set(workflowReviewers.map(login => login.toLowerCase()))
+  const manualReviewers = currentReviewers.filter(login => !workflowReviewerKeys.has(login.toLowerCase()))
+  let retainedCountedSlots = Math.max(
+    0,
+    MAX_COUNTED_REQUESTED_REVIEWERS
+      - manualReviewers.filter(login => login.toLowerCase() !== UNCOUNTED_REVIEWER).length,
+  )
+  const retainedWorkflowReviewerKeys = new Set()
+  for (const { login } of candidates) {
+    const key = login.toLowerCase()
+    if (!workflowReviewerKeys.has(key)) continue
+    if (key === UNCOUNTED_REVIEWER) retainedWorkflowReviewerKeys.add(key)
+    else if (retainedCountedSlots > 0) {
+      retainedWorkflowReviewerKeys.add(key)
+      retainedCountedSlots--
+    }
+  }
+  const reviewersToCancel = workflowReviewers.filter(
+    login => !retainedWorkflowReviewerKeys.has(login.toLowerCase()),
+  )
+  const cancelledReviewerKeys = new Set(reviewersToCancel.map(login => login.toLowerCase()))
+  const remainingReviewers = currentReviewers.filter(login => !cancelledReviewerKeys.has(login.toLowerCase()))
+  const alreadyRequested = new Set(remainingReviewers.map(login => login.toLowerCase()))
+  const availableSlots = Math.max(
+    0,
+    MAX_COUNTED_REQUESTED_REVIEWERS
+      - remainingReviewers.filter(login => login.toLowerCase() !== UNCOUNTED_REVIEWER).length,
+  )
+  writeList(write, 'Current individual review requests', currentReviewers.map(login => `@${login}`))
+  write(`Available counted review request slots: ${availableSlots}.`)
+  const reviewers = candidates
+    .filter(({ login }) => !alreadyRequested.has(login.toLowerCase()))
+    .slice(0, availableSlots)
+    .map(({ login }) => login)
+  writeList(write, 'Review requests to cancel', reviewersToCancel.map(login => `@${login}`))
+  writeList(write, 'Reviewers to request', reviewers.map(login => `@${login}`))
+  if (reviewersToCancel.length > 0) {
+    await api(`/repos/${pull.repository}/pulls/${pull.number}/requested_reviewers`, {
+      method: 'DELETE',
+      body: { reviewers: reviewersToCancel },
+    })
+    const requestLabel = reviewersToCancel.length === 1 ? 'request' : 'requests'
+    write(`Cancelled review ${requestLabel} for ${reviewersToCancel.map(login => `@${login}`).join(' ')}.`)
+  }
+
+  if (reviewers.length > 0) {
+    await api(`/repos/${pull.repository}/pulls/${pull.number}/requested_reviewers`, {
+      method: 'POST',
+      body: { reviewers },
+    })
+    write(`Requested ${reviewers.map(login => `@${login}`).join(' ')}.`)
+  }
+  return { ...classified, requestedReviewers: reviewers, cancelledReviewers: reviewersToCancel }
 }
 
 function pullRequestFromEvent(event) {

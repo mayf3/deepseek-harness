@@ -16,6 +16,13 @@
 - paragraph:
   - img "Remote test image"
 - paragraph: Local test image
+- paragraph:
+  - img "Workspace test image"
+- paragraph: Oversized image
+- paragraph:
+  - img "Outside workspace image"
+- paragraph: Missing image
+- paragraph: {{cwd}}/corrupt.png
 - paragraph: REMOTE_IMAGE_DONE
 - button "Copy":
   - img
