@@ -35,8 +35,8 @@ export interface SessionObservation extends Disposable {
   /** Exact projection baseline at {@link cursor}, when the registry is mounted. */
   readonly projections?: ProjectionSnapshot
   /**
-   * Requested host projection states detached at {@link cursor}; present only
-   * when the registry is mounted, and contains only the registered keys.
+   * All registered host projection states detached at {@link cursor}; omitted
+   * when projections are disabled or the registry is absent.
    */
   readonly projectionStates?: Partial<SessionProjectionStateMap>
   /**
@@ -50,14 +50,8 @@ export interface SessionObservation extends Disposable {
 export interface SessionObservationOptions {
   /** Optional cancellation while resolving a cold source. */
   readonly signal?: AbortSignal
-  /** Whether to compute client views; requested host states are still materialized. */
+  /** Whether to return projection views and states or leave projections untouched. */
   readonly projectionMode?: 'all' | 'none'
-  /**
-   * Host projection states to detach from the same exact cut, independent of
-   * {@link projectionMode}. A cold observation hydrates its registry cells to
-   * serve them.
-   */
-  readonly projectionStateKeys?: readonly Extract<keyof SessionProjectionStateMap, string>[]
 }
 
 /**
@@ -103,32 +97,32 @@ export class SessionObservationReader {
   /**
    * Observe one live-preferred Session and retain a cold preparation until disposal.
    * @param sessionId - logical Session identity.
-   * @param options - cancellation, client views, and requested host states for this read.
+   * @param options - cancellation and projection views and states for this read.
    * @returns one exact immutable observation.
    */
   async read(
     sessionId: SessionId,
     options: SessionObservationOptions = {},
   ): Promise<SessionObservation> {
-    const { signal, projectionMode = 'all', projectionStateKeys } = options
+    const { signal, projectionMode = 'all' } = options
     for (;;) {
       throwIfObservationAborted(signal)
       const live = this.ctx.sessions.get(sessionId)
-      if (live !== undefined) return this.live(live, projectionMode, projectionStateKeys)
+      if (live !== undefined) return this.live(live, projectionMode)
       const persistence = this.ctx.get('sessionPersistence')
       if (persistence === undefined) throw notFound(sessionId)
 
       const snapshot = await this.statSource(persistence, sessionId, signal)
       const attachedDuringStat = this.ctx.sessions.get(sessionId)
       if (attachedDuringStat !== undefined) {
-        return this.live(attachedDuringStat, projectionMode, projectionStateKeys)
+        return this.live(attachedDuringStat, projectionMode)
       }
       let entry = this.cachedEntry(persistence, sessionId, snapshot.revision)
       if (entry === undefined) {
         const loaded = await this.loadSource(persistence, sessionId, signal)
         throwIfObservationAborted(signal)
         const attached = this.ctx.sessions.get(sessionId)
-        if (attached !== undefined) return this.live(attached, projectionMode, projectionStateKeys)
+        if (attached !== undefined) return this.live(attached, projectionMode)
         // The handle marks persisted events as adoptable; synthetic closers
         // are owned by this read, so the combined seed needs no copy.
         const seed = loaded.events
@@ -164,12 +158,9 @@ export class SessionObservationReader {
       let projections: ProjectionSnapshot | undefined
       let projectionStates: Partial<SessionProjectionStateMap> | undefined
       try {
-        if (projectionMode === 'all' || projectionStateKeys !== undefined) {
-          // Hydration installs every unit's cell on the prepared Session, so a
-          // requested host state reads the same cut the views were taken from.
-          const snapshot = this.preparedProjections(entry, projectionMode)
-          projections = projectionMode === 'all' ? snapshot : undefined
-          projectionStates = this.projectionStates(entry.session, projectionStateKeys)
+        if (projectionMode === 'all') {
+          projections = this.preparedProjections(entry)
+          projectionStates = this.projectionStates(entry.session)
         }
       } catch (error: unknown) {
         throw new SessionQueryError(
@@ -297,7 +288,6 @@ export class SessionObservationReader {
   private live(
     session: Session,
     projectionMode: NonNullable<SessionObservationOptions['projectionMode']>,
-    projectionStateKeys: SessionObservationOptions['projectionStateKeys'],
   ): SessionObservation {
     // The cut is the log length now. The log only appends, so the prefix
     // below `seq` is the same array whenever a consumer first reads `events`.
@@ -306,7 +296,7 @@ export class SessionObservationReader {
     const projections = projectionMode === 'none'
       ? undefined
       : this.ctx.get('sessionProjections')?.snapshot(session)
-    const projectionStates = this.projectionStates(session, projectionStateKeys)
+    const projectionStates = projectionMode === 'none' ? undefined : this.projectionStates(session)
     const lease = (): SessionObservation => {
       let disposed = false
       return {
@@ -330,36 +320,20 @@ export class SessionObservationReader {
     return lease()
   }
 
-  private preparedProjections(
-    entry: PreparedEntry,
-    projectionMode: NonNullable<SessionObservationOptions['projectionMode']>,
-  ): ProjectionSnapshot | undefined {
+  private preparedProjections(entry: PreparedEntry): ProjectionSnapshot | undefined {
     const registry = this.ctx.get('sessionProjections')
     if (registry === undefined) return undefined
     const cache = this.ctx.get('sessionProjectionCache')
     return cache === undefined
-      ? registry.hydrate(entry.session, {}, entry.events, SessionLogOffset(0), projectionMode)
-      : cache.hydratePrepared(entry.session, entry.events, projectionMode)
+      ? registry.hydrate(entry.session, {}, entry.events, SessionLogOffset(0))
+      : cache.hydratePrepared(entry.session, entry.events)
   }
 
-  /**
-   * Detach the requested host states from the registry cells already at this
-   * Session's cut. Registry cells are live references that later drives
-   * advance, so each state is cloned into the immutable observation.
-   */
-  private projectionStates(
-    session: Session,
-    keys: SessionObservationOptions['projectionStateKeys'],
-  ): Partial<SessionProjectionStateMap> | undefined {
-    if (keys === undefined) return undefined
+  /** Checkpoint rows already own detached state values at the Session cut. */
+  private projectionStates(session: Session): Partial<SessionProjectionStateMap> | undefined {
     const registry = this.ctx.get('sessionProjections')
     if (registry === undefined) return undefined
-    const states: Record<string, unknown> = {}
-    for (const key of keys) {
-      const state = registry.stateOf(session, key)
-      if (state !== undefined) states[key] = structuredClone(state)
-    }
-    return states
+    return Object.fromEntries(Object.entries(registry.checkpoint(session)).map(([key, row]) => [key, row.val]))
   }
 }
 

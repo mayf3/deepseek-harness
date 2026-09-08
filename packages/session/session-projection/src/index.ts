@@ -488,7 +488,6 @@ export class SessionProjectionRegistry extends Service {
    * @param baseSeq - the seq `events` starts at (its first event's seq when non-empty).
    * @param header - immutable metadata for the Session being restored.
    * @param inheritedEventCount - exact fork-inherited prefix length supplied to unit initialization.
-   * @param projectionMode - `none` restores every state without computing or validating client views; defaults to `all`.
    * @returns the snapshot cut at the supplied log end (`asOfSeq` is the last
    *   supplied event's seq, `baseSeq - 1` for an empty tail) plus the
    *   refreshed checkpoint rows at that cut, ready for a durable write-back.
@@ -499,7 +498,6 @@ export class SessionProjectionRegistry extends Service {
     baseSeq: SessionLogOffset,
     header: SessionHeader,
     inheritedEventCount: SessionLogOffset,
-    projectionMode: 'all' | 'none' = 'all',
   ):
   { snapshot: ProjectionSnapshot; checkpoint: ProjectionCheckpoint } {
     const endSeq: SessionSeqCursor = events.at(-1)?.seq ?? cursorBefore(baseSeq)
@@ -532,9 +530,7 @@ export class SessionProjectionRegistry extends Service {
         }
         state = def.apply(state, event)
       }
-      if (projectionMode === 'all' && def.wire !== undefined) {
-        values[def.key] = def.wire.viewSchema.parse(def.wire.view(state))
-      }
+      if (def.wire !== undefined) values[def.key] = def.wire.viewSchema.parse(def.wire.view(state))
       refreshed[def.key] = { ver: def.stateVersion, seq: endSeq, val: state }
     }
     return {
@@ -551,15 +547,13 @@ export class SessionProjectionRegistry extends Service {
    * @param checkpoint - persisted rows for this Session lifecycle.
    * @param events - exact events at the observation cut.
    * @param baseSeq - first supplied event sequence.
-   * @param projectionMode - `none` installs every state without computing or validating client views; defaults to `all`.
-   * @returns the supplied cut with all client views, or empty values in `none` mode.
+   * @returns all projection values at the supplied cut.
    */
   hydrate(
     session: Session,
     checkpoint: ProjectionCheckpoint,
     events: readonly SessionEvent[],
     baseSeq: SessionLogOffset,
-    projectionMode: 'all' | 'none' = 'all',
   ): ProjectionSnapshot {
     const endSeq: SessionSeqCursor = events.at(-1)?.seq ?? cursorBefore(baseSeq)
     let complete = true
@@ -572,12 +566,10 @@ export class SessionProjectionRegistry extends Service {
     }
     if (complete) {
       const values: Record<string, unknown> = {}
-      if (projectionMode === 'all') {
-        for (const registration of this.registrations.values()) {
-          if (registration.def.wire === undefined) continue
-          const current = registration.cells.get(session) as UnitCell
-          values[registration.def.key] = this.viewCell(registration, current)
-        }
+      for (const registration of this.registrations.values()) {
+        if (registration.def.wire === undefined) continue
+        const current = registration.cells.get(session) as UnitCell
+        values[registration.def.key] = this.viewCell(registration, current)
       }
       return { asOfSeq: endSeq, values }
     }
@@ -587,7 +579,6 @@ export class SessionProjectionRegistry extends Service {
       baseSeq,
       session.header,
       session.inheritedEventCount,
-      projectionMode,
     )
     for (const registration of this.registrations.values()) {
       const row = restored.checkpoint[registration.def.key]

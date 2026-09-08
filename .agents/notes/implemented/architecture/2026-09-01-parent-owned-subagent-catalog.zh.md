@@ -38,6 +38,6 @@ snapshot normalizer 会把 `childCreatedAt` 归零，因为它来自 process clo
 
 ## 后果
 
-调用方可以向 `observeSession` 请求 `projectionStateKeys: ['subagentCatalog']`。实时观察克隆 registry 维护中的 state；冷观察 hydrate 已准备的 Session，并在观察 cursor 处分离出同一 state。仅读取 host state 时，`projectionMode: 'none'` 会传递到检查点 hydration，包括缓存复用和损坏 row 的恢复；无关 wire view 不会被计算或校验。Hydration 只接受 `all` 或 `none`，因为观察不会请求单独的客户端视图 key。直接子级和后代列表仍使用 Session 语料库与子级身份 projection。
+默认 Session 观察在返回客户端视图的同时，通过 `projectionStates` 暴露全部已注册 host state。注册表现有的 `checkpoint` 操作提供独立状态值，无需 key 选择参数或额外 hydration 模式。`projectionMode: 'none'` 保留不执行投影的行为。直接子级和后代列表仍使用 Session 语料库与子级身份 projection。
 
 不认识该 required event 的 backend 会按既有 Session event 机制拒绝日志。pre-release format policy 不要求为旧日志保留 fallback scan。

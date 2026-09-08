@@ -651,41 +651,6 @@ describe('SessionProjectionCache cold-read seeding', () => {
     })
   })
 
-  it.each(['matching', 'malformed', 'absent'])('hydrates host states without client views from a %s checkpoint', async (record) => {
-    const root = await mkdtemp(join(tmpdir(), 'dsh-projcache-'))
-    roots.push(root)
-    const id = SessionId('selected-views')
-    if (record !== 'absent') {
-      await seedRecord(root, id, {
-        'cache-test/marks': { ver: 1, seq: SessionSeq(1), val: { marks: record === 'matching' ? ['cached'] : 'malformed' } },
-      })
-    }
-    const { cache, ctx } = await harness({ root })
-    const view = vi.fn(secondaryMarksUnit.wire.view)
-    const schema = secondaryMarksUnit.wire.viewSchema.clone()
-    const parseView = vi.spyOn(schema, 'parse')
-    ctx.sessionProjections.register({
-      ...secondaryMarksUnit,
-      wire: { viewSchema: schema, view },
-    })
-    const events = storedLog([['fresh']])
-    const session = Session.create(id, events, headerOf(id))
-    const marks = { marks: [record === 'matching' ? 'cached' : 'fresh'] }
-
-    for (let read = 0; read < 2; read++) {
-      expect(cache.hydratePrepared(session, events, 'none')).toEqual({ asOfSeq: 2, values: {} })
-      expect(ctx.sessionProjections.stateOf(session, 'cache-test/marks')).toEqual(marks)
-      expect(ctx.sessionProjections.stateOf(session, 'cache-test/secondary-marks')).toEqual({ marks: ['fresh'] })
-      expect(view).not.toHaveBeenCalled()
-      expect(parseView).not.toHaveBeenCalled()
-    }
-    expect(cache.hydratePrepared(session, events).values).toEqual({
-      'cache-test/marks': marks,
-      'cache-test/secondary-marks': { marks: ['fresh'] },
-    })
-    expect(view).toHaveBeenCalledOnce()
-  })
-
   it('coldSnapshot traverses the full log but applies only the events after each cached watermark', async () => {
     const root = await mkdtemp(join(tmpdir(), 'dsh-projcache-'))
     roots.push(root)

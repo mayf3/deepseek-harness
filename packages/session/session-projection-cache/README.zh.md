@@ -52,8 +52,6 @@ kind: "package-reference"
 
 本插件注入 `storageDomain`、`sessionProjections` 与 `sessions`。生成的[配置目录](../../../docs/config-catalog.zh.md#deepseek-aidsh-session-projection-cache)是每个受支持字段及其 JSDoc 的穷尽式真源。
 
-`hydratePrepared` 从检查点与事件尾部恢复所有状态。其 `projectionMode` 默认为 `all`；`none` 会跳过客户端视图的计算与校验，即使检查点损坏、需要重新折叠完整日志也如此。
-
 ### 检查点如何写入
 
 三个必写点总是写入：会话创建保存由种子派生的切面，`turn/end` 保存列表读取所需的轮次终值，会话释放保存最终实时切面。其间，配置的条数与间隔节流随事件累积写入。每次写入通过领域写入链以原子方式替换该会话的完整记录；失败会记录警告并让缓存保持陈旧，后续写入会自行修复。
@@ -123,7 +121,6 @@ kind: "package-reference"
 ## 已知限制与延期工作
 
 <a id="known-limitations-and-deferred-work"></a>
-
 
 这些限制说明缓存何时需要运维注意。它们是当前包约束，不是任务积压。
 

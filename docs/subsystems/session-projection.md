@@ -163,10 +163,9 @@ cachedPredecessorTitle( meta: SessionHeader, inheritedEventCount: SessionLogOffs
  * because the logical observation may contain recovery events not yet durable.
  * @param session - exact unpublished Session retained by persistence.
  * @param events - exact logical event prefix represented by the observation.
- * @param projectionMode - `none` hydrates every state without computing or validating client views; defaults to `all`.
- * @returns the event cut with all client views, or empty values in `none` mode.
+ * @returns all projection values at the event cut.
  */
-hydratePrepared( session: Session, events: readonly SessionEvent[], projectionMode: 'all' | 'none' = 'all', ): ProjectionSnapshot
+hydratePrepared( session: Session, events: readonly SessionEvent[], ): ProjectionSnapshot
 
 /**
  * Durably checkpoint one live session NOW (all mandatory points call
@@ -330,12 +329,11 @@ viewCheckpoint( checkpoint: ProjectionCheckpoint, keys?: readonly Extract<keyof 
  * @param baseSeq - the seq `events` starts at (its first event's seq when non-empty).
  * @param header - immutable metadata for the Session being restored.
  * @param inheritedEventCount - exact fork-inherited prefix length supplied to unit initialization.
- * @param projectionMode - `none` restores every state without computing or validating client views; defaults to `all`.
  * @returns the snapshot cut at the supplied log end (`asOfSeq` is the last
  *   supplied event's seq, `baseSeq - 1` for an empty tail) plus the
  *   refreshed checkpoint rows at that cut, ready for a durable write-back.
  */
-restore( checkpoint: ProjectionCheckpoint, events: readonly SessionEvent[], baseSeq: SessionLogOffset, header: SessionHeader, inheritedEventCount: SessionLogOffset, projectionMode: 'all' | 'none' = 'all', ): { snapshot: ProjectionSnapshot; checkpoint: ProjectionCheckpoint }
+restore( checkpoint: ProjectionCheckpoint, events: readonly SessionEvent[], baseSeq: SessionLogOffset, header: SessionHeader, inheritedEventCount: SessionLogOffset, ): { snapshot: ProjectionSnapshot; checkpoint: ProjectionCheckpoint }
 
 /**
  * Restore an exact cut and install its states on the supplied prepared Session.
@@ -345,10 +343,9 @@ restore( checkpoint: ProjectionCheckpoint, events: readonly SessionEvent[], base
  * @param checkpoint - persisted rows for this Session lifecycle.
  * @param events - exact events at the observation cut.
  * @param baseSeq - first supplied event sequence.
- * @param projectionMode - `none` installs every state without computing or validating client views; defaults to `all`.
- * @returns the supplied cut with all client views, or empty values in `none` mode.
+ * @returns all projection values at the supplied cut.
  */
-hydrate( session: Session, checkpoint: ProjectionCheckpoint, events: readonly SessionEvent[], baseSeq: SessionLogOffset, projectionMode: 'all' | 'none' = 'all', ): ProjectionSnapshot
+hydrate( session: Session, checkpoint: ProjectionCheckpoint, events: readonly SessionEvent[], baseSeq: SessionLogOffset, ): ProjectionSnapshot
 ```
 
 Types: [Session](session.md) · [SessionEvent](session.md) · [SessionHeader](persistence.md) · [SessionLogOffset](session.md)
