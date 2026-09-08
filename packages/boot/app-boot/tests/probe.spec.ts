@@ -9,7 +9,7 @@ import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { PLUGIN_PROBE_DIR, probePackage, readProbeCache, writeProbeCache, type PluginProbe } from '../src/index.ts'
 import { PLUGIN_PROBE_FORMAT } from '../src/probe.ts'
-import { cordisPackageDir, parseProbeRecord } from '../src/probe.ts'
+import { cordisPackageDir, parseProbeRecord, StreamTail } from '../src/probe.ts'
 import { parseChildReport, type ChildReport } from '../src/probe-report.ts'
 
 const NAME = 'dsh-test-bin'
@@ -338,5 +338,24 @@ describe('parseChildReport', () => {
     ]
     for (const fields of broken) expect(parseChildReport({ ...report, ...fields }), JSON.stringify(fields)).toBeUndefined()
     expect(parseChildReport('report')).toBeUndefined()
+  })
+})
+
+describe('StreamTail', () => {
+  it('keeps the end of one oversized chunk and what a later small chunk pushes out of it', () => {
+    // Linux hands the parent a flood as one read; the marker written after it arrives alone.
+    const tail = new StreamTail(16)
+    tail.push(Buffer.from('x'.repeat(200)))
+    tail.push(Buffer.from('tail-marker'))
+    expect(tail.text()).toBe('xxxxxtail-marker')
+  })
+
+  it('drops whole leading chunks before trimming the oldest kept one', () => {
+    // macOS drains a flood in small reads: the kept chunks are the last few.
+    const tail = new StreamTail(10)
+    for (const piece of ['abcd', 'efgh', 'ijkl', 'mn']) tail.push(Buffer.from(piece))
+    expect(tail.text()).toBe('efghijklmn')
+    tail.push(Buffer.from('opq'))
+    expect(tail.text()).toBe('hijklmnopq')
   })
 })
