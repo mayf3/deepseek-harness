@@ -83,8 +83,8 @@ export interface TypeApiEntry {
 export const SERVICE_API: readonly ServiceApiEntry[] = [
   {
     key: 'layout',
-    summary: 'The outward layout face (`ctx.layout`): the panel transitions other plugins may trigger — and exactly what a test fake must supply.',
-    description: 'The outward layout face (`ctx.layout`): the panel transitions other plugins may trigger — and exactly what a test fake must supply. The attachPanels wiring hook stays on the concrete class (root-entry assembly only).',
+    summary: 'Panel navigation and geometry actions exposed through ctx.layout.',
+    description: 'Panel navigation and geometry actions exposed through ctx.layout.',
     methods: [
       {
         signature: 'toggleSidebar(): void',

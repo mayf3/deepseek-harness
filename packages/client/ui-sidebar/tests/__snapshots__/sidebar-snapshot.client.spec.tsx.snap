@@ -60,35 +60,6 @@ exports[`sidebar shell snapshots > renders the collapsed rail after the crossfad
         xmlns="http://www.w3.org/2000/svg"
       />
     </button>
-    <nav
-      aria-label="Global panels"
-      class="panelList"
-    >
-      <button
-        aria-label="Hello World"
-        class="panelRow"
-        type="button"
-      >
-        <span
-          aria-hidden="true"
-          class="panelGlyph"
-        >
-          <div
-            data-slot="sidebar.panellist"
-            style="display: contents;"
-          >
-            <svg
-              data-content="f23fa4b8"
-              fill="none"
-              height="18"
-              viewBox="0 0 14 14"
-              width="18"
-              xmlns="http://www.w3.org/2000/svg"
-            />
-          </div>
-        </span>
-      </button>
-    </nav>
     <div
       class="regionArea"
     >
@@ -219,45 +190,6 @@ exports[`sidebar shell snapshots > renders the expanded column (wordmark, capsul
         New Session
       </span>
     </button>
-    <nav
-      aria-label="Global panels"
-      class="panelList"
-    >
-      <button
-        aria-label="Hello World"
-        class="panelRow"
-        type="button"
-      >
-        <span
-          aria-hidden="true"
-          class="panelGlyph"
-        >
-          <div
-            data-slot="sidebar.panellist"
-            style="display: contents;"
-          >
-            <svg
-              data-content="f23fa4b8"
-              fill="none"
-              height="16"
-              viewBox="0 0 14 14"
-              width="16"
-              xmlns="http://www.w3.org/2000/svg"
-            />
-          </div>
-        </span>
-        <span
-          class="panelTitle wide"
-        >
-          <div
-            data-slot="sidebar.panellist.title"
-            style="display: contents;"
-          >
-            Hello World
-          </div>
-        </span>
-      </button>
-    </nav>
     <div
       class="regionArea"
     >
@@ -388,45 +320,6 @@ exports[`sidebar shell snapshots > renders the expanded column in the default lo
         新会话
       </span>
     </button>
-    <nav
-      aria-label="全局面板"
-      class="panelList"
-    >
-      <button
-        aria-label="Hello World"
-        class="panelRow"
-        type="button"
-      >
-        <span
-          aria-hidden="true"
-          class="panelGlyph"
-        >
-          <div
-            data-slot="sidebar.panellist"
-            style="display: contents;"
-          >
-            <svg
-              data-content="f23fa4b8"
-              fill="none"
-              height="16"
-              viewBox="0 0 14 14"
-              width="16"
-              xmlns="http://www.w3.org/2000/svg"
-            />
-          </div>
-        </span>
-        <span
-          class="panelTitle wide"
-        >
-          <div
-            data-slot="sidebar.panellist.title"
-            style="display: contents;"
-          >
-            Hello World
-          </div>
-        </span>
-      </button>
-    </nav>
     <div
       class="regionArea"
     >

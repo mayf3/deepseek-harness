@@ -57,9 +57,8 @@ describe('ui-sidebar apply', () => {
     expect(b.slots.entries('sidebar')[0]!.locale).toBe('sidebar')
     const injected = (b.slots.entries('sidebar')[0]!.inject as () => SidebarRootInjected)()
     expect(Object.keys(injected)).toEqual(['startSession', 'toggleSidebar', 'selectPanel', 'hooks'])
-    expect(injected.hooks.panels.getSnapshot()).toEqual([
-      { id: 'hello-world', order: 100, label: 'Hello World' },
-    ])
+    expect(injected.hooks.panels.getSnapshot()).toEqual([])
+    expect(b.slots.entries('main')).toEqual([])
     // Both arms delegate to the Workspace UI's shared New Session action.
     injected.startSession('workspace' as never)
     expect(b.uiWorkspace.startSession).toHaveBeenCalledWith('workspace')
@@ -81,6 +80,37 @@ describe('ui-sidebar apply', () => {
     expect(b.slots.entries('sidebar')).toHaveLength(1)
     disposeRoot()
     await fiber.dispose()
+  })
+
+  it('projects plugin-owned panel entries and removes them with their owner', async () => {
+    const b = await bench()
+    const sidebar = b.ctx.plugin({ inject: [...inject], apply })
+    await sidebar.await()
+    const injected = (b.slots.entries('sidebar')[0]!.inject as () => SidebarRootInjected)()
+    const panel = b.ctx.plugin({
+      inject: ['slots'],
+      apply(ctx: Context) {
+        ctx.slots.register({ name: 'main', key: 'custom-panel' }, () => 'Custom panel')
+        ctx.slots.register({
+          name: 'sidebar.panellist', id: 'custom-panel', order: 20, label: 'Custom panel',
+        }, () => null)
+      },
+    })
+    try {
+      await panel.await()
+      await vi.waitFor(() => {
+        expect(injected.hooks.panels.getSnapshot()).toEqual([
+          { id: 'custom-panel', order: 20, label: 'Custom panel' },
+        ])
+      })
+      expect(b.slots.entries('main').map(entry => entry.options.key)).toEqual(['custom-panel'])
+      await panel.dispose()
+      await vi.waitFor(() => { expect(injected.hooks.panels.getSnapshot()).toEqual([]) })
+      expect(b.slots.entries('main')).toEqual([])
+    } finally {
+      await panel.dispose()
+      await sidebar.dispose()
+    }
   })
 
   it('removes the entry and child declaration on teardown', async () => {

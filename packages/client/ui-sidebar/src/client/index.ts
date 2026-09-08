@@ -1,4 +1,4 @@
-/** Registers the sidebar shell, global panel navigation, and Hello World panel. */
+/** Registers the sidebar shell and global panel navigation. */
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import { resolveSlotLabel } from '@deepseek-ai/dsh-client-ui-slots'
@@ -10,7 +10,6 @@ import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 // Type-only: pulls the Session root standard-props merge.
 import type {} from '@deepseek-ai/dsh-client-ui-session/client'
 import type { SidebarPanelMetadata, SidebarRootInjected } from './contract/slots.ts'
-import { HelloWorldIcon, HelloWorldPanel } from './hello-world/HelloWorldPanel.tsx'
 import { SidebarRoot } from './SidebarRoot.tsx'
 import { en, zh, type SidebarKey } from './locales.ts'
 
@@ -31,8 +30,6 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 /** Dictionary namespace owned by this plugin. */
 const NS = 'sidebar'
 
-const HELLO_WORLD_PANEL_ID = 'hello-world' as MainPanelId
-
 interface WorkspaceNavigation {
   startSession(workspaceId?: Parameters<SidebarRootInjected['startSession']>[0]): void
 }
@@ -46,7 +43,6 @@ export const inject = ['slots', 'layout', 'uiWorkspace', 'locale']
 export function apply(ctx: ClientContext): void {
   const workspaceNavigation = ctx.get('uiWorkspace') as unknown as WorkspaceNavigation
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-sidebar: dictionaries')
-  const t = ctx.locale.bind(NS)
   const panels = createSnapshotStore<readonly SidebarPanelMetadata[]>([])
   const syncPanels = (): void => {
     const next = ctx.slots.entriesOfSlot('sidebar.panellist').map(({ options }) => {
@@ -86,16 +82,5 @@ export function apply(ctx: ClientContext): void {
     },
     inject: injectProps,
   }, SidebarRoot))
-  ctx.slots.inject('main', () => ctx.slots.register({
-    name: 'main',
-    key: HELLO_WORLD_PANEL_ID,
-    locale: NS,
-  }, HelloWorldPanel))
-  ctx.slots.inject('sidebar.panellist', () => ctx.slots.register({
-    name: 'sidebar.panellist',
-    id: HELLO_WORLD_PANEL_ID,
-    order: 100,
-    label: () => t('panel.helloWorld.title'),
-  }, HelloWorldIcon))
   syncPanels()
 }
