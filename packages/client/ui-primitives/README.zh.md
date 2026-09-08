@@ -25,6 +25,8 @@ kind: "package-library"
 <a id="use-this-package"></a>
 ## 使用本包
 
+本包是 Web 壳的构建输入。静态 ESM 为 Vite 保留第三方导入和样式；独立消费方自行提供开发依赖（[依赖规则](../AGENTS.md#dependency-declaration)）。
+
 只要 Web 客户端需要标准控件或 agent 输出渲染器，就用这些原子组件拼装功能 UI。它们只经 React 渲染，并从主题取得 `--dsw-*` 设计 token，因此无需导入主题或 slot 系统即可适配任意插件。
 
 <a id="component-catalog"></a>

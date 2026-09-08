@@ -2192,17 +2192,16 @@ importers:
         version: link:../../typert/protocol
 
   packages/client/store:
-    dependencies:
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:^
+        version: link:../../../vendor/cordis
       immer:
         specifier: ^10.1.1
         version: 10.2.0
       zustand:
         specifier: ~4.4.7
         version: 4.4.7(@types/react@18.3.31)(immer@10.2.0)(react@18.3.1)
-    devDependencies:
-      '@deepseek-ai/cordis':
-        specifier: workspace:^
-        version: link:../../../vendor/cordis
 
   packages/client/ui-agent-preset:
     devDependencies:
@@ -2307,10 +2306,6 @@ importers:
         version: 18.3.1
 
   packages/client/ui-attachment:
-    dependencies:
-      clsx:
-        specifier: ^2.0.0
-        version: 2.1.1
     devDependencies:
       '@deepseek-ai/cordis':
         specifier: workspace:^
@@ -2345,6 +2340,9 @@ importers:
       '@types/react-dom':
         specifier: ~18.3.0
         version: 18.3.7(@types/react@18.3.31)
+      clsx:
+        specifier: ^2.0.0
+        version: 2.1.1
       react:
         specifier: ^18.2.0
         version: 18.3.1
@@ -2492,10 +2490,6 @@ importers:
         version: 18.3.1(react@18.3.1)
 
   packages/client/ui-commands:
-    dependencies:
-      clsx:
-        specifier: ^2.0.0
-        version: 2.1.1
     devDependencies:
       '@deepseek-ai/cordis':
         specifier: workspace:^
@@ -2545,6 +2539,9 @@ importers:
       '@types/react':
         specifier: ~18.3.1
         version: 18.3.31
+      clsx:
+        specifier: ^2.0.0
+        version: 2.1.1
       react:
         specifier: ^18.2.0
         version: 18.3.1
@@ -2554,24 +2551,6 @@ importers:
       '@deepseek-ai/schemastery':
         specifier: link:../../../vendor/schemastery
         version: link:../../../vendor/schemastery
-      '@lexical/history':
-        specifier: ^0.49.0
-        version: 0.49.0(typescript@6.0.3)
-      '@lexical/plain-text':
-        specifier: ^0.49.0
-        version: 0.49.0(typescript@6.0.3)
-      '@lexical/text':
-        specifier: ^0.49.0
-        version: 0.49.0(typescript@6.0.3)
-      '@lexical/utils':
-        specifier: ^0.49.0
-        version: 0.49.0(typescript@6.0.3)
-      clsx:
-        specifier: ^2.0.0
-        version: 2.1.1
-      lexical:
-        specifier: ^0.49.0
-        version: 0.49.0(typescript@6.0.3)
     devDependencies:
       '@deepseek-ai/cordis':
         specifier: workspace:^
@@ -2666,12 +2645,30 @@ importers:
       '@lexical/headless':
         specifier: ^0.49.0
         version: 0.49.0(typescript@6.0.3)
+      '@lexical/history':
+        specifier: ^0.49.0
+        version: 0.49.0(typescript@6.0.3)
+      '@lexical/plain-text':
+        specifier: ^0.49.0
+        version: 0.49.0(typescript@6.0.3)
+      '@lexical/text':
+        specifier: ^0.49.0
+        version: 0.49.0(typescript@6.0.3)
+      '@lexical/utils':
+        specifier: ^0.49.0
+        version: 0.49.0(typescript@6.0.3)
       '@types/react':
         specifier: ~18.3.1
         version: 18.3.31
       '@types/react-dom':
         specifier: ~18.3.0
         version: 18.3.7(@types/react@18.3.31)
+      clsx:
+        specifier: ^2.0.0
+        version: 2.1.1
+      lexical:
+        specifier: ^0.49.0
+        version: 0.49.0(typescript@6.0.3)
       react:
         specifier: ^18.2.0
         version: 18.3.1
@@ -2731,10 +2728,6 @@ importers:
         version: 18.3.1
 
   packages/client/ui-directory-picker-browse:
-    dependencies:
-      clsx:
-        specifier: ^2.0.0
-        version: 2.1.1
     devDependencies:
       '@deepseek-ai/cordis':
         specifier: workspace:^
@@ -2766,6 +2759,9 @@ importers:
       '@types/react':
         specifier: ~18.3.1
         version: 18.3.31
+      clsx:
+        specifier: ^2.0.0
+        version: 2.1.1
       react:
         specifier: ^18.2.0
         version: 18.3.1
@@ -2798,16 +2794,6 @@ importers:
         version: 18.3.1(react@18.3.1)
 
   packages/client/ui-dockkit:
-    dependencies:
-      clsx:
-        specifier: ^2.0.0
-        version: 2.1.1
-      react:
-        specifier: ^18.2.0
-        version: 18.3.1
-      react-dom:
-        specifier: ^18.2.0
-        version: 18.3.1(react@18.3.1)
     devDependencies:
       '@deepseek-ai/cordis':
         specifier: workspace:^
@@ -2824,6 +2810,15 @@ importers:
       '@types/react-dom':
         specifier: ~18.3.0
         version: 18.3.7(@types/react@18.3.31)
+      clsx:
+        specifier: ^2.0.0
+        version: 2.1.1
+      react:
+        specifier: ^18.2.0
+        version: 18.3.1
+      react-dom:
+        specifier: ^18.2.0
+        version: 18.3.1(react@18.3.1)
 
   packages/client/ui-goal:
     devDependencies:
@@ -2886,10 +2881,6 @@ importers:
         version: 18.3.1(react@18.3.1)
 
   packages/client/ui-input-trigger:
-    dependencies:
-      clsx:
-        specifier: ^2.0.0
-        version: 2.1.1
     devDependencies:
       '@deepseek-ai/cordis':
         specifier: workspace:^
@@ -2930,6 +2921,9 @@ importers:
       '@types/react':
         specifier: ~18.3.1
         version: 18.3.31
+      clsx:
+        specifier: ^2.0.0
+        version: 2.1.1
       react:
         specifier: ^18.2.0
         version: 18.3.1
@@ -3064,10 +3058,6 @@ importers:
         version: 18.3.1(react@18.3.1)
 
   packages/client/ui-model-selection:
-    dependencies:
-      clsx:
-        specifier: ^2.1.1
-        version: 2.1.1
     devDependencies:
       '@deepseek-ai/cordis':
         specifier: workspace:^
@@ -3120,6 +3110,9 @@ importers:
       '@types/react-dom':
         specifier: ~18.3.0
         version: 18.3.7(@types/react@18.3.31)
+      clsx:
+        specifier: ^2.1.1
+        version: 2.1.1
       react:
         specifier: ^18.2.0
         version: 18.3.1
@@ -3266,13 +3259,22 @@ importers:
         version: 18.3.1
 
   packages/client/ui-primitives:
-    dependencies:
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:^
+        version: link:../../../vendor/cordis
       '@shikijs/langs':
         specifier: ^4.3.1
         version: 4.3.1
       '@types/mdast':
         specifier: ^4.0.4
         version: 4.0.4
+      '@types/react':
+        specifier: ~18.3.1
+        version: 18.3.31
+      '@types/react-dom':
+        specifier: ~18.3.0
+        version: 18.3.7(@types/react@18.3.31)
       anser:
         specifier: ^2.3.5
         version: 2.3.5
@@ -3327,16 +3329,6 @@ importers:
       shiki:
         specifier: ^4.3.1
         version: 4.3.1
-    devDependencies:
-      '@deepseek-ai/cordis':
-        specifier: workspace:^
-        version: link:../../../vendor/cordis
-      '@types/react':
-        specifier: ~18.3.1
-        version: 18.3.31
-      '@types/react-dom':
-        specifier: ~18.3.0
-        version: 18.3.7(@types/react@18.3.31)
 
   packages/client/ui-reference:
     devDependencies:
@@ -3381,10 +3373,6 @@ importers:
         version: link:../../util/workspace-path
 
   packages/client/ui-renderer:
-    dependencies:
-      use-sync-external-store:
-        specifier: 1.2.0
-        version: 1.2.0(react@18.3.1)
     devDependencies:
       '@deepseek-ai/cordis':
         specifier: workspace:^
@@ -3413,6 +3401,9 @@ importers:
       react-dom:
         specifier: ^18.2.0
         version: 18.3.1(react@18.3.1)
+      use-sync-external-store:
+        specifier: 1.2.0
+        version: 1.2.0(react@18.3.1)
 
   packages/client/ui-schedule:
     devDependencies:
@@ -3530,9 +3521,6 @@ importers:
       '@deepseek-ai/schemastery':
         specifier: link:../../../vendor/schemastery
         version: link:../../../vendor/schemastery
-      clsx:
-        specifier: ^2.0.0
-        version: 2.1.1
     devDependencies:
       '@deepseek-ai/cordis':
         specifier: workspace:^
@@ -3576,6 +3564,9 @@ importers:
       '@types/react':
         specifier: ~18.3.1
         version: 18.3.31
+      clsx:
+        specifier: ^2.0.0
+        version: 2.1.1
       react:
         specifier: ^18.2.0
         version: 18.3.1
@@ -3665,10 +3656,6 @@ importers:
         version: 18.3.1(react@18.3.1)
 
   packages/client/ui-settings-plugins:
-    dependencies:
-      clsx:
-        specifier: ^2.0.0
-        version: 2.1.1
     devDependencies:
       '@deepseek-ai/cordis':
         specifier: workspace:^
@@ -3700,15 +3687,14 @@ importers:
       '@types/react':
         specifier: ~18.3.1
         version: 18.3.31
+      clsx:
+        specifier: ^2.0.0
+        version: 2.1.1
       react:
         specifier: ^18.2.0
         version: 18.3.1
 
   packages/client/ui-sidebar:
-    dependencies:
-      clsx:
-        specifier: ^2.0.0
-        version: 2.1.1
     devDependencies:
       '@deepseek-ai/cordis':
         specifier: workspace:^
@@ -3746,21 +3732,14 @@ importers:
       '@types/react':
         specifier: ~18.3.1
         version: 18.3.31
-      react:
-        specifier: ^18.2.0
-        version: 18.3.1
-
-  packages/client/ui-sidebar-files:
-    dependencies:
       clsx:
         specifier: ^2.0.0
         version: 2.1.1
       react:
         specifier: ^18.2.0
         version: 18.3.1
-      react-dom:
-        specifier: ^18.2.0
-        version: 18.3.1(react@18.3.1)
+
+  packages/client/ui-sidebar-files:
     devDependencies:
       '@deepseek-ai/cordis':
         specifier: workspace:^
@@ -3813,21 +3792,17 @@ importers:
       '@types/react-dom':
         specifier: ~18.3.0
         version: 18.3.7(@types/react@18.3.31)
-
-  packages/client/ui-sidebar-right:
-    dependencies:
       clsx:
         specifier: ^2.0.0
         version: 2.1.1
-      picomatch:
-        specifier: ^4.0.4
-        version: 4.0.4
       react:
         specifier: ^18.2.0
         version: 18.3.1
       react-dom:
         specifier: ^18.2.0
         version: 18.3.1(react@18.3.1)
+
+  packages/client/ui-sidebar-right:
     devDependencies:
       '@deepseek-ai/cordis':
         specifier: workspace:^
@@ -3883,18 +3858,20 @@ importers:
       '@types/react-dom':
         specifier: ~18.3.0
         version: 18.3.7(@types/react@18.3.31)
-
-  packages/client/ui-sidebar-textpreview:
-    dependencies:
       clsx:
         specifier: ^2.0.0
         version: 2.1.1
+      picomatch:
+        specifier: ^4.0.4
+        version: 4.0.4
       react:
         specifier: ^18.2.0
         version: 18.3.1
       react-dom:
         specifier: ^18.2.0
         version: 18.3.1(react@18.3.1)
+
+  packages/client/ui-sidebar-textpreview:
     devDependencies:
       '@deepseek-ai/cordis':
         specifier: workspace:^
@@ -3950,6 +3927,15 @@ importers:
       '@types/react-dom':
         specifier: ~18.3.0
         version: 18.3.7(@types/react@18.3.31)
+      clsx:
+        specifier: ^2.0.0
+        version: 2.1.1
+      react:
+        specifier: ^18.2.0
+        version: 18.3.1
+      react-dom:
+        specifier: ^18.2.0
+        version: 18.3.1(react@18.3.1)
 
   packages/client/ui-skill:
     devDependencies:
@@ -4076,9 +4062,6 @@ importers:
       '@deepseek-ai/schemastery':
         specifier: link:../../../vendor/schemastery
         version: link:../../../vendor/schemastery
-      clsx:
-        specifier: ^2.0.0
-        version: 2.1.1
     devDependencies:
       '@deepseek-ai/cordis':
         specifier: workspace:^
@@ -4119,15 +4102,14 @@ importers:
       '@types/react':
         specifier: ~18.3.1
         version: 18.3.31
+      clsx:
+        specifier: ^2.0.0
+        version: 2.1.1
       react:
         specifier: ^18.2.0
         version: 18.3.1
 
   packages/client/ui-tool:
-    dependencies:
-      clsx:
-        specifier: ^2.0.0
-        version: 2.1.1
     devDependencies:
       '@deepseek-ai/cordis':
         specifier: workspace:^
@@ -4201,6 +4183,9 @@ importers:
       '@types/react':
         specifier: ~18.3.1
         version: 18.3.31
+      clsx:
+        specifier: ^2.0.0
+        version: 2.1.1
       react:
         specifier: ^18.2.0
         version: 18.3.1
@@ -4209,13 +4194,6 @@ importers:
         version: 18.3.1(react@18.3.1)
 
   packages/client/ui-trajectory:
-    dependencies:
-      '@tanstack/react-virtual':
-        specifier: ^3.14.9
-        version: 3.14.9(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
-      diff:
-        specifier: ^9.0.0
-        version: 9.0.0
     devDependencies:
       '@deepseek-ai/cordis':
         specifier: workspace:^
@@ -4268,12 +4246,18 @@ importers:
       '@deepseek-ai/dsh-tools':
         specifier: workspace:^
         version: link:../../core/tools
+      '@tanstack/react-virtual':
+        specifier: ^3.14.9
+        version: 3.14.9(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
       '@types/react':
         specifier: ~18.3.1
         version: 18.3.31
       '@types/react-dom':
         specifier: ~18.3.0
         version: 18.3.7(@types/react@18.3.31)
+      diff:
+        specifier: ^9.0.0
+        version: 9.0.0
       react:
         specifier: ^18.2.0
         version: 18.3.1
@@ -4282,10 +4266,6 @@ importers:
         version: 18.3.1(react@18.3.1)
 
   packages/client/ui-user-questions:
-    dependencies:
-      clsx:
-        specifier: ^2.0.0
-        version: 2.1.1
     devDependencies:
       '@deepseek-ai/cordis':
         specifier: workspace:^
@@ -4341,6 +4321,9 @@ importers:
       '@types/react':
         specifier: ~18.3.1
         version: 18.3.31
+      clsx:
+        specifier: ^2.0.0
+        version: 2.1.1
       react:
         specifier: ^18.2.0
         version: 18.3.1
@@ -4397,10 +4380,6 @@ importers:
         version: 18.3.1
 
   packages/client/ui-workspace:
-    dependencies:
-      clsx:
-        specifier: ^2.0.0
-        version: 2.1.1
     devDependencies:
       '@deepseek-ai/cordis':
         specifier: workspace:^
@@ -4462,6 +4441,9 @@ importers:
       '@types/react':
         specifier: ~18.3.1
         version: 18.3.31
+      clsx:
+        specifier: ^2.0.0
+        version: 2.1.1
       react:
         specifier: ^18.2.0
         version: 18.3.1
