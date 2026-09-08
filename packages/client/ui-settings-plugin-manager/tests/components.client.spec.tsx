@@ -193,7 +193,13 @@ describe('PluginManagerSettingsTab', () => {
             { entryId: 'include:crash', rowId: 'crash', moduleName: 'dsh-better-sidebar/crash', enabled: true, phase: 'failed', failure: { stage: 'apply', message: 'boom' } },
             { entryId: 'include:flaky', rowId: 'flaky', moduleName: 'dsh-better-sidebar/flaky', enabled: true, phase: 'failed' },
             { entryId: 'include:idle', rowId: 'idle', moduleName: 'dsh-better-sidebar/idle', enabled: true, phase: null },
+            { entryId: 'include:wait', rowId: 'wait', moduleName: 'dsh-better-sidebar/wait', enabled: true, phase: 'pending' },
+            { entryId: 'include:recorded', rowId: 'recorded', moduleName: 'dsh-better-sidebar/recorded', enabled: true, phase: null, failure: { stage: 'inject-pending', message: 'pending (waiting for service: authorization)' } },
           ],
+        }),
+        pkg({
+          name: 'waiting-pack', status: 'partial', reason: 'pending (waiting for service: authorization)',
+          rows: [{ entryId: 'include:w1', rowId: 'w1', moduleName: 'waiting-pack', enabled: true, phase: null, failure: { stage: 'inject-pending', message: 'pending (waiting for service: authorization)' } }],
         }),
         pkg({ name: 'no-rows', enabled: false, status: 'disabled' }),
         pkg({ name: 'dsh-tool-foo', kind: 'plugin', status: 'plain' }),
@@ -203,6 +209,8 @@ describe('PluginManagerSettingsTab', () => {
         }),
       ],
     })
+    // A pack whose only trouble is a row waiting for a service is tagged as waiting, not as a problem.
+    expect(screen.getByText(en.statusWaiting)).toBeTruthy()
     // The list and its toolbar give way to the page; the crumb leads back.
     fireEvent.click(screen.getByRole('button', { name: 'View better-sidebar' }))
     expect(screen.queryByRole('button', { name: en.addPlugin })).toBeNull()
@@ -211,7 +219,7 @@ describe('PluginManagerSettingsTab', () => {
     expect(screen.getByText('0.16.0')).toBeTruthy()
     expect(screen.getByText(en.sourceExternal)).toBeTruthy()
     // Every row in the pack's order: its id over the module it loads, then its state; a failure adds its message.
-    expect(screen.getByText('6 total · 1 running · 2 off · 2 failed')).toBeTruthy()
+    expect(screen.getByText('8 total · 1 running · 2 waiting · 2 off · 2 failed')).toBeTruthy()
     const rowText = (id: string): string | undefined => document.querySelector(`[data-plugin-row="include:${id}"]`)?.textContent
     expect(rowText('better-sidebar')).toBe(`better-sidebardsh-better-sidebar${en.rowPhaseActive}`)
     expect(rowText('off')).toBe(`offdsh-better-sidebar/off${en.partDisabledByUser}`)
@@ -219,6 +227,11 @@ describe('PluginManagerSettingsTab', () => {
     expect(rowText('crash')).toBe(`crashdsh-better-sidebar/crash${en.rowStateFailed}boom`)
     expect(rowText('flaky')).toBe(`flakydsh-better-sidebar/flaky${en.rowStateFailed}`)
     expect(rowText('idle')).toBe(`idledsh-better-sidebar/idle${en.rowStateIdle}`)
+    // A wait for a service reads the same whether the fiber is pending or a composition recorded the wait.
+    expect(rowText('wait')).toBe(`waitdsh-better-sidebar/wait${en.rowPhasePending}`)
+    expect(rowText('recorded')).toBe(`recordeddsh-better-sidebar/recorded${en.rowPhasePending}pending (waiting for service: authorization)`)
+    expect(document.querySelector('[data-plugin-row="include:wait"]')?.getAttribute('data-state')).toBe('waiting')
+    expect(document.querySelector('[data-plugin-row="include:recorded"]')?.getAttribute('data-state')).toBe('waiting')
     expect(document.querySelector('[data-plugin-row="include:off"]')?.getAttribute('data-state')).toBe('off')
     expect(document.querySelector('[data-plugin-row="include:crash"]')?.getAttribute('data-state')).toBe('failed')
     // A short list has no filter; the built-in rows the pack changes are named.
@@ -239,6 +252,11 @@ describe('PluginManagerSettingsTab', () => {
     expect(screen.queryByText(en.partsLabel)).toBeNull()
     expect(screen.getByRole('button', { name: en.addPlugin })).toBeTruthy()
 
+    // The waiting pack's page keeps the wait on its row and repeats no reason above the facts.
+    fireEvent.click(screen.getByRole('button', { name: 'View waiting-pack' }))
+    expect(screen.queryByText(`${en.reasonLabel}: pending (waiting for service: authorization)`)).toBeNull()
+    expect(screen.getByText('1 total · 1 waiting')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: en.backToList }))
     // A pack without rows says so; a plugin's page has no rows section; a
     // built-in pack retries but never uninstalls.
     fireEvent.click(screen.getByRole('button', { name: 'View no-rows' }))

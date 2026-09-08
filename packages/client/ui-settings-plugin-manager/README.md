@@ -45,7 +45,7 @@ A plugin's card carries **Add to…**, listing every session and each preset; a 
 
 ### Reading a failure
 
-What the last action left to say sits above the groups: a restart notice, or the failure with the Host's own reason — a probe refusal, a rejected recomposition, a row id already taken. Dismiss it or let the next action replace it.
+What the last action left to say sits above the groups: a restart notice, or the failure with the Host's own reason — a probe refusal, a rejected recomposition, a row id already taken. Dismiss it or let the next action replace it. A row waiting for a service another row provides — one the person switched off, say — reads as *waiting for a dependency* on the row and on its pack's tag, whether a live recomposition left its fiber pending or a fresh composition recorded the wait as a failure; the red *problem* is kept for a real failure.
 
 -----
 

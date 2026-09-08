@@ -649,6 +649,17 @@
   color: var(--dsw-alias-state-error-primary);
 }
 
+.rowNote {
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-tertiary);
+  overflow-wrap: anywhere;
+}
+
+.row[data-state='failed'] .rowNote {
+  color: var(--dsw-alias-state-error-primary);
+}
+
 .rowFailure {
   margin: 4px 0 0 44px;
   font-size: 12px;

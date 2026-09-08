@@ -51,8 +51,8 @@ const PHASE_KEYS = {
   unloading: 'rowPhaseUnloading',
 } satisfies Record<RowPhase, PluginManagerLocaleKey>
 
-/** The two states a card tags; running and off are what the switch shows. */
-type CardStatus = 'restart' | 'problem'
+/** The states a card tags; running and off are what the switch shows. */
+type CardStatus = 'restart' | 'waiting' | 'problem'
 
 const STATUS_OF = {
   'running': null,
@@ -66,6 +66,7 @@ const STATUS_OF = {
 
 const STATUS_KEYS = {
   restart: 'statusRestart',
+  waiting: 'statusWaiting',
   problem: 'statusProblem',
 } satisfies Record<CardStatus, PluginManagerLocaleKey>
 
@@ -79,19 +80,37 @@ const PHASE_STATES = {
   unloading: 'idle',
 } satisfies Record<RowPhase, StateDotState>
 
-/** A component with a recorded startup failure or a failed fiber. */
+/**
+ * A row waiting for a service another row provides: a fiber left pending by
+ * a live recomposition, or the failure a fresh composition records for the
+ * same wait. Both read as one state, since the person sees one situation.
+ */
+function isWaitingRow(row: RowView): boolean {
+  return row.failure?.stage === 'inject-pending' || (row.failure === undefined && row.phase === 'pending')
+}
+
+/** A row with a recorded startup failure or a failed fiber; a wait for a service is not a failure. */
 function isFailedRow(row: RowView): boolean {
-  return row.failure !== undefined || row.phase === 'failed'
+  return !isWaitingRow(row) && (row.failure !== undefined || row.phase === 'failed')
+}
+
+/** The tag one package carries: a pending restart, rows waiting for a service, a problem, or none. */
+function cardStatus(pkg: PluginPackageView): CardStatus | null {
+  const base = pkg.kind === 'bundle' ? STATUS_OF[pkg.status] : pkg.reason === undefined ? null : 'problem'
+  if (base === 'problem' && pkg.kind === 'bundle' && pkg.enabled && pkg.rows.some(isWaitingRow) && !pkg.rows.some(isFailedRow)) return 'waiting'
+  return base
 }
 
 /** The count line over a pack's components: the total, then only the states that occur. */
 function partsSummary(rows: readonly RowView[], t: Translate): string {
   const failed = rows.filter(isFailedRow).length
-  const off = rows.filter(row => !row.enabled && !isFailedRow(row)).length
+  const waiting = rows.filter(isWaitingRow).length
+  const off = rows.filter(row => !row.enabled && !isFailedRow(row) && !isWaitingRow(row)).length
   const running = rows.filter(row => row.enabled && row.phase === 'active').length
   return [
     t('partsCountTotal', { count: String(rows.length) }),
     ...running > 0 ? [t('partsCountRunning', { count: String(running) })] : [],
+    ...waiting > 0 ? [t('partsCountWaiting', { count: String(waiting) })] : [],
     ...off > 0 ? [t('partsCountOff', { count: String(off) })] : [],
     ...failed > 0 ? [t('partsCountFailed', { count: String(failed) })] : [],
   ].join(' · ')
@@ -128,6 +147,7 @@ function RowSwitch({ row, t, toggle }: { readonly row: RowView; readonly t: Tran
 
 /** What a row's state line says: the failure, why it is off, or the phase its fiber is in. */
 function rowStateText(row: RowView, t: Translate): string {
+  if (isWaitingRow(row)) return t('rowPhasePending')
   if (isFailedRow(row)) return t('rowStateFailed')
   if (!row.enabled) return t(row.disabledBy === 'user' ? 'partDisabledByUser' : 'partDisabledByComposition')
   return row.phase === null ? t('rowStateIdle') : t(PHASE_KEYS[row.phase])
@@ -135,6 +155,7 @@ function rowStateText(row: RowView, t: Translate): string {
 
 /** The dot beside a row: its failure, its fiber phase, or idle. */
 function rowDotState(row: RowView): StateDotState {
+  if (isWaitingRow(row)) return 'ongoing'
   if (isFailedRow(row)) return 'error'
   if (!row.enabled || row.phase === null) return 'idle'
   return PHASE_STATES[row.phase]
@@ -188,7 +209,7 @@ function RowsSection({ rows, t, toggle }: {
                   key={row.entryId}
                   className={css.row}
                   data-plugin-row={row.entryId}
-                  {...isFailedRow(row) ? { 'data-state': 'failed' } : row.enabled ? {} : { 'data-state': 'off' }}
+                  {...isWaitingRow(row) ? { 'data-state': 'waiting' } : isFailedRow(row) ? { 'data-state': 'failed' } : row.enabled ? {} : { 'data-state': 'off' }}
                 >
                   <div className={css.rowLine}>
                     <span className={css.rowIcon} aria-hidden="true"><IconCordisPluginOutline14 /></span>
@@ -265,13 +286,12 @@ function ModulesSection({ pkg, t, busy, presets, globalModules, presetName, onAd
                 <div className={css.rowMain}>
                   <span className={css.rowId}>{entry.title ?? (entry.declaredName === '.' ? title : entry.declaredName)}</span>
                   <span className={css.rowModule}>{entry.moduleName}</span>
+                  <span className={css.rowNote}>
+                    {entry.ok
+                      ? joined.length > 0 ? t('moduleJoined', { targets: joined.join(t('joinedSeparator')) }) : t('moduleNotJoined')
+                      : t('moduleBroken', { error: entry.error ?? '' })}
+                  </span>
                 </div>
-                <span className={css.rowState}>
-                  <StateDot state={entry.ok ? joined.length > 0 ? 'done' : 'idle' : 'error'} size={8} />
-                  {entry.ok
-                    ? joined.length > 0 ? t('moduleJoined', { targets: joined.join(t('joinedSeparator')) }) : t('moduleNotJoined')
-                    : t('moduleBroken', { error: entry.error ?? '' })}
-                </span>
                 {entry.ok
                   ? (
                     <Menu
@@ -351,7 +371,7 @@ function PackageCard({ pkg, t, busy, presets, globalModules, presetName, onOpen,
   const title = pkg.title ?? shortName(pkg.name)
   const bundle = pkg.kind === 'bundle'
   const builtin = pkg.trust === 'builtin'
-  const status: CardStatus | null = bundle ? STATUS_OF[pkg.status] : pkg.reason === undefined ? null : 'problem'
+  const status = cardStatus(pkg)
   const addable = pkg.addable.filter(entry => entry.ok)
   const [single] = addable
   const menuItems: MenuItem[] = single !== undefined && addable.length === 1
@@ -368,7 +388,7 @@ function PackageCard({ pkg, t, busy, presets, globalModules, presetName, onOpen,
           <div className={css.titleRow}>
             <span className={css.cardTitle}>{title}</span>
             {builtin ? <Tag>{t('builtinTag')}</Tag> : null}
-            {status === null ? null : <Tag tone={status === 'restart' ? 'warning' : 'danger'}>{t(STATUS_KEYS[status])}</Tag>}
+            {status === null ? null : <Tag tone={status === 'problem' ? 'danger' : 'warning'}>{t(STATUS_KEYS[status])}</Tag>}
           </div>
           {pkg.description === undefined ? null : <span className={css.cardDesc}>{pkg.description}</span>}
         </div>
@@ -456,7 +476,7 @@ function PackageDetail({
   const title = pkg.title ?? shortName(pkg.name)
   const bundle = pkg.kind === 'bundle'
   const builtin = pkg.trust === 'builtin'
-  const status: CardStatus | null = bundle ? STATUS_OF[pkg.status] : pkg.reason === undefined ? null : 'problem'
+  const status = cardStatus(pkg)
   const retryable = bundle && pkg.enabled && (pkg.status === 'failed' || pkg.status === 'partial')
   const removable = pkg.installed && !builtin
   // A row's switch acts at once only on an external pack composed on a
@@ -475,7 +495,7 @@ function PackageDetail({
           <div className={css.titleRow}>
             <h3 className={css.detailTitle}>{title}</h3>
             {builtin ? <Tag>{t('builtinTag')}</Tag> : null}
-            {status === null ? null : <Tag tone={status === 'restart' ? 'warning' : 'danger'}>{t(STATUS_KEYS[status])}</Tag>}
+            {status === null ? null : <Tag tone={status === 'problem' ? 'danger' : 'warning'}>{t(STATUS_KEYS[status])}</Tag>}
           </div>
           <p className={css.detailDesc}>{pkg.description ?? t('noDescription')}</p>
         </div>
@@ -491,7 +511,7 @@ function PackageDetail({
           )
           : null}
       </div>
-      {pkg.reason === undefined ? null : <p className={css.reason} role="status">{t('reasonLabel')}: {pkg.reason}</p>}
+      {pkg.reason === undefined || status === 'waiting' ? null : <p className={css.reason} role="status">{t('reasonLabel')}: {pkg.reason}</p>}
       <dl className={css.facts}>
         {pkg.version === undefined ? null : <><dt>{t('versionLabel')}</dt><dd>{pkg.version}</dd></>}
         <dt>{t('sourceLabel')}</dt>
