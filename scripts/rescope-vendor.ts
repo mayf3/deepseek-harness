@@ -93,6 +93,7 @@ const GENERIC_SKIPS: readonly GenericSkip[] = [
   { file: 'apps/cli/tests/web-agent-presets.e2e.ts', upstream: ['cordis'] },
   { file: 'apps/web/tests/agent-preset-authoring.e2e.ts', upstream: ['cordis'] },
   { file: 'packages/preset/agent-presets/tests/session.spec.ts', upstream: ['cordis'] },
+  { file: 'packages/visualizer/tool-visualizer/tests/loader-composition.spec.ts', upstream: ['cordis'] },
   // The preset's own composition: its header comment and its system prompt name
   // the preset a model mounts, so the scoped name would send the model after an
   // id no roster reports.
@@ -163,6 +164,8 @@ const POSTCONDITIONS: readonly PostCondition[] = [
   // The preset id the shipped composition documents to its own model.
   { file: 'packages/preset/agent-presets/presets/cordis/agent.cordis.yml', text: 'The `cordis` agent preset', count: 1 },
   { file: 'packages/preset/agent-presets/presets/cordis/agent.cordis.yml', text: 'corrupting the `cordis` preset', count: 1 },
+  // The Visualizer composition checks name the preset in its id union and mounted-preset list.
+  { file: 'packages/visualizer/tool-visualizer/tests/loader-composition.spec.ts', text: "'cordis'", count: 2 },
 ]
 
 /**
