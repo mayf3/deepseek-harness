@@ -888,15 +888,16 @@ class FaceAnalyzer {
     symbol: ts.Symbol,
     from: PackageRegistration,
   ): PackageImport | undefined {
-    const visited = new Set<string>()
+    const visited = new Map<string, Set<string>>()
     const walk = (sourceFile: ts.SourceFile, specifier: string, name: string): PackageImport | undefined => {
       const module = moduleIdentity(specifier)
       if (module !== undefined) return { module, name }
       const resolvedPath = this.resolveImport(specifier, sourceFile.fileName)
       if (resolvedPath === undefined || !isWithin(resolvedPath, from.root)) return undefined
-      const key = `${resolvedPath}\0${name}`
-      if (visited.has(key)) return undefined
-      visited.add(key)
+      const names = visited.get(resolvedPath)
+      if (names?.has(name)) return undefined
+      if (names === undefined) visited.set(resolvedPath, new Set([name]))
+      else names.add(name)
       const forward = this.sourceFiles.get(resolvedPath) as ts.SourceFile
       for (const edge of this.forwardedExports(forward, name, symbol)) {
         const found = walk(forward, edge.specifier, edge.name)
