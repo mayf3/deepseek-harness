@@ -70,8 +70,9 @@ export type InstalledManifest = ProfileManifest & { description?: string; dsh?: 
  * Every run reads the profile manifest afresh and writes it through the
  * app-boot helpers the `dsh plugin` command uses, so the CLI and the Web
  * host never disagree on the file: `dependencies` records what is installed,
- * `dsh.profile.bundles` what is enabled. Nothing here touches a running
- * tree, which is what lets the CLI install before any plugin starts.
+ * `dsh.profile.bundles` what is enabled, and `dsh.profile.disabledBundles`
+ * what the user turned off. Nothing here touches a running tree, which is
+ * what lets the CLI install before any plugin starts.
  */
 export class PluginInstaller {
   private readonly spawn: SpawnLike
