@@ -9,7 +9,8 @@
 import { describe, expect, it } from 'vitest'
 import type { EntryOptions } from '@deepseek-ai/cordis-plugin-loader'
 import type { PatchOptions } from '@deepseek-ai/cordis-plugin-include'
-import { claimLayerIds, composeProfileStack, CONTAINED_GROUP_MODULE, formatRowConflict, type ProfileLayer } from '../src/index.ts'
+import { claimLayerIds, composeProfileStack, formatRowConflict, type ProfileLayer } from '../src/index.ts'
+import { CONTAINED_GROUP_MODULE } from '../src/external-bundles.ts'
 
 const NAME = 'dsh-test-bin'
 

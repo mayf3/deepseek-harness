@@ -50,24 +50,18 @@ export {
   type ProfileModuleFallbackOptions,
   type ProfileTemplate,
 } from './profile.ts'
+export { ensurePluginFailures } from './contained-group.ts'
 export {
-  ContainedFailureRegistry, ContainedGroup, containingGroup, ensurePluginFailures, isContainedEntry,
-  type ContainedFailure, type ContainedFailureStage,
-} from './contained-group.ts'
-export {
-  BUNDLE_GROUP_PREFIX, bundleGroupId, composeExternalLayer, CONTAINED_GROUP_MODULE, disableBundle,
-  enableBundle, exportsBundlePatch, isContainedLayer, reconcileInstalledBundles,
+  bundleGroupId, disableBundle, enableBundle, reconcileInstalledBundles,
   type BundleReconciliation, type ComposedExternalLayer, type DuplicateRow,
 } from './external-bundles.ts'
 export {
   claimLayerIds, composeProfileStack, formatRowConflict,
   type ComposedStack, type LayerOwnership, type RowConflict, type StackUserLayer,
 } from './compose-stack.ts'
+export { ProfileRuntime, type RowOrigin } from './profile-runtime.ts'
 export {
-  ProfileRuntime, type ProfileRuntimeOptions, type RowOrigin,
-} from './profile-runtime.ts'
-export {
-  PLUGIN_PROBE_DIR, PLUGIN_PROBE_FORMAT, probePackage, readProbeCache, writeProbeCache,
+  PLUGIN_PROBE_DIR, probePackage, readProbeCache, writeProbeCache,
   type PluginProbe, type PluginProbeRow, type ProbeOptions,
 } from './probe.ts'
 

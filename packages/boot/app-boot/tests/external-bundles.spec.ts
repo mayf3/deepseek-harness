@@ -10,10 +10,8 @@ import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import type { EntryOptions } from '@deepseek-ai/cordis-plugin-loader'
 import { applyEntryPatches, type PatchOptions } from '@deepseek-ai/cordis-plugin-include'
-import {
-  bundleGroupId, composeExternalLayer, CONTAINED_GROUP_MODULE, disableBundle, enableBundle,
-  exportsBundlePatch, isContainedLayer, reconcileInstalledBundles, readProfileManifest, type ProfileLayer,
-} from '../src/index.ts'
+import { bundleGroupId, disableBundle, enableBundle, reconcileInstalledBundles, readProfileManifest, type ProfileLayer } from '../src/index.ts'
+import { composeExternalLayer, CONTAINED_GROUP_MODULE, exportsBundlePatch, isContainedLayer } from '../src/external-bundles.ts'
 
 const NAME = 'dsh-test-bin'
 
