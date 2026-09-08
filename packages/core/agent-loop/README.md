@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-`dsh-agent-loop` creates agents — fresh or resumed from persisted history — and runs the turn and step lifecycle that claims prompts, assembles requests, streams model responses, dispatches tool calls, and appends every result back to the session log. As the default driver it implements the `Agent` interface from `dsh-agent` and registers its factory there, so plugins create and drive agents through `ctx.agents` without depending on this package. Declarative config entries start agents automatically at boot, and `maxParallelToolCalls` caps how many parallel-safe tool calls run at once. It is the harness's only concrete loop — everything beyond "call the model, run the tools, repeat" belongs to plugins listening on the event taxonomy. Choose it as the driver for standard compositions; swap it by implementing `Agent` and registering through `ctx.agents`.
+`dsh-agent-loop` creates fresh agents or resumes persisted sessions, then drives each turn through model requests, streamed responses, tool execution, and durable session history. Mount it for standard agent compositions; declarative entries start agents at boot, while the public `ctx.agents` API supports programmatic creation and resume. `maxParallelToolCalls` limits concurrent parallel-safe calls, and exclusive calls retain ordering. Cancellation preserves streamed text already delivered to the user. Choose a custom `Agent` implementation only when the standard "call model, run tools, repeat" lifecycle is insufficient.
 
 ## Table of Contents
 
@@ -64,7 +64,7 @@ Plugins and hosts create agents through `ctx.agents.create()` and resume persist
 const handle = await ctx.agents.create({
   sessionId,
   agentOptions: { provider: 'deepseek', model: 'deepseek-chat' },
-  setup: (agentCtx) => { /* scoped tools, prompt sections, listeners */ },
+  setup: (agentCtx, agent) => { /* scoped registrations plus explicit unpublished Agent */ },
 })
 ```
 
@@ -108,7 +108,7 @@ The loop deep-freezes each derived message identity on its first request and reu
 
 ### Creation and teardown
 
-Creation is one rollback-covered transaction: construct a private session, concrete agent, and scoped context; await optional setup; enter both registries; announce `session/created` then `agent/created`; emit `agent/session-start`; only then start the driver. A setup throw, commit failure, or owner disposal rolls the transaction back without publishing either id. Teardown runs stop-and-drain, closes the session's write path, unwinds the scope, detaches the agent, then detaches the session, and every detach is bound to the exact entered object so a stale disposer cannot remove a later same-id replacement.
+Creation is one rollback-covered transaction: construct a private session, concrete agent, and scoped context; await optional setup with the context and Agent passed separately; enter both registries; announce `session/created` then `agent/created`; emit `agent/session-start`; only then start the driver. A caller creating a runtime child sets `options.parentAgent`; the caller Context separately owns the transaction and live handle. A setup throw, commit failure, or owner disposal rolls the transaction back without publishing either id. Teardown runs stop-and-drain, closes the session's write path, unwinds the scope, detaches the agent, then detaches the session, and every detach is bound to the exact entered object so a stale disposer cannot remove a later same-id replacement.
 
 ### Persistence integration
 

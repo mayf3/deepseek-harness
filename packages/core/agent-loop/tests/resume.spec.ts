@@ -636,10 +636,10 @@ describe('the session-persistence Agent Note: AgentLoop factory create/resume', 
     const resuming = ctx.agents.resume({
       resumeSessionId: sessionId,
       agentOptions: { provider: 'mock', model: 'mock' },
-      setup: async (agentCtx) => {
-        expect(agentCtx.agent?.id).toBe(sessionId)
+      setup: async (agentCtx, agent) => {
+        expect(agent.id).toBe(sessionId)
         // The two persisted events plus the end-seed marker.
-        expect(agentCtx.agent?.session.snapshotEvents()).toHaveLength(3)
+        expect(agent.session.snapshotEvents()).toHaveLength(3)
         agentCtx.on('session/created', () => void order.push('setup-listener:session/created'))
         agentCtx.on('agent/created', () => void order.push('setup-listener:agent/created'))
         order.push('setup:start')
