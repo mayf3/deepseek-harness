@@ -31,6 +31,8 @@ export interface DockLabels {
   readonly dockFloat: string
   /** Close a floating panel. */
   readonly closeFloat: string
+  /** The drop hint's caption for each body zone a dragged tab can land on. */
+  readonly dropZone: Readonly<Record<DockZone, string>>
 }
 
 /**
