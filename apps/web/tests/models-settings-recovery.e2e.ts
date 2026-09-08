@@ -14,6 +14,8 @@ import { saveFailureShot, ZH_BROWSER_LOCALE } from './support.ts'
 const EXPECTED = fileURLToPath(new URL('./expected/models-settings-recovery/stored-error.expected.md', import.meta.url))
 const FAILURE = 'llm-pi-ai: provider "openrouter" model "111" needs an api; '
   + 'the installed catalog does not describe it, so set the route\'s api to the wire protocol its endpoint speaks'
+const CUSTOM_FAILURE = 'llm-pi-ai: provider "acme-gateway" model "custom-model" needs an api; '
+  + 'the installed catalog does not describe it, so set the route\'s api to the wire protocol its endpoint speaks'
 
 describe('web e2e: repairs a stored provider after catalog drift', () => {
   let home: string
@@ -26,7 +28,8 @@ describe('web e2e: repairs a stored provider after catalog drift', () => {
     home = await mkdtemp(join(tmpdir(), 'dsh-models-recovery-'))
     await writeFile(join(home, 'settings.yaml'), [
       'llm-pi-ai:', '  providers:', '    openrouter:', '      models:',
-      '        - id: "111"', '    zai: {}', '',
+      '        - id: "111"', '    zai: {}', '    acme-gateway:',
+      '      baseURL: https://gateway.example/v1', '      models:', '        - id: "custom-model"', '',
     ].join('\n'))
     scaffold = await launchWebScaffold({ harnessHome: home })
     browser = await chromium.launch()
@@ -56,6 +59,8 @@ describe('web e2e: repairs a stored provider after catalog drift', () => {
     const dialog = page.getByRole('dialog', { name: '设置' })
     expect(await dialog.getByRole('button', { name: '编辑 openrouter', exact: true }).count()).toBe(1)
     expect(await dialog.getByRole('button', { name: '编辑 zai', exact: true }).count()).toBe(1)
+    expect(await dialog.getByRole('button', { name: '编辑 acme-gateway', exact: true }).count()).toBe(1)
+    expect(await dialog.getByText(CUSTOM_FAILURE, { exact: true }).count()).toBe(1)
     expect(await dialog.getByRole('button', { name: '添加提供方', exact: true }).isEnabled()).toBe(true)
     expect(await dialog.getByRole('button', { name: '添加自定义提供方', exact: true }).isEnabled()).toBe(true)
     await compareOrRefreshGolden(EXPECTED, await captureStableAria(page, '[role="dialog"]', scaffold.workspaceCwd), webSnapshotMode())

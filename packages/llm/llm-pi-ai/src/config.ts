@@ -205,7 +205,7 @@ export interface ResolvedPiAiProviderProfile
    * a stored route cannot be constructed; its configuration remains editable.
    */
   piProvider?: Provider
-  /** First stored-catalog diagnostic for settings surfaces; absent for a serviceable route. */
+  /** First model diagnostic, or the route failure when no model diagnostic is available. */
   catalogError?: string
   /** Per-model failures reported before attempting a request. */
   modelErrors: ReadonlyMap<string, string>
@@ -470,6 +470,7 @@ export function resolveProfiles(
         defaultContextWindow: source.defaultContextWindow ?? DEFAULT_CONTEXT_WINDOW,
         defaultMaxTokens: source.defaultMaxTokens ?? DEFAULT_MAX_TOKENS,
       }, validation)
+      catalogError = catalog.modelErrors.values().next().value
       piProvider = buildProvider({
         provider,
         displayName,
@@ -478,10 +479,9 @@ export function resolveProfiles(
         models: catalog.models,
         namesCredential: source.apiKeyEnv !== undefined,
       })
-      catalogError = catalog.modelErrors.values().next().value
     } catch (error) {
       if (validation === 'strict' || !(error instanceof PiAiCatalogError)) throw error
-      catalogError = error.message
+      catalogError ??= error.message
     }
     const { apiKeyEnv, retryPolicy, models: _models, displayName: _displayName, ...rest } = source
     resolved.set(provider, {
