@@ -38,7 +38,7 @@ import { apply as registerCode } from './code/index.ts'
 // Values stay package-private unless another package needs them; the plugin
 // surface is `apply`, `inject`, and the store factory another registration may
 // share, plus the types a consumer of the seat or the store names.
-export type { SidebarTextpreviewKey } from './locales.ts'
+export type { SidebarDocumentPreviewKey } from './locales.ts'
 export type { TextPreviewProps } from './TextPreview.tsx'
 export type { TextInjected } from './face.ts'
 export type { ReadWorkspaceFilePage, SessionFile, WorkspaceFilesReadRemote } from './rpc.ts'
@@ -54,7 +54,7 @@ declare module '@deepseek-ai/cordis' {
 }
 
 /** This package's copy namespace. */
-const NS = 'sidebarTextpreview'
+const NS = 'sidebarDocumentPreview'
 
 declare module '@deepseek-ai/dsh-client-ui-sidebar-right/client' {
   interface SidebarRightResourceParamsMap {
@@ -66,7 +66,7 @@ declare module '@deepseek-ai/dsh-client-ui-sidebar-right/client' {
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface LocaleNamespaceMap {
     /** Text-preview progress, paging, change, control, and failure lines. */
-    sidebarTextpreview: import('./locales.ts').SidebarTextpreviewKey
+    sidebarDocumentPreview: import('./locales.ts').SidebarDocumentPreviewKey
   }
 }
 
@@ -102,8 +102,8 @@ export function apply(ctx: ClientContext, config: Config = Config({})): void {
   const previews = new DocumentPreviewRegistry()
   const disposePreviews = ctx.reflect.provide('documentPreviews', previews)
   ctx.effect(() => disposePreviews)
-  ctx.effect(() => ctx.sidebarRightTabs.register(textDefinition()), 'ui-sidebar-textpreview: text type')
-  ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-sidebar-textpreview: dictionaries')
+  ctx.effect(() => ctx.sidebarRightTabs.register(textDefinition()), 'ui-sidebar-documentpreview: text type')
+  ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-sidebar-documentpreview: dictionaries')
 
   const store = createTextStore()
   const face = textFace(
@@ -120,7 +120,7 @@ export function apply(ctx: ClientContext, config: Config = Config({})): void {
       inject: (sessionId, actions): TextPreviewInjected => ({ ...face(sessionId, actions), hooks: { documentPreviews: source } }),
     },
     TextPreview,
-  )), 'ui-sidebar-textpreview: text body')
+  )), 'ui-sidebar-documentpreview: text body')
   registerText(ctx)
   registerMarkdown(ctx)
   registerHtml(ctx, { maxAssetBytes: config.htmlMaxAssetBytes, maxTotalBytes: config.htmlMaxTotalBytes, maxAssets: config.htmlMaxAssets })

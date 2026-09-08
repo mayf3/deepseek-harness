@@ -43,7 +43,7 @@ export type TextPreviewProps =
   & PropsRenderSlots<'sidebar.right.tab.document'>
   & PropsStore<TextStore>
   & InjectFace<TextPreviewInjected>
-  & PropsLocale<'sidebarTextpreview'>
+  & PropsLocale<'sidebarDocumentPreview'>
 
 /**
  * The text type's body, registered under `sidebar.right.pane.tab` as `text`.

@@ -10,7 +10,7 @@ import { CODE_EXTENSIONS } from '../src/client/code/languages.ts'
 import { DocumentPreviewRegistry } from '../src/client/document/registry.ts'
 import { documentTabInfoFactory } from '../src/client/document/contract.ts'
 
-const ID = '@deepseek-ai/dsh-client-ui-sidebar-textpreview/code'
+const ID = '@deepseek-ai/dsh-client-ui-sidebar-documentpreview/code'
 const SLOT = 'sidebar.right.tab.document'
 const plugin = { inject: ['slots', 'locale', 'documentPreviews'], apply }
 let runtime: SlotTestRuntime | undefined

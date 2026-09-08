@@ -3485,7 +3485,7 @@ export interface Config {
 - `@deepseek-ai/dsh-client-ui-sidebar`（[`packages/client/ui-sidebar/src/index.ts`](../packages/client/ui-sidebar/src/index.ts)）
 - `@deepseek-ai/dsh-client-ui-sidebar-files`（[`packages/client/ui-sidebar-files/src/index.ts`](../packages/client/ui-sidebar-files/src/index.ts)）
 - `@deepseek-ai/dsh-client-ui-sidebar-right`（[`packages/client/ui-sidebar-right/src/index.ts`](../packages/client/ui-sidebar-right/src/index.ts)）
-- `@deepseek-ai/dsh-client-ui-sidebar-textpreview`（[`packages/client/ui-sidebar-textpreview/src/index.ts`](../packages/client/ui-sidebar-textpreview/src/index.ts)）
+- `@deepseek-ai/dsh-client-ui-sidebar-documentpreview`（[`packages/client/ui-sidebar-documentpreview/src/index.ts`](../packages/client/ui-sidebar-documentpreview/src/index.ts)）
 - `@deepseek-ai/dsh-client-ui-skill`（[`packages/client/ui-skill/src/index.ts`](../packages/client/ui-skill/src/index.ts)）
 - `@deepseek-ai/dsh-client-ui-subagent`（[`packages/client/ui-subagent/src/index.ts`](../packages/client/ui-subagent/src/index.ts)）
 - `@deepseek-ai/dsh-client-ui-theme`（[`packages/client/ui-theme/src/index.ts`](../packages/client/ui-theme/src/index.ts)）

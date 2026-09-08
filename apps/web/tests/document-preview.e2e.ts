@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url'
 import type { Browser, Locator, Page } from 'playwright'
 import { chromium } from 'playwright'
 import { afterAll, beforeAll, describe, expect, it, onTestFailed, vi } from 'vitest'
-import { pdfFixture } from '../../../packages/client/ui-sidebar-textpreview/tests/pdf-fixture.ts'
+import { pdfFixture } from '../../../packages/client/ui-sidebar-documentpreview/tests/pdf-fixture.ts'
 import { assertFixtureInventory, compareOrRefreshGolden, launchWebScaffold, watchConsole, webSnapshotMode, type WebScaffold } from './scaffold.ts'
 import { connectFreshWorkspace, newEnglishPage, saveFailureShot } from './support.ts'
 

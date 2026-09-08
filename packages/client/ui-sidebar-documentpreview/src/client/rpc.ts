@@ -66,7 +66,7 @@ export interface SessionFile {
  */
 export function hostFileOf(address: string): SessionFile {
   const parsed = parseFileAddress(address)
-  if (parsed?.scope !== 'session') throw new Error(`ui-sidebar-textpreview: not a session file address "${address}"`)
+  if (parsed?.scope !== 'session') throw new Error(`ui-sidebar-documentpreview: not a session file address "${address}"`)
   // The address is a string boundary: its id segment is the Session id it names.
   return { sessionId: parsed.sessionId as SessionId, path: parsed.path }
 }

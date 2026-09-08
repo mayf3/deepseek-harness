@@ -1,5 +1,5 @@
 /**
- * `sidebarTextpreview` namespace dictionaries.
+ * `sidebarDocumentPreview` namespace dictionaries.
  *
  * The failure lines are the point of this file: a preview that cannot show a
  * page has to say which of several different things went wrong, and each one
@@ -28,7 +28,7 @@ export const zh = {
 } satisfies Record<string, string>
 
 /** Text-preview dictionary key union. */
-export type SidebarTextpreviewKey = keyof typeof zh
+export type SidebarDocumentPreviewKey = keyof typeof zh
 
 /** English dictionary, checked against the Chinese key set. */
 export const en = {
@@ -49,4 +49,4 @@ export const en = {
   'error.notRegularFile': 'That is not a regular file, so it has no text to show.',
   'error.unavailable': 'Read failed: {message}',
   retry: 'Retry',
-} satisfies Record<SidebarTextpreviewKey, string>
+} satisfies Record<SidebarDocumentPreviewKey, string>

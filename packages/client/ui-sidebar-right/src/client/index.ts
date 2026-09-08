@@ -18,7 +18,7 @@
  * Tab types register in two stages: the type itself into `ctx.sidebarRightTabs`,
  * its body into the keyed `sidebar.right.pane.tab` seat under the same kind. The
  * guide registers through those stages unmodified, exactly as a type shipped
- * from another package does — `ui-sidebar-textpreview` is the live proof.
+ * from another package does — `ui-sidebar-documentpreview` is the live proof.
  */
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-client-resources/client'

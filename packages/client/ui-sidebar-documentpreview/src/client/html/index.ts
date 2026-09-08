@@ -9,7 +9,7 @@ import { en, zh } from './locales.ts'
 import type { HtmlPackLimits } from './pack.ts'
 
 /** HTML implementation identity, shared by metadata and the keyed slot. */
-export const HTML_BODY_ID = '@deepseek-ai/dsh-client-ui-sidebar-textpreview/html'
+export const HTML_BODY_ID = '@deepseek-ai/dsh-client-ui-sidebar-documentpreview/html'
 
 /**
  * Describe the builtin HTML renderer's file types and loading mode.

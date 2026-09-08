@@ -4,12 +4,12 @@
 import { describe, expect, it } from 'vitest'
 import type { RemoteFailure } from '@deepseek-ai/dsh-api-remotes/client'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
-// The namespace declaration `TranslateNS<'sidebarTextpreview'>` resolves against.
+// The namespace declaration `TranslateNS<'sidebarDocumentPreview'>` resolves against.
 import type {} from '../src/client/index.ts'
 import { failureLine } from '../src/client/failure-line.ts'
 
 /** Key-echoing translate that also shows its parameters, so a formatted value is visible. */
-const t: TranslateNS<'sidebarTextpreview'> = (key, params) =>
+const t: TranslateNS<'sidebarDocumentPreview'> = (key, params) =>
   params === undefined ? key : `${key}(${Object.entries(params).map(([k, v]) => `${k}=${String(v)}`).join(',')})`
 
 function failure(code: string, details: Record<string, unknown> = {}, message = 'boom'): RemoteFailure {

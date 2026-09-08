@@ -3,7 +3,7 @@ description: "Document previews in the right Sidebar: shared file loading and co
 kind: "package-reference"
 ---
 
-# @deepseek-ai/dsh-client-ui-sidebar-textpreview
+# @deepseek-ai/dsh-client-ui-sidebar-documentpreview
 
 English | [中文](README.zh.md)
 
@@ -26,7 +26,7 @@ Preview workspace documents in the right Sidebar and choose among registered ren
 <a id="what-it-registers"></a>
 ## What it registers
 
-- **The type** — `ctx.sidebarRightTabs.register(...)` with id `@deepseek-ai/dsh-client-ui-sidebar-textpreview` (this implementation's identity in the tab system, and the key its body registers under), kind `text`, pattern `dsh-resource://file/**`, band `fallback`. `canOpen` accepts only Session addresses, whose paths may be relative or absolute; bare `absolute` addresses are not claimed. A type registered at the `extension` or `builtin` band for a narrower pattern (say `*.png`) takes those addresses; other supported files land here. The whole address is the content identity, so two files with one name in different directories, or one path under two sessions, are two tabs; the decoded basename is the tab title.
+- **The type** — `ctx.sidebarRightTabs.register(...)` with id `@deepseek-ai/dsh-client-ui-sidebar-documentpreview` (this implementation's identity in the tab system, and the key its body registers under), kind `text`, pattern `dsh-resource://file/**`, band `fallback`. `canOpen` accepts only Session addresses, whose paths may be relative or absolute; bare `absolute` addresses are not claimed. A type registered at the `extension` or `builtin` band for a narrower pattern (say `*.png`) takes those addresses; other supported files land here. The whole address is the content identity, so two files with one name in different directories, or one path under two sessions, are two tabs; the decoded basename is the tab title.
 - **The body** — the keyed `sidebar.right.pane.tab` seat under the type's id. Its fixed header shows the Host's absolute path when available, otherwise the requested path, and a dropdown for matching renderers plus plain text. A wrap toggle appears only when the selected renderer declares `wrap: true`; the per-tab preference starts on. Reload stays in this header, not the Sidebar's tab strip. The shared body below owns document scrolling.
 - **Shared loading and view state**, session-scoped and bucketed by tab id. The store holds accumulated pages or complete bytes, read and observed versions, loading/failure state, renderer choice, scroll offset, wrap, and the answered navigation revision. The ordinary inject face calls Remote readers and writes through declared store actions. Reloads and loading-mode changes retire older requests; the tab's abort signal forgets its state.
 
@@ -59,7 +59,7 @@ The body reads its record, navigation and lifetime through `useTabInfo().tab`. `
 
 HTML runs in a Blob iframe with exactly `sandbox="allow-scripts"`, without `allow-same-origin`; scripts cannot access the parent application's origin or file reader. The renderer loads directly declared relative `.js` classic scripts and `.css` stylesheets through its ordinary inject callback to `remote.workspaceFiles.readRelated`, under the configured limits. Host code resolves the related path; `rpc.ts` decodes the returned bytes. Inside the renderer, base64 is used only to embed the iframe bootstrap payload in script text. A `<base href>` leaves dependency resolution to the browser, as do HTTPS resources. Local module imports, CSS `url()`/`@import`, and dynamic `fetch` do not use Host file access. Read failures, invalid UTF-8, or exceeded limits fail the preview rather than publishing a partial asset package. Replacing or unmounting the document releases its Blob URL.
 
-Shared copy comes from `sidebarTextpreview`; each builtin renderer owns its localized labels.
+Shared copy comes from `sidebarDocumentPreview`; each builtin renderer owns its localized labels.
 
 Initial reads, additional pages, and HTML/PDF preparation share a loading indicator that respects reduced-motion preferences. Loaded pages stay visible while another page loads. Code previews show source line numbers by default without including them in copied text; plain text uses the same font size and line height as code.
 

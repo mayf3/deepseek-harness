@@ -3,7 +3,7 @@ description: "右侧 Sidebar 的文档预览：共享文件加载与控件，可
 kind: "package-reference"
 ---
 
-# @deepseek-ai/dsh-client-ui-sidebar-textpreview
+# @deepseek-ai/dsh-client-ui-sidebar-documentpreview
 
 [English](README.md) | 中文
 
@@ -26,7 +26,7 @@ kind: "package-reference"
 <a id="what-it-registers"></a>
 ## 注册了什么
 
-- **类型** —— `ctx.sidebarRightTabs.register(...)`，id 为 `@deepseek-ai/dsh-client-ui-sidebar-textpreview`（这个实现在 tab 系统里的唯一键，也是其体注册所用的 key），kind `text`，pattern `dsh-resource://file/**`，档位 `fallback`。`canOpen` 只接受 Session 地址，其中路径可为相对或绝对路径；不认领裸 `absolute` 地址。在 `extension` 或 `builtin` 档以更窄 pattern（比如 `*.png`）注册的类型接走那些地址；其他受支持文件落到这里。整个地址就是内容身份，所以不同目录下同名的两个文件、或同一路径在两个会话之下，是两个 tab；解码后的 basename 是 tab 标题。
+- **类型** —— `ctx.sidebarRightTabs.register(...)`，id 为 `@deepseek-ai/dsh-client-ui-sidebar-documentpreview`（这个实现在 tab 系统里的唯一键，也是其体注册所用的 key），kind `text`，pattern `dsh-resource://file/**`，档位 `fallback`。`canOpen` 只接受 Session 地址，其中路径可为相对或绝对路径；不认领裸 `absolute` 地址。在 `extension` 或 `builtin` 档以更窄 pattern（比如 `*.png`）注册的类型接走那些地址；其他受支持文件落到这里。整个地址就是内容身份，所以不同目录下同名的两个文件、或同一路径在两个会话之下，是两个 tab；解码后的 basename 是 tab 标题。
 - **正文** —— keyed slot `sidebar.right.pane.tab`，键为类型的 id。固定头部在可用时显示 Host 的绝对路径，否则显示请求路径，并提供匹配渲染器及纯文本的下拉选择。仅当所选渲染器声明 `wrap: true` 时显示换行开关；该偏好按 tab 保存，初始开启。重新载入仍在此头部，不放入 Sidebar 的 tab 条。下方的共享正文区域负责文档滚动。
 - **共享加载与视图状态**，会话作用域、按 tab id 分桶。store 持有累计页或完整字节、读取与观察版本、加载/失败状态、渲染器选择、滚动位置、换行和已响应的导航 revision。普通 inject face 调用 Remote 读取，并经声明的 store action 写入。重新载入和加载模式变化会淘汰旧请求；tab 的中止信号清理其状态。
 
@@ -59,7 +59,7 @@ tab 使用 `fileAddressFor` 构造的 Session 地址，携带相对或绝对路�
 
 HTML 在 Blob iframe 中运行，沙箱属性严格为 `sandbox="allow-scripts"`，不含 `allow-same-origin`；脚本无法访问父应用的源或文件读取接口。渲染器在配置上限内，通过普通 inject 回调调用 `remote.workspaceFiles.readRelated`，加载直接声明的相对 `.js` 经典脚本和 `.css` 样式表。Host 代码解析关联路径，`rpc.ts` 解码返回的字节。在渲染器内部，base64 仅用于把 iframe 引导载荷嵌入脚本文本。`<base href>` 将依赖解析交给浏览器，HTTPS 资源也由浏览器处理。本地模块 import、CSS `url()`/`@import` 和动态 `fetch` 不使用 Host 文件访问。读取失败、无效 UTF-8 或超出上限都使预览失败，不发布部分资源包。替换或卸载文档会释放其 Blob URL。
 
-共享文案来自 `sidebarTextpreview`；各内置渲染器拥有自己的本地化标签。
+共享文案来自 `sidebarDocumentPreview`；各内置渲染器拥有自己的本地化标签。
 
 首次读取、追加页及 HTML/PDF 准备共用加载指示器，并遵循减少动态效果偏好。下一页加载期间保留已显示的内容。代码预览默认显示源码行号，但复制文本不包含行号；纯文本与代码使用相同字号和行高。
 

@@ -15,7 +15,7 @@ export type CodeBodyProps = DocumentPreviewProps & PropsLocale<'sidebarCodePrevi
 export function CodeBody({ resourceAddress, content, wrap, t }: CodeBodyProps): ReactNode {
   if (content.kind !== 'text') return null
   const file = parseFileAddress(resourceAddress)
-  if (file === undefined) throw new Error(`ui-sidebar-textpreview: not a file address "${resourceAddress}"`)
+  if (file === undefined) throw new Error(`ui-sidebar-documentpreview: not a file address "${resourceAddress}"`)
   const language = languageForPath(file.path)
   return (
     <div className={css.renderer} data-code-preview data-wrap={wrap}>

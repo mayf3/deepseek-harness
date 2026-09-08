@@ -21,7 +21,7 @@ function humanBytes(bytes: number): string {
  * @param failure - the settled Remote failure.
  * @returns the line to show in place of the file.
  */
-export function failureLine(t: TranslateNS<'sidebarTextpreview'>, failure: RemoteFailure): string {
+export function failureLine(t: TranslateNS<'sidebarDocumentPreview'>, failure: RemoteFailure): string {
   switch (failure.code) {
     case 'workspace-file/not-found': return t('error.notFound')
     case 'workspace-file/outside-workspace': return t('error.outsideWorkspace')

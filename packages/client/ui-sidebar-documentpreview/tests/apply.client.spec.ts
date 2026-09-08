@@ -74,7 +74,7 @@ async function boot() {
   return { tabs, registered, dictionaries, fiber, workspaceFiles }
 }
 
-describe('ui-sidebar-textpreview apply', () => {
+describe('ui-sidebar-documentpreview apply', () => {
   it('keeps the host Loader entry inert', () => {
     expect(hostApply).not.toThrow()
   })
@@ -83,16 +83,16 @@ describe('ui-sidebar-textpreview apply', () => {
     const { tabs, registered, dictionaries } = await boot()
     expect(tabs.get(TEXTPREVIEW_KIND)?.priority).toBe('fallback')
     expect(tabs.get(TEXTPREVIEW_KIND)?.id).toBe(TEXTPREVIEW_ID)
-    expect(dictionaries.get('sidebarTextpreview')).toEqual({ zh, en })
+    expect(dictionaries.get('sidebarDocumentPreview')).toEqual({ zh, en })
     // The seat key is the implementation's id, not the kind: an extension may
     // take the kind over, and the seat must still find this body.
     expect(registered.map(entry => [entry.name, entry.key, entry.locale, entry.component])).toEqual([
-      ['sidebar.right.pane.tab', TEXTPREVIEW_ID, 'sidebarTextpreview', TextPreview],
+      ['sidebar.right.pane.tab', TEXTPREVIEW_ID, 'sidebarDocumentPreview', TextPreview],
       ['sidebar.right.tab.document', PLAIN_BODY_ID, undefined, TextBody],
       ['sidebar.right.tab.document', MARKDOWN_BODY_ID, 'documentMarkdown', MarkdownBody],
       ['sidebar.right.tab.document', HTML_BODY_ID, 'documentHtml', HtmlBody],
       ['sidebar.right.tab.document', PDF_BODY_ID, 'sidebarPdf', PdfBody],
-      ['sidebar.right.tab.document', '@deepseek-ai/dsh-client-ui-sidebar-textpreview/code', 'sidebarCodePreview', CodeBody],
+      ['sidebar.right.tab.document', '@deepseek-ai/dsh-client-ui-sidebar-documentpreview/code', 'sidebarCodePreview', CodeBody],
     ])
     expect(registered[0]?.store).toBeDefined()
     expect(typeof registered[0]?.inject).toBe('function')

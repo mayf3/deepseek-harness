@@ -15,7 +15,7 @@ import { parseFileAddress } from '@deepseek-ai/dsh-util-workspace-path'
 export const TEXTPREVIEW_KIND = 'text'
 
 /** This implementation's identity in the tab system: the key its body registers under. */
-export const TEXTPREVIEW_ID = '@deepseek-ai/dsh-client-ui-sidebar-textpreview'
+export const TEXTPREVIEW_ID = '@deepseek-ai/dsh-client-ui-sidebar-documentpreview'
 
 /**
  * The tab title for one `file:` address: its decoded basename.

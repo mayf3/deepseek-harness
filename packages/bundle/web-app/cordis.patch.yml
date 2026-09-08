@@ -227,8 +227,8 @@
 
     # The right Sidebar's first outside tab type: workspace text files, read
     # through the bounded workspaceFiles endpoint.
-    - id: ui-sidebar-textpreview
-      name: '@deepseek-ai/dsh-client-ui-sidebar-textpreview'
+    - id: ui-sidebar-documentpreview
+      name: '@deepseek-ai/dsh-client-ui-sidebar-documentpreview'
 
     # The right Sidebar's workspace file tree tab type.
     - id: ui-sidebar-files
