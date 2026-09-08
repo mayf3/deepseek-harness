@@ -10,6 +10,7 @@ import type {
 import { releasedV0SessionFormatCodec, releasedV1SessionFormatCodec, sessionFormatV0ToV1 } from '@deepseek-ai/dsh-session-format-v0-to-v1'
 import { releasedV2SessionFormatCodec, sessionFormatV1ToV2 } from '@deepseek-ai/dsh-session-format-v1-to-v2'
 import { assertReleasedV3Header, releasedV3SessionFormatCodec, restoreReleasedV3Artifact, sessionFormatV2ToV3 } from '../src/index.ts'
+import { canonicalizeTransformedEvent } from '../src/payload.ts'
 
 const header: SessionFormatHeader = {
   version: 2, id: 'canonical-envelopes', createdAt: 1, isSeeded: false, delegationDepth: 0,
@@ -179,6 +180,21 @@ describe('canonical V2 to V3 envelopes', () => {
   )
 
   it.each([
+    ['extra field', { op: 'replace', start: 0, end: 0, extra: true }],
+    ['wrong op', { op: 'append', start: 0, end: 0 }],
+    ['missing start', { op: 'replace', startSeq: 0, end: 0 }],
+    ['missing end', { op: 'replace', start: 0, endSeq: 0 }],
+  ] satisfies [string, SessionFormatJsonObject][])(
+    'refuses malformed released markers at transformed-event admission: %s', (_name, surfaceOp) => {
+      const source = user(1, { surfaceOp, sourceEventSeqs: [0] })
+      const before = JSON.stringify(source)
+      expect(() => canonicalizeTransformedEvent(source))
+        .toThrow('format v2 user/message at seq 1 requires exact replace fields op/start/end')
+      expect(JSON.stringify(source)).toBe(before)
+    },
+  )
+
+  it.each([
     ['V2 fields', { op: 'replace', start: 0, end: 0 }],
     ['mixed fields', { op: 'replace', start: 0, endSeq: 0 }],
     ['both generations', { op: 'replace', start: 0, end: 0, startSeq: 0, endSeq: 0 }],
@@ -339,6 +355,10 @@ describe('native V3 physical admission', () => {
   const invalidRows: [string, SessionFormatEvent, RegExp][] = [
     ['missing surface marker', user(1, {}), /requires a surfaceOp/],
     ['old replacement', user(1, { surfaceOp: { op: 'replace', start: 0, end: 0 } }), /exact replace fields/],
+    ['current replacement start', user(1, { surfaceOp: { op: 'replace', startSeq: 1, endSeq: 0 } }), /replacement endpoints must reference earlier events/],
+    ['future replacement start', user(1, { surfaceOp: { op: 'replace', startSeq: 2, endSeq: 0 } }), /replacement endpoints must reference earlier events/],
+    ['current replacement end', user(1, { surfaceOp: { op: 'replace', startSeq: 0, endSeq: 1 } }), /replacement endpoints must reference earlier events/],
+    ['future replacement end', user(1, { surfaceOp: { op: 'replace', startSeq: 0, endSeq: 2 } }), /replacement endpoints must reference earlier events/],
     ['empty header optional', event('request/header', 1, {
       reason: 'initial', header: { config: { provider: 'mock', model: 'mock' }, tools: [] },
     }), /empty optional header fields/],

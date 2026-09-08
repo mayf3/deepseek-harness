@@ -121,18 +121,27 @@ describe('incremental DeepSeek session-log upload', () => {
   })
 
   it.each(['extension/event', 'tool/code-dispatch', 'tool/code-dispatch-start'])('uploads opaque ignorable %s without interpreting its metadata', async (type) => {
-    const event = { type, seq: SessionSeq(0), time: 1, data: { nested: [null, true] }, ignorable: true,
-      surfaceOp: { opaque: ['retained'] }, sourceEventSeqs: { opaque: [null] },
-    } as unknown as SessionEvent
-    const { ctx, session } = await harness('wire-opaque', [event])
-    const prepared = await ctx.deepseekLlmApiExtensions.prepare({ body: body(), signal: SIGNAL, sessionId: session.id })
-    expect(prepared.fields.dsh_session_log?.events[0]).toEqual(event)
-    expect(session.deriveMessages()).toEqual([])
+    for (const metadata of [
+      {},
+      { surfaceOp: null },
+      { sourceEventSeqs: null },
+      { surfaceOp: { opaque: ['retained'] }, sourceEventSeqs: { opaque: [null] } },
+    ]) {
+      const event = {
+        type, seq: SessionSeq(0), time: 1, data: { nested: [null, true] }, ignorable: true, ...metadata,
+      } as unknown as SessionEvent
+      const { ctx, session } = await harness('wire-opaque', [event])
+      const prepared = await ctx.deepseekLlmApiExtensions.prepare({ body: body(), signal: SIGNAL, sessionId: session.id })
+      expect(prepared.fields.dsh_session_log?.events[0]).toStrictEqual(event)
+      expect(session.deriveMessages()).toEqual([])
+    }
   })
 
   it.each(['turn/start', 'assistant/attempt', 'request/context', 'tool/ptc-dispatch'])('rejects known log-only %s metadata before uploading', async (type) => {
     for (const metadata of [{ surfaceOp: 'append' }, { sourceEventSeqs: [0] }]) {
-      const event = { type, seq: SessionSeq(0), time: 1, data: { turn: 1, step: 1, stream: [] }, ignorable: true, ...metadata } as unknown as SessionEvent
+      const event = {
+        type, seq: SessionSeq(0), time: 1, data: { turn: 1, step: 1, stream: [] }, ignorable: true, ...metadata,
+      } as unknown as SessionEvent
       await expect(harness('wire-invalid', [event])).rejects.toThrow(/not surface-eligible/)
     }
   })

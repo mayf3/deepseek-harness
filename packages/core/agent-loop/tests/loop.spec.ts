@@ -658,7 +658,7 @@ describe('agent loop', () => {
       expect(adapter.requests[1]?.messages.map(message => message.role)).toEqual(['system', 'user', 'assistant', 'user'])
       const replacement = agent.session.snapshotEvents().findLast(event => event.type === 'system/message')
       expect(replacement).toMatchObject({
-        surfaceOp: { op: 'replace', start: head?.seq, end: head?.seq },
+        surfaceOp: { op: 'replace', startSeq: head?.seq, endSeq: head?.seq },
         sourceEventSeqs: [head?.seq],
       })
       expect(agent.session.surface.nodes[0]).toBe(replacement?.seq)

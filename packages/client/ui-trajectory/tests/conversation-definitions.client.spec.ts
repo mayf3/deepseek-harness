@@ -610,7 +610,7 @@ describe('Trajectory conversation Definitions', () => {
         turn: 2,
         step: 1,
         message: systemMessage('second prompt'),
-      }, { surfaceOp: { op: 'replace', start: 3, end: 3 }, sourceEventSeqs: [3] }),
+      }, { surfaceOp: { op: 'replace', startSeq: 3, endSeq: 3 }, sourceEventSeqs: [3] }),
       at(11, 'request/header', {
         reason: 'series',
         header: { config: { provider: 'test', model: 'test' }, tools: [] },
@@ -790,7 +790,7 @@ describe('Trajectory conversation Definitions', () => {
       at(12, 'user/message', {
         turn: 1, step: 3, id: 'summary', role: 'user',
         content: [{ type: 'text', text: 'summary' }], source: { kind: 'plugin', plugin: 'compaction' },
-      }, { surfaceOp: { op: 'replace', start: 5, end: 9 }, sourceEventSeqs: [5, 8, 9] }),
+      }, { surfaceOp: { op: 'replace', startSeq: 5, endSeq: 9 }, sourceEventSeqs: [5, 8, 9] }),
       at(13, 'request/header', {
         reason: 'series', header: { config: { provider: 'test', model: 'test' }, tools: [] },
       }),
@@ -821,7 +821,7 @@ describe('Trajectory conversation Definitions', () => {
   it('withholds unknown replacement order in request headers until prepend', () => {
     const system = (seq: number, text: string, replaces?: number) => at(seq, 'system/message', {
       turn: 1, step: 1, message: systemMessage(text),
-    }, { surfaceOp: replaces === undefined ? 'append' : { op: 'replace', start: replaces, end: replaces } })
+    }, { surfaceOp: replaces === undefined ? 'append' : { op: 'replace', startSeq: replaces, endSeq: replaces } })
     const value = assembler([
       system(6, 'C', 3), system(7, 'D', 5),
       at(8, 'step/start', { turn: 1, step: 1 }),
@@ -843,7 +843,7 @@ describe('Trajectory conversation Definitions', () => {
       at(7, 'request/header', { reason: 'resume', header: { config: { provider: 'test', model: 'test' } } }),
       at(8, 'user/message', {
         ...systemMessage('summary'), role: 'user', source: { kind: 'plugin', plugin: 'compaction' },
-      }, { surfaceOp: { op: 'replace', start: 2, end: 6 } }),
+      }, { surfaceOp: { op: 'replace', startSeq: 2, endSeq: 6 } }),
       at(9, 'assistant/message', { turn: 1, step: 1, message: assistantMessage('reply', 'reply') }),
     ])
     expect(snapshot(value).requests.at(-1)).toMatchObject({ prompt: { system: '' } })

@@ -286,7 +286,9 @@ describe('canonical event-local surface metadata', () => {
 
   it.each(['turn/start', 'assistant/attempt', 'request/context', 'session/title', 'tool/ptc-dispatch'])('rejects known log-only %s metadata even when ignorable', (type) => {
     for (const metadata of [{ surfaceOp: 'append' }, { sourceEventSeqs: [0] }]) {
-      const event = { type, seq: SessionSeq(0), time: 1, data: { turn: 1, step: 1, stream: [] }, ignorable: true, ...metadata } as unknown as SessionEvent
+      const event = {
+        type, seq: SessionSeq(0), time: 1, data: { turn: 1, step: 1, stream: [] }, ignorable: true, ...metadata,
+      } as unknown as SessionEvent
       for (const accept of Object.values(entryPaths)) expect(() => accept(event)).toThrow(/not surface-eligible/)
     }
   })

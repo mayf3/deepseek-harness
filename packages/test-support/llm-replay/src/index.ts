@@ -312,7 +312,6 @@ function restoreProjectedRequestHeader(
   target: Readonly<Record<string, unknown>>,
   source: Readonly<Record<string, unknown>>,
 ): Readonly<Record<string, unknown>> {
-  if (target['type'] !== 'request/header' || source['type'] !== 'request/header') return target
   const targetData = target['data'] as Record<string, unknown>
   const sourceData = source['data'] as Record<string, unknown>
   const targetHeader = targetData['header'] as Record<string, unknown>
