@@ -18,8 +18,6 @@ Runtime interfaces carry Agent identity at the point that owns it. `AgentSetup` 
 
 Scope-aware registries continue to use the opaque scope key only for registration membership. Tool-subagent does not classify that key or resolve an Agent from Context. A direct `AgentSetup` passes the unpublished Session explicitly and installs through the supplied Context before publication. A settings-backed standing preset reserves one Cordis cleanup effect for each matching Agent before sampling policy: the event payload supplies the Agent, its Session supplies the policy target, its Context owns the registrations, and the preset effect joins their removal after reparenting or preset unload.
 
-Visualizer model installation likewise uses Context only for scoped registrations. The shipped wrapper selects the preset scope; the installer neither classifies its opaque key nor resolves an Agent from it. Widget follow-up authorization receives its exact live Agent through the Remote.
-
 `SubagentContinuationManager` puts the exact parent in both fresh-creation and cold-resume options. A live continuable child is therefore excluded from `AgentRegistry.roots()` and satisfies `isOwnedBy(child.id, parent)`. Durable `parentSession` metadata does not substitute for this relation: a fork or resumed Session may be a runtime root when no live Agent owns it.
 
 The [Agent registration-scope decision](2026-07-08-agent-scope-contexts.md), its [runtime design](2026-07-12-agent-scope-runtime-design.md), and the [initiator-scope decision](2026-07-15-agent-initiator-scope.md) retain their independent registration, lifecycle, and private-chain rationale. This decision supersedes only the reverse Context association and implicit runtime-owner derivation described there.

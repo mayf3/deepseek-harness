@@ -18,8 +18,6 @@ Agent 的 Cordis Context 拥有注册及其清理。Agent 身份则为某项操�
 
 感知作用域的注册表继续仅使用不透明作用域键判断注册成员关系。tool-subagent 不会分类该键，也不会从 Context 解析 Agent。直接 `AgentSetup` 显式传入尚未发布的 Session，并在发布前通过所给 Context 完成安装。由设置控制的常驻 preset 在读取策略前，会为每个匹配 Agent 预留一个 Cordis 清理 effect：事件 payload 提供 Agent，其 Session 提供策略目标，其 Context 拥有注册项，而 preset effect 会在重设父级或 preset 卸载后等待其清理完成。
 
-Visualizer 模型贡献的安装同样只使用 Context 管理作用域注册。随产品提供的 wrapper 选择 preset 作用域；安装器既不分类其不透明键，也不从中解析 Agent。Widget follow-up 授权通过 Remote 接收确切的存活 Agent。
-
 `SubagentContinuationManager` 会把确切父级放进全新创建与冷恢复的 options。因此，存活的可续跑子级不会出现在 `AgentRegistry.roots()` 中，并且满足 `isOwnedBy(child.id, parent)`。持久化 `parentSession` 元数据不能代替这项关系：没有存活 Agent 拥有 fork 或已恢复会话时，它仍可成为 runtime root。
 
 [Agent 注册作用域决策](2026-07-08-agent-scope-contexts.zh.md)、其[运行时设计](2026-07-12-agent-scope-runtime-design.zh.md)和[发起方作用域决策](2026-07-15-agent-initiator-scope.zh.md)继续拥有各自独立的注册、生命周期及私有调用链理由。本决策只取代其中描述的反向 Context 关联和隐式运行时所属方推导。

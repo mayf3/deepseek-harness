@@ -501,6 +501,9 @@ describe('web e2e: seeded history renders through cold resume', () => {
       const userId = userLine?.match(/^Anonymous user: ([0-9a-f-]+)/i)?.[1]
       if (userId === undefined) throw new Error('feedback command omitted the user id')
 
+      // command/done can arrive before the submit reply releases the composer.
+      await expect.poll(() => input.textContent(), { timeout: 10_000 }).toBe('')
+      await expect.poll(() => page.getByRole('button', { name: 'Add attachment' }).isEnabled(), { timeout: 10_000 }).toBe(true)
       const snapshot = (await captureStableAria(page, '[class*="centerCol"]', scaffold.workspaceCwd))
         .split(SEED_ID).join('{{seededId}}')
         .split(userId).join('{{userId}}')

@@ -349,6 +349,14 @@ describe('web e2e: lifecycle & chrome (workspace flow / reload / dark mode)', ()
       expect(await connecting.innerText()).toMatch(/^Reconnecting\.{1,3}$/)
       const connectingGeometry = await connectionIndicatorGeometry(connecting)
       expect(await connectionIndicatorTextAlignment(connecting)).toBe('left')
+      // Animated dots must remain hidden with their state label during hover.
+      await connecting.evaluate((element) => {
+        for (const animation of element.getAnimations({ subtree: true })) {
+          if (!(animation instanceof CSSAnimation)) continue
+          animation.pause()
+          animation.currentTime = 1_250
+        }
+      })
       await connecting.hover()
       expect(await connecting.innerText()).toBe('Reconnect now')
       expect(await connectionIndicatorGeometry(connecting)).toEqual(connectingGeometry)

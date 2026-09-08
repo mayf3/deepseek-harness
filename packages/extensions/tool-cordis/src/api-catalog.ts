@@ -2737,23 +2737,6 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
-    key: 'visualizer',
-    summary: 'One Host service owns every authority-bearing part of the Visualizer extension.',
-    description: 'One Host service owns every authority-bearing part of the Visualizer extension.',
-    methods: [
-      {
-        signature: 'installModelSurface(modelCtx: Context): void',
-        description: 'Install the model-facing Visualizer contribution through the supplied scoped owner.',
-        parameters: [{ name: 'modelCtx', description: 'Scoped context that owns the prompt and tool effects; shipped wrappers use the preset scope.' }],
-      },
-      {
-        signature: '@Remote(\'sendPrompt\') remoteSendPrompt(agent: Agent, request: WidgetPromptRequest): void',
-        description: 'Queue a widget-authored message after Host-side authorization and rate limiting.',
-        parameters: [{ name: 'agent', description: 'Exact live Agent resolved from the Remote session scope.' }, { name: 'request', description: 'Follow-up for one successful interactive widget call.' }],
-      },
-    ],
-  },
-  {
     key: 'web',
     summary: 'The web access service.',
     description: 'The web access service. Registered as `ctx.web` (one instance per context).\n\nSelection semantics (resolved at execution time, never order-dependent):\n\n- A configured id that is registered and `available()` → that provider.\n- A configured id not registered → `WEB_PROVIDER_CONFIGURED_MISSING`.\n- A configured id registered but unavailable → `WEB_PROVIDER_CONFIGURED_UNAVAILABLE`.\n- No id configured, exactly one registered usable provider → that provider.\n- No id configured, multiple usable providers → `WEB_PROVIDER_AMBIGUOUS`.\n- No id configured, no usable provider → `WEB_PROVIDER_UNAVAILABLE`.',
@@ -6319,10 +6302,6 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'WebUpgradeRoute',
     declaration: 'export interface WebUpgradeRoute {\n    path: string;\n    handler: (req: IncomingMessage, socket: Duplex, head: Buffer) => void | Promise<void>;\n}',
-  },
-  {
-    name: 'WidgetPromptRequest',
-    declaration: 'export interface WidgetPromptRequest {\n    readonly resultSeq: number;\n    readonly text: string;\n}',
   },
   {
     name: 'WorkflowAgentEndInfo',
