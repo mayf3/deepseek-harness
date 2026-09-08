@@ -100,17 +100,16 @@ function PdfPage({ document, page, requested: initiallyRequested, onVisible, sig
       return
     }
     let disposed = false
-    let observer: IntersectionObserver | undefined
-    observer = new IntersectionObserver((entries) => {
+    const observer = new IntersectionObserver((entries) => {
       if (disposed || !entries.some(entry => entry.isIntersecting)) return
       setRequested(true)
       onVisible(page)
-      observer?.disconnect()
+      observer.disconnect()
     }, { rootMargin: '100% 0px' })
     observer.observe(node)
     return () => {
       disposed = true
-      observer?.disconnect()
+      observer.disconnect()
     }
   }, [page, onVisible])
   useEffect(() => {
