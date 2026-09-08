@@ -1,7 +1,8 @@
 /**
- * ic_ds_* icon set for the dsh web UI. All glyphs render fill="currentColor"
- * and take {size, className}. Batch A mirrors the deepsuite icon library
- * (same figma source); batch B glyphs are harness-only figma extracts.
+ * ic_ds_* icon set for the dsh web UI. All glyphs ride currentColor (filled
+ * or stroked) and take {size, className}. Batch A mirrors the deepsuite icon
+ * library (same figma source); batch B glyphs are harness-only figma
+ * extracts; the product glyphs at the end are hand-authored.
  */
 import type { IconProps } from './props.ts'
 
@@ -935,7 +936,12 @@ export const IconArchiveOutline20 = ({ size = 20, className }: IconProps) => (
   </svg>
 )
 
-/** plan_outline_14 (design doc for #3567: the composer menu's Plan row glyph; drawn on a 14 grid) */
+/**
+ * Plan row glyph of the composer menu (#3567): a document with three ruled
+ * lines and a pencil over its corner. Drawn on a 14 grid whose content spans
+ * 0.5..13.5, so at the menu's 16px render it fills the same extent as the
+ * 16-grid glyphs beside it.
+ */
 export const IconPlanOutline14 = ({ size = 14, className }: IconProps) => (
   <svg width={size} height={size} className={className} viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg">
     <path d="M9.56143 3.14672V4.24774H3.94716V3.14672H9.56143Z" fill="currentColor" />
@@ -953,22 +959,32 @@ export const IconPlanOutline14 = ({ size = 14, className }: IconProps) => (
   </svg>
 )
 
-/** compact_outline_16 (the composer's context-usage ring as a static glyph: a quiet track with one filled arc) */
+/**
+ * Compact row glyph of the composer menu: the composer's context-usage ring
+ * (ContextMeter) frozen at its resting look — a quiet track with one filled
+ * quarter arc. A restyle of the live ring revisits this copy.
+ */
 export const IconCompactOutline16 = ({ size = 16, className }: IconProps) => (
   <svg width={size} height={size} className={className} viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
-    <circle cx="8" cy="8" r="6" stroke="currentColor" strokeWidth="1.6" opacity="0.35" />
-    <path d="M8 2A6 6 0 0 1 14 8" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+    <circle cx="8" cy="8" r="6.4" stroke="currentColor" strokeWidth="1.6" opacity="0.35" />
+    <path d="M8 1.6A6.4 6.4 0 0 1 14.4 8" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
   </svg>
 )
 
-/** shield_outline_16 (design set 1556: the permission shield contour without a mode mark) */
+/**
+ * The permission shield contour on the 16 grid (design set 1556), stroked at
+ * {@link SHIELD_OUTLINE_STROKE}. The composer's permission selector composes
+ * its mode marks (check, pencil, exclamation) over this same path inside one
+ * svg, so the geometry lives here once.
+ */
+export const SHIELD_OUTLINE_PATH = 'M8.20554 0.899994L14.7901 3.36857V7.01026C14.7901 12 11.0466 14.2103 8.20554 15.3C5.36446 14.2103 1.62012 12 1.62012 7.01026V3.36857L8.20554 0.899994Z'
+
+/** Stroke width of {@link SHIELD_OUTLINE_PATH}. */
+export const SHIELD_OUTLINE_STROKE = '1.31831'
+
+/** Permission row glyph of the composer menu: the shield contour alone, without a mode mark. */
 export const IconShieldOutline16 = ({ size = 16, className }: IconProps) => (
   <svg width={size} height={size} className={className} viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
-    <path
-      d="M8.20554 0.899994L14.7901 3.36857V7.01026C14.7901 12 11.0466 14.2103 8.20554 15.3C5.36446 14.2103 1.62012 12 1.62012 7.01026V3.36857L8.20554 0.899994Z"
-      stroke="currentColor"
-      strokeWidth="1.31831"
-      strokeLinejoin="round"
-    />
+    <path d={SHIELD_OUTLINE_PATH} stroke="currentColor" strokeWidth={SHIELD_OUTLINE_STROKE} strokeLinejoin="round" />
   </svg>
 )
