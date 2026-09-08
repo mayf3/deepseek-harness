@@ -28,4 +28,6 @@ This decision supersedes the flat owner-props choice in [tab types and navigatio
 
 ## Consequences
 
+Browser comparisons of related panel rectangles and CSS insets capture all values in one page execution. Responsive grid updates can occur between browser round trips, so separately sampled rectangles do not establish alignment even when each sample is accurate.
+
 Tab extensions use a framework-injected reader and keep their own store actions separate from `tab.actions`. Layout, seat and docking tests cover width concessions, explicit reopening, body/title visibility, tab lifetimes, horizontal drop zones and divider limits; browser tests exercise the assembled application. Compact mobile controls and layout persistence remain outside this decision.
