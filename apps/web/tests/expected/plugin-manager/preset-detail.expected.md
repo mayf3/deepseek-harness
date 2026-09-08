@@ -6,9 +6,6 @@
 - paragraph: 功能完整的编码 Agent，支持文件编辑、Shell、文件与网页检索、Skills、计划、目标、子代理和工作流。
 - heading "能力" [level=3]
 - button "给 标准模式 添加能力": 添加
-- status:
-  - text: 已完成。
-  - button "知道了"
 - list:
   - listitem:
     - text: 人设 助手的身份与语气

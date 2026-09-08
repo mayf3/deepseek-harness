@@ -15,7 +15,8 @@
 import { useEffect, useId, useState, type ReactNode } from 'react'
 import type { PluginInstallRejection, PluginPackageView, PluginRowTarget } from '@deepseek-ai/dsh-api-remotes/client'
 import {
-  Button, IconChevronDownOutline14, IconRefreshOutline16, Input, Menu, Modal, StateDot, Switch, Tag,
+  Button, IconChevronDownOutline14, IconChevronRightOutline14, IconCordisPluginOutline14, IconRefreshOutline16,
+  Input, Menu, Modal, StateDot, Switch, Tag,
   type MenuItem, type StateDotState,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
@@ -183,13 +184,19 @@ function RowsSection({ rows, t, toggle }: {
                   data-plugin-row={row.entryId}
                   {...isFailedRow(row) ? { 'data-state': 'failed' } : row.enabled ? {} : { 'data-state': 'off' }}
                 >
-                  <StateDot state={rowDotState(row)} size={8} />
-                  <div className={css.rowMain}>
-                    <span className={css.rowId}>{row.rowId}</span>
-                    <span className={css.rowState}>{rowStateText(row, t)}</span>
-                    {row.failure === undefined ? null : <p className={css.rowFailure}>{row.failure.message}</p>}
+                  <div className={css.rowLine}>
+                    <span className={css.rowIcon} aria-hidden="true"><IconCordisPluginOutline14 /></span>
+                    <div className={css.rowMain}>
+                      <span className={css.rowId}>{row.rowId}</span>
+                      <span className={css.rowModule}>{row.moduleName}</span>
+                    </div>
+                    <span className={css.rowState}>
+                      <StateDot state={rowDotState(row)} size={8} />
+                      {rowStateText(row, t)}
+                    </span>
+                    {rowToggle === undefined ? null : <RowSwitch row={row} t={t} toggle={rowToggle} />}
                   </div>
-                  {rowToggle === undefined ? null : <RowSwitch row={row} t={t} toggle={rowToggle} />}
+                  {row.failure === undefined ? null : <p className={css.rowFailure}>{row.failure.message}</p>}
                 </li>
               )
             })}
@@ -246,44 +253,48 @@ function ModulesSection({ pkg, t, busy, presets, globalModules, presetName, onAd
           const joined = joinedTargets(entry, presets, globalModules, t, presetName)
           const open = openMenu === entry.moduleName
           return (
-            <li key={entry.moduleName} className={css.row} data-plugin-module={entry.moduleName}>
-              <StateDot state={entry.ok ? joined.length > 0 ? 'done' : 'idle' : 'error'} size={8} />
-              <div className={css.rowMain}>
-                <span className={css.rowId}>{entry.title ?? (entry.declaredName === '.' ? title : entry.declaredName)}</span>
+            <li key={entry.moduleName} className={css.row} data-plugin-module={entry.moduleName} {...entry.ok ? {} : { 'data-state': 'failed' }}>
+              <div className={css.rowLine}>
+                <span className={css.rowIcon} aria-hidden="true"><IconCordisPluginOutline14 /></span>
+                <div className={css.rowMain}>
+                  <span className={css.rowId}>{entry.title ?? (entry.declaredName === '.' ? title : entry.declaredName)}</span>
+                  <span className={css.rowModule}>{entry.moduleName}</span>
+                </div>
                 <span className={css.rowState}>
+                  <StateDot state={entry.ok ? joined.length > 0 ? 'done' : 'idle' : 'error'} size={8} />
                   {entry.ok
                     ? joined.length > 0 ? t('moduleJoined', { targets: joined.join(t('joinedSeparator')) }) : t('moduleNotJoined')
                     : t('moduleBroken', { error: entry.error ?? '' })}
                 </span>
+                {entry.ok
+                  ? (
+                    <Menu
+                      open={open}
+                      onClose={() => { setOpenMenu(null) }}
+                      items={addTargets(entry, presets, globalModules, t, presetName)}
+                      onSelect={(id) => {
+                        setOpenMenu(null)
+                        const choice = JSON.parse(id) as AddChoice
+                        onAddRow(choice.declaredName, choice.target)
+                      }}
+                      align="end"
+                      portal
+                      anchor={(
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          aria-haspopup="menu"
+                          aria-expanded={open}
+                          disabled={busy}
+                          onClick={() => { setOpenMenu(open ? null : entry.moduleName) }}
+                        >
+                          {t('addTo')}
+                        </Button>
+                      )}
+                    />
+                  )
+                  : null}
               </div>
-              {entry.ok
-                ? (
-                  <Menu
-                    open={open}
-                    onClose={() => { setOpenMenu(null) }}
-                    items={addTargets(entry, presets, globalModules, t, presetName)}
-                    onSelect={(id) => {
-                      setOpenMenu(null)
-                      const choice = JSON.parse(id) as AddChoice
-                      onAddRow(choice.declaredName, choice.target)
-                    }}
-                    align="end"
-                    portal
-                    anchor={(
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        aria-haspopup="menu"
-                        aria-expanded={open}
-                        disabled={busy}
-                        onClick={() => { setOpenMenu(open ? null : entry.moduleName) }}
-                      >
-                        {t('addTo')}
-                      </Button>
-                    )}
-                  />
-                )
-                : null}
             </li>
           )
         })}
@@ -403,7 +414,7 @@ function PackageCard({ pkg, t, busy, presets, globalModules, presetName, onOpen,
             title={t('openDetailTip')}
             onClick={onOpen}
           >
-            <IconChevronDownOutline14 className={css.chevronRight} aria-hidden="true" />
+            <IconChevronRightOutline14 className={css.cardArrow} aria-hidden="true" />
           </button>
         </div>
       </div>

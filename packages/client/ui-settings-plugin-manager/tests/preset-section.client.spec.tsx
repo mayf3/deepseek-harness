@@ -200,8 +200,8 @@ describe('PresetPluginsSection', () => {
   })
 
   it('shows the last action\'s outcome and dismisses it', () => {
-    const { actions, set } = renderSection({ presets: [preset()], notice: { kind: 'done', packageName: 'x' } })
-    expect(screen.getByRole('status').textContent).toContain(en.doneNotice)
+    const { actions, set } = renderSection({ presets: [preset()], notice: { kind: 'restart', packageName: 'x' } })
+    expect(screen.getByRole('status').textContent).toContain(en.restartNotice)
     set({ notice: { kind: 'failed', code: 'plugins/row-conflict', reason: 'r', rowId: 'row-1' } })
     expect(screen.getByRole('alert').textContent).toContain(en.rowConflict.replace('{row}', 'row-1'))
     fireEvent.click(screen.getByRole('button', { name: en.dismiss }))

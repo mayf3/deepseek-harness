@@ -197,7 +197,9 @@ describe('PluginManagerController', () => {
     await vi.waitFor(() => { expect(state().confirm?.dependents).toBeDefined() })
     face.confirm()
     await vi.waitFor(() => { expect(plugins.uninstall).toHaveBeenCalledWith(BUNDLE.name) })
-    await vi.waitFor(() => { expect(state().notice).toEqual({ kind: 'done', packageName: BUNDLE.name }) })
+    await vi.waitFor(() => { expect(state().busy).toEqual([]) })
+    // Success shows in the re-read list, not as a notice.
+    expect(state().notice).toBeNull()
     expect(state().confirm).toBeNull()
   })
 
@@ -222,13 +224,15 @@ describe('PluginManagerController', () => {
     await controller.load()
     face.retry(BUNDLE.name)
     await vi.waitFor(() => { expect(plugins.retry).toHaveBeenCalledWith(BUNDLE.name) })
-    await vi.waitFor(() => { expect(state().notice).toEqual({ kind: 'done', packageName: BUNDLE.name }) })
+    await vi.waitFor(() => { expect(state().busy).toEqual([]) })
+    expect(state().notice).toBeNull()
 
     face.addRow('@fixture/tool', '.', { kind: 'preset', preset: 'standard' })
     await vi.waitFor(() => {
       expect(plugins.addRow).toHaveBeenCalledWith('@fixture/tool', { kind: 'preset', preset: 'standard' }, { module: '.' })
     })
-    await vi.waitFor(() => { expect(state().notice).toEqual({ kind: 'done', packageName: '@fixture/tool' }) })
+    await vi.waitFor(() => { expect(state().busy).toEqual([]) })
+    expect(state().notice).toBeNull()
 
     const target = { kind: 'preset', preset: 'standard' } as const
     face.setRowDisabled(target, 'bash', true)

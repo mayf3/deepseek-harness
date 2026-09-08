@@ -29,7 +29,6 @@ export type PresetRow = PresetGroup['rows'][number]
 /** What the last action left to say. */
 export type ManagerNotice =
   | { readonly kind: 'restart'; readonly packageName: string }
-  | { readonly kind: 'done'; readonly packageName?: string }
   | {
     readonly kind: 'failed'
     /** The Host's failure code, which selects the copy. */
@@ -220,7 +219,6 @@ export class PluginManagerController {
       addRow: (packageName, declaredName, target) => {
         void this.run(packageName, { packageName }, async () => {
           this.answer(await this.ctx.remote.plugins.addRow(packageName, target, { module: declaredName }))
-          this.patch({ notice: { kind: 'done', packageName } })
         })
       },
       removeRow: (target, rowId) => {
@@ -316,7 +314,6 @@ export class PluginManagerController {
     const perform = action === 'uninstall'
       ? async (): Promise<void> => {
         this.answer(await this.ctx.remote.plugins.uninstall(packageName))
-        this.patch({ notice: { kind: 'done', packageName } })
       }
       : async (): Promise<void> => {
         this.effect(await this.ctx.remote.plugins.disable(packageName), packageName)
@@ -397,7 +394,8 @@ export class PluginManagerController {
   /** Publish an enable-shaped answer's effect as the notice. */
   private effect(result: Answer<PluginEnableResult>, packageName: string): void {
     const value = this.answer(result)
-    this.patch({ notice: value.effect === 'restart' ? { kind: 'restart', packageName } : { kind: 'done', packageName } })
+    // Success needs no notice: the re-read list shows the new state. A restart the change waits for does.
+    if (value.effect === 'restart') this.patch({ notice: { kind: 'restart', packageName } })
   }
 
   /** Unwrap an answer, throwing its failure for {@link run} to report. */

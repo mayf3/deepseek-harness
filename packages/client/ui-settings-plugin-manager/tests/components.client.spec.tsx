@@ -206,15 +206,15 @@ describe('PluginManagerSettingsTab', () => {
     expect(screen.getByText(`${en.reasonLabel}: one row failed`)).toBeTruthy()
     expect(screen.getByText('0.16.0')).toBeTruthy()
     expect(screen.getByText(en.sourceExternal)).toBeTruthy()
-    // Every row on one line, in the pack's order, saying its state; a failure adds its message.
+    // Every row in the pack's order: its id over the module it loads, then its state; a failure adds its message.
     expect(screen.getByText('6 total · 1 running · 2 off · 2 failed')).toBeTruthy()
     const rowText = (id: string): string | undefined => document.querySelector(`[data-plugin-row="include:${id}"]`)?.textContent
-    expect(rowText('better-sidebar')).toBe(`better-sidebar${en.rowPhaseActive}`)
-    expect(rowText('off')).toBe(`off${en.partDisabledByUser}`)
-    expect(rowText('gated')).toBe(`gated${en.partDisabledByComposition}`)
-    expect(rowText('crash')).toBe(`crash${en.rowStateFailed}boom`)
-    expect(rowText('flaky')).toBe(`flaky${en.rowStateFailed}`)
-    expect(rowText('idle')).toBe(`idle${en.rowStateIdle}`)
+    expect(rowText('better-sidebar')).toBe(`better-sidebardsh-better-sidebar${en.rowPhaseActive}`)
+    expect(rowText('off')).toBe(`offdsh-better-sidebar/off${en.partDisabledByUser}`)
+    expect(rowText('gated')).toBe(`gateddsh-better-sidebar/gated${en.partDisabledByComposition}`)
+    expect(rowText('crash')).toBe(`crashdsh-better-sidebar/crash${en.rowStateFailed}boom`)
+    expect(rowText('flaky')).toBe(`flakydsh-better-sidebar/flaky${en.rowStateFailed}`)
+    expect(rowText('idle')).toBe(`idledsh-better-sidebar/idle${en.rowStateIdle}`)
     expect(document.querySelector('[data-plugin-row="include:off"]')?.getAttribute('data-state')).toBe('off')
     expect(document.querySelector('[data-plugin-row="include:crash"]')?.getAttribute('data-state')).toBe('failed')
     // A short list has no filter; the built-in rows the pack changes are named.
@@ -316,7 +316,7 @@ describe('PluginManagerSettingsTab', () => {
     // applies patches at its next start, a pack that is off, and a built-in pack.
     for (const [name, rowId] of [['frozen', 'frozen'], ['parked', 'parked'], ['Core', 'core']] as const) {
       fireEvent.click(screen.getByRole('button', { name: `View ${name}` }))
-      expect(document.querySelector(`[data-plugin-row="include:${rowId}"]`)?.textContent).toBe(`${rowId}${en.partDisabledByUser}`)
+      expect(document.querySelector(`[data-plugin-row="include:${rowId}"]`)?.textContent).toContain(en.partDisabledByUser)
       expect(screen.queryByRole('switch', { name: `Enable component ${rowId}` })).toBeNull()
       fireEvent.click(screen.getByRole('button', { name: en.backToList }))
     }
@@ -348,8 +348,9 @@ describe('PluginManagerSettingsTab', () => {
     // The main export reads by the package title; a module by its own title;
     // each names where it is composed, or why it cannot be.
     const moduleText = (name: string): string | undefined => document.querySelector(`[data-plugin-module="${name}"]`)?.textContent
-    expect(moduleText('dsh-tool-foo')).toContain(`Foo tools${en.moduleJoined.replace('{targets}', `${en.joinedGlobal}, 标准`)}`)
-    expect(moduleText('dsh-tool-foo/bar')).toContain(`Bar${en.moduleNotJoined}`)
+    expect(moduleText('dsh-tool-foo')).toBe(`Foo toolsdsh-tool-foo${en.moduleJoined.replace('{targets}', `${en.joinedGlobal}, 标准`)}${en.addTo}`)
+    expect(moduleText('dsh-tool-foo/bar')).toBe(`Bardsh-tool-foo/bar${en.moduleNotJoined}${en.addTo}`)
+    expect(document.querySelector('[data-plugin-module="dsh-tool-foo/broken"]')?.getAttribute('data-state')).toBe('failed')
     expect(moduleText('dsh-tool-foo/broken')).toContain(en.moduleBroken.replace('{error}', 'no default export'))
     expect(moduleText('dsh-tool-foo/silent')).toContain(en.moduleBroken.replace('{error}', ''))
     // Only an importable module offers Add to…; the menu marks the targets it joined.
@@ -373,7 +374,7 @@ describe('PluginManagerSettingsTab', () => {
     // A package without a title reads by its short name.
     fireEvent.click(screen.getByRole('button', { name: en.backToList }))
     fireEvent.click(screen.getByRole('button', { name: 'View tool-bare' }))
-    expect(moduleText('dsh-tool-bare')).toContain(`tool-bare${en.moduleNotJoined}`)
+    expect(moduleText('dsh-tool-bare')).toContain(`tool-baredsh-tool-bare${en.moduleNotJoined}`)
   })
 
   it('offers Add to… for a plugin with importable modules, marking the targets it already joined', () => {
@@ -526,8 +527,6 @@ describe('PluginManagerSettingsTab', () => {
   it('words every notice and dismisses it', () => {
     const { actions, set } = renderTab({ notice: { kind: 'restart', packageName: 'x' } })
     expect(screen.getByRole('status').textContent).toContain(en.restartNotice)
-    set({ notice: { kind: 'done' } })
-    expect(screen.getByRole('status').textContent).toContain(en.doneNotice)
     const failures: [string, string][] = [
       ['plugins/not-enableable', en.notEnableable.replace('{reason}', 'r')],
       ['plugins/enable-failed', en.enableFailed.replace('{reason}', 'r')],

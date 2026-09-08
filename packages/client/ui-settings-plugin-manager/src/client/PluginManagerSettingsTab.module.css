@@ -134,11 +134,6 @@
   background: var(--dsw-alias-bg-layer-3);
 }
 
-.card[data-open='true'] {
-  background: var(--dsw-alias-bg-layer-2);
-  border-color: var(--dsw-alias-border-l3);
-}
-
 .cardHead {
   display: flex;
   align-items: center;
@@ -451,13 +446,6 @@
   --dsw-alias-button-primary-hover: var(--dsw-alias-state-error-primary);
 }
 
-/* The way into a package's page: the list chevron turned to point right. */
-.chevronRight {
-  flex: none;
-  color: var(--dsw-alias-label-tertiary);
-  transform: rotate(-90deg);
-}
-
 .detail {
   display: flex;
   flex-direction: column;
@@ -623,6 +611,99 @@
   flex-basis: 100%;
   margin: 0;
   font-size: 12px;
+  color: var(--dsw-alias-state-error-primary);
+  overflow-wrap: anywhere;
+}
+/* The way into a package's page. */
+.cardArrow {
+  flex: none;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+/* Rows sit on the page ground, one hairline apart, so they read on a white page too. */
+.rows {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.row {
+  padding: 10px 2px;
+  border-bottom: 0.5px solid var(--dsw-alias-border-l2);
+}
+
+.row:last-child {
+  border-bottom: 0;
+}
+
+.rowLine {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.rowIcon {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: 0.5px solid var(--dsw-alias-border-l3);
+  border-radius: 8px;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.rowMain {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.rowId {
+  font-size: 13.5px;
+  line-height: 20px;
+  font-weight: 600;
+  color: var(--dsw-alias-label-primary);
+  overflow-wrap: anywhere;
+}
+
+.row[data-state='off'] .rowId {
+  color: var(--dsw-alias-label-secondary);
+}
+
+.rowModule {
+  font-family: var(--dsw-font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 11.5px;
+  line-height: 16px;
+  color: var(--dsw-alias-label-tertiary);
+  overflow-wrap: anywhere;
+}
+
+.rowState {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-secondary);
+  white-space: nowrap;
+}
+
+.row[data-state='failed'] .rowState {
+  color: var(--dsw-alias-state-error-primary);
+}
+
+.rowFailure {
+  margin: 4px 0 0 44px;
+  font-size: 12px;
+  line-height: 18px;
   color: var(--dsw-alias-state-error-primary);
   overflow-wrap: anywhere;
 }
