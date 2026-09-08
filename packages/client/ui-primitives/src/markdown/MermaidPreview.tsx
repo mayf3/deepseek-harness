@@ -11,7 +11,12 @@ export interface MermaidPreviewLabels {
   error: string
 }
 
-type Result = { code: string; src: string } | { code: string; error: true }
+type Result = { kind: 'ok'; code: string; src: string } | { kind: 'error'; code: string }
+
+/* v8 ignore next 3 -- closed-union backstop; only reached if a result is forged */
+function assertNever(value: never): never {
+  throw new Error(`unreachable Mermaid result: ${String(value)}`)
+}
 
 /**
  * Display a complete Mermaid document on a light diagram canvas, or its source if rendering fails.
@@ -23,20 +28,24 @@ export function MermaidPreview({ code, labels }: { code: string; labels: Mermaid
   useEffect(() => {
     const controller = new AbortController()
     void renderMermaid(code, controller.signal).then(
-      (src) => { if (!controller.signal.aborted) setResult({ code, src }) },
-      () => { if (!controller.signal.aborted) setResult({ code, error: true }) },
+      (src) => { if (!controller.signal.aborted) setResult({ kind: 'ok', code, src }) },
+      () => { if (!controller.signal.aborted) setResult({ kind: 'error', code }) },
     )
     return () => { controller.abort() }
   }, [code])
 
   if (result?.code !== code) return <div className={css.status} role="status">{labels.loading}</div>
-  if ('error' in result) {
-    return (
-      <div>
-        <div className={css.status} role="status">{labels.error}</div>
-        <pre><code>{code}</code></pre>
-      </div>
-    )
+  switch (result.kind) {
+    case 'ok':
+      return <div className={css.canvas}><img className={css.diagram} src={result.src} alt={labels.diagram} /></div>
+    case 'error':
+      return (
+        <div>
+          <div className={css.status} role="status">{labels.error}</div>
+          <pre><code>{code}</code></pre>
+        </div>
+      )
+    /* v8 ignore next -- closed-union backstop; only reached if a result is forged */
+    default: return assertNever(result)
   }
-  return <div className={css.canvas}><img className={css.diagram} src={result.src} alt={labels.diagram} /></div>
 }
