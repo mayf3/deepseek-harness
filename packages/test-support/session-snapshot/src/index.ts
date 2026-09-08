@@ -44,7 +44,6 @@ export {
   normalizeSessionSnapshot,
   normalizeSessionSnapshots,
   normalizeStdout,
-  omitSubagentCatalogForHistoricalComparison,
   scrubModelRequestBulk,
   scrubSessionSnapshot,
   scrubSystemPrompts,

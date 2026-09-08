@@ -7,7 +7,6 @@ import {
   normalizeSessionSnapshot,
   normalizeSessionSnapshots,
   normalizeStdout,
-  omitSubagentCatalogForHistoricalComparison,
   scrubModelRequestBulk,
   scrubSessionSnapshot,
   scrubSystemPrompts,
@@ -677,70 +676,6 @@ describe('normalizeSessionSnapshot', () => {
       records[4],
     ].map(record => JSON.stringify(record)).join('\n') + '\n')
     expect(normalizeSessionSnapshot(normalized, ctx)).toBe(normalized)
-  })
-
-  it('omits current catalog facts and rebases source references for historical comparison', () => {
-    const normalized = [
-      JSON.stringify({ type: 'session', id: '{{session:1}}' }),
-      JSON.stringify({ type: 'tool/call', data: { callId: 'first' } }),
-      JSON.stringify({
-        type: 'subagent/catalog',
-        data: { version: 0, childId: '{{session:2}}', childCreatedAt: 0, mode: 'one-shot' },
-      }),
-      JSON.stringify({ type: 'tool/result', data: { callId: 'first' }, sourceEventSeqs: [0] }),
-      JSON.stringify({ type: 'tool/call', data: { callId: 'second' } }),
-      JSON.stringify({
-        type: 'subagent/catalog',
-        data: { version: 0, childId: '{{session:3}}', childCreatedAt: 0, mode: 'one-shot' },
-      }),
-      JSON.stringify({ type: 'tool/result', data: { callId: 'second' }, sourceEventSeqs: [3] }),
-      '',
-    ].join('\n')
-    expect(omitSubagentCatalogForHistoricalComparison(normalized)).toBe([
-      JSON.stringify({ type: 'session', id: '{{session:1}}' }),
-      JSON.stringify({ type: 'tool/call', data: { callId: 'first' } }),
-      JSON.stringify({ type: 'tool/result', data: { callId: 'first' }, sourceEventSeqs: [0] }),
-      JSON.stringify({ type: 'tool/call', data: { callId: 'second' } }),
-      JSON.stringify({ type: 'tool/result', data: { callId: 'second' }, sourceEventSeqs: [2] }),
-      '',
-    ].join('\n'))
-  })
-
-  it('rejects an empty historical comparison input', () => {
-    expect(() => omitSubagentCatalogForHistoricalComparison('\n'))
-      .toThrow('session snapshot must start with a session header')
-  })
-
-  it('preserves snapshots and source references when no catalog fact is present', () => {
-    const normalized = [
-      { type: 'session', id: '{{session:1}}' },
-      { type: 'tool/call', data: { callId: 'result' } },
-      { type: 'tool/result', data: { callId: 'result' }, sourceEventSeqs: [0] },
-    ].map(record => JSON.stringify(record)).join('\n') + '\n'
-
-    expect(omitSubagentCatalogForHistoricalComparison(normalized)).toBe(normalized)
-  })
-
-  it.each(['0', 0.5, -1])('refuses malformed source references during historical comparison: %s', (source) => {
-    const normalized = [
-      { type: 'session', id: '{{session:1}}' },
-      { type: 'subagent/catalog', data: { childId: '{{session:2}}' } },
-      { type: 'tool/result', data: { callId: 'result' }, sourceEventSeqs: [source] },
-    ].map(record => JSON.stringify(record)).join('\n')
-
-    expect(() => omitSubagentCatalogForHistoricalComparison(normalized))
-      .toThrow('normalized sourceEventSeqs must contain non-negative safe integers')
-  })
-
-  it('refuses to remove a catalog fact cited by a retained event', () => {
-    const normalized = [
-      { type: 'session', id: '{{session:1}}' },
-      { type: 'subagent/catalog', data: { childId: '{{session:2}}' } },
-      { type: 'tool/result', data: { callId: 'result' }, sourceEventSeqs: [0] },
-    ].map(record => JSON.stringify(record)).join('\n')
-
-    expect(() => omitSubagentCatalogForHistoricalComparison(normalized))
-      .toThrow('historical comparison cannot omit cited catalog event 0')
   })
 
   it('migrates and re-packs multi-session fixtures after relationship-preserving id redaction', () => {

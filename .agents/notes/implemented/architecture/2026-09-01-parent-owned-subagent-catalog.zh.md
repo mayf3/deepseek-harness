@@ -28,6 +28,8 @@ Headless 快照采集按父目录顺序分配同父子级的 fixture 角色，�
 
 snapshot normalizer 会把 `childCreatedAt` 归零，因为它来自 process clock。事件顺序与来源事件引用保持不变：相邻 fact 也可能来自顺序创建，因此相邻关系不能证明可交换性。
 
+即使 replay 输入保留历史 Session generation，当前 writer 的快照预期也包含 catalog 事实。比较保留 catalog 及其来源事件引用；历史 replay 文件保持不变。
+
 ## 考虑过的替代方案
 
 **扁平不可变数组。** 用 `[...facts, fact]` append 会复制 D 个 fact，因此创建是 O(D)。修改共享数组会违反 projection state ownership 与 checkpoint 安全。

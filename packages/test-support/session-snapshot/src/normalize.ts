@@ -456,44 +456,6 @@ export function normalizeSessionSnapshots(
 }
 
 /**
- * Omit current subagent discovery facts when comparing a fresh run with an
- * immutable historical Session generation. The remaining source-event
- * references are rebased to the projected stream and refuse to cite an
- * omitted catalog event.
- *
- * @param rawLog - normalized current-format snapshot JSONL.
- * @returns the snapshot without `subagent/catalog` events.
- */
-export function omitSubagentCatalogForHistoricalComparison(rawLog: string): string {
-  const lines = rawLog.split('\n').filter(line => line.trim().length > 0)
-  const header = lines.shift()
-  if (header === undefined) throw new Error('session snapshot must start with a session header')
-  const events = lines.map(line => JSON.parse(line) as Record<string, unknown>)
-  const omitted = new Set(events.flatMap((event, seq) => event.type === 'subagent/catalog' ? [seq] : []))
-  if (omitted.size === 0) return `${[header, ...lines].join('\n')}\n`
-
-  const retained = events.flatMap((event, seq) => {
-    if (omitted.has(seq)) return []
-    if (!Array.isArray(event.sourceEventSeqs)) return [event]
-    const sourceEventSeqs = event.sourceEventSeqs.map((source) => {
-      if (typeof source !== 'number' || !Number.isSafeInteger(source) || source < 0) {
-        throw new Error('normalized sourceEventSeqs must contain non-negative safe integers')
-      }
-      if (omitted.has(source)) {
-        throw new Error(`historical comparison cannot omit cited catalog event ${source}`)
-      }
-      let preceding = 0
-      for (const omittedSeq of omitted) {
-        if (omittedSeq < source) preceding += 1
-      }
-      return source - preceding
-    })
-    return [{ ...event, sourceEventSeqs }]
-  })
-  return [header, ...retained.map(event => JSON.stringify(event)), ''].join('\n')
-}
-
-/**
  * Omit the artifact header generation after official migration for comparison.
  * Delivery and captured-source generations retain their opaque recorded values.
  * @param rawLog - Session records or events as compact JSON lines.

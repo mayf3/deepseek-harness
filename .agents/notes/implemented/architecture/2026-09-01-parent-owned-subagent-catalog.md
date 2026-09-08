@@ -28,6 +28,8 @@ Headless snapshot collection assigns sibling fixture roles by their parent catal
 
 Snapshot normalizers zero `childCreatedAt` because it originates from the process clock. Event order and source-event references remain intact: adjacent facts can come from sequential creation, so adjacency does not establish commutativity.
 
+Current-writer snapshot expectations include catalog facts even when replay input retains a historical Session generation. The comparison preserves the catalog and its source-event references; historical replay files remain unchanged.
+
 ## Alternatives considered
 
 **A flat immutable array.** Appending with `[...facts, fact]` copies D facts, so creation is O(D). Mutating a shared array would violate projection state ownership and checkpoint safety.

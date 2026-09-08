@@ -26,7 +26,6 @@ import {
   normalizedHeaders,
   normalizedSystemPrompts,
   normalizedToolSchemas,
-  omitSubagentCatalogForHistoricalComparison,
   parseSnapshotManifest,
   parseToolSchemasSnapshot,
   redactSessionSnapshotIds,
@@ -789,17 +788,17 @@ describe('headless recorded-session snapshots', () => {
     try {
       const logs = [
         [
-          { type: 'session', version: 2, id: 'parent', createdAt: 1 },
+          { type: 'session', version: SESSION_FORMAT_VERSION, id: 'parent', createdAt: 1 },
           { type: 'subagent/catalog', data: { childId: 'child-z' } },
           { type: 'subagent/catalog', data: { childId: 'child-a' } },
         ],
-        [{ type: 'session', version: 2, id: 'child-z', createdAt: firstCreatedAt, parentSession: 'parent' }],
-        [{ type: 'session', version: 2, id: 'child-a', createdAt: 10, parentSession: 'parent' }],
+        [{ type: 'session', version: SESSION_FORMAT_VERSION, id: 'child-z', createdAt: firstCreatedAt, parentSession: 'parent' }],
+        [{ type: 'session', version: SESSION_FORMAT_VERSION, id: 'child-a', createdAt: 10, parentSession: 'parent' }],
       ].map(rows => rows.map(row => JSON.stringify(row)).join('\n') + '\n')
       for (const content of logs) {
         const directory = join(cwd, '.dsh', 'sessions', String(headerOf(content).id))
         await mkdir(directory, { recursive: true })
-        await writeFile(join(directory, 'session.v2.jsonl'), content)
+        await writeFile(join(directory, `session.v${SESSION_FORMAT_VERSION}.jsonl`), content)
       }
       const actual = await persistedSessions(cwd)
       expect(actual.map(log => log.header.id)).toEqual(['parent', 'child-z', 'child-a'])
@@ -1013,9 +1012,6 @@ describe('headless recorded-session snapshots', () => {
         expect(await fixtureSessions(scenario), 'historical replay input remains unchanged').toEqual(fixtures)
       }
       const actualSnapshots = normalizeSessionSnapshots(actualLogs.map(log => log.content), actualContext)
-        .map(snapshot => scenario.manifest.sessionFormat === undefined
-          ? snapshot
-          : omitSubagentCatalogForHistoricalComparison(snapshot))
       const expectedSnapshots = normalizeSessionSnapshots(expected, contextOf(expected))
       for (const [index, actual] of actualSnapshots.entries()) {
         expect(records(actual), `${scenario.name}: session ${index}`).toEqual(records(expectedSnapshots[index] as string))
