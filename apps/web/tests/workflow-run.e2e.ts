@@ -79,9 +79,8 @@ describe.skipIf(MODE === 'record')('web e2e: durable workflow run in Chat', () =
   it('shows the live member, opens its local child, then retains the settled record beside the tool row', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-workflow-run-live'))
     const settled = waitForParentSettlement()
-    onTestFinished(async () => {
+    onTestFinished(() => {
       releaseChild.resolve(undefined)
-      await settled
     })
     const input = page.locator('[data-composer-input]').first()
     await input.fill(prompt)
