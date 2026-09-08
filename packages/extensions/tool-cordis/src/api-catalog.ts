@@ -2743,8 +2743,8 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     methods: [
       {
         signature: 'installModelSurface(modelCtx: Context): void',
-        description: 'Install the model-facing Visualizer contribution in the caller\'s preset scope.',
-        parameters: [{ name: 'modelCtx', description: 'Preset-scoped context that owns the prompt and tool effects.' }],
+        description: 'Install the model-facing Visualizer contribution through the supplied scoped owner.',
+        parameters: [{ name: 'modelCtx', description: 'Scoped context that owns the prompt and tool effects; shipped wrappers use the preset scope.' }],
       },
       {
         signature: '@Remote(\'sendPrompt\') remoteSendPrompt(agent: Agent, request: WidgetPromptRequest): void',

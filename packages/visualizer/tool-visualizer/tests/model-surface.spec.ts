@@ -100,7 +100,7 @@ function recordedAgent(
     agent,
     presetParent === undefined ? undefined : { parent: presetParent },
   )
-  Object.assign(agent, { ctx: scope.ctx.extend({ agent }) })
+  Object.assign(agent, { ctx: scope.ctx })
   return agent
 }
 
@@ -278,14 +278,14 @@ describe('Visualizer model surface', () => {
     await ctx.plugin(VisualizerService)
 
     expect(() => { ctx.visualizer.installModelSurface(ctx) })
-      .toThrow('tool-visualizer: the model contribution requires a scoped context without an Agent')
+      .toThrow('tool-visualizer: the model contribution requires a scoped context')
     expect(ctx.tools.schemas()).toEqual([])
     expect((await ctx.systemPrompt.assemble()).sections
       .some(section => section.name === 'tool:visualizer')).toBe(false)
     await ctx.fiber.dispose()
   })
 
-  it('rejects installing the model surface in one Agent\'s own scope', async () => {
+  it('uses an Agent scope only as the registration owner', async () => {
     const ctx = new Context()
     await ctx.plugin(AgentRegistry)
     await ctx.plugin(SystemPrompt)
@@ -295,11 +295,12 @@ describe('Visualizer model surface', () => {
     const agent = recordedAgent(ctx, 'own-model-agent')
     ctx.agents.register(agent)
 
-    expect(() => { ctx.visualizer.installModelSurface(agent.ctx) })
-      .toThrow('tool-visualizer: the model contribution requires a scoped context without an Agent')
-    expect(ctx.tools.schemas(agent)).toEqual([])
+    ctx.visualizer.installModelSurface(agent.ctx)
+    expect(ctx.tools.schemas()).toEqual([])
+    expect(ctx.tools.schemas(agent).map(tool => tool.name).sort())
+      .toEqual(['show_widget', 'widget_guidelines'])
     expect((await ctx.systemPrompt.assemble({ agent, scope: agent })).sections
-      .some(section => section.name === 'tool:visualizer')).toBe(false)
+      .some(section => section.name === 'tool:visualizer')).toBe(true)
     await ctx.fiber.dispose()
   })
 

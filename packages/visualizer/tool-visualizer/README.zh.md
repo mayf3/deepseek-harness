@@ -37,6 +37,8 @@ kind: "package-reference"
 
 wrapper 会可恢复地等待根权威。权威不存在时它不贡献提示词或工具；权威出现时激活继承的 preset 模型面，权威撤销时移除该模型面，之后权威再次出现仍可重新激活。child `toolFilter` 限制在整个生命周期中都会继续生效。
 
+通过程序接口安装模型贡献时必须提供有作用域的 Context，它只负责 effect 所有权；随产品提供的 wrapper 传入 preset Context。follow-up 授权通过 Remote 显式接收 Agent。
+
 ### 权威与 follow-up
 
 生成式 Remote 只接纳命中准确 live Agent，且由 `resultSeq` 标识的准确已持久化 HTML `show_widget` result。该 result 必须是 append 成功的事件，其唯一 source event 必须是同 turn、同 step 且 tool-call ID 匹配的 `show_widget` call。Host 从该 source call 派生标题，从 result 的 presentation metadata 派生 widget kind，将完整已标记 follow-up 限制在 4096 UTF-8 字节以内，并固定为每个 Agent 每个滚动分钟最多接纳 4 次。Widget 源码限制为 128 KiB。

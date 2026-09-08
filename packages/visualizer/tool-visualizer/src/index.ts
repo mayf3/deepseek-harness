@@ -40,12 +40,12 @@ export class VisualizerService extends TypertRemoteService {
   }
 
   /**
-   * Install the model-facing Visualizer contribution in the caller's preset scope.
-   * @param modelCtx - Preset-scoped context that owns the prompt and tool effects.
+   * Install the model-facing Visualizer contribution through the supplied scoped owner.
+   * @param modelCtx - Scoped context that owns the prompt and tool effects; shipped wrappers use the preset scope.
    */
   installModelSurface(modelCtx: Context): void {
-    if (scopeOf(modelCtx) === undefined || modelCtx.agent !== undefined) {
-      throw new Error('tool-visualizer: the model contribution requires a scoped context without an Agent')
+    if (scopeOf(modelCtx) === undefined) {
+      throw new Error('tool-visualizer: the model contribution requires a scoped context')
     }
     modelCtx.systemPrompt.section({
       name: 'tool:visualizer',

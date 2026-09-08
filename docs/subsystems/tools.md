@@ -581,8 +581,8 @@ One Host service owns every authority-bearing part of the Visualizer extension.
 
 ```ts cordis-catalog
 /**
- * Install the model-facing Visualizer contribution in the caller's preset scope.
- * @param modelCtx - Preset-scoped context that owns the prompt and tool effects.
+ * Install the model-facing Visualizer contribution through the supplied scoped owner.
+ * @param modelCtx - Scoped context that owns the prompt and tool effects; shipped wrappers use the preset scope.
  */
 installModelSurface(modelCtx: Context): void
 

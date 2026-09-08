@@ -37,6 +37,8 @@ Mount the root service only in a composition that supplies a compatible Client:
 
 The wrapper waits recoverably for root authority. It contributes no prompt or tools while authority is absent, activates the inherited preset surface when authority appears, withdraws it when authority leaves, and can activate again later. Child `toolFilter` restrictions continue to apply throughout that lifecycle.
 
+Programmatic model installation requires a scoped Context and uses it only to own effects; shipped wrappers supply the preset Context. Follow-up authorization receives the Agent explicitly through the Remote.
+
 ### Authority and follow-ups
 
 The generated Remote accepts a follow-up only for the exact live Agent and the exact persisted HTML `show_widget` result identified by `resultSeq`. The result must be an appended success whose single source event is a same-turn, same-step `show_widget` call with the matching tool-call ID. The Host derives the title from that source call and the widget kind from the result's presentation metadata, bounds the complete labelled follow-up to 4096 UTF-8 bytes, and applies a fixed limit of four admissions per Agent per rolling minute. Widget source is limited to 128 KiB.

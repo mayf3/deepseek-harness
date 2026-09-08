@@ -97,7 +97,7 @@ function registerPresetAgent(
   const session = Session.create(SessionId(id))
   const agent = { id: session.id, session, ctx } as unknown as Agent
   const agentScope = createScope(preset.base, agent, { parent: preset.presetKey })
-  Object.assign(agent, { ctx: agentScope.ctx.extend({ agent }) })
+  Object.assign(agent, { ctx: agentScope.ctx })
   ctx.agents.register(agent)
   return agent
 }
