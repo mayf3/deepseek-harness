@@ -11,6 +11,7 @@ import json
 import os
 import queue
 import re
+import secrets
 import shutil
 import subprocess
 import sys
@@ -769,7 +770,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--scenario",
-        choices=("all", "sdk-default", "sdk-custom", "sdk-minimal", "sdk-fs-search", "sdk-spawn-node", "sdk-mcp", "sdk-snapshot", "sdk-restart", "sdk-profile-plugin", "sdk-live", "direct"),
+        choices=("all", "sdk-default", "sdk-custom", "sdk-minimal", "sdk-fs-search", "sdk-spawn-node", "sdk-mcp", "sdk-snapshot", "sdk-restart", "sdk-profile-plugin", "sdk-live", "runner", "direct"),
         default="all",
     )
     parser.add_argument("--exe", type=Path)
@@ -788,12 +789,19 @@ def main() -> None:
         parser.error("--scenario sdk-profile-plugin requires --installed-wheel")
     if args.installed_wheel:
         args.exe = assert_installed_wheel_environment()
-    if args.scenario in {"all", "sdk-custom", "sdk-minimal", "sdk-fs-search", "sdk-spawn-node", "sdk-snapshot", "sdk-restart", "direct"} and args.exe is None:
-        parser.error("--exe is required for custom, minimal, snapshot, and direct scenarios")
+    if args.scenario in {"all", "sdk-custom", "sdk-minimal", "sdk-fs-search", "sdk-spawn-node", "sdk-snapshot", "sdk-restart", "runner", "direct"} and args.exe is None:
+        parser.error("--exe is required for custom, minimal, fs-search, spawn-node, snapshot, restart, runner, and direct scenarios")
     if args.update_snapshots and args.scenario not in {"all", "sdk-minimal", "sdk-snapshot", "sdk-restart"}:
         parser.error("--update-snapshots requires --scenario sdk-minimal, sdk-snapshot, sdk-restart, or all")
     if args.exe is not None and not args.exe.is_file():
         parser.error(f"runtime executable does not exist: {args.exe}")
+
+    if args.scenario in {"all", "runner"}:
+        assert args.exe is not None
+        smoke_packaged_runner(args.exe.resolve())
+    if args.scenario == "runner":
+        print("smoke-python-runtime: runner passed")
+        return
 
     if args.scenario == "sdk-live":
         smoke_sdk_live()
@@ -908,8 +916,9 @@ def smoke_sdk_live() -> None:
             f"containing {LIVE_API_SENTINEL}. Then reply with exactly {LIVE_API_SENTINEL}.\n{marker}"
         )
         verify_prompt = (
-            "Use a tool to read the file created in the previous turn. "
-            f"If its only line is {LIVE_API_SENTINEL}, reply with exactly {LIVE_API_SENTINEL}."
+            "The file created in the previous turn now contains a new value written by the test. "
+            "Use a tool to read its current contents without modifying it. "
+            "Reply with exactly its current single line, not the value from the previous turn."
         )
         with DeepSeekHarness(
             provider="deepseek-official",
@@ -925,32 +934,44 @@ def smoke_sdk_live() -> None:
             request_timeout_seconds=180,
         ) as harness:
             created = harness.run(create_prompt, session_id=session_id)
+            assert_live_turn("create", created, LIVE_API_SENTINEL)
+            if not marker.is_file():
+                raise AssertionError(f"real-model tool turn did not create {marker}")
+            if marker.read_text(encoding="utf-8").splitlines() != [LIVE_API_SENTINEL]:
+                raise AssertionError(f"real-model tool turn wrote unexpected text to {marker}")
+            # Only a fresh filesystem observation can reveal the verification answer.
+            verification_value = secrets.token_hex(16)
+            marker.write_text(verification_value + "\n", encoding="utf-8")
             verified = harness.run(verify_prompt, session_id=session_id)
+            assert_live_turn("verify", verified, verification_value)
 
-        for label, result in (("create", created), ("verify", verified)):
-            if result.finish_reason != "completed":
-                event_types = [event.get("type") for event in result.events]
-                turn_end_data = next(
-                    (event.get("data") for event in reversed(result.events) if event.get("type") == "turn/end"),
-                    None,
-                )
-                turn_end = safe_turn_end(turn_end_data)
-                raise AssertionError(
-                    f"{label} turn ended with {result.finish_reason!r}; "
-                    f"final={result.final_response!r}; turn_end={turn_end!r}; events={event_types}"
-                )
-            if not any(event.get("type") == "tool/call" for event in result.events):
-                raise AssertionError(
-                    f"{label} turn made no model-requested tool call; "
-                    f"final={result.final_response!r}"
-                )
-            if result.final_response.strip() != LIVE_API_SENTINEL:
-                raise AssertionError(f"{label} turn returned {result.final_response!r}")
         if not marker.is_file():
             raise AssertionError(f"real-model tool turn did not create {marker}")
-        if marker.read_text(encoding="utf-8").splitlines() != [LIVE_API_SENTINEL]:
+        if marker.read_text(encoding="utf-8").splitlines() != [verification_value]:
             raise AssertionError(f"real-model tool turn wrote unexpected text to {marker}")
         assert_zstd_session_log(sessions)
+
+
+def assert_live_turn(label: str, result: RunResult, expected: str) -> None:
+    """Require a completed model-requested tool turn with the expected response."""
+    if result.finish_reason != "completed":
+        event_types = [event.get("type") for event in result.events]
+        turn_end_data = next(
+            (event.get("data") for event in reversed(result.events) if event.get("type") == "turn/end"),
+            None,
+        )
+        turn_end = safe_turn_end(turn_end_data)
+        raise AssertionError(
+            f"{label} turn ended with {result.finish_reason!r}; "
+            f"final={result.final_response!r}; turn_end={turn_end!r}; events={event_types}"
+        )
+    if not any(event.get("type") == "tool/call" for event in result.events):
+        raise AssertionError(
+            f"{label} turn made no model-requested tool call; "
+            f"final={result.final_response!r}"
+        )
+    if result.final_response.strip() != expected:
+        raise AssertionError(f"{label} turn returned {result.final_response!r}")
 
 
 def safe_turn_end(value: object) -> object:
@@ -1271,6 +1292,11 @@ def smoke_sdk_snapshot(base_url: str, executable: Path, update_snapshots: bool) 
         sessions = dsh_home / "sessions"
         patch = write_advanced_profile_patch(root, "snapshot.patch.yml", sessions)
         feedback_patch = write_profile_patch(root, "feedback.patch.yml", sessions, [{"insert": [
+            {"id": "snapshot-workflow-order", "name": (
+                Path(__file__).resolve().parent / "fixtures/python-snapshot-workflow-order.mjs"
+            ).as_uri(), "config": {
+                "parentSessionId": SNAPSHOT_SESSION_ID, "prompt": SNAPSHOT_WORKFLOW_CHILD_PROMPT,
+            }},
             {"id": "snapshot-message-feedback", "name": "@deepseek-ai/dsh-message-feedback",
              "config": {"maxNoteBytes": 1024}},
             {"id": "snapshot-feedback-producer", "name": (
@@ -1426,6 +1452,104 @@ def smoke_direct(base_url: str, executable: Path) -> None:
         finally:
             peer.close()
         assert_session_log(sessions, root, EXPECTED_TEXT)
+
+
+def smoke_packaged_runner(executable: Path) -> None:
+    """Exercise the private subprocess runner through the single-file entry."""
+    with tempfile.TemporaryDirectory(prefix="dsh-packaged-runner-") as temporary:
+        root = Path(temporary).resolve()
+        target_script = (
+            "import os,sys; "
+            "ok = (os.getcwd() == os.environ['PACKAGED_RUNNER_EXPECTED_CWD'] "
+            "and os.environ.get('DSH_SUBPROCESS_RUNNER') == 'target-collision-restored'); "
+            "sys.exit(7 if ok else 9)"
+        )
+        if not IS_WINDOWS:
+            request_path = root / "launch-request.json"
+            target_env = dict(os.environ)
+            target_env["DSH_SUBPROCESS_RUNNER"] = "target-collision-restored"
+            target_env["PACKAGED_RUNNER_EXPECTED_CWD"] = str(root)
+            request_path.write_text(
+                json.dumps({"cwd": str(root), "env": target_env}),
+                encoding="utf-8",
+            )
+            request_path.chmod(0o600)
+            environment = dict(os.environ)
+            environment["DSH_SUBPROCESS_RUNNER"] = str(request_path)
+            result = subprocess.run(
+                [str(executable), "--", sys.executable, "-c", target_script],
+                cwd=root,
+                env=environment,
+                capture_output=True,
+                text=True,
+                timeout=30,
+                check=False,
+            )
+            if result.returncode != 7 or request_path.exists() or (root / "startup-error.json").exists():
+                raise AssertionError(
+                    "packaged POSIX runner failed: "
+                    f"exit={result.returncode}; stdout={result.stdout!r}; stderr={result.stderr!r}"
+                )
+            return
+
+        node = shutil.which("node")
+        if node is None:
+            raise AssertionError("packaged Windows runner smoke requires node on PATH")
+        helper = root / "windows-runner-smoke.mjs"
+        helper.write_text(
+            """import { spawn } from 'node:child_process'
+const [runtime, target, cwd, targetScript] = process.argv.slice(2)
+const child = spawn(runtime, ['--', target, '-c', targetScript], {
+  cwd,
+  env: { ...process.env, DSH_SUBPROCESS_RUNNER: 'windows' },
+  stdio: ['ignore', 'ignore', 'ignore', 'ipc', 'pipe', 'pipe', 'pipe'],
+})
+const messages = []
+let stdout = ''
+let stderr = ''
+child.stdio[4].destroy()
+child.stdio[5].on('data', chunk => { stdout += chunk.toString() })
+child.stdio[6].on('data', chunk => { stderr += chunk.toString() })
+child.on('message', message => { messages.push(message) })
+const result = await new Promise((resolve, reject) => {
+  child.once('error', reject)
+  child.once('spawn', () => {
+    child.send({
+      type: 'start',
+      cwd,
+      env: {
+        ...process.env,
+        DSH_SUBPROCESS_RUNNER: 'target-collision-restored',
+        PACKAGED_RUNNER_EXPECTED_CWD: cwd,
+      },
+    }, error => { if (error) reject(error) })
+  })
+  child.once('close', (exitCode, signal) => { resolve({ exitCode, signal }) })
+})
+process.stdout.write(JSON.stringify({ ...result, messages, stdout, stderr }))
+""",
+            encoding="utf-8",
+        )
+        helper_result = subprocess.run(
+            [node, str(helper), str(executable), sys.executable, str(root), target_script],
+            cwd=root,
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=False,
+        )
+        if helper_result.returncode != 0:
+            raise AssertionError(f"packaged Windows runner helper failed: {helper_result.stderr}")
+        observed = json.loads(helper_result.stdout)
+        expected = {
+            "exitCode": 0,
+            "signal": None,
+            "messages": [{"type": "target-exit", "exitCode": 7}],
+            "stdout": "",
+            "stderr": "",
+        }
+        if observed != expected:
+            raise AssertionError(f"packaged Windows runner returned unexpected facts: {observed}")
 
 
 def is_idle_notification(message: dict[str, object]) -> bool:
