@@ -36,7 +36,7 @@ The Session object also carries local submission echoes: `session.beginSubmissio
 <a id="session-media-references"></a>
 ## Session media references
 
-`SessionMediaReferences` mounts `GET|HEAD /api/file?path=<absolute path>` on the authenticated `connection.fetch` channel when both `connection` and `workspaceRegistry` are composed, so conversation prose can display workspace-contained local media (images today; video/audio later) in the browser. Per request the route fail-closes: the path must be absolute, its `realpath` must lie inside a registered workspace root (path-component containment, including a filesystem-root workspace), the file must be regular, and its `mime-types` category must be image/video/audio (excluding `image/svg+xml`); media bytes are never sniffed. Regular-file checks run before opening, so named pipes and device nodes are refused instead of blocking the open; reading binds to the opened file, and a stat-identity comparison with the pre-open stat narrows (does not fully close) a concurrent replacement window. Single-range `bytes` requests stream a 206 slice parsed by `range-parser`; malformed, unknown-unit, and multi-range headers are ignored for a full 200 body; HEAD never opens a file stream; an aborted client destroys it. Responses carry `private, no-store` and `nosniff`; failures answer 400/403/404/415/416. The client-side rewrite vocabulary lives in `ui-chat` (`AssistantMarkdown`); this package owns only the serving contract.
+`SessionMediaReferences` mounts `GET|HEAD /api/file?path=<absolute path>` on the authenticated `connection.fetch` channel when `connection`, `fs`, and `attachments` are composed. It reads ordinary files through `ctx.fs`, including temporary paths outside registered workspaces and files in remote providers. Neither directory containment nor MIME categories restrict access; `mime-types` supplies the response type, with `application/octet-stream` for unknown extensions. GET reuses `readBytes` for preflight and ongoing byte limits; HEAD reads metadata only. Images use `maxImageBytes`, while audio, video, and other files use `maxFileBytes`; exceeding the applicable limit returns 413. Responses contain the complete file, ignore Range, and carry `private, no-store`, `nosniff`, and a sandbox CSP so directly opened HTML/SVG cannot execute with the API origin. The Client rewrite lives in `ui-chat` (`AssistantMarkdown`); audio/video responses are available, while Markdown audio/video player nodes remain separate work.
 
 -----
 
@@ -46,6 +46,8 @@ The Session object also carries local submission echoes: `session.beginSubmissio
 | Field | Default | Meaning |
 |---|---:|---|
 | `nativeOpen` | platform-detected | Whether Session workspace paths can be handed to a native desktop opener |
+| `maxImageBytes` | attachment image limit (normally 20 MiB) | Inclusive byte cap for image responses; positive safe integer |
+| `maxFileBytes` | attachment image limit (normally 20 MiB) | Independent inclusive byte cap for audio, video, and other complete-file responses; positive safe integer |
 
 The generated [configuration catalog](../../../docs/config-catalog.md#deepseek-aidsh-api-session-controller) is the exhaustive source for accepted fields and their JSDoc.
 
@@ -64,6 +66,8 @@ No direct effect; model requests remain owned by the Agent and LLM packages.
 
 <a id="known-limitations-and-deferred-work"></a>
 
+- Media reads use Host files under registered workspace roots. Temporary files outside those roots return 403; files available only in a remote filesystem provider cannot be served. The route does not use `ctx.fs`; its read permissions differ from `read_image`.
+- The image byte cap does not validate decoded dimensions or pixel count.
 - Control baselines represent process-local state and therefore cannot reconstruct jobs after a Host restart.
 - A failed follow resumption remains visible to the caller instead of retrying indefinitely.
 - The raw browser upload is one streaming HTTP request without resumable offsets; a retry sends the file again from byte zero.

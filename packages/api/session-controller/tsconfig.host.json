@@ -34,6 +34,7 @@
     { "path": "../../client/connection/tsconfig.host.json" },
     { "path": "../../interaction/permission-presets" },
     { "path": "../../jobs/jobs" },
+    { "path": "../../fs/fs" },
     { "path": "../../llm/llm" },
     { "path": "../../util/deque" },
     { "path": "../../util/native-command" },

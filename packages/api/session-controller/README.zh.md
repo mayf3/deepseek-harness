@@ -36,7 +36,7 @@ Session 对象还承载本地提交回显：`session.beginSubmission` 在调用�
 <a id="session-media-references"></a>
 ## 会话媒体引用
 
-当 `connection` 与 `workspaceRegistry` 均被组合时，`SessionMediaReferences` 在鉴权 `connection.fetch` 通道上挂载 `GET|HEAD /api/file?path=<绝对路径>`，使会话正文可以引用 workspace 内的本地媒体（图片今天可用；视频/音频后续同一条 URL）。每次请求 fail-closed：路径必须绝对、其 `realpath` 必须落在已注册 workspace 根内（按路径组件判定包含，含文件系统根目录作为 workspace）、文件必须是常规文件、其 `mime-types` 类别必须属于 image/video/audio（排除 `image/svg+xml`）；该路由从不嗅探媒体字节。常规文件检查在打开前执行，命名管道与设备节点会被拒绝而不是阻塞打开；读取绑定已打开文件，并与打开前的 stat 做身份比较，收窄（而非完全消除）并发替换窗口。单段 `bytes` Range 请求由 `range-parser` 解析后流式返回 206 分片；畸形、未知单位与多段 Range 头被忽略并返回完整 200；HEAD 从不打开文件流；客户端中止即销毁流。响应携带 `private, no-store` 与 `nosniff`；失败返回 400/403/404/415/416。客户端侧的重写词表位于 `ui-chat`（`AssistantMarkdown`）；本包只拥有服务契约。
+当 `connection`、`fs` 与 `attachments` 均被组合时，`SessionMediaReferences` 在鉴权 `connection.fetch` 通道上挂载 `GET|HEAD /api/file?path=<绝对路径>`。它通过 `ctx.fs` 读取普通文件，包括已注册工作区之外的临时路径与远程提供方中的文件。目录包含关系与 MIME 类别均不限制访问；`mime-types` 提供响应类型，未知扩展名使用 `application/octet-stream`。GET 复用 `readBytes` 执行读取前及读取中的字节限制；HEAD 只读取元数据。图片使用 `maxImageBytes`，音视频及其他文件使用 `maxFileBytes`；超过对应上限返回 413。响应包含完整文件，忽略 Range，并携带 `private, no-store`、`nosniff` 与 sandbox CSP，使直接打开的 HTML/SVG 无法以 API 源身份执行脚本。客户端重写位于 `ui-chat`（`AssistantMarkdown`）；音视频文件响应已可用，Markdown 音视频播放器节点仍是独立工作。
 
 -----
 
@@ -46,6 +46,8 @@ Session 对象还承载本地提交回显：`session.beginSubmission` 在调用�
 | 字段 | 默认值 | 含义 |
 |---|---:|---|
 | `nativeOpen` | 平台探测 | 是否能把 Session 工作区路径交给原生桌面打开器 |
+| `maxImageBytes` | 附件图片上限（通常 20 MiB） | 图片响应的字节上限（含等值）；正安全整数 |
+| `maxFileBytes` | 附件图片上限（通常 20 MiB） | 音视频及其他完整文件响应的独立字节上限（含等值）；正安全整数 |
 
 生成的[配置目录](../../../docs/config-catalog.zh.md#deepseek-aidsh-api-session-controller)是所有受支持字段及其 JSDoc 的完整来源。
 
@@ -64,6 +66,8 @@ Session 对象还承载本地提交回显：`session.beginSubmission` 在调用�
 
 <a id="known-limitations-and-deferred-work"></a>
 
+- 媒体读取使用已注册 workspace 根内的 Host 文件。根外临时文件返回 403；仅存在于远程文件系统提供方中的文件无法提供。该路由不使用 `ctx.fs`，其读取权限与 `read_image` 不同。
+- 图片字节上限不校验解码后的尺寸或像素数。
 - Control baseline 表示进程本地状态，因此 Host 重启后无法重建 jobs。
 - follow 恢复失败会对调用方可见，而不会无限重试。
 - 浏览器原始字节上传使用一次不带断点续传偏移的流式 HTTP 请求；重试会从第一个字节重新传输整个文件。

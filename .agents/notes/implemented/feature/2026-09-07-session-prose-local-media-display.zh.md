@@ -6,37 +6,38 @@ Status: implemented
 
 ## Problem
 
-Assistant 正文有时用本地文件系统路径引用图片（markdown `![](/Users/.../x.png)`）。Web 渲染器只允许绝对 HTTP(S) 图片目标，这类引用只能回退为惰性 alt 文本：浏览器读不到 Host 文件，也没有任何东西提供这些字节。检索正式与外部 Issue 仓库均无既有记录，issue #3662 记录了这一缺口（Web 无法显示 Agent 回答引用的本地路径图片）。
+Assistant 正文可能通过文件系统路径引用图片，但浏览器无法读取 Host 文件。仅允许绝对 HTTP(S) 目标的渲染器会把这些引用保留为静态 alt 文本。Issue #3662 记录了这一展示缺口。
 
 ## Decision
 
-会话正文中的本地媒体路径通过一条同源文件路由渲染；重写词表与服务政策分别归属于仓库现有缝对应的位置。
+Session 正文中的本地媒体路径通过同源文件路由渲染。本记录拥有渲染器词表及其归属；[鉴权文件系统读取](2026-09-08-file-display-through-filesystem.zh.md)拥有当前文件服务策略，并取代下文的工作区与媒体限制。
 
-- **渲染缝（`ui-primitives`）**：`MarkdownText` 新增 `MarkdownPathImages` 词表（`pathImages` prop），与 `fileMentions` 同用 settled-only 门：消息流式期间冻结的缓存块绝不烘入词表处理器；落定渲染把未通过远程 URL 白名单的图片目标重写为可展示 URL，且只有结果是绝对 `http(s)`/`blob`/`data` URL 时才发射。不提供词表时渲染输出与之前逐字节一致。
-- **聊天接线（`ui-chat`）**：`AssistantMarkdown` 提供页面级稳定的词表（`localPathMediaUrl`，与组件同文件的模块私有函数），把绝对 POSIX 路径映射为同源 `GET /api/file?path=…`；非 HTTP 载体（Electron `file://`）与相对/协议相对目标保持惰性。Windows 风格 Host 路径（`C:\...`）在客户端侧刻意保持惰性，作为局限记录于 Consequences。
-- **Host 路由（`session-controller`）**：`SessionMediaReferences` 是与 `SessionFileReferences` 并列注册的插件贡献，把 `GET|HEAD /api/file` 挂到共享鉴权 `connection.fetch` 通道（与 `/api` RPC 同一 trust fence 与浏览器认证）。每次请求 fail-closed：路径必须绝对、其 `realpath` 必须落在已注册 workspace 根内（按路径组件判定包含，含文件系统根目录作为 workspace 的情况）、文件必须是常规文件、其 MIME 类型（由 `mime-types` 解析）必须属于受服务类别 image/video/audio（排除 `image/svg+xml`）；该路由从不嗅探媒体字节。常规文件检查在打开前执行（命名管道与设备节点会被拒绝而不是阻塞打开）；读取绑定已打开文件，并与打开前的 stat 做身份比较，收窄（而非完全消除）并发替换窗口。响应由 `range-parser` 解析 Range 后流式输出：单段 `bytes` 请求回 206，畸形/未知单位/多段 Range 被忽略并回完整 200，HEAD 从不打开文件流，客户端中止即销毁流；响应携带 `private, no-store` 与 `nosniff`。该贡献只在 `connection` 与 `workspaceRegistry` 均被组合时激活（pending-until-composed，与包内其它可选贡献一致）。
+`ui-primitives` 拥有 `MarkdownText` 上的 `MarkdownPathImages` 词表。与 `fileMentions` 一样，它只在消息稳定后生效，使冻结的流式块无法缓存词表处理函数。稳定渲染过程重写远程 URL 白名单之外的图片目标，并只输出绝对 `http(s)`、`blob` 或 `data` 结果。没有词表时，本地目标保留静态 alt 文本。加载失败会把图片替换为作者提供的 alt 文本；alt 为空时显示原始目标路径；不同来源仍可重新加载。
 
-该路由纯呈现且无状态：从不写入、不跟随重定向，失败返回 400/403/404/415/416，不近似其它文件服务行为。
+`ui-chat` 通过 `AssistantMarkdown` 提供页面稳定的 `localPathMediaUrl` 词表。它把绝对 POSIX 路径映射到页面同源的 `/api/file?path=…`。相对路径、协议相对路径、Windows 风格路径，以及 Electron `file://` 等非 HTTP 页面传输保持静态回退。
+
+`session-controller` 在 `SessionFileReferences` 旁拥有 `SessionMediaReferences` 贡献。它通过 `connection.fetch` 注册；该通道执行与 `/api` RPC 相同的浏览器鉴权和信任检查。固定同源端点让同步渲染器获得稳定 URL，无需异步能力协商。
 
 ## Alternatives considered
 
-- **注册到 Typert gateway**：gateway 负责 Remote RPC 分发（endpoint 认领、WebSocket mux、转发事件），不负责文件服务；把路由放那里等于把 workspace 文件的 HTTP 呈现塞进 RPC 传输层。否决并完整回滚。
-- **注册到 `workspace-controller`**：该包负责 workspace 注册表生命周期（CRUD、排序、feed），与文件呈现只共享 registry 这一政策数据源。否决并完整回滚。
-- **经会话 RPC 取字节后显示 blob/data URL**：附件图片已如此工作，但 markdown 重写需要渲染时确定性同步 URL（流式冻结缓存、memo 化）；异步往返不能成为渲染缝。否决。
-- **逐图片或仅图片专用路由**：媒体类型共享同一条「路径 + 包含」政策，视频/音频本就需要 Range 流式；一条 `/api/file` 路由加扩展名 allowlist 即可覆盖现有与后续媒体类型。作为更窄的方案被否决。
-- **手写 MIME 表、Range 解析与图片签名校验**：否决，改用维护中的包（`mime-types`、`range-parser`）且不做嗅探。其中字节签名校验被否决的理由是：相同检查已在 `fs/tool-fs` 的 `read_image` 工具内实现，仓库的跨文件克隆门禁止在此复制，而为单个辅助函数加宽 attachment 包公开 API 没有共享归属。扩展名 allowlist 已把非媒体内容挡在门外，损坏的图片载荷失败发生在浏览器侧而不是路由上。
-- **每请求交互授权、客户端协商端点或任意 Host 路径**：重写只是呈现；路由对每次请求复验，可读字节限制在注册 workspace 根与 allowlist 媒体内；同源端点是固定通道契约而非协商能力。出于安全与确定性否决。
+**由 Typert gateway 或 workspace controller 拥有。** gateway 拥有 Remote RPC 分发，workspace controller 拥有注册表生命周期。两者都不拥有文件字节展示；Session Controller 是服务 Session 正文的消费方。
+
+**先经 Session RPC 获取，再使用 blob/data URL。** 附件图片可以异步获取，但此 Markdown 词表必须在记忆化渲染过程中同步解析目标。
+
+**图片专用端点。** 单一文件路由即可服务图片、音频和视频，无需独立 URL 词表。当前实现返回有界完整文件；Markdown 音视频播放器节点仍是独立工作。
+
+**路由中的字节签名校验。** 面向模型的 `read_image` 工具拥有图片准入检查。展示响应通过 MIME 查询描述内容，由浏览器解码拒绝损坏载荷，避免重复实现签名检查器。
+
+**仅限工作区与媒体的访问（已取代）。** 原策略把规范路径限制在已注册工作区根目录内，并允许除 SVG 外的 image/video/audio MIME 类别。打开前的普通文件检查拒绝管道与设备；已打开句柄的身份比较收窄替换竞态。这些限制约束了鉴权后的访问范围，并避免每次请求的交互授权流程。它们也排除了临时截图与远程文件；后续记录说明替代策略及不保留这些限制的理由。
 
 ## Consequences
 
-- 引用 workspace 内图片文件的 Assistant 正文现在可在 Web 聊天中显示；原先惰性的 alt 文本只在 Host 无法提供字节时保留。
-- 政策在 Host 端每次请求强制；客户端词表不会扩大路由放行的范围。媒体类型判定信任 MIME 类别 allowlist；字节签名校验保留在其所有者 `read_image` 工具中。
-- 存在性泄露：已鉴权同源客户端可区分「存在但在 workspace 外」（403）与「不存在」（404）。可读字节仍被限定在 workspace 根内，影响仅限于存在性探测，保留不同状态码是有意决定。
-- Windows Host 局限：客户端词表只重写绝对 POSIX 路径，Windows 风格 `C:\...` 目标保持惰性 alt 文本（尽管路由侧 `isAbsolute` 本可接受）；服务此类引用留待后续。
-- 范围刻意收窄：只服务注册 workspace 根内、媒体 allowlist 内的文件；其它一律保持作者原样的回退。Trajectory 与工具卡片等 markdown 消费方尚未传词表，视频/音频 markdown 节点也尚未渲染为 `<video>`/`<audio>`——URL 层已为它们准备好。
-- 客户端把 `/api/file` 硬编码为同源通道契约；由于页面与挂载路由的 Host 同源，该契约按构造稳定。
-- 相关历史：已归档笔记 [model-readable image paths](../../archived/feature/2026-08-21-model-readable-image-paths.md) 决定本地图片路径面向模型的一侧；本笔记拥有面向用户展示的一侧，不构成对其的取代。
+客户端词表无法绕过 Host 鉴权或文件系统提供方。原受限路由区分了工作区外已存在路径与缺失路径，即使拒绝其字节仍暴露存在性；后续策略则允许提供方可读的普通文件。
+
+客户端词表仍不支持作者提供的 Windows 风格路径。轨迹与工具卡片 Markdown 消费方不提供此词表，音视频 Markdown 节点也不渲染播放器。这些属于渲染器限制，与文件路由可读的 MIME 类型无关。
+
+已归档的[模型可读图片路径](../../archived/feature/2026-08-21-model-readable-image-paths.md)记录拥有模型侧行为；本记录拥有用户侧展示，不取代它。
 
 ## Testing
 
-单元覆盖：渲染缝（落定与流式门、引用式图片、协议复检）、聊天词表与组件接线、以及经注册路由施加的 Host 路由政策（包含关系含符号链接与文件系统根 workspace、MIME 类别 allowlist、单/多段 Range 与 416 应答、HEAD 不开流、客户端中止即销毁、释放即注销）。`media-references.ts` 语句/分支/函数/行覆盖率均为 100%。当前状态本地门禁：typecheck、oxlint、duplication、translation pairing 与受影响套件全部通过。推迟到 PR 后续：端到端 GUI 路径的 keyless 录播回放，以及 GUI PR 证据链要求的浏览器演示 GIF。
+渲染器测试覆盖稳定与流式门禁、引用式图片、协议复查、加载失败回退和来源替换。聊天测试覆盖词表与组件连接。`apps/web/tests/markdown-images.e2e.ts` 浏览器场景使用已播种 Session 启动交付的 Web 组合，检查实际加载与回退文本。模型驱动的记录 Session 往返仍独立于此 UI 期望；后续记录说明当前路由覆盖。

@@ -1,26 +1,18 @@
-import { mkdir, mkdtemp, open, realpath, rm, symlink, writeFile } from 'node:fs/promises'
+import { appendFile, mkdir, mkdtemp, open, realpath, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join, sep } from 'node:path'
+import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
+import { FsError, FsTargetKey, FsVersion } from '@deepseek-ai/dsh-fs'
+import { LocalFileSystem } from '@deepseek-ai/dsh-fs-local'
 import { SessionMediaReferences } from '../src/media-references.ts'
+import { SessionController } from '../src/index.ts'
 
-const PNG_BYTES = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3, 4, 5, 6, 7, 8])
-const TEXT_BYTES = new Uint8Array([1, 2, 3, 4])
-const MP4_BYTES = new TextEncoder().encode('....ftypmp42....moov....')
+const PNG_BYTES = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3, 4])
+const DEFAULT_LIMIT = 20 * 1024 * 1024
 
 async function responseBytes(response: Response): Promise<Uint8Array> {
   return new Uint8Array(await response.arrayBuffer())
-}
-
-/** One mounted plugin contribution with its registered `/api/file` handler. */
-interface MountedRoute {
-  /** GET/HEAD helper for one local path. */
-  call(path: string, init?: RequestInit): Promise<Response>
-  /** Direct request access (custom URLs and headers). */
-  raw(url: string, init?: RequestInit): Promise<Response>
-  unregister: ReturnType<typeof vi.fn>
-  dispose(): Promise<void>
 }
 
 describe('SessionMediaReferences /api/file', () => {
@@ -28,7 +20,6 @@ describe('SessionMediaReferences /api/file', () => {
   const contexts: Context[] = []
 
   beforeEach(async () => {
-    // Real workspace roots are canonical; tmpdir may sit behind a symlink.
     root = await realpath(await mkdtemp(join(tmpdir(), 'dsh-media-references-')))
   })
 
@@ -37,7 +28,7 @@ describe('SessionMediaReferences /api/file', () => {
     await rm(root, { recursive: true, force: true })
   })
 
-  async function mount(workspaceRoot: string = root): Promise<MountedRoute> {
+  async function mount(config: { maxImageBytes?: number; maxFileBytes?: number } = {}, defaultLimit = DEFAULT_LIMIT) {
     const ctx = new Context()
     contexts.push(ctx)
     let handler: ((request: Request) => Promise<Response>) | undefined
@@ -50,336 +41,199 @@ describe('SessionMediaReferences /api/file', () => {
         },
       },
     } as never)
-    ctx.provide('workspaceRegistry', {
-      list: () => [{ path: workspaceRoot }],
-    } as never)
-    await ctx.plugin(SessionMediaReferences).await()
-    const fetchFile = (request: Request) => {
+    ctx.provide('attachments', { imageLimits: { maxImageBytes: defaultLimit } } as never)
+    await ctx.plugin(LocalFileSystem, { cwd: root }).await()
+    await ctx.plugin(SessionMediaReferences, config).await()
+    const raw = (url: string, init?: RequestInit) => {
       if (handler === undefined) throw new Error('route not registered')
-      return handler(request)
+      return handler(new Request(url, init))
     }
     return {
-      call: (path, init) => {
-        const url = `http://127.0.0.1:3080/api/file?path=${encodeURIComponent(path)}`
-        return fetchFile(new Request(url, init))
-      },
-      raw: (url, init) => fetchFile(new Request(url, init)),
+      call: (path: string, init?: RequestInit) => raw(`http://127.0.0.1/api/file?path=${encodeURIComponent(path)}`, init),
+      raw,
+      fs: ctx.fs as LocalFileSystem,
       unregister,
-      dispose: () => ctx.fiber.dispose().then(() => {
-        const index = contexts.indexOf(ctx)
-        if (index >= 0) contexts.splice(index, 1)
-      }),
+      dispose: () => ctx.fiber.dispose(),
     }
   }
 
-  it('serves images from the workspace root and nested directories', async () => {
+  it('inherits attachment limits unless configured and rejects invalid overrides', async () => {
+    expect(SessionController.Config({}).maxImageBytes).toBeUndefined()
+    expect(SessionController.Config({}).maxFileBytes).toBeUndefined()
+    for (const field of ['maxImageBytes', 'maxFileBytes']) {
+      expect(SessionController.Config({ [field]: 1 })).toMatchObject({ [field]: 1 })
+      for (const value of [0, -1, 1.5, Infinity, NaN, Number.MAX_SAFE_INTEGER + 1]) {
+        expect(() => SessionController.Config({ [field]: value })).toThrow()
+      }
+    }
+    const route = await mount({}, PNG_BYTES.length - 1)
+    const path = join(root, 'image.png')
+    await writeFile(path, PNG_BYTES)
+    expect((await route.call(path)).status).toBe(413)
+  })
+
+  it('serves the inclusive image cap and refuses larger images for GET, HEAD and Range', async () => {
+    const route = await mount({ maxImageBytes: PNG_BYTES.length })
+    const path = join(root, 'bounded.png')
+    await writeFile(path, PNG_BYTES)
+    expect(await responseBytes(await route.call(path))).toEqual(PNG_BYTES)
+    await appendFile(path, new Uint8Array(1))
+    expect((await route.call(path)).status).toBe(413)
+    expect((await route.call(path, { headers: { range: 'bytes=0-0' } })).status).toBe(413)
+    const head = await route.call(path, { method: 'HEAD' })
+    expect(head.status).toBe(413)
+    expect(head.body).toBeNull()
+  })
+
+  it('rejects a sparse 1 GiB image before content I/O', async () => {
     const route = await mount()
-    const direct = join(root, 'graph.png')
-    await writeFile(direct, PNG_BYTES)
-    const response = await route.call(direct)
+    const inspect = vi.fn()
+    route.fs.internals.inspectReadBytesAfterStat = inspect
+    const path = join(root, 'huge.png')
+    const handle = await open(path, 'w')
+    try {
+      await handle.truncate(1024 * 1024 * 1024)
+    } finally {
+      await handle.close()
+    }
+    expect((await route.call(path)).status).toBe(413)
+    expect(inspect).not.toHaveBeenCalled()
+  })
+
+  it('uses the filesystem byte reader to reject post-stat image growth', async () => {
+    const route = await mount({ maxImageBytes: PNG_BYTES.length })
+    const path = join(root, 'growing.png')
+    await writeFile(path, PNG_BYTES)
+    route.fs.internals.inspectReadBytesAfterStat = async () => {
+      await appendFile(path, new Uint8Array(1))
+    }
+    expect((await route.call(path)).status).toBe(413)
+  })
+
+  it.each([
+    ['png', 'image/png'], ['svg', 'image/svg+xml'], ['mp4', 'video/mp4'], ['mp3', 'audio/mpeg'],
+    ['txt', 'text/plain'], ['html', 'text/html'], ['bin', 'application/octet-stream'], ['', 'application/octet-stream'],
+  ])('serves .%s files with their MIME type and response protections', async (extension, mediaType) => {
+    const route = await mount()
+    const path = join(root, `file${extension === '' ? '' : `.${extension}`}`)
+    await writeFile(path, PNG_BYTES)
+    const response = await route.call(path)
     expect(response.status).toBe(200)
-    expect(response.headers.get('content-type')).toBe('image/png')
+    expect(response.headers.get('content-type')).toBe(mediaType)
     expect(response.headers.get('content-length')).toBe(String(PNG_BYTES.length))
-    expect(response.headers.get('accept-ranges')).toBe('bytes')
     expect(response.headers.get('cache-control')).toBe('private, no-store')
     expect(response.headers.get('x-content-type-options')).toBe('nosniff')
+    expect(response.headers.get('content-security-policy')).toBe("sandbox; default-src 'none'")
     expect(await responseBytes(response)).toEqual(PNG_BYTES)
-
-    const nestedDir = join(root, 'shots', 'deep')
-    await mkdir(nestedDir, { recursive: true })
-    const nested = join(nestedDir, 'x.png')
-    await writeFile(nested, PNG_BYTES)
-    expect((await route.call(nested)).status).toBe(200)
   })
 
-  it('serves every allowlisted media category by extension', async () => {
-    const route = await mount()
-    const video = join(root, 'clip.mp4')
-    await writeFile(video, MP4_BYTES)
-    const videoResponse = await route.call(video)
-    expect(videoResponse.status).toBe(200)
-    expect(videoResponse.headers.get('content-type')).toBe('video/mp4')
-
-    const audio = join(root, 'song.mp3')
-    await writeFile(audio, TEXT_BYTES)
-    const audioResponse = await route.call(audio)
-    expect(audioResponse.status).toBe(200)
-    expect(audioResponse.headers.get('content-type')).toBe('audio/mpeg')
-  })
-
-  it('serves allowlisted image extensions regardless of payload bytes', async () => {
-    // Media bytes are never sniffed on this route: a corrupt payload fails
-    // in the browser, not here.
-    const route = await mount()
-    const fake = join(root, 'fake.png')
-    await writeFile(fake, TEXT_BYTES)
-    const response = await route.call(fake)
-    expect(response.status).toBe(200)
-    expect(response.headers.get('content-type')).toBe('image/png')
-  })
-
-  it('refuses non-media, unknown, and denied content types', async () => {
-    const route = await mount()
-    const cases: ReadonlyArray<[string, Uint8Array]> = [
-      ['note.txt', TEXT_BYTES],
-      ['run.exe', TEXT_BYTES],
-      ['logo.svg', TEXT_BYTES],
-      ['data.bin', TEXT_BYTES],
-      ['README', TEXT_BYTES],
-    ]
-    for (const [name, bytes] of cases) {
-      const path = join(root, name)
-      await writeFile(path, bytes)
-      const response = await route.call(path)
-      expect(response.status, name).toBe(415)
-      expect(await response.text()).toBe('not an allowlisted media type')
-    }
-  })
-
-  it('answers bounded, open-ended, suffix, and clamped range requests', async () => {
-    const route = await mount()
-    const path = join(root, 'graph.png')
+  it.each(['mp4', 'mp3', 'bin'])('allows a separate byte cap for .%s files', async (extension) => {
+    const route = await mount({ maxImageBytes: 1, maxFileBytes: PNG_BYTES.length })
+    const path = join(root, `file.${extension}`)
     await writeFile(path, PNG_BYTES)
-    const total = PNG_BYTES.length
-
-    const bounded = await route.call(path, { headers: { range: 'bytes=0-3' } })
-    expect(bounded.status).toBe(206)
-    expect(bounded.headers.get('content-range')).toBe(`bytes 0-3/${total}`)
-    expect(bounded.headers.get('content-length')).toBe('4')
-    expect(await responseBytes(bounded)).toEqual(PNG_BYTES.slice(0, 4))
-
-    const suffix = await route.call(path, { headers: { range: 'bytes=-4' } })
-    expect(suffix.status).toBe(206)
-    expect(await responseBytes(suffix)).toEqual(PNG_BYTES.slice(-4))
-
-    const openEnded = await route.call(path, { headers: { range: 'bytes=4-' } })
-    expect(openEnded.status).toBe(206)
-    expect(await responseBytes(openEnded)).toEqual(PNG_BYTES.slice(4))
-
-    const clamped = await route.call(path, { headers: { range: 'bytes=6-999' } })
-    expect(clamped.status).toBe(206)
-    expect(clamped.headers.get('content-range')).toBe(`bytes 6-${total - 1}/${total}`)
-    expect(await responseBytes(clamped)).toEqual(PNG_BYTES.slice(6))
+    expect(await responseBytes(await route.call(path))).toEqual(PNG_BYTES)
+    await appendFile(path, new Uint8Array(1))
+    expect((await route.call(path)).status).toBe(413)
+    expect((await route.call(path, { method: 'HEAD' })).status).toBe(413)
   })
 
-  it('answers unsatisfiable ranges with 416 and the total size', async () => {
+  it('ignores Range headers and returns complete bodies without advertising ranges', async () => {
     const route = await mount()
-    const path = join(root, 'graph.png')
+    const path = join(root, 'clip.mp4')
     await writeFile(path, PNG_BYTES)
-    const response = await route.call(path, { headers: { range: 'bytes=999-' } })
-    expect(response.status).toBe(416)
-    expect(response.headers.get('content-range')).toBe(`bytes */${PNG_BYTES.length}`)
-  })
-
-  it('ignores malformed and unknown-unit ranges for a full 200 body', async () => {
-    const route = await mount()
-    const path = join(root, 'graph.png')
-    await writeFile(path, PNG_BYTES)
-    for (const range of ['bytes=abc', 'items=0-0']) {
+    for (const range of ['bytes=0-3', 'bytes=-4', 'bytes=999-', 'bytes=abc', 'items=0-0', 'bytes=0-1,3-4']) {
       const response = await route.call(path, { headers: { range } })
-      expect(response.status, range).toBe(200)
-      expect(response.headers.get('content-range')).toBeNull()
-      expect(response.headers.get('content-length')).toBe(String(PNG_BYTES.length))
-      expect(await responseBytes(response), range).toEqual(PNG_BYTES)
-    }
-  })
-
-  it('ignores multi-range headers and serves the full 200 body', async () => {
-    const route = await mount()
-    const path = join(root, 'graph.png')
-    await writeFile(path, PNG_BYTES)
-    const response = await route.call(path, { headers: { range: 'bytes=0-1,3-4' } })
-    expect(response.status).toBe(200)
-    expect(response.headers.get('content-length')).toBe(String(PNG_BYTES.length))
-    expect(response.headers.get('content-range')).toBeNull()
-    expect(await responseBytes(response)).toEqual(PNG_BYTES)
-  })
-
-  it('answers HEAD without a body', async () => {
-    const route = await mount()
-    const path = join(root, 'graph.png')
-    await writeFile(path, PNG_BYTES)
-    const response = await route.call(path, { method: 'HEAD' })
-    expect(response.status).toBe(200)
-    expect(response.headers.get('content-length')).toBe(String(PNG_BYTES.length))
-    expect(response.headers.get('content-range')).toBeNull()
-    expect(response.body).toBeNull()
-
-    const ranged = await route.call(path, { method: 'HEAD', headers: { range: 'bytes=0-3' } })
-    expect(ranged.status).toBe(206)
-    expect(ranged.headers.get('content-range')).toBe(`bytes 0-3/${PNG_BYTES.length}`)
-    expect(ranged.headers.get('content-length')).toBe('4')
-    expect(ranged.body).toBeNull()
-  })
-
-  it('answers HEAD errors without a body', async () => {
-    const route = await mount()
-    const response = await route.raw('http://127.0.0.1:3080/api/file', { method: 'HEAD' })
-    expect(response.status).toBe(400)
-    expect(response.body).toBeNull()
-  })
-
-  it('denies malformed, missing, empty, and uncontained requests', async () => {
-    const route = await mount()
-    expect((await route.raw('http://127.0.0.1:3080/api/file')).status).toBe(400)
-    expect((await route.raw('http://127.0.0.1:3080/api/file?path=')).status).toBe(400)
-    expect((await route.raw(`http://127.0.0.1:3080/api/file?path=${encodeURIComponent('x.png')}`)).status)
-      .toBe(400)
-    expect((await route.raw(`http://127.0.0.1:3080/api/file?path=${encodeURIComponent('/a\0b.png')}`)).status)
-      .toBe(400)
-    expect((await route.call(join(root, 'missing.png'))).status).toBe(404)
-
-    const outside = await realpath(await mkdtemp(join(tmpdir(), 'dsh-media-references-out-')))
-    const path = join(outside, 'x.png')
-    await writeFile(path, PNG_BYTES)
-    try {
-      const denied = await route.call(path)
-      expect(denied.status).toBe(403)
-      expect(await denied.text()).toBe('outside workspace roots')
-    } finally {
-      await rm(outside, { recursive: true, force: true })
-    }
-  })
-
-  // A FIFO would block a plain open; the pre-open regular-file check refuses
-  // it first. POSIX-only because Windows has no named-pipe path construction
-  // here.
-  it.skipIf(process.platform === 'win32')(
-    'refuses a FIFO named as media without blocking on the open',
-    async () => {
-      const route = await mount()
-      const pipe = join(root, 'stream.png')
-      const { execFile } = await import('node:child_process')
-      const { promisify } = await import('node:util')
-      await promisify(execFile)('mkfifo', [pipe])
-      const response = await route.call(pipe)
-      expect(response.status).toBe(403)
-      expect(await response.text()).toBe('not a regular file')
-    },
-  )
-
-  it('answers 404 when an existing file cannot be opened for reading', async () => {
-    // A permission-less file passes realpath/stat but fails the open; the
-    // route treats the unreadable file like a missing one. chmod has no
-    // effect on Windows, where this case is skipped.
-    if (process.platform === 'win32') return
-    const route = await mount()
-    const path = join(root, 'locked.png')
-    await writeFile(path, PNG_BYTES)
-    const { chmod } = await import('node:fs/promises')
-    await chmod(path, 0o000)
-    try {
-      const response = await route.call(path)
-      expect(response.status).toBe(404)
-    } finally {
-      await chmod(path, 0o600)
-    }
-  })
-
-  it('refuses a directory even when its name carries a media extension', async () => {
-    const route = await mount()
-    const directory = join(root, 'frames.png')
-    await mkdir(directory)
-    const response = await route.call(directory)
-    expect(response.status).toBe(403)
-    expect(await response.text()).toBe('not a regular file')
-  })
-
-  // A POSIX filesystem root is the separator itself; the Windows drive-root
-  // spelling cannot be produced portably, so the case stays POSIX-only. The
-  // containment code treats any separator-terminated root the same way.
-  it.skipIf(process.platform === 'win32')(
-    'serves files when the registered workspace is the filesystem root',
-    async () => {
-      const route = await mount(sep)
-      const path = join(root, 'graph.png')
-      await writeFile(path, PNG_BYTES)
-      const response = await route.call(path)
       expect(response.status).toBe(200)
+      expect(response.headers.get('accept-ranges')).toBeNull()
+      expect(response.headers.get('content-range')).toBeNull()
       expect(await responseBytes(response)).toEqual(PNG_BYTES)
-    },
-  )
+    }
+  })
 
-  it('follows symlinks for the containment check', async () => {
+  it('answers HEAD without reading content and reports missing and non-regular files', async () => {
     const route = await mount()
-    const real = join(root, 'real.png')
-    await writeFile(real, PNG_BYTES)
-    const link = join(root, 'link.png')
-    await symlink(real, link)
-    expect((await route.call(link)).status).toBe(200)
+    const path = join(root, 'image.png')
+    await writeFile(path, PNG_BYTES)
+    const read = vi.spyOn(route.fs, 'readBytes')
+    const response = await route.call(path, { method: 'HEAD', headers: { range: 'bytes=0-3' } })
+    expect(response.status).toBe(200)
+    expect(response.headers.get('content-length')).toBe(String(PNG_BYTES.length))
+    expect(response.body).toBeNull()
+    expect(read).not.toHaveBeenCalled()
+    expect((await route.call(join(root, 'missing'), { method: 'HEAD' })).status).toBe(404)
+    expect((await route.call(root, { method: 'HEAD' })).status).toBe(403)
+    vi.spyOn(route.fs, 'stat').mockResolvedValue({ type: 'file', version: FsVersion('v1') })
+    expect((await route.call(path, { method: 'HEAD' })).headers.get('content-length')).toBeNull()
+  })
 
-    // The escaping target lives in a private directory so concurrent test
-    // processes can never share or delete it.
-    const outside = await realpath(await mkdtemp(join(tmpdir(), 'dsh-media-references-target-')))
-    const outsideTarget = join(outside, 'secret.png')
-    await writeFile(outsideTarget, PNG_BYTES)
+  it('rejects malformed paths, absent files, and directories', async () => {
+    const route = await mount()
+    expect((await route.raw('http://127.0.0.1/api/file')).status).toBe(400)
+    for (const path of ['', 'relative.png', '/a\0b.png']) {
+      expect((await route.call(path)).status).toBe(400)
+    }
+    const head = await route.call('', { method: 'HEAD' })
+    expect(head.status).toBe(400)
+    expect(head.body).toBeNull()
+    expect((await route.call(join(root, 'missing.png'))).status).toBe(404)
+    await mkdir(join(root, 'frames.png'))
+    expect((await route.call(join(root, 'frames.png'))).status).toBe(403)
+  })
+
+  it('reads files and symlink targets outside the default cwd without a workspace registry', async () => {
+    const route = await mount()
+    const outside = await mkdtemp(join(tmpdir(), 'dsh-media-outside-'))
     try {
-      const escaping = join(root, 'escape.png')
-      await symlink(outsideTarget, escaping)
-      const denied = await route.call(escaping)
-      expect(denied.status).toBe(403)
-      expect(await denied.text()).toBe('outside workspace roots')
+      const path = join(outside, 'image.png')
+      await writeFile(path, PNG_BYTES)
+      expect(await responseBytes(await route.call(path))).toEqual(PNG_BYTES)
+      const link = join(root, 'linked.png')
+      await symlink(path, link)
+      expect(await responseBytes(await route.call(link))).toEqual(PNG_BYTES)
     } finally {
       await rm(outside, { recursive: true, force: true })
     }
   })
 
-  it('streams a slice of a large sparse file without buffering it whole', async () => {
+  it.skipIf(process.platform === 'win32')('rejects a FIFO before opening it', async () => {
     const route = await mount()
-    const path = join(root, 'huge.mp4')
-    const handle = await open(path, 'w')
-    try {
-      await handle.truncate(256 * 1024 * 1024)
-    } finally {
-      await handle.close()
-    }
-    const response = await route.call(path, { headers: { range: 'bytes=0-9' } })
-    expect(response.status).toBe(206)
-    expect(response.headers.get('content-length')).toBe('10')
-    expect((await responseBytes(response)).length).toBe(10)
+    const path = join(root, 'stream.png')
+    const { execFile } = await import('node:child_process')
+    const { promisify } = await import('node:util')
+    await promisify(execFile)('mkfifo', [path])
+    expect((await route.call(path)).status).toBe(403)
   })
 
-  it('closes the file stream when the client aborts mid-response', async () => {
+  it('reads opaque remote targets through ctx.fs and preserves provider failures', async () => {
     const route = await mount()
-    const path = join(root, 'huge.mp4')
-    const handle = await open(path, 'w')
-    try {
-      await handle.truncate(64 * 1024 * 1024)
-    } finally {
-      await handle.close()
+    const target = { targetKey: FsTargetKey('opaque-remote-id'), displayPath: '/remote/photo.png' }
+    vi.spyOn(route.fs, 'resolve').mockResolvedValue(target)
+    const read = vi.spyOn(route.fs, 'readBytes').mockResolvedValue(PNG_BYTES)
+    expect(await responseBytes(await route.call('/remote/photo.png'))).toEqual(PNG_BYTES)
+    expect(read).toHaveBeenCalledWith(target, expect.any(AbortSignal), DEFAULT_LIMIT)
+    for (const [code, status] of [
+      ['FS_PERMISSION_DENIED', 403], ['FS_SANDBOX_DENIED', 403], ['FS_NOT_FOUND', 404],
+      ['FS_NOT_REGULAR_FILE', 403], ['FS_TOO_LARGE', 413], ['FS_IO_ERROR', 500],
+    ] as const) {
+      read.mockRejectedValueOnce(new FsError('provider rejected read', code))
+      expect((await route.call('/remote/photo.png')).status).toBe(status)
     }
-    const controller = new AbortController()
-    const response = await route.call(path, { signal: controller.signal })
-    expect(response.status).toBe(200)
-    const reader = response.body?.getReader()
-    expect(reader).toBeDefined()
-    await reader?.read()
-    controller.abort()
-    // The abort listener destroys the underlying file stream; reading the web
-    // stream then fails instead of draining the remaining 64 MiB.
-    await expect(reader?.read()).rejects.toBeTruthy()
+    read.mockRejectedValueOnce(new Error('provider bug'))
+    await expect(route.call('/remote/photo.png')).rejects.toThrow('provider bug')
   })
 
-  it('destroys the stream immediately for an already-aborted request', async () => {
+  it('serves an empty file and respects an aborted request', async () => {
     const route = await mount()
-    const path = join(root, 'huge.mp4')
-    const handle = await open(path, 'w')
-    try {
-      await handle.truncate(16 * 1024 * 1024)
-    } finally {
-      await handle.close()
-    }
-    const controller = new AbortController()
-    controller.abort()
-    const response = await route.call(path, { signal: controller.signal })
-    expect(response.status).toBe(200)
-    // No stream is opened for a client that is already gone.
-    expect(response.body).toBeNull()
+    const path = join(root, 'empty.png')
+    await writeFile(path, '')
+    const response = await route.call(path)
+    expect(response.headers.get('content-length')).toBe('0')
+    expect(await response.text()).toBe('')
+    expect((await route.call(path, { signal: AbortSignal.abort() })).status).toBe(499)
   })
 
-  it('unregisters the route when the contribution is disposed', async () => {
+  it('unregisters the route on disposal', async () => {
     const route = await mount()
-    expect(route.unregister).not.toHaveBeenCalled()
     await route.dispose()
     expect(route.unregister).toHaveBeenCalledTimes(1)
   })

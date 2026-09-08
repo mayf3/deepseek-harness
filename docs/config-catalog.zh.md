@@ -212,6 +212,10 @@ export interface Config {
 export interface Config {
   /** Override platform desktop-opener detection. */
   readonly nativeOpen?: boolean
+  /** Inclusive byte limit for images served by `/api/file`. Defaults to `ctx.attachments.imageLimits.maxImageBytes`. */
+  readonly maxImageBytes?: number
+  /** Inclusive byte limit for other files served by `/api/file`. Defaults to `ctx.attachments.imageLimits.maxImageBytes`. */
+  readonly maxFileBytes?: number
 }
 ```
 
