@@ -1,19 +1,20 @@
-/* Plugin manager tab: toolbar, notices, and the package and preset cards. */
+/* Plugin manager page: a centred column with its header, notices, and the package and preset cards. */
 
 .page {
   display: flex;
   flex-direction: column;
+  align-items: center;
   gap: 14px;
   box-sizing: border-box;
   height: 100%;
   overflow: auto;
-  padding: 24px 32px 40px;
+  padding: 28px clamp(24px, 4vw, 48px) 48px;
   color: var(--dsw-alias-label-primary);
 }
 
 .page > * {
   width: 100%;
-  max-width: 920px;
+  max-width: 960px;
 }
 
 .pageHead {
