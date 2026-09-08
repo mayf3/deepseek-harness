@@ -41,6 +41,7 @@ const installer = new PluginInstaller({
   loadProfile: () => loadProfile('dsh', 'web', installAnchor, undefined, { userLayer: false }),
   config: { pnpmCommand: 'pnpm', installTimeoutMs: 600_000, probeTimeoutMs: 20_000, installLogTailBytes: 16_384 },
   installLog: (chunk) => process.stdout.write(chunk.text),
+  color: process.stdout.isTTY,
 })
 const outcome = await installer.add('@acme/dsh-sql-tool')
 console.log(outcome.installed, outcome.removed)
