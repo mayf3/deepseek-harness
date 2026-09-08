@@ -20,6 +20,8 @@ Status: implemented
 
 [publint 运行器测试](../../../../scripts/publint-all.spec.ts)在 lane 预算内等待异步子进程关闭，而不施加五秒同步 spawn 期限。测试独立检查 spawn 错误、终止信号和退出码。清理在等待前取得子进程和 fixture 根目录，终止尚未完成的子进程，并在删除根目录前等待关闭。延迟启动复现了原来的空退出码失败；强制触发外层超时则验证子进程已经结束，而其根目录仍然存在。
 
+[详情 Session 生命周期测试](../../../../apps/web/tests/details-session-lifecycle.e2e.ts)在关闭状态出现后等待框架已捕获的动画 Promise，再保留宽度为零的断言。完成和取消的过渡都会进入该断言；取消不能让持续非零的轨道通过。暂停真实网格过渡可以复现关闭断言失败，只有释放后才成功完成，而持续一像素的轨道仍被拒绝。
+
 ### 已构建客户端的导入分类
 
 [master Windows 运行](https://github.com/deepseek-harness/deepseek-harness/actions/runs/34204779455/job/101996934534)还拒绝了 `ui-dockkit` 有意暴露的 CSS 导入。[Node 导入检查](../../../../packages/experimental/webworker-runtime/tests/compile/transform-corpus-check.ts)仅在 Node 针对其 `dockkit.module.css` 报告 `ERR_UNKNOWN_FILE_EXTENSION` 时，才允许这个精确的 bundle。相同入口的其他错误仍然失败，成功导入则报告豁免已过期。这保留了导入检查，同时不要求仅面向浏览器的组件库在裸 Node 中加载样式表。

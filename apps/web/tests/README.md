@@ -12,7 +12,7 @@ the deliberate composition divergences from `dsh web` — are documented in
 
 The GitHub webhook scenario awaits the deterministic model adapter’s first request before inspecting its created Session; HTTP 202 only acknowledges dispatch. Its controlled Workspace-creation barrier verifies that distinction without a short polling deadline. See the [completion-observation decision](../../../.agents/notes/implemented/testing/2026-09-08-ci-completion-observations.md).
 
-Queue layout assertions wait for the responsive frame to settle and sample both related rectangles in one browser evaluation; separate round trips can observe different layout states.
+Queue layout assertions wait for the responsive frame to settle and sample both related rectangles in one browser evaluation; separate round trips can observe different layout states. Details-panel close assertions await the frame’s running transitions before checking zero width; published closed state alone does not imply settled geometry.
 
 ## These are Host-face tests
 
