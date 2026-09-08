@@ -39,9 +39,9 @@ const GLOBAL: PluginRowTarget = { kind: 'global' }
 
 /** The list's two groups: packs, which switch as a whole, and everything else, which joins a composition per row. */
 const PACKAGE_GROUPS = [
-  { key: 'bundles', title: 'bundlesTitle', holds: (pkg: PluginPackageView) => pkg.kind === 'bundle' },
-  { key: 'plugins', title: 'pluginsTitle', holds: (pkg: PluginPackageView) => pkg.kind !== 'bundle' },
-] as const satisfies readonly { key: string; title: PluginManagerLocaleKey; holds: (pkg: PluginPackageView) => boolean }[]
+  { key: 'bundles', titleKey: 'bundlesTitle', holds: (pkg: PluginPackageView) => pkg.kind === 'bundle' },
+  { key: 'plugins', titleKey: 'pluginsTitle', holds: (pkg: PluginPackageView) => pkg.kind !== 'bundle' },
+] as const satisfies readonly { key: string; titleKey: PluginManagerLocaleKey; holds: (pkg: PluginPackageView) => boolean }[]
 
 const PHASE_KEYS = {
   pending: 'rowPhasePending',
@@ -843,7 +843,7 @@ export function PluginManagerSettingsTab(props: PluginManagerSettingsTabProps): 
               : (
                 <section key={group.key} className={css.group} data-plugin-scope="global" data-plugin-group={group.key}>
                   <div className={css.groupTitleRow}>
-                    <h3 className={css.groupTitle}>{t(group.title)}</h3>
+                    <h3 className={css.groupTitle}>{t(group.titleKey)}</h3>
                     <span className={css.count} data-plugin-count={members.length}>{`${String(members.length)} ${t('countUnit')}`}</span>
                   </div>
                   <ul className={css.cards}>
