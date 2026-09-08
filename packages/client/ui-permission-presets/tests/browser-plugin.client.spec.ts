@@ -1,37 +1,44 @@
 /**
  * ui-permission browser half on a real cordis Context with fake command/
  * sessions faces: the plugin hangs the /permission popup decoration on the
- * host command; options flatten the session's permissions projection with
- * the current value active and `custom` excluded; availability follows the
- * projection key's presence; a pick submits the /permission line through
+ * host command; options join the process catalog with the Session's current
+ * value; availability requires both sources; a pick submits the /permission line through
  * Session.command and surfaces rejection/unmatched as thrown errors; fiber
  * disposal removes the contribution (HMR safety). The same plugin registers
  * its Settings row and invalidates that row on host settings changes.
  */
 import { Context } from '@deepseek-ai/cordis'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { SlotRegistry } from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import { TestRemote, scriptedSettingsRemote } from '@deepseek-ai/dsh-client-test-runtime'
 import { apply as settingsApply, inject as settingsInject } from '@deepseek-ai/dsh-client-ui-settings/client'
 import type { CommandDecoration } from '@deepseek-ai/dsh-client-ui-commands/client'
-import type { PermissionSelect } from '@deepseek-ai/dsh-permission-presets/client'
+import type {
+  PermissionCatalog, PermissionSelection,
+} from '@deepseek-ai/dsh-permission-presets/client'
 import {
   PermissionRow, type PermissionRowInjected,
 } from '../src/client/PermissionRow.tsx'
+import { PermissionSelect } from '../src/client/PermissionSelect.tsx'
+import type { PermissionSelectInjected } from '../src/client/PermissionSelect.tsx'
 import { apply, inject } from '../src/client/index.ts'
 import { accessEn, accessZh } from '../src/client/locales.ts'
 
 const sid = (k: string): SessionId => k as SessionId
 
-const SELECT: PermissionSelect = {
+const CATALOG: PermissionCatalog = {
   options: [
     { value: 'read-only', name: 'read-only', description: 'Reads only.' },
     { value: 'workspace-write', name: 'workspace-write' },
     { value: 'danger-full-access', name: 'danger-full-access' },
+    {
+      value: 'auto',
+      name: 'Auto review',
+      description: 'Run without a sandbox after an experimental same-model review of every native tool call and PTC inner call.',
+    },
   ],
-  currentValue: 'workspace-write',
 }
 
 async function bench() {
@@ -41,11 +48,26 @@ async function bench() {
   locale.setLocale('en')
   ctx.provide('locale', locale)
   const settingsRemote = scriptedSettingsRemote()
-  const remote = new TestRemote(ctx, { settings: settingsRemote.settings })
+  let catalog = CATALOG
+  let catalogCalls = 0
+  const permissionPresets = {
+    catalog: () => {
+      catalogCalls += 1
+      return Promise.resolve({ ok: true as const, value: catalog })
+    },
+  }
+  const remote = new TestRemote(ctx, { settings: settingsRemote.settings, permissionPresets })
+  ctx.provide('connection', {
+    generation: {
+      getSnapshot: () => ({ id: 1, host: { home: '/host', isLoopback: true } }),
+      subscribe: () => () => {},
+    },
+  } as never)
   ctx.slots.register({
     name: 'root',
     children: {
       'settings.general.item': { kind: 'list', scope: 'root' },
+      'conversation.input.permission': { kind: 'single', scope: 'session' },
     },
   } as never, () => null)
   await ctx.plugin({ inject: [...settingsInject], apply: settingsApply }).await()
@@ -56,7 +78,7 @@ async function bench() {
       return () => { decoration = undefined }
     },
   })
-  const values = new Map<SessionId, PermissionSelect>()
+  const values = new Map<SessionId, PermissionSelection>()
   const commands: string[] = []
   let commandResult: { ok: boolean; matched?: boolean } = { ok: true, matched: true }
   const session = (id: SessionId) => ({
@@ -78,12 +100,20 @@ async function bench() {
   })
   const fiber = ctx.plugin({ inject: [...inject], apply })
   await fiber.await()
+  await vi.waitFor(() => { expect(catalogCalls).toBe(1) })
   return {
     ctx, fiber, locale, values, commands, remote,
+    catalogCalls: () => catalogCalls,
+    setCatalog: (value: PermissionCatalog) => {
+      catalog = value
+      remote.emit('permission-presets/catalog-changed', [])
+    },
     setResult: (r: { ok: boolean; matched?: boolean }) => { commandResult = r },
     decoration: () => decoration,
     permissionRow: () => ctx.slots.entries('settings.general.item')
       .find(entry => entry.component === PermissionRow),
+    permissionSelect: () => ctx.slots.entries('conversation.input.permission')
+      .find(entry => entry.component === PermissionSelect),
   }
 }
 
@@ -101,24 +131,34 @@ describe('ui-permission browser plugin', () => {
     expect(typeof injected?.select).toBe('function')
     await injected!.load()
     await injected!.select('read-only')
+    const select = b.permissionSelect()!
+    const injectSelect = select.inject as unknown as (sessionId: SessionId) => PermissionSelectInjected
+    b.values.set(sid('s1'), { currentValue: 'workspace-write' })
+    const selectInjected = injectSelect(sid('s1'))
+    expect(selectInjected?.hooks.permissionCatalog.getSnapshot().value).toEqual(CATALOG)
+    await expect(selectInjected.select('auto')).resolves.toBe(true)
+    expect(b.commands).toEqual(['/permission auto'])
+    expect(b.catalogCalls()).toBe(1)
   })
 
-  it('availability follows the projection key; options mark the current value active and exclude custom', async () => {
+  it('availability follows the projection and catalog; options mark the current value active', async () => {
     const b = await bench()
     const c = b.decoration()!
     const proj = { sessionId: sid('s1') }
     expect(c.available(proj)).toBe(false)
-    b.values.set(sid('s1'), { ...SELECT, options: [...SELECT.options, { value: 'custom', name: 'Custom' }], currentValue: 'custom' })
+    b.values.set(sid('s1'), { currentValue: 'custom' })
     expect(c.available(proj)).toBe(true)
     const options = await c.ui.options(proj, new AbortController().signal)
-    expect(options.map(option => option.id)).toEqual(['read-only', 'workspace-write', 'danger-full-access'])
+    expect(options.map(option => option.id)).toEqual(['read-only', 'workspace-write', 'danger-full-access', 'auto'])
     expect(options.every(option => option.active !== true)).toBe(true)
-    b.values.set(sid('s1'), SELECT)
+    b.values.set(sid('s1'), { currentValue: 'workspace-write' })
     const again = await c.ui.options(proj, new AbortController().signal)
     expect(again.find(option => option.id === 'workspace-write')?.active).toBe(true)
     expect(again.find(option => option.id === 'read-only')?.detail).toBe('Reads only.')
+    expect(again.find(option => option.id === 'auto')?.detail)
+      .toBe('Run without a sandbox after an experimental same-model review of every native tool call and PTC inner call.')
     // English built-ins use product labels; other kebab-case names title-case.
-    expect(again.map(option => option.label)).toEqual(['Read Only', 'Workspace Write', 'Full access'])
+    expect(again.map(option => option.label)).toEqual(['Read Only', 'Workspace Write', 'Full access', 'Auto review'])
     expect(again.find(option => option.id === 'danger-full-access')?.confirmation).toEqual({
       title: 'Enable Full access?',
       description: accessEn['confirm.description'],
@@ -126,9 +166,19 @@ describe('ui-permission browser plugin', () => {
       cancelLabel: 'Cancel',
       confirmLabel: 'Enable Full access',
     })
+    expect(again.find(option => option.id === 'auto')).toMatchObject({
+      badge: 'EXP',
+      confirmation: {
+        title: 'Enable Auto review (experimental)?',
+        description: accessEn['auto.confirm.description'],
+        acknowledgeLabel: 'I understand these risks and want to continue',
+        cancelLabel: 'Cancel',
+        confirmLabel: 'Enable Auto review',
+      },
+    })
     b.locale.setLocale('zh')
     const localized = await c.ui.options(proj, new AbortController().signal)
-    expect(localized.map(option => option.label)).toEqual(['仅可查看', '工作区内修改', '完全权限'])
+    expect(localized.map(option => option.label)).toEqual(['仅可查看', '工作区内修改', '完全权限', 'Auto review'])
     expect(localized.find(option => option.id === 'danger-full-access')?.confirmation).toEqual({
       title: '确认启用完全权限？',
       description: accessZh['confirm.description'],
@@ -136,27 +186,41 @@ describe('ui-permission browser plugin', () => {
       cancelLabel: '取消',
       confirmLabel: '启用完全权限',
     })
-    b.values.set(sid('s1'), { ...SELECT, options: [
+    b.setCatalog({ options: [
       { value: 'workspace-write', name: 'Project Files' },
       { value: 'danger-full-access', name: 'Operator Mode' },
       { value: 'custom-mode', name: 'custom-mode' },
       { value: '__proto__', name: '__proto__' },
       { value: 'plain', name: 'Ask Every Time' },
     ] })
-    const passthrough = await c.ui.options(proj, new AbortController().signal)
+    let passthrough = await c.ui.options(proj, new AbortController().signal)
+    await vi.waitFor(async () => {
+      passthrough = await c.ui.options(proj, new AbortController().signal)
+      expect(passthrough.map(option => option.label)).toHaveLength(5)
+    })
     expect(passthrough.map(option => option.label)).toEqual([
       'Project Files', 'Operator Mode', 'Custom Mode', '__proto__', 'Ask Every Time',
     ])
     // A projection that vanished between availability and open throws.
-    expect(() => c.ui.options({ sessionId: sid('ghost') }, new AbortController().signal))
-      .toThrow(/not available on this host/)
+    await expect(c.ui.options({ sessionId: sid('ghost') }, new AbortController().signal))
+      .rejects.toThrow(/not available on this host/)
+  })
+
+  it('localizes the Auto description instead of displaying host English copy', async () => {
+    const b = await bench()
+    b.ctx.locale.setLocale('zh')
+    const proj = { sessionId: sid('s1') }
+    b.values.set(sid('s1'), { currentValue: 'workspace-write' })
+    const options = await b.decoration()!.ui.options(proj, new AbortController().signal)
+    expect(options.find(option => option.id === 'auto')?.detail)
+      .toBe('无沙箱运行；每次原生工具调用和 PTC 内层调用前由同一模型进行实验性审查。')
   })
 
   it('a pick submits the /permission line; rejection and unmatched throw', async () => {
     const b = await bench()
     const c = b.decoration()!
     const proj = { sessionId: sid('s1') }
-    b.values.set(sid('s1'), SELECT)
+    b.values.set(sid('s1'), { currentValue: 'workspace-write' })
     await c.ui.onSelect({ id: 'danger-full-access', label: 'danger-full-access' }, proj)
     expect(b.commands).toEqual(['/permission danger-full-access'])
     b.setResult({ ok: false })
@@ -173,9 +237,9 @@ describe('ui-permission browser plugin', () => {
     expect(b.decoration()).toBeDefined()
     b.remote.emit('settings/document-updated', ['another', 1])
     b.remote.emit('settings/document-updated', ['permission', 1])
-    b.ctx.emit('connection/reset')
     await b.fiber.dispose()
     expect(b.decoration()).toBeUndefined()
     expect(b.permissionRow()).toBeUndefined()
+    expect(b.permissionSelect()).toBeUndefined()
   })
 })

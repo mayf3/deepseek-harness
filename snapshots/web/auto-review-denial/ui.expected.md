@@ -1,0 +1,91 @@
+## Collapsed
+
+- banner:
+  - navigation "Session hierarchy":
+    - button "{{workspace}}" [disabled]
+  - button "Session log":
+    - text: Session log
+    - img
+  - button "Open the sidebar":
+    - img
+  - tablist:
+    - tab "Chat" [selected]
+    - tab "Trajectory"
+- text: Inspect the protected operation, but do not run it unless authorized. {{clock}}
+- button "Copy":
+  - img
+- text: Failed
+- button "Tool call Rejected by Auto review":
+  - img
+  - text: Tool call Rejected by Auto review
+- button "Code Catch an Auto-denied inner call":
+  - img
+  - img
+  - text: Code Catch an Auto-denied inner call
+- text: Failed
+- button "Bash Rejected by Auto review":
+  - img
+  - text: Bash Rejected by Auto review
+- textbox "Message or run a task, / commands, @ files or sessions"
+- button "Commands":
+  - img
+- button "Add attachment":
+  - img
+- 'button "Access mode, current: Auto review EXP"':
+  - text: Auto review
+  - superscript: EXP
+- button "Select model, current DeepSeek-V4-Flash":
+  - text: DeepSeek-V4-Flash
+  - img
+- button "Send message" [disabled]
+- button "1 turns 2 steps":
+  - img
+  - text: 1 turns 2 steps
+
+## Expanded
+
+- banner:
+  - navigation "Session hierarchy":
+    - button "{{workspace}}" [disabled]
+  - button "Session log":
+    - text: Session log
+    - img
+  - button "Open the sidebar":
+    - img
+  - tablist:
+    - tab "Chat" [selected]
+    - tab "Trajectory"
+- text: Inspect the protected operation, but do not run it unless authorized. {{clock}}
+- button "Copy":
+  - img
+- text: Failed
+- button "Tool call Rejected by Auto review" [expanded]:
+  - img
+  - text: Tool call Rejected by Auto review
+- text: "OUT Tool was not executed. Reason: raw reason"
+- button "Inspect"
+- button "Code Catch an Auto-denied inner call":
+  - img
+  - img
+  - text: Code Catch an Auto-denied inner call
+- text: Failed
+- button "Bash Rejected by Auto review" [expanded]:
+  - img
+  - text: Bash Rejected by Auto review
+- text: "OUT Tool was not executed. Reason: ptc raw reason"
+- button "Inspect"
+- textbox "Message or run a task, / commands, @ files or sessions"
+- button "Commands":
+  - img
+- button "Add attachment":
+  - img
+- 'button "Access mode, current: Auto review EXP"':
+  - text: Auto review
+  - superscript: EXP
+- button "Select model, current DeepSeek-V4-Flash":
+  - text: DeepSeek-V4-Flash
+  - img
+- button "Send message" [disabled]
+- button "1 turns 2 steps":
+  - img
+  - text: 1 turns 2 steps

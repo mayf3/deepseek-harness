@@ -54,6 +54,7 @@ export function GenericToolCard({ toolName, block, cwd, home, openFile, inspect,
       bodyRaw={singleFile ? null : model.bodyRaw}
       output={model.output}
       errorSummary={model.errorSummary}
+      autoReviewDenial={model.autoReviewDenial}
       terminal={terminal}
       diff={diff}
       read={read}

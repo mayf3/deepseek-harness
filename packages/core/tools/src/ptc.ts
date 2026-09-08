@@ -8,9 +8,9 @@
 
 import { brandString } from '@deepseek-ai/dsh-brand'
 import { createUserMessage, HarnessError } from '@deepseek-ai/dsh-llm'
-import type { ContentBlock, ToolCallId } from '@deepseek-ai/dsh-llm'
+import type { ContentBlock, ToolCallId, ToolSchema } from '@deepseek-ai/dsh-llm'
 import type { CodeBindingFunction, CodeRunResult, CodeRuntime } from '@deepseek-ai/dsh-code-runtime'
-import { snapshotJsonValue, type JsonValue } from '@deepseek-ai/dsh-util-values'
+import { deepFreeze, snapshotJsonValue, type JsonValue } from '@deepseek-ai/dsh-util-values'
 import { defineTool, parameterSchemaSpecToJsonSchema } from './schema.ts'
 import { TOOL_RUNTIME_SCHEDULER } from './index.ts'
 import type { PtcDispatchLog, ToolDefinition, ToolExecutionResult, ToolRuntime, ToolRunContext } from './index.ts'
@@ -460,7 +460,8 @@ export function createRunCodeTool(registry: ToolRuntime, options: RunCodeBridgeO
       // would be narrowed away by control flow analysis.
       const runOver = (): boolean => runController.signal.aborted
 
-      const binding = (name: string): CodeBindingFunction => async (rawArgs: unknown): Promise<JsonValue> => {
+      const binding = (schema: ToolSchema): CodeBindingFunction => async (rawArgs: unknown): Promise<JsonValue> => {
+        const { name } = schema
         if (runOver()) {
           throw new Error(`run_code run is over (${String(runController.signal.reason)}); ${name} not dispatched`)
         }
@@ -471,6 +472,7 @@ export function createRunCodeTool(registry: ToolRuntime, options: RunCodeBridgeO
           callId: subCallId,
           rootCallId: exec.rootCallId,
           name,
+          schema,
           arguments: normalized.dispatched,
           ...exec.agent ? { agent: exec.agent } : {},
           parent: exec.token,
@@ -516,6 +518,7 @@ export function createRunCodeTool(registry: ToolRuntime, options: RunCodeBridgeO
                 // this record from what it actually received.
                 arguments: normalized.logged,
                 isError: result.isError,
+                ...result.error?.info === undefined ? {} : { error: result.error.info },
                 content: logged,
               })
             })().finally(() => { logWork.delete(task) })
@@ -610,7 +613,7 @@ export function createRunCodeTool(registry: ToolRuntime, options: RunCodeBridgeO
       // re-resolves per call through the same view (exec.agent threads down).
       for (const schema of registry.schemas(exec.agent)) {
         if (schema.name === RUN_CODE_NAME) continue
-        Object.defineProperty(functions, schema.name, { enumerable: true, value: binding(schema.name) })
+        Object.defineProperty(functions, schema.name, { enumerable: true, value: binding(deepFreeze(schema)) })
       }
 
       try {

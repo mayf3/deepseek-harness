@@ -1,0 +1,5 @@
+- insert:
+    - id: code-runtime
+      name: '@deepseek-ai/dsh-code-runtime-worker-thread'
+    - id: structured-denial-fixture
+      name: './deny.mjs'

@@ -5,6 +5,7 @@ import { cleanup, fireEvent, render } from '@testing-library/react'
 import type { RunningToolCall, ToolResultNode } from '@deepseek-ai/dsh-client-ui-chat/client'
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import { zh as commonZh } from '@deepseek-ai/dsh-client-locale/src/locales/zh.ts'
+import { localizeAutoReviewDenial, normalizeAutoReviewReason } from '../src/client/tool/models/auto-review-denial.ts'
 import {
   classifyTool, formatToolBody, resultText, toolRowModel,
 } from '../src/client/tool/models/tool-call-model.ts'
@@ -203,6 +204,42 @@ describe('tool-call-model', () => {
     expect(toolRowModel('bash', running()).errorSummary).toBeNull()
   })
 
+  it('derives Auto-review denial only from the exact structured error identity', () => {
+    const denied = result({
+      parentCallId: 'outer:code:1',
+      isError: true,
+      error: { name: 'AutoReviewDeniedError', code: 'AUTO_REVIEW_DENIED', reason: ' raw\nreason ' },
+    })
+    expect(toolRowModel('bash', denied).autoReviewDenial).toEqual({ reason: ' raw\nreason ' })
+    expect(toolRowModel('bash', result({
+      isError: true,
+      error: { name: 'AutoReviewDeniedError', code: 'AUTO_REVIEW_DENIED' },
+    })).autoReviewDenial).toEqual({ reason: null })
+    expect(toolRowModel('bash', result({
+      isError: true,
+      error: { name: 'AutoReviewDeniedError', code: 'OTHER' },
+    })).autoReviewDenial).toBeNull()
+    expect(toolRowModel('bash', result({
+      isError: true,
+      error: { name: 'OtherError', code: 'AUTO_REVIEW_DENIED' },
+    })).autoReviewDenial).toBeNull()
+    expect(toolRowModel('bash', result({
+      isError: false,
+      error: { name: 'AutoReviewDeniedError', code: 'AUTO_REVIEW_DENIED' },
+    })).autoReviewDenial).toBeNull()
+    expect(toolRowModel('bash', running()).autoReviewDenial).toBeNull()
+  })
+
+  it('normalizes Auto-review reasons only for localized display and falls back when blank', () => {
+    expect(normalizeAutoReviewReason('  first\r\n\nsecond\u2028\u2029third  ')).toBe('first second third')
+    expect(normalizeAutoReviewReason(' \r\n\u2028 ')).toBeNull()
+    expect(normalizeAutoReviewReason(null)).toBeNull()
+    expect(localizeAutoReviewDenial({ reason: null }, t)).toEqual({
+      summary: 'Auto review 已拒绝',
+      output: '工具未执行。原因：Auto review 未授权此次操作',
+    })
+  })
+
   it('gives Cordis lifecycle tools action titles over their generic variants', () => {
     expect(toolRowModel('cordis_runtime_inspect', running({
       name: 'cordis_runtime_inspect',
@@ -359,6 +396,32 @@ describe('ToolRow', () => {
     expect(view.getByText('List files')).toBeTruthy()
   })
 
+  it('an Auto denial replaces the collapsed failure and expands to one localized OUT line', () => {
+    const stringify = vi.spyOn(JSON, 'stringify')
+    const view = render(
+      <ToolRow
+        {...rowProps}
+        state="error"
+        output="Tool execution rejected by user"
+        errorSummary="Tool execution rejected by user"
+        autoReviewDenial={{ reason: '  scope\r\nwas not authorized  ' }}
+      />,
+    )
+    expect(view.getByText('Auto review 已拒绝')).toBeTruthy()
+    expect(view.queryByText('scope\r\nwas not authorized')).toBeNull()
+    expect(view.queryByText('Tool execution rejected by user')).toBeNull()
+
+    fireEvent.click(view.getByRole('button'))
+
+    expect(view.queryByText('输入')).toBeNull()
+    expect(view.getAllByText('输出')).toHaveLength(1)
+    expect(view.getByText('工具未执行。原因：scope was not authorized')).toBeTruthy()
+    expect(view.queryByText('Tool execution rejected by user')).toBeNull()
+    expect(stringify.mock.calls.some(([value]) => (
+      typeof value === 'object' && value !== null && 'a' in value
+    ))).toBe(false)
+  })
+
   it('renders summarySuffix outside the ellipsized summary span, and drops it on a failure line', () => {
     const view = render(<ToolRow {...rowProps} summarySuffix="+2" />)
     const summary = view.getByText('List files')
@@ -493,5 +556,21 @@ describe('GenericToolCard', () => {
     const bashView = render(<GenericToolCard {...bash} />)
     fireEvent.click(bashView.getByText('List files'))
     expect(bash.openFile).not.toHaveBeenCalled()
+  })
+
+  it('renders a nested Auto denial through the generic fallback without exposing raw failure content', () => {
+    const denied = result({
+      parentCallId: 'outer',
+      call: { name: 'mystery', argsRaw: '{"path":"secret"}' },
+      content: [{ type: 'text', text: 'Tool execution rejected by user' }],
+      isError: true,
+      error: { name: 'AutoReviewDeniedError', code: 'AUTO_REVIEW_DENIED', reason: 'not authorized' },
+    })
+    const view = render(<GenericToolCard {...props('mystery', denied)} />)
+    expect(view.getByText('Auto review 已拒绝')).toBeTruthy()
+    fireEvent.click(view.getByRole('button'))
+    expect(view.getByText('工具未执行。原因：not authorized')).toBeTruthy()
+    expect(view.queryByText('Tool execution rejected by user')).toBeNull()
+    expect(view.queryByText(/"path"/)).toBeNull()
   })
 })

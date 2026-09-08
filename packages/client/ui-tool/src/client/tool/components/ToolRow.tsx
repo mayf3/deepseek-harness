@@ -18,8 +18,9 @@ import {
   diffBlockLabels, readBlockLabels, searchBlockLabels, webBlockLabels,
 } from '../models/primitive-labels.ts'
 import type { AskQuestionCardModel } from '../models/ask-question-card-model.ts'
+import { localizeAutoReviewDenial } from '../models/auto-review-denial.ts'
 import {
-  formatToolBody, type ToolRowState, type ToolRowVariant,
+  formatToolBody, type AutoReviewDenial, type ToolRowState, type ToolRowVariant,
 } from '../models/tool-call-model.ts'
 import type { WebCardModelProps } from '../models/web-card-model.ts'
 import { AskQuestionCard } from './AskQuestionCard.tsx'
@@ -49,6 +50,8 @@ export interface ToolRowProps {
   askQuestion?: AskQuestionCardModel | null | undefined
   /** Error first line shown as the collapsed summary on an error row; null/absent = keep `summary`. */
   errorSummary?: string | null | undefined
+  /** Structured Auto-review denial; replaces all ordinary input/card/output presentation. */
+  autoReviewDenial?: AutoReviewDenial | null | undefined
   /** Terminal card; card fields are mutually exclusive and replace text sections. */
   terminal?: TerminalCardModel | null | undefined
   diff?: DiffCardModel | null | undefined
@@ -120,6 +123,7 @@ export function ToolRow({
   output,
   askQuestion,
   errorSummary,
+  autoReviewDenial,
   terminal,
   diff,
   read,
@@ -135,33 +139,38 @@ export function ToolRow({
   inspect,
 }: ToolRowProps) {
   const [expanded, setExpanded] = useState(false)
+  const autoReview = autoReviewDenial === undefined || autoReviewDenial === null
+    ? null
+    : localizeAutoReviewDenial(autoReviewDenial, t)
   const terminalLabels = useMemo(() => terminalBlockLabels(t), [t])
   const diffLabels = useMemo(() => diffBlockLabels(t), [t])
   const readLabels = useMemo(() => readBlockLabels(t), [t])
   const searchLabels = useMemo(() => searchBlockLabels(t), [t])
   const webLabels = useMemo(() => webBlockLabels(t), [t])
-  const terminalBody = terminal === undefined || terminal === null
+  const terminalBody = autoReview !== null || terminal === undefined || terminal === null
     ? null
     : localizeTerminalCardModel(terminal, t)
-  const diffBody = diff ?? null
-  const readBody = read ?? null
-  const imageBody = image !== undefined && image !== null && renderSlot !== undefined && loadImage !== undefined
+  const diffBody = autoReview === null ? diff ?? null : null
+  const readBody = autoReview === null ? read ?? null : null
+  const imageBody = autoReview === null
+    && image !== undefined && image !== null && renderSlot !== undefined && loadImage !== undefined
     ? image
     : null
-  const searchBody = search ?? null
-  const webBody = web ?? null
-  const askQuestionBody = askQuestion ?? null
-  const outputText = output ?? null
+  const searchBody = autoReview === null ? search ?? null : null
+  const webBody = autoReview === null ? web ?? null : null
+  const askQuestionBody = autoReview === null ? askQuestion ?? null : null
+  const inputRaw = autoReview === null ? bodyRaw ?? null : null
+  const outputText = autoReview?.output ?? output ?? null
   const card = askQuestionBody ?? terminalBody ?? diffBody ?? readBody ?? imageBody ?? searchBody ?? webBody
-  const expandable = bodyRaw != null || outputText !== null || card !== null
+  const expandable = inputRaw !== null || outputText !== null || card !== null
   const open = expanded && expandable
   const bodyText = useMemo(
-    () => open && card === null && bodyRaw != null ? formatToolBody(variant, bodyRaw) : null,
-    [bodyRaw, card, open, variant],
+    () => open && card === null && inputRaw !== null ? formatToolBody(variant, inputRaw) : null,
+    [card, inputRaw, open, variant],
   )
   const status = stateStatus(state, t)
   // A failure must replace, not supplement, the normal summary.
-  const failureLine = state === 'error' ? errorSummary ?? null : null
+  const failureLine = autoReview?.summary ?? (state === 'error' ? errorSummary ?? null : null)
   const summaryText = failureLine ?? terminalBody?.description ?? summary
   // A diff row's collapsed line carries the card's +/- totals (the same
   // numbers the expanded footer prints) so the change size reads without

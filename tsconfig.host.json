@@ -9,6 +9,8 @@
   },
   "include": [
     "apps/web/tests/scaffold.ts",
+    "apps/web/tests/auto-review-fixture.ts",
+    "apps/web/tests/auto-review-denial.e2e.ts",
     "apps/web/tests/scaffold-generation.spec.ts",
     "apps/web/tests/default-model.e2e.ts",
     "apps/web/tests/github-ready-review.e2e.ts",
@@ -222,6 +224,7 @@
     { "path": "./packages/interaction/user-questions" },
     { "path": "./packages/interaction/user-approval" },
     { "path": "./packages/interaction/permission-presets" },
+    { "path": "./packages/experimental/auto-review" },
     { "path": "./packages/core/tools" },
     { "path": "./packages/core/agent-tool-presentation" },
     { "path": "./packages/skill/skill" },
