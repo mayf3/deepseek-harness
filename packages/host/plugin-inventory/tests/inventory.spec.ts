@@ -165,7 +165,9 @@ describe('PluginInventoryGateway', () => {
     const stack: ComposedStack = {
       patches: [], layers: [], owners: new Map(), conflicts: [], skippedBundles: [], userDisabledRowIds: new Set([groupId]),
     }
-    await ctx.plugin(ProfileRuntime, { profile, stack, loadProfile: () => profile, compose: () => stack, rootEntry: () => undefined })
+    await ctx.plugin(ProfileRuntime, {
+      profile, stack, installAnchor: '/app/package.json', loadProfile: () => profile, compose: () => stack, rootEntry: () => undefined,
+    })
     await ctx.loader.update(groupId, { disabled: true })
     const listed = (await inventory.list()).entries.find(entry => entry.entryId === child?.id)
     expect(listed).toMatchObject({ enabled: false, disabledBy: 'user' })
