@@ -64,7 +64,6 @@ Session 对象还承载本地提交回显：`session.beginSubmission` 在调用�
 
 <a id="known-limitations-and-deferred-work"></a>
 
-- 媒体读取使用已注册 workspace 根内的 Host 文件。根外临时文件返回 403；仅存在于远程文件系统提供方中的文件无法提供。该路由不使用 `ctx.fs`，其读取权限与 `read_image` 不同。
 - 图片字节上限不校验解码后的尺寸或像素数。
 - Control baseline 表示进程本地状态，因此 Host 重启后无法重建 jobs。
 - follow 恢复失败会对调用方可见，而不会无限重试。

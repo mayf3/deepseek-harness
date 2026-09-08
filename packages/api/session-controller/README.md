@@ -64,7 +64,6 @@ No direct effect; model requests remain owned by the Agent and LLM packages.
 
 <a id="known-limitations-and-deferred-work"></a>
 
-- Media reads use Host files under registered workspace roots. Temporary files outside those roots return 403; files available only in a remote filesystem provider cannot be served. The route does not use `ctx.fs`; its read permissions differ from `read_image`.
 - The image byte cap does not validate decoded dimensions or pixel count.
 - Control baselines represent process-local state and therefore cannot reconstruct jobs after a Host restart.
 - A failed follow resumption remains visible to the caller instead of retrying indefinitely.
