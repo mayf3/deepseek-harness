@@ -33,31 +33,6 @@ function omitFixtureEnvelope(record: Record<string, unknown>): void {
   delete record.time0
 }
 
-/** Return a catalog event's child id, or undefined for every ordering barrier. */
-function catalogChildId(event: { readonly type: string; readonly data?: unknown }): string | undefined {
-  if (event.type !== 'subagent/catalog' || event.data === null || typeof event.data !== 'object') return undefined
-  const data = event.data as { childId?: unknown }
-  return typeof data.childId === 'string' ? data.childId : undefined
-}
-
-/** Sort commutative adjacent catalog facts without crossing another event. */
-function canonicalizeCatalogRuns<T extends { readonly type: string; readonly data?: unknown }>(events: readonly T[]): T[] {
-  const canonical = [...events]
-  let start = 0
-  while (start < canonical.length) {
-    if (catalogChildId(canonical[start] as T) === undefined) {
-      start += 1
-      continue
-    }
-    let end = start + 1
-    while (end < canonical.length && catalogChildId(canonical[end] as T) !== undefined) end += 1
-    canonical.splice(start, end - start, ...canonical.slice(start, end).sort((left, right) =>
-      (catalogChildId(left) as string).localeCompare(catalogChildId(right) as string)))
-    start = end
-  }
-  return canonical
-}
-
 /** A cwd-rooted path after volatile cwd replacement, through its last separator-delimited segment. */
 const CWD_ROOTED_PATH_RE = /\{\{cwd\}\}(?:[\\/][^\s<>"'`]+)+/g
 const PATH_TAG_RE = /(<path>)([^<]*)(<\/path>)/g
@@ -427,19 +402,10 @@ function projectSessionSnapshot(rawLog: string): string {
   const lines = rawLog.split('\n').filter(line => line.trim().length > 0)
   const header = lines.shift() as string
 
-  const original = lines.map((line) => {
-    return JSON.parse(line) as Record<string, unknown> & { type: string }
-  })
-  const records = canonicalizeCatalogRuns(original)
-  const positions = new Map(records.map((record, seq) => [record, seq]))
-  const sourcePositions = original.map(record => positions.get(record) as number)
-  const body = records.map((record) => {
-    const projected = { ...record }
-    if (Array.isArray(record.sourceEventSeqs)) {
-      projected.sourceEventSeqs = record.sourceEventSeqs.map((seq: number) => sourcePositions[seq] ?? seq)
-    }
-    omitFixtureEnvelope(projected)
-    return JSON.stringify(projected)
+  const body = lines.map((line) => {
+    const record = JSON.parse(line) as Record<string, unknown>
+    omitFixtureEnvelope(record)
+    return JSON.stringify(record)
   })
   return [header, ...body, ''].join('\n')
 }
@@ -448,7 +414,8 @@ function projectSessionSnapshot(rawLog: string): string {
  * Normalize and project persisted session JSONL for a committed fixture.
  * This composes ordinary log normalization with request-header scrubbing and
  * persistence-envelope projection, then writes the v3 logical event stream as
- * one record per event, independent of persistence flush boundaries.
+ * one record per event, independent of persistence flush boundaries. Event order
+ * and source-event references are preserved.
  *
  * @param rawLog - persisted or already-projected session JSONL.
  * @param ctx - the run's volatile values to scrub.

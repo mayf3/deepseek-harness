@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
+import { z } from 'zod'
 import { Context } from '@deepseek-ai/cordis'
 import SessionStore from '@deepseek-ai/dsh-session'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
@@ -105,18 +106,7 @@ describe('subagent catalog projection', () => {
     const events: SessionEvent[] = [
       fact(0, 'child-b', 1, { mode: 'one-shot' }),
       fact(1, 'child-a', 1, { mode: 'one-shot', label: 'once' }),
-      {
-        type: 'subagent/catalog',
-        seq: SessionSeq(2),
-        time: 0,
-        data: {
-          version: 0,
-          childId: SessionId('child-c'),
-          childCreatedAt: 2,
-          mode: 'continuable',
-        },
-      } as unknown as SessionEvent,
-      fact(3, 'child-d', 3, { mode: 'continuable', label: 'later' }),
+      fact(2, 'child-d', 3, { mode: 'continuable', label: 'later' }),
     ]
     const state = fold(events)
 
@@ -134,7 +124,7 @@ describe('subagent catalog projection', () => {
     ])
   })
 
-  it('ignores unrelated, inherited, and malformed events without changing state', () => {
+  it('ignores unrelated and inherited events without changing state', () => {
     const seededHeader = { ...header, isSeeded: true }
     const initial = subagentCatalogProjectionDefinition.init(seededHeader, SessionLogOffset(2))
     const unrelated = subagentCatalogProjectionDefinition.apply(initial, {
@@ -144,12 +134,28 @@ describe('subagent catalog projection', () => {
       unrelated,
       fact(1, 'inherited', 1, { mode: 'one-shot' }),
     )
-    const malformed = subagentCatalogProjectionDefinition.apply(inherited, {
-      type: 'subagent/catalog', seq: SessionSeq(2), time: 0, data: { version: 9 },
-    } as unknown as SessionEvent)
 
     expect(unrelated).toBe(initial)
     expect(inherited).toBe(initial)
-    expect(malformed).toBe(initial)
+  })
+
+  it.each([
+    { version: 9, childId: 'child', childCreatedAt: 0, mode: 'one-shot' },
+    { version: 0, childId: 'child', childCreatedAt: 0, mode: 'continuable' },
+    { version: 0, childId: 'child', childCreatedAt: -1, mode: 'one-shot' },
+  ])('refuses to restore a catalog containing an invalid fact: %j', async (data) => {
+    const ctx = new Context()
+    try {
+      await ctx.plugin(SessionStore)
+      await ctx.plugin(SessionProjectionRegistry)
+      ctx.sessionProjections.register(subagentCatalogProjectionDefinition)
+      const events = [
+        fact(0, 'valid-child', 0, { mode: 'one-shot' }),
+        { type: 'subagent/catalog', seq: SessionSeq(1), time: 0, data } as unknown as SessionEvent,
+      ]
+      expect(() => ctx.sessionProjections.restore({}, events, SessionLogOffset(0), header, SessionLogOffset(0))).toThrow(z.ZodError)
+    } finally {
+      await ctx.fiber.dispose()
+    }
   })
 })

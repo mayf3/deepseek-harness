@@ -12,7 +12,7 @@ The child descriptor remains necessary for recovery and composition, but it cann
 
 ## Decision
 
-The parent Session's required `subagent/catalog` events are the persistent authority for direct-child discovery. Each event is one successful creation fact containing `childId`, `childCreatedAt`, mode, and the mode-discriminated label. Remote one-shot runs without a local Session remain outside this catalog.
+The parent Session's required `subagent/catalog` events are the persistent authority for direct-child discovery. Each event is one successful creation fact containing `childId`, `childCreatedAt`, mode, and the mode-discriminated label. Remote one-shot runs without a local Session remain outside this catalog. Invalid own facts, including unsupported payload versions, reject projection restoration because silently dropping a required fact would return an incomplete catalog.
 
 Creation publishes only successful facts. A one-shot run appends the catalog event after its provider returns a local child and before the run reaches its caller. A continuable run admits the initial prompt, appends the catalog event, then returns the child id. If admission or catalog append fails, creation fails and releases the activation; there is no compensating catalog event or rollback protocol.
 
@@ -22,7 +22,7 @@ The registered `subagentCatalog` projection materializes the parent facts. It st
 
 Fork isolation uses the exact `Session.inheritedEventCount` supplied to projection initialization. The fold ignores `subagent/catalog` events below that offset. The state stores the inherited offset but not each event seq because acceptance is decided during folding.
 
-Snapshot normalizers zero `childCreatedAt` because it originates from the process clock. The TypeScript normalizer also sorts adjacent catalog facts by distinct child id because parallel successful creations may append in either order. Non-catalog events remain ordering barriers. Source-event references are remapped to the sorted positions so each citation retains its original fact.
+Snapshot normalizers zero `childCreatedAt` because it originates from the process clock. Event order and source-event references remain intact: adjacent facts can come from sequential creation, so adjacency does not establish commutativity.
 
 ## Alternatives considered
 

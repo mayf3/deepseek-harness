@@ -176,11 +176,21 @@ async function persistedSessions(cwd: string): Promise<SessionLog[]> {
     expect(assertPersistedSessionVersion(basename(file), content), `${file}: current writer`).toBe(SESSION_FORMAT_VERSION)
     return { content, header: headerOf(content) }
   }))
+  // Same-millisecond siblings bind to fixture roles by their parent's recorded
+  // discovery order; random persistence filenames do not identify child roles.
+  const catalogOrders = new Map(logs.map(log => [log.header.id, new Map(
+    records(log.content)
+      .filter(event => event.type === 'subagent/catalog')
+      .map((event, index) => [(event.data as JsonObject).childId, index]),
+  )]))
   return logs.sort((left, right) => {
     const leftChild = typeof left.header.parentSession === 'string'
     const rightChild = typeof right.header.parentSession === 'string'
     if (leftChild !== rightChild) return leftChild ? 1 : -1
-    return Number(left.header.createdAt) - Number(right.header.createdAt)
+    const timeOrder = Number(left.header.createdAt) - Number(right.header.createdAt)
+    if (timeOrder !== 0 || left.header.parentSession !== right.header.parentSession) return timeOrder
+    const catalogOrder = catalogOrders.get(left.header.parentSession)
+    return (catalogOrder?.get(left.header.id) ?? Infinity) - (catalogOrder?.get(right.header.id) ?? Infinity)
   })
 }
 

@@ -51,6 +51,8 @@ export interface SubagentCatalogState {
   readonly head?: CatalogChunk | undefined
 }
 
+const CATALOG_CHUNK_CAPACITY = 64
+
 const sessionIdSchema = z.string() as unknown as z.ZodType<SessionId>
 const oneShotCatalogSchema = z.object({
   version: z.literal(SUBAGENT_CATALOG_VERSION),
@@ -81,7 +83,7 @@ const viewSchema = z.array(z.union([
   }),
 ])) as unknown as z.ZodType<SubagentCatalogEntry[]>
 const chunkSchema: z.ZodType<CatalogChunk> = z.lazy(() => z.object({
-  facts: z.array(eventDataSchema).min(1).max(64),
+  facts: z.array(eventDataSchema).min(1).max(CATALOG_CHUNK_CAPACITY),
   previous: chunkSchema.optional(),
 }).strict())
 const stateSchema: z.ZodType<SubagentCatalogState> = z.object({
@@ -98,7 +100,7 @@ declare module '@deepseek-ai/dsh-session-projection/types' {
 /** Append one fact to the persistent chunk stack in constant bounded work. */
 function appendFact(state: SubagentCatalogState, fact: SubagentCatalogEvent): SubagentCatalogState {
   const head = state.head
-  if (head === undefined || head.facts.length === 64) {
+  if (head === undefined || head.facts.length === CATALOG_CHUNK_CAPACITY) {
     return { ...state, head: { facts: [fact], ...head === undefined ? {} : { previous: head } } }
   }
   return {
@@ -139,16 +141,14 @@ function subagentCatalogEntries(state: SubagentCatalogState): SubagentCatalogEnt
   return entries
 }
 
-/** Parent-owned direct-child catalog projection. */
+/** Parent-owned direct-child catalog projection; invalid own facts reject restoration. */
 export const subagentCatalogProjectionDefinition = {
   key: 'subagentCatalog',
   stateSchema,
   init: (_header: SessionHeader, inheritedEventCount: SessionLogOffset) => ({ inheritedEventCount }),
   apply: (state, event: SessionEvent) => {
     if (event.type !== 'subagent/catalog' || event.seq < state.inheritedEventCount) return state
-    const parsed = eventDataSchema.safeParse(event.data)
-    if (!parsed.success) return state
-    return appendFact(state, parsed.data)
+    return appendFact(state, eventDataSchema.parse(event.data))
   },
   stateVersion: 1,
   wire: { viewSchema, view: subagentCatalogEntries },

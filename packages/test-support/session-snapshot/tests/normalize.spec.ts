@@ -621,7 +621,7 @@ describe('normalizeSessionSnapshot', () => {
     ].join('\n'))
   })
 
-  it('orders adjacent catalog facts by child id', () => {
+  it('preserves adjacent catalog facts in parent event order', () => {
     const raw = [
       JSON.stringify({ type: 'session', version: 0 }),
       JSON.stringify({ type: 'tool/call', data: { callId: 'parallel' } }),
@@ -636,11 +636,11 @@ describe('normalizeSessionSnapshot', () => {
       JSON.stringify({ type: 'tool/result', data: { callId: 'parallel' } }),
     ].join('\n') + '\n'
     const normalized = normalizeSessionSnapshot(raw, ctx)
-    expect(normalized.indexOf('{{session:2}}')).toBeLessThan(normalized.indexOf('{{session:3}}'))
+    expect(normalized.indexOf('{{session:3}}')).toBeLessThan(normalized.indexOf('{{session:2}}'))
     expect(normalized).toContain('"childCreatedAt":0')
   })
 
-  it('treats malformed catalog facts as ordering barriers', () => {
+  it('preserves malformed catalog payloads', () => {
     const raw = [
       JSON.stringify({ type: 'session', version: 0 }),
       JSON.stringify({
@@ -658,9 +658,9 @@ describe('normalizeSessionSnapshot', () => {
   })
 
   it.each([
-    { sources: [0, 1], remapped: [0, 2] },
-    { sources: [0, 2], remapped: [0, 1] },
-  ])('preserves cited children when adjacent catalog facts change position: $sources', ({ sources, remapped }) => {
+    { sources: [0, 1] },
+    { sources: [0, 2] },
+  ])('preserves source references and catalog order: $sources', ({ sources }) => {
     const records = [
       { type: 'session', version: 2 },
       { type: 'tool/call', data: { callId: 'parallel' } },
@@ -672,9 +672,9 @@ describe('normalizeSessionSnapshot', () => {
     expect(normalized).toBe([
       records[0],
       records[1],
-      { ...records[3], data: { ...records[3]?.data, childCreatedAt: 0 } },
       { ...records[2], data: { ...records[2]?.data, childCreatedAt: 0 } },
-      { ...records[4], sourceEventSeqs: remapped },
+      { ...records[3], data: { ...records[3]?.data, childCreatedAt: 0 } },
+      records[4],
     ].map(record => JSON.stringify(record)).join('\n') + '\n')
     expect(normalizeSessionSnapshot(normalized, ctx)).toBe(normalized)
   })

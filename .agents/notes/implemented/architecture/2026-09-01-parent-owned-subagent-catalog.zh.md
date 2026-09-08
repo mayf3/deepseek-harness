@@ -12,7 +12,7 @@ child descriptor 对恢复与 composition 仍然必要，但它不能作为 disc
 
 ## 决策
 
-parent Session 的 required `subagent/catalog` 事件是直接 child discovery 的持久化权威。每个事件都是一条成功创建事实，包含 `childId`、`childCreatedAt`、mode 与按 mode 区分的 label。没有本地 Session 的远程 one-shot run 不进入该目录。
+parent Session 的 required `subagent/catalog` 事件是直接 child discovery 的持久化权威。每个事件都是一条成功创建事实，包含 `childId`、`childCreatedAt`、mode 与按 mode 区分的 label。没有本地 Session 的远程 one-shot run 不进入该目录。无效的自身 fact（包括不支持的 payload 版本）会使 projection 恢复失败，因为静默丢弃 required fact 会返回不完整的目录。
 
 创建只发布成功事实。one-shot run 在 provider 返回本地 child 后、run 到达调用方前追加目录事件。continuable run 先准入初始 prompt，再追加目录事件，最后返回 child id。准入或目录追加失败时，创建失败并释放 activation；不存在补偿目录事件或 rollback 协议。
 
@@ -22,7 +22,7 @@ child header 与 `subagent/descriptor` 继续拥有恢复与 composition 权威�
 
 fork 隔离使用 projection 初始化时提供的精确 `Session.inheritedEventCount`。fold 忽略该 offset 之前的 `subagent/catalog` 事件。state 保存 inherited offset，但不保存每条 event seq，因为接受判定已在 fold 时完成。
 
-snapshot normalizer 会把 `childCreatedAt` 归零，因为它来自 process clock。TypeScript normalizer 还会按不同 child id 排序相邻 catalog fact，因为并行成功创建的 append 顺序可能不同。非 catalog event 继续作为顺序 barrier。来源事件引用会重映射到排序后的位置，使每个引用仍指向原来的事实。
+snapshot normalizer 会把 `childCreatedAt` 归零，因为它来自 process clock。事件顺序与来源事件引用保持不变：相邻 fact 也可能来自顺序创建，因此相邻关系不能证明可交换性。
 
 ## 考虑过的替代方案
 
