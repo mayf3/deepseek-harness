@@ -190,6 +190,8 @@ export interface PluginInstallLogChunk {
   readonly jobId: string
   /** The command line the run executes: pnpm's command name, then its arguments. */
   readonly argv: readonly string[]
+  /** The directory the run executes in: the profile directory. */
+  readonly cwd: string
   /** The package spec the run installs or removes. */
   readonly spec: string
   readonly stream: 'stdout' | 'stderr'

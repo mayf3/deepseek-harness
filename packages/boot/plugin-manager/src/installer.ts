@@ -262,7 +262,7 @@ export class PluginInstaller {
       while (tailBytes > config.installLogTailBytes && tail.length > 1) {
         tailBytes -= Buffer.byteLength(tail.shift() as string)
       }
-      this.options.installLog({ jobId, argv, spec, stream, text })
+      this.options.installLog({ jobId, argv, cwd: profileDir, spec, stream, text })
     }
     // Windows resolves pnpm through its .cmd shim, which spawn() refuses
     // without a shell since the CVE-2024-27980 hardening. The parent
@@ -287,10 +287,10 @@ export class PluginInstaller {
     ).catch((error: unknown) => {
       const message = messageOf(error)
       record('stderr', `${message}\n`)
-      this.options.installLog({ jobId, argv, spec, stream: 'stderr', text: '', exitCode: null })
+      this.options.installLog({ jobId, argv, cwd: profileDir, spec, stream: 'stderr', text: '', exitCode: null })
       throw new PluginOperationError('plugins/install-failed', `${NAME}: ${message}`, { spec, exitCode: null, log: tail.join('') }, { cause: error })
     })
-    this.options.installLog({ jobId, argv, spec, stream: 'stdout', text: '', exitCode })
+    this.options.installLog({ jobId, argv, cwd: profileDir, spec, stream: 'stdout', text: '', exitCode })
     if (exitCode !== 0) {
       throw new PluginOperationError(
         'plugins/install-failed',
