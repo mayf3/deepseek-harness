@@ -210,6 +210,9 @@ declare module '@deepseek-ai/cordis' {
   }
 }
 
+/** The listeners `ctx.events.dispatch('emit', …)` returns for one event, called with its payload. */
+type EmitListeners = Array<(...listenerArgs: unknown[]) => unknown>
+
 /**
  * A write refused because the namespace moved since the caller read it. The
  * Service Definition's serialized write queue orders writes; it cannot tell a fresh writer
@@ -1088,7 +1091,9 @@ export abstract class SettingsProvider extends Service {
 
   /** Contained fan-out of `settings/document-updated`, the way {@link commit} emits `settings/updated`. */
   private emitDocumentUpdated(ns: SettingsNamespace, revision: number, scope: SettingsScopeId | undefined): void {
-    this.emitContained(ns, 'settings/document-updated', scope === undefined ? [ns, revision] : [ns, revision, scope])
+    const payload: unknown[] = scope === undefined ? [ns, revision] : [ns, revision, scope]
+    const args = ['settings/document-updated', ...payload]
+    this.deliver(ns, this.ctx.events.dispatch('emit', args) as EmitListeners, payload)
   }
 
   /** Commit a resolved value when changed: swap, notify watchers, emit the event. */
@@ -1121,19 +1126,20 @@ export abstract class SettingsProvider extends Service {
     // harness-fatal by design and rethrow after every listener ran; any other
     // failure is contained so one broken observer cannot wedge the commit
     // path (and, through it, a provider's reload loop).
-    this.emitContained(ns, 'settings/updated', registration.scope === undefined
+    const payload: unknown[] = registration.scope === undefined
       ? [ns, next, prev, source]
-      : [ns, next, prev, source, registration.scope])
+      : [ns, next, prev, source, registration.scope]
+    const args = ['settings/updated', ...payload]
+    this.deliver(ns, this.ctx.events.dispatch('emit', args) as EmitListeners, payload)
   }
 
   /**
-   * Emit one settings event to every listener in turn: an invariant violation
+   * Call each listener of one settings event in turn: an invariant violation
    * rethrows after the rest ran, any other failure is contained.
    */
-  private emitContained(ns: SettingsNamespace, event: string, payload: unknown[]): void {
+  private deliver(ns: SettingsNamespace, listeners: EmitListeners, payload: unknown[]): void {
     let invariantFailure: unknown
-    const args = [event, ...payload]
-    for (const listener of this.ctx.events.dispatch('emit', args) as Array<(...listenerArgs: unknown[]) => unknown>) {
+    for (const listener of listeners) {
       try {
         const returned = listener(...payload)
         if (returned != null && typeof (returned as PromiseLike<unknown>).then === 'function') {
