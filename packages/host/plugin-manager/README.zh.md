@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-`dsh-host-plugin-manager` 是插件管理在 Web 宿主上的那一面。它把 `pluginManager` 挂为 Typert 服务并暴露 `plugins` Remote——`list`、`add`、`uninstall`、`enable`、`disable`、`retry`、`addRow`、`removeRow`、`setRowDisabled`、`dependents`——每个方法转接给在本上下文之上构造的 [`dsh-plugin-manager`](../../boot/plugin-manager/README.zh.md) `PluginManager`，每个 `plugins/*` 失败以同码的 `RemoteError` 过线。操作做什么、以及跟随操作的 `plugins/changed` 与 `plugins/install-log` 事件，都属于那个包；本包只从上下文读出 profile runtime、preset roster 与 agent 注册表并交过去。客户端包通过 [`api-remotes`](../../api/remotes/README.zh.md) 装配消费该 Remote。
+`dsh-host-plugin-manager` 把 `pluginManager` 挂载为 Typert 服务并暴露 `plugins` Remote——`list`、`add`、`uninstall`、`enable`、`disable`、`retry`、`addRow`、`removeRow`、`setRowDisabled`、`dependents`——每个方法都转给建立在本上下文之上的 [`dsh-plugin-manager`](../../boot/plugin-manager/README.zh.md) `PluginManager`，每个 `plugins/*` 失败以同码的 `RemoteError` 过线。操作做什么、以及随之而来的 `plugins/changed` 与 `plugins/install-log` 事件属于那个包；本包只是从上下文读取 profile runtime、预设名册与 agent 注册表并交给它。客户端经 [`api-remotes`](../../api/remotes/README.zh.md) 装配消费该 Remote。
 
 ## 目录
 

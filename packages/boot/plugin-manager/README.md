@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-`dsh-plugin-manager` is what changes a profile's plugins, with no Remote protocol attached. `PluginInstaller` needs only the profile on disk: it runs pnpm in the profile directory, probes every package a run added in a child process, and removes again what has no place in a profile — the `dsh plugin add` command uses it before any plugin starts. `PluginManager` needs the booted tree: it moves a bundle in and out of the profile's layer list and recomposes the tree through `profileRuntime`, composes a bundle again when its rows failed, adds and removes rows in the profile's global user layer or one agent preset's, says what disabling a package would strand, and folds the manifest, the probe record, and the live tree into one view per package. Every refusal or failure is a `PluginOperationError` carrying a `plugins/*` code; the Web host's [`dsh-host-plugin-manager`](../../host/plugin-manager/README.md) exposes the manager as the `plugins` Remote and turns each failure into a Remote error of the same code.
+`dsh-plugin-manager` changes a profile's plugins. `PluginInstaller` needs the profile on disk: it runs pnpm there, probes every package a run added in a child process, and removes what has no place in a profile — `dsh plugin add` uses it before any plugin starts. `PluginManager` needs the booted tree: it enables and disables bundles through `profileRuntime`, retries failed ones, adds and removes rows in the global or a preset's user layer, reports dependents, and folds manifest, probe record, and live tree into one view per package. Failures carry `plugins/*` codes; [`dsh-host-plugin-manager`](../../host/plugin-manager/README.md) exposes the manager as the `plugins` Remote.
 
 ## Table of Contents
 

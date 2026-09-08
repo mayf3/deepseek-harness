@@ -9,7 +9,7 @@ kind: "package-group"
 
 ## 概述
 
-boot 组提供每个 dsh app bin 启动以及管理所启动之物所需的全部能力：`app-boot` 把 `cordis.yml` 连同你的环境与 patch 层变成运行中的应用，并给出清晰的失败信息；`cmdline` 让应用持有自己的命令行 flag 与 `--help`；`plugin-manager` 为 `dsh plugin` 命令与 Web 宿主安装、启用与编辑 profile 的插件。借助这些包，你可以运行 `dsh`，也可以编写以同样方式启动的新应用或测试 fixture。三者都是 `apps/cli`、宿主包与测试专用 Loader fixture 导入的库，绝不是组合加载的插件。本页是组的映射；各包 README 负责各自的包级约定。
+boot 组提供每个 dsh 应用 bin 启动、并管理所启动内容所需的东西：`app-boot` 把 `cordis.yml` 连同环境与补丁层变成一个带清晰失败信息的运行中应用，`cmdline` 让应用自己拥有命令行参数与 `--help`，`plugin-manager` 为 `dsh plugin` 命令与 Web 宿主安装、启用与编辑 profile 的插件。三者都是被 `apps/cli`、宿主包与仅测试用的 Loader fixture 导入的库，从不是组合加载的插件；各包 README 拥有自己的契约。
 
 ## 目录
 
