@@ -78,7 +78,7 @@ console.log(await manager.list())
 
 `addRow` 把一条点名该包某个模块的行——`plugin` 包的主导出，或某个 `dsh.plugins` 条目——插入 profile 的全局 `cordis.patch.yml`（`target: { kind: 'global' }`）或某个 agent preset 的用户层（`{ kind: 'preset', preset }`，经 roster 的 `overlayPathFor`）。行 id 未给出时由包名与子路径派生；已被占用的 id 以 `plugins/row-conflict` 失败。`removeRow` 移除一条插入的行，`setRowDisabled` 为任意行写入或移除 `disabled: true`——只写拒绝，因此组合包自己的 `!!js` 门被恢复而不是被覆盖。全局层当场在线重新组合；preset 的层在其下一个常驻代际生效。`dependents` 说明停用或移除一个包会搁浅什么：其行提供而包外的行注入的服务，以及点名其模块的用户层行。
 
-管理器一次只跑一个变更——上一个还在跑时再调用会以 `plugins/busy` 失败并点名正在进行的操作——`add` 与 `uninstall` 在有会话运行时拒绝改动 `node_modules`，报 `plugins/agents-running`。每次变更之后在上下文上发出 `plugins/changed` 事件，安装运行把 pnpm 的输出以 `plugins/install-log` 分块发出，每块都写明所跑的命令行，开了颜色时还带着 pnpm 的 SGR 转义。
+管理器一次只跑一个变更——上一个还在跑时再调用会以 `plugins/busy` 失败并点名正在进行的操作——`add` 与 `uninstall` 在有会话运行时拒绝改动 `node_modules`，报 `plugins/agents-running`。每次变更之后在上下文上发出 `plugins/changed` 事件，安装运行把 pnpm 的输出以 `plugins/install-log` 分块发出，每块都写明所跑的命令行与所在的 profile 目录，开了颜色时还带着 pnpm 的 SGR 转义。
 
 ### 失败
 

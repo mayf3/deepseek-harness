@@ -599,9 +599,9 @@ describe('PluginManager', () => {
       // The fake pnpm records the spec itself as the dependency name, which
       // resolves to nothing: a plain dependency whose probe cannot run.
       expect(result).toEqual({ installed: ['github:acme/ext-new'], removed: [], enabled: [], installedOnly: [], plain: ['github:acme/ext-new'], jobId: expect.any(String) as string })
-      expect(log.map(chunk => [chunk.argv, chunk.stream, chunk.text, chunk.exitCode])).toEqual([
-        [['pnpm', 'add', 'github:acme/ext-new'], 'stdout', '+ github:acme/ext-new 1.0.0\n', undefined],
-        [['pnpm', 'add', 'github:acme/ext-new'], 'stdout', '', 0],
+      expect(log.map(chunk => [chunk.argv, chunk.cwd, chunk.stream, chunk.text, chunk.exitCode])).toEqual([
+        [['pnpm', 'add', 'github:acme/ext-new'], staged.profileDir, 'stdout', '+ github:acme/ext-new 1.0.0\n', undefined],
+        [['pnpm', 'add', 'github:acme/ext-new'], staged.profileDir, 'stdout', '', 0],
       ])
       expect(changes).toEqual([{ reason: 'install' }])
     })
