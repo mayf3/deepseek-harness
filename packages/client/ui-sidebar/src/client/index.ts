@@ -1,30 +1,37 @@
-/** Registers the sidebar shell into the layout-owned slot. */
+/** Registers the sidebar shell, global panel navigation, and Hello World panel. */
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
+import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
+import { resolveSlotLabel } from '@deepseek-ai/dsh-client-ui-slots'
+import type { MainPanelId } from '@deepseek-ai/dsh-client-ui-layout/client'
 // Type-only: pulls the locale plugin's Context merge (ctx.locale).
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 // Type-only: pulls the SlotRegistry service merge (ctx.slots).
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 // Type-only: pulls the Session root standard-props merge.
 import type {} from '@deepseek-ai/dsh-client-ui-session/client'
-import type { SidebarRootInjected } from './contract/slots.ts'
+import type { SidebarPanelMetadata, SidebarRootInjected } from './contract/slots.ts'
+import { HelloWorldIcon, HelloWorldPanel } from './hello-world/HelloWorldPanel.tsx'
 import { SidebarRoot } from './SidebarRoot.tsx'
 import { en, zh, type SidebarKey } from './locales.ts'
 
 export type {
   SidebarBrandMarkOwnerProps, SidebarBrandNameOwnerProps, SidebarFooterActionOwnerProps,
+  SidebarPanelIconOwnerProps, SidebarPanelMetadata, SidebarPanelTitleOwnerProps,
   SidebarRootComponentProps, SidebarRootInjected, SidebarSectionOwnerProps, SidebarSettingsOwnerProps,
 } from './contract/slots.ts'
 export type { SidebarKey } from './locales.ts'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface LocaleNamespaceMap {
-    /** Sidebar shell controls copy. */
+    /** Sidebar controls and global panel copy. */
     sidebar: SidebarKey
   }
 }
 
-/** Dictionary namespace owned by this plugin (shell controls copy). */
+/** Dictionary namespace owned by this plugin. */
 const NS = 'sidebar'
+
+const HELLO_WORLD_PANEL_ID = 'hello-world' as MainPanelId
 
 interface WorkspaceNavigation {
   startSession(workspaceId?: Parameters<SidebarRootInjected['startSession']>[0]): void
@@ -39,29 +46,56 @@ export const inject = ['slots', 'layout', 'uiWorkspace', 'locale']
 export function apply(ctx: ClientContext): void {
   const workspaceNavigation = ctx.get('uiWorkspace') as unknown as WorkspaceNavigation
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-sidebar: dictionaries')
+  const t = ctx.locale.bind(NS)
+  const panels = createSnapshotStore<readonly SidebarPanelMetadata[]>([])
+  const syncPanels = (): void => {
+    const next = ctx.slots.entriesOfSlot('sidebar.panellist').map(({ options }) => {
+      // The list registration requires an id; StoredEntry erases the slot kind.
+      const id = options.id as MainPanelId
+      return { id, order: options.order ?? 0, label: resolveSlotLabel(options.label) ?? id }
+    }).sort((a, b) => a.order - b.order)
+    const previous = panels.getSnapshot()
+    if (previous.length === next.length && previous.every((panel, index) => {
+      const candidate = next[index]!
+      return panel.id === candidate.id && panel.order === candidate.order && panel.label === candidate.label
+    })) return
+    panels.set(next)
+  }
+  ctx.effect(() => ctx.slots.subscribe('sidebar.panellist', syncPanels), 'ui-sidebar: panel entries')
+  ctx.effect(() => ctx.locale.subscribe(syncPanels), 'ui-sidebar: panel labels')
 
   const injectProps = (): SidebarRootInjected => ({
     // The shell's New Session button rides the Workspace UI's shared action
     // (current Session Workspace, then recent Workspace).
     startSession: (workspaceId) => { workspaceNavigation.startSession(workspaceId) },
     toggleSidebar: () => { ctx.layout.toggleSidebar() },
+    selectPanel: (id) => { ctx.layout.selectPanel(id) },
+    hooks: { panels },
   })
-  ctx.effect(
-    () => ctx.slots.register({
-      name: 'sidebar',
-      locale: NS,
-      // The shell owns geometry; ui-workspace registers the whole browsing
-      // region (header, search, session list, workspace dialogs), ui-settings
-      // registers the foot trigger + settings panel.
-      children: {
-        'sidebar.brand.mark': { kind: 'single', scope: 'root' },
-        'sidebar.brand.name': { kind: 'single', scope: 'root' },
-        'sidebar.workspaces': { kind: 'single', scope: 'root' },
-        'sidebar.settings': { kind: 'single', scope: 'root' },
-        'sidebar.footer.action': { kind: 'list', scope: 'root' },
-      },
-      inject: injectProps,
-    }, SidebarRoot),
-    'ui-sidebar: slot registration',
-  )
+  ctx.slots.inject('sidebar', () => ctx.slots.register({
+    name: 'sidebar',
+    locale: NS,
+    children: {
+      'sidebar.brand.mark': { kind: 'single', scope: 'root' },
+      'sidebar.brand.name': { kind: 'single', scope: 'root' },
+      'sidebar.panellist': { kind: 'list', scope: 'root' },
+      'sidebar.panellist.title': { kind: 'keyed', scope: 'root' },
+      'sidebar.workspaces': { kind: 'single', scope: 'root' },
+      'sidebar.settings': { kind: 'single', scope: 'root' },
+      'sidebar.footer.action': { kind: 'list', scope: 'root' },
+    },
+    inject: injectProps,
+  }, SidebarRoot))
+  ctx.slots.inject('main', () => ctx.slots.register({
+    name: 'main',
+    key: HELLO_WORLD_PANEL_ID,
+    locale: NS,
+  }, HelloWorldPanel))
+  ctx.slots.inject('sidebar.panellist', () => ctx.slots.register({
+    name: 'sidebar.panellist',
+    id: HELLO_WORLD_PANEL_ID,
+    order: 100,
+    label: () => t('panel.helloWorld.title'),
+  }, HelloWorldIcon))
+  syncPanels()
 }

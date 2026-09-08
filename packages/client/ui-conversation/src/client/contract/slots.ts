@@ -117,6 +117,8 @@ export type UseConversationViews = SnapshotSelectorHook<readonly ViewTab[]>
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface SlotMap {
+    /** Conversation shell beneath its root-scoped main-panel entry. */
+    'main.conversation': { kind: 'single'; scope: 'session-maybe' }
     /** Strict per-Session Conversation body. */
     'conversation.session': { kind: 'single'; scope: 'session' }
     /** Strict per-Session title, actions, and View navigation. */
@@ -364,7 +366,7 @@ export interface HeroBrandMarkOwnerProps {
 
 /** Full props of the resident optional-Session Conversation shell. */
 export type ConversationSlotProps =
-  PropsRuntime<'conversation'>
+  PropsRuntime<'main.conversation'>
   & PropsRenderSlots<
     | 'conversation.session' | 'conversation.session.header'
     | 'conversation.composer' | 'conversation.composer.bar'

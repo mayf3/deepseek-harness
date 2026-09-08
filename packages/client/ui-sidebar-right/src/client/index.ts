@@ -32,6 +32,7 @@ import type {} from './contract/slots.ts'
 import { GuideBody, type GuideInjected } from './tabs/guide/GuideBody.tsx'
 import { ExpandButton } from './shell/ExpandButton.tsx'
 import { RightbarSeat, type SidebarRightInjected } from './shell/SidebarRight.tsx'
+import { RightbarRoot } from './shell/RightbarRoot.tsx'
 import { createSidebarRightController, type SidebarRightController } from './service.ts'
 import { SidebarRightTabRegistry } from './tab-registry.ts'
 import { createSidebarRightStore } from './stores.ts'
@@ -143,21 +144,27 @@ export function apply(ctx: ClientContext): void {
     }
 
     const disposeTypes = [tabs.register(guideDefinition(t))]
-    const disposeSeat = ctx.slots.inject('rightbar', () => ctx.slots.register({
-      name: 'rightbar',
-      locale: NS,
-      children: {
-        'sidebar.right.pane.tab': { kind: 'keyed', scope: 'session', inject: { hooks: { tabInfo: tabInfoFactory } } },
-        'sidebar.right.pane.tab.title': { kind: 'keyed', scope: 'session', inject: { hooks: { tabInfo: tabInfoFactory } } },
-        'sidebar.right.tab.menu.item': { kind: 'list', scope: 'session' },
-      },
-      store,
-      inject: (sessionId): SidebarRightInjected => ({
-        ...injected,
-        keyedHooks: { tabNavigation: key => controller.tabDomain.occurrence(sessionId, { id: key as TabId }).navigation },
-        occurrence: tab => controller.tabDomain.occurrence(sessionId, tab),
-      }),
-    }, RightbarSeat))
+    const disposeSeat = ctx.slots.inject('rightbar', function* () {
+      yield ctx.slots.register({
+        name: 'rightbar',
+        children: { 'rightbar.session': { kind: 'single', scope: 'session' } },
+      }, RightbarRoot)
+      yield ctx.slots.register({
+        name: 'rightbar.session',
+        locale: NS,
+        children: {
+          'sidebar.right.pane.tab': { kind: 'keyed', scope: 'session', inject: { hooks: { tabInfo: tabInfoFactory } } },
+          'sidebar.right.pane.tab.title': { kind: 'keyed', scope: 'session', inject: { hooks: { tabInfo: tabInfoFactory } } },
+          'sidebar.right.tab.menu.item': { kind: 'list', scope: 'session' },
+        },
+        store,
+        inject: (sessionId): SidebarRightInjected => ({
+          ...injected,
+          keyedHooks: { tabNavigation: key => controller.tabDomain.occurrence(sessionId, { id: key as TabId }).navigation },
+          occurrence: tab => controller.tabDomain.occurrence(sessionId, tab),
+        }),
+      }, RightbarSeat)
+    })
     // The expand button shares the panel's store: it only needs to know whether
     // the panel is expanded, and to ask for it to be. The header's corner seat
     // is its own place, past the utilities, so showing and hiding it moves

@@ -10,9 +10,15 @@ import type {
   IWorkspaces, WorkspaceId, WorkspaceView,
 } from '@deepseek-ai/dsh-api-workspace-controller/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 
 /** Workspace archive and directory operations consumed by Client UI domains. */
 export interface UiWorkspace {
+  /**
+   * Select a Session and show its Conversation as one UI navigation action.
+   * @param sessionId - listed or retained Session to display.
+   */
+  openSession(sessionId: SessionId): void
   /**
    * Resolve the reusable or newly created blank Session for a Workspace.
    * @param workspaceId - target Workspace.
@@ -111,6 +117,11 @@ class UiWorkspaceService extends Service implements UiWorkspace {
     return attempt
   }
 
+  openSession(sessionId: SessionId): void {
+    this.sessions.open(sessionId)
+    this.ctx.layout.selectPanel(null)
+  }
+
   startSession(workspaceId?: WorkspaceId): void {
     const workspace = this.workspaces.list.getSnapshot()
     const sessions = this.sessions.list.getSnapshot()
@@ -124,10 +135,11 @@ class UiWorkspaceService extends Service implements UiWorkspace {
     const target = workspaceId ?? currentWorkspaceId ?? recent
     if (target === undefined) {
       this.sessions.clear()
+      this.ctx.layout.selectPanel(null)
       return
     }
     void this.connectWorkspace(target).then(
-      (sessionId) => { this.sessions.open(sessionId) },
+      (sessionId) => { this.openSession(sessionId) },
       (reason: unknown) => { console.warn('new session failed:', reason) },
     )
   }
