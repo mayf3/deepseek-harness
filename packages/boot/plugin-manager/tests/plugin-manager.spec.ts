@@ -218,7 +218,6 @@ async function bootProfile(staged: StagedHome, internals: Internals = {}, config
     loadProfile: load,
     compose: composeFor,
     rootEntry: () => rootIncludeEntry(ctx),
-    readUserPatches: () => loadOptionalPatches(NAME, profile.patchPath) ?? [],
   })
   const changes: Booted['changes'] = []
   const log: PluginInstallLogChunk[] = []
