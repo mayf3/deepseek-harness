@@ -31,6 +31,7 @@ import { pathToFileURL } from 'node:url'
 import type { Page } from 'playwright'
 import { expect } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
+import { DSH_LAUNCH_ENVIRONMENT_KEY, type LaunchEnvironmentSnapshot } from '@deepseek-ai/dsh-launch-environment'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
 import Include, { type PatchOptions } from '@deepseek-ai/cordis-plugin-include'
 import Group from '@deepseek-ai/cordis-plugin-group'
@@ -284,6 +285,8 @@ export interface WebScaffold {
 
 /** Options for {@link launchWebScaffold}. */
 export interface LaunchOptions {
+  /** Enable the real Open In rows with deterministic launch-environment facts. */
+  openInAppEnvironment?: LaunchEnvironmentSnapshot
   /** Compare the replayed root session with `replayFixture`; defaults on for a manifest-owned canonical recording. */
   compareReplaySession?: boolean
   /**
@@ -600,13 +603,10 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
       { id: 'directory-picker-browse', name: '@deepseek-ai/dsh-host-directory-picker-browse' },
       { id: 'ui-directory-picker-browse', name: '@deepseek-ai/dsh-client-ui-directory-picker-browse' },
     ] },
-    // The open-in-app header button reflects the host application probe —
-    // whatever editors and terminals the RUNNING machine has installed — so
-    // its presence and label would vary per host and platform. Pin both rows
-    // off (routes and surface); the packages' own composition and jsdom tests
-    // cover the button.
-    { id: 'open-in-app', disabled: true },
-    { id: 'ui-open-in-app', disabled: true },
+    // Ordinary scenarios exclude host-dependent application discovery. The
+    // Open In scenario supplies launch facts that suppress every native probe.
+    { id: 'open-in-app', disabled: options.openInAppEnvironment === undefined },
+    { id: 'ui-open-in-app', disabled: options.openInAppEnvironment === undefined },
     ...options.agentPresets === undefined
       ? []
       // Never the derived harness-home root: a developer's own presets must not
@@ -638,6 +638,7 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
   // the temp workspace so tool cwd, session cwd, and fixtures agree.
   const originalCwd = process.cwd()
   const ctx = new Context()
+  if (options.openInAppEnvironment !== undefined) ctx.provide(DSH_LAUNCH_ENVIRONMENT_KEY, options.openInAppEnvironment)
   const observedSessions = new Map<SessionId, Session>()
   const stopObservingSessions = ctx.on('session/created', (session) => {
     observedSessions.set(session.id, session)
