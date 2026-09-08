@@ -418,6 +418,20 @@ export class PwshLocalExecutor extends ShellExecutor {
         disarm()
         settlePromotion(undefined)
       }, (error: unknown) => {
+        // A live handle whose rejection follows this execution's own
+        // termination — kill() or the spawn signal's abort — reports its
+        // terminal outcome: a provider that terminated the range before the
+        // target started has no exit to report and rejects with the
+        // cancellation reason instead. The result projection classifies it
+        // from the deadline wiring; nothing is a provider failure. A
+        // synchronous spawn throw never produced a handle and stays a failure.
+        if (running !== undefined && (proc.status === 'killed' || spawnSignal?.aborted === true)) {
+          proc.status = 'killed'
+          this.onProcessDone(proc, collected.stderr.readFrom(0).text, false)
+          disarm()
+          settlePromotion(undefined)
+          return
+        }
         // Provider failures settle the handle as killed and surface on stderr for every reader.
         proc.status = 'killed'
         let detail = 'unprintable provider failure'

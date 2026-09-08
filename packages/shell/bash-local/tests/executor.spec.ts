@@ -6,7 +6,7 @@ import { Context } from '@deepseek-ai/cordis'
 import { LocalBashExecutor } from '@deepseek-ai/dsh-bash-local'
 import LocalSubprocessRuntime from '@deepseek-ai/dsh-subprocess-local'
 import SubprocessRuntime from '@deepseek-ai/dsh-subprocess'
-import type { SubprocessHandle, SubprocessOutputReader } from '@deepseek-ai/dsh-subprocess'
+import type { SubprocessHandle, SubprocessOutcome, SubprocessOutputReader } from '@deepseek-ai/dsh-subprocess'
 import { MAX_TIMER_DELAY_MS } from '@deepseek-ai/dsh-timeout'
 import type { ShellExecSpec, ShellExecution, ShellProcess, ShellRunResult } from '@deepseek-ai/dsh-shell'
 
@@ -344,6 +344,57 @@ describe('LocalBashExecutor.start (background process handles)', () => {
     expect(output).toContain('subprocess failed before reporting an outcome:')
     expect(output).not.toContain('spawn failed:')
     expect(proc.readOutput().delta).toBe('')
+  })
+
+  it('treats a rejection after its own abort as the aborted outcome, not a provider failure', async () => {
+    const { ctx, bash } = await setup()
+    const emptyReader: SubprocessOutputReader = {
+      readFrom: () => ({ text: '', nextOffset: 0, lossy: false }),
+    }
+    const rejected = Promise.withResolvers<SubprocessOutcome>()
+    vi.spyOn(ctx.subprocess, 'spawn').mockReturnValue({
+      stdin: undefined,
+      stdout: undefined,
+      stderr: undefined,
+      collected: { stdout: emptyReader, stderr: emptyReader },
+      done: rejected.promise,
+      terminate: vi.fn(),
+      waitForExit: async () => true,
+    } satisfies SubprocessHandle)
+    const controller = new AbortController()
+    const ex = start(bash, bash.resolve({ command: 'true', signal: controller.signal }))
+    controller.abort()
+    // A provider that terminated the range before the target started has no
+    // exit to report and rejects with the cancellation reason instead.
+    rejected.reject(controller.signal.reason)
+    await expect(ex.done).resolves.toBeUndefined()
+    expect(ex.status).toBe('killed')
+    await expect(ex.result()).resolves.toMatchObject({ aborted: true, timedOut: false, exitCode: null })
+    expect(ex.readOutput().delta).toBe('')
+  })
+
+  it('treats a rejection after kill() as the killed outcome, not a provider failure', async () => {
+    const { ctx, bash } = await setup()
+    const emptyReader: SubprocessOutputReader = {
+      readFrom: () => ({ text: '', nextOffset: 0, lossy: false }),
+    }
+    const rejected = Promise.withResolvers<SubprocessOutcome>()
+    vi.spyOn(ctx.subprocess, 'spawn').mockReturnValue({
+      stdin: undefined,
+      stdout: undefined,
+      stderr: undefined,
+      collected: { stdout: emptyReader, stderr: emptyReader },
+      done: rejected.promise,
+      terminate: vi.fn(),
+      waitForExit: async () => true,
+    } satisfies SubprocessHandle)
+    const ex = start(bash, bash.resolve({ command: 'true' }))
+    expect(ex.kill()).toBe(true)
+    rejected.reject(new Error('subprocess terminated before target start'))
+    await expect(ex.done).resolves.toBeUndefined()
+    expect(ex.status).toBe('killed')
+    await expect(ex.result()).resolves.toMatchObject({ aborted: false, timedOut: false, exitCode: null })
+    expect(ex.readOutput().delta).toBe('')
   })
 
   it('settles an unprintable provider rejection instead of rejecting done', async () => {

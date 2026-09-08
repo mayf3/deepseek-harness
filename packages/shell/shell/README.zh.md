@@ -95,7 +95,7 @@ seam 本身不是执行器：每个组合只挂载一个提供方，工具即可
 
 ### 后台生命周期与归属
 
-已 spawn 的进程属于 subprocess 服务而非执行器：它能在仅重载执行器后存活，并在组合拆解时被终止并 join。实现必须遵守 seam 的语义——`result()` 只在基础设施失败时 reject；句柄立即可用且其 `done` 绝不 reject（无论同步还是异步的 provider rejection 都把句柄结算为 `killed`、把不声明阶段的提示写入 stderr，同时 `result()` 以同一失败 reject）；`readOutput` 是消费式的，有损读取会报告 spill 文件；未应答的转移 offer 视为 decline。
+已 spawn 的进程属于 subprocess 服务而非执行器：它能在仅重载执行器后存活，并在组合拆解时被终止并 join。实现必须遵守 seam 的语义——`result()` 只在基础设施失败时 reject；句柄立即可用且其 `done` 绝不 reject（无论同步还是异步的 provider rejection 都把句柄结算为 `killed`、把不声明阶段的提示写入 stderr，同时 `result()` 以同一失败 reject；活句柄在本次执行自己的 `kill()` 或 abort 之后才到来的 rejection 则结算为其终态）；`readOutput` 是消费式的，有损读取会报告 spill 文件；未应答的转移 offer 视为 decline。
 
 </details>
 

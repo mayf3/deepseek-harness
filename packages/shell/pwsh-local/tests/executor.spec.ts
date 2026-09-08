@@ -254,6 +254,39 @@ describe('spawn construction (pure, every platform)', () => {
     expect(proc.readOutput().delta).toBe('')
   })
 
+  it('treats a rejection after its own abort as the aborted outcome, not a provider failure', async () => {
+    const ctx = new Context()
+    const subprocess = new CapturingSubprocessRuntime(ctx)
+    await ctx.plugin(PwshLocalExecutor)
+    const rejected = Promise.withResolvers<SubprocessOutcome>()
+    subprocess.done = rejected.promise
+    const controller = new AbortController()
+    const ex = start(ctx.shell, ctx.shell.resolve({ command: 'Write-Output maybe-ran', signal: controller.signal }))
+    controller.abort()
+    // A provider that terminated the range before the target started has no
+    // exit to report and rejects with the cancellation reason instead.
+    rejected.reject(controller.signal.reason)
+    await expect(ex.done).resolves.toBeUndefined()
+    expect(ex.status).toBe('killed')
+    await expect(ex.result()).resolves.toMatchObject({ aborted: true, timedOut: false, exitCode: null })
+    expect(ex.readOutput().delta).toBe('')
+  })
+
+  it('treats a rejection after kill() as the killed outcome, not a provider failure', async () => {
+    const ctx = new Context()
+    const subprocess = new CapturingSubprocessRuntime(ctx)
+    await ctx.plugin(PwshLocalExecutor)
+    const rejected = Promise.withResolvers<SubprocessOutcome>()
+    subprocess.done = rejected.promise
+    const ex = start(ctx.shell, ctx.shell.resolve({ command: 'Write-Output maybe-ran' }))
+    expect(ex.kill()).toBe(true)
+    rejected.reject(new Error('subprocess terminated before target start'))
+    await expect(ex.done).resolves.toBeUndefined()
+    expect(ex.status).toBe('killed')
+    await expect(ex.result()).resolves.toMatchObject({ aborted: false, timedOut: false, exitCode: null })
+    expect(ex.readOutput().delta).toBe('')
+  })
+
   it('preserves an explicit kill stamp and maps an aborted direct outcome to killed', async () => {
     const ctx = new Context()
     const subprocess = new CapturingSubprocessRuntime(ctx)
