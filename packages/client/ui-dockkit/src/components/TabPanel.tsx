@@ -25,7 +25,7 @@ import type { ReactNode, RefObject } from 'react'
 import clsx from 'clsx'
 import { IconCloseFill14, IconPlusOutline16, Tooltip } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { DockZone, LayoutState, PaneNode, TabId } from '../contract/types.ts'
-import { assertNever, getTab } from '../engine/tree.ts'
+import { getTab } from '../engine/tree.ts'
 import type { PaneCallbacks, SplitBlock } from './render.ts'
 import { TabMenu } from './TabMenu.tsx'
 import { TabTitle } from './TabTitle.tsx'
@@ -48,29 +48,26 @@ function SplitGlyph(): ReactNode {
 }
 
 /**
- * The drop hint's glyph: the panel frame with the half or the whole a release
- * would fill drawn solid, so the hint names its zone before its caption is
- * read. A half is drawn out to the frame's outer edge, under the ring, so its
- * visible edge is exactly the ring's inner edge with no seam at the corners;
- * the whole sits one stroke inside the frame so the ring stays visible around
- * it.
+ * The drop hint's fill per zone: the half or the whole a release would fill
+ * drawn solid, so the hint names its zone before its caption is read. A half
+ * is drawn out to the frame's outer edge, under the ring, so its visible edge
+ * is exactly the ring's inner edge with no seam at the corners; the whole sits
+ * one stroke inside the frame so the ring stays visible around it.
  */
+const ZONE_FILL: Record<DockZone, string> = {
+  center: 'M4.56 3.48H11.44A1.6 1.6 0 0 1 13.04 5.08V10.92A1.6 1.6 0 0 1 11.44 12.52H4.56A1.6 1.6 0 0 1 2.96 10.92V5.08A1.6 1.6 0 0 1 4.56 3.48Z',
+  left: 'M4 0.523H8V15.477H4A4 4 0 0 1 0 11.477V4.523A4 4 0 0 1 4 0.523Z',
+  right: 'M8 0.523H12A4 4 0 0 1 16 4.523V11.477A4 4 0 0 1 12 15.477H8Z',
+  top: 'M0 8V4.523A4 4 0 0 1 4 0.523H12A4 4 0 0 1 16 4.523V8Z',
+  bottom: 'M0 8H16V11.477A4 4 0 0 1 12 15.477H4A4 4 0 0 1 0 11.477Z',
+}
+
+/** The drop hint's glyph: the panel frame with the zone's fill drawn solid. */
 function ZoneGlyph({ zone }: { readonly zone: DockZone }): ReactNode {
-  const fill = ((): string => {
-    switch (zone) {
-      case 'center': return 'M4.56 3.48H11.44A1.6 1.6 0 0 1 13.04 5.08V10.92A1.6 1.6 0 0 1 11.44 12.52H4.56A1.6 1.6 0 0 1 2.96 10.92V5.08A1.6 1.6 0 0 1 4.56 3.48Z'
-      case 'left': return 'M4 0.523H8V15.477H4A4 4 0 0 1 0 11.477V4.523A4 4 0 0 1 4 0.523Z'
-      case 'right': return 'M8 0.523H12A4 4 0 0 1 16 4.523V11.477A4 4 0 0 1 12 15.477H8Z'
-      case 'top': return 'M0 8V4.523A4 4 0 0 1 4 0.523H12A4 4 0 0 1 16 4.523V8Z'
-      case 'bottom': return 'M0 8H16V11.477A4 4 0 0 1 12 15.477H4A4 4 0 0 1 0 11.477Z'
-      /* v8 ignore next -- closed-union backstop; the compiler rejects a new zone here. */
-      default: return assertNever(zone, 'dockkit: drop zone glyph')
-    }
-  })()
   return (
     <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
       <path fillRule="evenodd" clipRule="evenodd" d={PANEL_FRAME} fill="currentColor" />
-      <path d={fill} fill="currentColor" />
+      <path d={ZONE_FILL[zone]} fill="currentColor" />
     </svg>
   )
 }
