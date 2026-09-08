@@ -396,6 +396,27 @@ describe('TextPreview — the file\'s metadata', () => {
     expect(view.container.querySelector('[data-textpreview-changed]')).toBeNull()
   })
 
+  it('says a metadata-and-read failure once and retries the content read', async () => {
+    const h = harness({ 1: failure('workspace-file/outside-workspace', { path: PATH }) })
+    h.setFailure(new RemoteError('workspace-file/outside-workspace', 'outside', { path: PATH }))
+    const view = render(<TextPreview {...h.props()} />)
+    await settle()
+    // With nothing read the body's failure is the whole story: a metadata bar
+    // above it would repeat the same line.
+    expect(view.container.querySelector('[data-textpreview-meta-failed]')).toBeNull()
+    expect(view.container.querySelector('[data-textpreview-failed]')?.getAttribute('data-textpreview-failed'))
+      .toBe('workspace-file/outside-workspace')
+    h.script(1, page(1, ['a'], true))
+    click(view.container, '[data-textpreview-retry]')
+    await settle()
+    expect(h.read).toHaveBeenCalledTimes(2)
+    expect(lines(view.container)).toEqual(['a\n'])
+    h.setFailure(undefined)
+    view.rerender(<TextPreview {...h.props()} />)
+    expect(view.container.querySelector('[data-textpreview-meta-failed]')).toBeNull()
+    expect(view.container.querySelector('[data-textpreview-failed]')).toBeNull()
+  })
+
   it('draws a page holding one empty line as one line, and nothing for a page past the end', async () => {
     const h = harness({ 1: page(1, [''], false), 2: page(2, [], true) })
     const view = render(<TextPreview {...h.props()} />)

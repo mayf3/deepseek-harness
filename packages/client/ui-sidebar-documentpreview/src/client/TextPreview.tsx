@@ -186,10 +186,12 @@ export function TextPreview({
   }
   return (
     <div className={css.preview} data-textpreview-state="text" data-textpreview-url={tab.contentId} data-document-preview={selected.id}>
-      {meta.failure !== undefined
+      {meta.failure !== undefined && hasContent
         ? (
           // The file's metadata failed — gone, or its workspace unknown — which
           // outranks a pending change; the pages already read stay under it.
+          // With nothing read the body's own failure already says it, so the
+          // bar would only repeat the same line.
           <p className={css.changed} data-textpreview-meta-failed={meta.failure.code}>
             <span>{failureLine(t, meta.failure)}</span>
             <button
@@ -301,6 +303,8 @@ export function TextPreview({
             </p>
           )
           : (
+            // With no content, retry the selected renderer's read; metadata
+            // observation remains owned by the resource provider.
             <div className={css.empty} data-textpreview-failed={current.failure.code}>
               <FileTypeIcon kind={classifyFileType(name)} size={36} className={css.emptyIcon} />
               <p className={css.emptyLine}>{failureLine(t, current.failure)}</p>
@@ -308,7 +312,7 @@ export function TextPreview({
                 type="button"
                 className={css.retry}
                 data-textpreview-retry
-                onClick={loadNext}
+                onClick={reload}
               >
                 <IconRefreshOutline16 size={14} />
                 {t('retry')}
