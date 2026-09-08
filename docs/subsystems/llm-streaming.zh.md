@@ -249,9 +249,9 @@ interface LlmFailure {
   /**
    * With code `IMAGE_OFFLOAD_REQUIRED`: how many more of the oldest retained
    * image occurrences the route needs offloaded before the same request fits
-   * its exact byte accounting. `dsh-llm-retry` replaces the surface nodes
-   * carrying that many oldest retained occurrences with copies marked
-   * `offloaded` and retries the step.
+   * its exact byte accounting. `dsh-compaction-image-offload` replaces the
+   * surface nodes carrying that many oldest retained occurrences with copies
+   * marked `offloaded` and retries the step.
    */
   readonly offloadImages?: number
 }

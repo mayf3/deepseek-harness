@@ -484,6 +484,19 @@ export interface ModelCompactPolicyConfig extends CompactionPolicyConfig {
 
 来源：[`packages/compaction/compaction-basic/src/types.ts:38`](../packages/compaction/compaction-basic/src/types.ts)
 
+<a id="deepseek-aidsh-compaction-image-offload"></a>
+
+## `@deepseek-ai/dsh-compaction-image-offload`
+
+需要：`agents` · `tokenMeter`
+
+```ts config-catalog
+/** The executor has no configuration; image-capable routes own their budgets. */
+export type Config = Readonly<Record<string, never>>
+```
+
+来源：[`packages/compaction/compaction-image-offload/src/index.ts:23`](../packages/compaction/compaction-image-offload/src/index.ts)
+
 <a id="deepseek-aidsh-compaction-tool-result-pruner"></a>
 
 ## `@deepseek-ai/dsh-compaction-tool-result-pruner`
@@ -1453,7 +1466,7 @@ export interface ReplayModelConfig {
 export type Config = Readonly<Record<string, never>>
 ```
 
-来源：[`packages/llm/llm-retry/src/index.ts:27`](../packages/llm/llm-retry/src/index.ts)
+来源：[`packages/llm/llm-retry/src/index.ts:25`](../packages/llm/llm-retry/src/index.ts)
 
 <a id="deepseek-aidsh-lsp-stdio"></a>
 

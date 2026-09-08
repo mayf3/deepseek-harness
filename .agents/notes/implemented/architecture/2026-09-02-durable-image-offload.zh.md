@@ -22,9 +22,9 @@ Status: implemented
 
 **adapter 只投影，不决定。** 支持图片的路由按保留的出现位置的精确请求版本字节执行一个 `LlmImageRequestBudget`（`representation`、`maxBytes`、`maxImages` 与两个量子）。当它们仍超过预算，无论是 file 模式、内联回退更紧的预算还是 pi-ai 上限，adapter 都以 `IMAGE_OFFLOAD_REQUIRED` 让本次尝试失败，并在 `LlmFailure.offloadImages` 中用共享的 `requiredImageOffload()` 算出还需省略多少最老的出现位置。发送前没有任何规划。
 
-**恢复归 `dsh-llm-retry`。** 重试执行器本来就在 `agent/request-error` waterfall 上。它在任何提供方策略之前处理 `IMAGE_OFFLOAD_REQUIRED`：按模型请求顺序遍历表层，给前 `offloadImages` 个保留的出现位置打标记，为每个承载了其中任一位置的节点追加一条替换，然后返回 `retry` 动作，不占提供方重试预算，也不记录 `llm/retry`。assistant 节点承载的是模型输出而不是输入图片，直接跳过。没有可省略的出现位置时向下游委托，失败进入普通恢复路径。循环在替换后的表层上重跑该 step，并像每次表层替换后一样记录新的 `request/header`；agent loop 不变。
+**恢复归 `dsh-compaction-image-offload`。** 图片省略是 compaction 在另一个容量维度上的实例：provider 拒绝请求，持久历史被缩减，step 重试。执行器是 compaction 组里 `compaction-tool-result-pruner` 的兄弟包，监听 `agent/request-error` waterfall。收到 `IMAGE_OFFLOAD_REQUIRED` 时，它按模型请求顺序遍历表层，给前 `offloadImages` 个保留的出现位置打标记，为每个承载了其中任一位置的节点先追加 seam 的 `compaction/prune` 影子价格，再追加带标记的副本，然后返回 `retry` 动作，不占提供方重试预算，也不记录 `llm/retry`。assistant 节点承载的是模型输出而不是输入图片，直接跳过。没有可省略的出现位置时向下游委托，失败进入普通恢复路径。循环在替换后的表层上重跑该 step，并像每次表层替换后一样记录新的 `request/header`；agent loop 不变。
 
-**token 记账。** `priceImages` 接收表层的 `ImageBlock`，把带标记的按占位文本定价；DeepSeek 和 replay 的定价不再复现任何 offload 算术。meter 不需要新状态：一次替换和其他替换一样重新为该节点定价。
+**token 记账。** `priceImages` 接收表层的 `ImageBlock`，把带标记的按占位文本定价；DeepSeek 和 replay 的定价不再复现任何 offload 算术。meter 不需要新状态：`compaction/prune` 事件加替换节点，和工具结果剪枝一样重新为该节点定价。
 
 **其他消费方。** compaction 通过 `deriveEventMessage()` 重建每个选中事件，看得到标记。resume、fork 和重放从日志复现表层。纯文本路由保留各自的全历史替换。
 
@@ -52,4 +52,4 @@ Status: implemented
 
 ## 测试
 
-`packages/llm/llm/tests/content.spec.ts` 钉住任意深度的图片遍历、包括 129 到 64 MiB 量子示例在内的省略计数，以及占位投影。`packages/llm/llm-retry/tests/image-offload.spec.ts` 钉住 `IMAGE_OFFLOAD_REQUIRED` 替换并重试且不追加重试事件的路径、原节点保持不变、更早一次表层替换之后的请求顺序计数，以及向下游委托的耗尽情况。adapter 测试钉住占位投影、只读取保留图片以及带数量的精确字节失败；`route-pricing.spec.ts` 钉住带标记替换的占位定价。`inline-image-prompt` TypeScript SDK 快照通过发布的 profile 重放一次手工编写的 `IMAGE_OFFLOAD_REQUIRED` 尝试，钉住替换和重试后的请求。
+`packages/llm/llm/tests/content.spec.ts` 钉住任意深度的图片遍历、包括 129 到 64 MiB 量子示例在内的省略计数，以及占位投影。`packages/compaction/compaction-image-offload/tests/image-offload.spec.ts` 钉住 `IMAGE_OFFLOAD_REQUIRED` 替换并重试、带 `compaction/prune` 影子价格且不追加重试事件的路径、原节点保持不变、更早一次表层替换之后的请求顺序计数，以及向下游委托的耗尽情况。adapter 测试钉住占位投影、只读取保留图片以及带数量的精确字节失败；`route-pricing.spec.ts` 钉住带标记替换的占位定价。`inline-image-prompt` TypeScript SDK 快照通过发布的 profile 重放一次手工编写的 `IMAGE_OFFLOAD_REQUIRED` 尝试，钉住替换和重试后的请求。

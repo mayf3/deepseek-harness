@@ -1,7 +1,8 @@
 /**
  * Image offload recovery: an adapter's `IMAGE_OFFLOAD_REQUIRED` failure
  * replaces the surface nodes carrying the named count of oldest images with
- * marked copies and retries the step without spending the provider retry budget.
+ * marked copies, each priced by a preceding `compaction/prune` event, and
+ * retries the step without a retry event.
  */
 
 import { describe, expect, it } from 'vitest'
@@ -12,7 +13,8 @@ import { createAssistantMessage, createToolResultMessage, createUserMessage, IMA
 import type { ContentBlock, GenerateOptions, StreamChunk } from '@deepseek-ai/dsh-llm'
 import { isReplacementSurfaceEvent, SessionId, SessionSeq } from '@deepseek-ai/dsh-session'
 import type { Session } from '@deepseek-ai/dsh-session'
-import * as retry from '../src/index.ts'
+import TokenMeter from '@deepseek-ai/dsh-token-meter'
+import * as offload from '../src/index.ts'
 
 type ScriptEntry = StreamChunk[] | (() => never)
 
@@ -50,7 +52,8 @@ function offloadRequired(offloadImages: number): () => never {
 async function harness(adapter: ScriptedAdapter): Promise<Context> {
   const ctx = new Context()
   await mountAgentLoopTestDependencies(ctx)
-  await ctx.plugin(Object.assign((inner: Context) => { retry.apply(inner, {}) }, { inject: retry.inject }))
+  await ctx.plugin(TokenMeter)
+  await ctx.plugin(Object.assign((inner: Context) => { offload.apply(inner, {}) }, { inject: offload.inject }))
   await ctx.plugin(AgentLoop, { agents: [] })
   ctx.llm.registerAdapter(['mock'], adapter)
   return ctx
@@ -82,7 +85,20 @@ function replacements(session: Session): [number, number][] {
     .map(event => [Number(event.sourceEventSeqs?.[0]), Number(event.seq)])
 }
 
-describe('image offload recovery', () => {
+/** Assert each listed replacement is immediately preceded by its `compaction/prune` shadow price. */
+function expectShadowPriced(session: Session, pairs: readonly [number, number][]): void {
+  const events = session.snapshotEvents()
+  for (const [original, replacement] of pairs) {
+    const prune = events[replacement - 1]
+    expect(prune).toMatchObject({
+      type: 'compaction/prune',
+      data: { shadowedRange: { start: original, end: original }, shadowedSeqs: [original] },
+    })
+    expect(prune?.type === 'compaction/prune' ? prune.data.shadowedTokenCount : 0).toBeGreaterThan(0)
+  }
+}
+
+describe('compaction-image-offload', () => {
   it('replaces the node carrying the named count of images and retries without a retry event', async () => {
     const adapter = new ScriptedAdapter([offloadRequired(2), textResponse('sent')])
     const ctx = await harness(adapter)
@@ -113,6 +129,7 @@ describe('image offload recovery', () => {
     expect(events[original]).toMatchObject({ type: 'user/message', surfaceOp: 'append' })
     expect(types.indexOf('assistant/attempt')).toBeLessThan(replacement)
     expect(replacement).toBeLessThan(types.indexOf('assistant/message'))
+    expectShadowPriced(agent.session, replacements(agent.session))
     // The original event keeps its content; only the replacement carries the marks.
     const durable = events[original]!
     expect(durable.type === 'user/message' ? durable.data.content[0] : undefined).not.toHaveProperty('offloaded')
@@ -148,7 +165,9 @@ describe('image offload recovery', () => {
     expect(adapter.requests).toHaveLength(2)
     expect(offloadedNames(adapter.requests[1]!)).toEqual(['replacement', 'second'])
     // Both nodes carried one occurrence, so the recovery replaced the replacement node and 'second'.
+    // The first replacement is the test's own; the recovery priced the two it appended.
     expect(replacements(agent.session).slice(1).map(([original]) => original)).toEqual([3, 2])
+    expectShadowPriced(agent.session, replacements(agent.session).slice(1))
   })
 
   it('replaces a tool result node and leaves blocks after the count untouched', async () => {
@@ -190,6 +209,23 @@ describe('image offload recovery', () => {
     expect(replacement).toEqual([Number(result.seq), expect.any(Number) as never])
     const replaced = agent.session.eventAt(SessionSeq(replacement![1]))!
     expect(replaced.type === 'tool/result' ? replaced.data.message.source.callId : undefined).toBe(callId)
+  })
+
+  it('leaves every other failure to downstream recovery', async () => {
+    const adapter = new ScriptedAdapter([() => {
+      throw new LlmError('provider outage', 'SERVER')
+    }])
+    const ctx = await harness(adapter)
+    const agent = await ctx.agentLoop.create(SessionId('offload-other-failure'), { provider: 'mock', model: 'mock' })
+    const delegated: string[] = []
+    ctx.on('agent/request-error', ({ failure }, next) => {
+      delegated.push(failure.code)
+      return next()
+    })
+    agent.followup(createUserMessage({ content: [image('a')], source: { kind: 'user' } }))
+    await agent.whenIdle()
+    expect(delegated).toEqual(['SERVER'])
+    expect(replacements(agent.session)).toHaveLength(0)
   })
 
   it('delegates IMAGE_OFFLOAD_REQUIRED once nothing remains to offload', async () => {
