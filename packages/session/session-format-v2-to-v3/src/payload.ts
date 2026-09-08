@@ -40,10 +40,13 @@ export function keys(value: SessionFormatJsonObject, required: readonly string[]
  * @param version - source or target generation.
  */
 export function assertEvent(event: SessionFormatEvent, version: 2 | 3): void {
-  const system = version === 3 && event.type === 'system/message'
+  if (version === 3) {
+    assertV3Event(event)
+    return
+  }
   const disposition = RELEASED_V2_EVENT_DISPOSITIONS[event.type]
   const feedback = event.type === 'feedback/message-put' || event.type === 'feedback/message-delete'
-  if (disposition === undefined && !system && !feedback) {
+  if (disposition === undefined && !feedback) {
     throw new SessionFormatUnsupportedMigrationError('format v2 to v3 cannot safely transform unclassified event ' + event.type)
   }
   const surface = SURFACE_TYPES.has(event.type)
@@ -56,19 +59,11 @@ export function assertEvent(event: SessionFormatEvent, version: 2 | 3): void {
     if (event['surfaceOp'] === undefined) throw new SessionFormatError(event.type + ' requires surfaceOp')
   }
   const data = record(event.data, event.type + ' data')
-  if (system) {
-    assertSystem(event, data)
-    return
-  }
   if (feedback) {
     assertFeedback(event.type, data)
     return
   }
-  if (version === 3 && event.type === 'request/header') {
-    assertV3StructuralRow(event)
-    return
-  }
-  // Non-inventory system and feedback events have returned above.
+  // Non-inventory feedback events have returned above.
   const admitted = disposition as NonNullable<typeof disposition>
   keys(data, admitted.required, admitted.optional, event.type + ' data')
   // Assistant attempts are introduced by V2; the V0 helper has no case for them.
@@ -84,7 +79,6 @@ export function assertEvent(event: SessionFormatEvent, version: 2 | 3): void {
   }
   // These are the only payload positions containing Harness messages. Tool JSON and stream
   // records are owner-opaque; their counters and serialized text are not local Session refs.
-  if (version === 3) return
   if (event.type === 'user/message') assertSource(data)
   if (event.type === 'assistant/message' || event.type === 'tool/result') assertSource(record(data['message'], 'message'))
   if (event.type === 'tool/result' && isSessionFormatJsonObject(data['error']) && data['error']['code'] === 'TOOL_NOT_STARTED') {
@@ -205,4 +199,118 @@ function assertFeedback(type: string, data: SessionFormatJsonObject): void {
   if (item['note'] !== undefined && typeof item['note'] !== 'string') throw new SessionFormatError('feedback note must be a string')
   sessionFormatCount(item['createdAt'], 'feedback createdAt')
   sessionFormatCount(item['updatedAt'], 'feedback updatedAt')
+}
+
+/**
+ * Validate one canonical V3 event without interpreting plugin-owned payloads or log relationships.
+ * Unclassified metadata is deferred to vocabulary-aware restoration; unknown required types must not become recoverable corruption.
+ * @param event - decoded logical event.
+ * @param knownEventTypes - additional installed event types whose envelopes are interpreted.
+ */
+export function assertV3Event(event: SessionFormatEvent, knownEventTypes?: ReadonlySet<string>): void {
+  const value = record(event, 'format v3 event')
+  const subject = `format v3 ${event.type} at seq ${event.seq}`
+  const obsolete = event.type === 'tool/code-dispatch-start' || event.type === 'tool/code-dispatch'
+  const known = !obsolete && (SURFACE_TYPES.has(event.type)
+    || RELEASED_V2_EVENT_DISPOSITIONS[event.type] !== undefined
+    || event.type === 'tool/ptc-dispatch-start' || event.type === 'tool/ptc-dispatch'
+    || event.type === 'feedback/message-put' || event.type === 'feedback/message-delete'
+    || knownEventTypes?.has(event.type) === true)
+  const opaque = !known
+  keys(value, ['type', 'seq', 'time', 'data'],
+    SURFACE_TYPES.has(event.type) || opaque ? ['ignorable', 'surfaceOp', 'sourceEventSeqs'] : ['ignorable'], subject)
+  if (typeof event.type !== 'string') throw new SessionFormatError(`${subject} type must be a string`)
+  sessionFormatCount(event.seq, `${subject} seq`)
+  sessionFormatSafeInteger(event.time, `${subject} time`)
+  if (Object.hasOwn(value, 'ignorable') && value['ignorable'] !== true) {
+    throw new SessionFormatError(`${subject} ignorable must be true when present`)
+  }
+  if (SURFACE_TYPES.has(event.type)) {
+    const operation = value['surfaceOp']
+    if (operation === undefined) throw new SessionFormatError(`${subject} requires a surfaceOp marker`)
+    if (operation !== 'append') {
+      const replace = record(operation, `${subject} surfaceOp`)
+      if (Object.keys(replace).length !== 3 || replace['op'] !== 'replace'
+        || !Object.hasOwn(replace, 'startSeq') || !Object.hasOwn(replace, 'endSeq')) {
+        throw new SessionFormatError(`${subject} requires exact replace fields op/startSeq/endSeq`)
+      }
+      for (const key of ['startSeq', 'endSeq']) {
+        if (sessionFormatCount(replace[key], `${subject} surfaceOp ${key}`) >= event.seq) {
+          throw new SessionFormatError(`${subject} replacement endpoints must reference earlier events`)
+        }
+      }
+    }
+    const sources = value['sourceEventSeqs']
+    if (event.type === 'assistant/message' && sources !== undefined) {
+      throw new SessionFormatError(`${subject} embeds its stream and cannot carry sourceEventSeqs`)
+    }
+    if (sources !== undefined) {
+      if (!Array.isArray(sources) || sources.length === 0) {
+        throw new SessionFormatError(`${subject} sourceEventSeqs must be a non-empty array`)
+      }
+      const seen = new Set<number>()
+      for (const source of sources) {
+        const seq = sessionFormatCount(source, `${subject} sourceEventSeqs member`)
+        if (seq >= event.seq || seen.has(seq)) throw new SessionFormatError(`${subject} sourceEventSeqs must be unique earlier seqs`)
+        seen.add(seq)
+      }
+    }
+  }
+  assertV3StructuralRow(event)
+  assertCanonicalPayload(event)
+}
+
+function assertCanonicalPayload(event: SessionFormatEvent): void {
+  const subject = `format v3 ${event.type} at seq ${event.seq}`
+  if (event.type === 'request/header') {
+    const data = record(event.data, `${subject} data`)
+    const header = record(data['header'], `${subject} header`)
+    if (Array.isArray(header['tools']) && header['tools'].length === 0
+      || isSessionFormatJsonObject(header['adapterDefaults']) && Object.keys(header['adapterDefaults']).length === 0) {
+      throw new SessionFormatError(`${subject} empty optional header fields must be omitted`)
+    }
+  }
+  if (event.type !== 'tool/result') return
+  const data = record(event.data, `${subject} data`)
+  if (data['error'] === undefined) return
+  const message = record(data['message'], `${subject} message`)
+  const content = message['content']
+  if (!Array.isArray(content) || content.length !== 1 || !isSessionFormatJsonObject(content[0])
+    || content[0]['type'] !== 'tool-result' || content[0]['isError'] !== true) {
+    throw new SessionFormatError(`${subject} carries error metadata for a non-error tool result`)
+  }
+}
+
+/**
+ * Canonicalize structurally transformed events without changing their target coordinates.
+ * @param event - transformed event using released replacement names and target coordinates.
+ * @returns a V3 event sharing all unchanged payloads and reference values.
+ */
+export function canonicalizeTransformedEvent(event: SessionFormatEvent): SessionFormatEvent {
+  let target = event
+  const operation = event['surfaceOp']
+  if (operation !== undefined && operation !== 'append') {
+    const replace = record(operation, `format v2 ${event.type} at seq ${event.seq} surfaceOp`)
+    if (Object.keys(replace).length !== 3 || replace['op'] !== 'replace'
+      || !Object.hasOwn(replace, 'start') || !Object.hasOwn(replace, 'end')) {
+      throw new SessionFormatError(`format v2 ${event.type} at seq ${event.seq} requires exact replace fields op/start/end`)
+    }
+    target = { ...event, surfaceOp: {
+      op: 'replace',
+      startSeq: sessionFormatCount(replace['start'], `format v2 ${event.type} at seq ${event.seq} replace start`),
+      endSeq: sessionFormatCount(replace['end'], `format v2 ${event.type} at seq ${event.seq} replace end`),
+    } }
+  }
+  if (event.type === 'request/header') {
+    const data = record(event.data, `format v2 request/header at seq ${event.seq} data`)
+    const header = record(data['header'], `format v2 request/header at seq ${event.seq} header`)
+    const empty = Object.keys(header).filter(key => key === 'tools' && Array.isArray(header[key]) && header[key].length === 0
+      || key === 'adapterDefaults' && isSessionFormatJsonObject(header[key]) && Object.keys(header[key]).length === 0)
+    if (empty.length > 0) {
+      const canonical = Object.fromEntries(Object.entries(header).filter(([key]) => !empty.includes(key)))
+      target = { ...target, data: { ...data, header: canonical } }
+    }
+  }
+  assertV3Event(target)
+  return target
 }

@@ -94,7 +94,7 @@ const price = ctx.tokenMeter.estimateMessage(message)
 
 ### Fold 流程
 
-每次 `measure()` 调用都把 fold 同步到当前持久尾部，然后读取一份连贯快照。fold 跟踪完整请求标头快照、步骤边界、表面追加与替换、成功 assistant 消息、提供方用量，以及每条 assistant 消息引用的分片 seq。用量锚点的提供方输出从精确引用的分片 seq 重新组装；显式空列表表示已知空提供方流，而缺失的遗留列表保守地把持久 assistant 输出视为提供方输出。
+每次 `measure()` 调用都把 fold 同步到当前持久尾部，然后读取一份连贯快照。fold 跟踪完整请求标头快照、步骤边界、表面追加与替换、成功 assistant 消息及提供方用量。用量锚点的提供方输出从 assistant 消息的精确内嵌流重新组装，与监听器对持久内容的改写相互独立；空的重组内容计价为零。
 
 ### 投影语义
 
@@ -136,7 +136,6 @@ const price = ctx.tokenMeter.estimateMessage(message)
 - **固定启发式规则是近似值**——没有可复用提供方用量的文本按字符数加结构开销计价，而非精确提供方分词器或请求序列化器；只有声明了定价的路由上的图片出现处携带提供方精确的视觉 token。
 - **每次测量都克隆当前表面**——连贯不可变快照让读取为 O(surface)，包括低于阈值的压力检查。
 - **提供方用量只在规范 envelope 完全相同时可复用**——工具、提供方、模型或调用配置变化会刻意回退到完整启发式估算；系统提示词变更在下一次成功调用之前按带符号的表面增量计量。
-- **缺失遗留源 seq 时保守处理**——没有 `sourceEventSeqs` 的 assistant 消息无法区分提供方输出与监听器改写，因此 fold 不会声称已知空或精确分片流。
 - **system 提示词改写不带影子价**——循环替换 system 节点时没有紧邻的计量事件，因此 `contextPressure.projectedTokens` 以零增量折叠该替换，直到下一个用量样本；`contextBreakdown.systemTokens` 与 `measure()` 会立即按新提示词重新计价。
 - **构成检查点保留当前 surface**——精确的 system/message 分类需要位置条目；检查点大小和 surface 事件折叠成本为 O(当前保留 surface)。
 

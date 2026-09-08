@@ -67,7 +67,7 @@ describe('durable V3 admission failures', () => {
   })
 
   it('rejects ordinary replacements that consume the protected head', () => {
-    expect(() => native([...opening, event('system/message', system, { surfaceOp: 'append' }), event('user/message', user, { surfaceOp: { op: 'replace', start: 2, end: 2 }, sourceEventSeqs: [2] })])).toThrow(/protected/)
+    expect(() => native([...opening, event('system/message', system, { surfaceOp: 'append' }), event('user/message', user, { surfaceOp: { op: 'replace', startSeq: 2, endSeq: 2 }, sourceEventSeqs: [2] })])).toThrow(/protected/)
   })
 
   it.each([
@@ -102,7 +102,7 @@ describe('tool result restoration', () => {
   const call = { type: 'tool-call', id: 'call', name: 'tool', arguments: '{}' }
   const assistant = event('assistant/message', { turn: 1, step: 1, stream: [], message: { id: 'assistant', role: 'assistant', source: { kind: 'model', provider: 'mock', model: 'mock' }, content: [call] } }, { surfaceOp: 'append' })
   const started = event('tool/call', { turn: 1, step: 1, callId: 'call', name: 'tool', arguments: '{}' })
-  const result = { turn: 1, step: 1, message: { id: 'result', role: 'user', source: { kind: 'tool', callId: 'call' }, content: [{ type: 'tool-result', toolCallId: 'call', content: [{ type: 'text', text: 'result' }] }] } }
+  const result = { turn: 1, step: 1, message: { id: 'result', role: 'user', source: { kind: 'tool', callId: 'call' }, content: [{ type: 'tool-result', toolCallId: 'call', isError: true, content: [{ type: 'text', text: 'result' }] }] } }
   it.each([undefined, { name: 'ToolError', code: 'TOOL_ERROR' }])('restores started tool results without repair identity projection %j', (error) => {
     const output = migrate([...opening, assistant, started, event('tool/result', { ...result, ...(error === undefined ? {} : { error }) }, { surfaceOp: 'append' })])
     expect(restoreReleasedV3Artifact(output, new Set())).toBe(output)

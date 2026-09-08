@@ -25,7 +25,7 @@ The system prompt lives on the surface. It is an ordinary surface event, `system
 | Situation | Surface operation |
 |---|---|
 | No `system/message` survives on the surface (including an empty rendered prompt) | append `system/message`; on the session's first step it is surface node 0, before the first `user/message` of the step |
-| A `system/message` survives and the rendered prompt differs from its text (including a prompt that becomes empty) | replace exactly that node: `surfaceOp: { op: 'replace', start: <seq of the node>, end: <same> }`, `sourceEventSeqs: [<seq of the node>]`; an empty prompt produces an empty-content node that projects to no message |
+| A `system/message` survives and the rendered prompt differs from its text (including a prompt that becomes empty) | replace exactly that node: `surfaceOp: { op: 'replace', startSeq: <seq of the node>, endSeq: <same> }`, `sourceEventSeqs: [<seq of the node>]`; an empty prompt produces an empty-content node that projects to no message |
 | The rendered prompt equals the surviving node's text | no operation |
 
 When the initial rendered prompt is empty, the loop reserves an empty system head before the initial admitted user messages so a prompt that first becomes non-empty later still replaces node 0. Omitting that empty node would append the later prompt behind user history, where pi-ai converts it to a user message rather than its `systemPrompt`. Replacing node 0 is a head rewrite expressed on the surface: the provider prefix changes from the first token, the log records the shadowed node through `sourceEventSeqs`, and `replaceGeneration` advances as it does for a compaction replacement. The loop's `startsSeries` detection (`requestSurfaceGeneration !== surfaceGeneration`) therefore covers the prompt change without a `system` comparison in `headerEquals`. `request/header` keeps reasons `initial`, `resume`, `change`, and `series`; `change` means config or tools changed, and the unchanged header that follows a prompt replacement logs as `series`.
@@ -66,7 +66,7 @@ Strict migration refuses unknown events whose payloads cannot be safely transfor
 
 The [released-format policy](2026-08-31-released-session-format-migrations.md) keeps V0, V1, and V2 generations byte-frozen and publishes only V3 successors. V3 is one unreleased target, not a new version per feature; it can evolve before release, so integration requires disposable homes. An existing V3 generation does not rerun V2-to-V3. Projection-cache version 4 is independent of the Session format and does not imply Session V4.
 
-[Canonical-envelope work](https://github.com/deepseek-ai/deepseek-harness/pull/3636) is separate and not integrated here. Its composition order is after this structural transform within the same V2-to-V3 edge, so it canonicalizes the transformed events rather than replacing the conversion.
+[Canonical-envelope conversion](2026-09-06-v3-canonical-session-envelopes.md) follows structural insertion and reference remapping within the same V2-to-V3 edge. It canonicalizes replacement endpoints on original and synthetic events; only that final stage preserves its input event count and sequence coordinates, not the whole migration.
 
 ## Alternatives considered
 

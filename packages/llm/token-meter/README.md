@@ -92,7 +92,7 @@ The service is built on one fold and one anchor. Each session gets an isolated r
 
 ### Fold flow
 
-Each `measure()` call synchronizes the fold to the current durable tail, then reads one coherent snapshot. The fold tracks full request-header snapshots, step boundaries, surface appends and replacements, successful assistant messages, provider usage, and the chunk seqs each assistant message cites. Provider output for a usage anchor is reassembled from the exact cited chunk seqs; an explicit empty list means a known empty provider stream, while a missing legacy list conservatively treats the durable assistant output as provider output.
+Each `measure()` call synchronizes the fold to the current durable tail, then reads one coherent snapshot. The fold tracks full request-header snapshots, step boundaries, surface appends and replacements, successful assistant messages, and provider usage. Provider output for a usage anchor is reassembled from the assistant message's exact embedded stream, independently of listener rewrites to durable content; empty assembled content costs zero.
 
 ### Projection semantics
 
@@ -134,7 +134,6 @@ These limits define where the measurement stops and future work begins. They are
 - **The fixed heuristic is approximate** — text without reusable provider usage is priced by character count plus structural overhead, not an exact provider tokenizer or request serializer; only image occurrences on routes with declared pricing carry provider-exact visual tokens.
 - **Every measurement clones the current surface** — coherent immutable snapshots make reads O(surface), including below-threshold pressure checks.
 - **Provider usage is only reusable for an identical canonical envelope** — tools, provider, model, or call-config changes deliberately fall back to full heuristic estimation; system-prompt changes are signed surface deltas until the next successful call.
-- **Missing legacy source seqs are handled conservatively** — assistant messages without `sourceEventSeqs` cannot distinguish provider output from listener rewrites, so the fold avoids claiming a known empty or exact chunk stream.
 - **A system-prompt rewrite carries no shadow price** — the loop replaces a system node without an adjacent metering event, so `contextPressure.projectedTokens` folds that replacement at zero delta until the next usage sample; `contextBreakdown.systemTokens` and `measure()` reprice the new prompt immediately.
 - **Composition checkpoints retain the current surface** — exact system/message classification needs positional entries; checkpoint size and surface-event folding are O(current retained surface).
 

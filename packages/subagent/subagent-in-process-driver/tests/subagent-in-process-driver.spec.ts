@@ -231,7 +231,7 @@ describe('startInProcessRun', () => {
     const child = ctx.agents.get(run.id)!
     const systemNodes = child.session.snapshotEvents().filter(event => event.type === 'system/message')
     expect(systemNodes.map(event => event.seq)).toEqual([seededSystem.seq, systemNodes[1]?.seq])
-    expect(systemNodes[1]?.surfaceOp).toEqual({ op: 'replace', start: seededSystem.seq, end: seededSystem.seq })
+    expect(systemNodes[1]?.surfaceOp).toEqual({ op: 'replace', startSeq: seededSystem.seq, endSeq: seededSystem.seq })
     expect(systemNodes[1]?.sourceEventSeqs).toEqual([seededSystem.seq])
     expect(child.session.surface.nodes[0]).toBe(systemNodes[1]?.seq)
     const childRequest = adapter.requests.at(-1)!
