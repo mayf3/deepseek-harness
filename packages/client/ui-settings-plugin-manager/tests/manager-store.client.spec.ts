@@ -175,8 +175,12 @@ describe('PluginManagerController', () => {
       references: [],
     }) as never)
     face.setEnabled(BUNDLE.name, false)
-    expect(state().confirm).toEqual({ action: 'disable', packageName: BUNDLE.name, dependents: undefined })
-    await vi.waitFor(() => { expect(state().confirm?.dependents).toBeDefined() })
+    // The switch is inert while the Host is asked; the dialog opens only with the answer in hand.
+    expect(state().busy).toEqual([BUNDLE.name])
+    expect(state().confirm).toBeNull()
+    await vi.waitFor(() => { expect(state().confirm?.dependents?.services).toHaveLength(1) })
+    expect(state().confirm).toMatchObject({ action: 'disable', packageName: BUNDLE.name })
+    expect(state().busy).toEqual([])
     face.confirm()
     expect(state().confirm).toBeNull()
     await vi.waitFor(() => { expect(plugins.disable).toHaveBeenCalledTimes(2) })
@@ -190,9 +194,13 @@ describe('PluginManagerController', () => {
     const { plugins, face, state, controller } = bench({ dependents: vi.fn(() => Promise.resolve(ok({ services, references: [] }))) })
     await controller.load()
     face.disableRow(BUNDLE.name, 'include:seam', 'seam')
-    expect(state().confirm).toEqual({ action: 'disableRow', packageName: BUNDLE.name, rowId: 'seam', dependents: undefined })
+    // The row is inert while the Host is asked, and no dialog opens before the answer.
+    expect(state().busy).toEqual([rowKey({ kind: 'global' }, 'seam')])
+    expect(state().confirm).toBeNull()
     // Of the package's dependents, only the services this row provides are the row's.
-    await vi.waitFor(() => { expect(state().confirm?.dependents).toEqual({ services: [services[0]], references: [] }) })
+    await vi.waitFor(() => {
+      expect(state().confirm).toEqual({ action: 'disableRow', packageName: BUNDLE.name, rowId: 'seam', dependents: { services: [services[0]], references: [] } })
+    })
     expect(plugins.setRowDisabled).not.toHaveBeenCalled()
     face.confirm()
     await vi.waitFor(() => { expect(plugins.setRowDisabled).toHaveBeenCalledWith({ kind: 'global' }, 'seam', true) })
@@ -205,14 +213,21 @@ describe('PluginManagerController', () => {
     face.disableRow(BUNDLE.name, 'include:unknown', 'unknown')
     await vi.waitFor(() => { expect(plugins.setRowDisabled).toHaveBeenCalledWith({ kind: 'global' }, 'unknown', true) })
     expect(state().confirm).toBeNull()
+    // A check that fails on the wire does not stand between the person and the switch.
+    plugins.dependents.mockRejectedValueOnce(new Error('down'))
+    face.disableRow(BUNDLE.name, 'include:offline', 'offline')
+    await vi.waitFor(() => { expect(plugins.setRowDisabled).toHaveBeenCalledWith({ kind: 'global' }, 'offline', true) })
+    expect(state().confirm).toBeNull()
   })
 
-  it('drops a row ask whose answer arrives after the confirmation changed', async () => {
+  it('drops a row ask whose answer arrives after disposal, and refuses a second ask while one is in flight', async () => {
     const gate = deferred<ReturnType<typeof ok<{ services: never[]; references: never[] }>>>()
     const { plugins, face, state, controller } = bench({ dependents: vi.fn().mockReturnValueOnce(gate.promise) })
     await controller.load()
     face.disableRow(BUNDLE.name, 'include:seam', 'seam')
-    face.cancelConfirm()
+    face.disableRow(BUNDLE.name, 'include:seam', 'seam')
+    expect(plugins.dependents).toHaveBeenCalledTimes(1)
+    controller.dispose()
     gate.resolve(ok({ services: [], references: [] }))
     await Promise.resolve()
     await Promise.resolve()
@@ -223,6 +238,8 @@ describe('PluginManagerController', () => {
   it('always asks before uninstalling, and cancelling runs nothing', async () => {
     const { plugins, face, state, controller } = bench()
     await controller.load()
+    // A check that fails on the wire still leaves the dialog open, with nothing to name.
+    plugins.dependents.mockRejectedValueOnce(new Error('down'))
     face.uninstall(BUNDLE.name)
     await vi.waitFor(() => { expect(state().confirm?.dependents).toEqual({ services: [], references: [] }) })
     face.cancelConfirm()

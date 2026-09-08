@@ -330,43 +330,69 @@ export class PluginManagerController {
       : async (): Promise<void> => {
         this.effect(await this.ctx.remote.plugins.disable(packageName), packageName)
       }
-    this.pendingConfirm = () => this.run(packageName, { packageName }, perform)
-    this.patch({ confirm: { action, packageName, dependents: undefined } })
-    const dependents = await this.ctx.remote.plugins.dependents(packageName)
-    // Reads run beside this ask (the Host announces changes while it is
-    // open), so liveness is the confirmation still being this one.
-    const confirm = this.getSnapshot().confirm
-    if (this.disposed || confirm?.packageName !== packageName || confirm.action !== action) return
-    const value: PluginDependents = dependents.ok ? dependents.value : { services: [], references: [] }
-    if (action === 'disable' && value.services.length === 0 && value.references.length === 0) {
-      this.patch({ confirm: null })
-      await this.confirm()
+    const commit = (): Promise<void> => this.run(packageName, { packageName }, perform)
+    if (action === 'uninstall') {
+      // Always confirmed: the dialog opens at once and fills in what depends on the package.
+      this.pendingConfirm = commit
+      this.patch({ confirm: { action, packageName, dependents: undefined } })
+      const answer = await this.ctx.remote.plugins.dependents(packageName).catch((): undefined => undefined)
+      // Reads run beside this ask (the Host announces changes while it is
+      // open), so liveness is the confirmation still being this one.
+      const confirm = this.getSnapshot().confirm
+      if (this.disposed || confirm?.packageName !== packageName || confirm.action !== action) return
+      this.patch({ confirm: { ...confirm, dependents: answer?.ok === true ? answer.value : { services: [], references: [] } } })
       return
     }
-    this.patch({ confirm: { ...confirm, dependents: value } })
+    // A disable asks first, with the switch inert, and opens the dialog only
+    // for a package something depends on: nothing flashes for one nothing does.
+    const value = await this.dependentsOf(packageName, packageName)
+    if (value === undefined) return
+    if (value.services.length === 0 && value.references.length === 0) {
+      await commit()
+      return
+    }
+    this.pendingConfirm = commit
+    this.patch({ confirm: { action, packageName, dependents: value } })
   }
 
   /**
    * Ask before switching one row off: of the package's dependents, the
-   * services this row provides that other rows inject. A row nothing depends
-   * on switches off at once.
+   * services this row provides that other rows inject. The switch stays
+   * inert while the Host answers; a row nothing depends on switches off at
+   * once, and only a row something depends on opens the dialog.
    */
   private async askRowConfirm(packageName: string, entryId: string, rowId: string): Promise<void> {
     const target: PluginRowTarget = { kind: 'global' }
-    this.pendingConfirm = () => this.run(rowKey(target, rowId), { rowId }, async () => {
+    const key = rowKey(target, rowId)
+    const commit = (): Promise<void> => this.run(key, { rowId }, async () => {
       this.answer(await this.ctx.remote.plugins.setRowDisabled(target, rowId, true))
     })
-    this.patch({ confirm: { action: 'disableRow', packageName, rowId, dependents: undefined } })
-    const dependents = await this.ctx.remote.plugins.dependents(packageName)
-    const confirm = this.getSnapshot().confirm
-    if (this.disposed || confirm?.action !== 'disableRow' || confirm.packageName !== packageName || confirm.rowId !== rowId) return
-    const services = dependents.ok ? dependents.value.services.filter(service => service.providedBy === entryId) : []
+    const value = await this.dependentsOf(packageName, key)
+    if (value === undefined) return
+    const services = value.services.filter(service => service.providedBy === entryId)
     if (services.length === 0) {
-      this.patch({ confirm: null })
-      await this.confirm()
+      await commit()
       return
     }
-    this.patch({ confirm: { ...confirm, dependents: { services, references: [] } } })
+    this.pendingConfirm = commit
+    this.patch({ confirm: { action: 'disableRow', packageName, rowId, dependents: { services, references: [] } } })
+  }
+
+  /**
+   * Ask the Host what depends on a package while the control that asked
+   * stays inert under `key`, so nothing opens before the answer is known. A
+   * refused or failed answer reads as nothing: the check must not stand
+   * between the person and the action they asked for, whose own failure
+   * would still be reported.
+   * @returns the dependents, or undefined when the key is already busy or the controller was disposed meanwhile.
+   */
+  private async dependentsOf(packageName: string, key: string): Promise<PluginDependents | undefined> {
+    if (this.getSnapshot().busy.includes(key)) return undefined
+    this.patch({ busy: [...this.getSnapshot().busy, key] })
+    const answer = await this.ctx.remote.plugins.dependents(packageName).catch((): undefined => undefined)
+    this.patch({ busy: this.getSnapshot().busy.filter(entry => entry !== key) })
+    if (this.disposed) return undefined
+    return answer?.ok === true ? answer.value : { services: [], references: [] }
   }
 
   private async confirm(): Promise<void> {

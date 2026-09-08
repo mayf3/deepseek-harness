@@ -515,19 +515,15 @@ describe('PluginManagerSettingsTab', () => {
   })
 
   it('asks before switching a row off, naming the rows that inject what it provides', () => {
-    const { actions, set } = renderTab({
+    const { actions } = renderTab({
       packages: [pkg()],
-      confirm: { action: 'disableRow', packageName: 'dsh-better-sidebar', rowId: 'seam', dependents: undefined },
-    })
-    expect(screen.getByRole('dialog', { name: en.confirmDisableRowTitle.replace('{name}', 'seam') })).toBeTruthy()
-    expect(screen.getByText(en.confirmDisableRowDescription)).toBeTruthy()
-    expect(screen.getByRole('button', { name: en.confirmDisableRow })).toHaveProperty('disabled', true)
-    set({
       confirm: {
         action: 'disableRow', packageName: 'dsh-better-sidebar', rowId: 'seam',
         dependents: { services: [{ service: 'authorization', providedBy: 'include:seam', injectedBy: ['include:oauth'] }], references: [] },
       },
     })
+    expect(screen.getByRole('dialog', { name: en.confirmDisableRowTitle.replace('{name}', 'seam') })).toBeTruthy()
+    expect(screen.getByText(en.confirmDisableRowDescription)).toBeTruthy()
     expect(screen.getByText(en.confirmDependents)).toBeTruthy()
     expect(within(screen.getByRole('dialog')).getByRole('listitem').textContent).toContain('oauth')
     fireEvent.click(screen.getByRole('button', { name: en.confirmDisableRow }))
@@ -538,11 +534,12 @@ describe('PluginManagerSettingsTab', () => {
     const { actions, set } = renderTab({
       packages: [pkg(), pkg({ name: 'dsh-other', title: 'Other' })],
       presets: [preset()],
-      confirm: { action: 'disable', packageName: 'dsh-better-sidebar', dependents: undefined },
+      confirm: { action: 'uninstall', packageName: 'dsh-better-sidebar', dependents: undefined },
     })
-    expect(screen.getByRole('dialog', { name: en.confirmDisableTitle.replace('{name}', 'better-sidebar') })).toBeTruthy()
+    // An uninstall is always confirmed, so its dialog opens while the Host is still asked.
+    expect(screen.getByRole('dialog', { name: en.confirmUninstallTitle.replace('{name}', 'better-sidebar') })).toBeTruthy()
     expect(screen.getByText(en.confirmChecking)).toBeTruthy()
-    expect(screen.getByRole('button', { name: en.confirmDisable })).toHaveProperty('disabled', true)
+    expect(screen.getByRole('button', { name: en.confirmUninstall })).toHaveProperty('disabled', true)
 
     set({
       confirm: {
