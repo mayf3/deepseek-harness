@@ -30,6 +30,8 @@ Status: implemented
 
 [LSP 背压测试](../../../../packages/lsp/lsp-stdio/tests/instance.spec.ts)在 `didOpen` 处 cork 真实 stdin 流，写入完整文档，并在中止前观察待完成写入。测试立即观察查询拒绝并等待释放，不依赖短启动标记期限，也不通过 sleep 推断背压。
 
+[整队转向测试](../../../../apps/web/tests/steering.e2e.ts)在触发快捷键前等待两个已启用的转向操作，以及输入框的队列转向提示。Host 队列仍为空时，乐观行可能已经包含预期文本。延迟模型流屏障使问题输入框在转向后才接管；清理在关闭浏览器前释放该屏障。
+
 ### 已构建客户端的导入分类
 
 [master Windows 运行](https://github.com/deepseek-harness/deepseek-harness/actions/runs/34204779455/job/101996934534)还拒绝了 `ui-dockkit` 有意暴露的 CSS 导入。[Node 导入检查](../../../../packages/experimental/webworker-runtime/tests/compile/transform-corpus-check.ts)仅在 Node 针对其 `dockkit.module.css` 报告 `ERR_UNKNOWN_FILE_EXTENSION` 时，才允许这个精确的 bundle。相同入口的其他错误仍然失败，成功导入则报告豁免已过期。这保留了导入检查，同时不要求仅面向浏览器的组件库在裸 Node 中加载样式表。
