@@ -38,6 +38,6 @@ Snapshot normalizers zero `childCreatedAt` because it originates from the proces
 
 ## Consequences
 
-A caller can request `projectionStateKeys: ['subagentCatalog']` from `observeSession`. Live observations clone the maintained registry state; cold observations hydrate their prepared Session and detach the same state at the observation cursor. A host-state-only read passes an empty view selection through checkpoint hydration, including cache reuse and malformed-row recovery; unrelated wire views are neither computed nor validated. Direct-child and descendant listing still use the Session corpus and child identity projection.
+A caller can request `projectionStateKeys: ['subagentCatalog']` from `observeSession`. Live observations clone the maintained registry state; cold observations hydrate their prepared Session and detach the same state at the observation cursor. A host-state-only read passes `projectionMode: 'none'` through checkpoint hydration, including cache reuse and malformed-row recovery; unrelated wire views are neither computed nor validated. Hydration accepts only `all` or `none` because observations do not request individual client view keys. Direct-child and descendant listing still use the Session corpus and child identity projection.
 
 Backends that do not know the required event refuse the log under the existing Session event mechanism. Pre-release format policy requires no fallback scan for old logs.

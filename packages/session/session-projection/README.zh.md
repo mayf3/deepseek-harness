@@ -64,7 +64,7 @@ const { asOfSeq, values } = ctx.sessionProjections.snapshot(session)
 
 必须使用投影状态的领域把 `sessionProjections` 声明为 Cordis 服务依赖；可选贡献方可以在 `ctx.inject(['sessionProjections'], …)` 下注册。载体使用 `ctx.get('sessionProjections')`，注册表缺席时省略自己的块或帧。
 
-`restore` 和 `hydrate` 接受可选的视图 key。省略时返回全部客户端视图；传入空列表时恢复所有 host state，但不计算或校验任何客户端视图。
+`restore` 和 `hydrate` 接受 `projectionMode`，默认值为 `all`。模式 `none` 恢复所有 host state，但不计算或校验客户端视图。
 
 ### 持久检查点
 

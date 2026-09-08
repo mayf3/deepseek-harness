@@ -52,7 +52,7 @@ kind: "package-reference"
 
 本插件注入 `storageDomain`、`sessionProjections` 与 `sessions`。生成的[配置目录](../../../docs/config-catalog.zh.md#deepseek-aidsh-session-projection-cache)是每个受支持字段及其 JSDoc 的穷尽式真源。
 
-`hydratePrepared` 接受可选的视图 key，并从检查点与事件尾部恢复所有状态。空 key 列表会跳过客户端视图的计算与校验，即使检查点损坏、需要重新折叠完整日志也如此。
+`hydratePrepared` 从检查点与事件尾部恢复所有状态。其 `projectionMode` 默认为 `all`；`none` 会跳过客户端视图的计算与校验，即使检查点损坏、需要重新折叠完整日志也如此。
 
 ### 检查点如何写入
 

@@ -64,7 +64,7 @@ const { asOfSeq, values } = ctx.sessionProjections.snapshot(session)
 
 A domain that requires projected state declares `sessionProjections` as a Cordis service dependency; optional contributors may register under `ctx.inject(['sessionProjections'], …)`. Carriers use `ctx.get('sessionProjections')` and omit their block or frames when the registry is absent.
 
-`restore` and `hydrate` accept optional view keys. Omitting them returns all client views; an empty list restores every host state without computing or validating any client view.
+`restore` and `hydrate` accept `projectionMode`, which defaults to `all`. Mode `none` restores every host state without computing or validating client views.
 
 ### Persisted checkpoints
 

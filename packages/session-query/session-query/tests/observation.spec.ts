@@ -779,7 +779,7 @@ describe('SessionObservationReader cold projections', () => {
 
     expect(observed.projections).toBe(projectionMode === 'all' ? snapshot : undefined)
     expect(hydratePrepared).toHaveBeenCalledOnce()
-    expect(hydratePrepared.mock.calls[0]?.[2]).toEqual(projectionMode === 'all' ? undefined : [])
+    expect(hydratePrepared.mock.calls[0]?.[2]).toBe(projectionMode)
     await ctx.fiber.dispose()
   })
 

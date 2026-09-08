@@ -337,10 +337,9 @@ export class SessionObservationReader {
     const registry = this.ctx.get('sessionProjections')
     if (registry === undefined) return undefined
     const cache = this.ctx.get('sessionProjectionCache')
-    const keys = projectionMode === 'none' ? [] : undefined
     return cache === undefined
-      ? registry.hydrate(entry.session, {}, entry.events, SessionLogOffset(0), keys)
-      : cache.hydratePrepared(entry.session, entry.events, keys)
+      ? registry.hydrate(entry.session, {}, entry.events, SessionLogOffset(0), projectionMode)
+      : cache.hydratePrepared(entry.session, entry.events, projectionMode)
   }
 
   /**
