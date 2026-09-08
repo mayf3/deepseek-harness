@@ -1,13 +1,16 @@
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import test from 'node:test'
 
 import {
   classifyChangedFiles,
   createGitHubApi,
+  isCommentOnlyChange,
+  isDocumentationPath,
   isTestPath,
   listPullRequestFiles,
+  listPullRequestTimeline,
   normalizeRepositoryPath,
   parseOwnership,
   planReviewers,
@@ -35,30 +38,29 @@ test('loads the repository ownership policy without test-only directory rules', 
   assert.equal(rules.some(rule => rule.pattern === '/packages/test-support/'), false)
   assert.deepEqual(ownersByPattern.get('/apps/cli/'), ['@turtle1999'])
   assert.deepEqual(ownersByPattern.get('/docs/'), ['@turtle1999'])
-  assert.deepEqual(ownersByPattern.get('/packages/core/'), ['@tianyicui', '@turtle1999', '@mektpoy'])
+  assert.deepEqual(ownersByPattern.get('/packages/core/'), ['@turtle1999', '@mektpoy'])
   assert.deepEqual(ownersByPattern.get('/packages/llm/'), ['@LegGasai'])
   assert.deepEqual(ownersByPattern.get('/packages/preset/'), ['@LegGasai', '@turtle1999'])
-  assert.deepEqual(ownersByPattern.get('/packages/session/'), ['@tianyicui', '@turtle1999', '@mektpoy'])
+  assert.deepEqual(ownersByPattern.get('/packages/session/'), ['@turtle1999', '@mektpoy'])
   assert.deepEqual(ownersByPattern.get('/packages/subagent/'), ['@Dudu-0223'])
   assert.deepEqual(ownersByPattern.get('/packages/web/'), ['@imccyu'])
   assert.deepEqual(ownersByPattern.get('/python/'), ['@LegGasai'])
   assert.deepEqual(ownersByPattern.get('/website/'), ['@LegGasai'])
-  assert.deepEqual(
-    rules.filter(rule => rule.owners.includes('@tianyicui')).map(rule => rule.pattern),
-    ['/packages/core/', '/packages/session/'],
-  )
-  for (const excludedOwner of ['@kermeanx', '@pkh-xht']) {
+  assert.equal(rules.every(rule => rule.owners.length <= 2), true)
+  for (const excludedOwner of ['@tianyicui', '@kermeanx', '@pkh-xht']) {
     assert.equal(rules.some(rule => rule.owners.some(owner => owner.toLowerCase() === excludedOwner)), false)
   }
 })
 
 test('keeps turtle below one third of the eligible owned codebase', () => {
   const rules = parseOwnership(ownershipSource)
-  const trackedFiles = execFileSync('git', ['ls-files', '-z'], { encoding: 'utf8' }).split('\0').filter(Boolean)
+  const trackedFiles = execFileSync('git', ['ls-files', '-z'], { encoding: 'utf8' })
+    .split('\0')
+    .filter(file => file && existsSync(file))
   let ownedLines = 0
   let turtleLines = 0
   for (const file of trackedFiles) {
-    if (isTestPath(file)) continue
+    if (isTestPath(file) || isDocumentationPath(file)) continue
     const owners = planReviewers(rules, [file]).matches[0]?.owners ?? []
     if (owners.length === 0) continue
     const content = readFileSync(file)
@@ -82,6 +84,7 @@ test('rejects ownership forms the requester cannot apply safely', () => {
     ['/packages/*/ @owner\n', /explicit absolute directory/u],
     ['/packages/core/\n', /at least one owner/u],
     ['/packages/core/ @org/team\n', /individual GitHub users/u],
+    ['/packages/core/ @one @two @three\n', /at most 2 owners/u],
     ['/packages/core/ @owner @OWNER\n', /duplicate owner/u],
     ['/packages/core/ @owner\n/packages/core/ @other\n', /duplicate pattern/u],
   ]) {
@@ -132,6 +135,76 @@ test('does not confuse production names with tests', () => {
   }
 })
 
+test('excludes Markdown and YAML documentation extensions', () => {
+  for (const file of [
+    'README.md',
+    'docs/architecture.MD',
+    'packages/subagent/subagent/guide.yaml',
+    'profiles/example.YAML',
+  ]) {
+    assert.equal(isDocumentationPath(file), true, file)
+  }
+  for (const file of [
+    '.github/workflows/request-review.yml',
+    'packages/subagent/subagent/src/index.ts',
+    'website/docs.ts',
+  ]) {
+    assert.equal(isDocumentationPath(file), false, file)
+  }
+})
+
+test('detects comment-only changes only from complete supported patches', () => {
+  for (const file of [
+    {
+      filename: 'packages/core/agent/src/index.ts',
+      status: 'modified', additions: 1, deletions: 1,
+      patch: '@@ -1,2 +1,2 @@\n-// old note\n+// new note\n const value = "https://example.com"',
+    },
+    {
+      filename: 'python/sdk/src/client.py',
+      status: 'modified', additions: 1, deletions: 1,
+      patch: '@@ -1 +1 @@\n-value = 1  # old note\n+value = 1  # new note',
+    },
+    {
+      filename: 'native/landlock-run/src/main.rs',
+      status: 'modified', additions: 1, deletions: 1,
+      patch: '@@ -1 +1 @@\n-let value = 1; /* old note */\n+let value = 1; /* new note */',
+    },
+  ]) {
+    assert.equal(isCommentOnlyChange(file), true, file.filename)
+  }
+
+  for (const file of [
+    {
+      filename: 'packages/core/agent/src/index.ts',
+      status: 'modified', additions: 1, deletions: 1,
+      patch: '@@ -1 +1 @@\n-const value = 1 // note\n+const value = 2 // note',
+    },
+    {
+      filename: 'packages/core/agent/src/index.ts',
+      status: 'modified', additions: 2, deletions: 1,
+      patch: '@@ -1 +1 @@\n-// old note\n+// new note',
+    },
+    {
+      filename: 'packages/core/agent/src/data.json',
+      status: 'modified', additions: 1, deletions: 1,
+      patch: '@@ -1 +1 @@\n-{"value":1}\n+{"value":2}',
+    },
+    {
+      filename: 'native/landlock-run/src/main.rs',
+      status: 'modified', additions: 1, deletions: 1,
+      patch: '@@ -1 +1 @@\n-let value = r#"https://old.example"#;\n+let value = r#"https://new.example"#;',
+    },
+    {
+      filename: 'packages/core/agent/src/index.ts',
+      status: 'renamed', additions: 1, deletions: 1,
+      patch: '@@ -1 +1 @@\n-// old note\n+// new note',
+    },
+  ]) {
+    assert.equal(isCommentOnlyChange(file), false, file.filename)
+  }
+})
+
 test('normalizes separators and rejects paths that are not repository-relative', () => {
   assert.equal(normalizeRepositoryPath('./packages\\core\\agent\\src\\index.ts'), 'packages/core/agent/src/index.ts')
   for (const file of ['', '/absolute.ts', '../escape.ts', 'packages//empty.ts', 'packages/./same.ts']) {
@@ -150,6 +223,12 @@ test('classifies both sides of a rename independently', () => {
         filename: 'packages/client/store/src/restored.ts',
         previous_filename: 'packages/client/store/tests/restored.spec.ts',
       },
+      { filename: 'packages/core/agent/README.md' },
+      {
+        filename: 'packages/core/agent/src/commented.ts',
+        status: 'modified', additions: 1, deletions: 1,
+        patch: '@@ -1 +1 @@\n-// old note\n+// new note',
+      },
     ]),
     {
       changedCodeFiles: [
@@ -160,6 +239,8 @@ test('classifies both sides of a rename independently', () => {
         'packages/client/store/tests/restored.spec.ts',
         'packages/core/agent/tests/moved.spec.ts',
       ],
+      excludedDocumentationFiles: ['packages/core/agent/README.md'],
+      excludedCommentOnlyFiles: ['packages/core/agent/src/commented.ts'],
     },
   )
 })
@@ -210,7 +291,19 @@ test('fails closed when GitHub cannot provide the complete file list', async () 
   )
 })
 
-test('prints changed code files before requesting missing owners', async () => {
+test('fails closed when the review-request timeline exceeds its limit', async () => {
+  let calls = 0
+  await assert.rejects(
+    listPullRequestTimeline(async () => {
+      calls++
+      return Array.from({ length: 100 }, () => ({ event: 'commented' }))
+    }, 'owner/repo', 42),
+    /exceeds 3000 events/u,
+  )
+  assert.equal(calls, 30)
+})
+
+test('prints changed code files and limits current review requests to two people', async () => {
   const trace = []
   const files = [
     { filename: 'packages/core/agent/src/index.ts' },
@@ -239,14 +332,16 @@ test('prints changed code files before requesting missing owners', async () => {
 
   assert.deepEqual(result, {
     changedCodeFiles: [
-      'AGENTS.md',
       'packages/client/store/src/index.ts',
       'packages/core/agent/src/index.ts',
       'packages/preset/agent-presets/src/index.ts',
       'packages/subagent/subagent/src/index.ts',
     ],
     excludedTestFiles: ['packages/core/agent/tests/index.spec.ts'],
-    requestedReviewers: ['Dudu-0223', 'LegGasai', 'mektpoy', 'tianyicui'],
+    excludedDocumentationFiles: ['AGENTS.md'],
+    excludedCommentOnlyFiles: [],
+    requestedReviewers: ['Dudu-0223'],
+    cancelledReviewers: [],
   })
   assert.equal(trace[0].type, 'log')
   assert.equal(trace[0].line, 'This is by automated Angry Turtle Cyborg, not a human')
@@ -258,17 +353,46 @@ test('prints changed code files before requesting missing owners', async () => {
     path: '/repos/deepseek-harness/deepseek-harness/pulls/42/requested_reviewers',
     options: {
       method: 'POST',
-      body: { reviewers: ['Dudu-0223', 'LegGasai', 'mektpoy', 'tianyicui'] },
+      body: { reviewers: ['Dudu-0223'] },
     },
   })
 })
 
-test('does not request reviewers for a test-only change', async () => {
+test('does not add an owner when two people are already requested', async () => {
+  const calls = []
+  const result = await requestReviews({
+    event: pullRequestEvent(),
+    ownershipSource: '/packages/core/ @turtle1999 @mektpoy\n',
+    api: async (path, options = {}) => {
+      calls.push({ path, options })
+      if (path.endsWith('/files?per_page=100&page=1')) {
+        return [{ filename: 'packages/core/agent/src/index.ts' }]
+      }
+      if (path.endsWith('/requested_reviewers') && options.method === undefined) {
+        return { users: [{ login: 'first' }, { login: 'second' }], teams: [] }
+      }
+      throw new Error(`unexpected API path ${path}`)
+    },
+    write: () => {},
+  })
+
+  assert.deepEqual(result.requestedReviewers, [])
+  assert.equal(calls.some(call => call.options.method === 'POST'), false)
+})
+
+test('does not request reviewers for test, documentation, or comment-only changes', async () => {
   const calls = []
   const output = []
   const files = [
     { filename: 'apps/web/tests/chat.e2e.ts' },
     { filename: 'packages/core/agent/tests/agent.spec.ts' },
+    { filename: 'packages/core/agent/README.md' },
+    { filename: 'packages/core/agent/examples.yaml' },
+    {
+      filename: 'packages/core/agent/src/index.ts',
+      status: 'modified', additions: 1, deletions: 1,
+      patch: '@@ -1 +1 @@\n-// old note\n+// new note',
+    },
   ]
   const result = await requestReviews({
     event: pullRequestEvent({ changedFiles: files.length }),
@@ -281,8 +405,11 @@ test('does not request reviewers for a test-only change', async () => {
   })
   assert.deepEqual(result, {
     changedCodeFiles: [],
-    excludedTestFiles: files.map(file => file.filename),
+    excludedTestFiles: files.slice(0, 2).map(file => file.filename),
+    excludedDocumentationFiles: files.slice(2, 4).map(file => file.filename),
+    excludedCommentOnlyFiles: ['packages/core/agent/src/index.ts'],
     requestedReviewers: [],
+    cancelledReviewers: [],
   })
   assert.equal(calls.length, 1)
   assert.deepEqual(output.slice(0, 4), [
@@ -293,19 +420,67 @@ test('does not request reviewers for a test-only change', async () => {
   ])
 })
 
-test('defers draft pull requests without reading changed files', async () => {
-  const output = []
+test('cancels workflow-authored review requests on draft pull requests', async () => {
+  const trace = []
+  const files = [
+    { filename: 'packages/subagent/subagent/src/index.ts' },
+    { filename: 'packages/subagent/subagent/tests/index.spec.ts' },
+    { filename: 'packages/subagent/subagent/README.md' },
+  ]
   const result = await requestReviews({
-    event: pullRequestEvent({ draft: true }),
+    event: pullRequestEvent({ draft: true, changedFiles: files.length }),
     ownershipSource,
-    api: async () => assert.fail('draft routing must not call GitHub'),
-    write: line => output.push(line),
+    api: async (path, options = {}) => {
+      trace.push({ type: 'api', path, options })
+      if (path.endsWith('/files?per_page=100&page=1')) return files
+      if (path.endsWith('/requested_reviewers') && options.method === undefined) {
+        return { users: [{ login: 'Dudu-0223' }, { login: 'manual-reviewer' }], teams: [] }
+      }
+      if (path.endsWith('/timeline?per_page=100&page=1')) {
+        return [
+          {
+            event: 'review_requested',
+            requested_reviewer: { login: 'Dudu-0223' },
+            review_requester: { login: 'maintainer' },
+          },
+          {
+            event: 'review_requested',
+            requested_reviewer: { login: 'Dudu-0223' },
+            review_requester: { login: 'github-actions[bot]' },
+          },
+          {
+            event: 'review_requested',
+            requested_reviewer: { login: 'manual-reviewer' },
+            review_requester: { login: 'github-actions[bot]' },
+          },
+          {
+            event: 'review_requested',
+            requested_reviewer: { login: 'manual-reviewer' },
+            review_requester: { login: 'maintainer' },
+          },
+        ]
+      }
+      if (path.endsWith('/requested_reviewers') && options.method === 'DELETE') return {}
+      throw new Error(`unexpected API path ${path}`)
+    },
+    write: line => trace.push({ type: 'log', line }),
   })
-  assert.deepEqual(result, { changedCodeFiles: [], excludedTestFiles: [], requestedReviewers: [] })
-  assert.deepEqual(output, [
-    'This is by automated Angry Turtle Cyborg, not a human',
-    'Draft pull request; reviewer routing is deferred until ready_for_review.',
-  ])
+  assert.deepEqual(result, {
+    changedCodeFiles: ['packages/subagent/subagent/src/index.ts'],
+    excludedTestFiles: ['packages/subagent/subagent/tests/index.spec.ts'],
+    excludedDocumentationFiles: ['packages/subagent/subagent/README.md'],
+    excludedCommentOnlyFiles: [],
+    requestedReviewers: [],
+    cancelledReviewers: ['Dudu-0223'],
+  })
+  const remove = trace.find(item => item.type === 'api' && item.options.method === 'DELETE')
+  assert.deepEqual(remove, {
+    type: 'api',
+    path: '/repos/deepseek-harness/deepseek-harness/pulls/42/requested_reviewers',
+    options: { method: 'DELETE', body: { reviewers: ['Dudu-0223'] } },
+  })
+  assert.equal(trace.some(item => item.type === 'log' && item.line === '- @manual-reviewer'), false)
+  assert.equal(trace.at(-1).line, 'Cancelled review request for @Dudu-0223.')
 })
 
 test('sends authenticated JSON and escapes an API error body', async () => {

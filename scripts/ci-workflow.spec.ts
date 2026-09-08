@@ -775,7 +775,7 @@ describe('Python release workflows', () => {
 })
 
 describe('Request review workflow', () => {
-  it('runs trusted routing on reviewable pull request updates', () => {
+  it('runs trusted routing on pull request review-state updates', () => {
     const workflow = loadWorkflow('.github/workflows/request-review.yml')
     const event = workflowEvent(workflow, 'pull_request_target')
     const job = workflowJob(workflow, 'request-review')
@@ -787,7 +787,7 @@ describe('Request review workflow', () => {
 
     expect(workflow.name).toBe('request-review')
     expect(Object.keys(workflow.on)).toEqual(['pull_request_target'])
-    expect(event.types).toEqual(['opened', 'synchronize', 'reopened', 'ready_for_review'])
+    expect(event.types).toEqual(['opened', 'synchronize', 'reopened', 'ready_for_review', 'converted_to_draft'])
     expect(workflow.permissions).toEqual({ contents: 'read', 'pull-requests': 'write' })
     expect(workflow.concurrency).toEqual({
       group: 'request-review-${{ github.event.pull_request.number }}',
@@ -795,10 +795,10 @@ describe('Request review workflow', () => {
     })
     expect(job).toMatchObject({
       name: 'request-review',
-      if: '${{ !github.event.pull_request.draft }}',
       'runs-on': 'ubuntu-latest',
       'timeout-minutes': 5,
     })
+    expect(job).not.toHaveProperty('if')
     expect(checkout).toMatchObject({
       uses: 'actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1',
       with: {
