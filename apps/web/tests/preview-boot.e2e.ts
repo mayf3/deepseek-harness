@@ -314,7 +314,7 @@ async function bootPreview(origin: string, browser: Browser): Promise<void> {
     const configureLater = page.getByRole('button', { name: 'Configure later' })
     await configureLater.waitFor({ timeout: 30_000 })
     await configureLater.click()
-    await page.locator('[data-composer-input][data-placeholder="Describe what you want to build... / commands, @ files or sessions"]')
+    await page.locator('[data-composer-input][data-placeholder="Describe what you want to build, / commands, @ files or sessions"]')
       .waitFor({ timeout: 30_000 })
 
     const exercised = await page.evaluate(async () => {
@@ -473,7 +473,11 @@ async function bootEmptyPreview(origin: string, browser: Browser): Promise<void>
     })
     expect(sessionCount).toBe(0)
     expect(pageErrors.map(error => error.message)).toEqual([])
-    expect(failedResponses).toEqual(['/plugins/events'])
+    // Two accepted static-host 404s, sorted (the boot fetches race): the HMR
+    // event stream has no server here, and the open-in-app availability read
+    // has no host routes — the controller publishes an empty list and the
+    // header renders no button, which is that surface's designed degradation.
+    expect([...failedResponses].sort()).toEqual(['/open-in-app/apps', '/plugins/events'])
     expect(consoleErrors.filter(line => !line.includes('Failed to load resource: the server responded with a status of 404')))
       .toEqual([])
   } catch (error) {

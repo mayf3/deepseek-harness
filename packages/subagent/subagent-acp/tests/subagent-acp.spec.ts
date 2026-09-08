@@ -74,9 +74,10 @@ function expectedPermission(policy: 'allow' | 'reject', requestKind: string, dec
  * Poll until `file` exists (the mock touches it once its prompt is in flight),
  * so a cancel test waits on a CONDITION rather than an arbitrary timeout — the
  * subprocess cold-start is variable, and a fixed sleep both flakes and
- * slows the suite. Fails loud if the child never signals readiness.
+ * slows the suite. The caller supplies its effective test budget so child
+ * startup retains the lane's allowance under concurrent coverage.
  */
-async function waitForFile(file: string, timeoutMs = 5000): Promise<void> {
+async function waitForFile(file: string, timeoutMs: number): Promise<void> {
   const deadline = Date.now() + timeoutMs
   while (!existsSync(file)) {
     if (Date.now() > deadline) throw new Error(`mock child never became ready (${file})`)
@@ -86,7 +87,6 @@ async function waitForFile(file: string, timeoutMs = 5000): Promise<void> {
 
 function rejectFinalExitWait(child: SubprocessHandle, message: string): SubprocessHandle {
   return {
-    pid: child.pid,
     stdin: child.stdin,
     stdout: child.stdout,
     stderr: child.stderr,
@@ -110,7 +110,6 @@ function rejectFinalExitWaitAfterExit(child: SubprocessHandle, message: string):
 
 function tapBoundedExitWait(child: SubprocessHandle, onWait: () => void): SubprocessHandle {
   return {
-    pid: child.pid,
     stdin: child.stdin,
     stdout: child.stdout,
     stderr: child.stderr,
@@ -132,7 +131,6 @@ function replaceProtocolStreams(
   if (child.stdin === undefined) throw new Error('expected piped child stdin')
   stdin.pipe(child.stdin)
   return {
-    pid: child.pid,
     stdin,
     stdout,
     stderr: child.stderr,
@@ -170,7 +168,6 @@ function closeProtocolOnPrompt(child: SubprocessHandle, onClose: () => void = ()
 
 function replaceProcessOutcome(child: SubprocessHandle, outcome: SubprocessOutcome): SubprocessHandle {
   return {
-    pid: child.pid,
     stdin: child.stdin,
     stdout: child.stdout,
     stderr: child.stderr,
@@ -300,7 +297,6 @@ describe('disposeAcpChild (the backend-owned teardown ladder over seam verbs)', 
     const stdin = new PassThrough()
     const calls: string[] = []
     const child: SubprocessHandle = {
-      pid: 123,
       stdin,
       stdout: undefined,
       stderr: undefined,
@@ -354,6 +350,98 @@ describe('disposeAcpChild (the backend-owned teardown ladder over seam verbs)', 
     })
     await expect(disposeAcpChild(child, 1_000)).resolves.toBeUndefined()
     await expect(child.done).rejects.toThrow()
+  })
+
+  it('still terminates and performs the final wait when the EOF wait rejects', async () => {
+    const initialFailure = new Error('initial range observation failed')
+    const waitForExit = vi.fn()
+      .mockRejectedValueOnce(initialFailure)
+      .mockResolvedValueOnce(true)
+    const terminate = vi.fn()
+    const child: SubprocessHandle = {
+      stdin: new PassThrough(),
+      stdout: undefined,
+      stderr: undefined,
+      collected: {},
+      done: new Promise(() => {}),
+      terminate,
+      waitForExit,
+    }
+
+    await expect(disposeAcpChild(child, 1_000)).rejects.toBe(initialFailure)
+    expect(terminate).toHaveBeenCalledOnce()
+    expect(waitForExit).toHaveBeenCalledTimes(2)
+  })
+
+  it('preserves both wait failures in observation order', async () => {
+    const initialFailure = new Error('initial range observation failed')
+    const finalFailure = new Error('final range observation failed')
+    const waitForExit = vi.fn()
+      .mockRejectedValueOnce(initialFailure)
+      .mockRejectedValueOnce(finalFailure)
+    const child: SubprocessHandle = {
+      stdin: new PassThrough(),
+      stdout: undefined,
+      stderr: undefined,
+      collected: {},
+      done: new Promise(() => {}),
+      terminate: vi.fn(),
+      waitForExit,
+    }
+
+    let failure: unknown
+    try {
+      await disposeAcpChild(child, 1_000)
+    } catch (error: unknown) {
+      failure = error
+    }
+    expect(failure).toBeInstanceOf(AggregateError)
+    expect((failure as AggregateError).errors).toEqual([initialFailure, finalFailure])
+  })
+
+  it('keeps an initialize transport failure before its rollback failure', async () => {
+    const startupFailure = new Error('target startup failed')
+    const cleanupFailure = new Error('range cleanup failed')
+    const direct = Promise.withResolvers<SubprocessOutcome>()
+    const stdin = new PassThrough()
+    const stdout = new PassThrough()
+    const child: SubprocessHandle = {
+      stdin,
+      stdout,
+      stderr: undefined,
+      collected: {},
+      done: direct.promise,
+      terminate: vi.fn(),
+      waitForExit: vi.fn()
+        .mockResolvedValueOnce(false)
+        .mockRejectedValueOnce(cleanupFailure),
+    }
+    const starting = startAcpRun(request(), {
+      command: 'fake-acp',
+      args: [],
+      cwd: process.cwd(),
+      permission: 'reject',
+      env: {},
+      disposeEofGraceMs: 1_000,
+      disposeGraceMs: 1_000,
+      spawn: () => child,
+    })
+    direct.reject(startupFailure)
+
+    let failure: unknown
+    try {
+      await starting
+    } catch (error: unknown) {
+      failure = error
+    }
+    expect(failure).toBeInstanceOf(AggregateError)
+    const failures = (failure as AggregateError).errors as Error[]
+    expect(failures.map(error => error.message)).toEqual([
+      `subagent-acp: ${expectedFailure('stage: initialize; category: transport')}`,
+      `subagent-acp: ${expectedFailure('stage: teardown; category: unknown')}`,
+    ])
+    expect(failures[0]?.cause).toBe(startupFailure)
+    expect(failures[1]?.cause).toBe(cleanupFailure)
   })
 })
 
@@ -637,7 +725,7 @@ describe('dsh-subagent-acp', () => {
     await run.dispose()
   })
 
-  it('aborting the required signal cancels a running child', async () => {
+  it('aborting the required signal cancels a running child', async ({ task }) => {
     const tmp = mkdtempSync(join(tmpdir(), 'acp-cancel-'))
     const readyFile = join(tmp, 'ready')
     try {
@@ -646,7 +734,7 @@ describe('dsh-subagent-acp', () => {
       const run = await ctx.subagents.start('acp', request('p', controller.signal))
       // Wait until the child's prompt is in flight (condition, not a sleep),
       // then cancel — so we exercise the mid-run session/cancel path.
-      await waitForFile(readyFile)
+      await waitForFile(readyFile, task.timeout)
       controller.abort('test')
       const result = await run.result
       expect(result.stopReason).toBe('aborted')
@@ -699,7 +787,7 @@ describe('dsh-subagent-acp', () => {
       env: { MOCK_CRASH_ON_INITIALIZE: '1' },
       disposeEofGraceMs: DEFAULT_DISPOSE_EOF_GRACE_MS,
       disposeGraceMs: DEFAULT_DISPOSE_GRACE_MS,
-      spawn: spawnSubprocess,
+      spawn: spec => spawnSubprocess(spec),
     }).catch((cause: unknown) => cause)
     expect(error).toBeInstanceOf(Error)
     expect((error as Error).message).toBe(
@@ -721,6 +809,36 @@ describe('dsh-subagent-acp', () => {
     expect(error).toBeInstanceOf(Error)
     expect((error as Error).message).toBe(
       `subagent-acp: ${expectedFailure('stage: initialize; category: transport')}`,
+    )
+  })
+
+  it('reuses a direct outcome already observed before the startup transport closes', async () => {
+    const outcome = { exitCode: 19, signal: null } as const
+    const stdin = new PassThrough()
+    const stdout = new PassThrough()
+    const starting = startAcpRun(request(), {
+      command: 'fake-acp',
+      args: [],
+      cwd: process.cwd(),
+      permission: 'reject',
+      env: {},
+      disposeEofGraceMs: 50,
+      disposeGraceMs: 50,
+      spawn: () => ({
+        stdin,
+        stdout,
+        stderr: undefined,
+        collected: {},
+        done: Promise.resolve(outcome),
+        terminate: vi.fn(),
+        waitForExit: vi.fn().mockResolvedValue(true),
+      }),
+    })
+    await Promise.resolve()
+    stdout.end()
+
+    await expect(starting).rejects.toThrow(
+      `subagent-acp: ${expectedFailure('stage: initialize; category: process-exit; exit code: 19')}`,
     )
   })
 
@@ -783,7 +901,7 @@ describe('dsh-subagent-acp', () => {
     await realChild?.done
   })
 
-  it('reports only the safe teardown failure when cancelled startup rollback fails', async () => {
+  it('reports only the safe teardown failure when cancelled startup rollback fails', async ({ task }) => {
     const tmp = mkdtempSync(join(tmpdir(), 'acp-cancelled-rollback-'))
     const ready = join(tmp, 'ready')
     const go = join(tmp, 'go')
@@ -806,7 +924,7 @@ describe('dsh-subagent-acp', () => {
         },
         onError: (error) => { errors.push(error.message) },
       })
-      await waitForFile(ready)
+      await waitForFile(ready, task.timeout)
       controller.abort()
       writeFileSync(go, 'go')
       const error = await starting.catch((cause: unknown) => cause)
@@ -823,7 +941,7 @@ describe('dsh-subagent-acp', () => {
     }
   })
 
-  it('dispose escalates SIGTERM → SIGKILL for a child that traps SIGTERM (bounded quiescence)', async () => {
+  it('dispose escalates SIGTERM → SIGKILL for a child that traps SIGTERM (bounded quiescence)', async ({ task }) => {
     // The child traps SIGTERM and keeps its event loop alive, so a graceful
     // term alone would hang dispose forever. With a short grace, dispose must
     // escalate to SIGKILL and return once the process is actually gone.
@@ -847,7 +965,7 @@ describe('dsh-subagent-acp', () => {
       // Wait until the child has BOOTED AND ARMED THE TRAP (a condition, not a
       // sleep) — otherwise SIGTERM races the trap install and the default handler
       // terminates the child, never exercising the escalation.
-      await waitForFile(ready)
+      await waitForFile(ready, task.timeout)
       // Don't await result (the child hangs). Dispose must still return promptly
       // via the SIGKILL escalation — bound it so a regression (no escalation)
       // fails loud instead of hanging the suite.
@@ -860,7 +978,7 @@ describe('dsh-subagent-acp', () => {
     }
   })
 
-  it('dispose gives the child an EOF window that outlasts the SIGTERM grace (graceful flush)', async () => {
+  it('dispose gives the child an EOF window that outlasts the SIGTERM grace (graceful flush)', async ({ task }) => {
     // The real acp-agent flushes ASYNCHRONOUSLY on stdin EOF (its bridge tears
     // down on connection close, NOT on a signal) — and it has no SIGTERM handler.
     // Its EOF teardown can itself await a signal-trapping grandchild (a bash
@@ -894,7 +1012,7 @@ describe('dsh-subagent-acp', () => {
       const run = await startAcpRun(request(), spec)
       // Wait until the child is fully booted with its prompt in flight (its ACP
       // stdin reader is attached), so dispose's stdin EOF reaches a live child.
-      await waitForFile(ready)
+      await waitForFile(ready, task.timeout)
       await run.dispose()
       // dispose returned via the natural-exit tier — the EOF-driven flush landed
       // despite taking longer than the SIGTERM grace.
@@ -904,7 +1022,7 @@ describe('dsh-subagent-acp', () => {
     }
   })
 
-  it('terminates a child that ignores EOF using the host platform semantics', async () => {
+  it('terminates a child that ignores EOF using the host platform semantics', async ({ task }) => {
     // POSIX uses the catchable SIGTERM tier and records the marker. Windows has
     // no distinct graceful signal, so disposal skips directly to forced exit.
     const tmp = mkdtempSync(join(tmpdir(), 'acp-ignore-eof-'))
@@ -931,7 +1049,7 @@ describe('dsh-subagent-acp', () => {
         },
       }
       run = await startAcpRun(request(), spec)
-      await waitForFile(ready)
+      await waitForFile(ready, task.timeout)
       await run.dispose()
       const outcome = await child!.done
       expect(outcome.signal).toBeNull()
@@ -954,7 +1072,7 @@ describe('dsh-subagent-acp', () => {
     }
   })
 
-  it('rejects after cleanup when the signal aborts during newSession', async () => {
+  it('rejects after cleanup when the signal aborts during newSession', async ({ task }) => {
     // Gate the child at newSession: it signals `ready` and blocks until `go`.
     // We cancel WHILE newSession is pending (sessionId still undefined, so the
     // backend cannot send session/cancel) — the `cancelled` flag alone must
@@ -966,23 +1084,40 @@ describe('dsh-subagent-acp', () => {
       const ctx = await setup({ MOCK_NEWSESSION_READY: ready, MOCK_NEWSESSION_GO: go, MOCK_TEXT: 'should not run' })
       const controller = new AbortController()
       const starting = ctx.subagents.start('acp', request('p', controller.signal))
-      await waitForFile(ready) // newSession is now in flight, sessionId undefined
-      controller.abort('early')
-      writeFileSync(go, 'go') // let newSession resolve
-      await expect(starting).rejects.toThrow('aborted before the ACP child started')
+      // Observe rejection before readiness; cleanup still owns an unpublished
+      // child if readiness or an assertion fails.
+      const settled = starting.then(
+        run => ({ kind: 'started' as const, run }),
+        (error: unknown) => ({ kind: 'failed' as const, error }),
+      )
+      try {
+        await waitForFile(ready, task.timeout) // newSession is now in flight, sessionId undefined
+        controller.abort('early')
+        writeFileSync(go, 'go') // let newSession resolve
+        await expect(starting).rejects.toThrow('aborted before the ACP child started')
+      } finally {
+        controller.abort('test cleanup')
+        writeFileSync(go, 'go')
+        try {
+          const outcome = await settled
+          if (outcome.kind === 'started') await outcome.run.dispose()
+        } finally {
+          await ctx.fiber.dispose()
+        }
+      }
     } finally {
       rmSync(tmp, { recursive: true, force: true })
     }
   })
 
-  it('bridges the request signal to a session/cancel mid-run', async () => {
+  it('bridges the request signal to a session/cancel mid-run', async ({ task }) => {
     const tmp = mkdtempSync(join(tmpdir(), 'acp-signal-'))
     const readyFile = join(tmp, 'ready')
     try {
       const controller = new AbortController()
       const ctx = await setup({ MOCK_TEXT: 'partial', MOCK_HANG: '1', MOCK_READY_FILE: readyFile })
       const run = await ctx.subagents.start('acp', request('p', controller.signal))
-      await waitForFile(readyFile)
+      await waitForFile(readyFile, task.timeout)
       controller.abort()
       const result = await run.result
       expect(result.stopReason).toBe('aborted')
@@ -1125,8 +1260,16 @@ describe('dsh-subagent-acp', () => {
   })
 
   it('preserves partial output and structured process facts when the child exits', async () => {
-    const ctx = await setup({ MOCK_TEXT: 'partial answer', MOCK_CRASH_AFTER_CHUNK: '1' })
-    const run = await ctx.subagents.start('acp', request())
+    const run = await startAcpRun(request(), {
+      command: process.execPath,
+      args: [mockServer],
+      cwd: process.cwd(),
+      permission: 'reject',
+      env: { MOCK_TEXT: 'partial answer', MOCK_CRASH_AFTER_CHUNK: '1' },
+      disposeEofGraceMs: DEFAULT_DISPOSE_EOF_GRACE_MS,
+      disposeGraceMs: DEFAULT_DISPOSE_GRACE_MS,
+      spawn: spec => spawnSubprocess(spec),
+    })
     const result = await run.result
     expect(result).toEqual({
       output: [{ type: 'text', text: 'partial answer' }],
@@ -1134,6 +1277,44 @@ describe('dsh-subagent-acp', () => {
       stopReason: 'error',
     })
     await run.dispose()
+  })
+
+  it('classifies a rejected direct result as the active prompt transport failure', async () => {
+    const processFailure = new Error('remote provider failed after returning a handle')
+    const direct = Promise.withResolvers<SubprocessOutcome>()
+    let realChild: SubprocessHandle | undefined
+    const errors: Error[] = []
+    const run = await startAcpRun(request(), {
+      command: process.execPath,
+      args: [mockServer],
+      cwd: process.cwd(),
+      permission: 'reject',
+      env: { MOCK_HANG: '1' },
+      disposeEofGraceMs: 100,
+      disposeGraceMs: 100,
+      spawn: (spec) => {
+        const child = spawnSubprocess(spec)
+        realChild = child
+        return closeProtocolOnPrompt({
+          stdin: child.stdin,
+          stdout: child.stdout,
+          stderr: child.stderr,
+          collected: child.collected,
+          done: direct.promise,
+          terminate: () => { child.terminate() },
+          waitForExit: (signal?: AbortSignal) => child.waitForExit(signal),
+        }, () => { direct.reject(processFailure) })
+      },
+      onError: (error) => { errors.push(error) },
+    })
+    await expect(run.result).resolves.toEqual({
+      output: [],
+      diagnostic: expectedFailure('stage: prompt; category: transport'),
+      stopReason: 'error',
+    })
+    expect(errors).toContain(processFailure)
+    await run.dispose()
+    await realChild?.done
   })
 
   it('reports a signal-only process outcome', async () => {
@@ -1159,7 +1340,7 @@ describe('dsh-subagent-acp', () => {
     await run.dispose()
   })
 
-  it('rejects a spawn failure after provider-owned cleanup', async () => {
+  it('rejects a returned-handle startup failure after provider-owned cleanup', async () => {
     const privateCommand = '/nonexistent/private/SECRET_TOKEN/acp-agent'
     const error = await startAcpRun(
       request(),
@@ -1167,7 +1348,7 @@ describe('dsh-subagent-acp', () => {
     ).catch((cause: unknown) => cause)
     expect(error).toBeInstanceOf(Error)
     expect((error as Error).message).toBe(
-      `subagent-acp: ${expectedFailure('stage: process; category: process-start')}`,
+      `subagent-acp: ${expectedFailure('stage: initialize; category: transport')}`,
     )
     expect((error as Error).message).not.toContain(privateCommand)
   })
@@ -1194,7 +1375,7 @@ describe('dsh-subagent-acp', () => {
     expect(errors).toEqual([rawMessage])
   })
 
-  it.skipIf(process.platform === 'win32')('plugin-config dispose graces reach the run (SIGKILL escalation through the provider)', async () => {
+  it.skipIf(process.platform === 'win32')('plugin-config dispose graces reach the run (SIGKILL escalation through the provider)', async ({ task }) => {
     // Same trap scenario as the direct startAcpRun escalation test, but the
     // graces arrive via the PLUGIN CONFIG through the registered provider — so a
     // regression that stops threading config into AcpRunSpec (falling back to
@@ -1216,7 +1397,7 @@ describe('dsh-subagent-acp', () => {
         disposeGraceMs: 150,
       })
       const run = await ctx.subagents.start('acp', request())
-      await waitForFile(ready)
+      await waitForFile(ready, task.timeout)
       await expect(Promise.race([
         run.dispose(),
         new Promise((_r, reject) => { setTimeout(() => { reject(new Error('dispose did not return — config graces not threaded to the run')) }, 4000) }),
@@ -1246,7 +1427,7 @@ describe('dsh-subagent-acp', () => {
     }
   })
 
-  it('rejects a startup failure via the provider load path', async () => {
+  it('classifies a returned-handle startup failure through the provider load path', async () => {
     const ctx = new Context()
     await ctx.plugin(SessionProjectionRegistry)
     await ctx.plugin(SubagentRuntime)
@@ -1259,7 +1440,7 @@ describe('dsh-subagent-acp', () => {
       env: {},
     })
     await expect(ctx.subagents.start('acp', request())).rejects.toThrow(
-      `subagent-acp: ${expectedFailure('stage: process; category: process-start')}`,
+      `subagent-acp: ${expectedFailure('stage: initialize; category: transport')}`,
     )
   })
 
@@ -1390,9 +1571,11 @@ describe('dsh-subagent-acp', () => {
     expect(result.diagnostic).toBe(
       expectedFailure('stage: process; category: process-exit; exit code: 1'),
     )
-    expect(warnings).toEqual([
+    // Unsupported hosts can emit the subprocess provider's one-time fallback
+    // warning before this provider-specific failure reaches the same logger.
+    expect(warnings).toContainEqual(
       expect.stringContaining('subagent-acp "acp": child run failed (error):'),
-    ])
+    )
     await run.dispose()
   })
 
@@ -1422,7 +1605,7 @@ describe('dsh-subagent-acp', () => {
     await run.dispose()
   })
 
-  it('settles aborted when the child crashes (tears the pipe) AFTER a cancel', async () => {
+  it('settles aborted when the child crashes (tears the pipe) AFTER a cancel', async ({ task }) => {
     // The child hangs, we cancel, and instead of answering the child exits hard
     // — the pending prompt RPC rejects. With a cancel already requested, the
     // backend's catch path must settle `aborted` (the failure is the cancel
@@ -1433,7 +1616,7 @@ describe('dsh-subagent-acp', () => {
       const ctx = await setup({ MOCK_TEXT: 'partial', MOCK_HANG: '1', MOCK_CRASH_ON_CANCEL: '1', MOCK_READY_FILE: ready })
       const controller = new AbortController()
       const run = await ctx.subagents.start('acp', request('p', controller.signal))
-      await waitForFile(ready)
+      await waitForFile(ready, task.timeout)
       controller.abort('crash it')
       const result = await run.result
       expect(result.stopReason).toBe('aborted')
@@ -1444,7 +1627,7 @@ describe('dsh-subagent-acp', () => {
     }
   })
 
-  it('settles aborted on signal even when the child IGNORES session/cancel', async () => {
+  it('settles aborted on signal even when the child IGNORES session/cancel', async ({ task }) => {
     // The signal contract requires `result` to settle `aborted`. A child that hangs
     // its prompt AND ignores session/cancel must not wedge the parent — the
     // backend's own cancel-settle path resolves `aborted` without the child's
@@ -1455,7 +1638,7 @@ describe('dsh-subagent-acp', () => {
       const ctx = await setup({ MOCK_TEXT: 'partial', MOCK_HANG: '1', MOCK_IGNORE_CANCEL: '1', MOCK_READY_FILE: ready })
       const controller = new AbortController()
       const run = await ctx.subagents.start('acp', request('p', controller.signal))
-      await waitForFile(ready)
+      await waitForFile(ready, task.timeout)
       controller.abort('test')
       // Bound it: a regression (cancel only notifies the child, which ignores it)
       // would hang result forever — fail loud instead of stalling the suite.

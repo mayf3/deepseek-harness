@@ -9,7 +9,7 @@ kind: "package-library"
 
 ## 概述
 
-`dsh-typert-generator` 在构建时把源代码 TypeScript 转换为与编译器无关的数据与可运行产物：它分析工作区各包的类型树，生成 `FaceModel` 与类型图，并输出包含受支持 Zod schema 与 `TYPERT` 反射贡献的可执行 JavaScript，以及配套声明文件。它是构建时库而非插件——绝不会在实时 agent 会话中运行。仓库的 Host tsdown 会自动运行它；业务包通过导出 `./typert` 与 `./client/typert` 入口选择加入，生成器会校验这些导出与发布文件清单。静态消费方也可以直接调用分析器进行类型检查或目录生成，无需发布任何内容。
+`dsh-typert-generator` 让维护者把公开的 TypeScript 类型转换为构建产物和与编译器无关的模型。包通过 `./typert` 和可选的 `./client/typert` 导出选择加入；如果声明、发布清单、Remote 导出或 Zod 投影无法被正确表示，生成过程就会失败。仓库构建可以生成可执行 schema 与配套声明，工具也可以调用 `WorkspaceAnalyzer` 完成检查或目录生成而不发布产物。生成过程只在构建时运行，绝不会进入实时 agent 会话。
 
 ## 目录
 
