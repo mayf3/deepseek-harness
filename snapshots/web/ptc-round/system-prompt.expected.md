@@ -162,6 +162,15 @@ interface ToolArgsMap {
     /** children (default) lists direct children only; descendants walks the complete tree below you. */
     scope?: "children" | "descendants";
   } & Record<string, JsonValue>;
+  /** Deliver final files to the user. Saves a snapshot of each existing workspace file so it remains downloadable after edits or deletion. Create the files before calling this tool. */
+  present: {
+    files: {
+      /** Path of an existing file inside the workspace. */
+      path: string;
+      /** Brief description for the user. */
+      description?: string;
+    }[];
+  } & Record<string, JsonValue>;
   /** Run a foreground fresh-agent Ralph loop toward one immutable objective. Use only when the direct human explicitly asks for Ralph or fresh-agent iteration. Each round opens a new child with no parent conversation or prior child session; the shared workspace is long-term memory, and only a bounded structured report crosses rounds. The call returns when a worker reports completion or a concrete blocker, or at the round limit. Ordinary long-running same-session work belongs to goal tools. */
   ralph: {
     /** The immutable completion objective for every fresh Ralph round. */
@@ -399,6 +408,16 @@ interface ToolOutputMap {
     parent?: string;
     depth?: number;
   })[];
+  present: {
+    turn: number;
+    files: {
+      path: string;
+      name: string;
+      attachmentId: string;
+      bytes: number;
+      description?: string;
+    }[];
+  };
   ralph: {
     runId: string;
     agentsStarted: number;

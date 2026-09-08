@@ -16,6 +16,9 @@ describe('ui-deliverables node plugin', () => {
   it('registers final-response file-reference guidance only while mounted', async () => {
     ctx = new Context()
     await ctx.plugin(SystemPrompt, { personaPrefix: '' })
+    ctx.provide('connection', { fetch: { register: () => () => {} } } as never)
+    ctx.provide('sessionQuery', {} as never)
+    ctx.provide('attachments', {} as never)
     const mounted = ctx.plugin({ apply, inject })
     await mounted.await()
 

@@ -21,13 +21,15 @@ import { SlotRegistry } from '@deepseek-ai/dsh-client-ui-renderer/client'
 import { apply as applyLocale, inject as localeInject } from '@deepseek-ai/dsh-client-locale/client'
 import type { ChatFileMentions, TurnTailOwnerProps } from '@deepseek-ai/dsh-client-ui-chat/client'
 import { makeTranslate, stubSettingsScope } from '@deepseek-ai/dsh-client-test-runtime'
+import { Deliverables, selectDeliverables } from '../src/client/Deliverables.tsx'
 import { ProducedFiles } from '../src/client/ProducedFiles.tsx'
 import {
-  basename, deliverablesDefinition, producedFileMentions, producedForClosing, selectProducedFiles,
+  basename, deliverablesDefinition, presentedForClosing, producedFileMentions, producedForClosing, selectProducedFiles,
   type DeliverablesTurnData,
 } from '../src/client/turn-deliverables.ts'
 import { apply, inject } from '../src/client/index.ts'
 import { en, zh } from '../src/client/locales.ts'
+import { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { SessionEvent } from '@deepseek-ai/dsh-session/types'
 
 afterEach(() => {
@@ -494,7 +496,7 @@ describe('plugin registration', () => {
     // The owning view's child declaration, stood up by a bench root entry.
     ctx.slots.register({
       name: 'root',
-      children: { 'conversation.chat.turnTail': { kind: 'chain', scope: 'session' } },
+      children: { 'conversation.chat.turnTail': { kind: 'chain', scope: 'session' }, 'tool.call.toolview': { kind: 'keyed', scope: 'session' } },
     } as never, () => null)
     // ui-theme's Appearance row binds a durable scope through these two.
     const session = {
@@ -513,6 +515,7 @@ describe('plugin registration', () => {
     await fiber.await()
     const [entry] = ctx.slots.entries('conversation.chat.turnTail')
     expect(entry).toBeDefined()
+    expect(ctx.slots.entries('tool.call.toolview')).toHaveLength(1)
     // The row needs no injected Host capability: it hands a path to its owner
     // and nothing in it reaches the local machine.
     expect(entry?.inject).toBeUndefined()
@@ -526,15 +529,85 @@ describe('plugin registration', () => {
       (path) => { opened.push(path) },
     )
     const service = (ctx as unknown as { get(name: string): ChatFileMentions | undefined }).get('chatFileMentions')
-    const mentions = service?.forClosing(owner)
+    const mentions = service?.forClosing(owner, SessionId('viewed-session'))
     mentions?.resolve('report.html')?.open()
     expect(opened).toEqual(['site/report.html'])
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) {
+      expect(this.getAttribute('href')).toBe('/api/present.download?sessionId=child-session&seq=2&index=0')
+      expect(this.download).toBe('report.docx')
+    })
+    const delivered = tailOwner({ produced: [], presented: [{ path: 'report.docx', name: 'report.docx', bytes: 4, attachmentId: 'saved' as never, seq: 2, index: 0 }] }, 3)
+    service?.forClosing(delivered, SessionId('child-session'))?.resolve('report.docx')?.open()
+    expect(click).toHaveBeenCalledOnce()
     // A turn that produced nothing yields no vocabulary at all.
-    expect(service?.forClosing(tailOwner(undefined, 2))).toBeUndefined()
+    expect(service?.forClosing(tailOwner(undefined, 2), SessionId('viewed-session'))).toBeUndefined()
 
     await fiber.dispose()
     expect(ctx.slots.entries('conversation.chat.turnTail')).toHaveLength(0)
+    expect(ctx.slots.entries('tool.call.toolview')).toHaveLength(0)
     // Fiber teardown retracts the service: the consumer's ctx.get sees the off state.
     expect((ctx as unknown as { get(name: string): unknown }).get('chatFileMentions')).toBeUndefined()
   })
+})
+
+
+describe('presented files', () => {
+  const file = (path = 'report.docx') => ({ path, name: path, bytes: 4, attachmentId: 'saved-ref' })
+
+  it('replays deliveries without mutation calls, preserves indices, and isolates turns', () => {
+    const value = assembler([
+      at(1, 'turn/start', { turn: 1 }),
+      at(2, 'deliverables/presented', { turn: 1, callId: 'nested', files: [null, { ...file(), description: 'Final report' }] }),
+      at(3, 'deliverables/presented', { turn: 1, callId: 'again', files: [{ ...file(), attachmentId: 'new-ref' }] }),
+      at(4, 'turn/end', { turn: 1 }),
+      at(5, 'turn/start', { turn: 2 }),
+    ])
+    const first = presentedForClosing(tailOwner(deliverablesOf(value), 3))
+    expect(first).toMatchObject([{ path: 'report.docx', seq: 2, index: 1, attachmentId: 'saved-ref', description: 'Final report' }])
+    expect(presentedForClosing(tailOwner(deliverablesOf(value), 4)))
+      .toMatchObject([{ path: 'report.docx', seq: 3, attachmentId: 'new-ref' }])
+    expect(selectDeliverables(tailOwner(deliverablesOf(value, 2), 9))).toBeNull()
+  })
+
+  it('uses the viewed fork Session in every download and retains all delivered files', () => {
+    const value = assembler([
+      at(1, 'turn/start', { turn: 1 }),
+      at(2, 'deliverables/presented', { turn: 1, callId: 'nested', files: Array.from({ length: 8 }, (_, i) => file(`report-${i}.docx`)) }),
+    ])
+    const owner = tailOwner(deliverablesOf(value), 3)
+    const matched = selectDeliverables(owner)!
+    const view = render(<Deliverables matched={matched} openFile={owner.openFile} sessionId={SessionId('child-session')} t={makeTranslate(en)} />)
+    expect(view.getAllByRole('link')).toHaveLength(8)
+    expect(view.getAllByRole('link')[0]?.getAttribute('href')).toBe('/api/present.download?sessionId=child-session&seq=2&index=0')
+    expect(view.queryByText('Produced')).toBeNull()
+  })
+})
+
+
+it.each([null, [], 'invalid', {}, { turn: '1', callId: 'bad', files: [] },
+  { turn: 1.5, callId: 'bad', files: [] }, { turn: 0, callId: 'bad', files: [] },
+  { turn: 1, files: [] }, { turn: 1, callId: '', files: [] }, { turn: 1, callId: 'bad', files: null },
+])('ignores malformed delivery data and keeps the existing produced row: %j', (data) => {
+  const value = assembler([
+    at(1, 'turn/start', { turn: 1 }),
+    call(2, 'write-a', 'write', { file_path: 'a.txt', content: 'a' }),
+    result(3, 'write-a'),
+    at(4, 'deliverables/presented', data),
+  ])
+  const owner = tailOwner(deliverablesOf(value), 5)
+  const matched = selectDeliverables(owner)!
+  const view = render(<Deliverables matched={matched} openFile={owner.openFile} sessionId={SessionId('session')} t={makeTranslate(en)} />)
+  expect(view.getByText('Produced')).toBeTruthy()
+  expect(view.queryByText('Deliverables')).toBeNull()
+})
+
+it('shows file metadata and descriptions without hiding extensionless deliveries', () => {
+  const view = render(<Deliverables matched={{ produced: [], presented: [
+    { path: 'out/report.txt', name: 'report.txt', bytes: 4096, description: 'Quarterly summary', attachmentId: 'ref' as never, seq: 2, index: 0 },
+    { path: 'LICENSE', name: 'LICENSE', bytes: 0, attachmentId: 'ref2' as never, seq: 2, index: 1 },
+  ] }} openFile={() => {}} sessionId={SessionId('session')} t={makeTranslate(en)} />)
+  expect(view.getByText('Quarterly summary')).toBeTruthy()
+  expect(view.getByText('TXT · 4.0KB')).toBeTruthy()
+  expect(view.getByText('File · 0B')).toBeTruthy()
+  expect(view.getByRole('link', { name: 'Download out/report.txt' }).getAttribute('title')).toBe('out/report.txt')
 })

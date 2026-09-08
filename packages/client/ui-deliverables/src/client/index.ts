@@ -13,10 +13,12 @@ import type { ChatFileMentions } from '@deepseek-ai/dsh-client-ui-chat/client'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
-import { ProducedFiles } from './ProducedFiles.tsx'
+import { presentedFileUrl } from '../presented.ts'
+import { PresentRow } from './PresentRow.tsx'
+import { Deliverables, selectDeliverables } from './Deliverables.tsx'
 import { en, NS, zh, type DeliverablesKey } from './locales.ts'
 import {
-  deliverablesDefinition, producedFileMentions, selectProducedFiles,
+  deliverablesDefinition, presentedForClosing, producedFileMentions, selectProducedFiles,
 } from './turn-deliverables.ts'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
@@ -43,20 +45,34 @@ export function apply(ctx: ClientContext): void {
     'conversation.chat.turnTail',
     () => ctx.slots.register({
       name: 'conversation.chat.turnTail',
-      select: selectProducedFiles,
+      select: selectDeliverables,
       locale: NS,
-    }, ProducedFiles),
+    }, Deliverables),
   )
+  ctx.slots.inject('tool.call.toolview', () => ctx.slots.register(
+    { name: 'tool.call.toolview', key: 'present', locale: NS }, PresentRow,
+  ))
   // The prose side of the same vocabulary: the chat view reaches this face
   // via ctx.get, so its absence — this plugin composed out — is the off state.
   const t = ctx.locale.bind(NS)
   const mentions: ChatFileMentions = {
-    forClosing(owner) {
+    forClosing(owner, sessionId) {
       // Same claim test the turn-tail chain entry runs: no produced files,
       // no vocabulary — the two surfaces agree by construction.
       const paths = selectProducedFiles(owner)
-      if (paths === null) return undefined
-      return producedFileMentions(paths, owner.openFile, path => t('produced.open', { name: path }))
+      const presented = presentedForClosing(owner)
+      if (paths === null && presented.length === 0) return undefined
+      const deliveries = new Map(presented.map(file => [file.path, file]))
+      return producedFileMentions([...new Set([...paths ?? [], ...deliveries.keys()])], (path) => {
+        const file = deliveries.get(path)
+        if (file === undefined) owner.openFile(path)
+        else {
+          const link = document.createElement('a')
+          link.href = presentedFileUrl(sessionId, file.seq, file.index)
+          link.download = file.name
+          link.click()
+        }
+      }, path => t(deliveries.has(path) ? 'presented.download' : 'produced.open', { name: path }))
     },
   }
   ctx.provide('chatFileMentions', mentions)
