@@ -73,6 +73,40 @@ describe('claimLayerIds', () => {
       { id: 'h', config: [{ id: 'settings', name: 'taking/impostor' }] },
     ])
     expect(() => claimLayerIds([base, taking])).toThrow(/row "settings" is declared by both @deepseek-ai\/dsh-base and taking/)
+    // Setting a row under another group would move it; listing it twice would fail the group's update.
+    const moving = layer('moving', 'builtin', [
+      { insert: [
+        { id: 'g', name: 'cordis:group', group: true, config: [{ id: 'a', name: 'a' }] },
+        { id: 'h', name: 'cordis:group', group: true, config: [] },
+      ] },
+      { id: 'h', config: [{ id: 'a', name: 'a' }] },
+    ])
+    expect(() => claimLayerIds([moving])).toThrow(/row "a" is declared twice by moving/)
+    const twice = layer('twice', 'builtin', [
+      { insert: [{ id: 'g', name: 'cordis:group', group: true, config: [] }] },
+      { id: 'g', config: [{ id: 'a', name: 'a' }, { id: 'a', name: 'a' }] },
+    ])
+    expect(() => claimLayerIds([twice])).toThrow(/row "a" is declared twice by twice/)
+    // A child of a group without an id cannot be restated: no patch can address that group.
+    const anonymous = layer('anonymous', 'builtin', [
+      { insert: [
+        // A row leaves its id to the Loader, as YAML rows may; the type asks for one.
+        { name: 'cordis:group', group: true, config: [{ id: 'a', name: 'a' }] } as unknown as EntryOptions,
+        { id: 'h', name: 'cordis:group', group: true, config: [] },
+      ] },
+      { id: 'h', config: [{ id: 'a', name: 'a' }] },
+    ])
+    expect(() => claimLayerIds([anonymous])).toThrow(/row "a" is declared twice by anonymous/)
+  })
+
+  it('leaves out a bundle whose config override of its own group lists an id twice', () => {
+    const self = layer('self', 'external', [
+      { insert: [{ id: 'row', name: 'self/row' }] },
+      { id: 'bundle/self', config: [{ id: 'row', name: 'self/row' }, { id: 'row', name: 'self/row-again' }] },
+    ])
+    const { skipped, composed } = claimLayerIds([base, self])
+    expect(skipped.get('self')?.map(conflict => conflict.message)).toEqual(['row "row" is declared twice by self'])
+    expect(composed.has('self')).toBe(false)
   })
 
   it('leaves out a bundle that declares one of its own ids twice and composes each mounted bundle once', () => {
@@ -100,6 +134,17 @@ describe('claimLayerIds', () => {
 })
 
 describe('composeProfileStack', () => {
+  it('collects the rows the user layers disable with a literal disabled: true', () => {
+    const stack = composeProfileStack(NAME, [base], [{ label: '/p/cordis.patch.yml', patches: [
+      { id: 'a', disabled: true },
+      // A gate read from disk is an expression node: a condition of the composition, not a decision.
+      { id: 'b', disabled: { __jsExpr: 'true' } as unknown as boolean },
+      { id: 'c', config: {} },
+      { insert: [{ id: 'd', name: 'x', disabled: true }] },
+    ] }])
+    expect([...stack.userDisabledRowIds]).toEqual(['a'])
+  })
+
   it('mounts owning layers in manifest order and drops a user insert of a taken id', () => {
     const ext = layer('ext', 'external', [{ insert: [{ id: 'ext-tool', name: 'ext' }] }])
     const stack = composeProfileStack(NAME, [base, ext], [

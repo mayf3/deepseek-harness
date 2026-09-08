@@ -20,6 +20,8 @@ export interface ChildInspection {
 
 /** The child's one message: where cordis resolves from the package, and what each module imported as. */
 export interface ChildReport {
+  /** The token the parent handed the child for this run; a message without it is not the report. */
+  token: string
   /** The URL the package resolves `@deepseek-ai/cordis` to, or null when it does not resolve it. */
   cordis: string | null
   /** The main export's inspection; the not-imported default when the package declares no main. */
@@ -53,6 +55,7 @@ function isInspection(value: unknown): value is ChildInspection {
  */
 export function parseChildReport(value: unknown): ChildReport | undefined {
   if (!isRecord(value)) return undefined
+  if (typeof value.token !== 'string') return undefined
   if (value.cordis !== null && typeof value.cordis !== 'string') return undefined
   if (!isInspection(value.main) || !isRecord(value.addable)) return undefined
   if (!Object.values(value.addable).every(isInspection)) return undefined

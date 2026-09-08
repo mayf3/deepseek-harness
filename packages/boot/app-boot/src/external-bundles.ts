@@ -59,7 +59,11 @@ export interface ComposedExternalLayer {
    * names; a repeated id keeps its first module.
    */
   rows: Map<string, string>
-  /** Ids the layer introduces more than once, in order of repetition; a config override restating a row is not one. */
+  /**
+   * Ids the layer introduces more than once, in order of repetition. A config
+   * override restating a row under the group that already holds it is not
+   * one; the same id twice in one config list, or set under another group, is.
+   */
   duplicates: DuplicateRow[]
   /** Ids outside the bundle that its patch overrides; not containable, reported for visibility. */
   overrides: string[]
@@ -87,7 +91,9 @@ export function isContainedLayer(layer: ProfileLayer): boolean {
  * an override when it addresses a row the bundle did not introduce; the rows
  * it sets as a group's config count as the bundle's own, since they mount
  * as children like inserted ones. Every id, declared or generated, goes
- * through one registration, so a row spelling a wrapper's id is a duplicate.
+ * through one registration, so a row spelling a wrapper's id is a duplicate,
+ * and so is a config row the bundle already declared under another group,
+ * or listed twice: the Loader would move the first and reject the second.
  * Ids are indexed before any patch is emitted, so an insert into a group the
  * bundle introduces later in its list still counts as its own.
  * @param layer - the resolved external layer.
@@ -96,20 +102,40 @@ export function isContainedLayer(layer: ProfileLayer): boolean {
 export function composeExternalLayer(layer: ProfileLayer): ComposedExternalLayer {
   const groupId = bundleGroupId(layer.packageName)
   const rows = new Map<string, string>()
+  const declaredUnder = new Map<string, string | undefined>()
   const duplicates: DuplicateRow[] = []
-  const claim = (rowId: string, moduleName: string): void => {
-    if (rows.has(rowId)) duplicates.push({ rowId, moduleName })
-    else rows.set(rowId, moduleName)
-  }
-  visitPatchRows(layer.patches, (row, source) => {
-    if (typeof row.id !== 'string') return
-    // A config override restates the children it keeps: the id counts as
-    // the bundle's own without being a repeat.
-    if (source === 'config') {
-      if (!rows.has(row.id)) rows.set(row.id, row.name)
+  const claim = (rowId: string, moduleName: string, target?: string): void => {
+    if (rows.has(rowId)) {
+      duplicates.push({ rowId, moduleName })
       return
     }
-    claim(row.id, row.name)
+    rows.set(rowId, moduleName)
+    declaredUnder.set(rowId, target)
+  }
+  let listed = new Set<string>()
+  let listIndex = -1
+  visitPatchRows(layer.patches, (row, source, place) => {
+    if (typeof row.id !== 'string') return
+    if (place.patch !== listIndex) {
+      listIndex = place.patch
+      listed = new Set()
+    }
+    // A root insert lands in the bundle's group: that is the group it declares under.
+    const target = place.target ?? groupId
+    if (source === 'config') {
+      // A config override restates the children it keeps: the same id declared
+      // under the same group before is that row. Twice in one list, or under
+      // another group, it would mount as a rejected duplicate or move the row.
+      if (listed.has(row.id) || (rows.has(row.id) && declaredUnder.get(row.id) !== target)) {
+        duplicates.push({ rowId: row.id, moduleName: row.name })
+      } else if (!rows.has(row.id)) {
+        rows.set(row.id, row.name)
+        declaredUnder.set(row.id, target)
+      }
+    } else {
+      claim(row.id, row.name, target)
+    }
+    listed.add(row.id)
   })
   claim(groupId, CONTAINED_GROUP_MODULE)
   const wrappers = new Map<string, string>()
@@ -176,7 +202,7 @@ export interface BundleReconciliation {
   removed: string[]
   /** Newly added dependencies that declare no `dsh.bundle` (plain libraries or plugin modules). */
   plain: string[]
-  /** Installed bundles left out of the layer list because `autoEnable` was off. */
+  /** Bundles the run installed and left out of the layer list because `autoEnable` was off. */
   installedOnly: string[]
 }
 
@@ -184,9 +210,11 @@ export interface BundleReconciliation {
  * Reconcile `dsh.profile.bundles` against the installed state after a pnpm
  * run. A dependency that no longer resolves to a bundle leaves the layer
  * list; template bundles (never dependencies) are untouched. A dependency
- * that resolves to a bundle joins the list only when `autoEnable` is set —
- * the CLI's install-and-enable semantics — and is otherwise reported as
- * installed-only, which is the plugin manager's install step.
+ * the run added that resolves to a bundle joins the list only when
+ * `autoEnable` is set — the CLI's install-and-enable semantics — and is
+ * otherwise reported as installed-only, which is the plugin manager's install
+ * step. A bundle installed before the run keeps its place in or out of the
+ * list: one the user disabled stays disabled through an unrelated run.
  * @param binName - the diagnostic prefix used by manifest reads.
  * @param profileDir - the profile directory.
  * @param installAnchor - absolute path of the dsh app's package.json.
@@ -207,16 +235,17 @@ export function reconcileInstalledBundles(
   const bundles = [...after.dsh?.profile?.bundles ?? []]
   const outcome: BundleReconciliation = { enabled: [], removed: [], plain: [], installedOnly: [] }
   for (const packageName of dependencies) {
-    const isBundle = exportsBundlePatch(binName, packageName, installAnchor, profileDir)
-    if (isBundle && !bundles.includes(packageName)) {
-      if (options.autoEnable) {
-        bundles.push(packageName)
-        outcome.enabled.push(packageName)
-      } else {
-        outcome.installedOnly.push(packageName)
-      }
-    } else if (!isBundle && !beforeDeps.has(packageName)) {
+    if (beforeDeps.has(packageName)) continue
+    if (!exportsBundlePatch(binName, packageName, installAnchor, profileDir)) {
       outcome.plain.push(packageName)
+      continue
+    }
+    if (bundles.includes(packageName)) continue
+    if (options.autoEnable) {
+      bundles.push(packageName)
+      outcome.enabled.push(packageName)
+    } else {
+      outcome.installedOnly.push(packageName)
     }
   }
   const dependencySet = new Set(dependencies)

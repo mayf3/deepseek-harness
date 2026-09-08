@@ -663,6 +663,7 @@ export const FOUNDATION_TYPE_NAMES: ReadonlySet<string> = new Set([
   'AsyncIterable',
   'Context',
   'Error',
+  'Entry',
   'EntryTree',
   'Exclude',
   'Extract',
@@ -675,6 +676,7 @@ export const FOUNDATION_TYPE_NAMES: ReadonlySet<string> = new Set([
   'Record',
   'Readonly',
   'Set',
+  'ReadonlySet',
   'Uint8Array',
 ])
 
