@@ -7,6 +7,54 @@ import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { verifyPlatformBinaries } from '../scripts/repo.mjs';
 
+test('the real Landlock subpath imports without platform packages or dlopen, while the root is unexported', { timeout: 120_000 }, (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'system-landlock-entry-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }), { timeout: 120_000 });
+  const entry = fileURLToPath(new URL('../packages/entry/', import.meta.url));
+  const installed = path.join(dir, 'node_modules', '@deepseek-ai', 'node-addon-system');
+  fs.mkdirSync(installed, { recursive: true });
+  fs.copyFileSync(path.join(entry, 'package.json'), path.join(installed, 'package.json'));
+  // Only the real entry payload is present; no platform package or addon is copied.
+  fs.cpSync(path.join(entry, 'lib'), path.join(installed, 'lib'), { recursive: true });
+  const manifest = JSON.parse(fs.readFileSync(path.join(installed, 'package.json'), 'utf8'));
+  assert.equal(manifest.main, undefined);
+  assert.equal(manifest.types, undefined);
+
+  const result = spawnSync(process.execPath, ['--no-addons', '--input-type=module', '--eval', `
+    import assert from 'node:assert/strict';
+    import { createRequire } from 'node:module';
+    const originalDlopen = process.dlopen;
+    let dlopenCalls = 0;
+    try {
+      process.dlopen = () => {
+        dlopenCalls++;
+        throw new Error('Landlock import attempted dlopen');
+      };
+      const api = await import('@deepseek-ai/node-addon-system/landlock-run');
+      assert.equal(api.LAUNCHER_BIN, 'landlock-run');
+      assert.deepEqual(api.grantArgs({}), []);
+      assert.equal(dlopenCalls, 0);
+      await assert.rejects(import('@deepseek-ai/node-addon-system'), {
+        code: 'ERR_PACKAGE_PATH_NOT_EXPORTED',
+      });
+      assert.throws(() => createRequire(import.meta.url).resolve('@deepseek-ai/node-addon-system'), {
+        code: 'ERR_PACKAGE_PATH_NOT_EXPORTED',
+      });
+    } finally {
+      process.dlopen = originalDlopen;
+    }
+  `], {
+    cwd: dir,
+    encoding: 'utf8',
+    timeout: 120_000,
+    env: Object.fromEntries(Object.entries(process.env)
+      .filter(([key]) => !/KEY|TOKEN|SECRET|PASSWORD|^NODE_PATH$/i.test(key))),
+  });
+  assert.equal(result.error, undefined);
+  assert.equal(result.signal, null, result.stderr);
+  assert.equal(result.status, 0, result.stderr);
+});
+
 // These minimal headers exercise format rejection, not executable behavior.
 // flock.test.js and packed-install verification execute the real addon.
 function fixture(t, { platform = 'linux', arch = 'x64', kind = 'node-api' } = {}) {
@@ -106,14 +154,14 @@ test('rejects a symbolic-link payload', { skip: process.platform === 'win32' }, 
   assert.throws(() => verifyPlatformBinaries(f.dir), /not a regular file/);
 });
 
-test('entry prepack rejects a missing exported flock file even when the root entry exists', (t) => {
+test('entry prepack rejects a missing exported flock file even when the Landlock entry exists', (t) => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'system-entry-'));
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
   fs.mkdirSync(path.join(dir, 'lib'));
   fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify({
     name: 'entry-fixture',
     exports: {
-      '.': { types: './lib/index.d.ts', default: './lib/index.js' },
+      './landlock-run': { types: './lib/index.d.ts', default: './lib/index.js' },
       './flock': { types: './lib/flock.d.ts', default: './lib/flock.js' },
     },
   }));

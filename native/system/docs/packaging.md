@@ -4,7 +4,7 @@ The family publishes one ESM entry package plus OS/CPU-selected optional platfor
 
 ## Payloads
 
-The entry exports the Landlock API at its root and the asynchronous lock API at `./flock`, with C sources included for auditability. Platform packages contain no JavaScript.
+The entry package exports the Landlock API at `./landlock-run` and the asynchronous lock API at `./flock`, with C sources included for auditability. There is no root export. Platform packages contain no JavaScript.
 
 - Linux: `bin/landlock-run`, `bin/glibc/system.node`, and `bin/musl/system.node`.
 - macOS: `bin/system.node`.
@@ -15,7 +15,7 @@ The entry exports the Landlock API at its root and the asynchronous lock API at 
 
 Neither entry nor platform packages have installation lifecycle scripts. The entry resolves its matching optional package when a native operation needs it. Optional means that the package manager selects a platform, not that a requested lock can succeed without its binding.
 
-The root Landlock API stays importable without native payloads and reports unavailable enforcement through its probe. The flock entry is also lazy at import; acquisition reports a missing or unloadable addon instead of compiling or granting an unprotected lock.
+The `./landlock-run` API stays importable without native payloads and reports unavailable enforcement through its probe. The flock entry is also lazy at import; acquisition reports a missing or unloadable addon instead of compiling or granting an unprotected lock.
 
 ## Pack verification
 

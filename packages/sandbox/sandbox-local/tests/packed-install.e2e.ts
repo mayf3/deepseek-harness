@@ -109,7 +109,7 @@ describe.skipIf(!packable)('sandbox-local: packed-tarball distribution (publish-
       import { spawnSync } from 'node:child_process'
       import { existsSync } from 'node:fs'
       import { Context } from '@deepseek-ai/cordis'
-      import { launcherPath } from '@deepseek-ai/node-addon-system'
+      import { launcherPath } from '@deepseek-ai/node-addon-system/landlock-run'
       import { LocalSandboxProvider } from '@deepseek-ai/dsh-sandbox-local'
       const ctx = new Context()
       await ctx.plugin(LocalSandboxProvider, {})

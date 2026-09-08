@@ -15,7 +15,11 @@ import {
   grantArgs,
   launcherPath,
   probe,
-} from '@deepseek-ai/node-addon-system';
+} from '@deepseek-ai/node-addon-system/landlock-run';
+
+await assert.rejects(import('@deepseek-ai/node-addon-system'), {
+  code: 'ERR_PACKAGE_PATH_NOT_EXPORTED',
+});
 
 // --- constants are part of the CLI contract ---
 assert.equal(LAUNCHER_BIN, 'landlock-run');

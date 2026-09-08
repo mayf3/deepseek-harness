@@ -8,10 +8,8 @@
     "url": "git+https://github.com/deepseek-harness/deepseek-harness.git",
     "directory": "native/system/packages/entry"
   },
-  "main": "lib/index.js",
-  "types": "lib/index.d.ts",
   "exports": {
-    ".": {
+    "./landlock-run": {
       "types": "./lib/index.d.ts",
       "default": "./lib/index.js"
     },

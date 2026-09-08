@@ -166,8 +166,12 @@ import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { grantArgs, launcherPath, probe } from '@deepseek-ai/node-addon-system';
+import { grantArgs, launcherPath, probe } from '@deepseek-ai/node-addon-system/landlock-run';
 import { tryLockExclusive } from '@deepseek-ai/node-addon-system/flock';
+
+await assert.rejects(import('@deepseek-ai/node-addon-system'), {
+  code: 'ERR_PACKAGE_PATH_NOT_EXPORTED',
+});
 
 const requireLandlock = process.env.NALR_REQUIRE_LANDLOCK === '1';
 const platformPackage = '@deepseek-ai/node-addon-system-' + process.platform + '-' + process.arch;
