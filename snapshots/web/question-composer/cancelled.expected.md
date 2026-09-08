@@ -3,7 +3,7 @@
     - button "Use the ask_user_question tool to" [disabled]
   - button "More actions":
     - img
-  - button "Open sidebar":
+  - button "Open right sidebar":
     - img
   - tablist:
     - tab "Chat" [selected]

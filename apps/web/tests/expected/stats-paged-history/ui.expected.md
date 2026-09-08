@@ -3,7 +3,7 @@
     - button "{{workspace}}" [disabled]
   - button "More actions":
     - img
-  - button "Open sidebar":
+  - button "Open right sidebar":
     - img
   - tablist:
     - tab "Chat" [selected]
