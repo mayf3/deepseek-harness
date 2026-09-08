@@ -81,15 +81,16 @@ export function absoluteFileAddress(path: string): string {
 }
 
 /**
- * Read a file address back into its parts.
+ * Read a file address back into its parts without resolving `.` or `..`.
+ * Query and fragment suffixes are ignored; encoded path segments are decoded.
  * @param address - a candidate address.
  * @returns the parts, or `undefined` when the string is not a `dsh-resource://file/` URI in a known scope with a path, or a segment is not validly encoded.
  */
 export function parseFileAddress(address: string): FileAddress | undefined {
   try {
-    const url = new URL(address)
-    if (url.protocol !== 'dsh-resource:' || url.host !== 'file') return undefined
-    const [, scope, ...rest] = url.pathname.split('/')
+    if (!address.startsWith(FILE_ADDRESS_PREFIX)) return undefined
+    const end = address.search(/[?#]/)
+    const [scope, ...rest] = address.slice(FILE_ADDRESS_PREFIX.length, end === -1 ? undefined : end).split('/')
     if (scope === 'session') {
       const [id, ...segments] = rest
       if (id === undefined || id === '' || segments.length === 0) return undefined
@@ -105,8 +106,7 @@ export function parseFileAddress(address: string): FileAddress | undefined {
     }
     return undefined
   } catch {
-    // `new URL` throws TypeError on a non-URL and `decodeURIComponent` throws
-    // URIError on a malformed escape; both mean "not a file address".
+    // `decodeURIComponent` throws URIError on a malformed escape.
     return undefined
   }
 }

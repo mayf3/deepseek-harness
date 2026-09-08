@@ -1,43 +1,31 @@
 .body {
   display: flex;
   flex-direction: column;
+  width: 100%;
   min-height: 0;
+  overflow-x: hidden;
   font-family: var(--dsw-font, sans-serif);
   white-space: normal;
 }
 
-.toolbar {
-  position: sticky;
-  top: 0;
-  z-index: 1;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-  align-items: center;
-  padding: 4px 8px;
-  background: var(--dsw-alias-bg-layer-1);
-  border-bottom: 0.5px solid var(--dsw-alias-border-l1);
-}
-
-.pageInput {
-  width: 72px;
-}
-
-.label {
-  color: var(--dsw-alias-label-secondary);
-  font-size: 12px;
-  line-height: 1.5;
-}
-
 .page {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
   padding: 12px;
-  overflow: auto;
+  overflow-x: hidden;
+}
+
+.placeholder {
+  width: 100%;
+  aspect-ratio: 3 / 4;
 }
 
 .canvas {
   display: block;
-  width: var(--pdf-page-width);
-  height: var(--pdf-page-height);
+  width: min(var(--pdf-page-width), 100%);
+  max-width: 100%;
+  height: auto;
   margin-inline: auto;
 }
 

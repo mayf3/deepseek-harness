@@ -1,10 +1,12 @@
 // @vitest-environment jsdom
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, onTestFinished, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { RemoteError } from '@deepseek-ai/dsh-client-test-runtime'
+import type { OwnerOf } from '@deepseek-ai/dsh-client-ui-slots'
 import { TextPreview } from '../src/client/TextPreview.tsx'
 import type { TextPreviewProps } from '../src/client/TextPreview.tsx'
 import type { DocumentPreviewDefinition } from '../src/client/document/registry.ts'
+import { CodeBody } from '../src/client/code/CodeBody.tsx'
 import { ABSOLUTE_PATH, FILE, harness, page, settle, TAB_ID } from './fixtures.client.ts'
 
 afterEach(cleanup)
@@ -13,19 +15,105 @@ const binary: DocumentPreviewDefinition = {
   id: 'complete-document', extensions: ['md'], title: () => 'Complete document', loading: 'bytes-complete',
 }
 
+function codeProps(h: ReturnType<typeof harness>): TextPreviewProps {
+  const props = h.props()
+  const definition: DocumentPreviewDefinition = {
+    id: 'code', extensions: ['md'], title: () => 'Code', loading: 'text-pages', wrap: true,
+  }
+  return {
+    ...props,
+    useDocumentPreviews: selector => selector([definition]),
+    // This adapter only receives the concrete document slot, not an arbitrary generic key.
+    renderSlot: (_key, owner) => <CodeBody {...props} {...owner as unknown as OwnerOf<'sidebar.right.tab.document'>} t={key => key} />,
+  }
+}
+
 describe('document toolbar', () => {
+  it('keeps Reading above the first code page and reload, retaining code during pagination', async () => {
+    const h = harness()
+    const first = Promise.withResolvers<Awaited<ReturnType<typeof h.read>>>()
+    const next = Promise.withResolvers<Awaited<ReturnType<typeof h.read>>>()
+    const reload = Promise.withResolvers<Awaited<ReturnType<typeof h.read>>>()
+    onTestFinished(async () => {
+      h.controller.abort()
+      for (const pending of [first, next, reload]) pending.resolve(page(1, [], true))
+      await Promise.all([first.promise, next.promise, reload.promise])
+    })
+    h.read.mockReturnValueOnce(first.promise).mockReturnValueOnce(next.promise).mockReturnValueOnce(reload.promise)
+    const view = render(<TextPreview {...codeProps(h)} />)
+    const body = view.container.querySelector('[data-textpreview-body]')
+    expect(view.container.querySelector('[data-code-preview]')).toBeNull()
+    expect(body?.firstElementChild).toBe(view.getByRole('status'))
+    expect(view.getByRole('status').textContent).toBe('loading')
+    expect(view.container.querySelector('[data-textpreview-more]')).toBeNull()
+
+    await act(async () => { first.resolve(page(1, ['const prefix = 1;'], false)); await first.promise })
+    const renderer = view.container.querySelector('[data-code-preview]')
+    expect(renderer).not.toBeNull()
+    expect(renderer?.querySelector('pre')?.textContent).toBe('const prefix = 1;')
+    expect(view.queryByRole('status')).toBeNull()
+    fireEvent.click(view.getByRole('button', { name: 'loadMore' }))
+    expect(view.container.querySelector('[data-code-preview]')).toBe(renderer)
+    expect(renderer?.querySelector('pre')?.textContent).toBe('const prefix = 1;')
+    expect(view.getByRole('status').closest('[data-textpreview-more]')).not.toBeNull()
+    await act(async () => { next.resolve(page(2, ['const tail = 2;'], true)); await next.promise })
+    expect(view.container.querySelector('[data-code-preview]')).toBe(renderer)
+    expect(renderer?.querySelector('pre')?.textContent).toBe('const prefix = 1;\nconst tail = 2;')
+    expect(view.queryByRole('status')).toBeNull()
+    expect(view.container.querySelector('[data-textpreview-more]')).toBeNull()
+
+    fireEvent.click(view.getByRole('button', { name: 'reload' }))
+    expect(view.container.querySelector('[data-code-preview]')).toBeNull()
+    expect(renderer?.isConnected).toBe(false)
+    expect(body?.firstElementChild).toBe(view.getByRole('status'))
+    expect(view.container.querySelector('[data-textpreview-more]')).toBeNull()
+    await act(async () => { reload.resolve(page(1, ['const refreshed = 3;'], true, 'v2')); await reload.promise })
+    expect(view.container.querySelector('[data-code-preview] pre')?.textContent).toBe('const refreshed = 3;')
+    expect(view.queryByRole('status')).toBeNull()
+  })
+
+  it('mounts the code renderer after an empty file page completes', async () => {
+    const h = harness()
+    const pending = Promise.withResolvers<Awaited<ReturnType<typeof h.read>>>()
+    onTestFinished(async () => {
+      h.controller.abort()
+      pending.resolve(page(1, [], true))
+      await pending.promise
+    })
+    h.read.mockReturnValueOnce(pending.promise)
+    const view = render(<TextPreview {...codeProps(h)} />)
+    expect(view.container.querySelector('[data-code-preview]')).toBeNull()
+    expect(view.getByRole('status').textContent).toBe('loading')
+    await act(async () => { pending.resolve(page(1, [], true)); await pending.promise })
+    expect(view.container.querySelector('[data-code-preview]')).not.toBeNull()
+    expect(view.container.querySelector('[data-code-preview] pre')?.textContent).toBe('')
+    expect(h.instance.getSnapshot().byTab[TAB_ID]?.pages).toEqual({ 1: { text: '', lines: 0 } })
+    expect(view.queryByRole('status')).toBeNull()
+    expect(view.container.querySelector('[data-textpreview-more]')).toBeNull()
+  })
+
   it('shows the shared loading indicator until a complete read settles', async () => {
     const h = harness()
     const pending = Promise.withResolvers<Awaited<ReturnType<typeof h.bytes>>>()
+    const result = { ok: true as const, value: { absolutePath: ABSOLUTE_PATH, version: 'v1', offset: 0, data: btoa('all'), bytes: 3, eof: true } }
+    onTestFinished(async () => {
+      h.controller.abort()
+      pending.resolve(result)
+      await pending.promise
+    })
     h.bytes.mockReturnValueOnce(pending.promise)
-    const props: TextPreviewProps = { ...h.props(), useDocumentPreviews: selector => selector([binary]) }
+    const renderSlot = vi.fn(() => null)
+    const props: TextPreviewProps = { ...h.props(), useDocumentPreviews: selector => selector([binary]), renderSlot }
     const view = render(<TextPreview {...props} />)
     expect(view.getByRole('status').hasAttribute('data-document-loading')).toBe(true)
     expect(view.getByRole('status').textContent).toBe('loading')
+    expect(view.container.querySelector('[data-textpreview-body]')?.firstElementChild).toBe(view.getByRole('status'))
+    expect(renderSlot).not.toHaveBeenCalled()
     await act(async () => {
-      pending.resolve({ ok: true, value: { absolutePath: ABSOLUTE_PATH, version: 'v1', offset: 0, data: btoa('all'), bytes: 3, eof: true } })
+      pending.resolve(result)
       await pending.promise
     })
+    expect(renderSlot).toHaveBeenCalled()
     expect(view.queryByRole('status')).toBeNull()
   })
 

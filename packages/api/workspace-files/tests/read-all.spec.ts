@@ -24,11 +24,12 @@ describe('workspaceFiles.readAll', () => {
     expect(await harness.endpoint().readAll(agent, 'empty', signal())).toMatchObject({ data: '', offset: 0, eof: true, bytes: 0 })
   })
 
-  it('rejects a known oversized file before reading bytes', async () => {
-    await writeFile(join(harness.workspace, 'large'), 'abcde')
+  it.each(['workspace', 'outside'] as const)('rejects a known oversized %s file before reading bytes', async (location) => {
+    const path = join(harness[location], 'large')
+    await writeFile(path, 'abcde')
     const read = vi.spyOn(harness.ctx.fs, 'readByteRange')
-    expect(await failureOf(harness.endpoint({ maxFileBytes: 4 }).readAll(agent, 'large', signal())))
-      .toEqual({ code: 'workspace-file/too-large', details: { path: 'large', limit: 4 } })
+    expect(await failureOf(harness.endpoint({ maxFileBytes: 4 }).readAll(agent, path, signal())))
+      .toEqual({ code: 'workspace-file/too-large', details: { path, limit: 4 } })
     expect(read).not.toHaveBeenCalled()
   })
 
@@ -39,13 +40,14 @@ describe('workspaceFiles.readAll', () => {
       .toBe('workspace-file/too-large')
   })
 
-  it('retains missing-file, kind and workspace confinement failures', async () => {
+  it('reads outside files while retaining missing-file and kind failures', async () => {
     await mkdir(join(harness.workspace, 'directory'))
     await writeFile(join(harness.outside, 'outside'), 'outside')
     const files = harness.endpoint()
     expect((await failureOf(files.readAll(agent, 'missing', signal()))).code).toBe('workspace-file/not-found')
     expect((await failureOf(files.readAll(agent, 'directory', signal()))).code).toBe('workspace-file/not-regular-file')
-    expect((await failureOf(files.readAll(agent, join(harness.outside, 'outside'), signal()))).code).toBe('workspace-file/outside-workspace')
+    const outside = await files.readAll(agent, join(harness.outside, 'outside'), signal())
+    expect(Buffer.from(outside.data, 'base64').toString()).toBe('outside')
   })
 })
 
@@ -68,13 +70,38 @@ describe('workspaceFiles.readRelated', () => {
     expect((await failureOf(harness.endpoint().readRelated(agent, 'base', path, signal()))).code).toBe('gateway/bad-request')
   })
 
-  it('keeps base-file and target-file access checks', async () => {
+  it('resolves related files on either side of the workspace root', async () => {
     await writeFile(join(harness.workspace, 'base'), 'base')
-    await writeFile(join(harness.outside, 'secret'), 'secret')
+    await writeFile(join(harness.outside, 'outside'), 'outside')
     const files = harness.endpoint()
     expect((await failureOf(files.readRelated(agent, 'missing', 'file', signal()))).code).toBe('workspace-file/not-found')
-    expect((await failureOf(files.readRelated(agent, join(harness.outside, 'secret'), '../file', signal()))).code).toBe('workspace-file/outside-workspace')
-    expect((await failureOf(files.readRelated(agent, 'base', '../outside/secret', signal()))).code).toBe('workspace-file/outside-workspace')
+    const fromOutside = await files.readRelated(agent, join(harness.outside, 'outside'), '../workspace/base', signal())
+    const toOutside = await files.readRelated(agent, 'base', '../outside/outside', signal())
+    expect(Buffer.from(fromOutside.data, 'base64').toString()).toBe('base')
+    expect(Buffer.from(toOutside.data, 'base64').toString()).toBe('outside')
+  })
+
+  it('reads sibling assets beside an outside HTML file with escaped path characters', async () => {
+    await mkdir(join(harness.outside, 'space # assets'))
+    const base = join(harness.outside, 'space # assets', 'page.html')
+    await writeFile(base, '<script src="./app.js"></script>')
+    await writeFile(join(harness.outside, 'space # assets', 'app.js'), 'EXTERNAL_ASSET')
+    const result = await harness.endpoint().readRelated(agent, base, './app.js', signal())
+    expect(Buffer.from(result.data, 'base64').toString()).toBe('EXTERNAL_ASSET')
+  })
+
+  it.each([
+    ['C:\\external\\page.html', 'C:\\external\\app.js'],
+    ['\\\\server\\share\\page.html', '\\\\server\\share\\app.js'],
+    ['/external/back\\slash.html', '/external/app.js'],
+  ])('uses the backend process-path syntax for related reads from %s', async (base, expected) => {
+    await writeFile(join(harness.workspace, 'base'), 'base')
+    const files = harness.endpoint()
+    vi.spyOn(harness.ctx.fs, 'processPath').mockReturnValue(base)
+    const read = vi.spyOn(files, 'readAll').mockResolvedValue({ absolutePath: expected, version: 'v', offset: 0, data: '', eof: true })
+    const caller = signal()
+    await files.readRelated(agent, 'base', './app.js', caller)
+    expect(read).toHaveBeenCalledWith(agent, expected, caller)
   })
 
   it('rejects a related symlink rather than following it', async () => {

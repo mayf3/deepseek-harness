@@ -1,10 +1,11 @@
 /** Keyless document-preview smoke through a real Session, Files tab, and shipped renderers. */
-import { mkdir, writeFile } from 'node:fs/promises'
-import { join } from 'node:path'
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { Browser, Locator, Page } from 'playwright'
 import { chromium } from 'playwright'
-import { afterAll, beforeAll, describe, expect, it, onTestFailed } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it, onTestFailed, vi } from 'vitest'
 import { pdfFixture } from '../../../packages/client/ui-sidebar-textpreview/tests/pdf-fixture.ts'
 import { assertFixtureInventory, compareOrRefreshGolden, launchWebScaffold, watchConsole, webSnapshotMode, type WebScaffold } from './scaffold.ts'
 import { connectFreshWorkspace, newEnglishPage, saveFailureShot } from './support.ts'
@@ -51,8 +52,10 @@ describe.skipIf(MODE === 'record')('web e2e: document preview through Files', ()
   let browser: Browser
   let page: Page
   let tripwire: ReturnType<typeof watchConsole>
+  let outsideRoot: string | undefined
 
   beforeAll(async () => {
+    outsideRoot = await mkdtemp(join(tmpdir(), 'dsh-preview-outside-'))
     scaffold = await launchWebScaffold({ replayFixture: FIXTURE, paceMs: 5, compareReplaySession: false, extraOverlayPath: PAGING_PATCH })
     browser = await chromium.launch()
     page = await newEnglishPage(browser)
@@ -65,7 +68,11 @@ describe.skipIf(MODE === 'record')('web e2e: document preview through Files', ()
     try {
       await browser?.close()
     } finally {
-      await scaffold?.close()
+      try {
+        await scaffold?.close()
+      } finally {
+        if (outsideRoot !== undefined) await rm(outsideRoot, { recursive: true, force: true })
+      }
     }
   })
 
@@ -82,6 +89,9 @@ describe.skipIf(MODE === 'record')('web e2e: document preview through Files', ()
     await page.getByText('LIGHTHOUSE', { exact: true }).waitFor({ timeout: 15_000 })
     const cwd = scaffold.ctx.agents.get(sessionId)?.session.header.cwd
     if (cwd === undefined) throw new Error('settled Session has no workspace cwd')
+    if (outsideRoot === undefined) throw new Error('outside fixture directory is unavailable')
+    const outsideScript = join(outsideRoot, 'outside.js')
+    const outsideReference = relative(cwd, outsideScript).replace(/\\/g, '/')
     const markdownText = [
       '# Markdown smoke', '', 'Rendered from the workspace.', '',
       ...Array.from({ length: (PAGE_LINES - 4) / 2 }, (_, index) => [`Paragraph ${index + 1}: ${'visible prefix '.repeat(20)}`, '']).flat(),
@@ -98,13 +108,16 @@ describe.skipIf(MODE === 'record')('web e2e: document preview through Files', ()
       writeFile(join(cwd, 'smoke.html'), [
         '<!doctype html><link rel="stylesheet" href="./local.css">',
         '<h1>HTML smoke</h1><p id="result">pending</p><p id="local-result">pending</p><p id="parent-result">pending</p>',
+        '<p id="outside-result">pending</p>',
         '<script>document.getElementById("result").textContent="INLINE_OK";',
         'try{parent.document.documentElement.setAttribute("data-document-preview-escape","true");document.getElementById("parent-result").textContent="parent-accessible"}',
         'catch(error){const result=document.getElementById("parent-result");result.textContent="parent-blocked";result.dataset.error=error.name}</script>',
         '<script src="./local.js"></script>',
+        `<script src="${outsideReference}"></script>`,
       ].join('\n')),
       writeFile(join(cwd, 'local.js'), 'document.getElementById("local-result").textContent="LOCAL_JS_OK";'),
       writeFile(join(cwd, 'local.css'), '#local-result { color: rgb(12, 34, 56); }'),
+      writeFile(outsideScript, 'document.getElementById("outside-result").textContent="OUTSIDE_JS_OK";'),
       writeFile(join(cwd, 'smoke.pdf'), pdfFixture()),
     ])
 
@@ -218,6 +231,7 @@ describe.skipIf(MODE === 'record')('web e2e: document preview through Files', ()
     await html.getByRole('heading', { name: 'HTML smoke', exact: true }).waitFor({ timeout: 15_000 })
     await expect.poll(() => html.locator('#result').innerText()).toBe('INLINE_OK')
     await expect.poll(() => html.locator('#local-result').innerText()).toBe('LOCAL_JS_OK')
+    await expect.poll(() => html.locator('#outside-result').innerText()).toBe('OUTSIDE_JS_OK')
     await expect.poll(() => html.locator('#local-result').evaluate(node => getComputedStyle(node).color)).toBe('rgb(12, 34, 56)')
     await expect.poll(() => html.locator('#parent-result').innerText()).toBe('parent-blocked')
     expect(await html.locator('#parent-result').getAttribute('data-error')).toBe('SecurityError')
@@ -229,6 +243,7 @@ describe.skipIf(MODE === 'record')('web e2e: document preview through Files', ()
       `- Sandbox: ${await iframe.getAttribute('sandbox')}`,
       `- Inline script: ${await html.locator('#result').innerText()}`,
       `- Local script: ${await html.locator('#local-result').innerText()}`,
+      `- Outside-workspace script: ${await html.locator('#outside-result').innerText()}`,
       `- Local stylesheet: ${await html.locator('#local-result').evaluate(node => getComputedStyle(node).color)}`,
       `- Parent access: ${await html.locator('#parent-result').innerText()} (${await html.locator('#parent-result').getAttribute('data-error')})`,
       `- Parent unchanged: ${String(await page.locator('html').getAttribute('data-document-preview-escape') === null)}`,
@@ -276,7 +291,34 @@ describe.skipIf(MODE === 'record')('web e2e: document preview through Files', ()
       `- Same tab: ${String(await pdfTab.getAttribute('data-dockkit-tab') === pdfTabId)}`,
     ].join('\n'))
 
-    await openFile('pages.ts')
+    const releaseRead = Promise.withResolvers<undefined>()
+    let waitingForRead = false
+    const readPage = scaffold.ctx.workspaceFiles.read.bind(scaffold.ctx.workspaceFiles)
+    const heldRead = vi.spyOn(scaffold.ctx.workspaceFiles, 'read').mockImplementation(async (agent, path, range, signal) => {
+      if (path === 'pages.ts' && (range.offset ?? 1) === 1) {
+        waitingForRead = true
+        await releaseRead.promise
+      }
+      return readPage(agent, path, range, signal)
+    })
+    let initialReading = false
+    try {
+      await openFile('pages.ts')
+      await expect.poll(() => waitingForRead).toBe(true)
+      const reading = preview.locator('[data-document-loading]')
+      initialReading = await reading.isVisible()
+      expect(initialReading).toBe(true)
+      expect(await preview.locator('[data-code-preview]').count()).toBe(0)
+      const indicator = await reading.boundingBox()
+      const scroller = await body.boundingBox()
+      if (indicator === null || scroller === null) throw new Error('reading indicator or document body is not rendered')
+      expect(indicator.y).toBeGreaterThanOrEqual(scroller.y)
+      expect(indicator.y + indicator.height).toBeLessThanOrEqual(scroller.y + scroller.height)
+      await successShot(page, 'code-reading')
+    } finally {
+      releaseRead.resolve(undefined)
+      heldRead.mockRestore()
+    }
     await expect.poll(() => viewer.innerText()).toBe('Code')
     const highlightedLines = preview.locator('.shiki .line')
     await expect.poll(() => highlightedLines.count(), { timeout: 15_000 }).toBe(PAGE_LINES)
@@ -333,6 +375,7 @@ describe.skipIf(MODE === 'record')('web e2e: document preview through Files', ()
     sections.push([
       '## Code paging', '',
       `- Viewer: ${await viewer.innerText()}`,
+      `- Initial reading indicator: ${initialReading}`,
       `- Lines: ${prefix.length} -> ${completed.length}`,
       `- Prefix retained: ${String(JSON.stringify(completed.slice(0, prefix.length)) === JSON.stringify(prefix))}`,
       `- Tail: ${completed.at(-1)}`,

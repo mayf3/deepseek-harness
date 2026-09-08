@@ -100,12 +100,10 @@ describe('TextPreview — pages', () => {
   it('reads the first page on first mount and draws its lines, offering the next', async () => {
     const h = harness({ 1: page(1, ['one', 'two', 'three'], false) })
     const view = render(<TextPreview {...h.props()} />)
-    // The read is in flight from the mount effect on: the body is up with no
-    // lines yet, and its next-page control reports the progress.
-    const pending = view.container.querySelector<HTMLButtonElement>('[data-textpreview-more]')
-    expect(pending?.disabled).toBe(true)
-    expect(pending?.textContent).toBe('loading')
+    // The first read has no document body or next-page control to displace its status.
+    expect(view.container.querySelector('[data-textpreview-more]')).toBeNull()
     expect(view.getByRole('status').hasAttribute('data-document-loading')).toBe(true)
+    expect(body(view.container).firstElementChild).toBe(view.getByRole('status'))
     expect(lines(view.container)).toEqual([])
     await settle()
     expect(view.queryByRole('status')).toBeNull()

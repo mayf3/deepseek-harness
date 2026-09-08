@@ -47,7 +47,7 @@ export type ReadWorkspaceFilePage = (
 
 /** The file one tab reads: the session the read runs under and the path handed to the Host. */
 export interface SessionFile {
-  /** The session whose workspace confines the read. */
+  /** The Session whose workspace resolves relative paths. */
   readonly sessionId: SessionId
   /** The path the Host receives, absolute or relative to the addressed Session's workspace. */
   readonly path: string

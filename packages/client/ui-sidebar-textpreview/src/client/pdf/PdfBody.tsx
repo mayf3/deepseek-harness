@@ -1,11 +1,11 @@
 /** PDF page presentation; binary content and tab information come from the document owner. */
 import { useEffect, useRef, useState, type ReactNode } from 'react'
-import { Button, Input } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Button } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsLocale, PropsStore } from '@deepseek-ai/dsh-client-ui-slots'
 import type { TabId } from '@deepseek-ai/dsh-client-ui-dockkit'
 import type { DocumentPreviewProps } from '../document/contract.ts'
 import { LoadingIndicator } from '../LoadingIndicator.tsx'
-import { DEFAULT_PDF_VIEW, type PdfStore } from './store.ts'
+import type { PdfStore } from './store.ts'
 import { renderPdfPage, type PdfDocument } from './document.ts'
 import { openPdf } from './runtime.ts'
 import { PdfWorkerFailure } from './errors.ts'
@@ -36,11 +36,10 @@ type LoadState =
  */
 export function PdfBody(props: PdfBodyProps): ReactNode {
   const { tab } = props.useTabInfo()
-  const view = props.useStore(state => state.byTab[tab.id] ?? DEFAULT_PDF_VIEW)
   const data = props.content.kind === 'bytes' ? props.content.data : undefined
   const [load, setLoad] = useState<LoadState>()
   const [attempt, setAttempt] = useState(0)
-  const { retainTab, actions, t } = props
+  const { retainTab, t } = props
 
   useEffect(() => { retainTab(tab.id, tab.signal) }, [retainTab, tab.id, tab.signal])
   useEffect(() => {
@@ -69,53 +68,57 @@ export function PdfBody(props: PdfBodyProps): ReactNode {
       <Button size="sm" onClick={() => { setAttempt(value => value + 1) }}>{t('retry')}</Button>
     </div>
   }
-  const page = Math.min(view.page, load.document.numPages)
-  const setPage = (requested: number): void => {
-    if (Number.isInteger(requested)) actions.page(tab.id, Math.max(1, Math.min(load.document.numPages, requested)))
-  }
-  const zoom = Math.max(0.25, Math.min(4, view.zoom))
   return <section className={css.body} data-pdf-preview>
-    <div className={css.toolbar} role="toolbar" aria-label={t('toolbar')}>
-      <Button size="sm" variant="toolbar" disabled={page <= 1} onClick={() => { setPage(page - 1) }}>{t('previous')}</Button>
-      <div className={css.pageInput}>
-        <Input type="number" min={1} max={load.document.numPages} value={page}
-          aria-label={t('page')} onChange={(event) => { setPage(event.currentTarget.valueAsNumber) }} />
-      </div>
-      <span className={css.label}>{t('pageCount', { total: load.document.numPages })}</span>
-      <Button size="sm" variant="toolbar" disabled={page >= load.document.numPages} onClick={() => { setPage(page + 1) }}>{t('next')}</Button>
-      <Button size="sm" variant="toolbar" disabled={zoom <= 0.25} onClick={() => { actions.zoom(tab.id, Math.max(0.25, zoom - 0.25)) }}>{t('zoomOut')}</Button>
-      <Button size="sm" variant="toolbar" aria-label={t('resetZoom')} onClick={() => { actions.zoom(tab.id, 1) }}>{t('zoom', { percent: Math.round(zoom * 100) })}</Button>
-      <Button size="sm" variant="toolbar" disabled={zoom >= 4} onClick={() => { actions.zoom(tab.id, Math.min(4, zoom + 0.25)) }}>{t('zoomIn')}</Button>
-    </div>
-    <PdfPage key={`${page}:${zoom}`} document={load.document} page={page} zoom={zoom} signal={tab.signal} t={t} />
+    {Array.from({ length: load.document.numPages }, (_, index) => (
+      <PdfPage key={index} document={load.document} page={index + 1} signal={tab.signal} t={t} />
+    ))}
   </section>
 }
 
-function PdfPage({ document, page, zoom, signal, t }: {
+function PdfPage({ document, page, signal, t }: {
   readonly document: PdfDocument
   readonly page: number
-  readonly zoom: number
   readonly signal: AbortSignal
 } & PropsLocale<'sidebarPdf'>): ReactNode {
+  const host = useRef<HTMLDivElement>(null)
   const canvas = useRef<HTMLCanvasElement>(null)
+  const [requested, setRequested] = useState(page === 1)
   const [state, setState] = useState<'loading' | 'ready'>('loading')
   const [failure, setFailure] = useState<{ readonly error: unknown }>()
   const [attempt, setAttempt] = useState(0)
   useEffect(() => {
+    if (requested) return
+    const node = host.current as HTMLDivElement
+    if (typeof IntersectionObserver === 'undefined') {
+      setRequested(true)
+      return
+    }
+    let observer: IntersectionObserver | undefined
+    observer = new IntersectionObserver((entries) => {
+      if (!entries.some(entry => entry.isIntersecting)) return
+      setRequested(true)
+      observer?.disconnect()
+    }, { rootMargin: '100% 0px' })
+    observer.observe(node)
+    return () => { observer?.disconnect() }
+  }, [requested])
+  useEffect(() => {
+    if (!requested) return
     // The canvas is unconditional; this effect runs after its ref is committed.
     const node = canvas.current as HTMLCanvasElement
     const lifetime = new AbortController()
     const renderSignal = AbortSignal.any([lifetime.signal, signal])
     setState('loading')
     setFailure(undefined)
-    void renderPdfPage(document, page, zoom, node, renderSignal, window.devicePixelRatio).then(
+    void renderPdfPage(document, page, 1, node, renderSignal, window.devicePixelRatio).then(
       () => { if (!renderSignal.aborted) setState('ready') },
       (error: unknown) => { if (!renderSignal.aborted) setFailure({ error }) },
     )
     return () => { lifetime.abort() }
-  }, [document, page, zoom, signal, attempt])
-  return <div className={css.page}>
-    {failure === undefined && state === 'loading' && <LoadingIndicator className={css.status} label={t('rendering')} />}
+  }, [document, page, requested, signal, attempt])
+  return <div ref={host} className={css.page} data-pdf-page={page}>
+    {!requested && <div className={css.placeholder} />}
+    {requested && failure === undefined && state === 'loading' && <LoadingIndicator className={css.status} label={t('rendering')} />}
     {failure !== undefined && <div className={css.status} role="alert">
       <span>{failureText(failure.error, t)}</span>
       <Button size="sm" onClick={() => { setAttempt(value => value + 1) }}>{t('retry')}</Button>

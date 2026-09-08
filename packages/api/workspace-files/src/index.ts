@@ -1,20 +1,12 @@
 /**
- * Workspace file service: paged text reads, byte-window reads, stats, directory
- * listings, and the agent-write change feed inside one session's workspace
- * root, exposed as the `workspaceFiles` Remote namespace.
+ * Workspace file service: read-only file previews, workspace directory
+ * listings, and the agent-write change feed, exposed as `workspaceFiles`.
  *
- * Reads through `ctx.fs` are deliberately unconfined — the sandboxing backend
- * fences writes and edits only, and says so. Every constraint this service
- * needs is therefore its own, and there are four:
- *
- * 1. The path is authorized by containment in the session's workspace root.
- * 2. Containment is decided by {@link FileSystem.contains}, never by comparing
- *    path strings: `resolve` realpaths, so a prefix test cannot see a symlink
- *    that leaves the root. `lstat` rejects a link before that follow happens.
- * 3. Every cap is validated Config, changeable per deployment. A page is cut by
- *    lines and refused, not shortened, when its bytes exceed the byte cap; a
- *    listing is cut by entries and says so.
- * 4. Failures are one `RemoteError` per reason, declared in `./types`.
+ * File reads follow the composed filesystem's read access, including paths
+ * outside the workspace. The Session's policy supplies the base for relative
+ * paths, not a read-containment restriction. Directory listings and change
+ * observations remain workspace-scoped. File-kind checks and configured read
+ * caps apply to every preview; this service exposes no mutations.
  *
  * A page is cut from `streamText`, which decodes and rejects non-UTF-8 as it
  * goes, so the file is read only up to the first character past the page and
@@ -25,6 +17,7 @@
  * file content across the wire, which is a different level of exposure.
  */
 
+import { posix, win32 } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import type { Agent } from '@deepseek-ai/dsh-agent'
@@ -166,7 +159,7 @@ function directoryEntry(child: FsDirEntry): WorkspaceDirectoryEntry {
   }
 }
 
-/** Host Remote service over the composed filesystem, confined to one workspace. */
+/** Host Remote file reads and workspace directory observations over the composed filesystem. */
 export class WorkspaceFiles extends TypertRemoteService {
   static inject = ['fs', 'sandboxPolicy', 'typert']
 
@@ -189,9 +182,9 @@ export class WorkspaceFiles extends TypertRemoteService {
   }
 
   /**
-   * Read one page of lines from a UTF-8 text file inside the Agent's workspace.
+   * Read one page of lines from a UTF-8 file readable by the filesystem backend.
    * @param agent - target Agent resolved from the Session identity on the wire.
-   * @param path - workspace path, absolute or relative to the workspace root.
+   * @param path - absolute path or path relative to the workspace root; files outside it are allowed.
    * @param range - the line window; omitted fields take the page defaults.
    * @param signal - caller cancellation.
    * @returns the page, the file's version at the stat before it, and whether it reaches the last line.
@@ -208,10 +201,10 @@ export class WorkspaceFiles extends TypertRemoteService {
   }
 
   /**
-   * Read one byte window of a regular file inside the Agent's workspace: raw
+   * Read one byte window of a regular file readable by the filesystem backend: raw
    * bytes, no text decoding and no binary rejection.
    * @param agent - target Agent resolved from the Session identity on the wire.
-   * @param path - workspace path, absolute or relative to the workspace root.
+   * @param path - absolute path or path relative to the workspace root; files outside it are allowed.
    * @param range - the byte window; omitted fields take the window defaults.
    * @param signal - caller cancellation.
    * @returns the window in base64, the file's version and size at the stat before it, and whether it reaches the last byte.
@@ -227,7 +220,7 @@ export class WorkspaceFiles extends TypertRemoteService {
 
   /**
    * Read a complete regular file as bytes, subject to the configured full-file cap.
-   * @param agent - target Agent whose workspace confines the read.
+   * @param agent - target Agent whose workspace resolves relative paths.
    * @param path - absolute or workspace-relative file path.
    * @param signal - caller cancellation.
    * @returns one complete base64 window with offset zero and eof true; oversized files fail with too-large.
@@ -247,8 +240,8 @@ export class WorkspaceFiles extends TypertRemoteService {
   }
 
   /**
-   * Read a complete file relative to another file's directory within the same workspace.
-   * @param agent - Agent whose workspace confines both files.
+   * Read a complete file relative to another file's directory, including outside the workspace.
+   * @param agent - Agent whose workspace resolves the base file's relative path.
    * @param path - base file, absolute or workspace-relative.
    * @param relativePath - relative filesystem path, not a URL or absolute path.
    * @param signal - caller cancellation.
@@ -261,16 +254,15 @@ export class WorkspaceFiles extends TypertRemoteService {
       throw new RemoteError('gateway/bad-request', 'relativePath must be a relative filesystem path', {})
     }
     const { target } = await this.locateFile(agent, path, signal)
-    const root = await this.ctx.fs.resolve(this.workspaceRootOf(agent), { signal })
-    const fromRoot = workspacePathOf(this.ctx.fs.fileUrl(root), this.ctx.fs.fileUrl(target))
-    const directory = fromRoot.slice(0, fromRoot.lastIndexOf('/') + 1)
-    return this.readAll(agent, directory + relative, signal)
+    const absolute = this.ctx.fs.processPath(target)
+    const paths = absolute.startsWith('/') ? posix : win32
+    return this.readAll(agent, paths.resolve(paths.dirname(absolute), relative), signal)
   }
 
   /**
    * Report one regular file's identity, version, and size without its content.
    * @param agent - target Agent resolved from the Session identity on the wire.
-   * @param path - workspace path, absolute or relative to the workspace root.
+   * @param path - absolute path or path relative to the workspace root; files outside it are allowed.
    * @param signal - caller cancellation.
    * @returns the file's absolute path, current version, and byte size.
    */
@@ -359,12 +351,8 @@ export class WorkspaceFiles extends TypertRemoteService {
   }
 
   /**
-   * Gates 1 and 2 up to the point where the path's own type is known. The
-   * path is inspected before containment is decided, so a caller learns whether
-   * an outside path exists and what kind it is before `outside-workspace`
-   * refuses it; the caller is the Session's own owner, who can read the Host
-   * through the Agent anyway, and the accepted cost buys one `lstat` gate for
-   * every method instead of two resolution orders.
+   * Inspect the requested path itself before resolution follows its final
+   * component. Directory containment is checked separately by `list`.
    */
   private async inspect(
     agent: Agent,
@@ -397,11 +385,11 @@ export class WorkspaceFiles extends TypertRemoteService {
    * changed kind in between.
    */
   private async locateFile(agent: Agent, path: string, signal: AbortSignal): Promise<{ target: FsTarget; info: FsInfo }> {
-    const { root, workspaceRoot, entry } = await this.inspect(agent, path, signal)
+    const { workspaceRoot, entry } = await this.inspect(agent, path, signal)
     if (entry.type !== 'file') {
       throw new RemoteError('workspace-file/not-regular-file', `"${path}" is a ${entry.type}`, { path, kind: entry.type })
     }
-    const target = await this.confine(root, workspaceRoot, path, signal)
+    const target = await this.ctx.fs.resolve(path, { cwd: workspaceRoot, signal })
     const info = await this.ctx.fs.stat(target, signal)
     if (info === undefined) {
       throw new RemoteError('workspace-file/not-found', `no entry at "${path}"`, { path })

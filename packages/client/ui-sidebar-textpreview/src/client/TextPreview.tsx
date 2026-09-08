@@ -127,6 +127,7 @@ export function TextPreview({
     if (mode === 'bytes-complete') {
       return current?.complete === undefined ? undefined : { kind: 'bytes', data: current.complete.data }
     }
+    if (loaded.length === 0) return undefined
     return { kind: 'text', pages: loaded, text: loaded.filter(page => page.lines > 0).map(page => page.text).join('\n'), eof: current?.eof ?? false }
   }, [mode, loaded, current?.complete, current?.eof])
 
@@ -238,6 +239,9 @@ export function TextPreview({
             && body.scrollTop + body.clientHeight >= body.scrollHeight - 1) loadNext()
         }}
       >
+        {!hasContent && current?.failure === undefined && (
+          <LoadingIndicator className={css.statusLine} label={t('loading')} />
+        )}
         {content !== undefined && renderSlot('sidebar.right.tab.document', {
           resourceAddress: tab.contentId, content, wrap: state.wrap,
         }, {
@@ -257,7 +261,7 @@ export function TextPreview({
             </button>
           </p>
         )}
-        {mode === 'text-pages' && !current?.eof && current?.failure === undefined && (
+        {mode === 'text-pages' && loaded.length > 0 && !current?.eof && current?.failure === undefined && (
           <button
             type="button"
             className={css.more}
@@ -267,9 +271,6 @@ export function TextPreview({
           >
             {current?.loading ? <LoadingIndicator label={t('loading')} /> : t('loadMore')}
           </button>
-        )}
-        {mode === 'bytes-complete' && current?.complete === undefined && current?.failure === undefined && (
-          <LoadingIndicator className={css.statusLine} label={t('loading')} />
         )}
       </div>
     </div>
