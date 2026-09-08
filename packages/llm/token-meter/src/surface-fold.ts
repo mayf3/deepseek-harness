@@ -18,18 +18,8 @@
 
 import { deriveEventMessage } from '@deepseek-ai/dsh-session'
 import type { SessionSeq, SurfaceEvent } from '@deepseek-ai/dsh-session'
-import { visitImageBlocks } from '@deepseek-ai/dsh-llm'
-import type { ContentBlock, ImageBlockPath, Message } from '@deepseek-ai/dsh-llm'
-import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
+import type { ContentBlock, ImageBlock, Message } from '@deepseek-ai/dsh-llm'
 import { estimateMessage, estimateStructuralBlock } from './estimate.ts'
-
-/** One durable image occurrence of a surface node, positioned for the offload watermark. */
-export interface MeterImageOccurrence {
-  /** Durable normalized attachment reference of the occurrence. */
-  readonly attachment: ImageAttachmentRef
-  /** Block path of the occurrence inside the node's message content. */
-  readonly path: ImageBlockPath
-}
 
 type FileAttachmentRef = Extract<ContentBlock, { type: 'file' }>['attachment']
 
@@ -43,8 +33,8 @@ export interface MeterSurfaceNode {
   readonly imageStructuralTokens: number
   /** Structural JSON price replaced when request assembly projects files to text. */
   readonly fileStructuralTokens: number
-  /** Durable image occurrences in message order; empty for image-free nodes. */
-  readonly images: readonly MeterImageOccurrence[]
+  /** Durable image blocks in message order, `offloaded` marks included; empty for image-free nodes. */
+  readonly images: readonly ImageBlock[]
   /** Durable file occurrences in message order; empty for file-free nodes. */
   readonly files: readonly FileAttachmentRef[]
 }
@@ -61,28 +51,28 @@ export interface SurfaceTokenPlan {
   readonly target: 'append' | { readonly startIdx: number; readonly endIdx: number }
 }
 
-/** Collect image occurrences with their block paths and total their structural prices. */
-function collectImages(blocks: readonly ContentBlock[], images: MeterImageOccurrence[]): number {
-  let structuralTokens = 0
-  visitImageBlocks(blocks, (block, path) => {
-    images.push({ attachment: block.attachment, path })
-    structuralTokens += estimateStructuralBlock(block)
-  })
-  return structuralTokens
-}
-
-/** Collect file occurrences recursively and total their structural prices. */
-function collectFiles(blocks: readonly ContentBlock[], files: FileAttachmentRef[]): number {
+/** Collect projected attachment occurrences and their structural prices. */
+function collectProjectedAttachments(
+  blocks: readonly ContentBlock[],
+  images: ImageBlock[],
+  files: FileAttachmentRef[],
+): { readonly imageTokens: number; readonly fileTokens: number } {
+  let imageTokens = 0
   let fileTokens = 0
   for (const block of blocks) {
-    if (block.type === 'file') {
+    if (block.type === 'image') {
+      images.push(block)
+      imageTokens += estimateStructuralBlock(block)
+    } else if (block.type === 'file') {
       files.push(block.attachment)
       fileTokens += estimateStructuralBlock(block)
     } else if (block.type === 'tool-result') {
-      fileTokens += collectFiles(block.content, files)
+      const nested = collectProjectedAttachments(block.content, images, files)
+      imageTokens += nested.imageTokens
+      fileTokens += nested.fileTokens
     }
   }
-  return fileTokens
+  return { imageTokens, fileTokens }
 }
 
 /** Build one priced node from a surface event's derived message. */
@@ -98,15 +88,14 @@ function analyzeNode(seq: SessionSeq, message: Message | null): MeterSurfaceNode
     }
   }
   const heuristicTokens = estimateMessage(message)
-  const images: MeterImageOccurrence[] = []
-  const imageStructuralTokens = collectImages(message.content, images)
+  const images: ImageBlock[] = []
   const files: FileAttachmentRef[] = []
-  const fileStructuralTokens = collectFiles(message.content, files)
+  const structural = collectProjectedAttachments(message.content, images, files)
   return {
     seq,
     heuristicTokens,
-    imageStructuralTokens,
-    fileStructuralTokens,
+    imageStructuralTokens: structural.imageTokens,
+    fileStructuralTokens: structural.fileTokens,
     images,
     files,
   }

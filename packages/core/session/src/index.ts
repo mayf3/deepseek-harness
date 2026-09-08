@@ -12,11 +12,11 @@ import { brandString } from '@deepseek-ai/dsh-brand'
 import { assertNever, deepFreeze, snapshotJsonValue } from '@deepseek-ai/dsh-util-values'
 import { scopeOf, scopeTarget } from '@deepseek-ai/dsh-scope'
 import type { Scoped } from '@deepseek-ai/dsh-scope'
-import type { ContentBlock, Message } from '@deepseek-ai/dsh-llm'
+import type { Message } from '@deepseek-ai/dsh-llm'
 import { SESSION_FORMAT_VERSION, SessionLogOffset, SessionSeq } from './types.ts'
 import type { TypertLookup } from '@deepseek-ai/dsh-typert-protocol'
-import type { CreateSessionOptions, EpochHeader, ImageOccurrencePosition, PrepareSessionOptions, RequestContext, SessionEvent, SessionEventMap, SessionEventType, SessionHeader, SessionId, SessionSeedEventState, SurfaceIntent, SurfaceEventType } from './types.ts'
-import { compareImagePositions, deriveEventMessage, markImageOffload, SurfaceManager } from './surface.ts'
+import type { CreateSessionOptions, EpochHeader, PrepareSessionOptions, RequestContext, SessionEvent, SessionEventMap, SessionEventType, SessionHeader, SessionId, SessionSeedEventState, SurfaceIntent, SurfaceEventType } from './types.ts'
+import { deriveEventMessage, SurfaceManager } from './surface.ts'
 import type { SessionSurface } from './surface.ts'
 import { foldRequestHeader } from './request-header.ts'
 
@@ -26,7 +26,7 @@ export type { SessionPreparationOptions } from './preparation.ts'
 export type { AssistantMessage, ToolResultMessage, UserMessage } from '@deepseek-ai/dsh-llm'
 export { interruptedTurnClosers, TOOL_NOT_STARTED, TOOL_OUTCOME_UNKNOWN } from './repair.ts'
 export type { SessionSurface, SurfaceFoldReplacement, SurfaceFoldResult } from './surface.ts'
-export { compareImagePositions, deriveEventMessage, foldSurface, isAppendSurfaceEvent, isReplacementSurfaceEvent, isSurfaceEvent, isSurfaceEligibleType } from './surface.ts'
+export { deriveEventMessage, foldSurface, isAppendSurfaceEvent, isReplacementSurfaceEvent, isSurfaceEvent, isSurfaceEligibleType } from './surface.ts'
 export { canonicalHeader, foldRequestHeader, headerEquals } from './request-header.ts'
 export { KNOWN_SESSION_EVENT_TYPES } from './known-event-types.ts'
 
@@ -335,7 +335,6 @@ function assertMessageEventShape(event: Record<string, unknown>, subject: string
   if (!Array.isArray(messageRecord['content'])) {
     throw new Error(`${subject} message has invalid content`)
   }
-  assertNoLoggedImageOffloadMarker(type, data, subject)
   const sourceRecord = source as Record<string, unknown>
   if (type === 'assistant/message') {
     if (sourceRecord['kind'] !== 'model' || !hasProviderModel(sourceRecord)) {
@@ -358,58 +357,6 @@ function assertMessageEventShape(event: Record<string, unknown>, subject: string
   }
   if ((block as Record<string, unknown>)['toolCallId'] !== sourceRecord['callId']) {
     throw new Error(`${subject} message has mismatched tool call ids`)
-  }
-}
-
-/** Reject the request-only image marker from durable message content at every nesting depth. */
-function assertNoLoggedImageOffloadMarker(type: string, data: unknown, subject: string): void {
-  if (type !== 'user/message' && type !== 'assistant/message' && type !== 'tool/result') return
-  const message = (type === 'user/message' ? data : (data as { message: unknown }).message) as { content?: unknown }
-  const visit = (blocks: unknown): void => {
-    if (!Array.isArray(blocks)) return
-    for (const block of blocks as ({ type?: unknown; content?: unknown } | null)[]) {
-      if (block?.type === 'image' && 'offloaded' in block) {
-        throw new Error(`${subject} stores the request-only image offload marker`)
-      }
-      if (block?.type === 'tool-result') visit(block.content)
-    }
-  }
-  visit(message.content)
-}
-
-/** Return whether a block path identifies an image occurrence. */
-function pathIdentifiesImage(content: readonly ContentBlock[], [index, ...rest]: readonly number[]): boolean {
-  const block = index === undefined ? undefined : content[index]
-  if (block === undefined) return false
-  if (rest.length === 0) return block.type === 'image'
-  return block.type === 'tool-result' && pathIdentifiesImage(block.content, rest)
-}
-
-/**
- * Validate one `image/offload` payload at the append or seed boundary: the
- * position must name an image occurrence on the current surface and lie
- * strictly after the watermark in force.
- */
-function assertImageOffloadAdvance(
-  data: unknown,
-  log: readonly SessionEvent[],
-  surfaceNodes: readonly SessionSeq[],
-  prior: ImageOccurrencePosition | undefined,
-  location: string,
-): void {
-  const watermark = (data as { watermark?: { seq?: unknown; path?: unknown } } | null)?.watermark
-  if (typeof watermark?.seq !== 'number' || !Array.isArray(watermark.path)
-    || !watermark.path.every(index => Number.isInteger(index) && index >= 0)) {
-    throw new Error(`${location} names an invalid image offload watermark`)
-  }
-  const position = { seq: watermark.seq as SessionSeq, path: watermark.path as number[] }
-  if (prior !== undefined && compareImagePositions(position, prior) <= 0) {
-    throw new Error(`${location} does not advance the image offload watermark`)
-  }
-  // oxlint-disable-next-line typescript/no-non-null-assertion -- surface nodes index the accepted log
-  const message = surfaceNodes.includes(position.seq) ? deriveEventMessage(log[position.seq]!) : null
-  if (message === null || !pathIdentifiesImage(message.content, position.path)) {
-    throw new Error(`${location} watermark does not identify an image on the current surface`)
   }
 }
 
@@ -474,8 +421,6 @@ const attachments = new WeakMap<Session, SessionEntry>()
  */
 export class Session {
   private log: SessionEvent[] = []
-  /** Watermark in force after the last accepted `image/offload` event. */
-  private imageOffloadFold: ImageOccurrencePosition | undefined
   /** Single incremental owner of surface acceptance and projection state. */
   private readonly surfaceManager = new SurfaceManager(this.log)
 
@@ -598,9 +543,6 @@ export class Session {
           throw new Error(`seed event at index ${index} is not losslessly JSON-serializable`)
         }
         assertSessionEventEnvelope(snapshot, index)
-        if (snapshot.type === 'image/offload') {
-          assertImageOffloadAdvance(snapshot.data, this.log, this.surface.nodes, this.imageOffloadFold, `seed event at index ${index}`)
-        }
         if (snapshot.seq !== index) {
           throw new Error(`seed event at index ${index} has seq ${snapshot.seq} (expected ${index}); seed must be contiguous from 0`)
         }
@@ -613,8 +555,6 @@ export class Session {
           throw new Error(`invalid seed event at index ${index}: ${error instanceof Error ? error.message : 'invalid surface metadata'}`)
         }
         this.log.push(mode === 'snapshot' ? deepFreeze(snapshot) : snapshot)
-        // oxlint-disable-next-line typescript/no-non-null-assertion -- the event was just appended
-        this.foldImageOffload(this.log.at(-1)!)
       }
     }
     this.firstLiveSeq = SessionLogOffset(this.log.length)
@@ -749,10 +689,6 @@ export class Session {
     if (dataSnapshot === undefined) {
       throw new Error(`session event "${type}" carries non-JSON-serializable data`)
     }
-    assertNoLoggedImageOffloadMarker(type, dataSnapshot, `session event "${type}"`)
-    if (type === 'image/offload') {
-      assertImageOffloadAdvance(dataSnapshot, this.log, this.surface.nodes, this.imageOffloadFold, `session event "${type}"`)
-    }
     const surfaceMetadataSnapshot = snapshotJsonValue(surfaceMetadata)
     if (surfaceMetadataSnapshot === undefined) {
       throw new Error(`session event "${type}" carries non-JSON-serializable surface metadata`)
@@ -778,7 +714,6 @@ export class Session {
         callbacks = collectSessionCallbacks(entry.emitCtx, [entry.carrier, 'session/event', ...callbackArgs])
       }
       this.log.push(event as SessionEvent)
-      this.foldImageOffload(event as SessionEvent)
       this.eventsSnapshot = undefined
       if (callbacks !== undefined && entry !== undefined) {
         invokeContainedSessionObservers(entry.emitCtx, 'session/event', entry.id, callbackArgs, callbacks)
@@ -836,21 +771,12 @@ export class Session {
     return this.contextFold
   }
 
-  /** Record an accepted `image/offload` event as the watermark in force. */
-  private foldImageOffload(event: SessionEvent): void {
-    if (event.type !== 'image/offload') return
-    const { watermark } = event.data
-    this.imageOffloadFold = deepFreeze({ seq: watermark.seq, path: [...watermark.path] })
-  }
-
   /** The derived-message cache: frozen projections, extended per unseen node. */
   private derived: Message[] = []
   /** Surface position (nodes projected) the cache has reached. */
   private derivedNodes = 0
   /** {@link SurfaceManager.replaceGeneration} the cache was built under. */
   private derivedGeneration = 0
-  /** Watermark the cache was built under; an advance rebuilds every node. */
-  private derivedWatermark: ImageOccurrencePosition | undefined
 
   /**
    * Derive the LLM message history by walking the ordered sequences of
@@ -863,9 +789,7 @@ export class Session {
    *
    * CACHED: each surface node is projected exactly once, when first seen — a
    * call costs O(new nodes), and a surface rewrite (a `replace`;
-   * {@link SessionSurface.replaceGeneration}) or an `image/offload` advance
-   * rebuilds, and image occurrences at or before the watermark derive with
-   * `offloaded: true` ({@link markImageOffload}). The returned array is
+   * {@link SessionSurface.replaceGeneration}) rebuilds. The returned array is
    * a fresh snapshot per call (later appends never grow an array a caller
    * already holds); the `Message` objects in it are SHARED and **deep-frozen**.
    * Their content reuses the already frozen durable event data, so the cache
@@ -876,12 +800,10 @@ export class Session {
     const surface = this.surface
     const nodes = surface.nodes
     const generation = surface.replaceGeneration
-    const watermark = this.imageOffloadFold
-    if (generation !== this.derivedGeneration || watermark !== this.derivedWatermark) {
+    if (generation !== this.derivedGeneration) {
       this.derived = []
       this.derivedNodes = 0
       this.derivedGeneration = generation
-      this.derivedWatermark = watermark
     }
     for (const seq of nodes.slice(this.derivedNodes)) {
       // Surface sequences are built from this.log — seq is always a valid
@@ -898,18 +820,13 @@ export class Session {
   }
 
   /**
-   * Derive one event under the session's current image offload watermark.
-   * Direct model consumers use this instance method so their per-event
-   * reconstruction matches {@link deriveMessages}.
+   * Instance face of the pure per-node `deriveEventMessage` export from
+   * `surface.ts`.
    * @param event - the event to project.
    * @returns the derived message, or null when the event produces none.
    */
   deriveEventMessage(event: SessionEvent): Message | null {
-    const message = deriveEventMessage(event)
-    if (message === null) return null
-    // A marked copy is frozen like the durable original it derives from.
-    const marked = markImageOffload(message, event.seq, this.imageOffloadFold)
-    return marked === message ? message : deepFreeze(marked)
+    return deriveEventMessage(event)
   }
 }
 

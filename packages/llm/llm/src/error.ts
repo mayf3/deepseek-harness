@@ -163,10 +163,10 @@ export function isHarnessError(value: unknown): value is HarnessError {
 }
 
 /**
- * Canonical code for a request an image-capable route cannot send until the
- * session's durable `image/offload` watermark advances. The failure's
- * `offloadImages` names how many more of the oldest retained occurrences must
- * be offloaded; `dsh-llm-retry` appends the advance and retries the step, so
- * the model never receives an unlogged projection.
+ * Canonical code for a request an image-capable route cannot send until more
+ * of its images are offloaded. The failure's `offloadImages` names how many
+ * more of the oldest retained occurrences must be offloaded; `dsh-llm-retry`
+ * replaces the surface nodes carrying them with copies marked `offloaded` and
+ * retries the step, so the model never receives an unlogged projection.
  */
 export const IMAGE_OFFLOAD_REQUIRED_CODE = 'IMAGE_OFFLOAD_REQUIRED'

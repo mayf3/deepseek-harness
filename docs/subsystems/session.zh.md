@@ -118,17 +118,6 @@ interface SessionEventMap {
    */
   'request/context': RequestContext
   /**
-   * Advances the durable image offload watermark before a request in step
-   * `step` of turn `turn` is dispatched. Every image occurrence positioned at
-   * or before `watermark` derives with `offloaded: true`, so each route sends
-   * its placeholder text instead of the image; occurrences after it stay
-   * retained. The watermark only advances: each event names a position
-   * strictly after the previous one, and no later budget, route change, or
-   * compaction moves it back. It is a log-only event that changes the derived
-   * surface, so a build that does not know the type refuses the log.
-   */
-  'image/offload': { turn: number; step: number; watermark: ImageOccurrencePosition }
-  /**
    * Marks the end of a constructor seed. Events before it have smaller seq
    * values and came from the seed (resume, fork, or replay); this lifecycle
    * produced none of them. This log-only event is the durable projection of
@@ -195,26 +184,6 @@ interface RequestContext {
   model: string
   /** Maximum combined request and response context in tokens, when advertised. */
   contextWindow?: number
-}
-```
-
-### 图片 offload 事件：`image/offload`
-
-adapter 以 `IMAGE_OFFLOAD_REQUIRED` 让一次尝试失败时，`dsh-llm-retry` 在 `agent/request-error` waterfall 上、step 重试前追加 `image/offload`。其 `watermark` 指向最后一个被省略的出现位置；`deriveMessages()` 与 Session 实例的 `deriveEventMessage()` 把位于它及之前的每个出现位置标为 `offloaded: true`，每条路由把这些标记渲染为占位文本。`Session.append` 与 seed 要求水位指向当前表层的图片，拒绝畸形和没有严格前进的位置，并拒绝持久消息中的请求专用 `offloaded` 标记。它和 `request/header` 一样不是 `SurfaceEventType`；与之不同的是它改变派生表层，因此读取时必须识别（[决定](../../.agents/notes/implemented/architecture/2026-09-02-image-offload-watermark.zh.md)）。
-
-```ts type-equiv
-/**
- * Durable position of one image occurrence on the model-visible surface: the
- * seq of the event carrying it and the block path inside that event's
- * content. Every nested tool-result contributes another path index. Positions
- * order by seq, then by path, so a newer event always lies after an older one
- * regardless of surface replacements.
- */
-interface ImageOccurrencePosition {
-  /** Seq of the surface message event carrying the occurrence. */
-  seq: SessionSeq
-  /** Block index path inside that event's message content. */
-  path: number[]
 }
 ```
 
@@ -590,9 +559,7 @@ declare class Session {
    *
    * CACHED: each surface node is projected exactly once, when first seen — a
    * call costs O(new nodes), and a surface rewrite (a `replace`;
-   * {@link SessionSurface.replaceGeneration}) or an `image/offload` advance
-   * rebuilds, and image occurrences at or before the watermark derive with
-   * `offloaded: true` ({@link markImageOffload}). The returned array is
+   * {@link SessionSurface.replaceGeneration}) rebuilds. The returned array is
    * a fresh snapshot per call (later appends never grow an array a caller
    * already holds); the `Message` objects in it are SHARED and **deep-frozen**.
    * Their content reuses the already frozen durable event data, so the cache
@@ -601,9 +568,8 @@ declare class Session {
    */
   deriveMessages(): Message[];
   /**
-   * Derive one event under the session's current image offload watermark.
-   * Direct model consumers use this instance method so their per-event
-   * reconstruction matches {@link deriveMessages}.
+   * Instance face of the pure per-node `deriveEventMessage` export from
+   * `surface.ts`.
    * @param event - the event to project.
    * @returns the derived message, or null when the event produces none.
    */
@@ -613,7 +579,7 @@ declare class Session {
 
 ## 派生历史：`deriveMessages()` 与 `deriveEventMessage()`
 
-`Session.deriveMessages()` 将事件日志投影为模型看到的 `Message[]`。它是缓存的（每个 surface 节点在首次出现时投影一次；surface 重写或图片水位推进触发重建）且冻结的（每次调用返回一个新数组，引用共享的深冻结消息，因此通过投影修改已记录的历史在类型上不可表达）。纯函数导出 `deriveEventMessage(event)` 只应用消息类型规则。同名 Session 实例方法还会应用当前图片水位，是 compaction 等直接模型消费方使用的逐事件接口。投影规则：
+`Session.deriveMessages()` 将事件日志投影为模型看到的 `Message[]`。它是缓存的（每个 surface 节点在首次出现时投影一次；surface 重写触发重建）且冻结的（每次调用返回一个新数组，引用共享的深冻结消息，因此通过投影修改已记录的历史在类型上不可表达）。`deriveEventMessage(event)` 是折叠所应用的逐节点纯函数，公开暴露以便外部重建器和开发不变式检查能以完全相同的规则投影日志前缀，不会与缓存产生分歧。投影规则：
 
 - `user/message` → 一条携带确切 `content` 的 user 消息；可选 envelope 仅作为日志中的展示元数据保留。
 - `assistant/message` → 一条 assistant 消息，包含生成它的提供方和模型，以及可选的适配器私有回放状态。其嵌入式紧凑 stream 是回放、usage 与 UI 证据，而不是第二条 message。**内容为空的** `assistant/message` 也会跳过：因 max-tokens 而截断且无内容的步骤仍会记录一条 `assistant/message` 来保存 stream、usage、提供方和模型，但无内容的 assistant 轮次不得进入提供方 transcript（文本记录）。

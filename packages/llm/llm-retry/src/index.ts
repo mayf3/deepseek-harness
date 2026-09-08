@@ -14,7 +14,7 @@ import { IMAGE_OFFLOAD_REQUIRED_CODE } from '@deepseek-ai/dsh-llm'
 import type { LlmFailure, ResolvedRetryPolicy } from '@deepseek-ai/dsh-llm'
 import type {} from '@deepseek-ai/dsh-session-projection'
 import { RetryId } from './brand.ts'
-import { advanceImageOffload } from './image-offload.ts'
+import { offloadOldestImages } from './image-offload.ts'
 import type { LlmRetryEventData } from './types.ts'
 
 export type { LlmRetryEventData, LlmRetryStartedEventData } from './types.ts'
@@ -199,7 +199,7 @@ export function apply(ctx: Context, config: Config = {}, internals: RetryInterna
   ): Promise<RequestErrorAction> {
     // A durable surface repair, not a provider retry: it spends no retry budget and logs no retry event.
     if (failure.code === IMAGE_OFFLOAD_REQUIRED_CODE && failure.offloadImages !== undefined
-      && advanceImageOffload(agent.session, turn, step, failure.offloadImages)) {
+      && offloadOldestImages(agent.session, failure.offloadImages)) {
       return { kind: 'retry' }
     }
     if (policy === undefined) return next()

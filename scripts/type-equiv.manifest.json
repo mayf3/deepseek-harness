@@ -476,11 +476,6 @@
     },
     {
       "doc": "docs/subsystems/session.md",
-      "symbol": "ImageOccurrencePosition",
-      "source": "packages/core/session/src/types.ts"
-    },
-    {
-      "doc": "docs/subsystems/session.md",
       "symbol": "SessionSeq",
       "source": "packages/core/session/src/types.ts"
     },

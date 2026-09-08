@@ -908,46 +908,6 @@ describe('compaction region transaction', () => {
     expect(summarizedText(input)).toContain('fixture user 1')
   })
 
-  it('applies the durable image watermark to the replayed summarization prefix', async () => {
-    const compact = service()
-    const session = conversation(3)
-    const replaced = session.surface.nodes[0]!
-    const replacement = session.append('user/message', createUserMessage({
-      content: [
-        { type: 'text', text: 'large image context '.repeat(100) },
-        {
-          type: 'image',
-          attachment: {
-            attachmentId: AttachmentId(`sha256:${'d'.repeat(64)}`),
-            mediaType: 'image/png',
-            bytes: 1,
-            width: 1,
-            height: 1,
-          },
-        },
-      ],
-      source: { kind: 'user' },
-    }), {
-      surfaceOp: { op: 'replace', start: replaced, end: replaced },
-      sourceEventSeqs: [replaced],
-    })
-    session.append('image/offload', {
-      turn: 4,
-      step: 1,
-      watermark: { seq: replacement.seq, path: [1] },
-    })
-
-    await compact.compactRegion(replacement.seq, replacement.seq, agent(session, MODEL), SIGNAL)
-
-    expect(compact.calls[0]!.input.messages[0]!.content[1]).toMatchObject({
-      type: 'image',
-      offloaded: true,
-    })
-    const durable = session.eventAt(replacement.seq)!
-    expect(durable.type === 'user/message' ? durable.data.content[1] : undefined)
-      .not.toHaveProperty('offloaded')
-  })
-
   it.each([
     ['start missing', 9_001, undefined, /start seq 9001 not found/],
     ['end missing', undefined, 9_002, /end seq 9002 not found/],

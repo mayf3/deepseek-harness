@@ -206,36 +206,17 @@ function base64Length(bytes: number): number {
 }
 
 /**
- * Block index path of one image occurrence inside message content. Each
- * nested tool-result contributes another index. Paths compare
- * lexicographically in message order.
- */
-export type ImageBlockPath = readonly number[]
-
-function visitImageBlocksAt(
-  content: readonly ContentBlock[],
-  prefix: ImageBlockPath,
-  visit: (block: ImageBlock, path: ImageBlockPath) => void,
-): void {
-  for (const [index, block] of content.entries()) {
-    const path = [...prefix, index]
-    if (block.type === 'image') visit(block, path)
-    else if (block.type === 'tool-result') visitImageBlocksAt(block.content, path, visit)
-  }
-}
-
-/**
  * Visit every image occurrence of typed content in message order, including
- * nested tool-result content, with the block path that identifies it. Budget
- * planning, adapter validation, and pricing share this request-content walk.
+ * nested tool-result content. Budget accounting, adapter validation, and
+ * pricing share this request-content walk.
  * @param content - typed model content blocks.
- * @param visit - called once per occurrence with the block and its path.
+ * @param visit - called once per occurrence.
  */
-export function visitImageBlocks(
-  content: readonly ContentBlock[],
-  visit: (block: ImageBlock, path: ImageBlockPath) => void,
-): void {
-  visitImageBlocksAt(content, [], visit)
+export function visitImageBlocks(content: readonly ContentBlock[], visit: (block: ImageBlock) => void): void {
+  for (const block of content) {
+    if (block.type === 'image') visit(block)
+    else if (block.type === 'tool-result') visitImageBlocks(block.content, visit)
+  }
 }
 
 /** Replace every offloaded occurrence, including nested tool results, with its placeholder. */

@@ -15,7 +15,7 @@ import {
   requestImageHandleText,
   visitImageBlocks,
 } from '../src/index.ts'
-import type { ContentBlock, ImageBlockPath } from '../src/index.ts'
+import type { ContentBlock } from '../src/index.ts'
 
 const source = { kind: 'plugin' as const, plugin: 'test' }
 
@@ -36,8 +36,8 @@ function image(bytes: number, offloaded?: true): Extract<ContentBlock, { type: '
 }
 
 describe('visitImageBlocks', () => {
-  it('visits image occurrences at every tool-result depth with their block paths', () => {
-    const seen: ImageBlockPath[] = []
+  it('visits image occurrences at every tool-result depth in message order', () => {
+    const seen: number[] = []
     visitImageBlocks([
       { type: 'text', text: 'before' },
       image(1),
@@ -55,8 +55,8 @@ describe('visitImageBlocks', () => {
         ],
       },
       image(3),
-    ], (block, path) => seen.push([...path, block.attachment.bytes]))
-    expect(seen).toEqual([[1, 1], [2, 1, 2], [2, 2, 0, 0, 4], [3, 3]])
+    ], block => seen.push(block.attachment.bytes))
+    expect(seen).toEqual([1, 2, 4, 3])
   })
 })
 

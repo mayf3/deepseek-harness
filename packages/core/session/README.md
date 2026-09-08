@@ -83,15 +83,13 @@ The package is built on event sourcing: a `Session` is an append-only log of typ
 
 `request/header` stores a full canonical snapshot of the non-history request envelope with reason `initial`, `resume`, `change`, or `series`. An explicit message-series start or a surface replacement writes a `series` snapshot when the envelope is unchanged; a simultaneous change uses `startsSeries: true`. Same-series steps, retries, and ordinary later turns inherit the latest snapshot. `adapterDefaults` distinguishes values resolved by the adapter from explicit settings, and `foldRequestHeader()` selects the latest snapshot. This self-contained record supports partial-window rendering and exact reconstruction at the cost of growth per message series; the [reconstructable-requests Agent Note](../../../.agents/notes/implemented/architecture/2026-07-05-reconstructable-requests.md) owns the detail.
 
-`image/offload` records the durable image offload watermark `dsh-llm-retry` advances when an adapter reports that a route's request-image budget is exceeded: an `ImageOccurrencePosition` naming the last offloaded occurrence by event seq and its complete nested block path. The derivation marks every occurrence at or before it `offloaded: true`, so each route sends its placeholder text instead of the image. The position only advances; `Session.append` and seeding require it to identify a current surface image and reject request-only `offloaded` markers in durable messages. Because the event changes the derived surface it is required-on-read: a build without the type refuses the log rather than replaying images the model never saw ([decision](../../../.agents/notes/implemented/architecture/2026-09-02-image-offload-watermark.md)).
-
 ### Source map
 
 | File | Role |
 |---|---|
 | [`src/index.ts`](src/index.ts) | Plugin entry: `SessionStore` service, store lifecycle, `fork`, `flush` |
 | [`src/types.ts`](src/types.ts) | `SessionEventMap`, `SessionEvent`, `UserMessage`, `SessionHeader`, `TurnEndReasonMap` |
-| [`src/surface.ts`](src/surface.ts) | Ordered surface projection, replacement validation, `deriveEventMessage`, `image/offload` marking |
+| [`src/surface.ts`](src/surface.ts) | Ordered surface projection, replacement validation, `deriveEventMessage` |
 | [`src/request-header.ts`](src/request-header.ts) | `request/header` folding and reconstruction |
 | [`dsh-util-values`](../../util/values/README.md) | Shared lossless JSON validation and detached snapshots |
 | [`src/repair.ts`](src/repair.ts) | Cold repair of crash-orphaned logs |
@@ -107,7 +105,7 @@ Every append uses the shared iterative `snapshotJsonValue()` pass, which reads, 
 
 ### The request header
 
-The loop logs a full canonical `request/header` snapshot (call config, adapter defaults, rendered system prompt, assembled tool schemas) at each loop-instance boundary and on change; `foldRequestHeader(events)` reconstructs it by selecting the latest snapshot, making every conversation request a pure function of the log. Route metadata (`request/context`) is separate logged state appended only when the provider, model, or capacity differs. The image offload watermark (`image/offload`) is durable surface state: every image occurrence positioned at or before it derives with `offloaded: true`, each event must advance strictly past the previous one.
+The loop logs a full canonical `request/header` snapshot (call config, adapter defaults, rendered system prompt, assembled tool schemas) at each loop-instance boundary and on change; `foldRequestHeader(events)` reconstructs it by selecting the latest snapshot, making every conversation request a pure function of the log. Route metadata (`request/context`) is separate logged state appended only when the provider, model, or capacity differs.
 
 </details>
 

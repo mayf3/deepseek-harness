@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-`@deepseek-ai/dsh-llm-retry` 是失败模型请求的重试执行器：它在 agent loop 的打开步骤 `agent/request-error` 扩展点上应用各提供方解析后的重试策略，因此每次重试都会在同一个打开的轮次内重跑同一个步骤（基于同一份持久历史）。它不包装流式调用本身——每次适配器调用仍是一次提供方尝试，直接 `ctx.llm.stream()` 消费方仍是单次尝试。重试调度是持久的：插件在等待之前就把 `llm/retry` 事件追加进会话日志，退避期间取消会让日志保持一致。normal mode 以指数退避重试一组有界的失败 code，最多 `maxRetries` 次；always mode 先询问下游恢复，然后无尝试上限地重试每个失败。它还负责一种持久修复：adapter 以 `IMAGE_OFFLOAD_REQUIRED` 失败时，按失败给出的数量推进会话的 `image/offload` 水位并重试该步骤，不占任何提供方重试预算。
+`@deepseek-ai/dsh-llm-retry` 是失败模型请求的重试执行器：它在 agent loop 的打开步骤 `agent/request-error` 扩展点上应用各提供方解析后的重试策略，因此每次重试都会在同一个打开的轮次内重跑同一个步骤（基于同一份持久历史）。它不包装流式调用本身——每次适配器调用仍是一次提供方尝试，直接 `ctx.llm.stream()` 消费方仍是单次尝试。重试调度是持久的：插件在等待之前就把 `llm/retry` 事件追加进会话日志，退避期间取消会让日志保持一致。normal mode 以指数退避重试一组有界的失败 code，最多 `maxRetries` 次；always mode 先询问下游恢复，然后无尝试上限地重试每个失败。它还负责一种持久修复：adapter 以 `IMAGE_OFFLOAD_REQUIRED` 失败时，把承载失败所报数量的最老图片的表层节点替换为标了 `offloaded` 的副本，再重试该步骤，不占任何提供方重试预算。
 
 ## 目录
 
@@ -55,7 +55,7 @@ kind: "package-reference"
 
 ### 失败与恢复
 
-在任何最终适配器被选中之前发生的失败没有提供方策略，原样委派下游。normal mode 中，不在合格集合内的失败 code 或已耗尽的预算会委派；always mode 中，超上限的提供方延迟使用配置的本地退避，因此策略不会因该指令终止。这里没有任何模型可见内容：重试事件、延迟、提供方错误或失败的部分输出都不会到达模型或派生消息。带 `offloadImages` 的 `IMAGE_OFFLOAD_REQUIRED` 失败在任何策略之前处理：插件追加一个 `image/offload` 事件，指向按请求顺序最老的那些保留图片中最大的持久位置，然后返回 `retry`；没有可省略的图片时委派下游。这次重试不占重试预算，也不追加 `llm/retry` 事件，重试的请求为被省略的图片发送占位文本（[决定](../../../.agents/notes/implemented/architecture/2026-09-02-image-offload-watermark.zh.md)）。
+在任何最终适配器被选中之前发生的失败没有提供方策略，原样委派下游。normal mode 中，不在合格集合内的失败 code 或已耗尽的预算会委派；always mode 中，超上限的提供方延迟使用配置的本地退避，因此策略不会因该指令终止。这里没有任何模型可见内容：重试事件、延迟、提供方错误或失败的部分输出都不会到达模型或派生消息。带 `offloadImages` 的 `IMAGE_OFFLOAD_REQUIRED` 失败在任何策略之前处理：插件按请求顺序遍历表层，把承载那些最老保留图片的每个节点替换为标了 `offloaded` 的副本（和 compaction 一样的 `surfaceOp: replace`），然后返回 `retry`；没有可省略的图片时委派下游。这次重试不占重试预算，也不追加 `llm/retry` 事件，重试的请求为被标记的图片发送占位文本（[决定](../../../.agents/notes/implemented/architecture/2026-09-02-durable-image-offload.zh.md)）。
 
 -----
 
@@ -77,13 +77,13 @@ kind: "package-reference"
 |---|---|
 | [`src/index.ts`](src/index.ts) | 函数插件：waterfall 监听器、策略查找、退避、持久事件追加 |
 | [`src/history.ts`](src/history.ts) | 从会话日志查找持久重试历史 |
-| [`src/image-offload.ts`](src/image-offload.ts) | 针对 `IMAGE_OFFLOAD_REQUIRED` 失败的 `image/offload` 推进 |
+| [`src/image-offload.ts`](src/image-offload.ts) | 为 `IMAGE_OFFLOAD_REQUIRED` 失败省略图片的表层替换 |
 | [`src/types.ts`](src/types.ts) | 浏览器安全的 `llm/retry` 与 `llm/retry-started` 事件载荷类型 |
 | [`src/brand.ts`](src/brand.ts) | 事件载荷共享的 `RetryId` 品牌 |
 
 ### 恢复流程
 
-失败步骤连同其提供方与解析后的策略一起到达 waterfall。带 `offloadImages` 的 `IMAGE_OFFLOAD_REQUIRED` 失败会立即修复：推进水位，步骤无延迟重试。always mode 先结算下游恢复，并遵循下游的 `retry` 决定；normal mode 先检查失败 code 是否合格、预算是否未耗尽。插件计算延迟——有效且在边界内的提供方 `Retry-After`，否则带对称抖动的本地有界指数退避——追加 `llm/retry` 事件，在可取消定时器上等待，追加 `llm/retry-started`，然后返回 `{ kind: 'retry' }`。loop 随后在同一个打开的轮次内重跑失败步骤（仍基于同一份持久历史）。
+失败步骤连同其提供方与解析后的策略一起到达 waterfall。带 `offloadImages` 的 `IMAGE_OFFLOAD_REQUIRED` 失败会立即修复：替换承载节点，步骤无延迟重试。always mode 先结算下游恢复，并遵循下游的 `retry` 决定；normal mode 先检查失败 code 是否合格、预算是否未耗尽。插件计算延迟——有效且在边界内的提供方 `Retry-After`，否则带对称抖动的本地有界指数退避——追加 `llm/retry` 事件，在可取消定时器上等待，追加 `llm/retry-started`，然后返回 `{ kind: 'retry' }`。loop 随后在同一个打开的轮次内重跑失败步骤（仍基于同一份持久历史）。
 
 ### Waterfall 组合
 

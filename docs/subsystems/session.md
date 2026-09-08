@@ -118,17 +118,6 @@ interface SessionEventMap {
    */
   'request/context': RequestContext
   /**
-   * Advances the durable image offload watermark before a request in step
-   * `step` of turn `turn` is dispatched. Every image occurrence positioned at
-   * or before `watermark` derives with `offloaded: true`, so each route sends
-   * its placeholder text instead of the image; occurrences after it stay
-   * retained. The watermark only advances: each event names a position
-   * strictly after the previous one, and no later budget, route change, or
-   * compaction moves it back. It is a log-only event that changes the derived
-   * surface, so a build that does not know the type refuses the log.
-   */
-  'image/offload': { turn: number; step: number; watermark: ImageOccurrencePosition }
-  /**
    * Marks the end of a constructor seed. Events before it have smaller seq
    * values and came from the seed (resume, fork, or replay); this lifecycle
    * produced none of them. This log-only event is the durable projection of
@@ -195,26 +184,6 @@ interface RequestContext {
   model: string
   /** Maximum combined request and response context in tokens, when advertised. */
   contextWindow?: number
-}
-```
-
-### The image offload event: `image/offload`
-
-`dsh-llm-retry` appends `image/offload` on the `agent/request-error` waterfall when an adapter fails an attempt with `IMAGE_OFFLOAD_REQUIRED`, before the step retries. Its `watermark` names the last offloaded occurrence; `deriveMessages()` and the Session instance's `deriveEventMessage()` mark every occurrence positioned at or before it `offloaded: true`, and each route renders those marks as placeholder text. `Session.append` and seeding require the watermark to identify an image on the current surface, reject malformed and non-advancing positions, and reject request-only `offloaded` markers in durable messages. Like `request/header`, it is not a `SurfaceEventType`; unlike it, it changes the derived surface, so it stays required-on-read ([decision](../../.agents/notes/implemented/architecture/2026-09-02-image-offload-watermark.md)).
-
-```ts type-equiv
-/**
- * Durable position of one image occurrence on the model-visible surface: the
- * seq of the event carrying it and the block path inside that event's
- * content. Every nested tool-result contributes another path index. Positions
- * order by seq, then by path, so a newer event always lies after an older one
- * regardless of surface replacements.
- */
-interface ImageOccurrencePosition {
-  /** Seq of the surface message event carrying the occurrence. */
-  seq: SessionSeq
-  /** Block index path inside that event's message content. */
-  path: number[]
 }
 ```
 
@@ -588,9 +557,7 @@ declare class Session {
    *
    * CACHED: each surface node is projected exactly once, when first seen — a
    * call costs O(new nodes), and a surface rewrite (a `replace`;
-   * {@link SessionSurface.replaceGeneration}) or an `image/offload` advance
-   * rebuilds, and image occurrences at or before the watermark derive with
-   * `offloaded: true` ({@link markImageOffload}). The returned array is
+   * {@link SessionSurface.replaceGeneration}) rebuilds. The returned array is
    * a fresh snapshot per call (later appends never grow an array a caller
    * already holds); the `Message` objects in it are SHARED and **deep-frozen**.
    * Their content reuses the already frozen durable event data, so the cache
@@ -599,9 +566,8 @@ declare class Session {
    */
   deriveMessages(): Message[];
   /**
-   * Derive one event under the session's current image offload watermark.
-   * Direct model consumers use this instance method so their per-event
-   * reconstruction matches {@link deriveMessages}.
+   * Instance face of the pure per-node `deriveEventMessage` export from
+   * `surface.ts`.
    * @param event - the event to project.
    * @returns the derived message, or null when the event produces none.
    */
@@ -611,7 +577,7 @@ declare class Session {
 
 ## Derived history: `deriveMessages()` and `deriveEventMessage()`
 
-`Session.deriveMessages()` projects the event log into the `Message[]` the model sees — cached (each surface node projected once, when first seen; a surface rewrite or image watermark advance rebuilds) and frozen (a fresh array per call over shared, deep-frozen messages, so mutating logged history through a projection is unrepresentable). The pure `deriveEventMessage(event)` export applies the message-type rules without session state. The Session instance method of the same name additionally applies the current image watermark and is the per-event API for direct model consumers such as compaction. The projection rules:
+`Session.deriveMessages()` projects the event log into the `Message[]` the model sees — cached (each surface node projected once, when first seen; a surface rewrite rebuilds) and frozen (a fresh array per call over shared, deep-frozen messages, so mutating logged history through a projection is unrepresentable). `deriveEventMessage(event)` is the per-node pure function the fold applies — public so external reconstructors and the dev invariant project a log prefix with exactly the same rules and cannot disagree with the cache. The projection rules:
 
 - `user/message` → a user message carrying exact `content`; an optional envelope remains log-only display metadata.
 - `assistant/message` → an assistant message with the provider and model that produced it plus optional adapter-private replay state. Its embedded compact stream is replay, usage, and UI evidence rather than a second message. An **empty-content** `assistant/message` is also skipped — a max-tokens step cut off with no content still records an `assistant/message` to hold its stream, usage, provider, and model, but a content-less assistant turn must not enter the provider transcript.

@@ -49,17 +49,6 @@ for line in sys.stdin:
             "params": {
                 "sessionId": params["sessionId"],
                 "event": {
-                    "type": "image/offload",
-                    "data": {"turn": 1, "step": 1, "watermark": {"seq": 7, "path": [3]}},
-                },
-            },
-        }), flush=True)
-        print(json.dumps({
-            "jsonrpc": "2.0",
-            "method": "session.event",
-            "params": {
-                "sessionId": params["sessionId"],
-                "event": {
                     "type": "assistant/message",
                     "data": {
                         "message": {
@@ -120,10 +109,6 @@ for line in sys.stdin:
 
     assert result.final_response == "hello from runtime"
     assert result.finish_reason == "max-tokens"
-    assert result.events[1] == {
-        "type": "image/offload",
-        "data": {"turn": 1, "step": 1, "watermark": {"seq": 7, "path": [3]}},
-    }
     assert result.events[-1]["type"] == "turn/end"
     dumped_env = json.loads(env_dump.read_text())
     assert dumped_env["DEEPSEEK_API_KEY"] == "env-key"
