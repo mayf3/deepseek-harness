@@ -41,8 +41,6 @@ export interface SurfaceState {
   readonly history: History
   /** How many ids this surface has minted; carried so replay stays reproducible. */
   readonly minted: number
-  /** Sole-entry defaults protected from close; retired ids remain protected when undo restores them. */
-  readonly permanentTabIds: readonly TabId[]
 }
 
 /**
@@ -61,21 +59,18 @@ type SurfacePlan = (state: LayoutState, mint: Mint, makeTab: (id: TabId) => TabR
 
 /**
  * Decide whether an explicit close may remove a tab.
- * @param surface - current surface including default-tab protection.
+ * @param surface - current surface.
  * @param tabId - tab requested for closing.
- * @returns false for missing tabs, protected docked defaults, and a docked pane's last tab.
+ * @returns false for a missing tab or the guide standing as the only docked tab.
  */
 export function canCloseTab(surface: SurfaceState, tabId: TabId): boolean {
-  if (surface.layout.tabs[tabId] === undefined) return false
-  const pane = findTabPane(surface.layout, tabId)
-  if (pane.host === 'float') return true
-  return !surface.permanentTabIds.includes(tabId) && pane.tabs.length > 1
+  const tab = surface.layout.tabs[tabId]
+  return tab !== undefined && !(tab.kind === GUIDE_KIND && soleDockedTab(surface.layout, tabId))
 }
 
-/** Build a default tab and retain its close protection outside the docking kit's data. */
-function seedRecord(id: TabId, seed: () => SidebarRightSeed, permanentTabIds: TabId[]): TabRecord {
+/** Build the currently selected default tab. */
+function seedRecord(id: TabId, seed: () => SidebarRightSeed): TabRecord {
   const initial = seed()
-  if (initial.permanent) permanentTabIds.push(id)
   return { id, kind: initial.kind, title: initial.title, contentId: pageAddress(initial.kind) }
 }
 
@@ -114,12 +109,10 @@ function counting(from: number): { mint: Mint; used: () => number } {
  */
 export function createSurface(seed: () => SidebarRightSeed): SurfaceState {
   const counter = counting(0)
-  const permanentTabIds: TabId[] = []
   return {
-    layout: createInitialState({ next: counter.mint }, id => seedRecord(id, seed, permanentTabIds)),
+    layout: createInitialState({ next: counter.mint }, id => seedRecord(id, seed)),
     history: EMPTY_HISTORY,
     minted: counter.used(),
-    permanentTabIds,
   }
 }
 
@@ -131,6 +124,19 @@ function paneGuide(state: LayoutState, paneId: PaneId): TabId | undefined {
 /** Whether a tab is the guide, which a pane holds at most once and which is therefore never copied. */
 function isGuide(state: LayoutState, tabId: TabId): boolean {
   return state.tabs[tabId]?.kind === GUIDE_KIND
+}
+
+/**
+ * Whether a tab stands alone on the docked surface: its pane is the sole docked
+ * pane and holds nothing else. Floating panels do not count — they render
+ * whether or not the column is expanded.
+ * @param state - current layout.
+ * @param tabId - the tab asked about.
+ * @returns `true` for the docked surface's only tab.
+ */
+export function soleDockedTab(state: LayoutState, tabId: TabId): boolean {
+  const pane = findTabPane(state, tabId)
+  return pane.host === 'dock' && pane.tabs.length === 1 && dockPaneIds(state).length === 1
 }
 
 /** Focus a tab: nothing to plan while it is its pane's active tab and its pane is the active one. */
@@ -170,8 +176,7 @@ function arriving(state: LayoutState, tabId: TabId, toPaneId: PaneId, otherwise:
  */
 function advance(surface: SurfaceState, plan: SurfacePlan, seed: () => SidebarRightSeed): SurfaceState {
   const counter = counting(surface.minted)
-  const permanentTabIds = [...surface.permanentTabIds]
-  const makeTab = (id: TabId): TabRecord => seedRecord(id, seed, permanentTabIds)
+  const makeTab = (id: TabId): TabRecord => seedRecord(id, seed)
   const planned = plan(surface.layout, counter.mint, makeTab)
   if (planned.length === 0) return surface
   // The settle planner reads the state the intent produces, so it is applied
@@ -179,7 +184,7 @@ function advance(surface: SurfaceState, plan: SurfacePlan, seed: () => SidebarRi
   const after = replay(surface.layout, planned)
   const settled = planSettle(after, counter.mint, makeTab)
   const stepped = record(surface.history, surface.layout, [...planned, ...settled])
-  return { layout: stepped.state, history: stepped.history, minted: counter.used(), permanentTabIds }
+  return { layout: stepped.state, history: stepped.history, minted: counter.used() }
 }
 
 /**
@@ -322,9 +327,17 @@ export function createSidebarRightStore(
       },
       // A tab already gone — closed twice by a racing callback and the user — is
       // left alone rather than handed to the kit, which refuses an unknown tab.
+      // The docked surface's last tab follows the close rule, whoever asks: the
+      // guide stays (the kit hides its close routes through `canCloseTab`, and
+      // this plan refuses the programmatic path), and anything else closes
+      // together with the column — the settle planner reseeds the current
+      // default page for the next expansion.
       closeTab: (d, sessionId: string, tabId: TabId) => {
-        d.bySession = seat(d, sessionId, seed, s =>
-          advance(s, () => canCloseTab(s, tabId) ? [{ type: 'closeTab', tabId }] : [], seed))
+        d.bySession = seat(d, sessionId, seed, s => advance(s, (state) => {
+          if (!canCloseTab(s, tabId)) return []
+          if (!soleDockedTab(state, tabId)) return [{ type: 'closeTab', tabId }]
+          return [{ type: 'closeTab', tabId }, ...planSetExpanded(state, false)]
+        }, seed))
       },
       focusTab: (d, sessionId: string, tabId: TabId) => {
         d.bySession = seat(d, sessionId, seed, s => advance(s, state => planFocusTab(state, tabId), seed))

@@ -16,7 +16,6 @@ import type { SidebarRightTabRegistry } from '../tab-registry.ts'
 export interface SidebarRightSeed {
   readonly kind: string
   readonly title: string
-  readonly permanent: boolean
 }
 
 /**
@@ -30,7 +29,7 @@ export function defaultSeed(tabs: SidebarRightTabRegistry): SidebarRightSeed {
   const kind = single ? only.kind : GUIDE_KIND
   const definition = tabs.get(kind)
   if (definition === undefined) throw new Error(`sidebarRight: default tab kind "${kind}" is not registered`)
-  return { kind, title: definition.title(pageAddress(kind)), permanent: single }
+  return { kind, title: definition.title(pageAddress(kind)) }
 }
 
 /** The guide tab's kind. */

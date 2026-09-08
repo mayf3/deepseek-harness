@@ -15,7 +15,7 @@ import { createSidebarRightStore } from '../src/client/stores.ts'
 const SESSION = 's-test'
 
 function harness() {
-  const instance = createSidebarRightStore(() => ({ kind: 'guide', title: 'Start', permanent: false })).create()
+  const instance = createSidebarRightStore(() => ({ kind: 'guide', title: 'Start' })).create()
   instance.actions.open(SESSION)
   const surface = () => {
     const held = instance.getSnapshot().bySession[SESSION]
@@ -133,6 +133,60 @@ describe('createSidebarRightStore — the sequence', () => {
     expect(layout().expanded).toBe(false)
     actions.redo(SESSION)
     expect(layout().expanded).toBe(true)
+  })
+})
+
+describe('createSidebarRightStore — the last docked tab', () => {
+  it('refuses to close the guide standing as the docked surface\'s only tab, recording nothing', () => {
+    const { actions, surface, layout, entries, guide } = harness()
+    actions.setExpanded(SESSION, true)
+    const before = surface()
+    const recorded = entries()
+    actions.closeTab(SESSION, guide())
+    expect(surface()).toBe(before)
+    expect(entries()).toBe(recorded)
+    expect(layout().tabs[guide()]).toBeDefined()
+  })
+
+  it('closes the last non-guide tab together with the column, reseeding the guide, as one reversible entry', () => {
+    const { actions, layout, entries } = harness()
+    actions.openContent(SESSION, { kind: 'text', contentId: 'dsh-resource://file/session/s-test/a.txt', title: 'a' }, () => {})
+    const text = Object.values(layout().tabs).find(tab => tab.kind === 'text')
+    const seeded = Object.values(layout().tabs).find(tab => tab.kind !== 'text')
+    if (text === undefined || seeded === undefined) throw new Error('expected the text tab beside the guide')
+    // Two tabs: closing the guide is an ordinary close, and the column stays open.
+    actions.closeTab(SESSION, seeded.id)
+    expect(layout().expanded).toBe(true)
+    expect(layout().tabs[seeded.id]).toBeUndefined()
+    const before = layout()
+    const recorded = entries()
+
+    actions.closeTab(SESSION, text.id)
+
+    expect(layout().expanded).toBe(false)
+    expect(layout().tabs[text.id]).toBeUndefined()
+    // The settle rule reseeded the emptied root pane, so reopening shows the guide.
+    const reseeded = Object.values(layout().tabs)
+    expect(reseeded).toHaveLength(1)
+    expect(entries()).toBe(recorded + 1)
+
+    actions.undo(SESSION)
+    expect(layout()).toEqual(before)
+  })
+
+  it('closes a floating tab without touching the column: floats do not count as the last docked tab', () => {
+    const { actions, layout, guide } = harness()
+    actions.setExpanded(SESSION, true)
+    actions.openContent(SESSION, { kind: 'text', contentId: 'dsh-resource://file/session/s-test/a.txt', title: 'a' }, () => {})
+    const text = Object.values(layout().tabs).find(tab => tab.kind === 'text')
+    if (text === undefined) throw new Error('expected the text tab')
+    actions.floatTab(SESSION, text.id, { x: 10, y: 20, width: 300, height: 200 })
+    // The guide is now the docked surface's only tab; the floating text tab closes freely.
+    actions.closeTab(SESSION, text.id)
+    expect(layout().floats).toHaveLength(0)
+    expect(layout().tabs[text.id]).toBeUndefined()
+    expect(layout().expanded).toBe(true)
+    expect(layout().tabs[guide()]).toBeDefined()
   })
 })
 
