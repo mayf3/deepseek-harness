@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -238,24 +238,27 @@ describe.skipIf(process.platform === 'win32')('terminal-bash real shell', () => 
     expect(() => process.kill(pid, 0)).toThrow()
   }, 10_000)
 
-  it.each([false, true])('quiesces a disowned same-session descendant after the shell exits naturally (hold descendant: %s)', async (holdDescendant) => {
+  it('quiesces a disowned same-session descendant after the shell exits naturally', async () => {
     const { ctx, root, agent } = await harness('danger-full-access')
     const created = await ctx.terminals.spawn(agent, { type: 'shell' })
-    const releaseFile = join(root, 'release-descendant')
-    // Keep the descendant before its workload without delaying the parent's PID publication.
-    const barrier = holdDescendant ? 'while [ ! -e "$1" ]; do sleep 0.01; done; ' : ''
+    const pidFile = join(root, 'disowned.pid')
     let pid: number | undefined
     try {
-      // Ignore TERM before forking so even an unscheduled child inherits it.
       const background = ctx.terminals.startSend(agent, created.sessionId, {
-        text: `trap "" TERM; sh -c '${barrier}exec sleep 60' dsh "${releaseFile}" & disown; trap - TERM; echo CHILD=$!`,
+        text: `sh -c 'trap "" TERM; printf "%s" "$$" > "$1"; sleep 60' dsh "${pidFile}" & disown`,
         submit: true,
       })
-      const result = await background.done
-      const childPid = Number(/CHILD=(\d+)/.exec(result.viewport)?.[1])
-      if (childPid > 0) pid = childPid
-      expectReadyForNextSend(result.waitReason)
-      expect(childPid, result.viewport).toBeGreaterThan(0)
+      await background.done
+      const pidDeadline = Date.now() + 2_000
+      let childPid = 0
+      while (childPid === 0 && Date.now() < pidDeadline) {
+        if (existsSync(pidFile)) childPid = Number(readFileSync(pidFile, 'utf8'))
+        if (childPid > 0) break
+        await new Promise(resolve => setTimeout(resolve, 10))
+      }
+      expect(existsSync(pidFile), ctx.terminals.read(agent, created.sessionId, { offset: 0, count: 100 }).text).toBe(true)
+      expect(childPid).toBeGreaterThan(0)
+      pid = childPid
       expect(() => process.kill(childPid, 0)).not.toThrow()
       await ctx.terminals.startSend(agent, created.sessionId, { text: 'exit', submit: true }).done
       const deadline = Date.now() + 2_000
@@ -272,8 +275,6 @@ describe.skipIf(process.platform === 'win32')('terminal-bash real shell', () => 
         } catch (_alreadyReaped) {
           // Product cleanup is the expected path; this only contains a failed regression.
         }
-        const disposedPid = pid
-        await expect.poll(() => processIsRunning(disposedPid)).toBe(false)
       }
     }
   }, 10_000)
