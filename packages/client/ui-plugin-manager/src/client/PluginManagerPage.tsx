@@ -380,7 +380,7 @@ function EnableSwitch({ pkg, title, t, busy, onSetEnabled }: {
   )
 }
 
-/** One installed package as a card: its name, which opens its page, its one-liner, its tags, and its switch or its **Add to…** menu. */
+/** One installed package as a card that opens its page: its name, its one-liner, its tags, and its switch or its **Add to…** menu. */
 function PackageCard({ pkg, t, busy, presets, globalModules, presetName, onOpen, onSetEnabled, onAddRow }: {
   readonly pkg: PluginPackageView
   readonly t: Translate
@@ -406,11 +406,11 @@ function PackageCard({ pkg, t, busy, presets, globalModules, presetName, onOpen,
       submenu: addTargets(entry, presets, globalModules, t, presetName),
     }))
   return (
-    <li className={css.card} data-plugin-package={pkg.name} data-plugin-status={pkg.status}>
+    <li className={`${css.card} ${css.cardLink}`} data-plugin-package={pkg.name} data-plugin-status={pkg.status}>
       <div className={css.cardHead}>
         <div className={css.cardMain}>
           <div className={css.titleRow}>
-            <button type="button" className={css.cardTitle} aria-label={t('openDetail', { name: title })} onClick={onOpen}>{title}</button>
+            <button type="button" className={`${css.cardTitle} ${css.cardOpen}`} aria-label={t('openDetail', { name: title })} onClick={onOpen}>{title}</button>
             {builtin ? <Tag>{t('builtinTag')}</Tag> : null}
             {status === null ? null : <Tag tone={status === 'problem' ? 'danger' : 'warning'}>{t(STATUS_KEYS[status])}</Tag>}
           </div>
@@ -504,7 +504,26 @@ function PackageDetail({
           </div>
           <p className={css.detailDesc}>{pkg.description ?? t('noDescription')}</p>
         </div>
-        <EnableSwitch pkg={pkg} title={title} t={t} busy={busy} onSetEnabled={onSetEnabled} />
+        <div className={css.detailActions}>
+          {retryable
+            ? <Button variant="outline" size="sm" disabled={busy} onClick={onRetry}>{t('retryPackage')}</Button>
+            : null}
+          {removable
+            ? (
+              <Button
+                variant="outline"
+                size="sm"
+                className={css.danger}
+                aria-label={t('uninstallLabel', { name: title })}
+                disabled={busy}
+                onClick={onUninstall}
+              >
+                {t('uninstall')}
+              </Button>
+            )
+            : null}
+          <EnableSwitch pkg={pkg} title={title} t={t} busy={busy} onSetEnabled={onSetEnabled} />
+        </div>
       </div>
       {pkg.reason === undefined || status === 'waiting' ? null : <p className={css.reason} role="status">{t('reasonLabel')}: {pkg.reason}</p>}
       <dl className={css.facts}>
@@ -536,29 +555,6 @@ function PackageDetail({
               onAddRow={onAddRow}
             />
           )}
-        {retryable || removable
-          ? (
-            <div className={css.detailActions}>
-              {retryable
-                ? <Button variant="outline" size="sm" disabled={busy} onClick={onRetry}>{t('retryPackage')}</Button>
-                : null}
-              {removable
-                ? (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className={css.danger}
-                    aria-label={t('uninstallLabel', { name: title })}
-                    disabled={busy}
-                    onClick={onUninstall}
-                  >
-                    {t('uninstall')}
-                  </Button>
-                )
-                : null}
-            </div>
-          )
-          : null}
       </div>
     </div>
   )

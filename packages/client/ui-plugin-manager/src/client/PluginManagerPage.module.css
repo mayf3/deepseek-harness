@@ -161,6 +161,11 @@
   border: 0.5px solid var(--dsw-alias-border-l4);
   border-radius: 14px;
   background: var(--dsw-alias-bg-layer-3);
+  /* The card is the elevated surface here; the page itself scrolls on the base
+     surface. Anything that scrolls inside a card draws the l2 thumb (ui-theme
+     styles/scrollbar.css rebinding contract). */
+  --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2);
+  --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);
 }
 
 .cardHead {
@@ -186,48 +191,69 @@
   min-width: 0;
 }
 
-/* The title is the way into the package's page: a text button, underlined on hover. */
 .cardTitle {
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/*
+ * A package card opens its page: the title button stretches over the whole
+ * card, and the controls at the card's end sit above that stretch, so the
+ * switch and the Add to… menu keep their own clicks.
+ */
+.cardLink {
+  position: relative;
+}
+
+.cardLink:hover {
+  border-color: var(--dsw-alias-border-l3);
+}
+
+.cardOpen {
   max-width: 100%;
   padding: 0;
   border: 0;
   background: transparent;
   color: inherit;
   font: inherit;
-  font-size: 14px;
-  line-height: 20px;
   font-weight: 600;
   text-align: left;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
   cursor: pointer;
 }
 
-.cardTitle:hover {
-  text-decoration: underline;
-  text-underline-offset: 3px;
+.cardOpen::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 14px;
 }
 
-.cardTitle:focus-visible {
+.cardOpen:focus-visible {
+  outline: none;
+}
+
+.cardOpen:focus-visible::after {
   outline: 2px solid var(--dsw-alias-brand-primary);
   outline-offset: 2px;
-  border-radius: 4px;
 }
 
-/* Two lines at most; the page carries the whole description. */
 .cardDesc {
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
   font-size: 12.5px;
   line-height: 18px;
   color: var(--dsw-alias-label-tertiary);
   overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* The pill the Agent preset section marks its cards with. */
 .cardEnd {
+  position: relative;
+  z-index: 1;
   display: inline-flex;
   flex: none;
   align-items: center;
@@ -267,11 +293,11 @@
   border-color: var(--dsw-alias-state-error-primary);
 }
 
-/* Retry and uninstall close the page at its bottom-right corner. */
+/* Retry, uninstall, and the switch at the end of the page's head. */
 .detailActions {
   display: flex;
+  flex: none;
   align-items: center;
-  justify-content: flex-end;
   gap: 8px;
 }
 
@@ -571,7 +597,6 @@
 
 .detailDesc {
   margin: 0;
-  max-width: 64ch;
   color: var(--dsw-alias-label-secondary);
   font-size: 14px;
   line-height: 22px;
