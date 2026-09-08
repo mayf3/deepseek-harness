@@ -8,7 +8,7 @@ Status: implemented
 
 `installFailLoud` 注册了一个进程级的 `unhandledRejection` 处理器，写出 `fatal load failure` 后退出，而 launcher 丢弃了它返回的卸载函数，于是这个处理器活到进程结束。启动期间这是对的：未处理的 rejection 就是没人会报告的加载失败。启动之后它意味着任何插件的漏网延续——社区组合包忘了 await 的一个被拒 promise——都会把每个会话一起拖下去，而且根本没有 `uncaughtException` 处理器，定时器回调里的一次同步 throw 会让进程带着 Node 的默认堆栈崩掉，没有来源。插件管理器存在的目的正是在运行时挂载三方代码，在这两个默认行为之下这是拿进程赌。
 
-另外，不把包 import 进宿主就没法知道一个已安装的包是什么：它是声明了组合包层还是导出了插件，它的 patch 会插入哪些行，它把 `@deepseek-ai/cordis` 解析到 harness 的那份还是自己的一份——在 profile 的 hoisted linker 与 `autoInstallPeers: false` 之下这才是"依赖冲突"的真实形态——以及它的主导出带什么 `Config` schema。
+另外，不把包 import 进宿主就没法知道一个已安装的包是什么：它是声明了组合包层还是导出了插件，它的 patch 会插入哪些行，它把 `@deepseek-ai/cordis` 解析到 harness 的那份还是自己的一份——在 profile 的 hoisted linker 与 `autoInstallPeers: false` 之下这才是"依赖冲突"的真实形态——以及它的主导出带什么 `Config` schema（按包目录判断，穿过符号链接与打包可执行文件的代理包）。
 
 ## 决定
 

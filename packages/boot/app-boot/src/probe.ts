@@ -11,8 +11,8 @@
 
 import { spawn } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { withoutSensitiveEnv } from '@deepseek-ai/dsh-launch-environment'
 import { loadOverlayPatches } from './index.ts'
@@ -262,8 +262,7 @@ export async function probePackage(options: ProbeOptions): Promise<PluginProbe> 
     : describeBundlePatch(options.binName, join(packageDir, declaredBundle))
   const hasMain = manifest.main !== undefined || manifest.exports !== undefined
   const report = await runChild(options, packageDir, hasMain ? options.packageName : '', declaredAddable.map(entry => entry.name))
-  const harnessCordis = resolveHarnessCordis()
-  const cordisSameCopy = report.cordis === null || harnessCordis === undefined ? null : report.cordis === harnessCordis
+  const cordisSameCopy = sameCordisCopy(report.cordis, resolveHarnessCordis())
   const kind: PluginProbe['kind'] = declaredBundle !== undefined
     ? 'bundle'
     : report.main.isPlugin && declaresDsh(manifest) ? 'plugin' : 'library'
@@ -305,18 +304,65 @@ export async function probePackage(options: ProbeOptions): Promise<PluginProbe> 
 }
 
 /**
- * The copy of `@deepseek-ai/cordis` this harness runs: the one this module
- * resolves, which is the one every built-in plugin shares. Undefined only in
- * an environment that cannot resolve it at all.
+ * The package directory of the `@deepseek-ai/cordis` copy this harness runs:
+ * the one this module resolves, which every built-in plugin shares. Undefined
+ * only in an environment that cannot resolve it at all.
  */
 function resolveHarnessCordis(): string | undefined {
   try {
-    return import.meta.resolve('@deepseek-ai/cordis')
+    return cordisPackageDir(import.meta.resolve('@deepseek-ai/cordis'))
   } catch {
     // Only an embedder without cordis on its module path lands here; the
     // harness itself always resolves its own peer.
     /* v8 ignore next */
     return undefined
+  }
+}
+
+/**
+ * Whether the package's cordis is the harness's: the two package directories
+ * compare equal. Null when the package resolves no cordis, when the harness
+ * cannot resolve its own, or when no cordis manifest encloses what the
+ * package resolved, since none of those says the package brought a copy.
+ */
+function sameCordisCopy(reported: string | null, harness: string | undefined): boolean | null {
+  if (reported === null) return null
+  /* v8 ignore next -- the harness resolves its own peer; only an embedder without cordis lands here */
+  if (harness === undefined) return null
+  const dir = cordisPackageDir(reported)
+  return dir === undefined ? null : dir === harness
+}
+
+/** The manifest fields that tell a dsh module proxy from the package it stands for. */
+interface ProxyAwareManifest {
+  name?: unknown
+  dsh?: { moduleFallback?: { targets?: Record<string, string> } }
+}
+
+/**
+ * The directory of the `@deepseek-ai/cordis` package a resolved module URL
+ * belongs to, with symlinks resolved and a dsh module proxy followed to the
+ * package it re-exports. Two resolutions of one installed package compare
+ * equal this way whether they landed on `src` or `lib`, on a link or its
+ * target, or on the proxy a packaged executable writes for its peers; the
+ * URLs themselves differ in every one of those cases.
+ * @param resolved - the URL `import.meta.resolve('@deepseek-ai/cordis')` gave.
+ * @returns the real package directory, or undefined when no cordis manifest encloses the URL.
+ */
+export function cordisPackageDir(resolved: string): string | undefined {
+  let dir = dirname(fileURLToPath(resolved))
+  for (;;) {
+    const manifestPath = join(dir, 'package.json')
+    if (existsSync(manifestPath)) {
+      const manifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as ProxyAwareManifest
+      if (manifest.name === '@deepseek-ai/cordis') {
+        const target = Object.values(manifest.dsh?.moduleFallback?.targets ?? {})[0]
+        return target === undefined ? realpathSync(dir) : cordisPackageDir(target)
+      }
+    }
+    const parent = dirname(dir)
+    if (parent === dir) return undefined
+    dir = parent
   }
 }
 

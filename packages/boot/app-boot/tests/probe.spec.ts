@@ -3,12 +3,12 @@
  * a child process, and the per-profile cache.
  */
 
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { PLUGIN_PROBE_DIR, PLUGIN_PROBE_FORMAT, probePackage, readProbeCache, writeProbeCache, type PluginProbe } from '../src/index.ts'
-import { parseProbeRecord } from '../src/probe.ts'
+import { cordisPackageDir, parseProbeRecord } from '../src/probe.ts'
 import { parseChildReport, type ChildReport } from '../src/probe-report.ts'
 
 const NAME = 'dsh-test-bin'
@@ -139,6 +139,46 @@ describe('probePackage', () => {
     expect(own.cordisSameCopy).toBe(false)
     expect(own.ok).toBe(false)
     expect(own.reason).toContain('own copy of @deepseek-ai/cordis')
+  })
+
+  it('recognizes the harness\'s cordis through a link and through a packaged executable\'s proxy', async () => {
+    const harnessCordis = cordisPackageDir(import.meta.resolve('@deepseek-ai/cordis')) as string
+    const harnessEntry = import.meta.resolve('@deepseek-ai/cordis')
+    const { profileDir, installAnchor } = stage({
+      'linked': { main: 'export function apply() {}\n', manifest: { peerDependencies: { '@deepseek-ai/cordis': '*' } } },
+      // A cordis directory whose manifest names no package: an unknown copy, not a second one.
+      'unnamed': {
+        main: 'export function apply() {}\n',
+        manifest: { peerDependencies: { '@deepseek-ai/cordis': '*' } },
+        files: {
+          'node_modules/@deepseek-ai/cordis/package.json': JSON.stringify({ version: '0.0.0', type: 'module', main: './index.js' }),
+          'node_modules/@deepseek-ai/cordis/index.js': 'export const Context = class {}\n',
+        },
+      },
+      'proxied': {
+        main: 'export function apply() {}\n',
+        manifest: { peerDependencies: { '@deepseek-ai/cordis': '*' } },
+        files: {
+          // The proxy a packaged executable writes: a manifest naming its targets, and an entry that re-exports one.
+          'node_modules/@deepseek-ai/cordis/package.json': JSON.stringify({
+            name: '@deepseek-ai/cordis', version: '0.0.0', type: 'module', exports: { '.': './entry-0.js' },
+            dsh: { moduleFallback: { targets: { '.': harnessEntry } } },
+          }),
+          'node_modules/@deepseek-ai/cordis/entry-0.js': `export * from ${JSON.stringify(harnessEntry)}\n`,
+        },
+      },
+    })
+    // The profile links the harness's own cordis, as plain Node installs do.
+    mkdirSync(join(profileDir, 'node_modules', '@deepseek-ai'), { recursive: true })
+    symlinkSync(harnessCordis, join(profileDir, 'node_modules', '@deepseek-ai', 'cordis'), 'dir')
+    const linked = await probePackage({ binName: NAME, profileDir, installAnchor, packageName: 'linked' })
+    expect(linked).toMatchObject({ kind: 'plugin', ok: true, cordisSameCopy: true })
+    const proxied = await probePackage({ binName: NAME, profileDir, installAnchor, packageName: 'proxied' })
+    expect(proxied).toMatchObject({ kind: 'plugin', ok: true, cordisSameCopy: true })
+    const unnamed = await probePackage({ binName: NAME, profileDir, installAnchor, packageName: 'unnamed' })
+    expect(unnamed).toMatchObject({ kind: 'plugin', ok: true, cordisSameCopy: null })
+    // A URL no cordis manifest encloses is an unknown copy, not a different one.
+    expect(cordisPackageDir(`file://${tmpdir()}/nowhere/index.js`)).toBeUndefined()
   })
 
   it('probes a package with the minimal manifest and no main export', async () => {
