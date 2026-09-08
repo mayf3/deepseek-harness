@@ -16,6 +16,7 @@ import {
   apply as applyChat, inject as injectChat, type ChatViewInjected,
 } from '@deepseek-ai/dsh-client-ui-chat/client'
 import { SessionSeq, type SessionId } from '@deepseek-ai/dsh-session/types'
+import type { WorkspaceId } from '@deepseek-ai/dsh-workspace/types'
 import { createChatStore } from '../src/client/stores.ts'
 
 usePinnedBrowserLanguages('zh-CN')
@@ -57,7 +58,11 @@ async function bench() {
   )
   new TestRemote(runtime.ctx, { session: { openWorkspacePath } })
   runtime.ctx.provide('uiWorkspace', {
-    connectWorkspace: vi.fn(async () => ROOT),
+    openWorkspace: vi.fn(async (_workspaceId: WorkspaceId, beforeOpen: (id: SessionId) => void) => {
+      beforeOpen(ROOT)
+      runtime.sessions.open(ROOT)
+    }),
+    openSession: (id: SessionId) => { runtime.sessions.open(id) },
   } as never)
   const session = sessionFakeFor()
   await runtime.sessions.add({
@@ -69,7 +74,7 @@ async function bench() {
   runtime.ctx.provide('locale', locale)
   runtime.slots.installLocale(locale)
   await runtime.root.declare({
-    'conversation': { kind: 'single', scope: 'session-maybe' },
+    'main': { kind: 'keyed', scope: 'root' },
   }, (_props: { renderSlot?: unknown }) => null)
   await runtime.mount({ inject: [...injectConversation], apply: applyConversation })
   await runtime.mount({ inject: [...injectChat], apply: applyChat })
@@ -177,7 +182,7 @@ describe('Chat inject API', () => {
     const forClosing = vi.fn(() => mentions)
     b.runtime.ctx.provide('chatFileMentions', { forClosing } as never)
     expect(injected.fileMentions(owner)).toBe(mentions)
-    expect(forClosing).toHaveBeenCalledWith(owner)
+    expect(forClosing).toHaveBeenCalledWith(owner, ROOT)
 
     expect(injected.chatScroll.read()).toBeNull()
     const position = { anchorKey: 'node-1', anchorTop: 4, scrollTop: 12 }

@@ -74,6 +74,8 @@ tab 的 `kind` 是不透明字符串。种子 tab 是工厂（`DockControllerOpt
 <a id="build-shape"></a>
 ## 构建形态
 
+静态 ESM 为 Web 壳的 Vite 构建保留第三方导入；独立消费方自行提供开发依赖（[依赖规则](../AGENTS.md#dependency-declaration)）。
+
 本包静态链接：tsdown 的 `staticLinked` 预设在 `lib/index.js` 产出一个浏览器 ESM bundle（所有裸说明符保持为 import，sourcemap 链回源码），并把样式表按其相对 `src` 的路径放到 `lib/` 下；Web 外壳按包名解析并自行打包该产物，因此 vite 仍是 class 哈希的唯一拥有者。有一个后果是承重的——套件只保留**一张**样式表 `dockkit.module.css`，因为消费方按文件名去重注入的样式表，撞名会静默丢掉一张。
 
 <a id="model-experience"></a>

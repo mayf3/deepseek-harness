@@ -94,6 +94,8 @@ JSONL provider 只扫描一次 frame boundary，复用一个 Zstandard decoder�
 
 Current encode 以单条 record 为单位。Provider 在主线程每个 slice 序列化约 1 MiB plaintext，通过一个会传播 source error 的 Zstandard context 流式压缩，以 4 MiB batch 写入同目录排他创建的临时文件，并在 publication 前 sync。进程级 scheduler 最多允许两个完整 verification Worker 并行，并把释放的 permit 直接交给最早的 waiter。
 
+发布的 `lib/worker.cjs` 将 JavaScript workspace 依赖一起打包，使每个新 verifier 无需解析并编译它们的运行时模块图。Worker 只通过普通 request/result 消息通信，与 host 不共享 service 或 class identity，因此可以这样处理。Host build 应用现有 TypeScript 与 Typert 转换；Client pass 跳过这个 Node-only package，不会用未经转换的源代码覆盖 worker。Native add-on 保持 external。Verification、scheduler admission、termination 与 durable publication 仍在 writable open 返回前完成。Built-worker 冒烟测试把 package manifest 与 worker 复制到隔离的临时 package，移除环境中的模块搜索路径，接受有效 generation，并拒绝错误的 event count。
+
 Preparation 会把 cancellation 传给 source read，并在现有的约 500 ms Decode yield 边界观察它。`publish()` 一旦开始，encode、Worker verification 与 publication 不接收 caller cancellation，并运行到终态；write open 会在之后再次检查 caller signal。已经发布的 generation 绝不会回滚。
 
 Stage pipeline 终止于一份 prepared current artifact。[历史 Session 只读迁移准备](2026-09-05-read-only-session-migration-preparation.zh.md)定义 read open 如何立即消费该 artifact，以及 write open 如何在返回 append 权限前完成 encode、verification 与 publication。
