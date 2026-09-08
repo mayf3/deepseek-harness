@@ -272,7 +272,7 @@ function PanelChrome({ sessionId, fullscreen, autoFullscreen, actions, t }: Pick
         <button
           type="button"
           className={css.iconButton}
-          aria-label={t('chrome.collapse')}
+          aria-label={t('chrome.collapseAria')}
           data-sidebar-right-toggle
           onClick={() => { actions.toggleExpanded(sessionId) }}
         >

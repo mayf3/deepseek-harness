@@ -238,12 +238,14 @@ export function TextPreview({
           dense
         />
         {selected.wrap === true && (
+          // The tooltip names the action while the stable aria name and
+          // `aria-pressed` expose the control and its current state.
           <Tooltip label={t(state.wrap ? 'wrap.disable' : 'wrap.enable')} side="bottom" delayMs={500}>
             <button
               type="button"
               className={css.tool}
               aria-pressed={state.wrap}
-              aria-label={t(state.wrap ? 'wrap.disable' : 'wrap.enable')}
+              aria-label={t('wrap.aria')}
               data-textpreview-tool="wrap"
               onClick={() => { actions.toggledWrap(tab.id) }}
             >

@@ -45,7 +45,7 @@ describe('ExpandButton', () => {
     const { instance, view, control } = mountButton()
     const button = control()
     if (button === null) throw new Error('expected the expand control')
-    expect(button.getAttribute('aria-label')).toBe('chrome.expand')
+    expect(button.getAttribute('aria-label')).toBe('chrome.expandAria')
     fireEvent.click(button)
     expect(instance.getSnapshot().bySession[SESSION]?.layout.expanded).toBe(true)
     // Shown: the seat is empty, so the header lays out without it.

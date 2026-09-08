@@ -160,16 +160,21 @@ describe('createSidebarRightStore — the last docked tab', () => {
     expect(layout().tabs[seeded.id]).toBeUndefined()
     const before = layout()
     const recorded = entries()
+    // Fullscreen at the moment of the close: the collapse must hand the mode
+    // back too, or the next expand gives the whole window to the default page.
+    actions.setMode(SESSION, 'fullscreen')
 
     actions.closeTab(SESSION, text.id)
 
     expect(layout().expanded).toBe(false)
+    expect(layout().mode).toBe('push')
     expect(layout().tabs[text.id]).toBeUndefined()
     // The settle rule reseeded the emptied root pane, so reopening shows the guide.
     const reseeded = Object.values(layout().tabs)
     expect(reseeded).toHaveLength(1)
-    expect(entries()).toBe(recorded + 1)
+    expect(entries()).toBe(recorded + 2)
 
+    actions.undo(SESSION)
     actions.undo(SESSION)
     expect(layout()).toEqual(before)
   })

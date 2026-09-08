@@ -279,7 +279,7 @@ describe('web e2e: navigation & panes over a rich seeded session', () => {
     const header = exportButton.locator('xpath=ancestor::header[1]')
     // The right Sidebar's expand button holds the header's corner; the export
     // control sits immediately to its left.
-    const sidebarButton = page.getByRole('button', { name: 'Open sidebar' })
+    const sidebarButton = page.getByRole('button', { name: 'Open right sidebar' })
     const [buttonBox, sidebarBox, headerBox] = await Promise.all([
       exportButton.boundingBox(), sidebarButton.boundingBox(), header.boundingBox(),
     ])

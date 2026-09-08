@@ -142,6 +142,12 @@ function hiddenSides(box: HTMLElement): 'start' | 'end' | 'start end' | undefine
  * commit that can change the chips, on scroll, and on resize. Written to the
  * DOM directly rather than through state because a reading never changes
  * what renders, only how the stylesheet fades it.
+ *
+ * Known gap: a content-width change that alters neither `tabs` nor the box's
+ * outer size — a live `renderTabTitle` growing a chip, or a drop-caret slot
+ * mounting mid-drag — keeps the fade at its last reading until the next
+ * scroll or resize. The fade is orientation chrome, so a stale edge fades a
+ * few frames late rather than hiding anything.
  */
 function useStripScrollFades(box: RefObject<HTMLDivElement | null>, tabs: readonly TabId[]): void {
   useLayoutEffect(() => {

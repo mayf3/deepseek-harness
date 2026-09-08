@@ -328,6 +328,9 @@
   border-radius: 20px;
   cursor: pointer;
   opacity: 0;
+  /* Hidden means untouchable too: without this a touch press on the chip's
+     trailing 20px would close the tab instead of activating it. */
+  pointer-events: none;
 }
 
 /* Shown while the chip is hovered or holds focus, and always on the active
@@ -336,6 +339,7 @@
 .tab:focus-within .tabClose,
 .tabActive .tabClose {
   opacity: 1;
+  pointer-events: auto;
 }
 
 /* The chip's height and corner, so it reads as one more capsule in the row. */
@@ -506,7 +510,10 @@
   position: absolute;
   inset: 0;
   pointer-events: none;
-  background: color-mix(in srgb, var(--dsw-alias-bg-layer-2) 72%, transparent);
+  /* The ground the panes sit on, not a raised layer: in dark mode `bg-layer-2`
+     is a lighter bluish step than the column's `bg-base`, which tinted the
+     whole scrim away from the content beneath it. */
+  background: color-mix(in srgb, var(--dsw-alias-bg-base) 72%, transparent);
   backdrop-filter: blur(6px);
   animation: dockScrimIn 140ms ease-out;
 }

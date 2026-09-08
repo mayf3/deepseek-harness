@@ -37,7 +37,7 @@ export function ExpandButton({ sessionId, useStore, actions, t }: ExpandButtonPr
       <button
         type="button"
         className={css.button}
-        aria-label={t('chrome.expand')}
+        aria-label={t('chrome.expandAria')}
         data-sidebar-right-expand
         onClick={() => { actions.setExpanded(sessionId, true) }}
       >

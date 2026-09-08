@@ -407,6 +407,7 @@ describe('web e2e: shipped right Sidebar', () => {
       const guideTab = column.locator('[data-dockkit-tab]').filter({ hasText: 'Start' })
       expect(await guideTab.locator('[data-dockkit-tab-close]').count()).toBe(1)
       // Back to the seeded shape the cases below start from.
+      await guideTab.hover()
       await guideTab.locator('[data-dockkit-tab-close]').click()
       await expect.poll(async () => await tabTitles(column)).toEqual(['Files'])
       await expect.poll(async () => await addTab.count()).toBe(1)
@@ -751,7 +752,7 @@ describe('web e2e: shipped right Sidebar', () => {
       await expect.poll(async () => await panes.count()).toBe(2)
 
       const splitFiles = panes.nth(1).locator('[data-dockkit-tab]').filter({ hasText: 'Files' })
-      expect(await splitFiles.locator('[data-dockkit-tab-close]').count()).toBe(0)
+      expect(await splitFiles.locator('[data-dockkit-tab-close]').count()).toBe(1)
       await dragTo(page, splitFiles, await pointIn(panes.first(), 0.5, 0.5))
       await expect.poll(async () => await tabTitles(panes.nth(1))).toEqual([SAMPLE_NAME])
 
@@ -927,17 +928,20 @@ describe('web e2e: shipped right Sidebar', () => {
 
       // Closing a pane's last tab drops the pane: there is no separate
       // "close pane" gesture, and none is needed.
+      await panes.nth(1).locator('[data-dockkit-tab]').first().hover()
       await panes.nth(1).locator('[data-dockkit-tab-close]').first().click()
       await expect.poll(async () => await panes.count()).toBe(1)
       await expect.poll(async () => await tabTitles(column)).toEqual(['Files', SAMPLE_NAME])
 
       // Leave a guide as the sole docked tab.
-      await column.locator('[data-dockkit-tab]').filter({ hasText: 'Files' })
-        .locator('[data-dockkit-tab-close]').click()
+      const files = column.locator('[data-dockkit-tab]').filter({ hasText: 'Files' })
+      await files.hover()
+      await files.locator('[data-dockkit-tab-close]').click()
       await column.locator('[data-dockkit-add-tab]').click()
       await expect.poll(async () => await tabTitles(column)).toEqual([SAMPLE_NAME, 'Start'])
-      await column.locator('[data-dockkit-tab]').filter({ hasText: SAMPLE_NAME })
-        .locator('[data-dockkit-tab-close]').click()
+      const sample = column.locator('[data-dockkit-tab]').filter({ hasText: SAMPLE_NAME })
+      await sample.hover()
+      await sample.locator('[data-dockkit-tab-close]').click()
       await expect.poll(async () => await tabTitles(column)).toEqual(['Start'])
 
       // The guide standing as the docked surface's only tab draws no close
@@ -954,8 +958,10 @@ describe('web e2e: shipped right Sidebar', () => {
       // settle rule reseeds the current default, so reopening shows Files.
       await page.getByRole('button', { name: `Open ${SAMPLE_NAME}` }).click()
       await expect.poll(async () => await tabTitles(column)).toEqual(['Start', SAMPLE_NAME])
+      await column.locator('[data-dockkit-tab]').first().hover()
       await column.locator('[data-dockkit-tab-close]').first().click()
       await expect.poll(async () => await tabTitles(column)).toEqual([SAMPLE_NAME])
+      await column.locator('[data-dockkit-tab]').first().hover()
       await column.locator('[data-dockkit-tab-close]').first().click()
       await expect.poll(async () => await column.locator('[data-sidebar-right-open]').count()).toBe(0)
       await expandOf(page).click()
