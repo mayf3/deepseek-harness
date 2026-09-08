@@ -73,6 +73,39 @@ describe('claimLayerIds', () => {
       { id: 'h', config: [{ id: 'settings', name: 'taking/impostor' }] },
     ])
     expect(() => claimLayerIds([base, taking])).toThrow(/row "settings" is declared by both @deepseek-ai\/dsh-base and taking/)
+    // Setting a row under another group would move it; listing it twice would fail the group's update.
+    const moving = layer('moving', 'builtin', [
+      { insert: [
+        { id: 'g', name: 'cordis:group', group: true, config: [{ id: 'a', name: 'a' }] },
+        { id: 'h', name: 'cordis:group', group: true, config: [] },
+      ] },
+      { id: 'h', config: [{ id: 'a', name: 'a' }] },
+    ])
+    expect(() => claimLayerIds([moving])).toThrow(/row "a" is declared twice by moving/)
+    const twice = layer('twice', 'builtin', [
+      { insert: [{ id: 'g', name: 'cordis:group', group: true, config: [] }] },
+      { id: 'g', config: [{ id: 'a', name: 'a' }, { id: 'a', name: 'a' }] },
+    ])
+    expect(() => claimLayerIds([twice])).toThrow(/row "a" is declared twice by twice/)
+    // A child of a group without an id cannot be restated: no patch can address that group.
+    const anonymous = layer('anonymous', 'builtin', [
+      { insert: [
+        { name: 'cordis:group', group: true, config: [{ id: 'a', name: 'a' }] },
+        { id: 'h', name: 'cordis:group', group: true, config: [] },
+      ] },
+      { id: 'h', config: [{ id: 'a', name: 'a' }] },
+    ])
+    expect(() => claimLayerIds([anonymous])).toThrow(/row "a" is declared twice by anonymous/)
+  })
+
+  it('leaves out a bundle whose config override of its own group lists an id twice', () => {
+    const self = layer('self', 'external', [
+      { insert: [{ id: 'row', name: 'self/row' }] },
+      { id: 'bundle/self', config: [{ id: 'row', name: 'self/row' }, { id: 'row', name: 'self/row-again' }] },
+    ])
+    const { skipped, composed } = claimLayerIds([base, self])
+    expect(skipped.get('self')?.map(conflict => conflict.message)).toEqual(['row "row" is declared twice by self'])
+    expect(composed.has('self')).toBe(false)
   })
 
   it('leaves out a bundle that declares one of its own ids twice and composes each mounted bundle once', () => {
