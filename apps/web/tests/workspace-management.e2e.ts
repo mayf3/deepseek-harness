@@ -77,6 +77,11 @@ describe('web e2e: workspace management (create / rename / flat view / hover aff
       () => scaffold.ctx.workspaceRegistry.resolveByPath(join(parent, name)),
       { timeout: 10_000 },
     ).not.toBeUndefined()
+    // Adoption also opens a blank Session. Its selected row must reach the
+    // browser before a later workspace action can depend on the row positions.
+    const row = page.getByRole('treeitem').filter({ hasText: name }).first()
+    const section = row.locator('xpath=ancestor::*[contains(@class, "groupSection")][1]')
+    await section.locator('[role="treeitem"][aria-selected="true"]').waitFor({ timeout: 10_000 })
   }
 
   /**
