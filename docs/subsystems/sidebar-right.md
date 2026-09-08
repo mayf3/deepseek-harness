@@ -8,7 +8,7 @@ This page is the reference for the subsystem's contracts: addresses, tab-type re
 
 ## Position and ownership
 
-One docking surface exists per Session, held in a session-scoped slot store and drawn by `rightbar.session`. The root-scoped `rightbar` controller mounts that seat only while Conversation is selected; a reload returns every session to the collapsed default, and switching sessions keeps each surface where it was ([state](../../packages/client/ui-sidebar-right/README.md#state)). The surface's every change is one recorded history entry computed by the kit's pure planners; a docked pane never stays empty, and the last pane reseeds the guide tab.
+One docking surface exists per Session, held in a session-scoped slot store and drawn by `rightbar.session`. The root-scoped `rightbar` controller mounts that seat only while Conversation is selected; a reload returns every session to the collapsed default, and switching sessions keeps each surface where it was ([state](../../packages/client/ui-sidebar-right/README.md#state)). The surface's every change is one recorded history entry computed by the kit's pure planners; a docked pane never stays empty, and an empty root pane receives the default page selected from registered guide entries.
 
 A tab type is two registrations that share the definition's `id`: a static definition in `ctx.sidebarRightTabs` saying which addresses its `kind` opens, and a keyed slot registration supplying its body. The framework injects `useTabInfo()` for live Sidebar, pane and tab information; each type keeps its own state in its slot store. Packages import each other's declarations only as types.
 
@@ -130,7 +130,7 @@ The Host `ctx.workspaceFiles` service and generated `workspaceFiles` Remote name
 
 ## Shipped types
 
-- **`guide`** — `builtin`, opened as `openTab('guide')`. A centred title, one line, and one entry box per `guide` entry the registered types contributed, in `order`; picking a box opens the contributing type as a page in the guide tab's place. A pane holds at most one guide tab, every new pane is seeded with one, and the strip's add control appears only while its pane has none ([guide](../../packages/client/ui-sidebar-right/README.md#the-guide)).
+- **`guide`** — `builtin`, opened as `openTab('guide')`. A centred title, one line, and one entry box per `guide` entry the registered types contributed, in `order`; picking a box opens the contributing type as a page in the guide tab's place. A pane holds at most one guide tab, and the strip's add control appears only while its pane has none. A new pane receives the registered default page: the sole guide entry directly, or the guide when the entry count is not one ([guide](../../packages/client/ui-sidebar-right/README.md#the-guide)).
 - **`text`** — `fallback`, `dsh-resource://file/**`, claiming Session addresses only. Document Preview observes metadata through `useResource<'file'>`, loads content through Remote callbacks, and owns renderer selection, the toolbar, per-tab refresh, scroll, and source navigation; unknown extensions render as plain text ([README](../../packages/client/ui-sidebar-documentpreview/README.md)).
 - **`files`** — `builtin`, opened as `openTab('files')`. The workspace directory tree, listed lazily through `list`, opening a file with `tab.actions.openResource(fileAddressFor(sessionId, root, path))` into its own pane ([README](../../packages/client/ui-sidebar-files/README.md)).
 
@@ -145,4 +145,4 @@ The Host `ctx.workspaceFiles` service and generated `workspaceFiles` Remote name
 - Naming a tab implementation when opening: `openResource` names a kind at most; document-renderer selection belongs to the file tab's toolbar.
 - An address lookup on the service (`find`): a caller opens with `revealIfOpened` and lets the surface de-duplicate.
 - Navigation addresses beyond the Sidebar's own `sidebar://<kind>` bookkeeping; their grammar waits for the navigation controller as a whole.
-- A user-facing undo, a content navigation stack, tab icons, and closing restrictions ([deferred](../../.agents/notes/implemented/feature/2026-09-04-right-sidebar-docking-infrastructure.md#deferred)).
+- A user-facing undo, a content navigation stack, and tab icons ([deferred](../../.agents/notes/implemented/feature/2026-09-04-right-sidebar-docking-infrastructure.md#deferred)).

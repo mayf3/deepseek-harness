@@ -225,8 +225,8 @@
       name: '@deepseek-ai/dsh-client-ui-sidebar-right'
 
 
-    # The right Sidebar's first outside tab type: workspace text files, read
-    # through the bounded workspaceFiles endpoint.
+    # The right Sidebar's document tab: bounded file reads with selectable
+    # Markdown, code, HTML, PDF, and plain-text renderers.
     - id: ui-sidebar-documentpreview
       name: '@deepseek-ai/dsh-client-ui-sidebar-documentpreview'
 

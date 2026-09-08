@@ -24,7 +24,6 @@ function humanBytes(bytes: number): string {
 export function failureLine(t: TranslateNS<'sidebarDocumentPreview'>, failure: RemoteFailure): string {
   switch (failure.code) {
     case 'workspace-file/not-found': return t('error.notFound')
-    case 'workspace-file/outside-workspace': return t('error.outsideWorkspace')
     case 'workspace-file/too-large':
       return t('error.tooLarge', { limit: humanBytes(failure.details.limit) })
     case 'workspace-file/not-text': return t('error.notText')

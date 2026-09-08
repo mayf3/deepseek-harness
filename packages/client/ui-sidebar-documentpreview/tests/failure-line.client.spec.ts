@@ -19,7 +19,6 @@ function failure(code: string, details: Record<string, unknown> = {}, message = 
 describe('failureLine', () => {
   it('names each workspace-file code', () => {
     expect(failureLine(t, failure('workspace-file/not-found'))).toBe('error.notFound')
-    expect(failureLine(t, failure('workspace-file/outside-workspace'))).toBe('error.outsideWorkspace')
     expect(failureLine(t, failure('workspace-file/not-text'))).toBe('error.notText')
     expect(failureLine(t, failure('workspace-file/not-regular-file'))).toBe('error.notRegularFile')
   })
