@@ -147,23 +147,25 @@ describe('web e2e: queue row actions', () => {
     ).toBe(2)
 
     await page.setViewportSize({ width: 640, height: 1000 })
-    const queueBox = await page.locator('[data-queue-dock]').boundingBox()
-    const composerBox = await page.locator('[data-composer-card]').boundingBox()
-    expect(queueBox).not.toBeNull()
-    expect(composerBox).not.toBeNull()
-    expect(queueBox!.x).toBeGreaterThanOrEqual(composerBox!.x)
-    expect(queueBox!.x + queueBox!.width)
-      .toBeLessThanOrEqual(composerBox!.x + composerBox!.width)
-    const queueLeftInset = queueBox!.x - composerBox!.x
-    const queueRightInset = composerBox!.x + composerBox!.width - queueBox!.x - queueBox!.width
-    const composerMetrics = await page.locator('[data-composer-card]').evaluate((element) => {
-      const style = getComputedStyle(element)
-      return {
-        dockInset: Number.parseFloat(style.getPropertyValue('--dsh-composer-dock-inset')),
-      }
-    })
-    expect(queueLeftInset).toBeCloseTo(composerMetrics.dockInset, 1)
-    expect(queueRightInset).toBeCloseTo(composerMetrics.dockInset, 1)
+    await expect.poll(async () => {
+      const metrics = await page.locator('[data-composer-card]').evaluate((composer) => {
+        const queue = document.querySelector('[data-queue-dock]')
+        if (!(queue instanceof HTMLElement)) throw new Error('queue dock is not mounted')
+        const queueBox = queue.getBoundingClientRect()
+        const composerBox = composer.getBoundingClientRect()
+        const dockInset = Number.parseFloat(getComputedStyle(composer).getPropertyValue('--dsh-composer-dock-inset'))
+        return {
+          left: queueBox.left - composerBox.left,
+          right: composerBox.right - queueBox.right,
+          dockInset,
+        }
+      })
+      expect(metrics.left).toBeGreaterThanOrEqual(0)
+      expect(metrics.right).toBeGreaterThanOrEqual(0)
+      expect(metrics.left).toBeCloseTo(metrics.dockInset, 1)
+      expect(metrics.right).toBeCloseTo(metrics.dockInset, 1)
+      return true
+    }, { timeout: 10_000 }).toBe(true)
     await page.setViewportSize({ width: 1680, height: 1000 })
 
     const editRow = page.locator('[data-queue-dock] li', { hasText: EDIT })
