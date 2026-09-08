@@ -26,7 +26,7 @@ Each declares itself in its own `package.json` under a `dsh` field: `dsh.profile
 
 Layers apply to an empty entry list in this order: each bundle in the profile's listed order, then the profile's `cordis.patch.yml`, then the home-level one, then any `--patch` overlay. A patch targets a row by id and replaces its whole config, or inserts new rows.
 
-A bundle installed into the profile with `dsh plugin` is external. Its rows mount under one contained group, `bundle/<package>`, under the ids its patch declares, and a row that fails to start is isolated and reported in the plugin list while built-in rows keep failing the boot. Row ids share one namespace: built-in layers own theirs first, and a bundle or user insert that declares a taken id is left out and reported as a conflict. A bundle that provides a service built-in rows inject opts out of isolation with `dsh.bundle.stage: boot`, and an isolated failure that leaves a built-in row waiting still stops the boot and names the bundle. Installing a package and enabling its layer are separate facts: `dependencies` records the install, `dsh.profile.bundles` records the enabled layers.
+An installed bundle is external: its rows mount under one contained group, a failing row is isolated and reported, and built-in rows keep failing the boot ([app-boot](../packages/boot/app-boot/README.md)).
 
 Custom profiles default to live patch reload. The shipped `web` profile is live; `headless`, `sdk`, `sdk-minimal`, and `acp` apply all layers once at startup because replacing a one-shot or stdio application's dependencies after it owns work would invalidate that lifecycle.
 
