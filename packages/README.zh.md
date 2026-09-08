@@ -71,7 +71,6 @@ harness 由 `packages/` 下的 npm 包组装而成，按能力系列分组：会
 | [`sdk/`](sdk/README.zh.md) | 进程外 SDK：JSON-RPC 协议与 TypeScript 客户端／服务器 |
 | [`acp/`](acp/README.zh.md) | 仅面向自动化的 Agent Client Protocol 服务器 |
 | [`interaction/`](interaction/README.zh.md) | 人机协作平面：批准/交互 seam、权限预设、命令、询问用户的工具 |
-| [`visualizer/`](visualizer/README.zh.md) | 内联视觉能力：Host 授权与 preset 作用域模型工具 |
 | [`boot/`](boot/README.zh.md) | 共享的 app bin 启动粘合层 |
 | [`host/`](host/README.zh.md) | web GUI 宿主半侧：API 网关 + HTTP 路由服务器 |
 | [`client/`](client/README.zh.md) | web GUI 浏览器半侧：shell、协议层、对象服务、slot、`ui-*` 插件 |

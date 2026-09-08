@@ -72,7 +72,6 @@
   "dependencies": {
     "js-yaml": "^4.1.0",
     "@deepseek-ai/schemastery": "workspace:^",
-    "@deepseek-ai/dsh-tool-visualizer": "workspace:^",
     "zod": "^4.4.3"
   },
   "devDependencies": {
