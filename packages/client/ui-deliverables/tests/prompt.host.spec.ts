@@ -18,7 +18,6 @@ describe('ui-deliverables node plugin', () => {
     await ctx.plugin(SystemPrompt, { personaPrefix: '' })
     ctx.provide('connection', { fetch: { register: () => () => {} } } as never)
     ctx.provide('sessionQuery', {} as never)
-    ctx.provide('attachments', {} as never)
     ctx.provide('sessionController', {} as never)
     const mounted = ctx.plugin({ apply, inject })
     await mounted.await()

@@ -246,14 +246,13 @@ const TOOL_PACKAGES: ToolPackage[] = [
     pkg: '@deepseek-ai/dsh-tool-present',
     dir: 'tool-present',
     source: 'packages/fs/tool-present/src/index.ts',
-    requires: ['ctx.tools', 'ctx.fs', 'ctx.attachments', 'ctx.sessionProjections'],
+    requires: ['ctx.tools', 'ctx.fs', 'ctx.sessionProjections'],
     writes: ['tool/call', 'deliverables/presented after a successful final result', 'tool/result'],
     async mount(ctx) {
       await ctx.plugin(LocalFileSystem)
-      await ctx.plugin(CatalogAttachmentStore)
       await ctx.plugin(ToolPresent)
     },
-    note: 'Deliveries belong to the calling Session; Web ui-deliverables supplies authenticated downloads and cards.',
+    note: 'Deliveries belong to the calling Session; Web ui-deliverables supplies source-file opening and cards.',
   },
   {
     pkg: '@deepseek-ai/dsh-tool-pwsh',

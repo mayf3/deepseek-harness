@@ -66,12 +66,12 @@
 - paragraph: PRESENT_DONE
 - text: Deliverables
 - button "Open report.txt in default app":
-  - text: report.txt TXT · 17B delivered report
+  - text: report.txt TXT delivered report
   - status: Opened in default app
   - img
   - text: Open
 - button "Open 说明.txt in default app":
-  - text: 说明.txt TXT · 15B delivered note
+  - text: 说明.txt TXT delivered note
   - status: Opened in default app
   - img
   - text: Open

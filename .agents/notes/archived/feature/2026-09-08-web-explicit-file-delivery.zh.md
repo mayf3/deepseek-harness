@@ -1,6 +1,7 @@
 # Agent Note: Web 显式交付文件快照
 
 Status: implemented
+Archived: 2026-09-08
 
 [English](2026-09-08-web-explicit-file-delivery.md) | 中文
 

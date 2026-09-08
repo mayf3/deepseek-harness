@@ -379,6 +379,10 @@ describe('produced-file Turn data', () => {
     ))
       .toThrow('deliverables start requires turn/start')
     expect(deliverablesDefinition.update(context, unrelated)).toBe(state)
+    for (const files of [[], [null, { path: '' }]]) {
+      const declaration = matched(at(3, 'deliverables/presented', { turn: 1, callId: 'present', files }), 'update')
+      expect(deliverablesDefinition.update(context, declaration)).toBe(state)
+    }
   })
 
   it('replays a tail page once prepend supplies its missing Turn start', () => {
@@ -541,7 +545,7 @@ describe('plugin registration', () => {
     expect(opened).toEqual(['site/report.html'])
     const fetcher = vi.fn().mockResolvedValue(new Response(null, { status: 204 }))
     vi.stubGlobal('fetch', fetcher)
-    const delivered = tailOwner({ produced: [], presented: [{ path: 'report.docx', name: 'report.docx', bytes: 4, attachmentId: 'saved' as never, seq: 2, index: 0 }] }, 3)
+    const delivered = tailOwner({ produced: [], presented: [{ path: 'report.docx', seq: 2, index: 0 }] }, 3)
     service?.forClosing(delivered, SessionId('child-session'))?.resolve('report.docx')?.open()
     expect(fetcher).toHaveBeenCalledWith('/api/present.open?sessionId=child-session&seq=2&index=0', { method: 'POST', signal: expect.any(AbortSignal) as AbortSignal })
     const face = entry!.inject!(SessionId('child-session') as never) as unknown as DeliverablesInjected
@@ -560,20 +564,20 @@ describe('plugin registration', () => {
 
 
 describe('presented files', () => {
-  const file = (path = 'report.docx') => ({ path, name: path, bytes: 4, attachmentId: 'saved-ref' })
+  const file = (path = 'report.docx') => ({ path })
 
   it('replays deliveries without mutation calls, preserves indices, and isolates turns', () => {
     const value = assembler([
       at(1, 'turn/start', { turn: 1 }),
       at(2, 'deliverables/presented', { turn: 1, callId: 'nested', files: [null, { ...file(), description: 'Final report' }] }),
-      at(3, 'deliverables/presented', { turn: 1, callId: 'again', files: [{ ...file(), attachmentId: 'new-ref' }] }),
+      at(3, 'deliverables/presented', { turn: 1, callId: 'again', files: [{ ...file(), description: 'Updated report' }] }),
       at(4, 'turn/end', { turn: 1 }),
       at(5, 'turn/start', { turn: 2 }),
     ])
     const first = presentedForClosing(tailOwner(deliverablesOf(value), 3))
-    expect(first).toMatchObject([{ path: 'report.docx', seq: 2, index: 1, attachmentId: 'saved-ref', description: 'Final report' }])
+    expect(first).toMatchObject([{ path: 'report.docx', seq: 2, index: 1, description: 'Final report' }])
     expect(presentedForClosing(tailOwner(deliverablesOf(value), 4)))
-      .toMatchObject([{ path: 'report.docx', seq: 3, attachmentId: 'new-ref' }])
+      .toMatchObject([{ path: 'report.docx', seq: 3, description: 'Updated report' }])
     expect(selectDeliverables(tailOwner(deliverablesOf(value, 2), 9))).toBeNull()
   })
 
@@ -615,12 +619,12 @@ it.each([null, [], 'invalid', {}, { turn: '1', callId: 'bad', files: [] },
 
 it('shows file metadata and descriptions without hiding extensionless deliveries', () => {
   const view = render(<Deliverables {...openProps()} matched={{ produced: [], presented: [
-    { path: 'out/report.txt', name: 'report.txt', bytes: 4096, description: 'Quarterly summary', attachmentId: 'ref' as never, seq: 2, index: 0 },
-    { path: 'LICENSE', name: 'LICENSE', bytes: 0, attachmentId: 'ref2' as never, seq: 2, index: 1 },
+    { path: 'out/report.txt', description: 'Quarterly summary', seq: 2, index: 0 },
+    { path: 'LICENSE', seq: 2, index: 1 },
   ] }} openFile={() => {}} sessionId={SessionId('session')} t={makeTranslate(en)} />)
   expect(view.getByText('Quarterly summary')).toBeTruthy()
-  expect(view.getByText('TXT · 4.0KB')).toBeTruthy()
-  expect(view.getByText('File · 0B')).toBeTruthy()
+  expect(view.getByText('TXT')).toBeTruthy()
+  expect(view.getByText('File')).toBeTruthy()
   expect(view.getByRole('button', { name: 'Open out/report.txt in default app' }).getAttribute('title')).toBe('Open out/report.txt in default app')
 })
 
@@ -630,7 +634,7 @@ it.each(['opening', 'opened', 'error'] as const)('shows the %s state and permits
   controller.state.set({ '/api/present.open?sessionId=session&seq=2&index=0': phase })
   const props = openProps(controller)
   const view = render(<Deliverables {...props} matched={{ produced: [], presented: [
-    { path: 'report.txt', name: 'report.txt', bytes: 4, attachmentId: 'ref' as never, seq: 2, index: 0 },
+    { path: 'report.txt', seq: 2, index: 0 },
   ] }} openFile={() => {}} sessionId={SessionId('session')} t={makeTranslate(en)} />)
   expect(view.getByRole('status').textContent).toBe(en[`presented.${phase}`])
   expect((view.getByRole('button') as HTMLButtonElement).disabled).toBe(phase === 'opening')

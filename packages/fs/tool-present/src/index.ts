@@ -1,9 +1,8 @@
-/** Scoped tool that saves immutable file deliveries and records their owning Session. */
+/** Scoped tool that declares workspace file deliveries in their owning Session. */
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { FsError } from '@deepseek-ai/dsh-fs'
 import { defineTool, type ToolExecution } from '@deepseek-ai/dsh-tools'
-import type {} from '@deepseek-ai/dsh-attachment'
 import type {} from '@deepseek-ai/dsh-agent'
 import type {} from '@deepseek-ai/dsh-session-projection'
 import type { Session } from '@deepseek-ai/dsh-session'
@@ -12,37 +11,33 @@ import type { PresentedFile } from './types.ts'
 /** Stable Loader identity. */
 export const name = 'tool-present'
 
-/** Per-call snapshot limits. */
+/** Per-call delivery limit. */
 export interface Config {
-  /** Inclusive per-file byte cap; at most 100 MiB. */
-  maxFileBytes: number
   /** Maximum number of files in one call. */
   maxFiles: number
 }
 
-/** Validated snapshot limits. */
+/** Validated delivery limit. */
 export const Config: z<Config> = z.object({
-  maxFileBytes: z.number().default(100 * 1024 * 1024),
   maxFiles: z.number().default(8),
 })
 
-/** Services used by the scoped snapshot tool. */
-export const inject = ['tools', 'fs', 'attachments', 'sessionProjections']
+/** Services used by the scoped delivery tool. */
+export const inject = ['tools', 'fs', 'sessionProjections']
 
 /**
  * Register present with durable file references in its tool result.
  * @param ctx - agent-scoped services.
- * @param config - per-file and per-call limits.
+ * @param config - maximum files per call.
  */
 export function apply(ctx: Context, config: Config): void {
-  if (!Number.isSafeInteger(config.maxFileBytes) || config.maxFileBytes < 1 || config.maxFileBytes > 100 * 1024 * 1024
-    || !Number.isSafeInteger(config.maxFiles) || config.maxFiles < 1) {
-    throw new Error('present requires positive integer limits; maxFileBytes must not exceed 100 MiB')
+  if (!Number.isSafeInteger(config.maxFiles) || config.maxFiles < 1) {
+    throw new Error('present requires a positive integer maxFiles')
   }
   const pending = new WeakMap<ToolExecution, { session: Session; turn: number; files: PresentedFile[] }>()
   ctx.tools.register(defineTool({
     name: 'present',
-    description: 'Deliver final files to the user. Saves a snapshot of each existing workspace file so it remains downloadable after edits or deletion. Create the files before calling this tool.',
+    description: 'Declare existing workspace files as final deliverables. The user opens the current source files; their contents are not copied or preserved. Create the files before calling this tool.',
     parameters: {
       files: {
         type: 'array', required: true,
@@ -65,15 +60,14 @@ export function apply(ctx: Context, config: Config): void {
             items: {
               type: 'object', additionalProperties: false,
               properties: {
-                path: { type: 'string', required: true }, name: { type: 'string', required: true },
-                attachmentId: { type: 'string', required: true }, bytes: { type: 'integer', required: true },
+                path: { type: 'string', required: true },
                 description: { type: 'string' },
               },
             },
           },
         },
       },
-      render: (_args, value) => [{ type: 'text', text: value.files.map(file => `Presented ${file.path} (${file.bytes} bytes)`).join('\n') }],
+      render: (_args, value) => [{ type: 'text', text: value.files.map(file => `Presented ${file.path}`).join('\n') }],
     },
     async execute(args, exec) {
       if (exec.agent === undefined) throw new Error('present requires an agent Session')
@@ -84,7 +78,7 @@ export function apply(ctx: Context, config: Config): void {
       if (cwd === undefined) throw new Error('present requires a workspace')
       const options = { cwd, signal: exec.signal }
       const root = await ctx.fs.resolve('.', options)
-      const admitted = []
+      const files: PresentedFile[] = []
       for (const file of args.files) {
         if (file.path.trim().length === 0) throw new Error('present requires a non-empty file path')
         const target = await ctx.fs.resolve(file.path, options)
@@ -92,19 +86,9 @@ export function apply(ctx: Context, config: Config): void {
         const info = await ctx.fs.stat(target, exec.signal)
         if (info === undefined) throw new FsError(`Cannot present ${file.path}: file not found. Check the path, create the file if needed, and retry.`, 'FS_NOT_FOUND')
         if (info.type !== 'file') throw new Error(`Cannot present ${file.path}: not a regular file`)
-        if (info.size !== undefined && info.size > config.maxFileBytes) throw new FsError(`Cannot present ${file.path}: file exceeds ${config.maxFileBytes} bytes`, 'FS_TOO_LARGE')
-        admitted.push({ file, target, version: info.version })
+        files.push({ ...file })
       }
-      const files = []
-      for (const { file, target, version } of admitted) {
-        const data = await ctx.fs.readBytes(target, exec.signal, config.maxFileBytes)
-        const after = await ctx.fs.stat(target, exec.signal)
-        if (after?.version !== version) throw new FsError(`Cannot present ${file.path}: file changed while reading; retry.`, 'FS_STALE_VERSION')
-        exec.signal.throwIfAborted()
-        const name = file.path.slice(Math.max(file.path.lastIndexOf('/'), file.path.lastIndexOf('\\')) + 1)
-        const ref = await ctx.attachments.saveFile({ data, name })
-        files.push({ ...file, ...ref })
-      }
+      exec.signal.throwIfAborted()
       pending.set(exec, { session: exec.agent.session, turn: boundary.lastTurn, files })
       return { turn: boundary.lastTurn, files }
     },

@@ -522,7 +522,7 @@
     },
     {
       "name": "present",
-      "description": "Deliver final files to the user. Saves a snapshot of each existing workspace file so it remains downloadable after edits or deletion. Create the files before calling this tool.",
+      "description": "Declare existing workspace files as final deliverables. The user opens the current source files; their contents are not copied or preserved. Create the files before calling this tool.",
       "parameters": {
         "type": "object",
         "properties": {

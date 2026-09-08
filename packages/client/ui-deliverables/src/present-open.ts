@@ -1,57 +1,71 @@
-/** Private editable copies keep native applications away from immutable attachment objects. */
-import { createWriteStream } from 'node:fs'
-import { mkdtemp, rm } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
-import { promises as streamPromises } from 'node:stream'
+/** Open declared source files inside the viewed Session's workspace. */
+import { realpath, stat } from 'node:fs/promises'
+import { isAbsolute, relative, resolve, sep } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
-import type { FileAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import type {} from '@deepseek-ai/dsh-api-session-controller'
-import { basename } from './presented.ts'
+import type {} from '@deepseek-ai/dsh-client-connection'
+import type {} from '@deepseek-ai/dsh-session-query'
+import type { SessionId, SessionSeq } from '@deepseek-ai/dsh-session'
+import { isPresentedData, isPresentedFile, PRESENT_OPEN_PATH } from './presented.ts'
 
 /**
- * Own native-open work and its temporary copies for one plugin lifetime.
- * Successful copies remain until disposal because desktop applications may read lazily.
- * @param ctx - attachment provider and plugin lifetime.
- * @returns an opener that verifies the entire snapshot before launching its default application.
+ * Register native opening inside Connection's authentication fence.
+ * @param ctx - Session lookup, native opener, and route lifetime.
  */
-export function createPresentedOpener(ctx: Context): (ref: FileAttachmentRef, signal: AbortSignal) => Promise<void> {
+export function registerPresentOpen(ctx: Context): void {
   const lifetime = new AbortController()
-  const directories = new Set<string>()
-  const pending = new Set<Promise<void>>()
+  const pending = new Set<Promise<Response>>()
   ctx.effect(() => async () => {
     lifetime.abort()
     await Promise.allSettled(pending)
-    await Promise.all([...directories].map(directory => rm(directory, { recursive: true, force: true })))
   })
+  ctx.connection.fetch.register({
+    path: PRESENT_OPEN_PATH,
+    methods: ['POST'],
+    requestBody: 'buffered',
+    fetch: (request) => {
+      const task = handlePresentOpen(ctx, new Request(request, {
+        signal: AbortSignal.any([request.signal, lifetime.signal]),
+      }))
+      pending.add(task)
+      void task.then(() => { pending.delete(task) }, () => { pending.delete(task) })
+      return task
+    },
+  })
+}
 
-  async function open(ref: FileAttachmentRef, signal: AbortSignal): Promise<void> {
-    signal.throwIfAborted()
-    if (basename(ref.name) !== ref.name || ref.name === '.' || ref.name === '..' || ref.name.includes('\0')) {
-      throw new Error('Presented file name must be a leaf name.')
-    }
-    const directory = await mkdtemp(join(tmpdir(), 'dsh-present-'))
-    directories.add(directory)
-    try {
-      const path = join(directory, ref.name)
-      await streamPromises.pipeline(
-        ctx.attachments.readFileStream(ref, signal),
-        createWriteStream(path, { flags: 'wx', mode: 0o600 }),
-        { signal },
-      )
-      signal.throwIfAborted()
-      await ctx.sessionController.openWorkspacePath({ path }, signal)
-    } catch (error) {
-      await rm(directory, { recursive: true, force: true })
-      directories.delete(directory)
-      throw error
-    }
+async function handlePresentOpen(ctx: Context, request: Request): Promise<Response> {
+  const query = new URL(request.url).searchParams
+  const id = query.get('sessionId')
+  const seq = query.get('seq')
+  const index = query.get('index')
+  if (!id || seq === null || index === null || !/^\d+$/.test(seq) || !/^\d+$/.test(index)
+    || !Number.isSafeInteger(Number(seq)) || !Number.isSafeInteger(Number(index))) {
+    return new Response('Invalid Presented file coordinates.', { status: 400 })
   }
-
-  return (ref, signal) => {
-    const task = open(ref, AbortSignal.any([signal, lifetime.signal]))
-    pending.add(task)
-    void task.then(() => { pending.delete(task) }, () => { pending.delete(task) })
-    return task
+  try {
+    request.signal.throwIfAborted()
+    const { session, target } = await ctx.sessionQuery.readEvent({
+      sessionId: id as SessionId, seq: Number(seq) as SessionSeq, before: 0, after: 0,
+    }, request.signal)
+    const file = target.type === 'deliverables/presented' && isPresentedData(target.data) ? target.data.files[Number(index)] : undefined
+    if (!isPresentedFile(file)) return new Response('Presented file not found in this Session result.', { status: 404 })
+    if (session.cwd === undefined) return new Response('Session workspace unavailable.', { status: 404 })
+    const root = await realpath(session.cwd)
+    const path = await realpath(resolve(root, file.path))
+    const within = relative(root, path)
+    if (isAbsolute(within) || within === '..' || within.startsWith(`..${sep}`)) {
+      return new Response('Presented file is outside the workspace.', { status: 403 })
+    }
+    if (!(await stat(path)).isFile()) return new Response('Presented path is not a file.', { status: 404 })
+    request.signal.throwIfAborted()
+    await ctx.sessionController.openWorkspacePath({ path }, request.signal)
+    return new Response(null, { status: 204, headers: { 'cache-control': 'no-store' } })
+  } catch (error: unknown) {
+    request.signal.throwIfAborted()
+    const missing = error instanceof Error && 'code' in error
+      && (error.code === 'SESSION_QUERY_SESSION_NOT_FOUND' || error.code === 'SESSION_QUERY_EVENT_NOT_FOUND'
+        || error.code === 'ENOENT' || error.code === 'ENOTDIR')
+    return new Response('Presented workspace file unavailable.', { status: missing ? 404 : 500 })
   }
 }

@@ -162,7 +162,7 @@ interface ToolArgsMap {
     /** children (default) lists direct children only; descendants walks the complete tree below you. */
     scope?: "children" | "descendants";
   } & Record<string, JsonValue>;
-  /** Deliver final files to the user. Saves a snapshot of each existing workspace file so it remains downloadable after edits or deletion. Create the files before calling this tool. */
+  /** Declare existing workspace files as final deliverables. The user opens the current source files; their contents are not copied or preserved. Create the files before calling this tool. */
   present: {
     files: {
       /** Path of an existing file inside the workspace. */
@@ -412,9 +412,6 @@ interface ToolOutputMap {
     turn: number;
     files: {
       path: string;
-      name: string;
-      attachmentId: string;
-      bytes: number;
       description?: string;
     }[];
   };

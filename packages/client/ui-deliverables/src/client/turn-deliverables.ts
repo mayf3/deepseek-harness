@@ -10,7 +10,7 @@ import type { MarkdownFileMentions } from '@deepseek-ai/dsh-client-ui-primitives
 import type { PresentedFile } from '@deepseek-ai/dsh-tool-present/types'
 import { basename, isPresentedData, isPresentedFile } from '../presented.ts'
 
-/** A saved delivery with its authorized download coordinate. */
+/** A declared file with its authorized open coordinates. */
 export interface PresentedPath extends PresentedFile {
   readonly seq: number
   readonly index: number
@@ -173,7 +173,12 @@ export const deliverablesDefinition: ConversationNodeDefinition<DeliverablesStat
     if (match.event.type === 'deliverables/presented') {
       const { files } = match.event.data
       const seq = match.event.seq
-      const presented = files.flatMap((file, index) => isPresentedFile(file) ? [{ ...file, seq, index }] : [])
+      const presented: PresentedPath[] = []
+      for (let index = 0; index < files.length; index += 1) {
+        const file = files[index]
+        if (isPresentedFile(file)) presented.push({ ...file, seq, index })
+      }
+      if (presented.length === 0) return context.state
       return { ...context.state, presented: [...context.state.presented ?? [], ...presented] }
     }
     if (match.event.type === 'tool/call') {
@@ -210,7 +215,7 @@ export const deliverablesDefinition: ConversationNodeDefinition<DeliverablesStat
 }
 
 /**
- * Select the latest saved delivery of each path before the closing reply.
+ * Select the latest declaration of each path before the closing reply.
  * @param owner - closing turn and sequence.
  * @returns replayable deliveries in first-seen path order.
  */

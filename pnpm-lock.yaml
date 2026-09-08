@@ -2696,12 +2696,6 @@ importers:
       '@deepseek-ai/dsh-api-session-controller':
         specifier: workspace:^
         version: link:../../api/session-controller
-      '@deepseek-ai/dsh-attachment':
-        specifier: workspace:^
-        version: link:../../attachment/attachment
-      '@deepseek-ai/dsh-attachment-local':
-        specifier: workspace:^
-        version: link:../../attachment/attachment-local
       '@deepseek-ai/dsh-client-connection':
         specifier: workspace:^
         version: link:../connection
@@ -6109,12 +6103,6 @@ importers:
       '@deepseek-ai/dsh-agent-loop-testkit':
         specifier: workspace:^
         version: link:../../test-support/agent-loop-testkit
-      '@deepseek-ai/dsh-attachment':
-        specifier: workspace:^
-        version: link:../../attachment/attachment
-      '@deepseek-ai/dsh-attachment-local':
-        specifier: workspace:^
-        version: link:../../attachment/attachment-local
       '@deepseek-ai/dsh-fs':
         specifier: workspace:^
         version: link:../fs

@@ -1,5 +1,5 @@
-/** Recorded delivery, source deletion, reload, and Session ZIP behavior. */
-import { readFile, unlink, mkdir, mkdtemp, writeFile, rm } from 'node:fs/promises'
+/** Recorded source-file delivery, edits, reload, deletion, and Session ZIP behavior. */
+import { readFile, unlink, mkdir, mkdtemp, writeFile, rm, realpath } from 'node:fs/promises'
 import { join, delimiter } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { chromium, type Browser, type Page } from 'playwright'
@@ -35,7 +35,7 @@ describe.skipIf(process.platform === 'win32' || release().toLowerCase().includes
   const events: SessionEvent[] = []
   let nativeRoot: string | undefined
   let openLog: string
-  const opened = async (): Promise<string[]> => (await readFile(openLog, 'utf8')).split('\n').filter(Boolean).map(line => JSON.parse(line) as string)
+  const opened = async (): Promise<Array<{ path: string; content: string }>> => (await readFile(openLog, 'utf8')).split('\n').filter(Boolean).map(line => JSON.parse(line) as { path: string; content: string })
   const downloads: string[] = []
 
   beforeAll(async () => {
@@ -46,7 +46,7 @@ describe.skipIf(process.platform === 'win32' || release().toLowerCase().includes
     const command = process.platform === 'darwin' ? 'open' : 'xdg-open'
     await writeFile(join(nativeRoot, command), `#!${process.execPath}
 const fs = require('node:fs');
-fs.appendFileSync(${JSON.stringify(openLog)}, JSON.stringify(fs.readFileSync(process.argv[2], 'utf8')) + '\\n');
+fs.appendFileSync(${JSON.stringify(openLog)}, JSON.stringify({ path: process.argv[2], content: fs.readFileSync(process.argv[2], 'utf8') }) + '\\n');
 `, { mode: 0o700 })
     vi.stubEnv('PATH', `${nativeRoot}${delimiter}${process.env.PATH ?? ''}`)
     await mkdir(DIR, { recursive: true })
@@ -79,7 +79,7 @@ fs.appendFileSync(${JSON.stringify(openLog)}, JSON.stringify(fs.readFileSync(pro
     }
   })
 
-  it('delivers nested snapshots even when the enclosing program subsequently fails', async () => {
+  it('declares nested deliveries even when the enclosing program subsequently fails', async () => {
     if (MODE !== 'record') expect(fixtureUserPrompts(await readFile(FIXTURE, 'utf8'))).toEqual([PROMPT])
     const settled = scaffold.whenTurnSettled()
     const input = page.locator('[data-composer-input]').first()
@@ -94,13 +94,21 @@ fs.appendFileSync(${JSON.stringify(openLog)}, JSON.stringify(fs.readFileSync(pro
     await assertFinalWorkspaceSnapshot(DIR, cwd)
     expect(events.filter(event => event.type === 'deliverables/presented').flatMap(event => event.data.files.map(file => file.path)))
       .toEqual(['report.txt', '说明.txt'])
+    for (const event of events) {
+      if (event.type === 'deliverables/presented') {
+        expect(event.data.files).toEqual([
+          { path: 'report.txt', description: 'delivered report' },
+          { path: '说明.txt', description: 'delivered note' },
+        ])
+      }
+    }
     expect(events.some(event => event.type === 'tool/code-dispatch' && event.data.name === 'present' && event.data.isError)).toBe(true)
     expect(events.some(event => event.type === 'tool/result' && event.data.message.content[0].isError)).toBe(true)
   }, 200_000)
 
-  it('opens saved copies after source deletion and reload, while Session ZIP contains only references', async () => {
-    await unlink(join(cwd, 'report.txt'))
-    await unlink(join(cwd, '说明.txt'))
+  it('opens current source files after edits and reload, and reports deletion without downloading', async () => {
+    await writeFile(join(cwd, 'report.txt'), 'EDITED_REPORT\n')
+    await writeFile(join(cwd, '说明.txt'), 'EDITED_NOTE\n')
     for (const reload of [false, true]) {
       if (reload) {
         const warningStart = tripwire.warnings.length
@@ -111,14 +119,14 @@ fs.appendFileSync(${JSON.stringify(openLog)}, JSON.stringify(fs.readFileSync(pro
       const row = page.locator('[data-presented-files-row]')
       await row.waitFor()
       expect(await row.getByRole('button').count()).toBe(2)
-      for (const [name, bytes] of [['report.txt', 'DELIVERED_REPORT\n'], ['说明.txt', 'DELIVERED_NOTE\n']]) {
+      for (const [name, bytes] of [['report.txt', 'EDITED_REPORT\n'], ['说明.txt', 'EDITED_NOTE\n']] as const) {
         const count = (await opened()).length
         const response = page.waitForResponse(response => response.url().includes('/api/present.open?') && response.request().method() === 'POST')
         await row.getByRole('button', { name: `Open ${name} in default app`, exact: true }).click()
         expect((await response).status()).toBe(204)
         await page.waitForFunction(() => document.querySelector('[data-presented-files-row] button:disabled') === null)
         expect(await opened()).toHaveLength(count + 1)
-        expect((await opened()).at(-1)).toBe(bytes)
+        expect((await opened()).at(-1)).toEqual({ path: await realpath(join(cwd, name)), content: bytes })
       }
     }
     const count = (await opened()).length
@@ -127,13 +135,22 @@ fs.appendFileSync(${JSON.stringify(openLog)}, JSON.stringify(fs.readFileSync(pro
     await page.waitForFunction(() => document.querySelector('[data-presented-files-row] button:disabled') === null)
     expect((await openedResponse).status()).toBe(204)
     expect(await opened()).toHaveLength(count + 1)
-    expect((await opened()).at(-1)).toBe('DELIVERED_REPORT\n')
+    expect((await opened()).at(-1)).toEqual({ path: await realpath(join(cwd, 'report.txt')), content: 'EDITED_REPORT\n' })
     expect(downloads).toEqual([])
     const response = await page.request.get(new URL(`/api/session.export?sessionId=${sessionId}`, scaffold.authenticatedUrl).href)
     expect(response.status()).toBe(200)
     const entries = unzipSync(await response.body())
     expect(Object.keys(entries)).toHaveLength(1)
-    expect(strFromU8(Object.values(entries)[0]!)).toContain('deliverables/presented')
+    const exported = strFromU8(Object.values(entries)[0]!)
+    expect(exported).toContain('deliverables/presented')
+    const declarations = exported.trim().split('\n').map(line => JSON.parse(line) as SessionEvent)
+      .filter(event => event.type === 'deliverables/presented')
+    expect(declarations).toHaveLength(1)
+    expect(declarations[0]!.data.files).toEqual([
+      { path: 'report.txt', description: 'delivered report' },
+      { path: '说明.txt', description: 'delivered note' },
+    ])
+    expect(exported).not.toContain('EDITED_REPORT')
     if (MODE !== 'record') {
       const aria = await captureExpandedTurnProcessAria(page, '[class*="centerCol"]', scaffold.workspaceCwd)
       await compareOrRefreshGolden(join(DIR, 'ui.expected.md'), aria, MODE)
@@ -155,6 +172,14 @@ fs.appendFileSync(${JSON.stringify(openLog)}, JSON.stringify(fs.readFileSync(pro
         expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(480)
       }
     }
+    const beforeDelete = (await opened()).length
+    await unlink(join(cwd, 'report.txt'))
+    const missing = page.waitForResponse(response => response.url().includes('/api/present.open?'))
+    await page.locator('[data-presented-files-row]').getByRole('button', { name: 'Open report.txt in default app', exact: true }).click()
+    expect((await missing).status()).toBe(404)
+    await page.getByText('Could not open. Click to retry.', { exact: true }).waitFor()
+    expect(await opened()).toHaveLength(beforeDelete)
+    expect(downloads).toEqual([])
     expect(tripwire.pageErrors).toEqual([])
     expect(tripwire.warnings).toEqual([])
   })

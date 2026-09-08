@@ -1,45 +1,38 @@
-/** Validate durable delivery references and address their Web downloads. */
+/** Validate declared workspace paths and address their native-open actions. */
 import type { PresentedFile } from '@deepseek-ai/dsh-tool-present/types'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { ToolCallId } from '@deepseek-ai/dsh-llm/brand'
 
-/** Authenticated route for saved file bytes. */
-export const PRESENT_DOWNLOAD_PATH = '/api/present.download'
-
-/** Authenticated POST route for opening a saved file on the Host desktop. */
+/** Authenticated POST route for opening a workspace file on the Host desktop. */
 export const PRESENT_OPEN_PATH = '/api/present.open'
 
 /**
- * Validate a saved delivery read from a Session log.
+ * Validate a file declaration read from a Session log.
  * @param value - decoded durable data.
- * @returns whether the reference contains the fields used for display and downloads.
+ * @returns whether the declaration contains a path and optional description.
  */
 export function isPresentedFile(value: unknown): value is PresentedFile {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) return false
-  const { path, name, bytes, attachmentId, description } = value as Record<string, unknown>
+  const { path, description } = value as Record<string, unknown>
   return typeof path === 'string' && path.trim().length > 0
-    && typeof name === 'string' && name.trim().length > 0
-    && typeof attachmentId === 'string' && attachmentId.length > 0
-    && typeof bytes === 'number' && Number.isSafeInteger(bytes) && bytes >= 0
     && (description === undefined || typeof description === 'string')
 }
 
 /**
- * Build authenticated coordinates for a saved delivery.
+ * Build authenticated coordinates for a declared file.
  * @param sessionId - owning Session.
  * @param seq - deliverables/presented event sequence.
  * @param index - original index in the event's files array.
- * @param action - retrieve the bytes or open a copy on the Host desktop.
  * @returns same-origin file action URL.
  */
-export function presentedFileUrl(sessionId: SessionId, seq: number, index: number, action: 'download' | 'open' = 'download'): string {
-  return `${action === 'open' ? PRESENT_OPEN_PATH : PRESENT_DOWNLOAD_PATH}?${new URLSearchParams({ sessionId, seq: String(seq), index: String(index) })}`
+export function presentedFileUrl(sessionId: SessionId, seq: number, index: number): string {
+  return `${PRESENT_OPEN_PATH}?${new URLSearchParams({ sessionId, seq: String(seq), index: String(index) })}`
 }
 
 /**
- * Validate a delivery event before reading its turn or saved references.
+ * Validate a delivery event before reading its turn or file declarations.
  * @param value - decoded durable event data.
- * @returns whether the event identifies a turn, call, and file-reference list.
+ * @returns whether the event identifies a turn, call, and file list.
  */
 export function isPresentedData(value: unknown): value is { turn: number; callId: ToolCallId; files: unknown[] } {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) return false

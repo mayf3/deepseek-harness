@@ -403,13 +403,13 @@ Source: [`packages/compaction/compaction/src/types.ts:34`](../packages/compactio
 #### `deliverables/presented` — log-only
 
 ```ts persistence-catalog
-/** Saved deliveries from a successful final present result, including nested calls. */
+/** Declared workspace files from a successful final present result, including nested calls. */
 'deliverables/presented': { turn: number; callId: ToolCallId; files: PresentedFile[] }
 ```
 
 Types: [ToolCallId](subsystems/core.md)
 
-Source: [`packages/fs/tool-present/src/types.ts:16`](../packages/fs/tool-present/src/types.ts)
+Source: [`packages/fs/tool-present/src/types.ts:15`](../packages/fs/tool-present/src/types.ts)
 
 ### `feedback/*`
 

@@ -1,12 +1,11 @@
 /** Explicit deliveries commit only after a successful final tool result. */
-import { mkdtemp, rm, writeFile, unlink, symlink } from 'node:fs/promises'
+import { mkdtemp, rm, writeFile, symlink } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import AgentRegistry, { type Agent } from '@deepseek-ai/dsh-agent'
 import { unsupportedInbox } from '@deepseek-ai/dsh-agent-loop-testkit'
-import LocalAttachmentStore from '@deepseek-ai/dsh-attachment-local'
 import LocalFileSystem from '@deepseek-ai/dsh-fs-local'
 import { createScope, type Scope } from '@deepseek-ai/dsh-scope'
 import { ToolCallId } from '@deepseek-ai/dsh-llm'
@@ -52,7 +51,7 @@ async function agent(ctx: Context, cwd: string | undefined): Promise<Agent> {
 }
 
 
-async function setup(maxFileBytes = 1024) {
+async function setup() {
   const root = await mkdtemp(join(tmpdir(), 'dsh-present-minimal-'))
   cleanups.push(() => rm(root, { recursive: true, force: true }))
   const ctx = new Context()
@@ -61,10 +60,9 @@ async function setup(maxFileBytes = 1024) {
   await ctx.plugin(ToolRuntime)
   await ctx.plugin(AgentRegistry)
   await ctx.plugin(LocalFileSystem, { cwd: root })
-  await ctx.plugin(LocalAttachmentStore, { dshHome: join(root, 'home') })
   await ctx.plugin(SessionProjectionRegistry)
   ctx.sessionProjections.register(turnBoundaryProjectionDefinition)
-  const fiber = ctx.plugin(Present, { maxFileBytes, maxFiles: 2 })
+  const fiber = ctx.plugin(Present, { maxFiles: 2 })
   await fiber
   const owner = await agent(ctx, root)
   owner.session.append('turn/start', { turn: 1 })
@@ -76,21 +74,20 @@ async function setup(maxFileBytes = 1024) {
 }
 
 describe('present', () => {
-  it('saves binary bytes, records one delivery, and survives source deletion', async () => {
+  it('declares binary files without reading or copying contents, and records one delivery', async () => {
     const { ctx, owner, root, execute, fiber } = await setup()
     const data = Uint8Array.of(80, 75, 0, 255)
     await writeFile(join(root, '报告.docx'), data)
+    const read = vi.spyOn(ctx.fs, 'readBytes')
     const result = await execute([{ path: '报告.docx', description: 'Report' }])
     expect(result.isError).toBe(false)
     if (result.isError) throw new Error('present failed')
     const files = (result.value as unknown as { files: PresentedFile[] }).files
     expect(files).toHaveLength(1)
     expect(owner.session.snapshotEvents().find(event => event.type === 'deliverables/presented')?.data.files).toEqual(files)
-    const file = files[0]!
-    await unlink(join(root, '报告.docx'))
-    const chunks = []
-    for await (const chunk of ctx.attachments.readFileStream(file)) chunks.push(chunk)
-    expect(Buffer.concat(chunks)).toEqual(Buffer.from(data))
+    expect(files).toEqual([{ path: '报告.docx', description: 'Report' }])
+    expect(read).not.toHaveBeenCalled()
+    expect(ctx.get('attachments')).toBeUndefined()
     await fiber.dispose()
     expect(ctx.tools.get('present', owner)).toBeUndefined()
   })
@@ -117,7 +114,7 @@ describe('present', () => {
 
   it('records once when ancestor and agent scopes both mount present', async () => {
     const { owner, root, execute } = await setup()
-    await owner.ctx.plugin(Present, { maxFileBytes: 1024, maxFiles: 2 })
+    await owner.ctx.plugin(Present, { maxFiles: 2 })
     await writeFile(join(root, 'a'), 'a')
     expect((await execute([{ path: 'a' }])).isError).toBe(false)
     const deliveries = owner.session.snapshotEvents().filter(event => event.type === 'deliverables/presented')
@@ -125,7 +122,7 @@ describe('present', () => {
     expect(deliveries[0]?.data.files[0]?.path).toBe('a')
   })
 
-  it('does not publish deliveries after post-execute blocks a successful snapshot', async () => {
+  it('does not publish deliveries after post-execute blocks a successful declaration', async () => {
     const { ctx, root, owner, execute } = await setup()
     await writeFile(join(root, 'a'), 'a')
     ctx.on('tools/post-execute', async (_exec, _result, next) => {
@@ -136,37 +133,24 @@ describe('present', () => {
     expect(owner.session.snapshotEvents().some(event => event.type === 'deliverables/presented')).toBe(false)
   })
 
-  it('rejects missing, non-file, outside-workspace, empty, and oversized inputs', async () => {
-    const { root, owner, execute } = await setup(3)
+  it('rejects missing, non-file, outside-workspace, empty, and excessive inputs', async () => {
+    const { root, owner, execute } = await setup()
     await writeFile(join(root, 'large'), 'four')
     await symlink(tmpdir(), join(root, 'outside'))
-    for (const files of [[], [{ path: '' }], [{ path: 'missing' }], [{ path: '.' }], [{ path: 'outside' }], [{ path: 'large' }]]) {
+    for (const files of [[], [{ path: '' }], [{ path: 'missing' }], [{ path: '.' }], [{ path: 'outside' }], [{ path: 'large' }, { path: 'large' }, { path: 'large' }]]) {
       const result = await execute(files)
       expect(result.isError, JSON.stringify(files)).toBe(true)
     }
     expect(owner.session.snapshotEvents().some(event => event.type === 'deliverables/presented')).toBe(false)
   })
 
-  it('refuses a file changed during the bounded read before saving it', async () => {
-    const { ctx, root, owner, execute } = await setup()
-    await writeFile(join(root, 'a'), 'old')
-    const read = ctx.fs.readBytes.bind(ctx.fs)
-    vi.spyOn(ctx.fs, 'readBytes').mockImplementation(async (...args) => {
-      const data = await read(...args)
-      await writeFile(join(root, 'a'), 'changed')
-      return data
-    })
-    const save = vi.spyOn(ctx.attachments, 'saveFile')
-    expect((await execute([{ path: 'a' }])).isError).toBe(true)
-    expect(save).not.toHaveBeenCalled()
-    expect(owner.session.snapshotEvents().some(event => event.type === 'deliverables/presented')).toBe(false)
-  })
+
 })
 
 
 it('validates deployment limits before registering the tool', () => {
-  for (const config of [{ maxFileBytes: 0, maxFiles: 2 }, { maxFileBytes: 104857601, maxFiles: 2 }, { maxFileBytes: 3, maxFiles: 0 }]) {
-    expect(() => { Present.apply(new Context(), config) }).toThrow('positive integer limits')
+  for (const config of [{ maxFiles: 0 }, { maxFiles: 1.5 }, { maxFiles: Number.POSITIVE_INFINITY }]) {
+    expect(() => { Present.apply(new Context(), config) }).toThrow('positive integer maxFiles')
   }
 })
 

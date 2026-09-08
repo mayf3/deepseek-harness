@@ -30,7 +30,7 @@ kind: "package-reference"
 <a id="explicit-deliveries"></a>
 ### 显式交付
 
-Web 的 `standard`、`ptc` 与 `cordis` preset 提供 `present` 用于交付最终文件，包括通过 Bash 创建的文件。创建文件后，以 `files: [{ path, description? }]` 调用。[present 工具](../../fs/tool-present/README.zh.md)拥有快照创建、限制和 Session 交付记录。收尾 turn 显示响应式文件卡片，包含名称、类型、大小、说明和在 Host 默认应用中打开保存副本的按钮。匹配的行内代码引用也打开相同快照；修改或删除源文件、重新加载后仍可打开，不触发浏览器下载。Fork 通过当前查看的 Session 授权打开。同一路径重复交付时，选择收尾回复之前最近一次成功的快照。
+Web 的 `standard`、`ptc` 与 `cordis` preset 提供 `present` 用于声明交付最终工作区文件，包括通过 Bash 创建的文件。创建文件后，以 `files: [{ path, description? }]` 调用。[present 工具](../../fs/tool-present/README.zh.md)拥有文件数量限制和 Session 声明。收尾 turn 显示响应式卡片，包含文件名称、类型、说明和在 Host 默认应用中打开源文件的按钮。匹配的行内代码引用打开相同源文件，不触发浏览器下载。同一路径重复声明时，选择收尾回复之前最近一次的说明。
 
 `present` 工具行显示正在交付、已交付、失败或中断状态；展开已结束的调用可查看其记录的结果。文件卡片展示全部交付文件。打开时，卡片显示进度、成功确认或可重试的错误。服务 Host 必须具备桌面和合适的默认应用；远程浏览器不会打开其所在设备上的应用。
 
@@ -52,7 +52,7 @@ Web 的 `standard`、`ptc` 与 `cordis` preset 提供 `present` 用于交付最�
 
 Node 半部注册静态 `ui:deliverable-file-references` 系统提示词段，要求模型点名成功创建或修改的主要文件，并把这些文件以及正文中提到的其他本轮变更文件写成 Markdown 行内代码。浏览器半部把组合 `ProducedFiles` 与显式交付的包装组件注册进 chat 视图的 `conversation.chat.turnTail` 洞。`deliverablesDefinition` 根据 `write`、`edit` 和有修改作用的 `str_replace_editor` 命令中经过校验的原始参数，把每个轮次成功的第一方修改调用折叠进 `DeliverablesTurnData`。读取、删除、不受支持的工具、格式错误的调用和失败结果不贡献任何条目。新的修改工具必须增加显式 Client contribution 才能加入列表。本包还提供 chat 视图按收尾消息查询的 `chatFileMentions` 服务；把插件组合出去会同时移除两个表面，视图的空链以零成本留下。
 
-原生打开使用经过认证的 POST，通过 Session、事件序号和原始文件索引定位文件。Host 将保存的字节流写入私有临时副本，完整校验 attachment 后才启动默认应用。每次操作创建独立副本，因此应用内的编辑不会修改已保存的快照。打开失败时删除副本；成功副本保留到插件释放，因为应用可能延迟读取。释放时先取消并等待进行中的操作，再执行清理。经过认证的 GET 下载端点仍供字节读取方使用。
+原生打开使用经过认证的 POST，通过当前查看的 Session、事件序号和原始文件索引定位声明。Host 按该 Session 的工作区解析路径，检查当前文件存在且位于工作区内，再启动默认应用。编辑会影响后续打开的内容；删除后返回错误。不创建文件内容副本或附件。插件释放时取消并等待进行中的原生打开请求。
 
 </details>
 
@@ -95,9 +95,9 @@ Node 半部注册静态 `ui:deliverable-file-references` 系统提示词段，�
 这些限制界定了当前产出物词表。它们是当前包约束，不是通用文件链接对比或任务积压。
 
 - **提及匹配只认精确路径或唯一 basename**——后缀式提及保持惰性；等真实的收尾消息形态产生需求后再放宽匹配规则。
-- **终端创建的文件需要显式交付**——调用 `present` 使其快照可供下载。
-- **转移的 Session 导出不含交付字节** — 下载链接依赖服务主机附件存储中的同一快照；快照缺失或被清理时返回 404。
-- **原生文件夹交接以 Host 桌面为目标**——经非 loopback authority 访问的浏览器会省略该动作，报告没有原生打开器的部署也一样；若 SSH 转发让远端 Host 看似 loopback 本地，部署必须为 Session Controller 设置 `nativeOpen: false`。
+- **终端创建的文件需要显式交付**——调用 `present` 声明文件，以便原生打开。
+- **声明不保存文件内容**——重新打开或转移 Session 后，需要当前查看的 Session 工作区中仍有源文件。文件缺失返回 404；解析到工作区外的路径返回 403。
+- **目录没有打开目标**——标签项在右侧 Sidebar 的文本预览中打开文件，该预览仅支持文件，不提供原生文件夹打开动作。
 
 <a id="dev-note"></a>
 ### 开发备注
@@ -109,4 +109,4 @@ Node 半部注册静态 `ui:deliverable-file-references` 系统提示词段，�
 
 </details>
 
-**运行时不变式：** 不发布伴生入口。prompt section、slot、dictionary、文件操作路由与可选 service 注册都归 effect 所有，释放由插件测试证明；attachment 服务拥有保存的字节，Session 日志拥有交付引用。
+**运行时不变式：** 不发布伴生入口。提示词、slot、dictionary、文件操作路由与可选 service 注册归 effect 所有；Session 日志拥有声明，工作区拥有文件内容。

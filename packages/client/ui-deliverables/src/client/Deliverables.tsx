@@ -1,6 +1,6 @@
-/** Existing changed-file chips and explicitly delivered snapshots for a closing turn. */
+/** Existing changed-file chips and explicitly declared files for a closing turn. */
 import type { TurnTailOwnerProps } from '@deepseek-ai/dsh-client-ui-chat/client'
-import { LinkIcon, classifyLinkPath, fileSizeText, IconRightUpOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
+import { LinkIcon, classifyLinkPath, IconRightUpOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace, PropsLocale, SessionStandardProps } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ObservableSnapshot } from '@deepseek-ai/dsh-client-store'
 import type { PresentedOpenController } from './present-open.ts'
@@ -19,7 +19,7 @@ export interface DeliverablesInjected {
 }
 
 /**
- * Claim turns containing modified paths or presented snapshots.
+ * Claim turns containing modified paths or declared files.
  * @param owner - closing turn.
  * @returns matched files, or null for an empty turn.
  */
@@ -30,7 +30,7 @@ export function selectDeliverables(owner: TurnTailOwnerProps): DeliverablesMatch
 }
 
 /**
- * Render workspace file actions and default-application buttons for saved deliveries.
+ * Render workspace file actions and default-application buttons for declared files.
  * @param props - matched files, workspace opener, and localized copy.
  * @returns the closing turn's file rows.
  */
@@ -44,7 +44,7 @@ export function Deliverables({ matched, openFile, t, sessionId, openPresented, u
       <span className={css.label}>{t('presented.label')}</span>
       <div className={css.presented} data-presented-files-row>
         {matched.presented.map((file) => {
-          const phase = states[presentedFileUrl(sessionId, file.seq, file.index, 'open')]
+          const phase = states[presentedFileUrl(sessionId, file.seq, file.index)]
           return <button key={file.path} type="button" className={css.file}
             disabled={phase === 'opening'}
             onClick={() => { void openPresented(sessionId, file.seq, file.index) }}
@@ -52,7 +52,7 @@ export function Deliverables({ matched, openFile, t, sessionId, openPresented, u
             <LinkIcon kind={classifyLinkPath(file.path)} className={css.fileIcon} />
             <span className={css.details}>
               <span className={css.fileName}>{basename(file.path)}</span>
-              <span className={css.metadata}>{basename(file.path).match(/\.([^.]+)$/)?.[1]?.toUpperCase() ?? t('presented.file')} · {fileSizeText(file.bytes)}</span>
+              <span className={css.metadata}>{basename(file.path).match(/\.([^.]+)$/)?.[1]?.toUpperCase() ?? t('presented.file')}</span>
               {file.description && <span className={css.description}>{file.description}</span>}
               {phase !== undefined && <span className={css.description} role="status">{t(`presented.${phase}`)}</span>}
             </span>

@@ -14,7 +14,7 @@ export class PresentedOpenController {
   private readonly pending = new Set<Promise<void>>()
 
   /**
-   * Open a snapshot once while a request for the same coordinates is pending.
+   * Open a declared workspace file once while a request for the same coordinates is pending.
    * Failures remain visible on the card and a later gesture retries them.
    * @param sessionId - viewed Session, including a fork's own identity.
    * @param seq - durable delivery event sequence.
@@ -22,7 +22,7 @@ export class PresentedOpenController {
    * @returns after the Host acknowledges opening or the error state is published.
    */
   async open(sessionId: SessionId, seq: number, index: number): Promise<void> {
-    const url = presentedFileUrl(sessionId, seq, index, 'open')
+    const url = presentedFileUrl(sessionId, seq, index)
     if (this.lifetime.signal.aborted || this.state.getSnapshot()[url] === 'opening') return
     this.state.update((state) => { state[url] = 'opening' })
     const task = this.request(url)

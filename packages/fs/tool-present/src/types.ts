@@ -1,9 +1,8 @@
 /** Durable file deliveries produced by the present tool. */
-import type { FileAttachmentRef } from '@deepseek-ai/dsh-attachment/types'
 import type { ToolCallId } from '@deepseek-ai/dsh-llm/brand'
 
-/** A saved file and the model-selected path it came from. */
-export interface PresentedFile extends FileAttachmentRef {
+/** A declared workspace file whose current contents remain at its source path. */
+export interface PresentedFile {
   /** Original workspace path. */
   path: string
   /** Optional description supplied by the model. */
@@ -12,7 +11,7 @@ export interface PresentedFile extends FileAttachmentRef {
 
 declare module '@deepseek-ai/dsh-session/types' {
   interface SessionEventMap {
-    /** Saved deliveries from a successful final present result, including nested calls. */
+    /** Declared workspace files from a successful final present result, including nested calls. */
     'deliverables/presented': { turn: number; callId: ToolCallId; files: PresentedFile[] }
   }
 }
