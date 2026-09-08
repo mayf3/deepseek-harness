@@ -8,14 +8,16 @@
 
 /** Simplified Chinese dictionary and key source of truth. */
 export const zh = {
-  tab: '插件管理',
+  panel: '插件',
+  title: '插件管理',
+  intro: '管理已安装的插件。',
   loading: '正在读取插件…',
   error: '暂时无法读取插件。',
   unavailable: '本部署没有可管理的 profile，无法安装或启停插件。',
   retry: '重试',
   refresh: '刷新',
   empty: '还没有安装任何插件。',
-  addPlugin: '添加',
+  addPlugin: '添加插件',
   restartBanner: '以下更改会在下次启动生效：{names}',
   restartNotice: '更改会在下次启动生效。',
   dismiss: '知道了',
@@ -221,14 +223,16 @@ export type PluginManagerLocaleKey = keyof typeof zh
 
 /** English dictionary checked against the Chinese key set. */
 export const en = {
-  tab: 'Manage plugins',
+  panel: 'Plugins',
+  title: 'Manage plugins',
+  intro: 'Manage the installed plugins.',
   loading: 'Reading plugins…',
   error: 'Plugins are temporarily unavailable.',
   unavailable: 'This deployment runs without a manageable profile, so plugins cannot be installed or switched here.',
   retry: 'Retry',
   refresh: 'Refresh',
   empty: 'No plugins are installed yet.',
-  addPlugin: 'Add',
+  addPlugin: 'Add plugin',
   restartBanner: 'These changes take effect at the next start: {names}',
   restartNotice: 'The change takes effect at the next start.',
   dismiss: 'Got it',

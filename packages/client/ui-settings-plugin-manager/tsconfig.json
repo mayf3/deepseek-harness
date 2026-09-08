@@ -16,10 +16,10 @@
     { "path": "../locale" },
     { "path": "../store" },
     { "path": "../ui-agent-preset" },
+    { "path": "../ui-layout" },
     { "path": "../ui-primitives" },
     { "path": "../ui-renderer" },
-    { "path": "../ui-settings" },
-    { "path": "../ui-settings-plugins" },
+    { "path": "../ui-sidebar" },
     { "path": "../ui-slots" }
   ]
 }

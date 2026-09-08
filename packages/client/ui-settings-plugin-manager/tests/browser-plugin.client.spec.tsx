@@ -6,8 +6,9 @@ import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import { SlotRegistry } from '@deepseek-ai/dsh-client-ui-renderer/client'
 import { resolveSlotLabel } from '@deepseek-ai/dsh-client-ui-slots'
 import { TestRemote, usePinnedBrowserLanguages } from '@deepseek-ai/dsh-client-test-runtime'
-import { apply, inject, NS } from '../src/client/index.ts'
-import { PluginManagerSettingsTab } from '../src/client/PluginManagerSettingsTab.tsx'
+import { apply, inject, NS, PANEL_ID } from '../src/client/index.ts'
+import { PluginManagerPage } from '../src/client/PluginManagerPage.tsx'
+import { PluginsPanelIcon } from '../src/client/PluginsPanelIcon.tsx'
 import { PresetPluginsSection } from '../src/client/PresetPluginsSection.tsx'
 import type { PluginManagerFace } from '../src/client/manager-store.ts'
 import { apply as hostApply } from '../src/index.ts'
@@ -39,7 +40,8 @@ function declare(slots: SlotRegistry): () => void {
   return slots.register({
     name: 'root',
     children: {
-      'settings.plugins.tab': { kind: 'list', scope: 'root' },
+      'main': { kind: 'keyed', scope: 'root' },
+      'sidebar.panellist': { kind: 'list', scope: 'root' },
       'settings.agentPreset.detail': { kind: 'list', scope: 'root' },
     },
   } as never, () => null)
@@ -50,21 +52,26 @@ describe('ui-settings-plugin-manager browser plugin', () => {
     expect(hostApply).not.toThrow()
   })
 
-  it('declares only the services the tab and its two Remote faces use', () => {
+  it('declares only the services the page and its two Remote faces use', () => {
     expect(inject).toEqual(['slots', 'locale', 'remote', 'remote.plugins', 'remote.pluginInventory'])
   })
 
-  it('registers a localized tab that reads the Host only once rendered, and follows Host changes', async () => {
+  it('registers the sidebar entry and its page, which reads the Host only once rendered and follows Host changes', async () => {
     const b = await bench()
     declare(b.slots)
     const fiber = b.ctx.plugin({ inject: [...inject], apply })
     await fiber.await()
 
-    const entry = b.slots.entries('settings.plugins.tab')[0]!
-    expect(entry.component).toBe(PluginManagerSettingsTab)
-    expect(entry.options).toMatchObject({ id: 'manage', order: -10 })
+    const entry = b.slots.entries('main')[0]!
+    expect(entry.component).toBe(PluginManagerPage)
+    expect(entry.options).toMatchObject({ key: PANEL_ID })
     expect(entry.locale).toBe(NS)
-    expect(resolveSlotLabel(entry.options.label)).toBe('插件管理')
+    // The sidebar entry addresses the page by the same id and speaks the dictionary.
+    const icon = b.slots.entries('sidebar.panellist')[0]!
+    expect(icon.component).toBe(PluginsPanelIcon)
+    expect(icon.options).toMatchObject({ id: PANEL_ID, order: 0 })
+    expect(icon.locale).toBe(NS)
+    expect(resolveSlotLabel(icon.options.label)).toBe('插件')
     // The same store feeds the capabilities section of every preset's detail page.
     const section = b.slots.entries('settings.agentPreset.detail')[0]!
     expect(section.component).toBe(PresetPluginsSection)
@@ -101,7 +108,8 @@ describe('ui-settings-plugin-manager browser plugin', () => {
     expect(face.presetName({ id: 'mine', trust: 'user', name: '我自己的', isDefault: false, rows: [] })).toBe('我自己的')
 
     await fiber.dispose()
-    expect(b.slots.entries('settings.plugins.tab')).toHaveLength(0)
+    expect(b.slots.entries('main')).toHaveLength(0)
+    expect(b.slots.entries('sidebar.panellist')).toHaveLength(0)
     expect(b.slots.entries('settings.agentPreset.detail')).toHaveLength(0)
     b.remote.emit('plugins/changed', [{ reason: 'install' }])
     await Promise.resolve()

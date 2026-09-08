@@ -4,8 +4,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { PluginPackageView } from '@deepseek-ai/dsh-api-remotes/client'
 import { bindSnapshotSelector } from '@deepseek-ai/dsh-client-test-runtime'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
-import { PluginManagerSettingsTab } from '../src/client/PluginManagerSettingsTab.tsx'
-import type { PluginManagerSettingsTabProps } from '../src/client/PluginManagerSettingsTab.tsx'
+import { PluginManagerPage } from '../src/client/PluginManagerPage.tsx'
+import type { PluginManagerPageProps } from '../src/client/PluginManagerPage.tsx'
 import { rowKey, type InstallState, type PluginManagerState, type PresetGroup } from '../src/client/manager-store.ts'
 import { en, zh, type PluginManagerLocaleKey } from '../src/client/locales.ts'
 
@@ -15,7 +15,7 @@ const t = ((key: PluginManagerLocaleKey, params?: Record<string, string>): strin
   Object.entries(params ?? {}).reduce(
     (text, [name, value]) => text.replaceAll(`{${name}}`, value),
     en[key],
-  )) as PluginManagerSettingsTabProps['t']
+  )) as PluginManagerPageProps['t']
 
 function pkg(overrides: Partial<PluginPackageView> = {}): PluginPackageView {
   return {
@@ -81,8 +81,8 @@ function renderTab(state: Partial<PluginManagerState> = {}) {
     ...actions,
     presetName: (candidate: PresetGroup) => candidate.name ?? candidate.id,
     usePluginManager: bindSnapshotSelector(store),
-  } as unknown as PluginManagerSettingsTabProps
-  render(<PluginManagerSettingsTab {...props} />)
+  } as unknown as PluginManagerPageProps
+  render(<PluginManagerPage {...props} />)
   return { store, actions, set: (next: Partial<PluginManagerState>) => { act(() => { store.set({ ...store.getSnapshot(), ...next }) }) } }
 }
 
@@ -98,7 +98,7 @@ describe('locale dictionaries', () => {
   })
 })
 
-describe('PluginManagerSettingsTab', () => {
+describe('PluginManagerPage', () => {
   it('asks the store once mounted and renders the loading, unavailable, error, and empty states', () => {
     const { actions, set } = renderTab({ status: 'loading' })
     expect(actions.ensure).toHaveBeenCalledTimes(1)

@@ -7,7 +7,7 @@ import type { ReactNode } from 'react'
 import { Button } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ManagerNotice } from './manager-store.ts'
 import { noticeText, type Translate } from './presentation.ts'
-import css from './PluginManagerSettingsTab.module.css'
+import css from './PluginManagerPage.module.css'
 
 /**
  * Render the last operation's notice with its dismiss button, or nothing while there is none.

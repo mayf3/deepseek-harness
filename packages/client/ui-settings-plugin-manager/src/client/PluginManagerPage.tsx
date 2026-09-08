@@ -1,5 +1,6 @@
 /**
- * The Manage plugins tab: the profile's installed packages as cards — a
+ * The plugin management page behind the sidebar's Plugins entry: the
+ * profile's installed packages as cards — a
  * plugin pack with its switch, a plugin with its **Add to…** menu, a built-in
  * pack with a locked switch — each a name, a one-liner, and a tag only when
  * a restart is pending or something is wrong; the install dialog streaming
@@ -24,11 +25,11 @@ import type { PluginManagerLocaleKey } from './locales.ts'
 import { rowKey, type ConfirmState, type InstallState, type PluginManagerFace, type PresetGroup } from './manager-store.ts'
 import { NoticeLine } from './NoticeLine.tsx'
 import { packageOf, refusalText, rowLabel, shortName, type Translate } from './presentation.ts'
-import css from './PluginManagerSettingsTab.module.css'
+import css from './PluginManagerPage.module.css'
 
-/** Full component props assembled by the Settings slot renderer. */
-export type PluginManagerSettingsTabProps =
-  PropsRuntime<'settings.plugins.tab'>
+/** Full component props assembled by the main slot renderer. */
+export type PluginManagerPageProps =
+  PropsRuntime<'main'>
   & PropsLocale<'settings.pluginManager'>
   & InjectFace<PluginManagerFace>
 
@@ -767,7 +768,7 @@ function ConfirmDialog({ confirm, t, packages, presets, presetName, onConfirm, o
 }
 
 /** Render the plugin manager: the installed packages, the install dialog, and the confirmation. */
-export function PluginManagerSettingsTab(props: PluginManagerSettingsTabProps): ReactNode {
+export function PluginManagerPage(props: PluginManagerPageProps): ReactNode {
   const { t, presetName, ensure } = props
   const state = props.usePluginManager(snapshot => snapshot)
   // The package whose page is open; one that leaves the list (uninstalled) drops back to the cards.
@@ -779,15 +780,21 @@ export function PluginManagerSettingsTab(props: PluginManagerSettingsTabProps): 
   const openPkg = openPackage === null ? undefined : state.packages.find(pkg => pkg.name === openPackage)
 
   return (
-    <div className={css.section} aria-busy={state.status === 'loading'}>
+    <section className={css.page} data-plugin-panel aria-busy={state.status === 'loading'}>
       {openPkg === undefined
         ? (
-          <div className={css.toolbar}>
-            <button type="button" className={css.iconButton} aria-label={t('refresh')} title={t('refresh')} disabled={!loaded} onClick={props.refresh}>
-              <span className={css.iconWrap} aria-hidden="true"><IconRefreshOutline16 /></span>
-            </button>
-            <Button variant="primary" size="sm" disabled={!loaded} onClick={props.openInstall}>{t('addPlugin')}</Button>
-          </div>
+          <header className={css.pageHead}>
+            <div>
+              <h1 className={css.pageTitle}>{t('title')}</h1>
+              <p className={css.pageIntro}>{t('intro')}</p>
+            </div>
+            <div className={css.toolbar}>
+              <button type="button" className={css.iconButton} aria-label={t('refresh')} title={t('refresh')} disabled={!loaded} onClick={props.refresh}>
+                <span className={css.iconWrap} aria-hidden="true"><IconRefreshOutline16 /></span>
+              </button>
+              <Button variant="primary" size="sm" disabled={!loaded} onClick={props.openInstall}>{t('addPlugin')}</Button>
+            </div>
+          </header>
         )
         : null}
       {state.status === 'loading' ? <p className={css.status}>{t('loading')}</p> : null}
@@ -881,6 +888,6 @@ export function PluginManagerSettingsTab(props: PluginManagerSettingsTabProps): 
             onCancel={props.cancelConfirm}
           />
         )}
-    </div>
+    </section>
   )
 }

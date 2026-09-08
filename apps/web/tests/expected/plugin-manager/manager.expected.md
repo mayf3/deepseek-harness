@@ -1,43 +1,20 @@
-- dialog "设置":
-  - navigation:
-    - text: 设置
-    - button "通用设置":
+- heading "插件管理" [level=1]
+- paragraph: 管理已安装的插件。
+- button "刷新"
+- button "添加插件"
+- heading "插件包" [level=3]
+- text: 1 个
+- list:
+  - listitem:
+    - text: "示例组合包 Web e2e fixture: a bundle whose one row is an inert plugin."
+    - switch "启用 示例组合包"
+    - button "查看 示例组合包":
       - img
-      - text: 通用设置
-    - button "模型":
+- heading "插件" [level=3]
+- text: 1 个
+- list:
+  - listitem:
+    - text: "示例插件 Web e2e fixture: a plain plugin module with no bundle, added to a composition per row."
+    - button "加入到…"
+    - button "查看 示例插件":
       - img
-      - text: 模型
-    - button "插件":
-      - img
-      - text: 插件
-    - button "Agent 预设":
-      - img
-      - text: Agent 预设
-  - button "打开配置文件"
-  - button "关闭":
-    - img
-    - text: 关闭
-  - heading "插件" [level=2]
-  - paragraph: 配置和查看本部署已安装的插件。
-  - tablist "插件视图":
-    - tab "插件管理" [selected]
-    - tab "插件配置"
-  - tabpanel "插件管理":
-    - button "刷新"
-    - button "添加"
-    - heading "插件包" [level=3]
-    - text: 1 个
-    - list:
-      - listitem:
-        - text: "示例组合包 Web e2e fixture: a bundle whose one row is an inert plugin."
-        - switch "启用 示例组合包"
-        - button "查看 示例组合包":
-          - img
-    - heading "插件" [level=3]
-    - text: 1 个
-    - list:
-      - listitem:
-        - text: "示例插件 Web e2e fixture: a plain plugin module with no bundle, added to a composition per row."
-        - button "加入到…"
-        - button "查看 示例插件":
-          - img

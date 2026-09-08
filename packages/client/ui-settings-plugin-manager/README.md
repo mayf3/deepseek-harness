@@ -1,5 +1,5 @@
 ---
-description: "Plugin management tab in Web Plugins settings for the dsh web client: install packages through pnpm, enable and disable bundles, retry failed ones, and compose rows into the global user layer or one agent preset's."
+description: "Plugin management behind the Web sidebar's Plugins entry for the dsh web client: install packages through pnpm, enable and disable bundles, retry failed ones, and compose rows into the global user layer or one agent preset's."
 kind: "package-reference"
 ---
 
@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-Use the **Manage plugins** tab in Web Plugins settings to see the profile's installed packages in two groups — plugin packs, switched on and off as a whole, and plugins, added to a preset or every session through **Add to…** — open a pack's own page to switch its rows and uninstall it, and install a package by name, path, or Git URL, watching each pnpm run in a terminal. Disabling a pack with dependents and every uninstall ask for confirmation. The same store contributes the **Capabilities** section to each preset's detail page.
+Use the **Plugins** entry in the Web sidebar to see the profile's installed packages in two groups — plugin packs, switched on and off as a whole, and plugins, added to a preset or every session through **Add to…** — open a pack's own page to switch its rows and uninstall it, and install a package by name, path, or Git URL, watching each pnpm run in a terminal. Dependents and every uninstall ask for confirmation. The same store contributes the **Capabilities** section to each preset's detail page; configuring a plugin stays in the Settings **Plugins** section.
 
 ## Table of Contents
 
@@ -25,15 +25,15 @@ Use the **Manage plugins** tab in Web Plugins settings to see the profile's inst
 <a id="use-this-package"></a>
 ## Use this package
 
-Open the Plugins section in Settings and select the **Manage plugins** tab. The tab reads no Remote during plugin activation — selecting it mounts the component, which then reads the packages and the preset compositions through `api-remotes`.
+Select **Plugins** in the sidebar. The page reads no Remote during plugin activation — selecting the entry mounts it, and it then reads the packages and the preset compositions through `api-remotes`. Configuring a plugin stays in the Settings **Plugins** section.
 
 ### Installing a package
 
-**Add** opens the install dialog. Enter what pnpm accepts — `dsh-better-sidebar@latest`, `/path/to/plugin`, a Git URL — and choose whether a newly installed pack is enabled right away. The dialog shows the run's progress as one terminal per pnpm command — the command line, pnpm's output streaming in with its colours, the exit code when it is not zero — and cannot be closed while the run is in flight. A line above the terminals names the profile directory pnpm installs into, and a finished run leaves **Done** as the only action until the spec changes, which starts the dialog over. Once pnpm exits, one sentence per package says what happened: a pack installed and enabled, a pack installed and waiting for its switch, a plugin installed and ready to join a preset, a package that is not a DSH plugin removed again, or a pack removed again because its row id conflicts with an installed one — the last with the Host's reason. A run or any other action the Host refuses because another change is still running, or because a session is running, shows that refusal in the Host's words.
+**Add plugin** opens the install dialog. Enter what pnpm accepts — `dsh-better-sidebar@latest`, `/path/to/plugin`, a Git URL — and choose whether a newly installed pack is enabled right away. The dialog shows the run's progress as one terminal per pnpm command — the command line, pnpm's output streaming in with its colours, the exit code when it is not zero — and cannot be closed while the run is in flight. A line above the terminals names the profile directory pnpm installs into, and a finished run leaves **Done** as the only action until the spec changes, which starts the dialog over. Once pnpm exits, one sentence per package says what happened: a pack installed and enabled, a pack installed and waiting for its switch, a plugin installed and ready to join a preset, a package that is not a DSH plugin removed again, or a pack removed again because its row id conflicts with an installed one — the last with the Host's reason. A run or any other action the Host refuses because another change is still running, or because a session is running, shows that refusal in the Host's words.
 
 ### Switching a plugin pack
 
-A pack's switch calls `plugins.enable` or `plugins.disable`. On a live-reload profile the tree recomposes before the switch settles; a profile that applies layer changes at its next start reports the change as *restart needed*, and the tab names every such package in a banner until the restart. A pack the probe refused reads as a *problem* with the probe's reason in its expanded card and cannot be switched on; a pack whose components failed offers **Retry** in its expanded card, beside **Uninstall**. A built-in pack carries a locked switch. A disable first asks the Host what it would strand, with the switch inert meanwhile, and opens the confirmation only when something does.
+A pack's switch calls `plugins.enable` or `plugins.disable`. On a live-reload profile the tree recomposes before the switch settles; a profile that applies layer changes at its next start reports the change as *restart needed*, and the page names every such package in a banner until the restart. A pack the probe refused reads as a *problem* with the probe's reason in its expanded card and cannot be switched on; a pack whose components failed offers **Retry** in its expanded card, beside **Uninstall**. A built-in pack carries a locked switch. A disable first asks the Host what it would strand, with the switch inert meanwhile, and opens the confirmation only when something does.
 
 ### Switching one row of a pack
 
@@ -57,11 +57,11 @@ What the last action left to say sits above the groups: a restart notice, or the
 
 ### Registration
 
-The browser plugin registers one localized `settings.plugins.tab` contribution with id `manage` and order -10, before the configuration tab, and one `settings.agentPreset.detail` contribution with id `plugins` — the Capabilities section of every preset's detail page, over the same store. Registration uses `ctx.slots.inject()`, so it follows late tab declaration, redeclaration, locale changes, and teardown without importing the section owner. Preset names resolve through the shared `presetDisplayText` fold over [`ui-agent-preset`](../ui-agent-preset/README.md)'s dictionaries. Harness modules in a preset resolve their display name and one-liner through the tab's own dictionary — `name.<slug>` and `desc.<slug>`, tried by the composition row id first (four subagent rows share one module) and then by the unscoped module name without its `dsh-` prefix — and only for modules under the `@deepseek-ai/` scope; a third-party module reads its installed package's `dsh.title` and `description`, or an addable module's own title.
+The browser plugin registers the `plugins` panel under one id twice: a `sidebar.panellist` entry with order 0, whose localized label the sidebar renders and whose icon this package supplies, and the `main` keyed entry it opens — the management page, root-scoped and bound to no Session; plus one `settings.agentPreset.detail` contribution with id `plugins` — the Capabilities section of every preset's detail page, over the same store. Registration uses `ctx.slots.inject()`, so it follows late slot declaration, redeclaration, locale changes, and teardown without importing the sidebar or layout owner. Preset names resolve through the shared `presetDisplayText` fold over [`ui-agent-preset`](../ui-agent-preset/README.md)'s dictionaries. Harness modules in a preset resolve their display name and one-liner through the page's own dictionary — `name.<slug>` and `desc.<slug>`, tried by the composition row id first (four subagent rows share one module) and then by the unscoped module name without its `dsh-` prefix — and only for modules under the `@deepseek-ai/` scope; a third-party module reads its installed package's `dsh.title` and `description`, or an addable module's own title.
 
 ### The store
 
-`PluginManagerController` holds one snapshot: the read status, the packages, the preset groups, the busy keys, the notice, the install dialog, and the pending confirmation. `load` folds concurrent reads into one in-flight read plus one rerun, so an invalidation landing mid-read is never lost. Every action runs under a busy key — the package name, or `<target>:<rowId>` for a row — turns a refused answer into the notice with the Host's code and reason, and re-reads afterwards whatever happened. The plugin's `apply` subscribes `plugins/changed` and `connection/reset` to reload a tab that has rendered once, and `plugins/install-log` to fold chunks into the open install's runs by job, the `add` run and the removals that follow it alike, since the Host runs one mutation at a time.
+`PluginManagerController` holds one snapshot: the read status, the packages, the preset groups, the busy keys, the notice, the install dialog, and the pending confirmation. `load` folds concurrent reads into one in-flight read plus one rerun, so an invalidation landing mid-read is never lost. Every action runs under a busy key — the package name, or `<target>:<rowId>` for a row — turns a refused answer into the notice with the Host's code and reason, and re-reads afterwards whatever happened. The plugin's `apply` subscribes `plugins/changed` and `connection/reset` to reload a page that has rendered once, and `plugins/install-log` to fold chunks into the open install's runs by job, the `add` run and the removals that follow it alike, since the Host runs one mutation at a time.
 
 ### Confirmation
 
@@ -76,9 +76,9 @@ The browser plugin registers one localized `settings.plugins.tab` contribution w
 
 These pages cover the settings section, the Remote calls, and the Host-side manager.
 
-- [ui-settings-plugins](../ui-settings-plugins/README.md) — the Plugins section this tab registers into.
+- [ui-sidebar](../ui-sidebar/README.md) — the panel list the Plugins entry registers into; [ui-layout](../ui-layout/README.md) — the main slot the page occupies.
 - [api-remotes](../../api/remotes/README.md) — the Remote BFF surface behind `plugins.*` and `pluginInventory.list()`.
-- [plugin-manager](../../host/plugin-manager/README.md) — the Host-side manager this tab drives.
+- [plugin-manager](../../host/plugin-manager/README.md) — the Host-side manager this page drives.
 
 -----
 
@@ -99,9 +99,9 @@ None; this package neither assembles nor sends a provider request.
 These limits define the reach of the management view; they are current package constraints.
 
 - **Global user-layer rows are not listed per package** — a row added to every session marks that target in the package's **Add to…** menu and shows in its dependents, not on the card; removing it goes through the patch file or a future row list.
-- **Names for harness modules live in this tab's dictionary** — a new first-party agent-plane module reads by its short module name until `name.<slug>` and `desc.<slug>` are added here.
+- **Names for harness modules live in this page's dictionary** — a new first-party agent-plane module reads by its short module name until `name.<slug>` and `desc.<slug>` are added here.
 - **One install at a time** — the dialog runs one pnpm command; a second spec waits for the first to finish.
-- **No version picker** — the spec is typed as pnpm accepts it; the tab neither lists registry versions nor offers upgrades.
+- **No version picker** — the spec is typed as pnpm accepts it; the page neither lists registry versions nor offers upgrades.
 
 <a id="dev-note"></a>
 ### Dev Note
@@ -113,4 +113,4 @@ None.
 
 </details>
 
-**Runtime invariant:** No companion is published. This package owns a Settings contribution over Host-owned facts.
+**Runtime invariant:** No companion is published. This package owns a sidebar panel and a Settings contribution over Host-owned facts.

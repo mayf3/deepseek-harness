@@ -1,17 +1,19 @@
 /**
- * Plugin manager, browser half: the **Manage plugins** tab of the Plugins
- * settings section, and the capabilities section of every agent preset's
- * detail page. The tab installs, enables, disables, retries, and uninstalls
- * the packages of the Host's profile through the `plugins` Remote; the
- * section composes rows into one preset's user layer.
+ * Plugin manager, browser half: the **Plugins** entry of the sidebar and the
+ * management page it opens in the main column, and the capabilities section
+ * of every agent preset's detail page. The page installs, enables, disables,
+ * retries, and uninstalls the packages of the Host's profile through the
+ * `plugins` Remote; the section composes rows into one preset's user layer.
+ * Configuring a plugin stays in Settings.
  */
 
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
-import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
-// Type-only: the `settings.plugins.tab` slot this tab registers into is
-// declared by ui-settings-plugins; registration goes through `slots.inject`.
-import type {} from '@deepseek-ai/dsh-client-ui-settings-plugins/client'
+// Type-only: the root `main` keyed slot the page registers into, declared by
+// ui-layout with the panel id brand, and the `sidebar.panellist` list the
+// entry registers into, declared by ui-sidebar.
+import type { MainPanelId } from '@deepseek-ai/dsh-client-ui-layout/client'
+import type {} from '@deepseek-ai/dsh-client-ui-sidebar/client'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 // Type-only: the ctx.remote Context merge and the forwarded-event key face.
 import type {} from '@deepseek-ai/dsh-api-remotes/client'
@@ -24,12 +26,13 @@ import type {} from '@deepseek-ai/dsh-host-plugin-manager/types'
 import type {} from '@deepseek-ai/dsh-client-ui-agent-preset/client'
 // Inline-safe shared fold: shipped ids map to dictionary keys in one home.
 import { presetDisplayText } from '@deepseek-ai/dsh-agent-presets/display'
-import { PluginManagerSettingsTab } from './PluginManagerSettingsTab.tsx'
+import { PluginManagerPage } from './PluginManagerPage.tsx'
+import { PluginsPanelIcon } from './PluginsPanelIcon.tsx'
 import { PresetPluginsSection } from './PresetPluginsSection.tsx'
 import { PluginManagerController } from './manager-store.ts'
 import { en, zh, type PluginManagerLocaleKey } from './locales.ts'
 
-export type { PluginManagerSettingsTabProps } from './PluginManagerSettingsTab.tsx'
+export type { PluginManagerPageProps } from './PluginManagerPage.tsx'
 export type { PresetPluginsSectionProps } from './PresetPluginsSection.tsx'
 export type {
   ConfirmState, InstallState, ManagerNotice, PluginManagerFace, PluginManagerState, PresetGroup, PresetRow,
@@ -46,13 +49,16 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 /** Dictionary namespace owned by this plugin. */
 export const NS = 'settings.pluginManager'
 
+/** The id shared by the sidebar entry and the main panel it opens. */
+export const PANEL_ID = 'plugins' as MainPanelId
+
 /** Services required by the Settings registration and the two Remote faces. */
 export const inject = ['slots', 'locale', 'remote', 'remote.plugins', 'remote.pluginInventory']
 
 /**
- * Contribute the manager tab to the Plugins settings section and the
- * capabilities section to every preset's detail page, and keep both current
- * on the Host's change events.
+ * Contribute the Plugins entry to the sidebar with the management page it
+ * opens, and the capabilities section to every preset's detail page, and
+ * keep both current on the Host's change events.
  * @param ctx - the browser plugin context.
  */
 export function apply(ctx: ClientContext): void {
@@ -64,7 +70,7 @@ export function apply(ctx: ClientContext): void {
   // The Host says when what is installed, enabled, or composed changed — from
   // this page, the CLI, or another browser — and streams install output.
   ctx.effect(() => {
-    // A tab never rendered holds no snapshot to refresh.
+    // A page never rendered holds no snapshot to refresh.
     const refresh = (): void => {
       if (controller.getSnapshot().status !== 'idle') void controller.load()
     }
@@ -76,15 +82,22 @@ export function apply(ctx: ClientContext): void {
     return () => { for (const dispose of disposers) dispose() }
   }, 'ui-settings-plugin-manager: host invalidations')
 
-  // Before the configuration tab: what is installed comes before how it is configured.
-  ctx.slots.inject('settings.plugins.tab', () => ctx.slots.register({
-    name: 'settings.plugins.tab',
-    id: 'manage',
-    order: -10,
-    label: () => t('tab'),
+  // The page is a global panel: it belongs to the profile, not to a Session,
+  // and the sidebar's entry selects it. How a plugin is configured stays in
+  // Settings; this page is what is installed and switched on.
+  ctx.slots.inject('main', () => ctx.slots.register({
+    name: 'main',
+    key: PANEL_ID,
     locale: NS,
     inject: () => controller.inject(),
-  }, PluginManagerSettingsTab))
+  }, PluginManagerPage))
+  ctx.slots.inject('sidebar.panellist', () => ctx.slots.register({
+    name: 'sidebar.panellist',
+    id: PANEL_ID,
+    order: 0,
+    label: () => t('panel'),
+    locale: NS,
+  }, PluginsPanelIcon))
 
   ctx.slots.inject('settings.agentPreset.detail', () => ctx.slots.register({
     name: 'settings.agentPreset.detail',

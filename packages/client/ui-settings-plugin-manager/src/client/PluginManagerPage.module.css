@@ -1,12 +1,40 @@
 /* Plugin manager tab: toolbar, notices, and the package and preset cards. */
 
-.section {
+.page {
   display: flex;
   flex-direction: column;
   gap: 14px;
-  width: 100%;
-  max-width: 760px;
+  box-sizing: border-box;
+  height: 100%;
+  overflow: auto;
+  padding: 24px 32px 40px;
   color: var(--dsw-alias-label-primary);
+}
+
+.page > * {
+  width: 100%;
+  max-width: 920px;
+}
+
+.pageHead {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.pageTitle {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 600;
+  line-height: 28px;
+}
+
+.pageIntro {
+  margin: 4px 0 0;
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--dsw-alias-label-secondary);
 }
 
 .toolbar {

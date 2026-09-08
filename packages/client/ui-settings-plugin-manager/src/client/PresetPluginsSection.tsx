@@ -17,7 +17,7 @@ import type { PluginManagerFace, PresetGroup, PresetRow } from './manager-store.
 import { rowKey } from './manager-store.ts'
 import { NoticeLine } from './NoticeLine.tsx'
 import { presetRowCopy, rowIdOf, shortName, type Translate } from './presentation.ts'
-import css from './PluginManagerSettingsTab.module.css'
+import css from './PluginManagerPage.module.css'
 
 /** Full component props assembled by the slot renderer. */
 export type PresetPluginsSectionProps =

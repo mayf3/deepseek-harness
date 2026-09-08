@@ -1,5 +1,5 @@
 ---
-description: "dsh Web 客户端设置里的插件管理标签页：经 pnpm 安装包、启停 bundle、重试失败的 bundle，并把行组合进全局用户层或某个 Agent 预设。"
+description: "dsh Web 客户端左侧栏「插件」入口背后的插件管理：经 pnpm 安装包、启停 bundle、重试失败的 bundle，并把行组合进全局用户层或某个 Agent 预设。"
 kind: "package-reference"
 ---
 
@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-使用 Web 插件设置里的**插件管理**标签页可以按两组查看 profile 已安装的包——插件包整体开关、插件经**加入到…**加入某个预设或所有会话——打开插件包自己的页面来开关它的行并卸载它，也可以按包名、路径或 Git 地址安装包，并在一块终端里观看每次 pnpm 运行。停用有依赖方的插件包与每次卸载都要确认。同一个 store 还把**能力**段贡献到每个预设的详情页。
+使用 Web 左侧栏的**插件**入口可以按两组查看 profile 已安装的包——插件包整体开关、插件经**加入到…**加入某个预设或所有会话——打开插件包自己的页面来开关它的行并卸载它，也可以按包名、路径或 Git 地址安装包，并在一块终端里观看每次 pnpm 运行。有依赖方时与每次卸载都要确认。同一个 store 还把**能力**段贡献到每个预设的详情页；插件的配置仍留在设置的**插件**分区。
 
 ## 目录
 
@@ -25,15 +25,15 @@ kind: "package-reference"
 <a id="use-this-package"></a>
 ## 使用本包
 
-打开设置中的「插件」分区并选择**插件管理**标签页。插件激活期间不会读取 Remote——选择该标签页时才挂载组件，组件再通过 `api-remotes` 读取包与预设组合。
+在左侧栏选择**插件**。插件激活期间不会读取 Remote——选择该入口时才挂载页面，页面再通过 `api-remotes` 读取包与预设组合。插件的配置仍在设置的**插件**分区。
 
 ### 安装一个包
 
-**添加**打开安装对话框。输入 pnpm 接受的写法——`dsh-better-sidebar@latest`、`/path/to/plugin`、Git 地址——并选择新装的插件包是否立即启用。对话框把每条 pnpm 命令显示成一块终端——命令行、带颜色边跑边刷的输出、非零时的退出码——运行进行中对话框不能关闭。终端上方一行写明 pnpm 安装到的 profile 目录；运行完成后只剩**完成**一个动作，改动包名后对话框从头开始。pnpm 退出后，每个包一句话说明结果：插件包已安装并启用、插件包已安装等待开关、插件已安装可加入预设、不是 DSH 插件的包已被移除、行 id 与已安装插件包冲突的包已被移除——最后一种附宿主给出的原因。宿主因为另一个改动还在进行、或有会话正在运行而拒绝的安装或其他操作，会原样显示那条拒绝理由。
+**添加插件**打开安装对话框。输入 pnpm 接受的写法——`dsh-better-sidebar@latest`、`/path/to/plugin`、Git 地址——并选择新装的插件包是否立即启用。对话框把每条 pnpm 命令显示成一块终端——命令行、带颜色边跑边刷的输出、非零时的退出码——运行进行中对话框不能关闭。终端上方一行写明 pnpm 安装到的 profile 目录；运行完成后只剩**完成**一个动作，改动包名后对话框从头开始。pnpm 退出后，每个包一句话说明结果：插件包已安装并启用、插件包已安装等待开关、插件已安装可加入预设、不是 DSH 插件的包已被移除、行 id 与已安装插件包冲突的包已被移除——最后一种附宿主给出的原因。宿主因为另一个改动还在进行、或有会话正在运行而拒绝的安装或其他操作，会原样显示那条拒绝理由。
 
 ### 切换一个插件包
 
-插件包的开关调用 `plugins.enable` 或 `plugins.disable`。在实时重载的 profile 上，树会在开关落定前重新组合；在下次启动才应用层变更的 profile 上，改动被报告为*需重启*，标签页会在横幅里点名每个这样的包直到重启。探针拒绝的插件包显示为*异常*，展开后可见探针的原因，且无法打开；组件启动失败的插件包在展开区提供**重试**，与**卸载**并排。内置插件包带锁定的开关。停用会先询问宿主它会搁置什么，询问期间开关置灰，只有存在依赖方时才弹出确认框。
+插件包的开关调用 `plugins.enable` 或 `plugins.disable`。在实时重载的 profile 上，树会在开关落定前重新组合；在下次启动才应用层变更的 profile 上，改动被报告为*需重启*，页面会在横幅里点名每个这样的包直到重启。探针拒绝的插件包显示为*异常*，展开后可见探针的原因，且无法打开；组件启动失败的插件包在展开区提供**重试**，与**卸载**并排。内置插件包带锁定的开关。停用会先询问宿主它会搁置什么，询问期间开关置灰，只有存在依赖方时才弹出确认框。
 
 ### 切换插件包里的一行
 
@@ -57,11 +57,11 @@ kind: "package-reference"
 
 ### 注册
 
-浏览器插件注册一个 id 为 `manage`、order 为 -10 的本地化 `settings.plugins.tab` 贡献，位于配置标签页之前；另注册一个 id 为 `plugins` 的 `settings.agentPreset.detail` 贡献——每个预设详情页的能力段，读同一个 store。注册使用 `ctx.slots.inject()`，因此能跟随标签 slot 的延迟声明、重新声明、本地化变化与 teardown，而无需 import 分区拥有方。预设名经共享的 `presetDisplayText` 纯函数叠在 [`ui-agent-preset`](../ui-agent-preset/README.zh.md) 的字典上解析。预设里的 harness 模块经标签页自己的字典解析显示名与一句话——`name.<slug>` 与 `desc.<slug>`，先按组合行 id 查（四个子代理行共用一个模块），再按去掉 `dsh-` 前缀的无 scope 模块名查——且只对 `@deepseek-ai/` scope 下的模块生效；第三方模块读取其安装包的 `dsh.title` 与 `description`，或可添加模块自己的标题。
+浏览器插件用同一个 id 把 `plugins` 面板注册两次：一个 order 为 0 的 `sidebar.panellist` 条目，其本地化标签由侧栏渲染、图标由本包提供，以及它打开的 `main` 键控条目——管理页面，根级作用域，不绑定任何 Session；另注册一个 id 为 `plugins` 的 `settings.agentPreset.detail` 贡献——每个预设详情页的能力段，读同一个 store。注册使用 `ctx.slots.inject()`，因此能跟随 slot 的延迟声明、重新声明、本地化变化与 teardown，而无需 import 侧栏或布局的拥有方。预设名经共享的 `presetDisplayText` 纯函数叠在 [`ui-agent-preset`](../ui-agent-preset/README.zh.md) 的字典上解析。预设里的 harness 模块经页面自己的字典解析显示名与一句话——`name.<slug>` 与 `desc.<slug>`，先按组合行 id 查（四个子代理行共用一个模块），再按去掉 `dsh-` 前缀的无 scope 模块名查——且只对 `@deepseek-ai/` scope 下的模块生效；第三方模块读取其安装包的 `dsh.title` 与 `description`，或可添加模块自己的标题。
 
 ### store
 
-`PluginManagerController` 持有一份快照：读取状态、包、预设组、忙碌键、提示、安装对话框与待确认项。`load` 把并发读取折叠成一次在途读取加一次重跑，因此读取中途到达的失效不会丢失。每个操作在一个忙碌键下运行——包名，或行的 `<target>:<rowId>`——把被拒的应答转成带宿主代码与原因的提示，并且无论结果如何随后重新读取。插件的 `apply` 订阅 `plugins/changed` 与 `connection/reset` 以重载渲染过的标签页，订阅 `plugins/install-log` 按 job 把块折进打开的安装的各次运行——`add` 运行与随后的移除运行一视同仁，因为宿主一次只跑一个变更。
+`PluginManagerController` 持有一份快照：读取状态、包、预设组、忙碌键、提示、安装对话框与待确认项。`load` 把并发读取折叠成一次在途读取加一次重跑，因此读取中途到达的失效不会丢失。每个操作在一个忙碌键下运行——包名，或行的 `<target>:<rowId>`——把被拒的应答转成带宿主代码与原因的提示，并且无论结果如何随后重新读取。插件的 `apply` 订阅 `plugins/changed` 与 `connection/reset` 以重载渲染过的页面，订阅 `plugins/install-log` 按 job 把块折进打开的安装的各次运行——`add` 运行与随后的移除运行一视同仁，因为宿主一次只跑一个变更。
 
 ### 确认
 
@@ -76,9 +76,9 @@ kind: "package-reference"
 
 这些页面覆盖设置分区、Remote 调用与宿主侧管理器。
 
-- [ui-settings-plugins](../ui-settings-plugins/README.zh.md)——本标签页注册进的「插件」分区。
+- [ui-sidebar](../ui-sidebar/README.zh.md)——「插件」入口注册进的面板列表；[ui-layout](../ui-layout/README.zh.md)——页面所占的 main slot。
 - [api-remotes](../../api/remotes/README.zh.md)——`plugins.*` 与 `pluginInventory.list()` 背后的 Remote BFF 表面。
-- [plugin-manager](../../host/plugin-manager/README.zh.md)——本标签页驱动的宿主侧管理器。
+- [plugin-manager](../../host/plugin-manager/README.zh.md)——本页面驱动的宿主侧管理器。
 
 -----
 
@@ -99,9 +99,9 @@ kind: "package-reference"
 这些限制界定管理视图的范围；它们是本包当前的约束。
 
 - **全局用户层的行不按包列出**——加入所有会话的行会在该包的**加入到…**菜单里标注该目标并出现在其依赖方里，而不在卡片上；移除它要走补丁文件或将来的行列表。
-- **harness 模块的名字放在本标签页的字典里**——新的第一方 agent 面模块在补上 `name.<slug>` 与 `desc.<slug>` 之前按短模块名显示。
+- **harness 模块的名字放在本页面的字典里**——新的第一方 agent 面模块在补上 `name.<slug>` 与 `desc.<slug>` 之前按短模块名显示。
 - **一次只能安装一个**——对话框运行一条 pnpm 命令；第二个 spec 要等第一个结束。
-- **没有版本选择器**——spec 按 pnpm 接受的写法输入；标签页既不列出仓库版本也不提供升级。
+- **没有版本选择器**——spec 按 pnpm 接受的写法输入；页面既不列出仓库版本也不提供升级。
 
 <a id="dev-note"></a>
 ### 开发备注
@@ -113,4 +113,4 @@ kind: "package-reference"
 
 </details>
 
-**运行时不变量：** 不发布 companion。本包拥有一个基于宿主事实的设置贡献。
+**运行时不变量：** 不发布 companion。本包拥有一个侧栏面板与一个基于宿主事实的设置贡献。

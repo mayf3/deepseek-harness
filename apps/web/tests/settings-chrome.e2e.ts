@@ -94,15 +94,13 @@ describe('web e2e: settings modal and General preferences', () => {
     await dialog.getByRole('button', { name: '模型' }).click()
     await expect.poll(() => dialog.getByRole('button', { name: '模型' }).getAttribute('aria-current'), { timeout: 5_000 }).toBe('true')
     expect(await dialog.getByRole('button', { name: '通用设置' }).getAttribute('aria-current')).toBeNull()
-    // Plugins: the section opens on its configuration tab; the manager tab
-    // says in zh that this scaffold runs without a manageable profile (its
-    // own scenario file drives the page over a profile runtime).
+    // Plugins: the section is the configuration page, with no tab strip;
+    // management lives on the sidebar's Plugins panel (its own scenario file
+    // drives that page over a profile runtime).
     await dialog.getByRole('button', { name: '插件', exact: true }).click()
     await dialog.getByRole('heading', { name: '插件', exact: true }).waitFor({ timeout: 10_000 })
-    await dialog.getByRole('tab', { name: '插件管理', exact: true }).click()
-    await dialog.getByText('本部署没有可管理的 profile，无法安装或启停插件。', { exact: true }).waitFor({ timeout: 10_000 })
     expect(await dialog.getByRole('button', { name: '插件', exact: true }).getAttribute('aria-current')).toBe('true')
-    expect(await dialog.getByRole('tab', { name: '插件管理', exact: true }).getAttribute('aria-selected')).toBe('true')
+    expect(await dialog.getByRole('tab').count()).toBe(0)
     expect(await dialog.getByRole('button', { name: '模型' }).getAttribute('aria-current')).toBeNull()
     // Close path 1: Escape.
     await page.keyboard.press('Escape')
@@ -589,11 +587,12 @@ describe('web e2e: settings modal and General preferences', () => {
       const dialog = enPage.getByRole('dialog', { name: 'Settings' })
       await dialog.waitFor({ timeout: 10_000 })
       await dialog.getByRole('button', { name: 'English' }).waitFor({ timeout: 10_000 })
-      // The plugin manager speaks the en dictionary too: its tab label and
-      // the unavailable notice a scaffold without a profile runtime shows.
-      await dialog.getByRole('button', { name: 'Plugins', exact: true }).click()
-      await dialog.getByRole('tab', { name: 'Manage plugins', exact: true }).click()
-      await dialog.getByText('This deployment runs without a manageable profile, so plugins cannot be installed or switched here.', { exact: true })
+      // The plugin manager speaks the en dictionary too: its sidebar entry
+      // and the unavailable notice a scaffold without a profile runtime shows.
+      await enPage.keyboard.press('Escape')
+      await expect.poll(() => enPage.getByRole('dialog', { name: 'Settings' }).count(), { timeout: 5_000 }).toBe(0)
+      await enPage.getByRole('navigation', { name: 'Global panels' }).getByRole('button', { name: 'Plugins', exact: true }).click()
+      await enPage.getByText('This deployment runs without a manageable profile, so plugins cannot be installed or switched here.', { exact: true })
         .waitFor({ timeout: 10_000 })
       // This page has no closing inventory spec to sweep its console, so the
       // scenario clears both tripwire channels itself.

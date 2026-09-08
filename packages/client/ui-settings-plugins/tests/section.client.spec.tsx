@@ -187,6 +187,14 @@ describe('PluginsSettingsSection', () => {
     expect(screen.getByText(en.intro)).toBeTruthy()
   })
 
+  it('shows a single contribution as the page itself, without a tab strip', () => {
+    renderSection([{ id: 'configurable', order: 0, label: en.configurableTab }])
+
+    expect(screen.queryByRole('tablist')).toBeNull()
+    expect(screen.queryByRole('tab')).toBeNull()
+    expect(screen.getByText('configurable')).toBeTruthy()
+  })
+
   it('moves focus and selection with standard horizontal tab keys', () => {
     renderSection([
       { id: 'configurable', order: 0, label: en.configurableTab },
