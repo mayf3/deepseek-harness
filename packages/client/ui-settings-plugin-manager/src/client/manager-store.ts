@@ -283,16 +283,16 @@ export class PluginManagerController {
   }
 
   /**
-   * Fold one install-log chunk into its pnpm run. A chunk for another spec —
-   * a CLI install running beside the page — is not this dialog's output. A
-   * run's last chunk may trail the answer that settled the dialog and still
-   * lands on its run; a chunk for a run the dialog has not seen counts only
-   * while the dialog's own install is in flight.
+   * Fold one install-log chunk into its pnpm run. The Host runs one mutation
+   * at a time, so while this dialog's install is in flight every chunk is its
+   * own: the `add` run, then the removals that follow it under the removed
+   * packages' names. A run's last chunk may trail the answer that settled the
+   * dialog and still lands on its run; a chunk for a run the dialog has not
+   * seen counts only while the install is in flight.
    * @param chunk - the chunk the Host forwarded.
    */
   appendLog(chunk: PluginInstallLogChunk): void {
     const install = this.getSnapshot().install
-    if (chunk.spec !== install.spec.trim()) return
     const index = install.runs.findIndex(run => run.jobId === chunk.jobId)
     if (index === -1 && install.phase !== 'running') return
     const settled = chunk.exitCode === undefined ? {} : { exitCode: chunk.exitCode }

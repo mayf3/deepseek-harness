@@ -61,7 +61,7 @@ kind: "package-reference"
 
 ### store
 
-`PluginManagerController` 持有一份快照：读取状态、包、预设组、忙碌键、提示、安装对话框与待确认项。`load` 把并发读取折叠成一次在途读取加一次重跑，因此读取中途到达的失效不会丢失。每个操作在一个忙碌键下运行——包名，或行的 `<target>:<rowId>`——把被拒的应答转成带宿主代码与原因的提示，并且无论结果如何随后重新读取。插件的 `apply` 订阅 `plugins/changed` 与 `connection/reset` 以重载渲染过的标签页，订阅 `plugins/install-log` 以折叠 spec 与打开的运行匹配的块。
+`PluginManagerController` 持有一份快照：读取状态、包、预设组、忙碌键、提示、安装对话框与待确认项。`load` 把并发读取折叠成一次在途读取加一次重跑，因此读取中途到达的失效不会丢失。每个操作在一个忙碌键下运行——包名，或行的 `<target>:<rowId>`——把被拒的应答转成带宿主代码与原因的提示，并且无论结果如何随后重新读取。插件的 `apply` 订阅 `plugins/changed` 与 `connection/reset` 以重载渲染过的标签页，订阅 `plugins/install-log` 按 job 把块折进打开的安装的各次运行——`add` 运行与随后的移除运行一视同仁，因为宿主一次只跑一个变更。
 
 ### 确认
 

@@ -61,7 +61,7 @@ The browser plugin registers one localized `settings.plugins.tab` contribution w
 
 ### The store
 
-`PluginManagerController` holds one snapshot: the read status, the packages, the preset groups, the busy keys, the notice, the install dialog, and the pending confirmation. `load` folds concurrent reads into one in-flight read plus one rerun, so an invalidation landing mid-read is never lost. Every action runs under a busy key — the package name, or `<target>:<rowId>` for a row — turns a refused answer into the notice with the Host's code and reason, and re-reads afterwards whatever happened. The plugin's `apply` subscribes `plugins/changed` and `connection/reset` to reload a tab that has rendered once, and `plugins/install-log` to fold chunks whose spec matches the open run.
+`PluginManagerController` holds one snapshot: the read status, the packages, the preset groups, the busy keys, the notice, the install dialog, and the pending confirmation. `load` folds concurrent reads into one in-flight read plus one rerun, so an invalidation landing mid-read is never lost. Every action runs under a busy key — the package name, or `<target>:<rowId>` for a row — turns a refused answer into the notice with the Host's code and reason, and re-reads afterwards whatever happened. The plugin's `apply` subscribes `plugins/changed` and `connection/reset` to reload a tab that has rendered once, and `plugins/install-log` to fold chunks into the open install's runs by job, the `add` run and the removals that follow it alike, since the Host runs one mutation at a time.
 
 ### Confirmation
 

@@ -337,10 +337,10 @@ describe('PluginManagerController', () => {
     expect(state().install.open).toBe(true)
     const argv = ['pnpm', 'add', 'dsh-better-sidebar']
     controller.appendLog({ jobId: 'j1', argv, cwd: '/p', spec: 'dsh-better-sidebar', stream: 'stdout', text: 'Progress\n' })
-    controller.appendLog({ jobId: 'j2', argv: ['pnpm', 'add', 'other'], cwd: '/p', spec: 'other', stream: 'stdout', text: 'not mine' })
-    // The Host's second pnpm run (removing a rejected package) is a run of
-    // its own, and a later chunk lands on the run it names.
-    controller.appendLog({ jobId: 'jr', argv: ['pnpm', 'remove', 'lib'], cwd: '/p', spec: 'dsh-better-sidebar', stream: 'stdout', text: '- lib\n', exitCode: 0 })
+    // The Host's second pnpm run — removing a rejected package, under that
+    // package's name — is a run of its own, and a later chunk lands on the
+    // run it names.
+    controller.appendLog({ jobId: 'jr', argv: ['pnpm', 'remove', 'lib'], cwd: '/p', spec: 'lib', stream: 'stdout', text: '- lib\n', exitCode: 0 })
     controller.appendLog({ jobId: 'j1', argv, cwd: '/p', spec: 'dsh-better-sidebar', stream: 'stdout', text: 'Done\n' })
     expect(state().install.runs).toEqual([
       { jobId: 'j1', command: 'pnpm add dsh-better-sidebar', cwd: '/p', output: 'Progress\nDone\n' },
