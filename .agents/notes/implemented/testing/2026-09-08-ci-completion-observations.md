@@ -34,6 +34,8 @@ The [whole-queue steering test](../../../../apps/web/tests/steering.e2e.ts) wait
 
 The [workspace-management test](../../../../apps/web/tests/workspace-management.e2e.ts) waits for restored composer focus before the next directory-dialog gesture, because workspace listing can render before Session restoration changes focus. Archive actions stay scoped to the seeded row rather than a captured fallback title that cold loading can replace; durable archive assertions retain the exact seed id.
 
+The [worker budget tests](../../../../packages/code-runtime/code-runtime-worker-thread/tests/budget.spec.ts) retain real worker execution and binding transport while controlling only host timers and event-loop-utilization samples. They prove that idle binding time can exceed the compute allowance, active time still expires with a binding pending, and the independent wall ceiling still expires. Real measured hot-loop tests remain; a small total active-time allowance cannot isolate idle accounting from worker bootstrap and host scheduling.
+
 ### Built-client import classification
 
 The [master Windows run](https://github.com/deepseek-harness/deepseek-harness/actions/runs/34204779455/job/101996934534) also rejects the intentional CSS import exposed by `ui-dockkit`. The [Node import sweep](../../../../packages/experimental/webworker-runtime/tests/compile/transform-corpus-check.ts) admits that exact bundle only when Node reports `ERR_UNKNOWN_FILE_EXTENSION` for its `dockkit.module.css`. Other errors at the same entry still fail, and an entry that imports successfully reports a stale exemption. This preserves the import sweep without requiring a browser-only component library to load its stylesheet under bare Node.

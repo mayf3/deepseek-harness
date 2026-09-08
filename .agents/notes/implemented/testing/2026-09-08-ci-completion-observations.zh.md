@@ -34,6 +34,8 @@ Status: implemented
 
 [工作区管理测试](../../../../apps/web/tests/workspace-management.e2e.ts)在下一次目录对话框操作前等待恢复后的输入框焦点，因为工作区列表可能早于 Session 恢复引发的焦点变化完成渲染。归档操作始终限定在种子行内，不依赖冷加载可能替换的已捕获备用标题；持久化归档断言保留精确种子 id。
 
+[worker 预算测试](../../../../packages/code-runtime/code-runtime-worker-thread/tests/budget.spec.ts)保留真实 worker 执行和绑定传输，只控制宿主定时器与事件循环利用率样本。测试证明空闲绑定时间可以超过计算额度、绑定待完成时活动时间仍会触发到期，以及独立壁钟上限仍会触发到期。真实计量的热循环测试仍保留；较小的总活动时间额度无法将空闲计费与 worker 启动及宿主调度隔离。
+
 ### 已构建客户端的导入分类
 
 [master Windows 运行](https://github.com/deepseek-harness/deepseek-harness/actions/runs/34204779455/job/101996934534)还拒绝了 `ui-dockkit` 有意暴露的 CSS 导入。[Node 导入检查](../../../../packages/experimental/webworker-runtime/tests/compile/transform-corpus-check.ts)仅在 Node 针对其 `dockkit.module.css` 报告 `ERR_UNKNOWN_FILE_EXTENSION` 时，才允许这个精确的 bundle。相同入口的其他错误仍然失败，成功导入则报告豁免已过期。这保留了导入检查，同时不要求仅面向浏览器的组件库在裸 Node 中加载样式表。
