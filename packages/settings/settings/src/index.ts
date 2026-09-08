@@ -1071,28 +1071,9 @@ export abstract class SettingsProvider extends Service {
     this.emitDocumentUpdated(ns, revision, scope)
   }
 
-  /** Contained fan-out of `settings/document-updated`, mirroring {@link commit}'s. */
+  /** Contained fan-out of `settings/document-updated`, the way {@link commit} emits `settings/updated`. */
   private emitDocumentUpdated(ns: SettingsNamespace, revision: number, scope: SettingsScopeId | undefined): void {
-    let invariantFailure: unknown
-    const payload: unknown[] = scope === undefined ? [ns, revision] : [ns, revision, scope]
-    const args = ['settings/document-updated', ...payload]
-    for (const listener of this.ctx.events.dispatch('emit', args) as Array<(...listenerArgs: unknown[]) => unknown>) {
-      try {
-        const returned = listener(...payload)
-        if (returned != null && typeof (returned as PromiseLike<unknown>).then === 'function') {
-          void Promise.resolve(returned as PromiseLike<unknown>).then(undefined, (error: unknown) => {
-            this.warnListenerFailure(ns, error)
-          })
-        }
-      } catch (error) {
-        if ((error as { code?: unknown } | null)?.code === 'INVARIANT') {
-          invariantFailure ??= error
-          continue
-        }
-        this.warnListenerFailure(ns, error)
-      }
-    }
-    if (invariantFailure !== undefined) throw invariantFailure as Error
+    this.emitContained(ns, 'settings/document-updated', scope === undefined ? [ns, revision] : [ns, revision, scope])
   }
 
   /** Commit a resolved value when changed: swap, notify watchers, emit the event. */
@@ -1125,11 +1106,18 @@ export abstract class SettingsProvider extends Service {
     // harness-fatal by design and rethrow after every listener ran; any other
     // failure is contained so one broken observer cannot wedge the commit
     // path (and, through it, a provider's reload loop).
-    let invariantFailure: unknown
-    const payload: unknown[] = registration.scope === undefined
+    this.emitContained(ns, 'settings/updated', registration.scope === undefined
       ? [ns, next, prev, source]
-      : [ns, next, prev, source, registration.scope]
-    const args = ['settings/updated', ...payload]
+      : [ns, next, prev, source, registration.scope])
+  }
+
+  /**
+   * Emit one settings event to every listener in turn: an invariant violation
+   * rethrows after the rest ran, any other failure is contained.
+   */
+  private emitContained(ns: SettingsNamespace, event: string, payload: unknown[]): void {
+    let invariantFailure: unknown
+    const args = [event, ...payload]
     for (const listener of this.ctx.events.dispatch('emit', args) as Array<(...listenerArgs: unknown[]) => unknown>) {
       try {
         const returned = listener(...payload)
