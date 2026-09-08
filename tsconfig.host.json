@@ -251,7 +251,7 @@
     { "path": "./packages/shell/pwsh-local" },
     { "path": "./packages/shell/pwsh-sandbox" },
     { "path": "./packages/shell/tool-pwsh" },
-    { "path": "./native/landlock-run/packages/entry" },
+    { "path": "./native/system/packages/entry" },
     { "path": "./packages/sandbox/sandbox" },
     { "path": "./packages/sandbox/sandbox-local" },
     { "path": "./packages/sandbox/sandbox-policy" },

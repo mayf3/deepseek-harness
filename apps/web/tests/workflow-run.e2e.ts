@@ -114,11 +114,13 @@ describe.skipIf(MODE === 'record')('web e2e: durable workflow run in Chat', () =
     await runDisclosure.press('Space')
     expect(await disclosures.count()).toBe(2)
     expect(await phaseDisclosure.getAttribute('aria-expanded')).toBe('true')
-    await member.focus()
-
     const lightColor = await member.locator('[data-member-label]').evaluate(element => getComputedStyle(element).color)
     await page.setViewportSize({ width: 560, height: 800 })
     await page.evaluate(() => { document.body.setAttribute('data-ds-dark-theme', '') })
+    // Exercise keyboard focus after the responsive layout has changed.
+    await phaseDisclosure.focus()
+    await phaseDisclosure.press('Tab')
+    await expect.poll(() => member.evaluate(element => element.matches(':focus-visible'))).toBe(true)
     const darkNarrow = await page.locator('[data-workflow-run]').evaluate((element) => {
       const panel = element as HTMLElement
       panel.style.width = '356px'

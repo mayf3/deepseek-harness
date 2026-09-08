@@ -9,6 +9,9 @@
   ],
   "references": [
     {
+      "path": "../../../native/system/packages/entry"
+    },
+    {
       "path": "../../../vendor/cosmokit"
     },
     {
