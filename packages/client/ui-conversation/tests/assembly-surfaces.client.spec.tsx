@@ -40,13 +40,13 @@ beforeEach(() => {
   vi.stubGlobal('ResizeObserver', ResizeObserverStub)
 })
 
-type AppRootProps = PropsRenderSlots<'conversation'>
+type AppRootProps = PropsRenderSlots<'main'>
 function AppRoot({ renderSlot }: AppRootProps) {
-  return <>{renderSlot('conversation', {})}</>
+  return <>{renderSlot('main', {}, { entryKey: 'conversation' })}</>
 }
 
 const LAYOUT_CHILDREN = {
-  'conversation': { kind: 'single', scope: 'session-maybe' },
+  'main': { kind: 'keyed', scope: 'root' },
 } as const
 
 function WorkspaceProbe({ open }: EmptyWorkspaceOwnerProps) {
@@ -60,7 +60,10 @@ function WorkspaceProbe({ open }: EmptyWorkspaceOwnerProps) {
 
 async function bench(opts?: { blank?: boolean }) {
   const runtime = await SlotTestRuntime.create()
-  runtime.ctx.provide('uiWorkspace', { connectWorkspace: vi.fn(async () => SID) } as never)
+  runtime.ctx.provide('uiWorkspace', {
+    connectWorkspace: vi.fn(async () => SID),
+    openSession: (id: SessionId) => { runtime.sessions.open(id) },
+  } as never)
   runtime.ctx.provide('settingsScope', { bind: () => stubSettingsScope().scope } as never)
   const locale = new LocaleRuntime(runtime.ctx)
   runtime.ctx.provide('locale', locale)
@@ -82,7 +85,10 @@ async function bench(opts?: { blank?: boolean }) {
 describe('resident composer', () => {
   it('renders the locked view state while no session exists at all', async () => {
     const runtime = await SlotTestRuntime.create()
-    runtime.ctx.provide('uiWorkspace', { connectWorkspace: vi.fn(async () => SID) } as never)
+    runtime.ctx.provide('uiWorkspace', {
+      connectWorkspace: vi.fn(async () => SID),
+      openSession: (id: SessionId) => { runtime.sessions.open(id) },
+    } as never)
     runtime.ctx.provide('settingsScope', { bind: () => stubSettingsScope().scope } as never)
     const locale = new LocaleRuntime(runtime.ctx)
     runtime.ctx.provide('locale', locale)
@@ -109,7 +115,10 @@ describe('resident composer', () => {
 
   it('keeps the complete Hero tree mounted when the first Workspace session appears', async () => {
     const runtime = await SlotTestRuntime.create()
-    runtime.ctx.provide('uiWorkspace', { connectWorkspace: vi.fn(async () => SID) } as never)
+    runtime.ctx.provide('uiWorkspace', {
+      connectWorkspace: vi.fn(async () => SID),
+      openSession: (id: SessionId) => { runtime.sessions.open(id) },
+    } as never)
     runtime.ctx.provide('settingsScope', { bind: () => stubSettingsScope().scope } as never)
     const locale = new LocaleRuntime(runtime.ctx)
     runtime.ctx.provide('locale', locale)
@@ -174,7 +183,10 @@ describe('resident composer', () => {
 describe('prompt rejection through the assembled composer', () => {
   it('renders the promptError alert strip and keeps the draft in the machine', async () => {
     const runtime = await SlotTestRuntime.create()
-    runtime.ctx.provide('uiWorkspace', { connectWorkspace: vi.fn(async () => SID) } as never)
+    runtime.ctx.provide('uiWorkspace', {
+      connectWorkspace: vi.fn(async () => SID),
+      openSession: (id: SessionId) => { runtime.sessions.open(id) },
+    } as never)
     runtime.ctx.provide('settingsScope', { bind: () => stubSettingsScope().scope } as never)
     const locale = new LocaleRuntime(runtime.ctx)
     runtime.ctx.provide('locale', locale)

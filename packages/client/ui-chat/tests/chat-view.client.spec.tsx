@@ -364,6 +364,7 @@ function makeHarness(
   // ChatView never invokes it (pass-through stub).
   const SessionProviderStub: ChatViewSlotProps['SessionProvider'] = ({ children }) => <>{children}</>
   const props: ChatViewSlotProps = {
+    usePanelInfo: selector => selector({ activePanelId: null }),
     sessionId: SID,
     useSession: bindSnapshotSelector(session.source),
     useChat: bindSnapshotSelector(chatSource.source),

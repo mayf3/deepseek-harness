@@ -189,6 +189,8 @@ interface BenchOptions {
 
 function bench(options: BenchOptions = {}) {
   const ctx = new Context()
+  const selectPanel = vi.fn()
+  ctx.provide('layout', { selectPanel })
   const directoryPicker = new FakeDirectoryPicker()
   const workspaces = new FakeWorkspaces(options.workspaces ?? workspaceState([], [], 'pending'))
   const sessions = new FakeSessions(options.sessions ?? sessionState([], undefined, 'pending'))
@@ -198,7 +200,7 @@ function bench(options: BenchOptions = {}) {
     workspaces,
     sessions as unknown as ISessions,
   )
-  return { ctx, directoryPicker, sessions, uiWorkspace, workspaces }
+  return { ctx, directoryPicker, sessions, uiWorkspace, workspaces, selectPanel }
 }
 
 async function flush(): Promise<void> {
@@ -207,6 +209,25 @@ async function flush(): Promise<void> {
 }
 
 describe('UiWorkspaceService', () => {
+  it('selects a Session before revealing its Conversation, including the current Session', () => {
+    const current = sid('current')
+    const b = bench({ sessions: sessionState([summary('current')], current) })
+    b.selectPanel.mockImplementation(() => {
+      expect(b.sessions.list.getSnapshot().current).toBe(current)
+    })
+    b.uiWorkspace.openSession(current)
+    expect(b.sessions.open).toHaveBeenCalledWith(current)
+    expect(b.selectPanel).toHaveBeenCalledWith(null)
+    expect(b.sessions.open.mock.invocationCallOrder[0]).toBeLessThan(b.selectPanel.mock.invocationCallOrder[0]!)
+  })
+
+  it('keeps the current panel when selecting a Session throws', () => {
+    const b = bench()
+    b.sessions.open.mockImplementationOnce(() => { throw new Error('selection failed') })
+    expect(() => { b.uiWorkspace.openSession(sid('target')) }).toThrow('selection failed')
+    expect(b.selectPanel).not.toHaveBeenCalled()
+  })
+
   it('reuses only an unarchived member blank and coalesces concurrent creation', async () => {
     const b = bench()
     const memberBlank = sid('member-blank')

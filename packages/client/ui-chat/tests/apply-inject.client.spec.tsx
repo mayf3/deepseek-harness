@@ -58,6 +58,7 @@ async function bench() {
   new TestRemote(runtime.ctx, { session: { openWorkspacePath } })
   runtime.ctx.provide('uiWorkspace', {
     connectWorkspace: vi.fn(async () => ROOT),
+    openSession: (id: SessionId) => { runtime.sessions.open(id) },
   } as never)
   const session = sessionFakeFor()
   await runtime.sessions.add({
@@ -69,7 +70,7 @@ async function bench() {
   runtime.ctx.provide('locale', locale)
   runtime.slots.installLocale(locale)
   await runtime.root.declare({
-    'conversation': { kind: 'single', scope: 'session-maybe' },
+    'main': { kind: 'keyed', scope: 'root' },
   }, (_props: { renderSlot?: unknown }) => null)
   await runtime.mount({ inject: [...injectConversation], apply: applyConversation })
   await runtime.mount({ inject: [...injectChat], apply: applyChat })

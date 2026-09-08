@@ -2,15 +2,20 @@
 import { Context } from '@deepseek-ai/cordis'
 import { describe, expect, it, vi } from 'vitest'
 import { SlotRegistry } from '@deepseek-ai/dsh-client-ui-renderer/client'
+import type { PropsRenderSlots } from '@deepseek-ai/dsh-client-ui-slots'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import { apply, inject } from '@deepseek-ai/dsh-client-ui-sidebar/client'
 import type { SidebarRootInjected } from '@deepseek-ai/dsh-client-ui-sidebar/client'
 import { apply as hostApply } from '../src/index.ts'
 
+function SidebarFrame({ renderSlot }: PropsRenderSlots<'sidebar'>) {
+  return renderSlot('sidebar', { collapsed: false, width: 300 })
+}
+
 async function bench(declare = true) {
   const ctx = new Context()
   await ctx.plugin(SlotRegistry).await()
-  const layout = { toggleSidebar: vi.fn() }
+  const layout = { toggleSidebar: vi.fn(), selectPanel: vi.fn() }
   const uiWorkspace = { startSession: vi.fn() }
   ctx.provide('layout', layout)
   ctx.provide('uiWorkspace', uiWorkspace as never)
@@ -18,8 +23,11 @@ async function bench(declare = true) {
   const slots = ctx.get('slots') as SlotRegistry
   if (declare) {
     slots.register(
-      { name: 'root', children: { 'sidebar': { kind: 'single', scope: 'root' } } } as never,
-      () => null,
+      { name: 'root', children: {
+        'sidebar': { kind: 'single', scope: 'root' },
+        'main': { kind: 'keyed', scope: 'root' },
+      } },
+      SidebarFrame,
     )
   }
   return { ctx, slots, layout, uiWorkspace }
@@ -43,10 +51,15 @@ describe('ui-sidebar apply', () => {
     expect(b.slots.spec('sidebar.workspaces')).toEqual({ kind: 'single', scope: 'root' })
     expect(b.slots.spec('sidebar.settings')).toEqual({ kind: 'single', scope: 'root' })
     expect(b.slots.spec('sidebar.footer.action')).toEqual({ kind: 'list', scope: 'root' })
+    expect(b.slots.spec('sidebar.panellist')).toEqual({ kind: 'list', scope: 'root' })
+    expect(b.slots.spec('sidebar.panellist.title')).toEqual({ kind: 'keyed', scope: 'root' })
     // Copy rides the standard locale seat, not the inject face.
     expect(b.slots.entries('sidebar')[0]!.locale).toBe('sidebar')
     const injected = (b.slots.entries('sidebar')[0]!.inject as () => SidebarRootInjected)()
-    expect(Object.keys(injected)).toEqual(['startSession', 'toggleSidebar'])
+    expect(Object.keys(injected)).toEqual(['startSession', 'toggleSidebar', 'selectPanel', 'hooks'])
+    expect(injected.hooks.panels.getSnapshot()).toEqual([
+      { id: 'hello-world', order: 100, label: 'Hello World' },
+    ])
     // Both arms delegate to the Workspace UI's shared New Session action.
     injected.startSession('workspace' as never)
     expect(b.uiWorkspace.startSession).toHaveBeenCalledWith('workspace')
@@ -56,9 +69,18 @@ describe('ui-sidebar apply', () => {
     expect(b.layout.toggleSidebar).toHaveBeenCalledOnce()
   })
 
-  it('fails when no live owner declared the sidebar slot', async () => {
+  it('waits for the sidebar declaration before registering', async () => {
     const b = await bench(false)
-    await expect(b.ctx.plugin({ inject: [...inject], apply })).rejects.toThrow(/not declared/)
+    const fiber = b.ctx.plugin({ inject: [...inject], apply })
+    await fiber.await()
+    expect(b.slots.entries('sidebar')).toHaveLength(0)
+    const disposeRoot = b.slots.register({
+      name: 'root',
+      children: { sidebar: { kind: 'single', scope: 'root' } },
+    }, SidebarFrame)
+    expect(b.slots.entries('sidebar')).toHaveLength(1)
+    disposeRoot()
+    await fiber.dispose()
   })
 
   it('removes the entry and child declaration on teardown', async () => {
@@ -71,5 +93,7 @@ describe('ui-sidebar apply', () => {
     expect(b.slots.spec('sidebar.brand.name')).toBeUndefined()
     expect(b.slots.spec('sidebar.workspaces')).toBeUndefined()
     expect(b.slots.spec('sidebar.footer.action')).toBeUndefined()
+    expect(b.slots.spec('sidebar.panellist')).toBeUndefined()
+    expect(b.slots.entries('main')).toHaveLength(0)
   })
 })
