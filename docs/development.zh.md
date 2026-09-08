@@ -17,7 +17,7 @@
 
 ### Windows 与 WSL 2
 
-在 Windows 上，可以使用原生工具开发，也可以通过 WSL 2 使用 Linux 环境。需要验证 Linux 行为，或原生依赖编译、文件系统权限阻碍 Windows 开发时，WSL 2 提供了使用 Linux 工具链的途径。每种环境都需要准备相应的运行时、编译工具和权限；WSL 是可选项。
+在 Windows 上，可以使用原生工具开发，也可以通过 WSL 2 使用 Linux 环境。WSL 2 既可用于验证 Linux 行为，也可在原生依赖编译或文件系统权限阻碍 Windows 开发时提供使用 Linux 工具链的途径。每种环境都需要准备相应的运行时、编译工具和权限；WSL 是可选项。
 
 将检出目录、已安装的依赖和工具链放在同一操作系统环境中。使用 WSL 2 时，将检出目录放在 Linux 文件系统中；使用 Windows 原生工具时，则使用 Windows 文件系统。跨两种文件系统访问会给 Git、依赖安装和构建等 I/O 密集型操作增加开销。参见微软的[文件存储与性能指南](https://learn.microsoft.com/en-us/windows/wsl/filesystems#file-storage-and-performance-across-file-systems)。
 
