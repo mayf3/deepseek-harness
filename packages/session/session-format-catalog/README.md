@@ -66,7 +66,7 @@ The catalog contains all supported historical readers directly. A profile cannot
 - [Migration machinery](../session-format/README.md) — catalog construction and dispatch behavior.
 - [Released v0 to v1 edge](../session-format-v0-to-v1/README.md) — codec and validator ownership.
 - [Released v1 to v2 edge](../session-format-v1-to-v2/README.md) — Assistant stream embedding and cardinality-changing reference remapping.
-- [Released v2 to v3 edge](../session-format-v2-to-v3/README.md) — identity event restoration.
+- [Released V2 to V3 specification](../session-format-v2-to-v3/README.md#v2-to-v3-specification) — transformations, preservation, and refusal.
 - [JSONL persistence](../session-persistence-jsonl/README.md) — immutable generation naming and exclusive publication.
 
 -----
