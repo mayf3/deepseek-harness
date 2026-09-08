@@ -10,7 +10,7 @@ Status: implemented
 
 ## Decision
 
-[GitHub 评审浏览器测试](../../../../apps/web/tests/github-ready-review.e2e.ts)先等待确定性适配器收到首个请求，再断言 Agent（智能体）和请求的精确数量。Workspace 创建的延迟屏障证明 HTTP 接纳可以早于这两项观察；屏障委托真实方法，并在 `finally` 中释放和恢复。原有的 Workspace 成员关系、提示词内容、回复以及折叠和展开浏览器预期仍然是判定依据。
+[GitHub 评审浏览器测试](../../../../apps/web/tests/github-ready-review.e2e.ts)先等待确定性适配器收到首个请求，再断言 Agent（智能体）和请求的精确数量。Workspace 创建的延迟屏障证明 HTTP 接纳可以早于这两项观察；屏障委托真实方法，并在 `finally` 中释放和恢复；如果请求本身挂起并超过测试超时，独立的 `onTestFinished` 清理仍会释放和恢复屏障。原有的 Workspace 成员关系、提示词内容、回复以及折叠和展开浏览器预期仍然是判定依据。
 
 [PowerShell 执行器测试](../../../../packages/shell/pwsh-local/tests/executor.spec.ts)先等待 `done`，再读取完整的 stdin 和环境变量输出。启动及消费式读取检查用私有文件屏障阻止命令结束，因此运行状态和未读的后续输出不依赖 sleep 或耗时阈值。部分输出轮询继承 lane 预算。每个创建的 Context 都在使用前登记清理；子进程释放先于私有目录删除。在原生 Windows 上，延迟六秒的命令复现五秒期限失败，而改用完成等待后通过。
 

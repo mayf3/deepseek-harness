@@ -6,7 +6,7 @@ import type { AddressInfo } from 'node:net'
 import { fileURLToPath } from 'node:url'
 import type { Browser, Page } from 'playwright'
 import { chromium } from 'playwright'
-import { afterAll, beforeAll, describe, expect, it, onTestFailed, vi } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it, onTestFailed, onTestFinished, vi } from 'vitest'
 import type { GenerateOptions, StreamChunk } from '@deepseek-ai/dsh-llm'
 import { LlmAdapter } from '@deepseek-ai/dsh-llm'
 import type {} from '@deepseek-ai/dsh-webhook'
@@ -156,6 +156,10 @@ describe.skipIf(MODE === 'record')('web e2e: GitHub ready-for-review', () => {
       entered.resolve(undefined)
       await release.promise
       return await createWorkspace(...args)
+    })
+    onTestFinished(() => {
+      release.resolve(undefined)
+      create.mockRestore()
     })
     try {
       expect((await send(webhookOrigin, 'ready', payload)).status).toBe(202)

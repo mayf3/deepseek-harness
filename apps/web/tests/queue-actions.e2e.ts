@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url'
 import { join } from 'node:path'
 import type { Browser, Page } from 'playwright'
 import { chromium } from 'playwright'
-import { afterEach, describe, expect, it, onTestFailed, vi } from 'vitest'
+import { afterEach, describe, expect, it, onTestFailed } from 'vitest'
 import { deriveReplayScript, parseSessionLog, type ReplayEntry } from '@deepseek-ai/dsh-llm-replay'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import {
@@ -161,8 +161,9 @@ describe('web e2e: queue row actions', () => {
     await page.setViewportSize({ width: 640, height: 1000 })
     const narrowFrame = page.locator('[data-sidebar-collapsed="true"]')
     await narrowFrame.waitFor()
-    await expect.poll(() => narrowFrame.evaluate(element =>
-      element.getAnimations().filter(animation => animation.playState === 'running').length)).toBe(0)
+    await narrowFrame.evaluate(async (element) => {
+      await Promise.allSettled(element.getAnimations().map(animation => animation.finished))
+    })
     // The frame's resize observer can move both cards between browser round trips.
     const { queueBox, composerBox, dockInset } = await page.evaluate(() => {
       const queue = document.querySelector('[data-queue-dock]')
