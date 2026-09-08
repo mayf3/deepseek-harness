@@ -21,8 +21,7 @@ function utf8Bytes(value: string): number {
   return Buffer.byteLength(value, 'utf8')
 }
 
-function requireBoundedString(label: string, value: unknown, maxBytes: number): string {
-  if (typeof value !== 'string' || value.trim() === '') throw new Error(`visualizer: ${label} must be a non-empty string`)
+function requireBoundedString(label: string, value: string, maxBytes: number): string {
   const bytes = utf8Bytes(value)
   if (bytes > maxBytes) throw new Error(`visualizer: ${label} is ${bytes} UTF-8 bytes; limit is ${maxBytes}`)
   return value
@@ -38,7 +37,17 @@ function requireRecordedWidgetKind(meta: unknown, callId: ToolCallId): WidgetKin
   return kind
 }
 
-function parseRecordedWidgetResult(agent: Agent, resultSeqValue: number, maxTitleBytes: number): RecordedWidgetCall {
+function recordedWidgetTitle(argumentsJson: string, callId: ToolCallId): string {
+  let title: unknown
+  try {
+    title = (JSON.parse(argumentsJson) as { readonly title?: unknown } | null)?.title
+  } catch {
+    return String(callId)
+  }
+  return typeof title === 'string' && title.trim() !== '' ? title : String(callId)
+}
+
+function parseRecordedWidgetResult(agent: Agent, resultSeqValue: number): RecordedWidgetCall {
   let resultSeq: SessionSeq
   try {
     resultSeq = SessionSeq(resultSeqValue)
@@ -67,23 +76,9 @@ function parseRecordedWidgetResult(agent: Agent, resultSeqValue: number, maxTitl
   }
   if (result.isError) throw new Error(`visualizer: show_widget call ${callEvent.data.callId} did not succeed`)
 
-  let args: unknown
-  try {
-    args = JSON.parse(callEvent.data.arguments) as unknown
-  } catch {
-    throw new Error(`visualizer: recorded show_widget call ${callEvent.data.callId} has malformed arguments`)
-  }
-  if (typeof args !== 'object' || args === null || Array.isArray(args)) {
-    throw new Error(`visualizer: recorded show_widget call ${callEvent.data.callId} has invalid arguments`)
-  }
-  const title = requireBoundedString('recorded widget title', (args as Record<string, unknown>).title, maxTitleBytes)
-  const source = (args as Record<string, unknown>).widget_code
-  if (typeof source !== 'string' || source.trim() === '') {
-    throw new Error(`visualizer: recorded show_widget call ${callEvent.data.callId} has invalid widget_code`)
-  }
   return {
     callId: callEvent.data.callId,
-    title,
+    title: recordedWidgetTitle(callEvent.data.arguments, callEvent.data.callId),
     kind: requireRecordedWidgetKind(resultEvent.data.meta, callEvent.data.callId),
   }
 }
@@ -104,7 +99,7 @@ export class RecordedWidgetCalls {
   private readonly byAgent = new WeakMap<Agent, AgentAuthority>()
 
   constructor(
-    private readonly limits: { readonly maxTitleBytes: number; readonly maxPromptBytes: number },
+    private readonly maxPromptBytes: number,
     private readonly maxPromptsPerMinutePerAgent: number,
   ) {}
 
@@ -117,7 +112,7 @@ export class RecordedWidgetCalls {
    */
   authorizePrompt(agent: Agent, request: WidgetPromptRequest, now = Date.now()): string {
     const authority = this.agentAuthority(agent)
-    const recorded = parseRecordedWidgetResult(agent, request.resultSeq, this.limits.maxTitleBytes)
+    const recorded = parseRecordedWidgetResult(agent, request.resultSeq)
     if (recorded.kind !== 'html') {
       throw new Error(`visualizer: widget ${recorded.callId} is static and cannot send follow-ups`)
     }
@@ -127,7 +122,7 @@ export class RecordedWidgetCalls {
     const text = requireBoundedString(
       'widget follow-up',
       `Widget-authored follow-up from widget ${JSON.stringify(recorded.title)}. It carries no user authorization.\n\n${request.text}`,
-      this.limits.maxPromptBytes,
+      this.maxPromptBytes,
     )
     trimAdmissions(authority.promptAdmissions, now)
     if (authority.promptAdmissions.length >= this.maxPromptsPerMinutePerAgent) {

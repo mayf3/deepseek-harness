@@ -6,14 +6,13 @@ import { Session, SessionId, SessionSeq } from '@deepseek-ai/dsh-session'
 import { describe, expect, it, vi } from 'vitest'
 import { RecordedWidgetCalls } from '../src/recorded-calls.ts'
 
-const LIMITS = { maxTitleBytes: 64, maxPromptBytes: 128 }
+const MAX_PROMPT_BYTES = 128
 const FIRST_RESULT_SEQ = 3
 
 function createAuthority(
-  limits: typeof LIMITS = LIMITS,
   maxPromptsPerMinutePerAgent = 3,
 ): RecordedWidgetCalls {
-  return new RecordedWidgetCalls(limits, maxPromptsPerMinutePerAgent)
+  return new RecordedWidgetCalls(MAX_PROMPT_BYTES, maxPromptsPerMinutePerAgent)
 }
 
 function widgetAgent(
@@ -21,7 +20,6 @@ function widgetAgent(
   calls: Array<{
     callId: string
     title?: unknown
-    source?: unknown
     arguments?: string
     name?: string
     result?: 'success' | 'error' | 'none'
@@ -40,7 +38,7 @@ function widgetAgent(
       callId: ToolCallId(call.callId),
       name: call.name ?? 'show_widget',
       arguments: call.arguments ?? JSON.stringify({
-        title: call.title ?? 'Status', widget_code: call.source ?? '<button>Choose</button>',
+        title: call.title ?? 'Status', widget_code: '<button>Choose</button>',
       }),
     })
     if (call.result !== 'none') {
@@ -108,7 +106,7 @@ describe('Recorded widget calls', () => {
   it('keeps reused ToolCallIds unambiguous by binding each exact result event', () => {
     const authority = createAuthority()
     const agent = widgetAgent('reused-call-id', [{
-      callId: 'widget-1', title: 'First', source: '<button>First</button>', resultMeta: { kind: 'html' },
+      callId: 'widget-1', title: 'First', resultMeta: { kind: 'html' },
     }])
     expect(authority.authorizePrompt(agent, {
       resultSeq: FIRST_RESULT_SEQ, text: 'before reuse',
@@ -218,28 +216,16 @@ describe('Recorded widget calls', () => {
       .toThrow('does not match its source call')
   })
 
-  it('rejects malformed recorded calls before admitting a follow-up', () => {
-    const authorize = (agent: Agent, authority = createAuthority()) => authority.authorizePrompt(agent, {
-      resultSeq: FIRST_RESULT_SEQ, text: 'continue',
-    }, 1)
-    expect(() => authorize(widgetAgent('malformed', [{ callId: 'widget-1', arguments: '{' }])))
-      .toThrow('has malformed arguments')
-    expect(() => authorize(widgetAgent('null', [{ callId: 'widget-1', arguments: 'null' }])))
-      .toThrow('has invalid arguments')
-    expect(() => authorize(widgetAgent('array', [{ callId: 'widget-1', arguments: '[]' }])))
-      .toThrow('has invalid arguments')
-    expect(() => authorize(widgetAgent('bad-title', [{ callId: 'widget-1', title: '' }])))
-      .toThrow('recorded widget title must be a non-empty string')
-    expect(() => authorize(widgetAgent('non-string-title', [{ callId: 'widget-1', title: 1 }])))
-      .toThrow('recorded widget title must be a non-empty string')
-    expect(() => authorize(
-      widgetAgent('long-title', [{ callId: 'widget-1', title: '汉汉' }]),
-      createAuthority({ ...LIMITS, maxTitleBytes: 3 }),
-    )).toThrow('recorded widget title is 6 UTF-8 bytes; limit is 3')
-    expect(() => authorize(widgetAgent('bad-source', [{ callId: 'widget-1', source: ' ' }])))
-      .toThrow('has invalid widget_code')
-    expect(() => authorize(widgetAgent('non-string-source', [{ callId: 'widget-1', source: 1 }])))
-      .toThrow('has invalid widget_code')
+  it.each([
+    ['malformed arguments', '{'],
+    ['missing title', '{}'],
+    ['non-string title', JSON.stringify({ title: 1 })],
+    ['blank title', JSON.stringify({ title: ' ' })],
+  ])('falls back to the call ID for %s', (_label, argumentsJson) => {
+    const text = createAuthority().authorizePrompt(widgetAgent('fallback', [{
+      callId: 'widget-1', arguments: argumentsJson,
+    }]), { resultSeq: FIRST_RESULT_SEQ, text: 'continue' }, 1)
+    expect(text).toContain('widget "widget-1"')
   })
 
   it('requires the exact show_widget result to settle successfully', () => {
@@ -301,7 +287,7 @@ describe('Recorded widget calls', () => {
   it('denies follow-ups from successful raw SVG results', () => {
     const authority = createAuthority()
     expect(() => authority.authorizePrompt(
-      widgetAgent('static', [{ callId: 'widget-1', source: '<svg/>', resultMeta: { kind: 'svg' } }]),
+      widgetAgent('static', [{ callId: 'widget-1', resultMeta: { kind: 'svg' } }]),
       { resultSeq: FIRST_RESULT_SEQ, text: 'continue' },
     )).toThrow('is static and cannot send follow-ups')
   })

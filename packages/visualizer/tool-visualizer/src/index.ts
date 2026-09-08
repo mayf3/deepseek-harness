@@ -34,7 +34,7 @@ export class VisualizerService extends TypertRemoteService {
     super(ctx, 'visualizer')
     this.rootCtx = ctx
     this.recordedCalls = new RecordedWidgetCalls(
-      { maxTitleBytes: MAX_TITLE_BYTES, maxPromptBytes: MAX_PROMPT_BYTES },
+      MAX_PROMPT_BYTES,
       MAX_PROMPTS_PER_MINUTE_PER_AGENT,
     )
   }
