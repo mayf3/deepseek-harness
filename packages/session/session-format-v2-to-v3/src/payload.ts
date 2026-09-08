@@ -66,10 +66,10 @@ export function assertEvent(event: SessionFormatEvent, version: 2 | 3): void {
   // Non-inventory feedback events have returned above.
   const admitted = disposition as NonNullable<typeof disposition>
   keys(data, admitted.required, admitted.optional, event.type + ' data')
+  assertOwnedContent(event, data)
   // Assistant attempts are introduced by V2; the V0 helper has no case for them.
   if (event.type !== 'assistant/attempt') assertReleasedPayloadSemantics(event, version)
   if (event.type === 'assistant/message' || event.type === 'assistant/attempt') {
-    if (!Array.isArray(data['stream'])) throw new SessionFormatError('assistant stream must be an array')
     for (const coordinate of ['turn', 'step']) {
       if (sessionFormatCount(data[coordinate], coordinate) === 0) throw new SessionFormatError(coordinate + ' must be positive')
     }
@@ -77,8 +77,7 @@ export function assertEvent(event: SessionFormatEvent, version: 2 | 3): void {
   if (event.type === 'session/end-seed' && data['inherited'] !== undefined && data['inherited'] !== true) {
     throw new SessionFormatError('session/end-seed inherited must be true')
   }
-  // These are the only payload positions containing Harness messages. Tool JSON and stream
-  // records are owner-opaque; their counters and serialized text are not local Session refs.
+  // Source classification applies only to Harness messages, not team delivery envelopes.
   if (event.type === 'user/message') assertSource(data)
   if (event.type === 'assistant/message' || event.type === 'tool/result') assertSource(record(data['message'], 'message'))
   if (event.type === 'tool/result' && isSessionFormatJsonObject(data['error']) && data['error']['code'] === 'TOOL_NOT_STARTED') {
@@ -119,34 +118,90 @@ function assertSource(message: SessionFormatJsonObject): void {
       throw new SessionFormatError('agent-message source requires relay form and senderSessionId')
     }
   }
-  assertContentKinds(message['content'])
 }
 
-function assertContentKinds(content: SessionFormatJsonValue | undefined): void {
-  // The frozen payload validator already checks content arrays, including nested tool results.
-  for (const value of content as readonly SessionFormatJsonValue[]) {
-    const block = record(value, 'message content')
-    switch (block['type']) {
-      case 'text':
-      case 'reasoning':
-      case 'image':
-      case 'tool-call':
-        break
-      case 'file': {
-        keys(block, ['type', 'attachment'], [], 'file content')
-        const attachment = record(block['attachment'], 'file attachment')
-        keys(attachment, ['attachmentId', 'name', 'bytes'], [], 'file attachment')
-        if (typeof attachment['attachmentId'] !== 'string' || attachment['attachmentId'].length === 0
-          || typeof attachment['name'] !== 'string') throw new SessionFormatError('file attachment requires attachmentId and name')
-        sessionFormatCount(attachment['bytes'], 'file attachment bytes')
-        break
+const CONTENT_KINDS = new Set(['text', 'reasoning', 'image', 'file', 'tool-call', 'tool-result'])
+
+function contentArray(value: SessionFormatJsonValue | undefined, label: string): readonly SessionFormatJsonValue[] {
+  if (!Array.isArray(value)) throw new SessionFormatError(label + ': content must be an array')
+  return value as readonly SessionFormatJsonValue[]
+}
+
+function assertOwnedContent(event: SessionFormatEvent, data: SessionFormatJsonObject): void {
+  const label = 'format v2 ' + event.type + ' at seq ' + String(event.seq) + ' data'
+  switch (event.type) {
+    case 'user/message':
+    case 'tool/code-dispatch':
+      assertContentKinds(data['content'], label + '.content')
+      break
+    case 'assistant/message':
+    case 'tool/result':
+    case 'team/message/queued':
+      assertContentKinds(record(data['message'], label + '.message')['content'], label + '.message.content')
+      break
+    case 'agent/inbox/spliced':
+    case 'session/title-llm-request': {
+      const field = event.type === 'agent/inbox/spliced' ? 'inserted' : 'messages'
+      for (const [index, value] of contentArray(data[field], label + '.' + field).entries()) {
+        const path = label + '.' + field + '[' + String(index) + ']'
+        assertContentKinds(record(value, path)['content'], path + '.content')
       }
-      case 'tool-result':
-        assertContentKinds(block['content'])
-        break
-      default:
-        throw new SessionFormatUnsupportedMigrationError('cannot safely transform unclassified message content')
+      break
     }
+    case 'compaction/summary':
+      assertContentKinds(data['summary'], label + '.summary')
+      if (data['rawOutput'] !== undefined) assertContentKinds(data['rawOutput'], label + '.rawOutput')
+      break
+  }
+  if (event.type === 'assistant/message' || event.type === 'assistant/attempt') {
+    for (const [index, value] of contentArray(data['stream'], label + '.stream').entries()) {
+      const path = label + '.stream[' + String(index) + ']'
+      const entry = record(value, path)
+      // Only raw chunks carry blocks; packed deltas and other chunk payloads remain opaque.
+      if (entry['type'] !== 'chunk') continue
+      const chunk = record(entry['chunk'], path + '.chunk')
+      if (chunk['type'] === 'block-end') assertContentBlock(chunk['block'], path + '.chunk.block')
+      if (chunk['type'] === 'block-start') assertContentKind(chunk['blockType'], path + '.chunk.blockType')
+    }
+  }
+}
+
+function assertContentKind(kind: SessionFormatJsonValue | undefined, label: string): void {
+  if (typeof kind !== 'string' || !CONTENT_KINDS.has(kind)) {
+    throw new SessionFormatUnsupportedMigrationError(label + ': cannot safely transform unclassified message content kind ' + JSON.stringify(kind))
+  }
+}
+
+function assertContentKinds(content: SessionFormatJsonValue | undefined, label: string): void {
+  for (const [index, value] of contentArray(content, label).entries()) assertContentBlock(value, label + '[' + String(index) + ']')
+}
+
+function assertContentBlock(value: SessionFormatJsonValue | undefined, label: string): void {
+  const block = record(value, label)
+  assertContentKind(block['type'], label)
+  if (block['type'] === 'tool-result') {
+    if (!Array.isArray(block['content'])) throw new SessionFormatError(label + '.content: invalid message content kind "tool-result": content must be an array')
+    assertContentKinds(block['content'], label + '.content')
+  }
+  if (block['type'] === 'file') {
+    keys(block, ['type', 'attachment'], [], label + ' kind "file"')
+    const attachment = record(block['attachment'], label + ' kind "file" attachment')
+    keys(attachment, ['attachmentId', 'name', 'bytes'], [], label + ' kind "file" attachment')
+    if (typeof attachment['attachmentId'] !== 'string' || attachment['attachmentId'].length === 0
+      || typeof attachment['name'] !== 'string') throw new SessionFormatError(label + ' kind "file": file attachment requires attachmentId and name')
+    sessionFormatCount(attachment['bytes'], label + ' kind "file" attachment bytes')
+    return
+  }
+  // Reuse frozen field rules without recursively revisiting tool-result children or interpreting opaque JSON.
+  const leaf = block['type'] === 'tool-result' ? { ...block, content: [] } : block
+  const probe: SessionFormatEvent = { type: 'user/message', seq: 0, time: 0, data: {
+    id: 'content-admission', role: 'user', source: { kind: 'user' }, content: [leaf],
+  } }
+  try {
+    assertReleasedPayloadSemantics(probe, 2)
+  } catch (error) {
+    // Frozen payload failures need the original event and content path, not the synthetic message.
+    throw new SessionFormatError(label + ': invalid message content kind ' + JSON.stringify(block['type']) + ': ' + String(error))
   }
 }
 
