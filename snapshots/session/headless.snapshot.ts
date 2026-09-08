@@ -4,7 +4,7 @@ import { cp, copyFile, mkdir, mkdtemp, readFile, readdir, rm, utimes, writeFile 
 import { existsSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
-import { basename, delimiter, dirname, join } from 'node:path'
+import { basename, delimiter, dirname, join, relative, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import ts from 'typescript'
@@ -539,7 +539,7 @@ function pinOf(scenario: HeadlessScenario): HeadlessScenario {
 }
 
 /** Require successful verification and the complete canonical event before refresh can write a fixture. */
-async function verifySessionQuerySpill(log: string): Promise<void> {
+async function verifySessionQuerySpill(log: string, spillRoot: string, locatorRoot: string): Promise<void> {
   const events = parseSessionLog(log)
   const results = events.flatMap(event => event.type === 'tool/result'
     ? event.data.message.content.filter(block => block.type === 'tool-result')
@@ -555,7 +555,8 @@ async function verifySessionQuerySpill(log: string): Promise<void> {
   const locator = preview?.match(/Full formatted result stored at: (.+-session_event_read\.txt)\. Use read/)
   expect(locator).not.toBeNull()
   expect(locator?.[1]).toBeDefined()
-  const full = await readFile(locator![1]!, 'utf8')
+  expect(locator![1]!.startsWith(locatorRoot + sep)).toBe(true)
+  const full = await readFile(join(spillRoot, relative(locatorRoot, locator![1]!)), 'utf8')
   const json = full.match(/```json\n([\s\S]+)\n```/)
   expect(json).not.toBeNull()
   const header = events.find(event => event.type === 'request/header')
@@ -871,6 +872,7 @@ describe('headless recorded-session snapshots', () => {
       let initialWorkspace: WorkspaceSnapshotEntry[] | undefined
       let finalWorkspace: WorkspaceSnapshotEntry[] | undefined
       const spillRoot = await mkdtemp(join(tmpdir(), 'acp-snap-spill-'))
+      const locatorRoot = snapshotSpillRoot(join(scenario.dir, fixtureFiles[0] as string))
       let result: Awaited<ReturnType<typeof runLoaderSmoke>>
       try {
         result = await runLoaderSmoke({
@@ -894,7 +896,7 @@ describe('headless recorded-session snapshots', () => {
             DSH_SNAPSHOT_PROVIDER: model.provider,
             DSH_SNAPSHOT_MODEL: model.model,
             DSH_SNAPSHOT_SPILL_ROOT: spillRoot,
-            DSH_SNAPSHOT_SPILL_LOCATOR_ROOT: snapshotSpillRoot(join(scenario.dir, fixtureFiles[0] as string)),
+            DSH_SNAPSHOT_SPILL_LOCATOR_ROOT: locatorRoot,
             DSH_SNAPSHOT_FILE: join(scenario.dir, fixtureFiles[0] as string),
             ...(replaying && fixtureFiles.length > 1
               ? { DSH_SNAPSHOT_CHILD_FILES: fixtureFiles.slice(1).map(file => join(scenario.dir, file)).join(delimiter) }
@@ -925,7 +927,7 @@ describe('headless recorded-session snapshots', () => {
           inspect: async (cwd) => {
             actualLogs = await persistedSessions(cwd)
             if (scenario.name === 'session-query-spill') {
-              await verifySessionQuerySpill(actualLogs[0]!.content)
+              await verifySessionQuerySpill(actualLogs[0]!.content, spillRoot, locatorRoot)
             }
             finalWorkspace = await captureWorkspaceSnapshot(cwd, {
               ignoredRootEntries: RUNTIME_WORKSPACE_ENTRIES,
