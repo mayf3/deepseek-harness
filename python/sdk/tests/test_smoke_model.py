@@ -1,13 +1,97 @@
 from __future__ import annotations
 
 import runpy
+import subprocess
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
 
 ROOT = Path(__file__).resolve().parents[3]
 SMOKE = runpy.run_path(ROOT / "scripts" / "smoke-python-runtime.py")
+
+
+@pytest.mark.parametrize(
+    ("behavior", "error"),
+    [
+        ("read-current", None),
+        ("no-verify-tool", "verify turn made no model-requested tool call"),
+        ("no-create-tool", "create turn made no model-requested tool call"),
+        ("create-error", "create turn ended with.*AUTH.*401"),
+        ("stale-answer", "verify turn returned"),
+        ("missing-create", "real-model tool turn did not create"),
+        ("wrong-create", "real-model tool turn wrote unexpected text"),
+        ("modify-verify", "real-model tool turn wrote unexpected text"),
+    ],
+)
+def test_live_smoke_requires_fresh_file_observation(
+    monkeypatch: pytest.MonkeyPatch, behavior: str, error: str | None,
+) -> None:
+    import deepseek_harness
+
+    smoke_live = SMOKE["smoke_sdk_live"]
+    sentinel = SMOKE["LIVE_API_SENTINEL"]
+    prompts: list[str] = []
+    session_ids: list[str] = []
+    log_checks: list[Path] = []
+
+    class ScriptedHarness:
+        def __init__(self, *, cwd: str, **_kwargs: object) -> None:
+            self.marker = Path(cwd) / "live-api-marker.txt"
+
+        def __enter__(self) -> ScriptedHarness:
+            return self
+
+        def __exit__(self, *_args: object) -> None:
+            pass
+
+        def run(self, prompt: str, *, session_id: str) -> SimpleNamespace:
+            prompts.append(prompt)
+            session_ids.append(session_id)
+            events = [{"type": "tool/call"}]
+            if len(prompts) == 1:
+                assert not self.marker.exists()
+                if behavior == "create-error":
+                    return SimpleNamespace(finish_reason="error", final_response="", events=[{
+                        "type": "turn/end",
+                        "data": {"turn": 1, "reason": {
+                            "kind": "error", "error": {"code": "AUTH", "status": 401},
+                        }},
+                    }])
+                if behavior == "no-create-tool":
+                    events = []
+                if behavior != "missing-create":
+                    self.marker.write_text(
+                        ("wrong" if behavior == "wrong-create" else sentinel) + "\n",
+                        encoding="utf-8",
+                    )
+                response = sentinel
+            else:
+                current = self.marker.read_text(encoding="utf-8").strip()
+                assert current != sentinel, "verification must require new world state"
+                assert all(current not in text for text in prompts), "prompts must not reveal the answer"
+                response = sentinel if behavior == "stale-answer" else current
+                if behavior == "no-verify-tool":
+                    events = []
+                if behavior == "modify-verify":
+                    self.marker.write_text("changed\n", encoding="utf-8")
+            return SimpleNamespace(finish_reason="completed", final_response=response, events=events)
+
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "fixture-key")
+    monkeypatch.setenv("DEEPSEEK_BASE_URL", "https://fixture.invalid")
+    monkeypatch.setattr(deepseek_harness, "DeepSeekHarness", ScriptedHarness)
+    monkeypatch.setitem(smoke_live.__globals__, "assert_zstd_session_log", log_checks.append)
+
+    if error is None:
+        smoke_live()
+        assert len(prompts) == 2
+        assert session_ids[0] == session_ids[1]
+        assert len(log_checks) == 1
+    else:
+        with pytest.raises(AssertionError, match=error):
+            smoke_live()
+        assert not log_checks
 
 
 @pytest.mark.parametrize(
@@ -262,3 +346,17 @@ def test_snapshot_generation_filename_must_match_header(tmp_path: Path) -> None:
 
     with pytest.raises(AssertionError, match="filename declares Session format v1"):
         SMOKE["selected_snapshot_session_files"](tmp_path)
+
+
+@pytest.mark.parametrize("returncode", [1, -1073741819, 3221225477])
+def test_profile_plugin_failure_reports_native_exit_status(monkeypatch: pytest.MonkeyPatch, returncode: int) -> None:
+    def failed_install(*args: object, **kwargs: object) -> subprocess.CompletedProcess[str]:
+        return subprocess.CompletedProcess(args=[], returncode=returncode, stdout="", stderr="")
+
+    monkeypatch.setattr(subprocess, "run", failed_install)
+    with pytest.raises(AssertionError) as error:
+        SMOKE["smoke_sdk_profile_plugin"]("http://127.0.0.1:1")
+    message = str(error.value)
+    assert f"returncode={returncode}" in message
+    assert f"0x{returncode & 0xffffffff:08x}" in message
+    assert "stdout='' stderr=''" in message

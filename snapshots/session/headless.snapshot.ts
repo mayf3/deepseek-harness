@@ -3,11 +3,12 @@
 import { cp, copyFile, mkdir, mkdtemp, readFile, readdir, rm, utimes, writeFile } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
-import { homedir, tmpdir } from 'node:os'
+import { tmpdir } from 'node:os'
 import { basename, delimiter, dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import ts from 'typescript'
+import { assertWorkspaceOutsideTemp, outsideTempWorkspaceParent } from '../../scripts/snapshot-workspace-parent.ts'
 import {
   assertPersistedSessionVersion,
   assertSessionFixtureVersion,
@@ -281,11 +282,7 @@ function taskFromSession(log: string): string | undefined {
       ? blocks[0].text
       : undefined
   }
-  for (const record of records(log)) {
-    if (record.type !== 'user/message') continue
-    const task = text(record.data)
-    if (task !== undefined) return task
-  }
+  // Inbox text retains canonical mentions that pre-step renders as readable labels.
   for (const record of records(log)) {
     if (record.type !== 'agent/inbox/spliced') continue
     const data = record.data as JsonObject | undefined
@@ -294,6 +291,11 @@ function taskFromSession(log: string): string | undefined {
       const task = text(message)
       if (task !== undefined) return task
     }
+  }
+  for (const record of records(log)) {
+    if (record.type !== 'user/message') continue
+    const task = text(record.data)
+    if (task !== undefined) return task
   }
   return undefined
 }
@@ -673,6 +675,17 @@ describe('headless recorded-session snapshots', () => {
     expect(logical(packed)).toStrictEqual(logical(source))
   })
 
+  it('replays original inbox mentions before normalized user messages', () => {
+    const message = (text: string) => ({ source: { kind: 'user' }, content: [{ type: 'text', text }] })
+    const original = 'Use @[Research](dsh-session:InJlZmVyZW5jZS1zb3VyY2Ui)'
+    const log = [
+      { type: 'agent/inbox/spliced', data: { inserted: [message(original)] } },
+      { type: 'user/message', data: message('Use @Research') },
+    ].map(record => JSON.stringify(record)).join('\n')
+    expect(taskFromSession(log)).toBe(original)
+    expect(taskFromSession(JSON.stringify({ type: 'user/message', data: message('legacy task') }))).toBe('legacy task')
+  })
+
   it('reconstructs reasoning stderr across packed output boundaries', () => {
     const log = [
       { type: 'turn/start', data: { turn: 1 } },
@@ -834,14 +847,13 @@ describe('headless recorded-session snapshots', () => {
       let actualLogs: SessionLog[] = []
       let initialWorkspace: WorkspaceSnapshotEntry[] | undefined
       let finalWorkspace: WorkspaceSnapshotEntry[] | undefined
-      const spillRoot = snapshotSpillRoot(join(scenario.dir, fixtureFiles[0] as string))
-      await rm(spillRoot, { recursive: true, force: true })
+      const spillRoot = await mkdtemp(join(tmpdir(), 'acp-snap-spill-'))
       let result: Awaited<ReturnType<typeof runLoaderSmoke>>
       try {
         result = await runLoaderSmoke({
           label: `${scenario.name} headless snapshot`,
           tempDirPrefix: 'dsh-log-snap-',
-          ...(scenario.manifest.workspace?.parent === 'home' ? { tempDirParent: homedir() } : {}),
+          ...(scenario.manifest.workspace?.parent === 'outside-temp' ? { tempDirParent: outsideTempWorkspaceParent() } : {}),
           binScript: dshBin,
           configPath: join(baseComposition.dir, 'cordis.yml'),
           binArgs: [
@@ -859,6 +871,7 @@ describe('headless recorded-session snapshots', () => {
             DSH_SNAPSHOT_PROVIDER: model.provider,
             DSH_SNAPSHOT_MODEL: model.model,
             DSH_SNAPSHOT_SPILL_ROOT: spillRoot,
+            DSH_SNAPSHOT_SPILL_LOCATOR_ROOT: snapshotSpillRoot(join(scenario.dir, fixtureFiles[0] as string)),
             DSH_SNAPSHOT_FILE: join(scenario.dir, fixtureFiles[0] as string),
             ...(replaying && fixtureFiles.length > 1
               ? { DSH_SNAPSHOT_CHILD_FILES: fixtureFiles.slice(1).map(file => join(scenario.dir, file)).join(delimiter) }
@@ -874,6 +887,7 @@ describe('headless recorded-session snapshots', () => {
             DSH_TELEMETRY_DISABLED: '1',
           },
           prepare: async (cwd) => {
+            if (scenario.manifest.workspace?.parent === 'outside-temp') assertWorkspaceOutsideTemp(cwd)
             await mkdir(join(cwd, patchRoot), { recursive: true })
             patchSources.forEach((source, index) => {
               if (source.endsWith('.snapshot.yml')) {
