@@ -83,7 +83,7 @@ function replacements(session: Session): [number, number][] {
 }
 
 describe('image offload recovery', () => {
-  it('advances the watermark by the named count and retries without a retry event', async () => {
+  it('replaces the node carrying the named count of images and retries without a retry event', async () => {
     const adapter = new ScriptedAdapter([offloadRequired(2), textResponse('sent')])
     const ctx = await harness(adapter)
     const agent = await ctx.agentLoop.create(SessionId('offload-required'), { provider: 'mock', model: 'mock' })
