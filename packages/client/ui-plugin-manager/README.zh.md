@@ -3,7 +3,7 @@ description: "dsh Web 客户端左侧栏「插件」入口背后的插件管理�
 kind: "package-reference"
 ---
 
-# @deepseek-ai/dsh-client-ui-settings-plugin-manager
+# @deepseek-ai/dsh-client-ui-plugin-manager
 
 [English](README.md) | 中文
 

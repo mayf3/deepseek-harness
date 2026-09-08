@@ -42,12 +42,12 @@ export type { PluginManagerLocaleKey } from './locales.ts'
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface LocaleNamespaceMap {
     /** Plugin manager tab copy. */
-    'settings.pluginManager': PluginManagerLocaleKey
+    'pluginManager': PluginManagerLocaleKey
   }
 }
 
 /** Dictionary namespace owned by this plugin. */
-export const NS = 'settings.pluginManager'
+export const NS = 'pluginManager'
 
 /** The id shared by the sidebar entry and the main panel it opens. */
 export const PANEL_ID = 'plugins' as MainPanelId
@@ -62,11 +62,11 @@ export const inject = ['slots', 'locale', 'remote', 'remote.plugins', 'remote.pl
  * @param ctx - the browser plugin context.
  */
 export function apply(ctx: ClientContext): void {
-  ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-settings-plugin-manager: dictionaries')
+  ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-plugin-manager: dictionaries')
   const t = ctx.locale.bind(NS)
   const agentPresetCopy = ctx.locale.bind('settings.agentPreset')
   const controller = new PluginManagerController(ctx, preset => presetDisplayText(preset, agentPresetCopy).name)
-  ctx.effect(() => () => { controller.dispose() }, 'ui-settings-plugin-manager: controller')
+  ctx.effect(() => () => { controller.dispose() }, 'ui-plugin-manager: controller')
   // The Host says when what is installed, enabled, or composed changed — from
   // this page, the CLI, or another browser — and streams install output.
   ctx.effect(() => {
@@ -80,7 +80,7 @@ export function apply(ctx: ClientContext): void {
       ctx.on('connection/reset', refresh),
     ]
     return () => { for (const dispose of disposers) dispose() }
-  }, 'ui-settings-plugin-manager: host invalidations')
+  }, 'ui-plugin-manager: host invalidations')
 
   // The page is a global panel: it belongs to the profile, not to a Session,
   // and the sidebar's entry selects it. How a plugin is configured stays in

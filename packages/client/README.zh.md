@@ -69,7 +69,7 @@ kind: "package-group"
 | [`ui-settings/`](ui-settings/README.zh.md) | 承载设置界面及其扩展区域 | — |
 | [`ui-settings-general/`](ui-settings-general/README.zh.md) | 提供常规设置分区 | — |
 | [`ui-settings-models/`](ui-settings-models/README.zh.md) | 提供模型提供方配置与 DeepSeek 引导 | — |
-| [`ui-settings-plugin-manager/`](ui-settings-plugin-manager/README.zh.md) | 向“插件”设置贡献插件管理标签页：安装、启用、停用、重试与组合包 | — |
+| [`ui-plugin-manager/`](ui-plugin-manager/README.zh.md) | 向“插件”设置贡献插件管理标签页：安装、启用、停用、重试与组合包 | — |
 | [`ui-deliverables/`](ui-deliverables/README.zh.md) | 生成已产出文件的轮次尾部与可点击的最终响应文件引用 | — |
 | [`ui-message-feedback/`](ui-message-feedback/README.zh.md) | 向助手消息操作条贡献逐消息反馈控件 | — |
 | [`ui-directory-picker-browse/`](ui-directory-picker-browse/README.zh.md) | 面向工作区目录流程的应用内目录浏览界面 | — |

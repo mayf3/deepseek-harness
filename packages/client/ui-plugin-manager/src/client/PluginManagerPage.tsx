@@ -30,7 +30,7 @@ import css from './PluginManagerPage.module.css'
 /** Full component props assembled by the main slot renderer. */
 export type PluginManagerPageProps =
   PropsRuntime<'main'>
-  & PropsLocale<'settings.pluginManager'>
+  & PropsLocale<'pluginManager'>
   & InjectFace<PluginManagerFace>
 
 type RowView = PluginPackageView['rows'][number]

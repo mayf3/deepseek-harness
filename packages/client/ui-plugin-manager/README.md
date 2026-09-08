@@ -3,7 +3,7 @@ description: "Plugin management behind the Web sidebar's Plugins entry for the d
 kind: "package-reference"
 ---
 
-# @deepseek-ai/dsh-client-ui-settings-plugin-manager
+# @deepseek-ai/dsh-client-ui-plugin-manager
 
 English | [中文](README.zh.md)
 

@@ -10,7 +10,7 @@ Status: implemented
 
 ## 决定
 
-**管理是侧栏入口；配置留在设置里。** `ui-settings-plugin-manager` 用同一个 id `plugins` 注册一个 `sidebar.panellist` 条目和它打开的 `main` 面板：侧栏渲染本地化的**插件**标签，本包提供图标与页面。页面是根级作用域，不绑定任何 Session；它带自己的标题、简介、刷新与**添加插件**，并在主列内部滚动。页面显示的内容没有变：插件包与插件、每个包的页面、安装对话框与各个确认框都来自原来的标签页。设置的**插件**分区保留插件配置，`ui-settings-plugins` 把唯一的 `settings.plugins.tab` 贡献直接渲染成这一页，没有标签条，因此该分区读起来就是它现在的样子——配置页。设置里的预设详情页保留读同一个 store 的**能力**段。
+**管理是侧栏入口；配置留在设置里。** `ui-plugin-manager` 用同一个 id `plugins` 注册一个 `sidebar.panellist` 条目和它打开的 `main` 面板：侧栏渲染本地化的**插件**标签，本包提供图标与页面。页面是根级作用域，不绑定任何 Session；它带自己的标题、简介、刷新与**添加插件**，并在主列内部滚动。页面显示的内容没有变：插件包与插件、每个包的页面、安装对话框与各个确认框都来自原来的标签页。设置的**插件**分区保留插件配置，`ui-settings-plugins` 把唯一的 `settings.plugins.tab` 贡献直接渲染成这一页，没有标签条，因此该分区读起来就是它现在的样子——配置页。设置里的预设详情页保留读同一个 store 的**能力**段。
 
 **配置不搬。** 插件的配置把一个 settings 命名空间绑定在某个 scope 下——全局实例或某个预设——而设置外壳拥有这套 scope 机制，一处选择同时服务分区与每个预设的详情页。把卡片搬到管理页会复制外壳的 scope 选择，并把设置拆到两个入口，而人找一个值时会去设置里找。等设置能按分区打开后，插件自己的页面会转而指向它的可配置分区，那只需要一个深链接。
 
@@ -26,4 +26,4 @@ web bundle 的面板列表不再为空：**插件**入口位于新建会话与�
 
 ## 测试
 
-`packages/client/ui-settings-plugin-manager/tests` 钉住同一 id 下的两处注册与页面的渲染；`packages/client/ui-settings-plugins/tests` 钉住没有标签条的单一贡献；上述 web e2e 场景在脚手架上驱动面板与分区。
+`packages/client/ui-plugin-manager/tests` 钉住同一 id 下的两处注册与页面的渲染；`packages/client/ui-settings-plugins/tests` 钉住没有标签条的单一贡献；上述 web e2e 场景在脚手架上驱动面板与分区。

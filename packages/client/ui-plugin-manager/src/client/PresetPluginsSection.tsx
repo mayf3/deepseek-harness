@@ -22,7 +22,7 @@ import css from './PluginManagerPage.module.css'
 /** Full component props assembled by the slot renderer. */
 export type PresetPluginsSectionProps =
   PropsRuntime<'settings.agentPreset.detail'>
-  & PropsLocale<'settings.pluginManager'>
+  & PropsLocale<'pluginManager'>
   & InjectFace<PluginManagerFace>
 
 /** One module the preset could still add, carried through the menu as its item id. */

@@ -47,7 +47,7 @@ function declare(slots: SlotRegistry): () => void {
   } as never, () => null)
 }
 
-describe('ui-settings-plugin-manager browser plugin', () => {
+describe('ui-plugin-manager browser plugin', () => {
   it('keeps the host Loader entry inert', () => {
     expect(hostApply).not.toThrow()
   })

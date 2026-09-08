@@ -11,7 +11,7 @@ import { zh, type PluginManagerLocaleKey } from './locales.ts'
 import type { ManagerNotice, PresetRow } from './manager-store.ts'
 
 /** The translate seat of the manager's dictionary. */
-export type Translate = PropsLocale<'settings.pluginManager'>['t']
+export type Translate = PropsLocale<'pluginManager'>['t']
 
 /** The scope every harness module is published under. */
 const FIRST_PARTY_SCOPE = '@deepseek-ai/'
