@@ -10,15 +10,17 @@ Status: implemented
 
 ## 决策
 
-[present 工具](../../../../packages/fs/tool-present/README.zh.md)拥有执行、不可变快照、交付类型和持久事件。[交付插件](../../../../packages/client/ui-deliverables/README.zh.md)拥有认证下载和浏览器渲染，仅从工具的 `./types` 入口导入类型。`standard`、`ptc` 与 `cordis` preset 挂载工具包；`minimal` 保留双工具训练配置。现有 attachment 服务保存不可变字节；成功的最终 `tools/result` 通知将 `deliverables/presented` 追加到调用方 Session。原生与嵌套调用使用同一个记录器。外层程序随后失败不会撤销已完成的嵌套交付。被阻止的工具结果不发布交付。
+[present 工具](../../../../packages/fs/tool-present/README.zh.md)拥有执行、不可变快照、交付类型和持久事件。[交付插件](../../../../packages/client/ui-deliverables/README.zh.md)拥有认证快照操作和浏览器渲染，仅从工具的 `./types` 入口导入类型。`standard`、`ptc` 与 `cordis` preset 挂载工具包；`minimal` 保留双工具训练配置。现有 attachment 服务保存不可变字节；成功的最终 `tools/result` 通知将 `deliverables/presented` 追加到调用方 Session。原生与嵌套调用使用同一个记录器。外层程序随后失败不会撤销已完成的嵌套交付。被阻止的工具结果不发布交付。
 
-下载通过当前查看的 Session、事件序号与文件索引授权引用。事件不保存 Session ID，因此 fork 历史使用子 Session 自己的日志。现有产出文件行保留其名称和行为。Session ZIP 保留交付事件，但不收集其中引用的 attachment 字节。
+下载与原生打开请求通过当前查看的 Session、事件序号与文件索引授权引用。事件不保存 Session ID，因此 fork 历史使用子 Session 自己的日志。现有产出文件行保留其名称和行为。Session ZIP 保留交付事件，但不收集其中引用的 attachment 字节。
+
+卡片和收尾引用操作通过现有 native-command 工具，在默认应用中打开经过校验的私有副本。POST 表达桌面副作用；GET 仍仅读取字节。每次操作创建新副本，避免应用内编辑损坏不可变 attachment 或改变后续打开的内容。成功副本保留到插件释放，以支持延迟读取的应用；失败副本立即删除，释放时先等待取消的操作结束再清理。
 
 ## 已考虑的替代方案
 
 **在 UI 包中提供 Host 工具子路径**会将 preset 安装与浏览器打包耦合，并要求额外发布入口。普通工具包通过仓库 peer dependency 规则保留共享的文件系统和工具错误类。
 
-**实时工作区链接**无法在编辑或删除后保留已交付版本。
+**实时工作区链接**无法在编辑或删除后保留已交付版本。直接打开 attachment 存储路径则会使不可变保存字节暴露于应用写入。
 
 **在工具、dispatch 和 Session 中增加通用 artifact 字段**会为单个 Web 功能扩大无关 API。插件拥有的事件使用现有扩展点，并省去父调用结果转发。
 
@@ -32,4 +34,4 @@ Status: implemented
 
 交付事件要求读取端识别，因为它是保存字节的授权索引，不只是显示元数据。跳过事件会让旧读取端在重建或分叉 Session 时丢失已完成的交付。不支持该事件的读取端拒绝读取，避免静默丢弃引用。
 
-定向测试覆盖快照字节、无效输入、被阻止的结果、HTTP 完整性、turn 隔离及使用 fork 地址的链接。录制 Web 场景覆盖嵌套调用完成后外层失败、源文件删除、重新加载和 ZIP 排除。
+定向测试覆盖快照字节、无效输入、被阻止的结果、HTTP 完整性、原生打开的副本隔离、重试与释放、turn 隔离及使用 fork 地址的操作。录制 Web 场景覆盖嵌套调用完成后外层失败、源文件删除、重新加载、不触发浏览器下载的原生打开操作和 ZIP 排除。

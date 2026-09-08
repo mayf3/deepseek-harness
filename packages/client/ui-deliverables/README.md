@@ -30,9 +30,9 @@ Mount this plugin alongside `ui-conversation`; a finished turn then ends with th
 <a id="explicit-deliveries"></a>
 ### Explicit deliveries
 
-The Web `standard`, `ptc`, and `cordis` presets expose `present` for final files, including files created through Bash. Call it with `files: [{ path, description? }]` after creating the files. The [present tool](../../fs/tool-present/README.md) owns snapshot creation, limits, and Session delivery records. The closing turn shows responsive file cards with names, types, sizes, descriptions, and download actions, and matching inline-code references download the same snapshots after source edits, deletion, or reload. Forks download through the viewed Session. Repeated delivery of a path selects its latest successful snapshot before the closing reply.
+The Web `standard`, `ptc`, and `cordis` presets expose `present` for final files, including files created through Bash. Call it with `files: [{ path, description? }]` after creating the files. The [present tool](../../fs/tool-present/README.md) owns snapshot creation, limits, and Session delivery records. The closing turn shows responsive file cards with names, types, sizes, descriptions, and buttons that open a saved copy in the Host’s default application. Matching inline-code references open the same snapshots after source edits, deletion, or reload, without starting a browser download. Forks authorize opening through the viewed Session. Repeated delivery of a path selects its latest successful snapshot before the closing reply.
 
-The `present` tool row shows running, delivered, failed, or interrupted status; expanding a settled row reveals its recorded result. File cards include every delivered file.
+The `present` tool row shows running, delivered, failed, or interrupted status; expanding a settled row reveals its recorded result. File cards include every delivered file. Opening shows progress, confirmation, or a retryable error on the card. It requires a desktop and a suitable default application on the serving Host; a remote browser does not open applications on its own device.
 
 ### The row
 
@@ -51,6 +51,8 @@ The closing prose carries the same vocabulary: an inline-code token resolves by 
 <summary>Implementation internals — click to expand</summary>
 
 The Node half registers the static `ui:deliverable-file-references` system-prompt section asking the model to mention primary files from successful creation or modification calls and to write those and any other changed-file references as Markdown inline code. The browser half registers a wrapper around `ProducedFiles` and explicit deliveries into the chat view's `conversation.chat.turnTail` hole. `deliverablesDefinition` folds each Turn's successful first-party mutation calls into `DeliverablesTurnData` from the validated raw arguments of `write`, `edit`, and mutating `str_replace_editor` commands. Reads, deletes, unsupported tools, malformed calls, and failed results contribute nothing. A new mutation tool needs an explicit Client contribution before it joins the list. The package also provides the `chatFileMentions` service the chat view consults per closing message; composing the plugin out removes both surfaces and leaves the view's empty chain at zero cost.
+
+Native opening uses an authenticated POST addressed by Session, event sequence, and original file index. The Host streams the saved bytes into a private temporary copy and verifies the complete attachment before launching the default application. Each gesture creates a separate copy, so application edits cannot change the stored snapshot. Failed opens remove their copies; successful copies remain until plugin disposal because applications may read lazily. Disposal cancels and awaits pending work before cleanup. The authenticated GET download endpoint remains available to byte consumers.
 
 </details>
 
@@ -93,8 +95,8 @@ The section is static at first-party order 9000 for the lifetime of the package 
 These limits define the current deliverables vocabulary. They are current package constraints, not a general file-linking comparison or a task backlog.
 
 - **Mention matching is exact path or unique basename only** — a suffix mention stays inert; widening the matcher is deferred until a real closing-message shape needs it.
-- **Terminal-created files require explicit delivery** — call `present` to make their snapshots downloadable.
-- **Transferred Session exports contain no delivered bytes** — download links require the same snapshots in the serving host’s attachment store; missing or pruned snapshots return 404.
+- **Terminal-created files require explicit delivery** — call `present` to make their saved snapshots available.
+- **Transferred Session exports contain no delivered bytes** — delivery actions require the same snapshots in the serving host’s attachment store; missing or pruned snapshots return 404.
 - **Directories have no destination** — chips open files in the right Sidebar's text preview, which shows files only; the former native folder handoff is gone rather than replaced.
 
 <a id="dev-note"></a>
@@ -107,4 +109,4 @@ None.
 
 </details>
 
-**Runtime invariant:** No companion is published. The prompt section, slot, dictionary, download route, and optional service registrations are effect-owned with disposal proven by their plugin specs; the attachment service owns saved bytes, and the Session log owns delivery references.
+**Runtime invariant:** No companion is published. The prompt section, slot, dictionary, file-action routes, and optional service registrations are effect-owned with disposal proven by their plugin specs; the attachment service owns saved bytes, and the Session log owns delivery references.

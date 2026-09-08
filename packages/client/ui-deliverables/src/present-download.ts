@@ -1,26 +1,34 @@
-/** Authorize downloads against the Session log, then stream only the saved Presented file bytes. */
+/** Authorize delivery actions against the Session log, using only saved attachment bytes. */
 import { Readable } from 'node:stream'
 import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-attachment'
 import type {} from '@deepseek-ai/dsh-client-connection'
 import type { SessionId, SessionSeq } from '@deepseek-ai/dsh-session'
-import { isPresentedData, isPresentedFile, PRESENT_DOWNLOAD_PATH } from './presented.ts'
+import { isPresentedData, isPresentedFile, PRESENT_DOWNLOAD_PATH, PRESENT_OPEN_PATH } from './presented.ts'
+import { createPresentedOpener } from './present-open.ts'
 import type {} from '@deepseek-ai/dsh-session-query'
 
 /**
- * Register a streaming download inside Connection's existing authentication fence.
+ * Register snapshot downloads and native opening inside Connection's authentication fence.
  * @param ctx - Host services owning Session reads, attachments, and HTTP routing.
  */
 export function registerPresentDownload(ctx: Context): void {
+  const open = createPresentedOpener(ctx)
   ctx.connection.fetch.register({
     path: PRESENT_DOWNLOAD_PATH,
     methods: ['GET'],
     requestBody: 'buffered',
-    fetch: request => download(ctx, request),
+    fetch: request => handleDelivery(ctx, request),
+  })
+  ctx.connection.fetch.register({
+    path: PRESENT_OPEN_PATH,
+    methods: ['POST'],
+    requestBody: 'buffered',
+    fetch: request => handleDelivery(ctx, request, open),
   })
 }
 
-async function download(ctx: Context, request: Request): Promise<Response> {
+async function handleDelivery(ctx: Context, request: Request, open?: ReturnType<typeof createPresentedOpener>): Promise<Response> {
   const query = new URL(request.url).searchParams
   const id = query.get('sessionId')
   const seq = query.get('seq')
@@ -35,6 +43,10 @@ async function download(ctx: Context, request: Request): Promise<Response> {
     }, request.signal)
     const artifact = target.type === 'deliverables/presented' && isPresentedData(target.data) ? target.data.files[Number(index)] : undefined
     if (!isPresentedFile(artifact)) return new Response('Presented file not found in this Session result.', { status: 404 })
+    if (open !== undefined) {
+      await open(artifact, request.signal)
+      return new Response(null, { status: 204, headers: { 'cache-control': 'no-store' } })
+    }
     const filename = encodeURIComponent(artifact.name.toWellFormed())
       .replace(/['()*]/g, character => `%${character.charCodeAt(0).toString(16).toUpperCase()}`)
     const iterator = ctx.attachments.readFileStream(artifact, request.signal)[Symbol.asyncIterator]()

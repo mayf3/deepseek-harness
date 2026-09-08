@@ -13,9 +13,9 @@ import type { ChatFileMentions } from '@deepseek-ai/dsh-client-ui-chat/client'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
-import { presentedFileUrl } from '../presented.ts'
+import { PresentedOpenController } from './present-open.ts'
 import { PresentRow } from './PresentRow.tsx'
-import { Deliverables, selectDeliverables } from './Deliverables.tsx'
+import { Deliverables, selectDeliverables, type DeliverablesInjected } from './Deliverables.tsx'
 import { en, NS, zh, type DeliverablesKey } from './locales.ts'
 import {
   deliverablesDefinition, presentedForClosing, producedFileMentions, selectProducedFiles,
@@ -39,6 +39,8 @@ export const inject = ['slots', 'locale', 'uiConversation', 'remote', 'remote.se
  * @param ctx - client root context.
  */
 export function apply(ctx: ClientContext): void {
+  const opener = new PresentedOpenController()
+  ctx.effect(() => () => opener.dispose())
   ctx.uiConversation.events.register(deliverablesDefinition)
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-deliverables: dictionaries')
   ctx.slots.inject(
@@ -47,6 +49,10 @@ export function apply(ctx: ClientContext): void {
       name: 'conversation.chat.turnTail',
       select: selectDeliverables,
       locale: NS,
+      inject: (): DeliverablesInjected => ({
+        hooks: { presentedOpen: opener.state },
+        openPresented: (sessionId, seq, index) => opener.open(sessionId, seq, index),
+      }),
     }, Deliverables),
   )
   ctx.slots.inject('tool.call.toolview', () => ctx.slots.register(
@@ -66,13 +72,8 @@ export function apply(ctx: ClientContext): void {
       return producedFileMentions([...new Set([...paths ?? [], ...deliveries.keys()])], (path) => {
         const file = deliveries.get(path)
         if (file === undefined) owner.openFile(path)
-        else {
-          const link = document.createElement('a')
-          link.href = presentedFileUrl(sessionId, file.seq, file.index)
-          link.download = file.name
-          link.click()
-        }
-      }, path => t(deliveries.has(path) ? 'presented.download' : 'produced.open', { name: path }))
+        else void opener.open(sessionId, file.seq, file.index)
+      }, path => t(deliveries.has(path) ? 'presented.open' : 'produced.open', { name: path }))
     },
   }
   ctx.provide('chatFileMentions', mentions)

@@ -10,15 +10,17 @@ Workspace links read live paths, so edits or deletion can invalidate a final del
 
 ## Decision
 
-The [present tool](../../../../packages/fs/tool-present/README.md) owns execution, immutable snapshots, delivery types, and the durable event. The [deliverables plugin](../../../../packages/client/ui-deliverables/README.md) owns authenticated downloads and browser rendering, with type-only imports from the tool’s `./types` entry. The `standard`, `ptc`, and `cordis` presets mount the tool package; `minimal` retains its two-tool training configuration. The existing attachment service saves immutable bytes; successful final `tools/result` notifications append `deliverables/presented` to the calling Session. Native and nested calls use the same recorder. A later enclosing program failure does not undo a completed nested delivery. Blocked tool results publish none.
+The [present tool](../../../../packages/fs/tool-present/README.md) owns execution, immutable snapshots, delivery types, and the durable event. The [deliverables plugin](../../../../packages/client/ui-deliverables/README.md) owns authenticated snapshot actions and browser rendering, with type-only imports from the tool’s `./types` entry. The `standard`, `ptc`, and `cordis` presets mount the tool package; `minimal` retains its two-tool training configuration. The existing attachment service saves immutable bytes; successful final `tools/result` notifications append `deliverables/presented` to the calling Session. Native and nested calls use the same recorder. A later enclosing program failure does not undo a completed nested delivery. Blocked tool results publish none.
 
-Downloads authorize a reference by the viewed Session, event sequence, and file index. The event stores no Session ID, so forked history uses the child's own log. The existing produced-file row keeps its names and behavior. Session ZIP retains delivery events but does not collect their attachment bytes.
+Download and native-open requests authorize a reference by the viewed Session, event sequence, and file index. The event stores no Session ID, so forked history uses the child's own log. The existing produced-file row keeps its names and behavior. Session ZIP retains delivery events but does not collect their attachment bytes.
+
+Card and closing-mention gestures open a verified private copy with the existing native-command utility. A POST expresses the desktop side effect; GET remains a byte read. Each gesture receives a new copy so application edits cannot corrupt the immutable attachment or alter later opens. Successful copies survive until plugin disposal for applications that read lazily; failed copies are removed immediately, and disposal awaits cancelled work before cleanup.
 
 ## Alternatives considered
 
 **A Host tool subpath in the UI package** couples preset installation to browser packaging and requires extra published entries. An ordinary tool package preserves shared filesystem and tool error classes through the repository’s peer dependency rules.
 
-**Live workspace links** cannot preserve a delivered version after edits or deletion.
+**Live workspace links** cannot preserve a delivered version after edits or deletion. Opening the attachment store’s own path instead would expose immutable saved bytes to application writes.
 
 **Generic artifact fields throughout tools, dispatch, and Session** would broaden unrelated APIs for one Web feature. A plugin-owned event uses existing extension points and avoids parent-result forwarding.
 
@@ -32,4 +34,4 @@ The implementation adds no artifact service or attachment format. Unreferenced s
 
 The delivery event is required-on-read because it is the authorization index for saved bytes, not only display metadata. Skipping it would allow an older reader to reconstruct or fork a Session without its completed deliveries. Unsupported readers refuse that loss instead of silently dropping the references.
 
-Focused tests cover snapshot bytes, invalid inputs, blocked results, HTTP integrity, turn isolation, and fork-addressed links. The recorded Web scenario covers nested completion followed by an enclosing failure, source deletion, reload, and ZIP exclusion.
+Focused tests cover snapshot bytes, invalid inputs, blocked results, HTTP integrity, native-open copy isolation, retry and disposal, turn isolation, and fork-addressed actions. The recorded Web scenario covers nested completion followed by an enclosing failure, source deletion, reload, native-open gestures without browser downloads, and ZIP exclusion.

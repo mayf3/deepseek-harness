@@ -56,25 +56,25 @@
   - code: present
   - text: succeeded for
   - code:
-    - button "Download report.txt": report.txt
+    - button "Open report.txt in default app": report.txt
   - text: and
   - code:
-    - button "Download 说明.txt": 说明.txt
+    - button "Open 说明.txt in default app": 说明.txt
   - text: ", after which the program deliberately threw the string"
   - code: AFTER_PRESENT
   - text: — no retries, no extra files.
 - paragraph: PRESENT_DONE
 - text: Deliverables
-- link "Download report.txt":
-  - /url: /api/present.download?sessionId=session-{{uuid}}&seq=19&index=0
+- button "Open report.txt in default app":
   - text: report.txt TXT · 17B delivered report
+  - status: Opened in default app
   - img
-  - text: Download
-- link "Download 说明.txt":
-  - /url: /api/present.download?sessionId=session-{{uuid}}&seq=19&index=1
+  - text: Open
+- button "Open 说明.txt in default app":
   - text: 说明.txt TXT · 15B delivered note
+  - status: Opened in default app
   - img
-  - text: Download
+  - text: Open
 - button "Copy":
   - img
 - button "Good response":

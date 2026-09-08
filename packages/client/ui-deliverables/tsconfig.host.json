@@ -8,7 +8,8 @@
   "files": [
     "src/index.ts",
     "src/present-download.ts",
-    "src/presented.ts"
+    "src/presented.ts",
+    "src/present-open.ts"
   ],
   "references": [
     {
@@ -34,6 +35,9 @@
     },
     {
       "path": "../../fs/tool-present"
+    },
+    {
+      "path": "../../api/session-controller/tsconfig.host.json"
     }
   ]
 }

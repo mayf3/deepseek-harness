@@ -6,6 +6,9 @@ import type { ToolCallId } from '@deepseek-ai/dsh-llm/brand'
 /** Authenticated route for saved file bytes. */
 export const PRESENT_DOWNLOAD_PATH = '/api/present.download'
 
+/** Authenticated POST route for opening a saved file on the Host desktop. */
+export const PRESENT_OPEN_PATH = '/api/present.open'
+
 /**
  * Validate a saved delivery read from a Session log.
  * @param value - decoded durable data.
@@ -22,14 +25,15 @@ export function isPresentedFile(value: unknown): value is PresentedFile {
 }
 
 /**
- * Build an authenticated download coordinate for a saved delivery.
+ * Build authenticated coordinates for a saved delivery.
  * @param sessionId - owning Session.
  * @param seq - deliverables/presented event sequence.
  * @param index - original index in the event's files array.
- * @returns same-origin download URL.
+ * @param action - retrieve the bytes or open a copy on the Host desktop.
+ * @returns same-origin file action URL.
  */
-export function presentedFileUrl(sessionId: SessionId, seq: number, index: number): string {
-  return `${PRESENT_DOWNLOAD_PATH}?${new URLSearchParams({ sessionId, seq: String(seq), index: String(index) })}`
+export function presentedFileUrl(sessionId: SessionId, seq: number, index: number, action: 'download' | 'open' = 'download'): string {
+  return `${action === 'open' ? PRESENT_OPEN_PATH : PRESENT_DOWNLOAD_PATH}?${new URLSearchParams({ sessionId, seq: String(seq), index: String(index) })}`
 }
 
 /**

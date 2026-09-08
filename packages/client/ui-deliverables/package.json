@@ -68,7 +68,8 @@
     "@deepseek-ai/dsh-llm": "workspace:^",
     "@deepseek-ai/dsh-attachment-local": "workspace:^",
     "@deepseek-ai/dsh-client-ui-tool": "workspace:^",
-    "@deepseek-ai/dsh-tool-present": "workspace:^"
+    "@deepseek-ai/dsh-tool-present": "workspace:^",
+    "@deepseek-ai/dsh-api-session-controller": "workspace:^"
   },
   "files": [
     "lib/index.js",

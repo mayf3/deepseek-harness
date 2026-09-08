@@ -21,7 +21,8 @@ import { SlotRegistry } from '@deepseek-ai/dsh-client-ui-renderer/client'
 import { apply as applyLocale, inject as localeInject } from '@deepseek-ai/dsh-client-locale/client'
 import type { ChatFileMentions, TurnTailOwnerProps } from '@deepseek-ai/dsh-client-ui-chat/client'
 import { makeTranslate, stubSettingsScope } from '@deepseek-ai/dsh-client-test-runtime'
-import { Deliverables, selectDeliverables } from '../src/client/Deliverables.tsx'
+import { Deliverables, selectDeliverables, type DeliverablesInjected } from '../src/client/Deliverables.tsx'
+import { PresentedOpenController } from '../src/client/present-open.ts'
 import { ProducedFiles } from '../src/client/ProducedFiles.tsx'
 import {
   basename, deliverablesDefinition, presentedForClosing, producedFileMentions, producedForClosing, selectProducedFiles,
@@ -31,6 +32,14 @@ import { apply, inject } from '../src/client/index.ts'
 import { en, zh } from '../src/client/locales.ts'
 import { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { SessionEvent } from '@deepseek-ai/dsh-session/types'
+
+function openProps(controller = new PresentedOpenController()) {
+  return {
+    openPresented: vi.fn((...args: Parameters<PresentedOpenController['open']>) => controller.open(...args)),
+    usePresentedOpen: <T,>(select: (state: ReturnType<typeof controller.state.getSnapshot>) => T): T =>
+      select(controller.state.getSnapshot()),
+  }
+}
 
 afterEach(() => {
   cleanup()
@@ -516,9 +525,7 @@ describe('plugin registration', () => {
     const [entry] = ctx.slots.entries('conversation.chat.turnTail')
     expect(entry).toBeDefined()
     expect(ctx.slots.entries('tool.call.toolview')).toHaveLength(1)
-    // The row needs no injected Host capability: it hands a path to its owner
-    // and nothing in it reaches the local machine.
-    expect(entry?.inject).toBeUndefined()
+    expect(entry?.inject).toBeDefined()
 
     // The prose face is live while the plugin is: a produced turn yields a
     // resolver whose matches open through the owner-supplied opener.
@@ -532,13 +539,14 @@ describe('plugin registration', () => {
     const mentions = service?.forClosing(owner, SessionId('viewed-session'))
     mentions?.resolve('report.html')?.open()
     expect(opened).toEqual(['site/report.html'])
-    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) {
-      expect(this.getAttribute('href')).toBe('/api/present.download?sessionId=child-session&seq=2&index=0')
-      expect(this.download).toBe('report.docx')
-    })
+    const fetcher = vi.fn().mockResolvedValue(new Response(null, { status: 204 }))
+    vi.stubGlobal('fetch', fetcher)
     const delivered = tailOwner({ produced: [], presented: [{ path: 'report.docx', name: 'report.docx', bytes: 4, attachmentId: 'saved' as never, seq: 2, index: 0 }] }, 3)
     service?.forClosing(delivered, SessionId('child-session'))?.resolve('report.docx')?.open()
-    expect(click).toHaveBeenCalledOnce()
+    expect(fetcher).toHaveBeenCalledWith('/api/present.open?sessionId=child-session&seq=2&index=0', { method: 'POST', signal: expect.any(AbortSignal) as AbortSignal })
+    const face = entry!.inject!(SessionId('child-session') as never) as unknown as DeliverablesInjected
+    await face.openPresented(SessionId('child-session'), 2, 0)
+    expect(face.hooks.presentedOpen.getSnapshot()['/api/present.open?sessionId=child-session&seq=2&index=0']).toBe('opened')
     // A turn that produced nothing yields no vocabulary at all.
     expect(service?.forClosing(tailOwner(undefined, 2), SessionId('viewed-session'))).toBeUndefined()
 
@@ -569,16 +577,20 @@ describe('presented files', () => {
     expect(selectDeliverables(tailOwner(deliverablesOf(value, 2), 9))).toBeNull()
   })
 
-  it('uses the viewed fork Session in every download and retains all delivered files', () => {
+  it('uses the viewed fork Session in every open action and retains all delivered files', () => {
     const value = assembler([
       at(1, 'turn/start', { turn: 1 }),
       at(2, 'deliverables/presented', { turn: 1, callId: 'nested', files: Array.from({ length: 8 }, (_, i) => file(`report-${i}.docx`)) }),
     ])
     const owner = tailOwner(deliverablesOf(value), 3)
     const matched = selectDeliverables(owner)!
-    const view = render(<Deliverables matched={matched} openFile={owner.openFile} sessionId={SessionId('child-session')} t={makeTranslate(en)} />)
-    expect(view.getAllByRole('link')).toHaveLength(8)
-    expect(view.getAllByRole('link')[0]?.getAttribute('href')).toBe('/api/present.download?sessionId=child-session&seq=2&index=0')
+    const props = openProps()
+    props.openPresented.mockResolvedValue(undefined)
+    const view = render(<Deliverables {...props} matched={matched} openFile={owner.openFile} sessionId={SessionId('child-session')} t={makeTranslate(en)} />)
+    expect(view.getAllByRole('button')).toHaveLength(8)
+    expect(view.queryByRole('link')).toBeNull()
+    fireEvent.click(view.getByRole('button', { name: 'Open report-0.docx in default app' }))
+    expect(props.openPresented).toHaveBeenCalledWith('child-session', 2, 0)
     expect(view.queryByText('Produced')).toBeNull()
   })
 })
@@ -596,18 +608,30 @@ it.each([null, [], 'invalid', {}, { turn: '1', callId: 'bad', files: [] },
   ])
   const owner = tailOwner(deliverablesOf(value), 5)
   const matched = selectDeliverables(owner)!
-  const view = render(<Deliverables matched={matched} openFile={owner.openFile} sessionId={SessionId('session')} t={makeTranslate(en)} />)
+  const view = render(<Deliverables {...openProps()} matched={matched} openFile={owner.openFile} sessionId={SessionId('session')} t={makeTranslate(en)} />)
   expect(view.getByText('Produced')).toBeTruthy()
   expect(view.queryByText('Deliverables')).toBeNull()
 })
 
 it('shows file metadata and descriptions without hiding extensionless deliveries', () => {
-  const view = render(<Deliverables matched={{ produced: [], presented: [
+  const view = render(<Deliverables {...openProps()} matched={{ produced: [], presented: [
     { path: 'out/report.txt', name: 'report.txt', bytes: 4096, description: 'Quarterly summary', attachmentId: 'ref' as never, seq: 2, index: 0 },
     { path: 'LICENSE', name: 'LICENSE', bytes: 0, attachmentId: 'ref2' as never, seq: 2, index: 1 },
   ] }} openFile={() => {}} sessionId={SessionId('session')} t={makeTranslate(en)} />)
   expect(view.getByText('Quarterly summary')).toBeTruthy()
   expect(view.getByText('TXT · 4.0KB')).toBeTruthy()
   expect(view.getByText('File · 0B')).toBeTruthy()
-  expect(view.getByRole('link', { name: 'Download out/report.txt' }).getAttribute('title')).toBe('out/report.txt')
+  expect(view.getByRole('button', { name: 'Open out/report.txt in default app' }).getAttribute('title')).toBe('Open out/report.txt in default app')
+})
+
+
+it.each(['opening', 'opened', 'error'] as const)('shows the %s state and permits retries after failure', (phase) => {
+  const controller = new PresentedOpenController()
+  controller.state.set({ '/api/present.open?sessionId=session&seq=2&index=0': phase })
+  const props = openProps(controller)
+  const view = render(<Deliverables {...props} matched={{ produced: [], presented: [
+    { path: 'report.txt', name: 'report.txt', bytes: 4, attachmentId: 'ref' as never, seq: 2, index: 0 },
+  ] }} openFile={() => {}} sessionId={SessionId('session')} t={makeTranslate(en)} />)
+  expect(view.getByRole('status').textContent).toBe(en[`presented.${phase}`])
+  expect((view.getByRole('button') as HTMLButtonElement).disabled).toBe(phase === 'opening')
 })

@@ -30,9 +30,9 @@ kind: "package-reference"
 <a id="explicit-deliveries"></a>
 ### 显式交付
 
-Web 的 `standard`、`ptc` 与 `cordis` preset 提供 `present` 用于交付最终文件，包括通过 Bash 创建的文件。创建文件后，以 `files: [{ path, description? }]` 调用。[present 工具](../../fs/tool-present/README.zh.md)拥有快照创建、限制和 Session 交付记录。收尾 turn 显示响应式文件卡片，包含名称、类型、大小、说明和下载操作，匹配的行内代码引用也下载相同快照；修改或删除源文件、重新加载后仍可下载。Fork 通过当前查看的 Session 下载。同一路径重复交付时，选择收尾回复之前最近一次成功的快照。
+Web 的 `standard`、`ptc` 与 `cordis` preset 提供 `present` 用于交付最终文件，包括通过 Bash 创建的文件。创建文件后，以 `files: [{ path, description? }]` 调用。[present 工具](../../fs/tool-present/README.zh.md)拥有快照创建、限制和 Session 交付记录。收尾 turn 显示响应式文件卡片，包含名称、类型、大小、说明和在 Host 默认应用中打开保存副本的按钮。匹配的行内代码引用也打开相同快照；修改或删除源文件、重新加载后仍可打开，不触发浏览器下载。Fork 通过当前查看的 Session 授权打开。同一路径重复交付时，选择收尾回复之前最近一次成功的快照。
 
-`present` 工具行显示正在交付、已交付、失败或中断状态；展开已结束的调用可查看其记录的结果。文件卡片展示全部交付文件。
+`present` 工具行显示正在交付、已交付、失败或中断状态；展开已结束的调用可查看其记录的结果。文件卡片展示全部交付文件。打开时，卡片显示进度、成功确认或可重试的错误。服务 Host 必须具备桌面和合适的默认应用；远程浏览器不会打开其所在设备上的应用。
 
 ### 该行
 
@@ -51,6 +51,8 @@ Web 的 `standard`、`ptc` 与 `cordis` preset 提供 `present` 用于交付最�
 <summary>实现细节——点击展开</summary>
 
 Node 半部注册静态 `ui:deliverable-file-references` 系统提示词段，要求模型点名成功创建或修改的主要文件，并把这些文件以及正文中提到的其他本轮变更文件写成 Markdown 行内代码。浏览器半部把组合 `ProducedFiles` 与显式交付的包装组件注册进 chat 视图的 `conversation.chat.turnTail` 洞。`deliverablesDefinition` 根据 `write`、`edit` 和有修改作用的 `str_replace_editor` 命令中经过校验的原始参数，把每个轮次成功的第一方修改调用折叠进 `DeliverablesTurnData`。读取、删除、不受支持的工具、格式错误的调用和失败结果不贡献任何条目。新的修改工具必须增加显式 Client contribution 才能加入列表。本包还提供 chat 视图按收尾消息查询的 `chatFileMentions` 服务；把插件组合出去会同时移除两个表面，视图的空链以零成本留下。
+
+原生打开使用经过认证的 POST，通过 Session、事件序号和原始文件索引定位文件。Host 将保存的字节流写入私有临时副本，完整校验 attachment 后才启动默认应用。每次操作创建独立副本，因此应用内的编辑不会修改已保存的快照。打开失败时删除副本；成功副本保留到插件释放，因为应用可能延迟读取。释放时先取消并等待进行中的操作，再执行清理。经过认证的 GET 下载端点仍供字节读取方使用。
 
 </details>
 
@@ -107,4 +109,4 @@ Node 半部注册静态 `ui:deliverable-file-references` 系统提示词段，�
 
 </details>
 
-**运行时不变式：** 不发布伴生入口。prompt section、slot、dictionary、下载路由与可选 service 注册都归 effect 所有，释放由插件测试证明；attachment 服务拥有保存的字节，Session 日志拥有交付引用。
+**运行时不变式：** 不发布伴生入口。prompt section、slot、dictionary、文件操作路由与可选 service 注册都归 effect 所有，释放由插件测试证明；attachment 服务拥有保存的字节，Session 日志拥有交付引用。

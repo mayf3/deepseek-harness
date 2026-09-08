@@ -1,10 +1,11 @@
 /** Recorded delivery, source deletion, reload, and Session ZIP behavior. */
-import { readFile, unlink, mkdir } from 'node:fs/promises'
-import { join } from 'node:path'
+import { readFile, unlink, mkdir, mkdtemp, writeFile, rm } from 'node:fs/promises'
+import { join, delimiter } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { chromium, type Browser, type Page } from 'playwright'
 import { unzipSync, strFromU8 } from 'fflate'
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
+import { tmpdir, release } from 'node:os'
 import type { SessionEvent, SessionId } from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-tool-present/types'
 import {
@@ -22,7 +23,8 @@ const PROMPT = 'Use one run_code program to do the following in order. Call pres
   + 'Call present for report.txt and 说明.txt. After present succeeds, deliberately throw the string "AFTER_PRESENT" (not an Error object) from that same run_code program. '
   + 'Do not retry the program or create any other files. Finish by mentioning `report.txt` and `说明.txt` in inline code, and put PRESENT_DONE in a separate paragraph.'
 
-describe('web e2e: explicit file delivery', () => {
+// The recorded Bash scenario and executable opener fixture require a POSIX host outside WSL.
+describe.skipIf(process.platform === 'win32' || release().toLowerCase().includes('microsoft'))('web e2e: explicit file delivery', () => {
   let scaffold: WebScaffold
   let browser: Browser
   let page: Page
@@ -31,8 +33,22 @@ describe('web e2e: explicit file delivery', () => {
   let cwd: string
   let disposeApproval: (() => void) | undefined
   const events: SessionEvent[] = []
+  let nativeRoot: string | undefined
+  let openLog: string
+  const opened = async (): Promise<string[]> => (await readFile(openLog, 'utf8')).split('\n').filter(Boolean).map(line => JSON.parse(line) as string)
+  const downloads: string[] = []
 
   beforeAll(async () => {
+    nativeRoot = await mkdtemp(join(tmpdir(), 'dsh-present-native-'))
+    openLog = join(nativeRoot, 'opened.jsonl')
+    await writeFile(openLog, '')
+    // Exercise the built Host through its actual OS command, replacing only the desktop application.
+    const command = process.platform === 'darwin' ? 'open' : 'xdg-open'
+    await writeFile(join(nativeRoot, command), `#!${process.execPath}
+const fs = require('node:fs');
+fs.appendFileSync(${JSON.stringify(openLog)}, JSON.stringify(fs.readFileSync(process.argv[2], 'utf8')) + '\\n');
+`, { mode: 0o700 })
+    vi.stubEnv('PATH', `${nativeRoot}${delimiter}${process.env.PATH ?? ''}`)
     await mkdir(DIR, { recursive: true })
     scaffold = await launchWebScaffold({
       agentPresets: { roots: [], default: 'ptc' }, compareReplaySession: true,
@@ -43,15 +59,24 @@ describe('web e2e: explicit file delivery', () => {
     browser = await chromium.launch()
     page = await newEnglishPage(browser)
     tripwire = watchConsole(page)
+    page.on('download', (download) => { downloads.push(download.suggestedFilename()) })
     await page.goto(scaffold.authenticatedUrl, { waitUntil: 'load' })
     await page.waitForSelector('[class*="frame"]', { timeout: 30_000 })
     await connectFreshWorkspace(page, scaffold.workspaceCwd)
   }, 120_000)
 
   afterAll(async () => {
-    await browser?.close()
-    disposeApproval?.()
-    await scaffold?.close()
+    try {
+      await browser?.close()
+    } finally {
+      disposeApproval?.()
+      try {
+        await scaffold?.close()
+      } finally {
+        vi.unstubAllEnvs()
+        if (nativeRoot !== undefined) await rm(nativeRoot, { recursive: true, force: true })
+      }
+    }
   })
 
   it('delivers nested snapshots even when the enclosing program subsequently fails', async () => {
@@ -73,7 +98,7 @@ describe('web e2e: explicit file delivery', () => {
     expect(events.some(event => event.type === 'tool/result' && event.data.message.content[0].isError)).toBe(true)
   }, 200_000)
 
-  it('downloads after source deletion and reload, while Session ZIP contains only references', async () => {
+  it('opens saved copies after source deletion and reload, while Session ZIP contains only references', async () => {
     await unlink(join(cwd, 'report.txt'))
     await unlink(join(cwd, '说明.txt'))
     for (const reload of [false, true]) {
@@ -85,16 +110,25 @@ describe('web e2e: explicit file delivery', () => {
       }
       const row = page.locator('[data-presented-files-row]')
       await row.waitFor()
-      expect(await row.getByRole('link').count()).toBe(2)
+      expect(await row.getByRole('button').count()).toBe(2)
       for (const [name, bytes] of [['report.txt', 'DELIVERED_REPORT\n'], ['说明.txt', 'DELIVERED_NOTE\n']]) {
-        const pending = page.waitForEvent('download')
-        await row.getByRole('link', { name: `Download ${name}`, exact: true }).click()
-        const download = await pending
-        expect(download.suggestedFilename()).toBe(name)
-        expect(await download.failure()).toBeNull()
-        expect(await readFile(await download.path(), 'utf8')).toBe(bytes)
+        const count = (await opened()).length
+        const response = page.waitForResponse(response => response.url().includes('/api/present.open?') && response.request().method() === 'POST')
+        await row.getByRole('button', { name: `Open ${name} in default app`, exact: true }).click()
+        expect((await response).status()).toBe(204)
+        await page.waitForFunction(() => document.querySelector('[data-presented-files-row] button:disabled') === null)
+        expect(await opened()).toHaveLength(count + 1)
+        expect((await opened()).at(-1)).toBe(bytes)
       }
     }
+    const count = (await opened()).length
+    const openedResponse = page.waitForResponse(response => response.url().includes('/api/present.open?') && response.request().method() === 'POST')
+    await page.locator('code').getByRole('button', { name: 'Open report.txt in default app', exact: true }).click()
+    await page.waitForFunction(() => document.querySelector('[data-presented-files-row] button:disabled') === null)
+    expect((await openedResponse).status()).toBe(204)
+    expect(await opened()).toHaveLength(count + 1)
+    expect((await opened()).at(-1)).toBe('DELIVERED_REPORT\n')
+    expect(downloads).toEqual([])
     const response = await page.request.get(new URL(`/api/session.export?sessionId=${sessionId}`, scaffold.authenticatedUrl).href)
     expect(response.status()).toBe(200)
     const entries = unzipSync(await response.body())
@@ -114,7 +148,7 @@ describe('web e2e: explicit file delivery', () => {
       await page.setViewportSize({ width: 480, height: 900 })
       const row = page.locator('[data-presented-files-row]')
       await row.scrollIntoViewIfNeeded()
-      for (const card of await row.getByRole('link').all()) {
+      for (const card of await row.getByRole('button').all()) {
         const bounds = await card.boundingBox()
         expect(bounds).not.toBeNull()
         expect(bounds!.x).toBeGreaterThanOrEqual(0)

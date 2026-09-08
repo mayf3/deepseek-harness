@@ -1,9 +1,9 @@
 /** Saved Presented file downloads over the real Connection route and local attachment store. */
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdtemp, rm, readFile, writeFile, access } from 'node:fs/promises'
 import { once } from 'node:events'
 import { createServer } from 'node:http'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, basename, dirname } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
 import { AttachmentError, AttachmentId } from '@deepseek-ai/dsh-attachment'
 import LocalAttachmentStore from '@deepseek-ai/dsh-attachment-local'
@@ -17,7 +17,7 @@ import { SessionQueryError } from '@deepseek-ai/dsh-session-query'
 import type { SessionEventReadRequest } from '@deepseek-ai/dsh-session-query'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { registerPresentDownload } from '../src/present-download.ts'
-import { presentedFileUrl, PRESENT_DOWNLOAD_PATH } from '../src/presented.ts'
+import { presentedFileUrl, PRESENT_DOWNLOAD_PATH, PRESENT_OPEN_PATH } from '../src/presented.ts'
 
 const cleanups: Array<() => Promise<unknown>> = []
 afterEach(async () => {
@@ -40,12 +40,16 @@ async function fixture() {
     return { target: { type: 'deliverables/presented', data: { turn: 1, callId: 'present-call', files: [artifact] } } as SessionEvent }
   })
   ctx.provide('sessionQuery', { readEvent } as never)
+  const opener = vi.fn(async (_request: { path: string }, _signal: AbortSignal) => ({ opened: true as const }))
+  ctx.provide('sessionController', { openWorkspacePath: opener } as never)
   const connection = new HostConnectionService(ctx, [], {} as BrowserAuth)
-  const fiber = ctx.plugin({ inject: ['connection', 'sessionQuery', 'attachments'], apply: registerPresentDownload })
+  const fiber = ctx.plugin({ inject: ['connection', 'sessionQuery', 'attachments', 'sessionController'], apply: registerPresentDownload })
   await fiber
   const fetch = (query = '?sessionId=owner&seq=7&index=0', signal?: AbortSignal) => connection
     .createSharedFetchHandler('/api').fetch(new Request(`http://localhost${PRESENT_DOWNLOAD_PATH}${query}`, { signal: signal ?? null }))
-  return { ctx, fiber, artifact, readEvent, fetch, handler: connection.createSharedFetchHandler('/api') }
+  const open = (query = '?sessionId=owner&seq=7&index=0', signal?: AbortSignal) => connection
+    .createSharedFetchHandler('/api').fetch(new Request(`http://localhost${PRESENT_OPEN_PATH}${query}`, { method: 'POST', signal: signal ?? null }))
+  return { ctx, fiber, artifact, readEvent, fetch, open, opener, handler: connection.createSharedFetchHandler('/api') }
 }
 
 describe('Presented file download route', () => {
@@ -194,5 +198,84 @@ describe('Presented file download route', () => {
     })
     const response = await fetch()
     await expect(response.arrayBuffer()).rejects.toThrow('corrupt')
+  })
+})
+
+
+describe('Presented file native open route', () => {
+  it('opens separate verified copies with the original filename and cleans them at disposal', async () => {
+    const { open, fetch, fiber, artifact, handler, opener } = await fixture()
+    expect((await handler.fetch(new Request(`http://localhost${PRESENT_OPEN_PATH}?sessionId=owner&seq=7&index=0`))).status).toBe(404)
+    for (let i = 0; i < 2; i++) {
+      const response = await open()
+      expect(response.status).toBe(204)
+      expect(response.headers.get('content-disposition')).toBeNull()
+      const path = opener.mock.calls[i]![0].path
+      expect(basename(path)).toBe(artifact.name)
+      expect(await readFile(path)).toEqual(Buffer.from([80, 75, 0, 255]))
+      await writeFile(path, 'edited by desktop app')
+    }
+    expect(opener.mock.calls[0]![0].path).not.toBe(opener.mock.calls[1]![0].path)
+    expect(new Uint8Array(await (await fetch()).arrayBuffer())).toEqual(Uint8Array.of(80, 75, 0, 255))
+    await fiber.dispose()
+    for (const [{ path }] of opener.mock.calls) await expect(access(dirname(path))).rejects.toMatchObject({ code: 'ENOENT' })
+    expect((await open()).status).toBe(404)
+  })
+
+  it('refuses invalid coordinates, unrelated logs, missing snapshots, and corruption before native launch', async () => {
+    const { open, artifact, readEvent, opener } = await fixture()
+    expect((await open('?sessionId=owner&seq=-1&index=0')).status).toBe(400)
+    expect(readEvent).not.toHaveBeenCalled()
+    expect((await open('?sessionId=other&seq=7&index=0')).status).toBe(404)
+    expect((await open('?sessionId=owner&seq=7&index=1')).status).toBe(404)
+    readEvent.mockResolvedValueOnce({ target: { type: 'turn/start' } as SessionEvent })
+    expect((await open()).status).toBe(404)
+    artifact.bytes = 0
+    expect((await open()).status).toBe(500)
+    artifact.attachmentId = AttachmentId(`sha256:${'0'.repeat(64)}`)
+    expect((await open()).status).toBe(404)
+    expect(opener).not.toHaveBeenCalled()
+  })
+
+  it.each(['../escape.txt', 'folder\\escape.txt', '.', '..', 'bad\0name'])('rejects unsafe durable filenames: %j', async (name) => {
+    const { open, artifact, opener } = await fixture()
+    artifact.name = name
+    expect((await open()).status).toBe(500)
+    expect(opener).not.toHaveBeenCalled()
+  })
+
+  it('reports launcher failure, removes its copy, and allows retry', async () => {
+    const { open, opener } = await fixture()
+    opener.mockRejectedValueOnce(new Error('/private/host/path'))
+    const response = await open()
+    expect(response.status).toBe(500)
+    expect(await response.text()).not.toContain('/private/host/path')
+    await expect(access(dirname(opener.mock.calls[0]![0].path))).rejects.toMatchObject({ code: 'ENOENT' })
+    expect((await open()).status).toBe(204)
+  })
+
+  it('disposal aborts a pending native launch and waits for it before deleting the copy', async () => {
+    const entered = Promise.withResolvers<undefined>()
+    const aborted = Promise.withResolvers<undefined>()
+    const release = Promise.withResolvers<undefined>()
+    const { open, fiber, opener } = await fixture()
+    opener.mockImplementation(async (_request, signal) => {
+      signal.addEventListener('abort', () => { aborted.resolve(undefined) }, { once: true })
+      entered.resolve(undefined)
+      await release.promise
+      signal.throwIfAborted()
+      return { opened: true }
+    })
+    const request = open()
+    await entered.promise
+    const path = opener.mock.calls[0]![0].path
+    let disposed = false
+    const disposal = fiber.dispose().then(() => { disposed = true })
+    await aborted.promise
+    expect(disposed).toBe(false)
+    await access(path)
+    release.resolve(undefined)
+    await Promise.all([request, disposal])
+    await expect(access(dirname(path))).rejects.toMatchObject({ code: 'ENOENT' })
   })
 })
