@@ -747,6 +747,7 @@ function docSyncLeafGates(options: {
     pnpmScript('package-paths', 'verify-package-paths', { label: 'package paths' }),
     pnpmScript('tsconfig-paths', 'verify-tsconfig-paths', { label: 'tsconfig paths' }),
     pnpmScript('config-source-ownership', 'verify-config-source-ownership', { label: 'config source ownership' }),
+    pnpmScript('package-readme-summaries', 'verify-package-readme-summaries', { label: 'package README Summaries', quick: true }),
     pnpmScript('package-readme-model-experience', 'verify-package-readme-model-experience', { label: 'package README model experience', quick: true }),
     pnpmScript('agent-note-classification', 'verify-agent-note-classification', { label: 'agent note classification', quick: true }),
     pnpmScript('agent-note-format', 'verify-agent-note-format', { label: 'agent note format', quick: true }),

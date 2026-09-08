@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-本包在 Web GUI 中渲染 goal 表面：composer 上下文堆栈里的一条条带，显示会话的当前目标，并提供编辑、暂停、恢复与清除动作。它从宿主计算的投影读取持久 goal，通过 registrant-private 的可观察 hook 叠加进程本地 `activation`，把每次变更都经 goal 服务路由，并把拒绝内联呈现。它还把每条持久的 `/goal` 命令运行投影为聊天中的 `Command input` 气泡，让用户或模型输入的 goal 命令出现在文本记录中。goal 创建不归本插件。除 `minimal` 外，随附的 Web preset 都会在其 agent scope 中挂载 `/goal`。
+Web GUI 的 goal 表面同时显示持久 goal 状态及当前的进程本地激活状态，供用户编辑、暂停、恢复或清除 goal；被拒绝的变更会内联显示。它把持久的 `/goal` 运行显示为 `Command input` 气泡，让用户或模型发出的命令在重新加载后仍然可见。goal 创建仍不归本包。除 `minimal` 外，随附的 Web preset 都会向 agent 提供 `/goal`。
 
 ## 目录
 
