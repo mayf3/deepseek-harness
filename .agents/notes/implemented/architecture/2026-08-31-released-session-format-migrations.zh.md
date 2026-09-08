@@ -70,6 +70,8 @@ Chain 中不存在 `flatMap`、spread expansion、中间 event array 或 schedul
 
 [V2 到 V3 README](../../../../packages/session/session-format-v2-to-v3/README.zh.md#v2-to-v3-specification)是该迁移边转换、保留与拒绝规则的单一规范真源；单列的[原生准入章节](../../../../packages/session/session-format-v2-to-v3/README.zh.md#native-v3-admission)避免将仅当前版本支持的能力误认为历史转换。已发布 V2 codec 仍归 V1→V2 所有，并被复用而非复制。[系统提示词](2026-09-02-system-prompt-as-surface-node.zh.md)、[PTC](../feature/2026-06-15-ptc.zh.md)和[规范信封](2026-09-06-v3-canonical-session-envelopes.zh.md)记录保留各自独立依据，而非重复转换规范。[格式版本实操手册](../../../../docs/cookbook/adding-a-session-format-version.zh.md)负责包接线、当前消费方、快照后继代际与验证命令。
 
+历史内容准入归入边所有，而非原生 V3 扩展校验。在不了解字段的情况下保留未知块，不能证明迁移保留了其含义。因此，[源审计](../../../../packages/session/session-format-v2-to-v3/README.zh.md#source-audit)在明确归其所有的内容位置（包括未完成的流）使用同一历史种类集合。它检查已接纳的内容而不改写，并且不解释归其他所有者所有的不透明 JSON。收紧原生准入或修改冻结的前代校验器，会改变独立承诺，而非证明转换安全。
+
 预设更名覆盖创建头部和每条选择事件，因为最新选择决定恢复时的预设，而更早的选择决定历史 fork 的预设。只改写最后一条选择会丢失这种区别。已发布的 `code` 标识表示旧内置预设；迁移不依赖已安装的预设列表，因此相同字节在每台主机上产生相同结果。原生 V3 的自定义标识仍可使用，无需全局运行时别名。
 
 源继承数量在 EOF 前可能未知：V2 从种子标记推导它，而 V1→V2 可以改变事件数量。迁移链将这种缺失传递给下一个 Stage，而不伪造数量。[V2 到 V3 继承规则](../../../../packages/session/session-format-v2-to-v3/README.zh.md#sequence-references)支持此情况；需要 header 提供数量的旧 Stage 仍在数量缺失时拒绝。这使有种子的多跳恢复无需保留中间产物数组。
@@ -121,6 +123,8 @@ POSIX publication 使用 hard-link creation 加目录 sync；Windows 使用 no-o
 ## 验证
 
 迁移规范要求分别提供转换、保留与拒绝的证据。直接迁移边和原生 V3 测试不能证明有种子的多跳发布：前代 assistant 流折叠会在 V3 插入系统事件前改变源坐标。因此，经过真实目录与 JSONL 提供方的测试需要原始及压缩的 V0/V1 输入、映射后的引用和继承切点、发布/重新打开等价性、前代字节不变，以及不产生中间代。覆盖率百分比本身不能证明这些跨阶段关系；组合断言必须比较结果历史与拒绝效果。
+
+内容准入证据必须覆盖规范列出的每个位置、嵌套结果、未完成的起始记录和已知种类的畸形块，并验证诊断使用源坐标。成功迁移必须保留已接纳的内容与不透明值。经真实持久化路径拒绝时，必须保持源不变且不发布后继代。原生 V3 测试必须独立证明两种目录校验策略均保留扩展准入；历史拒绝不能证明原生输入也被拒绝。
 
 ### Benchmark 输入与口径
 
