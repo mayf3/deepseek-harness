@@ -815,6 +815,51 @@ describe('Request review workflow', () => {
   })
 })
 
+describe('Weighted approval workflow', () => {
+  it('publishes a trusted status on pull request and review updates', () => {
+    const workflow = loadWorkflow('.github/workflows/weighted-approval.yml')
+    const pullRequest = workflowEvent(workflow, 'pull_request_target')
+    const review = workflowEvent(workflow, 'pull_request_review')
+    const job = workflowJob(workflow, 'publish-status')
+    if (!isRecord(workflow.on)) throw new TypeError('weighted-approval workflow must define events')
+    if (!Array.isArray(job.steps)) throw new TypeError('weighted-approval job must define steps')
+    const steps = job.steps.filter(isRecord)
+    const checkout = steps.find(step => step.name === 'Check out trusted approval policy')
+    const publish = steps.find(step => step.name === 'Publish weighted approval status')
+
+    expect(workflow.name).toBe('weighted-approval')
+    expect(Object.keys(workflow.on)).toEqual(['pull_request_target', 'pull_request_review'])
+    expect(pullRequest.types).toEqual(['opened', 'synchronize', 'reopened', 'ready_for_review', 'converted_to_draft'])
+    expect(review.types).toEqual(['submitted', 'edited', 'dismissed'])
+    expect(workflow.permissions).toEqual({ contents: 'read', 'pull-requests': 'read', statuses: 'write' })
+    expect(workflow.concurrency).toEqual({
+      group: 'weighted-approval-${{ github.event.pull_request.number }}',
+      'cancel-in-progress': true,
+    })
+    expect(job).toMatchObject({
+      name: 'publish weighted approval status',
+      'runs-on': 'ubuntu-latest',
+      'timeout-minutes': 5,
+    })
+    expect(checkout).toMatchObject({
+      uses: 'actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1',
+      with: {
+        ref: '${{ github.event.repository.default_branch }}',
+        'persist-credentials': false,
+      },
+    })
+    expect(publish).toMatchObject({
+      env: {
+        GITHUB_TOKEN: '${{ github.token }}',
+        GITHUB_RUN_URL: '${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}',
+      },
+      run: 'node .github/review-ownership/check-approval.mjs',
+    })
+    expect(JSON.stringify(workflow)).not.toContain('github.event.pull_request.head')
+    expect(JSON.stringify(workflow)).not.toContain('secrets.')
+  })
+})
+
 describe('Issue lifecycle workflow', () => {
   it('runs the lifecycle job on every PR/review event but gates token and board steps', () => {
     const lifecycle = loadWorkflow('.github/workflows/issue-lifecycle.yml')

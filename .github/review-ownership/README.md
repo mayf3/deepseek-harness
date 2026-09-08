@@ -1,12 +1,13 @@
-# Automated review requests
+# Automated pull-request reviews
 
 ## Summary
 
-The [`request-review` workflow](../workflows/request-review.yml) reads the CODEOWNERS-compatible [ownership map](CODEOWNERS) from the trusted default branch. It classifies changed files, requests missing owners for reviewable code, and cancels its outstanding requests when a pull request becomes a draft. The ownership map is outside GitHub's native CODEOWNERS locations, so GitHub does not apply it directly.
+The [`request-review` workflow](../workflows/request-review.yml) requests owners for reviewable code. The [`weighted-approval` workflow](../workflows/weighted-approval.yml) publishes an approval score for branch rules. Both workflows execute policy from the trusted default branch.
 
 ## Table of Contents
 
 - [Routing](#routing)
+- [Approval scoring](#approval-scoring)
 - [Review exclusions](#review-exclusions)
 - [Security](#security)
 - [Verification](#verification)
@@ -26,6 +27,18 @@ The ownership map accepts explicit absolute directory patterns and one or two in
 
 The policy test measures non-test tracked lines under matched directories and requires `@turtle1999` to own no more than one third of that eligible owned codebase.
 
+<a id="approval-scoring"></a>
+
+## Approval scoring
+
+The weighted approval workflow publishes the `weighted approval` commit status on the pull request head. Branch rules must require this status context. The status succeeds at two approval points, remains pending below two points or while the pull request is a draft, fails while a write-capable reviewer has an effective `CHANGES_REQUESTED` review, and reports an error when policy evaluation fails.
+
+Reviewers whose calculated base repository permission is `write` or `admin` count. The [approval policy](approval-policy.json) gives `@07akioni`, `@imccyu`, `@tianyicui`, `@tianyicui-bot`, `@turtle1999`, and `@turtle2099` two points each; every other write-capable reviewer gets one point. The pull-request author and reviewers without write permission do not count.
+
+Each reviewer contributes only the latest non-comment `APPROVED` or `CHANGES_REQUESTED` decision that GitHub returns. Comment-only and dismissed review records do not replace an effective decision. The workflow does not invalidate an approval by its review commit; the repository's native pull-request rules own stale-review and latest-push requirements.
+
+The workflow runs when a pull request opens, synchronizes, reopens, becomes ready, or becomes a draft, and when a review is submitted, edited, or dismissed. It fetches every review and resolves current repository permission before publishing the status. Permission changes take effect on the next subscribed pull-request or review event.
+
 <a id="review-exclusions"></a>
 
 ## Review exclusions
@@ -42,15 +55,15 @@ For a modified file with a supported source extension, the scanner compares the 
 
 ## Security
 
-The write-capable `pull_request_target` job checks out only the repository default branch. It does not check out or execute pull-request code and does not use repository secrets. Pull-request filenames are treated as API data and escaped in logs.
+The write-capable jobs check out only the repository default branch. They do not check out or execute pull-request code and do not use repository secrets. Pull-request filenames and reviews are treated as API data and escaped in logs.
 
-Ownership changes take effect only after they merge into the default branch. This prevents an untrusted pull request from changing the routing program or its owner assignments for its own run.
+Ownership and approval policy changes take effect only after they merge into the default branch. This prevents an untrusted pull request from changing either program or policy for its own run.
 
 <a id="verification"></a>
 
 ## Verification
 
-Run `pnpm run test:request-review` for ownership parsing, file classification, complete-patch checks, comment parsing, changed-LOC ranking, pagination, logging order, non-draft reconciliation, draft cancellation, reviewer provenance, reviewer filtering, and API behavior. [Workflow tests](../../scripts/ci-workflow.spec.ts) pin the trusted checkout, permissions, events, and command. The repository gate graph runs both checks in CI.
+Run `pnpm run test:request-review` for routing behavior and `pnpm run test:approval-policy` for policy parsing, effective review decisions, pagination, permission filtering, weighted scoring, blockers, drafts, status publication, and API failures. [Workflow tests](../../scripts/ci-workflow.spec.ts) pin both workflows' trusted checkout, permissions, events, and commands. The repository gate graph runs all three checks in CI.
 
 <a id="dev-note"></a>
 
