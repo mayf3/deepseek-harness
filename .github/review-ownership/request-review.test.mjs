@@ -423,6 +423,7 @@ test('does not add another counted owner when one is already requested', async (
       if (path.endsWith('/requested_reviewers') && options.method === undefined) {
         return { users: [{ login: 'first' }], teams: [] }
       }
+      if (path.endsWith('/timeline?per_page=100&page=1')) return []
       throw new Error(`unexpected API path ${path}`)
     },
     write: line => output.push(line),
@@ -430,10 +431,12 @@ test('does not add another counted owner when one is already requested', async (
 
   assert.deepEqual(result.requestedReviewers, [])
   assert.equal(calls.some(call => call.options.method === 'POST'), false)
-  assert.deepEqual(output.slice(-5), [
+  assert.deepEqual(output.slice(-7), [
     'Current individual review requests:',
     '- @first',
     'Available counted review request slots: 0.',
+    'Review requests to cancel:',
+    '- (none)',
     'Reviewers to request:',
     '- (none)',
   ])
@@ -481,6 +484,7 @@ test('does not add turtle when one counted reviewer is already requested', async
       if (path.endsWith('/requested_reviewers') && options.method === undefined) {
         return { users: [{ login: 'first' }], teams: [] }
       }
+      if (path.endsWith('/timeline?per_page=100&page=1')) return []
       throw new Error(`unexpected API path ${path}`)
     },
     write: () => {},
@@ -503,6 +507,7 @@ test('keeps the counted slot available when turtle is already requested', async 
       if (path.endsWith('/requested_reviewers') && options.method === undefined) {
         return { users: [{ login: 'turtle1999' }], teams: [] }
       }
+      if (path.endsWith('/timeline?per_page=100&page=1')) return []
       if (path.endsWith('/requested_reviewers') && options.method === 'POST') return {}
       throw new Error(`unexpected API path ${path}`)
     },
@@ -513,6 +518,101 @@ test('keeps the counted slot available when turtle is already requested', async 
   assert.deepEqual(calls.find(call => call.options.method === 'POST'), {
     path: '/repos/deepseek-harness/deepseek-harness/pulls/42/requested_reviewers',
     options: { method: 'POST', body: { reviewers: ['mektpoy'] } },
+  })
+})
+
+test('replaces a workflow reviewer that no longer matches current ownership', async () => {
+  const trace = []
+  const result = await requestReviews({
+    event: pullRequestEvent({ author: 'contributor' }),
+    ownershipSource: '/packages/core/ @mektpoy\n',
+    api: async (path, options = {}) => {
+      trace.push({ type: 'api', path, options })
+      if (path.endsWith('/files?per_page=100&page=1')) {
+        return [{ filename: 'packages/core/agent/src/index.ts', additions: 20, deletions: 10 }]
+      }
+      if (path.endsWith('/requested_reviewers') && options.method === undefined) {
+        return { users: [{ login: 'Dudu-0223' }], teams: [] }
+      }
+      if (path.endsWith('/timeline?per_page=100&page=1')) {
+        return [{
+          event: 'review_requested',
+          requested_reviewer: { login: 'Dudu-0223' },
+          review_requester: { login: 'github-actions[bot]' },
+        }]
+      }
+      if (path.endsWith('/requested_reviewers') && options.method === 'DELETE') return {}
+      if (path.endsWith('/requested_reviewers') && options.method === 'POST') return {}
+      throw new Error(`unexpected API path ${path}`)
+    },
+    write: line => trace.push({ type: 'log', line }),
+  })
+
+  assert.deepEqual(result.requestedReviewers, ['mektpoy'])
+  assert.deepEqual(result.cancelledReviewers, ['Dudu-0223'])
+  const cancelLog = trace.findIndex(item => item.type === 'log' && item.line === 'Review requests to cancel:')
+  const requestLog = trace.findIndex(item => item.type === 'log' && item.line === 'Reviewers to request:')
+  const firstMutation = trace.findIndex(item => item.type === 'api' && item.options.method !== undefined)
+  assert.ok(cancelLog >= 0 && requestLog >= 0 && cancelLog < firstMutation && requestLog < firstMutation)
+  assert.equal(trace[cancelLog + 1].line, '- @Dudu-0223')
+  assert.equal(trace[requestLog + 1].line, '- @mektpoy')
+  assert.deepEqual(trace.filter(item => item.type === 'api' && item.options.method !== undefined), [
+    {
+      type: 'api',
+      path: '/repos/deepseek-harness/deepseek-harness/pulls/42/requested_reviewers',
+      options: { method: 'DELETE', body: { reviewers: ['Dudu-0223'] } },
+    },
+    {
+      type: 'api',
+      path: '/repos/deepseek-harness/deepseek-harness/pulls/42/requested_reviewers',
+      options: { method: 'POST', body: { reviewers: ['mektpoy'] } },
+    },
+  ])
+})
+
+test('removes excess workflow reviewers using current relevance order', async () => {
+  const calls = []
+  const result = await requestReviews({
+    event: pullRequestEvent({ author: 'contributor', changedFiles: 2 }),
+    ownershipSource: '/packages/core/ @mektpoy\n/packages/subagent/ @Dudu-0223\n',
+    api: async (path, options = {}) => {
+      calls.push({ path, options })
+      if (path.endsWith('/files?per_page=100&page=1')) {
+        return [
+          { filename: 'packages/core/agent/src/index.ts', additions: 25, deletions: 5 },
+          { filename: 'packages/subagent/subagent/src/index.ts', additions: 8, deletions: 2 },
+        ]
+      }
+      if (path.endsWith('/requested_reviewers') && options.method === undefined) {
+        return { users: [{ login: 'Dudu-0223' }, { login: 'mektpoy' }], teams: [] }
+      }
+      if (path.endsWith('/timeline?per_page=100&page=1')) {
+        return ['Dudu-0223', 'mektpoy'].map(login => ({
+          event: 'review_requested',
+          requested_reviewer: { login },
+          review_requester: { login: 'github-actions[bot]' },
+        }))
+      }
+      if (path.endsWith('/requested_reviewers') && options.method === 'DELETE') return {}
+      throw new Error(`unexpected API path ${path}`)
+    },
+    write: () => {},
+  })
+
+  assert.deepEqual(result, {
+    changedCodeFiles: [
+      'packages/core/agent/src/index.ts',
+      'packages/subagent/subagent/src/index.ts',
+    ],
+    excludedTestFiles: [],
+    excludedDocumentationFiles: [],
+    excludedCommentOnlyFiles: [],
+    requestedReviewers: [],
+    cancelledReviewers: ['Dudu-0223'],
+  })
+  assert.deepEqual(calls.find(call => call.options.method === 'DELETE'), {
+    path: '/repos/deepseek-harness/deepseek-harness/pulls/42/requested_reviewers',
+    options: { method: 'DELETE', body: { reviewers: ['Dudu-0223'] } },
   })
 })
 
@@ -535,7 +635,9 @@ test('does not request reviewers for test, documentation, or comment-only change
     ownershipSource,
     api: async (path) => {
       calls.push(path)
-      return files
+      if (path.endsWith('/files?per_page=100&page=1')) return files
+      if (path.endsWith('/requested_reviewers')) return { users: [], teams: [] }
+      throw new Error(`unexpected API path ${path}`)
     },
     write: line => output.push(line),
   })
@@ -547,7 +649,7 @@ test('does not request reviewers for test, documentation, or comment-only change
     requestedReviewers: [],
     cancelledReviewers: [],
   })
-  assert.equal(calls.length, 1)
+  assert.equal(calls.length, 2)
   assert.deepEqual(output.slice(0, 4), [
     'This is by automated Angry Turtle Cyborg, not a human',
     'Changed code files:',

@@ -437,8 +437,8 @@ function requestedReviewerLogins(response) {
 }
 
 /**
- * Print changed paths, request missing owners on reviewable pull requests, and
- * cancel workflow-authored requests on drafts.
+ * Print changed paths, reconcile workflow-authored requests with current
+ * ownership, and cancel workflow-authored requests on drafts.
  * @param {{event: unknown, ownershipSource: string, api: (path: string, options?: {method?: string, body?: unknown}) => Promise<unknown>, write?: (line: string) => void}} options Runtime inputs.
  * @returns {Promise<{changedCodeFiles: string[], excludedTestFiles: string[], excludedDocumentationFiles: string[], excludedCommentOnlyFiles: string[], requestedReviewers: string[], cancelledReviewers: string[]}>} Applied routing result.
  */
@@ -494,17 +494,41 @@ export async function requestReviews({ event, ownershipSource, api, write = line
     return { ...classified, requestedReviewers: [], cancelledReviewers: reviewers }
   }
 
-  if (candidates.length === 0) {
-    writeList(write, 'Reviewers to request', [])
-    return { ...classified, requestedReviewers: [], cancelledReviewers: [] }
-  }
   const existing = await api(`/repos/${pull.repository}/pulls/${pull.number}/requested_reviewers`)
   const currentReviewers = requestedReviewerLogins(existing).sort((left, right) => left.localeCompare(right, 'en'))
-  const alreadyRequested = new Set(currentReviewers.map(login => login.toLowerCase()))
+  const workflowReviewers = currentReviewers.length === 0
+    ? []
+    : workflowRequestedReviewers(
+        await listPullRequestTimeline(api, pull.repository, pull.number),
+        currentReviewers,
+      )
+  const workflowReviewerKeys = new Set(workflowReviewers.map(login => login.toLowerCase()))
+  const manualReviewers = currentReviewers.filter(login => !workflowReviewerKeys.has(login.toLowerCase()))
+  let retainedCountedSlots = Math.max(
+    0,
+    MAX_COUNTED_REQUESTED_REVIEWERS
+      - manualReviewers.filter(login => login.toLowerCase() !== UNCOUNTED_REVIEWER).length,
+  )
+  const retainedWorkflowReviewerKeys = new Set()
+  for (const { login } of candidates) {
+    const key = login.toLowerCase()
+    if (!workflowReviewerKeys.has(key)) continue
+    if (key === UNCOUNTED_REVIEWER) retainedWorkflowReviewerKeys.add(key)
+    else if (retainedCountedSlots > 0) {
+      retainedWorkflowReviewerKeys.add(key)
+      retainedCountedSlots--
+    }
+  }
+  const reviewersToCancel = workflowReviewers.filter(
+    login => !retainedWorkflowReviewerKeys.has(login.toLowerCase()),
+  )
+  const cancelledReviewerKeys = new Set(reviewersToCancel.map(login => login.toLowerCase()))
+  const remainingReviewers = currentReviewers.filter(login => !cancelledReviewerKeys.has(login.toLowerCase()))
+  const alreadyRequested = new Set(remainingReviewers.map(login => login.toLowerCase()))
   const availableSlots = Math.max(
     0,
     MAX_COUNTED_REQUESTED_REVIEWERS
-      - currentReviewers.filter(login => login.toLowerCase() !== UNCOUNTED_REVIEWER).length,
+      - remainingReviewers.filter(login => login.toLowerCase() !== UNCOUNTED_REVIEWER).length,
   )
   writeList(write, 'Current individual review requests', currentReviewers.map(login => `@${login}`))
   write(`Available counted review request slots: ${availableSlots}.`)
@@ -512,15 +536,25 @@ export async function requestReviews({ event, ownershipSource, api, write = line
     .filter(({ login }) => !alreadyRequested.has(login.toLowerCase()))
     .slice(0, availableSlots)
     .map(({ login }) => login)
+  writeList(write, 'Review requests to cancel', reviewersToCancel.map(login => `@${login}`))
   writeList(write, 'Reviewers to request', reviewers.map(login => `@${login}`))
-  if (reviewers.length === 0) return { ...classified, requestedReviewers: [], cancelledReviewers: [] }
+  if (reviewersToCancel.length > 0) {
+    await api(`/repos/${pull.repository}/pulls/${pull.number}/requested_reviewers`, {
+      method: 'DELETE',
+      body: { reviewers: reviewersToCancel },
+    })
+    const requestLabel = reviewersToCancel.length === 1 ? 'request' : 'requests'
+    write(`Cancelled review ${requestLabel} for ${reviewersToCancel.map(login => `@${login}`).join(' ')}.`)
+  }
 
-  await api(`/repos/${pull.repository}/pulls/${pull.number}/requested_reviewers`, {
-    method: 'POST',
-    body: { reviewers },
-  })
-  write(`Requested ${reviewers.map(login => `@${login}`).join(' ')}.`)
-  return { ...classified, requestedReviewers: reviewers, cancelledReviewers: [] }
+  if (reviewers.length > 0) {
+    await api(`/repos/${pull.repository}/pulls/${pull.number}/requested_reviewers`, {
+      method: 'POST',
+      body: { reviewers },
+    })
+    write(`Requested ${reviewers.map(login => `@${login}`).join(' ')}.`)
+  }
+  return { ...classified, requestedReviewers: reviewers, cancelledReviewers: reviewersToCancel }
 }
 
 function pullRequestFromEvent(event) {
