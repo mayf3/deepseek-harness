@@ -122,6 +122,7 @@ None; the cache never assembles or sends provider requests.
 
 <a id="known-limitations-and-deferred-work"></a>
 
+
 These limits define where the cache needs operational care. They are current package constraints, not a task backlog.
 
 - **No eviction or retention surface** — records accumulate per session; pruning stored checkpoints is out-of-band maintenance, same stance as session persistence itself.

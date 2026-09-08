@@ -126,6 +126,7 @@ None; projections never assemble or send provider requests.
 
 <a id="known-limitations-and-deferred-work"></a>
 
+
 These limits define where the projection registry needs care at scale. They are current package constraints, not a task backlog.
 
 - **Every tail page carries every client-visible key** — there is no per-key opt-out or lazy-key request shape yet; acceptable while values are UI-scale whole states, revisit if a domain's value grows large.

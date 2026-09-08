@@ -122,6 +122,7 @@ kind: "package-reference"
 
 <a id="known-limitations-and-deferred-work"></a>
 
+
 这些限制说明缓存何时需要运维注意。它们是当前包约束，不是任务积压。
 
 - **无淘汰或保留接口**——记录按会话持续累积；清理已存储检查点属于带外维护，与会话持久化采用相同策略。

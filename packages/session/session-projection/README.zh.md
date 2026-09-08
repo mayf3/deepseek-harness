@@ -126,6 +126,7 @@ const { asOfSeq, values } = ctx.sessionProjections.snapshot(session)
 
 <a id="known-limitations-and-deferred-work"></a>
 
+
 这些限制说明投影注册表在大规模下何时需要特别处理。它们是当前包约束，不是任务积压。
 
 - **每个尾页携带每个 client-visible key**——尚无逐 key 的 opt-out 或惰性 key 请求形状；在值都是 UI 量级的全量状态时可以接受，若某领域的值变大再重议。
