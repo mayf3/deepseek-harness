@@ -704,10 +704,10 @@ function InstallDialog({ install, t, onClose, onEditSpec, onToggleEnable, onRun 
 
 /** The copy of each confirmation: its title, its one-line description, and its action button. */
 const CONFIRM_KEYS = {
-  uninstall: { title: 'confirmUninstallTitle', description: 'confirmUninstallDescription', action: 'confirmUninstall' },
-  disable: { title: 'confirmDisableTitle', description: 'confirmDisableDescription', action: 'confirmDisable' },
-  disableRow: { title: 'confirmDisableRowTitle', description: 'confirmDisableRowDescription', action: 'confirmDisableRow' },
-} as const satisfies Record<ConfirmState['action'], Record<'title' | 'description' | 'action', PluginManagerLocaleKey>>
+  uninstall: { titleKey: 'confirmUninstallTitle', descriptionKey: 'confirmUninstallDescription', actionKey: 'confirmUninstall' },
+  disable: { titleKey: 'confirmDisableTitle', descriptionKey: 'confirmDisableDescription', actionKey: 'confirmDisable' },
+  disableRow: { titleKey: 'confirmDisableRowTitle', descriptionKey: 'confirmDisableRowDescription', actionKey: 'confirmDisableRow' },
+} as const satisfies Record<ConfirmState['action'], Record<'titleKey' | 'descriptionKey' | 'actionKey', PluginManagerLocaleKey>>
 
 /** The confirmation a destructive action waits on, naming what still uses the package or the row. */
 function ConfirmDialog({ confirm, t, packages, presets, presetName, onConfirm, onCancel }: {
@@ -740,14 +740,14 @@ function ConfirmDialog({ confirm, t, packages, presets, presetName, onConfirm, o
     <Modal
       open
       onClose={onCancel}
-      title={t(keys.title, { name })}
+      title={t(keys.titleKey, { name })}
       closeLabel={t('close')}
-      description={t(keys.description)}
+      description={t(keys.descriptionKey)}
       footer={(
         <>
           <Button variant="outline" onClick={onCancel}>{t('cancel')}</Button>
           <Button variant="primary" className={css.dangerButton} disabled={dependents === undefined} onClick={onConfirm}>
-            {t(keys.action)}
+            {t(keys.actionKey)}
           </Button>
         </>
       )}
