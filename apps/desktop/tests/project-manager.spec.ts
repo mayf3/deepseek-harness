@@ -293,7 +293,7 @@ describe('desktop project transactions', () => {
     expect(existsSync(paths.pending)).toBe(false)
   })
 
-  it('records the live pnpm worker as transaction owner until it exits', async () => {
+  it('records the live pnpm worker as transaction owner until it exits', async ({ task }) => {
     const root = temporaryRoot()
     const seed = join(root, 'seed')
     const ready = join(root, 'pnpm-ready')
@@ -306,13 +306,17 @@ describe('desktop project transactions', () => {
     const runtime = { node: process.execPath, pnpm: writeBlockingFakePnpm(root, ready, releaseWorker) }
     const manager = new DesktopProjectManager(paths, runtime)
     const installing = manager.applyRelease(seed, '1.0.0', hooks())
-    await expect.poll(() => existsSync(ready)).toBe(true)
-    const workerPid = Number.parseInt(readFileSync(ready, 'utf8'), 10)
-    expect(readFileSync(paths.lock, 'utf8')).toBe(`${String(workerPid)}\n`)
-    const competing = new DesktopProjectManager(paths, runtime)
-    await expect(competing.applyRelease(seed, '1.0.0', hooks())).rejects.toThrow(/another package transaction is active/u)
-    writeFileSync(releaseWorker, 'continue')
-    await expect(installing).resolves.toBe(true)
+    try {
+      // Child startup shares the test's execution budget; it has no one-second latency contract.
+      await expect.poll(() => existsSync(ready), { timeout: task.timeout }).toBe(true)
+      const workerPid = Number.parseInt(readFileSync(ready, 'utf8'), 10)
+      expect(readFileSync(paths.lock, 'utf8')).toBe(`${String(workerPid)}\n`)
+      const competing = new DesktopProjectManager(paths, runtime)
+      await expect(competing.applyRelease(seed, '1.0.0', hooks())).rejects.toThrow(/another package transaction is active/u)
+    } finally {
+      writeFileSync(releaseWorker, 'continue')
+      await expect(installing).resolves.toBe(true)
+    }
     expect(existsSync(paths.lock)).toBe(false)
   })
 
