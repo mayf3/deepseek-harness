@@ -15,7 +15,8 @@ import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-cli
 import type {} from '@deepseek-ai/dsh-client-ui-agent-preset/client'
 import type { PluginManagerFace, PresetGroup, PresetRow } from './manager-store.ts'
 import { rowKey } from './manager-store.ts'
-import { noticeText, presetRowCopy, rowIdOf, shortName, type Translate } from './presentation.ts'
+import { NoticeLine } from './NoticeLine.tsx'
+import { presetRowCopy, rowIdOf, shortName, type Translate } from './presentation.ts'
 import css from './PluginManagerSettingsTab.module.css'
 
 /** Full component props assembled by the slot renderer. */
@@ -152,14 +153,7 @@ export function PresetPluginsSection(props: PresetPluginsSectionProps): ReactNod
       {state.status === 'loading' ? <p className={css.status}>{t('loading')}</p> : null}
       {state.status === 'unavailable' ? <p className={css.status} role="status">{t('unavailable')}</p> : null}
       {state.status === 'error' ? <p className={css.reason} role="alert">{t('error')}</p> : null}
-      {state.notice === null
-        ? null
-        : (
-          <p className={css.notice} data-kind={state.notice.kind} role={state.notice.kind === 'failed' ? 'alert' : 'status'}>
-            <span>{noticeText(state.notice, t)}</span>
-            <Button variant="ghost" size="sm" onClick={props.dismissNotice}>{t('dismiss')}</Button>
-          </p>
-        )}
+      <NoticeLine notice={state.notice} t={t} onDismiss={props.dismissNotice} />
       {!loaded || preset !== undefined ? null : <p className={css.empty}>{t('presetMissing')}</p>}
       {preset?.broken === undefined ? null : <p className={css.reason} role="alert">{preset.broken}</p>}
       {preset === undefined || preset.broken !== undefined

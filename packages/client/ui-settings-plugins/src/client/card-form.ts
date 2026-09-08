@@ -13,8 +13,8 @@
  * override equal to the composition default is still an override.
  */
 
-import { createSnapshotStore, type SnapshotStore } from '@deepseek-ai/dsh-client-store'
 import type { SettingsScope, SettingsScopeSnapshot } from '@deepseek-ai/dsh-client-ui-settings/client'
+import { ObservableForm } from './observable-form.ts'
 
 /** The write one field's staged text performs when the card is saved. */
 export type FieldWrite =
@@ -179,11 +179,10 @@ export function linesField(field: string): CardFieldSpec {
  * through a snapshot selector, while both the scope and the local drafts
  * change underneath; every projection is rebuilt from the two together.
  */
-export class CardForm<T> {
+export class CardForm<T> extends ObservableForm {
   private readonly specs: Map<string, CardFieldSpec>
   private readonly secretSpecs: Map<string, CardSecretSpec>
   private readonly staged = new Map<string, StagedEdit>()
-  private readonly listeners = new Set<() => void>()
   private saving = false
   private failed = false
 
@@ -197,6 +196,7 @@ export class CardForm<T> {
     specs: CardFieldSpec[],
     secrets: CardSecretSpec[] = [],
   ) {
+    super()
     this.specs = new Map(specs.map(spec => [spec.field, spec]))
     this.secretSpecs = new Map(secrets.map(spec => [spec.field, spec]))
     scope.subscribe(() => { this.publish() })
@@ -208,27 +208,6 @@ export class CardForm<T> {
    */
   scopeOf(): SettingsScope<T> {
     return this.scope
-  }
-
-  /**
-   * Observe the form: the scope moved or a draft changed.
-   * @param listener - invoked after each change.
-   * @returns the disposer removing this listener.
-   */
-  subscribe(listener: () => void): () => void {
-    this.listeners.add(listener)
-    return () => { this.listeners.delete(listener) }
-  }
-
-  /**
-   * Publish a projection of this form, rebuilt whenever the scope or a draft changes.
-   * @param project - build the card's state from the form's current reads.
-   * @returns the store the card's component reads through its bound selector.
-   */
-  bind<S>(project: () => S): SnapshotStore<S> {
-    const store = createSnapshotStore(project())
-    this.subscribe(() => { store.set(project()) })
-    return store
   }
 
   /**
@@ -414,7 +393,4 @@ export class CardForm<T> {
     return user !== undefined && Object.hasOwn(user, field)
   }
 
-  private publish(): void {
-    for (const listener of this.listeners) listener()
-  }
 }

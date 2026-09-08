@@ -12,11 +12,12 @@
  * call time, so one registration serves both surfaces.
  */
 
-import { createSnapshotStore, type SnapshotStore } from '@deepseek-ai/dsh-client-store'
+import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import type { SettingsScope } from '@deepseek-ai/dsh-client-ui-settings/client'
 import {
   CardForm, type CardActions, type CardFieldSpec, type CardFieldState, type CardSecretSpec, type CardShell,
 } from './card-form.ts'
+import { ObservableForm } from './observable-form.ts'
 
 /** The scope the cards are editing. */
 export interface ScopeSelectionState {
@@ -76,9 +77,8 @@ export type BindScope<T> = (scope: string | undefined) => SettingsScope<T>
  * page's lifetime; the global form is bound at once, because the card's
  * availability is read from it before any switch.
  */
-export class ScopedCardForms<T> {
+export class ScopedCardForms<T> extends ObservableForm {
   private readonly forms = new Map<string, CardForm<T>>()
-  private readonly listeners = new Set<() => void>()
 
   /**
    * @param selection - the scope selection shared with the card surfaces.
@@ -92,6 +92,7 @@ export class ScopedCardForms<T> {
     private readonly specs: CardFieldSpec[],
     private readonly secrets: CardSecretSpec[] = [],
   ) {
+    super()
     this.formFor(undefined)
     selection.subscribe(() => {
       this.formFor(selection.current())
@@ -113,27 +114,6 @@ export class ScopedCardForms<T> {
    */
   scope(): SettingsScope<T> {
     return this.current().scopeOf()
-  }
-
-  /**
-   * Observe the selected form: a scope switch, a Host acceptance, or a draft change.
-   * @param listener - invoked after each change.
-   * @returns the disposer removing this listener.
-   */
-  subscribe(listener: () => void): () => void {
-    this.listeners.add(listener)
-    return () => { this.listeners.delete(listener) }
-  }
-
-  /**
-   * Publish a projection of the selected form, rebuilt whenever it moves.
-   * @param project - build the card's state from the current reads.
-   * @returns the store the card's component reads through its bound selector.
-   */
-  bind<S>(project: () => S): SnapshotStore<S> {
-    const store = createSnapshotStore(project())
-    this.subscribe(() => { store.set(project()) })
-    return store
   }
 
   /**
@@ -200,7 +180,4 @@ export class ScopedCardForms<T> {
     return form
   }
 
-  private publish(): void {
-    for (const listener of this.listeners) listener()
-  }
 }

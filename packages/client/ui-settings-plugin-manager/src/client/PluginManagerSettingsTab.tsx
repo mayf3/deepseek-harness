@@ -22,7 +22,8 @@ import {
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { PluginManagerLocaleKey } from './locales.ts'
 import { rowKey, type ConfirmState, type InstallState, type PluginManagerFace, type PresetGroup } from './manager-store.ts'
-import { noticeText, packageOf, refusalText, rowLabel, shortName, type Translate } from './presentation.ts'
+import { NoticeLine } from './NoticeLine.tsx'
+import { packageOf, refusalText, rowLabel, shortName, type Translate } from './presentation.ts'
 import css from './PluginManagerSettingsTab.module.css'
 
 /** Full component props assembled by the Settings slot renderer. */
@@ -357,6 +358,27 @@ function addTargets(
   ]
 }
 
+/** A bundle's enable switch on its card and its page: locked for a built-in bundle, off and locked for one the profile cannot enable. */
+function EnableSwitch({ pkg, title, t, busy, onSetEnabled }: {
+  readonly pkg: PluginPackageView
+  readonly title: string
+  readonly t: Translate
+  readonly busy: boolean
+  readonly onSetEnabled: (enabled: boolean) => void
+}): ReactNode {
+  if (pkg.kind !== 'bundle') return null
+  const builtin = pkg.trust === 'builtin'
+  return (
+    <Switch
+      checked={pkg.enabled}
+      label={t('enableToggle', { name: title })}
+      disabled={busy || builtin || (!pkg.enabled && pkg.status === 'not-enableable')}
+      {...builtin ? { title: t('builtinLocked') } : {}}
+      onChange={onSetEnabled}
+    />
+  )
+}
+
 /** One installed package as a card: its name, its one-liner, its tags, its switch or its **Add to…** menu, and the way into its page. */
 function PackageCard({ pkg, t, busy, presets, globalModules, presetName, onOpen, onSetEnabled, onAddRow }: {
   readonly pkg: PluginPackageView
@@ -371,7 +393,6 @@ function PackageCard({ pkg, t, busy, presets, globalModules, presetName, onOpen,
 }): ReactNode {
   const [addMenu, setAddMenu] = useState(false)
   const title = pkg.title ?? shortName(pkg.name)
-  const bundle = pkg.kind === 'bundle'
   const builtin = pkg.trust === 'builtin'
   const status = cardStatus(pkg)
   const addable = pkg.addable.filter(entry => entry.ok)
@@ -395,17 +416,7 @@ function PackageCard({ pkg, t, busy, presets, globalModules, presetName, onOpen,
           {pkg.description === undefined ? null : <span className={css.cardDesc}>{pkg.description}</span>}
         </div>
         <div className={css.cardEnd}>
-          {bundle
-            ? (
-              <Switch
-                checked={pkg.enabled}
-                label={t('enableToggle', { name: title })}
-                disabled={busy || builtin || (!pkg.enabled && pkg.status === 'not-enableable')}
-                {...builtin ? { title: t('builtinLocked') } : {}}
-                onChange={onSetEnabled}
-              />
-            )
-            : null}
+          <EnableSwitch pkg={pkg} title={title} t={t} busy={busy} onSetEnabled={onSetEnabled} />
           {menuItems.length === 0
             ? null
             : (
@@ -501,17 +512,7 @@ function PackageDetail({
           </div>
           <p className={css.detailDesc}>{pkg.description ?? t('noDescription')}</p>
         </div>
-        {bundle
-          ? (
-            <Switch
-              checked={pkg.enabled}
-              label={t('enableToggle', { name: title })}
-              disabled={busy || builtin || (!pkg.enabled && pkg.status === 'not-enableable')}
-              {...builtin ? { title: t('builtinLocked') } : {}}
-              onChange={onSetEnabled}
-            />
-          )
-          : null}
+        <EnableSwitch pkg={pkg} title={title} t={t} busy={busy} onSetEnabled={onSetEnabled} />
       </div>
       {pkg.reason === undefined || status === 'waiting' ? null : <p className={css.reason} role="status">{t('reasonLabel')}: {pkg.reason}</p>}
       <dl className={css.facts}>
@@ -802,14 +803,7 @@ export function PluginManagerSettingsTab(props: PluginManagerSettingsTabProps): 
       {restartPending.length > 0
         ? <p className={css.banner} role="status">{t('restartBanner', { names: restartPending.join(', ') })}</p>
         : null}
-      {state.notice === null
-        ? null
-        : (
-          <p className={css.notice} data-kind={state.notice.kind} role={state.notice.kind === 'failed' ? 'alert' : 'status'}>
-            <span>{noticeText(state.notice, t)}</span>
-            <Button variant="ghost" size="sm" onClick={props.dismissNotice}>{t('dismiss')}</Button>
-          </p>
-        )}
+      <NoticeLine notice={state.notice} t={t} onDismiss={props.dismissNotice} />
       {loaded && openPkg !== undefined
         ? (
           <PackageDetail
