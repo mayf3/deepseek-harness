@@ -863,13 +863,13 @@ Facts and recomposition of the booted profile.
 originOf(rowId: string): RowOrigin | undefined
 
 /**
- * Row ids the user patch layers disable with a literal `disabled: true`.
- * A `!!js` gate in a user file stays an expression node when read from
- * disk, so it is a condition, not a user decision, and is left to the
- * composition.
- * @returns the ids, re-read from disk on every call.
+ * Row ids the user patch layers disable with a literal `disabled: true`,
+ * as the committed composition read them. The set describes the running
+ * tree: a user file the include rejected, or one that cannot be parsed,
+ * changes nothing here until a composition with it is accepted.
+ * @returns the ids, from the committed composition.
  */
-userDisabledRowIds(): Set<string>
+userDisabledRowIds(): ReadonlySet<string>
 
 /**
  * Recompose the host tree from the profile's layers and the user patch files

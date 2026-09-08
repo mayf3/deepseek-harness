@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { Context, FiberState, type Plugin } from '@deepseek-ai/cordis'
-import Loader from '@deepseek-ai/cordis-plugin-loader'
+import Loader, { Group } from '@deepseek-ai/cordis-plugin-loader'
 import { remoteMethods } from '@deepseek-ai/dsh-typert-protocol'
 import type { AgentPresets } from '@deepseek-ai/dsh-agent-presets'
 import { ensurePluginFailures, type ProfileRuntime, type RowOrigin } from '@deepseek-ai/dsh-app-boot'
@@ -143,7 +143,7 @@ describe('PluginInventoryGateway', () => {
         package: { name: 'late', version: '9.9.9' }, failure: { stage: 'conflict', message: 'row "tool" is already declared by ext' },
       },
       {
-        entryId: 'conflict:/p/cordis.patch.yml:mine', moduleName: 'twice', enabled: true, fiberPhase: 'failed', trust: 'builtin',
+        entryId: 'conflict:/p/cordis.patch.yml:mine', moduleName: 'twice', enabled: true, fiberPhase: 'failed', trust: 'user',
         failure: { stage: 'conflict', message: 'row "mine" is already declared by ext' },
       },
       // A bundle the layer list no longer names keeps its package, without a version.
@@ -152,6 +152,20 @@ describe('PluginInventoryGateway', () => {
         package: { name: 'gone' }, failure: { stage: 'conflict', message: 'row "x" is declared twice by gone' },
       },
     ].sort(byId))
+  })
+
+  it('attributes a row disabled through a group the user disabled to the user', async () => {
+    const { ctx, inventory } = await harness()
+    ctx.loader.builtins.group = Group
+    const groupId = await ctx.loader.create({ name: 'cordis:group', group: true, config: [{ name: 'cordis:active' }] })
+    const child = [...ctx.loader.entries()].find(entry => !entry.options.group && entry.parent.ctx.fiber.entry?.options.id === groupId)
+    expect(child).toBeDefined()
+    ctx.provide('profileRuntime', {
+      originOf: () => undefined, userDisabledRowIds: () => new Set([groupId]), layers: [], conflicts: [],
+    } as unknown as ProfileRuntime)
+    await ctx.loader.update(groupId, { disabled: true })
+    const listed = (await inventory.list()).entries.find(entry => entry.entryId === child?.id)
+    expect(listed).toMatchObject({ enabled: false, disabledBy: 'user' })
   })
 
   it('carries each composed preset with root-fiber states mapped to phases', async () => {

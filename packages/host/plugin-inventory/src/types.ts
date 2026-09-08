@@ -12,8 +12,11 @@ export type PluginFiberPhase =
   | 'unloading'
   | null
 
-/** Who supplied a Loader row: the installation itself or an installed external bundle. */
-export type PluginTrust = 'builtin' | 'external'
+/**
+ * Who supplied a Loader row: the installation itself, an installed external
+ * bundle, or the user's own patch file (a row of theirs the composition left out).
+ */
+export type PluginTrust = 'builtin' | 'external' | 'user'
 
 /** Why a row is disabled: the composition's own gate or tombstone, or the user's patch layer. */
 export type PluginDisabledBy = 'composition' | 'user'

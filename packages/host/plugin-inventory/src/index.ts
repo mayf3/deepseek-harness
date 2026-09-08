@@ -6,7 +6,7 @@ import type {} from '@deepseek-ai/cordis-plugin-loader'
 import type {} from '@deepseek-ai/dsh-agent-presets'
 // Type-only: the optional profile runtime and contained-failure registry the
 // boot glue provides, both resolved through `ctx.get`.
-import type {} from '@deepseek-ai/dsh-app-boot'
+import { userDisablesEntry } from '@deepseek-ai/dsh-app-boot'
 import { TypertRemoteService, Remote } from '@deepseek-ai/dsh-typert-protocol'
 // Typert-generated ./typert and ./remote artifacts import Zod at runtime.
 import type {} from 'zod'
@@ -96,7 +96,7 @@ export class PluginInventoryGateway extends TypertRemoteService {
         fiberPhase: entry.fiber === undefined ? null : FIBER_PHASE[entry.fiber.state],
         trust: origin?.trust ?? 'builtin',
         ...origin === undefined ? {} : { package: packageRef(origin) },
-        ...enabled ? {} : { disabledBy: userDisabled.has(entry.options.id) ? 'user' as const : 'composition' as const },
+        ...enabled ? {} : { disabledBy: userDisablesEntry(entry, userDisabled) ? 'user' as const : 'composition' as const },
         ...failure === undefined ? {} : { failure: { stage: failure.stage, message: failure.message } },
       })
     }
@@ -125,7 +125,7 @@ export class PluginInventoryGateway extends TypertRemoteService {
           moduleName: conflict.moduleName,
           enabled: true,
           fiberPhase: 'failed',
-          trust: conflict.packageName === undefined ? 'builtin' : 'external',
+          trust: conflict.packageName === undefined ? 'user' : 'external',
           ...conflict.packageName === undefined
             ? {}
             : { package: packageRef({ packageName: conflict.packageName, ...version === undefined ? {} : { version } }) },

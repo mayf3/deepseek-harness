@@ -65,6 +65,7 @@ export {
 } from './compose-stack.ts'
 export {
   ProfileRuntime, type ProfileRuntimeOptions, type RowOrigin,
+  userDisablesEntry,
 } from './profile-runtime.ts'
 export {
   PLUGIN_PROBE_DIR, PLUGIN_PROBE_FORMAT, probePackage, readProbeCache, writeProbeCache,

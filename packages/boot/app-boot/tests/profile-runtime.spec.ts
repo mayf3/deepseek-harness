@@ -7,7 +7,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import type { Entry, EntryOptions } from '@deepseek-ai/cordis-plugin-loader'
 import type { PatchOptions } from '@deepseek-ai/cordis-plugin-include'
-import { claimLayerIds, ProfileRuntime, type ComposedStack, type Profile, type ProfileLayer } from '../src/index.ts'
+import { claimLayerIds, ProfileRuntime, userDisablesEntry, type ComposedStack, type Profile, type ProfileLayer } from '../src/index.ts'
 
 const contexts: Context[] = []
 afterEach(async () => {
@@ -24,7 +24,7 @@ function profile(layers: ProfileLayer[]): Profile {
 
 async function harness(
   layers: ProfileLayer[],
-  options: { rootEntry?: () => Entry | undefined; userPatches?: PatchOptions[]; reloaded?: Profile; conflicts?: ComposedStack['conflicts'] } = {},
+  options: { rootEntry?: () => Entry | undefined; reloaded?: Profile; conflicts?: ComposedStack['conflicts'] } = {},
 ): Promise<{ ctx: Context; runtime: ProfileRuntime; compose: ReturnType<typeof vi.fn> }> {
   const ctx = new Context()
   contexts.push(ctx)
@@ -37,6 +37,7 @@ async function harness(
       owners: claimLayerIds(current.layers).owners,
       conflicts: current === options.reloaded ? options.conflicts ?? [] : [],
       skippedBundles: [],
+      userDisabledRowIds: new Set(current === options.reloaded ? ['reloaded-off'] : ['booted-off']),
     }
   })
   const booted = profile(layers)
@@ -46,7 +47,6 @@ async function harness(
     loadProfile: () => options.reloaded ?? profile(layers),
     compose,
     rootEntry: options.rootEntry ?? (() => undefined),
-    readUserPatches: () => options.userPatches ?? [],
   })
   return { ctx, runtime: ctx.profileRuntime, compose }
 }
@@ -91,16 +91,22 @@ describe('ProfileRuntime', () => {
     expect(runtime.originOf('r')).toEqual({ trust: 'builtin', packageName: 'local' })
   })
 
-  it('reads user-disabled rows from literal disabled: true items only', async () => {
-    const { runtime } = await harness([], {
-      userPatches: [
-        { id: 'a', disabled: true },
-        { id: 'b', disabled: { __jsExpr: 'true' } as unknown as boolean },
-        { id: 'c', config: {} },
-        { insert: [{ id: 'd', name: 'x', disabled: true }] },
-      ],
-    })
-    expect([...runtime.userDisabledRowIds()]).toEqual(['a'])
+  it('reports the user-disabled rows of the committed composition and keeps them when the include rejects an update', async () => {
+    const entry = { options: { config: { path: 'file:///root/cordis.yml' } }, update: vi.fn(async () => { throw new Error('rejected') }) } as unknown as Entry
+    const reloaded = profile([layer('a', 'builtin', []), layer('b', 'external', [])])
+    const { runtime } = await harness([layer('a', 'builtin', [])], { rootEntry: () => entry, reloaded })
+    expect([...runtime.userDisabledRowIds()]).toEqual(['booted-off'])
+    await expect(runtime.recompose({ reloadBundles: true })).rejects.toThrow('rejected')
+    expect([...runtime.userDisabledRowIds()]).toEqual(['booted-off'])
+  })
+
+  it('tells a row the user disabled through a group holding it from one the composition gates', () => {
+    const chain = (ids: string[]): Entry => ids.reduceRight<Entry | undefined>(
+      (parent, id) => ({ options: { id }, parent: { ctx: { fiber: { entry: parent } } } } as unknown as Entry), undefined,
+    ) as Entry
+    expect(userDisablesEntry(chain(['kid', 'grp', 'root']), new Set(['grp']))).toBe(true)
+    expect(userDisablesEntry(chain(['kid', 'grp']), new Set(['kid']))).toBe(true)
+    expect(userDisablesEntry(chain(['kid', 'grp']), new Set(['other']))).toBe(false)
   })
 
   it('recomposes through the root include, optionally re-reading the profile first, and commits on acceptance', async () => {
@@ -118,9 +124,10 @@ describe('ProfileRuntime', () => {
     await runtime.recompose({ reloadBundles: true })
     expect(runtime.layers).toHaveLength(2)
     expect(update).toHaveBeenLastCalledWith({ config: { path: 'file:///root/cordis.yml', patches: [{ id: 'composed-for-2' }] } })
-    // Provenance and conflicts follow the reloaded profile once the update holds.
+    // Provenance, conflicts, and the user-disabled rows follow the reloaded profile once the update holds.
     expect(runtime.originOf('bundle/b')).toEqual({ trust: 'external', packageName: 'b', version: '2.0.0' })
     expect(runtime.conflicts).toEqual(conflicts)
+    expect([...runtime.userDisabledRowIds()]).toEqual(['reloaded-off'])
   })
 
   it('runs recompositions one at a time, each from what the previous one committed', async () => {

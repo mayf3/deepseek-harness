@@ -31,7 +31,7 @@ kind: "package-reference"
 
 每一行是一个非组 Loader 条目：其条目 id、精确模块标识、有效启用状态（含被禁用的祖先组）与当前根 Fiber 阶段。`pending` 表示条目等待加载，`loading` 表示正在读取，`active` 表示正在运行，`failed` 表示其 fiber 被拒绝，`unloading` 表示正在拆除；`null` 表示完全不存在存活的根 Fiber。结构性的 group 行会被跳过。
 
-当树由 profile launcher 组合时，每一行还会说明是谁提供的：`trust` 对安装自带组合包的行是 `builtin`，对用户安装的组合包的行是 `external`；`package` 给出该组合包的名称与版本，对外部行还给出组合包自己的 patch 在 launcher 加前缀之前声明的 id；停用的行带 `disabledBy`——用户 patch 文件用字面量 `disabled: true` 停用的是 `user`，组合包自己的门或墓碑是 `composition`。被隔离的外部组合包启动失败的行已经不在树里；它仍从 launcher 的失败注册表列出，`fiberPhase` 为 `'failed'`，并带一个说明阶段与消息的 `failure`。没有 launcher 时每一行都读作 `builtin`，也没有 package 或 failure。
+当树由 profile launcher 组合时，每一行还会说明是谁提供的：`trust` 对安装自带组合包的行是 `builtin`，对用户安装的组合包的行是 `external`，对用户自己的补丁文件插入却被组合排除的行是 `user`；`package` 给出该组合包的名称与版本，对外部行还给出组合包自己的 patch 在 launcher 加前缀之前声明的 id；停用的行带 `disabledBy`——用户 patch 文件用字面量 `disabled: true` 停用它、或停用了持有它的组的是 `user`，组合包自己的门或墓碑是 `composition`。被隔离的外部组合包启动失败的行已经不在树里；它仍从 launcher 的失败注册表列出，`fiberPhase` 为 `'failed'`，并带一个说明阶段与消息的 `failure`。没有 launcher 时每一行都读作 `builtin`，也没有 package 或 failure。
 
 ### 每个预设的组合
 

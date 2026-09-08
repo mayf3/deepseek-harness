@@ -58,6 +58,12 @@ export interface ComposedStack {
   readonly conflicts: RowConflict[]
   /** External bundles left out because a row id was already claimed or repeated. */
   readonly skippedBundles: string[]
+  /**
+   * Row ids the user layers disable with a literal `disabled: true`, as
+   * composed; a `!!js` gate stays an expression node when read from disk, so
+   * it is a condition of the composition, not a user decision.
+   */
+  readonly userDisabledRowIds: ReadonlySet<string>
 }
 
 /** Row-id ownership across the bundle layers: who owns each id, which external bundles lost, and how the rest mount. */
@@ -166,7 +172,7 @@ export function claimLayerIds(layers: readonly ProfileLayer[]): LayerOwnership {
  * @param binName - the diagnostic prefix on a thrown built-in duplicate.
  * @param layers - the profile's bundle layers, in manifest order.
  * @param userLayers - the user-owned layers, in application order.
- * @returns the patches to mount, the owner of every bundle id, the conflicts, and the bundles left out.
+ * @returns the patches to mount, the owner of every bundle id, the conflicts, the bundles left out, and the rows the user layers disable.
  * @throws when two built-in or boot-staged layers declare the same id, or one of them declares an id twice.
  */
 export function composeProfileStack(
@@ -193,10 +199,12 @@ export function composeProfileStack(
   }
   const claimed = new Map<string, string>()
   for (const [id, layer] of ownership.owners) claimed.set(id, layer.packageName)
+  const userDisabledRowIds = new Set<string>()
   for (const userLayer of userLayers) {
     const patches: PatchOptions[] = []
     for (const patch of userLayer.patches) {
       if (patch.insert === undefined) {
+        if (patch.id !== undefined && patch.disabled === true) userDisabledRowIds.add(patch.id)
         patches.push(patch)
         continue
       }
@@ -222,6 +230,7 @@ export function composeProfileStack(
     owners: ownership.owners,
     conflicts,
     skippedBundles,
+    userDisabledRowIds,
   }
 }
 

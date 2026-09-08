@@ -1398,10 +1398,10 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the origin, or undefined for a row no bundle layer owns (a user or overlay row, or a bundle left out by a conflict).',
       },
       {
-        signature: 'userDisabledRowIds(): Set<string>',
-        description: 'Row ids the user patch layers disable with a literal `disabled: true`. A `!!js` gate in a user file stays an expression node when read from disk, so it is a condition, not a user decision, and is left to the composition.',
+        signature: 'userDisabledRowIds(): ReadonlySet<string>',
+        description: 'Row ids the user patch layers disable with a literal `disabled: true`, as the committed composition read them. The set describes the running tree: a user file the include rejected, or one that cannot be parsed, changes nothing here until a composition with it is accepted.',
         parameters: [],
-        returns: 'the ids, re-read from disk on every call.',
+        returns: 'the ids, from the committed composition.',
       },
       {
         signature: 'async recompose(options: { reloadBundles?: boolean } = {}): Promise<void>',

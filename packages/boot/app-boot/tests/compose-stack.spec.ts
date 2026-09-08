@@ -133,6 +133,17 @@ describe('claimLayerIds', () => {
 })
 
 describe('composeProfileStack', () => {
+  it('collects the rows the user layers disable with a literal disabled: true', () => {
+    const stack = composeProfileStack(NAME, [base], [{ label: '/p/cordis.patch.yml', patches: [
+      { id: 'a', disabled: true },
+      // A gate read from disk is an expression node: a condition of the composition, not a decision.
+      { id: 'b', disabled: { __jsExpr: 'true' } as unknown as boolean },
+      { id: 'c', config: {} },
+      { insert: [{ id: 'd', name: 'x', disabled: true }] },
+    ] }])
+    expect([...stack.userDisabledRowIds]).toEqual(['a'])
+  })
+
   it('mounts owning layers in manifest order and drops a user insert of a taken id', () => {
     const ext = layer('ext', 'external', [{ insert: [{ id: 'ext-tool', name: 'ext' }] }])
     const stack = composeProfileStack(NAME, [base, ext], [
