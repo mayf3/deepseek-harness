@@ -1,0 +1,93 @@
+/* The design's dialog is the shared Modal card at 640px; everything else
+   about the chrome (radius, header, close, footer) is the primitive's. */
+.dialog {
+  width: min(640px, 100%);
+}
+
+.categories {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 11px 10px;
+}
+
+.chip {
+  height: 34px;
+  padding: 0 14px;
+  border: 1px solid var(--dsw-alias-border-l3);
+  border-radius: 17px;
+  background: transparent;
+  color: var(--dsw-alias-label-primary);
+  font: inherit;
+  font-size: 13px;
+  line-height: 20px;
+  cursor: pointer;
+}
+
+.chip:hover:not(:disabled) {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.chip:disabled {
+  cursor: default;
+  opacity: 0.4;
+}
+
+.chipActive,
+.chipActive:hover:not(:disabled) {
+  border-color: var(--dsw-alias-button-primary-fill);
+  background: var(--dsw-alias-button-primary-fill);
+  color: var(--dsw-alias-label-primary-foreground);
+}
+
+.detail {
+  display: block;
+  width: 100%;
+  height: 148px;
+  box-sizing: border-box;
+  margin-top: 28px;
+  padding: 14px;
+  border: 1px solid var(--dsw-alias-border-l4);
+  border-radius: 12px;
+  background: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-label-primary);
+  font: inherit;
+  font-size: 13px;
+  line-height: 20px;
+  resize: none;
+}
+
+.detail::placeholder {
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.detail:focus {
+  outline: none;
+  border-color: var(--dsw-alias-border-l3);
+}
+
+.failure {
+  display: block;
+  margin-top: 8px;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.submit {
+  width: 100%;
+  height: 56px;
+  margin-top: 36px;
+  border-radius: 28px;
+  font-size: 15px;
+}
+
+/* The design's ringed green check, not the warning tint the Toast icon seat defaults to. */
+.toastIcon {
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border: 1.5px solid var(--dsw-alias-state-success-primary);
+  border-radius: 50%;
+  color: var(--dsw-alias-state-success-primary);
+}

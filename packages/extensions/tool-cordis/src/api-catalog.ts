@@ -1557,6 +1557,19 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'sessionFeedback',
+    summary: 'Host Remote through which a product surface records a Session-level remark.',
+    description: 'Host Remote through which a product surface records a Session-level remark.',
+    methods: [
+      {
+        signature: '@Remote(\'record\') record(request: SessionFeedbackRecordRequest): Promise<SessionFeedbackRecordResult>',
+        description: 'Record one remark on a live Session.',
+        parameters: [{ name: 'request', description: 'target Session plus the optional text and category.' }],
+        returns: 'the recorded postcondition, or `session-not-found` when no live Session carries the id.',
+      },
+    ],
+  },
+  {
     key: 'sessionFileReferences',
     summary: 'Host Remote adapter over the composed file-reference provider.',
     description: 'Host Remote adapter over the composed file-reference provider.',
@@ -4168,6 +4181,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface EpochHeader {\n    config: LlmCallConfig;\n    adapterDefaults?: LlmCallConfigAdapterDefaults;\n    tools?: ToolSchema[];\n}',
   },
   {
+    name: 'FeedbackCategory',
+    declaration: 'export type FeedbackCategory = \'task-result\' | \'instruction-following\' | \'product-interaction\' | \'service-stability\' | \'resource-cost\' | \'security-privacy-permission\' | \'other\';',
+  },
+  {
     name: 'FiberState',
     declaration: 'export type FiberState = FiberStateEnum;',
   },
@@ -4593,7 +4610,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'MessageFeedbackItem',
-    declaration: 'export interface MessageFeedbackItem {\n    readonly messageId: MessageId;\n    readonly rating: MessageFeedbackRating;\n    readonly note?: string;\n    readonly version: MessageFeedbackVersion;\n    readonly createdAt: number;\n    readonly updatedAt: number;\n}',
+    declaration: 'export interface MessageFeedbackItem {\n    readonly messageId: MessageId;\n    readonly rating: MessageFeedbackRating;\n    readonly note?: string;\n    readonly category?: FeedbackCategory;\n    readonly version: MessageFeedbackVersion;\n    readonly createdAt: number;\n    readonly updatedAt: number;\n}',
   },
   {
     name: 'MessageFeedbackListRequest',
@@ -4617,7 +4634,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'MessageFeedbackPutRequest',
-    declaration: 'export interface MessageFeedbackPutRequest {\n    readonly sessionId: SessionId;\n    readonly messageId: MessageId;\n    readonly rating: MessageFeedbackRating;\n    readonly note?: string;\n    readonly ifVersion: MessageFeedbackVersion | null;\n}',
+    declaration: 'export interface MessageFeedbackPutRequest {\n    readonly sessionId: SessionId;\n    readonly messageId: MessageId;\n    readonly rating: MessageFeedbackRating;\n    readonly note?: string;\n    readonly category?: FeedbackCategory;\n    readonly ifVersion: MessageFeedbackVersion | null;\n}',
   },
   {
     name: 'MessageFeedbackPutResult',
@@ -5126,6 +5143,22 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'SessionEventWindow',
     declaration: 'export interface SessionEventWindow {\n    session: SessionHeader;\n    inheritedEventCount: SessionLogOffset;\n    target: SessionEvent;\n    events: SessionEvent[];\n    startSeq: SessionSeq;\n    endSeq: SessionSeq;\n}',
+  },
+  {
+    name: 'SessionFeedbackRecordRequest',
+    declaration: 'export interface SessionFeedbackRecordRequest {\n    readonly sessionId: SessionId;\n    readonly text?: string;\n    readonly category?: FeedbackCategory;\n}',
+  },
+  {
+    name: 'SessionFeedbackRecordResult',
+    declaration: 'export type SessionFeedbackRecordResult = {\n    readonly ok: true;\n    readonly value: SessionFeedbackRecordValue;\n} | {\n    readonly ok: false;\n    readonly error: SessionFeedbackSessionNotFound;\n};',
+  },
+  {
+    name: 'SessionFeedbackRecordValue',
+    declaration: 'export interface SessionFeedbackRecordValue {\n    readonly recorded: true;\n}',
+  },
+  {
+    name: 'SessionFeedbackSessionNotFound',
+    declaration: 'export interface SessionFeedbackSessionNotFound {\n    readonly code: \'session-not-found\';\n    readonly sessionId: SessionId;\n}',
   },
   {
     name: 'SessionFollowFrame',

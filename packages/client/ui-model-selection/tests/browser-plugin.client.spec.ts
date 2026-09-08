@@ -16,7 +16,7 @@ import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import { createSnapshotStore, type SnapshotStore } from '@deepseek-ai/dsh-client-store'
 import { TestRemote } from '@deepseek-ai/dsh-client-test-runtime'
 import type { ModelSelection, ModelSelectionProjection } from '@deepseek-ai/dsh-api-session-controller/types'
-import type { CommandContribution, SelectOption } from '@deepseek-ai/dsh-client-ui-commands/client'
+import type { CommandContribution, PopupSelectSpec, SelectOption } from '@deepseek-ai/dsh-client-ui-commands/client'
 import type { ModelSelectInjected } from '../src/client/slots.ts'
 import { apply, inject } from '../src/client/index.ts'
 import { zh } from '../src/client/locales.ts'
@@ -157,6 +157,11 @@ async function bench() {
   return {
     ctx, fiber, mint, calls, remote,
     contribution: () => contribution!,
+    popup: (): PopupSelectSpec => {
+      const ui = contribution!.ui
+      if (ui.kind !== 'popupSelect') throw new Error('expected the popupSelect kind')
+      return ui
+    },
     seat: () => seats.get('conversation.input.model')!,
     hostCurrent: () => selected,
     setHostCurrent: (selection: ModelSelection) => { defaultSelection = selection },
@@ -182,7 +187,7 @@ describe('ui-model-selection dual entry', () => {
   it('popup options mark the host current active with the provider group in the detail', async () => {
     const b = await bench()
     b.mint('s1')
-    const options = await b.contribution().ui.options(projection('s1'), new AbortController().signal)
+    const options = await b.popup().options(projection('s1'), new AbortController().signal)
     expect(options.map((o: SelectOption) => o.label)).toEqual(['DeepSeek-V4-Flash', 'DeepSeek-V4-Pro'])
     expect(options[0]).toMatchObject({ active: true, detail: 'DeepSeek' })
     expect(options[1]?.active).toBeUndefined()
@@ -209,7 +214,7 @@ describe('ui-model-selection dual entry', () => {
       reasoningEffort: 'max',
     })
     // The POPUP's next options pass reflects it without a seat-side reload.
-    const options = await b.contribution().ui.options(projection('s1'), new AbortController().signal)
+    const options = await b.popup().options(projection('s1'), new AbortController().signal)
     expect(options.find((o: SelectOption) => o.label === 'DeepSeek-V4-Pro')).toMatchObject({ active: true })
   })
 
@@ -217,9 +222,9 @@ describe('ui-model-selection dual entry', () => {
     const b = await bench()
     b.mint('s1')
     const seatFace = b.seat().inject!(sid('s1'))
-    const options = await b.contribution().ui.options(projection('s1'), new AbortController().signal)
+    const options = await b.popup().options(projection('s1'), new AbortController().signal)
     const pro = options.find((o: SelectOption) => o.label === 'DeepSeek-V4-Pro')!
-    await b.contribution().ui.onSelect(pro, projection('s1'))
+    await b.popup().onSelect(pro, projection('s1'))
     expect(seatFace.directory.getSnapshot().current).toEqual({
       provider: 'deepseek-official',
       model: 'deepseek-v4-pro',
@@ -239,8 +244,8 @@ describe('ui-model-selection dual entry', () => {
     // The service face resolves the same instance the seat inject handed out.
     expect(b.ctx.modelDirectories.directoryFor(sid('a')).store).toBe(faceA.directory)
     await Promise.all([
-      b.contribution().ui.options(projection('a'), new AbortController().signal),
-      b.contribution().ui.options(projection('b'), new AbortController().signal),
+      b.popup().options(projection('a'), new AbortController().signal),
+      b.popup().options(projection('b'), new AbortController().signal),
     ])
     expect(b.calls.models).toBe(1)
   })
@@ -369,7 +374,7 @@ describe('ui-model-selection dual entry', () => {
     b.address(sid('child'))
 
     expect(b.contribution().available(projection('child'))).toBe(false)
-    await expect(b.contribution().ui.options(
+    await expect(b.popup().options(
       projection('child'),
       new AbortController().signal,
     )).rejects.toThrow(/unavailable for addressed subagent/)
