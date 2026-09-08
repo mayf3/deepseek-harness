@@ -47,8 +47,8 @@ export interface SnapshotWorkspaceManifest {
   setup?: string
   /** Whether `workspace.expected/` owns the complete final world state. */
   final?: true
-  /** Place the generated cwd under the user's home instead of a temporary root. */
-  parent?: 'home'
+  /** Place the generated cwd outside automatically writable temporary roots. */
+  parent?: 'outside-temp'
 }
 
 /** Controller input that cannot enter a session because admission rejects it. */
@@ -320,13 +320,13 @@ export function parseSnapshotManifest(source: string, path = 'snapshot.yml'): Sn
       if (value.final !== undefined && value.final !== true) {
         throw new Error('manifest.workspace.final must equal true when present')
       }
-      if (value.parent !== undefined && value.parent !== 'home') {
-        throw new Error('manifest.workspace.parent must equal home')
+      if (value.parent !== undefined && value.parent !== 'outside-temp') {
+        throw new Error('manifest.workspace.parent must equal outside-temp')
       }
       workspace = {
         ...(value.setup === undefined ? {} : { setup: name(value.setup, 'manifest.workspace.setup') }),
         ...(value.final === true ? { final: true as const } : {}),
-        ...(value.parent === 'home' ? { parent: 'home' as const } : {}),
+        ...(value.parent === 'outside-temp' ? { parent: 'outside-temp' as const } : {}),
       }
       if (Object.keys(workspace).length === 0) throw new Error('manifest.workspace must not be empty')
     }
