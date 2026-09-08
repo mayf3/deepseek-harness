@@ -64,7 +64,6 @@
     "tests/cordis-tool-round.e2e.ts",
     "tests/web-search-round.e2e.ts",
     "tests/file-upload-round.e2e.ts",
-    "tests/visualizer.e2e.ts",
     "tests/message-actions.e2e.ts",
     "tests/open-in-app-ssh.e2e.ts",
     "tests/message-feedback.e2e.ts",

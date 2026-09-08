@@ -1,8 +1,0 @@
-version: 1
-scenario: visualizer-host
-profile: web
-composition: web-standard-plus-visualizer-host-test
-recording: live
-header:
-  class: web-visualizer-host
-  pin: true
