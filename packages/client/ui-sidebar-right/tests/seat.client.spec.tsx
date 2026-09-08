@@ -6,6 +6,7 @@ import { useState } from 'react'
 import { SlotTestRuntime } from '@deepseek-ai/dsh-client-test-runtime'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import type { PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
+import type { MainPanelId } from '@deepseek-ai/dsh-client-ui-layout/client'
 import type { PaneId, SplitId, TabId } from '@deepseek-ai/dsh-client-ui-dockkit'
 import { dockPaneIds, getPane } from '@deepseek-ai/dsh-client-ui-dockkit'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
@@ -67,7 +68,7 @@ async function mountSeat(viewportWidth = 1440, canShow = true) {
   runtime.ctx.provide('locale', locale)
   runtime.slots.installLocale(locale)
   await runtime.declare({
-    'rightbar': { kind: 'single', scope: 'session' },
+    'rightbar': { kind: 'single', scope: 'root' },
     'conversation.session.header.corner': { kind: 'single', scope: 'session' },
   })
   await runtime.sessions.add({ id: SESSION })
@@ -98,7 +99,7 @@ async function mountSeat(viewportWidth = 1440, canShow = true) {
     runtime.slots.register({ name: 'sidebar.right.pane.tab.title', key: 'test/text' }, Title)
   })
   const view = runtime.renderSlot('rightbar', { width: 420, viewportWidth, canShow })
-  const instance = runtime.storeOf('rightbar', SESSION) as ReturnType<ReturnType<typeof createSidebarRightStore>['create']>
+  const instance = runtime.storeOf('rightbar.session', SESSION) as ReturnType<ReturnType<typeof createSidebarRightStore>['create']>
   const controller = runtime.ctx.sidebarRight
   const layout = () => instance.getSnapshot().bySession[SESSION]!.layout
   const open = (name = 'a.txt', options?: Parameters<typeof controller.openResource>[1]) => {
@@ -115,6 +116,19 @@ function element(container: HTMLElement, selector: string): HTMLElement {
 }
 
 describe('RightbarSeat presentation', () => {
+  it('hides for a global main panel and retains the Session sidebar state', async () => {
+    const h = await mountSeat()
+    h.open('retained.txt')
+    const retained = h.layout()
+    act(() => { h.runtime.panelInfo.set({ activePanelId: 'other-panel' as MainPanelId }) })
+    expect(h.view.container.querySelector('[data-sidebar-right-panel]')).toBeNull()
+    expect(h.frame.closeRightbar).toHaveBeenCalled()
+    expect(h.layout()).toBe(retained)
+    act(() => { h.runtime.panelInfo.set({ activePanelId: null }) })
+    expect(h.view.container.querySelector('[data-sidebar-right-panel]')).not.toBeNull()
+    expect(h.layout()).toBe(retained)
+  })
+
   it('keeps the panel mounted while collapsed and releases the frame on unmount', async () => {
     const h = await mountSeat()
     const panel = element(h.view.container, '[data-sidebar-right-panel]')

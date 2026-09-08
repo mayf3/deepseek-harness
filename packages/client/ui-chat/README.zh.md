@@ -10,6 +10,8 @@ kind: "package-reference"
 
 使用本包可在浏览器中渲染已记录的 Session 对话，包括历史图片、本地化操作和滚动位置恢复。紧凑显示会收起已完成轮次的过程行，同时保持最终答案和独立有用的上下文可见；已打包的历史 Assistant 连续消息保持收起。本地 transcript 与 steering 提交会立即显示并保留在原区域，在权威 Session 记录到达时原子地消失，而 queued 提交始终不进入 Chat。本包不组装或修改模型请求。
 
+文件引用提供方同时接收当前查看的 Session ID 与收尾 turn 的属主信息，因此继承历史中的链接可以指向 fork 自身。
+
 ## 目录
 
 - [系统提示词行](#system-prompt-row)
