@@ -129,7 +129,6 @@ function packageStatus(facts: {
 /** The rows a composed bundle owns in the live tree, plus rows only the failure registry knows. */
 function composedRows(ctx: Context, runtime: ProfileRuntime, name: string): PluginPackageRowView[] {
   const failures = ctx.get('pluginFailures')
-  const userDisabled = runtime.userDisabledRowIds()
   const rows: PluginPackageRowView[] = []
   const listed = new Set<string>()
   for (const { entry, rowId } of ownedEntries(ctx, runtime, name)) {
@@ -140,7 +139,8 @@ function composedRows(ctx: Context, runtime: ProfileRuntime, name: string): Plug
       rowId,
       moduleName: entry.options.name,
       enabled: !entry.disabled,
-      ...entry.disabled ? { disabledBy: userDisabled.has(rowId) ? 'user' as const : 'composition' as const } : {},
+      // The runtime walks the groups holding the entry: a row inside a group the user disabled is the user's doing.
+      ...entry.disabled ? { disabledBy: runtime.userDisables(entry) ? 'user' as const : 'composition' as const } : {},
       phase: entry.fiber === undefined ? null : ROW_PHASE[entry.fiber.state],
       ...failure === undefined ? {} : { failure: { stage: failure.stage, message: failure.message } },
     })

@@ -3,13 +3,12 @@
  * a child process, and the per-profile cache.
  */
 
-import { mkdirSync, mkdtempSync, writeFileSync, symlinkSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import { PLUGIN_PROBE_DIR, PLUGIN_PROBE_FORMAT, probePackage, readProbeCache, writeProbeCache, type PluginProbe } from '../src/index.ts'
-import { parseProbeRecord } from '../src/probe.ts'
+import { cordisPackageDir, parseProbeRecord } from '../src/probe.ts'
 import { parseChildReport, type ChildReport } from '../src/probe-report.ts'
 
 const NAME = 'dsh-test-bin'
@@ -130,16 +129,6 @@ describe('probePackage', () => {
           'node_modules/@deepseek-ai/cordis/index.js': 'export const Context = class {}\n',
         },
       },
-      // A copy whose manifest carries another name still resolves as cordis
-      // for Node; with no cordis manifest above its entry, the entry itself
-      // stands for the copy, which is not the harness's.
-      'renamed-cordis': {
-        main: 'export function apply() {}\n',
-        files: {
-          'node_modules/@deepseek-ai/cordis/package.json': JSON.stringify({ name: 'not-cordis', version: '0.0.0', type: 'module', main: './index.js' }),
-          'node_modules/@deepseek-ai/cordis/index.js': 'export const Context = class {}\n',
-        },
-      },
     })
     const broken = await probePackage({ binName: NAME, profileDir, installAnchor, packageName: 'broken' })
     expect(broken.ok).toBe(false)
@@ -150,21 +139,46 @@ describe('probePackage', () => {
     expect(own.cordisSameCopy).toBe(false)
     expect(own.ok).toBe(false)
     expect(own.reason).toContain('own copy of @deepseek-ai/cordis')
-    const renamed = await probePackage({ binName: NAME, profileDir, installAnchor, packageName: 'renamed-cordis' })
-    expect(renamed.cordisSameCopy).toBe(false)
   })
 
-  it('recognizes the harness copy of cordis by its package directory, whichever entry each side resolved', async () => {
-    // The staged package reaches cordis through a symlink to the harness's
-    // own package; the child resolves its built entry, this process (under
-    // the test runner's source aliases) its TypeScript entry.
-    const { profileDir, installAnchor } = stage({ 'shared-cordis': { main: 'export function apply() {}\n' } })
-    const harnessCordis = fileURLToPath(new URL('../../../../vendor/cordis', import.meta.url))
-    mkdirSync(join(profileDir, 'node_modules', 'shared-cordis', 'node_modules', '@deepseek-ai'), { recursive: true })
-    symlinkSync(harnessCordis, join(profileDir, 'node_modules', 'shared-cordis', 'node_modules', '@deepseek-ai', 'cordis'), 'dir')
-    const shared = await probePackage({ binName: NAME, profileDir, installAnchor, packageName: 'shared-cordis' })
-    expect(shared.cordisSameCopy).toBe(true)
-    expect(shared.ok).toBe(true)
+  it('recognizes the harness\'s cordis through a link and through a packaged executable\'s proxy', async () => {
+    const harnessCordis = cordisPackageDir(import.meta.resolve('@deepseek-ai/cordis')) as string
+    const harnessEntry = import.meta.resolve('@deepseek-ai/cordis')
+    const { profileDir, installAnchor } = stage({
+      'linked': { main: 'export function apply() {}\n', manifest: { peerDependencies: { '@deepseek-ai/cordis': '*' } } },
+      // A cordis directory whose manifest names no package: an unknown copy, not a second one.
+      'unnamed': {
+        main: 'export function apply() {}\n',
+        manifest: { peerDependencies: { '@deepseek-ai/cordis': '*' } },
+        files: {
+          'node_modules/@deepseek-ai/cordis/package.json': JSON.stringify({ version: '0.0.0', type: 'module', main: './index.js' }),
+          'node_modules/@deepseek-ai/cordis/index.js': 'export const Context = class {}\n',
+        },
+      },
+      'proxied': {
+        main: 'export function apply() {}\n',
+        manifest: { peerDependencies: { '@deepseek-ai/cordis': '*' } },
+        files: {
+          // The proxy a packaged executable writes: a manifest naming its targets, and an entry that re-exports one.
+          'node_modules/@deepseek-ai/cordis/package.json': JSON.stringify({
+            name: '@deepseek-ai/cordis', version: '0.0.0', type: 'module', exports: { '.': './entry-0.js' },
+            dsh: { moduleFallback: { targets: { '.': harnessEntry } } },
+          }),
+          'node_modules/@deepseek-ai/cordis/entry-0.js': `export * from ${JSON.stringify(harnessEntry)}\n`,
+        },
+      },
+    })
+    // The profile links the harness's own cordis, as plain Node installs do.
+    mkdirSync(join(profileDir, 'node_modules', '@deepseek-ai'), { recursive: true })
+    symlinkSync(harnessCordis, join(profileDir, 'node_modules', '@deepseek-ai', 'cordis'), 'dir')
+    const linked = await probePackage({ binName: NAME, profileDir, installAnchor, packageName: 'linked' })
+    expect(linked).toMatchObject({ kind: 'plugin', ok: true, cordisSameCopy: true })
+    const proxied = await probePackage({ binName: NAME, profileDir, installAnchor, packageName: 'proxied' })
+    expect(proxied).toMatchObject({ kind: 'plugin', ok: true, cordisSameCopy: true })
+    const unnamed = await probePackage({ binName: NAME, profileDir, installAnchor, packageName: 'unnamed' })
+    expect(unnamed).toMatchObject({ kind: 'plugin', ok: true, cordisSameCopy: null })
+    // A URL no cordis manifest encloses is an unknown copy, not a different one.
+    expect(cordisPackageDir(`file://${tmpdir()}/nowhere/index.js`)).toBeUndefined()
   })
 
   it('probes a package with the minimal manifest and no main export', async () => {
@@ -201,6 +215,38 @@ describe('probePackage', () => {
     expect(chatty).toMatchObject({ kind: 'plugin', ok: true })
     const lingers = await probePackage({ binName: NAME, profileDir, installAnchor, packageName: 'lingers', timeoutMs: 5_000 })
     expect(lingers).toMatchObject({ kind: 'plugin', ok: true })
+    // The probe settled on the child's close: nothing of the killed child is still open.
+    expect(process.getActiveResourcesInfo()).not.toContain('ChildProcess')
+  })
+
+  it('takes only the message that echoes its token, hides credentials from the child, and keeps a stderr tail', async () => {
+    const { profileDir, installAnchor } = stage({
+      // A report forged at import, complete with the token's name: the token is
+      // gone from the environment and `process.send` from `process` by then.
+      'forges': {
+        main: 'process.send?.({ token: process.env.DSH_PROBE_REPORT ?? "", cordis: null, main: { ok: true, isPlugin: true, configSchema: null }, addable: {} })\n'
+          + 'export const notAPlugin = 1\n',
+        manifest: { dsh: { title: 'Forges' } },
+      },
+      'peeks': {
+        main: 'throw new Error("env=" + Object.keys(process.env).filter(k => k.startsWith("PROBE_TEST") || k === "DSH_PROBE_REPORT").sort().join(","))\n',
+      },
+      'floods': { main: 'import { writeSync } from "node:fs"\nwriteSync(2, "x".repeat(200_000))\nwriteSync(2, "tail-marker")\nprocess.exit(3)\n' },
+    })
+    const forged = await probePackage({ binName: NAME, profileDir, installAnchor, packageName: 'forges' })
+    expect(forged).toMatchObject({ kind: 'library', ok: true })
+    process.env.PROBE_TEST_SECRET = 'hidden'
+    process.env.PROBE_TEST_PLAIN = 'visible'
+    try {
+      const peeked = await probePackage({ binName: NAME, profileDir, installAnchor, packageName: 'peeks' })
+      expect(peeked.reason).toContain('env=PROBE_TEST_PLAIN')
+    } finally {
+      delete process.env.PROBE_TEST_SECRET
+      delete process.env.PROBE_TEST_PLAIN
+    }
+    const flood = await probePackage({ binName: NAME, profileDir, installAnchor, packageName: 'floods' }).then(() => undefined, (error: unknown) => error as Error)
+    expect(flood?.message).toMatch(/exited with 3 without a report: x+tail-marker$/)
+    expect(flood?.message.length).toBeLessThan(17_000)
   })
 
   it('kills a child that never reports, rejects an unrecognized report, and refuses an unresolvable package', async () => {
@@ -208,14 +254,15 @@ describe('probePackage', () => {
       // Blocks the child's thread inside the import: an unsettled top-level await would make Node exit instead.
       'hangs': { main: 'Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0)\nexport function apply() {}\n' },
       'exits': { main: 'process.stderr.write("refusing to report"); process.exit(3)\n' },
-      'spoofs': { main: 'process.send({ nope: true }); process.exit(0)\n' },
+      // `process.send` is gone by the time the package runs; a message it could send would not carry the token anyway.
+      'spoofs': { main: 'process.send?.({ nope: true }); process.exit(0)\n' },
     })
     await expect(probePackage({ binName: NAME, profileDir, installAnchor, packageName: 'hangs', timeoutMs: 300 }))
       .rejects.toThrow(/timed out after 300ms/)
     await expect(probePackage({ binName: NAME, profileDir, installAnchor, packageName: 'exits' }))
       .rejects.toThrow(/exited with 3 without a report: refusing to report/)
     await expect(probePackage({ binName: NAME, profileDir, installAnchor, packageName: 'spoofs' }))
-      .rejects.toThrow(/reported an unrecognized value/)
+      .rejects.toThrow(/exited with 0 without a report/)
     await expect(probePackage({ binName: NAME, profileDir, installAnchor, packageName: 'ghost' }))
       .rejects.toThrow(/cannot resolve profile bundle "ghost"/)
     await expect(probePackage({ binName: NAME, profileDir, installAnchor, packageName: 'exits', nodeExecutable: '/no/such/node' }))
@@ -274,11 +321,11 @@ describe('probe cache', () => {
 describe('parseChildReport', () => {
   it('accepts the child\'s message only with every field in place', () => {
     const inspection = { ok: true, isPlugin: true, configSchema: null }
-    const report: ChildReport = { cordis: null, main: inspection, addable: { 'pkg/x': { ...inspection, ok: false, error: 'boom' } } }
+    const report: ChildReport = { token: 't', cordis: null, main: inspection, addable: { 'pkg/x': { ...inspection, ok: false, error: 'boom' } } }
     expect(parseChildReport(report)).toBe(report)
     expect(parseChildReport({ ...report, cordis: 'file:///cordis/index.js' })).toBeDefined()
     const broken: Record<string, unknown>[] = [
-      { cordis: 1 }, { main: undefined }, { main: { ...inspection, ok: 'yes' } }, { main: { ...inspection, isPlugin: 'no' } },
+      { token: undefined }, { token: 1 }, { cordis: 1 }, { main: undefined }, { main: { ...inspection, ok: 'yes' } }, { main: { ...inspection, isPlugin: 'no' } },
       { main: { ok: true, isPlugin: true } }, { main: { ...inspection, error: 1 } }, { addable: [] }, { addable: { 'pkg/x': 1 } },
     ]
     for (const fields of broken) expect(parseChildReport({ ...report, ...fields }), JSON.stringify(fields)).toBeUndefined()

@@ -117,9 +117,9 @@ await mutatePatchFile(file, (document) => {
 - **与渠道无关的库。** 此包不包含 loader 钩子，也不提供开发模式接口；[`dsh` 应用](../../../apps/cli/README.zh.md) 持有自己的 Node 源码启动钩子，并在启动序列中使用这些 helper，构建后的消费方则使用普通 Node 包解析。
 - **三个 Loader builtin。** `mountRootInclude` 把 `cordis:include`、`cordis:group` 与 `cordis:contained-group` 注册为 Loader builtin：group 行能把一个提供方与它的消费方放进同一个 `isolate` realm，位于本工作区之外的 agent preset 无法按名称解析 `@deepseek-ai/cordis-plugin-group`，受控组则是外部组合包挂载的位置。三者都通过宿主的模块管线加载，而非被包含树自身的说明符解析。
 - **外部组合包即组。** vendored 的 `EntryGroup.update` 是整组事务，因此 `composeExternalLayer` 把每个 `runtime` 阶段外部层的插入行按组合包声明的 id 包进一个 `cordis:contained-group`；该组的 `create()` 把失败的行记录到根上的 `pluginFailures` 注册表而不是 reject，组更新时丢掉配置里不再有的行的记录，卸载时全部丢掉，`assertEntriesActivated` 豁免已记录的行，但内置行停在 pending 时仍然失败。
-- **行 id 归属而非改写。** entry id 在整棵树内唯一，而 `create()` 遇到已有 id 时会把那个 entry 挪到自己名下而不是 reject，所以 `composeProfileStack` 在任何行挂载之前先判定归属：内置层与 boot 阶段的层先占有 id，它们之间重复即启动失败；撞名的受控组合包整层排除；用户层插入已被占用的 id 时该行丢弃；每一条被排除的行都是 `pluginFailures` 里的一条 `conflict` 记录。启动、运行时重组与 `--dump-config` 走同一个函数。
+- **行 id 归属而非改写。** entry id 在整棵树内唯一，而 `create()` 遇到已有 id 时会把那个 entry 挪到自己名下而不是 reject，所以 `composeProfileStack` 在任何行挂载之前先判定归属：内置层与 boot 阶段的层先占有 id，它们之间重复即启动失败；撞名的受控组合包整层排除；用户层插入已被占用的 id 时该行丢弃；每一条被排除的行都是 `pluginFailures` 里的一条 `conflict` 记录。config 覆盖可以在已持有某行的组下重述它；同一 config 列表里出现两次、或改放到别的组下，都算声明了两次——前者会在挂载时被 Loader 拒绝，后者会被静默挪走——因此内置层启动失败、受控组合包整层排除。启动、运行时重组与 `--dump-config` 走同一个函数。
 - **fail-loud 只在启动期。** `installFailLoud` 对任何未处理 rejection 退出，因为启动期间它就是加载失败；树起来后 launcher 卸载它并安装 `installRuntimeGuards`：rejection 被报告并继续运行，未捕获异常被报告并退出。内置条目下失败的嵌套 fiber（`ctx.inject()` 的延续）由 `warnNestedFiberFailures` 以提示行报告。
-- **探针从不在宿主内运行包。** `probePackage` 在本进程读取已安装包的 manifest，在子进程里 import 它并经 IPC 通道接收报告，因此抛错、退出、挂起、import 时打印或自带 cordis 副本的包只消耗一个子进程，得到一条带原因的记录；子进程的报告与缓存记录都逐字段校验之后才被信任。只有包向 dsh 声明了自己——有 `dsh` 段或依赖 `@deepseek-ai/cordis`——且主导出是插件形状时才判为 `plugin`；光是导出一个函数（`lodash`）的包是 `library`。记录缓存在 profile 的 `.dsh-plugins/` 下并带格式号，旧版探针写的记录会重新探测而不是被信任。
+- **探针从不在宿主内运行包。** `probePackage` 在本进程读取已安装包的 manifest，在子进程里 import 它并经 IPC 通道接收报告，因此抛错、退出、挂起、import 时打印或自带 cordis 副本的包只消耗一个子进程，得到一条带原因的记录——cordis 判定比较的是包目录，穿过符号链接与打包可执行文件写出的代理包，因此同一个包的 `src` 与 `lib` 解析结果一致；子进程的报告与缓存记录都逐字段校验之后才被信任。子进程拿到的是剔除了密钥形态变量的宿主环境（`dsh-launch-environment` 的 `SENSITIVE_ENV_PATTERN`），报告是唯一回显本次 token 的那条消息，token 在 import 之前就从子进程环境里删掉、被 import 的代码也找不到 `process.send`；失败文本只留 stderr 的最后 16 KiB；探针要等子进程关闭后才结算。只有包向 dsh 声明了自己——有 `dsh` 段或依赖 `@deepseek-ai/cordis`——且主导出是插件形状时才判为 `plugin`；光是导出一个函数（`lodash`）的包是 `library`。记录缓存在 profile 的 `.dsh-plugins/` 下并带格式号，旧版探针写的记录会重新探测而不是被信任。
 - **Profile 模块后备机制。** 裸插件 specifier 由 Loader 从配置目录解析。普通 Node 会为安装依赖闭包中的每个包维护一个符号链接。打包可执行文件无法让操作系统符号链接进入 pkg 的 `/snapshot` 树，因此会按 Node ESM 条件读取已安装包的 export map，并写入重新导出虚拟模块 URL 的真实代理包。缺失 export 保持不可用，错误 export map 会让启动失败，跨进程 writer lock 则会在不暴露部分代理的情况下替换陈旧条目。所选外部 bundle 若不在安装闭包中，则会获得 profile 本地的 `.dsh-module-fallback` 链接；已有 pnpm 条目优先，后续闭包发现会排除投影链接，清理也只删除 dsh 自有链接。
 - **单一 rejection 检查点。** `assertEntriesActivated` 把折入启动诊断的确切原因保持到下一个进程级 rejection 检查点可见，使 `installFailLoud` 能合并 Loader 的重复通知，而所有无关的未处理 rejection 仍然致命。
 - **两阶段失败标签。** `boot()` 区分 `host preparation failed`（`prepare` 在任何配置树条目挂载前抛出）与 `plugin tree failed to load`（此后的一切失败），并追加最深层插件错误的堆栈，使启动诊断保留原始激活错误，而不只是包装链。
@@ -195,6 +195,7 @@ await mutatePatchFile(file, (document) => {
 - **补丁编辑按键级而非行级合并**——`setRowField('x', 'config', value)` 替换该补丁的整个 `config` 映射；只想改一个嵌套字段的调用方先用 `rowField` 读出当前值，再把合并后的映射写回。
 - **补丁写入器不生成表达式**——它只输出普通数据；`!!js` 门是作者敲进文件的东西，从不是某个 API 调用的产物。
 - **锁孤儿由操作者处理**——补丁写入器崩溃留下的锁文件不会被竞争者移除，竞争者等待超时后失败；`dsh-atomic-write` 记录了同样的选择。
+- **探针无法从打包可执行文件运行**——`probe-child.js` 位于可执行文件的 `/snapshot` 树内，普通 Node 子进程读不到它，因此 `probePackage` 在那里会 reject，直到子进程入口像模块代理那样被物化到可执行文件之外。
 
 <a id="dev-note"></a>
 ### 开发备注

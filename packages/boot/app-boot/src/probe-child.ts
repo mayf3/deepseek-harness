@@ -4,7 +4,8 @@
  * over the IPC channel the parent opened. stdout and stderr stay the
  * imported modules' own, so a package that prints at import still reports.
  * Arguments: the package directory, the main specifier (empty for none), and
- * the addable specifiers as a JSON array. Nothing here runs inside the host.
+ * the addable specifiers as a JSON array; the environment carries the token
+ * the report echoes. Nothing here runs inside the host.
  * @module @deepseek-ai/dsh-app-boot/probe-child
  */
 
@@ -13,6 +14,13 @@ import type { ChildInspection, ChildReport } from './probe-report.ts'
 
 const [dir = '', mainSpecifier = '', addableJson = '[]'] = process.argv.slice(2)
 const base = pathToFileURL(`${dir}/package.json`).href
+// The report is the parent's to receive: its token leaves the environment and
+// the channel's `send` leaves `process` before any of the package's code runs,
+// so nothing that code sends at import can pass as the report.
+const token = process.env.DSH_PROBE_REPORT ?? ''
+delete process.env.DSH_PROBE_REPORT
+const send = process.send?.bind(process)
+Reflect.deleteProperty(process, 'send')
 
 /** Import one module from the package and describe what it exports. */
 async function inspect(specifier: string): Promise<ChildInspection> {
@@ -31,7 +39,7 @@ async function inspect(specifier: string): Promise<ChildInspection> {
   }
 }
 
-const report: ChildReport = { cordis: null, main: { ok: false, isPlugin: false, configSchema: null }, addable: {} }
+const report: ChildReport = { token, cordis: null, main: { ok: false, isPlugin: false, configSchema: null }, addable: {} }
 try {
   report.cordis = import.meta.resolve('@deepseek-ai/cordis', base)
 } catch {
@@ -39,4 +47,4 @@ try {
 }
 if (mainSpecifier !== '') report.main = await inspect(mainSpecifier)
 for (const name of JSON.parse(addableJson) as string[]) report.addable[name] = await inspect(name)
-process.send?.(report, undefined, undefined, () => { process.disconnect() })
+send?.(report, undefined, undefined, () => { process.disconnect() })
