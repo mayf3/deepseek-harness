@@ -240,6 +240,15 @@ describe('gate graph validation', () => {
     },
   )
 
+  it.each(['ci-primary', 'ci-static', 'check-all'] as const)(
+    'keeps review request policy tests in %s',
+    (mode) => {
+      const ids = withPnpmEntrypoint(() => gatesForMode(mode).map(subject => subject.id))
+
+      expect(ids).toContain('request-review')
+    },
+  )
+
   it.each(['ci-primary', 'ci-static', 'check-all', 'hygiene'] as const)(
     'keeps hard-coded Client UI copy enforcement in %s',
     (mode) => {
@@ -548,6 +557,7 @@ describe('Node 24 lane ownership', () => {
     })
     expect(subject.find(item => item.id === 'built-bin-smoke')?.args).toEqual(
       expect.arrayContaining([
+        'packages/subprocess/subprocess-local/tests/spawn-runner-built.e2e.ts',
         'packages/subagent/subagent-codex/tests/loader-composition.e2e.ts',
         'packages/subagent/subagent-claude-code/tests/loader-composition.e2e.ts',
         'packages/experimental/agent-team/tests/built-lib.e2e.ts',

@@ -210,7 +210,7 @@ export interface RunOptions {
 }
 
 /**
- * Derive one stable, fixed-length spill root owned by this scenario.
+ * Derive the stable, fixed-length logical spill prefix; never allocate files here.
  * Windows uses a two-character-shorter root because drive resolution adds its drive prefix.
  * @param fixtureFile - The scenario fixture whose parent directory provides the stable identity.
  * @param platform - the host platform, injectable for unit coverage.
@@ -239,17 +239,14 @@ export async function runScenario(input: InputScript, opts: RunOptions): Promise
   const cwd = await mkdtemp(join(opts.workspaceParent ?? tmpdir(), 'acp-snap-cwd-'))
   const cwdAliases = [...new Set([realpathSync(cwd), realpathSync.native(cwd)])]
   const sessionsRoot = await mkdtemp(join(tmpdir(), 'acp-snap-sessions-'))
-  // Fixed path length: spill-policy budgets the preview against the REAL path
-  // before stdout normalization, so tmpdir() length differences churn expected outputs.
-  // Scenario ownership also matters: replay runs concurrently, and one teardown
-  // must never delete another scenario's in-flight full-output recovery file.
-  const spillRoot = snapshotSpillRoot(opts.fixtureFile)
+  let spillRoot: string | undefined
   // Everything past the temp-dir creation is followed by failure-safe cleanup,
   // so a failure in workspace seeding, spawn, or any step never leaks resources.
   let launched: LaunchedAcpTestAgent | undefined
   let sessionId: string | undefined
   let sessionLogs: HarvestedLog[] = []
   const outcome = await (async (): Promise<RunResult> => {
+    spillRoot = await mkdtemp(join(tmpdir(), 'acp-snap-spill-'))
     // Seed the workspace if the scenario ships one (a file the agent reads/edits).
     // Copied into the generated cwd so the agent's bash tools see it; the expected outputs
     // normalize the cwd, so the seeded paths stay stable across runs.
@@ -272,6 +269,7 @@ export async function runScenario(input: InputScript, opts: RunOptions): Promise
       DSH_SNAPSHOT_FILE: opts.fixtureFile,
       DSH_SNAPSHOT_SESSIONS_ROOT: sessionsRoot,
       DSH_SNAPSHOT_SPILL_ROOT: spillRoot,
+      DSH_SNAPSHOT_SPILL_LOCATOR_ROOT: snapshotSpillRoot(opts.fixtureFile),
       DSH_HOME: join(cwd, '.dsh'),
       DSH_AGENTS_HOME: join(cwd, '.agents'),
       ...opts.overrideFile !== undefined ? { DSH_SNAPSHOT_OVERRIDE: opts.overrideFile } : {},
@@ -383,7 +381,8 @@ export async function runScenario(input: InputScript, opts: RunOptions): Promise
   await cleanup(() => launched?.close('SIGKILL') ?? Promise.resolve())
   await cleanup(() => rm(cwd, { recursive: true, force: true }))
   await cleanup(() => rm(sessionsRoot, { recursive: true, force: true }))
-  await cleanup(() => rm(spillRoot, { recursive: true, force: true }))
+  const allocatedSpillRoot = spillRoot
+  if (allocatedSpillRoot !== undefined) await cleanup(() => rm(allocatedSpillRoot, { recursive: true, force: true }))
 
   const cleanupFailures = cleanupResults
     .filter((result): result is PromiseRejectedResult => result.status === 'rejected')
