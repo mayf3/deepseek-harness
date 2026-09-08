@@ -122,14 +122,14 @@ interface JobOutcome {
   status: 'completed' | 'killed' | 'failed'
   /**
    * Terminal reason rendered into status lines (`exit code: 3`, `max-tokens`).
-   * When the job settles `killed` after a {@link CallerJobs.kill} with a
+   * When the job settles `killed` after a {@link JobRegistry.kill} with a
    * reason, the registry appends that reason.
    */
   detail?: string
   /**
    * Return value for jobs whose result is a value rather than a stream (a
    * workflow's rendered result, a subagent's report). The output ring carries
-   * the stream; this is handed out once by the model's next {@link CallerJobs.read}.
+   * the stream; this is handed out once by the model's next {@link JobRegistry.read}.
    */
   result?: string
 }
@@ -176,7 +176,7 @@ interface JobSourceRead {
 
 ## 输出环
 
-每个 job 拥有一个有界的环。拉取源被泵入其中，`JobHandle.append` 的推送整块落地；模型通过注册表保管的游标（`CallerJobs.read`）消耗该环，任意数量的观察者按绝对字节偏移读取它（`CallerJobs.readAt`），二者互不干扰。`JobChannel` 标记 `stdout`、`stderr` 与 `log`；`log` 是只到达观察者、从不进入模型消耗式读取的生产方叙述。结算即封流并把保留量裁剪到结算上限——环没有独立的生命周期。拉取源保留的 spill 文件是 job 元数据（`JobView.output.spillPaths`，每次泵读取都会刷新），不是 chunk 的来源信息，所以环淘汰了字节之后、甚至缺口 chunk 本身也被淘汰之后，模型的丢失输出提示仍能点名该文件。浏览器通过 [`dsh-api-job-controller`](../../packages/api/job-controller/README.zh.md) 的 Remote 流 `job.rows` 与 `job.observe` 触达名册与环，其帧列于下文的 Cordis API 一节。
+每个 job 拥有一个有界的环。拉取源被泵入其中，`JobHandle.append` 的推送整块落地；模型通过注册表保管的游标（`JobRegistry.read`）消耗该环，任意数量的观察者按绝对字节偏移读取它（`JobRegistry.readAt`），二者互不干扰。`JobChannel` 标记 `stdout`、`stderr` 与 `log`；`log` 是只到达观察者、从不进入模型消耗式读取的生产方叙述。结算即封流并把保留量裁剪到结算上限——环没有独立的生命周期。拉取源保留的 spill 文件是 job 元数据（`JobView.output.spillPaths`，每次泵读取都会刷新），不是 chunk 的来源信息，所以环淘汰了字节之后、甚至缺口 chunk 本身也被淘汰之后，模型的丢失输出提示仍能点名该文件。浏览器通过 [`dsh-api-job-controller`](../../packages/api/job-controller/README.zh.md) 的 Remote 流 `job.list` 与 `job.follow` 触达名册与环，其帧列于下文的 Cordis API 一节。
 
 ```ts type-equiv
 /** One chunk of a job's output ring: absolute offset, text, and its provenance. */
@@ -193,7 +193,7 @@ interface JobChunk {
 ```
 
 ```ts type-equiv
-/** Result of one non-consuming {@link CallerJobs.readAt}. */
+/** Result of one non-consuming {@link JobRegistry.readAt}. */
 interface JobOutputRead {
   /** Retained chunks overlapping `[from, total)`, in offset order. */
   chunks: readonly JobChunk[]
@@ -257,10 +257,10 @@ interface JobView {
 }
 ```
 
-`JobRegistry.forCaller(caller)` 绑定一个调用方的身份并返回其操作；调用方看得到自己的 job 与所有无主 job，每个操作对该集合之外的 id 抛出。
+`JobRegistry` 的 `list`、`get`、`read`、`readAt`、`kill` 和 `wait` 各自接收调用方的 `SessionId`；省略调用方时仅可访问无主 job，传入会话时还可访问该会话拥有的 job。
 
 ```ts type-equiv
-/** Output and post-read state returned by the consuming {@link CallerJobs.read}. */
+/** Output and post-read state returned by the consuming {@link JobRegistry.read}. */
 interface JobRead {
   /** Ring chunks appended since the model cursor, in offset order; every channel included. */
   chunks: readonly JobChunk[]
@@ -273,65 +273,6 @@ interface JobRead {
 }
 ```
 
-```ts type-equiv
-/**
- * The operations one caller may perform, bound by {@link JobRegistry.forCaller}.
- * A caller sees its own jobs and every unowned job; every method throws for
- * an id outside that set, without distinguishing unknown from foreign.
- */
-interface CallerJobs {
-  /**
-   * List the visible jobs in registration order.
-   * @returns fresh projections.
-   */
-  list(): JobView[]
-  /**
-   * Project one job without touching its cursor.
-   * @param id - job to look up.
-   * @returns a fresh projection.
-   */
-  get(id: JobId): JobView
-  /**
-   * Consume the ring from the model cursor and advance it to the current
-   * total. After settlement the first read also carries the producer's
-   * result; later reads return only what was appended since.
-   * @param id - job to read.
-   * @returns the chunks since the cursor, the lossy flag, the result once, and the post-read projection.
-   */
-  read(id: JobId): JobRead
-  /**
-   * Read retained ring output from an absolute byte offset without consuming
-   * it. Resume by passing a previous read's `next`; an offset inside a
-   * retained chunk returns that whole chunk (its `at` may precede `from`).
-   * Never moves the model cursor. Throws for a negative or non-integer offset.
-   * @param id - job to read.
-   * @param from - absolute byte offset to read from (0 for the retained head).
-   * @returns retained chunks overlapping `[from, total)`, the resume offset, and the lossy flag.
-   */
-  readAt(id: JobId, from: number): JobOutputRead
-  /**
-   * Request cancellation, then mark the job stopping. A recorded
-   * {@link JobKillOptions.reason} merges into the terminal `detail` when the
-   * job settles `killed`. A producer throw propagates without changing job
-   * state.
-   * @param id - job to cancel.
-   * @param options - cancellation reason.
-   * @returns `requested` for live work, otherwise `already-finished`.
-   */
-  kill(id: JobId, options?: JobKillOptions): 'requested' | 'already-finished'
-  /**
-   * Wait for settlement or timeout without cancelling the job. Caller abort
-   * rejects only while the job is live; after settlement the terminal
-   * projection wins. Throws for an invalid timeout.
-   * @param id - job to wait for.
-   * @param timeoutMs - positive finite wait bound in milliseconds.
-   * @param signal - optional cancellation of the wait itself.
-   * @returns projection at settlement or timeout.
-   */
-  wait(id: JobId, timeoutMs: number, signal?: AbortSignal): Promise<JobView>
-}
-```
-
 ## 事件
 
 注册表通过一条带过滤的流宣布每次提交。生命周期事件携带其所宣布的提交之后的投影；`settled` 标出原因，完成播报方据此跳过 teardown；`output` 只携带 id 与新的 total，观察者从自己的游标读取，注册表从不推送负载。
@@ -340,7 +281,7 @@ interface CallerJobs {
 /**
  * One lifecycle or output event. Lifecycle events carry the job's projection
  * after the commit they announce; `output` carries only the id and the new
- * total, so an observer schedules a {@link CallerJobs.readAt} from its own
+ * total, so an observer schedules a {@link JobRegistry.readAt} from its own
  * cursor and the registry never pushes payloads.
  */
 type JobEvent =
@@ -379,7 +320,7 @@ type JobEventFilter =
 
 ## 服务行为
 
-抽象的 [`JobRegistry`](../../packages/jobs/jobs/src/index.ts) Service Definition 规定了原子化的 `start`、绑定调用方的 `forCaller`（`list`、`get`、消耗式 `read`、非消耗的 `readAt`、`kill` 与有界的 `wait`）、带过滤的 `events` 流，以及 `attachController`；[`LocalJobRegistry`](../../packages/jobs/jobs-local/src/index.ts) 是进程本地的 Service Provider。授权比较拥有者会话；拥有者清理与准入使用 job 启动时登记在该拥有者会话下的活体 `Agent`。本地提供方的正安全整数配置 `maxConcurrentJobsPerOwner` 默认为 `10`，按精确拥有者统计 `running` 加 `stopping` 记录，无主任务共享一个桶；生产方的终态结算释放容量；`retainBytes`（默认 262144）与 `settledRetainBytes`（默认 16384）约束每个环的运行期与结算后保留量，`pumpPollMs`（默认 150）是拉取节奏。参见 [`dsh-jobs`](../../packages/jobs/jobs/README.zh.md) 了解 Service Definition 约定，[`dsh-jobs-local`](../../packages/jobs/jobs-local/README.zh.md) 了解注册表生命周期与准入策略，[`dsh-tool-jobs`](../../packages/jobs/tool-jobs/README.zh.md) 了解面向模型的 Consumer。
+抽象的 [`JobRegistry`](../../packages/jobs/jobs/src/index.ts) Service Definition 规定了原子化的 `start`、各自接收调用方的 `list`、`get`、消耗式 `read`、非消耗的 `readAt`、`kill` 与有界的 `wait`、带过滤的 `events` 流，以及 `attachController`；[`LocalJobRegistry`](../../packages/jobs/jobs-local/src/index.ts) 是进程本地的 Service Provider。授权比较拥有者会话；拥有者清理与准入使用 job 启动时登记在该拥有者会话下的活体 `Agent`。本地提供方的正安全整数配置 `maxConcurrentJobsPerOwner` 默认为 `10`，按精确拥有者统计 `running` 加 `stopping` 记录，无主任务共享一个桶；生产方的终态结算释放容量；`retainBytes`（默认 262144）与 `settledRetainBytes`（默认 16384）约束每个环的运行期与结算后保留量，`pumpPollMs`（默认 150）是拉取节奏。参见 [`dsh-jobs`](../../packages/jobs/jobs/README.zh.md) 了解 Service Definition 约定，[`dsh-jobs-local`](../../packages/jobs/jobs-local/README.zh.md) 了解注册表生命周期与准入策略，[`dsh-tool-jobs`](../../packages/jobs/tool-jobs/README.zh.md) 了解面向模型的 Consumer。
 
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 
@@ -404,7 +345,7 @@ Host service backing the generated `ctx.remote.job` namespace.
  * @param signal - cancellation owned by the Remote stream carrier.
  * @returns the roster frames.
  */
-@Remote({ mode: 'stream' }) rows(request: JobRowsRequest, signal: AbortSignal): AsyncIterable<JobRowsFrame>
+@Remote({ mode: 'stream' }) list(request: JobListRequest, signal: AbortSignal): AsyncIterable<JobListFrame>
 
 /**
  * Stream one job's retained output from an absolute byte offset, then its
@@ -416,7 +357,7 @@ Host service backing the generated `ctx.remote.job` namespace.
  * @param signal - cancellation owned by the Remote stream carrier.
  * @returns anchor, coalesced output frames, and the terminal status.
  */
-@Remote({ mode: 'stream' }) observe(request: JobObserveRequest, signal: AbortSignal): AsyncIterable<JobObserveFrame>
+@Remote({ mode: 'stream' }) follow(request: JobFollowRequest, signal: AbortSignal): AsyncIterable<JobFollowFrame>
 
 /**
  * Kill one background job on a human's behalf. The request's session is
@@ -460,14 +401,67 @@ Implementations must honor these semantics:
 abstract start(spec: JobSpec): JobId
 
 /**
- * Bind the caller's identity once and return its operations. A caller sees
- * its own jobs and every unowned job; an anonymous caller sees unowned jobs
- * only. The operations resolve visibility on every call, so they stay valid
- * as jobs come and go.
- * @param caller - the calling session, or `undefined` for an anonymous caller.
- * @returns the operations available to that caller.
+ * List caller-owned and unowned jobs in registration order.
+ * @param caller - reading session; omission sees only unowned jobs.
+ * @returns fresh projections.
  */
-abstract forCaller(caller: SessionId | undefined): CallerJobs
+abstract list(caller?: SessionId): JobView[]
+
+/**
+ * Project one job without changing its cursor. Throws for an unknown or
+ * foreign job.
+ * @param id - job to look up.
+ * @param caller - reading session checked against the owner.
+ * @returns a fresh projection.
+ */
+abstract get(id: JobId, caller?: SessionId): JobView
+
+/**
+ * Consume the ring from the model cursor and advance it to the current
+ * total. After settlement the first read also carries the producer's
+ * result. Throws for an unknown or foreign job.
+ * @param id - job to read.
+ * @param caller - reading session checked against the owner.
+ * @returns the chunks since the cursor, the lossy flag, the result once, and the post-read projection.
+ */
+abstract read(id: JobId, caller?: SessionId): JobRead
+
+/**
+ * Read retained ring output without moving the model cursor. Resume with
+ * a previous read's `next`; an offset inside a retained chunk returns the
+ * whole chunk (its `at` may precede `from`). Throws for a negative or
+ * non-integer offset, or an unknown or foreign job.
+ * @param id - job to read.
+ * @param from - absolute byte offset to read from (0 for the retained head).
+ * @param caller - reading session checked against the owner.
+ * @returns retained chunks overlapping `[from, total)`, the resume offset, and the lossy flag.
+ */
+abstract readAt(id: JobId, from: number, caller?: SessionId): JobOutputRead
+
+/**
+ * Request cancellation, then mark the job stopping. A producer throw
+ * propagates without changing job state. A supplied reason is merged into
+ * terminal `detail` when the job settles `killed`. Throws for an unknown
+ * or foreign job.
+ * @param id - job to cancel.
+ * @param caller - killing session checked against the owner.
+ * @param reason - cancellation reason forwarded verbatim to the producer.
+ * @returns `requested` for live work, otherwise `already-finished`.
+ */
+abstract kill(id: JobId, caller?: SessionId, reason?: string): 'requested' | 'already-finished'
+
+/**
+ * Wait for settlement or timeout without cancelling the job. Caller abort
+ * rejects only while the job is live; after settlement the terminal
+ * projection wins. Rejects for an invalid timeout or an unknown or foreign
+ * job.
+ * @param id - job to wait for.
+ * @param timeoutMs - positive finite wait bound in milliseconds.
+ * @param caller - waiting session checked against the owner.
+ * @param signal - optional cancellation of the wait itself.
+ * @returns projection at settlement or timeout.
+ */
+abstract wait(id: JobId, timeoutMs: number, caller?: SessionId, signal?: AbortSignal): Promise<JobView>
 
 /**
  * Attach an effect-scoped controller that can read and stop jobs. It serves the

@@ -119,7 +119,7 @@ describe('background pwsh output', () => {
     pwsh.backgroundHandler = () => scripted.proc
 
     await call(ctx, { command: 'Get-Progress', description: 'test command', run_in_background: true })
-    const jobs = ctx.jobs.forCaller(undefined)
+    const jobs = ctx.jobs
     const job = jobs.list()[0]
     expect(job).toBeDefined()
     expect(job!.kind).toBe('pwsh')
@@ -163,7 +163,7 @@ describe('background pwsh output', () => {
     }
     pwsh.backgroundHandler = () => proc
     await call(ctx, { command: 'Get-Broken', description: 'test command', run_in_background: true })
-    const jobs = ctx.jobs.forCaller(undefined)
+    const jobs = ctx.jobs
     const job = jobs.list()[0]
     await until(() => warn.mock.calls.some(args => String(args[0]).includes('output source for')) ? true : undefined)
     // The reader already failed; the job must wait for real settlement rather
@@ -184,7 +184,7 @@ describe('background pwsh output', () => {
     pwsh.backgroundHandler = () => scripted.proc
 
     await call(ctx, { command: 'Start-Job', description: 'test command', run_in_background: true })
-    const jobs = ctx.jobs.forCaller(undefined)
+    const jobs = ctx.jobs
     const job = jobs.list()[0]
     expect(jobs.readAt(job!.id, 0).chunks).toEqual([])
 
@@ -213,14 +213,14 @@ describe('owned background output (pwsh)', () => {
       arguments: { command: 'Get-Slow', description: 'test command', run_in_background: true },
       agent: owner,
     })
-    const owned = ctx.jobs.forCaller(owner.id)
-    const job = owned.list()[0]
+    const owned = ctx.jobs
+    const job = owned.list(owner.id)[0]
     expect(job).toBeDefined()
     expect(job!.owner).toBe(owner.id)
-    expect(() => ctx.jobs.forCaller(undefined).readAt(job!.id, 0)).toThrow(/belongs to another session/)
-    expect(owned.readAt(job!.id, 0).chunks).toEqual([])
+    expect(() => ctx.jobs.readAt(job!.id, 0)).toThrow(/belongs to another session/)
+    expect(owned.readAt(job!.id, 0, owner.id).chunks).toEqual([])
     scripted.finish()
-    await until(() => owned.get(job!.id).status === 'completed' ? true : undefined)
+    await until(() => owned.get(job!.id, owner.id).status === 'completed' ? true : undefined)
   })
 })
 
@@ -271,7 +271,7 @@ describe('foreground timeout promotion (pwsh)', () => {
     expect(body).toContain('read newer output with job_output, stop it with job_kill')
     expect(scripted.offer.accepted).toBe(true)
 
-    const jobs = ctx.jobs.forCaller(undefined)
+    const jobs = ctx.jobs
     const job = jobs.list()[0]
     expect(job).toMatchObject({ id: 'pwsh-1', kind: 'pwsh', status: 'running' })
     // The ring starts where the promoted result stopped: the next read repeats nothing.
@@ -318,15 +318,15 @@ describe('foreground timeout promotion (pwsh)', () => {
       agent: owner,
     })
     expect((result.content[0] as { text: string }).text).toContain('moved to background job')
-    const owned = ctx.jobs.forCaller(owner.id)
-    const job = owned.list()[0]
+    const owned = ctx.jobs
+    const job = owned.list(owner.id)[0]
     expect(job).toBeDefined()
     expect(job!.owner).toBe(owner.id)
 
-    expect(owned.kill(job!.id, { reason: 'test cleanup' })).toBe('requested')
+    expect(owned.kill(job!.id, owner.id, 'test cleanup')).toBe('requested')
     await until(() => killed ? true : undefined)
     const settled = await until(() => {
-      const view = owned.get(job!.id)
+      const view = owned.get(job!.id, owner.id)
       return view.status === 'killed' ? view : undefined
     })
     expect(settled.detail).toBe('signal: SIGTERM; test cleanup')

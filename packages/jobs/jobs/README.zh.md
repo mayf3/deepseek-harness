@@ -77,14 +77,14 @@ kind: "package-reference"
 | 文件 | 职责 |
 |---|---|
 | [`src/index.ts`](src/index.ts) | 插件入口：抽象 `JobRegistry` 服务及其约定 |
-| [`src/types.ts`](src/types.ts) | 共享词汇：`JobSpec`、`JobHandle`、`JobHooks`、`JobOutcome`、`CallerJobs`、`JobEvent` 与读取结果 |
+| [`src/types.ts`](src/types.ts) | 共享词汇：`JobSpec`、`JobHandle`、`JobHooks`、`JobOutcome`、`JobEvent` 与读取结果 |
 | [`src/view.ts`](src/view.ts) | 客户端安全叶子：`JobView`、`JobChunk`、`JobStatus` 与可合并扩展的 `JobKindMap` |
 | [`src/brand.ts`](src/brand.ts) | `JobId` 带类型标记的标识符，无需 agent 依赖即可导入 |
 | [`src/invariant.ts`](src/invariant.ts) | 不变式伴生插件：校验每个 job 的事件协议（先 registered、恰一次结算、最后 removed）以及每个通告的投影与注册表自身读取的一致性 |
 
 ### 服务操作
 
-每个操作都是已注册任务之上的薄投影，由 `forCaller` 绑定到一个调用方：`list` 与 `get` 返回全新投影，`read` 推进模型游标并在结算后把生产方的 result 交出一次，`readAt` 按绝对偏移读取保留块且不消耗任何东西，`kill` 在改变状态前调用生产方取消并为终态 `detail` 记录原因，`wait` 阻塞至超时，`start()` 在调用生产方 `run()` 一次之前预检访问、校验与准入，同时拒绝任何没有已附加控制器服务的所有者；`events.subscribe` 按所有者、scope 或进程粒度投递注册、进度、停止中、结算、移除与输出提交。
+每个读取或控制操作接收可选的调用方 `SessionId`，省略时仅允许访问无主 job：`list` 与 `get` 返回全新投影，`read` 推进模型游标并在结算后把生产方的 result 交出一次，`readAt` 按绝对偏移读取保留块且不消耗任何东西，`kill` 在改变状态前调用生产方取消并为终态 `detail` 记录原因，`wait` 阻塞至超时，`start()` 在调用生产方 `run()` 一次之前预检访问、校验与准入，同时拒绝任何没有已附加控制器服务的所有者；`events.subscribe` 按所有者、scope 或进程粒度投递注册、进度、停止中、结算、移除与输出提交。
 
 </details>
 

@@ -1,7 +1,7 @@
 /** Per-session roster generations: the caller-visible job set, replaced whole after every lifecycle change. */
 
 import type { JobRegistry } from '@deepseek-ai/dsh-jobs'
-import type { JobRowsFrame, JobRowsRequest } from './types.ts'
+import type { JobListFrame, JobListRequest } from './types.ts'
 import { OutputWaiter, sleep } from './wake.ts'
 
 /** Cadence bound for one roster generation. */
@@ -25,10 +25,10 @@ export interface RowsOptions {
  */
 export async function* streamJobRows(
   registry: JobRegistry,
-  request: JobRowsRequest,
+  request: JobListRequest,
   options: RowsOptions,
   signal: AbortSignal,
-): AsyncIterable<JobRowsFrame> {
+): AsyncIterable<JobListFrame> {
   signal.throwIfAborted()
   const waiter = new OutputWaiter()
   // Subscribe before the first read so a commit between the read and the
@@ -39,14 +39,13 @@ export async function* streamJobRows(
     if (owner === undefined || owner === request.sessionId) waiter.wake()
   })
   try {
-    const visible = registry.forCaller(request.sessionId)
-    yield { type: 'rows', jobs: visible.list() }
+    yield { type: 'rows', jobs: registry.list(request.sessionId) }
     while (true) {
       await waiter.wait(signal)
       // Let a burst of commits settle into one frame.
       await sleep(options.flushMs, signal)
       if (signal.aborted) return
-      yield { type: 'rows', jobs: visible.list() }
+      yield { type: 'rows', jobs: registry.list(request.sessionId) }
     }
   } finally {
     unsubscribe()

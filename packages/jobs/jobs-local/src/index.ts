@@ -18,8 +18,8 @@ import type { SessionId } from '@deepseek-ai/dsh-session'
 import { deadline, timeoutOf } from '@deepseek-ai/dsh-timeout'
 import { JobRegistry, JobId } from '@deepseek-ai/dsh-jobs'
 import type {
-  JobAppendOptions, JobEvent, JobEvents, JobHandle, JobKillOptions, JobKind, JobOutcome, JobOutputRead, JobOutputSource,
-  JobRead, JobSettleCause, JobSpec, JobStatus, JobView, CallerJobs,
+  JobAppendOptions, JobEvent, JobEvents, JobHandle, JobKind, JobOutcome, JobOutputRead, JobOutputSource,
+  JobRead, JobSettleCause, JobSpec, JobStatus, JobView,
 } from '@deepseek-ai/dsh-jobs'
 import { JobEventHub, JobLayer } from './events.ts'
 import { startPump } from './pump.ts'
@@ -83,7 +83,7 @@ interface TrackedJob {
   cancel: (reason?: string) => void
   status: JobStatus
   ring: OutputRing
-  /** The model's consuming cursor; {@link CallerJobs.readAt} never moves it. */
+  /** The model's consuming cursor; {@link JobRegistry.readAt} never moves it. */
   modelCursor: number
   /** Whether the first post-settlement read already handed out `result`. */
   resultDelivered: boolean
@@ -94,7 +94,7 @@ interface TrackedJob {
   result: string | undefined
   startedAt: number
   finishedAt: number | undefined
-  /** Reason recorded by {@link CallerJobs.kill}, merged into a `killed` settlement's detail. */
+  /** Reason recorded by {@link JobRegistry.kill}, merged into a `killed` settlement's detail. */
   killReason: string | undefined
   /** Set once a kill or teardown cancel ran; settlement reports it as the cause. */
   settleCause: JobSettleCause | undefined
@@ -303,22 +303,34 @@ export class LocalJobRegistry extends JobRegistry {
     return id
   }
 
-  forCaller(caller: SessionId | undefined): CallerJobs {
-    const reach = (id: JobId): TrackedJob => {
-      const job = this.expect(id)
-      this.assertAccess(job, caller)
-      return job
+  list(caller?: SessionId): JobView[] {
+    return [...this.store.values()]
+      .filter(job => job.owner === undefined || job.owner.id === caller)
+      .map(job => this.view(job))
+  }
+
+  get(id: JobId, caller?: SessionId): JobView {
+    return this.view(this.expect(id, caller))
+  }
+
+  read(id: JobId, caller?: SessionId): JobRead {
+    return this.readJob(this.expect(id, caller))
+  }
+
+  readAt(id: JobId, from: number, caller?: SessionId): JobOutputRead {
+    const job = this.expect(id, caller)
+    if (!Number.isSafeInteger(from) || from < 0) {
+      throw new Error(`invalid output read offset: expected a non-negative safe integer, got ${JSON.stringify(from)}`)
     }
-    return {
-      list: () => [...this.store.values()]
-        .filter(job => job.owner === undefined || job.owner.id === caller)
-        .map(job => this.view(job)),
-      get: id => this.view(reach(id)),
-      read: id => this.readJob(reach(id)),
-      readAt: (id, from) => this.readAt(reach(id), from),
-      kill: (id, options) => this.killJob(reach(id), options),
-      wait: async (id, timeoutMs, signal) => this.waitJob(reach(id), timeoutMs, signal),
-    }
+    return job.ring.readFrom(from)
+  }
+
+  kill(id: JobId, caller?: SessionId, reason?: string): 'requested' | 'already-finished' {
+    return this.killJob(this.expect(id, caller), reason)
+  }
+
+  async wait(id: JobId, timeoutMs: number, caller?: SessionId, signal?: AbortSignal): Promise<JobView> {
+    return this.waitJob(this.expect(id, caller), timeoutMs, signal)
   }
 
   attachController(name: string): () => void {
@@ -372,10 +384,11 @@ export class LocalJobRegistry extends JobRegistry {
     return count
   }
 
-  /** Look up a job or fail loud. */
-  private expect(id: JobId): TrackedJob {
+  /** Look up a job and enforce caller access. */
+  private expect(id: JobId, caller?: SessionId): TrackedJob {
     const job = this.store.get(id)
     if (job === undefined) throw new Error(`unknown job ${id}`)
+    this.assertAccess(job, caller)
     return job
   }
 
@@ -436,20 +449,13 @@ export class LocalJobRegistry extends JobRegistry {
     }
   }
 
-  private readAt(job: TrackedJob, from: number): JobOutputRead {
-    if (!Number.isSafeInteger(from) || from < 0) {
-      throw new Error(`invalid output read offset: expected a non-negative safe integer, got ${JSON.stringify(from)}`)
-    }
-    return job.ring.readFrom(from)
-  }
-
-  private killJob(job: TrackedJob, options?: JobKillOptions): 'requested' | 'already-finished' {
+  private killJob(job: TrackedJob, reason?: string): 'requested' | 'already-finished' {
     if (isTerminal(job.status)) return 'already-finished'
     // Cancel first so a throw leaves lifecycle state unchanged.
-    job.cancel(options?.reason)
+    job.cancel(reason)
     job.status = 'stopping'
     // Last writer wins on purpose: the detail reports the latest kill intent.
-    if (options?.reason !== undefined) job.killReason = options.reason
+    if (reason !== undefined) job.killReason = reason
     job.settleCause = 'kill'
     this.emit({ type: 'stopping', job: this.view(job) }, job.owner)
     return 'requested'

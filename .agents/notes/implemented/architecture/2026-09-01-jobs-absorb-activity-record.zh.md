@@ -2,7 +2,7 @@
 
 Status: implemented
 
-Superseded：下文描述的 record 声明（`JobStart.record`、`RecordingJob`、`readRecord`、`pumpJobOutput`）与拆分的线路（会话控制流上的 `SessionJob.record`、`ctx.jobOutput`）已收敛为一个输出环、`CallerJobs` 与 `ctx.jobs`——见 [jobs seam 收敛](2026-09-03-jobs-seam-consolidation.zh.md)。把独立 activity seam 吸收进 `ctx.jobs` 的论证仍然成立。
+Superseded：下文描述的 record 声明（`JobStart.record`、`RecordingJob`、`readRecord`、`pumpJobOutput`）与拆分的线路（会话控制流上的 `SessionJob.record`、`ctx.jobOutput`）已收敛为一个输出环与 `ctx.jobs` 上的直接操作——见 [jobs seam 收敛](2026-09-03-jobs-seam-consolidation.zh.md)。把独立 activity seam 吸收进 `ctx.jobs` 的论证仍然成立。
 
 [English](2026-09-01-jobs-absorb-activity-record.md) | 中文
 
@@ -20,7 +20,7 @@ Superseded：下文描述的 record 声明（`JobStart.record`、`RecordingJob`�
 - **没有 `end`。** job 结算——生产者 outcome、kill 或 teardown——是 record 唯一的关闭：裁剪到结算保留量并发出最后一个 `onOutput` 信号。双结算配对（`ActivityHandle.end` 与 teardown 强结的 first-wins 对账）被删除，而非重新实现。
 - **`readRecord(id, from, caller)`** 是非消耗多读者视图（绝对 UTF-8 偏移，低于保留窗口为 `lossy`），围栏与其他 job 读取一致；永不置 `reported`。模型面的 `readOutput` 游标原样保留——两个投影服务不同读者，刻意保持分离。
 - **`jobs-local`** 吸收块环（`retainBytes` 运行期 256 KiB，`settledRetainBytes` 结算后 16 KiB），`pumpJobOutput` 在 seam 旁替换 `pumpActivityOutput`。生产者把 pump 的末次排空折进 `hooks.done`，让 record 在结算关闭前握有最后的字节。
-- **wire 按角色拆分。** `SessionJob.record`（恰在 record job 上存在）在会话控制流上标记行可观测；`api-job-controller` 的 `job` 命名空间上的 `job.observe({sessionId?, jobId, from?})` 流式发送 anchor/output/status 帧，围栏读取者由请求的 session 解析。`api-activity-controller` 删除；其名册流是冗余的（jobs 帧就是名册），observe 机制位于 `api-job-controller`（`observe.ts`，客户端 `ctx.jobOutput`），它在自己的 apply 里解析所依赖的 Remote 面。
+- **wire 按角色拆分。** `SessionJob.record`（恰在 record job 上存在）在会话控制流上标记行可观测；`api-job-controller` 的 `job` 命名空间上的 `job.follow({sessionId?, jobId, from?})` 流式发送 anchor/output/status 帧，围栏读取者由请求的 session 解析。`api-activity-controller` 删除；其名册流是冗余的（jobs 帧就是名册），observe 机制位于 `api-job-controller`（`observe.ts`，客户端 `ctx.jobOutput`），它在自己的 apply 里解析所依赖的 Remote 面。
 - **`ui-activity` 改回上游名字 `ui-jobs`**，渲染单一名册：`jobsBySession` 行，恰在 `record` 存在时可展开。双名册 join 被删除。
 - **前台 workflow 有意失去实时面板。** `tool-workflow` 的 activity 镜像被移除；前台 run 只通过已记录的 run/member 生命周期事件呈现，逐行的 `workflow/phase` / `workflow/log` 叙述在 workflow 获得 `run_in_background` 并登记 record job 之前没有观察者。jobs 保持纯后台注册表——没有 `foreground` 模式位、没有模型不可见行、没有无 run 行。
 

@@ -15,7 +15,7 @@ import { apiSessionSubagentOwnershipError, hasApiSessionSubagentOwner } from '@d
 import { Remote, RemoteError, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import { observeJobOutput } from './observe.ts'
 import { streamJobRows } from './rows.ts'
-import type { JobKillRequest, JobKillValue, JobObserveFrame, JobObserveRequest, JobRowsFrame, JobRowsRequest } from './types.ts'
+import type { JobKillRequest, JobKillValue, JobFollowFrame, JobFollowRequest, JobListFrame, JobListRequest } from './types.ts'
 
 export type * from './types.ts'
 
@@ -74,7 +74,7 @@ export class JobController extends TypertRemoteService {
    * @returns the roster frames.
    */
   @Remote({ mode: 'stream' })
-  rows(request: JobRowsRequest, signal: AbortSignal): AsyncIterable<JobRowsFrame> {
+  list(request: JobListRequest, signal: AbortSignal): AsyncIterable<JobListFrame> {
     return streamJobRows(this.ctx.jobs, request, { flushMs: this.observeFlushMs }, signal)
   }
 
@@ -89,7 +89,7 @@ export class JobController extends TypertRemoteService {
    * @returns anchor, coalesced output frames, and the terminal status.
    */
   @Remote({ mode: 'stream' })
-  observe(request: JobObserveRequest, signal: AbortSignal): AsyncIterable<JobObserveFrame> {
+  follow(request: JobFollowRequest, signal: AbortSignal): AsyncIterable<JobFollowFrame> {
     return observeJobOutput(this.ctx.jobs, request, {
       flushMs: this.observeFlushMs,
       maxFrameBytes: this.observeMaxFrameBytes,
@@ -112,9 +112,9 @@ export class JobController extends TypertRemoteService {
     if (agent !== undefined && hasApiSessionSubagentOwner(this.ctx, agent.session, agent)) {
       throw apiSessionSubagentOwnershipError(request.sessionId)
     }
-    const jobs = this.ctx.jobs.forCaller(request.sessionId)
+    const jobs = this.ctx.jobs
     try {
-      jobs.get(request.jobId)
+      jobs.get(request.jobId, request.sessionId)
     } catch (error) {
       // `unknown job` and `belongs to another session` both mean this session's
       // list no longer carries a killable row; the client renders one story.
@@ -126,7 +126,7 @@ export class JobController extends TypertRemoteService {
     // Same synchronous span as the lookup, so nothing can remove the job in
     // between — and a producer-cancel throw propagates per the registry
     // contract (job state unchanged) instead of masquerading as job-not-found.
-    const outcome = jobs.kill(request.jobId, { reason: 'cancelled by the user' })
+    const outcome = jobs.kill(request.jobId, request.sessionId, 'cancelled by the user')
     return { outcome }
   }
 }

@@ -55,7 +55,7 @@ kind: "package-reference"
 
 ### 超时转后台
 
-到达超时的前台命令默认不再被杀：执行器把仍在运行的进程交还回来，工具将它注册为后台任务，调用带着任务 id 与已捕获的输出返回——任务的消费游标恰好从此处接续。转移结果呈现为 `[still running after <timeoutMs>ms; moved to background job <id>]` 加任务交接指引，该运行的 observed 流也像任何后台调用一样从当前偏移起填充任务注册表的输出环，Web 任务列表经 `job.rows` 与 `job.observe` 随即可流式观看（含停止控件）。转移严格尽力而为：`promoteOnTimeout: false`、缺少任务注册表或任务准入被拒都会回落到普通的超时杀，工具描述也只在语义成立时才宣传它。
+到达超时的前台命令默认不再被杀：执行器把仍在运行的进程交还回来，工具将它注册为后台任务，调用带着任务 id 与已捕获的输出返回——任务的消费游标恰好从此处接续。转移结果呈现为 `[still running after <timeoutMs>ms; moved to background job <id>]` 加任务交接指引，该运行的 observed 流也像任何后台调用一样从当前偏移起填充任务注册表的输出环，Web 任务列表经 `job.list` 与 `job.follow` 随即可流式观看（含停止控件）。转移严格尽力而为：`promoteOnTimeout: false`、缺少任务注册表或任务准入被拒都会回落到普通的超时杀，工具描述也只在语义成立时才宣传它。
 
 ### Windows 特有的沙箱行为
 

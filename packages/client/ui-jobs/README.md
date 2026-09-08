@@ -29,7 +29,7 @@ Load the plugin through the web-app manifest; it renders nothing until the sessi
 
 ### One row per job
 
-The `job.rows` stream `ctx.jobs` mirrors is the single roster: each `JobView` row carries lifecycle, duration, the live `progress` line or the terminal `detail`, and its retained byte count — a live job, or a settled one with retained output, is what makes a row expandable. There is no second roster to join.
+The `job.list` stream `ctx.jobs` mirrors is the single roster: each `JobView` row carries lifecycle, duration, the live `progress` line or the terminal `detail`, and its retained byte count — a live job, or a settled one with retained output, is what makes a row expandable. There is no second roster to join.
 
 Running job rows also carry a two-press stop control: the first press arms it, the confirming press within three seconds calls `ctx.jobs.kill`, and the row converges through the roster stream (`stopping`, then the settled section, whose detail carries `cancelled by the user`). The kill claims nothing in the model's notice ledger, so the owning agent still receives the standard completion notice — the model is told the user stopped its task rather than left to infer it ([decision](../../../.agents/notes/implemented/feature/2026-08-26-human-job-kill.md)). The settled section folds behind its count while live work exists and can be cleared client-side.
 
@@ -45,7 +45,7 @@ Expanding an observable row opens that job's output observation stream from `ctx
 <details>
 <summary>Implementation internals — click to expand</summary>
 
-One slot entry in the header actions band (after the preset label, before the subagent catalog) renders the trigger and popover; the popover fits itself to the viewport by measuring its anchor. All data arrives through `ctx.jobs` — the component holds no transport state. The roster follows the mount: one `useEffect` keeps the session's `job.rows` stream open while the control lives. Observation follows visibility: another `useEffect` opens the stream for the expanded row's job and closes it on collapse, unmount, or popover close.
+One slot entry in the header actions band (after the preset label, before the subagent catalog) renders the trigger and popover; the popover fits itself to the viewport by measuring its anchor. All data arrives through `ctx.jobs` — the component holds no transport state. The roster follows the mount: one `useEffect` keeps the session's `job.list` stream open while the control lives. Observation follows visibility: another `useEffect` opens the stream for the expanded row's job and closes it on collapse, unmount, or popover close.
 
 | File | Role |
 |---|---|
@@ -60,7 +60,7 @@ One slot entry in the header actions band (after the preset label, before the su
 <a id="further-exploration"></a>
 ## Further Exploration
 
-- [`dsh-api-job-controller`](../../api/job-controller/README.md) — the `job.rows` and `job.observe` streams, the `job.kill` Remote, and the `ctx.jobs` service behind the rows, the panel, and the stop control.
+- [`dsh-api-job-controller`](../../api/job-controller/README.md) — the `job.list` and `job.follow` streams, the `job.kill` Remote, and the `ctx.jobs` service behind the rows, the panel, and the stop control.
 - [`dsh-jobs`](../../jobs/jobs/README.md) — the registry contract that owns the ring and projection semantics.
 - [`dsh-client-ui-primitives`](../ui-primitives/README.md) — the `TerminalBlock` surface the panel configures.
 

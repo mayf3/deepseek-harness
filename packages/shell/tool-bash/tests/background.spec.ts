@@ -64,7 +64,7 @@ async function until<T>(read: () => T | undefined, timeoutMs = 5_000): Promise<T
 }
 
 function retainedText(ctx: Context, id: JobId, caller?: Agent): string {
-  return ctx.jobs.forCaller(caller?.id).readAt(id, 0).chunks.map(chunk => chunk.text).join('')
+  return ctx.jobs.readAt(id, 0, caller?.id).chunks.map(chunk => chunk.text).join('')
 }
 
 describe('background bash output', () => {
@@ -76,7 +76,7 @@ describe('background bash output', () => {
       run_in_background: true,
     })
     expect(text(ack)).toContain('started background job')
-    const jobs = ctx.jobs.forCaller(undefined)
+    const jobs = ctx.jobs
     const job = jobs.list()[0]
     expect(job).toBeDefined()
 
@@ -98,9 +98,9 @@ describe('background bash output', () => {
   it('a killed background job settles killed with the kill reason merged into its detail', async () => {
     const ctx = await setup()
     await call(ctx, { command: 'sleep 60', description: 'test command', run_in_background: true })
-    const jobs = ctx.jobs.forCaller(undefined)
+    const jobs = ctx.jobs
     const job = jobs.list()[0]
-    jobs.kill(job!.id, { reason: 'test cleanup' })
+    jobs.kill(job!.id, undefined, 'test cleanup')
     await until(() => jobs.get(job!.id).status === 'killed' ? true : undefined)
     expect(jobs.get(job!.id).detail).toMatch(/(signal|killed before exit).*; test cleanup$/)
   })
@@ -114,7 +114,7 @@ describe('background bash output', () => {
       run_in_background: true,
     })
     expect(text(started)).toMatch(/^started background job bash-\d+$/)
-    const jobs = ctx.jobs.forCaller(undefined)
+    const jobs = ctx.jobs
     const job = jobs.list()[0]
     await until(() => jobs.get(job!.id).status === 'killed' ? true : undefined)
     const read = text(await ctx.tools.execute({
@@ -133,7 +133,7 @@ describe('background bash output', () => {
       description: 'test command',
       run_in_background: true,
     })
-    const jobs = ctx.jobs.forCaller(undefined)
+    const jobs = ctx.jobs
     const job = jobs.list()[0]
     await until(() => jobs.get(job!.id).status === 'completed' ? true : undefined)
     const chunks = jobs.readAt(job!.id, 0).chunks
@@ -207,7 +207,7 @@ describe('foreground timeout promotion', () => {
     expect(body).toContain('read newer output with job_output, stop it with job_kill')
     expect(body.indexOf('early-output')).toBeLessThan(body.indexOf('[still running'))
 
-    const jobs = ctx.jobs.forCaller(undefined)
+    const jobs = ctx.jobs
     const job = jobs.list()[0]
     expect(job).toMatchObject({ id: 'bash-1', kind: 'bash', status: 'running', label: 'printf "early-output\\n"; sleep 30' })
 
@@ -216,7 +216,7 @@ describe('foreground timeout promotion', () => {
     await new Promise(resolve => setTimeout(resolve, 100))
     expect(retainedText(ctx, job!.id)).not.toContain('early-output')
     expect(jobs.read(job!.id).chunks).toEqual([])
-    expect(jobs.kill(job!.id, { reason: 'test cleanup' })).toBe('requested')
+    expect(jobs.kill(job!.id, undefined, 'test cleanup')).toBe('requested')
     await until(() => jobs.get(job!.id).status === 'killed' ? true : undefined)
   })
 
@@ -237,13 +237,13 @@ describe('foreground timeout promotion', () => {
       agent: owner,
     })
     expect(text(result)).toContain('moved to background job')
-    const owned = ctx.jobs.forCaller(owner.id)
-    const job = owned.list()[0]
+    const owned = ctx.jobs
+    const job = owned.list(owner.id)[0]
     expect(job).toBeDefined()
     expect(job!.owner).toBe(owner.id)
-    expect(() => ctx.jobs.forCaller(undefined).readAt(job!.id, 0)).toThrow(/belongs to another session/)
-    expect(owned.kill(job!.id, { reason: 'test cleanup' })).toBe('requested')
-    await until(() => owned.get(job!.id).status === 'killed' ? true : undefined)
+    expect(() => ctx.jobs.readAt(job!.id, 0)).toThrow(/belongs to another session/)
+    expect(owned.kill(job!.id, owner.id, 'test cleanup')).toBe('requested')
+    await until(() => owned.get(job!.id, owner.id).status === 'killed' ? true : undefined)
   })
 
   it('falls back to the timeout kill when the job admission refuses the promotion', async () => {
@@ -290,7 +290,7 @@ describe('foreground timeout promotion', () => {
     await ctx.plugin(ToolBash, { promoteOnTimeout: false })
     const result = await call(ctx, { command: 'sleep 30', description: 'test command', timeoutMs: 250 })
     expect(text(result)).toContain('[timed out after 250ms]')
-    expect(ctx.jobs.forCaller(undefined).list()).toEqual([])
+    expect(ctx.jobs.list()).toEqual([])
     const description = ctx.tools.get('bash')?.description ?? ''
     expect(description).not.toContain('moves to the background')
   })
@@ -335,11 +335,11 @@ describe('owned background output', () => {
       arguments: { command: 'echo owned', description: 'test command', run_in_background: true },
       agent: owner,
     })
-    const owned = ctx.jobs.forCaller(owner.id)
-    const job = owned.list()[0]
+    const owned = ctx.jobs
+    const job = owned.list(owner.id)[0]
     expect(job).toBeDefined()
     expect(job!.owner).toBe(owner.id)
-    await until(() => owned.get(job!.id).status === 'completed' ? true : undefined)
+    await until(() => owned.get(job!.id, owner.id).status === 'completed' ? true : undefined)
     expect(() => retainedText(ctx, job!.id)).toThrow(/belongs to another session/)
     await until(() => retainedText(ctx, job!.id, owner).includes('owned') ? true : undefined)
   })

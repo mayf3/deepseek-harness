@@ -43,7 +43,7 @@ describe('streamJobRows', () => {
 
     job.progress('3/10')
     expect((await next(iterator))?.jobs[0]).toMatchObject({ progress: '3/10' })
-    ctx.jobs.forCaller(alice.id).kill(job.id, { reason: 'enough' })
+    ctx.jobs.kill(job.id, alice.id, 'enough')
     expect((await next(iterator))?.jobs[0]).toMatchObject({ status: 'stopping', progress: '3/10' })
     startJob(ctx, { label: 'second', owner: alice.id })
     expect((await next(iterator))?.jobs.map(entry => entry.label)).toEqual(['first', 'second'])

@@ -2,7 +2,7 @@
 
 Status: implemented
 
-Superseded: the roster this note put on the session control stream (`jobsBySession`, `onJobsChanged`) now streams from the job controller's `job.rows` into `ctx.jobs` — see [the jobs seam consolidation](../architecture/2026-09-03-jobs-seam-consolidation.md). The display decisions below (one roster, sections, durations, no kill control) still hold.
+Superseded: the roster this note put on the session control stream (`jobsBySession`, `onJobsChanged`) now streams from the job controller's `job.list` into `ctx.jobs` — see [the jobs seam consolidation](../architecture/2026-09-03-jobs-seam-consolidation.md). The display decisions below (one roster, sections, durations, no kill control) still hold.
 
 Update: the output phase this note deferred now ships as the per-job observation record on `ctx.jobs` — see [jobs absorb the record](../architecture/2026-09-01-jobs-absorb-activity-record.md).
 

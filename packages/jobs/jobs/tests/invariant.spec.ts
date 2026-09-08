@@ -28,13 +28,11 @@ async function setup() {
   const reads = new Map<string, JobView>()
   let listener: JobEventListener | undefined
   const probe = {
-    forCaller: (caller?: SessionId) => ({
-      get: (id: JobId) => {
-        const view = reads.get(String(id))
-        if (view === undefined || view.owner !== caller) throw new Error(`unknown job ${String(id)}`)
-        return view
-      },
-    }),
+    get: (id: JobId, caller?: SessionId) => {
+      const view = reads.get(String(id))
+      if (view === undefined || view.owner !== caller) throw new Error(`unknown job ${String(id)}`)
+      return view
+    },
     events: {
       subscribe(_filter: unknown, value: JobEventListener) {
         listener = value

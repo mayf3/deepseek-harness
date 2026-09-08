@@ -585,7 +585,7 @@ describe('job_kill', () => {
     expect(result.isError).toBe(true)
     expect(Buffer.byteLength(text(result))).toBeLessThanOrEqual(64)
     expect(text(result)).toContain('[result truncated]')
-    expect(ctx.jobs.forCaller(undefined).get(JobId('bash-1')).status).toBe('running')
+    expect(ctx.jobs.get(JobId('bash-1')).status).toBe('running')
   })
 
   it('bounds single-text post policy while preserving structured policy results', async () => {
@@ -738,7 +738,7 @@ describe('completion notice delivery', () => {
 
     // A kill outside the model's own job_kill (the web client's stop button)
     // claims nothing in the ledger, so the notice stays due.
-    ctx.jobs.forCaller(owner.id).kill(id, { reason: 'cancelled by the user' })
+    ctx.jobs.kill(id, owner.id, 'cancelled by the user')
     p.settle({ status: 'killed', detail: 'signal: SIGTERM' })
     await tick()
     expect(inject).toHaveBeenCalledTimes(1)

@@ -1,7 +1,7 @@
 /**
  * React-free client job state: the roster each watched session can see, fed
- * by `job.rows` frames, and per-job accumulated output views fed by
- * `job.observe` frames. Pure data plus subscriptions — transport wiring stays
+ * by `job.list` frames, and per-job accumulated output views fed by
+ * `job.follow` frames. Pure data plus subscriptions — transport wiring stays
  * in the client service, UI stays in slot components.
  * @module @deepseek-ai/dsh-api-job-controller/client/model
  */
@@ -10,7 +10,7 @@ import { notifySubscribers } from '@deepseek-ai/dsh-client-store'
 import type { JobId } from '@deepseek-ai/dsh-jobs/brand'
 import type { JobView } from '@deepseek-ai/dsh-jobs/view'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
-import type { JobObserveFrame } from '../types.ts'
+import type { JobFollowFrame } from '../types.ts'
 
 /** Bounded per-job render tail, in UTF-16 code units. */
 const RENDER_TAIL_LIMIT = 128 * 1024
@@ -123,7 +123,7 @@ export class ClientJobsModel implements JobsSource {
    * @param id - observed job.
    * @param frame - the generation's `opened` anchor.
    */
-  observeOpened(id: JobId, frame: Extract<JobObserveFrame, { type: 'opened' }>): void {
+  observeOpened(id: JobId, frame: Extract<JobFollowFrame, { type: 'opened' }>): void {
     const existing = this.observedStates.get(String(id))
     // A fresh view anchored past offset zero starts after an evicted head
     // (fresh observations anchor at the registry's earliest retained byte), so
@@ -145,7 +145,7 @@ export class ClientJobsModel implements JobsSource {
    * @param id - observed job.
    * @param frame - a coalesced `output` frame.
    */
-  observeOutput(id: JobId, frame: Extract<JobObserveFrame, { type: 'output' }>): void {
+  observeOutput(id: JobId, frame: Extract<JobFollowFrame, { type: 'output' }>): void {
     const state = this.observedStates.get(String(id))
     /* v8 ignore next -- frames arrive only between opened and stop for a tracked id. */
     if (state === undefined) return

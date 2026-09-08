@@ -95,7 +95,7 @@ kind: "package-reference"
 
 ### 准入与结算
 
-`activeTaskCount` 按精确所有者或共享无主桶统计权威记录。`settle` 只记录一次终止结果（把记录下来的 kill 原因合并进 `killed` 的 detail），清除进度行，把环裁剪到结算保留量（保留模型游标尚未消费的全部字节），解析每个等待方，然后发出带原因的 `settled` 与环的最终 `output` 信号。原因在 `CallerJobs.kill` 之后为 `kill`，在所有者或服务取消之后为 `teardown`，否则为 `producer`；`dsh-tool-jobs` 据此跳过没人能读的通知。
+`activeTaskCount` 按精确所有者或共享无主桶统计权威记录。`settle` 只记录一次终止结果（把记录下来的 kill 原因合并进 `killed` 的 detail），清除进度行，把环裁剪到结算保留量（保留模型游标尚未消费的全部字节），解析每个等待方，然后发出带原因的 `settled` 与环的最终 `output` 信号。原因在 `JobRegistry.kill` 之后为 `kill`，在所有者或服务取消之后为 `teardown`，否则为 `producer`；`dsh-tool-jobs` 据此跳过没人能读的通知。
 
 ### 销毁
 
