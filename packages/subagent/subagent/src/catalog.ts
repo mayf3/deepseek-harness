@@ -13,6 +13,7 @@ import type {
   SessionLogOffset,
 } from '@deepseek-ai/dsh-session'
 import type { ProjectionDefinition } from '@deepseek-ai/dsh-session-projection'
+import type { SubagentCatalogEntry } from './projection-types.ts'
 
 /** Current payload version for `subagent/catalog` events. */
 export const SUBAGENT_CATALOG_VERSION = 0
@@ -38,27 +39,13 @@ declare module '@deepseek-ai/dsh-session/types' {
   }
 }
 
-/** One current direct-child discovery row materialized from parent facts. */
-export type SubagentCatalogEntry =
-  & {
-    readonly id: SessionId
-    readonly createdAt: number
-  }
-  & (
-    | { readonly mode: 'one-shot'; readonly label?: string }
-    | { readonly mode: 'continuable'; readonly label: string }
-  )
-
 /** A fixed-size persistent stack node; newest facts occupy the head chunk. */
 interface CatalogChunk {
   readonly facts: readonly SubagentCatalogEvent[]
   readonly previous?: CatalogChunk | undefined
 }
 
-/**
- * Host fold state for one parent catalog. A cold reader detaches it from a
- * Session observation for direct-child materialization.
- */
+/** Host fold state for one parent catalog. */
 export interface SubagentCatalogState {
   readonly inheritedEventCount: SessionLogOffset
   readonly head?: CatalogChunk | undefined
@@ -83,6 +70,16 @@ const eventDataSchema = z.union([
   oneShotCatalogSchema,
   continuableCatalogSchema,
 ]) as unknown as z.ZodType<SubagentCatalogEvent>
+const viewSchema = z.array(z.union([
+  oneShotCatalogSchema.omit({ version: true, childId: true, childCreatedAt: true }).extend({
+    id: sessionIdSchema,
+    createdAt: oneShotCatalogSchema.shape.childCreatedAt,
+  }),
+  continuableCatalogSchema.omit({ version: true, childId: true, childCreatedAt: true }).extend({
+    id: sessionIdSchema,
+    createdAt: continuableCatalogSchema.shape.childCreatedAt,
+  }),
+])) as unknown as z.ZodType<SubagentCatalogEntry[]>
 const chunkSchema: z.ZodType<CatalogChunk> = z.lazy(() => z.object({
   facts: z.array(eventDataSchema).min(1).max(64),
   previous: chunkSchema.optional(),
@@ -118,7 +115,7 @@ function appendFact(state: SubagentCatalogState, fact: SubagentCatalogEvent): Su
  * @param state - parent catalog fold state.
  * @returns current direct-child rows in parent catalog event order.
  */
-export function subagentCatalogEntries(state: SubagentCatalogState): SubagentCatalogEntry[] {
+function subagentCatalogEntries(state: SubagentCatalogState): SubagentCatalogEntry[] {
   const chunks: CatalogChunk[] = []
   for (let chunk = state.head; chunk !== undefined; chunk = chunk.previous) chunks.push(chunk)
   const entries: SubagentCatalogEntry[] = []
@@ -154,6 +151,7 @@ export const subagentCatalogProjectionDefinition = {
     return appendFact(state, parsed.data)
   },
   stateVersion: 1,
+  wire: { viewSchema, view: subagentCatalogEntries },
 } satisfies ProjectionDefinition<'subagentCatalog', SubagentCatalogState>
 
 /**

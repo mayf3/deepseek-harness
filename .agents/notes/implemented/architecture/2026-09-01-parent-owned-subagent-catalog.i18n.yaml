@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-09-01-parent-owned-subagent-catalog.md
-2026-09-01-parent-owned-subagent-catalog.md: f424943c523c1143884116fd5aeccdf6e20423f2
-2026-09-01-parent-owned-subagent-catalog.zh.md: b4c524ab81e4c2df9a666d0119e1de9c8b771e8b
+2026-09-01-parent-owned-subagent-catalog.md: d4b6a20dfbceb30e3f7e5dc827895a25f823b59a
+2026-09-01-parent-owned-subagent-catalog.zh.md: d4a394aee3ee1b9f86aff5872657c37acca93852

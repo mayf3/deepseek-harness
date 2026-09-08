@@ -18,7 +18,7 @@ Creation publishes only successful facts. A one-shot run appends the catalog eve
 
 The child header and `subagent/descriptor` remain authoritative for recovery and composition. An Activation and the exact parent relationship remain authoritative for authorization and delivery. Mode and label are snapshotted once and the same detached values reach the parent catalog fact and child descriptor.
 
-The registered host-only `subagentCatalog` projection materializes the parent facts. It stores facts in a persistent stack of 64-entry chunks, so an append copies at most the head chunk in bounded O(1) work. Materialization visits chunks from oldest to newest and preserves parent catalog event order in O(D) time for D facts. Concurrent creation is ordered by successful catalog append, independent of child timestamps and ids. A projection checkpoint clones the state once in O(D); projection-cache writes remain asynchronous and use the existing mandatory creation, turn-end, and disposal points.
+The registered `subagentCatalog` projection materializes the parent facts. It stores facts in a persistent stack of 64-entry chunks, so an append copies at most the head chunk in bounded O(1) work. Materialization visits chunks from oldest to newest and preserves parent catalog event order in O(D) time for D facts. Concurrent creation is ordered by successful catalog append, independent of child timestamps and ids. A projection checkpoint clones the state once in O(D); projection-cache writes remain asynchronous and use the existing mandatory creation, turn-end, and disposal points.
 
 Fork isolation uses the exact `Session.inheritedEventCount` supplied to projection initialization. The fold ignores `subagent/catalog` events below that offset. The state stores the inherited offset but not each event seq because acceptance is decided during folding.
 
@@ -30,7 +30,7 @@ Snapshot normalizers zero `childCreatedAt` because it originates from the proces
 
 **A node-per-fact linked list.** It provides O(1) append and O(D) read, but persisted projection checkpoints form JSON nested D levels deep. Sixty-four-entry chunks preserve the asymptotic costs while reducing nesting.
 
-**A client-visible projection.** Publishing the complete catalog after every creation would turn constant-time folding into O(D²) cumulative materialization. The Session Controller already owns the observation needed for a cold read.
+**Separate host-state observation output.** Returning internal projection states duplicates the existing observation result mechanism and copies states unrelated to child discovery. A catalog view supplies the direct-child list through the existing typed projection map.
 
 **A durable SQLite child index.** An index would create another write path, reconciliation protocol, schema, and corruption surface for a fact already ordered in the parent Session log.
 
@@ -38,6 +38,6 @@ Snapshot normalizers zero `childCreatedAt` because it originates from the proces
 
 ## Consequences
 
-Default Session observations expose every registered host state in `projectionStates` alongside client views. The registry’s existing `checkpoint` operation supplies detached state values; no key-selection parameter or additional hydration mode is required. `projectionMode: 'none'` retains its projection-free behavior. Direct-child and descendant listing still use the Session corpus and child identity projection.
+Session observations and client snapshots expose the direct-child list through `projections.values.subagentCatalog`. The projection change feed publishes a complete list when catalog state changes. Each view costs O(D), so D creations can incur O(D²) cumulative view work; this follows the existing projection mechanism. Direct-child and descendant listing still use the Session corpus and child identity projection.
 
 Backends that do not know the required event refuse the log under the existing Session event mechanism. Pre-release format policy requires no fallback scan for old logs.

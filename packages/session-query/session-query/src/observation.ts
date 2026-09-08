@@ -9,7 +9,6 @@ import type {
   SessionPersistenceSnapshot,
 } from '@deepseek-ai/dsh-session-persistence'
 import type { ProjectionSnapshot } from '@deepseek-ai/dsh-session-projection'
-import type { SessionProjectionStateMap } from '@deepseek-ai/dsh-session-projection/types'
 import type {} from '@deepseek-ai/dsh-session-projection-cache'
 import { SESSION_QUERY_DEFAULT_PREPARED_SESSION_CACHE_SIZE, SessionQueryError } from './config.ts'
 import { readColdSessionLog, type ColdSessionLog } from './cold-read.ts'
@@ -35,11 +34,6 @@ export interface SessionObservation extends Disposable {
   /** Exact projection baseline at {@link cursor}, when the registry is mounted. */
   readonly projections?: ProjectionSnapshot
   /**
-   * All registered host projection states detached at {@link cursor}; omitted
-   * when projections are disabled or the registry is absent.
-   */
-  readonly projectionStates?: Partial<SessionProjectionStateMap>
-  /**
    * Retain the same immutable cut for another Host owner.
    * @returns an independently disposable lease over this observation.
    */
@@ -50,7 +44,7 @@ export interface SessionObservation extends Disposable {
 export interface SessionObservationOptions {
   /** Optional cancellation while resolving a cold source. */
   readonly signal?: AbortSignal
-  /** Whether to return projection views and states or leave projections untouched. */
+  /** Whether to compute every projection or leave projection state untouched. */
   readonly projectionMode?: 'all' | 'none'
 }
 
@@ -97,7 +91,7 @@ export class SessionObservationReader {
   /**
    * Observe one live-preferred Session and retain a cold preparation until disposal.
    * @param sessionId - logical Session identity.
-   * @param options - cancellation and projection views and states for this read.
+   * @param options - cancellation and all-or-none projection computation for this read.
    * @returns one exact immutable observation.
    */
   async read(
@@ -114,9 +108,7 @@ export class SessionObservationReader {
 
       const snapshot = await this.statSource(persistence, sessionId, signal)
       const attachedDuringStat = this.ctx.sessions.get(sessionId)
-      if (attachedDuringStat !== undefined) {
-        return this.live(attachedDuringStat, projectionMode)
-      }
+      if (attachedDuringStat !== undefined) return this.live(attachedDuringStat, projectionMode)
       let entry = this.cachedEntry(persistence, sessionId, snapshot.revision)
       if (entry === undefined) {
         const loaded = await this.loadSource(persistence, sessionId, signal)
@@ -156,12 +148,8 @@ export class SessionObservationReader {
       }
 
       let projections: ProjectionSnapshot | undefined
-      let projectionStates: Partial<SessionProjectionStateMap> | undefined
       try {
-        if (projectionMode === 'all') {
-          projections = this.preparedProjections(entry)
-          projectionStates = this.projectionStates(entry.session)
-        }
+        projections = projectionMode === 'none' ? undefined : this.preparedProjections(entry)
       } catch (error: unknown) {
         throw new SessionQueryError(
           `failed to project session "${sessionId}": ${errorMessage(error)}`,
@@ -169,7 +157,7 @@ export class SessionObservationReader {
           { cause: error },
         )
       }
-      return this.preparedLease(sessionId, entry, projections, projectionStates)
+      return this.preparedLease(sessionId, entry, projections)
     }
   }
 
@@ -255,7 +243,6 @@ export class SessionObservationReader {
     sessionId: SessionId,
     entry: PreparedEntry,
     projections: ProjectionSnapshot | undefined,
-    projectionStates: Partial<SessionProjectionStateMap> | undefined,
   ): SessionObservation {
     entry.refs += 1
     const lease = (): SessionObservation => {
@@ -268,7 +255,6 @@ export class SessionObservationReader {
         cursor: entry.events.at(-1)?.seq ?? -1,
         revision: entry.revision,
         ...projections === undefined ? {} : { projections },
-        ...projectionStates === undefined ? {} : { projectionStates },
         retain: () => {
           if (disposed) throw new Error(`session observation "${sessionId}" is disposed`)
           entry.refs += 1
@@ -296,7 +282,6 @@ export class SessionObservationReader {
     const projections = projectionMode === 'none'
       ? undefined
       : this.ctx.get('sessionProjections')?.snapshot(session)
-    const projectionStates = projectionMode === 'none' ? undefined : this.projectionStates(session)
     const lease = (): SessionObservation => {
       let disposed = false
       return {
@@ -309,7 +294,6 @@ export class SessionObservationReader {
         },
         cursor: seq === 0 ? -1 : SessionSeq(seq - 1),
         ...projections === undefined ? {} : { projections },
-        ...projectionStates === undefined ? {} : { projectionStates },
         retain: () => {
           if (disposed) throw new Error(`session observation "${session.id}" is disposed`)
           return lease()
@@ -327,13 +311,6 @@ export class SessionObservationReader {
     return cache === undefined
       ? registry.hydrate(entry.session, {}, entry.events, SessionLogOffset(0))
       : cache.hydratePrepared(entry.session, entry.events)
-  }
-
-  /** Checkpoint rows already own detached state values at the Session cut. */
-  private projectionStates(session: Session): Partial<SessionProjectionStateMap> | undefined {
-    const registry = this.ctx.get('sessionProjections')
-    if (registry === undefined) return undefined
-    return Object.fromEntries(Object.entries(registry.checkpoint(session)).map(([key, row]) => [key, row.val]))
   }
 }
 

@@ -1,4 +1,7 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
+import { Context } from '@deepseek-ai/cordis'
+import SessionStore from '@deepseek-ai/dsh-session'
+import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import {
   SessionLogOffset,
   SessionSeq,
@@ -7,7 +10,6 @@ import {
 } from '@deepseek-ai/dsh-session'
 import type { SessionEvent, SessionHeader } from '@deepseek-ai/dsh-session'
 import {
-  subagentCatalogEntries,
   subagentCatalogProjectionDefinition,
 } from '../src/catalog.ts'
 import type { SubagentCatalogState } from '../src/catalog.ts'
@@ -48,6 +50,37 @@ function fact(
 }
 
 describe('subagent catalog projection', () => {
+  it('publishes detached catalog views and changes only for new own facts', async () => {
+    const ctx = new Context()
+    try {
+      await ctx.plugin(SessionStore)
+      await ctx.plugin(SessionProjectionRegistry)
+      ctx.sessionProjections.register(subagentCatalogProjectionDefinition)
+      const parent = ctx.sessions.create(header.id)
+      const changes = vi.fn()
+      ctx.sessionProjections.onChanged(changes)
+      expect(ctx.sessionProjections.snapshot(parent).values.subagentCatalog).toEqual([])
+
+      parent.append('subagent/catalog', fact(0, 'first', 1, { mode: 'one-shot' }).data)
+      const first = ctx.sessionProjections.snapshot(parent)
+      expect(first.values.subagentCatalog).toEqual([
+        { id: SessionId('first'), createdAt: 1, mode: 'one-shot' },
+      ])
+      changes.mockClear()
+      parent.append('session/title', { title: 'Parent', messageSeqs: [], source: { kind: 'user' } })
+      expect(changes).not.toHaveBeenCalled()
+      parent.append('subagent/catalog', fact(2, 'second', 2, { mode: 'continuable', label: 'Next' }).data)
+      expect(changes).toHaveBeenCalledOnce()
+      expect(first.values.subagentCatalog).toHaveLength(1)
+      const second = ctx.sessionProjections.snapshot(parent)
+      expect(second.values.subagentCatalog).toHaveLength(2)
+      second.values.subagentCatalog?.pop()
+      expect(ctx.sessionProjections.snapshot(parent).values.subagentCatalog).toHaveLength(2)
+    } finally {
+      await ctx.fiber.dispose()
+    }
+  })
+
   it('preserves event order across chunk rollover and checkpoint restoration', () => {
     const first = fold(Array.from({ length: 64 }, (_, i) =>
       fact(i, `child-${i}`, 130 - i, { mode: 'one-shot' })))
@@ -63,8 +96,8 @@ describe('subagent catalog projection', () => {
     )
 
     expect(JSON.stringify(first)).toBe(checkpoint)
-    expect(subagentCatalogEntries(first)).toHaveLength(64)
-    expect(subagentCatalogEntries(restored).map(entry => entry.id))
+    expect(subagentCatalogProjectionDefinition.wire.view(first)).toHaveLength(64)
+    expect(subagentCatalogProjectionDefinition.wire.view(restored).map(entry => entry.id))
       .toEqual(Array.from({ length: 130 }, (_, i) => SessionId(`child-${i}`)))
   })
 
@@ -89,7 +122,12 @@ describe('subagent catalog projection', () => {
 
     expect(subagentCatalogProjectionDefinition.stateSchema.parse(JSON.parse(JSON.stringify(state))))
       .toEqual(state)
-    expect(subagentCatalogEntries(state)).toEqual([
+    const view = subagentCatalogProjectionDefinition.wire.view(state)
+    expect(subagentCatalogProjectionDefinition.wire.viewSchema.parse(JSON.parse(JSON.stringify(view)))).toEqual(view)
+    expect(() => subagentCatalogProjectionDefinition.wire.viewSchema.parse([
+      { id: 'bad', createdAt: 1, mode: 'continuable' },
+    ])).toThrow()
+    expect(view).toEqual([
       { id: SessionId('child-b'), createdAt: 1, mode: 'one-shot' },
       { id: SessionId('child-a'), createdAt: 1, mode: 'one-shot', label: 'once' },
       { id: SessionId('child-d'), createdAt: 3, mode: 'continuable', label: 'later' },

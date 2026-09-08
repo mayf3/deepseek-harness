@@ -18,7 +18,7 @@ parent Session 的 required `subagent/catalog` 事件是直接 child discovery �
 
 child header 与 `subagent/descriptor` 继续拥有恢复与 composition 权威。Activation 与精确 parent 关系继续拥有授权与投递权威。mode 与 label 只快照一次，同一份分离值写入 parent catalog fact 与 child descriptor。
 
-注册的 host-only `subagentCatalog` projection 物化 parent fact。它以每块 64 项的持久 stack 保存事实，因此 append 最多复制 head chunk，以有界 O(1) 工作完成。materialization 从旧到新访问 chunk，对 D 条事实以 O(D) 时间保留父目录事件顺序。并发创建按目录成功追加的顺序排列，与 child 时间戳和 id 无关。projection checkpoint 以 O(D) 克隆 state；projection-cache 继续异步写入，并使用既有创建、turn-end 与 disposal 强制点。
+注册的 `subagentCatalog` projection 物化 parent fact。它以每块 64 项的持久 stack 保存事实，因此 append 最多复制 head chunk，以有界 O(1) 工作完成。materialization 从旧到新访问 chunk，对 D 条事实以 O(D) 时间保留父目录事件顺序。并发创建按目录成功追加的顺序排列，与 child 时间戳和 id 无关。projection checkpoint 以 O(D) 克隆 state；projection-cache 继续异步写入，并使用既有创建、turn-end 与 disposal 强制点。
 
 fork 隔离使用 projection 初始化时提供的精确 `Session.inheritedEventCount`。fold 忽略该 offset 之前的 `subagent/catalog` 事件。state 保存 inherited offset，但不保存每条 event seq，因为接受判定已在 fold 时完成。
 
@@ -30,7 +30,7 @@ snapshot normalizer 会把 `childCreatedAt` 归零，因为它来自 process clo
 
 **每 fact 一个 node 的 linked list。** 它提供 O(1) append 与 O(D) read，但持久 projection checkpoint 会形成 D 层 JSON 嵌套。每块 64 项保留渐进复杂度，同时降低嵌套深度。
 
-**client-visible projection。** 每次创建后发布完整 catalog 会把常数时间 fold 变成 O(D²) 累积 materialization。Session Controller 已经拥有 cold read 所需的 observation。
+**独立的 host state 观察输出。** 返回内部 projection state 会重复已有观察结果机制，并复制与子级发现无关的状态。目录视图通过既有的类型化 projection map 提供直接子级列表。
 
 **持久 SQLite child index。** index 会为 parent Session 日志中已有顺序的 fact 增加另一套写路径、reconciliation protocol、schema 与 corruption surface。
 
@@ -38,6 +38,6 @@ snapshot normalizer 会把 `childCreatedAt` 归零，因为它来自 process clo
 
 ## 后果
 
-默认 Session 观察在返回客户端视图的同时，通过 `projectionStates` 暴露全部已注册 host state。注册表现有的 `checkpoint` 操作提供独立状态值，无需 key 选择参数或额外 hydration 模式。`projectionMode: 'none'` 保留不执行投影的行为。直接子级和后代列表仍使用 Session 语料库与子级身份 projection。
+Session 观察和客户端快照通过 `projections.values.subagentCatalog` 暴露直接子级列表。目录状态变化时，projection 变更通知发布完整列表。每次视图计算成本为 O(D)，因此 D 次创建的累计视图工作量可能为 O(D²)；这沿用既有 projection 机制。直接子级和后代列表仍使用 Session 语料库与子级身份 projection。
 
 不认识该 required event 的 backend 会按既有 Session event 机制拒绝日志。pre-release format policy 不要求为旧日志保留 fallback scan。
