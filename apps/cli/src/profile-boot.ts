@@ -313,10 +313,6 @@ export async function runProfile(options: RunProfileOptions): Promise<{ ctx: Con
       loadProfile: () => prepareProfile(options.profile),
       compose: composeFor,
       rootEntry: () => rootIncludeEntry(ctx),
-      readUserPatches: () => [
-        ...loadOptionalPatches(NAME, composed.profile.patchPath) ?? [],
-        ...loadOptionalPatches(NAME, homePatchPath()) ?? [],
-      ],
     })
     const runtime = ctx.get('profileRuntime')
     if (runtime !== undefined) app.runtime = runtime

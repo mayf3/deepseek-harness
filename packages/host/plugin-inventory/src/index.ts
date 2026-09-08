@@ -79,7 +79,6 @@ export class PluginInventoryGateway extends TypertRemoteService {
     const entries: PluginInventoryEntry[] = []
     const runtime = this.ctx.get('profileRuntime')
     const failures = this.ctx.get('pluginFailures')
-    const userDisabled = runtime?.userDisabledRowIds() ?? new Set<string>()
     const listed = new Set<string>()
     for (const entry of this.ctx.loader.entries()) {
       if (entry.options.group) continue
@@ -96,7 +95,7 @@ export class PluginInventoryGateway extends TypertRemoteService {
         fiberPhase: entry.fiber === undefined ? null : FIBER_PHASE[entry.fiber.state],
         trust: origin?.trust ?? 'builtin',
         ...origin === undefined ? {} : { package: packageRef(origin) },
-        ...enabled ? {} : { disabledBy: userDisabled.has(entry.options.id) ? 'user' as const : 'composition' as const },
+        ...enabled ? {} : { disabledBy: runtime?.userDisables(entry) === true ? 'user' as const : 'composition' as const },
         ...failure === undefined ? {} : { failure: { stage: failure.stage, message: failure.message } },
       })
     }
@@ -125,7 +124,7 @@ export class PluginInventoryGateway extends TypertRemoteService {
           moduleName: conflict.moduleName,
           enabled: true,
           fiberPhase: 'failed',
-          trust: conflict.packageName === undefined ? 'builtin' : 'external',
+          trust: conflict.packageName === undefined ? 'user' : 'external',
           ...conflict.packageName === undefined
             ? {}
             : { package: packageRef({ packageName: conflict.packageName, ...version === undefined ? {} : { version } }) },

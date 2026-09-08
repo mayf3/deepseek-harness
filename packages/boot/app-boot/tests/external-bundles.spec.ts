@@ -163,6 +163,35 @@ describe('composeExternalLayer', () => {
     expect(composed.rows.get('dup')).toBe('pkg-r/one')
   })
 
+  it('reports a config override that lists one id twice or sets a row under a group other than the one holding it', () => {
+    const composed = composeExternalLayer(layer('pkg-o', [
+      { insert: [
+        { id: 'a', name: 'cordis:group', group: true, config: [{ id: 'shared', name: 'pkg-o/x' }] },
+        { id: 'b', name: 'cordis:group', group: true, config: [] },
+      ] },
+      { id: 'b', config: [{ id: 'shared', name: 'pkg-o/moved' }] },
+      { id: 'a', config: [{ id: 'twice', name: 'pkg-o/one' }, { id: 'twice', name: 'pkg-o/two' }] },
+      // The bundle's own group is a predictable target: a duplicate under it
+      // would fail the group's update before any row is contained.
+      { id: 'bundle/pkg-o', config: [{ id: 'own', name: 'pkg-o/own' }, { id: 'own', name: 'pkg-o/own-again' }] },
+    ]))
+    expect(composed.duplicates).toEqual([
+      { rowId: 'shared', moduleName: 'pkg-o/moved' },
+      { rowId: 'twice', moduleName: 'pkg-o/two' },
+      { rowId: 'own', moduleName: 'pkg-o/own-again' },
+    ])
+    expect(composed.overrides).toEqual([])
+  })
+
+  it('lets a config override restate a row under the built-in group it was inserted into', () => {
+    const composed = composeExternalLayer(layer('pkg-s', [
+      { id: 'tools', insert: [{ id: 'tool', name: 'pkg-s/tool' }] },
+      { id: 'tools', config: [{ id: 'tool', name: 'pkg-s/tool' }] },
+    ]))
+    expect(composed.duplicates).toEqual([])
+    expect(composed.overrides).toEqual(['tools'])
+  })
+
   it('never mutates the layer\'s own patch objects', () => {
     const patches: PatchOptions[] = [{ insert: [{ id: 'row', name: 'pkg-d' }] }, { id: 'row', config: { a: 1 } }]
     const snapshot = structuredClone(patches)
@@ -240,6 +269,28 @@ describe('reconcileInstalledBundles', () => {
     expect(readProfileManifest(NAME, profileDir).dsh?.profile?.bundles).toEqual(['@deepseek-ai/dsh-base', 'ext-bundle'])
     expect(exportsBundlePatch(NAME, 'plain-lib', installAnchor, profileDir)).toBe(false)
     expect(exportsBundlePatch(NAME, 'missing', installAnchor, profileDir)).toBe(false)
+  })
+
+  it('leaves a bundle installed before the run where the user left it, in or out of the list', () => {
+    const { profileDir, installAnchor } = stageProfile({ 'ext-bundle': { bundle: true }, 'new-bundle': { bundle: true } })
+    // ext-bundle was installed earlier and is not listed: the user disabled it.
+    const before = { dependencies: { 'ext-bundle': '1.0.0' } }
+    expect(reconcileInstalledBundles(NAME, profileDir, installAnchor, before, { autoEnable: true }))
+      .toEqual({ enabled: ['new-bundle'], removed: [], plain: [], installedOnly: [] })
+    expect(readProfileManifest(NAME, profileDir).dsh?.profile?.bundles).toEqual(['@deepseek-ai/dsh-base', 'new-bundle'])
+    disableBundle(NAME, profileDir, 'new-bundle')
+    expect(reconcileInstalledBundles(NAME, profileDir, installAnchor, readProfileManifest(NAME, profileDir), { autoEnable: true }))
+      .toEqual({ enabled: [], removed: [], plain: [], installedOnly: [] })
+    expect(readProfileManifest(NAME, profileDir).dsh?.profile?.bundles).toEqual(['@deepseek-ai/dsh-base'])
+  })
+
+  it('keeps a listed bundle listed once when the run brings its dependency back', () => {
+    const { profileDir, installAnchor } = stageProfile({ 'ext-bundle': { bundle: true } })
+    enableBundle(NAME, profileDir, installAnchor, 'ext-bundle')
+    // The manifest the run started with had lost the dependency; pnpm added it again.
+    expect(reconcileInstalledBundles(NAME, profileDir, installAnchor, { dependencies: {} }, { autoEnable: true }))
+      .toEqual({ enabled: [], removed: [], plain: [], installedOnly: [] })
+    expect(readProfileManifest(NAME, profileDir).dsh?.profile?.bundles).toEqual(['@deepseek-ai/dsh-base', 'ext-bundle'])
   })
 
   it('drops a layer whose dependency was removed and keeps template bundles', () => {

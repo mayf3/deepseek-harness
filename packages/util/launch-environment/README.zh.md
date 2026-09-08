@@ -51,6 +51,10 @@ const endpoint = launchEnvironmentOf(ctx).get('DEEPSEEK_BASE_URL')?.value
 
 当产品 CLI 引导了这棵树时，`launchEnvironmentOf(ctx)` 返回启动器的快照；否则返回只含继承环境的那一层。该回退并不削弱规则：SDK 宿主或裸 `cordis.yml` 从未发现过任何文件，因此它拥有的一切就是它被启动时的环境。
 
+### 为子进程剔除凭据
+
+`withoutSensitiveEnv(process.env)` 返回去掉了密钥形态条目——名字匹配 `SENSITIVE_ENV_PATTERN`（`KEY`、`PASSWORD`、`SECRET`、`TOKEN`，不分大小写）——且去掉了未设置值的环境，给不该看到 harness 凭据的子进程用：`dsh-app-boot` 的包探针用它生成子进程，`dsh-subprocess` 按同一模式清洗每条被生成的命令。
+
 -----
 
 <a id="understand-the-implementation"></a>

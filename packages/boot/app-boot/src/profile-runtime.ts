@@ -18,7 +18,6 @@
 import { Context, Service } from '@deepseek-ai/cordis'
 import type { Entry } from '@deepseek-ai/cordis-plugin-loader'
 import type Include from '@deepseek-ai/cordis-plugin-include'
-import type { PatchOptions } from '@deepseek-ai/cordis-plugin-include'
 import type { ProfilePatchReload } from '@deepseek-ai/dsh-package-manifest'
 import type { ComposedStack, RowConflict } from './compose-stack.ts'
 import type { BundleTrust, Profile, ProfileLayer } from './profile.ts'
@@ -54,8 +53,6 @@ export interface ProfileRuntimeOptions {
   compose: (profile: Profile) => ComposedStack
   /** The root Include entry, once mounted. */
   rootEntry: () => Entry | undefined
-  /** The user patch layers as they stand on disk (profile file, then home file). */
-  readUserPatches: () => PatchOptions[]
 }
 
 /** The profile and stack the tree runs, published together once the root include accepted the stack. */
@@ -131,19 +128,26 @@ export class ProfileRuntime extends Service {
   }
 
   /**
-   * Row ids the user patch layers disable with a literal `disabled: true`.
-   * A `!!js` gate in a user file stays an expression node when read from
-   * disk, so it is a condition, not a user decision, and is left to the
-   * composition.
-   * @returns the ids, re-read from disk on every call.
+   * Row ids the user patch layers disable with a literal `disabled: true`,
+   * as the committed composition read them. The set describes the running
+   * tree: a user file the include rejected, or one that cannot be parsed,
+   * changes nothing here until a composition with it is accepted.
+   * @returns the ids, from the committed composition.
    */
-  userDisabledRowIds(): Set<string> {
-    const ids = new Set<string>()
-    for (const patch of this.options.readUserPatches()) {
-      if (patch.insert !== undefined || patch.id === undefined) continue
-      if (patch.disabled === true) ids.add(patch.id)
-    }
-    return ids
+  userDisabledRowIds(): ReadonlySet<string> {
+    return this.committed.stack.userDisabledRowIds
+  }
+
+  /**
+   * Whether the user patch layers disable an entry: its own row id, or the
+   * id of a group holding it, is among {@link userDisabledRowIds}. The Loader
+   * disables every descendant of a disabled group, so a child's own id alone
+   * does not say who switched it off.
+   * @param entry - the Loader entry.
+   * @returns true when the user's patches disable the entry or one of the groups holding it.
+   */
+  userDisables(entry: Entry): boolean {
+    return userDisablesEntry(entry, this.committed.stack.userDisabledRowIds)
   }
 
   /**
@@ -182,4 +186,12 @@ export class ProfileRuntime extends Service {
     })
     this.committed = { profile, stack }
   }
+}
+
+/** The walk behind {@link ProfileRuntime.userDisables}: the entry, then each group holding it, outward. */
+function userDisablesEntry(entry: Entry, userDisabled: ReadonlySet<string>): boolean {
+  for (let current: Entry | undefined = entry; current !== undefined; current = current.parent.ctx.fiber.entry) {
+    if (typeof current.options.id === 'string' && userDisabled.has(current.options.id)) return true
+  }
+  return false
 }
