@@ -16,7 +16,7 @@ Status: implemented
 
 **嵌套失败被报告，暂不致命。** `warnNestedFiberFailures` 遍历每个 runtime 的 fiber，报告属于内置条目却不是该条目根 fiber 的 `FAILED` fiber——抛错的 `ctx.inject()` 延续，Loader 给它盖了条目的章，而激活审计从未看见它。它在启动后以提示行运行；确认随附组合没有这类失败后再并入致命审计。
 
-**探针在伤不到宿主的地方运行包。** `probePackage` 在宿主里读取已安装包的 manifest——从 `dsh.bundle` 得到种类、其 patch 的行与覆盖、`dsh.plugins` 声明、`engines.dsh`、标题与描述——并生成一个 Node 子进程——`probe-child.ts`，探针旁边的独立模块，源码启动时经 tsx 运行，构建后是 `lib/probe-child.js`——从该包解析 `@deepseek-ai/cordis`，import 主导出与每个声明为可添加的模块，经 IPC 通道发出一份报告。stdout 与 stderr 仍归被 import 的模块自己，所以在 import 时打印的包照样能报告；报告一到子进程就被杀掉，因此让定时器一直活着的包不再多花任何代价。报告与缓存记录按各自跨越的进程边界与文件边界逐字段校验：无法识别的报告是一次 rejection，无法识别的记录重新探测。抛错、退出或挂起的子进程得到带原因的 `ok: false`，或点名超时的 rejection；`ok` 只表示主导出 import 成功且 cordis 不是第二份副本，能否启用或添加由 `kind` 与 `addable[].ok` 决定。记录缓存在 profile 的 `.dsh-plugins/` 下，按版本失效。
+**探针在伤不到宿主的地方运行包。** `probePackage` 在宿主里读取已安装包的 manifest——从 `dsh.bundle` 得到种类、其 patch 的行与覆盖、`dsh.plugins` 声明、`engines.dsh`、标题与描述——并生成一个 Node 子进程——`probe-child.ts`，探针旁边的独立模块，源码启动时经 tsx 运行，构建后是 `lib/probe-child.js`——从该包解析 `@deepseek-ai/cordis`，import 主导出与每个声明为可添加的模块，经 IPC 通道发出一份报告。stdout 与 stderr 仍归被 import 的模块自己，所以在 import 时打印的包照样能报告；报告一到子进程就被杀掉，因此让定时器一直活着的包不再多花任何代价。报告与缓存记录按各自跨越的进程边界与文件边界逐字段校验：没有回显本次 token 的消息是包自己的、不算报告，无法识别的记录重新探测。子进程拿到的是剔除了密钥形态变量的父环境，import 之前先删掉 token 与 `process.send`，stderr 只留最后 16 KiB 作失败文本，kill 之后等到 `close` 才结算，所以子进程的任何东西都不会活过这次调用。抛错、退出或挂起的子进程得到带原因的 `ok: false`，或点名超时的 rejection；`ok` 只表示主导出 import 成功且 cordis 不是第二份副本，能否启用或添加由 `kind` 与 `addable[].ok` 决定。记录缓存在 profile 的 `.dsh-plugins/` 下，按版本失效。
 
 ## 考虑过的替代方案
 

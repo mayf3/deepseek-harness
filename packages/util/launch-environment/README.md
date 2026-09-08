@@ -51,6 +51,10 @@ Names match the way the platform matches them: exactly on POSIX, case-insensitiv
 
 `launchEnvironmentOf(ctx)` returns the launcher's snapshot when the product CLI booted the tree, and otherwise the inherited environment as the only layer. The fallback does not weaken the rules: an SDK host or a bare `cordis.yml` discovered no files, so everything it has is the environment it was launched with.
 
+### Scrubbing credentials for a child
+
+`withoutSensitiveEnv(process.env)` returns the environment without its credential-shaped entries — names matching `SENSITIVE_ENV_PATTERN` (`KEY`, `PASSWORD`, `SECRET`, `TOKEN`, case-insensitively) — and without unset values, for a child that must not see the harness's credentials: the package probe in `dsh-app-boot` spawns with it, and `dsh-subprocess` scrubs every spawned command by the same pattern.
+
 -----
 
 <a id="understand-the-implementation"></a>

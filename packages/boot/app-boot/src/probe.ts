@@ -10,9 +10,11 @@
  */
 
 import { spawn } from 'node:child_process'
+import { randomUUID } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { withoutSensitiveEnv } from '@deepseek-ai/dsh-launch-environment'
 import { loadOverlayPatches } from './index.ts'
 import { readProfileManifest, resolveBundleDir, type ProfileManifest } from './profile.ts'
 import { visitPatchRows } from './patch-rows.ts'
@@ -136,53 +138,81 @@ function childEntryArgs(): string[] {
  * the probe needs, so the child is killed once it arrived: a package that
  * keeps a timer alive after import costs nothing more. stdout is not read
  * at all, so whatever the imported modules print cannot corrupt the report.
+ * The child gets the parent environment minus credential-shaped names, plus
+ * a per-run token it echoes in its report — a message without the token is
+ * the package's own, not the report — and the probe settles only once the
+ * child closed, so its pipes and channel are gone when the caller continues.
  */
 function runChild(options: ProbeOptions, packageDir: string, mainSpecifier: string, addable: string[]): Promise<ChildReport> {
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS
   return new Promise((resolve, reject) => {
+    const token = randomUUID()
     const child = spawn(
       options.nodeExecutable ?? process.execPath,
       ['--experimental-import-meta-resolve', ...childEntryArgs(), packageDir, mainSpecifier, JSON.stringify(addable)],
-      { cwd: options.profileDir, stdio: ['ignore', 'ignore', 'pipe', 'ipc'], env: { ...process.env, NODE_NO_WARNINGS: '1' } },
+      {
+        cwd: options.profileDir,
+        stdio: ['ignore', 'ignore', 'pipe', 'ipc'],
+        env: { ...withoutSensitiveEnv(process.env), NODE_NO_WARNINGS: '1', [PROBE_REPORT_VARIABLE]: token },
+      },
     )
+    // The tail of stderr, for the failure text: a package that floods stderr at
+    // import must not grow this process's heap by as much.
     const err: Buffer[] = []
-    child.stderr?.on('data', (chunk: Buffer) => err.push(chunk))
-    // One settlement: a spawn failure emits `error` and then `close`, a
-    // timeout kill emits `close` after the rejection below, and the kill
-    // after a report emits `close` after the resolution.
-    let settled = false
-    let unrecognized = false
-    const settle = (outcome: () => void): void => {
-      if (settled) return
-      settled = true
+    let errBytes = 0
+    child.stderr?.on('data', (chunk: Buffer) => {
+      err.push(chunk)
+      errBytes += chunk.length
+      while (errBytes > STDERR_TAIL_BYTES && err.length > 1) errBytes -= (err.shift() as Buffer).length
+      if (errBytes > STDERR_TAIL_BYTES) {
+        err[0] = (err[0] as Buffer).subarray(errBytes - STDERR_TAIL_BYTES)
+        errBytes = STDERR_TAIL_BYTES
+      }
+    })
+    // The outcome lands on `close`. A kill — after the report, or at the
+    // timeout — records its outcome and waits for the close it causes, so the
+    // child's pipes and channel are gone when the caller continues; a spawn
+    // failure emits `error` with no process to wait for.
+    let outcome: (() => void) | undefined
+    const finish = (next: () => void): void => {
+      /* v8 ignore next -- a report the kill still let through after the timeout decided, or the reverse: the first outcome stands */
+      if (outcome !== undefined) return
+      outcome = next
       clearTimeout(timer)
-      outcome()
+      child.kill('SIGKILL')
     }
     const timer = setTimeout(() => {
-      child.kill('SIGKILL')
-      settle(() => { reject(new Error(`${options.binName}: probe of ${options.packageName} timed out after ${String(timeoutMs)}ms`)) })
+      finish(() => { reject(new Error(`${options.binName}: probe of ${options.packageName} timed out after ${String(timeoutMs)}ms`)) })
     }, timeoutMs)
     child.on('message', (message) => {
       const report = parseChildReport(message)
-      if (report === undefined) {
-        unrecognized = true
+      /* v8 ignore next -- the imported code finds no process.send; a message through the raw channel would still lack the token */
+      if (report === undefined || report.token !== token) return
+      finish(() => { resolve(report) })
+    })
+    child.on('error', (error) => {
+      clearTimeout(timer)
+      reject(error)
+    })
+    child.on('close', (code) => {
+      clearTimeout(timer)
+      if (outcome !== undefined) {
+        outcome()
         return
       }
-      child.kill('SIGKILL')
-      settle(() => { resolve(report) })
-    })
-    child.on('error', (error) => { settle(() => { reject(error) }) })
-    child.on('close', (code) => {
-      settle(() => {
-        reject(new Error(unrecognized
-          ? `${options.binName}: probe of ${options.packageName} reported an unrecognized value`
-          : `${options.binName}: probe of ${options.packageName} exited with ${String(code)} without a report: ${Buffer.concat(err).toString('utf8').trim()}`))
-      })
+      const tail = Buffer.concat(err).toString('utf8').trim()
+      reject(new Error(`${options.binName}: probe of ${options.packageName} exited with ${String(code)} without a report: ${tail}`))
     })
   })
 }
 
 const DEFAULT_TIMEOUT_MS = 20_000
+
+/** How much of the child's stderr the failure text keeps: the end, where the cause usually is. */
+const STDERR_TAIL_BYTES = 16 * 1024
+
+/** The environment name carrying the run's report token; the child removes it before importing anything. */
+const PROBE_REPORT_VARIABLE = 'DSH_PROBE_REPORT'
 
 /** The rows a bundle patch introduces, flattened from nested groups, with the ids of overrides on other rows. */
 function describeBundlePatch(binName: string, patchPath: string): { rows: PluginProbeRow[]; overrides: string[] } {

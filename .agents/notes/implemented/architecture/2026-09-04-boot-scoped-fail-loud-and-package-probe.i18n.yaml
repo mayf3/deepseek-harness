@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-09-04-boot-scoped-fail-loud-and-package-probe.md
-2026-09-04-boot-scoped-fail-loud-and-package-probe.md: c0ae61e1323de3dcbeec826363dc953c32dbdcc5
-2026-09-04-boot-scoped-fail-loud-and-package-probe.zh.md: d4e136e36dcf90ad78b499123bfe56add868484d
+2026-09-04-boot-scoped-fail-loud-and-package-probe.md: 940b500f9f0b5c531e0c0eaf849a8a8000a90a6a
+2026-09-04-boot-scoped-fail-loud-and-package-probe.zh.md: 2205a1abfba92c06b3e65745a9d79bb09421bdb2
