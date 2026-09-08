@@ -21,6 +21,7 @@
  * therefore live with their declarer.
  */
 import type {} from '@deepseek-ai/dsh-client-ui-slots'
+import type { RightbarOwnerProps } from '@deepseek-ai/dsh-client-ui-layout/client'
 // The locale plugin's own merge carries the shared `common` vocabulary that the
 // lookup chain consults after this namespace misses.
 import type {} from '@deepseek-ai/dsh-client-locale/client'
@@ -37,6 +38,8 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
   }
 
   interface SlotMap {
+    /** Session content selected by the root-scoped right Sidebar controller. */
+    'rightbar.session': { kind: 'single'; scope: 'session'; owner: RightbarOwnerProps }
     /**
      * One tab's body, dispatched with the `id` of the type in force for
      * `tab.kind`. A tab type registers here under its definition's `id` and

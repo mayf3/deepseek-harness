@@ -8,7 +8,7 @@ This page is the reference for the subsystem's contracts: addresses, tab-type re
 
 ## Position and ownership
 
-One docking surface exists per Session, held in a session-scoped slot store and drawn by the `rightbar` seat; a reload returns every session to the collapsed default, and switching sessions keeps each surface where it was ([state](../../packages/client/ui-sidebar-right/README.md#state)). The surface's every change is one recorded history entry computed by the kit's pure planners; a docked pane never stays empty, and the last pane reseeds the guide tab.
+One docking surface exists per Session, held in a session-scoped slot store and drawn by `rightbar.session`. The root-scoped `rightbar` controller mounts that seat only while Conversation is selected; a reload returns every session to the collapsed default, and switching sessions keeps each surface where it was ([state](../../packages/client/ui-sidebar-right/README.md#state)). The surface's every change is one recorded history entry computed by the kit's pure planners; a docked pane never stays empty, and the last pane reseeds the guide tab.
 
 A tab type is two registrations that share one `kind`: a static definition in `ctx.sidebarRightTabs` saying which addresses the type opens, and a keyed slot registration supplying its body. The framework injects `useTabInfo()` for live Sidebar, pane and tab information; each type keeps its own state in its slot store. Packages import each other's declarations only as types.
 

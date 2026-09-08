@@ -82,6 +82,7 @@ const PACKAGE_LIBRARIES: Readonly<Record<string, string>> = {
   'packages/util/brand': 'Stateless nominal-string and canonical-key constructors.',
   'packages/util/crypto': 'Zero-dependency identifier minting utility.',
   'packages/util/deque': 'Zero-dependency circular deque utility.',
+  'packages/util/chunked-list': 'Persistent collection operations and checkpoint validation without a plugin surface.',
   'packages/util/home-paths': 'Zero-dependency harness-home path resolver.',
   'packages/util/launch-environment': 'Zero-dependency environment resolver.',
   'packages/util/native-command': 'Host-side subprocess runner utility.',
