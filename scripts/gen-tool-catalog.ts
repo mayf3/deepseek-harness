@@ -61,6 +61,8 @@ import * as ToolTasks from '@deepseek-ai/dsh-tool-jobs'
 import type TeamService from '@deepseek-ai/dsh-experimental-agent-team'
 import * as ToolTeam from '@deepseek-ai/dsh-experimental-tool-agent-team'
 import * as ToolTodo from '@deepseek-ai/dsh-tool-todo'
+import VisualizerService from '@deepseek-ai/dsh-tool-visualizer'
+import * as VisualizerModel from '@deepseek-ai/dsh-tool-visualizer/model'
 import * as ToolSubagent from '@deepseek-ai/dsh-tool-subagent'
 import { registerListSubagentModels } from '../packages/subagent/tool-subagent/src/list-models.ts'
 import * as ToolWeb from '@deepseek-ai/dsh-tool-web'
@@ -556,6 +558,28 @@ const TOOL_PACKAGES: ToolPackage[] = [
     },
     note:
       'todo_write is session-owned state; UIs render the latest todo/write event as a checklist. `allowParallelInProgress` is required with no default, so the catalog states its choice: `true`, whose description invites several `in_progress` items. A deployment choosing `false` receives the same tool with a description asking for exactly one active task.',
+  },
+  {
+    pkg: '@deepseek-ai/dsh-tool-visualizer',
+    dir: 'tool-visualizer',
+    source: 'packages/visualizer/tool-visualizer/src/tools.ts',
+    requires: ['ctx.visualizer', 'ctx.tools', 'ctx.systemPrompt'],
+    writes: ['tool/call', 'tool/result', 'user/message via agent.followup() for authorized widget follow-ups'],
+    async mount(ctx) {
+      await ctx.plugin(AgentRegistry)
+      await ctx.plugin(VisualizerService)
+      await mountCatalogChildScope(
+        ctx,
+        (childCtx) => {
+          VisualizerModel.apply(childCtx)
+        },
+        { id: SessionId('tool-catalog-visualizer') } as Agent,
+        ['tools', 'systemPrompt', 'visualizer'],
+      )
+    },
+    scope: ctx => catalogChildScopes.get(ctx) as Agent,
+    note:
+      'The standard and cordis presets always mount a recoverable model wrapper, which contributes prompt and tools only while the authority service exists and follows later authority withdrawal or reappearance. Minimal and PTC omit it; PTC nested code-dispatch calls lack the ordinary show_widget call/result identity required by the follow-up bridge.',
   },
   {
     pkg: '@deepseek-ai/dsh-tool-workflow',
