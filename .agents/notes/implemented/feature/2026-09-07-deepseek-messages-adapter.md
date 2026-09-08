@@ -18,6 +18,8 @@ Assistant blocks remain the durable model-visible content. A versioned `ReplayEn
 
 Image requests use bounded inline base64 versions from the attachment service. Shared attachment offload and DeepSeek token measurement keep request and measurement policy consistent. Files uploads remain outside this adapter because their endpoints and cache ownership differ from chat-completions; adding them requires a Messages-specific lifetime and error policy.
 
+System updates use the existing [route capability](2026-09-02-in-history-system-prompt-replacement.md) when explicitly declared for an endpoint/model. Messages retains the initial top-level system and emits later snapshots as native system turns after the corresponding user/tool-result turn, preserving previously sent prefixes. This placement differs from the loop's system-before-user admission; serialization changes neither the durable log nor conversation-turn order. Undeclared routes consolidate the latest snapshot at the top level, including direct compaction calls. Capability inference from protocol or model names is insufficient because support and update semantics depend on the deployed endpoint.
+
 The Web profile selects the Messages adapter and disables the Chat Completions adapter. Both its settings card and model group display DeepSeek, while the provider id remains `deepseek-messages` and settings remain under `llm-deepseek-messages`. First-run onboarding targets that route and reuses `DEEPSEEK_API_KEY`. Separating display names from provider ids preserves explicit protocol selection and recorded request identity. Saved selections remain user-owned; the composer switches them without rewriting Session history.
 
 ## Alternatives considered
@@ -27,6 +29,8 @@ The Web profile selects the Messages adapter and disables the Chat Completions a
 **Delegate the new route to pi-ai or the Anthropic SDK.** Both provide maintained protocol implementations, but the requested direct adapter needs DeepSeek-specific configuration, attachment policy, credential resolution, and retry ownership. A small stream translator with a maintained SSE parser keeps these responsibilities explicit; the library-backed adapter remains available independently.
 
 **Persist complete native responses or flatten thinking into text.** Full responses duplicate logged content and complicate truncation alignment. Flattening changes the next model input. Minimal aligned replay metadata preserves the missing protocol information without a new Session format.
+
+**Always rewrite the top-level system prompt.** This discards the cache-preserving native update path on capable routes. Explicit capability selection keeps that path while retaining ordinary replacement for other endpoints; converting system instructions to user text would also lose their priority.
 
 ## Consequences
 

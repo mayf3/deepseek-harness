@@ -1,6 +1,6 @@
 /** Request conversion and durable replay validation. */
 import { describe, expect, it, vi } from 'vitest'
-import { createAssistantMessage, createMessage, createToolResultMessage, ReasoningEffortId, ToolCallId } from '@deepseek-ai/dsh-llm'
+import { createAssistantMessage, createMessage, createSystemMessage, createToolResultMessage, ReasoningEffortId, ToolCallId } from '@deepseek-ai/dsh-llm'
 import type { ContentBlock, GenerateOptions, Message } from '@deepseek-ai/dsh-llm'
 import { AttachmentId, ImageVariantId } from '@deepseek-ai/dsh-attachment'
 import type { AttachmentStore, ImageAttachmentRef, RequestImageAttachment } from '@deepseek-ai/dsh-attachment'
@@ -18,8 +18,52 @@ const result = (id = 'a', content: ContentBlock[] = [{ type: 'text', text: 'resu
 const body = (messages: Message[] = [user()], overrides: Partial<GenerateOptions> = {}) => serialize(
   options({ messages, ...overrides }), connection, messages, new Map(), () => undefined,
 )
+const capable = resolveOptions({ models: [{ id: MODEL, systemPromptUpdate: 'in-history' }] })
+const nativeBody = (messages: Message[]) => serialize(options({ messages }), capable, messages, new Map(), () => undefined)
 
 describe('Messages request conversion', () => {
+  it('keeps the original top-level prompt and cached prefix while appending native system updates', () => {
+    const head = createSystemMessage('original', 'test')
+    const first = [head, user('first')]
+    const update = createSystemMessage('updated', 'test')
+    const second = [...first, assistant([{ type: 'text', text: 'one' }]), update, user('second')]
+    const saved = JSON.stringify(second)
+    const before = nativeBody(first)
+    const after = nativeBody(second)
+    expect(after.system).toBe(before.system)
+    expect(after.messages.slice(0, before.messages.length)).toEqual(before.messages)
+    expect(after.messages.slice(-2)).toEqual([
+      { role: 'user', content: [{ type: 'text', text: 'second' }] },
+      { role: 'system', content: [{ type: 'text', text: 'updated' }] },
+    ])
+    const third = nativeBody([...second, assistant([{ type: 'text', text: 'two' }]), user('third')])
+    expect(third.messages.slice(0, after.messages.length)).toEqual(after.messages)
+    expect(JSON.stringify(second)).toBe(saved)
+  })
+
+  it('places system updates after all parallel tool results and before the next assistant', () => {
+    const history = [createSystemMessage('original', 'test'), user(), assistant([call(), call('b')]),
+      createSystemMessage('first update', 'test'), result(), createSystemMessage('second update', 'test'), result('b'),
+      user('more input'), assistant([{ type: 'text', text: 'done' }])]
+    const request = nativeBody(history)
+    expect(request.messages.map(message => message.role)).toEqual(['user', 'assistant', 'user', 'system', 'system', 'assistant'])
+    expect(request.messages[2]?.content.map(block => block.type)).toEqual(['tool_result', 'tool_result', 'text'])
+    expect(request.messages.slice(3, 5).map(message => message.content)).toEqual([
+      [{ type: 'text', text: 'first update' }], [{ type: 'text', text: 'second update' }],
+    ])
+  })
+
+  it('accepts native trailing updates without a top-level prompt and rejects unrepresentable positions', () => {
+    const update = createSystemMessage('update', 'test')
+    expect(nativeBody([user(), update])).toMatchObject({ messages: [
+      { role: 'user' }, { role: 'system', content: [{ type: 'text', text: 'update' }] },
+    ] })
+    expect(nativeBody([user(), update]).system).toBeUndefined()
+    expect(() => nativeBody([user(), assistant([{ type: 'text', text: 'done' }]), update])).toThrow(/preceding user/)
+    expect(() => nativeBody([user(), createSystemMessage('', 'test')])).toThrow(/empty in-history/)
+    expect(() => nativeBody([user(), assistant([call(), call('b')]), update, result()])).toThrow(/immediate results/)
+  })
+
   it('groups parallel results before ordinary text and keeps tool failure content', () => {
     const messages = [user(), assistant([call(), call('b')]), user('follow-up'), result(), createToolResultMessage({ callId: ToolCallId('b'), content: [{ type: 'text', text: 'permission denied' }], isError: true })]
     expect(body(messages).messages).toEqual([
@@ -46,7 +90,37 @@ describe('Messages request conversion', () => {
     expect(body([system, user()], { system: 'top', maxTokens: 123, stop: ['END'], tools: [{ name: 'read', description: 'Read a file', parameters: { type: 'object' } }] })).toMatchObject({
       system: 'top\n\ninstructions', max_tokens: 123, stop_sequences: ['END'], tools: [{ name: 'read', description: 'Read a file', input_schema: { type: 'object' } }],
     })
-    expect(() => body([user(), system])).toThrow(/system/)
+    expect(body([user(), system]).system).toBe('instructions')
+  })
+
+  it('uses the latest complete system snapshot without changing tool history or durable messages', () => {
+    const conversation = [user(), assistant([call()]), result(), assistant([{ type: 'text', text: 'done' }]), user('continue')]
+    const history = [createSystemMessage('obsolete', 'test'), ...conversation.slice(0, 2),
+      createSystemMessage('intermediate', 'test'), ...conversation.slice(2, 4),
+      createSystemMessage('current', 'test'), conversation[4]!]
+    const saved = JSON.stringify(history)
+    expect(body(history)).toEqual({ ...body(conversation), system: 'current' })
+    expect(body(history, { system: 'one-shot prefix' }).system).toBe('one-shot prefix\n\ncurrent')
+    expect(JSON.stringify(history)).toBe(saved)
+  })
+
+  it('replaces adjacent system snapshots and joins blocks only within the current snapshot', () => {
+    const latest = createMessage({ role: 'system', source: { kind: 'plugin', plugin: 'test' },
+      content: [{ type: 'text', text: 'part one' }, { type: 'text', text: ' and part two' }] })
+    expect(body([createSystemMessage('old', 'test'), latest, user()]).system).toBe('part one and part two')
+  })
+
+  it.each([[], [{ type: 'text' as const, text: '' }]].map(content => ({ content })))('clears earlier prompt snapshots with empty content %#', ({ content }) => {
+    const cleared = createMessage({ role: 'system', source: { kind: 'plugin', plugin: 'test' }, content })
+    const history = [createSystemMessage('old', 'test'), user(), cleared]
+    expect(body(history).system).toBeUndefined()
+    expect(body(history, { system: 'one-shot prefix' }).system).toBe('one-shot prefix')
+    expect(body(history, { system: '' }).system).toBeUndefined()
+  })
+
+  it('rejects non-text system content even when a later snapshot supersedes it', () => {
+    const invalid = createMessage({ role: 'system', source: { kind: 'plugin', plugin: 'test' }, content: [{ type: 'reasoning', text: 'bad' }] })
+    expect(() => body([invalid, user(), createSystemMessage('current', 'test')])).toThrow(/non-text system/)
   })
 
   it.each(['off', 'low', 'high', 'max'])('maps reasoning effort %s', (effort) => {
@@ -150,6 +224,10 @@ describe('validated configuration', () => {
   it('advertises exact model metadata and allows unlisted text models', () => {
     expect(modelInfo(connection, 'deepseek-messages', MODEL)).toMatchObject({ context: { contextWindow: 1_000_000 }, defaultMaxTokens: 256_000, reasoning: { defaultEffort: 'high' } })
     expect(modelInfo(connection, 'deepseek-messages', 'custom').inputModalities).toEqual(['text'])
+    expect(modelInfo(connection, 'deepseek-messages', MODEL).systemPromptUpdate).toBeUndefined()
+    expect(modelInfo(connection, 'deepseek-messages', 'custom').systemPromptUpdate).toBeUndefined()
+    expect(modelInfo(capable, 'deepseek-messages', MODEL).systemPromptUpdate).toBe('in-history')
+    expect(modelInfo(capable, 'deepseek-messages', 'custom').systemPromptUpdate).toBeUndefined()
     expect(modelInfo(resolveOptions({ thinking: 'disabled' }), 'deepseek-messages', MODEL).reasoning?.efforts).toEqual([{ id: 'off', name: 'off' }])
     expect(resolveOptions({ baseURL: 'https://example.com/anthropic///' }).baseURL).toBe('https://example.com/anthropic')
   })
@@ -160,6 +238,7 @@ describe('validated configuration', () => {
     { baseURL: 'ftp://example.com' }, { baseURL: 'https://user:pass@example.com' },
     { baseURL: 'https://example.com/?key=x' }, { baseURL: 'https://example.com/#x' },
     { maxTokens: 0 }, { streamIdleTimeoutMs: 0 },
+    { models: [{ id: MODEL, systemPromptUpdate: 'unsupported' }] },
   ])('rejects invalid composition input %#', (value) => {
     expect(() => resolveOptions(value as Config)).toThrow()
   })

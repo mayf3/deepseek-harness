@@ -6,15 +6,21 @@ import { pathToFileURL } from 'node:url'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context, LoggerLevel, Service } from '@deepseek-ai/cordis'
 import LocalAttachments from '@deepseek-ai/dsh-attachment-local'
+import AgentRegistry, { installModelSelection } from '@deepseek-ai/dsh-agent'
+import type { Agent, ModelSelectionRef } from '@deepseek-ai/dsh-agent'
+import AgentLoop from '@deepseek-ai/dsh-agent-loop'
+import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
+import ToolRuntime from '@deepseek-ai/dsh-tools'
+import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import { AttachmentId } from '@deepseek-ai/dsh-attachment'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
 import Include from '@deepseek-ai/cordis-plugin-include'
-import LlmRuntime, { createAssistantMessage } from '@deepseek-ai/dsh-llm'
+import LlmRuntime, { createAssistantMessage, createSystemMessage } from '@deepseek-ai/dsh-llm'
 import type { Message } from '@deepseek-ai/dsh-llm'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import LocalCredentials from '@deepseek-ai/dsh-credentials-local'
 import FileSettings from '@deepseek-ai/dsh-settings-file'
-import { SessionId } from '@deepseek-ai/dsh-session'
+import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import * as Completions from '@deepseek-ai/dsh-llm-deepseek'
 import * as Messages from '../src/index.ts'
 import { adapter, assemble, chunks, MODEL, options, server, sse, textEvents, user } from './helpers.ts'
@@ -37,6 +43,12 @@ async function context() {
   const ctx = new Context()
   cleanup.push(() => ctx.fiber.dispose())
   return { ctx, home }
+}
+
+async function send(agent: Agent, text: string) {
+  agent.followup(user(text))
+  await agent.whenIdle()
+  expect(agent.session.snapshotEvents().at(-1)).toMatchObject({ type: 'turn/end', data: { reason: { kind: 'completed' } } })
 }
 
 describe('direct Messages HTTP', () => {
@@ -77,10 +89,12 @@ describe('direct Messages HTTP', () => {
 
   it('freezes endpoint and defaults for a prepared call while the next call sees new settings', async () => {
     const first = await endpoint(), second = await endpoint()
-    let config = Messages.resolveOptions({ baseURL: first.url, maxTokens: 10 })
+    let config = Messages.resolveOptions({ baseURL: first.url, maxTokens: 10, models: [{ id: MODEL, systemPromptUpdate: 'in-history' }] })
     const llm = new Messages.DeepSeekMessagesAdapter({ connection: () => config, apiKey: snapshot => Promise.resolve(snapshot.maxTokens === 10 ? 'first' : 'second'), userId: () => 'user', attachments: () => undefined, imageAccess: () => undefined })
     const prepared = await llm.prepareCall('deepseek-messages', MODEL)
     config = Messages.resolveOptions({ baseURL: second.url, maxTokens: 20 })
+    expect(prepared.model.systemPromptUpdate).toBe('in-history')
+    expect((await llm.resolveModel('deepseek-messages', MODEL)).systemPromptUpdate).toBeUndefined()
     await chunks(prepared.stream(options()))
     await chunks(llm.stream(options()))
     expect(first.requests[0]).toMatchObject({ headers: { 'x-api-key': 'first' }, body: { max_tokens: 10 } })
@@ -140,8 +154,8 @@ describe('Cordis provider composition', () => {
     expect(price().priceImages([attachment])[0]?.text).toContain('/mounted/image.png')
   })
 
-  async function boot() {
-    const http = await endpoint()
+  async function boot(...args: Parameters<typeof server>) {
+    const http = await endpoint(...args)
     const { ctx, home } = await context()
     vi.stubEnv('DEEPSEEK_API_KEY', '')
     await writeFile(join(home, '.credentials.yaml'), 'version: 1\nrefs:\n  DEEPSEEK_API_KEY: stored-key\n', { mode: 0o600 })
@@ -154,6 +168,9 @@ describe('Cordis provider composition', () => {
     const modules = new Map<string, unknown>([
       ['@deepseek-ai/dsh-llm', LlmRuntime], ['@deepseek-ai/dsh-llm-deepseek', Completions],
       ['@deepseek-ai/dsh-llm-deepseek-messages', Messages], ['@deepseek-ai/dsh-credentials-local', LocalCredentials], ['@deepseek-ai/dsh-settings-file', FileSettings],
+      ['@deepseek-ai/dsh-agent', AgentRegistry], ['@deepseek-ai/dsh-agent-loop', AgentLoop],
+      ['@deepseek-ai/dsh-session', SessionStore], ['@deepseek-ai/dsh-session-projection', SessionProjectionRegistry],
+      ['@deepseek-ai/dsh-system-prompt', SystemPrompt], ['@deepseek-ai/dsh-tools', ToolRuntime],
     ])
     // The importer supplies source modules while Loader still owns configuration and effects.
     for (const name of modules.keys()) {
@@ -169,6 +186,96 @@ describe('Cordis provider composition', () => {
     await ctx.loader.await()
     return { ctx, http }
   }
+
+  it.each([false, true])('updates, clears and restores prompts across continued and resumed sessions, in-history=%s', async (inHistory) => {
+    const { ctx, http } = await boot()
+    if (inHistory) await ctx.settings.update(Messages.name, { models: [{ id: MODEL, systemPromptUpdate: 'in-history' }] })
+    let prompt = 'first prompt'
+    ctx.on('system-prompt/assemble', async (_assembly, _context, next) => ({
+      ...await next(), sections: [{ name: 'test', text: prompt, order: 0 }],
+    }))
+    const agentOptions = { provider: 'deepseek-messages', model: MODEL }
+    const agent = await ctx.agentLoop.create(SessionId('prompt-update'), agentOptions)
+    await send(agent, 'first')
+    prompt = 'second prompt'
+    await send(agent, 'second')
+    const count = agent.session.snapshotEvents().filter(event => event.type === 'system/message').length
+    await send(agent, 'unchanged')
+    expect(agent.session.snapshotEvents().filter(event => event.type === 'system/message')).toHaveLength(count)
+    prompt = ''
+    await send(agent, 'clear')
+    const { agent: resumed } = await ctx.agents.create({ sessionId: SessionId('prompt-resume'), agentOptions,
+      seed: [...agent.session.snapshotEvents()] })
+    await send(resumed, 'resume cleared')
+    prompt = 'restored prompt'
+    await send(resumed, 'restore')
+    expect(http.requests.map(request => request.body.system)).toEqual(inHistory
+      ? ['first prompt', 'first prompt', 'first prompt', undefined, undefined, undefined]
+      : ['first prompt', 'second prompt', 'second prompt', undefined, undefined, 'restored prompt'])
+    for (const [index, request] of http.requests.entries()) {
+      const messages = request.body.messages as { role: string; content: unknown[] }[]
+      expect(messages.filter(message => message.role === 'assistant')).toHaveLength(index)
+      expect(messages.filter(message => message.role === 'system').map(message => message.content)).toEqual(
+        !inHistory ? [] : index === 1 || index === 2 ? [[{ type: 'text', text: 'second prompt' }]]
+          : index === 5 ? [[{ type: 'text', text: 'restored prompt' }]] : [],
+      )
+      expect(JSON.stringify(messages.filter(message => message.role !== 'system'))).not.toMatch(/first prompt|second prompt|restored prompt/)
+    }
+    expect(resumed.session.requestContext()?.systemPromptUpdate).toBe(inHistory ? 'in-history' : undefined)
+  })
+
+  it.each([false, true])('continues and resumes Chat Completions sessions through Messages, in-history=%s', async (inHistory) => {
+    let messagesProtocol = false
+    const { ctx, http } = await boot(response => response.end(messagesProtocol ? sse(textEvents) : [
+      'data: {"choices":[{"delta":{"content":"OK"}}]}\n\n',
+      'data: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\n',
+      'data: [DONE]\n\n',
+    ].join('')))
+    await ctx.settings.update('llm-deepseek', { baseURL: http.url, models: [{ id: MODEL, systemPromptUpdate: 'in-history' }] })
+    if (inHistory) await ctx.settings.update(Messages.name, { models: [{ id: MODEL, systemPromptUpdate: 'in-history' }] })
+    let prompt = 'old prompt'
+    ctx.on('system-prompt/assemble', async (_assembly, _context, next) => ({
+      ...await next(), sections: [{ name: 'test', text: prompt, order: 0 }],
+    }))
+    const selection: ModelSelectionRef = { current: { provider: 'deepseek-official', model: MODEL }, assembled: undefined }
+    const agent = await ctx.agentLoop.create(SessionId('protocol-switch'), selection.current)
+    installModelSelection(agent.ctx, selection)
+    await send(agent, 'first')
+    prompt = 'current prompt'
+    await send(agent, 'second')
+    expect((http.requests[1]?.body.messages as { role: string }[]).filter(message => message.role === 'system')).toHaveLength(2)
+    const seed = [...agent.session.snapshotEvents()]
+    const saved = JSON.stringify(seed)
+    messagesProtocol = true
+    selection.current = { provider: 'deepseek-messages', model: MODEL }
+    await send(agent, 'switch')
+    const { agent: resumed } = await ctx.agents.create({ sessionId: SessionId('switch-resume'), agentOptions: selection.current, seed })
+    await send(resumed, 'resume')
+    for (const request of http.requests.slice(2)) {
+      expect(request.path).toBe('/anthropic/v1/messages')
+      expect(request.body.system).toBe(inHistory ? 'old prompt' : 'current prompt')
+      const messages = request.body.messages as { role: string }[]
+      expect(messages.filter(message => message.role === 'assistant')).toHaveLength(2)
+      expect(messages.filter(message => message.role === 'system')).toHaveLength(inHistory ? 1 : 0)
+      expect(JSON.stringify(messages.filter(message => message.role !== 'system'))).not.toMatch(/old prompt|current prompt/)
+    }
+    expect(JSON.stringify(seed)).toBe(saved)
+    expect(agent.session.deriveMessages().filter(message => message.role === 'system')).toHaveLength(inHistory ? 2 : 1)
+    expect(resumed.session.deriveMessages().filter(message => message.role === 'system')).toHaveLength(inHistory ? 2 : 1)
+  })
+
+  it('maps multiple system snapshots on direct compaction calls to the latest prompt', async () => {
+    const { ctx, http } = await boot()
+    const history = [createSystemMessage('old', 'test'), user(),
+      createAssistantMessage({ content: [{ type: 'text', text: 'OK' }], source: { provider: 'deepseek-official', model: MODEL } }),
+      createSystemMessage('current', 'test'), user('summarize')]
+    const saved = JSON.stringify(history)
+    const response = await assemble(ctx.llm.stream(options({ messages: history, purpose: 'compaction' })))
+    expect(response.assembler.finish.kind).toBe('stop')
+    expect(http.requests[0]?.body.system).toBe('current')
+    expect((http.requests[0]?.body.messages as { role: string }[]).map(message => message.role)).toEqual(['user', 'assistant', 'user'])
+    expect(JSON.stringify(history)).toBe(saved)
+  })
 
   it('continues a recorded tool turn with a warning when its native replay version is unknown', async () => {
     const { ctx, http } = await boot()

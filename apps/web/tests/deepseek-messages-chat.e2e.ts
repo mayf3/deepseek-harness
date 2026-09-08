@@ -6,12 +6,12 @@ import { chromium, type Browser, type Page } from 'playwright'
 import { afterAll, beforeAll, describe, expect, it, onTestFailed } from 'vitest'
 import {
   assertFixtureInventory, captureStableAria, compareOrRefreshGolden, fixtureUserPrompts,
-  launchWebScaffold, recordFixture, watchConsole, webSnapshotMode, type WebScaffold,
+  launchWebScaffold, recordFixture, selectedSessionFixture, watchConsole, webSnapshotMode, type WebScaffold,
 } from './scaffold.ts'
 import { connectFreshWorkspaceZh, saveFailureShot, ZH_BROWSER_LOCALE } from './support.ts'
 
 const SNAPSHOT_DIR = fileURLToPath(new URL('../../../snapshots/web/deepseek-messages-chat', import.meta.url))
-const FIXTURE = join(SNAPSHOT_DIR, 'session.v2.jsonl')
+const FIXTURE = join(SNAPSHOT_DIR, 'session.v3.jsonl')
 const MODE = webSnapshotMode()
 const RECORD_PROMPT = '只回复 MESSAGES_WEB_READY，不调用工具。'
 
@@ -20,12 +20,14 @@ describe('web e2e: DeepSeek Messages conversation', () => {
   let browser: Browser
   let page: Page
   let tripwire: ReturnType<typeof watchConsole>
+  let replayFixture: string
 
   beforeAll(async () => {
+    replayFixture = await selectedSessionFixture(FIXTURE, MODE === 'record')
     scaffold = await launchWebScaffold({
       deepSeekMessages: true,
       ...(MODE === 'record' ? {} : {
-        replayFixture: FIXTURE,
+        replayFixture,
         paceMs: 5,
         replayProviders: [{
           id: 'deepseek-messages', name: 'DeepSeek',
@@ -50,7 +52,7 @@ describe('web e2e: DeepSeek Messages conversation', () => {
 
   it('records the Messages provider while displaying DeepSeek in the model selector', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-deepseek-messages-chat'))
-    const prompts = MODE === 'record' ? [RECORD_PROMPT] : fixtureUserPrompts(await readFile(FIXTURE, 'utf8'))
+    const prompts = MODE === 'record' ? [RECORD_PROMPT] : fixtureUserPrompts(await readFile(replayFixture, 'utf8'))
     expect(prompts).toHaveLength(1)
     expect(scaffold.ctx.agentDefaultModel.currentSelection()).toEqual({ provider: 'deepseek-messages', model: 'deepseek-v4-flash' })
     await page.getByRole('button', { name: /^选择模型/ }).click()
@@ -75,6 +77,6 @@ describe('web e2e: DeepSeek Messages conversation', () => {
   })
 
   it.skipIf(MODE === 'record')('keeps the recorded-session inventory closed', async () => {
-    await assertFixtureInventory(SNAPSHOT_DIR, ['session.v2.jsonl', 'ui.expected.md'])
+    await assertFixtureInventory(SNAPSHOT_DIR, ['session.v3.jsonl', 'ui.expected.md'])
   })
 })

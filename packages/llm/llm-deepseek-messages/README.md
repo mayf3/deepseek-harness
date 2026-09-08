@@ -57,7 +57,17 @@ The [configuration catalog](../../../docs/config-catalog.md#deepseek-aidsh-llm-d
 
 ### Request behavior
 
-Tools use native `tool_use` and `tool_result` blocks. Adjacent user messages are combined with tool results first, preserving call ids. Leading system messages join the top-level system prompt; a mid-conversation system message is rejected. Thinking uses `output_config.effort`; title requests disable it. A temperature supplied with thinking enabled fails with `UNSUPPORTED_OPTION`.
+Tools use native `tool_use` and `tool_result` blocks. Adjacent user messages are combined with tool results first, preserving call ids. Thinking uses `output_config.effort`; title requests disable it. A temperature supplied with thinking enabled fails with `UNSUPPORTED_OPTION`.
+
+Without an in-history capability declaration, the latest system message supplies the complete top-level `system` prompt, including for direct calls carrying multiple snapshots. An empty latest snapshot clears the historical prompt. The agent loop also consolidates updates at the system head when continuing or resuming these routes, including after switching from a capable route. One-shot `GenerateOptions.system` remains a separate prefix. Non-text system content is rejected.
+
+Set `models[].systemPromptUpdate: in-history` only for an endpoint/model that treats the latest system update as the complete effective prompt. Default and unlisted models do not enable it. Capable routes keep the initial prompt in the top-level field and serialize later snapshots as native `role: system` messages. [Anthropic placement rules](https://platform.claude.com/docs/en/build-with-claude/mid-conversation-system-messages) put updates after the user turn, including all tool results, and before the next assistant. The adapter maps the loop's earlier system admission to that position without changing durable messages or the relative order of conversation turns. An update without a user turn to follow, or an empty in-history update, is rejected; loop-owned clearing consolidates the history before serialization.
+
+```yaml
+models:
+  - id: deepseek-v4-flash
+    systemPromptUpdate: in-history
+```
 
 Vision routes resolve durable attachments into deterministic request images with a default 640000-pixel and 1 MiB target per image. Oldest-first offload applies before normalization using durable bytes and again using exact encoded bytes. Each retained image carries the standard attachment descriptor; tool-result images remain inside that result. Unlisted and text-only routes receive the shared text-only attachment projection.
 
@@ -102,7 +112,7 @@ Usage counters are cumulative and disjoint: uncached input, cache reads, cache w
 
 #### KV Cache effect
 
-Stable message order and verbatim thinking preserve reusable prefixes. Endpoint/model changes, tool schemas, image offload, or changed execution-world paths can invalidate a prefix. The adapter does not send Anthropic cache-control hints because DeepSeek ignores them.
+Stable message order and verbatim thinking preserve reusable prefixes. An in-history update preserves the initial system field and prior conversation prefix; ordinary replacement or clearing can invalidate that prefix. Endpoint/model changes, tool schemas, image offload, or changed execution-world paths can also invalidate it. The adapter does not send Anthropic cache-control hints because DeepSeek ignores them.
 
 ## Known Limitations and Deferred Work
 

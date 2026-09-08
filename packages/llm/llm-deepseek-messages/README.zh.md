@@ -57,7 +57,17 @@ kind: "package-reference"
 
 ### 请求行为
 
-工具采用原生 `tool_use` 和 `tool_result` 内容块。相邻用户消息会合并，并将工具结果放在前面，保留调用 ID。开头的 system 消息合入顶层系统提示词；对话中途的 system 消息会被拒绝。思考强度使用 `output_config.effort`；标题请求禁用思考。开启思考时传入 temperature 会以 `UNSUPPORTED_OPTION` 失败。
+工具采用原生 `tool_use` 和 `tool_result` 内容块。相邻用户消息会合并，并将工具结果放在前面，保留调用 ID。思考强度使用 `output_config.effort`；标题请求禁用思考。开启思考时传入 temperature 会以 `UNSUPPORTED_OPTION` 失败。
+
+未声明历史追加能力时，最后一条 system 消息提供完整的顶层 `system` 提示词，也适用于携带多版快照的直接调用。最后一条快照为空时，清空历史提示词。代理循环在继续或恢复这些路由时，也会将更新归并到系统头节点；从支持追加的路由切换过来时也如此。单次调用的 `GenerateOptions.system` 仍作为独立前缀。非文本 system 内容会被拒绝。
+
+仅当端点与模型将最后一次 system 更新视为完整的有效提示词时，设置 `models[].systemPromptUpdate: in-history`。默认模型和未列入目录的模型均不启用。支持该能力的路由将初始提示词保留在顶层字段中，把后续快照序列化为原生 `role: system` 消息。[Anthropic 位置规则](https://platform.claude.com/docs/en/build-with-claude/mid-conversation-system-messages)要求更新位于用户轮次（包括全部工具结果）之后、下一条助手消息之前。适配器将循环较早接纳的 system 映射到该位置，不改写持久化消息或对话轮次的相对顺序。缺少前置用户轮次的更新、空的历史内更新会被拒绝；循环负责的清空操作会在序列化前归并历史。
+
+```yaml
+models:
+  - id: deepseek-v4-flash
+    systemPromptUpdate: in-history
+```
 
 视觉路由将持久化附件转换为确定性的请求图片，单图默认目标为 640000 像素和 1 MiB。规范化前按持久化字节数移除最旧图片，随后按实际编码字节数再次检查。保留的图片带有标准附件描述；工具结果中的图片保留在该结果内部。未列入目录和纯文本路由使用共享的附件文本投影。
 
@@ -102,7 +112,7 @@ usage 计数为累计且互斥的未缓存输入、缓存读取、缓存写入�
 
 #### KV Cache 影响
 
-稳定的消息顺序和原样思考有助于保留可复用前缀。端点或模型变化、工具 schema、图片移除以及执行环境路径变化可能使前缀失效。适配器不发送 Anthropic 缓存控制提示，因为 DeepSeek 会忽略它们。
+稳定的消息顺序和原样思考有助于保留可复用前缀。历史内更新保留初始系统字段和此前的对话前缀；普通替换或清空可能使该前缀失效。端点或模型变化、工具 schema、图片移除以及执行环境路径变化也可能使前缀失效。适配器不发送 Anthropic 缓存控制提示，因为 DeepSeek 会忽略它们。
 
 ## 已知限制与后续工作
 

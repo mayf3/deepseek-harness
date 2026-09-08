@@ -3,7 +3,7 @@
 import z from '@deepseek-ai/schemastery'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import { ReasoningEffortId, resolveRetryPolicy, RetryPolicySchema } from '@deepseek-ai/dsh-llm'
-import type { LlmResolvedModelInfo, RetryPolicyConfig } from '@deepseek-ai/dsh-llm'
+import type { LlmResolvedModelInfo, RetryPolicyConfig, SystemPromptUpdate } from '@deepseek-ai/dsh-llm'
 import type { LaunchEnvironmentSnapshot } from '@deepseek-ai/dsh-launch-environment'
 import { MAX_TIMER_DELAY_MS } from '@deepseek-ai/dsh-timeout'
 
@@ -23,6 +23,8 @@ export interface CatalogModel {
   imagePixelBudget?: number
   /** Encoded-byte target used to normalize each request image. */
   imageMaxBytes?: number
+  /** Explicit support for complete system-prompt updates within message history; absent by default. */
+  systemPromptUpdate?: SystemPromptUpdate
 }
 
 /** Composition configuration and the `llm-deepseek-messages` settings section. */
@@ -64,6 +66,7 @@ const modelSchema: z<CatalogModel> = z.object({
   inputModalities: z.array(z.union(['text', 'image'])).min(1).default(['text']),
   imagePixelBudget: positive(),
   imageMaxBytes: positive(),
+  systemPromptUpdate: z.const('in-history'),
 })
 
 const catalog: CatalogModel[] = [
@@ -158,6 +161,7 @@ export function modelInfo(connection: Connection, provider: string, model: strin
     inputModalities: entry?.inputModalities ?? ['text'],
     context: { contextWindow: entry?.contextWindow ?? connection.defaultContextWindow },
     defaultMaxTokens: entry?.maxTokens ?? connection.maxTokens,
+    ...entry?.systemPromptUpdate === undefined ? {} : { systemPromptUpdate: entry.systemPromptUpdate },
     reasoning: {
       defaultEffort: ReasoningEffortId(connection.reasoningEffort),
       efforts: efforts.map(id => ({ id: ReasoningEffortId(id), name: id })),

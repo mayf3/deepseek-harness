@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context, LoggerLevel } from '@deepseek-ai/cordis'
 import LocalAttachments from '@deepseek-ai/dsh-attachment-local'
-import LlmRuntime, { createToolResultMessage, ReasoningEffortId } from '@deepseek-ai/dsh-llm'
+import LlmRuntime, { createSystemMessage, createToolResultMessage, ReasoningEffortId } from '@deepseek-ai/dsh-llm'
 import type { Message } from '@deepseek-ai/dsh-llm'
 import * as Messages from '../src/index.ts'
 import { assemble, options, user } from './helpers.ts'
@@ -15,19 +15,40 @@ afterEach(async () => {
   while (cleanups.length) await cleanups.pop()!()
   vi.unstubAllEnvs()
 })
-async function boot() {
+async function boot(inHistory = false) {
   const home = await mkdtemp(join(tmpdir(), 'dsh-messages-e2e-'))
   cleanups.push(() => rm(home, { recursive: true, force: true }))
   vi.stubEnv('DSH_HOME', home)
   const ctx = new Context()
   cleanups.push(() => ctx.fiber.dispose())
   await ctx.plugin(LlmRuntime)
-  await ctx.plugin(Messages, { maxTokens: 4096 })
+  await ctx.plugin(Messages, { maxTokens: 4096,
+    ...inHistory ? { models: [{ id: 'deepseek-v4-flash', systemPromptUpdate: 'in-history' as const }] } : {},
+  })
   return ctx
 }
 const tool = { name: 'lookup_value', description: 'Read the requested value. Always call this tool to obtain a value.', parameters: { type: 'object', properties: { key: { type: 'string' } }, required: ['key'] } }
 
 describe.skipIf(!process.env.DEEPSEEK_API_KEY)('DeepSeek Messages real API', () => {
+  it.each([false, true])('updates system instructions during a conversation, in-history=%s', async (inHistory) => {
+    const ctx = await boot(inHistory)
+    const history: Message[] = [createSystemMessage('Reply to every user message with exactly PROMPT_FIRST.', 'test'), user('Answer now.')]
+    const reply = async (expected: string) => {
+      const saved = JSON.stringify(history)
+      const response = await assemble(ctx.llm.stream(options({ messages: history, reasoningEffort: ReasoningEffortId('off') })))
+      expect(response.assembler.finish.kind).toBe('stop')
+      expect(response.message.content.filter(block => block.type === 'text').map(block => block.text).join('')).toContain(expected)
+      expect(JSON.stringify(history)).toBe(saved)
+      history.push(response.message)
+    }
+    await reply('PROMPT_FIRST')
+    history.push(createSystemMessage('Reply to every user message with exactly PROMPT_SECOND.', 'test'), user('Answer again.'))
+    await reply('PROMPT_SECOND')
+    const withoutSystem = history.filter(message => message.role !== 'system')
+    history.splice(0, history.length, createSystemMessage('', 'test'), ...withoutSystem, user('Reply with exactly PROMPT_CLEARED.'))
+    await reply('PROMPT_CLEARED')
+  })
+
   it('describes a durable image sent as inline Messages content', async () => {
     const ctx = await boot()
     await ctx.plugin(LocalAttachments)

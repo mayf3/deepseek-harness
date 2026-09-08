@@ -1,4 +1,4 @@
-/** Convert Harness history into ordered Messages content without changing durable data. */
+/** Map system snapshots and conversation turns to Messages using the configured route capability. */
 
 import { LlmError, requestImageHandleText } from '@deepseek-ai/dsh-llm'
 import type { ContentBlock, GenerateOptions, ImageAttachmentAccessResolver, Message } from '@deepseek-ai/dsh-llm'
@@ -38,7 +38,7 @@ function assistant(message: Message, model: string, onReplayDegrade?: (reason: s
 /** Serialize one complete request using already prepared image bytes.
  * @param options - provider-neutral request.
  * @param connection - validated defaults and thinking policy.
- * @param history - image-projected history, still ordered by durable occurrence.
+ * @param history - image-projected history with complete system snapshots; durable messages remain unchanged.
  * @param images - request versions for retained images.
  * @param access - execution-world paths for image descriptions.
  * @param onReplayDegrade - diagnostic for discarded native replay metadata.
@@ -49,6 +49,8 @@ export function serialize(
   images: ReadonlyMap<ImageAttachmentRef['attachmentId'], RequestImageAttachment>, access: ImageAttachmentAccessResolver,
   onReplayDegrade?: (reason: string) => void,
 ): WireRequest {
+  const model = connection.models.find(entry => entry.id === options.model)
+  const inHistory = model?.systemPromptUpdate === 'in-history'
   const input = (blocks: readonly ContentBlock[]): WireInput[] => blocks.flatMap((block): WireInput[] => {
     if (block.type === 'text') return block.text ? [{ type: 'text', text: block.text }] : []
     if (block.type !== 'image') return unsupported(`user/tool-result content ${block.type}`)
@@ -60,14 +62,29 @@ export function serialize(
     ]
   })
   const messages: WireMessage[] = []
-  const system = options.system === undefined ? [] : [options.system]
+  let historySystem: string | undefined
+  const systemUpdates: WireMessage[] = []
+  // Harness admits system updates before user input. Messages places the same
+  // update after that user/tool-result turn and before the next assistant.
+  const flushSystemUpdates = () => {
+    if (systemUpdates.length === 0) return
+    if (messages.at(-1)?.role !== 'user') return unsupported('system update without a preceding user or tool-result turn')
+    messages.push(...systemUpdates.splice(0))
+  }
   for (const message of history) {
     if (message.role === 'system') {
       const texts = message.content.filter(block => block.type === 'text')
-      if (messages.length > 0 || texts.length !== message.content.length) return unsupported('mid-conversation or non-text system message')
-      system.push(texts.map(block => block.text).join(''))
+      if (texts.length !== message.content.length) return unsupported('non-text system message')
+      const text = texts.map(block => block.text).join('')
+      if (inHistory && messages.length > 0) {
+        if (text.length === 0) return unsupported('empty in-history system update')
+        systemUpdates.push({ role: 'system', content: [{ type: 'text', text }] })
+      } else {
+        historySystem = text
+      }
       continue
     }
+    if (message.role === 'assistant') flushSystemUpdates()
     const content: WireBlock[] = message.role === 'assistant' ? assistant(message, options.model, onReplayDegrade) : message.content.flatMap((block): WireBlock[] => {
       if (block.type !== 'tool-result') return input([block])
       return [{ type: 'tool_result', tool_use_id: block.toolCallId, content: input(block.content), ...block.isError === undefined ? {} : { is_error: block.isError } }]
@@ -76,13 +93,14 @@ export function serialize(
     if (previous?.role === message.role) previous.content.push(...content)
     else messages.push({ role: message.role, content })
   }
+  flushSystemUpdates()
   let pending = new Set<string>()
   for (const message of messages) {
     if (message.role === 'assistant') {
       const calls = message.content.filter(block => block.type === 'tool_use')
       pending = new Set(calls.map(block => block.id))
       if (pending.size !== calls.length) throw new LlmError('DeepSeek Messages duplicate tool call id', 'INVALID_REQUEST')
-    } else {
+    } else if (message.role === 'user') {
       const results = message.content.filter(block => block.type === 'tool_result')
       for (const result of results) {
         if (!pending.delete(result.tool_use_id)) throw new LlmError('DeepSeek Messages tool result has no matching call', 'INVALID_REQUEST')
@@ -99,13 +117,13 @@ export function serialize(
   if (options.temperature !== undefined && effort !== 'off') {
     throw new LlmError('DeepSeek Messages temperature requires reasoningEffort off', 'UNSUPPORTED_OPTION')
   }
-  const model = connection.models.find(entry => entry.id === options.model)
+  const system = [options.system, historySystem].filter(Boolean).join('\n\n')
   return {
     model: options.model, stream: true, messages,
     max_tokens: options.maxTokens ?? model?.maxTokens ?? connection.maxTokens,
     thinking: { type: effort === 'off' ? 'disabled' : 'enabled' },
     ...effort === 'off' ? {} : { output_config: { effort: effort as 'low' | 'high' | 'max' } },
-    ...system.length === 0 ? {} : { system: system.join('\n\n') },
+    ...system.length === 0 ? {} : { system },
     ...options.temperature === undefined ? {} : { temperature: options.temperature },
     ...options.stop === undefined ? {} : { stop_sequences: options.stop },
     ...options.tools === undefined ? {} : {

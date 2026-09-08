@@ -11,9 +11,9 @@ export type WireBlock = WireInput
   | { type: 'tool_use'; id: string; name: string; input: Record<string, unknown> }
   | { type: 'tool_result'; tool_use_id: string; content: WireInput[]; is_error?: boolean }
 
-/** One user or assistant turn; system instructions use the request's top-level field. */
+/** Conversation turn; capable routes retain later system updates in message history. */
 export interface WireMessage {
-  role: 'user' | 'assistant'
+  role: 'user' | 'assistant' | 'system'
   content: WireBlock[]
 }
 

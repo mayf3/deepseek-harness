@@ -1147,12 +1147,14 @@ export interface CatalogModel {
   imagePixelBudget?: number
   /** Encoded-byte target used to normalize each request image. */
   imageMaxBytes?: number
+  /** Explicit support for complete system-prompt updates within message history; absent by default. */
+  systemPromptUpdate?: SystemPromptUpdate
 }
 ```
 
-Depends on: [`RetryPolicyConfig`](../packages/llm/llm/src/index.ts)
+Depends on: [`RetryPolicyConfig`](../packages/llm/llm/src/index.ts) · [`SystemPromptUpdate`](../packages/llm/llm/src/index.ts)
 
-Source: [`packages/llm/llm-deepseek-messages/src/config.ts:29`](../packages/llm/llm-deepseek-messages/src/config.ts)
+Source: [`packages/llm/llm-deepseek-messages/src/config.ts:31`](../packages/llm/llm-deepseek-messages/src/config.ts)
 
 <a id="deepseek-aidsh-llm-pi-ai"></a>
 
