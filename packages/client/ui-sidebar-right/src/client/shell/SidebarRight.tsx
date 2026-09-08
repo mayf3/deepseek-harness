@@ -33,8 +33,7 @@ import { createPortal } from 'react-dom'
 import type {
   HostObservable, InjectFace, PropsLocale, PropsRenderSlots, PropsRuntime, PropsStore,
 } from '@deepseek-ai/dsh-client-ui-slots'
-// The frame declares the `rightbar` seat this component fills.
-import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
+import type {} from '../contract/slots.ts'
 import type { DockIntents, DockMode, FloatRect, TabId, TabRecord, TabRenderer } from '@deepseek-ai/dsh-client-ui-dockkit'
 import { canSplit, dockPaneIds, DockSurface, findPaneContentTab, FloatLayer } from '@deepseek-ai/dsh-client-ui-dockkit'
 import type { HalvesFit, LayoutState, PaneId } from '@deepseek-ai/dsh-client-ui-dockkit'
@@ -108,7 +107,7 @@ export interface SidebarRightInjected {
 
 /** The column seat's props: session scope, so the session arrives as a standard prop. */
 export type RightbarSeatProps =
-  & PropsRuntime<'rightbar'>
+  & PropsRuntime<'rightbar.session'>
   & Children
   & Store
   & PropsLocale<'sidebarRight'>

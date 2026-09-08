@@ -49,7 +49,7 @@
         - text: 复制
     - listitem:
       - 'button "设为默认: 极简模式"':
-        - text: 极简模式 内置 仅提供持久 bash 与 str_replace_editor 的双工具编码 Agent。
+        - text: 极简模式 内置 仅提供持久 shell 的单工具编码 Agent。
         - code: minimal
       - 'button "配置: 极简模式"':
         - img
@@ -77,7 +77,7 @@
   - list:
     - listitem:
       - 'button "设为默认: 我的模式"':
-        - text: 我的模式 自定义 仅提供持久 bash 与 str_replace_editor 的双工具编码 Agent。
+        - text: 我的模式 自定义 仅提供持久 shell 的单工具编码 Agent。
         - code: my-agent
       - 'button "配置: 我的模式"':
         - img

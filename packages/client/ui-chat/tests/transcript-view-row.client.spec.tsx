@@ -35,6 +35,7 @@ function mount(mode: 'normal' | 'compact' = 'compact') {
   const source = createSnapshotStore(mode)
   const setTranscriptView = vi.fn((next: 'normal' | 'compact') => { source.set(next) })
   const props: TranscriptViewRowProps = {
+    usePanelInfo: selector => selector({ activePanelId: null }),
     useSessions: emptySessions(),
     useSessionPendingInteraction: noPendingInteraction(),
     useWorkspaces: emptyWorkspaces(),
