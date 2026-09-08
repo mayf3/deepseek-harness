@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-使用 `dsh-tools`，工具插件注册 schema 与执行器，每次模型工具调用都经过一条受守卫的流水线——允许／拒绝／询问策略、单调守卫、环绕分发包装层、结果检查、由工具定义持有的内容终结，以及最终的仅观测通知。该包还控制工具向模型呈现的方式：`mode` 配置选择原生 Function Calling（函数调用）、[PTC mode](#ptc-mode) 或两者，单个 agent 可用 `presentAs` 为自己遮蔽该默认值。工具作者使用 `defineTool` 定义类型化参数与输出 schema、可选的协作式超时、并行安全分类与可选的 UI 呈现意图。把任何希望模型触达的能力做成注册表时请选择本包——schema 会自动流入提示词组装。
+使用 `dsh-tools` 可向模型公开类型化能力、校验调用、执行允许／拒绝／询问策略，并在普通工具失败时返回最终结果而不中止当前轮次。通过 `mode` 选择原生 Function Calling（函数调用）、[PTC mode](#ptc-mode) 或两者；单个 agent 可用 `presentAs` 覆盖默认值。工具作者使用 `defineTool` 声明类型化参数与输出、协作式超时、并行安全属性和可选 UI 展示。模型会看到每个获准工具声明的名称、描述与参数 schema；按 agent 设置的限制可缩小该可见集合。
 
 ## 目录
 

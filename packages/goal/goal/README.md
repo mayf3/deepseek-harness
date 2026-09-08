@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-`dsh-goal` keeps one durable completion objective per agent session: the goal's text, phase, round count, and revision history live in the session log, so they survive session resume, fork, and process restarts. You can create, edit, pause, resume, complete, block, and clear a goal, and every mutation is compare-and-set, so a stale view cannot clobber newer state. A goal carries a round cap (default 256) that bounds automatic continuation, and a blocked goal keeps a stable policy code plus a human explanation. It is state, not a scheduler: the service decides nothing about when work continues, and continuation permission is process-local and never persisted. Choose it when one long-running objective should span many turns; skip it for routine single-turn work.
+`dsh-goal` lets one long-running completion objective persist across turns, session resume, fork, and process restarts. Users and agents can create, edit, pause, resume, complete, block, or clear it; compare-and-set updates reject stale views. A configurable round cap (256 by default) bounds automatic continuation, and blocked goals retain a stable policy code with a human-readable explanation. The package stores goal state but does not schedule work, and continuation permission remains process-local rather than durable. Choose it for one objective spanning many turns; skip it for routine single-turn work or parallel objectives.
 
 ## Table of Contents
 
