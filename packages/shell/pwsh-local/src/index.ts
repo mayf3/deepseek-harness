@@ -122,7 +122,7 @@ export function assertServiceablePwshConfig(config: Config): void {
 
 /**
  * Local PowerShell executor over `ctx.subprocess`. Bounded output, spill
- * files, and process-tree termination are the subprocess service's mechanics;
+ * files, and managed-range termination are the subprocess service's mechanics;
  * this executor supplies their configured budgets per spawn.
  */
 export class PwshLocalExecutor extends ShellExecutor {
@@ -288,21 +288,22 @@ export class PwshLocalExecutor extends ShellExecutor {
     const running = this.ctx.subprocess.spawn(this.spawnSpec(spec, this.config.maxOutputBytes, spec.signal, argv))
     const collected = PwshLocalExecutor.collected(running)
 
-    // A spawn failure produces no process output, so the subprocess service has
-    // nothing to buffer: once the spawn rejected, the note is the whole stderr
-    // stream for every reader. The observed reader serves it at offset 0 and
-    // the consuming read folds it in exactly once.
-    let spawnFailure: string | undefined
-    let spawnFailureReported = false
-    const consumeSpawnFailure = (): string => {
-      if (spawnFailure === undefined || spawnFailureReported) return ''
-      spawnFailureReported = true
-      return spawnFailure
+    // A provider rejection produces no process output, so the subprocess
+    // service has nothing to buffer: once the provider rejected, its
+    // stage-neutral note is the whole stderr stream for every reader. The
+    // observed reader serves it at offset 0 and the consuming read folds it in
+    // exactly once.
+    let providerFailureNote: string | undefined
+    let providerFailureReported = false
+    const consumeProviderFailure = (): string => {
+      if (providerFailureNote === undefined || providerFailureReported) return ''
+      providerFailureReported = true
+      return providerFailureNote
     }
     const observedStderr: SubprocessOutputReader = {
       readFrom: (fromByte) => {
-        if (spawnFailure === undefined) return collected.stderr.readFrom(fromByte)
-        const note = Buffer.from(spawnFailure, 'utf8')
+        if (providerFailureNote === undefined) return collected.stderr.readFrom(fromByte)
+        const note = Buffer.from(providerFailureNote, 'utf8')
         return { text: note.subarray(Math.min(fromByte, note.length)).toString('utf8'), nextOffset: note.length, lossy: false }
       },
     }
@@ -323,10 +324,16 @@ export class PwshLocalExecutor extends ShellExecutor {
         proc.signal = outcome.signal
         this.onProcessDone(proc, collected.stderr.readFrom(0).text, false)
       }, (error: unknown) => {
-        // Background spawn failures settle as killed and surface on stderr for every reader.
+        // Background provider failures settle as killed and surface on stderr for every reader.
         proc.status = 'killed'
-        spawnFailure = `spawn failed: ${String(error)}`
-        this.onProcessDone(proc, spawnFailure, true, error)
+        let detail = 'unprintable provider failure'
+        try {
+          detail = String(error)
+        } catch {
+          // Provider-owned rejection values cannot make ShellProcess.done reject.
+        }
+        providerFailureNote = `subprocess failed before reporting an outcome: ${detail}`
+        this.onProcessDone(proc, providerFailureNote, true, error)
       }),
       readOutput: (): ShellProcessRead => {
         const out = collected.stdout.readFrom(stdoutOffset)
@@ -334,9 +341,10 @@ export class PwshLocalExecutor extends ShellExecutor {
         stdoutOffset = out.nextOffset
         stderrOffset = err.nextOffset
 
-        // A failed spawn never produced process output, so the note and real
-        // stderr text are mutually exclusive.
-        const errText = err.text.length > 0 ? err.text : consumeSpawnFailure()
+        const providerFailure = consumeProviderFailure()
+        const failureSeparator = err.text.length > 0 && !err.text.endsWith('\n') ? '\n' : ''
+        const errText = err.text
+          + (providerFailure.length > 0 ? `${failureSeparator}${providerFailure}` : '')
         // Single newline between sections: stdout chunks usually end with one
         // already; add it only when missing.
         const separator = out.text.length > 0 && !out.text.endsWith('\n') ? '\n' : ''
@@ -366,10 +374,10 @@ export class PwshLocalExecutor extends ShellExecutor {
    * pwsh-confining consumer is `@deepseek-ai/dsh-pwsh-sandbox`.
    * @param _proc - the settled process handle.
    * @param _stderr - the process's retained stderr tail used by subclasses for settlement classification.
-   * @param _spawnFailed - whether the spawn rejected before any process existed.
-   * @param _spawnError - the spawn rejection, when `_spawnFailed`.
+   * @param _providerRejected - whether the subprocess promise rejected without a direct outcome.
+   * @param _providerError - the provider rejection reason, which may itself be undefined.
    */
-  protected onProcessDone(_proc: ShellProcess, _stderr: string, _spawnFailed: boolean, _spawnError?: unknown): void {}
+  protected onProcessDone(_proc: ShellProcess, _stderr: string, _providerRejected: boolean, _providerError?: unknown): void {}
 }
 /* jscpd:ignore-end */
 

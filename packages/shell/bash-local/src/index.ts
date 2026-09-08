@@ -1,6 +1,6 @@
 /**
  * Local Service Provider for the bash capability seam over the subprocess
- * capability seam. Public commands run as `bash -c` in a managed process group spawned
+ * capability seam. Public commands run as `bash -c` in a provider-managed range
  * through `ctx.subprocess`; subclasses may reuse the same mechanics with an
  * explicit argv. This executor owns command defaulting, deadlines and cause
  * classification, the model-friendly terminal environment, and the model-facing
@@ -93,9 +93,9 @@ export function assertServiceableBashConfig(config: Config): void {
 }
 
 /**
- * Local bash executor over `ctx.subprocess`. Bounded output, spill files, and
- * process-group SIGTERM→SIGKILL escalation are the subprocess service's
- * mechanics; this executor supplies their configured budgets per spawn, so a
+ * Local bash executor over `ctx.subprocess`. Bounded output, spill files,
+ * managed-range SIGTERM→SIGKILL escalation, and quiescence are the subprocess
+ * service's mechanics; this executor supplies their configured budgets per spawn, so a
  * still-running background process stays managed (killed and joined at
  * composition teardown) even across an executor reload.
  */
@@ -247,33 +247,34 @@ export class LocalBashExecutor extends ShellExecutor {
 
   /**
    * Start an explicit argv with the background lifecycle, environment, output,
-   * cancellation, and process-tree ownership semantics of this executor.
+   * cancellation, and managed-range ownership semantics of this executor.
    * Subclasses use this after replacing the public command's shell argv at an
    * execution boundary.
    * @param spec - resolved execution settings and caller-owned command metadata.
    * @param argv - exact executable and arguments to hand to `ctx.subprocess`.
-   * @returns the live background handle; spawn rejection settles it as killed.
+   * @returns the live background handle; provider rejection settles it as killed.
    */
   protected startArgv(spec: ShellExecSpec, argv: readonly string[]): ShellProcess {
     // Background runs ignore timeoutMs; callers stop them through kill() or spec.signal.
     const running = this.ctx.subprocess.spawn(this.spawnSpec(spec, argv, this.config.maxOutputBytes, spec.signal))
     const collected = LocalBashExecutor.collected(running)
 
-    // A spawn failure produces no process output, so the subprocess service has
-    // nothing to buffer: once the spawn rejected, the note is the whole stderr
-    // stream for every reader. The observed reader serves it at offset 0 and
-    // the consuming read folds it in exactly once.
-    let spawnFailure: string | undefined
-    let spawnFailureReported = false
-    const consumeSpawnFailure = (): string => {
-      if (spawnFailure === undefined || spawnFailureReported) return ''
-      spawnFailureReported = true
-      return spawnFailure
+    // A provider rejection produces no process output, so the subprocess
+    // service has nothing to buffer: once the provider rejected, its
+    // stage-neutral note is the whole stderr stream for every reader. The
+    // observed reader serves it at offset 0 and the consuming read folds it in
+    // exactly once.
+    let providerFailureNote: string | undefined
+    let providerFailureReported = false
+    const consumeProviderFailure = (): string => {
+      if (providerFailureNote === undefined || providerFailureReported) return ''
+      providerFailureReported = true
+      return providerFailureNote
     }
     const observedStderr: SubprocessOutputReader = {
       readFrom: (fromByte) => {
-        if (spawnFailure === undefined) return collected.stderr.readFrom(fromByte)
-        const note = Buffer.from(spawnFailure, 'utf8')
+        if (providerFailureNote === undefined) return collected.stderr.readFrom(fromByte)
+        const note = Buffer.from(providerFailureNote, 'utf8')
         return { text: note.subarray(Math.min(fromByte, note.length)).toString('utf8'), nextOffset: note.length, lossy: false }
       },
     }
@@ -294,10 +295,16 @@ export class LocalBashExecutor extends ShellExecutor {
         proc.signal = outcome.signal
         this.onProcessDone(proc, collected.stderr.readFrom(0).text, false)
       }, (error: unknown) => {
-        // Background spawn failures settle as killed and surface on stderr for every reader.
+        // Background provider failures settle as killed and surface on stderr for every reader.
         proc.status = 'killed'
-        spawnFailure = `spawn failed: ${String(error)}`
-        this.onProcessDone(proc, spawnFailure, true, error)
+        let detail = 'unprintable provider failure'
+        try {
+          detail = String(error)
+        } catch {
+          // Provider-owned rejection values cannot make ShellProcess.done reject.
+        }
+        providerFailureNote = `subprocess failed before reporting an outcome: ${detail}`
+        this.onProcessDone(proc, providerFailureNote, true, error)
       }),
       readOutput: (): ShellProcessRead => {
         const out = collected.stdout.readFrom(stdoutOffset)
@@ -305,9 +312,10 @@ export class LocalBashExecutor extends ShellExecutor {
         stdoutOffset = out.nextOffset
         stderrOffset = err.nextOffset
 
-        // A failed spawn never produced process output, so the note and real
-        // stderr text are mutually exclusive.
-        const errText = err.text.length > 0 ? err.text : consumeSpawnFailure()
+        const providerFailure = consumeProviderFailure()
+        const failureSeparator = err.text.length > 0 && !err.text.endsWith('\n') ? '\n' : ''
+        const errText = err.text
+          + (providerFailure.length > 0 ? `${failureSeparator}${providerFailure}` : '')
         // Single newline between sections: stdout chunks usually end with one
         // already; add it only when missing.
         const separator = out.text.length > 0 && !out.text.endsWith('\n') ? '\n' : ''
@@ -332,15 +340,15 @@ export class LocalBashExecutor extends ShellExecutor {
 
   /**
    * Settlement hook for subclasses that attach execution facts to a process.
-   * Called after exit facts or spawn-failure output are stamped and before
+   * Called after exit facts or provider-failure output are stamped and before
    * {@link ShellProcess.done} resolves. The base implementation is intentionally
    * empty.
    * @param _proc - the settled process handle.
    * @param _stderr - the process's retained stderr tail used by subclasses for settlement classification.
-   * @param _spawnFailed - whether the subprocess promise rejected before a process started.
-   * @param _spawnError - the original spawn rejection reason, which may itself be undefined.
+   * @param _providerRejected - whether the subprocess promise rejected without a direct outcome.
+   * @param _providerError - the provider rejection reason, which may itself be undefined.
    */
-  protected onProcessDone(_proc: ShellProcess, _stderr: string, _spawnFailed: boolean, _spawnError?: unknown): void {}
+  protected onProcessDone(_proc: ShellProcess, _stderr: string, _providerRejected: boolean, _providerError?: unknown): void {}
 }
 
 export default LocalBashExecutor
