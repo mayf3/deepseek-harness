@@ -14,6 +14,7 @@ import { visitRowTree } from './patch-rows.ts'
 
 /** Runtime mirror: FiberState is a cross-package const enum. */
 const FIBER_PENDING = 0 as FiberState.PENDING
+const FIBER_ACTIVE = 2 as FiberState.ACTIVE
 
 /**
  * The diagnostic line for a fiber waiting on services, naming the ones its
@@ -49,7 +50,8 @@ export interface ContainedFailure {
 /**
  * Failures recorded by contained groups of one runtime. Rows are keyed by
  * their tree-wide id; recording a row again replaces its earlier record, a
- * row that later mounts clears it, a group that updates drops the records of
+ * row that later mounts — re-created, or activated in place once the service
+ * it waited for appears — clears it, a group that updates drops the records of
  * rows it no longer configures, and a group that unmounts clears its rows'.
  * A record's `groupId` names the contained group that isolates the row, at
  * any nesting depth, so those two cleanups reach every row of a bundle.
@@ -145,6 +147,9 @@ function stageOf(error: unknown): ContainedFailureStage {
  * no failure outlives the composition that produced it.
  */
 export class ContainedGroup extends Group {
+  /** Whether the activation watcher is registered. */
+  private watching = false
+
   override async update(config: EntryOptions[]): Promise<void> {
     await super.update(config)
     const configured = new Set<string>()
@@ -163,6 +168,7 @@ export class ContainedGroup extends Group {
       const rowId = (options as EntryOptions).id
       const fiber = this.tree.store[rowId]?.fiber
       if (fiber !== undefined && fiber.state === FIBER_PENDING) {
+        this.watchActivation()
         this.registry()?.record({
           entryId: id,
           rowId,
@@ -202,6 +208,24 @@ export class ContainedGroup extends Group {
   override async stop(): Promise<void> {
     await super.stop()
     this.registry()?.clearGroup(this.groupId())
+  }
+
+  /**
+   * A row recorded as waiting comes to life in place once its service
+   * appears — a sibling row switched back on, say — with no `create` to
+   * clear the record, so the group watches fiber states for that moment.
+   * Registered once per group; the group's context disposal drops it.
+   */
+  private watchActivation(): void {
+    if (this.watching) return
+    this.watching = true
+    this.ctx.on('internal/status', (fiber: Fiber) => {
+      if (fiber.state !== FIBER_ACTIVE) return
+      const entryId = fiber.entry?.id
+      if (entryId === undefined) return
+      const registry = this.registry()
+      if (registry?.get(entryId)?.stage === 'inject-pending') registry.clear(entryId)
+    })
   }
 
   /** The registry provided on the runtime root, if the boot glue provided one. */
