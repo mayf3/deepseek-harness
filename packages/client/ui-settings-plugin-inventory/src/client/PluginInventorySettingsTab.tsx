@@ -113,7 +113,10 @@ function PluginCard({ rowKey, moduleName, entryId, trailing, ariaLabel, failed, 
         aria-label={ariaLabel}
         onClick={() => { onToggle(rowKey) }}
       >
-        <strong className={css.cardTitle} title={moduleName}>{moduleShortName(moduleName)}</strong>
+        <span className={css.cardHeading}>
+          <strong className={css.cardTitle} title={moduleName}>{moduleShortName(moduleName)}</strong>
+          {entryId === null ? null : <code className={css.cardIdentity} title={entryId}>{entryId}</code>}
+        </span>
         <span className={css.cardTrailing}>
           {trailing}
           <IconChevronDownOutline14 className={css.chevron} size={12} aria-hidden="true" />
@@ -280,7 +283,7 @@ export function PluginInventorySettingsTab({ list, presetName, t }: PluginInvent
         failed={failed}
         expanded={expanded}
         onToggle={toggleRow}
-        ariaLabel={`${title}, ${stateText}`}
+        ariaLabel={`${title}${row.entryId === null ? '' : `, ${row.entryId}`}, ${stateText}`}
         trailing={(
           <>
             {row.enabled === true && !failed && row.fiberPhase !== null
@@ -326,7 +329,7 @@ export function PluginInventorySettingsTab({ list, presetName, t }: PluginInvent
         failed={failed}
         expanded={expanded}
         onToggle={toggleRow}
-        ariaLabel={`${title}, ${stateText}`}
+        ariaLabel={`${title}, ${entry.entryId}, ${stateText}`}
         trailing={(
           <>
             {entry.enabled && !failed && entry.fiberPhase !== null

@@ -150,14 +150,32 @@
   outline-offset: -2px;
 }
 
-.cardTitle {
+.cardHeading {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
   min-width: 0;
   overflow: hidden;
+}
+
+.cardTitle,
+.cardIdentity {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cardTitle {
   font-size: 14px;
   line-height: 20px;
   font-weight: 600;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+}
+
+.cardIdentity {
+  color: var(--dsw-alias-label-tertiary);
+  font-family: var(--ds-font-family-code);
+  font-size: 11px;
+  line-height: 16px;
 }
 
 .cardTrailing {
