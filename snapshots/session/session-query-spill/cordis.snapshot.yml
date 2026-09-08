@@ -58,3 +58,18 @@
 
 - id: timeout-policy
   name: '@deepseek-ai/dsh-tool-call-timeout-policy'
+
+- insert:
+    - id: snapshot-spill-locators
+      name: ../../../scripts/snapshot-spill-locators.ts
+      config:
+        root: !!js process.env.DSH_SNAPSHOT_SPILL_ROOT
+        locatorRoot: !!js process.env.DSH_SNAPSHOT_SPILL_LOCATOR_ROOT
+
+- insert:
+    - id: snapshot-shell-path
+      name: ../../../scripts/snapshot-shell-path.ts
+      config:
+        command: "file=$(find /tmp/dsh-acp-snap-035d1d054 -name '*-session_event_read.txt' -type f); grep -q request/header \"$file\" && grep -q session_event_search \"$file\" && echo SPILL_CANONICAL_OK"
+        recordedPath: /tmp/dsh-acp-snap-035d1d054
+        livePath: !!js process.env.DSH_SNAPSHOT_SPILL_ROOT
