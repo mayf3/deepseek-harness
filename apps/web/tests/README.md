@@ -14,6 +14,8 @@ The GitHub webhook scenario awaits the deterministic model adapter’s first req
 
 Queue layout assertions wait for the responsive frame to settle and sample both related rectangles in one browser evaluation; separate round trips can observe different layout states. Details-panel close assertions await the frame’s running transitions before checking zero width; published closed state alone does not imply settled geometry.
 
+Feedback selection waits for menu closure, queued-image capture waits for the durable attachment after admission, and wide-table measurements wait for frame tracks and observer-published conversation width to agree with rendered geometry.
+
 ## These are Host-face tests
 
 They type-check in the root `tsconfig.host.json`, not in the Client aggregate,

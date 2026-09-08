@@ -22,6 +22,10 @@ Status: implemented
 
 [详情 Session 生命周期测试](../../../../apps/web/tests/details-session-lifecycle.e2e.ts)在关闭状态出现后等待框架已捕获的动画 Promise，再保留宽度为零的断言。完成和取消的过渡都会进入该断言；取消不能让持续非零的轨道通过。暂停真实网格过渡可以复现关闭断言失败，只有释放后才成功完成，而持续一像素的轨道仍被拒绝。
 
+[反馈释放测试](../../../../apps/web/tests/feedback-release.e2e.ts)在选择模型后等待菜单关闭：选择响应仍在传输时，投影标签就可能变化。[排队图片测试](../../../../apps/web/tests/queue-image.e2e.ts)区分乐观预览和持久化行的附件；缩略图捕获发生在接纳和持久化附件响应之后。受控响应屏障固定这两种顺序，独立的测试完成清理即使在超时后也会释放拦截的请求。
+
+[宽表格测试](../../../../apps/web/tests/markdown-wide-table.e2e.ts)等待请求的框架轨道与渲染轨道一致，并等待会话 ResizeObserver 发布当前渲染宽度。两次相同的中间表格宽度不能证明这些输入已稳定。暂停原生过渡和延迟观察回调能够复现过期的溢出读数；故意破坏溢出布局时，未修改的几何断言仍然失败。
+
 ### 已构建客户端的导入分类
 
 [master Windows 运行](https://github.com/deepseek-harness/deepseek-harness/actions/runs/34204779455/job/101996934534)还拒绝了 `ui-dockkit` 有意暴露的 CSS 导入。[Node 导入检查](../../../../packages/experimental/webworker-runtime/tests/compile/transform-corpus-check.ts)仅在 Node 针对其 `dockkit.module.css` 报告 `ERR_UNKNOWN_FILE_EXTENSION` 时，才允许这个精确的 bundle。相同入口的其他错误仍然失败，成功导入则报告豁免已过期。这保留了导入检查，同时不要求仅面向浏览器的组件库在裸 Node 中加载样式表。
