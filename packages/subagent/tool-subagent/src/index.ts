@@ -664,7 +664,11 @@ export function apply(ctx: Context, config: Config, session?: Session): void {
     if (ctx.fiber.uid === null || ctx.fiber.state === FiberState.UNLOADING || presetInstalls.has(candidate)) return
     let fiber: ReturnType<Context['inject']> | undefined
     const dispose = ctx.effect(() => async () => {
-      if (fiber !== undefined) await fiber.dispose()
+      if (fiber !== undefined) {
+        await fiber.dispose()
+        // Agent teardown may already have claimed the single-shot disposer.
+        while (fiber.inertia !== undefined) await fiber.inertia
+      }
     }, `tool-subagent: standing-preset definitions for Agent "${candidate.id}"`)
     // Reserve before policy sampling or injection can re-enter reconciliation.
     presetInstalls.set(candidate, dispose)

@@ -26,7 +26,7 @@ The [Agent registration-scope decision](2026-07-08-agent-scope-contexts.md), its
 
 Agent creation tests pin explicit root and child ownership. Continuation integration tests keep a real child live long enough to assert both `roots()` exclusion and `isOwnedBy()` membership. Existing Schedule tests verify that root-only registrations stay absent from an explicitly owned child.
 
-Remote-event tests reject a missing or mismatched Agent before forwarding a scoped waterfall. Tool-subagent tests verify that direct setup installs before Session publication; standing-preset tests verify per-Session policy sampling, inheritance, and removal of every installed definition before preset unload settles, including cleanup already started by reparenting.
+Remote-event tests reject a missing or mismatched Agent before forwarding a scoped waterfall. Tool-subagent tests verify that direct setup installs before Session publication; standing-preset tests verify per-Session policy sampling, inheritance, and removal of every installed definition before preset unload settles, including cleanup already started by reparenting or Agent disposal.
 
 ## Alternatives considered
 

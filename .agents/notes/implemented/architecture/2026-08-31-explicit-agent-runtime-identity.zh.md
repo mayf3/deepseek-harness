@@ -26,7 +26,7 @@ Agent 的 Cordis Context 拥有注册及其清理。Agent 身份则为某项操�
 
 Agent 创建测试锁定显式的根级与子级归属。continuation 集成测试让一个真实子级保持存活，直到断言其既不属于 `roots()`、又满足 `isOwnedBy()`。现有 Schedule 测试验证仅限根级的注册项不会出现在显式归属的子级中。
 
-Remote 事件测试会在转发作用域 waterfall 前拒绝缺失或不匹配的 Agent。tool-subagent 测试验证 direct setup 会在 Session 发布前完成安装；常驻 preset 测试验证逐 Session 的策略读取、继承，以及 preset 卸载完成前会移除所有已安装定义，包括重设父级时已启动的清理。
+Remote 事件测试会在转发作用域 waterfall 前拒绝缺失或不匹配的 Agent。tool-subagent 测试验证 direct setup 会在 Session 发布前完成安装；常驻 preset 测试验证逐 Session 的策略读取、继承，以及 preset 卸载完成前会移除所有已安装定义，包括重设父级或 Agent 销毁时已启动的清理。
 
 ## 考虑过的替代方案
 

@@ -316,6 +316,59 @@ describe('SubagentModelSelectionConfig', () => {
     await ctx.fiber.dispose()
   })
 
+  it('awaits Agent-started definition cleanup when a standing preset unloads', async () => {
+    const ctx = await boot(false)
+    const cleanupStarted = Promise.withResolvers<undefined>()
+    const cleanupGate = Promise.withResolvers<undefined>()
+    const settlements: string[] = []
+    let definitionParent: Context | undefined
+    let disposingAgent: Promise<void> | undefined
+    let unloadingPreset: Promise<void> | undefined
+    try {
+      const preset = createScope(ctx, { preset: 'agent-first-cleanup' })
+      ctx.on('internal/plugin', (fiber) => {
+        if (fiber.parent !== definitionParent
+          || Object.keys(fiber.inject).sort().join(',') !== 'subagents,systemPrompt,tools') return
+        fiber.ctx.effect(() => async () => {
+          cleanupStarted.resolve(undefined)
+          await cleanupGate.promise
+          settlements.push('definition-cleaned')
+        }, 'tool-subagent test: Agent-started cleanup barrier')
+      })
+      const mounted = await preset.ctx.plugin(tool, {
+        provider: 'spawn',
+        modelSelectionSettings: true,
+        backgroundMode: 'continuable',
+      })
+      const handle = await ctx.agents.create({
+        sessionId: SessionId('agent-first-cleanup'),
+        setup: (agentCtx) => {
+          definitionParent = agentCtx
+          bindScopeParent(scopeOf(agentCtx)!, scopeOf(preset.ctx)!)
+        },
+      })
+      await vi.waitFor(() => { expect(ctx.tools.get('subagent', handle.agent)).toBeDefined() })
+
+      disposingAgent = handle.dispose()
+      await cleanupStarted.promise
+      unloadingPreset = Promise.resolve(mounted.dispose()).then(() => {
+        settlements.push('preset-unloaded')
+      })
+      setImmediate(() => { cleanupGate.resolve(undefined) })
+      await unloadingPreset
+      await disposingAgent
+      expect(settlements).toEqual(['definition-cleaned', 'preset-unloaded'])
+      expect(ctx.tools.get('subagent', handle.agent)).toBeUndefined()
+    } finally {
+      cleanupGate.resolve(undefined)
+      try {
+        await Promise.all([disposingAgent, unloadingPreset])
+      } finally {
+        await ctx.fiber.dispose()
+      }
+    }
+  })
+
   it('releases a shared-preset installation reservation after policy selection fails', async () => {
     const ctx = await boot(false)
     const preset = createScope(ctx, { preset: 'standard' })
