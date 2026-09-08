@@ -226,11 +226,15 @@ describe.skipIf(MODE === 'record')('web e2e: details panel follows the current S
       await page.locator('[data-sidebar-right-expand]').click()
       await expect.poll(() => column.locator('[data-sidebar-right-open]').count()).toBe(1)
       await expect.poll(() => columns(page)).toEqual(normalColumns)
+      // The panel's slide completes independently of the frame's grid tracks.
+      await expect.poll(() => panel.evaluate(element => getComputedStyle(element).transform))
+        .toBe('none')
     }
     const close = async (): Promise<void> => {
       await column.locator('[data-sidebar-right-toggle]').click()
       await expect.poll(() => column.locator('[data-sidebar-right-open]').count()).toBe(0)
       await expect.poll(() => detailsTrack(page)).toBe(0)
+      await panel.waitFor({ state: 'hidden' })
     }
 
     await select(original, 'LIGHTHOUSE')
