@@ -104,6 +104,25 @@ describe('Remote event Host source', () => {
       value: { event: 'settings/document-updated', args: ['ui-theme', 1] },
     })
 
+    emitRaw(ctx, 'goal/activation-changed', [{
+      sessionId: 'session-1',
+      goal: { id: 'goal-1', revision: 1, activation: 'disarmed' },
+    }])
+    await expect(first.next()).resolves.toEqual({
+      done: false,
+      value: {
+        event: 'goal/activation-changed',
+        args: [{ sessionId: 'session-1', goal: { id: 'goal-1', revision: 1, activation: 'disarmed' } }],
+      },
+    })
+    await expect(second.next()).resolves.toEqual({
+      done: false,
+      value: {
+        event: 'goal/activation-changed',
+        args: [{ sessionId: 'session-1', goal: { id: 'goal-1', revision: 1, activation: 'disarmed' } }],
+      },
+    })
+
     const firstDone = first.next()
     firstAbort.abort(new Error('first Client disconnected'))
     emitRaw(ctx, 'commands/change', [])

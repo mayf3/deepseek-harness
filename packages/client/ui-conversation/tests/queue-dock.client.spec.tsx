@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
 /**
  * QueueDock rendering and operations: authoritative rows, inline editing,
- * collapse state, removal, strict steering, failure notices, and live retirement.
+ * collapse state, removal, QueueDock Steer, failure notices, and live retirement.
  */
+import type { GlobalStandardProps } from '@deepseek-ai/dsh-client-ui-slots'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, waitFor } from '@testing-library/react'
 import { useSyncExternalStore } from 'react'
@@ -22,7 +23,11 @@ import type { InputState } from '../src/client/contract/input.ts'
 import { zh } from '../src/client/locales.ts'
 import { QueueDock, queueDockEntry, type QueueDockInjected, type QueueDockProps } from '../src/client/queue/QueueDock.tsx'
 
+// Every session-scope fixture carries the resource hook the resources plugin merges into GlobalStandardProps.
+const useResource = (() => ({ status: 'none' as const, value: undefined, failure: undefined, reload: () => {} })) as GlobalStandardProps['useResource']
+
 afterEach(cleanup)
+
 
 const SID = 's1' as SessionId
 const iid = (id: string): QueueItemId => id as QueueItemId
@@ -74,6 +79,7 @@ function kitFor(snapshot: SessionSnapshot, injected: Partial<QueueDockInjected> 
     sessionId: SID,
     t,
     useSessions: (() => { throw new Error('unused') }) as unknown as SnapshotSelectorHook<SessionListState>,
+    useResource,
     useSessionPendingInteraction: bindSnapshotSelector(
       createSnapshotStore<SessionPendingInteractionSnapshot>(new Map()),
     ),
@@ -486,7 +492,7 @@ describe('QueueDock', () => {
     expect(rendered.getByLabelText('插话发送').getAttribute('title')).toBe('仅运行中可插话发送')
   })
 
-  it('renders a session-backed subagent Queue without unsupported actions', () => {
+  it('renders ordinary queue actions for a continuable child', () => {
     const snap = {
       ...snapshotWith([row('i-subagent', 'pending child follow-up')]),
       subagent: {
@@ -494,6 +500,29 @@ describe('QueueDock', () => {
           parentSessionId: 'parent' as SessionId,
           childSessionId: SID,
           mode: 'continuable' as const,
+        },
+        parentAvailable: false,
+      },
+    }
+    const source = liveSession(snap)
+    const view = render(
+      <QueueDock {...kitFor(snap)} useSession={source.useSession} />,
+    )
+
+    expect(view.getByText('pending child follow-up')).toBeTruthy()
+    expect(view.getByLabelText('编辑排队消息')).toBeTruthy()
+    expect(view.getByLabelText('删除排队消息')).toBeTruthy()
+    expect(view.getByLabelText('插话发送')).toBeTruthy()
+  })
+
+  it('keeps a one-shot child Queue read-only', () => {
+    const snap = {
+      ...snapshotWith([row('i-subagent', 'pending child follow-up')]),
+      subagent: {
+        address: {
+          parentSessionId: 'parent' as SessionId,
+          childSessionId: SID,
+          mode: 'one-shot' as const,
         },
         parentAvailable: true,
       },

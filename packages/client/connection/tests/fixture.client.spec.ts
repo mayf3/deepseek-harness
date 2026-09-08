@@ -501,6 +501,7 @@ interface TimingHooks {
   failNextHistory(): void
   appendUser(id: string, msg: string): void
   appendTitle(id: string, title: string): void
+  disarmOnlyGoal(): void
   startReasoningChunkStorm(id: string, chunkCount: number, chunksPerInterval: number, intervalMs: number): string
   reasoningChunkStormState(): {
     sessionId: string
@@ -1677,6 +1678,13 @@ describe('fixture Connection RPC', () => {
     expect(revision).toBe(1)
     const ref = (at: number) => ({ id: goalId, revision: at })
     expect((await goal('goals/edit', { ref: ref(1), request: { objective: 'ship it v2' } })).ok).toBe(true)
+    expect(await goal('goals/get', {})).toMatchObject({
+      ok: true, value: { objective: 'ship it v2', revision: 2, activation: 'armed' },
+    })
+    timing().disarmOnlyGoal()
+    expect(await goal('goals/get', {})).toMatchObject({
+      ok: true, value: { objective: 'ship it v2', revision: 2, activation: 'disarmed' },
+    })
     expect((await goal('goals/pause', { ref: ref(2) })).ok).toBe(true)
     expect((await goal('goals/resume', { ref: ref(3) })).ok).toBe(true)
     // A stale ref loses the CAS check.

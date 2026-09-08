@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-`dsh-plugin-manager` 是改变一个 profile 的插件的地方，不带任何 Remote 协议。`PluginInstaller` 只需要磁盘上的 profile：在 profile 目录运行 pnpm，在子进程里探测一次运行新增的每个包，并把在 profile 里没有位置的包再移除——`dsh plugin add` 命令在任何插件启动之前就用它。`PluginManager` 需要已启动的树：把组合包移入或移出 profile 的层列表并经 `profileRuntime` 重新组合树，在组合包的行失败时重新组合它，向 profile 的全局用户层或某个 agent preset 的用户层添加与移除行，说明停用一个包会搁浅什么，并把 manifest、探针记录与在线树折叠成每个包一份视图。每次拒绝或失败都是一个带 `plugins/*` 码的 `PluginOperationError`；Web 宿主的 [`dsh-host-plugin-manager`](../../host/plugin-manager/README.zh.md) 把管理器暴露为 `plugins` Remote，并把每个失败转成同码的 Remote 错误。
+`dsh-plugin-manager` 负责改动 profile 的插件。`PluginInstaller` 只需要磁盘上的 profile：在那里运行 pnpm，在子进程里探测本次新增的每个包，并把在 profile 里没有位置的包再移除——`dsh plugin add` 在任何插件启动之前就用它。`PluginManager` 需要启动好的树：经 `profileRuntime` 启用与停用组合包、重试失败的组合包、在全局或某个预设的用户层里增删行、报告依赖方，并把 manifest、探针记录与实时树折叠成每个包的一份视图。失败带 `plugins/*` 代码；[`dsh-host-plugin-manager`](../../host/plugin-manager/README.zh.md) 把管理器暴露为 `plugins` Remote。
 
 ## 目录
 
