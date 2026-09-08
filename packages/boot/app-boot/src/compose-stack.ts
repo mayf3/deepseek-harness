@@ -16,7 +16,7 @@
 import type { EntryOptions } from '@deepseek-ai/cordis-plugin-loader'
 import type { PatchOptions } from '@deepseek-ai/cordis-plugin-include'
 import { composeExternalLayer, isContainedLayer, type ComposedExternalLayer } from './external-bundles.ts'
-import { visitPatchRows, visitRowTree } from './patch-rows.ts'
+import { visitIdentifiedRows, visitRowTree } from './patch-rows.ts'
 import type { ProfileLayer } from './profile.ts'
 
 /** One user-owned patch list in the stack: the profile file, the home file, or a `--patch` overlay. */
@@ -114,29 +114,21 @@ export function claimLayerIds(layers: readonly ProfileLayer[]): LayerOwnership {
   const declaredUnder = new Map<string, string | undefined>()
   for (const layer of layers) {
     if (isContainedLayer(layer)) continue
-    let listed = new Set<string>()
-    let listIndex = -1
-    visitPatchRows(layer.patches, (row, source, place) => {
-      if (typeof row.id !== 'string') return
-      if (place.patch !== listIndex) {
-        listIndex = place.patch
-        listed = new Set()
-      }
-      const owner = owners.get(row.id)
+    visitIdentifiedRows(layer.patches, ({ id, source, place, listed }) => {
+      const owner = owners.get(id)
       if (owner === layer) {
         // Restating a row under the group that already holds it is the layer
         // keeping its child; inserting it again, listing it twice in one
         // config, or setting it under another group is declaring it twice.
-        if (source === 'insert' || listed.has(row.id) || declaredUnder.get(row.id) !== place.target) {
-          throw new Error(`row ${JSON.stringify(row.id)} is declared twice by ${layer.packageName}`)
+        if (source === 'insert' || listed.has(id) || declaredUnder.get(id) !== place.target) {
+          throw new Error(`row ${JSON.stringify(id)} is declared twice by ${layer.packageName}`)
         }
       } else if (owner !== undefined) {
-        throw new Error(`row ${JSON.stringify(row.id)} is declared by both ${owner.packageName} and ${layer.packageName}`)
+        throw new Error(`row ${JSON.stringify(id)} is declared by both ${owner.packageName} and ${layer.packageName}`)
       } else {
-        owners.set(row.id, layer)
-        declaredUnder.set(row.id, place.target)
+        owners.set(id, layer)
+        declaredUnder.set(id, place.target)
       }
-      listed.add(row.id)
     })
   }
   const skipped = new Map<string, RowConflict[]>()

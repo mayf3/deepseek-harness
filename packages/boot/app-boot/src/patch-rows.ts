@@ -76,3 +76,39 @@ export function visitPatchRows(
     }
   })
 }
+
+/** One id-carrying row `visitIdentifiedRows` reports. */
+export interface IdentifiedRow {
+  /** The row's id. */
+  id: string
+  /** The row as the patch wrote it. */
+  row: EntryOptions
+  /** How the patch introduced the row. */
+  source: PatchRowSource
+  /** Where the row mounts. */
+  place: PatchRowPlace
+  /** The ids the same patch listed before this row. */
+  listed: ReadonlySet<string>
+}
+
+/**
+ * Visit every row with an id a patch list introduces, in written order, with
+ * the ids the same patch listed before it: a config override lists the
+ * children it keeps, and an id it lists twice would mount as a rejected
+ * duplicate, which each caller reports in its own terms.
+ * @param patches - the patch list.
+ * @param visit - called once per row that carries an id.
+ */
+export function visitIdentifiedRows(patches: readonly PatchOptions[], visit: (visited: IdentifiedRow) => void): void {
+  let listed = new Set<string>()
+  let listIndex = -1
+  visitPatchRows(patches, (row, source, place) => {
+    if (typeof row.id !== 'string') return
+    if (place.patch !== listIndex) {
+      listIndex = place.patch
+      listed = new Set()
+    }
+    visit({ id: row.id, row, source, place, listed })
+    listed.add(row.id)
+  })
+}

@@ -18,6 +18,8 @@ Status: implemented
 
 **探针在伤不到宿主的地方运行包。** `probePackage` 在宿主里读取已安装包的 manifest——从 `dsh.bundle` 得到种类、其 patch 的行与覆盖、`dsh.plugins` 声明、`engines.dsh`、标题与描述——并生成一个 Node 子进程——`probe-child.ts`，探针旁边的独立模块，源码启动时经 tsx 运行，构建后是 `lib/probe-child.js`——从该包解析 `@deepseek-ai/cordis`，import 主导出与每个声明为可添加的模块，经 IPC 通道发出一份报告。stdout 与 stderr 仍归被 import 的模块自己，所以在 import 时打印的包照样能报告；报告一到子进程就被杀掉，因此让定时器一直活着的包不再多花任何代价。报告与缓存记录按各自跨越的进程边界与文件边界逐字段校验：没有回显本次 token 的消息是包自己的、不算报告，无法识别的记录重新探测。子进程拿到的是剔除了密钥形态变量的父环境，import 之前先删掉 token 与 `process.send`，stderr 只留最后 16 KiB 作失败文本，kill 之后等到 `close` 才结算，所以子进程的任何东西都不会活过这次调用。抛错、退出或挂起的子进程得到带原因的 `ok: false`，或点名超时的 rejection；`ok` 只表示主导出 import 成功且 cordis 不是第二份副本，能否启用或添加由 `kind` 与 `addable[].ok` 决定。记录缓存在 profile 的 `.dsh-plugins/` 下，按版本失效。
 
+**被禁用的 bundle 是 manifest 里的事实。** `disableBundle` 把包从 `dsh.profile.bundles` 移到 `dsh.profile.disabledBundles`，`reconcileInstalledBundles` 只启用两个列表都没有的 bundle——本次运行装上的，或更新后声明了 `dsh.bundle` 的依赖——所以无关的 pnpm 运行不会重新启用用户关掉的东西，依赖被移除时记录随之消失。曾考虑比较运行前后的 manifest，但被否决：仅凭已安装状态分不清一个 bundle 是用户禁用的，还是安装之后才变成 bundle 的。
+
 ## 考虑过的替代方案
 
 **把运行时 rejection 归属到产生它的插件并把该插件标为失败。** 正确的终态，但 promise 不携带 fiber，cordis 的 effect 包装也只覆盖插件经由它注册的东西。延后：守卫现在只报告并让进程继续；归属需要一个 async-context seam。

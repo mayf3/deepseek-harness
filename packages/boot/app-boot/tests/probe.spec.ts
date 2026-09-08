@@ -232,7 +232,14 @@ describe('probePackage', () => {
       'peeks': {
         main: 'throw new Error("env=" + Object.keys(process.env).filter(k => k.startsWith("PROBE_TEST") || k === "DSH_PROBE_REPORT").sort().join(","))\n',
       },
-      'floods': { main: 'import { writeSync } from "node:fs"\nwriteSync(2, "x".repeat(200_000))\nwriteSync(2, "tail-marker")\nprocess.exit(3)\n' },
+      // The child's stderr is a pipe Node put in non-blocking mode (tsx touches
+      // process.stderr at start), so one raw write returns short or throws EAGAIN
+      // once the pipe is full: the flood retries until the parent has drained it.
+      'floods': {
+        main: 'import { writeSync } from "node:fs"\n'
+          + 'const put = (text) => { let rest = Buffer.from(text); while (rest.length > 0) { try { rest = rest.subarray(writeSync(2, rest)) } catch (error) { if (error.code !== "EAGAIN") throw error } } }\n'
+          + 'put("x".repeat(200_000))\nput("tail-marker")\nprocess.exit(3)\n',
+      },
     })
     const forged = await probePackage({ binName: NAME, profileDir, installAnchor, packageName: 'forges' })
     expect(forged).toMatchObject({ kind: 'library', ok: true })

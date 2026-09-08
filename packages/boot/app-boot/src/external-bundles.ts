@@ -16,7 +16,8 @@
 
 import { join } from 'node:path'
 import type { PatchOptions } from '@deepseek-ai/cordis-plugin-include'
-import { visitPatchRows } from './patch-rows.ts'
+import type { DshProfileManifest } from '@deepseek-ai/dsh-package-manifest'
+import { visitIdentifiedRows } from './patch-rows.ts'
 import {
   readProfileManifest, resolveBundleDir, writeProfileManifest, type ProfileLayer, type ProfileManifest,
 } from './profile.ts'
@@ -112,30 +113,22 @@ export function composeExternalLayer(layer: ProfileLayer): ComposedExternalLayer
     rows.set(rowId, moduleName)
     declaredUnder.set(rowId, target)
   }
-  let listed = new Set<string>()
-  let listIndex = -1
-  visitPatchRows(layer.patches, (row, source, place) => {
-    if (typeof row.id !== 'string') return
-    if (place.patch !== listIndex) {
-      listIndex = place.patch
-      listed = new Set()
-    }
+  visitIdentifiedRows(layer.patches, ({ id, row, source, place, listed }) => {
     // A root insert lands in the bundle's group: that is the group it declares under.
     const target = place.target ?? groupId
     if (source === 'config') {
       // A config override restates the children it keeps: the same id declared
       // under the same group before is that row. Twice in one list, or under
       // another group, it would mount as a rejected duplicate or move the row.
-      if (listed.has(row.id) || (rows.has(row.id) && declaredUnder.get(row.id) !== target)) {
-        duplicates.push({ rowId: row.id, moduleName: row.name })
-      } else if (!rows.has(row.id)) {
-        rows.set(row.id, row.name)
-        declaredUnder.set(row.id, target)
+      if (listed.has(id) || (rows.has(id) && declaredUnder.get(id) !== target)) {
+        duplicates.push({ rowId: id, moduleName: row.name })
+      } else if (!rows.has(id)) {
+        rows.set(id, row.name)
+        declaredUnder.set(id, target)
       }
     } else {
-      claim(row.id, row.name, target)
+      claim(id, row.name, target)
     }
-    listed.add(row.id)
   })
   claim(groupId, CONTAINED_GROUP_MODULE)
   const wrappers = new Map<string, string>()
@@ -209,12 +202,14 @@ export interface BundleReconciliation {
 /**
  * Reconcile `dsh.profile.bundles` against the installed state after a pnpm
  * run. A dependency that no longer resolves to a bundle leaves the layer
- * list; template bundles (never dependencies) are untouched. A dependency
- * the run added that resolves to a bundle joins the list only when
- * `autoEnable` is set — the CLI's install-and-enable semantics — and is
- * otherwise reported as installed-only, which is the plugin manager's install
- * step. A bundle installed before the run keeps its place in or out of the
- * list: one the user disabled stays disabled through an unrelated run.
+ * list; template bundles (never dependencies) are untouched. A bundle in
+ * neither list — one the run added, or a dependency whose update declared
+ * `dsh.bundle` — joins the layer list only when `autoEnable` is set, the
+ * CLI's install-and-enable semantics, and is otherwise reported as
+ * installed-only, the plugin manager's install step. A bundle the user
+ * disabled is named in `dsh.profile.disabledBundles` and stays out through
+ * every later run until enabled again; the record goes when its dependency
+ * does.
  * @param binName - the diagnostic prefix used by manifest reads.
  * @param profileDir - the profile directory.
  * @param installAnchor - absolute path of the dsh app's package.json.
@@ -233,14 +228,14 @@ export function reconcileInstalledBundles(
   const beforeDeps = new Set(Object.keys(before.dependencies ?? {}))
   const dependencies = Object.keys(after.dependencies ?? {})
   const bundles = [...after.dsh?.profile?.bundles ?? []]
+  const disabled = after.dsh?.profile?.disabledBundles ?? []
   const outcome: BundleReconciliation = { enabled: [], removed: [], plain: [], installedOnly: [] }
   for (const packageName of dependencies) {
-    if (beforeDeps.has(packageName)) continue
     if (!exportsBundlePatch(binName, packageName, installAnchor, profileDir)) {
-      outcome.plain.push(packageName)
+      if (!beforeDeps.has(packageName)) outcome.plain.push(packageName)
       continue
     }
-    if (bundles.includes(packageName)) continue
+    if (bundles.includes(packageName) || disabled.includes(packageName)) continue
     if (options.autoEnable) {
       bundles.push(packageName)
       outcome.enabled.push(packageName)
@@ -249,29 +244,36 @@ export function reconcileInstalledBundles(
     }
   }
   const dependencySet = new Set(dependencies)
+  const stillBundle = (packageName: string): boolean => (
+    dependencySet.has(packageName) && exportsBundlePatch(binName, packageName, installAnchor, profileDir)
+  )
   for (const packageName of [...bundles]) {
     // Only dependency-managed entries are subject to removal; template
     // bundles are not dependencies.
     const wasDependency = beforeDeps.has(packageName) || dependencySet.has(packageName)
-    const stillBundle = dependencySet.has(packageName) && exportsBundlePatch(binName, packageName, installAnchor, profileDir)
-    if (wasDependency && !stillBundle) {
+    if (wasDependency && !stillBundle(packageName)) {
       bundles.splice(bundles.indexOf(packageName), 1)
       outcome.removed.push(packageName)
     }
   }
-  if (outcome.enabled.length > 0 || outcome.removed.length > 0) {
-    writeProfileManifest(profileDir, withBundles(after, bundles))
+  // A disabled bundle whose dependency is gone, or no longer a bundle, has nothing left to keep out.
+  const stillDisabled = disabled.filter(stillBundle)
+  if (outcome.enabled.length > 0 || outcome.removed.length > 0 || stillDisabled.length !== disabled.length) {
+    writeProfileManifest(profileDir, withBundles(after, bundles, stillDisabled))
   }
   return outcome
 }
 
-/** The manifest with its bundle layer list replaced, every other field kept. */
-function withBundles(manifest: ProfileManifest, bundles: string[]): ProfileManifest {
-  return { ...manifest, dsh: { ...manifest.dsh, profile: { ...manifest.dsh?.profile, bundles } } }
+/** The manifest with its bundle lists replaced, every other field kept; an empty disabled list leaves the field out. */
+function withBundles(manifest: ProfileManifest, bundles: string[], disabled: readonly string[]): ProfileManifest {
+  const profile: DshProfileManifest = { ...manifest.dsh?.profile, bundles }
+  if (disabled.length > 0) profile.disabledBundles = [...disabled]
+  else delete profile.disabledBundles
+  return { ...manifest, dsh: { ...manifest.dsh, profile } }
 }
 
 /**
- * Add one installed bundle to the profile's layer list.
+ * Add one installed bundle to the profile's layer list and drop its disabled record.
  * @param binName - the diagnostic prefix on thrown errors.
  * @param profileDir - the profile directory.
  * @param installAnchor - absolute path of the dsh app's package.json.
@@ -289,12 +291,14 @@ export function enableBundle(binName: string, profileDir: string, installAnchor:
   }
   const bundles = manifest.dsh?.profile?.bundles ?? []
   if (bundles.includes(packageName)) return false
-  writeProfileManifest(profileDir, withBundles(manifest, [...bundles, packageName]))
+  const disabled = (manifest.dsh?.profile?.disabledBundles ?? []).filter(name => name !== packageName)
+  writeProfileManifest(profileDir, withBundles(manifest, [...bundles, packageName], disabled))
   return true
 }
 
 /**
- * Remove one dependency-managed bundle from the profile's layer list.
+ * Remove one dependency-managed bundle from the profile's layer list and
+ * record it as disabled, so reconciliation leaves it out until `enableBundle`.
  * @param binName - the diagnostic prefix on thrown errors.
  * @param profileDir - the profile directory.
  * @param packageName - the bundle to disable.
@@ -308,6 +312,9 @@ export function disableBundle(binName: string, profileDir: string, packageName: 
   if (!(packageName in (manifest.dependencies ?? {}))) {
     throw new Error(`${binName}: ${packageName} is a template bundle of this profile and cannot be disabled`)
   }
-  writeProfileManifest(profileDir, withBundles(manifest, bundles.filter(name => name !== packageName)))
+  const disabled = manifest.dsh?.profile?.disabledBundles ?? []
+  writeProfileManifest(profileDir, withBundles(
+    manifest, bundles.filter(name => name !== packageName), [...new Set([...disabled, packageName])],
+  ))
   return true
 }
