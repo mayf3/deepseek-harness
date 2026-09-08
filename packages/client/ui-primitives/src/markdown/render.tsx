@@ -16,7 +16,7 @@
  * may add node types this renderer has no mapping for.
  */
 
-import { Fragment, createElement } from 'react'
+import { Fragment, createElement, useState } from 'react'
 import type { Key, ReactNode } from 'react'
 import clsx from 'clsx'
 import type * as Md from 'mdast'
@@ -567,12 +567,19 @@ function renderImage(url: string, alt: string, key: Key, context: MarkdownRender
   if (imageSrc === undefined) {
     return <span key={key} className={css.imageAlt}>{alt}</span>
   }
+  return <MarkdownImage key={`${key}:${imageSrc}`} src={imageSrc} alt={alt} destination={url} />
+}
+
+/** Failed loads retain the authored alt or destination; a new source remounts the image. */
+function MarkdownImage({ src, alt, destination }: { src: string; alt: string; destination: string }): ReactNode {
+  const [failed, setFailed] = useState(false)
+  if (failed) return <span className={css.imageAlt}>{alt || destination}</span>
   return (
     <img
-      key={key}
       className={css.image}
-      src={imageSrc}
+      src={src}
       alt={alt}
+      onError={() => { setFailed(true) }}
       loading="lazy"
       decoding="async"
       referrerPolicy="no-referrer"

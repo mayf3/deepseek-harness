@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it } from 'vitest'
 import { MarkdownText } from './markdown-test-components.tsx'
 import type { MarkdownPathImages } from '../src/markdown/MarkdownText.tsx'
@@ -24,6 +24,27 @@ describe('MarkdownText local-path images', () => {
     const image = container.querySelector('img')
     expect(image?.getAttribute('src')).toBe('https://cdn.example.com/graph.png')
     expect(image?.getAttribute('alt')).toBe('diagram')
+  })
+
+  it.each(['diagram', ''])('shows authored text after an image fails with alt %j', (alt) => {
+    const pathImages: MarkdownPathImages = { resolve: mapping }
+    const { container } = render(
+      <MarkdownText text={`![${alt}](/tmp/graph.png)`} pathImages={pathImages} />,
+    )
+    fireEvent.error(screen.getByAltText(alt))
+    expect(container.querySelector('img')).toBeNull()
+    expect(container.textContent).toBe(alt || '/tmp/graph.png')
+  })
+
+  it('loads a replacement destination after the preceding image failed', () => {
+    const pathImages: MarkdownPathImages = { resolve: value => `https://example.com${value}` }
+    const { container, rerender } = render(
+      <MarkdownText text={LOCAL_IMAGE} pathImages={pathImages} />,
+    )
+    fireEvent.error(screen.getByRole('img'))
+    rerender(<MarkdownText text="![](/tmp/replacement.png)" pathImages={pathImages} />)
+    expect(container.querySelector('img')?.getAttribute('src'))
+      .toBe('https://example.com/tmp/replacement.png')
   })
 
   it('keeps the alt fallback when the vocabulary misses', () => {
