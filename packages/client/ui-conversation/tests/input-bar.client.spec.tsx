@@ -164,6 +164,7 @@ function bench(over?: BenchOptions) {
     return null
   }) as never
   const props: InputBarProps = {
+    usePanelInfo: selector => selector({ activePanelId: null }),
     sessionId: SID,
     SessionProvider: ({ children }) => children,
     useSession: bindSnapshotSelector(session),
@@ -738,6 +739,24 @@ describe('Enter semantics', () => {
 })
 
 describe('running and lock semantics', () => {
+  it('dismisses the Stop tooltip when an empty composer becomes idle', () => {
+    vi.useFakeTimers()
+    try {
+      const { button, view, session } = bench({ running: true })
+      fireEvent.mouseEnter(button)
+      act(() => { vi.advanceTimersByTime(500) })
+      expect(view.getByRole('tooltip').textContent).toBe('停止生成')
+
+      // Disabling a hovered native button need not deliver mouseleave.
+      act(() => { session.set(snapshotOf({ running: false })) })
+      expect(button.disabled).toBe(true)
+      expect(button.getAttribute('aria-label')).toBe('发送消息')
+      expect(view.queryByRole('tooltip')).toBeNull()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('running switches the primary between Stop and Queue Send with the draft', async () => {
     const { textarea, button, stop, sink, shell } = bench({ running: true })
     expect(textarea.getAttribute('aria-disabled')).not.toBe('true')
