@@ -118,7 +118,8 @@ describe('minimal agent preset', () => {
       bash: text(bash),
     }).toMatchInlineSnapshot(`
       {
-        "bash": "PERSISTED:{{cwd}}/persistent-state",
+        "bash": "PERSISTED:{{cwd}}/persistent-state
+      [Command finished with exit code 0]",
         "goalCommand": false,
         "prompt": "You are a helpful software engineer assistant.",
         "tools": [
@@ -161,7 +162,7 @@ describe('minimal agent preset', () => {
     const call = row.locator('xpath=..')
     await call.getByText('IN', { exact: true }).waitFor()
     await call.getByText('OUT', { exact: true }).waitFor()
-    await call.getByText('MINIMAL_BASH_CARD_OK', { exact: true }).waitFor()
+    await call.getByText('MINIMAL_BASH_CARD_OK\n[Command finished with exit code 0]', { exact: true }).waitFor()
     await call.getByText(/"command": "printf 'MINIMAL_BASH_CARD_OK/).waitFor()
 
     const snapshot = await captureStableAria(page, '[class*="centerCol"]', scaffold.workspaceCwd)
