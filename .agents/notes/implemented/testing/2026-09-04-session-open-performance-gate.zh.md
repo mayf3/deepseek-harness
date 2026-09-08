@@ -56,6 +56,8 @@ Session benchmark 使用固定参数合成 released-v0 输入：200 轮，每轮
 
 `ca3ffe95dac2c55eefeb16ed9b61067bbd19ee90` 上的[标准双 CPU 运行](https://github.com/deepseek-harness/deepseek-harness/actions/runs/34023970384/job/101461539961)使用 Node 24.20.0 x64 和 Ubuntu 镜像 `20260831.293.1`。当前 generation `open` 的五次样本为 49.2、47.4、49.1、48.6 和 48.1 ms：中位数 48.6 ms，最大值 49.2 ms。取整后的 50 ms CI 预期值给出 63 ms 上限，不重复乘以 2 倍机器系数。日志标明两个可用 CPU，但未记录型号；它无法区分硬件变化与 Node 版本变化的影响。这是端点专属的运行器校准，不是应用优化或参考机器新测量的证据。其他每项 benchmark 均通过既有预算。确定性正反例在历史 30 ms 上限下拒绝实测中位数，在 63 ms 下接受它，拒绝合成的 75 ms reopen 中位数，并以未改变的 550 ms 上限拒绝合成的 4,000 ms 首次打开耗时。这些正反例验证预算执行，不代表测得新的退化。
 
+一次冷 verifier 打包调整移除了运行时 workspace 模块加载，未改变这些预算或测量终点。在 macOS arm64、Node 24.18.0 上，`ac48359b195558806ee5a2286697074fd1a52815` 对同一份 127,400-event fixture 的首次 writable resume 耗时为 164.2、162.4、159.7、149.3、167.7 ms（中位数 162.4 ms）。通过 workspace build 打包 verifier 后为 119.8、120.9、121.9、122.3、121.8 ms（中位数 121.8 ms，降低 25%）。Retained heap 保持 5.4 MB；peak RSS 中位数从 144.9 变为 143.7 MB。Reopen 中位数为 27.5 和 27.1 ms，包含 128 MB completion check 的全部 16 项 Session 用例通过。CPU profile 将旧 verifier 的部分成本归因于模块解析和编译。隔离 package 的 built-worker 测试在旧 worker 上因无法解析 workspace import 而失败，在打包后的 worker 上通过，同时验证错误的 event count 会被拒绝。这些本地结果不能证明 Linux runner 耗时；现有 450 ms CI gate 仍是验收检查。
+
 校准后的源码预算如下：
 
 | 测量项 | 参考机预期 | CI 预算 |
