@@ -1,7 +1,7 @@
 {
   "name": "@deepseek-ai/dsh-plugin-manager",
   "description": "Plugin management over a dsh profile: install, enable, disable, retry, user-layer rows, dependents, and one view per package, shared by the dsh plugin command and the Web host",
-  "version": "0.1.3-alpha.1",
+  "version": "0.1.3-alpha.2",
   "publishConfig": {
     "access": "public"
   },
