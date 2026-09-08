@@ -1,4 +1,5 @@
 import { mkdir, mkdtemp, readFile, readdir, realpath, rm, symlink, writeFile } from 'node:fs/promises'
+import * as fsPromises from 'node:fs/promises'
 import { once } from 'node:events'
 import { tmpdir } from 'node:os'
 import { delimiter, join, relative, sep } from 'node:path'
@@ -982,6 +983,37 @@ describe('runScenario', () => {
       { steps: [...boot, { op: 'waitForGoalPhase', phase: 'blocked', timeoutMs: 20 }] },
       { agent: AGENT, mode: 'replay', fixtureFile: missing.fixtureFile },
     )).rejects.toThrow(/did not persist goal phase "blocked" within 20ms/)
+  })
+
+  it('identifies the child wait when its first log harvest outlasts the deadline', async () => {
+    const { fixtureFile } = await scenario({})
+    const reading = Promise.withResolvers<undefined>()
+    const release = Promise.withResolvers<undefined>()
+    let pendingRead: Promise<unknown> | undefined
+    const originalReaddir = readdir
+    const spy = vi.spyOn(fsPromises, 'readdir').mockImplementation(async (...args) => {
+      if (pendingRead === undefined && String(args[0]).includes('acp-snap-sessions-')) {
+        const read = release.promise.then(() => originalReaddir(...args))
+        pendingRead = read
+        reading.resolve(undefined)
+        return await read
+      }
+      return await originalReaddir(...args)
+    })
+    const run = runScenario(
+      { steps: [...boot, { op: 'waitForSubagentTurnEnd', child: 2, timeoutMs: 20 }] },
+      { agent: AGENT, mode: 'replay', fixtureFile },
+    )
+    const rejected = expect(run).rejects.toThrow(/subagent child #2 did not persist closed turn 1 within 20ms/)
+    try {
+      await Promise.race([reading.promise, rejected])
+      expect(pendingRead).toBeDefined()
+      await rejected
+    } finally {
+      release.resolve(undefined)
+      await Promise.allSettled([pendingRead, run, rejected])
+      spy.mockRestore()
+    }
   })
 
   it('waitForSubagentTurnEnd requires a closed child work turn', { timeout: 20_000 }, async () => {
