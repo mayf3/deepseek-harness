@@ -11,7 +11,7 @@ import { fileURLToPath } from 'node:url'
 import { join } from 'node:path'
 import type { Browser, Page } from 'playwright'
 import { chromium } from 'playwright'
-import { afterEach, describe, expect, it, onTestFailed, onTestFinished } from 'vitest'
+import { afterEach, describe, expect, it, onTestFailed } from 'vitest'
 import { deriveReplayScript, parseSessionLog, type ReplayEntry } from '@deepseek-ai/dsh-llm-replay'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import {
@@ -46,9 +46,12 @@ describe('web e2e: queued image submission', () => {
   let browser: Browser | undefined
   let page: Page
   let overrideDir: string | undefined
+  let cleanupRoutes: (() => Promise<void>) | undefined
 
   afterEach(async () => {
     const failures: unknown[] = []
+    await cleanupRoutes?.().catch((error: unknown) => failures.push(error))
+    cleanupRoutes = undefined
     await browser?.close().catch((error: unknown) => failures.push(error))
     browser = undefined
     const closing = scaffold
@@ -99,22 +102,23 @@ describe('web e2e: queued image submission', () => {
     await page.getByRole('img', { name: 'queued.png' }).waitFor({ timeout: 10_000 })
     const releasePrompt = Promise.withResolvers<undefined>()
     const releaseImage = Promise.withResolvers<undefined>()
-    onTestFinished(async () => {
+    let cleanupPromise: Promise<void> | undefined
+    const cleanup = (): Promise<void> => cleanupPromise ??= (async () => {
       releasePrompt.resolve(undefined)
       releaseImage.resolve(undefined)
-      // afterEach closes this test's browser before onTestFinished runs.
-      if (!page.isClosed()) await page.unrouteAll({ behavior: 'wait' })
-    }, 15_000)
+      await page.unrouteAll({ behavior: 'wait' })
+    })()
+    cleanupRoutes = cleanup
     let imageRequested = false
     await page.route('**/api/session/prompt', async (route) => {
       await releasePrompt.promise
       await route.continue()
-    }, { times: 1 })
+    })
     await page.route('**/api/session/attachment', async (route) => {
       imageRequested = true
       await releaseImage.promise
       await route.continue()
-    }, { times: 1 })
+    })
     const dockThumb = page.locator('[data-queue-dock] img[alt="Queued message image"]')
     try {
       await input.fill(QUEUED_TEXT)
@@ -137,9 +141,7 @@ describe('web e2e: queued image submission', () => {
       const queuedSnapshot = await captureStableAria(page, '[class*="centerCol"]', scaffold.workspaceCwd)
       await compareOrRefreshGolden(QUEUED_EXPECTED, queuedSnapshot, MODE)
     } finally {
-      releasePrompt.resolve(undefined)
-      releaseImage.resolve(undefined)
-      await page.unrouteAll({ behavior: 'wait' })
+      await cleanup()
     }
 
     // Stop parks the accepted queue; the next waking send delivers the image

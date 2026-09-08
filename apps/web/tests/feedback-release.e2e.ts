@@ -200,17 +200,19 @@ describe.each(MODE === 'record' ? ['deepseek-official'] : ['deepseek-official', 
     expect(events.at(-1)?.type).toBe('command/done')
     expect(events.at(-1)!.seq).toBeGreaterThan(authorized.at(-1)!.seq)
     const release = Promise.withResolvers<undefined>()
-    onTestFinished(async () => {
+    let cleanupPromise: Promise<void> | undefined
+    const cleanup = (): Promise<void> => cleanupPromise ??= (async () => {
       release.resolve(undefined)
       await page.unrouteAll({ behavior: 'wait' })
-    }, 15_000)
+    })()
+    onTestFinished(cleanup, 15_000)
     let responseReceived = false
     await page.route('**/api/session/selectModel', async (route) => {
       const response = await route.fetch({ timeout: 10_000 })
       responseReceived = true
       await release.promise
       await route.fulfill({ response })
-    }, { times: 1 })
+    })
     const selection = selectModel('Feedback mock')
     // Observe rejection immediately; the original promise is awaited after releasing the response.
     const observedSelection = Promise.allSettled([selection])
@@ -220,8 +222,7 @@ describe.each(MODE === 'record' ? ['deepseek-official'] : ['deepseek-official', 
       await expect.poll(() => trigger.getAttribute('aria-label'), { timeout: 10_000 }).toContain('Feedback mock')
       expect(await trigger.getAttribute('aria-expanded')).toBe('true')
     } finally {
-      release.resolve(undefined)
-      await page.unrouteAll({ behavior: 'wait' })
+      await cleanup()
       await observedSelection
     }
     await selection
