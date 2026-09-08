@@ -7,9 +7,10 @@ import { pathToFileURL } from 'node:url'
 const API_VERSION = '2026-03-10'
 const MAX_OWNERS_PER_RULE = 2
 const MAX_PULL_REQUEST_FILES = 3_000
-const MAX_REQUESTED_REVIEWERS = 2
+const MAX_COUNTED_REQUESTED_REVIEWERS = 1
 const MAX_TIMELINE_EVENTS = 3_000
 const PAGE_SIZE = 100
+const UNCOUNTED_REVIEWER = 'turtle1999'
 const WORKFLOW_REVIEW_REQUESTER = 'github-actions[bot]'
 const TEST_DIRECTORY_NAMES = new Set(['__snapshots__', '__tests__', 'benches', 'stress-tests', 'test', 'tests'])
 const TEST_FILE_MARKER = /\.(?:bench|corpus|e2e|perf|snapshot|spec|stress|test)\.[^./]+$/u
@@ -500,9 +501,13 @@ export async function requestReviews({ event, ownershipSource, api, write = line
   const existing = await api(`/repos/${pull.repository}/pulls/${pull.number}/requested_reviewers`)
   const currentReviewers = requestedReviewerLogins(existing).sort((left, right) => left.localeCompare(right, 'en'))
   const alreadyRequested = new Set(currentReviewers.map(login => login.toLowerCase()))
-  const availableSlots = Math.max(0, MAX_REQUESTED_REVIEWERS - alreadyRequested.size)
+  const availableSlots = Math.max(
+    0,
+    MAX_COUNTED_REQUESTED_REVIEWERS
+      - currentReviewers.filter(login => login.toLowerCase() !== UNCOUNTED_REVIEWER).length,
+  )
   writeList(write, 'Current individual review requests', currentReviewers.map(login => `@${login}`))
-  write(`Available review request slots: ${availableSlots}.`)
+  write(`Available counted review request slots: ${availableSlots}.`)
   const reviewers = candidates
     .filter(({ login }) => !alreadyRequested.has(login.toLowerCase()))
     .slice(0, availableSlots)

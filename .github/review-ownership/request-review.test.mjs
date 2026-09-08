@@ -32,8 +32,9 @@ const pullRequestEvent = ({ author = 'author', changedFiles = 1, draft = false }
 test('loads the repository ownership policy without test-only directory rules', () => {
   const rules = parseOwnership(ownershipSource)
   const ownersByPattern = new Map(rules.map(rule => [rule.pattern, rule.owners]))
-  assert.equal(rules.length, 58)
+  assert.equal(rules.length, 57)
   assert.equal(rules.some(rule => rule.pattern === '/benchmarks/'), false)
+  assert.equal(rules.some(rule => rule.pattern === '/scripts/'), false)
   assert.equal(rules.some(rule => rule.pattern === '/snapshots/'), false)
   assert.equal(rules.some(rule => rule.pattern === '/packages/test-support/'), false)
   assert.deepEqual(ownersByPattern.get('/apps/cli/'), ['@turtle1999'])
@@ -344,7 +345,7 @@ test('fails closed when the review-request timeline exceeds its limit', async ()
   assert.equal(calls, 30)
 })
 
-test('prints changed code files and limits current review requests to two people', async () => {
+test('prints changed code files and requests the highest-ranked counted owner', async () => {
   const trace = []
   const files = [
     { filename: 'packages/core/agent/src/index.ts', additions: 70, deletions: 10 },
@@ -358,7 +359,7 @@ test('prints changed code files and limits current review requests to two people
     trace.push({ type: 'api', path, options })
     if (path.endsWith('/files?per_page=100&page=1')) return files
     if (path.endsWith('/requested_reviewers') && options.method !== 'POST') {
-      return { users: [{ login: 'imccyu' }], teams: [] }
+      return { users: [], teams: [] }
     }
     if (path.endsWith('/requested_reviewers') && options.method === 'POST') return {}
     throw new Error(`unexpected API path ${path}`)
@@ -408,19 +409,19 @@ test('prints changed code files and limits current review requests to two people
   })
 })
 
-test('does not add an owner when two people are already requested', async () => {
+test('does not add another counted owner when one is already requested', async () => {
   const calls = []
   const output = []
   const result = await requestReviews({
     event: pullRequestEvent(),
-    ownershipSource: '/packages/core/ @turtle1999 @mektpoy\n',
+    ownershipSource: '/packages/core/ @mektpoy\n',
     api: async (path, options = {}) => {
       calls.push({ path, options })
       if (path.endsWith('/files?per_page=100&page=1')) {
         return [{ filename: 'packages/core/agent/src/index.ts', additions: 20, deletions: 10 }]
       }
       if (path.endsWith('/requested_reviewers') && options.method === undefined) {
-        return { users: [{ login: 'first' }, { login: 'second' }], teams: [] }
+        return { users: [{ login: 'first' }], teams: [] }
       }
       throw new Error(`unexpected API path ${path}`)
     },
@@ -429,14 +430,90 @@ test('does not add an owner when two people are already requested', async () => 
 
   assert.deepEqual(result.requestedReviewers, [])
   assert.equal(calls.some(call => call.options.method === 'POST'), false)
-  assert.deepEqual(output.slice(-6), [
+  assert.deepEqual(output.slice(-5), [
     'Current individual review requests:',
     '- @first',
-    '- @second',
-    'Available review request slots: 0.',
+    'Available counted review request slots: 0.',
     'Reviewers to request:',
     '- (none)',
   ])
+})
+
+test('requests at most one owner per run when turtle ranks first', async () => {
+  const calls = []
+  const result = await requestReviews({
+    event: pullRequestEvent({ author: 'contributor', changedFiles: 2 }),
+    ownershipSource: '/packages/core/ @turtle1999\n/packages/client/ @mektpoy\n',
+    api: async (path, options = {}) => {
+      calls.push({ path, options })
+      if (path.endsWith('/files?per_page=100&page=1')) {
+        return [
+          { filename: 'packages/core/agent/src/index.ts', additions: 25, deletions: 5 },
+          { filename: 'packages/client/store/src/index.ts', additions: 8, deletions: 2 },
+        ]
+      }
+      if (path.endsWith('/requested_reviewers') && options.method === undefined) {
+        return { users: [], teams: [] }
+      }
+      if (path.endsWith('/requested_reviewers') && options.method === 'POST') return {}
+      throw new Error(`unexpected API path ${path}`)
+    },
+    write: () => {},
+  })
+
+  assert.deepEqual(result.requestedReviewers, ['turtle1999'])
+  assert.deepEqual(calls.find(call => call.options.method === 'POST'), {
+    path: '/repos/deepseek-harness/deepseek-harness/pulls/42/requested_reviewers',
+    options: { method: 'POST', body: { reviewers: ['turtle1999'] } },
+  })
+})
+
+test('does not add turtle when one counted reviewer is already requested', async () => {
+  const calls = []
+  const result = await requestReviews({
+    event: pullRequestEvent({ author: 'contributor' }),
+    ownershipSource: '/packages/core/ @turtle1999 @mektpoy\n',
+    api: async (path, options = {}) => {
+      calls.push({ path, options })
+      if (path.endsWith('/files?per_page=100&page=1')) {
+        return [{ filename: 'packages/core/agent/src/index.ts', additions: 20, deletions: 10 }]
+      }
+      if (path.endsWith('/requested_reviewers') && options.method === undefined) {
+        return { users: [{ login: 'first' }], teams: [] }
+      }
+      throw new Error(`unexpected API path ${path}`)
+    },
+    write: () => {},
+  })
+
+  assert.deepEqual(result.requestedReviewers, [])
+  assert.equal(calls.some(call => call.options.method === 'POST'), false)
+})
+
+test('keeps the counted slot available when turtle is already requested', async () => {
+  const calls = []
+  const result = await requestReviews({
+    event: pullRequestEvent({ author: 'contributor' }),
+    ownershipSource: '/packages/core/ @turtle1999 @mektpoy\n',
+    api: async (path, options = {}) => {
+      calls.push({ path, options })
+      if (path.endsWith('/files?per_page=100&page=1')) {
+        return [{ filename: 'packages/core/agent/src/index.ts', additions: 20, deletions: 10 }]
+      }
+      if (path.endsWith('/requested_reviewers') && options.method === undefined) {
+        return { users: [{ login: 'turtle1999' }], teams: [] }
+      }
+      if (path.endsWith('/requested_reviewers') && options.method === 'POST') return {}
+      throw new Error(`unexpected API path ${path}`)
+    },
+    write: () => {},
+  })
+
+  assert.deepEqual(result.requestedReviewers, ['mektpoy'])
+  assert.deepEqual(calls.find(call => call.options.method === 'POST'), {
+    path: '/repos/deepseek-harness/deepseek-harness/pulls/42/requested_reviewers',
+    options: { method: 'POST', body: { reviewers: ['mektpoy'] } },
+  })
 })
 
 test('does not request reviewers for test, documentation, or comment-only changes', async () => {
