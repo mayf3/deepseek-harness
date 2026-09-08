@@ -188,11 +188,14 @@ export type PluginChangeReason = 'install' | 'uninstall' | 'enable' | 'disable' 
 export interface PluginInstallLogChunk {
   /** The run the chunk belongs to. */
   readonly jobId: string
+  /** The command line the run executes: pnpm's command name, then its arguments. */
+  readonly argv: readonly string[]
   /** The package spec the run installs or removes. */
   readonly spec: string
   readonly stream: 'stdout' | 'stderr'
+  /** The output as pnpm wrote it; with the installer's colours on, its SGR escapes included. */
   readonly text: string
-  /** Present on the run's last chunk, with pnpm's exit code (null for a signal). */
+  /** Present on the run's last chunk, with pnpm's exit code (null when it ended by a signal or never started). */
   readonly exitCode?: number | null
 }
 

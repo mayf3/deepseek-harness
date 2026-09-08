@@ -32,6 +32,9 @@ import type { PluginInstallLogChunk, PluginInstallRejection, PluginInstallResult
 /** What one install run changed before any newly installed bundle was enabled. */
 export type PluginInstallOutcome = Omit<PluginInstallResult, 'enabled'>
 
+/** A terminal escape sequence (CSI): colours, cursor moves, and the rest of what a coloured pnpm prints. */
+const ANSI_SEQUENCE = /\u001b\[[0-9;?]*[ -/]*[@-~]/g
+
 /** What {@link PluginInstaller} needs: the profile on disk, the tooling bounds, and where pnpm's output goes. */
 export interface PluginInstallerOptions {
   /** The profile directory pnpm runs in and whose manifest records installs. */
@@ -45,6 +48,13 @@ export interface PluginInstallerOptions {
   readonly config: PluginToolingConfig
   /** Receives every chunk of a pnpm run's output, in order; the last chunk carries the exit code. */
   readonly installLog: (chunk: PluginInstallLogChunk) => void
+  /**
+   * Whether pnpm colours its output. On, the chunks carry SGR escapes for a
+   * consumer that draws them (the Web install dialog's terminal); off, they
+   * are plain text, with the escapes a pnpm told to colour anyway prints
+   * (a `color=always` config) dropped.
+   */
+  readonly color: boolean
   /** Test seam: the child spawner; defaults to `node:child_process`. */
   readonly spawn?: SpawnLike
   /** Test seam: the package probe; defaults to app-boot's. */
@@ -240,27 +250,32 @@ export class PluginInstaller {
    * @throws {PluginOperationError} `plugins/install-failed` on a non-zero exit, a signal, or the timeout.
    */
   private async runPnpm(args: readonly string[], spec: string): Promise<string> {
-    const { config, profileDir } = this.options
+    const { color, config, profileDir } = this.options
     const jobId = randomUUID()
+    const argv = [config.pnpmCommand, ...args]
     const tail: string[] = []
     let tailBytes = 0
-    const record = (stream: 'stdout' | 'stderr', text: string): void => {
+    const record = (stream: 'stdout' | 'stderr', chunk: string): void => {
+      const text = color ? chunk : chunk.replace(ANSI_SEQUENCE, '')
       tail.push(text)
       tailBytes += Buffer.byteLength(text)
       while (tailBytes > config.installLogTailBytes && tail.length > 1) {
         tailBytes -= Buffer.byteLength(tail.shift() as string)
       }
-      this.options.installLog({ jobId, spec, stream, text })
+      this.options.installLog({ jobId, argv, spec, stream, text })
     }
     // Windows resolves pnpm through its .cmd shim, which spawn() refuses
     // without a shell since the CVE-2024-27980 hardening. The parent
     // environment is passed whole, as the `dsh plugin` command does: pnpm
-    // needs the user's registry, proxy, and auth settings.
+    // needs the user's registry, proxy, and auth settings. pnpm writes to a
+    // pipe and would decide against colour on its own, so `FORCE_COLOR`
+    // decides for it either way: a parent forcing colours for its own
+    // terminal cannot leak escapes into a plain log.
     const child = this.spawn(config.pnpmCommand, args, {
       cwd: profileDir,
       stdio: ['ignore', 'pipe', 'pipe'],
       shell: process.platform === 'win32',
-      env: process.env,
+      env: { ...process.env, FORCE_COLOR: color ? '1' : '0' },
     })
     child.stdout?.setEncoding('utf8')
     child.stderr?.setEncoding('utf8')
@@ -272,10 +287,10 @@ export class PluginInstaller {
     ).catch((error: unknown) => {
       const message = messageOf(error)
       record('stderr', `${message}\n`)
-      this.options.installLog({ jobId, spec, stream: 'stderr', text: '', exitCode: null })
+      this.options.installLog({ jobId, argv, spec, stream: 'stderr', text: '', exitCode: null })
       throw new PluginOperationError('plugins/install-failed', `${NAME}: ${message}`, { spec, exitCode: null, log: tail.join('') }, { cause: error })
     })
-    this.options.installLog({ jobId, spec, stream: 'stdout', text: '', exitCode })
+    this.options.installLog({ jobId, argv, spec, stream: 'stdout', text: '', exitCode })
     if (exitCode !== 0) {
       throw new PluginOperationError(
         'plugins/install-failed',
