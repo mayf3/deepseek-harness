@@ -41,7 +41,7 @@
   - img
   - text: 用时 {{duration}}
 - text: {{clock}}
-- textbox "发消息或做任务… / 调用指令 @ 文件或对话"
+- textbox "发消息或创建任务, / 调用指令, @ 文件或对话"
 - button "指令":
   - img
 - button "添加附件":
@@ -52,4 +52,9 @@
   - img
 - button "上下文已用 1%"
 - button "发送消息" [disabled]
-- text: 1 轮 · 1 步 LLM {{duration}} 首 token 平均 {{duration}} · {{throughput}} tok/s 缓存命中 16% 输入 8.2K tok · 输出 9 tok
+- button "1 轮 1 步 · {{throughput}} tok/s":
+  - img
+  - text: 1 轮 1 步{{throughput}} tok/s
+- button "8.2K tok · 缓存命中 16%":
+  - img
+  - text: 8.2K tok缓存命中 16%
