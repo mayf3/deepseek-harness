@@ -8,7 +8,7 @@
  * @module @deepseek-ai/dsh-tool-subagent
  */
 
-import { FiberState, type Context } from '@deepseek-ai/cordis'
+import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { scopeChainOf, scopeOf } from '@deepseek-ai/dsh-scope'
 import { defineTool } from '@deepseek-ai/dsh-tools'
@@ -657,57 +657,51 @@ export function apply(ctx: Context, config: Config, session?: Session): void {
   const agents = ctx.get('agents')
   /* v8 ignore next -- shipped preset compositions always include the Agent registry. */
   if (agents === undefined) throw new Error('tool-subagent: standing `modelSelectionSettings` requires the Agent registry')
-  const presetInstalls = new Map<Agent, () => Promise<void>>()
+  const scopedInstalls = new WeakMap<Agent, ReturnType<Context['inject']>>()
+  const installing = new WeakSet<Agent>()
   const belongsToComposition = (candidate: Agent): boolean =>
     scopeChainOf(scopeOf(candidate.ctx)).includes(compositionScope)
-  const installPresetDefinition = (candidate: Agent): void => {
-    if (ctx.fiber.uid === null || ctx.fiber.state === FiberState.UNLOADING || presetInstalls.has(candidate)) return
-    let fiber: ReturnType<Context['inject']> | undefined
-    const dispose = ctx.effect(() => async () => {
-      if (fiber !== undefined) {
-        await fiber.dispose()
-        // Agent teardown may already have claimed the single-shot disposer.
-        while (fiber.inertia !== undefined) await fiber.inertia
-      }
-    }, `tool-subagent: standing-preset definitions for Agent "${candidate.id}"`)
-    // Reserve before policy sampling or injection can re-enter reconciliation.
-    presetInstalls.set(candidate, dispose)
+  const installScoped = (candidate: Agent): void => {
+    if (scopedInstalls.has(candidate) || installing.has(candidate)) return
+    // Reserve before the injected fiber runs: tool registration emits
+    // `tools/change` synchronously, which re-enters the reconciliation below.
+    installing.add(candidate)
+    let fiber: ReturnType<Context['inject']>
     try {
       const policy = selectForSession(candidate.session)
       fiber = candidate.ctx.inject(['tools', 'subagents', 'systemPrompt'], (runtimeCtx) => {
         install(runtimeCtx, policy)
       })
-    } catch (error) {
-      presetInstalls.delete(candidate)
-      void dispose()
-      throw error
+    } finally {
+      installing.delete(candidate)
     }
+    scopedInstalls.set(candidate, fiber)
   }
-  const removePresetDefinition = (candidate: Agent): void => {
-    const dispose = presetInstalls.get(candidate)
-    if (dispose === undefined) return
-    presetInstalls.delete(candidate)
+  const removeScoped = (candidate: Agent): void => {
+    const fiber = scopedInstalls.get(candidate)
+    if (fiber === undefined) return
+    scopedInstalls.delete(candidate)
     /* v8 ignore next 3 -- Cordis Fiber disposal contains registration cleanup failures; this is the final diagnostic sink. */
-    void dispose().catch((error: unknown) => {
+    void fiber.dispose().catch((error: unknown) => {
       ctx.logger.warn(`tool-subagent: failed to remove recomposed Agent "${candidate.id}" definitions: ${String(error)}`)
     })
   }
-  const reconcilePresetDefinitions = (): void => {
+  const reconcileComposedAgents = (): void => {
     for (const candidate of agents.list()) {
-      if (belongsToComposition(candidate)) installPresetDefinition(candidate)
-      else removePresetDefinition(candidate)
+      if (belongsToComposition(candidate)) installScoped(candidate)
+      else removeScoped(candidate)
     }
   }
   // The preset-scoped listener admits descendant Agents and installs the
   // sampled tool definition in each Agent's own scope, so a later settings
   // change cannot mutate a live session.
   ctx.on('agent/created', ({ agent: created }) => {
-    installPresetDefinition(created)
+    installScoped(created)
   })
-  ctx.on('agent/disposed', ({ agent: disposed }) => { removePresetDefinition(disposed) })
+  ctx.on('agent/disposed', ({ agent: disposed }) => { removeScoped(disposed) })
   // Reparenting an Agent between standing presets changes its inherited tool
   // set and emits `tools/change`; reconcile the Agent-owned override with the
   // new ancestry. Other registry changes are idempotent no-ops here.
-  ctx.on('tools/change', reconcilePresetDefinitions)
-  reconcilePresetDefinitions()
+  ctx.on('tools/change', reconcileComposedAgents)
+  reconcileComposedAgents()
 }

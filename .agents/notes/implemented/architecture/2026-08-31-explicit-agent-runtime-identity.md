@@ -16,7 +16,7 @@ Without an explicit owner, `SubagentContinuationManager` creates and resumes chi
 
 Runtime interfaces carry Agent identity at the point that owns it. `AgentSetup` receives `(agentCtx, agent)`; Agent creation and resume options carry `parentAgent` for a runtime child; scoped events carry their Agent in the payload; Remote forwarding verifies that `request.agent` is the carrier key; and Host Typert Context resolution maps wire identity to a live Agent Context without a reverse scan. `agent.ctx` remains the registration and lifecycle owner and exposes no reverse Agent property.
 
-Scope-aware registries continue to use the opaque scope key only for registration membership. Tool-subagent does not classify that key or resolve an Agent from Context. A direct `AgentSetup` passes the unpublished Session explicitly and installs through the supplied Context before publication. A settings-backed standing preset reserves one Cordis cleanup effect for each matching Agent before sampling policy: the event payload supplies the Agent, its Session supplies the policy target, its Context owns the registrations, and the preset effect joins their removal after reparenting or preset unload.
+Scope-aware registries continue to use the opaque scope key only for registration membership. Tool-subagent does not classify that key or resolve an Agent from Context. A direct `AgentSetup` passes the unpublished Session explicitly and installs through the supplied Context before publication. For a settings-backed standing preset, the event payload supplies the Agent, its Session supplies the policy target, and its Context owns the registrations.
 
 `SubagentContinuationManager` puts the exact parent in both fresh-creation and cold-resume options. A live continuable child is therefore excluded from `AgentRegistry.roots()` and satisfies `isOwnedBy(child.id, parent)`. Durable `parentSession` metadata does not substitute for this relation: a fork or resumed Session may be a runtime root when no live Agent owns it.
 
@@ -26,7 +26,7 @@ The [Agent registration-scope decision](2026-07-08-agent-scope-contexts.md), its
 
 Agent creation tests pin explicit root and child ownership. Continuation integration tests keep a real child live long enough to assert both `roots()` exclusion and `isOwnedBy()` membership. Existing Schedule tests verify that root-only registrations stay absent from an explicitly owned child.
 
-Remote-event tests reject a missing or mismatched Agent before forwarding a scoped waterfall. Tool-subagent tests verify that direct setup installs before Session publication; standing-preset tests verify per-Session policy sampling, inheritance, and removal of every installed definition before preset unload settles, including cleanup already started by reparenting or Agent disposal.
+Remote-event tests reject a missing or mismatched Agent before forwarding a scoped waterfall. Tool-subagent tests verify that direct setup installs before Session publication; standing-preset tests verify per-Session policy sampling and inheritance.
 
 ## Alternatives considered
 
