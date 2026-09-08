@@ -1837,7 +1837,7 @@ def build_in_history_snapshot_files(
     assert all(event.get("surfaceOp") in (None, "append") for event in result.events)
     first_tool = next(index for index, event in enumerate(result.events) if event.get("type") == "tool/result")
     assert result.events.index(systems[1]) > first_tool
-    assert len(requests) == 4, requests
+    assert len(requests) == 3, requests
     request_prompts = []
     for index, request in enumerate(requests):
         messages = request["messages"]
