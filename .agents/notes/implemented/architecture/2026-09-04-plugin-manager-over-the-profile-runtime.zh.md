@@ -14,7 +14,7 @@ Status: implemented
 
 **启用就是 Loader 的事务。** `enable` 把组合包放进层列表，在 `healProfilesModuleFallback` 链接好该组合包携带的包之后调用 `profileRuntime.recompose({ reloadBundles: true })`。被拒绝的重新组合——`boot` 阶段而行抛错的组合包——就是 Loader 回滚到原本运行的树；管理器恢复层列表并报告 `plugins/enable-failed`。`runtime` 阶段而行失败的组合包由受控组隔离并逐行报告。由于启动审计不会再跑一次，管理器在在线重新组合之后调用 `recordContainedStates`，而 `ContainedGroup.create` 现在把以 pending 状态完成创建的行记录下来而不是清除——重载会重新创建组里的每一行，等待中的行必须带着记录穿过这一过程。`retry` 是先停用再启用：Loader 的更新不碰未改变的行，只有离开再回来才能重启一条失败的隔离行。
 
-**pnpm 按 CLI 的方式运行。** 经 `node:child_process`、带父进程环境、Windows 上开 `shell`，而不经 subprocess seam：seam 会清洗 pnpm 访问 registry 与代理所需的形似密钥的变量，也没有解析 `.cmd` shim 的 shell 模式。输出以某个 job id 下的 `plugins/install-log` 分块流式发出，每块写明命令行，pnpm 的颜色为 Web 对话框的终端保留、对 stdout 不是终端的 CLI 去掉；非零退出、spawn 错误或超时即带日志尾部的 `plugins/install-failed`。新包被探测并保持停用，除非调用方要求 `enable`。
+**pnpm 按 CLI 的方式运行。** 经 `node:child_process`、带父进程环境、Windows 上开 `shell`，而不经 subprocess seam：seam 会清洗 pnpm 访问 registry 与代理所需的形似密钥的变量，也没有解析 `.cmd` shim 的 shell 模式。输出以某个 job id 下的 `plugins/install-log` 分块流式发出，每块写明命令行与 profile 目录，pnpm 的颜色为 Web 对话框的终端保留、对 stdout 不是终端的 CLI 去掉；非零退出、spawn 错误或超时即带日志尾部的 `plugins/install-failed`。新包被探测并保持停用，除非调用方要求 `enable`。
 
 **`pnpm add` 成功不等于装好了插件。** 运行前先给 manifest 拍快照，pnpm 失败时恢复，失败的 add 不会留下依赖。之后逐个裁决 pnpm 加进来的包：既不声明组合包也不声明插件模块的，或者行 id 已被已组合层占有的组合包（对当前各层加候选层跑 `claimLayerIds`），再以 `pnpm remove` 移除并连同原因报在 `removed` 里；探针拒绝的包保留，因为视图能解释它、`retry` 还能再试。管理器一次只跑一个变更，第二个以 `plugins/busy` 拒绝而不是排队——否则每次写入都会在 manifest、用户层或 `node_modules` 上竞争——`install` 与 `uninstall` 在任一 agent 运行时以 `plugins/agents-running` 拒绝，因为 pnpm 会重写那些会话正在 import 的目录。这三道守卫来自社区的 `dshmarket` 管理器，它每一条都是从一个 bug 学来的。
 
