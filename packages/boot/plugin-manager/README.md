@@ -27,7 +27,7 @@ English | [中文](README.zh.md)
 
 ### Installing without booting
 
-Build a `PluginInstaller` from the profile directory, the install anchor (the dsh app's `package.json`), a `loadProfile` that answers the profile's composed layers, the tooling bounds, and a sink for pnpm's output; then `add(spec)` or `remove(name)`:
+Build a `PluginInstaller` from the profile directory, the install anchor (the dsh app's `package.json`), a `loadProfile` that answers the profile's composed layers, the tooling bounds, a sink for pnpm's output, and whether pnpm colours it; then `add(spec)` or `remove(name)`:
 
 ```ts
 import { loadProfile } from '@deepseek-ai/dsh-app-boot'
@@ -77,7 +77,7 @@ console.log(await manager.list())
 
 `addRow` inserts a row naming one of the package's modules — its main export for a `plugin` package, or a `dsh.plugins` entry — into the profile's global `cordis.patch.yml` (`target: { kind: 'global' }`) or an agent preset's user layer (`{ kind: 'preset', preset }`, through the roster's `overlayPathFor`). The row id derives from the package name and subpath unless given; a taken id fails with `plugins/row-conflict`. `removeRow` removes an inserted row and `setRowDisabled` writes or removes a `disabled: true` for any row — deny-only, so a bundle's own `!!js` gate is restored rather than overridden. The global layer is recomposed live on the spot; a preset's layer reaches its next standing generation. `dependents` says what disabling or removing a package would strand: services its rows provide that rows outside it inject, and user-layer rows naming its modules.
 
-The manager runs one mutation at a time — a second call while one runs fails with `plugins/busy` naming the operation in flight — and `add` and `uninstall` refuse to change `node_modules` while a session is running, with `plugins/agents-running`. Every change is followed by a `plugins/changed` event on the context, and an install run emits pnpm's output as `plugins/install-log` chunks.
+The manager runs one mutation at a time — a second call while one runs fails with `plugins/busy` naming the operation in flight — and `add` and `uninstall` refuse to change `node_modules` while a session is running, with `plugins/agents-running`. Every change is followed by a `plugins/changed` event on the context, and an install run emits pnpm's output as `plugins/install-log` chunks, each naming the command line it ran and, with colour on, carrying pnpm's SGR escapes.
 
 ### Failures
 

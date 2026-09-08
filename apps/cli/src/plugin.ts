@@ -134,6 +134,8 @@ async function runManaged(
     loadProfile: () => loadProfile(NAME, profile, INSTALL_ANCHOR, undefined, { userLayer: false }),
     config: TOOLING,
     installLog: (chunk) => { (chunk.stream === 'stdout' ? process.stdout : process.stderr).write(chunk.text) },
+    // pnpm's colours reach the terminal the user is looking at, never a redirected file.
+    color: process.stdout.isTTY,
     ...internals,
   })
   for (const argument of specs) {

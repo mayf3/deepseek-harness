@@ -154,6 +154,8 @@ export class PluginManager {
       loadProfile: () => runtime.current,
       config: this.options.config,
       installLog: (chunk) => { this.ctx.emit('plugins/install-log', chunk) },
+      // The chunks feed the Web install dialog's terminal, which draws SGR colour.
+      color: true,
       ...this.options.spawn === undefined ? {} : { spawn: this.options.spawn },
       ...this.options.probe === undefined ? {} : { probe: this.options.probe },
     })
