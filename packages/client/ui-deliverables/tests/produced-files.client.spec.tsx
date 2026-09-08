@@ -600,7 +600,11 @@ describe('presented files', () => {
 })
 
 
-it.each([null, [], 'invalid', {}, { turn: '1', callId: 'bad', files: [] },
+it.each([null, [], 'invalid'])('declines non-object delivery data: %j', (data) => {
+  expect(deliverablesDefinition.match(at(1, 'deliverables/presented', data))).toBeNull()
+})
+
+it.each([{}, { turn: '1', callId: 'bad', files: [] },
   { turn: 1.5, callId: 'bad', files: [] }, { turn: 0, callId: 'bad', files: [] },
   { turn: 1, files: [] }, { turn: 1, callId: '', files: [] }, { turn: 1, callId: 'bad', files: null },
 ])('ignores malformed delivery data and keeps the existing produced row: %j', (data) => {
