@@ -10,6 +10,7 @@ flowchart TD
   subgraph group_util["packages/util"]
     pkg_atomic_write["atomic-write"]
     pkg_brand["brand"]
+    pkg_chunked_list["chunked-list"]
     pkg_deque["deque"]
     pkg_home_paths["home-paths"]
     pkg_http_proxy["http-proxy"]
@@ -1172,6 +1173,7 @@ flowchart TD
 | --- | --- | --- |
 | [`atomic-write`](../packages/util/atomic-write) | `util` | — |
 | [`brand`](../packages/util/brand) | `util` | — |
+| [`chunked-list`](../packages/util/chunked-list) | `util` | — |
 | [`deque`](../packages/util/deque) | `util` | — |
 | [`home-paths`](../packages/util/home-paths) | `util` | — |
 | [`http-proxy`](../packages/util/http-proxy) | `util` | — |

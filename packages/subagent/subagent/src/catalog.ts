@@ -5,6 +5,8 @@
  */
 
 import { z } from 'zod'
+import { appendChunkedList, chunkedListSchema, iterateChunkedList } from '@deepseek-ai/dsh-chunked-list'
+import type { ChunkedList } from '@deepseek-ai/dsh-chunked-list'
 import type {
   Session,
   SessionEvent,
@@ -39,19 +41,11 @@ declare module '@deepseek-ai/dsh-session/types' {
   }
 }
 
-/** A fixed-size persistent stack node; newest facts occupy the head chunk. */
-interface CatalogChunk {
-  readonly facts: readonly SubagentCatalogEvent[]
-  readonly previous?: CatalogChunk | undefined
-}
-
 /** Host fold state for one parent catalog. */
 export interface SubagentCatalogState {
   readonly inheritedEventCount: SessionLogOffset
-  readonly head?: CatalogChunk | undefined
+  readonly head?: ChunkedList<SubagentCatalogEvent> | undefined
 }
-
-const CATALOG_CHUNK_CAPACITY = 64
 
 const sessionIdSchema = z.string() as unknown as z.ZodType<SessionId>
 const oneShotCatalogSchema = z.object({
@@ -82,33 +76,14 @@ const viewSchema = z.array(z.union([
     createdAt: continuableCatalogSchema.shape.childCreatedAt,
   }),
 ])) as unknown as z.ZodType<SubagentCatalogEntry[]>
-const chunkSchema: z.ZodType<CatalogChunk> = z.lazy(() => z.object({
-  facts: z.array(eventDataSchema).min(1).max(CATALOG_CHUNK_CAPACITY),
-  previous: chunkSchema.optional(),
-}).strict())
 const stateSchema: z.ZodType<SubagentCatalogState> = z.object({
   inheritedEventCount: z.number().int().nonnegative() as unknown as z.ZodType<SessionLogOffset>,
-  head: chunkSchema.optional(),
+  head: chunkedListSchema(eventDataSchema).optional(),
 }).strict()
 
 declare module '@deepseek-ai/dsh-session-projection/types' {
   interface SessionProjectionStateMap {
     subagentCatalog: SubagentCatalogState
-  }
-}
-
-/** Append one fact to the persistent chunk stack in constant bounded work. */
-function appendFact(state: SubagentCatalogState, fact: SubagentCatalogEvent): SubagentCatalogState {
-  const head = state.head
-  if (head === undefined || head.facts.length === CATALOG_CHUNK_CAPACITY) {
-    return { ...state, head: { facts: [fact], ...head === undefined ? {} : { previous: head } } }
-  }
-  return {
-    ...state,
-    head: {
-      facts: [...head.facts, fact],
-      ...head.previous === undefined ? {} : { previous: head.previous },
-    },
   }
 }
 
@@ -118,25 +93,21 @@ function appendFact(state: SubagentCatalogState, fact: SubagentCatalogEvent): Su
  * @returns current direct-child rows in parent catalog event order.
  */
 function subagentCatalogEntries(state: SubagentCatalogState): SubagentCatalogEntry[] {
-  const chunks: CatalogChunk[] = []
-  for (let chunk = state.head; chunk !== undefined; chunk = chunk.previous) chunks.push(chunk)
   const entries: SubagentCatalogEntry[] = []
-  for (const chunk of chunks.reverse()) {
-    for (const data of chunk.facts) {
-      entries.push(data.mode === 'one-shot'
-        ? {
-          id: data.childId,
-          createdAt: data.childCreatedAt,
-          mode: data.mode,
-          ...data.label === undefined ? {} : { label: data.label },
-        }
-        : {
-          id: data.childId,
-          createdAt: data.childCreatedAt,
-          mode: data.mode,
-          label: data.label,
-        })
-    }
+  for (const data of iterateChunkedList(state.head)) {
+    entries.push(data.mode === 'one-shot'
+      ? {
+        id: data.childId,
+        createdAt: data.childCreatedAt,
+        mode: data.mode,
+        ...data.label === undefined ? {} : { label: data.label },
+      }
+      : {
+        id: data.childId,
+        createdAt: data.childCreatedAt,
+        mode: data.mode,
+        label: data.label,
+      })
   }
   return entries
 }
@@ -148,9 +119,9 @@ export const subagentCatalogProjectionDefinition = {
   init: (_header: SessionHeader, inheritedEventCount: SessionLogOffset) => ({ inheritedEventCount }),
   apply: (state, event: SessionEvent) => {
     if (event.type !== 'subagent/catalog' || event.seq < state.inheritedEventCount) return state
-    return appendFact(state, eventDataSchema.parse(event.data))
+    return { ...state, head: appendChunkedList(state.head, eventDataSchema.parse(event.data)) }
   },
-  stateVersion: 1,
+  stateVersion: 2,
   wire: { viewSchema, view: subagentCatalogEntries },
 } satisfies ProjectionDefinition<'subagentCatalog', SubagentCatalogState>
 

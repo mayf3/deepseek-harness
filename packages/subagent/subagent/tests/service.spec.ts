@@ -84,7 +84,7 @@ describe('SubagentRuntime', () => {
       childCreatedAt: 1,
       mode: 'one-shot',
     })
-    expect(ctx.sessionProjections.stateOf(parent, 'subagentCatalog')?.head?.facts).toHaveLength(1)
+    expect(ctx.sessionProjections.snapshot(parent).values.subagentCatalog).toHaveLength(1)
 
     await fiber.dispose()
 
