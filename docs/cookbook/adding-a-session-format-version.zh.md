@@ -30,7 +30,7 @@
 <a id="add-an-identity-edge"></a>
 ## 2. 添加恒等迁移边
 
-按照包检查清单，将 [`packages/session/session-format-v2-to-v3`](../../packages/session/session-format-v2-to-v3/README.zh.md) 创建为库，而非挂载插件。先将 header 从 2 转换为 3，并在正文转换中保留所有可接受事件的 payload、序号、引用、时间戳、顺序和继承截点。恒等指逻辑事件转换，而非文件字节完全相同：header 和文件名标识 V3。
+按照包检查清单创建库，而非挂载插件。恒等正文转换仅是最初的接线骨架；集成后的 [V2 到 V3 规范](../../packages/session/session-format-v2-to-v3/README.zh.md#v2-to-v3-specification)定义实际转换与保留规则。不要将其结构转换视为恒等迁移边。
 
 在包 manifest（元数据清单）中声明 `dsh.sessionFormatMigration`，包含 `from: 2`、`to: 3`、导出路径，以及导出的迁移、源 codec、目标 codec、目标 header 校验器和目标恢复器。复用前一条迁移边的 `releasedV2SessionFormatCodec`，并依赖该包；不要复制或重新定义已发布 V2 codec。从新包导出 V3 codec 和校验器。将新迁移边加入 catalog 的直接依赖，并添加工作区的 TypeScript 路径与项目引用。
 
@@ -51,7 +51,7 @@ pnpm run gen-session-format-catalog
 
 继承截点是逻辑事件数量，不是物理行数。只有在 EOF 前已知时才公开 `headerInheritedEventCount`；`finish` 返回精确的目标截点。前一条改变事件数量的迁移边可能使该数量在构造时不可知。必要时从已校验的种子标记推导它，并用有种子的 Session 测试 V0→V1→V2→V3 和 V1→V2→V3，而非仅测试直接 V2 输入。绝不以零替代未知截点。
 
-显式定义每条迁移边的事件准入与变换规则。V2→V3 恒等骨架保留已安装的普通事件新增项，以及带有 `ignorable: true` 的未知事件；未知必需事件仍会被拒绝。这依赖于 payload、序号、引用与顺序均不变。[Alpha V0→V1 规则](../../.agents/notes/implemented/architecture/2026-08-31-alpha-historical-unknown-event-refusal.zh.md)则采用冻结清单，并拒绝所有未知事件，包括可忽略事件。不要将任一策略推广到所有迁移边。改变结构或事件位置的子变更必须分类源事件、payload 成员与引用，并显式判断不透明数据能否保持有效。[同版本保留](../../.agents/notes/implemented/architecture/2026-08-30-retain-ignorable-external-session-events.zh.md)本身不能证明结构变换安全。校验目标语义，并为每个新增可接受案例提供一个被拒绝的反例；绝不放宽旧迁移边来掩盖不受支持的 V3 变换。
+显式定义每条迁移边的事件准入与变换规则；[V2 到 V3 源审计](../../packages/session/session-format-v2-to-v3/README.zh.md#source-audit)负责本迁移边的策略。[Alpha V0→V1 规则](../../.agents/notes/implemented/architecture/2026-08-31-alpha-historical-unknown-event-refusal.zh.md)负责前代迁移边的策略。不要将任一策略推广到所有迁移边。结构或事件位置变化时，必须分类源事件、载荷成员与引用，并显式判断不透明数据能否保持有效。[同版本保留](../../.agents/notes/implemented/architecture/2026-08-30-retain-ignorable-external-session-events.zh.md)本身不能证明结构变换安全。校验目标语义，并为每个新增可接受案例提供一个被拒绝的反例；绝不放宽旧迁移边来掩盖不受支持的转换。
 
 通过 `sessionFormatCatalog.createRestore(header, { recovery: 'strict', validation: 'current' })` 验证严格恢复，按顺序传入各行并调用 `finish()`。这会执行物理解码、完整迁移链与已安装当前 Session 校验。生产环境的 recoverable/transformed 策略不能替代 fixture（测试前置数据）和发布验证所需的严格校验。保留已记录的历史校验例外，不要宣称源校验比迁移边实际执行的更严格。
 

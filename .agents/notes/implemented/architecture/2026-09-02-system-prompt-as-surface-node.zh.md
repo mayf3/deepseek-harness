@@ -58,15 +58,11 @@ Status: implemented
 
 ### V2-to-V3 结构转换
 
-[V2-to-V3 迁移](../../../../packages/session/session-format-v2-to-v3/README.zh.md)把每个 V2 `request/header.system` 转为受保护的 `system/message` 头节点，并删除已退役的 header 字段。它紧接首个 `step/start` 插入空头节点，再在提示词不同的 header 之前立即替换该节点。插入消息的 ID 是确定性的。转换保留源事件顺序、重建请求的含义，以及所有其他消息的精确 ID 和内容。原生 V3 writer 正常写出提示词头节点；迁移事件布局与原生记录语义等价，但并非逐字节相同。
-
-插入事件会移动本地序列位置。转换重映射本地序号引用、替换范围与继承截点；历史投递／版本事实，以及捕获的其他会话引用保留源值。这些历史坐标不得被重新标记为对转换后 V3 日志的确认。
-
-严格迁移拒绝无法安全转换载荷的未知事件、首个步骤前不受支持的 surface 历史，以及开放步骤之外的提示词转换。这样的 V2 源可以有效，但在当前核心步骤不变量下没有保持顺序的转换方式。拒绝不会改动原始文件；它不会重排源事件，也不会放宽不变量来强行转换。V3 读取器拒绝已退役的 `header.system` 字段，并校验系统消息载荷与受保护头节点的重写，而非依赖 TypeScript 省略字段。
+[V2 到 V3 规范](../../../../packages/session/session-format-v2-to-v3/README.zh.md#system-head)负责系统头节点转换与消息身份；其[引用规则](../../../../packages/session/session-format-v2-to-v3/README.zh.md#sequence-references)和[源拒绝](../../../../packages/session/session-format-v2-to-v3/README.zh.md#source-audit)定义保留内容与不支持的输入。迁移布局与原生请求语义等价，而非与原生录制逐字节相同。有效 V2 源在当前步骤不变量下可能没有保持顺序的转换方式；拒绝它优于移动历史或放宽归属。历史接收坐标不得变为对转换后日志的确认。
 
 [已发布格式策略](2026-08-31-released-session-format-migrations.zh.md)保持 V0、V1、V2 代际字节冻结，并且只发布 V3 后继代际。V3 是一个尚未发布的目标，而不是每个功能一个新版本；它在发布前可以演化，因此集成必须使用可丢弃的 home。已有 V3 代际不会重跑 V2-to-V3。投影缓存版本 4 独立于 Session 格式，并不意味着 Session V4。
 
-[规范信封转换](2026-09-06-v3-canonical-session-envelopes.zh.md)在同一 V2-to-V3 迁移边中位于结构插入与引用重映射之后。它规范化原始与合成事件的替换端点；只有这个最终阶段保留其输入事件数与序列坐标，而不是整个迁移都保留。
+[规范信封规范](../../../../packages/session/session-format-v2-to-v3/README.zh.md#canonical-envelopes)定义与结构转换的组合；[规范信封决策](2026-09-06-v3-canonical-session-envelopes.zh.md)负责严格准入的依据。
 
 ## Alternatives considered
 

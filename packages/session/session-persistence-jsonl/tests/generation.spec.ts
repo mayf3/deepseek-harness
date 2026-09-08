@@ -920,7 +920,7 @@ describe('JSONL immutable generation publication', () => {
     }
   })
 
-  it('publishes only the final generation across a multi-edge migration', async () => {
+  it('publishes only the adapter target generation beside the source', async () => {
     const root = await tempRoot()
     const format = adapter()
     const request = options(root, 'none', format)

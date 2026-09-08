@@ -66,7 +66,7 @@ Production 历史读取使用 `{ recovery: 'recoverable', validation: 'transform
 - [迁移机制](../session-format/README.zh.md)——目录构造与分派行为。
 - [已发布 v0 到 v1 迁移边](../session-format-v0-to-v1/README.zh.md)——编解码器与校验器所有权。
 - [已发布 v1 到 v2 迁移边](../session-format-v1-to-v2/README.zh.md)——Assistant stream 嵌入与基数变化引用重映射。
-- [已发布 v2 到 v3 迁移边](../session-format-v2-to-v3/README.zh.md)——恒等事件还原。
+- [已发布 V2 到 V3 规范](../session-format-v2-to-v3/README.zh.md#v2-to-v3-specification)——转换、保留与拒绝。
 - [JSONL 持久化](../session-persistence-jsonl/README.zh.md)——不可变 generation 命名与排他发布。
 
 -----

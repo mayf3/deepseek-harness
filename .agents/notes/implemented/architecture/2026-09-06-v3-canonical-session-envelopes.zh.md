@@ -24,13 +24,7 @@ Session 格式 V3 使用一种规范事件信封。每个 `system/message`、`us
 
 ### 已发布 V2 到 V3 的转换
 
-[相邻迁移](../../../../packages/session/session-format-v2-to-v3/README.zh.md)将 Session 头版本改为 3。其结构阶段在首个 `step/start` 后立即插入空系统头节点，在历史请求提示发生变化（包括清空）前输出受保护头节点替换，移除每个 `header.system`，并重映射经过审计的序列引用与继承切点。它保留源事件时序与请求含义，而非源事件数或序列坐标。未知历史事件即使可忽略也会被拒绝，因为其序列依赖尚未经审计。仅含元数据的日志不添加头节点。
-
-随后规范化将原始与合成信封上的精确替换对象从 `op/start/end` 重命名为 `op/startSeq/endSeq`，并省略空的 `tools` 与 `adapterDefaults`。只有这个最终阶段保留其输入事件数、坐标、时间戳、顺序与继承切点。嵌入式 stream、模型可见内容、历史身份与无关载荷值保持原样。有效源 surface 事件要求位置声明；缺失标记会被拒绝，绝不会合成为 append 操作。矛盾的工具错误会被拒绝，而非修复。
-
-冻结的 v0-to-v1 与 v1-to-v2 语义保持不变。V3 恢复首先验证规范信封、系统载荷、步骤归属与受保护头节点操作。随后冻结的关系校验接收由私有 system/PTC/repair 视图与规范端点视图组合而成的输入，并为代次敏感检查保留实际目标代次。历史修复 ID 后缀仍是身份，而非当前坐标。恢复器返回原始 V3 产物；内部视图既不是读取别名，也不替代结构校验。
-
-V3 编解码器在编码前及物理分帧与来源解码后验证事件本地规则。原始结构与不受支持事件的拒绝先于可恢复解码，包括损坏行之后必需的旧 PTC 标签；恢复不能隐藏它们。严格解码立即拒绝规范错误。已提交前缀恢复不产出首个规范无效事件及其后所有事件；后续 `turn/end` 证明无效后缀已提交，因此会拒绝该后缀。继承切点只统计已接纳的标记：丢弃的后缀不能推进它，缺少已接纳标记的种子前缀会被拒绝。这样，即使当前代次原生读取绕过产物恢复，也仍受 V3 接纳规则约束。
+[V2 到 V3 规范](../../../../packages/session/session-format-v2-to-v3/README.zh.md#v2-to-v3-specification)负责完整历史转换、[规范化规则](../../../../packages/session/session-format-v2-to-v3/README.zh.md#canonical-envelopes)及[原生准入与恢复](../../../../packages/session/session-format-v2-to-v3/README.zh.md#native-v3-admission)。将这些规则集中在一起，可以避免把保持事件数量的规范化步骤误认为恒等迁移。冻结的关系校验使用私有视图而非运行时别名；原始 V3 产物仍具权威性。
 
 ## 曾考虑的替代方案
 
@@ -46,7 +40,7 @@ V3 编解码器在编码前及物理分帧与来源解码后验证事件本地�
 
 类型化事件、持久化与浏览器历史对必填位置和事件本地失败语义保持一致。畸形记录在投影前失败，而不会从模型历史中消失。迁移放弃对矛盾记录的尽力恢复；[已发布格式的发布策略](2026-08-31-released-session-format-migrations.zh.md)保证保留的源代次不被修改。
 
-本决策部分取代[会话 surface](2026-06-18-session-surface.zh.md)与[可重建请求](2026-07-05-reconstructable-requests.zh.md)说明中的信封表示细节。它们继续负责有序投影与已记录请求的所有权。[系统提示词 surface 节点决策](2026-09-02-system-prompt-as-surface-node.zh.md)保留提示所有权、受保护头节点语义与结构迁移。[V2 嵌入式 stream 决策](2026-09-01-v2-embedded-assistant-streams.zh.md)继续负责尝试结算、精确 stream 证据与改变事件数量的迁移；V3 保留这些决策。
+本决策部分取代[会话 surface](2026-06-18-session-surface.zh.md)与[可重建请求](2026-07-05-reconstructable-requests.zh.md)说明中的信封表示细节。它们继续负责有序投影与已记录请求的所有权。[系统提示词 surface 节点决策](2026-09-02-system-prompt-as-surface-node.zh.md)保留提示所有权、受保护头节点语义与迁移依据。[V2 嵌入式 stream 决策](2026-09-01-v2-embedded-assistant-streams.zh.md)继续负责尝试结算、精确 stream 证据与改变事件数量的迁移；V3 保留这些决策。
 
 ## 验证
 
