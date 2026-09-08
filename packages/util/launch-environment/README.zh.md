@@ -37,6 +37,8 @@ const endpoint = launchEnvironmentOf(ctx).get('DEEPSEEK_BASE_URL')?.value
 
 `get(name)` 按可信度从高到低搜索所有层。`getFrom(name, sources)` 只搜索指定的层，不改变这一可信顺序——绝不能接受某一层的调用方不把它列进去，因此后续任何重新排序都无法让它回来。
 
+`launchedThroughSsh(snapshot)` 仅在继承的进程层中存在非空 `SSH_CONNECTION` 或 `SSH_TTY` 时返回 true。Web 浏览器唤起、自适应目录选择器与 Open In 共用此判断；项目与用户 `.env` 中的值不作为 SSH 会话的依据。
+
 ### 各层的优先级
 
 | 层 | 它是什么 |

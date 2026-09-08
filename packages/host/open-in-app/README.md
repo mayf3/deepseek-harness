@@ -59,6 +59,8 @@ The catalog is a fixed whitelist covering editors and IDEs (Cursor, VS Code and 
 
 ### What to expect
 
+When the inherited process layer of the [launch environment](../../util/launch-environment/README.md) contains a non-empty `SSH_CONNECTION` or `SSH_TTY`, the application list is empty and the Web header hides Open In, including any remembered choice. Project and user `.env` values do not establish an SSH launch. The host skips application probing and refuses icon and launch requests for unavailable applications. This rule also applies when an SSH session carries a display or VS Code IPC connection; it does not identify remote deployments whose launchers remove both SSH markers.
+
 Resolution runs lazily, once per host process, on the first request that needs it; installing an application takes effect on the next restart, while an uninstalled one heals immediately — a launch that finds its executable gone re-resolves that one entry and drops it from the list when nothing proves it anymore. The icon route serves the real application icon on every platform where one is extractable: the bundle's `.icns` as a 128px PNG on macOS, the executable's associated icon as a 32px PNG on Windows, and the desktop entry's hicolor-theme icon (PNG or SVG) on Linux; a missing icon answers 404 and the browser surface renders a generic glyph.
 
 ### The `./shared` subpath
