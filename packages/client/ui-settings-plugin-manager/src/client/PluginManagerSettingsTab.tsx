@@ -86,11 +86,13 @@ const PHASE_STATES = {
  * same wait. Both read as one state, since the person sees one situation.
  */
 function isWaitingRow(row: RowView): boolean {
+  if (row.phase === 'active') return false
   return row.failure?.stage === 'inject-pending' || (row.failure === undefined && row.phase === 'pending')
 }
 
 /** A row with a recorded startup failure or a failed fiber; a wait for a service is not a failure. */
 function isFailedRow(row: RowView): boolean {
+  if (row.phase === 'active') return false
   return !isWaitingRow(row) && (row.failure !== undefined || row.phase === 'failed')
 }
 
@@ -125,7 +127,7 @@ interface RowToggle {
 /** Switching for a pack's rows: which rows have a write in flight, and the write. */
 interface RowToggles {
   readonly busy: (rowId: string) => boolean
-  readonly onSetDisabled: (rowId: string, disabled: boolean) => void
+  readonly onSetDisabled: (row: RowView, disabled: boolean) => void
 }
 
 /** Rows beyond this count get a filter box above the list. */
@@ -203,7 +205,7 @@ function RowsSection({ rows, t, toggle }: {
             {shown.map((row) => {
               const rowToggle = toggle === undefined || row.failure?.stage === 'conflict'
                 ? undefined
-                : { busy: toggle.busy(row.rowId), onChange: (disabled: boolean) => { toggle.onSetDisabled(row.rowId, disabled) } }
+                : { busy: toggle.busy(row.rowId), onChange: (disabled: boolean) => { toggle.onSetDisabled(row, disabled) } }
               return (
                 <li
                   key={row.entryId}
@@ -223,7 +225,7 @@ function RowsSection({ rows, t, toggle }: {
                     </span>
                     {rowToggle === undefined ? null : <RowSwitch row={row} t={t} toggle={rowToggle} />}
                   </div>
-                  {row.failure === undefined ? null : <p className={css.rowFailure}>{row.failure.message}</p>}
+                  {row.failure === undefined || row.phase === 'active' ? null : <p className={css.rowFailure}>{row.failure.message}</p>}
                 </li>
               )
             })}
@@ -471,7 +473,7 @@ function PackageDetail({
   readonly onRetry: () => void
   readonly onUninstall: () => void
   readonly onAddRow: (declaredName: string, target: PluginRowTarget) => void
-  readonly onSetRowDisabled: (rowId: string, disabled: boolean) => void
+  readonly onSetRowDisabled: (row: RowView, disabled: boolean) => void
 }): ReactNode {
   const title = pkg.title ?? shortName(pkg.name)
   const bundle = pkg.kind === 'bundle'
@@ -651,7 +653,14 @@ function InstallDialog({ install, t, onClose, onEditSpec, onToggleEnable, onRun 
   )
 }
 
-/** The confirmation a destructive action waits on, naming what still uses the package. */
+/** The copy of each confirmation: its title, its one-line description, and its action button. */
+const CONFIRM_KEYS = {
+  uninstall: { title: 'confirmUninstallTitle', description: 'confirmUninstallDescription', action: 'confirmUninstall' },
+  disable: { title: 'confirmDisableTitle', description: 'confirmDisableDescription', action: 'confirmDisable' },
+  disableRow: { title: 'confirmDisableRowTitle', description: 'confirmDisableRowDescription', action: 'confirmDisableRow' },
+} as const satisfies Record<ConfirmState['action'], Record<'title' | 'description' | 'action', PluginManagerLocaleKey>>
+
+/** The confirmation a destructive action waits on, naming what still uses the package or the row. */
 function ConfirmDialog({ confirm, t, packages, presets, presetName, onConfirm, onCancel }: {
   readonly confirm: ConfirmState
   readonly t: Translate
@@ -662,7 +671,8 @@ function ConfirmDialog({ confirm, t, packages, presets, presetName, onConfirm, o
   readonly onCancel: () => void
 }): ReactNode {
   const pkg = packages.find(candidate => candidate.name === confirm.packageName)
-  const name = pkg?.title ?? shortName(confirm.packageName)
+  const name = confirm.action === 'disableRow' ? confirm.rowId : pkg?.title ?? shortName(confirm.packageName)
+  const keys = CONFIRM_KEYS[confirm.action]
   const dependents = confirm.dependents
   const lines = dependents === undefined
     ? []
@@ -677,19 +687,18 @@ function ConfirmDialog({ confirm, t, packages, presets, presetName, onConfirm, o
         return t('dependentReferencePreset', { name: preset === undefined ? target : presetName(preset), row })
       }),
     ]
-  const uninstall = confirm.action === 'uninstall'
   return (
     <Modal
       open
       onClose={onCancel}
-      title={t(uninstall ? 'confirmUninstallTitle' : 'confirmDisableTitle', { name })}
+      title={t(keys.title, { name })}
       closeLabel={t('close')}
-      description={t(uninstall ? 'confirmUninstallDescription' : 'confirmDisableDescription')}
+      description={t(keys.description)}
       footer={(
         <>
           <Button variant="outline" onClick={onCancel}>{t('cancel')}</Button>
           <Button variant="primary" className={css.dangerButton} disabled={dependents === undefined} onClick={onConfirm}>
-            {t(uninstall ? 'confirmUninstall' : 'confirmDisable')}
+            {t(keys.action)}
           </Button>
         </>
       )}
@@ -767,7 +776,11 @@ export function PluginManagerSettingsTab(props: PluginManagerSettingsTabProps): 
             onRetry={() => { props.retry(openPkg.name) }}
             onUninstall={() => { props.uninstall(openPkg.name) }}
             onAddRow={(declaredName, target) => { props.addRow(openPkg.name, declaredName, target) }}
-            onSetRowDisabled={(rowId, disabled) => { props.setRowDisabled(GLOBAL, rowId, disabled) }}
+            onSetRowDisabled={(row, disabled) => {
+              // Off asks first when other rows inject what the row provides; on has nothing to ask.
+              if (disabled) props.disableRow(openPkg.name, row.entryId, row.rowId)
+              else props.setRowDisabled(GLOBAL, row.rowId, false)
+            }}
           />
         )
         : null}

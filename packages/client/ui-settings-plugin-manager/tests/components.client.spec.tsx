@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { PluginPackageView } from '@deepseek-ai/dsh-api-remotes/client'
 import { bindSnapshotSelector } from '@deepseek-ai/dsh-client-test-runtime'
@@ -73,6 +73,7 @@ function renderTab(state: Partial<PluginManagerState> = {}) {
     addRow: vi.fn(),
     removeRow: vi.fn(),
     setRowDisabled: vi.fn(),
+    disableRow: vi.fn(),
     dismissNotice: vi.fn(),
   }
   const props = {
@@ -195,6 +196,7 @@ describe('PluginManagerSettingsTab', () => {
             { entryId: 'include:idle', rowId: 'idle', moduleName: 'dsh-better-sidebar/idle', enabled: true, phase: null },
             { entryId: 'include:wait', rowId: 'wait', moduleName: 'dsh-better-sidebar/wait', enabled: true, phase: 'pending' },
             { entryId: 'include:recorded', rowId: 'recorded', moduleName: 'dsh-better-sidebar/recorded', enabled: true, phase: null, failure: { stage: 'inject-pending', message: 'pending (waiting for service: authorization)' } },
+            { entryId: 'include:healed', rowId: 'healed', moduleName: 'dsh-better-sidebar/healed', enabled: true, phase: 'active', failure: { stage: 'inject-pending', message: 'stale' } },
           ],
         }),
         pkg({
@@ -219,7 +221,7 @@ describe('PluginManagerSettingsTab', () => {
     expect(screen.getByText('0.16.0')).toBeTruthy()
     expect(screen.getByText(en.sourceExternal)).toBeTruthy()
     // Every row in the pack's order: its id over the module it loads, then its state; a failure adds its message.
-    expect(screen.getByText('8 total · 1 running · 2 waiting · 2 off · 2 failed')).toBeTruthy()
+    expect(screen.getByText('9 total · 2 running · 2 waiting · 2 off · 2 failed')).toBeTruthy()
     const rowText = (id: string): string | undefined => document.querySelector(`[data-plugin-row="include:${id}"]`)?.textContent
     expect(rowText('better-sidebar')).toBe(`better-sidebardsh-better-sidebar${en.rowPhaseActive}`)
     expect(rowText('off')).toBe(`offdsh-better-sidebar/off${en.partDisabledByUser}`)
@@ -232,6 +234,9 @@ describe('PluginManagerSettingsTab', () => {
     expect(rowText('recorded')).toBe(`recordeddsh-better-sidebar/recorded${en.rowPhasePending}pending (waiting for service: authorization)`)
     expect(document.querySelector('[data-plugin-row="include:wait"]')?.getAttribute('data-state')).toBe('waiting')
     expect(document.querySelector('[data-plugin-row="include:recorded"]')?.getAttribute('data-state')).toBe('waiting')
+    // A row that came to life is running, whatever record the registry still holds for it.
+    expect(rowText('healed')).toBe(`healeddsh-better-sidebar/healed${en.rowPhaseActive}`)
+    expect(document.querySelector('[data-plugin-row="include:healed"]')?.getAttribute('data-state')).toBeNull()
     expect(document.querySelector('[data-plugin-row="include:off"]')?.getAttribute('data-state')).toBe('off')
     expect(document.querySelector('[data-plugin-row="include:crash"]')?.getAttribute('data-state')).toBe('failed')
     // A short list has no filter; the built-in rows the pack changes are named.
@@ -302,22 +307,25 @@ describe('PluginManagerSettingsTab', () => {
     })
     const target = { kind: 'global' } as const
     fireEvent.click(screen.getByRole('button', { name: 'View better-sidebar' }))
-    // A row the person switched off switches back on; one the pack itself keeps off is locked and says why.
+    // A row the person switched off switches back on at once; one the pack itself keeps off is locked and says why.
     const off = screen.getByRole('switch', { name: 'Enable component off' })
     expect(off.getAttribute('aria-checked')).toBe('false')
     fireEvent.click(off)
     expect(actions.setRowDisabled).toHaveBeenLastCalledWith(target, 'off', false)
+    expect(actions.disableRow).not.toHaveBeenCalled()
     const gated = screen.getByRole('switch', { name: 'Enable component gated' })
     expect(gated).toHaveProperty('disabled', true)
     expect(gated.getAttribute('title')).toBe(en.partLockedByComposition)
-    // A failing row can be switched off; a row another layer owns has nothing mounted to switch.
+    // Switching a row off goes through the ask, which names the package and the row's tree-wide id;
+    // a failing row can be switched off; a row another layer owns has nothing mounted to switch.
     fireEvent.click(screen.getByRole('switch', { name: 'Enable component crash' }))
-    expect(actions.setRowDisabled).toHaveBeenLastCalledWith(target, 'crash', true)
+    expect(actions.disableRow).toHaveBeenLastCalledWith('dsh-better-sidebar', 'include:crash', 'crash')
     expect(screen.queryByRole('switch', { name: 'Enable component taken' })).toBeNull()
     const sidebar = screen.getByRole('switch', { name: 'Enable component better-sidebar' })
     expect(sidebar.getAttribute('aria-checked')).toBe('true')
     fireEvent.click(sidebar)
-    expect(actions.setRowDisabled).toHaveBeenLastCalledWith(target, 'better-sidebar', true)
+    expect(actions.disableRow).toHaveBeenLastCalledWith('dsh-better-sidebar', 'include:better-sidebar', 'better-sidebar')
+    expect(actions.setRowDisabled).toHaveBeenCalledTimes(1)
     // Only the row with a write in flight goes inert; a busy package takes every row with it.
     set({ busy: [rowKey(target, 'better-sidebar')] })
     expect(screen.getByRole('switch', { name: 'Enable component better-sidebar' })).toHaveProperty('disabled', true)
@@ -504,6 +512,26 @@ describe('PluginManagerSettingsTab', () => {
     expect(screen.getByRole('alert').textContent).toBe(en.busy.replace('{reason}', 'add x'))
     set({ install: { ...IDLE_INSTALL, open: true, spec: 'dsh-x', phase: 'failed', failure: null } })
     expect(screen.getByRole('alert').textContent).toBe(en.installFailed)
+  })
+
+  it('asks before switching a row off, naming the rows that inject what it provides', () => {
+    const { actions, set } = renderTab({
+      packages: [pkg()],
+      confirm: { action: 'disableRow', packageName: 'dsh-better-sidebar', rowId: 'seam', dependents: undefined },
+    })
+    expect(screen.getByRole('dialog', { name: en.confirmDisableRowTitle.replace('{name}', 'seam') })).toBeTruthy()
+    expect(screen.getByText(en.confirmDisableRowDescription)).toBeTruthy()
+    expect(screen.getByRole('button', { name: en.confirmDisableRow })).toHaveProperty('disabled', true)
+    set({
+      confirm: {
+        action: 'disableRow', packageName: 'dsh-better-sidebar', rowId: 'seam',
+        dependents: { services: [{ service: 'authorization', providedBy: 'include:seam', injectedBy: ['include:oauth'] }], references: [] },
+      },
+    })
+    expect(screen.getByText(en.confirmDependents)).toBeTruthy()
+    expect(within(screen.getByRole('dialog')).getByRole('listitem').textContent).toContain('oauth')
+    fireEvent.click(screen.getByRole('button', { name: en.confirmDisableRow }))
+    expect(actions.confirm).toHaveBeenCalledTimes(1)
   })
 
   it('names what still uses a package in the confirmation and runs the action through it', () => {

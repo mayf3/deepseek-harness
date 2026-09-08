@@ -182,6 +182,44 @@ describe('PluginManagerController', () => {
     await vi.waitFor(() => { expect(plugins.disable).toHaveBeenCalledTimes(2) })
   })
 
+  it('asks before switching a row off only when other rows inject what it provides', async () => {
+    const services = [
+      { service: 'authorization', providedBy: 'include:seam', injectedBy: ['include:oauth'] },
+      { service: 'other', providedBy: 'include:elsewhere', injectedBy: ['include:x'] },
+    ]
+    const { plugins, face, state, controller } = bench({ dependents: vi.fn(() => Promise.resolve(ok({ services, references: [] }))) })
+    await controller.load()
+    face.disableRow(BUNDLE.name, 'include:seam', 'seam')
+    expect(state().confirm).toEqual({ action: 'disableRow', packageName: BUNDLE.name, rowId: 'seam', dependents: undefined })
+    // Of the package's dependents, only the services this row provides are the row's.
+    await vi.waitFor(() => { expect(state().confirm?.dependents).toEqual({ services: [services[0]], references: [] }) })
+    expect(plugins.setRowDisabled).not.toHaveBeenCalled()
+    face.confirm()
+    await vi.waitFor(() => { expect(plugins.setRowDisabled).toHaveBeenCalledWith({ kind: 'global' }, 'seam', true) })
+    await vi.waitFor(() => { expect(state().busy).toEqual([]) })
+    // A row nothing depends on switches off without asking; so does one whose dependents the Host refused to name.
+    face.disableRow(BUNDLE.name, 'include:lonely', 'lonely')
+    await vi.waitFor(() => { expect(plugins.setRowDisabled).toHaveBeenCalledWith({ kind: 'global' }, 'lonely', true) })
+    expect(state().confirm).toBeNull()
+    plugins.dependents.mockResolvedValueOnce(refused('gateway/internal', 'boom') as never)
+    face.disableRow(BUNDLE.name, 'include:unknown', 'unknown')
+    await vi.waitFor(() => { expect(plugins.setRowDisabled).toHaveBeenCalledWith({ kind: 'global' }, 'unknown', true) })
+    expect(state().confirm).toBeNull()
+  })
+
+  it('drops a row ask whose answer arrives after the confirmation changed', async () => {
+    const gate = deferred<ReturnType<typeof ok<{ services: never[]; references: never[] }>>>()
+    const { plugins, face, state, controller } = bench({ dependents: vi.fn().mockReturnValueOnce(gate.promise) })
+    await controller.load()
+    face.disableRow(BUNDLE.name, 'include:seam', 'seam')
+    face.cancelConfirm()
+    gate.resolve(ok({ services: [], references: [] }))
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(state().confirm).toBeNull()
+    expect(plugins.setRowDisabled).not.toHaveBeenCalled()
+  })
+
   it('always asks before uninstalling, and cancelling runs nothing', async () => {
     const { plugins, face, state, controller } = bench()
     await controller.load()

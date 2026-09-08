@@ -63,13 +63,22 @@ export interface InstallState {
   readonly failure: { readonly code: string; readonly reason: string } | null
 }
 
-/** A destructive action waiting for the user's confirmation. */
-export interface ConfirmState {
-  readonly action: 'uninstall' | 'disable'
-  readonly packageName: string
-  /** What the action would strand; undefined while the Host is asked. */
-  readonly dependents: PluginDependents | undefined
-}
+/** A destructive action waiting for the user's confirmation: a package's uninstall or disable, or one row's switch-off. */
+export type ConfirmState =
+  | {
+    readonly action: 'uninstall' | 'disable'
+    readonly packageName: string
+    /** What the action would strand; undefined while the Host is asked. */
+    readonly dependents: PluginDependents | undefined
+  }
+  | {
+    readonly action: 'disableRow'
+    readonly packageName: string
+    /** The row the switch-off targets. */
+    readonly rowId: string
+    /** The rows injecting what this row provides; undefined while the Host is asked. */
+    readonly dependents: PluginDependents | undefined
+  }
 
 /** What the tab renders. */
 export interface PluginManagerState {
@@ -113,6 +122,8 @@ export interface PluginManagerFace {
   addRow: (packageName: string, declaredName: string, target: PluginRowTarget) => void
   removeRow: (target: PluginRowTarget, rowId: string) => void
   setRowDisabled: (target: PluginRowTarget, rowId: string, disabled: boolean) => void
+  /** Switch one of a package's rows off in the global layer, after asking when other rows inject what it provides. */
+  disableRow: (packageName: string, entryId: string, rowId: string) => void
   dismissNotice: () => void
   /** Display name for one preset, resolved through the agent-preset dictionaries. */
   presetName: (preset: PresetGroup) => string
@@ -231,6 +242,7 @@ export class PluginManagerController {
           this.answer(await this.ctx.remote.plugins.setRowDisabled(target, rowId, disabled))
         })
       },
+      disableRow: (packageName, entryId, rowId) => { void this.askRowConfirm(packageName, entryId, rowId) },
       dismissNotice: () => { this.patch({ notice: null }) },
       presetName: this.presetName,
     }
@@ -310,7 +322,7 @@ export class PluginManagerController {
    * confirmation and runs at once; every other confirmation runs its action
    * through `confirm` once the dependents are listed.
    */
-  private async askConfirm(action: ConfirmState['action'], packageName: string): Promise<void> {
+  private async askConfirm(action: 'uninstall' | 'disable', packageName: string): Promise<void> {
     const perform = action === 'uninstall'
       ? async (): Promise<void> => {
         this.answer(await this.ctx.remote.plugins.uninstall(packageName))
@@ -332,6 +344,29 @@ export class PluginManagerController {
       return
     }
     this.patch({ confirm: { ...confirm, dependents: value } })
+  }
+
+  /**
+   * Ask before switching one row off: of the package's dependents, the
+   * services this row provides that other rows inject. A row nothing depends
+   * on switches off at once.
+   */
+  private async askRowConfirm(packageName: string, entryId: string, rowId: string): Promise<void> {
+    const target: PluginRowTarget = { kind: 'global' }
+    this.pendingConfirm = () => this.run(rowKey(target, rowId), { rowId }, async () => {
+      this.answer(await this.ctx.remote.plugins.setRowDisabled(target, rowId, true))
+    })
+    this.patch({ confirm: { action: 'disableRow', packageName, rowId, dependents: undefined } })
+    const dependents = await this.ctx.remote.plugins.dependents(packageName)
+    const confirm = this.getSnapshot().confirm
+    if (this.disposed || confirm?.action !== 'disableRow' || confirm.packageName !== packageName || confirm.rowId !== rowId) return
+    const services = dependents.ok ? dependents.value.services.filter(service => service.providedBy === entryId) : []
+    if (services.length === 0) {
+      this.patch({ confirm: null })
+      await this.confirm()
+      return
+    }
+    this.patch({ confirm: { ...confirm, dependents: { services, references: [] } } })
   }
 
   private async confirm(): Promise<void> {
