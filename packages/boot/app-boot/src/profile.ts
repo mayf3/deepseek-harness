@@ -789,35 +789,22 @@ export function resolveBundleDir(
 }
 
 /**
- * Load a profile: resolve every `dsh.profile.bundles` entry to its patch
- * layer and parse the profile's own patch file. A listed bundle without a
- * `dsh.bundle` manifest fails loud — naming a bundle-less package as a layer
- * is a misconfiguration, not "no patches".
+ * Load an already initialized profile directory without resolving it through
+ * the shared Harness home. This is used by application-owned profiles whose
+ * package project and lifecycle belong to that application.
  * @param binName - the diagnostic prefix on thrown errors.
- * @param name - the profile name.
- * @param installAnchor - absolute path of the dsh app's package.json (first resolution anchor).
- * @param home - the Harness home; defaults to {@link resolveDshHome}.
- * @param options - `userLayer: false` skips reading `cordis.patch.yml`, so a
- * bundles-only consumer (`--dump-default-config`, a recovery diagnostic)
- * cannot fail on a broken user layer.
- * @returns the loaded profile (empty `patches` when the user layer is skipped).
+ * @param dir - absolute profile package directory.
+ * @param installAnchor - absolute path of the owning dsh app's package.json.
+ * @param options - `userLayer: false` skips reading `cordis.patch.yml`.
+ * @returns the resolved bundle layers and optional user patch layer.
  */
-export function loadProfile(
-  binName: string, name: string, installAnchor: string, home: string = resolveDshHome(),
+export function loadProfileDirectory(
+  binName: string,
+  dir: string,
+  installAnchor: string,
   options: { userLayer?: boolean } = {},
 ): Profile {
-  const dir = resolveProfileDir(name, home)
-  if (!existsSync(join(dir, 'package.json'))) {
-    const template = PROFILE_TEMPLATES[name]
-    if (template === undefined) {
-      throw new Error(
-        `${binName}: profile ${JSON.stringify(name)} does not exist; create it with 'dsh plugin --profile ${name} add <package>'`,
-      )
-    }
-    initProfile(dir, template.bundles, template.patchReload)
-  }
-  const manifest = normalizeShippedProfile(name, dir, readProfileManifest(binName, dir))
-  // A hand-written profile manifest may omit the dsh section entirely.
+  const manifest = readProfileManifest(binName, dir)
   const bundles = manifest.dsh?.profile?.bundles ?? []
   const rawPatchReload: unknown = manifest.dsh?.profile?.patchReload
   if (rawPatchReload !== undefined && rawPatchReload !== 'live' && rawPatchReload !== 'startup') {
@@ -856,7 +843,39 @@ export function loadProfile(
   const patches = options.userLayer !== false && existsSync(patchPath)
     ? loadOverlayPatches(binName, patchPath)
     : []
-  return { name, dir, layers, patchPath, patches, patchReload }
+  return { name: basename(dir), dir, layers, patchPath, patches, patchReload }
+}
+
+/**
+ * Load a profile: resolve every `dsh.profile.bundles` entry to its patch
+ * layer and parse the profile's own patch file. A listed bundle without a
+ * `dsh.bundle` manifest fails loud — naming a bundle-less package as a layer
+ * is a misconfiguration, not "no patches".
+ * @param binName - the diagnostic prefix on thrown errors.
+ * @param name - the profile name.
+ * @param installAnchor - absolute path of the dsh app's package.json (first resolution anchor).
+ * @param home - the Harness home; defaults to {@link resolveDshHome}.
+ * @param options - `userLayer: false` skips reading `cordis.patch.yml`, so a
+ * bundles-only consumer (`--dump-default-config`, a recovery diagnostic)
+ * cannot fail on a broken user layer.
+ * @returns the loaded profile (empty `patches` when the user layer is skipped).
+ */
+export function loadProfile(
+  binName: string, name: string, installAnchor: string, home: string = resolveDshHome(),
+  options: { userLayer?: boolean } = {},
+): Profile {
+  const dir = resolveProfileDir(name, home)
+  if (!existsSync(join(dir, 'package.json'))) {
+    const template = PROFILE_TEMPLATES[name]
+    if (template === undefined) {
+      throw new Error(
+        `${binName}: profile ${JSON.stringify(name)} does not exist; create it with 'dsh plugin --profile ${name} add <package>'`,
+      )
+    }
+    initProfile(dir, template.bundles, template.patchReload)
+  }
+  normalizeShippedProfile(name, dir, readProfileManifest(binName, dir))
+  return loadProfileDirectory(binName, dir, installAnchor, options)
 }
 
 /**
