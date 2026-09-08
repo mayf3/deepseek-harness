@@ -36,9 +36,11 @@ const REPLY = 'Review complete: no actionable findings.'
 /** Deterministic model response for the webhook-created Session. */
 class ReviewAdapter extends LlmAdapter {
   readonly requests: GenerateOptions[] = []
+  readonly firstRequest = Promise.withResolvers<undefined>()
 
   override async * stream(options: GenerateOptions): AsyncIterable<StreamChunk> {
     this.requests.push(options)
+    this.firstRequest.resolve(undefined)
     yield { type: 'block-start', index: 0, blockType: 'text' }
     yield { type: 'block-end', index: 0, block: { type: 'text', text: REPLY } }
     yield { type: 'finish', reason: { kind: 'stop' } }
@@ -147,10 +149,24 @@ describe.skipIf(MODE === 'record')('web e2e: GitHub ready-for-review', () => {
         && event.data.source.deliveryId === 'ready' && event.data.source.ruleId === 'review-pr-when-ready') reviewSession = session.id
       if (event.type === 'turn/end' && session.id === reviewSession) completed.resolve(undefined)
     })
+    const entered = Promise.withResolvers<undefined>()
+    const release = Promise.withResolvers<undefined>()
+    const createWorkspace = scaffold.ctx.workspaceRegistry.create.bind(scaffold.ctx.workspaceRegistry)
+    const create = vi.spyOn(scaffold.ctx.workspaceRegistry, 'create').mockImplementationOnce(async (...args) => {
+      entered.resolve(undefined)
+      await release.promise
+      return await createWorkspace(...args)
+    })
     try {
       expect((await send(webhookOrigin, 'ready', payload)).status).toBe(202)
+      await entered.promise
+      expect(scaffold.ctx.agents.list()).toHaveLength(before)
+      expect(adapter.requests).toHaveLength(0)
+      release.resolve(undefined)
       await completed.promise
     } finally {
+      release.resolve(undefined)
+      create.mockRestore()
       off()
     }
     expect(scaffold.ctx.agents.list()).toHaveLength(before + 1)

@@ -16,6 +16,8 @@ Status: implemented
 
 [原生 Windows CI 决策](../process/2026-08-08-native-windows-pull-request-ci.zh.md) 继续负责通道调度和预算。本次改动仅移除冲突的局部期限并加强资源生命周期断言；它并不证明 Windows 进程终止或文件系统存在缺陷。
 
+捕获 TERM 的 ACP 用例同样在 lane 预算内等待，并检查真实子进程结果：POSIX 上为 `SIGKILL`，Windows 直接强制终止时为非零退出码。就绪标记在安装信号处理器后写入。失败清理先等待捕获的子进程结束，再删除其私有标记目录；fixture 的 EOF 与终止宽限期保持不变。
+
 ## 曾考虑的替代方案
 
 - 增加生产环境宽限期或文件系统重试次数：这些失败不能证明产品时序错误或删除重试耗尽。

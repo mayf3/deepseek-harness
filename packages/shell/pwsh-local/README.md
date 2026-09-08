@@ -68,6 +68,8 @@ if (result.timedOut) console.log('timed out after', result.timeoutMs)
 
 Call `start` to run a command in the background; it returns a handle immediately and no timeout applies. `readOutput()` merges the stream deltas into one consuming read, marking stderr under a `[stderr]` section; `kill()` terminates the provider-managed range; `done` settles when the direct command closes and never rejects. Job ids, ownership, polling, and notices belong to the generic `ctx.jobs` runtime, which the tool layer registers the handle with.
 
+The real-process tests await `done` before asserting complete output and use private file barriers for partial-output checks. Their polling inherits the execution lane’s budget, and Context disposal precedes temporary-directory removal; see the [completion-observation decision](../../../.agents/notes/implemented/testing/2026-09-08-ci-completion-observations.md).
+
 <a id="adjusting-budgets-at-runtime"></a>
 ### Adjusting budgets at runtime
 

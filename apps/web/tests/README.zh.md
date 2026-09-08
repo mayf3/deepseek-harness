@@ -7,6 +7,12 @@
 [`scaffold.ts`](scaffold.ts) 和
 [浏览器 e2e Agent Note](../../../.agents/notes/implemented/testing/2026-07-24-web-gui-browser-e2e-lane.zh.md)中。
 
+## 完成状态观察
+
+GitHub webhook 场景先等待确定性模型适配器收到首个请求，再检查已创建的 Session；HTTP 202 只确认分发。受控的 Workspace 创建屏障验证这一区别，而不引入短轮询期限。参见[完成状态观察决策](../../../.agents/notes/implemented/testing/2026-09-08-ci-completion-observations.zh.md)。
+
+Queue 布局断言等待响应式框架稳定，并在一次浏览器执行中采样相关的两个矩形；分开的往返可能观察到不同布局状态。
+
 ## 这些是 Host 面的测试
 
 它们在根 `tsconfig.host.json` 中做类型检查，而不在 Client aggregate 中，因为它们直接读取

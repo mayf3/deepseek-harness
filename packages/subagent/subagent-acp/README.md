@@ -93,6 +93,8 @@ This section explains how the backend drives a child over ACP and where the obse
 
 A start resolves the child's working directory (the configured `cwd` override, else the parent session's cwd), spawns the command through the subprocess seam, performs the ACP `initialize` and `newSession` handshake, and only then publishes the run. Fulfillment means a remote session is ready and ownership has transferred to the caller. Disposal is idempotent: it closes stdin and waits a configured grace for cooperative quiescence, then escalates through SIGTERM to SIGKILL and awaits whole-range exit. Cleanup failures remain observable as ordered safe facts and never claim quiescence.
 
+The [disposal tests](tests/subagent-acp.spec.ts) observe real child exit under the lane budget and distinguish POSIX signal escalation from Windows force termination; cleanup joins child exit before deleting marker directories. See the [teardown-test decision](../../../.agents/notes/implemented/testing/2026-09-07-subagent-teardown-test-budgets.md).
+
 ### Stop-reason mapping
 
 The run outcome maps the ACP terminal into the shared stop-reason vocabulary (`completed`, `max-tokens`, `refusal`, `aborted`, or `error`) in [`src/run.ts`](src/run.ts).

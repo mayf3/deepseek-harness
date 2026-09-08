@@ -8,6 +8,12 @@ the deliberate composition divergences from `dsh web` — are documented in
 [`scaffold.ts`](scaffold.ts) and the
 [browser e2e Agent Note](../../../.agents/notes/implemented/testing/2026-07-24-web-gui-browser-e2e-lane.md).
 
+## Completion observations
+
+The GitHub webhook scenario awaits the deterministic model adapter’s first request before inspecting its created Session; HTTP 202 only acknowledges dispatch. Its controlled Workspace-creation barrier verifies that distinction without a short polling deadline. See the [completion-observation decision](../../../.agents/notes/implemented/testing/2026-09-08-ci-completion-observations.md).
+
+Queue layout assertions wait for the responsive frame to settle and sample both related rectangles in one browser evaluation; separate round trips can observe different layout states.
+
 ## These are Host-face tests
 
 They type-check in the root `tsconfig.host.json`, not in the Client aggregate,
