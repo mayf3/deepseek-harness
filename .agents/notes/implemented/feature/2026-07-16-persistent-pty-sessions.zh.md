@@ -158,6 +158,8 @@ plugins:
 
 ## 验证
 
+脱离作业表的后代进程由父 shell 在 fork 前设置忽略 `SIGTERM`，并由父 shell 发布其 PID，因此身份与信号处置都不依赖子进程启动。文件屏障还会将后代进程阻挡在工作负载之前，此时 shell 自然退出与显式关闭仍必须使其完全停稳。
+
 - 逐文件覆盖测试锁定了 owner 隔离、并发预留、写入前检查期间的取消、未发布 spawn 的取消与等待式 teardown、沙箱模式变更拒绝、可重试的生命周期清理、就绪层级、对写入前 stdin 等待与延迟到达的先前 prompt 的拒绝、配置化交接宽限把 idle fallback 顶过一次轮询以及低于 `pollIntervalMs` 时的拒绝、sanitizer carry state、完整 UTF-8 结果上限、task 集成、schema 和精确 render intent。
 - 子进程 fixture（测试前置数据）覆盖非 leader 与非主线程的 stdin 等待、线程本地 fd 表、`/dev/tty` 别名、用户态模拟下受支持的内核 ABI、拒绝把指向管道的 fd 0 当作终端输入、僵尸进程完全停稳、不可读进程状态、不支持的架构和其他误报拒绝；同一单元测试套件通过注入覆盖 macOS 检查器逻辑。
 - 真实 `node-pty` 与 PTY 消费方测试共同覆盖 shell 状态、通过 `/dev/tty` 读取控制终端输入、进程 syscall 可读时的精确归因、宿主策略拒绝读取时的有界 idle fallback、共享沙箱策略、环境清洗、raw mode 前台 `SIGINT`、忽略 `SIGTERM` 的后代进程，以及 dispose 返回后立即完全停稳。Linux native 冒烟测试会在一个 reparent 的 `setsid` 后代仍由 scope 拥有时，保持 PTY PID、session leader、控制终端、前台 `inputWaiting` 与 readiness；fallback 测试套件继续覆盖带身份围栏的观察式清理。
