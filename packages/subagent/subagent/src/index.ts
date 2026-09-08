@@ -75,6 +75,7 @@ import type { SubagentDescendantListEntry, SubagentListEntry } from './list-chil
 import { snapshotSubagentDescriptor } from './descriptor.ts'
 import { subagentIdentityProjectionDefinition, subagentTimingProjectionDefinition } from './projection.ts'
 import { establishCatalogChild, subagentCatalogProjectionDefinition } from './catalog.ts'
+import type {} from './catalog.ts'
 import { deliverSubagentPrompt } from './internal.ts'
 
 export * from './out-of-process.ts'
