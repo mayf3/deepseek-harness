@@ -138,10 +138,11 @@ class UiWorkspaceService extends Service implements UiWorkspace {
 
   async openWorkspace(workspaceId: WorkspaceId, beforeOpen?: (sessionId: SessionId) => void): Promise<void> {
     const navigation = AbortSignal.any([this.ctx.layout.beginNavigation(), this.lifetime.signal])
+    const isCurrent = (): boolean => !navigation.aborted
     const sessionId = await this.connectWorkspace(workspaceId)
-    if (navigation.aborted) return
+    if (!isCurrent()) return
     beforeOpen?.(sessionId)
-    if (!navigation.aborted) this.openSession(sessionId)
+    if (isCurrent()) this.openSession(sessionId)
   }
 
   async forkSession(sessionId: SessionId): Promise<void> {
