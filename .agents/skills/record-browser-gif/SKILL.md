@@ -1,11 +1,11 @@
 ---
 name: record-browser-gif
-description: Record browser or Web UI interaction demos as optimized GIFs using Playwright Videos and deterministic encoding, with screenshot capture when video is unavailable, then attach the GIF to a pull request with `gh --attach`, falling back to a dedicated assets branch where attach cannot apply. Use when asked to make, record, or generate a GIF that demonstrates a browser workflow, and for every pull request that changes product-user-visible GUI behavior, which MUST include a GIF recorded from the pull request's real server and model flow.
+description: Record browser or Web UI interaction demos as optimized GIFs using the available browser-control workflow, optional Playwright Videos for higher capture frame rates, and deterministic encoding, then attach the GIF to a pull request with `gh --attach`, falling back to a dedicated assets branch where attach cannot apply. Use when asked to make, record, or generate a GIF that demonstrates a browser workflow, and for every pull request that changes product-user-visible GUI behavior, which MUST include a GIF recorded from the pull request's real server and model flow.
 ---
 
 # Record Browser GIF
 
-Produce a short, truthful UI demonstration as a local GIF, and — only when the task includes attaching it to a pull request — publish it through the attach workflow at the end of this skill. Prefer the repository-declared Playwright dependency with [Videos](https://playwright.dev/docs/videos); use the bundled encoder for trimming, playback speed, final hold, dimensions, and size.
+Produce a short, truthful UI demonstration as a local GIF, and — only when the task includes attaching it to a pull request — publish it through the attach workflow at the end of this skill. The available browser-control workflow remains preferred. Use [Playwright Videos](https://playwright.dev/docs/videos) when that workflow supports continuous capture at higher frame rates; use the bundled encoder for trimming, playback speed, final hold, dimensions, and size.
 
 The [evidence-chain decision](../../notes/implemented/process/2026-08-08-browser-gif-evidence-chain.md) owns why one storyboard comes from one isolated run and why publication revalidates both the artifact and the demonstrated pull-request head.
 
@@ -31,13 +31,21 @@ A GIF for a specific pull request demonstrates that pull request's tree, so stag
 3. Treat one storyboard as one evidence run: every published frame comes from that server and those state roots, workspace, session, and model-backed scenario run. If capture automation fails, discard its frames and rerun from fresh roots; never splice frames from separate runs.
 4. When switching between pull requests, stop the old server by PID or an exact match on its command line. A broad `pkill -f` pattern can match and kill the shell that launched it — including your own.
 
-## Record with Playwright Videos
+## Record the flow
 
-Use the repository-declared Playwright dependency in an isolated Chromium context. In this repository it resolves from `apps/web/package.json`; do not install another driver or open the user's browser. If the available browser-control workflow exposes `recordVideo`, it can own the context instead. When video is unavailable, use [screenshot capture](#screenshot-capture) and state the limitation. Existing user browser state remains an explicit provenance exception.
+Follow the available browser-control workflow's setup, interaction, and cleanup instructions. When it exposes `recordVideo`, enable video on the same controlled context to capture more intermediate frames. Otherwise use [screenshot capture](#screenshot-capture) within that workflow; video availability does not determine which browser-control workflow to use. Existing user browser state remains an explicit provenance exception.
+
+Only when browser control is unavailable, use the repository-declared Playwright dependency in an isolated headless browser and state that fallback in the provenance. In this repository it resolves from `apps/web/package.json`; do not install another driver or open the user's browser.
 
 Before recording, identify the origin, built or development server, transport, and any mode overrides. When a production default opens a native surface that automation cannot drive, select an official browser-operable production backend through normal application configuration and disclose the override.
 
-Store the script, raw video, timing notes, QA frames, and GIF under the repository's gitignored `.playwright-mcp/` directory. Create the run directory first. Match `viewport` and `recordVideo.size` explicitly: Playwright otherwise scales the video down to fit 800×800, which can make UI text unreadable.
+Store the script, raw video, timing notes, QA frames, and GIF under the repository's gitignored `.playwright-mcp/` directory. Create the run directory first.
+
+### Capture video
+
+Match `viewport` and `recordVideo.size` explicitly: Playwright otherwise scales the video down to fit 800×800, which can make UI text unreadable.
+
+Configure video through the chosen browser-control workflow. The standalone Playwright fallback uses:
 
 ```js
 const { chromium } = createRequire(join(repo, 'apps/web/package.json'))('playwright')
@@ -61,9 +69,9 @@ try {
 
 Import `createRequire` from `node:module` and `join` from `node:path`; set `repo` and a fresh `runDir` to absolute paths in the recording script. Retain the page's video handle before closing it. Await `context.close()` before `video.saveAs()` or encoding; closing only the browser does not guarantee the video's flush. Each page has its own video: choose the demonstrated page explicitly and do not concatenate unrelated pages or runs. Failed runs are diagnostic only.
 
-Choose a short story with three to six meaningful states. Wait for unique semantic locators before acting; use `exact: true` for accessible-name equality and exact-text completion predicates that cannot match a prompt echo. Fixed waits may provide a reading hold after the state is verified, but never establish readiness. Preserve animations and scrolling in the continuous video.
+Choose a short story with three to six meaningful states. Wait for unique semantic locators before acting; use `exact: true` for accessible-name equality and exact-text completion predicates that cannot match a prompt echo. Fixed waits may provide a reading hold after the state is verified, but never establish readiness. When capturing video, preserve animations and scrolling.
 
-When demonstrating a tool call, rejection, or recovery, open its detail or trajectory so the video shows the tool identity, status or stable error code, and downstream result. If a transient running state matters, prompt for a slow foreground operation and observe its concrete DOM marker; the video records it without screenshot timing races. Give the model a short final sentinel to anchor completion. Stop an unnecessarily long real-API run after the demonstrated state is visible.
+When demonstrating a tool call, rejection, or recovery, open its detail or trajectory so the video shows the tool identity, status or stable error code, and downstream result. If a transient running state matters, prompt for a slow foreground operation and observe its concrete DOM marker; continuous video captures its intermediate frames. Give the model a short final sentinel to anchor completion. Stop an unnecessarily long real-API run after the demonstrated state is visible.
 
 Capture no secrets, personal data, unrelated tabs, or notifications. Browser video contains page content, not browser chrome; avoid rendering credential-bearing URLs in the application. Review the whole selected interval, including intermediate states. Keep one viewport throughout.
 
@@ -80,7 +88,7 @@ python3 "$GIF_SKILL_DIR/scripts/encode_gif.py" \
   --fps 10 --max-width 1200 --colors 128
 ```
 
-`--start` and `--end` select one continuous source interval in seconds. Defaults retain the full video at 1× speed and add a two-second final hold. `--speed` changes playback speed; disclose it and the selected interval beside the GIF so the demo cannot imply measured response latency. Use observed video times, not guessed wall-clock offsets, and preserve the complete cause and outcome of the demonstrated behavior. The final hold repeats the last selected frame. Keep the original WebM for QA; do not splice separate runs or synthesize missing states.
+`--start` and `--end` select one continuous source interval in seconds. Defaults retain the full video at 1× speed and add a two-second final hold. `--speed` changes playback speed; disclose it and the selected interval beside the GIF so the demo cannot imply measured response latency. Use observed video times, not guessed wall-clock offsets, and preserve the complete cause and outcome of the demonstrated behavior. The final hold repeats the last selected frame. `--fps` sets the encoded GIF frame rate; increasing it cannot recover motion that the source recording did not capture. Keep the original WebM for QA; do not splice separate runs or synthesize missing states.
 
 The encoder probes WebM container duration, applies trim and speed before palette conversion, and checks encoded duration, animation, width, and byte size. It refuses an empty or out-of-range interval, a selection shorter than two output frames, mode-inappropriate flags, and accidental overwrite. Reduce `--max-width`, then `--colors` or `--fps` for a large artifact; preserve readable text. Use `--force` only after resolving the exact output path.
 
