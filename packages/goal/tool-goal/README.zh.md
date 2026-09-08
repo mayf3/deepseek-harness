@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-`dsh-tool-goal` 为模型提供基于持久 goal 服务的三个工具：`get_goal` 读取当前 goal，`create_goal` 创建新 goal，`update_goal` 编辑、暂停、恢复、完成或阻塞它。模型可以从人类直接请求中推断长期目标并创建 goal；更新必须携带先前读取到的精确 id 与 revision。权限在执行时强制：create、edit、pause 和 resume 要求顶层 agent 的当前轮次中存在人类直接消息；complete 和 blocked 在自动续行期间还接受当前 Goal Round。`resume` 只重新启用 active-but-disarmed 或 blocked 的 goal；持久的 paused goal 由用户通过 Web 条带或 `/goal resume` 恢复。可配置的阈值（默认 3）约束自主 Round 多快可以自行报告 `blocked`。当模型需要自行管理 goal 时，与 `dsh-goal` 一起挂载它。
+`dsh-tool-goal` 让模型读取持久 goal，并根据人类直接请求推断和创建长期 goal。创建、编辑、暂停或恢复要求该直接请求出现在顶层 agent 轮次中；完成或阻塞也可以在自主 Goal Round 中执行。更新必须使用先前读取到的精确 goal id 和 revision。`resume` 会重新启用 active-but-disarmed 或 blocked 的 goal，而持久的 paused goal 由用户通过 Web 或 `/goal resume` 恢复。自主阻塞要求同一条件持续达到可配置阈值，默认是连续三个 Round。
 
 ## 目录
 

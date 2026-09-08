@@ -172,6 +172,12 @@ describe('gate graph validation', () => {
     expect(ids).toContain('subsystem-pages')
   })
 
+  it('keeps the package README Summary limit in the documentation gate', () => {
+    const ids = withPnpmEntrypoint(() => gatesForMode('doc-sync').map(subject => subject.id))
+
+    expect(ids).toContain('package-readme-summaries')
+  })
+
   it('derives the quick documentation aggregate from marked doc-sync leaves', () => {
     const full = withPnpmEntrypoint(() => gatesForMode('doc-sync'))
     const quick = withPnpmEntrypoint(() => gatesForMode('doc-quick'))

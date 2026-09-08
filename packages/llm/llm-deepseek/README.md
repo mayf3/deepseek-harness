@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-`@deepseek-ai/dsh-llm-deepseek` is the direct DeepSeek adapter for the harness LLM service: it owns the `deepseek-official` provider route and translates DeepSeek's chat-completions wire format into the harness stream-chunk protocol. With it a composition can stream DeepSeek models with configurable thinking and reasoning effort, send images to vision models, and browse an advisory model catalog. Connection facts — endpoint, catalog, key, thinking policy — resolve per request, so editing the user settings document changes the next request without a restart. The [pi-ai adapter](../llm-pi-ai/README.md) serves additional providers through a library; the [Messages adapter](../llm-deepseek-messages/README.md) serves DeepSeek through Anthropic Messages. Their separate routes allow simultaneous mounting.
+Use this package to stream DeepSeek models through `deepseek-official` with the Chat Completions protocol, configurable thinking and reasoning effort, image input for vision models, and an advisory model catalog. Endpoint, credentials, catalog, and thinking policy resolve per request, so valid user-settings changes apply without restarting. Choose it for DeepSeek's official API or an OpenAI-compatible gateway. It can run beside the [pi-ai adapter](../llm-pi-ai/README.md) and the [Anthropic Messages adapter](../llm-deepseek-messages/README.md) because each uses a separate provider route.
 
 ## Table of Contents
 

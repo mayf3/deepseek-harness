@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-`@deepseek-ai/dsh-llm-deepseek` 是 harness LLM 服务的 DeepSeek 直连适配器：它拥有 `deepseek-official` 提供方路由，并把 DeepSeek 的 chat-completions 协议格式翻译为 harness 的流式分片协议。借助它，组合可以流式调用 DeepSeek 模型，支持可配置的 thinking 与推理（reasoning）强度、向视觉模型发送图片，并浏览一份建议性模型目录。连接事实——端点、目录、密钥、thinking 策略——按请求解析，因此编辑用户设置文档即可改变下一个请求，无需重启。[pi-ai 适配器](../llm-pi-ai/README.zh.md) 通过库提供更多提供方；[Messages 适配器](../llm-deepseek-messages/README.zh.md) 通过 Anthropic Messages 调用 DeepSeek。独立路由允许它们同时挂载。
+使用本包可通过 `deepseek-official` 路由和 Chat Completions 协议流式调用 DeepSeek 模型，支持配置 thinking 与推理强度、向视觉模型输入图片，以及查看建议性模型目录。端点、凭据、目录与 thinking 策略均按请求解析，因此有效的用户设置更改无需重启即可生效。它适合 DeepSeek 官方 API 或 OpenAI 兼容网关。由于各自使用独立的提供方路由，可与 [pi-ai 适配器](../llm-pi-ai/README.zh.md)和 [Anthropic Messages 适配器](../llm-deepseek-messages/README.zh.md)并用。
 
 ## 目录
 
