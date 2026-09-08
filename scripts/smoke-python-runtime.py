@@ -11,6 +11,7 @@ import json
 import os
 import queue
 import re
+import secrets
 import shutil
 import subprocess
 import sys
@@ -879,8 +880,9 @@ def smoke_sdk_live() -> None:
             f"containing {LIVE_API_SENTINEL}. Then reply with exactly {LIVE_API_SENTINEL}.\n{marker}"
         )
         verify_prompt = (
-            "Use a tool to read the file created in the previous turn. "
-            f"If its only line is {LIVE_API_SENTINEL}, reply with exactly {LIVE_API_SENTINEL}."
+            "The file created in the previous turn now contains a new value written by the test. "
+            "Use a tool to read its current contents without modifying it. "
+            "Reply with exactly its current single line, not the value from the previous turn."
         )
         with DeepSeekHarness(
             provider="deepseek-official",
@@ -896,32 +898,44 @@ def smoke_sdk_live() -> None:
             request_timeout_seconds=180,
         ) as harness:
             created = harness.run(create_prompt, session_id=session_id)
+            assert_live_turn("create", created, LIVE_API_SENTINEL)
+            if not marker.is_file():
+                raise AssertionError(f"real-model tool turn did not create {marker}")
+            if marker.read_text(encoding="utf-8").splitlines() != [LIVE_API_SENTINEL]:
+                raise AssertionError(f"real-model tool turn wrote unexpected text to {marker}")
+            # Only a fresh filesystem observation can reveal the verification answer.
+            verification_value = secrets.token_hex(16)
+            marker.write_text(verification_value + "\n", encoding="utf-8")
             verified = harness.run(verify_prompt, session_id=session_id)
+            assert_live_turn("verify", verified, verification_value)
 
-        for label, result in (("create", created), ("verify", verified)):
-            if result.finish_reason != "completed":
-                event_types = [event.get("type") for event in result.events]
-                turn_end_data = next(
-                    (event.get("data") for event in reversed(result.events) if event.get("type") == "turn/end"),
-                    None,
-                )
-                turn_end = safe_turn_end(turn_end_data)
-                raise AssertionError(
-                    f"{label} turn ended with {result.finish_reason!r}; "
-                    f"final={result.final_response!r}; turn_end={turn_end!r}; events={event_types}"
-                )
-            if not any(event.get("type") == "tool/call" for event in result.events):
-                raise AssertionError(
-                    f"{label} turn made no model-requested tool call; "
-                    f"final={result.final_response!r}"
-                )
-            if result.final_response.strip() != LIVE_API_SENTINEL:
-                raise AssertionError(f"{label} turn returned {result.final_response!r}")
         if not marker.is_file():
             raise AssertionError(f"real-model tool turn did not create {marker}")
-        if marker.read_text(encoding="utf-8").splitlines() != [LIVE_API_SENTINEL]:
+        if marker.read_text(encoding="utf-8").splitlines() != [verification_value]:
             raise AssertionError(f"real-model tool turn wrote unexpected text to {marker}")
         assert_zstd_session_log(sessions)
+
+
+def assert_live_turn(label: str, result: RunResult, expected: str) -> None:
+    """Require a completed model-requested tool turn with the expected response."""
+    if result.finish_reason != "completed":
+        event_types = [event.get("type") for event in result.events]
+        turn_end_data = next(
+            (event.get("data") for event in reversed(result.events) if event.get("type") == "turn/end"),
+            None,
+        )
+        turn_end = safe_turn_end(turn_end_data)
+        raise AssertionError(
+            f"{label} turn ended with {result.finish_reason!r}; "
+            f"final={result.final_response!r}; turn_end={turn_end!r}; events={event_types}"
+        )
+    if not any(event.get("type") == "tool/call" for event in result.events):
+        raise AssertionError(
+            f"{label} turn made no model-requested tool call; "
+            f"final={result.final_response!r}"
+        )
+    if result.final_response.strip() != expected:
+        raise AssertionError(f"{label} turn returned {result.final_response!r}")
 
 
 def safe_turn_end(value: object) -> object:
@@ -1238,6 +1252,11 @@ def smoke_sdk_snapshot(base_url: str, executable: Path, update_snapshots: bool) 
         sessions = dsh_home / "sessions"
         patch = write_advanced_profile_patch(root, "snapshot.patch.yml", sessions)
         feedback_patch = write_profile_patch(root, "feedback.patch.yml", sessions, [{"insert": [
+            {"id": "snapshot-workflow-order", "name": (
+                Path(__file__).resolve().parent / "fixtures/python-snapshot-workflow-order.mjs"
+            ).as_uri(), "config": {
+                "parentSessionId": SNAPSHOT_SESSION_ID, "prompt": SNAPSHOT_WORKFLOW_CHILD_PROMPT,
+            }},
             {"id": "snapshot-message-feedback", "name": "@deepseek-ai/dsh-message-feedback",
              "config": {"maxNoteBytes": 1024}},
             {"id": "snapshot-feedback-producer", "name": (
