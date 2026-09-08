@@ -40,6 +40,7 @@ import { en, zh } from './locales.ts'
 import { GUIDE_ID, guideDefinition } from './tabs/guide/definition.ts'
 import { guideTabInfoFactory, tabInfoFactory } from './tab-info.ts'
 import type { TabId } from '@deepseek-ai/dsh-client-ui-dockkit'
+import { defaultSeed } from './contract/seed.ts'
 
 export type { RightbarSeatProps, SidebarRightInjected, SidebarRightPresentation } from './shell/SidebarRight.tsx'
 export type { GuideBodyProps, GuideInjected } from './tabs/guide/GuideBody.tsx'
@@ -118,7 +119,7 @@ export function apply(ctx: ClientContext): void {
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-sidebar-right: dictionaries')
 
   ctx.effect(() => {
-    const handle = createSidebarRightStore(() => t('tab.guide.title'))
+    const handle = createSidebarRightStore(() => defaultSeed(tabs))
     // The runtime mints one instance of this handle per session (the scope key
     // is the session id) and caches it per key. Each is adopted as it is minted,
     // so a tab's own action reaches its session's store while another session

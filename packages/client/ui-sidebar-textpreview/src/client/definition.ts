@@ -1,11 +1,11 @@
 /**
  * Stage one of this package's registration: what the `text` tab type IS.
  *
- * The type claims every `dsh-resource://file/` address in either scope —
- * `session/<sessionId>/<path>` or `absolute/<path>` — at the `fallback` band: it
+ * The type claims every `dsh-resource://file/session/<sessionId>/<path>`
+ * address at the `fallback` band: it
  * is the plain viewer that any more specific type for the same address should
  * beat, the position VS Code's text editor holds among its editors. `canOpen`
- * refuses an address `parseFileAddress` rejects at claim time, where an
+ * refuses an address `parseFileAddress` rejects or that has no Session at claim time, where an
  * unclaimed address is the documented wiring error.
  */
 import type { SidebarRightTabDefinition } from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
@@ -48,7 +48,7 @@ export function textDefinition(): SidebarRightTabDefinition {
     kind: TEXTPREVIEW_KIND,
     patterns: ['dsh-resource://file/**'],
     priority: 'fallback',
-    canOpen: address => parseFileAddress(address) !== undefined,
+    canOpen: address => parseFileAddress(address)?.scope === 'session',
     title: basenameOf,
   }
 }

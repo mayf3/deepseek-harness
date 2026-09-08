@@ -16,6 +16,8 @@ import type { RemoteFailure } from '@deepseek-ai/dsh-api-remotes/client'
 import { defineStore, type EngineStoreHandle } from '@deepseek-ai/dsh-client-store'
 import type { TabId } from '@deepseek-ai/dsh-client-ui-dockkit'
 import type { WorkspaceFileText } from '@deepseek-ai/dsh-api-workspace-files/types'
+import type { DocumentFileBytes } from './rpc.ts'
+import type { DocumentLoadMode } from './document/registry.ts'
 
 /**
  * One page as the store keeps it: its text and the Host's line count, which
@@ -29,8 +31,16 @@ export interface TextPage {
 
 /** One tab's pages and view. */
 export interface TextTabState {
+  /** Explicit viewer choice for this tab; absence follows automatic matching. */
+  rendererId?: string
+  /** Current display-loading mode; absent before the first read. */
+  mode?: DocumentLoadMode
+  /** Full byte result used by complete-file renderers. */
+  complete?: DocumentFileBytes
   /** The file version the loaded pages belong to; absent before the first page. */
   version: string | undefined
+  /** Metadata version observed when this tab began its current read generation. */
+  observedVersion: string | undefined
   /** Pages by the 1-based line each starts at. */
   pages: Record<number, TextPage>
   /** Whether the last loaded page reached the end of the file. */
@@ -59,6 +69,7 @@ export interface TextState {
 export function fresh(): TextTabState {
   return {
     version: undefined,
+    observedVersion: undefined,
     pages: {},
     eof: false,
     loading: false,
@@ -76,7 +87,9 @@ function bucket(state: TextState, tabId: TabId): TextTabState {
 
 /** The preview store's write set; every action names the tab it writes. */
 type TextActions = {
-  loading: (draft: TextState, tabId: TabId) => void
+  selected: (draft: TextState, tabId: TabId, rendererId: string | undefined) => void
+  loading: (draft: TextState, tabId: TabId, mode?: DocumentLoadMode, observedVersion?: string) => void
+  complete: (draft: TextState, tabId: TabId, file: DocumentFileBytes) => void
   page: (draft: TextState, tabId: TabId, page: WorkspaceFileText) => void
   failed: (draft: TextState, tabId: TabId, failure: RemoteFailure) => void
   reset: (draft: TextState, tabId: TabId) => void
@@ -97,13 +110,33 @@ export function createTextStore(): EngineStoreHandle<TextState, TextActions> {
   return defineStore({
     init: (): TextState => ({ byTab: {} }),
     actions: {
+      /** @param d - draft. @param tabId - owning tab. @param rendererId - manual choice, or automatic selection. */
+      selected: (d, tabId: TabId, rendererId: string | undefined) => {
+        if (rendererId === undefined) delete bucket(d, tabId).rendererId
+        else bucket(d, tabId).rendererId = rendererId
+      },
       /**
        * Mark a page read as in flight.
        * @param d - draft state.
        * @param tabId - the tab being drawn.
+       * @param mode - selected renderer's loading mode.
+       * @param observedVersion - metadata version at read start; later pages retain the initial observation.
        */
-      loading: (d, tabId: TabId) => {
-        bucket(d, tabId).loading = true
+      loading: (d, tabId: TabId, mode?: DocumentLoadMode, observedVersion?: string) => {
+        const state = bucket(d, tabId)
+        if (state.version === undefined && !state.loading) state.observedVersion = observedVersion
+        state.loading = true
+        state.failure = undefined
+        if (mode !== undefined) state.mode = mode
+      },
+      /** @param d - draft. @param tabId - owning tab. @param file - complete byte result for this view. */
+      complete: (d, tabId: TabId, file: DocumentFileBytes) => {
+        const state = bucket(d, tabId)
+        state.complete = file
+        state.version = file.version
+        state.eof = true
+        state.loading = false
+        state.failure = undefined
       },
       /**
        * Keep one page. A page from a newer file version invalidates the pages
@@ -140,8 +173,11 @@ export function createTextStore(): EngineStoreHandle<TextState, TextActions> {
       reset: (d, tabId: TabId) => {
         const state = bucket(d, tabId)
         state.pages = {}
+        delete state.complete
         state.eof = false
         state.version = undefined
+        state.observedVersion = undefined
+        state.loading = false
         state.failure = undefined
       },
       /**

@@ -11,15 +11,14 @@
  * Every resource address is `dsh-resource://<type>/…`, the URI host naming the
  * resource protocol; for `file` the path opens with the scope:
  *
- * - `dsh-resource://file/session/<sessionId>/<path>` names a file by its path
- *   relative to that Session's workspace root (`src/a.ts`, no leading `/`); the
+ * - `dsh-resource://file/session/<sessionId>/<path>` names a file by its path,
+ *   relative to that Session's workspace root or absolute; the
  *   Host resolves it against the root it holds for the Session.
  * - `dsh-resource://file/absolute/<path>` names a file by its absolute path with
  *   the leading `/` dropped (`dsh-resource://file/absolute/home/ys/notes.txt`;
  *   Windows `dsh-resource://file/absolute/C:/x/y.txt`; a UNC path keeps an empty
  *   first segment, `dsh-resource://file/absolute//server/share/x.txt`). It carries
- *   no Session: the reader's own Session resolves it, and the Host's workspace
- *   confinement still applies.
+ *   no Session.
  *
  * Every id and path segment is component-encoded, so a name carrying `#`, `?`,
  * or a space survives the round trip; `:` stays literal so a drive letter reads
@@ -28,9 +27,9 @@
 export type FileAddress =
   | {
     readonly scope: 'session'
-    /** The Session whose workspace root the path is relative to. */
+    /** The Session whose Host workspace resolves the path. */
     readonly sessionId: string
-    /** Workspace-relative `/`-separated path, no leading `/`; empty for the root itself. */
+    /** Absolute or workspace-relative `/`-separated path; empty for the workspace root itself. */
     readonly path: string
   }
   | {
@@ -58,14 +57,14 @@ function isDriveSegment(segment: string | undefined): boolean {
 }
 
 /**
- * Build the address of a file inside one Session's workspace.
- * @param sessionId - the Session whose workspace root the path is relative to.
- * @param path - workspace-relative path; backslashes are normalized to `/`, and a leading `./` or `/` is dropped.
+ * Build the address of a file read through one Session.
+ * @param sessionId - the Session whose Host workspace resolves the path.
+ * @param path - absolute or workspace-relative path; backslashes are normalized to `/`, and leading `./` prefixes are dropped.
  * @returns the `dsh-resource://file/session/<sessionId>/<path>` address.
  */
 export function sessionFileAddress(sessionId: string, path: string): string {
-  const relative = path.replace(/\\/g, '/').replace(/^(?:\.\/)+/, '').replace(/^\/+/, '')
-  return `${FILE_ADDRESS_PREFIX}session/${encodeSegment(sessionId)}/${encodePath(relative)}`
+  const normalized = path.replace(/\\/g, '/').replace(/^(?:\.\/)+/, '')
+  return `${FILE_ADDRESS_PREFIX}session/${encodeSegment(sessionId)}/${encodePath(normalized)}`
 }
 
 /**

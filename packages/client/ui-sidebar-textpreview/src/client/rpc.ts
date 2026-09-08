@@ -4,11 +4,11 @@
  * Content is the consumer's business: the `file` resource carries metadata only,
  * and the text arrives here one page of lines at a time. The endpoint takes a
  * session and a workspace path while a tab carries a `dsh-resource://file/`
- * address in one of two scopes, so this module also owns that translation.
+ * session address, so this module also owns that translation.
  */
 import type { RemoteResult } from '@deepseek-ai/dsh-api-remotes/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
-import type { WorkspaceFileRange, WorkspaceFileText } from '@deepseek-ai/dsh-api-workspace-files/types'
+import type { WorkspaceFileBytes, WorkspaceFileRange, WorkspaceFileText } from '@deepseek-ai/dsh-api-workspace-files/types'
 import { parseFileAddress } from '@deepseek-ai/dsh-util-workspace-path'
 
 /** The slice of the Client Remote this package calls. */
@@ -49,30 +49,26 @@ export type ReadWorkspaceFilePage = (
 export interface SessionFile {
   /** The session whose workspace confines the read. */
   readonly sessionId: SessionId
-  /** The path the Host receives: workspace-relative for a `session` address, absolute for an `absolute` one. */
+  /** The path the Host receives, absolute or relative to the addressed Session's workspace. */
   readonly path: string
 }
 
 /**
  * The session and path one `dsh-resource://file/…` address names.
  *
- * A `session` address names its own session and a workspace-relative path, so
+ * A `session` address names its own session and a relative or absolute path, so
  * a tab addressed into another session reads from that session. An `absolute`
- * address carries no session and is read through the seat's own, which the
- * Host confines to that session's workspace. The registry routes every
- * parseable `file` address to this type, so an address `parseFileAddress`
- * rejects is a programming error and throws.
+ * address carries no session and cannot be read here. The registry routes only
+ * session-scoped `file` addresses to this type, so an address `parseFileAddress`
+ * rejects or that carries no session is a programming error and throws.
  * @param address - a tab's `dsh-resource://file/…` address.
- * @param sessionId - the seat's session, which an `absolute` address is read through.
  * @returns the session and the path to hand the endpoint.
  */
-export function hostFileOf(address: string, sessionId: SessionId): SessionFile {
+export function hostFileOf(address: string): SessionFile {
   const parsed = parseFileAddress(address)
-  if (parsed === undefined) throw new Error(`ui-sidebar-textpreview: not a file address "${address}"`)
+  if (parsed?.scope !== 'session') throw new Error(`ui-sidebar-textpreview: not a session file address "${address}"`)
   // The address is a string boundary: its id segment is the Session id it names.
-  return parsed.scope === 'session'
-    ? { sessionId: parsed.sessionId as SessionId, path: parsed.path }
-    : { sessionId, path: parsed.path }
+  return { sessionId: parsed.sessionId as SessionId, path: parsed.path }
 }
 
 /**
@@ -83,4 +79,24 @@ export function hostFileOf(address: string, sessionId: SessionId): SessionFile {
  */
 export function createReadPage(remote: WorkspaceFilesReadRemote): ReadWorkspaceFilePage {
   return (sessionId, path, offset, signal) => remote.workspaceFiles.read(sessionId, path, { offset }, signal)
+}
+
+/** Complete document bytes borrowed read-only by renderers; copy before transferring to a Worker. */
+export type DocumentFileBytes = Omit<WorkspaceFileBytes, 'data'> & { readonly data: Uint8Array<ArrayBuffer> }
+
+/**
+ * Read a complete file through the Host endpoint.
+ * @param file - Session and path decoded from the tab address.
+ * @param signal - owning tab lifetime.
+ * @returns complete wire bytes, including declared failures.
+ */
+export type ReadDocumentBytes = (file: SessionFile, signal: AbortSignal) => Promise<RemoteResult<WorkspaceFileBytes>>
+
+/**
+ * Decode one successful Remote byte result for document renderers.
+ * @param file - Host byte result with base64 data.
+ * @returns the same metadata with native bytes; malformed base64 throws.
+ */
+export function documentFileBytes(file: WorkspaceFileBytes): DocumentFileBytes {
+  return { ...file, data: Uint8Array.from(atob(file.data), character => character.charCodeAt(0)) }
 }

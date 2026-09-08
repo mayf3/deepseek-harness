@@ -8,12 +8,28 @@ describe('file addresses', () => {
     expect(parseFileAddress(address)).toEqual({ scope: 'session', sessionId: 's 1', path: 'w/a b#c?.txt' })
   })
 
-  it('drops a leading ./ or / from a session-relative path and names the root with an empty path', () => {
+  it('drops a leading ./ from a session-relative path and names the root with an empty path', () => {
     expect(sessionFileAddress('s', './src/a.ts')).toBe('dsh-resource://file/session/s/src/a.ts')
-    expect(sessionFileAddress('s', '/src/a.ts')).toBe('dsh-resource://file/session/s/src/a.ts')
     expect(sessionFileAddress('s', 'src\\a.ts')).toBe('dsh-resource://file/session/s/src/a.ts')
     expect(sessionFileAddress('s', '')).toBe('dsh-resource://file/session/s/')
     expect(parseFileAddress('dsh-resource://file/session/s/')).toEqual({ scope: 'session', sessionId: 's', path: '' })
+  })
+
+  it.each([
+    ['/etc/hosts', '/etc/hosts', 'dsh-resource://file/session/s//etc/hosts'],
+    ['/', '/', 'dsh-resource://file/session/s//'],
+    ['C:\\w\\x.ts', 'C:/w/x.ts', 'dsh-resource://file/session/s/C:/w/x.ts'],
+    ['\\\\server\\share\\x.ts', '//server/share/x.ts', 'dsh-resource://file/session/s///server/share/x.ts'],
+    ['/a b#c?%.txt', '/a b#c?%.txt', 'dsh-resource://file/session/s//a%20b%23c%3F%25.txt'],
+  ])('round-trips the absolute path %s in a Session address', (input, path, expected) => {
+    const address = sessionFileAddress('s', input)
+    expect(address).toBe(expected)
+    expect(parseFileAddress(address)).toEqual({ scope: 'session', sessionId: 's', path })
+  })
+
+  it('gives the same absolute path different addresses in different Sessions', () => {
+    expect(sessionFileAddress('s1', '/etc/hosts')).toBe('dsh-resource://file/session/s1//etc/hosts')
+    expect(sessionFileAddress('s2', '/etc/hosts')).toBe('dsh-resource://file/session/s2//etc/hosts')
   })
 
   it('round-trips an absolute POSIX path with the leading slash dropped', () => {

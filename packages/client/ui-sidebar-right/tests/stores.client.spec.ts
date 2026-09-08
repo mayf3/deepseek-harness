@@ -15,7 +15,7 @@ import { createSidebarRightStore } from '../src/client/stores.ts'
 const SESSION = 's-test'
 
 function harness() {
-  const instance = createSidebarRightStore(() => 'Start').create()
+  const instance = createSidebarRightStore(() => ({ kind: 'guide', title: 'Start', permanent: false })).create()
   instance.actions.open(SESSION)
   const surface = () => {
     const held = instance.getSnapshot().bySession[SESSION]

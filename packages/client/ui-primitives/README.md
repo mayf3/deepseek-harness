@@ -52,7 +52,7 @@ Check this table before writing a control in a feature package. A plugin cannot 
 | `HoverCard` | Hover preview the pointer can rest on and select from; optional copy button. |
 | `Toast` | Transient top-center banner held for the owner's `holdMs`. |
 | `JsonTree`, `JsonBlock` | Read-only JSON inspection. |
-| `MarkdownText`, `CodeBlock` | Untrusted GFM with TeX math, and highlighted code. |
+| `MarkdownText`, `CodeBlock` | Untrusted GFM with TeX math, and highlighted code. `CodeBlock` accepts opt-in `lineNumbers`; copied source excludes the gutter. |
 | `TerminalBlock`, `ReadBlock`, `DiffBlock`, `SearchBlock`, `WebBlock` | The agent-output card matching each tool-result intent. |
 | `icons/*`, `FishLogo`, `BrandWordmark`, `ReferenceIcon`, `LinkIcon`, `DocumentFileIcon` | Glyphs and brand marks, all riding `currentColor`. |
 

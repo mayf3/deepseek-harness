@@ -66,10 +66,15 @@
   word-break: break-word;
 }
 
+/* Sticky code banners meet the scrollport edge; prose owns its initial spacing. */
+.body:has([data-code-preview], [data-document-markdown]) {
+  padding: 0;
+}
+
 /* One page of lines; pages abut so the file reads as one. */
 .page {
   margin: 0;
-  font: inherit;
+  font: var(--dsw-font-markdown-code-block);
   white-space: inherit;
 }
 
@@ -166,4 +171,14 @@
 .toolOn {
   color: var(--dsw-alias-label-primary);
   background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.viewerTool {
+  width: auto;
+  max-width: 160px;
+  padding: 0 6px;
+  overflow: hidden;
+  font-size: 12px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }

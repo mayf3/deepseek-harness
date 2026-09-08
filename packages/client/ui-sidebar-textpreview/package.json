@@ -1,6 +1,6 @@
 {
   "name": "@deepseek-ai/dsh-client-ui-sidebar-textpreview",
-  "description": "Text preview tab type for the right Sidebar: the fallback viewer for file: addresses, drawn from the file resource with line navigation, wrap, and reload",
+  "description": "Extensible document previews for Sidebar files: Markdown, highlighted code, PDF, HTML, and plain text",
   "version": "0.1.5-alpha.1",
   "publishConfig": {
     "access": "public"
@@ -28,6 +28,7 @@
   "dsh": {
     "client": {
       "inject": [
+        "@deepseek-ai/dsh-api-gateway",
         "@deepseek-ai/dsh-api-workspace-files",
         "@deepseek-ai/dsh-client-ui-sidebar-right",
         "@deepseek-ai/dsh-client-ui-session",
@@ -41,11 +42,19 @@
     "watch": "tsdown --watch"
   },
   "license": "MIT",
+  "dependencies": {
+    "clsx": "^2.0.0",
+    "pdfjs-dist": "6.3.289",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0"
+  },
   "peerDependencies": {
     "@deepseek-ai/cordis": "workspace:^"
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "workspace:^",
+    "@deepseek-ai/schemastery": "workspace:^",
+    "@deepseek-ai/dsh-api-gateway": "workspace:^",
     "@deepseek-ai/dsh-api-remotes": "workspace:^",
     "@deepseek-ai/dsh-api-workspace-files": "workspace:^",
     "@deepseek-ai/dsh-client-locale": "workspace:^",
@@ -70,6 +79,7 @@
   "files": [
     "lib/index.js",
     "lib/client.js",
+    "lib/pdfjs-NOTICES.txt",
     "lib/types/**/*.d.ts"
   ]
 }

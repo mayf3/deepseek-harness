@@ -1,5 +1,5 @@
 ---
-description: "dsh Web 客户端右侧 Sidebar 的纯文本查看器 tab 类型：对一个工作区文件分页读取，带行导航、换行、重新读取，并兜底认领每个 file 资源地址。"
+description: "右侧 Sidebar 的文档预览：共享文件加载与控件，可选 Markdown、代码、PDF 和 HTML 渲染器，并以纯文本兜底。"
 kind: "package-reference"
 ---
 
@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-右侧 Sidebar 的纯文本查看器：一个工作区文本文件，一次读一页行，带行号导航、换行与重新读取。它是每个 `file` 资源地址的兜底类型，也是 `ui-sidebar-right` 之外交付的 tab 类型的样板：来自 Sidebar 的每个 import 都是类型，文件的元数据来自共享的 `file` 资源，正文是类型自己的事，类型的控件住在自己的体里。
+在右侧 Sidebar 预览工作区文档，无需另开 tab 即可切换已注册的渲染器。Markdown 和代码接收累计文本页；PDF 和 HTML 接收完整字节；未知文件扩展名使用纯文本。tab 负责加载、文件状态、渲染器选择、换行和重新载入，文档正文通过同一元数据注册表与子 slot 注册。Sidebar tab 的 kind 为 `text`。
 
 ## 目录
 
@@ -26,30 +26,47 @@ kind: "package-reference"
 <a id="what-it-registers"></a>
 ## 注册了什么
 
-- **类型** —— `ctx.sidebarRightTabs.register(...)`，id 为 `@deepseek-ai/dsh-client-ui-sidebar-textpreview`（这个实现在 tab 系统里的唯一键，也是其体注册所用的 key），kind `text`，pattern `dsh-resource://file/**`，档位 `fallback`。在 `extension` 或 `builtin` 档以更窄 pattern（比如 `*.png`）注册的类型接走那些地址；其余一切落到这里。整个地址就是内容身份，所以不同目录下同名的两个文件、或同一路径在两个会话之下，是两个 tab；解码后的 basename 是 tab 标题。
-- **体** —— keyed 坑位 `sidebar.right.pane.tab`，键为类型的 id。它的头部行显示 Host 的绝对路径，并在提示中保留完整值，末端是类型的两个控件：换行开关（默认开；长行折行直到读者关掉它，按 tab 记）与重新读取按钮。Sidebar 的 tab 条不承载这个类型的任何控件。体占满 pane 体的全部高度：头部行不动，其下的文件体是唯一的滚动者，于是短文件不留没有样式的空白，长文件在固定的路径下滚动。 元数据尚未提供绝对路径时，头部使用请求路径。
-- **一个 store 与一个 face**，会话作用域、按 tab id 分桶。store 持有已读的页（以每页起始的 1 起行号为键，连同它们所属的文件版本）、文件末尾标志、进行中的读取或其失败，以及视图：滚动位置、换行（初始为开）、体最近答过的导航 revision。face（`loadPage`、`reloadPages`）执行读取并经 store 的 action 写入。owner 的 `signal` abort 时——即 tab 记录消失时——桶被忘掉。
+- **类型** —— `ctx.sidebarRightTabs.register(...)`，id 为 `@deepseek-ai/dsh-client-ui-sidebar-textpreview`（这个实现在 tab 系统里的唯一键，也是其体注册所用的 key），kind `text`，pattern `dsh-resource://file/**`，档位 `fallback`。`canOpen` 只接受 Session 地址，其中路径可为相对或绝对路径；不认领裸 `absolute` 地址。在 `extension` 或 `builtin` 档以更窄 pattern（比如 `*.png`）注册的类型接走那些地址；其他受支持文件落到这里。整个地址就是内容身份，所以不同目录下同名的两个文件、或同一路径在两个会话之下，是两个 tab；解码后的 basename 是 tab 标题。
+- **正文** —— keyed slot `sidebar.right.pane.tab`，键为类型的 id。固定头部在可用时显示 Host 的绝对路径，否则显示请求路径，并提供匹配渲染器及纯文本的下拉选择。仅当所选渲染器声明 `wrap: true` 时显示换行开关；该偏好按 tab 保存，初始开启。重新载入仍在此头部，不放入 Sidebar 的 tab 条。下方的共享正文区域负责文档滚动。
+- **共享加载与视图状态**，会话作用域、按 tab id 分桶。store 持有累计页或完整字节、读取与观察版本、加载/失败状态、渲染器选择、滚动位置、换行和已响应的导航 revision。普通 inject face 调用 Remote 读取，并经声明的 store action 写入。重新载入和加载模式变化会淘汰旧请求；tab 的中止信号清理其状态。
+
+文档实现在 `ctx.documentPreviews.register({ id, extensions, priority, title, loading, wrap? })` 注册元数据，并以相同 `id` 向 keyed、Session 作用域的子 slot `sidebar.right.tab.document` 注册正文。两处注册都由 effect 持有，通过 `ctx.slots.inject` 等待子 slot。正文接收 `resourceAddress`、准备好的 `content`、`wrap` 和标准 `useTabInfo`/`useResource` 钩子，不接收自定义资源加载器。元数据声明 `loading: 'text-pages'` 或 `'bytes-complete'`。注册表保留所有匹配备选：`extension`（默认）优先于 `builtin`，随后按更长的后缀、再按注册顺序排列。所选实现仍可用时，下拉选择保持不变；移除后选择下一个候选。内置正文也使用相同注册方式。
+
+### 配置
+
+HTML 上限是本包根 Client `Config` 的字段，可在现有插件配置项中设置：
+
+| 字段 | 默认值 | 含义 |
+|---|---|---|
+| `htmlMaxAssetBytes` | `4194304`（4 MiB） | 单个直接引用的本地脚本或样式表的最大解码字节数 |
+| `htmlMaxTotalBytes` | `33554432`（32 MiB） | 根 HTML 与去重后打包资源合计的最大解码字节数 |
+| `htmlMaxAssets` | `64` | 一份 HTML 文档最多打包的不同本地脚本与样式表引用数 |
 
 <a id="addresses"></a>
 ## 地址
 
-tab 的地址是 `dsh-resource://file/session/<sessionId>/<相对该会话工作区根的路径>` 或 `dsh-resource://file/absolute/<去掉前导 / 的绝对路径>`（一个 URI，authority 是资源协议 `file`，路径以作用域开头），由 `@deepseek-ai/dsh-util-workspace-path` 的 `fileAddressFor` 构造、`parseFileAddress` 读回；每段都做 component 编码，本包从不自己拆这个串。`rpc.ts` 里的 `hostFileOf` 把地址变成端点所需的会话与路径：`session` 地址在它命名的会话下读取，相对路径由 Host 对该会话的工作区根解析；`absolute` 地址在坑位被挂载的会话下以绝对路径读取，Host 的工作区限制照样适用。畸形地址直接抛错，因为注册表把每个 `file` 地址都路由给这个类型，造地址的调用方本应使用助手。
+tab 使用 `fileAddressFor` 构造的 Session 地址，携带相对或绝对路径。`hostFileOf(address)` 仅从地址取得 Session，不接收外部 Session 参数，也不借用当前或 Tab Session。Host 解析文件及关联路径，并执行包含检查。任何 UI（包括 Global 组件）都共享同一完整地址的元数据。[Workspace Files README](../../api/workspace-files/README.zh.md)定义这些规则；渲染器选择不改变导航地址。
 
 <a id="how-it-reads"></a>
 ## 怎么读
 
-正文通过 `useTabInfo().tab` 读取记录、导航和生命周期。元数据与内容来自不同的地方：
+正文通过 `useTabInfo().tab` 读取记录、导航和生命周期。`useResource<'file'>(tab.contentId)` 提供元数据，普通 inject 回调提供内容读取：
 
-- `useResource<'file'>(tab.contentId)`——来自 `@deepseek-ai/dsh-client-resources` 的标准 hook——从 `@deepseek-ai/dsh-api-workspace-files` 的 `file` 提供方得到 `{ absolutePath, version, bytes, changed }`。体读 `changed` 与失败态：agent 在上次 `stat` 之后写了文件时，一条提示带着重新载入按钮出现；资源为 `failed` 时——文件没了，或 Host 拒绝——一条失败条占据同一位置，显示失败句与同一个重新载入按钮，并优先于尚未处理的 `changed`。两种情况下已读的页都留在屏幕上：正文绝不在读者眼前被替换。
-- 页来自 `remote.workspaceFiles.read(sessionId, path, { offset }, signal)`，在 `rpc.ts` 绑定、由 face 以地址所命名的会话与路径调用。首次挂载读第一页；已加载文本末尾的 **加载更多** 按钮读下一页直到 `eof`。每页带着自己的行数（`lines`），单个空行与越过文件末尾的页由此区分。来自更新文件版本的第一页替换旧版本的页；更新版本的后续页不被采用——从第一页重新走一遍，于是体永不混合两个版本。失败的页按 `workspace-file/*` 错误码各显示一句（`not-found`、`outside-workspace`、超过字节上限的页 `too-large`、`not-text`、`not-regular-file`）或传输层自己的消息，并带一个重读同一页的重试。
-- **重新载入** —— 变更提示条的按钮与头部的重新读取控件都调用资源的 `reload()`（重新 `stat`，清掉 `changed`）与 face 的 `reloadPages`（丢掉所有页，重读第一页）。重载淘汰仍在飞的读取——face 按 tab 记请求代次，旧代次结算的页什么也不写。滚动位置保留，读者停在原处。
+- 资源快照仅包含 `status`、`value` 和 `failure`；`value` 是 `WorkspaceFileStat` 元数据。提供方可用后，内容读取无需等待首个元数据帧。观察失败优先于 Preview 的变更提示显示；两者都不会自动替换已加载内容。
+- **文本页** —— 纯文本、Markdown 和代码通过 inject 回调调用 `remote.workspaceFiles.read(sessionId, path, { offset }, signal)`。首次挂载读取第一页；滚动到正文末尾或点击 **加载更多** 会读取下一页，直到 `eof`。owner 以 `{ kind: 'text', text, pages, eof }` 提供累计前缀，包含源码行偏移和行数。Markdown 和代码增量渲染此前缀，不把每页当成独立文档。第一页之后到达的更新版本页会使读取从头开始，避免混合版本。失败时保留已加载内容并提供重试。
+- **完整字节** —— PDF 和 HTML 通过 inject 回调调用 `remote.workspaceFiles.readAll(sessionId, path, signal)`。`rpc.ts` 将线路上的 base64 解码为 `data: Uint8Array<ArrayBuffer>`，供 `{ kind: 'bytes', data }` 使用。Host 的 `maxFileBytes` 上限拒绝超大文件，不截断。PDF 在传给 worker 前复制保留的字节，使 Preview 缓冲区仍可使用。字节仅保存在临时视图状态中，绝不进入持久布局或 Session JSONL。加载模式变化会淘汰先前结果。
+- **重新载入** —— 仅当前 Preview tab 通过自己的 Remote 回调重读，保留滚动偏好并淘汰旧请求。变更提示将读取版本及起读时的观察版本与后续 `resource.value.version` 比较；刷新前已观察到的版本不会被当成新变化。读取既不刷新共享元数据，也不清除其它 tab 的提示。
 
-文案来自 `sidebarTextpreview` locale 命名空间。
+HTML 在 Blob iframe 中运行，沙箱属性严格为 `sandbox="allow-scripts"`，不含 `allow-same-origin`；脚本无法访问父应用的源或文件读取接口。渲染器在配置上限内，通过普通 inject 回调调用 `remote.workspaceFiles.readRelated`，加载直接声明的相对 `.js` 经典脚本和 `.css` 样式表。Host 代码解析关联路径，`rpc.ts` 解码返回的字节。在渲染器内部，base64 仅用于把 iframe 引导载荷嵌入脚本文本。`<base href>` 将依赖解析交给浏览器，HTTPS 资源也由浏览器处理。本地模块 import、CSS `url()`/`@import` 和动态 `fetch` 不使用 Host 文件访问。读取失败、无效 UTF-8 或超出上限都使预览失败，不发布部分资源包。替换或卸载文档会释放其 Blob URL。
+
+共享文案来自 `sidebarTextpreview`；各内置渲染器拥有自己的本地化标签。
+
+首次读取、追加页及 HTML/PDF 准备共用加载指示器，并遵循减少动态效果偏好。下一页加载期间保留已显示的内容。代码预览默认显示源码行号，但复制文本不包含行号；纯文本与代码使用相同字号和行高。
 
 <a id="navigation"></a>
 ## 导航
 
-`ctx.sidebarRight.openResource(address, { params: { line } })`——`read` 工具行以此传它的 `offset`——以 `navigation.params` 到达，体把它收窄为 `file` 资源类型声明的参数（`SidebarRightResourceParamsMap['file']`，`{ line?: number }`，1 起），不做运行时校验：`params` 是同进程的类型化值。已加载的页够不到该行时，体读下一页，再读，直到覆盖它或文件结束；然后把该行滚到顶部并标记，每个 `navigation.revision` 一次。同一 revision 下重新挂载的体恢复读者的滚动位置而不再跳。不带 `revealIfOpened: false` 再次打开同一文件时聚焦已有 tab，并把新参数作为新 revision 送达。
+`ctx.sidebarRight.openResource(address, { params: { line } })` 通过 `file` 参数携带 1 起算的源码行号。在 `text-pages` 模式下，owner 顺序加载到该行或 EOF；渲染器提供源码行锚点时，再定位到对应锚点，纯文本提供这些锚点。字节模式渲染器不消费源码行导航。每个导航 revision 只响应一次；重新挂载恢复共享滚动位置。不带 `revealIfOpened: false` 打开同一文件时聚焦已有 tab，并送达新 revision。
 
 <a id="model-experience"></a>
 ## 模型体验
@@ -63,8 +80,9 @@ tab 的地址是 `dsh-resource://file/session/<sessionId>/<相对该会话工作
 ## 已知限制与延期工作
 
 <a id="known-limitations-and-deferred-work"></a>
-- **只有纯文本。** 没有语法高亮、图片、Markdown 渲染或搜索；目录地址以 `not-regular-file` 失败。
-- **页按顺序加载。** 大文件深处的一行要先加载它之前的每一页；没有到任意偏移的 seek。
+- **预览而非编辑。** 查看器不提供文件编辑或共享搜索接口；目录地址以 `not-regular-file` 失败。未知扩展名使用纯文本读取，仍受其 UTF-8/NUL 检查限制。
+- **文本顺序分页，完整文件受限。** 定位深处源码行需要先加载此前各页；PDF 和 HTML 必须取得 Host `maxFileBytes` 上限内的完整结果。
+- **本地 HTML 依赖集合有限。** 只打包直接引用的经典 `.js` 脚本和 `.css` 样式表。浏览器解析的资源仍受浏览器源与网络规则限制；iframe 不获得运行时文件读取桥接。
 - **换行图标为包内自绘。** `IconWrapOutline16` 住在 `src/client/icons.tsx`，直到共享图标集提供为止；props 契约已经一致。
 - **滚动写入未节流。** 每次滚动事件都把偏移记进 store；行块已 memo 化，于是由此引发的重渲染交还给 React 的是同一批元素。
 
@@ -78,4 +96,4 @@ tab 的地址是 `dsh-resource://file/session/<sessionId>/<相对该会话工作
 
 </details>
 
-**运行时不变量：** 不发布 companion。该类型唯一的运行时状态是每 tab 一份的 Slot store，由持有它的正文写入、随 tab 的中止信号忘掉；没有第二个观测源可与之比对。
+**运行时不变式：** 不发布伴生入口。渲染器元数据、文档加载和视图状态归本地注册表与声明的 Slot store 所有，没有可比对的独立运行时来源；注册释放和 tab 生命周期由行为测试覆盖。

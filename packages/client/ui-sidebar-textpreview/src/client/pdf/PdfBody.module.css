@@ -1,0 +1,56 @@
+.body {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  font-family: var(--dsw-font, sans-serif);
+  white-space: normal;
+}
+
+.toolbar {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+  padding: 4px 8px;
+  background: var(--dsw-alias-bg-layer-1);
+  border-bottom: 0.5px solid var(--dsw-alias-border-l1);
+}
+
+.pageInput {
+  width: 72px;
+}
+
+.label {
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.page {
+  padding: 12px;
+  overflow: auto;
+}
+
+.canvas {
+  display: block;
+  width: var(--pdf-page-width);
+  height: var(--pdf-page-height);
+  margin-inline: auto;
+}
+
+.canvas[hidden] {
+  display: none;
+}
+
+.status {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 10px;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 13px;
+  line-height: 1.5;
+}

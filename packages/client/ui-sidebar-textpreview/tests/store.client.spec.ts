@@ -20,6 +20,14 @@ function pageValue(offset: number, lines: readonly string[], eof: boolean, versi
 }
 
 describe('text store', () => {
+  it('clears an explicit implementation choice to resume automatic selection', () => {
+    const instance = createTextStore().create()
+    instance.actions.selected(TAB_1, 'custom')
+    expect(instance.getSnapshot().byTab[TAB_1]?.rendererId).toBe('custom')
+    instance.actions.selected(TAB_1, undefined)
+    expect(instance.getSnapshot().byTab[TAB_1]?.rendererId).toBeUndefined()
+  })
+
   it('starts empty and mints a bucket on the first write', () => {
     const instance = createTextStore().create()
     expect(instance.getSnapshot().byTab).toEqual({})
@@ -80,5 +88,19 @@ describe('text store', () => {
     // fire for a tab that never wrote anything.
     instance.actions.forget(TAB_9)
     expect(Object.keys(instance.getSnapshot().byTab)).toEqual([TAB_2])
+  })
+})
+describe('read observation baseline', () => {
+  it('retains the first observation across overlapping reads and resets it only for a new generation', () => {
+    const instance = createTextStore().create()
+    instance.actions.loading(TAB_1, 'text-pages', 'observed-1')
+    instance.actions.loading(TAB_1, 'text-pages', 'observed-2')
+    expect(instance.getSnapshot().byTab[TAB_1]?.observedVersion).toBe('observed-1')
+    instance.actions.page(TAB_1, pageValue(1, ['first'], false))
+    instance.actions.loading(TAB_1, 'text-pages', 'observed-3')
+    expect(instance.getSnapshot().byTab[TAB_1]?.observedVersion).toBe('observed-1')
+    instance.actions.reset(TAB_1)
+    instance.actions.loading(TAB_1, 'text-pages', 'observed-3')
+    expect(instance.getSnapshot().byTab[TAB_1]?.observedVersion).toBe('observed-3')
   })
 })

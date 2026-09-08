@@ -271,6 +271,25 @@ Host Remote service over the composed filesystem, confined to one workspace.
 @Remote async readBytes(agent: Agent, path: string, range: WorkspaceByteRange, signal: AbortSignal): Promise<WorkspaceFileBytes>
 
 /**
+ * Read a complete regular file as bytes, subject to the configured full-file cap.
+ * @param agent - target Agent whose workspace confines the read.
+ * @param path - absolute or workspace-relative file path.
+ * @param signal - caller cancellation.
+ * @returns one complete base64 window with offset zero and eof true; oversized files fail with too-large.
+ */
+@Remote async readAll(agent: Agent, path: string, signal: AbortSignal): Promise<WorkspaceFileBytes>
+
+/**
+ * Read a complete file relative to another file's directory within the same workspace.
+ * @param agent - Agent whose workspace confines both files.
+ * @param path - base file, absolute or workspace-relative.
+ * @param relativePath - relative filesystem path, not a URL or absolute path.
+ * @param signal - caller cancellation.
+ * @returns the complete related file using the ordinary file-size and access checks.
+ */
+@Remote async readRelated(agent: Agent, path: string, relativePath: string, signal: AbortSignal): Promise<WorkspaceFileBytes>
+
+/**
  * Report one regular file's identity, version, and size without its content.
  * @param agent - target Agent resolved from the Session identity on the wire.
  * @param path - workspace path, absolute or relative to the workspace root.

@@ -16,6 +16,8 @@ Three tab types ship with the Sidebar: the **guide** (`ui-sidebar-right`), the *
 
 ### The guide
 
+[Default pages and close protection](2026-09-08-sidebar-default-pages.md) supersedes this section's default-guide selection; guide registration, replacement and uniqueness remain unchanged.
+
 The guide is what a pane shows before it holds content. Its registration is `{ id: '@deepseek-ai/dsh-client-ui-sidebar-right/guide', kind: 'guide', priority: 'builtin', title }` with no `patterns`: a guide views nothing, so it is opened by kind through `openTab` and recorded under the page address `sidebar://guide`, which is the registry's bookkeeping and never composed by a caller. The tab's title is `开始` / `Start`, captured into the layout record when the pane is seeded, so a later language change relabels the type and not tabs already open.
 
 The body is a centred column — a lead line (`侧栏用来放你想一直看着的东西。` / `The sidebar holds what you want to keep looking at.`), one line of copy (`会话里的文件和产物会开在这一栏，也可以从下面的入口打开。` / `Files and artifacts from the conversation open in this column; the entries below open more.`), and a grid of entry boxes at most 480px wide, each box at least 160px, filling as many columns as fit. The boxes are projected from every registered type's `guide[]` in `order`, through the registry's observable `guide()` list, so a type registering later appears without the guide knowing it. A box shows the contributing type's glyph, title, and description, and picking it calls `tabActions.openTab(entry.kind, { replaceTab: true })`: the picked type opens in the guide's own tab, and the guide is gone. The guide is a doorway, not a page that stays open beside what it opened.

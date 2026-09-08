@@ -16,6 +16,8 @@ Sidebar 随包交付三个 tab 类型：**引导页**（`ui-sidebar-right`）、
 
 ### 引导页
 
+[默认页与关闭保护](2026-09-08-sidebar-default-pages.zh.md)取代本节的默认引导选择；引导页注册、替换和唯一性保持不变。
+
 引导页是 pane 承载内容之前显示的东西。它的注册定义是 `{ id: '@deepseek-ai/dsh-client-ui-sidebar-right/guide', kind: 'guide', priority: 'builtin', title }`，没有 `patterns`：引导页不查看任何东西，所以经 `openTab` 按 kind 打开，并记在页地址 `sidebar://guide` 之下——那是注册表自己的记账，调用方从不拼它。tab 标题是 `开始` / `Start`，在 pane 播种时捕获进布局记录，于是之后切换语言只重标类型，不改已开着的 tab。
 
 体是一根居中的列——一句引导语（`侧栏用来放你想一直看着的东西。` / `The sidebar holds what you want to keep looking at.`）、一行文案（`会话里的文件和产物会开在这一栏，也可以从下面的入口打开。` / `Files and artifacts from the conversation open in this column; the entries below open more.`），以及一组最宽 480px 的入口框栅格，每框至少 160px，能放几列放几列。入口框按 `order` 从每个已注册类型的 `guide[]` 投影而来，经注册表可观察的 `guide()` 列表，因此后注册的类型不用引导页知道就能出现。一个框显示贡献类型的图标、标题与说明；点选它调用 `tabActions.openTab(entry.kind, { replaceTab: true })`：被选的类型在引导页自己的 tab 里打开，引导页随之消失。引导页是一扇门，不是留在被打开者旁边的一页。

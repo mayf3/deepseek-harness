@@ -63,6 +63,8 @@ export interface Config {
    * way. The file itself has no size cap: a caller pages through it.
    */
   readonly maxBytes: number
+  /** Inclusive byte cap on a complete-file read; larger files are refused, never truncated. */
+  readonly maxFileBytes: number
   /** Default and largest page size in lines; a request asking for more is refused. */
   readonly maxLines: number
   /** Cap on returned directory entries; the rest is dropped and reported cut. */
@@ -170,6 +172,7 @@ export class WorkspaceFiles extends TypertRemoteService {
 
   static Config: z<Config> = z.object({
     maxBytes: z.number().step(1).min(1).default(2 * 1024 * 1024),
+    maxFileBytes: z.number().step(1).min(1).max(Number.MAX_SAFE_INTEGER - 1).default(32 * 1024 * 1024),
     maxLines: z.number().step(1).min(1).default(5000),
     maxEntries: z.number().step(1).min(1).default(2000),
   })
@@ -220,6 +223,48 @@ export class WorkspaceFiles extends TypertRemoteService {
     const data = await this.ctx.fs.readByteRange(target, { offset, length }, signal)
     const eof = info.size === undefined ? data.length < length : offset + data.length >= info.size
     return { ...this.statOf(target, info), offset, data: Buffer.from(data).toString('base64'), eof }
+  }
+
+  /**
+   * Read a complete regular file as bytes, subject to the configured full-file cap.
+   * @param agent - target Agent whose workspace confines the read.
+   * @param path - absolute or workspace-relative file path.
+   * @param signal - caller cancellation.
+   * @returns one complete base64 window with offset zero and eof true; oversized files fail with too-large.
+   */
+  @Remote
+  async readAll(agent: Agent, path: string, signal: AbortSignal): Promise<WorkspaceFileBytes> {
+    const { target, info } = await this.locateFile(agent, path, signal)
+    const limit = this.config.maxFileBytes
+    if (info.size !== undefined && info.size > limit) {
+      throw new RemoteError('workspace-file/too-large', `"${path}" exceeds the ${limit} byte full-file cap`, { path, limit })
+    }
+    const data = await this.ctx.fs.readByteRange(target, { offset: 0, length: limit + 1 }, signal)
+    if (data.length > limit) {
+      throw new RemoteError('workspace-file/too-large', `"${path}" exceeds the ${limit} byte full-file cap`, { path, limit })
+    }
+    return { ...this.statOf(target, info), offset: 0, data: Buffer.from(data).toString('base64'), eof: true }
+  }
+
+  /**
+   * Read a complete file relative to another file's directory within the same workspace.
+   * @param agent - Agent whose workspace confines both files.
+   * @param path - base file, absolute or workspace-relative.
+   * @param relativePath - relative filesystem path, not a URL or absolute path.
+   * @param signal - caller cancellation.
+   * @returns the complete related file using the ordinary file-size and access checks.
+   */
+  @Remote
+  async readRelated(agent: Agent, path: string, relativePath: string, signal: AbortSignal): Promise<WorkspaceFileBytes> {
+    const relative = relativePath.replace(/\\/g, '/')
+    if (relative.length === 0 || relative.startsWith('/') || /^[a-z][a-z\d+.-]*:/iu.test(relative) || relative.includes(NUL)) {
+      throw new RemoteError('gateway/bad-request', 'relativePath must be a relative filesystem path', {})
+    }
+    const { target } = await this.locateFile(agent, path, signal)
+    const root = await this.ctx.fs.resolve(this.workspaceRootOf(agent), { signal })
+    const fromRoot = workspacePathOf(this.ctx.fs.fileUrl(root), this.ctx.fs.fileUrl(target))
+    const directory = fromRoot.slice(0, fromRoot.lastIndexOf('/') + 1)
+    return this.readAll(agent, directory + relative, signal)
   }
 
   /**

@@ -19,8 +19,10 @@
 import type { BoundActions } from '@deepseek-ai/dsh-client-store'
 import type { TabId } from '@deepseek-ai/dsh-client-ui-dockkit'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
-import type { ReadWorkspaceFilePage, SessionFile } from './rpc.ts'
+import type { ReadDocumentBytes, ReadWorkspaceFilePage, SessionFile } from './rpc.ts'
+import { documentFileBytes } from './rpc.ts'
 import type { TextStore } from './store.ts'
+import type { DocumentLoadMode } from './document/registry.ts'
 
 /** The preview's injected business face, as the body receives it. */
 export interface TextInjected {
@@ -33,8 +35,9 @@ export interface TextInjected {
    * @param file - the session and workspace path the tab's address names.
    * @param offset - 1-based line the page starts at.
    * @param signal - the tab record's lifetime.
+   * @param observedVersion - metadata version observed at read start.
    */
-  readonly loadPage: (tabId: TabId, file: SessionFile, offset: number, signal: AbortSignal) => void
+  readonly loadPage: (tabId: TabId, file: SessionFile, offset: number, signal: AbortSignal, observedVersion?: string) => void
   /**
    * Drop every page and read the first one again, for a file the Host reports
    * changed. The view is kept, so the reader stays where they were; a page read
@@ -42,8 +45,25 @@ export interface TextInjected {
    * @param tabId - the tab being drawn.
    * @param file - the session and workspace path the tab's address names.
    * @param signal - the tab record's lifetime.
+   * @param observedVersion - metadata version observed at read start.
    */
-  readonly reloadPages: (tabId: TabId, file: SessionFile, signal: AbortSignal) => void
+  readonly reloadPages: (tabId: TabId, file: SessionFile, signal: AbortSignal, observedVersion?: string) => void
+  /**
+   * Read the complete file for a whole-file renderer.
+   * @param tabId - owning tab.
+   * @param file - the session and workspace path the tab's address names.
+   * @param signal - tab lifetime.
+   * @param observedVersion - metadata version observed at read start.
+   */
+  readonly loadAll: (tabId: TabId, file: SessionFile, signal: AbortSignal, observedVersion?: string) => void
+  /**
+   * Discard the old complete result and read again.
+   * @param tabId - owning tab.
+   * @param file - the session and workspace path the tab's address names.
+   * @param signal - tab lifetime.
+   * @param observedVersion - metadata version observed at read start.
+   */
+  readonly reloadAll: (tabId: TabId, file: SessionFile, signal: AbortSignal, observedVersion?: string) => void
 }
 
 /**
@@ -54,14 +74,19 @@ export interface TextInjected {
 interface TabReads {
   generation: number
   version: string | undefined
+  mode: DocumentLoadMode
 }
 
 /**
- * Bind the preview's face to one paged read.
+ * Bind the preview's face to one paged read and one complete-byte read.
  * @param read - the bound `workspaceFiles.read` call.
+ * @param readAll - ordinary complete-byte Remote read.
  * @returns the Slot `inject` factory: bound actions in, face out. The slot's session id is unused because the address carries its own.
  */
-export function textFace(read: ReadWorkspaceFilePage): (sessionId: SessionId, actions: BoundActions<TextStore>) => TextInjected {
+export function textFace(
+  read: ReadWorkspaceFilePage,
+  readAll: ReadDocumentBytes,
+): (sessionId: SessionId, actions: BoundActions<TextStore>) => TextInjected {
   return (_sessionId: SessionId, actions: BoundActions<TextStore>): TextInjected => {
     const tabs = new Map<TabId, TabReads>()
     // Reached with a live signal only: the record's end forgets the tab's
@@ -69,7 +94,7 @@ export function textFace(read: ReadWorkspaceFilePage): (sessionId: SessionId, ac
     const readsOf = (tabId: TabId, signal: AbortSignal): TabReads => {
       const held = tabs.get(tabId)
       if (held !== undefined) return held
-      const created: TabReads = { generation: 0, version: undefined }
+      const created: TabReads = { generation: 0, version: undefined, mode: 'text-pages' }
       tabs.set(tabId, created)
       signal.addEventListener('abort', () => {
         tabs.delete(tabId)
@@ -77,11 +102,21 @@ export function textFace(read: ReadWorkspaceFilePage): (sessionId: SessionId, ac
       }, { once: true })
       return created
     }
-    const loadPage = (tabId: TabId, file: SessionFile, offset: number, signal: AbortSignal): void => {
-      if (signal.aborted) return
+    const modeOf = (tabId: TabId, signal: AbortSignal, mode: DocumentLoadMode): TabReads => {
       const reads = readsOf(tabId, signal)
+      if (reads.mode !== mode) {
+        reads.mode = mode
+        reads.generation++
+        reads.version = undefined
+        actions.reset(tabId)
+      }
+      return reads
+    }
+    const loadPage = (tabId: TabId, file: SessionFile, offset: number, signal: AbortSignal, observedVersion?: string): void => {
+      if (signal.aborted) return
+      const reads = modeOf(tabId, signal, 'text-pages')
       const { generation } = reads
-      actions.loading(tabId)
+      actions.loading(tabId, 'text-pages', observedVersion)
       void read(file.sessionId, file.path, offset, signal).then((result) => {
         if (signal.aborted || reads.generation !== generation) return
         if (!result.ok) {
@@ -91,21 +126,42 @@ export function textFace(read: ReadWorkspaceFilePage): (sessionId: SessionId, ac
         // Pages of two versions never meet: a newer file past the first line
         // restarts the walk from line 1, where the store adopts the new version.
         if (offset !== 1 && reads.version !== undefined && result.value.version !== reads.version) {
-          restart(tabId, file, signal)
+          restart(tabId, file, signal, observedVersion)
           return
         }
         reads.version = result.value.version
         actions.page(tabId, result.value)
       })
     }
-    const restart = (tabId: TabId, file: SessionFile, signal: AbortSignal): void => {
+    const loadAll = (tabId: TabId, file: SessionFile, signal: AbortSignal, observedVersion?: string): void => {
+      if (signal.aborted) return
+      const reads = modeOf(tabId, signal, 'bytes-complete')
+      const { generation } = reads
+      actions.loading(tabId, 'bytes-complete', observedVersion)
+      void readAll(file, signal).then((result) => {
+        if (signal.aborted || reads.generation !== generation) return
+        if (!result.ok) {
+          actions.failed(tabId, result.error)
+          return
+        }
+        reads.version = result.value.version
+        actions.complete(tabId, documentFileBytes(result.value))
+      })
+    }
+    const restart = (
+      tabId: TabId, file: SessionFile, signal: AbortSignal, observedVersion?: string, mode: DocumentLoadMode = 'text-pages',
+    ): void => {
       if (signal.aborted) return
       const reads = readsOf(tabId, signal)
       reads.generation += 1
       reads.version = undefined
       actions.reset(tabId)
-      loadPage(tabId, file, 1, signal)
+      if (mode === 'text-pages') loadPage(tabId, file, 1, signal, observedVersion)
+      else loadAll(tabId, file, signal, observedVersion)
     }
-    return { loadPage, reloadPages: restart }
+    return {
+      loadPage, reloadPages: restart, loadAll,
+      reloadAll: (tabId, file, signal, observedVersion) => { restart(tabId, file, signal, observedVersion, 'bytes-complete') },
+    }
   }
 }
