@@ -37,6 +37,7 @@ export {
   healProfilesModuleFallback,
   initProfile,
   loadProfile,
+  loadProfileDirectory,
   PROFILE_PATCH_FILENAME,
   PROFILE_TEMPLATES,
   PROFILES_DIR,
@@ -52,25 +53,19 @@ export {
   type ProfileModuleFallbackOptions,
   type ProfileTemplate,
 } from './profile.ts'
+export { ensurePluginFailures } from './contained-group.ts'
 export {
-  ContainedFailureRegistry, ContainedGroup, containingGroup, ensurePluginFailures, isContainedEntry,
-  type ContainedFailure, type ContainedFailureStage,
-} from './contained-group.ts'
-export {
-  BUNDLE_GROUP_PREFIX, bundleGroupId, composeExternalLayer, CONTAINED_GROUP_MODULE, disableBundle,
-  enableBundle, exportsBundlePatch, isContainedLayer, reconcileInstalledBundles,
+  bundleGroupId, disableBundle, enableBundle, reconcileInstalledBundles,
   type BundleReconciliation, type ComposedExternalLayer, type DuplicateRow,
 } from './external-bundles.ts'
 export {
   claimLayerIds, composeProfileStack, formatRowConflict,
   type ComposedStack, type LayerOwnership, type RowConflict, type StackUserLayer,
 } from './compose-stack.ts'
-export {
-  ProfileRuntime, type ProfileRuntimeOptions, type RowOrigin,
-} from './profile-runtime.ts'
+export { ProfileRuntime, type RowOrigin } from './profile-runtime.ts'
 export { awaitChildClose } from './child-close.ts'
 export {
-  PLUGIN_PROBE_DIR, PLUGIN_PROBE_FORMAT, probePackage, readProbeCache, writeProbeCache,
+  PLUGIN_PROBE_DIR, probePackage, readProbeCache, writeProbeCache,
   type PluginProbe, type PluginProbeRow, type ProbeOptions,
 } from './probe.ts'
 
@@ -967,9 +962,10 @@ export const HARNESS_SOURCE_SECTION = 'harness:source'
  * explicitly distinguishing it from the task workspace and current working
  * directory. The self-referential `dsh-tool-cordis` toolset reads and edits this
  * checkout. Call once on the settled boot context ({@link boot}); the section
- * uses the shared first-party placement just after the harness identity opener
- * and before the deployment persona. A booted tree with no `systemPrompt` service has no prompt to
- * augment, so this is then a no-op that returns `undefined`. The section is
+ * uses the shared first-party placement after reusable instructions
+ * and before the Web surface and persona suffix. A booted tree with no
+ * `systemPrompt` service has no prompt to augment, so this is then a no-op
+ * that returns `undefined`. The section is
  * registered against the `systemPrompt` service's fiber, so a dev HMR reload of
  * that plugin drops it until the next boot.
  * @param ctx - the settled boot context whose global system prompt to augment.

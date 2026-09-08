@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-`dsh-subagent-codex` registers a Profile-named Codex subagent provider (default `codex`) that runs a real Codex child through the official app-server protocol in the delegating session's workspace. Each accepted run starts the package-local Codex wrapper with `app-server --stdio`, creates one ephemeral Codex thread, submits one self-contained text task, and returns the selected final answer — or a separate safe failure diagnostic — through the shared subagent result contract. The provider ships as an optional Profile Bundle: installing it brings the official wrapper and one compatible native platform payload, while the registered provider stays dormant until a bound tool calls it. Native Codex configuration and authentication remain authoritative, and the Profile-selected `permissionMode` maps into the thread's approval, reviewer, and sandbox fields. Choose it when the child should be a genuine Codex session, fully isolated from the parent harness.
+Install `@deepseek-ai/dsh-subagent-codex` into a Profile when delegated work should run in a genuine, unattended Codex session in the parent Session's workspace. Each delegation uses a fresh isolated Codex thread for one self-contained text task and returns only its final answer or a safe failure diagnostic. Native Codex configuration and authentication remain authoritative, while `permissionMode` selects the non-interactive approval and sandbox behavior. The Bundle supplies a compatible native Codex payload, but it exposes no model capability until a delegation tool is configured.
 
 ## Table of Contents
 
@@ -47,7 +47,7 @@ Removing the package withdraws the provider and its private runtime closure on t
 | `model` | native Codex settings | Optional non-empty model name fixed for every thread from this provider instance; omission sends no app-server override |
 | `env` | `{}` | Explicit child environment layered over the credential-scrubbed parent environment |
 | `permissionMode` | `never` | Native non-interactive approval and sandbox mode fixed for every thread from this provider instance |
-| `disposeGraceMs` | `3000` | Grace between the shared process-tree owner's termination tiers |
+| `disposeGraceMs` | `3000` | Grace between the shared managed-range owner's termination tiers |
 
 | `permissionMode` value | `thread/start` fields | Native behavior |
 |---|---|---|
@@ -192,4 +192,4 @@ This Dev Note is working context for maintainers: open questions and undecided d
 
 </details>
 
-**Runtime invariant:** No companion is published. Lifecycle pairing belongs to the shared subagent service and process-tree ownership belongs to the subprocess service.
+**Runtime invariant:** No companion is published. Lifecycle pairing belongs to the shared subagent service, and managed-range ownership belongs to the subprocess service.
