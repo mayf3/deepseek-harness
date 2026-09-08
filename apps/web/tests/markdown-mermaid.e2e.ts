@@ -15,6 +15,7 @@ import { newEnglishPage, saveFailureShot } from './support.ts'
 const SNAPSHOT_DIR = fileURLToPath(new URL('./expected/markdown-mermaid', import.meta.url))
 const MODE = webSnapshotMode()
 const SEED_ID = 'markdown-mermaid-web-e2e'
+const DIAGRAM_MESSAGE = '[class*="markdown"]:has(.md-code-block)'
 const FLOW = 'flowchart LR\n  A[输入] --> B[共享渲染器] --> C[图形预览]'
 const SEQUENCE = 'sequenceDiagram\n  participant U as User\n  participant R as Renderer\n  U->>R: Mermaid source\n  R-->>U: Diagram'
 const INVALID = 'flowchart LR\n  A[unfinished'
@@ -122,8 +123,7 @@ describe('web e2e: Mermaid chat previews', () => {
     expect(tripwire.warnings).toEqual([])
     await page.getByRole('heading', { name: 'Mermaid previews' }).click()
     await page.mouse.move(0, 0)
-    const snapshot = (await captureStableAria(page, '[class*="centerCol"]', scaffold.workspaceCwd))
-      .split(SEED_ID).join('{{seededId}}')
+    const snapshot = await captureStableAria(page, DIAGRAM_MESSAGE, scaffold.workspaceCwd)
     await compareOrRefreshGolden(join(SNAPSHOT_DIR, 'ui.expected.md'), snapshot, MODE)
     await page.close()
   }, 60_000)
@@ -142,8 +142,7 @@ describe('web e2e: Mermaid chat previews', () => {
     await expect.poll(() => firstImage.evaluate(node => (node as HTMLImageElement).naturalWidth)).toBeGreaterThan(0)
     expect(await controls.evaluate(node => node.getBoundingClientRect().top))
       .toBeGreaterThanOrEqual(await firstImage.evaluate(node => node.getBoundingClientRect().bottom))
-    const snapshot = (await captureStableAria(page, '[class*="centerCol"]', scaffold.workspaceCwd))
-      .split(SEED_ID).join('{{seededId}}')
+    const snapshot = await captureStableAria(page, DIAGRAM_MESSAGE, scaffold.workspaceCwd)
     await compareOrRefreshGolden(join(SNAPSHOT_DIR, 'zh.expected.md'), snapshot, MODE)
     await assertFixtureInventory(SNAPSHOT_DIR, ['ui.expected.md', 'zh.expected.md'])
     await page.close()
