@@ -6,7 +6,6 @@ import { hostFileOf } from '../rpc.ts'
 import { HtmlBody } from './HtmlBody.tsx'
 import type { HtmlBodyProps } from './HtmlBody.tsx'
 import { en, zh } from './locales.ts'
-import type { HtmlPackLimits } from './pack.ts'
 
 /** HTML implementation identity, shared by metadata and the keyed slot. */
 export const HTML_BODY_ID = '@deepseek-ai/dsh-client-ui-sidebar-documentpreview/html'
@@ -23,20 +22,15 @@ export function htmlBodyDefinition(title: () => string): DocumentPreviewDefiniti
 /**
  * Register the HTML dictionary, metadata and body with reversible effects.
  * @param ctx - owning plugin context.
- * @param limits - explicit static-dependency limits; omitted keeps HTML self-contained or HTTPS-backed.
  */
-export function apply(ctx: Context, limits?: HtmlPackLimits): void {
-  for (const [name, value] of Object.entries(limits ?? {})) {
-    if (!Number.isSafeInteger(value) || value < 1) throw new Error(`HTML ${name} must be a positive safe integer`)
-  }
+export function apply(ctx: Context): void {
   const t = ctx.locale.bind('documentHtml')
   ctx.effect(() => ctx.locale.register('documentHtml', { zh, en }))
   ctx.effect(() => ctx.documentPreviews.register(htmlBodyDefinition(() => t('title'))))
   ctx.effect(() => ctx.slots.inject('sidebar.right.tab.document', () => ctx.slots.register(
     {
       name: 'sidebar.right.tab.document', key: HTML_BODY_ID, locale: 'documentHtml',
-      inject: (): Pick<HtmlBodyProps, 'limits' | 'readRelated'> => ({
-        limits,
+      inject: (): Pick<HtmlBodyProps, 'readRelated'> => ({
         readRelated: (address, relativePath, signal) => {
           const file = hostFileOf(address)
           return ctx.remote.workspaceFiles.readRelated(file.sessionId, file.path, relativePath, signal)

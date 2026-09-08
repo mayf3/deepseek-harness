@@ -37,7 +37,6 @@ function props(text = '<p>hello</p>'): HtmlBodyProps {
     resourceAddress: 'dsh-resource://file/session/html/index.html',
     content: { kind: 'bytes', data: utf8(text) },
     wrap: false,
-    limits: undefined,
     sessionId: 'html' as SessionId,
     useTabInfo: () => ({ tab: { signal } }),
     readRelated: vi.fn(),
@@ -49,10 +48,10 @@ function props(text = '<p>hello</p>'): HtmlBodyProps {
 const utf8 = (text: string): Uint8Array<ArrayBuffer> => new TextEncoder().encode(text)
 
 describe('HtmlBody', () => {
-  it('renders a Blob iframe with only scripts allowed, keeping it mounted for unrelated props', () => {
+  it('renders a Blob iframe with only scripts allowed, keeping it mounted for unrelated props', async () => {
     const initial = props()
     const view = render(<HtmlBody {...initial} />)
-    const iframe = screen.getByTitle(en.frame)
+    const iframe = await screen.findByTitle(en.frame)
     expect(iframe.getAttribute('sandbox')).toBe('allow-scripts')
     expect(iframe.getAttribute('src')).toBe('blob:https://preview.invalid/1')
     expect(create.mock.calls[0]?.[0].type).toBe('text/html')
@@ -64,29 +63,31 @@ describe('HtmlBody', () => {
     expect(revoke).toHaveBeenCalledExactlyOnceWith('blob:https://preview.invalid/1')
   })
 
-  it('destroys the old frame and revokes its Blob when bytes or source file change', () => {
+  it('destroys the old frame and revokes its Blob when bytes or source file change', async () => {
     const view = render(<HtmlBody {...props()} />)
-    const first = screen.getByTitle(en.frame)
+    const first = await screen.findByTitle(en.frame)
     const changed = props('<p>changed</p>')
     view.rerender(<HtmlBody {...changed} />)
-    expect(screen.getByTitle(en.frame)).not.toBe(first)
+    expect(await screen.findByTitle(en.frame)).not.toBe(first)
     expect(first.isConnected).toBe(false)
     expect(revoke).toHaveBeenCalledWith('blob:https://preview.invalid/1')
     view.rerender(<HtmlBody {...changed} resourceAddress="dsh-resource://file/session/html/other.html" />)
+    await screen.findByTitle(en.frame)
     expect(revoke).toHaveBeenCalledWith('blob:https://preview.invalid/2')
     view.unmount()
     expect(revoke).toHaveBeenCalledWith('blob:https://preview.invalid/3')
   })
 
-  it('reports invalid bytes and Blob creation failures without leaving a previous frame running', () => {
+  it('reports invalid bytes and Blob creation failures without leaving a previous frame running', async () => {
     const view = render(<HtmlBody {...props()} />)
+    await screen.findByTitle(en.frame)
     view.rerender(<HtmlBody {...props()} content={{ kind: 'bytes', data: new Uint8Array([255]) }} />)
-    expect(screen.getByRole('alert').textContent).toBe(en.failed)
+    expect((await screen.findByRole('alert')).textContent).toBe(en.failed)
     expect(screen.queryByTitle(en.frame)).toBeNull()
     expect(revoke).toHaveBeenCalledWith('blob:https://preview.invalid/1')
     create.mockImplementationOnce(() => { throw new Error('Blob unavailable') })
     view.rerender(<HtmlBody {...props('different')} />)
-    expect(screen.getByRole('alert').textContent).toBe(en.failed)
+    expect((await screen.findByRole('alert')).textContent).toBe(en.failed)
   })
 
   it('does not create a document for a text-pages delivery', () => {
@@ -103,7 +104,6 @@ describe('HtmlBody', () => {
       ...props('<script src="./app.js"></script>'),
       useTabInfo: () => ({ tab: { signal } }),
       readRelated: bytes,
-      limits: { maxAssetBytes: 100, maxTotalBytes: 1000, maxAssets: 1 },
     } as unknown as HtmlBodyProps
     const view = render(<HtmlBody {...initial} />)
     expect(bytes).toHaveBeenCalledOnce()
@@ -127,7 +127,6 @@ describe('HtmlBody', () => {
       useTabInfo: () => ({ tab: { signal } }),
       useResource,
       readRelated: bytes,
-      limits: { maxAssetBytes: 100, maxTotalBytes: 1000, maxAssets: 1 },
     } as unknown as HtmlBodyProps
     render(<HtmlBody {...initial} />)
     expect(screen.getByRole('status').textContent).toBe(en.loading)
@@ -148,7 +147,7 @@ describe('HtmlBody', () => {
     const useResource = vi.fn(() => ({ value: { version: 'v1' } }))
     const initial = {
       ...props('<script src="./app.js"></script>'), useTabInfo: () => ({ tab: { signal } }),
-      useResource, readRelated: bytes, limits: { maxAssetBytes: 100, maxTotalBytes: 1000, maxAssets: 1 },
+      useResource, readRelated: bytes,
     } as unknown as HtmlBodyProps
     const view = render(<HtmlBody {...initial} />)
     const iframe = await screen.findByTitle(en.frame)

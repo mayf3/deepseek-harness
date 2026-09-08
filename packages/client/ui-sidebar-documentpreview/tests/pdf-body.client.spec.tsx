@@ -12,7 +12,6 @@ import type { openPdf } from '../src/client/pdf/runtime.ts'
 const engine = vi.hoisted(() => ({ open: vi.fn<typeof openPdf>(), render: vi.fn<typeof renderPdfPage>() }))
 vi.mock('../src/client/pdf/runtime.ts', () => ({ openPdf: engine.open }))
 vi.mock('../src/client/pdf/document.ts', () => ({ renderPdfPage: engine.render }))
-import { DOCUMENT_LAYOUT_READY_EVENT } from '../src/client/document/layout.ts'
 import { PdfBody, type PdfBodyProps } from '../src/client/pdf/PdfBody.tsx'
 import { createPdfStore, type PdfState } from '../src/client/pdf/store.ts'
 import { en } from '../src/client/pdf/locales.ts'
@@ -100,10 +99,7 @@ describe('PDF body', () => {
   it('shows loading, omits the paging toolbar, and renders a continuous page sequence', async () => {
     const h = harness()
     const view = render(<h.View />)
-    const layoutReady = vi.fn()
-    view.container.addEventListener(DOCUMENT_LAYOUT_READY_EVENT, layoutReady)
     expect(screen.getByRole('status').textContent).toBe('Opening PDF…')
-    expect(layoutReady).not.toHaveBeenCalled()
     expect(screen.getByRole('status').hasAttribute('data-document-loading')).toBe(true)
     await act(async () => { loads[0]!.deferred.resolve(documentOf()) })
     await act(async () => {})
@@ -112,8 +108,7 @@ describe('PDF body', () => {
       .toEqual(['1', '2', '3'])
     expect(screen.getAllByRole('img').map(image => image.getAttribute('aria-label')))
       .toEqual(['PDF page 1', 'PDF page 2', 'PDF page 3'])
-    expect(engine.render.mock.calls.map(([, page, zoom]) => [page, zoom])).toEqual([[1, 1], [2, 1], [3, 1]])
-    expect(layoutReady).toHaveBeenCalledOnce()
+    expect(engine.render.mock.calls.map(([, page]) => page)).toEqual([1, 2, 3])
   })
 
   it('keeps the replacement document when the previous load settles late', async () => {
@@ -175,7 +170,7 @@ describe('PDF body', () => {
     const h = harness()
     const view = render(<h.View />)
     await act(async () => { loads[0]!.deferred.resolve(documentOf(2)) })
-    const signals = engine.render.mock.calls.map(([, , , , signal]) => signal)
+    const signals = engine.render.mock.calls.map(([, , , signal]) => signal)
     expect(signals).toHaveLength(2)
     view.unmount()
     expect(signals.every(signal => signal.aborted)).toBe(true)

@@ -46,6 +46,9 @@ export function scrollToLine(body: HTMLElement, line: number): boolean {
   const code = body.querySelectorAll('[data-code-preview] pre .line').item(line - 1)
   const row = plain ?? code
   if (!(row instanceof HTMLElement)) return false
-  body.scrollTop = row.offsetTop
+  const codeBlock = code === row ? row.closest<HTMLElement>('.md-code-block') : null
+  const toolbar = codeBlock?.firstElementChild
+  const toolbarHeight = toolbar instanceof HTMLElement ? toolbar.offsetHeight : 0
+  body.scrollTop = Math.max(0, row.offsetTop - toolbarHeight)
   return true
 }

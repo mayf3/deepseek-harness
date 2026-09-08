@@ -11,13 +11,9 @@ import { decodeText } from './bytes.ts'
  */
 export type ReadHtmlRelative = (reference: string, signal: AbortSignal) => Promise<DocumentFileBytes>
 
-/** Explicit limits supplied by the preview's owning configuration. */
-export interface HtmlPackLimits {
-  readonly maxAssetBytes: number
-  /** Decoded root HTML plus all unique decoded assets. */
-  readonly maxTotalBytes: number
-  readonly maxAssets: number
-}
+const MAX_ASSET_BYTES = 4 * 1024 * 1024
+const MAX_TOTAL_BYTES = 32 * 1024 * 1024
+const MAX_ASSETS = 64
 
 /** Whether this reference can be read relative to the original document, never the parent application URL. */
 function relative(reference: string): boolean {
@@ -30,19 +26,17 @@ function relative(reference: string): boolean {
  * links are packed; local CSS url/import, modules and dynamically constructed URLs are unsupported.
  * @param data - complete UTF-8 HTML bytes.
  * @param readRelative - original-document-scoped read, never exposed to the iframe.
- * @param limits - maximum decoded bytes and unique dependency count.
  * @param signal - stops reads and prevents publication after cancellation.
  * @returns complete HTML and its finite static asset set; decoding, limits and read failures reject.
  */
 export async function packHtml(
   data: Uint8Array<ArrayBuffer>,
   readRelative: ReadHtmlRelative,
-  limits: HtmlPackLimits,
   signal: AbortSignal,
 ): Promise<HtmlBundle> {
   signal.throwIfAborted()
   let total = data.byteLength
-  if (total > limits.maxTotalBytes) throw new Error('HTML package exceeds its total byte limit')
+  if (total > MAX_TOTAL_BYTES) throw new Error('HTML package exceeds its total byte limit')
   const template = document.createElement('template')
   template.innerHTML = decodeText(data)
   const assets: HtmlAsset[] = []
@@ -62,14 +56,14 @@ export async function packHtml(
     const kind = script ? 'script' : 'stylesheet'
     const key = `${kind}:${reference}`
     if (seen.has(key)) continue
-    if (assets.length >= limits.maxAssets) throw new Error('HTML package exceeds its asset count limit')
+    if (assets.length >= MAX_ASSETS) throw new Error('HTML package exceeds its asset count limit')
     signal.throwIfAborted()
     const asset = await readRelative(reference, signal)
     signal.throwIfAborted()
     const size = asset.data.byteLength
-    if (size > limits.maxAssetBytes) throw new Error('HTML asset exceeds its byte limit')
+    if (size > MAX_ASSET_BYTES) throw new Error('HTML asset exceeds its byte limit')
     total += size
-    if (total > limits.maxTotalBytes) throw new Error('HTML package exceeds its total byte limit')
+    if (total > MAX_TOTAL_BYTES) throw new Error('HTML package exceeds its total byte limit')
     decodeText(asset.data)
     assets.push({ kind, reference, data: asset.data })
     seen.add(key)

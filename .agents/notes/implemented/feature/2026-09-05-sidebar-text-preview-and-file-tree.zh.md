@@ -28,6 +28,8 @@ Sidebar 随包交付三个 tab 类型：**引导页**（`ui-sidebar-right`）、
 
 ### 文本预览
 
+[Document Preview 决议](../architecture/2026-09-08-document-preview-operations.zh.md)取代本节的渲染器、加载和资源观察细节。兜底 tab 注册、分页源码导航与正文自有控件仍然有效。
+
 `text` 是 Session 作用域文件的兜底查看器。它的注册定义是 `{ id: '@deepseek-ai/dsh-client-ui-sidebar-documentpreview', kind: 'text', patterns: ['dsh-resource://file/**'], priority: 'fallback', canOpen, title: basenameOf }`。`canOpen` 只接受解析后 scope 为 `session` 的地址。pattern 含 `:`，因此匹配整个地址；`fallback` 是最低档，所以 `extension` 或 `builtin` 档上一个 pattern 更窄的类型（比如 `*.png`）接走那些地址，其余一切落到这里，而 text 类型对任何文件都留在候选列表中。`id` 是包名，兼作体坑位的 `key`，于是一个接管了 `text` kind 的扩展不可能让坑位误拿到这个体。标题是地址解码后的最后一段：整个地址仍是内容身份——不同目录下同名的两个文件、或同一路径在两个会话之下，是两个 tab——只有 chip 上的文字被缩短。
 
 tab 的地址是 `dsh-resource://file/session/<sessionId>/<相对该会话工作区根的路径>` 或 `dsh-resource://file/absolute/<绝对路径>`（[Workspace Files](../architecture/2026-09-05-workspace-files-service.zh.md) 拥有这套语法及 `dsh-util-workspace-path` 里的 `fileAddressFor` / `parseFileAddress` 助手）。预览从不自己拆这个串：`rpc.ts` 里的 `hostFileOf` 调 `parseFileAddress` 得到端点所需的 `{ sessionId, path }`——`session` 地址在它命名的会话下以 Host 解析的相对路径读取，`absolute` 地址在坑位被挂载的会话下以绝对路径读取——畸形地址直接抛错，那是程序错误，因为注册表把每个 `file` 地址都路由给这个类型，而造地址的调用方本应使用助手。
@@ -40,7 +42,7 @@ store 是 Slot 标准件：每会话一个独占实例，按 tab id 分桶，持
 
 文件变了只提示，不应用。当 `file` 资源报告 `changed`——agent 在上次 `stat` 之后经工具写了该文件——路径行上方出现一条提示 `文件已被修改，显示的还是旧内容。` / `The file has changed; this is the older text.`，带一个 `重新载入` / `Reload` 按钮。只有点击才同时做两件事：`meta.reload()`（重新 `stat`，清掉 `changed`）与 `reloadPages`（丢掉所有页，重读第 1 页）。滚动位置保留，读者停在原处。没有别的东西触发重载：树和预览都不监听文件系统，外部编辑不会被提示。资源变为 `failed`——文件被删，或 Host 拒绝——时，同一位置出现一条失败条，句子来自 `failure-line.ts`，带同一个重新载入按钮，并优先于尚未处理的 `changed`；已读的页留在它下方。
 
-体的头部是一行：左边是地址所命名的文件路径（12px、三级色、单行、溢出省略号、悬停显示完整路径），右端是两个 24px 控件——换行开关（`自动换行` / `Wrap lines`，显示按下态，**默认开**、按 tab 记：长行折行、绝不横向滚动，直到读者关掉它，此后文件体自己横向滚动）与一个重新读取按钮（`重新读取文件` / `Read the file again`），做的恰是变更提示条按钮做的事。两个控件都永不禁用。预览占满 pane 体的全部高度（对 pane 体取 `height: 100%`；pane 体是高度确定的块级滚动容器），于是短文件下方不留另一块样式不同的空白，而文件体——等宽、13px、行高 1.6、上下 10px 内边距——是唯一的滚动者：长文件在头部与变更提示条之下滚动，二者不动。
+正文头部为一行：左侧显示完整文件路径，右侧放匹配渲染器菜单、按条件出现的换行开关和重新载入按钮。[Document Preview README](../../../../packages/client/ui-sidebar-documentpreview/README.zh.md)负责当前控件与渲染器行为。预览占满 pane 正文的全部高度，其文档正文是固定头部与变更提示条下方的滚动区域。
 
 某页失败时，已显示的页保留，并在已加载文本末尾加一句以文件而非传输为主语的说明，带一个重读同一页的 `重试` / `Retry` 按钮：`workspace-file/not-found` `这个文件不在了。可能已被移动或删除。` / `That file is gone. It may have been moved or deleted.`；`workspace-file/outside-workspace` `这个文件在工作区之外，侧栏不会读取它。` / `That file is outside the workspace, so the sidebar will not read it.`；`workspace-file/too-large` `这一页太大，侧栏不读取超过 {limit} 的页。` / `That page is too large; the sidebar does not read pages above {limit}.`，字节上限渲染为 `2 MB` 这样的形式；`workspace-file/not-text` `这不是文本文件，没法在这里查看。` / `That is not a text file, so it cannot be shown here.`；`workspace-file/not-regular-file` `这不是一个普通文件，没有可显示的文本。` / `That is not a regular file, so it has no text to show.`；其余任何失败，无论载体层还是未分类，`读取失败：{message}` / `Read failed: {message}` 并带上失败自身的消息。映射住在 `failure-line.ts` 里，与组件分开以便单独测试；读者未命名的错误码落到带传输层消息的通用句。目录或二进制文件因此只显示一行失败说明；空文件显示头部与一个空的体，没有任何标记。
 
@@ -111,7 +113,7 @@ face 是树唯一的异步半边。`start(tabId, root, signal)` 以根展开态�
 ## Deferred
 
 - 虚拟化或可 seek 的分页加载（页按顺序加载）、恢复已加载范围的重新载入、节流的滚动位置持久化，以及 `ui-primitives` 里的换行图标。
-- 文本预览的行号、语法高亮、Markdown 渲染、图片与搜索；总行数或文件末尾标记。
+- 图片、搜索、总行数与文件末尾标记。
 - 文件树的搜索、产物过滤、拖拽、重命名、右键菜单、高亮当前文件、文件系统监听，以及浏览到工作区根之上。
 - 引导页文案的产品评审，以及一个类型贡献多个入口时引导页的行为。
 

@@ -32,16 +32,6 @@ kind: "package-reference"
 
 文档实现在 `ctx.documentPreviews.register({ id, extensions, priority, title, loading, wrap? })` 注册元数据，并以相同 `id` 向 keyed、Session 作用域的子 slot `sidebar.right.tab.document` 注册正文。两处注册都由 effect 持有，通过 `ctx.slots.inject` 等待子 slot。正文接收 `resourceAddress`、准备好的 `content`、`wrap` 和标准 `useTabInfo`/`useResource` 钩子，不接收自定义资源加载器。元数据声明 `loading: 'text-pages'` 或 `'bytes-complete'`。注册表保留所有匹配备选：`extension`（默认）优先于 `builtin`，随后按更长的后缀、再按注册顺序排列。所选实现仍可用时，下拉选择保持不变；移除后选择下一个候选。内置正文也使用相同注册方式。
 
-### 配置
-
-HTML 上限是本包根 Client `Config` 的字段，可在现有插件配置项中设置：
-
-| 字段 | 默认值 | 含义 |
-|---|---|---|
-| `htmlMaxAssetBytes` | `4194304`（4 MiB） | 单个直接引用的本地脚本或样式表的最大解码字节数 |
-| `htmlMaxTotalBytes` | `33554432`（32 MiB） | 根 HTML 与去重后打包资源合计的最大解码字节数 |
-| `htmlMaxAssets` | `64` | 一份 HTML 文档最多打包的不同本地脚本与样式表引用数 |
-
 <a id="addresses"></a>
 ## 地址
 
@@ -57,7 +47,7 @@ tab 使用 `fileAddressFor` 构造的 Session 地址，携带相对或绝对路�
 - **完整字节** —— PDF 和 HTML 通过 inject 回调调用 `remote.workspaceFiles.readAll(sessionId, path, signal)`。`rpc.ts` 将线路上的 base64 解码为 `data: Uint8Array<ArrayBuffer>`，供 `{ kind: 'bytes', data }` 使用。Host 的 `maxFileBytes` 上限拒绝超大文件，不截断。PDF 在传给 worker 前复制保留的字节，使 Preview 缓冲区仍可使用。字节仅保存在临时视图状态中，绝不进入持久布局或 Session JSONL。加载模式变化会淘汰先前结果。
 - **重新载入** —— 仅当前 Preview tab 通过自己的 Remote 回调重读，保留滚动偏好并淘汰旧请求。变更提示将读取版本及起读时的观察版本与后续 `resource.value.version` 比较；刷新前已观察到的版本不会被当成新变化。读取既不刷新共享元数据，也不清除其它 tab 的提示。
 
-HTML 在 Blob iframe 中运行，沙箱属性严格为 `sandbox="allow-scripts"`，不含 `allow-same-origin`；脚本无法访问父应用的源或文件读取接口。渲染器在配置上限内，通过普通 inject 回调调用 `remote.workspaceFiles.readRelated`，加载直接声明的相对 `.js` 经典脚本和 `.css` 样式表。Host 代码解析关联路径，`rpc.ts` 解码返回的字节。在渲染器内部，base64 仅用于把 iframe 引导载荷嵌入脚本文本。`<base href>` 将依赖解析交给浏览器，HTTPS 资源也由浏览器处理。本地模块 import、CSS `url()`/`@import` 和动态 `fetch` 不使用 Host 文件访问。读取失败、无效 UTF-8 或超出上限都使预览失败，不发布部分资源包。替换或卸载文档会释放其 Blob URL。
+HTML 在 Blob iframe 中运行，沙箱属性严格为 `sandbox="allow-scripts"`，不含 `allow-same-origin`；脚本无法访问父应用的源或文件读取接口。渲染器通过普通 inject 回调调用 `remote.workspaceFiles.readRelated`，加载直接声明的相对 `.js` 经典脚本和 `.css` 样式表；固定安全上限为单个资源 4 MiB、总计 32 MiB、64 个不同资源。Host 代码解析关联路径，`rpc.ts` 解码返回的字节。在渲染器内部，base64 仅用于把 iframe 引导载荷嵌入脚本文本。`<base href>` 将依赖解析交给浏览器，HTTPS 资源也由浏览器处理。本地模块 import、CSS `url()`/`@import` 和动态 `fetch` 不使用 Host 文件访问。读取失败、无效 UTF-8 或超出上限都使预览失败，不发布部分资源包。替换或卸载文档会释放其 Blob URL。
 
 共享文案来自 `sidebarDocumentPreview`；各内置渲染器拥有自己的本地化标签。
 
@@ -66,7 +56,7 @@ HTML 在 Blob iframe 中运行，沙箱属性严格为 `sandbox="allow-scripts"`
 <a id="navigation"></a>
 ## 导航
 
-`ctx.sidebarRight.openResource(address, { params: { line } })` 通过 `file` 参数携带 1 起算的源码行号。在 `text-pages` 模式下，owner 顺序加载到该行或 EOF；渲染器提供源码行锚点时，再定位到对应锚点，纯文本提供这些锚点。字节模式渲染器不消费源码行导航。每个导航 revision 只响应一次；重新挂载恢复共享滚动位置。不带 `revealIfOpened: false` 打开同一文件时聚焦已有 tab，并送达新 revision。
+`ctx.sidebarRight.openResource(address, { params: { line } })` 通过 `file` 参数携带 1 起算的源码行号。在 `text-pages` 模式下，owner 顺序加载到该行或 EOF。纯文本与代码渲染器提供源码行锚点；Markdown 不提供。所选渲染器没有锚点时，导航保持待处理；用户切换到纯文本或代码后执行。代码导航会把目标放在置顶工具栏下方。字节模式渲染器不消费源码行导航。每个完成的导航 revision 只响应一次。不带 `revealIfOpened: false` 打开同一文件时聚焦已有 tab，并送达新 revision。
 
 <a id="model-experience"></a>
 ## 模型体验
@@ -82,6 +72,7 @@ HTML 在 Blob iframe 中运行，沙箱属性严格为 `sandbox="allow-scripts"`
 <a id="known-limitations-and-deferred-work"></a>
 - **预览而非编辑。** 查看器不提供文件编辑或共享搜索接口；目录地址以 `not-regular-file` 失败。未知扩展名使用纯文本读取，仍受其 UTF-8/NUL 检查限制。
 - **文本顺序分页，完整文件受限。** 定位深处源码行需要先加载此前各页；PDF 和 HTML 必须取得 Host `maxFileBytes` 上限内的完整结果。
+- **字节视图不恢复滚动位置。** PDF 与 HTML 的渲染器重新挂载或重新载入时可能回到顶部；HTML iframe 的滚动属于其不透明浏览上下文。
 - **本地 HTML 依赖集合有限。** 只打包直接引用的经典 `.js` 脚本和 `.css` 样式表。浏览器解析的资源仍受浏览器源与网络规则限制；iframe 不获得运行时文件读取桥接。
 - **换行图标为包内自绘。** `IconWrapOutline16` 住在 `src/client/icons.tsx`，直到共享图标集提供为止；props 契约已经一致。
 - **滚动写入未节流。** 每次滚动事件都把偏移记进 store；行块已 memo 化，于是由此引发的重渲染交还给 React 的是同一批元素。

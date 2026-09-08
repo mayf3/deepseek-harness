@@ -6,7 +6,7 @@ import type { DocumentPreviewProps } from '../document/contract.ts'
 import { LoadingIndicator } from '../LoadingIndicator.tsx'
 import { createHtmlDocument } from './bootstrap.ts'
 import { packHtml } from './pack.ts'
-import type { HtmlPackLimits, ReadHtmlRelative } from './pack.ts'
+import type { ReadHtmlRelative } from './pack.ts'
 import { createReadHtmlRelative } from './read-relative.ts'
 import type { ReadHtmlRelated } from './read-relative.ts'
 import type {} from './locales.ts'
@@ -14,8 +14,6 @@ import css from './HtmlBody.module.css'
 
 /** Standard document inputs plus this renderer's dictionary. */
 export type HtmlBodyProps = DocumentPreviewProps & PropsLocale<'documentHtml'> & {
-  /** Static dependencies are packed only when the owner supplies explicit limits. */
-  readonly limits: HtmlPackLimits | undefined
   /** Ordinary Remote callback bound by this renderer's Slot inject. */
   readonly readRelated: ReadHtmlRelated
 }
@@ -23,37 +21,34 @@ export type HtmlBodyProps = DocumentPreviewProps & PropsLocale<'documentHtml'> &
 type FrameInput = {
   readonly data: Uint8Array<ArrayBuffer>
   readonly readRelative: ReadHtmlRelative
-  readonly limits: HtmlPackLimits | undefined
 }
 
 type FrameState = FrameInput & { readonly url: string | undefined }
 
 /** One mounted file owns its root Blob; replacing content also replaces the browsing context. */
-function HtmlFrame({ data, readRelative, limits, t }: FrameInput & { t: HtmlBodyProps['t'] }): ReactNode {
+function HtmlFrame({ data, readRelative, t }: FrameInput & { t: HtmlBodyProps['t'] }): ReactNode {
   const [frame, setFrame] = useState<FrameState>()
   useEffect(() => {
     const controller = new AbortController()
     let url: string | undefined
     void (async () => {
       try {
-        const bundle = limits !== undefined
-          ? await packHtml(data, readRelative, limits, controller.signal)
-          : { data, assets: [] }
+        const bundle = await packHtml(data, readRelative, controller.signal)
         controller.signal.throwIfAborted()
         const html = createHtmlDocument(bundle)
         url = URL.createObjectURL(new Blob([html], { type: 'text/html' }))
-        setFrame({ data, readRelative, limits, url })
+        setFrame({ data, readRelative, url })
       } catch {
-        if (!controller.signal.aborted) setFrame({ data, readRelative, limits, url: undefined })
+        if (!controller.signal.aborted) setFrame({ data, readRelative, url: undefined })
       }
     })()
     return () => {
       controller.abort()
       if (url !== undefined) URL.revokeObjectURL(url)
     }
-  }, [data, readRelative, limits])
+  }, [data, readRelative])
 
-  if (frame?.data !== data || frame.readRelative !== readRelative || frame.limits !== limits) {
+  if (frame?.data !== data || frame.readRelative !== readRelative) {
     return <LoadingIndicator className={css.status} label={t('loading')} />
   }
   if (frame.url === undefined) return <p className={css.status} role="alert">{t('failed')}</p>
@@ -62,15 +57,15 @@ function HtmlFrame({ data, readRelative, limits, t }: FrameInput & { t: HtmlBody
 
 /**
  * Render complete HTML with the standard file and tab hooks.
- * @param props - document bytes, hooks, dependency limits and locale.
+ * @param props - document bytes, hooks, related-file reader and locale.
  * @returns an isolated HTML document, or nothing for text delivery.
  */
-export function HtmlBody({ content, resourceAddress, readRelated, useTabInfo, limits, t }: HtmlBodyProps): ReactNode {
+export function HtmlBody({ content, resourceAddress, readRelated, useTabInfo, t }: HtmlBodyProps): ReactNode {
   const { tab } = useTabInfo()
   const readRelative = useMemo(
     () => createReadHtmlRelative(readRelated, resourceAddress, tab.signal),
     [readRelated, resourceAddress, tab.signal],
   )
   if (content.kind !== 'bytes') return null
-  return <HtmlFrame key={resourceAddress} data={content.data} readRelative={readRelative} limits={limits} t={t} />
+  return <HtmlFrame key={resourceAddress} data={content.data} readRelative={readRelative} t={t} />
 }

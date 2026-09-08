@@ -10,7 +10,7 @@
  * with the same reload. The type's controls, viewer choice, wrap and reload, sit at the end of
  * the path row; the Sidebar's strip carries none of them.
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import clsx from 'clsx'
 import type { ObservableSnapshot } from '@deepseek-ai/dsh-client-store'
@@ -25,7 +25,6 @@ import type { TextStore } from './store.ts'
 import type { DocumentContent } from './document/contract.ts'
 import { matchingDocumentPreviews } from './document/registry.ts'
 import type { DocumentPreviewDefinition } from './document/registry.ts'
-import { DOCUMENT_LAYOUT_READY_EVENT } from './document/layout.ts'
 import { PLAIN_BODY_ID } from './text/index.ts'
 import { loadedPages, lastLineLoaded, scrollToLine } from './text/lines.ts'
 import css from './TextPreview.module.css'
@@ -71,28 +70,6 @@ export function TextPreview({
   const mode = selected?.loading
   const current = (state?.mode ?? 'text-pages') === mode ? state : undefined
   const bodyRef = useRef<HTMLDivElement | null>(null)
-  const layoutRestore = useRef<{ content: unknown; scrollTop: number; pending: boolean }>({
-    content: undefined, scrollTop: 0, pending: false,
-  })
-  if (layoutRestore.current.content !== current?.complete) {
-    layoutRestore.current = {
-      content: current?.complete,
-      scrollTop: state?.scrollTop ?? 0,
-      pending: current?.complete !== undefined,
-    }
-  }
-  const restoreAfterDocumentLayout = useCallback((event: Event) => {
-    const restore = layoutRestore.current
-    if (!restore.pending) return
-    const body = event.currentTarget as HTMLDivElement
-    body.scrollTop = restore.scrollTop
-    restore.pending = false
-  }, [])
-  const setBody = useCallback((body: HTMLDivElement | null) => {
-    bodyRef.current?.removeEventListener(DOCUMENT_LAYOUT_READY_EVENT, restoreAfterDocumentLayout)
-    bodyRef.current = body
-    body?.addEventListener(DOCUMENT_LAYOUT_READY_EVENT, restoreAfterDocumentLayout)
-  }, [restoreAfterDocumentLayout])
   const [menuOpen, setMenuOpen] = useState(false)
   // Every tab of this type is a `file` resource address, so its params are the
   // `file` type's; the union is narrowed on the one field read, not validated.
@@ -144,7 +121,7 @@ export function TextPreview({
     actions.scrolled(tab.id, body.scrollTop)
   }, [
     navigation.revision, line, loadedThrough, current?.eof, current?.loading, current?.failure, started,
-    mode, file, canRead, meta.value?.version,
+    selected?.id, mode, file, canRead, meta.value?.version,
   ])
 
   const content = useMemo((): DocumentContent | undefined => {
@@ -252,7 +229,7 @@ export function TextPreview({
         </button>
       </div>
       <div
-        ref={setBody}
+        ref={bodyRef}
         className={clsx(css.body, state.wrap && css.wrap)}
         data-textpreview-body
         data-textpreview-wrap={state.wrap ? '' : undefined}

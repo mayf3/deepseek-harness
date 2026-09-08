@@ -27,7 +27,6 @@ export interface PdfPageSize {
  * awaited before the page is cleaned up.
  * @param document - loaded pdfjs document.
  * @param pageNumber - 1-based selected page.
- * @param zoom - scale relative to 96-DPI display size.
  * @param canvas - canvas owned by this render only.
  * @param signal - render lifetime.
  * @param pixelRatio - display pixel ratio.
@@ -36,7 +35,6 @@ export interface PdfPageSize {
 export async function renderPdfPage(
   document: PdfDocument,
   pageNumber: number,
-  zoom: number,
   canvas: HTMLCanvasElement,
   signal: AbortSignal,
   pixelRatio: number,
@@ -45,7 +43,7 @@ export async function renderPdfPage(
   const page: PDFPageProxy = await document.getPage(pageNumber)
   try {
     signal.throwIfAborted()
-    const viewport = page.getViewport({ scale: zoom * 96 / 72 })
+    const viewport = page.getViewport({ scale: 96 / 72 })
     // Limit raster allocation without changing the document's display dimensions.
     const ratio = Math.min(pixelRatio, Math.sqrt(16_777_216 / (viewport.width * viewport.height)))
     canvas.width = Math.max(1, Math.floor(viewport.width * ratio))

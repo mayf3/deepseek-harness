@@ -1,10 +1,9 @@
 /** PDF page presentation; binary content and tab information come from the document owner. */
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { Button } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsLocale, PropsStore } from '@deepseek-ai/dsh-client-ui-slots'
 import type { TabId } from '@deepseek-ai/dsh-client-ui-dockkit'
 import type { DocumentPreviewProps } from '../document/contract.ts'
-import { DOCUMENT_LAYOUT_READY_EVENT } from '../document/layout.ts'
 import { LoadingIndicator } from '../LoadingIndicator.tsx'
 import { DEFAULT_PDF_VIEW, type PdfStore } from './store.ts'
 import { renderPdfPage, type PdfDocument } from './document.ts'
@@ -39,7 +38,6 @@ export function PdfBody(props: PdfBodyProps): ReactNode {
   const { tab } = props.useTabInfo()
   const view = props.useStore(state => state.byTab[tab.id] ?? DEFAULT_PDF_VIEW)
   const data = props.content.kind === 'bytes' ? props.content.data : undefined
-  const body = useRef<HTMLElement>(null)
   const [load, setLoad] = useState<LoadState>()
   const [attempt, setAttempt] = useState(0)
   const { retainTab, actions, t } = props
@@ -65,13 +63,6 @@ export function PdfBody(props: PdfBodyProps): ReactNode {
       void session.dispose()
     }
   }, [data, tab.signal, attempt])
-  useLayoutEffect(() => {
-    if (load?.kind === 'loaded' && load.data === data) {
-      // The loaded branch renders this section in the same commit as the layout effect.
-      (body.current as HTMLElement).dispatchEvent(new Event(DOCUMENT_LAYOUT_READY_EVENT, { bubbles: true }))
-    }
-  }, [data, load])
-
   if (data === undefined) return <p className={css.status} role="alert">{t('unsupported')}</p>
   if (load?.data !== data) return <LoadingIndicator className={css.status} label={t('loading')} />
   if (load.kind === 'failed') {
@@ -80,7 +71,7 @@ export function PdfBody(props: PdfBodyProps): ReactNode {
       <Button size="sm" onClick={() => { setAttempt(value => value + 1) }}>{t('retry')}</Button>
     </div>
   }
-  return <section ref={body} className={css.body} data-pdf-preview>
+  return <section className={css.body} data-pdf-preview>
     {Array.from({ length: load.document.numPages }, (_, index) => (
       <PdfPage key={index} document={load.document} page={index + 1}
         requested={index === 0 || view.page === index + 1} onVisible={pageVisible} signal={tab.signal} t={t} />
@@ -128,7 +119,7 @@ function PdfPage({ document, page, requested: initiallyRequested, onVisible, sig
     const renderSignal = AbortSignal.any([lifetime.signal, signal])
     setState('loading')
     setFailure(undefined)
-    void renderPdfPage(document, page, 1, node, renderSignal, window.devicePixelRatio).then(
+    void renderPdfPage(document, page, node, renderSignal, window.devicePixelRatio).then(
       () => { if (!renderSignal.aborted) setState('ready') },
       (error: unknown) => { if (!renderSignal.aborted) setFailure({ error }) },
     )

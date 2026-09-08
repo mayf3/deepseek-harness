@@ -32,16 +32,6 @@ Preview readable files in the right Sidebar and choose among registered renderer
 
 Document implementations register metadata with `ctx.documentPreviews.register({ id, extensions, priority, title, loading, wrap? })` and a body under the same `id` in the keyed, Session-scoped `sidebar.right.tab.document` child slot. Own both registrations with effects and wait for the child slot through `ctx.slots.inject`. Bodies receive `resourceAddress`, prepared `content`, `wrap`, and the standard `useTabInfo`/`useResource` hooks; they do not receive a custom resource loader. Metadata declares `loading: 'text-pages'` or `'bytes-complete'`. The registry retains all matching alternatives: `extension` (the default) ranks above `builtin`, then longer suffixes rank first, then registration order. The dropdown preserves a selected implementation while it remains available; removing it selects the next candidate. Builtin bodies use these same registrations.
 
-### Configuration
-
-HTML limits are fields on this package's root Client `Config`, configurable on its existing plugin row:
-
-| Field | Default | Meaning |
-|---|---|---|
-| `htmlMaxAssetBytes` | `4194304` (4 MiB) | Maximum decoded bytes in one directly referenced local script or stylesheet |
-| `htmlMaxTotalBytes` | `33554432` (32 MiB) | Maximum decoded bytes in the root HTML and its unique packed assets together |
-| `htmlMaxAssets` | `64` | Maximum distinct local script and stylesheet references packed for one HTML document |
-
 <a id="addresses"></a>
 ## Addresses
 
@@ -57,7 +47,7 @@ The body reads its record, navigation and lifetime through `useTabInfo().tab`. `
 - **Complete bytes** — PDF and HTML use an inject callback to `remote.workspaceFiles.readAll(sessionId, path, signal)`. `rpc.ts` decodes the wire base64 into `data: Uint8Array<ArrayBuffer>` for `{ kind: 'bytes', data }`. The Host's `maxFileBytes` cap rejects oversized files rather than truncating them. PDF copies retained bytes before worker transfer, keeping the Preview buffer usable. Bytes stay in transient view state, never persisted layouts or Session JSONL. Loading-mode changes retire previous results.
 - **Reload** — only the current Preview tab rereads through its Remote callbacks, preserving its scroll preference and retiring older requests. Its change notice compares the read version and the observation captured at read start with later `resource.value.version`; an already observed version does not become a new change after refresh. Reads neither refresh shared metadata nor clear another tab's notice.
 
-HTML runs in a Blob iframe with exactly `sandbox="allow-scripts"`, without `allow-same-origin`; scripts cannot access the parent application's origin or file reader. The renderer loads directly declared relative `.js` classic scripts and `.css` stylesheets through its ordinary inject callback to `remote.workspaceFiles.readRelated`, under the configured limits. Host code resolves the related path; `rpc.ts` decodes the returned bytes. Inside the renderer, base64 is used only to embed the iframe bootstrap payload in script text. A `<base href>` leaves dependency resolution to the browser, as do HTTPS resources. Local module imports, CSS `url()`/`@import`, and dynamic `fetch` do not use Host file access. Read failures, invalid UTF-8, or exceeded limits fail the preview rather than publishing a partial asset package. Replacing or unmounting the document releases its Blob URL.
+HTML runs in a Blob iframe with exactly `sandbox="allow-scripts"`, without `allow-same-origin`; scripts cannot access the parent application's origin or file reader. The renderer loads directly declared relative `.js` classic scripts and `.css` stylesheets through its ordinary inject callback to `remote.workspaceFiles.readRelated`, with fixed safety limits of 4 MiB per asset, 32 MiB total, and 64 distinct assets. Host code resolves the related path; `rpc.ts` decodes the returned bytes. Inside the renderer, base64 is used only to embed the iframe bootstrap payload in script text. A `<base href>` leaves dependency resolution to the browser, as do HTTPS resources. Local module imports, CSS `url()`/`@import`, and dynamic `fetch` do not use Host file access. Read failures, invalid UTF-8, or exceeded limits fail the preview rather than publishing a partial asset package. Replacing or unmounting the document releases its Blob URL.
 
 Shared copy comes from `sidebarDocumentPreview`; each builtin renderer owns its localized labels.
 
@@ -66,7 +56,7 @@ Initial reads, additional pages, and HTML/PDF preparation share a loading indica
 <a id="navigation"></a>
 ## Navigation
 
-`ctx.sidebarRight.openResource(address, { params: { line } })` carries a 1-based source line through the `file` parameters. In `text-pages` mode, the owner loads sequential pages until that line or EOF, then locates a source-line anchor if the renderer supplies one; plain text supplies these anchors. Byte-mode renderers do not consume source-line navigation. Each navigation revision is answered once; remounting restores the shared scroll offset. Opening the same file without `revealIfOpened: false` focuses its existing tab and delivers a new revision.
+`ctx.sidebarRight.openResource(address, { params: { line } })` carries a 1-based source line through the `file` parameters. In `text-pages` mode, the owner loads sequential pages until that line or EOF. Plain-text and code renderers expose source-line anchors; Markdown does not. A navigation remains pending while its selected renderer has no anchor and runs if the user switches to plain text or code. Code navigation places the target below its sticky toolbar. Byte-mode renderers do not consume source-line navigation. Each completed navigation revision is answered once. Opening the same file without `revealIfOpened: false` focuses its existing tab and delivers a new revision.
 
 <a id="model-experience"></a>
 ## Model Experience
@@ -82,6 +72,7 @@ No direct effect; what the user reads here never enters a model request.
 <a id="known-limitations-and-deferred-work"></a>
 - **Preview, not editing.** The viewers provide no file editing or shared search interface; a directory address fails with `not-regular-file`. Unknown extensions use the plain-text reader and remain subject to its UTF-8/NUL checks.
 - **Sequential text and bounded complete files.** Deep source lines require the preceding pages; PDF and HTML require a complete result within the Host's `maxFileBytes` cap.
+- **Byte-view scroll state is not restored.** PDF and HTML can return to the top when their renderer remounts or reloads; HTML iframe scrolling belongs to its opaque browsing context.
 - **Finite local HTML dependencies.** Only direct classic `.js` and stylesheet `.css` references are packed. Browser-resolved resources retain browser origin and network restrictions; no runtime file-read bridge is exposed to the iframe.
 - **Package-local wrap glyph.** `IconWrapOutline16` lives in `src/client/icons.tsx` until the shared icon set carries one; the props contract already matches.
 - **Scroll writes are unthrottled.** Every scroll event records its offset in the store; the line blocks are memoized so the resulting re-render hands React the same elements back.

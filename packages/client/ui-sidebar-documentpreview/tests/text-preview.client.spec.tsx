@@ -9,7 +9,6 @@
  * set to. Both are the browser's job; the specs assert the body's arithmetic
  * over them.
  */
-import { useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, waitFor } from '@testing-library/react'
 import { RemoteError } from '@deepseek-ai/dsh-client-test-runtime'
@@ -18,14 +17,17 @@ import type { OwnerOf } from '@deepseek-ai/dsh-client-ui-slots'
 import { TextPreview } from '../src/client/TextPreview.tsx'
 import type { TextPreviewProps } from '../src/client/TextPreview.tsx'
 import { CodeBody } from '../src/client/code/CodeBody.tsx'
-import { DOCUMENT_LAYOUT_READY_EVENT } from '../src/client/document/layout.ts'
 import type { DocumentPreviewDefinition } from '../src/client/document/registry.ts'
+import { TextBody } from '../src/client/text/TextBody.tsx'
+import { PLAIN_BODY_ID } from '../src/client/text/index.ts'
 import { ABSOLUTE_PATH, ADDRESS, PATH, SESSION, TAB_ID, failure, harness, page, settle } from './fixtures.client.ts'
 
 const LINE_HEIGHT = 20
+const CODE_TOOLBAR_HEIGHT = 36
 
 const originals = {
   offsetTop: Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'offsetTop'),
+  offsetHeight: Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'offsetHeight'),
   scrollTop: Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'scrollTop'),
 }
 
@@ -43,8 +45,13 @@ beforeAll(() => {
   Object.defineProperty(HTMLElement.prototype, 'scrollTop', {
     configurable: true,
     get(this: HTMLElement & { __scrollTop?: number }) { return this.__scrollTop ?? 0 },
-    set(this: HTMLElement & { __scrollTop?: number }, value: number) {
-      this.__scrollTop = this.querySelector('[data-test-pdf-loading]') === null ? value : 0
+    set(this: HTMLElement & { __scrollTop?: number }, value: number) { this.__scrollTop = value },
+  })
+  Object.defineProperty(HTMLElement.prototype, 'offsetHeight', {
+    configurable: true,
+    get(this: HTMLElement) {
+      return this.parentElement?.classList.contains('md-code-block') === true
+        && this.parentElement.firstElementChild === this ? CODE_TOOLBAR_HEIGHT : 0
     },
   })
 })
@@ -92,18 +99,6 @@ function codeProps(h: ReturnType<typeof harness>, navigation: { params?: unknown
     useDocumentPreviews: selector => selector([definition]),
     renderSlot: (_key, owner) => <CodeBody {...props} {...owner as unknown as OwnerOf<'sidebar.right.tab.document'>} t={key => key} />,
   }
-}
-
-let finishPdfLayout: (() => void) | undefined
-
-function AsyncPdfLayout(): ReactNode {
-  const [ready, setReady] = useState(false)
-  const section = useRef<HTMLElement>(null)
-  finishPdfLayout = () => { setReady(true) }
-  useLayoutEffect(() => {
-    if (ready) section.current?.dispatchEvent(new Event(DOCUMENT_LAYOUT_READY_EVENT, { bubbles: true }))
-  }, [ready])
-  return ready ? <section ref={section} data-test-pdf-ready /> : <span data-test-pdf-loading />
 }
 
 function body(container: HTMLElement): HTMLElement {
@@ -345,48 +340,36 @@ describe('TextPreview — the file\'s metadata', () => {
 })
 
 describe('TextPreview — navigation and view', () => {
-  it('waits to answer a loaded-line navigation until the renderer exposes the line', async () => {
-    const h = harness({ 1: page(1, ['a', 'b'], true) })
-    const definition: DocumentPreviewDefinition = {
-      id: 'no-lines', extensions: ['md'], title: () => 'No lines', loading: 'text-pages', wrap: true,
-    }
+  it.each([
+    ['Code', 'code', 2 * LINE_HEIGHT - CODE_TOOLBAR_HEIGHT],
+    ['Plain text', PLAIN_BODY_ID, 2 * LINE_HEIGHT],
+  ])('retries a Markdown line navigation after switching to %s', async (_name, rendererId, expectedScrollTop) => {
+    PendingIntersectionObserver.instances = []
+    vi.stubGlobal('IntersectionObserver', PendingIntersectionObserver)
+    const h = harness({ 1: page(1, ['a', 'b', 'c'], true) })
+    const definitions: DocumentPreviewDefinition[] = [
+      { id: 'markdown', extensions: ['md'], title: () => 'Markdown', loading: 'text-pages', wrap: false },
+      { id: 'code', extensions: ['md'], title: () => 'Code', loading: 'text-pages', wrap: true },
+      { id: PLAIN_BODY_ID, extensions: [], title: () => 'Plain text', loading: 'text-pages', wrap: true },
+    ]
+    const base = h.props({ params: { line: 3 }, revision: 1 })
     const props: TextPreviewProps = {
-      ...h.props({ params: { line: 2 }, revision: 1 }),
-      useDocumentPreviews: selector => selector([definition]),
-      renderSlot: () => <div data-test-no-lines />,
+      ...base,
+      useDocumentPreviews: selector => selector(definitions),
+      renderSlot: (_key, owner, opts) => {
+        const documentOwner = owner as unknown as OwnerOf<'sidebar.right.tab.document'>
+        if (opts.entryKey === 'code') return <CodeBody {...base} {...documentOwner} t={key => key} />
+        if (opts.entryKey === PLAIN_BODY_ID) return <TextBody {...base} {...documentOwner} />
+        return <div data-test-no-lines />
+      },
     }
     const view = render(<TextPreview {...props} />)
     await settle()
     expect(body(view.container).scrollTop).toBe(0)
     expect(h.instance.getSnapshot().byTab[TAB_ID]?.revision).toBeUndefined()
-  })
-
-  it('restores complete-document scrolling after its asynchronous layout is ready', () => {
-    const h = harness()
-    h.instance.actions.loading(TAB_ID, 'bytes-complete', 'v1')
-    h.instance.actions.complete(TAB_ID, {
-      absolutePath: ABSOLUTE_PATH, version: 'v1', offset: 0,
-      data: new Uint8Array([1]), bytes: 1, eof: true,
-    })
-    h.instance.actions.scrolled(TAB_ID, 320)
-    const definition: DocumentPreviewDefinition = {
-      id: 'pdf', extensions: ['md'], title: () => 'PDF', loading: 'bytes-complete', wrap: false,
-    }
-    const props: TextPreviewProps = {
-      ...h.props(),
-      useDocumentPreviews: selector => selector([definition]),
-      renderSlot: () => <AsyncPdfLayout />,
-    }
-    const view = render(<TextPreview {...props} />)
-    const scrollBody = body(view.container)
-    expect(scrollBody.scrollTop).toBe(0)
-    act(() => { finishPdfLayout?.() })
-    expect(scrollBody.scrollTop).toBe(320)
-
-    fireEvent.scroll(scrollBody, { target: { scrollTop: 480 } })
-    view.container.querySelector('[data-test-pdf-ready]')
-      ?.dispatchEvent(new Event(DOCUMENT_LAYOUT_READY_EVENT, { bubbles: true }))
-    expect(scrollBody.scrollTop).toBe(480)
+    act(() => { h.instance.actions.selected(TAB_ID, rendererId) })
+    await waitFor(() => { expect(h.instance.getSnapshot().byTab[TAB_ID]?.revision).toBe(1) })
+    expect(body(view.container).scrollTop).toBe(expectedScrollTop)
   })
 
   it('lands on code lines before and after syntax highlighting is ready', async () => {
@@ -397,14 +380,14 @@ describe('TextPreview — navigation and view', () => {
     await settle()
     expect(view.container.querySelector('[data-code-preview] pre.shiki')).toBeNull()
     expect(view.container.querySelectorAll('[data-code-preview] pre .line')).toHaveLength(3)
-    expect(body(view.container).scrollTop).toBe(LINE_HEIGHT)
+    expect(body(view.container).scrollTop).toBe(0)
     expect(h.instance.getSnapshot().byTab[TAB_ID]?.revision).toBe(1)
 
     const block = view.container.querySelector('[data-code-preview] .md-code-block')!
     act(() => { PendingIntersectionObserver.instances[0]!.intersect(block) })
     await waitFor(() => { expect(view.container.querySelector('[data-code-preview] pre.shiki')).not.toBeNull() })
     view.rerender(<TextPreview {...codeProps(h, { params: { line: 3 }, revision: 2 })} />)
-    expect(body(view.container).scrollTop).toBe(2 * LINE_HEIGHT)
+    expect(body(view.container).scrollTop).toBe(2 * LINE_HEIGHT - CODE_TOOLBAR_HEIGHT)
     expect(h.instance.getSnapshot().byTab[TAB_ID]?.revision).toBe(2)
   })
 

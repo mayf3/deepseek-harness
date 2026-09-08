@@ -11,7 +11,6 @@
  */
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-api-remotes/client'
-import z from '@deepseek-ai/schemastery'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-resources/client'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
@@ -76,29 +75,11 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
  */
 export const inject = ['slots', 'locale', 'sidebarRightTabs', 'remote', 'remote.workspaceFiles']
 
-/** Bounds on HTML's statically referenced local resources. */
-export interface Config {
-  /** Maximum decoded bytes per referenced resource. */
-  htmlMaxAssetBytes: number
-  /** Maximum decoded bytes across the HTML and referenced resources. */
-  htmlMaxTotalBytes: number
-  /** Maximum distinct referenced scripts and stylesheets. */
-  htmlMaxAssets: number
-}
-
-/** Validated limits for static HTML dependency loading. */
-export const Config: z<Partial<Config>, Config> = z.object({
-  htmlMaxAssetBytes: z.natural().min(1).default(4 * 1024 * 1024),
-  htmlMaxTotalBytes: z.natural().min(1).default(32 * 1024 * 1024),
-  htmlMaxAssets: z.natural().min(1).default(64),
-})
-
 /**
  * Client plugin body: register the type, its dictionaries, and its body.
  * @param ctx - client root context carrying the registry, the slots, copy, and the Remote face.
- * @param config - validated local-resource limits.
  */
-export function apply(ctx: ClientContext, config: Config = Config({})): void {
+export function apply(ctx: ClientContext): void {
   const previews = new DocumentPreviewRegistry()
   const disposePreviews = ctx.reflect.provide('documentPreviews', previews)
   ctx.effect(() => disposePreviews)
@@ -123,7 +104,7 @@ export function apply(ctx: ClientContext, config: Config = Config({})): void {
   )), 'ui-sidebar-documentpreview: text body')
   registerText(ctx)
   registerMarkdown(ctx)
-  registerHtml(ctx, { maxAssetBytes: config.htmlMaxAssetBytes, maxTotalBytes: config.htmlMaxTotalBytes, maxAssets: config.htmlMaxAssets })
+  registerHtml(ctx)
   registerPdf(ctx)
   registerCode(ctx)
 }

@@ -17,7 +17,7 @@ describe('PDF canvas rendering', () => {
       },
       cleanup,
     } as unknown as PDFPageProxy
-    await expect(renderPdfPage({ numPages: 1, getPage: async () => page }, 1, 1, document.createElement('canvas'), controller.signal, 1))
+    await expect(renderPdfPage({ numPages: 1, getPage: async () => page }, 1, document.createElement('canvas'), controller.signal, 1))
       .rejects.toMatchObject({ name: 'AbortError' })
     expect(cancel).toHaveBeenCalledOnce()
     expect(cleanup).toHaveBeenCalledOnce()
@@ -29,7 +29,7 @@ describe('PDF canvas rendering', () => {
     const canvas = document.createElement('canvas')
     const cleanup = vi.fn()
     const render = vi.fn()
-    const pending = renderPdfPage({ numPages: 1, getPage: () => lookup.promise }, 1, 1, canvas, controller.signal, 1)
+    const pending = renderPdfPage({ numPages: 1, getPage: () => lookup.promise }, 1, canvas, controller.signal, 1)
     const rejected = expect(pending).rejects.toMatchObject({ name: 'AbortError' })
     controller.abort()
     lookup.resolve({ cleanup, render } as unknown as PDFPageProxy)
@@ -51,7 +51,7 @@ describe('PDF canvas rendering', () => {
       render: vi.fn(() => { entered.resolve(undefined); return { promise: running.promise, cancel } }),
       cleanup,
     } as unknown as PDFPageProxy
-    const pending = renderPdfPage({ numPages: 1, getPage: async () => page }, 1, 1.5, document.createElement('canvas'), controller.signal, 2)
+    const pending = renderPdfPage({ numPages: 1, getPage: async () => page }, 1, document.createElement('canvas'), controller.signal, 2)
     const rejected = expect(pending).rejects.toThrow('cancelled')
     await entered.promise
     controller.abort()
@@ -64,14 +64,16 @@ describe('PDF canvas rendering', () => {
 
   it('bounds raster allocation while retaining the selected display dimensions', async () => {
     const cleanup = vi.fn()
+    const getViewport = vi.fn(() => ({ width: 8192, height: 8192 }))
     const page = {
-      getViewport: vi.fn(() => ({ width: 8192, height: 8192 })),
+      getViewport,
       render: vi.fn(() => ({ promise: Promise.resolve(), cancel: vi.fn() })),
       cleanup,
     } as unknown as PDFPageProxy
     const canvas = document.createElement('canvas')
-    await expect(renderPdfPage({ numPages: 1, getPage: async () => page }, 1, 4, canvas, new AbortController().signal, 2))
+    await expect(renderPdfPage({ numPages: 1, getPage: async () => page }, 1, canvas, new AbortController().signal, 2))
       .resolves.toEqual({ width: 8192, height: 8192 })
+    expect(getViewport).toHaveBeenCalledWith({ scale: 96 / 72 })
     expect(canvas.width * canvas.height).toBe(16_777_216)
     expect(canvas.style.getPropertyValue('--pdf-page-width')).toBe('8192px')
     expect(cleanup).toHaveBeenCalledOnce()

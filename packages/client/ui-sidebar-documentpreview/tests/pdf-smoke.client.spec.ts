@@ -45,7 +45,7 @@ describe('PDF.js real-library smoke', () => {
         const target = factory.create(1, 1)
         Object.defineProperty(target.canvas, 'style', { value: { setProperty: () => {} } })
         try {
-          await renderPdfPage(pdf, page, 1, target.canvas, new AbortController().signal, 1)
+          await renderPdfPage(pdf, page, target.canvas, new AbortController().signal, 1)
           const pixel = target.context.getImageData(Math.floor(target.canvas.width / 2), Math.floor(target.canvas.height / 2), 1, 1).data
           expect(pixel[3]).toBe(255)
           if (page === 1) expect(pixel[0]! - pixel[2]!).toBeGreaterThan(150)
