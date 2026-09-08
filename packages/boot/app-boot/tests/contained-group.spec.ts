@@ -9,7 +9,7 @@
 import { mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context, type Plugin } from '@deepseek-ai/cordis'
 import Loader, { type EntryOptions } from '@deepseek-ai/cordis-plugin-loader'
 import {
@@ -95,6 +95,27 @@ describe('cordis:contained-group', () => {
     const registry = ctx.get('pluginFailures') as ContainedFailureRegistry
     expect(registry.get('include:ext/waiting')).toEqual(expect.objectContaining({ stage: 'inject-pending', rowId: 'ext/waiting' }))
     expect(registry.get('include:ext/waiting')?.message).toContain('neverReady')
+  })
+
+  it('clears a waiting row\'s record once the service it waits for appears', async () => {
+    const ctx = await boot(NAME, stage(`
+- id: bundle/ext
+  name: cordis:contained-group
+  group: true
+  config:
+    - id: ext/waiting
+      name: cordis:pending
+`), [], prepare)
+    contexts.push(ctx)
+    const registry = ctx.get('pluginFailures') as ContainedFailureRegistry
+    expect(registry.get('include:ext/waiting')?.stage).toBe('inject-pending')
+    // A fiber outside the tree — no entry, no record — changes state without touching the registry.
+    await ctx.plugin(() => {})
+    expect(registry.get('include:ext/waiting')?.stage).toBe('inject-pending')
+    // The service arrives in place, with no re-creation of the row: the fiber
+    // activates where it stands, and the record goes with the wait.
+    ctx.provide('neverReady', {})
+    await vi.waitFor(() => { expect(registry.get('include:ext/waiting')).toBeUndefined() })
   })
 
   it('keeps recording a waiting row when a reload re-creates its group', async () => {
