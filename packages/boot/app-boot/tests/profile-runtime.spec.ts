@@ -7,7 +7,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import type { Entry, EntryOptions } from '@deepseek-ai/cordis-plugin-loader'
 import type { PatchOptions } from '@deepseek-ai/cordis-plugin-include'
-import { claimLayerIds, ProfileRuntime, userDisablesEntry, type ComposedStack, type Profile, type ProfileLayer } from '../src/index.ts'
+import { claimLayerIds, ProfileRuntime, type ComposedStack, type Profile, type ProfileLayer } from '../src/index.ts'
 
 const contexts: Context[] = []
 afterEach(async () => {
@@ -100,13 +100,15 @@ describe('ProfileRuntime', () => {
     expect([...runtime.userDisabledRowIds()]).toEqual(['booted-off'])
   })
 
-  it('tells a row the user disabled through a group holding it from one the composition gates', () => {
+  it('tells a row the user disabled through a group holding it from one the composition gates', async () => {
+    const { runtime } = await harness([layer('a', 'builtin', [])])
     const chain = (ids: string[]): Entry => ids.reduceRight<Entry | undefined>(
       (parent, id) => ({ options: { id }, parent: { ctx: { fiber: { entry: parent } } } } as unknown as Entry), undefined,
     ) as Entry
-    expect(userDisablesEntry(chain(['kid', 'grp', 'root']), new Set(['grp']))).toBe(true)
-    expect(userDisablesEntry(chain(['kid', 'grp']), new Set(['kid']))).toBe(true)
-    expect(userDisablesEntry(chain(['kid', 'grp']), new Set(['other']))).toBe(false)
+    // The booted composition disables 'booted-off'.
+    expect(runtime.userDisables(chain(['kid', 'booted-off', 'root']))).toBe(true)
+    expect(runtime.userDisables(chain(['booted-off', 'grp']))).toBe(true)
+    expect(runtime.userDisables(chain(['kid', 'grp']))).toBe(false)
   })
 
   it('recomposes through the root include, optionally re-reading the profile first, and commits on acceptance', async () => {

@@ -6,7 +6,7 @@ import type {} from '@deepseek-ai/cordis-plugin-loader'
 import type {} from '@deepseek-ai/dsh-agent-presets'
 // Type-only: the optional profile runtime and contained-failure registry the
 // boot glue provides, both resolved through `ctx.get`.
-import { userDisablesEntry } from '@deepseek-ai/dsh-app-boot'
+import type {} from '@deepseek-ai/dsh-app-boot'
 import { TypertRemoteService, Remote } from '@deepseek-ai/dsh-typert-protocol'
 // Typert-generated ./typert and ./remote artifacts import Zod at runtime.
 import type {} from 'zod'
@@ -79,7 +79,6 @@ export class PluginInventoryGateway extends TypertRemoteService {
     const entries: PluginInventoryEntry[] = []
     const runtime = this.ctx.get('profileRuntime')
     const failures = this.ctx.get('pluginFailures')
-    const userDisabled = runtime?.userDisabledRowIds() ?? new Set<string>()
     const listed = new Set<string>()
     for (const entry of this.ctx.loader.entries()) {
       if (entry.options.group) continue
@@ -96,7 +95,7 @@ export class PluginInventoryGateway extends TypertRemoteService {
         fiberPhase: entry.fiber === undefined ? null : FIBER_PHASE[entry.fiber.state],
         trust: origin?.trust ?? 'builtin',
         ...origin === undefined ? {} : { package: packageRef(origin) },
-        ...enabled ? {} : { disabledBy: userDisablesEntry(entry, userDisabled) ? 'user' as const : 'composition' as const },
+        ...enabled ? {} : { disabledBy: runtime?.userDisables(entry) === true ? 'user' as const : 'composition' as const },
         ...failure === undefined ? {} : { failure: { stage: failure.stage, message: failure.message } },
       })
     }

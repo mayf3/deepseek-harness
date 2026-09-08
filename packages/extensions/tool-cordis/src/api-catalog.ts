@@ -1404,6 +1404,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the ids, from the committed composition.',
       },
       {
+        signature: 'userDisables(entry: Entry): boolean',
+        description: 'Whether the user patch layers disable an entry: its own row id, or the id of a group holding it, is among userDisabledRowIds. The Loader disables every descendant of a disabled group, so a child\'s own id alone does not say who switched it off.',
+        parameters: [{ name: 'entry', description: 'the Loader entry.' }],
+        returns: 'true when the user\'s patches disable the entry or one of the groups holding it.',
+      },
+      {
         signature: 'async recompose(options: { reloadBundles?: boolean } = {}): Promise<void>',
         description: 'Recompose the host tree from the profile\'s layers and the user patch files as they stand now. The root Include re-applies the stack transactionally: a row whose options changed is updated in place, a row that appeared is created, a row that vanished is disposed, and a failure rolls the whole update back with the previous tree still running. The candidate profile, its ownership, and its conflicts become the committed composition only once the update holds; until then, and after a rejection, `current`, `layers`, `originOf`, and `conflicts` keep describing the running tree. Calls queue: one that arrives while another is in flight starts after it settled and reads what it committed. A rejection is that call\'s outcome alone and does not stop the ones behind it.',
         parameters: [{ name: 'options', description: '`reloadBundles` re-reads the profile manifest first, so a bundle enabled or installed since boot joins the stack.' }],

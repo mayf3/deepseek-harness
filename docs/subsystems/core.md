@@ -862,6 +862,16 @@ originOf(rowId: string): RowOrigin | undefined
 userDisabledRowIds(): ReadonlySet<string>
 
 /**
+ * Whether the user patch layers disable an entry: its own row id, or the
+ * id of a group holding it, is among {@link userDisabledRowIds}. The Loader
+ * disables every descendant of a disabled group, so a child's own id alone
+ * does not say who switched it off.
+ * @param entry - the Loader entry.
+ * @returns true when the user's patches disable the entry or one of the groups holding it.
+ */
+userDisables(entry: Entry): boolean
+
+/**
  * Recompose the host tree from the profile's layers and the user patch files
  * as they stand now. The root Include re-applies the stack transactionally:
  * a row whose options changed is updated in place, a row that appeared is
