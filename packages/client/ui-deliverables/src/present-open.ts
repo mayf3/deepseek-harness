@@ -3,7 +3,7 @@ import { createWriteStream } from 'node:fs'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { pipeline } from 'node:stream/promises'
+import { promises as streamPromises } from 'node:stream'
 import type { Context } from '@deepseek-ai/cordis'
 import type { FileAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import type {} from '@deepseek-ai/dsh-api-session-controller'
@@ -34,7 +34,11 @@ export function createPresentedOpener(ctx: Context): (ref: FileAttachmentRef, si
     directories.add(directory)
     try {
       const path = join(directory, ref.name)
-      await pipeline(ctx.attachments.readFileStream(ref, signal), createWriteStream(path, { flags: 'wx', mode: 0o600 }), { signal })
+      await streamPromises.pipeline(
+        ctx.attachments.readFileStream(ref, signal),
+        createWriteStream(path, { flags: 'wx', mode: 0o600 }),
+        { signal },
+      )
       signal.throwIfAborted()
       await ctx.sessionController.openWorkspacePath({ path }, signal)
     } catch (error) {
