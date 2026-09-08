@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-The boot group provides what every dsh app bin needs to start and to manage what it starts: `app-boot` turns a `cordis.yml` plus your environment and patch layers into a running app with clear failure messages, `cmdline` lets the app own its command-line flags and `--help`, and `plugin-manager` installs, enables, and edits a profile's plugins for the `dsh plugin` command and the Web host alike. With these packages you can run `dsh` or write a new application or test fixture that boots the same way. All three are libraries imported by `apps/cli`, host packages, and test-only Loader fixtures, never plugins a composition loads. This page maps the group; each package README owns its per-package contract.
+The boot group provides what every dsh app bin needs to start and to manage what it starts: `app-boot` turns a `cordis.yml` plus your environment and patch layers into a running app with clear failure messages, `cmdline` lets the app own its command-line flags and `--help`, and `plugin-manager` installs, enables, and edits a profile's plugins for the `dsh plugin` command and the Web host alike. All three are libraries imported by `apps/cli`, host packages, and test-only Loader fixtures, never plugins a composition loads; each package README owns its contract.
 
 ## Table of Contents
 

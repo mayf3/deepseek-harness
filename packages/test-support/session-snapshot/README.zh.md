@@ -72,7 +72,7 @@ defineAcpSnapshotSuite({
 
 `normalizeSessionSnapshot` 在规范化路径并清理 request header 后，会保留完整 Session header 与事件 payload，但从已提交 fixture 中省略顶层 `seq`/`time` envelope；它还会规范化嵌入式 stream clock 与历史 packed-row 的 `seq0`/`time0` envelope。Replay 只在内存中合成顶层 envelope，而运行时持久化仍写入完整日志。多 Session 比较会先通过当前构建期静态 Session 格式目录恢复每个选定的持久化或投影 fixture，再进行身份脱敏与规范化，因此保留的 v0/v1 replay 输入与新生成的 `session.v2.jsonl` writer 输出会作为同一个 v2 logical Session 比较，且不会重写或重命名历史文件。预期日志与收集日志使用同一条严格恢复路径；来源文件名不能改变格式校验。无版本的协议适配器单元测试 fixture 不属于已发布 Session 格式语料。当前 v2 fixture 每个事件占一行；保留的 v0/v1 fixture 可以使用规范 packed row。[临时仓库迁移器](../../../scripts/migrate-packed-session-fixtures.ts)（`pnpm run migrate:packed-session-fixtures`）会改写更旧的历史布局，由其[移除提案](../../../.agents/notes/proposed/process/2026-07-26-remove-packed-session-fixture-migrator.zh.md)负责删除该迁移器。
 
-已知的快照 spill 路径会规范化为稳定的定位信息 token，包括 JSON 省略通知中带引号、使用 JSON 转义 Windows 分隔符的路径。刷新提取会保留匹配路径的序列化写法，以便进行字面替换。规范化只改变定位信息：保存字节数与省略计数仍作为比较证据。
+Spill 场景通过真实本地 provider 保存到私有临时根目录。夹具适配器提供固定长度的逻辑定位符，并仅将本次运行已保存的定位符映射回实际文件以供检索，在不写入共享逻辑路径的情况下保留预览预算。已知的快照 spill 路径会规范化为稳定的定位信息 token，包括 JSON 省略通知中带引号、使用 JSON 转义 Windows 分隔符的路径。刷新提取会保留匹配路径的序列化写法，以便进行字面替换。规范化只改变定位信息：保存字节数与省略计数仍作为比较证据。
 
 ### 录制、回放与刷新
 
@@ -84,7 +84,7 @@ defineAcpSnapshotSuite({
 
 ### 平台与组合变体
 
-需要非 Windows 主机的场景声明 `posixOnly`，在 Windows 上跳过运行测试，但 fixture 保护仍在所有平台覆盖其已提交文件；组合需要可用 `pwsh` 的场景声明 `pwshOnly`。当临时目录授权自身待测时，`workspaceParent` 将生成子级 cwd 移出平台临时区域；场景签入的 `workspace/` 会先复制到该子级，随后 `prepareWorkspace` 在 agent 启动前针对生成 cwd 运行。默认生成的 workspace 在会话 fixture 中存储为 `{{cwd}}`，使平台临时根目录与随机 basename 不影响录制。
+需要非 Windows 主机的场景声明 `posixOnly`，在 Windows 上跳过运行测试，但 fixture 保护仍在所有平台覆盖其已提交文件；组合需要可用 `pwsh` 的场景声明 `pwshOnly`。当临时目录授权自身待测时，`workspaceParent` 将生成子级 cwd 移出平台临时区域；场景签入的 `workspace/` 会先复制到该子级，随后 `prepareWorkspace` 在 agent 启动前针对生成 cwd 运行。默认生成的 workspace 在会话 fixture 中存储为 `{{cwd}}`，使平台临时根目录与随机 basename 不影响录制。 Headless manifest 在测试 Session workspace 授权本身时使用 `workspace.parent: outside-temp`。适配器在父目录可写且位于系统临时授权之外时，于平台临时根目录旁分配目录，否则使用 home，并拒绝已被自动临时写授权覆盖的生成 cwd。
 
 ### 可能出什么问题
 

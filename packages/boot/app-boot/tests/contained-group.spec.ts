@@ -12,10 +12,8 @@ import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context, type Plugin } from '@deepseek-ai/cordis'
 import Loader, { type EntryOptions } from '@deepseek-ai/cordis-plugin-loader'
-import {
-  assertEntriesActivated, boot, ContainedFailureRegistry, ContainedGroup, ensurePluginFailures, installRuntimeGuards,
-  isContainedEntry, rootIncludeEntry, warnNestedFiberFailures, type RuntimeGuardProcess,
-} from '../src/index.ts'
+import { assertEntriesActivated, boot, ensurePluginFailures, installRuntimeGuards, rootIncludeEntry, warnNestedFiberFailures, type RuntimeGuardProcess } from '../src/index.ts'
+import { ContainedFailureRegistry, ContainedGroup, isContainedEntry } from '../src/contained-group.ts'
 
 const NAME = 'dsh-test-bin'
 
