@@ -117,7 +117,21 @@ V2 `session-log-deepseek/delivery-accepted` 若携带 `data.sessionFormatVersion
 <a id="source-audit"></a>
 ### 源审计与拒绝
 
-迁移分类[已发布 V2 事件清单](../session-format-v1-to-v2/src/dispositions.ts)，包括仅日志的 `assistant/attempt`，以及 `feedback/message-put` 和 `feedback/message-delete`。[载荷校验器](src/payload.ts)应用精确的已接纳信封和载荷成员、已发布嵌套校验，以及显式消息来源/内容分类。消息来源与递归内容种类分类适用于 `user/message.data`、`assistant/message.data.message`、`tool/result.data.message`、`agent/inbox/spliced.data.inserted[]` 和 `session/title-llm-request.data.messages[]`。这些位置的未知来源/内容种类会被拒绝；agent（智能体）中继归属和文件附件元数据被接纳，但标识与字节计数不会被解释为 Session 引用。未知事件（即使可忽略）以及被检查记录中未经审计的成员均被拒绝。其他捕获载荷（包括排队的团队消息内容、压缩摘要/原始输出和 PTC 分发内容）使用已发布检查，不执行这层额外的递归分类或坐标推断。这不是对每个嵌套载荷的通用 schema 审计。
+迁移分类[已发布 V2 事件清单](../session-format-v1-to-v2/src/dispositions.ts)，包括仅日志的 `assistant/attempt`，以及 `feedback/message-put` 和 `feedback/message-delete`。[载荷校验器](src/payload.ts)应用精确的已接纳信封和载荷成员，以及已发布嵌套校验。未知事件（即使可忽略）以及被检查记录中未经审计的成员均被拒绝。消息来源分类覆盖下表的五个 Message 位置：未知来源种类会被拒绝，agent（智能体）中继归属则被接纳，但标识不会被解释为 Session 引用。
+
+内容审计仅接纳 `text`、`reasoning`、`image`、`file`、`tool-call` 和 `tool-result`。它校验归本格式所有的块字段，并在以下有限位置递归审计每层嵌套的 `tool-result.content`：
+
+| 所有者 | 审计内容 |
+|---|---|
+| 五个 Message 位置 | `user/message.data.content`；`assistant/message.data.message.content`；`tool/result.data.message.content`；`agent/inbox/spliced.data.inserted[].content`；`session/title-llm-request.data.messages[].content` |
+| 排队的团队消息 | `team/message/queued.data.message.content`；历史 Team 载荷保持 `version: 1` 并带有 `message.delivery` |
+| 压缩输出 | `compaction/summary.data.summary` 和可选的 `compaction/summary.data.rawOutput` |
+| PTC 前代输出 | `tool/code-dispatch.data.content` |
+| 内嵌 assistant 流 | `assistant/message.data.stream[]` 和 `assistant/attempt.data.stream[]` 中的原始 `type: 'chunk'` 记录：`block-end` 的 `chunk.block` 和 `block-start` 的 `chunk.blockType`，包括尚无完整块的起始记录 |
+
+所有位置共用同一历史种类集合；未完成的起始记录不能引入未知种类。未知种类和归本格式所有的畸形块都会拒绝整次迁移；目录恢复报告 `SessionFormatUnsupportedMigrationError`。诊断标明源事件类型、源序号、包含索引的完整载荷路径和违反的规则。未知种类错误标明违规种类；已知块的畸形错误标明种类和字段错误。畸形内容容器或缺失块报告其位置，而不虚构种类。拒绝时，持久化保留源字节且不发布后继代。
+
+准入不改写内容。特别是，内嵌流虽然接受归本格式所有的块字段检查，其字节仍保持不变。工具参数、`replayState.response` 和 `replayState.blocks` 保持不透明；任意 JSON 内的同名字段不会触发此审计。文件附件元数据接受校验，但标识或字节计数不会被解释为 Session 引用。这不是通用 schema 审计或递归坐标推断，原生 V3 扩展准入与此分开。
 
 首个步骤前的 surface 事件、开放步骤外的提示词变化或生成标识冲突，会抛出 `SessionFormatUnsupportedMigrationError`，而非移动事件或虚构归属。源字段格式错误、缺失位置、无效引用、不一致切点、投递违规与矛盾工具结果，会在直接阶段或目标校验器中抛出格式错误。目录将迁移阶段和转换后目标校验失败报告为类型化的不支持迁移；物理解码失败仍按所选恢复策略归类为损坏。本迁移边不修复源或目标，不回退代次，也不改写文件。
 
@@ -180,8 +194,7 @@ V2 `session-log-deepseek/delivery-accepted` 若携带 `data.sessionFormatVersion
 <a id="known-limitations-and-deferred-work"></a>
 
 - **历史预设歧义** — 已发布 `code` 引用无法区分与旧内置标识同名的自定义预设；[精确重命名](#header-and-presets)不依赖宿主。
-- **有范围的源审计** — [源拒绝](#source-audit)可能拒绝无法在保留时序的同时转换的历史，但已分类 Message 位置之外的嵌套内容不接受相同的种类审计。原生扩展支持不意味着迁移支持。
-- **不迁移文件或设置** — 本包绝不修改已提交代或 `settings.yaml`。持久化负责发布最终后继代；已有 V3 代不重新运行其入边。
+- **不迁移文件或设置** — 本包绝不修改已提交代或 `settings.yaml`。持久化负责发布最终后继代；已有 V3 代不重新运行其入边。V3 尚未发布；本包不为已写出的开发期 V3 文件提供兼容或修复。
 
 <a id="dev-note"></a>
 ### 开发备注

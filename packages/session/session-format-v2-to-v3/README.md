@@ -117,7 +117,21 @@ A V2 `session-log-deepseek/delivery-accepted` with `data.sessionFormatVersion ==
 <a id="source-audit"></a>
 ### Source audit and refusal
 
-Migration classifies the [released V2 event inventory](../session-format-v1-to-v2/src/dispositions.ts), including log-only `assistant/attempt`, plus `feedback/message-put` and `feedback/message-delete`. The [payload validator](src/payload.ts) applies exact admitted envelope and payload members, released nested validation, and explicit message-source/content classification. Message-source and recursive content-kind classification applies to `user/message.data`, `assistant/message.data.message`, `tool/result.data.message`, `agent/inbox/spliced.data.inserted[]`, and `session/title-llm-request.data.messages[]`. In these slots, unknown source/content kinds are refused; agent relay attribution and file attachment metadata are admitted without interpreting ids or byte counts as Session references. Unknown events, even ignorable ones, and unaudited members at checked records are refused. Other captured payloads, including queued team-message content, compaction summary/raw output, and PTC dispatch content, use released checks without this additional recursive classification or coordinate inference. This is not a general schema audit of every nested payload.
+Migration classifies the [released V2 event inventory](../session-format-v1-to-v2/src/dispositions.ts), including log-only `assistant/attempt`, plus `feedback/message-put` and `feedback/message-delete`. The [payload validator](src/payload.ts) applies exact admitted envelope and payload members and released nested validation. Unknown events, even ignorable ones, and unaudited members at checked records are refused. Message-source classification covers the five Message slots below: unknown source kinds are refused, while agent relay attribution is admitted without interpreting ids as Session references.
+
+The content audit admits exactly `text`, `reasoning`, `image`, `file`, `tool-call`, and `tool-result`. It validates owned block fields and recursively audits every nested `tool-result.content` in this finite set of positions:
+
+| Owner | Audited content |
+|---|---|
+| Five Message slots | `user/message.data.content`; `assistant/message.data.message.content`; `tool/result.data.message.content`; `agent/inbox/spliced.data.inserted[].content`; `session/title-llm-request.data.messages[].content` |
+| Queued team message | `team/message/queued.data.message.content`; the historical Team payload remains `version: 1` with `message.delivery` |
+| Compaction output | `compaction/summary.data.summary` and optional `compaction/summary.data.rawOutput` |
+| PTC predecessor output | `tool/code-dispatch.data.content` |
+| Embedded assistant streams | In `assistant/message.data.stream[]` and `assistant/attempt.data.stream[]`, raw `type: 'chunk'` records: `chunk.block` for `block-end` and `chunk.blockType` for `block-start`, including starts with no completed block |
+
+All positions use the same historical kind set; a partial start cannot introduce an unknown kind. Unknown kinds and malformed owned blocks refuse the whole migration; catalog restoration reports `SessionFormatUnsupportedMigrationError`. The diagnostic identifies the source event type, source sequence, full indexed payload path, and violated rule. Unknown-kind errors name the offending kind; malformed known-block errors name the kind and field error. A malformed content container or missing block reports its location without inventing a kind. Persistence leaves source bytes unchanged and publishes no successor on refusal.
+
+Admission does not rewrite content. In particular, embedded stream bytes are preserved although their owned block fields are inspected. Tool arguments, `replayState.response`, and `replayState.blocks` remain opaque; matching field names inside arbitrary JSON do not trigger this audit. File attachment metadata is validated without interpreting ids or byte counts as Session references. This is not a general schema audit or recursive coordinate inference, and native V3 extension acceptance is separate.
 
 A surface event before the first step, a changed prompt outside an open step, or a generated-id collision raises `SessionFormatUnsupportedMigrationError` rather than moving events or inventing ownership. Malformed source fields, missing placement, invalid references, inconsistent cuts, delivery violations, and contradictory tool results raise format errors in the direct stage or target validator. The catalog reports migration-stage and transformed-target validation failures as typed unsupported migration; physical decoding failures remain corruption under its selected recovery policy. No source or target repair, generation fallback, or file rewrite is performed by this edge.
 
@@ -180,8 +194,7 @@ The edge preserves historical request meaning and model configuration; it does n
 <a id="known-limitations-and-deferred-work"></a>
 
 - **Historical preset ambiguity** — released `code` references cannot distinguish a custom preset with the legacy built-in id; the [exact rename](#header-and-presets) is host-independent.
-- **Bounded source audit** — [source refusal](#source-audit) can reject history that cannot be converted without changing chronology, but nested content outside the classified Message slots does not receive the same kind audit. Native extension support does not imply migration support.
-- **No file or settings migration** — this package never changes committed generations or `settings.yaml`. Persistence owns publishing the final successor; an existing V3 generation does not rerun its incoming edge.
+- **No file or settings migration** — this package never changes committed generations or `settings.yaml`. Persistence owns publishing the final successor; an existing V3 generation does not rerun its incoming edge. V3 is unreleased; compatibility or repair for already-written development V3 files is not provided.
 
 <a id="dev-note"></a>
 ### Dev Note
