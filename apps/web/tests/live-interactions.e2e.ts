@@ -166,9 +166,12 @@ describe('web e2e: live-turn interactions (cancel / error / retry)', () => {
 
     const input = page.locator('[data-composer-input]').first()
     await input.fill(RUNNING_DRAFT)
-    const send = page.getByRole('button', { name: 'Send message', exact: true })
+    // The running primary names its delivery: the default busy-state
+    // preference is Queue, so the button reads Queue rather than plain Send.
+    const send = page.getByRole('button', { name: 'Queue message', exact: true })
     await send.waitFor({ timeout: 10_000 })
     expect(await page.getByRole('button', { name: 'Stop generating', exact: true }).count()).toBe(0)
+    expect(await page.getByRole('button', { name: 'Send message', exact: true }).count()).toBe(0)
     const runningDraftSnapshot = await captureStableAria(page, '[class*="centerCol"]', scaffold!.workspaceCwd)
     await compareOrRefreshGolden(RUNNING_DRAFT_EXPECTED, runningDraftSnapshot, MODE)
     await send.click()

@@ -222,6 +222,9 @@ describe('web e2e: queue row actions', () => {
     await expect.poll(() => page.getByRole('button', { name: 'Remove queued message' }).count())
       .toBe(2)
 
+    // Stop becomes Send under the pointer; dismiss its hover tooltip before capture.
+    await page.mouse.move(0, 0)
+    await expect.poll(() => page.getByRole('tooltip').filter({ hasText: 'Send message' }).count()).toBe(0)
     const preservedSnapshot = await captureStableAria(page, '[class*="centerCol"]', scaffold.workspaceCwd)
     await compareOrRefreshGolden(PRESERVED_EXPECTED, preservedSnapshot, MODE)
     const expanded = await captureExpandedTurnProcessAria(
