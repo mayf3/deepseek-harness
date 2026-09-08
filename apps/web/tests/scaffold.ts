@@ -901,6 +901,28 @@ function mapJsonStringValues(value: unknown, map: (value: string) => string): un
   return value
 }
 
+/** Tokenize the browser timezone carried by user message sources. */
+function normalizeClientTimeZones(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(item => normalizeClientTimeZones(item))
+  if (value !== null && typeof value === 'object') {
+    const next = Object.fromEntries(Object.entries(value).map(([key, item]) => [
+      key,
+      normalizeClientTimeZones(item),
+    ]))
+    const source = (next as { source?: unknown }).source
+    if (source !== null && typeof source === 'object'
+      && (source as { kind?: unknown }).kind === 'user'
+      && typeof (source as { clientTimeZone?: unknown }).clientTimeZone === 'string') {
+      return {
+        ...next,
+        source: { ...source, clientTimeZone: '{{clientTimeZone}}' },
+      }
+    }
+    return next
+  }
+  return value
+}
+
 const WEB_PATH_TEXT_BOUNDARY_RE = /[\s<>'"`()\[\]{},;:!?=]/
 const WEB_FILE_URI_PATH_PREFIX_RE = /(?:^|[^a-z0-9+.-])file:\/\/\/?$/i
 
@@ -956,12 +978,12 @@ export function normalizeWebSessionVolatiles(log: string, workspaceCwd?: string)
     }))].sort((left, right) => right.length - left.length)
   return log.split(/\r?\n/).map((line) => {
     if (line.trim() === '') return line
-    const record = mapJsonStringValues(JSON.parse(line), (value) => {
+    const record = normalizeClientTimeZones(mapJsonStringValues(JSON.parse(line), (value) => {
       let normalized = value
         .replace(/Anonymous user: [0-9a-f-]{36}(?=\.$)/gi, 'Anonymous user: {{anonymousUserId}}')
       for (const cwd of cwdSpellings) normalized = replaceWebCwd(normalized, cwd)
       return normalized
-    }) as { type?: unknown; data?: { endpoint?: unknown } }
+    })) as { type?: unknown; data?: { endpoint?: unknown } }
     if (record.type === 'web/deepseek-search-llm-request' && typeof record.data?.endpoint === 'string') {
       record.data.endpoint = '{{webSearchEndpoint}}'
     }
