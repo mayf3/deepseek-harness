@@ -77,7 +77,7 @@ export function observedOffsets(proc: ShellProcess): ObservedOffsets {
  * process is spawned inside the starter, after the registry admitted the job;
  * a read before the spawn yields nothing, and the pump keeps the model's
  * consuming cursor untouched. A rejected spawn's stderr reader carries the
- * provider's `spawn failed: …` note.
+ * provider's `subprocess failed before reporting an outcome: …` note.
  * @param proc - the started process, once the starter has spawned it.
  * @param from - per-stream offsets the sources start pulling at.
  * @returns one source per stream, stdout first.

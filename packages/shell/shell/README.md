@@ -38,7 +38,7 @@ console.log(result.exitCode, result.stdout.text)
 
 ### Background processes
 
-Resolve the request with `onExpiry: 'none'` and keep the handle: no deadline is armed, and the process runs until killed or finished. Read output incrementally with `readOutput()` — consecutive reads never repeat output, and lossy reads point at full-stream spill files. Kill the process group with `kill()` (returns `false` once it has finished) and await `done` for settlement. Job ids, ownership, polling, and notices belong to the generic `ctx.jobs` runtime, where the tool layer registers the handle. `ShellProcess.observed` exposes non-consuming offset readers over the same captured streams — for observers independent of the consuming cursor, such as the job registry's pull sources — including the `spawn failed: …` note a rejected spawn leaves on stderr.
+Resolve the request with `onExpiry: 'none'` and keep the handle: no deadline is armed, and the process runs until killed or finished. Read output incrementally with `readOutput()` — consecutive reads never repeat output, and lossy reads point at full-stream spill files. Terminate the provider-managed range with `kill()` (returns `false` once the direct command has finished) and await `done` for direct-command settlement. Job ids, ownership, polling, and notices belong to the generic `ctx.jobs` runtime, where the tool layer registers the handle. `ShellProcess.observed` exposes non-consuming offset readers over the same captured streams — for observers independent of the consuming cursor, such as the job registry's pull sources — including the `spawn failed: …` note a rejected spawn leaves on stderr.
 
 ### Timeout promotion offers
 
@@ -95,7 +95,7 @@ The package is one role of a standard capability seam: the Service Definition th
 
 ### Background lifecycle and ownership
 
-A spawned process belongs to the subprocess service, not to the executor: it survives an executor-only reload and is killed and joined when the composition tears down. Implementations must honor the seam's semantics — `result()` rejects only for infrastructure failures; the handle is live immediately and its `done` never rejects (spawn failures, synchronous or asynchronous, settle the handle as `killed` with the error on the read path while `result()` carries the same failure as its rejection); `readOutput` is consuming and lossy reads report spill files; an unanswered promotion offer is declined.
+A spawned process belongs to the subprocess service, not to the executor: it survives an executor-only reload and is killed and joined when the composition tears down. Implementations must honor the seam's semantics — `result()` rejects only for infrastructure failures; the handle is live immediately and its `done` never rejects (provider rejections, synchronous or asynchronous, settle the handle as `killed` with a stage-neutral note on stderr while `result()` carries the same failure as its rejection); `readOutput` is consuming and lossy reads report spill files; an unanswered promotion offer is declined.
 
 </details>
 

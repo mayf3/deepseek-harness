@@ -123,7 +123,7 @@ describe('background bash output', () => {
       name: 'job_output',
       arguments: { job_id: String(job!.id) },
     }))
-    expect(read).toMatch(/^\[stderr\]\nspawn failed: .*\n\[status: killed, killed before exit\]$/s)
+    expect(read).toMatch(/^\[stderr\]\nsubprocess failed before reporting an outcome: .*\n\[status: killed, killed before exit\]$/s)
   })
 
   it('labels stderr chunks with their channel', async () => {

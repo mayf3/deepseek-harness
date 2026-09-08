@@ -191,7 +191,10 @@ export interface ShellProcess {
   exitCode: number | null
   /** Terminating signal name, when signal-killed. */
   signal: NodeJS.Signals | null
-  /** Resolves when the underlying process closes (never rejects — a spawn failure settles as `killed` with the error on stderr). */
+  /**
+   * Resolves when the underlying process settles (never rejects — provider
+   * rejection settles as `killed` with a stage-neutral error on stderr).
+   */
   readonly done: Promise<void>
   /** Sandbox facts, stamped once a confined process settles. */
   sandbox?: ShellSandboxInfo
@@ -203,13 +206,13 @@ export interface ShellProcess {
   readOutput(): ShellProcessRead
   /**
    * Non-consuming offset readers over the same captured streams the consuming
-   * {@link readOutput} cursor drains, including the spawn-failure note a
+   * {@link readOutput} cursor drains, including the provider-failure note a
    * rejected spawn leaves on stderr. Independent observers read here at their
    * own offsets without stealing bytes from `readOutput`.
    */
   observed: ShellObservedStreams
   /**
-   * Kill the process group. Returns false when it had already finished
+   * Terminate the provider-managed range. Returns false when it had already finished
    * (no-op); idempotent.
    */
   kill(): boolean
