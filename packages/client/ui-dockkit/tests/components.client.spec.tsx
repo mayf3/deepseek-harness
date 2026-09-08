@@ -933,6 +933,8 @@ describe('tab drags', () => {
     const { intents, second, fileTabId, chip } = twoPanes(208)
     drag(chip(fileTabId), FILE_CHIP, [208 + 200, 300], false)
     expect(document.querySelector('[data-dockkit-dock-zone]')).toBeNull()
+    fireEvent.pointerMove(window, { pointerId: 7, clientX: 208 + 104, clientY: 500 })
+    expect(document.querySelector('[data-dockkit-dock-zone]')?.getAttribute('data-dockkit-dock-zone')).toBe('bottom')
     fireEvent.pointerMove(window, { pointerId: 7, clientX: 208 + 104, clientY: 100 })
     expect(document.querySelector('[data-dockkit-dock-zone]')?.getAttribute('data-dockkit-dock-zone')).toBe('top')
     fireEvent.pointerUp(window, { pointerId: 7, clientX: 208 + 104, clientY: 100 })

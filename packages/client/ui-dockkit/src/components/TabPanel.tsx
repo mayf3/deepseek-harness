@@ -63,6 +63,7 @@ function ZoneGlyph({ zone }: { readonly zone: DockZone }): ReactNode {
       case 'right': return 'M8 0.523H12A4 4 0 0 1 16 4.523V11.477A4 4 0 0 1 12 15.477H8Z'
       case 'top': return 'M0 8V4.523A4 4 0 0 1 4 0.523H12A4 4 0 0 1 16 4.523V8Z'
       case 'bottom': return 'M0 8H16V11.477A4 4 0 0 1 12 15.477H4A4 4 0 0 1 0 11.477Z'
+      /* v8 ignore next -- closed-union backstop; the compiler rejects a new zone here. */
       default: return assertNever(zone, 'dockkit: drop zone glyph')
     }
   })()
