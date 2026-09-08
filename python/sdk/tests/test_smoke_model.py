@@ -109,6 +109,11 @@ def test_live_smoke_requires_fresh_external_content(live_smoke: SimpleNamespace)
 @pytest.mark.parametrize("label", ["create", "verify"])
 @pytest.mark.parametrize(("overrides", "message"), [
     ({"finish_reason": "error"}, "turn ended with 'error'"),
+    ({"finish_reason": "error", "events": [{
+        "type": "turn/end", "data": {"turn": 1, "reason": {
+            "kind": "error", "error": {"code": "AUTH", "status": 401},
+        }},
+    }]}, "turn ended with.*AUTH.*401"),
     ({"events": []}, "turn made no model-requested tool call"),
     ({"final_response": "PYTHON_SDK_LIVE_OK extra"}, "turn returned"),
 ])

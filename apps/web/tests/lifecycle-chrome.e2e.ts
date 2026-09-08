@@ -184,6 +184,17 @@ describe('web e2e: lifecycle & chrome (workspace flow / reload / dark mode)', ()
     const observeTurn = async () => {
       const originalViewport = page.viewportSize() ?? { width: 1680, height: 1000 }
       if (MODE !== 'record') await page.setViewportSize({ width: 480, height: 1000 })
+      const observedReasoning = Promise.withResolvers<undefined>()
+      const releaseStream = MODE === 'record' ? undefined : scaffold.ctx.on('llm/stream', async function* (_options, next) {
+        let reasoning = false
+        for await (const chunk of next()) {
+          if (reasoning && chunk.type !== 'reasoning-delta') {
+            await observedReasoning.promise
+          }
+          if (chunk.type === 'reasoning-delta') reasoning = true
+          yield chunk
+        }
+      })
       try {
         await input.press('Enter')
         if (MODE !== 'record') {
@@ -199,8 +210,11 @@ describe('web e2e: lifecycle & chrome (workspace flow / reload / dark mode)', ()
             })
           }, { timeout: 10_000, interval: 10 }).toBe(true)
         }
+        observedReasoning.resolve(undefined)
         return await settled
       } finally {
+        observedReasoning.resolve(undefined)
+        releaseStream?.()
         if (MODE !== 'record') await page.setViewportSize(originalViewport)
       }
     }
@@ -222,7 +236,8 @@ describe('web e2e: lifecycle & chrome (workspace flow / reload / dark mode)', ()
     ).toBeGreaterThanOrEqual(1)
     await expect.poll(() => page.locator('[role="treeitem"][aria-selected="true"]').count(), { timeout: 10_000 }).toBe(1)
     await expect.poll(() => page.getByText('LIGHTHOUSE', { exact: true }).count(), { timeout: 15_000 }).toBeGreaterThanOrEqual(1)
-    await expect.poll(() => page.getByText('Cache hit 99.5%', { exact: true }).count(), { timeout: 15_000 }).toBe(1)
+    // The usage pill's one label span concatenates the billed total and the cache-hit share.
+    await expect.poll(() => page.getByRole('button', { name: /Cache hit 99\.5%/ }).count(), { timeout: 15_000 }).toBe(1)
     // Host: the session's durable header cwd is the folder the workspace
     // flow created and adopted (<workspaceCwd>/workspace) — the proof the
     // send went through workspace materialization rather than a bare

@@ -137,6 +137,14 @@ describe('web e2e: queued image submission', () => {
     ).toBe(0)
     const chatImage = page.locator('[class*="userRow"] img')
     await chatImage.first().waitFor({ timeout: 15_000 })
+    // Host persistence precedes delivery to the browser; require the waking turn's settled tail.
+    await page.locator('[data-turn-tail="3"]')
+      .getByRole('button', { name: 'Branch into a new conversation', exact: true })
+      .waitFor({ timeout: 15_000 })
+    await expect.poll(
+      () => page.getByRole('button', { name: /^3 turns 3 steps/ }).count(),
+      { timeout: 15_000 },
+    ).toBe(1)
     const deliveredSnapshot = await captureStableAria(page, '[class*="centerCol"]', scaffold.workspaceCwd)
     await compareOrRefreshGolden(DELIVERED_EXPECTED, deliveredSnapshot, MODE)
 
