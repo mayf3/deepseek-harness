@@ -16,7 +16,7 @@
 import { useEffect, useId, useState, type ReactNode } from 'react'
 import type { PluginInstallRejection, PluginPackageView, PluginRowTarget } from '@deepseek-ai/dsh-api-remotes/client'
 import {
-  Button, IconChevronDownOutline14, IconChevronRightOutline14, IconCordisPluginOutline14, IconRefreshOutline16,
+  Button, IconChevronDownOutline14, IconCordisPluginOutline14, IconRefreshOutline16,
   Input, Menu, Modal, StateDot, Switch, Tag, TerminalBlock,
   type MenuItem, type StateDotState, type TerminalBlockLabels,
 } from '@deepseek-ai/dsh-client-ui-primitives'
@@ -380,7 +380,7 @@ function EnableSwitch({ pkg, title, t, busy, onSetEnabled }: {
   )
 }
 
-/** One installed package as a card: its name, its one-liner, its tags, its switch or its **Add to…** menu, and the way into its page. */
+/** One installed package as a card: its name, which opens its page, its one-liner, its tags, and its switch or its **Add to…** menu. */
 function PackageCard({ pkg, t, busy, presets, globalModules, presetName, onOpen, onSetEnabled, onAddRow }: {
   readonly pkg: PluginPackageView
   readonly t: Translate
@@ -410,7 +410,7 @@ function PackageCard({ pkg, t, busy, presets, globalModules, presetName, onOpen,
       <div className={css.cardHead}>
         <div className={css.cardMain}>
           <div className={css.titleRow}>
-            <span className={css.cardTitle}>{title}</span>
+            <button type="button" className={css.cardTitle} aria-label={t('openDetail', { name: title })} onClick={onOpen}>{title}</button>
             {builtin ? <Tag>{t('builtinTag')}</Tag> : null}
             {status === null ? null : <Tag tone={status === 'problem' ? 'danger' : 'warning'}>{t(STATUS_KEYS[status])}</Tag>}
           </div>
@@ -447,15 +447,6 @@ function PackageCard({ pkg, t, busy, presets, globalModules, presetName, onOpen,
                 )}
               />
             )}
-          <button
-            type="button"
-            className={css.iconButton}
-            aria-label={t('openDetail', { name: title })}
-            title={t('openDetailTip')}
-            onClick={onOpen}
-          >
-            <IconChevronRightOutline14 className={css.cardArrow} aria-hidden="true" />
-          </button>
         </div>
       </div>
     </li>
