@@ -1507,6 +1507,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     ],
     ownerPropsReferences: [],
     standardProps: [
+      'useResource: UseResource',
       'useWorkspaces: SnapshotSelectorHook<WorkspaceSnapshot>',
       'useSessions: UseSessions',
       'useSessionPendingInteraction: UseSessionPendingInteraction',
@@ -1543,6 +1544,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     ],
     ownerPropsReferences: [],
     standardProps: [
+      'useResource: UseResource',
       'useWorkspaces: SnapshotSelectorHook<WorkspaceSnapshot>',
       'useSessions: UseSessions',
       'useSessionPendingInteraction: UseSessionPendingInteraction',
