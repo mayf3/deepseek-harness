@@ -31,6 +31,7 @@ import { pathToFileURL } from 'node:url'
 import type { Page } from 'playwright'
 import { expect } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
+import { DSH_LAUNCH_ENVIRONMENT_KEY, type LaunchEnvironmentSnapshot } from '@deepseek-ai/dsh-launch-environment'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
 import Include, { type PatchOptions } from '@deepseek-ai/cordis-plugin-include'
 import Group from '@deepseek-ai/cordis-plugin-group'
@@ -46,7 +47,7 @@ import {
   redactSessionSnapshotIds,
   normalizeSessionSnapshots,
   parseSessionFixtureName,
-  scrubRequestHeaders,
+  scrubModelRequestBulk,
   scrubSessionSnapshot,
   sessionFixtureFiles,
   sessionFixtureName,
@@ -284,6 +285,8 @@ export interface WebScaffold {
 
 /** Options for {@link launchWebScaffold}. */
 export interface LaunchOptions {
+  /** Enable the real Open In rows with deterministic launch-environment facts. */
+  openInAppEnvironment?: LaunchEnvironmentSnapshot
   /** Compare the replayed root session with `replayFixture`; defaults on for a manifest-owned canonical recording. */
   compareReplaySession?: boolean
   /**
@@ -600,13 +603,10 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
       { id: 'directory-picker-browse', name: '@deepseek-ai/dsh-host-directory-picker-browse' },
       { id: 'ui-directory-picker-browse', name: '@deepseek-ai/dsh-client-ui-directory-picker-browse' },
     ] },
-    // The open-in-app header button reflects the host application probe —
-    // whatever editors and terminals the RUNNING machine has installed — so
-    // its presence and label would vary per host and platform. Pin both rows
-    // off (routes and surface); the packages' own composition and jsdom tests
-    // cover the button.
-    { id: 'open-in-app', disabled: true },
-    { id: 'ui-open-in-app', disabled: true },
+    // Ordinary scenarios exclude host-dependent application discovery. The
+    // Open In scenario supplies launch facts that suppress every native probe.
+    { id: 'open-in-app', disabled: options.openInAppEnvironment === undefined },
+    { id: 'ui-open-in-app', disabled: options.openInAppEnvironment === undefined },
     ...options.agentPresets === undefined
       ? []
       // Never the derived harness-home root: a developer's own presets must not
@@ -638,6 +638,7 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
   // the temp workspace so tool cwd, session cwd, and fixtures agree.
   const originalCwd = process.cwd()
   const ctx = new Context()
+  if (options.openInAppEnvironment !== undefined) ctx.provide(DSH_LAUNCH_ENVIRONMENT_KEY, options.openInAppEnvironment)
   const observedSessions = new Map<SessionId, Session>()
   const stopObservingSessions = ctx.on('session/created', (session) => {
     observedSessions.set(session.id, session)
@@ -1079,9 +1080,10 @@ async function assertReplaySession(
 }
 
 /**
- * Record-mode fixture write-back: harvest the live session, scrub request
- * headers to {{system}}/{{tools}}, tokenize the run-local cwd and Harness Home, redact opaque
- * identities with typed relationship-preserving tokens, and write the fixture.
+ * Record-mode fixture write-back: harvest the live session, scrub the
+ * system-prompt text to {{system}} and header tool schemas to {{tools}},
+ * tokenize the run-local cwd, redact opaque identities with typed
+ * relationship-preserving tokens, and write the fixture.
  * A manifest-retained historical generation makes the write-back a no-op.
  * @param scaffold - the record-mode scaffold.
  * @param sessionId - the driven session.
@@ -1554,7 +1556,7 @@ export async function assertFixtureInventory(dir: string, expected: string[]): P
   }
   for (const entry of artifacts.filter(name => name.endsWith('.jsonl'))) {
     const content = await readFile(join(dir, entry), 'utf8')
-    expect(scrubRequestHeaders(content), `${dir}/${entry} carries request-header bulk`).toBe(content)
+    expect(scrubModelRequestBulk(content), `${dir}/${entry} carries prompt text or tool-schema bulk`).toBe(content)
     expect(redactSessionSnapshotIds([content]), `${dir}/${entry} carries unredacted identities`).toEqual([content])
   }
 }

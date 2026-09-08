@@ -2,6 +2,7 @@
 
 import {
   createAssistantMessage,
+  createSystemMessage,
   createToolResultMessage,
   createUserMessage,
 } from '@deepseek-ai/dsh-llm/message'
@@ -686,6 +687,9 @@ function fixtureSettledStream(
   return stream
 }
 
+/** Rendered system prompt of the fx-alpha history: surface node 0. */
+const FIXTURE_SYSTEM_PROMPT = '你是 DeepSeek Harness 的 fixture 助手。用简洁的中文回答，并在需要时调用工具。'
+
 /** fx-alpha history script: 75 turns (~150+ messages -> 4 pages at PAGE_MESSAGES=50),
  *  mixing reasoning blocks / tool call+result / context. */
 function buildAlphaLog(): SessionEvent[] {
@@ -719,6 +723,13 @@ function buildAlphaLog(): SessionEvent[] {
   })
   for (let turn = 0; turn < 60; turn++) {
     push({ type: 'turn/start', data: { turn } })
+    // The rendered system prompt is surface node 0, ahead of the first user message.
+    if (turn === 0) {
+      push({
+        type: 'system/message', surfaceOp: 'append',
+        data: { turn, step: 0, message: createSystemMessage(FIXTURE_SYSTEM_PROMPT, '@deepseek-ai/dsh-system-prompt') },
+      })
+    }
     const userSeq = push({
       type: 'user/message', surfaceOp: 'append',
       data: userMessage(text(turn === 59 ? USER_MARKDOWN_LITERAL : `问题 ${turn}：fixture 历史消息，用于翻页与渲染验收。`)),
@@ -855,13 +866,13 @@ function buildAlphaLog(): SessionEvent[] {
     push({ type: 'tool/call', data: { turn, step: 0, callId, name: 'run_code', arguments: args } })
     const dispatchPair = (n: number, name: string, dispatchArgs: Record<string, unknown>, resultText: string, isError = false): void => {
       push({
-        type: 'tool/code-dispatch-start',
-        data: { rootCallId: callId, parentCallId: callId, subCallId: `${callId}:code:${n}`, name, arguments: dispatchArgs },
+        type: 'tool/ptc-dispatch-start',
+        data: { rootCallId: callId, parentCallId: callId, subCallId: `${callId}:ptc:${n}`, name, arguments: dispatchArgs },
       })
       push({
-        type: 'tool/code-dispatch',
+        type: 'tool/ptc-dispatch',
         data: {
-          rootCallId: callId, parentCallId: callId, subCallId: `${callId}:code:${n}`, name,
+          rootCallId: callId, parentCallId: callId, subCallId: `${callId}:ptc:${n}`, name,
           arguments: dispatchArgs, isError, content: [{ type: 'text', text: resultText }],
         },
       })
@@ -1255,23 +1266,35 @@ function estimateFixtureContent(blocks: readonly ContentBlock[]): number {
   }, 0)
 }
 
-/** Fixture parallel of token-meter's heuristic context-composition projection. */
+/**
+ * Fixture parallel of token-meter's heuristic context-composition projection.
+ * The system prompt is the system-role surface node; it prices as text plus
+ * role framing with no block overhead and stays out of the message figure.
+ */
 function contextBreakdownOf(log: readonly SessionEvent[]): FixtureContextBreakdownProjection {
   const headerEvent = log.findLast(event => event.type === 'request/header')
   const header = headerEvent === undefined
     ? undefined
     : headerEvent.data.header
+  let systemTokens = 0
   let messageTokens = 0
   for (const seq of foldSurface(log).nodes) {
     const event = log[seq]
     if (event === undefined) continue
     const message = deriveEventMessage(event)
-    if (message !== null) messageTokens += estimateFixtureContent(message.content) + ROLE_OVERHEAD
+    if (message === null) continue
+    if (message.role === 'system') {
+      const characters = message.content.reduce(
+        (total, block) => total + (block.type === 'text' ? block.text.length : JSON.stringify(block).length),
+        0,
+      )
+      systemTokens = Math.ceil(characters / CHARS_PER_TOKEN) + ROLE_OVERHEAD
+      continue
+    }
+    messageTokens += estimateFixtureContent(message.content) + ROLE_OVERHEAD
   }
   return {
-    systemTokens: header?.system === undefined
-      ? 0
-      : Math.ceil(header.system.length / CHARS_PER_TOKEN) + ROLE_OVERHEAD,
+    systemTokens,
     toolsTokens: header?.tools === undefined || header.tools.length === 0
       ? 0
       : Math.ceil(JSON.stringify(header.tools).length / CHARS_PER_TOKEN) + BLOCK_OVERHEAD,
@@ -1420,6 +1443,7 @@ function projectionFramesOf(
     })
   }
   if (type === 'request/header'
+    || type === 'system/message'
     || type === 'user/message'
     || type === 'assistant/message'
     || type === 'tool/result') {

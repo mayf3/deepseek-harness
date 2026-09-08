@@ -6,7 +6,6 @@
 /native/ @mektpoy
 /patches/ @mektpoy
 /python/ @LegGasai
-/scripts/ @turtle1999
 /vendor/ @turtle1999
 /website/ @LegGasai
 /packages/acp/ @mektpoy
@@ -18,7 +17,7 @@
 /packages/code-runtime/ @Chinesezjc
 /packages/compaction/ @imccyu
 /packages/context/ @turtle1999
-/packages/core/ @tianyicui @turtle1999 @mektpoy
+/packages/core/ @turtle1999 @mektpoy
 /packages/credentials/ @mektpoy
 /packages/e2b/ @mektpoy
 /packages/experimental/ @mektpoy
@@ -41,7 +40,7 @@
 /packages/sandbox/ @mektpoy
 /packages/schedule/ @imccyu
 /packages/sdk/ @mektpoy
-/packages/session/ @tianyicui @turtle1999 @mektpoy
+/packages/session/ @turtle1999 @mektpoy
 /packages/session-query/ @mektpoy
 /packages/settings/ @mektpoy
 /packages/shell/ @mektpoy

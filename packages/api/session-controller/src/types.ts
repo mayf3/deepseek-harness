@@ -407,23 +407,29 @@ export interface SessionWireHeader {
   readonly agentPreset?: string
 }
 
-/** Browser wire form of one Session surface operation. */
+/** Browser wire surface operation; replacement endpoints are earlier event seqs in surface order. */
 export type SessionWireSurfaceOp =
   | 'append'
-  | { readonly op: 'replace'; readonly start: number; readonly end: number }
+  | { readonly op: 'replace'; readonly startSeq: number; readonly endSeq: number }
 
-/** One history-page record. V2 embeds compact Assistant streams inside events. */
+/** One history-page record with compact Assistant streams embedded inside events. */
 export type SessionHistoryRecord = SessionEventEntry
 
-/** Session event wire form; durable readers own recognition of merge-extensible event names. */
+/**
+ * Exact Session event envelope accepted by the Client journal adapter.
+ * Surface events require surfaceOp; only non-Assistant surface events may cite earlier sources.
+ * Durable readers own recognition of merge-extensible event names.
+ */
 export interface SessionWireEvent {
   readonly type: string
   readonly seq: number
   readonly time: number
   readonly data: JsonValue
   readonly ignorable?: true
-  readonly sourceEventSeqs?: number[]
-  readonly surfaceOp?: SessionWireSurfaceOp
+  /** Earlier sources on current surface events; opaque JSON on unknown ignorable events. */
+  readonly sourceEventSeqs?: JsonValue
+  /** Canonical placement on current surface events; opaque JSON on unknown ignorable events. */
+  readonly surfaceOp?: JsonValue
 }
 
 /** One message-aligned backwards-history request. */
