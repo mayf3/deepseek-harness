@@ -601,7 +601,7 @@ describe('presented files', () => {
 
 
 it.each([null, [], 'invalid'])('declines non-object delivery data: %j', (data) => {
-  expect(deliverablesDefinition.match(at(1, 'deliverables/presented', data))).toBeNull()
+  expect(deliverablesDefinition.match(at(1, 'deliverables/presented', data).event)).toBeNull()
 })
 
 it.each([{}, { turn: '1', callId: 'bad', files: [] },
