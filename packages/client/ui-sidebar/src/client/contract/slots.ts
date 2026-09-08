@@ -30,8 +30,6 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
      * the sidebar owns the button and resolves its label from list metadata.
      */
     'sidebar.panellist': { kind: 'list'; scope: 'root'; owner: SidebarPanelIconOwnerProps }
-    /** Global panel titles keyed by list id, with the list label as fallback. */
-    'sidebar.panellist.title': { kind: 'keyed'; scope: 'root'; owner: SidebarPanelTitleOwnerProps }
     /**
      * The workspace/session browsing region: section header, search, the
      * grouped/flat session list, and every workspace dialog. Declared by this
@@ -73,19 +71,13 @@ export interface SidebarPanelIconOwnerProps {
   active: boolean
 }
 
-/** Title presentation supplied by the global panel row. */
-export interface SidebarPanelTitleOwnerProps {
-  /** Whether this panel is selected in the main column. */
-  active: boolean
-}
-
 /** Serializable metadata for one active global panel list registration. */
 export interface SidebarPanelMetadata {
   /** List id and matching main panel key. */
   id: MainPanelId
   /** Ascending row order; ties retain registration order. */
   order: number
-  /** Localized accessible name and fallback title. */
+  /** Row title and accessible name: resolved label, or the id when omitted. */
   label: string
 }
 
@@ -128,8 +120,8 @@ export type SidebarRootInjected = {
   startSession: (workspaceId?: WorkspaceId) => void
   /** Toggle the sidebar column through the layout service. */
   toggleSidebar: () => void
-  /** Select a global panel, or the conversation when null. */
-  selectPanel: (id: MainPanelId | null) => void
+  /** Select the global panel addressed by a sidebar row. */
+  selectPanel: (id: MainPanelId) => void
   /** Private reactive sources bound to framework selector hooks. */
   hooks: { panels: ObservableSnapshot<readonly SidebarPanelMetadata[]> }
 }
@@ -145,7 +137,6 @@ export type SidebarRootComponentProps =
     | 'sidebar.brand.mark'
     | 'sidebar.brand.name'
     | 'sidebar.panellist'
-    | 'sidebar.panellist.title'
     | 'sidebar.workspaces'
     | 'sidebar.settings'
     | 'sidebar.footer.action'

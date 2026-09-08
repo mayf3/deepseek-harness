@@ -53,7 +53,7 @@ type PanelRowProps =
   & Pick<SidebarSectionOwnerProps, 'wide'>
   & Pick<PropsRuntime<'sidebar'>, 'usePanelInfo'>
   & Pick<InjectFace<SidebarRootInjected>, 'selectPanel'>
-  & PropsRenderSlots<'sidebar.panellist' | 'sidebar.panellist.title'>
+  & PropsRenderSlots<'sidebar.panellist'>
 
 /** Each panel row subscribes only to its own selection state. */
 function PanelRow({ id, label, wide, usePanelInfo, selectPanel, renderSlot }: PanelRowProps) {
@@ -72,7 +72,7 @@ function PanelRow({ id, label, wide, usePanelInfo, selectPanel, renderSlot }: Pa
         </span>
         {wide && (
           <span className={clsx(css.panelTitle, css.wide)}>
-            {renderSlot('sidebar.panellist.title', { active }, { entryKey: id, fallback: label })}
+            {label}
           </span>
         )}
       </button>

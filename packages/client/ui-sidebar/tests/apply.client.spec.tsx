@@ -1,19 +1,34 @@
 /** Sidebar shell slot registration and its Session/layout callbacks. */
-import { Context } from '@deepseek-ai/cordis'
-import { describe, expect, it, vi } from 'vitest'
+import { Context, type Fiber } from '@deepseek-ai/cordis'
+import { afterEach, describe, expect, expectTypeOf, it, vi } from 'vitest'
 import { SlotRegistry } from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type { PropsRenderSlots } from '@deepseek-ai/dsh-client-ui-slots'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import { apply, inject } from '@deepseek-ai/dsh-client-ui-sidebar/client'
 import type { SidebarRootInjected } from '@deepseek-ai/dsh-client-ui-sidebar/client'
+import type { MainPanelId } from '@deepseek-ai/dsh-client-ui-layout/client'
 import { apply as hostApply } from '../src/index.ts'
+
+const owners = new Set<Fiber>()
+afterEach(async () => {
+  try {
+    for (const owner of owners) await owner.dispose()
+  } finally {
+    owners.clear()
+  }
+})
 
 function SidebarFrame({ renderSlot }: PropsRenderSlots<'sidebar'>) {
   return renderSlot('sidebar', { collapsed: false, width: 300 })
 }
 
 async function bench(declare = true) {
-  const ctx = new Context()
+  const root = new Context()
+  let ctx: Context | undefined
+  const owner = root.plugin((owned: Context) => { ctx = owned })
+  owners.add(owner)
+  await owner.await()
+  if (ctx === undefined) throw new Error('the sidebar fixture owner did not activate')
   await ctx.plugin(SlotRegistry).await()
   const layout = { toggleSidebar: vi.fn(), selectPanel: vi.fn() }
   const uiWorkspace = { startSession: vi.fn() }
@@ -52,7 +67,6 @@ describe('ui-sidebar apply', () => {
     expect(b.slots.spec('sidebar.settings')).toEqual({ kind: 'single', scope: 'root' })
     expect(b.slots.spec('sidebar.footer.action')).toEqual({ kind: 'list', scope: 'root' })
     expect(b.slots.spec('sidebar.panellist')).toEqual({ kind: 'list', scope: 'root' })
-    expect(b.slots.spec('sidebar.panellist.title')).toEqual({ kind: 'keyed', scope: 'root' })
     // Copy rides the standard locale seat, not the inject face.
     expect(b.slots.entries('sidebar')[0]!.locale).toBe('sidebar')
     const injected = (b.slots.entries('sidebar')[0]!.inject as () => SidebarRootInjected)()
@@ -66,6 +80,10 @@ describe('ui-sidebar apply', () => {
     expect(b.uiWorkspace.startSession).toHaveBeenLastCalledWith(undefined)
     injected.toggleSidebar()
     expect(b.layout.toggleSidebar).toHaveBeenCalledOnce()
+    const panelId = 'custom-panel' as MainPanelId
+    injected.selectPanel(panelId)
+    expect(b.layout.selectPanel).toHaveBeenCalledExactlyOnceWith(panelId)
+    expectTypeOf<Parameters<SidebarRootInjected['selectPanel']>[0]>().toEqualTypeOf<MainPanelId>()
   })
 
   it('waits for the sidebar declaration before registering', async () => {
