@@ -32,6 +32,8 @@ The [LSP backpressure test](../../../../packages/lsp/lsp-stdio/tests/instance.sp
 
 The [whole-queue steering test](../../../../apps/web/tests/steering.e2e.ts) waits for both enabled steering actions and the composer’s queue-steering hint before invoking the shortcut. Optimistic rows can already contain the expected text while the Host queue remains empty. A deferred model-stream barrier keeps question-composer takeover after steering; teardown releases that barrier before closing the browser.
 
+The [workspace-management test](../../../../apps/web/tests/workspace-management.e2e.ts) waits for restored composer focus before the next directory-dialog gesture, because workspace listing can render before Session restoration changes focus. Archive actions stay scoped to the seeded row rather than a captured fallback title that cold loading can replace; durable archive assertions retain the exact seed id.
+
 ### Built-client import classification
 
 The [master Windows run](https://github.com/deepseek-harness/deepseek-harness/actions/runs/34204779455/job/101996934534) also rejects the intentional CSS import exposed by `ui-dockkit`. The [Node import sweep](../../../../packages/experimental/webworker-runtime/tests/compile/transform-corpus-check.ts) admits that exact bundle only when Node reports `ERR_UNKNOWN_FILE_EXTENSION` for its `dockkit.module.css`. Other errors at the same entry still fail, and an entry that imports successfully reports a stale exemption. This preserves the import sweep without requiring a browser-only component library to load its stylesheet under bare Node.
