@@ -37,6 +37,12 @@ type RowPhase = NonNullable<RowView['phase']>
 /** The layer a pack's components are switched in: a row override always lands in the profile's global user layer. */
 const GLOBAL: PluginRowTarget = { kind: 'global' }
 
+/** The list's two groups: packs, which switch as a whole, and everything else, which joins a composition per row. */
+const PACKAGE_GROUPS = [
+  { key: 'bundles', title: 'bundlesTitle', holds: (pkg: PluginPackageView) => pkg.kind === 'bundle' },
+  { key: 'plugins', title: 'pluginsTitle', holds: (pkg: PluginPackageView) => pkg.kind !== 'bundle' },
+] as const satisfies readonly { key: string; title: PluginManagerLocaleKey; holds: (pkg: PluginPackageView) => boolean }[]
+
 const PHASE_KEYS = {
   pending: 'rowPhasePending',
   loading: 'rowPhaseLoading',
@@ -517,14 +523,14 @@ function PackageDetail({
           )}
         {retryable || removable
           ? (
-            <div className={css.actions}>
+            <div className={css.detailActions}>
               {retryable
-                ? <Button variant="ghost" size="sm" disabled={busy} onClick={onRetry}>{t('retryPackage')}</Button>
+                ? <Button variant="outline" size="sm" disabled={busy} onClick={onRetry}>{t('retryPackage')}</Button>
                 : null}
               {removable
                 ? (
                   <Button
-                    variant="ghost"
+                    variant="outline"
                     size="sm"
                     className={css.danger}
                     aria-label={t('uninstallLabel', { name: title })}
@@ -746,34 +752,37 @@ export function PluginManagerSettingsTab(props: PluginManagerSettingsTabProps): 
         )
         : null}
       {loaded && openPkg === undefined
-        ? (
-          <section className={css.group} data-plugin-scope="global">
-            <div className={css.groupTitleRow}>
-              <h3 className={css.groupTitle}>{t('installedTitle')}</h3>
-              <span className={css.count} data-plugin-count={state.packages.length}>{`${String(state.packages.length)} ${t('countUnit')}`}</span>
-            </div>
-            {state.packages.length === 0
-              ? <p className={css.empty}>{t('empty')}</p>
+        ? state.packages.length === 0
+          ? <p className={css.empty}>{t('empty')}</p>
+          : PACKAGE_GROUPS.map((group) => {
+            const members = state.packages.filter(group.holds)
+            return members.length === 0
+              ? null
               : (
-                <ul className={css.cards}>
-                  {state.packages.map(pkg => (
-                    <PackageCard
-                      key={pkg.name}
-                      pkg={pkg}
-                      t={t}
-                      busy={state.busy.includes(pkg.name)}
-                      presets={state.presets}
-                      globalModules={state.globalModules}
-                      presetName={presetName}
-                      onOpen={() => { setOpenPackage(pkg.name) }}
-                      onSetEnabled={(enabled) => { props.setEnabled(pkg.name, enabled) }}
-                      onAddRow={(declaredName, target) => { props.addRow(pkg.name, declaredName, target) }}
-                    />
-                  ))}
-                </ul>
-              )}
-          </section>
-        )
+                <section key={group.key} className={css.group} data-plugin-scope="global" data-plugin-group={group.key}>
+                  <div className={css.groupTitleRow}>
+                    <h3 className={css.groupTitle}>{t(group.title)}</h3>
+                    <span className={css.count} data-plugin-count={members.length}>{`${String(members.length)} ${t('countUnit')}`}</span>
+                  </div>
+                  <ul className={css.cards}>
+                    {members.map(pkg => (
+                      <PackageCard
+                        key={pkg.name}
+                        pkg={pkg}
+                        t={t}
+                        busy={state.busy.includes(pkg.name)}
+                        presets={state.presets}
+                        globalModules={state.globalModules}
+                        presetName={presetName}
+                        onOpen={() => { setOpenPackage(pkg.name) }}
+                        onSetEnabled={(enabled) => { props.setEnabled(pkg.name, enabled) }}
+                        onAddRow={(declaredName, target) => { props.addRow(pkg.name, declaredName, target) }}
+                      />
+                    ))}
+                  </ul>
+                </section>
+              )
+          })
         : null}
       <InstallDialog
         install={state.install}

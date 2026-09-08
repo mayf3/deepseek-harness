@@ -25,14 +25,17 @@
   - tabpanel "插件管理":
     - button "刷新"
     - button "添加"
-    - heading "已安装" [level=3]
-    - text: 2 个
+    - heading "插件包" [level=3]
+    - text: 1 个
     - list:
       - listitem:
         - text: "示例组合包 Web e2e fixture: a bundle whose one row is an inert plugin."
         - switch "启用 示例组合包"
         - button "查看 示例组合包":
           - img
+    - heading "插件" [level=3]
+    - text: 1 个
+    - list:
       - listitem:
         - text: "示例插件 Web e2e fixture: a plain plugin module with no bundle, added to a composition per row."
         - button "加入到…"

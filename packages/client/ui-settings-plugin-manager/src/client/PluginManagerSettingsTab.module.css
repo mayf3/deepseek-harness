@@ -213,6 +213,15 @@
 /* The destructive text action in a card body. */
 .danger {
   color: var(--dsw-alias-state-error-primary);
+  border-color: var(--dsw-alias-state-error-primary);
+}
+
+/* Retry and uninstall close the page at its bottom-right corner. */
+.detailActions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
 }
 
 .actions {

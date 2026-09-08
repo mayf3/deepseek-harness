@@ -140,7 +140,11 @@ describe('PluginManagerSettingsTab', () => {
       ],
     })
     expect(screen.getByText(en.restartBanner.replace('{names}', 'Pending, untitled'))).toBeTruthy()
-    expect(document.querySelector('[data-plugin-count]')?.getAttribute('data-plugin-count')).toBe('10')
+    // Packs and plugins list in their own groups; a library counts among the plugins.
+    expect(document.querySelector('[data-plugin-group="bundles"] [data-plugin-count]')?.getAttribute('data-plugin-count')).toBe('6')
+    expect(document.querySelector('[data-plugin-group="plugins"] [data-plugin-count]')?.getAttribute('data-plugin-count')).toBe('4')
+    expect(screen.getByRole('heading', { name: en.bundlesTitle })).toBeTruthy()
+    expect(screen.getByRole('heading', { name: en.pluginsTitle })).toBeTruthy()
     // No kind tag, no running or off tag: the switch says that.
     expect(screen.getByText(en.statusProblem)).toBeTruthy()
     expect(screen.getAllByText(en.statusRestart)).toHaveLength(2)
