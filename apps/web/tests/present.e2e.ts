@@ -16,7 +16,7 @@ import {
 import { connectFreshWorkspace, newEnglishPage } from './support.ts'
 
 const DIR = fileURLToPath(new URL('../../../snapshots/web/present', import.meta.url))
-const FIXTURE = join(DIR, 'session.v2.jsonl')
+const FIXTURE = join(DIR, 'session.v3.jsonl')
 const MODE = webSnapshotMode()
 const PROMPT = 'Use one run_code program to do the following in order. Call present for missing.txt and catch its error without creating that file. '
   + 'Use bash to run exactly `printf "DELIVERED_REPORT\\n" > report.txt; printf "DELIVERED_NOTE\\n" > 说明.txt`. '
@@ -102,7 +102,7 @@ fs.appendFileSync(${JSON.stringify(openLog)}, JSON.stringify({ path: process.arg
         ])
       }
     }
-    expect(events.some(event => event.type === 'tool/code-dispatch' && event.data.name === 'present' && event.data.isError)).toBe(true)
+    expect(events.some(event => event.type === 'tool/ptc-dispatch' && event.data.name === 'present' && event.data.isError)).toBe(true)
     expect(events.some(event => event.type === 'tool/result' && event.data.message.content[0].isError)).toBe(true)
   }, 200_000)
 
