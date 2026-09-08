@@ -59,7 +59,6 @@ import {
   assertEntriesLoaded, claimLayerIds,
   composeEntries,
   healProfilesModuleFallback,
-  loadOptionalPatches,
   loadOverlayPatches,
   loadProfile,
   ProfileRuntime,
@@ -746,6 +745,7 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
       // The scaffold's own patches, with the id ownership the runtime answers `originOf` from.
       const compose = (): ComposedStack => ({
         patches, layers: [{ label: 'scaffold', patches }], owners: claimLayerIds(profile.layers).owners, conflicts: [], skippedBundles: [],
+        userDisabledRowIds: new Set<string>(),
       })
       await ctx.plugin(ProfileRuntime, {
         profile,
@@ -754,7 +754,6 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
         loadProfile: readProfile,
         compose,
         rootEntry: () => [...ctx.loader.entries()].find(entry => entry.id === rootIncludeId),
-        readUserPatches: () => loadOptionalPatches('dsh', profile.patchPath) ?? [],
       })
     }
     if (options.welcomeNoticePending !== true) {
