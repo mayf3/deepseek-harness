@@ -42,52 +42,55 @@ function fixture(options: {
   return root
 }
 
-function run(root: string) {
-  return spawnSync(process.execPath, [
+function run(root: string, timeoutMs: number) {
+  const result = spawnSync(process.execPath, [
     '--import', 'tsx', runner,
     '--packages-root', root,
   ], {
     cwd: repositoryRoot,
     encoding: 'utf8',
-    timeout: 5_000,
+    timeout: timeoutMs,
   })
+  expect(result.error, result.stderr).toBeUndefined()
+  expect(result.signal, result.stderr).toBeNull()
+  return result
 }
 
 describe('publint package runner', () => {
-  it('lints recursively declared files from an in-memory publication view', () => {
-    const result = run(fixture())
+  it('lints recursively declared files from an in-memory publication view', ({ task }) => {
+    const result = run(fixture(), task.timeout)
     expect(result.status, result.stderr).toBe(0)
     expect(result.stdout).toContain('linting 1 package(s)')
     expect(result.stdout).toContain('All good!')
   })
 
-  it('rejects an export that exists in the workspace but is not published', () => {
-    const result = run(fixture({ exportPath: './unpublished.js' }))
+  it('rejects an export that exists in the workspace but is not published', ({ task }) => {
+    const result = run(fixture({ exportPath: './unpublished.js' }), task.timeout)
     expect(result.status).toBe(1)
     expect(result.stdout).toContain('unpublished.js')
   })
 
-  it('rejects a public export whose built file is missing', () => {
-    const result = run(fixture({ exportPath: './lib/missing.js' }))
+  it('rejects a public export whose built file is missing', ({ task }) => {
+    const result = run(fixture({ exportPath: './lib/missing.js' }), task.timeout)
     expect(result.status).toBe(1)
     expect(result.stdout).toContain('missing.js')
   })
 
-  it('accepts published relative JavaScript and CSS targets', () => {
+  it('accepts published relative JavaScript and CSS targets', ({ task }) => {
     const result = run(fixture({
       indexSource: "export { helper } from './helper.js'\nimport './theme.css'\n",
       files: {
         'lib/helper.js': 'export const helper = true\n',
         'lib/theme.css': ':root {}\n',
       },
-    }))
+    }), task.timeout)
     expect(result.status, result.stderr).toBe(0)
   })
 
-  it('rejects unpublished relative JavaScript and CSS targets', () => {
+  it('rejects unpublished relative JavaScript and CSS targets', ({ task }) => {
     const result = run(fixture({
       indexSource: "export { helper } from './missing.js'\nimport './missing.css'\n",
-    }))
+    }), task.timeout)
     expect(result.status).toBe(1)
     expect(result.stderr).toContain('imports "./missing.js"')
     expect(result.stderr).toContain('imports "./missing.css"')

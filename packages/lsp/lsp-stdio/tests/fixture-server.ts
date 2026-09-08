@@ -13,7 +13,7 @@
  * - LSP_FAKE_EXIT_AFTER_REPLY: "1" exits the process right after answering a textDocument/* request,
  *   simulating a server that dies while idle so the pool holds a dead instance (eviction test).
  * - LSP_FAKE_OPEN_MARKER: appends each didOpen document text as one JSON line to this path.
- * - LSP_FAKE_INITIALIZED_MARKER: records when the initialized notification is received.
+ * - LSP_FAKE_INITIALIZED_MARKER: records initialized receipt after any requested stdin pause.
  * - LSP_FAKE_PAUSE_STDIN_AFTER_INITIALIZED: "1" stops consuming stdin after initialized.
  * - LSP_FAKE_EXIT_DELAY_MS / LSP_FAKE_EXIT_MARKER: delay protocol exit and record exit/termination.
  * - LSP_FAKE_NO_SHUTDOWN: "1" ignores the shutdown request (forces kill escalation).
@@ -144,8 +144,8 @@ function handle(message: { id?: number; method?: string; params?: unknown; resul
     return
   }
   if (method === 'initialized') {
-    if (initializedMarker !== undefined) appendFileSync(initializedMarker, 'INITIALIZED\n')
     if (pauseStdinAfterInitialized) process.stdin.pause()
+    if (initializedMarker !== undefined) appendFileSync(initializedMarker, 'INITIALIZED\n')
     return
   }
   if (method === 'textDocument/didClose') return
