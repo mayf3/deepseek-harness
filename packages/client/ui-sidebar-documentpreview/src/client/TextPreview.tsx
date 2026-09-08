@@ -10,15 +10,16 @@
  * with the same reload. The type's controls, viewer choice, wrap and reload, sit at the end of
  * the path row; the Sidebar's strip carries none of them.
  */
-import { useEffect, useMemo, useRef, useState } from 'react'
-import type { ReactNode } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import type { ReactNode, RefObject } from 'react'
 import clsx from 'clsx'
 import type { ObservableSnapshot } from '@deepseek-ai/dsh-client-store'
 import type { InjectFace, PropsLocale, PropsRenderSlots, PropsRuntime, PropsStore } from '@deepseek-ai/dsh-client-ui-slots'
-import { IconRefreshOutline16, Menu } from '@deepseek-ai/dsh-client-ui-primitives'
+import { FileTypeIcon, IconRefreshOutline16, Menu, Tooltip, classifyFileType } from '@deepseek-ai/dsh-client-ui-primitives'
+import { pathPartsOf } from '@deepseek-ai/dsh-util-workspace-path'
 import type { TextInjected } from './face.ts'
 import { failureLine } from './failure-line.ts'
-import { IconWrapOutline16 } from './icons.tsx'
+import { IconNowrapFill16, IconWrapFill16 } from './icons.tsx'
 import { LoadingIndicator } from './LoadingIndicator.tsx'
 import { hostFileOf } from './rpc.ts'
 import type { TextStore } from './store.ts'
@@ -31,6 +32,29 @@ import css from './TextPreview.module.css'
 
 export { linesOf, loadedPages, lastLineLoaded, scrollToLine } from './text/lines.ts'
 export type { LoadedPage } from './text/lines.ts'
+
+/** Keep the path fade in sync with whether its full text fits the header row. */
+function usePathClipped(
+  box: RefObject<HTMLDivElement | null>,
+  text: RefObject<HTMLSpanElement | null>,
+  path: string,
+  shown: boolean,
+): void {
+  useLayoutEffect(() => {
+    const outer = box.current
+    const inner = text.current
+    if (outer === null || inner === null) return undefined
+    const apply = (): void => {
+      if (inner.offsetWidth > outer.clientWidth) outer.dataset.textpreviewPathClipped = ''
+      else delete outer.dataset.textpreviewPathClipped
+    }
+    apply()
+    const observer = typeof ResizeObserver === 'undefined' ? undefined : new ResizeObserver(apply)
+    observer?.observe(outer)
+    observer?.observe(inner)
+    return () => { observer?.disconnect() }
+  }, [box, text, path, shown])
+}
 
 /** Private registration inputs; the framework binds the registry source to useDocumentPreviews. */
 export interface TextPreviewInjected extends TextInjected {
@@ -70,7 +94,11 @@ export function TextPreview({
   const mode = selected?.loading
   const current = (state?.mode ?? 'text-pages') === mode ? state : undefined
   const bodyRef = useRef<HTMLDivElement | null>(null)
+  const pathRef = useRef<HTMLDivElement | null>(null)
+  const pathTextRef = useRef<HTMLSpanElement | null>(null)
   const [menuOpen, setMenuOpen] = useState(false)
+  const displayPath = meta.value?.absolutePath ?? current?.complete?.absolutePath ?? file.path
+  usePathClipped(pathRef, pathTextRef, displayPath, state !== undefined)
   // Every tab of this type is a `file` resource address, so its params are the
   // `file` type's; the union is narrowed on the one field read, not validated.
   const line = navigation.params !== undefined && 'line' in navigation.params ? navigation.params.line : undefined
@@ -142,7 +170,7 @@ export function TextPreview({
     )
   }
   const next = loadedThrough + 1
-  const displayPath = meta.value?.absolutePath ?? current?.complete?.absolutePath ?? file.path
+  const { directory, name } = pathPartsOf(displayPath)
   const observedVersion = meta.value?.version
   const changed = current?.version !== undefined && observedVersion !== undefined
     && observedVersion !== current.version && observedVersion !== current.observedVersion
@@ -188,7 +216,12 @@ export function TextPreview({
           </p>
         )}
       <div className={css.header}>
-        <div className={css.path} title={displayPath} data-textpreview-path>{displayPath}</div>
+        <div ref={pathRef} className={css.path} title={displayPath} data-textpreview-path>
+          <span ref={pathTextRef} className={css.pathText}>
+            {directory !== '' && <span className={css.pathDirectory}>{directory}</span>}
+            <span className={css.pathName}>{name}</span>
+          </span>
+        </div>
         <Menu
           open={menuOpen}
           anchor={(
@@ -205,28 +238,30 @@ export function TextPreview({
           dense
         />
         {selected.wrap === true && (
+          <Tooltip label={t(state.wrap ? 'wrap.disable' : 'wrap.enable')} side="bottom" delayMs={500}>
+            <button
+              type="button"
+              className={css.tool}
+              aria-pressed={state.wrap}
+              aria-label={t(state.wrap ? 'wrap.disable' : 'wrap.enable')}
+              data-textpreview-tool="wrap"
+              onClick={() => { actions.toggledWrap(tab.id) }}
+            >
+              {state.wrap ? <IconNowrapFill16 /> : <IconWrapFill16 />}
+            </button>
+          </Tooltip>
+        )}
+        <Tooltip label={t('reload')} side="bottom" delayMs={500}>
           <button
             type="button"
-            className={clsx(css.tool, state.wrap && css.toolOn)}
-            aria-pressed={state.wrap}
-            aria-label={t('wrap')}
-            title={t('wrap')}
-            data-textpreview-tool="wrap"
-            onClick={() => { actions.toggledWrap(tab.id) }}
+            className={css.tool}
+            aria-label={t('reload')}
+            data-textpreview-tool="reload"
+            onClick={reload}
           >
-            <IconWrapOutline16 />
+            <IconRefreshOutline16 />
           </button>
-        )}
-        <button
-          type="button"
-          className={css.tool}
-          aria-label={t('reload')}
-          title={t('reload')}
-          data-textpreview-tool="reload"
-          onClick={reload}
-        >
-          <IconRefreshOutline16 />
-        </button>
+        </Tooltip>
       </div>
       <div
         ref={bodyRef}
@@ -249,19 +284,35 @@ export function TextPreview({
           entryKey: selected.id, hookContext: useTabInfo,
           fallback: <p className={css.statusLine}>{t('rendererUnavailable', { name: selected.title() })}</p>,
         })}
-        {current?.failure !== undefined && (
-          <p className={css.statusLine} data-textpreview-failed={current.failure.code}>
-            <span>{failureLine(t, current.failure)}</span>
-            <button
-              type="button"
-              className={css.action}
-              data-textpreview-retry
-              onClick={loadNext}
-            >
-              {t('retry')}
-            </button>
-          </p>
-        )}
+        {current?.failure !== undefined && (hasContent
+          ? (
+            <p className={css.statusLine} data-textpreview-failed={current.failure.code}>
+              <span>{failureLine(t, current.failure)}</span>
+              <button
+                type="button"
+                className={css.action}
+                data-textpreview-retry
+                onClick={loadNext}
+              >
+                {t('retry')}
+              </button>
+            </p>
+          )
+          : (
+            <div className={css.empty} data-textpreview-failed={current.failure.code}>
+              <FileTypeIcon kind={classifyFileType(name)} size={36} className={css.emptyIcon} />
+              <p className={css.emptyLine}>{failureLine(t, current.failure)}</p>
+              <button
+                type="button"
+                className={css.retry}
+                data-textpreview-retry
+                onClick={loadNext}
+              >
+                <IconRefreshOutline16 size={14} />
+                {t('retry')}
+              </button>
+            </div>
+          ))}
         {mode === 'text-pages' && current !== undefined && loaded.length > 0 && !current.eof && current.failure === undefined && (
           <button
             type="button"
