@@ -294,6 +294,8 @@
   line-height: 18px;
   color: var(--dsw-alias-state-error-primary);
   overflow-wrap: anywhere;
+  /* The Host's captured tail, when no output streamed, keeps its lines. */
+  white-space: pre-wrap;
 }
 
 .partsHead .subLabel {
@@ -329,11 +331,25 @@
   color: var(--dsw-alias-label-tertiary);
 }
 
+/* Wider than the default dialog: pnpm's lines are long, and the terminal keeps them unwrapped. */
+.installDialog {
+  width: min(600px, 100%);
+}
+
 .installBody {
   display: flex;
   flex-direction: column;
   gap: 12px;
   min-width: 0;
+}
+
+/* Where pnpm installs: the profile directory the first run names. */
+.installLocation {
+  margin: 0;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-tertiary);
+  overflow-wrap: anywhere;
 }
 
 .installField {
@@ -416,30 +432,14 @@
   background: color-mix(in srgb, var(--dsw-alias-state-warning-primary, var(--dsw-alias-state-business-primary)) 12%, transparent);
 }
 
-.logFold {
-  font-size: 12.5px;
-}
-
-.logFold summary {
-  cursor: pointer;
-  color: var(--dsw-alias-label-tertiary);
-}
-
-/* The log scrolls on the dialog's elevated surface: rebind the bar to the elevation pair. */
-.log {
-  --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2);
-  --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);
-  max-height: 200px;
-  margin: 8px 0 0;
-  padding: 10px 12px;
-  overflow: auto;
-  border-radius: 8px;
-  background: var(--dsw-alias-bg-layer-1);
-  font-family: var(--dsw-font-mono, monospace);
-  font-size: 12px;
-  line-height: 18px;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
+/* The install terminal: the shared TerminalBlock at the bash card's smaller
+   size, its output capped so an expanded log scrolls inside the dialog. */
+.terminal {
+  --dsl-terminal-font: var(--dsw-font-markdown-code-block-small);
+  --dsl-terminal-line-height: 18px;
+  --dsl-terminal-output-max-height: 240px;
+  margin: 4px 0 0;
+  border: 0.5px solid var(--dsw-alias-border-l1);
 }
 
 .dependents {

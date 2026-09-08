@@ -39,6 +39,19 @@ export type ManagerNotice =
     readonly rowId?: string
   }
 
+/** One pnpm run of an install, as the dialog's terminal draws it. */
+export interface InstallRun {
+  readonly jobId: string
+  /** The command line the Host ran, space-joined. */
+  readonly command: string
+  /** The directory the Host ran pnpm in: the profile directory. */
+  readonly cwd: string
+  /** stdout and stderr interleaved as they arrived, pnpm's colour escapes included. */
+  readonly output: string
+  /** pnpm's exit code once the run settled, null when it ended by a signal or never started; absent while it runs. */
+  readonly exitCode?: number | null
+}
+
 /** The install dialog. */
 export interface InstallState {
   readonly open: boolean
@@ -47,8 +60,8 @@ export interface InstallState {
   /** Whether a newly installed bundle is enabled right away. */
   readonly enable: boolean
   readonly phase: 'idle' | 'running' | 'done' | 'failed'
-  /** pnpm's output so far, stdout and stderr interleaved as they arrived. */
-  readonly log: string
+  /** The pnpm runs of the open install, in the order they started. */
+  readonly runs: readonly InstallRun[]
   /** Dependencies the last run added and kept, once it finished. */
   readonly installed: readonly string[]
   /** Bundles the run enabled at once. */
@@ -144,6 +157,21 @@ function detailOf(error: { details?: unknown }, field: string): string | undefin
   return undefined
 }
 
+/** The exit code a pnpm failure's details carry: a number, null for no exit code, undefined when the details carry none. */
+function exitCodeOf(error: { details?: unknown }): number | null | undefined {
+  const details = error.details
+  if (typeof details === 'object' && details !== null && 'exitCode' in details) {
+    const value = (details as Record<string, unknown>).exitCode
+    if (typeof value === 'number' || value === null) return value
+  }
+  return undefined
+}
+
+/** The runs with every one still open settled at `exitCode`. */
+function settledRuns(runs: readonly InstallRun[], exitCode: number | null): readonly InstallRun[] {
+  return runs.map(run => run.exitCode === undefined ? { ...run, exitCode } : run)
+}
+
 /** The Host reason a failure carries, when its details name one; else its message. */
 function reasonOf(error: { message: string; details?: unknown }): string {
   return detailOf(error, 'reason') ?? error.message
@@ -160,7 +188,7 @@ export function rowKey(target: PluginRowTarget, rowId: string): string {
 }
 
 const IDLE_INSTALL: InstallState = {
-  open: false, spec: '', enable: true, phase: 'idle', log: '', installed: [], enabled: [], installedOnly: [], plain: [], removed: [], failure: null,
+  open: false, spec: '', enable: true, phase: 'idle', runs: [], installed: [], enabled: [], installedOnly: [], plain: [], removed: [], failure: null,
 }
 
 /** Reads and mutates the profile's plugins through the `plugins` and `pluginInventory` Remotes. */
@@ -215,7 +243,13 @@ export class PluginManagerController {
         if (this.getSnapshot().install.phase === 'running') return
         this.patch({ install: IDLE_INSTALL })
       },
-      editInstallSpec: (text) => { this.patchInstall({ spec: text }) },
+      editInstallSpec: (text) => {
+        const install = this.getSnapshot().install
+        // A new spec after a settled run starts over: the outcome on screen belongs to the old spec.
+        this.patchInstall(install.phase === 'done' || install.phase === 'failed'
+          ? { ...IDLE_INSTALL, open: true, enable: install.enable, spec: text }
+          : { spec: text })
+      },
       toggleInstallEnable: () => { this.patchInstall({ enable: !this.getSnapshot().install.enable }) },
       runInstall: () => { void this.runInstall() },
       setEnabled: (packageName, enabled) => { void this.setEnabled(packageName, enabled) },
@@ -249,14 +283,23 @@ export class PluginManagerController {
   }
 
   /**
-   * Fold one install-log chunk into the open run. A chunk for another spec —
-   * a CLI install running beside the page — is not this dialog's output.
+   * Fold one install-log chunk into its pnpm run. A chunk for another spec —
+   * a CLI install running beside the page — is not this dialog's output. A
+   * run's last chunk may trail the answer that settled the dialog and still
+   * lands on its run; a chunk for a run the dialog has not seen counts only
+   * while the dialog's own install is in flight.
    * @param chunk - the chunk the Host forwarded.
    */
   appendLog(chunk: PluginInstallLogChunk): void {
     const install = this.getSnapshot().install
-    if (install.phase !== 'running' || chunk.spec !== install.spec.trim()) return
-    this.patchInstall({ log: install.log + chunk.text })
+    if (chunk.spec !== install.spec.trim()) return
+    const index = install.runs.findIndex(run => run.jobId === chunk.jobId)
+    if (index === -1 && install.phase !== 'running') return
+    const settled = chunk.exitCode === undefined ? {} : { exitCode: chunk.exitCode }
+    const runs = index === -1
+      ? [...install.runs, { jobId: chunk.jobId, command: chunk.argv.join(' '), cwd: chunk.cwd, output: chunk.text, ...settled }]
+      : install.runs.map((run, at) => at === index ? { ...run, output: run.output + chunk.text, ...settled } : run)
+    this.patchInstall({ runs })
   }
 
   /**
@@ -406,22 +449,23 @@ export class PluginManagerController {
     const install = this.getSnapshot().install
     const spec = install.spec.trim()
     if (install.phase === 'running' || spec === '') return
-    this.patchInstall({ phase: 'running', log: '', installed: [], enabled: [], installedOnly: [], plain: [], removed: [], failure: null })
+    this.patchInstall({ phase: 'running', runs: [], installed: [], enabled: [], installedOnly: [], plain: [], removed: [], failure: null })
     // The Host announces `plugins/changed` while the run is still on the
     // wire — enabling recomposes before the call answers — and every such
     // event reads again; those reads must not cancel the run's settlement.
     const result = await this.ctx.remote.plugins.add(spec, { enable: install.enable })
     if (this.disposed) return
+    // A run whose last chunk never reached the dialog settles from the answer:
+    // a finished install, and a refusal that followed pnpm — a bundle the tree
+    // rejected, a probe that refused it — both mean every run exited 0, and a
+    // pnpm failure names the code the failing run exited with.
+    const runs = this.getSnapshot().install.runs
     if (result.ok) {
-      this.patchInstall({ phase: 'done', ...outcomeOf(result.value) })
+      this.patchInstall({ phase: 'done', runs: settledRuns(runs, 0), ...outcomeOf(result.value) })
     } else {
-      // The Host's reason follows whatever streamed: pnpm's captured log when
-      // no chunk arrived, else the refusal that followed a successful pnpm
-      // run — a bundle the tree rejected, a probe that refused it.
-      const current = this.getSnapshot().install.log
       const reason = detailOf(result.error, 'reason') ?? detailOf(result.error, 'log') ?? result.error.message
-      const log = current === '' || current.endsWith(reason) ? (current === '' ? reason : current) : `${current}\n${reason}`
-      this.patchInstall({ phase: 'failed', log, failure: { code: result.error.code, reason } })
+      const exitCode = result.error.code === 'plugins/install-failed' ? exitCodeOf(result.error) ?? null : 0
+      this.patchInstall({ phase: 'failed', runs: settledRuns(runs, exitCode), failure: { code: result.error.code, reason } })
     }
     void this.load()
   }

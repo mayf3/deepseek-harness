@@ -41,7 +41,7 @@ function preset(overrides: Partial<PresetGroup> = {}): PresetGroup {
 }
 
 const IDLE_INSTALL: InstallState = {
-  open: false, spec: '', enable: true, phase: 'idle', log: '', installed: [], enabled: [], installedOnly: [], plain: [], removed: [], failure: null,
+  open: false, spec: '', enable: true, phase: 'idle', runs: [], installed: [], enabled: [], installedOnly: [], plain: [], removed: [], failure: null,
 }
 
 const READY: PluginManagerState = {
@@ -463,7 +463,7 @@ describe('PluginManagerSettingsTab', () => {
     expect(actions.editInstallSpec).toHaveBeenCalledWith('dsh-x')
     fireEvent.click(screen.getByRole('checkbox'))
     expect(actions.toggleInstallEnable).toHaveBeenCalledTimes(1)
-    expect(screen.queryByText(en.installLogToggle)).toBeNull()
+    expect(document.querySelector('[data-terminal]')).toBeNull()
 
     set({ install: { ...IDLE_INSTALL, open: true, spec: ' dsh-x ' } })
     fireEvent.click(screen.getByRole('button', { name: en.installRun }))
@@ -471,11 +471,31 @@ describe('PluginManagerSettingsTab', () => {
     fireEvent.click(screen.getByRole('button', { name: en.cancel }))
     expect(actions.closeInstall).toHaveBeenCalledTimes(1)
 
-    set({ install: { ...IDLE_INSTALL, open: true, spec: 'dsh-x', phase: 'running', log: 'Progress' } })
+    set({
+      install: {
+        ...IDLE_INSTALL,
+        open: true,
+        spec: 'dsh-x',
+        phase: 'running',
+        runs: [{ jobId: 'j1', command: 'pnpm add dsh-x', cwd: '/home/u/.dsh/profiles/web', output: 'Progress: resolved \u001b[96m1\u001b[39m\n' }],
+      },
+    })
     expect(screen.getByText(en.installRunning.replace('{spec}', 'dsh-x'))).toBeTruthy()
-    expect(screen.getByText(en.installLogToggle)).toBeTruthy()
-    expect((document.querySelector('details') as HTMLDetailsElement).open).toBe(false)
+    expect(screen.getByText(en.installLocation.replace('{dir}', '/home/u/.dsh/profiles/web'))).toBeTruthy()
+    // The run streams as a terminal: its command line, its coloured output so far, the running label.
+    expect(screen.getByText('pnpm add dsh-x')).toBeTruthy()
+    const terminal = document.querySelector('[data-terminal]') as HTMLElement
+    expect(terminal.hasAttribute('data-running')).toBe(true)
+    expect(within(terminal).getByText('1').getAttribute('style')).toContain('--dsw-static-blue-500')
+    expect(within(terminal).getByText(en.terminalRunning)).toBeTruthy()
     expect(screen.getByRole('button', { name: en.installRun })).toHaveProperty('disabled', true)
+    // A long log folds its middle behind an expand control, so the dialog keeps its height while pnpm talks.
+    const lines = Array.from({ length: 15 }, (_line, index) => `line ${index + 1}`).join('\n')
+    set({ install: { ...IDLE_INSTALL, open: true, spec: 'dsh-x', phase: 'running', runs: [{ jobId: 'j1', command: 'pnpm add dsh-x', cwd: '/p', output: `${lines}\n` }] } })
+    expect(screen.queryByText('line 8')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: en.terminalExpandAria.replace('{n}', '3') }))
+    expect(screen.getByText('line 8')).toBeTruthy()
+    expect(screen.getByText(en.terminalCollapse)).toBeTruthy()
 
     set({
       install: {
@@ -483,7 +503,7 @@ describe('PluginManagerSettingsTab', () => {
         open: true,
         spec: 'dsh-x',
         phase: 'done',
-        log: 'Done',
+        runs: [{ jobId: 'j1', command: 'pnpm add dsh-x', cwd: '/p', output: 'Done in 1s\n', exitCode: 0 }],
         installed: ['a', 'b', 'c', 'd'],
         enabled: ['a'],
         installedOnly: ['b'],
@@ -500,14 +520,30 @@ describe('PluginManagerSettingsTab', () => {
     expect(screen.getByText(en.installDoneOther.replace('{name}', 'd'))).toBeTruthy()
     expect(screen.getByText(en.installRemovedLibrary.replace('{name}', 'lodash'))).toBeTruthy()
     expect(screen.getByText(en.installRemovedConflict.replace('{name}', 'clash').replace('{reason}', 'row "x" is already declared by y'))).toBeTruthy()
+    // A finished run leaves Done as the only action.
     expect(screen.getByRole('button', { name: en.installClose })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: en.installRun })).toBeNull()
+    expect(within(document.querySelector('[data-terminal]') as HTMLElement).getByText(en.terminalDone)).toBeTruthy()
 
     set({ install: { ...IDLE_INSTALL, open: true, spec: 'dsh-x', phase: 'done' } })
     expect(screen.getByText(en.installDoneNothing)).toBeTruthy()
 
-    set({ install: { ...IDLE_INSTALL, open: true, spec: 'dsh-x', phase: 'failed', log: 'ERR', failure: { code: 'plugins/install-failed', reason: 'ERR' } } })
+    // A pnpm failure with its run on screen points at the terminal; without a run, the Host's tail stands in.
+    set({
+      install: {
+        ...IDLE_INSTALL,
+        open: true,
+        spec: 'dsh-x',
+        phase: 'failed',
+        runs: [{ jobId: 'j1', command: 'pnpm add dsh-x', cwd: '/p', output: 'ERR\n', exitCode: 1 }],
+        failure: { code: 'plugins/install-failed', reason: 'ERR\n' },
+      },
+    })
     expect(screen.getByRole('alert').textContent).toBe(en.installFailed)
-    expect((document.querySelector('details') as HTMLDetailsElement).open).toBe(true)
+    expect(screen.getByRole('button', { name: en.installRetry })).toBeTruthy()
+    expect(screen.getByText(en.terminalExitCode.replace('{code}', '1'))).toBeTruthy()
+    set({ install: { ...IDLE_INSTALL, open: true, spec: 'dsh-x', phase: 'failed', failure: { code: 'plugins/install-failed', reason: 'ERR' } } })
+    expect(screen.getByRole('alert').textContent).toBe(en.installFailedTail.replace('{reason}', 'ERR'))
     set({ install: { ...IDLE_INSTALL, open: true, spec: 'dsh-x', phase: 'failed', failure: { code: 'plugins/busy', reason: 'add x' } } })
     expect(screen.getByRole('alert').textContent).toBe(en.busy.replace('{reason}', 'add x'))
     set({ install: { ...IDLE_INSTALL, open: true, spec: 'dsh-x', phase: 'failed', failure: null } })

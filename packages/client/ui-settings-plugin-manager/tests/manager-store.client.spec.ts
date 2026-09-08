@@ -335,9 +335,17 @@ describe('PluginManagerController', () => {
     expect(state().install.phase).toBe('running')
     face.closeInstall()
     expect(state().install.open).toBe(true)
-    controller.appendLog({ jobId: 'j1', spec: 'dsh-better-sidebar', stream: 'stdout', text: 'Progress\n' })
-    controller.appendLog({ jobId: 'j2', spec: 'other', stream: 'stdout', text: 'not mine' })
-    expect(state().install.log).toBe('Progress\n')
+    const argv = ['pnpm', 'add', 'dsh-better-sidebar']
+    controller.appendLog({ jobId: 'j1', argv, cwd: '/p', spec: 'dsh-better-sidebar', stream: 'stdout', text: 'Progress\n' })
+    controller.appendLog({ jobId: 'j2', argv: ['pnpm', 'add', 'other'], cwd: '/p', spec: 'other', stream: 'stdout', text: 'not mine' })
+    // The Host's second pnpm run (removing a rejected package) is a run of
+    // its own, and a later chunk lands on the run it names.
+    controller.appendLog({ jobId: 'jr', argv: ['pnpm', 'remove', 'lib'], cwd: '/p', spec: 'dsh-better-sidebar', stream: 'stdout', text: '- lib\n', exitCode: 0 })
+    controller.appendLog({ jobId: 'j1', argv, cwd: '/p', spec: 'dsh-better-sidebar', stream: 'stdout', text: 'Done\n' })
+    expect(state().install.runs).toEqual([
+      { jobId: 'j1', command: 'pnpm add dsh-better-sidebar', cwd: '/p', output: 'Progress\nDone\n' },
+      { jobId: 'jr', command: 'pnpm remove lib', cwd: '/p', output: '- lib\n', exitCode: 0 },
+    ])
     gate.resolve(ok({
       installed: ['dsh-better-sidebar', 'dsh-tool-foo'], removed: [{ name: 'lib', reason: 'not a plugin' }],
       enabled: [], installedOnly: ['dsh-better-sidebar'], plain: ['dsh-tool-foo'], jobId: 'j1',
@@ -350,9 +358,18 @@ describe('PluginManagerController', () => {
       plain: ['dsh-tool-foo'],
       removed: [{ name: 'lib', reason: 'not a plugin' }],
     })
-    controller.appendLog({ jobId: 'j1', spec: 'dsh-better-sidebar', stream: 'stdout', text: 'late', exitCode: 0 })
-    expect(state().install.log).toBe('Progress\n')
+    // The finished install settled its run; a trailing last chunk still lands
+    // on it, while a chunk for a run the dialog never saw is dropped.
+    controller.appendLog({ jobId: 'j1', argv, cwd: '/p', spec: 'dsh-better-sidebar', stream: 'stdout', text: 'late', exitCode: 0 })
+    controller.appendLog({ jobId: 'j3', argv, cwd: '/p', spec: 'dsh-better-sidebar', stream: 'stdout', text: 'stray' })
+    expect(state().install.runs).toEqual([
+      { jobId: 'j1', command: 'pnpm add dsh-better-sidebar', cwd: '/p', output: 'Progress\nDone\nlate', exitCode: 0 },
+      { jobId: 'jr', command: 'pnpm remove lib', cwd: '/p', output: '- lib\n', exitCode: 0 },
+    ])
     await vi.waitFor(() => { expect(plugins.list).toHaveBeenCalledTimes(2) })
+    // A new spec after the finished run starts over, keeping the enable choice.
+    face.editInstallSpec('another')
+    expect(state().install).toMatchObject({ phase: 'idle', spec: 'another', enable: false, runs: [], installed: [] })
     face.closeInstall()
     expect(state().install.open).toBe(false)
   })
@@ -380,36 +397,57 @@ describe('PluginManagerController', () => {
     expect(plugins.list).toHaveBeenCalledTimes(4)
   })
 
-  it('shows the Host log of a failed install, or its message when no chunk arrived', async () => {
+  it('keeps the Host reason of a failed install and settles a run whose last chunk never came', async () => {
     const { face, state, controller, plugins } = bench({
       add: vi.fn()
         .mockResolvedValueOnce(refused('plugins/install-failed', 'exit 1', { spec: 'x', exitCode: 1, log: 'ERR_PNPM' }))
         .mockResolvedValueOnce(refused('gateway/internal', 'offline'))
-        .mockResolvedValueOnce(refused('plugins/install-failed', 'exit 1', { spec: 'x', exitCode: 1, log: 'tail' }))
-        .mockResolvedValueOnce(refused('plugins/enable-failed', 'plugin-manager: x rejected', { packageName: 'x', reason: 'the tree rejected it' })),
+        .mockResolvedValueOnce(refused('plugins/install-failed', 'killed', { spec: 'x', exitCode: null, log: 'tail' }))
+        .mockResolvedValueOnce(refused('plugins/enable-failed', 'plugin-manager: x rejected', { packageName: 'x', reason: 'the tree rejected it' }))
+        .mockResolvedValueOnce(refused('plugins/install-failed', 'exit 1', { spec: 'x' }))
+        .mockResolvedValueOnce(refused('plugins/install-failed', 'exit 1', { spec: 'x', exitCode: 'one' })),
     })
+    const argv = ['pnpm', 'add', 'x']
     await controller.load()
     face.openInstall()
     face.editInstallSpec('x')
+    // No chunk arrived: the Host's captured tail is the reason, and there is no run.
     face.runInstall()
     await vi.waitFor(() => { expect(state().install.phase).toBe('failed') })
-    expect(state().install.log).toBe('ERR_PNPM')
+    expect(state().install.runs).toEqual([])
     expect(state().install.failure).toEqual({ code: 'plugins/install-failed', reason: 'ERR_PNPM' })
     face.runInstall()
     await vi.waitFor(() => { expect(plugins.add).toHaveBeenCalledTimes(2) })
-    await vi.waitFor(() => { expect(state().install.log).toBe('offline') })
+    await vi.waitFor(() => { expect(state().install.failure).toEqual({ code: 'gateway/internal', reason: 'offline' }) })
+    // A pnpm failure settles the open run with the code the answer names — here none.
     face.runInstall()
-    controller.appendLog({ jobId: 'j', spec: 'x', stream: 'stderr', text: 'streamed' })
+    controller.appendLog({ jobId: 'j', argv, cwd: '/p', spec: 'x', stream: 'stderr', text: 'streamed' })
     await vi.waitFor(() => { expect(plugins.add).toHaveBeenCalledTimes(3) })
     await vi.waitFor(() => { expect(state().install.phase).toBe('failed') })
-    // The Host's captured log follows what streamed; a refusal after a clean
-    // pnpm run follows it with its reason.
-    expect(state().install.log).toBe('streamed\ntail')
+    expect(state().install.runs).toEqual([{ jobId: 'j', command: 'pnpm add x', cwd: '/p', output: 'streamed', exitCode: null }])
+    expect(state().install.failure).toEqual({ code: 'plugins/install-failed', reason: 'tail' })
+    // A refusal after pnpm means pnpm itself exited 0.
     face.runInstall()
-    controller.appendLog({ jobId: 'j', spec: 'x', stream: 'stdout', text: 'Done' })
+    controller.appendLog({ jobId: 'j', argv, cwd: '/p', spec: 'x', stream: 'stdout', text: 'Done' })
     await vi.waitFor(() => { expect(plugins.add).toHaveBeenCalledTimes(4) })
     await vi.waitFor(() => { expect(state().install.phase).toBe('failed') })
-    expect(state().install.log).toBe('Done\nthe tree rejected it')
+    expect(state().install.runs).toEqual([{ jobId: 'j', command: 'pnpm add x', cwd: '/p', output: 'Done', exitCode: 0 }])
+    expect(state().install.failure).toEqual({ code: 'plugins/enable-failed', reason: 'the tree rejected it' })
+    // Details without an exit code settle the run as having none.
+    face.runInstall()
+    controller.appendLog({ jobId: 'j', argv, cwd: '/p', spec: 'x', stream: 'stdout', text: 'partial' })
+    await vi.waitFor(() => { expect(plugins.add).toHaveBeenCalledTimes(5) })
+    await vi.waitFor(() => { expect(state().install.phase).toBe('failed') })
+    expect(state().install.runs).toEqual([{ jobId: 'j', command: 'pnpm add x', cwd: '/p', output: 'partial', exitCode: null }])
+    // So does an exit code the answer types wrongly.
+    face.runInstall()
+    controller.appendLog({ jobId: 'j', argv, cwd: '/p', spec: 'x', stream: 'stdout', text: 'odd' })
+    await vi.waitFor(() => { expect(plugins.add).toHaveBeenCalledTimes(6) })
+    await vi.waitFor(() => { expect(state().install.phase).toBe('failed') })
+    expect(state().install.runs).toEqual([{ jobId: 'j', command: 'pnpm add x', cwd: '/p', output: 'odd', exitCode: null }])
+    // Editing the spec after a failure starts over too.
+    face.editInstallSpec('y')
+    expect(state().install).toMatchObject({ phase: 'idle', spec: 'y', runs: [], failure: null })
   })
 
   it('drops every late settlement after disposal', async () => {
@@ -463,7 +501,7 @@ describe('PluginManagerController', () => {
     expect(state()).toBe(before)
   })
 
-  it('keeps a streamed log that already ends with the Host reason', async () => {
+  it('leaves a run its own exit code when its last chunk beat the answer', async () => {
     const { face, state, controller } = bench({
       add: vi.fn().mockResolvedValueOnce(refused('plugins/install-failed', 'exit 1', { spec: 'x', exitCode: 1, log: 'same tail' })),
     })
@@ -471,8 +509,9 @@ describe('PluginManagerController', () => {
     face.openInstall()
     face.editInstallSpec('x')
     face.runInstall()
-    controller.appendLog({ jobId: 'j', spec: 'x', stream: 'stderr', text: 'same tail' })
+    controller.appendLog({ jobId: 'j', argv: ['pnpm', 'add', 'x'], cwd: '/p', spec: 'x', stream: 'stderr', text: 'same tail' })
+    controller.appendLog({ jobId: 'j', argv: ['pnpm', 'add', 'x'], cwd: '/p', spec: 'x', stream: 'stdout', text: '', exitCode: 1 })
     await vi.waitFor(() => { expect(state().install.phase).toBe('failed') })
-    expect(state().install.log).toBe('same tail')
+    expect(state().install.runs).toEqual([{ jobId: 'j', command: 'pnpm add x', cwd: '/p', output: 'same tail', exitCode: 1 }])
   })
 })

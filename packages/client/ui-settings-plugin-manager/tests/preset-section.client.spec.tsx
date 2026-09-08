@@ -54,7 +54,7 @@ const READY: PluginManagerState = {
   globalModules: [],
   busy: [],
   notice: null,
-  install: { open: false, spec: '', enable: true, phase: 'idle', log: '', installed: [], enabled: [], installedOnly: [], plain: [], removed: [], failure: null },
+  install: { open: false, spec: '', enable: true, phase: 'idle', runs: [], installed: [], enabled: [], installedOnly: [], plain: [], removed: [], failure: null },
   confirm: null,
 }
 

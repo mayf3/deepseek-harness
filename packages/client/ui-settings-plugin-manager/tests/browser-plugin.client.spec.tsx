@@ -91,8 +91,8 @@ describe('ui-settings-plugin-manager browser plugin', () => {
     // Install output folds into an open run only.
     face.openInstall()
     face.editInstallSpec('pkg')
-    b.remote.emit('plugins/install-log', [{ jobId: 'j', spec: 'pkg', stream: 'stdout', text: 'early' }])
-    expect(face.hooks.pluginManager.getSnapshot().install.log).toBe('')
+    b.remote.emit('plugins/install-log', [{ jobId: 'j', argv: ['pnpm', 'add', 'pkg'], cwd: '/p', spec: 'pkg', stream: 'stdout', text: 'early' }])
+    expect(face.hooks.pluginManager.getSnapshot().install.runs).toEqual([])
 
     // Shipped preset names resolve over the agent-preset dictionaries the
     // real plugin registers; user-authored metadata stays untranslated.

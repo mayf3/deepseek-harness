@@ -16,8 +16,8 @@ import { useEffect, useId, useState, type ReactNode } from 'react'
 import type { PluginInstallRejection, PluginPackageView, PluginRowTarget } from '@deepseek-ai/dsh-api-remotes/client'
 import {
   Button, IconChevronDownOutline14, IconChevronRightOutline14, IconCordisPluginOutline14, IconRefreshOutline16,
-  Input, Menu, Modal, StateDot, Switch, Tag,
-  type MenuItem, type StateDotState,
+  Input, Menu, Modal, StateDot, Switch, Tag, TerminalBlock,
+  type MenuItem, type StateDotState, type TerminalBlockLabels,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { PluginManagerLocaleKey } from './locales.ts'
@@ -578,7 +578,43 @@ function removedText(entry: PluginInstallRejection, t: Translate): string {
     : t('installRemovedLibrary', { name: entry.name })
 }
 
-/** The install dialog: the spec, the enable choice, the run's progress, and pnpm's output behind a fold. */
+/** Output lines an install run's terminal shows before its middle folds: the first and last six of a long pnpm log. */
+const INSTALL_TERMINAL_LINES = 12
+
+/** The install terminal's display copy, from the tab's dictionary. */
+function terminalLabels(t: Translate): TerminalBlockLabels {
+  return {
+    /* v8 ignore next -- the Host reports a killed pnpm as a null exit code, never a signal name; the label interface needs one */
+    signal: signal => t('terminalSignal', { signal }),
+    exitCode: code => t('terminalExitCode', { code: String(code) }),
+    noExitCode: t('terminalNoExitCode'),
+    running: t('terminalRunning'),
+    failed: t('terminalFailed'),
+    done: t('terminalDone'),
+    copy: t('terminalCopy'),
+    copied: t('terminalCopied'),
+    noOutput: t('terminalNoOutput'),
+    collapseAria: t('terminalCollapseAria'),
+    collapse: t('terminalCollapse'),
+    expandAria: hidden => t('terminalExpandAria', { n: String(hidden) }),
+    expand: hidden => t('terminalExpand', { n: String(hidden) }),
+  }
+}
+
+/**
+ * The failure line: the Host's refusal in its words, except a pnpm failure,
+ * which the terminal above already shows — unless none of its output reached
+ * the dialog, in which case the Host's captured tail stands in.
+ */
+function failureText(install: InstallState, t: Translate): string {
+  if (install.failure === null) return t('installFailed')
+  if (install.failure.code === 'plugins/install-failed' && install.runs.length === 0) {
+    return t('installFailedTail', { reason: install.failure.reason })
+  }
+  return refusalText(install.failure, t)
+}
+
+/** The install dialog: the spec, the enable choice, the run's progress, and a terminal per pnpm run. */
 function InstallDialog({ install, t, onClose, onEditSpec, onToggleEnable, onRun }: {
   readonly install: InstallState
   readonly t: Translate
@@ -589,6 +625,7 @@ function InstallDialog({ install, t, onClose, onEditSpec, onToggleEnable, onRun 
 }): ReactNode {
   const running = install.phase === 'running'
   const exampleId = useId()
+  const firstRun = install.runs[0]
   const outcomes: string[] = install.phase !== 'done'
     ? []
     : install.installed.length === 0 && install.removed.length === 0
@@ -606,12 +643,17 @@ function InstallDialog({ install, t, onClose, onEditSpec, onToggleEnable, onRun 
       title={t('installTitle')}
       closeLabel={t('close')}
       description={t('installDescription')}
-      footer={(
-        <>
-          <Button variant="outline" disabled={running} onClick={onClose}>{t(install.phase === 'idle' ? 'cancel' : 'installClose')}</Button>
-          <Button variant="primary" disabled={running || install.spec.trim() === ''} onClick={onRun}>{t('installRun')}</Button>
-        </>
-      )}
+      className={css.installDialog as string}
+      footer={install.phase === 'done'
+        ? <Button variant="primary" onClick={onClose}>{t('installClose')}</Button>
+        : (
+          <>
+            <Button variant="outline" disabled={running} onClick={onClose}>{t(install.phase === 'idle' ? 'cancel' : 'installClose')}</Button>
+            <Button variant="primary" disabled={running || install.spec.trim() === ''} onClick={onRun}>
+              {t(install.phase === 'failed' ? 'installRetry' : 'installRun')}
+            </Button>
+          </>
+        )}
     >
       <div className={css.installBody}>
         <label className={css.installField}>
@@ -638,16 +680,23 @@ function InstallDialog({ install, t, onClose, onEditSpec, onToggleEnable, onRun 
           ? install.removed.map(entry => <p key={entry.name} className={css.resultWarn} role="status">{removedText(entry, t)}</p>)
           : null}
         {install.phase === 'failed'
-          ? <p className={css.reason} role="alert">{install.failure === null ? t('installFailed') : refusalText(install.failure, t)}</p>
+          ? <p className={css.reason} role="alert">{failureText(install, t)}</p>
           : null}
-        {install.log === ''
+        {firstRun === undefined
           ? null
-          : (
-            <details className={css.logFold} open={install.phase === 'failed'}>
-              <summary>{t('installLogToggle')}</summary>
-              <pre className={css.log} aria-label={t('installLogLabel')} aria-live="polite">{install.log}</pre>
-            </details>
-          )}
+          : <p className={css.installLocation}>{t('installLocation', { dir: firstRun.cwd })}</p>}
+        {install.runs.map(run => (
+          <TerminalBlock
+            key={run.jobId}
+            command={run.command}
+            output={run.output}
+            running={run.exitCode === undefined}
+            exitCode={run.exitCode}
+            maxLines={INSTALL_TERMINAL_LINES}
+            labels={terminalLabels(t)}
+            className={css.terminal}
+          />
+        ))}
       </div>
     </Modal>
   )
