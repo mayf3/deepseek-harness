@@ -69,8 +69,8 @@ export function createElectronBuilderConfig(
       identity: macOSSigning?.signingIdentity,
       forceCodeSigning: true,
       hardenedRuntime: true,
-      // Runtime files are signed before their integrity inventory is sealed.
-      signIgnore: ['/Contents/Resources/dsh(?:/|$)'],
+      // Native runtime files are pre-signed; PAK resources are sealed by their enclosing bundle.
+      signIgnore: ['/Contents/Resources/dsh(?:/|$)', '\\.pak$'],
       notarize: true,
       target: ['dmg', 'zip'],
     },

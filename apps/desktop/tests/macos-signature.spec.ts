@@ -63,7 +63,7 @@ describe('desktop macOS release signature', () => {
         identity: RELEASE_ENVIRONMENT.DSH_DESKTOP_MACOS_SIGNING_IDENTITY,
         forceCodeSigning: true,
         notarize: true,
-        signIgnore: ['/Contents/Resources/dsh(?:/|$)'],
+        signIgnore: ['/Contents/Resources/dsh(?:/|$)', '\\.pak$'],
       },
       dmg: {
         sign: true,
@@ -75,6 +75,21 @@ describe('desktop macOS release signature', () => {
       }],
     })
     expect(typeof config.artifactBuildCompleted).toBe('function')
+  })
+
+  it('seals PAK resources with their enclosing bundle while signing executable code', async () => {
+    const { createElectronBuilderConfig } = await import('../electron-builder.config.mjs')
+    const config = createElectronBuilderConfig(RELEASE_ENVIRONMENT, 'darwin', 'arm64')
+    const ignored = (path: string): boolean => config.mac.signIgnore.some(pattern => new RegExp(pattern).test(path))
+    expect(ignored('/App.app/Contents/Frameworks/Electron.framework/Versions/A/Resources/en.lproj/locale.pak')).toBe(true)
+    expect(ignored('/App.app/Contents/Frameworks/Electron.framework/Versions/A/Resources/resources.pak')).toBe(true)
+    for (const path of [
+      '/App.app/Contents/Resources/runtime/node/node',
+      '/App.app/Contents/Resources/runtime/pnpm/addon.node',
+      '/App.app/Contents/Frameworks/Electron.framework/Versions/A/library.dylib',
+      '/App.app/Contents/Frameworks/Electron.framework',
+      '/App.app',
+    ]) expect(ignored(path)).toBe(false)
   })
 
   it('copies the complete runtime despite electron-builder excluding root node_modules', async () => {
