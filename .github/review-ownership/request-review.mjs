@@ -6,10 +6,20 @@ import { pathToFileURL } from 'node:url'
 
 const API_VERSION = '2026-03-10'
 const MAX_PULL_REQUEST_FILES = 3_000
+const MAX_TIMELINE_EVENTS = 3_000
 const PAGE_SIZE = 100
+const WORKFLOW_REVIEW_REQUESTER = 'github-actions[bot]'
 const TEST_DIRECTORY_NAMES = new Set(['__snapshots__', '__tests__', 'benches', 'stress-tests', 'test', 'tests'])
 const TEST_FILE_MARKER = /\.(?:bench|corpus|e2e|perf|snapshot|spec|stress|test)\.[^./]+$/u
 const PYTHON_TEST_FILE = /^(?:test_.+|.+_tests?)\.py$/u
+const DOCUMENTATION_FILE = /\.(?:md|yaml)$/iu
+const C_STYLE_EXTENSIONS = new Set([
+  'c', 'cc', 'cjs', 'cpp', 'cts', 'cxx', 'go', 'h', 'hpp', 'java', 'js', 'jsx',
+  'kt', 'kts', 'less', 'mjs', 'mts', 'rs', 'scss', 'swift', 'ts', 'tsx',
+])
+const BLOCK_COMMENT_EXTENSIONS = new Set(['css'])
+const HASH_COMMENT_EXTENSIONS = new Set(['bash', 'ps1', 'py', 'pyi', 'r', 'rb', 'sh', 'toml', 'yml', 'zsh'])
+const HTML_COMMENT_EXTENSIONS = new Set(['htm', 'html'])
 
 /**
  * Parse the explicit directory subset accepted from the review ownership file.
@@ -83,27 +93,174 @@ export function isTestPath(value) {
 }
 
 /**
- * Expand changed-file records into reviewable and excluded repository paths.
+ * Decide whether a repository path is documentation excluded from review routing.
+ * @param {string} value Repository-relative path.
+ * @returns {boolean} Whether the path has an excluded documentation extension.
+ */
+export function isDocumentationPath(value) {
+  return DOCUMENTATION_FILE.test(normalizeRepositoryPath(value))
+}
+
+/**
+ * Decide whether a complete modified-file patch changes comments only.
+ * @param {unknown} value GitHub changed-file record.
+ * @returns {boolean} Whether supported comment parsing removes every changed token.
+ */
+export function isCommentOnlyChange(value) {
+  if (!isRecord(value) || value.status !== 'modified' || typeof value.filename !== 'string'
+    || typeof value.patch !== 'string' || !Number.isSafeInteger(value.additions)
+    || value.additions < 0 || !Number.isSafeInteger(value.deletions) || value.deletions < 0) return false
+  const syntax = commentSyntax(value.filename)
+  if (syntax === undefined) return false
+  if (value.filename.toLowerCase().endsWith('.rs') && /\b(?:br|r)#{0,255}"/u.test(value.patch)) return false
+  const hunks = parsePatchHunks(value.patch)
+  if (hunks === undefined || hunks.additions !== value.additions || hunks.deletions !== value.deletions) {
+    return false
+  }
+  return hunks.values.every(({ before, after }) =>
+    normalizedCode(before, syntax) === normalizedCode(after, syntax))
+}
+
+function commentSyntax(filename) {
+  const normalized = normalizeRepositoryPath(filename)
+  const basename = normalized.slice(normalized.lastIndexOf('/') + 1).toLowerCase()
+  const extension = basename.includes('.') ? basename.slice(basename.lastIndexOf('.') + 1) : ''
+  const line = []
+  const block = []
+  if (C_STYLE_EXTENSIONS.has(extension)) {
+    line.push('//')
+    block.push(['/*', '*/'])
+  }
+  if (BLOCK_COMMENT_EXTENSIONS.has(extension)) block.push(['/*', '*/'])
+  if (HASH_COMMENT_EXTENSIONS.has(extension) || basename === 'dockerfile' || basename.startsWith('dockerfile.')
+    || basename === 'makefile' || basename.startsWith('makefile.')) line.push('#')
+  if (extension === 'sql') {
+    line.push('--')
+    block.push(['/*', '*/'])
+  }
+  if (HTML_COMMENT_EXTENSIONS.has(extension)) block.push(['<!--', '-->'])
+  return line.length === 0 && block.length === 0 ? undefined : { line, block }
+}
+
+function parsePatchHunks(patch) {
+  const values = []
+  let current
+  let additions = 0
+  let deletions = 0
+  for (const line of patch.split('\n')) {
+    if (line.startsWith('@@')) {
+      current = { before: [], after: [] }
+      values.push(current)
+      continue
+    }
+    if (current === undefined || line.startsWith('\\ No newline at end of file')) continue
+    const prefix = line[0]
+    const content = line.slice(1)
+    if (prefix === ' ') {
+      current.before.push(content)
+      current.after.push(content)
+    } else if (prefix === '-') {
+      current.before.push(content)
+      deletions++
+    } else if (prefix === '+') {
+      current.after.push(content)
+      additions++
+    }
+  }
+  return values.length === 0 ? undefined : { values, additions, deletions }
+}
+
+function normalizedCode(lines, syntax) {
+  return stripComments(lines.join('\n'), syntax)
+    .split('\n')
+    .map(line => line.trimEnd())
+    .filter(line => line.trim().length > 0)
+    .join('\n')
+}
+
+function stripComments(source, syntax) {
+  let result = ''
+  let quote
+  let blockEnd
+  for (let index = 0; index < source.length;) {
+    if (blockEnd !== undefined) {
+      if (source.startsWith(blockEnd, index)) {
+        index += blockEnd.length
+        blockEnd = undefined
+      } else {
+        index++
+      }
+      continue
+    }
+    const character = source[index]
+    if (quote !== undefined) {
+      result += character
+      index++
+      if (character === '\\' && index < source.length) {
+        result += source[index]
+        index++
+      } else if (character === quote) {
+        quote = undefined
+      }
+      continue
+    }
+    if (character === '\'' || character === '"' || character === '`') {
+      quote = character
+      result += character
+      index++
+      continue
+    }
+    const block = syntax.block.find(([start]) => source.startsWith(start, index))
+    if (block !== undefined) {
+      index += block[0].length
+      blockEnd = block[1]
+      continue
+    }
+    const line = syntax.line.find(marker => source.startsWith(marker, index))
+    const lineStart = index === 0 || source[index - 1] === '\n'
+    const hashStartsComment = line !== '#' || lineStart || /\s/u.test(source[index - 1] ?? '')
+    if (line !== undefined && hashStartsComment && !(line === '#' && lineStart && source[index + 1] === '!')) {
+      const newline = source.indexOf('\n', index + line.length)
+      if (newline === -1) break
+      result += '\n'
+      index = newline + 1
+      continue
+    }
+    result += character
+    index++
+  }
+  return result
+}
+
+/**
+ * Expand changed-file records into reviewable, test, documentation, and comment-only paths.
  * @param {unknown[]} files Pull-request file records from GitHub.
- * @returns {{changedCodeFiles: string[], excludedTestFiles: string[]}} Classified paths.
+ * @returns {{changedCodeFiles: string[], excludedTestFiles: string[], excludedDocumentationFiles: string[], excludedCommentOnlyFiles: string[]}} Classified paths.
  */
 export function classifyChangedFiles(files) {
   const changedCodeFiles = new Set()
   const excludedTestFiles = new Set()
+  const excludedDocumentationFiles = new Set()
+  const excludedCommentOnlyFiles = new Set()
   for (const entry of files) {
     if (!isRecord(entry)) throw new Error('changed-file response contains a non-object entry')
     const paths = [normalizeRepositoryPath(entry.filename)]
+    const commentOnly = isCommentOnlyChange(entry)
     if (entry.previous_filename !== undefined) {
       paths.unshift(normalizeRepositoryPath(entry.previous_filename))
     }
     for (const file of paths) {
       if (isTestPath(file)) excludedTestFiles.add(file)
+      else if (isDocumentationPath(file)) excludedDocumentationFiles.add(file)
+      else if (commentOnly) excludedCommentOnlyFiles.add(file)
       else changedCodeFiles.add(file)
     }
   }
   return {
     changedCodeFiles: [...changedCodeFiles].sort(),
     excludedTestFiles: [...excludedTestFiles].sort(),
+    excludedDocumentationFiles: [...excludedDocumentationFiles].sort(),
+    excludedCommentOnlyFiles: [...excludedCommentOnlyFiles].sort(),
   }
 }
 
@@ -190,18 +347,66 @@ export async function listPullRequestFiles(api, repository, pullNumber, expected
 }
 
 /**
- * Print changed paths, route owners, and request every missing eligible reviewer.
+ * Fetch the pull request timeline used to identify workflow-authored review requests.
+ * @param {(path: string, options?: {method?: string, body?: unknown}) => Promise<unknown>} api GitHub API caller.
+ * @param {string} repository Owner/name repository identifier.
+ * @param {number} pullNumber Pull-request number.
+ * @returns {Promise<unknown[]>} Complete timeline event list within the supported limit.
+ */
+export async function listPullRequestTimeline(api, repository, pullNumber) {
+  const events = []
+  for (let page = 1; ; page++) {
+    const response = await api(`/repos/${repository}/issues/${pullNumber}/timeline?per_page=${PAGE_SIZE}&page=${page}`)
+    if (!Array.isArray(response)) throw new Error('pull-request timeline response is not an array')
+    events.push(...response)
+    if (response.length < PAGE_SIZE) return events
+    if (events.length >= MAX_TIMELINE_EVENTS) {
+      throw new Error(`pull-request timeline exceeds ${MAX_TIMELINE_EVENTS} events`)
+    }
+  }
+}
+
+/** Return current requested reviewers whose latest request came from this workflow identity. */
+function workflowRequestedReviewers(events, requestedReviewers) {
+  const requested = new Map(requestedReviewers.map(login => [login.toLowerCase(), login]))
+  const latestRequester = new Map()
+  for (const event of events) {
+    if (!isRecord(event) || event.event !== 'review_requested') continue
+    if (!isRecord(event.requested_reviewer) || typeof event.requested_reviewer.login !== 'string') continue
+    const key = event.requested_reviewer.login.toLowerCase()
+    if (!requested.has(key)) continue
+    if (!isRecord(event.review_requester) || typeof event.review_requester.login !== 'string') {
+      throw new Error('review-request timeline event has no requester login')
+    }
+    latestRequester.set(key, event.review_requester.login.toLowerCase())
+  }
+  return [...requested]
+    .filter(([key]) => latestRequester.get(key) === WORKFLOW_REVIEW_REQUESTER)
+    .map(([, login]) => login)
+}
+
+/** Extract and validate individual logins from GitHub's requested-reviewer response. */
+function requestedReviewerLogins(response) {
+  if (!isRecord(response) || !Array.isArray(response.users)) {
+    throw new Error('requested-reviewers response has no users array')
+  }
+  return response.users.map((user) => {
+    if (!isRecord(user) || typeof user.login !== 'string') {
+      throw new Error('requested-reviewers response contains an invalid user')
+    }
+    return user.login
+  })
+}
+
+/**
+ * Print changed paths, request missing owners on reviewable pull requests, and
+ * cancel workflow-authored requests on drafts.
  * @param {{event: unknown, ownershipSource: string, api: (path: string, options?: {method?: string, body?: unknown}) => Promise<unknown>, write?: (line: string) => void}} options Runtime inputs.
- * @returns {Promise<{changedCodeFiles: string[], excludedTestFiles: string[], requestedReviewers: string[]}>} Applied routing result.
+ * @returns {Promise<{changedCodeFiles: string[], excludedTestFiles: string[], excludedDocumentationFiles: string[], excludedCommentOnlyFiles: string[], requestedReviewers: string[], cancelledReviewers: string[]}>} Applied routing result.
  */
 export async function requestReviews({ event, ownershipSource, api, write = line => process.stdout.write(`${line}\n`) }) {
   const pull = pullRequestFromEvent(event)
   write('This is by automated Angry Turtle Cyborg, not a human')
-  if (pull.draft) {
-    write('Draft pull request; reviewer routing is deferred until ready_for_review.')
-    return { changedCodeFiles: [], excludedTestFiles: [], requestedReviewers: [] }
-  }
-
   const files = await listPullRequestFiles(api, pull.repository, pull.number, pull.changedFileCount)
   const classified = classifyChangedFiles(files)
   const plan = planReviewers(parseOwnership(ownershipSource), classified.changedCodeFiles)
@@ -209,35 +414,58 @@ export async function requestReviews({ event, ownershipSource, api, write = line
   writeList(write, 'Excluded test files', classified.excludedTestFiles.map(file => JSON.stringify(file)))
   writeList(
     write,
+    'Excluded documentation files',
+    classified.excludedDocumentationFiles.map(file => JSON.stringify(file)),
+  )
+  writeList(
+    write,
+    'Excluded comment-only files',
+    classified.excludedCommentOnlyFiles.map(file => JSON.stringify(file)),
+  )
+  writeList(
+    write,
     'Owners by changed file',
     plan.matches.map(({ file, owners }) => `${JSON.stringify(file)}: ${owners.length ? owners.join(' ') : '(none)'}`),
   )
 
   const candidates = plan.reviewers.filter(login => login.toLowerCase() !== pull.author.toLowerCase())
+  if (pull.draft) {
+    const existing = await api(`/repos/${pull.repository}/pulls/${pull.number}/requested_reviewers`)
+    const requestedReviewers = requestedReviewerLogins(existing)
+    const reviewers = requestedReviewers.length === 0
+      ? []
+      : workflowRequestedReviewers(
+          await listPullRequestTimeline(api, pull.repository, pull.number),
+          requestedReviewers,
+        )
+    writeList(write, 'Review requests to cancel', reviewers.map(login => `@${login}`))
+    if (reviewers.length === 0) return { ...classified, requestedReviewers: [], cancelledReviewers: [] }
+
+    await api(`/repos/${pull.repository}/pulls/${pull.number}/requested_reviewers`, {
+      method: 'DELETE',
+      body: { reviewers },
+    })
+    const requestLabel = reviewers.length === 1 ? 'request' : 'requests'
+    write(`Cancelled review ${requestLabel} for ${reviewers.map(login => `@${login}`).join(' ')}.`)
+    return { ...classified, requestedReviewers: [], cancelledReviewers: reviewers }
+  }
+
   if (candidates.length === 0) {
     writeList(write, 'Reviewers to request', [])
-    return { ...classified, requestedReviewers: [] }
+    return { ...classified, requestedReviewers: [], cancelledReviewers: [] }
   }
   const existing = await api(`/repos/${pull.repository}/pulls/${pull.number}/requested_reviewers`)
-  if (!isRecord(existing) || !Array.isArray(existing.users)) {
-    throw new Error('requested-reviewers response has no users array')
-  }
-  const alreadyRequested = new Set(existing.users.map((user) => {
-    if (!isRecord(user) || typeof user.login !== 'string') {
-      throw new Error('requested-reviewers response contains an invalid user')
-    }
-    return user.login.toLowerCase()
-  }))
+  const alreadyRequested = new Set(requestedReviewerLogins(existing).map(login => login.toLowerCase()))
   const reviewers = candidates.filter(login => !alreadyRequested.has(login.toLowerCase()))
   writeList(write, 'Reviewers to request', reviewers.map(login => `@${login}`))
-  if (reviewers.length === 0) return { ...classified, requestedReviewers: [] }
+  if (reviewers.length === 0) return { ...classified, requestedReviewers: [], cancelledReviewers: [] }
 
   await api(`/repos/${pull.repository}/pulls/${pull.number}/requested_reviewers`, {
     method: 'POST',
     body: { reviewers },
   })
   write(`Requested ${reviewers.map(login => `@${login}`).join(' ')}.`)
-  return { ...classified, requestedReviewers: reviewers }
+  return { ...classified, requestedReviewers: reviewers, cancelledReviewers: [] }
 }
 
 function pullRequestFromEvent(event) {
