@@ -776,7 +776,10 @@ describe('web e2e: long Chat scroll contract', () => {
       await world.page.setViewportSize({ width: 700, height: 900 })
       // The narrow breakpoint auto-collapses the sidebar. Re-open it because
       // this scenario switches sessions while pinning the narrow Chat scroll owner.
-      await world.page.getByRole('button', { name: 'Open sidebar', exact: true }).click()
+      await world.page
+        .getByRole('button', { name: 'Open sidebar', exact: true })
+        .and(world.page.locator(':not([data-sidebar-right-expand])'))
+        .click()
       await world.page.getByRole('tab', { name: 'Chat', exact: true }).click()
       await nextPaint(world.page)
       await expectSameFlowTop(world.page, sessionAnchor, RESPONSIVE_REFLOW_TOLERANCE)
