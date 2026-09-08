@@ -9,11 +9,17 @@
  * set to. Both are the browser's job; the specs assert the body's arithmetic
  * over them.
  */
+import { useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
-import { act, cleanup, fireEvent, render } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, waitFor } from '@testing-library/react'
 import { RemoteError } from '@deepseek-ai/dsh-client-test-runtime'
 import type { TabId } from '@deepseek-ai/dsh-client-ui-dockkit'
+import type { OwnerOf } from '@deepseek-ai/dsh-client-ui-slots'
 import { TextPreview } from '../src/client/TextPreview.tsx'
+import type { TextPreviewProps } from '../src/client/TextPreview.tsx'
+import { CodeBody } from '../src/client/code/CodeBody.tsx'
+import { DOCUMENT_LAYOUT_READY_EVENT } from '../src/client/document/layout.ts'
+import type { DocumentPreviewDefinition } from '../src/client/document/registry.ts'
 import { ABSOLUTE_PATH, ADDRESS, PATH, SESSION, TAB_ID, failure, harness, page, settle } from './fixtures.client.ts'
 
 const LINE_HEIGHT = 20
@@ -28,13 +34,18 @@ beforeAll(() => {
     configurable: true,
     get(this: HTMLElement) {
       const line = this.getAttribute('data-textpreview-line')
-      return line === null ? 0 : (Number(line) - 1) * LINE_HEIGHT
+      if (line !== null) return (Number(line) - 1) * LINE_HEIGHT
+      if (!this.matches('[data-code-preview] pre .line')) return 0
+      const rows = this.closest('[data-code-preview]')?.querySelectorAll('pre .line') ?? []
+      return Array.from(rows).indexOf(this) * LINE_HEIGHT
     },
   })
   Object.defineProperty(HTMLElement.prototype, 'scrollTop', {
     configurable: true,
     get(this: HTMLElement & { __scrollTop?: number }) { return this.__scrollTop ?? 0 },
-    set(this: HTMLElement & { __scrollTop?: number }, value: number) { this.__scrollTop = value },
+    set(this: HTMLElement & { __scrollTop?: number }, value: number) {
+      this.__scrollTop = this.querySelector('[data-test-pdf-loading]') === null ? value : 0
+    },
   })
 })
 
@@ -45,7 +56,55 @@ afterAll(() => {
   }
 })
 
-afterEach(cleanup)
+afterEach(() => {
+  cleanup()
+  vi.unstubAllGlobals()
+})
+
+class PendingIntersectionObserver {
+  static instances: PendingIntersectionObserver[] = []
+  readonly observed = new Set<Element>()
+
+  constructor(private readonly callback: IntersectionObserverCallback) {
+    PendingIntersectionObserver.instances.push(this)
+  }
+
+  observe(element: Element): void { this.observed.add(element) }
+  unobserve(element: Element): void { this.observed.delete(element) }
+  disconnect(): void {}
+  takeRecords(): IntersectionObserverEntry[] { return [] }
+
+  intersect(element: Element): void {
+    this.callback(
+      [{ target: element, isIntersecting: true } as IntersectionObserverEntry],
+      this as unknown as IntersectionObserver,
+    )
+  }
+}
+
+function codeProps(h: ReturnType<typeof harness>, navigation: { params?: unknown; revision: number }): TextPreviewProps {
+  const props = h.props(navigation)
+  const definition: DocumentPreviewDefinition = {
+    id: 'code', extensions: ['md'], title: () => 'Code', loading: 'text-pages', wrap: true,
+  }
+  return {
+    ...props,
+    useDocumentPreviews: selector => selector([definition]),
+    renderSlot: (_key, owner) => <CodeBody {...props} {...owner as unknown as OwnerOf<'sidebar.right.tab.document'>} t={key => key} />,
+  }
+}
+
+let finishPdfLayout: (() => void) | undefined
+
+function AsyncPdfLayout(): ReactNode {
+  const [ready, setReady] = useState(false)
+  const section = useRef<HTMLElement>(null)
+  finishPdfLayout = () => { setReady(true) }
+  useLayoutEffect(() => {
+    if (ready) section.current?.dispatchEvent(new Event(DOCUMENT_LAYOUT_READY_EVENT, { bubbles: true }))
+  }, [ready])
+  return ready ? <section ref={section} data-test-pdf-ready /> : <span data-test-pdf-loading />
+}
 
 function body(container: HTMLElement): HTMLElement {
   const element = container.querySelector<HTMLElement>('[data-textpreview-body]')
@@ -286,6 +345,69 @@ describe('TextPreview — the file\'s metadata', () => {
 })
 
 describe('TextPreview — navigation and view', () => {
+  it('waits to answer a loaded-line navigation until the renderer exposes the line', async () => {
+    const h = harness({ 1: page(1, ['a', 'b'], true) })
+    const definition: DocumentPreviewDefinition = {
+      id: 'no-lines', extensions: ['md'], title: () => 'No lines', loading: 'text-pages', wrap: true,
+    }
+    const props: TextPreviewProps = {
+      ...h.props({ params: { line: 2 }, revision: 1 }),
+      useDocumentPreviews: selector => selector([definition]),
+      renderSlot: () => <div data-test-no-lines />,
+    }
+    const view = render(<TextPreview {...props} />)
+    await settle()
+    expect(body(view.container).scrollTop).toBe(0)
+    expect(h.instance.getSnapshot().byTab[TAB_ID]?.revision).toBeUndefined()
+  })
+
+  it('restores complete-document scrolling after its asynchronous layout is ready', () => {
+    const h = harness()
+    h.instance.actions.loading(TAB_ID, 'bytes-complete', 'v1')
+    h.instance.actions.complete(TAB_ID, {
+      absolutePath: ABSOLUTE_PATH, version: 'v1', offset: 0,
+      data: new Uint8Array([1]), bytes: 1, eof: true,
+    })
+    h.instance.actions.scrolled(TAB_ID, 320)
+    const definition: DocumentPreviewDefinition = {
+      id: 'pdf', extensions: ['md'], title: () => 'PDF', loading: 'bytes-complete', wrap: false,
+    }
+    const props: TextPreviewProps = {
+      ...h.props(),
+      useDocumentPreviews: selector => selector([definition]),
+      renderSlot: () => <AsyncPdfLayout />,
+    }
+    const view = render(<TextPreview {...props} />)
+    const scrollBody = body(view.container)
+    expect(scrollBody.scrollTop).toBe(0)
+    act(() => { finishPdfLayout?.() })
+    expect(scrollBody.scrollTop).toBe(320)
+
+    fireEvent.scroll(scrollBody, { target: { scrollTop: 480 } })
+    view.container.querySelector('[data-test-pdf-ready]')
+      ?.dispatchEvent(new Event(DOCUMENT_LAYOUT_READY_EVENT, { bubbles: true }))
+    expect(scrollBody.scrollTop).toBe(480)
+  })
+
+  it('lands on code lines before and after syntax highlighting is ready', async () => {
+    PendingIntersectionObserver.instances = []
+    vi.stubGlobal('IntersectionObserver', PendingIntersectionObserver)
+    const h = harness({ 1: page(1, ['const a = 1', 'const b = 2', 'const c = 3'], true) })
+    const view = render(<TextPreview {...codeProps(h, { params: { line: 2 }, revision: 1 })} />)
+    await settle()
+    expect(view.container.querySelector('[data-code-preview] pre.shiki')).toBeNull()
+    expect(view.container.querySelectorAll('[data-code-preview] pre .line')).toHaveLength(3)
+    expect(body(view.container).scrollTop).toBe(LINE_HEIGHT)
+    expect(h.instance.getSnapshot().byTab[TAB_ID]?.revision).toBe(1)
+
+    const block = view.container.querySelector('[data-code-preview] .md-code-block')!
+    act(() => { PendingIntersectionObserver.instances[0]!.intersect(block) })
+    await waitFor(() => { expect(view.container.querySelector('[data-code-preview] pre.shiki')).not.toBeNull() })
+    view.rerender(<TextPreview {...codeProps(h, { params: { line: 3 }, revision: 2 })} />)
+    expect(body(view.container).scrollTop).toBe(2 * LINE_HEIGHT)
+    expect(h.instance.getSnapshot().byTab[TAB_ID]?.revision).toBe(2)
+  })
+
   it('loads until the navigated line is held, then jumps to it once and marks it', async () => {
     const h = harness({ 1: page(1, ['a', 'b', 'c'], false), 4: page(4, ['d', 'e', 'f'], true) })
     const view = render(<TextPreview {...h.props({ params: { line: 5 }, revision: 1 })} />)

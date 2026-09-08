@@ -60,7 +60,7 @@ describe('PDF registration', () => {
       expect(instance.getSnapshot().byTab).toEqual({})
       const other = new AbortController()
       face.retainTab('two' as TabId, other.signal)
-      instance.actions.zoom('two' as TabId, 2)
+      instance.actions.page('two' as TabId, 2)
       await fiber.dispose()
       expect(instance.getSnapshot().byTab).toEqual({})
       expect(previews.getSnapshot()).toEqual([])

@@ -164,6 +164,22 @@ describe('RightbarSeat presentation', () => {
     expect(Object.values(h.layout().tabs).map(tab => tab.kind)).toEqual(['text', 'text'])
   })
 
+  it('offers close for a floating tab while the docked pane keeps its sole tab', async () => {
+    const h = await mountSeat()
+    const floating = h.open('floating.txt')
+    act(() => { h.controller.float(floating.id) })
+    const paneId = getPane(h.layout(), h.layout().floats[0]!).id
+    expect(h.view.container.querySelector('[data-dockkit-tab-close]')).toBeNull()
+    const close = document.querySelector<HTMLButtonElement>(`[data-dockkit-float-close="${paneId}"]`)
+    expect(close).not.toBeNull()
+
+    fireEvent.click(close!)
+
+    expect(h.layout().tabs[floating.id]).toBeUndefined()
+    expect(h.layout().floats).toHaveLength(0)
+    expect(getPane(h.layout(), h.layout().rootId).tabs).toHaveLength(1)
+  })
+
   it('keeps the panel mounted while collapsed and releases the frame on unmount', async () => {
     const h = await mountSeat()
     const panel = element(h.view.container, '[data-sidebar-right-panel]')

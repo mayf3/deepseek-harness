@@ -63,11 +63,13 @@ type SurfacePlan = (state: LayoutState, mint: Mint, makeTab: (id: TabId) => TabR
  * Decide whether an explicit close may remove a tab.
  * @param surface - current surface including default-tab protection.
  * @param tabId - tab requested for closing.
- * @returns false for missing tabs, protected defaults, and a pane's last tab.
+ * @returns false for missing tabs, protected docked defaults, and a docked pane's last tab.
  */
 export function canCloseTab(surface: SurfaceState, tabId: TabId): boolean {
-  if (surface.layout.tabs[tabId] === undefined || surface.permanentTabIds.includes(tabId)) return false
-  return findTabPane(surface.layout, tabId).tabs.length > 1
+  if (surface.layout.tabs[tabId] === undefined) return false
+  const pane = findTabPane(surface.layout, tabId)
+  if (pane.host === 'float') return true
+  return !surface.permanentTabIds.includes(tabId) && pane.tabs.length > 1
 }
 
 /** Build a default tab and retain its close protection outside the docking kit's data. */

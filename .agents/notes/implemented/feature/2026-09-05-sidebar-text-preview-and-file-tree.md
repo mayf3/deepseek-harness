@@ -12,7 +12,7 @@ Each answer carries product rules that code alone does not explain: why a text f
 
 ## Decision
 
-Three tab types ship with the Sidebar: the **guide** (`ui-sidebar-right`), the **text preview** (`ui-sidebar-textpreview`), and the **file tree** (`ui-sidebar-files`). Each registers a static definition into `ctx.sidebarRightTabs` and a body into the keyed `sidebar.right.pane.tab` seat under the definition's `id`, inside its own `ctx.effect`, so the type exists exactly as long as its plugin. The guide and the tree are page types opened by kind; the text preview is a viewer that claims every `file` resource address at the lowest band. A type's controls live in its own body; the pane's tab strip carries only the panel's actions. Copy is locale-owned in each package's namespace (`sidebarRight`, `sidebarTextpreview`, `sidebarFiles`).
+Three tab types ship with the Sidebar: the **guide** (`ui-sidebar-right`), the **document preview** (`ui-sidebar-documentpreview`), and the **file tree** (`ui-sidebar-files`). Each registers a static definition into `ctx.sidebarRightTabs` and a body into the keyed `sidebar.right.pane.tab` seat under the definition's `id`, inside its own `ctx.effect`, so the type exists exactly as long as its plugin. The guide and the tree are page types opened by kind; the document preview is a viewer that claims Session-scoped `file` resource addresses at the lowest band. A type's controls live in its own body; the pane's tab strip carries only the panel's actions. Copy is locale-owned in each package's namespace (`sidebarRight`, `sidebarDocumentPreview`, `sidebarFiles`).
 
 ### The guide
 
@@ -28,7 +28,7 @@ A pane holds at most one guide, and the docking layer enforces it as product beh
 
 ### The text preview
 
-`text` is the fallback viewer for every file. Its registration is `{ id: '@deepseek-ai/dsh-client-ui-sidebar-textpreview', kind: 'text', patterns: ['dsh-resource://file/**'], priority: 'fallback', title: basenameOf }`. The pattern contains `:` and so matches the whole address; `fallback` is the lowest band, so a type at `extension` or `builtin` with a narrower pattern (`*.png`, say) takes those addresses and everything else lands here, while the text type stays in the candidate list for any file. The `id` is the package name and doubles as the `key` of the body seat, so an extension that takes the `text` kind over cannot make the seat pick up this body by mistake. The title is the address's decoded last segment: the whole address stays the content identity — two files with one name in different directories, or one path under two sessions, are two tabs — and only the chip text is shortened.
+`text` is the fallback viewer for Session-scoped files. Its registration is `{ id: '@deepseek-ai/dsh-client-ui-sidebar-documentpreview', kind: 'text', patterns: ['dsh-resource://file/**'], priority: 'fallback', canOpen, title: basenameOf }`. `canOpen` accepts only addresses whose parsed scope is `session`. The pattern contains `:` and so matches the whole address; `fallback` is the lowest band, so a type at `extension` or `builtin` with a narrower pattern (`*.png`, say) takes those addresses and everything else lands here, while the text type stays in the candidate list for any file. The `id` is the package name and doubles as the `key` of the body seat, so an extension that takes the `text` kind over cannot make the seat pick up this body by mistake. The title is the address's decoded last segment: the whole address stays the content identity — two files with one name in different directories, or one path under two sessions, are two tabs — and only the chip text is shortened.
 
 A tab's address is `dsh-resource://file/session/<sessionId>/<path relative to that session's workspace root>` or `dsh-resource://file/absolute/<absolute path>` ([Workspace Files](../architecture/2026-09-05-workspace-files-service.md) owns the grammar and the `fileAddressFor` / `parseFileAddress` helpers in `dsh-util-workspace-path`). The preview never splits the string itself: `hostFileOf` in `rpc.ts` calls `parseFileAddress` and yields the `{ sessionId, path }` the endpoint takes — a `session` address reads under the session it names with the relative path the Host resolves, an `absolute` address reads under the session the slot was mounted for with the absolute path — and a malformed address throws, a programming error, because the registry routes every `file` address to this type and a caller building one is expected to use the helper.
 
@@ -96,7 +96,7 @@ Copy is the `sidebarFiles` namespace, thirteen keys. Row states: `loading` 「�
 
 ## Consequences
 
-- A type written outside `ui-sidebar-right` has a complete template: `ui-sidebar-textpreview` shows a viewer with an address-derived read, an exclusive Slot store bucketed by tab, an inject face, typed navigation params, and body-owned controls; `ui-sidebar-files` shows a page type with a guide entry and a lazily filled store; the guide shows a chain fallback.
+- A type written outside `ui-sidebar-right` has a complete template: `ui-sidebar-documentpreview` shows a viewer with an address-derived read, an exclusive Slot store bucketed by tab, an inject face, typed navigation params, and body-owned controls; `ui-sidebar-files` shows a page type with a guide entry and a lazily filled store; the guide shows a chain fallback.
 - Reading by page bounds every request (`maxLines` lines, `maxBytes` bytes) at the cost of a **Load more** control, no total line count, and sequential walks to a deep line; a navigation to line 40,000 of a large file reads eight pages first.
 - Announcing a change instead of applying it keeps the reader's place during an agent's repeated writes, at the cost of showing stale text until the reader clicks; an external edit is never announced.
 - Reload reads the first page only, so a reader deep in a file reloads into the top of it and pages forward again; the scroll offset is preserved but may point past the loaded text.
@@ -114,7 +114,6 @@ The text preview's `tests/` cover the registry claim and yielding (through the r
 - Line numbers, syntax highlighting, rendered Markdown, images, and search in the text preview; a total line count or end-of-file marker.
 - Search, an artifact filter, drag-and-drop, rename, a context menu, current-file highlight, filesystem watching, and browsing above the workspace root in the file tree.
 - Product review of the guide's copy, and the guide's behaviour when a type contributes several entries.
-- Chinese README counterparts for `ui-sidebar-textpreview` and `ui-sidebar-files`.
 
 ## Related
 

@@ -12,7 +12,7 @@ Status: implemented
 
 ## Decision
 
-Sidebar 随包交付三个 tab 类型：**引导页**（`ui-sidebar-right`）、**文本预览**（`ui-sidebar-textpreview`）与**文件树**（`ui-sidebar-files`）。每个类型都在自己的 `ctx.effect` 里把静态定义注册进 `ctx.sidebarRightTabs`、把体注册进 keyed 坑位 `sidebar.right.pane.tab`（键 = 定义的 `id`），因此类型的寿命恰等于其插件。引导页与文件树是按 kind 打开的页类型；文本预览是以最低档认领每个 `file` 资源地址的查看器。类型的控件住在自己的体里；pane 的 tab 条只承载面板自身的动作。文案由各包的命名空间（`sidebarRight`、`sidebarTextpreview`、`sidebarFiles`）以 locale 方式持有。
+Sidebar 随包交付三个 tab 类型：**引导页**（`ui-sidebar-right`）、**文档预览**（`ui-sidebar-documentpreview`）与**文件树**（`ui-sidebar-files`）。每个类型都在自己的 `ctx.effect` 里把静态定义注册进 `ctx.sidebarRightTabs`、把体注册进 keyed 坑位 `sidebar.right.pane.tab`（键 = 定义的 `id`），因此类型的寿命恰等于其插件。引导页与文件树是按 kind 打开的页类型；文档预览是以最低档认领 Session 作用域 `file` 资源地址的查看器。类型的控件住在自己的体里；pane 的 tab 条只承载面板自身的动作。文案由各包的命名空间（`sidebarRight`、`sidebarDocumentPreview`、`sidebarFiles`）以 locale 方式持有。
 
 ### 引导页
 
@@ -28,7 +28,7 @@ Sidebar 随包交付三个 tab 类型：**引导页**（`ui-sidebar-right`）、
 
 ### 文本预览
 
-`text` 是每个文件的兜底查看器。它的注册定义是 `{ id: '@deepseek-ai/dsh-client-ui-sidebar-textpreview', kind: 'text', patterns: ['dsh-resource://file/**'], priority: 'fallback', title: basenameOf }`。pattern 含 `:`，因此匹配整个地址；`fallback` 是最低档，所以 `extension` 或 `builtin` 档上一个 pattern 更窄的类型（比如 `*.png`）接走那些地址，其余一切落到这里，而 text 类型对任何文件都留在候选列表中。`id` 是包名，兼作体坑位的 `key`，于是一个接管了 `text` kind 的扩展不可能让坑位误拿到这个体。标题是地址解码后的最后一段：整个地址仍是内容身份——不同目录下同名的两个文件、或同一路径在两个会话之下，是两个 tab——只有 chip 上的文字被缩短。
+`text` 是 Session 作用域文件的兜底查看器。它的注册定义是 `{ id: '@deepseek-ai/dsh-client-ui-sidebar-documentpreview', kind: 'text', patterns: ['dsh-resource://file/**'], priority: 'fallback', canOpen, title: basenameOf }`。`canOpen` 只接受解析后 scope 为 `session` 的地址。pattern 含 `:`，因此匹配整个地址；`fallback` 是最低档，所以 `extension` 或 `builtin` 档上一个 pattern 更窄的类型（比如 `*.png`）接走那些地址，其余一切落到这里，而 text 类型对任何文件都留在候选列表中。`id` 是包名，兼作体坑位的 `key`，于是一个接管了 `text` kind 的扩展不可能让坑位误拿到这个体。标题是地址解码后的最后一段：整个地址仍是内容身份——不同目录下同名的两个文件、或同一路径在两个会话之下，是两个 tab——只有 chip 上的文字被缩短。
 
 tab 的地址是 `dsh-resource://file/session/<sessionId>/<相对该会话工作区根的路径>` 或 `dsh-resource://file/absolute/<绝对路径>`（[Workspace Files](../architecture/2026-09-05-workspace-files-service.zh.md) 拥有这套语法及 `dsh-util-workspace-path` 里的 `fileAddressFor` / `parseFileAddress` 助手）。预览从不自己拆这个串：`rpc.ts` 里的 `hostFileOf` 调 `parseFileAddress` 得到端点所需的 `{ sessionId, path }`——`session` 地址在它命名的会话下以 Host 解析的相对路径读取，`absolute` 地址在坑位被挂载的会话下以绝对路径读取——畸形地址直接抛错，那是程序错误，因为注册表把每个 `file` 地址都路由给这个类型，而造地址的调用方本应使用助手。
 
@@ -96,7 +96,7 @@ face 是树唯一的异步半边。`start(tabId, root, signal)` 以根展开态�
 
 ## Consequences
 
-- `ui-sidebar-right` 之外写的类型有了一份完整样板：`ui-sidebar-textpreview` 演示一个查看器——由地址推出的读取、按 tab 分桶的独占 Slot store、inject face、类型化的导航参数与体内自有控件；`ui-sidebar-files` 演示一个带引导入口、懒填充 store 的页类型；引导页演示一个链 fallback。
+- `ui-sidebar-right` 之外写的类型有了一份完整样板：`ui-sidebar-documentpreview` 演示一个查看器——由地址推出的读取、按 tab 分桶的独占 Slot store、inject face、类型化的导航参数与体内自有控件；`ui-sidebar-files` 演示一个带引导入口、懒填充 store 的页类型；引导页演示一个链 fallback。
 - 按页读取让每次请求都有界（`maxLines` 行、`maxBytes` 字节），代价是一个 **加载更多** 控件、没有总行数，以及到深处某行的顺序补页；导航到一个大文件的第 40,000 行要先读八页。
 - 只提示不应用，让读者在 agent 反复写入期间保住位置，代价是点击之前显示的是旧文本；外部编辑永不提示。
 - 重新载入只读第 1 页，所以身在文件深处的读者重载后回到文件开头再往后翻；滚动位置保留但可能指向已加载文本之外。
@@ -114,7 +114,6 @@ face 是树唯一的异步半边。`start(tabId, root, signal)` 以根展开态�
 - 文本预览的行号、语法高亮、Markdown 渲染、图片与搜索；总行数或文件末尾标记。
 - 文件树的搜索、产物过滤、拖拽、重命名、右键菜单、高亮当前文件、文件系统监听，以及浏览到工作区根之上。
 - 引导页文案的产品评审，以及一个类型贡献多个入口时引导页的行为。
-- `ui-sidebar-textpreview` 与 `ui-sidebar-files` 的中文 README 对照。
 
 ## Related
 

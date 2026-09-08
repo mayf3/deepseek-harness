@@ -3,7 +3,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { runInNewContext } from 'node:vm'
 import { createHtmlDocument } from '../src/client/html/bootstrap.ts'
-import { decodeText } from '../src/client/html/bytes.ts'
+import { decodeText, encodeText } from '../src/client/html/bytes.ts'
 
 afterEach(() => { vi.restoreAllMocks() })
 
@@ -56,5 +56,11 @@ describe('HTML bootstrap', () => {
     expect(() => createHtmlDocument({ data: utf8('<p>root</p>'), assets: [{ kind: 'script', reference: 'bad.js', data: new Uint8Array([255]) }] })).toThrow()
     expect(() => createHtmlDocument({ data: new Uint8Array([255]), assets: [] })).toThrow()
     expect(decodeText(utf8('雪\u2028\u2029'))).toBe('雪\u2028\u2029')
+  })
+
+  it('base64-encodes a large UTF-8 payload in browser-safe chunks', () => {
+    const source = `${'0123456789abcdef'.repeat(16_384)}雪`
+    const bytes = Uint8Array.from(atob(encodeText(source)), character => character.charCodeAt(0))
+    expect(decodeText(bytes)).toBe(source)
   })
 })

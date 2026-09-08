@@ -10,7 +10,7 @@
  * with the same reload. The type's controls, viewer choice, wrap and reload, sit at the end of
  * the path row; the Sidebar's strip carries none of them.
  */
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import clsx from 'clsx'
 import type { ObservableSnapshot } from '@deepseek-ai/dsh-client-store'
@@ -25,6 +25,7 @@ import type { TextStore } from './store.ts'
 import type { DocumentContent } from './document/contract.ts'
 import { matchingDocumentPreviews } from './document/registry.ts'
 import type { DocumentPreviewDefinition } from './document/registry.ts'
+import { DOCUMENT_LAYOUT_READY_EVENT } from './document/layout.ts'
 import { PLAIN_BODY_ID } from './text/index.ts'
 import { loadedPages, lastLineLoaded, scrollToLine } from './text/lines.ts'
 import css from './TextPreview.module.css'
@@ -69,7 +70,29 @@ export function TextPreview({
   const selected = candidates.find(candidate => candidate.id === state?.rendererId) ?? candidates[0]
   const mode = selected?.loading
   const current = (state?.mode ?? 'text-pages') === mode ? state : undefined
-  const bodyRef = useRef<HTMLDivElement>(null)
+  const bodyRef = useRef<HTMLDivElement | null>(null)
+  const layoutRestore = useRef<{ content: unknown; scrollTop: number; pending: boolean }>({
+    content: undefined, scrollTop: 0, pending: false,
+  })
+  if (layoutRestore.current.content !== current?.complete) {
+    layoutRestore.current = {
+      content: current?.complete,
+      scrollTop: state?.scrollTop ?? 0,
+      pending: current?.complete !== undefined,
+    }
+  }
+  const restoreAfterDocumentLayout = useCallback((event: Event) => {
+    const restore = layoutRestore.current
+    if (!restore.pending) return
+    const body = event.currentTarget as HTMLDivElement
+    body.scrollTop = restore.scrollTop
+    restore.pending = false
+  }, [])
+  const setBody = useCallback((body: HTMLDivElement | null) => {
+    bodyRef.current?.removeEventListener(DOCUMENT_LAYOUT_READY_EVENT, restoreAfterDocumentLayout)
+    bodyRef.current = body
+    body?.addEventListener(DOCUMENT_LAYOUT_READY_EVENT, restoreAfterDocumentLayout)
+  }, [restoreAfterDocumentLayout])
   const [menuOpen, setMenuOpen] = useState(false)
   // Every tab of this type is a `file` resource address, so its params are the
   // `file` type's; the union is narrowed on the one field read, not validated.
@@ -113,7 +136,8 @@ export function TextPreview({
       }
       return
     }
-    scrollToLine(body, line)
+    const landed = scrollToLine(body, line)
+    if (!landed && line <= loadedThrough) return
     actions.navigated(tab.id, navigation.revision)
     // Recorded here as well as by the scroll event, so the store holds the
     // landing before any later navigation reads it.
@@ -127,8 +151,8 @@ export function TextPreview({
     if (mode === 'bytes-complete') {
       return current?.complete === undefined ? undefined : { kind: 'bytes', data: current.complete.data }
     }
-    if (loaded.length === 0) return undefined
-    return { kind: 'text', pages: loaded, text: loaded.filter(page => page.lines > 0).map(page => page.text).join('\n'), eof: current?.eof ?? false }
+    if (current === undefined || loaded.length === 0) return undefined
+    return { kind: 'text', pages: loaded, text: loaded.filter(page => page.lines > 0).map(page => page.text).join('\n'), eof: current.eof }
   }, [mode, loaded, current?.complete, current?.eof])
 
   if (state === undefined || selected === undefined) {
@@ -228,7 +252,7 @@ export function TextPreview({
         </button>
       </div>
       <div
-        ref={bodyRef}
+        ref={setBody}
         className={clsx(css.body, state.wrap && css.wrap)}
         data-textpreview-body
         data-textpreview-wrap={state.wrap ? '' : undefined}
@@ -261,15 +285,15 @@ export function TextPreview({
             </button>
           </p>
         )}
-        {mode === 'text-pages' && loaded.length > 0 && !current?.eof && current?.failure === undefined && (
+        {mode === 'text-pages' && current !== undefined && loaded.length > 0 && !current.eof && current.failure === undefined && (
           <button
             type="button"
             className={css.more}
-            disabled={current?.loading ?? true}
+            disabled={current.loading}
             data-textpreview-more
             onClick={loadNext}
           >
-            {current?.loading ? <LoadingIndicator label={t('loading')} /> : t('loadMore')}
+            {current.loading ? <LoadingIndicator label={t('loading')} /> : t('loadMore')}
           </button>
         )}
       </div>

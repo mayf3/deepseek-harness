@@ -1,16 +1,7 @@
 /** Copy owned by the PDF renderer. */
 export const zh = {
   title: 'PDF',
-  toolbar: 'PDF 阅读工具',
-  previous: '上一页',
-  next: '下一页',
-  page: '页码',
-  pageCount: '共 {total} 页',
   pageImage: 'PDF 第 {page} 页',
-  zoomIn: '放大',
-  zoomOut: '缩小',
-  resetZoom: '重置缩放',
-  zoom: '{percent}%',
   loading: '正在打开 PDF…',
   rendering: '正在绘制页面…',
   failed: '无法显示 PDF：{message}',
@@ -26,16 +17,7 @@ export type PdfLocaleKey = keyof typeof zh
 /** English PDF-renderer dictionary. */
 export const en = {
   title: 'PDF',
-  toolbar: 'PDF reading tools',
-  previous: 'Previous page',
-  next: 'Next page',
-  page: 'Page',
-  pageCount: 'of {total}',
   pageImage: 'PDF page {page}',
-  zoomIn: 'Zoom in',
-  zoomOut: 'Zoom out',
-  resetZoom: 'Reset zoom',
-  zoom: '{percent}%',
   loading: 'Opening PDF…',
   rendering: 'Rendering page…',
   failed: 'Cannot display PDF: {message}',
@@ -47,7 +29,7 @@ export const en = {
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface LocaleNamespaceMap {
-    /** PDF navigation, loading, and failure messages. */
+    /** PDF page, loading, and failure messages. */
     sidebarPdf: PdfLocaleKey
   }
 }

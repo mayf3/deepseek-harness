@@ -39,10 +39,13 @@ export function lastLineLoaded(pages: readonly LoadedPage[]): number {
  * Reveal a plain-text or highlighted source line.
  * @param body - scrolling document body.
  * @param line - 1-based source line to reveal.
+ * @returns Whether the current renderer exposes that line.
  */
-export function scrollToLine(body: HTMLElement, line: number): void {
+export function scrollToLine(body: HTMLElement, line: number): boolean {
   const plain = body.querySelector(`[data-textpreview-line="${line}"]`)
-  const code = body.querySelectorAll('.shiki .line').item(line - 1)
+  const code = body.querySelectorAll('[data-code-preview] pre .line').item(line - 1)
   const row = plain ?? code
-  if (row instanceof HTMLElement) body.scrollTop = row.offsetTop
+  if (!(row instanceof HTMLElement)) return false
+  body.scrollTop = row.offsetTop
+  return true
 }

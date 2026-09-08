@@ -144,8 +144,18 @@ export function textFace(
           actions.failed(tabId, result.error)
           return
         }
-        reads.version = result.value.version
-        actions.complete(tabId, documentFileBytes(result.value))
+        let file
+        try {
+          file = documentFileBytes(result.value)
+        } catch (error) {
+          actions.failed(tabId, Object.assign(
+            new Error('document file byte response has malformed base64 data', { cause: error }),
+            { name: 'RemoteError', isDSHRemoteError: true as const, code: 'gateway/internal' as const, details: {} },
+          ))
+          return
+        }
+        reads.version = file.version
+        actions.complete(tabId, file)
       })
     }
     const restart = (

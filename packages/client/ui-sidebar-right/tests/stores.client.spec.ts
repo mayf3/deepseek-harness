@@ -137,6 +137,27 @@ describe('createSidebarRightStore — the sequence', () => {
 })
 
 describe('createSidebarRightStore — floating panels and dividers', () => {
+  it('closes the sole tab in a floating pane while retaining the docked pane', () => {
+    const { actions, layout, entries, guide } = harness()
+    const floating = guide()
+    actions.floatTab(SESSION, floating, { x: 10, y: 20, width: 300, height: 200 })
+    expect(findTabPane(layout(), floating).host).toBe('float')
+    const recorded = entries()
+
+    actions.closeTab(SESSION, floating)
+
+    expect(layout().tabs[floating]).toBeUndefined()
+    expect(layout().floats).toHaveLength(0)
+    expect(getPane(layout(), layout().rootId).tabs).toHaveLength(1)
+    expect(entries()).toBe(recorded + 1)
+
+    const docked = getPane(layout(), layout().rootId).tabs[0]!
+    const retained = layout()
+    actions.closeTab(SESSION, docked)
+    expect(layout()).toBe(retained)
+    expect(entries()).toBe(recorded + 1)
+  })
+
   it('moves and resizes a floating panel, one entry each', () => {
     const { actions, layout, entries, guide } = harness()
     actions.floatTab(SESSION, guide(), { x: 10, y: 20, width: 300, height: 200 })
