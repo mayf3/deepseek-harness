@@ -4,7 +4,7 @@ import { once } from 'node:events'
 import { tmpdir } from 'node:os'
 import { delimiter, join, relative, sep } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
-import { afterAll, describe, expect, it, vi } from 'vitest'
+import { afterAll, describe, expect, it, vi, type TestContext } from 'vitest'
 import { PROTOCOL_VERSION } from '@agentclientprotocol/sdk'
 import { runScenario, snapshotSpillRoot, type AgentUnderTest, type InputStep } from '../src/harness.ts'
 import { launchAcpTestAgent } from '../src/launcher.ts'
@@ -74,6 +74,21 @@ async function scenario(behavior: object): Promise<{ dir: string; fixtureFile: s
   tempDirs.push(dir)
   await writeFile(join(dir, 'behavior.json'), JSON.stringify(behavior))
   return { dir, fixtureFile: join(dir, 'session.jsonl') }
+}
+
+/** Keep immutable-log diagnostics independent of initial filesystem harvest latency. */
+function isolateDiagnosticTimeout(onTestFinished: TestContext['onTestFinished']): void {
+  const waitFor = vi.waitFor
+  const wait = vi.spyOn(vi, 'waitFor')
+  onTestFinished(() => { wait.mockRestore() })
+  wait.mockImplementation(async (callback, options) => {
+    if (typeof options !== 'object' || options.timeout !== 20) return waitFor(callback, options)
+    try {
+      return await callback()
+    } catch (error) {
+      return waitFor(() => { throw error }, options)
+    }
+  })
 }
 
 const boot: InputStep[] = [{ op: 'initialize' }, { op: 'newSession' }]
@@ -1016,7 +1031,8 @@ describe('runScenario', () => {
     }
   })
 
-  it('waitForSubagentTurnEnd requires a closed child work turn', { timeout: 20_000 }, async () => {
+  it('waitForSubagentTurnEnd requires a closed child work turn', { timeout: 20_000 }, async ({ onTestFinished }) => {
+    isolateDiagnosticTimeout(onTestFinished)
     const closed = await scenario({
       prompt: 'hang-until-cancel',
       persistLogsOnCancel: true,
@@ -1128,7 +1144,8 @@ describe('runScenario', () => {
     )).rejects.toThrow(new RegExp(`did not persist session/title after turn/end within ${titleDiagnosticTimeoutMs}ms`))
   })
 
-  it('waitForEventAfterTurnEnd holds the app for a typed post-boundary record and times out otherwise', { timeout: 20_000 }, async () => {
+  it('waitForEventAfterTurnEnd holds the app for a typed post-boundary record and times out otherwise', { timeout: 20_000 }, async ({ onTestFinished }) => {
+    isolateDiagnosticTimeout(onTestFinished)
     const late = await scenario({
       prompt: 'hang-until-cancel',
       persistLogsOnCancel: true,

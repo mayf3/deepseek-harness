@@ -16,8 +16,8 @@ const SNAPSHOT_DIR = fileURLToPath(new URL('../../../snapshots/web/details-sessi
 const HANDLES_EXPECTED = join(SNAPSHOT_DIR, 'handles.expected.md')
 const SIDEBAR_EXPECTED = join(SNAPSHOT_DIR, 'sidebar.expected.md')
 const SHOT_DIR = fileURLToPath(new URL('../../../.artifacts/screenshots/0907-sidebar-rules', import.meta.url))
-const FIXTURE = fileURLToPath(new URL('../../../snapshots/web/lifecycle-chrome/session.v2.jsonl', import.meta.url))
-const SEED_FIXTURE = fileURLToPath(new URL('../../../snapshots/web/seeded-history/session.v2.jsonl', import.meta.url))
+const FIXTURE = fileURLToPath(new URL('../../../snapshots/web/lifecycle-chrome/session.v3.jsonl', import.meta.url))
+const SEED_FIXTURE = fileURLToPath(new URL('../../../snapshots/web/seeded-history/session.v3.jsonl', import.meta.url))
 const PROMPT = 'Reply with the single word LIGHTHOUSE and stop.'
 const MODE = webSnapshotMode()
 

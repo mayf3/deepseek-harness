@@ -19,7 +19,7 @@ import {
 import { connectFreshWorkspace, newEnglishPage, saveFailureShot } from './support.ts'
 
 const SNAPSHOT_DIR = fileURLToPath(new URL('../../../snapshots/web/queue-actions', import.meta.url))
-const FIXTURE = fileURLToPath(new URL('../../../snapshots/web/live-interactions/session.v2.jsonl', import.meta.url))
+const FIXTURE = fileURLToPath(new URL('../../../snapshots/web/live-interactions/session.v3.jsonl', import.meta.url))
 const COLLAPSED_EXPECTED = join(SNAPSHOT_DIR, 'collapsed.expected.md')
 const EDITING_EXPECTED = join(SNAPSHOT_DIR, 'editing.expected.md')
 const LAYOUT_EXPECTED = join(SNAPSHOT_DIR, 'layout.expected.md')
@@ -65,6 +65,16 @@ describe('web e2e: queue row actions', () => {
     if (failures.length > 1) throw new AggregateError(failures, 'queue-actions teardown failed')
   })
 
+  /** Wait for the exact queue mutation response before observing its unlocked actions. */
+  async function settleQueueAction(action: () => Promise<void>, remainingText: string): Promise<void> {
+    const response = page.waitForResponse('**/api/session/updateQueue')
+    await action()
+    expect((await response).ok()).toBe(true)
+    const row = page.locator('[data-queue-dock] li', { hasText: remainingText })
+    await expect.poll(() => row.getByRole('button', { name: 'Edit queued message' }).isEnabled()).toBe(true)
+    await expect.poll(() => row.getByRole('button', { name: 'Remove queued message' }).isEnabled()).toBe(true)
+  }
+
   it.skipIf(MODE === 'record')('edits and removes exact occurrences and preserves Queue across stop', async () => {
     overrideDir = await mkdtemp(join(tmpdir(), 'dsh-web-queue-actions-'))
     const readyFile = join(overrideDir, '.hang-ready')
@@ -96,6 +106,7 @@ describe('web e2e: queue row actions', () => {
     await input.press('Enter')
     await expect.poll(() => existsSync(readyFile), { timeout: 15_000 }).toBe(true)
 
+    const admitted = page.waitForResponse('**/api/session/prompt')
     const received = Promise.withResolvers<undefined>()
     const release = Promise.withResolvers<undefined>()
     await page.route('**/api/session/prompt', async (route) => {
@@ -125,6 +136,7 @@ describe('web e2e: queue row actions', () => {
     } finally {
       release.resolve(undefined)
     }
+    expect((await admitted).ok()).toBe(true)
     await expect.poll(() => page.getByRole('button', { name: 'Remove queued message' }).isEnabled()).toBe(true)
     expect(await page.locator('[data-queue-dock] [data-submission-echo]').count()).toBe(0)
     expect(await page.locator('[data-queue-dock]').getByRole('status').count()).toBe(0)
@@ -179,11 +191,11 @@ describe('web e2e: queue row actions', () => {
     await page.getByRole('tooltip', { name: 'Save queued message', exact: true }).waitFor()
     const editingSnapshot = await captureStableAria(page, '[class*="centerCol"]', scaffold.workspaceCwd)
     await compareOrRefreshGolden(EDITING_EXPECTED, editingSnapshot, MODE)
-    await page.getByRole('button', { name: 'Save queued message' }).click()
+    await settleQueueAction(() => page.getByRole('button', { name: 'Save queued message' }).click(), EDITED)
     await page.getByText(EDITED, { exact: true }).waitFor()
 
     const removeRow = page.locator('[data-queue-dock] li', { hasText: REMOVE })
-    await removeRow.getByRole('button', { name: 'Remove queued message' }).click()
+    await settleQueueAction(() => removeRow.getByRole('button', { name: 'Remove queued message' }).click(), EDITED)
     await expect.poll(() => page.getByText(REMOVE, { exact: true }).count()).toBe(0)
     // The queue stream can remove the row before the mutation reply clears busy.
     const remainingEdit = page.getByRole('button', { name: 'Edit queued message', exact: true })

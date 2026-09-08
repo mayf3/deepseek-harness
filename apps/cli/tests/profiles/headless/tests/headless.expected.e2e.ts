@@ -8,10 +8,9 @@ import {
   normalizeSessionSnapshot,
   normalizeSessionSnapshots,
   normalizeStdout,
-  scrubRequestHeaders,
+  scrubModelRequestBulk,
   type NormalizeContext,
 } from '@deepseek-ai/dsh-session-snapshot'
-import { prepareSessionEventNotificationsForComparison } from '@deepseek-ai/dsh-llm-replay'
 import { LOADER_SMOKE_TEST_TIMEOUT_MS, runLoaderSmoke } from '@deepseek-ai/dsh-loader-smoke'
 import {
   decompressZstdFrame,
@@ -75,9 +74,9 @@ async function expectSessionSnapshot(
   expect(parseJsonl(normalizedActual ?? '')).toEqual(parseJsonl(normalizedExpected ?? ''))
 }
 
-/** Compare current headless session-event wrappers with a committed v1 stream. */
+/** Compare the complete current-writer headless notification sequence. */
 async function expectHeadlessStream(normalized: string, expectedPath: string): Promise<void> {
-  const expected = prepareSessionEventNotificationsForComparison(await readFile(expectedPath, 'utf8'))
+  const expected = await readFile(expectedPath, 'utf8')
   expect(parseJsonl(normalized)).toEqual(parseJsonl(expected))
 }
 
@@ -150,7 +149,7 @@ function normalizeHeadlessStream(rawStdout: string, cwd: string): string {
     }
     return record.event as JsonObject
   })
-  const normalizedEvents = parseJsonl(scrubRequestHeaders(normalizeSessionLog(
+  const normalizedEvents = parseJsonl(scrubModelRequestBulk(normalizeSessionLog(
     `${events.map(event => JSON.stringify(event)).join('\n')}\n`,
     context,
   )))

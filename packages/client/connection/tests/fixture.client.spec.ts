@@ -963,7 +963,10 @@ describe('createFixtureApi', () => {
       goal: null,
       imageLimits: { maxImagesPerMessage: 20, maxImageBytes: 5 * 1024 * 1024 },
     })
-    expect((alpha?.values['contextBreakdown'] as { messageTokens: number }).messageTokens).toBeGreaterThan(0)
+    const breakdown = alpha?.values['contextBreakdown'] as { systemTokens: number; messageTokens: number }
+    expect(breakdown.messageTokens).toBeGreaterThan(0)
+    // The seeded system/message at surface node 0 prices the system figure.
+    expect(breakdown.systemTokens).toBeGreaterThan(0)
     expect((alpha?.values['sessionStats'] as { steps: number }).steps).toBeGreaterThan(0)
     expect(second.value.projections['fx-alpha']).toEqual(alpha)
 

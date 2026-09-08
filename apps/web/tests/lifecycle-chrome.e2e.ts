@@ -27,7 +27,7 @@ import {
 } from './support.ts'
 
 const SNAPSHOT_DIR = fileURLToPath(new URL('../../../snapshots/web/lifecycle-chrome', import.meta.url))
-const FIXTURE = join(SNAPSHOT_DIR, 'session.v2.jsonl')
+const FIXTURE = join(SNAPSHOT_DIR, 'session.v3.jsonl')
 const REPLAY_OVERRIDE = join(SNAPSHOT_DIR, 'replay.override.json')
 const HERO_EXPECTED = join(SNAPSHOT_DIR, 'hero.expected.md')
 const COMMAND_MENU_EXPECTED = join(SNAPSHOT_DIR, 'command-menu.expected.md')
@@ -205,6 +205,17 @@ describe('web e2e: lifecycle & chrome (workspace flow / reload / dark mode)', ()
     const observeTurn = async () => {
       const originalViewport = page.viewportSize() ?? { width: 1680, height: 1000 }
       if (MODE !== 'record') await page.setViewportSize({ width: 480, height: 1000 })
+      const observedReasoning = Promise.withResolvers<undefined>()
+      const releaseStream = MODE === 'record' ? undefined : scaffold.ctx.on('llm/stream', async function* (_options, next) {
+        let reasoning = false
+        for await (const chunk of next()) {
+          if (reasoning && chunk.type !== 'reasoning-delta') {
+            await observedReasoning.promise
+          }
+          if (chunk.type === 'reasoning-delta') reasoning = true
+          yield chunk
+        }
+      })
       try {
         await input.press('Enter')
         if (MODE !== 'record') {
@@ -220,8 +231,11 @@ describe('web e2e: lifecycle & chrome (workspace flow / reload / dark mode)', ()
             })
           }, { timeout: 10_000, interval: 10 }).toBe(true)
         }
+        observedReasoning.resolve(undefined)
         return await settled
       } finally {
+        observedReasoning.resolve(undefined)
+        releaseStream?.()
         if (MODE !== 'record') await page.setViewportSize(originalViewport)
       }
     }
@@ -443,7 +457,7 @@ describe('web e2e: lifecycle & chrome (workspace flow / reload / dark mode)', ()
   it.skipIf(MODE === 'record')('keeps the fixture inventory closed', async () => {
     expect(tripwire.warnings).toEqual([])
     await assertFixtureInventory(SNAPSHOT_DIR, [
-      'session.v2.jsonl', 'replay.override.json', 'command-menu.expected.md',
+      'session.v3.jsonl', 'replay.override.json', 'command-menu.expected.md',
       'command-menu-fuzzy.expected.md', 'command-menu-zh.expected.md', 'connection-error.expected.md',
       'hero.expected.md', 'plan-active.expected.md',
       'reloaded.expected.md', 'reloaded-expanded.expected.md',
