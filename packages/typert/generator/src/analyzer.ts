@@ -877,10 +877,10 @@ class FaceAnalyzer {
   /**
    * Follow the import that names `symbol` at `site` through modules of the
    * referencing package until a package specifier appears. Each forwarding
-   * module is entered once; its explicit export edges are tried before its
-   * star edges. A relative specifier that resolves outside `from`, a namespace
-   * hop, or a module with no edge leading to a package specifier yields
-   * undefined.
+   * module and requested export name pair is entered once; its explicit export
+   * edges are tried before its star edges. A relative specifier that resolves
+   * outside `from`, a namespace hop, or a module with no edge leading to a
+   * package specifier yields undefined.
    */
   private packageImportOf(
     site: ReferenceSite,
@@ -893,8 +893,10 @@ class FaceAnalyzer {
       const module = moduleIdentity(specifier)
       if (module !== undefined) return { module, name }
       const resolvedPath = this.resolveImport(specifier, sourceFile.fileName)
-      if (resolvedPath === undefined || !isWithin(resolvedPath, from.root) || visited.has(resolvedPath)) return undefined
-      visited.add(resolvedPath)
+      if (resolvedPath === undefined || !isWithin(resolvedPath, from.root)) return undefined
+      const key = `${resolvedPath}\0${name}`
+      if (visited.has(key)) return undefined
+      visited.add(key)
       const forward = this.sourceFiles.get(resolvedPath) as ts.SourceFile
       for (const edge of this.forwardedExports(forward, name, symbol)) {
         const found = walk(forward, edge.specifier, edge.name)

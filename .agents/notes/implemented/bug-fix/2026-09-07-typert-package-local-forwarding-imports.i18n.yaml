@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-09-07-typert-package-local-forwarding-imports.md
-2026-09-07-typert-package-local-forwarding-imports.md: 35780d5fe9e6c1f7a2ff82d7157b98f163a11a34
-2026-09-07-typert-package-local-forwarding-imports.zh.md: 52bb0e025d3374289eb15ad97339d2b92a5ab6ef
+2026-09-07-typert-package-local-forwarding-imports.md: f50dc7bfc8c9d83c2b6f2b584e1d1119b8df817b
+2026-09-07-typert-package-local-forwarding-imports.zh.md: 7e012d220df3e7356b35a105784f89e4df148802

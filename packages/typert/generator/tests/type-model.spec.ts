@@ -764,6 +764,23 @@ describe('WorkspaceAnalyzer', { timeout: 60_000 }, () => {
       expect(consumerPayloadTarget(root)).toEqual({ kind: 'declaration', symbol: hostPayload })
     })
 
+    it('follows a valid renamed route after another route reaches the same module', () => {
+      const root = copyFixture('typert-forward-shared-module-')
+      addSameFacePackage(root, './outer.ts', 'Payload', {
+        'outer.ts': "export * from './left.ts'\nexport * from './right.ts'\n",
+        'left.ts': "export { Left as Payload } from './shared.ts'\n",
+        'right.ts': "export { Right as Payload } from './shared.ts'\n",
+        'shared.ts': [
+          "export { Payload as Left } from './relative.ts'",
+          "export type { Payload as Right } from '@fixture/host/models'",
+          '',
+        ].join('\n'),
+        'relative.ts': "export type { Payload } from '../../host/src/models.ts'\n",
+      })
+
+      expect(consumerPayloadTarget(root)).toEqual({ kind: 'declaration', symbol: hostPayload })
+    })
+
     it('rejects a forwarding cycle whose only exit crosses a package by relative path', () => {
       const root = copyFixture('typert-forward-cycle-relative-')
       addSameFacePackage(root, './outer.ts', 'Payload', {
