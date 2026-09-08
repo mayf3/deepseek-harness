@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-With `dsh-tools`, tool plugins register schemas and executors, and every model tool call runs through a guarded pipeline — allow/deny/ask policy, monotonic guards, around-dispatch wrappers, result inspection, definition-owned content finalization, and a final observe-only notification. The package also controls how tools are presented to the model: its `mode` config selects native function calling, [PTC mode](#ptc-mode), or both, and one agent shadows that default for itself with `presentAs`. Tool authors use `defineTool` for typed parameter and output schemas, an optional cooperative timeout, parallel-safety classification, and optional UI presentation intents. Choose it as the registry for any capability you want the model to reach — schemas flow into prompt assembly automatically.
+Use `dsh-tools` to expose typed capabilities to models, validate calls, enforce allow/deny/ask policy, and return finalized results without ending a turn on ordinary tool failures. Choose native function calling, [PTC mode](#ptc-mode), or both with `mode`; an agent can override the default through `presentAs`. Tool authors use `defineTool` to declare typed parameters and outputs, cooperative timeouts, parallel-safety, and optional UI presentation. Models see each permitted tool's declared name, description, and parameter schema; per-agent restrictions can narrow that visible set.
 
 ## Table of Contents
 

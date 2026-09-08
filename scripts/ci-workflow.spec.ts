@@ -774,6 +774,47 @@ describe('Python release workflows', () => {
   })
 })
 
+describe('Request review workflow', () => {
+  it('runs trusted routing on pull request review-state updates', () => {
+    const workflow = loadWorkflow('.github/workflows/request-review.yml')
+    const event = workflowEvent(workflow, 'pull_request_target')
+    const job = workflowJob(workflow, 'request-review')
+    if (!isRecord(workflow.on)) throw new TypeError('request-review workflow must define events')
+    if (!Array.isArray(job.steps)) throw new TypeError('request-review job must define steps')
+    const steps = job.steps.filter(isRecord)
+    const checkout = steps.find(step => step.name === 'Check out trusted review policy')
+    const request = steps.find(step => step.name === 'Request reviewers')
+
+    expect(workflow.name).toBe('request-review')
+    expect(Object.keys(workflow.on)).toEqual(['pull_request_target'])
+    expect(event.types).toEqual(['opened', 'synchronize', 'reopened', 'ready_for_review', 'converted_to_draft'])
+    expect(workflow.permissions).toEqual({ contents: 'read', 'pull-requests': 'write' })
+    expect(workflow.concurrency).toEqual({
+      group: 'request-review-${{ github.event.pull_request.number }}',
+      'cancel-in-progress': true,
+    })
+    expect(job).toMatchObject({
+      name: 'request-review',
+      'runs-on': 'ubuntu-latest',
+      'timeout-minutes': 5,
+    })
+    expect(job).not.toHaveProperty('if')
+    expect(checkout).toMatchObject({
+      uses: 'actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1',
+      with: {
+        ref: '${{ github.event.repository.default_branch }}',
+        'persist-credentials': false,
+      },
+    })
+    expect(request).toMatchObject({
+      env: { GITHUB_TOKEN: '${{ github.token }}' },
+      run: 'node .github/review-ownership/request-review.mjs',
+    })
+    expect(JSON.stringify(workflow)).not.toContain('github.event.pull_request.head')
+    expect(JSON.stringify(workflow)).not.toContain('secrets.')
+  })
+})
+
 describe('Issue lifecycle workflow', () => {
   it('runs the lifecycle job on every PR/review event but gates token and board steps', () => {
     const lifecycle = loadWorkflow('.github/workflows/issue-lifecycle.yml')
