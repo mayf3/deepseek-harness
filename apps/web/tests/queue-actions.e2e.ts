@@ -175,6 +175,8 @@ describe('web e2e: queue row actions', () => {
     await editRow.getByRole('button', { name: 'Edit queued message' }).click()
     const editor = page.getByRole('textbox', { name: 'Edit queued message' })
     await editor.fill(EDITED)
+    await page.getByRole('button', { name: 'Save queued message' }).hover()
+    await page.getByRole('tooltip', { name: 'Save queued message', exact: true }).waitFor()
     const editingSnapshot = await captureStableAria(page, '[class*="centerCol"]', scaffold.workspaceCwd)
     await compareOrRefreshGolden(EDITING_EXPECTED, editingSnapshot, MODE)
     await page.getByRole('button', { name: 'Save queued message' }).click()
@@ -183,6 +185,11 @@ describe('web e2e: queue row actions', () => {
     const removeRow = page.locator('[data-queue-dock] li', { hasText: REMOVE })
     await removeRow.getByRole('button', { name: 'Remove queued message' }).click()
     await expect.poll(() => page.getByText(REMOVE, { exact: true }).count()).toBe(0)
+    // The queue stream can remove the row before the mutation reply clears busy.
+    const remainingEdit = page.getByRole('button', { name: 'Edit queued message', exact: true })
+    await expect.poll(() => remainingEdit.isEnabled(), { timeout: 10_000 }).toBe(true)
+    await remainingEdit.hover()
+    await page.getByRole('tooltip', { name: 'Edit queued message', exact: true }).waitFor()
 
     const snapshot = await captureStableAria(page, '[class*="centerCol"]', scaffold.workspaceCwd)
     await compareOrRefreshGolden(UI_EXPECTED, snapshot, MODE)
@@ -227,9 +234,9 @@ describe('web e2e: queue row actions', () => {
     await expect.poll(() => page.getByRole('button', { name: 'Remove queued message' }).count())
       .toBe(2)
 
-    // Stop becomes Send under the pointer; dismiss its hover tooltip before capture.
+    // Stop becomes Send under the pointer; capture the idle queue with tooltips dismissed.
     await page.mouse.move(0, 0)
-    await expect.poll(() => page.getByRole('tooltip').filter({ hasText: 'Send message' }).count()).toBe(0)
+    await expect.poll(() => page.getByRole('tooltip').count()).toBe(0)
     const preservedSnapshot = await captureStableAria(page, '[class*="centerCol"]', scaffold.workspaceCwd)
     await compareOrRefreshGolden(PRESERVED_EXPECTED, preservedSnapshot, MODE)
     const expanded = await captureExpandedTurnProcessAria(
