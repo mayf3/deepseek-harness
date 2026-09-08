@@ -19,6 +19,8 @@ let home: string
 let previousHome: string | undefined
 let stderr: string
 let stdout: string
+/** The FORCE_COLOR each fake pnpm run was spawned with. */
+let spawnEnvs: (string | undefined)[] = []
 
 beforeEach(() => {
   home = mkdtempSync(join(tmpdir(), 'dsh-plugin-command-'))
@@ -26,6 +28,7 @@ beforeEach(() => {
   process.env.DSH_HOME = home
   stderr = ''
   stdout = ''
+  spawnEnvs = []
   vi.spyOn(process.stderr, 'write').mockImplementation((chunk) => { stderr += String(chunk); return true })
   vi.spyOn(process.stdout, 'write').mockImplementation((chunk) => { stdout += String(chunk); return true })
 })
@@ -64,6 +67,7 @@ function uninstall(profileDir: string, name: string): void {
 function fakePnpm(calls: string[][], failWith?: { code: number } | { error: NodeJS.ErrnoException }): SpawnLike {
   return (_command, args, options) => {
     calls.push([...args])
+    spawnEnvs.push(options.env?.FORCE_COLOR)
     const child = new EventEmitter() as EventEmitter & { stdout: PassThrough; stderr: PassThrough }
     child.stdout = new PassThrough()
     child.stderr = new PassThrough()
@@ -81,7 +85,8 @@ function fakePnpm(calls: string[][], failWith?: { code: number } | { error: Node
       const profileDir = options.cwd as string
       if (verb === 'add' && target !== undefined) install(profileDir, target, target === 'ext-bundle')
       if (verb === 'remove' && target !== undefined) uninstall(profileDir, target)
-      child.stdout.write(`${verb === 'add' ? '+' : '-'} ${String(target)}\n`)
+      // A coloured line, as a pnpm told to colour anyway would print one.
+      child.stdout.write(`\u001b[32m${verb === 'add' ? '+' : '-'}\u001b[39m ${String(target)}\n`)
       child.emit('close', 0)
     }, 5)
     return child as unknown as ChildProcess
@@ -104,6 +109,20 @@ const fakeProbe: typeof probePackage = (options) => {
 }
 
 describe('dsh plugin', () => {
+  it('lets pnpm colour its output when stdout is a terminal', async () => {
+    const calls: string[][] = []
+    const descriptor = Object.getOwnPropertyDescriptor(process.stdout, 'isTTY')
+    Object.defineProperty(process.stdout, 'isTTY', { value: true, configurable: true })
+    try {
+      expect(await runPlugin('web', ['add', 'ext-bundle'], { spawn: fakePnpm(calls), probe: fakeProbe })).toBe(0)
+    } finally {
+      if (descriptor === undefined) delete (process.stdout as { isTTY?: boolean }).isTTY
+      else Object.defineProperty(process.stdout, 'isTTY', descriptor)
+    }
+    expect(spawnEnvs).toEqual(['1'])
+    expect(stdout).toContain('\u001b[32m+\u001b[39m ext-bundle')
+  })
+
   it('add initializes the profile, installs through the installer, enables the new bundle, and removes a plain library again', async () => {
     const calls: string[][] = []
 
@@ -117,7 +136,10 @@ describe('dsh plugin', () => {
     expect(Object.keys(manifest.dependencies ?? {})).toContain('ext-bundle')
     expect(Object.keys(manifest.dependencies ?? {})).not.toContain('ext-lib')
     expect(manifest.dsh?.profile?.bundles).toContain('ext-bundle')
+    // The log reaches its readers plain: colours are off for the child and stripped from what it still prints.
+    expect(spawnEnvs).toEqual(['0', '0', '0'])
     expect(stdout).toContain('+ ext-bundle')
+    expect(stdout).not.toContain('\u001b[')
     expect(stderr).toContain('dsh: removed ext-lib again: declares neither a dsh bundle nor a plugin module')
     expect(existsSync(join(profileDir, '.dsh-plugins', 'ext-bundle.json'))).toBe(true)
   })

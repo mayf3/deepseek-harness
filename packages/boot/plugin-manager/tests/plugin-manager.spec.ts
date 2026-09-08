@@ -599,11 +599,30 @@ describe('PluginManager', () => {
       // The fake pnpm records the spec itself as the dependency name, which
       // resolves to nothing: a plain dependency whose probe cannot run.
       expect(result).toEqual({ installed: ['github:acme/ext-new'], removed: [], enabled: [], installedOnly: [], plain: ['github:acme/ext-new'], jobId: expect.any(String) as string })
-      expect(log.map(chunk => [chunk.stream, chunk.text, chunk.exitCode])).toEqual([
-        ['stdout', '+ github:acme/ext-new 1.0.0\n', undefined],
-        ['stdout', '', 0],
+      expect(log.map(chunk => [chunk.argv, chunk.stream, chunk.text, chunk.exitCode])).toEqual([
+        [['pnpm', 'add', 'github:acme/ext-new'], 'stdout', '+ github:acme/ext-new 1.0.0\n', undefined],
+        [['pnpm', 'add', 'github:acme/ext-new'], 'stdout', '', 0],
       ])
       expect(changes).toEqual([{ reason: 'install' }])
+    })
+
+    it('has pnpm colour its output and streams the escapes as they come', async () => {
+      const staged = await stageHome()
+      stagePackage(staged.profileDir, 'ext-new', { patch: BUNDLE_ONE_ROW })
+      const colours: (string | undefined)[] = []
+      const pnpm = fakePnpm(staged.profileDir, (args) => {
+        addDependency(staged.profileDir, args[1] as string)
+        return { code: 0, stdout: '\u001b[32m+\u001b[39m ext-new \u001b[90m1.0.0\u001b[39m\n' }
+      })
+      const { manager, log } = await bootProfile(staged, {
+        spawn: (command, args, options) => {
+          colours.push(options.env?.FORCE_COLOR)
+          return pnpm(command, args, options)
+        },
+      })
+      await manager.add('ext-new')
+      expect(colours).toEqual(['1'])
+      expect(log[0]?.text).toBe('\u001b[32m+\u001b[39m ext-new \u001b[90m1.0.0\u001b[39m\n')
     })
 
     it('reconciles by the installed name, and enables the new bundle when asked', async () => {
