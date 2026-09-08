@@ -24,7 +24,7 @@ export const inject = ['invariants']
 /** The registry's own current projection of `id`, or undefined once the record is gone. */
 function readBack(ctx: Context, id: JobId, owner: JobView['owner']): JobView | undefined {
   try {
-    return ctx.jobs.forCaller(owner).get(id)
+    return ctx.jobs.get(id, owner)
   } catch {
     // The registry throws for an id outside the caller's set; after a removal that is the expected answer.
     return undefined

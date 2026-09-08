@@ -77,14 +77,14 @@ This section explains the design decisions behind the contract and points at the
 | File | Role |
 |---|---|
 | [`src/index.ts`](src/index.ts) | Plugin entry: the abstract `JobRegistry` service and its contract |
-| [`src/types.ts`](src/types.ts) | Shared vocabulary: `JobSpec`, `JobHandle`, `JobHooks`, `JobOutcome`, `CallerJobs`, `JobEvent`, and the read results |
+| [`src/types.ts`](src/types.ts) | Shared vocabulary: `JobSpec`, `JobHandle`, `JobHooks`, `JobOutcome`, `JobEvent`, and the read results |
 | [`src/view.ts`](src/view.ts) | Client-safe leaf: `JobView`, `JobChunk`, `JobStatus`, and the merge-extensible `JobKindMap` |
 | [`src/brand.ts`](src/brand.ts) | `JobId` branded identifier, importable without the agent dependency |
 | [`src/invariant.ts`](src/invariant.ts) | Invariant companion: checks the announced event protocol per job (registered first, one settlement, removal last) and each announced projection against the registry's own read |
 
 ### Service operations
 
-Every operation is a thin projection over the registered jobs, bound to one caller by `forCaller`: `list` and `get` return fresh projections, `read` advances the model's cursor and hands out the producer's result once after settlement, `readAt` reads retained chunks at an absolute offset without consuming anything, `kill` invokes producer cancellation before changing status and records the reason for the terminal `detail`, `wait` blocks up to a timeout, and `start()` preflights access, validation, and admission before invoking the producer's `run()` once while refusing any owner no attached controller serves; `events.subscribe` delivers registration, progress, stopping, settlement, removal, and output commits at owner, scope, or process granularity.
+Each read or control operation accepts an optional caller `SessionId`; omitting it permits only unowned jobs: `list` and `get` return fresh projections, `read` advances the model's cursor and hands out the producer's result once after settlement, `readAt` reads retained chunks at an absolute offset without consuming anything, `kill` invokes producer cancellation before changing status and records the reason for the terminal `detail`, `wait` blocks up to a timeout, and `start()` preflights access, validation, and admission before invoking the producer's `run()` once while refusing any owner no attached controller serves; `events.subscribe` delivers registration, progress, stopping, settlement, removal, and output commits at owner, scope, or process granularity.
 
 </details>
 

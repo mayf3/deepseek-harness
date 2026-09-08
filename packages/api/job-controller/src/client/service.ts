@@ -1,7 +1,7 @@
 /**
  * The `ctx.jobs` client service: reference-counted streams over the `job`
- * namespace — one `job.rows` roster stream per watched session and one
- * `job.observe` stream per observed job — so overlapping viewers share a
+ * namespace — one `job.list` roster stream per watched session and one
+ * `job.follow` stream per observed job — so overlapping viewers share a
  * stream, rosters resume whole after a reconnect, and observations resume
  * from the model's cursor.
  * @module @deepseek-ai/dsh-api-job-controller/client/service
@@ -11,7 +11,7 @@ import { Service, type Context } from '@deepseek-ai/cordis'
 import { RemoteStreamCarrierError, type ClientRemote } from '@deepseek-ai/dsh-api-gateway/client'
 import type { JobId } from '@deepseek-ai/dsh-jobs/brand'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
-import type { JobObserveFrame, JobObserveRequest, JobRowsFrame, JobRowsRequest } from '../types.ts'
+import type { JobFollowFrame, JobFollowRequest, JobListFrame, JobListRequest } from '../types.ts'
 import type { ClientJobsModel, JobsSource } from './model.ts'
 
 /** The generated `job` namespace face the stream runners drive. */
@@ -22,14 +22,14 @@ export interface JobRemote {
    * @param signal - generation cancellation.
    * @returns the whole-set frame sequence of one generation.
    */
-  rows(request: JobRowsRequest, signal?: AbortSignal): AsyncIterable<JobRowsFrame>
+  list(request: JobListRequest, signal?: AbortSignal): AsyncIterable<JobListFrame>
   /**
    * Open one observation generation.
    * @param request - target job, owning session, and optional resume offset.
    * @param signal - generation cancellation.
    * @returns the frame sequence of one generation.
    */
-  observe(request: JobObserveRequest, signal?: AbortSignal): AsyncIterable<JobObserveFrame>
+  follow(request: JobFollowRequest, signal?: AbortSignal): AsyncIterable<JobFollowFrame>
 }
 
 /** Remote faces the runners drive: the Gateway stream factory and the `job` namespace. */
@@ -166,9 +166,9 @@ export class ClientJobs extends Service implements IJobs {
 
   private startRows(sessionId: SessionId): StreamEntry {
     const name = `job rows ${String(sessionId)}`
-    const stream = this.remote.$stream<JobRowsFrame>({
+    const stream = this.remote.$stream<JobListFrame>({
       name,
-      open: signal => this.remote.job.rows({ sessionId }, signal),
+      open: signal => this.remote.job.list({ sessionId }, signal),
       // The roster has no natural end while it is watched: an end after the
       // first frame is a carrier interruption (a Host reload closes the
       // generation) and the next generation's whole set loses nothing. An end
@@ -202,11 +202,11 @@ export class ClientJobs extends Service implements IJobs {
 
   private startObservation(sessionId: SessionId | undefined, id: JobId): StreamEntry {
     const name = `job observation ${String(id)}`
-    const stream = this.remote.$stream<JobObserveFrame>({
+    const stream = this.remote.$stream<JobFollowFrame>({
       name,
       open: (signal) => {
         const from = this.model.cursorOf(id)
-        return this.remote.job.observe(
+        return this.remote.job.follow(
           {
             jobId: id,
             ...sessionId !== undefined ? { sessionId } : {},

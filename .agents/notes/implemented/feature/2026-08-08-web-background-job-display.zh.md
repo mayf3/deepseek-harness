@@ -2,7 +2,7 @@
 
 Status: implemented
 
-Superseded：本文放在会话控制流上的名册（`jobsBySession`、`onJobsChanged`）现在从 job 控制器的 `job.rows` 流入 `ctx.jobs`——见 [jobs seam 收敛](../architecture/2026-09-03-jobs-seam-consolidation.zh.md)。下文的展示决策（单一名册、分组、时长、没有 kill 控件）仍然成立。
+Superseded：本文放在会话控制流上的名册（`jobsBySession`、`onJobsChanged`）现在从 job 控制器的 `job.list` 流入 `ctx.jobs`——见 [jobs seam 收敛](../architecture/2026-09-03-jobs-seam-consolidation.zh.md)。下文的展示决策（单一名册、分组、时长、没有 kill 控件）仍然成立。
 
 Update：本文推迟的输出阶段现已作为 `ctx.jobs` 上的逐 job 观测 record 交付——见 [jobs 吸收 record](../architecture/2026-09-01-jobs-absorb-activity-record.zh.md)。
 

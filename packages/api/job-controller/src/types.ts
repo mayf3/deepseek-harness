@@ -10,23 +10,23 @@ import type { SessionId } from '@deepseek-ai/dsh-session/types'
 
 export type { JobChunk, JobView } from '@deepseek-ai/dsh-jobs/view'
 
-/** Target of one `job.rows` stream: the session whose visible jobs the stream mirrors. */
-export interface JobRowsRequest {
+/** Target of one `job.list` stream: the session whose visible jobs the stream mirrors. */
+export interface JobListRequest {
   readonly sessionId: SessionId
 }
 
 /**
- * One `job.rows` frame: the complete set the session can see — its own jobs
+ * One `job.list` frame: the complete set the session can see — its own jobs
  * plus every unowned job — after a lifecycle change. Whole-set replacement,
  * so a reconnect's first frame is already the truth.
  */
-export interface JobRowsFrame {
+export interface JobListFrame {
   readonly type: 'rows'
   readonly jobs: readonly JobView[]
 }
 
-/** Target of one `job.observe` stream: the job, its owning session, and an optional resume offset. */
-export interface JobObserveRequest {
+/** Target of one `job.follow` stream: the job, its owning session, and an optional resume offset. */
+export interface JobFollowRequest {
   /**
    * Owning session for the fenced read. Omitted for an unowned job, which any
    * caller may observe.
@@ -49,7 +49,7 @@ export interface JobObserveRequest {
  * closes normally. Status rides the same stream as output so settlement can
  * never race a still-open output channel.
  */
-export type JobObserveFrame =
+export type JobFollowFrame =
   | {
     readonly type: 'opened'
     readonly job: JobView

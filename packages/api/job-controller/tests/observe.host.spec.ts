@@ -10,7 +10,7 @@ import TypertRegistry from '@deepseek-ai/dsh-typert-registry'
 import { JobController } from '../src/index.ts'
 import { observeJobOutput } from '../src/observe.ts'
 import type { ObserveJobOptions } from '../src/observe.ts'
-import type { JobObserveFrame } from '../src/types.ts'
+import type { JobFollowFrame } from '../src/types.ts'
 import { collect, harness, next, registerAgent, startJob, wait } from './host-harness.ts'
 
 const OBSERVE: ObserveJobOptions = { flushMs: 5, maxFrameBytes: 1024 }
@@ -18,7 +18,7 @@ const OBSERVE: ObserveJobOptions = { flushMs: 5, maxFrameBytes: 1024 }
 describe('observeJobOutput', () => {
   function observed(ctx: Context, request: { jobId: JobId; sessionId?: SessionId; from?: number }) {
     const abort = new AbortController()
-    const frames: JobObserveFrame[] = []
+    const frames: JobFollowFrame[] = []
     const stream = observeJobOutput(ctx.jobs, request, OBSERVE, abort.signal)
     const done = (async () => {
       for await (const frame of stream) frames.push(frame)
@@ -79,7 +79,7 @@ describe('observeJobOutput', () => {
     job.append('y'.repeat(30))
     await job.settle({ status: 'completed' })
     const abort = new AbortController()
-    const frames = await collect<JobObserveFrame>(
+    const frames = await collect<JobFollowFrame>(
       observeJobOutput(ctx.jobs, { jobId: job.id }, { flushMs: 5, maxFrameBytes: 30 }, abort.signal),
       5,
       abort,
@@ -98,7 +98,7 @@ describe('observeJobOutput', () => {
     job.append('c'.repeat(40))
     await job.settle({ status: 'completed' })
     const abort = new AbortController()
-    const frames = await collect<JobObserveFrame>(
+    const frames = await collect<JobFollowFrame>(
       observeJobOutput(ctx.jobs, { jobId: job.id, from: 0 }, { flushMs: 5, maxFrameBytes: 40 }, abort.signal),
       5,
       abort,
@@ -195,7 +195,7 @@ describe('observeJobOutput', () => {
     await done
     expect(frames.map(frame => frame.type)).toEqual(['opened', 'output', 'status'])
     expect(frames.at(-1)).toMatchObject({ type: 'status', job: { id: job.id, status: 'killed' } })
-    expect(() => ctx.jobs.forCaller(owner.id).get(job.id)).toThrow(/unknown job/)
+    expect(() => ctx.jobs.get(job.id, owner.id)).toThrow(/unknown job/)
   })
 
   it('stops cleanly on abort while waiting for output', async () => {
@@ -254,8 +254,8 @@ describe('JobController', () => {
     await job.settle({ status: 'completed' })
 
     const abort = new AbortController()
-    const frames = await collect<JobObserveFrame>(
-      ctx.jobController.observe({ sessionId: owner.id, jobId: job.id }, abort.signal),
+    const frames = await collect<JobFollowFrame>(
+      ctx.jobController.follow({ sessionId: owner.id, jobId: job.id }, abort.signal),
       3,
       abort,
     )
@@ -269,8 +269,8 @@ describe('JobController', () => {
     await job.settle({ status: 'completed' })
 
     const abort = new AbortController()
-    const frames = await collect<JobObserveFrame>(
-      ctx.jobController.observe({ jobId: job.id }, abort.signal),
+    const frames = await collect<JobFollowFrame>(
+      ctx.jobController.follow({ jobId: job.id }, abort.signal),
       3,
       abort,
     )
@@ -284,7 +284,7 @@ describe('JobController', () => {
     startJob(ctx, { label: 'shared' })
 
     const abort = new AbortController()
-    const iterator = ctx.jobController.rows({ sessionId: owner.id }, abort.signal)[Symbol.asyncIterator]()
+    const iterator = ctx.jobController.list({ sessionId: owner.id }, abort.signal)[Symbol.asyncIterator]()
     const first = await next(iterator)
     expect(first?.jobs.map(job => job.label)).toEqual(['owned', 'shared'])
     const pending = next(iterator)

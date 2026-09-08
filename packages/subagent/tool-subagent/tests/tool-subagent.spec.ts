@@ -972,7 +972,7 @@ describe('dsh-tool-subagent background mode', () => {
     const result = await resultPromise
 
     expect(result.isError).toBe(true)
-    expect(ctx.jobs.forCaller(parent.id).list()).toEqual([])
+    expect(ctx.jobs.list(parent.id)).toEqual([])
   })
 
   it('rejects startup when the provider changes during asynchronous route preflight', async () => {
@@ -1241,7 +1241,7 @@ describe('dsh-tool-subagent continuable background mode', () => {
     expect(match).not.toBeNull()
     const [, childId] = match!
     // No Task was created for the continuable child.
-    expect(ctx.jobs.forCaller(parent.id).list()).toEqual([])
+    expect(ctx.jobs.list(parent.id)).toEqual([])
 
     await vi.waitFor(() => {
       expect(ctx.agents.get(SessionId(childId!))).toBeUndefined()
@@ -1272,7 +1272,7 @@ describe('dsh-tool-subagent continuable background mode', () => {
     if (result.isError) throw new Error('expected foreground subagent success')
     expect(result.value).toMatchObject({ kind: 'foreground' })
     expect(text(result)).toBe('continuable answer')
-    expect(ctx.jobs.forCaller(parent.id).list()).toEqual([])
+    expect(ctx.jobs.list(parent.id)).toEqual([])
   })
 
   it('isolates a cancelled continuable preparation from a concurrent sibling', async () => {

@@ -12,7 +12,7 @@ import type {} from '@deepseek-ai/dsh-jobs'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import { observeJobOutput } from './observe.ts'
 import { streamJobRows } from './rows.ts'
-import type { JobObserveFrame, JobObserveRequest, JobRowsFrame, JobRowsRequest } from './types.ts'
+import type { JobFollowFrame, JobFollowRequest, JobListFrame, JobListRequest } from './types.ts'
 
 export type * from './types.ts'
 
@@ -71,7 +71,7 @@ export class JobController extends TypertRemoteService {
    * @returns the roster frames.
    */
   @Remote({ mode: 'stream' })
-  rows(request: JobRowsRequest, signal: AbortSignal): AsyncIterable<JobRowsFrame> {
+  list(request: JobListRequest, signal: AbortSignal): AsyncIterable<JobListFrame> {
     return streamJobRows(this.ctx.jobs, request, { flushMs: this.observeFlushMs }, signal)
   }
 
@@ -86,7 +86,7 @@ export class JobController extends TypertRemoteService {
    * @returns anchor, coalesced output frames, and the terminal status.
    */
   @Remote({ mode: 'stream' })
-  observe(request: JobObserveRequest, signal: AbortSignal): AsyncIterable<JobObserveFrame> {
+  follow(request: JobFollowRequest, signal: AbortSignal): AsyncIterable<JobFollowFrame> {
     return observeJobOutput(this.ctx.jobs, request, {
       flushMs: this.observeFlushMs,
       maxFrameBytes: this.observeMaxFrameBytes,

@@ -29,7 +29,7 @@ kind: "package-reference"
 
 ### 一 job 一行
 
-`ctx.jobs` 镜像的 `job.rows` 流是唯一名册：每个 `JobView` 行携带生命周期、时长、实时 `progress` 行或终态 `detail`，以及其保留字节数——进行中的 job，或留有保留输出的已结束 job，就是行可展开的依据。不存在需要 join 的第二份名册。
+`ctx.jobs` 镜像的 `job.list` 流是唯一名册：每个 `JobView` 行携带生命周期、时长、实时 `progress` 行或终态 `detail`，以及其保留字节数——进行中的 job，或留有保留输出的已结束 job，就是行可展开的依据。不存在需要 join 的第二份名册。
 
 ### 展开的面板
 
@@ -43,7 +43,7 @@ kind: "package-reference"
 <details>
 <summary>实现内幕——点击展开</summary>
 
-头部操作带里的一个 slot 条目（preset 标签之后、subagent 目录之前）渲染触发器与弹出层；弹出层通过测量锚点把自己收进视口。所有数据经 `ctx.jobs` 到达——组件不持有任何传输状态。名册跟随挂载：一个 `useEffect` 在控件存活期间保持会话的 `job.rows` 流打开。观测跟随可见性：另一个 `useEffect` 为展开行的 job 打开流，并在收起、卸载或弹出层关闭时关闭它。
+头部操作带里的一个 slot 条目（preset 标签之后、subagent 目录之前）渲染触发器与弹出层；弹出层通过测量锚点把自己收进视口。所有数据经 `ctx.jobs` 到达——组件不持有任何传输状态。名册跟随挂载：一个 `useEffect` 在控件存活期间保持会话的 `job.list` 流打开。观测跟随可见性：另一个 `useEffect` 为展开行的 job 打开流，并在收起、卸载或弹出层关闭时关闭它。
 
 | 文件 | 角色 |
 |---|---|
@@ -58,7 +58,7 @@ kind: "package-reference"
 <a id="further-exploration"></a>
 ## 进一步探索
 
-- [`dsh-api-job-controller`](../../api/job-controller/README.zh.md) —— 行与面板背后的 `job.rows`、`job.observe` 流与 `ctx.jobs` 服务。
+- [`dsh-api-job-controller`](../../api/job-controller/README.zh.md) —— 行与面板背后的 `job.list`、`job.follow` 流与 `ctx.jobs` 服务。
 - [`dsh-jobs`](../../jobs/jobs/README.zh.md) —— 拥有环与投影语义的注册表契约。
 - [`dsh-client-ui-primitives`](../ui-primitives/README.zh.md) —— 面板所配置的 `TerminalBlock` 表面。
 

@@ -1144,13 +1144,13 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     description: 'Host service backing the generated `ctx.remote.job` namespace.',
     methods: [
       {
-        signature: '@Remote({ mode: \'stream\' }) rows(request: JobRowsRequest, signal: AbortSignal): AsyncIterable<JobRowsFrame>',
+        signature: '@Remote({ mode: \'stream\' }) list(request: JobListRequest, signal: AbortSignal): AsyncIterable<JobListFrame>',
         description: 'Stream the jobs one session can see — its own plus every unowned job — as whole-set frames: one on open, then one after each coalesced burst of lifecycle commits. The stream has no natural end; the carrier closes it.',
         parameters: [{ name: 'request', description: 'the session whose visible set to mirror.' }, { name: 'signal', description: 'cancellation owned by the Remote stream carrier.' }],
         returns: 'the roster frames.',
       },
       {
-        signature: '@Remote({ mode: \'stream\' }) observe(request: JobObserveRequest, signal: AbortSignal): AsyncIterable<JobObserveFrame>',
+        signature: '@Remote({ mode: \'stream\' }) follow(request: JobFollowRequest, signal: AbortSignal): AsyncIterable<JobFollowFrame>',
         description: 'Stream one job\'s retained output from an absolute byte offset, then its terminal projection once settled and drained. Non-consuming: the model-facing cursor and notice state never observe these reads. The request\'s session is the fenced read\'s caller; the registry rejects a job the session cannot see and an unknown job.',
         parameters: [{ name: 'request', description: 'target job, owning session, and optional resume offset.' }, { name: 'signal', description: 'cancellation owned by the Remote stream carrier.' }],
         returns: 'anchor, coalesced output frames, and the terminal status.',
@@ -1174,10 +1174,40 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the registry-issued `<kind>-N` id.',
       },
       {
-        signature: 'abstract forCaller(caller: SessionId | undefined): CallerJobs',
-        description: 'Bind the caller\'s identity once and return its operations. A caller sees its own jobs and every unowned job; an anonymous caller sees unowned jobs only. The operations resolve visibility on every call, so they stay valid as jobs come and go.',
-        parameters: [{ name: 'caller', description: 'the calling session, or `undefined` for an anonymous caller.' }],
-        returns: 'the operations available to that caller.',
+        signature: 'abstract list(caller?: SessionId): JobView[]',
+        description: 'List caller-owned and unowned jobs in registration order.',
+        parameters: [{ name: 'caller', description: 'reading session; omission sees only unowned jobs.' }],
+        returns: 'fresh projections.',
+      },
+      {
+        signature: 'abstract get(id: JobId, caller?: SessionId): JobView',
+        description: 'Project one job without changing its cursor. Throws for an unknown or foreign job.',
+        parameters: [{ name: 'id', description: 'job to look up.' }, { name: 'caller', description: 'reading session checked against the owner.' }],
+        returns: 'a fresh projection.',
+      },
+      {
+        signature: 'abstract read(id: JobId, caller?: SessionId): JobRead',
+        description: 'Consume the ring from the model cursor and advance it to the current total. After settlement the first read also carries the producer\'s result. Throws for an unknown or foreign job.',
+        parameters: [{ name: 'id', description: 'job to read.' }, { name: 'caller', description: 'reading session checked against the owner.' }],
+        returns: 'the chunks since the cursor, the lossy flag, the result once, and the post-read projection.',
+      },
+      {
+        signature: 'abstract readAt(id: JobId, from: number, caller?: SessionId): JobOutputRead',
+        description: 'Read retained ring output without moving the model cursor. Resume with a previous read\'s `next`; an offset inside a retained chunk returns the whole chunk (its `at` may precede `from`). Throws for a negative or non-integer offset, or an unknown or foreign job.',
+        parameters: [{ name: 'id', description: 'job to read.' }, { name: 'from', description: 'absolute byte offset to read from (0 for the retained head).' }, { name: 'caller', description: 'reading session checked against the owner.' }],
+        returns: 'retained chunks overlapping `[from, total)`, the resume offset, and the lossy flag.',
+      },
+      {
+        signature: 'abstract kill(id: JobId, caller?: SessionId, reason?: string): \'requested\' | \'already-finished\'',
+        description: 'Request cancellation, then mark the job stopping. A producer throw propagates without changing job state. A supplied reason is merged into terminal `detail` when the job settles `killed`. Throws for an unknown or foreign job.',
+        parameters: [{ name: 'id', description: 'job to cancel.' }, { name: 'caller', description: 'killing session checked against the owner.' }, { name: 'reason', description: 'cancellation reason forwarded verbatim to the producer.' }],
+        returns: '`requested` for live work, otherwise `already-finished`.',
+      },
+      {
+        signature: 'abstract wait(id: JobId, timeoutMs: number, caller?: SessionId, signal?: AbortSignal): Promise<JobView>',
+        description: 'Wait for settlement or timeout without cancelling the job. Caller abort rejects only while the job is live; after settlement the terminal projection wins. Rejects for an invalid timeout or an unknown or foreign job.',
+        parameters: [{ name: 'id', description: 'job to wait for.' }, { name: 'timeoutMs', description: 'positive finite wait bound in milliseconds.' }, { name: 'caller', description: 'waiting session checked against the owner.' }, { name: 'signal', description: 'optional cancellation of the wait itself.' }],
+        returns: 'projection at settlement or timeout.',
       },
       {
         signature: 'abstract attachController(name: string): () => void',
@@ -3768,10 +3798,6 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type BrandedNumber<B extends string> = number & {\n    readonly [BRAND]: B;\n};',
   },
   {
-    name: 'CallerJobs',
-    declaration: 'export interface CallerJobs {\n    list(): JobView[];\n    get(id: JobId): JobView;\n    read(id: JobId): JobRead;\n    readAt(id: JobId, from: number): JobOutputRead;\n    kill(id: JobId, options?: JobKillOptions): \'requested\' | \'already-finished\';\n    wait(id: JobId, timeoutMs: number, signal?: AbortSignal): Promise<JobView>;\n}',
-  },
-  {
     name: 'ClientArtifactBaseline',
     declaration: 'export interface ClientArtifactBaseline {\n    readonly path: string;\n    readonly mtimeMs: number;\n    readonly size: number;\n}',
   },
@@ -4400,6 +4426,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface JobEvents {\n    subscribe(filter: JobEventFilter, listener: JobEventListener): () => void;\n}',
   },
   {
+    name: 'JobFollowFrame',
+    declaration: 'export type JobFollowFrame = {\n    readonly type: \'opened\';\n    readonly job: JobView;\n    readonly from: number;\n} | {\n    readonly type: \'output\';\n    readonly chunks: readonly JobChunk[];\n    readonly next: number;\n    readonly lossy?: true;\n} | {\n    readonly type: \'status\';\n    readonly job: JobView;\n};',
+  },
+  {
+    name: 'JobFollowRequest',
+    declaration: 'export interface JobFollowRequest {\n    readonly sessionId?: SessionId;\n    readonly jobId: JobId;\n    readonly from?: number;\n}',
+  },
+  {
     name: 'JobHandle',
     declaration: 'export interface JobHandle {\n    readonly id: JobId;\n    append(text: string, options?: JobAppendOptions): void;\n    updateProgress(line: string): void;\n}',
   },
@@ -4412,10 +4446,6 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type JobId = Branded<\'JobId\'>;',
   },
   {
-    name: 'JobKillOptions',
-    declaration: 'export interface JobKillOptions {\n    reason?: string;\n}',
-  },
-  {
     name: 'JobKind',
     declaration: 'export type JobKind = JobKindMap[keyof JobKindMap];',
   },
@@ -4424,12 +4454,12 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface JobKindMap {\n    bash: \'bash\';\n    subagent: \'subagent\';\n}',
   },
   {
-    name: 'JobObserveFrame',
-    declaration: 'export type JobObserveFrame = {\n    readonly type: \'opened\';\n    readonly job: JobView;\n    readonly from: number;\n} | {\n    readonly type: \'output\';\n    readonly chunks: readonly JobChunk[];\n    readonly next: number;\n    readonly lossy?: true;\n} | {\n    readonly type: \'status\';\n    readonly job: JobView;\n};',
+    name: 'JobListFrame',
+    declaration: 'export interface JobListFrame {\n    readonly type: \'rows\';\n    readonly jobs: readonly JobView[];\n}',
   },
   {
-    name: 'JobObserveRequest',
-    declaration: 'export interface JobObserveRequest {\n    readonly sessionId?: SessionId;\n    readonly jobId: JobId;\n    readonly from?: number;\n}',
+    name: 'JobListRequest',
+    declaration: 'export interface JobListRequest {\n    readonly sessionId: SessionId;\n}',
   },
   {
     name: 'JobOutcome',
@@ -4446,14 +4476,6 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'JobRead',
     declaration: 'export interface JobRead {\n    chunks: readonly JobChunk[];\n    lossy: boolean;\n    result?: string;\n    job: JobView;\n}',
-  },
-  {
-    name: 'JobRowsFrame',
-    declaration: 'export interface JobRowsFrame {\n    readonly type: \'rows\';\n    readonly jobs: readonly JobView[];\n}',
-  },
-  {
-    name: 'JobRowsRequest',
-    declaration: 'export interface JobRowsRequest {\n    readonly sessionId: SessionId;\n}',
   },
   {
     name: 'JobSettleCause',

@@ -116,7 +116,7 @@ describe.skipIf(MODE === 'record')('web e2e: live job stream', () => {
     expect(tripwire.warnings).toEqual([])
 
     phase = 'settled'
-    expect(scaffold.ctx.jobs.forCaller(agent.id).kill(jobId, { reason: 'web e2e cancellation' })).toBe('requested')
+    expect(scaffold.ctx.jobs.kill(jobId, agent.id, 'web e2e cancellation')).toBe('requested')
 
     // Settlement arrives on the observation stream itself, so the open panel
     // flips without any further interaction; the roster trigger follows.

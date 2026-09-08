@@ -4,7 +4,7 @@ import { RemoteStream, type RemoteStreamOptions } from '@deepseek-ai/dsh-api-gat
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { afterEach, describe, expect, it } from 'vitest'
 import * as JobClient from '../src/client/index.ts'
-import type { JobObserveFrame, JobRowsFrame } from '../src/types.ts'
+import type { JobFollowFrame, JobListFrame } from '../src/types.ts'
 
 const contexts = new Set<Context>()
 
@@ -30,13 +30,13 @@ async function mount(): Promise<{ ctx: Context; observeCalls: unknown[]; rowsCal
   }
   const job = {
     // The fake streams never yield; opening and releasing must leave no state behind.
-    rows: (request: unknown) => {
+    list: (request: unknown) => {
       rowsCalls.push(request)
-      return (async function* (): AsyncGenerator<JobRowsFrame> {})()
+      return (async function* (): AsyncGenerator<JobListFrame> {})()
     },
-    observe: (request: unknown) => {
+    follow: (request: unknown) => {
       observeCalls.push(request)
-      return (async function* (): AsyncGenerator<JobObserveFrame> {})()
+      return (async function* (): AsyncGenerator<JobFollowFrame> {})()
     },
   }
   ctx.reflect.provide('remote', {

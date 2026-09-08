@@ -2,7 +2,7 @@
 
 import type { JobId } from '@deepseek-ai/dsh-jobs/brand'
 import type { JobChunk, JobRegistry, JobStatus, JobView } from '@deepseek-ai/dsh-jobs'
-import type { JobObserveFrame, JobObserveRequest } from './types.ts'
+import type { JobFollowFrame, JobFollowRequest } from './types.ts'
 import { OutputWaiter, sleep } from './wake.ts'
 
 /** Cadence and framing bounds for one observation generation. */
@@ -40,10 +40,10 @@ function isTerminal(status: JobStatus): boolean {
  */
 export async function* observeJobOutput(
   registry: JobRegistry,
-  request: JobObserveRequest,
+  request: JobFollowRequest,
   options: ObserveJobOptions,
   signal: AbortSignal,
-): AsyncIterable<JobObserveFrame> {
+): AsyncIterable<JobFollowFrame> {
   if (request.from !== undefined && (!Number.isSafeInteger(request.from) || request.from < 0)) {
     throw new Error(`invalid observe offset: expected a non-negative safe integer, got ${JSON.stringify(request.from)}`)
   }
@@ -65,8 +65,7 @@ export async function* observeJobOutput(
     waiter.wake()
   })
   try {
-    const visible = registry.forCaller(request.sessionId)
-    let job = visible.get(id)
+    let job = registry.get(id, request.sessionId)
     let cursor = request.from ?? job.output.earliest
     yield { type: 'opened', job, from: cursor }
     while (!signal.aborted) {
@@ -74,12 +73,12 @@ export async function* observeJobOutput(
         yield { type: 'status', job: removed }
         return
       }
-      const read = visible.readAt(id, cursor)
+      const read = registry.readAt(id, cursor, request.sessionId)
       if (read.chunks.length > 0 || read.lossy) {
         yield* outputFrames(read.chunks, read.next, read.lossy, options.maxFrameBytes)
       }
       cursor = read.next
-      job = visible.get(id)
+      job = registry.get(id, request.sessionId)
       if (isTerminal(job.status) && cursor >= job.output.total) {
         yield { type: 'status', job }
         return
@@ -99,7 +98,7 @@ function* outputFrames(
   next: number,
   lossy: boolean,
   maxFrameBytes: number,
-): Iterable<JobObserveFrame> {
+): Iterable<JobFollowFrame> {
   let batch: JobChunk[] = []
   let batchBytes = 0
   let flaggedLossy = lossy

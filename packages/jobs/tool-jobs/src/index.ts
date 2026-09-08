@@ -15,7 +15,7 @@ import { TextRetainer } from '@deepseek-ai/dsh-output-retention'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import type { GenericCallView, ToolDefinition, ToolExecution } from '@deepseek-ai/dsh-tools'
 import { JobId } from '@deepseek-ai/dsh-jobs'
-import type { JobView, CallerJobs } from '@deepseek-ai/dsh-jobs'
+import type { JobView, JobRead } from '@deepseek-ai/dsh-jobs'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type {} from '@deepseek-ai/dsh-agent'
 import { publicJob, renderModelDelta, statusLine } from './render.ts'
@@ -166,7 +166,7 @@ function visibleOutputLimit(ctx: Context, exec: ToolExecution): number | undefin
   if (exec.name !== 'job_output' && exec.name !== 'job_kill') return undefined
   const jobId = (exec.arguments as { job_id?: unknown } | null | undefined)?.job_id
   if (typeof jobId !== 'string' || jobId.length === 0) return undefined
-  return ctx.jobs.forCaller(exec.agent?.id).list().find(job => job.id === jobId)?.outputLimitBytes
+  return ctx.jobs.list(exec.agent?.id).find(job => job.id === jobId)?.outputLimitBytes
 }
 
 /** Validate the non-empty constraint that ParameterSchemaSpec cannot express. */
@@ -188,8 +188,7 @@ function isTerminal(job: JobView): boolean {
 }
 
 /** The consuming read as the model sees it: the delta, then the result once, then the status line. */
-function readBody(jobs: CallerJobs, id: JobId): { text: string; job: PublicJobSnapshot } {
-  const read = jobs.read(id)
+function readBody(read: JobRead): { text: string; job: PublicJobSnapshot } {
   const delta = renderModelDelta(read.chunks, read.lossy, read.job.output.spillPaths ?? [])
   const text = read.result === undefined
     ? delta
@@ -359,7 +358,7 @@ export function apply(ctx: Context, config: Config): void {
     },
     async execute(args, exec) {
       const id = validateJobId(args.job_id)
-      const jobs = ctx.jobs.forCaller(exec.agent?.id)
+      const jobs = ctx.jobs
       if (args.wait === true) {
         const timeout = Math.min(args.timeout_ms ?? waitDefault, waitCap)
         const entry = claim(id)
@@ -373,7 +372,7 @@ export function apply(ctx: Context, config: Config): void {
         const abandon = (): void => { entry.live = false }
         exec.signal.addEventListener('abort', abandon, { once: true })
         try {
-          const view = await jobs.wait(id, timeout, exec.signal)
+          const view = await jobs.wait(id, timeout, exec.agent?.id, exec.signal)
           if (!isTerminal(view)) claims.delete(entry)
         } catch (error: unknown) {
           claims.delete(entry)
@@ -382,7 +381,7 @@ export function apply(ctx: Context, config: Config): void {
           exec.signal.removeEventListener('abort', abandon)
         }
       }
-      return readBody(jobs, id)
+      return readBody(jobs.read(id, exec.agent?.id))
     },
     presentCall: args => presentTaskCall(`Read output from background job ${args.job_id}`, 'read', args.job_id),
   }))
@@ -401,7 +400,7 @@ export function apply(ctx: Context, config: Config): void {
       }],
     },
     execute(_args, exec) {
-      const jobs = ctx.jobs.forCaller(exec.agent?.id).list()
+      const jobs = ctx.jobs.list(exec.agent?.id)
       return Promise.resolve(jobs.map(publicJob))
     },
     presentCall: () => presentTaskCall('List background jobs', 'read'),
@@ -437,13 +436,13 @@ export function apply(ctx: Context, config: Config): void {
     },
     execute(args, exec) {
       const id = validateJobId(args.job_id)
-      const jobs = ctx.jobs.forCaller(exec.agent?.id)
-      const result = jobs.kill(id, args.reason === undefined ? {} : { reason: args.reason })
+      const jobs = ctx.jobs
+      const result = jobs.kill(id, exec.agent?.id, args.reason)
       // The model's own kill is its delivery: the settlement notice would only
       // repeat what this tool result already said.
       if (result === 'requested') claim(id)
       // A projection describes current state without consuming pending output.
-      const job = publicJob(jobs.get(id))
+      const job = publicJob(jobs.get(id, exec.agent?.id))
       return Promise.resolve({
         outcome: result === 'already-finished' ? 'already-finished' as const : 'cancellation-requested' as const,
         job,

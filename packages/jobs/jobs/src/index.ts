@@ -11,7 +11,7 @@
 
 import { Context, Service } from '@deepseek-ai/cordis'
 import type { SessionId } from '@deepseek-ai/dsh-session'
-import type { JobEvents, JobId, JobSpec, CallerJobs } from './types.ts'
+import type { JobEvents, JobId, JobOutputRead, JobRead, JobSpec, JobView } from './types.ts'
 
 export { JobId } from './types.ts'
 export type {
@@ -24,7 +24,6 @@ export type {
   JobEvents,
   JobHandle,
   JobHooks,
-  JobKillOptions,
   JobKind,
   JobKindMap,
   JobOutcome,
@@ -36,7 +35,6 @@ export type {
   JobSpec,
   JobStatus,
   JobView,
-  CallerJobs,
 } from './types.ts'
 
 declare module '@deepseek-ai/cordis' {
@@ -104,14 +102,67 @@ export abstract class JobRegistry extends Service {
   abstract start(spec: JobSpec): JobId
 
   /**
-   * Bind the caller's identity once and return its operations. A caller sees
-   * its own jobs and every unowned job; an anonymous caller sees unowned jobs
-   * only. The operations resolve visibility on every call, so they stay valid
-   * as jobs come and go.
-   * @param caller - the calling session, or `undefined` for an anonymous caller.
-   * @returns the operations available to that caller.
+   * List caller-owned and unowned jobs in registration order.
+   * @param caller - reading session; omission sees only unowned jobs.
+   * @returns fresh projections.
    */
-  abstract forCaller(caller: SessionId | undefined): CallerJobs
+  abstract list(caller?: SessionId): JobView[]
+
+  /**
+   * Project one job without changing its cursor. Throws for an unknown or
+   * foreign job.
+   * @param id - job to look up.
+   * @param caller - reading session checked against the owner.
+   * @returns a fresh projection.
+   */
+  abstract get(id: JobId, caller?: SessionId): JobView
+
+  /**
+   * Consume the ring from the model cursor and advance it to the current
+   * total. After settlement the first read also carries the producer's
+   * result. Throws for an unknown or foreign job.
+   * @param id - job to read.
+   * @param caller - reading session checked against the owner.
+   * @returns the chunks since the cursor, the lossy flag, the result once, and the post-read projection.
+   */
+  abstract read(id: JobId, caller?: SessionId): JobRead
+
+  /**
+   * Read retained ring output without moving the model cursor. Resume with
+   * a previous read's `next`; an offset inside a retained chunk returns the
+   * whole chunk (its `at` may precede `from`). Throws for a negative or
+   * non-integer offset, or an unknown or foreign job.
+   * @param id - job to read.
+   * @param from - absolute byte offset to read from (0 for the retained head).
+   * @param caller - reading session checked against the owner.
+   * @returns retained chunks overlapping `[from, total)`, the resume offset, and the lossy flag.
+   */
+  abstract readAt(id: JobId, from: number, caller?: SessionId): JobOutputRead
+
+  /**
+   * Request cancellation, then mark the job stopping. A producer throw
+   * propagates without changing job state. A supplied reason is merged into
+   * terminal `detail` when the job settles `killed`. Throws for an unknown
+   * or foreign job.
+   * @param id - job to cancel.
+   * @param caller - killing session checked against the owner.
+   * @param reason - cancellation reason forwarded verbatim to the producer.
+   * @returns `requested` for live work, otherwise `already-finished`.
+   */
+  abstract kill(id: JobId, caller?: SessionId, reason?: string): 'requested' | 'already-finished'
+
+  /**
+   * Wait for settlement or timeout without cancelling the job. Caller abort
+   * rejects only while the job is live; after settlement the terminal
+   * projection wins. Rejects for an invalid timeout or an unknown or foreign
+   * job.
+   * @param id - job to wait for.
+   * @param timeoutMs - positive finite wait bound in milliseconds.
+   * @param caller - waiting session checked against the owner.
+   * @param signal - optional cancellation of the wait itself.
+   * @returns projection at settlement or timeout.
+   */
+  abstract wait(id: JobId, timeoutMs: number, caller?: SessionId, signal?: AbortSignal): Promise<JobView>
 
   /**
    * Attach an effect-scoped controller that can read and stop jobs. It serves the

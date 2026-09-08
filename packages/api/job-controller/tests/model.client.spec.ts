@@ -4,7 +4,7 @@ import type { JobId } from '@deepseek-ai/dsh-jobs/brand'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { ClientJobsModel } from '../src/client/model.ts'
 import { ClientJobs } from '../src/client/service.ts'
-import type { JobObserveFrame, JobRowsFrame, JobView } from '../src/types.ts'
+import type { JobFollowFrame, JobListFrame, JobView } from '../src/types.ts'
 
 const ID = 'bash-1' as JobId
 const S1 = 'alice' as SessionId
@@ -250,7 +250,7 @@ interface StreamOptions {
 function bench() {
   const ctx = new Context()
   const model = new ClientJobsModel()
-  const streams: { options: StreamOptions; stream: FakeStream<JobObserveFrame> & FakeStream<JobRowsFrame> }[] = []
+  const streams: { options: StreamOptions; stream: FakeStream<JobFollowFrame> & FakeStream<JobListFrame> }[] = []
   const observeCalls: unknown[] = []
   const rowsCalls: unknown[] = []
   const remote = {
@@ -260,11 +260,11 @@ function bench() {
       return stream
     },
     job: {
-      observe: (request: unknown) => {
+      follow: (request: unknown) => {
         observeCalls.push(request)
         return { [Symbol.asyncIterator]: async function* () { /* never yields */ } }
       },
-      rows: (request: unknown) => {
+      list: (request: unknown) => {
         rowsCalls.push(request)
         return { [Symbol.asyncIterator]: async function* () { /* never yields */ } }
       },
@@ -275,7 +275,7 @@ function bench() {
 }
 
 const tick = () => new Promise<void>(resolve => setTimeout(resolve, 0))
-const anchor = (): JobObserveFrame => ({ type: 'opened', job: view(), from: 0 })
+const anchor = (): JobFollowFrame => ({ type: 'opened', job: view(), from: 0 })
 
 describe('ClientJobs roster streams', () => {
   it('shares one roster stream per session and drops the rows after the last release', async () => {

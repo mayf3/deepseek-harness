@@ -222,7 +222,7 @@ describe('PTC mode typed values: keyless real-worker contracts', () => {
       return await tools.bash({ command: 'sleep 10', description: 'Must never start', run_in_background: true });
     `, pre.signal)
     expect(preResult.isError).toBe(true)
-    expect(ctx.jobs.forCaller(undefined).list()).toEqual([])
+    expect(ctx.jobs.list()).toEqual([])
 
     const afterPublication = new AbortController()
     const running = runCode(ctx, `
@@ -230,14 +230,14 @@ describe('PTC mode typed values: keyless real-worker contracts', () => {
       console.log(started.jobId);
       await new Promise(() => {});
     `, afterPublication.signal)
-    for (let attempt = 0; attempt < 100 && ctx.jobs.forCaller(undefined).list().length === 0; attempt++) {
+    for (let attempt = 0; attempt < 100 && ctx.jobs.list().length === 0; attempt++) {
       await new Promise(resolve => setTimeout(resolve, 10))
     }
-    const job = ctx.jobs.forCaller(undefined).list()[0]
+    const job = ctx.jobs.list()[0]
     expect(job).toMatchObject({ id: 'bash-1', status: 'running' })
     afterPublication.abort('outer-call-cancelled')
     expect((await running).isError).toBe(true)
-    expect(ctx.jobs.forCaller(undefined).list()[0]).toMatchObject({ id: job!.id, status: 'running' })
+    expect(ctx.jobs.list()[0]).toMatchObject({ id: job!.id, status: 'running' })
 
     const killed = completion(await runCode(ctx, `
       return await tools.job_kill({ job_id: ${JSON.stringify(job!.id)}, reason: 'test owns cancellation' });
@@ -261,7 +261,7 @@ describe('PTC mode typed values: keyless real-worker contracts', () => {
     const result = await pending
     expect(result.isError).toBe(true)
     expect(Date.now() - startedAt).toBeLessThan(5_000)
-    expect(ctx.jobs.forCaller(undefined).list()).toEqual([])
+    expect(ctx.jobs.list()).toEqual([])
   }, 15_000)
 
   it('uses versioned Cordis DTO ids directly for running and pending Plugins, then confirms removal', async () => {

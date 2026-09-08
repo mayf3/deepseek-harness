@@ -18,7 +18,7 @@ export type { JobsSnapshot, ObservedJob } from './model.ts'
 // declaration emit drops the value import above.
 export type { IJobs } from './service.ts'
 export type {
-  JobChunk, JobObserveFrame, JobObserveRequest, JobRowsFrame, JobRowsRequest, JobView,
+  JobChunk, JobFollowFrame, JobFollowRequest, JobListFrame, JobListRequest, JobView,
 } from '../types.ts'
 
 /** Required Client Remote services. */

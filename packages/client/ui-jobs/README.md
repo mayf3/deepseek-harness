@@ -29,7 +29,7 @@ Load the plugin through the web-app manifest; it renders nothing until the sessi
 
 ### One row per job
 
-The `job.rows` stream `ctx.jobs` mirrors is the single roster: each `JobView` row carries lifecycle, duration, the live `progress` line or the terminal `detail`, and its retained byte count — a live job, or a settled one with retained output, is what makes a row expandable. There is no second roster to join.
+The `job.list` stream `ctx.jobs` mirrors is the single roster: each `JobView` row carries lifecycle, duration, the live `progress` line or the terminal `detail`, and its retained byte count — a live job, or a settled one with retained output, is what makes a row expandable. There is no second roster to join.
 
 ### The expanded panel
 
@@ -43,7 +43,7 @@ Expanding an observable row opens that job's output observation stream from `ctx
 <details>
 <summary>Implementation internals — click to expand</summary>
 
-One slot entry in the header actions band (after the preset label, before the subagent catalog) renders the trigger and popover; the popover fits itself to the viewport by measuring its anchor. All data arrives through `ctx.jobs` — the component holds no transport state. The roster follows the mount: one `useEffect` keeps the session's `job.rows` stream open while the control lives. Observation follows visibility: another `useEffect` opens the stream for the expanded row's job and closes it on collapse, unmount, or popover close.
+One slot entry in the header actions band (after the preset label, before the subagent catalog) renders the trigger and popover; the popover fits itself to the viewport by measuring its anchor. All data arrives through `ctx.jobs` — the component holds no transport state. The roster follows the mount: one `useEffect` keeps the session's `job.list` stream open while the control lives. Observation follows visibility: another `useEffect` opens the stream for the expanded row's job and closes it on collapse, unmount, or popover close.
 
 | File | Role |
 |---|---|
@@ -58,7 +58,7 @@ One slot entry in the header actions band (after the preset label, before the su
 <a id="further-exploration"></a>
 ## Further Exploration
 
-- [`dsh-api-job-controller`](../../api/job-controller/README.md) — the `job.rows` and `job.observe` streams and the `ctx.jobs` service behind the rows and the panel.
+- [`dsh-api-job-controller`](../../api/job-controller/README.md) — the `job.list` and `job.follow` streams and the `ctx.jobs` service behind the rows and the panel.
 - [`dsh-jobs`](../../jobs/jobs/README.md) — the registry contract that owns the ring and projection semantics.
 - [`dsh-client-ui-primitives`](../ui-primitives/README.md) — the `TerminalBlock` surface the panel configures.
 

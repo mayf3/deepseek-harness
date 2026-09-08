@@ -1098,11 +1098,6 @@
     },
     {
       "doc": "docs/subsystems/jobs.md",
-      "symbol": "CallerJobs",
-      "source": "packages/jobs/jobs/src/types.ts"
-    },
-    {
-      "doc": "docs/subsystems/jobs.md",
       "symbol": "JobEvent",
       "source": "packages/jobs/jobs/src/types.ts"
     },

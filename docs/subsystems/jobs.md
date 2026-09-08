@@ -122,14 +122,14 @@ interface JobOutcome {
   status: 'completed' | 'killed' | 'failed'
   /**
    * Terminal reason rendered into status lines (`exit code: 3`, `max-tokens`).
-   * When the job settles `killed` after a {@link CallerJobs.kill} with a
+   * When the job settles `killed` after a {@link JobRegistry.kill} with a
    * reason, the registry appends that reason.
    */
   detail?: string
   /**
    * Return value for jobs whose result is a value rather than a stream (a
    * workflow's rendered result, a subagent's report). The output ring carries
-   * the stream; this is handed out once by the model's next {@link CallerJobs.read}.
+   * the stream; this is handed out once by the model's next {@link JobRegistry.read}.
    */
   result?: string
 }
@@ -176,7 +176,7 @@ interface JobSourceRead {
 
 ## The output ring
 
-Every job owns one bounded ring. Pull sources are pumped into it and `JobHandle.append` pushes land whole; the model consumes the ring through a registry-kept cursor (`CallerJobs.read`), any number of observers read it at absolute byte offsets (`CallerJobs.readAt`), and neither disturbs the other. `JobChannel` labels `stdout`, `stderr`, and `log`; `log` is producer narration that reaches observers only, never the model's consuming read. Settlement ends the stream and trims retention to the settled cap — the ring has no separate lifecycle. The spill file a pull source keeps is job metadata (`JobView.output.spillPaths`, refreshed by every pump read), not chunk provenance, so the model's dropped-output notice names it after the ring evicted the bytes and even after the gap chunk itself is gone. Browsers reach the roster and the ring through `job.rows` and `job.observe`, the Remote streams of [`dsh-api-job-controller`](../../packages/api/job-controller/README.md), whose frames are listed under its Cordis API section below.
+Every job owns one bounded ring. Pull sources are pumped into it and `JobHandle.append` pushes land whole; the model consumes the ring through a registry-kept cursor (`JobRegistry.read`), any number of observers read it at absolute byte offsets (`JobRegistry.readAt`), and neither disturbs the other. `JobChannel` labels `stdout`, `stderr`, and `log`; `log` is producer narration that reaches observers only, never the model's consuming read. Settlement ends the stream and trims retention to the settled cap — the ring has no separate lifecycle. The spill file a pull source keeps is job metadata (`JobView.output.spillPaths`, refreshed by every pump read), not chunk provenance, so the model's dropped-output notice names it after the ring evicted the bytes and even after the gap chunk itself is gone. Browsers reach the roster and the ring through `job.list` and `job.follow`, the Remote streams of [`dsh-api-job-controller`](../../packages/api/job-controller/README.md), whose frames are listed under its Cordis API section below.
 
 ```ts type-equiv
 /** One chunk of a job's output ring: absolute offset, text, and its provenance. */
@@ -193,7 +193,7 @@ interface JobChunk {
 ```
 
 ```ts type-equiv
-/** Result of one non-consuming {@link CallerJobs.readAt}. */
+/** Result of one non-consuming {@link JobRegistry.readAt}. */
 interface JobOutputRead {
   /** Retained chunks overlapping `[from, total)`, in offset order. */
   chunks: readonly JobChunk[]
@@ -257,10 +257,10 @@ interface JobView {
 }
 ```
 
-`JobRegistry.forCaller(caller)` binds one caller's identity and returns its operations; a caller sees its own jobs and every unowned job, and every operation throws for an id outside that set.
+`JobRegistry.list`, `get`, `read`, `readAt`, `kill`, and `wait` each accept the caller’s `SessionId`; omitting it permits only unowned jobs, while a session may also access its own jobs.
 
 ```ts type-equiv
-/** Output and post-read state returned by the consuming {@link CallerJobs.read}. */
+/** Output and post-read state returned by the consuming {@link JobRegistry.read}. */
 interface JobRead {
   /** Ring chunks appended since the model cursor, in offset order; every channel included. */
   chunks: readonly JobChunk[]
@@ -273,65 +273,6 @@ interface JobRead {
 }
 ```
 
-```ts type-equiv
-/**
- * The operations one caller may perform, bound by {@link JobRegistry.forCaller}.
- * A caller sees its own jobs and every unowned job; every method throws for
- * an id outside that set, without distinguishing unknown from foreign.
- */
-interface CallerJobs {
-  /**
-   * List the visible jobs in registration order.
-   * @returns fresh projections.
-   */
-  list(): JobView[]
-  /**
-   * Project one job without touching its cursor.
-   * @param id - job to look up.
-   * @returns a fresh projection.
-   */
-  get(id: JobId): JobView
-  /**
-   * Consume the ring from the model cursor and advance it to the current
-   * total. After settlement the first read also carries the producer's
-   * result; later reads return only what was appended since.
-   * @param id - job to read.
-   * @returns the chunks since the cursor, the lossy flag, the result once, and the post-read projection.
-   */
-  read(id: JobId): JobRead
-  /**
-   * Read retained ring output from an absolute byte offset without consuming
-   * it. Resume by passing a previous read's `next`; an offset inside a
-   * retained chunk returns that whole chunk (its `at` may precede `from`).
-   * Never moves the model cursor. Throws for a negative or non-integer offset.
-   * @param id - job to read.
-   * @param from - absolute byte offset to read from (0 for the retained head).
-   * @returns retained chunks overlapping `[from, total)`, the resume offset, and the lossy flag.
-   */
-  readAt(id: JobId, from: number): JobOutputRead
-  /**
-   * Request cancellation, then mark the job stopping. A recorded
-   * {@link JobKillOptions.reason} merges into the terminal `detail` when the
-   * job settles `killed`. A producer throw propagates without changing job
-   * state.
-   * @param id - job to cancel.
-   * @param options - cancellation reason.
-   * @returns `requested` for live work, otherwise `already-finished`.
-   */
-  kill(id: JobId, options?: JobKillOptions): 'requested' | 'already-finished'
-  /**
-   * Wait for settlement or timeout without cancelling the job. Caller abort
-   * rejects only while the job is live; after settlement the terminal
-   * projection wins. Throws for an invalid timeout.
-   * @param id - job to wait for.
-   * @param timeoutMs - positive finite wait bound in milliseconds.
-   * @param signal - optional cancellation of the wait itself.
-   * @returns projection at settlement or timeout.
-   */
-  wait(id: JobId, timeoutMs: number, signal?: AbortSignal): Promise<JobView>
-}
-```
-
 ## Events
 
 The registry announces every commit through one filtered stream. Lifecycle events carry the projection after the commit they announce; `settled` names its cause so a completion reporter can skip a teardown; `output` carries only the id and the new total, so observers read from their own cursor and the registry never pushes payloads.
@@ -340,7 +281,7 @@ The registry announces every commit through one filtered stream. Lifecycle event
 /**
  * One lifecycle or output event. Lifecycle events carry the job's projection
  * after the commit they announce; `output` carries only the id and the new
- * total, so an observer schedules a {@link CallerJobs.readAt} from its own
+ * total, so an observer schedules a {@link JobRegistry.readAt} from its own
  * cursor and the registry never pushes payloads.
  */
 type JobEvent =
@@ -379,7 +320,7 @@ type JobEventFilter =
 
 ## Service behavior
 
-The abstract [`JobRegistry`](../../packages/jobs/jobs/src/index.ts) Service Definition specifies atomic `start`, caller-bound `forCaller` (`list`, `get`, the consuming `read`, the non-consuming `readAt`, `kill`, and bounded `wait`), the filtered `events` stream, and `attachController`; [`LocalJobRegistry`](../../packages/jobs/jobs-local/src/index.ts) is the process-local Service Provider. Authorization compares owner sessions; owner cleanup and admission use the live `Agent` registered under the owner session when the job starts. The local provider's positive-safe-integer `maxConcurrentJobsPerOwner` config defaults to `10` and counts `running` plus `stopping` records per exact owner, with one shared bucket for unowned jobs; terminal producer settlement releases capacity; `retainBytes` (default 262144) and `settledRetainBytes` (default 16384) bound each ring's live and settled retention, and `pumpPollMs` (default 150) is the pull cadence. See [`dsh-jobs`](../../packages/jobs/jobs/README.md) for the Service Definition contract, [`dsh-jobs-local`](../../packages/jobs/jobs-local/README.md) for the registry lifecycle and admission policy, and [`dsh-tool-jobs`](../../packages/jobs/tool-jobs/README.md) for the model-facing Consumer.
+The abstract [`JobRegistry`](../../packages/jobs/jobs/src/index.ts) Service Definition specifies atomic `start`, caller-scoped `list`, `get`, consuming `read`, non-consuming `readAt`, `kill`, and bounded `wait`, the filtered `events` stream, and `attachController`; [`LocalJobRegistry`](../../packages/jobs/jobs-local/src/index.ts) is the process-local Service Provider. Authorization compares owner sessions; owner cleanup and admission use the live `Agent` registered under the owner session when the job starts. The local provider's positive-safe-integer `maxConcurrentJobsPerOwner` config defaults to `10` and counts `running` plus `stopping` records per exact owner, with one shared bucket for unowned jobs; terminal producer settlement releases capacity; `retainBytes` (default 262144) and `settledRetainBytes` (default 16384) bound each ring's live and settled retention, and `pumpPollMs` (default 150) is the pull cadence. See [`dsh-jobs`](../../packages/jobs/jobs/README.md) for the Service Definition contract, [`dsh-jobs-local`](../../packages/jobs/jobs-local/README.md) for the registry lifecycle and admission policy, and [`dsh-tool-jobs`](../../packages/jobs/tool-jobs/README.md) for the model-facing Consumer.
 
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 
@@ -404,7 +345,7 @@ Host service backing the generated `ctx.remote.job` namespace.
  * @param signal - cancellation owned by the Remote stream carrier.
  * @returns the roster frames.
  */
-@Remote({ mode: 'stream' }) rows(request: JobRowsRequest, signal: AbortSignal): AsyncIterable<JobRowsFrame>
+@Remote({ mode: 'stream' }) list(request: JobListRequest, signal: AbortSignal): AsyncIterable<JobListFrame>
 
 /**
  * Stream one job's retained output from an absolute byte offset, then its
@@ -416,7 +357,7 @@ Host service backing the generated `ctx.remote.job` namespace.
  * @param signal - cancellation owned by the Remote stream carrier.
  * @returns anchor, coalesced output frames, and the terminal status.
  */
-@Remote({ mode: 'stream' }) observe(request: JobObserveRequest, signal: AbortSignal): AsyncIterable<JobObserveFrame>
+@Remote({ mode: 'stream' }) follow(request: JobFollowRequest, signal: AbortSignal): AsyncIterable<JobFollowFrame>
 ```
 
 Source: [`packages/api/job-controller/src/index.ts`](../../packages/api/job-controller/src/index.ts)
@@ -448,14 +389,67 @@ Implementations must honor these semantics:
 abstract start(spec: JobSpec): JobId
 
 /**
- * Bind the caller's identity once and return its operations. A caller sees
- * its own jobs and every unowned job; an anonymous caller sees unowned jobs
- * only. The operations resolve visibility on every call, so they stay valid
- * as jobs come and go.
- * @param caller - the calling session, or `undefined` for an anonymous caller.
- * @returns the operations available to that caller.
+ * List caller-owned and unowned jobs in registration order.
+ * @param caller - reading session; omission sees only unowned jobs.
+ * @returns fresh projections.
  */
-abstract forCaller(caller: SessionId | undefined): CallerJobs
+abstract list(caller?: SessionId): JobView[]
+
+/**
+ * Project one job without changing its cursor. Throws for an unknown or
+ * foreign job.
+ * @param id - job to look up.
+ * @param caller - reading session checked against the owner.
+ * @returns a fresh projection.
+ */
+abstract get(id: JobId, caller?: SessionId): JobView
+
+/**
+ * Consume the ring from the model cursor and advance it to the current
+ * total. After settlement the first read also carries the producer's
+ * result. Throws for an unknown or foreign job.
+ * @param id - job to read.
+ * @param caller - reading session checked against the owner.
+ * @returns the chunks since the cursor, the lossy flag, the result once, and the post-read projection.
+ */
+abstract read(id: JobId, caller?: SessionId): JobRead
+
+/**
+ * Read retained ring output without moving the model cursor. Resume with
+ * a previous read's `next`; an offset inside a retained chunk returns the
+ * whole chunk (its `at` may precede `from`). Throws for a negative or
+ * non-integer offset, or an unknown or foreign job.
+ * @param id - job to read.
+ * @param from - absolute byte offset to read from (0 for the retained head).
+ * @param caller - reading session checked against the owner.
+ * @returns retained chunks overlapping `[from, total)`, the resume offset, and the lossy flag.
+ */
+abstract readAt(id: JobId, from: number, caller?: SessionId): JobOutputRead
+
+/**
+ * Request cancellation, then mark the job stopping. A producer throw
+ * propagates without changing job state. A supplied reason is merged into
+ * terminal `detail` when the job settles `killed`. Throws for an unknown
+ * or foreign job.
+ * @param id - job to cancel.
+ * @param caller - killing session checked against the owner.
+ * @param reason - cancellation reason forwarded verbatim to the producer.
+ * @returns `requested` for live work, otherwise `already-finished`.
+ */
+abstract kill(id: JobId, caller?: SessionId, reason?: string): 'requested' | 'already-finished'
+
+/**
+ * Wait for settlement or timeout without cancelling the job. Caller abort
+ * rejects only while the job is live; after settlement the terminal
+ * projection wins. Rejects for an invalid timeout or an unknown or foreign
+ * job.
+ * @param id - job to wait for.
+ * @param timeoutMs - positive finite wait bound in milliseconds.
+ * @param caller - waiting session checked against the owner.
+ * @param signal - optional cancellation of the wait itself.
+ * @returns projection at settlement or timeout.
+ */
+abstract wait(id: JobId, timeoutMs: number, caller?: SessionId, signal?: AbortSignal): Promise<JobView>
 
 /**
  * Attach an effect-scoped controller that can read and stop jobs. It serves the
