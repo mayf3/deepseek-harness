@@ -29,6 +29,7 @@ import {
 import { createJsonlGenerationTestRuntime } from '../src/testing/generation.ts'
 import { compressZstdFrame, decompressZstdFrame, scanZstdFrames } from '../src/zstd.ts'
 import type { JsonlCompression } from '../src/format.ts'
+import { sessionFormatCatalog } from '@deepseek-ai/dsh-session-format-catalog'
 import type {
   SessionFormatArtifact,
   SessionFormatEvent,
@@ -174,6 +175,18 @@ function adapter(overrides: Partial<TestGenerationFormatAdapter> = {}): TestGene
   }
 }
 
+function catalogAdapter(): JsonlGenerationFormatAdapter {
+  return {
+    currentVersion: sessionFormatCatalog.currentVersion,
+    createRestore: header => sessionFormatCatalog.createRestore(header, {
+      recovery: 'recoverable', validation: 'transformed',
+    }),
+    encodeHeader: (header, inheritedEventCount) =>
+      sessionFormatCatalog.encodeCurrentHeader(header, inheritedEventCount),
+    encodeEvent: event => sessionFormatCatalog.encodeCurrentEvent(event),
+  }
+}
+
 function streamingAdapter(): JsonlGenerationFormatAdapter & {
   createRestore(header: Record<string, unknown>): SessionFormatRestore
 } {
@@ -274,6 +287,93 @@ async function decodeZstdJsonl(path: string): Promise<string> {
 }
 
 describe('JSONL immutable generation publication', () => {
+  it('refuses V2 messages without surface markers before writing a V3 successor', async () => {
+    const root = await tempRoot()
+    const request = options(root, 'none', catalogAdapter(), 2)
+    const events = assistantLifecycle('assistant/message', assistantData())
+      .map(({ surfaceOp: _surfaceOp, ...event }) => event)
+    const source = Buffer.from(line(header(2)) + events.map(line).join(''))
+    await writeFile(request.sourcePath, source)
+
+    await expect(ensureJsonlGenerationCurrent(request))
+      .rejects.toThrow('assistant/message requires surfaceOp')
+    expect(await readFile(request.sourcePath)).toEqual(source)
+    await expect(readFile(request.currentPath)).rejects.toMatchObject({ code: 'ENOENT' })
+    expect(await readdir(root)).toEqual(['session.v2.jsonl'])
+  })
+
+  it('refuses contradictory V2 tool error metadata without publishing or modifying the source', async () => {
+    const root = await tempRoot()
+    const request = options(root, 'none', catalogAdapter(), 2)
+    const events: SessionFormatEvent[] = [
+      ...assistantLifecycle('assistant/message', assistantData({
+        content: [{ type: 'tool-call', id: 'call', name: 'test', arguments: '{}' }],
+        stream: [], usage: null, replayState: null,
+      })).slice(0, 3),
+      { type: 'tool/call', seq: 3, time: 6,
+        data: { turn: 1, step: 1, callId: 'call', name: 'test', arguments: '{}' } },
+      { type: 'tool/result', seq: 4, time: 7, surfaceOp: 'append', data: {
+        turn: 1, step: 1,
+        message: { id: 'result', role: 'user', source: { kind: 'tool', callId: 'call' },
+          content: [{ type: 'tool-result', toolCallId: 'call', isError: false,
+            content: [{ type: 'text', text: 'success' }] }] },
+        error: { name: 'ToolError', code: 'FAILED' },
+      } },
+      { type: 'step/end', seq: 5, time: 8, data: { turn: 1, step: 1 } },
+      { type: 'turn/end', seq: 6, time: 9, data: { turn: 1, reason: { kind: 'completed' } } },
+    ]
+    const source = Buffer.from(line(header(2)) + events.map(line).join(''))
+    await writeFile(request.sourcePath, source)
+
+    await expect(ensureJsonlGenerationCurrent(request))
+      .rejects.toThrow('tool/result at seq 5 carries error metadata for a non-error tool result')
+    expect(await readFile(request.sourcePath)).toEqual(source)
+    await expect(readFile(request.currentPath)).rejects.toMatchObject({ code: 'ENOENT' })
+    expect(await readdir(root)).toEqual(['session.v2.jsonl'])
+  })
+
+  it('publishes canonical V3 replacements and headers while retaining exact V2 bytes', async () => {
+    const root = await tempRoot()
+    const request = options(root, 'none', catalogAdapter(), 2)
+    const config = { provider: 'mock', model: 'mock' }
+    const events: SessionFormatEvent[] = [
+      event0,
+      { type: 'step/start', seq: 1, time: 3, data: { turn: 1, step: 1 } },
+      { type: 'user/message', seq: 2, time: 4, surfaceOp: 'append', data: {
+        id: 'input', role: 'user', content: [{ type: 'text', text: 'original' }], source: { kind: 'user' },
+      } },
+      { type: 'user/message', seq: 3, time: 5,
+        surfaceOp: { op: 'replace', start: 2, end: 2 }, sourceEventSeqs: [2], data: {
+          id: 'summary', role: 'user', content: [{ type: 'text', text: 'summary' }],
+          source: { kind: 'plugin', plugin: 'summary-fixture' },
+        } },
+      { type: 'request/header', seq: 4, time: 6, data: {
+        header: { config, system: '', tools: [], adapterDefaults: {} }, reason: 'initial',
+      } },
+      { type: 'step/end', seq: 5, time: 7, data: { turn: 1, step: 1 } },
+      { type: 'turn/end', seq: 6, time: 8, data: { turn: 1, reason: { kind: 'completed' } } },
+    ]
+    const source = Buffer.from(line(header(2)) + events.map(line).join(''))
+    await writeFile(request.sourcePath, source)
+    const prepared = await prepareJsonlMigration({ ...request, verifyCurrentFile: verifier() })
+    const canonical: unknown[] = [
+      events[0], events[1],
+      expect.objectContaining({ type: 'system/message', seq: 2, surfaceOp: 'append', data: expect.objectContaining({ message: expect.objectContaining({ role: 'system', content: [] }) as unknown }) as unknown }) as unknown,
+      ...events.slice(2).map(event => event.seq === 3
+        ? { ...event, seq: 4, surfaceOp: { op: 'replace', startSeq: 3, endSeq: 3 }, sourceEventSeqs: [3] }
+        : event.seq === 4 ? { ...event, seq: 5, data: { header: { config }, reason: 'initial' } } : { ...event, seq: event.seq + 1 }),
+    ]
+
+    expect(prepared.artifact.events).toEqual(canonical)
+    await expect(readFile(request.currentPath)).rejects.toMatchObject({ code: 'ENOENT' })
+    await prepared.publish()
+    expect(await readFile(request.sourcePath)).toEqual(source)
+    const written = (await readFile(request.currentPath, 'utf8')).trimEnd().split('\n')
+      .map(row => JSON.parse(row) as unknown)
+    expect(written).toEqual([header(3), ...canonical])
+    expect((await readdir(root)).sort()).toEqual(['session.v2.jsonl', 'session.v3.jsonl'])
+  })
+
   it('returns migrated events while publication is still waiting for verification', async () => {
     const root = await tempRoot()
     const request = options(root, 'none', streamingAdapter())

@@ -1,4 +1,4 @@
-/** V3 physical envelopes retain V2 provenance encoding and validate native system/header payloads. */
+/** V3 framing with hard structural admission and recoverable canonical event validation. */
 
 import { SessionFormatError, isSessionFormatJsonObject, snapshotSessionFormatJson } from '@deepseek-ai/dsh-session-format'
 import type {
@@ -9,9 +9,9 @@ import type {
 } from '@deepseek-ai/dsh-session-format'
 import { releasedV2SessionFormatCodec } from '@deepseek-ai/dsh-session-format-v1-to-v2'
 import { assertReleasedV3Header, assertV3EventAdmission } from './validation.ts'
-import { assertEvent, assertV3StructuralRow } from './payload.ts'
+import { assertV3Event, assertV3StructuralRow } from './payload.ts'
 
-/** Physical V3 codec with protected system-message payload admission and retired header.system refusal. */
+/** V3 codec validates structural rows before recovery and logical envelopes after provenance decoding. */
 export const releasedV3SessionFormatCodec = Object.freeze({
   version: 3,
   decodeHeader(value: unknown) {
@@ -19,18 +19,45 @@ export const releasedV3SessionFormatCodec = Object.freeze({
   },
   createDecoder(value, recovery) {
     const decoder = releasedV2SessionFormatCodec.createDecoder(v2PhysicalHeader(value), recovery)
+    let issue: SessionFormatError | undefined
+    let acceptedInheritedCut: number | undefined
     return {
-      ...decoder, header: { ...decoder.header, version: 3 },
+      header: { ...decoder.header, version: 3 },
       decodeRow(row, context) {
         assertV3RowAdmission(row)
-
         decoder.decodeRow(row, {
+          emitRun: context.emitRun.bind(context),
           emitEvent(event) {
-            if (event.type === 'system/message' || event.type === 'request/header') assertEvent(event, 3)
+            assertV3EventAdmission(event)
+            if (issue === undefined) {
+              try {
+                assertV3Event(event)
+              } catch (error: unknown) {
+                // The frozen event validator reports every decoded JSON violation as SessionFormatError.
+                const invalid = error as SessionFormatError
+                if (recovery === 'strict') throw invalid
+                issue = invalid
+              }
+            }
+            if (issue !== undefined) {
+              if (event.type === 'turn/end') throw issue
+              return
+            }
+            if (event.type === 'session/end-seed' && isSessionFormatJsonObject(event.data)
+              && event.data['inherited'] === true) acceptedInheritedCut = event.seq
             context.emitEvent(event)
           },
-          emitRun: context.emitRun.bind(context),
         })
+      },
+      finish(context) {
+        if (issue === undefined) return decoder.finish(context)
+        if (decoder.header.isSeeded && acceptedInheritedCut === undefined) {
+          throw new SessionFormatError('format v3 seeded Session lacks an accepted inherited end-seed marker')
+        }
+        if (!decoder.header.isSeeded && acceptedInheritedCut !== undefined) {
+          throw new SessionFormatError('format v3 unseeded Session contains an inherited end-seed marker')
+        }
+        return acceptedInheritedCut ?? 0
       },
     }
   },
@@ -43,7 +70,7 @@ export const releasedV3SessionFormatCodec = Object.freeze({
   },
   encodeEvent(event) {
     assertV3EventAdmission(event)
-    if (event.type === 'system/message' || event.type === 'request/header') assertEvent(event, 3)
+    assertV3Event(event)
     return releasedV2SessionFormatCodec.encodeEvent(event)
   },
 } satisfies SessionFormatCodec & SessionFormatCurrentEncoder)

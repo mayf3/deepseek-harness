@@ -298,7 +298,7 @@ function parsedSessionFixture(
 
 /**
  * Convert one persisted or projected snapshot fixture to the current physical format in memory for expected-output comparison.
- * Projected cwd tokens remain tokens so the ordinary snapshot normalizer can compare them with a fresh run.
+ * Projected cwd and request-tool tokens remain tokens for comparison with a fresh run.
  * @param text - one complete Session fixture.
  * @returns current-format JSONL with complete event envelopes; the input string and source file remain unchanged.
  */
@@ -307,7 +307,27 @@ export function prepareSessionSnapshotFixtureForComparison(text: string): string
   return encodeCurrentSessionSnapshotFixture(text, parsed)
 }
 
-/** Encode one migrated fixture while retaining a projected cwd token. */
+/** Restore fixture tokens materialized only to satisfy released-format validation. */
+function restoreProjectedRequestHeader(
+  target: Readonly<Record<string, unknown>>,
+  source: Readonly<Record<string, unknown>>,
+): Readonly<Record<string, unknown>> {
+  const targetData = target['data'] as Record<string, unknown>
+  const sourceData = source['data'] as Record<string, unknown>
+  const targetHeader = targetData['header'] as Record<string, unknown>
+  const sourceHeader = sourceData['header'] as Record<string, unknown>
+  const sourceTools = sourceHeader['tools']
+  if (sourceTools !== '{{tools}}') return target
+  return {
+    ...target,
+    data: {
+      ...targetData,
+      header: { ...targetHeader, tools: sourceTools },
+    },
+  }
+}
+
+/** Encode one migrated fixture while retaining projected cwd and request-tool tokens. */
 function encodeCurrentSessionSnapshotFixture(text: string, parsed: ParsedSessionFixture): string {
   const header = {
     ...sessionFormatCatalog.encodeCurrentHeader(
@@ -317,14 +337,23 @@ function encodeCurrentSessionSnapshotFixture(text: string, parsed: ParsedSession
   }
   const sourceCwd = parsed.sourceHeader['cwd']
   if (typeof sourceCwd === 'string' && /^\{\{cwd\}\}(?:\/|$)/.test(sourceCwd)) header['cwd'] = sourceCwd
+  const sourceRequests = text.split(/\r?\n/).filter(line => line.trim().length > 0).slice(1)
+    .map(line => JSON.parse(line) as Record<string, unknown>)
+    .filter(row => row['type'] === 'request/header')
+  let requestIndex = 0
   const output = [
     JSON.stringify(header),
-    ...parsed.artifact.events.map(event => JSON.stringify(sessionFormatCatalog.encodeCurrentEvent(event))),
+    ...parsed.artifact.events.map((event) => {
+      const encoded = sessionFormatCatalog.encodeCurrentEvent(event)
+      if (event.type !== 'request/header') return JSON.stringify(encoded)
+      const source = sourceRequests[requestIndex++] as Record<string, unknown>
+      return JSON.stringify(restoreProjectedRequestHeader(encoded, source))
+    }),
   ].join('\n')
   return text.endsWith('\n') ? `${output}\n` : output
 }
 
-/** Restore typed request-header values replaced by snapshot sidecar tokens. */
+/** Omit exact request-tool sidecar tokens and materialize projected tool names for validation. */
 function normalizeProjectedRow(source: Readonly<Record<string, unknown>>): Record<string, unknown> {
   const record = { ...source }
   if (record['type'] !== 'request/header') return record
@@ -333,19 +362,16 @@ function normalizeProjectedRow(source: Readonly<Record<string, unknown>>): Recor
   const header = (data as Record<string, unknown>)['header']
   if (header === null || typeof header !== 'object' || Array.isArray(header)) return record
   const tools = (header as Record<string, unknown>)['tools']
-  let materializedTools: unknown
+  const normalizedHeader = { ...header as Record<string, unknown> }
   if (tools === '{{tools}}') {
-    materializedTools = []
-  } else if (Array.isArray(tools)
+    delete normalizedHeader['tools']
+  } else if (Array.isArray(tools) && tools.length > 0
     && tools.every((tool): tool is string => typeof tool === 'string' && tool.length > 0)) {
-    materializedTools = tools.map(name => ({ name, description: '', parameters: {} }))
+    normalizedHeader['tools'] = tools.map(name => ({ name, description: '', parameters: {} }))
   } else {
     return record
   }
-  record['data'] = {
-    ...data,
-    header: { ...header, tools: materializedTools },
-  }
+  record['data'] = { ...data, header: normalizedHeader }
   return record
 }
 

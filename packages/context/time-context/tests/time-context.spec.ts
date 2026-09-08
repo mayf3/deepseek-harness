@@ -298,7 +298,7 @@ describe('durable step context', () => {
       content: [{ type: 'text', text: 'compacted history' }],
       source: { kind: 'plugin', plugin: 'compaction-basic' },
     }), {
-      surfaceOp: { op: 'replace', start: user.seq, end: reading.seq },
+      surfaceOp: { op: 'replace', startSeq: user.seq, endSeq: reading.seq },
       sourceEventSeqs: [user.seq, reading.seq],
     })
     original.append('turn/end', { turn: 1, reason: { kind: 'completed' } })

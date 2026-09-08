@@ -224,7 +224,7 @@ describe('defineAcpSnapshotSuite: refresh write-back', () => {
     expect(readFileSync(join(refreshDir, 'pin-turn', 'session.jsonl'), 'utf8'))
       .not.toContain('"version"')
     expect(pinSession.match(/"text":"{{system}}"/g)).toHaveLength(2)
-    expect(pinSession).toContain('"surfaceOp":{"op":"replace","start":2,"end":2}')
+    expect(pinSession).toContain('"surfaceOp":{"op":"replace","startSeq":2,"endSeq":2}')
     expect(pinSession).not.toContain('NEW PROMPT LINE')
   })
 })

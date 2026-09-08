@@ -86,9 +86,9 @@ export function foldSurfaceProjection(
   // replaced range's price, so fold those neutrally — historical replay
   // degrades to drift instead of failing.
   if (claim === undefined) return { deltaTokens: 0, claim: undefined }
-  if (claim.start !== op.start || claim.end !== op.end) {
+  if (claim.start !== op.startSeq || claim.end !== op.endSeq) {
     throw new Error(
-      `token surface: replace at seq ${event.seq} over range ${op.start}-${op.end} has no adjacent shadow price`
+      `token surface: replace at seq ${event.seq} over range ${op.startSeq}-${op.endSeq} has no adjacent shadow price`
       + ` (armed claim covers ${claim.start}-${claim.end})`,
     )
   }

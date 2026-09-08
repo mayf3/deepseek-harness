@@ -71,7 +71,7 @@ function replaceSystem(session: Session, node: SessionSeqType, text: string): Se
     turn: 1,
     step: 1,
     message: createSystemMessage(text, SYSTEM_PLUGIN),
-  }, { surfaceOp: { op: 'replace', start: node, end: node }, sourceEventSeqs: [node] }).seq
+  }, { surfaceOp: { op: 'replace', startSeq: node, endSeq: node }, sourceEventSeqs: [node] }).seq
 }
 
 /**
@@ -182,7 +182,7 @@ describe('contextBreakdown session projection', () => {
       source: { kind: 'plugin', plugin: 'test' },
     })
     session.append('user/message', summary, {
-      surfaceOp: { op: 'replace', start: question, end: followUp },
+      surfaceOp: { op: 'replace', startSeq: question, endSeq: followUp },
       sourceEventSeqs: [question, superseded, followUp],
     })
     expect(agree().messageTokens).toBe(8 + estimateMessage(summary))
@@ -196,7 +196,7 @@ describe('contextBreakdown session projection', () => {
     appendSummaryMeter(ctx, session, question, newest)
     const summary = createUserMessage({ content: [{ type: 'text', text: 'summary' }], source: { kind: 'user' } })
     session.append('user/message', summary, {
-      surfaceOp: { op: 'replace', start: question, end: newest },
+      surfaceOp: { op: 'replace', startSeq: question, endSeq: newest },
       sourceEventSeqs: [question, newest],
     })
     expect(projected(ctx, session)).toEqual({ systemTokens: 5, toolsTokens: 0, messageTokens: estimateMessage(summary) })
@@ -235,7 +235,7 @@ describe('contextBreakdown session projection', () => {
     })
     appendSummaryMeter(ctx, session, first, second)
     session.append('user/message', summary, {
-      surfaceOp: { op: 'replace', start: first, end: second },
+      surfaceOp: { op: 'replace', startSeq: first, endSeq: second },
       sourceEventSeqs: [first, second],
     })
     expect(projected(ctx, session).messageTokens).toBe(estimateMessage(summary))
@@ -281,7 +281,7 @@ describe('contextBreakdown session projection', () => {
       content: [{ type: 'text', text: 'summary' }],
       source: { kind: 'plugin', plugin: 'test' },
     }), {
-      surfaceOp: { op: 'replace', start: question, end: answer },
+      surfaceOp: { op: 'replace', startSeq: question, endSeq: answer },
       sourceEventSeqs: [question, answer],
     })
     expect(agree()).toBeLessThan(grown)
@@ -296,10 +296,10 @@ describe('contextBreakdown session projection', () => {
     const before = JSON.stringify(state)
     const replacement = session.append('user/message', createUserMessage({
       content: [{ type: 'text', text: 'summary' }], source: { kind: 'user' },
-    }), { surfaceOp: { op: 'replace', start: first, end: last }, sourceEventSeqs: [first, last] })
+    }), { surfaceOp: { op: 'replace', startSeq: first, endSeq: last }, sourceEventSeqs: [first, last] })
     expect(definition.wire.view(definition.apply(state, replacement)).messageTokens).toBe(10)
     expect(JSON.stringify(state)).toBe(before)
-    const invalid = { ...replacement, surfaceOp: { op: 'replace', start: SessionSeq(999), end: last } } as SessionEvent
+    const invalid = { ...replacement, surfaceOp: { op: 'replace', startSeq: SessionSeq(999), endSeq: last } } as SessionEvent
     expect(() => definition.apply(state, invalid)).toThrow('invalid current range')
     expect(JSON.stringify(state)).toBe(before)
   })
@@ -321,16 +321,16 @@ describe('contextBreakdown session projection', () => {
     agree('last prompt in surface order')
     question = session.append('user/message', createUserMessage({
       content: [{ type: 'text', text: 'rewritten question' }], source: { kind: 'user' },
-    }), { surfaceOp: { op: 'replace', start: question, end: question }, sourceEventSeqs: [question] }).seq
+    }), { surfaceOp: { op: 'replace', startSeq: question, endSeq: question }, sourceEventSeqs: [question] }).seq
     expect(question).toBeGreaterThan(middle)
     // Provenance can cite a surviving prompt outside the replaced span.
     session.append('user/message', createUserMessage({
       content: [{ type: 'text', text: 'middle summary' }], source: { kind: 'user' },
-    }), { surfaceOp: { op: 'replace', start: question, end: middle }, sourceEventSeqs: [question, middle, tail] })
+    }), { surfaceOp: { op: 'replace', startSeq: question, endSeq: middle }, sourceEventSeqs: [question, middle, tail] })
     agree('last prompt in surface order')
     session.append('user/message', createUserMessage({
       content: [{ type: 'text', text: 'tail summary' }], source: { kind: 'user' },
-    }), { surfaceOp: { op: 'replace', start: tail, end: tail }, sourceEventSeqs: [tail, head] })
+    }), { surfaceOp: { op: 'replace', startSeq: tail, endSeq: tail }, sourceEventSeqs: [tail, head] })
     agree('head rewritten at a newer event seq')
     const repeated = appendSystem(session, 'head rewritten at a newer event seq')
     agree('head rewritten at a newer event seq')
@@ -373,7 +373,7 @@ describe('contextBreakdown session projection', () => {
     const shadowed = [...session.surface.nodes]
     session.append('user/message', createUserMessage({
       content: [{ type: 'text', text: 'summary' }], source: { kind: 'user' },
-    }), { surfaceOp: { op: 'replace', start: first, end: last }, sourceEventSeqs: shadowed })
+    }), { surfaceOp: { op: 'replace', startSeq: first, endSeq: last }, sourceEventSeqs: shadowed })
     expect(state().nodes).toHaveLength(1)
     expect(projected(ctx, session).messageTokens).toBe(10)
   })
@@ -409,7 +409,7 @@ describe('contextBreakdown session projection', () => {
     expect(ctx.sessionProjections.viewCheckpoint(checkpoint).contextBreakdown).toEqual(projected(ctx, session))
     const replacement = session.append('user/message', createUserMessage({
       content: [{ type: 'text', text: 'summary' }], source: { kind: 'user' },
-    }), { surfaceOp: { op: 'replace', start: first, end: last }, sourceEventSeqs: [first, last] })
+    }), { surfaceOp: { op: 'replace', startSeq: first, endSeq: last }, sourceEventSeqs: [first, last] })
     const restored = ctx.sessionProjections.restore(
       checkpoint, [replacement], SessionLogOffset(replacement.seq), session.header, session.inheritedEventCount,
     )

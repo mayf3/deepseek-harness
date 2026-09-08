@@ -157,7 +157,7 @@ function withCompaction(raw: string, meter: TokenMeter): string {
         kind: 'plugin', plugin: 'compact', compactionId, sourceCommandId: commandId,
       },
     }),
-    surfaceOp: { op: 'replace', start: first, end: last },
+    surfaceOp: { op: 'replace', startSeq: first, endSeq: last },
     sourceEventSeqs: [startSeq, summarySeq, ...surfaceSeqs],
   })
   at({

@@ -658,7 +658,7 @@ describe('agent loop', () => {
       expect(adapter.requests[1]?.messages.map(message => message.role)).toEqual(['system', 'user', 'assistant', 'user'])
       const replacement = agent.session.snapshotEvents().findLast(event => event.type === 'system/message')
       expect(replacement).toMatchObject({
-        surfaceOp: { op: 'replace', start: head?.seq, end: head?.seq },
+        surfaceOp: { op: 'replace', startSeq: head?.seq, endSeq: head?.seq },
         sourceEventSeqs: [head?.seq],
       })
       expect(agent.session.surface.nodes[0]).toBe(replacement?.seq)
@@ -744,7 +744,7 @@ describe('agent loop', () => {
       content: [{ type: 'text', text: 'compacted summary' }],
       source: { kind: 'plugin', plugin: 'test-compaction' },
     }), {
-      surfaceOp: { op: 'replace', start: contextEvent.seq, end: contextEvent.seq },
+      surfaceOp: { op: 'replace', startSeq: contextEvent.seq, endSeq: contextEvent.seq },
       sourceEventSeqs: [contextEvent.seq],
     })
 
@@ -779,7 +779,7 @@ describe('agent loop', () => {
       content: [{ type: 'text', text: 'summary retaining old mode: read-only' }],
       source: { kind: 'plugin', plugin: 'test-compaction' },
     }), {
-      surfaceOp: { op: 'replace', start: contextEvent.seq, end: contextEvent.seq },
+      surfaceOp: { op: 'replace', startSeq: contextEvent.seq, endSeq: contextEvent.seq },
       sourceEventSeqs: [contextEvent.seq],
     })
     dispose()
@@ -808,7 +808,7 @@ describe('agent loop', () => {
       content: [{ type: 'text', text: 'compacted summary' }],
       source: { kind: 'plugin', plugin: 'test-compaction' },
     }), {
-      surfaceOp: { op: 'replace', start: original.seq, end: original.seq },
+      surfaceOp: { op: 'replace', startSeq: original.seq, endSeq: original.seq },
       sourceEventSeqs: [original.seq],
     })
 

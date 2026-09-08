@@ -159,7 +159,7 @@ describe('plan mode through the agent loop', () => {
     const systemNodes = log.filter(event => event.type === 'system/message')
     expect(systemNodes).toHaveLength(2)
     const second = systemNodes[1]
-    expect(second?.surfaceOp).toEqual({ op: 'replace', start: firstSystem.seq, end: firstSystem.seq })
+    expect(second?.surfaceOp).toEqual({ op: 'replace', startSeq: firstSystem.seq, endSeq: firstSystem.seq })
     expect(second?.sourceEventSeqs).toEqual([firstSystem.seq])
     expect(agent.session.surface.nodes[0]).toBe(second?.seq)
     expect(systemText(agent)).toContain('plan mode')

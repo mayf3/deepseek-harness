@@ -45,9 +45,9 @@ function requests(events: readonly SessionFormatEvent[], version: 2 | 3) {
   for (const e of events) {
     if (e['surfaceOp'] === 'append') surface.push(e)
     else if (e['surfaceOp'] !== undefined) {
-      const op = e['surfaceOp'] as { start: number; end: number }
-      const start = surface.findIndex(x => x.seq === op.start)
-      const end = surface.findIndex(x => x.seq === op.end)
+      const op = e['surfaceOp'] as SessionFormatJsonObject
+      const start = surface.findIndex(x => x.seq === op[version === 2 ? 'start' : 'startSeq'])
+      const end = surface.findIndex(x => x.seq === op[version === 2 ? 'end' : 'endSeq'])
       surface.splice(start, end - start + 1, e)
     }
     if (e.type === 'request/header') {
@@ -310,16 +310,16 @@ describe('native V3 codec and restorer', () => {
     const systems = target.events.filter(e => e.type === 'system/message')
     const wrongStep = target.events.map(e => e === systems[0] ? { ...e, data: { ...e.data as SessionFormatJsonObject, step: 2 } } : e)
     expect(() => restoreReleasedV3Artifact({ ...target, events: wrongStep }, new Set())).toThrow(/open step/)
-    expect(() => restoreReleasedV3Artifact({ ...target, events: target.events.map(e => e === systems[1] ? { ...e, surfaceOp: { op: 'replace', start: 2, end: 3 }, sourceEventSeqs: [2, 3] } : e) }, new Set())).toThrow(/exactly/)
+    expect(() => restoreReleasedV3Artifact({ ...target, events: target.events.map(e => e === systems[1] ? { ...e, surfaceOp: { op: 'replace', startSeq: 2, endSeq: 3 }, sourceEventSeqs: [2, 3] } : e) }, new Set())).toThrow(/exactly/)
   })
   it('round-trips in-history system append, replacement, and compaction without shadowing the head', () => {
     const base = migrate([...opening(), event('user/message', user(), 'append')])
     const system = base.events.find(e => e.type === 'system/message')!
     const message = (system.data as SessionFormatJsonObject)['message'] as SessionFormatJsonObject
     const append = { ...system, seq: 4, data: { ...system.data as SessionFormatJsonObject, message: { ...message, id: 'tail', source: { kind: 'plugin', plugin: 'context-plugin' }, content: [{ type: 'text', text: 'tail context' }, { type: 'reasoning', text: 'retained content' }] } } }
-    const replace = { ...system, seq: 5, sourceEventSeqs: [4], surfaceOp: { op: 'replace', start: 4, end: 4 } }
+    const replace = { ...system, seq: 5, sourceEventSeqs: [4], surfaceOp: { op: 'replace', startSeq: 4, endSeq: 4 } }
     const prune = { ...event('compaction/prune', { shadowedRange: { start: 5, end: 5 }, shadowedSeqs: [5], shadowedTokenCount: 0 }), seq: 6 }
-    const checkpoint = { ...event('user/message', user('checkpoint'), { op: 'replace', start: 5, end: 5 }), sourceEventSeqs: [5], seq: 7 }
+    const checkpoint = { ...event('user/message', user('checkpoint'), { op: 'replace', startSeq: 5, endSeq: 5 }), sourceEventSeqs: [5], seq: 7 }
     const artifact = { ...base, events: [...base.events, append, replace, prune, checkpoint] }
     expect(restoreReleasedV3Artifact(artifact, new Set())).toBe(artifact)
     const restore = catalog.createRestore(releasedV3SessionFormatCodec.encodeHeader(base.header, 0), { recovery: 'strict', validation: 'current' })
@@ -487,7 +487,6 @@ describe('v3 PTC event admission and relationships', () => {
     const source = artifact([{
       type, seq: 0, time: -5, ignorable: true,
       data: { source: { kind: 'plugin', plugin: 'tools-code-mode' }, invalidLifecycle: true, content: ['tool/code-dispatch'] },
-      sourceEventSeqs: [17], surfaceOp: { unknown: ['tools-code-mode'] },
     }])
     expect(restoreReleasedV3Artifact(source, new Set())).toBe(source)
     expect(source.events[0]?.type).toBe(type)

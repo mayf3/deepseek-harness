@@ -1,5 +1,6 @@
 /** Immutable system-only interpretation of the loaded Session surface. */
 import type { SessionEvent } from '@deepseek-ai/dsh-session/types'
+import { isSurfaceEvent } from '@deepseek-ai/dsh-session/surface'
 import type { SystemPromptNode } from './request-inspection.ts'
 
 interface PositionedSystem {
@@ -35,20 +36,20 @@ export type SystemPromptInspector = (previous: SystemPromptState | undefined, ev
  * @returns Immutable surviving system facts and the effective nonempty prompt.
  */
 export function inspectSystemPrompt(previous: SystemPromptState | undefined, event: SessionEvent): SystemPromptState {
-  const op = 'surfaceOp' in event ? event.surfaceOp : undefined
+  const op = isSurfaceEvent(event) ? event.surfaceOp : undefined
   const firstSeq = previous?.firstSeq ?? event.seq
   let nodes = previous?.nodes ?? []
   let replacements = previous?.replacements ?? new Map<number, number>()
   const unknownEndpoint = (seq: number): boolean => seq < firstSeq && !replacements.has(seq)
   const uncertain = previous?.uncertain === true || (op !== undefined && op !== 'append'
-    && (unknownEndpoint(op.start) || unknownEndpoint(op.end)))
+    && (unknownEndpoint(op.startSeq) || unknownEndpoint(op.endSeq)))
   if (uncertain) {
     return { firstSeq, uncertain, nodes: [], replacements: new Map(), effective: undefined, introduced: undefined }
   }
   let position: number = event.seq
   if (op !== undefined && op !== 'append') {
-    position = replacements.get(op.start) ?? op.start
-    const end = replacements.get(op.end) ?? op.end
+    position = replacements.get(op.startSeq) ?? op.startSeq
+    const end = replacements.get(op.endSeq) ?? op.endSeq
     nodes = nodes.filter(item => item.position < position || item.position > end)
     const retained = new Map([...replacements].filter(([, value]) => value < position || value > end))
     retained.set(event.seq, position)

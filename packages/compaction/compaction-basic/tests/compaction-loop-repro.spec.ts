@@ -337,7 +337,7 @@ describe('token pressure after loop-admitted system prompts', () => {
           turn,
           step,
           message: createSystemMessage('retry guidance', '@deepseek-ai/dsh-system-prompt'),
-        }, { surfaceOp: { op: 'replace', start: node, end: node }, sourceEventSeqs: [node] })
+        }, { surfaceOp: { op: 'replace', startSeq: node, endSeq: node }, sourceEventSeqs: [node] })
         return { kind: 'retry' }
       })
       const agent = await ctx.agentLoop.create(SessionId('prompt-pressure'), { provider: 'mock', model: 'mock' })

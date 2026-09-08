@@ -325,21 +325,24 @@ describe('Session attachment authorization', () => {
     const message = imageRef('message')
     const inserted = imageRef('inserted')
     const streamed = imageRef('streamed')
-    const events = [
+    const events: SessionEvent[] = [
       { ...event('fixture/direct', SessionSeq(0), {
         content: [null, [], { type: 'tool-result', content: [{ type: 'text', text: 'none' }] }, {
           type: 'tool-result', content: [{ type: 'image', attachment: nested }],
         }],
       }), ignorable: true as const },
-      { ...event('assistant/message', SessionSeq(1), {
-        turn: 1,
-        step: 1,
-        stream: [],
-        message: createAssistantMessage({
-          content: [{ type: 'image', attachment: message }],
-          source: { provider: 'fixture', model: 'fixture' },
-        }),
-      }), surfaceOp: 'append' as const },
+      {
+        type: 'assistant/message', seq: SessionSeq(1), time: 2, surfaceOp: 'append',
+        data: {
+          turn: 1,
+          step: 1,
+          stream: [],
+          message: createAssistantMessage({
+            content: [{ type: 'image', attachment: message }],
+            source: { provider: 'fixture', model: 'fixture' },
+          }),
+        },
+      },
       event('agent/inbox/spliced', SessionSeq(2), {
         target: 'next-turn',
         start: 0,

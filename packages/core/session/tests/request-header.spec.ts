@@ -79,7 +79,7 @@ describe('foldRequestHeader', () => {
     session.append('user/message', createUserMessage({
       content: [{ type: 'text', text: 'hi' }], source: { kind: 'user' },
     }), { surfaceOp: 'append' })
-    session.append('request/header', { header: { config: { provider: 'mock', model: 'other' }, tools: [] }, reason: 'change' })
+    session.append('request/header', { header: { config: { provider: 'mock', model: 'other' } }, reason: 'change' })
     expect(foldRequestHeader(session.snapshotEvents())).toEqual({ config: { provider: 'mock', model: 'other' } })
   })
 })
