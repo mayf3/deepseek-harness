@@ -12,6 +12,7 @@ import type { Agent } from '@deepseek-ai/dsh-agent'
 import { MAX_TIMER_DELAY_MS } from '@deepseek-ai/dsh-timeout'
 import type { SubprocessHandle, SubprocessOutcome } from '@deepseek-ai/dsh-subprocess'
 import * as acp from '../src/index.ts'
+import * as acpRun from '../src/run.ts'
 import { acpStopReason, acpContentText, DEFAULT_DISPOSE_EOF_GRACE_MS, DEFAULT_DISPOSE_GRACE_MS, disposeAcpChild, startAcpRun, toAcpPrompt, type AcpRunSpec } from '../src/run.ts'
 import LocalSubprocessRuntime from '@deepseek-ai/dsh-subprocess-local'
 import { spawnSubprocess } from '@deepseek-ai/dsh-subprocess-local/src/spawn.ts'
@@ -941,40 +942,54 @@ describe('dsh-subagent-acp', () => {
     }
   })
 
-  it('dispose escalates SIGTERM → SIGKILL for a child that traps SIGTERM (bounded quiescence)', async ({ task }) => {
-    // The child traps SIGTERM and keeps its event loop alive, so a graceful
-    // term alone would hang dispose forever. With a short grace, dispose must
-    // escalate to SIGKILL and return once the process is actually gone.
+  it('dispose reaps a child that ignores EOF with the host force-termination outcome', async ({ onTestFinished, task }) => {
+    // POSIX must escalate past the armed SIGTERM trap; Windows force-terminates
+    // the process tree without delivering a catchable signal.
+    let child: ReturnType<typeof spawnSubprocess> | undefined
+    const active: { run?: Awaited<ReturnType<typeof startAcpRun>> } = {}
+    let exited = false
     const tmp = mkdtempSync(join(tmpdir(), 'acp-trap-'))
-    const ready = join(tmp, 'trap-armed')
-    try {
-      const spec: AcpRunSpec = {
-        command: process.execPath,
-        args: [mockServer],
-        cwd: process.cwd(),
-        permission: 'reject',
-        env: { MOCK_TRAP_SIGTERM: '1', MOCK_TEXT: 'x', MOCK_READY_FILE: ready },
-        // Short on BOTH tiers: the trap ignores EOF and SIGTERM, so dispose must
-        // burn the EOF window, then the SIGTERM window, then SIGKILL — keep each
-        // small so the whole ladder finishes well within the 4000ms bound.
-        disposeEofGraceMs: 150,
-        disposeGraceMs: 150,
-        spawn: spawnSubprocess,
+    onTestFinished(async () => {
+      try {
+        if (!exited) child?.terminateForHostExit()
+        const cleanup = await Promise.allSettled([active.run?.dispose(), child?.waitForExit(), child?.done])
+        const failures: unknown[] = []
+        for (const result of cleanup) {
+          if (result.status === 'rejected') failures.push(result.reason)
+        }
+        if (failures.length > 0) throw new AggregateError(failures, 'ACP test cleanup failed')
+      } finally {
+        rmSync(tmp, { recursive: true, force: true })
       }
-      const run = await startAcpRun(request(), spec)
-      // Wait until the child has BOOTED AND ARMED THE TRAP (a condition, not a
-      // sleep) — otherwise SIGTERM races the trap install and the default handler
-      // terminates the child, never exercising the escalation.
-      await waitForFile(ready, task.timeout)
-      // Don't await result (the child hangs). Dispose must still return promptly
-      // via the SIGKILL escalation — bound it so a regression (no escalation)
-      // fails loud instead of hanging the suite.
-      await expect(Promise.race([
-        run.dispose(),
-        new Promise((_r, reject) => { setTimeout(() => { reject(new Error('dispose did not return — no SIGKILL escalation')) }, 4000) }),
-      ])).resolves.toBeUndefined()
-    } finally {
-      rmSync(tmp, { recursive: true, force: true })
+    })
+    const ready = join(tmp, 'trap-armed')
+    const spec: AcpRunSpec = {
+      command: process.execPath,
+      args: [mockServer],
+      cwd: process.cwd(),
+      permission: 'reject',
+      env: { MOCK_TRAP_SIGTERM: '1', MOCK_TEXT: 'x', MOCK_READY_FILE: ready },
+      disposeEofGraceMs: 150,
+      disposeGraceMs: 150,
+      spawn: (spec) => {
+        child = spawnSubprocess(spec)
+        return child
+      },
+    }
+    const run = await startAcpRun(request(), spec)
+    active.run = run
+    await waitForFile(ready, task.timeout)
+    // Process reaping uses the lane's test/hook budget, not a second grace timer.
+    await expect(run.dispose()).resolves.toBeUndefined()
+    expect(await child!.waitForExit()).toBe(true)
+    exited = true
+    const outcome = await child!.done
+    if (process.platform === 'win32') {
+      expect(outcome.signal).toBeNull()
+      expect(outcome.exitCode).not.toBeNull()
+      expect(outcome.exitCode).not.toBe(0)
+    } else {
+      expect(outcome.signal).toBe('SIGKILL')
     }
   })
 
@@ -1375,37 +1390,38 @@ describe('dsh-subagent-acp', () => {
     expect(errors).toEqual([rawMessage])
   })
 
-  it.skipIf(process.platform === 'win32')('plugin-config dispose graces reach the run (SIGKILL escalation through the provider)', async ({ task }) => {
-    // Same trap scenario as the direct startAcpRun escalation test, but the
-    // graces arrive via the PLUGIN CONFIG through the registered provider — so a
-    // regression that stops threading config into AcpRunSpec (falling back to
-    // the 6s/3s defaults) blows past the 4000ms bound and fails loud.
+  it('plugin-config dispose graces reach the real ACP run', async ({ onTestFinished, task }) => {
+    const ctx = new Context()
     const tmp = mkdtempSync(join(tmpdir(), 'acp-cfg-trap-'))
+    onTestFinished(async () => {
+      try {
+        await ctx.fiber.dispose()
+      } finally {
+        rmSync(tmp, { recursive: true, force: true })
+      }
+    })
+    const start = vi.spyOn(acpRun, 'startAcpRun')
+    onTestFinished(() => { start.mockRestore() })
     const ready = join(tmp, 'trap-armed')
-    try {
-      const ctx = new Context()
-      await ctx.plugin(SessionProjectionRegistry)
-      await ctx.plugin(SubagentRuntime)
-      await ctx.plugin(LocalSubprocessRuntime)
-      await ctx.plugin(acp, {
-        providerName: 'acp',
-        command: process.execPath,
-        args: [mockServer],
-        permission: 'reject',
-        env: { MOCK_TRAP_SIGTERM: '1', MOCK_TEXT: 'x', MOCK_READY_FILE: ready },
-        disposeEofGraceMs: 150,
-        disposeGraceMs: 150,
-      })
-      const run = await ctx.subagents.start('acp', request())
-      await waitForFile(ready, task.timeout)
-      await expect(Promise.race([
-        run.dispose(),
-        new Promise((_r, reject) => { setTimeout(() => { reject(new Error('dispose did not return — config graces not threaded to the run')) }, 4000) }),
-      ])).resolves.toBeUndefined()
-      await ctx.fiber.dispose()
-    } finally {
-      rmSync(tmp, { recursive: true, force: true })
-    }
+    await ctx.plugin(SessionProjectionRegistry)
+    await ctx.plugin(SubagentRuntime)
+    await ctx.plugin(LocalSubprocessRuntime)
+    await ctx.plugin(acp, {
+      providerName: 'acp',
+      command: process.execPath,
+      args: [mockServer],
+      permission: 'reject',
+      env: { MOCK_TRAP_SIGTERM: '1', MOCK_TEXT: 'x', MOCK_READY_FILE: ready },
+      disposeEofGraceMs: 150,
+      disposeGraceMs: 150,
+    })
+    const run = await ctx.subagents.start('acp', request())
+    expect(start).toHaveBeenCalledExactlyOnceWith(expect.anything(), expect.objectContaining({
+      disposeEofGraceMs: 150,
+      disposeGraceMs: 150,
+    }))
+    await waitForFile(ready, task.timeout)
+    await expect(run.dispose()).resolves.toBeUndefined()
   })
 
   it('rejects a dispose grace outside the Node timer range at load', async () => {

@@ -21,7 +21,7 @@ function migrate(event: SessionFormatEvent): SessionFormatEvent | undefined {
 }
 
 describe('released code preset references', () => {
-  it.each([undefined, 'code', 'ptc', 'standard', 'minimal', 'cordis', 'code-custom', 'Code'])(
+  it.each([undefined, 'code', 'ptc', 'standard', 'minimal', 'custom-agent', 'code-custom', 'Code'])(
     'migrates only the exact legacy header preset (%s)', (agentPreset) => {
       const source = Object.freeze({ ...header, ...(agentPreset === undefined ? {} : { agentPreset }) })
       expect(sessionFormatV2ToV3.migrateHeader(source)).toEqual({
@@ -32,7 +32,7 @@ describe('released code preset references', () => {
     },
   )
 
-  it.each(['code', 'ptc', 'standard', 'minimal', 'cordis', 'code-custom', 'Code'])(
+  it.each(['code', 'ptc', 'standard', 'minimal', 'custom-agent', 'code-custom', 'Code'])(
     'preserves admitted selection metadata (%s)', (agentPreset) => {
       const event = Object.freeze({
         type: 'agent-preset/selected', seq: 0, time: -7, ignorable: true,
