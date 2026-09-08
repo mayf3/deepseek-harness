@@ -16,15 +16,23 @@ export function apply(ctx) {
   })
   ctx.effect(() => {
     const jobs = ctx.jobs
-    const wait = jobs.wait
-    jobs.wait = function (...args) {
-      // The registry registers its waiter synchronously, unlike the tool middleware.
-      const pending = wait.apply(this, args)
-      rmSync(HOLD)
-      return pending
+    const forCaller = jobs.forCaller
+    // Waits live on the caller-bound operations, so the barrier wraps every
+    // view the registry hands out and releases on the wait itself.
+    jobs.forCaller = function (...args) {
+      const view = forCaller.apply(this, args)
+      return {
+        ...view,
+        wait: (...waitArgs) => {
+          // The registry registers its waiter synchronously, unlike the tool middleware.
+          const pending = view.wait(...waitArgs)
+          rmSync(HOLD)
+          return pending
+        },
+      }
     }
     return () => {
-      jobs.wait = wait
+      jobs.forCaller = forCaller
       rmSync(HOLD, { force: true })
     }
   })
