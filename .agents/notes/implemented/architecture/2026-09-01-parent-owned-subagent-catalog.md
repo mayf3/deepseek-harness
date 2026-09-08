@@ -24,6 +24,8 @@ The utility owns chunk layout and its shared capacity constant; the catalog owns
 
 Fork isolation uses the exact `Session.inheritedEventCount` supplied to projection initialization. The fold ignores `subagent/catalog` events below that offset. The state stores the inherited offset but not each event seq because acceptance is decided during folding.
 
+Headless snapshot collection assigns sibling fixture roles by their parent catalog order, regardless of child creation timestamps: provider startup can publish an older Session after a newer one. The collection preserves each log verbatim.
+
 Snapshot normalizers zero `childCreatedAt` because it originates from the process clock. Event order and source-event references remain intact: adjacent facts can come from sequential creation, so adjacency does not establish commutativity.
 
 ## Alternatives considered

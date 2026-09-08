@@ -176,8 +176,8 @@ async function persistedSessions(cwd: string): Promise<SessionLog[]> {
     expect(assertPersistedSessionVersion(basename(file), content), `${file}: current writer`).toBe(SESSION_FORMAT_VERSION)
     return { content, header: headerOf(content) }
   }))
-  // Same-millisecond siblings bind to fixture roles by their parent's recorded
-  // discovery order; random persistence filenames do not identify child roles.
+  // Siblings bind to fixture roles by catalog publication order; concurrent
+  // provider startup can publish an older Session after a newer one.
   const catalogOrders = new Map(logs.map(log => [log.header.id, new Map(
     records(log.content)
       .filter(event => event.type === 'subagent/catalog')
@@ -187,10 +187,12 @@ async function persistedSessions(cwd: string): Promise<SessionLog[]> {
     const leftChild = typeof left.header.parentSession === 'string'
     const rightChild = typeof right.header.parentSession === 'string'
     if (leftChild !== rightChild) return leftChild ? 1 : -1
-    const timeOrder = Number(left.header.createdAt) - Number(right.header.createdAt)
-    if (timeOrder !== 0 || left.header.parentSession !== right.header.parentSession) return timeOrder
-    const catalogOrder = catalogOrders.get(left.header.parentSession)
-    return (catalogOrder?.get(left.header.id) ?? Infinity) - (catalogOrder?.get(right.header.id) ?? Infinity)
+    if (left.header.parentSession === right.header.parentSession) {
+      const catalogOrder = catalogOrders.get(left.header.parentSession)
+      const childOrder = (catalogOrder?.get(left.header.id) ?? Infinity) - (catalogOrder?.get(right.header.id) ?? Infinity)
+      if (childOrder) return childOrder
+    }
+    return Number(left.header.createdAt) - Number(right.header.createdAt)
   })
 }
 
@@ -780,6 +782,31 @@ describe('headless recorded-session snapshots', () => {
     ].map(record => JSON.stringify(record)).join('\n')
 
     expect(stderrFromSession(log)).toBe('dsh: reasoning:\nfirst thought\ndsh: reasoning:\nsecond\n')
+  })
+
+  it.each([10, 20])('assigns sibling roles by catalog order when the first child timestamp is %i', async (firstCreatedAt) => {
+    const cwd = await mkdtemp(join(tmpdir(), 'dsh-headless-catalog-order-'))
+    try {
+      const logs = [
+        [
+          { type: 'session', version: 2, id: 'parent', createdAt: 1 },
+          { type: 'subagent/catalog', data: { childId: 'child-z' } },
+          { type: 'subagent/catalog', data: { childId: 'child-a' } },
+        ],
+        [{ type: 'session', version: 2, id: 'child-z', createdAt: firstCreatedAt, parentSession: 'parent' }],
+        [{ type: 'session', version: 2, id: 'child-a', createdAt: 10, parentSession: 'parent' }],
+      ].map(rows => rows.map(row => JSON.stringify(row)).join('\n') + '\n')
+      for (const content of logs) {
+        const directory = join(cwd, '.dsh', 'sessions', String(headerOf(content).id))
+        await mkdir(directory, { recursive: true })
+        await writeFile(join(directory, 'session.v2.jsonl'), content)
+      }
+      const actual = await persistedSessions(cwd)
+      expect(actual.map(log => log.header.id)).toEqual(['parent', 'child-z', 'child-a'])
+      expect(actual.map(log => log.content)).toEqual(logs)
+    } finally {
+      await rm(cwd, { recursive: true, force: true })
+    }
   })
 
   it('writes header sidecars without replacing a retained Session generation', async () => {

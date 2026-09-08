@@ -24,6 +24,8 @@ child header 与 `subagent/descriptor` 继续拥有恢复与 composition 权威�
 
 fork 隔离使用 projection 初始化时提供的精确 `Session.inheritedEventCount`。fold 忽略该 offset 之前的 `subagent/catalog` 事件。state 保存 inherited offset，但不保存每条 event seq，因为接受判定已在 fold 时完成。
 
+Headless 快照采集按父目录顺序分配同父子级的 fixture 角色，不依赖子级创建时间戳：provider 启动可能在较新的 Session 之后发布较旧的 Session。采集过程原样保留每份日志。
+
 snapshot normalizer 会把 `childCreatedAt` 归零，因为它来自 process clock。事件顺序与来源事件引用保持不变：相邻 fact 也可能来自顺序创建，因此相邻关系不能证明可交换性。
 
 ## 考虑过的替代方案
