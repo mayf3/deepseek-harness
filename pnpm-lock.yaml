@@ -3752,19 +3752,6 @@ importers:
         version: 18.3.1
 
   packages/client/ui-sidebar-documentpreview:
-    dependencies:
-      clsx:
-        specifier: ^2.0.0
-        version: 2.1.1
-      pdfjs-dist:
-        specifier: 6.3.289
-        version: 6.3.289
-      react:
-        specifier: ^18.2.0
-        version: 18.3.1
-      react-dom:
-        specifier: ^18.2.0
-        version: 18.3.1(react@18.3.1)
     devDependencies:
       '@deepseek-ai/cordis':
         specifier: workspace:^
@@ -3826,6 +3813,18 @@ importers:
       '@types/react-dom':
         specifier: ~18.3.0
         version: 18.3.7(@types/react@18.3.31)
+      clsx:
+        specifier: ^2.0.0
+        version: 2.1.1
+      pdfjs-dist:
+        specifier: 6.3.289
+        version: 6.3.289
+      react:
+        specifier: ^18.2.0
+        version: 18.3.1
+      react-dom:
+        specifier: ^18.2.0
+        version: 18.3.1(react@18.3.1)
 
   packages/client/ui-sidebar-files:
     devDependencies:

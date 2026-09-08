@@ -246,13 +246,13 @@ Source: [`packages/api/workspace-controller/src/index.ts`](../../packages/api/wo
 
 ### `ctx.workspaceFiles` — `WorkspaceFiles`
 
-Host Remote service over the composed filesystem, confined to one workspace.
+Host Remote file reads and workspace directory observations over the composed filesystem.
 
 ```ts cordis-catalog
 /**
- * Read one page of lines from a UTF-8 text file inside the Agent's workspace.
+ * Read one page of lines from a UTF-8 file readable by the filesystem backend.
  * @param agent - target Agent resolved from the Session identity on the wire.
- * @param path - workspace path, absolute or relative to the workspace root.
+ * @param path - absolute path or path relative to the workspace root; files outside it are allowed.
  * @param range - the line window; omitted fields take the page defaults.
  * @param signal - caller cancellation.
  * @returns the page, the file's version at the stat before it, and whether it reaches the last line.
@@ -260,10 +260,10 @@ Host Remote service over the composed filesystem, confined to one workspace.
 @Remote async read(agent: Agent, path: string, range: WorkspaceFileRange, signal: AbortSignal): Promise<WorkspaceFileText>
 
 /**
- * Read one byte window of a regular file inside the Agent's workspace: raw
+ * Read one byte window of a regular file readable by the filesystem backend: raw
  * bytes, no text decoding and no binary rejection.
  * @param agent - target Agent resolved from the Session identity on the wire.
- * @param path - workspace path, absolute or relative to the workspace root.
+ * @param path - absolute path or path relative to the workspace root; files outside it are allowed.
  * @param range - the byte window; omitted fields take the window defaults.
  * @param signal - caller cancellation.
  * @returns the window in base64, the file's version and size at the stat before it, and whether it reaches the last byte.
@@ -272,7 +272,7 @@ Host Remote service over the composed filesystem, confined to one workspace.
 
 /**
  * Read a complete regular file as bytes, subject to the configured full-file cap.
- * @param agent - target Agent whose workspace confines the read.
+ * @param agent - target Agent whose workspace resolves relative paths.
  * @param path - absolute or workspace-relative file path.
  * @param signal - caller cancellation.
  * @returns one complete base64 window with offset zero and eof true; oversized files fail with too-large.
@@ -280,8 +280,8 @@ Host Remote service over the composed filesystem, confined to one workspace.
 @Remote async readAll(agent: Agent, path: string, signal: AbortSignal): Promise<WorkspaceFileBytes>
 
 /**
- * Read a complete file relative to another file's directory within the same workspace.
- * @param agent - Agent whose workspace confines both files.
+ * Read a complete file relative to another file's directory, including outside the workspace.
+ * @param agent - Agent whose workspace resolves the base file's relative path.
  * @param path - base file, absolute or workspace-relative.
  * @param relativePath - relative filesystem path, not a URL or absolute path.
  * @param signal - caller cancellation.
@@ -292,7 +292,7 @@ Host Remote service over the composed filesystem, confined to one workspace.
 /**
  * Report one regular file's identity, version, and size without its content.
  * @param agent - target Agent resolved from the Session identity on the wire.
- * @param path - workspace path, absolute or relative to the workspace root.
+ * @param path - absolute path or path relative to the workspace root; files outside it are allowed.
  * @param signal - caller cancellation.
  * @returns the file's absolute path, current version, and byte size.
  */

@@ -1,5 +1,5 @@
 ---
-description: "面向 Web GUI 的工作区文件服务：在 Session 工作区根内做分页读取、字节窗口、完整读取、关联文件读取、stat、目录列举与 Agent 写入变更流，以 workspaceFiles Remote 命名空间暴露。"
+description: "面向 Web GUI 的工作区文件服务：通过组合文件系统进行有界文件读取，并在 Session 工作区根内列举目录和观察 Agent 写入。"
 kind: "package-reference"
 ---
 
@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-使用本包可从 Web Client 浏览和检查 Session 工作区内的文件。它按行分页读取 UTF-8 文本、按有界窗口或完整文件读取原始字节、从基文件目录解析关联文件、报告文件版本与大小、列举目录的直接子项，并流式推送 Agent 文件操作造成的变更。每项操作都限定在为被寻址 Session 选择的工作区根内，不受文件系统后端工作目录影响。Client 组件还可经共享 Remote API 跟随实时文件元数据并构建 Sidebar 文件树。
+使用本包可从 Web Client 预览 Session 文件系统允许读取的文件。它按页读取 UTF-8 文本、按有界窗口或完整文件读取原始字节、从基文件目录解析关联文件，并报告文件元数据。文件读取可以指向工作区外路径；目录列举与 Agent 写入变更观察仍限定于工作区。本服务不提供修改操作。
 
 ## 目录
 
@@ -39,7 +39,7 @@ kind: "package-reference"
 
 ### 寻址与路径
 
-`read`、`stat` 与 `list` 接受工作区路径，可以是绝对路径，也可以是相对于 Session 工作区根的路径。离开服务的路径词汇有两套，每个方法只用其中一套：`read`、`stat` 与 `changes` 以文件系统执行环境中的绝对路径报告文件，符号链接已解析（`WorkspaceFileStat.absolutePath`、`WorkspaceFileChange.absolutePath`），因为其消费方是 Client 资源系统，它按这条路径跟随变更；`list` 以相对于根的工作区路径报告被列举目录——根自身为空串——因为其消费方是一棵以根为起点的树，子项路径就是该值与条目名以 `/` 连接。 `readRelated` 从基文件所在目录解析相对文件系统路径，不接受 URL 或绝对路径；基文件与目标均经过 Host 访问检查。
+`read`、`readBytes`、`readAll`、`readRelated` 与 `stat` 接受绝对路径或相对于 Session 工作区根的路径。组合文件系统决定路径是否可读；本服务不额外要求文件读取限定于工作区。`readRelated` 从基文件所在目录解析相对文件系统路径，基文件或目标文件位于工作区外时同样适用。这些方法以文件系统执行环境中的绝对路径报告文件。`list` 仍限定于工作区，并以相对于该根的路径报告被列举目录。`changes` 同样只报告工作区根内的 Agent 观察。
 
 ### 分页
 
@@ -49,9 +49,9 @@ kind: "package-reference"
 
 `read` 按行分页，绝不按字节；字节窗口走 `readBytes`。`range.offset` 是 0 起算的首字节，缺省为 0；`range.length` 是窗口最多的字节数，缺省为 `maxBytes` 且不得超过它——更长的窗口以 `too-large` 失败而不是被截短，不是整数或越界的 offset / length 则是 `gateway/bad-request`。窗口以 base64 的 `data` 返回，到文件末尾时短于 `length`，位于或越过末尾时为空；窗口含文件最后一个字节时 `eof` 为 true。不做任何解码，也不按二进制拒绝，因此图片或含 NUL 的文件在 `read` 以 `not-text` 失败之处仍可读出。与页一样附带同一 `version` 与 `bytes`。
 
-### 四道关
+### 文件读取与目录检查
 
-每次读取、stat 与列举依次过四道关。第一，`lstat` 在跟随任何东西之前检查路径本身：符号链接不论指向哪里，`read` 与 `stat` 都以 `not-regular-file`、`list` 都以 `not-directory` 拒绝，并带上条目的 `kind`。第二，包含判定：路径解析为目标后由 `ctx.fs.contains(root, target)` 裁决，所以 `..` 上溯或根外绝对路径都以 `outside-workspace` 失败——绝不做字符串前缀比较，那看不见离开根的 realpath。第三，上限：文本超过 `maxBytes` 的页以 `too-large` 失败而不是被截短送达——分页读取不限制文件总大小，完整读取则受 `maxFileBytes` 限制——`maxEntries` 则截断列举并置 `truncated`。第四，文本：到该页末尾为止非 UTF-8 的内容，或含 NUL 字节的页，以 `not-text` 失败；页之后的字节不检查。路径不存在以 `not-found` 失败；空路径是 `gateway/bad-request`。
+每项操作都先通过 `lstat` 拒绝不存在的路径、末端符号链接或错误的文件类型。文件操作随后通过组合文件系统解析和读取，不做额外的工作区包含检查。只有 `list` 要求解析后的目录仍位于工作区内。配置的分页、窗口、完整文件和目录列举上限仍然适用。文本页还拒绝无效 UTF-8 与 NUL 字节；字节读取不解码内容。空路径是 `gateway/bad-request`。
 
 ### 变更流
 
@@ -70,7 +70,7 @@ kind: "package-reference"
 
 ### 失败
 
-每种失败都是一个带类型化 details 的 `RemoteError` 代码，声明于 [`src/types.ts`](src/types.ts)：`workspace-file/not-found`、`workspace-file/outside-workspace`、`workspace-file/too-large`（带 `limit`，即适用的页、窗口或完整文件上限）、`workspace-file/not-text`、`workspace-file/not-regular-file`（`kind` 为 `directory`、`symlink` 或 `other`）以及 `workspace-file/not-directory`（`kind` 为 `file`、`symlink` 或 `other`）。调用方按代码分支，绝不按消息文本。
+每种失败都是一个带类型化 details 的 `RemoteError` 代码，声明于 [`src/types.ts`](src/types.ts)：`workspace-file/not-found`、`workspace-file/outside-workspace`（仅目录列举）、`workspace-file/too-large`（带 `limit`，即适用的页、窗口或完整文件上限）、`workspace-file/not-text`、`workspace-file/not-regular-file`（`kind` 为 `directory`、`symlink` 或 `other`）以及 `workspace-file/not-directory`（`kind` 为 `file`、`symlink` 或 `other`）。调用方按代码分支，绝不按消息文本。
 
 ### Client 文件资源
 
@@ -92,7 +92,7 @@ kind: "package-reference"
 
 ### 设计概念
 
-经 `ctx.fs` 的读取是有意不加限制的——沙箱后端只围栏写与编辑——所以这里的每条约束都是服务自己的。页从 `streamText` 切出，后者逐块解码并拒绝非 UTF-8：切页器对窗口之前的行只计数不保留，对窗口内的每个片段先按字节上限验收再缓冲，并在窗口之后的第一个字符处返回，所以无论多大的文件或多长的单行都不会在内存里超过一页；随后在该页上做 NUL 扫描。流之前的一次 `stat` 给出页所报告的版本与大小。路径关有意先于包含判定：`lstat` 面向路径、看得见链接，而 `resolve` 会跟随它；代价是根外条目会先报告自己的类型再报告位置。
+经 `ctx.fs` 的读取使用后端的读取权限；沙箱后端限制写与编辑，而不限制读取。本服务增加普通文件检查与有界传输，工作区包含要求只属于目录列举与变更观察。页从 `streamText` 切出，后者逐块解码并拒绝非 UTF-8：切页器对窗口之前的行只计数不保留，对窗口内的每个片段先按字节上限验收再缓冲，并在窗口之后的第一个字符处返回。流之前的一次 `stat` 给出页所报告的版本与大小。
 
 ### 源码地图
 
@@ -137,7 +137,7 @@ Typert 生成 `./typert` 与 `./remote` 暴露的 Host 与 Client Remote 产物�
 <a id="known-limitations-and-deferred-work"></a>
 
 - **仅覆盖 Agent 写入**——`changes` 转发 `fs/observed` 的发射；子进程、shell 命令或用户编辑器改动的文件不产生任何帧。
-- **类型先于位置**——根外条目若类型本身就不合格，报告的是 `not-regular-file` 或 `not-directory` 而非 `outside-workspace`，因为路径关先于包含判定。
+- **仅目录受限**——尽管文件预览可以读取文件系统后端允许的任意路径，`list` 与 `changes` 仍限定在 Session 工作区内。
 - **没有总行数**——页只报告 `eof`，不报告后面还有多少行；需要总数的消费方要翻到末尾或按 `bytes` 估算。
 - **超长单行没有页**——超过 `maxBytes` 的单行在包含它的每个窗口都以 `too-large` 失败，因为页按行而非按字节切。
 - **读取不具备事务性**——结果元数据来自内容读取之前的 stat；并发写入可能使报告版本与返回内容不一致。

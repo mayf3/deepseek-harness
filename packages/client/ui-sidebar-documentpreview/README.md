@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-Preview workspace documents in the right Sidebar and choose among registered renderers without opening another tab. Markdown and code receive accumulated text pages; PDF and HTML receive complete bytes; unknown file extensions use plain text. The tab owns loading, file status, renderer selection, wrap, and reload, while document bodies register through the same metadata registry and child slot. The Sidebar tab kind is `text`.
+Preview readable files in the right Sidebar and choose among registered renderers without opening another tab. Markdown and code receive accumulated text pages; PDF and HTML receive complete bytes; unknown file extensions use plain text. The tab owns loading, file status, renderer selection, wrap, and reload, while document bodies register through the same metadata registry and child slot. The Sidebar tab kind is `text`.
 
 ## Table of Contents
 
@@ -45,7 +45,7 @@ HTML limits are fields on this package's root Client `Config`, configurable on i
 <a id="addresses"></a>
 ## Addresses
 
-A tab uses the Session address built by `fileAddressFor`, carrying a relative or absolute path. `hostFileOf(address)` takes the Session only from that address, with no external Session argument; neither current nor Tab Session is borrowed. The Host resolves file and related paths and enforces confinement. Metadata for the same complete address is shared by every UI, including Global components. The [Workspace Files README](../../api/workspace-files/README.md) owns these rules; renderer selection does not change the navigation address.
+A tab uses the Session address built by `fileAddressFor`, carrying a relative or absolute path. `hostFileOf(address)` takes the Session only from that address, with no external Session argument; neither current nor Tab Session is borrowed. The Host resolves file and related paths through the Session filesystem, whose backend controls read authority. Metadata for the same complete address is shared by every UI, including Global components. The [Workspace Files README](../../api/workspace-files/README.md) owns these rules; renderer selection does not change the navigation address.
 
 <a id="how-it-reads"></a>
 ## How it reads
@@ -61,7 +61,7 @@ HTML runs in a Blob iframe with exactly `sandbox="allow-scripts"`, without `allo
 
 Shared copy comes from `sidebarDocumentPreview`; each builtin renderer owns its localized labels.
 
-Initial reads, additional pages, and HTML/PDF preparation share a loading indicator that respects reduced-motion preferences. Loaded pages stay visible while another page loads. Code previews show source line numbers by default without including them in copied text; plain text uses the same font size and line height as code.
+Initial reads, additional pages, and HTML/PDF preparation share a loading indicator that respects reduced-motion preferences. Loaded pages stay visible while another page loads. PDF pages form one vertical, width-fitted sequence and render lazily near the viewport. Code previews show source line numbers by default without including them in copied text; plain text uses the same font size and line height as code.
 
 <a id="navigation"></a>
 ## Navigation

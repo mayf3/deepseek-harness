@@ -10,7 +10,7 @@ import { pdfFixture } from '../../../packages/client/ui-sidebar-documentpreview/
 import { assertFixtureInventory, compareOrRefreshGolden, launchWebScaffold, watchConsole, webSnapshotMode, type WebScaffold } from './scaffold.ts'
 import { connectFreshWorkspace, newEnglishPage, saveFailureShot } from './support.ts'
 
-const FIXTURE = fileURLToPath(new URL('../../../snapshots/web/lifecycle-chrome/session.v2.jsonl', import.meta.url))
+const FIXTURE = fileURLToPath(new URL('../../../snapshots/web/lifecycle-chrome/session.v3.jsonl', import.meta.url))
 const SNAPSHOT_DIR = fileURLToPath(new URL('../../../snapshots/web/document-preview', import.meta.url))
 const EXPECTED = join(SNAPSHOT_DIR, 'document.expected.md')
 const PAGING_PATCH = join(SNAPSHOT_DIR, 'paging.patch.yml')

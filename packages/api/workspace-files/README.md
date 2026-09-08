@@ -1,5 +1,5 @@
 ---
-description: "Workspace file service for the web GUI: paged read, byte windows, complete and related-file reads, stat, directory listing, and the Agent-write change feed inside the Session workspace root, exposed as the workspaceFiles Remote namespace."
+description: "Workspace file service for the web GUI: bounded file reads through the composed filesystem, plus directory listing and Agent-write observation inside the Session workspace root."
 kind: "package-reference"
 ---
 
@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-Use this package to browse and inspect files within a Session's workspace from the web client. It reads UTF-8 text one page of lines at a time, reads raw bytes in bounded windows or complete files, resolves related files from a base file's directory, reports file versions and sizes, lists direct directory children, and streams changes caused by Agent file operations. Every operation stays within the workspace root selected for the addressed Session, independent of the filesystem backend's working directory. Client components can also follow live file metadata and build the Sidebar file tree through the shared Remote API.
+Use this package to preview files readable through a Session's filesystem from the web client. It reads UTF-8 text by page, reads bounded byte windows or complete files, resolves related files from a base file's directory, and reports file metadata. File reads may target paths outside the workspace; directory listing and Agent-write change observation remain workspace-scoped. The service exposes no mutation operation.
 
 ## Table of Contents
 
@@ -39,7 +39,7 @@ Mount the package beside `dsh-fs`, `dsh-sandbox-policy`, and the Typert Gateway;
 
 ### Addressing and paths
 
-`read`, `stat`, and `list` accept a workspace path that is absolute or relative to the Session's workspace root. Two path vocabularies leave the service, and each method uses exactly one: `read`, `stat`, and `changes` report a file as its absolute path in the filesystem's execution world, symlinks resolved (`WorkspaceFileStat.absolutePath`, `WorkspaceFileChange.absolutePath`), because their consumer is the Client resource system, which follows changes by that path; `list` reports the listed directory as a workspace path relative to the root — empty for the root itself — because its consumer is a tree rooted there, and a child's path is that value joined with the entry name by `/`. `readRelated` resolves a relative filesystem path from the base file's directory, not a URL or absolute path; both files pass Host access checks.
+`read`, `readBytes`, `readAll`, `readRelated`, and `stat` accept an absolute path or one relative to the Session's workspace root. The composed filesystem decides whether the path is readable; the service does not impose workspace containment on file reads. `readRelated` resolves a relative filesystem path from the base file's directory, including when either file is outside the workspace. These methods report the file's absolute path in the filesystem's execution world. `list` remains workspace-scoped and reports the listed directory relative to that root. `changes` likewise reports only Agent observations inside the workspace root.
 
 ### Pages
 
@@ -49,9 +49,9 @@ Mount the package beside `dsh-fs`, `dsh-sandbox-policy`, and the Typert Gateway;
 
 `read` pages by lines and never by bytes; a byte window is `readBytes`. `range.offset` is the 0-based first byte and defaults to 0; `range.length` is the largest number of bytes in the window and defaults to `maxBytes`, which it may not exceed — a longer window fails with `too-large` instead of arriving shortened, and an offset or length that is not an integer in range is a `gateway/bad-request`. The window comes back as base64 `data`, shorter than `length` at the end of the file and empty at or past it; `eof` is true when the window includes the file's last byte. Nothing is decoded and nothing is refused as binary, so an image or a NUL-laden file reads where `read` fails with `not-text`. The same `version` and `bytes` ride along as on a page.
 
-### The four gates
+### File-read and directory checks
 
-Every read, stat, and listing passes four gates in this order. First, `lstat` inspects the path itself before anything follows it: a symlink, wherever it points, fails `read` and `stat` with `not-regular-file` and `list` with `not-directory`, each carrying the entry's `kind`. Second, containment: the path resolves to a target and `ctx.fs.contains(root, target)` decides, so a `..` traversal or an absolute path outside the root fails with `outside-workspace` — never a string-prefix comparison, which cannot see a realpath that leaves the root. Third, the caps: a page whose text exceeds `maxBytes` fails with `too-large` instead of arriving shortened — paged reads have no total file cap, while complete reads use `maxFileBytes` — while `maxEntries` cuts a listing and sets `truncated`. Fourth, text: content that is not UTF-8 up to the end of the page, or a page that carries a NUL byte, fails with `not-text`; bytes past the page are not inspected. A missing path fails with `not-found`; an empty path is a `gateway/bad-request`.
+Every operation first uses `lstat` to reject a missing path, a final symlink, or the wrong file kind. File operations then resolve and read through the composed filesystem without an additional workspace-containment check. `list` alone requires the resolved directory to remain inside the workspace root. The configured page, window, complete-file, and listing caps still apply. Text pages additionally reject invalid UTF-8 and NUL bytes; byte reads do not decode content. An empty path is a `gateway/bad-request`.
 
 ### The change feed
 
@@ -70,7 +70,7 @@ The generated [configuration catalog](../../../docs/config-catalog.md#deepseek-a
 
 ### Failures
 
-Each failure is one `RemoteError` code with typed details, declared in [`src/types.ts`](src/types.ts): `workspace-file/not-found`, `workspace-file/outside-workspace`, `workspace-file/too-large` (with `limit`, the applicable page, window, or complete-file cap), `workspace-file/not-text`, `workspace-file/not-regular-file` (`kind`: `directory`, `symlink`, or `other`), and `workspace-file/not-directory` (`kind`: `file`, `symlink`, or `other`). Callers branch on the code, never on message text.
+Each failure is one `RemoteError` code with typed details, declared in [`src/types.ts`](src/types.ts): `workspace-file/not-found`, `workspace-file/outside-workspace` (directory listing only), `workspace-file/too-large` (with `limit`, the applicable page, window, or complete-file cap), `workspace-file/not-text`, `workspace-file/not-regular-file` (`kind`: `directory`, `symlink`, or `other`), and `workspace-file/not-directory` (`kind`: `file`, `symlink`, or `other`). Callers branch on the code, never on message text.
 
 ### Client file resources
 
@@ -92,7 +92,7 @@ One supervised `changes` stream serves every followed file in a Session. Followe
 
 ### Design concept
 
-Reads through `ctx.fs` are deliberately unconfined — the sandboxing backend fences writes and edits only — so every constraint here is the service's own. A page is cut from `streamText`, which decodes and rejects non-UTF-8 chunk by chunk: the cutter counts lines before the window without keeping them, admits each in-window segment against the byte cap before buffering it, and returns at the first character past the window, so neither a huge file nor one giant line can hold more than a page in memory; the NUL scan then runs on the page. One `stat` before the stream names the version and size the page reports. The path gate runs before containment on purpose: `lstat` is path-shaped and sees the link, while `resolve` follows it; the price is that an entry outside the root reports its own kind before its position.
+Reads through `ctx.fs` use the backend's read authority; the sandboxing backend fences writes and edits, not reads. The service adds regular-file checks and bounded transfer, while workspace containment belongs only to directory listing and change observation. A page is cut from `streamText`, which decodes and rejects non-UTF-8 chunk by chunk: the cutter counts lines before the window without keeping them, admits each in-window segment against the byte cap before buffering it, and returns at the first character past the window. One `stat` before the stream names the version and size the page reports.
 
 ### Source map
 
@@ -137,7 +137,7 @@ None; this package neither assembles nor sends a provider request.
 <a id="known-limitations-and-deferred-work"></a>
 
 - **Agent writes only** — `changes` relays `fs/observed` emissions; a file changed by a subprocess, a shell command, or the user's editor produces no frame.
-- **Kind before position** — an entry outside the workspace whose type already disqualifies it reports `not-regular-file` or `not-directory`, not `outside-workspace`, because the path gate precedes containment.
+- **Directory scope only** — `list` and `changes` stay inside the Session workspace even though file preview reads may use any path readable by the filesystem backend.
 - **No total line count** — a page reports `eof`, not how many lines follow; a consumer that needs the total pages to the end or estimates from `bytes`.
 - **One giant line has no page** — a single line above `maxBytes` fails `too-large` at every window that includes it, because pages are cut by lines, not bytes.
 - **Reads are not transactional** — result metadata comes from stat before content is read; a concurrent write can make the reported version and returned contents differ.

@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-在右侧 Sidebar 预览工作区文档，无需另开 tab 即可切换已注册的渲染器。Markdown 和代码接收累计文本页；PDF 和 HTML 接收完整字节；未知文件扩展名使用纯文本。tab 负责加载、文件状态、渲染器选择、换行和重新载入，文档正文通过同一元数据注册表与子 slot 注册。Sidebar tab 的 kind 为 `text`。
+在右侧 Sidebar 预览可读文件，无需另开 tab 即可切换已注册的渲染器。Markdown 和代码接收累计文本页；PDF 和 HTML 接收完整字节；未知文件扩展名使用纯文本。tab 负责加载、文件状态、渲染器选择、换行和重新载入，文档正文通过同一元数据注册表与子 slot 注册。Sidebar tab 的 kind 为 `text`。
 
 ## 目录
 
@@ -45,7 +45,7 @@ HTML 上限是本包根 Client `Config` 的字段，可在现有插件配置项�
 <a id="addresses"></a>
 ## 地址
 
-tab 使用 `fileAddressFor` 构造的 Session 地址，携带相对或绝对路径。`hostFileOf(address)` 仅从地址取得 Session，不接收外部 Session 参数，也不借用当前或 Tab Session。Host 解析文件及关联路径，并执行包含检查。任何 UI（包括 Global 组件）都共享同一完整地址的元数据。[Workspace Files README](../../api/workspace-files/README.zh.md)定义这些规则；渲染器选择不改变导航地址。
+tab 使用 `fileAddressFor` 构造的 Session 地址，携带相对或绝对路径。`hostFileOf(address)` 仅从地址取得 Session，不接收外部 Session 参数，也不借用当前或 Tab Session。Host 通过 Session 文件系统解析文件及关联路径，由该后端控制读取权限。任何 UI（包括 Global 组件）都共享同一完整地址的元数据。[Workspace Files README](../../api/workspace-files/README.zh.md)定义这些规则；渲染器选择不改变导航地址。
 
 <a id="how-it-reads"></a>
 ## 怎么读
@@ -61,7 +61,7 @@ HTML 在 Blob iframe 中运行，沙箱属性严格为 `sandbox="allow-scripts"`
 
 共享文案来自 `sidebarDocumentPreview`；各内置渲染器拥有自己的本地化标签。
 
-首次读取、追加页及 HTML/PDF 准备共用加载指示器，并遵循减少动态效果偏好。下一页加载期间保留已显示的内容。代码预览默认显示源码行号，但复制文本不包含行号；纯文本与代码使用相同字号和行高。
+首次读取、追加页及 HTML/PDF 准备共用加载指示器，并遵循减少动态效果偏好。下一页加载期间保留已显示的内容。PDF 页面组成一个纵向、适配宽度的连续序列，并在接近视口时惰性渲染。代码预览默认显示源码行号，但复制文本不包含行号；纯文本与代码使用相同字号和行高。
 
 <a id="navigation"></a>
 ## 导航
