@@ -64,8 +64,6 @@ const { asOfSeq, values } = ctx.sessionProjections.snapshot(session)
 
 必须使用投影状态的领域把 `sessionProjections` 声明为 Cordis 服务依赖；可选贡献方可以在 `ctx.inject(['sessionProjections'], …)` 下注册。载体使用 `ctx.get('sessionProjections')`，注册表缺席时省略自己的块或帧。
 
-`restore` 和 `hydrate` 接受 `projectionMode`，默认值为 `all`。模式 `none` 恢复所有 host state，但不计算或校验客户端视图。
-
 ### 持久检查点
 
 每个单元的状态都会被检查点化——client-visible 与 host-only 一视同仁——通过 `checkpoint(session)`，同级包 [session-projection-cache](../session-projection-cache/README.zh.md) 持久化这些检查点，使冷读跳过全量日志加载。检查点水位使用 `SessionSeqCursor`（空日志为 `-1`），回放起点使用 `SessionLogOffset`；`restoreFloor` 与 `restore` 在无活动会话的情况下实现读取配方，且不会混淆已有事件与日志间隙。

@@ -678,6 +678,8 @@ list(): string[]
  * fulfills; a rejection therefore has no run for the caller to dispose and
  * emits no run lifecycle events. Post-publication turn and infrastructure
  * failures settle through the returned run.
+ * A catalog append failure disposes the run and handles its result rejection;
+ * the caller receives the catalog error even if disposal also fails.
  * @param name - the provider to use.
  * @param request - child label, prompt, parent, signal, and optional capabilities.
  * @returns the published holder-owned run.

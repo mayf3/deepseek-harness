@@ -1,4 +1,4 @@
-import { describe, expect, expectTypeOf, it, vi } from 'vitest'
+import { describe, expect, expectTypeOf, it, onTestFinished, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { type Agent } from '@deepseek-ai/dsh-agent'
 
@@ -270,14 +270,22 @@ describe('SubagentRuntime', () => {
     expect(lifecycle).not.toHaveBeenCalled()
   })
 
-  it('quiesces a local run when the parent catalog append fails', async () => {
-    const { subagents } = await service()
+  it.each([false, true])('handles a rejected local result after catalog failure (disposal fails: %s)', async (failsDisposal) => {
+    const { ctx, subagents } = await service()
+    onTestFinished(() => ctx.fiber.dispose())
     const parentSession = Session.create(SessionId('catalog-parent'))
     const childSession = Session.create(SessionId('catalog-child'))
     const parent = { id: parentSession.id, session: parentSession } as Agent
     const localAgent = { id: childSession.id, session: childSession } as Agent
+    const result = Promise.withResolvers<SubagentResult>()
     const cleanupFailure = new Error('dispose also failed')
-    const dispose = vi.fn().mockRejectedValue(cleanupFailure)
+    const warnings = vi.spyOn(ctx.logger, 'warn')
+    const dispose = vi.fn(async () => {
+      result.reject(new Error('run infrastructure failed'))
+      // Cross Node's unhandled-rejection checkpoint while disposal is pending.
+      await new Promise<void>(resolve => setImmediate(resolve))
+      if (failsDisposal) throw cleanupFailure
+    })
     subagents.registerProvider({
       name: 'catalog-failure',
       capabilities: NO_CAPS,
@@ -285,7 +293,7 @@ describe('SubagentRuntime', () => {
       start: () => Promise.resolve({
         id: childSession.id,
         localAgent,
-        result: Promise.resolve({ output: [], stopReason: 'completed' }),
+        result: result.promise,
         dispose,
       }),
     })
@@ -298,6 +306,7 @@ describe('SubagentRuntime', () => {
       .rejects.toBe(catalogFailure)
     expect(append).toHaveBeenCalledOnce()
     expect(dispose).toHaveBeenCalledOnce()
+    expect(warnings).toHaveBeenCalledTimes(failsDisposal ? 1 : 0)
   })
 
   it('emits an enriched end event and maps result rejection to error telemetry', async () => {
