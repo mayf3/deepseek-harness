@@ -150,13 +150,13 @@ describe('Visualizer model surface', () => {
         modules: {
           type: 'array',
           items: { type: 'string', enum: ['diagram', 'mockup', 'interactive', 'chart', 'illustration'] },
-          description: 'Choose every module that fits the requested result. diagram: a fixed view of nodes and relationships. chart: quantitative data. illustration: a scene or image. interactive: an adjustable calculation, simulation, or animated demonstration. mockup: a product surface shown to explain one interaction.',
+          description: 'Choose every relevant module; content and behavior are independent, so combine modules when useful. diagram: nodes and relationships. chart: quantitative data. illustration: a scene or image. interactive: motion that contributes to the presentation, or direct manipulation and adjustable inputs requested by the user. mockup: a product surface shown to explain one interaction.',
         },
       },
       required: ['modules'],
     })
     expect(show.description)
-      .toBe('Render one temporary inline graphic or interactive widget from conversation content or completed tool results. Source beginning with <svg uses SVG; anything else uses HTML. Pass one small, complete source in this call; validation occurs after submission.')
+      .toBe('Render one temporary inline visual from conversation content or completed tool results. Source beginning with <svg uses SVG; anything else uses HTML. Pass one small, complete source in this call; validation occurs after submission.')
     const staticReceipt = show.output.render?.(
       { title: 'Static', widget_code: '<svg></svg>' },
       { kind: 'svg' },

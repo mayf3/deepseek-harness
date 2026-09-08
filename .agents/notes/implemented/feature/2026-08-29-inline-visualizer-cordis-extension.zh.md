@@ -14,7 +14,7 @@ DSH 缺少一方 Host 契约，让模型请求临时内联视觉内容、渐进�
 
 同一包的 `./model` function-plugin 要求 `systemPrompt` 与 `tools`，然后可恢复地注入 `visualizer`；权威存在时，它只在 Agent preset standing scope 安装 `tool:visualizer` 提示词，以及 `widget_guidelines` 与 `show_widget`。`standard` 与 `cordis` 始终挂载该 wrapper，因此权威稍后出现、撤销与再次出现会针对现有及新 Agent 激活、移除与重新激活模型面。`minimal` 与 `ptc` 不包含该 row，因为 PTC 的嵌套 code-dispatch 日志不提供 follow-up bridge 所需的普通 `show_widget` call/result 身份。默认 application composition 均不挂载根权威，因此正式默认提示词与工具面保持不变。
 
-每个 `widget_guidelines` result 都会在 `show_widget` 可见时包含 Delivery，再把一个共享 Foundation 与所请求的类型模块组合起来。Foundation 拥有宿主原生构图、响应式流、主题使用与跨类型可访问性；类型模块分别拥有 diagram 结构、交互生命周期、chart 语义与 illustration 例外。
+每个 `widget_guidelines` result 都会在 `show_widget` 可见时包含 Delivery，再把一个共享 Foundation 与所请求的模块组合起来。Foundation 拥有宿主原生构图、响应式流、主题使用与跨类型可访问性。内容和行为相互独立：当运动、操控或可调输入有助于呈现时，调用方会将 diagram、chart、illustration 或 mockup 指导与 interactive 指导组合使用。
 
 挂载根权威后会同时公开 raw SVG 与 HTML fragment；源码前缀检测记录 kind，而不在模型可见 schema 中暴露 renderer 部署策略。本次变更不提供展示 Client，也不在 Web、headless 或 TUI 中激活该能力。Host 不提供可变状态上报、恢复或模型读取面。实现不新增 Visualizer session event、Agent loop 规则或 core schema。
 

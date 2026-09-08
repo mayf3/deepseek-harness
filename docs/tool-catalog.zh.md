@@ -2092,7 +2092,7 @@ todo_write 是会话所有的状态；UI 将最新的 todo/write 事件渲染为
 
 ### `show_widget`
 
-从对话内容或已完成的工具结果渲染一个临时内联图形或交互组件。以 <svg 开头的源码使用 SVG，其余源码使用 HTML。在本次调用中传入一份小而完整的源码；提交后才会进行校验。
+从对话内容或已完成的工具结果渲染一份临时内联视觉内容。以 <svg 开头的源码使用 SVG，其余源码使用 HTML。在本次调用中传入一份小而完整的源码；提交后才会进行校验。
 
 ```json
 {
@@ -2126,7 +2126,7 @@ todo_write 是会话所有的状态；UI 将最新的 todo/write 事件渲染为
   "properties": {
     "modules": {
       "type": "array",
-      "description": "Choose every module that fits the requested result. diagram: a fixed view of nodes and relationships. chart: quantitative data. illustration: a scene or image. interactive: an adjustable calculation, simulation, or animated demonstration. mockup: a product surface shown to explain one interaction.",
+      "description": "Choose every relevant module; content and behavior are independent, so combine modules when useful. diagram: nodes and relationships. chart: quantitative data. illustration: a scene or image. interactive: motion that contributes to the presentation, or direct manipulation and adjustable inputs requested by the user. mockup: a product surface shown to explain one interaction.",
       "items": {
         "type": "string",
         "enum": [

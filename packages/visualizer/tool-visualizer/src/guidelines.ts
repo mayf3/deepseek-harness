@@ -22,7 +22,7 @@ const FOUNDATION_GUIDANCE = `## Foundation
 
 const GUIDELINES: Readonly<Record<WidgetGuidelineModule, string>> = Object.freeze({
   diagram: `## Diagram
-- Use raw SVG for a fixed diagram, beginning the source with <svg> and putting any styles inside it. Give it one responsive viewBox that fills the available width; do not assume a fixed card width.
+- When using raw SVG for a diagram, begin the source with <svg>, put any styles inside it, and give it one responsive viewBox that fills the available width; do not assume a fixed card width.
 - Match layout to the relationship: use one reading direction for sequences, a cycle only when recurrence is the point, a staged state view when stages need inspection, shallow nested regions for containment, and simplified forms with outside labels for spatial structure. Keep connectors behind nodes, avoid crossings, and label relationships directly.
 - Keep node text to labels and short phrases; move sentence-level explanation to the reply. Fit labels by widening or wrapping nodes. If the relationships still cannot fit at a readable size, split the visual into overview and detail views instead of shrinking text. Use semantic groups, consistent radii and spacing, and a visible hierarchy before decoration. If geometry is illustrative rather than sourced, label it as schematic or not to scale. Do not use emoji as decoration.`,
   mockup: `## Mockup
@@ -34,7 +34,7 @@ const GUIDELINES: Readonly<Record<WidgetGuidelineModule, string>> = Object.freez
 - Match each input to its semantics with one primary control per value: fields for exact entry, choice controls for discrete values, and ranges only for values meant to be swept. Give every control a clear label. Native controls come styled, focusable, and keyboard-accessible; custom controls must match that.
 - Within an HTML fragment, use inspectable DOM or inline SVG elements when they can represent the scene directly; use canvas only when retaining one element per visual mark would be impractical.
 - Keep self-contained interactions and computation local; they must not call the model.
-- Use motion only when change over time carries the explanation. Otherwise start stable; continuous motion waits for a user action unless immediate motion is the requested content. Honor reduced-motion preferences.
+- Use motion when change over time materially contributes to the meaning or experience. Motion may start immediately when it is central to the result; otherwise begin stable and let continuous motion follow a user action. Honor reduced-motion preferences.
 - Reuse a bounded set of DOM or SVG nodes for recurring updates; change textContent or attributes in place instead of rebuilding markup, and stop scheduling while idle, paused, or settled.
 - Keep changing numeric readouts from shifting the layout by using tabular numerals and reserving enough width for expected values.
 - Call window.dshWidget.sendPrompt(text, event) directly from a trusted click or keydown handler, at most once per event, and only when the next step genuinely needs the model. The message enters the conversation immediately, labelled as widget-authored; there is no confirmation step.
@@ -47,6 +47,7 @@ const GUIDELINES: Readonly<Record<WidgetGuidelineModule, string>> = Object.freez
   illustration: `## Illustration
 - Use illustration only when its visual form carries information that prose does not.
 - Derive the visual language from the subject and requested tone, with one clear focal point.
+- An illustration may be still or animated. Combine it with Interactive when motion or manipulation contributes to the presentation.
 - Use canvas for dense or procedurally repeated imagery; use raw SVG when a modest set of inspectable shapes is enough.`,
 })
 
