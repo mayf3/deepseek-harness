@@ -30,8 +30,14 @@ afterAll(() => {
 
 /** Per-test temp dirs, removed after each test. */
 const tempDirs: string[] = []
-afterEach(() => {
-  for (const dir of tempDirs.splice(0)) rmSync(dir, { recursive: true, force: true })
+const contexts: Context[] = []
+afterEach(async () => {
+  const ownedContexts = contexts.splice(0)
+  const directories = tempDirs.splice(0)
+  const results = await Promise.allSettled(ownedContexts.map(ctx => ctx.fiber.dispose()))
+  for (const dir of directories) rmSync(dir, { recursive: true, force: true })
+  const failures: unknown[] = results.flatMap((result): unknown[] => result.status === 'rejected' ? [result.reason] : [])
+  if (failures.length > 0) throw new AggregateError(failures, 'PowerShell fixture cleanup failed')
 })
 
 // The probe follows the executor's own resolution (Program Files installs on
@@ -51,6 +57,7 @@ function samePath(actual: string, expected: string): boolean {
 
 async function setup(config: ConstructorParameters<typeof PwshLocalExecutor>[1] = {}) {
   const ctx = new Context()
+  contexts.push(ctx)
   await ctx.plugin(LocalSubprocessRuntime)
   ;(ctx.subprocess as LocalSubprocessRuntime).internals = { spillDir }
   // A short kill grace via the REAL config path, so escalation tests stay fast.
@@ -422,6 +429,7 @@ describe.skipIf(!hasPwsh)('PwshLocalExecutor.start (background process handles)'
     }))
     const partialOutput = await readUntil(proc, '[bg-env][bg-dsh-env]', task.timeout)
     await proc.done
+    expect(proc.status).toBe('completed')
     const output = partialOutput + lf(proc.readOutput().delta)
     expect(output).toBe('bg-stdin\n[bg-env][bg-dsh-env]\n')
     expect(proc.exitCode).toBe(0)
