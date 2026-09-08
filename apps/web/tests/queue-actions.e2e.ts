@@ -227,15 +227,17 @@ describe('web e2e: queue row actions', () => {
       { timeout: 10_000 },
     ).toBe(2)
 
-    await page.getByRole('button', { name: 'Stop generating' }).click()
+    const stopButton = page.getByRole('button', { name: 'Stop generating' })
+    await stopButton.hover()
+    await page.getByRole('tooltip', { name: 'Stop generating', exact: true }).waitFor()
+    await stopButton.click()
     await firstSettled
     await expect.poll(() => page.getByRole('button', { name: 'Stop generating' }).count())
       .toBe(0)
     await expect.poll(() => page.getByRole('button', { name: 'Remove queued message' }).count())
       .toBe(2)
 
-    // Stop becomes Send under the pointer; capture the idle queue with tooltips dismissed.
-    await page.mouse.move(0, 0)
+    // The disabled Send button must dismiss the active Stop tooltip without mouseleave.
     await expect.poll(() => page.getByRole('tooltip').count()).toBe(0)
     const preservedSnapshot = await captureStableAria(page, '[class*="centerCol"]', scaffold.workspaceCwd)
     await compareOrRefreshGolden(PRESERVED_EXPECTED, preservedSnapshot, MODE)
