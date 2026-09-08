@@ -158,17 +158,8 @@ function runChild(options: ProbeOptions, packageDir: string, mainSpecifier: stri
     )
     // The tail of stderr, for the failure text: a package that floods stderr at
     // import must not grow this process's heap by as much.
-    const err: Buffer[] = []
-    let errBytes = 0
-    child.stderr?.on('data', (chunk: Buffer) => {
-      err.push(chunk)
-      errBytes += chunk.length
-      while (errBytes > STDERR_TAIL_BYTES && err.length > 1) errBytes -= (err.shift() as Buffer).length
-      if (errBytes > STDERR_TAIL_BYTES) {
-        err[0] = (err[0] as Buffer).subarray(errBytes - STDERR_TAIL_BYTES)
-        errBytes = STDERR_TAIL_BYTES
-      }
-    })
+    const err = new StreamTail(STDERR_TAIL_BYTES)
+    child.stderr?.on('data', (chunk: Buffer) => { err.push(chunk) })
     // The outcome lands on `close`. A kill — after the report, or at the
     // timeout — records its outcome and waits for the close it causes, so the
     // child's pipes and channel are gone when the caller continues; a spawn
@@ -200,7 +191,7 @@ function runChild(options: ProbeOptions, packageDir: string, mainSpecifier: stri
         outcome()
         return
       }
-      const tail = Buffer.concat(err).toString('utf8').trim()
+      const tail = err.text().trim()
       reject(new Error(`${options.binName}: probe of ${options.packageName} exited with ${String(code)} without a report: ${tail}`))
     })
   })
@@ -210,6 +201,48 @@ const DEFAULT_TIMEOUT_MS = 20_000
 
 /** How much of the child's stderr the failure text keeps: the end, where the cause usually is. */
 const STDERR_TAIL_BYTES = 16 * 1024
+
+/**
+ * The last `limit` bytes a stream delivered, kept as the chunks it arrived in:
+ * as more arrives, whole chunks leave the front and the oldest kept chunk is
+ * trimmed, so one chunk larger than the limit keeps its end and a small chunk
+ * after it never drops what was kept.
+ */
+export class StreamTail {
+  private readonly chunks: Buffer[] = []
+  private bytes = 0
+
+  /** @param limit - how many bytes of the end to keep. */
+  constructor(private readonly limit: number) {}
+
+  /**
+   * Take one more chunk from the stream.
+   * @param chunk - the bytes as delivered.
+   */
+  push(chunk: Buffer): void {
+    this.chunks.push(chunk)
+    this.bytes += chunk.length
+    while (this.bytes > this.limit) {
+      const excess = this.bytes - this.limit
+      const first = this.chunks[0] as Buffer
+      if (first.length <= excess) {
+        this.chunks.shift()
+        this.bytes -= first.length
+      } else {
+        this.chunks[0] = first.subarray(excess)
+        this.bytes = this.limit
+      }
+    }
+  }
+
+  /**
+   * The kept end of the stream.
+   * @returns the last bytes delivered, at most the limit, as UTF-8 text.
+   */
+  text(): string {
+    return Buffer.concat(this.chunks).toString('utf8')
+  }
+}
 
 /** The environment name carrying the run's report token; the child removes it before importing anything. */
 const PROBE_REPORT_VARIABLE = 'DSH_PROBE_REPORT'
