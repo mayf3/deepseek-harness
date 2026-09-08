@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-`dsh-llm-replay` 让快照测试无需 API 密钥即可运行：它安装一个回放 LLM（大语言模型）适配器，从已记录的会话 JSONL fixture（测试前置数据）重建模型流，使测试针对固定 transcript（文本记录）启动真实 agent（智能体）。fixture 是持久化会话日志的投影——每个 `assistant/message` 或 `assistant/attempt` 都嵌入一次模型调用的 stream，显式标记的本地压缩（compaction）调用则回放为一条规范流。`replay.override.json` 伴随文件覆盖 settlement 无法重建的情况：任何分片之前就抛出、取消/挂起，或注入重试。实时会话按首次调用顺序绑定到已记录脚本，因此父会话与 subagent 场景各自获得自己的脚本。它是 ACP 与 headless 快照套件以及 Web 浏览器 e2e 流水线的模型来源。
+`dsh-llm-replay` 从已记录的 Session JSONL fixture（测试前置数据）回放模型流，让快照测试无需 API 密钥即可运行真实 agent（智能体）。每个 parent 与 subagent 会话按首次调用顺序取得各自的已记录脚本，而同一会话内的调用会独立推进。`replay.override.json` 伴随文件表示持久 settlement 无法重建的分片前失败、取消、挂起与注入重试。需要以固定模型输出确定性测试真实 loop 行为时，可在 ACP、headless 与 Web 浏览器场景中使用本包。
 
 ## 目录
 

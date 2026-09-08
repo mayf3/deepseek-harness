@@ -182,7 +182,10 @@ describe('web e2e: live-turn interactions (cancel / error / retry)', () => {
     await queuedRow.getByRole('button', { name: 'Remove queued message' }).click()
     await expect.poll(() => queuedRow.count(), { timeout: 10_000 }).toBe(0)
 
-    await page.getByRole('button', { name: 'Stop generating' }).click()
+    const stopButton = page.getByRole('button', { name: 'Stop generating' })
+    await stopButton.hover()
+    await page.getByRole('tooltip', { name: 'Stop generating', exact: true }).waitFor()
+    await stopButton.click()
     await settled
     expect(turnEndReasons(sessionEvents).at(-1)).toBe('aborted')
     // Composer recovered; no streaming node lingers. The host settled first
@@ -190,6 +193,7 @@ describe('web e2e: live-turn interactions (cancel / error / retry)', () => {
     // frozen-partial swap is eventually consistent, so poll rather than count.
     await expect.poll(() => page.locator('[data-composer-input]').first().isEnabled(), { timeout: 10_000 }).toBe(true)
     await expect.poll(() => page.locator('[data-streaming="true"]').count(), { timeout: 10_000 }).toBe(0)
+    await expect.poll(() => page.getByRole('tooltip').count()).toBe(0)
     // Golden of the aborted end-state: the prompt bubble plus the frozen
     // partial ('partial' is the hang entry's replayed prefix) and no more.
     const snapshot = await captureStableAria(page, '[class*="centerCol"]', scaffold!.workspaceCwd)

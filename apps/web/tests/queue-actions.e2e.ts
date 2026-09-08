@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url'
 import { join } from 'node:path'
 import type { Browser, Page } from 'playwright'
 import { chromium } from 'playwright'
-import { afterEach, describe, expect, it, onTestFailed } from 'vitest'
+import { afterEach, describe, expect, it, onTestFailed, vi } from 'vitest'
 import { deriveReplayScript, parseSessionLog, type ReplayEntry } from '@deepseek-ai/dsh-llm-replay'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import {
@@ -159,31 +159,36 @@ describe('web e2e: queue row actions', () => {
     ).toBe(2)
 
     await page.setViewportSize({ width: 640, height: 1000 })
-    await expect.poll(async () => {
-      const metrics = await page.locator('[data-composer-card]').evaluate((composer) => {
+    await page.locator('[data-sidebar-collapsed="true"]').waitFor()
+    // The responsive sidebar and composer settle independently; sample both
+    // rectangles in one browser task so the comparison uses one layout.
+    await vi.waitFor(async () => {
+      const metrics = await page.evaluate(() => {
         const queue = document.querySelector('[data-queue-dock]')
-        if (!(queue instanceof HTMLElement)) throw new Error('queue dock is not mounted')
+        const composer = document.querySelector('[data-composer-card]')
+        if (queue === null || composer === null) return undefined
         const queueBox = queue.getBoundingClientRect()
         const composerBox = composer.getBoundingClientRect()
-        const dockInset = Number.parseFloat(getComputedStyle(composer).getPropertyValue('--dsh-composer-dock-inset'))
         return {
-          left: queueBox.left - composerBox.left,
-          right: composerBox.right - queueBox.right,
-          dockInset,
+          leftInset: queueBox.left - composerBox.left,
+          rightInset: composerBox.right - queueBox.right,
+          dockInset: Number.parseFloat(getComputedStyle(composer).getPropertyValue('--dsh-composer-dock-inset')),
         }
       })
-      expect(metrics.left).toBeGreaterThanOrEqual(0)
-      expect(metrics.right).toBeGreaterThanOrEqual(0)
-      expect(metrics.left).toBeCloseTo(metrics.dockInset, 1)
-      expect(metrics.right).toBeCloseTo(metrics.dockInset, 1)
-      return true
-    }, { timeout: 10_000 }).toBe(true)
+      expect(metrics).toBeDefined()
+      expect(metrics!.leftInset).toBeGreaterThanOrEqual(0)
+      expect(metrics!.rightInset).toBeGreaterThanOrEqual(0)
+      expect(metrics!.leftInset).toBeCloseTo(metrics!.dockInset, 1)
+      expect(metrics!.rightInset).toBeCloseTo(metrics!.dockInset, 1)
+    }, { timeout: 10_000 })
     await page.setViewportSize({ width: 1680, height: 1000 })
 
     const editRow = page.locator('[data-queue-dock] li', { hasText: EDIT })
     await editRow.getByRole('button', { name: 'Edit queued message' }).click()
     const editor = page.getByRole('textbox', { name: 'Edit queued message' })
     await editor.fill(EDITED)
+    await page.getByRole('button', { name: 'Save queued message' }).hover()
+    await page.getByRole('tooltip', { name: 'Save queued message', exact: true }).waitFor()
     const editingSnapshot = await captureStableAria(page, '[class*="centerCol"]', scaffold.workspaceCwd)
     await compareOrRefreshGolden(EDITING_EXPECTED, editingSnapshot, MODE)
     await settleQueueAction(() => page.getByRole('button', { name: 'Save queued message' }).click(), EDITED)
@@ -192,6 +197,11 @@ describe('web e2e: queue row actions', () => {
     const removeRow = page.locator('[data-queue-dock] li', { hasText: REMOVE })
     await settleQueueAction(() => removeRow.getByRole('button', { name: 'Remove queued message' }).click(), EDITED)
     await expect.poll(() => page.getByText(REMOVE, { exact: true }).count()).toBe(0)
+    // The queue stream can remove the row before the mutation reply clears busy.
+    const remainingEdit = page.getByRole('button', { name: 'Edit queued message', exact: true })
+    await expect.poll(() => remainingEdit.isEnabled(), { timeout: 10_000 }).toBe(true)
+    await remainingEdit.hover()
+    await page.getByRole('tooltip', { name: 'Edit queued message', exact: true }).waitFor()
 
     const snapshot = await captureStableAria(page, '[class*="centerCol"]', scaffold.workspaceCwd)
     await compareOrRefreshGolden(UI_EXPECTED, snapshot, MODE)
@@ -229,16 +239,18 @@ describe('web e2e: queue row actions', () => {
       { timeout: 10_000 },
     ).toBe(2)
 
-    await page.getByRole('button', { name: 'Stop generating' }).click()
+    const stopButton = page.getByRole('button', { name: 'Stop generating' })
+    await stopButton.hover()
+    await page.getByRole('tooltip', { name: 'Stop generating', exact: true }).waitFor()
+    await stopButton.click()
     await firstSettled
     await expect.poll(() => page.getByRole('button', { name: 'Stop generating' }).count())
       .toBe(0)
     await expect.poll(() => page.getByRole('button', { name: 'Remove queued message' }).count())
       .toBe(2)
 
-    // Stop becomes Send under the pointer; dismiss its hover tooltip before capture.
-    await page.mouse.move(0, 0)
-    await expect.poll(() => page.getByRole('tooltip').filter({ hasText: 'Send message' }).count()).toBe(0)
+    // The disabled Send button must dismiss the active Stop tooltip without mouseleave.
+    await expect.poll(() => page.getByRole('tooltip').count()).toBe(0)
     const preservedSnapshot = await captureStableAria(page, '[class*="centerCol"]', scaffold.workspaceCwd)
     await compareOrRefreshGolden(PRESERVED_EXPECTED, preservedSnapshot, MODE)
     const expanded = await captureExpandedTurnProcessAria(

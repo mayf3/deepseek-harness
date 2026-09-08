@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-`@deepseek-ai/dsh-llm-pi-ai` is the pi-ai-backed multi-provider adapter for the harness LLM service: one plugin instance owns a dictionary of provider routes, each served through [`@earendil-works/pi-ai`](https://www.npmjs.com/package/@earendil-works/pi-ai). A route naming an installed pi-ai provider inherits its endpoint, wire protocol, and model catalog as defaults; a route pi-ai does not ship is declared outright, so an OpenAI-compatible gateway or self-hosted server is configuration, not a code change. Profiles and credentials resolve per request over the optional settings and credential seams, so editing the user settings document changes the next request without a restart. A provider that ships a login can be signed into through the harness authorization seam, and the stored sign-in — an OAuth grant, or a key typed into pi-ai's own login prompt — authenticates its route and refreshes itself under the store's cross-process lock. The plugin can mount dormant with zero routes and activate them the moment a settings section supplies profiles.
+`@deepseek-ai/dsh-llm-pi-ai` routes model requests to multiple pi-ai providers, OpenAI-compatible gateways, or self-hosted servers from one configuration. Installed pi-ai providers supply endpoint, protocol, and model-catalog defaults; custom routes can declare those values without code changes. Profiles and credentials are resolved for each request, so settings changes take effect on the next request without a restart. Supported providers can use stored OAuth or interactive-key sign-in with cross-process refresh locking. The package may start with no routes and activate when user settings add them.
 
 ## Table of Contents
 

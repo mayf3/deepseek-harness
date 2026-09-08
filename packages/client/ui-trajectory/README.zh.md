@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-`dsh-client-ui-trajectory` 是 dsh Web 客户端的 Trajectory 视图：它渲染按轮次组织的事件记录表，其中可选择用户、助手、工具与嵌套子工具记录，并带交互式时间概览。较粗的分割线标示轮次边界，紧凑的行内标记标识步骤；选择记录会打开局部检查器，查看 token 用量、耗时、输入、输出、计时，以及用户、助手或工具内容中的持久图片与文件附件摘要。该视图是纯消费方：它注册 target 专属 Event Definition、Trajectory view builder 以及对话 `conversation.view` slot 环中的一个视图标签页，不提供 service，也不声明 Context 合并。带类型的 `trajectory` locale namespace 拥有所有产品编写的 ledger、timeline、inspector、tooltip 与无障碍文案；事件内容、工具名称、标识符与 provider 诊断保持原始数据。长记录表打开时定位于当前尾部、按需加载更早历史，并且只挂载可见行窗口。
+Trajectory 标签页让你以按轮次组织的事件记录表和交互式时间概览检查 agent 活动。它对用户、助手、工具、嵌套子工具和压缩记录分组，标示轮次与步骤边界，并为所选记录打开检查器，显示 token 用量、耗时、输入、输出、计时、图片和附件摘要。较长历史打开时定位于当前尾部，按需加载更早页面，并且只渲染可见行。流式输出期间，视图会跟随尾部，直到你向上滚动；进行中的记录只显示开始标记，不会虚构耗时。
 
 ## 目录
 

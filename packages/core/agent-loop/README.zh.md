@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-`dsh-agent-loop` 创建 agent——全新创建或从持久化历史恢复——并运行轮次与步骤生命周期：领取提示词、组装请求、流式接收模型响应、分发工具调用，并把每个结果追加回会话日志。作为默认驱动器，它实现 `dsh-agent` 的 `Agent` 接口并在此注册工厂，因此插件通过 `ctx.agents` 创建与驱动 agent，而不必依赖本包。声明式配置项会在启动时自动启动 agent，`maxParallelToolCalls` 限制同时运行的并行安全工具调用数量。它是 harness 唯一的具象循环——超出「调用模型、运行工具、重复」的所有内容都属于监听事件分类体系的插件。标准组合请选择它作为驱动器；如需替换，请实现 `Agent` 并通过 `ctx.agents` 注册。
+`dsh-agent-loop` 创建全新 agent 或恢复持久化会话，随后通过模型请求、流式响应、工具执行和持久会话历史驱动每个轮次。标准 agent 组合应挂载本包；声明式条目会在启动时启动 agent，公开的 `ctx.agents` API 则支持以编程方式创建和恢复 agent。`maxParallelToolCalls` 限制同时运行的并行安全调用数量，独占调用保留顺序。取消会保留已经流式交付给用户的文本。只有标准的「调用模型、运行工具、重复」生命周期无法满足需求时，才应选择自定义 `Agent` 实现。
 
 ## 目录
 
@@ -64,7 +64,7 @@ kind: "package-reference"
 const handle = await ctx.agents.create({
   sessionId,
   agentOptions: { provider: 'deepseek', model: 'deepseek-chat' },
-  setup: (agentCtx) => { /* scoped tools, prompt sections, listeners */ },
+  setup: (agentCtx, agent) => { /* scoped registrations plus explicit unpublished Agent */ },
 })
 ```
 
@@ -108,7 +108,7 @@ const handle = await ctx.agents.create({
 
 ### 创建与拆除
 
-创建是同一个受回滚保护的事务：构造私有会话、具象 agent 与带作用域上下文；等待可选 setup；进入两个注册表；依次宣告 `session/created` 与 `agent/created`；发出 `agent/session-start`；此后才启动驱动器。Setup 抛出、commit 失败或所有者 dispose 都会回滚事务而不发布任一 id。Teardown 顺序是停止并排空、关闭会话的写路径、撤销作用域、detach agent、再 detach 会话，且每次 detach 都绑定到确切进入的对象，因此陈旧 disposer 无法移除之后出现的同 id 替代项。
+创建是同一个受回滚保护的事务：构造私有会话、具象 agent 与带作用域上下文；等待分别传入上下文与 Agent 的可选 setup；进入两个注册表；依次宣告 `session/created` 与 `agent/created`；发出 `agent/session-start`；此后才启动驱动器。创建运行时子 Agent 的调用方设置 `options.parentAgent`；调用方 Context 则单独拥有事务和存活 handle。Setup 抛出、commit 失败或所有者 dispose 都会回滚事务而不发布任一 id。Teardown 顺序是停止并排空、关闭会话的写路径、撤销作用域、detach agent、再 detach 会话，且每次 detach 都绑定到确切进入的对象，因此陈旧 disposer 无法移除之后出现的同 id 替代项。
 
 ### 持久化集成
 

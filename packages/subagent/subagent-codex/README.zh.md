@@ -9,7 +9,7 @@ kind: "package-bundle"
 
 ## 概述
 
-`dsh-subagent-codex` 注册由 Profile 命名、默认名称为 `codex` 的 Codex subagent 提供方，它在发起委派的会话工作区中通过官方 app-server 协议运行真实的 Codex 子 agent（智能体）。每次接受的运行以 `app-server --stdio` 启动包内 Codex wrapper，创建一个临时 Codex 线程，提交一个自包含文本任务，并通过共享的 subagent 结果约定返回选定的最终答案——或独立的安全失败诊断。该提供方作为可选的 Profile Bundle 发布：安装会带入官方 wrapper 与一个兼容的原生平台载荷，而注册的提供方在绑定工具调用前保持休眠。原生 Codex 配置与身份验证继续是权威来源，Profile 选择的 `permissionMode` 会映射进线程的 approval、reviewer 与 sandbox 字段。当子 agent 应该是与父 harness 完全隔离的真实 Codex 会话时，选择它。
+当委派工作需要在父会话工作区中的真实无人值守 Codex 会话内运行时，把 `@deepseek-ai/dsh-subagent-codex` 安装进 Profile。每次委派都会为一个自包含文本任务使用全新且隔离的 Codex 线程，并且只返回其最终答案或安全失败诊断。原生 Codex 配置和身份验证继续作为权威来源，而 `permissionMode` 选择非交互式审批和沙箱行为。Bundle 会提供兼容的原生 Codex 载荷，但只有配置委派工具后才会向模型提供能力。
 
 ## 目录
 
