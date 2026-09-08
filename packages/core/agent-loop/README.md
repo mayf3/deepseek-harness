@@ -64,7 +64,7 @@ Plugins and hosts create agents through `ctx.agents.create()` and resume persist
 const handle = await ctx.agents.create({
   sessionId,
   agentOptions: { provider: 'deepseek', model: 'deepseek-chat' },
-  setup: (agentCtx) => { /* scoped tools, prompt sections, listeners */ },
+  setup: (agentCtx, agent) => { /* scoped registrations plus explicit unpublished Agent */ },
 })
 ```
 
@@ -108,7 +108,7 @@ The loop deep-freezes each derived message identity on its first request and reu
 
 ### Creation and teardown
 
-Creation is one rollback-covered transaction: construct a private session, concrete agent, and scoped context; await optional setup; enter both registries; announce `session/created` then `agent/created`; emit `agent/session-start`; only then start the driver. A setup throw, commit failure, or owner disposal rolls the transaction back without publishing either id. Teardown runs stop-and-drain, closes the session's write path, unwinds the scope, detaches the agent, then detaches the session, and every detach is bound to the exact entered object so a stale disposer cannot remove a later same-id replacement.
+Creation is one rollback-covered transaction: construct a private session, concrete agent, and scoped context; await optional setup with the context and Agent passed separately; enter both registries; announce `session/created` then `agent/created`; emit `agent/session-start`; only then start the driver. A caller creating a runtime child sets `options.parentAgent`; the caller Context separately owns the transaction and live handle. A setup throw, commit failure, or owner disposal rolls the transaction back without publishing either id. Teardown runs stop-and-drain, closes the session's write path, unwinds the scope, detaches the agent, then detaches the session, and every detach is bound to the exact entered object so a stale disposer cannot remove a later same-id replacement.
 
 ### Persistence integration
 
