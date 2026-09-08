@@ -90,7 +90,8 @@ describe('claimLayerIds', () => {
     // A child of a group without an id cannot be restated: no patch can address that group.
     const anonymous = layer('anonymous', 'builtin', [
       { insert: [
-        { name: 'cordis:group', group: true, config: [{ id: 'a', name: 'a' }] },
+        // A row leaves its id to the Loader, as YAML rows may; the type asks for one.
+        { name: 'cordis:group', group: true, config: [{ id: 'a', name: 'a' }] } as unknown as EntryOptions,
         { id: 'h', name: 'cordis:group', group: true, config: [] },
       ] },
       { id: 'h', config: [{ id: 'a', name: 'a' }] },
