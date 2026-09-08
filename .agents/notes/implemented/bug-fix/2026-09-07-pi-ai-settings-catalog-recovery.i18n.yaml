@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-09-07-pi-ai-settings-catalog-recovery.md
-2026-09-07-pi-ai-settings-catalog-recovery.md: 13c23233e924b6ba2e0b22381e791c5ccdcdc254
-2026-09-07-pi-ai-settings-catalog-recovery.zh.md: 6f001f545108aa2006491127318ae3123722364f
+2026-09-07-pi-ai-settings-catalog-recovery.md: 7b9fba06f6d5447654420a5912e45d1684ec5041
+2026-09-07-pi-ai-settings-catalog-recovery.zh.md: d68a36cffd240df63aeb7cbb5d1922b383360fd8

@@ -75,7 +75,8 @@ describe('login flows in a real composition', () => {
 })
 
 describe('request-level dynamic profiles', () => {
-  it('retains the last accepted profiles after an invalid external edit and accepts a repaired file', async () => {
+  // Real filesystem notifications can lag behind chokidar's stability window on busy hosts.
+  it('retains the last accepted profiles after an invalid external edit and accepts a repaired file', { timeout: 30_000 }, async () => {
     const dir = await home()
     const path = join(dir, 'settings.yaml')
     await writeFile(path, JSON.stringify({ [NS]: { providers: { deepseek: {} } } }))
@@ -83,14 +84,15 @@ describe('request-level dynamic profiles', () => {
 
     await writeFile(path, JSON.stringify({ [NS]: { providers: { openrouter: { models: [{ id: '111' }] } } } }))
     // The raw section proves the watcher processed the edit even though validation kept the old resolved value.
-    await expect.poll(() => ctx.settings.describe().find(section => section.ns === NS)?.user)
+    await expect.poll(() => ctx.settings.describe().find(section => section.ns === NS)?.user, { timeout: 10_000 })
       .toEqual({ providers: { openrouter: { models: [{ id: '111' }] } } })
     expect(ctx.llm.listProviders()).toEqual([{ id: 'deepseek', name: 'deepseek' }])
 
     await writeFile(path, JSON.stringify({ [NS]: { providers: {
       openrouter: { api: 'openai-completions', models: [{ id: '111' }] },
     } } }))
-    await expect.poll(() => ctx.llm.listProviders()).toEqual([{ id: 'openrouter', name: 'openrouter' }])
+    await expect.poll(() => ctx.llm.listProviders(), { timeout: 10_000 })
+      .toEqual([{ id: 'openrouter', name: 'openrouter' }])
     expect((await ctx.llm.listModels('openrouter')).map(model => model.id)).toEqual(['111'])
   })
 

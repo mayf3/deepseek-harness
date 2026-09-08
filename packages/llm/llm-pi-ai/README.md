@@ -116,6 +116,8 @@ A route pi-ai does not ship needs `api`, `baseURL`, and a non-empty `models` lis
 
 Settings writes strictly validate each new or changed provider after merging its composition and user layers. During namespace registration, stored catalog failures retain the namespace and provider rows, with the first diagnostic in `LlmConfigurableProvider.error`; unchanged failed providers do not block edits elsewhere. Serviceable models remain selectable, while unresolved models remain in the editable configuration and fail with `INVALID_CONFIG` before network I/O if requested directly. Repairing or deleting the offending configuration clears its diagnostic. Schema and self-contained profile errors still reject loading. Later external edits validate changed providers and retain the last accepted section on failure.
 
+Changing `displayName`, `apiKeyEnv`, or `baseURL` without resolving the provider's model errors still rejects the save. For example, renaming an OpenRouter route whose model `111` needs an `api` cannot be saved on its own: repair or remove that model in the same editor draft, then save the complete provider configuration. Intermediate repairs remain in the draft until the whole provider validates; other providers can be saved independently.
+
 -----
 
 <a id="understand-the-implementation"></a>

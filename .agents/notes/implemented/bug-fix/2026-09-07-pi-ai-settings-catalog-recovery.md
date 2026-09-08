@@ -14,7 +14,7 @@ The pi-ai consumer uses the existing settings `validate` callback. During namesp
 
 Initial profile resolution retains catalog diagnostics, while schema and self-contained profile constraints still reject loading. Writes strictly resolve each new or changed provider, comparing effective provider values against the committed snapshot. Unchanged failed providers do not block another provider's edit, and deletion remains possible. Editing a provider-wide setting validates all models it affects.
 
-Profile resolution keeps valid models beside per-model errors. A missing override retains its diagnostic without disabling the remaining catalog. A route-level catalog failure retains its provider and editable settings but supplies no callable models. The adapter checks the selected model's recorded failure before credentials or network I/O and reports `INVALID_CONFIG`. No protocol is guessed and no user configuration is rewritten during loading. Immutable snapshots still keep an in-flight request on its captured configuration.
+Profile resolution keeps valid models beside per-model errors. A missing override retains its diagnostic without disabling the remaining catalog. A route-level catalog failure retains its provider and editable settings but supplies no callable models. When route-wide validation aborts catalog resolution, the incomplete catalog and its collected per-model diagnostics are discarded; model requests on that route report the route-level error. The adapter checks the selected model's recorded failure before credentials or network I/O and reports `INVALID_CONFIG`. No protocol is guessed and no user configuration is rewritten during loading. Immutable snapshots still keep an in-flight request on its captured configuration.
 
 `LlmConfigurableProvider.error` carries the first diagnostic for the provider row. The configurable-provider directory publishes diagnostic changes so configuration repair refreshes the browser without re-registering the adapter. Failed model ids remain in settings, while the model selector receives serviceable entries. Models settings displays the diagnostic and retains edit/delete controls. Both add actions require their owning settings namespace; the ordinary add menu filters out unavailable namespaces.
 
@@ -32,7 +32,7 @@ This extends the [provider-routed adapter decision](../architecture/2026-07-14-p
 
 ## Consequences
 
-Upgrade-dependent errors remain visible and repairable without weakening validation of new provider edits. Configuration errors remain distinct from remote model existence: a catalog-external id with an explicit protocol is accepted, and its endpoint decides whether that id exists. Scalar or document errors still fail early. No settings API, storage format, or session event is added; configurable-provider entries gain one optional diagnostic field.
+Upgrade-dependent errors remain visible and repairable without weakening validation of new provider edits. Configuration errors remain distinct from remote model existence: a catalog-external id with an explicit protocol is accepted, and its endpoint decides whether that id exists. Scalar or document errors still fail early. Models settings does not explain namespace registration failures; those errors require inspecting the configuration and startup diagnostics. No settings API, storage format, or session event is added; configurable-provider entries gain one optional diagnostic field.
 
 ## Testing
 
