@@ -6,6 +6,8 @@
   - button "Session 日志":
     - text: Session 日志
     - img
+  - button "展开侧栏":
+    - img
   - tablist:
     - tab "对话" [selected]
     - tab "轨迹"
