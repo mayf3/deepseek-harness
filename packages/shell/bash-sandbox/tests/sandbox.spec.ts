@@ -255,7 +255,7 @@ describe('fail closed', () => {
     const backgroundError = await background.result().catch((error: unknown) => error)
     expect(backgroundError).toMatchObject({ code: 'ENOEXEC', syscall: 'spawn' })
     expect(backgroundError).not.toBeInstanceOf(SandboxUnavailableError)
-    expect(background.readOutput().delta).toContain('spawn failed:')
+    expect(background.readOutput().delta).toContain('subprocess failed before reporting an outcome:')
   })
 
   it('classifies a synchronous SubprocessRuntime EACCES with the exact runner path', async () => {
