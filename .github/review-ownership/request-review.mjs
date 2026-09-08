@@ -240,55 +240,87 @@ function stripComments(source, syntax) {
 /**
  * Expand changed-file records into reviewable, test, documentation, and comment-only paths.
  * @param {unknown[]} files Pull-request file records from GitHub.
- * @returns {{changedCodeFiles: string[], excludedTestFiles: string[], excludedDocumentationFiles: string[], excludedCommentOnlyFiles: string[]}} Classified paths.
+ * @returns {{changedCodeFiles: string[], reviewableChanges: Array<{paths: string[], changedLines: number}>, excludedTestFiles: string[], excludedDocumentationFiles: string[], excludedCommentOnlyFiles: string[]}} Classified paths and their GitHub-reported changed-line counts.
  */
 export function classifyChangedFiles(files) {
   const changedCodeFiles = new Set()
+  const reviewableChanges = []
   const excludedTestFiles = new Set()
   const excludedDocumentationFiles = new Set()
   const excludedCommentOnlyFiles = new Set()
   for (const entry of files) {
     if (!isRecord(entry)) throw new Error('changed-file response contains a non-object entry')
+    const changedLines = changedLineCount(entry)
     const paths = [normalizeRepositoryPath(entry.filename)]
     const commentOnly = isCommentOnlyChange(entry)
     if (entry.previous_filename !== undefined) {
       paths.unshift(normalizeRepositoryPath(entry.previous_filename))
     }
-    for (const file of paths) {
+    const reviewablePaths = []
+    for (const file of new Set(paths)) {
       if (isTestPath(file)) excludedTestFiles.add(file)
       else if (isDocumentationPath(file)) excludedDocumentationFiles.add(file)
       else if (commentOnly) excludedCommentOnlyFiles.add(file)
-      else changedCodeFiles.add(file)
+      else {
+        changedCodeFiles.add(file)
+        reviewablePaths.push(file)
+      }
+    }
+    if (reviewablePaths.length > 0) {
+      reviewableChanges.push({ paths: reviewablePaths.sort(), changedLines })
     }
   }
   return {
     changedCodeFiles: [...changedCodeFiles].sort(),
+    reviewableChanges,
     excludedTestFiles: [...excludedTestFiles].sort(),
     excludedDocumentationFiles: [...excludedDocumentationFiles].sort(),
     excludedCommentOnlyFiles: [...excludedCommentOnlyFiles].sort(),
   }
 }
 
+function changedLineCount(entry) {
+  for (const field of ['additions', 'deletions']) {
+    if (!Number.isSafeInteger(entry[field]) || entry[field] < 0) {
+      throw new Error(`changed-file ${field} must be a non-negative integer`)
+    }
+  }
+  const changedLines = entry.additions + entry.deletions
+  if (!Number.isSafeInteger(changedLines)) throw new Error('changed-file LOC exceeds the safe integer range')
+  return changedLines
+}
+
 /**
- * Match changed paths to owners with CODEOWNERS last-match semantics.
+ * Match changed paths and rank owners by their reviewable changed LOC.
  * @param {Array<{prefix: string, owners: string[]}>} rules Ordered ownership rules.
- * @param {string[]} changedCodeFiles Reviewable repository paths.
- * @returns {{matches: Array<{file: string, owners: string[]}>, reviewers: string[]}} Routing plan.
+ * @param {Array<{paths: string[], changedLines: number}>} reviewableChanges Reviewable GitHub file records.
+ * @returns {{matches: Array<{file: string, changedLines: number, owners: string[]}>, reviewers: Array<{login: string, changedLines: number}>}} Routing plan.
  */
-export function planReviewers(rules, changedCodeFiles) {
+export function planReviewers(rules, reviewableChanges) {
   const matches = []
   const reviewers = new Map()
-  for (const file of changedCodeFiles) {
-    let owners = []
-    for (const rule of rules) {
-      if (file.startsWith(rule.prefix)) owners = rule.owners
+  for (const change of reviewableChanges) {
+    const changeOwners = new Map()
+    for (const file of change.paths) {
+      let owners = []
+      for (const rule of rules) {
+        if (file.startsWith(rule.prefix)) owners = rule.owners
+      }
+      matches.push({ file, changedLines: change.changedLines, owners })
+      for (const owner of owners) changeOwners.set(owner.toLowerCase(), owner.slice(1))
     }
-    matches.push({ file, owners })
-    for (const owner of owners) reviewers.set(owner.toLowerCase(), owner.slice(1))
+    for (const [key, login] of changeOwners) {
+      const changedLines = (reviewers.get(key)?.changedLines ?? 0) + change.changedLines
+      if (!Number.isSafeInteger(changedLines)) throw new Error(`changed LOC for @${login} exceeds the safe integer range`)
+      reviewers.set(key, { login, changedLines })
+    }
   }
   return {
-    matches,
-    reviewers: [...reviewers.values()].sort((left, right) => left.localeCompare(right, 'en')),
+    matches: matches.sort((left, right) => left.file.localeCompare(right.file, 'en')),
+    reviewers: [...reviewers.values()].sort((left, right) => {
+      if (left.changedLines !== right.changedLines) return left.changedLines < right.changedLines ? 1 : -1
+      return left.login.localeCompare(right.login, 'en')
+    }),
   }
 }
 
@@ -413,8 +445,8 @@ export async function requestReviews({ event, ownershipSource, api, write = line
   const pull = pullRequestFromEvent(event)
   write('This is by automated Angry Turtle Cyborg, not a human')
   const files = await listPullRequestFiles(api, pull.repository, pull.number, pull.changedFileCount)
-  const classified = classifyChangedFiles(files)
-  const plan = planReviewers(parseOwnership(ownershipSource), classified.changedCodeFiles)
+  const { reviewableChanges, ...classified } = classifyChangedFiles(files)
+  const plan = planReviewers(parseOwnership(ownershipSource), reviewableChanges)
   writeList(write, 'Changed code files', classified.changedCodeFiles.map(file => JSON.stringify(file)))
   writeList(write, 'Excluded test files', classified.excludedTestFiles.map(file => JSON.stringify(file)))
   writeList(
@@ -430,10 +462,16 @@ export async function requestReviews({ event, ownershipSource, api, write = line
   writeList(
     write,
     'Owners by changed file',
-    plan.matches.map(({ file, owners }) => `${JSON.stringify(file)}: ${owners.length ? owners.join(' ') : '(none)'}`),
+    plan.matches.map(({ file, changedLines, owners }) =>
+      `${JSON.stringify(file)} (${changedLines} LOC): ${owners.length ? owners.join(' ') : '(none)'}`),
+  )
+  writeList(
+    write,
+    'Owner relevance by changed LOC',
+    plan.reviewers.map(({ login, changedLines }) => `@${login}: ${changedLines}`),
   )
 
-  const candidates = plan.reviewers.filter(login => login.toLowerCase() !== pull.author.toLowerCase())
+  const candidates = plan.reviewers.filter(({ login }) => login.toLowerCase() !== pull.author.toLowerCase())
   if (pull.draft) {
     const existing = await api(`/repos/${pull.repository}/pulls/${pull.number}/requested_reviewers`)
     const requestedReviewers = requestedReviewerLogins(existing)
@@ -460,11 +498,15 @@ export async function requestReviews({ event, ownershipSource, api, write = line
     return { ...classified, requestedReviewers: [], cancelledReviewers: [] }
   }
   const existing = await api(`/repos/${pull.repository}/pulls/${pull.number}/requested_reviewers`)
-  const alreadyRequested = new Set(requestedReviewerLogins(existing).map(login => login.toLowerCase()))
+  const currentReviewers = requestedReviewerLogins(existing).sort((left, right) => left.localeCompare(right, 'en'))
+  const alreadyRequested = new Set(currentReviewers.map(login => login.toLowerCase()))
   const availableSlots = Math.max(0, MAX_REQUESTED_REVIEWERS - alreadyRequested.size)
+  writeList(write, 'Current individual review requests', currentReviewers.map(login => `@${login}`))
+  write(`Available review request slots: ${availableSlots}.`)
   const reviewers = candidates
-    .filter(login => !alreadyRequested.has(login.toLowerCase()))
+    .filter(({ login }) => !alreadyRequested.has(login.toLowerCase()))
     .slice(0, availableSlots)
+    .map(({ login }) => login)
   writeList(write, 'Reviewers to request', reviewers.map(login => `@${login}`))
   if (reviewers.length === 0) return { ...classified, requestedReviewers: [], cancelledReviewers: [] }
 

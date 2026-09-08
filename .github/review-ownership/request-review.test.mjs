@@ -61,7 +61,7 @@ test('keeps turtle below one third of the eligible owned codebase', () => {
   let turtleLines = 0
   for (const file of trackedFiles) {
     if (isTestPath(file) || isDocumentationPath(file)) continue
-    const owners = planReviewers(rules, [file]).matches[0]?.owners ?? []
+    const owners = planReviewers(rules, [{ paths: [file], changedLines: 0 }]).matches[0]?.owners ?? []
     if (owners.length === 0) continue
     const content = readFileSync(file)
     const lines = content.length === 0
@@ -218,12 +218,16 @@ test('classifies both sides of a rename independently', () => {
       {
         filename: 'packages/core/agent/tests/moved.spec.ts',
         previous_filename: 'packages/core/agent/src/moved.ts',
+        additions: 3,
+        deletions: 2,
       },
       {
         filename: 'packages/client/store/src/restored.ts',
         previous_filename: 'packages/client/store/tests/restored.spec.ts',
+        additions: 2,
+        deletions: 1,
       },
-      { filename: 'packages/core/agent/README.md' },
+      { filename: 'packages/core/agent/README.md', additions: 1, deletions: 0 },
       {
         filename: 'packages/core/agent/src/commented.ts',
         status: 'modified', additions: 1, deletions: 1,
@@ -235,6 +239,10 @@ test('classifies both sides of a rename independently', () => {
         'packages/client/store/src/restored.ts',
         'packages/core/agent/src/moved.ts',
       ],
+      reviewableChanges: [
+        { paths: ['packages/core/agent/src/moved.ts'], changedLines: 5 },
+        { paths: ['packages/client/store/src/restored.ts'], changedLines: 3 },
+      ],
       excludedTestFiles: [
         'packages/client/store/tests/restored.spec.ts',
         'packages/core/agent/tests/moved.spec.ts',
@@ -245,19 +253,52 @@ test('classifies both sides of a rename independently', () => {
   )
 })
 
-test('uses the last matching ownership rule and keeps unmatched files visible', () => {
+test('uses the last matching ownership rule and ranks owners by changed LOC', () => {
   const rules = parseOwnership('/packages/ @broad\n/packages/core/ @core @second\n')
   assert.deepEqual(
-    planReviewers(rules, ['AGENTS.md', 'packages/core/agent/src/index.ts', 'packages/fs/fs/src/index.ts']),
+    planReviewers(rules, [
+      { paths: ['AGENTS.md'], changedLines: 1 },
+      { paths: ['packages/core/agent/src/index.ts'], changedLines: 8 },
+      { paths: ['packages/fs/fs/src/index.ts'], changedLines: 3 },
+    ]),
     {
       matches: [
-        { file: 'AGENTS.md', owners: [] },
-        { file: 'packages/core/agent/src/index.ts', owners: ['@core', '@second'] },
-        { file: 'packages/fs/fs/src/index.ts', owners: ['@broad'] },
+        { file: 'AGENTS.md', changedLines: 1, owners: [] },
+        { file: 'packages/core/agent/src/index.ts', changedLines: 8, owners: ['@core', '@second'] },
+        { file: 'packages/fs/fs/src/index.ts', changedLines: 3, owners: ['@broad'] },
       ],
-      reviewers: ['broad', 'core', 'second'],
+      reviewers: [
+        { login: 'core', changedLines: 8 },
+        { login: 'second', changedLines: 8 },
+        { login: 'broad', changedLines: 3 },
+      ],
     },
   )
+})
+
+test('counts each changed-file record once per owner across rename paths', () => {
+  const rules = parseOwnership('/packages/a/ @same @a\n/packages/b/ @same @b\n/packages/c/ @c\n')
+  const plan = planReviewers(rules, [
+    { paths: ['packages/a/old.ts', 'packages/b/new.ts'], changedLines: 10 },
+    { paths: ['packages/a/other.ts'], changedLines: 5 },
+    { paths: ['packages/c/tiny.ts'], changedLines: 1 },
+  ])
+  assert.deepEqual(plan.reviewers, [
+    { login: 'a', changedLines: 15 },
+    { login: 'same', changedLines: 15 },
+    { login: 'b', changedLines: 10 },
+    { login: 'c', changedLines: 1 },
+  ])
+})
+
+test('rejects invalid changed-file LOC', () => {
+  for (const file of [
+    { filename: 'packages/core/index.ts', deletions: 0 },
+    { filename: 'packages/core/index.ts', additions: -1, deletions: 0 },
+    { filename: 'packages/core/index.ts', additions: Number.MAX_SAFE_INTEGER, deletions: 1 },
+  ]) {
+    assert.throws(() => classifyChangedFiles([file]), /changed-file|LOC/u)
+  }
 })
 
 test('fetches every declared changed file across pages', async () => {
@@ -306,12 +347,12 @@ test('fails closed when the review-request timeline exceeds its limit', async ()
 test('prints changed code files and limits current review requests to two people', async () => {
   const trace = []
   const files = [
-    { filename: 'packages/core/agent/src/index.ts' },
-    { filename: 'packages/preset/agent-presets/src/index.ts' },
-    { filename: 'packages/client/store/src/index.ts' },
-    { filename: 'packages/subagent/subagent/src/index.ts' },
-    { filename: 'packages/core/agent/tests/index.spec.ts' },
-    { filename: 'AGENTS.md' },
+    { filename: 'packages/core/agent/src/index.ts', additions: 70, deletions: 10 },
+    { filename: 'packages/preset/agent-presets/src/index.ts', additions: 5, deletions: 5 },
+    { filename: 'packages/client/store/src/index.ts', additions: 2, deletions: 0 },
+    { filename: 'packages/subagent/subagent/src/index.ts', additions: 40, deletions: 0 },
+    { filename: 'packages/core/agent/tests/index.spec.ts', additions: 100, deletions: 0 },
+    { filename: 'AGENTS.md', additions: 200, deletions: 0 },
   ]
   const api = async (path, options = {}) => {
     trace.push({ type: 'api', path, options })
@@ -340,54 +381,72 @@ test('prints changed code files and limits current review requests to two people
     excludedTestFiles: ['packages/core/agent/tests/index.spec.ts'],
     excludedDocumentationFiles: ['AGENTS.md'],
     excludedCommentOnlyFiles: [],
-    requestedReviewers: ['Dudu-0223'],
+    requestedReviewers: ['mektpoy'],
     cancelledReviewers: [],
   })
   assert.equal(trace[0].type, 'log')
   assert.equal(trace[0].line, 'This is by automated Angry Turtle Cyborg, not a human')
   const changedHeading = trace.findIndex(item => item.type === 'log' && item.line === 'Changed code files:')
+  const relevanceHeading = trace.findIndex(item => item.type === 'log' && item.line === 'Owner relevance by changed LOC:')
   const post = trace.findIndex(item => item.type === 'api' && item.options.method === 'POST')
-  assert.ok(changedHeading >= 0 && changedHeading < post)
+  assert.ok(changedHeading >= 0 && changedHeading < relevanceHeading && relevanceHeading < post)
+  assert.deepEqual(trace.slice(relevanceHeading, relevanceHeading + 6).map(item => item.line), [
+    'Owner relevance by changed LOC:',
+    '- @turtle1999: 90',
+    '- @mektpoy: 80',
+    '- @Dudu-0223: 40',
+    '- @LegGasai: 10',
+    '- @imccyu: 2',
+  ])
   assert.deepEqual(trace[post], {
     type: 'api',
     path: '/repos/deepseek-harness/deepseek-harness/pulls/42/requested_reviewers',
     options: {
       method: 'POST',
-      body: { reviewers: ['Dudu-0223'] },
+      body: { reviewers: ['mektpoy'] },
     },
   })
 })
 
 test('does not add an owner when two people are already requested', async () => {
   const calls = []
+  const output = []
   const result = await requestReviews({
     event: pullRequestEvent(),
     ownershipSource: '/packages/core/ @turtle1999 @mektpoy\n',
     api: async (path, options = {}) => {
       calls.push({ path, options })
       if (path.endsWith('/files?per_page=100&page=1')) {
-        return [{ filename: 'packages/core/agent/src/index.ts' }]
+        return [{ filename: 'packages/core/agent/src/index.ts', additions: 20, deletions: 10 }]
       }
       if (path.endsWith('/requested_reviewers') && options.method === undefined) {
         return { users: [{ login: 'first' }, { login: 'second' }], teams: [] }
       }
       throw new Error(`unexpected API path ${path}`)
     },
-    write: () => {},
+    write: line => output.push(line),
   })
 
   assert.deepEqual(result.requestedReviewers, [])
   assert.equal(calls.some(call => call.options.method === 'POST'), false)
+  assert.deepEqual(output.slice(-6), [
+    'Current individual review requests:',
+    '- @first',
+    '- @second',
+    'Available review request slots: 0.',
+    'Reviewers to request:',
+    '- (none)',
+  ])
 })
 
 test('does not request reviewers for test, documentation, or comment-only changes', async () => {
   const calls = []
   const output = []
   const files = [
-    { filename: 'apps/web/tests/chat.e2e.ts' },
-    { filename: 'packages/core/agent/tests/agent.spec.ts' },
-    { filename: 'packages/core/agent/README.md' },
-    { filename: 'packages/core/agent/examples.yaml' },
+    { filename: 'apps/web/tests/chat.e2e.ts', additions: 10, deletions: 0 },
+    { filename: 'packages/core/agent/tests/agent.spec.ts', additions: 10, deletions: 0 },
+    { filename: 'packages/core/agent/README.md', additions: 10, deletions: 0 },
+    { filename: 'packages/core/agent/examples.yaml', additions: 10, deletions: 0 },
     {
       filename: 'packages/core/agent/src/index.ts',
       status: 'modified', additions: 1, deletions: 1,
@@ -423,9 +482,9 @@ test('does not request reviewers for test, documentation, or comment-only change
 test('cancels workflow-authored review requests on draft pull requests', async () => {
   const trace = []
   const files = [
-    { filename: 'packages/subagent/subagent/src/index.ts' },
-    { filename: 'packages/subagent/subagent/tests/index.spec.ts' },
-    { filename: 'packages/subagent/subagent/README.md' },
+    { filename: 'packages/subagent/subagent/src/index.ts', additions: 10, deletions: 2 },
+    { filename: 'packages/subagent/subagent/tests/index.spec.ts', additions: 10, deletions: 0 },
+    { filename: 'packages/subagent/subagent/README.md', additions: 10, deletions: 0 },
   ]
   const result = await requestReviews({
     event: pullRequestEvent({ draft: true, changedFiles: files.length }),
