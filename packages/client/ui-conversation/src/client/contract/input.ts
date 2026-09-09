@@ -43,6 +43,9 @@ export interface SubmitOutcome {
 
 /** Command-mode credential supplied by one input-trigger source. */
 export interface CommandClaim {
+  /** Catalog command name without the leading slash (the key of per-command composer copy such as `hint.*`). */
+  readonly name: string
+  /** The text the draft carries for the claim (`/name ` in English, a localized token elsewhere). */
   readonly token: string
   readonly hint?: string
   readonly attachments?: boolean
@@ -348,7 +351,7 @@ export interface InputState {
   readonly draftRev: number
   readonly phase: 'plain' | 'adjudicating' | 'claimed' | 'submitting'
   /** Present exactly while claimed/submitting (claim snapshot during flight; submit closure withheld). */
-  readonly claim?: { readonly token: string; readonly hint?: string; readonly attachments?: boolean }
+  readonly claim?: { readonly name: string; readonly token: string; readonly hint?: string; readonly attachments?: boolean }
   /** Reference occurrence view of the editor's chips, sorted by offset. */
   readonly occurrences: readonly Occurrence[]
   /** Read-only transient inbox projection from Session control, including pending steering. */

@@ -353,6 +353,7 @@ export class CommandUiRuntime extends Service implements CommandUiContract {
     const token = `/${shown} `
     const line = `/${desc.name} `
     return {
+      name: desc.name,
       token,
       ...(desc.input !== undefined ? { hint: desc.input.hint } : {}),
       ...(desc.input?.attachments === true ? { attachments: true } : {}),

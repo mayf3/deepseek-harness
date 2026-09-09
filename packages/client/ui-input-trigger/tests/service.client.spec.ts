@@ -63,7 +63,7 @@ function readySource(
 }
 
 const claimOf = (token: string): CommandClaim =>
-  ({ token, submit: () => Promise.resolve({ kind: 'success' }) })
+  ({ name: token.slice(1).trim(), token, submit: () => Promise.resolve({ kind: 'success' }) })
 
 /** One microtask hop: lets settled candidate promises flow into the store. */
 const tick = () => Promise.resolve()

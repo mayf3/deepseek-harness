@@ -58,6 +58,7 @@ function commandSource(
 ) {
   const resolve = (name: string): FakeCommand | undefined => commands.find(c => c.name === name)
   const leadingClaim = (desc: FakeCommand): CommandClaim => ({
+    name: desc.name,
     token: `/${desc.name} `,
     ...(desc.input !== undefined ? { hint: desc.input.hint } : {}),
     ...(desc.input?.attachments === true ? { attachments: true } : {}),

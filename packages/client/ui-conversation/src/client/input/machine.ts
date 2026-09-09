@@ -53,6 +53,7 @@ export class SubmitMachine {
       ...(c
         ? {
           claim: {
+            name: c.name,
             token: c.token,
             ...(c.hint !== undefined ? { hint: c.hint } : {}),
             ...(c.attachments === true ? { attachments: true } : {}),

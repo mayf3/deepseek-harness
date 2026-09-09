@@ -391,8 +391,7 @@ export const InputBar = memo(function InputBar({
     : null
   const hint = ((): string | null => {
     if (rawHint === null) return null
-    // Claim tokens have the `/name ` format (trailing space); trim to the bare name.
-    const commandName = input?.claim?.token.slice(1).trim() ?? ''
+    const commandName = input?.claim?.name ?? ''
     const hintKey = `hint.${commandName === 'goal' && hasGoal ? 'goal.active' : commandName}`
     // Dynamic lookup by claimed command name: unknown commands miss the
     // dictionary and keep the machine's own hint, so the call is wide.

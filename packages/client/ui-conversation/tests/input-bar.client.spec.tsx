@@ -803,7 +803,7 @@ describe('running and lock semantics', () => {
     act(() => {
       claimed.shell.setDraft('/goal ')
       claimed.shell.beginCommand(
-        { token: '/goal ', submit: () => Promise.resolve({ kind: 'success' }) },
+        { name: 'goal', token: '/goal ', submit: () => Promise.resolve({ kind: 'success' }) },
         { start: 0, end: 6, draftRev: claimed.shell.snapshot.draftRev },
       )
     })
@@ -1201,6 +1201,7 @@ describe('machine pending lock', () => {
       shell.setDraft('/goal ')
       shell.beginCommand(
         {
+          name: 'goal',
           token: '/goal ',
           submit: () => new Promise<never>(() => {}), // never settles: stays submitting
         },
@@ -1227,7 +1228,7 @@ describe('decorations', () => {
     act(() => {
       shell.setDraft('/goal ')
       shell.beginCommand(
-        { token: '/goal ', hint: '目标内容', submit: () => Promise.resolve({ kind: 'success' as const }) },
+        { name: 'goal', token: '/goal ', hint: '目标内容', submit: () => Promise.resolve({ kind: 'success' as const }) },
         { start: 0, end: 6, draftRev: shell.snapshot.draftRev },
       )
       shell.editor.update(() => {}, { discrete: true }) // flush the queued decoration refresh
@@ -1246,8 +1247,20 @@ describe('decorations', () => {
     act(() => {
       shell.setDraft('/goal ')
       shell.beginCommand(
-        { token: '/goal ', hint: '[<objective>|clear|edit <objective>|pause|resume]', submit: () => Promise.resolve({ kind: 'success' as const }) },
+        { name: 'goal', token: '/goal ', hint: '[<objective>|clear|edit <objective>|pause|resume]', submit: () => Promise.resolve({ kind: 'success' as const }) },
         { start: 0, end: 6, draftRev: shell.snapshot.draftRev },
+      )
+    })
+    expect(textarea.style.getPropertyValue('--dsh-composer-hint')).toBe(JSON.stringify('输入目标，智能体将持续执行'))
+  })
+
+  it('the hint lookup keys on the claim name, so a localized claim token keeps the locale entry', () => {
+    const { shell, textarea } = bench()
+    act(() => {
+      shell.setDraft('/目标 ')
+      shell.beginCommand(
+        { name: 'goal', token: '/目标 ', hint: '[<objective>|clear|edit <objective>|pause|resume]', submit: () => Promise.resolve({ kind: 'success' as const }) },
+        { start: 0, end: 4, draftRev: shell.snapshot.draftRev },
       )
     })
     expect(textarea.style.getPropertyValue('--dsh-composer-hint')).toBe(JSON.stringify('输入目标，智能体将持续执行'))

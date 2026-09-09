@@ -403,6 +403,7 @@ describe('candidates', () => {
       // The claim keeps the typed spelling (the draft carries it and the
       // arguments are read after it); the submission sends the catalog name.
       expect(space.claim.token).toBe('/计划 ')
+      expect(space.claim.name).toBe('plan')
       const enter = await source.matchEnter!(proj('s1'), '/目标 ship it', new AbortController().signal, { attachments: 0 })
       if (enter === undefined || enter === 'handled' || !('claim' in enter)) throw new Error('expected the goal claim')
       expect(enter.claim.attachments).toBe(true)

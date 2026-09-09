@@ -13,6 +13,7 @@ import { scanTextRefs } from '../src/client/input/decorations.ts'
 
 function claimOf(name: string, hint?: string): CommandClaim {
   return {
+    name,
     token: `/${name} `,
     ...(hint !== undefined ? { hint } : {}),
     submit: async () => ({ kind: 'success' }),
