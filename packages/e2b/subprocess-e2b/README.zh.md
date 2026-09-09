@@ -25,7 +25,7 @@ kind: "package-reference"
 <a id="use-this-package"></a>
 ## 使用本包
 
-当 agent 的 shell 命令与终端应在远程沙箱内而非你的机器上运行时，使用本包。它是 E2B 家族的命令半边：命令、终端与文件共享同一个远程世界。
+当 agent 的 shell 命令与终端应在远程沙箱内而非你的机器上运行时，使用本包。它是 E2B 家族的命令半边：命令、终端与文件共享同一个远程世界。 `terminalEnvironment()` 返回远端沙箱中非空的 `SHELL`；空值或缺失值由消费者决定 shell 回退。
 
 ### 何时选择
 

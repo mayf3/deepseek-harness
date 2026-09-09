@@ -25,7 +25,7 @@ English | [中文](README.zh.md)
 <a id="use-this-package"></a>
 ## Use this package
 
-Use this package when the agent's shell commands and terminals should run inside the remote sandbox rather than on your machine. It is the command half of the E2B family: commands, terminals, and files share one remote world.
+Use this package when the agent's shell commands and terminals should run inside the remote sandbox rather than on your machine. It is the command half of the E2B family: commands, terminals, and files share one remote world. `terminalEnvironment()` reports the remote sandbox’s nonempty `SHELL`; an empty or absent value leaves shell fallback to the consumer.
 
 ### When to choose it
 

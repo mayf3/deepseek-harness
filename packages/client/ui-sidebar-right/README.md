@@ -93,7 +93,7 @@ Two more seats extend what is already there: `sidebar.right.tab.guide` (chain) r
 
 The Tab domain retains navigation, an abort signal, and bound actions per (Session, tab id). A private assembly callback adopts each Session's store and reconciles records on its commits. Only record removal or plugin unload aborts the signal; closing the sidebar and switching Sessions retain records, while undo restores a new occurrence. `useTabInfo()` composes framework-bound store and navigation hooks without manual component subscriptions or render-time record creation. `tab.actions` always target their own Session; `tab.visible` distinguishes bodies from titles, and floating tabs remain visible when the sidebar closes. `adopt` is absent from the public controller.
 
-Tab owners register `registerCloseHandler(kind, handler)` through an effect. A handler can save background cleanup and return synchronously, allowing immediate removal, or return a Promise that the sidebar awaits before explicit close or replacement. A thrown or rejected handler preserves the tab. Collapse, presentation changes and plugin disposal do not invoke close handlers; the tab abort signal identifies occurrence disposal, not an explicit close.
+Tab owners register `registerCloseHandler(kind, handler)` through an effect. A handler synchronously retains any background cleanup before allowing explicit close or replacement. The resource owner tracks completion and retry; the sidebar does not wait. A thrown handler preserves the tab. Collapse, presentation changes and plugin disposal do not invoke close handlers; the tab abort signal identifies occurrence disposal, not an explicit close.
 
 <a id="the-guide"></a>
 ## The guide

@@ -1,4 +1,5 @@
 /** Browser view ownership across slow RPCs, remounts and transport generations. */
+import { setImmediate } from 'node:timers/promises'
 import { afterEach, expect, it, vi } from 'vitest'
 import { RemoteStream, RemoteStreamCarrierError, type ClientRemote, type RemoteStreamOptions } from '@deepseek-ai/dsh-api-gateway/client'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
@@ -53,7 +54,7 @@ function fixture(prepareStream?: <Item>(stream: RemoteStream<Item>) => void) {
   }
   cleanups.push(async () => { await Promise.all(streams.map(stream => stream.dispose())) })
   const model = new TerminalView(sessionId, remote, gateway, info.id)
-  cleanups.push(() => { model.dispose() })
+  cleanups.push(() => model.dispose())
   return { model, remote, gateway, options, streams, generation }
 }
 
@@ -141,7 +142,7 @@ it('bounds queued input by UTF-8 bytes and releases the byte budget after settle
   model.write('界界')
   await expect.poll(() => vi.mocked(remote.write).mock.calls.length).toBe(1)
   model.write('a')
-  expect(model.state.getSnapshot()).toMatchObject({ phase: 'failed', error: 'Terminal input buffer is full' })
+  expect(model.state.getSnapshot()).toMatchObject({ phase: 'failed', issue: 'inputFull' })
   input.resolve(success(undefined))
   model.connect()
   await expect.poll(() => model.state.getSnapshot().writable).toBe(true)
@@ -227,7 +228,7 @@ it('reports an attachment ending while the shell is still running and permits ma
     yield { type: 'snapshot', sequence: 0, screen: '', info: { ...info, id, controllerId } }
   })
   await connected(model)
-  await expect.poll(() => model.state.getSnapshot().error).toContain('Terminal attachment ended')
+  await expect.poll(() => model.state.getSnapshot().issue).toBe('attachmentEnded')
   model.connect()
   await expect.poll(() => model.state.getSnapshot().writable).toBe(true)
 })
@@ -407,7 +408,7 @@ it('keeps controls inert when process metadata or the attachment is unavailable'
   await expect.poll(() => remote.resize).toHaveBeenCalledOnce()
   expect(vi.mocked(remote.resize).mock.calls[0]?.slice(-2)).toEqual([100, 30])
   model.write('unknown budget')
-  expect(model.state.getSnapshot().error).toBe('Terminal input buffer is full')
+  expect(model.state.getSnapshot().issue).toBe('inputFull')
   expect(remote.write).not.toHaveBeenCalled()
 })
 
@@ -421,7 +422,7 @@ it('renames an existing terminal, skips unchanged names, and exposes rename fail
   vi.mocked(remote.rename).mockRejectedValueOnce('rename connection lost')
   await model.rename('Other')
   expect(model.state.getSnapshot()).toMatchObject({ phase: 'failed', error: 'rename connection lost', title: 'Build' })
-  model.dispose()
+  await model.dispose()
   await model.rename('Ignored')
   expect(remote.rename).toHaveBeenCalledTimes(2)
 })
@@ -446,7 +447,7 @@ it('retains state when disposal overtakes successful allocation or a failed disc
     else vi.mocked(remote.environment).mockReturnValueOnce(discovery.promise)
     const loading = model.refresh()
     if (operation === 'creation') await expect.poll(() => remote.create).toHaveBeenCalledOnce()
-    model.dispose()
+    await model.dispose()
     const before = model.state.getSnapshot()
     if (operation === 'creation') creation.resolve(success(info))
     else discovery.reject(new Error('late discovery failure'))
@@ -462,7 +463,7 @@ it('ignores a successful rename after the view is disposed', async () => {
   const rename = Promise.withResolvers<RemoteResult<void>>()
   vi.mocked(remote.rename).mockReturnValueOnce(rename.promise)
   const pending = model.rename('Late')
-  model.dispose()
+  await model.dispose()
   const before = model.state.getSnapshot()
   rename.resolve(success(undefined))
   await pending
@@ -492,7 +493,7 @@ it('does not publish a close result or reconnect after disposal', async () => {
   const closing = Promise.withResolvers<RemoteResult<void>>()
   vi.mocked(remote.close).mockReturnValueOnce(closing.promise)
   const pending = model.close()
-  model.dispose()
+  await model.dispose()
   const before = model.state.getSnapshot()
   closing.resolve(success(undefined))
   await pending
@@ -500,4 +501,61 @@ it('does not publish a close result or reconnect after disposal', async () => {
   model.connect()
   expect(model.state.getSnapshot()).toBe(before)
   expect(remote.follow).toHaveBeenCalledOnce()
+})
+
+it.each(['write', 'resize'] as const)('keeps the output connection when %s loses control before its state frame arrives', async (operation) => {
+  const { model, remote } = fixture()
+  const transfer = Promise.withResolvers<undefined>()
+  const response = Promise.withResolvers<RemoteResult<void>>()
+  cleanups.push(() => { transfer.resolve(undefined); response.resolve(success(undefined)) })
+  vi.mocked(remote.follow).mockImplementation(async function* (_session, id, controllerId, signal) {
+    yield { type: 'snapshot', sequence: 0, screen: 'retained screen', info: { ...info, id, controllerId } }
+    await transfer.promise
+    yield { type: 'state', info: { ...info, id } }
+    await untilAborted(signal)
+  })
+  await connected(model)
+  vi.mocked(remote[operation]).mockReturnValueOnce(response.promise)
+  if (operation === 'write') model.write('before transfer')
+  else model.resize(100, 30)
+  model.write('queued before transfer')
+  await expect.poll(() => vi.mocked(remote[operation]).mock.calls.length).toBe(1)
+  response.resolve({ ok: false, error: new RemoteError('terminal/control-unavailable', 'Another window owns input', { reason: 'read-only' }) })
+  await expect.poll(() => model.state.getSnapshot().writable).toBe(false)
+  expect(model.state.getSnapshot()).toMatchObject({ phase: 'connected', error: undefined, issue: undefined, render: { frame: { screen: 'retained screen' } } })
+  transfer.resolve(undefined)
+  await expect.poll(() => model.state.getSnapshot().info?.controllerId).toBeUndefined()
+  expect(remote.follow).toHaveBeenCalledOnce()
+  expect(vi.mocked(remote.write).mock.calls.some(call => call[3] === 'queued before transfer')).toBe(false)
+})
+
+it('keeps an exited screen when a pending input is refused after the exit state arrives', async () => {
+  const { model, remote } = fixture()
+  const exit = Promise.withResolvers<undefined>()
+  const response = Promise.withResolvers<RemoteResult<void>>()
+  cleanups.push(() => { exit.resolve(undefined); response.resolve(success(undefined)) })
+  vi.mocked(remote.follow).mockImplementation(async function* (_session, id, controllerId, signal) {
+    yield { type: 'snapshot', sequence: 0, screen: 'final screen', info: { ...info, id, controllerId } }
+    await exit.promise
+    yield { type: 'state', info: { ...info, id, state: 'exited', exitCode: 0 } }
+    await untilAborted(signal)
+  })
+  await connected(model)
+  vi.mocked(remote.write).mockReturnValueOnce(response.promise)
+  model.write('exit race')
+  await expect.poll(() => vi.mocked(remote.write).mock.calls.length).toBe(1)
+  exit.resolve(undefined)
+  await expect.poll(() => model.state.getSnapshot().info?.state).toBe('exited')
+  response.resolve({ ok: false, error: new RemoteError('terminal/control-unavailable', 'Terminal is not running', { reason: 'not-running' }) })
+  await setImmediate()
+  expect(model.state.getSnapshot()).toMatchObject({ phase: 'connected', writable: false, error: undefined, issue: undefined, render: { frame: { screen: 'final screen' } } })
+})
+
+it('exposes a localized quota error and clears it after a successful retry', async () => {
+  const { model, remote } = fixture()
+  vi.mocked(remote.create).mockResolvedValueOnce({ ok: false, error: new RemoteError('terminal/limit-reached', 'Session terminal limit reached', { limit: 8 }) })
+  await model.refresh()
+  expect(model.state.getSnapshot()).toMatchObject({ phase: 'failed', issue: 'terminalLimit' })
+  await connected(model)
+  expect(model.state.getSnapshot()).toMatchObject({ phase: 'connected', issue: undefined, error: undefined })
 })

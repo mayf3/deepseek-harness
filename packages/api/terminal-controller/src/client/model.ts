@@ -2,7 +2,7 @@
 import { randomUUID } from '@deepseek-ai/dsh-util-crypto'
 import { createSnapshotStore, type SnapshotStore } from '@deepseek-ai/dsh-client-store'
 import { RemoteStreamCarrierError, type ClientRemote, type RemoteStream } from '@deepseek-ai/dsh-api-gateway/client'
-import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
+import { RemoteError, remoteErrorOf, type RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
 import type {} from '@deepseek-ai/dsh-api-terminal-controller/remote'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type {
@@ -12,6 +12,20 @@ import type {
 
 /** The generated terminal namespace's browser-facing operations. */
 export type TerminalRemote = ClientRemote['terminal']
+
+/** Product error identifiers translated by the terminal UI. */
+export type TerminalViewIssue = 'missingTerminal' | 'inputFull' | 'attachmentEnded' | 'invalidOutput' | 'terminalLimit'
+
+declare module '@deepseek-ai/dsh-typert-protocol' {
+  interface RemoteErrorDetailsMap {
+    /** Client terminal failure preserved through the Remote stream supervisor. */
+    'terminal/view': { readonly issue: TerminalViewIssue }
+  }
+}
+
+class TerminalViewError extends RemoteError<'terminal/view'> {
+  constructor(issue: TerminalViewIssue, message: string = issue) { super('terminal/view', message, { issue }) }
+}
 
 /** One screen write awaiting the DOM emulator's callback. */
 export interface TerminalRenderFrame {
@@ -28,6 +42,7 @@ export interface TerminalViewState {
   readonly writable: boolean
   readonly render?: TerminalRenderFrame | undefined
   readonly error?: string | undefined
+  readonly issue?: TerminalViewIssue | undefined
 }
 
 /** A view survives DOM unmount; its process only ends on explicit close. */
@@ -45,6 +60,7 @@ export class TerminalView {
   private closing: Promise<void> | undefined
   private writes: Promise<void> = Promise.resolve()
   private queuedInput = 0
+  private readonly detaching = new Set<Promise<void>>()
 
   /**
    * @param sessionId - Session owning the terminal.
@@ -83,7 +99,7 @@ export class TerminalView {
   refresh(): Promise<void> {
     if (this.loading !== undefined) return this.loading
     if (this.closing !== undefined || this.lifetime.signal.aborted) return Promise.resolve()
-    this.patch({ phase: 'loading', error: undefined })
+    this.patch({ phase: 'loading', error: undefined, issue: undefined })
     this.loading = (async () => {
       const [environment, available] = await Promise.all([
         this.remote.environment(this.sessionId, this.lifetime.signal), this.remote.list(this.sessionId),
@@ -93,13 +109,13 @@ export class TerminalView {
       const info = valueOf(available).find(item => item.id === this.id)
       if (info !== undefined) this.adopt(info)
       else if (this.createWhenMissing) await this.create(valueOf(environment))
-      else throw new Error('This terminal no longer exists on the Host. Open a new terminal.')
+      else throw new TerminalViewError('missingTerminal')
     })().catch((error: unknown) => { this.fail(error) }).finally(() => { this.loading = undefined })
     return this.loading
   }
 
   private async create(environment: TerminalEnvironment): Promise<void> {
-    this.patch({ phase: 'creating', error: undefined })
+    this.patch({ phase: 'creating', error: undefined, issue: undefined })
     this.creation = (async () => {
       const info = valueOf(await this.remote.create(this.sessionId, {
         id: this.id, cols: Math.min(80, environment.maxCols), rows: Math.min(24, environment.maxRows),
@@ -126,11 +142,11 @@ export class TerminalView {
         this.attachmentId = attachmentId
         return this.remote.follow(this.sessionId, info.id, attachmentId, signal)
       },
-      ended: () => new Error('Terminal attachment ended; reconnect to recover its state'),
+      ended: () => new TerminalViewError('attachmentEnded'),
       carrierFailed: () => { if (this.stream === stream) this.patch({ phase: 'disconnected', writable: false }) },
     })
     this.stream = stream
-    this.patch({ phase: 'connecting', writable: false, error: undefined, render: undefined })
+    this.patch({ phase: 'connecting', writable: false, error: undefined, issue: undefined, render: undefined })
     void this.consume(stream)
   }
 
@@ -153,11 +169,11 @@ export class TerminalView {
     const attachmentId = this.attachmentId
     if (!state.writable || state.info === undefined || attachmentId === undefined) return
     const bytes = new TextEncoder().encode(data).byteLength
-    if (this.queuedInput + bytes > (state.environment?.maxInputBytes ?? 0)) { this.fail(new Error('Terminal input buffer is full')); return }
+    if (this.queuedInput + bytes > (state.environment?.maxInputBytes ?? 0)) { this.fail(new TerminalViewError('inputFull')); return }
     this.queuedInput += bytes
     const id = state.info.id
     this.writes = this.writes.then(async () => {
-      if (this.attachmentId !== attachmentId) return
+      if (this.attachmentId !== attachmentId || !this.state.getSnapshot().writable) return
       valueOf(await this.remote.write(this.sessionId, id, attachmentId, data))
     }).catch((error: unknown) => { if (this.attachmentId === attachmentId) this.fail(error) }).finally(() => { this.queuedInput -= bytes })
   }
@@ -176,7 +192,7 @@ export class TerminalView {
     cols = Math.min(cols, state.environment?.maxCols ?? cols)
     rows = Math.min(rows, state.environment?.maxRows ?? rows)
     this.writes = this.writes.then(async () => {
-      if (this.attachmentId !== attachmentId) return
+      if (this.attachmentId !== attachmentId || !this.state.getSnapshot().writable) return
       valueOf(await this.remote.resize(this.sessionId, id, attachmentId, cols, rows))
     }).catch((error: unknown) => { if (this.attachmentId === attachmentId) this.fail(error) })
   }
@@ -201,7 +217,7 @@ export class TerminalView {
    */
   close(): Promise<void> {
     if (this.closing !== undefined) return this.closing
-    this.patch({ phase: 'closing', writable: false, error: undefined })
+    this.patch({ phase: 'closing', writable: false, error: undefined, issue: undefined })
     this.detach()
     this.closing = (async () => {
       // Even a refused or lost creation response may leave an allocation to close.
@@ -213,11 +229,15 @@ export class TerminalView {
     return this.closing
   }
 
-  /** Stop Client work on plugin unload without closing Host terminals. */
-  dispose(): void {
+  /**
+   * Stop Client work on plugin unload without closing Host terminals.
+   * @returns after active and previously detached stream iterators have closed.
+   */
+  async dispose(): Promise<void> {
     this.mounted = false
     this.lifetime.abort()
     this.detach()
+    await Promise.all(this.detaching)
   }
 
   private detach(): void {
@@ -226,7 +246,10 @@ export class TerminalView {
     this.attachmentId = undefined
     this.pendingRender?.resolve()
     this.pendingRender = undefined
-    if (previous !== undefined) void previous.dispose()
+    if (previous !== undefined) {
+      const cleanup = previous.dispose().finally(() => { this.detaching.delete(cleanup) })
+      this.detaching.add(cleanup)
+    }
   }
 
   private async consume(stream: RemoteStream<TerminalFrame>): Promise<void> {
@@ -237,14 +260,14 @@ export class TerminalView {
         if (this.stream !== stream) return
         const frame = item.value
         if (generation !== item.generation) {
-          if (frame.type !== 'snapshot') throw new Error('Terminal output generation is missing its screen snapshot')
+          if (frame.type !== 'snapshot') throw new TerminalViewError('invalidOutput', 'Terminal output generation is missing its screen snapshot')
           generation = item.generation
           sequence = frame.sequence
           item.accept()
         } else if (frame.type === 'output') {
-          if (frame.sequence !== sequence + 1) throw new Error('Terminal output sequence has a gap')
+          if (frame.sequence !== sequence + 1) throw new TerminalViewError('invalidOutput', 'Terminal output sequence has a gap')
           sequence = frame.sequence
-        } else if (frame.type === 'snapshot') throw new Error('Unexpected terminal screen snapshot')
+        } else if (frame.type === 'snapshot') throw new TerminalViewError('invalidOutput', 'Unexpected terminal screen snapshot')
         if (frame.type !== 'output') {
           this.patch({ info: frame.info, title: frame.info.title, phase: 'connected', writable: frame.info.state === 'running' && frame.info.controllerId === this.attachmentId })
         }
@@ -274,11 +297,17 @@ export class TerminalView {
   }
 
   private fail(error: unknown): void {
-    this.patch({ phase: error instanceof RemoteStreamCarrierError ? 'disconnected' : 'failed', writable: false, error: error instanceof Error ? error.message : String(error) })
+    const failure = remoteErrorOf(error)
+    if (failure?.code === 'terminal/control-unavailable') {
+      this.patch({ writable: false, error: undefined, issue: undefined })
+      return
+    }
+    const issue = failure?.code === 'terminal/view' ? failure.details.issue : failure?.code === 'terminal/limit-reached' ? 'terminalLimit' : undefined
+    this.patch({ phase: error instanceof RemoteStreamCarrierError ? 'disconnected' : 'failed', writable: false, issue, error: error instanceof Error ? error.message : String(error) })
   }
 }
 
 function valueOf<T>(result: RemoteResult<T>): T {
-  if (!result.ok) throw new Error(result.error.message)
+  if (!result.ok) throw result.error
   return result.value
 }

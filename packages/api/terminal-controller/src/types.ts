@@ -1,5 +1,15 @@
 /** Browser terminal identities, metadata and screen-stream frames. */
 import type { Branded } from '@deepseek-ai/dsh-brand'
+import type {} from '@deepseek-ai/dsh-typert-protocol'
+
+declare module '@deepseek-ai/dsh-typert-protocol' {
+  interface RemoteErrorDetailsMap {
+    /** Input or resize was refused without invalidating the output attachment. */
+    'terminal/control-unavailable': { readonly reason: 'read-only' | 'not-running' }
+    /** Retained screens and pending allocations consume the Session's terminal quota. */
+    'terminal/limit-reached': { readonly limit: number }
+  }
+}
 
 /** A terminal identity scoped to one Session and one Host lifetime. */
 export type WebTerminalId = Branded<'WebTerminalId'>

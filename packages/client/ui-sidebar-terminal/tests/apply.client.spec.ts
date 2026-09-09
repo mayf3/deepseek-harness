@@ -87,10 +87,10 @@ it('registers terminal views, recovery and cleanup, then releases every contribu
     expect(h.terminals.view).toHaveBeenLastCalledWith(sessionId, 'tab', terminalId)
     expect(h.occurrence).toHaveBeenLastCalledWith(sessionId, { id: 'tab' })
     if (h.closeHandler === undefined) throw new Error('Terminal close handler was not registered')
-    expect(h.closeHandler(sessionId, { id: 'tab' } as Parameters<SidebarRightCloseHandler>[1])).toBeUndefined()
+    h.closeHandler(sessionId, { id: 'tab' } as Parameters<SidebarRightCloseHandler>[1])
     expect(h.terminals.close).toHaveBeenLastCalledWith(sessionId, 'tab', terminalId)
     h.setParams(undefined)
-    expect(h.closeHandler(sessionId, { id: 'new-tab' } as Parameters<SidebarRightCloseHandler>[1])).toBeUndefined()
+    h.closeHandler(sessionId, { id: 'new-tab' } as Parameters<SidebarRightCloseHandler>[1])
     expect(h.terminals.close).toHaveBeenLastCalledWith(sessionId, 'new-tab', undefined)
     const cleanupFace = h.entries[3]!.inject(sessionId) as TerminalCleanupInjected
     expect(cleanupFace.hooks.closeFailures).toBe(h.terminals.closeFailures)

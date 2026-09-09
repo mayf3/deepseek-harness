@@ -23,7 +23,7 @@ export function TerminalBody({ useTabInfo, useTerminal, view, t }: TerminalBodyP
   const state = useTerminal(tab.id)
   useEffect(() => model.mount(), [model])
   if (state === undefined) return null
-  const error = state.error ?? state.info?.error
+  const error = state.issue === undefined ? state.error ?? state.info?.error : t(state.issue)
   let status: string | undefined
   if (state.phase === 'idle' || state.phase === 'loading') status = t('loading')
   else if (state.phase === 'creating' || state.phase === 'connecting' || state.phase === 'disconnected') status = t(state.phase)

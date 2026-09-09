@@ -210,7 +210,7 @@ describe('TerminalController', () => {
     const creating = controller.create(agent, request, signal())
     try {
       await spawning.promise
-      await expect(controller.create(agent, { ...request, id: 'another' as WebTerminalId }, signal())).rejects.toThrow('limit reached')
+      await expect(controller.create(agent, { ...request, id: 'another' as WebTerminalId }, signal())).rejects.toMatchObject({ code: 'terminal/limit-reached', details: { limit: 1 } })
     } finally { allocation.resolve(handle) }
     const first = await creating
     expect(await controller.create(agent, request, signal())).toBe(first)
@@ -225,7 +225,7 @@ describe('TerminalController', () => {
     await expect(controller.create(agent, request, abort.signal)).rejects.toThrow('cleanup failed')
     expect(controller.list(agent)).toMatchObject([{ id, state: 'failed', error: 'lost request' }])
     await expect(controller.create(agent, request, signal())).rejects.toThrow('Close the failed terminal allocation')
-    await expect(controller.create(agent, { ...request, id: 'another' as WebTerminalId }, signal())).rejects.toThrow('limit reached')
+    await expect(controller.create(agent, { ...request, id: 'another' as WebTerminalId }, signal())).rejects.toMatchObject({ code: 'terminal/limit-reached', details: { limit: 1 } })
     await controller.close(agent, id)
     expect(controller.list(agent)).toEqual([])
   })

@@ -82,7 +82,7 @@ describe('SidebarRightController — opening', () => {
     const { controller } = harness()
     expect(() => { controller.openResource('dsh-resource://file/session/s-test/a.txt') }).toThrow('no session surface is mounted')
     expect(() => { controller.openTab('guide') }).toThrow('no session surface is mounted')
-    expect(() => { void controller.close('tab1' as TabId) }).toThrow('no session surface is mounted')
+    expect(() => { controller.close('tab1' as TabId) }).toThrow('no session surface is mounted')
     expect(() => { controller.toggleExpanded() }).toThrow('no session surface is mounted')
     expect(() => { controller.focus('tab1' as TabId) }).toThrow('no session surface is mounted')
     expect(() => { controller.split() }).toThrow('no session surface is mounted')
@@ -283,7 +283,7 @@ describe('SidebarRightController — opening', () => {
     publish()
     controller.openResource('dsh-resource://file/session/s-test/a.txt')
     publish()
-    void controller.close(tabOf('a.txt'))
+    controller.close(tabOf('a.txt'))
     expect(titles()).not.toContain('a.txt')
   })
 
@@ -459,7 +459,7 @@ describe('SidebarRightController — a tab\'s own actions', () => {
     // session's closes this session's, aborts its occurrence at once although
     // no seat draws the session, and the other keeps its own.
     expect(otherSurface.layout.tabs[guide.id]).toBeDefined()
-    void guideOccurrence.tabActions.close()
+    guideOccurrence.tabActions.close()
     expect(layout().tabs[guide.id]).toBeUndefined()
     expect(guideOccurrence.signal.aborted).toBe(true)
     expect(other.getSnapshot().bySession[OTHER]).toBe(otherSurface)
@@ -479,14 +479,14 @@ describe('SidebarRightController — a tab\'s own actions', () => {
     const before = instance.getSnapshot().bySession
     tabActions.openResource(B_TXT)
     tabActions.openTab('guide')
-    void tabActions.close()
+    tabActions.close()
     expect(instance.getSnapshot().bySession).toBe(before)
     // Adopted, they land; released, they stop again.
     const release = adopt(SESSION, instance)
     tabActions.openResource(B_TXT)
     expect(titles()).toContain('b.txt')
     release()
-    void tabActions.close()
+    tabActions.close()
     expect(titles()).toContain('a.txt')
   })
 
@@ -591,12 +591,12 @@ describe('explicit tab resource cleanup', () => {
     const unregister = h.controller.registerCloseHandler('text', handler)
     try {
       const before = h.entries()
-      if (operation === 'close') expect(h.controller.close(tabId)).toBeUndefined()
+      if (operation === 'close') h.controller.close(tabId)
       else h.controller.openTab('guide', { replaceTab: tabId, revealIfOpened: false })
       expect(handler).toHaveBeenCalledExactlyOnceWith(SESSION, original)
       expect(h.layout().tabs[tabId]).toBeUndefined()
       expect(h.entries()).toBe(before + 1)
-      expect(h.controller.closeIn(SESSION, tabId)).toBeUndefined()
+      h.controller.closeIn(SESSION, tabId)
       expect(handler).toHaveBeenCalledOnce()
     } finally {
       unregister()
@@ -605,44 +605,7 @@ describe('explicit tab resource cleanup', () => {
     }
   })
 
-  it('awaits cleanup once before closing and never closes on collapse', async () => {
-    const h = harness()
-    h.adopt(SESSION, h.instance)
-    h.publish()
-    h.controller.openResource('dsh-resource://file/session/s-test/terminal')
-    h.publish()
-    const tabId = h.tabOf('terminal')
-    const cleanup = Promise.withResolvers<undefined>()
-    const handler = vi.fn(() => cleanup.promise)
-    h.controller.registerCloseHandler('text', handler)
-    h.controller.toggleExpanded()
-    expect(handler).not.toHaveBeenCalled()
-    const first = h.controller.closeIn(SESSION, tabId)
-    const second = h.controller.closeIn(SESSION, tabId)
-    expect(first).toBe(second)
-    expect(handler).toHaveBeenCalledOnce()
-    expect(h.layout().tabs[tabId]).toBeDefined()
-    cleanup.resolve(undefined)
-    await first
-    expect(h.layout().tabs[tabId]).toBeUndefined()
-  })
-
-  it('keeps the tab after failed cleanup and permits retry', async () => {
-    const h = harness()
-    h.adopt(SESSION, h.instance)
-    h.publish()
-    h.controller.openResource('dsh-resource://file/session/s-test/terminal')
-    h.publish()
-    const tabId = h.tabOf('terminal')
-    const handler = vi.fn().mockRejectedValueOnce(new Error('still running')).mockResolvedValue(undefined)
-    h.controller.registerCloseHandler('text', handler)
-    await expect(h.controller.closeIn(SESSION, tabId)).rejects.toThrow('still running')
-    expect(h.layout().tabs[tabId]).toBeDefined()
-    await h.controller.closeIn(SESSION, tabId)
-    expect(h.layout().tabs[tabId]).toBeUndefined()
-  })
-
-  it('awaits cleanup before replacing in a single history entry, and skips cleanup when revealing the same tab', async () => {
+  it('does not invoke cleanup on collapse or when revealing the same tab', () => {
     const h = harness()
     h.adopt(SESSION, h.instance)
     h.publish()
@@ -650,27 +613,39 @@ describe('explicit tab resource cleanup', () => {
     h.controller.openResource(address)
     h.publish()
     const tabId = h.tabOf('terminal')
-    const cleanup = Promise.withResolvers<undefined>()
-    const handler = vi.fn(() => cleanup.promise)
+    const handler = vi.fn()
     h.controller.registerCloseHandler('text', handler)
+    h.controller.toggleExpanded()
     h.controller.openResource(address, { replaceTab: tabId })
     expect(handler).not.toHaveBeenCalled()
-    const before = h.entries()
-    h.controller.openTab('guide', { replaceTab: tabId })
-    expect(h.entries()).toBe(before)
     expect(h.layout().tabs[tabId]).toBeDefined()
-    cleanup.resolve(undefined)
-    await expect.poll(() => h.layout().tabs[tabId]).toBeUndefined()
-    expect(h.entries()).toBe(before + 1)
+  })
+
+  it.each(['close', 'replace'] as const)('preserves a tab when its synchronous %s handler throws', (operation) => {
+    const h = harness()
+    h.adopt(SESSION, h.instance)
+    h.publish()
+    h.controller.openResource('dsh-resource://file/session/s-test/terminal')
+    const tabId = h.tabOf('terminal')
+    const release = h.controller.registerCloseHandler('text', () => { throw new Error('cannot retain cleanup') })
+    const perform = () => {
+      if (operation === 'close') h.controller.closeIn(SESSION, tabId)
+      else h.controller.openTab('guide', { replaceTab: tabId, revealIfOpened: false })
+    }
+    expect(perform).toThrow('cannot retain cleanup')
+    expect(h.layout().tabs[tabId]).toBeDefined()
+    release()
+    perform()
+    expect(h.layout().tabs[tabId]).toBeUndefined()
   })
 })
 
-it('releases close handlers without a stale disposer removing a replacement', async () => {
+it('releases close handlers without a stale disposer removing a replacement', () => {
   const h = harness()
   h.adopt(SESSION, h.instance)
   h.publish()
-  const first = vi.fn(async () => {})
-  const second = vi.fn(async () => {})
+  const first = vi.fn(() => {})
+  const second = vi.fn(() => {})
   const release = h.controller.registerCloseHandler('text', first)
   expect(() => h.controller.registerCloseHandler('text', second)).toThrow('already registered')
   release()
@@ -678,7 +653,7 @@ it('releases close handlers without a stale disposer removing a replacement', as
   release()
   h.controller.openResource('dsh-resource://file/session/s-test/one')
   h.publish()
-  await h.controller.closeIn(SESSION, h.tabOf('one'))
+  h.controller.closeIn(SESSION, h.tabOf('one'))
   expect(first).not.toHaveBeenCalled()
   expect(second).toHaveBeenCalledOnce()
   releaseSecond()
@@ -688,42 +663,4 @@ it('releases close handlers without a stale disposer removing a replacement', as
   h.controller.openTab('guide', { replaceTab: tabId, revealIfOpened: false })
   expect(h.layout().tabs[tabId]).toBeUndefined()
   expect(second).toHaveBeenCalledOnce()
-})
-
-it.each(['adoption', 'occurrence'] as const)('does not commit a pending close after its %s ends', async (lifetime) => {
-  const h = harness()
-  const release = h.adopt(SESSION, h.instance)
-  h.publish()
-  h.controller.openResource('dsh-resource://file/session/s-test/terminal')
-  h.publish()
-  const tabId = h.tabOf('terminal')
-  const cleanup = Promise.withResolvers<undefined>()
-  h.controller.registerCloseHandler('text', () => cleanup.promise)
-  const pending = h.controller.closeIn(SESSION, tabId)
-  if (lifetime === 'adoption') release()
-  else h.instance.actions.closeTab(SESSION, tabId)
-  const entries = h.entries()
-  cleanup.resolve(undefined)
-  await pending
-  expect(h.entries()).toBe(entries)
-  if (lifetime === 'adoption') expect(h.layout().tabs[tabId]).toBeDefined()
-})
-
-it('reports failed replacement cleanup and retains the original resource', async () => {
-  const h = harness()
-  h.adopt(SESSION, h.instance)
-  h.publish()
-  h.controller.openResource('dsh-resource://file/session/s-test/terminal')
-  h.publish()
-  const tabId = h.tabOf('terminal')
-  const error = new Error('process cleanup failed')
-  h.controller.registerCloseHandler('text', async () => { throw error })
-  const reported = vi.spyOn(console, 'error').mockImplementation(() => {})
-  try {
-    h.controller.openTab('guide', { replaceTab: tabId, revealIfOpened: false })
-    await expect.poll(() => reported.mock.calls).toEqual([['Sidebar tab replacement failed:', error]])
-    expect(h.layout().tabs[tabId]).toBeDefined()
-  } finally {
-    reported.mockRestore()
-  }
 })

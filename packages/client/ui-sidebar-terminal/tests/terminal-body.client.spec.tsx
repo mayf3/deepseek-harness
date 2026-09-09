@@ -60,7 +60,7 @@ const titleSurfaces = [
     wrap: (title: ReactNode) => <header data-dockkit-float-grip="pane"><div data-dockkit-float-title><span>{title}</span></div></header>,
   },
 ]
-function mount(initial: TerminalViewState | undefined = idle) {
+function mount(initial: TerminalViewState | undefined = idle, dictionary = en) {
   let state: TerminalViewState | undefined = initial
   let visible = true
   const detach = vi.fn()
@@ -74,7 +74,7 @@ function mount(initial: TerminalViewState | undefined = idle) {
   const props = {
     view: () => model,
     useTerminal: (_key: string, select?: (value: TerminalViewState | undefined) => unknown) => select === undefined ? state : select(state),
-    useTabInfo: tab, t: makeTranslate(en),
+    useTabInfo: tab, t: makeTranslate(dictionary),
   } as unknown as TerminalBodyProps
   const view = render(<TerminalBody {...props} />)
   return {
@@ -296,4 +296,16 @@ it.each(titleSurfaces)('removes the native $name listener when its title unmount
 it('starts a recovered screen with no local history when environment discovery is unavailable', () => {
   mount({ ...idle, info, environment: undefined })
   expect(fake.terminals[0]!.options).toHaveProperty('scrollback', 0)
+})
+
+
+it.each([en, zh])('translates known terminal failures while retaining unknown Host diagnostics', (dictionary) => {
+  const h = mount(idle, dictionary)
+  for (const issue of ['missingTerminal', 'inputFull', 'attachmentEnded', 'invalidOutput', 'terminalLimit'] as const) {
+    h.update({ ...idle, phase: 'failed', issue, error: 'raw diagnostic' })
+    expect(h.view.getByRole('alert').textContent).toContain(dictionary[issue])
+    expect(h.view.getByRole('alert').textContent).not.toContain('raw diagnostic')
+  }
+  h.update({ ...idle, phase: 'failed', error: 'Host permission denied' })
+  expect(h.view.getByRole('alert').textContent).toContain('Host permission denied')
 })

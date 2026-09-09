@@ -7,7 +7,7 @@ import type { SubprocessTerminalHandle } from '@deepseek-ai/dsh-subprocess'
 import type {} from '@deepseek-ai/dsh-sandbox-policy'
 import type {} from '@deepseek-ai/dsh-sandbox'
 import type {} from '@deepseek-ai/dsh-session-projection'
-import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
+import { Remote, RemoteError, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import { resolveShell } from './shells.ts'
 import { BrowserTerminal } from './terminal.ts'
 import type {
@@ -153,7 +153,7 @@ export class TerminalController extends TypertRemoteService {
       return terminal.info
     }
     if (owner.allocations.has(request.id)) throw new Error('Close the failed terminal allocation before creating it again')
-    if (new Set([...owner.terminals.keys(), ...owner.pending.keys(), ...owner.allocations.keys()]).size >= this.config.maxTerminals) throw new Error('Session terminal limit reached')
+    if (new Set([...owner.terminals.keys(), ...owner.pending.keys(), ...owner.allocations.keys()]).size >= this.config.maxTerminals) throw new RemoteError('terminal/limit-reached', 'Session terminal limit reached', { limit: this.config.maxTerminals })
     const allocation = this.spawn(agent, owner, request, AbortSignal.any([signal, this.lifetime.signal, owner.lifetime.signal]))
     owner.pending.set(request.id, allocation)
     try {
@@ -232,6 +232,7 @@ export class TerminalController extends TypertRemoteService {
   async close(agent: Agent, id: WebTerminalId): Promise<void> {
     const owner = this.owner(agent)
     owner.closedIds.add(id)
+    // create publishes the allocation before this wait settles; close owns it even if create then rejects.
     await owner.pending.get(id)?.catch(() => { /* Creation reports its failure; close still owns any allocated process. */ })
     const terminal = owner.terminals.get(id)
     if (terminal !== undefined) {

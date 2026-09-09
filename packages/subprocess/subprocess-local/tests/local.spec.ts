@@ -64,6 +64,10 @@ describe('LocalSubprocessRuntime', () => {
       await expect(ctx.subprocess.terminalEnvironment()).resolves.toEqual({
         platform: 'posix', defaultShell: '/account/shell',
       })
+      vi.stubEnv('SHELL', '')
+      await expect(ctx.subprocess.terminalEnvironment()).resolves.toEqual({ platform: 'posix', defaultShell: '/account/shell' })
+      loginShell = ''
+      await expect(ctx.subprocess.terminalEnvironment()).resolves.toEqual({ platform: 'posix' })
       loginShell = null
       await expect(ctx.subprocess.terminalEnvironment()).resolves.toEqual({ platform: 'posix' })
       platform.mockReturnValue('win32')
@@ -72,6 +76,8 @@ describe('LocalSubprocessRuntime', () => {
         platform: 'windows', defaultShell: 'C:\\Windows\\System32\\cmd.exe',
       })
       vi.stubEnv('ComSpec', undefined)
+      await expect(ctx.subprocess.terminalEnvironment()).resolves.toEqual({ platform: 'windows' })
+      vi.stubEnv('ComSpec', '')
       await expect(ctx.subprocess.terminalEnvironment()).resolves.toEqual({ platform: 'windows' })
       platform.mockReturnValue('linux')
       userInfo.mockClear()

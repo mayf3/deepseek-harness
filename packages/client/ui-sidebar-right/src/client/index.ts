@@ -163,8 +163,8 @@ export function apply(ctx: ClientContext): void {
         inject: (sessionId): SidebarRightInjected => ({
           ...injected,
           closeTab: (tabId) => {
-            const pending = controller.closeIn(sessionId, tabId)
-            if (pending !== undefined) void pending.catch((error: unknown) => { console.error('Sidebar tab close failed:', error) })
+            try { controller.closeIn(sessionId, tabId) }
+            catch (error) { console.error('Sidebar tab close failed:', error) }
           },
           keyedHooks: { tabNavigation: key => controller.tabDomain.occurrence(sessionId, { id: key as TabId }).navigation },
           occurrence: tab => controller.tabDomain.occurrence(sessionId, tab),

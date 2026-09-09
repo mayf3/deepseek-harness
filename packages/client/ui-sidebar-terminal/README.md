@@ -27,7 +27,7 @@ Open the execution environment's default shell beside a conversation without lea
 
 Open the right sidebar and select **New terminal** on the Start page; first select **New tab** when another content tab is open. The default shell starts immediately. Use the sidebar's **New tab** control to open more terminals.
 
-Double-click the terminal's tab title to rename it. **Take control** makes the current attachment writable when another page owns input. A failed connection offers **Reconnect**. An exited shell remains visible with its exit code and never restarts automatically.
+Double-click the terminal's tab title to rename it. **Take control** makes the current attachment writable when another page owns input. A failed connection offers **Reconnect**. An exited shell remains visible with its exit code and never restarts automatically. Exited terminals count toward the Session limit; close unused tabs when the limit is reached.
 
 Closing or replacing a terminal tab removes it immediately and ends its process in the background. A cleanup failure shows a small notification with **Retry**; retrying does not reopen the tab. Collapsing, switching tabs or Sessions, floating and fullscreen presentation preserve the process.
 

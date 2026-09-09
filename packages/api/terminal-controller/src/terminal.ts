@@ -1,14 +1,21 @@
 /** One PTY, a bounded terminal emulator and its detachable browser followers. */
 import { createRequire } from 'node:module'
+import { RemoteError } from '@deepseek-ai/dsh-typert-protocol'
 import type { Terminal as HeadlessTerminal } from '@xterm/headless'
 import type { SerializeAddon as Serializer } from '@xterm/addon-serialize'
 import type { SubprocessTerminalHandle } from '@deepseek-ai/dsh-subprocess'
 import { TerminalFollower } from './stream.ts'
 import type { TerminalAttachmentId, TerminalFrame, WebTerminalInfo } from './types.ts'
 
-// Literal createRequire calls keep CommonJS xterm entries reachable in the Preview image.
-const { Terminal } = createRequire(import.meta.url)('@xterm/headless') as typeof import('@xterm/headless')
-const { SerializeAddon } = createRequire(import.meta.url)('@xterm/addon-serialize') as typeof import('@xterm/addon-serialize')
+const { Terminal, SerializeAddon } = loadXterm()
+
+function loadXterm() {
+  // The Preview's CommonJS wrapper owns its outer require binding; these literal calls also retain the CJS entries.
+  const require = createRequire(import.meta.url)
+  const { Terminal } = require('@xterm/headless') as typeof import('@xterm/headless')
+  const { SerializeAddon } = require('@xterm/addon-serialize') as typeof import('@xterm/addon-serialize')
+  return { Terminal, SerializeAddon }
+}
 
 /** Process lifetime is independent of follower and component lifetimes. */
 export class BrowserTerminal {
@@ -125,8 +132,8 @@ export class BrowserTerminal {
   }
 
   private requireController(id: TerminalAttachmentId): void {
-    if (this.closing !== undefined || this.info.state !== 'running') throw new Error('Terminal is not running')
-    if (this.controller?.id !== id) throw new Error('Terminal input is controlled by another attachment')
+    if (this.closing !== undefined || this.info.state !== 'running') throw new RemoteError('terminal/control-unavailable', 'Terminal is not running', { reason: 'not-running' })
+    if (this.controller?.id !== id) throw new RemoteError('terminal/control-unavailable', 'Terminal input is controlled by another attachment', { reason: 'read-only' })
   }
 
   private broadcast(frame: TerminalFrame): void {

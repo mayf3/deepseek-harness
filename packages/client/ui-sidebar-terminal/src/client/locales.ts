@@ -16,6 +16,11 @@ export const zh = {
   closed: '终端已关闭。', exited: '进程已退出（{code}）', failed: '终端错误：{message}',
   rename: '终端名称', unavailable: '不可用', retry: '重试',
   cleanupFailed: '终端「{title}」未能结束：{message}',
+  missingTerminal: '此终端已不存在，请新建终端。',
+  inputFull: '输入缓冲区已满，请重新连接后重试。',
+  attachmentEnded: '终端连接已结束，请重新连接。',
+  invalidOutput: '终端画面传输异常，请重新连接。',
+  terminalLimit: '终端数量已达上限，请关闭不用的终端后重试。已退出的终端也计入数量。',
 } satisfies Record<string, string>
 
 /** English terminal copy. */
@@ -27,4 +32,9 @@ export const en = {
   closed: 'Terminal closed.', exited: 'Process exited ({code})', failed: 'Terminal error: {message}',
   rename: 'Terminal name', unavailable: 'Unavailable', retry: 'Retry',
   cleanupFailed: 'Terminal “{title}” could not be ended: {message}',
+  missingTerminal: 'This terminal no longer exists. Open a new terminal.',
+  inputFull: 'The input buffer is full. Reconnect and try again.',
+  attachmentEnded: 'The terminal connection ended. Reconnect to continue.',
+  invalidOutput: 'The terminal screen could not be received. Reconnect to recover it.',
+  terminalLimit: 'The terminal limit has been reached. Close unused terminals and try again. Exited terminals also count toward the limit.',
 } satisfies Record<keyof typeof zh, string>

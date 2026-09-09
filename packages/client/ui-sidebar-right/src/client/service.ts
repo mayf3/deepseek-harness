@@ -134,8 +134,8 @@ export interface SidebarRightOpenTabOptions<K extends string = string> extends S
 /** The scheme every resource address carries; anything else is not a resource this face opens. */
 const RESOURCE_SCHEME = 'dsh-resource://'
 
-/** Explicit close/replacement hook. Return void for immediate removal, or a promise to defer removal until cleanup succeeds. */
-export type SidebarRightCloseHandler = (sessionId: SessionId, tab: TabRecord) => void | Promise<void>
+/** Synchronous close/replacement hook; resource owners retain any background cleanup. */
+export type SidebarRightCloseHandler = (sessionId: SessionId, tab: TabRecord) => void
 
 /** The outward right-Sidebar face (`ctx.sidebarRight`). */
 export interface ISidebarRight {
@@ -163,7 +163,7 @@ export interface ISidebarRight {
    * Close one tab of the mounted session; the sole docked guide remains open.
    * @param tabId - the tab to close.
    */
-  close(tabId: TabId): void | Promise<void>
+  close(tabId: TabId): void
   /**
    * The active tab of the active pane.
    * @returns the record, or `undefined` when no seat is mounted.
@@ -207,12 +207,11 @@ export interface ISidebarRight {
 export class SidebarRightController implements ISidebarRight {
   private binding: SidebarRightBinding | undefined
   private readonly closeHandlers = new Map<string, SidebarRightCloseHandler>()
-  private readonly closing = new Map<string, Promise<void>>()
 
   /**
    * Register resource cleanup before explicit removal. Failure preserves the tab.
    * @param kind - tab kind owned by the registering plugin.
-   * @param handler - saves background cleanup synchronously, or returns cleanup to await before removal.
+   * @param handler - saves any background cleanup before returning and allowing removal.
    * @returns an effect-scoped unregister callback.
    */
   registerCloseHandler(kind: string, handler: SidebarRightCloseHandler): () => void {
@@ -308,33 +307,19 @@ export class SidebarRightController implements ISidebarRight {
    * Not part of `ISidebarRight`: the Tab domain's path.
    * @param sessionId - the session the tab is in.
    * @param tabId - the tab to close.
-   * @returns resource cleanup completion when the tab type owns an asynchronous close handler.
    */
-  closeIn(sessionId: SessionId, tabId: TabId): void | Promise<void> {
+  closeIn(sessionId: SessionId, tabId: TabId): void {
     const actions = this.actionsFor(sessionId)
     const surface = this.adopted.get(sessionId)?.store.getSnapshot().bySession[sessionId]
     if (actions === undefined || surface === undefined) return
     const tab = surface.layout.tabs[tabId]
     if (tab === undefined || !canCloseTab(surface, tabId)) return
-    return this.removeAfterCleanup(sessionId, tab, () => { actions.closeTab(sessionId, tabId) })
+    this.removeAfterCleanup(sessionId, tab, () => { actions.closeTab(sessionId, tabId) })
   }
 
-  private removeAfterCleanup(sessionId: SessionId, tab: TabRecord, commit: () => void): void | Promise<void> {
-    const handler = this.closeHandlers.get(tab.kind)
-    if (handler === undefined) { commit(); return }
-    const key = `${sessionId}:${tab.id}`
-    const existing = this.closing.get(key)
-    if (existing !== undefined) return existing
-    const adoption = this.adopted.get(sessionId)
-    const occurrence = this.tabDomain.occurrence(sessionId, tab)
-    const completion = handler(sessionId, tab)
-    if (completion === undefined) { commit(); return }
-    const pending = completion.then(() => {
-      if (this.adopted.get(sessionId) !== adoption || occurrence.signal.aborted) return
-      commit()
-    }).finally(() => { this.closing.delete(key) })
-    this.closing.set(key, pending)
-    return pending
+  private removeAfterCleanup(sessionId: SessionId, tab: TabRecord, commit: () => void): void {
+    this.closeHandlers.get(tab.kind)?.(sessionId, tab)
+    commit()
   }
 
   /** Claim a resource and place it in one session; an address outside the scheme or one no type claims throws. */
@@ -385,18 +370,16 @@ export class SidebarRightController implements ISidebarRight {
     const revealed = layout === undefined || placement.revealIfOpened === false
       ? undefined : findContentTab(layout, claim.contentId, claim.kind)
     if (replaced === undefined || replaced.id === revealed) { commit(); return }
-    const pending = this.removeAfterCleanup(sessionId, replaced, commit)
-    if (pending !== undefined) void pending.catch((error: unknown) => { console.error('Sidebar tab replacement failed:', error) })
+    this.removeAfterCleanup(sessionId, replaced, commit)
   }
 
   /**
    * Close one tab of the mounted session; the sole docked guide remains open.
    * @param tabId - the tab to close.
-   * @returns resource cleanup completion when the tab type owns an asynchronous close handler.
    */
-  close(tabId: TabId): void | Promise<void> {
+  close(tabId: TabId): void {
     const { sessionId, actions } = this.require()
-    if (this.adopted.has(sessionId)) return this.closeIn(sessionId, tabId)
+    if (this.adopted.has(sessionId)) { this.closeIn(sessionId, tabId); return }
     actions.closeTab(sessionId, tabId)
   }
 

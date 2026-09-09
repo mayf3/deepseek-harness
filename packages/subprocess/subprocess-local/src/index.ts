@@ -233,7 +233,7 @@ export class LocalSubprocessRuntime extends SubprocessRuntime {
   async terminalEnvironment(signal?: AbortSignal): Promise<SubprocessTerminalEnvironment> {
     signal?.throwIfAborted()
     const platform = process.platform === 'win32' ? 'windows' : 'posix'
-    const defaultShell = platform === 'windows' ? process.env.ComSpec : process.env.SHELL ?? userInfo().shell ?? undefined
+    const defaultShell = platform === 'windows' ? process.env.ComSpec || undefined : process.env.SHELL || userInfo().shell || undefined
     return { platform, ...defaultShell === undefined ? {} : { defaultShell } }
   }
 

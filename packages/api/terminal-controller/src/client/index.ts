@@ -1,5 +1,6 @@
 /** Client terminal model service; views are keyed independently from Host terminal identities. */
 import { Service, type Context } from '@deepseek-ai/cordis'
+import { remoteErrorOf } from '@deepseek-ai/dsh-typert-protocol'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type {} from '@deepseek-ai/dsh-api-gateway/client'
 import { TerminalView, type TerminalRemote } from './model.ts'
@@ -8,7 +9,7 @@ import { randomUUID } from '@deepseek-ai/dsh-util-crypto'
 import type { WebTerminalId, WebTerminalInfo } from '../types.ts'
 import { TerminalCloseRequests, type TerminalCloseRequest } from './close-requests.ts'
 
-export type { TerminalView, TerminalViewState, TerminalRenderFrame, TerminalRemote } from './model.ts'
+export type { TerminalView, TerminalViewState, TerminalViewIssue, TerminalRenderFrame, TerminalRemote } from './model.ts'
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
@@ -42,9 +43,9 @@ export class ClientTerminals extends Service {
     super(ctx, 'webTerminals')
     ctx.effect(() => async () => {
       this.disposed = true
-      for (const views of this.views.values()) for (const view of views.values()) view.dispose()
+      const detaching = [...this.views.values()].flatMap(views => [...views.values()].map(view => view.dispose()))
       this.views.clear()
-      await Promise.all(this.closing.values())
+      await Promise.all([...detaching, ...this.closing.values()])
     }, 'terminal-controller.client.views')
     for (const request of this.requests.pending()) this.cleanup(request)
   }
@@ -117,16 +118,20 @@ export class ClientTerminals extends Service {
       if (view !== undefined) await view.close()
       else {
         const result = await this.remote.close(record.sessionId, record.id)
-        if (!result.ok) throw new Error(result.error.message)
+        if (!result.ok) throw result.error
       }
       this.requests.remove(record.id)
     })().catch((error: unknown) => {
+      if (remoteErrorOf(error)?.code === 'session/not-found') {
+        this.requests.remove(record.id)
+        return
+      }
       if (!this.disposed) this.closeFailures.set([...this.closeFailures.getSnapshot(), {
         id: record.id, title: record.title,
         message: error instanceof Error ? error.message : String(error),
       }])
-    }).finally(() => {
-      view?.dispose()
+    }).then(async () => {
+      await view?.dispose()
       this.closing.delete(record.id)
     })
     this.closing.set(record.id, pending)

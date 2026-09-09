@@ -126,7 +126,7 @@ export interface SidebarRightTabActions {
    */
   openTab<K extends string>(kind: K, options?: SidebarRightTabPlacement & { readonly params?: SidebarRightTabParamsFor<K> }): void
   /** Close this tab. */
-  close(): void | Promise<void>
+  close(): void
 }
 
 /** Live information shared by a tab's body, title, and guide replacement. */

@@ -150,7 +150,7 @@ export class E2BSubprocessRuntime extends SubprocessRuntime {
   async terminalEnvironment(signal?: AbortSignal): Promise<SubprocessTerminalEnvironment> {
     const sandbox = await this.ctx.e2b.getSandbox()
     const environment = scrubRemoteEnvironment(await readRemoteEnvironment(sandbox, signal))
-    const defaultShell = environment.get('SHELL')
+    const defaultShell = environment.get('SHELL') || undefined
     return { platform: 'posix', ...defaultShell === undefined ? {} : { defaultShell } }
   }
 

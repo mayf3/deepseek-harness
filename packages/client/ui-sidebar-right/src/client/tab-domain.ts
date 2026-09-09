@@ -34,7 +34,7 @@ export interface SidebarRightNavigator {
   /** Open a page type in one session; see `ISidebarRight.openTab`. */
   openTabIn(sessionId: SessionId, kind: string, options?: SidebarRightOpenTabOptions): void
   /** Close a tab of one session. */
-  closeIn(sessionId: SessionId, tabId: TabId): void | Promise<void>
+  closeIn(sessionId: SessionId, tabId: TabId): void
 }
 
 /** `ctx.resources.pin`: hold an address's content open for as long as `signal` lives. */
@@ -175,7 +175,7 @@ export class TabDomain {
         openTab: (kind, options = {}) => {
           navigator.openTabIn(sessionId, kind, { ...place(options), params: options.params })
         },
-        close: () => navigator.closeIn(sessionId, tabId),
+        close: () => { navigator.closeIn(sessionId, tabId) },
       },
     }
     this.session(sessionId).set(tabId, held)

@@ -138,7 +138,7 @@ describe('RightbarSeat presentation', () => {
     if (entryCount !== 1) {
       expect(h.view.container.querySelectorAll('[data-dockkit-tab-close]')).toHaveLength(0)
       const before = h.layout()
-      act(() => { void h.controller.close(initial.id) })
+      act(() => { h.controller.close(initial.id) })
       expect(h.layout()).toBe(before)
       fireEvent.contextMenu(element(h.view.container, '[data-dockkit-tab]'))
       expect(document.querySelector('[data-dockkit-tab-menu] [role^="menuitem"]')).toBeNull()
@@ -146,7 +146,7 @@ describe('RightbarSeat presentation', () => {
       return
     }
     expect(h.view.container.querySelector(`[data-dockkit-tab-close="${initial.id}"]`)).not.toBeNull()
-    act(() => { void h.controller.close(initial.id) })
+    act(() => { h.controller.close(initial.id) })
     expect(h.layout().expanded).toBe(false)
     const reseeded = Object.values(h.layout().tabs)[0]!
     expect(reseeded.kind).toBe('text')
@@ -157,12 +157,12 @@ describe('RightbarSeat presentation', () => {
     expect(h.view.container.querySelector('[data-dockkit-add-tab]')).toBeNull()
     expect(h.view.container.querySelector(`[data-dockkit-tab-close="${reseeded.id}"]`)).not.toBeNull()
     expect(h.view.container.querySelector(`[data-dockkit-tab-close="${guide.id}"]`)).not.toBeNull()
-    act(() => { void h.controller.close(reseeded.id) })
+    act(() => { h.controller.close(reseeded.id) })
     expect(h.layout().tabs[reseeded.id]).toBeUndefined()
     expect(h.view.container.querySelector(`[data-dockkit-tab-close="${guide.id}"]`)).toBeNull()
     const preview = h.open('ordinary.txt')
     expect(h.view.container.querySelector(`[data-dockkit-tab-close="${preview.id}"]`)).not.toBeNull()
-    act(() => { void h.controller.close(preview.id) })
+    act(() => { h.controller.close(preview.id) })
     expect(h.layout().tabs[preview.id]).toBeUndefined()
     expect(Object.keys(h.layout().tabs)).toEqual([guide.id])
     expect(h.view.container.querySelectorAll('[data-dockkit-tab-close]')).toHaveLength(0)
@@ -437,7 +437,7 @@ describe('slot-owned useTabInfo', () => {
     expect(Object.values(h.layout().tabs).map(tab => tab.title)).toContain('b.txt')
     expect(h.controller.active()?.contentId).toBe(otherTab.contentId)
     expect(h.bodies.get(otherTab.id)?.tab.navigation.params).toEqual({ line: 9 })
-    act(() => { void info.tab.actions.close() })
+    act(() => { info.tab.actions.close() })
     expect(info.tab.signal.aborted).toBe(true)
     expect(otherInfo.tab.signal.aborted).toBe(false)
     await h.runtime.sessions.setCurrent(SESSION)
@@ -580,11 +580,11 @@ describe('intentsFor — the kit\'s gestures as one session\'s store actions', (
   })
 })
 
-it('keeps a resource tab and reports cleanup rejection from its close button', async () => {
+it('keeps a resource tab and reports a synchronous cleanup failure from its close button', async () => {
   const h = await mountSeat()
   const tab = h.open('terminal')
   const failure = new Error('process still running')
-  const release = h.controller.registerCloseHandler('text', async () => { throw failure })
+  const release = h.controller.registerCloseHandler('text', () => { throw failure })
   const logged = vi.spyOn(console, 'error').mockImplementation(() => {})
   try {
     fireEvent.click(element(h.view.container, `[data-dockkit-tab-close="${tab.id}"]`))

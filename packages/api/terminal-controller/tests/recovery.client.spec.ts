@@ -1,4 +1,5 @@
 /** Reloaded tab identities and nonblocking close requests use independent lifetimes. */
+import { setImmediate } from 'node:timers/promises'
 import { afterEach, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
@@ -42,7 +43,7 @@ function fixture() {
   const gateway: Pick<ClientRemote, '$stream'> = { $stream: options => new RemoteStream({ generation: createSnapshotStore(undefined) }, options) }
   function view() {
     const model = new TerminalView(sessionId, remote, gateway, info.id)
-    cleanups.push(() => { model.dispose() })
+    cleanups.push(() => model.dispose())
     return model
   }
   async function service() {
@@ -92,7 +93,7 @@ it('does not recreate a recovered terminal that disappeared after the recovery l
   const model = service.view(sessionId, 'recovered', info.id)
   await model.refresh()
   expect(model.state.getSnapshot()).toMatchObject({ phase: 'failed', writable: false })
-  expect(model.state.getSnapshot().error).toBeDefined()
+  expect(model.state.getSnapshot().issue).toBe('missingTerminal')
   expect(h.remote.create).not.toHaveBeenCalled()
   model.mount()
   await model.refresh()
@@ -152,7 +153,7 @@ it('updates a restored inactive terminal title and ignores late results after di
   const rename = Promise.withResolvers<RemoteResult<void>>()
   vi.mocked(h.remote.rename).mockReturnValueOnce(rename.promise)
   const pending = model.rename('Late')
-  model.dispose()
+  await model.dispose()
   rename.resolve(success(undefined))
   await pending
   expect(model.state.getSnapshot().title).toBe('Build')
@@ -366,4 +367,67 @@ it('keeps cleanup usable in memory when storage access itself is denied', () => 
   requests.remove(info.id)
   expect(requests.pending()).toEqual([])
   expect(error).toHaveBeenCalledTimes(3)
+})
+
+it.each(['saved', 'view'] as const)('clears a %s close request after the Host confirms that its Session does not exist', async (source) => {
+  const data = storage()
+  const h = fixture()
+  const requests = new TerminalCloseRequests()
+  if (source === 'saved') requests.save({ sessionId, id: info.id, title: 'Build' })
+  vi.mocked(h.remote.close).mockResolvedValue({ ok: false, error: new RemoteError('session/not-found', 'Deleted Session', { sessionId }) })
+  const { service, dispose } = await h.service()
+  if (source === 'view') {
+    const view = service.view(sessionId, 'tab')
+    await view.refresh()
+    service.close(sessionId, 'tab')
+  }
+  await expect.poll(() => vi.mocked(h.remote.close).mock.calls.length).toBe(1)
+  await dispose()
+  expect(data.size).toBe(0)
+  expect(service.closeFailures.getSnapshot()).toEqual([])
+  expect(new TerminalCloseRequests().pending()).toEqual([])
+  await h.service()
+  expect(h.remote.close).toHaveBeenCalledOnce()
+})
+
+it('waits for both active and detached stream finalizers during plugin disposal without closing Host processes', async () => {
+  const h = fixture()
+  const { service, dispose } = await h.service()
+  const started = [Promise.withResolvers<undefined>(), Promise.withResolvers<undefined>()]
+  const release = [Promise.withResolvers<undefined>(), Promise.withResolvers<undefined>()]
+  const finished = [Promise.withResolvers<undefined>(), Promise.withResolvers<undefined>()]
+  cleanups.push(() => { for (const barrier of release) barrier.resolve(undefined) })
+  let index = 0
+  vi.mocked(h.remote.follow).mockImplementation(async function* (_session, id, controllerId, signal) {
+    const current = index++
+    try {
+      yield { type: 'snapshot', sequence: 0, screen: 'screen', info: { ...info, id, controllerId } }
+      await new Promise<void>((resolve) => {
+        if (signal?.aborted) resolve()
+        else signal?.addEventListener('abort', () => { resolve() }, { once: true })
+      })
+    } finally {
+      started[current]!.resolve(undefined)
+      await release[current]!.promise
+      finished[current]!.resolve(undefined)
+    }
+  })
+  const model = service.view(sessionId, 'tab')
+  model.mount()
+  await expect.poll(() => model.state.getSnapshot().writable).toBe(true)
+  model.connect()
+  await started[0]!.promise
+  await expect.poll(() => model.state.getSnapshot().writable).toBe(true)
+  let disposed = false
+  const disposing = dispose().then(() => { disposed = true })
+  await started[1]!.promise
+  release[1]!.resolve(undefined)
+  await finished[1]!.promise
+  // Drain runnable disposal continuations; only the held old finalizer may keep teardown pending.
+  await setImmediate()
+  expect(disposed).toBe(false)
+  release[0]!.resolve(undefined)
+  await disposing
+  expect(disposed).toBe(true)
+  expect(h.remote.close).not.toHaveBeenCalled()
 })

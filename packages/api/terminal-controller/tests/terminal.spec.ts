@@ -63,7 +63,7 @@ describe('BrowserTerminal', () => {
     output.write(encoded.subarray(2))
     expect(await readFrame(first.iterator)).toMatchObject({ type: 'output', data: '终端' })
     const second = await attach(terminal, 'second')
-    await expect(terminal.write(attachment('first'), 'ignored')).rejects.toThrow('another attachment')
+    await expect(terminal.write(attachment('first'), 'ignored')).rejects.toMatchObject({ code: 'terminal/control-unavailable', details: { reason: 'read-only' } })
     await terminal.write(attachment('second'), '\t')
     expect(handle.write).toHaveBeenCalledWith('\t')
     await terminal.resize(attachment('second'), 100, 30)
@@ -103,15 +103,15 @@ describe('BrowserTerminal', () => {
 
   it('rejects input before attachment, during close and after process exit', async () => {
     const { terminal, handle, output, outcome } = fixture()
-    await expect(terminal.write(attachment('first'), 'ignored')).rejects.toThrow('another attachment')
+    await expect(terminal.write(attachment('first'), 'ignored')).rejects.toMatchObject({ code: 'terminal/control-unavailable', details: { reason: 'read-only' } })
     const first = await attach(terminal)
     output.end()
     outcome.resolve({ exitCode: 0, signal: null })
     expect(await readFrame(first.iterator)).toMatchObject({ type: 'state', info: { state: 'exited' } })
-    await expect(terminal.write(attachment('first'), 'ignored')).rejects.toThrow('not running')
-    await expect(terminal.resize(attachment('first'), 100, 30)).rejects.toThrow('not running')
+    await expect(terminal.write(attachment('first'), 'ignored')).rejects.toMatchObject({ code: 'terminal/control-unavailable', details: { reason: 'not-running' } })
+    await expect(terminal.resize(attachment('first'), 100, 30)).rejects.toMatchObject({ code: 'terminal/control-unavailable', details: { reason: 'not-running' } })
     const closing = terminal.close()
-    await expect(terminal.write(attachment('first'), 'ignored')).rejects.toThrow('not running')
+    await expect(terminal.write(attachment('first'), 'ignored')).rejects.toMatchObject({ code: 'terminal/control-unavailable', details: { reason: 'not-running' } })
     await closing
     expect(handle.write).not.toHaveBeenCalled()
     expect(handle.resize).not.toHaveBeenCalled()

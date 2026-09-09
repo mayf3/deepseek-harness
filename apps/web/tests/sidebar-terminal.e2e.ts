@@ -12,12 +12,13 @@ import { connectFreshWorkspace, newEnglishPage, saveFailureShot } from './suppor
 const expected = fileURLToPath(new URL('./expected/sidebar-terminal/running.expected.md', import.meta.url))
 const shots = fileURLToPath(new URL('../../../.artifacts/screenshots/sidebar-terminal/', import.meta.url))
 
-async function openTerminal(page: Page): Promise<void> {
+async function openTerminal(page: Page, waitForShell = true): Promise<void> {
   const expand = page.locator('[data-sidebar-right-expand]')
   if (await expand.isVisible()) await expand.click()
-  else await page.locator('[data-dockkit-add-tab]').click()
-  await page.locator('[data-sidebar-right-guide-entry="terminal"]').click()
-  await expect.poll(async () => await page.locator('.xterm-rows:visible').innerText()).toContain('bash-')
+  const entry = page.locator('[data-sidebar-right-guide-entry="terminal"]')
+  if (!await entry.isVisible()) await page.locator('[data-dockkit-add-tab]').click()
+  await entry.click()
+  if (waitForShell) await expect.poll(async () => await page.locator('.xterm-rows:visible').innerText()).toContain('bash-')
 }
 
 async function command(page: Page, text: string): Promise<void> {
@@ -142,4 +143,30 @@ describe.skipIf(process.platform === 'win32')('Web sidebar terminal', () => {
     await expect.poll(() => scaffold.ctx.terminalController.list(scaffold.ctx.agents.list()[0]!).length).toBe(0)
     expect(tripwire.pageErrors).toEqual([])
   })
+
+  it('explains that exited terminals count toward the quota and permits creation after closing one', async () => {
+    onTestFailed(() => saveFailureShot(page, 'sidebar-terminal-quota'))
+    const terminals = () => scaffold.ctx.terminalController.list(scaffold.ctx.agents.list()[0]!)
+    for (let count = 1; count <= 2; count++) {
+      await openTerminal(page)
+      await command(page, 'exit')
+      await expect.poll(() => terminals().filter(info => info.state === 'exited').length).toBe(count)
+    }
+    await openTerminal(page, false)
+    const alert = page.getByRole('alert')
+    await expect.poll(async () => await alert.innerText()).toContain('Exited terminals also count toward the limit.')
+    const expectedLimit = fileURLToPath(new URL('./expected/sidebar-terminal/limit.expected.md', import.meta.url))
+    await compareOrRefreshGolden(expectedLimit, await alert.ariaSnapshot(), webSnapshotMode())
+    const failed = page.locator('[data-dockkit-tab][aria-selected="true"]')
+    await failed.hover()
+    await failed.locator('[data-dockkit-tab-close]').click()
+    const exited = page.locator('[data-dockkit-tab]').filter({ hasText: 'bash' }).first()
+    await exited.hover()
+    await exited.locator('[data-dockkit-tab-close]').click()
+    await expect.poll(() => terminals().length).toBe(1)
+    await openTerminal(page)
+    await expect.poll(() => terminals().filter(info => info.state === 'running').length).toBe(1)
+    expect(tripwire.pageErrors).toEqual([])
+  })
+
 })

@@ -1,5 +1,6 @@
 - id: terminal-controller
   config:
+    maxTerminals: 2
     shell:
       path: /bin/bash
       name: bash

@@ -859,6 +859,8 @@ describe('E2B subprocess terminal service', () => {
     try {
       fake.ambient = 'SHELL=/opt/fish\0'
       await expect(ctx.subprocess.terminalEnvironment()).resolves.toEqual({ platform: 'posix', defaultShell: '/opt/fish' })
+      fake.ambient = 'SHELL=\0'
+      await expect(ctx.subprocess.terminalEnvironment()).resolves.toEqual({ platform: 'posix' })
       fake.ambient = 'PATH=/usr/bin\0'
       await expect(ctx.subprocess.terminalEnvironment()).resolves.toEqual({ platform: 'posix' })
       fake.commandFailure = new Error('sandbox disconnected')
