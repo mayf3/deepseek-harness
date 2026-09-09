@@ -257,9 +257,12 @@ export const longProbe = 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 +
   it('allows Session history reads only in tests or with existing-call waivers', async () => {
     const suffix = randomUUID()
     const configPath = await writeContractConfig(suffix)
+    const exampleRoot = `examples/oxlint-contract-${suffix}`
+    const examplePath = `${exampleRoot}/tests/reads.ts`
     const testPaths = [
       `packages/core/session/tests/oxlint-contract-${suffix}.ts`,
       `apps/cli/tests/oxlint-contract-${suffix}.ts`,
+      examplePath,
       `scripts/oxlint-contract-${suffix}.spec.ts`,
     ]
     const productionPaths = [
@@ -296,6 +299,11 @@ export function unrelatedRead(): void {
 `
 
     try {
+      await mkdir(join(repositoryRoot, exampleRoot, 'tests'), { recursive: true })
+      await writeFile(join(repositoryRoot, exampleRoot, 'tsconfig.json'), JSON.stringify({
+        extends: '../../tsconfig.base.json',
+        include: ['tests/**/*.ts'],
+      }))
       await Promise.all([
         ...testPaths.map(path => writeFile(join(repositoryRoot, path), reads)),
         ...productionPaths.map(path => writeFile(join(repositoryRoot, path), existing)),
@@ -332,7 +340,8 @@ export function unrelatedRead(): void {
       )
     } finally {
       await Promise.all([
-        ...paths.map(path => rm(join(repositoryRoot, path), { force: true })),
+        ...paths.filter(path => path !== examplePath).map(path => rm(join(repositoryRoot, path), { force: true })),
+        rm(join(repositoryRoot, exampleRoot), { recursive: true, force: true }),
         rm(configPath, { force: true }),
       ])
     }
