@@ -1,0 +1,31 @@
+# Agent Note：由 consumer 持有启动严格语义
+
+Status: implemented
+
+[English](2026-09-09-consumer-owned-startup-strictness.md) | 中文
+
+## 问题
+
+Best-effort Loader reconcile 会保留可用 plugin，但应用仍需一组最小 capability。HTTP 应用没有 listening server 就不算运行，而一个 tool 不可用时可以仅省略该 tool，剩余应用仍然可用。Cordis 无法从 plugin 实现或依赖状态推断这一区别。
+
+## 决策
+
+DSH 在 vendored Cordis 之外持有启动严格语义。App-boot 用一份全局稳定 entry id list 审计已结算的初始 tree。List 中存在、启用且未 active 的 entry 会使启动 reject，并拆卸应用。List 中缺失或禁用的 id 不产生影响。其他 inactive entry 输出一次 warning，并让成功 sibling 继续运行。
+
+Required id 为 `agent-loop`、`webserver`、`modules`、`connection`、`headless-runner`、`acp` 和 `sdk-jsonrpc-server`。它们分别代表共享 Agent 执行，以及随附 Web、headless、ACP 和 SDK 应用的 endpoint。其 injected provider 不需要单列：provider 缺失会让已列出的 endpoint 保持 pending 或失败。
+
+该审计只在应用首次启动时运行。之后的 config HMR 仍采用 best effort，并保留 failed candidate 供后续修复。
+
+## 考虑过的替代方案
+
+- **给 vendored Loader 增加 transactional 与 best-effort mode。** 拒绝，因为严格语义属于应用或资源 owner，而一个 Loader group 包含互不相关的 plugin。Mode 还会扩大 vendor patch，并要求 caller 为每个 group 选择 policy。
+- **在每个 profile 中声明 required entry。** 拒绝，因为相同应用 endpoint 会在 profile data 与 custom profile 中重复。全局 list 会忽略缺失 id，同时让稳定的随附 id 保持权威。
+- **把所有启动失败都视为 optional。** 拒绝，因为无法暴露所选应用 endpoint 的进程必须报告启动失败。
+
+## 后果
+
+稳定的 required entry id 是应用 assembly 的一部分。重命名时必须同步更新 list 与测试。Optional plugin failure 会保留在 Loader state 和 stderr 中，但不会拆卸 active sibling。Required failure 使用相同的详细 import、activation 或 pending-service 诊断，然后由 app-boot 拆卸 root。
+
+## 测试
+
+App-boot 单元测试覆盖缺失和禁用的 required id、optional import failure、config evaluation failure、同步和异步 `apply()` failure、pending dependency，以及 required failure teardown。构建后的 Web-profile acceptance 会在 optional failure 存在时继续提供完整 UI，并在 required HTTP port 被占用时以非零码退出。

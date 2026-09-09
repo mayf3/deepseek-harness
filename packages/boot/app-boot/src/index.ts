@@ -271,7 +271,8 @@ export async function watchUserPatches(
     })
     await ctx.loader.await()
     await Promise.allSettled([...ctx.loader.entries()].map(entry => Promise.resolve(entry.fiber?.await())))
-    await assertEntriesActivated(ctx, binName)
+    const failures = await inactiveEntries(ctx)
+    if (failures.length > 0) ctx.logger.warn(activationDiagnostic(binName, 'warning', failures))
   })
   try {
     return await register
@@ -614,7 +615,7 @@ export const FAIL_LOUD_RELEASE_TIMEOUT_MS = 2_000
 /**
  * Install before boot to turn a late unhandled plugin-init rejection into one
  * labelled stderr diagnostic and `exit(1)`. A rejection already included by
- * {@link assertEntriesActivated} is ignored during its process checkpoint;
+ * {@link auditStartupEntries} is ignored during its process checkpoint;
  * every other rejection remains fatal. Stdout remains untouched for ACP; the
  * returned function removes the handler.
  *
@@ -683,21 +684,6 @@ export function installFailLoud(
 }
 
 /**
- * After the tree settles, reject entries with no fiber and name every plugin
- * whose module failed to resolve. Disabled entries are the only valid
- * fiber-less state.
- * @param ctx - the settled context whose loader entries to audit.
- * @param binName - the diagnostic prefix on the thrown error.
- */
-export function assertEntriesLoaded(ctx: Context, binName: string): void {
-  const failed = [...ctx.loader.entries()].filter(entry => entry.fiber === undefined && !entry.disabled)
-  if (failed.length > 0) {
-    const names = failed.map(entry => entry.options.name).join(', ')
-    throw new Error(`${binName}: plugin(s) failed to load: ${names}; Cordis startup failed because these plugin(s) could not be resolved (see the error(s) logged above)`)
-  }
-}
-
-/**
  * Value mirrors used because Cordis's const enum has no runtime object to import.
  * Keep aligned with `packages/extensions/tool-cordis/src/fiber-state.ts` and
  * `packages/client/web/src/loader-status.ts`.
@@ -706,34 +692,68 @@ const FIBER_PENDING = 0 as FiberState.PENDING
 const FIBER_ACTIVE = 2 as FiberState.ACTIVE
 const FIBER_FAILED = 3 as FiberState.FAILED
 
-/** Render plugin stacks, nested causes, and aggregate member failures. */
+/**
+ * Entry ids whose presence defines a usable DSH application.
+ *
+ * The list is global rather than profile metadata. Missing or disabled ids do
+ * not affect startup; an enabled listed entry must activate. Surface endpoints
+ * cover their injected providers, while `agent-loop` covers shared Agent
+ * execution.
+ */
+export const REQUIRED_STARTUP_ENTRY_IDS: readonly string[] = Object.freeze([
+  'agent-loop',
+  'webserver',
+  'modules',
+  'connection',
+  'headless-runner',
+  'acp',
+  'sdk-jsonrpc-server',
+])
+
+const requiredStartupEntryIds = new Set<string>(REQUIRED_STARTUP_ENTRY_IDS)
+
+/** Render plugin stacks, nested causes, and aggregate member failures once per error. */
 function formatActivationError(error: unknown): string {
-  if (!(error instanceof Error)) return String(error)
-  const details = [error.stack ?? error.message]
-  if (error.cause !== undefined) details.push(formatActivationError(error.cause))
-  if (error instanceof AggregateError) details.push(...error.errors.map(formatActivationError))
+  const details: string[] = []
+  const seen = new Set<Error>()
+  function visit(value: unknown): void {
+    if (!(value instanceof Error)) {
+      details.push(String(value))
+      return
+    }
+    if (seen.has(value)) return
+    seen.add(value)
+    details.push(value.stack ?? value.message)
+    if (value.cause !== undefined) visit(value.cause)
+    if (value instanceof AggregateError) value.errors.forEach(visit)
+  }
+  visit(error)
   return details.join('\n')
 }
 
+interface InactiveEntry {
+  /** Loader entry id used by the required-startup policy. */
+  id: string
+  /** Complete diagnostic beginning with the entry id and module specifier. */
+  diagnostic: string
+}
+
 /**
- * Reject a settled Loader tree when an enabled entry failed or remains inactive.
- * Plugin failures include original stacks, nested causes, and aggregate members.
- * Pending entries name their unresolved services because no plugin error exists for that state. Active
- * entries require no further wait; only failed fibers are awaited to recover
- * their private rejection reason.
- * @param ctx - the settled context whose Loader entries to audit.
- * @param binName - the diagnostic prefix on the thrown error.
- * @returns nothing when every enabled entry is active.
- * @throws after one process rejection checkpoint when an entry failed to
- * import, rejected during activation, or did not become active.
+ * Collect enabled Loader entries that did not become active. Failed fibers are
+ * awaited to recover their recorded rejection reason and coalesce duplicate
+ * Loader notifications through the next process rejection checkpoint.
  */
-export async function assertEntriesActivated(ctx: Context, binName: string): Promise<void> {
-  assertEntriesLoaded(ctx, binName)
-  const failures: string[] = []
+async function inactiveEntries(ctx: Context): Promise<InactiveEntry[]> {
+  const failures: InactiveEntry[] = []
   const rejectionReasons: unknown[] = []
   for (const entry of ctx.loader.entries()) {
     const fiber = entry.fiber
-    if (fiber === undefined || entry.disabled) continue
+    if (entry.disabled) continue
+    const subject = `${entry.options.id} (${entry.options.name})`
+    if (fiber === undefined) {
+      failures.push({ id: entry.options.id, diagnostic: `${subject}: failed to import` })
+      continue
+    }
     const state = fiber.state
     if (state === FIBER_ACTIVE) continue
     if (state === FIBER_FAILED) {
@@ -741,24 +761,62 @@ export async function assertEntriesActivated(ctx: Context, binName: string): Pro
         await fiber.await()
       } catch (error) {
         rejectionReasons.push(error)
-        failures.push(`${entry.options.name}: ${formatActivationError(error)}`)
+        failures.push({ id: entry.options.id, diagnostic: `${subject}: ${formatActivationError(error)}` })
       }
       continue
     }
     if (state === FIBER_PENDING) {
       const missing = Object.keys(fiber.inject).filter(service => fiber.ctx.get(service) === undefined)
-      const subject = missing.length === 1 ? 'service' : 'services'
-      failures.push(`${entry.options.name}: pending (waiting for ${subject}: ${missing.join(', ') || 'unknown'})`)
+      failures.push({
+        id: entry.options.id,
+        diagnostic: `${subject}: pending (waiting for ${missing.length === 1 ? 'service' : 'services'}: ${missing.join(', ') || 'unknown'})`,
+      })
     } else {
-      failures.push(`${entry.options.name}: fiber state ${String(state)}`)
+      failures.push({ id: entry.options.id, diagnostic: `${subject}: fiber state ${String(state)}` })
     }
   }
-  if (failures.length > 0) {
-    if (rejectionReasons.length > 0) {
-      await observeLoaderRejectionCheckpoint(rejectionReasons)
-    }
-    const noun = failures.length === 1 ? 'entry' : 'entries'
-    throw new Error(`${binName}: ${String(failures.length)} ${noun} did not activate\n${failures.join('\n')}`)
+  if (rejectionReasons.length > 0) await observeLoaderRejectionCheckpoint(rejectionReasons)
+  return failures
+}
+
+/** Render an inactive-entry diagnostic with a count and severity label. */
+function activationDiagnostic(
+  binName: string,
+  severity: 'warning' | 'required startup failure',
+  failures: readonly InactiveEntry[],
+): string {
+  const noun = failures.length === 1 ? 'entry' : 'entries'
+  const prefix = binName === '' ? '' : `${binName}: `
+  return `${prefix}${severity}: ${String(failures.length)} ${noun} did not activate\n${failures.map(failure => failure.diagnostic).join('\n')}\n`
+}
+
+/**
+ * Apply DSH startup policy to a settled Loader tree.
+ *
+ * Inactive entries from the global required list reject startup. Other
+ * inactive entries produce one warning and leave successful siblings running.
+ * Required ids absent from the tree, and disabled required entries, are ignored.
+ * @param ctx - the settled context whose Loader entries to audit.
+ * @param binName - the diagnostic prefix on optional-entry warnings.
+ * @param warn - sink for optional-entry warnings.
+ * @returns after all optional failures are warned when no required entry failed.
+ * @throws when an enabled entry in {@link REQUIRED_STARTUP_ENTRY_IDS} is inactive.
+ */
+export async function auditStartupEntries(
+  ctx: Context,
+  binName: string,
+  warn: (line: string) => void = line => void process.stderr.write(line),
+): Promise<void> {
+  const failures = await inactiveEntries(ctx)
+  const required: InactiveEntry[] = []
+  const optional: InactiveEntry[] = []
+  for (const failure of failures) {
+    const target = requiredStartupEntryIds.has(failure.id) ? required : optional
+    target.push(failure)
+  }
+  if (optional.length > 0) warn(activationDiagnostic(binName, 'warning', optional))
+  if (required.length > 0) {
+    throw new Error(activationDiagnostic('', 'required startup failure', required).trimEnd())
   }
 }
 
@@ -770,10 +828,11 @@ export async function assertEntriesActivated(ctx: Context, binName: string): Pro
  * is statically imported and mounted as the `cordis:include` builtin, loading
  * through the ambient module pipeline (vite/tsx/plain ESM). The package build
  * embeds Include while leaving Loader external, so the built include tree and
- * host share one Loader peer. The final audit, {@link assertEntriesActivated},
- * rejects missing, failed, or inactive entries. `boot` disposes its partial
- * context on failure and preserves the original activation stack; later unhandled rejections remain
- * covered by {@link installFailLoud}. Built bins need the Loader's native
+ * host share one Loader peer. Loader settlement drains entry work without
+ * rejecting the whole tree. The final {@link auditStartupEntries} call rejects
+ * failures in the global required list and warns about other failed, missing,
+ * and pending entries while successful siblings remain active. Later unhandled
+ * rejections remain covered by {@link installFailLoud}. Built bins need the Loader's native
  * helper for bare plugin specifiers; relative specifiers do not.
  * @param binName - the diagnostic prefix for load-failure errors.
  * @param absoluteConfigPath - the config to include; must already be absolute
@@ -820,7 +879,7 @@ export async function boot(
     // as asked. Re-check after settlement before auditing the tree.
     await ctx.get('loader')?.await()
     if (ctx.get('loader') === undefined) return ctx
-    await assertEntriesActivated(ctx, binName)
+    await auditStartupEntries(ctx, binName)
     return ctx
   } catch (cause) {
     // Root-fiber disposal contains cleanup failures per observer (Cordis

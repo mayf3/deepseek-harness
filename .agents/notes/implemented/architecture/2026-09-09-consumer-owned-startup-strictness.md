@@ -1,0 +1,31 @@
+# Agent Note: Consumer-owned startup strictness
+
+Status: implemented
+
+English | [中文](2026-09-09-consumer-owned-startup-strictness.zh.md)
+
+## Problem
+
+Best-effort Loader reconciliation preserves usable plugins, but applications still need a minimum set of capabilities. An HTTP application without its listening server is not running, while an unavailable tool can be omitted without making the remaining application unusable. Cordis cannot infer this distinction from plugin implementation or dependency state.
+
+## Decision
+
+DSH owns startup strictness outside vendored Cordis. App-boot audits the settled initial tree against one global list of stable entry ids. A listed entry that is present, enabled, and not active rejects startup and disposes the application. A listed id that is absent or disabled has no effect. Every other inactive entry produces one warning and leaves successful siblings running.
+
+The required ids are `agent-loop`, `webserver`, `modules`, `connection`, `headless-runner`, `acp`, and `sdk-jsonrpc-server`. They represent shared Agent execution and the endpoints of the shipped Web, headless, ACP, and SDK applications. Their injected providers do not need separate list entries: a missing provider leaves the listed endpoint pending or failed.
+
+The audit runs only during initial application boot. Later config HMR remains best effort and keeps the failed candidate visible for repair.
+
+## Alternatives considered
+
+- **Add transactional and best-effort modes to vendored Loader.** Rejected because strictness belongs to the application or resource owner, while a Loader group contains unrelated plugins. A mode would also expand the vendor patch and leave callers to select a policy at every group.
+- **Declare required entries in each profile.** Rejected because the same application endpoints would be duplicated across profile data and custom profiles. A global list treats missing ids as irrelevant while keeping stable shipped ids authoritative.
+- **Make every startup failure optional.** Rejected because a process that cannot expose its selected application endpoint must report launch failure.
+
+## Consequences
+
+Stable required entry ids are part of application assembly. Renaming one requires updating the list and its tests. Optional plugin failures remain visible in Loader state and stderr without tearing down active siblings. Required failures use the same detailed import, activation, or pending-service diagnostic before app-boot disposes the root.
+
+## Testing
+
+App-boot unit tests cover absent and disabled required ids, optional import failure, config evaluation failure, synchronous and asynchronous `apply()` failure, pending dependencies, and required failure teardown. The built Web-profile acceptance serves the full UI with optional failures and exits nonzero when the required HTTP port is occupied.

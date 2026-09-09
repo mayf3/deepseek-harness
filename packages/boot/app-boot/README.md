@@ -40,7 +40,7 @@ installFailLoud('dsh')
 const ctx = await boot('dsh', resolveConfigPath(argv[2], process.env.DSH_SNAPSHOT))
 ```
 
-With that entry point, success looks like a running app with every plugin active; failure is never silent — one labelled line names the failing plugin and the stage, and the process exits nonzero. The app context is torn down before the error is reported, so nothing keeps running half-started.
+With that entry point, startup keeps every plugin that can activate. An enabled failed plugin produces a labelled warning. A failed required entry makes startup dispose the whole app and exit nonzero; required ids absent from a profile and disabled required entries do not affect startup. The global required list covers shared Agent execution and each application's endpoint: `agent-loop`, `webserver`, `modules`, `connection`, `headless-runner`, `acp`, and `sdk-jsonrpc-server`.
 
 <a id="profiles"></a>
 ### Profiles
@@ -64,7 +64,18 @@ Before you boot, you can print the exact configuration the app will mount: the d
 
 ### What you see when startup fails
 
-Startup failure is a single labelled line plus a nonzero exit — never a silent hang or a raw stack dump. The message names the failing plugin; a plugin that threw keeps its original error, and an entry that never started is reported with the services it was waiting for.
+After the Loader settles, app-boot classifies each enabled entry by stable id. Optional failures produce one warning and leave active siblings running. Required failures produce the same entry detail, then dispose the application and reject startup.
+
+| Failure pattern | Entry result | Startup action |
+|---|---|---|
+| The root YAML cannot be read or parsed, is not an entry list, or repeats an id in one group | No valid candidate tree | Reject and dispose; no partial application is accepted |
+| A plugin module cannot be imported | Entry has no fiber | Warn if optional; reject and dispose if required |
+| Config expression evaluation or the plugin's config schema fails during activation | Fiber is `FAILED` with the validation error | Warn if optional; reject and dispose if required |
+| Synchronous `apply()` throws | Fiber is `FAILED` with the thrown error | Warn if optional; reject and dispose if required |
+| Asynchronous `apply()` rejects | Fiber is `FAILED` with the rejection | Warn if optional; reject and dispose if required |
+| Required injected services never appear | Fiber remains `PENDING` and names the missing services | Warn if optional; reject and dispose if required |
+
+The Loader consumes activation rejections while reconciling the group, and app-boot awaits a failed fiber only to recover its recorded reason. The process-level fail-loud handler is reserved for detached asynchronous failures that no Loader entry owns.
 
 If your app owns the terminal, it can hand the terminal back before the process exits, so your shell is never left in raw mode. The handoff is bounded: a stuck cleanup delays the fatal exit but never cancels it.
 
@@ -86,6 +97,7 @@ This section explains how the outcomes above are realized and points at the code
 
 - **Channel-neutral library.** The package carries no loader hooks and no dev-mode surface; the [`dsh` app](../../../apps/cli/README.md) owns its Node source-launch hook and consumes these helpers for the boot sequence, and built consumers use plain Node package resolution.
 - **Two Loader builtins.** `mountRootInclude` registers `cordis:include` and `cordis:group` as Loader builtins: a group row gives one `isolate` realm to a provider and its consumers together, and an agent preset outside this workspace cannot resolve `@deepseek-ai/cordis-plugin-group` by name. Both load through the ambient module pipeline rather than the included tree's own specifier resolution.
+- **Consumer-owned strictness.** Ordinary Loader groups keep successful siblings. App-boot applies the global required-entry policy after initial settlement; agent presets and dynamic multi-entry compositions own and dispose their separate generation when they require all-or-nothing setup.
 - **Profile module fallback.** Bare plugin specifiers resolve through the Loader from the config directory. Plain Node maintains one symlink per package in the installation dependency closure. A packaged executable instead reads each installed export map with Node ESM conditions and writes real proxy packages that re-export virtual module URLs, because an operating-system symlink cannot enter pkg's `/snapshot` tree. Missing exports stay unavailable, malformed maps fail startup, and a cross-process writer lock replaces stale entries without exposing partial proxies. A selected external bundle absent from the installation closure receives a profile-local `.dsh-module-fallback` link; existing pnpm entries win, projected links are excluded from later closure discovery, and cleanup removes only dsh-owned links.
 - **One rejection checkpoint.** `assertEntriesActivated` keeps the exact reasons it folds into the boot diagnostic visible through the next process rejection checkpoint, so `installFailLoud` coalesces Loader's duplicate notification while unrelated unhandled rejections remain fatal.
 - **Update completion.** App boot observes restart failures through the `internal/update` waterfall. Live patch reloads wait for the tree's fibers before auditing activation; `Fiber.update()` and `Entry.update()` alone do not establish restart success.

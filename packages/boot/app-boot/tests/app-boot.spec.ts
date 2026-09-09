@@ -6,9 +6,10 @@ import { afterAll, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import SystemPrompt, { renderPrompt } from '@deepseek-ai/dsh-system-prompt'
 import {
-  addHarnessSourceSection, assertEntriesActivated, assertEntriesLoaded, boot,
+  addHarnessSourceSection, auditStartupEntries, boot,
   FAIL_LOUD_RELEASE_TIMEOUT_MS, HARNESS_SOURCE_SECTION,
   installFailLoud, loadEnv, loadLayeredEnv, loadOverlayPatches, resolveConfigPath, type FailLoudProcess,
+  REQUIRED_STARTUP_ENTRY_IDS,
 } from '../src/index.ts'
 
 const NAME = 'dsh-test-bin'
@@ -419,10 +420,11 @@ describe('installFailLoud', () => {
     const proc = fakeProc()
     installFailLoud(NAME, proc)
     const error = new Error('assembled activation failure')
-    const audit = assertEntriesActivated({
+    const warn = vi.fn()
+    const audit = auditStartupEntries({
       loader: {
         entries: () => ['broken-a', 'broken-b'].map(name => ({
-          options: { name },
+          options: { id: name, name },
           fiber: {
             state: 3,
             inject: {},
@@ -431,13 +433,14 @@ describe('installFailLoud', () => {
           },
         })),
       },
-    } as unknown as Context, NAME)
+    } as unknown as Context, NAME, warn)
     await Promise.resolve()
     await Promise.resolve()
     proc.handlers[0]!(error)
     expect(proc.written).toEqual([])
     expect(proc.exits).toEqual([])
-    await expect(audit).rejects.toThrow('assembled activation failure')
+    await audit
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('assembled activation failure'))
     proc.handlers[0]!(error)
     expect(proc.exits).toEqual([1])
   })
@@ -501,36 +504,20 @@ describe('installFailLoud', () => {
   })
 })
 
-describe('assertEntriesLoaded', () => {
-  const ctxWith = (entries: Array<{ fiber?: unknown; disabled?: boolean; options: { name?: string } }>): Context =>
-    ({ loader: { entries: () => entries } }) as unknown as Context
-
-  it('passes when every enabled entry has a fiber', () => {
-    expect(() => { assertEntriesLoaded(ctxWith([
-      { fiber: {}, options: { name: 'a' } },
-      { disabled: true, options: { name: 'off' } },
-    ]), NAME) }).not.toThrow()
-  })
-
-  it('throws naming every enabled fiber-less entry', () => {
-    expect(() => { assertEntriesLoaded(ctxWith([
-      { fiber: {}, options: { name: 'ok' } },
-      { options: { name: 'broken-a' } },
-      { options: { name: 'broken-b' } },
-    ]), NAME) }).toThrow(`${NAME}: plugin(s) failed to load: broken-a, broken-b`)
-  })
-})
-
-describe('assertEntriesActivated', () => {
-  interface FakeFiber {
-    state: number
-    inject: Record<string, unknown>
-    ctx: { get(name: string): unknown }
-    await(): Promise<unknown>
+describe('auditStartupEntries', () => {
+  interface FakeEntry {
+    fiber?: {
+      state: number
+      inject: Record<string, unknown>
+      ctx: { get(name: string): unknown }
+      await(): Promise<unknown>
+    }
+    disabled?: boolean
+    options: { id: string; name: string }
   }
 
-  const ctxWith = (entries: Array<{ fiber?: FakeFiber; disabled?: boolean; options: { name: string } }>): Context => ({
-    loader: { entries: () => entries },
+  const ctxWith = (entries: FakeEntry[]): Context => ({
+    loader: { entries: () => entries.values() },
   }) as unknown as Context
 
   const fiber = (
@@ -538,95 +525,99 @@ describe('assertEntriesActivated', () => {
     error?: unknown,
     inject: Record<string, unknown> = {},
     services: string[] = [],
-  ): FakeFiber => ({
+  ): NonNullable<FakeEntry['fiber']> => ({
     state,
     inject,
     ctx: { get: name => services.includes(name) ? {} : undefined },
     await: error === undefined ? async () => undefined : async () => { throw error },
   })
 
-  it('passes active entries and ignores disabled entries', async () => {
-    let awaitCalls = 0
-    const active = fiber(2)
-    active.await = async () => {
-      awaitCalls++
-      return undefined
-    }
-    const disabled = fiber(3, new Error('disabled failure'))
-    disabled.await = async () => {
-      awaitCalls++
-      throw new Error('disabled failure')
-    }
-    await expect(assertEntriesActivated(ctxWith([
-      { fiber: active, options: { name: 'active' } },
-      { fiber: disabled, disabled: true, options: { name: 'disabled' } },
-    ]), NAME)).resolves.toBeUndefined()
-    expect(awaitCalls).toBe(0)
+  it('pins the global list to shared execution and application endpoints', () => {
+    expect(Object.isFrozen(REQUIRED_STARTUP_ENTRY_IDS)).toBe(true)
+    expect(REQUIRED_STARTUP_ENTRY_IDS).toEqual([
+      'agent-loop',
+      'webserver',
+      'modules',
+      'connection',
+      'headless-runner',
+      'acp',
+      'sdk-jsonrpc-server',
+    ])
+    expect(REQUIRED_STARTUP_ENTRY_IDS).not.toContain('tool-todo')
   })
 
-  it('reports the plugin name and original activation stack instead of fiber state 3', async () => {
-    const original = new Error('actual plugin failure')
-    await expect(assertEntriesActivated(ctxWith([
-      { fiber: fiber(3, original), options: { name: 'broken-plugin' } },
-    ]), NAME)).rejects.toThrow(`${NAME}: 1 entry did not activate\nbroken-plugin: ${original.stack!}`)
+  it('ignores active, disabled, and absent required entries', async () => {
+    const warn = vi.fn()
+    await expect(auditStartupEntries(ctxWith([
+      { fiber: fiber(2), options: { id: 'active', name: 'active' } },
+      { fiber: fiber(3, new Error('disabled failure')), disabled: true, options: { id: 'webserver', name: 'disabled' } },
+    ]), NAME, warn)).resolves.toBeUndefined()
+    expect(warn).not.toHaveBeenCalled()
   })
 
-  it('formats stackless and non-Error activation failures', async () => {
-    const stackless = new Error('stackless failure')
-    delete (stackless as { stack?: string }).stack
-    await expect(assertEntriesActivated(ctxWith([
-      { fiber: fiber(3, stackless), options: { name: 'stackless' } },
-      { fiber: fiber(3, 'plain failure'), options: { name: 'plain' } },
-    ]), NAME)).rejects.toThrow(`${NAME}: 2 entries did not activate\nstackless: stackless failure\nplain: plain failure`)
+  it('warns once for optional import, apply, and dependency failures', async () => {
+    const warn = vi.fn()
+    const original = new Error('todo apply failure')
+    await auditStartupEntries(ctxWith([
+      { options: { id: 'missing-tool', name: './missing.mjs' } },
+      { fiber: fiber(3, original), options: { id: 'tool-todo', name: '@deepseek-ai/dsh-tool-todo' } },
+      {
+        fiber: fiber(0, undefined, { ready: {}, missing: {} }, ['ready']),
+        options: { id: 'waiting-tool', name: './waiting.mjs' },
+      },
+    ]), NAME, warn)
+    expect(warn).toHaveBeenCalledOnce()
+    expect(warn).toHaveBeenCalledWith([
+      `${NAME}: warning: 3 entries did not activate`,
+      'missing-tool (./missing.mjs): failed to import',
+      `tool-todo (@deepseek-ai/dsh-tool-todo): ${original.stack!}`,
+      'waiting-tool (./waiting.mjs): pending (waiting for service: missing)',
+      '',
+    ].join('\n'))
   })
 
   it('preserves nested activation causes and aggregate member failures', async () => {
+    const warn = vi.fn()
     const original = new Error('tool discovery failed')
     const aggregate = new AggregateError([original, 'transport closed'], 'connection failed', {
       cause: new Error('server rejected discovery'),
     })
     const wrapper = new Error('plugin activation failed', { cause: aggregate })
-    await expect(assertEntriesActivated(ctxWith([
-      { fiber: fiber(3, wrapper), options: { name: 'wrapped-plugin' } },
-    ]), NAME)).rejects.toThrow([
-      `${NAME}: 1 entry did not activate`,
-      `wrapped-plugin: ${wrapper.stack!}`,
+    await auditStartupEntries(ctxWith([
+      { fiber: fiber(3, wrapper), options: { id: 'wrapped-plugin', name: './wrapped.mjs' } },
+    ]), NAME, warn)
+    expect(warn).toHaveBeenCalledWith([
+      `${NAME}: warning: 1 entry did not activate`,
+      `wrapped-plugin (./wrapped.mjs): ${wrapper.stack!}`,
       aggregate.stack!,
       (aggregate.cause as Error).stack!,
       original.stack!,
       'transport closed',
+      '',
     ].join('\n'))
   })
 
-  it('reports unresolved services for pending entries', async () => {
-    let awaitCalls = 0
-    const expected = [
-      `${NAME}: 3 entries did not activate`,
-      'waiting: pending (waiting for services: missingA, missingB)',
-      'single-wait: pending (waiting for service: missing)',
-      'unknown-wait: pending (waiting for services: unknown)',
-    ].join('\n')
-    const waiting = fiber(0, undefined, { ready: {}, missingA: {}, missingB: {} }, ['ready'])
-    const singleWait = fiber(0, undefined, { missing: {} })
-    const unknownWait = fiber(0)
-    for (const item of [waiting, singleWait, unknownWait]) {
-      item.await = async () => {
-        awaitCalls++
-        return undefined
-      }
-    }
-    await expect(assertEntriesActivated(ctxWith([
-      { fiber: waiting, options: { name: 'waiting' } },
-      { fiber: singleWait, options: { name: 'single-wait' } },
-      { fiber: unknownWait, options: { name: 'unknown-wait' } },
-    ]), NAME)).rejects.toThrow(expected)
-    expect(awaitCalls).toBe(0)
+  it('rejects required failures after warning about optional failures', async () => {
+    const warn = vi.fn()
+    const requiredError = new Error('address already in use')
+    const optionalError = new Error('todo unavailable')
+    await expect(auditStartupEntries(ctxWith([
+      { fiber: fiber(3, requiredError), options: { id: 'webserver', name: '@deepseek-ai/dsh-host-webserver' } },
+      { fiber: fiber(3, optionalError), options: { id: 'tool-todo', name: '@deepseek-ai/dsh-tool-todo' } },
+    ]), NAME, warn)).rejects.toThrow([
+      'required startup failure: 1 entry did not activate',
+      `webserver (@deepseek-ai/dsh-host-webserver): ${requiredError.stack!}`,
+    ].join('\n'))
+    expect(warn).toHaveBeenCalledWith(`${NAME}: warning: 1 entry did not activate\ntool-todo (@deepseek-ai/dsh-tool-todo): ${optionalError.stack!}\n`)
   })
 
-  it('retains the numeric diagnostic for a settled unexpected state', async () => {
-    await expect(assertEntriesActivated(ctxWith([
-      { fiber: fiber(4), options: { name: 'disposed' } },
-    ]), NAME)).rejects.toThrow('disposed: fiber state 4')
+  it('rejects a required entry pending on an injected service', async () => {
+    await expect(auditStartupEntries(ctxWith([{
+      fiber: fiber(0, undefined, { webRuntime: {} }),
+      options: { id: 'connection', name: '@deepseek-ai/dsh-client-connection' },
+    }]), NAME, vi.fn())).rejects.toThrow(
+      'connection (@deepseek-ai/dsh-client-connection): pending (waiting for service: webRuntime)',
+    )
   })
 })
 
@@ -818,48 +809,86 @@ describe('boot', () => {
     expect(ctx.get('loader')).toBeUndefined()
   })
 
-  it('rejects (never exits 0 half-empty) when a config names a plugin that cannot be imported', async () => {
-    const dir = tmp()
-    writeFileSync(join(dir, 'cordis.yml'), '- id: ghost\n  name: ./missing.mjs\n')
-    await expect(boot(NAME, join(dir, 'cordis.yml'))).rejects.toThrow(
-      `${NAME}: plugin tree failed to load: ${NAME}: plugin(s) failed to load: ./missing.mjs`,
-    )
-  })
-
-  it('labels a deferred config failure with its row and leaves the source file unchanged', async () => {
+  it('keeps successful entries and warns about optional import, config, sync apply, async apply, and dependency failures', async () => {
     const dir = tmp()
     const configPath = join(dir, 'cordis.yml')
     const config = [
+      '- id: good',
+      '  name: ./good.mjs',
+      '- id: import-failure',
+      '  name: ./missing.mjs',
       '- id: invalid-config',
       '  name: ./noop.mjs',
       '  config:',
       '    value: !!js "JSON.parse(\'invalid\')"',
+      '- id: sync-failure',
+      '  name: ./sync-failure.mjs',
+      '- id: async-failure',
+      '  name: ./async-failure.mjs',
+      '- id: waiting',
+      '  name: ./waiting.mjs',
       '',
     ].join('\n')
+    writeFileSync(join(dir, 'good.mjs'), 'export function apply(ctx) { ctx.provide("goodStarted", true) }\n')
     writeFileSync(join(dir, 'noop.mjs'), 'export function apply() {}\n')
+    writeFileSync(join(dir, 'sync-failure.mjs'), 'export function apply() { throw new Error("sync apply failure") }\n')
+    writeFileSync(join(dir, 'async-failure.mjs'), 'export async function apply() { throw new Error("async apply failure") }\n')
+    writeFileSync(join(dir, 'waiting.mjs'), 'export const inject = ["neverProvided"]\nexport function apply() {}\n')
     writeFileSync(configPath, config)
 
-    await expect(boot(NAME, configPath)).rejects.toThrow(
-      './noop.mjs: SyntaxError:',
-    )
-    expect(readFileSync(configPath, 'utf8')).toBe(config)
+    const write = vi.spyOn(process.stderr, 'write').mockImplementation(() => true)
+    let ctx: Context | undefined
+    try {
+      ctx = await boot(NAME, configPath)
+      expect(ctx.get('goodStarted')).toBe(true)
+      const entries = [...ctx.loader.entries()]
+      expect(entries.find(entry => entry.options.id === 'good')?.fiber?.state).toBe(2)
+      expect(entries.find(entry => entry.options.id === 'import-failure')?.fiber).toBeUndefined()
+      for (const id of ['invalid-config', 'sync-failure', 'async-failure']) {
+        expect(entries.find(entry => entry.options.id === id)?.fiber?.state).toBe(3)
+      }
+      expect(entries.find(entry => entry.options.id === 'waiting')?.fiber?.state).toBe(0)
+      const warning = write.mock.calls.map(call => String(call[0])).join('')
+      expect(warning).toContain(`${NAME}: warning: 5 entries did not activate`)
+      expect(warning).toContain('import-failure (./missing.mjs): failed to import')
+      expect(warning).toContain('SyntaxError: Unexpected token')
+      expect(warning).toContain('sync apply failure')
+      expect(warning).toContain('async apply failure')
+      expect(warning).toContain('waiting for service: neverProvided')
+      expect(readFileSync(configPath, 'utf8')).toBe(config)
+    } finally {
+      write.mockRestore()
+      await ctx?.fiber.dispose()
+    }
   })
 
-  it('appends the deepest cause with its original stack to the load failure', async () => {
+  it('disposes successful entries and rejects when a required entry fails', async () => {
     const dir = tmp()
-    writeFileSync(join(dir, 'failing.mjs'), [
-      'export function apply() {',
-      "  const failure = new Error('pinned activation failure')",
-      "  failure.stack = 'Error: pinned activation failure\\n    at failing-fixture'",
-      '  throw failure',
+    let disposed = false
+    writeFileSync(join(dir, 'good.mjs'), [
+      'export function apply(ctx) {',
+      '  globalThis.__DSH_REQUIRED_TEST_DISPOSED__ = false',
+      '  ctx.effect(() => () => { globalThis.__DSH_REQUIRED_TEST_DISPOSED__ = true })',
       '}',
       '',
     ].join('\n'))
-    writeFileSync(join(dir, 'cordis.yml'), '- id: failing\n  name: ./failing.mjs\n')
+    writeFileSync(join(dir, 'required-failure.mjs'), 'export function apply() { throw new Error("required apply failure") }\n')
+    writeFileSync(join(dir, 'cordis.yml'), [
+      '- id: good',
+      '  name: ./good.mjs',
+      '- id: webserver',
+      '  name: ./required-failure.mjs',
+      '',
+    ].join('\n'))
+
     await expect(boot(NAME, join(dir, 'cordis.yml'))).rejects.toThrow(new RegExp([
-      String.raw`\./failing\.mjs: Error: pinned activation failure\n`,
-      String.raw` {4}at failing-fixture$`,
-    ].join('')))
+      'plugin tree failed to load: required startup failure: 1 entry did not activate',
+      String.raw`webserver \(\.\/required-failure\.mjs\):`,
+      'required apply failure',
+    ].join(String.raw`[\s\S]*`)))
+    disposed = (globalThis as { __DSH_REQUIRED_TEST_DISPOSED__?: boolean }).__DSH_REQUIRED_TEST_DISPOSED__ ?? false
+    delete (globalThis as { __DSH_REQUIRED_TEST_DISPOSED__?: boolean }).__DSH_REQUIRED_TEST_DISPOSED__
+    expect(disposed).toBe(true)
   })
 
   it('falls back to the deepest cause message when its stack was erased', async () => {
@@ -901,15 +930,6 @@ describe('boot', () => {
     }
   })
 
-  it('reports a pending real Loader fiber and the service unresolved in its own context', async () => {
-    const dir = tmp()
-    writeFileSync(join(dir, 'waiting.mjs'), 'export const inject = ["neverProvided"]\nexport function apply() {}\n')
-    writeFileSync(join(dir, 'cordis.yml'), '- id: waiting\n  name: ./waiting.mjs\n')
-    await expect(boot(NAME, join(dir, 'cordis.yml'))).rejects.toThrow([
-      `${NAME}: 1 entry did not activate`,
-      './waiting.mjs: pending (waiting for service: neverProvided)',
-    ].join('\n'))
-  })
 })
 
 describe('addHarnessSourceSection', () => {
