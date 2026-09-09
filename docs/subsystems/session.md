@@ -680,7 +680,7 @@ The backends that consume this contract are on [persistence.md](persistence.md).
 
 `ModelCatalog` is the Host-generation model directory returned by `session/modelCatalog`: it carries the deployment default, routable provider ids, successful provider groups, and isolated provider failures. It is not derived from one Session and remains separate from Session projections.
 
-`SessionOpenWorkspacePathRequest` carries an absolute or workspace-resolved `path`. `SessionOpenWorkspacePathValue` confirms that the Host accepted the native handoff. A Session-aware Client resolves relative paths against its current Session cwd when known; the controller hands the path to the opener unchanged and reports invalid requests, cancellation, and opener failures through the Session Remote error vocabulary.
+`SessionOpenWorkspacePathRequest` carries an absolute or workspace-resolved `path`; optional `action: "reveal"` selects file-manager navigation instead of default-application opening. `SessionOpenWorkspacePathValue` confirms that the Host accepted the native handoff. A Session-aware Client resolves relative paths against its current Session cwd when known; the controller hands the path to the opener unchanged and reports invalid requests, cancellation, and opener failures through the Session Remote error vocabulary.
 
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 
@@ -753,6 +753,12 @@ inspect( sessionId: SessionId, signal?: AbortSignal, ): Promise<SessionInspectio
  * @returns true when the matching open operation is available.
  */
 @Remote canOpenWorkspacePath(): boolean
+
+/**
+ * Describe the serving desktop for authenticated file-action routes.
+ * @returns Host name, configured availability, and platform-specific file-manager behavior.
+ */
+workspaceDesktop(): { name: string; available: boolean; fileManager: 'finder' | 'explorer' | 'directory' | null }
 
 /**
  * Open one path prepared by a Session-aware caller on the Host desktop.

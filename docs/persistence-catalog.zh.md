@@ -405,7 +405,7 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 #### `deliverables/presented` — 仅日志
 
 ```ts persistence-catalog
-/** Declared workspace files from a successful final present result, including nested calls. */
+/** Declared filesystem files from a successful final present result, including nested calls. */
 'deliverables/presented': { turn: number; callId: ToolCallId; files: PresentedFile[] }
 ```
 

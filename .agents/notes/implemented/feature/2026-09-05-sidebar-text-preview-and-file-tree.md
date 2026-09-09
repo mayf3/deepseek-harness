@@ -24,7 +24,7 @@ The body is a centred column — a lead line (`侧栏用来放你想一直看着
 
 The body is also the replacement seam. It renders the `sidebar.right.tab.guide` chain with the shipped guide as the chain's fallback, so a product that registers its own entry takes the whole body, and with no entry, or every entry declining, the shipped guide draws. Because the shipped guide is the fallback and not a chain entry, there is always exactly one body and it cannot be outvoted by accident.
 
-A pane holds at most one guide, and the docking layer enforces it as product behaviour: the strip's add control hides while a guide is present, opening the guide into such a pane focuses it, a guide is never duplicated, and a guide dragged, dropped, or docked into a pane that already has one merges into it (the arriving tab closes). Settling a surface reseeds the guide when the root pane empties, so there is always at least one tab and never an empty pane.
+A pane holds at most one guide, and the docking layer enforces it as product behaviour: the strip's add control hides while a guide is present, opening the guide into such a pane focuses it, a guide is never duplicated, and a guide dragged, dropped, or docked into a pane that already has one merges into it (the arriving tab closes). An expanded empty root receives the current default page. Collapsed layouts may remain empty until expansion, when the default-page selection runs.
 
 ### The text preview
 

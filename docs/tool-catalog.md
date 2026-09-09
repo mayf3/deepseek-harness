@@ -225,7 +225,7 @@ The bash tool is the model-facing consumer of the bash executor seam. A `run_in_
 
 ### `present`
 
-Declare existing workspace files as final deliverables. When a file you create or update is an output the user asked to receive, you must call present after writing it and before your final response, including files created through Bash or code execution. Mentioning its path in your reply does not replace this call. The files must already exist. The user opens the current source files; their contents are not copied or preserved.
+Declare existing files accessible through the Session filesystem as final deliverables. When a file you create or update is an output the user asked to receive, you must call present after writing it and before your final response, including files created through Bash or code execution. Mentioning its path in your reply does not replace this call. The files must already exist. The user opens the current source files; their contents are not copied or preserved.
 
 ```json
 {
@@ -239,7 +239,7 @@ Declare existing workspace files as final deliverables. When a file you create o
         "properties": {
           "path": {
             "type": "string",
-            "description": "Path of an existing file inside the workspace."
+            "description": "Path of an existing regular file. Relative paths use the Session working directory."
           },
           "description": {
             "type": "string",

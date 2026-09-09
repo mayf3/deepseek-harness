@@ -1,7 +1,7 @@
 /** Explicit deliveries commit only after a successful final tool result. */
 import { mkdtemp, rm, writeFile, symlink } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, relative } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import AgentRegistry, { type Agent } from '@deepseek-ai/dsh-agent'
@@ -133,7 +133,7 @@ describe('present', () => {
     expect(owner.session.snapshotEvents().some(event => event.type === 'deliverables/presented')).toBe(false)
   })
 
-  it('rejects missing, non-file, outside-workspace, empty, and excessive inputs', async () => {
+  it('rejects missing, non-file, empty, and excessive inputs', async () => {
     const { root, owner, execute } = await setup()
     await writeFile(join(root, 'large'), 'four')
     await symlink(tmpdir(), join(root, 'outside'))
@@ -164,4 +164,32 @@ it('requires an agent, an open turn, and a workspace', async () => {
   noWorkspace.session.append('turn/start', { turn: 1 })
   const absent = await ctx.tools.execute({ signal: new AbortController().signal, callId: ToolCallId('no-workspace'), name: 'present', arguments: { files: [{ path: 'a' }] }, agent: noWorkspace })
   expect(absent.isError).toBe(true)
+})
+
+
+it('declares readable files outside the Session directory using absolute and relative paths', async () => {
+  const { root, execute, owner } = await setup()
+  const outside = await mkdtemp(join(tmpdir(), 'dsh-present-external-'))
+  cleanups.push(() => rm(outside, { recursive: true, force: true }))
+  const file = join(outside, 'report.txt')
+  await writeFile(file, 'external report')
+  const files = [{ path: file }, { path: relative(root, file) }]
+  expect((await execute(files)).isError).toBe(false)
+  expect(owner.session.snapshotEvents().find(event => event.type === 'deliverables/presented')?.data.files).toEqual(files)
+})
+
+it('refuses a final symlink to an ordinary file', async () => {
+  const { root, execute } = await setup()
+  await writeFile(join(root, 'source'), 'source')
+  await symlink(join(root, 'source'), join(root, 'link'))
+  expect((await execute([{ path: 'link' }])).isError).toBe(true)
+})
+
+
+it('refuses a file replaced by a directory after inspecting its final component', async () => {
+  const { ctx, root, execute } = await setup()
+  await writeFile(join(root, 'source'), 'source')
+  const directory = await ctx.fs.stat(await ctx.fs.resolve(root))
+  vi.spyOn(ctx.fs, 'stat').mockResolvedValueOnce(directory)
+  expect((await execute([{ path: 'source' }])).isError).toBe(true)
 })
