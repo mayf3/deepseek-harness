@@ -23,7 +23,7 @@ kind: "package-library"
 <a id="use-this-package"></a>
 ## 使用本包
 
-一条 tsdown 管线产出三个构建产物，以及一层由源码维护的进程实现：
+一条 tsdown 管线产出三个构建产物；另有一层由源码维护的进程实现：
 
 - **`lib/index.js`（装配库）**——`createWorkerHost`/`startWorkerHost` 挂载基础镜像和按序排列的数据 overlays（`storage/`）、安装模块加载器（`module-system/`）与 `process` shim、经镜像自带的 `dsh-app-boot` 启动插件树，并把服务 seam 交给隧道。Overlay 只能替换 `home/` 与 `workspace/` 下的文件，不能替换基础 manifest、配置或模块。镜像布局契约（`image-layout.ts`：虚拟根、config/manifest 路径、空目录、`lowered` 包装契约门）与 packer 共享。boot patch 强制部署形态行：关前端静态服务、JSONL 会话日志走明文、preset 根指向镜像内 `config/agent-presets`。
 - **`lib/worker.js`（worker 束）**——装配库加本包的 Node 兼容层，合成一个自含 ES module。模块代理表（`module-proxies.ts`）是唯一平台叉口：`node:*` 内建走 VFS、隧道和浏览器原语，浏览器做不到的走结构化 stub（调用即在 console 报错并抛出），native/binary 包则替换执行后端。`node:module` 在镜像 package 根之上提供 `createRequire().resolve` 与 `.resolve.paths()`，使未修改的包无需执行目标模块即可发现 manifest。全局 `process` shim 带有包括 `title` 在内的 Node 环境识别字段，避免 Worker 执行误入仅适用于 DOM 的分支。pack 期解析器会把名称静态可知的模块请求报告给 packer 的可达性遍历，其中包括通过 `node:module` 或 `module` 具名导入在模块作用域直接发起的 `createRequire(import.meta.url)('pkg')` 调用。保存、经 CommonJS 获取或另设基准的 `createRequire` 调用需要镜像入口种子。VFS mutation 驱动 `node:fs` 的 callback、polling 和 promise watcher；打开的 descriptor 在 rename、replacement 和 unlink 后仍保留文件身份与访问模式，只要文件名仍指向该文件，`FileHandle.stat({ bigint: true })` 报告的 device 与 inode 身份就与路径 stat 相同，`FileHandle.chmod()` 则更新打开文件身份的权限；`readable-stream` 提供文件流以及 Chokidar、readdirp 等未修改镜像包所用的流状态机。AsyncLocalStorage 经 pack 时降低注入的 snapshot/restore 面在 `await` 间携带同步栈因果。worker 不带编译器：packer 未降低的镜像在挂载时被拒。

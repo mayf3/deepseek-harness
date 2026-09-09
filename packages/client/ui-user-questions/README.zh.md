@@ -102,4 +102,4 @@ kind: "package-reference"
 
 </details>
 
-**运行时不变式：** 不发布伴生入口。工具与 slot 注册都是由各自注册表持有和观察的 effect；Host 待处理表通过公开的 wire protocol测试。
+**运行时不变式：** 不发布伴生入口。工具与 slot 注册都是由各自注册表持有和观察的 effect；Host 待处理表通过公开的 wire protocol 测试。
