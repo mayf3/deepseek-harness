@@ -6,6 +6,12 @@
 
 /** The `dsh` property of an npm manifest; a package may declare several roles. */
 export interface DshManifest {
+  /** Manifest format version, independent of the npm package and Session format versions. */
+  manifestVersion?: 1
+  /** Free-form discovery tags, such as `skills` or `tools`; do not affect plugin loading. */
+  categories?: string[]
+  /** Declared host compatibility; current readers do not enforce version ranges. */
+  engines?: DshEnginesManifest
   /** Bundle metadata consumed by the profile launcher. */
   bundle?: DshBundleManifest
   /** Profile metadata consumed by the profile launcher. */
@@ -21,6 +27,12 @@ export interface DshManifest {
    * @internal
    */
   moduleFallback?: DshModuleFallbackManifest
+}
+
+/** Host version requirements declared by the package author. */
+export interface DshEnginesManifest {
+  /** Compatible DSH versions as a SemVer range, including an exact version. */
+  dsh: string
 }
 
 /** The configuration layer exported by a bundle package. */

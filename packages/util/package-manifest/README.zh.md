@@ -32,12 +32,25 @@ import type { DshClientManifest, DshManifest } from '@deepseek-ai/dsh-package-ma
 
 const client: DshClientManifest = { platform: 'web' }
 const dsh: DshManifest = {
+  manifestVersion: 1,
+  categories: ['skills', 'tools'],
+  engines: { dsh: '0.1.5-alpha.1' },
   bundle: { patch: './cordis.patch.yml' },
   client,
 }
 ```
 
-`DshManifest` 描述 `bundle`、`profile`、`client`、`configTrees`、`sessionFormatMigration` 和 `moduleFallback`，不包含外层 npm manifest。`moduleFallback` 是启动器生成的元数据，不是作者配置项。TypeScript 检查该对象，并在编译时删除 `import type`；JSON 文件不能导入类型，此示例也不会写入 `package.json`。声明见 [`src/types.ts`](src/types.ts)。
+`DshManifest` 描述 `package.json.dsh`；`name`、`version`、`engines.node` 等 npm 字段仍位于包的顶层。TypeScript 检查该对象，并在编译时删除 `import type`；JSON 文件不能导入类型，此示例也不会写入 `package.json`。
+
+这三个作者元数据字段均可选。省略时，格式版本、标签或兼容的宿主版本保持未声明状态；读取方不推断默认值。
+
+| 字段 | 含义 |
+|---|---|
+| `manifestVersion` | manifest（元数据清单）格式标识；声明的格式为 `1`，独立于 npm 包版本和 Session 格式版本。 |
+| `categories` | `skills`、`tools` 等自由发现标签，无固定分类体系，不影响插件加载。 |
+| `engines.dsh` | 作者声明的兼容 DSH 版本，使用 SemVer 范围。可填写精确的预发布版本；存在 `engines` 时，必须填写 `dsh` 成员。 |
+
+组合与构建声明定义在 [`src/types.ts`](src/types.ts) 中。`moduleFallback` 是启动器生成的元数据，不是作者配置项。
 
 -----
 
@@ -73,6 +86,7 @@ const dsh: DshManifest = {
 <a id="known-limitations-and-deferred-work"></a>
 
 - **仅提供静态类型。** 这些声明不校验 JSON、不检查文件存在性，也不提供默认值。`configTrees` 服务于实验性镜像打包器，`sessionFormatMigration` 仅从工作区迁移包中发现；声明它们不会注册外部插件行为。
+- **兼容性仅作声明。** 当前安装器和加载器不强制检查 `manifestVersion` 或 `engines.dsh`；声明范围不会拒绝不兼容的宿主，也不会校验 SemVer 语法。
 
 <a id="dev-note"></a>
 ### 开发备注

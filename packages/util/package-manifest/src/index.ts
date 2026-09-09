@@ -7,6 +7,7 @@ export type {
   DshBundleManifest,
   DshClientManifest,
   DshConfigTreeDeclaration,
+  DshEnginesManifest,
   DshManifest,
   DshModuleFallbackManifest,
   DshProfileManifest,

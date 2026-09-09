@@ -32,12 +32,25 @@ import type { DshClientManifest, DshManifest } from '@deepseek-ai/dsh-package-ma
 
 const client: DshClientManifest = { platform: 'web' }
 const dsh: DshManifest = {
+  manifestVersion: 1,
+  categories: ['skills', 'tools'],
+  engines: { dsh: '0.1.5-alpha.1' },
   bundle: { patch: './cordis.patch.yml' },
   client,
 }
 ```
 
-`DshManifest` describes `bundle`, `profile`, `client`, `configTrees`, `sessionFormatMigration`, and `moduleFallback`, not the surrounding npm manifest. `moduleFallback` is launcher-generated metadata and is not an author configuration entry. TypeScript checks this object and erases `import type` during compilation; JSON files cannot import types, and this example does not write a `package.json`. See [`src/types.ts`](src/types.ts) for the declarations.
+`DshManifest` describes `package.json.dsh`; npm fields such as `name`, `version`, and `engines.node` stay at the package root. TypeScript checks this object and erases `import type` during compilation; JSON files cannot import types, and this example does not write a `package.json`.
+
+All three author metadata fields are optional. Omitting them leaves the format version, tags, or compatible host versions undeclared; readers do not infer defaults.
+
+| Field | Meaning |
+|---|---|
+| `manifestVersion` | Manifest format identifier; the declared format is `1`, independent of the npm package version and Session format version. |
+| `categories` | Free-form discovery tags such as `skills` and `tools`, with no fixed taxonomy or effect on plugin loading. |
+| `engines.dsh` | Author-declared compatible DSH versions as a SemVer range. An exact prerelease version is valid; the `dsh` member is required when `engines` is present. |
+
+Composition and build declarations are defined in [`src/types.ts`](src/types.ts). `moduleFallback` is launcher-generated metadata and is not an author configuration entry.
 
 -----
 
@@ -73,6 +86,7 @@ Type declarations add no model input, so provider cache reuse is unaffected.
 <a id="known-limitations-and-deferred-work"></a>
 
 - **Static typing only.** These declarations do not validate JSON, check file existence, or supply defaults. `configTrees` serves the experimental image packer, and `sessionFormatMigration` is discovered only for workspace migration packages; declaring them does not register external plugin behavior.
+- **Compatibility is declarative.** Current installers and loaders do not enforce `manifestVersion` or `engines.dsh`; declaring a range does not reject incompatible hosts or validate SemVer syntax.
 
 <a id="dev-note"></a>
 ### Dev Note
