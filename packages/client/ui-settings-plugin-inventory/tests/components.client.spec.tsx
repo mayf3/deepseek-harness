@@ -135,7 +135,8 @@ describe('PluginInventorySettingsTab', () => {
   })
 
   it('distinguishes collapsed same-module rows by stable entry id', async () => {
-    const longId = 'tool-subagent-secondary-with-a-complete-stable-identity'
+    const longId = 'include:agent-presets:tool-subagent-secondary-with-a-complete-stable-identity'
+    const subtitle = 'agent-presets:tool-subagent-secondary-with-a-complete-stable-identity'
     await renderReady({
       entries: [],
       agentPresets: [{
@@ -156,10 +157,10 @@ describe('PluginInventorySettingsTab', () => {
     expect(secondary.children).toHaveLength(2)
     expect(secondary.children[0]?.textContent).toContain('tool-subagent')
     expect(secondary.children[0]?.textContent).toContain('Disabled')
-    expect(secondary.children[1]?.textContent).toBe(longId)
-    expect(screen.getByTitle(longId).textContent).toBe(longId)
+    expect(secondary.children[1]?.textContent).toBe(subtitle)
+    expect(screen.getByTitle(longId).textContent).toBe(subtitle)
 
-    fireEvent.change(screen.getByRole('searchbox', { name: en.search }), { target: { value: 'secondary' } })
+    fireEvent.change(screen.getByRole('searchbox', { name: en.search }), { target: { value: 'include:agent-presets:tool-subagent-secondary' } })
     expect(screen.queryByRole('button', { name: 'tool-subagent, tool-subagent-primary, Enabled' })).toBeNull()
     const filteredSecondary = screen.getByRole('button', { name: `tool-subagent, ${longId}, Disabled` })
     fireEvent.click(filteredSecondary)

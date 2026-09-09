@@ -63,6 +63,11 @@ function moduleShortName(moduleName: string): string {
     .replace(/^dsh-(?:host-|client-)?/, '')
 }
 
+/** Display an entry identity without the composition-only `include:` marker. */
+function entrySubtitle(entryId: string): string {
+  return entryId.replace(/^include:/, '')
+}
+
 /** Whether one row's module name or entry id matches the catalog query. */
 function matches(moduleName: string, entryId: string | null, normalizedQuery: string): boolean {
   if (normalizedQuery.length === 0) return true
@@ -120,7 +125,7 @@ function PluginCard({ rowKey, moduleName, entryId, trailing, ariaLabel, failed, 
             <IconChevronDownOutline14 className={css.chevron} size={12} aria-hidden="true" />
           </span>
         </span>
-        {entryId === null ? null : <code className={css.cardIdentity} title={entryId}>{entryId}</code>}
+        {entryId === null ? null : <code className={css.cardIdentity} title={entryId}>{entrySubtitle(entryId)}</code>}
       </button>
       {open ? <div className={css.cardDetails} id={detailId}>{children}</div> : null}
     </li>
