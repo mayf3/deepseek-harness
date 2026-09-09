@@ -60,7 +60,7 @@ In `packages/core/agent-loop/src/agent.ts`, `preStep` renders the prompt with `r
 
 The [V2-to-V3 specification](../../../../packages/session/session-format-v2-to-v3/README.md#system-head) owns system-head conversion and message identities; its [reference rules](../../../../packages/session/session-format-v2-to-v3/README.md#sequence-references) and [source refusal](../../../../packages/session/session-format-v2-to-v3/README.md#source-audit) define preservation and unsupported inputs. The migrated layout is semantically equivalent to native requests, not byte-identical to a native recording. A valid V2 source can lack an order-preserving conversion under the current step invariant; refusing it is preferable to moving history or relaxing ownership. Historical acceptance coordinates must not become acknowledgements of the transformed log.
 
-The [released-format policy](2026-08-31-released-session-format-migrations.md) covers V3 as well as V0, V1, and V2. The V2-to-V3 conversion preserves its released semantics; an existing V3 generation does not rerun that edge. Projection-cache version 4 is independent of the Session format and does not imply Session V4.
+The [released-format policy](2026-08-31-released-session-format-migrations.md) preserves each released conversion’s semantics; an existing target-format generation does not rerun its incoming edge. Projection-cache versions are independent of Session format versions.
 
 The [canonical-envelope specification](../../../../packages/session/session-format-v2-to-v3/README.md#canonical-envelopes) defines composition with the structural conversion; the [canonical-envelope decision](2026-09-06-v3-canonical-session-envelopes.md) owns the strict-acceptance rationale.
 
