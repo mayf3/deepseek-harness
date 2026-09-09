@@ -398,8 +398,8 @@ async function bootPreview(origin: string, browser: Browser): Promise<void> {
     await page.getByText(SHOWCASE_TAIL, { exact: true }).waitFor({ timeout: 30_000 })
 
     expect(await page.getByText(SHOWCASE_OLDEST, { exact: true }).count()).toBe(0)
-    await page.getByText('PREVIEW.md', { exact: true }).waitFor()
-    await page.getByText('src/preview.ts', { exact: true }).waitFor()
+    await page.getByRole('button', { name: 'PREVIEW.md', exact: true }).waitFor()
+    await page.getByRole('button', { name: 'src/preview.ts', exact: true }).waitFor()
     await page.getByText('Update to-do list', { exact: true }).waitFor()
     await page.getByText('Error: ENOENT: no such file, open missing.txt', { exact: true }).waitFor()
 
