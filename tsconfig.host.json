@@ -53,6 +53,7 @@
     "apps/web/tests/ptc-round.e2e.ts",
     "apps/web/tests/present.e2e.ts",
     "apps/web/tests/composer-draft-scroll.e2e.ts",
+    "apps/web/tests/composer-placeholder.e2e.ts",
     "apps/web/tests/cordis-tool-round.e2e.ts",
     "apps/web/tests/web-search-round.e2e.ts",
     "apps/web/tests/file-upload-round.e2e.ts",
