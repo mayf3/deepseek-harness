@@ -26,7 +26,7 @@ declare module '@deepseek-ai/cordis' {
     'loader/config-update'(): void
     'loader/entry-init'(entry: Entry): void
     'loader/partial-dispose'(entry: Entry, legacy: Partial<EntryOptions>, active: boolean): void
-    'loader/patch-context'(entry: Entry, next: () => void | Promise<void>): void | Promise<void>
+    'loader/patch-context'(entry: Entry, next: () => void): void
   }
 
   interface Context {

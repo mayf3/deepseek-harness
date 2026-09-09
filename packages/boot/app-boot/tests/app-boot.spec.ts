@@ -786,6 +786,20 @@ describe('boot', () => {
     expect(ctx.get('loader')).toBeUndefined()
   })
 
+  it('returns when disposal completes before root entry creation returns', async () => {
+    const dir = tmp()
+    writeFileSync(join(dir, 'cordis.yml'), '[]\n')
+    const ctx = await boot(NAME, join(dir, 'cordis.yml'), [], (ctx) => {
+      const create = ctx.loader.create.bind(ctx.loader)
+      vi.spyOn(ctx.loader, 'create').mockImplementation(async (...args) => {
+        const id = await create(...args)
+        await ctx.fiber.dispose()
+        return id
+      })
+    })
+    expect(ctx.get('loader')).toBeUndefined()
+  })
+
   it('rejects (never exits 0 half-empty) when a config names a plugin that cannot be imported', async () => {
     const dir = tmp()
     writeFileSync(join(dir, 'cordis.yml'), '- id: ghost\n  name: ./missing.mjs\n')
@@ -839,6 +853,12 @@ describe('boot', () => {
     })).rejects.toThrow(
       `${NAME}: host preparation failed: wrapped setup failure\nstackless deep failure`,
     )
+  })
+
+  it('reports a non-Error rejection from host preparation', async () => {
+    await expect(boot(NAME, join(tmp(), 'cordis.yml'), [], () => {
+      throw 'host refused'
+    })).rejects.toThrow(`${NAME}: host preparation failed: host refused`)
   })
 
   it('expands a stackless aggregate at the deepest activation cause', async () => {

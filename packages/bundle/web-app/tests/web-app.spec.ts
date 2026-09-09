@@ -11,8 +11,9 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PassThrough } from 'node:stream'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
+import Loader from '@deepseek-ai/cordis-plugin-loader'
 import { createLaunchEnvironmentSnapshot, DSH_LAUNCH_ENVIRONMENT_KEY } from '@deepseek-ai/dsh-launch-environment'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import type { WebServer } from '@deepseek-ai/dsh-host-webserver'
@@ -100,7 +101,7 @@ function provideConnection(ctx: Context): void {
 
 /** A fake Loader whose settlement the test controls (the URL line waits on it). */
 function provideLoader(ctx: Context, settle: () => Promise<void> = async () => {}): void {
-  ctx.provide('loader', { await: settle } as never)
+  ctx.provide('loader', { await: settle, entries: () => [] } as never)
 }
 
 interface BashContribution {
@@ -311,6 +312,27 @@ describe('web-app runtime glue', () => {
     expect(log).not.toHaveBeenCalled()
     expect(openBrowser).not.toHaveBeenCalled()
     await torn.fiber.dispose()
+  })
+
+  it('keeps readiness private when Loader settles with a failed sibling', async () => {
+    stageDist()
+    const ctx = new Context()
+    onTestFinished(() => ctx.fiber.dispose())
+    ctx.baseUrl = 'file:///'
+    ctx.provide('webServer', fakeHttpServer().server)
+    provideConnection(ctx)
+    await ctx.plugin(Loader)
+    ctx.loader.builtins.failure = () => { throw new Error('sibling rejected') }
+    const id = await ctx.loader.create({ name: 'cordis:failure' })
+    await ctx.loader.await()
+    await expect(ctx.loader.resolve(id).fiber?.await()).rejects.toThrow('sibling rejected')
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {})
+    const openBrowser = vi.fn(async () => {})
+    internals.openBrowser = openBrowser
+    apply(ctx, new Config({ openBrowser: true, printUrl: true, surfaceContext: false, trustedHosts: [] }))
+    await new Promise<void>(resolve => setImmediate(resolve))
+    expect(log).not.toHaveBeenCalled()
+    expect(openBrowser).not.toHaveBeenCalled()
   })
 
   it('fails loud when the prompt section resolves against a portless webserver', async () => {

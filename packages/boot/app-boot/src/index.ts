@@ -270,6 +270,7 @@ export async function watchUserPatches(
       },
     })
     await ctx.loader.await()
+    await Promise.allSettled([...ctx.loader.entries()].map(entry => Promise.resolve(entry.fiber?.await())))
     await assertEntriesActivated(ctx, binName)
   })
   try {
@@ -799,6 +800,11 @@ export async function boot(
   try {
     ctx.baseUrl = pathToFileURL(dirname(absoluteConfigPath)).href + '/'
     ctx.provide('dshHomePath', dshHomePath)
+    // Fiber.update() discards the restart promise. Observe it before the
+    // waterfall returns; activation audits still report the failed fiber.
+    ctx.on('internal/update', (_config, _noSave, next: () => unknown) => {
+      void Promise.resolve(next()).catch((error: unknown) => { ctx.logger.error(error) })
+    }, { global: true, prepend: true })
     await ctx.plugin(Loader)
     await prepare?.(ctx)
     stage = 'plugin tree failed to load'

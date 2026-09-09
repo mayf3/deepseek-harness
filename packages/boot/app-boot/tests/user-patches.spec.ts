@@ -503,9 +503,14 @@ describe('boot with user patches', () => {
     await ctx.plugin(Hmr, { root: [], ignored: [], debounce: 0 })
     const previousFactory = configWatch.create
     onTestFinished(() => { configWatch.create = previousFactory })
+    const release = Promise.withResolvers<undefined>()
+    ctx.effect(() => () => release.promise)
+    let disposal: Promise<void> | undefined
+    onTestFinished(async () => { release.resolve(undefined); await disposal })
     configWatch.create = (options) => {
       const watcher = new FSWatcher(options)
-      void ctx.fiber.dispose().then(() => { watcher.emit('ready') })
+      disposal = ctx.fiber.dispose()
+      queueMicrotask(() => { watcher.emit('ready') })
       return watcher
     }
     const dispose = await watchUserPatches(ctx, { binName: NAME, filename: join(tmp(), PROFILE_PATCH_FILENAME) })

@@ -313,7 +313,7 @@ export async function inactiveRows(tree: EntryTree): Promise<string[]> {
     try {
       await fiber.await()
     } catch (error) {
-      const detail = error instanceof Error ? error.message : String(error)
+      const detail = mountDetail(error)
       lines.push(`${entry.options.id} (${entry.options.name}): ${detail}`)
       continue
     }
@@ -328,14 +328,8 @@ export async function inactiveRows(tree: EntryTree): Promise<string[]> {
 /**
  * The causes of `error` whose detail its own message does not already carry.
  *
- * `AggregateError` names none of its causes in its own message, so its
- * `errors` are the branches. The Loader's per-row wrapper takes the opposite
- * approach: it appends `cause.message` to the message it builds and keeps the
- * cause only as `error.cause`, so following a plain chain would print every
- * line twice. That leaves exactly one lossy shape — a wrapped row whose cause
- * is an `AggregateError`. Its message ends with the aggregate's own line and
- * drops the `errors` behind it, which is how a failed group reports as
- * "loader entries failed to apply" and names none of the rows that failed.
+ * Aggregate errors carry separate member messages. A wrapper can preserve the
+ * aggregate as its cause without including those messages in its own text.
  * @param error - the failure to read branches from.
  * @returns the branches to render beneath `error.message`, possibly empty.
  */
@@ -347,19 +341,12 @@ function detailBranches(error: Error): readonly unknown[] {
 /**
  * The reportable text of a mount failure.
  *
- * The loader reports several failed rows as one `AggregateError`, whose own
- * message names none of them; without flattening, a composition that fails on
- * two rows says only "loader entries failed to apply" and the operator has
- * nothing to act on. Nested groups indent under the row that owns them, so a
- * composition failing inside a group still names the rows rather than the
- * group alone.
+ * A plugin may reject with an aggregate or wrap one as its cause. Include its
+ * member messages beneath the row diagnostic so each failure is visible.
  * @param error - the value the mount rejected with.
  * @returns a single-line-per-cause description.
  */
 function mountDetail(error: unknown): string {
-  /* v8 ignore next -- every path into the mount's catch throws an Error: the loader
-     wraps a row's thrown value before it propagates, and this module's own
-     rejections are Errors. The fallback keeps a hostile value readable. */
   if (!(error instanceof Error)) return String(error)
   const branches = detailBranches(error)
   if (branches.length === 0) return error.message

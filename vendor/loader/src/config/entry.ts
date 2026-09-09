@@ -96,11 +96,11 @@ export class Entry {
   }
 
   private _patchContext(diff: string[]) {
-    return this.context.waterfall('loader/patch-context', this, () => {
+    this.context.waterfall('loader/patch-context', this, () => {
       Object.setPrototypeOf(this.ctx, this.parent.ctx)
 
       if (this.fiber?.uid && (diff.includes('config') || this.options.group)) {
-        return this.fiber.update(this.options.config, true)
+        this.fiber.update(this.options.config, true)
       }
     })
   }
@@ -142,7 +142,7 @@ export class Entry {
         .filter(key => !deepEqual(this.options[key], legacy[key]))
       if (!diff.length && !force) return
       this.context.emit('loader/partial-dispose', this, legacy, true)
-      await this._patchContext(diff)
+      this._patchContext(diff)
     } else {
       await this.init()
     }

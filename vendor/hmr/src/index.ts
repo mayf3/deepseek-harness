@@ -1,4 +1,4 @@
-import { Context, Service, type Plugin } from '@deepseek-ai/cordis'
+import { Context, Inject, Service, type Plugin } from '@deepseek-ai/cordis'
 import type { Dict } from '@deepseek-ai/cosmokit'
 import { ModuleLoader, type ModuleJob, type ResolveResult } from '@deepseek-ai/cordis-plugin-loader'
 import type { Include } from '@deepseek-ai/cordis-plugin-include'
@@ -45,9 +45,9 @@ interface Reload {
   runtime?: Plugin.Runtime
 }
 
+@Inject('loader')
+@Inject('timer')
 class Hmr extends Service {
-  static inject = ['loader', 'timer']
-
   public baseDir: string
 
   private internal: ModuleLoader

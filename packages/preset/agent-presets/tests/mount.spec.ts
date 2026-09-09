@@ -15,7 +15,7 @@ import AgentRegistry, { assembleContextFor, type Agent } from '@deepseek-ai/dsh-
 import AgentLoop from '@deepseek-ai/dsh-agent-loop'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import AgentPresets, {
-  COMPOSITION_FILE, leakedServices, livePresetMounts, mountPreset, serviceForAgent,
+  COMPOSITION_FILE, inactiveRows, leakedServices, livePresetMounts, mountPreset, serviceForAgent,
 } from '@deepseek-ai/dsh-agent-presets'
 import type { Config } from '@deepseek-ai/dsh-agent-presets'
 import type {} from '@deepseek-ai/dsh-agent-presets/types'
@@ -242,6 +242,27 @@ describe('composing a child agent from its parent', () => {
 })
 
 describe('rejecting a composition that cannot be used', () => {
+  it('reports import failures and arbitrary plugin rejections after eager settlement', async () => {
+    ctx.loader.builtins.stringFailure = () => { throw 'string rejection' }
+    ctx.loader.builtins.aggregateFailure = () => {
+      throw new AggregateError([
+        new Error('first member'),
+        new Error('wrapped member', { cause: new AggregateError(['nested member'], 'nested aggregate') }),
+      ], 'aggregate rejection')
+    }
+    await ctx.loader.root.update([
+      { id: 'missing', name: 'cordis:missingBuiltin' },
+      { id: 'disabled', name: 'cordis:missingBuiltin', disabled: true },
+      { id: 'string', name: 'cordis:stringFailure' },
+      { id: 'aggregate', name: 'cordis:aggregateFailure' },
+    ])
+    expect(await inactiveRows(ctx.loader)).toEqual([
+      'missing (cordis:missingBuiltin): never started',
+      'string (cordis:stringFailure): string rejection',
+      'aggregate (cordis:aggregateFailure): aggregate rejection\n- first member\n- wrapped member\n  - nested member',
+    ])
+  })
+
   it('refuses to mount into a context that carries no agent scope', async () => {
     await expect(ctx.agentPresets.mount(ctx, 'standard'))
       .rejects.toThrow(/unscoped context/)
