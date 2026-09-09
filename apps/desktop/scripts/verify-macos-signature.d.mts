@@ -42,6 +42,13 @@ export function verifyMacOSRuntimeCode(path: string, expected: MacOSSigningEnvir
 export function verifyMacOSSignature(appPath: string, expected: MacOSSigningEnvironment): void
 
 /**
+ * Verify an independently distributed application's signature, ticket, and Gatekeeper acceptance.
+ * @param appPath - Path to the stapled `.app` directory.
+ * @param expected - Public release identity.
+ */
+export function verifyMacOSNotarizedApplication(appPath: string, expected: MacOSSigningEnvironment): void
+
+/**
  * Verify the release identity, stapled ticket, and Gatekeeper acceptance of one disk image.
  * @param diskImagePath - Path to the packaged `.dmg` file.
  * @param expected - Public release identity.

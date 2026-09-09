@@ -9,6 +9,7 @@ import {
   resolveDesktopAutoUpdateConfig,
 } from './desktop-auto-update-environment.mjs'
 import { desktopTargetBuildPaths } from './desktop-build-paths.mjs'
+import { packageMacOSArtifacts, type DesktopPrepackagedArtifact } from './package-macos.ts'
 
 const APP_ROOT = resolve(import.meta.dirname, '..')
 const REPOSITORY_ROOT = resolve(APP_ROOT, '..', '..')
@@ -193,11 +194,13 @@ export function parseDesktopPackageInvocation(
  * Build the electron-builder command arguments for one validated target.
  * @param target - Supported release target.
  * @param directory - Whether to stop at an unpacked application directory.
+ * @param artifact - Optional single artifact built from an existing signed application.
  * @returns Arguments that keep publishing under the separate validated upload command.
  */
 export function desktopElectronBuilderArguments(
   target: DesktopPackageTarget,
   directory: boolean,
+  artifact?: DesktopPrepackagedArtifact,
 ): readonly string[] {
   return [
     'exec',
@@ -205,10 +208,15 @@ export function desktopElectronBuilderArguments(
     '--config',
     'electron-builder.config.mjs',
     target.builderPlatform,
+    ...(artifact === undefined ? [] : [artifact.format]),
     target.builderArch,
     '--publish',
     'never',
     ...(directory ? ['--dir'] : []),
+    ...(artifact === undefined ? [] : [
+      '--prepackaged', artifact.appPath,
+      '--config.directories.output', artifact.output,
+    ]),
   ]
 }
 
@@ -278,7 +286,20 @@ async function main(): Promise<void> {
   await runPnpm(['run', 'prepare:packages'], targetEnv)
   await runPnpm(['run', 'prepare:dsh'], targetEnv)
   if (invocation.prepareOnly) return
-  await runPnpm(desktopElectronBuilderArguments(target, invocation.directory), electronBuilderEnv)
+  if (target.platform === 'darwin' && !invocation.directory) {
+    await runPnpm([
+      ...desktopElectronBuilderArguments(target, true),
+      '--config.mac.notarize=false',
+    ], electronBuilderEnv)
+    await packageMacOSArtifacts({
+      arch: target.arch,
+      version: packageVersion(join(APP_ROOT, 'package.json'), 'desktop package'),
+      artifactsRoot: buildPaths.artifacts,
+      environment: electronBuilderEnv,
+    }, artifact => runPnpm(desktopElectronBuilderArguments(target, false, artifact), electronBuilderEnv))
+  } else {
+    await runPnpm(desktopElectronBuilderArguments(target, invocation.directory), electronBuilderEnv)
+  }
   if (!invocation.directory) writeReleaseRecord(target, electronBuilderEnv, buildPaths.artifacts)
 }
 
