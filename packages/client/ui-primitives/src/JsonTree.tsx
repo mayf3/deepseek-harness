@@ -219,6 +219,7 @@ function NodeField({
 
 interface JsonTreeNodeProps {
   collapsedStringLines: number
+  stringWrapping: JsonTreeProps['stringWrapping']
   field?: string
   initialExpanded: boolean
   labels: JsonTreeLabels
@@ -233,6 +234,7 @@ interface JsonTreeNodeProps {
 
 function JsonString({
   collapsedStringLines,
+  stringWrapping,
   field,
   labels,
   lastElement,
@@ -240,6 +242,7 @@ function JsonString({
   value,
 }: {
   collapsedStringLines: number
+  stringWrapping: JsonTreeProps['stringWrapping']
   field: string | undefined
   labels: JsonTreeLabels
   lastElement: boolean
@@ -250,6 +253,7 @@ function JsonString({
   const contentRef = useRef<HTMLSpanElement>(null)
   const rawRef = useRef<HTMLPreElement>(null)
   const [expanded, setExpanded] = useState(false)
+  const [wrapped, setWrapped] = useState(false)
   const [truncated, setTruncated] = useState(false)
 
   useLayoutEffect(() => {
@@ -309,12 +313,41 @@ function JsonString({
           ref={rawRef}
           id={contentsId}
           className={css.stringRaw}
+          data-wrap={wrapped}
           tabIndex={0}
           aria-labelledby={field === undefined ? undefined : fieldId}
         >
           {value}
         </pre>
         <div className={css.stringActions}>
+          {stringWrapping !== undefined && (
+            <button
+              type="button"
+              className={css.actionButton}
+              aria-label={stringWrapping.label}
+              title={stringWrapping.label}
+              aria-pressed={wrapped}
+              aria-controls={contentsId}
+              onClick={() => {
+                const next = !wrapped
+                setWrapped(next)
+                stringWrapping.setDefault(next)
+              }}
+            >
+              <svg
+                width="12"
+                height="12"
+                viewBox="0 0 16 16"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                strokeLinejoin="round"
+                aria-hidden="true"
+              >
+                <path d="M1.5 3.5h13M1.5 7.5h10.25a2.5 2.5 0 0 1 0 5H8m2-2-2 2 2 2M1.5 11.5h3" />
+              </svg>
+            </button>
+          )}
           <button
             type="button"
             className={css.actionButton}
@@ -355,7 +388,10 @@ function JsonString({
                 aria-label={labels.expandNode}
                 aria-expanded={false}
                 aria-controls={contentsId}
-                onClick={() => { setExpanded(true) }}
+                onClick={() => {
+                  setWrapped(stringWrapping?.getDefault() ?? false)
+                  setExpanded(true)
+                }}
               >
                 <span aria-hidden="true">…</span>{labels.expandNode}
               </button>
@@ -372,6 +408,7 @@ function JsonString({
 
 function JsonTreeNode({
   collapsedStringLines,
+  stringWrapping,
   field,
   initialExpanded,
   labels,
@@ -427,6 +464,7 @@ function JsonTreeNode({
     return row(
       <JsonString
         collapsedStringLines={collapsedStringLines}
+        stringWrapping={stringWrapping}
         field={field}
         value={value}
         labels={labels}
@@ -484,6 +522,7 @@ function JsonTreeNode({
             <JsonTreeNode
               key={key}
               collapsedStringLines={collapsedStringLines}
+              stringWrapping={stringWrapping}
               field={key}
               value={item}
               path={[...path, Array.isArray(value) ? index : key]}
@@ -533,6 +572,15 @@ export interface JsonTreeProps {
   className?: string | undefined
   /** Maximum visible lines per collapsed string; defaults to 3. */
   collapsedStringLines?: number
+  /** Optional wrap toggle; each expansion reads the shared default without changing other open strings. */
+  stringWrapping?: {
+    /** Localized label for the wrapping toggle. */
+    label: string
+    /** Read the wrapping preference when a string is expanded. @returns Whether to wrap long lines. */
+    getDefault: () => boolean
+    /** Remember a user toggle for future expansions. @param wrapped - Whether to wrap long lines. */
+    setDefault: (wrapped: boolean) => void
+  } | undefined
   /** Whether JSON rows expose copy actions. */
   copyable?: boolean
   /** Whether the top-level object or array is always expanded. */
@@ -551,6 +599,7 @@ export function JsonTree({
   label,
   className,
   collapsedStringLines = 3,
+  stringWrapping,
   copyable = true,
   expandTopLevel = true,
   labels,
@@ -721,6 +770,7 @@ export function JsonTree({
                 <JsonTreeNode
                   key={key}
                   collapsedStringLines={collapsedStringLines}
+                  stringWrapping={stringWrapping}
                   field={key}
                   value={value}
                   path={[Array.isArray(data) ? index : key]}
@@ -743,6 +793,7 @@ export function JsonTree({
           <div aria-label={label} className={css.container} role="tree">
             <JsonTreeNode
               collapsedStringLines={collapsedStringLines}
+              stringWrapping={stringWrapping}
               value={data}
               path={[]}
               labels={labels}

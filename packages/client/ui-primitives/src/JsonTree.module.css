@@ -145,6 +145,12 @@
   height: 16px;
 }
 
+.stringRaw[data-wrap='true'] {
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
 .stringActions > .copySlot {
   opacity: 1;
   pointer-events: auto;
@@ -273,6 +279,10 @@
 
 .actionButton:hover {
   color: var(--dsw-alias-label-primary);
+}
+
+.actionButton[aria-pressed='true'] {
+  color: var(--dsw-alias-state-business-primary);
 }
 
 .actionButton:focus-visible {

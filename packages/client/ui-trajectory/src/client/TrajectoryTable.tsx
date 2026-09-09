@@ -12,7 +12,7 @@ import {
   MarkdownText,
   Tooltip,
 } from '@deepseek-ai/dsh-client-ui-primitives'
-import type { JsonTreeLabels, MarkdownLabels } from '@deepseek-ai/dsh-client-ui-primitives'
+import type { JsonTreeLabels, JsonTreeProps, MarkdownLabels } from '@deepseek-ai/dsh-client-ui-primitives'
 import { structuredPatch } from 'diff'
 import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import type {
@@ -376,6 +376,8 @@ function AssistantTimingPanel({
 
 /** Props for the trajectory ledger. */
 export interface TrajectoryTableProps {
+  /** Wrapping control shared by all JSON inspectors. */
+  stringWrapping?: JsonTreeProps['stringWrapping']
   /** Trajectory locale seat. */
   t: TrajectoryTranslate
   /** Slot-backed durable image renderer shared with the Chat gallery. */
@@ -844,10 +846,12 @@ function RequestUsagePanel({
 function RequestOptions({
   options,
   preview = false,
+  stringWrapping,
   t,
 }: {
   options: AssistantRequestConfig | undefined
   preview?: boolean
+  stringWrapping: JsonTreeProps['stringWrapping']
   t: TrajectoryTranslate
 }) {
   if (options === undefined) {
@@ -856,6 +860,7 @@ function RequestOptions({
   return (
     <JsonTree
       data={options}
+      stringWrapping={stringWrapping}
       collapsedStringLines={preview ? 3 : 12}
       label={t('options.json')}
       labels={jsonTreeLabels(t)}
@@ -887,7 +892,11 @@ function messageSourceLabel(source: unknown, t: TrajectoryTranslate): string {
   return `${kind[0]?.toUpperCase() ?? ''}${kind.slice(1)}`
 }
 
-function MessageSource({ record, t }: { record: TableRecord; t: TrajectoryTranslate }) {
+function MessageSource({ record, stringWrapping, t }: {
+  record: TableRecord
+  stringWrapping: JsonTreeProps['stringWrapping']
+  t: TrajectoryTranslate
+}) {
   const source = record.cell.messageSource
   if (source === undefined) return <p className={css.noPayload}>{t('source.notRecorded')}</p>
   const data = typeof source === 'object' && source !== null
@@ -896,6 +905,7 @@ function MessageSource({ record, t }: { record: TableRecord; t: TrajectoryTransl
   return (
     <JsonTree
       data={data}
+      stringWrapping={stringWrapping}
       collapsedStringLines={12}
       label={t('source.messageJson')}
       labels={jsonTreeLabels(t)}
@@ -1283,8 +1293,13 @@ function ToolGlyph() {
 
 function ToolCatalog({
   tools,
+  stringWrapping,
   t,
-}: { tools: ConversationPromptSnapshot['tools']; t: TrajectoryTranslate }) {
+}: {
+  tools: ConversationPromptSnapshot['tools']
+  stringWrapping: JsonTreeProps['stringWrapping']
+  t: TrajectoryTranslate
+}) {
   if (tools.length === 0) return <p className={css.noPayload}>{t('record.toolsMissing')}</p>
   return (
     <div className={css.toolCatalog}>
@@ -1302,6 +1317,7 @@ function ToolCatalog({
             )}
             <JsonTree
               data={tool.parameters}
+              stringWrapping={stringWrapping}
               label={t('record.namedParametersJson', { name: tool.name })}
               labels={jsonTreeLabels(t)}
               className={css.toolCatalogTree}
@@ -1611,12 +1627,14 @@ function RecordPayload({
   direction,
   preview = false,
   renderImages,
+  stringWrapping,
   t,
 }: {
   record: TableRecord
   direction: 'input' | 'output'
   preview?: boolean
   renderImages: RenderMessageImages
+  stringWrapping: JsonTreeProps['stringWrapping']
   t: TrajectoryTranslate
 }) {
   const value = direction === 'input' ? record.cell.inputDetail : record.cell.outputDetail
@@ -1636,6 +1654,7 @@ function RecordPayload({
     return (
       <JsonTree
         data={json}
+        stringWrapping={stringWrapping}
         collapsedStringLines={preview ? 3 : 12}
         label={t('record.resultJson')}
         labels={jsonTreeLabels(t)}
@@ -1681,6 +1700,7 @@ function RecordPayload({
     return (
       <JsonTree
         data={json}
+        stringWrapping={stringWrapping}
         collapsedStringLines={preview ? 3 : 12}
         label={t(direction === 'input' ? 'record.payloadJson' : 'record.outputJson')}
         labels={jsonTreeLabels(t)}
@@ -1704,10 +1724,12 @@ function RecordPayload({
 function RecordSchema({
   record,
   preview = false,
+  stringWrapping,
   t,
 }: {
   record: TableRecord
   preview?: boolean
+  stringWrapping: JsonTreeProps['stringWrapping']
   t: TrajectoryTranslate
 }) {
   if (!record.cell.schemaDetail) {
@@ -1725,6 +1747,7 @@ function RecordSchema({
           <h4 className={css.schemaParametersTitle}>{t('record.parameters')}</h4>
           <JsonTree
             data={schema.parameters}
+            stringWrapping={stringWrapping}
             collapsedStringLines={preview ? 3 : 12}
             label={t('record.namedParametersJson', { name: schema.name })}
             labels={jsonTreeLabels(t)}
@@ -1837,6 +1860,7 @@ function OverviewSection({
  */
 export function TrajectoryTable({
   t,
+  stringWrapping,
   renderImages,
   requestNumbers: sessionRequestNumbers,
   turns,
@@ -2962,7 +2986,7 @@ export function TrajectoryTable({
                 <div className={css.overviewSections}>
                   {selectedRequestOptions !== undefined && (
                     <OverviewSection label={t('tab.options')} onOpen={() => { activateTab('options') }}>
-                      <RequestOptions options={selectedRequestOptions} preview t={t} />
+                      <RequestOptions options={selectedRequestOptions} preview stringWrapping={stringWrapping} t={t} />
                     </OverviewSection>
                   )}
                   <OverviewSection label={t('tab.usage')} onOpen={() => { activateTab('usage') }}>
@@ -2981,7 +3005,7 @@ export function TrajectoryTable({
               </>
             )}
             {selectedRequestInfo !== undefined && activeTab === 'options' && (
-              <RequestOptions options={selectedRequestOptions} t={t} />
+              <RequestOptions options={selectedRequestOptions} stringWrapping={stringWrapping} t={t} />
             )}
             {selectedRequestInfo !== undefined && activeTab === 'usage' && (
               <RequestUsagePanel
@@ -3017,7 +3041,7 @@ export function TrajectoryTable({
                 )
             )}
             {selectedPrompt !== undefined && activeTab === 'tools' && (
-              <ToolCatalog tools={selectedPrompt.tools} t={t} />
+              <ToolCatalog tools={selectedPrompt.tools} stringWrapping={stringWrapping} t={t} />
             )}
             {!promptSelected
               && selected?.cell.kind === 'compacted'
@@ -3179,16 +3203,16 @@ export function TrajectoryTable({
                       <>
                         {selected.cell.inputDetail && (
                           <OverviewSection label={t('tab.payload')} onOpen={() => { activateTab('input') }}>
-                            <RecordPayload record={selected} direction="input" preview renderImages={renderImages} t={t} />
+                            <RecordPayload record={selected} direction="input" preview renderImages={renderImages} stringWrapping={stringWrapping} t={t} />
                           </OverviewSection>
                         )}
                         {selected.cell.outputDetail && (
                           <OverviewSection label={t('tab.result')} onOpen={() => { activateTab('output') }}>
-                            <RecordPayload record={selected} direction="output" preview renderImages={renderImages} t={t} />
+                            <RecordPayload record={selected} direction="output" preview renderImages={renderImages} stringWrapping={stringWrapping} t={t} />
                           </OverviewSection>
                         )}
                         <OverviewSection label={t('tab.schema')} onOpen={() => { activateTab('schema') }}>
-                          <RecordSchema record={selected} preview t={t} />
+                          <RecordSchema record={selected} preview stringWrapping={stringWrapping} t={t} />
                         </OverviewSection>
                       </>
                     )}
@@ -3233,16 +3257,16 @@ export function TrajectoryTable({
               />
             )}
             {!promptSelected && selected !== undefined && activeTab === 'source' && (
-              <MessageSource record={selected} t={t} />
+              <MessageSource record={selected} stringWrapping={stringWrapping} t={t} />
             )}
             {!promptSelected && selected !== undefined && activeTab === 'input' && (
-              <RecordPayload record={selected} direction="input" renderImages={renderImages} t={t} />
+              <RecordPayload record={selected} direction="input" renderImages={renderImages} stringWrapping={stringWrapping} t={t} />
             )}
             {!promptSelected && selected !== undefined && activeTab === 'output' && (
-              <RecordPayload record={selected} direction="output" renderImages={renderImages} t={t} />
+              <RecordPayload record={selected} direction="output" renderImages={renderImages} stringWrapping={stringWrapping} t={t} />
             )}
             {!promptSelected && selected !== undefined && activeTab === 'schema' && (
-              <RecordSchema record={selected} t={t} />
+              <RecordSchema record={selected} stringWrapping={stringWrapping} t={t} />
             )}
             {!promptSelected && selected !== undefined && activeTab === 'timing' && (
               <RecordTiming record={selected} t={t} />
