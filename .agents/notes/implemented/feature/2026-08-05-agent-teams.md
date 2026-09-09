@@ -20,6 +20,10 @@ The implementation is split into `@deepseek-ai/dsh-experimental-agent-team`, whi
 
 The Lead must wait for required work before its final answer. Process teardown remains the final lifecycle owner and drains continuation Activations; a Team task owner is durable state and is not automatically released by idle, interruption, or process exit.
 
+## Team identity
+
+Team identity is a required runtime-context contribution wrapped in `<system-reminder>`. The shared system policy and tool schemas stay uniform across members, while the role, name, and Team id are logged after inherited history. Team id distinguishes an ordinary fork whose role and name remain lead. The existing snapshot projection owns deduplication, cold recovery, and reinjection after compaction; suppression rejects assembly. Putting identity at the end of the system prompt still changes the prefix before history, and adding it only to the first task omits recovery and compaction handling. Existing system-embedded identities may require a one-time prompt reconciliation when loaded; retained event generations are unchanged.
+
 ## Provisioning and recovery
 
 Creation first appends and flushes a `team/member` provisioning snapshot in the Lead Session, then starts the reserved continuable child through the selected fresh or fork provider. Failure before initial inbox acceptance appends a failed snapshot. Success flushes the child's accepted inbox item before appending active. Recovery recognizes that initial message while it is still pending or after it enters user-message history. Names are reserved by the first provisioning record and never reused, including after failure. Disposal closes admission, aborts and awaits admitted creation and mailbox-dispatch transactions, then stops every live child recorded by the roster; a failed child remains cleanup-owned until its Activation exits, and cleanup rejection fails disposal.

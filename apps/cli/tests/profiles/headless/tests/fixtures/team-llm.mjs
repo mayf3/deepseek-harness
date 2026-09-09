@@ -174,12 +174,17 @@ function lead(messages) {
 
 class TeamFixtureAdapter extends LlmAdapter {
   async * stream(options) {
-    const userText = options.messages.flatMap(message => message.role === 'user'
-      ? message.content.filter(block => block.type === 'text').map(block => block.text)
-      : []).join('\n')
-    const chunks = userText.includes('RESEARCHER_MARK')
+    const snapshot = options.messages.findLast(message => message.role === 'user'
+      && message.source.kind === 'plugin' && message.source.form === 'snapshot'
+      && message.source.sections.some(section => section.name === 'team:identity'))
+    const identity = snapshot?.source.sections.find(section => section.name === 'team:identity')?.text
+    if (!identity?.startsWith('<system-reminder>\nYour Team role is ')
+      || !identity.endsWith('\n</system-reminder>')) {
+      throw new Error('Team request is missing its durable identity reminder')
+    }
+    const chunks = identity.includes('your Team name is researcher;')
       ? researcher(options.messages)
-      : userText.includes('IMPLEMENTER_MARK')
+      : identity.includes('your Team name is implementer;')
         ? implementer(options.messages)
         : lead(options.messages)
     for (const chunk of chunks) {

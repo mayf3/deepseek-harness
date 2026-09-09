@@ -80,6 +80,8 @@ interface PromptContext {
   readonly name: string
   /** Contexts are joined in ascending order. */
   readonly order: number
+  /** Reject assembly when runtime context is suppressed and this contribution is effective. */
+  readonly required?: boolean
   /** Static text or a provider evaluated for each assembly. Empty text contributes nothing. */
   readonly text: string | ((context: AssembleContext) => string)
 }
@@ -167,6 +169,7 @@ variable(name: string, provider: (context: AssembleContext) => string | undefine
  * sole prompt section.
  * @param context - the optional scope and plugin-defined assembly fields.
  * @returns the post-waterfall assembly with any complete prompt enforced.
+ * @throws when runtime context is suppressed but an effective contribution requires it.
  */
 async assemble(context: AssembleContext = {}): Promise<PromptAssembly>
 ```

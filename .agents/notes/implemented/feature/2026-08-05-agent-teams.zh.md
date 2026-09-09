@@ -20,6 +20,10 @@ subagent seam 已提供 fresh／fork provider、持久 child Session、FIFO foll
 
 Lead 必须等待所需工作后才能给出最终答案。进程 teardown 仍是最终生命周期 owner，并会 drain continuation Activation；Team task owner 是持久状态，不会因 idle、interrupt 或进程退出自动释放。
 
+## Team identity
+
+Team 身份是包在 `<system-reminder>` 中的必需运行时上下文贡献。共享 system 策略和工具 schema 在成员间保持一致，role、name 和 Team id 则记录在继承历史之后。Team id 区分 role 和 name 仍为 lead 的普通 fork。现有快照投影负责去重、冷恢复和压缩后的补发；禁用上下文会使组装失败。把身份移到 system prompt 末尾仍会在历史之前改变前缀，只把身份加入首次任务则遗漏恢复与压缩处理。加载已有的 system 内嵌身份时可能需要一次提示词协调；保留的事件格式代际保持不变。
+
 ## Provisioning and recovery
 
 创建操作先在 Lead Session 中追加并 flush `team/member` provisioning 快照，再通过选定 fresh 或 fork provider 启动预留的 continuable child。初始 inbox 获准前的失败会追加 failed 快照；成功会先 flush child 中已接受的 inbox 条目，再追加 active。恢复会在初始消息仍处于 pending 或已进入用户消息历史时识别它。名字由第一条 provisioning 记录永久保留，包括失败后也不能复用。dispose 会关闭准入，中止并等待已获准的创建与 mailbox dispatch 事务，再停止 roster 记录的所有 live child；failed child 在 Activation 退出前仍由 cleanup 拥有，cleanup 拒绝会让 dispose 失败。

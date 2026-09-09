@@ -153,6 +153,21 @@ describe('SystemPrompt', () => {
       expect(providerCalls).toBe(0)
     })
 
+    it('rejects globally suppressed required context before evaluating its provider', async () => {
+      const ctx = new Context()
+      await ctx.plugin(SystemPrompt, { includeRuntimeContext: false })
+      let providerCalls = 0
+      const dispose = ctx.systemPrompt.context({
+        name: 'identity', order: 0, required: true,
+        text: () => `identity ${++providerCalls}`,
+      })
+      await expect(ctx.systemPrompt.assemble()).rejects.toThrow('required runtime context "identity" cannot be suppressed')
+      expect(providerCalls).toBe(0)
+      dispose()
+      expect((await ctx.systemPrompt.assemble()).contexts).toEqual([])
+      await ctx.fiber.dispose()
+    })
+
     it('tolerates a schema-bypassing direct construction (persona omitted)', async () => {
       // ctx.plugin validates + defaults the config first; a direct construction
       // skips the schema, so the ctor's `?? ''` narrowing is what fires.

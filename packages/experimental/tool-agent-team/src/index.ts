@@ -164,9 +164,15 @@ function install(agent: Agent, ctx: Context, config: Required<Config>): () => vo
     register(scoped.systemPrompt.section({
       name: 'team:policy',
       order: scoped.systemPrompt.getSectionOrder('TEAM_POLICY'),
+      text: POLICY,
+    }))
+    register(scoped.systemPrompt.context({
+      name: 'team:identity',
+      order: scoped.systemPrompt.getContextOrder('TEAM_IDENTITY'),
+      required: true,
       text: () => {
         const membership = ctx.agentTeams.membership(agent)
-        return `${POLICY}\n\nYour Team role is ${membership.role}; your Team name is ${membership.name}; Team id is ${membership.id}.`
+        return `<system-reminder>\nYour Team role is ${membership.role}; your Team name is ${membership.name}; Team id is ${membership.id}.\n</system-reminder>`
       },
     }))
 

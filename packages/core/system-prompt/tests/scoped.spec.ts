@@ -143,6 +143,33 @@ describe('scoped cache-safe context', () => {
       .toContain('global policy')
   })
 
+  it('uses the effective scoped requirement and restores it with suppression disposal', async () => {
+    const ctx = await mount()
+    const scope = await mintScope(ctx, 'required-context')
+    const key = scopeKeyOf(scope)
+    ctx.systemPrompt.context({ name: 'identity', order: 1, required: true, text: 'global identity' })
+    const optional = scope.ctx.systemPrompt.context({ name: 'identity', order: 1, text: 'optional identity' })
+    const suppress = scope.ctx.systemPrompt.suppressRuntimeContext()
+    expect((await ctx.systemPrompt.assemble({ scope: key })).contexts).toEqual([])
+    expect(renderContextSnapshot(await ctx.systemPrompt.assemble())).toContain('global identity')
+    optional()
+    await expect(ctx.systemPrompt.assemble({ scope: key })).rejects.toThrow('required runtime context "identity"')
+    suppress()
+    expect(renderContextSnapshot(await ctx.systemPrompt.assemble({ scope: key }))).toContain('global identity')
+    await ctx.fiber.dispose()
+  })
+
+  it('rejects a required scoped override of an optional global context', async () => {
+    const ctx = await mount()
+    const scope = await mintScope(ctx, 'scoped-required')
+    ctx.systemPrompt.context({ name: 'identity', order: 1, text: 'optional global' })
+    scope.ctx.systemPrompt.context({ name: 'identity', order: 1, required: true, text: 'required scoped' })
+    ctx.systemPrompt.suppressRuntimeContext()
+    expect((await ctx.systemPrompt.assemble()).contexts).toEqual([])
+    await expect(ctx.systemPrompt.assemble({ scope: scopeKeyOf(scope) })).rejects.toThrow('required runtime context "identity"')
+    await ctx.fiber.dispose()
+  })
+
   it('suppresses all context for one scope and restores it when disposed', async () => {
     const ctx = await mount()
     const scope = await mintScope(ctx, 'suppressed-context')

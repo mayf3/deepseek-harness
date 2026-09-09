@@ -79,6 +79,8 @@ export interface PromptContext {
   readonly name: string
   /** Contexts are joined in ascending order. */
   readonly order: number
+  /** Reject assembly when runtime context is suppressed and this contribution is effective. */
+  readonly required?: boolean
   /** Static text or a provider evaluated for each assembly. Empty text contributes nothing. */
   readonly text: string | ((context: AssembleContext) => string)
 }
@@ -160,6 +162,7 @@ const CONTEXT_ORDERS = {
   SANDBOX_POLICY: 110,
   APPROVAL_POLICY: 115,
   SUBAGENT_DELEGATION: 120,
+  TEAM_IDENTITY: 130,
 } as const
 
 /** Name of a centrally allocated runtime-context position. */
@@ -547,6 +550,7 @@ export class SystemPrompt extends Service {
    * sole prompt section.
    * @param context - the optional scope and plugin-defined assembly fields.
    * @returns the post-waterfall assembly with any complete prompt enforced.
+   * @throws when runtime context is suppressed but an effective contribution requires it.
    */
   // Keep configuration failures on the declared asynchronous error path.
   async assemble(context: AssembleContext = {}): Promise<PromptAssembly> {
@@ -568,6 +572,13 @@ export class SystemPrompt extends Service {
     // Scoped sections shadow globals before the deterministic order sort.
     const sectionByName = this.layers.merge(scope, layer => layer.sections)
     const contextByName = this.layers.merge(scope, layer => layer.contexts)
+    if (runtimeContextSuppressed) {
+      for (const entry of contextByName.values()) {
+        if (entry.required) {
+          throw new Error(`required runtime context "${entry.name}" cannot be suppressed; enable runtime context or remove the requiring plugin`)
+        }
+      }
+    }
     // Validate order against pre-restriction names while collecting visible schemas.
     const providers = [
       ...this.layers.global.toolProviders.values(),
