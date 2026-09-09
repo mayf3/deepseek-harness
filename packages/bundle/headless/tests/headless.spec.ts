@@ -114,7 +114,7 @@ async function bench(script: Script): Promise<{
       }
       await options.setup?.(ownerCtx, agent)
       script.before?.(session)
-      ctx.agents.register(agent)
+      await ctx.agents.register(agent)
       return { agent, dispose: () => Promise.resolve() }
     },
     resume: () => Promise.reject(new Error('not used')),

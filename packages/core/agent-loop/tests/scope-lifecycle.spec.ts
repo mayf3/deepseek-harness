@@ -61,6 +61,97 @@ function disposeCurrentLifecycle(ownerCtx: Context): void {
 }
 
 describe('agent scope lifecycle', () => {
+  it('awaits serial creation before session-start and caller readiness', async () => {
+    const ctx = await harness()
+    const entered = Promise.withResolvers<void>()
+    const release = Promise.withResolvers<void>()
+    const order: string[] = []
+    ctx.on('agent/created', async () => {
+      order.push('created:start')
+      entered.resolve()
+      await release.promise
+      order.push('created:end')
+    })
+    ctx.on('agent/created', () => { order.push('created:second') })
+    ctx.on('agent/session-start', () => { order.push('session-start') })
+    const creating = ctx.agentLoop.create(SessionId('serial-start')).then(agent => {
+      order.push('ready')
+      return agent
+    })
+    try {
+      await entered.promise
+      expect(order).toEqual(['created:start'])
+      release.resolve()
+      await creating
+      expect(order).toEqual(['created:start', 'created:end', 'created:second', 'session-start', 'ready'])
+    } finally {
+      release.resolve()
+      await ctx.fiber.dispose()
+    }
+  })
+
+  it('retains both entries and scoped effects until an asynchronous creation listener settles on owner unload', async () => {
+    const ctx = await harness()
+    const entered = Promise.withResolvers<void>()
+    const release = Promise.withResolvers<void>()
+    let ownerCtx!: Context
+    const owner = await ctx.plugin(Object.assign((inner: Context) => { ownerCtx = inner }, { inject: ['agents'] }))
+    const order: string[] = []
+    const id = SessionId('serial-owner-dispose')
+    ctx.on('agent/created', async ({ agent }) => {
+      entered.resolve()
+      await release.promise
+      expect(ctx.agents.get(id)).toBe(agent)
+      expect(ctx.sessions.get(id)).toBe(agent.session)
+      expect(order).toEqual([])
+      order.push('created:end')
+    })
+    ctx.on('agent/session-start', () => { order.push('session-start') })
+    ctx.on('agent/disposed', () => { order.push('agent-disposed') })
+    ctx.on('session/disposed', () => { order.push('session-disposed') })
+    const creating = ownerCtx.agents.create({
+      sessionId: id,
+      setup(agentCtx) { agentCtx.effect(() => () => { order.push('scope-disposed') }) },
+    })
+    const rejected = expect(creating).rejects.toThrow('owner disposed during setup')
+    try {
+      await entered.promise
+      const disposing = owner.dispose()
+      expect(ctx.agents.get(id)).toBeDefined()
+      release.resolve()
+      await rejected
+      await disposing
+      expect(order).toEqual(['created:end', 'scope-disposed', 'agent-disposed', 'session-disposed'])
+      expect(ctx.agents.get(id)).toBeUndefined()
+      expect(ctx.sessions.get(id)).toBeUndefined()
+    } finally {
+      release.resolve()
+      await ctx.fiber.dispose()
+    }
+  })
+
+  it('rolls back both registries and the scope when asynchronous creation fails', async () => {
+    const ctx = await harness()
+    const reason = new Error('async creation veto')
+    const order: string[] = []
+    ctx.on('agent/created', async () => {
+      await Promise.resolve()
+      throw reason
+    })
+    ctx.on('agent/created', () => { order.push('later-listener') })
+    ctx.on('agent/session-start', () => { order.push('session-start') })
+    ctx.on('agent/disposed', () => { order.push('agent-disposed') })
+    ctx.on('session/disposed', () => { order.push('session-disposed') })
+    await expect(ctx.agents.create({
+      sessionId: SessionId('async-veto'),
+      setup(agentCtx) { agentCtx.effect(() => () => { order.push('scope-disposed') }) },
+    })).rejects.toBe(reason)
+    expect(order).toEqual(['scope-disposed', 'agent-disposed', 'session-disposed'])
+    expect(ctx.agents.list()).toEqual([])
+    expect(ctx.sessions.list()).toEqual([])
+    await ctx.fiber.dispose()
+  })
+
   it('rejects an already-aborted creation signal before publishing either object', async () => {
     const ctx = await harness()
     const reason = new Error('cancelled before creation')

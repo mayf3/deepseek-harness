@@ -68,7 +68,7 @@ async function harness(presets?: readonly string[]) {
       const agent = stubAgent(session)
       ;(agent as { ctx?: Context }).ctx = ctx
       await options.setup?.(ctx, agent)
-      const unregister = ctx.agents.register(agent)
+      const unregister = await ctx.agents.register(agent)
       return { agent, dispose: () => { unregister(); return Promise.resolve() } }
     },
     async resume() {

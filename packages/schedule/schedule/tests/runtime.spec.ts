@@ -97,7 +97,7 @@ async function harness(): Promise<RuntimeHarness> {
     steer(_message: UserMessage) {},
     inject(_message: UserMessage) {},
   }
-  const disposeAgent = ctx.agents.register(agent)
+  const disposeAgent = await ctx.agents.register(agent)
   ctx.on('session/event', (_session, event) => {
     if (event.type === 'schedule/change' && event.data.operation === 'dispatch') order.push('dispatch')
   })

@@ -51,10 +51,29 @@ async function stubAgent(
     cancel() {},
     whenIdle: () => Promise.resolve(),
   } as unknown as Agent
-  return { agent, dispose: ctx.agents.register(agent) }
+  return { agent, dispose: await ctx.agents.register(agent) }
 }
 
 describe('LocalFileReferenceService', () => {
+  it('defers guidance until optional prompt and tool services become available', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SessionStore)
+    await ctx.plugin(AgentRegistry)
+    await ctx.plugin(LocalFileReferenceService)
+    try {
+      const { agent } = await stubAgent(ctx, 'deferred-prompt')
+      expect(ctx.agents.get(agent.id)).toBe(agent)
+      await ctx.plugin(SystemPrompt, { personaPrefix: '' })
+      await ctx.plugin(ToolRegistry)
+      ctx.tools.register(defineContentToolFixture({
+        name: 'read', description: 'read a file', parameters: {}, execute: () => Promise.resolve([]),
+      }))
+      expect(renderPrompt(await ctx.systemPrompt.assemble())).toContain(FILE_REFERENCE_PROMPT)
+    } finally {
+      await ctx.fiber.dispose()
+    }
+  })
+
   it('serves the addressed workspace and installs read-tool guidance for existing agents', async () => {
     const ctx = await harness()
     const { agent } = await stubAgent(ctx)
