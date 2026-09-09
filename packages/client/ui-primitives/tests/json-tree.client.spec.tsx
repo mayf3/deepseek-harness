@@ -13,8 +13,10 @@ function JsonTree(props: Omit<ComponentProps<typeof LocalizedJsonTree>, 'label' 
 }
 
 let writeText: ReturnType<typeof vi.fn>
+let originalClipboard: PropertyDescriptor | undefined
 
 beforeEach(() => {
+  originalClipboard = Object.getOwnPropertyDescriptor(navigator, 'clipboard')
   writeText = vi.fn().mockResolvedValue(undefined)
   Object.defineProperty(navigator, 'clipboard', {
     configurable: true,
@@ -25,9 +27,62 @@ beforeEach(() => {
 afterEach(() => {
   cleanup()
   vi.useRealTimers()
+  vi.restoreAllMocks()
+  vi.unstubAllGlobals()
+  if (originalClipboard === undefined) Reflect.deleteProperty(navigator, 'clipboard')
+  else Object.defineProperty(navigator, 'clipboard', originalClipboard)
 })
 
 describe('JsonTree', () => {
+  it('keeps raw strings intact and samples the wrapping preference on every expansion', async () => {
+    vi.spyOn(HTMLElement.prototype, 'scrollHeight', 'get').mockReturnValue(200)
+    const computedStyle = window.getComputedStyle.bind(window)
+    vi.spyOn(window, 'getComputedStyle').mockImplementation((element) => {
+      const style = computedStyle(element)
+      style.lineHeight = '16px'
+      return style
+    })
+    vi.stubGlobal('ResizeObserver', class {
+      observe() {}
+      disconnect() {}
+    })
+    let wrapped = false
+    const stringWrapping = {
+      label: 'Wrap lines',
+      getDefault: () => wrapped,
+      setDefault: (value: boolean) => { wrapped = value },
+    }
+    const original = `  leading spaces\n\t"quoted" \\${'long'.repeat(100)}\nlast line\n`
+    render(<JsonTree data={{ first: original, second: original }} stringWrapping={stringWrapping} />)
+    const [first, second] = within(screen.getByRole('tree')).getAllByRole('treeitem')
+    const a = within(first as HTMLElement)
+    const b = within(second as HTMLElement)
+    fireEvent.click(a.getByRole('button', { name: 'Expand JSON node' }))
+    fireEvent.click(b.getByRole('button', { name: 'Expand JSON node' }))
+    expect(a.getByRole('button', { name: 'Wrap lines' }).getAttribute('aria-pressed')).toBe('false')
+
+    fireEvent.click(a.getByRole('button', { name: 'Wrap lines' }))
+    expect(wrapped).toBe(true)
+    expect(a.getByRole('button', { name: 'Wrap lines' }).getAttribute('aria-pressed')).toBe('true')
+    expect(b.getByRole('button', { name: 'Wrap lines' }).getAttribute('aria-pressed')).toBe('false')
+
+    fireEvent.click(b.getByRole('button', { name: 'Collapse JSON node' }))
+    fireEvent.click(b.getByRole('button', { name: 'Expand JSON node' }))
+    expect(b.getByRole('button', { name: 'Wrap lines' }).getAttribute('aria-pressed')).toBe('true')
+    fireEvent.click(b.getByRole('button', { name: 'Wrap lines' }))
+    expect(wrapped).toBe(false)
+    expect(a.getByRole('button', { name: 'Wrap lines' }).getAttribute('aria-pressed')).toBe('true')
+
+    fireEvent.click(a.getByRole('button', { name: 'Collapse JSON node' }))
+    fireEvent.click(a.getByRole('button', { name: 'Expand JSON node' }))
+    const toggle = a.getByRole('button', { name: 'Wrap lines' })
+    expect(toggle.getAttribute('aria-pressed')).toBe('false')
+    const contents = document.getElementById(toggle.getAttribute('aria-controls') as string)
+    expect(contents?.textContent).toBe(original)
+    fireEvent.click(a.getByRole('button', { name: 'Copy value' }))
+    await waitFor(() => { expect(writeText).toHaveBeenCalledWith(original) })
+  })
+
   it('keeps the top level open and renders expandable value previews', () => {
     render(
       <JsonTree
@@ -270,48 +325,21 @@ describe('JsonTree', () => {
     view.unmount()
   })
 
-  it('keeps copy placement synchronized and clears stale targets', () => {
+  it('keeps the copy action on its hovered row and clears stale targets', () => {
     const view = render(<JsonTree data={{ first: { a: 1 }, second: 2 }} />)
     const root = view.container.firstElementChild as HTMLElement
     const tree = screen.getByRole('tree')
     const firstRow = within(tree).getAllByRole('treeitem')[0] as HTMLElement
     const secondRow = within(tree).getAllByRole('treeitem')[1] as HTMLElement
 
-    Object.defineProperty(root, 'clientHeight', { configurable: true, value: 100 })
-    Object.defineProperty(root, 'clientWidth', { configurable: true, value: 300 })
-    vi.spyOn(root, 'getBoundingClientRect').mockReturnValue({
-      bottom: 100,
-      height: 100,
-      left: 10,
-      right: 310,
-      top: 0,
-      width: 300,
-      x: 10,
-      y: 0,
-      toJSON: () => ({}),
-    })
-    vi.spyOn(firstRow, 'getBoundingClientRect').mockReturnValue({
-      bottom: 91,
-      height: 16,
-      left: 10,
-      right: 200,
-      top: 75,
-      width: 190,
-      x: 10,
-      y: 75,
-      toJSON: () => ({}),
-    })
-
     fireEvent.mouseOver(firstRow)
     const copyButton = screen.getByRole('button', { name: 'Copy pretty JSON' })
-    expect((copyButton.closest('span')?.parentElement as HTMLElement).style.left).toBe('284px')
+    expect(firstRow.contains(copyButton)).toBe(true)
     fireEvent.mouseOver(copyButton)
     expect(screen.getByRole('button', { name: 'Copy pretty JSON' })).toBeDefined()
     fireEvent.mouseOver(firstRow)
 
     fireEvent.scroll(root)
-    fireEvent.scroll(window)
-    fireEvent.resize(window)
 
     fireEvent.contextMenu(copyButton)
     fireEvent.mouseOver(secondRow)
