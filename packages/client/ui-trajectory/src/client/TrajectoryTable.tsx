@@ -3006,7 +3006,7 @@ export function TrajectoryTable({
                       <span className={css.detailsLocation}>
                         {selected.cell.kind === 'compacted'
                           ? sectionLabel(selected.turn, t)
-                          : selected.group}
+                          : `${sectionLabel(selected.turn, t)} · ${selected.group}`}
                       </span>
                     </>
                   )}

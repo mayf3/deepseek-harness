@@ -37,7 +37,7 @@ export const zh = {
   'turn.label': '第 {turn} 轮',
   'section.betweenTurns': '轮次之间',
   'group.message': '消息',
-  'group.step': '步骤 {step}',
+  'group.step': '第 {step} 步',
   'group.compaction': '压缩 {seq}',
   'status.failed': '失败',
   'status.pending': '等待中',
