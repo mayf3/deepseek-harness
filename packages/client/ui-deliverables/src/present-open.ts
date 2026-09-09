@@ -1,8 +1,9 @@
-/** Open declared source files inside the viewed Session's workspace. */
-import { realpath, stat } from 'node:fs/promises'
-import { isAbsolute, relative, resolve, sep } from 'node:path'
+/** Open declared source files verified by the viewed Session's filesystem. */
 import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-api-session-controller'
+import type {} from '@deepseek-ai/dsh-api-workspace-files'
+import type {} from '@deepseek-ai/dsh-fs'
+import { remoteErrorOf } from '@deepseek-ai/dsh-typert-protocol'
 import type {} from '@deepseek-ai/dsh-client-connection'
 import type {} from '@deepseek-ai/dsh-session-query'
 import type { SessionId, SessionSeq } from '@deepseek-ai/dsh-session'
@@ -53,27 +54,31 @@ async function handlePresentOpen(ctx: Context, request: Request): Promise<Respon
   try {
     request.signal.throwIfAborted()
     if (!ctx.sessionController.workspaceDesktop().available) return new Response('Host desktop unavailable.', { status: 409 })
-    const { session, target } = await ctx.sessionQuery.readEvent({
+    const { target } = await ctx.sessionQuery.readEvent({
       sessionId: id as SessionId, seq: Number(seq) as SessionSeq, before: 0, after: 0,
     }, request.signal)
     const file = target.type === 'deliverables/presented' && isPresentedData(target.data) ? target.data.files[Number(index)] : undefined
     if (!isPresentedFile(file)) return new Response('Presented file not found in this Session result.', { status: 404 })
-    if (session.cwd === undefined) return new Response('Session workspace unavailable.', { status: 404 })
-    const root = await realpath(session.cwd)
-    const path = await realpath(resolve(root, file.path))
-    const within = relative(root, path)
-    if (isAbsolute(within) || within === '..' || within.startsWith(`..${sep}`)) {
-      return new Response('Presented file is outside the workspace.', { status: 403 })
+    const found = await ctx.sessionController.resolveAgent(id as SessionId)
+    if ('error' in found) throw found.error
+    request.signal.throwIfAborted()
+    const { agent } = found
+    const { absolutePath: path } = await agent.ctx.workspaceFiles.stat(agent, file.path, request.signal)
+    const fs = agent.ctx.fs
+    const mapped = fs.processPathFromHostPath(path)
+    if (mapped === undefined || fs.processPath(await fs.resolve(mapped, { signal: request.signal })) !== path) {
+      return new Response('Presented file has no verified Host path.', { status: 422 })
     }
-    if (!(await stat(path)).isFile()) return new Response('Presented path is not a file.', { status: 404 })
     request.signal.throwIfAborted()
     await ctx.sessionController.openWorkspacePath({ path, ...(action === 'reveal' ? { action } : {}) }, request.signal)
     return new Response(null, { status: 204, headers: { 'cache-control': 'no-store' } })
   } catch (error: unknown) {
     request.signal.throwIfAborted()
-    const missing = error instanceof Error && 'code' in error
+    const remote = remoteErrorOf(error)
+    const missing = remote?.code === 'session/not-found' || remote?.code === 'workspace-file/not-found'
+      || remote?.code === 'workspace-file/not-regular-file' || error instanceof Error && 'code' in error
       && (error.code === 'SESSION_QUERY_SESSION_NOT_FOUND' || error.code === 'SESSION_QUERY_EVENT_NOT_FOUND'
         || error.code === 'ENOENT' || error.code === 'ENOTDIR')
-    return new Response('Presented workspace file unavailable.', { status: missing ? 404 : 500 })
+    return new Response('Presented file unavailable.', { status: missing ? 404 : 500 })
   }
 }

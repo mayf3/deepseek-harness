@@ -2,6 +2,10 @@
 import { mkdtemp, rm, readFile, writeFile, mkdir, realpath, symlink, unlink } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import type { Agent } from '@deepseek-ai/dsh-agent'
+import { LocalFileSystem } from '@deepseek-ai/dsh-fs-local'
+import { WorkspaceFiles } from '@deepseek-ai/dsh-api-workspace-files'
+import { RemoteError } from '@deepseek-ai/dsh-typert-protocol'
 import { Context } from '@deepseek-ai/cordis'
 import { HostConnectionService } from '@deepseek-ai/dsh-client-connection'
 import type { BrowserAuth } from '@deepseek-ai/dsh-client-connection/src/browser-auth.ts'
@@ -30,6 +34,11 @@ async function fixture() {
   const ctx = new Context()
   cleanups.push(() => ctx.fiber.dispose())
   const session: { cwd?: string } = { cwd }
+  await ctx.plugin(LocalFileSystem, { cwd })
+  ctx.provide('sandboxPolicy', { resolve: () => ({ workspaceRoot: session.cwd ?? cwd }) } as never)
+  new WorkspaceFiles(ctx, { maxBytes: 1024, maxFileBytes: 1024, maxLines: 100, maxEntries: 100 })
+  const agent = { ctx, session: { header: session } } as unknown as Agent
+  const resolveAgent = vi.fn<Context['sessionController']['resolveAgent']>(async () => ({ agent }))
   const readEvent = vi.fn(async (request: SessionEventReadRequest) => {
     if (request.sessionId !== 'owner') throw new SessionQueryError('missing', 'SESSION_QUERY_SESSION_NOT_FOUND')
     if (request.seq !== 7) throw new SessionQueryError('missing', 'SESSION_QUERY_EVENT_NOT_FOUND')
@@ -37,15 +46,15 @@ async function fixture() {
   })
   ctx.provide('sessionQuery', { readEvent } as never)
   const opener = vi.fn(async (_request: { path: string; action?: 'reveal' }, _signal: AbortSignal) => ({ opened: true as const }))
-  ctx.provide('sessionController', { openWorkspacePath: opener, workspaceDesktop: () => ({ name: 'desktop', available: true, fileManager: 'finder' }) } as never)
+  ctx.provide('sessionController', { resolveAgent, openWorkspacePath: opener, workspaceDesktop: () => ({ name: 'desktop', available: true, fileManager: 'finder' }) } as never)
   const connection = new HostConnectionService(ctx, [], {} as BrowserAuth)
-  const fiber = ctx.plugin({ inject: ['connection', 'sessionQuery', 'sessionController'], apply: registerPresentOpen })
+  const fiber = ctx.plugin({ inject: ['connection', 'sessionQuery', 'sessionController', 'workspaceFiles', 'fs'], apply: registerPresentOpen })
   await fiber
   const handler = connection.createSharedFetchHandler('/api')
   const open = (query = '?sessionId=owner&seq=7&index=0', signal?: AbortSignal) => handler.fetch(new Request(
     `http://localhost${PRESENT_OPEN_PATH}${query}`, { method: 'POST', signal: signal ?? null },
   ))
-  return { root, cwd, ctx, fiber, file, session, readEvent, open, opener, handler }
+  return { root, cwd, ctx, fiber, file, session, readEvent, open, opener, handler, resolveAgent }
 }
 
 describe('Presented workspace file native open route', () => {
@@ -75,7 +84,8 @@ describe('Presented workspace file native open route', () => {
     const fork = join(root, 'fork')
     await mkdir(fork)
     await writeFile(join(fork, file.path), 'child source')
-    readEvent.mockResolvedValueOnce({ session: { ...session, cwd: fork }, target: { type: 'deliverables/presented', data: { turn: 1, callId: 'inherited', files: [file] } } as SessionEvent })
+    session.cwd = fork
+    readEvent.mockResolvedValueOnce({ session, target: { type: 'deliverables/presented', data: { turn: 1, callId: 'inherited', files: [file] } } as SessionEvent })
     expect((await open('?sessionId=fork&seq=7&index=0')).status).toBe(204)
     expect(opener.mock.lastCall?.[0].path).toBe(await realpath(join(fork, file.path)))
   })
@@ -109,30 +119,29 @@ describe('Presented workspace file native open route', () => {
     expect(opener).not.toHaveBeenCalled()
   })
 
-  it('reports removed files, directories, and absent workspaces without launching', async () => {
-    const { cwd, file, session, open, opener } = await fixture()
+  it('reports removed files and directories without launching', async () => {
+    const { cwd, file, open, opener } = await fixture()
     await unlink(join(cwd, file.path))
     expect((await open()).status).toBe(404)
     file.path = '.'
     expect((await open()).status).toBe(404)
-    delete session.cwd
-    expect((await open()).status).toBe(404)
     expect(opener).not.toHaveBeenCalled()
   })
 
-  it('refuses traversal and a source replaced by a symlink outside the workspace', async () => {
+  it('opens external regular files through absolute and relative paths but refuses final symlinks', async () => {
     const { root, cwd, file, open, opener } = await fixture()
     const outside = join(root, 'outside.txt')
     await writeFile(outside, 'outside')
     const source = join(cwd, file.path)
     await unlink(source)
     await symlink(outside, source)
-    expect((await open()).status).toBe(403)
-    file.path = '../outside.txt'
-    expect((await open()).status).toBe(403)
-    file.path = outside
-    expect((await open()).status).toBe(403)
+    expect((await open()).status).toBe(404)
     expect(opener).not.toHaveBeenCalled()
+    for (const path of ['../outside.txt', outside]) {
+      file.path = path
+      expect((await open()).status).toBe(204)
+      expect(opener.mock.lastCall?.[0].path).toBe(await realpath(outside))
+    }
   })
 
   it('reports query and launcher failures without leaking Host paths and allows retry', async () => {
@@ -186,7 +195,7 @@ it('reports the serving desktop and reveals only an authorized declared source',
   expect(opener).toHaveBeenCalledWith({ path: await realpath(join(cwd, file.path)), action: 'reveal' }, expect.any(AbortSignal))
   expect((await open('?sessionId=owner&seq=7&index=0&action=delete')).status).toBe(400)
   file.path = '..'
-  expect((await open('?sessionId=owner&seq=7&index=0&action=reveal')).status).toBe(403)
+  expect((await open('?sessionId=owner&seq=7&index=0&action=reveal')).status).toBe(404)
   expect(opener).toHaveBeenCalledOnce()
 })
 
@@ -198,4 +207,33 @@ it('refuses native actions when the configured Host desktop is unavailable', asy
     expect((await open(`?sessionId=owner&seq=7&index=0&action=${action}`)).status).toBe(409)
   }
   expect(opener).not.toHaveBeenCalled()
+})
+
+
+it('refuses native opening without a matching Host mapping even when a same-name Host file exists', async () => {
+  const { ctx, open, opener } = await fixture()
+  const mapping = vi.spyOn(ctx.fs, 'processPathFromHostPath').mockReturnValue(undefined)
+  expect((await open()).status).toBe(422)
+  mapping.mockReturnValue('/another-filesystem/file')
+  expect((await open()).status).toBe(422)
+  expect(opener).not.toHaveBeenCalled()
+})
+
+it('reports Session resolution failures before checking files', async () => {
+  const { resolveAgent, open, opener } = await fixture()
+  resolveAgent.mockResolvedValueOnce({ error: new RemoteError('session/not-found', 'missing', { sessionId: SessionId('owner') }) })
+  expect((await open()).status).toBe(404)
+  expect(opener).not.toHaveBeenCalled()
+})
+
+
+it('uses the resolved Agent filesystem instead of the Host filesystem', async () => {
+  const { ctx, cwd, open, resolveAgent, opener } = await fixture()
+  const scoped = ctx.isolate('fs')
+  await scoped.plugin(LocalFileSystem, { cwd })
+  vi.spyOn(scoped.fs, 'processPathFromHostPath').mockReturnValue(undefined)
+  resolveAgent.mockResolvedValueOnce({ agent: { ctx: scoped, session: { header: { cwd } } } as unknown as Agent })
+  expect((await open()).status).toBe(422)
+  expect(opener).not.toHaveBeenCalled()
+  expect((await open()).status).toBe(204)
 })

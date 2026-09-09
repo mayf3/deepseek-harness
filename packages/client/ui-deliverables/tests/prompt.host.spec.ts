@@ -19,6 +19,8 @@ describe('ui-deliverables node plugin', () => {
     ctx.provide('connection', { fetch: { register: () => () => {} } } as never)
     ctx.provide('sessionQuery', {} as never)
     ctx.provide('sessionController', {} as never)
+    ctx.provide('workspaceFiles', {} as never)
+    ctx.provide('fs', {} as never)
     const mounted = ctx.plugin({ apply, inject })
     await mounted.await()
 

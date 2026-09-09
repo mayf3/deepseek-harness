@@ -5,6 +5,7 @@ export const NS = 'deliverables'
 
 /** Simplified Chinese dictionary (the key-set source of truth). */
 export const zh = {
+  'presented.nativeUnavailable': '此文件没有可用的主机路径，请在侧边栏预览',
   'presented.revealError': '无法在文件管理器中显示，请重试',
   'presented.directoryError': '无法打开所在文件夹，请重试',
   'presented.directoryOpening': '正在打开所在文件夹…',
@@ -46,6 +47,7 @@ export const zh = {
 
 /** English dictionary (same key set). */
 export const en: Record<DeliverablesKey, string> = {
+  'presented.nativeUnavailable': 'This file has no available Host path. Preview it in the sidebar.',
   'presented.revealError': 'Could not show in file manager. Try again.',
   'presented.directoryError': 'Could not open containing folder. Try again.',
   'presented.directoryOpening': 'Opening containing folder…',

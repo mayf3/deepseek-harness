@@ -4,7 +4,7 @@ import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { presentedFileUrl, PRESENT_HOST_PATH, isPresentedHost, type PresentedAction, type PresentedHost } from '../presented.ts'
 
 /** State of the latest explicit open gesture for one saved file. */
-export type PresentedOpenPhase = 'opening' | 'opened' | 'revealing' | 'revealed' | 'error' | 'revealError'
+export type PresentedOpenPhase = 'opening' | 'opened' | 'revealing' | 'revealed' | 'error' | 'revealError' | 'nativeUnavailable'
 
 /** One browser plugin's file-open requests, cancelled when that plugin is disposed. */
 export class PresentedOpenController {
@@ -18,7 +18,7 @@ export class PresentedOpenController {
   private readonly pending = new Set<Promise<void>>()
 
   /**
-   * Open a declared workspace file once while a request for the same coordinates is pending.
+   * Open a declared file once while a request for the same coordinates is pending.
    * Failures remain visible on the card and a later gesture retries them.
    * @param sessionId - viewed Session, including a fork's own identity.
    * @param seq - durable delivery event sequence.
@@ -93,7 +93,7 @@ export class PresentedOpenController {
     let phase: PresentedOpenPhase = action === 'open' ? 'opened' : 'revealed'
     try {
       const response = await fetch(action === 'open' ? url : `${url}&action=reveal`, { method: 'POST', signal: this.lifetime.signal })
-      if (!response.ok) phase = failure
+      if (!response.ok) phase = response.status === 422 ? 'nativeUnavailable' : failure
     } catch {
       // Transport failures share the retryable card state with Host open failures.
       phase = failure

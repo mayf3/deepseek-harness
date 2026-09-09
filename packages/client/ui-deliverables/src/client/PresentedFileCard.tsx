@@ -56,7 +56,7 @@ export function PresentedFileCard({ file, cwd, phase, host, onPreview, onAction,
       <div className={css.details}>
         <span className={css.fileName}>{name}</span>
         <span className={css.description} role={phase === undefined ? undefined : 'status'}
-          data-error={phase === 'error' || phase === 'revealError' ? true : undefined}>
+          data-error={phase === 'error' || phase === 'revealError' || phase === 'nativeUnavailable' ? true : undefined}>
           <span className={css.secondaryText}>{status}</span>
           <span className={css.previewHint}>{t('presented.preview')}</span>
         </span>

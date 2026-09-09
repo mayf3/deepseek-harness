@@ -68,7 +68,12 @@
     "@deepseek-ai/dsh-client-ui-tool": "workspace:^",
     "@deepseek-ai/dsh-tool-present": "workspace:^",
     "@deepseek-ai/dsh-api-session-controller": "workspace:^",
-    "@deepseek-ai/dsh-util-workspace-path": "workspace:^"
+    "@deepseek-ai/dsh-util-workspace-path": "workspace:^",
+    "@deepseek-ai/dsh-api-workspace-files": "workspace:^",
+    "@deepseek-ai/dsh-fs": "workspace:^",
+    "@deepseek-ai/dsh-fs-local": "workspace:^",
+    "@deepseek-ai/dsh-typert-protocol": "workspace:^",
+    "@deepseek-ai/dsh-agent": "workspace:^"
   },
   "files": [
     "lib/index.js",

@@ -152,3 +152,12 @@ it('discards a replaced Host response and keeps the new metadata request coalesc
   expect(controller.host.getSnapshot()).toMatchObject({ name: 'new' })
   await controller.dispose()
 })
+
+
+it.each(['open', 'reveal'] as const)('reports an unavailable Host path for %s while retaining the declaration', async (action) => {
+  vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(null, { status: 422 })))
+  const controller = new PresentedOpenController()
+  await controller.open(id, 2, 1, action)
+  expect(controller.state.getSnapshot()[url]).toBe('nativeUnavailable')
+  await controller.dispose()
+})
