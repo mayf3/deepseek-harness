@@ -229,7 +229,7 @@ bash 工具是 bash 执行器 seam 面向模型的消费方。使用 `run_in_bac
 
 ### `present`
 
-声明交付已有的工作区文件。如果你创建或更新的文件是用户要求接收的成果，则必须在写入完成后、最终回复前调用 present，包括通过 Bash 或代码执行创建的文件。在回复中提到文件路径不能替代这次调用。文件必须已存在。用户打开当前源文件；不复制或保存其内容。
+声明交付 Session 文件系统可访问的已有文件。如果你创建或更新的文件是用户要求接收的成果，则必须在写入完成后、最终回复前调用 present，包括通过 Bash 或代码执行创建的文件。在回复中提到文件路径不能替代这次调用。文件必须已存在。用户打开当前源文件；不复制或保存其内容。
 
 ```json
 {
@@ -243,7 +243,7 @@ bash 工具是 bash 执行器 seam 面向模型的消费方。使用 `run_in_bac
         "properties": {
           "path": {
             "type": "string",
-            "description": "Path of an existing file inside the workspace."
+            "description": "Path of an existing regular file. Relative paths use the Session working directory."
           },
           "description": {
             "type": "string",
