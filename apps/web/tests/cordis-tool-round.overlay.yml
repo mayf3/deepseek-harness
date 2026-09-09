@@ -1,0 +1,5 @@
+# Keep the recorded Cordis lifecycle on its original model route.
+- id: agent-default-model
+  config:
+    provider: deepseek-official
+    model: deepseek-v4-flash
