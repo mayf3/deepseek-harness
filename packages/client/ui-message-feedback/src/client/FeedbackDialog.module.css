@@ -1,30 +1,35 @@
-/* The design's dialog is the shared Modal card at 640px; everything else
-   about the chrome (radius, header, close, footer) is the primitive's. */
-.dialog {
-  width: min(640px, 100%);
+/* A light floating dialog: 540px wide with a 16px radius, the categories in
+   two rows (4 + 3), the detail box as the visual center, and one action.
+   Doubled selector: the Modal primitive's own card rule sets the width and
+   radius this dialog replaces; the header, close, body, and footer chrome
+   stay the primitive's. */
+.dialog.dialog {
+  width: min(540px, 100%);
+  border-radius: 16px;
 }
 
 .categories {
   display: flex;
   flex-wrap: wrap;
-  gap: 11px 10px;
+  gap: 8px;
 }
 
 .chip {
-  height: 34px;
-  padding: 0 14px;
-  border: 1px solid var(--dsw-alias-border-l3);
-  border-radius: 17px;
+  height: 28px;
+  padding: 0 12px;
+  border: 1px solid var(--dsw-alias-border-l4);
+  border-radius: 14px;
   background: transparent;
-  color: var(--dsw-alias-label-primary);
+  color: var(--dsw-alias-label-secondary);
   font: inherit;
   font-size: 13px;
-  line-height: 20px;
+  line-height: 18px;
   cursor: pointer;
 }
 
 .chip:hover:not(:disabled) {
   background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
 }
 
 .chip:disabled {
@@ -39,20 +44,24 @@
   color: var(--dsw-alias-label-primary-foreground);
 }
 
+/* Two or three sentences by default; grows with the text where the engine
+   supports content sizing, and stays scrollable past the cap. */
 .detail {
   display: block;
   width: 100%;
-  height: 148px;
+  min-height: 112px;
+  max-height: 320px;
   box-sizing: border-box;
-  margin-top: 28px;
-  padding: 14px;
+  margin-top: 20px;
+  padding: 12px 14px;
   border: 1px solid var(--dsw-alias-border-l4);
-  border-radius: 12px;
+  border-radius: 10px;
   background: var(--dsw-alias-bg-layer-1);
   color: var(--dsw-alias-label-primary);
   font: inherit;
-  font-size: 13px;
-  line-height: 20px;
+  font-size: 14px;
+  line-height: 22px;
+  field-sizing: content;
   resize: none;
 }
 
@@ -73,12 +82,14 @@
   line-height: 20px;
 }
 
+/* The final action sits a little further from the content than the content
+   sits from the categories. */
 .submit {
   width: 100%;
-  height: 56px;
-  margin-top: 36px;
-  border-radius: 28px;
-  font-size: 15px;
+  height: 44px;
+  margin-top: 8px;
+  border-radius: 12px;
+  font-size: 14px;
 }
 
 /* The design's ringed green check, not the warning tint the Toast icon seat defaults to. */
