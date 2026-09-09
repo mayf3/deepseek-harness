@@ -175,7 +175,7 @@ function packageFrom(anchor: string, name: string): string | undefined {
   if (!PACKAGE_NAME.test(name)) throw new Error(`desktop profile: invalid package name ${name}`)
   for (const modules of createRequire(join(anchor, 'package.json')).resolve.paths(name) ?? []) {
     const path = join(modules, name)
-    if (existsSync(join(path, 'package.json'))) return realpathSync(path)
+    if (existsSync(join(path, 'package.json'))) return realpathSync.native(path)
   }
   return undefined
 }
@@ -190,8 +190,8 @@ function packageFrom(anchor: string, name: string): string | undefined {
 export function validateDesktopPluginGraph(
   profile: string, root: string, runtime: DesktopRuntimeDescriptor, activePlugins: readonly string[],
 ): void {
-  const profileRoot = realpathSync(profile)
-  const shared = new Map(runtime.sharedPackages.map(entry => [entry.name, realpathSync(runtimePath(root, entry.path))]))
+  const profileRoot = realpathSync.native(profile)
+  const shared = new Map(runtime.sharedPackages.map(entry => [entry.name, realpathSync.native(runtimePath(root, entry.path))]))
   for (const [name, path] of shared) {
     if (packageFrom(profile, name) !== path) throw new Error(`desktop profile: missing or incorrect host link ${name}`)
   }
@@ -199,7 +199,7 @@ export function validateDesktopPluginGraph(
   const scan = (modules: string): void => {
     if (!existsSync(modules)) return
     if (lstatSync(modules).isSymbolicLink()) throw new Error(`desktop profile: linked package container ${modules}`)
-    const directory = realpathSync(modules)
+    const directory = realpathSync.native(modules)
     if (scanned.has(directory)) return
     scanned.add(directory)
     for (const entry of readdirSync(modules, { withFileTypes: true })) {
@@ -207,7 +207,7 @@ export function validateDesktopPluginGraph(
       const path = join(modules, entry.name)
       if (entry.name.startsWith('@')) { scan(path); continue }
       if (!existsSync(join(path, 'package.json'))) throw new Error(`desktop profile: invalid installed package ${path}`)
-      const canonical = realpathSync(path)
+      const canonical = realpathSync.native(path)
       const info = manifest(canonical)
       const host = shared.get(info.name)
       if (host !== undefined) {

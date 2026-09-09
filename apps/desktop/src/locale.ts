@@ -3,6 +3,10 @@
 export const en = {
   application: 'Application',
   startupFailed: 'DeepSeek Harness could not start',
+  startupLoading: 'Starting DeepSeek Harness…',
+  startupLoadingDescription: 'Your workspace will open when it is ready.',
+  startupErrorDescription: 'The application could not start. Retry or manage Desktop plugins to resolve the problem.',
+  managePlugins: 'Manage plugins',
   pluginsMenu: 'Desktop Plugins…',
   pluginsMenuPackagedOnly: 'Desktop Plugins… (available in packaged applications)',
   checkUpdatesMenu: 'Check for Updates…',
@@ -49,6 +53,10 @@ export type DesktopMessages = { readonly [Key in keyof typeof en]: string }
 export const zh = {
   application: '应用',
   startupFailed: 'DeepSeek Harness 无法启动',
+  startupLoading: '正在启动 DeepSeek Harness…',
+  startupLoadingDescription: '准备就绪后将自动打开工作区。',
+  startupErrorDescription: '应用未能启动。你可以重试，或管理桌面插件以解决问题。',
+  managePlugins: '管理插件',
   pluginsMenu: '桌面插件…',
   pluginsMenuPackagedOnly: '桌面插件…（打包应用中可用）',
   checkUpdatesMenu: '检查更新…',

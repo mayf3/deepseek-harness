@@ -83,6 +83,7 @@ export class DesktopHostProcess {
   })
   private exitPromise: Promise<void> | undefined
   private stderr = ''
+  private failureReported = false
 
   /**
    * @param node - absolute bundled upstream Node.js executable.
@@ -90,6 +91,7 @@ export class DesktopHostProcess {
    * @param projectDir - active or staged desktop plugin profile.
    * @param inspectPort - optional loopback inspector port for workspace development.
    * @param environment - Child environment; runtime and package-manager overrides are removed.
+   * @param onFailure - Receives the first fatal child or transport failure, including after readiness.
    */
   constructor(
     private readonly node: string,
@@ -97,6 +99,7 @@ export class DesktopHostProcess {
     private readonly projectDir: string,
     private readonly inspectPort?: number,
     private readonly environment: NodeJS.ProcessEnv = process.env,
+    private readonly onFailure?: (error: Error) => void,
   ) {}
 
   /** Start the child once and resolve only after its complete composition is active. */
@@ -149,7 +152,7 @@ export class DesktopHostProcess {
     })
     child.once('error', (error) => { this.fail(error) })
     this.exitPromise = new Promise<void>((resolve) => {
-      child.once('exit', (code) => {
+      child.once('close', (code) => {
         const suffix = this.stderr.trim() === '' ? '' : `: ${this.stderr.trim()}`
         if (code !== 0 && code !== null) this.fail(new Error(`dsh desktop host exited with ${String(code)}${suffix}`))
         else this.fail(new Error(`dsh desktop host stopped${suffix}`))
@@ -278,7 +281,7 @@ export class DesktopHostProcess {
   private send(message: DesktopHostCommand): void {
     const child = this.child
     if (child === undefined || !child.connected) throw new Error('dsh desktop host IPC is unavailable')
-    child.send(message)
+    child.send(message, (error) => { if (error !== null) this.fail(error) })
   }
 
   private acceptResponseBytes(chunk: Buffer): void {
@@ -405,6 +408,12 @@ export class DesktopHostProcess {
 
   private fail(error: Error): void {
     this.readyReject(error)
+    if (!this.failureReported) {
+      this.failureReported = true
+      try { this.onFailure?.(error) } catch (listenerError) {
+        console.error('desktop host failure listener failed', listenerError)
+      }
+    }
     for (const pending of this.pending.values()) {
       void pending.requestReader?.cancel(error).catch(() => undefined)
       if (pending.controller === undefined) pending.reject(error)

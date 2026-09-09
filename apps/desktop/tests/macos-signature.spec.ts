@@ -105,10 +105,10 @@ describe('desktop macOS release signature', () => {
         join(source, relative(sourceRoot, entry.from)), join(destination, entry.to), value => value,
       ))
       await copyFiles(matchers.slice(0, 1))
-      expect(() => verifyDesktopRuntime(join(destination, 'dsh'), '1.0.0')).toThrow(/integrity/u)
+      await expect(verifyDesktopRuntime(join(destination, 'dsh'), '1.0.0')).rejects.toThrow(/ENOENT/u)
       rmSync(destination, { recursive: true })
       await copyFiles(matchers)
-      expect(() => verifyDesktopRuntime(join(destination, 'dsh'), '1.0.0')).not.toThrow()
+      await expect(verifyDesktopRuntime(join(destination, 'dsh'), '1.0.0')).resolves.toMatchObject({ release: { version: '1.0.0' } })
     } finally { rmSync(root, { recursive: true, force: true }) }
   })
 
@@ -118,6 +118,29 @@ describe('desktop macOS release signature', () => {
       DSH_DESKTOP_APP_ID: RELEASE_ENVIRONMENT.DSH_DESKTOP_APP_ID,
       DSH_DESKTOP_TARGET_PLATFORM: 'win32',
     }, 'win32')).toThrow(/DSH_DESKTOP_WINDOWS_CER_FILE/u)
+  })
+
+  it('isolates unsigned Windows artifacts and omits updater metadata without release credentials', async () => {
+    const { createElectronBuilderConfig } = await import('../electron-builder.config.mjs')
+    const config = createElectronBuilderConfig({
+      DSH_DESKTOP_APP_ID: RELEASE_ENVIRONMENT.DSH_DESKTOP_APP_ID,
+      DSH_DESKTOP_TARGET_PLATFORM: 'win32',
+      DSH_DESKTOP_UNSIGNED: '1',
+    }, 'win32', 'x64')
+    expect(portablePath(config.directories.output)).toContain('/targets/win-x64/unsigned-artifacts')
+    expect(portablePath(config.nsis.include)).toMatch(/\/scripts\/installer\.nsh$/u)
+    expect(config).toMatchObject({
+      win: { forceCodeSigning: false, signtoolOptions: { sign: undefined } },
+      publish: null,
+    })
+  })
+
+  it('rejects unsigned macOS builds and malformed signing modes', async () => {
+    const { createElectronBuilderConfig } = await import('../electron-builder.config.mjs')
+    expect(() => createElectronBuilderConfig({ ...RELEASE_ENVIRONMENT, DSH_DESKTOP_UNSIGNED: '1' }))
+      .toThrow(/unsigned builds require Windows/u)
+    expect(() => createElectronBuilderConfig({ ...RELEASE_ENVIRONMENT, DSH_DESKTOP_UNSIGNED: 'yes' }))
+      .toThrow(/must be 0 or 1/u)
   })
 
   it('accepts the configured authority and team', () => {

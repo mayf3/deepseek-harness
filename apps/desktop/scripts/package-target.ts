@@ -73,6 +73,25 @@ export function withoutWindowsSigningEnvironment(environment: NodeJS.ProcessEnv)
 }
 
 /**
+ * Select signing and NSIS-compatible archive filters for electron-builder.
+ * @param environment - Target packaging environment.
+ * @param unsigned - Whether to create a local unsigned Windows artifact.
+ * @returns Packaging environment without certificate inputs for unsigned builds.
+ */
+export function desktopElectronBuilderEnvironment(environment: NodeJS.ProcessEnv, unsigned: boolean): NodeJS.ProcessEnv {
+  const selected: NodeJS.ProcessEnv = { ...environment, DSH_DESKTOP_UNSIGNED: unsigned ? '1' : '0' }
+  // The bundled NSIS decoder cannot extract 7-Zip's automatic ARM64-filtered entries.
+  if (environment.DSH_DESKTOP_TARGET_PLATFORM === 'win32') selected.ELECTRON_BUILDER_7Z_FILTER = 'BCJ'
+  if (!unsigned) return selected
+  return {
+    ...Object.fromEntries(Object.entries(withoutWindowsSigningEnvironment(selected))
+      .filter(([name]) => !/^(?:WIN_)?CSC_/iu.test(name))),
+    CSC_IDENTITY_AUTO_DISCOVERY: 'false',
+    DSH_DESKTOP_UNSIGNED: '1',
+  }
+}
+
+/**
  * Remove upload-only COS credentials from every packaging subprocess.
  * @param environment - Packaging command environment.
  * @returns A copy without Desktop upload credentials.
@@ -152,6 +171,7 @@ interface DesktopPackageInvocation {
   readonly target: DesktopPackageTarget
   readonly directory: boolean
   readonly prepareOnly: boolean
+  readonly unsigned: boolean
 }
 
 function hostTargetName(platform: NodeJS.Platform, arch: string): DesktopPackageTargetName {
@@ -178,14 +198,18 @@ export function parseDesktopPackageInvocation(
     options: {
       dir: { type: 'boolean', default: false },
       'prepare-only': { type: 'boolean', default: false },
+      unsigned: { type: 'boolean', default: false },
     },
   })
   if (positionals.length > 1) throw new Error('desktop package: expected at most one target')
   const name = positionals[0] ?? hostTargetName(hostPlatform, hostArch)
+  if (values.unsigned && name !== 'win-x64') throw new Error('desktop package: --unsigned requires win-x64')
+  if (values.unsigned && values['prepare-only']) throw new Error('desktop package: --unsigned cannot use --prepare-only')
   return {
     target: resolveDesktopPackageTarget(name, hostPlatform, hostArch),
     directory: values.dir,
     prepareOnly: values['prepare-only'],
+    unsigned: values.unsigned,
   }
 }
 
@@ -240,7 +264,7 @@ async function main(): Promise<void> {
   const { target } = invocation
   const buildPaths = desktopTargetBuildPaths(target.name)
   const releaseRecordPath = join(buildPaths.artifacts, desktopBuildRecordFilename(target.name))
-  if (!invocation.prepareOnly) {
+  if (!invocation.prepareOnly && !invocation.unsigned) {
     rmSync(releaseRecordPath, { force: true })
     rmSync(`${releaseRecordPath}.tmp`, { force: true })
   }
@@ -250,9 +274,9 @@ async function main(): Promise<void> {
     DSH_DESKTOP_TARGET_PLATFORM: target.platform,
     DSH_DESKTOP_TARGET_ARCH: target.arch,
   }
-  const electronBuilderEnv = { ...targetEnv }
+  const electronBuilderEnv = desktopElectronBuilderEnvironment(targetEnv, invocation.unsigned)
   for (const name of WINDOWS_SIGNING_ENV_NAMES) {
-    if (process.env[name] !== undefined) electronBuilderEnv[name] = process.env[name]
+    if (!invocation.unsigned && process.env[name] !== undefined) electronBuilderEnv[name] = process.env[name]
   }
   await runPnpm(['run', 'build:official'], buildEnv, REPOSITORY_ROOT)
   await runPnpm(['run', 'release:pack', '--family', 'dsh', '--out', buildPaths.packedDsh], buildEnv, REPOSITORY_ROOT)
@@ -279,7 +303,7 @@ async function main(): Promise<void> {
   await runPnpm(['run', 'prepare:dsh'], targetEnv)
   if (invocation.prepareOnly) return
   await runPnpm(desktopElectronBuilderArguments(target, invocation.directory), electronBuilderEnv)
-  if (!invocation.directory) writeReleaseRecord(target, electronBuilderEnv, buildPaths.artifacts)
+  if (!invocation.directory && !invocation.unsigned) writeReleaseRecord(target, electronBuilderEnv, buildPaths.artifacts)
 }
 
 if (process.argv[1] !== undefined && import.meta.filename === resolve(process.argv[1])) await main()

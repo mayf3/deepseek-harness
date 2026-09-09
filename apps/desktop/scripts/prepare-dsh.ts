@@ -3,7 +3,7 @@
 import { spawn } from 'node:child_process'
 import { copyFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { delimiter, dirname, join, resolve } from 'node:path'
+import { delimiter, dirname, join, relative, resolve } from 'node:path'
 import { createRuntimeProjectMetadata } from '../src/project-manager.ts'
 import { DESKTOP_HOST_PROTOCOL_VERSION } from '../src/host-protocol.ts'
 import { parseDesktopRelease, type DesktopRelease } from '../src/release.ts'
@@ -25,6 +25,7 @@ import {
   signMacOSRuntime,
 } from './macos-runtime.ts'
 import { resolveDesktopBuildTarget, resolveDesktopTargetBuildPaths } from './desktop-build-paths.mjs'
+import { desktopRuntimeFileExclusion } from './runtime-file-policy.ts'
 
 const APP_ROOT = resolve(import.meta.dirname, '..')
 const BUILD_PATHS = resolveDesktopTargetBuildPaths()
@@ -115,10 +116,13 @@ async function main(): Promise<void> {
     )
     await runPnpm(['install', '--prod', '--frozen-lockfile', '--trust-lockfile'])
     const packageSet = readDesktopCorePackageSet(BUILD_ROOT, release.version)
+    const targetName = resolveDesktopBuildTarget()
+    const target = { platform: process.platform, arch: targetName.endsWith('arm64') ? 'arm64' : 'x64' }
+    const modules = join(BUILD_ROOT, 'node_modules')
     mkdirSync(DSH_OUTPUT_ROOT, { recursive: true })
-    cpSync(join(BUILD_ROOT, 'node_modules'), join(DSH_OUTPUT_ROOT, 'node_modules'), {
+    cpSync(modules, join(DSH_OUTPUT_ROOT, 'node_modules'), {
       recursive: true, dereference: true,
-      filter: source => !source.split(/[\\/]/u).some(part => part === '.bin' || part === '.pnpm' || part === '.modules.yaml' || part === '.pnpm-workspace-state-v1.json'),
+      filter: source => desktopRuntimeFileExclusion(relative(modules, source), target) === undefined,
     })
     writeFileSync(join(DSH_OUTPUT_ROOT, 'package.json'), `${JSON.stringify({
       name: '@deepseek-ai/dsh-desktop-runtime', private: true, version: release.version, type: 'module',
@@ -132,12 +136,10 @@ async function main(): Promise<void> {
     if (process.platform === 'darwin') {
       await signMacOSRuntime(DSH_OUTPUT_ROOT, resolveDesktopAppId(process.env), resolveMacOSSigningEnvironment(process.env))
     }
-    const targetName = resolveDesktopBuildTarget()
-    const target = { platform: process.platform, arch: targetName.endsWith('arm64') ? 'arm64' : 'x64' }
     writeDesktopRuntime(DSH_OUTPUT_ROOT, release, packageSet.packages.map(entry => entry.name), target)
-    const descriptor = verifyDesktopRuntime(DSH_OUTPUT_ROOT, release.version, target)
+    const descriptor = await verifyDesktopRuntime(DSH_OUTPUT_ROOT, release.version, target)
     await smokeDesktopRuntime(DSH_OUTPUT_ROOT, NODE, descriptor)
-    verifyDesktopRuntime(DSH_OUTPUT_ROOT, release.version, target)
+    await verifyDesktopRuntime(DSH_OUTPUT_ROOT, release.version, target)
   } catch (error) {
     rmSync(DSH_OUTPUT_ROOT, { recursive: true, force: true })
     throw error

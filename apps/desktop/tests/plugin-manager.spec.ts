@@ -12,7 +12,7 @@ it('keeps disabled packages visible and offers recovery without a running backen
   const toggle = vi.fn(async (_name: string, active: boolean) => { enabled = active })
   const api = {
     locale: async () => resolveDesktopLocale('en'),
-    backend: { status: async () => ({ ready, error: ready ? undefined : 'plugin requires Cordis ^2.0.0' }), retry: vi.fn() },
+    backend: { status: async () => ready ? { phase: 'ready' } : { phase: 'error', message: 'plugin requires Cordis ^2.0.0' }, retry: vi.fn() },
     plugins: { list: async () => [{ name: 'example-plugin', version: '1.0.0', enabled }], disableAll, toggle },
   }
   Object.defineProperty(dom.window, 'dshDesktop', { value: api })

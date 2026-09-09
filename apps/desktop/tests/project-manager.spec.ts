@@ -48,7 +48,7 @@ if (command !== 'rebuild') {
   return path
 }
 function hooks(overrides: Partial<DesktopProjectHooks> = {}): DesktopProjectHooks {
-  return { healthCheck: async () => {}, beforeActivate: async () => {}, afterActivate: async () => {}, ...overrides }
+  return { beforeActivate: async () => {}, afterActivate: async () => {}, ...overrides }
 }
 function setup(): { root: string; manager: DesktopProjectManager } {
   const root = temporaryRoot()
@@ -88,6 +88,36 @@ describe('desktop external plugin profile', () => {
     await manager.applyRelease('1.0.0', hooks())
     unlinkSync(join(manager.paths.profile, 'node_modules/@deepseek-ai/cordis'))
     await expect(manager.applyRelease('1.0.0', hooks())).resolves.toBe(true)
+    expect(calls(root)).toEqual([])
+  })
+
+  it.skipIf(process.platform !== 'win32')('reuses the profile when the launch path changes only Windows letter casing', async () => {
+    const { manager } = setup()
+    await manager.applyRelease('1.0.0', hooks())
+    const relaunched = new DesktopProjectManager(manager.paths, { ...manager.runtime, dsh: manager.runtime.dsh.toUpperCase() })
+    let started = false
+    await expect(relaunched.applyRelease('1.0.0', hooks({
+      afterActivate: async () => { started = true },
+    }))).resolves.toBe(false)
+    expect(started).toBe(false)
+  })
+
+  it.each(['changed', 'same-size', 'extra', 'missing'])('starts and reuses a profile without checking %s runtime bytes', async (operation) => {
+    const { root, manager } = setup()
+    if (operation === 'changed') writeFileSync(join(manager.runtime.dsh, 'package.json'), '{}')
+    if (operation === 'same-size') writeFileSync(join(manager.runtime.dsh, 'package.json'), '{"type":"Module"}\n')
+    if (operation === 'extra') writeFileSync(join(manager.runtime.dsh, 'extra'), '')
+    if (operation === 'missing') unlinkSync(join(manager.runtime.dsh, 'package.json'))
+    let starts = 0
+    await expect(manager.applyRelease('1.0.0', hooks({
+      afterActivate: async () => { starts++ },
+    }))).resolves.toBe(true)
+    const relaunched = new DesktopProjectManager(manager.paths, manager.runtime)
+    await expect(relaunched.applyRelease('1.0.0', hooks({
+      afterActivate: async () => { starts++ },
+    }))).resolves.toBe(false)
+    expect(starts).toBe(1)
+    expect(existsSync(manager.paths.profile)).toBe(true)
     expect(calls(root)).toEqual([])
   })
 
@@ -166,12 +196,11 @@ describe('desktop external plugin profile', () => {
     expect(next.listPlugins()).toEqual([{ name: 'plugin', version: '1.0.0', enabled: false }])
   })
 
-  it.each(['health', 'before', 'after'] as const)('keeps the active profile when %s activation fails', async (phase) => {
+  it.each(['before', 'after'] as const)('keeps the active profile when %s activation fails', async (phase) => {
     const { manager } = setup()
     await manager.applyRelease('1.0.0', hooks())
     let starts = 0
     await expect(manager.mutate({ type: 'plugin-add', spec: 'plugin@1.0.0' }, hooks({
-      healthCheck: async () => { if (phase === 'health') throw new Error('health failed') },
       beforeActivate: async () => { if (phase === 'before') throw new Error('before failed') },
       afterActivate: async () => { if (phase === 'after' && starts++ === 0) throw new Error('after failed') },
     }))).rejects.toThrow(`${phase} failed`)
