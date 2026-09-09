@@ -124,7 +124,6 @@ async function proposeStep(
 }
 
 function catalogMessages(session: Session): Extract<SessionEvent, { type: 'user/message' }>[] {
-  // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
   return session.snapshotEvents().filter((event): event is Extract<SessionEvent, { type: 'user/message' }> => event.type === 'user/message'
     && event.data.source.kind === 'skill-catalog')
 }

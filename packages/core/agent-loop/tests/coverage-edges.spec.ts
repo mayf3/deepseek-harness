@@ -69,14 +69,12 @@ describe('tool JSON parse', () => {
     await waitForIdle(ctx, agent)
 
     // tool/call event should have recorded the raw arguments string
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const callEvent = agent.session.snapshotEvents().find(e => e.type === 'tool/call')
     expect(callEvent).toBeDefined()
     if (callEvent!.type === 'tool/call') {
       expect(callEvent!.data.arguments).toBe('not json')
     }
     // the loop did not crash — a result was produced
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(agent.session.snapshotEvents().some(e => e.type === 'tool/result')).toBe(true)
   })
 
@@ -103,7 +101,6 @@ describe('tool JSON parse', () => {
     send(agent, 'use tool')
     await waitForIdle(ctx, agent)
 
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(agent.session.snapshotEvents().some(e => e.type === 'tool/result')).toBe(true)
   })
 })
@@ -133,11 +130,8 @@ describe('thrown-value propagation', () => {
     expect(errors).toHaveLength(1)
     expect(errors[0]).toBe('naked string error')
     expect(adapter.requests).toHaveLength(0)
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const starts = agent.session.snapshotEvents().filter(event => event.type === 'turn/start')
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const ends = agent.session.snapshotEvents().filter(event => event.type === 'turn/end')
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const messages = agent.session.snapshotEvents().filter(event => event.type === 'user/message')
     expect(starts).toHaveLength(0)
     expect(ends).toHaveLength(0)
@@ -161,7 +155,6 @@ describe('thrown-value propagation', () => {
 
     send(agent, 'go')
     await waitForIdle(ctx, agent)
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const turnEnd = agent.session.snapshotEvents().find(e => e.type === 'turn/end')
     expect(turnEnd?.type === 'turn/end' && turnEnd.data.reason.kind === 'error'
       ? turnEnd.data.reason.error.message
@@ -187,7 +180,6 @@ describe('durable error rendering', () => {
     send(agent, 'go')
     await waitForIdle(ctx, agent)
 
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const turnEnd = agent.session.snapshotEvents().find(e => e.type === 'turn/end')
     expect(turnEnd).toBeDefined()
     if (turnEnd?.type === 'turn/end' && turnEnd.data.reason.kind === 'error') {
@@ -244,7 +236,6 @@ describe('structured tool error propagation (the runtime-validation Agent Note, 
     send(agent, 'go')
     await waitForIdle(ctx, agent)
 
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const toolResult = agent.session.snapshotEvents().find(e => e.type === 'tool/result')
     expect(toolResult?.type === 'tool/result' && toolResult.data.message.content[0].isError).toBe(true)
     expect(toolResult?.type === 'tool/result' && toolResult.data.error)
@@ -271,7 +262,6 @@ describe('request-error action edges', () => {
 
     // One failed request, no retry turn.
     expect(adapter.requests).toHaveLength(1)
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const ends = agent.session.snapshotEvents().filter(e => e.type === 'turn/end')
     expect(ends).toHaveLength(1)
   })
@@ -294,7 +284,6 @@ describe('request-error action edges', () => {
     await agent.whenIdle()
 
     expect(adapter.requests).toHaveLength(1)
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const end = agent.session.snapshotEvents().findLast(e => e.type === 'turn/end')
     expect(end?.type === 'turn/end' && end.data.reason.kind).toBe('aborted')
   })
@@ -324,7 +313,6 @@ describe('stream failure edges', () => {
 
     // No facts -> not offered to recovery; the turn fails through settle().
     expect(recoveries).toBe(0)
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const end = agent.session.snapshotEvents().findLast(e => e.type === 'turn/end')
     expect(end?.type === 'turn/end' && end.data.reason.kind).toBe('error')
   })
@@ -400,7 +388,6 @@ describe('tool result meta persistence', () => {
     send(agent, 'go')
     await waitForIdle(ctx, agent)
 
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const result = agent.session.snapshotEvents().find(e => e.type === 'tool/result')
     expect(result?.type === 'tool/result' && result.data.meta).toEqual({ presentation: 'diff-card' })
   })
@@ -449,7 +436,6 @@ describe('recovery without a retry action', () => {
 
     expect(recoveries).toBe(1)
     expect(adapter.requests).toHaveLength(1)
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const end = agent.session.snapshotEvents().findLast(e => e.type === 'turn/end')
     expect(end?.type === 'turn/end' && end.data.reason.kind).toBe('error')
   })
@@ -475,7 +461,6 @@ describe('unrenderable failure settlement', () => {
     send(agent, 'go')
     await agent.whenIdle()
 
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const end = agent.session.snapshotEvents().findLast(e => e.type === 'turn/end')
     expect(end?.type === 'turn/end' && end.data.reason.kind).toBe('error')
     if (end?.type === 'turn/end' && end.data.reason.kind === 'error') {
@@ -517,7 +502,6 @@ describe('driver bookkeeping edges', () => {
 
     expect(proposals).toBe(2)
     expect(adapter.requests).toHaveLength(1)
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const end = agent.session.snapshotEvents().findLast(event => event.type === 'turn/end')
     expect(end?.type === 'turn/end' && end.data.reason).toEqual({ kind: 'blocked' })
   })
@@ -540,10 +524,8 @@ describe('driver bookkeeping edges', () => {
     send(agent, 'go')
     await agent.whenIdle()
 
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const types = agent.session.snapshotEvents().map(e => e.type)
     expect(types.filter(t => t === 'step/end')).toHaveLength(1)
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const end = agent.session.snapshotEvents().findLast(e => e.type === 'turn/end')
     expect(end?.type === 'turn/end' && end.data.reason.kind).toBe('error')
   })

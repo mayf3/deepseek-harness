@@ -328,7 +328,6 @@ describe('SurfaceManager', () => {
       sourceEventSeqs: sourceSeqs(2, 1),
     })
 
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const folded = foldSurface(s.snapshotEvents())
     expect(folded.nodes).toEqual(s.surface.nodes)
     expect(folded.replacements).toEqual([
@@ -338,9 +337,7 @@ describe('SurfaceManager', () => {
     folded.nodes[0] = SessionSeq(99)
     folded.replacements[0]!.shadowedSeqs.push(SessionSeq(99))
     expect(s.surface.nodes).toEqual([3])
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(foldSurface(s.snapshotEvents()).nodes).toEqual([3])
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(foldSurface(s.snapshotEvents()).replacements[0]!.shadowedSeqs).toEqual([0])
   })
 
@@ -357,7 +354,6 @@ describe('SurfaceManager', () => {
     expect(s.surface.nodes).toEqual([1])
     const manager = s.surface as unknown as { _state: object }
     expect(Object.hasOwn(manager._state, 'replacements')).toBe(false)
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(foldSurface(s.snapshotEvents()).replacements).toEqual([
       { seq: 1, start: 0, end: 0, shadowedSeqs: [0] },
     ])
@@ -392,7 +388,6 @@ describe('SurfaceManager', () => {
     const surface = s.surface
     const nodes = surface.nodes
 
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(nodes).toEqual(foldSurface(s.snapshotEvents()).nodes)
     expect(surface.replaceGeneration).toBe(0)
 
@@ -413,12 +408,10 @@ describe('SurfaceManager', () => {
       { surfaceOp: surfaceOp({ op: 'replace', startSeq: 0, endSeq: 0 }) },
     )).toThrow(/missing 0/)
 
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(s.snapshotEvents()).toHaveLength(1)
     expect(s.surface).toBe(surface)
     expect(surface.nodes).toEqual([0])
     expect(surface.replaceGeneration).toBe(0)
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(surface.nodes).toEqual(foldSurface(s.snapshotEvents()).nodes)
 
     s.append('user/message', createUserMessage({
@@ -427,7 +420,6 @@ describe('SurfaceManager', () => {
     expect(surface.nodes).toBe(nodes)
     expect(surface.nodes).toEqual([0, 1])
     expect(surface.replaceGeneration).toBe(0)
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(surface.nodes).toEqual(foldSurface(s.snapshotEvents()).nodes)
   })
 
@@ -501,7 +493,6 @@ describe('SurfaceManager', () => {
         isError: false,
       }),
     }, { surfaceOp: 'append' })
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const replayed = Session.create(SessionId('replay'), original.snapshotEvents())
     expect(replayed.surface.nodes).toEqual([1, 2, 4])
     expect(replayed.deriveMessages()).toEqual(original.deriveMessages())
@@ -603,7 +594,6 @@ describe('SurfaceManager', () => {
     // Mutate caller's array after append.
     sources.push(SessionSeq(1))
     sources[0] = SessionSeq(99)
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const logged = s.snapshotEvents()[1]! as SurfaceEvent
     expect(logged.sourceEventSeqs).toEqual([0])
   })
@@ -639,7 +629,6 @@ describe('SurfaceManager', () => {
     })
     // Mutate caller's object after append.
     op.startSeq = SessionSeq(99)
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const logged = s.snapshotEvents()[1]! as SurfaceEvent
     expect(logged.surfaceOp).toEqual({ op: 'replace', startSeq: 0, endSeq: 0 })
   })
@@ -730,9 +719,7 @@ describe('Session.append surface opts', () => {
     expect(event.sourceEventSeqs).toEqual([0, 1])
     expect(event.surfaceOp).toBe('append')
     // The logged event matches the returned event.
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect((s.snapshotEvents()[2]! as SurfaceEvent).sourceEventSeqs).toEqual([0, 1])
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect((s.snapshotEvents()[2]! as SurfaceEvent).surfaceOp).toBe('append')
   })
 
@@ -766,9 +753,7 @@ describe('Session.append surface opts', () => {
   it('a non-surface event carries no surface fields', () => {
     const s = Session.create(SessionId('noopts'))
     s.append('turn/start', { turn: 1 })
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect((s.snapshotEvents()[0] as SessionEvent<SurfaceEventType>).sourceEventSeqs).toBeUndefined()
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect((s.snapshotEvents()[0] as SessionEvent<SurfaceEventType>).surfaceOp).toBeUndefined()
   })
 
@@ -821,14 +806,12 @@ describe('surface type guards', () => {
 
   it('isSurfaceEvent narrows a fully-formed surface event', () => {
     const s = surfaceSession()
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const userMessage = s.snapshotEvents().find(e => e.type === 'user/message')!
     expect(isSurfaceEvent(userMessage)).toBe(true)
   })
 
   it('isSurfaceEvent rejects a non-surface-eligible type', () => {
     const s = surfaceSession()
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const turnStart = s.snapshotEvents().find(e => e.type === 'turn/start')!
     expect(isSurfaceEvent(turnStart)).toBe(false)
   })
@@ -852,9 +835,7 @@ describe('surface type guards', () => {
     s.append('user/message', createUserMessage({
       content: [{ type: 'text', text: 'checkpoint' }], source: { kind: 'plugin', plugin: 'compact' },
     }), { surfaceOp: surfaceOp({ op: 'replace', startSeq: 1, endSeq: 2 }), sourceEventSeqs: sourceSeqs(1, 2) })
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const appended = s.snapshotEvents().find(e => e.type === 'user/message')!
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const replacement = s.snapshotEvents().at(-1)!
 
     expect(isAppendSurfaceEvent(appended)).toBe(true)
@@ -865,7 +846,6 @@ describe('surface type guards', () => {
 
   it('rejects log-only and markerless events from both marker guards', () => {
     const s = surfaceSession()
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const turnStart = s.snapshotEvents().find(e => e.type === 'turn/start')!
     // A surface-eligible type whose mandatory marker is absent has no origin at
     // all: it never entered the surface.

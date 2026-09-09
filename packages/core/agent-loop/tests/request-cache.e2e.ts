@@ -82,7 +82,6 @@ describe.skipIf(!process.env.DEEPSEEK_API_KEY)('log-derived request cache hits (
     agent.followup(createUserMessage({ content: [{ type: 'text', text: 'Thanks. Repeat that value one more time.' }], source: { kind: 'user' } }))
     await waitForIdle(ctx, agent)
 
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const usages = agent.session.snapshotEvents()
       .filter(e => e.type === 'assistant/message')
       .map(e => e.data.usage)

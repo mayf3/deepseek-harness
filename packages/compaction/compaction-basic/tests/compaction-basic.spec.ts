@@ -625,7 +625,6 @@ describe('pressure measurement and retention', () => {
 
     await expect(compactIfNeeded(compact, session, 'context-overflow')).resolves.toBeNull()
     expect(session.surface.replaceGeneration).toBe(generation)
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(session.snapshotEvents().some(event => event.type === 'compaction/start')).toBe(false)
   })
 
@@ -647,7 +646,6 @@ describe('pressure measurement and retention', () => {
     const compact = service(compactConfig, ctx)
     const session = conversation(4, undefined, 'SYSTEM HEAD')
     const [head, firstUser] = session.surface.nodes
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(session.eventAt(head!)?.type).toBe('system/message')
 
     const range = selectCompactableRange(session, ctx.tokenMeter.measure(session), compactConfig.retainTokens!)
@@ -891,11 +889,9 @@ describe('optional model-free tool-result pruning', () => {
 
     expect(await compactIfNeeded(compact, session)).not.toBeNull()
     expect(compact.calls).toHaveLength(1)
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const original = session.snapshotEvents().find(event => event.type === 'tool/result')
     expect(original?.type === 'tool/result' && original.data.message.content[0].content[0])
       .toEqual({ type: 'text', text: 'X'.repeat(3_000) })
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(session.snapshotEvents().filter(event =>
       event.type === 'tool/result' && event.surfaceOp !== 'append')).toHaveLength(0)
   })
@@ -922,7 +918,6 @@ describe('compaction region transaction', () => {
     expect(result.shadowedTokenCount).toBeGreaterThan(0)
     expect(compact.calls[0]).toMatchObject({ signal: SIGNAL })
     expect(summarizedText(compact.calls[0]!.input)).toContain('fixture user 1')
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const summary = session.snapshotEvents().findLast(event => event.type === 'compaction/summary')
     expect(summary?.data).toMatchObject({
       shadowedSeqs: result.shadowedSeqs,
@@ -939,7 +934,6 @@ describe('compaction region transaction', () => {
     expect(head.content[0]?.type === 'text' ? head.content[0].text : '').toContain('<compacted-summary>')
     expect(head.content.at(-1)).toEqual({ type: 'text', text: '</compacted-summary>' })
 
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const replay = Session.create(SessionId('replay'), session.snapshotEvents())
     expect(replay.deriveMessages()).toEqual(session.deriveMessages())
   })
@@ -964,7 +958,6 @@ describe('compaction region transaction', () => {
     const compact = service()
     const emptyHead = conversation(3, undefined, '')
     const emptyNodes = emptyHead.surface.nodes
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(emptyHead.eventAt(emptyNodes[0]!)?.type).toBe('system/message')
     await compact.compactRegion(emptyNodes[1]!, emptyNodes[2]!, agent(emptyHead, MODEL), SIGNAL)
     expect(compact.calls[0]!.input.messages[0]).toMatchObject({ role: 'user' })
@@ -986,7 +979,6 @@ describe('compaction region transaction', () => {
       .rejects.toThrow(/node 0 holds the system prompt/)
 
     expect(session.surface.nodes).toEqual(nodes)
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const end = session.snapshotEvents().findLast(event => event.type === 'compaction/end')
     expect(end?.type === 'compaction/end' && end.data.error).toBeDefined()
   })
@@ -1100,7 +1092,6 @@ describe('compaction region transaction', () => {
       agent(session, MODEL),
     )).rejects.toThrow('summary unavailable')
     expect(session.surface.nodes).toEqual(before)
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(session.snapshotEvents().findLast(event => event.type === 'compaction/end')?.data)
       .toMatchObject({ error: 'summary unavailable' })
   })
@@ -1115,7 +1106,6 @@ describe('compaction region transaction', () => {
       nodes[2]!,
       agent(session, MODEL),
     )).rejects.toBe('plain failure')
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(session.snapshotEvents().findLast(event => event.type === 'compaction/end')?.data)
       .toMatchObject({ error: 'plain failure' })
   })
@@ -1136,7 +1126,6 @@ describe('compaction region transaction', () => {
       nodes[2]!,
       agent(session, MODEL),
     )).resolves.toMatchObject({ shadowedSeqs: nodes.slice(0, 3) })
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(session.snapshotEvents().some(event => event.type === 'compaction/summary')).toBe(true)
   })
 
@@ -1156,7 +1145,6 @@ describe('compaction region transaction', () => {
       nodes[2]!,
       agent(session, MODEL),
     )).rejects.toThrow(/session surface changed/)
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(session.snapshotEvents().some(event => event.type === 'compaction/summary')).toBe(false)
   })
 
@@ -1174,7 +1162,6 @@ describe('compaction region transaction', () => {
       nodes[2]!,
       agent(session, MODEL),
     )).rejects.toThrow(/summary is not smaller/)
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(session.snapshotEvents().some(event => event.type === 'compaction/summary')).toBe(false)
   })
 
@@ -1448,7 +1435,6 @@ describe('default one-shot summarizer', () => {
     const session = conversation(3, 'large history '.repeat(500))
     const nodes = session.surface.nodes
     await compact.compactRegion(nodes[0]!, nodes[3]!, agent(session, MODEL), SIGNAL)
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(session.snapshotEvents().findLast(event => event.type === 'compaction/summary')?.data).toMatchObject({
       summary: [{ type: 'text', text: 'routed summary' }],
       llmStreamCall: true,
@@ -1575,7 +1561,6 @@ describe('automatic listener and loader composition', () => {
     next: () => Promise<RequestErrorAction> = () => Promise.resolve(undefined),
   ): Promise<boolean> {
     const failure: LlmFailure = { message: error.message, code: error.code ?? 'UNKNOWN' }
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const turn = owner.session.snapshotEvents().findLast(event => event.type === 'turn/start')?.data.turn ?? 1
     return agentEvents(ctx, owner).waterfall(
       'agent/request-error',
@@ -1596,12 +1581,10 @@ describe('automatic listener and loader composition', () => {
     })
     const pressured = conversation(4)
     await preStep(ctx, agent(pressured, 'unconfigured-agent-fallback'))
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(pressured.snapshotEvents().some(event => event.type === 'compaction/summary')).toBe(true)
 
     const small = conversation(1)
     await preStep(ctx, agent(small, MODEL))
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(small.snapshotEvents().some(event => event.type === 'compaction/start')).toBe(false)
     expect(compact.calls).toHaveLength(1)
   })
@@ -1619,7 +1602,6 @@ describe('automatic listener and loader composition', () => {
       .resolves.toEqual({ kind: 'enter', messages: [] })
 
     expect(compactIfNeeded).not.toHaveBeenCalled()
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(pressured.snapshotEvents().some(event => event.type === 'compaction/start')).toBe(false)
   })
 
@@ -1636,7 +1618,6 @@ describe('automatic listener and loader composition', () => {
 
     await expect(preStep(ctx, agent(session, MODEL))).resolves.toEqual({ kind: 'enter', messages: [] })
     expect(warnings).toContainEqual(expect.stringContaining('temporary failure'))
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(session.snapshotEvents().some(event => event.type === 'compaction/summary')).toBe(false)
   })
 
@@ -1696,7 +1677,6 @@ describe('automatic listener and loader composition', () => {
 
     expect(decision).toBe(true)
     expect(session.surface.replaceGeneration).toBe(beforeGeneration + 1)
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(session.snapshotEvents().some(event => event.type === 'compaction/summary')).toBe(true)
     expect(session.surface.nodes).toContain(retainedSeq)
   })
@@ -1716,7 +1696,6 @@ describe('automatic listener and loader composition', () => {
 
     expect(await recover(ctx, agent(session, MODEL), overflow())).toBe(true)
     expect(session.surface.replaceGeneration).toBe(1)
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(session.snapshotEvents().some(event => event.type === 'compaction/summary')).toBe(false)
     expect(compact.calls).toHaveLength(0)
   })
@@ -1735,7 +1714,6 @@ describe('automatic listener and loader composition', () => {
     const session = toolConversation()
 
     expect(await recover(ctx, agent(session, MODEL), overflow())).toBe(true)
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(session.snapshotEvents().some(event => event.type === 'compaction/summary')).toBe(true)
     expect(compact.calls).toHaveLength(1)
     expect(summarizedText(compact.calls[0]!.input)).toContain('tool result middle pruned')
@@ -1759,9 +1737,7 @@ describe('automatic listener and loader composition', () => {
 
     expect(await recover(ctx, agent(session, MODEL), overflow())).toBe(true)
     expect(session.surface.replaceGeneration).toBe(1)
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(session.snapshotEvents().filter(event => event.type === 'tool/result')).toHaveLength(2)
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(session.snapshotEvents().findLast(event => event.type === 'compaction/end')?.data)
       .toMatchObject({ error: 'summary unavailable after prune' })
     expect(warnings).toContainEqual(expect.stringContaining('retrying from the replacement surface'))
@@ -1964,11 +1940,9 @@ describe('automatic listener and loader composition', () => {
     })
     const session = conversation(4)
     await preStep(ctx, agent(session, MODEL))
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const summaries = session.snapshotEvents().filter(event => event.type === 'compaction/summary').length
     expect(summaries).toBe(1)
     expect(await recover(ctx, agent(session, MODEL), overflow())).toBe(false)
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(session.snapshotEvents().filter(event => event.type === 'compaction/summary')).toHaveLength(summaries)
   })
 
@@ -1981,7 +1955,6 @@ describe('automatic listener and loader composition', () => {
     })
     const session = conversation(4)
     await preStep(ctx, agent(session, MODEL))
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(session.snapshotEvents().some(event => event.type === 'compaction/start')).toBe(false)
     expect(await recover(ctx, agent(session, MODEL), overflow())).toBe(false)
   })
@@ -2014,7 +1987,6 @@ describe('automatic listener and loader composition', () => {
 
     const session = conversation(4)
     await preStep(ctx, agent(session, MODEL))
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(session.snapshotEvents().some(event => event.type === 'compaction/start')).toBe(false)
     expect(await recover(ctx, agent(session, MODEL), overflow())).toBe(false)
   })
@@ -2156,7 +2128,6 @@ describe('route-priced image pressure', () => {
 
     const result = await compact.compactIfNeeded(agent(session), 'pressure', SIGNAL)
     expect(result).not.toBeNull()
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const summaryEvent = session.snapshotEvents().find(event => event.type === 'compaction/summary')
     expect(summaryEvent).toBeDefined()
     const shadowedHeuristic = before.nodes

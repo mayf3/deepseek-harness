@@ -84,7 +84,6 @@ describe('present', () => {
     if (result.isError) throw new Error('present failed')
     const files = (result.value as unknown as { files: PresentedFile[] }).files
     expect(files).toHaveLength(1)
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(owner.session.snapshotEvents().find(event => event.type === 'deliverables/presented')?.data.files).toEqual(files)
     expect(files).toEqual([{ path: '报告.docx', description: 'Report' }])
     expect(read).not.toHaveBeenCalled()
@@ -110,7 +109,6 @@ describe('present', () => {
       execute: async () => ({ turn: 1, files: [] }),
     }))
     expect((await execute([])).isError).toBe(false)
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(owner.session.snapshotEvents().filter(event => event.type === 'deliverables/presented')).toEqual([])
   })
 
@@ -119,7 +117,6 @@ describe('present', () => {
     await owner.ctx.plugin(Present, { maxFiles: 2 })
     await writeFile(join(root, 'a'), 'a')
     expect((await execute([{ path: 'a' }])).isError).toBe(false)
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const deliveries = owner.session.snapshotEvents().filter(event => event.type === 'deliverables/presented')
     expect(deliveries).toHaveLength(1)
     expect(deliveries[0]?.data.files[0]?.path).toBe('a')
@@ -133,7 +130,6 @@ describe('present', () => {
       return { kind: 'block', feedback: [{ type: 'text', text: 'blocked' }] }
     })
     expect((await execute([{ path: 'a' }])).isError).toBe(true)
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(owner.session.snapshotEvents().some(event => event.type === 'deliverables/presented')).toBe(false)
   })
 
@@ -145,7 +141,6 @@ describe('present', () => {
       const result = await execute(files)
       expect(result.isError, JSON.stringify(files)).toBe(true)
     }
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(owner.session.snapshotEvents().some(event => event.type === 'deliverables/presented')).toBe(false)
   })
 

@@ -17,7 +17,6 @@ async function harness(withTitleService: boolean): Promise<{ ctx: Context; sessi
 }
 
 function appendTitle(session: Session, title: string): SessionSeqType {
-  // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
   const messageSeq = session.snapshotEvents().find(event =>
     event.type === 'user/message' && event.data.source.kind === 'user')?.seq
     ?? session.append('user/message', createUserMessage({

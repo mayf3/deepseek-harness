@@ -31,7 +31,6 @@ function durable(agent: Agent): {
   pendingMessages: TeamMessageSnapshot[]
 } {
   let projected = teamProjectionDefinition.init(agent.session.header)
-  // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
   for (const event of agent.session.snapshotEvents()) projected = teamProjectionDefinition.apply(projected, event)
   if (projected.failure !== undefined) throw new Error(projected.failure)
   const state = projected
@@ -159,7 +158,6 @@ async function persistedChild(
   // Live sessions persist only through an attached agent-loop writer; this
   // bare fixture session seeds its durable log directly for the cold restart.
   const handle = await ctx.sessionPersistence.create(child.header)
-  // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
   await handle.append(child.snapshotEvents())
   await handle.close()
   return child
@@ -395,7 +393,6 @@ for (const backend of backends) {
       const checkpointEntered = Promise.withResolvers<undefined>()
       const releaseCheckpoint = Promise.withResolvers<undefined>()
       const delayedCheckpoint = vi.spyOn(second.ctx.sessions, 'flush').mockImplementation(async (session) => {
-        // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
         if (session.id === rootId && session.snapshotEvents().some(event =>
           event.type === 'team/message/delivered' && event.data.messageId === messageId)) {
           checkpointEntered.resolve(undefined)

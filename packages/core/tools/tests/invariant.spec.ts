@@ -152,7 +152,6 @@ describe('tool-pipeline invariants', () => {
       name: 'echo',
       arguments: {},
     })).toThrow(/parentCallId child does not belong to rootCallId another-root/)
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(session.snapshotEvents().some(event => event.type === 'tool/ptc-dispatch-start'
       && String(event.data.subCallId) === 'invalid-grandchild')).toBe(false)
   })

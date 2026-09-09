@@ -58,7 +58,6 @@ describe('loop-owned request freezing', () => {
       }),
       stream: [],
     }, { surfaceOp: 'append' })
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const events = structuredClone(seed.snapshotEvents())
     const userEvent = events.find(event => event.type === 'user/message')!
     const assistantEvent = events.find(event => event.type === 'assistant/message')!
@@ -199,7 +198,6 @@ describe('loop-owned request freezing', () => {
       expect(() => request.stop!.push('mutate')).toThrow(TypeError)
       if (!registered) expect(request.stop).toBe(stops[index])
     }
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(agent.session.snapshotEvents().filter(event => event.type === 'request/header')).toHaveLength(1)
     expect(agent.session.requestHeader()!.tools).not.toBe(requests[0]!.tools)
     expect(agent.session.requestHeader()!.config.stop).not.toBe(requests[0]!.stop)
@@ -223,7 +221,6 @@ describe('loop-owned request freezing', () => {
       await agent.whenIdle()
       expect(request.signal!.aborted).toBe(true)
       expect(request.signal!.reason).toEqual({ kind: 'user' })
-      // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
       expect(agent.session.snapshotEvents().at(-1)).toMatchObject({
         type: 'turn/end', data: { reason: { kind: 'aborted', reason: { kind: 'user' } } },
       })

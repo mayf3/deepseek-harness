@@ -38,7 +38,6 @@ describe.skipIf(!process.env.DEEPSEEK_API_KEY)('spawn backend with-key smoke', (
 
     // The parent's log records the subagent tool/call + its result (not the
     // child's internal steps).
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const events = parent.session.snapshotEvents()
     const subagentCalls = events.filter(e => e.type === 'tool/call' && e.data.name === 'subagent')
     expect(subagentCalls.length).toBeGreaterThan(0)

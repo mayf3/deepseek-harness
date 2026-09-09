@@ -1034,7 +1034,6 @@ describe('session-query exact reads', () => {
     }).toThrow()
     Object.assign(snapshot.session, { cwd: '/mutated' })
 
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const logged = session.eventAt(SessionSeq(4))
     expect(logged?.type === 'user/message' && logged.data.content).toHaveLength(1)
     expect(session.header.cwd).toBe('/work')
@@ -1072,7 +1071,6 @@ describe('session-query exact reads', () => {
       (result.events[0]!.data as { content: unknown[] }).content = []
     }).toThrow()
     expect(session.header.createdAt).not.toBe(-1)
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const logged = session.eventAt(SessionSeq(1))
     expect(logged?.type === 'user/message' && logged.data.content).toHaveLength(1)
 

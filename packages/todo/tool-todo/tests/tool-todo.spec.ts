@@ -82,7 +82,6 @@ describe('dsh-tool-todo', () => {
     })
     expect(text(result)).toContain('1 pending, 1 in progress, 0 completed')
 
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const event = agent.session.snapshotEvents().findLast(e => e.type === 'todo/write')!
     expect(event.data.todos).toEqual(todos)
   })
@@ -93,7 +92,6 @@ describe('dsh-tool-todo', () => {
     const result = await callTodo(ctx, { todos: [{ content: '  plan the work  ', status: 'pending' }] }, { agent })
     expect(result.isError).toBe(false)
 
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const event = agent.session.snapshotEvents().findLast(e => e.type === 'todo/write')!
     expect(event.data.todos).toEqual([{ content: 'plan the work', status: 'pending' }])
   })
@@ -107,7 +105,6 @@ describe('dsh-tool-todo', () => {
       { content: 'b', status: 'in_progress' },
     ] }, { agent })
 
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const current = agent.session.snapshotEvents().findLast(e => e.type === 'todo/write')!.data.todos
     expect(current).toEqual([
       { content: 'a', status: 'completed' },
@@ -142,7 +139,6 @@ describe('dsh-tool-todo', () => {
       todos,
       counts: { pending: 1, inProgress: 2, completed: 0 },
     })
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(agent.session.snapshotEvents().findLast(e => e.type === 'todo/write')!.data.todos).toEqual(todos)
   })
 
@@ -159,7 +155,6 @@ describe('dsh-tool-todo', () => {
       expect(result.isError).toBe(true)
       expect(text(result)).toContain('at most one task may be in_progress')
       // A rejected call must not reach the durable log.
-      // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
       expect(agent.session.snapshotEvents().some(e => e.type === 'todo/write')).toBe(false)
     })
 
@@ -252,7 +247,6 @@ describe('todo/write event', () => {
     ]
     session.append('todo/write', { todos })
 
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const event = session.snapshotEvents().findLast(e => e.type === 'todo/write')!
     expect(event.type).toBe('todo/write')
     expect(event.data.todos).toEqual(todos)
@@ -274,7 +268,6 @@ describe('todo/write event', () => {
       { content: 'second', status: 'in_progress' },
     ] })
 
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const current = session.snapshotEvents().findLast(e => e.type === 'todo/write')!.data.todos
     expect(current).toEqual([
       { content: 'first', status: 'completed' },
@@ -300,13 +293,10 @@ describe('todo/write event', () => {
     original.append('turn/start', { turn: 1 })
     original.append('todo/write', { todos: [{ content: 'only', status: 'completed' }] })
     original.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const replayed = Session.create(SessionId('t4-replay'), original.snapshotEvents())
 
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(replayed.snapshotEvents().findLast(e => e.type === 'todo/write')!.data.todos)
       .toEqual([{ content: 'only', status: 'completed' }])
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(replayed.snapshotEvents(SessionLogOffset(0), original.seq)).toEqual(original.snapshotEvents())
     expect(replayed.firstLiveSeq).toBe(original.seq)
   })

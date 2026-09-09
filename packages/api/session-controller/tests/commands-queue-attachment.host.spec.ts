@@ -41,7 +41,6 @@ async function commandHarness(
   // never appends one: the identity folds as continuable, but from the
   // inherited prefix rather than this Session's own suffix.
   const lineage = childMode === 'seeded-continuable' || childMode === 'seed-only'
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     ? ancestor.snapshotEvents()
     : undefined
   const session = ctx.sessions.create(sessionId, {

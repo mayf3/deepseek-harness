@@ -16,6 +16,8 @@ All operations that synchronously read arbitrary positions or ranges of Session 
 
 The three methods carry this rule in `@deprecated` JSDoc. This is an API-use decision; the current Session implementation still retains the complete event sequence in memory.
 
+Repository test files may call these three readers to inspect emitted events and exercise Session history behavior. Their existing lint override allows `snapshotEvents`, `eventAt`, and `ownEvents`; all other deprecated names remain errors. This allowance also covers unrelated declarations with the same three names under the current linter. It does not apply to production source or ordinary repository scripts.
+
 ### State needed after resume
 
 Design durable event fields and Session projections together so each domain can reconstruct the state its consumers need. Restore that state during resume, then maintain it incrementally from newly committed events. After resume, ordinary logic reads the projection or processes the delivered current event instead of looking back through historical events. Reading already-maintained projection state synchronously does not require arbitrary access to the event log.
@@ -34,13 +36,15 @@ Fork and a small number of operations may genuinely need a complete historical s
 
 **Require every existing caller to migrate immediately.** Existing logic may defer migration under this decision. Preventing new dependencies bounds the remaining work without making every existing consumer part of the same change.
 
-**Disable deprecation lint for these methods or whole files.** Such exemptions also admit new calls. Line-scoped waivers make the existing migration debt explicit while retaining the native type-aware rule for new reads.
+**Disable deprecation lint throughout test files or exempt production readers by name.** Tests only need the three reader names; other deprecated APIs must remain errors. Production code retains the prohibition on new synchronous reads.
+
+**Add a separate test-only reader API.** The three existing readers already expose the observations these tests need. Wrapping them adds an API and production-import checks without changing those observations.
 
 ## Consequences
 
 New domain behavior must make its event data and projected state sufficient for resumed execution. User-requested history may still load progressively, and genuine full-history operations still have a storage path to design. This decision does not claim that resume or fork already avoids loading the complete log.
 
-Existing calls carry line-scoped `typescript/no-deprecated` waivers with a migration-deferral reason. The rule stays enabled for new calls and unrelated deprecated APIs. Remove a waiver when its call migrates; copying a waiver to a new call violates this policy. The executable lint check exercises all three readers with and without waivers, plus an unrelated deprecated API. Documentation checks verify the source-equivalent API declarations and bilingual records.
+Existing calls outside test files carry line-scoped `typescript/no-deprecated` waivers with a migration-deferral reason. Remove a waiver when its call migrates; copying a waiver to a new production call violates this policy. The executable lint check accepts test reads and existing waived reads, rejects unwaived production reads, and rejects unrelated deprecated APIs in tests. Documentation checks verify the source-equivalent API declarations and bilingual records.
 
 ## Related decisions
 

@@ -107,7 +107,6 @@ describe('Session properties', () => {
   it('seq is strictly monotonic and zero-based contiguous', () => {
     fc.assert(fc.property(logArb, (events) => {
       const session = build(events)
-      // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
       session.snapshotEvents().forEach((event, i) => { expect(event.seq).toBe(i) })
       expect(session.seq).toBe(events.length)
     }))
@@ -116,11 +115,9 @@ describe('Session properties', () => {
   it('replay-from-seed reproduces the derivation identically', () => {
     fc.assert(fc.property(logArb, (events) => {
       const original = build(events)
-      // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
       const replayed = Session.create(SessionId(`replay-${counter++}`), original.snapshotEvents())
       expect(replayed.deriveMessages()).toEqual(original.deriveMessages())
       // Every explicit replay grows by exactly one log-only boundary.
-      // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
       expect(replayed.snapshotEvents().slice(0, original.seq)).toEqual(original.snapshotEvents())
       expect(replayed.seq).toBe(original.seq + 1)
     }))
@@ -129,12 +126,9 @@ describe('Session properties', () => {
   it('replaying a log that already ends in end-seed adds no further marker', () => {
     fc.assert(fc.property(logArb, (events) => {
       const original = build(events)
-      // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
       const once = Session.create(SessionId(`idem-a-${counter++}`), original.snapshotEvents())
-      // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
       const twice = Session.create(SessionId(`idem-b-${counter++}`), once.snapshotEvents())
       // Lazy resume makes browsing a pickup, so this must not grow per open.
-      // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
       expect(twice.snapshotEvents()).toEqual(once.snapshotEvents())
     }))
   })
@@ -168,7 +162,6 @@ describe('Session properties', () => {
     fc.assert(fc.property(logArb, (events) => {
       const session = build(events)
       const messages = session.deriveMessages()
-      // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
       const before = structuredClone(session.snapshotEvents())
       for (const m of messages) {
         expect(['user', 'assistant', 'system']).toContain(m.role)
@@ -177,7 +170,6 @@ describe('Session properties', () => {
         expect(Object.isFrozen(m)).toBe(true)
         expect(() => { m.content.push({ type: 'text', text: 'mutation' }) }).toThrow(TypeError)
       }
-      // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
       expect(session.snapshotEvents()).toEqual(before)
     }))
   })

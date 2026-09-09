@@ -69,7 +69,6 @@ async function runTurn(registrationOrder: string[], toolOrder?: SystemPromptConf
 describe('loop-level canonical tool order', () => {
   it('logs the request/header with tools in canonical order, not registration order', async () => {
     const { agent, adapter } = await runTurn(['zulu', 'alpha', 'mike'])
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const header = foldRequestHeader(agent.session.snapshotEvents())
     expect(header?.tools?.map(tool => tool.name)).toEqual(['alpha', 'mike', 'zulu'])
     // The dispatched request is built FROM the logged header (whose tools the
@@ -83,7 +82,6 @@ describe('loop-level canonical tool order', () => {
   it('produces the same header order for any registration order', async () => {
     const first = await runTurn(['alpha', 'mike', 'zulu'])
     const second = await runTurn(['zulu', 'mike', 'alpha'])
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const names = (run: typeof first) => foldRequestHeader(run.agent.session.snapshotEvents())?.tools?.map(tool => tool.name)
     expect(names(first)).toEqual(['alpha', 'mike', 'zulu'])
     expect(names(second)).toEqual(names(first))
@@ -91,7 +89,6 @@ describe('loop-level canonical tool order', () => {
 
   it('honors a configured toolOrder in the logged header and the dispatched request', async () => {
     const { agent, adapter } = await runTurn(['alpha', 'zulu', 'mike'], ['zulu', TOOL_ORDER_REST])
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const header = foldRequestHeader(agent.session.snapshotEvents())
     expect(header?.tools?.map(tool => tool.name)).toEqual(['zulu', 'alpha', 'mike'])
     expect(adapter.requests[0]?.tools?.map(tool => tool.name)).toEqual(['zulu', 'alpha', 'mike'])
@@ -106,15 +103,10 @@ describe('loop-level canonical tool order', () => {
     agent.followup(createUserMessage({ content: [{ type: 'text', text: 'go' }], source: { kind: 'user' } }))
     await waitForIdle(ctx, agent)
     expect(adapter.requests).toHaveLength(0)
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(foldRequestHeader(agent.session.snapshotEvents())).toBeUndefined()
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(agent.session.snapshotEvents().some(e => e.type === 'turn/start')).toBe(true)
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(agent.session.snapshotEvents().some(e => e.type === 'turn/end')).toBe(true)
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(agent.session.snapshotEvents().some(e => e.type === 'step/start')).toBe(false)
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(agent.session.snapshotEvents().some(e => e.type === 'step/end')).toBe(false)
   })
 })

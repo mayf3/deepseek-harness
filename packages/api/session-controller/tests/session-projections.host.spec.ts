@@ -172,7 +172,6 @@ describe('session.history projections block', () => {
     parent.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
     const inheritedEventCount = parent.seq
     const child = ctx.sessions.create(SessionId('wire-seed-child'), {
-      // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
       seed: parent.snapshotEvents(),
       inheritedEventCount,
       meta: {
@@ -449,7 +448,6 @@ describe('session.history projections block', () => {
     expect('test/last-user' in after.projections.values).toBe(false)
     expect(after.projections.values.sessionListMetadata).toEqual({
       blank: true,
-      // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
       lastPromptAt: session.eventAt(SessionSeq(session.seq - 1))?.time,
     })
   })
@@ -484,7 +482,6 @@ describe('session.list projections column', () => {
     expect(row?.projections?.values['test/last-user']).toEqual({ text: 'm0' })
     expect(row?.projections?.values.sessionListMetadata).toEqual({
       blank: false,
-      // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
       lastPromptAt: session.eventAt(SessionSeq(session.seq - 1))?.time,
     })
     expect(row?.projections?.asOfSeq).toBe(session.seq - 1)

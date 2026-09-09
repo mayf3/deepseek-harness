@@ -19,13 +19,11 @@ export function apply(ctx: Context): void {
       || exec.arguments.file_path !== 'nested/task.txt') return downstream
     const agent = exec.agent
     const baseline = agent.session.surface.nodes
-      // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
       .map(seq => agent.session.snapshotEvents()[seq])
       .find(event => event?.type === 'user/message'
         && event.data.source.kind === 'agent-instructions'
         && event.data.source.baseline === true)
     if (baseline === undefined) throw new Error('workspace baseline missing before snapshot compaction')
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const openTurn = agent.session.snapshotEvents().findLast(event => event.type === 'turn/start')
     if (openTurn?.type !== 'turn/start') throw new Error('workspace snapshot compaction has no open turn')
     const compactionId = CompactionId('workspace-context-fixture')

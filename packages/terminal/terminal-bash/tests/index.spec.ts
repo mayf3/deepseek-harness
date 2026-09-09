@@ -618,7 +618,6 @@ describe('terminal-bash plugin shape', () => {
     expect(() => { setSandboxMode(session, 'read-only') }).toThrow(
       'cannot change sandbox mode from "danger-full-access" to "read-only" while persistent terminal sessions are open or being created; wait for creation to settle and close them first',
     )
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(session.snapshotEvents().filter(event => event.type === 'sandbox/mode')).toHaveLength(1)
 
     const replacementFiber = await registerStubLocalBackend(ctx, () => stubLocalSession())
@@ -629,7 +628,6 @@ describe('terminal-bash plugin shape', () => {
     await ctx.terminals.kill(owner, created.sessionId)
     await ctx.terminals.kill(owner, second.sessionId)
     expect(() => { setSandboxMode(session, 'read-only') }).not.toThrow()
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(session.snapshotEvents().filter(event => event.type === 'sandbox/mode')).toHaveLength(2)
   })
 

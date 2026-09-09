@@ -47,7 +47,6 @@ function firstUserMessage(events: readonly SessionEvent[]): SessionEvent<'user/m
 }
 
 function lastSeq(session: Session): SessionSeq {
-  // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
   const event = session.snapshotEvents().at(-1)
   if (event === undefined) throw new Error('missing last event')
   return event.seq
@@ -55,7 +54,6 @@ function lastSeq(session: Session): SessionSeq {
 
 /** A seeded child's fork-inherited prefix. */
 function inherited(session: Session): readonly SessionEvent[] {
-  // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
   return session.snapshotEvents(SessionLogOffset(0), session.inheritedEventCount)
 }
 
@@ -83,19 +81,13 @@ describe('SessionStore.fork', () => {
 
     const child = sessions.fork(SessionId('parent'), undefined, SessionId('child'))
 
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(inherited(child)).toEqual(source.snapshotEvents())
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(child.snapshotEvents()).not.toBe(source.snapshotEvents())
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(child.snapshotEvents()[1]).not.toBe(source.snapshotEvents()[1])
     expect(() => {
-      // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
       firstUserMessage(child.snapshotEvents()).data.content[0] = { type: 'text', text: 'child mutation' }
     }).toThrow(TypeError)
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(firstUserMessage(source.snapshotEvents()).data.content).toEqual([{ type: 'text', text: 'hello' }])
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(firstUserMessage(child.snapshotEvents()).data.content).toEqual([{ type: 'text', text: 'hello' }])
     expect(child.header).toMatchObject({
       id: SessionId('child'),
@@ -114,7 +106,6 @@ describe('SessionStore.fork', () => {
 
     const child = sessions.fork(source, undefined, SessionId('log-only-child'))
 
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(inherited(child)).toEqual(source.snapshotEvents())
     expect(inherited(child).at(-1)).toMatchObject({
       type: 'test/log-only',
@@ -132,7 +123,6 @@ describe('SessionStore.fork', () => {
 
     const child = sessions.fork(source, firstBoundary, SessionId('child-from-first'))
 
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(inherited(child)).toEqual(source.snapshotEvents().slice(0, firstBoundary + 1))
     expect(child.inheritedEventCount).toBe(firstBoundary + 1)
     expect(child.deriveMessages()).toEqual([{
@@ -176,12 +166,9 @@ describe('SessionStore.fork', () => {
     const child = sessions.fork(parent, undefined, SessionId('bracket-child'))
 
     // Parent: no end-seed event follows the bracket, so its owner treats it as live.
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(parent.snapshotEvents().at(-1)).toBe(open)
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(parent.snapshotEvents().some(event => event.type === 'session/end-seed')).toBe(false)
     // Child: the same bracket is before end-seed, so it belongs to the seed.
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const boundary = child.snapshotEvents().at(-1)
     expect(boundary).toMatchObject({ type: 'session/end-seed' })
     expect(boundary!.seq).toBeGreaterThan(open.seq)

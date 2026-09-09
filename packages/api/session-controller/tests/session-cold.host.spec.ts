@@ -203,7 +203,6 @@ describe('attached updatedAt tracks human prompts', () => {
       meta: { cwd: '/proj', createdAt: 500 },
     })
     ctx.agents.register({ id: resumed.id, session: resumed, status: 'idle', ctx } as Agent)
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const boundary = resumed.snapshotEvents().at(-1)
     expect(boundary?.type).toBe('session/end-seed')
     expect(boundary?.time).toBeGreaterThan(worked)
@@ -718,7 +717,6 @@ describe('sessions.prompt synchronous rejection', () => {
       defaultModelSelection: () => ({ provider: 'p', model: 'm' }),
       cwd: '/tmp',
     })
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const initialEvents = session.snapshotEvents()
     const rejectedContent: readonly SessionPromptRequest['content'][] = [
       [],
@@ -743,7 +741,6 @@ describe('sessions.prompt synchronous rejection', () => {
     }
     expect(followup).not.toHaveBeenCalled()
     expect(steer).not.toHaveBeenCalled()
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(session.snapshotEvents()).toEqual(initialEvents)
 
     const queued = await remote.prompt(promptRequest({

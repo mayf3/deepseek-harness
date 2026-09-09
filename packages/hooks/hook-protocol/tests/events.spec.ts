@@ -12,7 +12,6 @@ describe('hook/* session events', () => {
     const session = Session.create(SessionId('s'))
     appendHookInvoked(session, { turn: 1, point: 'PreToolUse', dialect: 'claude-code', handlerId: 'h1', matcher: 'Bash' })
 
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const ev = session.snapshotEvents().find(e => e.type === 'hook/invoked')
     expect(ev?.type).toBe('hook/invoked')
     if (ev?.type === 'hook/invoked') {
@@ -26,7 +25,6 @@ describe('hook/* session events', () => {
     const session = Session.create(SessionId('s'))
     appendHookInvoked(session, { turn: 2, point: 'Stop', dialect: 'codex', handlerId: 'h2' })
 
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const ev = session.snapshotEvents().find(e => e.type === 'hook/invoked')
     if (ev?.type === 'hook/invoked') {
       expect('matcher' in ev.data).toBe(false)
@@ -39,7 +37,6 @@ describe('hook/* session events', () => {
       turn: 1, point: 'PreToolUse', handlerId: 'h1',
       stderrSummaryMaxChars: 500, durationMs: 5, output: output({ exitCode: 2, stderr: 'blocked', decision: 'deny' }),
     })
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const full = session.snapshotEvents().find(e => e.type === 'hook/result')
     if (full?.type === 'hook/result') {
       expect(full.data).toEqual({ turn: 1, point: 'PreToolUse', handlerId: 'h1', decision: 'deny', exitCode: 2, stderrSummary: 'blocked', durationMs: 5 })
@@ -51,7 +48,6 @@ describe('hook/* session events', () => {
       turn: 1, point: 'Stop', handlerId: 'h3',
       stderrSummaryMaxChars: 500, durationMs: 5, output: output({ exitCode: undefined, decision: 'allow' }),
     })
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const sparse = session2.snapshotEvents().find(e => e.type === 'hook/result')
     if (sparse?.type === 'hook/result') {
       expect('exitCode' in sparse.data).toBe(false)
@@ -67,7 +63,6 @@ describe('hook/* session events', () => {
     // An explicit decision wins over the continue:false fallback.
     appendHookResult(session, { turn: 1, point: 'Stop', handlerId: 'both', stderrSummaryMaxChars: 500, durationMs: 5, output: output({ continue: false, decision: 'block' }) })
 
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const decisions = session.snapshotEvents()
       .filter(e => e.type === 'hook/result')
       .map(e => e.type === 'hook/result' ? [e.data.handlerId, e.data.decision] : [])
@@ -80,7 +75,6 @@ describe('hook/* session events', () => {
       turn: 1, point: 'PreToolUse', handlerId: 'long',
       stderrSummaryMaxChars: 500, durationMs: 5, output: output({ exitCode: 2, stderr: `  ${'x'.repeat(600)}  ` }),
     })
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const ev = session.snapshotEvents().find(e => e.type === 'hook/result')
     if (ev?.type === 'hook/result') {
       expect(ev.data.stderrSummary).toBe('x'.repeat(500) + '…')
@@ -93,7 +87,6 @@ describe('hook/* session events', () => {
       turn: 1, point: 'PreToolUse', handlerId: 'edge',
       stderrSummaryMaxChars: 500, durationMs: 5, output: output({ exitCode: 2, stderr: 'y'.repeat(500) }),
     })
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const ev = session.snapshotEvents().find(e => e.type === 'hook/result')
     if (ev?.type === 'hook/result') {
       expect(ev.data.stderrSummary).toBe('y'.repeat(500))
@@ -105,9 +98,7 @@ describe('hook/* session events', () => {
     appendHookInvoked(session, { turn: 1, point: 'PreToolUse', dialect: 'claude-code', handlerId: 'pair-1' })
     appendHookResult(session, { turn: 1, point: 'PreToolUse', handlerId: 'pair-1', stderrSummaryMaxChars: 500, durationMs: 5, output: output({ decision: 'allow' }) })
 
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const invoked = session.snapshotEvents().find(e => e.type === 'hook/invoked')
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const result = session.snapshotEvents().find(e => e.type === 'hook/result')
     expect(invoked?.type === 'hook/invoked' && invoked.data.handlerId).toBe('pair-1')
     expect(result?.type === 'hook/result' && result.data.handlerId).toBe('pair-1')

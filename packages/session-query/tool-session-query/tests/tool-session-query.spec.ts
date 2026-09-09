@@ -2006,7 +2006,6 @@ describe('trace and exact read rendering', () => {
     expect(text(result)).toContain('Replacement chain: 1')
     expect(text(result)).toContain('Events cited directly as sources: none')
     expect(text(result)).toContain('Direct derived events: 1')
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(text(result)).toContain(new Date(session.snapshotEvents()[0]?.time ?? 0).toISOString())
   })
 

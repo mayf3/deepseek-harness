@@ -631,7 +631,6 @@ describe('sandbox escalation through the generic task producer', () => {
     expect(prompted).not.toHaveBeenCalled()
 
     const malformed = sandboxAgent()
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     ;(malformed.session.snapshotEvents() as unknown as Array<{ type: string; data: { mode: string }; seq: number }>).push({
       type: 'sandbox/mode',
       data: { mode: 'unknown-mode' },

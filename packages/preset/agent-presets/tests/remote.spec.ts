@@ -98,7 +98,6 @@ async function agentOn(ctx: Context, id: string, presetId?: string): Promise<Age
 
 /** The recorded preset a restart replays, which is what a switch must move. */
 const recordedPreset = (agent: Agent): unknown =>
-  // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
   agent.session.snapshotEvents().findLast(event => event.type === 'agent-preset/selected')?.data
 
 describe('the roster a client reads', () => {

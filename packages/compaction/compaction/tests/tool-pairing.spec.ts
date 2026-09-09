@@ -7,7 +7,6 @@ import type { SessionEvent, SessionSeq as SessionSeqType } from '@deepseek-ai/ds
 const SURFACE = { surfaceOp: 'append' as const }
 
 function seqOf(session: Session, type: SessionEvent['type'], nth = 0): SessionSeqType {
-  // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
   return session.snapshotEvents().filter(event => event.type === type)[nth]!.seq
 }
 

@@ -72,7 +72,6 @@ describe('assistant replay provider and model fields', () => {
     send(agent, 'go')
     await waitForIdle(ctx, agent)
 
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const recorded = agent.session.snapshotEvents().find(event => event.type === 'assistant/message')
     expect(recorded?.type === 'assistant/message' && recorded.data.message.source).toEqual({
       kind: 'model', provider: 'mock', model: 'next-model', replayState,
@@ -112,7 +111,6 @@ describe('abort during tool execution ends the turn', () => {
     send(agent, 'go')
     await waitForIdle(ctx, agent)
 
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(agent.session.snapshotEvents()
       .filter(event => event.type === 'tool/result'
         || (event.type === 'user/message' && event.data.source.kind === 'plugin')
@@ -126,7 +124,6 @@ describe('abort during tool execution ends the turn', () => {
     send(agent, 'wake')
     await idle
 
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(agent.session.snapshotEvents()
       .flatMap(event => event.type === 'user/message' && event.data.source.kind === 'plugin'
         ? [event.data.content]
@@ -177,7 +174,6 @@ describe('abort during tool execution ends the turn', () => {
     send(agent, 'go')
     await waitForIdle(ctx, agent)
 
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const events = agent.session.snapshotEvents()
     expect(events
       .filter(event => event.type === 'tool/result'
@@ -203,11 +199,9 @@ describe('abort during tool execution ends the turn', () => {
     send(agent, 'go')
     await waitForIdle(ctx, agent)
     expect(adapter.requests).toHaveLength(0)
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(agent.session.snapshotEvents().filter(event => event.type === 'turn/start'
       || event.type === 'step/start' || event.type === 'turn/end').map(event => event.type))
       .toEqual(['turn/start', 'turn/end'])
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(agent.session.snapshotEvents().find(event => event.type === 'turn/end')?.data)
       .toEqual({ turn: 1, reason: { kind: 'completed' } })
     expect(agent.inbox.nextTurn).toHaveLength(0)
@@ -249,23 +243,19 @@ describe('abort during tool execution ends the turn', () => {
     await started.promise
     await fiber.dispose()
 
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(agent.session.snapshotEvents()
       .flatMap(event => event.type === 'user/message' && event.data.source.kind === 'plugin'
         ? [event.data.content]
         : []))
       .toEqual([])
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(agent.session.snapshotEvents()
       .flatMap(event => event.type === 'agent/inbox/spliced' && event.data.target === 'next-step'
         ? [event.data.inserted.map(inboxText)]
         : [])
       .at(-1))
       .toEqual(['accepted result context during disposal'])
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(agent.session.snapshotEvents().filter(event => event.type === 'turn/start'))
       .toHaveLength(1)
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(agent.session.snapshotEvents().find(event => event.type === 'turn/end')?.data.reason)
       .toEqual({ kind: 'aborted', reason: { kind: 'disposed' } })
   })
@@ -320,7 +310,6 @@ describe('abort during tool execution ends the turn', () => {
     send(agent, 'start a text-only turn')
     await waitForIdle(ctx, agent)
 
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(agent.session.snapshotEvents().flatMap(event =>
       event.type === 'user/message' && event.data.source.kind === 'plugin'
         ? [event.data.content]
@@ -373,7 +362,6 @@ describe('plugin exceptions are contained', () => {
 
     send(agent, 'first')
     await waitForIdle(ctx, agent)
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(agent.session.snapshotEvents().findLast(event => event.type === 'turn/end')).toMatchObject({
       data: { reason: { kind: 'error', error: { message: 'broken continuation plugin', code: 'UNKNOWN' } } },
     })
@@ -410,9 +398,7 @@ describe('disposal leaves the two-state status contract balanced', () => {
 
     expect(statuses).toEqual(['running', 'idle'])
     expect(reasons).toEqual([{ kind: 'aborted', reason: { kind: 'disposed' } }])
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(agent.session.snapshotEvents().filter(event => event.type === 'turn/start')).toHaveLength(1)
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const messages = agent.session.snapshotEvents()
       .filter(event => event.type === 'user/message')
       .flatMap(event => event.data.content)
@@ -462,7 +448,6 @@ describe('adapter registration, routing, and accepted-input ownership', () => {
 
     send(agent, 'go')
     await waitForIdle(ctx, agent)
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const turnEnd = agent.session.snapshotEvents().findLast(event => event.type === 'turn/end')
     expect(turnEnd?.type === 'turn/end' && turnEnd.data.reason.kind === 'error'
       ? turnEnd.data.reason.error.message
@@ -525,7 +510,6 @@ describe('adapter registration, routing, and accepted-input ownership', () => {
       ['content', 'id', 'role', 'source'],
     ])
     expect(targets).toEqual(['next-turn', 'next-step'])
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const steeringSources = agent.session.snapshotEvents().flatMap(e =>
       e.type === 'user/message' && e.data.source.kind === 'plugin' ? [e.data.source] : [])
     expect(steeringSources).toEqual([{ kind: 'plugin', plugin: 'goal' }])
@@ -559,7 +543,6 @@ describe('adapter registration, routing, and accepted-input ownership', () => {
     send(agent, 'go')
     await waitForIdle(ctx, agent)
 
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const events = agent.session.snapshotEvents()
     const claims = events.flatMap(event => event.type === 'agent/inbox/spliced'
       && event.data.target === 'next-step'
@@ -605,7 +588,6 @@ describe('turn numbering continues across seeded sessions', () => {
 
     const { agent: forked } = await ctx2.agents.create({
       sessionId: SessionId('forked'),
-      // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
       seed: agent.session.snapshotEvents(),
       agentOptions: { provider: 'mock', model: 'mock' },
     })
@@ -674,7 +656,6 @@ describe('a finish-error stream chunk ends the turn as error, not completed', ()
     expect(errors[0]).toBeInstanceOf(LlmError)
     expect((errors[0] as LlmError).failure).toEqual(failure)
 
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const events = agent.session.snapshotEvents()
     const turnEnd = events.find(event => event.type === 'turn/end')
     expect(turnEnd).toMatchObject({ data: { reason: { kind: 'error', error: failure } } })
@@ -697,7 +678,6 @@ describe('a finish-error stream chunk ends the turn as error, not completed', ()
     await waitForIdle(ctx, agent)
 
     expect(reasons).toEqual([{ kind: 'error', error: { message: 'model stream aborted', code: 'ABORTED' } }])
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(agent.session.snapshotEvents().some(event => event.type === 'assistant/message')).toBe(false)
   })
 
@@ -728,7 +708,6 @@ describe('step boundary publication order', () => {
     const observed: { turn: number; step: number; lastEventType: string | undefined; sawStepStart: boolean }[] = []
     ctx.on('session/event', (subject, event) => {
       if (subject !== agent.session || event.type !== 'step/start') return
-      // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
       const events = subject.snapshotEvents()
       const last = events.at(-1)
       observed.push({
@@ -765,7 +744,6 @@ describe('turn and step boundary recovery', () => {
 
   /** Count turn/step boundary events for balance assertions. */
   function boundaryCounts(agent: Agent) {
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const e = agent.session.snapshotEvents()
     return {
       turnStart: e.filter(x => x.type === 'turn/start').length,
@@ -796,7 +774,6 @@ describe('turn and step boundary recovery', () => {
     send(agent, 'go')
     await waitForIdle(ctx, agent)
 
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const e = agent.session.snapshotEvents()
     const c = boundaryCounts(agent)
     expect(c).toMatchObject({ turnStart: 1, turnEnd: 1, stepStart: 1, stepEnd: 1, errors: 0 })
@@ -830,7 +807,6 @@ describe('turn and step boundary recovery', () => {
     send(agent, 'rejected')
     await waitForIdle(ctx, agent)
 
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(agent.session.snapshotEvents().some(event => event.type === 'turn/start'
       || event.type === 'user/message')).toBe(false)
     expect(agent.inbox.nextTurn).toHaveLength(1)
@@ -862,7 +838,6 @@ describe('turn and step boundary recovery', () => {
       stepEnd: 0,
       errors: 1,
     })
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(agent.session.snapshotEvents().findLast(event => event.type === 'turn/end')).toMatchObject({
       data: { reason: { kind: 'error', error: { message: 'reject step-start before commit', code: 'UNKNOWN' } } },
     })
@@ -956,7 +931,6 @@ describe('turn and step boundary recovery', () => {
     await fiber.dispose() // dispose during the hanging step
     await driverDone(agent)
 
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const e = agent.session.snapshotEvents()
     const turnStarts = e.filter(x => x.type === 'turn/start').length
     const turnEnds = e.filter(x => x.type === 'turn/end').length
@@ -990,7 +964,6 @@ describe('turn and step boundary recovery', () => {
     send(agent, 'go')
     await agent.whenIdle()
 
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const e = agent.session.snapshotEvents()
     expect(e.filter(x => x.type === 'turn/start' || x.type === 'turn/end').map(x => x.type))
       .toEqual(['turn/start', 'turn/end'])
@@ -1020,14 +993,11 @@ describe('turn and step boundary recovery', () => {
     expect(errors).toEqual([])
     // Session contains the observer failure per listener, so the committed turn
     // remains visible to later observers and executes normally.
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const types = agent.session.snapshotEvents().map(e => e.type)
     expect(types.filter(t => t === 'turn/start')).toHaveLength(1)
     expect(types.filter(t => t === 'turn/end')).toHaveLength(1)
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const lastBoundary = agent.session.snapshotEvents().findLast(e => e.type === 'turn/start' || e.type === 'turn/end')
     expect(lastBoundary?.type).toBe('turn/end')
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(agent.session.snapshotEvents().at(-1)?.type).toBe('turn/end')
 
     // loop survives: a second turn runs normally.
@@ -1060,7 +1030,6 @@ describe('turn and step boundary recovery', () => {
       .toEqual({ kind: 'completed' })
 
     // step/end precedes turn/end (ordering contract)
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const e = agent.session.snapshotEvents()
     const stepEndIdx = e.findIndex(x => x.type === 'step/end')
     const turnEndIdx = e.findIndex(x => x.type === 'turn/end')
@@ -1095,7 +1064,6 @@ describe('turn and step boundary recovery', () => {
     send(agent, 'go')
     await waitForIdle(ctx, agent)
 
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const e = agent.session.snapshotEvents()
     // Both step/end and turn/end are present — finalization ran to completion.
     expect(e.some(x => x.type === 'step/end')).toBe(true)
@@ -1126,7 +1094,6 @@ describe('turn and step boundary recovery', () => {
     send(agent, 'go')
     await waitForIdle(ctx, agent)
     // turn 1 is balanced despite the throwing turn/end listener.
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const e1 = agent.session.snapshotEvents()
     expect(e1.filter(x => x.type === 'turn/start')).toHaveLength(1)
     expect(e1.filter(x => x.type === 'turn/end')).toHaveLength(1)
@@ -1136,7 +1103,6 @@ describe('turn and step boundary recovery', () => {
     send(agent, 'again')
     await waitForIdle(ctx, agent)
     expect(adapter.requests).toHaveLength(2)
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(agent.session.snapshotEvents().filter(x => x.type === 'turn/end')).toHaveLength(2)
   })
 })
@@ -1169,7 +1135,6 @@ describe('tool result call identity', () => {
     await waitForIdle(ctx, agent)
 
     // The logged tool/result.callId is the originating call.id.
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const resultEvent = agent.session.snapshotEvents().find(e => e.type === 'tool/result')
     expect(resultEvent?.type).toBe('tool/result')
     if (resultEvent?.type === 'tool/result') {
@@ -1234,7 +1199,6 @@ describe('disposal and cancellation during pre-step assembly', () => {
     await driverDone(agent)
     unlisten()
 
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const e = agent.session.snapshotEvents()
     expect(e.filter(x => x.type === 'turn/start' || x.type === 'turn/end').map(x => x.type))
       .toEqual(['turn/start', 'turn/end'])
@@ -1283,7 +1247,6 @@ describe('disposal and cancellation during pre-step assembly', () => {
     await driverDone(agent)
     unlisten()
 
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const e = agent.session.snapshotEvents()
     expect(e.filter(x => x.type === 'turn/start' || x.type === 'turn/end').map(x => x.type))
       .toEqual(['turn/start', 'turn/end'])
@@ -1334,7 +1297,6 @@ describe('disposal and cancellation during pre-step assembly', () => {
     await driverDone(agent)
 
     // The post-listener cancellation check catches disposal before any step or LLM call.
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const e = agent.session.snapshotEvents()
     expect(e.filter(x => x.type === 'turn/start' || x.type === 'turn/end').map(x => x.type))
       .toEqual(['turn/start', 'turn/end'])
@@ -1382,7 +1344,6 @@ describe('disposal and cancellation during pre-step assembly', () => {
     await fiber.dispose()
     await driverDone(agent)
 
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const e = agent.session.snapshotEvents()
     expect(e.filter(x => x.type === 'turn/start' || x.type === 'turn/end').map(x => x.type))
       .toEqual(['turn/start', 'turn/end'])
@@ -1428,7 +1389,6 @@ describe('disposal and cancellation during pre-step assembly', () => {
     await disposalDone
     await driverDone(agent)
 
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const e = agent.session.snapshotEvents()
     expect(e.filter(x => x.type === 'turn/start' || x.type === 'turn/end').map(x => x.type))
       .toEqual(['turn/start', 'turn/end'])

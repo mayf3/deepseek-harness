@@ -33,7 +33,6 @@ export class TestSessionQuery extends SessionQueryEngine {
     options: SessionObservationOptions = {},
   ): Promise<SessionObservation> {
     const live = this.ctx.sessions.get(sessionId)
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     if (live !== undefined) return cut('live', live.header, live.snapshotEvents())
     const handle = await this.ctx.sessionPersistence.open(
       sessionId,

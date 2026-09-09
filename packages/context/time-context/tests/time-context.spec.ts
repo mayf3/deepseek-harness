@@ -68,7 +68,6 @@ function openMessageTurn(session: Session, turn: number, clientTimeZone?: string
 
 function contextTexts(session: Session): string[] {
   const texts: string[] = []
-  // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
   for (const event of session.snapshotEvents()) {
     if (event.type === 'user/message'
       && event.data.source.kind === 'plugin'
@@ -169,7 +168,6 @@ describe('durable step context', () => {
       + 'Browser time zone for this request: Asia/Shanghai. Interpret otherwise-unqualified dates and times in this zone.\n'
       + 'Elapsed since the preceding model-visible message: 1d 1h 1m 1s.',
     ])
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const event = session.snapshotEvents().at(-1)
     expect(event?.type).toBe('user/message')
     if (event?.type !== 'user/message') throw new Error('missing time context')
@@ -293,9 +291,7 @@ describe('durable step context', () => {
     const original = Session.create(SessionId('seed-source'))
     openMessageTurn(original, 1)
     await fire(ctx, sessionAgent(original), 1, 1)
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const user = original.snapshotEvents().find(event => event.type === 'user/message' && event.data.source.kind === 'user')
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const reading = original.snapshotEvents().find(event => event.type === 'user/message' && event.data.source.kind === 'plugin')
     if (user === undefined || reading === undefined) throw new Error('missing source surface events')
     original.append('user/message', createUserMessage({
@@ -308,17 +304,14 @@ describe('durable step context', () => {
     original.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
     expect(JSON.stringify(original.deriveMessages())).not.toContain('Time sampled while preparing')
 
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const resumed = Session.create(SessionId('resumed'), original.snapshotEvents())
     const resumedAgent = sessionAgent(resumed)
     vi.setSystemTime(BASE + 999)
     openMessageTurn(resumed, 2)
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const beforeSkip = resumed.snapshotEvents().length
 
     await fire(ctx, resumedAgent, 2, 1)
 
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(resumed.snapshotEvents()).toHaveLength(beforeSkip)
     expect(contextTexts(resumed)).toHaveLength(1)
 
@@ -341,7 +334,6 @@ describe('durable step context', () => {
 
     vi.setSystemTime(BASE + 500)
     openMessageTurn(first, 2)
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const beforeSkip = first.snapshotEvents().length
     await fire(ctx, firstAgent, 2, 1)
 
@@ -349,7 +341,6 @@ describe('durable step context', () => {
     openMessageTurn(independent, 1)
     await fire(ctx, sessionAgent(independent, 'independent-agent'), 1, 1)
 
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(first.snapshotEvents()).toHaveLength(beforeSkip)
     expect(contextTexts(first)).toHaveLength(1)
     expect(contextTexts(independent)).toHaveLength(1)
@@ -469,7 +460,6 @@ describe('real agent-loop request history', () => {
 
     expect(contextTexts(agent.session)).toHaveLength(0)
     expect(adapter.requests).toHaveLength(0)
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(agent.session.snapshotEvents().some(event => event.type === 'step/start')).toBe(false)
     await ctx.fiber.dispose()
   })
@@ -492,10 +482,8 @@ describe('real agent-loop request history', () => {
     await agent.whenIdle()
 
     expect(adapter.requests).toHaveLength(2)
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const contexts = agent.session.snapshotEvents().filter(
       (event): event is SessionEvent<'user/message'> => event.type === 'user/message' && event.data.source.kind === 'plugin')
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const starts = agent.session.snapshotEvents().filter(event => event.type === 'step/start')
     expect(contexts).toHaveLength(adapter.requests.length)
     expect(starts).toHaveLength(adapter.requests.length)
@@ -520,7 +508,6 @@ describe('real agent-loop request history', () => {
       expect(request.messages[0]?.role).toBe('system')
       expect(JSON.stringify(request.messages[0])).not.toContain('Time sampled while preparing')
     }
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const systemNodes = agent.session.snapshotEvents().filter(event => event.type === 'system/message')
     expect(JSON.stringify(systemNodes)).not.toContain('Time sampled while preparing')
     await ctx.fiber.dispose()

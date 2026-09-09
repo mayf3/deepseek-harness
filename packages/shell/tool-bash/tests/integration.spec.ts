@@ -58,7 +58,6 @@ function waitForIdle(ctx: Context, agent: Agent): Promise<void> {
 }
 
 function events(agent: Agent): readonly SessionEvent[] {
-  // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
   return agent.session.snapshotEvents()
 }
 

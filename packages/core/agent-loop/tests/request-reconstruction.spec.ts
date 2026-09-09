@@ -94,7 +94,6 @@ describe('request stability across the loop', () => {
       expect(Object.isFrozen(request.messages)).toBe(true)
     }
     // One anchoring header snapshot; no further header events (nothing changed).
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const headerEvents = agent.session.snapshotEvents().filter(e => e.type === 'request/header')
     expect(headerEvents).toHaveLength(1)
     expect(headerEvents[0]?.type === 'request/header' && headerEvents[0].data.reason).toBe('initial')
@@ -112,7 +111,6 @@ describe('request stability across the loop', () => {
 
     expect(adapter.requests).toHaveLength(2)
     expectPrefixExtension(adapter.requests[0]!, adapter.requests[1]!)
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(agent.session.snapshotEvents().flatMap(event =>
       event.type === 'request/header' ? [event.data.reason] : [])).toEqual(['initial'])
   })
@@ -134,7 +132,6 @@ describe('request stability across the loop', () => {
     await waitForIdle(ctx, agent)
 
     expectPrefixExtension(adapter.requests[0]!, adapter.requests[1]!)
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(agent.session.snapshotEvents().flatMap(event =>
       event.type === 'request/header' ? [event.data.reason] : [])).toEqual(['initial', 'series'])
   })
@@ -160,7 +157,6 @@ describe('request stability across the loop', () => {
     await waitForIdle(ctx, agent)
 
     expectPrefixExtension(adapter.requests[0]!, adapter.requests[1]!)
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(agent.session.snapshotEvents().flatMap(event => event.type === 'request/header'
       ? [{ reason: event.data.reason, startsSeries: event.data.startsSeries }]
       : [])).toEqual([
@@ -198,7 +194,6 @@ describe('request stability across the loop', () => {
     await waitForIdle(ctx, agent)
 
     expectPrefixExtension(adapter.requests[0]!, adapter.requests[1]!)
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(agent.session.snapshotEvents().flatMap(event =>
       event.type === 'request/header' ? [event.data.reason] : [])).toEqual(['initial', 'series'])
   })
@@ -228,7 +223,6 @@ describe('request stability across the loop', () => {
       ReasoningEffortId('high'),
       ReasoningEffortId('max'),
     ])
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const headers = agent.session.snapshotEvents().filter(event => event.type === 'request/header')
     expect(headers.map(event => event.data.header.config.reasoningEffort)).toEqual([
       ReasoningEffortId('high'),
@@ -248,7 +242,6 @@ describe('request stability across the loop', () => {
       const resumedCtx = await harness(resumedAdapter)
       const resumedHandle = await resumedCtx.agents.create({
         sessionId: SessionId(`effort-${model}`),
-        // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
         seed: structuredClone(agent.session.snapshotEvents()),
         agentOptions: { provider: 'mock', model },
       })
@@ -257,7 +250,6 @@ describe('request stability across the loop', () => {
 
       expect(resumedAdapter.requests[0]?.model).toBe(model)
       expect(resumedAdapter.requests[0]?.reasoningEffort).toBe(effort)
-      // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
       const resumedHeaders = resumedHandle.agent.session.snapshotEvents().filter(event => event.type === 'request/header')
       expect(resumedHeaders.at(-1)?.data.header.config.reasoningEffort).toBe(effort)
       expect(resumedHeaders.at(-1)?.data.reason).toBe('resume')
@@ -276,7 +268,6 @@ describe('request stability across the loop', () => {
     await waitForIdle(ctx, agent)
 
     expect(adapter.requests[0]?.maxTokens).toBe(256_000)
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const header = agent.session.snapshotEvents().find(event => event.type === 'request/header')
     expect(header?.type === 'request/header' && header.data.header.config.maxTokens).toBe(256_000)
     expect(header?.type === 'request/header' && header.data.header.adapterDefaults)
@@ -308,7 +299,6 @@ describe('request stability across the loop', () => {
 
     expect(deepseek.requests[0]?.maxTokens).toBe(256_000)
     expect(other.requests[0]?.maxTokens).toBe(8_192)
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const headers = agent.session.snapshotEvents().filter(event => event.type === 'request/header')
     expect(headers.map(event => event.data.header.config.maxTokens)).toEqual([256_000, 8_192])
     expect(headers.map(event => event.data.header.adapterDefaults)).toEqual([
@@ -343,7 +333,6 @@ describe('request stability across the loop', () => {
 
     expect(deepseek.requests[0]?.maxTokens).toBe(4_096)
     expect(other.requests[0]?.maxTokens).toBe(4_096)
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const headers = agent.session.snapshotEvents().filter(event => event.type === 'request/header')
     expect(headers.map(event => event.data.header.config.maxTokens)).toEqual([4_096, 4_096])
     expect(headers.map(event => event.data.header.adapterDefaults)).toEqual([undefined, undefined])
@@ -396,7 +385,6 @@ describe('request stability across the loop', () => {
       ReasoningEffortId('high'),
     ])
     expect(second.requests).toHaveLength(0)
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const headers = agent.session.snapshotEvents().filter(event => event.type === 'request/header')
     expect(headers.at(-1)?.data.header.config.reasoningEffort).toBe(ReasoningEffortId('high'))
   })
@@ -435,7 +423,6 @@ describe('request stability across the loop', () => {
     expect(signal.aborted).toBe(true)
     expect(handle.agent.status).toBe('idle')
     expect(adapter.requests).toHaveLength(0)
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(handle.agent.session.snapshotEvents().some(event => event.type === 'request/header')).toBe(false)
   })
 
@@ -459,7 +446,6 @@ describe('request stability across the loop', () => {
       send(agent, 'go')
       await waitForIdle(ctx, agent)
 
-      // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
       expect(agent.session.snapshotEvents().findLast(event => event.type === 'turn/end')).toMatchObject({
         data: {
           reason: failure instanceof LlmError
@@ -535,7 +521,6 @@ describe('request stability across the loop', () => {
     // The rewritten history: summary replaces turn 1's user+assistant pair behind the system prompt.
     expect(second.messages[0]!.role).toBe('system')
     expect(second.messages[1]!.content.some(b => b.type === 'text' && b.text.includes('[summary of turn 1]'))).toBe(true)
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(agent.session.snapshotEvents().flatMap(event => event.type === 'request/header'
       ? [{ reason: event.data.reason, startsSeries: event.data.startsSeries }]
       : [])).toEqual([
@@ -574,7 +559,6 @@ describe('request stability across the loop', () => {
     expect(adapter.requests[1]?.messages[1]?.content).toContainEqual({
       type: 'text', text: '[summary for retry]',
     })
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(agent.session.snapshotEvents().flatMap(event =>
       event.type === 'request/header' ? [event.data.reason] : [])).toEqual(['initial', 'series'])
   })
@@ -588,7 +572,6 @@ describe('request stability across the loop', () => {
     await waitForIdle(ctx, agent)
     send(agent, 'second')
     await waitForIdle(ctx, agent)
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(agent.session.snapshotEvents().flatMap(event =>
       event.type === 'request/header' ? [event.data.reason] : [])).toEqual(['initial'])
 
@@ -596,10 +579,8 @@ describe('request stability across the loop', () => {
     send(agent, 'third')
     await waitForIdle(ctx, agent)
 
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const snapshots = agent.session.snapshotEvents().filter(e => e.type === 'request/header')
     expect(snapshots.map(event => event.data.reason)).toEqual(['initial', 'series'])
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const systemNodes = agent.session.snapshotEvents().filter(e => e.type === 'system/message')
     expect(systemNodes).toHaveLength(2)
     expect(systemNodes[1]?.surfaceOp).toEqual({ op: 'replace', startSeq: systemNodes[0]?.seq, endSeq: systemNodes[0]?.seq })
@@ -629,10 +610,8 @@ describe('request stability across the loop', () => {
     await waitForIdle(ctx, agent)
 
     // No new series: the header stays, node 0 stays, and the prompt update follows the cached prefix.
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(agent.session.snapshotEvents().flatMap(event =>
       event.type === 'request/header' ? [event.data.reason] : [])).toEqual(['initial'])
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const systemNodes = agent.session.snapshotEvents().filter(e => e.type === 'system/message')
     expect(systemNodes).toHaveLength(2)
     expect(systemNodes[1]?.surfaceOp).toBe('append')
@@ -646,7 +625,6 @@ describe('request stability across the loop', () => {
     // An unchanged prompt adds nothing on the next step.
     send(agent, 'fourth')
     await waitForIdle(ctx, agent)
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(agent.session.snapshotEvents().filter(e => e.type === 'system/message')).toHaveLength(2)
     expectPrefixExtension(adapter.requests[2]!, adapter.requests[3]!)
   })
@@ -670,11 +648,9 @@ describe('request stability across the loop', () => {
     startSeries = true
     send(agent, 'second')
     await waitForIdle(ctx, agent)
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     let systemNodes = agent.session.snapshotEvents().filter(e => e.type === 'system/message')
     expect(systemNodes).toHaveLength(2)
     expect(systemNodes[1]?.surfaceOp).toEqual({ op: 'replace', startSeq: systemNodes[0]?.seq, endSeq: systemNodes[0]?.seq })
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(agent.session.snapshotEvents().flatMap(event =>
       event.type === 'request/header' ? [event.data.reason] : [])).toEqual(['initial', 'series'])
 
@@ -684,7 +660,6 @@ describe('request stability across the loop', () => {
     disposeSection = ctx.systemPrompt.section({ name: 'extra', order: 2, text: 'newer guidance' })
     send(agent, 'third')
     await waitForIdle(ctx, agent)
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     systemNodes = agent.session.snapshotEvents().filter(e => e.type === 'system/message')
     expect(systemNodes).toHaveLength(3)
     expect(systemNodes[2]?.surfaceOp).toBe('append')
@@ -695,7 +670,6 @@ describe('request stability across the loop', () => {
     ctx.systemPrompt.section({ name: 'extra', order: 2, text: 'newest guidance' })
     send(agent, 'fourth')
     await waitForIdle(ctx, agent)
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     systemNodes = agent.session.snapshotEvents().filter(e => e.type === 'system/message')
     expect(systemNodes).toHaveLength(5)
     expect(systemNodes[3]?.data.message.content).toEqual([])
@@ -729,12 +703,10 @@ describe('request stability across the loop', () => {
     send(agent, 'second')
     await waitForIdle(ctx, agent)
 
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const systemNodes = agent.session.snapshotEvents().filter(e => e.type === 'system/message')
     expect(systemNodes).toHaveLength(2)
     expect(systemNodes[1]?.surfaceOp).toEqual({ op: 'replace', startSeq: systemNodes[0]?.seq, endSeq: systemNodes[0]?.seq })
     expect(adapter.requests[1]!.messages.map(message => message.role)).toEqual(['system', 'user', 'user'])
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(agent.session.snapshotEvents().flatMap(event =>
       event.type === 'request/header' ? [event.data.reason] : [])).toEqual(['initial', 'series'])
   })
@@ -753,10 +725,8 @@ describe('request stability across the loop', () => {
     send(agent, 'second')
     await waitForIdle(ctx, agent)
 
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const headers = agent.session.snapshotEvents().filter(e => e.type === 'request/header')
     expect(headers.map(event => [event.data.reason, event.data.startsSeries])).toEqual([['initial', undefined], ['change', true]])
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const systemNodes = agent.session.snapshotEvents().filter(e => e.type === 'system/message')
     expect(systemNodes).toHaveLength(2)
     expect(systemNodes[1]?.surfaceOp).toEqual({ op: 'replace', startSeq: systemNodes[0]?.seq, endSeq: systemNodes[0]?.seq })
@@ -782,7 +752,6 @@ describe('request stability across the loop', () => {
     const first = adapter.requests[0]!
     // The inject landed in the log after the boundary: not in THIS request…
     expect(first.messages.some(m => m.content.some(b => b.type === 'text' && b.text.includes('[late context]')))).toBe(false)
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(agent.session.snapshotEvents().some(e => e.type === 'user/message' && e.data.source.kind === 'plugin')).toBe(true)
 
     send(agent, 'second')
@@ -810,7 +779,6 @@ describe('request stability across the loop', () => {
     send(agent, 'go')
     await waitForIdle(ctx, agent)
 
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const turnEnd = agent.session.snapshotEvents().findLast(event => event.type === 'turn/end')
     expect(turnEnd).toMatchObject({ data: { reason: { kind: 'error' } } })
     if (turnEnd?.type !== 'turn/end' || turnEnd.data.reason.kind !== 'error') throw new Error()
@@ -830,7 +798,6 @@ describe('request stability across the loop', () => {
     const ctx2 = await harness(adapter2)
     const handle = await ctx2.agents.create({
       sessionId: SessionId('gen2-session'),
-      // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
       seed: agent.session.snapshotEvents(),
       agentOptions: { provider: 'mock', model: 'mock' },
     })
@@ -838,13 +805,11 @@ describe('request stability across the loop', () => {
     send(agent2, 'second')
     await waitForIdle(ctx2, agent2)
 
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const snapshots = agent2.session.snapshotEvents().filter(e => e.type === 'request/header')
     expect(snapshots).toHaveLength(2)
     expect(snapshots[1]?.data.reason).toBe('resume')
     // Identical header and an unchanged system node across the restart: byte-identical continuation.
     expect(adapter2.requests[0]!.messages[0]).toEqual(adapter.requests[0]!.messages[0])
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(agent2.session.snapshotEvents().filter(event => event.type === 'system/message')).toHaveLength(1)
     expectPrefixExtension(adapter.requests[0]!, adapter2.requests[0]!)
   })
@@ -873,7 +838,6 @@ describe('request stability across the loop', () => {
 
     // The second turn reuses the same series and header; the session's own
     // fold remains immutable state.
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(agent.session.snapshotEvents().flatMap(event =>
       event.type === 'request/header' ? [event.data.reason] : [])).toEqual(['initial'])
     expect(Object.isFrozen(agent.session.requestHeader())).toBe(true)
@@ -900,7 +864,6 @@ describe('request stability across the loop', () => {
     await waitForIdle(ctx, agent)
 
     expect(adapter.requests).toHaveLength(3)
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const events = agent.session.snapshotEvents()
     const stepStarts = events.filter(e => e.type === 'step/start')
     expect(stepStarts).toHaveLength(3)
@@ -957,7 +920,6 @@ describe('request/context capacity records', () => {
     send(agent, 'second')
     await waitForIdle(ctx, agent)
 
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const records = agent.session.snapshotEvents().filter(event => event.type === 'request/context')
     expect(records).toHaveLength(1)
     expect(records[0]?.data).toEqual({ provider: 'mock', model: 'mock', contextWindow: 128_000 })
@@ -983,7 +945,6 @@ describe('request/context capacity records', () => {
     send(agent, 'second')
     await waitForIdle(ctx, agent)
 
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(agent.session.snapshotEvents()
       .filter(event => event.type === 'request/context')
       .map(event => event.data.contextWindow)).toEqual([64_000, 256_000])
@@ -996,7 +957,6 @@ describe('request/context capacity records', () => {
     await waitForIdle(ctx, agent)
     send(agent, 'second')
     await waitForIdle(ctx, agent)
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(agent.session.snapshotEvents()
       .filter(event => event.type === 'request/context')
       .map(event => event.data)).toEqual([{ provider: 'mock', model: 'mock' }])
@@ -1017,7 +977,6 @@ describe('request/context capacity records', () => {
     send(agent, 'second')
     await waitForIdle(ctx, agent)
 
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(agent.session.snapshotEvents()
       .filter(event => event.type === 'request/context')
       .map(event => event.data)).toEqual([

@@ -902,7 +902,6 @@ describe('automation-only ACP bridge', () => {
     expect(secondImage.attachment.mediaType).toBe('image/jpeg')
     expect(secondImage.attachment.bytes).toBe(1)
     const agent = harness.ctx.agents.get(SessionId(sessionId))
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(JSON.stringify(agent?.session.snapshotEvents())).not.toContain('AQ==')
   })
 
@@ -976,7 +975,6 @@ describe('automation-only ACP bridge', () => {
       sessionId,
       prompt: [{ type: 'image', data: '', mimeType: 'image/png' }],
     })).rejects.toThrow(/inline image prompts were not advertised/)
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(harness.ctx.agents.get(SessionId(sessionId))?.session.snapshotEvents().some(event => event.type === 'turn/start')).toBe(false)
   })
 

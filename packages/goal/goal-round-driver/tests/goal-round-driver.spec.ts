@@ -197,7 +197,6 @@ describe('same-session goal driving', () => {
     })
     expect(test.adapter.requests).toHaveLength(2)
     const rounds: number[] = []
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     for (const event of test.agent.session.snapshotEvents()) {
       // Round zero is a durable goal state change; positive rounds are the
       // admitted continuation prompts this test counts.
@@ -208,7 +207,6 @@ describe('same-session goal driving', () => {
     expect(rounds).toEqual([1, 2])
     expect(requestText(test.adapter.requests[0]!)).toContain('Round: 1/2')
     expect(requestText(test.adapter.requests[1]!)).toContain('Round: 2/2')
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(test.agent.session.snapshotEvents().flatMap(event =>
       event.type === 'request/header' ? [event.data.reason] : [])).toEqual(['initial', 'series'])
   })
@@ -264,7 +262,6 @@ describe('same-session goal driving', () => {
       message: 'Goal round was rejected before entering its step.',
     })
     expect(test.adapter.requests).toHaveLength(0)
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(test.agent.session.snapshotEvents().some(event => event.type === 'turn/start')).toBe(true)
   })
 
@@ -302,7 +299,6 @@ describe('same-session goal driving', () => {
     expect(test.adapter.requests).toHaveLength(0)
     // No admitted continuation round reached the model; goal state changes are
     // represented by their own durable event.
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(test.agent.session.snapshotEvents().some(event => event.type === 'user/message'
       && event.data.source.kind === 'goal' && event.data.source.round > 0)).toBe(false)
   })
@@ -381,7 +377,6 @@ describe('same-session goal driving', () => {
 
     expect(goal).toMatchObject({ phase: 'paused', roundsStarted: 1 })
     expect(test.adapter.requests).toHaveLength(1)
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const turnEndKinds = test.agent.session.snapshotEvents().flatMap(event =>
       event.type === 'turn/end' ? [event.data.reason.kind] : [])
     expect(turnEndKinds).toContain('completed')
@@ -399,7 +394,6 @@ describe('same-session goal driving', () => {
     expect(requestText(test.adapter.requests[0]!)).toContain('human goes first')
     expect(requestText(test.adapter.requests[0]!)).not.toContain('<goal_round>')
     expect(requestText(test.adapter.requests[1]!)).toContain('<goal_round>')
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(test.agent.session.snapshotEvents().flatMap(event =>
       event.type === 'request/header' ? [event.data.reason] : [])).toEqual(['initial', 'series'])
   })
@@ -437,7 +431,6 @@ describe('same-session goal driving', () => {
     const goal = await waitForGoal(test.ctx, test.agent, current => current?.phase === 'blocked')
 
     expect(goal).toMatchObject({ revision: 3, objective: 'new objective', roundsStarted: 1 })
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const admitted = test.agent.session.snapshotEvents().find(event => event.type === 'user/message'
       && event.data.source.kind === 'goal' && event.data.source.round > 0)
     expect(admitted?.type === 'user/message' && admitted.data.source.kind === 'goal'
@@ -824,7 +817,6 @@ describe('same-session goal driving', () => {
     await test.agent.whenIdle()
 
     expect(test.adapter.requests).toHaveLength(0)
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(test.agent.session.snapshotEvents().some(event => event.type === 'turn/start')).toBe(true)
   })
 
@@ -999,7 +991,6 @@ describe('same-session goal driving', () => {
     })
     handle.agent.followup(createUserMessage({ content: [{ type: 'text', text: 'one ordinary turn' }], source: { kind: 'user' } }))
     await handle.agent.whenIdle()
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const closed = handle.agent.session.snapshotEvents().findLast(event => event.type === 'turn/end')
     if (closed?.type !== 'turn/end') throw new Error('expected a closed turn')
     await handle.dispose()
@@ -1105,7 +1096,6 @@ describe('same-session goal driving', () => {
 
     expect(test.ctx.goals.get(test.agent)).toMatchObject({ phase: 'active', roundsStarted: 0 })
     expect(test.adapter.requests).toHaveLength(0)
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(test.agent.session.snapshotEvents().some(event => event.type === 'turn/start')).toBe(true)
   })
 

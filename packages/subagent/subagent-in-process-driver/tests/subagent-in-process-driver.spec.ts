@@ -150,7 +150,6 @@ describe('startInProcessRun', () => {
     let injected = false
     ctx.on('session/flush', (session) => {
       if (injected || session.header.parentSession === undefined) return
-      // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
       const lastEnd = session.snapshotEvents().findLast(event => event.type === 'turn/end')
       if (lastEnd?.type !== 'turn/end' || lastEnd.data.reason.kind !== 'max-tokens') return
       injected = true
@@ -165,7 +164,6 @@ describe('startInProcessRun', () => {
     const child = ctx.agents.get(run.id)!
 
     expect(injected).toBe(false)
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(child.session.snapshotEvents().findLast(event => event.type === 'turn/end'))
       .toMatchObject({ data: { reason: { kind: 'max-tokens' } } })
     expect(result.stopReason).toBe('max-tokens')
@@ -201,7 +199,6 @@ describe('startInProcessRun', () => {
     const { ctx, parent } = await setup([textResponse('parent answer'), textResponse('child answer')])
     parent.followup(createUserMessage({ content: [{ type: 'text', text: 'parent question' }], source: { kind: 'user' } }))
     await parent.whenIdle()
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const seed = parent.session.snapshotEvents()
     const run = await startInProcessRun(request(parent), { seed })
     const result = await run.result
@@ -209,13 +206,11 @@ describe('startInProcessRun', () => {
     const child = ctx.agents.get(run.id)!
     expect(child.session.header.isSeeded).toBe(true)
     expect(child.session.inheritedEventCount).toBe(seed.length)
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(child.session.snapshotEvents().slice(0, seed.length)).toEqual(seed)
     // The seeded `system/message` stays surface node 0: the child renders the
     // same prompt, so its loop appends no second system node.
     const seededSystem = seed.find(event => event.type === 'system/message')
     expect(seededSystem).toBeDefined()
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(child.session.snapshotEvents().filter(event => event.type === 'system/message')).toHaveLength(1)
     expect(child.session.surface.nodes[0]).toBe(seededSystem?.seq)
     expect(child.session.deriveMessages()[0]).toEqual(parent.session.deriveMessages()[0])
@@ -226,7 +221,6 @@ describe('startInProcessRun', () => {
     const { ctx, parent, adapter } = await setup([textResponse('parent answer'), textResponse('child answer')])
     parent.followup(createUserMessage({ content: [{ type: 'text', text: 'parent question' }], source: { kind: 'user' } }))
     await parent.whenIdle()
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const seed = parent.session.snapshotEvents()
     const seededSystem = seed.find(event => event.type === 'system/message')
     if (seededSystem === undefined) throw new Error('the parent log lacks a system node')
@@ -235,7 +229,6 @@ describe('startInProcessRun', () => {
     const run = await startInProcessRun(request(parent), { seed })
     await run.result
     const child = ctx.agents.get(run.id)!
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const systemNodes = child.session.snapshotEvents().filter(event => event.type === 'system/message')
     expect(systemNodes.map(event => event.seq)).toEqual([seededSystem.seq, systemNodes[1]?.seq])
     expect(systemNodes[1]?.surfaceOp).toEqual({ op: 'replace', startSeq: seededSystem.seq, endSeq: seededSystem.seq })
@@ -367,7 +360,6 @@ describe('startInProcessRun', () => {
     })
     expect(adapter.requests[0]?.signal?.reason).toEqual({ kind: 'parent' })
     const child = parent.ctx.agents.get(signalled.id)
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const turnEnd = child?.session.snapshotEvents().findLast(event => event.type === 'turn/end')
     expect(turnEnd?.type === 'turn/end' && turnEnd.data.reason).toEqual({ kind: 'aborted', reason: { kind: 'parent' } })
     await signalled.dispose()

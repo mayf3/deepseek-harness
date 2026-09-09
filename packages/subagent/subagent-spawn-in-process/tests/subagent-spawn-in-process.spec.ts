@@ -118,7 +118,6 @@ describe('dsh-subagent-spawn-in-process', () => {
     const { ctx, parent } = await setup([textResponse('parent turn'), textResponse('child sees nothing')])
     parent.followup(createUserMessage({ content: [{ type: 'text', text: 'parent prompt' }], source: { kind: 'user' } }))
     await parent.whenIdle()
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const parentEventCount = parent.session.snapshotEvents().length
     expect(parentEventCount).toBeGreaterThan(0)
 
@@ -126,7 +125,6 @@ describe('dsh-subagent-spawn-in-process', () => {
     await run.result
     const child = ctx.agents.get(run.id)!
     // The child's first user/message is its OWN prompt, not the parent's history.
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const firstUser = child.session.snapshotEvents().find(e => e.type === 'user/message')
     expect(firstUser).toBeDefined()
     await run.dispose()
@@ -441,7 +439,6 @@ describe('dsh-subagent-spawn-in-process', () => {
       expect((childRequest.tools ?? []).map(t => t.name)).not.toContain('forbidden_tool')
       // …and the attempted call executed as UNKNOWN_TOOL (visible in the log).
       const child = ctx.agents.get(run.id)!
-      // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
       const toolResult = child.session.snapshotEvents().find(e => e.type === 'tool/result')!
       expect(JSON.stringify(toolResult.data)).toContain('unknown tool')
       await run.dispose()

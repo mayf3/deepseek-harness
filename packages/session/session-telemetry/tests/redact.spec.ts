@@ -72,7 +72,6 @@ describe('session-telemetry/record waterfall', () => {
     session.append('user/message', createUserMessage({
       content: [{ type: 'text', text: FIXTURE_SECRET }], source: { kind: 'user' },
     }), { surfaceOp: 'append' })
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const logged = session.snapshotEvents()[0]!.data as { content: { text: string }[] }
     expect(logged.content[0]!.text).toBe(FIXTURE_SECRET)
   })
@@ -125,7 +124,6 @@ describe('session-telemetry/record waterfall', () => {
       content: [{ type: 'text', text: 'hi' }], source: { kind: 'user' },
     }), { surfaceOp: 'append' })
     expect(backend.records).toHaveLength(0)
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(session.snapshotEvents()).toHaveLength(1)
   })
 })

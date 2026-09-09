@@ -85,7 +85,6 @@ describe('a child agent composed in-process', () => {
     const run = await startInProcessRun(spawnRequest(parent), {})
     await run.result
 
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(run.localAgent?.session.snapshotEvents().some(event =>
       event.type === 'system/message'
       && JSON.stringify(event.data.message.content).includes('section for preset_only'))).toBe(true)

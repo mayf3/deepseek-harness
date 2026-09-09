@@ -159,9 +159,7 @@ describe.skipIf(MODE === 'record')('web e2e: subagents/interruptByParent over th
     expect(child).toBeDefined()
     expect(child!.status).toBe('idle')
     expect(child!.inbox.nextTurn).toHaveLength(1)
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(child!.session.snapshotEvents().filter(event => event.type === 'turn/start')).toHaveLength(1)
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const lastEnd = child!.session.snapshotEvents().filter(event => event.type === 'turn/end').at(-1)
     expect((lastEnd)?.data.reason.kind).toBe('aborted')
 

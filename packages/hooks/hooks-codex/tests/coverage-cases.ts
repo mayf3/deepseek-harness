@@ -42,7 +42,6 @@ async function harness(configPath: string, adapter: MockAdapter, opts: HarnessOp
 function waitForIdle(_ctx: Context, agent: Agent): Promise<void> {
   return agent.whenIdle()
 }
-// oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
 function events(agent: Agent): readonly SessionEvent[] { return agent.session.snapshotEvents() }
 /** Poll until `predicate` holds or the deadline passes — robust to detached
  * emit-listener hooks firing on a `.then` (a fixed sleep flakes under load). */

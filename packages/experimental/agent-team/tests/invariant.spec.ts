@@ -44,7 +44,6 @@ describe('Agent Teams stream invariant', () => {
       code: 'INVARIANT',
       packageName: '@deepseek-ai/dsh-experimental-agent-team',
     }))
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(invalid.snapshotEvents()).toEqual([])
   })
 
@@ -70,7 +69,6 @@ describe('Agent Teams stream invariant', () => {
       code: 'INVARIANT',
       packageName: '@deepseek-ai/dsh-experimental-agent-team',
     }))
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(session.snapshotEvents()).toEqual([])
   })
 })

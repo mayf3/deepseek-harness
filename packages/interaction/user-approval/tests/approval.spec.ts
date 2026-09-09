@@ -132,11 +132,8 @@ describe('ApprovalService.request', () => {
 
     await expect(ctx.approval.request(requestOf(agent))).resolves.toBe('allowed-once')
 
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const audit = session.snapshotEvents().filter(event => event.type.startsWith('approval/'))
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const asked = session.snapshotEvents().find((event): event is SessionEvent<'approval/asked'> => event.type === 'approval/asked')
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const decided = session.snapshotEvents().find((event): event is SessionEvent<'approval/decided'> => event.type === 'approval/decided')
     expect(audit.map(event => event.type)).toEqual(['approval/asked', 'approval/decided'])
     expect(decided?.data.id).toBe(asked?.data.id)
@@ -158,11 +155,8 @@ describe('ApprovalService.request', () => {
 
     await expect(ctx.approval.request(requestOf(agent))).resolves.toBe('rejected')
 
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const audit = session.snapshotEvents().filter(event => event.type.startsWith('approval/'))
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const asked = session.snapshotEvents().find((event): event is SessionEvent<'approval/asked'> => event.type === 'approval/asked')
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const decided = session.snapshotEvents().find((event): event is SessionEvent<'approval/decided'> => event.type === 'approval/decided')
     expect(audit.map(event => event.type)).toEqual(['approval/asked', 'approval/decided'])
     expect(decided?.data).toMatchObject({ id: asked?.data.id, outcome: 'rejected' })
@@ -382,7 +376,6 @@ describe('approval policy (the approval/policy fold)', () => {
     setApprovalPolicy(session, 'never')
     setApprovalPolicy(session, 'ask')
     expect(service.overrideOf(session)).toBe('ask')
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(session.snapshotEvents().at(-1)).toMatchObject({ type: 'approval/policy', data: { policy: 'ask' } })
   })
 
@@ -422,9 +415,7 @@ describe('approval policy (the approval/policy fold)', () => {
     await expect(ctx.approval.request({ agent, toolName: 'bash' })).resolves.toBe('rejected')
     expect(consulted).not.toHaveBeenCalled()
     // The audit pair still lands on the session log.
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(session.snapshotEvents().filter(e => e.type === 'approval/asked')).toHaveLength(1)
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(session.snapshotEvents().filter(e => e.type === 'approval/decided')).toHaveLength(1)
   })
 

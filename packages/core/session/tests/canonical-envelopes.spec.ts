@@ -121,7 +121,6 @@ describe('canonical event payload acceptance', () => {
         expect(copy).toEqual(event)
         if (path === 'adopt' || path === 'snapshot') expect(accept(copy)).toEqual(event)
       }
-      // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
       expect(Session.create(id, [event]).eventAt(SessionSeq(0))).toEqual(event)
     }
   })
@@ -179,7 +178,6 @@ describe('canonical event payload acceptance', () => {
       const prepared = ctx.sessions.prepare(id, {
         seed: [event], meta: { ...header }, inheritedEventCount: SessionLogOffset(0), eventState,
       })
-      // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
       expect(prepared.eventAt(SessionSeq(0))).toBe(event)
       expect(prepared.requestHeader()).toEqual({ config })
       expect(ctx.sessions.get(id)).toBeUndefined()
@@ -205,7 +203,6 @@ describe('canonical event payload acceptance', () => {
       const published = vi.fn()
       ctx.on('session/created', created)
       ctx.on('session/event', published)
-      // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
       const events = session.snapshotEvents()
       const messages = session.deriveMessages()
       for (const { event } of invalidData) {
@@ -213,7 +210,6 @@ describe('canonical event payload acceptance', () => {
         expect(() => ctx.sessions.create(SessionId('invalid-seed'), { seed: [event] })).toThrow()
         expect(ctx.sessions.get(SessionId('invalid-seed'))).toBeUndefined()
         expect(session.seq).toBe(0)
-        // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
         expect(session.snapshotEvents()).toBe(events)
         expect(session.surface.nodes).toEqual([])
         expect(session.surface.replaceGeneration).toBe(0)
@@ -283,7 +279,6 @@ describe('canonical event-local surface metadata', () => {
       expect(() => accept(structuredClone(event))).not.toThrow()
     }
     const session = Session.create(id, [event])
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(session.eventAt(SessionSeq(0))).toEqual(event)
     expect(session.surface.nodes).toEqual([])
     expect(session.deriveMessages()).toEqual([])

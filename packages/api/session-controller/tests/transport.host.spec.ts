@@ -230,7 +230,6 @@ describe('SessionHistoryController', () => {
     observed.resolve({
       source: 'live',
       header: attached.header,
-      // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
       events: attached.snapshotEvents(),
       cursor: attached.seq - 1,
       projections: { asOfSeq: attached.seq - 1, values: {} },

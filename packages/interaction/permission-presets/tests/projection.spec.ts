@@ -99,7 +99,6 @@ describe('/permission command', () => {
         text: 'The approval policy changed from "ask" to "never" (changed by the user).',
       }],
     })
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const run = session.snapshotEvents().find(event => event.type === 'command/run')
     expect(run?.data).toMatchObject({ name: 'permission', args: ' danger-full-access' })
   })
@@ -112,14 +111,12 @@ describe('/permission command', () => {
       kind: 'success',
       text: 'current preset workspace-write (available: workspace-write, danger-full-access)',
     })
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(session.snapshotEvents().filter(event => event.type === 'permission/preset')).toHaveLength(1)
   })
 
   it('rejects an unknown preset without touching the log', async () => {
     const { ctx, session } = await harness()
     const { agent } = await agentFor(ctx, session)
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const before = session.snapshotEvents().filter(event =>
       event.type !== 'command/run' && event.type !== 'command/done')
     const execution = await ctx.commands.execute(agent, '/permission yolo', [], new AbortController().signal)
@@ -130,7 +127,6 @@ describe('/permission command', () => {
       kind: 'error',
       text: 'unknown preset "yolo" (available: workspace-write, danger-full-access)',
     })
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(session.snapshotEvents().filter(event =>
       event.type !== 'command/run' && event.type !== 'command/done')).toEqual(before)
   })

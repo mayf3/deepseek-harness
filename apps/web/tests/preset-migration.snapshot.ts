@@ -45,7 +45,6 @@ describe.skipIf(webSnapshotMode() === 'record')('historical preset restoration t
       if ('error' in resolved) throw resolved.error
       expect(scaffold.ctx.agentPresets.composedPreset(resolved.agent.ctx)).toBe('ptc')
       expect(resolved.agent.session.header.agentPreset).toBe('ptc')
-      // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
       expect(resolved.agent.session.snapshotEvents()
         .filter(event => event.type === 'agent-preset/selected')
         .map(event => event.data.agentPreset)).toEqual(withSelections ? ['ptc', 'standard', 'ptc'] : [])

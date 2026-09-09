@@ -175,7 +175,6 @@ describe('OpenTelemetrySessionBackend wire', () => {
     const start = ledger.find(r => r.record.attributes?.some(a => a.key === 'event.type' && a.value.stringValue === 'turn/start'))
     expect(start).toBeDefined()
     expect(start?.record.severityNumber).toBe(9)
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(BigInt(start!.record.timeUnixNano)).toBe(BigInt(session.snapshotEvents().find(event => event.type === 'turn/start')!.time) * 1_000_000n)
     expect(start?.record.attributes).toContainEqual({
       key: 'session.format_version',
@@ -241,7 +240,6 @@ describe('OpenTelemetrySessionBackend wire', () => {
       },
     })
     expect(eventTypes(captures)).not.toContain('manual')
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(eventTypes(captures)).toEqual(session.snapshotEvents().map(event => event.type))
     expect(ops).toHaveLength(0)
   })
@@ -495,7 +493,6 @@ describe('OpenTelemetrySessionBackend wire', () => {
       session.append('turn/start', { turn: 1 })
       expect(captures).toEqual([])
       recordFeedback(session, 'explicit report')
-      // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
       const submitted = session.snapshotEvents().map(event => event.type)
       await expect.poll(() => eventTypes(captures)).toEqual(submitted)
       session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
@@ -521,7 +518,6 @@ describe('OpenTelemetrySessionBackend route and feedback', () => {
       session.append('turn/start', { turn: 1 })
       expect(captures).toEqual([])
       recordFeedback(session, 'explicit report')
-      // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
       const expected = session.snapshotEvents().map(event => event.type)
       await expect.poll(() => eventTypes(captures)).toEqual(expected)
       session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
@@ -539,7 +535,6 @@ describe('OpenTelemetrySessionBackend route and feedback', () => {
     await ctx.plugin(SessionStore)
     const donor = Session.create(SessionId('stored-feedback'))
     recordFeedback(donor, 'old feedback is not a submission')
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const restored = ctx.sessions.create(donor.id, { seed: donor.snapshotEvents(), meta: donor.header })
     try {
       const first = await ctx.plugin(OpenTelemetrySessionBackend, { mode: SessionTelemetryMode.FEEDBACK_ONLY, exporter: { url } })
@@ -550,10 +545,8 @@ describe('OpenTelemetrySessionBackend route and feedback', () => {
         session.append('request/header', { header: { config: { provider, model: 'm' } }, reason: 'change' })
       }
       const child = ctx.sessions.fork(restored, undefined, SessionId('child'))
-      // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
       const inherited = child.snapshotEvents().find(event => event.type === 'feedback/record')!
       ctx.emit('session/event', child, inherited)
-      // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
       const opened = ctx.sessions.create(SessionId('opened'), { seed: donor.snapshotEvents() })
       ctx.emit('session/created', opened)
       await first.dispose()
@@ -588,7 +581,6 @@ describe('OpenTelemetrySessionBackend route and feedback', () => {
         expect(captures).toEqual([])
         const put = await ctx.messageFeedback.put(request)
         if (!put.ok) throw new Error('live put failed')
-        // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
         await expect.poll(() => eventTypes(captures)).toEqual(session.snapshotEvents().map(event => event.type))
         const throughPut = session.seq
         await ctx.messageFeedback.put({ ...request, ifVersion: put.value.version })
@@ -596,10 +588,8 @@ describe('OpenTelemetrySessionBackend route and feedback', () => {
         expect(session.seq).toBe(throughPut)
         const edit = await ctx.messageFeedback.put({ ...request, ifVersion: put.value.version, note: 'edited note' })
         if (!edit.ok) throw new Error('live note failed')
-        // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
         await expect.poll(() => eventTypes(captures)).toEqual(session.snapshotEvents().map(event => event.type))
         await ctx.messageFeedback.delete({ sessionId: session.id, messageId: message.id, ifVersion: edit.value.version })
-        // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
         await expect.poll(() => eventTypes(captures)).toEqual(session.snapshotEvents().map(event => event.type))
         const submitted = eventTypes(captures)
         const throughDelete = session.seq
@@ -622,7 +612,6 @@ describe('OpenTelemetrySessionBackend route and feedback', () => {
     const { ctx, fiber } = await boot(url)
     const session = Session.create(SessionId('cold-not-submitted'))
     const notify = async () => ctx.parallel('feedback/committed', {
-      // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
       meta: session.header, events: session.snapshotEvents(), inheritedEventCount: session.inheritedEventCount,
     })
     await notify()
@@ -634,7 +623,6 @@ describe('OpenTelemetrySessionBackend route and feedback', () => {
     child.append('feedback/message-delete', { sessionId: session.id, messageId: message.id })
     await ctx.parallel('feedback/committed', {
       meta: { ...session.header, id: SessionId('inherited-cold'), parentSession: session.id, isSeeded: true },
-      // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
       events: session.snapshotEvents(SessionLogOffset(0), SessionLogOffset(1)), inheritedEventCount: SessionLogOffset(1),
     })
     await fiber.dispose()
@@ -654,14 +642,12 @@ describe('OpenTelemetrySessionBackend route and feedback', () => {
       parent.append('request/header', { header: { config: { provider: 'mock', model: 'm' } }, reason: 'initial' })
       const message = createAssistantMessage({ content: [{ type: 'text', text: 'inherited answer' }], source: { provider: 'mock', model: 'm' } })
       parent.append('assistant/message', { message, stream: [], turn: 1, step: 1 }, { surfaceOp: 'append' })
-      // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
       const child = Session.create(SessionId('cold-child'), parent.snapshotEvents(), {
         ...parent.header, id: SessionId('cold-child'), parentSession: parent.id, isSeeded: true,
       }, parent.seq)
       recordFeedback(child, 'child-owned stored feedback')
       const handle = await ctx.sessionPersistence.create(child.header, { inheritedEventCount: child.inheritedEventCount })
       try {
-        // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
         await handle.append(child.snapshotEvents())
       } finally {
         await handle.close()
@@ -709,7 +695,6 @@ describe('OpenTelemetrySessionBackend route and feedback', () => {
       session.append('assistant/message', { message, stream: [], turn: 1, step: 1 }, { surfaceOp: 'append' })
       const handle = await ctx.sessionPersistence.create(session.header)
       try {
-        // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
         await handle.append(session.snapshotEvents())
       } finally {
         await handle.close()

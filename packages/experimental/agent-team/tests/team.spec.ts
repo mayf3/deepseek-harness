@@ -35,7 +35,6 @@ function durable(agent: Agent): {
   pendingMessages: TeamMessageSnapshot[]
 } {
   let projected = teamProjectionDefinition.init(agent.session.header)
-  // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
   for (const event of agent.session.snapshotEvents()) projected = teamProjectionDefinition.apply(projected, event)
   if (projected.failure !== undefined) throw new Error(projected.failure)
   const state = projected
@@ -271,7 +270,6 @@ describe('Team identity and provisioning', () => {
     // Live sessions persist only through an attached agent-loop writer; this
     // bare fixture session seeds its durable log directly for the cold reread.
     const persisted = await ctx.sessionPersistence.create(liveSession.header)
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     await persisted.append(liveSession.snapshotEvents())
     await persisted.close()
     await liveFiber.dispose()
@@ -471,7 +469,6 @@ describe('Team identity and provisioning', () => {
     await ctx.agentTeams.createTask(lead, { subject: 'parent task', description: 'belongs to parent' })
     const handle = await ctx.agents.create({
       sessionId: SessionId('ordinary-fork'),
-      // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
       seed: lead.session.snapshotEvents(),
       meta: { parentSession: lead.id, isSeeded: true },
       inheritedEventCount: SessionLogOffset(lead.session.seq),
@@ -954,7 +951,6 @@ describe('Team mailbox and waiting', () => {
     })
 
     await expect(teamInternals(ctx).mailbox.tryDispatch(lead, message, SIGNAL)).resolves.toBe(true)
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(lead.session.snapshotEvents().some(event => event.type === 'agent/inbox/spliced'
       && event.data.inserted.some(input => input.source.kind === 'team-message'
         && input.source.messageId === message.id))).toBe(true)
@@ -999,14 +995,12 @@ describe('Team mailbox and waiting', () => {
       'team/message/delivered',
     ])
 
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const receiptCount = lead.session.snapshotEvents().filter(event => event.type === 'agent/inbox/spliced'
       && event.data.inserted.some(message => message.source.kind === 'team-message'
         && messageIds.has(message.source.messageId))).length
     await teamFiber.dispose()
     await ctx.plugin(TeamService, { maxPendingMessagesPerMember: 1 })
     await vi.waitFor(() => { expect(durable(lead).pendingMessages).toEqual([]) })
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(lead.session.snapshotEvents().filter(event => event.type === 'agent/inbox/spliced'
       && event.data.inserted.some(message => message.source.kind === 'team-message'
         && messageIds.has(message.source.messageId)))).toHaveLength(receiptCount)
@@ -1208,7 +1202,6 @@ describe('Team mailbox and waiting', () => {
     expect(later.status).toBe('accepted')
     const target = await waitRunning(ctx, started.member.id)
     await vi.waitFor(() => {
-      // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
       const accepted = target.session.snapshotEvents().flatMap(event => event.type === 'agent/inbox/spliced'
         ? event.data.inserted.flatMap(message => message.source.kind === 'team-message'
           ? [message.source.messageId]

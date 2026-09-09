@@ -67,7 +67,6 @@ describe.skipIf(!process.env.DEEPSEEK_API_KEY)('coding task: fix a failing test 
     await waitForIdle(ctx, agent)
 
     // The agent claims success…
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const summary = finalText(agent.session.snapshotEvents()).toLowerCase()
     expect(summary.length).toBeGreaterThan(0)
 

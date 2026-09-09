@@ -57,7 +57,6 @@ function send(agent: Agent, text: string) {
 }
 
 function events(agent: Agent): readonly SessionEvent[] {
-  // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
   return agent.session.snapshotEvents()
 }
 

@@ -322,7 +322,6 @@ describe('session reference spill outcomes', () => {
       const target = ctx.sessions.create(SessionId('target'))
       const source = ctx.sessions.create(SessionId('source'))
       for (const text of texts) appendText(source, text)
-      // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
       const captured = source.snapshotEvents().at(-1)?.seq
       const read = vi.spyOn(ctx.sessionQuery, 'readSurface')
       const store = ctx.spillStore as RecordingSpill
@@ -372,7 +371,6 @@ describe('session reference spill outcomes', () => {
       const context = result.additionalContext!
       target.append('user/message', context, { surfaceOp: 'append' })
       for (const detach of detachSources) detach()
-      // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
       const replayed = Session.create(SessionId('replayed'), target.snapshotEvents()).deriveMessages()
       expect(replayed).toEqual(target.deriveMessages())
       expect(JSON.stringify(replayed)).toContain('memory:session-reference-1.txt')
@@ -453,7 +451,6 @@ describe('session reference spill outcomes', () => {
       finish.resolve(undefined)
       await rejected
       await settled.promise
-      // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
       expect(target.snapshotEvents().filter(event => event.type === 'user/message')).toEqual([])
     } finally { finish.resolve(undefined); await ctx.fiber.dispose() }
   })
@@ -1201,7 +1198,6 @@ describe('session reference discovery and preparation', () => {
     expect(JSON.stringify(before)).toContain('durable referenced fact')
     expect(JSON.stringify(before)).toContain('use @source')
     expect(JSON.stringify(before)).not.toContain('later source mutation')
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(Session.create(SessionId('replayed-target'), target.snapshotEvents()).deriveMessages()).toEqual(before)
   })
 

@@ -216,7 +216,6 @@ describe('ACP prompt lifecycle', () => {
     const prompt = harness.client.prompt({ sessionId, prompt: [{ type: 'text', text: 'go' }] })
       .finally(() => { settled = true })
     await vi.waitFor(() => {
-      // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
       expect(agent.session.snapshotEvents().filter(event => event.type === 'agent/inbox/spliced'
         && event.data.inserted.length > 0)).toHaveLength(2)
     })
@@ -317,7 +316,6 @@ describe('ACP prompt lifecycle', () => {
 
     await expect(first).resolves.toEqual({ stopReason: 'cancelled' })
     expect(harness.adapter.requests).toEqual([])
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const events = harness.ctx.agents.get(SessionId(sessionId))?.session.snapshotEvents() ?? []
     expect(events.some(event => event.type === 'user/message' || event.type === 'turn/start')).toBe(false)
   })
@@ -445,7 +443,6 @@ describe('ACP prompt lifecycle', () => {
     await harness.client.cancel({ sessionId })
     await expect(prompt).resolves.toEqual({ stopReason: 'cancelled' })
     await agent.whenIdle()
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(agent.session.snapshotEvents().findLast(event => event.type === 'turn/end')?.data.reason)
       .toEqual({ kind: 'aborted', reason: { kind: 'user' } })
   })
@@ -471,14 +468,12 @@ describe('ACP prompt lifecycle', () => {
       source: { kind: 'plugin', plugin: 'test' },
     }))
     await vi.waitFor(() => {
-      // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
       expect(agent.session.snapshotEvents().some(event => event.type === 'turn/start')).toBe(true)
     })
 
     await harness.client.cancel({ sessionId })
     await agent.whenIdle()
 
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(agent.session.snapshotEvents().findLast(event => event.type === 'turn/end')?.data.reason)
       .toEqual({ kind: 'aborted', reason: { kind: 'user' } })
   })

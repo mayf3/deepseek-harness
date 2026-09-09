@@ -212,7 +212,6 @@ function overflowHistorySeed(): readonly SessionEvent[] {
     session.append('step/end', { turn, step: 1 })
     session.append('turn/end', { turn, reason: { kind: 'completed' } })
   }
-  // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
   return session.snapshotEvents()
 }
 
@@ -231,9 +230,7 @@ describe('CBR-001: a real-loop checkpoint is a valid boundary on both sides', ()
       await waitForIdle(ctx, agent)
 
       expect(agent.session.requestHeader()?.config.model).toBe('mock')
-      // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
       expect(agent.session.snapshotEvents().some(event => event.type === 'compaction/summary')).toBe(true)
-      // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
       expect(agent.session.snapshotEvents().at(-1)).toMatchObject({
         type: 'turn/end',
         data: { reason: { kind: 'completed' } },
@@ -250,7 +247,6 @@ describe('CBR-001: a real-loop checkpoint is a valid boundary on both sides', ()
       agent.followup(createUserMessage({ content: [{ type: 'text', text: 'do tool work' }], source: { kind: 'user' } }))
       await waitForIdle(ctx, agent)
 
-      // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
       const events = agent.session.snapshotEvents()
       const compactStart = events.find(event => event.type === 'compaction/start')
       expect(compactStart).toBeDefined()
@@ -283,7 +279,6 @@ describe('CBR-001: a real-loop checkpoint is a valid boundary on both sides', ()
       agent.followup(createUserMessage({ content: [{ type: 'text', text: 'do a long multi-step task' }], source: { kind: 'user' } }))
       await waitForIdle(ctx, agent)
 
-      // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
       const events = agent.session.snapshotEvents()
       // A compaction ran: at least one checkpoint landed on the surface.
       const checkpoints = events.filter(
@@ -352,7 +347,6 @@ describe('token pressure after loop-admitted system prompts', () => {
         prompt = nextPrompt
         agent.followup(createUserMessage({ content: [{ type: 'text', text: 'question' }], source: { kind: 'user' } }))
         await agent.whenIdle()
-        // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
         expect(agent.session.snapshotEvents().at(-1)).toMatchObject({
           type: 'turn/end', data: { reason: { kind: 'completed' } },
         })
@@ -360,13 +354,11 @@ describe('token pressure after loop-admitted system prompts', () => {
         expect(measured.baseline).toEqual({ kind: 'usage', tokens: 1110, usage })
         expect(measured.surfaceDeltaTokens).toBe(0)
         expect(measured.totalTokens).toBe(1110)
-        // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
         const replay = Session.create(SessionId('prompt-pressure-replay'), agent.session.snapshotEvents())
         expect(ctx.tokenMeter.measure(replay)).toMatchObject({
           baseline: measured.baseline, surfaceDeltaTokens: 0, totalTokens: 1110, nodes: measured.nodes,
         })
       }
-      // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
       const events = agent.session.snapshotEvents()
       const prompts = events.filter(event => event.type === 'system/message')
       expect(prompts[0]?.surfaceOp).toBe('append')
@@ -436,7 +428,6 @@ describe('context-overflow recovery across the real loop and compaction-basic', 
         expect(retry).toContain('RECOVERY CHECKPOINT')
         expect(retry).not.toContain('OLD HISTORY SENTINEL')
 
-        // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
         const events = agent.session.snapshotEvents()
         const stepStart = events.find(event =>
           event.type === 'step/start' && event.data.turn === 3 && event.data.step === 1,
@@ -499,13 +490,10 @@ describe('context-overflow recovery across the real loop and compaction-basic', 
 
       expect(adapter.conversationRequests).toHaveLength(3)
       expect(adapter.summaryRequests).toHaveLength(1)
-      // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
       expect(agent.session.snapshotEvents().filter(event => event.type === 'llm/retry').map(event => event.data))
         .toEqual([expect.objectContaining({ turn: 3, step: 1, retry: 1, failure: { message: 'temporary provider outage', code: 'SERVER' } })])
-      // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
       expect(agent.session.snapshotEvents().filter(event => event.type === 'turn/start').slice(-1).map(event => event.data.turn))
         .toEqual([3])
-      // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
       expect(agent.session.snapshotEvents().at(-1)).toMatchObject({
         type: 'turn/end',
         data: { reason: { kind: 'completed' } },

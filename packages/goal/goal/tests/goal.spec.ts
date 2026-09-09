@@ -27,7 +27,6 @@ const sessionStubs = new WeakMap<Session, StubAgent>()
 
 /** Number the next balanced test-fixture turn. */
 function nextTurn(session: Session): number {
-  // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
   return session.snapshotEvents().reduce((max, event) => event.type === 'turn/start' ? Math.max(max, event.data.turn) : max, 0) + 1
 }
 
@@ -132,9 +131,7 @@ describe('GoalService creation and replay', () => {
     })
     expect(goal.id).toMatch(/^goal-/)
     expect(seen).toEqual(['create'])
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(session.snapshotEvents().map(event => event.type)).toEqual(['goal/change'])
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const context = session.snapshotEvents()[0]
     expect(context?.type).toBe('goal/change')
     if (context?.type !== 'goal/change') throw new Error('expected durable goal change')
@@ -143,7 +140,6 @@ describe('GoalService creation and replay', () => {
     expect(change).toMatchObject({ operation: 'create', goal: { id: goal.id } })
     expect(agent.inbox.nextStep).toEqual([])
     expect(session.deriveMessages()).toEqual([])
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(foldGoal(session.snapshotEvents())).toMatchObject({ goal: { id: goal.id }, roundsStarted: 0 })
     vi.useRealTimers()
   })
@@ -196,7 +192,6 @@ describe('GoalService creation and replay', () => {
     await ctx.plugin(AgentRegistry)
     await ctx.plugin(SessionProjectionRegistry)
     await ctx.plugin(GoalService)
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const resumed = stubAgent('seeded-goal', first.session.snapshotEvents())
     ctx.agents.register(resumed.agent)
     expect(ctx.goals.get(resumed.agent)).toMatchObject({
@@ -245,14 +240,12 @@ describe('GoalService creation and replay', () => {
     expect(activations.map(entry => entry.activation)).toEqual(['armed', 'disarmed', 'armed'])
     expect(activations.map(entry => entry.id)).toEqual([goal.id, goal.id, goal.id])
     expect(activations.map(entry => entry.revision)).toEqual([1, 1, 2])
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(() => foldGoal(session.snapshotEvents())).not.toThrow()
   })
 
   it('lets a lifecycle owner disarm without writing a durable revision', async () => {
     const { ctx, agent, session } = await harness()
     const goal = ctx.goals.create(agent, { objective: 'survive driver reload' })
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const before = session.snapshotEvents().length
     expect(ctx.goals.disarm(agent)).toMatchObject({
       id: goal.id,
@@ -260,7 +253,6 @@ describe('GoalService creation and replay', () => {
       phase: 'active',
       activation: 'disarmed',
     })
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(session.snapshotEvents()).toHaveLength(before)
     expect(ctx.goals.resume(agent, goal)).toMatchObject({ revision: 2, activation: 'armed' })
   })
@@ -424,7 +416,6 @@ describe('GoalService mutations', () => {
     const tombstone = ctx.goals.clear(agent, goal)
     expect(tombstone).toEqual({ id: goal.id, revision: 2 })
     expect(ctx.goals.get(agent)).toBeUndefined()
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(foldGoal(session.snapshotEvents())).toEqual({ roundsStarted: 0, lastRef: tombstone })
     expect(() => ctx.goals.clear(agent, goal)).toThrow(expect.objectContaining({ code: 'GOAL_NOT_FOUND' }))
     const next = ctx.goals.create(agent, { objective: 'fresh' })
@@ -441,13 +432,11 @@ describe('GoalService mutations', () => {
     expect(goal.updatedAt).toBe(100)
     vi.setSystemTime(80)
     ctx.goals.clear(agent, goal)
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const clear = session.snapshotEvents()
       .filter(event => event.type === 'goal/change')
       .map(event => event.type === 'goal/change' ? decodeGoalChange(event.data) : undefined)
       .at(-1)
     expect(clear).toMatchObject({ operation: 'clear', clearedAt: 100 })
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(() => foldGoal(session.snapshotEvents())).not.toThrow()
     vi.useRealTimers()
   })
@@ -469,12 +458,10 @@ describe('GoalService mutations', () => {
     goal = ctx.goals.edit(agent, goal, { objective: 'deferred edit' })
     goal = ctx.goals.pause(agent, goal)
     expect(goal).toMatchObject({ revision: 3, phase: 'paused', activation: 'disarmed' })
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(session.snapshotEvents().map(event => event.type)).toEqual([
       'goal/change', 'goal/change', 'goal/change',
     ])
     expect(ctx.goals.get(agent)).toMatchObject({ revision: 3, phase: 'paused' })
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(foldGoal(session.snapshotEvents())).toMatchObject({ goal: { revision: 3, phase: 'paused' } })
   })
 
@@ -495,7 +482,6 @@ describe('GoalService mutations', () => {
 
     expect(observed).toEqual(created)
     expect(ctx.goals.get(stub.agent)).toEqual(created)
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(foldGoal(stub.session.snapshotEvents())).toMatchObject({ goal: { id: created.id, revision: 1 } })
   })
 
@@ -513,7 +499,6 @@ describe('GoalService mutations', () => {
       revision: 1,
     })
     expect(stub.agent.inbox.nextStep).toEqual([])
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(stub.session.snapshotEvents().map(event => event.type)).toEqual(['goal/change'])
   })
 
@@ -599,7 +584,6 @@ describe('goal replay validation', () => {
   function oneChange(change: GoalChangeMeta) {
     const session = Session.create(SessionId(`validation-${Math.random()}`))
     appendChange(session, change)
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     return session.snapshotEvents()
   }
 
@@ -631,7 +615,6 @@ describe('goal replay validation', () => {
     const change = snapshotChange()
     const session = Session.create(SessionId('inbox-independent-change'))
     appendChange(session, change)
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(foldGoal(session.snapshotEvents())).toMatchObject({ goal: { id: change.goal.id, revision: 1 } })
     const message = createUserMessage({
       content: [{ type: 'text', text: 'unrelated pending context' }],
@@ -640,7 +623,6 @@ describe('goal replay validation', () => {
     const inbox = stubAgentForSession(session).agent.inbox
     inbox.append('next-step', message)
     expect(inbox.remove(message.id)).toBe(true)
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(foldGoal(session.snapshotEvents())).toMatchObject({ goal: { id: change.goal.id, revision: 1 } })
   })
 
@@ -648,7 +630,6 @@ describe('goal replay validation', () => {
     const session = Session.create(SessionId(`validation-pair-${Math.random()}`))
     appendChange(session, first)
     appendChange(session, second)
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     return foldGoal(session.snapshotEvents())
   }
 
@@ -660,7 +641,6 @@ describe('goal replay validation', () => {
       content: [{ type: 'text', text: 'other' }],
       source: { kind: 'plugin', plugin: 'test' },
     }))
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(foldGoal(session.snapshotEvents())).toEqual({ roundsStarted: 0 })
     const source = { kind: 'plugin', plugin: 'ordinary-user-message' } as const
     const turn = nextTurn(session)
@@ -669,7 +649,6 @@ describe('goal replay validation', () => {
       content: [{ type: 'text', text: 'ordinary' }], source,
     }), { surfaceOp: 'append' })
     session.append('turn/end', { turn, reason: { kind: 'completed' } })
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(foldGoal(session.snapshotEvents())).toEqual({ roundsStarted: 0 })
   })
 
@@ -677,7 +656,6 @@ describe('goal replay validation', () => {
     const change = snapshotChange()
     const session = Session.create(SessionId('other-goal-round'), oneChange(change))
     appendRound(session, { id: GoalId('goal-other'), revision: 1 }, 1)
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(() => foldGoal(session.snapshotEvents())).toThrow('not the next admitted round')
   })
 
@@ -754,7 +732,6 @@ describe('goal replay validation', () => {
     appendRound(session, base.goal, 2)
     appendChange(session, { ...paused, roundsStarted: 2 })
     appendChange(session, exhausted)
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(() => foldGoal(session.snapshotEvents())).toThrow('exhausted round budget')
   })
 
@@ -779,7 +756,6 @@ describe('goal replay validation', () => {
     appendChange(completedSession, base)
     appendChange(completedSession, complete)
     appendChange(completedSession, sameCurrentId)
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(() => foldGoal(completedSession.snapshotEvents())).toThrow('fresh active revision-one')
 
     const second = snapshotChange({
@@ -794,7 +770,6 @@ describe('goal replay validation', () => {
     appendChange(nonAdjacentReuse, second)
     appendChange(nonAdjacentReuse, secondComplete)
     appendChange(nonAdjacentReuse, { ...sameCurrentId, createdAt: 30, updatedAt: 30 })
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(() => foldGoal(nonAdjacentReuse.snapshotEvents())).toThrow('fresh active revision-one')
 
     const clear: GoalChangeMeta = {
@@ -804,7 +779,6 @@ describe('goal replay validation', () => {
     appendChange(clearedSession, base)
     appendChange(clearedSession, clear)
     appendChange(clearedSession, sameCurrentId)
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(() => foldGoal(clearedSession.snapshotEvents())).toThrow('fresh active revision-one')
   })
 
@@ -817,7 +791,6 @@ describe('goal replay validation', () => {
       content: [{ type: 'text', text: 'missing' }], source,
     }), { surfaceOp: 'append' })
     session.append('turn/end', { turn, reason: { kind: 'completed' } })
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(() => foldGoal(session.snapshotEvents())).toThrow('goal message source is invalid')
   })
 
@@ -865,7 +838,6 @@ describe('goal replay validation', () => {
       clearedAt: 20,
     }
     appendChange(session, clear)
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(foldGoal(session.snapshotEvents())).toEqual({
       roundsStarted: 0,
       lastRef: { id: change.goal.id, revision: 2 },

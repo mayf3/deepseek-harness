@@ -112,7 +112,6 @@ describe('tool-todo real Loader composition through cordis.yml', () => {
     })
     expect(result.isError).toBe(true)
     expect(resultText(result)).toContain('at most one task may be in_progress')
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(owner.session.snapshotEvents().some(e => e.type === 'todo/write')).toBe(false)
   }, 30_000)
 
@@ -130,7 +129,6 @@ describe('tool-todo real Loader composition through cordis.yml', () => {
       agent: owner,
     })
     expect(result.isError).toBe(false)
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(owner.session.snapshotEvents().findLast(e => e.type === 'todo/write')?.data.todos).toEqual(PARALLEL_TODOS)
   }, 30_000)
 

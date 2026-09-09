@@ -46,7 +46,6 @@ describe('SessionTitleService.rename', () => {
       messageSeqs: [],
       source: { kind: 'user' },
     })
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const event = session.snapshotEvents().findLast(item => item.type === 'session/title')
     expect(event?.data).toEqual({
       title: 'Hand picked name',
@@ -54,7 +53,6 @@ describe('SessionTitleService.rename', () => {
       source: { kind: 'user' },
     })
     // foldSessionTitle round-trips the third source kind.
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(foldSessionTitle(session.snapshotEvents())?.source).toEqual({ kind: 'user' })
   })
 
@@ -166,7 +164,6 @@ describe('SessionTitleService.rename', () => {
     await settle()
     // The released provider result must not append over the user title, and
     // the swallowed abort must not surface as an unhandled rejection.
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const latest = session.snapshotEvents().findLast(item => item.type === 'session/title')
     expect(latest?.data).toMatchObject({ title: 'User wins', source: { kind: 'user' } })
   })

@@ -142,7 +142,6 @@ describe('ReactLoopInbox', () => {
     const childAgent = stubAgent('inbox-fork-child', { ctx, session: child })
     const childInbox = new ReactLoopInbox(ctx.sessionProjections, child, agentEvents(ctx, childAgent))
 
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(child.inheritedEventCount).toBe(parent.snapshotEvents().length)
     expect(childInbox.nextTurn).toEqual([inherited])
 
@@ -247,7 +246,6 @@ describe('ReactLoopInbox', () => {
     const nextStep = createUserMessage({ content: [{ type: 'text', text: 'step' }], source: { kind: 'user' } })
     agent.inbox.append('next-turn', nextTurn)
     agent.inbox.append('next-step', nextStep)
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const beforeClear = session.snapshotEvents().length
 
     agent.inbox.clear()
@@ -255,7 +253,6 @@ describe('ReactLoopInbox', () => {
     expect(agent.inbox.nextTurn).toEqual([])
     expect(agent.inbox.nextStep).toEqual([])
     expect(discarded).toEqual([nextStep, nextTurn])
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(session.snapshotEvents().slice(beforeClear).map(event => event.type === 'agent/inbox/spliced'
       ? event.data
       : event.type)).toEqual([
@@ -264,7 +261,6 @@ describe('ReactLoopInbox', () => {
     ])
 
     agent.inbox.clear()
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(session.snapshotEvents()).toHaveLength(beforeClear + 2)
   })
 })

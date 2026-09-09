@@ -69,7 +69,6 @@ function spawnRequest(parent: Agent) {
 }
 
 function toolResultTexts(agent: Agent): string[] {
-  // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
   return agent.session.snapshotEvents()
     .filter((event): event is SessionEvent<'tool/result'> => event.type === 'tool/result')
     .map(event => event.data.message.content
@@ -87,7 +86,6 @@ describe('in-process policy inheritance', () => {
     setSandboxMode(parent.session, 'read-only')
     // No parent approval override: the child pin must not depend on one.
     expect(ctx.approval.overrideOf(parent.session)).toBeUndefined()
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const parentLogLength = parent.session.snapshotEvents().length
     script.push(
       toolCallResponse('write', 'write', { file_path: blocked, content: 'escaped' }),
@@ -102,7 +100,6 @@ describe('in-process policy inheritance', () => {
       await expect(readFile(blocked, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' })
       expect(toolResultTexts(child).join('\n')).toContain(READ_ONLY_DENIAL)
       expect(result.stopReason).toBe('completed')
-      // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
       expect(child.session.snapshotEvents().slice(0, 2)).toMatchObject([
         { type: 'sandbox/mode', seq: 0, data: { mode: 'read-only', source: 'delegation' } },
         { type: 'approval/policy', seq: 1, data: { policy: 'never', source: 'delegation' } },
@@ -112,15 +109,12 @@ describe('in-process policy inheritance', () => {
       expect(child.session.inheritedEventCount).toBe(0)
       expect(ctx.sandboxPolicy.overrideOf(child.session)).toBe('read-only')
       expect(ctx.approval.overrideOf(child.session)).toBe('never')
-      // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
       const request = child.session.snapshotEvents().find(
         (event): event is SessionEvent<'request/header'> => event.type === 'request/header',
       )
-      // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
       const systemNode = child.session.snapshotEvents().find(
         (event): event is SessionEvent<'system/message'> => event.type === 'system/message',
       )
-      // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
       const runtimeContext = child.session.snapshotEvents().find(
         (event): event is SessionEvent<'user/message'> => event.type === 'user/message'
           && event.data.source.kind === 'plugin'
@@ -148,7 +142,6 @@ describe('in-process policy inheritance', () => {
         .join('\n')
       expect(systemText).not.toContain('Approval prompts are disabled')
       expect(systemText).not.toContain('You are a delegated subagent')
-      // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
       expect(parent.session.snapshotEvents()).toHaveLength(parentLogLength)
     } finally {
       await run.dispose()
@@ -160,7 +153,6 @@ describe('in-process policy inheritance', () => {
     const { ctx, parent } = await setupWalled(script)
     const blocked = join(workspace, 'fork-blocked.txt')
     setSandboxMode(parent.session, 'workspace-write')
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const seed = parent.session.snapshotEvents()
     setSandboxMode(parent.session, 'read-only')
     script.push(
@@ -177,7 +169,6 @@ describe('in-process policy inheritance', () => {
       expect(child.session.inheritedEventCount).toBe(1)
       expect(child.session.firstLiveSeq).toBe(seed.length)
       // seq 1 is the constructor's end-seed marker.
-      // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
       expect(child.session.snapshotEvents().filter(event => event.type === 'sandbox/mode')).toMatchObject([
         { seq: 0, data: { mode: 'workspace-write' } },
         { seq: 2, data: { mode: 'read-only', source: 'delegation' } },
@@ -224,9 +215,7 @@ describe('in-process policy inheritance', () => {
       await run.result
       const child = run.localAgent as Agent
       expect(await readFile(allowed, 'utf8')).toBe('fine')
-      // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
       expect(child.session.snapshotEvents().some(event => event.type === 'sandbox/mode')).toBe(false)
-      // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
       expect(child.session.snapshotEvents().filter(event => event.type === 'approval/policy')).toMatchObject([
         { seq: 0, data: { policy: 'never', source: 'delegation' } },
       ])
@@ -266,11 +255,9 @@ describe('in-process policy inheritance', () => {
       expect(consulted).toBe(false)
       expect(toolResultTexts(child).join('\n'))
         .toContain('the user rejected escalating this operation to "workspace-write"')
-      // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
       const asked = child.session.snapshotEvents().find(
         (event): event is SessionEvent<'approval/asked'> => event.type === 'approval/asked',
       )
-      // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
       const decided = child.session.snapshotEvents().find(
         (event): event is SessionEvent<'approval/decided'> => event.type === 'approval/decided',
       )

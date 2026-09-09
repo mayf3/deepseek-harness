@@ -176,7 +176,6 @@ function assertMigrated(result: Awaited<ReturnType<typeof readSession>>) {
   expect(session.firstLiveSeq).toBe(23)
   expect(session.isOwnSeq(SessionSeq(8))).toBe(false)
   expect(session.isOwnSeq(SessionSeq(9))).toBe(true)
-  // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
   expect(session.ownEvents()).toEqual([
     ...events.slice(9),
     expect.objectContaining({ type: 'session/end-seed', seq: 23, data: {} }),

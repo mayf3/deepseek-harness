@@ -53,7 +53,6 @@ describe('Schedule package invariant', () => {
     const session = ctx.sessions.create(SessionId('schedule-invariant'))
     session.append('turn/start', { turn: 1 })
     session.append('schedule/change', create('schedule-1'))
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(session.snapshotEvents()).toHaveLength(2)
 
     expect(() => session.append('schedule/change', {
@@ -61,11 +60,9 @@ describe('Schedule package invariant', () => {
       operation: 'delete',
       id: ScheduleId('missing'),
     })).toThrow(InvariantError)
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(session.snapshotEvents()).toHaveLength(2)
 
     session.append('schedule/change', { version: 1, operation: 'dispatch', id: ScheduleId('schedule-1') })
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(session.snapshotEvents()).toHaveLength(3)
     await ctx.fiber.dispose()
   })
@@ -85,7 +82,6 @@ describe('Schedule package invariant', () => {
       id: ScheduleId('schedule-every'),
       acceptedAt: '2026-08-05T12:17:34.000Z',
     })
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(session.snapshotEvents()).toHaveLength(2)
     await ctx.fiber.dispose()
   })
@@ -122,7 +118,6 @@ describe('Schedule package invariant', () => {
     })
     const fiber = await ctx.plugin(scheduleInvariant)
     child.append('schedule/change', create('child'))
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(child.snapshotEvents().at(-1)?.data).toMatchObject({ operation: 'create' })
     await fiber.dispose()
     await ctx.fiber.dispose()

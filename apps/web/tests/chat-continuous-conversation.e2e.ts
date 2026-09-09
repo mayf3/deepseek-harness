@@ -334,7 +334,6 @@ describe('web e2e: continuous conversation grown through the composer', () => {
     }
 
     if (sessionId === undefined) throw new Error('continuous conversation completed no turn')
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(scaffold.ctx.agents.get(sessionId)?.session.snapshotEvents().filter(event => (
       event.type === 'turn/end' && event.data.reason.kind === 'completed'
     ))).toHaveLength(TURN_COUNT)

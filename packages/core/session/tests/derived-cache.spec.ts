@@ -16,7 +16,6 @@ function userText(session: Session, text: string): void {
 
 /** From-scratch oracle: replay the log into a fresh session and derive. */
 function scratch(session: Session): unknown {
-  // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
   return Session.create(SessionId(`${session.id}-scratch-${session.seq}`), session.snapshotEvents()).deriveMessages()
 }
 

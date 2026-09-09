@@ -134,10 +134,8 @@ describe('compaction invariants', () => {
     const source = Session.create(SessionId('stale-compaction-source'))
     source.append('compaction/start', { compactionId: TEST_COMPACTION_ID, turn: null })
     const replayed = ctx.sessions.create(SessionId('stale-compaction-replay'), {
-      // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
       seed: source.snapshotEvents(),
     })
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(replayed.snapshotEvents().map(event => event.type))
       .toEqual(['compaction/start', 'session/end-seed'])
 
@@ -157,10 +155,8 @@ describe('compaction invariants', () => {
     startTurn(source)
     source.append('compaction/start', { compactionId: TEST_COMPACTION_ID, turn: 1 })
     const replayed = ctx.sessions.create(SessionId('stale-numbered-compaction-replay'), {
-      // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
       seed: source.snapshotEvents(),
     })
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(replayed.snapshotEvents().map(event => event.type))
       .toEqual(['turn/start', 'compaction/start', 'session/end-seed'])
 
@@ -181,10 +177,8 @@ describe('compaction invariants', () => {
     startTurn(source)
     source.append('turn/end', { turn: 1, reason: { kind: 'interrupted' } })
     const replayed = ctx.sessions.create(SessionId('stale-repaired-compaction-replay'), {
-      // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
       seed: source.snapshotEvents(),
     })
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(replayed.snapshotEvents().map(event => event.type)).toEqual([
       'compaction/start',
       'turn/start',
@@ -210,10 +204,8 @@ describe('compaction invariants', () => {
     source.append('turn/end', { turn: 1, reason: { kind: 'interrupted' } })
     source.append('compaction/end', { compactionId: TEST_COMPACTION_ID, turn: null, error: 'failed after crossing turn' })
     const replayed = ctx.sessions.create(SessionId('closed-nested-compaction-replay'), {
-      // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
       seed: source.snapshotEvents(),
     })
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(replayed.snapshotEvents().at(-1)?.type).toBe('session/end-seed')
 
     await ctx.plugin(InvariantRegistry)

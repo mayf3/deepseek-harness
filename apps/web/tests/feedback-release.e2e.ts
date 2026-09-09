@@ -275,7 +275,6 @@ describe.each(MODE === 'record' ? ['deepseek-official'] : ['deepseek-official', 
     expect(captured()).toHaveLength(releasedCount)
     await input.press('Enter')
     const findHeaderless = () => scaffold.ctx.sessions.list().find(session => session.id !== sessionId
-      // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
       && session.snapshotEvents().some(event => event.type === 'feedback/record'))
     // A command-only session keeps the hero view; its durable event confirms submission.
     await expect.poll(findHeaderless, { timeout: 10_000 }).toBeDefined()

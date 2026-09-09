@@ -347,7 +347,6 @@ describe('SubagentModelSelectionConfig', () => {
 
     const enabledSeed = Session.create(SessionId('enabled-seed'))
     enabledSeed.append('subagent/model-selection-policy', { allowedModels: ALLOWED_MODELS })
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const resumedEnabled = await createAgent(ctx, 'resumed-enabled', { seed: enabledSeed.snapshotEvents() })
     expect(selectable(ctx, resumedEnabled)).toBe(true)
 
@@ -360,7 +359,6 @@ describe('SubagentModelSelectionConfig', () => {
     expect(selectable(ctx, resumedEmpty)).toBe(false)
     expect(subagentModelSelectionPolicy(ctx.sessionProjections, resumedEmpty.session)).toBeUndefined()
 
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const resumedDisabled = await createAgent(ctx, 'resumed-disabled', { seed: oldSeed.snapshotEvents() })
     expect(selectable(ctx, resumedDisabled)).toBe(false)
     expect(subagentModelSelectionPolicy(ctx.sessionProjections, resumedDisabled.session)).toBeUndefined()

@@ -137,7 +137,6 @@ describe('goal projection unit', () => {
     })
 
     expect(bench.tailValues().goal).toBeNull()
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(foldGoal(bench.session.snapshotEvents()).goal).toBeUndefined()
   })
 

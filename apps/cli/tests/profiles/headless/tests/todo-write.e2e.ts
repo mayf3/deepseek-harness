@@ -37,7 +37,6 @@ describe.skipIf(!process.env.DEEPSEEK_API_KEY)('todo_write: real model records a
       + 'Send all three in one todo_write call, then reply with the single word DONE.' }], source: { kind: 'user' } }))
     await waitForIdle(ctx, agent)
 
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const events = agent.session.snapshotEvents()
 
     // The model actually called the tool.

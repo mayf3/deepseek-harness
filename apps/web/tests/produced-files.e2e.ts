@@ -99,7 +99,6 @@ function producedFixture(): string {
       type: 'session', version: SESSION_FORMAT_VERSION, id: '{{sessionId}}',
       createdAt: 0, cwd: '{{cwd}}', isSeeded: false, delegationDepth: 0,
     }),
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     ...session.snapshotEvents().map(event => JSON.stringify({
       ...event, time: eventTimeOrigin + event.seq * 1_000,
     })),
