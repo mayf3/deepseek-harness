@@ -268,12 +268,11 @@ function scopedCallKey(step: StepIdentity, callId: ToolCallId): string {
   return `${step.turn}\0${step.step}\0${callId}`
 }
 
-/** Assign each PTC start to its open step or its latest logged root's step. */
+/** Assign each PTC start to the step open when it was logged. */
 function scopePtcStarts(events: readonly SessionEvent[]): {
   readonly starts: readonly ScopedPtcStart[]
   readonly openStep: StepIdentity | undefined
 } {
-  const latestRoots = new Map<ToolCallId, NativeCallEvent>()
   const starts: ScopedPtcStart[] = []
   let openStep: StepIdentity | undefined
   for (const event of events) {
@@ -289,17 +288,11 @@ function scopePtcStarts(events: readonly SessionEvent[]): {
       openStep = undefined
       continue
     }
-    if (event.type === 'tool/call') {
-      latestRoots.set(event.data.callId, event)
-      continue
-    }
     if (event.type !== 'tool/ptc-dispatch-start') continue
-    const root = latestRoots.get(event.data.rootCallId)
-    const step = openStep ?? (root === undefined ? undefined : stepIdentity(root.data))
-    if (step === undefined) {
+    if (openStep === undefined) {
       throw new Error('auto-review: a PTC call has no owning step in the session log')
     }
-    starts.push({ event, step })
+    starts.push({ event, step: openStep })
   }
   return { starts, openStep }
 }
@@ -377,7 +370,7 @@ function snapshotAutoReview(agent: Agent, exec: ToolExecution): ReviewSnapshot {
   }
 
   const nativeCalls = events.filter((event): event is NativeCallEvent => event.type === 'tool/call')
-  const { starts, openStep } = scopePtcStarts(events)
+  const { starts, openStep: currentStep } = scopePtcStarts(events)
   const initialPromptSeq = directParentInitialPromptSeq(agent, events)
   const nativeByScopedId = new Map<string, NativeCallEvent[]>()
   for (const event of nativeCalls) {
@@ -400,11 +393,8 @@ function snapshotAutoReview(agent: Agent, exec: ToolExecution): ReviewSnapshot {
     else bucket.push(start)
   }
 
-  const latestRootCall = nativeCalls.findLast(event => event.data.callId === exec.rootCallId)
-  const currentStep = openStep
-    ?? (latestRootCall === undefined ? undefined : stepIdentity(latestRootCall.data))
   if (currentStep === undefined) {
-    throw new Error('auto-review: the pending root call is missing from the session log')
+    throw new Error('auto-review: the pending call has no open step in the session log')
   }
   const currentRootCalls = nativeByScopedId.get(scopedCallKey(currentStep, exec.rootCallId)) ?? []
   const currentRootCall = currentRootCalls[0]

@@ -18,9 +18,8 @@ import {
   diffBlockLabels, readBlockLabels, searchBlockLabels, webBlockLabels,
 } from '../models/primitive-labels.ts'
 import type { AskQuestionCardModel } from '../models/ask-question-card-model.ts'
-import { localizeAutoReviewDenial } from '../models/auto-review-denial.ts'
 import {
-  formatToolBody, type AutoReviewDenial, type ToolRowState, type ToolRowVariant,
+  formatToolBody, type ToolRowState, type ToolRowVariant,
 } from '../models/tool-call-model.ts'
 import type { WebCardModelProps } from '../models/web-card-model.ts'
 import { AskQuestionCard } from './AskQuestionCard.tsx'
@@ -50,8 +49,6 @@ export interface ToolRowProps {
   askQuestion?: AskQuestionCardModel | null | undefined
   /** Error first line shown as the collapsed summary on an error row; null/absent = keep `summary`. */
   errorSummary?: string | null | undefined
-  /** Structured Auto-review denial; replaces all ordinary input/card/output presentation. */
-  autoReviewDenial?: AutoReviewDenial | null | undefined
   /** Terminal card; card fields are mutually exclusive and replace text sections. */
   terminal?: TerminalCardModel | null | undefined
   diff?: DiffCardModel | null | undefined
@@ -123,7 +120,6 @@ export function ToolRow({
   output,
   askQuestion,
   errorSummary,
-  autoReviewDenial,
   terminal,
   diff,
   read,
@@ -139,28 +135,24 @@ export function ToolRow({
   inspect,
 }: ToolRowProps) {
   const [expanded, setExpanded] = useState(false)
-  const autoReview = autoReviewDenial === undefined || autoReviewDenial === null
-    ? null
-    : localizeAutoReviewDenial(autoReviewDenial, t)
   const terminalLabels = useMemo(() => terminalBlockLabels(t), [t])
   const diffLabels = useMemo(() => diffBlockLabels(t), [t])
   const readLabels = useMemo(() => readBlockLabels(t), [t])
   const searchLabels = useMemo(() => searchBlockLabels(t), [t])
   const webLabels = useMemo(() => webBlockLabels(t), [t])
-  const terminalBody = autoReview !== null || terminal === undefined || terminal === null
+  const terminalBody = terminal === undefined || terminal === null
     ? null
     : localizeTerminalCardModel(terminal, t)
-  const diffBody = autoReview === null ? diff ?? null : null
-  const readBody = autoReview === null ? read ?? null : null
-  const imageBody = autoReview === null
-    && image !== undefined && image !== null && renderSlot !== undefined && loadImage !== undefined
+  const diffBody = diff ?? null
+  const readBody = read ?? null
+  const imageBody = image !== undefined && image !== null && renderSlot !== undefined && loadImage !== undefined
     ? image
     : null
-  const searchBody = autoReview === null ? search ?? null : null
-  const webBody = autoReview === null ? web ?? null : null
-  const askQuestionBody = autoReview === null ? askQuestion ?? null : null
-  const inputRaw = autoReview === null ? bodyRaw ?? null : null
-  const outputText = autoReview?.output ?? output ?? null
+  const searchBody = search ?? null
+  const webBody = web ?? null
+  const askQuestionBody = askQuestion ?? null
+  const inputRaw = bodyRaw ?? null
+  const outputText = output ?? null
   const card = askQuestionBody ?? terminalBody ?? diffBody ?? readBody ?? imageBody ?? searchBody ?? webBody
   const expandable = inputRaw !== null || outputText !== null || card !== null
   const open = expanded && expandable
@@ -170,7 +162,7 @@ export function ToolRow({
   )
   const status = stateStatus(state, t)
   // A failure must replace, not supplement, the normal summary.
-  const failureLine = autoReview?.summary ?? (state === 'error' ? errorSummary ?? null : null)
+  const failureLine = state === 'error' ? errorSummary ?? null : null
   const summaryText = failureLine ?? terminalBody?.description ?? summary
   // A diff row's collapsed line carries the card's +/- totals (the same
   // numbers the expanded footer prints) so the change size reads without
@@ -181,16 +173,16 @@ export function ToolRow({
     return `+${added} -${removed}`
   }, [diffBody])
   const suffix = failureLine === null ? summarySuffix ?? diffStat : null
-  const fileLink = filePath !== undefined && onOpenFile !== undefined && failureLine === null
   const toggleExpand = () => {
     setExpanded(v => !v)
   }
-  const openFile = (event: MouseEvent<HTMLButtonElement>) => {
-    event.stopPropagation()
-    if (filePath === undefined || onOpenFile === undefined) return
-    if (filePathLine === undefined) onOpenFile(filePath)
-    else onOpenFile(filePath, { line: filePathLine })
-  }
+  const openFile = filePath !== undefined && onOpenFile !== undefined && failureLine === null
+    ? (event: MouseEvent<HTMLButtonElement>) => {
+      event.stopPropagation()
+      if (filePathLine === undefined) onOpenFile(filePath)
+      else onOpenFile(filePath, { line: filePathLine })
+    }
+    : undefined
   // Keep Enter/Space on the focused path link from bubbling to the row's
   // keydown handler, which would preventDefault() the key and toggle expand
   // instead of activating the link — the keyboard analogue of openFile's
@@ -221,7 +213,7 @@ export function ToolRow({
              its title shows no trailing dot). */
           <>
             <span className={css.sep} aria-hidden />
-            {fileLink ? (
+            {openFile !== undefined ? (
               <button
                 type="button"
                 className={css.fileLink}

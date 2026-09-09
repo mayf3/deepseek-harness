@@ -352,8 +352,13 @@ describe('ToolRow', () => {
       <ToolRow {...rowProps} variant="read" title="Read" summary="src/a.ts" filePath="src/a.ts" onOpenFile={open} />,
     )
     const row = view.getByRole('button', { name: /Read/ })
+    const path = view.getByText('src/a.ts')
+    for (const key of ['Enter', ' ', 'Tab']) {
+      fireEvent.keyDown(path, { key })
+      expect(row.getAttribute('aria-expanded')).toBe('false')
+    }
     // Path click opens the file and leaves the row collapsed.
-    fireEvent.click(view.getByText('src/a.ts'))
+    fireEvent.click(path)
     expect(open).toHaveBeenCalledWith('src/a.ts')
     expect(row.getAttribute('aria-expanded')).toBe('false')
     // Row click (outside the link) expands the args body.
@@ -394,32 +399,6 @@ describe('ToolRow', () => {
   it('an error row without an error summary keeps the args summary', () => {
     const view = render(<ToolRow {...rowProps} state="error" errorSummary={null} />)
     expect(view.getByText('List files')).toBeTruthy()
-  })
-
-  it('an Auto denial replaces the collapsed failure and expands to one localized OUT line', () => {
-    const stringify = vi.spyOn(JSON, 'stringify')
-    const view = render(
-      <ToolRow
-        {...rowProps}
-        state="error"
-        output="Tool execution rejected by user"
-        errorSummary="Tool execution rejected by user"
-        autoReviewDenial={{ reason: '  scope\r\nwas not authorized  ' }}
-      />,
-    )
-    expect(view.getByText('Auto review 已拒绝')).toBeTruthy()
-    expect(view.queryByText('scope\r\nwas not authorized')).toBeNull()
-    expect(view.queryByText('Tool execution rejected by user')).toBeNull()
-
-    fireEvent.click(view.getByRole('button'))
-
-    expect(view.queryByText('输入')).toBeNull()
-    expect(view.getAllByText('输出')).toHaveLength(1)
-    expect(view.getByText('工具未执行。原因：scope was not authorized')).toBeTruthy()
-    expect(view.queryByText('Tool execution rejected by user')).toBeNull()
-    expect(stringify.mock.calls.some(([value]) => (
-      typeof value === 'object' && value !== null && 'a' in value
-    ))).toBe(false)
   })
 
   it('renders summarySuffix outside the ellipsized summary span, and drops it on a failure line', () => {
@@ -558,18 +537,24 @@ describe('GenericToolCard', () => {
     expect(bash.openFile).not.toHaveBeenCalled()
   })
 
-  it('renders a nested Auto denial through the generic fallback without exposing raw failure content', () => {
+  it('renders a nested Auto denial as one localized OUT line without formatting its input', () => {
+    const stringify = vi.spyOn(JSON, 'stringify')
     const denied = result({
       parentCallId: 'outer',
       call: { name: 'mystery', argsRaw: '{"path":"secret"}' },
       content: [{ type: 'text', text: 'Tool execution rejected by user' }],
       isError: true,
-      error: { name: 'AutoReviewDeniedError', code: 'AUTO_REVIEW_DENIED', reason: 'not authorized' },
+      error: { name: 'AutoReviewDeniedError', code: 'AUTO_REVIEW_DENIED', reason: '  scope\r\nwas not authorized  ' },
     })
     const view = render(<GenericToolCard {...props('mystery', denied)} />)
     expect(view.getByText('Auto review 已拒绝')).toBeTruthy()
     fireEvent.click(view.getByRole('button'))
-    expect(view.getByText('工具未执行。原因：not authorized')).toBeTruthy()
+    expect(view.getByText('工具未执行。原因：scope was not authorized')).toBeTruthy()
+    expect(view.queryByText('输入')).toBeNull()
+    expect(view.getAllByText('输出')).toHaveLength(1)
+    expect(stringify.mock.calls.some(([value]) => (
+      typeof value === 'object' && value !== null && 'path' in value
+    ))).toBe(false)
     expect(view.queryByText('Tool execution rejected by user')).toBeNull()
     expect(view.queryByText(/"path"/)).toBeNull()
   })

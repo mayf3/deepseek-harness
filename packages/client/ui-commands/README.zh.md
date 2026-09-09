@@ -43,7 +43,7 @@ composer 携带图片或通用文件提交时，只有声明了 `input.attachmen
 <details>
 <summary>实现细节——点击展开</summary>
 
-`src/client/contract.ts` 是固定的业务约定：`CommandUiContract.register(name, spec)` 与 `decorate(name, spec)` 是业务包消费的全部内容。`CommandDirectory` 是唯一的 wire 派生缓存，以会话为 key：普通会话经 `command.list({sessionId})` 拉取；条目由转发的 `commands/change` owner 事件软失效、由 `connection/reset` 硬失效，并以 epoch 把关，被取代的旧拉取永远无法覆盖更新的结果。`matchSpace` 只凭该缓存同步应答；`matchEnter` 在 SubmitAttempt 信号上强等缓存，预热失败即拒绝。`command.execute` 返回匹配结果后，浏览器发布本地 `command/executed` 确认；其他客户端经宿主事件流收到持久命令节点，但收不到这条确认。`PopupSelectController` 是不含界面的外壳状态；`PopupSelectView` 自注册进 `conversation.input.overlay`，按会话解析。
+`src/client/contract.ts` 定义业务 API：`register(contribution)` 添加客户端命令，`decorate(decoration)` 为宿主命令提供选择器，`dismiss(name)` 关闭该命令已打开的弹窗与确认对话框。关闭会中止待完成的选项加载，阻止晚到结果重新打开弹窗，并保留 composer 草稿。`CommandDirectory` 是唯一的 wire 派生缓存，以会话为 key：普通会话经 `command.list({sessionId})` 拉取；条目由转发的 `commands/change` owner 事件软失效、由 `connection/reset` 硬失效，并以 epoch 把关，被取代的旧拉取永远无法覆盖更新的结果。`matchSpace` 只凭该缓存同步应答；`matchEnter` 在 SubmitAttempt 信号上强等缓存，预热失败即拒绝。`command.execute` 返回匹配结果后，浏览器发布本地 `command/executed` 确认；其他客户端经宿主事件流收到持久命令节点，但收不到这条确认。`PopupSelectController` 是不含界面的外壳状态；`PopupSelectView` 自注册进 `conversation.input.overlay`，按会话解析。
 
 </details>
 

@@ -40,13 +40,13 @@ Integration 只使用最新 `request/header.config` 的 provider／model 与 shi
 | `FILTERED_HISTORY` | 当前 compaction surface 中带来源的 human／直接父级消息、checkpoint、图片／附件事实，以及历史调用名称与日志参数 |
 | `PENDING_ACTION` | 工具名称、描述、参数 schema 与解析后的 arguments |
 
-主 agent 的 V3 `system/message` 节点、assistant 正文／reasoning 与 tool results 全部排除。当前调用只在 `PENDING_ACTION` 出现；尚未开始的 sibling 没有历史调用事实。原生 schema 来自最新 request header。PTC 在 binding 构造时捕获冻结 schema，经由调度器传入 `ToolExecution`；描述与参数 schema 不进入开始／结算事件或 Session／SDK wire。动作事实缺失、不一致或有歧义时拒绝调用，不查询 live registry。超窗请求直接拒绝，不做摘要、截断、额外 compaction 或设置小型输出 token 预算。
+主 agent 的 V3 `system/message` 节点、assistant 正文／reasoning 与 tool results 全部排除。当前调用必须属于 `step/start` 记录的开放 step；缺少 step 归属时拒绝执行。该调用只在 `PENDING_ACTION` 出现；尚未开始的 sibling 没有历史调用事实。原生 schema 来自最新 request header。PTC 在 binding 构造时捕获冻结 schema，经由调度器传入 `ToolExecution`；描述与参数 schema 不进入开始／结算事件或 Session／SDK wire。动作事实缺失、不一致或有歧义时拒绝调用，不查询 live registry。超窗请求直接拒绝，不做摘要、截断、额外 compaction 或设置小型输出 token 预算。
 
 ### 结果与取消
 
 Reviewer 可以输出 reasoning blocks，随后恰好一个 JSON text block 和终态 `stop`。封闭对象只允许 `low + allow`、`medium + allow/deny` 与 `high + deny`；只有 deny 可携带字符串 `reason`。额外字段、重复成员、非法组合、其他 block 或终态以及 provider 失败均使用普通 Auto 拒绝结果。风险与 reviewer trace 不成为持久状态。
 
-原生结果与 PTC 结算事件携带同形结构化 `AutoReviewDeniedError`／`AUTO_REVIEW_DENIED` 及可选原始理由。主 agent 通过普通失败渲染只收到 `Auto review rejected tool "<name>"; its body was not executed`。PTC 保留既有程序异常／catch 行为；捕获拒绝不会将其提升为外层失败。Web 卡片在折叠时标识拒绝，展开时显示一行未执行说明。只有该显示过程会 trim、折叠行分隔符，或提供本地化空理由 fallback；持久化与两套 SDK 保留完整原始理由，不增加长度或脱敏规则。
+原生结果与 PTC 结算事件携带同形结构化 `AutoReviewDeniedError`／`AUTO_REVIEW_DENIED` 及可选原始理由。主 agent 通过普通失败渲染只收到 `Auto review rejected tool "<name>"; its body was not executed`。PTC 保留既有程序异常／catch 行为；捕获拒绝不会将其提升为外层失败。通用 Web 工具卡片为折叠行提供拒绝身份，为展开行提供一行未执行输出，不提供输入正文。只有该显示过程会 trim、折叠行分隔符，或提供本地化空理由 fallback；持久化与两套 SDK 保留完整原始理由，不增加长度或脱敏规则。
 
 准入与在途 review 登记在首次 await 前同步完成。Integration 拥有一个生命周期 controller 和一个在途操作集合。卸载先关闭新选择／review admission，经由既有 preset writer 把存活 Auto Session 切为 Full access，不改变旋钮、不关闭终端，然后中止并等待 review 结清，最后移除 listener 与 contribution。Provider 结算后，lifecycle abort 始终形成规范的 dispatch 前取消，包括晚到 allow、deny 或 failure。Caller 取消保留 ToolRuntime 优先级：晚到 allow 在 dispatch 前取消；晚到 deny 或 failure 保留原结果。被取消的 review 不启动工具 body。
 
@@ -54,7 +54,7 @@ Reviewer 可以输出 reasoning blocks，随后恰好一个 JSON text block 和�
 
 ### 进程目录与 child
 
-Permission owner 通过生成的 `permissionPresets` Remote 方法发布一份完整进程目录；BFF 显式挂载它，并转发无 payload 的失效事件。一个浏览器目录在读取前订阅，为两个选择器提供数据。Epoch 与 connection-generation 检查只发布胜出的完整结果。胜出读取失败或 connection reset 会清空旧快照；只有后续既有读取、通知或 reset 才重试。已 dispose 或陈旧的结算不能发布。Session 投影只携带当前选择，因此目录安装或移除不写 Session 事件或序号。
+Permission owner 通过生成的 `permissionPresets` Remote 方法发布一份完整进程目录；BFF 显式挂载它，并转发无 payload 的失效事件。一个浏览器目录在读取前订阅，为两个选择器提供数据。Epoch 与 connection-generation 检查只发布胜出的完整结果。胜出读取失败或 connection reset 会清空旧快照；只有后续既有读取、通知或 reset 才重试。已 dispose 或陈旧的结算不能发布。每次共享快照发布都通过命令 owner 关闭 slash 选择器与待确认对话框，同时保留草稿；重新打开时加载当前目录。Session 投影只携带当前选择，因此目录安装或移除不写 Session 事件或序号。
 
 Auto 带右上标 `EXP`。两个可见当前会话选择器都要求实验确认；显式 `/permission auto` 已构成同意。Composer 使用通用 Menu 既有 portal 定位保持在视口内，同时保留 218–360px 边界。Slash popup 保留 `min(220px, 100%)` 与 `max-width: 100%`，窄 composer 将 trigger 折叠时也一样。
 

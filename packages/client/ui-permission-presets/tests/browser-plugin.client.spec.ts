@@ -72,11 +72,13 @@ async function bench() {
   } as never, () => null)
   await ctx.plugin({ inject: [...settingsInject], apply: settingsApply }).await()
   let decoration: CommandDecoration | undefined
+  const dismissed: string[] = []
   ctx.provide('commandUi', {
     decorate(c: CommandDecoration) {
       decoration = c
       return () => { decoration = undefined }
     },
+    dismiss(name: string) { dismissed.push(name) },
   })
   const values = new Map<SessionId, PermissionSelection>()
   const commands: string[] = []
@@ -102,7 +104,7 @@ async function bench() {
   await fiber.await()
   await vi.waitFor(() => { expect(catalogCalls).toBe(1) })
   return {
-    ctx, fiber, locale, values, commands, remote,
+    ctx, fiber, locale, values, commands, remote, dismissed,
     catalogCalls: () => catalogCalls,
     setCatalog: (value: PermissionCatalog) => {
       catalog = value
@@ -118,6 +120,17 @@ async function bench() {
 }
 
 describe('ui-permission browser plugin', () => {
+  it('dismisses stale slash choices when the catalog publishes and removes that subscription on disposal', async () => {
+    const b = await bench()
+    const initial = b.dismissed.length
+    b.setCatalog({ options: CATALOG.options.filter(option => option.value !== 'auto') })
+    await vi.waitFor(() => { expect(b.dismissed.slice(initial)).toEqual(['permission']) })
+    await b.fiber.dispose()
+    b.setCatalog(CATALOG)
+    await Promise.resolve()
+    expect(b.dismissed.slice(initial)).toEqual(['permission'])
+  })
+
   it('hangs the /permission popup decoration on the host command', async () => {
     const b = await bench()
     const c = b.decoration()!

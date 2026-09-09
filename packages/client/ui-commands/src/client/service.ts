@@ -21,7 +21,7 @@ import type { TranslateNS } from '@deepseek-ai/dsh-client-locale/client'
 import { rankByName } from '@deepseek-ai/dsh-client-ui-primitives'
 import type {
   CandidateRequest, ClientSessionContext, CommandClaim, PickOutcome, InputTriggerCandidate, InputTriggerPick,
-  SubmitAttachment, SubmitEnvelope, SubmitOutcome,
+  SubmitAttachment, SubmitEnvelope,
 } from '@deepseek-ai/dsh-client-ui-input-trigger/client'
 import type { CommandContribution, CommandDecoration, CommandUiContract } from './contract.ts'
 import type { CommandDescriptor } from './directory.ts'
@@ -149,6 +149,17 @@ export class CommandUiRuntime extends Service implements CommandUiContract {
   }
 
   /**
+   * Close every open popup for a command whose options have become stale.
+   * Pending loads and confirmations lose their binding; drafts stay intact.
+   * @param name - command name without the leading slash.
+   */
+  dismiss(name: string): void {
+    for (const popup of this.live.popups.values()) {
+      if (popup.state.getSnapshot().command === name) popup.dismiss()
+    }
+  }
+
+  /**
    * Resolve the per-session popup controller (lazy; dies with the session
    * scope). The controller's consume callback dispatches the scoped
    * consume-token event back to this session; focusComposer reaches the
@@ -246,11 +257,11 @@ export class CommandUiRuntime extends Service implements CommandUiContract {
       this.openPopup(name, decoration.ui, pick.session, { via: 'menu', span: pick.span })
       return 'handled'
     }
-    if (desc.input !== undefined) return { claim: this.leadingClaim(desc, pick.session) }
+    if (desc.input !== undefined) return { claim: this.leadingClaim(desc.name, desc.input, pick.session) }
     // Menu-pick execute consumes the trigger span before the detached run
     // (scoped event; the input owns the CAS guard).
     this.consumeVia(pick.session.sessionId, { via: 'menu', span: pick.span })
-    this.runDetached(desc, pick.session, `/${name}`)
+    this.runDetached(pick.session, `/${name}`)
     return 'handled'
   }
 
@@ -261,7 +272,7 @@ export class CommandUiRuntime extends Service implements CommandUiContract {
     if (this.live.contributions.has(name)) return undefined // popup kinds never claim on space
     const desc = this.directory.resolve(session.sessionId, name)
     if (desc === undefined || desc.input === undefined) return undefined
-    return { claim: this.leadingClaim(desc, session) }
+    return { claim: this.leadingClaim(desc.name, desc.input, session) }
   }
 
   /**
@@ -314,12 +325,12 @@ export class CommandUiRuntime extends Service implements CommandUiContract {
     }
     if (desc.input !== undefined) {
       if (envelope.attachments > 0 && desc.input.attachments !== true) refuseAttachments()
-      return { claim: this.leadingClaim(desc, session) }
+      return { claim: this.leadingClaim(desc.name, desc.input, session) }
     }
     if (!bare) return undefined
     if (envelope.attachments > 0) refuseAttachments()
     this.consumeVia(session.sessionId, { via: 'enter', token })
-    this.runDetached(desc, session, trimmed)
+    this.runDetached(session, trimmed)
     return 'handled'
   }
 
@@ -336,12 +347,12 @@ export class CommandUiRuntime extends Service implements CommandUiContract {
   }
 
   /** Build the leadingInput claim: token `/name ` + the command.execute submit transaction. */
-  private leadingClaim(desc: CommandDescriptor, session: ClientSessionContext): CommandClaim {
-    const token = `/${desc.name} `
+  private leadingClaim(name: string, input: NonNullable<CommandDescriptor['input']>, session: ClientSessionContext): CommandClaim {
+    const token = `/${name} `
     return {
       token,
-      ...(desc.input !== undefined ? { hint: desc.input.hint } : {}),
-      ...(desc.input?.attachments === true ? { attachments: true } : {}),
+      hint: input.hint,
+      ...(input.attachments === true ? { attachments: true } : {}),
       submit: (args, _actx, attachments) => this.execute(session, token + args, attachments),
     }
   }
@@ -361,7 +372,7 @@ export class CommandUiRuntime extends Service implements CommandUiContract {
     session: ClientSessionContext,
     line: string,
     attachments: readonly SubmitAttachment[] = [],
-  ): Promise<SubmitOutcome> {
+  ): Promise<{ kind: 'success' } | { kind: 'error'; text: string }> {
     const result = await this.ctx.remote.commands.execute(session.sessionId, line, attachments)
     if (!result.ok) throw new Error(`command.execute failed: ${result.error.code}: ${result.error.message}`)
     if (result.value === undefined) return { kind: 'error', text: `unknown or malformed command: ${line}` }
@@ -405,11 +416,11 @@ export class CommandUiRuntime extends Service implements CommandUiContract {
    * entered a handler and therefore never logged — falls back to the composer
    * notice as immediate feedback.
    */
-  private runDetached(desc: CommandDescriptor, session: ClientSessionContext, line: string): void {
+  private runDetached(session: ClientSessionContext, line: string): void {
     void this.execute(session, line).then(
       (outcome) => {
         // matched:false maps to an error outcome with no logged lifecycle.
-        if (outcome.kind === 'error') this.noticeFor(session.sessionId, 'error', outcome.text ?? `/${desc.name} failed`)
+        if (outcome.kind === 'error') this.noticeFor(session.sessionId, 'error', outcome.text)
       },
       (error: unknown) => {
         this.noticeFor(session.sessionId, 'error', error instanceof Error ? error.message : String(error))

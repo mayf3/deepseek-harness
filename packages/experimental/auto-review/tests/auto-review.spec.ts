@@ -189,6 +189,7 @@ function appendAssistant(
   turn = 1,
   step = 1,
 ): void {
+  session.append('step/start', { turn, step })
   session.append('assistant/message', {
     turn,
     step,
@@ -485,6 +486,7 @@ describe('native review request', () => {
       { type: 'tool-call', id: ToolCallId('old-unstarted'), name: 'probe', arguments: '{}' },
     ], 1, 1)
     appendNativeCall(session, callId, 'probe', '{"path":"old"}', 1, 1)
+    session.append('step/end', { turn: 1, step: 1 })
     appendAssistant(session, [
       { type: 'tool-call', id: callId, name: 'probe', arguments: '{"path":"current"}' },
     ], 1, 2)
@@ -727,6 +729,7 @@ describe('native review request', () => {
     })
 
     const invalidId = ToolCallId('invalid-json-arguments')
+    session.append('step/end', { turn: 1, step: 1 })
     appendAssistant(session, [{ type: 'tool-call', id: invalidId, name: 'probe', arguments: 'not-json' }], 1, 2)
     appendNativeCall(session, invalidId, 'probe', 'not-json', 1, 2)
     await ctx.tools.execute({
@@ -1000,7 +1003,6 @@ describe('PTC and bypass semantics', () => {
     const subCallId = ToolCallId('reused-outer:code:0')
     session.append('turn/start', { turn: 1 })
     appendHeader(session)
-    session.append('step/start', { turn: 1, step: 1 })
     appendAssistant(session, [{
       type: 'tool-call', id: outerCallId, name: RUN_CODE_NAME, arguments: '{"code":"old"}',
     }], 1, 1)
@@ -1031,7 +1033,6 @@ describe('PTC and bypass semantics', () => {
       }),
     }, { surfaceOp: 'append' })
     session.append('step/end', { turn: 1, step: 1 })
-    session.append('step/start', { turn: 1, step: 2 })
     appendAssistant(session, [{
       type: 'tool-call', id: outerCallId, name: RUN_CODE_NAME, arguments: '{"code":"current"}',
     }], 1, 2)
@@ -1185,6 +1186,9 @@ describe('out-of-process delegation boundary', () => {
       kind: 'user', rpcId: 'remote-delegation-allow',
     } as never)
     const allowedId = ToolCallId('remote-delegation-allowed')
+    session.append('step/end', { turn: 1, step: 1 })
+    session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
+    session.append('turn/start', { turn: 2 })
     appendAssistant(session, [{
       type: 'tool-call', id: allowedId, name: 'delegate_remote', arguments: rawArgs,
     }], 2, 1)
@@ -1469,13 +1473,19 @@ describe('logged-fact failures', () => {
         appendAssistant(session, [{ type: 'tool-call', id: callId, name: 'probe', arguments: '{}' }])
         appendNativeCall(session, callId, 'probe', '{}')
       } },
+      { id: 'closed-current-step', prepare: (session, callId) => {
+        appendHeader(session, [{ name: 'probe', description: 'probe', parameters: { type: 'object' } }])
+        appendAssistant(session, [{ type: 'tool-call', id: callId, name: 'probe', arguments: '{}' }])
+        appendNativeCall(session, callId, 'probe', '{}')
+        session.append('step/end', { turn: 1, step: 1 })
+      } },
       { id: 'missing-current-surface', prepare: (session, callId) => {
         appendHeader(session, [{ name: 'probe', description: 'probe', parameters: { type: 'object' } }])
+        session.append('step/start', { turn: 1, step: 1 })
         appendNativeCall(session, callId, 'probe', '{}')
       } },
       { id: 'missing-current-log', prepare: (session, callId) => {
         appendHeader(session, [{ name: 'probe', description: 'probe', parameters: { type: 'object' } }])
-        session.append('step/start', { turn: 1, step: 1 })
         appendAssistant(session, [{ type: 'tool-call', id: callId, name: 'probe', arguments: '{}' }])
       } },
       { id: 'duplicate-current-log', prepare: (session, callId) => {
@@ -1553,7 +1563,6 @@ describe('logged-fact failures', () => {
       } },
       { id: 'unstarted-call-with-ptc-log', prepare: (session, callId) => {
         appendHeader(session, [{ name: 'probe', description: 'probe', parameters: { type: 'object' } }])
-        session.append('step/start', { turn: 1, step: 1 })
         const later = ToolCallId('unstarted-with-ptc')
         appendAssistant(session, [
           { type: 'tool-call', id: callId, name: 'probe', arguments: '{}' },
@@ -1630,6 +1639,13 @@ describe('logged-fact failures', () => {
       readonly logParent?: boolean
     }> = [
       { id: 'missing-start', starts: () => {} },
+      { id: 'start-without-open-step', starts: (session, outer, inner) => {
+        session.append('step/end', { turn: 1, step: 1 })
+        session.append('tool/ptc-dispatch-start', {
+          rootCallId: outer, parentCallId: outer, subCallId: inner,
+          name: 'probe', arguments: {},
+        })
+      } },
       { id: 'duplicate-start', starts: (session, outer, inner) => {
         for (let index = 0; index < 2; index += 1) {
           session.append('tool/ptc-dispatch-start', {
@@ -1703,6 +1719,8 @@ describe('logged-fact failures', () => {
         if (item.logParent !== false) {
           appendNativeCall(session, outer, RUN_CODE_NAME, '{"code":"probe()"}')
         }
+      } else {
+        session.append('step/start', { turn: 1, step: 1 })
       }
       item.starts(session, outer, inner)
       const result = await ctx.tools.execute({

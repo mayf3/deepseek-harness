@@ -133,6 +133,10 @@ export function apply(ctx: ClientContext): void {
 
   const catalog = new PermissionCatalogDirectory(ctx)
   ctx.effect(() => () => { catalog.dispose() }, 'ui-permission: process catalog directory')
+  ctx.effect(
+    () => catalog.store.subscribe(() => { command.dismiss('permission') }),
+    'ui-permission: dismiss stale slash choices',
+  )
 
   ctx.effect(() => ctx.locale.register('settings.permission', { zh, en }), 'ui-permission: settings row dictionaries')
 

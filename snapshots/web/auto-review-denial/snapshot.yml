@@ -5,3 +5,6 @@ composition: web-auto-review
 recording: authored
 header:
   class: web-default
+  pin: true
+  systemPromptSource: fresh-round-trip
+  toolSchemasSource: fresh-round-trip
