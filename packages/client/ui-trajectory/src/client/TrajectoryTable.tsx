@@ -1863,7 +1863,7 @@ export function TrajectoryTable({
   const [selectedRecordId, setSelectedRecordId] = useState<string | null>(null)
   const [selectedRequest, setSelectedRequest] = useState<SelectedRequest | null>(null)
   const [activeTab, setActiveTab] = useState<DetailTab>('overview')
-  const [thinkingExpanded, setThinkingExpanded] = useState(false)
+  const [thinkingDisclosure, setThinkingDisclosure] = useState<{ recordId: string; expanded: boolean }>()
   const [detailsWidth, setDetailsWidth] = useState<number | null>(null)
   const [toolRequestOffset, setToolRequestOffset] = useState<number | null>(null)
   const detailsResizeDrag = useRef<DetailsResizeDrag | null>(null)
@@ -1895,6 +1895,17 @@ export function TrajectoryTable({
   const selected = selectedTemplate === undefined
     ? undefined
     : currentRecord(selectedTemplate)
+  const thinkingExpanded = thinkingDisclosure?.recordId === selectedRecordId
+    ? thinkingDisclosure.expanded
+    : selected?.cell.kind === 'message'
+      && Boolean(selected.cell.thinkingDetail?.trim())
+      && !selected.cell.outputDetail?.trim()
+      && !selected.cell.sourceBlocks?.some(block => block.type === 'tool-call')
+  const setThinkingExpanded = (expanded: boolean) => {
+    if (selectedRecordId !== null) {
+      setThinkingDisclosure({ recordId: selectedRecordId, expanded })
+    }
+  }
   const selectedIndex = selected?.cell.index ?? null
   useEffect(() => {
     onSelectedIndexChange?.(selectedIndex)
