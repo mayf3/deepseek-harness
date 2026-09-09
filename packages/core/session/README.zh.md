@@ -81,11 +81,11 @@ session.deriveMessages()         // the derived model history
 
 ### 设计理念
 
-该包建立在事件溯源之上：`Session` 是类型化 `SessionEvent` 的仅追加日志，其他一切——模型历史、transcript（文本记录）、遥测、标题、持久化——都从这条流派生。surface 是派生投影：一个增量管理器校验追加候选、根据已提交事件推进有序视图，并跟踪每次已提交重写都会递增的 `replaceGeneration`。模型可见即已记录：任何到达模型请求的内容都必须能从日志重建。每个完成结算的模型尝试 都会提交一个事件：`assistant/message` 携带组装后的模型可见 message 及其紧凑带时间 stream，`assistant/attempt` 则保留失败、重试、取消或 stream error attempt，且不添加模型历史。如果进程在 settlement 前硬中断，则不会留下持久 attempt stream。
+该包建立在事件溯源之上：`Session` 是类型化 `SessionEvent` 的仅追加日志，其他一切——模型历史、transcript（文本记录）、遥测、标题、持久化——都从这条流派生。surface 是派生投影：一个增量管理器校验追加候选、根据已提交事件推进有序视图，并跟踪每次已提交重写都会递增的 `replaceGeneration`。模型可见即已记录：任何到达模型请求的内容都必须能从日志重建。每个完成结算的模型尝试都会提交一个事件：`assistant/message` 携带组装后的模型可见 message 及其紧凑带时间 stream，`assistant/attempt` 则保留失败、重试、取消或 stream error attempt，且不添加模型历史。如果进程在 settlement 前硬中断，则不会留下持久 attempt stream。
 
 ### 请求头
 
-`request/header` 存储非历史请求封装 的完整规范快照，原因为 `initial`、`resume`、`change` 或 `series`。显式消息序列起点或表层替换会在 请求封装不变时写入 `series` 快照；同时发生变化时使用 `startsSeries: true`。同一序列内的步骤、重试与普通后续轮次继承最新快照。`adapterDefaults` 区分由适配器解析的值与显式设置，`foldRequestHeader()` 选择最新快照。这种自包含记录以每个消息序列增加存储为代价，支持局部窗口渲染与精确重建；细节由[可重建请求 Agent Note](../../../.agents/notes/implemented/architecture/2026-07-05-reconstructable-requests.zh.md)负责。
+`request/header` 存储非历史请求封装的完整规范快照，原因为 `initial`、`resume`、`change` 或 `series`。显式消息序列起点或表层替换会在请求封装不变时写入 `series` 快照；同时发生变化时使用 `startsSeries: true`。同一序列内的步骤、重试与普通后续轮次继承最新快照。`adapterDefaults` 区分由适配器解析的值与显式设置，`foldRequestHeader()` 选择最新快照。这种自包含记录以每个消息序列增加存储为代价，支持局部窗口渲染与精确重建；细节由[可重建请求 Agent Note](../../../.agents/notes/implemented/architecture/2026-07-05-reconstructable-requests.zh.md)负责。
 
 ### 源码地图
 

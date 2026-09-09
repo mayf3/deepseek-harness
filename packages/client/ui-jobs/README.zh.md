@@ -39,7 +39,7 @@ Escape 关闭列表并把焦点交还触发器，在其外部按下指针同理�
 <details>
 <summary>实现细节——点击展开</summary>
 
-本包向 `conversation.session.header.actions` 贡献一个条目（`JobListAction`），数据完全来自 会话控制器绑定 从 `session/jobs` 帧折叠出的 `jobsBySession` 列表镜像——不发 RPC，除弹层开合外不持有任何状态。角标计数 `running` 加 `stopping`，为零时省略。行序为活跃行在前按 `startedAt` 升序、终态行按 `finishedAt` 降序，毫秒并列按启动顺序打破；缺少 `finishedAt` 的终态行读作零而不是负数，超过一小时的耗时停留在小时单位。终态行保持可见，因为失败任务的 `detail` 是其失败唯一可读之处。行为由 [Web 后台任务展示 Agent Note](../../../.agents/notes/implemented/feature/2026-08-08-web-background-job-display.zh.md) 规定。
+本包向 `conversation.session.header.actions` 贡献一个条目（`JobListAction`），数据完全来自会话控制器绑定从 `session/jobs` 帧折叠出的 `jobsBySession` 列表镜像——不发 RPC，除弹层开合外不持有任何状态。角标计数 `running` 加 `stopping`，为零时省略。行序为活跃行在前按 `startedAt` 升序、终态行按 `finishedAt` 降序，毫秒并列按启动顺序打破；缺少 `finishedAt` 的终态行读作零而不是负数，超过一小时的耗时停留在小时单位。终态行保持可见，因为失败任务的 `detail` 是其失败唯一可读之处。行为由 [Web 后台任务展示 Agent Note](../../../.agents/notes/implemented/feature/2026-08-08-web-background-job-display.zh.md) 规定。
 
 </details>
 
@@ -60,7 +60,7 @@ Escape 关闭列表并把焦点交还触发器，在其外部按下指针同理�
 <a id="model-experience"></a>
 ## 模型体验
 
-无，因为本包为人类渲染宿主计算出的注册表状态，不触及 提示词、消息、schema、流或工具结果。
+无，因为本包为人类渲染宿主计算出的注册表状态，不触及提示词、消息、schema、流或工具结果。
 
 #### KV Cache 影响
 

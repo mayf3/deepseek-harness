@@ -77,7 +77,7 @@ dsh --profile sdk-minimal
 
 #### 模型看到的内容
 
-系统提示词取 `DSH_SYSTEM_PROMPT`，未设置时使用 `You are a helpful software engineer assistant.`。对外公布的唯一工具是 Linux/macOS 上 agent 所有的持久 `bash` 或 Windows 上的 `pwsh`；运行时上下文、文件系统工具、workspace 指令、skill、jobs 控制、压缩 与 Harness 身份均不存在。
+系统提示词取 `DSH_SYSTEM_PROMPT`，未设置时使用 `You are a helpful software engineer assistant.`。对外公布的唯一工具是 Linux/macOS 上 agent 所有的持久 `bash` 或 Windows 上的 `pwsh`；运行时上下文、文件系统工具、workspace 指令、skill、jobs 控制、压缩与 Harness 身份均不存在。
 
 #### Token 影响
 
