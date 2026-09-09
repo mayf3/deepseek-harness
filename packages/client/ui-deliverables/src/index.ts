@@ -11,7 +11,7 @@ import type {} from '@deepseek-ai/dsh-system-prompt'
 import { registerPresentOpen } from './present-open.ts'
 
 /** Services required for file-reference guidance and authenticated native opens of declared files. */
-export const inject = ['systemPrompt', 'connection', 'sessionQuery', 'sessionController', 'workspaceFiles', 'fs']
+export const inject = ['systemPrompt', 'connection', 'sessionQuery', 'sessionController']
 
 /** Stable final-response guidance owned by the matching renderer. */
 const FILE_REFERENCE_PROMPT = 'When you successfully create or modify files, mention the primary outputs in your final response. '

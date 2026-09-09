@@ -63,8 +63,10 @@ async function handlePresentOpen(ctx: Context, request: Request): Promise<Respon
     if ('error' in found) throw found.error
     request.signal.throwIfAborted()
     const { agent } = found
-    const { absolutePath: path } = await agent.ctx.workspaceFiles.stat(agent, file.path, request.signal)
-    const fs = agent.ctx.fs
+    const workspaceFiles = agent.ctx.get('workspaceFiles')
+    const fs = agent.ctx.get('fs')
+    if (workspaceFiles === undefined || fs === undefined) throw new Error('Session file services unavailable.')
+    const { absolutePath: path } = await workspaceFiles.stat(agent, file.path, request.signal)
     const mapped = fs.processPathFromHostPath(path)
     if (mapped === undefined || fs.processPath(await fs.resolve(mapped, { signal: request.signal })) !== path) {
       return new Response('Presented file has no verified Host path.', { status: 422 })

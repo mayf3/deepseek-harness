@@ -237,3 +237,11 @@ it('uses the resolved Agent filesystem instead of the Host filesystem', async ()
   expect(opener).not.toHaveBeenCalled()
   expect((await open()).status).toBe(204)
 })
+
+
+it.each(['workspaceFiles', 'fs'])('refuses an Agent missing its %s service', async (service) => {
+  const { ctx, open, resolveAgent, opener } = await fixture()
+  resolveAgent.mockResolvedValueOnce({ agent: { ctx: ctx.isolate(service) } as unknown as Agent })
+  expect((await open()).status).toBe(500)
+  expect(opener).not.toHaveBeenCalled()
+})
