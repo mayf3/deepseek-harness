@@ -18,7 +18,7 @@ Status: implemented
 
 持久 inbox 仍是两份通过 `MessageId` 寻址的 `UserMessage[]` 列表。`append`、`prepend` 与 `splice` 接受 target；`replace(messageId, newMessage)` 与 `remove(messageId)` 则在提交规范化 splice 前，通过 `MessageId` 跨两份列表定位待处理消息。替换可以改变标识，并先将旧消息作为 discarded 发布，再将新消息作为 inserted 发布。每次插入发出 `agent/inbox/inserted { message }`；普通删除记录 `outcome: 'canceled'` 并发出 `agent/inbox/discarded { message }`。领取记录不带 outcome 的纯删除，并由 `ReactLoopInbox` 发出 claimed 事件。这些实时事件不增加 placement、outcome 或批次字段。
 
-`Agent.inbox` 只暴露用于读取和变更待处理工作的结构化 `Inbox` 接口；仅供循环使用的 `hasPending` 与领取操作不在该公开接口上。dsh-agent-loop 只构造一个 `ReactLoopInbox`，同时用于结构化命令与驱动器操作。具体构造函数直接接收 `SessionProjectionRegistry`，而不是更宽泛的 Cordis `Context`，并读取 `AgentLoop` 在服务激活时注册的定义。该服务生命周期让没有 live Agent 时的冷 Inbox 读取仍然可用。
+`Agent.inbox` 只暴露用于读取和变更待处理工作的结构化 `Inbox` 接口；仅供循环使用的 `hasPending` 与领取操作不在该公开接口上。dsh-agent-loop 只构造一个 `ReactLoopInbox`，同时用于结构化命令与驱动器操作。具体构造函数直接接收 `SessionProjectionRegistry`，而不是更宽泛的 Cordis `Context`，并在首次读取前于 agent scope 上注册标准定义。`AgentLoop` 也在服务激活时注册它；注册表通过引用计数，让没有 live Agent 时的冷 Inbox 读取仍然可用。
 
 两类事件接口服务不同消费方。跟踪单条消息的观察方使用 `agent/inbox/inserted`、`claimed` 与 `discarded`。`AgentLoop` 在持久 `agent/inbox/spliced` 流上贡献标准 `inbox` 投影；UI 编辑与移除通过 Inbox 变更方法处理，从而让同一投影记录所有变化。该投影重建持久历史时，会拒绝不安全或越界的坐标，以及跨两份列表重复的 `MessageId`，并报告出错事件的 seq。整体队列的 control 消费方使用通用投影变更流，直接读取完整的 Inbox 值。
 
