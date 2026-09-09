@@ -145,9 +145,15 @@ describe('watcher pipeline', () => {
     const dir = await tempDir()
     const path = join(dir, '.credentials.yaml')
     const ctx = await boot({ path, debounceMs: 5 })
+    const firstUpdate = Promise.withResolvers<undefined>()
+    const secondUpdate = Promise.withResolvers<undefined>()
     let arm = true
     ctx.on('credentials/reference-updated', () => {
-      if (!arm) return
+      if (!arm) {
+        secondUpdate.resolve(undefined)
+        return
+      }
+      firstUpdate.resolve(undefined)
       throw Object.assign(new Error('forged relation'), { code: 'INVARIANT' })
     })
     const [instance] = await fakeInstances()
@@ -156,16 +162,14 @@ describe('watcher pipeline', () => {
     instance!.watcher.emit('all', 'change', path)
     // The snapshot commits before the fan-out, so the value lands even though
     // the listener threw out of the refresh.
-    await vi.waitFor(async () => {
-      expect(await ctx.credentials.resolve(KEY)).toEqual({ value: 'first', source: 'file' })
-    })
+    await firstUpdate.promise
+    expect(await ctx.credentials.resolve(KEY)).toEqual({ value: 'first', source: 'file' })
 
     arm = false
     await writeCredentials(path, 'version: 1\nrefs:\n  DSH_CRED_PIPE: second\n')
     instance!.watcher.emit('all', 'change', path)
-    await vi.waitFor(async () => {
-      expect(await ctx.credentials.resolve(KEY)).toEqual({ value: 'second', source: 'file' })
-    })
+    await secondUpdate.promise
+    expect(await ctx.credentials.resolve(KEY)).toEqual({ value: 'second', source: 'file' })
   })
 
   it('quiesces the refresh pipeline before dispose completes', async () => {
