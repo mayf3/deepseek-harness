@@ -117,7 +117,7 @@ export function TextPreview({
   const bindScrollport = useCallback((scrollport: HTMLElement | null): void => {
     const next = scrollport ?? bodyRef.current
     scrollportRef.current = next
-    if (scrollport !== null) scrollport.scrollTop = storedScrollTopRef.current
+    if (next !== null) next.scrollTop = storedScrollTopRef.current
   }, [])
 
   // First mount reads the first page; a body coming back to a tab with content
@@ -286,7 +286,7 @@ export function TextPreview({
         data-textpreview-wrap={state.wrap ? '' : undefined}
         onScrollCapture={(event) => {
           const body = scrollportRef.current
-          /* v8 ignore next -- the layout effect binds the scrollport before user input. */
+          /* v8 ignore next -- callback refs bind the scrollport during commit, before user input. */
           if (body === null) return
           if (event.target !== body) return
           actions.scrolled(tab.id, body.scrollTop)

@@ -54,18 +54,6 @@
   color: var(--dsw-alias-label-secondary);
 }
 
-/* The time pill while it has no dialog to open (neither speed nor TTFT
-   recorded): rides .trigger for geometry, and quiets its hover and pointer.
-   Declared after the hover rules so the equal-specificity override wins. */
-.static {
-  cursor: default;
-}
-
-.static:hover {
-  background: transparent;
-  color: var(--dsw-alias-label-tertiary);
-}
-
 /* Narrow viewport: the pills collapse to bare icons with the sibling
    `.action` geometry (28px circle, 6px padding, centered glyph); the
    label-padding rebate no longer applies, so the pair keeps the row's plain

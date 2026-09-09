@@ -1,8 +1,9 @@
 /* The guide body's own sheet: its domain owns these rules, so the shell's
    stylesheet does not carry them. Tokens only. */
 
-/* The capsules in one centred column at the column's own 14px gap, lifted
-   above the body's middle by the spacer below — the empty-state offset. */
+/* The capsules form one centred column at the column's own 14px gap, lifted
+   above the body's middle by the spacer below. The minimum height centres a
+   short guide while allowing a tall guide to grow into the pane's scroller. */
 .guide {
   display: flex;
   flex-direction: column;
@@ -10,7 +11,7 @@
   align-items: center;
   justify-content: center;
   box-sizing: border-box;
-  height: 100%;
+  min-height: 100%;
   padding: 0 24px;
 }
 

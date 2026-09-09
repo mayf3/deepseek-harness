@@ -126,26 +126,11 @@ export function TurnUsagePanel({ usage, t }: TurnUsagePanelProps) {
 
 /**
  * Turn-time IconActions pill with a click-open Turn-time details dialog.
- *
- * With neither speed nor TTFT recorded the dialog would hold one row repeating
- * the pill's own duration (same formatter, same value), so the pill renders as
- * plain text instead: no hover, no dialog.
  * @param props - Turn timing facts and locale seat.
  * @returns The clock-and-duration trigger and, while open, its portaled dialog anchored above the trigger.
  */
 export function TurnTimePanel({ runMs, tokensPerSecond, ttftMs, t }: TurnTimePanelProps) {
   const { open, setOpen, rootRef, panelRef, pos } = useStatDialog()
-  const label = t('message.ranFor', { duration: formatRunDuration(runMs, t) })
-  if (tokensPerSecond === undefined && ttftMs === undefined) {
-    return (
-      <span className={css.root}>
-        <span className={`${css.trigger} ${css.static}`}>
-          <IconClockOutline16 />
-          <span className={css.label}>{label}</span>
-        </span>
-      </span>
-    )
-  }
   return (
     <span ref={rootRef} className={css.root}>
       <button
@@ -156,7 +141,7 @@ export function TurnTimePanel({ runMs, tokensPerSecond, ttftMs, t }: TurnTimePan
         onClick={() => { setOpen(!open) }}
       >
         <IconClockOutline16 />
-        <span className={css.label}>{label}</span>
+        <span className={css.label}>{t('message.ranFor', { duration: formatRunDuration(runMs, t) })}</span>
       </button>
       {open && createPortal(
         <div

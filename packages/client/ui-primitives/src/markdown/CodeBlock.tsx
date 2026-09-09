@@ -179,6 +179,7 @@ export function CodeBlock({ code, lang, streaming, className, contentRef, lineNu
       style={sourceLines === undefined ? undefined : {
         '--dsl-code-block-line-number-width': `${Math.max(2, String(sourceLines.length).length)}ch`,
       } as CSSProperties}>
+      {/* These paired attributes are stable semantic hooks for owner styling and DOM tests. */}
       <div className={css.bannerWrap}>
         <div className={css.banner} data-code-block-banner>
           <div className={css.infostring}>{lang ?? ''}</div>

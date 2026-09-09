@@ -444,6 +444,7 @@ describe('TextPreview — navigation and view', () => {
     expect(h.instance.getSnapshot().byTab[TAB_ID]?.scrollTop).toBe(240)
 
     view.rerender(<TextPreview {...fallback} />)
+    expect(outer.scrollTop).toBe(240)
     fireEvent.scroll(outer, { target: { scrollTop: 360 } })
     expect(h.instance.getSnapshot().byTab[TAB_ID]?.scrollTop).toBe(360)
   })
