@@ -4,7 +4,7 @@ English | [中文](adding-a-session-format-version.zh.md)
 
 ## Summary
 
-Use this tutorial to introduce the next structural Session log version without rewriting released data. Let N be the latest released Session format, verified from release evidence and source, and N+1 the target. V3 is released and frozen; the concrete V3→V4 example assumes N=3. Start with a working contributor checkout and read the [package checklist](adding-a-package.md), [format library](../../packages/session/session-format/README.md), and [released-format decision](../../.agents/notes/implemented/architecture/2026-08-31-released-session-format-migrations.md).
+Use this tutorial to introduce the next structural Session log version without rewriting released data. Read the [version and release-status authority](../session-format-status.md) to identify the checkout writer and the latest released format. Let N denote that verified released format and N+1 the target; substitute numeric values for these placeholders in names and metadata. Start with a working contributor checkout and read the [package checklist](adding-a-package.md), [format library](../../packages/session/session-format/README.md), and [released-format decision](../../.agents/notes/implemented/architecture/2026-08-31-released-session-format-migrations.md).
 
 ## Table of Contents
 
@@ -21,20 +21,20 @@ Use this tutorial to introduce the next structural Session log version without r
 
 Bump the format for a structural change to headers, event envelopes, core event semantics, or surface reconstruction. Ordinary event additions do not require a bump; follow the [versioning rule](../../.agents/notes/implemented/architecture/2026-08-10-session-log-version-mechanism.md). Distinguish the Session format integer from package release versions, SQLite schema versions, projection-unit versions, and protocol-wrapper versions.
 
-For the V3→V4 example, use a shared `release/*` integration base, such as `release/session-log-v4`. The base change adds the V4 writer, codec, catalog wiring, identity migration, and verification. Create each independent child branch from that base and target its PR at the release branch, not another independent child's branch. Each child adds its structural transformation, validators, consumers, and tests to the example's `session-format-v3-to-v4` package. Do not introduce V5 or V6 just to represent review order. Merge reviewed children into the release branch through PRs, then validate the combined result before release. Honor release-branch force-push and deletion protections; do not force-sync it.
+Use a shared `release/*` integration base for N+1. The base change adds the writer, codec, catalog wiring, identity migration, and verification. Create each independent child branch from that base and target its PR at the release branch, not another independent child’s branch. Each child adds its structural transformation, validators, consumers, and tests to the same adjacent migration package. Do not allocate extra versions just to represent review order. Merge reviewed children into the release branch through PRs, then validate the combined result before release. Honor release-branch force-push and deletion protections; do not force-sync it.
 
-Released codecs and migration semantics, including V3 and V2→V3, remain frozen. Do not amend V0→V1, V1→V2, or V2→V3 to implement a new structural feature. Only the N→N+1 edge may incorporate coordinated changes before N+1 ships; after release, further structural changes need the next adjacent edge.
+Released codecs and migration semantics remain frozen. Do not amend a released edge to implement a new structural feature. Only the N→N+1 edge may incorporate coordinated changes before N+1 ships; after release, further structural changes need the next adjacent edge.
 
 Use disposable, isolated Harness homes for unreleased N+1 integration testing. An interim N+1 file already has the target writer version, so a later edit to N→N+1 will not migrate that file again. Re-run from unchanged historical input in a fresh test home; never repair this by rewriting a committed generation or reusing a real user's home.
 
 <a id="add-an-identity-edge"></a>
 ## 2. Add an identity edge
 
-To implement the example V3→V4 edge, follow the package checklist to create a library, not a mounted plugin. An identity body conversion is only an initial wiring scaffold. The released [V2-to-V3 specification](../../packages/session/session-format-v2-to-v3/README.md#v2-to-v3-specification) is an example of explicit transformations and preservation rules, not an edge to extend or treat as an identity conversion.
+Follow the package checklist to create a library for N→N+1, not a mounted plugin. An identity body conversion is only an initial wiring scaffold. The [V2-to-V3 specification](../../packages/session/session-format-v2-to-v3/README.md#v2-to-v3-specification) is a fixed example of explicit transformations and preservation rules, not an edge to extend or treat as an identity conversion.
 
-In the example package manifest, declare `dsh.sessionFormatMigration` with `from: 3`, `to: 4`, an export path, and the exported migration, source codec, target codec, target-header validator, and target restorer. Reuse `releasedV3SessionFormatCodec` from the existing V2→V3 package and depend on that package; do not copy or redefine the released V3 codec. Export the example's V4 codec and validators from the new package. Add the new edge as a direct dependency of the catalog and add the workspace's TypeScript paths and project references.
+Declare `dsh.sessionFormatMigration` with numeric `from: N` and `to: N+1`, an export path, and the exported migration, source codec, target codec, target-header validator, and target restorer. Reuse the source codec exported by the preceding edge package and depend on that package; do not copy or redefine a released codec. Export the target codec and validators from the new package. Add the edge as a direct dependency of the catalog and add the workspace’s TypeScript paths and project references.
 
-Set `SESSION_FORMAT_VERSION` in [core Session types](../../packages/core/session/src/types.ts) to N+1 (4 in the example) alongside the new edge declarations, then generate the catalog. The command below generates only the declared chain; it does not implement a new version:
+Set `SESSION_FORMAT_VERSION` in [core Session types](../../packages/core/session/src/types.ts) to N+1 alongside the new edge declarations, then generate the catalog. The command below generates only the declared chain; it does not implement a new version:
 
 ```sh
 pnpm run gen-session-format-catalog
@@ -49,7 +49,7 @@ Use the [Stage interfaces](../../packages/session/session-format/src/types.ts), 
 
 Implement `transformEvent(event, context)`, `transformRun(run, context)`, and `finish(context)`. Emit synchronously through `context.emitEvent` or `context.emitRun`; a call can produce zero, one, or many outputs. Let a stage consume codec-owned compact runs directly, or iterate `run.expand()` without materializing an intermediate array. The caller owns scheduling, and the chain finishes upstream stages before downstream stages.
 
-Treat the inherited cut as a logical event count, not a physical row count. Expose `headerInheritedEventCount` only when it is known before EOF; `finish` returns the exact target cut. A preceding cardinality-changing edge can make that count unavailable at construction. Derive it from validated seed markers when required, and test the example's V0→V1→V2→V3→V4, V1→V2→V3→V4, and V2→V3→V4 chains with seeded Sessions, not just direct V3 input. Never substitute zero for an unknown cut.
+Treat the inherited cut as a logical event count, not a physical row count. Expose `headerInheritedEventCount` only when it is known before EOF; `finish` returns the exact target cut. A preceding cardinality-changing edge can make that count unavailable at construction. Derive it from validated seed markers when required, and test seeded multi-hop restoration from each supported historical generation through N+1, not just direct N input. Never substitute zero for an unknown cut.
 
 Define the new edge's event admission and transformation rules explicitly. The [V2-to-V3 source audit](../../packages/session/session-format-v2-to-v3/README.md#source-audit) and [alpha V0→V1 rule](../../.agents/notes/implemented/architecture/2026-08-31-alpha-historical-unknown-event-refusal.md) own the policies of those released edges, not the new edge. Do not generalize either to every edge. A change to structure or event positions requires classifying source events, payload members, and references, and explicitly deciding whether opaque data can remain valid. [Equal-version retention](../../.agents/notes/implemented/architecture/2026-08-30-retain-ignorable-external-session-events.md) alone does not prove a structural transformation safe. Validate target semantics and give each newly accepted case a rejecting counterexample; never widen older edges to hide an unsupported transformation.
 
@@ -67,7 +67,7 @@ Verify both read and write paths. Header-only listing must not read bodies or pu
 <a id="snapshot-successors"></a>
 ## 5. Create snapshot successors
 
-Read [snapshot ownership](../../snapshots/AGENTS.md) and the [snapshot library](../../packages/test-support/session-snapshot/README.md). Select the owning scenario, not an adapter that only references it. After implementing N+1, keep each historical file and generate its successor. In the V3→V4 example, use `session.v4.jsonl` for the parent and `session.1.v4.jsonl`, `session.2.v4.jsonl`, and so on for children. Never rename `session.v3.jsonl` to V4 or change only its header.
+Read [snapshot ownership](../../snapshots/AGENTS.md) and the [snapshot library](../../packages/test-support/session-snapshot/README.md). Select the owning scenario, not an adapter that only references it. After implementing N+1, keep each historical file and generate its successor using the target version’s canonical parent and child filenames. Never rename a predecessor to the target filename or change only its header.
 
 For unchanged replay input, use keyless refresh on the owner, then replay without write-back. These SDK commands use `text-turn` and the checkout's writer version. Implement and wire N+1 before using them to generate that version, and select the actual affected owner for a feature:
 
@@ -93,7 +93,7 @@ pnpm run test:snapshot scripts/session-snapshot-corpus.corpus.ts
 
 After implementing the new edge, add its actual test path to the focused Vitest run. Add the changed JSONL, replay, projection, and SDK tests selected by the actual diff, plus the built publication-Worker smoke when that path changes. Require successful strict migration, identity preservation for the skeleton, malformed and unknown-required-event refusal, deterministic repeated restores, independent concurrent stage state, seeded multi-hop cuts, unchanged predecessors, and no fallback. Report exact commands and failures, not an inferred full-suite result.
 
-Update the [owning Agent Note](../../.agents/notes/implemented/architecture/2026-08-31-released-session-format-migrations.md) rather than adding a redundant decision record. Audit related active notes for supersession; retain independent rationale and leave archived notes frozen. Update bilingual prose together, re-record each changed pair with the repository tool, then run documentation checks:
+Update the [owning Agent Note](../../.agents/notes/implemented/architecture/2026-08-31-released-session-format-migrations.md) rather than adding a redundant decision record. Keep the [release record](../session-format-status.md#updating-the-record) unchanged until publication; after publication, update it with verified release evidence. Audit related active notes for supersession; retain independent rationale and leave archived notes frozen. Update bilingual prose together, re-record each changed pair with the repository tool, then run documentation checks:
 
 ```sh
 pnpm run verify-translation-pairing --write docs/cookbook/adding-a-session-format-version.md

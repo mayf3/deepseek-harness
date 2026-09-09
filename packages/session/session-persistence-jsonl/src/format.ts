@@ -304,7 +304,7 @@ export function logPath(
 }
 
 /**
- * Serialize a v2 event batch as JSONL lines (no trailing newline). Compact
+ * Serialize a current event batch as JSONL lines (no trailing newline). Compact
  * Assistant streams are nested event data; every event occupies one row.
  * @param events - the batch to serialize, in log order.
  * @returns the batch's JSONL text; the writer adds the final newline.
@@ -314,7 +314,7 @@ export function eventLines(events: readonly SessionEvent[]): string {
 }
 
 /**
- * Serialize one v2 event as one JSONL record without its trailing newline.
+ * Serialize one current event as one JSONL record without its trailing newline.
  * @param event - current event to encode.
  * @returns one physical JSON record.
  */
