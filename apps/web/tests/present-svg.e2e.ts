@@ -101,7 +101,7 @@ describe('web e2e: requested SVG is explicitly delivered', () => {
     expect(events.some(event => event.type === 'assistant/message' && event.seq > delivery.seq
       && event.data.message.content.some(block => block.type === 'text'))).toBe(true)
 
-    const card = page.locator('[data-presented-files-row]').getByRole('button').filter({ hasText: FILE })
+    const card = page.locator('[data-presented-file]').filter({ hasText: FILE })
     await card.waitFor({ state: 'visible' })
     expect(await card.count()).toBe(1)
     expect(await page.getByText('产物', { exact: true }).count()).toBe(0)
