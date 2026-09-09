@@ -6,7 +6,7 @@ import type {
   MouseEvent as ReactMouseEvent,
   ReactNode,
 } from 'react'
-import { IconCheckOutline16, IconCopyOutline16 } from './icons/index.tsx'
+import { IconCheckOutline16, IconCopyOutline16, IconWrapLinesOutline16 } from './icons/index.tsx'
 import { Menu } from './Menu.tsx'
 import type { MenuEntry } from './Menu.tsx'
 import css from './JsonTree.module.css'
@@ -334,18 +334,7 @@ function JsonString({
                 stringWrapping.setDefault(next)
               }}
             >
-              <svg
-                width="12"
-                height="12"
-                viewBox="0 0 16 16"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="1.5"
-                strokeLinejoin="round"
-                aria-hidden="true"
-              >
-                <path d="M1.5 3.5h13M1.5 7.5h10.25a2.5 2.5 0 0 1 0 5H8m2-2-2 2 2 2M1.5 11.5h3" />
-              </svg>
+              <IconWrapLinesOutline16 size={12} />
             </button>
           )}
           <button

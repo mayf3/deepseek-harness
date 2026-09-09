@@ -8,6 +8,7 @@ import {
   IconCheckOutline16,
   IconChevronRightOutline14,
   IconCodeOutline16,
+  IconWrapLinesOutline16,
   IconCopyOutline16,
   IconSettingsOutline16,
   IconSparkle16,
@@ -1869,10 +1870,7 @@ function ProgramInput({ program, rawInput, initialWrapped, stringWrapping, onOpe
             stringWrapping?.setDefault(next)
           }}
         >
-          <svg width="12" height="12" viewBox="0 0 16 16" fill="none"
-            stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" aria-hidden="true">
-            <path d="M1.5 3.5h13M1.5 7.5h10.25a2.5 2.5 0 0 1 0 5H8m2-2-2 2 2 2M1.5 11.5h3" />
-          </svg>
+          <IconWrapLinesOutline16 size={12} />
         </button>
       )}
       {onOpen === undefined && (
