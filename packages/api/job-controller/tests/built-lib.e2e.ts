@@ -35,8 +35,8 @@ describe.skipIf(!existsSync(artifact))('job Remote built codecs', () => {
       if (invocation === undefined) throw new Error(`no generated job.${method} invocation`)
       return invocation.result.schema
     }
-    expect(schemaOf('rows').safeParse({ type: 'rows', jobs: [row] }).success).toBe(true)
-    expect(schemaOf('observe').safeParse({ type: 'opened', job: row, from: 0 }).success).toBe(true)
-    expect(schemaOf('observe').safeParse({ type: 'status', job: { ...row, status: 'paused' } }).success).toBe(false)
+    expect(schemaOf('list').safeParse({ type: 'rows', jobs: [row] }).success).toBe(true)
+    expect(schemaOf('follow').safeParse({ type: 'opened', job: row, from: 0 }).success).toBe(true)
+    expect(schemaOf('follow').safeParse({ type: 'status', job: { ...row, status: 'paused' } }).success).toBe(false)
   })
 })
