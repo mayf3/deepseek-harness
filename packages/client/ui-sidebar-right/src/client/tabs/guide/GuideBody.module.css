@@ -22,13 +22,19 @@
   flex: 0 1 10%;
 }
 
-/* The guide tab's own compass above the capsules, at 56px on the dimmed ink —
-   a watermark, not a control. Its margin over the column's gap holds the
-   first capsule 30px below it; the capsules keep the bare gap between them. */
+/* The guide tab's own compass above the capsules, at 56px on watermark ink —
+   not a control. The ink is pinned to the pure-gray static ramp per theme
+   because the label aliases all ride the bluish ramp, whose cast shows at
+   this size. Its margin over the column's gap holds the first capsule 30px
+   below it; the capsules keep the bare gap between them. */
 .hero {
   display: flex;
   margin-bottom: 16px;
-  color: var(--dsw-alias-label-dimmed);
+  color: var(--dsw-static-neutral-200);
+}
+
+:global(body[data-ds-dark-theme]) .hero {
+  color: var(--dsw-static-neutral-700);
 }
 
 /* A filled pill, 380px wide by default, its icon and text anchored at the
