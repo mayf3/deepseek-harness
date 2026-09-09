@@ -114,7 +114,8 @@ describe('web e2e: requested SVG is explicitly delivered', () => {
 
   it.skipIf(MODE === 'record')('replays the delivered file and Chinese conversation', async () => {
     await assertFinalWorkspaceSnapshot(DIR, cwd)
-    const aria = await captureExpandedTurnProcessAria(page, '[class*="centerCol"]', scaffold.workspaceCwd)
+    // Delivery owns the transcript; navigation and composer chrome have separate scenarios.
+    const aria = await captureExpandedTurnProcessAria(page, '[data-chat-flow]', scaffold.workspaceCwd)
     await compareOrRefreshGolden(join(DIR, 'ui.expected.md'), aria, MODE)
   })
 })
