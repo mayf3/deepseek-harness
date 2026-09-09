@@ -43,7 +43,7 @@ describe('workspaceFiles.stat', () => {
     await expect(harness.endpoint().stat(agent, 'notes.txt', controller.signal)).rejects.toThrow()
   })
 
-  it('resolves the workspace root and then the confined target under the caller\'s signal', async () => {
+  it('resolves the workspace root and then the file under the caller\'s signal', async () => {
     await writeFile(join(harness.workspace, 'notes.txt'), 'hello\n', 'utf8')
     const fs = harness.ctx.fs
     const original = fs.resolve.bind(fs)
@@ -61,7 +61,7 @@ describe('workspaceFiles.stat', () => {
     expect(result).toEqual({ absolutePath: result.absolutePath, version: 'v-sizeless' })
   })
 
-  it('applies the read gates: symlink, directory, outside, missing, empty', async () => {
+  it('accepts outside files and refuses symlinks, directories, missing and empty paths', async () => {
     await writeFile(join(harness.outside, 'secret.txt'), 'no', 'utf8')
     await symlink(join(harness.outside, 'secret.txt'), join(harness.workspace, 'link.txt'))
     await mkdir(join(harness.workspace, 'src'))
@@ -71,8 +71,7 @@ describe('workspaceFiles.stat', () => {
       details: { kind: 'symlink' },
     })
     expect((await failureOf(endpoint.stat(agent, 'src', signal()))).details).toMatchObject({ kind: 'directory' })
-    expect((await failureOf(endpoint.stat(agent, join(harness.outside, 'secret.txt'), signal()))).code)
-      .toBe('workspace-file/outside-workspace')
+    expect(await endpoint.stat(agent, join(harness.outside, 'secret.txt'), signal())).toMatchObject({ bytes: 2 })
     expect((await failureOf(endpoint.stat(agent, 'nope.txt', signal()))).code).toBe('workspace-file/not-found')
     expect((await failureOf(endpoint.stat(agent, '', signal()))).code).toBe('gateway/bad-request')
   })

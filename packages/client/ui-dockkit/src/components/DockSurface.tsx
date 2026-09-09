@@ -45,6 +45,8 @@ export interface DockSurfaceProps {
    * end controls where they are and the chips as the only shrinking part.
    */
   readonly canAddTab?: (paneId: PaneId) => boolean
+  /** Whether a tab offers close controls; defaults to true. Called per tab on every render. */
+  readonly canCloseTab?: (tabId: TabId) => boolean
   readonly intents: DockIntents
   readonly labels: DockLabels
   readonly renderTab: TabRenderer
@@ -154,7 +156,7 @@ function sameSizes(a: readonly number[], b: readonly number[]): boolean {
 
 /** The split tree and the gestures over it. */
 export function DockSurface({
-  state, canSplit, canAddTab, intents, labels, renderTab, renderTabTitle, renderTabMenuItems, chrome, onRoom,
+  state, canSplit, canAddTab, canCloseTab, intents, labels, renderTab, renderTabTitle, renderTabMenuItems, chrome, onRoom,
   dropZones = 'edges', minPaneFraction = MIN_PANE_FRACTION, hideSplitAtCapacity = false,
 }: DockSurfaceProps): ReactNode {
   const surface = useRef<HTMLDivElement | null>(null)
@@ -267,6 +269,7 @@ export function DockSurface({
     splitBlock,
     hideSplitAtCapacity,
     canAddTab: canAddTab ?? ALWAYS,
+    canCloseTab: canCloseTab ?? ALWAYS,
     dropTarget: preview.dropTarget,
     horizontalDrops: dropZones === 'horizontal',
     draggingTabId: preview.draggingTabId,

@@ -243,8 +243,10 @@ describe.skipIf(MODE === 'record')('web e2e: details panel follows the current S
     // CSS width assigned by the grid solver.
     await expect.poll(() => sidebarSnapshot(page), { timeout: 5_000 })
       .toMatchObject({ mode: 'push', panelContentWidth: normalWidth, panelOuterWidth: normalWidth + 1, resizeHandleWidth: 8 })
-    await column.locator('[data-sidebar-right-guide-entry="files"]').click()
-    await column.locator('[data-files-state="tree"]').waitFor({ timeout: 15_000 })
+    await expect.poll(async () => ({
+      filesVisible: await column.locator('[data-files-state="tree"]').isVisible(),
+      errors: tripwire.pageErrors,
+    })).toEqual({ filesVisible: true, errors: [] })
     await column.locator('[data-dockkit-add-tab]').click()
     const split = column.locator('[data-dockkit-split-button]').first()
     await expect.poll(() => split.isDisabled()).toBe(false)
@@ -253,7 +255,7 @@ describe.skipIf(MODE === 'record')('web e2e: details panel follows the current S
     await panes.first().locator('[data-dockkit-tab]').filter({ hasText: 'Files' }).click()
     await expect.poll(() => panes.first().locator('[data-files-state="tree"]').count()).toBe(1)
     const retainedA = await paneSnapshot(page)
-    expect(retainedA.map(pane => pane.tabs.map(tab => tab.title))).toEqual([['Files', 'Start'], ['Start']])
+    expect(retainedA.map(pane => pane.tabs.map(tab => tab.title))).toEqual([['Files', 'Start'], ['Files']])
     await checkpoint('A normal: two panes')
 
     await column.locator('[data-sidebar-right-mode="fullscreen"]').click()
@@ -272,7 +274,7 @@ describe.skipIf(MODE === 'record')('web e2e: details panel follows the current S
     await expect.poll(() => detailsTrack(page)).toBe(0)
     await open()
     expect(await panel.getAttribute('data-sidebar-right-panel')).toBe('push')
-    await column.locator('[data-sidebar-right-guide-entry="files"]').click()
+    await column.locator('[data-files-state="tree"]').waitFor({ timeout: 15_000 })
     const workspaceDirectory = column.locator('[data-files-entry="directory"] > button').filter({ hasText: /^workspace$/ })
     await workspaceDirectory.waitFor({ timeout: 15_000 })
     await workspaceDirectory.click()
