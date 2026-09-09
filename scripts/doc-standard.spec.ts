@@ -2,7 +2,8 @@
  * Quick comprehensive documentation-standard tests: the reference example
  * stays valid, the consolidated `dsh-doc` skill carries no stale copied
  * website values or prototype-era language, and the kind system maps each
- * label to exactly one skill template. These run in `pnpm run test` and
+ * label to exactly one skill template. Session release records match the
+ * writer bound, bilingual counterpart, and evidence links. These run in `pnpm run test` and
  * `pnpm run test:docs` to guard the standard between heavier corpus gates.
  * @module scripts/doc-standard.spec
  */
@@ -152,6 +153,7 @@ interface SessionFormatRelease {
   evidenceTag: string
 }
 
+/** Validate the release record and evidence links; throw on malformed or inconsistent input. */
 function validateSessionFormatRelease(source: string, currentWriterVersion: number): SessionFormatRelease {
   const normalized = source.replaceAll('\r\n', '\n')
   const openings = [...normalized.matchAll(/^```yaml session-format-release[ \t]*$/gmu)]
