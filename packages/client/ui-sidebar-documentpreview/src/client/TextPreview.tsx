@@ -69,6 +69,13 @@ export type TextPreviewProps =
   & InjectFace<TextPreviewInjected>
   & PropsLocale<'sidebarDocumentPreview'>
 
+/** The selected renderer's scrolling element; code owns an inner scrollport. */
+function scrollportOf(body: HTMLDivElement | null): HTMLElement | null {
+  if (body === null) return null
+  const code = body.querySelector('[data-code-preview]')
+  return code?.querySelector<HTMLElement>('[data-code-block-content]') ?? body
+}
+
 /**
  * The text type's body, registered under `sidebar.right.pane.tab` as `text`.
  * @param props - composed slot props.
@@ -94,6 +101,7 @@ export function TextPreview({
   const mode = selected?.loading
   const current = (state?.mode ?? 'text-pages') === mode ? state : undefined
   const bodyRef = useRef<HTMLDivElement | null>(null)
+  const scrollportRef = useRef<HTMLElement | null>(null)
   const pathRef = useRef<HTMLDivElement | null>(null)
   const pathTextRef = useRef<HTMLSpanElement | null>(null)
   const [menuOpen, setMenuOpen] = useState(false)
@@ -107,6 +115,11 @@ export function TextPreview({
   const loadedThrough = lastLineLoaded(loaded)
   const hasContent = loaded.length > 0 || current?.complete !== undefined
 
+  useLayoutEffect(() => {
+    scrollportRef.current = scrollportOf(bodyRef.current)
+    return () => { scrollportRef.current = null }
+  }, [hasContent, selected?.id])
+
   // First mount reads the first page; a body coming back to a tab with content
   // reads nothing, because the store outlives the body.
   const started = current !== undefined
@@ -117,19 +130,19 @@ export function TextPreview({
   }, [started, tab.id, file, signal, loadPage, loadAll, canRead, mode, meta.value?.version])
 
   // Come back where the reader was once there is content to scroll: on a remount,
-  // and after a reload rebuilt the content. Keyed on content presence only, so a
-  // scroll write never re-lands.
+  // after a reload rebuilt the content, or after the selected renderer changed.
+  // Scroll writes preserve both identities, so they never re-land.
   useEffect(() => {
-    const body = bodyRef.current
+    const body = scrollportRef.current
     if (hasContent && body !== null && state !== undefined) body.scrollTop = state.scrollTop
-  }, [hasContent])
+  }, [hasContent, selected?.id])
 
   // Answer a navigation once: a line the pages do not reach yet loads the next
   // page (again, until the pages cover it or the file ends); a line they hold
   // is scrolled to and marked. The store remembers the answer, so a remount
   // restores the reader's place instead.
   useEffect(() => {
-    const body = bodyRef.current
+    const body = scrollportRef.current
     if (current === undefined || body === null || current.revision === navigation.revision) return
     if (line === undefined || mode !== 'text-pages') {
       actions.navigated(tab.id, navigation.revision)
@@ -271,8 +284,11 @@ export function TextPreview({
         className={clsx(css.body, state.wrap && css.wrap)}
         data-textpreview-body
         data-textpreview-wrap={state.wrap ? '' : undefined}
-        onScroll={(event) => {
-          const body = event.currentTarget
+        onScrollCapture={(event) => {
+          const body = scrollportRef.current
+          /* v8 ignore next -- the layout effect binds the scrollport before user input. */
+          if (body === null) return
+          if (event.target !== body) return
           actions.scrolled(tab.id, body.scrollTop)
           if (mode === 'text-pages' && current?.failure === undefined && body.clientHeight > 0
             && body.scrollTop + body.clientHeight >= body.scrollHeight - 1) loadNext()
