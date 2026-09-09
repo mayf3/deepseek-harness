@@ -57,9 +57,11 @@ kind: "package-reference"
 
 ### 从自己的 UI 记录反馈
 
-反馈不一定来自斜杠命令或弹窗：任何 UI、钩子或 host 集成都可以通过 `recordFeedback` 或 `sessionFeedback` Remote 直接记录评价，享有同样的保证且无需模型轮次。想要斜杠命令的自定义应用，把命令注册表与本插件组合在一起即可：
+反馈不一定来自斜杠命令或弹窗：任何 UI、钩子或 host 集成都可以通过 `recordFeedback` 或 `sessionFeedback` Remote 直接记录评价，享有同样的保证且无需模型轮次。想要斜杠命令的自定义应用，把 Session 存储、命令注册表与本插件组合在一起即可；`sessionFeedback` Remote 从 Session 存储中解析 live Session：
 
 ```yaml
+- id: session
+  name: '@deepseek-ai/dsh-session'
 - id: commands
   name: '@deepseek-ai/dsh-commands'
 - id: command-feedback

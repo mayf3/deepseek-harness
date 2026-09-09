@@ -9,7 +9,7 @@
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { FeedbackRecord } from '@deepseek-ai/dsh-command-feedback/types'
-import { MessageFeedbackController, type MessageFeedbackActionResult } from './controller.ts'
+import { MessageFeedbackController, describe, type MessageFeedbackActionResult } from './controller.ts'
 import { FeedbackDialogController } from './dialog.ts'
 
 /** The per-session pair behind every entry of one Session. */
@@ -33,7 +33,7 @@ export class FeedbackSurface {
     const carried = await this.ctx.remote.sessionFeedback.record({ sessionId: this.sessionId, ...entry })
     if (!carried.ok) return { ok: false, error: { code: carried.error.code, message: carried.error.message } }
     if (carried.value.ok) return { ok: true }
-    return { ok: false, error: { code: carried.value.error.code, message: 'this session is no longer live' } }
+    return { ok: false, error: { code: carried.value.error.code, message: describe(carried.value.error.code) } }
   }
 
   /** Drop both controllers when the owning fiber unloads. */

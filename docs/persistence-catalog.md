@@ -447,7 +447,7 @@ Source: [`packages/feedback/message-feedback/src/types.ts:56`](../packages/feedb
 'feedback/record': FeedbackRecord
 ```
 
-Source: [`packages/feedback/command-feedback/src/types.ts:54`](../packages/feedback/command-feedback/src/types.ts)
+Source: [`packages/feedback/command-feedback/src/types.ts:40`](../packages/feedback/command-feedback/src/types.ts)
 
 ### `goal/*`
 

@@ -311,7 +311,7 @@ fork 种子可以包含父 Session 的反馈事件，但 payload 保留父级 `s
 - Host 约定不记录已认证的 actor 或审计身份，因此假设调用方边界可信。
 - Web 控件只出现在对话视图。trajectory 与 waterfall 视图不渲染反馈条目，尽管它们的助手节点携带相同的 `messageId`。
 - Web 控制器不消费反馈日志事件，因此另一个标签页的评分要等到重连或下一次冲突响应才可见，不会立即出现。
-- 弹窗不预先校验 `maxNoteBytes`；超长描述在提交时以 `note-too-large` 失败，而不是在输入过程中。
+- 弹窗不预先校验 `maxNoteBytes`；针对消息的超长描述在提交时以 `note-too-large` 失败，而不是在输入过程中。Session 级备注没有大小上限，`/feedback` 命令从来也没有。
 - `sessionFeedback.record` 只服务 live Session，否则回答 `session-not-found`；弹窗打开期间 Session 退役时，弹窗会报告该失败。
 
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->

@@ -311,7 +311,7 @@ Like records the bare positive judgment at once and shows the acknowledgement to
 - The Host contract records no authenticated actor or audit identity and therefore assumes a trusted caller boundary.
 - The Web controls appear in the chat view only. The trajectory and waterfall views render no feedback entry even though their assistant nodes carry the same `messageId`.
 - The Web controller does not consume feedback log events, so a second tab's rating becomes visible on reconnect or on the next conflict reply rather than immediately.
-- The dialog does not pre-check `maxNoteBytes`; an oversized description fails on submit with `note-too-large` rather than while typing.
+- The dialog does not pre-check `maxNoteBytes`; an oversized description for a message fails on submit with `note-too-large` rather than while typing. A Session remark has no size bound, as the `/feedback` command never had one.
 - `sessionFeedback.record` serves live Sessions only and answers `session-not-found` otherwise; the dialog reports that failure when its Session retires while it is open.
 
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->

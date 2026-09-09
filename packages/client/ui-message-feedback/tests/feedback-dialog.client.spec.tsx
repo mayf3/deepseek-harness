@@ -12,7 +12,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render } from '@testing-library/react'
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import { zh as commonZh } from '@deepseek-ai/dsh-client-locale/src/locales/zh.ts'
-import { FEEDBACK_CATEGORIES } from '@deepseek-ai/dsh-command-feedback/types'
+import { FEEDBACK_CATEGORIES } from '@deepseek-ai/dsh-command-feedback'
 import { FeedbackDialog } from '../src/client/FeedbackDialog.tsx'
 import type { FeedbackDialogState } from '../src/client/dialog.ts'
 import { zh } from '../src/client/locales.ts'
@@ -105,6 +105,14 @@ describe('FeedbackDialog', () => {
 
     const other = mount({ failure: 'session-not-found' })
     expect(other.getByRole('status').textContent).toBe(zh['error.generic'])
+  })
+
+  it('retires the toast when the entry unmounts, so a Session switch does not replay it', () => {
+    const ui = mount({ target: null, toast: 3 })
+
+    ui.unmount()
+
+    expect(ui.dismissToast).toHaveBeenCalledWith(3)
   })
 
   it('shows the acknowledgement toast and retires it after the fade', () => {

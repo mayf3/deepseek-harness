@@ -30,4 +30,4 @@ Web 客户端有两条互不相连的反馈路径，且都没有可见结果。`
 
 ## 后果
 
-新增分类意味着把它加进联合类型、宿主元组、弹窗的标签记录和 `feedback` 词典；客户端打包纯度门禁止从宿主包做值导入，因此弹窗以 `Record<FeedbackCategory, true>` 重述分类表，键的顺序就是标签顺序，完整性由编译器检查。冻结的已发布 v2 载荷清单仍把 `feedback/record` 列为仅有 `text`：它管辖从旧代际迁移来的产物，那些产物不可能携带新成员，而同版本恢复应用的是已安装词汇。固定浮层几何的 `message-feedback-layout` Web 场景随浮层一起删除。message-feedback 与 feedback-release 的 Web 期望输出和反馈子系统文档在同一个 PR 中更新；`/feedback <text>` 命令路径及其 SDK 期望输出不变。
+新增分类意味着把它加进联合类型、宿主元组、弹窗的标签记录和 `feedback` 词典；客户端打包纯度门禁止从宿主包做值导入，因此弹窗以 `Record<FeedbackCategory, true>` 重述分类表，键的顺序就是标签顺序，完整性由编译器检查。冻结的已发布 v2 载荷清单仍把 `feedback/record` 列为仅有 `text`：它管辖从旧代际迁移来的产物，那些产物不可能携带新成员，而同版本恢复应用的是已安装词汇。固定浮层几何的 `message-feedback-layout` Web 场景随浮层一起删除。message-feedback 与 feedback-release 的 Web 期望输出和反馈子系统文档在同一个 PR 中更新；SDK 的反馈生产方会记录一条带分类的 Session 备注和一条带分类的差评，因此两个 SDK 期望输出都携带新成员。

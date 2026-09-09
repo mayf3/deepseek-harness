@@ -7,7 +7,7 @@
  * @module @deepseek-ai/dsh-client-ui-message-feedback/client/FeedbackDialog
  */
 
-import { useCallback, useLayoutEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { Button, IconCheckOutline16, Modal, Toast } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { FeedbackCategory } from '@deepseek-ai/dsh-command-feedback/types'
 import type { FeedbackDialogProps } from './slots.ts'
@@ -50,6 +50,9 @@ export function FeedbackDialog({ useDialog, edit, submit, dismiss, dismissToast,
   }, [])
   const toast = state.toast
   const onToastDone = useCallback(() => { dismissToast(toast) }, [dismissToast, toast])
+  // A toast retires with the entry that showed it: the Toast's own timer dies
+  // on unmount, and the Session's controller must not replay it on return.
+  useEffect(() => () => { dismissToast(toast) }, [dismissToast, toast])
   const failure = state.failure === null ? null : t(FAILURE_COPY[state.failure] ?? 'error.generic')
 
   return (

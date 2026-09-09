@@ -1,9 +1,9 @@
 /**
  * Public vocabulary of Session-level feedback: the fixed category taxonomy,
  * the `feedback/record` event payload, and the `sessionFeedback.record`
- * Remote request and result types. Host packages (message-feedback), the
- * generated Remote client, and tests import the tuple; a browser plugin
- * imports types only, because its bundle may not carry Host values.
+ * Remote request and result types. Types only; the runtime category tuple is
+ * exported by the package entry, and a browser plugin imports types alone
+ * because its bundle may not carry Host values.
  * @module @deepseek-ai/dsh-command-feedback/types
  */
 
@@ -18,20 +18,6 @@ export type FeedbackCategory =
   | 'resource-cost'
   | 'security-privacy-permission'
   | 'other'
-
-/**
- * Every feedback category in the order product surfaces present them; each
- * surface owns its localized labels.
- */
-export const FEEDBACK_CATEGORIES = [
-  'task-result',
-  'instruction-following',
-  'product-interaction',
-  'service-stability',
-  'resource-cost',
-  'security-privacy-permission',
-  'other',
-] as const satisfies readonly FeedbackCategory[]
 
 /**
  * One recorded human remark about a Session. Both members are optional: a

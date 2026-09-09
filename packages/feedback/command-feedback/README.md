@@ -57,9 +57,11 @@ The ids are durable log vocabulary shared with per-message feedback; each surfac
 
 ### Recording feedback from your own UI
 
-Feedback does not have to come from the slash command or the dialog: any UI, hook, or host integration can record a remark directly through `recordFeedback` or the `sessionFeedback` Remote, with the same guarantees and without a model turn. A custom app that wants the slash command mounts the command registry plus this plugin:
+Feedback does not have to come from the slash command or the dialog: any UI, hook, or host integration can record a remark directly through `recordFeedback` or the `sessionFeedback` Remote, with the same guarantees and without a model turn. A custom app that wants the slash command mounts the Session store, the command registry, and this plugin; the Session store is what the `sessionFeedback` Remote resolves live Sessions from:
 
 ```yaml
+- id: session
+  name: '@deepseek-ai/dsh-session'
 - id: commands
   name: '@deepseek-ai/dsh-commands'
 - id: command-feedback

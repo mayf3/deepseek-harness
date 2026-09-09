@@ -62,8 +62,12 @@ const DISPOSED: MessageFeedbackActionFailure = Object.freeze({
   error: Object.freeze({ code: 'disposed', message: 'feedback controller is disposed' }),
 })
 
-/** Human-readable text for one business failure code. */
-function describe(code: string): string {
+/**
+ * Human-readable text for one business failure code.
+ * @param code - the Host's business failure code.
+ * @returns the developer-facing description carried in the failure branch.
+ */
+export function describe(code: string): string {
   switch (code) {
     case 'session-not-found': return 'this session is no longer persisted'
     case 'target-not-found': return 'this message is not a persisted assistant message'
