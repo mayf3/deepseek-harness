@@ -4,7 +4,7 @@
 
 ## 概述
 
-本教程介绍如何添加未来的结构性 Session 日志版本，同时不改写已发布数据。V3 已发布并冻结。示例拟通过单条 V3→V4 迁移边引入 V4；它并不描述已交付的 V4 包或运行时。开始前，请准备可用的贡献者工作区，并阅读[包检查清单](adding-a-package.zh.md)、[格式库](../../packages/session/session-format/README.zh.md)和[已发布格式决策](../../.agents/notes/implemented/architecture/2026-08-31-released-session-format-migrations.zh.md)。
+本教程介绍如何添加下一个结构性 Session 日志版本，同时不改写已发布数据。令 N 为经发布证据与源码确认的最新已发布 Session 格式，N+1 为目标版本。V3 已发布并冻结；具体的 V3→V4 示例假设 N=3。开始前，请准备可用的贡献者工作区，并阅读[包检查清单](adding-a-package.zh.md)、[格式库](../../packages/session/session-format/README.zh.md)和[已发布格式决策](../../.agents/notes/implemented/architecture/2026-08-31-released-session-format-migrations.zh.md)。
 
 ## 目录
 
@@ -21,20 +21,20 @@
 
 当 header、事件信封、核心事件语义或表面重建发生结构性变更时，提升格式版本。普通事件新增不需要提升版本；遵循[版本规则](../../.agents/notes/implemented/architecture/2026-08-10-session-log-version-mechanism.zh.md)。区分 Session 格式整数与包发布版本、SQLite schema 版本、投影单元版本及协议包装层版本。
 
-对于拟议的 V4 工作，使用共享的 `release/*` 集成基线，例如 `release/session-log-v4`。基线变更需添加 V4 写入器、codec、catalog 接线、恒等迁移与验证。从该基线创建各个独立子分支，并将其 PR（Pull Request）的目标设为发布分支，而非另一个独立子分支。每个子分支需在拟议的 `session-format-v3-to-v4` 包内添加自身的结构变换、校验器、消费方和测试。不要只为表示评审顺序而引入 V5 或 V6。通过 PR 将评审后的子分支合入发布分支，并在发布前验证组合结果。遵守发布分支的强制推送与删除保护；不要强制同步该分支。
+在 V3→V4 示例中，使用共享的 `release/*` 集成基线，例如 `release/session-log-v4`。基线变更添加 V4 写入器、codec、catalog 接线、恒等迁移与验证。从该基线创建各个独立子分支，并将其 PR（Pull Request）的目标设为发布分支，而非另一个独立子分支。每个子分支在示例的 `session-format-v3-to-v4` 包内添加自身的结构变换、校验器、消费方和测试。不要只为表示评审顺序而引入 V5 或 V6。通过 PR 将评审后的子分支合入发布分支，并在发布前验证组合结果。遵守发布分支的强制推送与删除保护；不要强制同步该分支。
 
-已发布 codec 和迁移语义（包括 V3 与 V2→V3）保持冻结。不要通过修改 V0→V1、V1→V2 或 V2→V3 来实现新的结构性功能。下一个结构性版本是 V4。只有拟议的 V3→V4 迁移边可在 V4 发布前纳入协同变更；发布后，进一步的结构性变更需要下一条相邻迁移边。
+已发布 codec 和迁移语义（包括 V3 与 V2→V3）保持冻结。不要通过修改 V0→V1、V1→V2 或 V2→V3 来实现新的结构性功能。只有 N→N+1 迁移边可在 N+1 发布前纳入协同变更；发布后，进一步的结构性变更需要下一条相邻迁移边。
 
-未发布 V4 的集成测试应使用可丢弃、相互隔离的 Harness home。中间版本产生的 V4 文件已标为拟议的写入器版本，因此后续对 V3→V4 的修改不会再次迁移该文件。请在全新测试 home 中从未变更的历史输入重新运行；绝不通过改写已提交代际或复用真实用户 home 来修复这个问题。
+未发布 N+1 的集成测试应使用可丢弃、相互隔离的 Harness home。中间版本产生的 N+1 文件已标为目标写入器版本，因此后续对 N→N+1 的修改不会再次迁移该文件。请在全新测试 home 中从未变更的历史输入重新运行；绝不通过改写已提交代际或复用真实用户 home 来修复这个问题。
 
 <a id="add-an-identity-edge"></a>
 ## 2. 添加恒等迁移边
 
-若要实现拟议的 V3→V4 迁移边，按照包检查清单创建库，而非挂载插件。恒等正文转换仅是最初的接线骨架。已发布的 [V2 到 V3 规范](../../packages/session/session-format-v2-to-v3/README.zh.md#v2-to-v3-specification)展示如何明确转换与保留规则，而不是可继续扩展或视为恒等转换的迁移边。
+若要实现示例中的 V3→V4 迁移边，按照包检查清单创建库，而非挂载插件。恒等正文转换仅是最初的接线骨架。已发布的 [V2 到 V3 规范](../../packages/session/session-format-v2-to-v3/README.zh.md#v2-to-v3-specification)展示如何明确转换与保留规则，而不是可继续扩展或视为恒等转换的迁移边。
 
-在拟议包的 manifest（元数据清单）中声明 `dsh.sessionFormatMigration`，包含 `from: 3`、`to: 4`、导出路径，以及导出的迁移、源 codec、目标 codec、目标 header 校验器和目标恢复器。复用现有 V2→V3 包的 `releasedV3SessionFormatCodec`，并依赖该包；不要复制或重新定义已发布 V3 codec。从新包导出拟议的 V4 codec 和校验器。将新迁移边加入 catalog 的直接依赖，并添加工作区的 TypeScript 路径与项目引用。
+在示例包的 manifest（元数据清单）中声明 `dsh.sessionFormatMigration`，包含 `from: 3`、`to: 4`、导出路径，以及导出的迁移、源 codec、目标 codec、目标 header 校验器和目标恢复器。复用现有 V2→V3 包的 `releasedV3SessionFormatCodec`，并依赖该包；不要复制或重新定义已发布 V3 codec。从新包导出示例的 V4 codec 和校验器。将新迁移边加入 catalog 的直接依赖，并添加工作区的 TypeScript 路径与项目引用。
 
-实现 V4 时，在添加新迁移边声明的同时，将[核心 Session 类型](../../packages/core/session/src/types.ts)中的 `SESSION_FORMAT_VERSION` 设为 4，然后生成 catalog。下面的现有命令只生成已声明的迁移链；在 V3 工作区运行它不会添加 V4 支持：
+在添加新迁移边声明的同时，将[核心 Session 类型](../../packages/core/session/src/types.ts)中的 `SESSION_FORMAT_VERSION` 设为 N+1（示例中为 4），然后生成 catalog。下面的命令只生成已声明的迁移链；它不会实现新版本：
 
 ```sh
 pnpm run gen-session-format-catalog
@@ -49,9 +49,9 @@ pnpm run gen-session-format-catalog
 
 实现 `transformEvent(event, context)`、`transformRun(run, context)` 和 `finish(context)`。通过 `context.emitEvent` 或 `context.emitRun` 同步输出；一次调用可以产生零个、一个或多个输出。让 Stage 直接消费 codec 所有的紧凑 run，或者迭代 `run.expand()`，而不物化中间数组。调用方负责调度，迁移链先结束上游 Stage，再结束下游 Stage。
 
-继承截点是逻辑事件数量，不是物理行数。只有在 EOF 前已知时才公开 `headerInheritedEventCount`；`finish` 返回精确的目标截点。前一条改变事件数量的迁移边可能使该数量在构造时不可知。必要时从已校验的种子标记推导它，并用有种子的 Session 测试拟议的 V0→V1→V2→V3→V4、V1→V2→V3→V4 和 V2→V3→V4 迁移链，而非仅测试直接 V3 输入。绝不以零替代未知截点。
+继承截点是逻辑事件数量，不是物理行数。只有在 EOF 前已知时才公开 `headerInheritedEventCount`；`finish` 返回精确的目标截点。前一条改变事件数量的迁移边可能使该数量在构造时不可知。必要时从已校验的种子标记推导它，并用有种子的 Session 测试示例中的 V0→V1→V2→V3→V4、V1→V2→V3→V4 和 V2→V3→V4 迁移链，而非仅测试直接 V3 输入。绝不以零替代未知截点。
 
-显式定义拟议迁移边的事件准入与变换规则。[V2 到 V3 源审计](../../packages/session/session-format-v2-to-v3/README.zh.md#source-audit)和 [Alpha V0→V1 规则](../../.agents/notes/implemented/architecture/2026-08-31-alpha-historical-unknown-event-refusal.zh.md)分别负责对应已发布迁移边的策略，而非 V3→V4 的策略。不要将任一策略推广到所有迁移边。结构或事件位置变化时，必须分类源事件、载荷成员与引用，并显式判断不透明数据能否保持有效。[同版本保留](../../.agents/notes/implemented/architecture/2026-08-30-retain-ignorable-external-session-events.zh.md)本身不能证明结构变换安全。校验目标语义，并为每个新增可接受案例提供一个被拒绝的反例；绝不放宽旧迁移边来掩盖不受支持的转换。
+显式定义新迁移边的事件准入与变换规则。[V2 到 V3 源审计](../../packages/session/session-format-v2-to-v3/README.zh.md#source-audit)和 [Alpha V0→V1 规则](../../.agents/notes/implemented/architecture/2026-08-31-alpha-historical-unknown-event-refusal.zh.md)分别负责对应已发布迁移边的策略，而非新迁移边的策略。不要将任一策略推广到所有迁移边。结构或事件位置变化时，必须分类源事件、载荷成员与引用，并显式判断不透明数据能否保持有效。[同版本保留](../../.agents/notes/implemented/architecture/2026-08-30-retain-ignorable-external-session-events.zh.md)本身不能证明结构变换安全。校验目标语义，并为每个新增可接受案例提供一个被拒绝的反例；绝不放宽旧迁移边来掩盖不受支持的转换。
 
 通过 `sessionFormatCatalog.createRestore(header, { recovery: 'strict', validation: 'current' })` 验证严格恢复，按顺序传入各行并调用 `finish()`。这会执行物理解码、完整迁移链与已安装当前 Session 校验。生产环境的 recoverable/transformed 策略不能替代 fixture（测试前置数据）和发布验证所需的严格校验。保留已记录的历史校验例外，不要宣称源校验比迁移边实际执行的更严格。
 
@@ -67,9 +67,9 @@ pnpm run gen-session-format-catalog
 <a id="snapshot-successors"></a>
 ## 5. 创建快照后继代际
 
-阅读[快照所有权](../../snapshots/AGENTS.md)和[快照库](../../packages/test-support/session-snapshot/README.zh.md)。选择拥有数据的场景，而非仅引用它的适配器。V4 实现后，保留每份历史文件，并生成 V4 后继文件：父角色使用 `session.v4.jsonl`，子角色依次使用 `session.1.v4.jsonl`、`session.2.v4.jsonl` 等。这些是拟议的输出名称，而非当前 fixture。绝不将 `session.v3.jsonl` 重命名为 V4，或仅修改其 header。
+阅读[快照所有权](../../snapshots/AGENTS.md)和[快照库](../../packages/test-support/session-snapshot/README.zh.md)。选择拥有数据的场景，而非仅引用它的适配器。实现 N+1 后，保留每份历史文件，并生成其后继文件。在 V3→V4 示例中，父角色使用 `session.v4.jsonl`，子角色依次使用 `session.1.v4.jsonl`、`session.2.v4.jsonl` 等。绝不将 `session.v3.jsonl` 重命名为 V4，或仅修改其 header。
 
-如果回放输入不变，在所有者上执行无密钥 refresh，再执行不写回的 replay。以下现有 SDK 命令使用 `text-turn` 和已实现的写入器版本（本工作区为 V3）；它们不会启用 V4。只有实现并接入 V4 后，才能用它们处理 V4；功能变更应选择实际受影响的所有者：
+如果回放输入不变，在所有者上执行无密钥 refresh，再执行不写回的 replay。以下 SDK 命令使用 `text-turn` 和工作区的写入器版本。先实现并接入 N+1，才能用它们生成该版本；功能变更应选择实际受影响的所有者：
 
 ```sh
 pnpm run test:snapshot:refresh snapshots/sdk/sdk.snapshot.ts -t text-turn
@@ -83,7 +83,7 @@ pnpm run test:snapshot snapshots/sdk/sdk.snapshot.ts -t text-turn
 <a id="validate"></a>
 ## 6. 验证集成结果
 
-从仓库根目录运行。以下现有命令检查 catalog 声明、Stage 组合、已发布的 V2→V3 迁移边与代际选择。它们是基线检查，不代表对拟议 V3→V4 迁移边的覆盖：
+从仓库根目录运行。以下命令检查 catalog 声明、Stage 组合、已发布的 V2→V3 迁移边与代际选择。它们是基线检查；需为新迁移边添加聚焦覆盖：
 
 ```sh
 pnpm run verify-session-format-catalog
@@ -91,7 +91,7 @@ pnpm exec vitest run scripts/gen-session-format-catalog.spec.ts packages/session
 pnpm run test:snapshot scripts/session-snapshot-corpus.corpus.ts
 ```
 
-实现拟议迁移边后，将其实际测试路径加入聚焦的 Vitest 命令。根据实际 diff 添加受影响的 JSONL、回放、投影与 SDK 测试；发布 Worker 路径变化时还需构建产物冒烟测试。要求严格迁移成功、骨架保持恒等、拒绝格式错误与未知必需事件、重复恢复确定、并发 Stage 状态独立、有种子的多跳截点正确、前代不变且无回退。报告确切命令与失败，不要推断整个测试套件的结果。
+实现新迁移边后，将其实际测试路径加入聚焦的 Vitest 命令。根据实际 diff 添加受影响的 JSONL、回放、投影与 SDK 测试；发布 Worker 路径变化时还需构建产物冒烟测试。要求严格迁移成功、骨架保持恒等、拒绝格式错误与未知必需事件、重复恢复确定、并发 Stage 状态独立、有种子的多跳截点正确、前代不变且无回退。报告确切命令与失败，不要推断整个测试套件的结果。
 
 更新[所属 Agent Note](../../.agents/notes/implemented/architecture/2026-08-31-released-session-format-migrations.zh.md)，而非添加重复决策记录。审计相关活跃记录的取代关系；保留独立理由，并保持归档记录冻结。一起更新双语正文，通过仓库工具重新记录每个变更的配对，然后运行文档检查：
 
