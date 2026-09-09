@@ -154,7 +154,7 @@ describe('headless command-line provider', () => {
   it('prints its own help and leaves the runner pending', async () => {
     const { task, observed } = await bootStartup(['--help'])
     expect(observed.out).toContain('dsh --profile headless')
-    expect(observed.out).toContain('stream reasoning to stderr')
+    expect(observed.out).toContain('the answer goes to stdout and diagnostics to stderr')
     expect(observed.out).toContain('--session-id')
     expect(task).toBeUndefined()
     expect(observed.runnerConfig).toBeUndefined()

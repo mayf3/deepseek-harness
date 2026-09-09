@@ -33,10 +33,10 @@ kind: "package-bundle"
 dsh --profile headless "run the tests"
 ```
 
-agent（智能体）会完成该任务，把提供方的每个非空推理增量流式写入 stderr 的 `dsh: reasoning:` 段，然后把最终答案写入 stdout 并退出。连续推理增量保持在同一段中；提供方未给尾换行时，runner 会在后续输出前结束该段。没有推理内容的成功运行保持 stderr 为空；失败时退出码为 1，并以 `dsh: <code>: <message>` 向 stderr 写入错误。任务来自位置参数，参数省略或为 `-` 时则来自 stdin；空白参数或空管道会在任何内容运行前被拒绝。
+agent（智能体）会完成该任务，把提供方的每个非空推理增量流式写入 stderr 的 `dsh: reasoning:` 段，然后把最终答案写入 stdout 并退出。连续推理增量保持在同一段中；提供方未给尾换行时，runner 会在后续输出前结束该段。没有推理内容的成功运行保持 stderr 为空；失败时退出码为 1，并以 `dsh: <code>: <message>` 向 stderr 写入错误。任务来自位置参数，参数省略或为单独的 `-` 时则来自 stdin；空白参数或空管道会在任何内容运行前被拒绝。位置参数会原样作为任务，stdin 不会被读取，因此想让管道内容进入提示词时，请把完整提示写进管道：
 
 ```sh
-git diff --stat | dsh --profile headless "summarize these changes"
+{ echo "Summarize these changes:"; git diff --stat; } | dsh --profile headless
 ```
 
 任务与运行选项通过三个设置提供：
@@ -55,7 +55,7 @@ git diff --stat | dsh --profile headless "summarize these changes"
 
 ### 机器可读输出
 
-`--json` 用按行 JSON 事件流取代 stdout 的最终文本行，stderr 仅保留 `dsh:` 诊断信息。事件流以 `session`（携带本次运行使用的标识）开头、以 `final` 结尾，其间为 `status`、`text`、`thinking`、`tool_call` 与 `tool_result` 事件。流式的 text 与 thinking 增量在写出前会被合并，每个字符串上限为 8 KiB，超出时标记 `truncated`。轮次之外的进程级失败除了 stderr 的 `dsh:` 行外，还会在 stdout 上以 `error` 事件报告。
+`--json` 用按行 JSON 事件流取代 stdout 的最终文本行，stderr 仅保留 `dsh:` 诊断信息。事件流以 `session`（携带本次运行使用的标识）开头、以 `final` 结尾，其间为 `status`、`text`、`thinking`、`tool_call` 与 `tool_result` 事件。`text` 与 `thinking` 只从已提交的 assistant 消息投影，因此被重试或丢弃的尝试不会进入事件流。终止 `final` 事件携带与默认模式相同的无损答案，不做限长；其他每个字符串上限为 8 KiB，超出时标记 `truncated`。轮次之外的进程级失败会写出 `error` 事件并在没有 `final` 的情况下结束事件流，同时向 stderr 写入 `dsh:` 行。
 
 ### 何时使用
 
@@ -93,11 +93,11 @@ patch 叠加在 `dsh-base` 之上：继承投影缓存，在基础 `system-promp
 |---|---|
 | [`src/index.ts`](src/index.ts) | `headless-runner` 插件：运行流程、Session 解析、输出约定、退出映射 |
 | [`src/startup.ts`](src/startup.ts) | `headless-startup` 提供方：任务位置参数、`--session-id`、`--json` 与 `--help` |
-| [`src/json-stream.ts`](src/json-stream.ts) | `--json` 投影：事件词汇、合并、字符串限长 |
+| [`src/json-stream.ts`](src/json-stream.ts) | `--json` 投影：事件词汇、提交点发射、字符串限长 |
 | [`cordis.patch.yml`](cordis.patch.yml) | 叠加在 `dsh-base` 之上的一次性 patch |
 | — | 不发布运行时不变式伴生入口；可观察的行为属于进程级组合，本包只持有静态 patch 列表。 |
 | [`tests/headless.spec.ts`](tests/headless.spec.ts) | 运行流程、汇总、flush、Session 沿用与退出映射 |
-| [`tests/json-stream.spec.ts`](tests/json-stream.spec.ts) | 投影顺序、合并、限长与释放 |
+| [`tests/json-stream.spec.ts`](tests/json-stream.spec.ts) | 投影顺序、提交点发射、限长与释放 |
 | [`tests/startup.spec.ts`](tests/startup.spec.ts) | 在真实 Loader 树上的命令行解析 |
 
 ### 不变式归属
@@ -143,7 +143,7 @@ runner 不向请求前缀添加任何内容；它只是把一条用户消息驱�
 - **推理进入 stderr 日志**——默认模式下，重定向与监督进程可能保留更多且可能敏感的模型输出；需要时应把 stderr 路由到受控位置。
 - **默认 stdout 只承载最终答案**——没有 assistant 消息的运行向 stdout 打印空行并以 1 退出；中间工具输出不会打印，除非显式启用 `--json`。
 - **沿用受 cwd 与归属限制**——`--session-id` 会拒绝记录在其他工作目录或由 subagent 拥有的 Session，并要求已组合的 Session 查询服务。
-- **事件流是投影而非日志**——`--json` 会合并增量并把字符串限制在 8 KiB，因此它不是 Session 日志的无损副本。
+- **事件流是投影而非日志**——`--json` 除终止 `final` 外把每个字符串限制在 8 KiB，并省略投影未建模的事件，因此它不是 Session 日志的无损副本。
 
 <a id="dev-note"></a>
 ### 开发备注

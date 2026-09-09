@@ -42,18 +42,19 @@ dsh --profile headless [--json] [--session-id <id>] [<task>... | -]
 |---|---|---|
 | `session` | `sessionId`、`cwd` | 第一行，先于任何模型输出 |
 | `status` | `phase`（`turn_start`、`step_start`、`step_end`、`turn_end`）、`turn`、`step`、`usage`、`reason` | 每个边界一条 |
-| `text` | `text` | 助手文本增量 |
-| `thinking` | `text` | 推理增量 |
+| `text` | `text` | 一个已提交的助手文本块 |
+| `thinking` | `text` | 一个已提交的推理块 |
 | `tool_call` | `callId`、`tool`、`input` | 每次调用一条 |
-| `tool_result` | `callId`、`status`、`result` | 每次调用一条 |
+| `tool_result` | `callId`、`status`、`result` | 每次追加的结果一条 |
 | `error` | `message` | 轮次之外的进程级失败 |
 | `final` | `text` | 最后一行 |
 
 投影规则：
 
-- 助手文本与推理增量按 100 ms 或 512 字节合并，因此流式回复保持实时，又不会每个 token 一行。
-- 增量发完之后不再重复整条助手消息。`user/message` 回显和内部会话事件（标题、模型选择、投影、检查点、目标、子 agent）都不投影。
-- 每个被投影的字符串都限制在 8 KiB；被截断的事件带 `truncated: true`。`tool_result` 不带 spill 路径，因为工具已经把自己的截断提示追加到结果文本里。
+- 文本与推理只从已提交的 `assistant/message` 投影，绝不来自实时的 attempt 增量。被重试或丢弃的 attempt 会追加 `assistant/attempt`，投影直接忽略，因此事件流永远不会承载持久化日志中不存在的内容（[只在提交点发布状态](../../../../packages/AGENTS.md)）。
+- 每个已提交的内容块按内容顺序变成恰好一条 `text` 或 `thinking` 事件；`tool-call` 块不投影，因为 `tool/call` 事件已经拥有它。`user/message` 回显和内部会话事件（标题、模型选择、投影、检查点、目标、子 agent）都不投影。
+- `tool/result` 仅在其 `surfaceOp` 为 `append` 时投影。压缩对旧结果的替换属于历史，投影它会产生没有对应 `tool_call` 的 call id。
+- 每个被投影的字符串都限制在 8 KiB；被截断的事件带 `truncated: true`，进程级 `error` 事件同样如此。终止 `final` 事件刻意不做限长：它承载与默认模式相同的无损答案。
 - `usage` 出现在 `step_end` 上，对应 provider 每步上报的 token 计量。
 - 原始会话事件不在范围内。调试用的逃生口可以以后再加，不必改动这套词汇表。
 
@@ -63,7 +64,7 @@ dsh --profile headless [--json] [--session-id <id>] [<task>... | -]
 
 `--session-id <id>` 是采用或创建：先观察持久化会话，存在就 resume，不存在就 create。只创建会让第二次运行失败，因为 JSONL 存储拒绝已存在的日志 id（见 [session persistence](../../implemented/architecture/2026-06-14-session-persistence.zh.md)）。
 
-采用时会比较持久化会话记录的 cwd 与进程 cwd，因为会话按项目目录组织（见 [project session directories](../../implemented/architecture/2026-07-24-project-session-directories.zh.md)）。不一致时以 `dsh:` 诊断退出 1，而不是静默续接一个根目录在别处的会话。带父会话或子 agent 关联的会话被拒绝。两个存活进程不能写同一个 id；存储的写租约已经会拒绝第二个写入者。runner 通过已组合的 `sessionQuery` 服务读取观察结果，并在请求 `--session-id` 却没有该服务时显式失败。
+采用时会比较持久化会话记录的 cwd 与进程 cwd，因为会话按项目目录组织（见 [project session directories](../../implemented/architecture/2026-07-24-project-session-directories.zh.md)）。不一致时以 `dsh:` 诊断退出 1，而不是静默续接一个根目录在别处的会话。带父会话或子 agent 关联的会话被拒绝。当某个存活 Agent 已经持有请求的 id 时，同样执行这两项检查，因此存活身份无法绕过它们。两个存活进程不能写同一个 id；存储的写租约已经会拒绝第二个写入者。runner 通过已组合的 `sessionQuery` 服务读取观察结果，并在请求 `--session-id` 却没有该服务时显式失败。
 
 ## 后果
 
@@ -71,7 +72,8 @@ dsh --profile headless [--json] [--session-id <id>] [<task>... | -]
 
 - 默认模式不变：纯文本运行向 stdout 写一行最终助手消息、stderr 无输出，退出码仍跟随终端原因。
 - `--json` 的 stdout 逐行可解析为 JSON，以 `session` 开头、以 `final` 结尾，不含纯文本。该模式下 stderr 不承载推理。
-- 两次连续的相同 `--session-id` 运行共享历史。cwd 与持久化会话不一致的运行以诊断退出 1。
+- 发生重试的步骤只为最终提交的 attempt 发布 `text` 与 `thinking`，因此被丢弃的 attempt 不会在事件流中留下任何痕迹。
+- 两次连续的相同 `--session-id` 运行共享历史。cwd 与持久化会话不一致的运行以诊断退出 1，无论身份是存活还是持久化的。
 - 无位置参数但 stdin 有管道输入时任务被采纳，而交互式无任务调用仍以用法错误失败。
 - 单元覆盖落在 `packages/bundle/headless/tests/startup.spec.ts`、`tests/headless.spec.ts` 与 `tests/json-stream.spec.ts`。`apps/cli/tests/profiles/headless/tests/headless.expected.e2e.ts` 的产品 headless profile 期望测试端到端覆盖两种输出模式。
 
@@ -80,7 +82,7 @@ dsh --profile headless [--json] [--session-id <id>] [<task>... | -]
 - 每次运行的 `--model` 覆盖尚未实现。后续改动必须尊重 Session Controller 拥有的会话局部选择优先级，而不是覆盖已保存的选择。
 - 冷启动加上日志重放会随会话变长而增长，因此长会话每次唤醒的代价高于新会话。
 - `--json` 把推理从 stderr 移到 stdout，因此只监听 stderr 的日志收集器在该模式的有推理运行上什么都看不到。
-- 有界的 `tool_result` 负载会让监督进程看不到完整输出；8 KiB 上限由 `src/json-stream.ts` 拥有，应保持单一常量。
+- 有界的 `tool_result` 负载会让监督进程看不到完整输出；8 KiB 上限由 `src/json-stream.ts` 拥有，应保持单一常量，终止 `final` 事件是唯一的例外。
 
 ## 备选方案
 

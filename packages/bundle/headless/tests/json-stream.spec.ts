@@ -1,13 +1,10 @@
-/** The `--json` run projection: ordering, coalescing, bounding, and disposal. */
+/** The `--json` run projection: commit-point emission, ordering, bounding, and disposal. */
 
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { describe, expect, it } from 'vitest'
 import type { Context } from '@deepseek-ai/cordis'
-import type { Agent, AssistantStreamFrame } from '@deepseek-ai/dsh-agent'
-import { LlmAttemptId, ToolCallId, type StreamChunk } from '@deepseek-ai/dsh-llm'
+import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
-import { projectJsonRun, type JsonProjectionOptions } from '../src/json-stream.ts'
-
-afterEach(() => { vi.useRealTimers() })
+import { boundJsonEvent, projectJsonRun, type JsonProjectionOptions } from '../src/json-stream.ts'
 
 interface ProjectionHarness {
   readonly lines: string[]
@@ -16,30 +13,63 @@ interface ProjectionHarness {
   readonly session: Session
   readonly parsed: () => Record<string, unknown>[]
   emitSession(event: SessionEvent): void
-  emitFrame(chunk: StreamChunk): void
   emitRawSession(session: unknown, event: SessionEvent): void
-  emitRawFrame(payload: { agent: Agent; frame: AssistantStreamFrame }): void
+}
+
+/** One committed assistant message carrying the given content blocks. */
+function assistantMessage(content: unknown[], usage?: unknown): SessionEvent {
+  return {
+    type: 'assistant/message',
+    data: {
+      stream: [],
+      turn: 1,
+      step: 1,
+      ...usage === undefined ? {} : { usage },
+      message: {
+        role: 'assistant',
+        content,
+        source: { kind: 'model', provider: 'p', model: 'm' },
+      },
+    },
+  } as unknown as SessionEvent
+}
+
+/** One tool result event with the given surface placement. */
+function toolResult(
+  callId: string,
+  content: unknown[],
+  surfaceOp: 'append' | { op: 'replace'; startSeq: number; endSeq: number } = 'append',
+): SessionEvent {
+  return {
+    type: 'tool/result',
+    surfaceOp,
+    data: {
+      turn: 1,
+      step: 1,
+      message: { content: [{ type: 'tool-result', toolCallId: callId, content, isError: false }] },
+    },
+  } as unknown as SessionEvent
 }
 
 /** Drive the projector through a minimal Context and Agent double. */
-function harness(options: JsonProjectionOptions = {}, agentId = 'session-1'): ProjectionHarness {
+function harness(
+  options: JsonProjectionOptions = {},
+  agentId = 'session-1',
+  cwd: string | null = '/',
+): ProjectionHarness {
   const lines: string[] = []
   const sessionListeners = new Set<(session: unknown, event: SessionEvent) => void>()
-  const frameListeners = new Set<(payload: { agent: Agent; frame: AssistantStreamFrame }) => void>()
   const ctx = {
     on(name: string, handler: unknown) {
-      const set = name === 'session/event' ? sessionListeners : frameListeners
-      set.add(handler as never)
-      return () => { set.delete(handler as never) }
+      if (name === 'session/event') sessionListeners.add(handler as never)
+      return () => { sessionListeners.delete(handler as never) }
     },
   } as unknown as Context
   const session = {} as Session
   const agent = { id: agentId, session } as unknown as Agent
   const projection = projectJsonRun(ctx, agent, {
     write: (chunk: string) => { lines.push(chunk); return true },
-  }, { cwd: '/', ...options })
-  const attemptId = LlmAttemptId('attempt')
-  let revision = 0
+  }, { ...options, ...cwd === null ? {} : { cwd } })
   return {
     lines,
     projection,
@@ -47,15 +77,7 @@ function harness(options: JsonProjectionOptions = {}, agentId = 'session-1'): Pr
     session,
     parsed: () => lines.map(line => JSON.parse(line) as Record<string, unknown>),
     emitSession: (event) => { for (const listener of sessionListeners) listener(session, event) },
-    emitFrame: (chunk) => {
-      revision += 1
-      const frame: AssistantStreamFrame = {
-        type: 'chunk', attemptId, revision, index: 0, time: 0, chunk,
-      }
-      for (const listener of frameListeners) listener({ agent, frame })
-    },
     emitRawSession: (rawSession, event) => { for (const listener of sessionListeners) listener(rawSession, event) },
-    emitRawFrame: (payload) => { for (const listener of frameListeners) listener(payload) },
   }
 }
 
@@ -65,80 +87,81 @@ describe('--json projection', () => {
     expect(test.parsed()).toEqual([{ type: 'session', sessionId: 'session-1', cwd: '/' }])
   })
 
-  it('coalesces consecutive same-kind deltas and flushes them before a later event', () => {
-    const test = harness({ coalesceMs: 10_000 })
-    test.emitFrame({ type: 'text-delta', index: 0, text: 'an' })
-    test.emitFrame({ type: 'text-delta', index: 0, text: 'swer' })
-    test.emitFrame({ type: 'reasoning-delta', index: 0, text: 'think' })
-    test.emitFrame({ type: 'text-delta', index: 0, text: '!' })
-    test.emitSession({ type: 'tool/call', data: { turn: 1, step: 1, callId: 'c1', name: 'bash', arguments: '{"a":1}' } } as unknown as SessionEvent)
-    expect(test.parsed().map(event => event.type)).toEqual(['session', 'text', 'thinking', 'text', 'tool_call'])
-    expect(test.parsed()[1]).toEqual({ type: 'text', text: 'answer' })
-    expect(test.parsed()[3]).toEqual({ type: 'text', text: '!' })
-    expect(test.parsed()[4]).toMatchObject({ type: 'tool_call', callId: 'c1', tool: 'bash', input: { a: 1 } })
+  it('defaults the reported cwd and the per-string cap', () => {
+    const test = harness({}, 'session-1', null)
+    expect(test.parsed()[0]).toEqual({ type: 'session', sessionId: 'session-1', cwd: process.cwd() })
+    test.emitSession(assistantMessage([{ type: 'text', text: 'x'.repeat(9000) }]))
+    expect(test.parsed()[1]?.truncated).toBe(true)
+    expect((test.parsed()[1]?.text as string).length).toBe(8 * 1024)
   })
 
-  it('flushes a buffered delta when the byte cap is reached', () => {
-    const test = harness({ coalesceMs: 10_000, coalesceBytes: 4 })
-    test.emitFrame({ type: 'text-delta', index: 0, text: 'abc' })
-    expect(test.lines).toHaveLength(1)
-    test.emitFrame({ type: 'text-delta', index: 0, text: 'd' })
-    expect(test.parsed().map(event => event.type)).toEqual(['session', 'text'])
-    expect(test.parsed()[1]).toEqual({ type: 'text', text: 'abcd' })
-  })
-
-  it('flushes a buffered delta on the coalescing timer', () => {
-    vi.useFakeTimers()
-    const test = harness({ coalesceMs: 100 })
-    test.emitFrame({ type: 'text-delta', index: 0, text: 'later' })
-    expect(test.lines).toHaveLength(1)
-    vi.advanceTimersByTime(100)
-    expect(test.parsed().map(event => event.type)).toEqual(['session', 'text'])
-  })
-
-  it('bounds every long string and flags the event once', () => {
-    const test = harness({ coalesceMs: 10_000, maxStringBytes: 16 })
-    test.emitFrame({ type: 'text-delta', index: 0, text: 'abcdefghijklmnopqrst' })
+  it('reports turn and step boundaries with the turn-end reason', () => {
+    const test = harness()
+    test.emitSession({ type: 'turn/start', data: { turn: 1 } } as unknown as SessionEvent)
+    test.emitSession({ type: 'step/start', data: { turn: 1, step: 1 } } as unknown as SessionEvent)
     test.emitSession({
-      type: 'tool/call',
-      data: { turn: 1, step: 1, callId: 'c1', name: 'bash', arguments: JSON.stringify({ command: 'x'.repeat(40) }) },
+      type: 'turn/end',
+      data: { turn: 1, reason: { kind: 'completed' } },
     } as unknown as SessionEvent)
-    const events = test.parsed()
-    expect(events[1]).toEqual({ type: 'text', text: 'abcdefghijklmnop', truncated: true })
-    expect(events[2]).toMatchObject({ type: 'tool_call', truncated: true })
-    expect(events[2]?.input).toEqual({ command: 'x'.repeat(16) })
+    expect(test.parsed().slice(1)).toEqual([
+      { type: 'status', phase: 'turn_start', turn: 1 },
+      { type: 'status', phase: 'step_start', turn: 1, step: 1 },
+      { type: 'status', phase: 'turn_end', turn: 1, reason: { kind: 'completed' } },
+    ])
   })
 
-  it('ignores events from other Sessions and Agents', () => {
-    const test = harness({ coalesceMs: 10_000 })
-    test.emitRawSession({}, { type: 'turn/start', data: { turn: 1 } } as unknown as SessionEvent)
-    test.emitRawFrame({
-      agent: { id: 'other', session: {} } as unknown as Agent,
-      frame: { type: 'chunk', attemptId: LlmAttemptId('other'), revision: 1, index: 0, time: 0, chunk: { type: 'text-delta', index: 0, text: 'foreign' } },
+  it('projects committed reasoning and text in content order', () => {
+    const test = harness()
+    test.emitSession(assistantMessage([
+      { type: 'reasoning', text: 'think' },
+      { type: 'tool-call', id: 'c1', name: 'bash', arguments: '{}' },
+      { type: 'text', text: 'answer' },
+    ]))
+    expect(test.parsed().slice(1)).toEqual([
+      { type: 'thinking', text: 'think' },
+      { type: 'text', text: 'answer' },
+    ])
+  })
+
+  it('ignores a discarded attempt so retried content never reaches the stream', () => {
+    const test = harness()
+    test.emitSession({
+      type: 'assistant/attempt',
+      data: { turn: 1, step: 1, stream: [] },
+    } as unknown as SessionEvent)
+    test.emitSession({ type: 'session/title', data: { title: 'ignored' } } as unknown as SessionEvent)
+    expect(test.parsed().map(event => event.type)).toEqual(['session'])
+  })
+
+  it('attaches step usage to step_end and omits it when absent', () => {
+    const test = harness()
+    test.emitSession({ type: 'step/end', data: { turn: 1, step: 1 } } as unknown as SessionEvent)
+    test.emitSession(assistantMessage([{ type: 'text', text: 'x' }], { inputTokens: 3, outputTokens: 4 }))
+    test.emitSession({ type: 'step/end', data: { turn: 1, step: 2 } } as unknown as SessionEvent)
+    const events = test.parsed()
+    expect(events[1]).toEqual({ type: 'status', phase: 'step_end', turn: 1, step: 1 })
+    expect(events[3]).toEqual({
+      type: 'status', phase: 'step_end', turn: 1, step: 2,
+      usage: { inputTokens: 3, outputTokens: 4 },
     })
-    test.projection.finish('mine')
-    expect(test.parsed().map(event => event.type)).toEqual(['session', 'final'])
   })
 
   it('reports tool results as completed or errored and keeps the final event last', () => {
-    const test = harness({ coalesceMs: 10_000 })
+    const test = harness()
+    test.emitSession(toolResult('c1', [{ type: 'text', text: 'a.txt' }]))
     test.emitSession({
       type: 'tool/result',
+      surfaceOp: 'append',
       data: {
         turn: 1,
         step: 1,
         message: {
-          content: [{ type: 'tool-result', toolCallId: 'c1', content: [{ type: 'text', text: 'a.txt' }], isError: false }],
-        },
-      },
-    } as unknown as SessionEvent)
-    test.emitSession({
-      type: 'tool/result',
-      data: {
-        turn: 1,
-        step: 1,
-        message: {
-          content: [{ type: 'tool-result', toolCallId: 'c2', content: [{ type: 'text', text: 'boom' }], isError: true }],
+          content: [{
+            type: 'tool-result',
+            toolCallId: 'c2',
+            content: [{ type: 'image' }, { type: 'text' }, { type: 'text', text: 'boom' }],
+            isError: true,
+          }],
         },
       },
     } as unknown as SessionEvent)
@@ -149,34 +172,14 @@ describe('--json projection', () => {
     expect(events.at(-1)).toEqual({ type: 'final', text: 'done' })
   })
 
-  it('attaches step usage to the step_end status and drops buffered deltas on dispose', () => {
-    const test = harness({ coalesceMs: 10_000 })
-    test.emitSession({
-      type: 'assistant/message',
-      data: {
-        stream: [],
-        turn: 1,
-        step: 1,
-        usage: { inputTokens: 3, outputTokens: 4 },
-        message: { role: 'assistant', content: [], source: { kind: 'model', provider: 'p', model: 'm' } },
-      },
-    } as unknown as SessionEvent)
-    test.emitSession({ type: 'step/end', data: { turn: 1, step: 1 } } as unknown as SessionEvent)
-    expect(test.parsed()[1]).toEqual({ type: 'status', phase: 'step_end', turn: 1, step: 1, usage: { inputTokens: 3, outputTokens: 4 } })
-
-    test.emitFrame({ type: 'text-delta', index: 0, text: 'dropped' })
-    test.projection.dispose()
-    test.projection.finish('ignored')
-    expect(test.parsed().map(event => event.type)).toEqual(['session', 'status'])
+  it('skips a compaction replacement of an older tool result', () => {
+    const test = harness()
+    test.emitSession(toolResult('old', [{ type: 'text', text: 'history' }], { op: 'replace', startSeq: 1, endSeq: 2 }))
+    expect(test.parsed().map(event => event.type)).toEqual(['session'])
   })
 
-  it('covers the remaining projection branches', () => {
-    const test = harness({ coalesceMs: 10_000, maxStringBytes: 11 }, 's1')
-    // An unprojected session event is ignored.
-    test.emitSession({ type: 'session/title', data: { title: 'ignored' } } as unknown as SessionEvent)
-    // A step end without a preceding assistant message carries no usage.
-    test.emitSession({ type: 'step/end', data: { turn: 1, step: 1 } } as unknown as SessionEvent)
-    // Non-JSON arguments survive as the raw string; arrays and scalars bound recursively.
+  it('keeps non-JSON tool arguments raw and bounds nested values', () => {
+    const test = harness({ maxStringBytes: 11 }, 's1')
     test.emitSession({
       type: 'tool/call',
       data: { turn: 1, step: 1, callId: 'raw', name: 'bash', arguments: 'not json' },
@@ -191,53 +194,41 @@ describe('--json projection', () => {
         arguments: JSON.stringify({ items: ['éééééé', null, true], n: 1 }),
       },
     } as unknown as SessionEvent)
-    // A tool result mixes a non-text block with a text block.
-    test.emitSession({
-      type: 'tool/result',
-      data: {
-        turn: 1,
-        step: 1,
-        message: {
-          content: [{
-            type: 'tool-result',
-            toolCallId: 'nested',
-            content: [{ type: 'image' }, { type: 'text' }, { type: 'text', text: 'kept' }],
-            isError: false,
-          }],
-        },
-      },
-    } as unknown as SessionEvent)
-    // Empty deltas are dropped; every non-delta chunk flushes the buffer.
-    test.emitFrame({ type: 'text-delta', index: 0, text: '' })
-    test.emitFrame({ type: 'reasoning-delta', index: 0, text: '' })
-    test.emitFrame({ type: 'block-start', index: 0, blockType: 'text' })
-    test.emitFrame({ type: 'block-end', index: 0, block: { type: 'text', text: '' } })
-    test.emitFrame({ type: 'tool-call-delta', index: 1, id: ToolCallId('t1'), name: 'bash', argumentsDelta: '{}' })
-    test.emitFrame({ type: 'usage', usage: { inputTokens: 1, outputTokens: 1 } })
-    test.emitFrame({ type: 'finish', reason: { kind: 'stop' } })
-    // A non-chunk frame flushes and writes nothing.
-    test.emitRawFrame({
-      agent: test.agent,
-      frame: { type: 'start', attemptId: LlmAttemptId('a'), revision: 1, turn: 1, step: 1 },
+    const events = test.parsed()
+    expect(events[1]).toEqual({ type: 'tool_call', callId: 'raw', tool: 'bash', input: 'not json' })
+    expect(events[2]).toEqual({
+      type: 'tool_call',
+      callId: 'nested',
+      tool: 'bash',
+      input: { items: ['ééééé', null, true], n: 1 },
+      truncated: true,
     })
-    // Truncation drops a split trailing multibyte character.
-    test.emitFrame({ type: 'text-delta', index: 0, text: 'éééééé' })
-    test.projection.finish('done')
+  })
 
-    expect(test.parsed()).toEqual([
-      { type: 'session', sessionId: 's1', cwd: '/' },
-      { type: 'status', phase: 'step_end', turn: 1, step: 1 },
-      { type: 'tool_call', callId: 'raw', tool: 'bash', input: 'not json' },
-      {
-        type: 'tool_call',
-        callId: 'nested',
-        tool: 'bash',
-        input: { items: ['ééééé', null, true], n: 1 },
-        truncated: true,
-      },
-      { type: 'tool_result', callId: 'nested', status: 'completed', result: 'kept' },
-      { type: 'text', text: 'ééééé', truncated: true },
-      { type: 'final', text: 'done' },
-    ])
+  it('drops a split trailing multibyte character when truncating', () => {
+    const test = harness({ maxStringBytes: 5 }, 's1')
+    test.emitSession(assistantMessage([{ type: 'text', text: 'ééé' }]))
+    expect(test.parsed()[1]).toEqual({ type: 'text', text: 'éé', truncated: true })
+  })
+
+  it('writes the terminal final event without bounding its answer', () => {
+    const test = harness({ maxStringBytes: 4 })
+    test.projection.finish('abcdefgh')
+    expect(test.parsed().at(-1)).toEqual({ type: 'final', text: 'abcdefgh' })
+  })
+
+  it('ignores events from another Session and stops writing after dispose', () => {
+    const test = harness()
+    test.emitRawSession({}, assistantMessage([{ type: 'text', text: 'foreign' }]))
+    test.projection.dispose()
+    test.emitSession(assistantMessage([{ type: 'text', text: 'late' }]))
+    test.projection.finish('ignored')
+    expect(test.parsed().map(event => event.type)).toEqual(['session'])
+  })
+
+  it('bounds one standalone payload for the runner error event', () => {
+    expect(boundJsonEvent({ type: 'error', message: 'x'.repeat(20) }, 8))
+      .toEqual({ type: 'error', message: 'xxxxxxxx', truncated: true })
+    expect(boundJsonEvent({ type: 'error', message: 'ok' })).toEqual({ type: 'error', message: 'ok' })
   })
 })

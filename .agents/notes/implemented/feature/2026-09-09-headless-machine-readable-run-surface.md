@@ -42,18 +42,19 @@ Task resolution order: joined positionals, then `-`, then piped stdin. A termina
 |---|---|---|
 | `session` | `sessionId`, `cwd` | first line, before any model output |
 | `status` | `phase` (`turn_start`, `step_start`, `step_end`, `turn_end`), `turn`, `step`, `usage`, `reason` | one per boundary |
-| `text` | `text` | assistant text delta |
-| `thinking` | `text` | reasoning delta |
+| `text` | `text` | one committed assistant text block |
+| `thinking` | `text` | one committed reasoning block |
 | `tool_call` | `callId`, `tool`, `input` | once per call |
-| `tool_result` | `callId`, `status`, `result` | once per call |
+| `tool_result` | `callId`, `status`, `result` | once per appended result |
 | `error` | `message` | process-level failure outside a turn |
 | `final` | `text` | last line |
 
 Projection rules:
 
-- Assistant text and reasoning deltas coalesce until 100 ms or 512 bytes accumulate, so a streaming reply stays live without one line per token.
-- The assembled assistant message is not repeated after its deltas. `user/message` echoes and internal session events (title, model selection, projection, checkpoint, goal, subagent) are not projected.
-- Every projected string is bounded at 8 KiB; an event with a cut string carries `truncated: true`. `tool_result` carries no spill path, because the tool already appends its own truncation notice to the result text.
+- Text and reasoning are projected only from a committed `assistant/message`, never from live attempt deltas. A retried or discarded attempt appends `assistant/attempt`, which the projection ignores, so the stream never carries content the durable log does not contain ([publish state only at its commit point](../../../../packages/AGENTS.md)).
+- Each committed content block becomes exactly one `text` or `thinking` event in content order; `tool-call` blocks are not projected because the `tool/call` event owns them. `user/message` echoes and internal session events (title, model selection, projection, checkpoint, goal, subagent) are not projected.
+- A `tool/result` is projected only when its `surfaceOp` is `append`. A compaction replacement of an older result is history, and projecting it would emit a call id with no matching `tool_call`.
+- Every projected string is bounded at 8 KiB, and an event with a cut string carries `truncated: true`, including the process-level `error` event. The terminal `final` event is deliberately unbounded: it carries the same lossless answer the default mode prints.
 - `usage` appears on `step_end`, matching the token accounting a provider reports per step.
 - Raw session events stay out of scope. A debug escape hatch can be added later without changing this vocabulary.
 
@@ -63,7 +64,7 @@ The runtime owns identity. A run without `--session-id` mints `session-<uuid>` a
 
 `--session-id <id>` is adopt-or-create: observe the persisted session, resume it when it exists, create it otherwise. Create-only would fail the second run, because the JSONL store rejects an existing log id ([session persistence](../../implemented/architecture/2026-06-14-session-persistence.md)).
 
-Adoption compares the persisted session's recorded cwd with the process cwd, since sessions are organized per project directory ([project session directories](../../implemented/architecture/2026-07-24-project-session-directories.md)). A mismatch exits 1 with a `dsh:` diagnostic instead of silently continuing a conversation rooted elsewhere. A session linked to a parent or subagent is rejected. Two live processes cannot write one id; the store's write lease already rejects the second writer. The runner reads the observation through the composed `sessionQuery` service and fails loudly when `--session-id` is requested without it.
+Adoption compares the persisted session's recorded cwd with the process cwd, since sessions are organized per project directory ([project session directories](../../implemented/architecture/2026-07-24-project-session-directories.md)). A mismatch exits 1 with a `dsh:` diagnostic instead of silently continuing a conversation rooted elsewhere. A session linked to a parent or subagent is rejected. The same two checks run when a live Agent already holds the requested id, so a live identity cannot bypass them. Two live processes cannot write one id; the store's write lease already rejects the second writer. The runner reads the observation through the composed `sessionQuery` service and fails loudly when `--session-id` is requested without it.
 
 ## Consequences
 
@@ -71,7 +72,8 @@ What landed: `src/startup.ts` parses `--json` and `--session-id <id>`, treats an
 
 - Default mode is unchanged: a text-only run writes one final assistant line to stdout and nothing to stderr, and exit status still follows the terminal reason.
 - `--json` stdout parses line by line as JSON, starts with `session`, ends with `final`, and contains no plain text. Stderr carries no reasoning in this mode.
-- Two consecutive runs with the same `--session-id` share history. A run whose cwd differs from the persisted session exits 1 with a diagnostic.
+- A step that retries publishes `text` and `thinking` only for the attempt that commits, so a discarded attempt leaves no trace in the stream.
+- Two consecutive runs with the same `--session-id` share history. A run whose cwd differs from the persisted session exits 1 with a diagnostic, whether the identity is live or persisted.
 - A piped task with no positional task is honored, and an interactive invocation without a task still fails with the usage error.
 - Unit coverage lands in `packages/bundle/headless/tests/startup.spec.ts`, `tests/headless.spec.ts`, and `tests/json-stream.spec.ts`. The product headless profile expectation test in `apps/cli/tests/profiles/headless/tests/headless.expected.e2e.ts` covers both output modes end to end.
 
@@ -80,7 +82,7 @@ Deferred and open:
 - The per-run `--model` override is unimplemented. A later change must respect the session-local selection precedence owned by the Session Controller rather than overriding a stored selection.
 - Cold start plus log replay grows with session length, so a long-lived conversation pays more per wake than a fresh one.
 - `--json` moves reasoning from stderr to stdout, so a log collector that watches stderr sees nothing on a reasoned run in that mode.
-- Bounded `tool_result` payloads hide full output from the supervisor; the 8 KiB cap is owned by `src/json-stream.ts` and should stay a single constant.
+- Bounded `tool_result` payloads hide full output from the supervisor; the 8 KiB cap is owned by `src/json-stream.ts` and should stay a single constant, with the terminal `final` event the only exemption.
 
 ## Alternatives considered
 

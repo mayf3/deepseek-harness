@@ -1,23 +1,17 @@
 /**
  * `--json` run projection: a bounded, ordered event stream derived from one
- * Agent's durable Session events plus its live Assistant frames. The stream is
- * a small vocabulary rather than a dump of the Session log, so a supervising
- * process can consume it without filtering internal events or de-duplicating
- * an assembled message against its own deltas.
+ * Agent's durable Session events. Every projected event is a commit point:
+ * text and reasoning come from committed `assistant/message` content, never
+ * from a live attempt that may still be retried or discarded, so the stream
+ * never carries content the durable log does not contain.
  * @module @deepseek-ai/dsh-headless/json-stream
  */
 
 import type { Context } from '@deepseek-ai/cordis'
-import type { Agent, AssistantStreamFrame } from '@deepseek-ai/dsh-agent'
+import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 
-/** Default delay before a buffered streaming delta is flushed. */
-export const COALESCE_MS = 100
-
-/** Default buffered byte count that flushes streaming deltas immediately. */
-export const COALESCE_BYTES = 512
-
-/** Default per-string cap applied to every projected payload. */
+/** Default per-string cap applied to every bounded projected payload. */
 export const MAX_STRING_BYTES = 8 * 1024
 
 /** The stdout sink a projection writes newline-delimited events to. */
@@ -30,19 +24,15 @@ export interface JsonSink {
 export interface JsonProjectionOptions {
   /** Working directory reported by the opening `session` event. */
   cwd?: string
-  /** Coalescing delay for streaming deltas in milliseconds. */
-  coalesceMs?: number
-  /** Buffered delta bytes that flush immediately instead of waiting. */
-  coalesceBytes?: number
   /** Per-string byte cap; longer strings are truncated and flagged. */
   maxStringBytes?: number
 }
 
 /** The live handle of one `--json` projection. */
 export interface JsonProjection {
-  /** Flush buffered deltas and write the terminal `final` event. */
+  /** Write the terminal `final` event carrying the run's answer text. */
   finish(text: string): void
-  /** Stop observing; buffered deltas that were never flushed are discarded. */
+  /** Stop observing the Session. */
   dispose(): void
 }
 
@@ -74,10 +64,20 @@ function boundValue(value: unknown, maxBytes: number, state: BoundState): unknow
   return value
 }
 
-/** Bound one event payload and flag the event when any string was cut. */
-function boundEvent(event: Record<string, unknown>, maxBytes: number): Record<string, unknown> {
+/**
+ * Bound every string in one projected payload, adding `truncated: true` when
+ * any string was cut. Exported so the runner applies the same limit to its
+ * process-level `error` event.
+ * @param event - the event payload to bound.
+ * @param maxStringBytes - per-string byte cap.
+ * @returns a copy with every over-long string truncated.
+ */
+export function boundJsonEvent(
+  event: Record<string, unknown>,
+  maxStringBytes: number = MAX_STRING_BYTES,
+): Record<string, unknown> {
   const state: BoundState = { truncated: false }
-  const bounded = boundValue(event, maxBytes, state) as Record<string, unknown>
+  const bounded = boundValue(event, maxStringBytes, state) as Record<string, unknown>
   if (state.truncated) bounded.truncated = true
   return bounded
 }
@@ -104,9 +104,11 @@ function resultText(blocks: readonly { type: string; text?: string }[]): string 
  * Project one Agent's run as newline-delimited JSON on `sink`.
  *
  * The opening `session` event is written before the subscription starts, so a
- * caller must invoke this before submitting the task. Deltas are coalesced but
- * always flushed before any later event, which preserves stream order.
- * @param ctx - plugin context carrying the live Session and Assistant feeds.
+ * caller must invoke this before submitting the task. Text and reasoning are
+ * emitted only when the step's `assistant/message` commits them, and the
+ * terminal `final` event carries the same lossless answer the default mode
+ * prints (it is deliberately not bounded).
+ * @param ctx - plugin context carrying the live Session feed.
  * @param agent - the exact Agent whose events belong to this invocation.
  * @param sink - stdout sink receiving one JSON object per line.
  * @param options - projection tunables.
@@ -118,72 +120,44 @@ export function projectJsonRun(
   sink: JsonSink,
   options: JsonProjectionOptions = {},
 ): JsonProjection {
-  const coalesceMs = options.coalesceMs ?? COALESCE_MS
-  const coalesceBytes = options.coalesceBytes ?? COALESCE_BYTES
   const maxStringBytes = options.maxStringBytes ?? MAX_STRING_BYTES
   let disposed = false
-  let timer: ReturnType<typeof setTimeout> | undefined
-  let bufferedBytes = 0
-  const deltas: { kind: 'text' | 'thinking'; text: string }[] = []
   let stepUsage: SessionEvent<'assistant/message'>['data']['usage']
 
   const write = (event: Record<string, unknown>): void => {
-    if (disposed) return
-    sink.write(`${JSON.stringify(boundEvent(event, maxStringBytes))}\n`)
-  }
-
-  const flush = (): void => {
-    if (timer !== undefined) {
-      clearTimeout(timer)
-      timer = undefined
-    }
-    bufferedBytes = 0
-    for (const delta of deltas.splice(0)) write({ type: delta.kind, text: delta.text })
-  }
-
-  const emit = (event: Record<string, unknown>): void => {
-    flush()
-    write(event)
-  }
-
-  const pushDelta = (kind: 'text' | 'thinking', text: string): void => {
-    const last = deltas[deltas.length - 1]
-    if (last !== undefined && last.kind === kind) last.text += text
-    else deltas.push({ kind, text })
-    bufferedBytes += Buffer.byteLength(text, 'utf8')
-    if (bufferedBytes >= coalesceBytes) {
-      flush()
-      return
-    }
-    timer ??= setTimeout(flush, coalesceMs)
+    sink.write(`${JSON.stringify(boundJsonEvent(event, maxStringBytes))}\n`)
   }
 
   const onSessionEvent = (session: unknown, event: SessionEvent): void => {
     if (session !== agent.session) return
     switch (event.type) {
       case 'turn/start':
-        emit({ type: 'status', phase: 'turn_start', turn: event.data.turn })
+        write({ type: 'status', phase: 'turn_start', turn: event.data.turn })
         return
       case 'step/start':
-        emit({ type: 'status', phase: 'step_start', turn: event.data.turn, step: event.data.step })
+        write({ type: 'status', phase: 'step_start', turn: event.data.turn, step: event.data.step })
         return
       case 'assistant/message':
         stepUsage = event.data.usage
+        for (const block of event.data.message.content) {
+          if (block.type === 'reasoning') write({ type: 'thinking', text: block.text })
+          else if (block.type === 'text') write({ type: 'text', text: block.text })
+        }
         return
       case 'step/end': {
         const usage = stepUsage
         stepUsage = undefined
-        emit({
+        write({
           type: 'status', phase: 'step_end', turn: event.data.turn, step: event.data.step,
           ...usage === undefined ? {} : { usage },
         })
         return
       }
       case 'turn/end':
-        emit({ type: 'status', phase: 'turn_end', turn: event.data.turn, reason: event.data.reason })
+        write({ type: 'status', phase: 'turn_end', turn: event.data.turn, reason: event.data.reason })
         return
       case 'tool/call':
-        emit({
+        write({
           type: 'tool_call',
           callId: event.data.callId,
           tool: event.data.name,
@@ -191,8 +165,11 @@ export function projectJsonRun(
         })
         return
       case 'tool/result': {
+        // Compaction replaces older results in the surface; those are history,
+        // not this run's output, and would otherwise duplicate a callId.
+        if (event.surfaceOp !== 'append') return
         const block = event.data.message.content[0]
-        emit({
+        write({
           type: 'tool_result',
           callId: block.toolCallId,
           status: block.isError === true ? 'error' : 'completed',
@@ -205,50 +182,18 @@ export function projectJsonRun(
     }
   }
 
-  const onFrame = (payload: { agent: Agent; frame: AssistantStreamFrame }): void => {
-    if (payload.agent !== agent) return
-    const frame = payload.frame
-    if (frame.type !== 'chunk') {
-      flush()
-      return
-    }
-    const chunk = frame.chunk
-    switch (chunk.type) {
-      case 'text-delta':
-        if (chunk.text !== '') pushDelta('text', chunk.text)
-        return
-      case 'reasoning-delta':
-        if (chunk.text !== '') pushDelta('thinking', chunk.text)
-        return
-      case 'block-start':
-      case 'block-end':
-      case 'tool-call-delta':
-      case 'usage':
-      case 'finish':
-        flush()
-        return
-      /* v8 ignore next -- closed-union exhaustiveness guard */
-      default:
-        return
-    }
-  }
-
   write({ type: 'session', sessionId: agent.id, cwd: options.cwd ?? process.cwd() })
   const stopSession = ctx.on('session/event', onSessionEvent)
-  const stopStream = ctx.on('agent/assistant-stream', onFrame)
 
   return {
     finish(text: string): void {
-      flush()
-      write({ type: 'final', text })
+      // The answer is the lossless terminal contract, so it is not truncated.
+      if (disposed) return
+      sink.write(`${JSON.stringify({ type: 'final', text })}\n`)
     },
     dispose(): void {
       disposed = true
-      if (timer !== undefined) clearTimeout(timer)
-      timer = undefined
-      deltas.length = 0
       stopSession()
-      stopStream()
     },
   }
 }

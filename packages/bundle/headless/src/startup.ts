@@ -41,7 +41,7 @@ export const internals: { stdinIsTty: () => boolean } = {
 function headlessCommand(): Command {
   return new Command()
     .name('dsh --profile headless')
-    .description('Answer one task, stream reasoning to stderr, print the final assistant message, and exit.')
+    .description('Answer one task and exit; the answer goes to stdout and diagnostics to stderr.')
     .helpOption('-h, --help', 'show this help')
     .option('--json', 'write newline-delimited run events to stdout instead of the final message')
     .option('--session-id <id>', 'adopt the persisted Session with this id, or create it when absent')

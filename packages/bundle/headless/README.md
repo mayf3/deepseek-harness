@@ -33,10 +33,10 @@ Run one task, get the final answer, and exit. The task is the command-line argum
 dsh --profile headless "run the tests"
 ```
 
-The agent works through the task, streams each non-empty provider reasoning delta to stderr under a `dsh: reasoning:` heading, then prints the final answer on stdout and exits. Consecutive reasoning deltas stay in one section, and the runner closes that section before later output when the provider supplied no trailing newline. A successful run without reasoning keeps stderr empty; a failure exits 1 and prints `dsh: <code>: <message>` to stderr. The task comes from the positional argument, or from stdin when the argument is omitted or is `-`; a blank argument or an empty pipe is rejected before anything runs.
+The agent works through the task, streams each non-empty provider reasoning delta to stderr under a `dsh: reasoning:` heading, then prints the final answer on stdout and exits. Consecutive reasoning deltas stay in one section, and the runner closes that section before later output when the provider supplied no trailing newline. A successful run without reasoning keeps stderr empty; a failure exits 1 and prints `dsh: <code>: <message>` to stderr. The task comes from the positional argument, or from stdin when the argument is omitted or is a lone `-`; a blank argument or an empty pipe is rejected before anything runs. A positional task is used as-is and stdin is not read, so put the whole prompt in the pipe when you want piped input:
 
 ```sh
-git diff --stat | dsh --profile headless "summarize these changes"
+{ echo "Summarize these changes:"; git diff --stat; } | dsh --profile headless
 ```
 
 The task and run options are supplied through three settings:
@@ -55,7 +55,7 @@ Every invocation defaults to a fresh `session-<uuid>` identity. Pass `--session-
 
 ### Machine-readable output
 
-`--json` replaces the final-text stdout line with a newline-delimited JSON event stream, while stderr keeps only the `dsh:` diagnostics. The stream opens with `session` (carrying the identity the run used) and closes with `final`, and carries `status`, `text`, `thinking`, `tool_call`, and `tool_result` events in between. Streamed text and thinking deltas are coalesced before they are written, and every string is capped at 8 KiB and flagged with `truncated`. A process-level failure outside a turn is reported as an `error` event on stdout in addition to the `dsh:` stderr line.
+`--json` replaces the final-text stdout line with a newline-delimited JSON event stream, while stderr keeps only the `dsh:` diagnostics. The stream opens with `session` (carrying the identity the run used) and closes with `final`, and carries `status`, `text`, `thinking`, `tool_call`, and `tool_result` events in between. `text` and `thinking` are projected from committed assistant messages, so a retried or discarded attempt never reaches the stream. The terminal `final` event carries the same lossless answer as the default mode and is not capped; every other string is capped at 8 KiB and flagged with `truncated`. A process-level failure outside a turn writes an `error` event and ends the stream without `final`, in addition to the `dsh:` stderr line.
 
 ### When to use it
 
@@ -93,11 +93,11 @@ A completed final `turn/end` exits 0; any other outcome — aborted, error, or n
 |---|---|
 | [`src/index.ts`](src/index.ts) | The `headless-runner` plugin: run flow, session resolution, output contract, exit mapping |
 | [`src/startup.ts`](src/startup.ts) | The `headless-startup` provider: task positional, `--session-id`, `--json`, and `--help` |
-| [`src/json-stream.ts`](src/json-stream.ts) | The `--json` projection: event vocabulary, coalescing, string bounding |
+| [`src/json-stream.ts`](src/json-stream.ts) | The `--json` projection: event vocabulary, commit-point emission, string bounding |
 | [`cordis.patch.yml`](cordis.patch.yml) | The one-shot patch over `dsh-base` |
 | — | No runtime invariant companion is published; the runner's observable contract (provider reasoning on stderr, final text on stdout, exit code by turn-end reason) is process-level and owned by the launcher e2e; it registers nothing and holds no mutable relation to audit inside the tree. |
 | [`tests/headless.spec.ts`](tests/headless.spec.ts) | Run flow, aggregation, flush, session adoption, and exit mapping |
-| [`tests/json-stream.spec.ts`](tests/json-stream.spec.ts) | Projection ordering, coalescing, bounding, and disposal |
+| [`tests/json-stream.spec.ts`](tests/json-stream.spec.ts) | Projection ordering, commit-point emission, bounding, and disposal |
 | [`tests/startup.spec.ts`](tests/startup.spec.ts) | Command-line parsing over a real Loader tree |
 
 ### Invariant ownership
@@ -143,7 +143,7 @@ These limits tell you when headless does not fit and what it needs from the `dsh
 - **Reasoning enters stderr logs** — in default mode, redirection and supervisors may retain substantially more and potentially sensitive model output; route stderr to a controlled sink when needed.
 - **Default stdout carries only the final answer** — a run without an assistant message prints an empty stdout line and exits 1; intermediate tool output is not printed unless you opt into `--json`.
 - **Adoption is cwd- and ownership-scoped** — `--session-id` refuses a Session recorded in another working directory or owned by a subagent, and requires the composed Session query service.
-- **The event stream is a projection, not the log** — `--json` coalesces deltas and caps strings at 8 KiB, so it is not a lossless copy of the Session log.
+- **The event stream is a projection, not the log** — `--json` caps every string except the terminal `final` at 8 KiB and omits events the projection does not model, so it is not a lossless copy of the Session log.
 
 <a id="dev-note"></a>
 ### Dev Note

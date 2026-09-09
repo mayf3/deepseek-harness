@@ -45,6 +45,8 @@ interface BenchOptions {
   observe?: () => Promise<ObservationStub>
   /** Register a live Agent under `sessionId` before the runner starts. */
   prelive?: boolean
+  /** Header facts for that pre-registered live Agent. */
+  preliveMeta?: { cwd?: string; origin?: 'subagent' }
 }
 
 const frameStates = new WeakMap<Agent, { attemptId: ReturnType<typeof LlmAttemptId>; revision: number; index: number }>()
@@ -175,10 +177,10 @@ async function bench(script: Script, options: BenchOptions = {}): Promise<{
       const exited = new Promise<number>((resolve) => {
         ctx.provide('appExit', (code: number) => { order.push('exit'); resolve(code) })
       })
-      if (options.prelive === true) {
+      if (options.prelive === true || options.preliveMeta !== undefined) {
         await ctx.agents.create({
           sessionId: brandString<SessionId>(options.sessionId ?? 'session-exact'),
-          meta: { cwd: process.cwd() },
+          meta: { cwd: process.cwd(), ...options.preliveMeta },
         })
       }
       apply(ctx, {
@@ -562,6 +564,41 @@ describe('headless runner', () => {
     await test.ctx.fiber.dispose()
   })
 
+  it('rejects a live Agent recorded in another working directory', async () => {
+    const test = await bench({ afterPrompt: () => {} }, {
+      sessionId: 'session-exact',
+      preliveMeta: { cwd: '/somewhere/else' },
+    })
+    const result = await test.run()
+    expect(result.code).toBe(1)
+    expect(result.err).toContain('was recorded in "/somewhere/else"')
+    await test.ctx.fiber.dispose()
+  })
+
+  it('rejects a live Agent owned by a subagent', async () => {
+    const test = await bench({ afterPrompt: () => {} }, {
+      sessionId: 'session-exact',
+      preliveMeta: { origin: 'subagent' },
+    })
+    const result = await test.run()
+    expect(result.code).toBe(1)
+    expect(result.err).toContain('belongs to a subagent')
+    await test.ctx.fiber.dispose()
+  })
+
+  it('bounds the error event message in --json mode', async () => {
+    const test = await bench({ afterPrompt: () => {} }, {
+      sessionId: 'session-exact',
+      json: true,
+      observe: () => Promise.reject(new SessionQueryError('x'.repeat(9 * 1024), 'SESSION_QUERY_CORRUPT_SESSION')),
+    })
+    const result = await test.run()
+    const event = JSON.parse(result.out.trim()) as { message: string; truncated?: boolean }
+    expect(event.truncated).toBe(true)
+    expect(event.message.length).toBe(8 * 1024)
+    await test.ctx.fiber.dispose()
+  })
+
   it('rejects a persisted Session linked to a parent', async () => {
     const test = await bench({ afterPrompt: () => {} }, {
       sessionId: 'session-exact',
@@ -594,8 +631,9 @@ describe('headless runner', () => {
         session.append('step/start', { turn: 1, step: 1 })
         session.append('user/message', message, { surfaceOp: 'append' })
         startFrames(agent)
-        emitChunk(agent, { type: 'reasoning-delta', index: 0, text: 'thinking hard' })
-        emitChunk(agent, { type: 'text-delta', index: 0, text: 'answer' })
+        // A live attempt that never commits must not reach the projection.
+        emitChunk(agent, { type: 'reasoning-delta', index: 0, text: 'discarded attempt' })
+        emitChunk(agent, { type: 'text-delta', index: 0, text: 'discarded answer' })
         session.append('assistant/message', {
           stream: [],
           turn: 1,
@@ -603,6 +641,7 @@ describe('headless runner', () => {
           usage: { inputTokens: 3, outputTokens: 4 },
           message: createAssistantMessage({
             content: [
+              { type: 'reasoning', text: 'thinking hard' },
               { type: 'text', text: 'answer' },
               { type: 'tool-call', id: ToolCallId('call-1'), name: 'bash', arguments: '{"command":"ls"}' },
             ],
@@ -636,6 +675,7 @@ describe('headless runner', () => {
     expect(events[1]).toMatchObject({ type: 'status', phase: 'turn_start', turn: 1 })
     expect(events[3]).toMatchObject({ type: 'thinking', text: 'thinking hard' })
     expect(events[4]).toMatchObject({ type: 'text', text: 'answer' })
+    expect(result.out).not.toContain('discarded')
     expect(events[5]).toMatchObject({ type: 'tool_call', callId: 'call-1', tool: 'bash', input: { command: 'ls' } })
     expect(events[6]).toMatchObject({ type: 'tool_result', callId: 'call-1', status: 'completed', result: 'a.txt' })
     expect(events[7]).toMatchObject({ type: 'status', phase: 'step_end', usage: { inputTokens: 3, outputTokens: 4 } })

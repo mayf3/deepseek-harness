@@ -28,7 +28,7 @@ import { SessionQueryError } from '@deepseek-ai/dsh-session-query'
 import type {} from '@deepseek-ai/cordis-plugin-loader'
 import type {} from '@deepseek-ai/dsh-cmdline'
 import type {} from '@deepseek-ai/dsh-session-query'
-import { projectJsonRun } from './json-stream.ts'
+import { projectJsonRun, boundJsonEvent } from './json-stream.ts'
 
 /** Stable Cordis plugin name. */
 export const name = 'headless-runner'
@@ -175,6 +175,23 @@ function streamReasoning(
   }
 }
 
+/** The Session facts that decide whether the runner may drive it directly. */
+interface AdoptableHeader {
+  cwd?: string | undefined
+  origin?: 'subagent' | undefined
+  parentSession?: SessionId | undefined
+}
+
+/** Reject a Session the one-shot runner must not adopt. */
+function assertAdoptable(header: AdoptableHeader, sessionId: SessionId): void {
+  if (header.origin === 'subagent' || header.parentSession !== undefined) {
+    throw new Error(`session "${sessionId}" belongs to a subagent and cannot be driven directly`)
+  }
+  if (header.cwd !== process.cwd()) {
+    throw new Error(`session "${sessionId}" was recorded in "${header.cwd}", not "${process.cwd()}"`)
+  }
+}
+
 /**
  * Resolve the Agent for one run: reuse a live identity, adopt the persisted
  * Session with the requested id, or create that exact id when no log exists.
@@ -193,20 +210,18 @@ async function resolveAgent(
   setup: (agentCtx: Context) => void,
 ): Promise<Agent> {
   const live = agents.get(sessionId)
-  if (live !== undefined) return live
+  if (live !== undefined) {
+    // A live identity skips adoption, not the rules that make adoption safe.
+    assertAdoptable(live.session.header, sessionId)
+    return live
+  }
   const query = ctx.get('sessionQuery')
   if (query === undefined) {
     throw new Error('headless --session-id requires the sessionQuery service; dsh-base provides it')
   }
   try {
     using observation = await query.observeSession(sessionId)
-    const header = observation.header
-    if (header.origin === 'subagent' || header.parentSession !== undefined) {
-      throw new Error(`session "${sessionId}" belongs to a subagent and cannot be driven directly`)
-    }
-    if (header.cwd !== process.cwd()) {
-      throw new Error(`session "${sessionId}" was recorded in "${header.cwd}", not "${process.cwd()}"`)
-    }
+    assertAdoptable(observation.header, sessionId)
     const { agent } = await agents.resume({ resumeSessionId: sessionId, agentOptions, setup })
     return agent
   } catch (error: unknown) {
@@ -224,7 +239,7 @@ async function resolveAgent(
 /** Report an unexpected direct-driver failure and request a failing exit. */
 function fail(io: HeadlessIo, error: unknown, json: boolean): void {
   const message = error instanceof Error ? error.message : String(error)
-  if (json) io.stdout.write(`${JSON.stringify({ type: 'error', message })}\n`)
+  if (json) io.stdout.write(`${JSON.stringify(boundJsonEvent({ type: 'error', message }))}\n`)
   io.stderr.write(`dsh: ${message}\n`)
   io.exit(1)
 }
