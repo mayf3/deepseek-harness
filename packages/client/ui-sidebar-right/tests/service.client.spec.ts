@@ -201,7 +201,7 @@ describe('SidebarRightController — opening', () => {
     expect(Object.values(layout().tabs).filter(tab => tab.title === 'a.txt')).toHaveLength(2)
   })
 
-  it('reveals an open guide for a plain open, as for any address', () => {
+  it('focuses the existing guide in the target pane', () => {
     const { controller, instance, publish, layout, tabOf, expand } = harness()
     instance.actions.open(SESSION)
     expand()

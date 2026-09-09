@@ -88,7 +88,7 @@ export interface OpenContentIntent {
   readonly paneId?: PaneId
   /** Take this tab's pane and slot, and close it in the same entry. */
   readonly replaceTab?: TabId
-  /** `false` opens another tab even when the identity is already shown; defaults to `true`. */
+  /** Resource tabs reveal an existing identity by default; `false` permits duplicates. Pages always deduplicate within the target pane. */
   readonly revealIfOpened?: boolean
 }
 
@@ -286,6 +286,7 @@ export function createSidebarRightStore(
       splitPane: (d, sessionId: string, paneId?: PaneId, settled?: (paneId: PaneId) => void) => {
         d.bySession = seat(d, sessionId, (s) => {
           const next = advance(s, (state, mint, makeTab) => dockPaneIds(state).length >= 2
+            || getPane(state, paneId ?? activeDockPaneId(state)).tabs.length === 0
             ? []
             : planSplitPane(state, mint, paneId, makeTab), seed)
           if (settled !== undefined && next !== s) {

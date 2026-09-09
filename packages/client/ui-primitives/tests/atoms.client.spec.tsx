@@ -108,11 +108,14 @@ describe('Menu', () => {
     // the focus move it causes is the one signal left, and it closes.
     const iframe = document.createElement('iframe')
     document.body.appendChild(iframe)
-    iframe.focus()
-    expect(document.activeElement).toBe(iframe)
-    fireEvent.blur(window)
-    expect(onClose).toHaveBeenCalledTimes(1)
-    iframe.remove()
+    try {
+      iframe.focus()
+      expect(document.activeElement).toBe(iframe)
+      fireEvent.blur(window)
+      expect(onClose).toHaveBeenCalledTimes(1)
+    } finally {
+      iframe.remove()
+    }
   })
 
   it('selected item shows the trailing check; align=end, side=top, and className apply', () => {

@@ -12,6 +12,7 @@ import { describe, expect, it, vi } from 'vitest'
 import type { LayoutState, PaneId, TabId } from '@deepseek-ai/dsh-client-ui-dockkit'
 import { dockPaneIds, findTabPane, getPane, getSplit } from '@deepseek-ai/dsh-client-ui-dockkit'
 import { createSidebarRightStore } from '../src/client/stores.ts'
+import { pageAddress } from '../src/client/contract/seed.ts'
 
 const SESSION = 's-test'
 
@@ -97,6 +98,47 @@ describe('createSidebarRightStore — the sequence', () => {
     actions.undo(SESSION)
     expect(getPane(layout(), home).tabs).toEqual([dragged])
     expect(Object.values(layout().tabs)).toHaveLength(1)
+  })
+
+  it.each([false, true])('does not split an empty collapsed pane after close=%s', (afterClose) => {
+    const { actions, layout, surface } = harness()
+    if (afterClose) {
+      actions.openContent(SESSION, { kind: 'text', contentId: 'file:a', title: 'a' }, () => {})
+      actions.closeTab(SESSION, Object.values(layout().tabs)[0]!.id)
+    }
+    const before = surface()
+    const settled = vi.fn()
+    actions.splitPane(SESSION, undefined, settled)
+    expect(surface()).toBe(before)
+    expect(settled).not.toHaveBeenCalled()
+    expect(layout().expanded).toBe(false)
+    expect(Object.keys(layout().tabs)).toHaveLength(0)
+  })
+
+  it.each(['guide', 'files'])('opens %s in the requested pane and merges a moved duplicate there', (kind) => {
+    const { actions, layout } = harness()
+    const address = pageAddress(kind)
+    actions.openContent(SESSION, { kind, contentId: address, title: kind }, () => {})
+    const first = Object.values(layout().tabs)[0]!
+    const firstPane = layout().activePaneId
+    actions.splitPane(SESSION)
+    const secondPane = layout().activePaneId
+    const seed = getPane(layout(), secondPane).tabs[0]!
+    actions.openContent(SESSION, { kind: 'text', contentId: 'file:b', title: 'b', replaceTab: seed }, () => {})
+    const opened = vi.fn<(tabId: TabId) => void>()
+    actions.openContent(SESSION, { kind, contentId: address, title: kind, paneId: secondPane }, opened)
+    const second = opened.mock.calls[0]![0]
+    expect(second).not.toBe(first.id)
+    expect(getPane(layout(), firstPane).tabs).toEqual([first.id])
+    expect(getPane(layout(), secondPane).activeTabId).toBe(second)
+    expect(layout().activePaneId).toBe(secondPane)
+    const held = vi.fn()
+    actions.openContent(SESSION, { kind, contentId: address, title: kind, paneId: secondPane, revealIfOpened: false }, held)
+    expect(held).toHaveBeenCalledWith(second)
+    actions.dropTab(SESSION, first.id, secondPane, 'center')
+    expect(layout().tabs[first.id]).toBeUndefined()
+    expect(getPane(layout(), secondPane).activeTabId).toBe(second)
+    expect(dockPaneIds(layout())).toEqual([secondPane])
   })
 
   it('allows two docked panes and rejects further splits without recording', () => {
