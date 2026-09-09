@@ -122,12 +122,25 @@ describe('TurnTimePanel', () => {
     expect(view.queryByRole('dialog')).toBeNull()
   })
 
-  it('omits unrecorded speed and TTFT rows', () => {
+  it('renders plain text without a dialog while only the duration is known', () => {
     const view = render(<TurnTimePanel runMs={3_000} t={t} />)
-    fireEvent.click(view.getByRole('button'))
-    const dialog = view.getByRole('dialog')
-    expect(dialog.textContent).toContain('Total run time3s')
-    expect(dialog.textContent).not.toContain('Tokens per second')
-    expect(dialog.textContent).not.toContain('Time to first token')
+    // The dialog would only repeat the pill's own duration, so there is no trigger at all.
+    expect(view.queryByRole('button')).toBeNull()
+    expect(view.container.textContent).toBe('Ran for 3s')
+  })
+
+  it('keeps the dialog and omits the unrecorded row while one of speed and TTFT is known', () => {
+    const speedOnly = render(<TurnTimePanel runMs={3_000} tokensPerSecond={20} t={t} />)
+    fireEvent.click(speedOnly.getByRole('button'))
+    expect(speedOnly.getByRole('dialog').textContent).toContain('Total run time3s')
+    expect(speedOnly.getByRole('dialog').textContent).toContain('Tokens per second (TPS)20 tok/s')
+    expect(speedOnly.getByRole('dialog').textContent).not.toContain('Time to first token')
+    fireEvent.keyDown(document, { key: 'Escape' })
+    speedOnly.unmount()
+
+    const ttftOnly = render(<TurnTimePanel runMs={3_000} ttftMs={800} t={t} />)
+    fireEvent.click(ttftOnly.getByRole('button'))
+    expect(ttftOnly.getByRole('dialog').textContent).not.toContain('Tokens per second')
+    expect(ttftOnly.getByRole('dialog').textContent).toContain('Time to first token (TTFT)0.8s')
   })
 })

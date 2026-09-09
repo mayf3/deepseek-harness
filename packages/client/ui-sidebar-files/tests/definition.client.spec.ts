@@ -10,7 +10,7 @@ import { SidebarRightTabRegistry } from '@deepseek-ai/dsh-client-ui-sidebar-righ
 import { sessionFileAddress } from '@deepseek-ai/dsh-util-workspace-path'
 import {
   FILES_ID, FILES_KIND, filesDefinition,
-} from '../src/client/definition.ts'
+} from '../src/client/definition.tsx'
 import { zh } from '../src/client/locales.ts'
 
 const t = makeTranslate(zh)
@@ -31,6 +31,7 @@ describe('filesDefinition', () => {
     expect(entry?.order).toBe(10)
     expect(entry?.kind).toBe(FILES_KIND)
     expect(entry?.title()).toBe(zh['guide.title'])
+    expect(entry?.description?.()).toBe(zh['guide.description'])
     expect(entry?.icon).toBeDefined()
   })
 
