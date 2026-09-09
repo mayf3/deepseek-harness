@@ -24,7 +24,7 @@ const TOOL_CONTINUATION_BUDGET_MS = Math.ceil(EXPECTED_TOOL_CONTINUATION_CI_MS *
 /** Standard two-CPU hosted CI catalog median is 858.364 ms; 900 ms is the rounded expectation. */
 const EXPECTED_CATALOG_CI_MS = 900
 const CATALOG_BUDGET_MS = Math.ceil(EXPECTED_CATALOG_CI_MS * PERFORMANCE_BUDGET_HEADROOM)
-/** Standard two-CPU hosted median limit; observed runner variation is pinned below. */
+/** Reviewed hosted limit: floor(238 × 1.25); calibration records the original reference. */
 const REQUEST_HISTORY_BUDGET_MS = 297
 const EXPECTED_RETAINED_HEAP_MB = 23
 const WORKERS = join(import.meta.dirname, '..', '.dsh-build', 'agent-continuation')
