@@ -18,6 +18,10 @@ const PAGE_LINES = 64
 const SHOT_DIR = fileURLToPath(new URL('../../../.artifacts/screenshots/0908-document-preview', import.meta.url))
 const PROMPT = 'Reply with the single word LIGHTHOUSE and stop.'
 const MODE = webSnapshotMode()
+const TINY_PNG = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
+  'base64',
+)
 
 /** Successful render evidence stays outside the committed snapshot inventory. */
 async function successShot(page: Page, name: string): Promise<void> {
@@ -76,7 +80,7 @@ describe.skipIf(MODE === 'record')('web e2e: document preview through Files', ()
     }
   })
 
-  it('opens Markdown, isolated HTML, and a rendered PDF from the Session workspace', async () => {
+  it('opens text, isolated HTML, intrinsic images, and rendered PDF from the Session workspace', async () => {
     onTestFailed(async () => {
       await mkdir(SHOT_DIR, { recursive: true })
       await saveFailureShot(page, `screenshots/0908-document-preview/smoke-${process.pid}`)
@@ -118,6 +122,13 @@ describe.skipIf(MODE === 'record')('web e2e: document preview through Files', ()
       writeFile(join(cwd, 'local.js'), 'document.getElementById("local-result").textContent="LOCAL_JS_OK";'),
       writeFile(join(cwd, 'local.css'), '#local-result { color: rgb(12, 34, 56); }'),
       writeFile(outsideScript, 'document.getElementById("outside-result").textContent="OUTSIDE_JS_OK";'),
+      writeFile(join(cwd, 'tiny.png'), TINY_PNG),
+      writeFile(join(cwd, 'large.svg'), [
+        '<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="1600" viewBox="0 0 1200 1600">',
+        '<script>parent.document.documentElement.setAttribute("data-image-preview-escape","true")</script>',
+        '<rect width="1200" height="1600" fill="#2463eb"/>',
+        '</svg>',
+      ].join('')),
       writeFile(join(cwd, 'smoke.pdf'), pdfFixture()),
     ])
 
@@ -291,6 +302,50 @@ describe.skipIf(MODE === 'record')('web e2e: document preview through Files', ()
       `- Canvas fills: ${[firstColor, secondColor, restoredColor].join(' -> ')}`,
       `- Same tab: ${String(await pdfTab.getAttribute('data-dockkit-tab') === pdfTabId)}`,
     ].join('\n'))
+
+    await openFile('tiny.png')
+    await expect.poll(() => viewer.innerText()).toBe('Image')
+    const tinyImage = preview.getByRole('img', { name: 'Image preview: tiny.png', exact: true })
+    await tinyImage.waitFor({ state: 'visible', timeout: 15_000 })
+    expect(await tinyImage.evaluate(node => ({
+      width: (node as HTMLImageElement).naturalWidth,
+      height: (node as HTMLImageElement).naturalHeight,
+      draggable: (node as HTMLImageElement).draggable,
+    }))).toEqual({ width: 1, height: 1, draggable: false })
+    const centering = await tinyImage.evaluate((node) => {
+      const image = node.getBoundingClientRect()
+      const scroller = node.closest('[data-textpreview-body]')?.getBoundingClientRect()
+      if (scroller === undefined) throw new Error('image document scroller is unavailable')
+      return {
+        horizontal: Math.abs((image.left + image.width / 2) - (scroller.left + scroller.width / 2)),
+        vertical: Math.abs((image.top + image.height / 2) - (scroller.top + scroller.height / 2)),
+      }
+    })
+    expect(centering.horizontal).toBeLessThan(10)
+    expect(centering.vertical).toBeLessThan(10)
+
+    await openFile('large.svg')
+    await expect.poll(() => viewer.innerText()).toBe('Image')
+    const largeImage = preview.getByRole('img', { name: 'Image preview: large.svg', exact: true })
+    await largeImage.waitFor({ state: 'visible', timeout: 15_000 })
+    expect(await largeImage.evaluate(node => ({
+      naturalWidth: (node as HTMLImageElement).naturalWidth,
+      naturalHeight: (node as HTMLImageElement).naturalHeight,
+      width: getComputedStyle(node).width,
+      height: getComputedStyle(node).height,
+    }))).toEqual({ naturalWidth: 1200, naturalHeight: 1600, width: '1200px', height: '1600px' })
+    expect(await body.evaluate(node => ({
+      horizontal: node.scrollWidth > node.clientWidth,
+      vertical: node.scrollHeight > node.clientHeight,
+    }))).toEqual({ horizontal: true, vertical: true })
+    const scrolled = await body.evaluate((node) => {
+      node.scrollLeft = node.scrollWidth
+      node.scrollTop = node.scrollHeight
+      return { left: node.scrollLeft, top: node.scrollTop }
+    })
+    expect(scrolled.left).toBeGreaterThan(0)
+    expect(scrolled.top).toBeGreaterThan(0)
+    expect(await page.locator('html').getAttribute('data-image-preview-escape')).toBeNull()
 
     const releaseRead = Promise.withResolvers<undefined>()
     let waitingForRead = false
