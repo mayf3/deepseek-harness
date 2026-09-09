@@ -24,7 +24,7 @@ The body is a centred column — a lead line (`侧栏用来放你想一直看着
 
 The body is also the replacement seam. It renders the `sidebar.right.tab.guide` chain with the shipped guide as the chain's fallback, so a product that registers its own entry takes the whole body, and with no entry, or every entry declining, the shipped guide draws. Because the shipped guide is the fallback and not a chain entry, there is always exactly one body and it cannot be outvoted by accident.
 
-A pane holds at most one guide, and the docking layer enforces it as product behaviour: the strip's add control hides while a guide is present, opening the guide into such a pane focuses it, a guide is never duplicated, and a guide dragged, dropped, or docked into a pane that already has one merges into it (the arriving tab closes). Settling a surface reseeds the guide when the root pane empties, so there is always at least one tab and never an empty pane.
+A pane holds at most one guide, and the docking layer enforces it as product behaviour: the strip's add control hides while a guide is present, opening the guide into such a pane focuses it, a guide is never duplicated, and a guide dragged, dropped, or docked into a pane that already has one merges into it (the arriving tab closes). An expanded empty root receives the current default page. Collapsed layouts may remain empty until expansion, when the default-page selection runs.
 
 ### The text preview
 
@@ -108,12 +108,12 @@ Copy is the `sidebarFiles` namespace, thirteen keys. Row states: `loading` 「�
 
 ## Testing
 
-The text preview's `tests/` cover the registry claim and yielding (through the real `SidebarRightTabRegistry`), the address translation (`sessionFileOf` accepting the `session` scope and throwing on others), the store's page, version, reset, view, and forget actions, the face's in-flight, failure, aborted, and reload paths, the page arithmetic (`linesOf`, `offsetsOf`, `lastLineLoaded`), the body's first read, load-more, retry, change bar, navigation walk, jump-once, remount, wrap default and toggle, header controls, and forget-on-abort, the failure-line mapping, and the plugin's registrations and their removal on dispose. A Chromium probe against the built app recorded the fill and scroll numbers (`.artifacts/sidebar-tab-types/app-probe.log`, `ROUND3`): a short file's preview is the pane body's content height, a long file scrolls inside the preview body, and the pane body never scrolls. The file tree's `tests/` cover ordering, lazy loading, collapse memory, reload, the three entry types, truncation and failure rows, and forget-on-abort. `apps/web/tests/sidebar-right.e2e.ts` opens a produced file from the conversation into the preview over the real Remote carrier.
+The text preview's `tests/` cover the registry claim and yielding (through the real `SidebarRightTabRegistry`), the address translation (`sessionFileOf` accepting the `session` scope and throwing on others), the store's page, version, reset, view, and forget actions, the face's in-flight, failure, aborted, and reload paths, the page arithmetic (`linesOf`, `offsetsOf`, `lastLineLoaded`), the body's first read, load-more, retry, change bar, navigation walk, jump-once, remount, wrap default and toggle, header controls, and forget-on-abort, the failure-line mapping, and the plugin's registrations and their removal on dispose. A Chromium probe against the built app recorded the fill and scroll numbers (`.artifacts/sidebar-tab-types/app-probe.log`, `ROUND3`): a short file's preview is the pane body's content height, a long file scrolls inside the preview body, and the pane body never scrolls. The file tree's `tests/` cover ordering, lazy loading, collapse memory, reload, the three entry types, truncation and failure rows, and forget-on-abort. `apps/web/tests/sidebar-right.e2e.ts` opens a produced file from the conversation into the preview over the real Remote carrier. `apps/web/tests/document-preview.e2e.ts` covers centred intrinsic-size images, two-axis image scrolling, and inert SVG scripts.
 
 ## Deferred
 
 - Virtualized or seekable page loading (pages load in order), a reload that restores the loaded range, throttled scroll persistence, and a wrap icon in `ui-primitives`.
-- Images, search, a total line count, and an end-of-file marker.
+- Search, a total line count, and an end-of-file marker.
 - Search, an artifact filter, drag-and-drop, rename, a context menu, current-file highlight, filesystem watching, and browsing above the workspace root in the file tree.
 - Product review of the guide's copy, and the guide's behaviour when a type contributes several entries.
 

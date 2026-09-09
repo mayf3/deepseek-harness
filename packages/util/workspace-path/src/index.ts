@@ -61,6 +61,22 @@ export function workspaceTitleOf(path: string): string {
   return trimmed.slice(separator + 1)
 }
 
+/**
+ * Split a path for display: the directories through their last separator, and
+ * the final segment after it. Both `/` and `\` separate, so a Windows path
+ * splits where its own segments end; trailing separators are dropped first, so
+ * a directory path names its own last segment. A path with no separator, or a
+ * separator-only path, is all name.
+ * @param path - file or directory path using POSIX or Windows separators.
+ * @returns the directory prefix (possibly empty) and the final segment.
+ */
+export function pathPartsOf(path: string): { readonly directory: string; readonly name: string } {
+  const trimmed = path.replace(/[/\\]+$/, '')
+  if (trimmed === '') return { directory: '', name: path }
+  const cut = Math.max(trimmed.lastIndexOf('/'), trimmed.lastIndexOf('\\')) + 1
+  return { directory: trimmed.slice(0, cut), name: trimmed.slice(cut) }
+}
+
 export * from './file-address.ts'
 
 /**
@@ -80,4 +96,17 @@ export function fileAddressFor(sessionId: string, cwd: string | undefined, path:
   if (root !== '' && normalized === root) return sessionFileAddress(sessionId, '')
   if (root !== '' && normalized.startsWith(`${root}/`)) return sessionFileAddress(sessionId, normalized.slice(root.length + 1))
   return sessionFileAddress(sessionId, normalized)
+}
+
+/**
+ * Strip the workspace root from a workspace-rooted absolute path (display only).
+ * @param text - the path to shorten.
+ * @param cwd - session workspace root; absent or empty leaves the path unchanged.
+ * @returns the path relative to the workspace root, or unchanged when it is not rooted there.
+ */
+export function relativizeToCwd(text: string, cwd: string | undefined): string {
+  if (cwd === undefined || cwd === '') return text
+  const root = cwd.replace(/[/\\]+$/, '')
+  if (text.startsWith(`${root}/`) || text.startsWith(`${root}\\`)) return text.slice(root.length + 1)
+  return text
 }

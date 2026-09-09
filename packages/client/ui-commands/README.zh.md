@@ -1,5 +1,5 @@
 ---
-description: "Web GUI 的客户端命令 API：/ 命令 source、三类派发、会话级命令目录，以及面向业务包的 popupSelect 注册；供斜杠命令的用户与维护者阅读。"
+description: "Web GUI 的客户端命令 API：/ 命令 source、三类派发、会话级命令目录，以及面向业务包的 popupSelect 与 action 注册；供斜杠命令的用户与维护者阅读。"
 kind: "package-reference"
 ---
 
@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-在 composer 中键入 `/` 命令会采用匹配的交互方式——打开已注册的弹窗、显示宿主命令的输入，或直接执行——命令行绝不会被静默降级为普通提示词。业务包经 `ctx.commandUi` 提供命令交互方式：注册 popupSelect 贡献项（`/model`、`/permission`），或用选择器装饰既有宿主命令，宿主保留其目录行与参数声明。空格与回车对照会话目录解析命令行：带 `input` 的宿主描述符是 `leadingInput`，注册了 `CommandUiSpec` 的是 `popupSelect`，其余全部是 `execute`。
+在 composer 中键入 `/` 命令会打开匹配的表面——已注册的弹窗、宿主命令的输入或直接执行——命令行绝不会被静默降级为普通提示词。业务包经 `ctx.commandUi` 贡献命令表面：popupSelect 贡献项（`/model`、`/permission`）或 action（`/feedback`），既可注册为命令，也可装饰既有宿主命令，宿主保留其目录行与参数声明。空格与回车对照会话目录解析命令行：带 `input` 的宿主描述符是 `leadingInput`，注册了 `CommandUiSpec` 的按其种类派发，其余全部是 `execute`。
 
 ## 目录
 
@@ -25,7 +25,7 @@ kind: "package-reference"
 <a id="use-this-package"></a>
 ## 使用本包
 
-与 `ui-input-trigger` 及 `ui-conversation` 一起挂载本插件；`/` source 随即出现在触发菜单中，业务包经 `ctx.commandUi` 注册相应的命令交互方式。键入 `/model` 打开已注册的弹窗；带参数声明的宿主命令打开其输入或直接执行。
+与 `ui-input-trigger` 及 `ui-conversation` 一起挂载本插件；`/` source 随即出现在触发菜单中，业务包经 `ctx.commandUi` 注册自己的命令表面。键入 `/model` 打开已注册的弹窗；带参数声明的宿主命令打开其输入或直接执行。
 
 ### 种类与装饰
 

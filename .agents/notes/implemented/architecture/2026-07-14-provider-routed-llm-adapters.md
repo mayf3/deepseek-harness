@@ -54,7 +54,7 @@ Compaction configuration gains `summarizationProvider` beside `summarizationMode
 
 The JSON-RPC runtime receives provider and model explicitly. Its convenience fallback mounts `dsh-llm-deepseek` only for provider `deepseek` when that provider has no registered owner; other missing providers fail without guessing an adapter.
 
-Current v1 seed/load validation rejects request headers and assistant messages that omit required provider/model fields. The frozen v0-to-v1 edge requires the same reconstructable routing identity before migration; it never guesses a missing provider or model, and malformed shapes refuse before publication.
+Current seed/load validation rejects request headers and assistant messages that omit required provider/model fields. The frozen v0-to-v1 edge requires the same reconstructable routing identity before migration; it never guesses a missing provider or model, and malformed shapes refuse before publication.
 
 ## Alternatives considered
 
@@ -78,7 +78,7 @@ Current v1 seed/load validation rejects request headers and assistant messages t
 - pi-ai credentials, transport knobs, SDK timeouts, and the five-minute-default `streamIdleTimeoutMs` watchdog are scoped per provider profile. Hidden provider retries are disabled; bounded retries belong to the separately composed agent recovery policy.
 - `dsh-llm-pi-ai` rejects stop sequences because pi-ai's common stream API cannot express them; the native DeepSeek adapter retains its stop support.
 - Replay state is portable only within the adapter instance that owns both the historical and target providers. Cross-provider and cross-model restoration is an adapter responsibility, and another adapter receives provider-neutral history without the opaque state.
-- Current v1 Session JSONL requires provider/model on request headers and assistant messages. The v0 edge migrates only frozen shapes that already carry reconstructable request identity.
+- Current Session JSONL requires provider/model on request headers and assistant messages. The v0 edge migrates only frozen shapes that already carry reconstructable request identity.
 
 ## Testing
 

@@ -8,7 +8,7 @@
 import { Context } from '@deepseek-ai/cordis'
 import { cleanup, fireEvent, render, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { SessionLiveEventEntry } from '@deepseek-ai/dsh-api-session-controller/client'
+import type { SessionLiveEventEntry, SessionListState } from '@deepseek-ai/dsh-api-session-controller/client'
 import {
   ConversationNodeAssembler, UiConversation,
 } from '@deepseek-ai/dsh-client-ui-conversation/client'
@@ -34,7 +34,13 @@ import { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { SessionEvent } from '@deepseek-ai/dsh-session/types'
 
 function openProps(controller = new PresentedOpenController()) {
+  controller.host.set({ name: 'desktop', available: true, fileManager: 'finder' })
+  const sessions: SessionListState = { ids: [], byId: {}, current: undefined, phase: 'ready', subagentsByParent: {}, jobsBySession: {}, currentAddress: undefined }
   return {
+    useSessions: <T,>(select: (state: SessionListState) => T): T => select(sessions),
+    reloadPresentedHost: vi.fn(() => controller.loadHost()),
+    usePresentedHost: <T,>(select: (state: ReturnType<typeof controller.host.getSnapshot>) => T): T =>
+      select(controller.host.getSnapshot()),
     openPresented: vi.fn((...args: Parameters<PresentedOpenController['open']>) => controller.open(...args)),
     usePresentedOpen: <T,>(select: (state: ReturnType<typeof controller.state.getSnapshot>) => T): T =>
       select(controller.state.getSnapshot()),
@@ -426,7 +432,7 @@ describe('ProducedFiles row', () => {
     const openFile = vi.fn<(path: string) => void>()
 
     const view = render(<ProducedFiles matched={paths} openFile={openFile} t={t} />)
-    expect(view.getByText('产物')).toBeTruthy()
+    expect(view.getByText('本轮文件改动')).toBeTruthy()
     const row = view.container.querySelector('[data-produced-files-row]')
     if (!(row instanceof HTMLElement)) throw new Error('produced row missing')
     expect(within(row).getAllByRole('button')).toHaveLength(6)
@@ -549,12 +555,24 @@ describe('plugin registration', () => {
     service?.forClosing(delivered, SessionId('child-session'))?.resolve('report.docx')?.open()
     expect(fetcher).toHaveBeenCalledWith('/api/present.open?sessionId=child-session&seq=2&index=0', { method: 'POST', signal: expect.any(AbortSignal) as AbortSignal })
     const face = entry!.inject!(SessionId('child-session') as never) as unknown as DeliverablesInjected
+    fetcher.mockResolvedValueOnce(Response.json({ name: 'desktop', available: true, fileManager: 'finder' }))
+    await face.reloadPresentedHost()
+    expect(face.hooks.presentedHost.getSnapshot()).toMatchObject({ name: 'desktop' })
+    ctx.emit('connection/reset')
+    expect(face.hooks.presentedHost.getSnapshot()).toBeNull()
     await face.openPresented(SessionId('child-session'), 2, 0)
     expect(face.hooks.presentedOpen.getSnapshot()['/api/present.open?sessionId=child-session&seq=2&index=0']).toBe('opened')
     // A turn that produced nothing yields no vocabulary at all.
     expect(service?.forClosing(tailOwner(undefined, 2), SessionId('viewed-session'))).toBeUndefined()
 
+    fetcher.mockResolvedValueOnce(Response.json({ name: 'last-host', available: true, fileManager: 'finder' }))
+    await face.reloadPresentedHost()
     await fiber.dispose()
+    const reset = vi.fn()
+    const unsubscribe = face.hooks.presentedHost.subscribe(reset)
+    ctx.emit('connection/reset')
+    expect(reset).not.toHaveBeenCalled()
+    unsubscribe()
     expect(ctx.slots.entries('conversation.chat.turnTail')).toHaveLength(0)
     expect(ctx.slots.entries('tool.call.toolview')).toHaveLength(0)
     // Fiber teardown retracts the service: the consumer's ctx.get sees the off state.
@@ -581,21 +599,34 @@ describe('presented files', () => {
     expect(selectDeliverables(tailOwner(deliverablesOf(value, 2), 9))).toBeNull()
   })
 
-  it('uses the viewed fork Session in every open action and retains all delivered files', () => {
+  it('uses the viewed fork Session in every open action and expands all delivered files', () => {
     const value = assembler([
       at(1, 'turn/start', { turn: 1 }),
       at(2, 'deliverables/presented', { turn: 1, callId: 'nested', files: Array.from({ length: 8 }, (_, i) => file(`report-${i}.docx`)) }),
     ])
-    const owner = tailOwner(deliverablesOf(value), 3)
+    const preview = vi.fn()
+    const owner = tailOwner(deliverablesOf(value), 3, preview)
     const matched = selectDeliverables(owner)!
     const props = openProps()
     props.openPresented.mockResolvedValue(undefined)
     const view = render(<Deliverables {...props} matched={matched} openFile={owner.openFile} sessionId={SessionId('child-session')} t={makeTranslate(en)} />)
-    expect(view.getAllByRole('button')).toHaveLength(8)
+    expect(view.container.querySelectorAll('[data-presented-file]')).toHaveLength(4)
+    const expand = view.getByRole('button', { name: 'Show all 8 delivered files' })
+    expect(expand.getAttribute('aria-expanded')).toBe('false')
+    fireEvent.click(expand)
+    expect(view.container.querySelectorAll('[data-presented-file]')).toHaveLength(8)
+    expect(view.getByRole('button', { name: 'Collapse delivered files' }).getAttribute('aria-expanded')).toBe('true')
     expect(view.queryByRole('link')).toBeNull()
-    fireEvent.click(view.getByRole('button', { name: 'Open report-0.docx in default app' }))
-    expect(props.openPresented).toHaveBeenCalledWith('child-session', 2, 0)
-    expect(view.queryByText('Produced')).toBeNull()
+    fireEvent.click(view.getByRole('button', { name: 'Preview report-0.docx in sidebar' }))
+    fireEvent.click(view.getByRole('button', { name: 'Open report-0.docx in sidebar' }))
+    expect(preview).toHaveBeenCalledTimes(2)
+    expect(preview).toHaveBeenLastCalledWith('report-0.docx')
+    fireEvent.click(view.getByRole('button', { name: 'More file actions for report-0.docx' }))
+    fireEvent.click(view.getByRole('menuitem', { name: 'Open in default app' }))
+    expect(props.openPresented).toHaveBeenCalledWith('child-session', 2, 0, 'open')
+    fireEvent.click(view.getByRole('button', { name: 'Collapse delivered files' }))
+    expect(view.container.querySelectorAll('[data-presented-file]')).toHaveLength(4)
+    expect(view.queryByText('Files changed')).toBeNull()
   })
 })
 
@@ -617,19 +648,41 @@ it.each([{}, { turn: '1', callId: 'bad', files: [] },
   const owner = tailOwner(deliverablesOf(value), 5)
   const matched = selectDeliverables(owner)!
   const view = render(<Deliverables {...openProps()} matched={matched} openFile={owner.openFile} sessionId={SessionId('session')} t={makeTranslate(en)} />)
-  expect(view.getByText('Produced')).toBeTruthy()
+  expect(view.getByText('Files changed')).toBeTruthy()
   expect(view.queryByText('Deliverables')).toBeNull()
 })
 
-it('shows file metadata and descriptions without hiding extensionless deliveries', () => {
+it('shows descriptions and falls back to file metadata without hiding extensionless deliveries', () => {
   const view = render(<Deliverables {...openProps()} matched={{ produced: [], presented: [
     { path: 'out/report.txt', description: 'Quarterly summary', seq: 2, index: 0 },
     { path: 'LICENSE', seq: 2, index: 1 },
   ] }} openFile={() => {}} sessionId={SessionId('session')} t={makeTranslate(en)} />)
   expect(view.getByText('Quarterly summary')).toBeTruthy()
-  expect(view.getByText('TXT')).toBeTruthy()
   expect(view.getByText('File')).toBeTruthy()
-  expect(view.getByRole('button', { name: 'Open out/report.txt in default app' }).getAttribute('title')).toBe('Open out/report.txt in default app')
+  expect(view.getByTitle('out/report.txt')).toBeTruthy()
+  expect(view.getByText('report.txt')).toBeTruthy()
+})
+
+it('distinguishes PDF, Word, Markdown, and code files with full-size decorative card icons', () => {
+  const paths = ['report.pdf', 'report.docx', 'README.md', 'index.tsx']
+  const view = render(<Deliverables {...openProps()} matched={{ produced: [], presented:
+    paths.map((path, index) => ({ path, seq: 2, index })),
+  }} openFile={() => {}} sessionId={SessionId('session')} t={makeTranslate(en)} />)
+  const icons = [...view.container.querySelectorAll('[data-presented-file]')].map((card) => {
+    const icon = card.querySelector('svg')!
+    expect(icon.getAttribute('aria-hidden')).toBe('true')
+    expect(icon.getAttribute('width')).toBe('28')
+    return icon.innerHTML
+  })
+  expect(new Set(icons).size).toBe(paths.length)
+})
+
+it('lets one delivered file span the complete row without an expansion control', () => {
+  const view = render(<Deliverables {...openProps()} matched={{ produced: [], presented: [
+    { path: 'report.pdf', seq: 2, index: 0 },
+  ] }} openFile={() => {}} sessionId={SessionId('session')} t={makeTranslate(en)} />)
+  expect(view.container.querySelector('[data-presented-files-row]')?.getAttribute('data-single')).toBe('true')
+  expect(view.queryByRole('button', { name: /delivered files/ })).toBeNull()
 })
 
 
@@ -640,6 +693,34 @@ it.each(['opening', 'opened', 'error'] as const)('shows the %s state and permits
   const view = render(<Deliverables {...props} matched={{ produced: [], presented: [
     { path: 'report.txt', seq: 2, index: 0 },
   ] }} openFile={() => {}} sessionId={SessionId('session')} t={makeTranslate(en)} />)
-  expect(view.getByRole('status').textContent).toBe(en[`presented.${phase}`])
-  expect((view.getByRole('button') as HTMLButtonElement).disabled).toBe(phase === 'opening')
+  expect(view.getByText(en[`presented.${phase}`])).toBeTruthy()
+  expect((view.getByRole('button', { name: 'More file actions for report.txt' }) as HTMLButtonElement).disabled).toBe(phase === 'opening')
+})
+
+
+it('explains a missing desktop and retries failed Host metadata', () => {
+  const controller = new PresentedOpenController()
+  const props = openProps(controller)
+  const matched = { produced: [], presented: [{ path: 'file.txt', seq: 2, index: 0 }] }
+  controller.host.set('error')
+  const view = render(<Deliverables {...props} matched={matched} openFile={() => {}} sessionId={SessionId('session')} t={makeTranslate(en)} />)
+  props.reloadPresentedHost.mockResolvedValue(undefined)
+  fireEvent.click(view.getByRole('button', { name: 'Retry' }))
+  expect(props.reloadPresentedHost).toHaveBeenCalledOnce()
+  controller.host.set({ name: 'server', available: false, fileManager: null })
+  view.rerender(<Deliverables {...props} matched={matched} openFile={() => {}} sessionId={SessionId('session')} t={makeTranslate(en)} />)
+  expect(view.getByText(en['presented.unavailable'])).toBeTruthy()
+})
+
+
+it('loads desktop information only when delivery cards appear', () => {
+  const controller = new PresentedOpenController()
+  const props = openProps(controller)
+  controller.host.set(null)
+  props.reloadPresentedHost.mockResolvedValue(undefined)
+  const shared = { ...props, openFile: () => {}, sessionId: SessionId('session'), t: makeTranslate(en) }
+  const view = render(<Deliverables {...shared} matched={{ produced: ['source.ts'], presented: [] }} />)
+  expect(props.reloadPresentedHost).not.toHaveBeenCalled()
+  view.rerender(<Deliverables {...shared} matched={{ produced: [], presented: [{ path: 'report.txt', seq: 2, index: 0 }] }} />)
+  expect(props.reloadPresentedHost).toHaveBeenCalledOnce()
 })

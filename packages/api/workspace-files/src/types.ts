@@ -115,9 +115,9 @@ export interface WorkspaceDirectoryListing {
 }
 
 /**
- * One observation of a workspace file made by an Agent's own filesystem
- * operation. Frames report observations, not deltas: a consumer already holding
- * `version` learns nothing new from the frame and can ignore it.
+ * One observation of a workspace file made by an instrumented filesystem
+ * operation. Frames report observations, not deltas: a consumer already
+ * holding `version` learns nothing new from the frame and can ignore it.
  */
 export type WorkspaceFileChange =
   | {

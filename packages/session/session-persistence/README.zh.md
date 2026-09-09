@@ -62,7 +62,7 @@ await ctx.sessionPersistence.flush()                           // backend-wide d
 
 ### 失败与恢复
 
-当前构建无法忠实解读的存储日志会被拒绝，并返回指明拒绝方向的错误，绝不会被误读。`SessionHandle` 只暴露当前逻辑 v1 记录；提供方必须在返回句柄前转换任何受支持的历史存储，随产品交付的 JSONL 提供方会通过静态 catalog 迁移已发布 v0。更新的格式会要求操作者升级 harness。本构建不认识的事件类型会被拒绝，除非其信封标记为 `ignorable`；已提交前缀中的损坏以 `SessionPersistenceCorruptionError` 拒绝。
+当前构建无法忠实解读的存储日志会被拒绝，并返回指明拒绝方向的错误，绝不会被误读。`SessionHandle` 只暴露由 `SESSION_FORMAT_VERSION` 标识的当前逻辑记录；提供方必须在返回句柄前转换任何受支持的历史存储，随产品交付的 JSONL 提供方会通过静态 catalog 迁移受支持的历史代际。更新的格式会要求操作者升级 harness。本构建不认识的事件类型会被拒绝，除非其信封标记为 `ignorable`；已提交前缀中的损坏以 `SessionPersistenceCorruptionError` 拒绝。
 
 -----
 
@@ -104,7 +104,7 @@ await ctx.sessionPersistence.flush()                           // backend-wide d
 
 ### 存储记录校验
 
-seam 的共享辅助函数校验当前逻辑 v1 记录，append 只写当前格式（[理由](../../../.agents/notes/implemented/architecture/2026-08-31-released-session-format-migrations.zh.md)）。历史解码与不可变后继发布属于各提供方内部，并在其返回句柄前完成。每个后端都在句柄读取与写 open 预热时运行 `storage-contract` 校验，把未知事件类型作为 `SessionFormatUnsupportedError` 拒绝，把格式错误的当前记录作为 `SessionPersistenceCorruptionError` 拒绝，并在后端为每个会话保留一份产物时附上原始日志的 `SessionLocation`。
+seam 的共享辅助函数校验由 `SESSION_FORMAT_VERSION` 标识的当前逻辑记录，append 只写当前格式（[理由](../../../.agents/notes/implemented/architecture/2026-08-31-released-session-format-migrations.zh.md)）。历史解码与不可变后继发布属于各提供方内部，并在其返回句柄前完成。每个后端都在句柄读取与写 open 预热时运行 `storage-contract` 校验，把未知事件类型作为 `SessionFormatUnsupportedError` 拒绝，把格式错误的当前记录作为 `SessionPersistenceCorruptionError` 拒绝，并在后端为每个会话保留一份产物时附上原始日志的 `SessionLocation`。
 
 </details>
 -----
@@ -146,7 +146,7 @@ seam 不添加提示词或 schema。恢复会将已存储的表层事件还原�
 
 这些限制界定 seam 保证的终点。它们是当前包约束，不是待办事项。
 
-- **写所有权仅限进程内**——提供方的写入器表只在单个后端实例内排除第二个写入方；持久的跨进程租约是计划在同一句柄形态上叠加的下一层，在它落地之前另一进程不得写入同一会话。
+- **seam 只保证单个后端实例内的写所有权**——跨进程排他由具体提供方负责。随产品交付的 JSONL 提供方通过内核锁在不同实例和进程之间提供租约；其他提供方必须记录等效保证，或要求部署方阻止并发写入。
 - **在有活跃会话时重载后端插件会使其写入器明确报错**——重载后的后端无法服务旧实例签发的句柄；写入会持续失败直到会话重启，没有任何机制静默重新接管日志。
 - **只有通过句柄获取的会话才会持久化**——仅靠 `ctx.sessions.create` + `session/flush` 不存储任何内容；agent-loop 是生产环境的获取点，测试通过 `create`/`append`/`close` 写入初始存储数据。
 - **无删除或保留接口**——剪枝已存储会话属于带外后端维护。

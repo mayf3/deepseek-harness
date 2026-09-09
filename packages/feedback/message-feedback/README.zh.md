@@ -1,5 +1,5 @@
 ---
-description: "在权威 Session 日志中保存已完成 assistant 消息的评分与备注。"
+description: "在权威 Session 日志中保存已完成 assistant 消息的评分、分类与备注。"
 kind: "package-reference"
 ---
 
@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-本服务为已完成的 assistant 消息记录好评、差评及可选的原样备注。每次创建、编辑和删除都由权威 Session 日志保存；`list`、`put` 和 `delete` 提供当前反馈，不会构造或唤醒 agent（智能体）。反馈仅写入日志，不进入模型历史。
+本服务为已完成的 assistant 消息记录好评、差评、固定反馈分类表中的可选分类，以及可选的原样备注。每次创建、编辑和删除都由权威 Session 日志保存；`list`、`put` 和 `delete` 提供当前反馈，不会构造或唤醒 agent（智能体）。反馈仅写入日志，不进入模型历史。
 
 ## 目录
 
@@ -30,17 +30,17 @@ kind: "package-reference"
 |---|---|---|
 | `maxNoteBytes` | 必填 | 单条可选备注的 UTF-8 字节上限，必须为大于零的安全整数。 |
 
-提交的备注必须包含非空白字符，且不超过配置的字节上限。空白备注返回 `note-blank`；过长备注返回 `note-too-large`。通过校验的文本会完整保留，包括首尾空白。省略备注会清除它。备注校验先于 Session 查找。
+提交的备注必须包含非空白字符，且不超过配置的字节上限。空白备注返回 `note-blank`；过长备注返回 `note-too-large`。通过校验的文本会完整保留，包括首尾空白。省略备注会清除它。备注校验先于 Session 查找。提交的分类必须是[固定反馈分类](../command-feedback/README.zh.md#the-web-feedback-dialog)之一；Remote schema 拒绝其他值，省略分类会清除它。
 
 ### 读取与修改反馈
 
 | 操作 | 请求 | 成功 | 业务失败 |
 |---|---|---|---|
 | `list` | Session id | 按创建顺序返回当前条目 | Session 不存在 |
-| `put` | Session、消息、评分、可选备注、预期版本 | 当前条目 | Session 或目标不存在、版本冲突、备注无效 |
+| `put` | Session、消息、评分、可选备注、可选分类、预期版本 | 当前条目 | Session 或目标不存在、版本冲突、备注无效 |
 | `delete` | Session、消息、预期版本 | 条目不存在 | Session 不存在、版本冲突 |
 
-创建时传入 `ifVersion: null`；编辑或删除时使用返回的版本。陈旧修改返回 `version-conflict` 及当前条目。每次实质 put 都生成新 token，并保留原始创建时间。匹配的无变化 put 返回相同条目，不追加事件。删除不存在的条目始终成功，不受所传版本影响，也不追加事件。重新创建已删除条目会产生新的创建时间和排序位置。
+创建时传入 `ifVersion: null`；编辑或删除时使用返回的版本。陈旧修改返回 `version-conflict` 及当前条目。每次实质 put 都生成新 token，并保留原始创建时间。重复已存评分、备注与分类的 put 是无变化操作：返回相同条目，不追加事件。删除不存在的条目始终成功，不受所传版本影响，也不追加事件。重新创建已删除条目会产生新的创建时间和排序位置。
 
 目标必须是由 append 来源事件产生的非空 assistant 消息。用户消息、空 assistant 占位及 replacement 来源消息返回 `target-not-found`。反馈跨重启保留；fork 即使继承了包含父会话反馈的前缀，初始时也没有自有反馈。
 
@@ -93,7 +93,7 @@ kind: "package-reference"
 - **删除保留历史：**delete 移除当前反馈，不会从仅追加日志中清除更早的评分或备注；它不是隐私擦除操作。
 - **写入所有权：**另一个进程持有 Session 写句柄时，冷会话修改会 reject。服务不会唤醒该所有者，也不协调跨进程 Remote 调用。
 - **受信任调用方：**请求不包含经过认证的 actor 或审计身份。部署方必须保护 Host 网关。
-- **遥测导出：**对于所有用户和提供方，包括 `deepseek-official`，随附 OTel 后端在 `FEEDBACK_ONLY` 模式下仅在新的显式文本反馈、评分或备注编辑、撤回后释放完整权威日志前缀。前缀包含上下文和原样备注；后续记录等待下一次反馈，`DISABLED` 阻止捕获。部署方负责脱敏；见 [OTel 导出策略](../../session/session-telemetry-otel/README.zh.md)。
+- **遥测导出：**对于所有用户和提供方，包括 `deepseek-official`，随附 OTel 后端在 `FEEDBACK_ONLY` 模式下仅在新的显式文本反馈、评分、备注或分类编辑、撤回后释放完整权威日志前缀。前缀包含上下文和原样备注；后续记录等待下一次反馈，`DISABLED` 阻止捕获。部署方负责脱敏；见 [OTel 导出策略](../../session/session-telemetry-otel/README.zh.md)。
 - **扫描成本：**每次访问已有 Session 的 `list`、`put` 或 `delete` 都会扫描完整事件日志来推导当前反馈；冷会话操作还会从持久化存储读取完整日志。工作量随 Session 历史总量增长，而不只是反馈条目数。
 - **保留量：**`maxNoteBytes` 只限制单条备注，不限制日志总大小或变更次数。
 

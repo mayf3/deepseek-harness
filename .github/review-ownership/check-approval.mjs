@@ -8,7 +8,6 @@ const API_VERSION = '2026-03-10'
 const MAX_PULL_REQUEST_REVIEWS = 3_000
 const PAGE_SIZE = 100
 const STATUS_CONTEXT = 'weighted approval'
-const STATUS_PREFIX = 'This is by automated Angry Turtle Cyborg, not a human'
 const WRITABLE_PERMISSIONS = new Set(['admin', 'write'])
 const REVIEW_STATES = new Set(['APPROVED', 'CHANGES_REQUESTED', 'COMMENTED', 'DISMISSED', 'PENDING'])
 const LOGIN = /^[A-Za-z0-9-]+(?:\[bot\])?$/u
@@ -130,7 +129,7 @@ export async function listPullRequestReviews(api, repository, pullNumber) {
 /**
  * Evaluate approval points from current reviews and repository permissions.
  * @param {{event: unknown, policySource: string, api: (path: string, options?: {method?: string, body?: unknown}) => Promise<unknown>}} options Runtime inputs.
- * @returns {Promise<{pull: {repository: string, number: number, headSha: string}, state: 'failure' | 'pending' | 'success', description: string, points: number, requiredPoints: number, approvals: Array<{login: string, points: number}>, blockers: string[], ignoredReviewers: string[]}>} Approval decision and status payload fields.
+ * @returns {Promise<{pull: {repository: string, number: number, headSha: string}, state: 'pending' | 'success', description: string, points: number, requiredPoints: number, approvals: Array<{login: string, points: number}>, blockers: string[], ignoredReviewers: string[]}>} Approval decision and status payload fields.
  */
 export async function evaluateApproval({ event, policySource, api }) {
   const pull = pullRequestFromEvent(event)
@@ -170,7 +169,7 @@ export async function evaluateApproval({ event, policySource, api }) {
     return next
   }, 0)
   if (blockers.length > 0) {
-    return approvalResult(pull, policy.requiredPoints, approvals, blockers, ignoredReviewers, 'failure',
+    return approvalResult(pull, policy.requiredPoints, approvals, blockers, ignoredReviewers, 'pending',
       `${blockers.length} blocking change request${blockers.length === 1 ? '' : 's'}`)
   }
   const state = points >= policy.requiredPoints ? 'success' : 'pending'
@@ -192,12 +191,11 @@ export async function evaluateApproval({ event, policySource, api }) {
  */
 export async function runApprovalCheck({ event, policySource, api, runUrl, write = line => process.stdout.write(`${line}\n`) }) {
   const pull = pullRequestFromEvent(event)
-  write(STATUS_PREFIX)
   let result
   try {
     result = await evaluateApproval({ event, policySource, api })
   } catch (error) {
-    await publishStatus(api, pull, 'error', `${STATUS_PREFIX}: approval evaluation failed.`, runUrl)
+    await publishStatus(api, pull, 'error', 'Approval evaluation failed.', runUrl)
     throw error
   }
   write(`Approval score: ${result.points}/${result.requiredPoints}.`)
@@ -239,7 +237,7 @@ function approvalResult(pull, requiredPoints, approvals, blockers, ignoredReview
   return {
     pull: { repository: pull.repository, number: pull.number, headSha: pull.headSha },
     state,
-    description: `${STATUS_PREFIX}: ${detail}.`,
+    description: `${detail}.`,
     points: approvals.reduce((total, approval) => total + approval.points, 0),
     requiredPoints,
     approvals,
@@ -355,7 +353,6 @@ async function main() {
       api,
     })
     if (resolved === null) {
-      process.stdout.write(`${STATUS_PREFIX}\n`)
       process.stdout.write('Skipped a review event for a superseded pull-request head.\n')
       return
     }

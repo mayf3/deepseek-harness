@@ -130,38 +130,46 @@ describe('RightbarSeat presentation', () => {
     expect(h.layout()).toBe(retained)
   })
 
-  it.each([0, 1, 2])('selects the default from %i guide entries and protects a single tab', async (entryCount) => {
+  it.each([0, 1, 2])('selects the default from %i guide entries and protects only a sole guide', async (entryCount) => {
     const h = await mountSeat(1440, true, entryCount)
     act(() => { h.controller.toggleExpanded() })
     const initial = Object.values(h.layout().tabs)[0]!
     expect(initial.kind).toBe(entryCount === 1 ? 'text' : 'guide')
-    expect(h.view.container.querySelectorAll('[data-dockkit-tab-close]')).toHaveLength(0)
-    const before = h.layout()
-    act(() => { h.controller.close(initial.id) })
-    expect(h.layout()).toBe(before)
-    fireEvent.contextMenu(element(h.view.container, '[data-dockkit-tab]'))
-    expect(document.querySelector('[data-dockkit-tab-menu] [role^="menuitem"]')).toBeNull()
     if (entryCount !== 1) {
+      expect(h.view.container.querySelectorAll('[data-dockkit-tab-close]')).toHaveLength(0)
+      const before = h.layout()
+      act(() => { h.controller.close(initial.id) })
+      expect(h.layout()).toBe(before)
+      fireEvent.contextMenu(element(h.view.container, '[data-dockkit-tab]'))
+      expect(document.querySelector('[data-dockkit-tab-menu] [role^="menuitem"]')).toBeNull()
       expect(h.view.container.querySelector('[data-dockkit-add-tab]')).toBeNull()
       return
     }
+    expect(h.view.container.querySelector(`[data-dockkit-tab-close="${initial.id}"]`)).not.toBeNull()
+    act(() => { h.controller.close(initial.id) })
+    expect(h.layout().expanded).toBe(false)
+    // The close leaves the layout empty; the next expansion reseeds.
+    expect(Object.keys(h.layout().tabs)).toHaveLength(0)
+    act(() => { h.controller.toggleExpanded() })
+    const reseeded = Object.values(h.layout().tabs)[0]!
+    expect(reseeded.kind).toBe('text')
+    expect(reseeded.id).not.toBe(initial.id)
     fireEvent.click(element(h.view.container, '[data-dockkit-add-tab]'))
     const guide = Object.values(h.layout().tabs).find(tab => tab.kind === 'guide')!
     expect(h.view.container.querySelector('[data-dockkit-add-tab]')).toBeNull()
-    expect(h.view.container.querySelector(`[data-dockkit-tab-close="${initial.id}"]`)).toBeNull()
+    expect(h.view.container.querySelector(`[data-dockkit-tab-close="${reseeded.id}"]`)).not.toBeNull()
     expect(h.view.container.querySelector(`[data-dockkit-tab-close="${guide.id}"]`)).not.toBeNull()
-    act(() => { h.controller.close(initial.id) })
-    expect(h.layout().tabs[initial.id]).toBe(initial)
+    act(() => { h.controller.close(reseeded.id) })
+    expect(h.layout().tabs[reseeded.id]).toBeUndefined()
+    expect(h.view.container.querySelector(`[data-dockkit-tab-close="${guide.id}"]`)).toBeNull()
     const preview = h.open('ordinary.txt')
     expect(h.view.container.querySelector(`[data-dockkit-tab-close="${preview.id}"]`)).not.toBeNull()
     act(() => { h.controller.close(preview.id) })
     expect(h.layout().tabs[preview.id]).toBeUndefined()
-    fireEvent.click(element(h.view.container, `[data-dockkit-tab-close="${guide.id}"]`))
-    expect(Object.keys(h.layout().tabs)).toEqual([initial.id])
+    expect(Object.keys(h.layout().tabs)).toEqual([guide.id])
     expect(h.view.container.querySelectorAll('[data-dockkit-tab-close]')).toHaveLength(0)
-    expect(h.view.container.querySelector('[data-dockkit-add-tab]')).not.toBeNull()
     act(() => { h.controller.split() })
-    expect(Object.values(h.layout().tabs).map(tab => tab.kind)).toEqual(['text', 'text'])
+    expect(Object.values(h.layout().tabs).map(tab => tab.kind)).toEqual(['guide', 'text'])
   })
 
   it('offers close for a floating tab while the docked pane keeps its sole tab', async () => {
@@ -445,11 +453,13 @@ describe('slot-owned useTabInfo', () => {
 
   it('updates guide replacements through the same hook and guide boxes through framework injection', async () => {
     const h = await mountSeat()
+    // The first expansion seeds the guide the replacement renders over.
+    act(() => { h.controller.toggleExpanded() })
     let captured: SidebarRightTabInfo | undefined
     await act(async () => {
       h.runtime.ctx.sidebarRightTabs.register({
         id: 'test/files', kind: 'files', title: () => 'Files',
-        guide: [{ order: 1, title: () => 'Files', description: () => 'Browse' }],
+        guide: [{ order: 1, title: () => 'Files' }],
       })
     })
     expect(h.view.container.querySelector('[data-sidebar-right-guide-entry="files"]')).not.toBeNull()
@@ -505,6 +515,8 @@ describe('slot-owned useTabInfo', () => {
 
   it('hides split controls at two panes and adds a guide only to a pane without one', async () => {
     const h = await mountSeat()
+    // Expanding first seeds the left pane's guide; only the right pane will lack one.
+    act(() => { h.controller.toggleExpanded() })
     h.open()
     const splitButtons = () => h.view.container.querySelectorAll<HTMLButtonElement>('[data-dockkit-split-button]')
     expect(splitButtons()).toHaveLength(1)
@@ -524,10 +536,6 @@ describe('slot-owned useTabInfo', () => {
     expect(getPane(h.layout(), right).tabs.filter(id => h.layout().tabs[id]?.kind === 'guide')).toHaveLength(1)
     const closing = [...getPane(h.layout(), right).tabs]
     act(() => { for (const tabId of closing) h.actions.closeTab(SESSION, tabId) })
-    expect(dockPaneIds(h.layout())).toHaveLength(2)
-    const remaining = getPane(h.layout(), right).tabs[0]!
-    expect(h.view.container.querySelector(`[data-dockkit-tab-close="${remaining}"]`)).toBeNull()
-    act(() => { h.actions.placeTab(SESSION, remaining, dockPaneIds(h.layout())[0]!, 0) })
     expect(dockPaneIds(h.layout())).toHaveLength(1)
     expect(splitButtons()).toHaveLength(1)
     expect(splitButtons()[0]?.disabled).toBe(false)
