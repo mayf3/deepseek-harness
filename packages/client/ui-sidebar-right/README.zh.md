@@ -45,7 +45,7 @@ kind: "package-reference"
 
 席位通过 `ctx.layout.openRightbar(track, fullscreen)` / `closeRightbar()` 报告呈现，框架不注入本包。宽屏切换全屏不改变中栏宽度；宽度拖拽区只在普通展开态显示。独立浮窗及 `float`/`dock` 操作保持可用。
 
-面板没有标题行。它的两个控件——形态切换与折叠按钮——搭在套件 chrome 席位上，位于右上格 tab 条的最末端，因此 tab 条就是面板的整条上边。每条 tab 条从左到右读作：作为胶囊、各带关闭按钮的 tab，添加控件（只在该格没有引导 tab 时绘制；它通过 `ctx.sidebarRight.openTab` 在该格打开引导页），该格的分栏控件，以及右上格里的两个面板控件。窄格里只有 chip 让位；其后的控件从不收缩或被裁切。
+面板没有标题行。它的两个控件——形态切换与折叠按钮——搭在套件 chrome 席位上，位于右上格 tab 条的最末端，因此 tab 条就是面板的整条上边。每条 tab 条从左到右读作：在允许时带关闭按钮的 tab 胶囊，添加控件（只在该格没有引导 tab 时绘制；它通过 `ctx.sidebarRight.openTab` 在该格打开引导页），该格的分栏控件，以及右上格里的两个面板控件。窄格里只有 chip 让位；其后的控件从不收缩或被裁切。
 
 <a id="the-expand-button"></a>
 ## 展开按钮
@@ -63,14 +63,14 @@ kind: "package-reference"
 
 把铸造计数器带在停靠面里，是记录的序列可回放的原因：操作内嵌它们创建的 id，因此从同一初始状态回放能复现同一棵树。每个动作记录一条历史，无论它需要多少操作。展开、折叠与切换形态也都被记录。
 
-每个动作之后，套件的 settle planner 保证停靠面有内容：最后一个 tab 被关闭、搬走或浮出的停靠格会被并掉；只剩根格且它为空时，重新播种引导 tab。永远至少有一个 tab，永远没有空格——因此没有单独的「关闭格」手势。
+每个动作之后，套件的 settle planner 保证停靠面有内容：最后一个 tab 被搬走或浮出的停靠格会被并掉；根格被清空时填入默认页。显式关闭遵循[默认页与关闭规则](#the-guide)。永远至少有一个 tab，永远没有空格——因此没有单独的「关闭格」手势。
 
 状态只在内存中。刷新会让每个会话回到折叠的默认态；切换会话则让每个停靠面留在原处。
 
 <a id="extension-seats"></a>
 ## 扩展席位
 
-tab 类型分两阶段注册，随包发布的引导类型走的正是别的包的类型走的同一条公开路径（`ui-sidebar-textpreview` 是活的证明）。两个阶段都在类型自己的 `ctx.effect` 里，因此注册与创建它的插件同生共死。
+tab 类型分两阶段注册，随包发布的引导类型走的正是别的包的类型走的同一条公开路径（`ui-sidebar-documentpreview` 是活的证明）。两个阶段都在类型自己的 `ctx.effect` 里，因此注册与创建它的插件同生共死。
 
 1. **类型**——`ctx.sidebarRightTabs.register({ id, kind, patterns?, priority?, canOpen?, title, guide? })`，一份没有运行时钩子的静态声明，返回 disposer。`id` 是这个实现在 tab 系统里的身份，在全部注册中唯一（包名是天然取值；随包引导页是 `@deepseek-ai/dsh-client-ui-sidebar-right/guide`）：一旦 extension 可以接管 builtin 的 kind，kind 就不再唯一，所以实现要自己命名，同一 `id` 的第二次注册会 throw。资源类型给出 `patterns`，即作用于 `dsh-resource://` 地址的 glob：含 `:` 的匹配整个地址（`dsh-resource://file/**`）；不含的匹配 URI 路径的任意深度且忽略大小写（`*.md`），不是 URI 的地址不匹配任何这类模式。页类型——引导页、文件树——不给出模式，按 kind 打开。`canOpen(address)` 否决一次命中。`title(address)` 是 tab chip 的文字，在 tab 打开时捕获。`guide` 列出引导页的入口框；选中一个即把贡献它的类型作为页打开。一个 `kind` 最多承载一份 `builtin` 与一份 `extension` 注册（extension 生效；它离开后 builtin 恢复）；kind 上的其它任何撞名都 throw。`id` 同时也是该类型正文与标题注册时用的 key，因此 extension 与它接管的 builtin 各占一个格位，席位渲染生效的那个。
 2. **正文**——`ctx.slots.register({ name: 'sidebar.right.pane.tab', key: definition.id }, Body)` 通过框架注入的 `useTabInfo()` 读取 `{ sidebar, panel, tab }`。`sidebar` 提供开合与全屏信息，`panel.id` 命名所在格，`tab` 包含原记录字段、`visible`、`navigation`、`signal` 和 `actions`。这些字段不再作为平铺owner props传入；类型自己的store仍使用 `useStore`/`actions`。可选标题注册及引导替换共享该hook；未注册标题时使用打开时保存的文本。
@@ -94,7 +94,9 @@ Tab域按（Session，Tab id）保留导航、中止信号与绑定动作；私�
 <a id="the-guide"></a>
 ## 引导页
 
-引导 tab 是一个居中标题、其下一行说明，以及各已注册类型贡献的每个 `guide` 条目一个入口框，按 `order` 排列。选中一个框会调用 `tab.actions.openTab(entry.kind, { replaceTab: true })`，于是引导页让位给它打开的页。一个格最多持有一个引导 tab。tab 条的添加控件只在该格没有引导 tab 时绘制，并以 `openTab('guide', { paneId, revealIfOpened: false })` 在该格打开一个，这样别的格里的引导页不会截走这次点击；把引导页开进已有引导页的格则改为聚焦它；把引导页拖入、放入或收回到这样的格会合并进去——来者关闭，该格自己的被聚焦；对引导页 `duplicateTab` 不记录任何东西。分栏或被清空的根格通过套件的工厂播种一个引导页，每个新格一个。普通的 `openTab('guide')` 保留每次打开都有的整树聚焦。产品最多保留左右两格，默认均分，分隔条限定20%～80%。宽度不足以容纳两格时不允许新分栏；已有两格时，正文拖放用于跨格移动，不再创建第三格。 达到两格上限时隐藏分栏控件；关闭回单格后恢复。
+默认页取决于已注册的引导入口数，不取决于 tab 类型数或已打开的 tab 数。恰好一个入口时直接打开对应页面（随包组合中为 Files）；没有入口或有多个入口时打开引导页。单入口生成的默认页在增加其他 tab 后仍不可关闭。任何格的最后一个 tab 也不可关闭；其他 tab 可以关闭。chip、上下文菜单与 `close` API 使用同一规则。显式添加引导页始终打开引导，即使只有一个入口。
+
+引导 tab 是一个居中标题、其下一行说明，以及各已注册类型贡献的每个 `guide` 条目一个入口框，按 `order` 排列。选中一个框会调用 `tab.actions.openTab(entry.kind, { replaceTab: true })`，于是引导页让位给它打开的页。一个格最多持有一个引导 tab。tab 条的添加控件只在该格没有引导 tab 时绘制，并以 `openTab('guide', { paneId, revealIfOpened: false })` 在该格打开一个，这样别的格里的引导页不会截走这次点击；把引导页开进已有引导页的格则改为聚焦它；把引导页拖入、放入或收回到这样的格会合并进去——来者关闭，该格自己的被聚焦；对引导页 `duplicateTab` 不记录任何东西。分栏或被清空的根格使用相同的默认页规则，每个新格一个 tab。普通的 `openTab('guide')` 保留每次打开都有的整树聚焦。产品最多保留左右两格，默认均分，分隔条限定20%～80%。宽度不足以容纳两格时不允许新分栏；已有两格时，正文拖放用于跨格移动，不再创建第三格。 达到两格上限时隐藏分栏控件；关闭回单格后恢复。
 
 <a id="copy"></a>
 ## 文案

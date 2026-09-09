@@ -57,7 +57,7 @@ function transition(property = 'transform') {
   }
 }
 
-async function mountSeat(viewportWidth = 1440, canShow = true) {
+async function mountSeat(viewportWidth = 1440, canShow = true, entryCount = 0) {
   const runtime = await SlotTestRuntime.create()
   runtimes.push(runtime)
   const frame = { openRightbar: vi.fn(), closeRightbar: vi.fn() }
@@ -94,6 +94,7 @@ async function mountSeat(viewportWidth = 1440, canShow = true) {
     runtime.ctx.sidebarRightTabs.register({
       id: 'test/text', kind: 'text', priority: 'builtin', patterns: ['dsh-resource://file/**'],
       title: address => address.slice(address.lastIndexOf('/') + 1),
+      guide: Array.from({ length: entryCount }, (_, order) => ({ order, title: () => 'Test', description: () => 'Test page' })),
     })
     runtime.slots.register({ name: 'sidebar.right.pane.tab', key: 'test/text' }, Body)
     runtime.slots.register({ name: 'sidebar.right.pane.tab.title', key: 'test/text' }, Title)
@@ -127,6 +128,56 @@ describe('RightbarSeat presentation', () => {
     act(() => { h.runtime.panelInfo.set({ activePanelId: null }) })
     expect(h.view.container.querySelector('[data-sidebar-right-panel]')).not.toBeNull()
     expect(h.layout()).toBe(retained)
+  })
+
+  it.each([0, 1, 2])('selects the default from %i guide entries and protects a single tab', async (entryCount) => {
+    const h = await mountSeat(1440, true, entryCount)
+    act(() => { h.controller.toggleExpanded() })
+    const initial = Object.values(h.layout().tabs)[0]!
+    expect(initial.kind).toBe(entryCount === 1 ? 'text' : 'guide')
+    expect(h.view.container.querySelectorAll('[data-dockkit-tab-close]')).toHaveLength(0)
+    const before = h.layout()
+    act(() => { h.controller.close(initial.id) })
+    expect(h.layout()).toBe(before)
+    fireEvent.contextMenu(element(h.view.container, '[data-dockkit-tab]'))
+    expect(document.querySelector('[data-dockkit-tab-menu] [role^="menuitem"]')).toBeNull()
+    if (entryCount !== 1) {
+      expect(h.view.container.querySelector('[data-dockkit-add-tab]')).toBeNull()
+      return
+    }
+    fireEvent.click(element(h.view.container, '[data-dockkit-add-tab]'))
+    const guide = Object.values(h.layout().tabs).find(tab => tab.kind === 'guide')!
+    expect(h.view.container.querySelector('[data-dockkit-add-tab]')).toBeNull()
+    expect(h.view.container.querySelector(`[data-dockkit-tab-close="${initial.id}"]`)).toBeNull()
+    expect(h.view.container.querySelector(`[data-dockkit-tab-close="${guide.id}"]`)).not.toBeNull()
+    act(() => { h.controller.close(initial.id) })
+    expect(h.layout().tabs[initial.id]).toBe(initial)
+    const preview = h.open('ordinary.txt')
+    expect(h.view.container.querySelector(`[data-dockkit-tab-close="${preview.id}"]`)).not.toBeNull()
+    act(() => { h.controller.close(preview.id) })
+    expect(h.layout().tabs[preview.id]).toBeUndefined()
+    fireEvent.click(element(h.view.container, `[data-dockkit-tab-close="${guide.id}"]`))
+    expect(Object.keys(h.layout().tabs)).toEqual([initial.id])
+    expect(h.view.container.querySelectorAll('[data-dockkit-tab-close]')).toHaveLength(0)
+    expect(h.view.container.querySelector('[data-dockkit-add-tab]')).not.toBeNull()
+    act(() => { h.controller.split() })
+    expect(Object.values(h.layout().tabs).map(tab => tab.kind)).toEqual(['text', 'text'])
+  })
+
+  it('offers close for a floating tab while the docked pane keeps its sole tab', async () => {
+    const h = await mountSeat()
+    const floating = h.open('floating.txt')
+    act(() => { h.controller.float(floating.id) })
+    const paneId = getPane(h.layout(), h.layout().floats[0]!).id
+    expect(h.view.container.querySelector('[data-dockkit-tab-close]')).toBeNull()
+    const close = document.querySelector<HTMLButtonElement>(`[data-dockkit-float-close="${paneId}"]`)
+    expect(close).not.toBeNull()
+
+    fireEvent.click(close!)
+
+    expect(h.layout().tabs[floating.id]).toBeUndefined()
+    expect(h.layout().floats).toHaveLength(0)
+    expect(getPane(h.layout(), h.layout().rootId).tabs).toHaveLength(1)
   })
 
   it('keeps the panel mounted while collapsed and releases the frame on unmount', async () => {
@@ -473,6 +524,10 @@ describe('slot-owned useTabInfo', () => {
     expect(getPane(h.layout(), right).tabs.filter(id => h.layout().tabs[id]?.kind === 'guide')).toHaveLength(1)
     const closing = [...getPane(h.layout(), right).tabs]
     act(() => { for (const tabId of closing) h.actions.closeTab(SESSION, tabId) })
+    expect(dockPaneIds(h.layout())).toHaveLength(2)
+    const remaining = getPane(h.layout(), right).tabs[0]!
+    expect(h.view.container.querySelector(`[data-dockkit-tab-close="${remaining}"]`)).toBeNull()
+    act(() => { h.actions.placeTab(SESSION, remaining, dockPaneIds(h.layout())[0]!, 0) })
     expect(dockPaneIds(h.layout())).toHaveLength(1)
     expect(splitButtons()).toHaveLength(1)
     expect(splitButtons()[0]?.disabled).toBe(false)

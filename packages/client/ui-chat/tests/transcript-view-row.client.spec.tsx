@@ -29,7 +29,7 @@ function noPendingInteraction() {
 }
 
 // The resource hook the resources plugin merges into GlobalStandardProps; this row reads no address.
-const useResource = (() => ({ status: 'none' as const, value: undefined, failure: undefined, reload: () => {} })) as GlobalStandardProps['useResource']
+const useResource = (() => ({ status: 'none' as const, value: undefined, failure: undefined })) as GlobalStandardProps['useResource']
 
 function mount(mode: 'normal' | 'compact' = 'compact') {
   const source = createSnapshotStore(mode)

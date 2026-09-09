@@ -157,7 +157,7 @@ export interface ISidebarRight {
    */
   openTab<K extends string>(kind: K, options?: SidebarRightOpenTabOptions<K>): void
   /**
-   * Close one tab of the mounted session.
+   * Close one tab of the mounted session; permanent defaults and a pane's last tab remain open.
    * @param tabId - the tab to close.
    */
   close(tabId: TabId): void
@@ -286,7 +286,7 @@ export class SidebarRightController implements ISidebarRight {
   }
 
   /**
-   * Close a tab of one session, for the tab's own action; nothing happens
+   * Close a tab of one session, preserving permanent defaults and a pane's last tab; nothing happens
    * for a session whose store was never adopted or whose adoption was released.
    * Not part of `ISidebarRight`: the Tab domain's path.
    * @param sessionId - the session the tab is in.
@@ -343,7 +343,7 @@ export class SidebarRightController implements ISidebarRight {
   }
 
   /**
-   * Close one tab of the mounted session.
+   * Close one tab of the mounted session; permanent defaults and a pane's last tab remain open.
    * @param tabId - the tab to close.
    */
   close(tabId: TabId): void {
