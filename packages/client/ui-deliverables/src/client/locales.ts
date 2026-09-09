@@ -39,7 +39,7 @@ export const en: Record<DeliverablesKey, string> = {
   'row.stopped': 'Interrupted',
   'row.inspect': 'Inspect call',
   'presented.open': 'Open {name} in default app',
-  'produced.label': 'Files changed this turn',
+  'produced.label': 'Files changed',
   'produced.moreOne': '+ 1 file',
   'produced.more': '+ {count} files',
   'produced.open': 'Open {name}',

@@ -169,7 +169,7 @@
 - list:
   - listitem:
     - paragraph: Footnote references stay inert superscripts. ↩
-- text: Files changed this turn
+- text: Files changed
 - button "Open site/report.html": report.html
 - button "Open a/style.css": style.css
 - button "Open b/style.css": style.css
