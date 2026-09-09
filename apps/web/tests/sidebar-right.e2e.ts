@@ -603,8 +603,8 @@ describe('web e2e: shipped right Sidebar', () => {
       // case collects console errors itself.
       const viewport = page.viewportSize()
       if (viewport === null) throw new Error('expected a fixed viewport')
+      const column = await resetSidebar(page)
       const frame = page.locator('[class*="frame"]').first()
-      const column = page.locator('[data-rightbar-col]')
       const panel = column.locator('[data-sidebar-right-panel]')
       const consoleErrors: string[] = []
       const collect = (message: ConsoleMessage): void => {
@@ -614,6 +614,7 @@ describe('web e2e: shipped right Sidebar', () => {
       try {
         await page.setViewportSize({ width: 1000, height: viewport.height })
         await ensureExpanded(page, column)
+        await width(column)
         const grip = frame.locator('[data-side="rightbar"]')
         // The frame reads the new viewport through a throttled ResizeObserver,
         // a couple of frames after the resize; until then the grip sits at the
