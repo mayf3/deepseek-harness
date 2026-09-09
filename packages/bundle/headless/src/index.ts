@@ -200,20 +200,27 @@ function* liveEvents(session: Session): Generator<SessionEvent> {
  * the last `agent-preset/selected` event. The header is only a creation fact;
  * the presets plugin reconstructs a session's composition from the projection.
  */
-function currentPreset(header: AdoptableHeader, events: Iterable<SessionEvent>): string | undefined {
+function currentPreset(header: AdoptableHeader, events: Iterable<SessionEvent>, sessionId: SessionId): string | undefined {
   let preset = header.agentPreset
   for (const event of events) {
     // Owned by dsh-agent-presets, which this bundle does not compose, so the
     // event is read structurally rather than through its module augmentation.
-    const candidate = event as unknown as { type: string; data: { agentPreset: string } }
-    if (candidate.type === 'agent-preset/selected') preset = candidate.data.agentPreset
+    const candidate = event as unknown as { type: string; data?: { agentPreset?: unknown } }
+    if (candidate.type !== 'agent-preset/selected') continue
+    const selected = candidate.data?.agentPreset
+    // A corrupt record must not read as "no preset": that would let the run
+    // continue under this bundle's composition instead of the recorded one.
+    if (typeof selected !== 'string' || selected === '') {
+      throw new Error(`session "${sessionId}" records a malformed agent-preset/selected event and cannot be adopted`)
+    }
+    preset = selected
   }
   return preset
 }
 
 /** Reject a Session the one-shot runner must not adopt. */
 function assertAdoptable(header: AdoptableHeader, events: Iterable<SessionEvent>, sessionId: SessionId): void {
-  const preset = currentPreset(header, events)
+  const preset = currentPreset(header, events, sessionId)
   if (preset !== undefined) {
     // This bundle composes no preset roster, so resuming the session here would
     // silently run it under the headless tools and prompts instead of the
@@ -254,13 +261,21 @@ async function resolveAgent(
   // caller a log a later process can continue. Without a durable log the run
   // would succeed, print the id, and still lose the whole history at exit, so
   // a miscomposed profile fails loud before either path.
-  if (ctx.get('sessionPersistence') === undefined) {
+  const persistence = ctx.get('sessionPersistence')
+  if (persistence === undefined) {
     throw new Error('headless --session-id requires the sessionPersistence service; the Session would not survive this process')
   }
   const live = agents.get(sessionId)
   if (live !== undefined) {
     // A live identity skips adoption, not the rules that make adoption safe.
     assertAdoptable(live.session.header, liveEvents(live.session), sessionId)
+    // The service can be mounted while this particular Agent was registered in
+    // memory (a custom factory or direct `agents.register`); the backend then
+    // holds no write handle for it and `session/flush` stores nothing. A stored
+    // record proves the id is actually persistence-backed.
+    if (await persistence.stat(sessionId) === undefined) {
+      throw new Error(`live session "${sessionId}" has no persisted record, so the one-shot runner cannot promise it survives this process`)
+    }
     return live
   }
   const query = ctx.get('sessionQuery')

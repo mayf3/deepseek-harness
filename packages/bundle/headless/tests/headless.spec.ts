@@ -46,6 +46,8 @@ interface BenchOptions {
   observe?: () => Promise<ObservationStub>
   /** Leave the persistence service unmounted to exercise the fail-loud path. */
   omitPersistence?: boolean
+  /** Mount the service but make it report no stored record for any id. */
+  unbackedPersistence?: boolean
   /** Register a live Agent under `sessionId` before the runner starts. */
   prelive?: boolean
   /** Header facts for that pre-registered live Agent. */
@@ -175,7 +177,11 @@ async function bench(script: Script, options: BenchOptions = {}): Promise<{
   if (options.observe !== undefined) {
     ctx.provide('sessionQuery', { observeSession: () => options.observe!() } as never)
   }
-  if (options.omitPersistence !== true) ctx.provide('sessionPersistence', {} as never)
+  if (options.omitPersistence !== true) {
+    ctx.provide('sessionPersistence', {
+      stat: () => Promise.resolve(options.unbackedPersistence === true ? undefined : { header: {} }),
+    } as never)
+  }
   return {
     ctx,
     output: () => ({ out, err, order: [...order] }),
@@ -536,6 +542,21 @@ describe('headless runner', () => {
     await test.ctx.fiber.dispose()
   })
 
+  it('rejects a live Session the persistence service does not know', async () => {
+    const test = await bench({
+      afterPrompt(session, message) { appendTurn(session, 1, message, 'live', true) },
+    }, {
+      sessionId: 'session-exact',
+      prelive: true,
+      unbackedPersistence: true,
+    })
+    const result = await test.run()
+    expect(result.code).toBe(1)
+    expect(result.err).toContain('has no persisted record')
+    expect(result.out).toBe('')
+    await test.ctx.fiber.dispose()
+  })
+
   it('resumes the persisted Session when the query finds it', async () => {
     const test = await bench({
       afterPrompt(session, message) { appendTurn(session, 1, message, 'resumed answer', true) },
@@ -600,6 +621,21 @@ describe('headless runner', () => {
     const result = await test.run()
     expect(result.code).toBe(1)
     expect(result.err).toContain('runs under agent preset "minimal"')
+    await test.ctx.fiber.dispose()
+  })
+
+  it('rejects a persisted Session whose preset record names no preset', async () => {
+    const test = await bench({ afterPrompt: () => {} }, {
+      sessionId: 'session-exact',
+      observe: () => Promise.resolve({
+        header: { cwd: process.cwd() },
+        events: [{ type: 'agent-preset/selected', data: {} }],
+        [Symbol.dispose]() {},
+      }),
+    })
+    const result = await test.run()
+    expect(result.code).toBe(1)
+    expect(result.err).toContain('malformed agent-preset/selected event')
     await test.ctx.fiber.dispose()
   })
 

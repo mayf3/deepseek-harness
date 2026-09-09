@@ -205,6 +205,15 @@ describe('--json projection', () => {
     })
   })
 
+  it('keeps raw arguments that JSON cannot round-trip, such as an overflowing number', () => {
+    const test = harness({}, 's1')
+    test.emitSession({
+      type: 'tool/call',
+      data: { turn: 1, step: 1, callId: 'inf', name: 'bash', arguments: '{"n":1e400}' },
+    } as unknown as SessionEvent)
+    expect(test.parsed()[1]).toEqual({ type: 'tool_call', callId: 'inf', tool: 'bash', input: '{"n":1e400}' })
+  })
+
   it('keeps a literal __proto__ key and bounds over-long object keys', () => {
     const proto = harness({ maxStringBytes: 32 }, 's1')
     proto.emitSession({
