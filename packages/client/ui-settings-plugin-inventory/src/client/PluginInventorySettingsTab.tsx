@@ -113,14 +113,14 @@ function PluginCard({ rowKey, moduleName, entryId, trailing, ariaLabel, failed, 
         aria-label={ariaLabel}
         onClick={() => { onToggle(rowKey) }}
       >
-        <span className={css.cardHeading}>
+        <span className={css.cardMainRow}>
           <strong className={css.cardTitle} title={moduleName}>{moduleShortName(moduleName)}</strong>
-          {entryId === null ? null : <code className={css.cardIdentity} title={entryId}>{entryId}</code>}
+          <span className={css.cardTrailing}>
+            {trailing}
+            <IconChevronDownOutline14 className={css.chevron} size={12} aria-hidden="true" />
+          </span>
         </span>
-        <span className={css.cardTrailing}>
-          {trailing}
-          <IconChevronDownOutline14 className={css.chevron} size={12} aria-hidden="true" />
-        </span>
+        {entryId === null ? null : <code className={css.cardIdentity} title={entryId}>{entryId}</code>}
       </button>
       {open ? <div className={css.cardDetails} id={detailId}>{children}</div> : null}
     </li>

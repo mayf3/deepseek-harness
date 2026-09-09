@@ -153,6 +153,10 @@ describe('PluginInventorySettingsTab', () => {
       .getAttribute('aria-expanded')).toBe('false')
     const secondary = screen.getByRole('button', { name: `tool-subagent, ${longId}, Disabled` })
     expect(secondary.getAttribute('aria-expanded')).toBe('false')
+    expect(secondary.children).toHaveLength(2)
+    expect(secondary.children[0]?.textContent).toContain('tool-subagent')
+    expect(secondary.children[0]?.textContent).toContain('Disabled')
+    expect(secondary.children[1]?.textContent).toBe(longId)
     expect(screen.getByTitle(longId).textContent).toBe(longId)
 
     fireEvent.change(screen.getByRole('searchbox', { name: en.search }), { target: { value: 'secondary' } })
