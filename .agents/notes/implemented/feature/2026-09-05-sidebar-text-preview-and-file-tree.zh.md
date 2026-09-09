@@ -108,12 +108,12 @@ face 是树唯一的异步半边。`start(tabId, root, signal)` 以根展开态�
 
 ## Testing
 
-文本预览的 `tests/` 覆盖：注册表认领与让位（经真实的 `SidebarRightTabRegistry`）、地址翻译（`sessionFileOf` 接受 `session` 作用域、其他一律抛错）、store 的页、版本、reset、视图与 forget 各 action、face 的进行中、失败、abort 与重载路径、页算术（`linesOf`、`offsetsOf`、`lastLineLoaded`）、体的首读、加载更多、重试、变更提示条、导航补页、只跳一次、重新挂载、换行默认与切换、头部控件与 abort 即忘、失败行映射，以及插件的各项注册与 dispose 时的撤销。针对已构建应用的 Chromium 探针记录了撑满与滚动的数字（`.artifacts/sidebar-tab-types/app-probe.log`，`ROUND3`）：短文件的预览高度等于 pane 体内容区高度，长文件在预览体内滚动，pane 体从不滚动。文件树的 `tests/` 覆盖排序、懒加载、折叠记忆、重新读取、三种条目类型、截断与失败行，以及 abort 即忘。`apps/web/tests/sidebar-right.e2e.ts` 经真实 Remote 载体把会话里的产物文件打开进预览。
+文本预览的 `tests/` 覆盖：注册表认领与让位（经真实的 `SidebarRightTabRegistry`）、地址翻译（`sessionFileOf` 接受 `session` 作用域、其他一律抛错）、store 的页、版本、reset、视图与 forget 各 action、face 的进行中、失败、abort 与重载路径、页算术（`linesOf`、`offsetsOf`、`lastLineLoaded`）、体的首读、加载更多、重试、变更提示条、导航补页、只跳一次、重新挂载、换行默认与切换、头部控件与 abort 即忘、失败行映射，以及插件的各项注册与 dispose 时的撤销。针对已构建应用的 Chromium 探针记录了撑满与滚动的数字（`.artifacts/sidebar-tab-types/app-probe.log`，`ROUND3`）：短文件的预览高度等于 pane 体内容区高度，长文件在预览体内滚动，pane 体从不滚动。文件树的 `tests/` 覆盖排序、懒加载、折叠记忆、重新读取、三种条目类型、截断与失败行，以及 abort 即忘。`apps/web/tests/sidebar-right.e2e.ts` 经真实 Remote 载体把会话里的产物文件打开进预览。`apps/web/tests/document-preview.e2e.ts` 覆盖居中的固有尺寸图片、双轴图片滚动和不可执行的 SVG 脚本。
 
 ## Deferred
 
 - 虚拟化或可 seek 的分页加载（页按顺序加载）、恢复已加载范围的重新载入、节流的滚动位置持久化，以及 `ui-primitives` 里的换行图标。
-- 图片、搜索、总行数与文件末尾标记。
+- 搜索、总行数与文件末尾标记。
 - 文件树的搜索、产物过滤、拖拽、重命名、右键菜单、高亮当前文件、文件系统监听，以及浏览到工作区根之上。
 - 引导页文案的产品评审，以及一个类型贡献多个入口时引导页的行为。
 
