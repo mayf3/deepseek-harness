@@ -283,7 +283,8 @@ describe.skipIf(MODE === 'record')('web e2e: details panel follows the current S
     await workspaceDirectory.waitFor({ timeout: 15_000 })
     await workspaceDirectory.click()
     await expect.poll(() => workspaceDirectory.getAttribute('aria-expanded')).toBe('true')
-    await expect.poll(() => column.locator('[data-files-row="loading"]').count()).toBe(0)
+    // The child listing crosses the same Remote as the root listing above.
+    await column.locator('[data-files-row="loading"]').waitFor({ state: 'hidden', timeout: 15_000 })
     expect(await column.locator('[data-files-row="failed"]').count()).toBe(0)
     const retainedB = await paneSnapshot(page)
     expect(retainedB.map(pane => pane.tabs.map(tab => tab.title))).toEqual([['Files']])
