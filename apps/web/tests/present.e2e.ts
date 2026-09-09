@@ -121,8 +121,8 @@ fs.appendFileSync(${JSON.stringify(openLog)}, JSON.stringify({ path, action, con
       }
       const row = page.locator('[data-presented-files-row]')
       await row.waitFor()
-      expect(await row.getByRole('button').count()).toBe(4)
-      expect(await row.getByTitle(join(cwd, 'report.txt'), { exact: true }).innerText()).toBe('report.txt')
+      expect(await row.getByRole('button', { name: /More file actions/ }).count()).toBe(2)
+      expect(await row.getByText('report.txt', { exact: true }).innerText()).toBe('report.txt')
       const beforeReveal = (await opened()).length
       await row.getByRole('button', { name: 'More file actions for report.txt', exact: true }).click()
       const revealResponse = page.waitForResponse(response => response.url().includes('action=reveal') && response.request().method() === 'POST')
@@ -133,7 +133,8 @@ fs.appendFileSync(${JSON.stringify(openLog)}, JSON.stringify({ path, action, con
       for (const [name, bytes] of [['report.txt', 'EDITED_REPORT\n'], ['说明.txt', 'EDITED_NOTE\n']] as const) {
         const count = (await opened()).length
         const response = page.waitForResponse(response => response.url().includes('/api/present.open?') && response.request().method() === 'POST')
-        await row.getByRole('button', { name: `Open ${name} in default app`, exact: true }).click()
+        await row.getByRole('button', { name: `More file actions for ${name}`, exact: true }).click()
+        await page.getByRole('menuitem', { name: 'Open in default app', exact: true }).click()
         expect((await response).status()).toBe(204)
         await page.waitForFunction(() => document.querySelector('[data-presented-files-row] button:disabled') === null)
         expect(await opened()).toHaveLength(count + 1)
@@ -186,7 +187,8 @@ fs.appendFileSync(${JSON.stringify(openLog)}, JSON.stringify({ path, action, con
     const beforeDelete = (await opened()).length
     await unlink(join(cwd, 'report.txt'))
     const missing = page.waitForResponse(response => response.url().includes('/api/present.open?'))
-    await page.locator('[data-presented-files-row]').getByRole('button', { name: 'Open report.txt in default app', exact: true }).click()
+    await page.locator('[data-presented-files-row]').getByRole('button', { name: 'More file actions for report.txt', exact: true }).click()
+    await page.getByRole('menuitem', { name: 'Open in default app', exact: true }).click()
     expect((await missing).status()).toBe(404)
     await page.getByText('Could not open. Click to retry.', { exact: true }).waitFor()
     expect(await opened()).toHaveLength(beforeDelete)

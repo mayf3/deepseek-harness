@@ -588,20 +588,33 @@ describe('presented files', () => {
     expect(selectDeliverables(tailOwner(deliverablesOf(value, 2), 9))).toBeNull()
   })
 
-  it('uses the viewed fork Session in every open action and retains all delivered files', () => {
+  it('uses the viewed fork Session in every open action and expands all delivered files', () => {
     const value = assembler([
       at(1, 'turn/start', { turn: 1 }),
       at(2, 'deliverables/presented', { turn: 1, callId: 'nested', files: Array.from({ length: 8 }, (_, i) => file(`report-${i}.docx`)) }),
     ])
-    const owner = tailOwner(deliverablesOf(value), 3)
+    const preview = vi.fn()
+    const owner = tailOwner(deliverablesOf(value), 3, preview)
     const matched = selectDeliverables(owner)!
     const props = openProps()
     props.openPresented.mockResolvedValue(undefined)
     const view = render(<Deliverables {...props} matched={matched} openFile={owner.openFile} sessionId={SessionId('child-session')} t={makeTranslate(en)} />)
-    expect(view.getAllByRole('button')).toHaveLength(16)
+    expect(view.container.querySelectorAll('[data-presented-file]')).toHaveLength(4)
+    const expand = view.getByRole('button', { name: 'Show all 8 delivered files' })
+    expect(expand.getAttribute('aria-expanded')).toBe('false')
+    fireEvent.click(expand)
+    expect(view.container.querySelectorAll('[data-presented-file]')).toHaveLength(8)
+    expect(view.getByRole('button', { name: 'Collapse delivered files' }).getAttribute('aria-expanded')).toBe('true')
     expect(view.queryByRole('link')).toBeNull()
-    fireEvent.click(view.getByRole('button', { name: 'Open report-0.docx in default app' }))
+    fireEvent.click(view.getByRole('button', { name: 'Preview report-0.docx in sidebar' }))
+    fireEvent.click(view.getByRole('button', { name: 'Open report-0.docx in sidebar' }))
+    expect(preview).toHaveBeenCalledTimes(2)
+    expect(preview).toHaveBeenLastCalledWith('report-0.docx')
+    fireEvent.click(view.getByRole('button', { name: 'More file actions for report-0.docx' }))
+    fireEvent.click(view.getByRole('menuitem', { name: 'Open in default app' }))
     expect(props.openPresented).toHaveBeenCalledWith('child-session', 2, 0, 'open')
+    fireEvent.click(view.getByRole('button', { name: 'Collapse delivered files' }))
+    expect(view.container.querySelectorAll('[data-presented-file]')).toHaveLength(4)
     expect(view.queryByText('Files changed')).toBeNull()
   })
 })
@@ -628,15 +641,23 @@ it.each([{}, { turn: '1', callId: 'bad', files: [] },
   expect(view.queryByText('Deliverables')).toBeNull()
 })
 
-it('shows file metadata and descriptions without hiding extensionless deliveries', () => {
+it('shows descriptions and falls back to file metadata without hiding extensionless deliveries', () => {
   const view = render(<Deliverables {...openProps()} matched={{ produced: [], presented: [
     { path: 'out/report.txt', description: 'Quarterly summary', seq: 2, index: 0 },
     { path: 'LICENSE', seq: 2, index: 1 },
   ] }} openFile={() => {}} sessionId={SessionId('session')} t={makeTranslate(en)} />)
   expect(view.getByText('Quarterly summary')).toBeTruthy()
-  expect(view.getByText('TXT')).toBeTruthy()
   expect(view.getByText('File')).toBeTruthy()
-  expect(view.getByText('out/report.txt')).toBeTruthy()
+  expect(view.getByTitle('out/report.txt')).toBeTruthy()
+  expect(view.getByText('report.txt')).toBeTruthy()
+})
+
+it('lets one delivered file span the complete row without an expansion control', () => {
+  const view = render(<Deliverables {...openProps()} matched={{ produced: [], presented: [
+    { path: 'report.pdf', seq: 2, index: 0 },
+  ] }} openFile={() => {}} sessionId={SessionId('session')} t={makeTranslate(en)} />)
+  expect(view.container.querySelector('[data-presented-files-row]')?.getAttribute('data-single')).toBe('true')
+  expect(view.queryByRole('button', { name: /delivered files/ })).toBeNull()
 })
 
 
@@ -647,8 +668,8 @@ it.each(['opening', 'opened', 'error'] as const)('shows the %s state and permits
   const view = render(<Deliverables {...props} matched={{ produced: [], presented: [
     { path: 'report.txt', seq: 2, index: 0 },
   ] }} openFile={() => {}} sessionId={SessionId('session')} t={makeTranslate(en)} />)
-  expect(view.getByRole('status').textContent).toBe(en[`presented.${phase}`])
-  expect((view.getByRole('button', { name: 'Open report.txt in default app' }) as HTMLButtonElement).disabled).toBe(phase === 'opening')
+  expect(view.getByText(en[`presented.${phase}`])).toBeTruthy()
+  expect((view.getByRole('button', { name: 'More file actions for report.txt' }) as HTMLButtonElement).disabled).toBe(phase === 'opening')
 })
 
 

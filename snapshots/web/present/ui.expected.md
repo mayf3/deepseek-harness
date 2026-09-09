@@ -63,24 +63,18 @@
   - code: AFTER_PRESENT
   - text: — no retries, no extra files.
 - paragraph: PRESENT_DONE
-- text: Deliverables Opens on the DSH Host report.txt TXT delivered report
-- img
+- button "Preview report.txt in sidebar"
 - text: report.txt
-- button "Open report.txt in default app":
-  - img
-  - text: Open
+- status: Opened in default app
+- button "Open report.txt in sidebar": Open
 - button "More file actions for report.txt":
   - img
-- status: Opened in default app
-- text: 说明.txt TXT delivered note
-- img
+- button "Preview 说明.txt in sidebar"
 - text: 说明.txt
-- button "Open 说明.txt in default app":
-  - img
-  - text: Open
+- status: Opened in default app
+- button "Open 说明.txt in sidebar": Open
 - button "More file actions for 说明.txt":
   - img
-- status: Opened in default app
 - button "Copy":
   - img
 - button "Good response":
