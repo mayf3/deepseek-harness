@@ -156,7 +156,8 @@ describe('ui-sidebar-right apply', () => {
     expect(seat('conversation.session.header.corner').store).toBe(handle)
     const instance = handle.create(SESSION)
     instance.actions.open(SESSION)
-    // A second tab beside the guide makes the guide closable.
+    // The first expansion seeds the guide; a second tab beside it makes it closable.
+    instance.actions.setExpanded(SESSION, true)
     instance.actions.openContent(SESSION, { kind: 'text', contentId: 'dsh-resource://file/session/s/a.txt', title: 'a' }, () => {})
     const guide = Object.values(instance.getSnapshot().bySession[SESSION]?.layout.tabs ?? {}).find(tab => tab.kind === 'guide')
     if (guide === undefined) throw new Error('expected the seeded guide')
