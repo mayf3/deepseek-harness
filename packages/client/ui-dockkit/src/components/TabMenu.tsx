@@ -2,8 +2,10 @@
  * The per-tab context menu, opened by a secondary press on the chip. It carries
  * the close gesture and whatever the embedder appends; the copy and float
  * gestures have no menu item — copying is an embedder API, floating is a drag
- * released clear of the surface. Presentational — it renders what its props
- * supply and dismisses itself on outside presses.
+ * released clear of the surface. A menu that would hold no item at all renders
+ * no popup, so a secondary press on a chip with nothing to offer shows nothing.
+ * Presentational — it renders what its props supply and dismisses itself on
+ * outside presses.
  *
  * It renders in a portal, positioned against the control that opened it. The tab
  * strip clips its overflow on purpose (so it never becomes a scroll container
@@ -26,12 +28,11 @@ export interface TabMenuProps {
   readonly labels: DockLabels
   /** The control that opened the menu; the menu hangs below its left edge. */
   readonly anchor: HTMLElement
-  /** Whether to offer close; custom items remain available when false. */
-  readonly canCloseTab: boolean
-  readonly onClose: () => void
+  /** Close the tab; `undefined` removes the kit's item, leaving the extras only. */
+  readonly onClose: (() => void) | undefined
   /** Dismiss without acting. */
   readonly onDismiss: () => void
-  /** Embedder ARIA menu items, rendered after the kit's own; absent means none. */
+  /** Embedder items, rendered after the kit's own; absent means none. */
   readonly extras: ReactNode
 }
 
@@ -49,18 +50,19 @@ function placeMenu(anchor: HTMLElement, menu: HTMLElement): CSSProperties {
 }
 
 /** The actions menu body, anchored to the control that opened it. */
-export function TabMenu({ labels, anchor, canCloseTab, onClose, onDismiss, extras }: TabMenuProps): ReactNode {
+export function TabMenu({ labels, anchor, onClose, onDismiss, extras }: TabMenuProps): ReactNode {
   const self = useRef<HTMLDivElement | null>(null)
   const [position, setPosition] = useState<CSSProperties | undefined>(undefined)
-  const hasItems = canCloseTab || Children.toArray(extras).some(item => item !== '')
+  const hasItems = onClose !== undefined || Children.toArray(extras).some(item => item !== '')
 
   useLayoutEffect(() => {
     if (self.current === null) return
     setPosition(placeMenu(anchor, self.current))
-  }, [anchor, canCloseTab, hasItems])
+  }, [anchor, hasItems])
 
   useEffect(() => {
     const menu = self.current
+    /* v8 ignore next -- the ref is attached by effect time: the menu renders unconditionally. */
     if (menu === null) return undefined
     // A press anywhere but inside the menu dismisses it; one with no element
     // target (dispatched to the window itself) counts as outside.
@@ -91,7 +93,7 @@ export function TabMenu({ labels, anchor, canCloseTab, onClose, onDismiss, extra
       onPointerDown={(event) => { event.stopPropagation() }}
       onClick={(event) => { event.stopPropagation() }}
     >
-      {canCloseTab && (
+      {onClose !== undefined && (
         <button type="button" role="menuitem" className={css.menuItem} data-dockkit-menu-close onClick={onClose}>
           {labels.closeTab}
         </button>

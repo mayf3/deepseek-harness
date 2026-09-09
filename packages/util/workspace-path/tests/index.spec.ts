@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
-  abbreviateHomePath, fileAddressFor, isAbsoluteWorkspacePath, parseFileAddress, resolveWorkspacePath, workspaceTitleOf,
+  abbreviateHomePath, fileAddressFor, isAbsoluteWorkspacePath, parseFileAddress, pathPartsOf, resolveWorkspacePath,
+  workspaceTitleOf,
 } from '@deepseek-ai/dsh-util-workspace-path'
 
 describe('Workspace path helpers', () => {
@@ -64,5 +65,17 @@ describe('Workspace path helpers', () => {
     expect(workspaceTitleOf('/work/project/')).toBe('project')
     expect(workspaceTitleOf('C:\\work\\project\\')).toBe('project')
     expect(workspaceTitleOf('/')).toBe('')
+  })
+
+  it('splits a path for display after the last separator of either kind, keeping the separator with the directories', () => {
+    expect(pathPartsOf('/work/project/notes.md')).toEqual({ directory: '/work/project/', name: 'notes.md' })
+    expect(pathPartsOf('C:\\work\\project\\notes.md')).toEqual({ directory: 'C:\\work\\project\\', name: 'notes.md' })
+    expect(pathPartsOf('\\\\host\\share/notes.md')).toEqual({ directory: '\\\\host\\share/', name: 'notes.md' })
+    expect(pathPartsOf('/work/project/')).toEqual({ directory: '/work/', name: 'project' })
+  })
+
+  it('makes a separator-less or separator-only path all name', () => {
+    expect(pathPartsOf('notes.md')).toEqual({ directory: '', name: 'notes.md' })
+    expect(pathPartsOf('/')).toEqual({ directory: '', name: '/' })
   })
 })

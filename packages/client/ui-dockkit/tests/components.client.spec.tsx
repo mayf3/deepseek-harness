@@ -260,14 +260,30 @@ describe('DockSurface', () => {
     expect(disabled.getAttribute('data-dockkit-split-blocked')).toBe('budget')
   })
 
-  it('hides capacity-blocked split controls when opted in and restores them when capacity returns', () => {
+  it('names the enabled split control through the shared tooltip, not a native title', () => {
+    vi.useFakeTimers()
+    try {
+      renderSurface(seededController(), spyIntents())
+      const button = screen.getByRole('button', { name: TEST_LABELS.splitPane })
+      expect(button.hasAttribute('title')).toBe(false)
+      fireEvent.mouseEnter(button)
+      act(() => { vi.advanceTimersByTime(500) })
+      expect(screen.getByRole('tooltip').textContent).toBe(TEST_LABELS.splitPane)
+      fireEvent.mouseLeave(button)
+      expect(screen.queryByRole('tooltip')).toBeNull()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('hides blocked split controls when opted in and restores them when capacity returns', () => {
     const controller = seededController()
     controller.splitPane()
     const state = controller.getSnapshot().state
-    layOut(dockPaneIds(state), 420)
+    layOut(dockPaneIds(state), 520)
     const intents = spyIntents()
     const props: DockSurfaceProps = {
-      state, canSplit: false, hideSplitAtCapacity: true, intents, labels: TEST_LABELS, renderTab: tab => <p>{tab.title}</p>,
+      state, canSplit: false, hideSplitWhenBlocked: true, intents, labels: TEST_LABELS, renderTab: tab => <p>{tab.title}</p>,
     }
     const view = render(<DockSurface {...props} />)
     expect(screen.queryByRole('button', { name: TEST_LABELS.splitPane })).toBeNull()
@@ -285,15 +301,15 @@ describe('DockSurface', () => {
   // jsdom lays nothing out, so the room rule reads the rectangles this spec
   // hands it: two panes, one wide enough for two halves and one not. The
   // strip's fixed part is 104px in both (the chrome pane's controls), the chip
-  // minimum falls back to the stylesheet's 59px.
-  it.each([false, true])('keeps the width-blocked split control and its title with hideSplitAtCapacity=%s', (hideSplitAtCapacity) => {
+  // minimum falls back to the stylesheet's 100px.
+  it.each([false, true])('disables or hides the width-blocked split control with hideSplitWhenBlocked=%s', (hideSplitWhenBlocked) => {
     const controller = seededController()
     controller.setExpanded(true)
     controller.splitPane()
     const snapshot = controller.getSnapshot()
     const [wide, narrow] = dockPaneIds(snapshot.state)
     if (wide === undefined || narrow === undefined) throw new Error('expected two docked panes')
-    const widths: Record<string, number> = { [wide]: 420, [narrow]: 208 }
+    const widths: Record<string, number> = { [wide]: 520, [narrow]: 208 }
     vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
       const paneWidth = widths[this.closest<HTMLElement>('[data-dockkit-pane]')?.dataset.dockkitPane ?? ''] ?? 0
       if (this.hasAttribute('data-dockkit-pane')) return box(0, 0, paneWidth, 600)
@@ -306,7 +322,7 @@ describe('DockSurface', () => {
       <DockSurface
         state={snapshot.state}
         canSplit
-        hideSplitAtCapacity={hideSplitAtCapacity}
+        hideSplitWhenBlocked={hideSplitWhenBlocked}
         intents={controller}
         labels={TEST_LABELS}
         renderTab={tab => <p>{tab.contentId}</p>}
@@ -315,10 +331,14 @@ describe('DockSurface', () => {
     const wideButton = document.querySelector(`[data-dockkit-split-button="${wide}"]`)
     const narrowButton = document.querySelector(`[data-dockkit-split-button="${narrow}"]`)
     expect(wideButton?.hasAttribute('disabled')).toBe(false)
-    expect(wideButton?.getAttribute('title')).toBe(TEST_LABELS.splitPane)
-    expect(narrowButton?.hasAttribute('disabled')).toBe(true)
-    expect(narrowButton?.getAttribute('title')).toBe(TEST_LABELS.splitPaneNarrow)
-    expect(narrowButton?.getAttribute('data-dockkit-split-blocked')).toBe('width')
+    expect(wideButton?.hasAttribute('title')).toBe(false)
+    if (hideSplitWhenBlocked) {
+      expect(narrowButton).toBeNull()
+    } else {
+      expect(narrowButton?.hasAttribute('disabled')).toBe(true)
+      expect(narrowButton?.getAttribute('title')).toBe(TEST_LABELS.splitPaneNarrow)
+      expect(narrowButton?.getAttribute('data-dockkit-split-blocked')).toBe('width')
+    }
   })
 
   it('reports the room readings through onRoom, and re-reads them when the surface resizes', () => {
@@ -342,7 +362,7 @@ describe('DockSurface', () => {
     controller.splitPane()
     const snapshot = controller.getSnapshot()
     const panes = dockPaneIds(snapshot.state)
-    let paneWidth = 420
+    let paneWidth = 520
     vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
       if (this.hasAttribute('data-dockkit-pane')) return box(0, 0, paneWidth, 600)
       if (this.hasAttribute('data-dockkit-strip')) return box(0, 0, paneWidth - 2, 36)
@@ -379,6 +399,194 @@ describe('DockSurface', () => {
     expect(observer.disconnect).toHaveBeenCalledTimes(1)
   })
 
+  // The room reading must not flip with the hidden control's own footprint:
+  // hiding the width-blocked control widens the fill by the control plus the
+  // strip's gap, and a reading that counted the control would fit again, show
+  // it, and re-render forever (React's update-depth limit, which crashed the
+  // surface). The rule leaves the footprint out, so the fill the fake hands
+  // back here depends on whether the control is in the DOM — exactly the
+  // feedback the fix breaks.
+  it('reads the same room whether hideSplitWhenBlocked has hidden the split control or not', () => {
+    class FakeResizeObserver implements ResizeObserver {
+      static latest: FakeResizeObserver | undefined
+      readonly observe = vi.fn()
+      readonly unobserve = vi.fn()
+      readonly disconnect = vi.fn()
+      constructor(private readonly callback: ResizeObserverCallback) {
+        FakeResizeObserver.latest = this
+      }
+
+      /** What the platform does when the observed element's size changes. */
+      fire(): void {
+        this.callback([], this)
+      }
+    }
+    vi.stubGlobal('ResizeObserver', FakeResizeObserver)
+    const controller = seededController()
+    controller.setExpanded(true)
+    const snapshot = controller.getSnapshot()
+    // In the band where only the control's 28px footprint decides the fit:
+    // half 188px against 76px of other fixed controls plus the 100px chip.
+    let paneWidth = 380
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+      const pane = this.closest<HTMLElement>('[data-dockkit-pane]')
+      if (this.hasAttribute('data-dockkit-pane')) return box(0, 0, paneWidth, 600)
+      if (this.hasAttribute('data-dockkit-strip')) return box(0, 0, paneWidth - 2, 36)
+      if (this.hasAttribute('data-dockkit-strip-tabs')) return box(0, 0, 60, 24)
+      if (this.hasAttribute('data-dockkit-split-button')) return box(0, 0, 28, 28)
+      if (this.hasAttribute('data-dockkit-strip-fill')) {
+        const fixed = pane?.querySelector('[data-dockkit-split-button]') === null ? 76 : 104
+        return box(0, 0, Math.max(0, paneWidth - 2 - 60 - fixed), 24)
+      }
+      return box(0, 0, 0, 0)
+    })
+    render(
+      <DockSurface
+        state={snapshot.state}
+        canSplit
+        hideSplitWhenBlocked
+        intents={controller}
+        labels={TEST_LABELS}
+        renderTab={tab => <p>{tab.contentId}</p>}
+      />,
+    )
+    // Settled with the control shown: the discounted reading fits either way.
+    expect(document.querySelector('[data-dockkit-split-button]')).not.toBeNull()
+
+    // Narrowed under the discounted minimum: hidden, and the reading without
+    // the control settles hidden.
+    const observer = FakeResizeObserver.latest
+    if (observer === undefined) throw new Error('expected the surface to observe its own size')
+    paneWidth = 300
+    act(() => { observer.fire() })
+    expect(document.querySelector('[data-dockkit-split-button]')).toBeNull()
+  })
+
+  it('names the chip box\'s hidden sides in data-dockkit-strip-scroll as it scrolls', () => {
+    let scrollLeft = 0
+    const descriptors = ['scrollLeft', 'scrollWidth', 'clientWidth'].map(name =>
+      [name, Object.getOwnPropertyDescriptor(Element.prototype, name)] as const)
+    const strip = (element: Element): boolean => element.hasAttribute('data-dockkit-strip-tabs')
+    Object.defineProperty(Element.prototype, 'scrollLeft', { configurable: true, get(this: Element) { return strip(this) ? scrollLeft : 0 } })
+    Object.defineProperty(Element.prototype, 'scrollWidth', { configurable: true, get(this: Element) { return strip(this) ? 400 : 0 } })
+    Object.defineProperty(Element.prototype, 'clientWidth', { configurable: true, get(this: Element) { return strip(this) ? 200 : 0 } })
+    try {
+      const controller = seededController()
+      renderSurface(controller, spyIntents())
+      const box = document.querySelector<HTMLElement>('[data-dockkit-strip-tabs]')
+      if (box === null) throw new Error('expected the chip box')
+      expect(box.getAttribute('data-dockkit-strip-scroll')).toBe('end')
+      scrollLeft = 100
+      fireEvent.scroll(box)
+      expect(box.getAttribute('data-dockkit-strip-scroll')).toBe('start end')
+      scrollLeft = 200
+      fireEvent.scroll(box)
+      expect(box.getAttribute('data-dockkit-strip-scroll')).toBe('start')
+    } finally {
+      for (const [name, descriptor] of descriptors) {
+        if (descriptor === undefined) Reflect.deleteProperty(Element.prototype, name)
+        else Object.defineProperty(Element.prototype, name, descriptor)
+      }
+    }
+  })
+
+  it('scrolls the chip box to the active chip when it lies past either edge, clearing the fade band', () => {
+    let scrollLeft = 0
+    const descriptor = Object.getOwnPropertyDescriptor(Element.prototype, 'scrollLeft')
+    Object.defineProperty(Element.prototype, 'scrollLeft', {
+      configurable: true,
+      get() { return scrollLeft },
+      set(value: number) { scrollLeft = value },
+    })
+    // The box spans 0..200; the seeded chip sits at 40..130 and the opened one where `openedAt` says.
+    let openedTab: TabId | undefined
+    let openedAt = 250
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+      if (this.hasAttribute('data-dockkit-strip-tabs')) return box(0, 0, 200, 28)
+      if (this.getAttribute('data-dockkit-tab') === openedTab) return box(openedAt, 0, 90, 28)
+      if (this.hasAttribute('data-dockkit-tab')) return box(40, 0, 90, 28)
+      return box(0, 0, 0, 0)
+    })
+    const surface = (controller: DockController) => (
+      <DockSurface
+        state={controller.getSnapshot().state}
+        canSplit
+        intents={controller}
+        labels={TEST_LABELS}
+        renderTab={tab => <p>{tab.contentId}</p>}
+      />
+    )
+    try {
+      const controller = seededController()
+      const seededTab = getPane(controller.getSnapshot().state, controller.getSnapshot().state.activePaneId).activeTabId
+      if (seededTab === undefined) throw new Error('expected the seeded tab')
+      const { rerender } = render(surface(controller))
+      // The seeded chip is in view: nothing moves.
+      expect(scrollLeft).toBe(0)
+      openedTab = controller.openContent({ contentId: 'dsh-resource://file/session/s/b.txt', title: 'b.txt', kind: 'file' })
+      rerender(surface(controller))
+      // Past the right edge by 140, plus the 24px fade.
+      expect(scrollLeft).toBe(164)
+      // Selected again once it lies 30 past the left edge: back by 30 plus the fade.
+      openedAt = -30
+      controller.focusTab(seededTab)
+      rerender(surface(controller))
+      controller.focusTab(openedTab)
+      rerender(surface(controller))
+      expect(scrollLeft).toBe(164 - 30 - 24)
+    } finally {
+      if (descriptor === undefined) Reflect.deleteProperty(Element.prototype, 'scrollLeft')
+      else Object.defineProperty(Element.prototype, 'scrollLeft', descriptor)
+    }
+  })
+
+  it('marks a chip title clipped while its text is wider than its box, re-reading on resize', () => {
+    class FakeResizeObserver implements ResizeObserver {
+      static readonly all: FakeResizeObserver[] = []
+      readonly observe = vi.fn()
+      readonly unobserve = vi.fn()
+      readonly disconnect = vi.fn()
+      constructor(private readonly callback: ResizeObserverCallback) {
+        FakeResizeObserver.all.push(this)
+      }
+
+      fire(): void {
+        this.callback([], this)
+      }
+    }
+    vi.stubGlobal('ResizeObserver', FakeResizeObserver)
+    let clientWidth = 200
+    const descriptors = ['scrollWidth', 'clientWidth'].map(name =>
+      [name, Object.getOwnPropertyDescriptor(Element.prototype, name)] as const)
+    const title = (element: Element): boolean => element.hasAttribute('data-dockkit-tab-title')
+    Object.defineProperty(Element.prototype, 'scrollWidth', { configurable: true, get(this: Element) { return title(this) ? 120 : 0 } })
+    Object.defineProperty(Element.prototype, 'clientWidth', { configurable: true, get(this: Element) { return title(this) ? clientWidth : 0 } })
+    try {
+      const controller = seededController()
+      const { unmount } = renderSurface(controller, spyIntents())
+      const span = document.querySelector<HTMLElement>('[data-dockkit-tab-title]')
+      if (span === null) throw new Error('expected a chip title')
+      const observer = FakeResizeObserver.all.find(candidate => candidate.observe.mock.calls.some(([target]) => target === span))
+      if (observer === undefined) throw new Error('expected the title to observe its own size')
+      expect(span.hasAttribute('data-dockkit-tab-clipped')).toBe(false)
+      // The chip narrowed under the text.
+      clientWidth = 80
+      act(() => { observer.fire() })
+      expect(span.hasAttribute('data-dockkit-tab-clipped')).toBe(true)
+      clientWidth = 200
+      act(() => { observer.fire() })
+      expect(span.hasAttribute('data-dockkit-tab-clipped')).toBe(false)
+      unmount()
+      expect(observer.disconnect).toHaveBeenCalledTimes(1)
+    } finally {
+      for (const [name, descriptor] of descriptors) {
+        if (descriptor === undefined) Reflect.deleteProperty(Element.prototype, name)
+        else Object.defineProperty(Element.prototype, name, descriptor)
+      }
+      vi.unstubAllGlobals()
+    }
+  })
+
   it('asks for the seeded tab from the strip\'s add control, naming the pane and nothing else', () => {
     const controller = seededController()
     const intents = spyIntents()
@@ -412,6 +620,59 @@ describe('DockSurface', () => {
     const strip = document.querySelector(`[data-dockkit-pane="${first}"] [data-dockkit-strip]`)
     expect(strip?.querySelector('[data-dockkit-split-button]')).not.toBeNull()
     expect(strip?.querySelector('[data-dockkit-strip-tabs]')).not.toBeNull()
+  })
+
+  it('withholds a tab\'s close control and menu close item where the embedder\'s canCloseTab denies, tab by tab', () => {
+    const controller = seededController()
+    controller.openContent({ contentId: 'dsh-resource://file/session/s/a.txt', title: 'a.txt', kind: 'file' })
+    const snapshot = controller.getSnapshot()
+    const seedTabId = getPane(snapshot.state, snapshot.state.activePaneId).tabs[0]
+    if (seedTabId === undefined) throw new Error('expected seeded tab')
+    render(
+      <DockSurface
+        state={snapshot.state}
+        canSplit
+        canCloseTab={tabId => tabId !== seedTabId}
+        intents={controller}
+        labels={TEST_LABELS}
+        renderTab={tab => <p>{tab.contentId}</p>}
+        renderTabMenuItems={(_, dismiss) => <button type="button" role="menuitem" onClick={dismiss}>embedder item</button>}
+      />,
+    )
+    const [seedChip, fileChip] = screen.getAllByRole('tab')
+    if (seedChip === undefined || fileChip === undefined) throw new Error('expected two chips')
+    expect(seedChip.querySelector('[data-dockkit-tab-close]')).toBeNull()
+    expect(fileChip.querySelector('[data-dockkit-tab-close]')).not.toBeNull()
+
+    // The menu still opens on the withheld chip: the embedder's items remain reachable.
+    fireEvent.contextMenu(seedChip)
+    expect(screen.getAllByRole('menuitem').map(item => item.textContent)).toEqual(['embedder item'])
+    fireEvent.pointerDown(document.body)
+
+    fireEvent.contextMenu(fileChip)
+    expect(screen.getAllByRole('menuitem').map(item => item.textContent)).toEqual([TEST_LABELS.closeTab, 'embedder item'])
+  })
+
+  it('draws a lone unclosable chip quiet, and shows no menu on it when the embedder renders no item', () => {
+    const controller = seededController()
+    render(
+      <DockSurface
+        state={controller.getSnapshot().state}
+        canSplit
+        canCloseTab={() => false}
+        intents={controller}
+        labels={TEST_LABELS}
+        renderTab={tab => <p>{tab.contentId}</p>}
+        renderTabMenuItems={() => undefined}
+      />,
+    )
+    const [chip] = screen.getAllByRole('tab')
+    if (chip === undefined) throw new Error('expected the seeded chip')
+    // The lone unclosable chip draws quiet: no capsule, no hover fill.
+    expect(chip.getAttribute('data-dockkit-tab-quiet')).toBe('true')
+    // The menu would hold nothing, so it dismisses itself before painting.
+    fireEvent.contextMenu(chip)
+    expect(document.querySelector('[data-dockkit-tab-menu]')).toBeNull()
   })
 
   it('lets the embedder render a chip\'s title, and shows the record\'s text when it does not', () => {
@@ -648,13 +909,13 @@ describe('tab drags', () => {
   })
 
   it('shows the dock hint on the pane under the pointer and reports the zone on release', () => {
-    const { intents, second, fileTabId, chip } = twoPanes()
-    drag(chip(fileTabId), FILE_CHIP, [420 + 210, 300], false)
+    const { intents, second, fileTabId, chip } = twoPanes(520)
+    drag(chip(fileTabId), FILE_CHIP, [520 + 260, 300], false)
     const hint = document.querySelector(`[data-dockkit-pane="${second}"] [data-dockkit-dock-zone]`)
     expect(hint?.getAttribute('data-dockkit-dock-zone')).toBe('center')
-    fireEvent.pointerMove(window, { pointerId: 7, clientX: 420 + 410, clientY: 300 })
+    fireEvent.pointerMove(window, { pointerId: 7, clientX: 520 + 510, clientY: 300 })
     expect(document.querySelector('[data-dockkit-dock-zone]')?.getAttribute('data-dockkit-dock-zone')).toBe('right')
-    fireEvent.pointerUp(window, { pointerId: 7, clientX: 420 + 410, clientY: 300 })
+    fireEvent.pointerUp(window, { pointerId: 7, clientX: 520 + 510, clientY: 300 })
     expect(intents.dropTab).toHaveBeenCalledWith(fileTabId, second, 'right')
     expect(document.querySelector('[data-dockkit-dock-zone]')).toBeNull()
   })
@@ -672,6 +933,8 @@ describe('tab drags', () => {
     const { intents, second, fileTabId, chip } = twoPanes(208)
     drag(chip(fileTabId), FILE_CHIP, [208 + 200, 300], false)
     expect(document.querySelector('[data-dockkit-dock-zone]')).toBeNull()
+    fireEvent.pointerMove(window, { pointerId: 7, clientX: 208 + 104, clientY: 500 })
+    expect(document.querySelector('[data-dockkit-dock-zone]')?.getAttribute('data-dockkit-dock-zone')).toBe('bottom')
     fireEvent.pointerMove(window, { pointerId: 7, clientX: 208 + 104, clientY: 100 })
     expect(document.querySelector('[data-dockkit-dock-zone]')?.getAttribute('data-dockkit-dock-zone')).toBe('top')
     fireEvent.pointerUp(window, { pointerId: 7, clientX: 208 + 104, clientY: 100 })
@@ -764,10 +1027,10 @@ describe('tab drags', () => {
 
 describe('horizontal workbench drops', () => {
   it.each([
-    { x: 450, y: 300, zone: 'left' },
-    { x: 810, y: 590, zone: 'right' },
+    { x: 550, y: 300, zone: 'left' },
+    { x: 1010, y: 590, zone: 'right' },
   ] as const)('offers both halves and targets $zone at ($x, $y)', ({ x, y, zone }) => {
-    const { intents, second, fileTabId, chip } = twoPanes(420, true, { dropZones: 'horizontal' })
+    const { intents, second, fileTabId, chip } = twoPanes(520, true, { dropZones: 'horizontal' })
     drag(chip(fileTabId), FILE_CHIP, [x, y], false)
     const hints = document.querySelectorAll('[data-dockkit-dock-zone]')
     expect([...hints].map(hint => hint.getAttribute('data-dockkit-dock-zone'))).toEqual(['left', 'right'])
