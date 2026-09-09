@@ -12,13 +12,16 @@ import type { Agent } from '@deepseek-ai/dsh-agent'
 import LocalJobRegistry from '@deepseek-ai/dsh-jobs-local'
 import type { JobId } from '@deepseek-ai/dsh-jobs'
 import * as ToolTasks from '@deepseek-ai/dsh-tool-jobs'
-import type { ShellProcess } from '@deepseek-ai/dsh-shell'
+import type { ShellExecution, ShellProcess } from '@deepseek-ai/dsh-shell'
 import { LocalBashExecutor } from '@deepseek-ai/dsh-bash-local'
 import LocalSubprocessRuntime from '@deepseek-ai/dsh-subprocess-local'
 import * as ToolBash from '@deepseek-ai/dsh-tool-bash'
 import { observedOffsets, processSources } from '../src/background.ts'
 import { renderPromoted } from '../src/render.ts'
 import * as BashEnvPlugin from '@deepseek-ai/dsh-shell-env'
+
+// Readiness polling stays on wall time while a test controls the execution deadline.
+const pollingTimeout = setTimeout
 
 const testToolSignal = new AbortController().signal
 const spillDir = mkdtempSync(join(tmpdir(), 'dsh-tool-bash-background-spec-'))
@@ -58,7 +61,7 @@ async function until<T>(read: () => T | undefined, timeoutMs = 5_000): Promise<T
   while (Date.now() < deadline) {
     const value = read()
     if (value !== undefined) return value
-    await new Promise(resolve => setTimeout(resolve, 20))
+    await new Promise(resolve => pollingTimeout(resolve, 20))
   }
   throw new Error('condition not reached before timeout')
 }
@@ -192,32 +195,47 @@ describe('processSources', () => {
 })
 
 describe('foreground timeout promotion', () => {
-  it('moves a timed-out foreground command into a job whose ring starts after the output so far', async () => {
+  it('moves a timed-out foreground command into a job whose ring starts after the output so far', async ({ task }) => {
     const ctx = await setup()
-    const result = await call(ctx, {
-      command: 'printf "early-output\\n"; sleep 30',
-      description: 'test command',
-      timeoutMs: 250,
+    const execute = ctx.shell.execute.bind(ctx.shell)
+    let execution: ShellExecution | undefined
+    const capture = vi.spyOn(ctx.shell, 'execute').mockImplementation((spec) => {
+      execution = execute(spec)
+      return execution
     })
-    const body = text(result)
-    // The promoted result carries the pre-promotion output, the marker, and
-    // the job hand-off guidance, in that order.
-    expect(body).toContain('early-output')
-    expect(body).toContain('[still running after 250ms; moved to background job bash-1]')
-    expect(body).toContain('read newer output with job_output, stop it with job_kill')
-    expect(body.indexOf('early-output')).toBeLessThan(body.indexOf('[still running'))
+    try {
+      // Process startup can exceed the deadline under load. Deliver the first
+      // line before advancing the deadline so this case proves the output split.
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+      const pending = call(ctx, {
+        command: 'printf "early-output\\n"; sleep 30',
+        description: 'test command',
+        timeoutMs: 250,
+      })
+      await until(() => execution?.observed.stdout.readFrom(0).text.includes('early-output') ? true : undefined, task.timeout)
+      await vi.advanceTimersByTimeAsync(250)
+      const result = await pending
+      vi.useRealTimers()
+      const body = text(result)
+      expect(body).toContain('early-output')
+      expect(body).toContain('[still running after 250ms; moved to background job bash-1]')
+      expect(body).toContain('read newer output with job_output, stop it with job_kill')
+      expect(body.indexOf('early-output')).toBeLessThan(body.indexOf('[still running'))
 
-    const jobs = ctx.jobs
-    const job = jobs.list()[0]
-    expect(job).toMatchObject({ id: 'bash-1', kind: 'bash', status: 'running', label: 'printf "early-output\\n"; sleep 30' })
-
-    // The ring starts where the promoted result stopped: the model's next
-    // read repeats nothing, and observers never see the promoted line twice.
-    await new Promise(resolve => setTimeout(resolve, 100))
-    expect(retainedText(ctx, job!.id)).not.toContain('early-output')
-    expect(jobs.read(job!.id).chunks).toEqual([])
-    expect(jobs.kill(job!.id, undefined, 'test cleanup')).toBe('requested')
-    await until(() => jobs.get(job!.id).status === 'killed' ? true : undefined)
+      const jobs = ctx.jobs
+      const job = jobs.list()[0]
+      expect(job).toMatchObject({ id: 'bash-1', kind: 'bash', status: 'running', label: 'printf "early-output\\n"; sleep 30' })
+      expect(jobs.kill(job!.id, undefined, 'test cleanup')).toBe('requested')
+      await until(() => jobs.get(job!.id).status === 'killed' ? true : undefined)
+      // Settlement drains every source; even that last read cannot repeat the
+      // output already handed to the model before promotion.
+      expect(retainedText(ctx, job!.id)).not.toContain('early-output')
+      expect(jobs.read(job!.id).chunks).toEqual([])
+    } finally {
+      vi.useRealTimers()
+      capture.mockRestore()
+      await ctx.fiber.dispose()
+    }
   })
 
   it('promotes under the calling agent so the job is fenced to its session', async () => {
