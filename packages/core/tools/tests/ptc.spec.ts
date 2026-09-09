@@ -138,9 +138,11 @@ describe('mode-aware wire contribution', () => {
         execute: args => Promise.resolve(args.value),
       }))
       const assembly = await systemPrompt.assemble()
+      const sdk = assembly.sections.find(section => section.name === 'tools:sdk')
+      expect(sdk).toBeDefined()
       const prompt = renderPrompt(assembly)
       expect(prompt).toContain(description)
-      expect(prompt).toContain(assembly.sections.find(section => section.name === 'tools:sdk')?.text)
+      expect(prompt).toContain(sdk!.text)
       expect(prompt).not.toContain('actual-model')
     } finally {
       await ctx.fiber.dispose()
