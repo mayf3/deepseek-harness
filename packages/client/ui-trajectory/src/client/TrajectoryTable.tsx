@@ -2084,8 +2084,6 @@ export function TrajectoryTable({
     ? thinkingDisclosure.expanded
     : selected?.cell.kind === 'message'
       && Boolean(selected.cell.thinkingDetail?.trim())
-      && !selected.cell.outputDetail?.trim()
-      && !selected.cell.sourceBlocks?.some(block => block.type === 'tool-call')
   const setThinkingExpanded = (expanded: boolean) => {
     if (selectedRecordId !== null) {
       setThinkingDisclosure({ recordId: selectedRecordId, expanded })
