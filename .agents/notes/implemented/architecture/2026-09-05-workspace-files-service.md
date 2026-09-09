@@ -20,23 +20,23 @@ Two constraints frame the service. File reads through `ctx.fs` use the Session's
 
 | Face | Package | Files | Depends on |
 |---|---|---|---|
-| Host | `api/workspace-files/tsconfig.host.json` | `src/index.ts` (`WorkspaceFiles`, `Config`, gates, pager), `src/changes.ts` (`WorkspaceChangeFeed`), `src/types.ts` (wire types, error codes) | `dsh-fs`, `dsh-sandbox-policy`, `dsh-typert-protocol`, `dsh-agent`, `dsh-session` |
-| Client | `api/workspace-files/tsconfig.client.json` | `src/client/index.ts` (plugin body), `provider.ts`, `change-feed.ts`, `remote.ts`, `types.ts`, and shared `src/types.ts` | `dsh-api-gateway/client`, `dsh-api-session-controller/client`, `dsh-client-resources`, `dsh-util-workspace-path`, `dsh-typert-protocol`, and the package's generated `./remote` |
+| Host | `api/workspace-files/tsconfig.host.json` | `src/index.ts` (`WorkspaceFiles`, `Config`, gates, pager), `src/changes.ts` (`WorkspaceChangeFeed`), `src/types.ts` (wire types, error codes) | `dsh-fs`, `dsh-sandbox-policy`, `dsh-typert-protocol`, `dsh-session`, `dsh-session-persistence` |
+| Client | `api/workspace-files/tsconfig.client.json` | `src/client/index.ts` (plugin body), `provider.ts`, `change-feed.ts`, `remote.ts`, `types.ts`, and shared `src/types.ts` | `dsh-api-gateway/client`, `dsh-session/types`, `dsh-client-resources`, `dsh-client-ui-slots`, `dsh-util-workspace-path`, `dsh-typert-protocol`, and the package's generated `./remote` |
 
 `api/remotes` and both root aggregates reference the matching Host/Client leaf. The package exports `.`, `./client`, `./types`, `./typert`, and `./remote`, with one `workspace-files` web-app row supplying both faces. The Client plugin injects `['resources', 'remote', 'remote.workspaceFiles']`; the resource model takes result types directly from the protocol package, and the text preview owns the Sidebar parameter declaration, so the Client compilation graph has no reverse dependency on Remote assembly or Sidebar UI.
 
 ### The `workspaceFiles` Remote namespace
 
-Every Host method takes the target `Agent` first, resolved by the Gateway from the Session identity on the wire, so a Client calls `remote.workspaceFiles.stat(sessionId, path, signal)` and never names a root. The seven signatures, as `src/index.ts` declares them:
+Every Host method takes `WorkspaceFileScope` first. The Gateway resolves it from the wire Session identity by reading the live Session header or, for a cold Session, `SessionPersistence.stat`; it never activates an Agent, reads the event body, or falls back to a parent Session. The scope carries the selected Session id and its `cwd`, with the sandbox policy's deployment root used only when that header has no `cwd`. A Client passes its Session id and never names a root. The seven signatures, as `src/index.ts` declares them:
 
 ```ts ignore-check
-@Remote async read(agent: Agent, path: string, range: WorkspaceFileRange, signal: AbortSignal): Promise<WorkspaceFileText>
-@Remote async readBytes(agent: Agent, path: string, range: WorkspaceByteRange, signal: AbortSignal): Promise<WorkspaceFileBytes>
-@Remote async readAll(agent: Agent, path: string, signal: AbortSignal): Promise<WorkspaceFileBytes>
-@Remote async readRelated(agent: Agent, path: string, relativePath: string, signal: AbortSignal): Promise<WorkspaceFileBytes>
-@Remote async stat(agent: Agent, path: string, signal: AbortSignal): Promise<WorkspaceFileStat>
-@Remote async list(agent: Agent, path: string, signal: AbortSignal): Promise<WorkspaceDirectoryListing>
-@Remote({ mode: 'stream' }) changes(agent: Agent, signal: AbortSignal): AsyncIterable<WorkspaceFileWatchFrame>
+@Remote async read(workspaceFileScope: WorkspaceFileScope, path: string, range: WorkspaceFileRange, signal: AbortSignal): Promise<WorkspaceFileText>
+@Remote async readBytes(workspaceFileScope: WorkspaceFileScope, path: string, range: WorkspaceByteRange, signal: AbortSignal): Promise<WorkspaceFileBytes>
+@Remote async readAll(workspaceFileScope: WorkspaceFileScope, path: string, signal: AbortSignal): Promise<WorkspaceFileBytes>
+@Remote async readRelated(workspaceFileScope: WorkspaceFileScope, path: string, relativePath: string, signal: AbortSignal): Promise<WorkspaceFileBytes>
+@Remote async stat(workspaceFileScope: WorkspaceFileScope, path: string, signal: AbortSignal): Promise<WorkspaceFileStat>
+@Remote async list(workspaceFileScope: WorkspaceFileScope, path: string, signal: AbortSignal): Promise<WorkspaceDirectoryListing>
+@Remote({ mode: 'stream' }) changes(workspaceFileScope: WorkspaceFileScope, signal: AbortSignal): AsyncIterable<WorkspaceFileWatchFrame>
 ```
 
 - **`stat`** returns `WorkspaceFileStat { absolutePath, version, bytes? }`: the file's identity, its opaque freshness token, and its size when the backend reports one. It accepts a regular file only.
@@ -57,7 +57,7 @@ Two path vocabularies leave the service, and each method uses exactly one. `read
 `read`, `readBytes`, `readAll`, `readRelated`, and `stat` share regular-file checks and then rely on the filesystem backend's read authority. `list` shares path inspection but also checks workspace containment, while `changes` filters observations to the workspace root. The service applies the following checks:
 
 1. **The path itself.** `lstat` inspects the path before anything follows it: a missing path is `not-found`, and a symlink — wherever it points, including back inside the workspace — is `not-regular-file` (kind `symlink`) for the file methods and `not-directory` for `list`. An empty path is a `gateway/bad-request`.
-2. **Workspace containment for `list`.** The directory resolves to a target and `ctx.fs.contains(root, target)` decides, where `root` is `sandboxPolicy.resolve({ session }).workspaceRoot` resolved the same way. A `..` traversal or an absolute directory outside the root is `outside-workspace`. `changes` applies the same backend containment predicate to observed targets.
+2. **Workspace containment for `list`.** The directory resolves to a target and `ctx.fs.contains(root, target)` decides, where `root` is the `WorkspaceFileScope.workspaceRoot` resolved from the selected Session header. A `..` traversal or an absolute directory outside the root is `outside-workspace`. `changes` applies the same backend containment predicate to observed targets.
 3. **The caps.** A page or window above `maxBytes`, or a `read` asking for more than `maxLines`, is refused, never shortened, because a silently cut page reads as the whole page; a listing above `maxEntries` is cut and says so. Complete and related-file reads are refused above `maxFileBytes`.
 4. **Text.** For `read` only: content that is not UTF-8 up to the end of the page, a NUL byte in the backend's 8 KiB opening sample, or a NUL byte anywhere in the page is `not-text`; bytes past the page are not inspected.
 
@@ -131,7 +131,7 @@ The [resource model](2026-09-05-client-resource-model.md) owns `ctx.resources`, 
 
 ## Consequences
 
-- Workspace file access belongs to the Host/Client faces of `api/workspace-files`; the Session Controller carries neither implementation, and compiler and runtime entries stay separate.
+- Workspace file access belongs to the Host/Client faces of `api/workspace-files`; the Session Controller carries neither implementation, and compiler and runtime entries stay separate. Header-only Session scope lets ordinary, subagent, live, and cold Sessions resolve their own relative paths without an Agent lifecycle or parent fallback.
 - A file of any size opens: text by line page, anything by byte window, each costing one page or window of memory on the Host; complete reads instead enforce `maxFileBytes`; the cost is that a consumer assembles pages itself and that a single line above `maxBytes` has no page at all, because pages are cut by lines.
 - Every filesystem provider now offers a windowed raw read. `fs-e2b` pays for it by transferring the skipped prefix, since its SDK cannot seek; `fs-local` seeks.
 - Paths on the wire are canonical: `absolutePath` and change frames spell a file with symlinks resolved. A follower binds to successful `stat.absolutePath`, so another spelling of the same file — a workspace root reached through a symlink — uses that canonical change key.
@@ -142,7 +142,7 @@ The [resource model](2026-09-05-client-resource-model.md) owns `ctx.resources`, 
 
 ## Testing
 
-Host specs in `packages/api/workspace-files/tests` exercise the paged read (whole file, nested path, empty file, multi-byte UTF-8, the line window's edges, defaults and refused limits, carriage returns kept), the byte window (defaults, a middle window with more following, tail windows exact and short, past-end and empty files, NUL and invalid UTF-8 round-tripping through base64, version parity with `stat`, the cap as `too-large`, bad ranges, a window of a file far above the cap, and `eof` inferred without a size), `stat`, outside-workspace reads and backend refusals, `list` with containment, truncation, symlink children, and `not-directory`, and the `changes` stream driven by `fs/observed` and filtered by root. Client specs in `packages/api/workspace-files/tests` cover the provider's frames (opening stat, failure frames, writes without content, disappearance, recovery, abort), the change feed (one stream per session, fan-out by normalized path, queued frames, ending on signal or Host close), the unsupported-address cases, and registration and disposal with the fiber. `fs/fs`, `fs-local`, and `fs-e2b` specs pin `readByteRange`'s range semantics — a middle window, a tail shorter than asked, past-end and zero-length windows, errors, aborts, and the e2b cancel — and `dsh-util-workspace-path` specs pin the file-address grammar. `readAll` and `readRelated` specs cover complete-read caps, outside base and related paths, and Host backend authorization. The connection fixture serves `stat`, paged `read`, `list`, and an opt-in `changes` frame for the web e2e suite.
+Host specs in `packages/api/workspace-files/tests` exercise header-only scope resolution for live and cold subagent Sessions, the deployment fallback, missing identities, and lookup disposal; the paged read (whole file, nested path, empty file, multi-byte UTF-8, the line window's edges, defaults and refused limits, carriage returns kept); the byte window (defaults, a middle window with more following, tail windows exact and short, past-end and empty files, NUL and invalid UTF-8 round-tripping through base64, version parity with `stat`, the cap as `too-large`, bad ranges, a window of a file far above the cap, and `eof` inferred without a size); `stat`; outside-workspace reads and backend refusals; `list` with containment, truncation, symlink children, and `not-directory`; and the `changes` stream driven by `fs/observed` and filtered by root. Client specs cover the provider's frames, the change feed, unsupported addresses, and registration and disposal. `fs/fs`, `fs-local`, and `fs-e2b` specs pin `readByteRange`; `dsh-util-workspace-path` specs pin the file-address grammar. The connection fixture serves `stat`, paged `read`, `list`, and an opt-in `changes` frame for the web e2e suite.
 
 ## Deferred
 
