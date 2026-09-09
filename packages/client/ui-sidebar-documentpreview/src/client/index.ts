@@ -2,8 +2,9 @@
  * Browser half: register `text` as a right-Sidebar tab type.
  *
  * The type reaches the Sidebar through its public path only: the definition into
- * `ctx.sidebarRightTabs` and the body into the keyed `sidebar.right.pane.tab`
- * seat under the definition's `id`. Nothing here reaches into the Sidebar's store, its
+ * `ctx.sidebarRightTabs`, the body into the keyed `sidebar.right.pane.tab`
+ * seat, and the chip title into `sidebar.right.pane.tab.title`, both under the
+ * definition's `id`. Nothing here reaches into the Sidebar's store, its
  * panes, or its sequence. The file's metadata comes from the standard
  * `useResource`, served by the `file` provider; the content is this type's own
  * business, read through its face. Every import from another
@@ -21,6 +22,7 @@ import type {} from '@deepseek-ai/dsh-api-workspace-files/remote'
 import type { WorkspaceFileParams } from '@deepseek-ai/dsh-api-workspace-files/client'
 import { TextPreview } from './TextPreview.tsx'
 import type { TextPreviewInjected } from './TextPreview.tsx'
+import { TextTitle } from './TextTitle.tsx'
 import { TEXTPREVIEW_ID, textDefinition } from './definition.ts'
 import { textFace } from './face.ts'
 import { createReadPage } from './rpc.ts'
@@ -76,7 +78,7 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 export const inject = ['slots', 'locale', 'sidebarRightTabs', 'remote', 'remote.workspaceFiles']
 
 /**
- * Client plugin body: register the type, its dictionaries, and its body.
+ * Client plugin body: register the type, its dictionaries, its body, and its chip title.
  * @param ctx - client root context carrying the registry, the slots, copy, and the Remote face.
  */
 export function apply(ctx: ClientContext): void {
@@ -102,6 +104,10 @@ export function apply(ctx: ClientContext): void {
     },
     TextPreview,
   )), 'ui-sidebar-documentpreview: text body')
+  ctx.effect(() => ctx.slots.inject('sidebar.right.pane.tab.title', () => ctx.slots.register(
+    { name: 'sidebar.right.pane.tab.title', key: TEXTPREVIEW_ID },
+    TextTitle,
+  )), 'ui-sidebar-documentpreview: text title')
   registerText(ctx)
   registerMarkdown(ctx)
   registerHtml(ctx)
