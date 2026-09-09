@@ -1,12 +1,6 @@
 # Real-product test overlay: the CLI, provider, Web servers, webhook runtime,
 # adapter, rule, Workspace, Session, and Agent all remain production modules.
 
-# Webhook delivery uses the same live model as the other real-API smokes.
-- id: agent-default-model
-  config:
-    provider: deepseek-official
-    model: deepseek-v4-flash
-
 - insert:
     - id: webhook-runtime
       name: '@deepseek-ai/dsh-webhook'
