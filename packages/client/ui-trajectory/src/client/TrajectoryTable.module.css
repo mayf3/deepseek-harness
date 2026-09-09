@@ -1046,6 +1046,7 @@
 .detailBodySummary > .overview {
   flex: 0 1 auto;
   min-height: 0;
+  padding-bottom: 0;
   overflow: auto;
   overscroll-behavior: contain;
 }
@@ -1184,13 +1185,13 @@
   display: flex;
   flex: 1 1 0;
   max-height: max-content;
-  min-height: 28px;
+  min-height: 24px;
   flex-direction: column;
   overflow: hidden;
 }
 
 .overviewSection + .overviewSection {
-  padding-top: 8px;
+  padding-top: 2px;
 }
 
 .overviewHeading {
@@ -1199,7 +1200,7 @@
   align-items: flex-end;
   box-sizing: border-box;
   width: 100%;
-  height: 28px;
+  height: 24px;
   margin: 0;
   padding: 0 0 3px 14px;
   color: var(--dsw-alias-label-secondary);
@@ -1251,6 +1252,10 @@
   background: var(--dsw-alias-bg-layer-1);
 }
 
+.overviewPreview[data-scroll-more] {
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 12px), transparent);
+}
+
 .overviewPreview > :last-child {
   margin-bottom: 0;
   padding-bottom: 0;
@@ -1258,6 +1263,7 @@
 
 .overviewPreview .jsonPreview > :first-child,
 .overviewPreview .schemaTree > :first-child {
+  padding-top: 2px;
   padding-bottom: 0;
 }
 
@@ -1413,7 +1419,7 @@
 }
 
 .markdownPreview {
-  padding: 6px 14px 8px;
+  padding: 2px 14px 8px;
 }
 
 .markdownPayload {
@@ -1443,7 +1449,7 @@
 }
 
 .schemaPreview .schemaIntro {
-  padding-top: 6px;
+  padding-top: 2px;
 }
 
 .schemaName {
@@ -1490,7 +1496,7 @@
 
 .payloadPreview {
   min-height: 0;
-  padding: 6px 14px 8px;
+  padding: 2px 14px 8px;
 }
 
 .sourceBlocks {
@@ -1741,7 +1747,7 @@
 
 .resultBlocksPreview {
   min-height: 0;
-  padding: 6px 14px 8px;
+  padding: 2px 14px 8px;
   gap: 6px;
 }
 
@@ -1756,7 +1762,7 @@
 }
 
 .overviewPreview .noPayload {
-  padding: 6px 14px 8px;
+  padding: 2px 14px 0;
 }
 
 .noPayload {

@@ -1787,6 +1787,23 @@ function OverviewSection({
   onOpen: () => void
   children: ReactNode
 }) {
+  const previewRef = useRef<HTMLDivElement>(null)
+  const [hasMore, setHasMore] = useState(false)
+  const measureOverflow = useCallback((preview: HTMLElement) => {
+    setHasMore(preview.scrollHeight - preview.clientHeight - preview.scrollTop > 1)
+  }, [])
+
+  useLayoutEffect(() => {
+    const preview = previewRef.current as HTMLDivElement
+    const measure = () => { measureOverflow(preview) }
+    measure()
+    if (typeof ResizeObserver === 'undefined') return
+    const observer = new ResizeObserver(measure)
+    observer.observe(preview)
+    for (const child of preview.children) observer.observe(child)
+    return () => { observer.disconnect() }
+  }, [children, measureOverflow])
+
   return (
     <section className={css.overviewSection}>
       <h3 className={css.overviewHeading}>
@@ -1800,8 +1817,11 @@ function OverviewSection({
         </button>
       </h3>
       <div
+        ref={previewRef}
         className={`${css.overviewPreview} ${css.summaryScrollRegion}`}
         data-summary-scroll-region=""
+        data-scroll-more={hasMore || undefined}
+        onScroll={(event) => { measureOverflow(event.currentTarget) }}
       >
         {children}
       </div>
