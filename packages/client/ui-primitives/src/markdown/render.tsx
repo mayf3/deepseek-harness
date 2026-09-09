@@ -421,7 +421,7 @@ function fencePreview(lang: string | undefined, code: string, labels: MarkdownLa
   const render = { mermaid: renderMermaid, graphviz: renderGraphviz, svg: renderSvg, html: renderHtml }[kind]
   return {
     content: (
-      <SourcePreview key={kind} code={code} labels={labels.preview[kind]} render={render} document={kind !== 'mermaid'} />
+      <SourcePreview key={kind} code={code} labels={labels.preview[kind]} render={render} document={kind === 'html'} />
     ),
     previewLabel: labels.preview.preview,
     sourceLabel: labels.preview.source,

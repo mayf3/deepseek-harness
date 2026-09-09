@@ -18,7 +18,7 @@ Status: implemented
 
 Mermaid 按需加载。共享队列将主题初始化与图表渲染一起串行执行，每次调用都在 `finally` 中删除临时测量 DOM。图表配置无法覆盖严格安全模式、禁用 HTML 标签、应用配色和错误渲染策略。生成的 SVG 作为图片显示，不安装链接或脚本。固有尺寸来自 SVG viewBox；大图缩小以适应宽度，画布使用代码块背景。已挂载的预览观察文档主题属性，仅在解析后的配色变化时重新生成；过期渲染不能发布结果。Graphviz 的默认颜色采用同一配色，DOT、SVG 和 HTML 中明确指定的颜色保持原样。
 
-HTML 先由 DOMPurify 清理，禁止导航属性与文档加载元素，再进入不透明来源的 `sandbox=""` iframe。可信 CSP 位于源码标记之前，仅允许内联 CSS、data 图片与 data 字体。脚本、外部资源、子 iframe、表单提交与同源访问均不可用。SVG 按 XML 解析后作为图片放进 iframe，因此 SVG 脚本与链接不会激活。iframe 使用固定的可滚动视口：测量内容需要额外的来源访问权限或可信 iframe 脚本。
+HTML 先由 DOMPurify 清理，禁止导航属性与文档加载元素，再进入不透明来源的 `sandbox=""` iframe。可信 CSP 位于源码标记之前，仅允许内联 CSS、data 图片与 data 字体。脚本、外部资源、子 iframe、表单提交与同源访问均不可用。SVG 按 XML 解析后，与 Graphviz 输出一同作为不可执行图片显示在[按内容定高的画布](../bug-fix/2026-09-09-content-sized-diagram-previews.zh.md)中，因此 SVG 脚本与链接不会激活。HTML iframe 使用固定的可滚动视口：测量内容需要额外的来源访问权限或可信 iframe 脚本。
 
 Graphviz 使用固定且未修改的 `@viz-js/viz` 3.30.0 WebAssembly 发布包，布局引擎为 `dot`。其 npm MIT 声明覆盖包装层；构建来源记录标明 Graphviz 16.0.0（EPL-2.0）、Expat 2.8.4（MIT）与 Emscripten 5.0.7（MIT/NCSA）。分发保留各组件条款，并按 EPL-2.0 第 3.1 节提供准确的 Graphviz 源码下载地址。[完整预览声明](../../../../packages/client/ui-primitives/THIRD_PARTY_PREVIEW_NOTICES.txt)还保留 Mermaid 的 MIT 文本，并为 DOMPurify 选择 Apache-2.0。UI primitives 包携带该声明，Web 构建在资源旁输出相同字节。内嵌产物的许可证检查独立于通用的宽松 npm 元数据策略。
 

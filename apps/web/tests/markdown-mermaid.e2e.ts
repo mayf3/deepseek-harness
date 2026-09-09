@@ -27,7 +27,12 @@ const UNTRUSTED = [
 ].join('\n')
 
 const DOT = 'digraph { rankdir=LR; Input -> Preview }'
-const SVG = '<svg xmlns="http://www.w3.org/2000/svg" width="220" height="100"><rect width="220" height="100" fill="lightblue"/><text x="20" y="55">SVG preview</text></svg>'
+const SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="460" height="100" onload="parent.document.body.dataset.previewEscaped='yes'">
+<rect width="460" height="100" fill="lightblue"/><text x="20" y="55">SVG preview</text>
+<script>parent.document.body.dataset.previewEscaped='yes';alert('unsafe SVG')</script>
+<image href="https://preview.invalid/svg-image" width="1" height="1"/>
+<foreignObject width="1" height="1"><div xmlns="http://www.w3.org/1999/xhtml"><script>alert('unsafe HTML')</script></div></foreignObject>
+</svg>`
 const HTML = `<style>h2 { color: green }</style><h2>Static HTML</h2>
 <script>parent.document.body.dataset.previewEscaped = 'yes'; alert('unsafe')</script>
 <meta http-equiv="refresh" content="0;url=https://preview.invalid/refresh">
@@ -88,6 +93,52 @@ describe('web e2e: Mermaid chat previews', () => {
     await scaffold?.close()
   })
 
+  it.skipIf(MODE === 'record').each(['light', 'dark'] as const)(
+    'tightly wraps short diagram previews in %s mode', async (scheme) => {
+      const page = await newEnglishPage(browser)
+      try {
+        await page.emulateMedia({ colorScheme: scheme })
+        await openConversation(page, scaffold)
+        await expect.poll(() => page.evaluate(() => getComputedStyle(document.documentElement).colorScheme)).toBe(scheme)
+
+        const mermaid = page.getByRole('img', { name: 'Mermaid diagram' }).first()
+        await mermaid.evaluate(async (node: HTMLImageElement) => { await node.decode() })
+        const mermaidHeight = await mermaid.evaluate(node => node.getBoundingClientRect().height)
+        const canvasHeight = await mermaid.evaluate(node => node.parentElement!.getBoundingClientRect().height)
+        // Compact diagrams need at most the Mermaid canvas's 16px padding on each side.
+        expect(canvasHeight - mermaidHeight).toBeLessThanOrEqual(32)
+
+        for (const title of ['Graphviz diagram', 'SVG preview']) {
+          const image = page.getByRole('img', { name: title, exact: true })
+          await image.evaluate(async (node: HTMLImageElement) => { await node.decode() })
+          const imageHeight = await image.evaluate(node => node.getBoundingClientRect().height)
+          const containerHeight = await image.evaluate(node => node.parentElement!.getBoundingClientRect().height)
+          expect(imageHeight).toBeGreaterThan(0)
+          expect(containerHeight).toBeGreaterThanOrEqual(imageHeight)
+          expect.soft(containerHeight - imageHeight,
+            `${scheme} ${title}: ${containerHeight}px container around ${imageHeight}px content`,
+          ).toBeLessThanOrEqual(32)
+        }
+        await page.setViewportSize({ width: 360, height: 800 })
+        const svg = page.getByRole('img', { name: 'SVG preview', exact: true })
+        await expect.poll(() => svg.evaluate((node) => {
+          const { width, height } = node.getBoundingClientRect()
+          return width > 0 && height > 0 && width < 460
+        })).toBe(true)
+        const compact = await svg.evaluate((node: HTMLImageElement) => ({
+          width: node.getBoundingClientRect().width,
+          height: node.getBoundingClientRect().height,
+          canvasHeight: node.parentElement!.getBoundingClientRect().height,
+          ratio: node.naturalWidth / node.naturalHeight,
+        }))
+        expect(compact.width / compact.height).toBeCloseTo(compact.ratio, 1)
+        expect(compact.canvasHeight - compact.height).toBeLessThanOrEqual(32)
+      } finally {
+        await page.close()
+      }
+    },
+  )
+
   it.skipIf(MODE === 'record')('updates existing diagrams when the document switches between light and dark', async () => {
     const page = await newEnglishPage(browser)
     try {
@@ -102,10 +153,19 @@ describe('web e2e: Mermaid chat previews', () => {
         }, scheme)
         await expect.poll(() => image.getAttribute('src')).not.toBe(previous)
         await expect.poll(() => image.evaluate(node => (node as HTMLImageElement).naturalWidth)).toBeGreaterThan(0)
-        const colors = await image.evaluate(node => ({
-          canvas: getComputedStyle(node.parentElement!).backgroundColor,
-          expected: getComputedStyle(document.body).getPropertyValue('--dsw-alias-markdown-code-block').trim(),
-        }))
+        const colors = await image.evaluate((node) => {
+          const reference = document.createElement('span')
+          reference.style.backgroundColor = 'var(--dsw-alias-markdown-code-block)'
+          document.body.append(reference)
+          try {
+            return {
+              canvas: getComputedStyle(node.parentElement!).backgroundColor,
+              expected: getComputedStyle(reference).backgroundColor,
+            }
+          } finally {
+            reference.remove()
+          }
+        })
         expect(colors.canvas).toBe(colors.expected)
         await expect.poll(() => page.getByTitle('HTML preview', { exact: true }).getAttribute('srcdoc'))
           .toContain(`color-scheme:${scheme}`)
@@ -186,7 +246,7 @@ describe('web e2e: Mermaid chat previews', () => {
     await page.close()
   }, 60_000)
 
-  it.skipIf(MODE === 'record')('previews DOT, SVG, and static HTML inside isolated frames', async () => {
+  it.skipIf(MODE === 'record')('previews inert DOT and SVG images and isolates static HTML', async () => {
     const page = await newEnglishPage(browser)
     const requests: string[] = []
     const dialogs: string[] = []
@@ -198,27 +258,29 @@ describe('web e2e: Mermaid chat previews', () => {
     page.on('dialog', (dialog) => { dialogs.push(dialog.message()); void dialog.dismiss() })
     await page.context().grantPermissions(['clipboard-read', 'clipboard-write'])
     await openConversation(page, scaffold)
-    for (const [title, code] of [['Graphviz diagram', DOT], ['SVG preview', SVG], ['HTML preview', HTML]]) {
-      const frame = page.locator(`iframe[title="${title}"]`)
-      await frame.waitFor()
-      expect(await frame.getAttribute('sandbox')).toBe('')
-      const body = frame.contentFrame()
+    for (const [title, code] of [['Graphviz diagram', DOT], ['SVG preview', SVG], ['HTML preview', HTML]] as const) {
+      const preview = title === 'HTML preview'
+        ? page.getByTitle(title, { exact: true })
+        : page.getByRole('img', { name: title, exact: true, includeHidden: true })
+      await preview.waitFor()
       if (title === 'HTML preview') {
+        expect(await preview.getAttribute('sandbox')).toBe('')
+        const body = preview.contentFrame()
         await body.getByRole('heading', { name: 'Static HTML' }).waitFor()
         expect(await body.getByRole('heading').evaluate(node => getComputedStyle(node).color)).toBe('rgb(0, 128, 0)')
         await body.getByText('Disabled navigation').click()
-        expect(await frame.evaluate(node => (node as HTMLIFrameElement).contentDocument)).toBeNull()
+        expect(await preview.evaluate(node => (node as HTMLIFrameElement).contentDocument)).toBeNull()
       } else {
-        await expect.poll(() => body.locator('img').evaluate(node => (node as HTMLImageElement).naturalWidth)).toBeGreaterThan(0)
+        await expect.poll(() => preview.evaluate(node => (node as HTMLImageElement).naturalWidth)).toBeGreaterThan(0)
       }
-      const block = page.locator('.md-code-block').filter({ has: frame })
+      const block = page.locator('.md-code-block').filter({ has: preview })
       await block.hover()
       await block.getByRole('button', { name: 'Copy', exact: true }).click()
       expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(code)
       await block.getByRole('button', { name: 'Source', exact: true }).click()
       expect(await block.locator('pre code').textContent()).toBe(code)
       await block.getByRole('button', { name: 'Preview', exact: true }).click()
-      expect(await frame.isVisible()).toBe(true)
+      expect(await preview.isVisible()).toBe(true)
     }
     expect(await page.locator('body').getAttribute('data-preview-escaped')).toBeNull()
     expect(dialogs).toEqual([])

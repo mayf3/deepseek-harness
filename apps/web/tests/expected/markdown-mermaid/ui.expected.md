@@ -15,10 +15,10 @@
 - img "Mermaid diagram"
 - button "Source"
 - button "Copy"
-- iframe
+- img "Graphviz diagram"
 - button "Source"
 - button "Copy"
-- iframe
+- img "SVG preview"
 - button "Source"
 - button "Copy"
 - iframe

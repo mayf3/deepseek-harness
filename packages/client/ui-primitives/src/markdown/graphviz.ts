@@ -11,7 +11,7 @@ let runtime: ReturnType<typeof instance> | undefined
  * @param code - Complete Graphviz DOT source.
  * @param signal - Cancels work waiting for the runtime; synchronous layout cannot be interrupted.
  * @param options - Native overrides; attribute maps merge over theme defaults and output remains SVG regardless of format.
- * @returns A srcdoc document. Import, layout, invalid source, and cancellation failures reject.
+ * @returns An SVG image data URL. Import, layout, invalid source, and cancellation failures reject.
  */
 export async function renderGraphviz(code: string, signal: AbortSignal, options?: RenderOptions): Promise<string> {
   runtime ??= import('@viz-js/viz').then(module => module.instance()).catch((error: unknown) => {

@@ -1,4 +1,4 @@
-/** Static preview documents: opaque sandbox frames with no scripts, navigation, or remote resources. */
+/** Static HTML documents and SVG image URLs without executable source markup. */
 
 import DOMPurify from 'dompurify'
 import { readPreviewTheme } from './preview-theme.ts'
@@ -28,10 +28,10 @@ export function renderHtml(code: string, signal: AbortSignal): string {
 }
 
 /**
- * Prepare an SVG image inside an isolated document, without activating SVG scripts or links.
+ * Prepare an SVG image URL without activating SVG scripts, links, or external resources.
  * @param code - Complete SVG XML; malformed XML or a non-SVG root throws.
  * @param signal - Prevents preparation after the preview owner is cancelled.
- * @returns A srcdoc document containing a responsive inert SVG image.
+ * @returns A data URL for an image whose intrinsic dimensions determine the preview height.
  */
 export function renderSvg(code: string, signal: AbortSignal): string {
   signal.throwIfAborted()
@@ -40,7 +40,5 @@ export function renderSvg(code: string, signal: AbortSignal): string {
     || parsed.documentElement.namespaceURI !== 'http://www.w3.org/2000/svg') {
     throw new Error('Invalid SVG document')
   }
-  // Double-quoted attributes keep encodeURIComponent's literal apostrophes inert.
-  const url = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(code)}`
-  return documentOf(`<img style="display:block;max-width:100%;height:auto;margin:auto" src="${url}" alt="">`)
+  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(code)}`
 }

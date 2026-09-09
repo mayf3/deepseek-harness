@@ -35,22 +35,29 @@ describe('Markdown fence previews', () => {
     expect(view.container.querySelector('iframe')).toBeNull()
     expect(view.container.querySelector('pre code')?.textContent).toBe(code)
     view.rerender(<MarkdownText {...props} />)
-    const frame = await screen.findByTitle(title)
-    expect(frame.getAttribute('sandbox')).toBe('')
-    expect(frame.getAttribute('referrerpolicy')).toBe('no-referrer')
-    expect(frame.getAttribute('srcdoc')).toContain('Content-Security-Policy')
+    const findPreview = async () => lang === 'html' ? await screen.findByTitle(title) : await screen.findByRole('img', { name: title })
+    const element = await findPreview()
+    if (lang === 'html') {
+      expect(element.getAttribute('sandbox')).toBe('')
+      expect(element.getAttribute('referrerpolicy')).toBe('no-referrer')
+      expect(element.getAttribute('srcdoc')).toContain('Content-Security-Policy')
+    } else {
+      expect(element.getAttribute('src')).toMatch(/^data:image\/svg\+xml/)
+      expect(view.container.querySelector('iframe')).toBeNull()
+      expect(element.parentElement!.querySelector('svg')).toBeNull()
+    }
     expect(view.container.querySelector('pre code')).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: 'Source' }))
     expect(view.container.querySelector('pre code')?.textContent).toBe(code)
-    expect(frame.closest('[hidden]')).not.toBeNull()
+    expect(element.closest('[hidden]')).not.toBeNull()
     fireEvent.click(screen.getByRole('button', { name: markdownLabels.code.copyLabel }))
     await waitFor(() => { expect(writeText).toHaveBeenCalledWith(code) })
     fireEvent.click(screen.getByRole('button', { name: 'Preview' }))
-    expect(screen.getByTitle(title)).toBe(frame)
-    expect(frame.closest('[hidden]')).toBeNull()
+    expect(await findPreview()).toBe(element)
+    expect(element.closest('[hidden]')).toBeNull()
     view.unmount()
     render(<MarkdownText {...props} />)
-    await screen.findByTitle(title)
+    await findPreview()
     fireEvent.click(screen.getByRole('button', { name: markdownLabels.code.copyLabel }))
     await waitFor(() => { expect(writeText).toHaveBeenCalledTimes(2) })
   })
@@ -60,7 +67,7 @@ describe('Markdown fence previews', () => {
     await screen.findByText(status.error)
     expect(view.container.querySelector('pre code')?.textContent).toBe('broken')
     view.rerender(<MarkdownText text={`\`\`\`svg\n${svg}\n\`\`\``} labels={{ ...markdownLabels, preview }} />)
-    await screen.findByTitle(preview.svg.diagram)
+    await screen.findByRole('img', { name: preview.svg.diagram })
     expect(screen.queryByText(status.error)).toBeNull()
   })
 
@@ -90,9 +97,9 @@ describe('static preview documents', () => {
 
   it('encodes SVG as an image rather than executable document markup', () => {
     const code = '<svg xmlns="http://www.w3.org/2000/svg"><script>alert("test")</script></svg>'
-    const parsed = new DOMParser().parseFromString(renderSvg(code, new AbortController().signal), 'text/html')
-    expect(parsed.querySelector('svg, script')).toBeNull()
-    expect(decodeURIComponent(parsed.querySelector('img')!.getAttribute('src')!)).toContain(code)
+    const url = renderSvg(code, new AbortController().signal)
+    expect(url).toMatch(/^data:image\/svg\+xml;charset=utf-8,/)
+    expect(decodeURIComponent(url.slice(url.indexOf(',') + 1))).toBe(code)
   })
 
   it.each(['<html/>', '<svg/>', '<svg xmlns="http://www.w3.org/2000/svg"><g></svg>'])('rejects non-SVG or malformed XML: %s', (code) => {

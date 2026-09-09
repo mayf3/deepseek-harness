@@ -14,10 +14,10 @@
 - img "Mermaid 图表"
 - button "源码"
 - button "复制"
-- iframe
+- img "Graphviz 图表"
 - button "源码"
 - button "复制"
-- iframe
+- img "SVG 预览"
 - button "源码"
 - button "复制"
 - iframe

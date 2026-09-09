@@ -77,7 +77,7 @@ kind: "package-library"
 
 `CodeBlock.preview` 提供无标题栏的替代正文，以及切换源码和复制的图标操作。操作在悬停或键盘聚焦时出现；只要设备具备触屏，就在图表下方保持可见，包括同时连接鼠标的情况。切换到源码时保留已挂载的预览，返回时复用其结果；复制始终保留源码。
 
-每个定稿 fence 默认显示可视化，并共享源码切换与复制操作。Graphviz 按需加载 `@viz-js/viz`，用 `dot` 引擎渲染 DOT。SVG 与 Graphviz 输出作为不可执行的图片放入不透明来源的 sandbox iframe；非法 SVG 与 DOT 显示错误并保留源码。HTML 接受完整文档或片段、保留内联样式，同时移除脚本与导航。iframe 不授予任何 sandbox 权限，Content Security Policy 阻止外部资源、嵌套 iframe、表单与脚本。iframe 使用可滚动的 400px 视口。代码 fence 外的原始 HTML 仍按普通 Markdown 输入处理。
+每个定稿 fence 默认显示可视化，并共享源码切换与复制操作。Graphviz 按需加载 `@viz-js/viz`，用 `dot` 引擎渲染 DOT。SVG 与 Graphviz 输出作为不可执行的图片，使用与 Mermaid 相同的按内容定高画布；非法 SVG 与 DOT 显示错误并保留源码。HTML 接受完整文档或片段、保留内联样式，同时移除脚本与导航。HTML iframe 不授予任何 sandbox 权限，Content Security Policy 阻止外部资源、嵌套 iframe、表单与脚本。图表画布随渲染后的图片高度收缩，保留 16px 内边距，并在可用宽度不足时等比例缩小图片。HTML iframe 使用可滚动的 400px 视口。代码 fence 外的原始 HTML 仍按普通 Markdown 输入处理。
 
 内部渲染函数接受可选的原生 `MermaidConfig` 与 Viz.js `RenderOptions`，供开发者定制。属性与主题变量覆盖项和文档默认值合并；Mermaid 预览限制与 Graphviz SVG 输出保持固定。这些参数没有设置界面。
 
