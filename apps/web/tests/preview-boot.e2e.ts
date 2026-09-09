@@ -355,7 +355,12 @@ async function bootPreview(origin: string, browser: Browser): Promise<void> {
         if (!body.result.ok) throw new Error(`${endpoint} failed: ${body.result.error.message}`)
         return body.result.value
       }
-      const renamed = await remote<{ title: string }>('session/rename', {
+      // Keep the fixture title stable for later UI assertions; increasing seqs
+      // prove that the cold Session acquired its write lease and appended.
+      const firstRename = await remote<{ title: string; seq: number }>('session/rename', {
+        request: { sessionId: seededSessionId, title: seededSessionTitle },
+      })
+      const secondRename = await remote<{ title: string; seq: number }>('session/rename', {
         request: { sessionId: seededSessionId, title: seededSessionTitle },
       })
       const skills = await remote<{ skills: Array<{ name: string }> }>(
@@ -390,7 +395,8 @@ async function bootPreview(origin: string, browser: Browser): Promise<void> {
       await remote('credentials/unset', { ref: 'PREVIEW_TEST_SECRET' })
       await new Promise((resolve) => { setTimeout(resolve, 250) })
       return {
-        renamedTitle: renamed.title,
+        renamedTitle: secondRename.title,
+        renameAdvanced: secondRename.seq > firstRename.seq,
         skillCount: skills.skills.length,
         credentialConfigured: credentials.PREVIEW_TEST_SECRET?.configured,
       }
@@ -399,6 +405,7 @@ async function bootPreview(origin: string, browser: Browser): Promise<void> {
       seededSessionTitle: SHOWCASE_TITLE,
     })
     expect(exercised.renamedTitle).toBe(SHOWCASE_TITLE)
+    expect(exercised.renameAdvanced).toBe(true)
     expect(exercised.skillCount).toBeGreaterThan(0)
     expect(exercised.credentialConfigured).toBe(true)
 

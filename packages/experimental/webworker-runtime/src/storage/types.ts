@@ -119,6 +119,7 @@ export interface VfsFileHandle {
   writeFile(data: string | Uint8Array): Promise<void>
   readFile(options?: VfsReadOptions): Promise<string | Uint8Array>
   truncate(length?: number): Promise<void>
+  chmod(mode: number): Promise<void>
   stat(options?: VfsStatOptions): Promise<VfsStats | VfsBigIntStats>
   sync(): Promise<void>
   datasync(): Promise<void>
@@ -152,6 +153,8 @@ export interface VfsOpenFile {
    * @param length - Target byte length.
    */
   truncate(length: number): void
+  /** Change permission bits on the opened file identity. */
+  chmod(mode: number): void
   /**
    * Read metadata from the opened file identity.
    * @returns Current file metadata, including after rename or unlink.

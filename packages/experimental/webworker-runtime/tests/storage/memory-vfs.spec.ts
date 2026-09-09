@@ -206,11 +206,13 @@ describe('mutation publication', () => {
   it('reports the path identity through a BigInt file handle stat', async () => {
     const vfs = new MemoryVfs()
     vfs.seed('/dsh/session.lock', '')
-    const handle = vfs.open('/dsh/session.lock', 'r')
+    const handle = vfs.open('/dsh/session.lock', 'w')
     const held = await handle.stat({ bigint: true }) as VfsBigIntStats
     const current = vfs.statSync('/dsh/session.lock', { bigint: true }) as VfsBigIntStats
 
     expect([held.dev, held.ino]).toEqual([current.dev, current.ino])
+    await handle.chmod(0o600)
+    expect((vfs.statSync('/dsh/session.lock') as VfsStats).mode & 0o777).toBe(0o600)
     await handle.close()
   })
 

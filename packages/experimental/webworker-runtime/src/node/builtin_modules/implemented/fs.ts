@@ -36,6 +36,9 @@ const encodingOf = (options: EncodingOption): BufferEncoding | undefined => {
   return options.encoding ?? undefined
 }
 
+const numericMode = (mode: number | string): number =>
+  typeof mode === 'string' ? Number.parseInt(mode, 8) : mode
+
 const bytesOf = (path: string): Uint8Array => vfs().readFileSync(path) as Uint8Array
 
 /** Share the VFS bytes rather than copying them. */
@@ -186,7 +189,7 @@ export function stat(
  * @param mode - new permission bits (`0o777` mask), numeric or Node's octal string form.
  */
 export function chmodSync(path: PathArg, mode: number | string): void {
-  vfs().chmodSync(asPath(path), typeof mode === 'string' ? Number.parseInt(mode, 8) : mode)
+  vfs().chmodSync(asPath(path), numericMode(mode))
 }
 
 /**
@@ -399,6 +402,7 @@ export interface FileHandle {
   writeFile(data: string | Uint8Array, encoding?: BufferEncoding): Promise<void>
   write(data: string | Uint8Array): Promise<{ bytesWritten: number }>
   read(buffer: Uint8Array, offset?: number, length?: number, position?: number | null): Promise<{ bytesRead: number; buffer: Uint8Array }>
+  chmod(mode: number | string): Promise<void>
   stat(options?: VfsStatOptions): Promise<VfsStats | VfsBigIntStats>
   truncate(length?: number): Promise<void>
   sync(): Promise<void>
@@ -441,6 +445,10 @@ export function openHandleSync(path: PathArg, flags = 'r', mode?: number): FileH
       bytesRead: readSync(fd, buffer, offset, length, position),
       buffer,
     }),
+    chmod: async (mode: number | string) => {
+      if (directory) chmodSync(target, mode)
+      else descriptor('fchmod').file.chmod(numericMode(mode))
+    },
     stat: async (options?: VfsStatOptions) => directory
       ? statSync(target, options)
       : options?.bigint === true
