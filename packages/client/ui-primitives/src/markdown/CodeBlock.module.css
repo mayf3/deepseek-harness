@@ -57,7 +57,6 @@
   display: flex;
   align-items: center;
   flex-shrink: 0;
-  gap: 12px;
 }
 
 .copyButton {
@@ -97,89 +96,6 @@
 
 .plain {
   color: var(--dsw-alias-label-primary);
-}
-
-/* Alternate content is a figure; its actions overlay instead of taking a title row. */
-.preview.showingPreview {
-  background: transparent;
-}
-
-.preview .bannerWrap {
-  position: absolute;
-  top: 8px;
-  right: 8px;
-  z-index: 1;
-  background: transparent;
-}
-
-.preview .banner {
-  padding: 2px;
-  background: var(--dsw-alias-bg-base);
-  border: 0;
-  border-radius: 8px;
-  box-shadow: var(--dsw-elevation-panel);
-}
-
-.preview .action {
-  gap: 2px;
-}
-
-.iconButton {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 32px;
-  height: 32px;
-  border-radius: 6px;
-  color: var(--dsw-alias-label-secondary);
-}
-
-.iconButton span {
-  display: flex;
-}
-
-.iconButton:hover {
-  color: var(--dsw-alias-label-primary);
-  background: var(--dsw-alias-interactive-bg-hover);
-}
-
-.preview:not(.showingPreview) :where(pre) {
-  padding-top: 48px;
-}
-
-@media (hover: hover) and (pointer: fine) {
-  .preview .bannerWrap {
-    opacity: 0;
-    pointer-events: none;
-  }
-
-  .preview:hover .bannerWrap,
-  .preview:focus-within .bannerWrap {
-    opacity: 1;
-    pointer-events: auto;
-  }
-}
-
-@media (any-pointer: coarse) {
-  .preview {
-    padding-bottom: 56px;
-  }
-
-  .preview .bannerWrap {
-    top: auto;
-    bottom: 8px;
-    opacity: 1;
-    pointer-events: auto;
-  }
-
-  .preview .iconButton {
-    width: 44px;
-    height: 44px;
-  }
-
-  .preview:not(.showingPreview) :where(pre) {
-    padding-top: 16px;
-  }
 }
 
 .numbered :where(pre) code {

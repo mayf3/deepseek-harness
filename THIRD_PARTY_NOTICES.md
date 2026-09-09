@@ -55,7 +55,6 @@ External packages installed for runtime use or distributed inside the prebuilt b
 | [`@shikijs/langs`](https://github.com/shikijs/shiki) | MIT |
 | [`@standard-schema/spec`](https://github.com/standard-schema/standard-schema) | MIT |
 | [`@tanstack/react-virtual`](https://github.com/TanStack/virtual) | MIT |
-| [`@viz-js/viz`](https://github.com/mdaines/viz-js) | MIT |
 | [`@vscode/ripgrep`](https://github.com/microsoft/vscode-ripgrep) | MIT |
 | [`@xterm/headless`](https://github.com/xtermjs/xterm.js) | MIT |
 | [`@yarnpkg/parsers`](https://github.com/yarnpkg/berry) | BSD-2-Clause |
@@ -67,7 +66,6 @@ External packages installed for runtime use or distributed inside the prebuilt b
 | [`commander`](https://github.com/tj/commander.js) | MIT |
 | [`compression`](https://github.com/expressjs/compression) | MIT |
 | [`diff`](https://github.com/kpdecker/jsdiff) | BSD-3-Clause |
-| [`dompurify`](https://github.com/cure53/DOMPurify) | (MPL-2.0 OR Apache-2.0) |
 | [`e2b`](https://github.com/e2b-dev/e2b) | MIT |
 | [`electron-updater`](https://github.com/electron-userland/electron-builder) | MIT |
 | [`eventsource-parser`](https://github.com/rexxars/eventsource-parser) | MIT |
@@ -81,7 +79,6 @@ External packages installed for runtime use or distributed inside the prebuilt b
 | [`mdast-util-from-markdown`](https://github.com/syntax-tree/mdast-util-from-markdown) | MIT |
 | [`mdast-util-gfm`](https://github.com/syntax-tree/mdast-util-gfm) | MIT |
 | [`mdast-util-math`](https://github.com/syntax-tree/mdast-util-math) | MIT |
-| [`mermaid`](https://github.com/mermaid-js/mermaid) | MIT |
 | [`micromark-core-commonmark`](https://github.com/micromark/micromark/tree/main/packages/micromark-core-commonmark) | MIT |
 | [`micromark-extension-gfm`](https://github.com/micromark/micromark-extension-gfm) | MIT |
 | [`micromark-extension-math`](https://github.com/micromark/micromark-extension-math) | MIT |
@@ -114,8 +111,6 @@ External packages installed for runtime use or distributed inside the prebuilt b
 | [`yaml`](https://github.com/eemeli/yaml) | ISC |
 | [`zod`](https://github.com/colinhacks/zod) | MIT |
 | [`zustand`](https://github.com/pmndrs/zustand) | MIT |
-
-The Markdown preview distribution also contains Graphviz 16.0.0 (EPL-2.0), Expat 2.8.4 (MIT), and Emscripten 5.0.7 runtime code (MIT/NCSA) inside `@viz-js/viz` 3.30.0. The wrapper's MIT metadata does not relicense these components. [Preview notices](packages/client/ui-primitives/THIRD_PARTY_PREVIEW_NOTICES.txt) preserve their full license texts and Graphviz source availability, together with Mermaid's MIT and DOMPurify's selected Apache-2.0 terms. The UI primitives npm package includes this file; the Web build emits it as `preview-third-party-notices.txt`.
 
 pnpm applies local patches to the following packages at install time, so shipped artifacts carry modified copies; each patch file is the complete record of the modification:
 
@@ -194,6 +189,7 @@ External packages **directly declared** for development, tests, types, or toolin
 | [`jsdom`](https://github.com/jsdom/jsdom) | MIT |
 | [`lefthook`](https://github.com/evilmartians/lefthook) | MIT |
 | [`lightningcss`](https://github.com/parcel-bundler/lightningcss) | MPL-2.0 |
+| [`mermaid`](https://github.com/mermaid-js/mermaid) | MIT |
 | [`micromark-util-types`](https://github.com/micromark/micromark/tree/main/packages/micromark-util-types) | MIT |
 | [`msgpackr`](http://github.com/kriszyp/msgpackr) | MIT |
 | [`oxlint`](https://github.com/oxc-project/oxc) | MIT |
