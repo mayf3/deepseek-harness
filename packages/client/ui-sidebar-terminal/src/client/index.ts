@@ -37,8 +37,8 @@ export function apply(ctx: Context): void {
   const t = ctx.locale.bind(namespace)
   ctx.effect(() => ctx.locale.register(namespace, { zh, en }), 'ui-sidebar-terminal.copy')
   ctx.effect(() => ctx.sidebarRightTabs.register({
-    id, kind: 'terminal', priority: 'builtin', title: () => t('title'),
-    guide: [{ order: 20, title: () => t('new'), icon: TerminalIcon, revealIfOpened: false }],
+    id, kind: 'terminal', multiple: true, priority: 'builtin', title: () => t('title'),
+    guide: [{ order: 20, title: () => t('new'), icon: TerminalIcon }],
   }), 'ui-sidebar-terminal.type')
   ctx.effect(() => ctx.sidebarRight.registerCloseHandler('terminal', (sessionId, tab) => {
     ctx.webTerminals.close(sessionId, tab.id, terminalId(sessionId, tab.id))
@@ -62,7 +62,7 @@ export function apply(ctx: Context): void {
           pending = ctx.webTerminals.recover(sessionId).then((terminals) => {
             if (disposed) return
             for (const info of terminals) ctx.sidebarRight.openTabIn(sessionId, 'terminal', {
-              revealIfOpened: false, params: { terminalId: info.id },
+              params: { terminalId: info.id },
             })
           }).catch((error: unknown) => { recovered.delete(sessionId); throw error })
           recovered.set(sessionId, pending)

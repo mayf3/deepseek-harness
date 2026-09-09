@@ -118,13 +118,13 @@ export class TerminalController extends TypertRemoteService {
   }
 
   /**
-   * List running and exited terminals available for reattachment.
-   * @param agent - Session owner supplied by the Gateway.
+   * List retained terminals without resolving or activating an Agent.
+   * @param sessionId - displayed Session identity, including offline history.
    * @returns terminals retained for this Host lifetime.
    */
   @Remote
-  list(agent: Agent): WebTerminalInfo[] {
-    const owner = this.owners.get(agent.id)
+  list(sessionId: SessionId): WebTerminalInfo[] {
+    const owner = this.owners.get(sessionId)
     if (owner === undefined) return []
     return [...owner.terminals.values(), ...owner.allocations.values()].map(terminal => terminal.info)
   }

@@ -69,7 +69,8 @@ it('registers terminal views, recovery and cleanup, then releases every contribu
   try {
     const definition = h.tabs.get('terminal')!
     expect(definition.title('sidebar://terminal')).toBe('title')
-    expect(definition.guide?.map(entry => [entry.order, entry.title(), entry.revealIfOpened])).toEqual([[20, 'new', false]])
+    expect(definition.guide?.map(entry => [entry.order, entry.title()])).toEqual([[20, 'new']])
+    expect(definition.multiple).toBe(true)
     expect(h.dictionaries.get('sidebarTerminal')).toEqual({ en, zh })
     expect(h.entries.map(entry => [entry.name, entry.component, entry.locale])).toEqual([
       ['sidebar.right.pane.tab', TerminalBody, 'sidebarTerminal'],
@@ -120,8 +121,8 @@ it('shares pending and completed recovery across Session headers and opens each 
     pending.resolve([terminalInfo('build'), terminalInfo('tests')])
     await completion
     expect(h.openTabIn.mock.calls).toEqual([
-      [sessionId, 'terminal', { revealIfOpened: false, params: { terminalId: 'build' } }],
-      [sessionId, 'terminal', { revealIfOpened: false, params: { terminalId: 'tests' } }],
+      [sessionId, 'terminal', { params: { terminalId: 'build' } }],
+      [sessionId, 'terminal', { params: { terminalId: 'tests' } }],
     ])
     await remounted.restore()
     expect(h.terminals.recover).toHaveBeenCalledTimes(1)

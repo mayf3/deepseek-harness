@@ -25,7 +25,7 @@ kind: "package-reference"
 <a id="use-this-package"></a>
 ## 使用此包
 
-Web bundle 将此包与 subprocess provider、sandbox policy 和 Typert Gateway 一起挂载。`remote.terminal` 提供 `environment`、`list`、`create`、`follow`、`write`、`resize`、`rename` 和 `close`；每个操作均按 Session 标识限定范围。
+Web bundle 将此包与 subprocess provider、sandbox policy 和 Typert Gateway 一起挂载。`remote.terminal` 提供 `environment`、`list`、`create`、`follow`、`write`、`resize`、`rename` 和 `close`；每个操作均按 Session 标识限定范围。列表直接读取 Host 保留的终端，因此查看离线 Session 不会激活 Agent，也不会产生恢复错误。
 
 新终端使用执行环境声明的默认 shell。仅当 provider 未声明默认值时，才在 POSIX 使用 `/bin/sh`，在 Windows 使用 `cmd.exe`。可选的 `shell` profile 通过可执行路径 `path`、显示名称 `name` 和参数 `args`（默认 `[]`）覆盖这一选择。provider 在创建时验证可执行文件；解析失败会直接报告，不尝试其他 shell。环境查询只返回工作目录和限制，不解析 shell，因此默认 shell 不可用时仍可重新连接已有进程。POSIX 自动 profile 以交互模式启动，PowerShell 使用 `-NoLogo`，补全和启动配置仍由 shell 提供。初始目录来自 Session 工作区，终端遵循同一 sandbox policy。
 

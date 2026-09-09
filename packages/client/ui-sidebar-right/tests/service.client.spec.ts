@@ -80,6 +80,25 @@ function harness() {
 }
 
 describe('SidebarRightController — opening', () => {
+  it('keeps independently opened instances distinct when they return to the same pane', () => {
+    const h = harness()
+    h.tabs.register({ id: 'test/terminal', kind: 'terminal', multiple: true, title: () => 'terminal' })
+    const release = h.publish()
+    try {
+      h.controller.openTab('terminal')
+      h.controller.openTab('terminal')
+      const terminals = Object.values(h.layout().tabs).filter(tab => tab.kind === 'terminal')
+      expect(terminals).toHaveLength(2)
+      expect(terminals[0]!.contentId).not.toBe(terminals[1]!.contentId)
+      const pane = findTabPane(h.layout(), terminals[0]!.id).id
+      h.instance.actions.floatTab(SESSION, terminals[0]!.id)
+      const floating = findTabPane(h.layout(), terminals[0]!.id).id
+      h.instance.actions.unfloatPane(SESSION, floating)
+      expect(getPane(h.layout(), pane).tabs).toContain(terminals[0]!.id)
+      expect(getPane(h.layout(), pane).tabs).toContain(terminals[1]!.id)
+    } finally { release() }
+  })
+
   it('refuses every write while no seat is mounted', () => {
     const { controller } = harness()
     expect(() => { controller.openResource('dsh-resource://file/session/s-test/a.txt') }).toThrow('no session surface is mounted')

@@ -67,10 +67,7 @@ export function GuideBody({ useTabInfo, useGuideEntries, renderSlotChain }: Guid
   const options = {
     hookContext: useTabInfo,
     fallback: (
-      <ShippedGuide entries={entries} onPick={(entry) => { tab.actions.openTab(entry.kind, {
-        replaceTab: true,
-        ...entry.revealIfOpened === undefined ? {} : { revealIfOpened: entry.revealIfOpened },
-      }) }} />
+      <ShippedGuide entries={entries} onPick={(entry) => { tab.actions.openTab(entry.kind, { replaceTab: true }) }} />
     ),
   } satisfies ChainRenderOpts & { hookContext: HookContextOf<'sidebar.right.tab.guide'> }
   return renderSlotChain('sidebar.right.tab.guide', {}, options)

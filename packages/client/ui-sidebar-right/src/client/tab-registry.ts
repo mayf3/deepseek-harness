@@ -68,8 +68,6 @@ export interface SidebarRightGuideEntry {
   readonly title: () => string
   /** Optional glyph, drawn before the title. */
   readonly icon?: ComponentType<IconProps>
-  /** Defaults to true; false makes this entry create another tab instead of focusing an existing one. */
-  readonly revealIfOpened?: boolean
 }
 
 /** A guide entry as the registry lists it: with the kind of the type that contributed it, which is what picking it opens. */
@@ -90,6 +88,8 @@ export interface SidebarRightTabDefinition {
   readonly id: string
   /** Type discriminator: what the tabs of this type are, and what `openTab` names. */
   readonly kind: string
+  /** Each open by kind creates independent content; omission keeps one page per kind in each pane. */
+  readonly multiple?: boolean
   /**
    * Resource-address globs this type recognizes; omit for a page type, which is
    * opened by kind and recognizes no address.

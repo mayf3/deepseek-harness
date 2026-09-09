@@ -25,7 +25,7 @@ Open the execution environment's default shell in a Session workspace from the W
 <a id="use-this-package"></a>
 ## Use this package
 
-The Web bundle mounts this package with the subprocess provider, sandbox policy and Typert Gateway. `remote.terminal` exposes `environment`, `list`, `create`, `follow`, `write`, `resize`, `rename` and `close`; each operation is scoped by Session identity.
+The Web bundle mounts this package with the subprocess provider, sandbox policy and Typert Gateway. `remote.terminal` exposes `environment`, `list`, `create`, `follow`, `write`, `resize`, `rename` and `close`; each operation is scoped by Session identity. Listing reads retained Host terminals directly, so viewing an offline Session neither activates an Agent nor produces a recovery error.
 
 New terminals use the execution environment's declared default shell. Only when the provider omits that default does resolution use `/bin/sh` on POSIX or `cmd.exe` on Windows. An optional `shell` profile overrides that choice with executable `path`, display `name` and `args` (default `[]`). The provider verifies the executable during creation; resolution failure is reported without trying another shell. Environment lookup returns the working directory and limits without resolving a shell, so an unavailable default does not prevent reattaching to an existing process. Automatic POSIX profiles start interactively, and PowerShell uses `-NoLogo`, so completion and startup configuration remain shell-owned. The Session workspace supplies the initial directory; its sandbox policy also applies to the terminal.
 

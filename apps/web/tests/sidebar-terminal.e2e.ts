@@ -1,11 +1,12 @@
 /** Shipped sidebar terminal over the real Loader, Remote mux, Chromium and local PTY. */
 import { mkdir } from 'node:fs/promises'
-import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { chromium, type Browser, type Page } from 'playwright'
-import { afterAll, beforeAll, describe, expect, it, onTestFailed } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, onTestFailed, vi } from 'vitest'
 import { createMessage, createUserMessage } from '@deepseek-ai/dsh-llm'
 import type {} from '@deepseek-ai/dsh-api-terminal-controller'
+import type { SubprocessTerminalHandle } from '@deepseek-ai/dsh-subprocess'
+import { createProcessInspector, type ProcessIdentity } from '@deepseek-ai/dsh-subprocess-local/src/process-inspector.ts'
 import { compareOrRefreshGolden, launchWebScaffold, watchConsole, webSnapshotMode, type WebScaffold } from './scaffold.ts'
 import { connectFreshWorkspace, newEnglishPage, saveFailureShot } from './support.ts'
 
@@ -27,29 +28,23 @@ async function command(page: Page, text: string): Promise<void> {
   await page.keyboard.press('Enter')
 }
 
-function alive(pid: number): boolean {
-  try {
-    process.kill(pid, 0)
-    // A container's init may retain a reparented zombie; it cannot run after terminal cleanup.
-    if (process.platform === 'linux') {
-      const stat = readFileSync(`/proc/${pid}/stat`, 'utf8')
-      const state = stat.slice(stat.lastIndexOf(')') + 2, stat.lastIndexOf(')') + 3)
-      return state !== 'Z' && state !== 'X'
-    }
-    return true
-  } catch (error) {
-    if (['ESRCH', 'ENOENT'].includes((error as NodeJS.ErrnoException).code ?? '')) return false
-    throw error
-  }
-}
-
 describe.skipIf(process.platform === 'win32')('Web sidebar terminal', () => {
   let scaffold: WebScaffold
   let browser: Browser
   let page: Page
   let tripwire: ReturnType<typeof watchConsole>
 
-  beforeAll(async () => {
+  let handles: SubprocessTerminalHandle[]
+  const inspector = createProcessInspector()
+  const alive = (identity: ProcessIdentity) => inspector.isAlive(identity)
+  const processIdentity = (index: number): ProcessIdentity => {
+    const pid = handles[index]!.pid
+    const identity = inspector.snapshot().tree(pid).find(member => member.pid === pid)
+    if (identity === undefined) throw new Error(`Terminal process ${pid} is missing`)
+    return identity
+  }
+
+  beforeEach(async () => {
     scaffold = await launchWebScaffold({ extraOverlayPath: fileURLToPath(new URL('./fixtures/sidebar-terminal.patch.yml', import.meta.url)) })
     browser = await chromium.launch()
     page = await newEnglishPage(browser)
@@ -59,6 +54,15 @@ describe.skipIf(process.platform === 'win32')('Web sidebar terminal', () => {
     await connectFreshWorkspace(page, scaffold.workspaceCwd)
     const agent = scaffold.ctx.agents.list()[0]
     if (agent === undefined) throw new Error('Workspace did not create a Session')
+    handles = []
+    const subprocess = agent.ctx.get('subprocess')
+    if (subprocess === undefined) throw new Error('Session subprocess provider is missing')
+    const spawn = subprocess.spawnTerminal.bind(subprocess)
+    vi.spyOn(subprocess, 'spawnTerminal').mockImplementation(async (spec) => {
+      const handle = await spawn(spec)
+      handles.push(handle)
+      return handle
+    })
     agent.session.append('turn/start', { turn: 1 })
     agent.session.append('user/message', createUserMessage({ content: [{ type: 'text', text: 'Open a terminal.' }], source: { kind: 'user' } }), { surfaceOp: 'append' })
     agent.session.append('step/start', { turn: 1, step: 1 })
@@ -70,7 +74,11 @@ describe.skipIf(process.platform === 'win32')('Web sidebar terminal', () => {
     await mkdir(shots, { recursive: true })
   }, 180_000)
 
-  afterAll(async () => { await browser?.close(); await scaffold?.close() })
+  afterEach(async () => {
+    try { await browser?.close() } finally {
+      try { await scaffold?.close() } finally { vi.restoreAllMocks() }
+    }
+  })
 
   it('completes commands, preserves the process through collapse and reload, resizes, and kills on tab close', async () => {
     onTestFailed(() => saveFailureShot(page, 'sidebar-terminal'))
@@ -84,7 +92,8 @@ describe.skipIf(process.platform === 'win32')('Web sidebar terminal', () => {
     await command(page, "printf 'DSH_PID:%s\\n' \"$$\"")
     await expect.poll(async () => await screen.innerText()).toMatch(/DSH_PID:\d+/u)
     const pid = Number((await screen.innerText()).match(/DSH_PID:(\d+)/u)?.[1])
-    expect(alive(pid)).toBe(true)
+    const firstProcess = processIdentity(0)
+    expect(alive(firstProcess)).toBe(true)
     await command(page, 'dsh_terminal_completion_probe(){ printf "completed_from_shell\\n"; }')
     await page.keyboard.press('Control+l')
     await page.keyboard.insertText('dsh_terminal_completion_pro')
@@ -101,14 +110,16 @@ describe.skipIf(process.platform === 'win32')('Web sidebar terminal', () => {
     await command(page, "printf 'SECOND_PID:%s\\n' \"$$\"")
     await expect.poll(async () => await screen.innerText()).toMatch(/SECOND_PID:\d+/u)
     const secondPid = Number((await screen.innerText()).match(/SECOND_PID:(\d+)/u)?.[1])
-    expect(secondPid).not.toBe(pid)
+    // Shell PIDs belong to the sandbox namespace; process liveness uses Host identities.
+    const secondProcess = processIdentity(1)
+    expect(secondProcess.pid).not.toBe(firstProcess.pid)
     await page.locator('[data-dockkit-tab]').filter({ hasText: 'Development' }).click()
     await expect.poll(async () => await screen.innerText()).toContain('PERSIST:xterm-256color')
-    expect(alive(secondPid)).toBe(true)
+    expect(alive(secondProcess)).toBe(true)
     await page.getByRole('button', { name: 'Collapse right sidebar', exact: true }).click()
-    expect(alive(pid)).toBe(true)
+    expect(alive(firstProcess)).toBe(true)
     await page.locator('[data-sidebar-right-expand]').click()
-    const terminals = () => scaffold.ctx.terminalController.list(scaffold.ctx.agents.list()[0]!)
+    const terminals = () => scaffold.ctx.terminalController.list(scaffold.ctx.agents.list()[0]!.id)
     const dockedCols = terminals()[0]!.cols
     await page.getByRole('button', { name: 'Fullscreen', exact: true }).click()
     await expect.poll(() => terminals()[0]!.cols).toBeGreaterThan(dockedCols)
@@ -117,36 +128,38 @@ describe.skipIf(process.platform === 'win32')('Web sidebar terminal', () => {
     await page.screenshot({ path: `${shots}/fullscreen.png`, fullPage: true })
     await page.reload({ waitUntil: 'load' })
     await page.locator('[data-dockkit-tab]').filter({ hasText: 'Development' }).waitFor({ timeout: 15_000 })
-    await expect.poll(async () => await page.locator('[data-dockkit-tab-title]').allInnerTexts()).toEqual(['Start', 'Development', 'bash'])
+    await expect.poll(async () => await page.locator('[data-dockkit-tab-title]').allInnerTexts()).toEqual(['Development', 'bash'])
     expect(terminals()).toHaveLength(2)
-    expect(alive(pid)).toBe(true)
-    expect(alive(secondPid)).toBe(true)
+    expect(alive(firstProcess)).toBe(true)
+    expect(alive(secondProcess)).toBe(true)
     await expect.poll(async () => await screen.innerText()).toContain(`SECOND_PID:${secondPid}`)
     const secondTab = page.locator('[data-dockkit-tab]').filter({ hasText: 'bash' })
     await secondTab.hover()
     await secondTab.locator('[data-dockkit-tab-close]').click()
     await expect.poll(async () => await secondTab.count()).toBe(0)
-    await expect.poll(() => alive(secondPid), { timeout: 10_000 }).toBe(false)
+    await expect.poll(() => alive(secondProcess), { timeout: 10_000 }).toBe(false)
     await expect.poll(async () => await screen.innerText()).toContain('PERSIST:xterm-256color')
     await command(page, "printf 'RECOVERED_PID:%s\\n' \"$$\"")
     await expect.poll(async () => await screen.innerText()).toContain(`RECOVERED_PID:${pid}`)
     await page.screenshot({ path: `${shots}/recovered.png`, fullPage: true })
+    const previousMembers = new Set(inspector.snapshot().tree(firstProcess.pid).map(member => member.pid))
     await command(page, "sleep 120 & printf 'CHILD_PID:%s\\n' $!")
     await expect.poll(async () => await screen.innerText()).toMatch(/CHILD_PID:\d+/u)
-    const childPid = Number((await screen.innerText()).match(/CHILD_PID:(\d+)/u)?.[1])
-    expect(alive(childPid)).toBe(true)
+    const descendants = inspector.snapshot().tree(firstProcess.pid).filter(member => member.pid !== firstProcess.pid)
+    expect(descendants.some(member => !previousMembers.has(member.pid))).toBe(true)
+    expect(descendants.every(alive)).toBe(true)
     const tab = page.locator('[data-dockkit-tab]').filter({ hasText: 'Development' })
     await tab.hover()
     await tab.locator('[data-dockkit-tab-close]').click()
-    await expect.poll(() => alive(pid), { timeout: 10_000 }).toBe(false)
-    await expect.poll(() => alive(childPid), { timeout: 10_000 }).toBe(false)
-    await expect.poll(() => scaffold.ctx.terminalController.list(scaffold.ctx.agents.list()[0]!).length).toBe(0)
+    await expect.poll(() => alive(firstProcess), { timeout: 10_000 }).toBe(false)
+    await expect.poll(() => descendants.some(alive), { timeout: 10_000 }).toBe(false)
+    await expect.poll(() => scaffold.ctx.terminalController.list(scaffold.ctx.agents.list()[0]!.id).length).toBe(0)
     expect(tripwire.pageErrors).toEqual([])
   })
 
   it('explains that exited terminals count toward the quota and permits creation after closing one', async () => {
     onTestFailed(() => saveFailureShot(page, 'sidebar-terminal-quota'))
-    const terminals = () => scaffold.ctx.terminalController.list(scaffold.ctx.agents.list()[0]!)
+    const terminals = () => scaffold.ctx.terminalController.list(scaffold.ctx.agents.list()[0]!.id)
     for (let count = 1; count <= 2; count++) {
       await openTerminal(page)
       await command(page, 'exit')

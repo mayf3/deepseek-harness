@@ -199,11 +199,11 @@ Typed Remote control of transient Session-owned terminal processes.
 @Remote environment(agent: Agent, signal: AbortSignal): TerminalEnvironment
 
 /**
- * List running and exited terminals available for reattachment.
- * @param agent - Session owner supplied by the Gateway.
+ * List retained terminals without resolving or activating an Agent.
+ * @param sessionId - displayed Session identity, including offline history.
  * @returns terminals retained for this Host lifetime.
  */
-@Remote list(agent: Agent): WebTerminalInfo[]
+@Remote list(sessionId: SessionId): WebTerminalInfo[]
 
 /**
  * Allocate an interactive shell once for a caller-generated identity.
@@ -262,7 +262,7 @@ Typed Remote control of transient Session-owned terminal processes.
 @Remote async close(agent: Agent, id: WebTerminalId): Promise<void>
 ```
 
-Types: [Agent](core.md)
+Types: [Agent](core.md) · [SessionId](core.md)
 
 Source: [`packages/api/terminal-controller/src/index.ts`](../../packages/api/terminal-controller/src/index.ts)
 

@@ -82,11 +82,6 @@ describe('GuideBody', () => {
     cleanup()
   })
 
-  it.each([false, true])('passes an entry\'s explicit revealIfOpened=%s preference when replacing the guide', (revealIfOpened) => {
-    const { view, openTab } = mountGuide([{ ...box('terminal', 20), revealIfOpened }])
-    fireEvent.click(view.getByRole('button', { name: 'terminal title' }))
-    expect(openTab).toHaveBeenCalledExactlyOnceWith('terminal', { replaceTab: true, revealIfOpened })
-  })
 
   it('draws an empty guide while no type contributed an entry, and follows the registry when one does', () => {
     const { view, guideEntries, boxes } = mountGuide([])

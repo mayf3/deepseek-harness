@@ -10,11 +10,11 @@ Web 用户需要在 Session 旁使用交互式 shell 检查工作区和运行命
 
 ## 决定
 
-`api-terminal-controller` 按 Session 管理用户终端并提供 `terminal` Remote namespace。`ui-sidebar-terminal` 注册原生右侧栏标签页，使用 xterm.js 渲染和 FitAddon 测量尺寸。新终端立即启动执行环境的默认 shell。已有侧栏控件负责打开更多标签页，双击标签页标题可重命名终端。终端进程使用组合的 subprocess provider 和 Session sandbox policy。shell 只在创建时解析；读取限制和重新连接已有进程不依赖默认可执行文件仍然可用。交互式 shell 配置提供 Tab 补全和可选的内联建议。
+`api-terminal-controller` 按 Session 管理用户终端并提供 `terminal` Remote namespace。`ui-sidebar-terminal` 注册原生右侧栏标签页，使用 xterm.js 渲染和 FitAddon 测量尺寸。新终端立即启动执行环境的默认 shell。终端类型声明独立实例，因此打开或停靠标签页时，普通页面的去重规则不会合并不同进程。已有侧栏控件负责打开更多标签页，双击标签页标题可重命名终端。终端进程使用组合的 subprocess provider 和 Session sandbox policy。shell 只在创建时解析；读取限制和重新连接已有进程不依赖默认可执行文件仍然可用。交互式 shell 配置提供 Tab 补全和可选的内联建议。
 
 关闭和替换会同步移除标签页，并在后台清理进程。Client 先以终端独立的 localStorage key 保存未完成的关闭请求；成功后删除，启动时重试剩余请求。清理失败时显示带重试操作的轻量通知，不重新打开标签页。独立 key 避免其他窗口覆盖无关的清理请求。折叠、切换标签页或 Session、浮动、全屏和浏览器断线均保留进程。组件清理和 `TabDomain.signal` 只停止浏览器工作，因为插件重新加载也会结束这些生命周期。进程清理失败时保留所有权，包括分配完成但 create 尚未发布时的失败。Session owner 和 Host 插件卸载也会清理终端。 明确的 Session 不存在响应会清除已保存的关闭请求，因为进程清理由 Session 负责；传输失败仍可重试。Client 插件卸载等待所有断开的流结束，避免替换插件继承未完成的 Client 清理。
 
-侧栏布局、打开标签页映射、选中项和进程 PID 不持久化。Session header 挂载时，Client 查询 `terminal.list`，把 Host 保留的终端打开为新标签页。`params.terminalId` 关联只在当前页面中保留。新视图与恢复视图使用不同的 `createWhenMissing`：只有新视图可以分配进程，恢复目标消失时显示错误。恢复标识和标题来自 Host 状态，浏览器不维护第二份活跃终端注册表。
+侧栏布局、打开标签页映射、选中项和进程 PID 不持久化。Session header 挂载时，Client 查询 `terminal.list`，把 Host 保留的终端打开为新标签页。列表直接使用 Session ID，因为历史记录可以比 Agent 和终端 owner 存活更久；离线 Session 没有需要恢复的保留终端。`params.terminalId` 关联只在当前页面中保留。新视图与恢复视图使用不同的 `createWhenMissing`：只有新视图可以分配进程，恢复目标消失时显示错误。恢复标识和标题来自 Host 状态，浏览器不维护第二份活跃终端注册表。
 
 调用者在创建之前把终端 ID 保留在内存中。相同 Session 和未关闭 ID 的重复 create 不再分配进程。创建结果不确定时，关闭仍使用该 ID，即使没有收到创建响应。Host 在等待分配完成前记录已关闭 ID，防止迟到的 create 复活已关闭终端。每次连接先接收一致、有界的 xterm 序列化屏幕，后续有序输出使用 Gateway 已有的复用 Remote stream。输出和屏幕快照共享操作队列。订阅者正常关闭时保留末尾输出，缓存超限时明确失败。浏览器在完成渲染后确认帧，避免 React 批处理丢失增量。
 

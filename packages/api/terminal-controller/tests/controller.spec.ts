@@ -82,7 +82,7 @@ describe('TerminalController', () => {
     await controller.create(agent, request, signal())
     subprocess.resolveExecutable.mockRejectedValue(new SubprocessExecutableNotFoundError('default shell was removed'))
     expect(controller.environment(agent, signal())).toMatchObject({ cwd: '/workspace', maxInputBytes: 1000 })
-    expect(controller.list(agent)).toMatchObject([{ id, state: 'running' }])
+    expect(controller.list(agent.id)).toMatchObject([{ id, state: 'running' }])
     const stream = controller.follow(agent, id, 'restored' as TerminalAttachmentId, signal())[Symbol.asyncIterator]()
     try {
       expect(await stream.next()).toMatchObject({ done: false, value: { type: 'snapshot', info: { id, state: 'running' } } })
@@ -107,7 +107,7 @@ describe('TerminalController', () => {
     expect(first.id).toBe(second.id)
     expect(subprocess.spawnTerminal).toHaveBeenCalledOnce()
     expect(subprocess.spawnTerminal).toHaveBeenCalledWith(expect.objectContaining({ terminalType: 'xterm-256color', cwd: '/workspace' }))
-    expect(controller.list(owner(ctx, 'other'))).toEqual([])
+    expect(controller.list('other' as SessionId)).toEqual([])
     expect(() => controller.follow(owner(ctx, 'other'), id, 'writer' as TerminalAttachmentId, signal())).toThrow('no longer exists')
     const abort = new AbortController()
     const stream = controller.follow(agent, id, 'writer' as TerminalAttachmentId, abort.signal)[Symbol.asyncIterator]()
@@ -119,7 +119,7 @@ describe('TerminalController', () => {
     expect(handle.terminate).not.toHaveBeenCalled()
     await controller.close(agent, id)
     expect(handle.terminate).toHaveBeenCalledOnce()
-    expect(controller.list(agent)).toEqual([])
+    expect(controller.list(agent.id)).toEqual([])
     await controller.close(agent, id)
   })
 
@@ -133,7 +133,7 @@ describe('TerminalController', () => {
     allocation.resolve(handle)
     await rejected
     await closing
-    expect(controller.list(agent)).toEqual([])
+    expect(controller.list(agent.id)).toEqual([])
     expect(handle.terminate).toHaveBeenCalledOnce()
   })
 
@@ -166,7 +166,7 @@ describe('TerminalController', () => {
       await expect(controller.create(agent, request, signal())).rejects.toThrow('closed in this Session')
       expect(handle.terminate).toHaveBeenCalledOnce()
       expect(subprocess.spawnTerminal).toHaveBeenCalledOnce()
-      expect(controller.list(agent)).toEqual([])
+      expect(controller.list(agent.id)).toEqual([])
     } finally { allocation.resolve(handle) }
   })
 
@@ -176,10 +176,10 @@ describe('TerminalController', () => {
     subprocess.spawnTerminal.mockImplementationOnce(async () => { abort.abort(new Error('request disconnected')); return handle })
     vi.mocked(handle.terminate).mockRejectedValueOnce(new Error('cleanup failed'))
     await expect(controller.create(agent, request, abort.signal)).rejects.toThrow('cleanup failed')
-    expect(controller.list(agent)).toMatchObject([{ id, state: 'failed' }])
+    expect(controller.list(agent.id)).toMatchObject([{ id, state: 'failed' }])
     await controller.close(agent, id)
     expect(handle.terminate).toHaveBeenCalledTimes(2)
-    expect(controller.list(agent)).toEqual([])
+    expect(controller.list(agent.id)).toEqual([])
   })
 
   it('retains a terminal when process cleanup fails so closing can be retried', async () => {
@@ -187,10 +187,10 @@ describe('TerminalController', () => {
     await controller.create(agent, request, signal())
     vi.mocked(handle.terminate).mockRejectedValueOnce(new Error('process still alive'))
     await expect(controller.close(agent, id)).rejects.toThrow('still alive')
-    expect(controller.list(agent)).toHaveLength(1)
+    expect(controller.list(agent.id)).toHaveLength(1)
     await expect(controller.create(agent, request, signal())).rejects.toThrow('closed in this Session')
     await controller.close(agent, id)
-    expect(controller.list(agent)).toHaveLength(0)
+    expect(controller.list(agent.id)).toHaveLength(0)
   })
 
   it('rejects invalid dimensions, unavailable shells and oversized input before executing them', async () => {
@@ -223,11 +223,11 @@ describe('TerminalController', () => {
     subprocess.spawnTerminal.mockImplementationOnce(async () => { abort.abort('lost request'); return handle })
     handle.terminate.mockRejectedValueOnce(new Error('still alive'))
     await expect(controller.create(agent, request, abort.signal)).rejects.toThrow('cleanup failed')
-    expect(controller.list(agent)).toMatchObject([{ id, state: 'failed', error: 'lost request' }])
+    expect(controller.list(agent.id)).toMatchObject([{ id, state: 'failed', error: 'lost request' }])
     await expect(controller.create(agent, request, signal())).rejects.toThrow('Close the failed terminal allocation')
     await expect(controller.create(agent, { ...request, id: 'another' as WebTerminalId }, signal())).rejects.toMatchObject({ code: 'terminal/limit-reached', details: { limit: 1 } })
     await controller.close(agent, id)
-    expect(controller.list(agent)).toEqual([])
+    expect(controller.list(agent.id)).toEqual([])
   })
 
   it('lets close reclaim an allocation whose request failed while close was waiting', async () => {
@@ -243,7 +243,7 @@ describe('TerminalController', () => {
     await rejected
     await closing
     expect(handle.terminate).toHaveBeenCalledOnce()
-    expect(controller.list(agent)).toEqual([])
+    expect(controller.list(agent.id)).toEqual([])
   })
 
   it('routes input, resize and trimmed names through the active attachment', async () => {
@@ -259,7 +259,7 @@ describe('TerminalController', () => {
       await controller.resize(agent, id, attachmentId, 200, 100)
       expect(handle.resize).toHaveBeenCalledWith(200, 100)
       controller.rename(agent, id, '  server logs  ')
-      expect(controller.list(agent)).toMatchObject([{ title: 'server logs', cols: 200, rows: 100 }])
+      expect(controller.list(agent.id)).toMatchObject([{ title: 'server logs', cols: 200, rows: 100 }])
     } finally { await stream.return?.() }
   })
 
@@ -278,7 +278,7 @@ describe('TerminalController', () => {
     expect(() => { controller.rename(agent, id, '  ') }).toThrow('1–120')
     expect(() => { controller.rename(agent, id, 'x'.repeat(121)) }).toThrow('1–120')
     await controller.close(agent, id)
-    expect(controller.list(agent)).toEqual([])
+    expect(controller.list(agent.id)).toEqual([])
   })
 
   it('uses the Session sandbox policy to confine its selected shell', async () => {
@@ -329,7 +329,7 @@ describe('TerminalController', () => {
     await controller.create(agent, request, signal())
     await disposeEffect('terminal-controller.owner')
     expect(handle.terminate).toHaveBeenCalledOnce()
-    expect(controller.list(agent)).toEqual([])
+    expect(controller.list(agent.id)).toEqual([])
   })
 
   it('cleans up a Session when its real Agent plugin fiber is disposed', async () => {
@@ -340,7 +340,7 @@ describe('TerminalController', () => {
     await controller.create(agent, request, signal())
     await fiber.dispose()
     expect(handle.terminate).toHaveBeenCalledOnce()
-    expect(controller.list(agent)).toEqual([])
+    expect(controller.list(agent.id)).toEqual([])
   })
 
   it('waits for pending creation during Host disposal and rolls back its process before resolving', async () => {
@@ -356,7 +356,7 @@ describe('TerminalController', () => {
     await rejected
     await disposing
     expect(handle.terminate).toHaveBeenCalledOnce()
-    expect(controller.list(agent)).toEqual([])
+    expect(controller.list(agent.id)).toEqual([])
     await expect(controller.create(agent, request, signal())).rejects.toThrow('controller disposed')
   })
 
@@ -375,7 +375,7 @@ describe('TerminalController', () => {
       stopped.resolve(undefined)
       await Promise.all([ownerDisposal, hostDisposal])
       expect(handle.terminate).toHaveBeenCalledOnce()
-      expect(controller.list(agent)).toEqual([])
+      expect(controller.list(agent.id)).toEqual([])
     } finally { stopped.resolve(undefined) }
   })
 
@@ -387,9 +387,9 @@ describe('TerminalController', () => {
     await expect(controller.create(agent, request, signal())).rejects.toThrow('Session owner disposed')
     handle.terminate.mockRejectedValueOnce(new Error('still alive again'))
     await expect(disposeEffect('terminal-controller.processes')).rejects.toThrow('Browser terminal cleanup failed')
-    expect(controller.list(agent)).toHaveLength(1)
+    expect(controller.list(agent.id)).toHaveLength(1)
     await controller.close(agent, id)
-    expect(controller.list(agent)).toEqual([])
+    expect(controller.list(agent.id)).toEqual([])
     expect(handle.terminate).toHaveBeenCalledTimes(3)
   })
 
@@ -401,7 +401,7 @@ describe('TerminalController', () => {
     await expect(controller.create(agent, request, abort.signal)).rejects.toThrow('cleanup failed')
     await disposeEffect('terminal-controller.owner')
     expect(handle.terminate).toHaveBeenCalledTimes(2)
-    expect(controller.list(agent)).toEqual([])
+    expect(controller.list(agent.id)).toEqual([])
   })
 })
 

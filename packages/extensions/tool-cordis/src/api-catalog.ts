@@ -2475,9 +2475,9 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the Session workspace directory and terminal limits.',
       },
       {
-        signature: '@Remote list(agent: Agent): WebTerminalInfo[]',
-        description: 'List running and exited terminals available for reattachment.',
-        parameters: [{ name: 'agent', description: 'Session owner supplied by the Gateway.' }],
+        signature: '@Remote list(sessionId: SessionId): WebTerminalInfo[]',
+        description: 'List retained terminals without resolving or activating an Agent.',
+        parameters: [{ name: 'sessionId', description: 'displayed Session identity, including offline history.' }],
         returns: 'terminals retained for this Host lifetime.',
       },
       {
