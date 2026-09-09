@@ -178,7 +178,8 @@ export function CodeBlock({ code, lang, streaming, className, lineNumbers = fals
         '--dsl-code-block-line-number-width': `${Math.max(2, String(sourceLines.length).length)}ch`,
       } as CSSProperties}>
       <div className={css.bannerWrap}>
-        <div className={css.banner}>
+        {/* The attribute carries no style here; owner stylesheets use it to pin the banner (sidebar code preview, horizontal scroll). */}
+        <div className={css.banner} data-code-block-banner>
           <div className={css.infostring}>{lang ?? ''}</div>
           <div className={css.action}>
             <button type="button" className={css.copyButton} onClick={onCopy}>
