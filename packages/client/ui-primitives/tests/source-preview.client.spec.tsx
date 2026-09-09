@@ -25,6 +25,31 @@ afterEach(() => { cleanup(); vi.unstubAllGlobals() })
 beforeEach(() => { vi.resetAllMocks() })
 
 describe('SourcePreview', () => {
+  it('updates mounted previews on theme changes and ignores obsolete completions', async () => {
+    const previous = document.documentElement.style.colorScheme
+    const old = Promise.withResolvers<string>()
+    vi.mocked(renderMermaid).mockReturnValueOnce(old.promise).mockResolvedValue(imageUrl)
+    const view = render(<SourcePreview render={renderMermaid} code={source} labels={labels} />)
+    try {
+      const oldSignal = vi.mocked(renderMermaid).mock.calls[0]![1]
+      await act(async () => { document.documentElement.style.colorScheme = 'dark' })
+      expect(oldSignal.aborted).toBe(true)
+      const image = await screen.findByRole('img')
+      await act(async () => { old.resolve('obsolete') })
+      expect(image.getAttribute('src')).toBe(imageUrl)
+      await act(async () => { document.body.style.setProperty('--unrelated', '1') })
+      expect(renderMermaid).toHaveBeenCalledTimes(2)
+      await act(async () => { document.documentElement.style.colorScheme = 'light' })
+      expect(renderMermaid).toHaveBeenCalledTimes(3)
+      view.unmount()
+      await act(async () => { document.documentElement.style.colorScheme = 'dark' })
+      expect(renderMermaid).toHaveBeenCalledTimes(3)
+    } finally {
+      view.unmount()
+      document.documentElement.style.colorScheme = previous
+      document.body.style.removeProperty('--unrelated')
+    }
+  })
   it('shows loading until rendering completes, then displays an image without inserting SVG', async () => {
     const pending = Promise.withResolvers<string>()
     vi.mocked(renderMermaid).mockReturnValue(pending.promise)

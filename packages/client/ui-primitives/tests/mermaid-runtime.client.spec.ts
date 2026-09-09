@@ -13,7 +13,24 @@ beforeEach(() => {
 afterEach(() => { vi.doUnmock('mermaid') })
 
 describe('Mermaid runtime', () => {
-  it('shares lazy initialization and removes each measurement container after rendering', async () => {
+  it('accepts native configuration without weakening preview restrictions', async () => {
+    const { renderMermaid } = await import('../src/markdown/mermaid.ts')
+    renderDiagram.mockResolvedValue({ svg: '<svg/>' })
+    await renderMermaid('flowchart LR', new AbortController().signal, {
+      // oxlint-disable-next-line typescript/no-deprecated
+      layout: 'dagre', flowchart: { nodeSpacing: 40, htmlLabels: true },
+      themeVariables: { primaryColor: '#123456' },
+      securityLevel: 'loose', startOnLoad: true, suppressErrorRendering: false, htmlLabels: true, secure: [],
+    })
+    expect(initialize.mock.calls[0]![0]).toMatchObject({
+      layout: 'dagre', flowchart: { nodeSpacing: 40, htmlLabels: false },
+      themeVariables: { primaryColor: '#123456', darkMode: false },
+      securityLevel: 'strict', startOnLoad: false, suppressErrorRendering: true, htmlLabels: false,
+    })
+    expect(initialize.mock.calls[0]![0]).toHaveProperty('secure', expect.arrayContaining(['securityLevel']))
+  })
+
+  it('reuses the runtime and removes each measurement container after rendering', async () => {
     const { renderMermaid } = await import('../src/markdown/mermaid.ts')
     expect(initialize).not.toHaveBeenCalled()
     const stages: HTMLElement[] = []
@@ -29,7 +46,7 @@ describe('Mermaid runtime', () => {
       renderMermaid('中文', new AbortController().signal),
       renderMermaid('second', new AbortController().signal),
     ])
-    expect(initialize).toHaveBeenCalledOnce()
+    expect(initialize).toHaveBeenCalledTimes(2)
     expect(initialize).toHaveBeenCalledWith(expect.objectContaining({
       startOnLoad: false, securityLevel: 'strict', suppressErrorRendering: true, htmlLabels: false,
       secure: [
@@ -40,6 +57,28 @@ describe('Mermaid runtime', () => {
     expect(results.map(url => decodeURIComponent(url.split(',')[1]!))).toEqual(['<svg>中文</svg>', '<svg>second</svg>'])
     expect(new Set(ids).size).toBe(2)
     expect(stages.every(stage => !stage.isConnected)).toBe(true)
+  })
+
+  it('keeps theme initialization with its render and recovers the queue after failure', async () => {
+    const { renderMermaid } = await import('../src/markdown/mermaid.ts')
+    const first = Promise.withResolvers<{ svg: string }>()
+    renderDiagram.mockReturnValueOnce(first.promise).mockResolvedValue({ svg: '<svg/>' })
+    const light = renderMermaid('first', new AbortController().signal)
+    const failure = expect(light).rejects.toThrow('invalid')
+    await vi.waitFor(() => { expect(renderDiagram).toHaveBeenCalledOnce() })
+    const previous = document.documentElement.style.colorScheme
+    try {
+      document.documentElement.style.colorScheme = 'dark'
+      const dark = renderMermaid('second', new AbortController().signal)
+      await Promise.resolve()
+      expect(initialize).toHaveBeenCalledOnce()
+      first.reject(new Error('invalid'))
+      await failure
+      await dark
+      expect(initialize.mock.calls[1]![0]).toMatchObject({ themeVariables: { darkMode: true } })
+    } finally {
+      document.documentElement.style.colorScheme = previous
+    }
   })
 
   it('removes measurement DOM even when Mermaid rejects', async () => {

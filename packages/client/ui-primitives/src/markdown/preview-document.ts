@@ -1,12 +1,14 @@
 /** Static preview documents: opaque sandbox frames with no scripts, navigation, or remote resources. */
 
 import DOMPurify from 'dompurify'
+import { readPreviewTheme } from './preview-theme.ts'
 
 // This policy belongs to the preview document, before any source-controlled markup.
 const CSP = "default-src 'none'; script-src 'none'; style-src 'unsafe-inline'; img-src data:; font-src data:; base-uri 'none'; form-action 'none'"
 
 function documentOf(body: string): string {
-  return `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${CSP}"></head><body>${body}</body></html>`
+  const scheme = readPreviewTheme().dark ? 'dark' : 'light'
+  return `<!doctype html><html style="color-scheme:${scheme}"><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${CSP}"></head><body>${body}</body></html>`
 }
 
 /**

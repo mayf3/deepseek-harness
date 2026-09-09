@@ -88,6 +88,34 @@ describe('web e2e: Mermaid chat previews', () => {
     await scaffold?.close()
   })
 
+  it.skipIf(MODE === 'record')('updates existing diagrams when the document switches between light and dark', async () => {
+    const page = await newEnglishPage(browser)
+    try {
+      await openConversation(page, scaffold)
+      const image = page.getByRole('img', { name: 'Mermaid diagram' }).first()
+      await image.waitFor()
+      let previous = await image.getAttribute('src')
+      for (const scheme of ['dark', 'light'] as const) {
+        await page.evaluate((value) => {
+          document.documentElement.style.colorScheme = value
+          document.body.toggleAttribute('data-ds-dark-theme', value === 'dark')
+        }, scheme)
+        await expect.poll(() => image.getAttribute('src')).not.toBe(previous)
+        await expect.poll(() => image.evaluate(node => (node as HTMLImageElement).naturalWidth)).toBeGreaterThan(0)
+        const colors = await image.evaluate(node => ({
+          canvas: getComputedStyle(node.parentElement!).backgroundColor,
+          expected: getComputedStyle(document.body).getPropertyValue('--dsw-alias-markdown-code-block').trim(),
+        }))
+        expect(colors.canvas).toBe(colors.expected)
+        await expect.poll(() => page.getByTitle('HTML preview', { exact: true }).getAttribute('srcdoc'))
+          .toContain(`color-scheme:${scheme}`)
+        previous = await image.getAttribute('src')
+      }
+    } finally {
+      await page.close()
+    }
+  })
+
   it.skipIf(MODE === 'record')('renders diagrams, switches to source, copies source, and contains malformed content', async () => {
     const page = await newEnglishPage(browser)
     onTestFailed(() => saveFailureShot(page, 'web-e2e-markdown-mermaid'))

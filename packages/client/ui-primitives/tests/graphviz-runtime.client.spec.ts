@@ -33,3 +33,35 @@ it('skips layout after cancellation during runtime loading', async () => {
   await rejection
   expect(renderString).not.toHaveBeenCalled()
 })
+
+it('uses theme defaults without rewriting authored DOT attributes', async () => {
+  const previous = document.body.getAttribute('style')
+  try {
+    document.body.style.setProperty('--dsw-alias-label-primary', 'rgb(230, 231, 232)')
+    document.body.style.setProperty('--dsw-alias-label-secondary', '#aabbcc')
+    document.body.style.setProperty('--dsw-alias-label-tertiary', '#8899aa')
+    document.body.style.setProperty('--dsw-alias-bg-layer-2', '#222222')
+    const renderString = vi.fn().mockReturnValue('<svg xmlns="http://www.w3.org/2000/svg"/>')
+    instance.mockResolvedValue({ renderString })
+    const { renderGraphviz } = await import('../src/markdown/graphviz.ts')
+    const code = 'digraph { a [color="red"]; a -> b }'
+    await renderGraphviz(code, new AbortController().signal)
+    expect(renderString).toHaveBeenCalledWith(code, expect.objectContaining({
+      nodeAttributes: { color: '#8899aa', fontcolor: '#e6e7e8', fillcolor: '#222222', style: 'filled' },
+      edgeAttributes: { color: '#aabbcc', fontcolor: '#e6e7e8' },
+    }))
+    await renderGraphviz(code, new AbortController().signal, {
+      engine: 'neato', format: 'plain', yInvert: true,
+      graphAttributes: { ranksep: 1 }, nodeAttributes: { shape: 'box' }, edgeAttributes: { color: 'red' },
+    })
+    expect(renderString).toHaveBeenLastCalledWith(code, {
+      engine: 'neato', format: 'svg', yInvert: true,
+      graphAttributes: { bgcolor: 'transparent', fontcolor: '#e6e7e8', ranksep: 1 },
+      nodeAttributes: { color: '#8899aa', fontcolor: '#e6e7e8', fillcolor: '#222222', style: 'filled', shape: 'box' },
+      edgeAttributes: { color: 'red', fontcolor: '#e6e7e8' },
+    })
+  } finally {
+    if (previous === null) document.body.removeAttribute('style')
+    else document.body.setAttribute('style', previous)
+  }
+})

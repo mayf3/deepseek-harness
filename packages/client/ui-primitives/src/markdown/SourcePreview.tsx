@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import css from './SourcePreview.module.css'
+import { readPreviewTheme } from './preview-theme.ts'
 
 /** Localized preview states; the diagram source remains verbatim. */
 export interface PreviewLabels {
@@ -19,7 +20,7 @@ function assertNever(value: never): never {
 
 /**
  * Display a complete document or diagram, retaining the source when rendering fails.
- * @param props - Source and complete localized labels. Changing source discards the previous result.
+ * @param props - Source and complete localized labels. Source and document theme changes cancel obsolete renders.
  * @returns A loading status, an inert image or sandboxed document, or an error with the original source.
  */
 export function SourcePreview({ code, labels, render, document: isDocument = false }: {
@@ -30,12 +31,26 @@ export function SourcePreview({ code, labels, render, document: isDocument = fal
 }) {
   const [result, setResult] = useState<Result | null>(null)
   useEffect(() => {
-    const controller = new AbortController()
-    void (async () => await render(code, controller.signal))().then(
-      (src) => { if (!controller.signal.aborted) setResult({ kind: 'ok', code, src }) },
-      () => { if (!controller.signal.aborted) setResult({ kind: 'error', code }) },
-    )
-    return () => { controller.abort() }
+    let controller: AbortController | undefined
+    let palette: string | undefined
+    const update = () => {
+      const next = JSON.stringify(readPreviewTheme())
+      if (next === palette) return
+      palette = next
+      controller?.abort()
+      const current = new AbortController()
+      controller = current
+      void (async () => await render(code, current.signal))().then(
+        (src) => { if (!current.signal.aborted) setResult({ kind: 'ok', code, src }) },
+        () => { if (!current.signal.aborted) setResult({ kind: 'error', code }) },
+      )
+    }
+    // Isolated image/frame documents cannot inherit the host's CSS variables.
+    const observer = new MutationObserver(update)
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['style'] })
+    observer.observe(document.body, { attributes: true, attributeFilter: ['style', 'data-ds-dark-theme'] })
+    update()
+    return () => { observer.disconnect(); controller?.abort() }
   }, [code, render])
 
   if (result?.code !== code) return <div className={css.status} role="status">{labels.loading}</div>
