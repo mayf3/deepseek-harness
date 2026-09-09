@@ -9,7 +9,7 @@ import { join } from 'node:path'
 import type { Browser, Page } from 'playwright'
 import { chromium } from 'playwright'
 import { afterAll, beforeAll, describe, expect, it, onTestFailed } from 'vitest'
-import { ToolCallId, type StreamChunk } from '@deepseek-ai/dsh-llm'
+import { ToolCallId, expandAssistantStream, type StreamChunk } from '@deepseek-ai/dsh-llm'
 import type { ReplayEntry, ReplayOverrideDoc } from '@deepseek-ai/dsh-llm-replay'
 import type { SessionEvent, SessionId } from '@deepseek-ai/dsh-session'
 import {
@@ -18,7 +18,9 @@ import {
   webSnapshotMode,
   type WebScaffold,
 } from './scaffold.ts'
-import { connectFreshWorkspace, conversationContextKey, newEnglishPage, saveFailureShot } from './support.ts'
+import {
+  connectFreshWorkspace, conversationContextKey, expandOwningTurnProcess, newEnglishPage, saveFailureShot,
+} from './support.ts'
 
 const MODE = webSnapshotMode()
 const TURN_COUNT = 12
@@ -274,7 +276,11 @@ describe('web e2e: continuous conversation grown through the composer', () => {
       const turnEnds = turnEvents.filter((event): event is SessionEvent<'turn/end'> => (
         event.type === 'turn/end'
       ))
-      const chunks = turnEvents.filter(event => event.type === 'assistant/chunk')
+      const chunks = turnEvents.flatMap(event => (
+        event.type === 'assistant/message' || event.type === 'assistant/attempt'
+          ? expandAssistantStream(event.data.stream)
+          : []
+      ))
 
       expect(turnStarts).toHaveLength(1)
       expect(turnStarts[0]?.data.turn).toBe(spec.index)
@@ -315,6 +321,7 @@ describe('web e2e: continuous conversation grown through the composer', () => {
       const toolRow = page.locator(`[data-chat-call-id="${spec.callId}"]`)
       await expect.poll(() => toolRow.count(), { timeout: 10_000 }).toBe(1)
       expect(await toolRow.textContent()).toContain(spec.toolResultMarker)
+      await expandOwningTurnProcess(page, toolRow)
       const disclosure = toolRow.locator('[data-sample="bash"]')
       expect(await disclosure.getAttribute('aria-expanded')).toBe('false')
       await disclosure.click()
@@ -327,17 +334,21 @@ describe('web e2e: continuous conversation grown through the composer', () => {
     }
 
     if (sessionId === undefined) throw new Error('continuous conversation completed no turn')
-    expect(scaffold.ctx.agents.get(sessionId)?.session.events.filter(event => (
+    expect(scaffold.ctx.agents.get(sessionId)?.session.snapshotEvents().filter(event => (
       event.type === 'turn/end' && event.data.reason.kind === 'completed'
     ))).toHaveLength(TURN_COUNT)
     expect(sessionEvents.flatMap(event =>
       event.type === 'request/header' ? [event.data.reason] : [])).toEqual(['initial'])
-    await expect.poll(() => page.getByRole('button', { name: 'System prompt' }).count(), {
-      timeout: 10_000,
-    }).toBe(1)
+    expect(await page.getByRole('button', { name: 'System prompt' }).count()).toBe(1)
+    expect(await page.locator(
+      '[data-chat-flow-kind="system-prompt"][hidden="until-found"]',
+    ).count()).toBe(0)
     expect(specs.at(-1)?.prompt.length).toBeGreaterThan(4_000)
-    expect(sessionEvents.filter(event => (
-      event.type === 'assistant/chunk' && event.data.turn === TURN_COUNT
+    expect(sessionEvents.flatMap(event => (
+      (event.type === 'assistant/message' || event.type === 'assistant/attempt')
+        && event.data.turn === TURN_COUNT
+        ? expandAssistantStream(event.data.stream)
+        : []
     )).length).toBeGreaterThan(30)
     expect(consoleWarnings).toEqual([])
     expect(tripwire.pageErrors).toEqual([])

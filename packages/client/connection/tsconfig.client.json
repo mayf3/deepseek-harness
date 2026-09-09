@@ -13,13 +13,16 @@
     "src/client/index.ts",
     "src/client/random-uuid.ts",
     "src/client/rpc.ts",
-    "src/client/web-api-client.ts",
     "src/loopback-hostname.ts",
+    "src/recovery-config.ts",
     "src/rpc.ts"
   ],
   "references": [
     {
       "path": "../../../vendor/cordis"
+    },
+    {
+      "path": "../../../vendor/schemastery"
     },
     {
       "path": "../../attachment/attachment"
@@ -40,9 +43,6 @@
       "path": "../../settings/settings"
     },
     {
-      "path": "../../host/apiproxy"
-    },
-    {
       "path": "../../host/directory-picker"
     },
     {
@@ -50,9 +50,6 @@
     },
     {
       "path": "../../llm/llm"
-    },
-    {
-      "path": "../../runtime-diagnostics/invariants"
     },
     {
       "path": "../../util/brand"

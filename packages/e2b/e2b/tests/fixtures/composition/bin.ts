@@ -1,7 +1,7 @@
 import { readFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { boot } from '@deepseek-ai/dsh-app-boot'
-import { agentEvents, Inbox, type Agent } from '@deepseek-ai/dsh-agent'
+import { type Agent } from '@deepseek-ai/dsh-agent'
 import { Session, SessionId } from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-fs-e2b'
 import type {} from '@deepseek-ai/dsh-bash-local'
@@ -15,11 +15,23 @@ const ctx = await boot('e2b-composition', resolve(configPath))
 const ownerFiber = ctx.plugin(() => {})
 const ownerId = SessionId('e2b-live-owner')
 const session = Session.create(ownerId)
+const unsupportedInboxMutation = (): never => {
+  throw new Error('the E2B composition owner does not support Inbox mutations')
+}
 const owner: Agent = {
   id: ownerId,
   options: {},
   session,
-  inbox: undefined as never,
+  inbox: {
+    nextTurn: [],
+    nextStep: [],
+    clear: unsupportedInboxMutation,
+    append: unsupportedInboxMutation,
+    prepend: unsupportedInboxMutation,
+    replace: unsupportedInboxMutation,
+    remove: unsupportedInboxMutation,
+    splice: unsupportedInboxMutation,
+  },
   status: 'idle',
   ctx: ownerFiber.ctx,
   send() {},
@@ -30,7 +42,6 @@ const owner: Agent = {
   runMaintenance: task => task(new AbortController().signal),
   whenIdle: () => Promise.resolve(),
 }
-Object.assign(owner, { inbox: new Inbox(ctx, owner.session, agentEvents(ctx, owner)) })
 const unregisterOwner = ctx.agents.register(owner)
 let terminalId: Awaited<ReturnType<typeof ctx.terminals.spawn>>['sessionId'] | undefined
 try {

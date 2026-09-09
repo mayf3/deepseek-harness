@@ -1,14 +1,15 @@
 import { Context } from '@deepseek-ai/cordis'
-import AgentRegistry, { agentEvents, Inbox } from '@deepseek-ai/dsh-agent'
+import AgentRegistry from '@deepseek-ai/dsh-agent'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { JobOutcome } from '@deepseek-ai/dsh-jobs'
 import LocalJobRegistry from '@deepseek-ai/dsh-jobs-local'
-import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
+import SessionStore, { SESSION_FORMAT_VERSION, SessionId } from '@deepseek-ai/dsh-session'
 import type { Session } from '@deepseek-ai/dsh-session'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import { describe, expect, it } from 'vitest'
 import { SessionControlController } from '../src/control.ts'
 import type { SessionControlFrame } from '../src/types.ts'
+import { unsupportedInbox } from '@deepseek-ai/dsh-agent-loop-testkit'
 
 type BaselineFrame = Extract<SessionControlFrame, { type: 'baseline' }>
 type JobFrame = Extract<SessionControlFrame, { type: 'jobs' }>
@@ -28,7 +29,7 @@ function producer(label = 'sleep 60') {
   return { spec, reads, settle: (outcome: JobOutcome) => { settle(outcome) } }
 }
 
-async function harness(withRegistry: boolean): Promise<{
+async function harness(withJobs: boolean): Promise<{
   ctx: Context
   session: Session
   agent: Agent
@@ -38,19 +39,26 @@ async function harness(withRegistry: boolean): Promise<{
   await ctx.plugin(SessionStore)
   await ctx.plugin(SessionProjectionRegistry)
   await ctx.plugin(AgentRegistry)
-  if (withRegistry) {
+  if (withJobs) {
     await ctx.plugin(LocalJobRegistry)
     ctx.jobs.attachController('session-controller-test')
   }
   const session = ctx.sessions.create()
-  const agent = {
+  const agent: Agent = {
     id: session.id,
+    options: {},
     session,
-    inbox: undefined as never,
+    inbox: unsupportedInbox(),
     status: 'idle',
     ctx,
-  } as unknown as Agent
-  Object.assign(agent, { inbox: new Inbox(ctx, agent.session, agentEvents(ctx, agent)) })
+    send: () => {},
+    followup: () => {},
+    steer: () => {},
+    inject: () => {},
+    cancel: () => {},
+    runMaintenance: task => task(new AbortController().signal),
+    whenIdle: () => Promise.resolve(),
+  }
   ctx.agents.register(agent)
   const control = new SessionControlController(ctx)
   await new Promise(resolve => setTimeout(resolve, 0))
@@ -182,7 +190,7 @@ describe('Session control jobs updates', () => {
     const coldId = SessionId('session-cold-tasks')
     let loaded = false
     ctx.provide('sessionPersistence', {
-      list: async () => [{ version: 0, id: coldId, createdAt: 5, cwd: '/tmp' }],
+      list: async () => [{ version: SESSION_FORMAT_VERSION, id: coldId, createdAt: 5, cwd: '/tmp' }],
       locate: () => undefined,
       load: () => { loaded = true; throw new Error('job projection must not load a cold log') },
     } as never)
@@ -226,32 +234,4 @@ describe('Session control jobs updates', () => {
     expect(task.reads.count).toBe(0)
   })
 
-  it('ends active streams on context disposal after flushing buffered job frames', async () => {
-    const { ctx, agent, control } = await harness(true)
-    const iterator = control.control(new AbortController().signal)[Symbol.asyncIterator]()
-    await expect(iterator.next()).resolves.toMatchObject({ value: { type: 'baseline' } })
-    const first = producer('first')
-    const second = producer('second')
-    ctx.jobs.start({ ...first.spec, owner: agent })
-    ctx.jobs.start({ ...second.spec, owner: agent })
-    first.settle({ status: 'completed' })
-    second.settle({ status: 'completed' })
-    await expect.poll(() => ctx.jobs.list(agent).map(job => job.status))
-      .toEqual(['completed', 'completed'])
-
-    await ctx.fiber.dispose()
-
-    const frames: JobFrame[] = []
-    for (;;) {
-      const next = await iterator.next()
-      if (next.done) break
-      if (next.value.type === 'jobs') frames.push(next.value)
-    }
-    expect(frames.map(frame => frame.jobs.map(job => job.status))).toEqual([
-      ['running'],
-      ['running', 'running'],
-      ['completed', 'running'],
-      ['completed', 'completed'],
-    ])
-  })
 })

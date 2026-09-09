@@ -1,0 +1,167 @@
+/**
+ * The coloured file-type sheet: a 28×28 paper with a folded corner, filled in
+ * the type's colour, carrying a white mark for the type. Unlike the `ic_ds_*`
+ * glyphs it does not ride `currentColor` — the colour is the type's identity —
+ * so a consumer that wants it muted applies a CSS filter. Design sources:
+ * DSHFiles iconCode, iconHTML, iconImage, iconMD, iconPDF, iconExcel,
+ * iconPPT, iconWord, iconOthers.
+ *
+ * TODO: interim. The sheets and `classifyFileType` are drawn for the Sidebar
+ * only; the product-wide file-type standard that will replace them is described
+ * in `file-extensions.ts`.
+ */
+import type { ReactNode } from 'react'
+import {
+  CODE_EXTENSIONS, HTML_EXTENSIONS, IMAGE_EXTENSIONS, MARKDOWN_EXTENSIONS, PDF_EXTENSIONS, SHEET_EXTENSIONS,
+  SLIDES_EXTENSIONS, WORD_EXTENSIONS, fileExtension,
+} from './file-extensions.ts'
+import type { IconProps } from './icons/props.ts'
+
+/** File types with their own sheet colour and mark; `other` is the grey sheet with text lines. */
+export type FileTypeKind = 'code' | 'html' | 'image' | 'markdown' | 'pdf' | 'sheet' | 'slides' | 'document' | 'other'
+
+/** Props for {@link FileTypeIcon}: the type plus the shared icon sizing seat. */
+export interface FileTypeIconProps extends IconProps {
+  kind: FileTypeKind
+}
+
+/** Extension sets in precedence order: a specific type wins over the code set it may also sit in. */
+const KIND_SETS: readonly (readonly [FileTypeKind, ReadonlySet<string>])[] = [
+  ['markdown', MARKDOWN_EXTENSIONS],
+  ['html', HTML_EXTENSIONS],
+  ['pdf', PDF_EXTENSIONS],
+  ['sheet', SHEET_EXTENSIONS],
+  ['slides', SLIDES_EXTENSIONS],
+  ['document', WORD_EXTENSIONS],
+  ['image', IMAGE_EXTENSIONS],
+  ['code', CODE_EXTENSIONS],
+]
+
+/**
+ * Derive a file path's type glyph from its extension. Unknown and missing
+ * extensions fall to `other`.
+ * @param path - File path or bare name, with either separator.
+ * @returns The file's type.
+ */
+export function classifyFileType(path: string): FileTypeKind {
+  const extension = fileExtension(path)
+  return KIND_SETS.find(([, set]) => set.has(extension))?.[0] ?? 'other'
+}
+
+const SHEET_PATH = 'M8.48949 28H19.511C21.6482 28 22.7167 28 23.5596 27.6509C24.6835 27.1853 25.5764 26.2924 26.042 25.1685C26.3911 24.3256 26.3911 23.257 26.3911 21.1199V8.79443C26.3911 8.32877 26.3911 8.09593 26.3473 7.87507C26.2889 7.58058 26.1733 7.30042 26.007 7.05048C25.8822 6.86303 25.718 6.69799 25.3895 6.36792L20.0613 1.01354C19.7307 0.681235 19.5653 0.515081 19.3771 0.38885C19.1263 0.220541 18.8446 0.103463 18.5483 0.0443412C18.3261 0 18.0917 0 17.6229 0H8.48949C6.35233 0 5.28376 0 4.44085 0.349145C3.31697 0.814671 2.42405 1.70759 1.95852 2.83147C1.60938 3.67438 1.60938 4.74296 1.60938 6.88011V21.1199C1.60938 23.257 1.60938 24.3256 1.95852 25.1685C2.42405 26.2924 3.31697 27.1853 4.44085 27.6509C5.28376 28 6.35233 28 8.48949 28Z'
+
+const CORNER_PATH = 'M26.3911 7.37445L19.0527 0V3.77445C19.0527 4.89271 19.0527 5.45184 19.2354 5.89289C19.479 6.48096 19.9462 6.94818 20.5343 7.19176C20.9753 7.37445 21.5345 7.37445 22.6527 7.37445H26.3911Z'
+
+/** One type's sheet colour and its white mark. */
+interface Face {
+  readonly fill: string
+  readonly mark: ReactNode
+}
+
+const FACES: Readonly<Record<FileTypeKind, Face>> = {
+  code: {
+    fill: '#4176E6',
+    mark: (
+      <>
+        <path d="M8.61 16.3601L11.76 18.3901V20.1401L7 17.0601V15.6601L11.76 12.5801V14.3301L8.61 16.3601Z" fill="white" />
+        <path d="M16.1918 14.3301V12.5801L20.9518 15.6601V17.0601L16.1918 20.1401V18.3901L19.3418 16.3601L16.1918 14.3301Z" fill="white" />
+      </>
+    ),
+  },
+  html: {
+    fill: '#4176E6',
+    mark: (
+      <path
+        fillRule="evenodd"
+        clipRule="evenodd"
+        d="M13.9983 9.68311C17.2109 9.68311 19.8156 12.2873 19.8157 15.4998C19.8157 18.7124 17.211 21.3172 13.9983 21.3172C10.7858 21.317 8.18164 18.7123 8.18164 15.4998C8.1818 12.2874 10.7859 9.68327 13.9983 9.68311ZM9.26104 16.0248C9.46915 17.9243 10.7925 19.4877 12.5628 20.0464C12.4189 19.7978 12.2941 19.5153 12.1868 19.2117C11.8839 18.3543 11.6919 17.2436 11.6413 16.0248H9.26104ZM16.3554 16.0248C16.3048 17.2435 16.1134 18.3543 15.8105 19.2117C15.7033 19.5153 15.5777 19.7972 15.4339 20.0457C17.2043 19.4871 18.5282 17.9243 18.7363 16.0248H16.3554ZM12.6927 16.0248C12.7428 17.146 12.9201 18.1335 13.1773 18.8617C13.3309 19.2963 13.5019 19.6102 13.6675 19.8051C13.8329 19.9998 13.9462 20.0257 13.9983 20.0259C14.0503 20.0259 14.164 20.0003 14.3299 19.8051C14.4955 19.6101 14.6665 19.2963 14.82 18.8617C15.0773 18.1335 15.2546 17.146 15.3047 16.0248H12.6927ZM13.9983 10.7331C13.9462 10.7332 13.8329 10.7599 13.6675 10.9546C13.5019 11.1495 13.3308 11.4634 13.1773 11.8979C12.9019 12.6778 12.7177 13.7546 12.6838 14.9748H15.3136C15.2797 13.7546 15.0955 12.6778 14.82 11.8979C14.6665 11.4634 14.4954 11.1495 14.3299 10.9546C14.164 10.7594 14.0503 10.7331 13.9983 10.7331ZM15.5877 11.0052C15.669 11.1758 15.7433 11.3577 15.8105 11.5479C16.1332 12.4615 16.3297 13.6621 16.3636 14.9748H18.7363C18.5341 13.1308 17.2806 11.6037 15.5877 11.0052ZM12.409 11.0052C10.7163 11.6038 9.46318 13.1309 9.26104 14.9748H11.6338C11.6677 13.6621 11.8641 12.4615 12.1868 11.5479C12.254 11.3578 12.3277 11.1757 12.409 11.0052Z"
+        fill="white"
+      />
+    ),
+  },
+  image: {
+    fill: '#8B76F6',
+    mark: (
+      <>
+        <path d="M10.4211 15.9204C10.5755 15.6558 10.9578 15.6558 11.1121 15.9204L13.6491 20.2696C13.8047 20.5362 13.6123 20.8711 13.3036 20.8711H8.22962C7.9209 20.8711 7.72855 20.5362 7.88411 20.2696L10.4211 15.9204Z" fill="white" />
+        <path d="M15.498 13.186C15.6504 12.9117 16.0449 12.9117 16.1973 13.186L20.1367 20.2769C20.2848 20.5435 20.092 20.8711 19.787 20.8711H11.9083C11.6033 20.8711 11.4105 20.5435 11.5587 20.2769L15.498 13.186Z" fill="white" />
+        <path d="M11.8599 11.3997C11.8599 12.286 11.1415 13.0045 10.2552 13.0045C9.36887 13.0045 8.65039 12.286 8.65039 11.3997C8.65039 10.5134 9.36887 9.79492 10.2552 9.79492C11.1415 9.79492 11.8599 10.5134 11.8599 11.3997Z" fill="white" />
+      </>
+    ),
+  },
+  markdown: {
+    fill: '#4176E6',
+    mark: (
+      <path
+        d="M8.75904 19.5V14.6H9.90004L11.93 17.932H11.328L13.302 14.6H14.443L14.457 19.5H13.183L13.169 16.539H13.386L11.909 19.017H11.293L9.77404 16.539H10.04V19.5H8.75904ZM15.4378 19.5V14.6H17.7548C18.2961 14.6 18.7721 14.7003 19.1828 14.901C19.5934 15.1017 19.9131 15.384 20.1418 15.748C20.3751 16.112 20.4918 16.546 20.4918 17.05C20.4918 17.5493 20.3751 17.9833 20.1418 18.352C19.9131 18.716 19.5934 18.9983 19.1828 19.199C18.7721 19.3997 18.2961 19.5 17.7548 19.5H15.4378ZM16.8238 18.394H17.6988C17.9788 18.394 18.2214 18.3427 18.4268 18.24C18.6368 18.1327 18.8001 17.9787 18.9168 17.778C19.0334 17.5727 19.0918 17.33 19.0918 17.05C19.0918 16.7653 19.0334 16.5227 18.9168 16.322C18.8001 16.1213 18.6368 15.9697 18.4268 15.867C18.2214 15.7597 17.9788 15.706 17.6988 15.706H16.8238V18.394Z"
+        fill="white"
+      />
+    ),
+  },
+  pdf: {
+    fill: '#EC1313',
+    mark: (
+      <path
+        d="M6.80641 19.5V14.6H9.04641C9.49441 14.6 9.87941 14.6723 10.2014 14.817C10.5281 14.9617 10.7801 15.1717 10.9574 15.447C11.1347 15.7177 11.2234 16.0397 11.2234 16.413C11.2234 16.7817 11.1347 17.1013 10.9574 17.372C10.7801 17.6427 10.5281 17.8527 10.2014 18.002C9.87941 18.1467 9.49441 18.219 9.04641 18.219H7.57641L8.19241 17.617V19.5H6.80641ZM8.19241 17.764L7.57641 17.127H8.96241C9.25174 17.127 9.46641 17.064 9.60641 16.938C9.75107 16.812 9.82341 16.637 9.82341 16.413C9.82341 16.1843 9.75107 16.007 9.60641 15.881C9.46641 15.755 9.25174 15.692 8.96241 15.692H7.57641L8.19241 15.055V17.764ZM11.8992 19.5V14.6H14.2162C14.7575 14.6 15.2335 14.7003 15.6442 14.901C16.0548 15.1017 16.3745 15.384 16.6032 15.748C16.8365 16.112 16.9532 16.546 16.9532 17.05C16.9532 17.5493 16.8365 17.9833 16.6032 18.352C16.3745 18.716 16.0548 18.9983 15.6442 19.199C15.2335 19.3997 14.7575 19.5 14.2162 19.5H11.8992ZM13.2852 18.394H14.1602C14.4402 18.394 14.6828 18.3427 14.8882 18.24C15.0982 18.1327 15.2615 17.9787 15.3782 17.778C15.4948 17.5727 15.5532 17.33 15.5532 17.05C15.5532 16.7653 15.4948 16.5227 15.3782 16.322C15.2615 16.1213 15.0982 15.9697 14.8882 15.867C14.6828 15.7597 14.4402 15.706 14.1602 15.706H13.2852V18.394ZM17.6824 19.5V14.6H21.5254V15.671H19.0684V19.5H17.6824ZM18.9704 17.82V16.749H21.2314V17.82H18.9704Z"
+        fill="white"
+      />
+    ),
+  },
+  sheet: {
+    fill: '#22C55E',
+    mark: (
+      <path
+        d="M10.2935 20.5L13.3535 16.25L13.3435 17.66L10.4035 13.5H12.6335L14.5135 16.21L13.5635 16.22L15.4135 13.5H17.5535L14.6135 17.58V16.18L17.7135 20.5H15.4335L13.5235 17.65H14.4335L12.5535 20.5H10.2935Z"
+        fill="white"
+      />
+    ),
+  },
+  slides: {
+    fill: '#F59E0B',
+    mark: (
+      <path
+        d="M11.0135 20.5V13.5H14.2135C14.8535 13.5 15.4035 13.6033 15.8635 13.81C16.3301 14.0167 16.6901 14.3167 16.9435 14.71C17.1968 15.0967 17.3235 15.5567 17.3235 16.09C17.3235 16.6167 17.1968 17.0733 16.9435 17.46C16.6901 17.8467 16.3301 18.1467 15.8635 18.36C15.4035 18.5667 14.8535 18.67 14.2135 18.67H12.1135L12.9935 17.81V20.5H11.0135ZM12.9935 18.02L12.1135 17.11H14.0935C14.5068 17.11 14.8135 17.02 15.0135 16.84C15.2201 16.66 15.3235 16.41 15.3235 16.09C15.3235 15.7633 15.2201 15.51 15.0135 15.33C14.8135 15.15 14.5068 15.06 14.0935 15.06H12.1135L12.9935 14.15V18.02Z"
+        fill="white"
+      />
+    ),
+  },
+  document: {
+    fill: '#5686FE',
+    mark: (
+      <path
+        d="M10.512 20.5L8.24203 13.5H10.282L12.192 19.56H11.162L13.172 13.5H14.992L16.892 19.56H15.902L17.872 13.5H19.762L17.492 20.5H15.372L13.752 15.35H14.322L12.632 20.5H10.512Z"
+        fill="white"
+      />
+    ),
+  },
+  other: {
+    fill: '#CFD3D6',
+    mark: (
+      <>
+        <rect x="7.98242" y="10.792" width="12.0368" height="1.46414" fill="#545557" />
+        <rect x="7.98242" y="14.9221" width="12.0368" height="1.46414" fill="#545557" />
+        <rect x="7.98242" y="19.0522" width="7.57257" height="1.46414" fill="#545557" />
+      </>
+    ),
+  },
+}
+
+/**
+ * Render one file type's coloured sheet.
+ * @param props - The type, optional size (default 28px, the drawn size), and
+ * optional CSS class.
+ * @returns The type's SVG, `aria-hidden`; the adjacent name carries the meaning.
+ */
+export function FileTypeIcon({ kind, size = 28, className }: FileTypeIconProps): ReactNode {
+  const face = FACES[kind]
+  return (
+    <svg width={size} height={size} className={className} viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden>
+      <path d={SHEET_PATH} fill={face.fill} />
+      {face.mark}
+      {/* The grey sheet folds a darker corner; every coloured sheet folds a translucent white one. */}
+      {kind === 'other'
+        ? <path d={CORNER_PATH} fill="#A2A4A6" />
+        : <path d={CORNER_PATH} fill="white" fillOpacity="0.7" />}
+    </svg>
+  )
+}

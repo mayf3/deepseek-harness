@@ -60,7 +60,8 @@ describe('submit-machine: plain × enter', () => {
     expect(sink.draft).toBe('hello')
     expect(sink.mode).toBe('queue')
     expect(sink.attempt.draftSnapshot).toBe('hello')
-    expect(m.state.phase).toBe('submitting')
+    expect(effectAt(fx, 1, 'commit-draft').retainSuffixOf).toBe('hello')
+    expect(m.state.phase).toBe('plain')
   })
 
   it('retains an explicit steer mode on the default sink effect', () => {
@@ -122,7 +123,8 @@ describe('submit-machine: adjudication outcomes', () => {
     const sink = effectAt(fx, 0, 'default-sink')
     expect(sink.draft).toBe('/unknown thing')
     expect(sink.mode).toBe('steer')
-    expect(m.state.phase).toBe('submitting')
+    expect(effectAt(fx, 1, 'commit-draft').retainSuffixOf).toBe('/unknown thing')
+    expect(m.state.phase).toBe('plain')
   })
 
   it("'handled' lands plain with zero effects (popup shell path)", () => {
@@ -168,9 +170,9 @@ describe('submit-machine: adjudication outcomes', () => {
 describe('submit-machine: claimed lifecycle', () => {
   it('the claim event enters claimed and snapshots hint and images bits', () => {
     const m = new SubmitMachine()
-    m.dispatch({ type: 'claim', claim: { ...claimOf('goal', 'set a goal'), images: true } })
+    m.dispatch({ type: 'claim', claim: { ...claimOf('goal', 'set a goal'), attachments: true } })
     expect(m.state.phase).toBe('claimed')
-    expect(m.state.claim).toMatchObject({ token: '/goal ', hint: 'set a goal', images: true })
+    expect(m.state.claim).toMatchObject({ token: '/goal ', hint: 'set a goal', attachments: true })
   })
 
   it('claimed overwrites in place — no stack', () => {
@@ -315,7 +317,7 @@ describe('submit-machine: per-session isolation', () => {
     expect(effectAt(fx, 0, 'default-sink').draft).toBe('hello')
     a.dispatch({ type: 'submit-settled', attempt, ok: true, draft: '/goal x' })
     expect(a.state.phase).toBe('plain')
-    expect(b.state.phase).toBe('submitting')
+    expect(b.state.phase).toBe('plain')
   })
 })
 
@@ -343,6 +345,14 @@ describe('decorations: scanTextRefs', () => {
 
   it('names off the lexicon do not match; triggers are routed per lexicon list', () => {
     expect(scanTextRefs('/research @goal', lexicon)).toEqual([])
+  })
+
+  it('a "/" token continued by a path never matches, even when the name is on the lexicon', () => {
+    expect(scanTextRefs('/goal/x /goal/ /goal.md', lexicon)).toEqual([])
+  })
+
+  it('a "/" token glued to punctuation is not a reference: the host gesture is whitespace-bounded', () => {
+    expect(scanTextRefs('/goal。 then /goal, now', lexicon)).toEqual([])
   })
 
   it('word boundary: a trigger glued to text never matches', () => {

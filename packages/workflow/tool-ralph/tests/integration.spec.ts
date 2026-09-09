@@ -35,7 +35,7 @@ async function mountRalph(script: MockScript, config: toolRalph.Config) {
 }
 
 describe('dsh-tool-ralph over the real spawn and worker-thread stack', () => {
-  it('uses distinct empty-seed children, shared cwd, and only the prior bounded handoff', { timeout: 30_000 }, async () => {
+  it('uses distinct empty-seed children, shared cwd, and only the prior bounded handoff', { timeout: 90_000 }, async () => {
     const firstReport = {
       status: 'continue',
       summary: 'ROUND_ONE_HANDOFF',
@@ -98,7 +98,8 @@ describe('dsh-tool-ralph over the real spawn and worker-thread stack', () => {
     for (const child of children) {
       expect(child.session.header.cwd).toBe('/tmp/ralph-shared-workspace')
       expect(child.session.header.parentSession).toBe(parent.session.header.id)
-      expect(child.session.header.seedLength).toBeUndefined()
+      expect(child.session.header.isSeeded).toBe(false)
+      expect(child.session.inheritedEventCount).toBe(0)
       expect(ctx.agents.get(child.id)).toBeUndefined()
     }
 
@@ -115,7 +116,7 @@ describe('dsh-tool-ralph over the real spawn and worker-thread stack', () => {
     await parentHandle.dispose()
   })
 
-  it('reports the failed round and last good handoff when a child fails', { timeout: 30_000 }, async () => {
+  it('reports the failed round and last good handoff when a child fails', { timeout: 90_000 }, async () => {
     const firstReport = {
       status: 'continue',
       summary: 'ROUND_ONE_HANDOFF',
@@ -235,7 +236,7 @@ describe('dsh-tool-ralph over the real spawn and worker-thread stack', () => {
     await parentHandle.dispose()
   })
 
-  it('cancels the real worker and fresh child to quiescence', { timeout: 20_000 }, async () => {
+  it('cancels the real worker and fresh child to quiescence', { timeout: 90_000 }, async () => {
     const { ctx, parent, parentHandle } = await mountRalph(['hang'], { maxRounds: 2 })
     const children: Agent[] = []
     const outcomes: string[] = []

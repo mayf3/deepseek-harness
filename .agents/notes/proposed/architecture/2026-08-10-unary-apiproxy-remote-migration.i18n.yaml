@@ -1,6 +1,0 @@
-# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
-# side as of the last confirmed-consistent state. Both languages carry equal authority;
-# after editing either side, bring the other along and re-record with:
-#   pnpm run verify-translation-pairing --write .agents/notes/proposed/architecture/2026-08-10-unary-apiproxy-remote-migration.md
-2026-08-10-unary-apiproxy-remote-migration.md: 37e9ba636b03ca865bd8c48b0406e6b057b7d49a
-2026-08-10-unary-apiproxy-remote-migration.zh.md: d0060da0cd8399ffe2592ae7ef3ec83d9bf358c7

@@ -1,12 +1,7 @@
 import { describe, expect, expectTypeOf, it } from 'vitest'
 import { Context, Service, symbols } from '@deepseek-ai/cordis'
-import { createUserMessage, freezeMessage } from '@deepseek-ai/dsh-llm'
-import SessionStore, { Session, SessionId, type UserMessage } from '@deepseek-ai/dsh-session'
-import AgentRegistry, {
-  agentEvents,
-  Inbox,
-} from '@deepseek-ai/dsh-agent'
-import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
+import { Session, SessionId } from '@deepseek-ai/dsh-session'
+import AgentRegistry, { agentEvents } from '@deepseek-ai/dsh-agent'
 import TypertRegistry from '@deepseek-ai/dsh-typert-registry'
 
 import type {
@@ -27,7 +22,7 @@ function stubAgent(rawId: string, overrides: Partial<Agent> = {}): Agent {
     options: {},
     session,
     inbox: {
-      nextTurn: [], nextStep: [], hasPending: false,
+      nextTurn: [], nextStep: [],
     } as never,
     status: 'idle',
     ctx,
@@ -43,222 +38,6 @@ function stubAgent(rawId: string, overrides: Partial<Agent> = {}): Agent {
   return agent
 }
 
-async function inboxAgent(rawId: string): Promise<{ ctx: Context; session: Session; agent: Agent }> {
-  const ctx = new Context()
-  await ctx.plugin(SessionStore)
-  await ctx.plugin(SessionProjectionRegistry)
-  await ctx.plugin(AgentRegistry)
-  const session = ctx.sessions.create(SessionId(rawId))
-  const agent = stubAgent(rawId, { ctx, session })
-  Object.assign(agent, { inbox: new Inbox(ctx, agent.session, agentEvents(ctx, agent)) })
-  return { ctx, session, agent }
-}
-
-async function reconstructPersistedInbox(
-  rawId: string,
-  populate: (session: Session) => void,
-): Promise<Error> {
-  const ctx = new Context()
-  await ctx.plugin(SessionStore)
-  const session = ctx.sessions.create(SessionId(rawId))
-  populate(session)
-  await ctx.plugin(SessionProjectionRegistry)
-  await ctx.plugin(AgentRegistry)
-  try {
-    ctx.sessionProjections.stateOf(session, 'inbox')
-  } catch (error: unknown) {
-    if (error instanceof Error) return error
-    throw error
-  }
-  throw new Error('persisted inbox reconstruction unexpectedly succeeded')
-}
-
-describe('Inbox', () => {
-  it('rejects invalid durable coordinates and duplicate identities during reconstruction', async () => {
-    const outOfRange = await reconstructPersistedInbox('invalid-inbox-range', (session) => {
-      session.append('agent/inbox/spliced', {
-        target: 'next-turn', start: 0, removedCount: 1, inserted: [],
-      })
-    })
-    expect(outOfRange.message).toBe('invalid persisted inbox splice at session seq 0')
-    expect((outOfRange.cause as Error).message).toBe('invalid inbox splice')
-
-    const pending = createUserMessage({
-      content: [{ type: 'text', text: 'duplicate' }],
-      source: { kind: 'user' },
-    })
-    const duplicate = await reconstructPersistedInbox('invalid-inbox-duplicate', (session) => {
-      session.append('agent/inbox/spliced', {
-        target: 'next-turn', start: 0, inserted: [pending],
-      })
-      session.append('agent/inbox/spliced', {
-        target: 'next-step', start: 0, inserted: [pending],
-      })
-    })
-    expect(duplicate.message).toBe('invalid persisted inbox splice at session seq 1')
-    expect((duplicate.cause as Error).message).toBe(`message "${pending.id}" is already pending`)
-  })
-
-  it('projects inherited Inbox events in a forked session', async () => {
-    const { ctx, session: parent, agent: parentAgent } = await inboxAgent('inbox-fork-parent')
-    const inherited = createUserMessage({
-      content: [{ type: 'text', text: 'parent pending' }],
-      source: { kind: 'user' },
-    })
-    parentAgent.inbox.append('next-turn', inherited)
-    const child = ctx.sessions.fork(parent, undefined, SessionId('inbox-fork-child'))
-    const childAgent = stubAgent('inbox-fork-child', { ctx, session: child })
-    Object.assign(childAgent, { inbox: new Inbox(ctx, childAgent.session, agentEvents(ctx, childAgent)) })
-
-    expect(child.header.seedLength).toBe(parent.events.length)
-    expect(childAgent.inbox.nextTurn).toEqual([inherited])
-    expect(childAgent.inbox.nextStep).toEqual([])
-    const own = createUserMessage({
-      content: [{ type: 'text', text: 'child pending' }],
-      source: { kind: 'user' },
-    })
-    childAgent.inbox.append('next-turn', own)
-    expect(childAgent.inbox.nextTurn).toEqual([inherited, own])
-  })
-
-  it('replaces a pending message by identity across both lists', async () => {
-    const { ctx, agent } = await inboxAgent('replace-inbox')
-    const inserted: UserMessage[] = []
-    const discarded: UserMessage[] = []
-    ctx.on('agent/inbox/inserted', ({ message }) => void inserted.push(message))
-    ctx.on('agent/inbox/discarded', ({ message }) => void discarded.push(message))
-    const { inbox } = agent
-    const original = createUserMessage({
-      content: [{ type: 'text', text: 'original' }],
-      source: { kind: 'user' },
-    })
-    const nextStep = createUserMessage({
-      content: [{ type: 'text', text: 'step' }],
-      source: { kind: 'user' },
-    })
-    const replacement = createUserMessage({
-      content: [{ type: 'text', text: 'replacement' }],
-      source: { kind: 'user' },
-    })
-    const editedStep = freezeMessage({
-      ...nextStep,
-      content: [{ type: 'text', text: 'edited step' }],
-    })
-    inbox.append('next-turn', original)
-    inbox.append('next-step', nextStep)
-
-    expect(inbox.replace(createUserMessage({
-      content: [{ type: 'text', text: 'missing' }],
-      source: { kind: 'user' },
-    }).id, replacement)).toBe(false)
-    expect(inbox.replace(original.id, replacement)).toBe(true)
-    expect(inbox.replace(nextStep.id, editedStep)).toBe(true)
-    expect(inbox.nextTurn).toEqual([replacement])
-    expect(inbox.nextStep).toEqual([editedStep])
-    expect(discarded).toEqual([original, nextStep])
-    expect(inserted).toEqual([original, nextStep, replacement, editedStep])
-    expect(() => { inbox.replace(editedStep.id, replacement) })
-      .toThrow(`message "${replacement.id}" is already pending`)
-  })
-
-  it('normalizes splice coordinates, rejects duplicate identities, and reports missing removals', async () => {
-    const { agent } = await inboxAgent('splice-inbox')
-    const { inbox } = agent
-    const first = createUserMessage({
-      content: [{ type: 'text', text: 'first' }],
-      source: { kind: 'user' },
-    })
-    const second = createUserMessage({
-      content: [{ type: 'text', text: 'second' }],
-      source: { kind: 'user' },
-    })
-    const prefixed = createUserMessage({
-      content: [{ type: 'text', text: 'prefixed' }],
-      source: { kind: 'user' },
-    })
-
-    inbox.splice('next-turn', Number.NaN, Number.NaN, [first, second])
-    expect(inbox.nextTurn).toEqual([first, second])
-    expect(inbox.splice('next-turn', -1, 1, [])).toEqual([second])
-    inbox.prepend('next-turn', prefixed)
-    expect(inbox.nextTurn).toEqual([prefixed, first])
-    expect(inbox.remove(second.id)).toBe(false)
-    expect(() => { inbox.append('next-step', first) }).toThrow(`message "${first.id}" is already pending`)
-  })
-
-  it('clears both pending lists as durable cancellations', async () => {
-    const { ctx, session, agent } = await inboxAgent('clear-inbox')
-    const discarded: UserMessage[] = []
-    ctx.on('agent/inbox/discarded', ({ message }) => void discarded.push(message))
-    const { inbox } = agent
-    const nextTurn = createUserMessage({ content: [{ type: 'text', text: 'turn' }], source: { kind: 'user' } })
-    const nextStep = createUserMessage({ content: [{ type: 'text', text: 'step' }], source: { kind: 'user' } })
-    inbox.append('next-turn', nextTurn)
-    inbox.append('next-step', nextStep)
-    const beforeClear = session.events.length
-
-    inbox.clear()
-
-    expect(inbox.hasPending).toBe(false)
-    expect(discarded).toEqual([nextStep, nextTurn])
-    expect(session.events.slice(beforeClear).map(event => event.type === 'agent/inbox/spliced'
-      ? event.data
-      : event.type)).toEqual([
-      { target: 'next-step', start: 0, removedCount: 1, inserted: [], outcome: 'canceled' },
-      { target: 'next-turn', start: 0, removedCount: 1, inserted: [], outcome: 'canceled' },
-    ])
-
-    inbox.clear()
-    expect(session.events).toHaveLength(beforeClear + 2)
-  })
-
-  it('registers the durable Inbox projection from the Agent registry', async () => {
-    const ctx = new Context()
-    await ctx.plugin(SessionStore)
-    await ctx.plugin(SessionProjectionRegistry)
-    const agentFiber = ctx.plugin(AgentRegistry)
-    await agentFiber
-    const session = ctx.sessions.create(SessionId('inbox-projection'))
-    const agent = stubAgent('inbox-projection', { ctx, session })
-    Object.assign(agent, { inbox: new Inbox(ctx, agent.session, agentEvents(ctx, agent)) })
-    const pending = createUserMessage({
-      content: [{ type: 'text', text: 'pending' }],
-      source: { kind: 'user' },
-    })
-
-    agent.inbox.append('next-turn', pending)
-
-    expect(ctx.sessionProjections.snapshot(session).values.inbox).toEqual({
-      'next-turn': [pending],
-      'next-step': [],
-    })
-    await agentFiber.dispose()
-    expect(ctx.sessionProjections.snapshot(session).values).toEqual({})
-  })
-
-  it('uses the projection cell as the sole live state after direct durable appends', async () => {
-    const { ctx, session, agent } = await inboxAgent('inbox-live-projection')
-    const pending = createUserMessage({
-      content: [{ type: 'text', text: 'direct' }],
-      source: { kind: 'user' },
-    })
-    let observed: readonly UserMessage[] | undefined
-    ctx.on('session/event', (_session, event) => {
-      if (event.type === 'agent/inbox/spliced') observed = agent.inbox.nextTurn
-    })
-
-    session.append('agent/inbox/spliced', {
-      target: 'next-turn', start: 0, inserted: [pending],
-    })
-
-    expect(observed).toEqual([pending])
-    expect(agent.inbox.nextTurn).toEqual([pending])
-    expect(ctx.sessionProjections.snapshot(session).values.inbox).toEqual({
-      'next-turn': [pending], 'next-step': [],
-    })
-  })
-})
-
 describe('AgentRegistry', () => {
   it('contributes Agent lookup and scoped Context providers while Typert is live', async () => {
     const ctx = new Context()
@@ -266,7 +45,6 @@ describe('AgentRegistry', () => {
     await agentFiber
     await ctx.plugin(TypertRegistry)
     const agent = stubAgent('remote-agent')
-    Object.defineProperty(agent, 'ctx', { value: agent.ctx.extend({ agent }) })
     const disposeAgent = ctx.agents.register(agent)
 
     const lookup = ctx.typert.lookups.get('agent')
@@ -278,8 +56,6 @@ describe('AgentRegistry', () => {
     })
     expect(lookup?.resolve(agent.id)).toBe(agent)
     const context = ctx.typert.contexts.getHost('agent')
-    expect(context?.identity(agent.ctx)).toBe(agent.id)
-    expect(context?.identity(ctx)).toBeUndefined()
     expect(context?.resolve(agent.id)).toBe(agent.ctx)
 
     disposeAgent()
@@ -510,6 +286,22 @@ describe('AgentRegistry factory seam', () => {
     }, { inject: ['agents'] }))
     expect(calls.create[0]?.ownerCtx.fiber).toBe(callerFiber)
     expect(calls.resume[0]?.ownerCtx.fiber).toBe(callerFiber)
+    expect(calls.create[0]?.options.parentAgent).toBeUndefined()
+    expect(calls.resume[0]?.options.parentAgent).toBeUndefined()
+  })
+
+  it('keeps the runtime parent in options separately from the caller context', async () => {
+    const ctx = new Context()
+    await ctx.plugin(AgentRegistry)
+    const { factory, calls } = stubFactory()
+    ctx.agents.setFactory(factory)
+    const parent = stubAgent('parent')
+    const unregister = ctx.agents.register(parent)
+
+    await ctx.agents.create({ sessionId: SessionId('child'), parentAgent: parent })
+
+    expect(calls.create[0]?.options.parentAgent).toBe(parent)
+    unregister()
   })
 
   it('rejects a second factory and clears the slot with its owner (HMR)', async () => {

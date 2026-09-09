@@ -6,11 +6,9 @@ import { Context } from '@deepseek-ai/cordis'
 import { describe, expect, it } from 'vitest'
 import type { AddressInfo } from 'node:net'
 import type { IncomingMessage, ServerResponse } from 'node:http'
-import type { ApiProxy } from '@deepseek-ai/dsh-host-apiproxy/api'
 import type { AttachmentStore } from '@deepseek-ai/dsh-attachment'
-import { RpcId, type ClientRequest } from '@deepseek-ai/dsh-host-apiproxy/api'
-import type { WebServer, WebRoute, WebUpgradeRoute } from '@deepseek-ai/dsh-host-webserver'
-import { API_PATH, apply, inject, type HostConnectionHandle } from '../src/index.ts'
+import type { IndexInjection, WebServer, WebRoute, WebUpgradeRoute } from '@deepseek-ai/dsh-host-webserver'
+import { API_PATH, RpcId, apply, inject, type ClientRequest, type ConnectionConfig, type HostConnectionHandle } from '../src/index.ts'
 import { DEFAULT_MAX_REQUEST_BODY_BYTES } from '../src/http-bridge.ts'
 import { provideBrowserCredentials } from './browser-credentials.ts'
 
@@ -83,7 +81,8 @@ function fakeResponse(): {
   return { response, state }
 }
 
-async function mounted(config?: { trustedHosts?: string[] }): Promise<{
+async function mounted(config?: ConnectionConfig): Promise<{
+  ctx: Context
   routes: WebRoute[]
   upgrades: WebUpgradeRoute[]
   connection: HostConnectionHandle
@@ -94,10 +93,10 @@ async function mounted(config?: { trustedHosts?: string[] }): Promise<{
   const upgrades: WebUpgradeRoute[] = []
   provideBrowserCredentials(ctx)
   ctx.provide('webServer', fakeHttpServer(routes, upgrades) as WebServer)
-  ctx.provide('apiProxy', {} as unknown as ApiProxy)
   const fiber = ctx.plugin({ inject: [...inject], apply }, config)
   await fiber.await()
   return {
+    ctx,
     routes,
     upgrades,
     connection: ctx.get('connection') as HostConnectionHandle,
@@ -119,6 +118,44 @@ function browserCookie(connection: HostConnectionHandle, authority: string): str
 }
 
 describe('connection node half', () => {
+  it('provides the carrier-neutral service without a Web server', async () => {
+    const ctx = new Context()
+    provideBrowserCredentials(ctx)
+    const fiber = ctx.plugin({ inject: [...inject], apply })
+    await fiber.await()
+    expect(ctx.get('connection')).toBeInstanceOf(Object)
+    await fiber.dispose()
+  })
+
+  it('injects validated browser recovery timing and withdraws it on disposal', async () => {
+    const { ctx, dispose } = await mounted({ recovery: { generationReadyTimeoutMs: 25_000 } })
+    try {
+      const rows: IndexInjection[] = []
+      ctx.emit('webserver/index-inject', rows)
+      expect(rows).toEqual([{
+        kind: 'global', name: '__DSH_CONNECTION_RECOVERY__', value: {
+          backoffBaseMs: 500, backoffFactor: 2, backoffMaxMs: 10_000,
+          generationReadyWarnMs: 3_000, generationReadyTimeoutMs: 25_000,
+        },
+      }])
+      await dispose()
+      const after: IndexInjection[] = []
+      ctx.emit('webserver/index-inject', after)
+      expect(after).toEqual([])
+    } finally {
+      await dispose()
+    }
+  })
+
+  it.each([
+    { recovery: { backoffBaseMs: 0 }, error: /backoffBaseMs/ },
+    { recovery: { backoffFactor: NaN }, error: /backoffFactor.*finite/ },
+  ])('rejects invalid recovery timing before acquiring Host resources: $recovery', async ({ recovery, error }) => {
+    const ctx = new Context()
+    await expect(apply(ctx, { recovery })).rejects.toThrow(error)
+    expect(ctx.get('connection')).toBeUndefined()
+  })
+
   it('reserves enough default carrier capacity for the 200 MiB image batch', () => {
     expect(DEFAULT_MAX_REQUEST_BODY_BYTES).toBe(300 * 1024 * 1024)
     expect(DEFAULT_MAX_REQUEST_BODY_BYTES).toBeGreaterThan(Math.ceil(200 * 1024 * 1024 * 4 / 3) + 1024 * 1024)
@@ -131,7 +168,6 @@ describe('connection node half', () => {
     ctx.provide('attachments', {
       imageLimits: { maxMessageImageBytes: 20 * 1024 * 1024 },
     } as AttachmentStore)
-    ctx.provide('apiProxy', {} as ApiProxy)
     await expect(apply(ctx, { maxRequestBodyBytes: 1024 }))
       .rejects.toThrow(/must be at least .* aggregate image limit/)
     expect(routes).toHaveLength(0)
@@ -143,7 +179,6 @@ describe('connection node half', () => {
     const ctx = new Context()
     provideBrowserCredentials(ctx)
     ctx.provide('webServer', fakeHttpServer(routes, upgrades) as WebServer)
-    ctx.provide('apiProxy', {} as unknown as ApiProxy)
     const fiber = ctx.plugin({ inject: [...inject], apply }, { trustedHosts: ['harness.internal/path'] })
     await expect(fiber).rejects.toThrow(/not a bare host\[:port\] authority/)
     expect(routes).toHaveLength(0)
@@ -174,8 +209,8 @@ describe('connection node half', () => {
   it('requires the same browser session for every method on every trusted authority', async () => {
     const { routes, connection, dispose } = await mounted({ trustedHosts: ['harness.example'] })
     const methods = [
-      'host.openPath',
-      'llm.discoverModels', 'llm.models', 'agentPreset.openDocument',
+      'session/openWorkspacePath',
+      'llm/discoverModels', 'skills/list', 'settings/openAgentPresetDirectory',
     ]
     for (const method of methods) {
       const denied = fakeResponse()
@@ -243,7 +278,7 @@ describe('connection node half', () => {
     await dispose()
   })
 
-  it('provides a disposable dedicated RPC channel without requiring apiProxy', async () => {
+  it('provides a disposable dedicated RPC channel', async () => {
     const ctx = new Context()
     const routes: WebRoute[] = []
     provideBrowserCredentials(ctx)
@@ -292,12 +327,11 @@ describe('connection node half', () => {
     expect(routes).toHaveLength(0)
   })
 
-  it('dispatches claimed /api endpoints before the API Proxy fallback and withdraws the claim', async () => {
+  it('dispatches claimed /api endpoints and withdraws the claim', async () => {
     const ctx = new Context()
     const routes: WebRoute[] = []
     provideBrowserCredentials(ctx)
     ctx.provide('webServer', fakeHttpServer(routes, []) as WebServer)
-    ctx.provide('apiProxy', {} as unknown as ApiProxy)
     const fiber = ctx.plugin({ inject: [...inject], apply }, { trustedHosts: ['harness.example'] })
     await fiber.await()
     const connection = ctx.get('connection') as HostConnectionHandle
@@ -409,7 +443,7 @@ describe('connection node half', () => {
     }), methodMismatch.response)
     expect(JSON.parse(String(methodMismatch.state.body))).toMatchObject({
       rpcId: 'rpc-bad',
-      result: { ok: false, error: { code: 'bad-request' } },
+      result: { ok: false, error: { code: 'gateway/bad-request' } },
     })
 
     for (const [request, status] of [
@@ -434,7 +468,7 @@ describe('connection node half', () => {
       await route.handler(fakePost(harnessHeaders, '/rpc/goals/create', body), response.response)
       expect(JSON.parse(String(response.state.body))).toMatchObject({
         rpcId,
-        result: { ok: false, error: { code: 'bad-request' } },
+        result: { ok: false, error: { code: 'gateway/bad-request' } },
       })
     }
 
@@ -500,17 +534,17 @@ describe('connection node half over a real HTTP server', () => {
     const { port, close } = await serve(routes)
     try {
       const methods = [
-        'settings.openDocument',
-        'host.openPath',
-        'llm.discoverModels',
-        'agentPreset.openDocument',
-        'llm.providers', 'llm.models',
+        'settings/openSettingsDocument',
+        'session/openWorkspacePath',
+        'llm/discoverModels', 'skills/list',
+        'settings/openAgentPresetDirectory',
+        'llm/listProviders', 'session/modelCatalog',
       ]
       for (const method of methods) {
         expect([method, await call(port, method, 'localhost')]).toEqual([method, 401])
         expect([method, await call(port, method, 'harness.example')]).toEqual([method, 401])
       }
-      expect(await call(port, 'settings.openDocument', 'other.example')).toBe(403)
+      expect(await call(port, 'settings/openSettingsDocument', 'other.example')).toBe(403)
 
       const declaredCookie = browserCookie(connection, 'harness.example')
       for (const method of methods) {
@@ -519,7 +553,7 @@ describe('connection node half over a real HTTP server', () => {
       const loopbackAuthority = `127.0.0.1:${String(port)}`
       expect(await call(
         port,
-        'settings.openDocument',
+        'settings/openSettingsDocument',
         loopbackAuthority,
         browserCookie(connection, loopbackAuthority),
       )).toBe(404)

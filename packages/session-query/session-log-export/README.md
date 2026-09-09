@@ -1,5 +1,5 @@
 ---
-description: "Web Session-log export for users of the Web bundle: the Session Header download button and /export command, and what to expect from the download dialog."
+description: "Web Session-log ZIP export: Host streaming, the authenticated download route, the Session Header action, and the /export command."
 kind: "package-reference"
 ---
 
@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-`dsh-session-log-export` gives the Web interface a way to download a session's full history: a `Session log` button in the Session Header and an `/export` slash command both hand the session tree — the session, its sub-sessions, and attachments — to the browser as a ZIP download. A small dialog reports preparation, download start, or failure, shared by the button and the command. The ZIP is built and streamed by `dsh-host-apiproxy`; this package adds only the browser-side button and command. The download is a browser download: the browser chooses the destination. Setup and usage come first; the implementation internals live in a collapsible developer section below.
+`dsh-session-log-export` lets the Web interface download a session's full history: a `Download session log` menu item under the Session Header's more-actions button and an `/export` slash command both hand the session tree — the session, its sub-sessions, and attachments — to the browser as a ZIP download. The package owns the Host archive stream, its authenticated Fetch route, and the browser controls and feedback. The browser chooses the download destination. Setup and usage come first; implementation details follow.
 
 ## Table of Contents
 
@@ -25,11 +25,11 @@ English | [中文](README.zh.md)
 <a id="use-this-package"></a>
 ## Use this package
 
-Use this package when the Web bundle should let users export a session log. It is mounted only by the Web bundle, beside the host API proxy, the command registry, and the conversation UI. The common path is: mount the plugin, then click `Session log` in the Session Header or type `/export` — the browser downloads `dsh-session-<id>.zip`.
+Use this package when the Web bundle should let users export a session log. It requires Connection, the command registry, Session query and persistence, and attachments. Mount the plugin, then choose `Download session log` from the Session Header's more-actions menu or type `/export`; the browser downloads `dsh-session-<id>.zip`.
 
 ### When to choose it
 
-Choose it for a Web deployment that needs user-facing session export with a visible download dialog. Avoid it when a programmatic or Host-side export is needed: this package produces a browser download, not a Host path write, and it requires a persistence backend that stores a per-session raw artifact (the shipped JSONL backend supports plaintext and zstd; SQLite export is not supported).
+Choose it for a Web deployment that needs user-facing session export with a visible download dialog. Avoid it when a programmatic or Host-side export is needed: this package produces a browser download, not a Host path write. The logs are serialized from persistence read handles, so any mounted backend is supported.
 
 ### Composition
 
@@ -38,7 +38,13 @@ Choose it for a Web deployment that needs user-facing session export with a visi
   name: '@deepseek-ai/dsh-session-log-export'
 ```
 
-The Web bundle mounts the package beside `dsh-host-apiproxy`, `dsh-commands`, `dsh-client-ui-commands`, and `dsh-client-ui-conversation`.
+The Web bundle mounts the package with Connection, `dsh-commands`, `dsh-client-ui-commands`, and `dsh-client-ui-conversation`.
+
+### Configuration
+
+| Field | Default | Meaning |
+|---|---|---|
+| `compressionLevel` | `6` | DEFLATE level from 0 through 9 for each ZIP entry. |
 
 ### Command contract
 
@@ -49,7 +55,7 @@ The Web bundle mounts the package beside `dsh-host-apiproxy`, `dsh-commands`, `d
 
 ### What to expect
 
-The dialog reports three phases: preparing, download started, or failed. Closing the dialog does not cancel an in-flight download, and the dialog does not reopen when that operation later settles. One session admits one active download at a time; repeated gestures share that operation. The export includes the live session's newest events: the host endpoint flushes a live root session before reading, so a slash-triggered ZIP includes the `command/run` and `command/done` pair that started the download; cold persisted sessions need no flush.
+The dialog reports three phases: preparing, download started, or failed. Closing the dialog does not cancel an in-flight download, and the dialog does not reopen when that operation later settles. One session admits one active download at a time; repeated gestures share that operation. The export includes the live session's newest events: the host endpoint flushes a live root session before reading, so a slash-triggered ZIP includes the `command/run` and `command/done` pair that started the download; cold persisted sessions need no flush. Each logical log uses the current generation's canonical filename inside the archive (`session.jsonl` for v0, otherwise `session.vN.jsonl`), including beneath each sub-session directory. Images use `media/<attachmentId>.<ext>`, and generic files use `files/<digest-prefix>/<digest>/<name>`. Generic-file bytes are read and compressed as bounded chunks, so exporting a large upload does not buffer it in full.
 
 ### Failures
 
@@ -67,13 +73,13 @@ This section explains how the package wires the export control and points at the
 
 ### Design split
 
-The package has two halves. The host half ([`src/index.ts`](src/index.ts)) registers the `/export` command on `ctx.commands`; the browser half ([`src/client/index.ts`](src/client/index.ts)) provides a `SessionLogDownloadController`, contributes the Header button and shared modal to the `conversation.session.header.utilities` slot, and observes `command/executed` so a successful `/export` in the submitting browser starts the same download. Other tabs still render the durable command row without repeating the browser side effect.
+The package has two halves. The Host half ([`src/index.ts`](src/index.ts)) registers the `/export` command and contributes the exact `GET`/`HEAD /api/session.export` Fetch route to Connection; [`src/archive.ts`](src/archive.ts) builds the bounded ZIP stream. The browser half ([`src/client/index.ts`](src/client/index.ts)) provides the shared download controller and UI, and observes `command/executed` so only the submitting browser starts a download.
 
 ### Download flow
 
 Both entry paths issue a `HEAD` preflight to `GET /api/session.export?...`, then hand the GET URL to the browser download manager without buffering the ZIP in JavaScript. One controller owns one in-flight download per session, collapses concurrent gestures into that operation, and cancels the preflight on plugin disposal. Modal state lives in a snapshot store keyed by session, so the button and the command share one dialog per session.
 
-The host download endpoint is owned by [`dsh-host-apiproxy`](../../host/apiproxy/README.md): it flushes a live root session before `readRaw` and streams the ZIP; ZIP generation, raw JSONL/zstd reads, descendants, attachments, backpressure, and HTTP error semantics belong there.
+The Host route is a feature-owned exact Fetch contribution. Connection applies its Host/Origin and browser-session checks and bridges the streaming `Response`; this package owns query validation, live-session flushes, handle-based log reads and attachment reads, ZIP generation, and HTTP status semantics.
 
 </details>
 
@@ -84,7 +90,7 @@ The host download endpoint is owned by [`dsh-host-apiproxy`](../../host/apiproxy
 
 Read these pages when the package-level contract is not enough. They move from the Web control to the host endpoint and the surrounding command and session surfaces.
 
-- [dsh-host-apiproxy](../../host/apiproxy/README.md) — the host-streamed ZIP download endpoint this package drives.
+- [dsh-client-connection](../../client/connection/README.md) — the authenticated Fetch-route carrier used by the Host endpoint.
 - [Commands subsystem reference](../../../docs/subsystems/commands.md) — the human-command registry the `/export` command registers on.
 - [dsh-client-ui-commands](../../client/ui-commands/README.md) — the browser command surface that renders and acknowledges `/export`.
 - [Session Query package map](../README.md) — the retrieval family this package belongs to.
@@ -115,7 +121,6 @@ None. The log-only command lifecycle and browser download do not change the deri
 
 These limits define when this package is a poor fit or needs special operational care. They are current package constraints, not a task backlog.
 
-- **Requires a per-session raw artifact backend** — the download endpoint needs a persistence backend with a per-session raw artifact; the shipped JSONL backend supports plaintext and zstd, and SQLite export is not supported.
 - **Browser download, not a Host-path writer** — the browser chooses the local destination; no Host path or native folder action is returned.
 - **Preflight reports only pre-stream failures** — a descendant or attachment failure after the browser accepts the GET is reported by the browser download manager, not by the dialog.
 
@@ -132,3 +137,5 @@ This Dev Note is working context for maintainers: open design questions and dire
 The download is deliberately browser-scoped; a Host-path or native folder export would need a new endpoint contract and a decision on where the ZIP lands.
 
 </details>
+
+**Runtime invariant:** No companion is published. Connection and the command registry own both registrations, while each export reads authoritative Session services.

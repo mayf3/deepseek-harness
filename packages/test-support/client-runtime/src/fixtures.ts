@@ -65,6 +65,8 @@ export interface SessionFixture {
 export function sessionSnapshot(sessionId: SessionId): SessionSnapshot {
   return {
     sessionId,
+    queue: [],
+    pendingSubmissions: [],
     running: false,
     subagent: null,
     removed: false,

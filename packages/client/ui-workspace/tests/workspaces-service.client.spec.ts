@@ -6,15 +6,12 @@ import type {
 import type {
   IWorkspaces, WorkspaceId, WorkspaceSnapshot, WorkspaceView,
 } from '@deepseek-ai/dsh-api-workspace-controller/client'
-import {
-  RpcId,
-  type IApiClient,
-  type RpcError,
-  type RpcResponse,
-} from '@deepseek-ai/dsh-client-connection/client'
 import type { ClientRemote, DirectoryListing } from '@deepseek-ai/dsh-api-remotes/client'
-import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
+import { RemoteError } from '@deepseek-ai/dsh-client-test-runtime'
+import type { RemoteResult } from '@deepseek-ai/dsh-api-remotes/client'
 import { SessionId } from '@deepseek-ai/dsh-session/types'
+import { LayoutController } from '@deepseek-ai/dsh-client-ui-layout/client'
+import type { MainPanelId } from '@deepseek-ai/dsh-client-ui-layout/client'
 import { DirectoryBrowseError, UiWorkspaceService } from '../src/client/navigation.ts'
 
 const sid = (id: string): SessionId => SessionId(id)
@@ -113,6 +110,7 @@ class FakeSessions {
   readonly create: ReturnType<typeof vi.fn<ISessions['create']>>
   readonly open: ReturnType<typeof vi.fn<(id: SessionId) => void>>
   readonly clear: ReturnType<typeof vi.fn<() => void>>
+  readonly fork = vi.fn<ISessions['fork']>(async () => sid('forked'))
 
   constructor(initial: SessionListState) {
     this.list = new MutableSource(initial)
@@ -153,54 +151,12 @@ class FakeWorkspaces implements IWorkspaces {
   }
 }
 
-let nextRpcId = 0
-
-function ok<T>(value: T): RpcResponse<T> {
-  return { rpcId: RpcId(`workspace-test-${nextRpcId++}`), result: { ok: true, value } }
-}
-
-function failed<T>(error: RpcError): RpcResponse<T> {
-  return { rpcId: RpcId(`workspace-test-${nextRpcId++}`), result: { ok: false, error } }
-}
-
 const listing: DirectoryListing = {
   path: '/home/u',
   home: '/home/u',
   crumbs: [{ name: '/', path: '/', hidden: false }],
   entries: [{ name: 'project', path: '/home/u/project', hidden: false }],
   truncated: false,
-}
-
-class FakeApiClient implements IApiClient {
-  readonly calls: Array<{ readonly method: string; readonly payload: unknown }> = []
-
-  onDescribe: IApiClient['host']['describe'] = () => Promise.resolve(ok({
-    version: 'test',
-    cwd: '/home/u',
-    attachedSessions: 0,
-    home: '/home/u',
-    canOpenPath: true,
-  }))
-  onOpenPath: IApiClient['host']['openPath'] = () => Promise.resolve(ok({ opened: true }))
-
-  declare readonly skills: IApiClient['skills']
-  declare readonly agentPresets: IApiClient['agentPresets']
-  declare readonly settings: IApiClient['settings']
-  declare readonly llm: IApiClient['llm']
-
-  readonly host: IApiClient['host'] = {
-    describe: (payload, signal) => this.record('host.describe', payload, this.onDescribe(payload, signal)),
-    openPath: (payload, signal) => this.record('host.openPath', payload, this.onOpenPath(payload, signal)),
-  }
-
-  callsOf(method: string): unknown[] {
-    return this.calls.filter(call => call.method === method).map(call => call.payload)
-  }
-
-  private record<T>(method: string, payload: unknown, response: Promise<T>): Promise<T> {
-    this.calls.push({ method, payload })
-    return response
-  }
 }
 
 /** The directory-picking Remote namespace, recorded and scripted per case. */
@@ -236,18 +192,24 @@ interface BenchOptions {
 
 function bench(options: BenchOptions = {}) {
   const ctx = new Context()
-  const api = new FakeApiClient()
+  const layout = new LayoutController({
+    selectPanel: vi.fn(), retainMainPanels: vi.fn(),
+    setSidebar: vi.fn(), toggleSidebar: vi.fn(), setViewportWidth: vi.fn(),
+    setRightbar: vi.fn(), openRightbar: vi.fn(), closeRightbar: vi.fn(),
+  }, () => true)
+  const selectPanel = vi.spyOn(layout, 'selectPanel')
+  ctx.provide('layout', layout)
+  ctx.effect(() => () => { layout.dispose() })
   const directoryPicker = new FakeDirectoryPicker()
   const workspaces = new FakeWorkspaces(options.workspaces ?? workspaceState([], [], 'pending'))
   const sessions = new FakeSessions(options.sessions ?? sessionState([], undefined, 'pending'))
   const uiWorkspace = new UiWorkspaceService(
     ctx,
-    api,
     directoryPicker.remote,
     workspaces,
     sessions as unknown as ISessions,
   )
-  return { api, ctx, directoryPicker, sessions, uiWorkspace, workspaces }
+  return { ctx, directoryPicker, sessions, uiWorkspace, workspaces, layout, selectPanel }
 }
 
 async function flush(): Promise<void> {
@@ -256,6 +218,126 @@ async function flush(): Promise<void> {
 }
 
 describe('UiWorkspaceService', () => {
+  it('selects a Session before revealing its Conversation, including the current Session', () => {
+    const current = sid('current')
+    const b = bench({ sessions: sessionState([summary('current')], current) })
+    b.selectPanel.mockImplementation(() => {
+      expect(b.sessions.list.getSnapshot().current).toBe(current)
+    })
+    b.uiWorkspace.openSession(current)
+    expect(b.sessions.open).toHaveBeenCalledWith(current)
+    expect(b.selectPanel).toHaveBeenCalledWith(null)
+    expect(b.sessions.open.mock.invocationCallOrder[0]).toBeLessThan(b.selectPanel.mock.invocationCallOrder[0]!)
+  })
+
+  it('keeps the current panel when selecting a Session throws', () => {
+    const b = bench()
+    b.sessions.open.mockImplementationOnce(() => { throw new Error('selection failed') })
+    expect(() => { b.uiWorkspace.openSession(sid('target')) }).toThrow('selection failed')
+    expect(b.selectPanel).not.toHaveBeenCalled()
+  })
+
+  it('leaves a later panel selection in place when New Session finishes', async () => {
+    const b = bench({
+      sessions: sessionState([summary('current')], sid('current')),
+      workspaces: workspaceState([workspace('alpha')]),
+    })
+    const created = Promise.withResolvers<SessionId>()
+    b.sessions.create.mockReturnValue(created.promise)
+    const opening = vi.spyOn(b.uiWorkspace, 'openWorkspace')
+    b.uiWorkspace.startSession(wid('alpha'))
+    b.layout.selectPanel('panel-a' as MainPanelId)
+    created.resolve(sid('late'))
+    await opening.mock.results[0]!.value
+    expect(b.sessions.open).not.toHaveBeenCalled()
+    expect(b.selectPanel).toHaveBeenCalledExactlyOnceWith('panel-a')
+    expect(b.sessions.list.getSnapshot().current).toBe(sid('current'))
+  })
+
+  it('opens only the latest Workspace request when creation completes out of order', async () => {
+    const b = bench({
+      sessions: sessionState([summary('current')], sid('current')),
+      workspaces: workspaceState([workspace('alpha'), workspace('beta')]),
+    })
+    const older = Promise.withResolvers<SessionId>()
+    const newer = Promise.withResolvers<SessionId>()
+    b.sessions.create.mockImplementation(options => options?.workspaceId === wid('alpha') ? older.promise : newer.promise)
+    const oldDraft = vi.fn()
+    const newDraft = vi.fn()
+    const first = b.uiWorkspace.openWorkspace(wid('alpha'), oldDraft)
+    const second = b.uiWorkspace.openWorkspace(wid('beta'), newDraft)
+    newer.resolve(sid('newer'))
+    await second
+    older.resolve(sid('older'))
+    await first
+    expect(oldDraft).not.toHaveBeenCalled()
+    expect(newDraft).toHaveBeenCalledExactlyOnceWith(sid('newer'))
+    expect(b.sessions.open).toHaveBeenCalledExactlyOnceWith(sid('newer'))
+  })
+
+  it('does not move drafts or reopen a Workspace after reselecting the current Session', async () => {
+    const b = bench({
+      sessions: sessionState([summary('current')], sid('current')),
+      workspaces: workspaceState([workspace('alpha')]),
+    })
+    const created = Promise.withResolvers<SessionId>()
+    b.sessions.create.mockReturnValue(created.promise)
+    const moveDraft = vi.fn()
+    const pending = b.uiWorkspace.openWorkspace(wid('alpha'), moveDraft)
+    b.uiWorkspace.openSession(sid('current'))
+    created.resolve(sid('late'))
+    await pending
+    expect(moveDraft).not.toHaveBeenCalled()
+    expect(b.sessions.open).toHaveBeenCalledExactlyOnceWith(sid('current'))
+  })
+
+  it('keeps navigation performed by preparation and propagates preparation failures', async () => {
+    const b = bench({
+      sessions: sessionState([summary('current')], sid('current')),
+      workspaces: workspaceState([workspace('alpha')]),
+    })
+    await b.uiWorkspace.openWorkspace(wid('alpha'), () => { b.layout.selectPanel('panel-a' as MainPanelId) })
+    expect(b.sessions.open).not.toHaveBeenCalled()
+    await expect(b.uiWorkspace.openWorkspace(wid('alpha'), () => { throw new Error('draft failed') })).rejects.toThrow('draft failed')
+    expect(b.sessions.open).not.toHaveBeenCalled()
+  })
+
+  it('opens a fork only while its navigation is current and preserves fork failures', async () => {
+    const b = bench()
+    await b.uiWorkspace.forkSession(sid('source'))
+    expect(b.sessions.fork).toHaveBeenCalledWith({ sessionId: sid('source'), increaseTitle: true })
+    expect(b.sessions.open).toHaveBeenCalledExactlyOnceWith(sid('forked'))
+    const forked = Promise.withResolvers<SessionId>()
+    b.sessions.fork.mockReturnValueOnce(forked.promise)
+    const pending = b.uiWorkspace.forkSession(sid('source'))
+    b.layout.selectPanel('panel-a' as MainPanelId)
+    forked.resolve(sid('late-fork'))
+    await pending
+    expect(b.sessions.open).toHaveBeenCalledOnce()
+    b.sessions.fork.mockRejectedValueOnce(new Error('fork failed'))
+    await expect(b.uiWorkspace.forkSession(sid('source'))).rejects.toThrow('fork failed')
+    expect(b.sessions.open).toHaveBeenCalledOnce()
+  })
+
+  it('does not open a pending Workspace or fork after the navigation owner is disposed', async () => {
+    for (const kind of ['workspace', 'fork'] as const) {
+      const b = bench({
+        sessions: sessionState([summary('current')], sid('current')),
+        workspaces: workspaceState([workspace('alpha')]),
+      })
+      const resolved = Promise.withResolvers<SessionId>()
+      b.sessions.create.mockReturnValue(resolved.promise)
+      b.sessions.fork.mockReturnValue(resolved.promise)
+      const pending = kind === 'workspace'
+        ? b.uiWorkspace.openWorkspace(wid('alpha'))
+        : b.uiWorkspace.forkSession(sid('current'))
+      await b.ctx.fiber.dispose()
+      resolved.resolve(sid('late'))
+      await pending
+      expect(b.sessions.open).not.toHaveBeenCalled()
+    }
+  })
+
   it('reuses only an unarchived member blank and coalesces concurrent creation', async () => {
     const b = bench()
     const memberBlank = sid('member-blank')
@@ -484,26 +566,21 @@ describe('UiWorkspaceService', () => {
     expect(b.directoryPicker.callsOf('list')).toEqual([{ path: undefined }, { path: '/home/u' }])
     await expect(b.uiWorkspace.createDirectory('/home/u', 'new')).resolves.toBe('/home/u/new')
     expect(b.directoryPicker.callsOf('createDirectory')).toEqual([{ path: '/home/u', name: 'new' }])
-    await expect(b.uiWorkspace.openPath('/w/alpha/file.ts')).resolves.toBeUndefined()
-    expect(b.api.callsOf('host.openPath')).toEqual([{ path: '/w/alpha/file.ts' }])
-
     b.directoryPicker.onPick = () => Promise.resolve({
-      ok: false, error: { code: 'internal', message: 'no chooser', details: {} },
+      ok: false, error: new RemoteError('gateway/internal', 'no chooser', {}),
     })
     await expect(b.uiWorkspace.pickDirectory()).rejects.toThrow('directory picker failed: no chooser')
     b.directoryPicker.onList = () => Promise.resolve({
-      ok: false, error: { code: 'directory-unreadable', message: 'denied', details: { path: '/private' } },
+      ok: false, error: new RemoteError('directory-picker/unreadable', 'denied', { path: '/private' }),
     })
     const listFailure = b.uiWorkspace.listDirectory('/private')
     await expect(listFailure).rejects.toBeInstanceOf(DirectoryBrowseError)
-    await expect(listFailure).rejects.toMatchObject({ rpcError: { code: 'directory-unreadable' } })
+    await expect(listFailure).rejects.toMatchObject({ rpcError: { code: 'directory-picker/unreadable' } })
     b.directoryPicker.onCreateDirectory = () => Promise.resolve({
-      ok: false, error: { code: 'directory-exists', message: 'taken', details: { path: '/home/u/new' } },
+      ok: false, error: new RemoteError('directory-picker/exists', 'taken', { path: '/home/u/new' }),
     })
     await expect(b.uiWorkspace.createDirectory('/home/u', 'new')).rejects.toMatchObject({
-      rpcError: { code: 'directory-exists' },
+      rpcError: { code: 'directory-picker/exists' },
     })
-    b.api.onOpenPath = () => Promise.resolve(failed({ code: 'internal', message: 'boom', details: {} }))
-    await expect(b.uiWorkspace.openPath('/missing')).rejects.toThrow('path open failed: boom')
   })
 })

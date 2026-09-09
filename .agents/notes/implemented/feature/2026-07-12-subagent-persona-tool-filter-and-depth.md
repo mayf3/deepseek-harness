@@ -18,7 +18,7 @@ The controls answer different questions:
 
 | Control | Question | Result |
 |---|---|---|
-| `persona` | What role instructions replace the deployment persona for this child? | A child-local prompt section shadows `deployment:persona` |
+| `persona` | What role instructions replace the deployment persona for this child? | A child-local prompt section shadows `deployment:persona-prefix` |
 | `toolFilter` | Which deployment-global tools enter this child's visible tool view? | A scoped restriction filters globals before child-local tools are added |
 | `maxDepth` | How deep may this delegation tree grow? | A start whose child depth exceeds the absolute cap is rejected |
 
@@ -26,7 +26,7 @@ The controls answer different questions:
 
 ### Persona is a scoped shadow
 
-The persona control changes one child without changing deployment-wide prompt assembly. During unpublished setup, an in-process provider registers a child-scoped section named `deployment:persona`; ordinary most-specific-wins resolution replaces the global section only in that child's assemblies.
+The persona control changes one child without changing deployment-wide prompt assembly. During unpublished setup, an in-process provider registers a child-scoped section named `deployment:persona-prefix`; ordinary most-specific-wins resolution replaces the global section only in that child's assemblies.
 
 The value has the same strict template semantics as the deployment persona. Omitting it inherits the deployment section through the global layer; an explicit empty string shadows the global persona with an empty section. Parent and sibling personas never enter the child's flat scope.
 
@@ -34,7 +34,7 @@ This uses the normal system-prompt registration mechanism rather than a second p
 
 ### Tool filtering is one live global-view rule
 
-The tool filter controls capability visibility and executable lookup together. An in-process provider installs `ToolRuntime.restrict()` in the child's scope before publication, and the registry's single resolver applies the same result to wire tool schemas, lookup, execution, and Code Mode SDK generation. Independently registered system-prompt sections are outside `ToolRuntime`, so filtering a tool does not remove that plugin's standalone guidance.
+The tool filter controls capability visibility and executable lookup together. An in-process provider installs `ToolRuntime.restrict()` in the child's scope before publication, and the registry's single resolver applies the same result to wire tool schemas, lookup, execution, and PTC mode SDK generation. Independently registered system-prompt sections are outside `ToolRuntime`, so filtering a tool does not remove that plugin's standalone guidance.
 
 Resolution follows these rules:
 
@@ -85,7 +85,7 @@ A security design would need a separate authority representation, propagation ru
 
 **Snapshot allowed global tools at child creation.** A frozen allow-set makes future registration uniformly unavailable, but it changes hot-registration semantics and starts an authorization design. The implemented filter stays a live registry predicate and documents allow-versus-deny behavior directly.
 
-**Hide only tool schemas.** Presentation-only filtering lets the model execute a tool that the prompt says does not exist through Code Mode or a forged call. One resolver governs both presentation and execution instead.
+**Hide only tool schemas.** Presentation-only filtering lets the model execute a tool that the prompt says does not exist through PTC mode or a forged call. One resolver governs both presentation and execution instead.
 
 **Encode the depth cap as an automatic tool filter.** A creation-time filter snapshots a decision that may depend on runtime state, affects only one configured tool name, and does not protect direct service callers or alternate delegation tools. The provider instead enforces the absolute cap at every start.
 

@@ -1,4 +1,0 @@
-- tree "Sessions":
-  - treeitem "Ungrouped":
-    - img
-    - text: Ungrouped

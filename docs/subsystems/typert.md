@@ -139,7 +139,7 @@ interface TypertRemoteNamespaceMap {}
 
 ## Host Gateway
 
-Connection decodes its carrier envelope before calling `ctx.typertGateway`. The request carries exact named wire fields and the carrier's cancellation signal separately; infrastructure and boundary failures use the Gateway's in-process error taxonomy, ordinary exceptions are folded by the RPC adapter into the transport's `internal` error code, and existing RPC errors carried by lookup policy through `TypertLookupFailure` are returned unchanged.
+Connection decodes its carrier envelope before calling `ctx.typertGateway`. The request carries exact named wire fields and the carrier's cancellation signal separately; infrastructure and boundary failures ride `TypertGatewayError`, whose `gateway/*` codes are ordinary `RemoteError` codes, so the RPC adapter passes every structurally identified `RemoteError` through with its code and details intact and folds only unrecognized exceptions into `gateway/internal`.
 
 ```ts type-equiv
 /** One Remote method request after a carrier has decoded its envelope. */
@@ -158,23 +158,23 @@ interface InvokeRemoteRequest {
 ```ts type-equiv
 /** Stable infrastructure and boundary failures emitted before or after business execution. */
 type TypertGatewayErrorCode =
-  | 'ambiguous-endpoint'
-  | 'arguments-invalid'
-  | 'binding-invalid'
-  | 'context-failed'
-  | 'context-not-found'
-  | 'context-unavailable'
-  | 'definition-unavailable'
-  | 'input-invalid'
-  | 'invocation-unavailable'
-  | 'lookup-failed'
-  | 'lookup-not-found'
-  | 'lookup-unavailable'
-  | 'method-unavailable'
-  | 'provider-mismatch'
-  | 'result-invalid'
-  | 'service-unavailable'
-  | 'signature-invalid'
+  | 'gateway/ambiguous-endpoint'
+  | 'gateway/arguments-invalid'
+  | 'gateway/binding-invalid'
+  | 'gateway/context-failed'
+  | 'gateway/context-not-found'
+  | 'gateway/context-unavailable'
+  | 'gateway/definition-unavailable'
+  | 'gateway/input-invalid'
+  | 'gateway/invocation-unavailable'
+  | 'gateway/lookup-failed'
+  | 'gateway/lookup-not-found'
+  | 'gateway/lookup-unavailable'
+  | 'gateway/method-unavailable'
+  | 'gateway/provider-mismatch'
+  | 'gateway/result-invalid'
+  | 'gateway/service-unavailable'
+  | 'gateway/signature-invalid'
 ```
 
 ```ts type-equiv
@@ -185,9 +185,13 @@ interface TypertGateway {
   /**
    * Register the application-selected forwarded-event source.
    * @param source - stream factory installed by the Remote assembly.
+   * @param host - stable Host facts included in each Client generation's opening frame.
    * @returns disposer removing this exact source and cancelling its active streams.
    */
-  registerRemoteEvents(source: TypertRemoteEventSource): () => Promise<void>
+  registerRemoteEvents(
+    source: TypertRemoteEventSource,
+    host: RemoteEventHostInfo,
+  ): () => Promise<void>
   /**
    * Invoke one live Remote method without assuming a carrier or response envelope.
    * @param request - decoded endpoint and named wire arguments.
@@ -237,14 +241,6 @@ interface TypertClientRemote extends TypertRemoteNamespaceMap {
 ## Cordis API
 
 Generated from source by `scripts/gen-cordis-catalog.ts` (verified fresh by `pnpm run verify-cordis-catalog` in doc-sync; regenerate with `pnpm run gen-cordis-catalog`) — the language sides differ only in locale-specific paired document paths. Signature blocks use a `ts cordis-catalog` fence and keep the original source JSDoc; dispatch modes are defined in the [primer](../cordis-primer.md#dispatch-modes), and the framework-inherited `ctx` API lives in [cordis-api/inherited.md](../cordis-api/inherited.md).
-
-<a id="ctxapiproxy--apiproxy"></a>
-
-### `ctx.apiProxy` — `ApiProxy`
-
-Root interface of the unified API. New client-request domain = one new file pair + one field here + one map row.
-
-Source: [`packages/host/apiproxy/src/api/index.ts`](../../packages/host/apiproxy/src/api/index.ts)
 
 <a id="ctxtypert--typertregistry"></a>
 
@@ -322,9 +318,10 @@ Resolve strict generated definitions or conservative SRC markers against current
 /**
  * Register the sole application-selected forwarded-event source.
  * @param source - stream factory installed by the Remote assembly.
+ * @param host - stable Host facts included in each Client generation's opening frame.
  * @returns disposer removing this source and cancelling its active streams.
  */
-registerRemoteEvents(source: TypertRemoteEventSource): () => Promise<void>
+registerRemoteEvents( source: TypertRemoteEventSource, host: RemoteEventHostInfo, ): () => Promise<void>
 
 /**
  * Invoke one live Remote method through strict generated reflection or SRC markers.

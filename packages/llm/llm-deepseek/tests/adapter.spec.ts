@@ -338,7 +338,7 @@ describe('DeepSeekAdapter against a mock server', () => {
     const ctx = await harness(server.url)
 
     const result = await assemble(ctx, {
-      model: 'deepseek-v4-flash',
+      model: 'deepseek-v4-pro',
       messages: [createUserMessage({
         content: [{ type: 'text', text: 'hi' }],
         source: { kind: 'plugin', plugin: 'test' },
@@ -350,7 +350,7 @@ describe('DeepSeekAdapter against a mock server', () => {
 
     // The wire request carried the auth header contents we configured.
     expect(server.requests[0]).toMatchObject({
-      model: 'deepseek-v4-flash',
+      model: 'deepseek-v4-pro',
       max_tokens: 256_000,
       reasoning_effort: 'high',
       stream: true,
@@ -1976,6 +1976,22 @@ describe('plugin registration and config', () => {
   it.each([0, 1.5])('rejects a per-model output cap of %s', (maxTokens) => {
     expect(() => resolveAdapterOptions({ models: [{ id: 'bad-cap', maxTokens }] }))
       .toThrow(/maxTokens must be a positive integer/)
+  })
+
+  it('surfaces a catalog model\'s in-history system prompt update mode and rejects any other mode', async () => {
+    const adapter = adapterOf({ models: [
+      { id: 'capable', systemPromptUpdate: 'in-history' },
+      { id: 'plain' },
+    ] })
+    await expect(adapter.resolveModel('deepseek-official', 'capable'))
+      .resolves.toMatchObject({ systemPromptUpdate: 'in-history' })
+    await expect(adapter.resolveModel('deepseek-official', 'plain'))
+      .resolves.not.toHaveProperty('systemPromptUpdate')
+    await expect(adapter.resolveModel('deepseek-official', 'not-in-catalog'))
+      .resolves.not.toHaveProperty('systemPromptUpdate')
+    expect(() => resolveAdapterOptions({
+      models: [{ id: 'bogus', systemPromptUpdate: 'leading' as unknown as 'in-history' }],
+    })).toThrow(/systemPromptUpdate must be "in-history" when present/)
   })
 
   it('rejects image request limits on a text-only catalog model', () => {

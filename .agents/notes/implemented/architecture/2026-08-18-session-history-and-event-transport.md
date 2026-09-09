@@ -60,23 +60,28 @@ API Proxy owns neither the Session or Workspace Remote namespace nor the Host do
 
 ### Connection generation and physical connections
 
-The browser's Client Remote plugin starts `RemoteStreamMuxClient` idempotently on activation and connects to `/api/remote.mux` immediately. The physical WebSocket remains resident even when there is no business logical stream.
+The browser's Client Remote plugin starts `RemoteStreamMuxClient` idempotently on activation and connects to `/api/remote.mux` immediately. The physical WebSocket remains resident even when there is no business logical stream, but the mux performs no independent retry scheduling.
 
-After an initial connection failure or the loss of a connected socket, the mux rebuilds the physical connection with capped jittered backoff. Logical streams not yet opened share that reconnect loop; streams already open end their current physical generation with `RemoteStreamCarrierError`.
+The Host sends one RFC 6455 Ping control frame to every open mux socket at the configured `websocketHeartbeatIntervalMs` interval (two seconds by default). The browser replies with Pong at the protocol layer; neither control frame enters the Remote stream JSON union or changes Connection generation state. Before each Ping, the Host marks the socket as awaiting Pong and terminates it at the next interval if no Pong arrived.
+
+After an initial connection failure or the loss of a connected socket, open logical streams end their current physical generation with `RemoteStreamCarrierError`. `ConnectionController` owns the continuous exponential retry schedule with a capped delay; each attempt asks the mux to replace any candidate or active socket exactly once before reopening `$events`. A user-requested reconnect resets the attempt sequence and bypasses the delay through the same path ([decision](../../archived/feature/2026-08-28-web-connection-recovery-control.md)).
+
+
+The browser's network-status events are inputs to the same Controller. `offline` withdraws the Connection generation and suspends automatic retries; the next `online` transition restarts the base backoff. These events never establish connectivity: only a fresh `$events` ready frame publishes a Connection generation.
 
 In-process `connection.rpc.open` uses the same logical endpoint semantics while bypassing the browser WebSocket mux.
 
 The Gateway-internal `$events` logical stream is the sole generation source for `ConnectionHandle`. It does not depend on whether any business `$on` subscription exists, so connection health does not vary with the number of UI listeners.
 
-The Host event source installs incremental listeners synchronously before returning its first frame. Gateway then sends `{ type: 'ready' }` with a `clientId`; this frame proves that the current generation can receive increments.
+The Host event source installs incremental listeners synchronously before returning its first frame. Gateway then sends `{ type: 'ready', clientId, host: { home } }`; this frame proves that the current generation can receive increments and carries the stable Host path-display fact.
 
-`ConnectionController` waits for `$events` readiness and `host.describe` in parallel. It publishes `connected` only after both complete, so a Session or Workspace baseline cannot be read before Host incremental listeners are ready.
+`ConnectionController` publishes `connected` only after `$events` readiness, so a Session or Workspace baseline cannot be read before Host incremental listeners are ready.
 
-Unexpected normal completion of `$events`, a Host error, a malformed opening frame, or a carrier failure ends the current Connection generation. Connection withdraws `hostDescription`, then re-establishes `$events` and `host.describe` after backoff.
+Unexpected normal completion of `$events`, a Host error, a malformed opening frame, or a carrier failure ends the current Connection generation. Connection withdraws the generation, then re-establishes `$events` under its bounded backoff unless the browser is offline or a user requests an immediate retry.
 
 Gateway stream generation, Connection generation, and a Session business open epoch are three independent counters: the first identifies physical replacement of one logical stream, the second identifies a Host-availability handshake, and the last prevents an obsolete Session open from writing into current state.
 
-Plugin disposal stops backoff, cancels candidate and active sockets, ends logical streams, and awaits quiescence of background loops and consumers.
+Host plugin disposal stops the heartbeat timer, terminates mux sockets, and waits for active iterators. Client plugin disposal stops retry delays, cancels candidate and active sockets, ends logical streams, and awaits quiescence of background loops and consumers.
 
 ### General Remote stream model
 
@@ -134,7 +139,7 @@ If a page request is canceled with its physical carrier generation, the journal 
 
 `packages/api/session-controller` provides Host `ctx.sessionController` and the generated `ctx.remote.session` namespace.
 
-It owns Session list, search, create, selectModel, rename, fork, prompt, attachment, updateQueue, cancel, page, follow, and control. The Host-generation model catalog is exposed separately through `llm.models` because it is not Session-specific.
+It owns Session list, search, create, selectModel, rename, fork, prompt, attachment, updateQueue, cancel, page, follow, and control. The Host-generation model catalog is exposed separately through `session/modelCatalog` because it is not Session-specific.
 
 The package separates agent, commands, control, history, and list controllers internally, but Session identity resolution, activation policy, subagent ownership, and Remote error projection have one public owner.
 
@@ -160,7 +165,7 @@ Each method explicitly selects a cold inspection, live-only lookup, or resume-ca
 
 Reading titles, lists, and projections does not require an Agent. An observation operation cannot inherit resume authority merely because another Remote endpoint uses Agent lookup.
 
-`SessionQuery.observeSession()` chooses an attached Session or borrows one prepared source from `SessionPersistence.borrowSession()`. The persistence preparation cache shares concurrent cold reads and pins the exact unpublished Session until every observation lease is released. An observation computes either all registered projections or none; callers may expose a subset, but no caller creates a partial projection state.
+`SessionQuery.observeSession()` chooses an attached Session or serves a cold one from the reader's own prepared cache, filled through a persistence read handle. The cache shares concurrent cold reads and pins an entry until every observation lease is released. An observation computes either all registered projections or none; callers may expose a subset, but no caller creates a partial projection state.
 
 `session.list` never performs an unbounded cold-log scan. It uses cached projection hints when available and may fully observe only an individually stored artifact within the configured small-log byte limit to distinguish an abandoned blank Session. Missing or unreadable hints keep the row visible with unknown metadata.
 
@@ -321,15 +326,17 @@ API Proxy carries only independent business APIs it owns. Session, Workspace, Re
 
 **Use an independent physical WebSocket or duplex stream for Remote Event.** Gateway mux already provides authenticated upgrade, multiplexing, cancellation, error mapping, and reconnect. Downlink `$events` plus HTTP `$events/result` expresses request/response without a third connection.
 
+**Send application-level JSON heartbeat frames.** This would expand the strict Remote stream message union and require browser handling for traffic with no business meaning. WebSocket Ping/Pong provides carrier activity without changing logical-stream semantics.
+
 **Retain API Proxy's Host mux.** This keeps the handwritten union, schema, response envelope, and second stream lifecycle, and prevents Session and Workspace Controllers from owning their data protocols independently.
 
 **Update Session list time from aggregate `session/event`.** List correctness would depend on which Sessions a browser consumes and would mistake arbitrary plugin events for user activity. The durable `lastPromptAt` projection expresses the ordering fact directly.
 
 ## Verification
 
-Gateway mux tests pin connection without logical streams, idle residency, initial-failure and disconnect recovery, active-stream carrier failure, cancellation, and no reconnect after disposal.
+Gateway mux tests pin connection without logical streams, idle residency, one physical attempt per request, configurable Ping/Pong without application messages, active-stream carrier failure, cancellation, and no reconnect after disposal.
 
-Connection tests pin missing, duplicate, and withdrawn generation sources; the race between `$events` ready and `host.describe`; and description withdrawal and rebuilding after generation failure.
+Connection tests pin missing, duplicate, and withdrawn generation sources, readiness timeout, and generation withdrawal and rebuilding after failure.
 
 `RemoteStream` tests pin single consumption, retry reset after opening acceptance, generation-only `restart()`, no retry for terminal errors, and disposal quiescence.
 
@@ -365,6 +372,8 @@ Durable logs repair a missing suffix by sequence number and page; Session contro
 
 Gateway owns only transport, generation, pending waterfalls, and strict wire validation, not Session or Workspace business fields. A domain Controller supplies only openers, cursor rules, baseline reducers, and error presentation.
 
+Each resident browser connection adds one empty Ping/Pong exchange per configured interval. Deployments can shorten the interval for stricter idle timeouts without changing the Remote stream protocol or browser code.
+
 Session and Workspace Host APIs, stream adapters, and Client data models each have an explicit owner. API Proxy is no longer their intermediary.
 
 The general stream objects add three explicit layers while deleting the retry, cancellation, generation, baseline, and gap-repair shells previously duplicated by each Controller.
@@ -373,4 +382,4 @@ Remote waterfalls preserve first claim across multiple Clients, continuation of 
 
 This decision extends the allowlist and single Cordis-signature design from [Remote event delivery](2026-08-10-remote-event-delivery.md): ordinary notifications use `emit`, while Agent-scoped async waterfalls use the same `ctx.remote.$on` surface with explicit `waterfall` mode. It creates no second invocation map.
 
-This decision takes over the Session, Workspace, and Host-event carriers retained by [simple unary API Proxy migration](../../proposed/architecture/2026-08-10-unary-apiproxy-remote-migration.md) while preserving the complete jobs snapshot, process-local lifecycle, and “observation does not resume an Agent” semantics required by [background job display](../feature/2026-08-08-web-background-job-display.md).
+This decision takes over the Session, Workspace, and Host-event carriers retained by [simple unary API Proxy migration](../../archived/architecture/2026-08-10-unary-apiproxy-remote-migration.md) while preserving the complete jobs snapshot, process-local lifecycle, and “observation does not resume an Agent” semantics required by [background job display](../feature/2026-08-08-web-background-job-display.md).

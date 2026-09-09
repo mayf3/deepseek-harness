@@ -1,17 +1,20 @@
-/** Live Session jobs and projection state with reconnect baselines. */
+/** Live Session queue, jobs, and projection state with reconnect baselines. */
 
 import type { Context } from '@deepseek-ai/cordis'
-import type { Agent } from '@deepseek-ai/dsh-agent'
+import type { Agent, InboxState } from '@deepseek-ai/dsh-agent'
+import { Deque } from '@deepseek-ai/dsh-deque'
 import type { JobSnapshot } from '@deepseek-ai/dsh-jobs'
 import type {
-  JsonValue, Session, SessionId,
+  Session, SessionId, UserMessage,
 } from '@deepseek-ai/dsh-session'
+import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 import type {
   SessionControlBaseline,
   SessionControlFrame,
   SessionJob,
   SessionProjectionBaseline,
   SessionProjectionValues,
+  SessionQueuedItem,
 } from './types.ts'
 
 /** Owns the Host-wide Session control stream. */
@@ -20,15 +23,21 @@ export class SessionControlController {
 
   /** @param ctx - Host context carrying live Agent, projection, and jobs services. */
   constructor(private readonly ctx: Context) {
-    ctx.inject(['sessionProjections'], (projectionCtx) => {
-      projectionCtx.sessionProjections.onChanged((session, key, value, seq) => {
-        this.broadcast({
-          type: 'projection',
-          sessionId: session.id,
-          key,
-          value: value as JsonValue,
-          seq,
-        })
+    ctx.sessionProjections.onChanged((session, key, value, seq) => {
+      this.broadcast({
+        type: 'projection',
+        sessionId: session.id,
+        key,
+        value: value as JsonValue,
+        seq,
+      })
+      if (key !== 'inbox') return
+      const agent = this.ctx.agents.get(session.id)
+      if (agent?.session !== session) return
+      this.broadcast({
+        type: 'queue',
+        sessionId: session.id,
+        items: queueItemsFromInbox(value as InboxState),
       })
     })
     ctx.inject(['jobs'], (jobsCtx) => {
@@ -64,12 +73,15 @@ export class SessionControlController {
 
   private baseline(): SessionControlBaseline {
     const sessions = this.ctx.sessions.list()
+    const queues = Object.create(null) as Record<SessionId, readonly SessionQueuedItem[]>
     const jobs = Object.create(null) as Record<SessionId, readonly SessionJob[]>
     for (const session of sessions) {
       const agent = this.ctx.agents.get(session.id)
+      queues[session.id] = agent?.session === session ? queueItems(agent) : []
       jobs[session.id] = this.jobsFor(agent)
     }
     return {
+      queues,
       jobs,
       projections: this.projectionBaseline(sessions),
     }
@@ -78,17 +90,14 @@ export class SessionControlController {
   private projectionBaseline(
     sessions: readonly Session[],
   ): Readonly<Record<SessionId, SessionProjectionBaseline>> {
-    const registry = this.ctx.get('sessionProjections')
     const blocks = Object.create(null) as Record<SessionId, SessionProjectionBaseline>
     for (const session of sessions) {
-      const snapshot = registry?.snapshot(session)
-      blocks[session.id] = snapshot === undefined
-        ? { asOfSeq: session.seq - 1, values: {} }
-        : {
-          asOfSeq: snapshot.asOfSeq,
-          // Every projection definition validates its value before snapshot publication.
-          values: snapshot.values as SessionProjectionValues,
-        }
+      const snapshot = this.ctx.sessionProjections.snapshot(session)
+      blocks[session.id] = {
+        asOfSeq: snapshot.asOfSeq,
+        // Every projection definition validates its value before snapshot publication.
+        values: snapshot.values as SessionProjectionValues,
+      }
     }
     return blocks
   }
@@ -118,13 +127,13 @@ export class SessionControlController {
 }
 
 class ControlQueue {
-  private readonly buffer: SessionControlFrame[] = []
+  private readonly buffer = new Deque<SessionControlFrame>()
   private wake: (() => void) | undefined
   private done = false
 
   push(frame: SessionControlFrame): void {
     if (this.done) return
-    this.buffer.push(frame)
+    this.buffer.pushBack(frame)
     const wake = this.wake
     this.wake = undefined
     wake?.()
@@ -143,19 +152,49 @@ class ControlQueue {
     signal.addEventListener('abort', onAbort, { once: true })
     try {
       while (!this.done && !signal.aborted) {
-        const frame = this.buffer.shift()
+        const frame = this.buffer.popFront()
         if (frame !== undefined) {
           yield frame
           continue
         }
         await new Promise<void>((resolve) => { this.wake = resolve })
       }
-      while (this.buffer.length > 0 && !signal.aborted) yield this.buffer.shift() as SessionControlFrame
+      while (this.buffer.size > 0 && !signal.aborted) yield this.buffer.popFront() as SessionControlFrame
     } finally {
       signal.removeEventListener('abort', onAbort)
       this.end()
     }
   }
+}
+
+function queueItems(agent: Agent): SessionQueuedItem[] {
+  return queueItemsFromInbox({
+    'next-turn': agent.inbox.nextTurn,
+    'next-step': agent.inbox.nextStep,
+  })
+}
+
+function queueItemsFromInbox(inbox: InboxState): SessionQueuedItem[] {
+  return [
+    ...inbox['next-turn'].map(message => ({
+      id: message.id,
+      placement: 'queued' as const,
+      ...promptRpcId(message),
+      message: { id: message.id, content: message.content as unknown as JsonValue[] },
+    })),
+    ...inbox['next-step'].map(message => ({
+      id: message.id,
+      placement: message.source.kind === 'user' ? 'steering' as const : 'context' as const,
+      ...promptRpcId(message),
+      message: { id: message.id, content: message.content as unknown as JsonValue[] },
+    })),
+  ]
+}
+
+/** Prompt-RPC identity carried by a browser-submitted message's user source. */
+function promptRpcId(message: UserMessage): Pick<SessionQueuedItem, 'rpcId'> {
+  const source = message.source
+  return source.kind === 'user' && 'rpcId' in source ? { rpcId: source.rpcId } : {}
 }
 
 function jobView(job: JobSnapshot): SessionJob {

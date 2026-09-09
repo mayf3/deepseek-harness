@@ -1,6 +1,7 @@
 import { Context } from '@deepseek-ai/cordis'
 import type { Fiber } from '@deepseek-ai/cordis'
 import type {
+  RemoteEventHostInfo,
   TypertRemoteEventInvocation,
   TypertRemoteEventSource,
 } from '@deepseek-ai/dsh-api-gateway'
@@ -10,8 +11,12 @@ import { apply, inject } from '../src/index.ts'
 
 interface GatewayProbe {
   source: TypertRemoteEventSource | undefined
+  host: RemoteEventHostInfo | undefined
   removals: number
-  registerRemoteEvents(source: TypertRemoteEventSource): () => Promise<void>
+  registerRemoteEvents(
+    source: TypertRemoteEventSource,
+    host: RemoteEventHostInfo,
+  ): () => Promise<void>
 }
 
 async function setup(): Promise<{
@@ -22,12 +27,15 @@ async function setup(): Promise<{
   const ctx = new Context()
   const gateway: GatewayProbe = {
     source: undefined,
+    host: undefined,
     removals: 0,
-    registerRemoteEvents(source) {
+    registerRemoteEvents(source, host) {
       gateway.source = source
+      gateway.host = host
       return async () => {
         if (gateway.source !== source) return
         gateway.source = undefined
+        gateway.host = undefined
         gateway.removals += 1
       }
     },
@@ -71,6 +79,14 @@ function invocationOf(value: unknown): TypertRemoteEventInvocation {
 }
 
 describe('Remote event Host source', () => {
+  it('registers the Host home used by Client connection generations', async () => {
+    const { gateway, fiber } = await setup()
+    expect(gateway.host?.home).toBeTypeOf('string')
+    expect(gateway.host?.home.length).toBeGreaterThan(0)
+    await fiber.dispose()
+    expect(gateway.host).toBeUndefined()
+  })
+
   it('gives each Client stream an independent allowlisted event queue', async () => {
     const { ctx, gateway, fiber } = await setup()
     const firstAbort = new AbortController()
@@ -86,6 +102,25 @@ describe('Remote event Host source', () => {
     await expect(second.next()).resolves.toEqual({
       done: false,
       value: { event: 'settings/document-updated', args: ['ui-theme', 1] },
+    })
+
+    emitRaw(ctx, 'goal/activation-changed', [{
+      sessionId: 'session-1',
+      goal: { id: 'goal-1', revision: 1, activation: 'disarmed' },
+    }])
+    await expect(first.next()).resolves.toEqual({
+      done: false,
+      value: {
+        event: 'goal/activation-changed',
+        args: [{ sessionId: 'session-1', goal: { id: 'goal-1', revision: 1, activation: 'disarmed' } }],
+      },
+    })
+    await expect(second.next()).resolves.toEqual({
+      done: false,
+      value: {
+        event: 'goal/activation-changed',
+        args: [{ sessionId: 'session-1', goal: { id: 'goal-1', revision: 1, activation: 'disarmed' } }],
+      },
     })
 
     const firstDone = first.next()
@@ -138,9 +173,17 @@ describe('Remote event Host source', () => {
     const abort = new AbortController()
     const iterator = sourceOf(gateway)(abort.signal)[Symbol.asyncIterator]()
     const agentCtx = ctx.extend()
-    const agent = { ctx: agentCtx }
+    const agent = { id: 'agent-1', ctx: agentCtx }
     const target = scopeTarget(ctx, agent)
     const request = { questions: [], agent }
+
+    await expect(async () => waterfallRaw(
+      ctx,
+      target,
+      'user-questions/request',
+      [{ questions: [], agent: { id: 'agent-2', ctx: ctx.extend() } }],
+      () => Promise.resolve('host fallback'),
+    )).rejects.toThrow('must carry its Agent directly')
 
     const claimed = waterfallRaw(
       ctx,
@@ -153,7 +196,7 @@ describe('Remote event Host source', () => {
     expect(claimedDispatch).toMatchObject({
       event: 'user-questions/request',
       request,
-      context: { value: agentCtx, subject: agent },
+      context: { value: agentCtx, subject: agent, agentId: 'agent-1' },
     })
     claimedDispatch.resolve({ kind: 'result', value: 'client answer' })
     await expect(claimed).resolves.toBe('client answer')
@@ -195,7 +238,7 @@ describe('Remote event Host source', () => {
     const abort = new AbortController()
     const iterator = sourceOf(gateway)(abort.signal)[Symbol.asyncIterator]()
     const delivery = iterator.next()
-    const agent = { ctx: ctx.extend() }
+    const agent = { id: 'agent-1', ctx: ctx.extend() }
     const reason = new Error('forwarded event source removed')
     const pending = waterfallRaw(
       ctx,

@@ -7,16 +7,18 @@
  * composing this plugin out of cordis.yml removes both surfaces entirely;
  * the owning view renders an empty chain and inert prose at zero cost.
  */
-import type { ConnectionHandle } from '@deepseek-ai/dsh-client-connection/client'
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
+import type {} from '@deepseek-ai/dsh-api-remotes/client'
 import type { ChatFileMentions } from '@deepseek-ai/dsh-client-ui-chat/client'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
-import { ProducedFiles } from './ProducedFiles.tsx'
+import { PresentedOpenController } from './present-open.ts'
+import { PresentRow } from './PresentRow.tsx'
+import { Deliverables, selectDeliverables, type DeliverablesInjected } from './Deliverables.tsx'
 import { en, NS, zh, type DeliverablesKey } from './locales.ts'
 import {
-  deliverablesDefinition, producedFileMentions, selectProducedFiles,
+  deliverablesDefinition, presentedForClosing, producedFileMentions, selectProducedFiles,
 } from './turn-deliverables.ts'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
@@ -30,38 +32,48 @@ export { ProducedFiles, type ProducedFilesProps } from './ProducedFiles.tsx'
 export { producedForClosing } from './turn-deliverables.ts'
 
 /** Required services for the tail-slot registration and its dictionaries. */
-export const inject = ['slots', 'locale', 'uiConversation', 'connection']
+export const inject = ['slots', 'locale', 'uiConversation', 'remote', 'remote.session']
 
 /**
  * Client plugin body: register the dictionaries and the turn-tail entry.
  * @param ctx - client root context.
  */
 export function apply(ctx: ClientContext): void {
-  const connection = ctx.get('connection') as ConnectionHandle
+  const opener = new PresentedOpenController()
+  ctx.effect(() => () => opener.dispose())
   ctx.uiConversation.events.register(deliverablesDefinition)
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-deliverables: dictionaries')
   ctx.slots.inject(
     'conversation.chat.turnTail',
     () => ctx.slots.register({
       name: 'conversation.chat.turnTail',
-      select: selectProducedFiles,
+      select: selectDeliverables,
       locale: NS,
-      inject: () => ({
-        isLoopback: connection.isLoopback,
-        hooks: { hostDescription: connection.hostDescription },
+      inject: (): DeliverablesInjected => ({
+        hooks: { presentedOpen: opener.state },
+        openPresented: (sessionId, seq, index) => opener.open(sessionId, seq, index),
       }),
-    }, ProducedFiles),
+    }, Deliverables),
   )
+  ctx.slots.inject('tool.call.toolview', () => ctx.slots.register(
+    { name: 'tool.call.toolview', key: 'present', locale: NS }, PresentRow,
+  ))
   // The prose side of the same vocabulary: the chat view reaches this face
   // via ctx.get, so its absence — this plugin composed out — is the off state.
   const t = ctx.locale.bind(NS)
   const mentions: ChatFileMentions = {
-    forClosing(owner) {
+    forClosing(owner, sessionId) {
       // Same claim test the turn-tail chain entry runs: no produced files,
       // no vocabulary — the two surfaces agree by construction.
       const paths = selectProducedFiles(owner)
-      if (paths === null) return undefined
-      return producedFileMentions(paths, owner.openFile, path => t('produced.open', { name: path }))
+      const presented = presentedForClosing(owner)
+      if (paths === null && presented.length === 0) return undefined
+      const deliveries = new Map(presented.map(file => [file.path, file]))
+      return producedFileMentions([...new Set([...paths ?? [], ...deliveries.keys()])], (path) => {
+        const file = deliveries.get(path)
+        if (file === undefined) owner.openFile(path)
+        else void opener.open(sessionId, file.seq, file.index)
+      }, path => t(deliveries.has(path) ? 'presented.open' : 'produced.open', { name: path }))
     },
   }
   ctx.provide('chatFileMentions', mentions)

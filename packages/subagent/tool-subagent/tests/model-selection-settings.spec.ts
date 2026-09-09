@@ -2,7 +2,8 @@
 
 import { describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
-import { Session, SessionId } from '@deepseek-ai/dsh-session'
+import { ToolCallId } from '@deepseek-ai/dsh-llm'
+import { Session, SESSION_FORMAT_VERSION, SessionId } from '@deepseek-ai/dsh-session'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import { bindScopeParent, createScope, scopeOf, scopeTarget } from '@deepseek-ai/dsh-scope'
 import { SettingsProvider } from '@deepseek-ai/dsh-settings'
@@ -10,6 +11,7 @@ import type { SettingsNamespace } from '@deepseek-ai/dsh-settings'
 import InvariantRegistry from '@deepseek-ai/dsh-invariants'
 import AgentLoop from '@deepseek-ai/dsh-agent-loop'
 import { mountAgentLoopTestDependencies } from '@deepseek-ai/dsh-agent-loop-testkit'
+import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import SubagentRuntime from '@deepseek-ai/dsh-subagent'
 import * as SubagentSpawn from '@deepseek-ai/dsh-subagent-spawn-in-process'
 import * as tool from '../src/index.ts'
@@ -17,7 +19,13 @@ import * as ToolInvariant from '../src/invariant.ts'
 import SubagentModelSelectionConfig, {
   SUBAGENT_MODEL_SELECTION_SETTINGS_NAMESPACE,
 } from '../src/model-selection-settings.ts'
-import { hasSubagentModelSelection } from '../src/model-selection-state.ts'
+import {
+  subagentModelSelectionPolicy,
+  subagentModelSelectionProjectionDefinition,
+} from '../src/model-selection-state.ts'
+import { text } from './harness.ts'
+
+const ALLOWED_MODELS = [{ provider: 'alpha', model: 'fast-model' }]
 
 /** Writable in-memory settings provider for the package integration. */
 class MemorySettings extends SettingsProvider {
@@ -47,8 +55,10 @@ function selectable(ctx: Context, agent: Awaited<ReturnType<Context['agents']['c
     && ctx.tools.schemas(agent).some(candidate => candidate.name === 'list_subagent_models')
 }
 
-/** Mount the real settings, Agent, provider, and tool services. */
-async function boot(): Promise<Context> {
+const modelSelectionPresets = new WeakMap<Context, ReturnType<typeof createScope>>()
+
+/** Mount the real settings, Agent, provider, and optional preset tool services. */
+async function boot(withPreset = true): Promise<Context> {
   const ctx = new Context()
   await ctx.plugin(MemorySettings)
   await ctx.plugin(SubagentModelSelectionConfig)
@@ -56,23 +66,30 @@ async function boot(): Promise<Context> {
   await ctx.plugin(AgentLoop, { agents: [] })
   await ctx.plugin(SubagentRuntime)
   await ctx.plugin(SubagentSpawn, { providerName: 'spawn' })
+  if (withPreset) {
+    const preset = createScope(ctx, { preset: 'model-selection-test' })
+    await preset.ctx.plugin(tool, {
+      provider: 'spawn',
+      modelSelectionSettings: true,
+      backgroundMode: 'continuable',
+    })
+    modelSelectionPresets.set(ctx, preset)
+  }
   return ctx
 }
 
-/** Create one Agent whose setup mounts the settings-controlled tool preset row. */
+/** Create one Agent joined to the test's standing preset. */
 async function createAgent(ctx: Context, id: string, options: {
   meta?: { parentSession: SessionId; origin: 'subagent' }
   seed?: readonly SessionEvent[]
 } = {}) {
+  const preset = modelSelectionPresets.get(ctx)
+  if (preset === undefined) throw new Error('context has no model-selection preset')
   const handle = await ctx.agents.create({
     sessionId: SessionId(id),
     ...options,
-    setup: async (agentCtx) => {
-      await agentCtx.plugin(tool, {
-        provider: 'spawn',
-        modelSelectionSettings: true,
-        backgroundMode: 'continuable',
-      })
+    setup: (agentCtx) => {
+      bindScopeParent(scopeOf(agentCtx)!, scopeOf(preset.ctx)!)
     },
   })
   return handle.agent
@@ -81,9 +98,9 @@ async function createAgent(ctx: Context, id: string, options: {
 describe('SubagentModelSelectionConfig', () => {
   it('uses the composed default without a settings provider', async () => {
     const ctx = new Context()
-    await ctx.plugin(SubagentModelSelectionConfig, { enabled: true })
+    await ctx.plugin(SubagentModelSelectionConfig, { enabled: true, allowedModels: ALLOWED_MODELS })
 
-    expect(ctx.subagentModelSelection.currentEnabled()).toBe(true)
+    expect(ctx.subagentModelSelection.current()).toEqual({ enabled: true, allowedModels: ALLOWED_MODELS })
     await ctx.fiber.dispose()
   })
 
@@ -92,21 +109,63 @@ describe('SubagentModelSelectionConfig', () => {
     await ctx.plugin(MemorySettings)
     await ctx.plugin(SubagentModelSelectionConfig)
 
-    expect(ctx.subagentModelSelection.currentEnabled()).toBe(false)
-    await ctx.settings.update(SUBAGENT_MODEL_SELECTION_SETTINGS_NAMESPACE, { enabled: true })
-    expect(ctx.subagentModelSelection.currentEnabled()).toBe(true)
+    expect(ctx.subagentModelSelection.current()).toEqual({ enabled: false, allowedModels: [] })
+    await ctx.settings.update(SUBAGENT_MODEL_SELECTION_SETTINGS_NAMESPACE, {
+      enabled: true,
+      allowedModels: ALLOWED_MODELS,
+    })
+    expect(ctx.subagentModelSelection.current()).toEqual({ enabled: true, allowedModels: ALLOWED_MODELS })
     await ctx.fiber.dispose()
   })
 
-  it('samples each new root session without changing existing Agents', async () => {
+  it('rejects duplicate routes, enabled empty settings, and an empty durable policy', async () => {
+    const ctx = new Context()
+    await ctx.plugin(MemorySettings)
+    await ctx.plugin(SubagentModelSelectionConfig)
+    await ctx.plugin(SessionProjectionRegistry)
+    ctx.sessionProjections.register(subagentModelSelectionProjectionDefinition)
+
+    await expect(ctx.settings.update(SUBAGENT_MODEL_SELECTION_SETTINGS_NAMESPACE, {
+      allowedModels: [...ALLOWED_MODELS, ...ALLOWED_MODELS],
+    })).rejects.toThrow('repeats route "alpha/fast-model"')
+
+    await expect(ctx.settings.update(SUBAGENT_MODEL_SELECTION_SETTINGS_NAMESPACE, {
+      enabled: true,
+      allowedModels: [],
+    })).rejects.toThrow('enabled subagent model selection requires at least one allowed model')
+    await ctx.settings.update(SUBAGENT_MODEL_SELECTION_SETTINGS_NAMESPACE, {
+      enabled: false,
+      allowedModels: ALLOWED_MODELS,
+    })
+    expect(ctx.subagentModelSelection.current()).toEqual({ enabled: false, allowedModels: ALLOWED_MODELS })
+    await ctx.settings.update(SUBAGENT_MODEL_SELECTION_SETTINGS_NAMESPACE, { allowedModels: [] })
+    expect(ctx.subagentModelSelection.current()).toEqual({ enabled: false, allowedModels: [] })
+
+    const invalid = Session.create(SessionId('empty-policy'))
+    invalid.append('subagent/model-selection-policy', { allowedModels: [] })
+    expect(() => subagentModelSelectionPolicy(ctx.sessionProjections, invalid)).toThrow('requires at least one route')
+
+    const malformed = Session.create(SessionId('malformed-policy'))
+    malformed.append('subagent/model-selection-policy', {
+      allowedModels: [{ provider: 1, model: 'fast-model' }],
+    } as never)
+    expect(() => subagentModelSelectionPolicy(ctx.sessionProjections, malformed))
+      .toThrow('requires non-empty provider and model ids')
+    await ctx.fiber.dispose()
+  })
+
+  it('samples each new root Session without changing existing definitions', async () => {
     const ctx = await boot()
     const disabled = await createAgent(ctx, 'disabled')
     expect(selectable(ctx, disabled)).toBe(false)
-    expect(hasSubagentModelSelection(disabled.session)).toBe(false)
+    expect(subagentModelSelectionPolicy(ctx.sessionProjections, disabled.session)).toBeUndefined()
 
-    await ctx.settings.update(SUBAGENT_MODEL_SELECTION_SETTINGS_NAMESPACE, { enabled: true })
+    await ctx.settings.update(SUBAGENT_MODEL_SELECTION_SETTINGS_NAMESPACE, {
+      enabled: true,
+      allowedModels: ALLOWED_MODELS,
+    })
     const enabled = await createAgent(ctx, 'enabled')
-    expect(hasSubagentModelSelection(enabled.session)).toBe(true)
+    expect(subagentModelSelectionPolicy(ctx.sessionProjections, enabled.session)).toEqual(ALLOWED_MODELS)
     expect(selectable(ctx, enabled)).toBe(true)
     expect(selectable(ctx, disabled)).toBe(false)
 
@@ -117,8 +176,69 @@ describe('SubagentModelSelectionConfig', () => {
     await ctx.fiber.dispose()
   })
 
-  it('installs per-Agent definitions for a shared preset scope', async () => {
+  it('installs a direct Agent setup before Session publication', async () => {
+    const ctx = await boot(false)
+    await ctx.settings.update(SUBAGENT_MODEL_SELECTION_SETTINGS_NAMESPACE, {
+      enabled: true,
+      allowedModels: ALLOWED_MODELS,
+    })
+    let prepared: Awaited<ReturnType<Context['agents']['create']>>['agent'] | undefined
+    let visibleAtSessionCreated = false
+    ctx.on('session/created', () => {
+      visibleAtSessionCreated = prepared !== undefined && selectable(ctx, prepared)
+    })
+
+    const handle = await ctx.agents.create({
+      sessionId: SessionId('direct-agent-setup'),
+      setup: async (agentCtx, agent) => {
+        prepared = agent
+        const fiber = agentCtx.inject(tool.inject, (runtimeCtx) => {
+          tool.apply(runtimeCtx, {
+            provider: 'spawn',
+            modelSelectionSettings: true,
+            backgroundMode: 'continuable',
+          }, agent.session)
+        })
+        await fiber.await()
+      },
+    })
+
+    expect(visibleAtSessionCreated).toBe(true)
+    expect(selectable(ctx, handle.agent)).toBe(true)
+    await handle.dispose()
+    await ctx.fiber.dispose()
+  })
+
+  it('rejects a forced route outside the Session policy before child creation', async () => {
     const ctx = await boot()
+    await ctx.settings.update(SUBAGENT_MODEL_SELECTION_SETTINGS_NAMESPACE, {
+      enabled: true,
+      allowedModels: ALLOWED_MODELS,
+    })
+    const agent = await createAgent(ctx, 'enforced')
+
+    const result = await ctx.tools.execute({
+      signal: new AbortController().signal,
+      callId: ToolCallId('disallowed-session-route'),
+      name: 'subagent',
+      arguments: {
+        description: 'forced route',
+        prompt: 'do it',
+        provider: 'alpha',
+        model: 'other-model',
+      },
+      agent,
+    })
+
+    expect(result.isError).toBe(true)
+    expect(text(result)).toContain('is not allowed for this Session')
+    await ctx.fiber.dispose()
+  })
+
+  it('installs per-Agent definitions for a shared preset scope', async () => {
+    const ctx = await boot(false)
+    await ctx.plugin(InvariantRegistry, { enabled: true })
+    await ctx.plugin(ToolInvariant)
     const preset = createScope(ctx, { preset: 'standard' })
     const other = createScope(ctx, { preset: 'minimal' })
     await preset.ctx.plugin(tool, {
@@ -138,7 +258,10 @@ describe('SubagentModelSelectionConfig', () => {
 
     const disabled = await createComposed('preset-disabled')
     expect(selectable(ctx, disabled.agent)).toBe(false)
-    await ctx.settings.update(SUBAGENT_MODEL_SELECTION_SETTINGS_NAMESPACE, { enabled: true })
+    await ctx.settings.update(SUBAGENT_MODEL_SELECTION_SETTINGS_NAMESPACE, {
+      enabled: true,
+      allowedModels: ALLOWED_MODELS,
+    })
     const enabled = await createComposed('preset-enabled')
     expect(selectable(ctx, enabled.agent)).toBe(true)
     expect(selectable(ctx, disabled.agent)).toBe(false)
@@ -146,9 +269,22 @@ describe('SubagentModelSelectionConfig', () => {
     enabledBinding!.rebind(scopeOf(other.ctx)!)
     ctx.emit(scopeTarget({}, scopeOf(preset.ctx)), 'tools/change')
     await vi.waitFor(() => { expect(selectable(ctx, enabled.agent)).toBe(false) })
+    const next = () => Promise.resolve({ kind: 'enter' as const, messages: [] })
+    const payload = {
+      agent: enabled.agent,
+      messages: [],
+      turn: 1,
+      step: 1,
+      signal: new AbortController().signal,
+    }
+    await expect(ctx.waterfall(ctx as never, 'agent/pre-step', payload, next))
+      .resolves.toEqual({ kind: 'enter', messages: [] })
+
     enabledBinding!.rebind(scopeOf(preset.ctx)!)
     ctx.emit(scopeTarget({}, scopeOf(preset.ctx)), 'tools/change')
     await vi.waitFor(() => { expect(selectable(ctx, enabled.agent)).toBe(true) })
+    await expect(ctx.waterfall(ctx as never, 'agent/pre-step', payload, next))
+      .resolves.toEqual({ kind: 'enter', messages: [] })
 
     await enabled.dispose()
     ctx.emit(scopeTarget({}, scopeOf(preset.ctx)), 'tools/change')
@@ -156,45 +292,80 @@ describe('SubagentModelSelectionConfig', () => {
     await ctx.fiber.dispose()
   })
 
+  it('releases a shared-preset installation reservation after policy selection fails', async () => {
+    const ctx = await boot(false)
+    const preset = createScope(ctx, { preset: 'standard' })
+    const other = createScope(ctx, { preset: 'minimal' })
+    await preset.ctx.plugin(tool, {
+      provider: 'spawn',
+      modelSelectionSettings: true,
+      backgroundMode: 'continuable',
+    })
+    let binding: ReturnType<typeof bindScopeParent> | undefined
+    const handle = await ctx.agents.create({
+      sessionId: SessionId('preset-policy-retry'),
+      setup: (agentCtx) => {
+        binding = bindScopeParent(scopeOf(agentCtx)!, scopeOf(preset.ctx)!)
+      },
+    })
+    expect(selectable(ctx, handle.agent)).toBe(false)
+
+    binding!.rebind(scopeOf(other.ctx)!)
+    ctx.emit(scopeTarget({}, scopeOf(preset.ctx)), 'tools/change')
+    binding!.rebind(scopeOf(preset.ctx)!)
+    vi.spyOn(ctx.subagentModelSelection, 'current')
+      .mockImplementationOnce(() => { throw new Error('transient settings read') })
+      .mockReturnValue({ enabled: true, allowedModels: ALLOWED_MODELS })
+
+    expect(() => { ctx.emit(scopeTarget({}, scopeOf(preset.ctx)), 'tools/change') })
+      .toThrow('transient settings read')
+    ctx.emit(scopeTarget({}, scopeOf(preset.ctx)), 'tools/change')
+    await vi.waitFor(() => { expect(selectable(ctx, handle.agent)).toBe(true) })
+
+    await handle.dispose()
+    await ctx.fiber.dispose()
+  })
+
   it('inherits the parent decision and preserves seeded decisions across composition', async () => {
     const ctx = await boot()
-    await ctx.settings.update(SUBAGENT_MODEL_SELECTION_SETTINGS_NAMESPACE, { enabled: true })
+    await ctx.settings.update(SUBAGENT_MODEL_SELECTION_SETTINGS_NAMESPACE, {
+      enabled: true,
+      allowedModels: ALLOWED_MODELS,
+    })
     const parent = await createAgent(ctx, 'parent')
     await ctx.settings.update(SUBAGENT_MODEL_SELECTION_SETTINGS_NAMESPACE, { enabled: false })
     const child = await createAgent(ctx, 'child', {
       meta: { parentSession: parent.id, origin: 'subagent' },
     })
     expect(selectable(ctx, child)).toBe(true)
-    expect(hasSubagentModelSelection(child.session)).toBe(true)
+    expect(subagentModelSelectionPolicy(ctx.sessionProjections, child.session)).toEqual(ALLOWED_MODELS)
+
+    const orphan = await createAgent(ctx, 'orphan', {
+      meta: { parentSession: SessionId('missing-parent'), origin: 'subagent' },
+    })
+    expect(selectable(ctx, orphan)).toBe(false)
 
     const enabledSeed = Session.create(SessionId('enabled-seed'))
-    enabledSeed.append('subagent/model-selection-enabled', {})
-    const resumedEnabled = await createAgent(ctx, 'resumed-enabled', { seed: enabledSeed.events })
+    enabledSeed.append('subagent/model-selection-policy', { allowedModels: ALLOWED_MODELS })
+    const resumedEnabled = await createAgent(ctx, 'resumed-enabled', { seed: enabledSeed.snapshotEvents() })
     expect(selectable(ctx, resumedEnabled)).toBe(true)
 
     const oldSeed = Session.create(SessionId('old-seed'), [])
-    await ctx.settings.update(SUBAGENT_MODEL_SELECTION_SETTINGS_NAMESPACE, { enabled: true })
-    const resumedDisabled = await createAgent(ctx, 'resumed-disabled', { seed: oldSeed.events })
+    await ctx.settings.update(SUBAGENT_MODEL_SELECTION_SETTINGS_NAMESPACE, {
+      enabled: true,
+      allowedModels: ALLOWED_MODELS,
+    })
+    const resumedEmpty = await createAgent(ctx, 'resumed-empty', { seed: [] })
+    expect(selectable(ctx, resumedEmpty)).toBe(false)
+    expect(subagentModelSelectionPolicy(ctx.sessionProjections, resumedEmpty.session)).toBeUndefined()
+
+    const resumedDisabled = await createAgent(ctx, 'resumed-disabled', { seed: oldSeed.snapshotEvents() })
     expect(selectable(ctx, resumedDisabled)).toBe(false)
-    expect(hasSubagentModelSelection(resumedDisabled.session)).toBe(false)
+    expect(subagentModelSelectionPolicy(ctx.sessionProjections, resumedDisabled.session)).toBeUndefined()
     await ctx.fiber.dispose()
   })
 
-  it('rejects ambiguous static and settings-controlled configuration', async () => {
-    const ctx = new Context()
-    await mountAgentLoopTestDependencies(ctx)
-    await ctx.plugin(SubagentRuntime)
-    expect(() => {
-      tool.apply(ctx, {
-        provider: 'missing',
-        enableModelSelection: true,
-        modelSelectionSettings: true,
-      })
-    }).toThrow('mutually exclusive')
-    await ctx.fiber.dispose()
-  })
-
-  it('requires both the Host setting owner and a composition scope', async () => {
+  it('requires both the Host setting owner and a scoped standing preset', async () => {
     const withoutSettings = new Context()
     await mountAgentLoopTestDependencies(withoutSettings)
     await withoutSettings.plugin(SubagentRuntime)
@@ -207,18 +378,47 @@ describe('SubagentModelSelectionConfig', () => {
     }).toThrow('requires @deepseek-ai/dsh-tool-subagent/model-selection-settings')
     await withoutSettings.fiber.dispose()
 
-    const withoutAgent = await boot()
+    const withoutAgent = await boot(false)
     expect(() => {
       tool.apply(withoutAgent, {
         provider: 'spawn',
         modelSelectionSettings: true,
         backgroundMode: 'continuable',
       })
-    }).toThrow('requires an Agent or preset scope')
+    }).toThrow('requires a scoped preset Context')
+
     await withoutAgent.fiber.dispose()
   })
 
-  it('checks the durable decision against the published tool definitions', async () => {
+  it('requires the Session registry when a child inherits its parent policy', async () => {
+    const ctx = new Context()
+    try {
+      await ctx.plugin(SubagentModelSelectionConfig)
+      await ctx.plugin(SessionProjectionRegistry)
+      await ctx.plugin(SubagentRuntime)
+      const childId = SessionId('child-without-session-registry')
+      const child = Session.create(childId, undefined, {
+        version: SESSION_FORMAT_VERSION,
+        id: childId,
+        createdAt: 1,
+        isSeeded: false,
+        origin: 'subagent',
+        parentSession: SessionId('missing-parent'),
+      })
+
+      expect(() => {
+        tool.apply(ctx, {
+          provider: 'missing',
+          modelSelectionSettings: true,
+          maxDepth: 'provider-managed',
+        }, child)
+      }).toThrow('child model-selection inheritance requires the Session registry')
+    } finally {
+      await ctx.fiber.dispose()
+    }
+  })
+
+  it('checks model-selectable definitions without rejecting a policy-only preset', async () => {
     const ctx = await boot()
     await ctx.plugin(InvariantRegistry, { enabled: true })
     await ctx.plugin(ToolInvariant)
@@ -235,14 +435,29 @@ describe('SubagentModelSelectionConfig', () => {
       kind: 'enter', messages: [],
     })
 
-    disabled.session.append('subagent/model-selection-enabled', {})
+    disabled.session.append('subagent/model-selection-policy', { allowedModels: ALLOWED_MODELS })
     await expect(ctx.waterfall(ctx as never, 'agent/pre-step', payload, next))
-      .rejects.toThrow('must expose route fields and list_subagent_models')
+      .resolves.toEqual({ kind: 'enter', messages: [] })
 
-    await ctx.settings.update(SUBAGENT_MODEL_SELECTION_SETTINGS_NAMESPACE, { enabled: true })
+    await ctx.settings.update(SUBAGENT_MODEL_SELECTION_SETTINGS_NAMESPACE, {
+      enabled: true,
+      allowedModels: ALLOWED_MODELS,
+    })
     const enabled = await createAgent(ctx, 'invariant-enabled')
     await expect(ctx.waterfall(ctx as never, 'agent/pre-step', { ...payload, agent: enabled }, next))
       .resolves.toEqual({ kind: 'enter', messages: [] })
+
+    const enabledSchemas = ctx.tools.schemas(enabled)
+    const schemas = vi.spyOn(ctx.tools, 'schemas')
+    schemas.mockReturnValue(enabledSchemas.filter(schema => schema.name !== 'list_subagent_models'))
+    await expect(ctx.waterfall(ctx as never, 'agent/pre-step', { ...payload, agent: enabled }, next))
+      .rejects.toThrow('require a durable policy, route fields, and list_subagent_models')
+
+    schemas.mockReturnValue(enabledSchemas)
+    await ctx.settings.update(SUBAGENT_MODEL_SELECTION_SETTINGS_NAMESPACE, { enabled: false })
+    const withoutPolicy = await createAgent(ctx, 'invariant-without-policy')
+    await expect(ctx.waterfall(ctx as never, 'agent/pre-step', { ...payload, agent: withoutPolicy }, next))
+      .rejects.toThrow('require a durable policy, route fields, and list_subagent_models')
     await ctx.fiber.dispose()
   })
 })

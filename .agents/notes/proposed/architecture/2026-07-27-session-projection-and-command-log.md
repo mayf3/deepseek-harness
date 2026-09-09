@@ -18,9 +18,9 @@ The underlying gap is architectural: the client has no seam for a plugin to obse
 
 Four infrastructure pieces, then the domains become pure contributors.
 
-### Whole-value projection rule
+### Whole-value event rule
 
-Every served projection value is complete and self-describing on the wire, so consumers can use the latest seq-qualified value as final. Source events need not repeat that aggregate: a domain may use whole-value events such as `todo/write` and `plan/mode`, or replayable operations such as `agent/inbox/spliced`. The unit's deterministic `apply`, versioned checkpoint state, and forward tail replay must produce the same whole value.
+A state-carrying log event MUST carry the complete post-change state, never a bare delta. All three domains already comply: `todo/write` is a whole-list snapshot, `plan/mode` a whole boolean, `goal/change` metadata a full `GoalSnapshot` (or a whole-value clear tombstone). The rule keeps every domain's transition trivially cheap (the framework drives it per event), keeps values self-describing on the wire, and lets any consumer treat the latest pushed value as final — out-of-order immunity by seq comparison, self-healing because a missed update is corrected by the next one.
 
 ### Host projection registry (`dsh-session-projection`, new package)
 
@@ -54,18 +54,16 @@ declare module 'cordis' {
 }
 ```
 
-- `SessionProjectionStateMap` types host fold states; `SessionProjectionMap` remains the one client DTO table shared by the wire block and React hook via `import type`. A unit may remain host-only by omitting `wire`. How a client value is *rendered* is the slot system's business, never the projection layer's. The state/view split is specified by the [implemented state and client-view note](../../implemented/architecture/2026-08-19-session-projection-state-and-client-views.md).
-- **The host is the only place a projection is computed.** The framework drives every registered unit forward: each committed session event passes through `apply`; a unit uninterested in an event returns the same state reference, and an unchanged reference (`Object.is`) produces no downstream work. Clients never fold domain events — they receive finished values (baseline block + push frame below). This removes the double-implementation trap (plan's two-event fold written once, on the host) and any client-side domain code.
+- `SessionProjectionStateMap` types host fold states; `SessionProjectionMap` remains the one client DTO table shared by the wire block and React hook via `import type`. A unit may remain host-only by omitting `wire`. How a client value is *rendered* is the slot system's business, never the projection layer's. The state/view split is specified by the [implemented state and client-view note](../../archived/architecture/2026-08-19-session-projection-state-and-client-views.md).
+- **The host is the only place a projection is computed.** The framework drives every registered unit forward eagerly: each committed session event passes through `apply`; a unit uninterested in an event returns the same state reference, and an unchanged reference (`Object.is`) produces no downstream work. Clients never fold domain events — they receive finished values (baseline block + push frame below). This removes the double-implementation trap (plan's two-event fold written once, on the host) and any client-side domain code.
 - **State is always computed, never logged.** The log holds events only; the unit's state lives in the framework's per-session watermark cache (`{state, observedSeq}` per unit) and, in a later phase, in a **persisted projection cache** on the domain-KV storage seam: rows of `(sessionId, key, ver, seq, val)` (`ver` = the unit's `stateVersion`, `seq` = the watermark, `val` = the state JSON). A row is never wrong, only possibly stale — its `seq` says exactly how stale. The one read recipe, cold and live alike: take the cached state (or `init()`), forward-apply only the events past its watermark, `view` the result. Cold listings (every session's title across all workspaces) become an index read plus, at worst, a short tail replay; the session-persistence seam grows a read-from-seq primitive for that tail in the same later phase. Write policy: throttled (count/interval, configurable) plus two mandatory points — `turn/end` and detach (the live-to-cold moment). A crash between writes costs a longer tail replay, never a wrong value.
 - A domain's input event set is its own choice: todos folds `todo/write` alone; plan folds `plan/mode` plus its own `/plan` `command/run` records (see the plan section); goal folds `goal/change` metadata; session title folds its title events (retiring the bespoke `session/title` frame and the client's title-snapshot map — the fourth hand-rolled projection this seam absorbs).
-- Registration is an effect (disposer with the fiber): the last unload removes the key from subsequent responses and the client reads it as capability absence. Same-key, same-version registrants share the unit. A domain that requires projection state declares the service dependency; optional contributors register under `ctx.inject(['sessionProjections'], …)`.
+- Registration is an effect (disposer with the fiber): an unloaded plugin's key disappears from subsequent responses and the client reads it as capability absence — HMR semantics for free. Duplicate keys throw. Domain plugins register under `ctx.inject(['sessionProjections'], …)` so headless assemblies without the registry stay unaffected.
 - The package owns `./invariant` (every served key has a live registration).
 
-### Shipped consumers
+### Shipped consumer: the subagent identity unit
 
-The registry's two read faces serve [subagent list identity via the projection unit](../../implemented/architecture/2026-08-06-subagent-list-identity-projection.md): a `subagent` unit folds durable mode/label identity last-wins from `subagent/descriptor`, and `SubagentRuntime.listChildren` reads it through `snapshot()` for a live child and `restore({}, events, 0)` over one persistence inspection for a cold one. An absent value remains that consumer's signal, and how absence renders is its own decision.
-
-The Agent registry contributes Inbox's operation-folding unit whenever the projection registry is composed, as recorded by [durable Web queue recovery](../../implemented/bug-fix/2026-08-17-durable-web-queue-recovery.md). Like other units, it folds the complete session log, including inherited fork seed events, while preserving one projection state owner.
+The registry's two read faces already serve a shipped consumer beyond this RFC's wire plan: [subagent list identity via the projection unit](../../archived/architecture/2026-08-06-subagent-list-identity-projection.md) registers a `subagent` unit — the durable mode/label identity folded last-wins from `subagent/descriptor` — and `SubagentRuntime.listChildren` reads it through `snapshot()` for a live child (the watermark cache, zero log reads) and `restore({}, events, 0)` over one persistence inspection for a cold one. The registry contract is unchanged: no failure channel and no new read face — a unit never throws, an absent value is the signal, and how absence renders is that consumer's decision.
 
 ### Wire: projections block on the history tail page
 
@@ -160,7 +158,7 @@ Infrastructure first; the three in-flight PRs are left untouched and re-target a
 
 **Bounded reverse scan over the log tail (absorber declarations).** Rejected: no implementation supports it, it serves only domains whose every event carries the full folded state, and the persisted projection cache covers the same cold-read need uniformly (cache row plus forward tail replay — the same recipe as the client's baseline and catch-up, and as paged loading). Revisit only if a real cold-read path emerges that checkpointing cannot serve.
 
-**An `invalidate`-style cell (mark dirty, refetch on domain events)** — rejected: replayable operations already fold directly through `apply`. Refetching would reintroduce a second owner, a coalescing loop, and a stale-read fence instead of letting the domain's one deterministic transition produce the current whole value.
+**An `invalidate`-style cell (mark dirty, refetch on domain events)** — rejected: it exists only to serve delta events. The whole-value rule makes every domain last-wins; goal's refetch loop, its coalescing, and its stale-read fence all disappear.
 
 **Hanging the registry off `ctx.apiProxy`** — rejected: session projections are not web-specific (TUI, ACP, headless are future consumers), and domain packages must not depend on the apiproxy package. The independent seam also deletes #587's type-only import edge from api-proxy into the plan package.
 
@@ -176,7 +174,7 @@ Infrastructure first; the three in-flight PRs are left untouched and re-target a
 
 ## Acceptance criteria
 
-- A domain plugin ships per-session log-derived state to React by writing only: its source event declaration, one host unit `register`, its `SessionProjectionMap` merge, and inject callbacks — zero client-side code, no edits to the client `Session` class, `ConversationSnapshot`, api-proxy, or the wire schema files.
+- A domain plugin ships per-session log-derived state to React by writing only: the whole-value event declaration, one host unit `register`, its `SessionProjectionMap` merge, and inject callbacks — zero client-side code, no edits to the client `Session` class, `ConversationSnapshot`, api-proxy, or the wire schema files.
 - The history tail page carries `projections` with `asOfSeq` equal to the window tail seq; loadOlder pages never carry it; a deployment without the registry serves histories without the block and clients treat every key as absent.
 - A stale baseline cannot overwrite a newer `session/projection` frame, and a replayed frame cannot regress the value store (higher-seq-wins tests on both paths).
 - A slash command executed on one tab renders a durable node in the flow on refresh, on a second tab, and after resume; unregistered commands render the generic card; the composer notice path for command outcomes is gone.
@@ -185,10 +183,10 @@ Infrastructure first; the three in-flight PRs are left untouched and re-target a
 
 ## Risks
 
-- **Whole projection values are load-bearing**: every pushed or snapshotted value must stand alone at its seq. Source events may be whole values or replayable operations, but `apply`, checkpoint state, and tail replay must converge on that complete value.
+- **Whole-value rule is load-bearing**: a future domain logging bare deltas cannot serve consumers from its latest event and complicates its own unit. Mitigation: the rule is stated here and in the projection package README; the unit contract makes the full state explicit at every transition.
 - **Synchronous unit discipline**: `init`/`apply`/`view` that await would tear the consistency cut. The registry documents and the invariant companion asserts synchronicity as far as practical; review owns the rest.
 - **Live registry churn is not pushed**: loading or unloading a domain plugin mid-session changes the key set, but no session event fires and no frame is pushed; open clients hold the stale key until the next tail pull (reconnect, gap repair, open). Accepted as a dev-only (HMR) staleness window — a registry-change push can be added to the change feed later without contract impact.
-- **Eager drive costs on busy sessions**: every committed event passes every registered unit's `apply`. Units are cheap per event, non-matching events return the same reference, and the count of registered domains is small; if a hot path ever shows, per-unit event-type prefilters can be added without contract change.
+- **Eager drive costs on busy sessions**: every committed event passes every registered unit's `apply`. Units are cheap per-event by construction (whole-value rule), non-matching events return the same reference, and the count of registered domains is small; if a hot path ever shows, per-unit event-type prefilters can be added without contract change.
 - **Projection payload growth**: every tail page carries every registered key. Payloads are whole values of UI-scale state (a todo list, a goal snapshot); if a future domain's value is large, per-key opt-out or lazy keys can be added to the request without changing the model.
 - **Command log volume**: two log-only events per slash command; bounded by human command frequency, negligible against chunk volume.
 - **Re-target churn**: three open PRs rebase onto a moved foundation. Accepted cost of infrastructure-first.

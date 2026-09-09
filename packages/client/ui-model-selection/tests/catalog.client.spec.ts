@@ -1,4 +1,5 @@
-import type { IApiClient, ModelCatalog } from '@deepseek-ai/dsh-client-connection/client'
+import type { ModelCatalog } from '@deepseek-ai/dsh-api-remotes/client'
+import { RemoteError } from '@deepseek-ai/dsh-client-test-runtime'
 import { describe, expect, it, vi } from 'vitest'
 import { ModelCatalogDirectory } from '../src/client/catalog.ts'
 
@@ -10,22 +11,23 @@ const catalog = (model: string): ModelCatalog => ({
 })
 
 function directory(models: () => Promise<unknown>): ModelCatalogDirectory {
-  return new ModelCatalogDirectory({ llm: { models } } as unknown as IApiClient)
+  // The providing plugin's context, scripted down to the one method it calls.
+  return new ModelCatalogDirectory({ remote: { session: { modelCatalog: models } } } as never)
 }
 
 describe('ModelCatalogDirectory', () => {
   it('shares one failing request, exposes the RPC error, and permits a retry', async () => {
     const models = vi.fn()
       .mockResolvedValueOnce({
-        result: { ok: false, error: { code: 'unavailable', message: 'catalog offline', details: {} } },
+        ok: false, error: new RemoteError('gateway/internal', 'catalog offline', {}),
       })
-      .mockResolvedValueOnce({ result: { ok: true, value: catalog('recovered') } })
+      .mockResolvedValueOnce({ ok: true, value: catalog('recovered') })
     const subject = directory(models)
 
     const first = subject.load()
     expect(subject.load()).toBe(first)
-    await expect(first).rejects.toThrow('unavailable: catalog offline')
-    expect(subject.store.getSnapshot()).toMatchObject({ status: 'error', error: 'unavailable: catalog offline' })
+    await expect(first).rejects.toThrow('gateway/internal: catalog offline')
+    expect(subject.store.getSnapshot()).toMatchObject({ status: 'error', error: 'gateway/internal: catalog offline' })
     await expect(subject.load()).resolves.toEqual(catalog('recovered'))
     expect(models).toHaveBeenCalledTimes(2)
   })
@@ -40,10 +42,10 @@ describe('ModelCatalogDirectory', () => {
 
     const stale = subject.load()
     subject.resetGeneration()
-    first.resolve({ result: { ok: true, value: catalog('stale') } })
+    first.resolve({ ok: true, value: catalog('stale') })
     await expect(stale).resolves.toEqual(catalog('stale'))
     expect(subject.store.getSnapshot()).toMatchObject({ value: null, status: 'loading' })
-    second.resolve({ result: { ok: true, value: catalog('fresh') } })
+    second.resolve({ ok: true, value: catalog('fresh') })
     await vi.waitFor(() => {
       expect(subject.store.getSnapshot()).toMatchObject({ value: catalog('fresh'), status: 'ready' })
     })
@@ -62,7 +64,7 @@ describe('ModelCatalogDirectory', () => {
     first.reject(new Error('stale failure'))
     await expect(stale).rejects.toThrow('stale failure')
     expect(subject.store.getSnapshot()).toMatchObject({ value: null, status: 'loading', error: null })
-    second.resolve({ result: { ok: true, value: catalog('fresh') } })
+    second.resolve({ ok: true, value: catalog('fresh') })
     await vi.waitFor(() => {
       expect(subject.store.getSnapshot()).toMatchObject({ value: catalog('fresh'), status: 'ready' })
     })
@@ -70,7 +72,7 @@ describe('ModelCatalogDirectory', () => {
 
   it('contains refresh failures while retaining old data and clears it on a failed Host reset', async () => {
     const models = vi.fn()
-      .mockResolvedValueOnce({ result: { ok: true, value: catalog('old') } })
+      .mockResolvedValueOnce({ ok: true, value: catalog('old') })
       .mockRejectedValueOnce('refresh failed')
       .mockRejectedValueOnce(new Error('reset failed'))
     const subject = directory(models)

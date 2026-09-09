@@ -10,19 +10,23 @@ import { chromium } from 'playwright'
 import { afterAll, beforeAll, describe, expect, it, onTestFailed } from 'vitest'
 import { parseSessionLog } from '@deepseek-ai/dsh-llm-replay'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
+import { expandAssistantStream } from '@deepseek-ai/dsh-llm'
 import {
-  assertFixtureInventory, captureStableAria, compareOrRefreshGolden, fixtureUserPrompts,
+  assertFixtureInventory, captureExpandedTurnProcessAria, captureStableAria,
+  compareOrRefreshGolden, fixtureUserPrompts,
   launchWebScaffold, recordFixture, watchConsole, webSnapshotMode, type WebScaffold,
 } from './scaffold.ts'
 import { connectFreshWorkspace, newEnglishPage, saveFailureShot } from './support.ts'
 
 const SNAPSHOT_DIR = fileURLToPath(new URL('../../../snapshots/web/steering', import.meta.url))
-const FIXTURE = join(SNAPSHOT_DIR, 'session.jsonl')
-// Two goldens pin both durable surfaces: the mid-turn state renders accepted
-// steering from inbox.next-step while the question blocks admission, then the
-// settled state renders its user/message beside the reply that obeys it.
+const FIXTURE = join(SNAPSHOT_DIR, 'session.v3.jsonl')
+// Two goldens pin the transient Host projection and its durable handoff: the
+// mid-turn state renders accepted steering from the Session control queue while the
+// question blocks admission, then the settled state renders the same message
+// from user/message beside the reply that obeys it.
 const MID_EXPECTED = join(SNAPSHOT_DIR, 'mid-steer.expected.md')
 const SETTLED_EXPECTED = join(SNAPSHOT_DIR, 'settled.expected.md')
+const SETTLED_EXPANDED_EXPECTED = join(SNAPSHOT_DIR, 'settled-expanded.expected.md')
 const MODE = webSnapshotMode()
 // The question composer replaces the textarea, so fill → Queue row → Steer
 // starts only after request/context and must finish before the first replay
@@ -42,17 +46,17 @@ const STEER_ALL_FIXTURE = join(STEER_ALL_DIR, 'session.jsonl')
 const STEER_ALL_OVERRIDE = join(STEER_ALL_DIR, 'replay.override.json')
 const STEER_ALL_MID = join(STEER_ALL_DIR, 'mid-steer.expected.md')
 const STEER_ALL_SETTLED = join(STEER_ALL_DIR, 'settled.expected.md')
+const STEER_ALL_SETTLED_EXPANDED = join(STEER_ALL_DIR, 'settled-expanded.expected.md')
 const STEER_ONE = 'Interjection: include the word BANANA in your final reply.'
 const STEER_TWO = 'Interjection: include the word ORANGE in your final reply.'
 
 /** Concatenated assistant text deltas — the model-visible reply body. */
 function assistantText(events: SessionEvent[]): string {
   return events
-    .filter(e => e.type === 'assistant/chunk')
-    .map((e) => {
-      const chunk = (e as SessionEvent & { data: { chunk: { type: string; text?: string } } }).data.chunk
-      return chunk.type === 'text-delta' ? chunk.text ?? '' : ''
-    })
+    .flatMap(e => e.type === 'assistant/message' || e.type === 'assistant/attempt'
+      ? expandAssistantStream(e.data.stream)
+      : [])
+    .map(({ chunk }) => chunk.type === 'text-delta' ? chunk.text : '')
     .join('')
 }
 
@@ -106,8 +110,8 @@ describe('web e2e: mid-turn steering lands durably and visibly', () => {
       { timeout: 10_000 },
     ).toBe(true)
 
-    // Enter remains the Queue gesture. The row action then atomically moves
-    // this exact occurrence into the current turn's steering outbox.
+    // Enter remains the Queue gesture. In this live window the row action
+    // atomically moves this exact occurrence into the current turn's steering outbox.
     await page.locator('[data-composer-input][contenteditable="true"]').first().waitFor({ timeout: 10_000 })
     await input.fill(STEER)
     await input.press('Enter')
@@ -117,8 +121,8 @@ describe('web e2e: mid-turn steering lands durably and visibly', () => {
     await expect.poll(() => steerButton.isEnabled(), { timeout: 10_000 }).toBe(true)
     await steerButton.click({ timeout: 10_000 })
     const pendingSteering = page.locator('[data-pending-steering]').filter({ hasText: STEER })
-    // A timeout while the Queue row remains means strict steer lost to a
-    // closing window (`steer-unavailable`); inspect replay pacing first.
+    // A timeout while the Queue row remains means the command observed a
+    // stopped Agent (`steer-unavailable`); inspect replay pacing first.
     await pendingSteering.waitFor({ timeout: 10_000 })
 
     // The blocked composer keeps steering pending long enough to observe the
@@ -170,12 +174,20 @@ describe('web e2e: mid-turn steering lands durably and visibly', () => {
     // obeying reply, composer takeover gone.
     const snapshot = await captureStableAria(page, '[class*="centerCol"]', scaffold.workspaceCwd)
     await compareOrRefreshGolden(SETTLED_EXPECTED, snapshot, MODE)
+    const expanded = await captureExpandedTurnProcessAria(
+      page,
+      '[class*="centerCol"]',
+      scaffold.workspaceCwd,
+    )
+    await compareOrRefreshGolden(SETTLED_EXPANDED_EXPECTED, expanded, MODE)
     expect(tripwire.pageErrors).toEqual([])
     expect(tripwire.warnings).toEqual([])
   }, 200_000)
 
   it.skipIf(MODE === 'record')('keeps the fixture inventory closed', async () => {
-    await assertFixtureInventory(SNAPSHOT_DIR, ['session.jsonl', 'mid-steer.expected.md', 'settled.expected.md'])
+    await assertFixtureInventory(SNAPSHOT_DIR, [
+      'session.v3.jsonl', 'mid-steer.expected.md', 'settled.expected.md', 'settled-expanded.expected.md',
+    ])
   })
 })
 
@@ -391,13 +403,20 @@ describe('web e2e: empty-draft Cmd+Enter steers the whole queue', () => {
     expect(await page.locator('[data-pending-steering]').count()).toBe(0)
     const snapshot = await captureStableAria(page, '[class*="centerCol"]', scaffold.workspaceCwd)
     await compareOrRefreshGolden(STEER_ALL_SETTLED, snapshot, MODE)
+    const expanded = await captureExpandedTurnProcessAria(
+      page,
+      '[class*="centerCol"]',
+      scaffold.workspaceCwd,
+    )
+    await compareOrRefreshGolden(STEER_ALL_SETTLED_EXPANDED, expanded, MODE)
     expect(tripwire.pageErrors).toEqual([])
     expect(tripwire.warnings).toEqual([])
   }, 200_000)
 
   it.skipIf(MODE === 'record')('keeps the fixture inventory closed', async () => {
     await assertFixtureInventory(STEER_ALL_DIR, [
-      'replay.override.json', 'mid-steer.expected.md', 'settled.expected.md',
+      'replay.override.json', 'mid-steer.expected.md',
+      'settled.expected.md', 'settled-expanded.expected.md',
     ])
   })
 })

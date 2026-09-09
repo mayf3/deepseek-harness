@@ -1,6 +1,0 @@
-# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
-# side as of the last confirmed-consistent state. Both languages carry equal authority;
-# after editing either side, bring the other along and re-record with:
-#   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-07-31-web-stop-preserves-queue.md
-2026-07-31-web-stop-preserves-queue.md: 5cf49326d606dbb621d1ba88724ecd06f6145645
-2026-07-31-web-stop-preserves-queue.zh.md: 9bbe2fb28a165d964d59ac2b553a7e9adf796d02

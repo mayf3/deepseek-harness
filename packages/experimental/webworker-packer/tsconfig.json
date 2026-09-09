@@ -12,13 +12,16 @@
   ],
   "references": [
     {
+      "path": "../../../vendor/include"
+    },
+    {
       "path": "../webworker-runtime"
     },
     {
       "path": "../../util/home-paths"
     },
     {
-      "path": "../../runtime-diagnostics/invariants"
+      "path": "../../util/package-manifest"
     }
   ]
 }

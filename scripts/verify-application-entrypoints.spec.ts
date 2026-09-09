@@ -74,6 +74,15 @@ describe('application entrypoints', () => {
     ])
   })
 
+  it('rejects a packaging dispatcher owned by the CLI workspace', () => {
+    const root = fixture()
+    write(root, 'apps/cli/src/runtime-bootstrap.ts', '#!/usr/bin/env node\n')
+
+    expect(applicationEntrypointViolations(root)).toEqual([
+      'apps/cli/src/runtime-bootstrap.ts: executable source has no application/build/test classification',
+    ])
+  })
+
   it('rejects a private Python application carrier outside dsh', () => {
     const root = fixture()
     write(root, 'packages/sdk/rogue-python-runtime/package.json', JSON.stringify({ private: true }))
@@ -86,12 +95,12 @@ describe('application entrypoints', () => {
 
   it('rejects a classified demo wrapper that launches a package entry', () => {
     const root = fixture()
-    write(root, 'package.json', JSON.stringify({ scripts: { 'demo:code-mode': 'node scripts/demo-code-mode.mjs' } }))
-    write(root, 'scripts/demo-code-mode.mjs', "spawn('node', ['packages/example/app/src/bin.ts'])\n")
+    write(root, 'package.json', JSON.stringify({ scripts: { 'demo:ptc': 'node scripts/demo-ptc.mjs' } }))
+    write(root, 'scripts/demo-ptc.mjs', "spawn('node', ['packages/example/app/src/bin.ts'])\n")
 
     expect(applicationEntrypointViolations(root)).toEqual([
-      'scripts/demo-code-mode.mjs: application demo wrapper must launch apps/cli/src/bin.ts',
-      'scripts/demo-code-mode.mjs: application demo wrapper must not launch a package entry directly',
+      'scripts/demo-ptc.mjs: application demo wrapper must launch apps/cli/src/bin.ts',
+      'scripts/demo-ptc.mjs: application demo wrapper must not launch a package entry directly',
     ])
   })
 

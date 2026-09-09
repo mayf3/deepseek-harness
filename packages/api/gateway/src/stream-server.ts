@@ -19,18 +19,24 @@ export type RemoteStreamOpener = (
 /** Convert an invocation or carrier failure to a stable wire value. */
 export type RemoteStreamFailureMapper = (error: unknown) => RemoteStreamFailure
 
+const MAX_MISSED_HEARTBEATS = 2
+
 /** Own the no-server WebSocket acceptor and every active logical stream. */
 export class RemoteStreamMuxServer {
   private readonly server = new WebSocketServer({ noServer: true })
   private readonly connections = new Set<Promise<void>>()
+  private readonly missedHeartbeats = new WeakMap<WebSocket, number>()
+  private heartbeatTimer: NodeJS.Timeout | undefined
 
   /**
    * @param open - Gateway stream dispatcher.
    * @param failure - Gateway error-to-wire mapper.
+   * @param heartbeatIntervalMs - interval between WebSocket Ping control frames.
    */
   constructor(
     private readonly open: RemoteStreamOpener,
     private readonly failure: RemoteStreamFailureMapper,
+    private readonly heartbeatIntervalMs: number,
   ) {}
 
   /**
@@ -41,6 +47,9 @@ export class RemoteStreamMuxServer {
    */
   handleUpgrade(req: IncomingMessage, socket: Duplex, head: Buffer): void {
     this.server.handleUpgrade(req, socket, head, (websocket) => {
+      this.missedHeartbeats.set(websocket, 0)
+      websocket.on('pong', () => { this.missedHeartbeats.set(websocket, 0) })
+      this.startHeartbeat()
       const connection = new RemoteStreamMuxConnection(websocket, this.open, this.failure)
       const done = connection.run()
       this.connections.add(done)
@@ -50,6 +59,8 @@ export class RemoteStreamMuxServer {
 
   /** Terminate all sockets and wait until every iterator has returned. */
   async close(): Promise<void> {
+    clearInterval(this.heartbeatTimer)
+    this.heartbeatTimer = undefined
     for (const socket of this.server.clients) socket.terminate()
     const closed = Promise.withResolvers<void>()
     this.server.close((error) => {
@@ -58,6 +69,28 @@ export class RemoteStreamMuxServer {
     })
     await closed.promise
     await Promise.all(this.connections)
+  }
+
+  /** Start one `unref()` timer after the first upgrade; it spans empty-client periods until close(). */
+  private startHeartbeat(): void {
+    if (this.heartbeatTimer !== undefined) return
+    this.heartbeatTimer = setInterval(() => {
+      for (const socket of this.server.clients) {
+        if (socket.readyState !== WebSocket.OPEN) continue
+        const missed = this.missedHeartbeats.get(socket) as number
+        if (missed >= MAX_MISSED_HEARTBEATS) {
+          setImmediate(() => {
+            if ((this.missedHeartbeats.get(socket) as number) >= MAX_MISSED_HEARTBEATS) {
+              socket.terminate()
+            }
+          })
+          continue
+        }
+        this.missedHeartbeats.set(socket, missed + 1)
+        socket.ping()
+      }
+    }, this.heartbeatIntervalMs)
+    this.heartbeatTimer.unref()
   }
 }
 

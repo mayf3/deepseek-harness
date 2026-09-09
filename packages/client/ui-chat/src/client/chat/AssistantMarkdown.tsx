@@ -1,12 +1,29 @@
 import { Fragment, memo, useMemo } from 'react'
 import type { ReactNode } from 'react'
 import { JsonBlock, MarkdownText } from '@deepseek-ai/dsh-client-ui-primitives'
-import type { MarkdownFileMentions } from '@deepseek-ai/dsh-client-ui-primitives'
+import type { MarkdownFileMentions, MarkdownPathImages } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ChatNodeOwnerProps, ChatViewSlotProps } from '../contract/slots.ts'
 import type { AssistantBlock } from '../contract/snapshot.ts'
 import { markdownLabels } from '../markdown-labels.ts'
 import { ReasoningRow } from './ReasoningRow.tsx'
+import { useSearchableHidden } from './searchable-hidden.ts'
 import css from './AssistantMarkdown.module.css'
+
+/**
+ * Map one authored media destination to the same-origin workspace-file URL.
+ * @param protocol - `window.location.protocol` at render time.
+ * @param origin - `window.location.origin` at render time.
+ * @param value - The authored markdown destination, exactly as written.
+ * @returns The API URL for an absolute POSIX path on an HTTP(S) page, or
+ * undefined when the destination cannot be a Host-served local file
+ * (non-HTTP transport such as Electron `file://`, protocol-relative or
+ * relative destinations).
+ */
+export function localPathMediaUrl(protocol: string, origin: string, value: string): string | undefined {
+  if (protocol !== 'http:' && protocol !== 'https:') return undefined
+  if (value.length === 0 || !value.startsWith('/') || value.startsWith('//')) return undefined
+  return `${origin}/api/file?path=${encodeURIComponent(value)}`
+}
 
 export interface AssistantMarkdownProps {
   blocks: readonly AssistantBlock[]
@@ -15,6 +32,10 @@ export interface AssistantMarkdownProps {
   interrupted?: boolean | undefined
   /** Render consecutive image blocks through the attachment slot. */
   renderMessageImages: ChatNodeOwnerProps['renderMessageImages']
+  /** Hide reasoning that belongs to the Turn-level process disclosure. */
+  reasoningHidden?: boolean | undefined
+  /** Reveal the owning Turn-level process disclosure. */
+  revealProcess?: (() => void) | undefined
   /** Resolved prose file mentions for this Assistant's closing turn. */
   mentions?: MarkdownFileMentions | undefined
   /** The owning view's locale seat, passed down as a plain prop. */
@@ -23,11 +44,19 @@ export interface AssistantMarkdownProps {
 
 /** Reasoning block as the Think variant summary row (figma 39:28304). */
 export const AssistantMarkdown = memo(function AssistantMarkdown({
-  blocks, streaming, interrupted, renderMessageImages, mentions, t,
+  blocks, streaming, interrupted, renderMessageImages,
+  reasoningHidden = false, revealProcess, mentions, t,
 }: AssistantMarkdownProps) {
   // Stable per locale revision (t identity changes on switch): a fresh object
   // per render would rebuild MarkdownText's component table every chunk.
   const labels = useMemo(() => markdownLabels(t), [t])
+  // Local media paths in the closing prose rewrite to the same-origin file
+  // API (policy re-validation lives host-side). The vocabulary identity is
+  // stable per page load because MarkdownText memoizes on it.
+  const pathImages = useMemo<MarkdownPathImages>(() => {
+    const { protocol, origin } = window.location
+    return { resolve: value => localPathMediaUrl(protocol, origin, value) }
+  }, [])
   const last = blocks.length - 1
   // Tool-call heads render as tool rows in the chat view's grouping pass, so
   // a node that is only those heads (or empty) would paint an empty root
@@ -49,11 +78,20 @@ export const AssistantMarkdown = memo(function AssistantMarkdown({
             streaming={streaming}
             labels={labels}
             fileMentions={mentions}
+            pathImages={pathImages}
           />,
         )
         break
       case 'reasoning':
-        rendered.push(<ReasoningRow key={i} text={block.text} running={streaming && i === last} t={t} />)
+        rendered.push(
+          <ProcessReasoning
+            key={i}
+            hidden={reasoningHidden}
+            reveal={revealProcess}
+          >
+            <ReasoningRow text={block.text} running={streaming && i === last} t={t} />
+          </ProcessReasoning>,
+        )
         break
       case 'image': {
         // Consecutive image blocks share one gallery so several images tile
@@ -102,3 +140,14 @@ export const AssistantMarkdown = memo(function AssistantMarkdown({
     </div>
   )
 })
+
+function ProcessReasoning({ hidden, reveal, children }: {
+  hidden: boolean
+  reveal?: (() => void) | undefined
+  children: ReactNode
+}) {
+  const ref = useSearchableHidden(hidden, reveal ?? NOOP)
+  return <div ref={ref} data-turn-process-inline={hidden || undefined}>{children}</div>
+}
+
+const NOOP = (): void => {}
