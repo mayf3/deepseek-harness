@@ -3,10 +3,9 @@
     - button "Use one run_code program to" [disabled]
   - img
   - text: PTC mode
-  - button "Session log":
-    - text: Session log
+  - button "More actions":
     - img
-  - button "Open the sidebar":
+  - button "Open right sidebar":
     - img
   - tablist:
     - tab "Chat" [selected]
