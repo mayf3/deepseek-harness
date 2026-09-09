@@ -3,6 +3,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-api-session-controller'
 import type {} from '@deepseek-ai/dsh-api-workspace-files'
 import type {} from '@deepseek-ai/dsh-fs'
+import type {} from '@deepseek-ai/dsh-sandbox-policy'
 import { remoteErrorOf } from '@deepseek-ai/dsh-typert-protocol'
 import type {} from '@deepseek-ai/dsh-client-connection'
 import type {} from '@deepseek-ai/dsh-session-query'
@@ -54,19 +55,17 @@ async function handlePresentOpen(ctx: Context, request: Request): Promise<Respon
   try {
     request.signal.throwIfAborted()
     if (!ctx.sessionController.workspaceDesktop().available) return new Response('Host desktop unavailable.', { status: 409 })
-    const { target } = await ctx.sessionQuery.readEvent({
+    const { target, session } = await ctx.sessionQuery.readEvent({
       sessionId: id as SessionId, seq: Number(seq) as SessionSeq, before: 0, after: 0,
     }, request.signal)
     const file = target.type === 'deliverables/presented' && isPresentedData(target.data) ? target.data.files[Number(index)] : undefined
     if (!isPresentedFile(file)) return new Response('Presented file not found in this Session result.', { status: 404 })
-    const found = await ctx.sessionController.resolveAgent(id as SessionId)
-    if ('error' in found) throw found.error
     request.signal.throwIfAborted()
-    const { agent } = found
-    const workspaceFiles = agent.ctx.get('workspaceFiles')
-    const fs = agent.ctx.get('fs')
-    if (workspaceFiles === undefined || fs === undefined) throw new Error('Session file services unavailable.')
-    const { absolutePath: path } = await workspaceFiles.stat(agent, file.path, request.signal)
+    const { fs, workspaceFiles } = ctx
+    const { absolutePath: path } = await workspaceFiles.stat({
+      sessionId: id as SessionId,
+      workspaceRoot: session.cwd ?? ctx.sandboxPolicy.workspaceRoot,
+    }, file.path, request.signal)
     const mapped = fs.processPathFromHostPath(path)
     if (mapped === undefined || fs.processPath(await fs.resolve(mapped, { signal: request.signal })) !== path) {
       return new Response('Presented file has no verified Host path.', { status: 422 })

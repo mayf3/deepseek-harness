@@ -52,7 +52,7 @@ Web 的 `standard`、`ptc` 与 `cordis` preset 提供 `present` 用于声明交�
 
 Node 半部注册静态 `ui:deliverable-file-references` 系统提示词段，要求模型点名成功创建或修改的主要文件，并把这些文件以及正文中提到的其他本轮变更文件写成 Markdown 行内代码。浏览器半部把组合 `ProducedFiles` 与显式交付的包装组件注册进 chat 视图的 `conversation.chat.turnTail` 洞。`deliverablesDefinition` 根据 `write`、`edit` 和有修改作用的 `str_replace_editor` 命令中经过校验的原始参数，把每个轮次成功的第一方修改调用折叠进 `DeliverablesTurnData`。读取、删除、不受支持的工具、格式错误的调用和失败结果不贡献任何条目。新的修改工具必须增加显式 Client contribution 才能加入列表。本包还提供 chat 视图按收尾消息查询的 `chatFileMentions` 服务；把插件组合出去会同时移除两个表面，视图的空链以零成本留下。
 
-原生打开使用经过认证的 POST，通过当前查看的 Session、事件序号和原始文件索引定位声明。Host 查找或恢复该 Session 的 Agent，通过其 `workspaceFiles.stat` 检查声明，与侧栏预览使用同一文件系统。原生操作要求规范化的进程路径能从 Host 路径映射回同一进程路径。提供方没有这种映射时返回 422，卡片提示使用侧栏预览；Host 上存在同名文件并不足够。同一份桌面可用性配置同时约束信息查询和实际执行。编辑会影响后续打开的内容；删除后返回错误。不创建文件内容副本或附件。插件释放时取消并等待进行中的原生打开请求。
+原生打开使用经过认证的 POST，通过当前查看的 Session、事件序号和原始文件索引定位声明。Host 读取声明及当前查看的 Session header，将其中的 cwd 传给 `workspaceFiles.stat`；未记录 cwd 时使用部署的工作目录。它与侧栏预览使用同一组合文件系统，无需启动 Agent，子会话也适用。原生操作要求规范化的进程路径能从 Host 路径映射回同一进程路径。提供方没有这种映射时返回 422，卡片提示使用侧栏预览；Host 上存在同名文件并不足够。同一份桌面可用性配置同时约束信息查询和实际执行。编辑会影响后续打开的内容；删除后返回错误。不创建文件内容副本或附件。插件释放时取消并等待进行中的原生打开请求。
 
 </details>
 

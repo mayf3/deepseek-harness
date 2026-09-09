@@ -2,10 +2,8 @@
 import { mkdtemp, rm, readFile, writeFile, mkdir, realpath, symlink, unlink } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import type { Agent } from '@deepseek-ai/dsh-agent'
 import { LocalFileSystem } from '@deepseek-ai/dsh-fs-local'
 import { WorkspaceFiles } from '@deepseek-ai/dsh-api-workspace-files'
-import { RemoteError } from '@deepseek-ai/dsh-typert-protocol'
 import { Context } from '@deepseek-ai/cordis'
 import { HostConnectionService } from '@deepseek-ai/dsh-client-connection'
 import type { BrowserAuth } from '@deepseek-ai/dsh-client-connection/src/browser-auth.ts'
@@ -35,10 +33,12 @@ async function fixture() {
   cleanups.push(() => ctx.fiber.dispose())
   const session: { cwd?: string } = { cwd }
   await ctx.plugin(LocalFileSystem, { cwd })
-  ctx.provide('sandboxPolicy', { resolve: () => ({ workspaceRoot: session.cwd ?? cwd }) } as never)
-  new WorkspaceFiles(ctx, { maxBytes: 1024, maxFileBytes: 1024, maxLines: 100, maxEntries: 100 })
-  const agent = { ctx, session: { header: session } } as unknown as Agent
-  const resolveAgent = vi.fn<Context['sessionController']['resolveAgent']>(async () => ({ agent }))
+  ctx.provide('sandboxPolicy', { workspaceRoot: cwd } as never)
+  await ctx.plugin({
+    inject: ['fs', 'sandboxPolicy'],
+    apply: (scope) => { new WorkspaceFiles(scope, { maxBytes: 1024, maxFileBytes: 1024, maxLines: 100, maxEntries: 100 }) },
+  })
+  const resolveAgent = vi.fn<Context['sessionController']['resolveAgent']>(() => { throw new Error('Agent activation is unavailable') })
   const readEvent = vi.fn(async (request: SessionEventReadRequest) => {
     if (request.sessionId !== 'owner') throw new SessionQueryError('missing', 'SESSION_QUERY_SESSION_NOT_FOUND')
     if (request.seq !== 7) throw new SessionQueryError('missing', 'SESSION_QUERY_EVENT_NOT_FOUND')
@@ -48,7 +48,7 @@ async function fixture() {
   const opener = vi.fn(async (_request: { path: string; action?: 'reveal' }, _signal: AbortSignal) => ({ opened: true as const }))
   ctx.provide('sessionController', { resolveAgent, openWorkspacePath: opener, workspaceDesktop: () => ({ name: 'desktop', available: true, fileManager: 'finder' }) } as never)
   const connection = new HostConnectionService(ctx, [], {} as BrowserAuth)
-  const fiber = ctx.plugin({ inject: ['connection', 'sessionQuery', 'sessionController', 'workspaceFiles', 'fs'], apply: registerPresentOpen })
+  const fiber = ctx.plugin({ inject: ['connection', 'sessionQuery', 'sessionController', 'workspaceFiles', 'fs', 'sandboxPolicy'], apply: registerPresentOpen })
   await fiber
   const handler = connection.createSharedFetchHandler('/api')
   const open = (query = '?sessionId=owner&seq=7&index=0', signal?: AbortSignal) => handler.fetch(new Request(
@@ -219,29 +219,17 @@ it('refuses native opening without a matching Host mapping even when a same-name
   expect(opener).not.toHaveBeenCalled()
 })
 
-it('reports Session resolution failures before checking files', async () => {
-  const { resolveAgent, open, opener } = await fixture()
-  resolveAgent.mockResolvedValueOnce({ error: new RemoteError('session/not-found', 'missing', { sessionId: SessionId('owner') }) })
-  expect((await open()).status).toBe(404)
-  expect(opener).not.toHaveBeenCalled()
+it('opens a viewed child Session without activating an Agent', async () => {
+  const { session, readEvent, open, opener, resolveAgent } = await fixture()
+  readEvent.mockResolvedValueOnce({ session, target: { type: 'deliverables/presented', data: { turn: 1, callId: 'child', files: [{ path: '日记模板.docx' }] } } as SessionEvent })
+  expect((await open('?sessionId=child&seq=7&index=0')).status).toBe(204)
+  expect(opener).toHaveBeenCalledOnce()
+  expect(resolveAgent).not.toHaveBeenCalled()
 })
 
-
-it('uses the resolved Agent filesystem instead of the Host filesystem', async () => {
-  const { ctx, cwd, open, resolveAgent, opener } = await fixture()
-  const scoped = ctx.isolate('fs')
-  await scoped.plugin(LocalFileSystem, { cwd })
-  vi.spyOn(scoped.fs, 'processPathFromHostPath').mockReturnValue(undefined)
-  resolveAgent.mockResolvedValueOnce({ agent: { ctx: scoped, session: { header: { cwd } } } as unknown as Agent })
-  expect((await open()).status).toBe(422)
-  expect(opener).not.toHaveBeenCalled()
+it('uses the deployment workspace root when the viewed Session has no cwd', async () => {
+  const { session, open, cwd, file, opener } = await fixture()
+  delete session.cwd
   expect((await open()).status).toBe(204)
-})
-
-
-it.each(['workspaceFiles', 'fs'])('refuses an Agent missing its %s service', async (service) => {
-  const { ctx, open, resolveAgent, opener } = await fixture()
-  resolveAgent.mockResolvedValueOnce({ agent: { ctx: ctx.isolate(service) } as unknown as Agent })
-  expect((await open()).status).toBe(500)
-  expect(opener).not.toHaveBeenCalled()
+  expect(opener.mock.lastCall?.[0].path).toBe(await realpath(join(cwd, file.path)))
 })
