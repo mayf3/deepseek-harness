@@ -29,6 +29,9 @@ interface Observed {
 
 const disposers: (() => Promise<void>)[] = []
 
+/** The real process facts captured before any test substitutes them. */
+const originalInternals = { ...startupInternals }
+
 /** Fixture tree roots, removed after their booted tree has been disposed. */
 const tempDirs: string[] = []
 
@@ -136,6 +139,16 @@ describe('headless command-line provider', () => {
     expect(observed.out).toContain('--session-id requires a non-empty session id')
     expect(task).toBeUndefined()
     expect(observed.exits).toEqual([1])
+  })
+
+  it('reports the real process stdin terminal state by default', () => {
+    const original = Object.getOwnPropertyDescriptor(process, 'stdin')
+    Object.defineProperty(process, 'stdin', { value: { isTTY: true }, configurable: true })
+    try {
+      expect(originalInternals.stdinIsTty()).toBe(true)
+    } finally {
+      if (original !== undefined) Object.defineProperty(process, 'stdin', original)
+    }
   })
 
   it('prints its own help and leaves the runner pending', async () => {

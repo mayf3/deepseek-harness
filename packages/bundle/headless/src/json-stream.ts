@@ -94,8 +94,9 @@ function parseArguments(raw: string): unknown {
 /** Join the text blocks of a tool result's model-facing content. */
 function resultText(blocks: readonly { type: string; text?: string }[]): string {
   return blocks
-    .filter(block => block.type === 'text' && typeof block.text === 'string')
-    .map(block => block.text ?? '')
+    .filter((block): block is { type: string; text: string } =>
+      block.type === 'text' && typeof block.text === 'string')
+    .map(block => block.text)
     .join('')
 }
 

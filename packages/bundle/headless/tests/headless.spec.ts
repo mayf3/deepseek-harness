@@ -1,5 +1,6 @@
 /** Direct one-shot Agent driving, exact Session adoption, machine-readable projection, and exit mapping. */
 
+import { Readable } from 'node:stream'
 import { afterEach, describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { brandString } from '@deepseek-ai/dsh-brand'
@@ -42,6 +43,8 @@ interface BenchOptions {
   sessionId?: string
   json?: boolean
   observe?: () => Promise<ObservationStub>
+  /** Register a live Agent under `sessionId` before the runner starts. */
+  prelive?: boolean
 }
 
 const frameStates = new WeakMap<Agent, { attemptId: ReturnType<typeof LlmAttemptId>; revision: number; index: number }>()
@@ -172,6 +175,12 @@ async function bench(script: Script, options: BenchOptions = {}): Promise<{
       const exited = new Promise<number>((resolve) => {
         ctx.provide('appExit', (code: number) => { order.push('exit'); resolve(code) })
       })
+      if (options.prelive === true) {
+        await ctx.agents.create({
+          sessionId: brandString<SessionId>(options.sessionId ?? 'session-exact'),
+          meta: { cwd: process.cwd() },
+        })
+      }
       apply(ctx, {
         ...options.useStdin === true ? {} : { task: options.task ?? 'do the thing' },
         ...options.sessionId === undefined ? {} : { sessionId: options.sessionId },
@@ -445,6 +454,30 @@ describe('headless runner', () => {
     await test.ctx.fiber.dispose()
   })
 
+  it('reads the default process stdin when no override is installed', async () => {
+    const original = Object.getOwnPropertyDescriptor(process, 'stdin')
+    Object.defineProperty(process, 'stdin', {
+      value: Readable.from([Buffer.from('piped'), Buffer.from(' task')]),
+      configurable: true,
+    })
+    try {
+      await expect(originalInternals.readStdin()).resolves.toBe('piped task')
+    } finally {
+      if (original !== undefined) Object.defineProperty(process, 'stdin', original)
+    }
+  })
+
+  it('treats a bare dash positional as the stdin marker', async () => {
+    const test = await bench({
+      afterPrompt(session, message) { appendTurn(session, 1, message, 'dash answer', true) },
+    }, {
+      task: '-',
+      readStdin: () => Promise.resolve('piped dash task'),
+    })
+    expect(await test.run()).toMatchObject({ code: 0, out: 'dash answer\n', err: '' })
+    await test.ctx.fiber.dispose()
+  })
+
   it('creates the exact requested Session when the query reports it missing', async () => {
     const seen: string[] = []
     const test = await bench({
@@ -515,6 +548,42 @@ describe('headless runner', () => {
     const result = await test.run()
     expect(result.code).toBe(1)
     expect(result.err).toContain('requires the sessionQuery service')
+    await test.ctx.fiber.dispose()
+  })
+
+  it('reuses a live Agent already registered under the requested identity', async () => {
+    const test = await bench({
+      afterPrompt(session, message) { appendTurn(session, 1, message, 'live answer', true) },
+    }, {
+      sessionId: 'session-exact',
+      prelive: true,
+    })
+    expect(await test.run()).toMatchObject({ code: 0, out: 'live answer\n', err: '' })
+    await test.ctx.fiber.dispose()
+  })
+
+  it('rejects a persisted Session linked to a parent', async () => {
+    const test = await bench({ afterPrompt: () => {} }, {
+      sessionId: 'session-exact',
+      observe: () => Promise.resolve({
+        header: { cwd: process.cwd(), origin: 'user', parentSession: 'parent-1' },
+        [Symbol.dispose]() {},
+      }),
+    })
+    const result = await test.run()
+    expect(result.code).toBe(1)
+    expect(result.err).toContain('belongs to a subagent')
+    await test.ctx.fiber.dispose()
+  })
+
+  it('propagates a Session query failure that is not a missing log', async () => {
+    const test = await bench({ afterPrompt: () => {} }, {
+      sessionId: 'session-exact',
+      observe: () => Promise.reject(new SessionQueryError('log is corrupt', 'SESSION_QUERY_CORRUPT_SESSION')),
+    })
+    const result = await test.run()
+    expect(result.code).toBe(1)
+    expect(result.err).toBe('dsh: log is corrupt\n')
     await test.ctx.fiber.dispose()
   })
 

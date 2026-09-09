@@ -3,7 +3,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Context } from '@deepseek-ai/cordis'
 import type { Agent, AssistantStreamFrame } from '@deepseek-ai/dsh-agent'
-import { LlmAttemptId, type StreamChunk } from '@deepseek-ai/dsh-llm'
+import { LlmAttemptId, ToolCallId, type StreamChunk } from '@deepseek-ai/dsh-llm'
 import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
 import { projectJsonRun, type JsonProjectionOptions } from '../src/json-stream.ts'
 
@@ -22,7 +22,7 @@ interface ProjectionHarness {
 }
 
 /** Drive the projector through a minimal Context and Agent double. */
-function harness(options: JsonProjectionOptions = {}): ProjectionHarness {
+function harness(options: JsonProjectionOptions = {}, agentId = 'session-1'): ProjectionHarness {
   const lines: string[] = []
   const sessionListeners = new Set<(session: unknown, event: SessionEvent) => void>()
   const frameListeners = new Set<(payload: { agent: Agent; frame: AssistantStreamFrame }) => void>()
@@ -34,7 +34,7 @@ function harness(options: JsonProjectionOptions = {}): ProjectionHarness {
     },
   } as unknown as Context
   const session = {} as Session
-  const agent = { id: 'session-1', session } as unknown as Agent
+  const agent = { id: agentId, session } as unknown as Agent
   const projection = projectJsonRun(ctx, agent, {
     write: (chunk: string) => { lines.push(chunk); return true },
   }, { cwd: '/', ...options })
@@ -168,5 +168,76 @@ describe('--json projection', () => {
     test.projection.dispose()
     test.projection.finish('ignored')
     expect(test.parsed().map(event => event.type)).toEqual(['session', 'status'])
+  })
+
+  it('covers the remaining projection branches', () => {
+    const test = harness({ coalesceMs: 10_000, maxStringBytes: 11 }, 's1')
+    // An unprojected session event is ignored.
+    test.emitSession({ type: 'session/title', data: { title: 'ignored' } } as unknown as SessionEvent)
+    // A step end without a preceding assistant message carries no usage.
+    test.emitSession({ type: 'step/end', data: { turn: 1, step: 1 } } as unknown as SessionEvent)
+    // Non-JSON arguments survive as the raw string; arrays and scalars bound recursively.
+    test.emitSession({
+      type: 'tool/call',
+      data: { turn: 1, step: 1, callId: 'raw', name: 'bash', arguments: 'not json' },
+    } as unknown as SessionEvent)
+    test.emitSession({
+      type: 'tool/call',
+      data: {
+        turn: 1,
+        step: 1,
+        callId: 'nested',
+        name: 'bash',
+        arguments: JSON.stringify({ items: ['éééééé', null, true], n: 1 }),
+      },
+    } as unknown as SessionEvent)
+    // A tool result mixes a non-text block with a text block.
+    test.emitSession({
+      type: 'tool/result',
+      data: {
+        turn: 1,
+        step: 1,
+        message: {
+          content: [{
+            type: 'tool-result',
+            toolCallId: 'nested',
+            content: [{ type: 'image' }, { type: 'text' }, { type: 'text', text: 'kept' }],
+            isError: false,
+          }],
+        },
+      },
+    } as unknown as SessionEvent)
+    // Empty deltas are dropped; every non-delta chunk flushes the buffer.
+    test.emitFrame({ type: 'text-delta', index: 0, text: '' })
+    test.emitFrame({ type: 'reasoning-delta', index: 0, text: '' })
+    test.emitFrame({ type: 'block-start', index: 0, blockType: 'text' })
+    test.emitFrame({ type: 'block-end', index: 0, block: { type: 'text', text: '' } })
+    test.emitFrame({ type: 'tool-call-delta', index: 1, id: ToolCallId('t1'), name: 'bash', argumentsDelta: '{}' })
+    test.emitFrame({ type: 'usage', usage: { inputTokens: 1, outputTokens: 1 } })
+    test.emitFrame({ type: 'finish', reason: { kind: 'stop' } })
+    // A non-chunk frame flushes and writes nothing.
+    test.emitRawFrame({
+      agent: test.agent,
+      frame: { type: 'start', attemptId: LlmAttemptId('a'), revision: 1, turn: 1, step: 1 },
+    })
+    // Truncation drops a split trailing multibyte character.
+    test.emitFrame({ type: 'text-delta', index: 0, text: 'éééééé' })
+    test.projection.finish('done')
+
+    expect(test.parsed()).toEqual([
+      { type: 'session', sessionId: 's1', cwd: '/' },
+      { type: 'status', phase: 'step_end', turn: 1, step: 1 },
+      { type: 'tool_call', callId: 'raw', tool: 'bash', input: 'not json' },
+      {
+        type: 'tool_call',
+        callId: 'nested',
+        tool: 'bash',
+        input: { items: ['ééééé', null, true], n: 1 },
+        truncated: true,
+      },
+      { type: 'tool_result', callId: 'nested', status: 'completed', result: 'kept' },
+      { type: 'text', text: 'ééééé', truncated: true },
+      { type: 'final', text: 'done' },
+    ])
   })
 })
