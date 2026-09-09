@@ -1,16 +1,21 @@
 /** Turn-aware trajectory event ledger with a local record inspector. */
 
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties, ReactNode } from 'react'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import {
+  CodeBlock,
+  IconCheckOutline16,
   IconChevronRightOutline14,
+  IconCodeOutline16,
+  IconCopyOutline16,
   IconSettingsOutline16,
   IconSparkle16,
   IconUserOutline16,
   JsonTree,
   MarkdownText,
   Tooltip,
+  writeClipboard,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { JsonTreeLabels, JsonTreeProps, MarkdownLabels } from '@deepseek-ai/dsh-client-ui-primitives'
 import { structuredPatch } from 'diff'
@@ -30,6 +35,7 @@ import type { TrajectoryTurnModel } from './layout.ts'
 import { trajectoryPreviewText } from './trajectory-preview.ts'
 import type { TrajectoryKey, TrajectoryTranslate } from './locales.ts'
 import { COMPACTION_INTERRUPTED_ERROR } from './copy-codes.ts'
+import { codeProgram, type CodeProgram } from './code-program.ts'
 import css from './TrajectoryTable.module.css'
 
 const BOTTOM_FOLLOW_THRESHOLD_PX = 2
@@ -991,8 +997,11 @@ function detailTabs(record: TableRecord): readonly DetailTabItem[] {
   }
   return [
     { id: 'overview', labelKey: 'tab.summary' },
-    ...(record.cell.inputDetail ? [{ id: 'input', labelKey: 'tab.payload' } as const] : []),
-    ...(record.cell.outputDetail ? [{ id: 'output', labelKey: 'tab.result' } as const] : []),
+    ...(record.cell.inputDetail ? [{
+      id: 'input', labelKey: codeProgram(record.cell) === undefined ? 'tab.payload' : 'code.source',
+    } as const] : []),
+    ...(record.cell.outputDetail || codeProgram(record.cell) !== undefined
+      ? [{ id: 'output', labelKey: 'tab.result' } as const] : []),
     { id: 'schema', labelKey: 'tab.schema' },
     { id: 'timing', labelKey: 'tab.timing' },
   ]
@@ -1000,6 +1009,8 @@ function detailTabs(record: TableRecord): readonly DetailTabItem[] {
 
 function recordDisplayText(cell: TrajectoryCellProps, t: TrajectoryTranslate): string {
   if (isToolCallOnly(cell, t)) return ''
+  const program = codeProgram(cell)
+  if (program !== undefined) return `${cell.text.split(' · ', 1)[0]} · ${program.description.replace(/\s+/g, ' ')}`
   if (cell.previewMarkdown !== undefined) {
     const preview = trajectoryPreviewText(cell.previewMarkdown)
     if (cell.text === '') return preview
@@ -1099,10 +1110,11 @@ function RecordListText({
   return (
     <>
       <span className={css.toolCallNameTypeface}>
+        {toolCallText.name === 'run_code' && <IconCodeOutline16 className={css.programIcon} size={12} />}
         {toolCallText.name || '—'}
       </span>
       {toolCallText.args !== undefined && (
-        <span className={css.toolCallPayload}>
+        <span className={toolCallText.name === 'run_code' ? css.programSummary : css.toolCallPayload}>
           {toolCallText.args}
         </span>
       )}
@@ -1801,13 +1813,159 @@ function parseJsonContainer(value: string): object | undefined {
   }
 }
 
+function InspectorCopyButton({ text, label, t }: {
+  text: string
+  label: string
+  t: TrajectoryTranslate
+}) {
+  const [state, setState] = useState<'idle' | 'copied' | 'failed'>('idle')
+  useEffect(() => {
+    if (state === 'idle') return
+    const timer = setTimeout(() => { setState('idle') }, 1_500)
+    return () => { clearTimeout(timer) }
+  }, [state])
+  const title = state === 'idle' ? label : t(state === 'copied' ? 'copied' : 'copy.failed')
+  return (
+    <button
+      type="button"
+      className={css.programAction}
+      data-state={state}
+      aria-label={title}
+      title={title}
+      onClick={() => { void writeClipboard(text).then((ok) => { setState(ok ? 'copied' : 'failed') }) }}
+    >
+      {state === 'copied' ? <IconCheckOutline16 size={12} /> : <IconCopyOutline16 size={12} />}
+    </button>
+  )
+}
+
+function ProgramInput({ program, rawInput, initialWrapped, stringWrapping, onOpen, t }: {
+  program: CodeProgram
+  rawInput: string
+  initialWrapped: boolean
+  stringWrapping: JsonTreeProps['stringWrapping']
+  onOpen?: () => void
+  t: TrajectoryTranslate
+}) {
+  const contentsId = useId()
+  const [wrapped, setWrapped] = useState(initialWrapped)
+  const [showJson, setShowJson] = useState(false)
+  const actions = (
+    <span className={css.programActions}>
+      {!showJson && program.language !== undefined && (
+        <span className={css.programLanguage}>{program.language}</span>
+      )}
+      {!showJson && (
+        <button
+          type="button"
+          className={css.programAction}
+          aria-label={t('record.wrapLines')}
+          title={t('record.wrapLines')}
+          aria-pressed={wrapped}
+          aria-controls={contentsId}
+          onClick={() => {
+            const next = !wrapped
+            setWrapped(next)
+            stringWrapping?.setDefault(next)
+          }}
+        >
+          <svg width="12" height="12" viewBox="0 0 16 16" fill="none"
+            stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" aria-hidden="true">
+            <path d="M1.5 3.5h13M1.5 7.5h10.25a2.5 2.5 0 0 1 0 5H8m2-2-2 2 2 2M1.5 11.5h3" />
+          </svg>
+        </button>
+      )}
+      {onOpen === undefined && (
+        <button
+          type="button"
+          className={css.programAction}
+          aria-label={t('code.originalJson')}
+          title={t('code.originalJson')}
+          aria-pressed={showJson}
+          aria-controls={contentsId}
+          onClick={() => { setShowJson(value => !value) }}
+        >
+          <svg width="12" height="12" viewBox="0 0 16 16" fill="none"
+            stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M6 2H5a2 2 0 0 0-2 2v2a2 2 0 0 1-2 2 2 2 0 0 1 2 2v2a2 2 0 0 0 2 2h1" />
+            <path d="M10 2h1a2 2 0 0 1 2 2v2a2 2 0 0 0 2 2 2 2 0 0 0-2 2v2a2 2 0 0 1-2 2h-1" />
+          </svg>
+        </button>
+      )}
+      <InspectorCopyButton
+        text={showJson ? rawInput : program.source}
+        label={t(showJson ? 'copy.json' : 'code.copySource')}
+        t={t}
+      />
+    </span>
+  )
+  const body = (
+    <div id={contentsId} className={css.programContent} data-wrap={wrapped}>
+      {showJson
+        ? <JsonTree data={program.arguments} label={t('record.parametersJson')}
+          labels={jsonTreeLabels(t)} stringWrapping={stringWrapping} />
+        : <CodeBlock code={program.source} lang={program.language} lineNumbers showHeader={false}
+          className={css.programSource} copyLabel={t('code.copySource')} copiedLabel={t('copied')} />}
+    </div>
+  )
+  return onOpen === undefined
+    ? (
+      <section className={css.programPanel}>
+        <header className={css.overviewHeading}>
+          <span>{t('code.source')}</span>
+          {actions}
+        </header>
+        {body}
+      </section>
+    )
+    : <OverviewSection label={t('code.source')} onOpen={onOpen} actions={actions}>{body}</OverviewSection>
+}
+
+function ProgramOutput({ record, stringWrapping, onOpen, t }: {
+  record: TableRecord
+  stringWrapping: JsonTreeProps['stringWrapping']
+  onOpen?: () => void
+  t: TrajectoryTranslate
+}) {
+  const output = record.cell.outputDetail
+  const json = output === undefined || record.cell.isError === true ? undefined : parseJsonContainer(output)
+  const actions = output === undefined ? undefined : (
+    <span className={css.programActions}>
+      <InspectorCopyButton text={output} label={t('code.copyOutput')} t={t} />
+    </span>
+  )
+  const body = (
+    <div className={css.programContent}>
+      {output === undefined || output === ''
+        ? <p className={css.noPayload}>{t(stateOf(record) === 'running' ? 'code.running' : 'record.noOutput')}</p>
+        : json !== undefined
+          ? <JsonTree data={json} label={t('record.outputJson')} labels={jsonTreeLabels(t)}
+            stringWrapping={stringWrapping} collapsedStringLines={onOpen === undefined ? 12 : 3} />
+          : <pre className={`${css.programOutput} ${record.cell.isError === true ? css.programError : ''}`}>{output}</pre>}
+    </div>
+  )
+  return onOpen === undefined
+    ? (
+      <section className={css.programPanel}>
+        <header className={css.overviewHeading}>
+          <span>{t('code.output')}</span>
+          {actions}
+        </header>
+        {body}
+      </section>
+    )
+    : <OverviewSection label={t('code.output')} onOpen={onOpen} actions={actions}>{body}</OverviewSection>
+}
+
 function OverviewSection({
   label,
   onOpen,
+  actions,
   children,
 }: {
   label: string
   onOpen: () => void
+  actions?: ReactNode
   children: ReactNode
 }) {
   const previewRef = useRef<HTMLDivElement>(null)
@@ -1838,6 +1996,7 @@ function OverviewSection({
           <span>{label}</span>
           <IconChevronRightOutline14 className={css.overviewTitleIcon} size={12} />
         </button>
+        {actions}
       </h3>
       <div
         ref={previewRef}
@@ -1887,6 +2046,7 @@ export function TrajectoryTable({
   const [selectedRecordId, setSelectedRecordId] = useState<string | null>(null)
   const [selectedRequest, setSelectedRequest] = useState<SelectedRequest | null>(null)
   const [activeTab, setActiveTab] = useState<DetailTab>('overview')
+  const [codeWrappingOnOpen, setCodeWrappingOnOpen] = useState(false)
   const [thinkingDisclosure, setThinkingDisclosure] = useState<{ recordId: string; expanded: boolean }>()
   const [detailsWidth, setDetailsWidth] = useState<number | null>(null)
   const [toolRequestOffset, setToolRequestOffset] = useState<number | null>(null)
@@ -1919,6 +2079,7 @@ export function TrajectoryTable({
   const selected = selectedTemplate === undefined
     ? undefined
     : currentRecord(selectedTemplate)
+  const selectedProgram = selected === undefined ? undefined : codeProgram(selected.cell)
   const thinkingExpanded = thinkingDisclosure?.recordId === selectedRecordId
     ? thinkingDisclosure.expanded
     : selected?.cell.kind === 'message'
@@ -2130,6 +2291,7 @@ export function TrajectoryTable({
     }
 
   const activateTab = (tab: DetailTab) => {
+    setCodeWrappingOnOpen(stringWrapping?.getDefault() ?? false)
     tabHistory.current.delete(tab)
     tabHistory.current.add(tab)
     setActiveTab(tab)
@@ -2146,6 +2308,7 @@ export function TrajectoryTable({
   }
 
   const selectRecord = useCallback((index: number) => {
+    setCodeWrappingOnOpen(stringWrapping?.getDefault() ?? false)
     const record = allRecords.find(candidate => candidate.cell.index === index)
     onRecordSelect?.(index)
     setSelectedRequest(null)
@@ -2155,7 +2318,7 @@ export function TrajectoryTable({
     const available = new Set(tabs.map(tab => tab.id))
     const recent = [...tabHistory.current].reverse().find(tab => available.has(tab))
     setActiveTab(recent ?? tabs[0]?.id ?? 'overview')
-  }, [allRecords, onRecordSelect])
+  }, [allRecords, onRecordSelect, stringWrapping])
   useEffect(() => {
     if (
       recordSelection === null
@@ -2845,7 +3008,7 @@ export function TrajectoryTable({
                       <span className={css.detailsLocation}>
                         {selected.cell.kind === 'compacted'
                           ? sectionLabel(selected.turn, t)
-                          : `${sectionLabel(selected.turn, t)} · ${selected.group}`}
+                          : selected.group}
                       </span>
                     </>
                   )}
@@ -2879,7 +3042,9 @@ export function TrajectoryTable({
             id="trajectory-detail-panel"
             className={activeTab === 'overview'
               ? `${css.detailBody} ${css.detailBodySummary}`
-              : css.detailBody}
+              : selectedProgram !== undefined && (activeTab === 'input' || activeTab === 'output')
+                ? `${css.detailBody} ${css.detailBodyProgram}`
+                : css.detailBody}
             role="tabpanel"
             aria-labelledby={`trajectory-detail-${activeTab}`}
           >
@@ -3091,6 +3256,9 @@ export function TrajectoryTable({
               && selectedState !== undefined
               && activeTab === 'overview' && (
               <>
+                {selectedProgram !== undefined && selectedProgram.description !== '' && (
+                  <p className={css.programDescription}>{selectedProgram.description}</p>
+                )}
                 <dl
                   className={`${css.overview} ${css.summaryScrollRegion}`}
                   data-summary-scroll-region=""
@@ -3182,40 +3350,50 @@ export function TrajectoryTable({
                   )}
                 </dl>
                 <div className={css.overviewSections}>
-                  {isMarkdownRecord(selected)
+                  {selectedProgram !== undefined
                     ? (
                       <>
-                        <OverviewSection label={t('tab.preview')} onOpen={() => { activateTab('rendered') }}>
-                          <MarkdownRecordContent
-                            record={selected}
-                            renderImages={renderImages}
-                            rendered
-                            preview
-                            thinkingExpanded={thinkingExpanded}
-                            onThinkingExpandedChange={setThinkingExpanded}
-                            onOpenCall={openCallSummary}
-                            t={t}
-                          />
-                        </OverviewSection>
+                        <ProgramInput key={`preview:${selectedRecordId}`} program={selectedProgram}
+                          rawInput={selected.cell.inputDetail as string} initialWrapped={codeWrappingOnOpen}
+                          stringWrapping={stringWrapping} onOpen={() => { activateTab('input') }} t={t} />
+                        <ProgramOutput record={selected} stringWrapping={stringWrapping}
+                          onOpen={() => { activateTab('output') }} t={t} />
                       </>
                     )
-                    : (
-                      <>
-                        {selected.cell.inputDetail && (
-                          <OverviewSection label={t('tab.payload')} onOpen={() => { activateTab('input') }}>
-                            <RecordPayload record={selected} direction="input" preview renderImages={renderImages} stringWrapping={stringWrapping} t={t} />
+                    : isMarkdownRecord(selected)
+                      ? (
+                        <>
+                          <OverviewSection label={t('tab.preview')} onOpen={() => { activateTab('rendered') }}>
+                            <MarkdownRecordContent
+                              record={selected}
+                              renderImages={renderImages}
+                              rendered
+                              preview
+                              thinkingExpanded={thinkingExpanded}
+                              onThinkingExpandedChange={setThinkingExpanded}
+                              onOpenCall={openCallSummary}
+                              t={t}
+                            />
                           </OverviewSection>
-                        )}
-                        {selected.cell.outputDetail && (
-                          <OverviewSection label={t('tab.result')} onOpen={() => { activateTab('output') }}>
-                            <RecordPayload record={selected} direction="output" preview renderImages={renderImages} stringWrapping={stringWrapping} t={t} />
+                        </>
+                      )
+                      : (
+                        <>
+                          {selected.cell.inputDetail && (
+                            <OverviewSection label={t('tab.payload')} onOpen={() => { activateTab('input') }}>
+                              <RecordPayload record={selected} direction="input" preview renderImages={renderImages} stringWrapping={stringWrapping} t={t} />
+                            </OverviewSection>
+                          )}
+                          {selected.cell.outputDetail && (
+                            <OverviewSection label={t('tab.result')} onOpen={() => { activateTab('output') }}>
+                              <RecordPayload record={selected} direction="output" preview renderImages={renderImages} stringWrapping={stringWrapping} t={t} />
+                            </OverviewSection>
+                          )}
+                          <OverviewSection label={t('tab.schema')} onOpen={() => { activateTab('schema') }}>
+                            <RecordSchema record={selected} preview stringWrapping={stringWrapping} t={t} />
                           </OverviewSection>
-                        )}
-                        <OverviewSection label={t('tab.schema')} onOpen={() => { activateTab('schema') }}>
-                          <RecordSchema record={selected} preview stringWrapping={stringWrapping} t={t} />
-                        </OverviewSection>
-                      </>
-                    )}
+                        </>
+                      )}
                   {selectedAssistantRequestTarget !== undefined && (
                     <OverviewSection
                       label={t('timing.request')}
@@ -3260,10 +3438,16 @@ export function TrajectoryTable({
               <MessageSource record={selected} stringWrapping={stringWrapping} t={t} />
             )}
             {!promptSelected && selected !== undefined && activeTab === 'input' && (
-              <RecordPayload record={selected} direction="input" renderImages={renderImages} stringWrapping={stringWrapping} t={t} />
+              selectedProgram === undefined
+                ? <RecordPayload record={selected} direction="input" renderImages={renderImages} stringWrapping={stringWrapping} t={t} />
+                : <ProgramInput key={`input:${selectedRecordId}`} program={selectedProgram}
+                  rawInput={selected.cell.inputDetail as string} initialWrapped={codeWrappingOnOpen}
+                  stringWrapping={stringWrapping} t={t} />
             )}
             {!promptSelected && selected !== undefined && activeTab === 'output' && (
-              <RecordPayload record={selected} direction="output" renderImages={renderImages} stringWrapping={stringWrapping} t={t} />
+              selectedProgram === undefined
+                ? <RecordPayload record={selected} direction="output" renderImages={renderImages} stringWrapping={stringWrapping} t={t} />
+                : <ProgramOutput record={selected} stringWrapping={stringWrapping} t={t} />
             )}
             {!promptSelected && selected !== undefined && activeTab === 'schema' && (
               <RecordSchema record={selected} stringWrapping={stringWrapping} t={t} />
