@@ -9,6 +9,10 @@
  * ic_photo_outline_20, ic_paper_doc_outline_20, ic_paper_outline_20.
  */
 import type { ReactNode } from 'react'
+import {
+  CODE_EXTENSIONS, IMAGE_EXTENSIONS, PDF_EXTENSIONS, SHEET_EXTENSIONS, SLIDES_EXTENSIONS, WORD_EXTENSIONS,
+  fileExtension,
+} from './file-extensions.ts'
 import type { IconProps } from './icons/props.ts'
 
 /**
@@ -24,36 +28,22 @@ export interface LinkIconProps extends IconProps {
   kind: LinkIconKind
 }
 
-/** Code, web, and data extensions: all three categories share the code glyph. */
-const CODE_EXTENSIONS = new Set([
-  'ts', 'tsx', 'js', 'jsx', 'mjs', 'cjs', 'cts', 'mts', 'css', 'scss', 'sass', 'less',
-  'html', 'htm', 'vue', 'svelte', 'astro', 'json', 'jsonc', 'json5', 'yaml', 'yml',
-  'toml', 'xml', 'ini', 'env', 'sh', 'bash', 'zsh', 'fish', 'ps1', 'bat', 'cmd',
-  'py', 'pyi', 'rb', 'rs', 'go', 'java', 'kt', 'kts', 'c', 'cc', 'cpp', 'cxx',
-  'h', 'hh', 'hpp', 'cs', 'php', 'swift', 'sql', 'csv', 'tsv', 'proto', 'graphql',
-  'gql', 'lua', 'r', 'pl', 'scala', 'clj', 'cljs', 'ex', 'exs', 'erl', 'hs', 'dart',
-])
-
-const IMAGE_EXTENSIONS = new Set([
-  'png', 'jpg', 'jpeg', 'gif', 'svg', 'webp', 'avif', 'bmp', 'ico', 'tif', 'tiff', 'heic', 'heif',
-])
-
-const DOCUMENT_EXTENSIONS = new Set(['pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx'])
+/** Office-style documents share one paper-doc glyph on a link. */
+const DOCUMENT_SETS = [PDF_EXTENSIONS, SHEET_EXTENSIONS, SLIDES_EXTENSIONS, WORD_EXTENSIONS]
 
 /**
- * Derive a file path's link-icon category from its extension. Unknown and
- * missing extensions fall to `other` (the plain-paper glyph).
+ * Derive a file path's link-icon category from its extension. Code, web, and
+ * data files share the code glyph; unknown and missing extensions fall to
+ * `other` (the plain-paper glyph).
  * @param path - File path as the producing tool spelled it (either separator).
  * @returns The file's glyph category; never `url` or `folder`.
  */
 export function classifyLinkPath(path: string): LinkIconKind {
-  const name = path.slice(Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\')) + 1)
-  const dot = name.lastIndexOf('.')
-  if (dot < 0) return 'other'
-  const extension = name.slice(dot + 1).toLowerCase()
+  const extension = fileExtension(path)
+  if (extension === '') return 'other'
   if (CODE_EXTENSIONS.has(extension)) return 'code'
   if (IMAGE_EXTENSIONS.has(extension)) return 'image'
-  return DOCUMENT_EXTENSIONS.has(extension) ? 'document' : 'other'
+  return DOCUMENT_SETS.some(set => set.has(extension)) ? 'document' : 'other'
 }
 
 const GlobeGlyph = ({ size, className }: IconProps) => (

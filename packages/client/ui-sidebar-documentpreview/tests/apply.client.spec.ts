@@ -14,6 +14,7 @@ import { TEXTPREVIEW_ID, TEXTPREVIEW_KIND } from '../src/client/definition.ts'
 import { apply, inject } from '../src/client/index.ts'
 import { apply as hostApply } from '../src/index.ts'
 import { TextPreview } from '../src/client/TextPreview.tsx'
+import { TextTitle } from '../src/client/TextTitle.tsx'
 import { TextBody } from '../src/client/text/TextBody.tsx'
 import { PLAIN_BODY_ID } from '../src/client/text/index.ts'
 import { MarkdownBody } from '../src/client/markdown/MarkdownBody.tsx'
@@ -31,9 +32,9 @@ import { FILE, SESSION, TAB_ID, page } from './fixtures.client.ts'
 interface Recorded {
   name: string
   key: string
-  locale: string
-  store: unknown
-  inject: unknown
+  locale?: string
+  store?: unknown
+  inject?: unknown
   component: unknown
 }
 
@@ -79,7 +80,7 @@ describe('ui-sidebar-documentpreview apply', () => {
     expect(hostApply).not.toThrow()
   })
 
-  it('registers the type, its dictionaries, and the body seat under the type\'s id with a store and a face', async () => {
+  it('registers the type, its dictionaries, and the body and title seats under the type\'s id, the body with a store and a face', async () => {
     const { tabs, registered, dictionaries } = await boot()
     expect(tabs.get(TEXTPREVIEW_KIND)?.priority).toBe('fallback')
     expect(tabs.get(TEXTPREVIEW_KIND)?.id).toBe(TEXTPREVIEW_ID)
@@ -88,6 +89,7 @@ describe('ui-sidebar-documentpreview apply', () => {
     // take the kind over, and the seat must still find this body.
     expect(registered.map(entry => [entry.name, entry.key, entry.locale, entry.component])).toEqual([
       ['sidebar.right.pane.tab', TEXTPREVIEW_ID, 'sidebarDocumentPreview', TextPreview],
+      ['sidebar.right.pane.tab.title', TEXTPREVIEW_ID, undefined, TextTitle],
       ['sidebar.right.tab.document', PLAIN_BODY_ID, undefined, TextBody],
       ['sidebar.right.tab.document', MARKDOWN_BODY_ID, 'documentMarkdown', MarkdownBody],
       ['sidebar.right.tab.document', HTML_BODY_ID, 'documentHtml', HtmlBody],

@@ -433,7 +433,7 @@ describe('web e2e: seeded history renders through cold resume', () => {
     // Put the column back so the later goldens see the default frame.
     await column.locator('[data-sidebar-right-toggle]').click()
     await expect.poll(() => frame.getAttribute('data-rightbar-collapsed'), { timeout: 5_000 }).toBe('true')
-    await page.getByRole('button', { name: 'Open the sidebar', exact: true }).waitFor({ state: 'visible' })
+    await page.getByRole('button', { name: 'Open right sidebar', exact: true }).waitFor({ state: 'visible' })
     await page.getByRole('navigation', { name: 'Turn navigation', exact: true }).waitFor({ state: 'visible' })
   })
 
