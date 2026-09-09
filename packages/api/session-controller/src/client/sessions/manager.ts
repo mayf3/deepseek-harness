@@ -8,7 +8,6 @@ import type { WorkspaceId } from '@deepseek-ai/dsh-workspace/types'
 import type {
   SessionControlBaseline,
   SessionControlFrame,
-  SessionQueuedItem,
   SessionSummary,
   SessionJob as JobView,
 } from '../../types.ts'
@@ -96,8 +95,6 @@ export class SessionManager {
   private readonly sessions = new Map<SessionId, Session>()
   /** In-flight Session disposals remain here after instances leave `sessions`, so manager disposal can await quiescence. */
   private readonly sessionDisposals = new Set<Promise<void>>()
-  /** Latest transient queues, retained independently of Session object materialization. */
-  private readonly queues = new Map<SessionId, readonly SessionQueuedItem[]>()
   /**
    * Sessions that finished running while not selected — the sidebar's green
    * "done" reminder (manager-owned, survives connection generations; cleared
@@ -290,11 +287,6 @@ export class SessionManager {
     if (session === undefined) {
       session = this.createSession(sessionId)
       this.sessions.set(sessionId, session)
-      // Install the latest control baseline before the running-bit sync: a
-      // not-running summary must sweep replayed queue
-      // rows the same way a live status flip would (their retirement events dropped
-      // while the session was uninstantiated).
-      session.replaceControl(this.queues.get(sessionId) ?? [])
       // Sync the running and blank bits from the list snapshot into the new
       // instance (consistency when the list precedes open).
       const summary = this.summaries.find(s => s.sessionId === sessionId)
@@ -669,22 +661,12 @@ export class SessionManager {
       this.notifier.markDirty()
       return
     }
-    if (frame.type === 'jobs') {
-      if (frame.jobs.length === 0) this.jobsBySession.delete(frame.sessionId)
-      else this.jobsBySession.set(frame.sessionId, frame.jobs)
-      this.notifier.markDirty()
-      return
-    }
-    this.queues.set(frame.sessionId, frame.items)
-    this.sessions.get(frame.sessionId)?.handleControlFrame(frame)
+    if (frame.jobs.length === 0) this.jobsBySession.delete(frame.sessionId)
+    else this.jobsBySession.set(frame.sessionId, frame.jobs)
+    this.notifier.markDirty()
   }
 
   private replaceControlBaseline(baseline: SessionControlBaseline): void {
-    this.queues.clear()
-    for (const [sessionId, items] of Object.entries(baseline.queues)) {
-      this.queues.set(sessionId as SessionId, items)
-    }
-
     this.jobsBySession.clear()
     for (const [sessionId, jobs] of Object.entries(baseline.jobs)) {
       if (jobs.length > 0) this.jobsBySession.set(sessionId as SessionId, jobs)
@@ -695,9 +677,6 @@ export class SessionManager {
       const asOfSeq = sessionSeqCursor(block.asOfSeq)
       store.truncate(asOfSeq)
       store.seed({ ...block, asOfSeq })
-    }
-    for (const [sessionId, session] of this.sessions) {
-      session.replaceControl(this.queues.get(sessionId) ?? [])
     }
     this.notifier.markDirty()
   }
@@ -738,7 +717,6 @@ export class SessionManager {
     this.updateCatalogActivity(sessionId, false)
     if (durableSubagent) this.sessions.get(sessionId)?.handleRunning(false)
     else this.sessions.get(sessionId)?.handleRemoved()
-    this.queues.delete(sessionId)
     this.jobsBySession.delete(sessionId)
     if (!durableSubagent) this.projectionStores.delete(sessionId)
     const inflightCatalog = this.catalogInflight.get(sessionId)

@@ -130,10 +130,10 @@ describe('matrix row: plain', () => {
       actx: SCTX,
       defaultSink: () => Promise.resolve({ kind: 'success' }),
       inbox: { getSnapshot: () => undefined, subscribe },
-      commandImages: {
+      commandAttachments: {
         serialize: () => Promise.resolve([]),
         release: () => {},
-        unsupportedNotice: token => `${token.trim()} images-unsupported`,
+        unsupportedNotice: token => `${token.trim()} attachments-unsupported`,
       },
     })
 

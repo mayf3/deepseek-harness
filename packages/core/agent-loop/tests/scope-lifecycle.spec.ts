@@ -193,8 +193,10 @@ describe('agent scope lifecycle', () => {
     expect(after.sections.find(s => s.name === 'deployment:persona-prefix')?.text).toBe('You are the deployment.')
   })
 
-  it('keeps the inbox projection until the last owning agent fiber unloads', async () => {
+  it('keeps the inbox projection available after every agent fiber unloads', async () => {
     const ctx = await harness()
+    const cold = ctx.sessions.create(SessionId('projection-before-any-agent'))
+    expect(ctx.sessionProjections.stateOf(cold, 'inbox')).toEqual({ 'next-turn': [], 'next-step': [] })
     let first!: Awaited<ReturnType<typeof ctx.agents.create>>
     let second!: Awaited<ReturnType<typeof ctx.agents.create>>
     const firstOwner = await ctx.plugin(Object.assign(async (inner: Context) => {
@@ -214,7 +216,7 @@ describe('agent scope lifecycle', () => {
     await firstOwner.dispose()
     expect(ctx.sessionProjections.stateOf(second.agent.session, 'inbox')).toBeDefined()
     await secondOwner.dispose()
-    expect(ctx.sessionProjections.stateOf(second.agent.session, 'inbox')).toBeUndefined()
+    expect(ctx.sessionProjections.stateOf(second.agent.session, 'inbox')).toBeDefined()
 
     await Promise.all([first.dispose(), second.dispose()])
     await ctx.fiber.dispose()

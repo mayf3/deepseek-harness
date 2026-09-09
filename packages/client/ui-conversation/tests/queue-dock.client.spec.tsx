@@ -124,9 +124,9 @@ function kitFor(snapshot: SessionSnapshot, injected: Partial<QueueDockInjected> 
 }
 
 /** One queued row carrying a durable image reference (plus optional leading text). */
-function imageRow(id: string, refId: string, text = ''): QueuedMessage {
+function imageRow(id: string, refId: string, text = ''): UserMessage {
   return {
-    id: iid(id), messageId: `message-${id}` as never, placement: 'queued',
+    id: iid(id), role: 'user', source: { kind: 'user' },
     content: [
       ...text === '' ? [] : [{ type: 'text' as const, text }],
       {
@@ -134,7 +134,6 @@ function imageRow(id: string, refId: string, text = ''): QueuedMessage {
         attachment: { attachmentId: refId, mediaType: 'image/png', bytes: 1, width: 1, height: 1 },
       } as never,
     ],
-    preview: text, text: null,
   }
 }
 
@@ -172,7 +171,7 @@ describe('QueueDock', () => {
     }
     const source = liveSession(pending)
     const props = kitFor(pending)
-    const view = render(<QueueDock {...props} useSession={source.useSession} />)
+    const view = render(<QueueDock {...props} useSession={source.useSession} useProjection={source.useProjection} />)
     expect(view.getByText('等待上传').closest('[data-submission-echo]')).not.toBeNull()
     expect(view.getByRole('img', { name: '排队消息图片' }).getAttribute('src')).toBe('blob:queue-preview')
     expect(view.getByLabelText('排队文件 notes.txt').textContent).toContain('2.4GB')
@@ -188,7 +187,7 @@ describe('QueueDock', () => {
     act(() => {
       source.push({
         ...pending,
-        queue: [{ ...row('accepted', '等待上传'), rpcId: 'req-local-queue' as never }],
+        testInbox: { 'next-turn': [{ ...row('accepted', '等待上传'), source: { kind: 'user', rpcId: 'req-local-queue' as never } }], 'next-step': [] },
       })
     })
     expect(view.getAllByText('等待上传')).toHaveLength(1)
@@ -202,7 +201,7 @@ describe('QueueDock', () => {
   })
 
   it('loads the durable thumbnail after replacing a local image echo', async () => {
-    const pending: SessionSnapshot = {
+    const pending: TestSnapshot = {
       ...snapshotWith([]),
       pendingSubmissions: [{
         requestId: 'req-image' as never, placement: 'queued', time: 1,
@@ -215,14 +214,16 @@ describe('QueueDock', () => {
     const image = Promise.withResolvers<string>()
     const loadImage = vi.fn(() => image.promise)
     const source = liveSession(pending)
-    const view = render(<QueueDock {...kitFor(pending, { loadImage })} useSession={source.useSession} />)
+    const view = render(
+      <QueueDock {...kitFor(pending, { loadImage })} useSession={source.useSession} useProjection={source.useProjection} />,
+    )
     expect(view.getByRole('img', { name: '排队消息图片' }).getAttribute('src')).toBe('blob:local-preview')
     expect(loadImage).not.toHaveBeenCalled()
 
     act(() => {
       source.push({
         ...pending,
-        queue: [{ ...imageRow('accepted-image', 'durable-image', 'queued image'), rpcId: 'req-image' as never }],
+        testInbox: { 'next-turn': [{ ...imageRow('accepted-image', 'durable-image', 'queued image'), source: { kind: 'user', rpcId: 'req-image' as never } }], 'next-step': [] },
       })
     })
     expect(view.container.querySelector('[data-submission-echo]')).toBeNull()
@@ -238,7 +239,7 @@ describe('QueueDock', () => {
   })
 
   it('keeps sending status visible while a queue containing local submissions is collapsed', () => {
-    const pending: SessionSnapshot = {
+    const pending: TestSnapshot = {
       ...snapshotWith([row('accepted', '已排队')]),
       pendingSubmissions: [{
         requestId: 'req-waiting' as never, placement: 'queued', time: 1,
@@ -246,7 +247,7 @@ describe('QueueDock', () => {
       }],
     }
     const source = liveSession(pending)
-    const view = render(<QueueDock {...kitFor(pending)} useSession={source.useSession} />)
+    const view = render(<QueueDock {...kitFor(pending)} useSession={source.useSession} useProjection={source.useProjection} />)
     expect(view.getByRole('status').textContent).toBe('发送中…')
     const header = view.getByRole('button', { name: /2 条排队消息\s*发送中…/ })
     expect(header.getAttribute('aria-expanded')).toBe('false')
@@ -360,6 +361,16 @@ describe('QueueDock', () => {
     expect(view.queryByText('three')).toBeNull()
   })
 
+  it('flattens and caps previews at 200 code points while preserving complete editable text', () => {
+    const text = `  before   ${'🙂'.repeat(201)}  after`
+    const snap = snapshotWith([row('long-preview', text)])
+    const source = liveSession(snap)
+    const view = render(<QueueDock {...kitFor(snap)} useSession={source.useSession} useProjection={source.useProjection} />)
+    expect(view.getByText(`before ${'🙂'.repeat(193)}…`)).toBeTruthy()
+    fireEvent.click(view.getByLabelText('编辑排队消息'))
+    expect((view.getByRole('textbox') as HTMLInputElement).value).toBe(text)
+  })
+
   it('renders active actions and disables editing for mixed-content rows', () => {
     const snap = snapshotWith([
       row('i-1', '第一条排队消息'),
@@ -371,7 +382,7 @@ describe('QueueDock', () => {
     )
     fireEvent.click(getByRole('button', { name: '2 条排队消息' }))
     expect([...container.querySelectorAll('li')].map(item => item.textContent))
-      .toEqual(['第一条排队消息', 'image [image]'])
+      .toEqual(['第一条排队消息', 'image'])
     expect(container.querySelectorAll('button')).toHaveLength(7)
     expect(container.querySelectorAll('[aria-label="编辑排队消息"]')).toHaveLength(2)
     expect(container.querySelectorAll('[aria-label="删除排队消息"]')).toHaveLength(2)
@@ -387,7 +398,7 @@ describe('QueueDock', () => {
     const snap = snapshotWith([imageRow('i-img', 'att-9', '带图消息')])
     const source = liveSession(snap)
     const { container } = render(
-      <QueueDock {...kitFor(snap, { loadImage })} useSession={source.useSession} />,
+      <QueueDock {...kitFor(snap, { loadImage })} useSession={source.useSession} useProjection={source.useProjection} />,
     )
 
     await waitFor(() => {
@@ -400,8 +411,8 @@ describe('QueueDock', () => {
 
   it('renders durable files and images in their original queue order', async () => {
     const loadImage = vi.fn(() => Promise.resolve('blob:mixed'))
-    const mixed: QueuedMessage = {
-      id: iid('i-mixed'), messageId: 'message-i-mixed' as never, placement: 'queued',
+    const mixed: UserMessage = {
+      id: iid('i-mixed'), role: 'user', source: { kind: 'user' },
       content: [
         {
           type: 'file',
@@ -415,11 +426,10 @@ describe('QueueDock', () => {
           },
         },
       ],
-      preview: '', text: null,
     }
     const snap = snapshotWith([mixed])
     const source = liveSession(snap)
-    const view = render(<QueueDock {...kitFor(snap, { loadImage })} useSession={source.useSession} />)
+    const view = render(<QueueDock {...kitFor(snap, { loadImage })} useSession={source.useSession} useProjection={source.useProjection} />)
     await waitFor(() => { expect(view.container.querySelector('img')).not.toBeNull() })
     const group = view.getByLabelText('排队文件 report.csv').parentElement
     expect(group?.children).toHaveLength(2)
@@ -432,7 +442,7 @@ describe('QueueDock', () => {
     const snap = snapshotWith([imageRow('i-broken', 'att-x')])
     const source = liveSession(snap)
     const { container } = render(
-      <QueueDock {...kitFor(snap, { loadImage })} useSession={source.useSession} />,
+      <QueueDock {...kitFor(snap, { loadImage })} useSession={source.useSession} useProjection={source.useProjection} />,
     )
 
     await act(async () => { await Promise.resolve() })
@@ -446,7 +456,7 @@ describe('QueueDock', () => {
     const snap = snapshotWith([imageRow('i-late', 'att-late')])
     const source = liveSession(snap)
     const { unmount } = render(
-      <QueueDock {...kitFor(snap, { loadImage })} useSession={source.useSession} />,
+      <QueueDock {...kitFor(snap, { loadImage })} useSession={source.useSession} useProjection={source.useProjection} />,
     )
 
     unmount()
@@ -567,7 +577,7 @@ describe('QueueDock', () => {
     }
     const source = liveSession(snap)
     const view = render(
-      <QueueDock {...kitFor(snap)} useSession={source.useSession} />,
+      <QueueDock {...kitFor(snap)} useSession={source.useSession} useProjection={source.useProjection} />,
     )
 
     expect(view.getByText('pending child follow-up')).toBeTruthy()

@@ -8,13 +8,13 @@ import { SESSION_FORMAT_VERSION, SessionLogOffset, SessionSeq } from '@deepseek-
 import { describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import SessionStore from '@deepseek-ai/dsh-session'
-import AgentRegistry, { agentEvents, Inbox } from '@deepseek-ai/dsh-agent'
+import AgentRegistry from '@deepseek-ai/dsh-agent'
 import { SessionHistoryController } from '@deepseek-ai/dsh-api-session-controller/src/history.ts'
 import { subagentIdentityProjectionDefinition } from '@deepseek-ai/dsh-subagent/src/projection.ts'
 import TypertRegistry from '@deepseek-ai/dsh-typert-registry'
 import { createUserMessage, MessageId } from '@deepseek-ai/dsh-llm'
 import { snapshotSubagentDescriptor } from '@deepseek-ai/dsh-subagent'
-import { createInboxStub } from '@deepseek-ai/dsh-agent-loop-testkit'
+import { createInboxStub, mountAgentLoopTestDependencies, mountAgentLoopTestHarness } from '@deepseek-ai/dsh-agent-loop-testkit'
 import type { Agent, Inbox } from '@deepseek-ai/dsh-agent'
 import type { SessionEvent, SessionHeader, SessionId } from '@deepseek-ai/dsh-session'
 import AttachmentStore from '@deepseek-ai/dsh-attachment'
@@ -22,6 +22,7 @@ import type { SessionPromptRequest, SessionRequestId } from '../src/types.ts'
 import {
   SessionPersistenceRevision,
   type SessionPersistenceSnapshot,
+  type SessionHandle, SessionAccess,
 } from '@deepseek-ai/dsh-session-persistence'
 import {
   createSessionTestRemote,
@@ -273,8 +274,8 @@ describe('cold history recovery view', () => {
 describe('Remote Agent and Session lookup policy', () => {
   it('resumes a cold session before mutating a restored queue row', async () => {
     const ctx = new Context()
-    await ctx.plugin(SessionStore)
-    await ctx.plugin(AgentRegistry)
+    await mountAgentLoopTestDependencies(ctx)
+    await mountAgentLoopTestHarness(ctx)
     const sessionId = sid('session-cold-queue-mutation')
     const meta = header(sessionId, 1000)
     const message = createUserMessage({
@@ -290,35 +291,19 @@ describe('Remote Agent and Session lookup policy', () => {
     providePersistence(ctx, {
       list: () => Promise.resolve([meta]),
       inspect: () => Promise.resolve({ meta, events }),
-      locate: () => undefined,
+      open: (_id: SessionId, access: SessionAccess): Promise<SessionHandle> => Promise.resolve({
+        id: sessionId,
+        header: meta,
+        inheritedEventCount: SessionLogOffset(0),
+        access,
+        read: () => Promise.resolve({ eventState: 'detached', events: structuredClone(events) }),
+        append: (appended) => { events.push(...appended); return Promise.resolve() },
+        flush: () => Promise.resolve(),
+        close: () => Promise.resolve(),
+        [Symbol.asyncDispose]: () => Promise.resolve(),
+      }),
     })
-    let resumedAgent: Agent | undefined
-    const resume = vi.spyOn(ctx.agents, 'resume').mockImplementation(async () => {
-      const session = ctx.sessions.create(sessionId, {
-        seed: events,
-        meta: { cwd: '/proj', createdAt: meta.createdAt },
-      })
-      resumedAgent = {
-        id: session.id,
-        options: {},
-        session,
-        inbox: undefined as never,
-        status: 'idle',
-        ctx,
-        send() {},
-        followup() {},
-        steer() {},
-        inject() {},
-        cancel() {},
-        runMaintenance: task => task(new AbortController().signal),
-        whenIdle: () => Promise.resolve(),
-      } satisfies Agent
-      Object.assign(resumedAgent, {
-        inbox: new Inbox(ctx, resumedAgent.session, agentEvents(ctx, resumedAgent)),
-      })
-      ctx.agents.register(resumedAgent)
-      return { agent: resumedAgent, dispose: () => Promise.resolve() }
-    })
+    const resume = vi.spyOn(ctx.agents, 'resume')
     const remote = createSessionTestRemote(ctx, {
       defaultModelSelection: () => ({ provider: 'p', model: 'm' }),
       cwd: '/tmp',
@@ -332,11 +317,13 @@ describe('Remote Agent and Session lookup policy', () => {
 
     expect(response).toEqual({ ok: true, value: { accepted: true } })
     expect(resume).toHaveBeenCalledOnce()
+    const resumedAgent = ctx.agents.get(sessionId)
     expect(resumedAgent?.inbox.nextTurn).toEqual([])
-    expect(resumedAgent?.session.events.at(-1)).toMatchObject({
+    expect(resumedAgent?.session.snapshotEvents().at(-1)).toMatchObject({
       type: 'agent/inbox/spliced',
       data: { target: 'next-turn', start: 0, removedCount: 1, inserted: [], outcome: 'canceled' },
     })
+    await ctx.fiber.dispose()
   })
 
   it('keeps queue-item-not-found for a cold session when no persistence backend is composed', async () => {
@@ -355,7 +342,7 @@ describe('Remote Agent and Session lookup policy', () => {
     }))
 
     expect(response.ok).toBe(false)
-    if (!response.ok) expect(response.error.code).toBe('queue-item-not-found')
+    if (!response.ok) expect(response.error.code).toBe('session/queue-item-not-found')
   })
 
   it('deduplicates a cold resume across Agent and Session parameters', async () => {
@@ -473,8 +460,7 @@ describe('Remote Agent and Session lookup policy', () => {
 
     const resolution = lookup.resolve(sessionId)
 
-    await expect(resolution).rejects.toBeInstanceOf(TypertLookupFailure)
-    await expect(resolution).rejects.toMatchObject({ failure: { code: 'agent-busy' } })
+    await expect(resolution).rejects.toMatchObject({ code: 'session/agent-busy' })
   })
 })
 

@@ -7,7 +7,7 @@ import { SessionSeq, type SessionEvent, type SessionId } from '@deepseek-ai/dsh-
 import { RemoteError } from '@deepseek-ai/dsh-typert-protocol'
 import { Session } from '../src/client/sessions/session.ts'
 import type { PendingSubmissionRetirement } from '../src/client/contract/session.ts'
-import type { SessionQueuedItem, SessionRequestId } from '../src/types.ts'
+import type { SessionRequestId } from '../src/types.ts'
 import { FakeApiClient, err, fakeRemote, ok } from './fake-api.client.ts'
 import { historyValue } from './event-script.client.ts'
 
@@ -60,21 +60,17 @@ function promptEvent(seq: SessionSeq, rpcId: SessionRequestId, refs: readonly At
   } as unknown as SessionEvent
 }
 
-function queuedItem(rpcId: SessionRequestId, refs: readonly AttachmentRef[] = []): SessionQueuedItem {
-  return {
-    id: 'm-queued' as SessionQueuedItem['id'],
-    placement: 'queued',
-    rpcId,
-    message: {
-      id: 'm-queued' as SessionQueuedItem['id'],
-      content: refs.map(attachmentBlock) as unknown as SessionQueuedItem['message']['content'],
-    },
-  }
+function queuedItem(rpcId: SessionRequestId, refs: readonly AttachmentRef[] = []) {
+  return createUserMessage({
+    source: { kind: 'user', rpcId },
+    content: refs.map(attachmentBlock),
+  })
 }
 
 /** Let the frame-delayed retirement (setTimeout fallback in this node environment) run. */
-function settleFrames(): Promise<void> {
-  return new Promise(resolve => setTimeout(resolve, 0))
+async function settleFrames(): Promise<void> {
+  await Promise.resolve()
+  await new Promise(resolve => setTimeout(resolve, 0))
 }
 
 describe('beginSubmission', () => {
@@ -185,6 +181,25 @@ describe('observed retirement', () => {
     expect(retirements).toEqual([{ reason: 'observed', attachments: refs }])
   })
 
+  it('retires an accepted echo when a claim clears the projection before its notification', async () => {
+    const { api, session } = makeSession()
+    api.onHistory = () => Promise.resolve(ok(historyValue([])))
+    await session.open()
+    const onRetire = vi.fn()
+    const handle = session.beginSubmission({ mode: 'steer', text: 'accepted', attachments: [], onRetire })
+    const refs = [imageRef('claimed-image')]
+    const message = queuedItem(handle.requestId, refs)
+    session.projections.apply('inbox', { 'next-turn': [], 'next-step': [message] }, SessionSeq(0))
+    session.projections.apply('inbox', { 'next-turn': [], 'next-step': [] }, SessionSeq(1))
+    await api.pushFollow(SID, { type: 'event', event: {
+      type: 'agent/inbox/spliced', seq: SessionSeq(0), time: 1,
+      data: { target: 'next-step', start: 0, inserted: [message] },
+    } as never })
+    await settleFrames()
+    expect(session.getSnapshot().pendingSubmissions).toEqual([])
+    expect(onRetire).toHaveBeenCalledExactlyOnceWith({ reason: 'observed', attachments: refs })
+  })
+
   it('a queue occurrence carrying the rpcId retires the echo (running-turn submissions)', async () => {
     const { session } = makeSession()
     const retirements: PendingSubmissionRetirement[] = []
@@ -196,12 +211,14 @@ describe('observed retirement', () => {
       onRetire: retirement => retirements.push(retirement),
     })
     const refs = [imageRef('att-q')]
-    session.handleControlFrame({ type: 'queue', sessionId: SID, items: [queuedItem(handle.requestId, refs)] })
+    session.projections.apply('inbox', { 'next-turn': [queuedItem(handle.requestId, refs)], 'next-step': [] }, SessionSeq(1))
     await settleFrames()
     expect(session.getSnapshot().pendingSubmissions).toEqual([])
     expect(retirements).toEqual([{ reason: 'observed', attachments: refs }])
     // The queue projection keeps the correlation id for render-time dedupe.
-    expect(session.getSnapshot().queue).toMatchObject([{ rpcId: handle.requestId }])
+    expect(session.projections.get('inbox')).toMatchObject({
+      'next-turn': [{ source: { rpcId: handle.requestId } }],
+    })
   })
 
   it('retires a mixed echo with durable references in original selection order', async () => {
@@ -263,9 +280,7 @@ describe('observed retirement', () => {
       attachments: [],
       onRetire: retirement => retirements.push(retirement),
     })
-    session.handleControlFrame({
-      type: 'queue', sessionId: SID, items: [queuedItem(handle.requestId, [])],
-    })
+    session.projections.apply('inbox', { 'next-turn': [queuedItem(handle.requestId, [])], 'next-step': [] }, SessionSeq(1))
     await api.pushFollow(SID, {
       type: 'event', event: promptEvent(SessionSeq(0), handle.requestId) as never,
     })

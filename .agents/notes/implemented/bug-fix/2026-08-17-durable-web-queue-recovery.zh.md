@@ -12,9 +12,9 @@ Inbox 接受消息时会记录规范化的 `agent/inbox/spliced` 事件，但 We
 
 ## 决策
 
-`AgentRegistry` 会在 Session projection registry 已组合时注册标准 `inbox` 投影。该投影从完整会话日志中折叠规范化的 `agent/inbox/spliced` 操作，得到完整的 `{ 'next-turn', 'next-step' }` 状态，并直接暴露同一状态。因此 fork 会像其他投影一样，自然投影其 seed 中继承的待处理 Inbox 操作。其 schema 与 `InboxState` 类型只有一个定义；消息值依赖既有的类型化 `UserMessage` 约定，而不增加第二套运行时消息校验器。
+`AgentLoop` 会在 Session projection registry 已组合时注册标准 `inbox` 投影。该投影从完整会话日志中折叠规范化的 `agent/inbox/spliced` 操作，得到完整的 `{ 'next-turn', 'next-step' }` 状态，并直接暴露同一状态。因此 fork 会像其他投影一样，自然投影其 seed 中继承的待处理 Inbox 操作。其 schema 与 `InboxState` 类型只有一个定义；消息值依赖既有的类型化 `UserMessage` 约定，而不增加第二套运行时消息校验器。
 
-投影注册表同时拥有持久重建与 live 状态。其既有的 `session/event` 驱动会在 `Session.append()` 返回前折叠每个已提交 splice。每个 Agent 的 `Inbox` 命令 facade 都读取同一份注册表状态。Inbox 在 append 前规范化 splice 坐标并检查待处理 `MessageId` 唯一性。Inbox 不遍历 `session.events`，不复制已折叠数组，也不再次应用已提交 transition。它仍发出其变更拥有的逐消息 `inserted`、`discarded` 与 `claimed` live 通知。
+投影注册表同时拥有持久重建与 live 状态。其既有的 `session/event` 驱动会在 `Session.append()` 返回前折叠每个已提交 splice。每个 Agent 的 `ReactLoopInbox` 命令 facade 都读取同一份注册表状态。Inbox 在 append 前规范化 splice 坐标并检查待处理 `MessageId` 唯一性。Inbox 不遍历 `session.events`，不复制已折叠数组，也不再次应用已提交 transition。它仍发出其变更拥有的逐消息 `inserted`、`discarded` 与 `claimed` live 通知。
 
 通用会话投影传输层是唯一 Web 传输。它发送 seq 更高的 `session/projection` 值，在历史尾页中包含完整 values 块，折叠已分离的冷日志，并在缓存有效时使用投影缓存。系统不存在 Host 拥有的 `queue` 投影、placement 词汇、handoff 列表、专用 queue 帧或枚举 live Agent 的重连逻辑。
 

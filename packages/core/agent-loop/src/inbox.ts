@@ -76,9 +76,7 @@ export class ReactLoopInbox implements InboxContract {
     private readonly projections: SessionProjectionRegistry,
     private readonly session: Session,
     private readonly dispatch: AgentEventDispatch,
-  ) {
-    this.projections.register(inboxProjectionDefinition)
-  }
+  ) {}
 
   /** Prompts awaiting individual turns. */
   get nextTurn(): readonly UserMessage[] {
@@ -188,7 +186,7 @@ export class ReactLoopInbox implements InboxContract {
   /** Read the current durable projection state. */
   private current(): InboxState {
     const state = this.projections.stateOf(this.session, 'inbox')
-    /* v8 ignore next -- the constructor registers this key before any read */
+    /* v8 ignore next -- AgentLoop registers this key before publishing its factory */
     if (state === undefined) {
       throw new Error(
         `agent "${this.session.id}" cannot read inbox state: its projection registration is not active`,
