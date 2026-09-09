@@ -75,7 +75,6 @@ describe('web e2e: Cordis tools use their owned cards', () => {
   beforeAll(async () => {
     scaffold = await launchWebScaffold({
       cordisTools: true,
-      extraOverlayPath: fileURLToPath(new URL('./cordis-tool-round.overlay.yml', import.meta.url)),
       compareReplaySession: true,
       ...(MODE === 'record' ? {} : { replayFixture: FIXTURE, paceMs: 15 }),
     })
