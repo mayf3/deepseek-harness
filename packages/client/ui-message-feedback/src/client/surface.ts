@@ -14,7 +14,9 @@ import { FeedbackDialogController } from './dialog.ts'
 
 /** The per-session pair behind every entry of one Session. */
 export class FeedbackSurface {
+  /** The Session's message-feedback object layer, shared by every message control. */
   readonly feedback: MessageFeedbackController
+  /** The Session's dialog and toast state, shared by the overlay entry and the message controls. */
   readonly dialog: FeedbackDialogController
 
   /**
