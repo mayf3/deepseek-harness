@@ -11,7 +11,7 @@ import {
   type Sandbox,
 } from '@deepseek-ai/dsh-e2b'
 import type E2BRuntime from '@deepseek-ai/dsh-e2b'
-import type { SubprocessTerminalSpawnSpec } from '@deepseek-ai/dsh-subprocess'
+import { SubprocessExecutableNotFoundError, type SubprocessTerminalSpawnSpec } from '@deepseek-ai/dsh-subprocess'
 import E2BSubprocessRuntime from '@deepseek-ai/dsh-subprocess-e2b'
 import { spawnE2BTerminal } from '../src/terminal.ts'
 
@@ -85,6 +85,7 @@ class FakeTerminalSandbox {
   readonly commands: string[] = []
   readonly commandOptions: CommandOptions[] = []
   readonly inputs: Array<{ pid: number; data: Buffer }> = []
+  readonly sizes: Array<{ pid: number; cols: number; rows: number }> = []
   readonly removed: string[] = []
   readonly directories: string[] = []
   readonly writes = new Map<string, string>()
@@ -196,6 +197,10 @@ class FakeTerminalSandbox {
       },
     },
     pty: {
+      resize: async (pid: number, size: { cols: number; rows: number }, options?: { signal?: AbortSignal }): Promise<void> => {
+        options?.signal?.throwIfAborted()
+        this.sizes.push({ pid, ...size })
+      },
       create: async (options: Parameters<Sandbox['pty']['create']>[0]): Promise<CommandHandle> => {
         this.createOptions = options
         if (this.createError !== undefined) throw this.createError
@@ -240,6 +245,7 @@ function spec(overrides: Partial<SubprocessTerminalSpawnSpec> = {}): SubprocessT
     cwd: '/workspace',
     rows: 24,
     cols: 80,
+    terminalType: 'dumb',
     graceMs: 5,
     env: { TERM: 'dumb', DSH_SESSION_ID: 'owner', TOKEN_EXPLICIT: 'kept' },
     ...overrides,
@@ -270,6 +276,21 @@ function testSpawn(
 }
 
 describe('E2B terminal allocation', () => {
+  it('preserves the requested terminal type and resizes the remote PTY only while running', async () => {
+    const fake = new FakeTerminalSandbox()
+    const terminal = await testSpawn(runtime(fake), spec({ terminalType: 'xterm-256color' }), '/runtime/interactive')
+    try {
+      expect(fake.writes.get('/runtime/interactive/environment')).toContain('TERM=xterm-256color\0')
+      await terminal.resize(132, 40)
+      expect(fake.sizes).toEqual([{ pid: terminal.pid, cols: 132, rows: 40 }])
+      fake.handle.succeed()
+      await terminal.done
+      await expect(terminal.resize(80, 24)).rejects.toThrow('terminal process has exited')
+    } finally {
+      await terminal.terminate()
+    }
+  })
+
   it('hides bootstrap-shell bytes and preserves requested-shell bytes across the output boundary', async () => {
     const fake = new FakeTerminalSandbox()
     const terminal = await testSpawn(runtime(fake), spec(), '/runtime/terminal-one')
@@ -811,6 +832,40 @@ describe('E2B subprocess terminal service', () => {
     await expect(ctx.subprocess.resolveExecutable('node')).rejects.toThrow('did not resolve')
     fake.resolvedExecutable = '/one\n/two\n'
     await expect(ctx.subprocess.resolveExecutable('node')).rejects.toThrow('did not resolve')
+  })
+
+  it.each(['/missing/shell', 'missing-shell'])('classifies missing remote executable %s and preserves other failures', async (command) => {
+    const { ctx, fake, fiber } = await service()
+    try {
+      for (const exitCode of [1, 127]) {
+        const error = commandError(exitCode)
+        fake.commandFailure = error
+        await expect(ctx.subprocess.resolveExecutable(command)).rejects.toMatchObject({
+          constructor: SubprocessExecutableNotFoundError,
+          cause: error,
+        })
+      }
+      for (const error of [commandError(126), new Error('sandbox disconnected')]) {
+        fake.commandFailure = error
+        await expect(ctx.subprocess.resolveExecutable(command)).rejects.toBe(error)
+      }
+    } finally {
+      await fiber.dispose()
+    }
+  })
+
+  it('discovers terminal environment facts from the remote sandbox and propagates transport failures', async () => {
+    const { ctx, fake, fiber } = await service()
+    try {
+      fake.ambient = 'SHELL=/opt/fish\0'
+      await expect(ctx.subprocess.terminalEnvironment()).resolves.toEqual({ platform: 'posix', defaultShell: '/opt/fish' })
+      fake.ambient = 'PATH=/usr/bin\0'
+      await expect(ctx.subprocess.terminalEnvironment()).resolves.toEqual({ platform: 'posix' })
+      fake.commandFailure = new Error('sandbox disconnected')
+      await expect(ctx.subprocess.terminalEnvironment()).rejects.toThrow('sandbox disconnected')
+    } finally {
+      await fiber.dispose()
+    }
   })
 
   it('rejects a non-positive poll cadence at load', async () => {

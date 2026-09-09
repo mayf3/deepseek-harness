@@ -123,6 +123,8 @@ spawn 会立即返回活动句柄，而不公开目标身份。`done` 独立报�
 
 -----
 
+终端消费者通过 `terminalEnvironment()` 读取 provider 平台和首选 shell，通过 `resolveExecutable()` 验证候选。确定未找到可执行文件时抛出 `SubprocessExecutableNotFoundError`，传输故障仍单独报告。`spawnTerminal` 要求 `terminalType` 和初始尺寸，返回的 handle 通过 `resize(cols, rows)` 调整尺寸，不重新分配进程。
+
 <a id="model-experience"></a>
 ## 模型体验
 

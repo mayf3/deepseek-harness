@@ -200,6 +200,7 @@ export class BashTerminalBackend implements TerminalBackend {
       env: childEnvironment(spec, this.config.shellDialect),
       rows: this.config.rows,
       cols: this.config.cols,
+      terminalType: 'dumb',
       graceMs: this.config.disposeGraceMs,
       signal: spec.signal,
     })

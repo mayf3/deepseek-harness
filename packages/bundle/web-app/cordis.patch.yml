@@ -107,6 +107,8 @@
 
     # Workspace file service: bounded read, directory listing, and the
     # agent-write change feed inside the session workspace root.
+    - id: terminal-controller
+      name: '@deepseek-ai/dsh-api-terminal-controller'
     - id: workspace-files
       name: '@deepseek-ai/dsh-api-workspace-files'
 
@@ -231,6 +233,8 @@
       name: '@deepseek-ai/dsh-client-ui-sidebar-documentpreview'
 
     # The right Sidebar's workspace file tree tab type.
+    - id: ui-sidebar-terminal
+      name: '@deepseek-ai/dsh-client-ui-sidebar-terminal'
     - id: ui-sidebar-files
       name: '@deepseek-ai/dsh-client-ui-sidebar-files'
 

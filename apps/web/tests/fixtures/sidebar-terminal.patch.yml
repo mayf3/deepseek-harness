@@ -1,0 +1,6 @@
+- id: terminal-controller
+  config:
+    shell:
+      path: /bin/bash
+      name: bash
+      args: [--noprofile, --norc, -i]

@@ -67,7 +67,7 @@ After every action the kit's settle planner keeps the surface populated: a docke
 
 The docked surface's last tab carries one more rule, decided in the store's `closeTab` and mirrored to the kit through `canCloseTab`: the guide standing as the only docked tab draws no close control and no menu close item — its chip sits quiet, and with no extension item contributed a secondary press opens no menu — and a programmatic close of it records nothing; any other tab standing alone closes together with the column in one entry — the settle planner reseeds the current default page for the next expansion. Floating panels take no part in the rule: they render whether or not the column is expanded, and their tabs close freely.
 
-State is memory-only. A reload returns every session to the collapsed default; switching sessions keeps each surface where it was.
+Layout, open tabs, navigation parameters and selection are memory-only. A reload constructs the collapsed default; content plugins can then reopen their own live content, as [terminal recovery](../ui-sidebar-terminal/README.md#use-this-package) does. Switching sessions keeps each surface where it was.
 
 <a id="extension-seats"></a>
 ## Extension seats
@@ -93,12 +93,14 @@ Two more seats extend what is already there: `sidebar.right.tab.guide` (chain) r
 
 The Tab domain retains navigation, an abort signal, and bound actions per (Session, tab id). A private assembly callback adopts each Session's store and reconciles records on its commits. Only record removal or plugin unload aborts the signal; closing the sidebar and switching Sessions retain records, while undo restores a new occurrence. `useTabInfo()` composes framework-bound store and navigation hooks without manual component subscriptions or render-time record creation. `tab.actions` always target their own Session; `tab.visible` distinguishes bodies from titles, and floating tabs remain visible when the sidebar closes. `adopt` is absent from the public controller.
 
+Tab owners register `registerCloseHandler(kind, handler)` through an effect. A handler can save background cleanup and return synchronously, allowing immediate removal, or return a Promise that the sidebar awaits before explicit close or replacement. A thrown or rejected handler preserves the tab. Collapse, presentation changes and plugin disposal do not invoke close handlers; the tab abort signal identifies occurrence disposal, not an explicit close.
+
 <a id="the-guide"></a>
 ## The guide
 
 Default pages depend on the number of registered guide entries, not the number of tab types or open tabs. Exactly one entry opens its page directly (Files in the shipped composition); zero or multiple entries open the guide. Explicitly adding a guide still opens the guide, even with one entry. The sole docked guide is the only tab that cannot close; closing any other sole tab also collapses the column. The chip, context menu, and `close` API apply the same rule.
 
-The guide tab is one entry capsule (a glyph and a title, nothing else) per `guide` entry the registered types contributed, in `order`, centred in the body; the guide has no words of its own. Picking a capsule calls `tab.actions.openTab(entry.kind, { replaceTab: true })`, so the guide gives way to the page it opened. A pane holds at most one guide tab. The strip's add control is drawn only while its pane holds none and opens one there with `openTab('guide', { paneId, revealIfOpened: false })`, so a guide in another pane does not capture the click; opening the guide into a pane that already has one focuses it instead; a guide dragged, dropped, or docked into such a pane merges into it — the arriving guide closes and the pane's own is focused; `duplicateTab` on the guide records nothing. A split or an emptied root pane uses the same default-page rule, one tab per new pane. A plain `openTab('guide')` keeps the tree-wide reveal every open has. The product allows two horizontal panes, initially equal, with divider ratios limited to 20%–80%. Insufficient width blocks a new split; with two panes already present, a body drop moves the tab between panes instead of creating a third. At the two-pane limit, split controls are hidden; closing back to one pane restores them.
+The guide tab is one entry capsule (a glyph and a title, nothing else) per `guide` entry the registered types contributed, in `order`, centred in the body; the guide has no words of its own. Picking a capsule replaces the guide with its page. An entry may set `revealIfOpened: false` to create another tab; omission keeps the normal reveal of an existing page. A pane holds at most one guide tab. The strip's add control is drawn only while its pane holds none and opens one there with `openTab('guide', { paneId, revealIfOpened: false })`, so a guide in another pane does not capture the click; opening the guide into a pane that already has one focuses it instead; a guide dragged, dropped, or docked into such a pane merges into it — the arriving guide closes and the pane's own is focused; `duplicateTab` on the guide records nothing. A split or an emptied root pane uses the same default-page rule, one tab per new pane. A plain `openTab('guide')` keeps the tree-wide reveal every open has. The product allows two horizontal panes, initially equal, with divider ratios limited to 20%–80%. Insufficient width blocks a new split; with two panes already present, a body drop moves the tab between panes instead of creating a third. At the two-pane limit, split controls are hidden; closing back to one pane restores them.
 
 <a id="copy"></a>
 ## Copy
@@ -118,7 +120,7 @@ None; this package neither assembles nor sends a provider request.
 
 <a id="known-limitations-and-deferred-work"></a>
 
-- **Memory-only.** Nothing is persisted; a reload starts every session collapsed.
+- **Memory-only layout.** Sidebar state is not persisted; content-specific recovery cannot reproduce the previous layout or selection.
 - **No surface without a session.** State is keyed by session id, so the hero screen shows nothing on the right.
 - **Hard-coded stacking.** The panel and the float host use fixed z-index values because the client has no z-index token layer yet.
 - **Undo is not exposed.** The recorded sequence is stepped only through the `@internal` service methods; product controls are deliberately absent.

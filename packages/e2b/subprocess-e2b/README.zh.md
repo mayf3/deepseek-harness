@@ -125,6 +125,8 @@ agent 可以在沙箱中打开交互式终端、发送输入、读取输出，�
 
 -----
 
+终端环境探测读取 sandbox 环境，终端 resize 使用 E2B PTY resize API。调用者指定的 `terminalType` 应用于远端子进程环境。shell 查找缺失与传输错误分别报告。
+
 <a id="model-experience"></a>
 ## 模型体验
 

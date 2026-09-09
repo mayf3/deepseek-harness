@@ -113,6 +113,8 @@ spill 文件以 `0600` 权限、`O_EXCL` 与随机名称在 `0700` 每进程目�
 
 -----
 
+终端分配通过 TERM 和 node-pty 使用调用者指定的 `terminalType`。动态 resize 更新已有 PTY。输出背压会暂停原生读取，待消费者排空后恢复；显式终止会恢复暂停的读取，以接收退出通知。
+
 <a id="model-experience"></a>
 ## 模型体验
 

@@ -68,6 +68,8 @@ export interface SidebarRightGuideEntry {
   readonly title: () => string
   /** Optional glyph, drawn before the title. */
   readonly icon?: ComponentType<IconProps>
+  /** Defaults to true; false makes this entry create another tab instead of focusing an existing one. */
+  readonly revealIfOpened?: boolean
 }
 
 /** A guide entry as the registry lists it: with the kind of the type that contributed it, which is what picking it opens. */

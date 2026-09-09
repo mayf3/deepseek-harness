@@ -198,6 +198,14 @@ export interface SubprocessHandle {
  */
 export type SubprocessTerminalSignal = 'SIGINT' | 'SIGTERM' | 'SIGKILL' | 'SIGTSTP' | 'SIGHUP'
 
+/** Shell-selection facts from the subprocess provider's execution environment. */
+export interface SubprocessTerminalEnvironment {
+  /** Operating-system family that interprets executable paths and shell arguments. */
+  platform: 'posix' | 'windows'
+  /** Login or environment-selected shell, when the provider can resolve one. */
+  defaultShell?: string
+}
+
 /** A fully specified terminal-process spawn. */
 export interface SubprocessTerminalSpawnSpec {
   /** Executable and arguments; `argv[0]` is the program. */
@@ -210,6 +218,8 @@ export interface SubprocessTerminalSpawnSpec {
   rows: number
   /** Initial terminal column count. */
   cols: number
+  /** Terminal emulation advertised to the child through TERM. */
+  terminalType: string
   /** TERM-to-KILL cleanup grace for the complete terminal session. */
   graceMs: number
   /** Cancellation of terminal allocation; a published handle owns its later lifetime. */
@@ -242,6 +252,12 @@ export interface SubprocessTerminalHandle {
    * @param data - text to deliver without implicit newline conversion.
    */
   write(data: string): Promise<void>
+  /**
+   * Change the terminal dimensions and notify its foreground application.
+   * @param cols - positive terminal column count.
+   * @param rows - positive terminal row count.
+   */
+  resize(cols: number, rows: number): Promise<void>
   /**
    * Inspect the current foreground process group.
    * @returns its id and input-wait fact, or undefined when no foreground group can be resolved.

@@ -163,7 +163,7 @@ describe('ui-sidebar-right apply', () => {
     // Held and pinned from the store's own commit: no seat synced anything.
     const occurrence = ctx.sidebarRight.tabDomain.occurrence(SESSION, guide)
     expect(resources.pin).toHaveBeenCalledWith('sidebar://guide', occurrence.signal)
-    occurrence.tabActions.close()
+    void occurrence.tabActions.close()
     expect(instance.getSnapshot().bySession[SESSION]?.layout.tabs[guide.id]).toBeUndefined()
     expect(occurrence.signal.aborted).toBe(true)
   })
@@ -199,7 +199,7 @@ describe('ui-sidebar-right apply', () => {
     await fiber.dispose()
     expect(signal.aborted).toBe(true)
     // The adoption went with the plugin: a late action from the dead occurrence changes nothing.
-    tabActions.close()
+    void tabActions.close()
     expect(instance.getSnapshot().bySession[SESSION]?.layout.tabs[guide.id]).toBeDefined()
     expect(ctx.get('sidebarRight')).toBeUndefined()
     expect(ctx.get('sidebarRightTabs')).toBeUndefined()

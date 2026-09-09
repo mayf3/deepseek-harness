@@ -113,6 +113,8 @@ Read these pages when the provider-level contract is not enough. They move from 
 
 -----
 
+Terminal allocation advertises the caller-provided `terminalType` through TERM and node-pty. Dynamic resize updates the existing PTY. Output backpressure pauses native reads until the consumer drains; explicit termination resumes a paused reader to receive the exit notification.
+
 <a id="model-experience"></a>
 ## Model Experience
 

@@ -125,6 +125,8 @@ Read these pages when the package-level contract is not enough. They move from t
 
 -----
 
+Terminal environment discovery reads the sandbox environment, and terminal resize uses the E2B PTY resize API. The caller-provided `terminalType` is applied to the remote child environment. Shell lookup misses are distinguished from transport errors.
+
 <a id="model-experience"></a>
 ## Model Experience
 

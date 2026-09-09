@@ -1,4 +1,6 @@
 import { PassThrough } from 'node:stream'
+import os from 'node:os'
+import { syncBuiltinESMExports } from 'node:module'
 import { describe, expect, it, vi } from 'vitest'
 import { basename, dirname, relative, resolve } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
@@ -40,6 +42,51 @@ function spec(command: string, overrides: Partial<SubprocessSpawnSpec> = {}): Su
 }
 
 describe('LocalSubprocessRuntime', () => {
+  it('discovers the platform shell without inventing a missing default and honors cancellation', async () => {
+    let loginShell: string | null = '/account/shell'
+    const userInfo = vi.spyOn(os, 'userInfo').mockImplementation(() => ({
+      uid: 1, gid: 1, username: 'terminal-user', homedir: '/home/terminal-user', shell: loginShell,
+    }))
+    let fiber: Awaited<ReturnType<Context['plugin']>> | undefined
+    let restorePlatform: (() => void) | undefined
+    try {
+      syncBuiltinESMExports()
+      const ctx = new Context()
+      fiber = await ctx.plugin(LocalSubprocessRuntime)
+      const platform = vi.spyOn(process, 'platform', 'get').mockReturnValue('linux')
+      restorePlatform = () => { platform.mockRestore() }
+      vi.stubEnv('SHELL', '/environment/shell')
+      await expect(ctx.subprocess.terminalEnvironment()).resolves.toEqual({
+        platform: 'posix', defaultShell: '/environment/shell',
+      })
+      expect(userInfo).not.toHaveBeenCalled()
+      vi.stubEnv('SHELL', undefined)
+      await expect(ctx.subprocess.terminalEnvironment()).resolves.toEqual({
+        platform: 'posix', defaultShell: '/account/shell',
+      })
+      loginShell = null
+      await expect(ctx.subprocess.terminalEnvironment()).resolves.toEqual({ platform: 'posix' })
+      platform.mockReturnValue('win32')
+      vi.stubEnv('ComSpec', 'C:\\Windows\\System32\\cmd.exe')
+      await expect(ctx.subprocess.terminalEnvironment()).resolves.toEqual({
+        platform: 'windows', defaultShell: 'C:\\Windows\\System32\\cmd.exe',
+      })
+      vi.stubEnv('ComSpec', undefined)
+      await expect(ctx.subprocess.terminalEnvironment()).resolves.toEqual({ platform: 'windows' })
+      platform.mockReturnValue('linux')
+      userInfo.mockClear()
+      const reason = new Error('terminal inspection cancelled')
+      await expect(ctx.subprocess.terminalEnvironment(AbortSignal.abort(reason))).rejects.toBe(reason)
+      expect(userInfo).not.toHaveBeenCalled()
+    } finally {
+      restorePlatform?.()
+      vi.unstubAllEnvs()
+      userInfo.mockRestore()
+      syncBuiltinESMExports()
+      await fiber?.dispose()
+    }
+  })
+
   it('places the host-exit finalizer before listeners that predate the service', async () => {
     const baseline = new Set(process.listeners('exit'))
     const prior = vi.fn()
@@ -223,7 +270,7 @@ describe('LocalSubprocessRuntime', () => {
     const ctx = new Context()
     const fiber = await ctx.plugin(LocalSubprocessRuntime)
     const base: SubprocessTerminalSpawnSpec = {
-      argv: ['bash'], cwd: process.cwd(), rows: 24, cols: 80, graceMs: 10,
+      argv: ['bash'], cwd: process.cwd(), rows: 24, cols: 80, terminalType: 'dumb', graceMs: 10,
     }
     await expect(ctx.subprocess.spawnTerminal({ ...base, argv: [] })).rejects.toThrow('must contain a program')
     await expect(ctx.subprocess.spawnTerminal({ ...base, argv: [''] })).rejects.toThrow('must contain a program')
@@ -240,6 +287,7 @@ describe('LocalSubprocessRuntime', () => {
       output: new PassThrough(),
       done: Promise.resolve({ exitCode: 0, signal: null }),
       write: async () => {},
+      resize: async () => {},
       inspectForeground: async () => undefined,
       signalForeground: async () => 1,
       terminate,
@@ -267,6 +315,7 @@ describe('LocalSubprocessRuntime', () => {
       output: new PassThrough(),
       done: Promise.resolve({ exitCode: 0, signal: null }),
       write: async () => {},
+      resize: async () => {},
       inspectForeground: async () => undefined,
       signalForeground: async () => 1,
       terminate: vi.fn(async () => { throw firstFailure }),
@@ -319,6 +368,7 @@ describe('LocalSubprocessRuntime', () => {
       output: new PassThrough(),
       done: Promise.resolve({ exitCode: 0, signal: null }),
       write: async () => {},
+      resize: async () => {},
       inspectForeground: async () => undefined,
       signalForeground: async () => 1,
       terminate: vi.fn(async () => { throw failure }),
@@ -394,7 +444,7 @@ describe('LocalSubprocessRuntime', () => {
       const fiber = await ctx.plugin(IsolatedLocalSubprocessRuntime)
       const service = ctx.subprocess as InstanceType<typeof IsolatedLocalSubprocessRuntime>
       const handle = await ctx.subprocess.spawnTerminal({
-        argv: ['shell'], cwd: process.cwd(), rows: 24, cols: 80, graceMs: 1,
+        argv: ['shell'], cwd: process.cwd(), rows: 24, cols: 80, terminalType: 'dumb', graceMs: 1,
       })
       expect((service as unknown as { terminals: Set<SubprocessTerminalHandle> }).terminals.size).toBe(1)
       exitListener?.({ exitCode: 0 })
@@ -486,6 +536,7 @@ describe('LocalSubprocessRuntime', () => {
         cwd: targetCwd,
         rows: 24,
         cols: 80,
+        terminalType: 'dumb',
         graceMs: 10,
         env: { PWD: '/stale-parent-cwd', TERM: 'xterm-256color', TARGET_VALUE: 'preserved' },
       })
@@ -566,7 +617,7 @@ describe('LocalSubprocessRuntime', () => {
       runtime.terminalInspector = inspector
 
       await expect(runtime.spawnTerminal({
-        argv: ['shell'], cwd: process.cwd(), rows: 24, cols: 80, graceMs: 10,
+        argv: ['shell'], cwd: process.cwd(), rows: 24, cols: 80, terminalType: 'dumb', graceMs: 10,
       })).rejects.toBe(launchFailure)
       expect(cleanup).toHaveBeenCalledOnce()
     } finally {
@@ -613,7 +664,7 @@ describe('LocalSubprocessRuntime', () => {
         signalProcess: () => {},
       }
       const handle = await ctx.subprocess.spawnTerminal({
-        argv: ['shell'], cwd: process.cwd(), rows: 24, cols: 80, graceMs: 1,
+        argv: ['shell'], cwd: process.cwd(), rows: 24, cols: 80, terminalType: 'dumb', graceMs: 1,
       })
       exitListener?.({ exitCode: 0 })
       await handle.done

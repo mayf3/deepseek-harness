@@ -73,13 +73,19 @@ describe('GuideBody', () => {
     cleanup()
   })
 
-  it('picking a box opens that type in the guide\'s own place', () => {
+  it('picking a box without a reveal preference preserves the default opening behavior', () => {
     const { view, openTab } = mountGuide([box('files', 10)])
     const entry = view.container.querySelector('[data-sidebar-right-guide-entry="files"]')
     if (entry === null) throw new Error('expected the files box')
     fireEvent.click(entry)
     expect(openTab).toHaveBeenCalledWith('files', { replaceTab: true })
     cleanup()
+  })
+
+  it.each([false, true])('passes an entry\'s explicit revealIfOpened=%s preference when replacing the guide', (revealIfOpened) => {
+    const { view, openTab } = mountGuide([{ ...box('terminal', 20), revealIfOpened }])
+    fireEvent.click(view.getByRole('button', { name: 'terminal title' }))
+    expect(openTab).toHaveBeenCalledExactlyOnceWith('terminal', { replaceTab: true, revealIfOpened })
   })
 
   it('draws an empty guide while no type contributed an entry, and follows the registry when one does', () => {

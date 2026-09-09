@@ -188,6 +188,7 @@ describe('resolvePwshPath and candidatePwshPaths (pure, every platform)', () => 
 describe('spawn construction (pure, every platform)', () => {
   /** A subprocess service that records spawn specs and settles instantly. */
   class CapturingSubprocessRuntime extends SubprocessRuntime {
+    async terminalEnvironment() { return { platform: 'posix' as const } }
     specs: SubprocessSpawnSpec[] = []
     done: Promise<SubprocessOutcome> = Promise.resolve({ exitCode: 0, signal: null })
     stderrText = ''

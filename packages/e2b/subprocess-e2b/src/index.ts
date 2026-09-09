@@ -9,18 +9,20 @@ import { posix } from 'node:path'
 import { inspect } from 'node:util'
 import { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
-import { SubprocessRuntime } from '@deepseek-ai/dsh-subprocess'
+import { SubprocessRuntime, SubprocessExecutableNotFoundError } from '@deepseek-ai/dsh-subprocess'
 import { MAX_TIMER_DELAY_MS } from '@deepseek-ai/dsh-timeout'
 import type {
   SubprocessHandle,
   SubprocessSpawnSpec,
   SubprocessTerminalHandle,
+  SubprocessTerminalEnvironment,
   SubprocessTerminalSpawnSpec,
 } from '@deepseek-ai/dsh-subprocess'
-import { e2bControlEnvs, quoteE2BShellArg } from '@deepseek-ai/dsh-e2b'
+import { CommandExitError, e2bControlEnvs, quoteE2BShellArg } from '@deepseek-ai/dsh-e2b'
 import { E2BSubprocessHandle } from './process.ts'
 import { asError, signalOpts } from './remote.ts'
 import { spawnE2BTerminal } from './terminal.ts'
+import { readRemoteEnvironment, scrubRemoteEnvironment } from './environment.ts'
 
 /** Configuration for the E2B subprocess adapter. */
 export interface Config {
@@ -120,7 +122,7 @@ export class E2BSubprocessRuntime extends SubprocessRuntime {
       await sandbox.commands.run(
         `test -f ${quoteE2BShellArg(command)} -a -x ${quoteE2BShellArg(command)}`,
         { envs: e2bControlEnvs(), ...signalOpts(signal) },
-      )
+      ).catch((error: unknown) => { throw executableLookupError(command, error) })
       signal?.throwIfAborted()
       return command
     }
@@ -134,7 +136,7 @@ export class E2BSubprocessRuntime extends SubprocessRuntime {
     const result = await sandbox.commands.run(
       `${prefix}command -v -- ${quoteE2BShellArg(command)}`,
       { cwd: this.ctx.e2b.cwd, envs: e2bControlEnvs(), ...signalOpts(signal) },
-    )
+    ).catch((error: unknown) => { throw executableLookupError(command, error) })
     signal?.throwIfAborted()
     const executable = result.stdout.trim()
     if (executable.includes('\n') || (!posix.isAbsolute(executable) && !executable.includes('/'))) {
@@ -142,6 +144,14 @@ export class E2BSubprocessRuntime extends SubprocessRuntime {
     }
     // A relative result comes from a relative PATH entry; the lookup ran with the shared cwd.
     return posix.resolve(this.ctx.e2b.cwd, executable)
+  }
+
+  /** @inheritdoc */
+  async terminalEnvironment(signal?: AbortSignal): Promise<SubprocessTerminalEnvironment> {
+    const sandbox = await this.ctx.e2b.getSandbox()
+    const environment = scrubRemoteEnvironment(await readRemoteEnvironment(sandbox, signal))
+    const defaultShell = environment.get('SHELL')
+    return { platform: 'posix', ...defaultShell === undefined ? {} : { defaultShell } }
   }
 
   /** @inheritdoc */
@@ -229,3 +239,10 @@ export class E2BSubprocessRuntime extends SubprocessRuntime {
 }
 
 export default E2BSubprocessRuntime
+
+function executableLookupError(command: string, error: unknown): unknown {
+  if (error instanceof CommandExitError && (error.exitCode === 1 || error.exitCode === 127)) {
+    return new SubprocessExecutableNotFoundError(`subprocess-e2b: executable ${JSON.stringify(command)} was not found`, { cause: error })
+  }
+  return error
+}
