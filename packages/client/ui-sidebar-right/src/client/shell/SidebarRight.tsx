@@ -43,6 +43,7 @@ import { dockLabels } from '../labels.ts'
 import type { SidebarRightOpenTabOptions } from '../service.ts'
 import type { SidebarRightTabDefinition } from '../tab-registry.ts'
 import type { createSidebarRightStore, SurfaceState } from '../stores.ts'
+import { canCloseTab } from '../stores.ts'
 import type { TabOccurrence } from '../tab-domain.ts'
 import type { SidebarRightTabNavigation } from '../contract/slots.ts'
 import type { TabHookContext } from '../tab-info.ts'
@@ -306,6 +307,7 @@ function SidebarPanel(panel: PanelProps & { width: number; panelRef: RefObject<H
           dropZones="horizontal"
           minPaneFraction={0.2}
           canAddTab={paneId => guideIn(surface.layout, paneId) === undefined}
+          canCloseTab={tabId => canCloseTab(surface, tabId)}
           intents={intentsFor(sessionId, actions, openTab)}
           labels={dockLabels(t)}
           renderTab={bodiesFor(panel)}
@@ -328,6 +330,7 @@ function Floats(panel: PanelProps): ReactNode {
     <div className={css.floatHost} data-sidebar-right-float-host>
       <FloatLayer
         state={surface.layout}
+        canCloseTab={tabId => canCloseTab(surface, tabId)}
         intents={intentsFor(sessionId, actions, openTab)}
         labels={dockLabels(t)}
         renderTab={bodiesFor(panel)}

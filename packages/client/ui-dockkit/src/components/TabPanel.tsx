@@ -3,7 +3,7 @@
  * active tab's body with the dock preview overlay. Presentational; every gesture
  * leaves through `PaneCallbacks`, and the body itself comes from `renderTab`.
  *
- * A chip is a capsule carrying one control, its close, at its right end; the
+ * A chip is a capsule carrying an optional close control at its right end; the
  * context menu (secondary press) carries the same close plus whatever the
  * embedder appends. The chips sit in their own box, the strip's one shrinking
  * part: in a narrow pane they ellipsize and then clip there, so the add
@@ -136,6 +136,7 @@ export function TabPanel({ state, pane, callbacks }: TabPanelProps): ReactNode {
           {pane.tabs.map((tabId, index) => {
             const tab = getTab(state, tabId)
             const selected = tabId === pane.activeTabId
+            const canClose = callbacks.canCloseTab(tabId)
             return (
               <Fragment key={tabId}>
                 {stripIndex === index && <div className={css.caret} data-dockkit-caret={index} />}
@@ -188,25 +189,28 @@ export function TabPanel({ state, pane, callbacks }: TabPanelProps): ReactNode {
                   }}
                 >
                   <span className={css.tabTitle} data-dockkit-tab-title>{callbacks.renderTabTitle?.(tab) ?? tab.title}</span>
-                  <button
-                    type="button"
-                    className={css.tabClose}
-                    aria-label={callbacks.labels.closeTab}
-                    data-dockkit-tab-close={tabId}
-                    // A nested control stops its own press: otherwise the press
-                    // starts a drag, captures the pointer, and this click never lands.
-                    onPointerDown={(event) => { event.stopPropagation() }}
-                    onClick={(event) => {
-                      event.stopPropagation()
-                      callbacks.onCloseTab(tabId)
-                    }}
-                  >
-                    <CloseGlyph />
-                  </button>
+                  {canClose && (
+                    <button
+                      type="button"
+                      className={css.tabClose}
+                      aria-label={callbacks.labels.closeTab}
+                      data-dockkit-tab-close={tabId}
+                      // A nested control stops its own press: otherwise the press
+                      // starts a drag, captures the pointer, and this click never lands.
+                      onPointerDown={(event) => { event.stopPropagation() }}
+                      onClick={(event) => {
+                        event.stopPropagation()
+                        callbacks.onCloseTab(tabId)
+                      }}
+                    >
+                      <CloseGlyph />
+                    </button>
+                  )}
                   {menu?.tabId === tabId && (
                     <TabMenu
                       labels={callbacks.labels}
                       anchor={menu.anchor}
+                      canCloseTab={canClose}
                       onClose={() => { setMenu(undefined); callbacks.onCloseTab(tabId) }}
                       onDismiss={() => { setMenu(undefined) }}
                       extras={callbacks.renderTabMenuItems?.(tab, () => { setMenu(undefined) })}

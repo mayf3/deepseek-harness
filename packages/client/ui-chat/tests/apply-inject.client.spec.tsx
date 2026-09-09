@@ -154,9 +154,9 @@ describe('Chat inject API', () => {
     // Session; the Client need not know it.
     await injected.openFile('src/a.ts')
     expect(b.sidebarRight.openResource).toHaveBeenCalledWith('dsh-resource://file/session/root-2/src/a.ts')
-    // An absolute path outside every known root carries no Session in its address.
+    // An absolute path outside every known root still names its Session.
     await injected.openFile('/abs/a.ts')
-    expect(b.sidebarRight.openResource).toHaveBeenLastCalledWith('dsh-resource://file/absolute/abs/a.ts')
+    expect(b.sidebarRight.openResource).toHaveBeenLastCalledWith('dsh-resource://file/session/root-2//abs/a.ts')
     await b.runtime.dispose()
   })
 

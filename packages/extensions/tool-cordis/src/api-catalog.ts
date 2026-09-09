@@ -2912,25 +2912,37 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
   },
   {
     key: 'workspaceFiles',
-    summary: 'Host Remote service over the composed filesystem, confined to one workspace.',
-    description: 'Host Remote service over the composed filesystem, confined to one workspace.',
+    summary: 'Host Remote file reads and workspace directory observations over the composed filesystem.',
+    description: 'Host Remote file reads and workspace directory observations over the composed filesystem.',
     methods: [
       {
         signature: '@Remote async read(agent: Agent, path: string, range: WorkspaceFileRange, signal: AbortSignal): Promise<WorkspaceFileText>',
-        description: 'Read one page of lines from a UTF-8 text file inside the Agent\'s workspace.',
-        parameters: [{ name: 'agent', description: 'target Agent resolved from the Session identity on the wire.' }, { name: 'path', description: 'workspace path, absolute or relative to the workspace root.' }, { name: 'range', description: 'the line window; omitted fields take the page defaults.' }, { name: 'signal', description: 'caller cancellation.' }],
+        description: 'Read one page of lines from a UTF-8 file readable by the filesystem backend.',
+        parameters: [{ name: 'agent', description: 'target Agent resolved from the Session identity on the wire.' }, { name: 'path', description: 'absolute path or path relative to the workspace root; files outside it are allowed.' }, { name: 'range', description: 'the line window; omitted fields take the page defaults.' }, { name: 'signal', description: 'caller cancellation.' }],
         returns: 'the page, the file\'s version at the stat before it, and whether it reaches the last line.',
       },
       {
         signature: '@Remote async readBytes(agent: Agent, path: string, range: WorkspaceByteRange, signal: AbortSignal): Promise<WorkspaceFileBytes>',
-        description: 'Read one byte window of a regular file inside the Agent\'s workspace: raw bytes, no text decoding and no binary rejection.',
-        parameters: [{ name: 'agent', description: 'target Agent resolved from the Session identity on the wire.' }, { name: 'path', description: 'workspace path, absolute or relative to the workspace root.' }, { name: 'range', description: 'the byte window; omitted fields take the window defaults.' }, { name: 'signal', description: 'caller cancellation.' }],
+        description: 'Read one byte window of a regular file readable by the filesystem backend: raw bytes, no text decoding and no binary rejection.',
+        parameters: [{ name: 'agent', description: 'target Agent resolved from the Session identity on the wire.' }, { name: 'path', description: 'absolute path or path relative to the workspace root; files outside it are allowed.' }, { name: 'range', description: 'the byte window; omitted fields take the window defaults.' }, { name: 'signal', description: 'caller cancellation.' }],
         returns: 'the window in base64, the file\'s version and size at the stat before it, and whether it reaches the last byte.',
+      },
+      {
+        signature: '@Remote async readAll(agent: Agent, path: string, signal: AbortSignal): Promise<WorkspaceFileBytes>',
+        description: 'Read a complete regular file as bytes, subject to the configured full-file cap.',
+        parameters: [{ name: 'agent', description: 'target Agent whose workspace resolves relative paths.' }, { name: 'path', description: 'absolute or workspace-relative file path.' }, { name: 'signal', description: 'caller cancellation.' }],
+        returns: 'one complete base64 window with offset zero and eof true; oversized files fail with too-large.',
+      },
+      {
+        signature: '@Remote async readRelated(agent: Agent, path: string, relativePath: string, signal: AbortSignal): Promise<WorkspaceFileBytes>',
+        description: 'Read a complete file relative to another file\'s directory, including outside the workspace.',
+        parameters: [{ name: 'agent', description: 'Agent whose workspace resolves the base file\'s relative path.' }, { name: 'path', description: 'base file, absolute or workspace-relative.' }, { name: 'relativePath', description: 'relative filesystem path, not a URL or absolute path.' }, { name: 'signal', description: 'caller cancellation.' }],
+        returns: 'the complete related file using the ordinary file-size and access checks.',
       },
       {
         signature: '@Remote async stat(agent: Agent, path: string, signal: AbortSignal): Promise<WorkspaceFileStat>',
         description: 'Report one regular file\'s identity, version, and size without its content.',
-        parameters: [{ name: 'agent', description: 'target Agent resolved from the Session identity on the wire.' }, { name: 'path', description: 'workspace path, absolute or relative to the workspace root.' }, { name: 'signal', description: 'caller cancellation.' }],
+        parameters: [{ name: 'agent', description: 'target Agent resolved from the Session identity on the wire.' }, { name: 'path', description: 'absolute path or path relative to the workspace root; files outside it are allowed.' }, { name: 'signal', description: 'caller cancellation.' }],
         returns: 'the file\'s absolute path, current version, and byte size.',
       },
       {
