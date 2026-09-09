@@ -68,34 +68,42 @@ Examples:
  */
 export function apply(ctx: Context): void {
   const program = headlessCommand()
-  program.action(() => {
-    const options = program.opts<{ json?: boolean; sessionId?: string }>()
-    const json = options.json === true
-    // A usage error is still a process-level failure outside a turn, so a
-    // --json caller is owed the documented error event even though the runner
-    // never mounts to write it.
-    const reject = (message: string): never => {
-      if (json) internals.stdout.write(`${JSON.stringify(boundJsonEvent({ type: 'error', message }))}\n`)
-      return program.error(message)
+  // The raw snapshot decides the JSON contract: Commander rejects a grammar
+  // error (an unknown option, a missing option value) before the action runs,
+  // and such a rejection still owes a --json caller the error event.
+  if ((ctx.get('cmdlineArgs')?.get() ?? []).includes('--json')) {
+    const originalError = program.error.bind(program)
+    program.error = (message: string, errorOptions?: Parameters<typeof originalError>[1]): never => {
+      // The event message matches the runner's runtime errors, which carry no
+      // commander `error: ` prefix; the stderr line keeps commander's text.
+      const payload = boundJsonEvent({ type: 'error', message: message.replace(/^error: /, '') })
+      internals.stdout.write(`${JSON.stringify(payload)}\n`)
+      return originalError(message, errorOptions)
     }
+  }
+  program.action(() => {
     if (program.args.length > 1 && program.args.includes('-')) {
-      reject('error: `-` must be the only task argument')
+      program.error('error: `-` must be the only task argument')
     }
     const joined = program.args.join(' ')
-    const task = joined.trim() === '' ? undefined : joined
-    if (task === undefined && internals.stdinIsTty()) {
-      reject('error: a task is required, for example: dsh --profile headless "run the tests"')
+    if (program.args.length > 0 && joined.trim() === '') {
+      program.error('error: a task is required, for example: dsh --profile headless "run the tests"')
     }
+    const task = program.args.length === 0 ? undefined : joined
+    if (task === undefined && internals.stdinIsTty()) {
+      program.error('error: a task is required, for example: dsh --profile headless "run the tests"')
+    }
+    const options = program.opts<{ json?: boolean; sessionId?: string }>()
     // A SessionId is opaque, so whitespace is part of the identity: validate
     // emptiness on the trimmed value but hand the runner the exact string.
     const sessionId = options.sessionId
     if (sessionId !== undefined && sessionId.trim() === '') {
-      reject('error: --session-id requires a non-empty session id')
+      program.error('error: --session-id requires a non-empty session id')
     }
     ctx.provide(HEADLESS_STARTUP_SERVICE, {
       task,
       sessionId,
-      json,
+      json: options.json === true,
     } satisfies HeadlessStartupValues)
   })
   parseCmdline(ctx, program)

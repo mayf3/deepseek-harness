@@ -33,7 +33,7 @@ Run one task, get the final answer, and exit. The task is the command-line argum
 dsh --profile headless "run the tests"
 ```
 
-The agent works through the task, streams each non-empty provider reasoning delta to stderr under a `dsh: reasoning:` heading, then prints the final answer on stdout and exits. Consecutive reasoning deltas stay in one section, and the runner closes that section before later output when the provider supplied no trailing newline. A successful run without reasoning keeps stderr empty; a failure exits 1 and prints `dsh: <code>: <message>` to stderr. The task comes from the positional argument, or from stdin when the argument is omitted or is a lone `-`; a blank argument or an empty pipe is rejected before anything runs. A positional task is used as-is and stdin is not read, so put the whole prompt in the pipe when you want piped input:
+The agent works through the task, streams each non-empty provider reasoning delta to stderr under a `dsh: reasoning:` heading, then prints the final answer on stdout and exits. Consecutive reasoning deltas stay in one section, and the runner closes that section before later output when the provider supplied no trailing newline. A successful run without reasoning keeps stderr empty; a failure exits 1 and prints `dsh: <code>: <message>` to stderr. The task comes from the positional argument, or from stdin when the argument is omitted or is a lone `-`; a blank positional argument or an empty pipe is rejected before anything runs. A positional task is used as-is and stdin is not read, so put the whole prompt in the pipe when you want piped input; a piped task is sent verbatim, its trailing newline included.
 
 ```sh
 { echo "Summarize these changes:"; git diff --stat; } | dsh --profile headless
@@ -51,7 +51,7 @@ The generated [configuration catalog](../../../docs/config-catalog.md#deepseek-a
 
 ### Choosing the session identity
 
-Every invocation defaults to a fresh `session-<uuid>` identity. Pass `--session-id <id>` to name it yourself: the runner adopts the persisted Session with that id when one exists, and creates it otherwise. The identity is opaque, so the exact string is used, whitespace included. Adoption is scoped to the current working directory and refuses a Session that is a subagent or forked session, that recorded no working directory, or that was created under an agent preset this profile does not compose, so a supervisor cannot silently drive someone else's conversation under a different composition; any mismatch fails before the task runs.
+Every invocation defaults to a fresh `session-<uuid>` identity. Pass `--session-id <id>` to name it yourself: the runner adopts the persisted Session with that id when one exists, and creates it otherwise. The identity is opaque, so the exact string is used, whitespace included. Adoption is scoped to the current working directory and refuses a Session that is a subagent or forked session, that recorded no working directory, or that runs under an agent preset this profile does not compose — the check reads the preset the Session log currently records, so a Session that switched preset while blank is rejected too. A supervisor therefore cannot silently drive someone else's conversation under a different composition; any mismatch fails before the task runs.
 
 ### Machine-readable output
 
@@ -63,7 +63,7 @@ Use headless for scripted or automated dsh runs — CI steps, batch jobs, quick 
 
 ### Help and task errors
 
-`dsh --profile headless --help` prints the command's help text and exits without running anything. A missing or whitespace-only task is a usage error when stdin is a terminal: nothing runs and the process exits 1. When stdin is not a terminal the runner reads the task from it instead and rejects an empty result the same way. A lone `-` is the only stdin marker; mixing it with other task words is a usage error rather than a task that starts with a dash. In `--json` mode a usage error also writes an `error` event to stdout before the process exits, so a line-oriented supervisor sees a well-formed stream even when the runner never mounts.
+`dsh --profile headless --help` prints the command's help text and exits without running anything. A whitespace-only positional task is a usage error on its own — nothing runs and the process exits 1, even when stdin is not a terminal, so an accidental blank argument never consumes a pipe. A task that is absent entirely is a usage error only when stdin is a terminal; otherwise the runner reads the task from stdin and rejects an empty result the same way. A lone `-` is the only stdin marker; mixing it with other task words is a usage error rather than a task that starts with a dash. In `--json` mode every usage error — including commander's own grammar rejections such as an unknown option or a missing option value — also writes an `error` event to stdout before the process exits, so a line-oriented supervisor sees a well-formed stream even when the runner never mounts; the event `message` carries the text without commander's `error: ` prefix.
 
 -----
 
@@ -142,7 +142,7 @@ These limits tell you when headless does not fit and what it needs from the `dsh
 - **No pre-token heartbeat** — in default mode stderr stays silent until the provider emits a non-empty reasoning delta; a delayed first token exposes no earlier progress signal.
 - **Reasoning enters stderr logs** — in default mode, redirection and supervisors may retain substantially more and potentially sensitive model output; route stderr to a controlled sink when needed.
 - **Default stdout carries only the final answer** — a run without an assistant message prints an empty stdout line and exits 1; intermediate tool output is not printed unless you opt into `--json`.
-- **Adoption is cwd-, ownership-, and preset-scoped** — `--session-id` refuses a Session recorded in another working directory, one that recorded no working directory, one that is a subagent or forked session, or one created under an agent preset this profile does not compose, and requires the composed Session query service.
+- **Adoption is cwd-, ownership-, and preset-scoped** — `--session-id` refuses a Session recorded in another working directory, one that recorded no working directory, one that is a subagent or forked session, or one that runs under an agent preset this profile does not compose, and requires the composed Session query service.
 - **The event stream is a projection, not the log** — `--json` caps every string except the terminal `final` at 8 KiB and omits events the projection does not model, so it is not a lossless copy of the Session log.
 
 <a id="dev-note"></a>

@@ -30,7 +30,7 @@ Status: implemented
 dsh --profile headless [--json] [--session-id <id>] [<task>... | -]
 ```
 
-任务解析顺序：拼接后的位置参数，其次是 `-`，其次是管道 stdin。终端 stdin 且无位置参数仍是用法错误，因此交互式调用不会挂起等待输入。单独的 `-` 是唯一的 stdin 标记：把它与其他任务词混用属于用法错误，而不是以连字符开头的任务。在 `--json` 模式下，用法错误会在进程退出前写出 `error` 事件，因为 runner 从未挂载来写它。
+任务解析顺序：拼接后的位置参数，其次是 `-`，其次是管道 stdin。只有空白的位置参数本身就属于用法错误，即使 stdin 不是终端也一样，因此误传的空白参数绝不会消费管道内容；完全缺失任务时，仅在 stdin 是终端时属于用法错误。单独的 `-` 是唯一的 stdin 标记：把它与其他任务词混用属于用法错误，而不是以连字符开头的任务。管道任务会原样发送，包括结尾换行。在 `--json` 模式下，所有用法错误——包括 commander 自身的语法拒绝，例如未知选项或选项缺少取值——都会在进程退出前写出 `error` 事件，因为 runner 从未挂载来写它；事件 message 省略 commander 的 `error: ` 前缀，使同一事件类型只承载一种消息形态。
 
 `--json` 只改变 stdout 负载和推理投影的去向。退出码、关闭顺序、会话 flush 和持久化会话日志都不变，因此监督进程对一次运行的分类方式与现在完全一致。
 
@@ -65,17 +65,17 @@ dsh --profile headless [--json] [--session-id <id>] [<task>... | -]
 
 `--session-id <id>` 是采用或创建：先观察持久化会话，存在就 resume，不存在就 create。只创建会让第二次运行失败，因为 JSONL 存储拒绝已存在的日志 id（见 [session persistence](../../implemented/architecture/2026-06-14-session-persistence.zh.md)）。标识是不透明的，因此 runner 只在 trim 后的值上校验非空，并把调用方的原始字符串（含空白字符）原样传下去。
 
-采用时会比较持久化会话记录的 cwd 与进程 cwd，因为会话按项目目录组织（见 [project session directories](../../implemented/architecture/2026-07-24-project-session-directories.zh.md)）。不一致时以 `dsh:` 诊断退出 1，而不是静默续接一个根目录在别处的会话；未记录 cwd 的会话出于同样理由被拒绝。由 agent preset 创建的会话被拒绝，因为本 bundle 不组合任何 preset roster：在这里 resume 它，会用 headless 的工具与提示词运行它，而不是它日志记录时所用的组合。带父会话或子 agent 关联的会话——包括用户 fork 出的会话——被拒绝。当某个存活 Agent 已经持有请求的 id 时，上述检查全部执行，因此存活身份无法绕过它们。两个存活进程不能写同一个 id；存储的写租约已经会拒绝第二个写入者。runner 通过已组合的 `sessionQuery` 服务读取观察结果，并在请求 `--session-id` 却没有该服务时显式失败。
+采用时会比较持久化会话记录的 cwd 与进程 cwd，因为会话按项目目录组织（见 [project session directories](../../implemented/architecture/2026-07-24-project-session-directories.zh.md)）。不一致时以 `dsh:` 诊断退出 1，而不是静默续接一个根目录在别处的会话；未记录 cwd 的会话出于同样理由被拒绝。运行在 agent preset 下的会话被拒绝，因为本 bundle 不组合任何 preset roster：在这里 resume 它，会用 headless 的工具与提示词运行它，而不是它日志当前记录的组合。该检查读取日志当前记录的 preset——创建 header 再叠加任何 `agent-preset/selected` 事件——因为空白会话可能在创建后切换 preset，而 header 始终只是创建事实。带父会话或子 agent 关联的会话——包括用户 fork 出的会话——被拒绝。当某个存活 Agent 已经持有请求的 id 时，上述检查全部执行，因此存活身份无法绕过它们。两个存活进程不能写同一个 id；存储的写租约已经会拒绝第二个写入者。runner 通过已组合的 `sessionQuery` 服务读取观察结果，并在请求 `--session-id` 却没有该服务时显式失败。
 
 ## 后果
 
-实际落地：`src/startup.ts` 解析 `--json` 与 `--session-id <id>`，把缺失或为 `-` 的任务视为"从 stdin 读取"，并且只在 stdin 是终端时抛出用法错误。`src/index.ts` 解析任务、采用或创建精确会话，并接上 stderr 推理投影或新的 `src/json-stream.ts` 投影。`cordis.patch.yml` 转发这两个新设置。
+实际落地：`src/startup.ts` 解析 `--json` 与 `--session-id <id>`，把缺失或为 `-` 的任务视为"从 stdin 读取"，并且只在 stdin 是终端时抛出用法错误。`src/index.ts` 解析任务、采用或创建精确会话，并接上 stderr 推理投影或新的 `src/json-stream.ts` 投影。`cordis.patch.yml` 转发这两个新设置。`package.json` 发布两个入口共同引用的共享 chunk `lib/json-stream-*.js`，因此安装后的 tarball 可以加载。
 
 - 默认模式不变：纯文本运行向 stdout 写一行最终助手消息、stderr 无输出，退出码仍跟随终端原因。
 - `--json` 的 stdout 逐行可解析为 JSON，以 `session` 开头、以 `final` 结尾，不含纯文本。该模式下 stderr 不承载推理。
 - 发生重试的步骤只为最终提交的 attempt 发布 `text` 与 `thinking`，因此被丢弃的 attempt 不会在事件流中留下任何痕迹。
-- 两次连续的相同 `--session-id` 运行共享历史。cwd 不一致、未记录 cwd、属于子 agent 或 fork 会话，或由 agent preset 创建的运行都以诊断退出 1，无论身份是存活还是持久化的。
-- 无位置参数但 stdin 有管道输入时任务被采纳，而交互式无任务调用仍以用法错误失败。
+- 两次连续的相同 `--session-id` 运行共享历史。cwd 不一致、未记录 cwd、属于子 agent 或 fork 会话，或运行在 agent preset 下的运行都以诊断退出 1，无论身份是存活还是持久化的。
+- 无位置参数但 stdin 有管道输入时任务被采纳，只有空白的位置参数会被拒绝而不会消费管道，交互式无任务调用仍以用法错误失败。
 - 单元覆盖落在 `packages/bundle/headless/tests/startup.spec.ts`、`tests/headless.spec.ts` 与 `tests/json-stream.spec.ts`。`apps/cli/tests/profiles/headless/tests/headless.expected.e2e.ts` 的产品 headless profile 期望测试端到端覆盖两种输出模式。
 
 延期与未决：

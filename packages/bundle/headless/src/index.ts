@@ -183,15 +183,43 @@ interface AdoptableHeader {
   agentPreset?: string | undefined
 }
 
+/** Iterate a live Session's durable events in order. */
+function* liveEvents(session: Session): Generator<SessionEvent> {
+  const length = session.seq
+  for (let seq = 0; seq < length; seq++) {
+    const event = session.eventAt(SessionSeq(seq))
+    if (event === undefined) {
+      throw new Error(`headless adoption cannot read seq ${String(seq)} below captured length ${String(length)}`)
+    }
+    yield event
+  }
+}
+
+/**
+ * The preset a Session currently runs under: its creation header advanced by
+ * the last `agent-preset/selected` event. The header is only a creation fact;
+ * the presets plugin reconstructs a session's composition from the projection.
+ */
+function currentPreset(header: AdoptableHeader, events: Iterable<SessionEvent>): string | undefined {
+  let preset = header.agentPreset
+  for (const event of events) {
+    // Owned by dsh-agent-presets, which this bundle does not compose, so the
+    // event is read structurally rather than through its module augmentation.
+    const candidate = event as unknown as { type: string; data: { agentPreset: string } }
+    if (candidate.type === 'agent-preset/selected') preset = candidate.data.agentPreset
+  }
+  return preset
+}
+
 /** Reject a Session the one-shot runner must not adopt. */
-function assertAdoptable(header: AdoptableHeader, sessionId: SessionId): void {
-  if (header.agentPreset !== undefined) {
+function assertAdoptable(header: AdoptableHeader, events: Iterable<SessionEvent>, sessionId: SessionId): void {
+  const preset = currentPreset(header, events)
+  if (preset !== undefined) {
     // This bundle composes no preset roster, so resuming the session here would
     // silently run it under the headless tools and prompts instead of the
-    // composition the log was recorded under.
+    // composition its log records.
     throw new Error(
-      `session "${sessionId}" was created under agent preset "${header.agentPreset}", `
-      + 'which the one-shot runner does not compose',
+      `session "${sessionId}" runs under agent preset "${preset}", which the one-shot runner does not compose`,
     )
   }
   if (header.origin === 'subagent' || header.parentSession !== undefined) {
@@ -225,7 +253,7 @@ async function resolveAgent(
   const live = agents.get(sessionId)
   if (live !== undefined) {
     // A live identity skips adoption, not the rules that make adoption safe.
-    assertAdoptable(live.session.header, sessionId)
+    assertAdoptable(live.session.header, liveEvents(live.session), sessionId)
     return live
   }
   const query = ctx.get('sessionQuery')
@@ -234,7 +262,7 @@ async function resolveAgent(
   }
   try {
     using observation = await query.observeSession(sessionId)
-    assertAdoptable(observation.header, sessionId)
+    assertAdoptable(observation.header, observation.events, sessionId)
     const { agent } = await agents.resume({ resumeSessionId: sessionId, agentOptions, setup })
     return agent
   } catch (error: unknown) {

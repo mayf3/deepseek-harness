@@ -29,6 +29,7 @@
   "files": [
     "lib/index.js",
     "lib/startup.js",
+    "lib/json-stream-*.js",
     "cordis.patch.yml",
     "lib/types/**/*.d.ts"
   ],

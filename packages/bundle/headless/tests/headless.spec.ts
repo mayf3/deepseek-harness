@@ -32,6 +32,7 @@ interface Script {
 /** Observation stub returned by the `--session-id` query path. */
 interface ObservationStub {
   header: { cwd?: string; origin?: string; parentSession?: string; agentPreset?: string }
+  events: readonly { type: string; data: unknown }[]
   [Symbol.dispose](): void
 }
 
@@ -100,6 +101,12 @@ function appendTurn(
       ? { kind: 'completed' }
       : { kind: 'aborted', reason: { kind: 'user' } },
   })
+}
+
+/** Append the preset-selection event owned by dsh-agent-presets. */
+function selectPreset(session: Session, agentPreset: string): void {
+  const target = session as unknown as { append(type: string, data: unknown): void }
+  target.append('agent-preset/selected', { agentPreset })
 }
 
 /** Mount the real registries around a small scripted Agent factory. */
@@ -503,6 +510,7 @@ describe('headless runner', () => {
       sessionId: 'session-exact',
       observe: () => Promise.resolve({
         header: { cwd: process.cwd(), origin: 'user' },
+        events: [],
         [Symbol.dispose]() {},
       }),
     })
@@ -522,6 +530,7 @@ describe('headless runner', () => {
       sessionId: 'session-exact',
       observe: () => Promise.resolve({
         header: { cwd: '/somewhere/else', origin: 'user' },
+        events: [],
         [Symbol.dispose]() {},
       }),
     })
@@ -536,12 +545,28 @@ describe('headless runner', () => {
       sessionId: 'session-exact',
       observe: () => Promise.resolve({
         header: { cwd: process.cwd(), agentPreset: 'minimal' },
+        events: [],
         [Symbol.dispose]() {},
       }),
     })
     const result = await test.run()
     expect(result.code).toBe(1)
-    expect(result.err).toContain('created under agent preset "minimal"')
+    expect(result.err).toContain('runs under agent preset "minimal"')
+    await test.ctx.fiber.dispose()
+  })
+
+  it('rejects a persisted Session that switched to an agent preset after creation', async () => {
+    const test = await bench({ afterPrompt: () => {} }, {
+      sessionId: 'session-exact',
+      observe: () => Promise.resolve({
+        header: { cwd: process.cwd() },
+        events: [{ type: 'agent-preset/selected', data: { agentPreset: 'minimal' } }],
+        [Symbol.dispose]() {},
+      }),
+    })
+    const result = await test.run()
+    expect(result.code).toBe(1)
+    expect(result.err).toContain('runs under agent preset "minimal"')
     await test.ctx.fiber.dispose()
   })
 
@@ -550,6 +575,7 @@ describe('headless runner', () => {
       sessionId: 'session-exact',
       observe: () => Promise.resolve({
         header: {},
+        events: [],
         [Symbol.dispose]() {},
       }),
     })
@@ -564,6 +590,7 @@ describe('headless runner', () => {
       sessionId: 'session-exact',
       observe: () => Promise.resolve({
         header: { cwd: process.cwd(), origin: 'subagent' },
+        events: [],
         [Symbol.dispose]() {},
       }),
     })
@@ -621,7 +648,50 @@ describe('headless runner', () => {
     })
     const result = await test.run()
     expect(result.code).toBe(1)
-    expect(result.err).toContain('created under agent preset "minimal"')
+    expect(result.err).toContain('runs under agent preset "minimal"')
+    await test.ctx.fiber.dispose()
+  })
+
+  it('rejects a live Agent that switched to an agent preset while blank', async () => {
+    const test = await bench({
+      before(session) {
+        const history = {
+          role: 'user', content: [{ type: 'text', text: 'earlier' }], source: { kind: 'user' }, id: 'history',
+        } as UserMessage
+        appendTurn(session, 0, history, 'earlier answer', true)
+        selectPreset(session, 'minimal')
+      },
+      afterPrompt: () => {},
+    }, {
+      sessionId: 'session-exact',
+      prelive: true,
+    })
+    const result = await test.run()
+    expect(result.code).toBe(1)
+    expect(result.err).toContain('runs under agent preset "minimal"')
+    await test.ctx.fiber.dispose()
+  })
+
+  it('fails when a live event below the captured Session length cannot be read', async () => {
+    let capturedLength = 0
+    const test = await bench({
+      before(session) {
+        const history = {
+          role: 'user', content: [{ type: 'text', text: 'earlier' }], source: { kind: 'user' }, id: 'history',
+        } as UserMessage
+        appendTurn(session, 0, history, 'earlier answer', true)
+        capturedLength = session.seq
+        Object.defineProperty(session, 'eventAt', { value: () => undefined })
+      },
+      afterPrompt: () => {},
+    }, {
+      sessionId: 'session-exact',
+      prelive: true,
+    })
+    const result = await test.run()
+    expect(capturedLength).toBeGreaterThan(0)
+    expect(result.code).toBe(1)
+    expect(result.err).toContain(`headless adoption cannot read seq 0 below captured length ${String(capturedLength)}`)
     await test.ctx.fiber.dispose()
   })
 
@@ -643,6 +713,7 @@ describe('headless runner', () => {
       sessionId: 'session-exact',
       observe: () => Promise.resolve({
         header: { cwd: process.cwd(), origin: 'user', parentSession: 'parent-1' },
+        events: [],
         [Symbol.dispose]() {},
       }),
     })

@@ -160,7 +160,7 @@ describe('headless command-line provider', () => {
     const first = JSON.parse(observed.out.trim().split('\n')[0] ?? '{}') as { type: string; message: string }
     expect(first).toEqual({
       type: 'error',
-      message: 'error: a task is required, for example: dsh --profile headless "run the tests"',
+      message: 'a task is required, for example: dsh --profile headless "run the tests"',
     })
     expect(task).toBeUndefined()
     expect(observed.exits).toEqual([1])
@@ -174,6 +174,22 @@ describe('headless command-line provider', () => {
     expect(observed.exits).toEqual([1])
   })
 
+  it('writes the JSON error event for a commander grammar rejection in --json mode', async () => {
+    const { task, observed } = await bootStartup(['--json', '--bogus', 'do', 'it'])
+    const first = JSON.parse(observed.out.trim().split('\n')[0] ?? '{}') as { type: string; message: string }
+    expect(first).toEqual({ type: 'error', message: "unknown option '--bogus'" })
+    expect(task).toBeUndefined()
+    expect(observed.exits).toEqual([1])
+  })
+
+  it('rejects a blank positional task instead of reading stdin', async () => {
+    const { task, observed } = await bootStartup(['   '], { stdinIsTty: false })
+    expect(observed.out).toContain('a task is required')
+    expect(task).toBeUndefined()
+    expect(observed.runnerConfig).toBeUndefined()
+    expect(observed.exits).toEqual([1])
+  })
+
   it('reports the real process stdin terminal state by default', () => {
     const original = Object.getOwnPropertyDescriptor(process, 'stdin')
     Object.defineProperty(process, 'stdin', { value: { isTTY: true }, configurable: true })
@@ -182,6 +198,10 @@ describe('headless command-line provider', () => {
     } finally {
       if (original !== undefined) Object.defineProperty(process, 'stdin', original)
     }
+  })
+
+  it('fails loud without the launcher command line and exit request', () => {
+    expect(() => { apply(new Context()) }).toThrow('the launcher must provide ctx.cmdlineArgs and ctx.appExit')
   })
 
   it('prints its own help and leaves the runner pending', async () => {
