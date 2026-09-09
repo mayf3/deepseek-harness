@@ -14,7 +14,7 @@ import TypertRegistry from '@deepseek-ai/dsh-typert-registry'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import * as SessionClient from '../src/client/index.ts'
 import { ClientSessions } from '../src/client/sessions/service.ts'
-import { FakeApiClient, fakeRemote } from './fake-api.client.ts'
+import { FakeApiClient, fakeRemote, ok } from './fake-api.client.ts'
 
 const GENERATION: ConnectionGeneration = { id: 1, host: { home: '/home/fixture' } }
 
@@ -143,8 +143,41 @@ describe('Session Controller Client apply', () => {
     await flush()
     expect(bench.sessions.list.getSnapshot().byId[sid('session-1')]).toBeUndefined()
 
-    bench.ctx.emit('connection/reset')
+    bench.publishGeneration(GENERATION)
     expect(connected).toHaveBeenCalledOnce()
+  })
+
+  it('keeps immediate control projections when the ready notification follows their baseline', async () => {
+    const connected = vi.spyOn(ClientSessions.prototype, 'handleConnected')
+    const bench = await mount()
+    const sessionId = sid('immediate-baseline')
+    bench.api.onList = async () => ok({ items: [{
+      sessionId, updatedAt: 1, running: false, blank: false,
+    }] as never[] })
+    bench.api.controlBaseline = {
+      jobs: {},
+      projections: { [sessionId]: { asOfSeq: 20, values: { title: 'Before restart' } } },
+    }
+
+    bench.publishGeneration(GENERATION)
+    await flush()
+    expect(bench.sessions.list.getSnapshot().byId[sessionId]?.title).toBe('Before restart')
+    bench.ctx.emit('connection/reset')
+    await flush()
+    expect(bench.sessions.list.getSnapshot().byId[sessionId]?.title).toBe('Before restart')
+
+    bench.publishGeneration(undefined)
+    bench.api.controlBaseline = {
+      jobs: {},
+      projections: { [sessionId]: { asOfSeq: 1, values: { title: 'After restart' } } },
+    }
+    bench.publishGeneration({ ...GENERATION, id: 2 })
+    await flush()
+    expect(bench.sessions.list.getSnapshot().byId[sessionId]?.title).toBe('After restart')
+
+    await bench.fiber.dispose()
+    bench.publishGeneration({ ...GENERATION, id: 3 })
+    expect(connected).toHaveBeenCalledTimes(2)
   })
 
   it('accepts the control baseline, retries a carrier generation, and reports terminal protocol failure', async () => {
@@ -208,14 +241,14 @@ describe('Session Controller Client apply', () => {
     const accept = vi.spyOn(ClientSessions.prototype, 'handleControlFrame')
     const bench = await mount()
     await flush()
-    expect(accept.mock.calls.filter(([frame]) => frame.type === 'baseline')).toHaveLength(1)
+    expect(accept.mock.calls.filter(([frame]) => frame.type === 'baseline')).toHaveLength(0)
 
     bench.api.failStreams(new RemoteStreamCarrierError('offline'))
     await flush()
-    expect(accept.mock.calls.filter(([frame]) => frame.type === 'baseline')).toHaveLength(1)
+    expect(accept.mock.calls.filter(([frame]) => frame.type === 'baseline')).toHaveLength(0)
 
     bench.publishGeneration(GENERATION)
     await flush()
-    expect(accept.mock.calls.filter(([frame]) => frame.type === 'baseline')).toHaveLength(2)
+    expect(accept.mock.calls.filter(([frame]) => frame.type === 'baseline')).toHaveLength(1)
   })
 })
