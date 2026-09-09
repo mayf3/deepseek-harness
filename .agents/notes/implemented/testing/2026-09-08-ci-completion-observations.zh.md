@@ -1,4 +1,4 @@
-# Agent Note：CI fixture 的完成与隔离
+# Agent Note: CI fixture 的完成与隔离
 
 Status: implemented
 
@@ -6,7 +6,7 @@ Status: implemented
 
 ## 问题
 
-[参考 CI 运行](https://github.com/deepseek-harness/deepseek-harness/actions/runs/34206953049)报告：轮询一秒后 webhook 创建的 Session 仍不存在，五秒读取期限内 PowerShell 输出为空。HTTP 接受、UI 投影状态、进程启动和持久化完成是不同的观察。测试需要明确的完成条件，并用对照阻止中间状态满足该条件。
+[参考 CI 运行](https://github.com/deepseek-harness/deepseek-harness/actions/runs/34206953049)报告：轮询一秒后 webhook 创建的 Session 仍不存在，五秒读取期限内 PowerShell 输出为空。HTTP 接受、UI 投影状态、进程启动和持久化完成是不同的观察。测试需要明确的完成条件，并用对照阻止中间状态满足该条件。[完成等待决策](2026-09-08-ci-readiness-and-completion.zh.md)拥有这些条件与 lane 预算；这些 fixture 通过受控延迟使顺序与清理可观察。
 
 ## 决策
 
@@ -34,9 +34,11 @@ Status: implemented
 
 ## 考虑过的替代方案
 
-- 增加生产超时、增加重试或串行化整个套件：均不能建立缺少的完成观察。
-- 从 HTTP 202、乐观图片或投影标签推断完成：它们均可能早于被断言的操作。
-- 用受控样本替换真实 worker 计时覆盖：会遗漏对 Node 实际 ELU 与传输行为的验证。
+**生产超时、重试或套件串行化。** 拒绝，因为均不能建立缺少的完成观察。
+
+**从接受或预览推断完成。** HTTP 202 和乐观图片可能早于被断言的操作。
+
+**用受控样本替换实测 worker 覆盖。** 拒绝，因为会遗漏对 Node 实际 ELU 与传输行为的验证。
 
 ## 影响
 

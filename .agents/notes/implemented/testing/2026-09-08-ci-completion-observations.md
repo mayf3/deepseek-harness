@@ -6,7 +6,7 @@ English | [中文](2026-09-08-ci-completion-observations.zh.md)
 
 ## Problem
 
-The [reference CI run](https://github.com/deepseek-harness/deepseek-harness/actions/runs/34206953049) reports a webhook-created Session absent after a one-second poll and empty PowerShell output before a five-second read deadline. HTTP acceptance, projected UI state, process startup, and durable completion are separate observations. Tests need an explicit completion condition and controls that prevent an intermediate state from satisfying it.
+The [reference CI run](https://github.com/deepseek-harness/deepseek-harness/actions/runs/34206953049) reports a webhook-created Session absent after a one-second poll and empty PowerShell output before a five-second read deadline. HTTP acceptance, projected UI state, process startup, and durable completion are separate observations. Tests need an explicit completion condition and controls that prevent an intermediate state from satisfying it. The [completion-wait decision](2026-09-08-ci-readiness-and-completion.md) owns those conditions and lane budgets; these fixtures make their ordering and cleanup observable under controlled delays.
 
 ## Decision
 
@@ -34,9 +34,11 @@ The [Node import sweep](../../../../packages/experimental/webworker-runtime/test
 
 ## Alternatives considered
 
-- Increase production timeouts, add retries, or serialize the suite: none establishes the missing completion observation.
-- Infer completion from HTTP 202, an optimistic image, or a projected label: each can precede the operation being asserted.
-- Replace real worker timing coverage with controlled samples: that would omit verification of Node's actual ELU and transport behavior.
+**Production timeouts, retries, or suite serialization.** Rejected because none establishes the missing completion observation.
+
+**Completion inferred from acceptance or a preview.** HTTP 202 and an optimistic image can precede the operation being asserted.
+
+**Controlled samples replacing measured worker coverage.** Rejected because they omit verification of Node's actual ELU and transport behavior.
 
 ## Consequences
 
