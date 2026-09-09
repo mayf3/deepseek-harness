@@ -43,6 +43,7 @@ function mount(options: {
   current?: MessageFeedbackItem | undefined
   /** The controller's committed item when it differs from the rendered view (a cold row). */
   committed?: MessageFeedbackItem
+  ensureResult?: MessageFeedbackActionResult
   toggleResult?: MessageFeedbackToggleResult
   status?: MessageFeedbackView['status']
 } = {}) {
@@ -51,7 +52,7 @@ function mount(options: {
     items: new Map(options.current === undefined ? [] : [[MSG, options.current]]),
     error: null,
   }
-  const ensure = vi.fn(() => Promise.resolve<MessageFeedbackActionResult>({ ok: true }))
+  const ensure = vi.fn(() => Promise.resolve<MessageFeedbackActionResult>(options.ensureResult ?? { ok: true }))
   // The controller owns record-vs-retract, so the double stands in for it:
   // matching the shown rating retracts, anything else records.
   const toggle = vi.fn((_id: MessageId, next: MessageFeedbackRating) =>
@@ -133,6 +134,15 @@ describe('MessageFeedbackActions', () => {
 
   it('opens the dialog for a Dislike that replaces a recorded Like', async () => {
     const ui = mount({ current: item({ rating: 'positive' }) })
+
+    fireEvent.click(ui.getByLabelText(zh['action.dislike']))
+
+    await waitFor(() => { expect(ui.openDialog).toHaveBeenCalledWith(MSG) })
+    expect(ui.toggle).not.toHaveBeenCalled()
+  })
+
+  it('opens the dialog for a Dislike when the seeding read fails, leaving the put to decide', async () => {
+    const ui = mount({ ensureResult: { ok: false, error: { code: 'session-not-found', message: 'gone' } } })
 
     fireEvent.click(ui.getByLabelText(zh['action.dislike']))
 
@@ -222,6 +232,38 @@ describe('MessageFeedbackActions', () => {
     expect(errors).toEqual([])
   })
 
+  it('publishes no state after the row unmounts before the seeding read settles', async () => {
+    let release = (): void => {}
+    const gate = new Promise<MessageFeedbackActionResult>((resolve) => { release = () => { resolve({ ok: true }) } })
+    const view: MessageFeedbackView = { status: 'cold', items: new Map(), error: null }
+    const useFeedback = (<T,>(select: (v: MessageFeedbackView) => T): T =>
+      useSyncExternalStore(() => () => {}, () => select(view))) as never
+    const openDialog = vi.fn()
+    const props = {
+      messageId: MSG,
+      ensure: vi.fn(() => gate),
+      current: () => undefined,
+      toggle: vi.fn(),
+      openDialog,
+      acknowledge: vi.fn(),
+      useFeedback,
+      t,
+    } as unknown as Parameters<typeof MessageFeedbackActions>[0]
+    const ui = render(<MessageFeedbackActions {...props} />)
+    const errors: unknown[] = []
+    const onError = (event: ErrorEvent): void => { errors.push(event.error) }
+    window.addEventListener('error', onError)
+
+    fireEvent.click(ui.getByLabelText(zh['action.dislike']))
+    ui.unmount()
+    release()
+    await gate
+
+    window.removeEventListener('error', onError)
+    expect(errors).toEqual([])
+    expect(openDialog).not.toHaveBeenCalled()
+  })
+
   it('publishes no state after the row unmounts mid-retraction', async () => {
     let release = (): void => {}
     const gate = new Promise<MessageFeedbackToggleResult>((resolve) => {
@@ -248,6 +290,9 @@ describe('MessageFeedbackActions', () => {
     window.addEventListener('error', onError)
 
     fireEvent.click(ui.getByLabelText(zh['action.dislikeActive']))
+    // The retraction starts only after the seeding read settles; unmount
+    // while that retraction is in flight.
+    await waitFor(() => { expect(props.toggle).toHaveBeenCalledWith(MSG, 'negative') })
     ui.unmount()
     release()
     await gate
