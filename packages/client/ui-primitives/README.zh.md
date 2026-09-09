@@ -73,15 +73,6 @@ kind: "package-library"
 
 `MarkdownText` 渲染不可信的 GFM 与 TeX 公式、阻止不安全的链接与图片，并可把已解析的文件提及转换为显式控件。当 owner 传入 `pathImages` 词表时，本地媒体路径的图片目标只在落定渲染阶段重写为可展示 URL（与 file mentions 相同的流式门）；不传词表时本地目标保持惰性 alt 文本。加载或解码失败后，图片替换为作者的 alt 文本；alt 为空时显示原始目标路径。图片源变化后可重新加载。回复流式输出时，它冻结已完成的块、按已完成行推进顶层未闭合 fence，并从保存的 Shiki grammar state 为该 fence 增量高亮。已完成的 token 行进入固定大小的 React 分组，后续分片只 reconcile 正在增长的分组；最终全量解析解决跨文档语法时，未变化的 fence 会保留该 DOM。`TerminalBlock`、`ReadBlock`、`DiffBlock`、`SearchBlock` 与 `WebBlock` 把对应的工具结果意图渲染为带复制控件、溢出处理及适用时 ANSI 处理的卡片。`JsonTree` 与 `JsonBlock` 以只读方式检查 JSON 值；`projectUserText` 把已发送的用户文本投影为行内普通文本段与引用 chip，供消息气泡和排队行使用。
 
-提供 `MarkdownLabels.preview` 可启用定稿后的 `mermaid`、`graphviz`/`dot`、`svg` 和 `html` fence。每种语言提供本地化预览状态，未提供这些文案的调用方保留代码显示。Mermaid 与 Graphviz 在代码块背景上使用当前文档配色，主题切换时同步更新已挂载的预览。DOT、SVG 与 HTML 中明确指定的颜色仍保留原样。渲染按需加载 Mermaid、使用严格安全模式，并把生成的 SVG 显示为图片，不绑定图内链接处理器。渲染失败时显示原始源码与传入的错误文案；替换源码后会丢弃前一次渲染的延迟结果。图表保留固有尺寸，并在可用宽度不足时缩小。
-
-`CodeBlock.preview` 提供无标题栏的替代正文，以及切换源码和复制的图标操作。操作在悬停或键盘聚焦时出现；只要设备具备触屏，就在图表下方保持可见，包括同时连接鼠标的情况。切换到源码时保留已挂载的预览，返回时复用其结果；复制始终保留源码。
-
-每个定稿 fence 默认显示可视化，并共享源码切换与复制操作。Graphviz 按需加载 `@viz-js/viz`，用 `dot` 引擎渲染 DOT。SVG 与 Graphviz 输出作为不可执行的图片，使用与 Mermaid 相同的按内容定高画布；非法 SVG 与 DOT 显示错误并保留源码。HTML 接受完整文档或片段、保留内联样式，同时移除脚本与导航。HTML iframe 不授予任何 sandbox 权限，Content Security Policy 阻止外部资源、嵌套 iframe、表单与脚本。图表画布随渲染后的图片高度收缩，保留 16px 内边距，并在可用宽度不足时等比例缩小图片。HTML iframe 使用可滚动的 400px 视口。代码 fence 外的原始 HTML 仍按普通 Markdown 输入处理。
-
-内部渲染函数接受可选的原生 `MermaidConfig` 与 Viz.js `RenderOptions`，供开发者定制。属性与主题变量覆盖项和文档默认值合并；Mermaid 预览限制与 Graphviz SVG 输出保持固定。这些参数没有设置界面。
-
-[预览许可证声明](THIRD_PARTY_PREVIEW_NOTICES.txt)随本包与 Web 前端分发。Mermaid 使用 MIT；Viz.js 使用 MIT，但内嵌 Graphviz 使用 EPL-2.0。声明保留完整许可证文本及准确的 Graphviz 源码下载地址。升级依赖时必须同时检查内嵌产物和 npm 元数据；[预览决策](../../../.agents/notes/implemented/feature/2026-09-09-markdown-static-previews.zh.md)记录分发与 sandbox 选择。
 
 ### 本地化文案
 
@@ -150,7 +141,6 @@ kind: "package-library"
 
 这些限制说明原子组件在边缘情况下的行为；它们是当前包约束，不是组件路线图。
 
-- **图表渲染在浏览器线程上执行**：每个已挂载的定稿预览都会开始渲染，包括视口外的图表。Mermaid 串行执行布局；Graphviz 同步执行 WebAssembly 布局。已提交的布局工作无法中断。当前不提供预览虚拟化或 worker 渲染。
 - **流式期间跨边界引用解析被推迟**：定义落在增量冻结边界另一侧的引用式链接或脚注，在回复流式输出期间渲染为字面文本；定稿时的全量解析会将其解析。
 - **长高亮 fence 会保留完整 token DOM**：流式路径避免重新解析、重新 tokenize 和 reconcile 已完成前缀，但不会丢弃旧颜色或虚拟化 token span。因此最终 DOM 数量仍随 fence 的 token 数增长；嵌套／容器内 fence 与病态的单个超长行仍走通用尾部路径。
 - **字形级图标是重新绘制的近似版本**：鱼形标志与闪光标记来自字体字形，而本地设计数据无法导出其矢量几何；在获得精确导出路径前，使用手工重建版本代替。

@@ -15,7 +15,6 @@ kind: "package-reference"
 ## 目录
 
 - [系统提示词行](#system-prompt-row)
-- [Mermaid 预览](#mermaid-previews)
 - [轮次 token 用量](#turn-token-usage)
 - [轮次过程折叠](#turn-process-folding)
 - [滚动归属](#scroll-ownership)
@@ -29,13 +28,6 @@ kind: "package-reference"
 ## 系统提示词行
 
 每个非空追加的 `system/message` 都拥有一行折叠提示词，包括无 header 窗口起点的完整提示词；同一步骤的 header 不会重复它。Chat 也会为非空的初始请求、显式消息序列起点、文本发生变化的 `system/message` surface 节点替换（文本读取自 `request/header` 处 surface 顺序中最后一个非空存活系统节点），或前序 header 尚未进入已加载历史窗口的非初始请求显示一行默认折叠的`系统提示词`。即使系统文本未变，resume 也会重复该行，包括分页补齐前序 header 和系统节点后；同一序列内仅配置或仅工具变化、工具步骤与重试不会重复，且 `system/message` 事件绝不会渲染为对话消息。该行位于请求的用户消息之前，与提供方 envelope 顺序一致；展开后显示保留原始换行的精确模型可见文本。系统节点为空或位于已加载窗口之外的请求不创建该行，直到包含该节点的分页到达。
-
------
-
-<a id="mermaid-previews"></a>
-## Mermaid 预览
-
-已定稿的 Assistant Markdown 把 `mermaid` 代码 fence 显示为图表。图表不显示语言标题栏。源码／预览切换与复制图标在悬停或键盘聚焦时出现，触屏上保持可见；两种视图复制的都是原始 Mermaid 源码。流式 fence 在消息定稿前保持代码显示；非法图表显示错误与源码，不影响其他块。Chat 通过本地化 label 启用共享的 [Mermaid 预览原语](../ui-primitives/README.zh.md)。Chat 还在隔离 iframe 中预览 `graphviz`/`dot`、`svg` 和静态 `html` fence，共用默认可视化、源码切换与复制操作。HTML 脚本、导航与远程资源均被禁用。这项展示变更不增加模型提示词、工具或 Session 事件。
 
 -----
 
