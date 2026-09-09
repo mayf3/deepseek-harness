@@ -33,8 +33,10 @@ export { ReferenceIcon } from './ReferenceIcon.tsx'
 export type { ReferenceIconKind, ReferenceIconProps } from './ReferenceIcon.tsx'
 export { LinkIcon, classifyLinkPath } from './LinkIcon.tsx'
 export type { LinkIconKind, LinkIconProps } from './LinkIcon.tsx'
-export { FileTypeIcon, classifyFileType } from './FileTypeIcon.tsx'
-export type { FileTypeKind, FileTypeIconProps } from './FileTypeIcon.tsx'
+export { FileTypeIcon, classifyFileType, fileExtension } from './FileTypeIcon.tsx'
+export type {
+  CodeFileType, FileType, FileTypeIconProps, FileTypeKind, FileTypeProjectContext,
+} from './FileTypeIcon.tsx'
 export { projectUserText } from './user-text.tsx'
 export { Tooltip } from './Tooltip.tsx'
 export type { TooltipSide } from './Tooltip.tsx'

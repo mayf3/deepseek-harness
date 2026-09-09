@@ -3,7 +3,7 @@ import { cleanup, render } from '@testing-library/react'
 import { afterEach, describe, expect, it } from 'vitest'
 import * as primitives from '@deepseek-ai/dsh-client-ui-primitives'
 import {
-  IconAlarmClockOutline16, IconApiOutline14, IconArchiveOutline20, IconFolderClose16,
+  DocumentFileIcon, IconAlarmClockOutline16, IconApiOutline14, IconArchiveOutline20, IconFolderClose16,
   IconGoalOutline16, IconSendOutline16,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 
@@ -67,6 +67,19 @@ describe('FishLogo', () => {
     expect(container.querySelectorAll('path')).toHaveLength(1)
     expect(container.innerHTML).toContain('currentColor')
     expect(container.innerHTML).not.toContain('M0 0L23.16')
+  })
+})
+
+describe('DocumentFileIcon', () => {
+  it('renders the generic document artwork with instance-safe gradients and its class', () => {
+    const { container } = render(<><DocumentFileIcon className="document"/><DocumentFileIcon /></>)
+    const svgs = [...container.querySelectorAll('svg')]
+    const ids = [...container.querySelectorAll('linearGradient')].map(gradient => gradient.id)
+    expect(svgs).toHaveLength(2)
+    expect(svgs[0]?.classList.contains('document')).toBe(true)
+    expect(new Set(ids).size).toBe(2)
+    expect([...container.querySelectorAll('svg > path:first-child')].map(path => path.getAttribute('fill')))
+      .toEqual(ids.map(id => `url(#${id})`))
   })
 })
 

@@ -1,7 +1,7 @@
 import { useId } from 'react'
 
 /**
- * Render the DeepSeek Web document glyph used by generic-file cards.
+ * Render a generic document glyph when the caller intentionally has no file path to classify.
  * @param props - optional CSS class for sizing and placement.
  * @returns a decorative document SVG with an instance-safe gradient id.
  */

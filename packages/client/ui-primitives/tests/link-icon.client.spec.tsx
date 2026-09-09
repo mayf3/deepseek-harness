@@ -12,9 +12,13 @@ describe('classifyLinkPath', () => {
     ['data/export.CSV', 'code'],
     ['shots/hero.png', 'image'],
     ['report.pdf', 'document'],
+    ['budget.xlsx', 'document'],
     ['deck.pptx', 'document'],
+    ['notes.md', 'other'],
+    ['clip.mp4', 'other'],
     ['notes.unknownext', 'other'],
     ['Makefile', 'other'],
+    ['README', 'other'],
     ['C:\\work\\summary.docx', 'document'],
     ['archive.tar/.hidden', 'other'],
   ] as [string, LinkIconKind][])('%s → %s', (path, kind) => {

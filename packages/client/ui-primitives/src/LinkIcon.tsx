@@ -9,10 +9,8 @@
  * ic_photo_outline_20, ic_paper_doc_outline_20, ic_paper_outline_20.
  */
 import type { ReactNode } from 'react'
-import {
-  CODE_EXTENSIONS, IMAGE_EXTENSIONS, PDF_EXTENSIONS, SHEET_EXTENSIONS, SLIDES_EXTENSIONS, WORD_EXTENSIONS,
-  fileExtension,
-} from './file-extensions.ts'
+import { classifyFileType, fileExtension } from './FileTypeIcon.tsx'
+import { isCodeFileType, isLinkCodeExtension } from './code-file-types.ts'
 import type { IconProps } from './icons/props.ts'
 
 /**
@@ -28,22 +26,29 @@ export interface LinkIconProps extends IconProps {
   kind: LinkIconKind
 }
 
-/** Office-style documents share one paper-doc glyph on a link. */
-const DOCUMENT_SETS = [PDF_EXTENSIONS, SHEET_EXTENSIONS, SLIDES_EXTENSIONS, WORD_EXTENSIONS]
-
 /**
- * Derive a file path's link-icon category from its extension. Code, web, and
- * data files share the code glyph; unknown and missing extensions fall to
- * `other` (the plain-paper glyph).
+ * Derive a file path's link-icon category from its extension. Unknown and
+ * missing extensions fall to `other` (the plain-paper glyph).
  * @param path - File path as the producing tool spelled it (either separator).
  * @returns The file's glyph category; never `url` or `folder`.
  */
 export function classifyLinkPath(path: string): LinkIconKind {
+  const type = classifyFileType(path)
   const extension = fileExtension(path)
+  if (isCodeFileType(type)) return isLinkCodeExtension(extension) ? 'code' : 'other'
   if (extension === '') return 'other'
-  if (CODE_EXTENSIONS.has(extension)) return 'code'
-  if (IMAGE_EXTENSIONS.has(extension)) return 'image'
-  return DOCUMENT_SETS.some(set => set.has(extension)) ? 'document' : 'other'
+  switch (type) {
+    case 'code':
+    case 'html': return 'code'
+    case 'image': return 'image'
+    case 'excel':
+    case 'pdf':
+    case 'ppt':
+    case 'word': return 'document'
+    case 'markdown':
+    case 'other':
+    case 'video': return 'other'
+  }
 }
 
 const GlobeGlyph = ({ size, className }: IconProps) => (
