@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-`dsh-client-ui-jobs` puts this session's background jobs in one header control. Every row carries the job's lifecycle, ticking duration, and the model-visible progress line or terminal detail from the roster `ctx.jobs` keeps current; a live job, or a settled one that left retained output behind, additionally offers an expandable panel that streams its real output. Collapsing stops the stream, so output only flows while someone is watching. Live rows lead with the ticking duration and carry kind and status on a second line; settled rows fold after a section heading; a settled job that retained no output (a subagent, whose answer went to the model) renders as a static row.
+`dsh-client-ui-jobs` shows the session's background jobs in one header control, with lifecycle, elapsed time, progress, and terminal detail. Live jobs and settled jobs with retained output offer expandable output panels; collapsing stops the stream. Live rows lead with a ticking duration, followed by kind and status. Settled rows fold under a section heading; those without retained output, including subagents whose answers went to the model, stay static.
 
 ## Table of Contents
 

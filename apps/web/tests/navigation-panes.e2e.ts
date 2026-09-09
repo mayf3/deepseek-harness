@@ -22,7 +22,7 @@ import {
 import { expandOwningTurnProcess, newEnglishPage, saveFailureShot } from './support.ts'
 
 const SNAPSHOT_DIR = fileURLToPath(new URL('../../../snapshots/web/navigation-panes', import.meta.url))
-const SEED = join(SNAPSHOT_DIR, 'session.v2.jsonl')
+const SEED = join(SNAPSHOT_DIR, 'session.v3.jsonl')
 const TRAJECTORY_EXPECTED = join(SNAPSHOT_DIR, 'trajectory.expected.md')
 const SEARCH_EXPECTED = join(SNAPSHOT_DIR, 'search-results.expected.md')
 const TERMINAL_EXPECTED = join(SNAPSHOT_DIR, 'terminal-card.expected.md')
@@ -274,12 +274,12 @@ describe('web e2e: navigation & panes over a rich seeded session', () => {
   it.skipIf(MODE === 'record')('downloads through the Session Header and /export with one dialog', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-navigation-export'))
     await ensureSeedOpen(page)
-    const exportButton = page.getByRole('button', { name: 'Session log' })
+    const exportButton = page.getByRole('button', { name: 'More actions' })
     expect(await exportButton.isDisabled()).toBe(false)
     const header = exportButton.locator('xpath=ancestor::header[1]')
     // The right Sidebar's expand button holds the header's corner; the export
     // control sits immediately to its left.
-    const sidebarButton = page.getByRole('button', { name: 'Open the sidebar' })
+    const sidebarButton = page.getByRole('button', { name: 'Open right sidebar' })
     const [buttonBox, sidebarBox, headerBox] = await Promise.all([
       exportButton.boundingBox(), sidebarButton.boundingBox(), header.boundingBox(),
     ])
@@ -293,6 +293,7 @@ describe('web e2e: navigation & panes over a rich seeded session', () => {
       && new URL(response.url()).pathname === '/api/session.export', { timeout: 30_000 })
     const downloadPromise = page.waitForEvent('download', { timeout: 30_000 })
     await exportButton.click()
+    await page.getByRole('menuitem', { name: 'Download session log' }).click()
     const response = await responsePromise
     expect(response.status()).toBe(200)
     const download = await downloadPromise
@@ -503,7 +504,7 @@ describe('web e2e: navigation & panes over a rich seeded session', () => {
 
   it.skipIf(MODE === 'record')('keeps the recorded fixture inventory exact', async () => {
     await assertFixtureInventory(SNAPSHOT_DIR, [
-      'session.v2.jsonl', 'search-results.expected.md', 'trajectory.expected.md',
+      'session.v3.jsonl', 'search-results.expected.md', 'trajectory.expected.md',
       'terminal-card.expected.md',
     ])
   })

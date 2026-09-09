@@ -27,6 +27,13 @@ This package renders the deliverables row a finished turn ends with — the file
 
 Mount this plugin alongside `ui-conversation`; a finished turn then ends with the produced-files row between the closing message's body and its action footer. Each chip opens the file through the owner's `openFile`, which the chat view routes to the right Sidebar as a text-preview tab, with relative paths resolved against the session cwd. The row offers no folder action: the Sidebar has no directory form, so an omitted-file remainder is a label only.
 
+<a id="explicit-deliveries"></a>
+### Explicit deliveries
+
+The Web `standard`, `ptc`, and `cordis` presets expose `present` for final workspace files, including files created through Bash. Call it with `files: [{ path, description? }]` after creating the files. The [present tool](../../fs/tool-present/README.md) owns file-count limits and Session declarations. The closing turn shows responsive cards with file names, types, descriptions, and buttons that open the source in the Host’s default application. Matching inline-code references open the same source files without starting a browser download. Repeated declaration of a path selects its latest description before the closing reply.
+
+The `present` tool row shows running, delivered, failed, or interrupted status; expanding a settled row reveals its recorded result. File cards include every delivered file. Opening shows progress, confirmation, or a retryable error on the card. It requires a desktop and a suitable default application on the serving Host; a remote browser does not open applications on its own device.
+
 ### The row
 
 The row uses CSS container-width bands to show a responsive prefix of up to six file chips. Flexbox shrinks and ellipsizes basename text, while CSS selects the matching localized `+ N files` label for omitted paths; the full path remains available as the title, and the row performs no JavaScript layout observation or horizontal scrolling.
@@ -43,7 +50,9 @@ The closing prose carries the same vocabulary: an inline-code token resolves by 
 <details>
 <summary>Implementation internals — click to expand</summary>
 
-The Node half registers the static `ui:deliverable-file-references` system-prompt section asking the model to mention primary files from successful creation or modification calls and to write those and any other changed-file references as Markdown inline code. The browser half registers `ProducedFiles` into the chat view's `conversation.chat.turnTail` hole. `deliverablesDefinition` folds each Turn's successful first-party mutation calls into `DeliverablesTurnData` from the validated raw arguments of `write`, `edit`, and mutating `str_replace_editor` commands. Reads, deletes, unsupported tools, malformed calls, and failed results contribute nothing. A new mutation tool needs an explicit Client contribution before it joins the list. The package also provides the `chatFileMentions` service the chat view consults per closing message; composing the plugin out removes both surfaces and leaves the view's empty chain at zero cost.
+The Node half registers the static `ui:deliverable-file-references` system-prompt section asking the model to mention primary files from successful creation or modification calls and to write those and any other changed-file references as Markdown inline code. The browser half registers a wrapper around `ProducedFiles` and explicit deliveries into the chat view's `conversation.chat.turnTail` hole. `deliverablesDefinition` folds each Turn's successful first-party mutation calls into `DeliverablesTurnData` from the validated raw arguments of `write`, `edit`, and mutating `str_replace_editor` commands. Reads, deletes, unsupported tools, malformed calls, and failed results contribute nothing. A new mutation tool needs an explicit Client contribution before it joins the list. The package also provides the `chatFileMentions` service the chat view consults per closing message; composing the plugin out removes both surfaces and leaves the view's empty chain at zero cost.
+
+Native opening uses an authenticated POST addressed by the viewed Session, event sequence, and original file index. The Host resolves the declaration against that Session’s workspace and checks the current file exists within it before launching the default application. Edits affect subsequent opens; deletion returns an error. No file-content copy or attachment is created. Plugin disposal cancels and awaits pending native-open requests.
 
 </details>
 
@@ -72,7 +81,7 @@ One fixed paragraph instructs the model to name primary files from successful cr
 
 #### Token effect
 
-One fixed prompt paragraph whenever this package is loaded; no tool schema, tool result, or per-Turn context is added.
+One fixed prompt paragraph whenever this package is loaded. The [present tool](../../fs/tool-present/README.md#model-experience) owns the delivery schema and result text.
 
 #### KV Cache effect
 
@@ -86,7 +95,8 @@ The section is static at first-party order 9000 for the lifetime of the package 
 These limits define the current deliverables vocabulary. They are current package constraints, not a general file-linking comparison or a task backlog.
 
 - **Mention matching is exact path or unique basename only** — a suffix mention stays inert; widening the matcher is deferred until a real closing-message shape needs it.
-- **Files created indirectly by terminal commands remain outside the matching vocabulary** — naming such a file in inline code does not make it clickable unless a successful mutation location also records that path.
+- **Terminal-created files require explicit delivery** — call `present` to declare them for native opening.
+- **Declarations do not preserve file contents** — reopening or transferring a Session requires the source files in the viewed Session’s workspace. Missing files return 404; paths resolving outside the workspace return 403.
 - **Directories have no destination** — chips open files in the right Sidebar's text preview, which shows files only; the former native folder handoff is gone rather than replaced.
 
 <a id="dev-note"></a>
@@ -99,4 +109,4 @@ None.
 
 </details>
 
-**Runtime invariant:** No companion is published. The prompt section, slot, dictionary, event definition, and optional service registrations are effect-owned with disposal proven by their plugin specs; this package owns no mutable state.
+**Runtime invariant:** No companion is published. Prompt, slot, dictionary, file-action route, and optional service registrations are effect-owned; the Session log owns declarations and the workspace owns file contents.
