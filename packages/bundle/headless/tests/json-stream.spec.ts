@@ -373,15 +373,15 @@ describe('--json projection', () => {
     expect(test.parsed().at(-1)).toMatchObject({ usage: { inputTokens: 5, outputTokens: 1 } })
   })
 
-  it('keeps an earlier attempt sample when the committed message reports none', () => {
+  it('omits the step total when a later attempt reports no usage sample', () => {
     const test = harness()
     test.emitSession(attemptWithUsage({ inputTokens: 7, outputTokens: 3 }))
     test.emitSession(assistantMessage([{ type: 'text', text: 'ok' }]))
     test.emitSession(stepEnd())
-    expect(test.parsed().at(-1)).toMatchObject({ usage: { inputTokens: 7, outputTokens: 3 } })
+    expect(test.parsed().at(-1)).toEqual({ type: 'status', phase: 'step_end', turn: 1, step: 1 })
   })
 
-  it('ignores an attempt that reports no usage sample', () => {
+  it('omits the step total when an earlier attempt reports no usage sample', () => {
     const test = harness()
     test.emitSession({
       type: 'assistant/attempt',
@@ -389,7 +389,13 @@ describe('--json projection', () => {
     } as unknown as SessionEvent)
     test.emitSession(assistantMessage([{ type: 'text', text: 'ok' }], { inputTokens: 1, outputTokens: 1 }))
     test.emitSession(stepEnd())
-    expect(test.parsed().at(-1)).toMatchObject({ usage: { inputTokens: 1, outputTokens: 1 } })
+    expect(test.parsed().at(-1)).toEqual({ type: 'status', phase: 'step_end', turn: 1, step: 1 })
+  })
+
+  it('omits the step total when no attempt reports a usage sample', () => {
+    const test = harness()
+    test.emitSession(stepEnd())
+    expect(test.parsed().at(-1)).toEqual({ type: 'status', phase: 'step_end', turn: 1, step: 1 })
   })
 
   it('writes the terminal final event without bounding its answer', () => {

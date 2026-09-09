@@ -180,6 +180,13 @@ function resultText(blocks: readonly { type: string; text?: string }[]): string 
 /** Provider token accounting for one step, as carried by `assistant/message`. */
 type StepUsage = NonNullable<SessionEvent<'assistant/message'>['data']['usage']>
 
+/** Accumulated usage for one step plus whether every attempt reported a sample. */
+interface StepUsageState {
+  usage: StepUsage | undefined
+  /** False once any attempt in the step omitted a usage sample. */
+  complete: boolean
+}
+
 /** The usage a provider reported in one attempt's stream, if any. */
 function streamUsage(stream: SessionEvent<'assistant/message'>['data']['stream']): StepUsage | undefined {
   return lastAssistantStreamChunk(stream, 'usage')?.usage
@@ -188,15 +195,18 @@ function streamUsage(stream: SessionEvent<'assistant/message'>['data']['stream']
 /**
  * Accumulate one step's usage across its attempts. A retried attempt keeps its
  * usage only in its `assistant/attempt` stream, so the committed message alone
- * would under-report billed tokens; an optional bucket is summed only when
+ * would under-report billed tokens. An attempt that reports no sample makes the
+ * step total unknowable, so the step omits usage entirely rather than publish a
+ * partial sum as if it were complete; an optional bucket is summed only when
  * every contribution reports it.
- * @param total - usage accumulated so far.
+ * @param state - usage accumulated so far and whether it is still complete.
  * @param next - usage reported by the next attempt.
- * @returns the accumulated usage, or `undefined` when neither side reports any.
+ * @returns the updated state.
  */
-function addUsage(total: StepUsage | undefined, next: StepUsage | undefined): StepUsage | undefined {
-  if (next === undefined) return total
-  if (total === undefined) return next
+function addUsage(state: StepUsageState, next: StepUsage | undefined): StepUsageState {
+  if (next === undefined) return { usage: state.usage, complete: false }
+  if (state.usage === undefined) return { usage: next, complete: state.complete }
+  const total = state.usage
   const sum = (a: number | undefined, b: number | undefined): number | undefined =>
     a === undefined || b === undefined ? undefined : a + b
   const totalTokens = sum(total.totalTokens, next.totalTokens)
@@ -204,12 +214,15 @@ function addUsage(total: StepUsage | undefined, next: StepUsage | undefined): St
   const cacheWriteTokens = sum(total.cacheWriteTokens, next.cacheWriteTokens)
   const reasoningTokens = sum(total.reasoningTokens, next.reasoningTokens)
   return {
-    inputTokens: total.inputTokens + next.inputTokens,
-    outputTokens: total.outputTokens + next.outputTokens,
-    ...totalTokens === undefined ? {} : { totalTokens },
-    ...cacheReadTokens === undefined ? {} : { cacheReadTokens },
-    ...cacheWriteTokens === undefined ? {} : { cacheWriteTokens },
-    ...reasoningTokens === undefined ? {} : { reasoningTokens },
+    usage: {
+      inputTokens: total.inputTokens + next.inputTokens,
+      outputTokens: total.outputTokens + next.outputTokens,
+      ...totalTokens === undefined ? {} : { totalTokens },
+      ...cacheReadTokens === undefined ? {} : { cacheReadTokens },
+      ...cacheWriteTokens === undefined ? {} : { cacheWriteTokens },
+      ...reasoningTokens === undefined ? {} : { reasoningTokens },
+    },
+    complete: state.complete,
   }
 }
 
@@ -235,7 +248,7 @@ export function projectJsonRun(
 ): JsonProjection {
   const maxStringBytes = options.maxStringBytes ?? MAX_STRING_BYTES
   let disposed = false
-  let stepUsage: StepUsage | undefined
+  let stepUsage: StepUsageState = { usage: undefined, complete: true }
 
   const write = (event: Record<string, unknown>): void => {
     sink.write(`${boundJsonLine(event, maxStringBytes)}\n`)
@@ -263,11 +276,13 @@ export function projectJsonRun(
         }
         return
       case 'step/end': {
-        const usage = stepUsage
-        stepUsage = undefined
+        const { usage, complete } = stepUsage
+        stepUsage = { usage: undefined, complete: true }
         write({
           type: 'status', phase: 'step_end', turn: event.data.turn, step: event.data.step,
-          ...usage === undefined ? {} : { usage },
+          // A partial sum would read as an exact total, so omit it entirely
+          // when any attempt in the step failed to report usage.
+          ...complete && usage !== undefined ? { usage } : {},
         })
         return
       }

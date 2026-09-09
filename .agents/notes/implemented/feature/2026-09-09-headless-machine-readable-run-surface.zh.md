@@ -56,7 +56,7 @@ dsh --profile headless [--json] [--session-id <id>] [<task>... | -]
 - `tool/result` 仅在其 `surfaceOp` 为 `append` 时投影。压缩对旧结果的替换属于历史，投影它会产生没有对应 `tool_call` 的 call id。
 - 每个被投影的字符串与对象键都限制在 8 KiB；被截断的事件带 `truncated: true`，单条序列化事件行（含换行）限制在 32 KiB——超长事件保留标量字段、丢弃结构化字段，极端情况下只剩 `type` 与 `truncated`，嵌套达到 64 层及以上的负载会在该深度被截断，因此任何合法输入都不会让限界递归溢出。进程级 `error` 事件同样受限；字面量 `__proto__` 参数键会作为数据复制，而不经过继承的 setter；空工具参数字符串会投影为 `{}`，与执行器保持一致；JSON 无法往返的参数（例如溢出为 `Infinity` 的 `1e400`）保留原始文本，而不是 `JSON.stringify` 会报告的 `null`。终止 `final` 事件刻意不做限长：它承载与默认模式相同的无损答案。
 - 文本与推理在步骤提交时到达，而不是逐 token 到达；默认模式的 stderr 推理仍是唯一的实时文本通道。轮次内失败的运行仍以 `final` 结束且没有 `error` 事件，因此即使事件流格式良好，监督进程也要用退出码与 `turn_end` 原因来分类该次运行。
-- `usage` 出现在 `step_end` 上，累计该步的每一次 attempt——包括仅在被丢弃的 `assistant/attempt` 流中留下用量样本的重试——与 provider 为该步计费的 token 计量一致。
+- `usage` 仅在该步每一次 attempt 都上报了样本时出现在 `step_end` 上，并累计这些样本——包括仅在被丢弃的 `assistant/attempt` 流中留下用量样本的重试——因此部分汇总不会被当作精确总量发布。
 - 原始会话事件不在范围内。调试用的逃生口可以以后再加，不必改动这套词汇表。
 
 ### 会话身份
