@@ -2,6 +2,8 @@ import { Fragment, useCallback, useMemo, useRef, useState, useSyncExternalStore 
 import type { CSSProperties, ReactNode } from 'react'
 import clsx from 'clsx'
 import { writeClipboard } from '../clipboard.ts'
+import { Tooltip } from '../Tooltip.tsx'
+import { IconCheckOutline16, IconCodeOutline16, IconCopyOutline16 } from '../icons/index.tsx'
 import {
   StreamingHighlightSession, grammarLoadCount, highlightToHtml, subscribeGrammarLoaded,
 } from './highlight.ts'
@@ -31,6 +33,8 @@ export interface CodeBlockProps {
   copyLabel: string
   /** Copy-button label during the post-copy confirmation window. */
   copiedLabel: string
+  /** Headerless settled preview with hover/focus actions; copying always retains the source text. */
+  preview?: { content: ReactNode; previewLabel: string; sourceLabel: string } | undefined
 }
 
 /**
@@ -59,7 +63,7 @@ function renderLine(line: readonly HighlightSpan[], index: number): ReactNode {
   )
 }
 
-export function CodeBlock({ code, lang, streaming, className, lineNumbers = false, copyLabel, copiedLabel }: CodeBlockProps) {
+export function CodeBlock({ code, lang, streaming, className, lineNumbers = false, copyLabel, copiedLabel, preview }: CodeBlockProps) {
   const trimmed = code.endsWith('\n') ? code.slice(0, -1) : code
   const sourceLines = lineNumbers ? trimmed.split('\n') : undefined
   const rootRef = useRef<HTMLDivElement>(null)
@@ -143,13 +147,13 @@ export function CodeBlock({ code, lang, streaming, className, lineNumbers = fals
     [streaming, highlighting, streamedBody, trimmed, lang, loaded],
   )
   const [copied, setCopied] = useState(false)
+  const [showSource, setShowSource] = useState(false)
+  const previewAvailable = preview !== undefined && streaming !== true
+  const showingPreview = previewAvailable && !showSource
 
   const onCopy = useCallback(() => {
     if (copied) return
-    /* v8 ignore next -- both arms always mount a <pre>; trimmed is the
-       typed fallback if the DOM shape ever diverges. */
-    const text = rootRef.current?.querySelector('pre')?.textContent ?? trimmed
-    void writeClipboard(text).then((ok) => {
+    void writeClipboard(trimmed).then((ok) => {
       if (!ok) return
       setCopied(true)
       window.setTimeout(() => { setCopied(false) }, 1000)
@@ -171,8 +175,22 @@ export function CodeBlock({ code, lang, streaming, className, lineNumbers = fals
         <div dangerouslySetInnerHTML={{ __html: html }} />
       )
 
+  const copyActionLabel = copied ? copiedLabel : copyLabel
+  const copyAction = (
+    <button
+      type="button"
+      className={clsx(css.copyButton, previewAvailable && css.iconButton)}
+      aria-label={previewAvailable ? copyActionLabel : undefined}
+      onClick={onCopy}
+    >
+      {previewAvailable
+        ? <span aria-hidden="true">{copied ? <IconCheckOutline16 /> : <IconCopyOutline16 />}</span>
+        : copyActionLabel}
+    </button>
+  )
+
   return (
-    <div ref={rootRef} className={clsx(css.block, 'md-code-block', lineNumbers && css.numbered, className)}
+    <div ref={rootRef} className={clsx(css.block, 'md-code-block', lineNumbers && css.numbered, previewAvailable && css.preview, showingPreview && css.showingPreview, className)}
       data-line-numbers={lineNumbers || undefined}
       style={sourceLines === undefined ? undefined : {
         '--dsl-code-block-line-number-width': `${Math.max(2, String(sourceLines.length).length)}ch`,
@@ -180,15 +198,28 @@ export function CodeBlock({ code, lang, streaming, className, lineNumbers = fals
       <div className={css.bannerWrap}>
         {/* The attribute carries no style here; owner stylesheets use it to pin the banner (sidebar code preview, horizontal scroll). */}
         <div className={css.banner} data-code-block-banner>
-          <div className={css.infostring}>{lang ?? ''}</div>
+          {!previewAvailable && <div className={css.infostring}>{lang ?? ''}</div>}
           <div className={css.action}>
-            <button type="button" className={css.copyButton} onClick={onCopy}>
-              {copied ? copiedLabel : copyLabel}
-            </button>
+            {previewAvailable && (
+              <Tooltip label={showingPreview ? preview.sourceLabel : preview.previewLabel} side="top">
+                <button
+                  type="button"
+                  className={clsx(css.copyButton, css.iconButton)}
+                  aria-label={showingPreview ? preview.sourceLabel : preview.previewLabel}
+                  onClick={() => { setShowSource(!showSource) }}
+                >
+                  <span aria-hidden="true"><IconCodeOutline16 /></span>
+                </button>
+              </Tooltip>
+            )}
+            {previewAvailable
+              ? <Tooltip label={copyActionLabel} side="top">{copyAction}</Tooltip>
+              : copyAction}
           </div>
         </div>
       </div>
-      {body}
+      {previewAvailable && <div hidden={!showingPreview}>{preview.content}</div>}
+      {!showingPreview && body}
     </div>
   )
 }

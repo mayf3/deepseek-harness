@@ -122,7 +122,7 @@ describe('CodeBlock', () => {
     expect(view.getByText('plain text')).toBeTruthy()
   })
 
-  it('shows the language banner and copies the pre textContent', async () => {
+  it('shows the language banner and copies the displayed source text', async () => {
     vi.useFakeTimers()
     const writeText = vi.fn().mockResolvedValue(undefined)
     Object.defineProperty(navigator, 'clipboard', {
