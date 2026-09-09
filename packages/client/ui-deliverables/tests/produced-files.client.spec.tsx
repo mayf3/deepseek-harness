@@ -663,6 +663,20 @@ it('shows descriptions and falls back to file metadata without hiding extensionl
   expect(view.getByText('report.txt')).toBeTruthy()
 })
 
+it('distinguishes PDF, Word, Markdown, and code files with full-size decorative card icons', () => {
+  const paths = ['report.pdf', 'report.docx', 'README.md', 'index.tsx']
+  const view = render(<Deliverables {...openProps()} matched={{ produced: [], presented:
+    paths.map((path, index) => ({ path, seq: 2, index })),
+  }} openFile={() => {}} sessionId={SessionId('session')} t={makeTranslate(en)} />)
+  const icons = [...view.container.querySelectorAll('[data-presented-file]')].map((card) => {
+    const icon = card.querySelector('svg')!
+    expect(icon.getAttribute('aria-hidden')).toBe('true')
+    expect(icon.getAttribute('width')).toBe('28')
+    return icon.innerHTML
+  })
+  expect(new Set(icons).size).toBe(paths.length)
+})
+
 it('lets one delivered file span the complete row without an expansion control', () => {
   const view = render(<Deliverables {...openProps()} matched={{ produced: [], presented: [
     { path: 'report.pdf', seq: 2, index: 0 },

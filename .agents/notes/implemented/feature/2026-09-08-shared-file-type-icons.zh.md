@@ -18,7 +18,7 @@ Status: implemented
 
 `LinkIcon` 委托 `classifyFileType` 做扩展名分类，再把精细结果折叠进原有链接词汇：code 与 HTML 使用 `code`，图片使用 `image`，PDF/Word/Excel/PPT 使用 `document`，Markdown、video 与未知文件使用 `other`。无扩展名文件在链接语境中仍是 `other`，因此[可点击链接决策](2026-09-04-web-clickable-link-styles.zh.md)定义的 14px 外观不变。
 
-附件上传卡片、已发送消息文件卡片、排队文件行和工作区文件行渲染 `FileTypeIcon`。两处元数据行使用 `fileExtension`，不再保留本地解析器；`.env` 这样的前导点 basename 会显示 `ENV`，无后缀或末尾点号则不显示扩展名 label。图片内容继续渲染为预览而不是文件类型图形，产物文件链接与 Markdown 文件提及继续使用 `LinkIcon`，因为它们属于链接表面。
+附件上传卡片、已发送消息文件卡片、排队文件行和工作区文件行渲染 `FileTypeIcon`。显式交付卡片也使用 28px 的 `FileTypeIcon`，并通过 `fileExtension` 提供默认元数据。两处元数据行使用 `fileExtension`，不再保留本地解析器；`.env` 这样的前导点 basename 会显示 `ENV`，无后缀或末尾点号则不显示扩展名 label。图片内容继续渲染为预览而不是文件类型图形，产物文件链接与 Markdown 文件提及继续使用 `LinkIcon`，因为它们属于链接表面。
 
 ## 备选方案
 

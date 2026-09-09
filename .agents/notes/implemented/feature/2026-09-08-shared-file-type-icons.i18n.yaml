@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-09-08-shared-file-type-icons.md
-2026-09-08-shared-file-type-icons.md: 36b4ff8f57dd810da3d2af94aac15ec5afab799e
-2026-09-08-shared-file-type-icons.zh.md: 4b33a8ffe5934953b12e82750ce57febc6f054f4
+2026-09-08-shared-file-type-icons.md: 0844cb8828edafe135d4f35b6b942691998b8b97
+2026-09-08-shared-file-type-icons.zh.md: 6d10a5669a3c68cfa327997f6822547689e3df1a

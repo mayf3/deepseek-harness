@@ -2,7 +2,7 @@
 import { useRef, useState } from 'react'
 import { resolveWorkspacePath } from '@deepseek-ai/dsh-util-workspace-path'
 import {
-  Menu, LinkIcon, classifyLinkPath, IconRightUpOutline16,
+  Menu, FileTypeIcon, fileExtension, IconRightUpOutline16,
   IconChevronDownOutline14, IconFolderOpenOutline16,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
@@ -42,7 +42,7 @@ export function PresentedFileCard({ file, cwd, phase, host, onPreview, onAction,
     onAction(action)
   }
   const name = basename(file.path)
-  const metadata = name.match(/\.([^.]+)$/)?.[1]?.toUpperCase() ?? t('presented.file')
+  const metadata = fileExtension(name).toUpperCase() || t('presented.file')
   const status = phase === undefined
     ? cardDescription(file.description, metadata)
     : t(reveal === 'directory' && phase === 'revealed' ? 'presented.directoryOpened'
@@ -51,7 +51,7 @@ export function PresentedFileCard({ file, cwd, phase, host, onPreview, onAction,
   return <div className={css.file} data-presented-file>
     <button type="button" className={css.cardPreview} title={resolveWorkspacePath(cwd, file.path)}
       aria-label={t('presented.previewCard', { name: file.path })} onClick={onPreview} />
-    <span className={css.fileIcon}><LinkIcon kind={classifyLinkPath(file.path)} size={20} /></span>
+    <span className={css.fileIcon}><FileTypeIcon path={file.path} /></span>
     <div className={css.fileBody}>
       <div className={css.details}>
         <span className={css.fileName}>{name}</span>

@@ -18,7 +18,7 @@ Recognized code and configuration files render the corresponding 20px square art
 
 `LinkIcon` delegates extension classification to `classifyFileType` and folds the detailed result into its existing link vocabulary: code and HTML use `code`, images use `image`, PDF/Word/Excel/PPT use `document`, and Markdown/video/unknown files use `other`. Extensionless names remain `other` in link contexts, so the 14px clickable-link appearance defined by the [clickable-link decision](2026-09-04-web-clickable-link-styles.md) does not change.
 
-Attachment upload cards, sent-message file cards, queued-file rows, and workspace file rows render `FileTypeIcon`. The two metadata rows use `fileExtension` rather than local parsers; a leading-dot basename such as `.env` therefore displays `ENV`, while an absent or trailing suffix displays no extension label. Image content continues to render as a preview rather than a file-type glyph, and produced-file links and Markdown file mentions continue to use `LinkIcon` because they are link surfaces.
+Attachment upload cards, sent-message file cards, queued-file rows, and workspace file rows render `FileTypeIcon`. Explicit delivery cards also use `FileTypeIcon` at 28px and `fileExtension` for their fallback metadata. The two metadata rows use `fileExtension` rather than local parsers; a leading-dot basename such as `.env` therefore displays `ENV`, while an absent or trailing suffix displays no extension label. Image content continues to render as a preview rather than a file-type glyph, and produced-file links and Markdown file mentions continue to use `LinkIcon` because they are link surfaces.
 
 ## Alternatives considered
 
