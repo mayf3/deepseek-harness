@@ -174,37 +174,28 @@ describe('list lifecycle', () => {
     expect(items.find(item => item.sessionId === S2)?.title).toBe('Pushed')
   })
 
-  it('drops a projection row beyond the subscription baseline before accepting its durable replay', async () => {
+  it('discards the previous generation title before accepting its lower-seq replay', async () => {
     const api = new FakeApiClient()
     api.onList = () => Promise.resolve(ok({ items: [summary(S1)] as never[] }))
     const manager = new SessionManager(fakeRemote(api))
-    await manager.refreshList()
-    const frame = (payload: SessionControlFrame) => { manager.handleControlFrame(payload) }
-    frame({ type: 'projection', sessionId: S1, key: 'title', value: 'Unflushed', seq: 4 })
+    try {
+      await manager.refreshList()
+      manager.handleControlFrame({ type: 'projection', sessionId: S1, key: 'title', value: 'Unflushed', seq: 4 })
 
-    // The durable baseline says the host only knows up to seq 2: the phantom
-    // row rode lost state and must drop, or last-wins pins it forever.
-    frame({
-      type: 'baseline',
-      value: {
-        jobs: {},
-        projections: { [S1]: { asOfSeq: 2, values: {} } },
-      },
-    })
-    expect(manager.getListSnapshot().items[0]?.title).toBeUndefined()
-
-    frame({ type: 'projection', sessionId: S1, key: 'title', value: 'Durable', seq: 2 })
-    expect(manager.getListSnapshot().items[0]?.title).toBe('Durable')
-
-    // A baseline at or past the row's seq keeps it (nothing phantom to drop).
-    frame({
-      type: 'baseline',
-      value: {
-        jobs: {},
-        projections: { [S1]: { asOfSeq: 2, values: { title: 'Durable' } } },
-      },
-    })
-    expect(manager.getListSnapshot().items[0]?.title).toBe('Durable')
+      manager.handleConnected()
+      await manager.refreshList()
+      expect(manager.getListSnapshot().items[0]?.title).toBeUndefined()
+      manager.handleControlFrame({
+        type: 'baseline',
+        value: {
+          jobs: {},
+          projections: { [S1]: { asOfSeq: 2, values: { title: 'Durable' } } },
+        },
+      })
+      expect(manager.getListSnapshot().items[0]?.title).toBe('Durable')
+    } finally {
+      await manager.dispose()
+    }
   })
 })
 

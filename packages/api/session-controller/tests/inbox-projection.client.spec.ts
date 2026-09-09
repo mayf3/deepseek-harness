@@ -45,23 +45,44 @@ describe('Inbox projection intake', () => {
     expect(session.getSnapshot()).not.toHaveProperty('queue')
   })
 
-  it('drops a projection that claims events beyond a reconnect baseline', () => {
-    const manager = new SessionManager(fakeRemote(new FakeApiClient()))
-    manager.handleControlFrame(inboxFrame({
-      'next-turn': [message('stale', 'stale')],
-      'next-step': [],
-    }))
+  it.each(['included', 'omitted'] as const)(
+    'keeps a newer list Inbox when a delayed control baseline has the key %s',
+    async (key) => {
+      const api = new FakeApiClient()
+      const list = deferred<Awaited<ReturnType<FakeApiClient['onList']>>>()
+      api.onList = () => list.promise
+      const manager = new SessionManager(fakeRemote(api))
+      const empty = { 'next-turn': [], 'next-step': [] }
+      const stale = { ...empty, 'next-turn': [message('removed', 'already removed')] }
+      const result = ok({ items: [{
+        sessionId: SID, updatedAt: 1, running: false, blank: false,
+        projections: { asOfSeq: 21, values: { inbox: empty } },
+      }] }) as Awaited<ReturnType<FakeApiClient['onList']>>
+      let refreshed: Promise<void> | undefined
 
-    manager.handleControlFrame({
-      type: 'baseline',
-      value: {
-        jobs: {},
-        projections: { [SID]: { asOfSeq: 0, values: {} } },
-      },
-    })
+      try {
+        manager.handleConnected()
+        refreshed = manager.refreshList()
+        list.resolve(result)
+        await refreshed
+        const face = manager.get(SID).projections.faceOf('inbox')
+        expect(face.getSnapshot()).toEqual(empty)
 
-    expect(manager.get(SID).projections.faceOf('inbox').getSnapshot()).toBeUndefined()
-  })
+        manager.handleControlFrame({
+          type: 'baseline',
+          value: { jobs: {}, projections: { [SID]: {
+            asOfSeq: 20, values: key === 'included' ? { inbox: stale } : {},
+          } } },
+        } as SessionControlFrame)
+
+        expect(face.getSnapshot()).toEqual(empty)
+      } finally {
+        list.resolve(result)
+        await refreshed
+        await manager.dispose()
+      }
+    },
+  )
 
   it.each(['control-first', 'list-first'] as const)(
     'replaces cold Session Inbox values across Host generations (%s)',

@@ -18,7 +18,7 @@ Inbox 接受消息时会记录规范化的 `agent/inbox/spliced` 事件，但 We
 
 通用会话投影传输层是唯一 Web 传输。它发送 seq 更高的 `session/projection` 值，在历史尾页中包含完整 values 块，折叠已分离的冷日志，并在缓存有效时使用投影缓存。系统不存在 Host 拥有的 `queue` 投影、placement 词汇、handoff 列表、专用 queue 帧或枚举 live Agent 的重连逻辑。
 
-对已就绪 Host generation 的同步订阅会先丢弃所有保留的投影值及其水位，再刷新查询并重新打开 control stream，其中也包括进程本地 control baseline 中没有列出的冷 Session。首次 control stream 会等待 generation 就绪；baseline 不会先于旧状态清理到达，再被较晚的 Cordis `connection/reset` 通知清除。Observable face 保留自身标识及订阅。较早 generation 的 list 请求不能发布值或使当前请求结束，因此新 generation 的历史与 list 值可以建立较低的持久 seq，而不会被尚未持久化的状态挡住。在新查询开始前清理，也能在 control baseline 较晚到达时保留新 list 值。
+对已就绪 Host generation 的同步订阅会先丢弃所有保留的投影值及其水位，再刷新查询并重新打开 control stream，其中也包括进程本地 control baseline 中没有列出的冷 Session。首次 control stream 会等待 generation 就绪；baseline 不会先于旧状态清理到达，再被较晚的 Cordis `connection/reset` 通知清除。Observable face 保留自身标识及订阅。较早 generation 的 list 请求不能发布值或使当前请求结束，因此新 generation 的历史与 list 值可以建立较低的持久 seq，而不会被尚未持久化的状态挡住。同一 generation 内，所有收到的 baseline 都遵循较高 seq 优先，因此延迟到达的 control baseline 不能删除或覆盖较新的 list 或 history 值。
 
 客户端 Session binding 在通用逐会话投影存储中保留 `inbox`，不会把它复制进 `SessionSnapshot`。QueueDock 直接读取 `next-turn`。ChatView 直接读取用户来源的 `next-step` 消息，并忽略注入上下文。认领操作通过持久 splice 移除待处理值；后续 `user/message` 由普通会话投影渲染。
 

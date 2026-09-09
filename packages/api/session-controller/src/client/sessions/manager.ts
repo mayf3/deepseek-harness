@@ -679,7 +679,6 @@ export class SessionManager {
     for (const [sessionId, block] of Object.entries(baseline.projections)) {
       const store = this.projectionStore(sessionId as SessionId)
       const asOfSeq = sessionSeqCursor(block.asOfSeq)
-      store.truncate(asOfSeq)
       store.seed({ ...block, asOfSeq })
     }
     this.notifier.markDirty()

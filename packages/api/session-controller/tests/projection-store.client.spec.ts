@@ -3,7 +3,7 @@
  * docs/subsystems/session-projection.md): the single
  * higher-seq-wins rule on both paths (a stale baseline cannot overwrite a
  * newer push frame; a replayed frame cannot regress), capability absence as
- * undefined, generation truncation, and the Session/manager wiring (tail-page
+ * undefined, generation invalidation, and the Session/manager wiring (tail-page
  * seeding, control-stream projection routing pre- and post-instantiation, the
  * list rows' title projection).
  */
@@ -57,15 +57,6 @@ describe('Session projection value semantics', () => {
     // …and an omitting fresh cut clears (capability absent as of the cut).
     store.seed({ asOfSeq: SessionSeq(40), values: {} })
     expect(store.get('test/marks')).toBeUndefined()
-  })
-
-  it('truncate drops rows past the durable baseline and keeps the rest', () => {
-    const store = new ProjectionValueStore()
-    store.apply('test/marks', { marks: ['durable'] }, SessionSeq(5))
-    store.apply('other', 'phantom', SessionSeq(50))
-    store.truncate(SessionSeq(10))
-    expect(store.get('test/marks')).toEqual({ marks: ['durable'] })
-    expect(store.get('other')).toBeUndefined()
   })
 
   it('clears all generation watermarks without replacing subscribed faces', async () => {
@@ -181,7 +172,7 @@ describe('manager frame routing', () => {
     expect(session.projections.get('test/marks')).toEqual({ marks: ['later'] })
   })
 
-  it('projects the title key into list rows and truncates phantom rows on the control baseline', async () => {
+  it('preserves a newer title when the control baseline omits it', async () => {
     const api = new FakeApiClient()
     const manager = new SessionManager(fakeRemote(api))
     api.onList = () => Promise.resolve(ok({
@@ -193,8 +184,6 @@ describe('manager frame routing', () => {
     })
     await Promise.resolve()
     expect(manager.getListSnapshot().items[0]?.title).toBe('Projected title')
-    // The durable baseline says the host only knows up to seq 2: the row rode
-    // lost state and must drop (the un-flushed title precedent).
     manager.handleControlFrame({
       type: 'baseline',
       value: {
@@ -203,7 +192,7 @@ describe('manager frame routing', () => {
       },
     })
     await Promise.resolve()
-    expect(manager.getListSnapshot().items[0]?.title).toBeUndefined()
+    expect(manager.getListSnapshot().items[0]?.title).toBe('Projected title')
   })
 
   it('projects every retained value into list rows with stable snapshot identity', async () => {

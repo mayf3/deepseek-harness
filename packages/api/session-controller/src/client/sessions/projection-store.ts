@@ -159,21 +159,6 @@ export class ProjectionValueStore {
     }
   }
 
-  /**
-   * Drop rows beyond a replacement control baseline. Such rows describe
-   * process state the Host lost before persisting it and would otherwise
-   * outrank recomputed lower-seq values forever. The caller seeds the new
-   * baseline immediately afterward.
-   * @param lastSeq - highest durable sequence reflected by the baseline.
-   */
-  truncate(lastSeq: SessionSeqCursor): void {
-    for (const [key, row] of this.rows) {
-      if (row.seq <= lastSeq) continue
-      this.rows.delete(key)
-      this.changed(key)
-    }
-  }
-
   /** Discard one Host generation's values and watermarks while preserving subscribed faces. */
   clear(): void {
     for (const key of this.rows.keys()) {
