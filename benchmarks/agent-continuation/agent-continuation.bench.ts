@@ -1,7 +1,7 @@
 /** Baseline budgets for long-history requests, tool continuation, and fork-child discovery. */
 
 import { cp, mkdir, mkdtemp, rm } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { availableParallelism, cpus, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { runBuiltBenchmarkWorker } from '../support/built-worker.ts'
@@ -166,6 +166,12 @@ describe('continuing tool-heavy Sessions with large histories', () => {
       const retainedHeapBudgetMb = EXPECTED_RETAINED_HEAP_MB * PERFORMANCE_BUDGET_HEADROOM
       console.log(JSON.stringify({
         benchmark: 'agent-continuation/' + scenario, workload: WORKLOAD,
+        runtime: {
+          cpuModels: [...new Set(cpus().map(cpu => cpu.model))],
+          availableParallelism: availableParallelism(),
+          platform: process.platform, arch: process.arch,
+          node: process.version, v8: process.versions.v8,
+        },
         samples, totalMs: { min: Math.min(...totalMs), median: median(totalMs), max: Math.max(...totalMs) },
         budgetMs, ...(scenario === 'tool-continuation' ? { retainedHeapBudgetMb } : {}),
       }))
