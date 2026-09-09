@@ -44,7 +44,8 @@ function retryableWriteError(error: unknown): boolean {
  * Apply patch lists to an entry list — THE patch semantics of this include,
  * shared by mounting (`applyPatches`) and offline config tooling
  * (`dsh --dump-config`) so a dump can never drift from what boots. The input
- * is never mutated: patching shared entry objects would bake earlier patch
+ * is never mutated and the result is always detached from it (even with no
+ * patches): patching or mounting shared entry objects would bake earlier
  * values into the cached parse, so repeated application (config hot-reloads)
  * could never revert a removed or changed patch. Inserted entries are indexed
  * as they are added, so a later patch in the same list can target a row an
@@ -59,8 +60,8 @@ export function applyEntryPatches(
   patches: PatchOptions[] | undefined,
   warn: (message: string, ...args: any[]) => void,
 ): EntryOptions[] {
-  if (!patches?.length) return [...data]
   data = structuredClone(data)
+  if (!patches?.length) return data
 
   const entryMap = new Map<string, EntryOptions>()
   const buildMap = (entries: EntryOptions[]) => {
@@ -251,8 +252,8 @@ export class Include extends EntryTree {
       // never be mislabelled as absent or silently overwritten.
       if ((error as NodeJS.ErrnoException | null)?.code !== 'ENOENT') throw error
       if (this.config.initial) {
-        this.writeFile(this.config.initial as any)
-        await this.read()
+        await this._writeFile(this.config.initial as any)
+        await this.read(true)
       } else {
         throw new Error(`config file not found: ${this.filename}`)
       }
@@ -263,8 +264,12 @@ export class Include extends EntryTree {
   }
 
   async stop() {
-    await this.root.stop()
-    await this.flushWrite()
+    try {
+      await this.flushWrite()
+    } finally {
+      this.root.stop()
+      await this.flushWrite()
+    }
   }
 
   /**

@@ -1,15 +1,6 @@
-/**
- * Config hot-reload resilience of the booted include tree. `dsh-app-boot`
- * installs a fail-loud unhandled-rejection handler, so a `refresh()` that
- * rethrows a config-file parse error would kill a live app on one bad
- * `cordis.yml` edit (the HMR watcher awaits `refresh()` in an async event
- * callback nobody else catches). These tests pin the vendored
- * `@cordisjs/plugin-include` contract that boot relies on: an invalid file
- * keeps the last good tree, and a valid re-read re-applies overlay patches
- * exactly like the initial load.
- */
+/** File reload and overlay behavior through the booted Include tree. */
 
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, describe, expect, it } from 'vitest'
@@ -32,10 +23,11 @@ interface TreeFixture {
   include: Include
 }
 
-async function bootTree(configBody: string): Promise<TreeFixture> {
+async function bootTree(configBody: string, files: Record<string, string> = {}): Promise<TreeFixture> {
   const dir = mkdtempSync(join(tmpdir(), 'dsh-config-reload-'))
   tempRoots.push(dir)
   writeFileSync(join(dir, 'noop.mjs'), NOOP_PLUGIN)
+  for (const [name, content] of Object.entries(files)) writeFileSync(join(dir, name), content)
   writeFileSync(join(dir, 'cordis.yml'), configBody)
   const ctx = await boot(NAME, join(dir, 'cordis.yml'))
   const entry = [...ctx.loader.entries()].find(candidate => candidate.subtree !== undefined)
@@ -48,6 +40,26 @@ function entryConfig(ctx: Context, id: string): unknown {
 }
 
 describe('include refresh with an invalid file', () => {
+  it('writes and activates initial entries when an included file is missing', async () => {
+    const { ctx, dir } = await bootTree([
+      '- id: initialized',
+      "  name: 'cordis:include'",
+      '  config:',
+      '    path: ./created.yml',
+      '    initial:',
+      '      - id: noop',
+      '        name: ./noop.mjs',
+      '        config: { value: initial }',
+      '',
+    ].join('\n'))
+    try {
+      expect(entryConfig(ctx, 'noop')).toEqual({ value: 'initial' })
+      expect(readFileSync(join(dir, 'created.yml'), 'utf8')).toContain('id: noop')
+    } finally {
+      await ctx.fiber.dispose()
+    }
+  })
+
   it('keeps the last good tree instead of throwing, then applies the next valid edit', async () => {
     const { ctx, dir, include } = await bootTree('- id: noop\n  name: ./noop.mjs\n  config:\n    value: 1\n')
     try {

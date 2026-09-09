@@ -1,7 +1,7 @@
 /**
  * User patch-layer behavior of `dsh-app-boot`: the optional patch-list loader
  * (a profile's `cordis.patch.yml`) and `boot()` applying the user layer over
- * a real Loader tree, kept live through transactional HMR.
+ * a real Loader tree with live file watching.
  */
 
 import { mkdirSync, mkdtempSync, rmSync, unlinkSync, writeFileSync } from 'node:fs'
@@ -270,7 +270,9 @@ describe('Loader config interpolation', () => {
       await provider?.update({ disabled: true })
       await provider?.update({ config: { fail: true } })
       await provider?.update({ disabled: false })
-      await expect(ctx.loader.await()).rejects.toThrow('rejected provider')
+      await ctx.loader.await()
+      const reader = [...ctx.loader.entries()].find(entry => entry.options.id === 'reader')
+      await expect(reader?.fiber?.await()).rejects.toThrow('rejected provider')
       expect(ctx.get('readerResult')).toBeUndefined()
 
       await provider?.update({ disabled: true })
@@ -342,7 +344,8 @@ describe('Loader entry disabled interpolation', () => {
       const disabledFalse = { __jsExpr: 'process.version.length === 0' } as unknown as boolean
       await entry?.update({ disabled: disabledTrue })
       expect(entry?.disabled).toBe(true)
-      expect(entry?.fiber).toBeUndefined()
+      await ctx.loader.await()
+      expect(entry?.fiber?.uid).toBeNull()
       await entry?.update({ disabled: disabledFalse })
       expect(entry?.disabled).toBe(false)
       expect(entry?.fiber).toBeDefined()
@@ -403,7 +406,7 @@ describe('boot with user patches', () => {
     }
   })
 
-  it('watches add, failure, recovery, and removal through transactional HMR', { timeout: 20_000 }, async () => {
+  it('applies live patches, reports failures without rollback, and recovers after a later edit', { timeout: 20_000 }, async () => {
     const dir = tmp()
     const userDir = tmp()
     const filename = join(userDir, PROFILE_PATCH_FILENAME)
@@ -412,8 +415,8 @@ describe('boot with user patches', () => {
     onTestFinished(() => ctx.fiber.dispose())
     await ctx.plugin(Timer)
     await ctx.plugin(Hmr, { root: [], ignored: [], debounce: 0 })
-    // Native notifications belong to hmr-config.spec.ts; this case owns the
-    // real HMR/Include transaction after each delivered filesystem event.
+    // Native notifications belong to watch-config.spec.ts; this case owns
+    // Include recomposition after each explicitly delivered filesystem event.
     const watchers: FSWatcher[] = []
     const previousFactory = configWatch.create
     onTestFinished(() => { configWatch.create = previousFactory })
@@ -423,10 +426,11 @@ describe('boot with user patches', () => {
       queueMicrotask(() => { watcher.emit('ready') })
       return watcher
     }
-    const failures: Array<{ filename: string; error: Error }> = []
-    ctx.on('hmr/config-update-failed', (failedFilename, error) => {
-      failures.push({ filename: failedFilename, error })
+    const failures: Error[] = []
+    const warn = vi.spyOn(ctx.logger, 'warn').mockImplementation((value: unknown) => {
+      if (value instanceof Error) failures.push(value)
     })
+    onTestFinished(() => { warn.mockRestore() })
     const dispose = await watchUserPatches(ctx, {
       binName: NAME,
       filename,
@@ -441,16 +445,15 @@ describe('boot with user patches', () => {
 
       writeFileSync(filename, '- id: noop\n  config:\n    fail: true\n')
       watcher.emit('change', filename)
-      await eventually(() => failures.length === 1, 'failed candidate was not broadcast')
-      expect(failures[0]).toMatchObject({ filename })
-      expect(failures[0]?.error).toBeInstanceOf(Error)
-      expect((entryConfig(ctx, 'noop') as { value?: string }).value).toBe('live')
+      await eventually(() => failures.length === 1, 'failed candidate was not reported')
+      expect(failures[0]).toBeInstanceOf(Error)
+      expect(entryConfig(ctx, 'noop')).toMatchObject({ fail: true })
 
       writeFileSync(filename, 'invalid: [unclosed\n')
       watcher.emit('change', filename)
-      await eventually(() => failures.length === 2, 'parse failure was not broadcast')
-      expect(failures[1]?.error).toBeInstanceOf(Error)
-      expect((entryConfig(ctx, 'noop') as { value?: string }).value).toBe('live')
+      await eventually(() => failures.length === 2, 'parse failure was not reported')
+      expect(failures[1]).toBeInstanceOf(Error)
+      expect(entryConfig(ctx, 'noop')).toMatchObject({ fail: true })
 
       writeFileSync(filename, '- id: noop\n  config:\n    value: recovered\n')
       watcher.emit('change', filename)
@@ -494,21 +497,19 @@ describe('boot with user patches', () => {
   })
 
   it('returns a no-op disposer when the tree is disposed while the watcher opens', async () => {
-    // A surface can dispose the whole tree while registerConfig's effect
-    // registration is still in flight (the HMR effect then fails with
-    // INACTIVE_EFFECT); the app is exiting exactly as asked, so the watcher
-    // must not crash the process. The stub makes the race deterministic — the
-    // live-teardown ordering itself is not stageable.
     const dir = tmp()
     const ctx = await boot(NAME, writeTree(dir))
-    try {
-      const teardown = Object.assign(new Error('cannot create effect on inactive context'), { code: 'INACTIVE_EFFECT' })
-      ctx.provide('hmr', { registerConfig: () => Promise.reject(teardown) })
-      const dispose = await watchUserPatches(ctx, { binName: NAME, filename: join(tmp(), PROFILE_PATCH_FILENAME) })
-      await expect(dispose()).resolves.toBeUndefined()
-    } finally {
-      await ctx.fiber.dispose()
+    await ctx.plugin(Timer)
+    await ctx.plugin(Hmr, { root: [], ignored: [], debounce: 0 })
+    const previousFactory = configWatch.create
+    onTestFinished(() => { configWatch.create = previousFactory })
+    configWatch.create = (options) => {
+      const watcher = new FSWatcher(options)
+      void ctx.fiber.dispose().then(() => { watcher.emit('ready') })
+      return watcher
     }
+    const dispose = await watchUserPatches(ctx, { binName: NAME, filename: join(tmp(), PROFILE_PATCH_FILENAME) })
+    await expect(dispose()).resolves.toBeUndefined()
   })
 
   it('propagates registration failures other than mid-teardown', async () => {
@@ -519,7 +520,7 @@ describe('boot with user patches', () => {
       await ctx.plugin(Timer)
       await ctx.plugin(Hmr, { root: [], ignored: [], debounce: 0 })
       const dispose = await watchUserPatches(ctx, { binName: NAME, filename })
-      // Same user-layer path registered twice: HMR refuses; not a teardown race.
+      // Same user-layer path registered twice: the watcher refuses; not a teardown race.
       await expect(watchUserPatches(ctx, { binName: NAME, filename })).rejects.toThrow('already registered')
       await dispose()
     } finally {

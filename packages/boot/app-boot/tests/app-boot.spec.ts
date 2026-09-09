@@ -790,7 +790,7 @@ describe('boot', () => {
     const dir = tmp()
     writeFileSync(join(dir, 'cordis.yml'), '- id: ghost\n  name: ./missing.mjs\n')
     await expect(boot(NAME, join(dir, 'cordis.yml'))).rejects.toThrow(
-      `${NAME}: plugin tree failed to load: failed to apply loader entry`,
+      `${NAME}: plugin tree failed to load: ${NAME}: plugin(s) failed to load: ./missing.mjs`,
     )
   })
 
@@ -808,7 +808,7 @@ describe('boot', () => {
     writeFileSync(configPath, config)
 
     await expect(boot(NAME, configPath)).rejects.toThrow(
-      'failed to apply loader entry invalid-config (./noop.mjs)',
+      './noop.mjs: SyntaxError:',
     )
     expect(readFileSync(configPath, 'utf8')).toBe(config)
   })
@@ -825,8 +825,8 @@ describe('boot', () => {
     ].join('\n'))
     writeFileSync(join(dir, 'cordis.yml'), '- id: failing\n  name: ./failing.mjs\n')
     await expect(boot(NAME, join(dir, 'cordis.yml'))).rejects.toThrow(new RegExp([
-      String.raw`failed to apply loader entry failing \(\./failing\.mjs\): pinned activation failure\n`,
-      String.raw`Error: pinned activation failure\n {4}at failing-fixture$`,
+      String.raw`\./failing\.mjs: Error: pinned activation failure\n`,
+      String.raw` {4}at failing-fixture$`,
     ].join('')))
   })
 
@@ -835,9 +835,9 @@ describe('boot', () => {
     const deepest = new Error('stackless deep failure')
     delete (deepest as { stack?: string }).stack
     await expect(boot(NAME, join(dir, 'cordis.yml'), undefined, () => {
-      throw new Error('host preparation failed', { cause: deepest })
+      throw new Error('wrapped setup failure', { cause: deepest })
     })).rejects.toThrow(
-      `${NAME}: plugin tree failed to load: host preparation failed\nstackless deep failure`,
+      `${NAME}: host preparation failed: wrapped setup failure\nstackless deep failure`,
     )
   })
 

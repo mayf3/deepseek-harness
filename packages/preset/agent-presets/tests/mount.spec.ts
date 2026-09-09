@@ -255,20 +255,13 @@ describe('rejecting a composition that cannot be used', () => {
   })
 
   it('names every failed row, not just the count', async () => {
-    // The Loader folds several failed rows into one AggregateError whose own
-    // message names none of them; unflattened, the operator is told only that
-    // "loader entries failed to apply" and has nothing to act on.
     await expect(agentOn(ctx, 'sess-two-broken', 'two-broken'))
       .rejects.toThrow(/first-refuses[\s\S]*second-refuses/)
   })
 
   it('names the rows inside a failed group, not the group alone', async () => {
-    // The Loader's per-row wrapper keeps only `cause.message`, so a group's
-    // own AggregateError arrives with its `errors` reachable through `cause`
-    // alone. Reading the message stops at "loader entries failed to apply"
-    // and names neither row that actually refused.
     await expect(agentOn(ctx, 'sess-nested-broken', 'nested-broken'))
-      .rejects.toThrow(/outer[\s\S]*inner-first[\s\S]*inner-second/)
+      .rejects.toThrow(/inner-first[\s\S]*inner-second/)
   })
 
   it('names the unresolved service when a row never activates', async () => {

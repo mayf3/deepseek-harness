@@ -20,7 +20,6 @@ declare module '@deepseek-ai/cordis' {
   interface Events {
     'hmr/change'(url: string): void
     'hmr/reload'(reloads: Map<Plugin, Reload>): void
-
   }
 }
 

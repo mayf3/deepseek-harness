@@ -96,11 +96,11 @@ export class Entry {
   }
 
   private _patchContext(diff: string[]) {
-    this.context.waterfall('loader/patch-context', this, () => {
+    return this.context.waterfall('loader/patch-context', this, () => {
       Object.setPrototypeOf(this.ctx, this.parent.ctx)
 
       if (this.fiber?.uid && (diff.includes('config') || this.options.group)) {
-        this.fiber.update(this.options.config, true)
+        return this.fiber.update(this.options.config, true)
       }
     })
   }
@@ -142,7 +142,7 @@ export class Entry {
         .filter(key => !deepEqual(this.options[key], legacy[key]))
       if (!diff.length && !force) return
       this.context.emit('loader/partial-dispose', this, legacy, true)
-      this._patchContext(diff)
+      await this._patchContext(diff)
     } else {
       await this.init()
     }
@@ -165,10 +165,11 @@ export class Entry {
     } finally {
       this._initTask = undefined
     }
-    this.fiber?.await().finally(() => {
+    const notify = () => {
       if (this.loader.getTasks().length) return
       this.ctx.reflect.notify(['loader'])
-    })
+    }
+    this.fiber?.await().then(notify, notify)
   }
 
   private async _init() {

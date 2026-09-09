@@ -757,10 +757,6 @@ describe.skipIf(!existsSync(dshBin))('dsh BUILT bin (node lib/bin.js, no tsx)', 
   }, SPAWN_TIMEOUT_MS + 30_000)
 
   it('reports a patch-overlay boot failure without hanging', async () => {
-    // The HMR main watcher's initial scan once refreshed the include
-    // mid-initial-apply, deadlocking the failing apply's rollback against the
-    // refresh drain: dsh exited 13 with no diagnostic instead of settling
-    // ([vendor/README.md](../../../vendor/README.md)).
     const home = mkdtempSync(join(tmpdir(), 'dsh-invalid-patch-'))
     try {
       const result = await runBuiltBin(['--profile', 'web', '--patch', invalidProvider], {

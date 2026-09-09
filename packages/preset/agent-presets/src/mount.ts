@@ -295,22 +295,26 @@ export function serviceForAgent<K extends string & keyof Context>(
 /**
  * Rows that did not reach a usable state, each rendered as one diagnostic line.
  *
- * A row whose module failed to import or whose plugin threw already rejects the
- * mount through the loader; what remains observable here is a row still waiting
- * for a service the composition never supplies.
+ * Wait for the subtree, then report import failures, activation failures, and
+ * rows waiting for services the composition does not supply.
  * @param tree - the mounted subtree.
  * @returns one line per unusable row, empty when every enabled row is usable.
  */
-export function inactiveRows(tree: EntryTree): string[] {
+export async function inactiveRows(tree: EntryTree): Promise<string[]> {
+  await tree.await()
   const lines: string[] = []
   for (const entry of tree.entries()) {
     if (entry.disabled) continue
     const fiber = entry.fiber
-    /* v8 ignore next 4 -- the loader rejects an entry whose module or plugin failed,
-       so a settled tree never holds an enabled fiber-less entry; the branch exists
-       only because `Entry.fiber` is declared optional. */
     if (fiber === undefined) {
       lines.push(`${entry.options.id} (${entry.options.name}): never started`)
+      continue
+    }
+    try {
+      await fiber.await()
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error)
+      lines.push(`${entry.options.id} (${entry.options.name}): ${detail}`)
       continue
     }
     const missing = Object.keys(fiber.inject).filter(name => fiber.ctx.get(name) === undefined)
@@ -400,7 +404,7 @@ export async function mountPreset(agentCtx: Context, preset: AgentPreset): Promi
     /* v8 ignore next -- the subclass constructor runs before `await()` settles for every mounted tree */
     if (subtree === undefined) throw new Error('mounted subtree did not publish its entry tree')
     const { tree, fiber } = subtree
-    const unusable = inactiveRows(tree)
+    const unusable = await inactiveRows(tree)
     if (unusable.length > 0) {
       throw new Error(`${String(unusable.length)} row(s) did not activate:\n${unusable.join('\n')}`)
     }

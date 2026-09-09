@@ -126,7 +126,7 @@ export default function isolate(ctx: Context) {
     swap(entry.ctx[Context.intercept], entry.options.intercept)
 
     // step 4: reload fiber
-    next()
+    const result = next()
 
     // step 5: replace service impl
     for (const [symbol1, symbol2, flag1, flag2] of Object.values(diff)) {
@@ -150,6 +150,7 @@ export default function isolate(ctx: Context) {
         delete entry.ctx[delims[name]]
       }
     }
+    return result
   })
 
   ctx.on('loader/partial-dispose', (entry, legacy, active) => {

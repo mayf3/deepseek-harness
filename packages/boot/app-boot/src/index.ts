@@ -18,6 +18,7 @@ import Group from '@deepseek-ai/cordis-plugin-group'
 import { dshHomePath, resolveDshHome } from '@deepseek-ai/dsh-home-paths'
 import { createLaunchEnvironmentSnapshot, type LaunchEnvironmentSnapshot } from '@deepseek-ai/dsh-launch-environment'
 import type {} from '@deepseek-ai/cordis-plugin-hmr'
+import { watchConfig } from './watch-config.ts'
 import type {} from '@deepseek-ai/dsh-system-prompt'
 
 declare module '@deepseek-ai/cordis' {
@@ -241,7 +242,7 @@ export interface UserPatchWatchOptions {
 }
 
 /**
- * Watch the user patch layer through Cordis HMR and transactionally reapply it to the boot include.
+ * Watch the user patch layer and reapply it to the boot Include without rollback.
  * @param ctx - settled app context containing the root Include and an active HMR service.
  * @param options - diagnostic, file, and patch-composition inputs.
  * @returns an asynchronous disposer after the exact-path watcher is ready.
@@ -256,7 +257,7 @@ export async function watchUserPatches(
   if (hmr === undefined) throw new Error(`${binName}: user patch-layer watching requires the Cordis HMR service`)
   const entry = bootstrapIncludes.get(ctx)
   if (entry === undefined) throw new Error(`${binName}: user patch-layer watching requires the root Include entry`)
-  const register = hmr.registerConfig(filename, async () => {
+  const register = watchConfig(ctx, filename, hmr.config, async () => {
     // Re-read the include's non-patch options per refresh so a writer that
     // updates another option between refreshes is not silently reverted.
     const { patches: _previousPatches, ...includeConfig } = entry.options.config as Include.Config
@@ -268,6 +269,8 @@ export async function watchUserPatches(
         patches,
       },
     })
+    await ctx.loader.await()
+    await assertEntriesActivated(ctx, binName)
   })
   try {
     return await register
@@ -511,7 +514,7 @@ function groupedDump(
  * names; relative names continue to resolve beside the configuration file.
  * @returns the created root Include entry, or `undefined` when a surface
  * disposed the whole tree (taking the Loader service with it) while the
- * transactional create was still settling entry lifecycle.
+ * entry creation was in flight.
  */
 export async function mountRootInclude(
   ctx: Context,
@@ -762,11 +765,9 @@ export async function assertEntriesActivated(ctx: Context, binName: string): Pro
  * is statically imported and mounted as the `cordis:include` builtin, loading
  * through the ambient module pipeline (vite/tsx/plain ESM). The package build
  * embeds Include while leaving Loader external, so the built include tree and
- * host share one Loader peer. Loader
- * settlement rejects startup failures, which `boot` wraps after disposing the
- * partial context; a missing fiber or never-activating entry is rejected by
- * the final audit, {@link assertEntriesActivated}, which rethrows a plugin's
- * init rejection with its original stack; later unhandled rejections remain
+ * host share one Loader peer. The final audit, {@link assertEntriesActivated},
+ * rejects missing, failed, or inactive entries. `boot` disposes its partial
+ * context on failure and preserves the original activation stack; later unhandled rejections remain
  * covered by {@link installFailLoud}. Built bins need the Loader's native
  * helper for bare plugin specifiers; relative specifiers do not.
  * @param binName - the diagnostic prefix for load-failure errors.
@@ -780,6 +781,9 @@ export async function assertEntriesActivated(ctx: Context, binName: string): Pro
  * complete plugin set.
  * @returns the root context once every entry has started, or as soon as a
  * surface disposed the tree while startup was still in flight.
+ * @throws a labelled error after disposing the partial context — `host
+ * preparation failed` when `prepare` threw before any config-tree entry
+ * mounted, `plugin tree failed to load` afterwards.
  */
 export async function boot(
   binName: string,
@@ -789,21 +793,39 @@ export async function boot(
   bareModuleBaseUrl?: string,
 ): Promise<Context> {
   const ctx = new Context()
-  ctx.baseUrl = pathToFileURL(dirname(absoluteConfigPath)).href + '/'
-  ctx.provide('dshHomePath', dshHomePath)
-  await ctx.plugin(Loader)
-  await prepare?.(ctx)
-  await mountRootInclude(ctx, absoluteConfigPath, patches, bareModuleBaseUrl)
-  await ctx.loader.await()
-  // A surface can finish and dispose the whole tree while that await is still
-  // pending: the TUI renders as soon as its own fiber starts, so an `/exit`
-  // typed before the last entry settles tears the context down under us. The
-  // Loader service goes with it, and the activation audit describes a live
-  // tree — reading `ctx.loader` here would throw a TypeError over an app that
-  // exited exactly as asked.
-  if (ctx.get('loader') === undefined) return ctx
-  await assertEntriesActivated(ctx, binName)
-  return ctx
+  // Two failure labels: `prepare` runs before any config-tree entry mounts,
+  // so its failure is host setup, not the plugin tree.
+  let stage = 'host preparation failed'
+  try {
+    ctx.baseUrl = pathToFileURL(dirname(absoluteConfigPath)).href + '/'
+    ctx.provide('dshHomePath', dshHomePath)
+    await ctx.plugin(Loader)
+    await prepare?.(ctx)
+    stage = 'plugin tree failed to load'
+    await mountRootInclude(ctx, absoluteConfigPath, patches, bareModuleBaseUrl)
+    // A surface can finish and dispose the whole tree while startup is still
+    // in flight, before the last entry settles. The Loader service goes with
+    // it, and the activation audit describes a live tree — reading `ctx.loader`
+    // past this point would throw a TypeError over an app that exited exactly
+    // as asked. Re-check after settlement before auditing the tree.
+    await ctx.get('loader')?.await()
+    if (ctx.get('loader') === undefined) return ctx
+    await assertEntriesActivated(ctx, binName)
+    return ctx
+  } catch (cause) {
+    // Root-fiber disposal contains cleanup failures per observer (Cordis
+    // fiber.ts hardening) and a repeated call returns the settled single-shot
+    // result, so this await cannot reject and replace `cause`.
+    await ctx.fiber.dispose()
+    const detail = cause instanceof Error ? cause.message : String(cause)
+    // A wrapper can carry an activation error whose original stack names the failed plugin.
+    let deepest: unknown = cause
+    while (deepest instanceof Error && deepest.cause !== undefined) deepest = deepest.cause
+    const stack = deepest instanceof AggregateError
+      ? `\n${deepest.stack ?? deepest.message}\n${deepest.errors.map(formatActivationError).join('\n')}`
+      : deepest instanceof Error && deepest !== cause ? `\n${deepest.stack ?? deepest.message}` : ''
+    throw new Error(`${binName}: ${stage}: ${detail}${stack}`, { cause })
+  }
 }
 
 /** Prompt-section name for the harness-source location line an app bin adds after boot. */

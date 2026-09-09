@@ -54,7 +54,7 @@ Your machine-local preferences also live in the Harness home:
 - **`.env`** — your ordinary environment layers: the invoking directory's file outranks the Harness-home file, and both sit below the inherited environment. Variables that decide how the process starts (`PATH`, `DSH_*`, `XDG_*` and similar) are rejected from files: export them instead. The four proxy names (`HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`, `NO_PROXY`) are accepted from the Harness-home file only, never from the invoking directory's, which arrives with a clone. For a non-product bin that just wants one directory's `.env`, a missing file is fine and an unloadable one prints one labelled warning line.
 - **`cordis.patch.yml`** — your tweak layer, applied after every bundle layer (per-profile first, then the home-level file, which therefore outranks it): replace one entry's whole config (restating the fields you keep), insert new entries, or interpolate `!!js` expressions at boot. A patch naming an entry that does not exist prints a stderr warning; an empty or comments-only file fails boot — disable the layer with `[]` instead.
 
-Profiles with `patchReload: live` watch both user patch files: a valid edit recomposes without restart, while a rejected edit leaves the last good app running. A `startup` profile installs neither those watchers nor the launcher's watch-only HMR fallback.
+Profiles with `patchReload: live` watch both user patch files. Parse failures preserve the running configuration; plugin activation failures are reported and can leave a partially applied tree. A later valid edit can recover it. Loader changes are not rolled back. A `startup` profile installs neither those watchers nor the launcher's watch-only HMR fallback.
 
 Inserted plugin names may be absolute filesystem paths, file URLs, or package specifiers. Patch loading converts absolute paths and patch-relative `./` or `../` paths to file URLs within `insert` rows and their nested groups; existing-entry name assertions and replacement `config` values remain literal.
 
@@ -118,7 +118,7 @@ Read these pages when the package-level contract is not enough. They move from t
 - [dsh-home-paths](../../util/home-paths/README.md) — the Harness-home resolver (`resolveDshHome`).
 - [Configuration source ownership](../../../.agents/notes/implemented/architecture/2026-08-04-configuration-source-ownership.md) — why a discovered file may not decide bootstrap behavior.
 - [Profile plugin bundles](../../../.agents/notes/implemented/architecture/2026-08-05-profile-plugin-bundles.md) — the profile and bundle composition design.
-- [User-patch HMR tests](../../../.agents/notes/implemented/testing/2026-09-09-user-patch-hmr-test-delivery.md) — ownership of transaction behavior and native filesystem delivery.
+- [User-patch HMR tests](../../../.agents/notes/implemented/testing/2026-09-09-user-patch-hmr-test-delivery.md) — ownership of live-patch behavior and native filesystem delivery.
 
 -----
 

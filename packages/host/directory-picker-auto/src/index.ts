@@ -79,14 +79,18 @@ export async function apply(ctx: Context): Promise<void> {
         // nothing is left to unmount or await then.
         const entry = ctx.loader.store[id]
         if (entry === undefined) continue
-        const fiber = entry.fiber
+        const disposal = entry.fiber?.dispose()
         ctx.loader.remove(id)
-        await fiber?.dispose()
+        await disposal
       }
     }
     try {
       for (const name of [BACKEND_PACKAGES[backend], SURFACE_PACKAGES[backend]]) {
-        ids.push(await ctx.loader.create({ name }))
+        const id = await ctx.loader.create({ name })
+        ids.push(id)
+        const entry = ctx.loader.resolve(id)
+        if (entry.fiber === undefined) throw new Error(`directory-picker-auto: failed to load ${name}`)
+        await entry.fiber.await()
       }
     } catch (cause) {
       // Setup owns the entries it created until it returns the disposer: leaving
