@@ -20,7 +20,13 @@ The File row is an `action` contribution, a new `CommandUiSpec` kind whose bare 
 
 `ui-input-trigger` renders the new row anatomy: `InputTriggerCandidate.label` is the title and a second search key of the shared `rankByName`, the name renders as a trailing alias when the label differs from it, `icon` accepts an icon component beside the reference glyph tokens, and the description is right-aligned. `ui-primitives` gains the Plan glyph from the design doc, a static ring for Compact, and the permission shield contour.
 
+The menu uses a 400 px border-box height cap, which fits both headings and the eight built-in rows before the viewport clamp reduces it. A real overflow keeps a 10 px draggable WebKit rail around a 4 px visible thumb, insets the track from the rounded ends, and shows a bottom fade until the viewport reaches the final row; Firefox keeps its standard thin scrollbar.
+
 ## Alternatives considered
+
+**Release a claim when its separator is deleted.** The complete command name still identifies the selected command. Keeping the claim until the name changes preserves its highlight through argument replacement and avoids relying on an IME-generated space to run ordinary keydown adjudication. The shared input machine applies this rule to every command token, including failure recovery; neither the command name nor the locale selects a separate implementation.
+
+**Restore placeholders directly on native composition end.** Browsers can deliver that event before Lexical reconciles the final text. The shared editor binding keeps command hints and ordinary placeholders hidden while either native or editor composition remains active, and reevaluates visibility after an editor commit, including a cancellation that changes no text. Keyboard submit guards retain their separate post-composition window.
 
 **Localize descriptions on the Host.** The Host has no locale and its catalog is shared by every client; the client already owns product copy for every other surface (the locale-owned client UI copy decision), and the equality guard keeps a scoped or third-party descriptor verbatim.
 

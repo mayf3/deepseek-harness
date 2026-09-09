@@ -133,6 +133,68 @@ describe('web e2e: lifecycle & chrome (workspace flow / reload / dark mode)', ()
     }
   })
 
+  it.skipIf(MODE === 'record').each([
+    { locale: 'en-US', token: '/goal', row: 'Goal Set or view the goal for a long-running task', hint: 'describe the objective for a long-running task' },
+    { locale: 'en-US', token: '/plan', row: 'Plan Enter or leave plan mode', hint: 'describe your task to generate plan' },
+    { locale: ZH_BROWSER_LOCALE, token: '/目标', row: '目标 goal 设置或查看长期任务目标', hint: '输入目标，智能体将持续执行' },
+    { locale: ZH_BROWSER_LOCALE, token: '/计划', row: '计划 plan 进入或退出计划模式', hint: '描述你的任务以生成计划' },
+  ])('keeps $token claimed across separator edits and hides hints during IME composition', async ({ locale, token, row, hint }) => {
+    const inputPage = await browser.newPage({ viewport: { width: 1680, height: 1000 }, locale })
+    const inputTripwire = watchConsole(inputPage)
+    onTestFailed(() => saveFailureShot(inputPage, `web-e2e-command-input-${locale}-${token.slice(1)}`))
+    try {
+      await inputPage.goto(scaffold.authenticatedUrl, { waitUntil: 'load' })
+      await inputPage.waitForSelector('[class*="frame"]', { timeout: 30_000 })
+      const input = inputPage.locator('[data-composer-input]').first()
+      await writeComposerDraft(inputPage, input, '/')
+      await inputPage.getByRole('listbox').getByRole('option', { name: row, exact: true }).click()
+      await expect.poll(() => input.textContent()).toBe(`${token} `)
+      await input.press('End')
+      await inputPage.keyboard.insertText('这是任务')
+      await expect.poll(() => input.textContent()).toBe(`${token} 这是任务`)
+      for (let i = 0; i < 5; i++) await input.press('Backspace')
+      const tokenText = () => input.locator('[data-lexical-text][style*="warn-label"]').textContent()
+      await expect.poll(() => input.textContent()).toBe(token)
+      await expect.poll(() => input.getAttribute('data-phase')).toBe('claimed')
+      await expect.poll(tokenText).toBe(token)
+      await input.press('Space')
+      await expect.poll(() => input.getAttribute('data-phase')).toBe('claimed')
+      await expect.poll(() => input.textContent()).toBe(`${token} `)
+      await expect.poll(async () => (await tokenText())?.trimEnd()).toBe(token)
+      const shownHint = () => input.locator('p').last().evaluate(element => getComputedStyle(element, '::after').content)
+      await expect.poll(shownHint).toBe(JSON.stringify(hint))
+      const cdp = await inputPage.context().newCDPSession(inputPage)
+      await cdp.send('Input.imeSetComposition', { text: 'z', selectionStart: 1, selectionEnd: 1 })
+      await expect.poll(shownHint).toBe('none')
+      await cdp.send('Input.imeSetComposition', { text: 'zh', selectionStart: 2, selectionEnd: 2 })
+      await expect.poll(shownHint).toBe('none')
+      await cdp.send('Input.insertText', { text: '这' })
+      await expect.poll(() => input.textContent()).toBe(`${token} 这`)
+      await expect.poll(shownHint).toBe('none')
+      await input.press('Backspace')
+      await expect.poll(shownHint).toBe(JSON.stringify(hint))
+      await cdp.send('Input.imeSetComposition', { text: 'z', selectionStart: 1, selectionEnd: 1 })
+      await expect.poll(shownHint).toBe('none')
+      await cdp.send('Input.imeSetComposition', { text: '', selectionStart: 0, selectionEnd: 0 })
+      await expect.poll(shownHint).toBe(JSON.stringify(hint))
+      await input.press('Backspace')
+      await input.press('Backspace')
+      await expect.poll(() => input.getAttribute('data-phase')).toBe('plain')
+      await writeComposerDraft(inputPage, input, '')
+      const placeholder = inputPage.locator('[data-composer-placeholder]').first()
+      await expect.poll(() => placeholder.isVisible()).toBe(true)
+      await cdp.send('Input.imeSetComposition', { text: 'z', selectionStart: 1, selectionEnd: 1 })
+      await expect.poll(() => placeholder.isVisible()).toBe(false)
+      await cdp.send('Input.imeSetComposition', { text: '', selectionStart: 0, selectionEnd: 0 })
+      await expect.poll(() => placeholder.isVisible()).toBe(true)
+      await cdp.detach()
+      expect(inputTripwire.pageErrors).toEqual([])
+      expect(inputTripwire.warnings).toEqual([])
+    } finally {
+      await inputPage.close()
+    }
+  })
+
   it.skipIf(MODE === 'record')('shows active Plan as the warn-state status action', async () => {
     const activeScaffold = await launchWebScaffold()
     const activePage = await newEnglishPage(browser)

@@ -45,7 +45,7 @@ export interface SubmitOutcome {
 export interface CommandClaim {
   /** Catalog command name without the leading slash (the key of per-command composer copy such as `hint.*`). */
   readonly name: string
-  /** The text the draft carries for the claim (`/name ` in English, a localized token elsewhere). */
+  /** Inserted command text with its argument separator; the bare complete name also retains the claim. */
   readonly token: string
   readonly hint?: string
   readonly attachments?: boolean

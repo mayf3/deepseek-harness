@@ -1266,6 +1266,37 @@ describe('decorations', () => {
     expect(textarea.style.getPropertyValue('--dsh-composer-hint')).toBe(JSON.stringify('输入目标，智能体将持续执行'))
   })
 
+  it('suppresses placeholders throughout native composition, including a temporarily empty draft', async () => {
+    const { shell, textarea, view } = bench()
+    expect(view.container.querySelector('[data-composer-placeholder]')).not.toBeNull()
+    fireEvent.compositionStart(textarea)
+    expect(textarea.hasAttribute('data-composer-composing')).toBe(true)
+    act(() => { shell.setDraft('z') })
+    act(() => { shell.setDraft('') })
+    expect(textarea.hasAttribute('data-composer-composing')).toBe(true)
+    fireEvent.compositionEnd(textarea, { data: '' })
+    expect(textarea.hasAttribute('data-composer-composing')).toBe(true)
+    await act(async () => {})
+    expect(textarea.hasAttribute('data-composer-composing')).toBe(false)
+
+    act(() => {
+      shell.setDraft('/目标 ')
+      shell.beginCommand(
+        { name: 'goal', token: '/目标 ', hint: '目标内容', submit: () => Promise.resolve({ kind: 'success' as const }) },
+        { start: 0, end: 4, draftRev: shell.snapshot.draftRev },
+      )
+    })
+    fireEvent.compositionStart(textarea)
+    act(() => { shell.setDraft('/目标 z') })
+    act(() => { shell.setDraft('/目标 ') })
+    expect(textarea.hasAttribute('data-composer-composing')).toBe(true)
+    fireEvent.compositionEnd(textarea, { data: '这' })
+    act(() => { shell.setDraft('/目标 这') })
+    await act(async () => {})
+    expect(textarea.hasAttribute('data-composer-composing')).toBe(false)
+    expect(textarea.style.getPropertyValue('--dsh-composer-hint')).toBe('')
+  })
+
   it('an inserted reference renders a real chip capsule with its icon and label', () => {
     const { view, shell } = bench()
     const reference = {
