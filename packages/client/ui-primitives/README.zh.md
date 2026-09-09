@@ -53,7 +53,6 @@ kind: "package-library"
 | `Toast` | 顶部居中的瞬时横幅，保持时长由所有者的 `holdMs` 决定。 |
 | `JsonTree`、`JsonBlock` | 只读 JSON 查看。 |
 | `MarkdownText`、`CodeBlock` | 不可信 GFM 与 TeX 数学，以及高亮代码。`CodeBlock` 可通过 `lineNumbers` 开启行号；复制的源码不含行号栏。 |
-| `MermaidPreview` | 只读 Mermaid 图表图片，包含加载状态与源码回退状态。 |
 | `TerminalBlock`、`ReadBlock`、`DiffBlock`、`SearchBlock`、`WebBlock` | 与各类工具结果意图对应的 agent 输出卡片。 |
 | `icons/*`、`FishLogo`、`BrandWordmark`、`ReferenceIcon`、`LinkIcon`、`DocumentFileIcon` | 字形与品牌标识，全部随 `currentColor`。 |
 | `FileTypeIcon` | 彩色文件类型纸片（code、html、image、markdown、pdf、sheet、slides、document、other）；`classifyFileType` 按路径扩展名选出类型。 |
@@ -74,11 +73,11 @@ kind: "package-library"
 
 `MarkdownText` 渲染不可信的 GFM 与 TeX 公式、阻止不安全的链接与图片，并可把已解析的文件提及转换为显式控件。当 owner 传入 `pathImages` 词表时，本地媒体路径的图片目标只在落定渲染阶段重写为可展示 URL（与 file mentions 相同的流式门）；不传词表时本地目标保持惰性 alt 文本。加载或解码失败后，图片替换为作者的 alt 文本；alt 为空时显示原始目标路径。图片源变化后可重新加载。回复流式输出时，它冻结已完成的块、按已完成行推进顶层未闭合 fence，并从保存的 Shiki grammar state 为该 fence 增量高亮。已完成的 token 行进入固定大小的 React 分组，后续分片只 reconcile 正在增长的分组；最终全量解析解决跨文档语法时，未变化的 fence 会保留该 DOM。`TerminalBlock`、`ReadBlock`、`DiffBlock`、`SearchBlock` 与 `WebBlock` 把对应的工具结果意图渲染为带复制控件、溢出处理及适用时 ANSI 处理的卡片。`JsonTree` 与 `JsonBlock` 以只读方式检查 JSON 值；`projectUserText` 把已发送的用户文本投影为行内普通文本段与引用 chip，供消息气泡和排队行使用。
 
-`MermaidPreview` 在浅色画布上渲染完整的 Mermaid 源码。渲染按需加载 Mermaid、使用严格安全模式，并把生成的 SVG 显示为图片，不绑定图内链接处理器。渲染失败时显示原始源码与传入的错误文案；替换源码后会丢弃前一次渲染的延迟结果。图表保留固有尺寸，并在可用宽度不足时缩小。
+提供 `MarkdownLabels.preview` 可启用定稿后的 `mermaid`、`graphviz`/`dot`、`svg` 和 `html` fence。每种语言提供本地化预览状态，未提供这些文案的调用方保留代码显示。Mermaid 在浅色画布上渲染完整源码。渲染按需加载 Mermaid、使用严格安全模式，并把生成的 SVG 显示为图片，不绑定图内链接处理器。渲染失败时显示原始源码与传入的错误文案；替换源码后会丢弃前一次渲染的延迟结果。图表保留固有尺寸，并在可用宽度不足时缩小。
 
-为 Markdown 调用方传入 `MarkdownLabels.mermaid` 即可启用 `mermaid` fence 预览；未传入时，fence 保持代码显示。预览在消息定稿后开始。`CodeBlock.preview` 提供无标题栏的替代正文，以及切换源码和复制的图标操作。操作在悬停或键盘聚焦时出现；只要设备具备触屏，就在图表下方保持可见，包括同时连接鼠标的情况。切换到源码时保留已挂载的预览，返回时复用其结果；复制始终保留源码。[Mermaid 决策](../../../.agents/notes/implemented/feature/2026-09-07-web-mermaid-preview.zh.md)记录了渲染与复用选择。
+`CodeBlock.preview` 提供无标题栏的替代正文，以及切换源码和复制的图标操作。操作在悬停或键盘聚焦时出现；只要设备具备触屏，就在图表下方保持可见，包括同时连接鼠标的情况。切换到源码时保留已挂载的预览，返回时复用其结果；复制始终保留源码。
 
-传入 `MarkdownLabels.preview` 可启用 `graphviz`/`dot`、`svg` 和 `html` fence。每个定稿 fence 默认显示可视化，并共享源码切换与复制操作。Graphviz 按需加载 `@viz-js/viz`，用 `dot` 引擎渲染 DOT。SVG 与 Graphviz 输出作为不可执行的图片放入不透明来源的 sandbox iframe；非法 SVG 与 DOT 显示错误并保留源码。HTML 接受完整文档或片段、保留内联样式，同时移除脚本与导航。iframe 不授予任何 sandbox 权限，Content Security Policy 阻止外部资源、嵌套 iframe、表单与脚本。iframe 使用可滚动的 400px 视口。代码 fence 外的原始 HTML 仍按普通 Markdown 输入处理。
+每个定稿 fence 默认显示可视化，并共享源码切换与复制操作。Graphviz 按需加载 `@viz-js/viz`，用 `dot` 引擎渲染 DOT。SVG 与 Graphviz 输出作为不可执行的图片放入不透明来源的 sandbox iframe；非法 SVG 与 DOT 显示错误并保留源码。HTML 接受完整文档或片段、保留内联样式，同时移除脚本与导航。iframe 不授予任何 sandbox 权限，Content Security Policy 阻止外部资源、嵌套 iframe、表单与脚本。iframe 使用可滚动的 400px 视口。代码 fence 外的原始 HTML 仍按普通 Markdown 输入处理。
 
 [预览许可证声明](THIRD_PARTY_PREVIEW_NOTICES.txt)随本包与 Web 前端分发。Mermaid 使用 MIT；Viz.js 使用 MIT，但内嵌 Graphviz 使用 EPL-2.0。声明保留完整许可证文本及准确的 Graphviz 源码下载地址。升级依赖时必须同时检查内嵌产物和 npm 元数据；[预览决策](../../../.agents/notes/implemented/feature/2026-09-09-markdown-static-previews.zh.md)记录分发与 sandbox 选择。
 

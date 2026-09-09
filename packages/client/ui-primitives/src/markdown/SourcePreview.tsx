@@ -1,7 +1,7 @@
 /** Read-only diagram preview with source fallback and per-source async ownership. */
 
 import { useEffect, useState } from 'react'
-import css from './MermaidPreview.module.css'
+import css from './SourcePreview.module.css'
 
 /** Localized preview states; the diagram source remains verbatim. */
 export interface PreviewLabels {

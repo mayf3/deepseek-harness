@@ -9,24 +9,21 @@ import type { ChatViewSlotProps } from './contract/slots.ts'
  * @returns Labels for code fences and footnotes.
  */
 export function markdownLabels(t: ChatViewSlotProps['t']): MarkdownLabels {
+  const status = { loading: t('markdown.preview.loading'), error: t('markdown.preview.error') }
   return {
     code: { copyLabel: t('copy'), copiedLabel: t('copied') },
     footnotes: t('markdown.footnotes'),
     preview: {
-      graphviz: t('markdown.preview.graphviz'),
-      svg: t('markdown.preview.svg'),
-      html: t('markdown.preview.html'),
-      preview: t('markdown.mermaid.preview'),
-      source: t('markdown.mermaid.source'),
-      loading: t('markdown.preview.loading'),
-      error: t('markdown.preview.error'),
-    },
-    mermaid: {
-      diagram: t('markdown.mermaid.diagram'),
-      preview: t('markdown.mermaid.preview'),
-      source: t('markdown.mermaid.source'),
-      loading: t('markdown.mermaid.loading'),
-      error: t('markdown.mermaid.error'),
+      preview: t('markdown.preview.preview'),
+      source: t('markdown.preview.source'),
+      mermaid: {
+        diagram: t('markdown.mermaid.diagram'),
+        loading: t('markdown.mermaid.loading'),
+        error: t('markdown.mermaid.error'),
+      },
+      graphviz: { ...status, diagram: t('markdown.preview.graphviz') },
+      svg: { ...status, diagram: t('markdown.preview.svg') },
+      html: { ...status, diagram: t('markdown.preview.html') },
     },
   }
 }

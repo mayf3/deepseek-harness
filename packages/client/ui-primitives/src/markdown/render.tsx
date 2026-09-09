@@ -26,8 +26,8 @@ import { CodeBlock } from './CodeBlock.tsx'
 import { SourcePreview } from './SourcePreview.tsx'
 import { renderGraphviz } from './graphviz.ts'
 import { renderHtml, renderSvg } from './preview-document.ts'
-import { MermaidPreview } from './MermaidPreview.tsx'
-import type { MermaidPreviewLabels } from './MermaidPreview.tsx'
+import { renderMermaid } from './mermaid.ts'
+import type { PreviewLabels } from './SourcePreview.tsx'
 import { renderTexToReact } from './katex.tsx'
 import { LinkIcon, classifyLinkPath } from '../LinkIcon.tsx'
 import type { PositionedBlock } from './incremental.ts'
@@ -45,17 +45,14 @@ export interface MarkdownCodeLabels {
 export interface MarkdownLabels {
   code: MarkdownCodeLabels
   footnotes: string
-  /** Opt into settled Mermaid fence previews by supplying their complete localized labels. */
-  mermaid?: MermaidPreviewLabels & { preview: string; source: string }
-  /** Opt into settled Graphviz, SVG, and static HTML previews with complete localized labels. */
+  /** Opt into settled Mermaid, Graphviz, SVG, and static HTML previews with complete localized labels. */
   preview?: {
-    graphviz: string
-    svg: string
-    html: string
+    mermaid: PreviewLabels
+    graphviz: PreviewLabels
+    svg: PreviewLabels
+    html: PreviewLabels
     preview: string
     source: string
-    loading: string
-    error: string
   }
 }
 
@@ -418,20 +415,13 @@ function renderCode(node: Md.Code, key: Key, context: MarkdownRenderContext): Re
 
 /** Resolve the supported fence language without treating arbitrary HTML in Markdown as a preview. */
 function fencePreview(lang: string | undefined, code: string, labels: MarkdownLabels) {
-  if (lang === 'mermaid' && labels.mermaid !== undefined) {
-    return {
-      content: <MermaidPreview code={code} labels={labels.mermaid} />,
-      previewLabel: labels.mermaid.preview,
-      sourceLabel: labels.mermaid.source,
-    }
-  }
   if (labels.preview === undefined) return undefined
   const kind = lang === 'dot' ? 'graphviz' : lang
-  if (kind !== 'graphviz' && kind !== 'svg' && kind !== 'html') return undefined
-  const render = { graphviz: renderGraphviz, svg: renderSvg, html: renderHtml }[kind]
+  if (kind !== 'mermaid' && kind !== 'graphviz' && kind !== 'svg' && kind !== 'html') return undefined
+  const render = { mermaid: renderMermaid, graphviz: renderGraphviz, svg: renderSvg, html: renderHtml }[kind]
   return {
     content: (
-      <SourcePreview key={kind} code={code} labels={{ ...labels.preview, diagram: labels.preview[kind] }} render={render} document />
+      <SourcePreview key={kind} code={code} labels={labels.preview[kind]} render={render} document={kind !== 'mermaid'} />
     ),
     previewLabel: labels.preview.preview,
     sourceLabel: labels.preview.source,

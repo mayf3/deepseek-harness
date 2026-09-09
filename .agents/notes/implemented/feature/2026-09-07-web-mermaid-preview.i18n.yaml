@@ -1,6 +1,0 @@
-# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
-# side as of the last confirmed-consistent state. Both languages carry equal authority;
-# after editing either side, bring the other along and re-record with:
-#   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-09-07-web-mermaid-preview.md
-2026-09-07-web-mermaid-preview.md: 246b38e764e1e5812427f935c4a41c28f0fa24a0
-2026-09-07-web-mermaid-preview.zh.md: c1dd25c1b6dc21c36d92e0d7c1477fcea9ae99c2

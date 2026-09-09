@@ -7,16 +7,20 @@ import { renderGraphviz } from '../src/markdown/graphviz.ts'
 import { renderHtml, renderSvg } from '../src/markdown/preview-document.ts'
 import { markdownLabels } from './labels.client.ts'
 
+const status = { loading: 'Loading', error: 'Cannot preview' }
 const preview = {
-  graphviz: 'Graphviz diagram', svg: 'SVG preview', html: 'HTML preview',
-  preview: 'Preview', source: 'Source', loading: 'Loading', error: 'Cannot preview',
+  mermaid: { ...status, diagram: 'Mermaid diagram' },
+  graphviz: { ...status, diagram: 'Graphviz diagram' },
+  svg: { ...status, diagram: 'SVG preview' },
+  html: { ...status, diagram: 'HTML preview' },
+  preview: 'Preview', source: 'Source',
 }
 const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="120" height="80"><text y="30">示例</text></svg>'
 const cases = [
-  ['graphviz', 'digraph { Input -> Preview }', preview.graphviz],
-  ['dot', 'digraph { Input -> Preview }', preview.graphviz],
-  ['svg', svg, preview.svg],
-  ['html', '<style>h1 { color: green }</style><h1>Example</h1>', preview.html],
+  ['graphviz', 'digraph { Input -> Preview }', preview.graphviz.diagram],
+  ['dot', 'digraph { Input -> Preview }', preview.graphviz.diagram],
+  ['svg', svg, preview.svg.diagram],
+  ['html', '<style>h1 { color: green }</style><h1>Example</h1>', preview.html.diagram],
 ] as const
 
 afterEach(() => { cleanup(); vi.unstubAllGlobals() })
@@ -53,11 +57,11 @@ describe('Markdown fence previews', () => {
 
   it.each(['svg', 'graphviz'])('retains invalid %s source and recovers after replacement', async (lang) => {
     const view = render(<MarkdownText text={`\`\`\`${lang}\nbroken\n\`\`\``} labels={{ ...markdownLabels, preview }} />)
-    await screen.findByText(preview.error)
+    await screen.findByText(status.error)
     expect(view.container.querySelector('pre code')?.textContent).toBe('broken')
     view.rerender(<MarkdownText text={`\`\`\`svg\n${svg}\n\`\`\``} labels={{ ...markdownLabels, preview }} />)
-    await screen.findByTitle(preview.svg)
-    expect(screen.queryByText(preview.error)).toBeNull()
+    await screen.findByTitle(preview.svg.diagram)
+    expect(screen.queryByText(status.error)).toBeNull()
   })
 
   it('requires an opted-in code fence and leaves raw HTML and other languages unrendered', () => {

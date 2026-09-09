@@ -2,7 +2,7 @@
 
 import type { Mermaid } from 'mermaid'
 import clsx from 'clsx'
-import css from './MermaidPreview.module.css'
+import css from './SourcePreview.module.css'
 
 let runtime: Promise<Mermaid> | undefined
 let nextDiagramId = 0
