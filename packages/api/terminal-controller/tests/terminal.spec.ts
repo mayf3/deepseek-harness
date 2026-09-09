@@ -59,6 +59,7 @@ describe('BrowserTerminal', () => {
     const first = await attach(terminal)
     const encoded = Buffer.from('终端')
     output.write(encoded.subarray(0, 2))
+    await expect.poll(() => output.readableLength).toBe(0)
     output.write(encoded.subarray(2))
     expect(await readFrame(first.iterator)).toMatchObject({ type: 'output', data: '终端' })
     const second = await attach(terminal, 'second')
@@ -192,6 +193,13 @@ describe('BrowserTerminal', () => {
     outcome.resolve({ exitCode: 0, signal: null })
     expect(await readFrame(first.iterator)).toMatchObject({ type: 'output', data: '�' })
     expect(await readFrame(first.iterator)).toMatchObject({ type: 'state', info: { state: 'exited' } })
+  })
+
+  it('preserves a leading UTF-8 BOM in the terminal output stream', async () => {
+    const { terminal, output } = fixture()
+    const first = await attach(terminal)
+    output.write(Buffer.from('\uFEFF终端'))
+    expect(await readFrame(first.iterator)).toMatchObject({ type: 'output', data: '\uFEFF终端' })
   })
 
   it('shares concurrent close attempts and permits retry after termination fails', async () => {

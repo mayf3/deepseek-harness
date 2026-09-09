@@ -1,15 +1,14 @@
 /** One PTY, a bounded terminal emulator and its detachable browser followers. */
 import { createRequire } from 'node:module'
-import { StringDecoder } from 'node:string_decoder'
 import type { Terminal as HeadlessTerminal } from '@xterm/headless'
 import type { SerializeAddon as Serializer } from '@xterm/addon-serialize'
 import type { SubprocessTerminalHandle } from '@deepseek-ai/dsh-subprocess'
 import { TerminalFollower } from './stream.ts'
 import type { TerminalAttachmentId, TerminalFrame, WebTerminalInfo } from './types.ts'
 
-const require = createRequire(import.meta.url)
-const { Terminal } = require('@xterm/headless') as typeof import('@xterm/headless')
-const { SerializeAddon } = require('@xterm/addon-serialize') as typeof import('@xterm/addon-serialize')
+// Literal createRequire calls keep CommonJS xterm entries reachable in the Preview image.
+const { Terminal } = createRequire(import.meta.url)('@xterm/headless') as typeof import('@xterm/headless')
+const { SerializeAddon } = createRequire(import.meta.url)('@xterm/addon-serialize') as typeof import('@xterm/addon-serialize')
 
 /** Process lifetime is independent of follower and component lifetimes. */
 export class BrowserTerminal {
@@ -141,15 +140,15 @@ export class BrowserTerminal {
   }
 
   private async consume(): Promise<void> {
-    const decoder = new StringDecoder('utf8')
+    const decoder = new TextDecoder('utf-8', { ignoreBOM: true })
     const outcome = this.handle.done.then(value => ({ value }), (error: unknown) => ({ error }))
     try {
       for await (const chunk of this.handle.output) {
         // Node Readable's iterator is untyped; this provider explicitly emits Buffer chunks.
-        const data = decoder.write(chunk as Buffer)
+        const data = decoder.decode(chunk as Buffer, { stream: true })
         await this.output(data)
       }
-      await this.output(decoder.end())
+      await this.output(decoder.decode())
       const result = await outcome
       if ('error' in result) throw result.error
       this.info = { ...this.info, state: 'exited', exitCode: result.value.exitCode }
