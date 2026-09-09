@@ -232,8 +232,8 @@ function jsonTreeLabels(t: TrajectoryTranslate): JsonTreeLabels {
     copyCompactJson: t('copy.compactJson'),
     copied: t('copied'),
     copyFailed: t('copy.failed'),
-    collapseNode: t('json.collapseNode'),
-    expandNode: t('json.expandNode'),
+    collapseNode: t('collapse'),
+    expandNode: t('expand'),
     copyButtonTitle: action => t('copy.optionsHint', { action }),
   }
 }
@@ -856,6 +856,7 @@ function RequestOptions({
   return (
     <JsonTree
       data={options}
+      collapsedStringLines={preview ? 3 : 12}
       label={t('options.json')}
       labels={jsonTreeLabels(t)}
       className={preview ? css.jsonPreview : css.jsonPayload}
@@ -895,6 +896,7 @@ function MessageSource({ record, t }: { record: TableRecord; t: TrajectoryTransl
   return (
     <JsonTree
       data={data}
+      collapsedStringLines={12}
       label={t('source.messageJson')}
       labels={jsonTreeLabels(t)}
       className={css.jsonPayload}
@@ -1624,6 +1626,7 @@ function RecordPayload({
     return (
       <JsonTree
         data={json}
+        collapsedStringLines={preview ? 3 : 12}
         label={t('record.resultJson')}
         labels={jsonTreeLabels(t)}
         className={payloadClassName}
@@ -1668,6 +1671,7 @@ function RecordPayload({
     return (
       <JsonTree
         data={json}
+        collapsedStringLines={preview ? 3 : 12}
         label={t(direction === 'input' ? 'record.payloadJson' : 'record.outputJson')}
         labels={jsonTreeLabels(t)}
         className={payloadClassName}
@@ -1711,6 +1715,7 @@ function RecordSchema({
           <h4 className={css.schemaParametersTitle}>{t('record.parameters')}</h4>
           <JsonTree
             data={schema.parameters}
+            collapsedStringLines={preview ? 3 : 12}
             label={t('record.namedParametersJson', { name: schema.name })}
             labels={jsonTreeLabels(t)}
             className={css.schemaTree}
