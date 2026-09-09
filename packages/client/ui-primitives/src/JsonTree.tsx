@@ -317,13 +317,24 @@ function JsonString({
         <div className={css.stringActions}>
           <button
             type="button"
-            className={css.stringToggle}
+            className={css.actionButton}
             aria-label={labels.collapseNode}
+            title={labels.collapseNode}
             aria-expanded
             aria-controls={contentsId}
             onClick={() => { setExpanded(false) }}
           >
-            {labels.collapseNode}
+            <svg
+              width="12"
+              height="12"
+              viewBox="0 0 16 16"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              aria-hidden="true"
+            >
+              <path d="M9.5 1.5v5h5M1.5 9.5h5v5" />
+            </svg>
           </button>
           {renderCopy?.(true)}
         </div>
