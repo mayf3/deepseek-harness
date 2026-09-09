@@ -247,10 +247,10 @@ describe('TrajectoryTable', () => {
           kind: 'message',
           text: 'private chain…',
           thinkingDetail: thinking,
-          outputDetail,
-          sourceBlocks: toolCall ? [{
+          ...(outputDetail === undefined ? {} : { outputDetail }),
+          ...(toolCall ? { sourceBlocks: [{
             type: 'tool-call', content: '{}', callId: 'call-1', toolName: 'read',
-          }] : undefined,
+          }] } : {}),
           timeSeconds: 1,
         }],
       }],
