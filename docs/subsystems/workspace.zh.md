@@ -257,7 +257,7 @@ Host Remote file reads and workspace directory observations over the composed fi
  * @param signal - caller cancellation.
  * @returns the page, the file's version at the stat before it, and whether it reaches the last line.
  */
-@Remote async read(workspaceFileScope: WorkspaceFileScope, path: string, range: WorkspaceFileRange, signal: AbortSignal): Promise<WorkspaceFileText>
+@Remote async read( workspaceFileScope: WorkspaceFileScope, path: string, range: WorkspaceFileRange, signal: AbortSignal, ): Promise<WorkspaceFileText>
 
 /**
  * Read one byte window of a regular file readable by the filesystem backend: raw
@@ -268,7 +268,7 @@ Host Remote file reads and workspace directory observations over the composed fi
  * @param signal - caller cancellation.
  * @returns the window in base64, the file's version and size at the stat before it, and whether it reaches the last byte.
  */
-@Remote async readBytes(workspaceFileScope: WorkspaceFileScope, path: string, range: WorkspaceByteRange, signal: AbortSignal): Promise<WorkspaceFileBytes>
+@Remote async readBytes( workspaceFileScope: WorkspaceFileScope, path: string, range: WorkspaceByteRange, signal: AbortSignal, ): Promise<WorkspaceFileBytes>
 
 /**
  * Read a complete regular file as bytes, subject to the configured full-file cap.
@@ -287,7 +287,7 @@ Host Remote file reads and workspace directory observations over the composed fi
  * @param signal - caller cancellation.
  * @returns the complete related file using the ordinary file-size and access checks.
  */
-@Remote async readRelated(workspaceFileScope: WorkspaceFileScope, path: string, relativePath: string, signal: AbortSignal): Promise<WorkspaceFileBytes>
+@Remote async readRelated( workspaceFileScope: WorkspaceFileScope, path: string, relativePath: string, signal: AbortSignal, ): Promise<WorkspaceFileBytes>
 
 /**
  * Report one regular file's identity, version, and size without its content.

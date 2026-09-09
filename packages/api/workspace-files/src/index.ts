@@ -228,7 +228,12 @@ export class WorkspaceFiles extends TypertRemoteService {
    * @returns the page, the file's version at the stat before it, and whether it reaches the last line.
    */
   @Remote
-  async read(workspaceFileScope: WorkspaceFileScope, path: string, range: WorkspaceFileRange, signal: AbortSignal): Promise<WorkspaceFileText> {
+  async read(
+    workspaceFileScope: WorkspaceFileScope,
+    path: string,
+    range: WorkspaceFileRange,
+    signal: AbortSignal,
+  ): Promise<WorkspaceFileText> {
     const { offset, limit } = this.resolvePage(range)
     const { target, info } = await this.locateFile(workspaceFileScope, path, signal)
     const page = await this.cutPage(target, offset, limit, signal, path)
@@ -248,7 +253,12 @@ export class WorkspaceFiles extends TypertRemoteService {
    * @returns the window in base64, the file's version and size at the stat before it, and whether it reaches the last byte.
    */
   @Remote
-  async readBytes(workspaceFileScope: WorkspaceFileScope, path: string, range: WorkspaceByteRange, signal: AbortSignal): Promise<WorkspaceFileBytes> {
+  async readBytes(
+    workspaceFileScope: WorkspaceFileScope,
+    path: string,
+    range: WorkspaceByteRange,
+    signal: AbortSignal,
+  ): Promise<WorkspaceFileBytes> {
     const { offset, length } = this.resolveWindow(range, path)
     const { target, info } = await this.locateFile(workspaceFileScope, path, signal)
     const data = await this.ctx.fs.readByteRange(target, { offset, length }, signal)
@@ -286,7 +296,12 @@ export class WorkspaceFiles extends TypertRemoteService {
    * @returns the complete related file using the ordinary file-size and access checks.
    */
   @Remote
-  async readRelated(workspaceFileScope: WorkspaceFileScope, path: string, relativePath: string, signal: AbortSignal): Promise<WorkspaceFileBytes> {
+  async readRelated(
+    workspaceFileScope: WorkspaceFileScope,
+    path: string,
+    relativePath: string,
+    signal: AbortSignal,
+  ): Promise<WorkspaceFileBytes> {
     const relative = relativePath.replace(/\\/g, '/')
     if (relative.length === 0 || relative.startsWith('/') || /^[a-z][a-z\d+.-]*:/iu.test(relative) || relative.includes(NUL)) {
       throw new RemoteError('gateway/bad-request', 'relativePath must be a relative filesystem path', {})
@@ -410,7 +425,11 @@ export class WorkspaceFiles extends TypertRemoteService {
    * and size. The stat re-checks what `lstat` saw: the file may have gone or
    * changed kind in between.
    */
-  private async locateFile(workspaceFileScope: WorkspaceFileScope, path: string, signal: AbortSignal): Promise<{ target: FsTarget; info: FsInfo }> {
+  private async locateFile(
+    workspaceFileScope: WorkspaceFileScope,
+    path: string,
+    signal: AbortSignal,
+  ): Promise<{ target: FsTarget; info: FsInfo }> {
     const { workspaceRoot, entry } = await this.inspect(workspaceFileScope, path, signal)
     if (entry.type !== 'file') {
       throw new RemoteError('workspace-file/not-regular-file', `"${path}" is a ${entry.type}`, { path, kind: entry.type })
