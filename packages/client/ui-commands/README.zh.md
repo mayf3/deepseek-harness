@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-在 composer 中键入 `/` 命令会打开匹配的表面——已注册的弹窗、客户端动作、宿主命令的输入或直接执行——命令行绝不会被静默降级为普通提示词。业务包经 `ctx.commandUi` 贡献命令表面：注册 popupSelect 贡献项（`/model`、`/permission`）或动作，或用选择器装饰既有宿主命令，宿主保留其目录行与参数声明。空格与回车对照会话目录解析命令行：带 `input` 的宿主描述符是 `leadingInput`，注册了 `CommandUiSpec` 的是 `popupSelect` 或 `action`，其余全部是 `execute`。composer 的 `+` 按钮与键入的 `/` 打开同一个菜单：「添加」小节（文件、目标、计划、反馈）与「指令」小节（压缩、权限、模型、下载日志）按使用频次排列，每行带图标、本地化的标题与说明，本地化标题与命令名不同时还显示命令名作为别名。
+在 composer 中键入 `/` 命令会打开匹配的表面——已注册的弹窗、客户端动作、宿主命令的输入或直接执行——命令行绝不会被静默降级为普通提示词。业务包经 `ctx.commandUi` 贡献命令表面：注册 popupSelect 贡献项（`/model`、`/permission`）或动作，或用选择器装饰既有宿主命令。空格与回车对照会话目录解析命令行：带 `input` 的宿主描述符是 `leadingInput`，注册了 `CommandUiSpec` 的是 `popupSelect` 或 `action`，其余全部是 `execute`。
 
 ## 目录
 
@@ -25,7 +25,7 @@ kind: "package-reference"
 <a id="use-this-package"></a>
 ## 使用本包
 
-与 `ui-input-trigger` 及 `ui-conversation` 一起挂载本插件；`/` source 随即出现在触发菜单中，业务包经 `ctx.commandUi` 注册自己的命令表面。键入 `/model` 打开已注册的弹窗；带参数声明的宿主命令打开其输入或直接执行。
+与 `ui-input-trigger` 及 `ui-conversation` 一起挂载本插件；`/` source 随即出现在触发菜单中，业务包经 `ctx.commandUi` 注册自己的命令表面。键入 `/model` 打开已注册的弹窗；带参数声明的宿主命令打开其输入或直接执行。composer 的 `+` 按钮与键入的 `/` 打开同一个菜单：「添加」小节（文件、目标、计划、反馈）与「指令」小节（压缩、权限、模型、下载日志）按使用频次排列，每行带图标、本地化的标题与说明，本地化标题与命令名不同时还显示命令名作为别名。
 
 ### 种类与装饰
 

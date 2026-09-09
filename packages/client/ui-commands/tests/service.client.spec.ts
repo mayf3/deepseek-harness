@@ -40,6 +40,7 @@ interface BenchOptions {
   /** Scripted catalog per list payload; default serves the fixed catalogs by session. */
   commands?: (payload: { sessionId: SessionId }) => Promise<{ commands: CommandDescriptor[] }>
   execute?: (payload: { sessionId: SessionId; line: string }) => Promise<ExecuteValue>
+  translate?: (namespace: string, key: string, params?: Record<string, unknown>) => string
   addressed?: SessionId
 }
 
@@ -99,7 +100,8 @@ async function bench(opts: BenchOptions = {}) {
   // Deterministic key-echo translator: notice assertions read `key{json}`.
   ctx.provide('locale', {
     bind: (ns: string) => (key: string, params?: Record<string, unknown>) =>
-      `${ns}:${key}${params === undefined ? '' : JSON.stringify(params)}`,
+      opts.translate?.(ns, key, params)
+      ?? `${ns}:${key}${params === undefined ? '' : JSON.stringify(params)}`,
   })
   // Real scope tags behind a fake sessions face.
   const scopes = new Map<SessionId, { ctx: Context; fiber: { dispose(): Promise<void> } }>()
@@ -250,6 +252,37 @@ describe('candidates', () => {
     command.register(themeContribution())
     const names = (await source.candidates(proj('s1'), req('tm'))).map(c => c.name)
     expect(names).toEqual(['theme'])
+  })
+
+  it('localizes canonical built-in and contribution descriptions on every candidate request', async () => {
+    let locale = 'zh'
+    const commands: CommandDescriptor[] = [
+      { name: 'compact', description: 'Compact older conversation history' },
+      { name: 'goal', description: 'scoped goal override' },
+      { name: 'custom', description: 'plugin-authored copy' },
+    ]
+    const { command, source } = await bench({
+      commands: () => Promise.resolve({ commands }),
+      translate: (namespace, key) => `${locale}:${namespace}:${key}`,
+    })
+    command.register(themeContribution({ description: () => `${locale}:theme` }))
+
+    // Rows read as [name, label, description]; the empty query orders by section.
+    const faces = async () => (await source.candidates(proj('s1'), req(''))).map(c => [c.name, c.label, c.description])
+    await expect(faces()).resolves.toEqual([
+      ['goal', undefined, 'scoped goal override'],
+      ['compact', 'zh:command:label.compact', 'zh:command:description.compact'],
+      ['custom', undefined, 'plugin-authored copy'],
+      ['theme', undefined, 'zh:theme'],
+    ])
+
+    locale = 'en'
+    await expect(faces()).resolves.toEqual([
+      ['goal', undefined, 'scoped goal override'],
+      ['compact', 'en:command:label.compact', 'en:command:description.compact'],
+      ['custom', undefined, 'plugin-authored copy'],
+      ['theme', undefined, 'en:theme'],
+    ])
   })
 
   it('a contribution/host name collision fails loud', async () => {

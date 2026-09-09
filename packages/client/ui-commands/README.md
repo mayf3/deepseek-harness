@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-Typing a `/` command in the composer opens the matching surface — a registered popup, a client action, a host command's input, or a direct execution — and a command line is never silently downgraded to a plain prompt. Business packages contribute command surfaces through `ctx.commandUi`, registering a popupSelect spec (`/model`, `/permission`) or an action, or decorating an existing host command with a picker while the host keeps its catalog row and argument claim. Space and Enter resolve the line against the session's directory: a host descriptor with `input` is `leadingInput`, a registered `CommandUiSpec` is `popupSelect` or `action`, and everything else is `execute`. The composer's `+` button and a typed `/` open the same menu: an Add section (File, Goal, Plan, Feedback) and a Commands section (Compact, Permission, Model, Export) in usage order, each row with a glyph, a localized title and description, and the command name as an alias where the localized title differs from it.
+Typing a `/` command in the composer opens the matching surface — a registered popup, a client action, a host command's input, or a direct execution — and a command line is never silently downgraded to a plain prompt. Business packages contribute command surfaces through `ctx.commandUi`, registering a popupSelect spec (`/model`, `/permission`) or an action, or decorating an existing host command with a picker. Space and Enter resolve the line against the session's directory: a host descriptor with `input` is `leadingInput`, a registered `CommandUiSpec` is `popupSelect` or `action`, and everything else is `execute`.
 
 ## Table of Contents
 
@@ -25,7 +25,7 @@ Typing a `/` command in the composer opens the matching surface — a registered
 <a id="use-this-package"></a>
 ## Use this package
 
-Mount this plugin alongside `ui-input-trigger` and `ui-conversation`; the `/` source then appears in the trigger menu, and business packages register their command surfaces through `ctx.commandUi`. Typing `/model` opens the registered popup; a host command with an argument claim opens its input or executes directly.
+Mount this plugin alongside `ui-input-trigger` and `ui-conversation`; the `/` source then appears in the trigger menu, and business packages register their command surfaces through `ctx.commandUi`. Typing `/model` opens the registered popup; a host command with an argument claim opens its input or executes directly. The composer's `+` button and a typed `/` open the same menu: an Add section (File, Goal, Plan, Feedback) and a Commands section (Compact, Permission, Model, Export) in usage order, each row with a glyph, a localized title and description, and the command name as an alias where the localized title differs from it.
 
 ### Kinds and decorations
 

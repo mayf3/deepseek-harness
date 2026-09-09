@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-`dsh-agent-instructions` loads `AGENTS.md`-compatible workspace instruction files into model context: the user-global file and the project chain reach the first request as one durable baseline, and successful `read`, `write`, or `edit` calls bring newly relevant nested files, changes, and removals into later requests. `dsh-base` includes it by default, and a profile patch can disable it. Everything is bounded by a byte budget: broader files are omitted before the most specific file is truncated, and an empty chain contributes nothing. There is no file watcher — external edits become visible on the next successful filesystem touch or when a resumed session reconciles its baseline.
+`dsh-agent-instructions` gives agents workspace guidance from user-global and project-level `AGENTS.md`-compatible files. It loads the applicable chain for the first request. It does not watch external edits continuously: successful filesystem operations discover newly relevant nested files and make later changes or removals visible, while session resume reconciles the baseline. `dsh-base` enables this behavior by default, while profiles can disable it. A byte budget bounds the injected context: broader files are omitted before the most specific file is truncated, and an empty chain adds nothing.
 
 ## Table of Contents
 

@@ -199,6 +199,7 @@ function mount(
           useChat={useChat}
           useTrajectory={useTrajectory}
           useSessions={props.useSessions}
+          usePanelInfo={props.usePanelInfo}
           useResource={useResource}
           useSessionPendingInteraction={useSessionPendingInteraction}
           useWorkspaces={props.useWorkspaces}
@@ -225,6 +226,7 @@ function mount(
           useChat={useChat}
           useTrajectory={useTrajectory}
           useSessions={props.useSessions}
+          usePanelInfo={props.usePanelInfo}
           useResource={useResource}
           useSessionPendingInteraction={useSessionPendingInteraction}
           useWorkspaces={props.useWorkspaces}
@@ -251,6 +253,7 @@ function mount(
           useSession={useSession}
           useConversation={useConversation}
           useSessions={props.useSessions}
+          usePanelInfo={props.usePanelInfo}
           useSessionPendingInteraction={useSessionPendingInteraction}
           useWorkspaces={props.useWorkspaces}
           useProjection={(() => undefined)}
@@ -295,6 +298,7 @@ function mount(
       : (opts?.fallback ?? null)
   )) as ConversationRootProps['renderSlotChain']
   const props: ConversationRootProps = {
+    usePanelInfo: selector => selector({ activePanelId: null }),
     sessionId: SID,
     SessionProvider: ({ children }) => children,
     useSession,

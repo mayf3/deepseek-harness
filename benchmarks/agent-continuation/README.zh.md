@@ -4,7 +4,7 @@
 
 ## Summary
 
-在不使用网络服务或录制用户数据的情况下，测量长历史请求处理、冷工具密集续聊和重复发现非活动 fork 子会话。SDK 变体通过已发布 sdk-minimal profile 执行 100 个轮次和 800 次真实文件读取；其他用例隔离后端服务成本。所有用例均不渲染浏览器。
+在不使用网络服务或录制用户数据的情况下，测量长历史请求处理、冷工具密集续聊和重复发现非活动 fork 子会话。SDK 变体通过已发布 sdk-minimal profile 和显式 editor patch 执行 100 个轮次和 800 次真实文件读取；其他用例隔离后端服务成本。所有用例均不渲染浏览器。
 
 ## Table of Contents
 
@@ -24,7 +24,7 @@
 
 ## 测量
 
-[workload.ts](workload.ts)拥有合成维度。[Agent Note](../../.agents/notes/implemented/testing/2026-09-06-backend-continuation-performance.zh.md)拥有计时终点、校准证据、内存解释和排除项。模型适配器不执行服务商序列化或网络调用；集成用例通过真实工具执行管线运行合成工具体，SDK profile 变体则执行真实文件读取。
+[workload.ts](workload.ts)拥有合成维度。其当前代历史在首个 step 的用户输入之前保留空 system 头节点，因此续聊提示会替换该头节点而不移动历史消息。[Agent Note](../../.agents/notes/implemented/testing/2026-09-06-backend-continuation-performance.zh.md)拥有计时终点、校准证据、内存解释和排除项。模型适配器不执行服务商序列化或网络调用；集成用例通过真实工具执行管线运行合成工具体，SDK profile 变体则执行真实文件读取。
 
 ## Dev Note
 

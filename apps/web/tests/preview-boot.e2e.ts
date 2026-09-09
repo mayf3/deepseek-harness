@@ -415,7 +415,7 @@ async function bootPreview(origin: string, browser: Browser): Promise<void> {
     await page.getByText(SHOWCASE_OLDEST, { exact: true }).waitFor({ timeout: 15_000 })
     expect(pageErrors.map(error => error.message)).toEqual([])
     expect(consoleErrors.filter(line =>
-      /watchFile|failed to watch|node-addon-landlock-run\.probe|sandbox backend is usable|SANDBOX_UNAVAILABLE/i.test(line))).toEqual([])
+      /watchFile|failed to watch|node-addon-system\.probe|sandbox backend is usable|SANDBOX_UNAVAILABLE/i.test(line))).toEqual([])
   } catch (error) {
     await saveFailureShot(page, 'preview-boot')
     throw pageErrors.length === 0
