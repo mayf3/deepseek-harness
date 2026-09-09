@@ -18,10 +18,15 @@ import Selection from '@deepseek-ai/dsh-tool-subagent/model-selection-settings'
 import * as Schedule from '@deepseek-ai/dsh-schedule'
 
 const roots: string[] = []
-afterEach(async () => { for (const root of roots.splice(0)) await rm(root, { recursive: true, force: true }) })
+const contexts: Context[] = []
+afterEach(async () => {
+  for (const ctx of contexts.splice(0)) await ctx.fiber.dispose()
+  for (const root of roots.splice(0)) await rm(root, { recursive: true, force: true })
+})
 
 async function core(persistenceRoot?: string) {
   const ctx = new Context()
+  contexts.push(ctx)
   await mountAgentLoopTestDependencies(ctx)
   if (persistenceRoot !== undefined) await ctx.plugin(JsonlSessionPersistence, { root: persistenceRoot, compression: 'none' })
   await ctx.plugin(AgentLoop, { agents: [] })
@@ -62,8 +67,7 @@ describe('serial creation listener integrations', () => {
       await expect(ctx.agents.create({
         sessionId: SessionId('review-tool'),
         setup(agentCtx) {
-          const binding = bindScopeParent(scopeOf(agentCtx)!, scopeOf(preset.ctx)!)
-          agentCtx.effect(() => () => { binding.dispose() })
+          bindScopeParent(scopeOf(agentCtx)!, scopeOf(preset.ctx)!)
           agentCtx.tools.register(defineContentToolFixture({ name: 'subagent', description: 'occupied', parameters: {}, execute: () => Promise.resolve([]) }))
         },
       })).rejects.toThrow('subagent')
@@ -80,15 +84,15 @@ describe('serial creation listener integrations', () => {
     roots.push(root)
     const ctx = await core(root)
     await ctx.plugin(Schedule)
-    const entered = Promise.withResolvers<void>()
-    const release = Promise.withResolvers<void>()
-    const turn = Promise.withResolvers<void>()
+    const entered = Promise.withResolvers<undefined>()
+    const release = Promise.withResolvers<undefined>()
+    const turn = Promise.withResolvers<undefined>()
     let turns = 0
     let created = false
-    let sessionStarted = false
-    ctx.on('agent/created', async () => { entered.resolve(); await release.promise; created = true })
-    ctx.on('agent/session-start', () => { sessionStarted = true })
-    ctx.on('session/event', (_session, event) => { if (event.type === 'turn/start') { turns += 1; turn.resolve() } })
+    let laterCreated = false
+    ctx.on('agent/created', async () => { entered.resolve(undefined); await release.promise; created = true })
+    ctx.on('agent/created', () => { laterCreated = true })
+    ctx.on('session/event', (_session, event) => { if (event.type === 'turn/start') { turns += 1; turn.resolve(undefined) } })
     const creating = ctx.agents.create({
       sessionId: SessionId('review-schedule'),
       setup(_agentCtx, agent) {
@@ -104,14 +108,14 @@ describe('serial creation listener integrations', () => {
       // A full event-loop turn lets the due runtime run if it starts during creation.
       await setImmediate()
       expect(turns).toBe(0)
-      expect(sessionStarted).toBe(false)
-      release.resolve()
+      expect(laterCreated).toBe(false)
+      release.resolve(undefined)
       await creating
       await turn.promise
       expect(created).toBe(true)
-      expect(sessionStarted).toBe(true)
+      expect(laterCreated).toBe(true)
     } finally {
-      release.resolve()
+      release.resolve(undefined)
       await creating
       await ctx.fiber.dispose()
     }

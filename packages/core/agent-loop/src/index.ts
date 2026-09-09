@@ -213,7 +213,7 @@ interface PreparedAgent {
   agent: ReactLoopAgent
   /** Aborts when the factory unloads, the caller cancels, or teardown begins — ends any setup await. */
   signal: AbortSignal
-  /** Enter registries, announce, notify session-start, and start the machine. */
+  /** Enter both registries and await creation listeners. */
   publish(source: SessionStartSource): Promise<AgentHandle>
   /** Reverse teardown: stop the machine, unregister, unwind the scope. Memoized. */
   dispose(): Promise<void>
@@ -834,7 +834,8 @@ export class AgentLoop extends Service implements AgentFactory {
         try {
           return await initialize()
         } catch (error: unknown) {
-          prepared.agent.cancel({ kind: 'disposed' })
+          // Teardown owns inbox cleanup and may already have removed its projection.
+          prepared.agent.cancel({ kind: 'disposed' }, { keepInbox: true })
           throw error
         }
       })

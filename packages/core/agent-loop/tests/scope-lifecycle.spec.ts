@@ -61,52 +61,50 @@ function disposeCurrentLifecycle(ownerCtx: Context): void {
 }
 
 describe('agent scope lifecycle', () => {
-  it('awaits serial creation before session-start and caller readiness', async () => {
+  it('awaits serial creation before caller readiness', async () => {
     const ctx = await harness()
-    const entered = Promise.withResolvers<void>()
-    const release = Promise.withResolvers<void>()
+    const entered = Promise.withResolvers<undefined>()
+    const release = Promise.withResolvers<undefined>()
     const order: string[] = []
     ctx.on('agent/created', async () => {
       order.push('created:start')
-      entered.resolve()
+      entered.resolve(undefined)
       await release.promise
       order.push('created:end')
     })
     ctx.on('agent/created', () => { order.push('created:second') })
-    ctx.on('agent/session-start', () => { order.push('session-start') })
-    const creating = ctx.agentLoop.create(SessionId('serial-start')).then(agent => {
+    const creating = ctx.agentLoop.create(SessionId('serial-start')).then((agent) => {
       order.push('ready')
       return agent
     })
     try {
       await entered.promise
       expect(order).toEqual(['created:start'])
-      release.resolve()
+      release.resolve(undefined)
       await creating
-      expect(order).toEqual(['created:start', 'created:end', 'created:second', 'session-start', 'ready'])
+      expect(order).toEqual(['created:start', 'created:end', 'created:second', 'ready'])
     } finally {
-      release.resolve()
+      release.resolve(undefined)
       await ctx.fiber.dispose()
     }
   })
 
   it('retains both entries and scoped effects until an asynchronous creation listener settles on owner unload', async () => {
     const ctx = await harness()
-    const entered = Promise.withResolvers<void>()
-    const release = Promise.withResolvers<void>()
+    const entered = Promise.withResolvers<undefined>()
+    const release = Promise.withResolvers<undefined>()
     let ownerCtx!: Context
     const owner = await ctx.plugin(Object.assign((inner: Context) => { ownerCtx = inner }, { inject: ['agents'] }))
     const order: string[] = []
     const id = SessionId('serial-owner-dispose')
     ctx.on('agent/created', async ({ agent }) => {
-      entered.resolve()
+      entered.resolve(undefined)
       await release.promise
       expect(ctx.agents.get(id)).toBe(agent)
       expect(ctx.sessions.get(id)).toBe(agent.session)
       expect(order).toEqual([])
       order.push('created:end')
     })
-    ctx.on('agent/session-start', () => { order.push('session-start') })
     ctx.on('agent/disposed', () => { order.push('agent-disposed') })
     ctx.on('session/disposed', () => { order.push('session-disposed') })
     const creating = ownerCtx.agents.create({
@@ -118,28 +116,29 @@ describe('agent scope lifecycle', () => {
       await entered.promise
       const disposing = owner.dispose()
       expect(ctx.agents.get(id)).toBeDefined()
-      release.resolve()
+      release.resolve(undefined)
       await rejected
       await disposing
       expect(order).toEqual(['created:end', 'scope-disposed', 'agent-disposed', 'session-disposed'])
       expect(ctx.agents.get(id)).toBeUndefined()
       expect(ctx.sessions.get(id)).toBeUndefined()
     } finally {
-      release.resolve()
+      release.resolve(undefined)
       await ctx.fiber.dispose()
     }
   })
 
   it('rolls back both registries and the scope when asynchronous creation fails', async () => {
-    const ctx = await harness()
+    const adapter = new MockAdapter([textResponse('unexpected')])
+    const ctx = await harness(adapter)
     const reason = new Error('async creation veto')
     const order: string[] = []
-    ctx.on('agent/created', async () => {
+    ctx.on('agent/created', async ({ agent }) => {
+      agent.followup(createUserMessage({ content: text('queued during creation'), source: { kind: 'user' } }))
       await Promise.resolve()
       throw reason
     })
     ctx.on('agent/created', () => { order.push('later-listener') })
-    ctx.on('agent/session-start', () => { order.push('session-start') })
     ctx.on('agent/disposed', () => { order.push('agent-disposed') })
     ctx.on('session/disposed', () => { order.push('session-disposed') })
     await expect(ctx.agents.create({
@@ -149,6 +148,7 @@ describe('agent scope lifecycle', () => {
     expect(order).toEqual(['scope-disposed', 'agent-disposed', 'session-disposed'])
     expect(ctx.agents.list()).toEqual([])
     expect(ctx.sessions.list()).toEqual([])
+    expect(adapter.requests).toHaveLength(0)
     await ctx.fiber.dispose()
   })
 
@@ -332,12 +332,12 @@ describe('agent scope lifecycle', () => {
     expect(heard).toContain('a-sees:user-message')
   })
 
-  it('runs setup in the guaranteed slot: scoped world complete before session-start and the first assembly', async () => {
+  it('runs setup in the guaranteed slot: scoped world complete before agent/created and the first assembly', async () => {
     const ctx = await harness()
     const order: string[] = []
-    ctx.on('agent/session-start', ({ agent }) => {
-      order.push('session-start')
-      // The scoped section is already registered by the time session-start fires.
+    ctx.on('agent/created', ({ agent }) => {
+      order.push('agent/created')
+      // The scoped section is already registered by the time agent/created fires.
       void ctx.systemPrompt.assemble(assembleContextFor(agent)).then((assembly) => {
         order.push(`persona:${assembly.sections.find(s => s.name === 'deployment:persona-prefix')?.text}`)
       })
@@ -352,8 +352,7 @@ describe('agent scope lifecycle', () => {
         agentCtx.systemPrompt.section({ name: 'deployment:persona-prefix', order: 0, text: 'You are the child.' })
       },
     })
-    await new Promise(resolve => setTimeout(resolve, 0))
-    expect(order).toEqual(['setup', 'session-start', 'persona:You are the child.'])
+    expect(order).toEqual(['setup', 'agent/created', 'persona:You are the child.'])
     await handle.dispose()
   })
 
@@ -368,7 +367,6 @@ describe('agent scope lifecycle', () => {
       order.push('session/created')
     })
     ctx.on('agent/created', () => void order.push('agent/created'))
-    ctx.on('agent/session-start', () => void order.push('agent/session-start'))
     const acceptedOptions = { provider: 'mock', model: 'mock' }
 
     const creating = ctx.agents.create({
@@ -406,7 +404,6 @@ describe('agent scope lifecycle', () => {
       'setup-listener:session/created',
       'agent/created',
       'setup-listener:agent/created',
-      'agent/session-start',
     ])
     await handle.dispose()
   })
@@ -841,7 +838,7 @@ describe('agent scope lifecycle', () => {
     const starts: string[] = []
     let ownerCtx!: Context
     let creating!: ReturnType<typeof ctx.agents.create>
-    ctx.on('agent/session-start', ({ agent }) => void starts.push(agent.id))
+    ctx.on('agent/status', ({ agent, status }) => { if (status === 'running') starts.push(agent.id) })
     ctx.on('agent/created', ({ agent }) => {
       if (agent.id === SessionId('listener-dispose-s')) disposeCurrentLifecycle(ownerCtx)
     })
@@ -862,7 +859,7 @@ describe('agent scope lifecycle', () => {
     await ctx.fiber.dispose()
   })
 
-  it('rechecks caller liveness after session-start before starting the driver', async () => {
+  it('rechecks caller liveness after agent/created before starting the driver', async () => {
     const ctx = await harness()
     let ownerCtx!: Context
     let creating!: ReturnType<typeof ctx.agents.create>
@@ -871,15 +868,15 @@ describe('agent scope lifecycle', () => {
     let scopeDisposed = false
     let observerSawLive = false
     ctx.on('agent/status', ({ agent, status }) => {
-      if (agent.id === SessionId('session-start-dispose-s')) statuses.push(status)
+      if (agent.id === SessionId('agent/created-dispose-s')) statuses.push(status)
     })
-    ctx.on('agent/session-start', ({ agent }) => {
-      if (agent.id !== SessionId('session-start-dispose-s')) return
+    ctx.on('agent/created', ({ agent }) => {
+      if (agent.id !== SessionId('agent/created-dispose-s')) return
       announced = agent
       disposeCurrentLifecycle(ownerCtx)
     })
-    ctx.on('agent/session-start', ({ agent }) => {
-      if (agent.id !== SessionId('session-start-dispose-s')) return
+    ctx.on('agent/created', ({ agent }) => {
+      if (agent.id !== SessionId('agent/created-dispose-s')) return
       expect(ctx.agents.get(agent.id)).toBe(agent)
       expect(ctx.sessions.get(agent.session.id)).toBe(agent.session)
       agent.ctx.effect(() => () => { scopeDisposed = true })
@@ -889,7 +886,7 @@ describe('agent scope lifecycle', () => {
     const owner = await ctx.plugin(Object.assign((inner: Context) => {
       ownerCtx = inner
       creating = inner.agents.create({
-        sessionId: SessionId('session-start-dispose-s'),
+        sessionId: SessionId('agent/created-dispose-s'),
         agentOptions: { provider: 'mock', model: 'mock' },
       })
     }, { inject: ['agents'] }))
@@ -901,8 +898,8 @@ describe('agent scope lifecycle', () => {
     expect(observerSawLive).toBe(true)
     expect(scopeDisposed).toBe(true)
     expect(announced.session.snapshotEvents()).toEqual([])
-    expect(ctx.agents.get(SessionId('session-start-dispose-s'))).toBeUndefined()
-    expect(ctx.sessions.get(SessionId('session-start-dispose-s'))).toBeUndefined()
+    expect(ctx.agents.get(SessionId('agent/created-dispose-s'))).toBeUndefined()
+    expect(ctx.sessions.get(SessionId('agent/created-dispose-s'))).toBeUndefined()
     await ctx.fiber.dispose()
   })
 
@@ -911,7 +908,6 @@ describe('agent scope lifecycle', () => {
     const published: string[] = []
     ctx.on('session/created', () => void published.push('session/created'))
     ctx.on('agent/created', () => void published.push('agent/created'))
-    ctx.on('agent/session-start', () => void published.push('agent/session-start'))
     await expect(ctx.agents.create({
       sessionId: SessionId('bad-s'),
       agentOptions: { provider: 'mock', model: 'mock' },
