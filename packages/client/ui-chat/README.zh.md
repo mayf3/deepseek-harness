@@ -35,7 +35,7 @@ kind: "package-reference"
 <a id="mermaid-previews"></a>
 ## Mermaid 预览
 
-已定稿的 Assistant Markdown 把 `mermaid` 代码 fence 显示为图表。图表不显示语言标题栏。源码／预览切换与复制图标在悬停或键盘聚焦时出现，触屏上保持可见；两种视图复制的都是原始 Mermaid 源码。流式 fence 在消息定稿前保持代码显示；非法图表显示错误与源码，不影响其他块。Chat 通过本地化 label 启用共享的 [Mermaid 预览原语](../ui-primitives/README.zh.md)。这项展示变更不增加模型提示词、工具或 Session 事件。
+已定稿的 Assistant Markdown 把 `mermaid` 代码 fence 显示为图表。图表不显示语言标题栏。源码／预览切换与复制图标在悬停或键盘聚焦时出现，触屏上保持可见；两种视图复制的都是原始 Mermaid 源码。流式 fence 在消息定稿前保持代码显示；非法图表显示错误与源码，不影响其他块。Chat 通过本地化 label 启用共享的 [Mermaid 预览原语](../ui-primitives/README.zh.md)。Chat 还在隔离 iframe 中预览 `graphviz`/`dot`、`svg` 和静态 `html` fence，共用默认可视化、源码切换与复制操作。HTML 脚本、导航与远程资源均被禁用。这项展示变更不增加模型提示词、工具或 Session 事件。
 
 -----
 

@@ -78,6 +78,10 @@ kind: "package-library"
 
 为 Markdown 调用方传入 `MarkdownLabels.mermaid` 即可启用 `mermaid` fence 预览；未传入时，fence 保持代码显示。预览在消息定稿后开始。`CodeBlock.preview` 提供无标题栏的替代正文，以及切换源码和复制的图标操作。操作在悬停或键盘聚焦时出现；只要设备具备触屏，就在图表下方保持可见，包括同时连接鼠标的情况。切换到源码时保留已挂载的预览，返回时复用其结果；复制始终保留源码。[Mermaid 决策](../../../.agents/notes/implemented/feature/2026-09-07-web-mermaid-preview.zh.md)记录了渲染与复用选择。
 
+传入 `MarkdownLabels.preview` 可启用 `graphviz`/`dot`、`svg` 和 `html` fence。每个定稿 fence 默认显示可视化，并共享源码切换与复制操作。Graphviz 按需加载 `@viz-js/viz`，用 `dot` 引擎渲染 DOT。SVG 与 Graphviz 输出作为不可执行的图片放入不透明来源的 sandbox iframe；非法 SVG 与 DOT 显示错误并保留源码。HTML 接受完整文档或片段、保留内联样式，同时移除脚本与导航。iframe 不授予任何 sandbox 权限，Content Security Policy 阻止外部资源、嵌套 iframe、表单与脚本。iframe 使用可滚动的 400px 视口。代码 fence 外的原始 HTML 仍按普通 Markdown 输入处理。
+
+[预览许可证声明](THIRD_PARTY_PREVIEW_NOTICES.txt)随本包与 Web 前端分发。Mermaid 使用 MIT；Viz.js 使用 MIT，但内嵌 Graphviz 使用 EPL-2.0。声明保留完整许可证文本及准确的 Graphviz 源码下载地址。升级依赖时必须同时检查内嵌产物和 npm 元数据；[预览决策](../../../.agents/notes/implemented/feature/2026-09-09-markdown-static-previews.zh.md)记录分发与 sandbox 选择。
+
 ### 本地化文案
 
 这些原子组件无法读取应用 locale，因此每段面向用户的文案都必须通过 label prop 提供。`HoverCard`、`TerminalBlock`、`JsonTree`、`CodeBlock`、`MarkdownText`、`JsonBlock`、`ConnectionIndicator`、`Modal`、`DiffBlock`、`ReadBlock`、`SearchBlock` 与 `WebBlock` 接收完整的本地化 label。本包不拥有语言回退；遗漏会导致类型检查失败，各功能会把带类型的 `t` 席位映射到 primitive 的 label 接口。
@@ -145,7 +149,7 @@ kind: "package-library"
 
 这些限制说明原子组件在边缘情况下的行为；它们是当前包约束，不是组件路线图。
 
-- **Mermaid 渲染在浏览器线程上执行**：每个已挂载的定稿预览都会开始渲染，包括视口外的图表。Mermaid 串行执行布局，已提交给它的工作无法中断。当前不提供预览虚拟化或 worker 渲染。
+- **图表渲染在浏览器线程上执行**：每个已挂载的定稿预览都会开始渲染，包括视口外的图表。Mermaid 串行执行布局；Graphviz 同步执行 WebAssembly 布局。已提交的布局工作无法中断。当前不提供预览虚拟化或 worker 渲染。
 - **流式期间跨边界引用解析被推迟**：定义落在增量冻结边界另一侧的引用式链接或脚注，在回复流式输出期间渲染为字面文本；定稿时的全量解析会将其解析。
 - **长高亮 fence 会保留完整 token DOM**：流式路径避免重新解析、重新 tokenize 和 reconcile 已完成前缀，但不会丢弃旧颜色或虚拟化 token span。因此最终 DOM 数量仍随 fence 的 token 数增长；嵌套／容器内 fence 与病态的单个超长行仍走通用尾部路径。
 - **字形级图标是重新绘制的近似版本**：鱼形标志与闪光标记来自字体字形，而本地设计数据无法导出其矢量几何；在获得精确导出路径前，使用手工重建版本代替。

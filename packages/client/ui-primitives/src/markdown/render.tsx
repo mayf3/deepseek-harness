@@ -23,6 +23,9 @@ import type * as Md from 'mdast'
 import type {} from 'mdast-util-math'
 import { normalizeUri } from 'micromark-util-sanitize-uri'
 import { CodeBlock } from './CodeBlock.tsx'
+import { SourcePreview } from './SourcePreview.tsx'
+import { renderGraphviz } from './graphviz.ts'
+import { renderHtml, renderSvg } from './preview-document.ts'
 import { MermaidPreview } from './MermaidPreview.tsx'
 import type { MermaidPreviewLabels } from './MermaidPreview.tsx'
 import { renderTexToReact } from './katex.tsx'
@@ -44,6 +47,16 @@ export interface MarkdownLabels {
   footnotes: string
   /** Opt into settled Mermaid fence previews by supplying their complete localized labels. */
   mermaid?: MermaidPreviewLabels & { preview: string; source: string }
+  /** Opt into settled Graphviz, SVG, and static HTML previews with complete localized labels. */
+  preview?: {
+    graphviz: string
+    svg: string
+    html: string
+    preview: string
+    source: string
+    loading: string
+    error: string
+  }
 }
 
 function sanitizeUrl(url: string): string {
@@ -398,13 +411,31 @@ function renderCode(node: Md.Code, key: Key, context: MarkdownRenderContext): Re
       streaming={context.streaming}
       copyLabel={context.labels.code.copyLabel}
       copiedLabel={context.labels.code.copiedLabel}
-      preview={lang === 'mermaid' && !context.streaming && context.labels.mermaid !== undefined ? {
-        content: <MermaidPreview code={node.value} labels={context.labels.mermaid} />,
-        previewLabel: context.labels.mermaid.preview,
-        sourceLabel: context.labels.mermaid.source,
-      } : undefined}
+      preview={context.streaming ? undefined : fencePreview(lang, node.value, context.labels)}
     />
   )
+}
+
+/** Resolve the supported fence language without treating arbitrary HTML in Markdown as a preview. */
+function fencePreview(lang: string | undefined, code: string, labels: MarkdownLabels) {
+  if (lang === 'mermaid' && labels.mermaid !== undefined) {
+    return {
+      content: <MermaidPreview code={code} labels={labels.mermaid} />,
+      previewLabel: labels.mermaid.preview,
+      sourceLabel: labels.mermaid.source,
+    }
+  }
+  if (labels.preview === undefined) return undefined
+  const kind = lang === 'dot' ? 'graphviz' : lang
+  if (kind !== 'graphviz' && kind !== 'svg' && kind !== 'html') return undefined
+  const render = { graphviz: renderGraphviz, svg: renderSvg, html: renderHtml }[kind]
+  return {
+    content: (
+      <SourcePreview key={kind} code={code} labels={{ ...labels.preview, diagram: labels.preview[kind] }} render={render} document />
+    ),
+    previewLabel: labels.preview.preview,
+    sourceLabel: labels.preview.source,
+  }
 }
 
 /** A list is loose when it or any of its items is spread; every item then keeps its paragraphs. */

@@ -686,6 +686,28 @@ ${rows.join('\n')}
 }
 
 /**
+ * Require renewed license review when a preview dependency or embedded source changes.
+ * @param dependencies - UI primitives' browser build dependencies.
+ * @param sources - Native source URIs from the installed Viz.js build provenance.
+ * @returns Nothing; throws when a version or native source differs from the reviewed distribution.
+ */
+export function assertPreviewDistribution(dependencies: Record<string, string>, sources: readonly string[]): void {
+  for (const [name, version] of Object.entries({ mermaid: '11.16.0', '@viz-js/viz': '3.30.0', dompurify: '3.4.11' })) {
+    if (dependencies[name] !== version) {
+      throw new Error(`preview notices: review ${name} ${String(dependencies[name])} licenses and update THIRD_PARTY_PREVIEW_NOTICES.txt`)
+    }
+  }
+  const expected = [
+    'pkg:docker/emscripten/emsdk@5.0.7?platform=linux%2Famd64',
+    'https://github.com/libexpat/libexpat/releases/download/R_2_8_4/expat-2.8.4.tar.gz',
+    'https://gitlab.com/api/v4/projects/4207231/packages/generic/graphviz-releases/16.0.0/graphviz-16.0.0.tar.gz',
+  ]
+  if (sources.length !== expected.length || expected.some(uri => !sources.includes(uri))) {
+    throw new Error('preview notices: review the changed Viz.js native sources and their distribution licenses')
+  }
+}
+
+/**
  * Render the complete notices document.
  * @returns The exact bytes THIRD_PARTY_NOTICES.md must hold after resolving browser inputs.
  */
@@ -695,6 +717,16 @@ export async function render(): Promise<string> {
   // the manifests map it was resolved from; render() owns that single load.
   workspaceLinkedManifestCache.clear()
   const { manifests, names } = loadWorkspaceManifests()
+  const previewPackage = 'packages/client/ui-primitives'
+  const provenance = JSON.parse(readFileSync(resolve(root, previewPackage, 'node_modules/@viz-js/viz/lib/provenance.json'), 'utf8')) as {
+    predicate: { buildDefinition: { resolvedDependencies: { uri: string }[] } }
+  }
+  const previewDependencies = manifests.get(`${previewPackage}/package.json`)?.devDependencies
+  if (previewDependencies === undefined) throw new Error('preview notices: missing UI primitives browser dependencies')
+  assertPreviewDistribution(
+    previewDependencies,
+    provenance.predicate.buildDefinition.resolvedDependencies.map(source => source.uri),
+  )
   const npm = collectNpmDeps(manifests, names, browser)
   const runtimeDeps = npm.filter(dep => dep.runtime)
   const devDeps = npm.filter(dep => !dep.runtime)
@@ -734,6 +766,8 @@ ${vendored.map(row => `| \`${row.npmName}\` | \`${row.upstreamName}\` | [${row.u
 External packages installed for runtime use or distributed inside the prebuilt browser artifacts. Browser inputs are resolved through the shipping tsdown and Vite configurations, independently of npm dependency sections. The tier covers every plugin a user can mount from \`cordis.yml\` — not only what the \`dsh\` CLI, Web UI, and Python SDK runtime load by default.
 
 ${renderNpmTable(runtimeDeps)}
+
+The Markdown preview distribution also contains Graphviz 16.0.0 (EPL-2.0), Expat 2.8.4 (MIT), and Emscripten 5.0.7 runtime code (MIT/NCSA) inside \`@viz-js/viz\` 3.30.0. The wrapper's MIT metadata does not relicense these components. [Preview notices](packages/client/ui-primitives/THIRD_PARTY_PREVIEW_NOTICES.txt) preserve their full license texts and Graphviz source availability, together with Mermaid's MIT and DOMPurify's selected Apache-2.0 terms. The UI primitives npm package includes this file; the Web build emits it as \`preview-third-party-notices.txt\`.
 
 pnpm applies local patches to the following packages at install time, so shipped artifacts carry modified copies; each patch file is the complete record of the modification:
 

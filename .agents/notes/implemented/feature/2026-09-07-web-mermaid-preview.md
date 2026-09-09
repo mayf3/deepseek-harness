@@ -26,6 +26,8 @@ Source replacement and unmounting cancel result publication. Cancellation before
 
 **Insert interactive SVG into the message.** The requested preview needs diagram display and source access. Displaying the result as an image keeps diagram links and event handlers inactive.
 
+The [static fence preview decision](2026-09-09-markdown-static-previews.md) owns Graphviz, SVG, and HTML sandboxing and shared preview license distribution.
+
 ## Consequences
 
 The feature changes presentation without changing persisted messages, provider requests, tools, or Host APIs. Mermaid adds lazily loaded browser assets. Rendering still runs on the browser thread, and work already handed to the library cannot be interrupted. The initial feature has no editing, export, zoom controls, or interactive diagram links.

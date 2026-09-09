@@ -26,6 +26,15 @@ const UNTRUSTED = [
   '  click B "javascript:alert(1)"',
 ].join('\n')
 
+const DOT = 'digraph { rankdir=LR; Input -> Preview }'
+const SVG = '<svg xmlns="http://www.w3.org/2000/svg" width="220" height="100"><rect width="220" height="100" fill="lightblue"/><text x="20" y="55">SVG preview</text></svg>'
+const HTML = `<style>h2 { color: green }</style><h2>Static HTML</h2>
+<script>parent.document.body.dataset.previewEscaped = 'yes'; alert('unsafe')</script>
+<meta http-equiv="refresh" content="0;url=https://preview.invalid/refresh">
+<a href="https://preview.invalid/navigate">Disabled navigation</a>
+<img src="https://preview.invalid/image" onerror="alert('unsafe')">
+<iframe src="https://preview.invalid/frame"></iframe>`
+
 function fixture(): string {
   const session = Session.create(SessionId('markdown-mermaid-source'))
   session.append('turn/start', { turn: 1 })
@@ -41,6 +50,7 @@ function fixture(): string {
       content: [{ type: 'text', text: [
         '# Mermaid previews',
         ...[FLOW, SEQUENCE, INVALID, UNTRUSTED].map(code => `\`\`\`mermaid\n${code}\n\`\`\``),
+        ...[['dot', DOT], ['svg', SVG], ['html', HTML]].map(([lang, code]) => `\`\`\`${lang}\n${code}\n\`\`\``),
       ].join('\n\n') }],
       source: { kind: 'model', provider: 'fixture', model: 'fixture' },
     }),
@@ -132,7 +142,7 @@ describe('web e2e: Mermaid chat previews', () => {
     const page = await browser.newPage({ viewport: { width: 1680, height: 1000 }, locale: 'zh-CN', timezoneId: 'Asia/Shanghai', hasTouch: true })
     await openConversation(page, scaffold)
     await expect.poll(() => page.getByRole('img', { name: 'Mermaid 图表' }).count(), { timeout: 20_000 }).toBe(3)
-    expect(await page.getByRole('button', { name: '源码', exact: true }).count()).toBe(4)
+    expect(await page.getByRole('button', { name: '源码', exact: true }).count()).toBe(7)
     const controls = page.locator('.md-code-block').first().locator('[class*="bannerWrap"]')
     expect(await controls.evaluate(node => getComputedStyle(node).opacity)).toBe('1')
     expect(await page.getByRole('button', { name: '源码', exact: true }).first()
@@ -147,6 +157,49 @@ describe('web e2e: Mermaid chat previews', () => {
     await assertFixtureInventory(SNAPSHOT_DIR, ['ui.expected.md', 'zh.expected.md'])
     await page.close()
   }, 60_000)
+
+  it.skipIf(MODE === 'record')('previews DOT, SVG, and static HTML inside isolated frames', async () => {
+    const page = await newEnglishPage(browser)
+    const requests: string[] = []
+    const dialogs: string[] = []
+    // Routing observes requests eligible for transport; Chromium also emits 'request' for CSP-blocked URLs.
+    await page.route('https://preview.invalid/**', async (route) => {
+      requests.push(route.request().url())
+      await route.abort()
+    })
+    page.on('dialog', (dialog) => { dialogs.push(dialog.message()); void dialog.dismiss() })
+    await page.context().grantPermissions(['clipboard-read', 'clipboard-write'])
+    await openConversation(page, scaffold)
+    for (const [title, code] of [['Graphviz diagram', DOT], ['SVG preview', SVG], ['HTML preview', HTML]]) {
+      const frame = page.locator(`iframe[title="${title}"]`)
+      await frame.waitFor()
+      expect(await frame.getAttribute('sandbox')).toBe('')
+      const body = frame.contentFrame()
+      if (title === 'HTML preview') {
+        await body.getByRole('heading', { name: 'Static HTML' }).waitFor()
+        expect(await body.getByRole('heading').evaluate(node => getComputedStyle(node).color)).toBe('rgb(0, 128, 0)')
+        await body.getByText('Disabled navigation').click()
+        expect(await frame.evaluate(node => (node as HTMLIFrameElement).contentDocument)).toBeNull()
+      } else {
+        await expect.poll(() => body.locator('img').evaluate(node => (node as HTMLImageElement).naturalWidth)).toBeGreaterThan(0)
+      }
+      const block = page.locator('.md-code-block').filter({ has: frame })
+      await block.hover()
+      await block.getByRole('button', { name: 'Copy', exact: true }).click()
+      expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(code)
+      await block.getByRole('button', { name: 'Source', exact: true }).click()
+      expect(await block.locator('pre code').textContent()).toBe(code)
+      await block.getByRole('button', { name: 'Preview', exact: true }).click()
+      expect(await frame.isVisible()).toBe(true)
+    }
+    expect(await page.locator('body').getAttribute('data-preview-escaped')).toBeNull()
+    expect(dialogs).toEqual([])
+    expect(requests).toEqual([])
+    const notices = await page.request.get(new URL('/preview-third-party-notices.txt', scaffold.authenticatedUrl).href)
+    expect(notices.ok()).toBe(true)
+    expect(await notices.text()).toContain('Eclipse Public License - v 2.0')
+    await page.close()
+  })
 
   it.skipIf(MODE === 'record')('keeps actions visible when a mouse and touchscreen are both available', async () => {
     const hybridBrowser = await chromium.launch({

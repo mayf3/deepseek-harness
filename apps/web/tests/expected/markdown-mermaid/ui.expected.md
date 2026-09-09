@@ -13,3 +13,12 @@
 - button "Source"
 - button "Copy"
 - img "Mermaid diagram"
+- button "Source"
+- button "Copy"
+- iframe
+- button "Source"
+- button "Copy"
+- iframe
+- button "Source"
+- button "Copy"
+- iframe
