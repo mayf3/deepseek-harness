@@ -39,6 +39,7 @@ async function harness(capable = new MockAdapter(Array.from({ length: 8 }, () =>
   ctx.on('llm/stream', (request, next) => {
     // Rebuild from copied source events, not the live projection's cached state.
     const subject = ctx.agents.get(request.sessionId!)!
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const replay = Session.create(subject.id, subject.session.snapshotEvents())
     expect(request.messages).toEqual(replay.deriveMessages())
     expect(request.system).toBeUndefined()
@@ -83,21 +84,26 @@ describe('prepared-route prompt admission', () => {
     expect(systemTexts(cleared)).toEqual([])
     expect(toPiContext(cleared).systemPrompt).toBeUndefined()
     expect(JSON.stringify(toPiContext(cleared))).not.toContain('prompt ')
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const clearEvents = h.agent.session.snapshotEvents().filter(event => event.type === 'system/message').filter(event => event.data.turn === 4)
     expect(clearEvents).toHaveLength(3)
     for (const event of clearEvents) {
       expect(event.data.message.content).toEqual([])
       expect(event.surfaceOp).toEqual({ op: 'replace', startSeq: event.sourceEventSeqs?.[0], endSeq: event.sourceEventSeqs?.[0] })
     }
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const count = h.agent.session.snapshotEvents().filter(event => event.type === 'system/message').length
     await send(h.agent, 'still clear')
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(h.agent.session.snapshotEvents().filter(event => event.type === 'system/message')).toHaveLength(count)
     expect(systemTexts(adapter.requests.at(-1)!)).toEqual([])
     const { agent: resumed } = await h.ctx.agents.create({
       sessionId: SessionId('cleared-resume'), agentOptions: { provider, model: 'model' },
+      // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
       seed: [...h.agent.session.snapshotEvents()],
     })
     await send(resumed, 'resume clear')
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(resumed.session.snapshotEvents().filter(event => event.type === 'system/message')).toHaveLength(count)
     expect(systemTexts(adapter.requests.at(-1)!)).toEqual([])
     h.setPrompt('restored instruction')
@@ -124,6 +130,7 @@ describe('prepared-route prompt admission', () => {
     }
     await send(h.agent, 'third')
     expectPlain(h.capable.requests[2]!, 'prompt two')
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const header = h.agent.session.snapshotEvents().filter(event => event.type === 'request/header').at(-1)
     expect(header?.data.reason).toBe(reason === 'explicit' ? 'series' : 'change')
     if (reason === 'tools') expect(header?.data.startsSeries).toBe(true)
@@ -147,6 +154,7 @@ describe('prepared-route prompt admission', () => {
       expect(failure.code).toBe('CONTEXT_LENGTH')
       if (attempts++ === 0) {
         const nodes = h.agent.session.surface.nodes
+        // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
         const latest = nodes.findLast(seq => h.agent.session.eventAt(seq)?.type === 'system/message')!
         const start = retainOlder ? latest : nodes[1]!
         const replaced = nodes.slice(nodes.indexOf(start), nodes.indexOf(latest) + 1)
@@ -166,6 +174,7 @@ describe('prepared-route prompt admission', () => {
     expectPlain(adapter.requests[3]!, 'prompt three')
     expect(adapter.requests[4]!.messages).toEqual(adapter.requests[3]!.messages)
     expect(adapter.requests[3]!.messages.at(-1)?.content).toEqual([{ type: 'text', text: 'third' }])
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const events = h.agent.session.snapshotEvents()
     expect(events.filter(event => event.type === 'step/start')).toHaveLength(3)
     expect(events.filter(event => event.type === 'user/message' && event.data.source.kind === 'user')).toHaveLength(3)
@@ -183,6 +192,7 @@ describe('prepared-route prompt admission', () => {
     if (changed) h.setPrompt('prompt three')
     await send(h.agent, 'third')
     expectPlain(h.plain.requests[0]!, changed ? 'prompt three' : 'prompt two')
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const events = h.agent.session.snapshotEvents()
     const replacements = events.filter(event => event.type === 'system/message').filter(event => event.surfaceOp !== 'append')
     expect(replacements).toHaveLength(2)
@@ -191,6 +201,7 @@ describe('prepared-route prompt admission', () => {
       expect(event.surfaceOp).toEqual({ op: 'replace', startSeq: event.sourceEventSeqs?.[0], endSeq: event.sourceEventSeqs?.[0] })
     }
     await send(h.agent, 'fourth')
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(h.agent.session.snapshotEvents().filter(event => event.type === 'system/message')).toHaveLength(4)
     expectPlain(h.plain.requests[1]!, changed ? 'prompt three' : 'prompt two')
   })
@@ -214,6 +225,7 @@ describe('prepared-route prompt admission', () => {
     expect(messages.slice(-2).map(message => message.content)).toEqual([
       [{ type: 'text', text: 'second' }], notice,
     ])
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const notices = h.agent.session.snapshotEvents().filter(event => event.type === 'user/message'
       && event.data.source.kind === 'plugin' && event.data.source.plugin === 'model-selection')
     expect(notices).toHaveLength(1)
@@ -230,10 +242,12 @@ describe('prepared-route prompt admission', () => {
     await send(h.agent, 'second')
     const { agent: resumed } = await h.ctx.agents.create({
       sessionId: SessionId('resumed-capable'), agentOptions: { provider: 'capable', model: 'model' },
+      // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
       seed: [...h.agent.session.snapshotEvents()],
     })
     h.ctx.on('agent/pre-step', ({ agent }, next) => {
       if (agent === resumed && replace) {
+        // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
         const seq = agent.session.surface.nodes.find(seq => agent.session.eventAt(seq)?.type === 'user/message')!
         agent.session.append('user/message', createUserMessage({
           content: [{ type: 'text', text: 'compacted history' }], source: { kind: 'plugin', plugin: 'test-compaction' },
@@ -245,6 +259,7 @@ describe('prepared-route prompt admission', () => {
     expect(systemTexts(h.capable.requests[2]!)).toEqual(replace
       ? [[{ type: 'text', text: 'prompt two' }]]
       : [[{ type: 'text', text: 'prompt one' }], [{ type: 'text', text: 'prompt two' }]])
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(resumed.session.snapshotEvents().filter(event => event.type === 'request/header').map(event => event.data.reason))
       .toEqual(['initial', 'resume'])
   })
@@ -254,10 +269,12 @@ describe('prepared-route prompt admission', () => {
     await send(h.agent, 'first')
     h.setPrompt('prompt two')
     await send(h.agent, 'second')
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const seed = h.agent.session.snapshotEvents()
     const { agent: resumed } = await h.ctx.agents.create({ sessionId: SessionId('resumed'), agentOptions: { provider: 'plain', model: 'model' }, seed: [...seed] })
     await send(resumed, 'resume')
     expectPlain(h.plain.requests[0]!, 'prompt two')
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(resumed.session.snapshotEvents().filter(event => event.type === 'request/header').at(-1)?.data.reason).toBe('resume')
   })
 
@@ -266,6 +283,7 @@ describe('prepared-route prompt admission', () => {
     const entered = Promise.withResolvers<undefined>()
     const release = Promise.withResolvers<undefined>()
     const observe = async () => {
+      // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
       const types = h.agent.session.snapshotEvents().map(event => event.type)
       expect(types).toContain('step/start')
       expect(types).not.toContain('system/message')
@@ -285,6 +303,7 @@ describe('prepared-route prompt admission', () => {
     release.resolve(undefined)
     await h.agent.whenIdle()
     expect(h.capable.requests).toHaveLength(0)
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const types = h.agent.session.snapshotEvents().map(event => event.type)
     expect(types.filter(type => type === 'step/start' || type === 'step/end')).toEqual(['step/start', 'step/end'])
     expect(types.filter(type => ['system/message', 'user/message', 'request/header'].includes(type))).toEqual([])
@@ -303,6 +322,7 @@ describe('prepared-route prompt admission', () => {
     expect(h.plain.requests).toHaveLength(0)
     expect(h.capable.requests[1]).toMatchObject({ provider: 'capable', temperature: 0.5, maxTokens: 100 })
     expect(systemTexts(h.capable.requests[1]!)).toHaveLength(2)
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(h.agent.session.snapshotEvents().filter(event => event.type === 'user/message')).toHaveLength(2)
   })
 })

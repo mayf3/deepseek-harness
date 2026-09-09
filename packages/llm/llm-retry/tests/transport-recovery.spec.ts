@@ -102,9 +102,11 @@ describe('bounded retry through the real DeepSeek HTTP/SSE adapter', () => {
 
     expect(server).toBeDefined()
     expect(server?.requests).toHaveLength(1)
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(agent.session.snapshotEvents().filter(event => event.type === 'step/start')
       .map(event => [event.data.turn, event.data.step]))
       .toEqual([[1, 1]])
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(agent.session.snapshotEvents().filter(event => event.type === 'llm/retry').map(event => event.data.failure.code))
       .toEqual(['TRANSPORT'])
     expect(finalAssistantText(agent)).toBe('connected after retry')
@@ -131,7 +133,9 @@ describe('bounded retry through the real DeepSeek HTTP/SSE adapter', () => {
 
     expect(server.requests).toHaveLength(2)
     expect(server.requests[0]?.body).toEqual(server.requests[1]?.body)
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const retryEvent = agent.session.snapshotEvents().find(event => event.type === 'llm/retry')
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const failedAttempts = agent.session.snapshotEvents().filter((event): event is SessionEvent<'assistant/attempt'> =>
       event.type === 'assistant/attempt'
       && retryEvent !== undefined
@@ -139,9 +143,11 @@ describe('bounded retry through the real DeepSeek HTTP/SSE adapter', () => {
     )
     expect(failedAttempts).toHaveLength(1)
     expect(expandAssistantStream(failedAttempts[0]!.data.stream)).toHaveLength(failedChunkCount)
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(agent.session.snapshotEvents().filter(event => event.type === 'assistant/message')
       .map(event => [event.data.turn, event.data.step]))
       .toEqual([[1, 1]])
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(agent.session.snapshotEvents().filter(event => event.type === 'llm/retry').map(event => event.data.failure.code))
       .toEqual(['TRANSPORT'])
     expect(finalAssistantText(agent)).toBe('recovered response')
@@ -162,11 +168,14 @@ describe('bounded retry through the real DeepSeek HTTP/SSE adapter', () => {
 
     expect(server.requests).toHaveLength(2)
     expect(server.requests[0]?.body).toEqual(server.requests[1]?.body)
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(agent.session.snapshotEvents().filter(event => event.type === 'llm/retry').map(event => event.data.failure.code))
       .toEqual(['EMPTY_RESPONSE'])
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(agent.session.snapshotEvents().filter(event => event.type === 'assistant/message')
       .map(event => [event.data.turn, event.data.step]))
       .toEqual([[1, 1]])
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(agent.session.snapshotEvents().at(-1)).toMatchObject({
       type: 'turn/end',
       data: { reason: { kind: 'completed' } },
@@ -189,10 +198,14 @@ describe('bounded retry through the real DeepSeek HTTP/SSE adapter', () => {
     await sendAndWait(context, agent)
 
     expect(server.requests).toHaveLength(1)
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const attempt = agent.session.snapshotEvents().find(event => event.type === 'assistant/attempt' && event.data.turn === 1)
     expect(attempt?.type === 'assistant/attempt' ? expandAssistantStream(attempt.data.stream) : []).toHaveLength(3)
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(agent.session.snapshotEvents().some(event => event.type === 'assistant/message')).toBe(false)
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(agent.session.snapshotEvents().some(event => event.type === 'llm/retry')).toBe(false)
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(agent.session.snapshotEvents().at(-1)).toMatchObject({
       type: 'turn/end',
       data: { reason: { kind: 'error', error: { message: 'SSE stream ended without [DONE]', code: 'STREAM_CLOSED' } } },
@@ -215,6 +228,7 @@ describe('bounded retry through the real DeepSeek HTTP/SSE adapter', () => {
     await sendAndWait(context, agent)
 
     expect(server.requests.map(record => record.behavior)).toEqual(['stall', 'success'])
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(agent.session.snapshotEvents().filter(event => event.type === 'llm/retry').map(event => event.data.failure.code))
       .toEqual(['TIMEOUT'])
     expect(finalAssistantText(agent)).toBe('recovered after timeout')
@@ -233,8 +247,11 @@ describe('bounded retry through the real DeepSeek HTTP/SSE adapter', () => {
     await sendAndWait(context, agent)
 
     expect(server.requests).toHaveLength(3)
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(agent.session.snapshotEvents().filter(event => event.type === 'step/start')).toHaveLength(1)
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(agent.session.snapshotEvents().filter(event => event.type === 'llm/retry')).toHaveLength(2)
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const end = agent.session.snapshotEvents().at(-1)
     expect(end).toMatchObject({
       type: 'turn/end',

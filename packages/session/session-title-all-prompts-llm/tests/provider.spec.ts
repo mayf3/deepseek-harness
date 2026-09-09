@@ -53,6 +53,7 @@ describe('all-messages LLM title provider', () => {
     ctx.llm.registerAdapter(['current-route'], adapter)
     await ctx.plugin(providerPlugin, LLM_CONFIG)
     const session = ctx.sessions.create(SessionId('all-plugin'), {
+      // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
       seed: seeded.snapshotEvents(),
       inheritedEventCount: seeded.seq,
       meta: { parentSession: seeded.id, isSeeded: true },

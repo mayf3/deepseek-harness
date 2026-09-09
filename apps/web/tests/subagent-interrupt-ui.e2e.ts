@@ -320,6 +320,7 @@ describe.skipIf(MODE === 'record')('web e2e: composer interrupt for a running co
     const child = scaffold.ctx.agents.get(childId)
     expect(child).toBeDefined()
     expect(child!.inbox.nextTurn).toHaveLength(2)
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(child!.session.snapshotEvents().filter(event => event.type === 'turn/start')).toHaveLength(2)
     await page.getByRole('button', { name: 'Send message' }).waitFor({ timeout: 15_000 })
 

@@ -96,6 +96,7 @@ describe('dsh-agent-loop-testkit', () => {
       { id: step.id, turn: 3 },
       { id: turn.id, turn: 3 },
     ])
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(agent.session.snapshotEvents().map(event => event.type)).toEqual([
       'agent/inbox/spliced',
       'agent/inbox/spliced',

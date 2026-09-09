@@ -809,6 +809,7 @@ describe('agent scope lifecycle', () => {
     expect(statuses).toEqual([])
     expect(observerSawLive).toBe(true)
     expect(scopeDisposed).toBe(true)
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(announced.session.snapshotEvents()).toEqual([])
     expect(ctx.agents.get(SessionId('session-start-dispose-s'))).toBeUndefined()
     expect(ctx.sessions.get(SessionId('session-start-dispose-s'))).toBeUndefined()
@@ -1114,8 +1115,10 @@ describe('agent scope lifecycle', () => {
     // are empty and nothing still drives the detached session.
     expect(ctx.agents.get(agent.id)).toBeUndefined()
     expect(ctx.sessions.get(agent.id)).toBeUndefined()
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const eventsAfter = agent.session.snapshotEvents().length
     await new Promise(resolve => setTimeout(resolve, 30))
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(agent.session.snapshotEvents().length).toBe(eventsAfter)
     await ctx.fiber.dispose()
   })

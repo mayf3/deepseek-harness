@@ -160,6 +160,7 @@ describe('Schedule tool protocol', () => {
     expect(value(await execute(test, 'schedule_create', { prompt: 'x', every_seconds: 299 })))
       .toEqual({ code: 'frequency_too_high', message: 'every_seconds must be at least 300.' })
     expect(test.flushes.count).toBe(0)
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(test.agent.session.snapshotEvents().filter(event => event.type === 'schedule/change')).toEqual([])
   })
 
@@ -233,6 +234,7 @@ describe('Schedule tool protocol', () => {
       expect.objectContaining({ id: 'schedule-1', kind: 'at' }),
       expect.objectContaining({ id: 'schedule-2', kind: 'at' }),
     ])
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const changes = test.agent.session.snapshotEvents()
       .filter(event => event.type === 'schedule/change' && event.data.operation === 'create')
     expect(changes.map((change) => {
@@ -301,6 +303,7 @@ describe('Schedule tool protocol', () => {
       message: 'The scheduled time must be strictly in the future.',
     })
     expect(test.flushes.count).toBe(3)
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(test.agent.session.snapshotEvents().filter(event => event.type === 'schedule/change')).toEqual([])
   })
 
@@ -313,6 +316,7 @@ describe('Schedule tool protocol', () => {
       message: 'The scheduled time must be representable as a four-digit-year RFC 3339 UTC instant.',
     })
     expect(test.flushes.count).toBe(1)
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(test.agent.session.snapshotEvents().filter(event => event.type === 'schedule/change')).toEqual([])
 
     const internal = await harness()
@@ -439,6 +443,7 @@ describe('Schedule persistence failure boundaries', () => {
       error: { info: { name: 'AbortError', code: 'ABORTED' } },
     })
     expect(test.flushes.count).toBe(0)
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(test.agent.session.snapshotEvents().filter(event => event.type === 'schedule/change')).toEqual([])
   })
 
@@ -463,6 +468,7 @@ describe('Schedule persistence failure boundaries', () => {
       error: { info: { name: 'AbortError', code: 'ABORTED' } },
     })
     expect(test.flushes.count).toBe(1)
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(test.agent.session.snapshotEvents().filter(event => event.type === 'schedule/change')).toEqual([])
   })
 
@@ -486,6 +492,7 @@ describe('Schedule persistence failure boundaries', () => {
       error: { info: { name: 'AbortError', code: 'ABORTED' } },
     })
     expect(test.flushes.count).toBe(3)
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(test.agent.session.snapshotEvents().filter(event => event.type === 'schedule/change'))
       .toHaveLength(1)
     expect(value(await execute(test, 'schedule_list', {})))
@@ -497,6 +504,7 @@ describe('Schedule persistence failure boundaries', () => {
     createTest.flushes.outcomes.push('reject')
     expect(value(await execute(createTest, 'schedule_create', { prompt: 'later', after_seconds: 1 })))
       .toMatchObject({ code: 'persistence_uncertain', operation: 'create' })
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(createTest.agent.session.snapshotEvents().filter(event => event.type === 'schedule/change')).toEqual([])
 
     const deleteTest = await harness()
@@ -504,6 +512,7 @@ describe('Schedule persistence failure boundaries', () => {
     deleteTest.flushes.outcomes.push('reject')
     expect(value(await execute(deleteTest, 'schedule_delete', { id: 'schedule-1' })))
       .toMatchObject({ code: 'persistence_uncertain', operation: 'delete', id: 'schedule-1' })
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(deleteTest.agent.session.snapshotEvents().at(-1)?.data).toMatchObject({ operation: 'create' })
   })
 

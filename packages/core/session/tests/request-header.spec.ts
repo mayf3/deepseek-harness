@@ -80,6 +80,7 @@ describe('foldRequestHeader', () => {
       content: [{ type: 'text', text: 'hi' }], source: { kind: 'user' },
     }), { surfaceOp: 'append' })
     session.append('request/header', { header: { config: { provider: 'mock', model: 'other' } }, reason: 'change' })
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(foldRequestHeader(session.snapshotEvents())).toEqual({ config: { provider: 'mock', model: 'other' } })
   })
 })

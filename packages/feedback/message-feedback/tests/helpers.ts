@@ -186,6 +186,7 @@ class TestPersistence extends SessionPersistence {
   }
 
   persist(session: Session): void {
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     this.durable.set(session.id, { meta: session.header, events: [...session.snapshotEvents()] })
   }
 

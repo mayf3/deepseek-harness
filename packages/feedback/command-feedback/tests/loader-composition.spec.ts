@@ -102,12 +102,16 @@ describe('/feedback real Loader composition through cordis.yml', () => {
     })
 
     // The domain event owns the payload; generic command bookkeeping omits it.
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(owner.session.snapshotEvents().map(event => event.type))
       .toEqual(['command/run', 'feedback/record', 'command/done', 'command/run', 'command/done'])
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const run = owner.session.snapshotEvents().find(event => event.type === 'command/run')
     expect(run?.type === 'command/run' && Object.hasOwn(run.data, 'args')).toBe(false)
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const feedback = owner.session.snapshotEvents().find(event => event.type === 'feedback/record')
     expect(feedback?.type === 'feedback/record' && feedback.data.text).toBe('the diff view is unreadable')
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(JSON.stringify(owner.session.snapshotEvents()).match(/the diff view is unreadable/gu)).toHaveLength(1)
 
     // Nothing reached the model.

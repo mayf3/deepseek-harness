@@ -117,6 +117,7 @@ describe('incremental DeepSeek session-log upload', () => {
       turn: 1, step: 3, message: createSystemMessage('new head', 'fixture'),
     }, { surfaceOp: { op: 'replace', startSeq: head.seq, endSeq: head.seq }, sourceEventSeqs: [head.seq] })
     const prepared = await ctx.deepseekLlmApiExtensions.prepare({ body: body(), signal: SIGNAL, sessionId: session.id })
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(prepared.fields.dsh_session_log?.events).toEqual(session.snapshotEvents())
   })
 
@@ -176,6 +177,7 @@ describe('incremental DeepSeek session-log upload', () => {
     expect(firstPayload?.events).toHaveLength(2)
     await first.accept()
     expect(SessionLogDeepSeek.acceptedThrough(session)).toBe(1)
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(session.snapshotEvents().at(-1)?.data).toEqual({
       sessionId: session.id,
       throughSeq: 1,
@@ -197,6 +199,7 @@ describe('incremental DeepSeek session-log upload', () => {
     first.session.append('turn/start', { turn: 1 })
     const prepared = await first.ctx.deepseekLlmApiExtensions.prepare({ body: body(), signal: SIGNAL, sessionId: first.session.id })
     await prepared.accept()
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const seed = first.session.snapshotEvents()
 
     const resumed = await harness('parent', seed)
@@ -361,6 +364,7 @@ describe('incremental DeepSeek session-log upload', () => {
     const { ctx, session } = await harness('direct-events')
     session.append('turn/start', { turn: 1 })
     const prepared = await ctx.deepseekLlmApiExtensions.prepare({ body: {}, signal: SIGNAL, sessionId: session.id })
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(prepared.fields.dsh_session_log?.events).toEqual(session.snapshotEvents())
   })
 

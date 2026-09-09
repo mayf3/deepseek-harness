@@ -173,6 +173,7 @@ describe('Schedule timer and admission runtime', () => {
     await settle()
     expect(test.followed).toHaveLength(1)
     expect(test.controls.releaseCount).toBe(1)
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(test.agent.session.snapshotEvents().find(event =>
       event.type === 'schedule/change' && event.data.operation === 'dispatch')).toBeDefined()
     await runtime.dispose()
@@ -223,6 +224,7 @@ describe('Schedule timer and admission runtime', () => {
 
     expect(test.followed).toEqual([])
     expect(test.controls.whenIdleCount).toBe(1)
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(test.agent.session.snapshotEvents().at(-1)?.data).toMatchObject({ operation: 'create' })
 
     runtime.requestDrive()
@@ -295,12 +297,14 @@ describe('Schedule timer and admission runtime', () => {
       ].join('\n'),
     }])
     expect(test.followed[0]?.source).toEqual({ kind: 'plugin', plugin: 'schedule' })
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const dispatches = test.agent.session.snapshotEvents().filter(event =>
       event.type === 'schedule/change' && event.data.operation === 'dispatch')
     expect(dispatches.map(event => event.data)).toEqual([
       { version: 1, operation: 'dispatch', id: 'schedule-fast', acceptedAt: '2026-08-05T12:00:00.000Z' },
       { version: 1, operation: 'dispatch', id: 'schedule-slow', acceptedAt: '2026-08-05T12:00:00.000Z' },
     ])
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(foldScheduleEvents(test.agent.session.snapshotEvents()).active).toEqual([
       expect.objectContaining({ id: 'schedule-fast', scheduledAt: '2026-08-05T12:05:00.000Z' }),
       expect.objectContaining({ id: 'schedule-slow', scheduledAt: '2026-08-05T12:09:00.000Z' }),
@@ -370,6 +374,7 @@ describe('Schedule timer and admission runtime', () => {
 
     expect(test.controls.releaseCount).toBe(1)
     expect(test.followed).toEqual([])
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(test.agent.session.snapshotEvents().at(-1)?.data).toMatchObject({ operation: 'delete' })
     runtime.requestDrive()
     await settle()
@@ -429,6 +434,7 @@ describe('Schedule runtime failure and teardown boundaries', () => {
     await settle()
 
     expect(test.controls.releaseCount).toBe(1)
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(test.agent.session.snapshotEvents().filter(event =>
       event.type === 'schedule/change' && event.data.operation === 'dispatch')).toEqual([])
     await runtime.dispose()
@@ -460,6 +466,7 @@ describe('Schedule runtime failure and teardown boundaries', () => {
 
     expect(test.followed).toHaveLength(1)
     expect(test.controls.releaseCount).toBe(1)
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(test.agent.session.snapshotEvents().filter(event =>
       event.type === 'schedule/change' && event.data.operation === 'dispatch')).toEqual([])
     runtime.requestDrive()
@@ -487,6 +494,7 @@ describe('Schedule runtime failure and teardown boundaries', () => {
 
     expect(test.followed).toHaveLength(1)
     expect(test.controls.releaseCount).toBe(1)
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(test.agent.session.snapshotEvents().filter(event => (
       event.type === 'schedule/change' && event.data.operation === 'dispatch'
     )).map(event => event.data)).toEqual([{
@@ -495,6 +503,7 @@ describe('Schedule runtime failure and teardown boundaries', () => {
       id: 'schedule-first',
       acceptedAt: '2026-08-05T12:00:00.000Z',
     }])
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(foldScheduleEvents(test.agent.session.snapshotEvents()).active).toEqual([
       expect.objectContaining({ id: 'schedule-first', scheduledAt: '2026-08-05T12:05:00.000Z' }),
       expect.objectContaining({ id: 'schedule-second', scheduledAt: '2026-08-05T11:55:00.000Z' }),
@@ -545,6 +554,7 @@ describe('Schedule runtime failure and teardown boundaries', () => {
     await settle()
     expect(test.controls.flushCount).toBe(1)
     expect(test.followed).toEqual([])
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(test.agent.session.snapshotEvents().at(-1)?.data).toMatchObject({ operation: 'create' })
     await runtime.dispose()
 
@@ -607,6 +617,7 @@ describe('Schedule runtime failure and teardown boundaries', () => {
     }
     await settle()
     expect(test.followed).toEqual([])
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(test.agent.session.snapshotEvents().filter(event =>
       event.type === 'schedule/change' && event.data.operation === 'dispatch')).toEqual([])
   })

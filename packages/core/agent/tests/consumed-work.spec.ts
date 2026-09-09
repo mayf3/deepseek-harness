@@ -40,6 +40,7 @@ describe('foldConsumedWork', () => {
     const session = Session.create(SessionId('empty'))
     accept(session, 'queued')
 
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(foldConsumedWork(session.snapshotEvents())).toEqual({ droppedUnrun: false })
   })
 
@@ -48,6 +49,7 @@ describe('foldConsumedWork', () => {
     steppedTurn(session, 1, { kind: 'completed' })
     steppedTurn(session, 2, { kind: 'max-tokens' })
 
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(foldConsumedWork(session.snapshotEvents()).end?.data)
       .toEqual({ turn: 2, reason: { kind: 'max-tokens' } })
   })
@@ -61,6 +63,7 @@ describe('foldConsumedWork', () => {
     claim(session)
     session.append('turn/end', { turn: 2, reason: { kind: 'error', error: { message: 'ENOSPC', code: 'UNKNOWN' } } })
 
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(foldConsumedWork(session.snapshotEvents()).end?.data.turn).toBe(2)
   })
 
@@ -71,6 +74,7 @@ describe('foldConsumedWork', () => {
     claim(session)
     session.append('turn/end', { turn: 2, reason: { kind: 'aborted', reason: { kind: 'user' } } })
 
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(foldConsumedWork(session.snapshotEvents()).end?.data.turn).toBe(2)
   })
 
@@ -85,6 +89,7 @@ describe('foldConsumedWork', () => {
     session.append('turn/end', { turn: 4, reason: { kind: 'blocked' } })
 
     // None of these turns describes work: they opened, found nothing of their own, and closed.
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(foldConsumedWork(session.snapshotEvents()).end?.data.turn).toBe(1)
   })
 
@@ -97,6 +102,7 @@ describe('foldConsumedWork', () => {
 
     // Rejection does not retain the claimed messages, so the `blocked` end is
     // the only account of input that will never run.
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(foldConsumedWork(session.snapshotEvents()).end?.data.turn).toBe(2)
   })
 
@@ -109,6 +115,7 @@ describe('foldConsumedWork', () => {
 
     // An emptied claim ran nothing and dropped nothing: a listener rewrote the
     // batch away, which is not this log's account of the work.
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(foldConsumedWork(session.snapshotEvents()).end?.data.turn).toBe(1)
   })
 
@@ -120,6 +127,7 @@ describe('foldConsumedWork', () => {
     claim(session)
     session.append('turn/end', { turn: 2, reason: { kind: 'aborted', reason: { kind: 'user' } } })
 
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(foldConsumedWork(session.snapshotEvents()).end?.data.turn).toBe(1)
   })
 
@@ -130,7 +138,9 @@ describe('foldConsumedWork', () => {
     cancelPending(session)
 
     // No turn opened over it, so only the cancellation says the work was cut short.
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(foldConsumedWork(session.snapshotEvents())).toEqual({
+      // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
       end: session.snapshotEvents().find(event => event.type === 'turn/end'),
       droppedUnrun: true,
     })
@@ -143,6 +153,7 @@ describe('foldConsumedWork', () => {
       target: 'next-turn', start: 0, removedCount: 1, inserted: [message('rewritten')], outcome: 'canceled',
     })
 
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(foldConsumedWork(session.snapshotEvents()).droppedUnrun).toBe(false)
   })
 
@@ -152,7 +163,9 @@ describe('foldConsumedWork', () => {
     cancelPending(session)
     steppedTurn(session, 2, { kind: 'completed' })
 
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(foldConsumedWork(session.snapshotEvents())).toEqual({
+      // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
       end: session.snapshotEvents().findLast(event => event.type === 'turn/end'),
       droppedUnrun: false,
     })

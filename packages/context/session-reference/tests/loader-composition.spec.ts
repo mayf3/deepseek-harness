@@ -134,6 +134,7 @@ describe('session-reference real Loader composition', () => {
     ctx.sessions.get(SessionId('reference-source'))!.append('user/message', createUserMessage({
       content: [{ type: 'text', text: 'LATER_SOURCE_MUTATION' }], source: { kind: 'user' },
     }), { surfaceOp: 'append' })
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(Session.create(SessionId('replayed-target'), target.snapshotEvents()).deriveMessages()).toEqual(captured)
     expect(await readFile(notice.fullSnapshot.locator, 'utf8')).toBe(transcript)
   })

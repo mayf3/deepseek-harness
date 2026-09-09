@@ -69,11 +69,13 @@ describe('Session log positions', () => {
       isSeeded: true,
     }
 
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const child = Session.create(id, source.snapshotEvents(), header, source.seq)
 
     expect(child.header.isSeeded).toBe(true)
     expect('seedLength' in child.header).toBe(false)
     expect(child.inheritedEventCount).toBe(2)
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(child.ownEvents().map(event => event.type)).toEqual(['session/end-seed'])
     expect(child.isOwnSeq(SessionSeq(1))).toBe(false)
     expect(child.isOwnSeq(SessionSeq(2))).toBe(true)
@@ -90,6 +92,7 @@ describe('Session log positions', () => {
     parent.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
     const id = SessionId('suffix-child')
 
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const child = Session.create(id, parent.snapshotEvents(), {
       version: SESSION_FORMAT_VERSION,
       id,
@@ -98,6 +101,7 @@ describe('Session log positions', () => {
     }, parent.seq)
     child.append('request/context', { provider: 'provider', model: 'model' })
 
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(child.ownEvents().map(event => event.type)).toEqual([
       'session/end-seed',
       'request/context',

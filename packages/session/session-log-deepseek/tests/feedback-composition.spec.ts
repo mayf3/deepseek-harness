@@ -84,6 +84,7 @@ it('uploads freeform feedback and message put/edit/delete through the unchanged 
     recordFeedback(session, '  The session needs a clearer explanation.  ')
     const created = await ctx.messageFeedback.put({ sessionId: session.id, messageId: assistant.id, rating: 'negative', note: 'Explain the result.', ifVersion: null })
     if (!created.ok) throw new Error(created.error.code)
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const initialPrefix = session.snapshotEvents()
     const request = async () => {
       const chunks = []
@@ -132,6 +133,7 @@ it('uploads freeform feedback and message put/edit/delete through the unchanged 
       ] })
     }
     await ctx.sessions.flush(session)
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect((await handle.read()).events).toEqual(session.snapshotEvents())
   } finally {
     await handle.close()

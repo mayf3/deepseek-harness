@@ -70,6 +70,7 @@ async function executeShell(text: string, nested: boolean, name = 'bash', maxInl
     let block: ToolResultNode
     if (nested) {
       expect(result.value).toMatchObject({ result: true })
+      // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
       const dispatches = session.snapshotEvents().filter(event => event.type === 'tool/ptc-dispatch')
       expect(dispatches).toHaveLength(1)
       const event = dispatches[0]!

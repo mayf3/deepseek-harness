@@ -37,6 +37,7 @@ function waitForIdle(ctx: Context, agent: Agent): Promise<void> {
 
 /** Every injected-context user message in the agent's log, flattened to joined text + source for terse assertions. */
 function reminders(agent: Agent): { text: string; source: unknown }[] {
+  // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
   return agent.session.snapshotEvents()
     .filter((e): e is SessionEvent<'user/message'> => e.type === 'user/message' && e.data.source.kind !== 'user')
     .map(e => ({
@@ -337,6 +338,7 @@ describe('fold onto the downstream decision', () => {
     expect(found[1]!.source).toEqual(guardSource('probe', 2))
     expect(found[2]).toEqual({ text: 'downstream-ctx', source: { kind: 'plugin', plugin: 'test' } })
     // The block's feedback reached the tool result unchanged.
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const results = agent.session.snapshotEvents().filter((e): e is SessionEvent<'tool/result'> => e.type === 'tool/result')
     expect(results.every(r => r.data.message.content[0].isError)).toBe(true)
     expect(results[1]!.data.message.content[0].content).toEqual([{ type: 'text', text: 'nope' }])
@@ -361,6 +363,7 @@ describe('fold onto the downstream decision', () => {
     const found = reminders(agent)
     expect(found).toHaveLength(1)
     expect(found[0]!.text).toContain('repeating the exact same tool call')
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const results = agent.session.snapshotEvents().filter((e): e is SessionEvent<'tool/result'> => e.type === 'tool/result')
     expect(results[1]!.data.message.content[0].content).toEqual([{ type: 'text', text: 'replaced' }])
   })

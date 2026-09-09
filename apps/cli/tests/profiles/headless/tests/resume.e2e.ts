@@ -63,6 +63,7 @@ describe.skipIf(!process.env.DEEPSEEK_API_KEY)('resume: continue a persisted ses
     await waitForIdle(ctx, resumed)
 
     // The model recalls it — only possible from the resumed history.
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(finalText(resumed.session.snapshotEvents())).toContain(SECRET)
   }, 180_000)
 })

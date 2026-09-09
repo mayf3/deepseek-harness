@@ -277,6 +277,7 @@ async function syncedWorkspaceContext(ctx: Context, agent: Agent): Promise<UserM
 }
 
 function baselineEvents(agent: Agent): SessionEvent[] {
+  // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
   return agent.session.snapshotEvents().filter(event =>
     event.type === 'user/message'
     && event.data.source.kind === 'agent-instructions'
@@ -1127,6 +1128,7 @@ describe('workspace context request injection', () => {
       const second = await composeBaselinePrefix(ctx, agent)
 
       expect(second).toEqual(first)
+      // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
       expect(agent.session.snapshotEvents().filter(event => event.type === 'user/message' && event.data.source.kind !== 'user')).toHaveLength(1)
       expect(derivedText(agent)).toContain('repo rule')
     } finally {
@@ -1146,13 +1148,16 @@ describe('workspace context request injection', () => {
       const original = await stubAgent(root)
       await composeBaselinePrefix(ctx, original)
 
+      // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
       const firstResume = await stubAgent(root, original.session.snapshotEvents())
       await composeBaselinePrefix(ctx, firstResume)
+      // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
       const secondResume = await stubAgent(root, firstResume.session.snapshotEvents())
       await composeBaselinePrefix(ctx, secondResume)
 
       expect(baselineEvents(firstResume)).toHaveLength(1)
       expect(baselineEvents(secondResume)).toHaveLength(1)
+      // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
       expect(secondResume.session.snapshotEvents().filter(event => event.type === 'user/message'
         && event.data.source.kind === 'agent-instructions')).toHaveLength(1)
     } finally {
@@ -1175,10 +1180,12 @@ describe('workspace context request injection', () => {
       await composeBaselinePrefix(ctx, original)
 
       fs.throwOnStat.add(join(root, 'AGENTS.md'))
+      // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
       const resumed = await stubAgent(root, original.session.snapshotEvents())
       await composeBaselinePrefix(ctx, resumed)
 
       expect(baselineEvents(resumed)).toHaveLength(1)
+      // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
       expect(resumed.session.snapshotEvents().filter(event => event.type === 'user/message'
         && event.data.source.kind === 'agent-instructions')).toHaveLength(1)
     } finally {
@@ -1201,12 +1208,15 @@ describe('workspace context request injection', () => {
       const original = await stubAgent(cwd)
       await composeBaselinePrefix(ctx, original)
 
+      // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
       const firstResume = await stubAgent(cwd, original.session.snapshotEvents())
       await composeBaselinePrefix(ctx, firstResume)
+      // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
       const secondResume = await stubAgent(cwd, firstResume.session.snapshotEvents())
       await composeBaselinePrefix(ctx, secondResume)
 
       expect(baselineEvents(secondResume)).toHaveLength(1)
+      // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
       expect(secondResume.session.snapshotEvents().filter(event => event.type === 'user/message'
         && event.data.source.kind === 'agent-instructions')).toHaveLength(1)
       expect(blocksText(secondResume.session.deriveMessages()[0]?.content)).toContain('omitted AGENTS.md')
@@ -1231,10 +1241,12 @@ describe('workspace context request injection', () => {
       await composeBaselinePrefix(ctx, original)
 
       await write(join(cwd, 'AGENTS.md'), 'package rule')
+      // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
       const resumed = await stubAgent(cwd, original.session.snapshotEvents())
       await composeBaselinePrefix(ctx, resumed)
 
       expect(baselineEvents(resumed)).toHaveLength(1)
+      // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
       const update = resumed.session.snapshotEvents().findLast(event => event.type === 'user/message'
         && event.data.source.kind === 'agent-instructions'
         && event.data.source.baseline !== true)
@@ -1268,6 +1280,7 @@ describe('workspace context request injection', () => {
         maxBytes: 65536,
         instructionFileCandidates: ['CLAUDE.md', 'AGENTS.md'],
       })
+      // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
       const resumed = await stubAgent(root, original.session.snapshotEvents())
       await composeBaselinePrefix(resumedCtx, resumed)
 
@@ -1287,6 +1300,7 @@ describe('workspace context request injection', () => {
         : [])
       expect(new Set(baselineIdentities).size).toBe(2)
 
+      // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
       const repeated = await stubAgent(root, resumed.session.snapshotEvents())
       await composeBaselinePrefix(resumedCtx, repeated)
       expect(baselineEvents(repeated)).toHaveLength(2)
@@ -1321,6 +1335,7 @@ describe('workspace context request injection', () => {
         maxBytes: 65536,
         instructionFileCandidates: ['CLAUDE.md'],
       })
+      // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
       const claudeResume = await stubAgent(root, original.session.snapshotEvents())
       await composeBaselinePrefix(claudeCtx, claudeResume)
       const claudeBaseline = baselineEvents(claudeResume).at(-1)
@@ -1336,6 +1351,7 @@ describe('workspace context request injection', () => {
         maxBytes: 65536,
         instructionFileCandidates: ['AGENTS.md'],
       })
+      // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
       const restored = await stubAgent(root, claudeResume.session.snapshotEvents())
       await composeBaselinePrefix(restoredCtx, restored)
       const restoredBaseline = baselineEvents(restored).at(-1)
@@ -1371,6 +1387,7 @@ describe('workspace context request injection', () => {
         maxBytes: 65536,
         instructionFileCandidates: ['POLICY.md'],
       })
+      // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
       const resumed = await stubAgent(root, original.session.snapshotEvents())
       await composeBaselinePrefix(resumedCtx, resumed)
 
@@ -1385,6 +1402,7 @@ describe('workspace context request injection', () => {
         { action: 'remove', scope: sk('.', 'AGENTS.md'), path: 'AGENTS.md' },
       ])
 
+      // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
       const repeated = await stubAgent(root, resumed.session.snapshotEvents())
       await composeBaselinePrefix(resumedCtx, repeated)
       expect(baselineEvents(repeated)).toHaveLength(2)
@@ -1415,6 +1433,7 @@ describe('workspace context request injection', () => {
 
       await fiber.dispose()
       await mountWorkspaceContextPlugin(ctx, { dshHome: home, maxBytes: 65536 })
+      // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
       const resumed = await stubAgent(root, original.session.snapshotEvents())
       agentEvents(ctx, resumed).emit('agent/session-start', { source: 'resume' })
       const claimed = claimInbox(resumed, 'next-step')
@@ -1431,6 +1450,7 @@ describe('workspace context request injection', () => {
 
       expect(decision.messages.map(message => message.id)).toEqual([inserted?.id])
       expect(resumed.inbox.nextStep).toEqual([])
+      // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
       expect(resumed.session.snapshotEvents().filter(event => event.type === 'agent/inbox/spliced'
         && event.data.inserted.some(message => message.source.kind === 'agent-instructions'
           && message.source.baseline === true))).toHaveLength(1)
@@ -1461,6 +1481,7 @@ describe('workspace context request injection', () => {
       await write(join(root, 'AGENTS.md'), 'new repo rule')
       await fiber.dispose()
       await mountWorkspaceContextPlugin(ctx, { dshHome: home, maxBytes: 65536 })
+      // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
       const resumed = await stubAgent(root, original.session.snapshotEvents())
       agentEvents(ctx, resumed).emit('agent/session-start', { source: 'resume' })
       const staleClaim = claimInbox(resumed, 'next-step')
@@ -1514,6 +1535,7 @@ describe('workspace context request injection', () => {
       await originalCtx.fiber.dispose()
       if (provideFs) await resumedCtx.plugin(LocalFileSystem, { cwd: '/' })
       await mountWorkspaceContextPlugin(resumedCtx, { dshHome: home, maxBytes })
+      // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
       const resumed = await stubAgent(root, original.session.snapshotEvents())
       agentEvents(resumedCtx, resumed).emit('agent/session-start', { source: 'resume' })
       const claimed = claimInbox(resumed, 'next-step')
@@ -1555,6 +1577,7 @@ describe('workspace context request injection', () => {
 
       await composeBaselinePrefix(ctx, agent)
 
+      // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
       const removal = agent.session.snapshotEvents().find(event => event.type === 'user/message'
         && event.data.source.kind === 'agent-instructions'
         && event.data.source.changes.some(change => change.action === 'remove'))
@@ -1589,6 +1612,7 @@ describe('workspace context request injection', () => {
 
       await composeBaselinePrefix(ctx, agent)
 
+      // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
       const workspaceEvents = agent.session.snapshotEvents().filter(event => event.type === 'user/message'
         && event.data.source.kind === 'agent-instructions')
       expect(workspaceEvents).toHaveLength(2)
@@ -1598,6 +1622,7 @@ describe('workspace context request injection', () => {
       expect(baselineEvents(agent)).toHaveLength(1)
 
       await composeBaselinePrefix(ctx, agent)
+      // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
       expect(agent.session.snapshotEvents().filter(event => event.type === 'user/message'
         && event.data.source.kind === 'agent-instructions')).toHaveLength(2)
     } finally {
@@ -1821,6 +1846,7 @@ describe('workspace context request injection', () => {
       // The first resumed pre-step retains the compatible visible baseline and
       // appends only the offline file transition needed to reach current state.
       await write(join(root, 'AGENTS.md'), 'new root rule after offline edit')
+      // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
       const resumed = await stubAgent(root, original.session.snapshotEvents())
 
       // Resume announces its lifecycle start before the first step.
@@ -1829,6 +1855,7 @@ describe('workspace context request injection', () => {
 
       const baselines = baselineEvents(resumed)
       expect(baselines).toHaveLength(1)
+      // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
       const latest = resumed.session.snapshotEvents().findLast(event =>
         event.type === 'user/message' && event.data.source.kind === 'agent-instructions')
       expect(latest?.type === 'user/message' ? latest.data.source : undefined).toMatchObject({
@@ -2010,6 +2037,7 @@ describe('workspace context request injection', () => {
 
       await composeBaselinePrefix(ctx, agent)
 
+      // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
       const contexts = agent.session.snapshotEvents().filter(event =>
         event.type === 'user/message' && event.data.source.kind !== 'user',
       )
@@ -2651,6 +2679,7 @@ describe('dynamic nested workspace context injection', () => {
 
       agent.followup(createUserMessage({ content: [{ type: 'text', text: 'read and abort' }], source: { kind: 'user' } }))
       await agent.whenIdle()
+      // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
       expect(agent.session.snapshotEvents().filter(event =>
         event.type === 'user/message' && event.data.source.kind !== 'user',
       )).toHaveLength(0)
@@ -2658,6 +2687,7 @@ describe('dynamic nested workspace context injection', () => {
       agent.followup(createUserMessage({ content: [{ type: 'text', text: 'retry the read' }], source: { kind: 'user' } }))
       await agent.whenIdle()
 
+      // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
       const contexts = agent.session.snapshotEvents().filter(event => event.type === 'user/message' && event.data.source.kind !== 'user')
       expect(contexts).toHaveLength(1)
       expect(adapter.requests).toHaveLength(3)
@@ -3633,6 +3663,7 @@ describe('dynamic nested workspace context injection', () => {
         agent,
       })
       await appendAdditionalContexts(ctx, agent)
+      // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
       const resumed = await stubAgent(root, agent.session.snapshotEvents())
 
       const afterResume = await ctx.tools.execute({
@@ -3667,10 +3698,12 @@ describe('dynamic nested workspace context injection', () => {
       })
       await appendAdditionalContexts(ctx, original)
       await write(join(root, 'pkg/AGENTS.md'), 'new nested rule after resume')
+      // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
       const resumed = await stubAgent(root, original.session.snapshotEvents())
 
       await composeBaselinePrefix(ctx, resumed)
 
+      // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
       const update = resumed.session.snapshotEvents().findLast(event => event.type === 'user/message' && event.data.source.kind !== 'user')
       expect(update?.type === 'user/message' && update.data.source).toMatchObject({
         changes: [{ action: 'replace', scope: sk('pkg', 'AGENTS.md'), path: join('pkg', 'AGENTS.md') }],
@@ -4701,6 +4734,7 @@ describe('workspace context inbox synchronization', () => {
         callId: ToolCallId('recover-pending-a'), name: 'read', arguments: { file_path: join('a', 'file.txt') }, agent: original,
       })
       await syncWorkspaceContext(ctx, original)
+      // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
       const resumed = await stubAgent(root, original.session.snapshotEvents())
 
       await ctx.tools.execute({

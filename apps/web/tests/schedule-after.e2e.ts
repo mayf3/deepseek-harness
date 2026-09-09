@@ -205,6 +205,7 @@ async function waitForReply(
 ): Promise<SessionEvent<'assistant/message'>> {
   const deadline = Date.now() + timeoutMs
   while (true) {
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const event = handle.agent.session.snapshotEvents().find((candidate): candidate is SessionEvent<'assistant/message'> => (
       candidate.type === 'assistant/message' && assistantText(candidate) === text
     ))
@@ -455,6 +456,7 @@ describe.skipIf(MODE === 'record')('web e2e: conversational reminders', () => {
   it('batches one latest occurrence per overdue Every record into an ordinary follow-up', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-schedule-every'))
     const ids = new Set(everyRecords.map(record => record.id))
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const dispatches = everyHandle.agent.session.snapshotEvents().filter(event => (
       event.type === 'schedule/change'
       && event.data.operation === 'dispatch'
@@ -470,6 +472,7 @@ describe.skipIf(MODE === 'record')('web e2e: conversational reminders', () => {
     const decision = acceptedAt[0]
     if (decision === undefined) throw new Error('missing Every decision time')
 
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const batch = everyHandle.agent.session.snapshotEvents().find(event => (
       event.type === 'user/message'
       && event.data.source.kind === 'plugin'
@@ -493,6 +496,7 @@ describe.skipIf(MODE === 'record')('web e2e: conversational reminders', () => {
     if (reminderRequest === undefined) throw new Error('model did not receive the Every batch')
     expect(requestText(reminderRequest)).toContain(batchBlock.text)
     expectReminderFraming(reminderRequest)
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const active = foldScheduleEvents(everyHandle.agent.session.snapshotEvents()).active
     expect(active).toHaveLength(2)
     expect(active.every(record => Date.parse(record.scheduledAt) > Date.parse(decision))).toBe(true)
@@ -516,6 +520,7 @@ describe.skipIf(MODE === 'record')('web e2e: conversational reminders', () => {
 
   it('uses request-local browser context to create an explicit local At reminder', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-schedule-at'))
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const user = atHandle.agent.session.snapshotEvents().find(event => (
       event.type === 'user/message'
       && event.data.source.kind === 'user'
@@ -541,11 +546,13 @@ describe.skipIf(MODE === 'record')('web e2e: conversational reminders', () => {
     }
     expect(selectedAt.time_zone).toBe(AT_BROWSER_ZONE)
 
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const toolCall = atHandle.agent.session.snapshotEvents().find(event => (
       event.type === 'tool/call' && event.data.name === 'schedule_create'
     ))
     if (toolCall?.type !== 'tool/call') throw new Error('missing schedule_create tool call')
     expect(JSON.parse(toolCall.data.arguments)).toEqual({ prompt: AT_PROMPT, at: selectedAt })
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const created = atHandle.agent.session.snapshotEvents().find(event => (
       event.type === 'schedule/change'
       && event.data.operation === 'create'
@@ -560,6 +567,7 @@ describe.skipIf(MODE === 'record')('web e2e: conversational reminders', () => {
       prompt: AT_PROMPT,
       scheduledAt,
     })
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(atHandle.agent.session.snapshotEvents().filter(event => (
       event.type === 'schedule/change'
       && event.data.operation === 'dispatch'

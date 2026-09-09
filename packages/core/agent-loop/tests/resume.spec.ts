@@ -484,6 +484,7 @@ describe('the session-persistence Agent Note: AgentLoop factory create/resume', 
     // Lifecycle 2: resume repairs the tail and stores the repair durably.
     const ctx2 = await mountPersistentHarness(root, new MockAdapter([]))
     const handle = await ctx2.agents.resume({ resumeSessionId: sessionId })
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(handle.agent.session.snapshotEvents().map(event => event.type))
       .toEqual(['turn/start', 'turn/end', 'session/end-seed'])
     await handle.dispose()
@@ -552,6 +553,7 @@ describe('the session-persistence Agent Note: AgentLoop factory create/resume', 
     // closers immediately after the committed prefix — no gap, no fragment.
     const ctx2 = await mountPersistentHarness(root, new MockAdapter([]), 'none')
     const handle = await ctx2.agents.resume({ resumeSessionId: sessionId })
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(handle.agent.session.snapshotEvents().map(event => event.type))
       .toEqual(['turn/start', 'turn/end', 'session/end-seed'])
     await handle.dispose()
@@ -639,6 +641,7 @@ describe('the session-persistence Agent Note: AgentLoop factory create/resume', 
       setup: async (agentCtx, agent) => {
         expect(agent.id).toBe(sessionId)
         // The two persisted events plus the end-seed marker.
+        // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
         expect(agent.session.snapshotEvents()).toHaveLength(3)
         agentCtx.on('session/created', () => void order.push('setup-listener:session/created'))
         agentCtx.on('agent/created', () => void order.push('setup-listener:agent/created'))
@@ -691,6 +694,7 @@ describe('the session-persistence Agent Note: AgentLoop factory create/resume', 
     expect(stored.map(event => event.type)).toEqual(['turn/start', 'turn/end', 'session/end-seed'])
 
     const second = await ctx.agents.resume({ resumeSessionId: sessionId })
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(second.agent.session.snapshotEvents().map(event => event.type))
       .toEqual(['turn/start', 'turn/end', 'session/end-seed'])
     await second.dispose()
@@ -983,6 +987,7 @@ describe('the session-persistence Agent Note: AgentLoop factory create/resume', 
     const a1 = h1.agent
     a1.followup(createUserMessage({ content: [{ type: 'text', text: 'first question' }], source: { kind: 'user' } }))
     await waitForIdle(ctx1, a1)
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const events1 = a1.session.snapshotEvents()
     const seqs1 = events1.map(e => e.seq)
     expect(seqs1).toEqual([...seqs1].sort((x, y) => x - y)) // contiguous
@@ -996,8 +1001,10 @@ describe('the session-persistence Agent Note: AgentLoop factory create/resume', 
     // The resumed session carries the prior history…
     expect(a2.session.id).toBe('sess-resume')
     // …followed by one end-seed event marking the constructor seed.
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(a2.session.snapshotEvents().length).toBe(events1.length + 1)
     expect(a2.session.firstLiveSeq).toBe(events1.length)
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(a2.session.snapshotEvents().at(-1)?.type).toBe('session/end-seed')
     const replay = Session.create(SessionId('replay'), events1)
     expect(a2.session.deriveMessages()).toEqual(replay.deriveMessages())
@@ -1005,8 +1012,10 @@ describe('the session-persistence Agent Note: AgentLoop factory create/resume', 
     // …and a new turn continues numbering (turn 2) with contiguous seqs.
     a2.followup(createUserMessage({ content: [{ type: 'text', text: 'second question' }], source: { kind: 'user' } }))
     await waitForIdle(ctx2, a2)
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const allSeqs = a2.session.snapshotEvents().map(e => e.seq)
     expect(allSeqs).toEqual(allSeqs.map((_, i) => i)) // 0..N contiguous, no duplicates
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const turnStarts = a2.session.snapshotEvents().filter(e => e.type === 'turn/start')
     expect(turnStarts.map(e => e.type === 'turn/start' && e.data.turn)).toEqual([1, 2])
     await ctx2.fiber.dispose()

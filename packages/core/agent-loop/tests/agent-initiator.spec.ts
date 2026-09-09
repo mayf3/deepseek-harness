@@ -335,6 +335,7 @@ describe('AgentLoop initiator scope', () => {
     }])
     const schema = adapter.requests[0]?.tools?.find(tool => tool.name === 'capability-request')
     expect(JSON.stringify(schema?.parameters)).not.toMatch(/session|harness/i)
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const call = handle.agent.session.snapshotEvents().find(event => event.type === 'tool/call')
     expect(call?.type === 'tool/call' ? call.data.arguments : undefined)
       .toBe(JSON.stringify({ path: '/v1/capability' }))

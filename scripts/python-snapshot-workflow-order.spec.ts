@@ -82,6 +82,7 @@ describe('advanced Python snapshot workflow ordering', () => {
     const child = await entered.promise
     expect(child.id).toBe(run.id)
     expect(adapter.requests).toHaveLength(0)
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(child.session.snapshotEvents().some(event => event.type === 'subagent/descriptor')).toBe(false)
     parent.session.append('tool-workflow/agent-start', {
       runId: WorkflowRunId('run'), seq: 1, label: 'workflow-child', childId: child.id,

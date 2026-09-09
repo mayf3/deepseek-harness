@@ -207,6 +207,7 @@ describe('sandbox:policy request context', () => {
   it('reconstructs resumed policy from the session log and omits diagnostics without an agent', async () => {
     const active = session('sess-resume', '/projects/current')
     setSandboxMode(active, 'workspace-write')
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const resumed = Session.create(active.id, active.snapshotEvents(), active.header)
     const ctx = await promptMounted({ mode: 'read-only' })
 
@@ -232,6 +233,7 @@ describe('the sandbox/mode session kit', () => {
   it('setSandboxMode appends exactly one sandbox/mode event per switch', () => {
     const session = Session.create(SessionId('sess-write'))
     setSandboxMode(session, 'danger-full-access')
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const modeEvents = session.snapshotEvents().filter(e => e.type === 'sandbox/mode')
     expect(modeEvents).toHaveLength(1)
     expect(modeEvents[0]?.data).toEqual({ mode: 'danger-full-access' })

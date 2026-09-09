@@ -35,6 +35,7 @@ describe('Agent', () => {
 
     agent.inject(createUserMessage({ content: [{ type: 'text', text: 'context' }], source: { kind: 'plugin', plugin: 'p' } }))
 
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(agent.session.snapshotEvents().map(event => event.type)).toEqual(['agent/inbox/spliced'])
     expect(agent.status).toBe('idle')
     expect(adapter.requests).toHaveLength(0)
@@ -47,6 +48,7 @@ describe('Agent', () => {
 
     agent.inject(createUserMessage({ content: [{ type: 'text', text: 'empty plugin source' }], source: { kind: 'plugin', plugin: '' } }))
 
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const injected = agent.session.snapshotEvents().at(-1)
     expect(injected?.type === 'agent/inbox/spliced' && injected.data.inserted[0]?.source)
       .toEqual({ kind: 'plugin', plugin: '' })
@@ -97,6 +99,7 @@ describe('Agent', () => {
     expect(() => {
       agent.inject(createUserMessage({ content: [{ type: 'text', text: 'x', bad: 1n } as never], source: { kind: 'plugin', plugin: 'p' } }))
     }).toThrow(/non-JSON-serializable/)
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(agent.session.snapshotEvents()).toHaveLength(0)
   })
 
@@ -108,6 +111,7 @@ describe('Agent', () => {
     agent.steer(createUserMessage({ content: [{ type: 'text', text: 'steer idle' }], source: { kind: 'plugin', plugin: 'test' } }))
     await agent.whenIdle()
 
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(agent.session.snapshotEvents().some(event => event.type === 'user/message')).toBe(true)
     expect(adapter.requests).toHaveLength(1)
   })

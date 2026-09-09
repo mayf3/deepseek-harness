@@ -72,18 +72,21 @@ function recordStatus(ctx: Context, agent: Agent): { seen: string[]; dispose: ()
 }
 
 function userMessageTexts(agent: Agent): string[] {
+  // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
   return agent.session.snapshotEvents()
     .filter(e => e.type === 'user/message')
     .map(e => (e.data as { content: { type: string; text?: string }[] }).content.map(b => b.text ?? '').join(''))
 }
 
 function turnNumbers(agent: Agent): number[] {
+  // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
   return agent.session.snapshotEvents()
     .filter(e => e.type === 'turn/start')
     .map(e => e.data.turn)
 }
 
 function turnEndNumbers(agent: Agent): number[] {
+  // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
   return agent.session.snapshotEvents()
     .filter(e => e.type === 'turn/end')
     .map(e => (e.data as { turn: number }).turn)
@@ -91,6 +94,7 @@ function turnEndNumbers(agent: Agent): number[] {
 
 function userMessageCountsByTurn(agent: Agent): number[] {
   const counts: number[] = []
+  // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
   for (const event of agent.session.snapshotEvents()) {
     if (event.type === 'turn/start') counts.push(0)
     if (event.type === 'user/message') counts[counts.length - 1]! += 1

@@ -230,6 +230,7 @@ describe('TokenMeter pricing', () => {
     const result = service.measure(session)
     expect(result.baseline.kind).toBe('estimated')
     expect(result.totalTokens).toBeGreaterThan(result.surfaceTokens)
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(result.logRevision).toBe(session.snapshotEvents().length)
     expectSurfaceTotal(result)
   })
@@ -423,6 +424,7 @@ describe('replay anchors and surface folds', () => {
       content: [{ type: 'text', text: 'new tail' }],
       source: { kind: 'user' },
     }), { surfaceOp: 'append' })
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const seeded = Session.create(SessionId('surface-seeded'), original.snapshotEvents())
     const before = service.measure(seeded)
     expect(before.nodes).toHaveLength(2)
@@ -436,7 +438,9 @@ describe('replay anchors and surface folds', () => {
     }), { surfaceOp: { op: 'replace', startSeq: first, endSeq: first }, sourceEventSeqs: [first] })
     const after = service.measure(seeded)
     expect(after.nodes).toHaveLength(2)
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(after.nodes[0]!.seq).toBe(seeded.snapshotEvents().length - 1)
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(after.logRevision).toBe(seeded.snapshotEvents().length)
     expect(Object.isFrozen(after.nodes)).toBe(true)
     expect(Object.isFrozen(after.nodes[0])).toBe(true)
@@ -444,6 +448,7 @@ describe('replay anchors and surface folds', () => {
     expectSurfaceTotal(after)
     expect(before.nodes).toHaveLength(2)
     // The earlier snapshot still reports the log it measured: seed + boundary.
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(before.logRevision).toBe(original.snapshotEvents().length + 1)
     expect(before.surfaceDeltaTokens).toBeGreaterThan(0)
   })
@@ -455,6 +460,7 @@ describe('replay anchors and surface folds', () => {
       durableText: '',
     })
     const measurement = meter().measure(session)
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const assistant = session.snapshotEvents().find(event => event.type === 'assistant/message')!
     expect(measurement.nodes).toEqual([{ seq: assistant.seq, tokens: 0, heuristicTokens: 0 }])
     expect(measurement.surfaceTokens).toBe(0)

@@ -126,6 +126,7 @@ describe('generateSessionTitleWithLlm', () => {
     const providerRequest = request(ctx)
     let requestWasLoggedAtDispatch = false
     const adapter = new RecordingAdapter(SCRIPT, () => {
+      // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
       requestWasLoggedAtDispatch = providerRequest.session.snapshotEvents()
         .some(event => event.type === 'session/title-llm-request')
     })
@@ -162,6 +163,7 @@ describe('generateSessionTitleWithLlm', () => {
     const prompt = options.messages[0]?.content[0]
     expect(prompt?.type === 'text' && prompt.text).toContain('first prompt')
     expect(prompt?.type === 'text' && prompt.text).toContain('第二个问题')
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(providerRequest.session.snapshotEvents().findLast(event => event.type === 'session/title-llm-request')?.data)
       .toEqual({
         titleProvider: TITLE_PROVIDER,
@@ -193,6 +195,7 @@ describe('generateSessionTitleWithLlm', () => {
     await expect(generateSessionTitleWithLlm(ctx, config, oversized, [selected], TITLE_PROVIDER))
       .rejects.toThrow(/input.*bytes.*maxInputBytes/i)
     expect(adapter.requests).toEqual([])
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(oversized.session.snapshotEvents().some(event => event.type === 'session/title-llm-request')).toBe(false)
 
     const withinLimit = resolveSessionTitleLlmConfig({ ...config, maxInputBytes: 1_000 })
@@ -261,6 +264,7 @@ describe('generateSessionTitleWithLlm', () => {
       providerRequest.messages,
       TITLE_PROVIDER,
     )).rejects.toMatchObject({ message, code })
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(providerRequest.session.snapshotEvents().some(event => event.type === 'session/title-llm-request')).toBe(true)
   })
 

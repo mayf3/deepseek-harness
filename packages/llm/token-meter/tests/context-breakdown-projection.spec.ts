@@ -292,6 +292,7 @@ describe('contextBreakdown session projection', () => {
     const first = appendUser(session, 'first message')
     const last = appendUser(session, 'last message')
     const definition = contextBreakdownProjectionDefinition
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const state = session.snapshotEvents().reduce(definition.apply, definition.init())
     const before = JSON.stringify(state)
     const replacement = session.append('user/message', createUserMessage({
@@ -382,8 +383,10 @@ describe('contextBreakdown session projection', () => {
     const { session } = await harness()
     const head = appendSystem(session, 'head')
     const definition = contextBreakdownProjectionDefinition
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const state = session.snapshotEvents().reduce(definition.apply, definition.init())
     replaceSystem(session, head, 'same')
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const next = definition.apply(state, session.snapshotEvents().at(-1)!)
     expect(next).not.toBe(state)
     expect(definition.wire.view(next)).toBe(definition.wire.view(state))
@@ -421,6 +424,7 @@ describe('contextBreakdown session projection', () => {
       stale, [replacement], SessionLogOffset(replacement.seq), session.header, session.inheritedEventCount,
     )).toThrow('re-read from seq 0')
     const replayed = ctx.sessionProjections.restore(
+      // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
       stale, session.snapshotEvents(), SessionLogOffset(0), session.header, session.inheritedEventCount,
     )
     expect(replayed.snapshot.values.contextBreakdown).toEqual(projected(ctx, session))
@@ -433,6 +437,7 @@ describe('contextBreakdown session projection', () => {
       },
     }
     expect(() => ctx.sessionProjections.restore(
+      // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
       invalid, session.snapshotEvents(), SessionLogOffset(0), session.header, session.inheritedEventCount,
     )).toThrow()
   })
@@ -452,6 +457,7 @@ describe('contextBreakdown session projection', () => {
       expect.soft(ctx.sessionProjections.viewCheckpoint(checkpoint)).not.toHaveProperty('contextBreakdown')
       expect.soft(ctx.sessionProjections.restoreFloor(checkpoint)).toBe(0)
       const restored = ctx.sessionProjections.restore(
+        // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
         checkpoint, session.snapshotEvents(), SessionLogOffset(0), session.header, session.inheritedEventCount,
       )
       expect(restored.snapshot.values.contextBreakdown).toEqual({

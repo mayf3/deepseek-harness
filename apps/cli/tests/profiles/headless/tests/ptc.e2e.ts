@@ -366,6 +366,7 @@ describe.skipIf(!process.env.DEEPSEEK_API_KEY)('PTC mode: real model writes a pr
         + 'and return only the joined string.',
       }], source: { kind: 'user' } }))
     await waitForIdle(ctx, agent)
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const events: readonly SessionEvent[] = agent.session.snapshotEvents()
 
     // The wire contract: every request this session made offered EXACTLY ONE
@@ -418,10 +419,12 @@ describe.skipIf(!process.env.DEEPSEEK_API_KEY)('PTC mode: real model writes a pr
       }], source: { kind: 'user' } }))
     await waitForIdle(ctx, handle.agent)
 
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const events: readonly SessionEvent[] = handle.agent.session.snapshotEvents()
     const dispatch = events.find(event => event.type === 'tool/ptc-dispatch' && event.data.name === 'read')
     const outerResult = events.find(event => event.type === 'tool/result')
     const workspaceContext = await vi.waitFor(() => {
+      // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
       const splice = handle.agent.session.snapshotEvents().findLast(event => event.type === 'agent/inbox/spliced'
         && event.data.inserted.some(message => message.source.kind === 'agent-instructions'))
       const inserted = splice?.type === 'agent/inbox/spliced'

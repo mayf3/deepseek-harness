@@ -215,6 +215,7 @@ describe('provider-routed retry policy', () => {
     await idle
 
     expect(adapter.requests).toHaveLength(2)
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(agent.session.snapshotEvents().filter(item => item.type === 'step/start').map(item => item.data))
       .toEqual([{ turn: 1, step: 1 }])
     expect(agent.session.deriveMessages().at(-1)).toEqual({
@@ -250,6 +251,7 @@ describe('provider-routed retry policy', () => {
     await idle
 
     expect(adapter.requests).toHaveLength(2)
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(agent.session.snapshotEvents().filter(event => event.type === 'assistant/message').map(event => ({
       turn: event.data.turn,
       step: event.data.step,
@@ -286,7 +288,9 @@ describe('provider-routed retry policy', () => {
     await vi.advanceTimersByTimeAsync(500)
     await idle
 
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const retryEvent = agent.session.snapshotEvents().find(event => event.type === 'llm/retry')
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const failedAttempts = agent.session.snapshotEvents().filter((event): event is SessionEvent<'assistant/attempt'> =>
       event.type === 'assistant/attempt'
       && retryEvent !== undefined
@@ -294,12 +298,14 @@ describe('provider-routed retry policy', () => {
     )
     expect(failedAttempts).toHaveLength(1)
     expect(expandAssistantStream(failedAttempts[0]!.data.stream)).toHaveLength(7)
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const assistantMessages = agent.session.snapshotEvents().filter(event => event.type === 'assistant/message')
     expect(assistantMessages.map(event => ({
       turn: event.data.turn,
       step: event.data.step,
     }))).toEqual([{ turn: 1, step: 1 }])
     expect(assistantMessages[0]?.sourceEventSeqs).toBeUndefined()
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(agent.session.snapshotEvents().some(event => event.type === 'tool/call')).toBe(false)
     expect(toolExecutions).toBe(0)
     expect(agent.session.deriveMessages().at(-1)).toMatchObject({
@@ -337,7 +343,9 @@ describe('provider-routed retry policy', () => {
     await idle
 
     expect(adapter.requests).toHaveLength(3)
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(agent.session.snapshotEvents().filter(event => event.type === 'llm/retry')).toHaveLength(2)
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(agent.session.snapshotEvents().at(-1)).toMatchObject({
       type: 'turn/end',
       data: { reason: { kind: 'error', error: { message: 'busy three', code: 'SERVER' } } },
@@ -393,6 +401,7 @@ describe('provider-routed retry policy', () => {
     rejectedAgent.followup(createUserMessage({ content: [{ type: 'text', text: 'go' }], source: { kind: 'user' } }))
     await rejectedIdle
     expect(rejected.requests).toHaveLength(1)
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(rejectedAgent.session.snapshotEvents().some(event => event.type === 'llm/retry')).toBe(false)
   })
 
@@ -431,6 +440,7 @@ describe('provider-routed retry policy', () => {
     agent.followup(createUserMessage({ content: [{ type: 'text', text: 'go' }], source: { kind: 'user' } }))
     await idle
     expect(adapter.requests).toHaveLength(1)
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(agent.session.snapshotEvents().some(event => event.type === 'llm/retry')).toBe(false)
     expect(vi.getTimerCount()).toBe(0)
   })
@@ -450,7 +460,9 @@ describe('provider-routed retry policy', () => {
     await idle
 
     expect(adapter.requests).toHaveLength(0)
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(agent.session.snapshotEvents().some(event => event.type === 'llm/retry')).toBe(false)
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const end = agent.session.snapshotEvents().at(-1)
     expect(end).toMatchObject({
       type: 'turn/end',
@@ -479,6 +491,7 @@ describe('provider-routed retry policy', () => {
     const normalIdle = waitForIdle(context, normalAgent)
     normalAgent.followup(createUserMessage({ content: [{ type: 'text', text: 'normal' }], source: { kind: 'user' } }))
     await normalIdle
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(normalAgent.session.snapshotEvents().some(event => event.type === 'llm/retry')).toBe(false)
 
     const alwaysAgent = await context.agentLoop.create(SessionId('retry-provider-always'), {
@@ -565,6 +578,7 @@ describe('provider-routed retry policy', () => {
     await idle
 
     expect(adapter.requests.map(request => request.provider)).toEqual(['mock', 'other', 'other'])
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(agent.session.snapshotEvents().filter(event => event.type === 'llm/retry').map(event => ({
       provider: event.data.provider,
       retry: event.data.retry,
@@ -676,6 +690,7 @@ describe('provider-routed retry policy', () => {
     await vi.runAllTimersAsync()
     await idle
 
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const events = agent.session.snapshotEvents().filter(event => event.type === 'llm/retry')
     expect(adapter.requests).toHaveLength(5)
     expect(events.map(event => ({
@@ -720,6 +735,7 @@ describe('provider-routed retry policy', () => {
     const retriedContext = JSON.stringify(adapter.requests[1]?.messages)
     expect(retriedContext).not.toContain(diagnostic)
     expect(retriedContext).not.toContain('discarded partial output')
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(agent.session.snapshotEvents().some(event =>
       event.type === 'llm/retry' && event.data.failure.message === diagnostic,
     )).toBe(true)
@@ -742,6 +758,7 @@ describe('provider-routed retry policy', () => {
     await idle
 
     expect(adapter.requests).toHaveLength(2)
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(agent.session.snapshotEvents().some(event => event.type === 'llm/retry')).toBe(false)
   })
 
@@ -793,6 +810,7 @@ describe('provider-routed retry policy', () => {
     await vi.advanceTimersByTimeAsync(60_000)
 
     expect(adapter.requests).toHaveLength(1)
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(agent.session.snapshotEvents().filter(event => event.type === 'step/start')).toHaveLength(1)
     expect(vi.getTimerCount()).toBe(0)
   })
@@ -834,6 +852,7 @@ describe('provider-routed retry policy', () => {
     expect(order[0]).toBe('downstream')
     expect(order).toEqual(expect.arrayContaining(['disposed', 'idle']))
     expect(adapter.requests).toHaveLength(1)
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(agent.session.snapshotEvents().some(event => event.type === 'llm/retry')).toBe(false)
   })
 
@@ -872,6 +891,7 @@ describe('provider-routed retry policy', () => {
 
     expect(order).toEqual(['downstream', 'idle'])
     expect(adapter.requests).toHaveLength(1)
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(agent.session.snapshotEvents().at(-1)).toMatchObject({
       type: 'turn/end',
       data: { reason: { kind: 'aborted' } },
@@ -909,6 +929,7 @@ describe('provider-routed retry policy', () => {
     await idle
 
     expect(adapter.requests).toHaveLength(1)
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(agent.session.snapshotEvents().at(-1)).toMatchObject({
       type: 'turn/end',
       data: { reason: { kind: 'aborted' } },
@@ -966,6 +987,7 @@ describe('provider-routed retry policy', () => {
     await idle
 
     expect(adapter.requests).toHaveLength(1)
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(agent.session.snapshotEvents().at(-1)).toMatchObject({
       type: 'turn/end',
       data: { reason: { kind: 'aborted' } },
@@ -995,7 +1017,9 @@ describe('provider-routed retry policy', () => {
     await idle
 
     expect(adapter.requests).toHaveLength(1)
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(agent.session.snapshotEvents().some(event => event.type === 'llm/retry')).toBe(false)
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(agent.session.snapshotEvents().at(-1)).toMatchObject({
       type: 'turn/end',
       data: { reason: { kind: 'aborted' } },
@@ -1019,6 +1043,7 @@ describe('provider-routed retry policy', () => {
     await idle
 
     expect(adapter.requests).toHaveLength(1)
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(agent.session.snapshotEvents().filter(event => event.type === 'llm/retry')).toHaveLength(1)
     expect(vi.getTimerCount()).toBe(0)
   })

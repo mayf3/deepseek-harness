@@ -68,6 +68,7 @@ function stubAgent(rawId: string, supplied?: Session, suppliedCtx?: Context): St
 
 /** Open one message-triggered turn with its accepted model-visible input. */
 function openTurn(stub: StubAgent, source: MessageSource, text = 'prompt'): number {
+  // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
   const turn = stub.session.snapshotEvents()
     .filter(event => event.type === 'turn/start')
     .reduce((max, event) => Math.max(max, event.data.turn), 0) + 1
@@ -282,6 +283,7 @@ describe('goal tool execution authority', () => {
     const created = ctx.goals.create(root.agent, { objective: 'resume the fork' })
     closeTurn(root, originalTurn)
     const forkId = SessionId('goal-tool-resumed-fork')
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const forkSession = Session.create(forkId, root.session.snapshotEvents(), {
       version: SESSION_FORMAT_VERSION,
       id: forkId,

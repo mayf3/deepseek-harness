@@ -186,7 +186,9 @@ describe('ToolResultPruner session transaction', () => {
     expect(entry).toMatchObject({ originalSeq, callId: ToolCallId('one'), charsBefore: 100 })
     expect(entry.charsAfter).toBeLessThanOrEqual(50)
 
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const original = session.snapshotEvents()[originalSeq]!
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const replacement = session.snapshotEvents()[entry.replacementSeq]! as SurfaceEvent
     expect(original).toMatchObject({
       type: 'tool/result',
@@ -221,6 +223,7 @@ describe('ToolResultPruner session transaction', () => {
     // Shadow-price protocol: the metering event sits directly before the
     // replacement and prices the shadowed node with the shared estimator.
     if (original.type !== 'tool/result') throw new Error('original is not a tool/result')
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(session.snapshotEvents()[entry.replacementSeq - 1]).toMatchObject({
       type: 'compaction/prune',
       data: {
@@ -256,6 +259,7 @@ describe('ToolResultPruner session transaction', () => {
       turn: 2,
     })
     service().pruneSession(session)
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const replay = Session.create(session.id, session.snapshotEvents())
     expect(replay.deriveMessages()).toEqual(session.deriveMessages())
     expect(replay.surface.replaceGeneration).toBe(session.surface.replaceGeneration)

@@ -184,12 +184,17 @@ describe('web e2e: long Chat interaction contract', () => {
     const toolAssistantMarker = FIXTURE.markers.assistant(TOOL_TURN)
     const toolMarker1 = FIXTURE.markers.tool(TOOL_TURN, 1)
     const toolMarker2 = FIXTURE.markers.tool(TOOL_TURN, 2)
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const toolUserEvent = requiredEvent(source.session.snapshotEvents(), 'user/message', toolUserMarker)
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const toolAssistantEvent = requiredEvent(source.session.snapshotEvents(), 'assistant/message', toolAssistantMarker)
     const branchUserMarker = FIXTURE.markers.user(BRANCH_TURN)
     const branchAssistantMarker = FIXTURE.markers.assistant(BRANCH_TURN)
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const branchUserEvent = requiredEvent(source.session.snapshotEvents(), 'user/message', branchUserMarker)
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const branchAssistantEvent = requiredEvent(source.session.snapshotEvents(), 'assistant/message', branchAssistantMarker)
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const boundary = source.session.snapshotEvents().find((event): event is SessionEvent<'turn/end'> => (
       event.type === 'turn/end' && event.data.turn === BRANCH_TURN
     ))
@@ -315,8 +320,11 @@ describe('web e2e: long Chat interaction contract', () => {
       .find(agent => agent.session.header.parentSession === SessionId(SESSION_ID))
     if (child === undefined) throw new Error('message branch did not create a child session')
     expect(child.session.inheritedEventCount).toBe(boundary.seq + 1)
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(child.session.snapshotEvents().some(event => carries(event, branchAssistantMarker))).toBe(true)
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(child.session.snapshotEvents().some(event => carries(event, FIXTURE.markers.user(BRANCH_TURN + 1)))).toBe(false)
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(child.session.snapshotEvents().some(event => carries(event, FIXTURE.markers.user(FIXTURE.turns)))).toBe(false)
 
     const currentCrumb = page.getByRole('navigation', { name: 'Session hierarchy' })
@@ -334,10 +342,13 @@ describe('web e2e: long Chat interaction contract', () => {
     await expect.poll(() => page.locator('[data-streaming="true"]').count(), { timeout: 15_000 }).toBe(0)
     expect(await composer.textContent()).toBe('')
     expect(await composer.isEnabled()).toBe(true)
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(source.session.snapshotEvents().some(event => carries(event, CONTINUE_PROMPT))).toBe(false)
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(child.session.snapshotEvents().filter(event => (
       event.type === 'user/message' && carries(event, CONTINUE_PROMPT)
     ))).toHaveLength(1)
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const lastTurnEnd = child.session.snapshotEvents().findLast((event): event is SessionEvent<'turn/end'> => (
       event.type === 'turn/end'
     ))

@@ -34,11 +34,13 @@ Fork and a small number of operations may genuinely need a complete historical s
 
 **Require every existing caller to migrate immediately.** Existing logic may defer migration under this decision. Preventing new dependencies bounds the remaining work without making every existing consumer part of the same change.
 
+**Disable deprecation lint for these methods or whole files.** Such exemptions also admit new calls. Line-scoped waivers make the existing migration debt explicit while retaining the native type-aware rule for new reads.
+
 ## Consequences
 
 New domain behavior must make its event data and projected state sufficient for resumed execution. User-requested history may still load progressively, and genuine full-history operations still have a storage path to design. This decision does not claim that resume or fork already avoids loading the complete log.
 
-The current `typescript/no-deprecated` lint rule reports both existing and new calls. The JSDoc records the migration deferral, but lint does not yet distinguish permitted existing callers from prohibited additions. The documentation checks verify the source-equivalent API declarations and bilingual records; they do not enforce that distinction.
+Existing calls carry line-scoped `typescript/no-deprecated` waivers with a migration-deferral reason. The rule stays enabled for new calls and unrelated deprecated APIs. Remove a waiver when its call migrates; copying a waiver to a new call violates this policy. The executable lint check exercises all three readers with and without waivers, plus an unrelated deprecated API. Documentation checks verify the source-equivalent API declarations and bilingual records.
 
 ## Related decisions
 

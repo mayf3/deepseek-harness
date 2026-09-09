@@ -92,12 +92,14 @@ describe('agent/request-error', () => {
         code: 'SERVICE_UNAVAILABLE',
       },
     ])
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(agent.session.snapshotEvents().filter(event => event.type === 'turn/start')).toHaveLength(1)
     expect(seen.map(item => item.retryPolicy)).toEqual([
       expect.objectContaining({ mode: 'normal' }),
       expect.objectContaining({ mode: 'normal' }),
     ])
     expect(statuses).toEqual(['running', 'idle'])
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(agent.session.snapshotEvents().flatMap(event =>
       event.type === 'request/header' ? [event.data.reason] : [])).toEqual(['initial'])
   })
@@ -115,7 +117,9 @@ describe('agent/request-error', () => {
     await agent.whenIdle()
 
     expect(adapter.requests).toHaveLength(1)
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(agent.session.snapshotEvents().filter(event => event.type === 'turn/start')).toHaveLength(1)
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(agent.session.snapshotEvents().find(event => event.type === 'turn/end')).toMatchObject({
       type: 'turn/end',
       data: { reason: { kind: 'aborted', reason: { kind: 'user' } } },
@@ -137,7 +141,9 @@ describe('agent/request-error', () => {
     await agent.whenIdle()
 
     expect(adapter.requests).toHaveLength(1)
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(agent.session.snapshotEvents().filter(event => event.type === 'turn/start')).toHaveLength(1)
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(agent.session.snapshotEvents().find(event => event.type === 'turn/end')).toMatchObject({
       type: 'turn/end',
       data: { reason: { kind: 'error' } },

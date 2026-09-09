@@ -877,6 +877,7 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
  * in-memory record-mode harvest, so the on-disk zstd default never matters.
  */
 function rawSessionLog(session: Session): string {
+  // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
   const encodedEvents = (session.snapshotEvents() as unknown as readonly SessionFormatEvent[])
     .map(event => sessionFormatCatalog.encodeCurrentEvent(event))
   const header = sessionFormatCatalog.encodeCurrentHeader({
@@ -1030,6 +1031,7 @@ async function assertReplaySession(
   const userPrompts = fixtureUserPrompts(expected)
   const candidates = sessions.filter((session) => {
     if (session.header.parentSession !== undefined) return false
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const actual = session.snapshotEvents().flatMap((event) => {
       if (event.type !== 'user/message' || event.data.source.kind !== 'user') return []
       const text = event.data.content.filter(block => block.type === 'text').map(block => block.text).join('')

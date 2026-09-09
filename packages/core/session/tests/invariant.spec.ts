@@ -83,6 +83,7 @@ describe('session-log invariants', () => {
     expect(() => session.append('turn/start', {
       turn: 1,
     })).toThrow('later dispatch veto')
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(session.snapshotEvents()).toEqual([])
     expect(() => {
       session.append('turn/start', { turn: 1 })
@@ -428,6 +429,7 @@ describe('session-log invariants', () => {
     const open = ctx.sessions.create(SessionId('inherited-inside-open-turn'), { seed: [
       { type: 'turn/start', seq: SessionSeq(0), time: 1, data: { turn: 1 } },
     ] })
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(open.snapshotEvents().map(event => event.type)).toEqual(['turn/start', 'session/end-seed'])
     // Still open afterwards: the boundary moves no cursor.
     expect(() => open.append('turn/start', { turn: 2 }))

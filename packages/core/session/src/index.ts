@@ -649,6 +649,7 @@ export class Session {
    * @returns a fresh array containing child-owned events in log order.
    */
   ownEvents(): readonly SessionEvent[] {
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     return this.snapshotEvents(this.inheritedEventCount)
   }
 
@@ -1214,6 +1215,7 @@ export class SessionStore extends Service {
   }
 
   private _forkSeed(session: Session, requestedBoundary: SessionSeq | undefined): readonly SessionEvent[] {
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const lastEvent = session.snapshotEvents().at(-1)
     let boundary: SessionSeq
     if (requestedBoundary !== undefined) {
@@ -1236,6 +1238,7 @@ export class SessionStore extends Service {
       )
     }
 
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const boundaryEvent = session.eventAt(boundary)
     if (boundaryEvent === undefined || boundaryEvent.seq !== boundary) {
       throw new SessionForkError(
@@ -1243,6 +1246,7 @@ export class SessionStore extends Service {
         'INVALID_BOUNDARY',
       )
     }
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const events = session.snapshotEvents(SessionLogOffset(0), SessionLogOffset(boundary + 1))
     const lastTurnBoundary = events
       .findLast(event => event.type === 'turn/start' || event.type === 'turn/end')

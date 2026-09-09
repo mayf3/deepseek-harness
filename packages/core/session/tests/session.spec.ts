@@ -71,6 +71,7 @@ describe('Session', () => {
     session.append('turn/start', { turn: 1 })
     session.append('turn/end', { turn: 1, reason: { kind: 'max-tokens' } })
 
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const turnEnd = session.snapshotEvents().findLast(e => e.type === 'turn/end')!
     expect(turnEnd.data.reason).toEqual({ kind: 'max-tokens' })
     // survives a structuredClone (the persistence-serialization boundary)
@@ -81,8 +82,11 @@ describe('Session', () => {
     const session = Session.create(SessionId('aborted'))
     session.append('turn/start', { turn: 1 })
     session.append('turn/end', { turn: 1, reason: { kind: 'aborted', reason: { kind: 'user' } } })
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const replayed = Session.create(SessionId('aborted-replay'), structuredClone(session.snapshotEvents()))
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(replayed.snapshotEvents().slice(0, -1)).toEqual(session.snapshotEvents())
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const turnEnd = replayed.snapshotEvents().findLast(event => event.type === 'turn/end')
     expect(turnEnd?.type === 'turn/end' && turnEnd.data.reason)
       .toEqual({ kind: 'aborted', reason: { kind: 'user' } })
@@ -115,6 +119,7 @@ describe('Session', () => {
     session.append('user/message', message, { surfaceOp: 'append' })
 
     expect(session.deriveMessages()).toEqual([message])
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const event = session.snapshotEvents()[0]
     expect(event?.type === 'user/message' && event.data.source).toEqual({ kind: 'plugin', plugin: 'agent-instructions' })
   })
@@ -139,9 +144,11 @@ describe('Session', () => {
     }, { surfaceOp: 'append' })
     original.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
 
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const replayed = Session.create(SessionId('s3-replay'), original.snapshotEvents())
     expect(replayed.deriveMessages()).toEqual(original.deriveMessages())
     // The seed verbatim, plus the end-seed event the constructor appends.
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(replayed.snapshotEvents().slice(0, original.seq)).toEqual(original.snapshotEvents())
     expect(replayed.seq).toBe(original.seq + 1)
     expect(replayed.firstLiveSeq).toBe(original.seq)
@@ -149,16 +156,20 @@ describe('Session', () => {
 
   it('marks an explicitly empty seed without marking a fresh session', () => {
     const fresh = Session.create(SessionId('fresh-empty'))
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(fresh.snapshotEvents()).toEqual([])
 
     const resumed = Session.create(SessionId('resumed-empty'), [])
     expect(resumed.firstLiveSeq).toBe(0)
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(resumed.snapshotEvents()).toMatchObject([
       { type: 'session/end-seed', seq: 0, data: {} },
     ])
 
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const reopened = Session.create(SessionId('reopened-empty'), resumed.snapshotEvents())
     expect(reopened.firstLiveSeq).toBe(1)
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(reopened.snapshotEvents()).toEqual(resumed.snapshotEvents())
   })
 
@@ -188,6 +199,7 @@ describe('Session', () => {
     const unrelatedPrimitiveData = {
       type: 'plugin/event', seq: 0, time: 1, data: null,
     } as unknown as SessionEvent
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(Session.create(SessionId('primitive-plugin-data'), [unrelatedPrimitiveData]).snapshotEvents().slice(0, 1))
       .toEqual([unrelatedPrimitiveData])
   })
@@ -250,6 +262,7 @@ describe('Session', () => {
       SessionLogOffset(0),
       'detached',
     )
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(restored.eventAt(SessionSeq(0))).toBe(mismatchedMessage)
     expect(Object.isFrozen(mismatchedMessage)).toBe(false)
   })
@@ -519,6 +532,7 @@ describe('Session', () => {
         reason: 'initial',
       },
     } as const
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(Session.create(SessionId('reasoning-effort'), [valid]).snapshotEvents()[0])
       .toEqual(valid)
 
@@ -549,6 +563,7 @@ describe('Session', () => {
         reason: 'initial',
       },
     } as const
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(Session.create(SessionId('adapter-defaults'), [valid]).snapshotEvents()[0]).toEqual(valid)
 
     for (const adapterDefaults of [
@@ -579,6 +594,7 @@ describe('Session', () => {
         isError: false,
       }),
     }, { surfaceOp: 'append' })
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const before = structuredClone(session.snapshotEvents())
 
     // A misbehaving consumer tries to mutate the messages it was handed.
@@ -595,6 +611,7 @@ describe('Session', () => {
     messages.reverse()
 
     // The log is unchanged: deep-equal to the snapshot taken before mutation.
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(session.snapshotEvents()).toEqual(before)
     // And a fresh derivation still reflects the original content and order.
     expect(session.deriveMessages()[0]!.content).toEqual([{ type: 'text', text: 'original' }])
@@ -624,6 +641,7 @@ describe('Session', () => {
     cyclic['self'] = cyclic
     expect(bad(cyclic)).toThrow(/non-JSON-serializable/)
     // The rejected appends never entered the log.
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(session.snapshotEvents()).toHaveLength(0)
   })
 
@@ -638,12 +656,14 @@ describe('Session', () => {
     })))
       .toThrow(/surface-eligible and requires a surfaceOp marker/)
     // The rejected append never entered the log (only turn/start is present).
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(session.snapshotEvents()).toHaveLength(1)
   })
 
   it('accepts dense arrays and nested plain objects', () => {
     const session = Session.create(SessionId('s6'))
     expect(() => session.append('user/message', { content: [{ type: 'text', text: 'x' }], source: { kind: 'user' }, extra: [1, 2, [3, { a: null, b: true }]] } as never, { surfaceOp: 'append' })).not.toThrow()
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(session.snapshotEvents()).toHaveLength(1)
   })
 
@@ -688,6 +708,7 @@ describe('Session', () => {
       { type: 'turn/end' as const, seq: 2, time: 3, data: { turn: 1, reason: { kind: 'completed' as const } } },
     ] as SessionEvent[]
     const session = Session.create(SessionId('seed-ok'), goodSeed)
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(session.snapshotEvents().slice(0, 3)).toEqual(goodSeed)
     expect(session.firstLiveSeq).toBe(3)
   })
@@ -713,6 +734,7 @@ describe('Session', () => {
     const session = Session.create(SessionId('seed-entry-snapshot'), seed)
 
     expect(reads).toBe(1)
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(session.snapshotEvents().slice(0, 1)).toEqual([accepted])
   })
 
@@ -730,6 +752,7 @@ describe('Session', () => {
     const session = Session.create(SessionId('seed-nested-drift'), seed)
 
     expect(reads).toBe(1)
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(session.snapshotEvents()[0]!.data).toEqual({ value: 'accepted' })
   })
 
@@ -791,6 +814,7 @@ describe('Session', () => {
 
     const session = Session.create(SessionId('seed-null-prototype'), [event])
 
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(session.snapshotEvents().slice(0, 1)).toEqual([{ ...event }])
   })
 
@@ -823,6 +847,7 @@ describe('Session', () => {
     }] as unknown as SessionEvent[]
 
     const session = Session.create(SessionId('seed-unstable-metadata'), seed)
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const event = session.snapshotEvents()[1]!
     if (event.type !== 'user/message') throw new Error('test fixture must remain a user/message')
 
@@ -883,6 +908,7 @@ describe('Session', () => {
     const um = seed[1]!
     ;(um.data as { content: { type: 'text'; text: string }[] }).content[0]!.text = 'HACKED'
     ;(um.data as Record<string, unknown>)['injected'] = 1n // would have failed validation
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const logged = session.snapshotEvents()[1]!
     expect(logged.type === 'user/message' && (logged.data.content[0] as { text: string }).text).toBe('original')
     expect((logged.data as Record<string, unknown>)['injected']).toBeUndefined()
@@ -901,6 +927,7 @@ describe('Session', () => {
     // make session.snapshotEvents() diverge from the value that passed validation.
     data.content[0]!.text = 'HACKED'
     ;(data as Record<string, unknown>)['injected'] = 1n
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const logged = session.snapshotEvents()[0]!
     expect(logged.type === 'user/message' && (logged.data.content[0] as { text: string }).text).toBe('original')
     expect((logged.data as Record<string, unknown>)['injected']).toBeUndefined()
@@ -923,6 +950,7 @@ describe('Session', () => {
 
     expect(reads).toBe(1)
     expect(event.data).toEqual({ value: 'accepted' })
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(session.snapshotEvents()).toEqual([event])
   })
 
@@ -936,6 +964,7 @@ describe('Session', () => {
       }),
       { surfaceOp: { op: 'replace', startSeq: 1n, endSeq: 2 } } as never,
     )).toThrow(/non-JSON-serializable surface metadata/)
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(session.snapshotEvents()).toEqual([])
   })
 
@@ -954,6 +983,7 @@ describe('Session', () => {
       }),
       { surfaceOp: new ReplaceOp() },
     )).toThrow(/non-JSON-serializable surface metadata/)
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(session.snapshotEvents()).toEqual([])
   })
 
@@ -985,6 +1015,7 @@ describe('Session', () => {
 
     expect(reads).toBe(1)
     expect(event.surfaceOp).toEqual({ op: 'replace', startSeq: 0, endSeq: 0 })
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(session.snapshotEvents()).toEqual([source, event])
   })
 
@@ -1006,6 +1037,7 @@ describe('Session', () => {
       surfaceOp: 'append',
       sourceEventSeqs: [0, -1],
     })).toThrow(/non-negative safe integers/)
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(session.snapshotEvents()).toEqual([])
   })
 
@@ -1029,6 +1061,7 @@ describe('Session', () => {
       data: { turn: 1 },
       surfaceOp: 'append',
     } as unknown as SessionEvent])).toThrow(/invalid seed event.*not surface-eligible/)
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(session.snapshotEvents()).toEqual([])
   })
 
@@ -1039,6 +1072,7 @@ describe('Session', () => {
       time: 1,
       data: { turn: 1 },
     }])
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const seededEvent = seeded.snapshotEvents()[0]!
     if (seededEvent.type !== 'turn/start') throw new Error('test fixture must remain a turn/start')
     expect(Object.isFrozen(seededEvent)).toBe(true)
@@ -1059,20 +1093,24 @@ describe('Session', () => {
   it('returns cached frozen event-array snapshots that do not grow after append', () => {
     const session = Session.create(SessionId('events-snapshot'))
     session.append('turn/start', { turn: 1 })
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const before = session.snapshotEvents()
     const beforeEvent = before[0]!
     if (beforeEvent.type !== 'turn/start') throw new Error('test fixture must remain a turn/start')
 
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(session.snapshotEvents()).toBe(before)
     expect(Object.isFrozen(before)).toBe(true)
     expect(() => { (before as SessionEvent[]).push(beforeEvent) }).toThrow(TypeError)
     expect(() => { beforeEvent.data.turn = 99 }).toThrow(TypeError)
 
     session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const after = session.snapshotEvents()
     expect(before).toHaveLength(1)
     expect(after).toHaveLength(2)
     expect(after).not.toBe(before)
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(session.snapshotEvents()).toBe(after)
   })
 
@@ -1081,10 +1119,14 @@ describe('Session', () => {
     const start = session.append('turn/start', { turn: 1 })
     const end = session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
 
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(session.eventAt(SessionSeq(0))).toBe(start)
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(session.eventAt(SessionSeq(1))).toBe(end)
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(session.eventAt(SessionSeq(2))).toBeUndefined()
 
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const range = session.snapshotEvents(SessionLogOffset(1), SessionLogOffset(2))
     expect(range).toEqual([end])
     expect(Object.isFrozen(range)).toBe(true)
@@ -1230,6 +1272,7 @@ describe('Session', () => {
     const marked = Session.create(SessionId('ignorable-envelope'), [
       { ...base, ignorable: true } as SessionEvent,
     ])
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(marked.snapshotEvents()[0]?.ignorable).toBe(true)
   })
 })
@@ -1274,6 +1317,7 @@ describe('SessionStore', () => {
     a.append('user/message', createUserMessage({
       content: [{ type: 'text', text: 'q' }], source: { kind: 'user' },
     }), { surfaceOp: 'append' })
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const forked = ctx.sessions.create(SessionId('fork'), { seed: a.snapshotEvents() })
     expect(forked.deriveMessages()).toEqual(a.deriveMessages())
   })
@@ -1537,6 +1581,7 @@ describe('SessionStore', () => {
     const heard: SessionEvent[] = []
     let committedBeforeNotify = false
     ctx.on('session/event', (observedSession, event) => {
+      // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
       committedBeforeNotify = observedSession.snapshotEvents().at(-1) === event
       throw new Error('sync event observer')
     })
@@ -1550,6 +1595,7 @@ describe('SessionStore', () => {
       })
     }).not.toThrow()
     expect(committedBeforeNotify).toBe(true)
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(session.snapshotEvents()).toEqual([appended])
     expect(heard).toEqual([appended])
     await Promise.resolve()
@@ -1573,6 +1619,7 @@ describe('SessionStore', () => {
       const [observedSession, event] = args as [Session, SessionEvent]
       validations.push({
         event,
+        // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
         logLength: observedSession.snapshotEvents().length,
         frozen: Object.isFrozen(event) && Object.isFrozen(event.data),
       })
@@ -1586,6 +1633,7 @@ describe('SessionStore', () => {
     expect(() => session.append('turn/start', {
       turn: 1,
     })).toThrow('reject first candidate')
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(session.snapshotEvents()).toEqual([])
     expect(observed).toEqual([])
 
@@ -1598,6 +1646,7 @@ describe('SessionStore', () => {
     ])
     expect(validations.map(({ event }) => event.seq)).toEqual([0, 0])
     expect(validations[1]!.event).toBe(appended)
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(session.snapshotEvents()).toEqual([appended])
     expect(observed).toEqual([appended])
   })
@@ -1629,6 +1678,7 @@ describe('SessionStore', () => {
       sourceEventSeqs: [SessionSeq(2)],
     })).toThrow('reject surface candidate')
 
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(session.snapshotEvents()).toHaveLength(3)
     expect(surface.nodes).toEqual([2])
     expect(surface.replaceGeneration).toBe(0)
@@ -1654,6 +1704,7 @@ describe('SessionStore', () => {
     expect(() => session.append('turn/start', {
       turn: 1,
     })).toThrow('dispatch instrumentation rejected the carrier')
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(session.snapshotEvents()).toEqual([])
     expect(observed).toEqual([])
   })
@@ -1673,6 +1724,7 @@ describe('SessionStore', () => {
     const appended = session.append('turn/start', {
       turn: 1,
     })
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(session.snapshotEvents()).toEqual([appended])
     expect(heard).toEqual([appended])
     expect(warnings).toEqual([
@@ -1704,6 +1756,7 @@ describe('SessionStore', () => {
       turn: 1,
     })
 
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(session.snapshotEvents()).toEqual([appended])
     expect(order).toEqual(['resolve:live', 'observe:live', 'dispose:detached'])
     expect(ctx.sessions.get(session.id)).toBeUndefined()

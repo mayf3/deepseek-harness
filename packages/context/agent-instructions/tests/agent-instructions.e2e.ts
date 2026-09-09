@@ -77,6 +77,7 @@ describe.skipIf(!process.env.DEEPSEEK_API_KEY)('workspace context e2e: real mode
     live.agent.followup(createUserMessage({ content: [{ type: 'text', text: 'Workspace context handshake?' }], source: { kind: 'user' } }))
     await waitForIdle(live.ctx, live.agent)
 
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(finalText(live.agent.session.snapshotEvents())).toContain(PROBE)
   }, 120_000)
 
@@ -89,6 +90,7 @@ describe.skipIf(!process.env.DEEPSEEK_API_KEY)('workspace context e2e: real mode
     live.agent.followup(createUserMessage({ content: [{ type: 'text', text: 'Use the read tool to inspect pkg/deep/file.txt. After reading it, answer: nested instruction handshake?' }], source: { kind: 'user' } }))
     await waitForIdle(live.ctx, live.agent)
 
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(finalText(live.agent.session.snapshotEvents())).toContain(NESTED_PROBE)
   }, 120_000)
 
@@ -102,6 +104,7 @@ describe.skipIf(!process.env.DEEPSEEK_API_KEY)('workspace context e2e: real mode
     live.agent.followup(createUserMessage({ content: [{ type: 'text', text: 'You must use the read tool to inspect trigger.txt. After reading it, answer: updated workspace context handshake?' }], source: { kind: 'user' } }))
     await waitForIdle(live.ctx, live.agent)
 
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const events = live.agent.session.snapshotEvents()
     const update = events.find(event => event.type === 'user/message'
       && event.data.source.kind === 'agent-instructions'

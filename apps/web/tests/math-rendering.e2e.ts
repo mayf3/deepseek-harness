@@ -80,6 +80,7 @@ function mathFixture(): string {
       isSeeded: false,
       delegationDepth: 0,
     }),
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     ...session.snapshotEvents().map(event => JSON.stringify({
       ...event,
       time: eventTimeOrigin + event.seq * 1_000,

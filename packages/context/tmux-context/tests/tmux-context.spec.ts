@@ -123,6 +123,7 @@ function openMessageTurn(session: Session, turn: number): void {
 
 function contextTexts(session: Session): string[] {
   const texts: string[] = []
+  // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
   for (const event of session.snapshotEvents()) {
     if (event.type === 'user/message'
       && event.data.source.kind === 'plugin'
@@ -171,6 +172,7 @@ describe('tmux-context injection', () => {
       + 'window active=1, pane active=0, '
       + 'layout d517,270x71,0,0{135x71,0,0,87,134x71,136,0[134x35,136,0,90,134x35,136,36,93]}',
     ])
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const event = session.snapshotEvents().at(-1)
     if (event?.type !== 'user/message') throw new Error('missing tmux context')
     // `snapshot` form: one named contribution carrying exactly the reading the

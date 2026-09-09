@@ -142,6 +142,7 @@ function header(session: Session): void {
 }
 
 function noticeTexts(session: Session): string[] {
+  // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
   return session.snapshotEvents()
     .filter(event => event.type === 'user/message' && event.data.source.kind === 'plugin')
     .map(event => (event.data as { content: { type: string; text?: string }[] }).content.map(block => block.text ?? '').join(''))
@@ -205,10 +206,12 @@ describe('resolveConfig', () => {
 describe('foldPlanMode', () => {
   it('folds an empty log to inactive and takes the last plan/mode otherwise', () => {
     const session = Session.create(SessionId('fold'))
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(foldPlanMode(session.snapshotEvents())).toBe(false)
     session.append('plan/mode', { active: true })
     session.append('plan/mode', { active: false })
     session.append('plan/mode', { active: true })
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(foldPlanMode(session.snapshotEvents())).toBe(true)
   })
 
@@ -216,7 +219,9 @@ describe('foldPlanMode', () => {
     const session = Session.create(SessionId('fold-prefix'))
     session.append('plan/mode', { active: true })
     session.append('plan/mode', { active: false })
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(foldPlanMode(session.snapshotEvents(), 1)).toBe(true)
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(foldPlanMode(session.snapshotEvents(), 0)).toBe(false)
   })
 })
@@ -281,13 +286,16 @@ describe('ctx.planMode: get/set', () => {
     const ctx = await setup()
     const agent = await agentWithSession(ctx, 'agent-idle')
     expect(ctx.planMode.set(agent, true)).toBe('committed')
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(foldPlanMode(agent.session.snapshotEvents())).toBe(true)
     expect(ctx.planMode.get(agent)).toEqual({ active: true })
     // Immediately reversible, still without a boundary.
     expect(ctx.planMode.set(agent, false)).toBe('committed')
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(foldPlanMode(agent.session.snapshotEvents())).toBe(false)
     // A later boundary finds nothing pending — no double append.
     await boundary(ctx, agent, 'step-start')
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(agent.session.snapshotEvents().filter(event => event.type === 'plan/mode')).toHaveLength(2)
   })
 
@@ -299,6 +307,7 @@ describe('ctx.planMode: get/set', () => {
     closeTurn(agent.session)
     // Back to the logged state: the pending intent clears, nothing lands.
     expect(ctx.planMode.set(agent, false)).toBe('cancelled')
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(agent.session.snapshotEvents().some(event => event.type === 'plan/mode')).toBe(false)
     expect(ctx.planMode.get(agent)).toEqual({ active: false })
   })
@@ -319,6 +328,7 @@ describe('the boundary flush', () => {
     const service = ctx.planMode as unknown as { onBoundary(session: Session): void }
 
     expect(() => { service.onBoundary(agent.session) }).not.toThrow()
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(agent.session.snapshotEvents().some(event => event.type === 'plan/mode')).toBe(false)
   })
 
@@ -328,6 +338,7 @@ describe('the boundary flush', () => {
     openTurn(agent.session)
     ctx.planMode.set(agent, true)
     await boundary(ctx, agent, 'pre-step')
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(foldPlanMode(agent.session.snapshotEvents())).toBe(true)
     expect(ctx.planMode.get(agent)).toEqual({ active: true })
   })
@@ -343,6 +354,7 @@ describe('the boundary flush', () => {
     ctx.planMode.set(agent, true)
     await fiber.dispose()
     await boundary(ctx, agent, 'pre-step')
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(agent.session.snapshotEvents().some(event => event.type === 'plan/mode')).toBe(false)
   })
 
@@ -351,6 +363,7 @@ describe('the boundary flush', () => {
     const agent = await agentWithSession(ctx)
     ctx.planMode.set(agent, true)
     await boundary(ctx, agent, 'step-start')
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(foldPlanMode(agent.session.snapshotEvents())).toBe(true)
   })
 
@@ -362,6 +375,7 @@ describe('the boundary flush', () => {
     ctx.planMode.set(agent, true)
     ctx.planMode.set(agent, false)
     await boundary(ctx, agent, 'pre-step')
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(agent.session.snapshotEvents().some(event => event.type === 'plan/mode')).toBe(false)
     expect(noticeTexts(agent.session)).toEqual([])
   })
@@ -403,6 +417,7 @@ describe('the boundary flush', () => {
     agent.session.append('plan/mode', { active: false })
     ctx.planMode.set(agent, true)
     await boundary(ctx, agent, 'step-start')
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(foldPlanMode(agent.session.snapshotEvents())).toBe(true)
     expect(noticeTexts(agent.session)).toEqual([])
   })
@@ -430,6 +445,7 @@ describe('the boundary flush', () => {
     expect(ctx.planMode.get(agent)).toEqual({ active: false, pending: true })
     agent.session.append = original
     await boundary(ctx, agent, 'step-start')
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(foldPlanMode(agent.session.snapshotEvents())).toBe(true)
     expect(ctx.planMode.get(agent).pending).toBeUndefined()
   })
@@ -674,6 +690,7 @@ describe('/plan', () => {
     expect(enteringSteer).not.toHaveBeenCalled()
     await boundary(ctx, entering, 'step-start')
     expect(ctx.planMode.get(entering)).toEqual({ active: false })
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(entering.session.snapshotEvents().some(event => event.type === 'plan/mode')).toBe(false)
 
     const active = await agentWithSession(ctx, 'active-plan-command', { active: true })
@@ -698,9 +715,11 @@ describe('/plan', () => {
     const agent = await agentWithSession(ctx, 'idle-plan-command')
     expect((await ctx.commands.execute(agent, '/plan', [], signal))?.result)
       .toEqual({ kind: 'success', text: 'Plan mode on. Use /plan off to leave.' })
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(foldPlanMode(agent.session.snapshotEvents())).toBe(true)
     expect((await ctx.commands.execute(agent, '/plan off', [], signal))?.result)
       .toEqual({ kind: 'success', text: 'Plan mode off.' })
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(foldPlanMode(agent.session.snapshotEvents())).toBe(false)
   })
 
@@ -864,6 +883,7 @@ describe('exit_plan_mode', () => {
       expect(result.content).toEqual([{ type: 'text', text: 'Error: exit_plan_mode requires a non-empty markdown plan starting with a # heading' }])
     }
     expect(asked).toHaveLength(0)
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(foldPlanMode(agent.session.snapshotEvents())).toBe(true)
   })
 
@@ -873,6 +893,7 @@ describe('exit_plan_mode', () => {
     const result = await callExit(ctx, agent)
     expect(result.isError).toBe(true)
     expect(result.content).toEqual([{ type: 'text', text: 'Error: no user-questions channel is available to review the plan; ask the user to switch the session mode instead' }])
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(foldPlanMode(agent.session.snapshotEvents())).toBe(true)
   })
 
@@ -881,6 +902,7 @@ describe('exit_plan_mode', () => {
     const result = await callExit(ctx, agent)
     expect(result.isError).toBe(true)
     expect(result.content).toEqual([{ type: 'text', text: 'Error: no user-questions answerer accepted the request' }])
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(foldPlanMode(agent.session.snapshotEvents())).toBe(true)
   })
 
@@ -901,6 +923,7 @@ describe('exit_plan_mode', () => {
       text: "Error: human interaction is unavailable while the calling agent is owned by another live agent; include the unresolved question or decision in the child agent's final result",
     }])
     expect(ask).not.toHaveBeenCalled()
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(foldPlanMode(child.session.snapshotEvents())).toBe(true)
   })
 
@@ -913,9 +936,11 @@ describe('exit_plan_mode', () => {
     expect(result.content).toEqual([{ type: 'text', text: 'Plan approved — plan mode exited; carry out the plan starting with your next step.' }])
     // Boundary-applied, not a direct append: the fold stays plan until the
     // step's end, so the plan policy covers any remaining call of the SAME batch.
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(foldPlanMode(agent.session.snapshotEvents())).toBe(true)
     expect(ctx.planMode.get(agent)).toEqual({ active: true, pending: false })
     await boundary(ctx, agent, 'step-start')
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(foldPlanMode(agent.session.snapshotEvents())).toBe(false)
     expect(asked).toHaveLength(1)
     expect(asked[0]?.agent).toBe(agent)
@@ -966,6 +991,7 @@ describe('exit_plan_mode', () => {
       question: 'Approve this plan and leave plan mode?',
       detail: plan,
     })
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(agent.session.snapshotEvents().find(event => event.type === 'tool/ptc-dispatch')?.data).toMatchObject({
       name: EXIT_PLAN_MODE,
       arguments: { plan },
@@ -981,11 +1007,13 @@ describe('exit_plan_mode', () => {
     // Calls of the SAME assistant response were requested under the existing
     // plan-shaped header. Pending state shapes only the proposed next
     // assembly; the accepted boundary then commits the matching durable fold.
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(foldPlanMode(agent.session.snapshotEvents())).toBe(true)
     const assembly = await ctx.systemPrompt.assemble({ agent })
     expect(assembly.tools.some(tool => tool.name === EXIT_PLAN_MODE)).toBe(true)
     expect(assembly.sections.find(section => section.name === 'plan:policy')?.text).toBe('')
     await boundary(ctx, agent, 'step-start')
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(foldPlanMode(agent.session.snapshotEvents())).toBe(false)
     const afterExit = await ctx.systemPrompt.assemble({ agent })
     expect(afterExit.tools).toEqual(assembly.tools)
@@ -997,6 +1025,7 @@ describe('exit_plan_mode', () => {
     header(agent.session)
     await callExit(ctx, agent)
     await boundary(ctx, agent, 'step-start')
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(foldPlanMode(agent.session.snapshotEvents())).toBe(false)
     expect(noticeTexts(agent.session)).toEqual([])
   })
@@ -1006,6 +1035,7 @@ describe('exit_plan_mode', () => {
     const result = await callExit(ctx, agent)
     expect(result.isError).toBe(true)
     expect(result.content).toEqual([{ type: 'text', text: 'Error: The user chose to keep planning; their feedback: consider the resume path' }])
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(foldPlanMode(agent.session.snapshotEvents())).toBe(true)
   })
 
@@ -1021,6 +1051,7 @@ describe('exit_plan_mode', () => {
     const result = await callExit(ctx, agent)
     expect(result.isError).toBe(true)
     expect(result.content).toEqual([{ type: 'text', text: 'Error: The user chose to keep planning; their feedback: add tests first' }])
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(foldPlanMode(agent.session.snapshotEvents())).toBe(true)
   })
 
@@ -1029,6 +1060,7 @@ describe('exit_plan_mode', () => {
     const result = await callExit(ctx, agent)
     expect(result.isError).toBe(true)
     expect(result.content).toEqual([{ type: 'text', text: 'Error: The user chose to keep planning; revise the plan and present it again.' }])
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(foldPlanMode(agent.session.snapshotEvents())).toBe(true)
   })
 
@@ -1037,6 +1069,7 @@ describe('exit_plan_mode', () => {
     const result = await callExit(ctx, agent)
     expect(result.isError).toBe(true)
     expect(result.content).toEqual([{ type: 'text', text: 'Error: The user chose to keep planning; their feedback: change the tests' }])
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(foldPlanMode(agent.session.snapshotEvents())).toBe(true)
   })
 
@@ -1051,6 +1084,7 @@ describe('exit_plan_mode', () => {
     const result = await callExit(ctx, agent)
     expect(result.isError).toBe(true)
     expect(result.content).toEqual([{ type: 'text', text: 'Error: The user chose to keep planning; revise the plan and present it again.' }])
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(foldPlanMode(agent.session.snapshotEvents())).toBe(true)
   })
 
@@ -1083,6 +1117,7 @@ describe('exit_plan_mode', () => {
     const result = await callExit(ctx, agent)
     expect(result.isError).toBe(true)
     expect(result.content).toEqual([{ type: 'text', text: 'Error: The user dismissed the plan review to speak instead; stay in plan mode, stop here, and wait for their message.' }])
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(foldPlanMode(agent.session.snapshotEvents())).toBe(true)
   })
 
@@ -1095,6 +1130,7 @@ describe('exit_plan_mode', () => {
     const result = await callExit(ctx, agent)
     expect(result.isError).toBe(true)
     expect(result.content).toEqual([{ type: 'text', text: 'Error: ask_user_question was aborted before the user answered' }])
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(foldPlanMode(agent.session.snapshotEvents())).toBe(true)
   })
 
@@ -1135,6 +1171,7 @@ describe('exit_plan_mode', () => {
     const result = await pending
     expect(result.isError).toBe(true)
     expect(result.content).toEqual([{ type: 'text', text: 'Error: the plan-mode service was reloaded while the plan was under review; present the plan again' }])
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(foldPlanMode(agent.session.snapshotEvents())).toBe(true)
   })
 
@@ -1144,6 +1181,7 @@ describe('exit_plan_mode', () => {
     const result = await callExit(ctx, agent)
     expect(result.isError).toBe(true)
     expect(result.content).toEqual([{ type: 'text', text: 'Error: review aborted' }])
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(foldPlanMode(agent.session.snapshotEvents())).toBe(true)
   })
 
@@ -1195,6 +1233,7 @@ describe('HMR disposal', () => {
     expect(ctx.tools.get(EXIT_PLAN_MODE)).toBeUndefined()
     expect((await ctx.systemPrompt.assemble()).sections.map(section => section.name)).not.toContain('plan:policy')
     await boundary(ctx, agent, 'step-start')
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(agent.session.snapshotEvents().some(event => event.type === 'plan/mode')).toBe(false)
   })
 })

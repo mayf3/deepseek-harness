@@ -107,6 +107,7 @@ describe('Schedule production JSONL restart', () => {
     )
     pending.append('schedule/change', { version: 1, operation: 'create', schedule: pendingRecord })
     const seed = await first.sessionPersistence.create(pending.header)
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     await seed.append(pending.snapshotEvents())
     await seed.close()
     await disposeContext(first)
@@ -143,6 +144,7 @@ describe('Schedule production JSONL restart', () => {
     await replayed.sessions.flush(replayHandle.agent.session)
 
     expect(replayAdapter.requests).toEqual([])
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(replayHandle.agent.session.snapshotEvents().filter(event =>
       event.type === 'schedule/change' && event.data.operation === 'dispatch')).toHaveLength(1)
     const replayedStored = await readStored(replayed, sessionId)

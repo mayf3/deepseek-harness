@@ -130,6 +130,7 @@ describe('command-compact real Loader composition', () => {
       text: 'Compacted 3 history items (~99 tokens).',
       sourceEventSeq: RESULT.summarySeq,
     })
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(session.snapshotEvents().map(event => ({ type: event.type, data: event.data }))).toEqual([
       {
         type: 'command/run',

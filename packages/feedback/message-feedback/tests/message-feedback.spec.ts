@@ -62,6 +62,7 @@ describe('MessageFeedbackService public contract', () => {
     })
 
     const fixture = messageFixture('corrupt-session')
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     persistence.setDurable({ meta: fixture.session.header, events: fixture.session.snapshotEvents() })
     const corruption = new Error('stored log checksum mismatch')
     persistence.readFailure = corruption
@@ -414,6 +415,7 @@ describe('MessageFeedbackService item concurrency', () => {
 
     const replacement = Session.create(
       old.session.id,
+      // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
       old.session.snapshotEvents(),
       { ...old.session.header, createdAt: 20, cwd: '/new' },
     )
@@ -493,6 +495,7 @@ describe('canonical message feedback history', () => {
     const sessionId = fixture.session.id
     const messageId = fixture.assistantMessageIds[0]
     persistence.persist(fixture.session)
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const prefix = fixture.session.snapshotEvents()
     const lifecycle: string[] = []
     ctx.on('session/created', () => { lifecycle.push('created') })
@@ -538,6 +541,7 @@ describe('canonical message feedback history', () => {
     const { ctx, persistence } = await harness()
     const session = ctx.sessions.create(SessionId('live-log'))
     const fixture = appendMessageFixture(session)
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const before = session.snapshotEvents().length
     const failure = new Error('disk unavailable')
     let fail = true
@@ -552,7 +556,9 @@ describe('canonical message feedback history', () => {
     const item = listed.value.items[0]!
     fail = false
     expectItem(await ctx.messageFeedback.put({ ...request, ifVersion: item.version }))
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(session.snapshotEvents()).toHaveLength(before + 1)
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(persistence.durable.get(session.id)?.events).toEqual(session.snapshotEvents())
     expect(persistence.openCalls).toEqual(['read'])
   })
@@ -563,6 +569,7 @@ describe('canonical message feedback history', () => {
       const session = ctx.sessions.create(SessionId('mismatched-checkpoint'))
       const fixture = appendMessageFixture(session)
       ctx.on('session/flush', () => {
+        // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
         const events = [...session.snapshotEvents()]
         if (kind === 'missing-tail') events.pop()
         if (kind === 'different-tail') events[events.length - 1] = { ...events.at(-1)!, time: 0 }
@@ -587,6 +594,7 @@ describe('canonical message feedback history', () => {
     expectItem(await ctx.messageFeedback.put({
       sessionId: session.id, messageId: fixture.assistantMessageIds[0], rating: 'positive', ifVersion: null,
     }))
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(persistence.durable.get(session.id)!.events.length).toBe(session.snapshotEvents().length - 1)
   })
 
@@ -624,6 +632,7 @@ describe('canonical message feedback history', () => {
   ])('rejects malformed durable feedback payload %#', async (record) => {
     const { ctx, persistence } = await harness()
     const fixture = messageFixture('invalid-feedback')
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const events = fixture.session.snapshotEvents()
     persistence.setDurable({ meta: fixture.session.header, events: [...events, {
       ...record, seq: SessionSeq(events.length), time: 1,

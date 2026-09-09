@@ -59,15 +59,19 @@ async function harness(): Promise<Harness> {
 /** The log with executor-owned command lifecycle bookkeeping stripped (goal assertions target domain events). */
 function domainEvents(session: Session): readonly SessionEvent[] {
   const lifecycle = new Set<number>()
+  // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
   for (const event of session.snapshotEvents()) {
     if (event.type !== 'command/run' && event.type !== 'command/done') continue
     lifecycle.add(event.seq)
     // The zero-step wrap around a lifecycle event is bookkeeping too.
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const before = session.snapshotEvents()[event.seq - 1]
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const after = session.snapshotEvents()[event.seq + 1]
     if (before?.type === 'turn/start') lifecycle.add(before.seq)
     if (after?.type === 'turn/end') lifecycle.add(after.seq)
   }
+  // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
   return session.snapshotEvents().filter(event => !lifecycle.has(event.seq))
 }
 

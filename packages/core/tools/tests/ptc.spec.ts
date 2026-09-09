@@ -1484,6 +1484,7 @@ describe('the run_code dispatch bridge', () => {
     expect(result.isError).toBe(false)
     expect(result.isError ? undefined : result.value).toEqual({ logs: [], result: depth })
     expect({ observedDepth, observedLeaf }).toEqual({ observedDepth: depth, observedLeaf: 'leaf' })
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const dispatch = session.snapshotEvents().find(event => event.type === 'tool/ptc-dispatch')
     if (dispatch === undefined) throw new Error('expected a durable tool/ptc-dispatch event')
     const logged = dispatch.data.arguments as { nested: JsonValue }

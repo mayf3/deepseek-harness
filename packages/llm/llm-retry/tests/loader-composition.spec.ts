@@ -112,6 +112,7 @@ describe('real Loader composition', () => {
     await agent.whenIdle()
 
     expect(adapter.requests).toBe(2)
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(agent.session.snapshotEvents().filter(event => event.type === 'llm/retry')).toHaveLength(1)
     expect(agent.session.deriveMessages().at(-1)).toMatchObject({
       role: 'assistant',

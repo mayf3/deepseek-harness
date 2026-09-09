@@ -121,6 +121,7 @@ function expectLastLifecycle(
   args: string,
   outcome: CommandResult,
 ): string {
+  // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
   const lifecycle = test.agent.session.snapshotEvents()
     .filter(event => event.type === 'command/run' || event.type === 'command/done')
     .slice(-2)

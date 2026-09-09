@@ -131,6 +131,7 @@ describe('V2 system prompts through current Session and JSONL persistence', () =
       const session = await restore(reader)
       expect(messages(session)).toEqual([human])
       expect(session.surface.nodes).toEqual([8, 3])
+      // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
       expect(session.eventAt(SessionSeq(8))?.type).toBe('system/message')
     } finally {
       await reader.close()
@@ -207,6 +208,7 @@ describe('V2 system prompts through current Session and JSONL persistence', () =
       expect(session.firstLiveSeq).toBe(15)
       expect(session.surface.nodes).toEqual([4, 8])
       expect(messages(session)).toEqual([prompt('seed prompt'), { role: 'user', content: [{ type: 'text', text: 'summary' }] }])
+      // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
       expect(session.ownEvents()).toEqual([prepared[14]])
     } finally {
       await reader.close()
@@ -227,7 +229,9 @@ describe('V2 system prompts through current Session and JSONL persistence', () =
       }, { surfaceOp: { op: 'replace', startSeq: SessionSeq(4), endSeq: SessionSeq(4) }, sourceEventSeqs: [SessionSeq(4)] })
       session.append('step/end', { turn: 2, step: 1 })
       session.append('turn/end', { turn: 2, reason: { kind: 'completed' } })
+      // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
       expected = session.snapshotEvents()
+      // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
       await writer.append(session.snapshotEvents(session.firstLiveSeq))
       await writer.flush()
     } finally {
@@ -286,6 +290,7 @@ describe('V2 system prompts through current Session and JSONL persistence', () =
       }, { surfaceOp: 'append' })
       session.append('step/end', { turn: 1, step: 1 })
       session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
+      // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
       await writer.append(session.snapshotEvents())
       await writer.flush()
     } finally {
@@ -294,6 +299,7 @@ describe('V2 system prompts through current Session and JSONL persistence', () =
     const reopened = await mount()
     const reader = await reopened.sessionPersistence.open(id, 'read')
     try {
+      // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
       expect((await reader.read()).events).toEqual(session.snapshotEvents())
       const restored = await restore(reader)
       expect(restored.surface.nodes).toEqual([2, 3, 4])

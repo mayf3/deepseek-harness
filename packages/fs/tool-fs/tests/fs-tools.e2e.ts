@@ -43,6 +43,7 @@ describe.skipIf(!process.env.DEEPSEEK_API_KEY)('fs tools with-key smoke', () => 
     expect(content).not.toContain('draft')
 
     // The log records real read/write/edit tool calls (not bash).
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const calls = agent.session.snapshotEvents().filter(e => e.type === 'tool/call').map(e => e.data.name)
     expect(calls).toContain('write')
     expect(calls).toContain('read')

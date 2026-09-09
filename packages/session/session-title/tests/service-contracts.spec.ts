@@ -171,6 +171,7 @@ describe('SessionTitleService configuration and refresh boundaries', () => {
     })
     const source = appendPrompt(seed, 'Create exactly one fallback title')
     seed.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const session = ctx.sessions.create(SessionId('fallback-concurrency'), { seed: seed.snapshotEvents() })
 
     const results = await Promise.all([
@@ -179,7 +180,9 @@ describe('SessionTitleService configuration and refresh boundaries', () => {
     ])
 
     expect(results[0]).toEqual(results[1])
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(session.snapshotEvents().filter(event => event.type === 'session/title')).toHaveLength(1)
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(session.snapshotEvents().map(event => event.type)).toEqual([
       'turn/start',
       'user/message',
@@ -204,6 +207,7 @@ describe('SessionTitleService configuration and refresh boundaries', () => {
     })
 
     await expect(refresh).resolves.toMatchObject({ title: 'Already accepted' })
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(session.snapshotEvents().filter(event => event.type === 'session/title')).toHaveLength(1)
   })
 
@@ -266,6 +270,7 @@ describe('SessionTitleService configuration and refresh boundaries', () => {
     await fiber.dispose()
     await settle()
 
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(session.snapshotEvents().some(event => event.type === 'session/title')).toBe(false)
     const inactiveError = await lifecycle.inactiveRefresh
     expect(inactiveError).toBeInstanceOf(Error)
@@ -285,6 +290,7 @@ describe('SessionTitleService configuration and refresh boundaries', () => {
     await Promise.resolve()
     await fiber.dispose()
 
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(session.snapshotEvents().some(event => event.type === 'session/title')).toBe(false)
     expect(warn).not.toHaveBeenCalled()
   })

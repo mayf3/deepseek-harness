@@ -66,7 +66,9 @@ describe('SessionTitleService Provider lifecycle', () => {
 
     const child = ctx.sessions.fork(parent, undefined, SessionId('title-child'))
     expect(ctx.sessionTitle.get(child)).toEqual(ctx.sessionTitle.get(parent))
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(child.snapshotEvents().find(event => event.type === 'session/title'))
+      // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
       .toEqual(parent.snapshotEvents().find(event => event.type === 'session/title'))
 
     const firstGenerate = vi.fn(async (request: SessionTitleProviderRequest) => ({
@@ -377,6 +379,7 @@ describe('SessionTitleService Provider lifecycle', () => {
     })))
     await settle()
 
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(session.snapshotEvents().filter(event => event.type === 'request/header')).toHaveLength(1)
     expect(requests).toHaveLength(2)
     expect(requests[1]).toMatchObject({

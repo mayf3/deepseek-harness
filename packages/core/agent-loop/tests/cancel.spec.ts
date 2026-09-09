@@ -50,6 +50,7 @@ function waitForIdle(ctx: Context, agent: Agent): Promise<void> {
 
 /** All user-message texts recorded in the log (to assert what actually ran). */
 function userTexts(agent: Agent): string[] {
+  // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
   return agent.session.snapshotEvents()
     .filter(e => e.type === 'user/message')
     .flatMap(e => e.type === 'user/message' ? e.data.content : [])
@@ -71,6 +72,7 @@ describe('Agent.cancel()', () => {
 
     // The prompt ran: its user message is in the log and one turn completed.
     expect(userTexts(agent)).toEqual(['real prompt'])
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(agent.session.snapshotEvents().some(e => e.type === 'turn/end')).toBe(true)
   })
 
@@ -86,12 +88,14 @@ describe('Agent.cancel()', () => {
     // A waking send starts and claims synchronously, so keepInbox has no
     // pending item to preserve by the time this cancellation runs.
     agent.cancel({ kind: 'user' }, { keepInbox: true })
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(agent.session.snapshotEvents().some(event =>
       event.type === 'agent/inbox/spliced' && event.data.outcome === 'canceled')).toBe(false)
     await agent.whenIdle()
     expect(agent.inbox.nextTurn).toHaveLength(0)
     expect(userTexts(agent)).toEqual([])
     expect(adapter.requests).toHaveLength(0)
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(agent.session.snapshotEvents().findLast(event => event.type === 'turn/end')?.data.reason)
       .toEqual({ kind: 'aborted', reason: { kind: 'user' } })
 
@@ -146,6 +150,7 @@ describe('Agent.cancel()', () => {
     expect(userTexts(agent)).toEqual(['active', 'B'])
     expect(adapter.requests).toHaveLength(2)
     expect(agent.inbox.nextTurn).toHaveLength(0)
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(agent.session.snapshotEvents().filter(e => e.type === 'turn/end').map(e =>
       e.type === 'turn/end' ? e.data.reason : null)).toEqual([
       { kind: 'aborted', reason: { kind: 'user' } },
@@ -196,6 +201,7 @@ describe('Agent.cancel()', () => {
     expect(agent.status).toBe('idle')
     // No replay with nothing to run: the latched message is gone, so no
     // empty follow-up turn is recorded.
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(agent.session.snapshotEvents().filter(e => e.type === 'turn/start')).toHaveLength(1)
   })
 
@@ -255,8 +261,11 @@ describe('Agent.cancel()', () => {
     await new Promise(r => setTimeout(r, 30))
 
     expect(userTexts(agent)).toEqual([])
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(agent.session.snapshotEvents().filter(event => event.type === 'turn/start')).toHaveLength(1)
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(agent.session.snapshotEvents().filter(event => event.type === 'step/start')).toHaveLength(0)
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(agent.session.snapshotEvents().findLast(event => event.type === 'turn/end')?.data.reason)
       .toEqual({ kind: 'aborted', reason: { kind: 'user' } })
     expect(agent.status).toBe('idle')
@@ -286,6 +295,7 @@ describe('Agent.cancel()', () => {
     await driverDone(agent)
 
     expect(agent.status).toBe('idle')
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(agent.session.snapshotEvents().some(event => event.type === 'turn/start')).toBe(false)
     expect(userTexts(agent)).toEqual([])
     expect(adapter.requests).toHaveLength(0)
@@ -323,6 +333,7 @@ describe('Agent.cancel()', () => {
       replacementObservation = agent.whenIdle().then(() => ({
         status: agent.status,
         requests: adapter.requests.length,
+        // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
         turns: agent.session.snapshotEvents().filter(event => event.type === 'turn/start').length,
       }))
       agent.cancel({ kind: 'user' })
@@ -400,6 +411,7 @@ describe('Agent.cancel()', () => {
 
     expect(reasons).toEqual([{ kind: 'aborted', reason: { kind: 'user' } }])
     expect(userTexts(agent)).toEqual(['go'])
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(agent.session.snapshotEvents().filter(event => event.type === 'turn/start')).toHaveLength(1)
     expect(adapter.requests).toHaveLength(1)
   })
@@ -436,7 +448,9 @@ describe('Agent.cancel()', () => {
 
     expect(executions).toBe(0)
     expect(reasons).toEqual([{ kind: 'aborted', reason: { kind: 'user' } }])
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const call = agent.session.snapshotEvents().find(event => event.type === 'tool/call')
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const result = agent.session.snapshotEvents().find(event => event.type === 'tool/result')
     expect(call?.type === 'tool/call' ? call.data.callId : undefined).toBe('c1')
     expect(result?.type === 'tool/result' ? result.data : undefined).toMatchObject({
@@ -477,6 +491,7 @@ describe('Agent.cancel()', () => {
 
     expect(userTexts(agent)).toContain('second')
     // The second turn completed (its reply was streamed).
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const reasons = agent.session.snapshotEvents().filter(e => e.type === 'turn/end')
     expect(reasons.length).toBe(2)
   })
@@ -493,6 +508,7 @@ describe('Agent.cancel()', () => {
 
     // The prefix the user watched stream is committed as the step's message,
     // carrying the truncation marker and exact embedded stream that delivered it.
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const message = agent.session.snapshotEvents().find(e => e.type === 'assistant/message')
     expect(message?.type === 'assistant/message' ? message.data.message.content : undefined)
       .toEqual([{ type: 'text', text: 'partial' }])
@@ -503,6 +519,7 @@ describe('Agent.cancel()', () => {
       ))
       : false).toBe(true)
     expect(message?.sourceEventSeqs).toBeUndefined()
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const types = agent.session.snapshotEvents().map(e => e.type)
     expect(types.indexOf('assistant/message')).toBeLessThan(types.indexOf('step/end'))
     expect(types.indexOf('step/end')).toBeLessThan(types.indexOf('turn/end'))
@@ -537,12 +554,14 @@ describe('Agent.cancel()', () => {
     send(agent, 'go')
     await waitForIdle(ctx, agent)
 
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const message = agent.session.snapshotEvents().find(event => event.type === 'assistant/message')
     expect(message?.type === 'assistant/message' ? message.data.message.source.replayState : undefined)
       .toEqual(replayState)
     expect(message?.type === 'assistant/message' ? message.data.interrupted : undefined).toBe(true)
     expect(() => Session.fromRestore(
       agent.session.id,
+      // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
       structuredClone([...agent.session.snapshotEvents()]),
       structuredClone(agent.session.header),
       SessionLogOffset(0),
@@ -566,6 +585,7 @@ describe('Agent.cancel()', () => {
     agent.cancel({ kind: 'user' })
     await waitForIdle(ctx, agent)
 
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const message = agent.session.snapshotEvents().find(e => e.type === 'assistant/message')
     expect(message?.type === 'assistant/message' ? message.data.message.content : undefined)
       .toEqual([{ type: 'reasoning', text: 'thinking about it' }])
@@ -593,9 +613,11 @@ describe('Agent.cancel()', () => {
     await waitForIdle(ctx, agent)
 
     // The undispatched call is dropped whole — no dangling tool_use to pair.
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const message = agent.session.snapshotEvents().find(e => e.type === 'assistant/message')
     expect(message?.type === 'assistant/message' ? message.data.message.content : undefined)
       .toEqual([{ type: 'text', text: 'reading the file' }])
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(agent.session.snapshotEvents().some(e => e.type === 'tool/call')).toBe(false)
   })
 
@@ -618,7 +640,9 @@ describe('Agent.cancel()', () => {
 
     // The failed stream's prefix stays off the surface: clients reset it on
     // retry, and provider failures commit nothing.
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(agent.session.snapshotEvents().some(e => e.type === 'assistant/message')).toBe(false)
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const end = agent.session.snapshotEvents().find(e => e.type === 'turn/end')
     expect(end?.type === 'turn/end' ? end.data.reason.kind : undefined).toBe('aborted')
   })
@@ -639,12 +663,14 @@ describe('Agent.cancel()', () => {
     send(agent, 'go')
     await waitForIdle(ctx, agent)
 
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const messages = agent.session.snapshotEvents().filter(e => e.type === 'assistant/message')
     expect(messages).toHaveLength(1)
     const message = messages[0]!
     expect(message.type === 'assistant/message' ? message.data.message.content : undefined)
       .toEqual([{ type: 'text', text: 'recovered' }])
     expect(message.type === 'assistant/message' ? message.data.interrupted : undefined).toBeUndefined()
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const failed = agent.session.snapshotEvents().find(e => e.type === 'assistant/attempt')
     expect(failed?.type === 'assistant/attempt'
       ? expandAssistantStream(failed.data.stream).some(member => (
@@ -676,10 +702,12 @@ describe('Agent.cancel()', () => {
     send(agent, 'go')
     await waitForIdle(ctx, agent)
 
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const attempt = agent.session.snapshotEvents().find(event => event.type === 'assistant/attempt')
     expect(attempt?.type === 'assistant/attempt'
       ? expandAssistantStream(attempt.data.stream).map(member => member.chunk)
       : []).toContainEqual({ type: 'text-delta', index: 0, text: 'partial before failure' })
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(agent.session.snapshotEvents().find(event => event.type === 'turn/end')).toMatchObject({
       type: 'turn/end', data: { reason: { kind: 'error', error: { message: failure.message } } },
     })
@@ -700,6 +728,7 @@ describe('Agent.cancel()', () => {
     agent.cancel({ kind: 'user' })
     await waitForIdle(ctx, agent)
 
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(agent.session.snapshotEvents().some(e => e.type === 'assistant/message')).toBe(false)
   })
 
@@ -729,6 +758,7 @@ describe('Agent.cancel()', () => {
     // log is balanced (the open step was closed by the cancel branch).
     expect(streamed).toBe(false)
     expect(reasons).toEqual([{ kind: 'aborted', reason: { kind: 'user' } }])
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const types = agent.session.snapshotEvents().map(e => e.type)
     expect(types.filter(t => t === 'step/start').length).toBe(types.filter(t => t === 'step/end').length)
   })
@@ -764,7 +794,9 @@ describe('Agent.cancel()', () => {
 
     expect(streamed).toBe(false)
     expect(adapter.requests).toHaveLength(0)
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(agent.session.snapshotEvents().some(e => e.type === 'turn/end')).toBe(false)
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const types = agent.session.snapshotEvents().map(e => e.type)
     expect(types.filter(t => t === 'step/start').length).toBe(types.filter(t => t === 'step/end').length)
   })
@@ -818,6 +850,7 @@ describe('Agent.cancel()', () => {
     // No turn opened, no step streamed, and a later prompt still runs (the marker
     // was reset).
     expect(streamed).toBe(false)
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(agent.session.snapshotEvents().some(e => e.type === 'turn/start')).toBe(false)
   })
 
@@ -849,6 +882,7 @@ describe('Agent.cancel()', () => {
     await replacementIdle
     expect(userTexts(agent)).toEqual(['B', 'C'])
     expect(adapter.requests).toHaveLength(2)
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(agent.session.snapshotEvents().filter(event => event.type === 'turn/end')).toHaveLength(2)
   })
 
@@ -872,6 +906,7 @@ describe('Agent.cancel()', () => {
     await replacementIdle
     expect(userTexts(agent)).toEqual(['B', 'C'])
     expect(adapter.requests).toHaveLength(2)
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(agent.session.snapshotEvents().filter(event => event.type === 'turn/end')).toHaveLength(3)
   })
 
@@ -893,9 +928,11 @@ describe('Agent.cancel()', () => {
     // started from the dropped steering.
     await new Promise(r => setTimeout(r, 30))
     expect(agent.status).toBe('idle')
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const turnStarts = agent.session.snapshotEvents().filter(e => e.type === 'turn/start')
     expect(turnStarts.length).toBe(1) // only the original (cancelled) turn
     // The steering text was dropped — it never reached the log.
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const flat = agent.session.snapshotEvents()
       .filter(e => e.type === 'user/message')
       .flatMap(e => e.data.content)
@@ -927,6 +964,7 @@ describe('Agent.cancel()', () => {
             status: agent.status,
             requests: adapter.requests.length,
             users: userTexts(agent),
+            // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
             events: agent.session.snapshotEvents().map(event => event.type),
           })}`))
         }, 1000)
@@ -938,6 +976,7 @@ describe('Agent.cancel()', () => {
     expect(adapter.requests).toHaveLength(2)
     expect(userTexts(agent)).toEqual(['original', 'replacement'])
     expect(agent.inbox.nextTurn).toHaveLength(0)
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const reasons = agent.session.snapshotEvents()
       .filter(event => event.type === 'turn/end')
       .map(event => event.type === 'turn/end' ? event.data.reason : undefined)
@@ -965,6 +1004,7 @@ describe('Agent.cancel()', () => {
     const runtimeReason: unknown = adapter.requests[0]?.signal?.reason
     expect(runtimeReason).toEqual({ kind: 'parent' })
     expect(runtimeReason).toBe(supplied)
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const turnEnd = agent.session.snapshotEvents().findLast(event => event.type === 'turn/end')
     expect(turnEnd?.type === 'turn/end' && turnEnd.data.reason).toEqual({
       kind: 'aborted',
@@ -986,6 +1026,7 @@ describe('Agent.cancel()', () => {
     agent.cancel({ kind: 'user' })
     await handle.dispose()
 
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const turnEnd = agent.session.snapshotEvents().findLast(event => event.type === 'turn/end')
     expect(turnEnd?.type === 'turn/end' && turnEnd.data.reason).toEqual({ kind: 'aborted', reason: { kind: 'user' } })
   })
@@ -1057,6 +1098,7 @@ describe('Agent.cancel()', () => {
     const idle = agent.whenIdle()
     agent.cancel({ kind: 'user' })
     await idle
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const turnEnd = agent.session.snapshotEvents().findLast(event => event.type === 'turn/end')
     expect(turnEnd?.type === 'turn/end' && turnEnd.data.reason)
       .toEqual({ kind: 'aborted', reason: { kind: 'user' } })

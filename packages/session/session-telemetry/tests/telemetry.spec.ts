@@ -128,11 +128,13 @@ describe('SessionTelemetryCoordinator capture', () => {
       'event.type': 'turn/start',
       'event.seq': 0,
     })
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(start.time).toBe(session.snapshotEvents()[0]!.time)
     expect(start.severity).toBe('info')
     expect(message.attributes['event.seq']).toBe(1)
     // Deep-copy isolation: mutating the handed-off body never reaches the log.
     ;(message.body as { content: { text: string }[] }).content[0]!.text = 'tampered'
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const logged = session.snapshotEvents()[1] as SessionEvent<'user/message'>
     expect(logged.data.content[0]).toMatchObject({ text: 'hello' })
   })
@@ -244,6 +246,7 @@ describe('SessionTelemetryCoordinator on-demand capture', () => {
     const session = liveSession(ctx, 'on-demand-prefix')
     appendTurn(session)
     appendAssistantMessage(session, 1, 1, ['first'], 100)
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const firstBoundary = session.snapshotEvents()[2]!.seq
     appendAssistantMessage(session, 1, 2, ['second'], 200)
     session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
@@ -299,6 +302,7 @@ describe('SessionTelemetryCoordinator on-demand capture', () => {
       })
       const parent = liveSession(ctx, 'history-parent')
       appendTurn(parent)
+      // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
       const child = ctx.sessions.create(SessionId('history-child'), { seed: [...parent.snapshotEvents()] })
       const boundary = child.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
       child.append('turn/start', { turn: 2 })
@@ -398,6 +402,7 @@ describe('SessionTelemetryCoordinator adoption', () => {
       inject: ['sessions'],
       apply: (inner: Context) => void new SessionTelemetryCoordinator(inner, backend),
     })
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const child = ctx.sessions.prepare(SessionId('seeded'), { seed: [...parent.snapshotEvents()], meta: {} })
     child.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
     ctx.sessions.enter(child)
@@ -427,6 +432,7 @@ describe('SessionTelemetryCoordinator adoption', () => {
     // telemetry therefore receives a current-format object with the complete
     // migrated canonical seed.
     const resumed = ctx.sessions.prepare(SessionId('resumed'), {
+      // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
       seed: structuredClone(donor.snapshotEvents()) as SessionEvent[],
       meta: {
         version: SESSION_FORMAT_VERSION,
@@ -460,7 +466,9 @@ describe('SessionTelemetryCoordinator adoption', () => {
     const parent = liveSession(ctx, 'stitch-parent')
     appendTurn(parent)
     const child = ctx.sessions.create(SessionId('stitch-child'), {
+      // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
       seed: [...parent.snapshotEvents()],
+      // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
       inheritedEventCount: SessionLogOffset(parent.snapshotEvents().length),
       meta: { parentSession: SessionId('stitch-parent'), isSeeded: true },
     })

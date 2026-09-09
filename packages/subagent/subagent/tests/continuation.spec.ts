@@ -258,6 +258,7 @@ describe('SubagentRuntime.startContinuable', () => {
     ctx.on('agent/inbox/inserted', ({ agent, message }) => {
       // Acceptance is the boundary `startContinuable` resolves at, so observe
       // the log state exactly there rather than after later microtasks.
+      // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
       enqueued.push({ id: message.id, loggedYet: hasUserText(agent.session.snapshotEvents(), 'child task') })
     })
 
@@ -450,6 +451,7 @@ describe('SubagentRuntime.startContinuable', () => {
     })).rejects.toBe(catalogFailure)
 
     await vi.waitFor(() => { expect(ctx.agents.get(childId)).toBeUndefined() })
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(parent.session.snapshotEvents().filter(event => event.type === 'subagent/catalog')).toEqual([])
   })
 
@@ -529,6 +531,7 @@ describe('SubagentRuntime.startContinuable', () => {
       expect(found).toBeDefined()
       return found!
     })
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const descriptor = child.session.snapshotEvents().find(event => event.type === 'subagent/descriptor')
 
     expect(descriptor?.data).toEqual({
@@ -564,6 +567,7 @@ describe('SubagentRuntime.startContinuable', () => {
       return found!
     })
 
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(child.session.snapshotEvents().find(event => event.type === 'subagent/descriptor')?.data)
       .toEqual({
         version: SUBAGENT_DESCRIPTOR_VERSION,
@@ -1155,6 +1159,7 @@ describe('continuable durability and teardown', () => {
     child.followup(createUserMessage({ content: message('accepted during flush'), source: { kind: 'user' } }))
     await vi.waitFor(() => {
       expect(adapter.requests).toHaveLength(2)
+      // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
       expect(hasAssistantText(child.session.snapshotEvents(), 'late answer')).toBe(true)
     })
     await child.whenIdle()
@@ -1882,6 +1887,7 @@ describe('continuable review regressions', () => {
     const started = await ctx.subagents.startContinuable(startSpec(parent))
     await vi.waitFor(() => { expect(adapter.requests).toHaveLength(1) })
     const child = ctx.agents.get(started.childId)!
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const before = child.session.snapshotEvents().length
 
     const controller = new AbortController()
@@ -2343,6 +2349,7 @@ describe('continuable review regressions', () => {
 
 /** Every settlement notice this agent received, in order, as flat text. */
 function settlementNotices(agent: Agent): { sender: string; text: string; summary: string }[] {
+  // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
   const logged = agent.session.snapshotEvents().flatMap(event => event.type === 'user/message' ? [event.data] : [])
   return [...logged, ...agent.inbox.nextStep, ...agent.inbox.nextTurn].flatMap((message) => {
     if (message.source.kind !== 'subagent-settled') return []
@@ -2405,6 +2412,7 @@ describe('continuable adjacent-Agent delivery', () => {
     await vi.waitFor(() => {
       expect(adapter.requests.filter(request => request.sessionId === parent.id)).toHaveLength(1)
     })
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const delivered = parent.session.snapshotEvents().flatMap(event => event.type === 'user/message'
       && event.data.source.kind === 'agent-message' ? [event.data] : [])[0]
     expect(delivered?.id).toBe(messageId)
@@ -2699,6 +2707,7 @@ describe('continuable settlement delivery', () => {
 
     // Turn 1 closed cleanly and no later turn opened, so the cancelled queue is
     // the only record that this epoch was cut short.
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(hasUserText(child.session.snapshotEvents(), 'never runs')).toBe(false)
     await vi.waitFor(() => { expect(settlementNotices(parent)).toHaveLength(1) })
     expect(settlementNotices(parent)[0]!.text).toBe(
@@ -2867,7 +2876,9 @@ describe('continuable settlement delivery', () => {
       `Background subagent ${started.childId} was stopped before it finished.`
       + '\nIt left no closing message.',
     )
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(parent.session.snapshotEvents().some(event => event.type === 'agent/inbox/spliced')).toBe(true)
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(parent.session.snapshotEvents().some(event => event.type === 'turn/start')).toBe(false)
     expect(parent.status).toBe('idle')
   })
@@ -2884,6 +2895,7 @@ describe('continuable settlement delivery', () => {
     await drained
 
     expect(settlementNotices(parent)).toHaveLength(1)
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(parent.session.snapshotEvents().some(event => event.type === 'turn/start')).toBe(false)
   })
 

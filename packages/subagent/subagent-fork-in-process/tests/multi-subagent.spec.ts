@@ -67,6 +67,7 @@ describe('multi-subagent coexistence (spawn + fork on one context)', () => {
     // Parent does one real turn first, so the fork has a completed turn to seed.
     parent.followup(createUserMessage({ content: [{ type: 'text', text: 'parent q1' }], source: { kind: 'user' } }))
     await parent.whenIdle()
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const parentPrefixLen = parent.session.snapshotEvents().length
 
     // Delegate to a fresh spawn child.
@@ -88,6 +89,7 @@ describe('multi-subagent coexistence (spawn + fork on one context)', () => {
     expect(spawnChild.session.header.parentSession).toBe(parent.session.header.id)
     expect(forkChild.session.header.parentSession).toBe(parent.session.header.id)
     // The fork child inherited the parent's prefix; the spawn child did not.
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(forkChild.session.snapshotEvents().slice(0, parentPrefixLen).some(e => e.type === 'user/message')).toBe(true)
 
     await spawnRun.dispose()
@@ -96,12 +98,14 @@ describe('multi-subagent coexistence (spawn + fork on one context)', () => {
     // The parent is unaffected and keeps working after both delegations.
     parent.followup(createUserMessage({ content: [{ type: 'text', text: 'parent q2' }], source: { kind: 'user' } }))
     await parent.whenIdle()
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const lastParentMessage = parent.session.snapshotEvents().findLast(e => e.type === 'assistant/message')
     expect(lastParentMessage?.type === 'assistant/message' && text(lastParentMessage.data.message.content)).toBe('parent turn two')
     // The parent's OWN log never recorded the children's internal steps — its
     // only subagent-related entries would be tool/call+tool/result IF it had
     // used the tool, but here we called the service directly, so the parent log
     // is purely its own two turns.
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(parent.session.snapshotEvents().filter(e => e.type === 'turn/end')).toHaveLength(2)
   })
 })

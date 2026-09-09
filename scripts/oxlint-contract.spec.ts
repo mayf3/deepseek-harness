@@ -254,6 +254,59 @@ export const longProbe = 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 +
     }
   }, 90_000)
 
+  it('allows waived Session history reads while rejecting new reads and unrelated deprecations', async () => {
+    const suffix = randomUUID()
+    const configPath = await writeContractConfig(suffix)
+    const path = join(repositoryRoot, 'scripts', `oxlint-contract-${suffix}.ts`)
+    const existing = `import { Session, SessionSeq } from '@deepseek-ai/dsh-session'
+
+export function existingReads(session: Session): void {
+  // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
+  session.snapshotEvents()
+  // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
+  session.eventAt(SessionSeq(0))
+  // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
+  session.ownEvents()
+}
+`
+    const added = `
+/** @deprecated Use the replacement API. */
+function oldApi(): void {}
+
+export function newReads(session: Session): void {
+  session.snapshotEvents()
+  session.eventAt(SessionSeq(0))
+  session.ownEvents()
+  oldApi()
+}
+`
+
+    try {
+      await writeFile(path, existing)
+      const args = ['--config', relative(repositoryRoot, configPath), '--format', 'unix', relative(repositoryRoot, path)]
+      const allowed = runRepositoryOxlint(args)
+      expect(allowed.error).toBeUndefined()
+      expect(allowed.signal).toBeNull()
+      expect(allowed.status, normalizedOutput(allowed)).toBe(0)
+
+      await writeFile(path, existing + added)
+      const rejected = runRepositoryOxlint(args)
+      const output = normalizedOutput(rejected)
+      expect(rejected.error).toBeUndefined()
+      expect(rejected.signal).toBeNull()
+      expect(rejected.status, output).toBe(1)
+      expect(output.match(/typescript\(no-deprecated\)/g), output).toHaveLength(4)
+      for (const method of ['snapshotEvents', 'eventAt', 'ownEvents', 'oldApi']) {
+        expect(output).toContain(`\`${method}\` is deprecated`)
+      }
+    } finally {
+      await Promise.all([
+        rm(path, { force: true }),
+        rm(configPath, { force: true }),
+      ])
+    }
+  }, 90_000)
+
   it('accepts an ignored-only staged selection', () => {
     const result = runOxlint([
       '--fix',

@@ -56,6 +56,7 @@ describe.skipIf(!process.env.DEEPSEEK_API_KEY)('compaction: a long session compa
       }], source: { kind: 'user' } }))
     await waitForIdle(ctx, agent)
 
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const events = agent.session.snapshotEvents()
 
     // A compaction ran: the start…end bracket landed in the real log.

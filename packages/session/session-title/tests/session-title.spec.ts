@@ -53,6 +53,7 @@ describe('SessionTitleService', () => {
 
     await settleTitles()
 
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const titleEvent = session.snapshotEvents().findLast(event => event.type === 'session/title')
     expect(titleEvent).toMatchObject({
       type: 'session/title',
@@ -140,6 +141,7 @@ describe('SessionTitleService', () => {
 
     expect(first?.messageSeqs).toEqual([eligible.seq])
     expect(ctx.sessionTitle.get(session)).toEqual(first)
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(session.snapshotEvents().filter(event => event.type === 'session/title')).toHaveLength(1)
   })
 
@@ -160,6 +162,7 @@ describe('SessionTitleService', () => {
       },
     })
 
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(foldSessionTitle(seed.snapshotEvents())).toEqual({
       title: 'Later',
       messageSeqs: [1, 4],
@@ -169,6 +172,7 @@ describe('SessionTitleService', () => {
         model: { provider: 'mock', model: 'title-model' },
       },
       eventSeq: 1,
+      // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
       updatedAt: seed.snapshotEvents()[1]?.time,
     })
   })
@@ -176,6 +180,7 @@ describe('SessionTitleService', () => {
   it('folds an empty or title-less log to undefined', () => {
     expect(foldSessionTitle([])).toBeUndefined()
     const empty = Session.create(SessionId('no-title'))
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(foldSessionTitle(empty.snapshotEvents())).toBeUndefined()
   })
 })

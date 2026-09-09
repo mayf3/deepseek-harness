@@ -81,6 +81,7 @@ describe('minimal agent preset', () => {
     if (requestHeader === undefined) throw new Error('the minimal agent issued no model request')
     const systemPrompt = systemPromptText(agentHandle.agent.session)
     if (systemPrompt === undefined) throw new Error('the minimal agent issued no system prompt')
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     expect(agentHandle.agent.session.snapshotEvents().some(event => event.type === 'user/message'
       && event.data.source.kind === 'plugin'
       && event.data.source.plugin === '@deepseek-ai/dsh-system-prompt')).toBe(false)
