@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-`dsh-compaction-image-offload` keeps image-heavy conversations sendable. When an image-capable route fails a request with `IMAGE_OFFLOAD_REQUIRED`, naming how many of the oldest retained images no longer fit its budget, the plugin replaces each surface node carrying one of those images with a copy whose image blocks are marked `offloaded`, prices the replaced node through the compaction seam's `compaction/prune` protocol, and retries the step. Every route then sends placeholder text naming the image and its read-only path instead of the image. Like the other compaction executors, the replacement is a durable surface fact: it never reverts, so the images the model sees and the provider cache prefix move only forward.
+Image-heavy conversations continue when older images exceed a model route's budget. The plugin permanently replaces those images with text naming each attachment and its read-only path, then retries the request without spending the provider retry budget. Later requests retain that choice across route changes, resume, and replay. Token accounting follows the replacements, and provider cache reuse ends at the first changed message.
 
 ## Table of Contents
 

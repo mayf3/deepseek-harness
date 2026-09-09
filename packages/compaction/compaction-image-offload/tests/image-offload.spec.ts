@@ -155,7 +155,7 @@ describe('compaction-image-offload', () => {
     agent.session.append('user/message', createUserMessage({
       content: [image('replacement')], source: { kind: 'user' },
     }), {
-      surfaceOp: { op: 'replace', start: first.seq, end: first.seq },
+      surfaceOp: { op: 'replace', startSeq: first.seq, endSeq: first.seq },
       sourceEventSeqs: [first.seq],
     })
 

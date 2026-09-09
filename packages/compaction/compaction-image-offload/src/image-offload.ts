@@ -57,7 +57,7 @@ function replaceNode(ctx: Context, session: Session, event: ImageNode, content: 
     shadowedTokenCount: ctx.tokenMeter.estimateMessage(messageOf(event)),
   })
   const options = {
-    surfaceOp: { op: 'replace' as const, start: event.seq, end: event.seq },
+    surfaceOp: { op: 'replace' as const, startSeq: event.seq, endSeq: event.seq },
     sourceEventSeqs: [event.seq],
   }
   if (event.type === 'user/message') {
