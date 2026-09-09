@@ -3,6 +3,26 @@ import type { ReactNode } from 'react'
 import type { IconProps } from './icons/props.ts'
 import type { CodeFileType } from './code-file-types.ts'
 
+/** Non-localizable letterforms that are part of the source-format artwork. */
+const CODE_MARKS = {
+  c: 'C',
+  cpp: 'C',
+  csharp: 'C',
+  css: 'CSS',
+  env: 'ENV',
+  erlang: 'E',
+  ini: 'INI',
+  javascript: 'JS',
+  objectiveC: 'OC',
+  perl: 'PL',
+  php: 'PHP',
+  r: 'R',
+  toml: 'TOML',
+  typescript: 'TS',
+  yaml: 'YAML',
+  zig: 'ZIG',
+} as const
+
 /**
  * Render one full-color square code-file glyph from the embedded icon set.
  * @param props - Detailed code type, optional size, and optional CSS class.
@@ -33,7 +53,7 @@ function codeFileArtwork(type: CodeFileType, gradientId: string): ReactNode {
           <rect x="1" y="1" width="18" height="18" rx="4" fill="#659AD2"/>
           <path fill="none" stroke="#fff" strokeWidth="1.3" strokeLinejoin="round" d="m10 3.4 6 3.3v6.6l-6 3.3-6-3.3V6.7z"/>
           <text x="10" y="13.5" textAnchor="middle" fontFamily="Arial,sans-serif" fontSize="9.5" fontWeight="800" fill="#fff">
-            {'C'}
+            {CODE_MARKS.c}
           </text>
         </>
       )
@@ -63,7 +83,7 @@ function codeFileArtwork(type: CodeFileType, gradientId: string): ReactNode {
           <rect x="1" y="1" width="18" height="18" rx="4" fill="#00599C"/>
           <path fill="none" stroke="#fff" strokeWidth="1.15" strokeLinejoin="round" d="m10 3.4 6 3.3v6.6l-6 3.3-6-3.3V6.7z"/>
           <text x="7.8" y="13" textAnchor="middle" fontFamily="Arial,sans-serif" fontSize="8.2" fontWeight="800" fill="#fff">
-            {'C'}
+            {CODE_MARKS.cpp}
           </text>
           <path stroke="#fff" strokeWidth="1.1" d="M12 8.8v3.8m-1.9-1.9h3.8m2-1.9v3.8M14 10.7h3.8"/>
         </>
@@ -74,7 +94,7 @@ function codeFileArtwork(type: CodeFileType, gradientId: string): ReactNode {
           <rect x="1" y="1" width="18" height="18" rx="4" fill="#68217A"/>
           <path fill="none" stroke="#fff" strokeWidth="1.15" strokeLinejoin="round" d="m10 3.4 6 3.3v6.6l-6 3.3-6-3.3V6.7z"/>
           <text x="7.6" y="13" textAnchor="middle" fontFamily="Arial,sans-serif" fontSize="8.2" fontWeight="800" fill="#fff">
-            {'C'}
+            {CODE_MARKS.csharp}
           </text>
           <path stroke="#fff" strokeWidth=".95" d="M11.6 8.6h5m-5 3h5m-3.3-5v7m1.8-7v7"/>
         </>
@@ -84,7 +104,7 @@ function codeFileArtwork(type: CodeFileType, gradientId: string): ReactNode {
         <>
           <rect x="1" y="1" width="18" height="18" rx="4" fill="#1572B6"/>
           <text x="10" y="12.8" textAnchor="middle" fontFamily="Arial,sans-serif" fontSize="6.2" fontWeight="900" fill="#fff">
-            {'CSS'}
+            {CODE_MARKS.css}
           </text>
         </>
       )
@@ -125,7 +145,7 @@ function codeFileArtwork(type: CodeFileType, gradientId: string): ReactNode {
         <>
           <rect x="1" y="1" width="18" height="18" rx="4" fill="#ECD53F"/>
           <text x="10" y="13.2" textAnchor="middle" fontFamily="Arial,sans-serif" fontSize="6.8" fontWeight="900" fill="#24292F">
-            {'ENV'}
+            {CODE_MARKS.env}
           </text>
         </>
       )
@@ -135,7 +155,7 @@ function codeFileArtwork(type: CodeFileType, gradientId: string): ReactNode {
           <rect x="1" y="1" width="18" height="18" rx="4" fill="#A90533"/>
           <circle cx="10" cy="10" r="6.4" fill="none" stroke="#fff" strokeWidth="1"/>
           <text x="10" y="13.8" textAnchor="middle" fontFamily="Georgia,serif" fontSize="10.5" fontWeight="700" fill="#fff">
-            {'E'}
+            {CODE_MARKS.erlang}
           </text>
         </>
       )
@@ -192,7 +212,7 @@ function codeFileArtwork(type: CodeFileType, gradientId: string): ReactNode {
         <>
           <rect x="1" y="1" width="18" height="18" rx="4" fill="#6E7781"/>
           <text x="10" y="13.2" textAnchor="middle" fontFamily="Arial,sans-serif" fontSize="7.2" fontWeight="800" fill="#fff">
-            {'INI'}
+            {CODE_MARKS.ini}
           </text>
         </>
       )
@@ -209,7 +229,7 @@ function codeFileArtwork(type: CodeFileType, gradientId: string): ReactNode {
         <>
           <rect x="1" y="1" width="18" height="18" rx="4" fill="#F7DF1E"/>
           <text x="10" y="14" textAnchor="middle" fontFamily="Arial,sans-serif" fontSize="8.4" fontWeight="800" fill="#191919">
-            {'JS'}
+            {CODE_MARKS.javascript}
           </text>
         </>
       )
@@ -266,7 +286,7 @@ function codeFileArtwork(type: CodeFileType, gradientId: string): ReactNode {
         <>
           <rect x="1" y="1" width="18" height="18" rx="4" fill="#438EFF"/>
           <text x="10" y="13.2" textAnchor="middle" fontFamily="Arial,sans-serif" fontSize="7.2" fontWeight="800" fill="#fff">
-            {'OC'}
+            {CODE_MARKS.objectiveC}
           </text>
         </>
       )
@@ -275,7 +295,7 @@ function codeFileArtwork(type: CodeFileType, gradientId: string): ReactNode {
         <>
           <rect x="1" y="1" width="18" height="18" rx="4" fill="#39457E"/>
           <text x="10" y="13.3" textAnchor="middle" fontFamily="Arial,sans-serif" fontSize="7.8" fontWeight="800" fill="#fff">
-            {'PL'}
+            {CODE_MARKS.perl}
           </text>
         </>
       )
@@ -285,7 +305,7 @@ function codeFileArtwork(type: CodeFileType, gradientId: string): ReactNode {
           <rect x="1" y="1" width="18" height="18" rx="4" fill="#777BB4"/>
           <ellipse cx="10" cy="10" rx="7" ry="4.5" fill="none" stroke="#fff" strokeWidth="1"/>
           <text x="10" y="12.1" textAnchor="middle" fontFamily="Arial,sans-serif" fontSize="5.8" fontStyle="italic" fontWeight="800" fill="#fff">
-            {'PHP'}
+            {CODE_MARKS.php}
           </text>
         </>
       )
@@ -351,7 +371,7 @@ function codeFileArtwork(type: CodeFileType, gradientId: string): ReactNode {
           <path fill="#DEA584" d="m10 2.8.7 1.3 1.4-.4.1 1.5 1.5.2-.6 1.4 1.3.8-.1.1 1.4.7-.9 1.2 1 1.1-1.2.8.6 1.3-1.4.4.3 1.5-1.5.1-.4 1.4-1.3-.5-.9 1.2-.9-1.2-1.3.5-.4-1.4-1.5-.1.3-1.5-1.4-.4.6-1.3-1.2-.8 1-1.1-.9-1.2 1.4-.7-.1-.1 1.3-.8-.6-1.4 1.5-.2.1-1.5 1.4.4z"/>
           <circle cx="10" cy="10" r="4.6" fill="#2B2B2B"/>
           <text x="10" y="13.1" textAnchor="middle" fontFamily="Georgia,serif" fontSize="8.2" fontWeight="700" fill="#DEA584">
-            {'R'}
+            {CODE_MARKS.r}
           </text>
         </>
       )
@@ -405,7 +425,7 @@ function codeFileArtwork(type: CodeFileType, gradientId: string): ReactNode {
         <>
           <rect x="1" y="1" width="18" height="18" rx="4" fill="#9C4121"/>
           <text x="10" y="12.9" textAnchor="middle" fontFamily="Arial,sans-serif" fontSize="5.6" fontWeight="800" fill="#fff">
-            {'TOML'}
+            {CODE_MARKS.toml}
           </text>
         </>
       )
@@ -414,7 +434,7 @@ function codeFileArtwork(type: CodeFileType, gradientId: string): ReactNode {
         <>
           <rect x="1" y="1" width="18" height="18" rx="4" fill="#3178C6"/>
           <text x="10" y="14" textAnchor="middle" fontFamily="Arial,sans-serif" fontSize="8.4" fontWeight="800" fill="#fff">
-            {'TS'}
+            {CODE_MARKS.typescript}
           </text>
         </>
       )
@@ -445,7 +465,7 @@ function codeFileArtwork(type: CodeFileType, gradientId: string): ReactNode {
         <>
           <rect x="1" y="1" width="18" height="18" rx="4" fill="#CB171E"/>
           <text x="10" y="12.9" textAnchor="middle" fontFamily="Arial,sans-serif" fontSize="5.6" fontWeight="800" fill="#fff">
-            {'YAML'}
+            {CODE_MARKS.yaml}
           </text>
         </>
       )
@@ -455,7 +475,7 @@ function codeFileArtwork(type: CodeFileType, gradientId: string): ReactNode {
           <rect x="1" y="1" width="18" height="18" rx="4" fill="#F7A41D"/>
           <path fill="#fff" d="M3.5 6h4L6 7.5h5L7.5 12h5L11 14h5.5l-.8-3 1-5h-4.4L14 7.5h-3.7L13 4.2H6L7.3 6z"/>
           <text x="10" y="12.2" textAnchor="middle" fontFamily="Arial,sans-serif" fontSize="4.6" fontWeight="900" fill="#F7A41D">
-            {'ZIG'}
+            {CODE_MARKS.zig}
           </text>
         </>
       )
