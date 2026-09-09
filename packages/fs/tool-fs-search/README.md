@@ -134,7 +134,7 @@ Read these pages when the package-level contract is not enough. They move from t
 
 #### What the model sees
 
-At assembly time, each section checks `ctx.tools.get(name, scope)` and renders only while its tool is visible. The grep paragraph includes its read follow-up sentence only while read is visible. The original text and section order stay unchanged for the same supported tool set, including PTC capabilities behind `run_code`.
+At assembly time, each section checks `ctx.tools.get(name, scope)` and renders only while its tool is visible. The grep paragraph includes its read follow-up sentence only while read is visible. The original text and section order stay unchanged for the same supported tool set, including PTC capabilities behind `run_code`. This scope-dependent text selection applies to system-prompt sections. Tool schema descriptions remain registration-time text; in particular, the grep schema still recommends read even in a scope that hides read. Scope-dependent schema wording is not implemented.
 
 ##### Glob guidance with `sampleOverCapGlobResults: true`
 

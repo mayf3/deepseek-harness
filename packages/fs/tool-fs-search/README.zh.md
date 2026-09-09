@@ -134,7 +134,7 @@ Node 部署在受支持的 macOS、Linux 与 Windows 目标上获得 `@vscode/ri
 
 #### 模型看到的内容
 
-组装时，每个段落通过 `ctx.tools.get(name, scope)` 检查对应工具，仅在其可见时输出。grep 段落仅在 read 可见时包含后续使用 read 的句子。同一受支持工具集合下，原文和段落顺序保持不变，包括通过 `run_code` 暴露的 PTC 能力。
+组装时，每个段落通过 `ctx.tools.get(name, scope)` 检查对应工具，仅在其可见时输出。grep 段落仅在 read 可见时包含后续使用 read 的句子。同一受支持工具集合下，原文和段落顺序保持不变，包括通过 `run_code` 暴露的 PTC 能力。 这种按 scope 选择文本的机制适用于系统提示词段落。工具 schema 描述仍是注册时的文本；具体而言，即使 scope 隐藏了 read，grep 的 schema 仍会推荐 read。尚未实现按 scope 改变 schema 措辞。
 
 ##### 启用 `sampleOverCapGlobResults: true` 时的 Glob 指导
 
