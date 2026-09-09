@@ -7,7 +7,7 @@ import type { ContentBlock } from '@deepseek-ai/dsh-llm/types'
 import type { SessionControlFrame } from '@deepseek-ai/dsh-api-session-controller/types'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { SessionManager } from '../src/client/sessions/manager.ts'
-import { FakeApiClient, fakeRemote } from './fake-api.client.ts'
+import { deferred, FakeApiClient, fakeRemote, ok } from './fake-api.client.ts'
 
 const SID = 'fk-q1' as SessionId
 const text = (value: string): ContentBlock[] => [{ type: 'text', text: value }]
@@ -62,6 +62,50 @@ describe('Inbox projection intake', () => {
 
     expect(manager.get(SID).projections.faceOf('inbox').getSnapshot()).toBeUndefined()
   })
+
+  it.each(['control-first', 'list-first'] as const)(
+    'replaces cold Session Inbox values across Host generations (%s)',
+    async (order) => {
+      const api = new FakeApiClient()
+      const list = deferred<Awaited<ReturnType<FakeApiClient['onList']>>>()
+      api.onList = () => list.promise
+      const manager = new SessionManager(fakeRemote(api))
+      const hiddenSessionId = 'cold-hidden-inbox' as SessionId
+      const ghost = message('ghost', 'acceptance was not persisted')
+      const pending = message('pending', 'claim was not persisted')
+      const empty = { 'next-turn': [], 'next-step': [] }
+      const restored = { 'next-turn': [pending], 'next-step': [] }
+      manager.handleControlFrame({ ...inboxFrame({ ...empty, 'next-turn': [ghost] }), seq: 20 })
+      manager.handleControlFrame({ ...inboxFrame(empty), sessionId: hiddenSessionId, seq: 20 })
+      const face = manager.get(SID).projections.faceOf('inbox')
+      const baseline = { type: 'baseline', value: { jobs: {}, projections: {} } } as const
+      const result = ok({ items: [
+        { sessionId: SID, updatedAt: 1, running: false, blank: false,
+          projections: { asOfSeq: 1, values: { inbox: empty } } },
+        { sessionId: hiddenSessionId, updatedAt: 1, running: false, blank: false,
+          projections: { asOfSeq: 1, values: { inbox: restored } } },
+      ] }) as Awaited<ReturnType<FakeApiClient['onList']>>
+      let refreshed: Promise<void> | undefined
+
+      try {
+        manager.handleConnected()
+        refreshed = manager.refreshList()
+        expect(face.getSnapshot()).toBeUndefined()
+        if (order === 'control-first') manager.handleControlFrame(baseline)
+        list.resolve(result)
+        await refreshed
+        if (order === 'list-first') manager.handleControlFrame(baseline)
+
+        expect(manager.get(SID).projections.faceOf('inbox')).toBe(face)
+        expect(face.getSnapshot()).toEqual(empty)
+        expect(manager.get(hiddenSessionId).projections.faceOf('inbox').getSnapshot()).toEqual(restored)
+      } finally {
+        list.resolve(result)
+        await refreshed
+        await manager.dispose()
+      }
+    },
+  )
 
   it('retains only the highest-seq value received before Session materialization', () => {
     const manager = new SessionManager(fakeRemote(new FakeApiClient()))

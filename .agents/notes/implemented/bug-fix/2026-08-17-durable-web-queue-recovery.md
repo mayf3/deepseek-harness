@@ -18,6 +18,8 @@ The projection registry owns both durable reconstruction and live state. Its exi
 
 The generic session-projection carrier is the only Web transport. It sends higher-seq `session/projection` values, includes the complete values block on history tail pages, folds detached cold logs, and uses the projection cache when valid. There is no Host-owned `queue` projection, placement vocabulary, handoff list, dedicated queue frame, or live-Agent reconnect enumeration.
 
+Each Host connection reset discards every retained projection value and watermark before refreshing queries, including cold Sessions absent from the process-local control baseline. Observable faces retain their identities and subscriptions. A list request from an earlier generation cannot publish values or settle the current request; history and list values from the new generation may therefore establish a lower durable seq without losing to unpersisted state. Clearing at connection reset also preserves fresh list values when the control baseline arrives later.
+
 The client Session binding retains `inbox` in its generic per-session projection store and does not copy it into `SessionSnapshot`. QueueDock reads `next-turn` directly. ChatView reads user-origin `next-step` messages directly and ignores injected context. Claiming removes a pending value through the durable splice; a later `user/message` is rendered through the ordinary conversation projection.
 
 `session.updateQueue` resolves an ordinary cold Session through the shared Agent resolver before mutating its Inbox. A restored pending row therefore remains editable, removable, or steerable after restart, while subagent ownership keeps the same fence as other Agent operations.
@@ -28,7 +30,7 @@ No new session event or on-disk format is introduced. The existing splice stream
 
 Inbox tests prove that service creation restores both lists through the registered projection, a direct durable append is immediately visible through the same live cell, a fork projects pending input inherited in its seed, and Inbox mutations reject duplicate pending identities before append. Host projection coverage reads a detached persisted Session with a pending splice, returns `values.inbox` through `session.history`, and proves that no live Agent is required. A separate cold-operation test proves `session.updateQueue` resumes the Session and appends the durable removal splice.
 
-Client coverage pins generic Inbox projection delivery, reconnect truncation, higher-seq retention before Session materialization, and the absence of queue state from `SessionSnapshot`. UI coverage pins direct `next-turn` QueueDock rendering and user-origin `next-step` ChatView rendering. The keyless Web fixture opens a cold persisted Session and observes its pending row after restart.
+Client coverage pins generic Inbox projection delivery, reconnect invalidation for omitted cold Sessions, both baseline arrival orders, obsolete list request outcomes, higher-seq retention before Session materialization, and the absence of queue state from `SessionSnapshot`. UI coverage pins direct `next-turn` QueueDock rendering and user-origin `next-step` ChatView rendering. The keyless Web fixture opens a cold persisted Session and observes its pending row after restart.
 
 ## Alternatives considered
 

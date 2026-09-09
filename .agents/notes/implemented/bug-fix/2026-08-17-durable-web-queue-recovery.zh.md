@@ -18,6 +18,8 @@ Inbox 接受消息时会记录规范化的 `agent/inbox/spliced` 事件，但 We
 
 通用会话投影传输层是唯一 Web 传输。它发送 seq 更高的 `session/projection` 值，在历史尾页中包含完整 values 块，折叠已分离的冷日志，并在缓存有效时使用投影缓存。系统不存在 Host 拥有的 `queue` 投影、placement 词汇、handoff 列表、专用 queue 帧或枚举 live Agent 的重连逻辑。
 
+每次 Host 连接重置都会先丢弃所有保留的投影值及其水位，再刷新查询，其中也包括进程本地 control baseline 中没有列出的冷 Session。Observable face 保留自身标识及订阅。较早 generation 的 list 请求不能发布值或使当前请求结束，因此新 generation 的历史与 list 值可以建立较低的持久 seq，而不会被尚未持久化的状态挡住。在连接重置时清理，也能在 control baseline 较晚到达时保留新 list 值。
+
 客户端 Session binding 在通用逐会话投影存储中保留 `inbox`，不会把它复制进 `SessionSnapshot`。QueueDock 直接读取 `next-turn`。ChatView 直接读取用户来源的 `next-step` 消息，并忽略注入上下文。认领操作通过持久 splice 移除待处理值；后续 `user/message` 由普通会话投影渲染。
 
 `session.updateQueue` 在修改 Inbox 前通过共享 Agent 解析器解析普通冷 Session。因此，恢复出的待处理行在重启后仍可编辑、移除或 steering，而 subagent ownership 保持与其他 Agent 操作相同的 fence。
@@ -28,7 +30,7 @@ Inbox 接受消息时会记录规范化的 `agent/inbox/spliced` 事件，但 We
 
 Inbox 测试证明服务创建会通过已注册投影恢复两份列表、直接追加的持久事件会立即通过同一 live cell 可见、fork 会投影其 seed 中继承的待处理输入，并且 Inbox 变更会在 append 前拒绝重复的待处理标识。Host 投影覆盖会读取包含待处理 splice 的已分离持久 Session，经 `session.history` 返回 `values.inbox`，并证明不需要 live Agent。另一项冷操作测试证明 `session.updateQueue` 会恢复 Session 并追加持久删除 splice。
 
-客户端覆盖固定通用 Inbox 投影投递、重连截断、Session 实例化前保留 seq 更高的值，以及 `SessionSnapshot` 不含 queue 状态。UI 覆盖固定 QueueDock 直接渲染 `next-turn`，以及 ChatView 渲染用户来源的 `next-step`。无密钥 Web fixture 会打开一份冷持久 Session，并在重启后观察其待处理行。
+客户端覆盖固定通用 Inbox 投影投递、重连时清理遗漏冷 Session 的旧值、基线的两种到达顺序、过期 list 请求的结果、Session 实例化前保留 seq 更高的值，以及 `SessionSnapshot` 不含 queue 状态。UI 覆盖固定 QueueDock 直接渲染 `next-turn`，以及 ChatView 渲染用户来源的 `next-step`。无密钥 Web fixture 会打开一份冷持久 Session，并在重启后观察其待处理行。
 
 ## 考虑过的替代方案
 

@@ -751,6 +751,76 @@ describe('remaining branches', () => {
 })
 
 describe('connected generation', () => {
+  it.each(['old-first', 'new-first'] as const)(
+    'ignores a previous generation list response (%s)',
+    async (order) => {
+      const api = new FakeApiClient()
+      const oldList = deferred<Awaited<ReturnType<FakeApiClient['onList']>>>()
+      const newList = deferred<Awaited<ReturnType<FakeApiClient['onList']>>>()
+      let calls = 0
+      api.onList = () => calls++ === 0 ? oldList.promise : newList.promise
+      const manager = new SessionManager(fakeRemote(api))
+      const oldResult = ok({ items: [{ ...summary(S1), projections: {
+        asOfSeq: 20, values: { title: 'Unpersisted title' },
+      } }] as never[] })
+      const newResult = ok({ items: [{ ...summary(S1), projections: {
+        asOfSeq: 1, values: { title: 'Durable title' },
+      } }] as never[] })
+      const oldPull = manager.refreshList()
+      let newPull: Promise<void> | undefined
+      try {
+        manager.handleConnected()
+        newPull = manager.refreshList()
+        expect(api.callsOf('session.list')).toHaveLength(2)
+        if (order === 'old-first') {
+          oldList.resolve(oldResult)
+          await oldPull
+          expect(manager.getListSnapshot().state).toBe('loading')
+          expect(manager.refreshList()).toBe(newPull)
+        }
+        newList.resolve(newResult)
+        await newPull
+        oldList.resolve(oldResult)
+        await oldPull
+
+        expect(manager.getListSnapshot()).toMatchObject({ state: 'idle', error: null })
+        expect(manager.getListSnapshot().items[0]?.title).toBe('Durable title')
+      } finally {
+        oldList.resolve(oldResult)
+        newList.resolve(newResult)
+        await Promise.all([oldPull, newPull])
+        await manager.dispose()
+      }
+    },
+  )
+
+  it('ignores a previous generation request failure while the new list is loading', async () => {
+    const api = new FakeApiClient()
+    const oldList = deferred<Awaited<ReturnType<FakeApiClient['onList']>>>()
+    const newList = deferred<Awaited<ReturnType<FakeApiClient['onList']>>>()
+    let calls = 0
+    api.onList = () => calls++ === 0 ? oldList.promise : newList.promise
+    const manager = new SessionManager(fakeRemote(api))
+    const oldPull = manager.refreshList()
+    let newPull: Promise<void> | undefined
+    try {
+      manager.handleConnected()
+      newPull = manager.refreshList()
+      oldList.reject(new RemoteError('gateway/internal', 'old Host disconnected', {}))
+      await oldPull
+      expect(manager.getListSnapshot()).toMatchObject({ state: 'loading', error: null })
+      expect(manager.refreshList()).toBe(newPull)
+      newList.resolve(ok({ items: [summary(S1)] as never[] }))
+      await newPull
+      expect(manager.getListSnapshot()).toMatchObject({ state: 'idle', error: null })
+    } finally {
+      oldList.resolve(ok({ items: [] }))
+      newList.resolve(ok({ items: [] }))
+      await Promise.all([oldPull, newPull])
+      await manager.dispose()
+    }
+  })
+
   it('refreshes query baselines without rebuilding independently resumed Session sources', async () => {
     const api = new FakeApiClient()
     api.onHistory = () => Promise.resolve(ok({

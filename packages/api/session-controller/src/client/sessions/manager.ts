@@ -114,7 +114,7 @@ export class SessionManager {
   private listPhase: SessionListPhase = 'pending'
   private listError: RemoteFailure | null = null
   private listInflight: Promise<void> | null = null
-  /** Mutations arriving after a list request starts are replayed over its response. */
+  /** Active list request's mutation log; its identity also fences completion after reconnect. */
   private listMutations: SessionListMutation[] | null = null
   private readonly addresses = new Map<SessionId, SubagentAddress>()
   private readonly catalogs = new Map<SessionId, SubagentCatalogSnapshot>()
@@ -441,7 +441,7 @@ export class SessionManager {
 
   // ---- List API ----
 
-  /** Full refresh via session.list (single-flight: an in-flight call is reused). */
+  /** Full refresh via session.list (single-flight within one Host generation). */
   refreshList(): Promise<void> {
     if (this.listInflight !== null) return this.listInflight
     this.listState = 'loading'
@@ -453,6 +453,7 @@ export class SessionManager {
     this.listInflight = (async () => {
       try {
         const result = await this.remote.session.list({})
+        if (this.listMutations !== mutations) return
         if (result.ok) {
           const baseline: SessionSummary[] = this.listPhase === 'pending'
             ? [...result.value.items]
@@ -502,12 +503,15 @@ export class SessionManager {
         }
       } catch (error) {
         if (!isRemoteFailure(error)) throw error
+        if (this.listMutations !== mutations) return
         this.listState = 'error'
         this.listError = error
       } finally {
-        this.listMutations = null
-        this.listInflight = null
-        this.notifier.markDirty()
+        if (this.listMutations === mutations) {
+          this.listMutations = null
+          this.listInflight = null
+          this.notifier.markDirty()
+        }
       }
     })()
     return this.listInflight
@@ -766,9 +770,14 @@ export class SessionManager {
 
   /**
    * Repair one re-established Host-event generation with queryable baselines.
+   * Discard old projection cuts before new queries, including cold Sessions
+   * absent from the process-local control baseline.
    * Opened Session follow streams resume independently through API Gateway.
    */
   handleConnected(): void {
+    for (const store of this.projectionStores.values()) store.clear()
+    this.listMutations = null
+    this.listInflight = null
     void this.refreshList()
     const selectedAddress = this.selected === undefined ? undefined : this.addresses.get(this.selected)
     if (selectedAddress !== undefined) void this.refreshSubagents(selectedAddress.parentSessionId)

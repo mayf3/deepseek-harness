@@ -68,6 +68,32 @@ describe('Session projection value semantics', () => {
     expect(store.get('other')).toBeUndefined()
   })
 
+  it('clears all generation watermarks without replacing subscribed faces', async () => {
+    const store = new ProjectionValueStore()
+    const face = store.faceOf('test/marks')
+    const observed: unknown[] = []
+    const unsubscribe = face.subscribe(() => { observed.push(face.getSnapshot()) })
+    try {
+      store.apply('test/marks', { marks: ['lost-tail'] }, SessionSeq(20))
+      store.apply('empty-session', 'old generation', -1)
+      const previous = store.values()
+      await Promise.resolve()
+      store.clear()
+      await Promise.resolve()
+
+      expect(face.getSnapshot()).toBeUndefined()
+      expect(store.get('empty-session')).toBeUndefined()
+      expect(store.faceOf('test/marks')).toBe(face)
+      expect(store.values()).toEqual({})
+      expect(store.values()).not.toBe(previous)
+      store.seed({ asOfSeq: SessionSeq(1), values: { 'test/marks': { marks: ['durable'] } } })
+      await Promise.resolve()
+      expect(observed).toEqual([{ marks: ['lost-tail'] }, undefined, { marks: ['durable'] }])
+    } finally {
+      unsubscribe()
+    }
+  })
+
   it('notifies the key face on change (batched) and not on dropped applications', async () => {
     const store = new ProjectionValueStore()
     let keyTicks = 0
