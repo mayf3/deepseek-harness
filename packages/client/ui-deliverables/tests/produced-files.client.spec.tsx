@@ -665,3 +665,16 @@ it('explains a missing desktop and retries failed Host metadata', () => {
   view.rerender(<Deliverables {...props} matched={matched} openFile={() => {}} sessionId={SessionId('session')} t={makeTranslate(en)} />)
   expect(view.getByText(en['presented.unavailable'])).toBeTruthy()
 })
+
+
+it('loads desktop information only when delivery cards appear', () => {
+  const controller = new PresentedOpenController()
+  const props = openProps(controller)
+  controller.host.set(null)
+  props.reloadPresentedHost.mockResolvedValue(undefined)
+  const shared = { ...props, openFile: () => {}, sessionId: SessionId('session'), t: makeTranslate(en) }
+  const view = render(<Deliverables {...shared} matched={{ produced: ['source.ts'], presented: [] }} />)
+  expect(props.reloadPresentedHost).not.toHaveBeenCalled()
+  view.rerender(<Deliverables {...shared} matched={{ produced: [], presented: [{ path: 'report.txt', seq: 2, index: 0 }] }} />)
+  expect(props.reloadPresentedHost).toHaveBeenCalledOnce()
+})

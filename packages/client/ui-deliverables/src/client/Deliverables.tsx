@@ -1,4 +1,5 @@
 /** Existing changed-file chips and explicitly declared files for a closing turn. */
+import { useEffect } from 'react'
 import type { TurnTailOwnerProps } from '@deepseek-ai/dsh-client-ui-chat/client'
 import { Button } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { GlobalStandardProps, InjectFace, PropsLocale, SessionStandardProps } from '@deepseek-ai/dsh-client-ui-slots'
@@ -45,6 +46,9 @@ export function Deliverables({ matched, openFile, t, sessionId, useSessions, ope
   const cwd = useSessions(state => state.byId[sessionId]?.cwd)
   const states = usePresentedOpen(value => value)
   const host = usePresentedHost(value => value)
+  useEffect(() => {
+    if (matched.presented.length > 0 && host === null) void reloadPresentedHost()
+  }, [matched.presented.length, host, reloadPresentedHost])
   return <>
     {matched.produced.length > 0 && <ProducedFiles matched={matched.produced} openFile={openFile} t={t} />}
     {matched.presented.length > 0 && <div className={css.root}>
