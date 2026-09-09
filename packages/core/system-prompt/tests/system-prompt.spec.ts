@@ -579,6 +579,20 @@ describe('SystemPrompt', () => {
       expect(renderPrompt(await ctx.systemPrompt.assemble())).toBe(`${IDENTITY}\n\nYou run on deepseek-v4 in /work.`)
     })
 
+    it.each([false, true])('preserves literal section text with complete=%s', async (complete) => {
+      const ctx = new Context()
+      try {
+        await ctx.plugin(SystemPrompt, { includeHarnessIdentity: false, personaPrefix: '{{model}}' })
+        ctx.systemPrompt.variable('model', () => 'actual-model')
+        const text = '{{item}} {{model}} {{ model }} {{nested{{item}}}}'
+        ctx.systemPrompt.section({ name: 'literal', order: 1, text: () => text, interpolate: false, complete })
+        expect(renderPrompt(await ctx.systemPrompt.assemble()))
+          .toBe(complete ? text : `actual-model\n\n${text}`)
+      } finally {
+        await ctx.fiber.dispose()
+      }
+    })
+
     it('lets a waterfall listener add or override variables before render', async () => {
       const ctx = new Context()
       await ctx.plugin(SystemPrompt)
