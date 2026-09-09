@@ -703,8 +703,6 @@ const FIBER_FAILED = 3 as FiberState.FAILED
 export const REQUIRED_STARTUP_ENTRY_IDS: readonly string[] = Object.freeze([
   'agent-loop',
   'webserver',
-  'modules',
-  'connection',
   'headless-runner',
   'acp',
   'sdk-jsonrpc-server',

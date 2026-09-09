@@ -537,8 +537,6 @@ describe('auditStartupEntries', () => {
     expect(REQUIRED_STARTUP_ENTRY_IDS).toEqual([
       'agent-loop',
       'webserver',
-      'modules',
-      'connection',
       'headless-runner',
       'acp',
       'sdk-jsonrpc-server',
@@ -667,10 +665,10 @@ describe('auditStartupEntries', () => {
 
   it('rejects a required entry pending on an injected service', async () => {
     await expect(auditStartupEntries(ctxWith([{
-      fiber: fiber(0, undefined, { webRuntime: {} }),
-      options: { id: 'connection', name: '@deepseek-ai/dsh-client-connection' },
+      fiber: fiber(0, undefined, { headlessStartup: {} }),
+      options: { id: 'headless-runner', name: '@deepseek-ai/dsh-headless' },
     }]), NAME, vi.fn())).rejects.toThrow(
-      'connection (@deepseek-ai/dsh-client-connection): pending (waiting for service: webRuntime)',
+      'headless-runner (@deepseek-ai/dsh-headless): pending (waiting for service: headlessStartup)',
     )
   })
 })

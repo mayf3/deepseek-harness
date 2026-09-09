@@ -12,7 +12,7 @@ Best-effort Loader reconcile 会保留可用 plugin，但应用仍需一组最�
 
 DSH 在 vendored Cordis 之外持有启动严格语义。App-boot 用一份全局稳定 entry id list 审计已结算的初始 tree。List 中存在、启用且未 active 的 entry 会使启动 reject，并拆卸应用。List 中缺失或禁用的 id 不产生影响。Bootstrap Include 按 entry 身份被视为 required，因为根配置缺失或无效会阻止应用组装。其他 inactive entry 输出一次 warning，并让成功 sibling 继续运行。
 
-Required id 为 `agent-loop`、`webserver`、`modules`、`connection`、`headless-runner`、`acp` 和 `sdk-jsonrpc-server`。它们分别代表共享 Agent 执行，以及随附 Web、headless、ACP 和 SDK 应用的 endpoint。其 injected provider 不需要单列：provider 缺失会让已列出的 endpoint 保持 pending 或失败。
+Required id 为 `agent-loop`、`webserver`、`headless-runner`、`acp` 和 `sdk-jsonrpc-server`。它们分别代表共享 Agent 执行，以及随附 Web、headless、ACP 和 SDK 应用的 endpoint。其 injected provider 不需要单列：provider 缺失会让已列出的 endpoint 保持 pending 或失败。
 
 该审计只在应用首次启动时运行。之后的 config HMR 仍采用 best effort，并保留 failed candidate 供后续修复。
 
