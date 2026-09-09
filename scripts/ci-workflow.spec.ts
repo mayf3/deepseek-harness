@@ -813,7 +813,7 @@ describe('Weighted approval workflow', () => {
     })
     expect(job).toMatchObject({
       if: "github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'",
-      name: 'publish weighted approval status',
+      name: 'weighted approval publisher',
       'runs-on': 'ubuntu-latest',
       'timeout-minutes': 5,
     })
