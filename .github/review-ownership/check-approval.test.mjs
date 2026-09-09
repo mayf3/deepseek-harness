@@ -206,7 +206,7 @@ test('ignores a reviewer whose collaborator permission lookup returns 404', asyn
   assert.deepEqual(result.ignoredReviewers, ['former-writer'])
 })
 
-test('keeps a write-capable change request pending but ignores the author and read-only blockers', async () => {
+test('keeps the status pending on a write-capable change request while ignoring the author and read-only reviewers', async () => {
   const statuses = []
   const result = await runApprovalCheck({
     event: pullRequestEvent({ author: 'author' }),
