@@ -716,7 +716,7 @@ export class MemoryVfs implements Vfs {
         if (!access.writable) fail('EINVAL', 'ftruncate', target)
         this.truncateFile(node, length)
       },
-      chmod: mode => { this.chmodFile(node, mode) },
+      chmod: (mode) => { this.chmodFile(node, mode) },
       stat: () => this.fileStats(node),
       statBigInt: () => this.fileBigIntStats(node),
     }
