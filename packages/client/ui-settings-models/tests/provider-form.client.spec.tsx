@@ -1116,6 +1116,26 @@ describe('hand-declared providers', () => {
     expect(firstProbe(discover)).toMatchObject({ baseURL })
   })
 
+  it('normalizes surrounding whitespace before interrogating and storing a base URL', async () => {
+    const discover = vi.fn(() => Promise.resolve(ok([{ id: 'm' }])))
+    const { mutate, onClose } = mountCard({}, { discover })
+    fireEvent.change(screen.getByLabelText(en.customRoute), { target: { value: 'acme' } })
+    fireEvent.change(screen.getByLabelText(en.baseUrl), {
+      target: { value: '  https://gateway.acme.example/v1  ' },
+    })
+
+    expect(screen.queryByText(en.customBaseUrlInvalid)).toBeNull()
+    fireEvent.click(screen.getByText(en.fetchModels))
+    await waitFor(() => { expect(discover).toHaveBeenCalledTimes(1) })
+    expect(firstProbe(discover)).toMatchObject({ baseURL: 'https://gateway.acme.example/v1' })
+
+    fireEvent.click(await screen.findByText(en.fetchAdopt))
+    await waitFor(() => { expect(buttonNamed(en.create).disabled).toBe(false) })
+    fireEvent.click(screen.getByText(en.create))
+    await waitFor(() => { expect(onClose).toHaveBeenCalledWith(true) })
+    expect(firstMutate(mutate).ops[0]?.value).toMatchObject({ baseURL: 'https://gateway.acme.example/v1' })
+  })
+
   it('keeps a network failure distinct from base URL syntax', async () => {
     const discover = vi.fn(() => Promise.resolve(fail('connection refused', 'gateway/internal')))
     mountCard({}, { discover })
