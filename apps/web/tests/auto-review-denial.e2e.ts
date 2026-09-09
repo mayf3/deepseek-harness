@@ -1,7 +1,7 @@
 // Web e2e scenario: a cold recording renders the structured Auto-review
 // denial without replaying a reviewer or model call.
 // The real persistence reader, shipped Web composition, permission
-// projection, conversation assembler, and generic Tool row all participate.
+// projection, conversation assembler, Tool row, and Trajectory all participate.
 import { readFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import type { Browser, Page } from 'playwright'
@@ -112,7 +112,24 @@ describe.skipIf(MODE === 'record')('web e2e: cold Auto-review denial', () => {
     await captureAutoReviewState(page, 'deny-expanded')
     const expanded = (await captureStableAria(page, '[class*="centerCol"]', scaffold.workspaceCwd))
       .split(SEED_ID).join('{{seededId}}')
-    await compareOrRefreshGolden(UI_EXPECTED, `## Collapsed\n\n${collapsed.trim()}\n\n## Expanded\n\n${expanded.trim()}`, MODE)
+
+    await page.getByRole('tab', { name: 'Trajectory', exact: true }).click()
+    const ledger = page.locator('[data-trajectory-scroll]')
+    await ledger.locator('table[data-scroll-ready="true"]').waitFor({ timeout: 15_000 })
+    const nativeRecord = ledger.locator('tr[data-kind="tool"]').filter({ hasText: 'mystery' })
+    const innerRecord = ledger.locator('tr[data-kind="subtool"]').filter({ hasText: 'bash' })
+    await expect.poll(() => nativeRecord.textContent()).toContain('AUTO_REVIEW_DENIED')
+    await expect.poll(() => innerRecord.textContent()).toContain('AUTO_REVIEW_DENIED')
+    await innerRecord.click()
+    await page.getByRole('tab', { name: 'Result', exact: true }).click()
+    await page.getByRole('tabpanel', { name: 'Result' })
+      .getByText('AutoReviewDeniedError: AUTO_REVIEW_DENIED', { exact: true })
+      .waitFor({ state: 'visible' })
+    await captureAutoReviewState(page, 'deny-trajectory')
+    const trajectory = (await captureStableAria(page, '[class*="centerCol"]', scaffold.workspaceCwd))
+      .split(SEED_ID).join('{{seededId}}')
+    await compareOrRefreshGolden(UI_EXPECTED,
+      `## Collapsed\n\n${collapsed.trim()}\n\n## Expanded\n\n${expanded.trim()}\n\n## Trajectory\n\n${trajectory.trim()}`, MODE)
     expect(tripwire.pageErrors).toEqual([])
     expect(tripwire.warnings).toEqual([])
   }, 60_000)
