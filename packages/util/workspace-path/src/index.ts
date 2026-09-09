@@ -2,7 +2,7 @@
  * Browser-safe Workspace path and display helpers.
  * @module @deepseek-ai/dsh-util-workspace-path
  */
-import { absoluteFileAddress, sessionFileAddress } from './file-address.ts'
+import { sessionFileAddress } from './file-address.ts'
 
 /** Whether a path uses a Windows drive or UNC prefix. */
 function isWindowsStylePath(value: string): boolean {
@@ -66,8 +66,8 @@ export * from './file-address.ts'
 /**
  * The address for a path as a caller holds it: a relative path, or an absolute
  * path inside the Session's workspace, becomes a `session`-scoped address; an
- * absolute path outside it, or one whose workspace root is unknown, becomes an
- * `absolute`-scoped address.
+ * absolute path outside it, or one whose workspace root is unknown, keeps its
+ * absolute path in that Session's address.
  * @param sessionId - the Session the path is read in.
  * @param cwd - that Session's workspace root, when known.
  * @param path - absolute or workspace-relative path, in either separator spelling.
@@ -79,5 +79,5 @@ export function fileAddressFor(sessionId: string, cwd: string | undefined, path:
   const root = cwd === undefined ? '' : cwd.replace(/\\/g, '/').replace(/\/+$/, '')
   if (root !== '' && normalized === root) return sessionFileAddress(sessionId, '')
   if (root !== '' && normalized.startsWith(`${root}/`)) return sessionFileAddress(sessionId, normalized.slice(root.length + 1))
-  return absoluteFileAddress(normalized)
+  return sessionFileAddress(sessionId, normalized)
 }

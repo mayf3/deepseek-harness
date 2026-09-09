@@ -1,4 +1,5 @@
 - text: {{cwd}}/a.txt
+- button "Open with": Plain text
 - button "Wrap lines" [pressed]:
   - img
 - button "Read the file again":

@@ -37,7 +37,7 @@ kind: "package-reference"
 - `planSettle` 是可选加入的规则，保证意图之后每个停靠格都有内容：被意图清空的格会被并掉，被清空的根格通过嵌入方的工厂重新播种。想要空格的嵌入方只需不调用它。
 - `DockController` 是意图层，也是一个可观察源（`subscribe` + `getSnapshot`，其引用只在布局变化时才变）。
 
-**组件**渲染布局快照并上报已落定的意图——每次手势一条，绝不上报拖动帧。拖动过程中在本地状态里预览，手势自身的事实留在它的闭包里；松手时净结果通过一次 `DockIntents` 调用离开——在标签条上松手上报的是按绘制顺序数出的插入槽位（被拖的 chip 也计入），由 `planPlaceTab` 换算成重排或移动。正是这一点让嵌入方能为每次手势记录恰好一条历史。标签条遵循 WAI-ARIA tabs 模式的手动激活：选中的 chip 在 Tab 键序里；左右方向键（循环）、Home、End 只在 chip 之间移动焦点而不选中；Enter 或空格选中当前聚焦的 chip，走与点击相同的意图。chip 是一个胶囊，携带唯一的控件——它的关闭按钮；上下文菜单（在 chip 上的次键按下）携带同样的关闭项加上嵌入方的条目，并渲染在按 chip 定位的 portal 里，因为 chip 盒会故意裁掉溢出（见下文）。chip 之后是添加控件，它请嵌入方（`DockIntents.addTab`）安放其种子 tab；嵌入方的 `canAddTab(paneId)` 按格决定是否绘制该控件。复制 tab 没有套件控件——那是嵌入方的 API——而浮出就是把拖动松手在停靠区之外。
+**组件**渲染布局快照并上报已落定的意图——每次手势一条，绝不上报拖动帧。拖动过程中在本地状态里预览，手势自身的事实留在它的闭包里；松手时净结果通过一次 `DockIntents` 调用离开——在标签条上松手上报的是按绘制顺序数出的插入槽位（被拖的 chip 也计入），由 `planPlaceTab` 换算成重排或移动。正是这一点让嵌入方能为每次手势记录恰好一条历史。标签条遵循 WAI-ARIA tabs 模式的手动激活：选中的 chip 在 Tab 键序里；左右方向键（循环）、Home、End 只在 chip 之间移动焦点而不选中；Enter 或空格选中当前聚焦的 chip，走与点击相同的意图。可选的 `canCloseTab(tabId)` 隐藏 chip、菜单和浮窗的关闭控件；嵌入方在意图处理器中执行关闭限制。chip 是一个胶囊，在允许关闭时携带关闭按钮；上下文菜单（在 chip 上的次键按下）携带同样的关闭项加上嵌入方的条目，并渲染在按 chip 定位的 portal 里，因为 chip 盒会故意裁掉溢出（见下文）。chip 之后是添加控件，它请嵌入方（`DockIntents.addTab`）安放其种子 tab；嵌入方的 `canAddTab(paneId)` 按格决定是否绘制该控件。复制 tab 没有套件控件——那是嵌入方的 API——而浮出就是把拖动松手在停靠区之外。
 
 <a id="embedding-it"></a>
 ## 如何嵌入
@@ -73,6 +73,8 @@ tab 的 `kind` 是不透明字符串。种子 tab 是工厂（`DockControllerOpt
 
 <a id="build-shape"></a>
 ## 构建形态
+
+静态 ESM 为 Web 壳的 Vite 构建保留第三方导入；独立消费方自行提供开发依赖（[依赖规则](../AGENTS.md#dependency-declaration)）。
 
 本包静态链接：tsdown 的 `staticLinked` 预设在 `lib/index.js` 产出一个浏览器 ESM bundle（所有裸说明符保持为 import，sourcemap 链回源码），并把样式表按其相对 `src` 的路径放到 `lib/` 下；Web 外壳按包名解析并自行打包该产物，因此 vite 仍是 class 哈希的唯一拥有者。有一个后果是承重的——套件只保留**一张**样式表 `dockkit.module.css`，因为消费方按文件名去重注入的样式表，撞名会静默丢掉一张。
 

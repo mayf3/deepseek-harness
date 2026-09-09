@@ -33,8 +33,7 @@ import { createPortal } from 'react-dom'
 import type {
   HostObservable, InjectFace, PropsLocale, PropsRenderSlots, PropsRuntime, PropsStore,
 } from '@deepseek-ai/dsh-client-ui-slots'
-// The frame declares the `rightbar` seat this component fills.
-import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
+import type {} from '../contract/slots.ts'
 import type { DockIntents, DockMode, FloatRect, TabId, TabRecord, TabRenderer } from '@deepseek-ai/dsh-client-ui-dockkit'
 import { canSplit, dockPaneIds, DockSurface, findPaneContentTab, FloatLayer } from '@deepseek-ai/dsh-client-ui-dockkit'
 import type { HalvesFit, LayoutState, PaneId } from '@deepseek-ai/dsh-client-ui-dockkit'
@@ -44,6 +43,7 @@ import { dockLabels } from '../labels.ts'
 import type { SidebarRightOpenTabOptions } from '../service.ts'
 import type { SidebarRightTabDefinition } from '../tab-registry.ts'
 import type { createSidebarRightStore, SurfaceState } from '../stores.ts'
+import { canCloseTab } from '../stores.ts'
 import type { TabOccurrence } from '../tab-domain.ts'
 import type { SidebarRightTabNavigation } from '../contract/slots.ts'
 import type { TabHookContext } from '../tab-info.ts'
@@ -108,7 +108,7 @@ export interface SidebarRightInjected {
 
 /** The column seat's props: session scope, so the session arrives as a standard prop. */
 export type RightbarSeatProps =
-  & PropsRuntime<'rightbar'>
+  & PropsRuntime<'rightbar.session'>
   & Children
   & Store
   & PropsLocale<'sidebarRight'>
@@ -307,6 +307,7 @@ function SidebarPanel(panel: PanelProps & { width: number; panelRef: RefObject<H
           dropZones="horizontal"
           minPaneFraction={0.2}
           canAddTab={paneId => guideIn(surface.layout, paneId) === undefined}
+          canCloseTab={tabId => canCloseTab(surface, tabId)}
           intents={intentsFor(sessionId, actions, openTab)}
           labels={dockLabels(t)}
           renderTab={bodiesFor(panel)}
@@ -329,6 +330,7 @@ function Floats(panel: PanelProps): ReactNode {
     <div className={css.floatHost} data-sidebar-right-float-host>
       <FloatLayer
         state={surface.layout}
+        canCloseTab={tabId => canCloseTab(surface, tabId)}
         intents={intentsFor(sessionId, actions, openTab)}
         labels={dockLabels(t)}
         renderTab={bodiesFor(panel)}

@@ -48,7 +48,7 @@ export type TabRenderer = (tab: TabRecord) => ReactNode
  * because the menu closes on its own items only.
  * @param tab - the tab whose menu is open.
  * @param dismiss - close the menu without acting.
- * @returns the extra items, or nothing.
+ * @returns extra actions with ARIA menuitem, menuitemcheckbox, or menuitemradio roles, or nothing.
  */
 export type TabMenuExtras = (tab: TabRecord, dismiss: () => void) => ReactNode
 
