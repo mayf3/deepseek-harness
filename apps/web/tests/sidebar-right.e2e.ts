@@ -265,9 +265,9 @@ describe('web e2e: shipped right Sidebar', () => {
       // real because the preview reads it through the workspace endpoint.
       //
       // It goes in the SESSION's cwd, not the scaffold's: the endpoint resolves
-      // relative paths against `sandboxPolicy.resolve({session}).workspaceRoot`,
-      // which is the session header's cwd. Writing anywhere else makes the read
-      // fail with workspace-file/not-found, which is the endpoint being right.
+      // relative paths against the header-derived workspace root. Writing
+      // anywhere else makes the read fail with workspace-file/not-found, which
+      // is the endpoint being right.
       writeFileSync(join(agent.session.header.cwd ?? scaffold.workspaceCwd, SAMPLE_NAME), SAMPLE_TEXT, 'utf8')
       agent.session.append('tool/call', {
         turn: 1,
@@ -662,18 +662,27 @@ describe('web e2e: shipped right Sidebar', () => {
     it('CONTROL: the host endpoint answers when called directly, bypassing the wire', async () => {
       const files = (scaffold.ctx as unknown as {
         get(name: string): {
-          read(agent: unknown, path: string, range: object, signal: AbortSignal): Promise<{ text: string; eof: boolean }>
+          read(
+            scope: { sessionId: string; workspaceRoot: string },
+            path: string,
+            range: object,
+            signal: AbortSignal,
+          ): Promise<{ text: string; eof: boolean }>
         } | undefined
       }).get('workspaceFiles')
       if (files === undefined) throw new Error('host endpoint is not provided')
       const agent = scaffold.ctx.agents.list()[0]
       if (agent === undefined) throw new Error('no Agent to read for')
+      const scope = {
+        sessionId: agent.session.id,
+        workspaceRoot: agent.session.header.cwd ?? scaffold.workspaceCwd,
+      }
 
       // Raced against a timer so a hang reports a verdict instead of stalling
       // the suite: this case exists to tell host logic apart from the wire.
       // A page is the file's lines joined by `\n`, without the final terminator.
       const verdict = await Promise.race([
-        files.read(agent, SAMPLE_NAME, {}, new AbortController().signal)
+        files.read(scope, SAMPLE_NAME, {}, new AbortController().signal)
           .then(value => ({ kind: 'settled' as const, text: value.text, eof: value.eof }))
           .catch((error: unknown) => ({ kind: 'threw' as const, text: String(error), eof: false })),
         new Promise<{ kind: 'hung'; text: string; eof: boolean }>((resolve) => {

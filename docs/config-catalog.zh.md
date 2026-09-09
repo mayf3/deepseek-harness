@@ -235,7 +235,7 @@ export interface Config {
 
 ## `@deepseek-ai/dsh-api-workspace-files`
 
-Requires: `fs` · `sandboxPolicy` · `typert`
+Requires: `fs` · `sandboxPolicy` · `sessions` · `typert`
 
 ```ts config-catalog
 /** Deployment caps on one page or one listing. */
@@ -257,7 +257,7 @@ export interface Config {
 }
 ```
 
-来源：[`packages/api/workspace-files/src/index.ts:50`](../packages/api/workspace-files/src/index.ts)
+来源：[`packages/api/workspace-files/src/index.ts:69`](../packages/api/workspace-files/src/index.ts)
 
 <a id="deepseek-aidsh-attachment-local"></a>
 
