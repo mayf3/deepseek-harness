@@ -18,6 +18,8 @@ The tool remains an ordinary package with shared filesystem and tool error class
 
 An authenticated POST selects a declaration by viewed Session, event sequence, and original file index. The event carries no owning Session ID; relative paths in inherited history resolve against the viewed Session's workspace. The Host rechecks canonical workspace containment and regular-file existence before native opening. Route disposal cancels and awaits pending commands. The “Files changed” row lists successful file-tool mutations and retains its separate text-preview behavior. Its Chinese label is “本轮文件改动”; neither label implies final delivery.
 
+File cards separate default-app opening from file-manager navigation. The Host selects the file in Finder or Explorer, or opens its containing folder through the default Linux file manager. Both actions resolve the same saved declaration and recheck workspace containment; neither accepts a browser-supplied replacement path. Host-derived desktop metadata keeps remote-browser labels and availability honest, and the route enforces the configured availability on each gesture. A split button preserves one-click default-app opening while keeping the folder action explicit.
+
 ## Alternatives considered
 
 **Immutable attachment snapshots and editable temporary copies** preserve delivered versions after source edits or deletion, but make desktop edits diverge from workspace files and introduce retention work without a current product requirement. This decision supersedes the [snapshot-delivery design](../../archived/feature/2026-09-08-web-explicit-file-delivery.md). Neither a download endpoint nor a fallback copy remains; both require an explicit future product decision.

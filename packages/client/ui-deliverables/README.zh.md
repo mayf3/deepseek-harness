@@ -30,9 +30,9 @@ kind: "package-reference"
 <a id="explicit-deliveries"></a>
 ### 显式交付
 
-Web 的 `standard`、`ptc` 与 `cordis` preset 提供 `present` 用于声明交付最终工作区文件，包括通过 Bash 创建的文件。创建文件后，以 `files: [{ path, description? }]` 调用。[present 工具](../../fs/tool-present/README.zh.md)拥有文件数量限制和 Session 声明。收尾 turn 显示响应式卡片，包含文件名称、类型、说明和在 Host 默认应用中打开源文件的按钮。匹配的行内代码引用打开相同源文件，不触发浏览器下载。同一路径重复声明时，选择收尾回复之前最近一次的说明。
+Web 的 `standard`、`ptc` 与 `cordis` preset 提供 `present` 用于声明交付最终工作区文件，包括通过 Bash 创建的文件。创建文件后，以 `files: [{ path, description? }]` 调用。[present 工具](../../fs/tool-present/README.zh.md)拥有文件数量限制和 Session 声明。收尾 turn 显示响应式卡片，包含文件名称、类型、说明、工作区路径和分段“打开”按钮。主按钮在 Host 默认应用中打开源文件；菜单在 macOS 上提供“在 Finder 中显示”，在 Windows 和 WSL 上提供“在文件资源管理器中显示”，在 Linux 上通过默认文件管理器“打开所在文件夹”。菜单显示实际提供服务的 Host 名称，不依赖浏览器的操作系统。匹配的行内代码引用打开相同源文件，不触发浏览器下载。同一路径重复声明时，选择收尾回复之前最近一次的说明。
 
-`present` 工具行显示正在交付、已交付、失败或中断状态；展开已结束的调用可查看其记录的结果。文件卡片展示全部交付文件。打开时，卡片显示进度、成功确认或可重试的错误。服务 Host 必须具备桌面和合适的默认应用；远程浏览器不会打开其所在设备上的应用。
+`present` 工具行显示正在交付、已交付、失败或中断状态；展开已结束的调用可查看其记录的结果。文件卡片展示全部交付文件。两个操作共享等待状态，并显示进度、请求确认或各自可重试的错误。Host 没有桌面时禁用两个操作；桌面信息读取失败时提供“重试”。服务 Host 必须具备桌面和合适的默认应用；远程浏览器不会打开其所在设备上的应用。
 
 ### 该行
 
@@ -52,7 +52,7 @@ Web 的 `standard`、`ptc` 与 `cordis` preset 提供 `present` 用于声明交�
 
 Node 半部注册静态 `ui:deliverable-file-references` 系统提示词段，要求模型点名成功创建或修改的主要文件，并把这些文件以及正文中提到的其他本轮变更文件写成 Markdown 行内代码。浏览器半部把组合 `ProducedFiles` 与显式交付的包装组件注册进 chat 视图的 `conversation.chat.turnTail` 洞。`deliverablesDefinition` 根据 `write`、`edit` 和有修改作用的 `str_replace_editor` 命令中经过校验的原始参数，把每个轮次成功的第一方修改调用折叠进 `DeliverablesTurnData`。读取、删除、不受支持的工具、格式错误的调用和失败结果不贡献任何条目。新的修改工具必须增加显式 Client contribution 才能加入列表。本包还提供 chat 视图按收尾消息查询的 `chatFileMentions` 服务；把插件组合出去会同时移除两个表面，视图的空链以零成本留下。
 
-原生打开使用经过认证的 POST，通过当前查看的 Session、事件序号和原始文件索引定位声明。Host 按该 Session 的工作区解析路径，检查当前文件存在且位于工作区内，再启动默认应用。编辑会影响后续打开的内容；删除后返回错误。不创建文件内容副本或附件。插件释放时取消并等待进行中的原生打开请求。
+原生打开使用经过认证的 POST，通过当前查看的 Session、事件序号和原始文件索引定位声明。Host 按该 Session 的工作区解析路径，检查当前文件存在且位于工作区内，再启动所选原生操作。同一份桌面可用性配置同时约束信息查询和实际执行。编辑会影响后续打开的内容；删除后返回错误。不创建文件内容副本或附件。插件释放时取消并等待进行中的原生打开请求。
 
 </details>
 

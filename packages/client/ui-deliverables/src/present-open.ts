@@ -6,13 +6,18 @@ import type {} from '@deepseek-ai/dsh-api-session-controller'
 import type {} from '@deepseek-ai/dsh-client-connection'
 import type {} from '@deepseek-ai/dsh-session-query'
 import type { SessionId, SessionSeq } from '@deepseek-ai/dsh-session'
-import { isPresentedData, isPresentedFile, PRESENT_OPEN_PATH } from './presented.ts'
+import { isPresentedData, isPresentedFile, PRESENT_OPEN_PATH, PRESENT_HOST_PATH, type PresentedHost } from './presented.ts'
 
 /**
  * Register native opening inside Connection's authentication fence.
  * @param ctx - Session lookup, native opener, and route lifetime.
  */
 export function registerPresentOpen(ctx: Context): void {
+  ctx.connection.fetch.register({
+    path: PRESENT_HOST_PATH, methods: ['GET'], requestBody: 'buffered',
+    fetch: () => Promise.resolve(Response.json(ctx.sessionController.workspaceDesktop() satisfies PresentedHost,
+      { headers: { 'cache-control': 'no-store' } })),
+  })
   const lifetime = new AbortController()
   const pending = new Set<Promise<Response>>()
   ctx.effect(() => async () => {
@@ -36,6 +41,8 @@ export function registerPresentOpen(ctx: Context): void {
 
 async function handlePresentOpen(ctx: Context, request: Request): Promise<Response> {
   const query = new URL(request.url).searchParams
+  const action = query.get('action') ?? 'open'
+  if (action !== 'open' && action !== 'reveal') return new Response('Invalid file action.', { status: 400 })
   const id = query.get('sessionId')
   const seq = query.get('seq')
   const index = query.get('index')
@@ -45,6 +52,7 @@ async function handlePresentOpen(ctx: Context, request: Request): Promise<Respon
   }
   try {
     request.signal.throwIfAborted()
+    if (!ctx.sessionController.workspaceDesktop().available) return new Response('Host desktop unavailable.', { status: 409 })
     const { session, target } = await ctx.sessionQuery.readEvent({
       sessionId: id as SessionId, seq: Number(seq) as SessionSeq, before: 0, after: 0,
     }, request.signal)
@@ -59,7 +67,7 @@ async function handlePresentOpen(ctx: Context, request: Request): Promise<Respon
     }
     if (!(await stat(path)).isFile()) return new Response('Presented path is not a file.', { status: 404 })
     request.signal.throwIfAborted()
-    await ctx.sessionController.openWorkspacePath({ path }, request.signal)
+    await ctx.sessionController.openWorkspacePath({ path, ...(action === 'reveal' ? { action } : {}) }, request.signal)
     return new Response(null, { status: 204, headers: { 'cache-control': 'no-store' } })
   } catch (error: unknown) {
     request.signal.throwIfAborted()

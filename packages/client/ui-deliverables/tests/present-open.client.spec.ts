@@ -61,3 +61,58 @@ it('awaits cancellation and prevents late state publication or new requests afte
   await controller.open(id, 2, 1)
   expect(fetcher).toHaveBeenCalledOnce()
 })
+
+
+it('shares pending state across open and reveal and retries the selected action', async () => {
+  const reply = Promise.withResolvers<Response>()
+  const fetcher = vi.fn().mockReturnValueOnce(reply.promise).mockResolvedValue(new Response(null, { status: 204 }))
+  vi.stubGlobal('fetch', fetcher)
+  const controller = new PresentedOpenController()
+  const revealing = controller.open(id, 2, 1, 'reveal')
+  await controller.open(id, 2, 1)
+  expect(controller.state.getSnapshot()[url]).toBe('revealing')
+  expect(fetcher).toHaveBeenCalledOnce()
+  expect(fetcher.mock.calls[0]?.[0]).toBe(`${url}&action=reveal`)
+  reply.resolve(new Response(null, { status: 500 }))
+  await revealing
+  expect(controller.state.getSnapshot()[url]).toBe('revealError')
+  await controller.open(id, 2, 1, 'reveal')
+  expect(controller.state.getSnapshot()[url]).toBe('revealed')
+  await controller.dispose()
+})
+
+it.each([null, {}, { name: 'host', available: 'yes', fileManager: 'finder' },
+  { name: 'host', available: true, fileManager: 'unknown' }, 'invalid json', 'http', 'network',
+])('makes invalid Host metadata retryable: %j', async (value) => {
+  const host = { name: 'linux-host', available: true, fileManager: 'directory' }
+  const fetcher = vi.fn()
+  if (value === 'network') fetcher.mockRejectedValueOnce(new Error('offline'))
+  else if (value === 'http') fetcher.mockResolvedValueOnce(new Response(null, { status: 500 }))
+  else if (value === 'invalid json') fetcher.mockResolvedValueOnce(new Response('bad JSON'))
+  else fetcher.mockResolvedValueOnce(Response.json(value))
+  fetcher.mockResolvedValueOnce(Response.json(host))
+  vi.stubGlobal('fetch', fetcher)
+  const controller = new PresentedOpenController()
+  await controller.loadHost()
+  expect(controller.host.getSnapshot()).toBe('error')
+  await controller.loadHost()
+  expect(controller.host.getSnapshot()).toEqual(host)
+  await controller.dispose()
+  await controller.loadHost()
+  expect(fetcher).toHaveBeenCalledTimes(2)
+})
+
+it('coalesces metadata reads and suppresses their publication after disposal', async () => {
+  const reply = Promise.withResolvers<Response>()
+  const fetcher = vi.fn().mockReturnValue(reply.promise)
+  vi.stubGlobal('fetch', fetcher)
+  const controller = new PresentedOpenController()
+  const first = controller.loadHost()
+  const second = controller.loadHost()
+  expect(fetcher).toHaveBeenCalledOnce()
+  const disposal = controller.dispose()
+  expect((fetcher.mock.calls[0]?.[1] as RequestInit).signal?.aborted).toBe(true)
+  reply.resolve(Response.json({ name: 'host', available: false, fileManager: null }))
+  await Promise.all([first, second, disposal])
+  expect(controller.host.getSnapshot()).toBeNull()
+})

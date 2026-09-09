@@ -1,20 +1,25 @@
 /** Existing changed-file chips and explicitly declared files for a closing turn. */
 import type { TurnTailOwnerProps } from '@deepseek-ai/dsh-client-ui-chat/client'
-import { LinkIcon, classifyLinkPath, IconRightUpOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Button } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace, PropsLocale, SessionStandardProps } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ObservableSnapshot } from '@deepseek-ai/dsh-client-store'
 import type { PresentedOpenController } from './present-open.ts'
 import { ProducedFiles } from './ProducedFiles.tsx'
-import { basename, presentedForClosing, selectProducedFiles, type PresentedPath } from './turn-deliverables.ts'
+import { presentedForClosing, selectProducedFiles, type PresentedPath } from './turn-deliverables.ts'
 import type { NS } from './locales.ts'
 import { presentedFileUrl } from '../presented.ts'
+import { PresentedFileCard } from './PresentedFileCard.tsx'
 import css from './Deliverables.module.css'
 
 interface DeliverablesMatch { produced: readonly string[]; presented: readonly PresentedPath[] }
 
 /** Native-open callbacks and shared gesture status supplied by the plugin. */
 export interface DeliverablesInjected {
-  hooks: { presentedOpen: ObservableSnapshot<ReturnType<PresentedOpenController['state']['getSnapshot']>> }
+  hooks: {
+    presentedOpen: ObservableSnapshot<ReturnType<PresentedOpenController['state']['getSnapshot']>>
+    presentedHost: ObservableSnapshot<ReturnType<PresentedOpenController['host']['getSnapshot']>>
+  }
+  reloadPresentedHost: PresentedOpenController['loadHost']
   openPresented: PresentedOpenController['open']
 }
 
@@ -34,30 +39,28 @@ export function selectDeliverables(owner: TurnTailOwnerProps): DeliverablesMatch
  * @param props - matched files, workspace opener, and localized copy.
  * @returns the closing turn's file rows.
  */
-export function Deliverables({ matched, openFile, t, sessionId, openPresented, usePresentedOpen }: Pick<TurnTailOwnerProps, 'openFile'> & {
+export function Deliverables({ matched, openFile, t, sessionId, openPresented, usePresentedOpen, usePresentedHost, reloadPresentedHost }: Pick<TurnTailOwnerProps, 'openFile'> & {
   matched: DeliverablesMatch
 } & PropsLocale<typeof NS> & Pick<SessionStandardProps, 'sessionId'> & InjectFace<DeliverablesInjected>) {
   const states = usePresentedOpen(value => value)
+  const host = usePresentedHost(value => value)
   return <>
     {matched.produced.length > 0 && <ProducedFiles matched={matched.produced} openFile={openFile} t={t} />}
     {matched.presented.length > 0 && <div className={css.root}>
-      <span className={css.label}>{t('presented.label')}</span>
+      <div className={css.label}>
+        <span>{t('presented.label')}</span>
+        {host !== null && host !== 'error' && <span>{t('presented.target')}</span>}
+      </div>
+      {host === 'error' && <div className={css.hostStatus}>
+        <span>{t('presented.hostError')}</span>
+        <Button size="sm" onClick={() => { void reloadPresentedHost() }}>{t('presented.retry')}</Button>
+      </div>}
+      {host !== null && host !== 'error' && !host.available && <span className={css.hostStatus}>{t('presented.unavailable')}</span>}
       <div className={css.presented} data-presented-files-row>
-        {matched.presented.map((file) => {
-          const phase = states[presentedFileUrl(sessionId, file.seq, file.index)]
-          return <button key={file.path} type="button" className={css.file}
-            disabled={phase === 'opening'}
-            onClick={() => { void openPresented(sessionId, file.seq, file.index) }}
-            title={t('presented.open', { name: file.path })} aria-label={t('presented.open', { name: file.path })}>
-            <LinkIcon kind={classifyLinkPath(file.path)} className={css.fileIcon} />
-            <span className={css.details}>
-              <span className={css.fileName}>{basename(file.path)}</span>
-              <span className={css.metadata}>{basename(file.path).match(/\.([^.]+)$/)?.[1]?.toUpperCase() ?? t('presented.file')}</span>
-              {file.description && <span className={css.description}>{file.description}</span>}
-              {phase !== undefined && <span className={css.description} role="status">{t(`presented.${phase}`)}</span>}
-            </span>
-            <span className={css.open}><IconRightUpOutline16 /><span>{t('presented.action')}</span></span>
-          </button>})}
+        {matched.presented.map(file => <PresentedFileCard key={file.path} file={file}
+          phase={states[presentedFileUrl(sessionId, file.seq, file.index)]}
+          host={host === 'error' ? null : host} t={t}
+          onAction={(action) => { void openPresented(sessionId, file.seq, file.index, action) }} />)}
       </div>
     </div>}
   </>

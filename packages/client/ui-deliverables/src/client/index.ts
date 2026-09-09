@@ -41,6 +41,7 @@ export const inject = ['slots', 'locale', 'uiConversation', 'remote', 'remote.se
 export function apply(ctx: ClientContext): void {
   const opener = new PresentedOpenController()
   ctx.effect(() => () => opener.dispose())
+  void opener.loadHost()
   ctx.uiConversation.events.register(deliverablesDefinition)
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-deliverables: dictionaries')
   ctx.slots.inject(
@@ -50,8 +51,9 @@ export function apply(ctx: ClientContext): void {
       select: selectDeliverables,
       locale: NS,
       inject: (): DeliverablesInjected => ({
-        hooks: { presentedOpen: opener.state },
-        openPresented: (sessionId, seq, index) => opener.open(sessionId, seq, index),
+        hooks: { presentedOpen: opener.state, presentedHost: opener.host },
+        reloadPresentedHost: () => opener.loadHost(),
+        openPresented: (sessionId, seq, index, action) => opener.open(sessionId, seq, index, action),
       }),
     }, Deliverables),
   )

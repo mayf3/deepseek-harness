@@ -35,7 +35,7 @@ describe.skipIf(process.platform === 'win32' || release().toLowerCase().includes
   const events: SessionEvent[] = []
   let nativeRoot: string | undefined
   let openLog: string
-  const opened = async (): Promise<Array<{ path: string; content: string }>> => (await readFile(openLog, 'utf8')).split('\n').filter(Boolean).map(line => JSON.parse(line) as { path: string; content: string })
+  const opened = async (): Promise<Array<{ path: string; content: string | null; action: 'open' | 'reveal' }>> => (await readFile(openLog, 'utf8')).split('\n').filter(Boolean).map(line => JSON.parse(line) as { path: string; content: string | null; action: 'open' | 'reveal' })
   const downloads: string[] = []
 
   beforeAll(async () => {
@@ -46,11 +46,14 @@ describe.skipIf(process.platform === 'win32' || release().toLowerCase().includes
     const command = process.platform === 'darwin' ? 'open' : 'xdg-open'
     await writeFile(join(nativeRoot, command), `#!${process.execPath}
 const fs = require('node:fs');
-fs.appendFileSync(${JSON.stringify(openLog)}, JSON.stringify({ path: process.argv[2], content: fs.readFileSync(process.argv[2], 'utf8') }) + '\\n');
+const path = process.argv[2] === '-R' ? process.argv[3] : process.argv[2];
+const action = process.argv[2] === '-R' || fs.statSync(path).isDirectory() ? 'reveal' : 'open';
+fs.appendFileSync(${JSON.stringify(openLog)}, JSON.stringify({ path, action, content: action === 'open' ? fs.readFileSync(path, 'utf8') : null }) + '\\n');
 `, { mode: 0o700 })
     vi.stubEnv('PATH', `${nativeRoot}${delimiter}${process.env.PATH ?? ''}`)
     await mkdir(DIR, { recursive: true })
     scaffold = await launchWebScaffold({
+      extraOverlayPath: fileURLToPath(new URL('./present.overlay.yml', import.meta.url)),
       agentPresets: { roots: [], default: 'ptc' }, compareReplaySession: true,
       ...(MODE === 'record' ? {} : { replayFixture: FIXTURE }),
     })
@@ -118,7 +121,14 @@ fs.appendFileSync(${JSON.stringify(openLog)}, JSON.stringify({ path: process.arg
       }
       const row = page.locator('[data-presented-files-row]')
       await row.waitFor()
-      expect(await row.getByRole('button').count()).toBe(2)
+      expect(await row.getByRole('button').count()).toBe(4)
+      const beforeReveal = (await opened()).length
+      await row.getByRole('button', { name: 'More file actions for report.txt', exact: true }).click()
+      const revealResponse = page.waitForResponse(response => response.url().includes('action=reveal') && response.request().method() === 'POST')
+      await page.getByRole('menuitem', { name: process.platform === 'darwin' ? /Show in Finder/ : /Open containing folder/ }).click()
+      expect((await revealResponse).status()).toBe(204)
+      await expect.poll(opened).toHaveLength(beforeReveal + 1)
+      expect((await opened()).at(-1)).toEqual({ action: 'reveal', content: null, path: await realpath(process.platform === 'darwin' ? join(cwd, 'report.txt') : cwd) })
       for (const [name, bytes] of [['report.txt', 'EDITED_REPORT\n'], ['说明.txt', 'EDITED_NOTE\n']] as const) {
         const count = (await opened()).length
         const response = page.waitForResponse(response => response.url().includes('/api/present.open?') && response.request().method() === 'POST')
@@ -126,7 +136,7 @@ fs.appendFileSync(${JSON.stringify(openLog)}, JSON.stringify({ path: process.arg
         expect((await response).status()).toBe(204)
         await page.waitForFunction(() => document.querySelector('[data-presented-files-row] button:disabled') === null)
         expect(await opened()).toHaveLength(count + 1)
-        expect((await opened()).at(-1)).toEqual({ path: await realpath(join(cwd, name)), content: bytes })
+        expect((await opened()).at(-1)).toEqual({ action: 'open', path: await realpath(join(cwd, name)), content: bytes })
       }
     }
     const count = (await opened()).length
@@ -135,7 +145,7 @@ fs.appendFileSync(${JSON.stringify(openLog)}, JSON.stringify({ path: process.arg
     await page.waitForFunction(() => document.querySelector('[data-presented-files-row] button:disabled') === null)
     expect((await openedResponse).status()).toBe(204)
     expect(await opened()).toHaveLength(count + 1)
-    expect((await opened()).at(-1)).toEqual({ path: await realpath(join(cwd, 'report.txt')), content: 'EDITED_REPORT\n' })
+    expect((await opened()).at(-1)).toEqual({ action: 'open', path: await realpath(join(cwd, 'report.txt')), content: 'EDITED_REPORT\n' })
     expect(downloads).toEqual([])
     const response = await page.request.get(new URL(`/api/session.export?sessionId=${sessionId}`, scaffold.authenticatedUrl).href)
     expect(response.status()).toBe(200)

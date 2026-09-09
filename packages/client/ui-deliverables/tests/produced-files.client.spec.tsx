@@ -34,7 +34,11 @@ import { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { SessionEvent } from '@deepseek-ai/dsh-session/types'
 
 function openProps(controller = new PresentedOpenController()) {
+  controller.host.set({ name: 'desktop', available: true, fileManager: 'finder' })
   return {
+    reloadPresentedHost: vi.fn(() => controller.loadHost()),
+    usePresentedHost: <T,>(select: (state: ReturnType<typeof controller.host.getSnapshot>) => T): T =>
+      select(controller.host.getSnapshot()),
     openPresented: vi.fn((...args: Parameters<PresentedOpenController['open']>) => controller.open(...args)),
     usePresentedOpen: <T,>(select: (state: ReturnType<typeof controller.state.getSnapshot>) => T): T =>
       select(controller.state.getSnapshot()),
@@ -549,6 +553,7 @@ describe('plugin registration', () => {
     service?.forClosing(delivered, SessionId('child-session'))?.resolve('report.docx')?.open()
     expect(fetcher).toHaveBeenCalledWith('/api/present.open?sessionId=child-session&seq=2&index=0', { method: 'POST', signal: expect.any(AbortSignal) as AbortSignal })
     const face = entry!.inject!(SessionId('child-session') as never) as unknown as DeliverablesInjected
+    await face.reloadPresentedHost()
     await face.openPresented(SessionId('child-session'), 2, 0)
     expect(face.hooks.presentedOpen.getSnapshot()['/api/present.open?sessionId=child-session&seq=2&index=0']).toBe('opened')
     // A turn that produced nothing yields no vocabulary at all.
@@ -591,10 +596,10 @@ describe('presented files', () => {
     const props = openProps()
     props.openPresented.mockResolvedValue(undefined)
     const view = render(<Deliverables {...props} matched={matched} openFile={owner.openFile} sessionId={SessionId('child-session')} t={makeTranslate(en)} />)
-    expect(view.getAllByRole('button')).toHaveLength(8)
+    expect(view.getAllByRole('button')).toHaveLength(16)
     expect(view.queryByRole('link')).toBeNull()
     fireEvent.click(view.getByRole('button', { name: 'Open report-0.docx in default app' }))
-    expect(props.openPresented).toHaveBeenCalledWith('child-session', 2, 0)
+    expect(props.openPresented).toHaveBeenCalledWith('child-session', 2, 0, 'open')
     expect(view.queryByText('Files changed')).toBeNull()
   })
 })
@@ -629,7 +634,7 @@ it('shows file metadata and descriptions without hiding extensionless deliveries
   expect(view.getByText('Quarterly summary')).toBeTruthy()
   expect(view.getByText('TXT')).toBeTruthy()
   expect(view.getByText('File')).toBeTruthy()
-  expect(view.getByRole('button', { name: 'Open out/report.txt in default app' }).getAttribute('title')).toBe('Open out/report.txt in default app')
+  expect(view.getByText('out/report.txt')).toBeTruthy()
 })
 
 
@@ -641,5 +646,20 @@ it.each(['opening', 'opened', 'error'] as const)('shows the %s state and permits
     { path: 'report.txt', seq: 2, index: 0 },
   ] }} openFile={() => {}} sessionId={SessionId('session')} t={makeTranslate(en)} />)
   expect(view.getByRole('status').textContent).toBe(en[`presented.${phase}`])
-  expect((view.getByRole('button') as HTMLButtonElement).disabled).toBe(phase === 'opening')
+  expect((view.getByRole('button', { name: 'Open report.txt in default app' }) as HTMLButtonElement).disabled).toBe(phase === 'opening')
+})
+
+
+it('explains a missing desktop and retries failed Host metadata', () => {
+  const controller = new PresentedOpenController()
+  const props = openProps(controller)
+  const matched = { produced: [], presented: [{ path: 'file.txt', seq: 2, index: 0 }] }
+  controller.host.set('error')
+  const view = render(<Deliverables {...props} matched={matched} openFile={() => {}} sessionId={SessionId('session')} t={makeTranslate(en)} />)
+  props.reloadPresentedHost.mockResolvedValue(undefined)
+  fireEvent.click(view.getByRole('button', { name: 'Retry' }))
+  expect(props.reloadPresentedHost).toHaveBeenCalledOnce()
+  controller.host.set({ name: 'server', available: false, fileManager: null })
+  view.rerender(<Deliverables {...props} matched={matched} openFile={() => {}} sessionId={SessionId('session')} t={makeTranslate(en)} />)
+  expect(view.getByText(en['presented.unavailable'])).toBeTruthy()
 })
