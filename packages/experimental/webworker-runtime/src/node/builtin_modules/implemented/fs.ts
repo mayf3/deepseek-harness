@@ -399,7 +399,7 @@ export interface FileHandle {
   writeFile(data: string | Uint8Array, encoding?: BufferEncoding): Promise<void>
   write(data: string | Uint8Array): Promise<{ bytesWritten: number }>
   read(buffer: Uint8Array, offset?: number, length?: number, position?: number | null): Promise<{ bytesRead: number; buffer: Uint8Array }>
-  stat(): Promise<VfsStats>
+  stat(options?: VfsStatOptions): Promise<VfsStats | VfsBigIntStats>
   truncate(length?: number): Promise<void>
   sync(): Promise<void>
   datasync(): Promise<void>
@@ -441,7 +441,11 @@ export function openHandleSync(path: PathArg, flags = 'r', mode?: number): FileH
       bytesRead: readSync(fd, buffer, offset, length, position),
       buffer,
     }),
-    stat: async () => directory ? statSync(target) as VfsStats : descriptor('fstat').file.stat(),
+    stat: async (options?: VfsStatOptions) => directory
+      ? statSync(target, options)
+      : options?.bigint === true
+        ? descriptor('fstat').file.statBigInt()
+        : descriptor('fstat').file.stat(),
     truncate: async (length = 0) => {
       if (directory) writeFileSync(target, new Uint8Array(length))
       else descriptor('ftruncate').file.truncate(length)

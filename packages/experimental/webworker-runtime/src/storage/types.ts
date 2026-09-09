@@ -119,7 +119,7 @@ export interface VfsFileHandle {
   writeFile(data: string | Uint8Array): Promise<void>
   readFile(options?: VfsReadOptions): Promise<string | Uint8Array>
   truncate(length?: number): Promise<void>
-  stat(): Promise<VfsStats>
+  stat(options?: VfsStatOptions): Promise<VfsStats | VfsBigIntStats>
   sync(): Promise<void>
   datasync(): Promise<void>
   close(): Promise<void>
@@ -157,6 +157,11 @@ export interface VfsOpenFile {
    * @returns Current file metadata, including after rename or unlink.
    */
   stat(): VfsStats
+  /**
+   * Read BigInt metadata from the opened file identity.
+   * @returns Current file metadata, including device and inode identity.
+   */
+  statBigInt(): VfsBigIntStats
 }
 
 /**

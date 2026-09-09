@@ -431,6 +431,18 @@ export class MemoryVfs implements Vfs {
     return statsOf(node.bytes.length, node.mtimeMs, false, this.identityOfFile(node), node.mode)
   }
 
+  /** @returns BigInt stats for an open file, including its device and inode identity. */
+  private fileBigIntStats(node: FileNode): VfsBigIntStats {
+    return bigIntStatsOf(
+      node.bytes.length,
+      node.mtimeMs,
+      false,
+      this.identityOfFile(node),
+      node.mode,
+      this.fileLinkCount(node),
+    )
+  }
+
   /** Forget removed directory identities, so recreated paths report new ones. */
   private forgetIdentity(target: string): void {
     this.identities.delete(target)
@@ -647,7 +659,9 @@ export class MemoryVfs implements Vfs {
       truncate: async (length = 0): Promise<void> => {
         current('ftruncate').truncate(length)
       },
-      stat: async (): Promise<VfsStats> => current('fstat').stat(),
+      stat: async (options?: VfsStatOptions): Promise<VfsStats | VfsBigIntStats> => options?.bigint === true
+        ? current('fstat').statBigInt()
+        : current('fstat').stat(),
       sync: async (): Promise<void> => { current('fsync'); await this.flush() },
       datasync: async (): Promise<void> => { current('fdatasync'); await this.flush() },
       close: async (): Promise<void> => { closed = true },
@@ -692,6 +706,7 @@ export class MemoryVfs implements Vfs {
         this.truncateFile(node, length)
       },
       stat: () => this.fileStats(node),
+      statBigInt: () => this.fileBigIntStats(node),
     }
   }
 
@@ -704,7 +719,7 @@ export class MemoryVfs implements Vfs {
    */
   private handleTail(target: string): Pick<VfsFileHandle, 'stat' | 'sync' | 'datasync' | 'close'> {
     return {
-      stat: async (): Promise<VfsStats> => this.plainStats(target),
+      stat: async (options?: VfsStatOptions): Promise<VfsStats | VfsBigIntStats> => this.statSync(target, options),
       sync: async (): Promise<void> => { await this.flush() },
       datasync: async (): Promise<void> => { await this.flush() },
       close: async (): Promise<void> => {},

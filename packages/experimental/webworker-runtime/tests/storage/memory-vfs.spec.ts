@@ -203,6 +203,17 @@ describe('mutation publication', () => {
     expect(new TextDecoder().decode(descriptor.read(0, descriptor.stat().size))).toBe('detached')
   })
 
+  it('reports the path identity through a BigInt file handle stat', async () => {
+    const vfs = new MemoryVfs()
+    vfs.seed('/dsh/session.lock', '')
+    const handle = vfs.open('/dsh/session.lock', 'r')
+    const held = await handle.stat({ bigint: true }) as VfsBigIntStats
+    const current = vfs.statSync('/dsh/session.lock', { bigint: true }) as VfsBigIntStats
+
+    expect([held.dev, held.ino]).toEqual([current.dev, current.ino])
+    await handle.close()
+  })
+
   it('decomposes a directory rename into replayable destination state', () => {
     const recorded: VfsMutation[] = []
     const vfs = new MemoryVfs({

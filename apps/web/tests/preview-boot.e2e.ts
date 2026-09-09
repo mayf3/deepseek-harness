@@ -34,7 +34,10 @@ import {
   IMAGE_FILE_NAME, PREVIEW_FIXTURE_MANIFEST_FILE, PREVIEW_FIXTURE_MANIFEST_VERSION,
   type PreviewFixtureManifest,
 } from '@deepseek-ai/dsh-experimental-webworker-runtime'
-import { buildVfsExampleFiles } from '../../../packages/experimental/webworker-runtime/tests/vfs-example-fixture.ts'
+import {
+  VFS_EXAMPLE_SESSION_IDS,
+  buildVfsExampleFiles,
+} from '../../../packages/experimental/webworker-runtime/tests/vfs-example-fixture.ts'
 import { captureStableAria, compareOrRefreshGolden, webSnapshotMode } from './scaffold.ts'
 import { newEnglishPage, REPO_ROOT, saveFailureShot } from './support.ts'
 
@@ -317,7 +320,7 @@ async function bootPreview(origin: string, browser: Browser): Promise<void> {
     await page.locator('[data-composer-input][data-placeholder="Describe what you want to build, / commands, @ files or sessions"]')
       .waitFor({ timeout: 30_000 })
 
-    const exercised = await page.evaluate(async () => {
+    const exercised = await page.evaluate(async ({ seededSessionId, seededSessionTitle }) => {
       type Result<T> = { result: { ok: true; value: T } | { ok: false; error: { code: string; message: string } } }
       interface PreviewTransport {
         fetch(input: string, init: RequestInit): Promise<Response>
@@ -352,6 +355,9 @@ async function bootPreview(origin: string, browser: Browser): Promise<void> {
         if (!body.result.ok) throw new Error(`${endpoint} failed: ${body.result.error.message}`)
         return body.result.value
       }
+      const renamed = await remote<{ title: string }>('session/rename', {
+        request: { sessionId: seededSessionId, title: seededSessionTitle },
+      })
       const skills = await remote<{ skills: Array<{ name: string }> }>(
         'skills/list', { request: { sessionId } },
       )
@@ -384,10 +390,15 @@ async function bootPreview(origin: string, browser: Browser): Promise<void> {
       await remote('credentials/unset', { ref: 'PREVIEW_TEST_SECRET' })
       await new Promise((resolve) => { setTimeout(resolve, 250) })
       return {
+        renamedTitle: renamed.title,
         skillCount: skills.skills.length,
         credentialConfigured: credentials.PREVIEW_TEST_SECRET?.configured,
       }
+    }, {
+      seededSessionId: VFS_EXAMPLE_SESSION_IDS.main,
+      seededSessionTitle: SHOWCASE_TITLE,
     })
+    expect(exercised.renamedTitle).toBe(SHOWCASE_TITLE)
     expect(exercised.skillCount).toBeGreaterThan(0)
     expect(exercised.credentialConfigured).toBe(true)
 

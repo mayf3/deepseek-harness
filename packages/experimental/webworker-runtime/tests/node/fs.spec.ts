@@ -115,6 +115,13 @@ check('rmSync removes', fs.existsSync('/dsh/renamed.txt'), false)
 fs.writeFileSync('/dsh/log-handle.jsonl', 'header\n')
 const appendHandle = await fsp.open('/dsh/log-handle.jsonl', 'a')
 check('append handle sees the existing size', (await appendHandle.stat()).size, 7)
+const appendHandleStats = await appendHandle.stat({ bigint: true }) as VfsBigIntStats
+const appendPathStats = await fsp.stat('/dsh/log-handle.jsonl', { bigint: true }) as VfsBigIntStats
+check('bigint handle stat matches the path identity', [
+  typeof appendHandleStats.ino,
+  appendHandleStats.ino === appendPathStats.ino,
+  appendHandleStats.dev === appendPathStats.dev,
+], ['bigint', true, true])
 await appendHandle.writeFile('batch-1\n')
 await appendHandle.sync()
 check('handle.sync flushes the active VFS', flushes, 1)
