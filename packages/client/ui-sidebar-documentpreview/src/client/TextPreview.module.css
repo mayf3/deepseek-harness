@@ -116,6 +116,12 @@
   padding: 0;
 }
 
+/* The code renderer's banner sizes itself to this scroller's visible width
+   (100cqw in CodeBody.module.css); the container makes that width queryable. */
+.body:has([data-code-preview]) {
+  container-type: inline-size;
+}
+
 /* One page of lines; pages abut so the file reads as one. */
 .page {
   margin: 0;

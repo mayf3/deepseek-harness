@@ -105,7 +105,7 @@ export interface SidebarRightTabNavigation {
 export interface SidebarRightTabPlacement {
   /** Land a new tab in this pane instead. */
   readonly paneId?: PaneId
-  /** Defaults to `true`: a tab already showing the same content is focused instead of a second one opening. */
+  /** Resource tabs reveal existing content by default; `false` permits duplicates. Pages always deduplicate within the target pane. */
   readonly revealIfOpened?: boolean
   /** `true` opens in this tab's place — its pane and strip slot — and closes this tab in the same step. */
   readonly replaceTab?: boolean
