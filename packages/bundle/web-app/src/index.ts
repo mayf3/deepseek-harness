@@ -18,7 +18,7 @@ import { networkInterfaces } from 'node:os'
 import { fileURLToPath } from 'node:url'
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
-import { addHarnessSourceSection, assertEntriesActivated } from '@deepseek-ai/dsh-app-boot'
+import { addHarnessSourceSection, auditStartupEntries } from '@deepseek-ai/dsh-app-boot'
 import type {} from '@deepseek-ai/dsh-client-connection'
 import * as FrontendStatic from '@deepseek-ai/dsh-host-frontend-static'
 import { launchedThroughSsh, launchEnvironmentOf } from '@deepseek-ai/dsh-launch-environment'
@@ -285,7 +285,7 @@ export function apply(ctx: Context, config: Config): void {
       if (settled === undefined) announceReady()
       else {
         void settled.then(async () => {
-          await assertEntriesActivated(connectionCtx, 'dsh web')
+          await auditStartupEntries(connectionCtx.root, 'dsh web', () => {})
           // The tree can be disposed while the boot was in flight (early
           // SIGTERM); a URL line or browser tab for a dead server would only
           // mislead, and reading torn-down services would turn a clean shutdown

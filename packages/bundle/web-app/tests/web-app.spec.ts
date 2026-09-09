@@ -14,6 +14,7 @@ import { PassThrough } from 'node:stream'
 import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
+import * as AppBoot from '@deepseek-ai/dsh-app-boot'
 import { createLaunchEnvironmentSnapshot, DSH_LAUNCH_ENVIRONMENT_KEY } from '@deepseek-ai/dsh-launch-environment'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import type { WebServer } from '@deepseek-ai/dsh-host-webserver'
@@ -314,7 +315,10 @@ describe('web-app runtime glue', () => {
     await torn.fiber.dispose()
   })
 
-  it('keeps readiness private when Loader settles with a failed sibling', async () => {
+  it.each([
+    { id: 'webserver', announces: false },
+    { id: 'optional-tool', announces: true },
+  ])('announces readiness=$announces after the $id sibling fails', async ({ id, announces }) => {
     stageDist()
     const ctx = new Context()
     onTestFinished(() => ctx.fiber.dispose())
@@ -323,16 +327,23 @@ describe('web-app runtime glue', () => {
     provideConnection(ctx)
     await ctx.plugin(Loader)
     ctx.loader.builtins.failure = () => { throw new Error('sibling rejected') }
-    const id = await ctx.loader.create({ name: 'cordis:failure' })
+    await ctx.loader.root.update([{ id, name: 'cordis:failure' }])
     await ctx.loader.await()
     await expect(ctx.loader.resolve(id).fiber?.await()).rejects.toThrow('sibling rejected')
     const log = vi.spyOn(console, 'log').mockImplementation(() => {})
     const openBrowser = vi.fn(async () => {})
     internals.openBrowser = openBrowser
+    const audit = vi.spyOn(AppBoot, 'auditStartupEntries')
     apply(ctx, new Config({ openBrowser: true, printUrl: true, surfaceContext: false, trustedHosts: [] }))
-    await new Promise<void>(resolve => setImmediate(resolve))
-    expect(log).not.toHaveBeenCalled()
-    expect(openBrowser).not.toHaveBeenCalled()
+    await vi.waitFor(() => { expect(audit).toHaveBeenCalledOnce() })
+    await Promise.allSettled(audit.mock.results.map(result => result.value as Promise<void>))
+    if (announces) {
+      expect(log).toHaveBeenCalledWith('dsh web: http://127.0.0.1:4567/?token=test-token')
+      expect(openBrowser).toHaveBeenCalledWith('http://127.0.0.1:4567/?token=test-token')
+    } else {
+      expect(log).not.toHaveBeenCalled()
+      expect(openBrowser).not.toHaveBeenCalled()
+    }
   })
 
   it('fails loud when the prompt section resolves against a portless webserver', async () => {
