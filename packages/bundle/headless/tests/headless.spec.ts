@@ -44,6 +44,8 @@ interface BenchOptions {
   sessionId?: string
   json?: boolean
   observe?: () => Promise<ObservationStub>
+  /** Leave the persistence service unmounted to exercise the fail-loud path. */
+  omitPersistence?: boolean
   /** Register a live Agent under `sessionId` before the runner starts. */
   prelive?: boolean
   /** Header facts for that pre-registered live Agent. */
@@ -173,6 +175,7 @@ async function bench(script: Script, options: BenchOptions = {}): Promise<{
   if (options.observe !== undefined) {
     ctx.provide('sessionQuery', { observeSession: () => options.observe!() } as never)
   }
+  if (options.omitPersistence !== true) ctx.provide('sessionPersistence', {} as never)
   return {
     ctx,
     output: () => ({ out, err, order: [...order] }),
@@ -500,6 +503,21 @@ describe('headless runner', () => {
     })
     expect(await test.run()).toMatchObject({ code: 0, out: 'created\n', err: '' })
     expect(seen).toEqual(['session-exact'])
+    await test.ctx.fiber.dispose()
+  })
+
+  it('rejects creating the requested Session when persistence is not mounted', async () => {
+    const test = await bench({
+      afterPrompt(session, message) { appendTurn(session, 1, message, 'created', true) },
+    }, {
+      sessionId: 'session-exact',
+      observe: () => Promise.reject(new SessionQueryError('missing', 'SESSION_QUERY_SESSION_NOT_FOUND')),
+      omitPersistence: true,
+    })
+    const result = await test.run()
+    expect(result.code).toBe(1)
+    expect(result.err).toContain('requires the sessionPersistence service')
+    expect(result.out).toBe('')
     await test.ctx.fiber.dispose()
   })
 

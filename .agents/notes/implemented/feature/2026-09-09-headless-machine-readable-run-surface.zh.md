@@ -54,7 +54,7 @@ dsh --profile headless [--json] [--session-id <id>] [<task>... | -]
 - 文本与推理只从已提交的 `assistant/message` 投影，绝不来自实时的 attempt 增量。被重试或丢弃的 attempt 会追加 `assistant/attempt`，投影直接忽略，因此事件流永远不会承载持久化日志中不存在的内容（[只在提交点发布状态](../../../../packages/AGENTS.md)）。
 - 每个已提交的内容块按内容顺序变成恰好一条 `text` 或 `thinking` 事件；`tool-call` 块不投影，因为 `tool/call` 事件已经拥有它。`user/message` 回显和内部会话事件（标题、模型选择、投影、检查点、目标、子 agent）都不投影。
 - `tool/result` 仅在其 `surfaceOp` 为 `append` 时投影。压缩对旧结果的替换属于历史，投影它会产生没有对应 `tool_call` 的 call id。
-- 每个被投影的字符串与对象键都限制在 8 KiB；被截断的事件带 `truncated: true`，单条序列化事件行限制在 32 KiB——超长事件保留标量字段、丢弃结构化字段，极端情况下只剩 `type` 与 `truncated`，嵌套深度超过 64 层的负载会在该深度被截断，因此任何合法输入都不会让限界递归溢出。进程级 `error` 事件同样受限；字面量 `__proto__` 参数键会作为数据复制，而不经过继承的 setter；空工具参数字符串会投影为 `{}`，与执行器保持一致。终止 `final` 事件刻意不做限长：它承载与默认模式相同的无损答案。
+- 每个被投影的字符串与对象键都限制在 8 KiB；被截断的事件带 `truncated: true`，单条序列化事件行限制在 32 KiB——超长事件保留标量字段、丢弃结构化字段，极端情况下只剩 `type` 与 `truncated`，嵌套达到 64 层及以上的负载会在该深度被截断，因此任何合法输入都不会让限界递归溢出。进程级 `error` 事件同样受限；字面量 `__proto__` 参数键会作为数据复制，而不经过继承的 setter；空工具参数字符串会投影为 `{}`，与执行器保持一致。终止 `final` 事件刻意不做限长：它承载与默认模式相同的无损答案。
 - 文本与推理在步骤提交时到达，而不是逐 token 到达；默认模式的 stderr 推理仍是唯一的实时文本通道。轮次内失败的运行仍以 `final` 结束且没有 `error` 事件，因此即使事件流格式良好，监督进程也要用退出码与 `turn_end` 原因来分类该次运行。
 - `usage` 出现在 `step_end` 上，对应 provider 每步上报的 token 计量。
 - 原始会话事件不在范围内。调试用的逃生口可以以后再加，不必改动这套词汇表。
@@ -65,7 +65,7 @@ dsh --profile headless [--json] [--session-id <id>] [<task>... | -]
 
 `--session-id <id>` 是采用或创建：先观察持久化会话，存在就 resume，不存在就 create。只创建会让第二次运行失败，因为 JSONL 存储拒绝已存在的日志 id（见 [session persistence](../../implemented/architecture/2026-06-14-session-persistence.zh.md)）。标识是不透明的，因此 runner 只在 trim 后的值上校验非空，并把调用方的原始字符串（含空白字符）原样传下去。
 
-采用时会比较持久化会话记录的 cwd 与进程 cwd，因为会话按项目目录组织（见 [project session directories](../../implemented/architecture/2026-07-24-project-session-directories.zh.md)）。不一致时以 `dsh:` 诊断退出 1，而不是静默续接一个根目录在别处的会话；未记录 cwd 的会话出于同样理由被拒绝。运行在 agent preset 下的会话被拒绝，因为本 bundle 不组合任何 preset roster：在这里 resume 它，会用 headless 的工具与提示词运行它，而不是它日志当前记录的组合。该检查读取日志当前记录的 preset——创建 header 再叠加任何 `agent-preset/selected` 事件——因为空白会话可能在创建后切换 preset，而 header 始终只是创建事实。带父会话或子 agent 关联的会话——包括用户 fork 出的会话——被拒绝。当某个存活 Agent 已经持有请求的 id 时，上述检查全部执行，因此存活身份无法绕过它们。两个存活进程不能写同一个 id；存储的写租约已经会拒绝第二个写入者。runner 通过已组合的 `sessionQuery` 服务读取观察结果，并在请求 `--session-id` 却没有该服务时显式失败。
+采用时会比较持久化会话记录的 cwd 与进程 cwd，因为会话按项目目录组织（见 [project session directories](../../implemented/architecture/2026-07-24-project-session-directories.zh.md)）。不一致时以 `dsh:` 诊断退出 1，而不是静默续接一个根目录在别处的会话；未记录 cwd 的会话出于同样理由被拒绝。运行在 agent preset 下的会话被拒绝，因为本 bundle 不组合任何 preset roster：在这里 resume 它，会用 headless 的工具与提示词运行它，而不是它日志当前记录的组合。该检查读取日志当前记录的 preset——创建 header 再叠加任何 `agent-preset/selected` 事件——因为空白会话可能在创建后切换 preset，而 header 始终只是创建事实。带父会话或子 agent 关联的会话——包括用户 fork 出的会话——被拒绝。当某个存活 Agent 已经持有请求的 id 时，上述检查全部执行，因此存活身份无法绕过它们。两个存活进程不能写同一个 id；存储的写租约已经会拒绝第二个写入者。runner 通过已组合的 `sessionQuery` 服务读取观察结果，并在请求 `--session-id` 却没有该服务时显式失败；若创建所请求的身份时缺少让它持久化的 `sessionPersistence` 服务，同样显式失败。
 
 ## 后果
 

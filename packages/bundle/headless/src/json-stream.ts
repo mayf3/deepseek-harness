@@ -98,13 +98,12 @@ function boundValue(value: unknown, maxBytes: number, state: BoundState, depth =
 
 /**
  * Bound every string and key in one projected payload, adding `truncated: true`
- * when any was cut. {@link boundJsonLine} composes this with the whole-line cap;
- * this form stays exported for callers that need the bounded object.
+ * when any was cut. {@link boundJsonLine} composes this with the whole-line cap.
  * @param event - the event payload to bound.
  * @param maxStringBytes - per-string and per-key byte cap.
  * @returns a copy with every over-long string and key truncated.
  */
-export function boundJsonEvent(
+function boundJsonEvent(
   event: Record<string, unknown>,
   maxStringBytes: number = MAX_STRING_BYTES,
 ): Record<string, unknown> {

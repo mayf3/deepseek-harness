@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest'
 import type { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
-import { boundJsonEvent, boundJsonLine, MAX_STRING_BYTES, projectJsonRun, type JsonProjectionOptions } from '../src/json-stream.ts'
+import { boundJsonLine, MAX_STRING_BYTES, projectJsonRun, type JsonProjectionOptions } from '../src/json-stream.ts'
 
 interface ProjectionHarness {
   readonly lines: string[]
@@ -298,9 +298,9 @@ describe('--json projection', () => {
     expect(test.parsed().map(event => event.type)).toEqual(['session'])
   })
 
-  it('bounds one standalone payload for the runner error event', () => {
-    expect(boundJsonEvent({ type: 'error', message: 'x'.repeat(20) }, 8))
+  it('bounds one projected payload through the line writer', () => {
+    expect(JSON.parse(boundJsonLine({ type: 'error', message: 'x'.repeat(20) }, 8, 4096)))
       .toEqual({ type: 'error', message: 'xxxxxxxx', truncated: true })
-    expect(boundJsonEvent({ type: 'error', message: 'ok' })).toEqual({ type: 'error', message: 'ok' })
+    expect(JSON.parse(boundJsonLine({ type: 'error', message: 'ok' }))).toEqual({ type: 'error', message: 'ok' })
   })
 })
