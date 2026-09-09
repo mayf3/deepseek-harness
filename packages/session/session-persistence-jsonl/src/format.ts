@@ -76,7 +76,7 @@ export function parseGenerationLogFilename(
 }
 
 /**
- * The current v2 physical header stored as the first JSONL record. The exact
+ * The current physical header stored as the first JSONL record. The exact
  * inherited cut lives on the last tagged `session/end-seed` event.
  */
 interface HeaderLine {
