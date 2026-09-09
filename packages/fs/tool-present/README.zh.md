@@ -73,7 +73,7 @@ kind: "package-reference"
 
 #### 模型看到的内容
 
-[present schema](../../../docs/tool-catalog.zh.md#present)要求已有的工作区文件：“Declare existing workspace files as final deliverables. The user opens the current source files; their contents are not copied or preserved. Create the files before calling this tool.” 每个文件的结果为 `Presented <path>`；程序结果和持久事件包含路径及可选说明。
+[present schema](../../../docs/tool-catalog.zh.md#present)要求已有的工作区文件：“Declare existing workspace files as final deliverables. When a file you create or update is an output the user asked to receive, you must call present after writing it and before your final response, including files created through Bash or code execution. Mentioning its path in your reply does not replace this call. The files must already exist. The user opens the current source files; their contents are not copied or preserved.” 每个文件的结果为 `Presented <path>`；程序结果和持久事件包含路径及可选说明。
 
 #### Token 影响
 

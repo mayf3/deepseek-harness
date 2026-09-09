@@ -266,12 +266,12 @@ test('publishes the required status and replaces stale success with error on eva
       body: {
         state: 'success',
         context: 'weighted approval',
-        description: 'This is by automated Angry Turtle Cyborg, not a human: 2/2 approval points.',
+        description: '2/2 approval points.',
         target_url: 'https://github.example/actions/runs/1',
       },
     },
   })
-  assert.equal(output[0], 'This is by automated Angry Turtle Cyborg, not a human')
+  assert.equal(output[0], 'Approval score: 2/2.')
 
   const failures = []
   await assert.rejects(runApprovalCheck({
@@ -289,6 +289,7 @@ test('publishes the required status and replaces stale success with error on eva
     write: () => {},
   }), /reviews unavailable/u)
   assert.equal(failures[0].options.body.state, 'error')
+  assert.equal(failures[0].options.body.description, 'Approval evaluation failed.')
 })
 
 test('sends authenticated JSON and escapes an API error body', async () => {

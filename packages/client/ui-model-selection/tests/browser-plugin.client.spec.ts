@@ -30,6 +30,7 @@ const GROUPS = [{
     {
       id: 'deepseek-v4-flash',
       name: 'DeepSeek-V4-Flash',
+      description: 'Fast, efficient, and economical; suited to focused, routine, or parallel tasks.',
       reasoning: {
         efforts: [
           { id: 'off', name: 'Off' },
@@ -42,6 +43,7 @@ const GROUPS = [{
     {
       id: 'deepseek-v4-pro',
       name: 'DeepSeek-V4-Pro',
+      description: 'Stronger agentic coding, knowledge, and difficult reasoning; suited to complex or quality-critical tasks at higher cost.',
       reasoning: {
         efforts: [
           { id: 'off', name: 'Off' },
@@ -52,10 +54,18 @@ const GROUPS = [{
       },
     },
   ],
+}, {
+  id: 'external',
+  name: 'External Provider',
+  models: [{
+    id: 'deepseek-v4-flash',
+    name: 'External Flash',
+    description: 'Provider-authored description.',
+  }],
 }]
 
 /** Boot the plugin over fake faces + a stateful fake host (current moves on selectModel). */
-async function bench() {
+async function bench(locale: 'zh' | 'en' = 'zh') {
   const ctx = new Context()
   let defaultSelection: ModelSelection = { provider: 'deepseek-official', model: 'deepseek-v4-flash' }
   let selected = defaultSelection
@@ -117,10 +127,9 @@ async function bench() {
     },
   })
   const localeRuntime = new LocaleRuntime(ctx)
-  // This spec asserts the shipped Chinese copy. There is no jsdom `window` in
-  // this lane, so browser-language detection never runs and the locale comes
-  // from FALLBACK_LOCALE (en): state the asserted locale explicitly.
-  localeRuntime.setLocale('zh')
+  // There is no jsdom `window` in this lane, so browser-language detection
+  // never runs. Each bench states the locale its assertions require.
+  localeRuntime.setLocale(locale)
   ctx.provide('locale', localeRuntime)
   const scopes = new Map<SessionId, Context>()
   const addressed = new Set<SessionId>()
@@ -184,13 +193,31 @@ describe('ui-model-selection dual entry', () => {
     expect(b.seat().locale).toBe('model')
   })
 
-  it('popup options mark the host current active with the provider group in the detail', async () => {
+  it('localizes built-in descriptions and preserves external provider descriptions', async () => {
     const b = await bench()
     b.mint('s1')
     const options = await b.popup().options(projection('s1'), new AbortController().signal)
-    expect(options.map((o: SelectOption) => o.label)).toEqual(['DeepSeek-V4-Flash', 'DeepSeek-V4-Pro'])
-    expect(options[0]).toMatchObject({ active: true, detail: 'DeepSeek' })
+    expect(options.map((o: SelectOption) => o.label)).toEqual([
+      'DeepSeek-V4-Flash', 'DeepSeek-V4-Pro', 'External Flash',
+    ])
+    expect(options[0]).toMatchObject({
+      active: true,
+      detail: 'DeepSeek · 快速、高效且经济；适合目标明确、常规或并行任务。',
+    })
+    expect(options[1]?.detail)
+      .toBe('DeepSeek · 更强的自主编码、知识与复杂推理能力；适合复杂或质量优先的任务，但成本更高。')
+    expect(options[2]?.detail).toBe('External Provider · Provider-authored description.')
     expect(options[1]?.active).toBeUndefined()
+  })
+
+  it('keeps built-in descriptions unchanged in English', async () => {
+    const b = await bench('en')
+    b.mint('s1')
+    const options = await b.popup().options(projection('s1'), new AbortController().signal)
+    expect(options[0]?.detail)
+      .toBe('DeepSeek · Fast, efficient, and economical; suited to focused, routine, or parallel tasks.')
+    expect(options[1]?.detail)
+      .toBe('DeepSeek · Stronger agentic coding, knowledge, and difficult reasoning; suited to complex or quality-critical tasks at higher cost.')
   })
 
   it('a seat selection is the current the popup marks active next — one shared state', async () => {
