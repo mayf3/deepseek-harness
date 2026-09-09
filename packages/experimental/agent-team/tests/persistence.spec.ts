@@ -311,12 +311,20 @@ for (const backend of backends) {
       await first.dispose()
 
       const second = await stack(backend, storageRoot, [textResponse('resumed teammate answer')])
+      const delivered = Promise.withResolvers<undefined>()
+      second.ctx.on('session/event', (session, event) => {
+        if (session.id === rootId && event.type === 'team/message/delivered'
+          && event.data.messageId === queued.messageId) delivered.resolve(undefined)
+      })
       const rootHandle = await second.ctx.agents.resume({
         resumeSessionId: rootId,
         agentOptions: { provider: 'mock', model: 'mock' },
       })
+      // The child is also absent before cold resume starts; delivery proves recovery reached the mailbox.
+      await delivered.promise
+      await settleMailbox(second.ctx)
       await vi.waitFor(() => { expect(second.ctx.agents.get(started.member.id)).toBeUndefined() }, { timeout: 5_000 })
-      await vi.waitFor(() => { expect(durable(rootHandle.agent).pendingMessages).toEqual([]) })
+      expect(durable(rootHandle.agent).pendingMessages).toEqual([])
 
       const child = await storedEvents(second.ctx, started.member.id)
       const peerIds = child.flatMap(event => event.type === 'user/message'
