@@ -1,8 +1,12 @@
 /** Read replayable PTC source and language hints from recorded tool arguments and schemas. */
 import type { TrajectoryCellProps } from './trajectory-record.ts'
 
+/** Recorded name of the programmatic tool-calling entry point. */
+export const PTC_TOOL_NAME = 'run_code'
+
 /** Validated source and original arguments for one recorded run_code call. */
 export interface CodeProgram {
+  rawInput: string
   source: string
   description: string
   arguments: Record<string, unknown>
@@ -42,11 +46,12 @@ function recordedLanguage(schemaRaw: string | undefined): CodeProgram['language'
  */
 export function codeProgram(cell: TrajectoryCellProps): CodeProgram | undefined {
   if (cell.kind !== 'tool' && cell.kind !== 'subtool') return undefined
-  if (cell.text.split(' · ', 1)[0] !== 'run_code') return undefined
+  if (cell.toolName !== PTC_TOOL_NAME || cell.inputDetail === undefined) return undefined
   const args = parseRecord(cell.inputDetail)
   if (typeof args?.code !== 'string') return undefined
   if (args.description !== undefined && typeof args.description !== 'string') return undefined
   return {
+    rawInput: cell.inputDetail,
     source: args.code,
     description: typeof args.description === 'string' && args.description.trim() !== ''
       ? args.description

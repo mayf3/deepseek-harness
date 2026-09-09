@@ -15,7 +15,7 @@ afterEach(() => {
 const SOURCE = 'const value = await tools.bash({ command: "pwd" })\nreturn value\n'
 const ARGS = JSON.stringify({ code: SOURCE, description: 'Read the working directory' })
 const CELL: TrajectoryCellProps = {
-  index: 1, kind: 'tool', text: `run_code · ${ARGS}`, callId: 'code-1',
+  index: 1, kind: 'tool', toolName: 'run_code', text: `run_code · ${ARGS}`, callId: 'code-1',
   inputDetail: ARGS, outputDetail: 'printed line\n42', result: 'printed line', timeSeconds: 0.5,
 }
 

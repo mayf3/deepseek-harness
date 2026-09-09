@@ -4,13 +4,14 @@ import { codeProgram } from '../src/client/code-program.ts'
 import type { TrajectoryCellProps } from '../src/client/trajectory-record.ts'
 
 const CELL: TrajectoryCellProps = {
-  index: 1, kind: 'tool', text: 'run_code · {}', timeSeconds: 1,
+  index: 1, kind: 'tool', toolName: 'run_code', text: 'run_code · {}', timeSeconds: 1,
   inputDetail: JSON.stringify({ code: 'return 42\n', description: 'Compute the answer' }),
 }
 
 describe('recorded code programs', () => {
   it('keeps the program and arguments verbatim', () => {
     expect(codeProgram(CELL)).toEqual({
+      rawInput: CELL.inputDetail,
       source: 'return 42\n', description: 'Compute the answer',
       arguments: { code: 'return 42\n', description: 'Compute the answer' }, language: undefined,
     })
@@ -52,9 +53,18 @@ describe('recorded code programs', () => {
     },
   )
 
+  it('uses recorded tool metadata independently of display text', () => {
+    expect(codeProgram({ ...CELL, text: 'Execute program' })?.source).toBe('return 42\n')
+    const withoutName = { ...CELL }
+    delete withoutName.toolName
+    expect(codeProgram(withoutName)).toBeUndefined()
+    const rawInput = ' { "code": "return 42" }\n'
+    expect(codeProgram({ ...CELL, inputDetail: rawInput })?.rawInput).toBe(rawInput)
+  })
+
   it('does not specialize other tools or non-tool records', () => {
     expect(codeProgram({ ...CELL, kind: 'message' })).toBeUndefined()
-    expect(codeProgram({ ...CELL, text: 'run_code_extra · {}' })).toBeUndefined()
+    expect(codeProgram({ ...CELL, toolName: 'run_code_extra' })).toBeUndefined()
     expect(codeProgram({ ...CELL, kind: 'subtool' })?.source).toBe('return 42\n')
   })
 })

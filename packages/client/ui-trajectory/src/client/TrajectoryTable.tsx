@@ -36,7 +36,7 @@ import type { TrajectoryTurnModel } from './layout.ts'
 import { trajectoryPreviewText } from './trajectory-preview.ts'
 import type { TrajectoryKey, TrajectoryTranslate } from './locales.ts'
 import { COMPACTION_INTERRUPTED_ERROR } from './copy-codes.ts'
-import { codeProgram, type CodeProgram } from './code-program.ts'
+import { codeProgram, PTC_TOOL_NAME, type CodeProgram } from './code-program.ts'
 import css from './TrajectoryTable.module.css'
 
 const BOTTOM_FOLLOW_THRESHOLD_PX = 2
@@ -190,6 +190,7 @@ interface ParentRecords {
 }
 
 interface ToolCallTextParts {
+  program: boolean
   name: string
   args?: string
 }
@@ -1011,7 +1012,7 @@ function detailTabs(record: TableRecord): readonly DetailTabItem[] {
 function recordDisplayText(cell: TrajectoryCellProps, t: TrajectoryTranslate): string {
   if (isToolCallOnly(cell, t)) return ''
   const program = codeProgram(cell)
-  if (program !== undefined) return `${cell.text.split(' · ', 1)[0]} · ${program.description.replace(/\s+/g, ' ')}`
+  if (program !== undefined) return `${PTC_TOOL_NAME} · ${program.description.replace(/\s+/g, ' ')}`
   if (cell.previewMarkdown !== undefined) {
     const preview = trajectoryPreviewText(cell.previewMarkdown)
     if (cell.text === '') return preview
@@ -1033,13 +1034,15 @@ function recordResultText(cell: TrajectoryCellProps): string | undefined {
 }
 
 function toolCallTextParts(
-  kind: TrajectoryCellKind,
+  cell: TrajectoryCellProps,
   text: string,
 ): ToolCallTextParts | undefined {
-  if (kind !== 'tool' && kind !== 'subtool') return undefined
+  if (cell.kind !== 'tool' && cell.kind !== 'subtool') return undefined
+  const program = cell.toolName === PTC_TOOL_NAME
   const separator = text.indexOf(' · ')
-  if (separator === -1) return { name: text }
+  if (separator === -1) return { name: text, program }
   return {
+    program,
     name: text.slice(0, separator),
     args: text.slice(separator + 3),
   }
@@ -1072,7 +1075,7 @@ function RecordPresentation({
   const displayText = useMemo(
     () => recordDisplayText(cell, t),
     [
-      cell.kind, cell.text, cell.previewMarkdown,
+      cell.kind, cell.text, cell.toolName, cell.previewMarkdown,
       cell.inputDetail, cell.outputDetail, cell.thinkingDetail, t,
     ],
   )
@@ -1081,7 +1084,7 @@ function RecordPresentation({
     [cell.result, cell.resultPreviewMarkdown],
   )
   const toolCallOnly = isToolCallOnly(cell, t)
-  const toolCallText = toolCallTextParts(cell.kind, displayText)
+  const toolCallText = toolCallTextParts(cell, displayText)
   const listDisplayText = toolCallOnly
     ? t('record.toolCallOnly')
     : toolCallText === undefined
@@ -1111,11 +1114,11 @@ function RecordListText({
   return (
     <>
       <span className={css.toolCallNameTypeface}>
-        {toolCallText.name === 'run_code' && <IconCodeOutline16 className={css.programIcon} size={12} />}
+        {toolCallText.program && <IconCodeOutline16 className={css.programIcon} size={12} />}
         {toolCallText.name || '—'}
       </span>
       {toolCallText.args !== undefined && (
-        <span className={toolCallText.name === 'run_code' ? css.programSummary : css.toolCallPayload}>
+        <span className={toolCallText.program ? css.programSummary : css.toolCallPayload}>
           {toolCallText.args}
         </span>
       )}
@@ -1840,9 +1843,8 @@ function InspectorCopyButton({ text, label, t }: {
   )
 }
 
-function ProgramInput({ program, rawInput, initialWrapped, stringWrapping, onOpen, t }: {
+function ProgramInput({ program, initialWrapped, stringWrapping, onOpen, t }: {
   program: CodeProgram
-  rawInput: string
   initialWrapped: boolean
   stringWrapping: JsonTreeProps['stringWrapping']
   onOpen?: () => void
@@ -1891,7 +1893,7 @@ function ProgramInput({ program, rawInput, initialWrapped, stringWrapping, onOpe
         </button>
       )}
       <InspectorCopyButton
-        text={showJson ? rawInput : program.source}
+        text={showJson ? program.rawInput : program.source}
         label={t(showJson ? 'copy.json' : 'code.copySource')}
         t={t}
       />
@@ -3350,7 +3352,7 @@ export function TrajectoryTable({
                     ? (
                       <>
                         <ProgramInput key={`preview:${selectedRecordId}`} program={selectedProgram}
-                          rawInput={selected.cell.inputDetail as string} initialWrapped={codeWrappingOnOpen}
+                          initialWrapped={codeWrappingOnOpen}
                           stringWrapping={stringWrapping} onOpen={() => { activateTab('input') }} t={t} />
                         <ProgramOutput record={selected} stringWrapping={stringWrapping}
                           onOpen={() => { activateTab('output') }} t={t} />
@@ -3437,7 +3439,7 @@ export function TrajectoryTable({
               selectedProgram === undefined
                 ? <RecordPayload record={selected} direction="input" renderImages={renderImages} stringWrapping={stringWrapping} t={t} />
                 : <ProgramInput key={`input:${selectedRecordId}`} program={selectedProgram}
-                  rawInput={selected.cell.inputDetail as string} initialWrapped={codeWrappingOnOpen}
+                  initialWrapped={codeWrappingOnOpen}
                   stringWrapping={stringWrapping} t={t} />
             )}
             {!promptSelected && selected !== undefined && activeTab === 'output' && (
