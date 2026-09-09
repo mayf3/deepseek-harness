@@ -16,7 +16,7 @@ Session log 在发布后必须能升级格式，而最先发布的运行时决�
 
 **读取规则按方向区分。**版本相等：正常读。比读取器新：拒绝，说明方向（"由更新的 harness 写入，请升级"），并给出原始日志文件的路径，用户仍能看到文本（`SessionFormatUnsupportedError`，与 `SessionPersistenceCorruptionError` 区分，因为数据没有损坏）。比读取器旧：每个事件正文操作先在内存中运行完整相邻链，并保持源路径、字节与 inode 不变。读句柄可以直接使用该 current 逻辑结果；写 open 则在 append 前把最终 current generation 排他发布到其规范版本文件名。仅 header 的列表保持不变更，并报告数值最高的规范 generation。catalog 生成与模块初始化会拒绝缺失的相邻步骤，因此已发布第一方 build 绝不会暴露不完整历史链。保留的低 generation 不是自动 fallback，也不构成 downgrade compatibility 承诺。
 
-**逐事件的 `ignorable` 标记吸收词汇表增长，普通的新增事件永远不用升版本。**事件词汇表由挂载了哪些插件决定，单个版本整数描述不了它。读取器遇到不认识的事件类型时拒绝解读日志，除非该事件的信封带 `ignorable: true`。默认为必需：忘写标记的后果是把一个本可恢复的会话拒绝过头（体验问题），而默认可忽略会让同样的疏忽静默恢复出残缺会话（安全事故）。架构保证了这条规则成立：模型可见内容只经三种带 `surfaceOp` 标记的 surface 事件加 `request/header`、`request/context` 折叠进入重建，危险的未知事件恰好是那些不进 surface 但改变日志其余部分解读方式的事件（`session/end-seed` 是现存例子）。
+**逐事件的 `ignorable` 标记吸收词汇表增长，普通的新增事件永远不用升版本。**事件词汇表由挂载了哪些插件决定，单个版本整数描述不了它。读取器遇到不认识的事件类型时拒绝解读日志，除非该事件的信封带 `ignorable: true`。默认为必需：忘写标记的后果是把一个本可恢复的会话拒绝过头（体验问题），而默认可忽略会让同样的疏忽静默恢复出残缺会话（安全事故）。架构保证了这条规则成立：模型可见内容只经四种带 `surfaceOp` 标记的 surface 事件加 `request/header`、`request/context` 折叠进入重建，危险的未知事件恰好是那些不进 surface 但改变日志其余部分解读方式的事件（`session/end-seed` 是现存例子）。
 
 ## 影响
 
