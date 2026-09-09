@@ -13,6 +13,17 @@ beforeEach(() => {
 afterEach(() => { vi.doUnmock('mermaid') })
 
 describe('Mermaid runtime', () => {
+  it('allows another attempt after the runtime import fails', async () => {
+    vi.doMock('mermaid', () => { throw new Error('runtime unavailable') })
+    const { renderMermaid } = await import('../src/markdown/mermaid.ts')
+    await expect(renderMermaid('first', new AbortController().signal)).rejects.toThrow()
+    expect(initialize).not.toHaveBeenCalled()
+    vi.doMock('mermaid', () => ({ default: { initialize, render: renderDiagram } }))
+    renderDiagram.mockResolvedValue({ svg: '<svg/>' })
+    await expect(renderMermaid('retry', new AbortController().signal)).resolves.toContain('data:image/svg+xml')
+    expect(renderDiagram).toHaveBeenCalledOnce()
+  })
+
   it('accepts native configuration without weakening preview restrictions', async () => {
     const { renderMermaid } = await import('../src/markdown/mermaid.ts')
     renderDiagram.mockResolvedValue({ svg: '<svg/>' })

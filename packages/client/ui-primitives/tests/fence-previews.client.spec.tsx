@@ -81,6 +81,18 @@ describe('Markdown fence previews', () => {
 })
 
 describe('static preview documents', () => {
+  it.each(['light', 'dark'])('uses the document %s color scheme for HTML previews', (scheme) => {
+    const previous = document.documentElement.style.colorScheme
+    try {
+      document.documentElement.style.colorScheme = scheme
+      const doc = renderHtml('<h1>Example</h1>', new AbortController().signal)
+      const parsed = new DOMParser().parseFromString(doc, 'text/html')
+      expect(parsed.documentElement.style.colorScheme).toBe(scheme)
+    } finally {
+      document.documentElement.style.colorScheme = previous
+    }
+  })
+
   it('preserves HTML styling while removing scripts, navigation, and nested documents', () => {
     const doc = renderHtml(`<!doctype html><html><head><style>h1 { color: green }</style>
       <meta http-equiv="refresh" content="0;url=https://example.com"><base href="https://example.com"></head>
