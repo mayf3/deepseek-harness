@@ -109,6 +109,8 @@
 }
 
 .stringField {
+  position: relative;
+  z-index: 1;
   display: flow-root;
 }
 
@@ -121,9 +123,31 @@
   word-break: break-all;
 }
 
-.stringField[data-expanded='true'] > .stringText {
-  max-height: none;
-  overflow: visible;
+.stringRaw {
+  margin: 4px 0 0 12px;
+  overflow: auto;
+  color: var(--dsw-alias-label-primary);
+  font: inherit;
+  overflow-wrap: normal;
+  white-space: pre;
+  word-break: normal;
+}
+
+.stringActions {
+  position: absolute;
+  top: 1px;
+  right: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+  width: fit-content;
+  height: 16px;
+}
+
+.stringActions > .copySlot {
+  opacity: 1;
+  pointer-events: auto;
 }
 
 .stringToggleSlot {
@@ -150,10 +174,6 @@
   white-space: nowrap;
   cursor: pointer;
   pointer-events: auto;
-}
-
-.stringCollapse {
-  margin-left: 4px;
 }
 
 .stringToggle:hover {
@@ -226,10 +246,6 @@
 
 .row:has(> .copySlot) > .stringField .stringToggleSlot {
   padding-right: 24px;
-}
-
-.row:has(> .copySlot) > .stringField .stringCollapse {
-  margin-right: 24px;
 }
 
 .row:hover:not(:has(.row:hover)) > .copySlot,

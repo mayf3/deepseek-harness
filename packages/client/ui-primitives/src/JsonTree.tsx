@@ -226,7 +226,7 @@ interface JsonTreeNodeProps {
   onClaimTabStop: (id: string) => void
   onRowHover: (row: HTMLElement, target: RowTarget) => void
   path: JsonPath
-  renderCopy: ((path: JsonPath) => ReactNode) | undefined
+  renderCopy: ((target: RowTarget, persistent?: boolean) => ReactNode) | undefined
   tabStopId: string | null
   value: unknown
 }
@@ -236,20 +236,24 @@ function JsonString({
   field,
   labels,
   lastElement,
+  renderCopy,
   value,
 }: {
   collapsedStringLines: number
   field: string | undefined
   labels: JsonTreeLabels
   lastElement: boolean
+  renderCopy: ((persistent?: boolean) => ReactNode) | undefined
   value: string
 }) {
   const contentsId = useId()
   const contentRef = useRef<HTMLSpanElement>(null)
+  const rawRef = useRef<HTMLPreElement>(null)
   const [expanded, setExpanded] = useState(false)
   const [truncated, setTruncated] = useState(false)
 
   useLayoutEffect(() => {
+    if (expanded) return
     const content = contentRef.current as HTMLSpanElement
     const measure = () => {
       const lineHeight = Number.parseFloat(getComputedStyle(content).lineHeight)
@@ -260,32 +264,60 @@ function JsonString({
     const observer = new ResizeObserver(measure)
     observer.observe(content)
     return () => { observer.disconnect() }
-  }, [collapsedStringLines, field, lastElement, value])
+  }, [collapsedStringLines, expanded, field, lastElement, value])
 
-  return (
-    <span className={css.stringField} data-expanded={expanded}>
-      <span ref={contentRef} id={contentsId} className={css.stringText}>
-        {truncated && !expanded && (
-          <span className={css.stringToggleSlot}>
-            <button
-              type="button"
-              className={css.stringToggle}
-              aria-label={labels.expandNode}
-              aria-expanded={false}
-              aria-controls={contentsId}
-              onClick={() => { setExpanded(true) }}
-            >
-              <span aria-hidden="true">…</span>{labels.expandNode}
-            </button>
-          </span>
-        )}
-        {field !== undefined && <span className={css.label}>{fieldText(field)}:</span>}
-        {primitiveValue(value)}
-        {!lastElement && <span className={css.punctuation}>,</span>}
-        {truncated && expanded && (
+  useLayoutEffect(() => {
+    if (!expanded) return
+    const raw = rawRef.current as HTMLPreElement
+    const clips: HTMLElement[] = []
+    const tree = raw.closest<HTMLElement>(`.${css.root}`) as HTMLElement
+    for (let parent = tree.parentElement; parent !== null; parent = parent.parentElement) {
+      if (/auto|scroll|hidden|clip/.test(getComputedStyle(parent).overflowY)) clips.push(parent)
+    }
+    const measure = () => {
+      let top = 0
+      let bottom = window.innerHeight
+      for (const clip of clips) {
+        const rect = clip.getBoundingClientRect()
+        const style = getComputedStyle(clip)
+        top = Math.max(top, rect.top + clip.clientTop)
+        bottom = Math.min(bottom, rect.top + clip.clientTop + clip.clientHeight
+          - Number.parseFloat(style.paddingBottom))
+      }
+      const available = bottom - Math.max(top, raw.getBoundingClientRect().top)
+      raw.style.maxHeight = `${Math.max(16, available - 4)}px`
+    }
+    measure()
+    const observer = new ResizeObserver(measure)
+    observer.observe(raw)
+    for (const clip of clips) observer.observe(clip)
+    window.addEventListener('resize', measure)
+    window.addEventListener('scroll', measure, true)
+    return () => {
+      observer.disconnect()
+      window.removeEventListener('resize', measure)
+      window.removeEventListener('scroll', measure, true)
+    }
+  }, [expanded, value])
+
+  if (expanded) {
+    const fieldId = `${contentsId}-field`
+    return (
+      <div className={css.stringField} data-expanded>
+        {field !== undefined && <span id={fieldId} className={css.label}>{fieldText(field)}:</span>}
+        <pre
+          ref={rawRef}
+          id={contentsId}
+          className={css.stringRaw}
+          tabIndex={0}
+          aria-labelledby={field === undefined ? undefined : fieldId}
+        >
+          {value}
+        </pre>
+        <div className={css.stringActions}>
           <button
             type="button"
-            className={clsx(css.stringToggle, css.stringCollapse)}
+            className={css.stringToggle}
             aria-label={labels.collapseNode}
             aria-expanded
             aria-controls={contentsId}
@@ -293,9 +325,37 @@ function JsonString({
           >
             {labels.collapseNode}
           </button>
-        )}
+          {renderCopy?.(true)}
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <>
+      {renderCopy?.()}
+      <span className={css.stringField} data-expanded={expanded}>
+        <span ref={contentRef} id={contentsId} className={css.stringText}>
+          {truncated && (
+            <span className={css.stringToggleSlot}>
+              <button
+                type="button"
+                className={css.stringToggle}
+                aria-label={labels.expandNode}
+                aria-expanded={false}
+                aria-controls={contentsId}
+                onClick={() => { setExpanded(true) }}
+              >
+                <span aria-hidden="true">…</span>{labels.expandNode}
+              </button>
+            </span>
+          )}
+          {field !== undefined && <span className={css.label}>{fieldText(field)}:</span>}
+          {primitiveValue(value)}
+          {!lastElement && <span className={css.punctuation}>,</span>}
+        </span>
       </span>
-    </span>
+    </>
   )
 }
 
@@ -347,7 +407,7 @@ function JsonTreeNode({
         onRowHover(event.currentTarget, { path, value })
       }}
     >
-      {renderCopy?.(path)}
+      {typeof value !== 'string' && renderCopy?.({ path, value })}
       {children}
     </div>
   )
@@ -360,6 +420,7 @@ function JsonTreeNode({
         value={value}
         labels={labels}
         lastElement={lastElement}
+        renderCopy={renderCopy === undefined ? undefined : persistent => renderCopy({ path, value }, persistent)}
       />,
     )
   }
@@ -494,7 +555,7 @@ export function JsonTree({
       : pathId([Array.isArray(data) ? firstExpandableIndex : firstExpandableEntry[0]])
     : isExpandableValue(data) && rootEntries.length > 0 ? pathId([]) : null
   const activeRowRef = useRef<HTMLElement>()
-  const copyButtonRef = useRef<HTMLButtonElement>(null)
+  const copyButtonRef = useRef<HTMLButtonElement | null>(null)
   const copyMenuOpenRef = useRef(false)
   const resetTimer = useRef<ReturnType<typeof setTimeout>>()
   const [copyTarget, setCopyTarget] = useState<RowTarget>()
@@ -548,11 +609,10 @@ export function JsonTree({
     if (event.target.closest('[data-json-copy-button]') === null) clearCopyTarget()
   }
 
-  const copy = async (mode: 'json' | 'path' | 'prettyJson' | 'value') => {
-    /* v8 ignore next -- copy controls only render while their target exists. */
-    if (copyTarget === undefined) return
+  const copy = async (target: RowTarget, mode: 'json' | 'path' | 'prettyJson' | 'value') => {
+    setCopyTarget(target)
     try {
-      await navigator.clipboard.writeText(copyText(copyTarget, mode))
+      await navigator.clipboard.writeText(copyText(target, mode))
       setCopyState('copied')
     } catch {
       setCopyState('failed')
@@ -562,58 +622,61 @@ export function JsonTree({
   }
 
   const [rootOpen, rootClose] = bracketOf(data)
-  const copyTargetIsObject = typeof copyTarget?.value === 'object' && copyTarget.value !== null
-  const defaultCopyMode = copyTargetIsObject ? 'prettyJson' : 'value'
-  const copyTitle = copyState === 'copied'
-    ? labels.copied
-    : copyState === 'failed'
-      ? labels.copyFailed
-      : copyTargetIsObject ? labels.copyPrettyJson : labels.copyValue
-
-  const renderCopy = copyable ? (path: JsonPath) => (
-    <span className={css.copySlot}>
-      {copyTarget !== undefined && pathId(copyTarget.path) === pathId(path) && (
-        <Menu
-          open={copyMenuOpen}
-          compact
-          portal
-          align="end"
-          anchor={(
-            <button
-              ref={copyButtonRef}
-              type="button"
-              className={css.actionButton}
-              data-json-copy-button
-              data-state={copyState}
-              aria-label={copyTitle}
-              title={labels.copyButtonTitle(copyTitle)}
-              onClick={() => void copy(defaultCopyMode)}
-              onContextMenu={(event) => {
-                event.preventDefault()
-                event.stopPropagation()
-                copyMenuOpenRef.current = true
-                setCopyMenuOpen(true)
-              }}
-            >
-              {copyState === 'copied'
-                ? <IconCheckOutline16 size={12} />
-                : <IconCopyOutline16 size={12} />}
-            </button>
-          )}
-          items={copyTargetIsObject ? objectCopyMenuItems(labels) : valueCopyMenuItems(labels)}
-          onSelect={(id) => {
-            void copy(id as 'json' | 'path' | 'prettyJson' | 'value')
-            copyMenuOpenRef.current = false
-            setCopyMenuOpen(false)
-          }}
-          onClose={clearCopyTarget}
-          getAnchorRect={() => (
-            copyButtonRef.current as HTMLButtonElement
-          ).getBoundingClientRect()}
-        />
-      )}
-    </span>
-  ) : undefined
+  const renderCopy = copyable ? (target: RowTarget, persistent = false) => {
+    const active = copyTarget !== undefined && pathId(copyTarget.path) === pathId(target.path)
+    const state = active ? copyState : 'idle'
+    const object = typeof target.value === 'object' && target.value !== null
+    const copyTitle = state === 'copied'
+      ? labels.copied
+      : state === 'failed'
+        ? labels.copyFailed
+        : object ? labels.copyPrettyJson : labels.copyValue
+    return (
+      <span className={css.copySlot}>
+        {(persistent || active) && (
+          <Menu
+            open={active && copyMenuOpen}
+            compact
+            portal
+            align="end"
+            anchor={(
+              <button
+                type="button"
+                className={css.actionButton}
+                data-json-copy-button
+                data-state={state}
+                aria-label={copyTitle}
+                title={labels.copyButtonTitle(copyTitle)}
+                onClick={() => void copy(target, object ? 'prettyJson' : 'value')}
+                onContextMenu={(event) => {
+                  event.preventDefault()
+                  event.stopPropagation()
+                  copyButtonRef.current = event.currentTarget
+                  setCopyTarget(target)
+                  copyMenuOpenRef.current = true
+                  setCopyMenuOpen(true)
+                }}
+              >
+                {state === 'copied'
+                  ? <IconCheckOutline16 size={12} />
+                  : <IconCopyOutline16 size={12} />}
+              </button>
+            )}
+            items={object ? objectCopyMenuItems(labels) : valueCopyMenuItems(labels)}
+            onSelect={(id) => {
+              void copy(target, id as 'json' | 'path' | 'prettyJson' | 'value')
+              copyMenuOpenRef.current = false
+              setCopyMenuOpen(false)
+            }}
+            onClose={clearCopyTarget}
+            getAnchorRect={() => (
+              copyButtonRef.current as HTMLButtonElement
+            ).getBoundingClientRect()}
+          />
+        )}
+      </span>
+    )
+  } : undefined
 
   return (
     <div
@@ -635,7 +698,7 @@ export function JsonTree({
                 handleRowHover(event.currentTarget, { path: [], value: data })
               }}
             >
-              {renderCopy?.([])}
+              {renderCopy?.({ path: [], value: data })}
               <span className={css.punctuation}>{rootOpen}</span>
             </div>
             <div
