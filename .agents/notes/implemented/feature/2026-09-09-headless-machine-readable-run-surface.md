@@ -30,7 +30,7 @@ The change is confined to `packages/bundle/headless`: `src/startup.ts`, `src/ind
 dsh --profile headless [--json] [--session-id <id>] [<task>... | -]
 ```
 
-Task resolution order: joined positionals, then `-`, then piped stdin. A terminal stdin with no positional task remains a usage error, so an interactive invocation cannot hang waiting for input.
+Task resolution order: joined positionals, then `-`, then piped stdin. A terminal stdin with no positional task remains a usage error, so an interactive invocation cannot hang waiting for input. A lone `-` is the only stdin marker: mixing it with other task words is a usage error instead of a task that starts with a dash. In `--json` mode a usage error writes the `error` event before the process exits, because the runner never mounts to write it.
 
 `--json` changes the stdout payload and the destination of the reasoning projection only. Exit status, shutdown ordering, session flush, and the durable session log are unchanged, so a supervisor classifies a run exactly as it does today.
 
@@ -54,7 +54,8 @@ Projection rules:
 - Text and reasoning are projected only from a committed `assistant/message`, never from live attempt deltas. A retried or discarded attempt appends `assistant/attempt`, which the projection ignores, so the stream never carries content the durable log does not contain ([publish state only at its commit point](../../../../packages/AGENTS.md)).
 - Each committed content block becomes exactly one `text` or `thinking` event in content order; `tool-call` blocks are not projected because the `tool/call` event owns them. `user/message` echoes and internal session events (title, model selection, projection, checkpoint, goal, subagent) are not projected.
 - A `tool/result` is projected only when its `surfaceOp` is `append`. A compaction replacement of an older result is history, and projecting it would emit a call id with no matching `tool_call`.
-- Every projected string is bounded at 8 KiB, and an event with a cut string carries `truncated: true`, including the process-level `error` event. The terminal `final` event is deliberately unbounded: it carries the same lossless answer the default mode prints.
+- Every projected string and object key is bounded at 8 KiB, and an event with a cut value carries `truncated: true`, including the process-level `error` event; a literal `__proto__` argument key is copied as data rather than through the inherited setter. The terminal `final` event is deliberately unbounded: it carries the same lossless answer the default mode prints.
+- Text and reasoning arrive when the step commits, not per token; default-mode stderr reasoning remains the only live text channel. A turn that fails in-turn still ends the stream with `final` and no `error` event, so a supervisor classifies that run from the exit code and the `turn_end` reason even when the stream is well formed.
 - `usage` appears on `step_end`, matching the token accounting a provider reports per step.
 - Raw session events stay out of scope. A debug escape hatch can be added later without changing this vocabulary.
 
@@ -62,9 +63,9 @@ Projection rules:
 
 The runtime owns identity. A run without `--session-id` mints `session-<uuid>` and reports it in the first event. A supervisor persists that value and passes it back on the next wake.
 
-`--session-id <id>` is adopt-or-create: observe the persisted session, resume it when it exists, create it otherwise. Create-only would fail the second run, because the JSONL store rejects an existing log id ([session persistence](../../implemented/architecture/2026-06-14-session-persistence.md)).
+`--session-id <id>` is adopt-or-create: observe the persisted session, resume it when it exists, create it otherwise. Create-only would fail the second run, because the JSONL store rejects an existing log id ([session persistence](../../implemented/architecture/2026-06-14-session-persistence.md)). The id is opaque, so the runner validates non-emptiness on the trimmed value and passes the caller's exact string through, whitespace included.
 
-Adoption compares the persisted session's recorded cwd with the process cwd, since sessions are organized per project directory ([project session directories](../../implemented/architecture/2026-07-24-project-session-directories.md)). A mismatch exits 1 with a `dsh:` diagnostic instead of silently continuing a conversation rooted elsewhere. A session linked to a parent or subagent is rejected. The same two checks run when a live Agent already holds the requested id, so a live identity cannot bypass them. Two live processes cannot write one id; the store's write lease already rejects the second writer. The runner reads the observation through the composed `sessionQuery` service and fails loudly when `--session-id` is requested without it.
+Adoption compares the persisted session's recorded cwd with the process cwd, since sessions are organized per project directory ([project session directories](../../implemented/architecture/2026-07-24-project-session-directories.md)). A mismatch exits 1 with a `dsh:` diagnostic instead of silently continuing a conversation rooted elsewhere, and a session that recorded no cwd is rejected for the same reason. A session created under an agent preset is rejected because this bundle composes no preset roster: resuming it here would run it under the headless tools and prompts instead of the composition its log was recorded under. A session linked to a parent or subagent — including a user fork — is rejected. All checks run when a live Agent already holds the requested id, so a live identity cannot bypass them. Two live processes cannot write one id; the store's write lease already rejects the second writer. The runner reads the observation through the composed `sessionQuery` service and fails loudly when `--session-id` is requested without it.
 
 ## Consequences
 
@@ -73,7 +74,7 @@ What landed: `src/startup.ts` parses `--json` and `--session-id <id>`, treats an
 - Default mode is unchanged: a text-only run writes one final assistant line to stdout and nothing to stderr, and exit status still follows the terminal reason.
 - `--json` stdout parses line by line as JSON, starts with `session`, ends with `final`, and contains no plain text. Stderr carries no reasoning in this mode.
 - A step that retries publishes `text` and `thinking` only for the attempt that commits, so a discarded attempt leaves no trace in the stream.
-- Two consecutive runs with the same `--session-id` share history. A run whose cwd differs from the persisted session exits 1 with a diagnostic, whether the identity is live or persisted.
+- Two consecutive runs with the same `--session-id` share history. A run whose cwd differs from the persisted session, that recorded no cwd, that is a subagent or forked session, or that was created under an agent preset, exits 1 with a diagnostic, whether the identity is live or persisted.
 - A piped task with no positional task is honored, and an interactive invocation without a task still fails with the usage error.
 - Unit coverage lands in `packages/bundle/headless/tests/startup.spec.ts`, `tests/headless.spec.ts`, and `tests/json-stream.spec.ts`. The product headless profile expectation test in `apps/cli/tests/profiles/headless/tests/headless.expected.e2e.ts` covers both output modes end to end.
 

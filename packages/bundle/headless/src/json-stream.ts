@@ -11,7 +11,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 
-/** Default per-string cap applied to every bounded projected payload. */
+/** Default per-string and per-key cap applied to every bounded projected payload. */
 export const MAX_STRING_BYTES = 8 * 1024
 
 /** The stdout sink a projection writes newline-delimited events to. */
@@ -24,7 +24,7 @@ export interface JsonSink {
 export interface JsonProjectionOptions {
   /** Working directory reported by the opening `session` event. */
   cwd?: string
-  /** Per-string byte cap; longer strings are truncated and flagged. */
+  /** Per-string and per-key byte cap; longer values are truncated and flagged. */
   maxStringBytes?: number
 }
 
@@ -48,7 +48,14 @@ function truncateUtf8(text: string, maxBytes: number): string {
   return decoded.endsWith('\uFFFD') ? decoded.slice(0, -1) : decoded
 }
 
-/** Recursively cap every string in one JSON-serializable value. */
+/** Cap one object key, flagging the payload when it was cut. */
+function boundKey(key: string, maxBytes: number, state: BoundState): string {
+  if (Buffer.byteLength(key, 'utf8') <= maxBytes) return key
+  state.truncated = true
+  return truncateUtf8(key, maxBytes)
+}
+
+/** Recursively cap every string in one JSON-serializable value, keys included. */
 function boundValue(value: unknown, maxBytes: number, state: BoundState): unknown {
   if (typeof value === 'string') {
     if (Buffer.byteLength(value, 'utf8') <= maxBytes) return value
@@ -57,20 +64,26 @@ function boundValue(value: unknown, maxBytes: number, state: BoundState): unknow
   }
   if (Array.isArray(value)) return value.map(item => boundValue(item, maxBytes, state))
   if (value !== null && typeof value === 'object') {
-    const bounded: Record<string, unknown> = {}
-    for (const [key, item] of Object.entries(value)) bounded[key] = boundValue(item, maxBytes, state)
+    // A null prototype keeps a literal `__proto__` key as data instead of
+    // invoking the inherited setter, which would silently drop it. Two keys
+    // that share a truncated prefix collide last-wins; only a payload naming
+    // two multi-kilobyte keys can reach that.
+    const bounded = Object.create(null) as Record<string, unknown>
+    for (const [key, item] of Object.entries(value)) {
+      bounded[boundKey(key, maxBytes, state)] = boundValue(item, maxBytes, state)
+    }
     return bounded
   }
   return value
 }
 
 /**
- * Bound every string in one projected payload, adding `truncated: true` when
- * any string was cut. Exported so the runner applies the same limit to its
+ * Bound every string and key in one projected payload, adding `truncated: true`
+ * when any was cut. Exported so the runner applies the same limit to its
  * process-level `error` event.
  * @param event - the event payload to bound.
- * @param maxStringBytes - per-string byte cap.
- * @returns a copy with every over-long string truncated.
+ * @param maxStringBytes - per-string and per-key byte cap.
+ * @returns a copy with every over-long string and key truncated.
  */
 export function boundJsonEvent(
   event: Record<string, unknown>,

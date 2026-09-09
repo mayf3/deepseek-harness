@@ -9,6 +9,7 @@
 import { Command } from 'commander'
 import type { Context } from '@deepseek-ai/cordis'
 import { parseCmdline } from '@deepseek-ai/dsh-cmdline'
+import { boundJsonEvent } from './json-stream.ts'
 
 /** Stable Cordis plugin name. */
 export const name = 'headless-startup'
@@ -30,8 +31,12 @@ export interface HeadlessStartupValues {
 }
 
 /** Process facts the provider reads; tests substitute them. */
-export const internals: { stdinIsTty: () => boolean } = {
+export const internals: {
+  stdinIsTty: () => boolean
+  stdout: { write(chunk: string): unknown }
+} = {
   stdinIsTty: () => process.stdin.isTTY,
+  stdout: process.stdout,
 }
 
 /**
@@ -64,20 +69,33 @@ Examples:
 export function apply(ctx: Context): void {
   const program = headlessCommand()
   program.action(() => {
+    const options = program.opts<{ json?: boolean; sessionId?: string }>()
+    const json = options.json === true
+    // A usage error is still a process-level failure outside a turn, so a
+    // --json caller is owed the documented error event even though the runner
+    // never mounts to write it.
+    const reject = (message: string): never => {
+      if (json) internals.stdout.write(`${JSON.stringify(boundJsonEvent({ type: 'error', message }))}\n`)
+      return program.error(message)
+    }
+    if (program.args.length > 1 && program.args.includes('-')) {
+      reject('error: `-` must be the only task argument')
+    }
     const joined = program.args.join(' ')
     const task = joined.trim() === '' ? undefined : joined
     if (task === undefined && internals.stdinIsTty()) {
-      program.error('error: a task is required, for example: dsh --profile headless "run the tests"')
+      reject('error: a task is required, for example: dsh --profile headless "run the tests"')
     }
-    const options = program.opts<{ json?: boolean; sessionId?: string }>()
-    const sessionId = options.sessionId?.trim()
-    if (options.sessionId !== undefined && sessionId === '') {
-      program.error('error: --session-id requires a non-empty session id')
+    // A SessionId is opaque, so whitespace is part of the identity: validate
+    // emptiness on the trimmed value but hand the runner the exact string.
+    const sessionId = options.sessionId
+    if (sessionId !== undefined && sessionId.trim() === '') {
+      reject('error: --session-id requires a non-empty session id')
     }
     ctx.provide(HEADLESS_STARTUP_SERVICE, {
       task,
       sessionId,
-      json: options.json === true,
+      json,
     } satisfies HeadlessStartupValues)
   })
   parseCmdline(ctx, program)

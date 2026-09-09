@@ -41,6 +41,7 @@ afterEach(async () => {
   cmdlineInternals.stdout = process.stdout
   cmdlineInternals.stderr = process.stderr
   startupInternals.stdinIsTty = () => process.stdin.isTTY
+  startupInternals.stdout = process.stdout
 })
 
 /**
@@ -81,6 +82,7 @@ export const apply = ctx => globalThis.__headlessStartupApply(ctx)
   cmdlineInternals.stdout = observing
   cmdlineInternals.stderr = observing
   startupInternals.stdinIsTty = () => options.stdinIsTty === true
+  startupInternals.stdout = observing
   const globals = globalThis as unknown as {
     __headlessStartupApply: typeof apply
     __headlessStartupObserved: Observed
@@ -138,6 +140,37 @@ describe('headless command-line provider', () => {
     const { task, observed } = await bootStartup(['--session-id', '', 'do', 'it'])
     expect(observed.out).toContain('--session-id requires a non-empty session id')
     expect(task).toBeUndefined()
+    expect(observed.exits).toEqual([1])
+  })
+
+  it('keeps the caller-provided exact Session identity verbatim', async () => {
+    const { task } = await bootStartup(['--session-id', ' session-x ', 'do', 'it'])
+    expect(task).toEqual({ task: 'do it', sessionId: ' session-x ', json: false })
+  })
+
+  it('rejects a lone stdin marker mixed with other task words', async () => {
+    const { task, observed } = await bootStartup(['-', 'do', 'it'])
+    expect(observed.out).toContain('`-` must be the only task argument')
+    expect(task).toBeUndefined()
+    expect(observed.exits).toEqual([1])
+  })
+
+  it('writes the JSON error event for a --json usage error', async () => {
+    const { task, observed } = await bootStartup(['--json'], { stdinIsTty: true })
+    const first = JSON.parse(observed.out.trim().split('\n')[0] ?? '{}') as { type: string; message: string }
+    expect(first).toEqual({
+      type: 'error',
+      message: 'error: a task is required, for example: dsh --profile headless "run the tests"',
+    })
+    expect(task).toBeUndefined()
+    expect(observed.exits).toEqual([1])
+  })
+
+  it('writes the JSON error event for an empty Session identity in --json mode', async () => {
+    const { observed } = await bootStartup(['--json', '--session-id', '', 'do', 'it'])
+    const first = JSON.parse(observed.out.trim().split('\n')[0] ?? '{}') as { type: string; message: string }
+    expect(first.type).toBe('error')
+    expect(first.message).toContain('--session-id requires a non-empty session id')
     expect(observed.exits).toEqual([1])
   })
 

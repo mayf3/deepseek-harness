@@ -51,11 +51,11 @@ The generated [configuration catalog](../../../docs/config-catalog.md#deepseek-a
 
 ### Choosing the session identity
 
-Every invocation defaults to a fresh `session-<uuid>` identity. Pass `--session-id <id>` to name it yourself: the runner adopts the persisted Session with that id when one exists, and creates it otherwise. Adoption is scoped to the current working directory and refuses a Session owned by a subagent, so a supervisor cannot silently drive someone else's conversation; either mismatch fails before the task runs.
+Every invocation defaults to a fresh `session-<uuid>` identity. Pass `--session-id <id>` to name it yourself: the runner adopts the persisted Session with that id when one exists, and creates it otherwise. The identity is opaque, so the exact string is used, whitespace included. Adoption is scoped to the current working directory and refuses a Session that is a subagent or forked session, that recorded no working directory, or that was created under an agent preset this profile does not compose, so a supervisor cannot silently drive someone else's conversation under a different composition; any mismatch fails before the task runs.
 
 ### Machine-readable output
 
-`--json` replaces the final-text stdout line with a newline-delimited JSON event stream, while stderr keeps only the `dsh:` diagnostics. The stream opens with `session` (carrying the identity the run used) and closes with `final`, and carries `status`, `text`, `thinking`, `tool_call`, and `tool_result` events in between. `text` and `thinking` are projected from committed assistant messages, so a retried or discarded attempt never reaches the stream. The terminal `final` event carries the same lossless answer as the default mode and is not capped; every other string is capped at 8 KiB and flagged with `truncated`. A process-level failure outside a turn writes an `error` event and ends the stream without `final`, in addition to the `dsh:` stderr line.
+`--json` replaces the final-text stdout line with a newline-delimited JSON event stream, while stderr keeps only the `dsh:` diagnostics. The stream opens with `session` (carrying the identity the run used) and closes with `final`, and carries `status`, `text`, `thinking`, `tool_call`, and `tool_result` events in between. `text` and `thinking` are projected from committed assistant messages, so a retried or discarded attempt never reaches the stream; they arrive when the step commits, not per token, and default-mode stderr reasoning remains the only live text channel. The terminal `final` event carries the same lossless answer as the default mode and is not capped; every other string and object key is capped at 8 KiB and flagged with `truncated`. A process-level failure outside a turn writes an `error` event and ends the stream without `final`, in addition to the `dsh:` stderr line. A turn that fails in-turn still ends with a `final` event (often empty) and no `error` event, so a well-formed stream can still describe a failed run: treat exit code 1 and the `turn_end` reason as the failure signal.
 
 ### When to use it
 
@@ -63,7 +63,7 @@ Use headless for scripted or automated dsh runs — CI steps, batch jobs, quick 
 
 ### Help and task errors
 
-`dsh --profile headless --help` prints the command's help text and exits without running anything. A missing or whitespace-only task is a usage error when stdin is a terminal: nothing runs and the process exits 1. When stdin is not a terminal the runner reads the task from it instead and rejects an empty result the same way.
+`dsh --profile headless --help` prints the command's help text and exits without running anything. A missing or whitespace-only task is a usage error when stdin is a terminal: nothing runs and the process exits 1. When stdin is not a terminal the runner reads the task from it instead and rejects an empty result the same way. A lone `-` is the only stdin marker; mixing it with other task words is a usage error rather than a task that starts with a dash. In `--json` mode a usage error also writes an `error` event to stdout before the process exits, so a line-oriented supervisor sees a well-formed stream even when the runner never mounts.
 
 -----
 
@@ -142,7 +142,7 @@ These limits tell you when headless does not fit and what it needs from the `dsh
 - **No pre-token heartbeat** — in default mode stderr stays silent until the provider emits a non-empty reasoning delta; a delayed first token exposes no earlier progress signal.
 - **Reasoning enters stderr logs** — in default mode, redirection and supervisors may retain substantially more and potentially sensitive model output; route stderr to a controlled sink when needed.
 - **Default stdout carries only the final answer** — a run without an assistant message prints an empty stdout line and exits 1; intermediate tool output is not printed unless you opt into `--json`.
-- **Adoption is cwd- and ownership-scoped** — `--session-id` refuses a Session recorded in another working directory or owned by a subagent, and requires the composed Session query service.
+- **Adoption is cwd-, ownership-, and preset-scoped** — `--session-id` refuses a Session recorded in another working directory, one that recorded no working directory, one that is a subagent or forked session, or one created under an agent preset this profile does not compose, and requires the composed Session query service.
 - **The event stream is a projection, not the log** — `--json` caps every string except the terminal `final` at 8 KiB and omits events the projection does not model, so it is not a lossless copy of the Session log.
 
 <a id="dev-note"></a>

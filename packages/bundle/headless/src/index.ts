@@ -180,12 +180,25 @@ interface AdoptableHeader {
   cwd?: string | undefined
   origin?: 'subagent' | undefined
   parentSession?: SessionId | undefined
+  agentPreset?: string | undefined
 }
 
 /** Reject a Session the one-shot runner must not adopt. */
 function assertAdoptable(header: AdoptableHeader, sessionId: SessionId): void {
+  if (header.agentPreset !== undefined) {
+    // This bundle composes no preset roster, so resuming the session here would
+    // silently run it under the headless tools and prompts instead of the
+    // composition the log was recorded under.
+    throw new Error(
+      `session "${sessionId}" was created under agent preset "${header.agentPreset}", `
+      + 'which the one-shot runner does not compose',
+    )
+  }
   if (header.origin === 'subagent' || header.parentSession !== undefined) {
-    throw new Error(`session "${sessionId}" belongs to a subagent and cannot be driven directly`)
+    throw new Error(`session "${sessionId}" is a subagent or forked session and cannot be driven directly`)
+  }
+  if (header.cwd === undefined) {
+    throw new Error(`session "${sessionId}" recorded no working directory, so it cannot be adopted`)
   }
   if (header.cwd !== process.cwd()) {
     throw new Error(`session "${sessionId}" was recorded in "${header.cwd}", not "${process.cwd()}"`)

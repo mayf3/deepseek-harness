@@ -31,7 +31,7 @@ interface Script {
 
 /** Observation stub returned by the `--session-id` query path. */
 interface ObservationStub {
-  header: { cwd: string; origin?: string; parentSession?: string }
+  header: { cwd?: string; origin?: string; parentSession?: string; agentPreset?: string }
   [Symbol.dispose](): void
 }
 
@@ -46,7 +46,7 @@ interface BenchOptions {
   /** Register a live Agent under `sessionId` before the runner starts. */
   prelive?: boolean
   /** Header facts for that pre-registered live Agent. */
-  preliveMeta?: { cwd?: string; origin?: 'subagent' }
+  preliveMeta?: { cwd?: string; origin?: 'subagent'; agentPreset?: string }
 }
 
 const frameStates = new WeakMap<Agent, { attemptId: ReturnType<typeof LlmAttemptId>; revision: number; index: number }>()
@@ -531,6 +531,34 @@ describe('headless runner', () => {
     await test.ctx.fiber.dispose()
   })
 
+  it('rejects a persisted Session created under an agent preset', async () => {
+    const test = await bench({ afterPrompt: () => {} }, {
+      sessionId: 'session-exact',
+      observe: () => Promise.resolve({
+        header: { cwd: process.cwd(), agentPreset: 'minimal' },
+        [Symbol.dispose]() {},
+      }),
+    })
+    const result = await test.run()
+    expect(result.code).toBe(1)
+    expect(result.err).toContain('created under agent preset "minimal"')
+    await test.ctx.fiber.dispose()
+  })
+
+  it('rejects a persisted Session that recorded no working directory', async () => {
+    const test = await bench({ afterPrompt: () => {} }, {
+      sessionId: 'session-exact',
+      observe: () => Promise.resolve({
+        header: {},
+        [Symbol.dispose]() {},
+      }),
+    })
+    const result = await test.run()
+    expect(result.code).toBe(1)
+    expect(result.err).toContain('recorded no working directory')
+    await test.ctx.fiber.dispose()
+  })
+
   it('rejects a persisted Session owned by a subagent', async () => {
     const test = await bench({ afterPrompt: () => {} }, {
       sessionId: 'session-exact',
@@ -541,7 +569,7 @@ describe('headless runner', () => {
     })
     const result = await test.run()
     expect(result.code).toBe(1)
-    expect(result.err).toContain('belongs to a subagent')
+    expect(result.err).toContain('is a subagent or forked session')
     await test.ctx.fiber.dispose()
   })
 
@@ -582,7 +610,18 @@ describe('headless runner', () => {
     })
     const result = await test.run()
     expect(result.code).toBe(1)
-    expect(result.err).toContain('belongs to a subagent')
+    expect(result.err).toContain('is a subagent or forked session')
+    await test.ctx.fiber.dispose()
+  })
+
+  it('rejects a live Agent created under an agent preset', async () => {
+    const test = await bench({ afterPrompt: () => {} }, {
+      sessionId: 'session-exact',
+      preliveMeta: { agentPreset: 'minimal' },
+    })
+    const result = await test.run()
+    expect(result.code).toBe(1)
+    expect(result.err).toContain('created under agent preset "minimal"')
     await test.ctx.fiber.dispose()
   })
 
@@ -609,7 +648,7 @@ describe('headless runner', () => {
     })
     const result = await test.run()
     expect(result.code).toBe(1)
-    expect(result.err).toContain('belongs to a subagent')
+    expect(result.err).toContain('is a subagent or forked session')
     await test.ctx.fiber.dispose()
   })
 

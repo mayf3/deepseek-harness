@@ -205,6 +205,38 @@ describe('--json projection', () => {
     })
   })
 
+  it('keeps a literal __proto__ key and bounds over-long object keys', () => {
+    const proto = harness({ maxStringBytes: 32 }, 's1')
+    proto.emitSession({
+      type: 'tool/call',
+      data: {
+        turn: 1,
+        step: 1,
+        callId: 'p',
+        name: 'bash',
+        arguments: '{"__proto__":{"polluted":true},"a":1}',
+      },
+    } as unknown as SessionEvent)
+    const protoInput = proto.parsed()[1]?.input as Record<string, unknown>
+    expect(Object.keys(protoInput)).toEqual(['__proto__', 'a'])
+    expect(protoInput['__proto__']).toEqual({ polluted: true })
+
+    const longKey = harness({ maxStringBytes: 8 }, 's1')
+    longKey.emitSession({
+      type: 'tool/call',
+      data: {
+        turn: 1,
+        step: 1,
+        callId: 'k',
+        name: 'bash',
+        arguments: JSON.stringify({ ['k'.repeat(20)]: 1 }),
+      },
+    } as unknown as SessionEvent)
+    const longEvent = longKey.parsed()[1] as { input: Record<string, unknown>; truncated?: boolean }
+    expect(Object.keys(longEvent.input)).toEqual(['kkkkkkkk'])
+    expect(longEvent.truncated).toBe(true)
+  })
+
   it('drops a split trailing multibyte character when truncating', () => {
     const test = harness({ maxStringBytes: 5 }, 's1')
     test.emitSession(assistantMessage([{ type: 'text', text: 'ééé' }]))
