@@ -1,0 +1,97 @@
+# Agent Note: Headless machine-readable run surface
+
+Status: implemented
+
+English | [中文](2026-09-09-headless-machine-readable-run-surface.zh.md)
+
+## Problem
+
+`dsh --profile headless` serves a human terminal: the task arrives only through argv, stdout carries one final assistant message, provider reasoning streams to stderr, and every run creates a fresh random session. [Headless is a direct core entry point](../../archived/architecture/2026-08-09-headless-direct-core-entry-point.md) owns that transport and completion contract; [headless reasoning progress](../../archived/feature/2026-08-21-headless-reasoning-progress.md) owns the stderr projection.
+
+A supervising process that drives one headless process per wake, such as an external agent runtime, needs three things that contract does not provide. It needs the task over a private pipe rather than argv, because a long prompt exceeds the argument limit and argv is visible to other processes. It needs a machine-readable stream that separates assistant text, reasoning, tool calls and results, turn boundaries, and usage, because scraping stderr yields only reasoning and the final stdout line yields no tool activity. It needs an exact session identity it can pass back on the next wake, because a fresh random session per process makes continuity impossible.
+
+## Decision
+
+The `dsh-headless` bundle owns an opt-in machine-readable run surface. The default invocation keeps the previous contract unchanged: one final assistant message on stdout, reasoning on stderr, exit 0 exactly when the terminal `turn/end` reason is `completed`.
+
+Three additions extend the app-owned command line that [Apps own their command lines](../../archived/architecture/2026-08-06-app-owned-command-line.md) established:
+
+- `--json` replaces the stdout payload with newline-delimited JSON run events. Reasoning becomes an event instead of stderr output, so stderr carries only `dsh:` diagnostics.
+- `--session-id <id>` selects the exact session identity: adopt the persisted session when it exists, otherwise create it. Without the flag the run mints `session-<uuid>` as before.
+- The task text also arrives on stdin when no positional task is present, or when the positional is `-`.
+
+A per-run `--model` override is deliberately out of scope; the composition default stays authoritative.
+
+The change is confined to `packages/bundle/headless`: `src/startup.ts`, `src/index.ts`, the new `src/json-stream.ts`, the package manifest and `tsconfig.json`, and its tests. No core session, persistence, session-controller, base composition, or launcher file changes.
+
+### Command-line contract
+
+```text
+dsh --profile headless [--json] [--session-id <id>] [<task>... | -]
+```
+
+Task resolution order: joined positionals, then `-`, then piped stdin. A terminal stdin with no positional task remains a usage error, so an interactive invocation cannot hang waiting for input.
+
+`--json` changes the stdout payload and the destination of the reasoning projection only. Exit status, shutdown ordering, session flush, and the durable session log are unchanged, so a supervisor classifies a run exactly as it does today.
+
+### Event stream
+
+`--json` writes one JSON object per line to stdout and nothing else. The vocabulary is a projection of the session event log, not the log itself.
+
+| `type` | Fields | Emitted |
+|---|---|---|
+| `session` | `sessionId`, `cwd` | first line, before any model output |
+| `status` | `phase` (`turn_start`, `step_start`, `step_end`, `turn_end`), `turn`, `step`, `usage`, `reason` | one per boundary |
+| `text` | `text` | assistant text delta |
+| `thinking` | `text` | reasoning delta |
+| `tool_call` | `callId`, `tool`, `input` | once per call |
+| `tool_result` | `callId`, `status`, `result` | once per call |
+| `error` | `message` | process-level failure outside a turn |
+| `final` | `text` | last line |
+
+Projection rules:
+
+- Assistant text and reasoning deltas coalesce until 100 ms or 512 bytes accumulate, so a streaming reply stays live without one line per token.
+- The assembled assistant message is not repeated after its deltas. `user/message` echoes and internal session events (title, model selection, projection, checkpoint, goal, subagent) are not projected.
+- Every projected string is bounded at 8 KiB; an event with a cut string carries `truncated: true`. `tool_result` carries no spill path, because the tool already appends its own truncation notice to the result text.
+- `usage` appears on `step_end`, matching the token accounting a provider reports per step.
+- Raw session events stay out of scope. A debug escape hatch can be added later without changing this vocabulary.
+
+### Session identity
+
+The runtime owns identity. A run without `--session-id` mints `session-<uuid>` and reports it in the first event. A supervisor persists that value and passes it back on the next wake.
+
+`--session-id <id>` is adopt-or-create: observe the persisted session, resume it when it exists, create it otherwise. Create-only would fail the second run, because the JSONL store rejects an existing log id ([session persistence](../../implemented/architecture/2026-06-14-session-persistence.md)).
+
+Adoption compares the persisted session's recorded cwd with the process cwd, since sessions are organized per project directory ([project session directories](../../implemented/architecture/2026-07-24-project-session-directories.md)). A mismatch exits 1 with a `dsh:` diagnostic instead of silently continuing a conversation rooted elsewhere. A session linked to a parent or subagent is rejected. Two live processes cannot write one id; the store's write lease already rejects the second writer. The runner reads the observation through the composed `sessionQuery` service and fails loudly when `--session-id` is requested without it.
+
+## Consequences
+
+What landed: `src/startup.ts` parses `--json` and `--session-id <id>`, treats an absent or `-` task as "read stdin", and raises the usage error only when stdin is a terminal. `src/index.ts` resolves the task, adopts or creates the exact session, and wires either the stderr reasoning projection or the new `src/json-stream.ts` projection. `cordis.patch.yml` forwards the two new settings.
+
+- Default mode is unchanged: a text-only run writes one final assistant line to stdout and nothing to stderr, and exit status still follows the terminal reason.
+- `--json` stdout parses line by line as JSON, starts with `session`, ends with `final`, and contains no plain text. Stderr carries no reasoning in this mode.
+- Two consecutive runs with the same `--session-id` share history. A run whose cwd differs from the persisted session exits 1 with a diagnostic.
+- A piped task with no positional task is honored, and an interactive invocation without a task still fails with the usage error.
+- Unit coverage lands in `packages/bundle/headless/tests/startup.spec.ts`, `tests/headless.spec.ts`, and `tests/json-stream.spec.ts`. The product headless profile expectation test in `apps/cli/tests/profiles/headless/tests/headless.expected.e2e.ts` covers both output modes end to end.
+
+Deferred and open:
+
+- The per-run `--model` override is unimplemented. A later change must respect the session-local selection precedence owned by the Session Controller rather than overriding a stored selection.
+- Cold start plus log replay grows with session length, so a long-lived conversation pays more per wake than a fresh one.
+- `--json` moves reasoning from stderr to stdout, so a log collector that watches stderr sees nothing on a reasoned run in that mode.
+- Bounded `tool_result` payloads hide full output from the supervisor; the 8 KiB cap is owned by `src/json-stream.ts` and should stay a single constant.
+
+## Alternatives considered
+
+**`--verbose` human text on stderr.** A supervisor parses stdout, so a stderr-only projection is invisible to it. Default-mode stderr reasoning already is the human verbose surface.
+
+**Dump raw session events.** They repeat the assembled message beside its deltas, echo `user/message`, and include internal events. Measured on one prompt, pi's delta stream produced 84 lines and 11.7 KB against opencode's 3 lines and 962 B, with roughly a quarter of pi's bytes spent repeating one message across `message_end`, `turn_end`, and `agent_end`.
+
+**A long-lived SDK process instead of one process per wake.** The SDK already speaks structured events and create-or-adopt identity, but it replaces the one-process-per-wake model the supervisor is built on. Measured cold start for the headless profile is about 0.45 s warm and 1.2 s cold, small against a real turn.
+
+**Let the supervisor mint the session id.** Identity belongs to the runtime that owns the log. The supervisor records what the first event reports.
+
+**Create-only `--session-id`.** The second wake would fail against the existing log, which is the opposite of the continuity the flag exists for.
+
+**Task from argv only.** Long prompts exceed `ARG_MAX` and expose the prompt in the process list.

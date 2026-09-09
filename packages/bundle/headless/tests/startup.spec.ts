@@ -1,7 +1,7 @@
 /**
  * The one-shot app's ordinary command-line provider over a real Loader tree:
- * the task becomes injected runner config, while help and usage errors leave
- * the consumer pending.
+ * the task, exact Session identity, and output mode become injected runner
+ * config, while help and interactive usage errors leave the consumer pending.
  */
 
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
@@ -11,9 +11,14 @@ import { pathToFileURL } from 'node:url'
 import { Context } from '@deepseek-ai/cordis'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
 import Include from '@deepseek-ai/cordis-plugin-include'
-import { internals, provideCmdline } from '@deepseek-ai/dsh-cmdline'
+import { internals as cmdlineInternals, provideCmdline } from '@deepseek-ai/dsh-cmdline'
 import { afterEach, describe, expect, it } from 'vitest'
-import { apply, HEADLESS_STARTUP_SERVICE, type HeadlessStartupValues } from '../src/startup.ts'
+import {
+  apply,
+  HEADLESS_STARTUP_SERVICE,
+  internals as startupInternals,
+  type HeadlessStartupValues,
+} from '../src/startup.ts'
 
 /** What one boot of the fixture tree observed. */
 interface Observed {
@@ -30,16 +35,21 @@ const tempDirs: string[] = []
 afterEach(async () => {
   for (const dispose of disposers.splice(0)) await dispose()
   for (const dir of tempDirs.splice(0)) rmSync(dir, { recursive: true, force: true })
-  internals.stdout = process.stdout
-  internals.stderr = process.stderr
+  cmdlineInternals.stdout = process.stdout
+  cmdlineInternals.stderr = process.stderr
+  startupInternals.stdinIsTty = () => process.stdin.isTTY
 })
 
 /**
  * Mount the real provider over a runner stand-in.
  * @param args - the invocation's inner arguments.
+ * @param options - process facts the provider reads.
  * @returns the resolved service value and observed runner/process effects.
  */
-async function bootStartup(args: string[]): Promise<{ task: HeadlessStartupValues | undefined; observed: Observed }> {
+async function bootStartup(
+  args: string[],
+  options: { stdinIsTty?: boolean } = {},
+): Promise<{ task: HeadlessStartupValues | undefined; observed: Observed }> {
   const dir = mkdtempSync(join(tmpdir(), 'dsh-headless-startup-'))
   tempDirs.push(dir)
   const observed: Observed = { exits: [], out: '' }
@@ -58,13 +68,16 @@ export const apply = ctx => globalThis.__headlessStartupApply(ctx)
     `  inject: [${HEADLESS_STARTUP_SERVICE}]`,
     '  config:',
     '    task: !!js ctx.headlessStartup.task',
+    '    sessionId: !!js ctx.headlessStartup.sessionId',
+    '    json: !!js ctx.headlessStartup.json',
     '- id: headless-startup',
     `  name: ${pathToFileURL(join(dir, 'startup.mjs')).href}`,
     '',
   ].join('\n'))
   const observing = { write: (chunk: string) => { observed.out += chunk; return true } }
-  internals.stdout = observing
-  internals.stderr = observing
+  cmdlineInternals.stdout = observing
+  cmdlineInternals.stderr = observing
+  startupInternals.stdinIsTty = () => options.stdinIsTty === true
   const globals = globalThis as unknown as {
     __headlessStartupApply: typeof apply
     __headlessStartupObserved: Observed
@@ -88,16 +101,40 @@ export const apply = ctx => globalThis.__headlessStartupApply(ctx)
 describe('headless command-line provider', () => {
   it('joins the task positional into the runner config', async () => {
     const { task, observed } = await bootStartup(['run', 'the', 'tests'])
-    expect(task).toEqual({ task: 'run the tests' })
-    expect(observed.runnerConfig).toEqual({ task: 'run the tests' })
+    expect(task).toEqual({ task: 'run the tests', sessionId: undefined, json: false })
+    expect(observed.runnerConfig).toMatchObject({ task: 'run the tests', json: false })
     expect(observed.exits).toEqual([])
   })
 
-  it.each([{ args: [] }, { args: ['   '] }])('rejects an invocation with no non-whitespace task ($args)', async ({ args }) => {
-    const { task, observed } = await bootStartup(args)
+  it('publishes the machine-readable output mode and the exact Session identity', async () => {
+    const { task, observed } = await bootStartup(['--json', '--session-id', 'session-exact', 'do', 'it'])
+    expect(task).toEqual({ task: 'do it', sessionId: 'session-exact', json: true })
+    expect(observed.runnerConfig).toMatchObject({ task: 'do it', sessionId: 'session-exact', json: true })
+  })
+
+  it('keeps the stdin marker as the task so the runner reads the pipe', async () => {
+    const { task } = await bootStartup(['-'], { stdinIsTty: false })
+    expect(task).toEqual({ task: '-', sessionId: undefined, json: false })
+  })
+
+  it('defers an absent task to stdin when stdin is not a terminal', async () => {
+    const { task, observed } = await bootStartup([], { stdinIsTty: false })
+    expect(task).toEqual({ task: undefined, sessionId: undefined, json: false })
+    expect(observed.runnerConfig).toMatchObject({ json: false })
+  })
+
+  it.each([{ args: [] as string[] }, { args: ['   '] }])('rejects an interactive invocation with no task ($args)', async ({ args }) => {
+    const { task, observed } = await bootStartup(args, { stdinIsTty: true })
     expect(observed.out).toContain('a task is required')
     expect(task).toBeUndefined()
     expect(observed.runnerConfig).toBeUndefined()
+    expect(observed.exits).toEqual([1])
+  })
+
+  it('rejects an explicitly empty Session identity', async () => {
+    const { task, observed } = await bootStartup(['--session-id', '', 'do', 'it'])
+    expect(observed.out).toContain('--session-id requires a non-empty session id')
+    expect(task).toBeUndefined()
     expect(observed.exits).toEqual([1])
   })
 
@@ -105,6 +142,7 @@ describe('headless command-line provider', () => {
     const { task, observed } = await bootStartup(['--help'])
     expect(observed.out).toContain('dsh --profile headless')
     expect(observed.out).toContain('stream reasoning to stderr')
+    expect(observed.out).toContain('--session-id')
     expect(task).toBeUndefined()
     expect(observed.runnerConfig).toBeUndefined()
     expect(observed.exits).toEqual([0])

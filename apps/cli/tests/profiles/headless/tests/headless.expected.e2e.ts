@@ -251,6 +251,36 @@ describe('headless stream-json snapshots', () => {
     expect(result.stderr).toBe(await readFile(headlessReasoningExpected, 'utf8'))
   }, LOADER_SMOKE_TEST_TIMEOUT_MS)
 
+  it('projects the same run as JSON events with an exact session identity', async () => {
+    const task = 'Prove the machine-readable product headless profile path.'
+    const result = await runLoaderSmoke({
+      label: 'product headless profile json snapshot',
+      tempDirPrefix: 'headless-snapshot-profile-json-',
+      binScript: dshBinScript,
+      configPath: headlessOverlayPath,
+      binArgs: [
+        '--profile', 'headless', '--patch', headlessOverlayPath,
+        '--json', '--session-id', 'headless-json-session', task,
+      ],
+      tsconfigPath,
+      env: {
+        DSH_PERMISSION_MODE: 'danger-full-access',
+        DSH_TELEMETRY_DISABLED: '1',
+        NODE_OPTIONS: [process.env.NODE_OPTIONS, '--disable-warning=ExperimentalWarning'].filter(Boolean).join(' '),
+      },
+    })
+
+    const events = result.stdout.trim().split('\n').map(line => JSON.parse(line) as JsonObject)
+    expect(events[0]).toMatchObject({ type: 'session', sessionId: 'headless-json-session' })
+    expect(typeof events[0]?.cwd).toBe('string')
+    expect(events.at(-1)).toMatchObject({ type: 'final', text: 'CLI tool round trip complete: CLI_TOOL_ROUND_TRIP' })
+    expect(events.map(event => event.type)).toContain('thinking')
+    expect(events.map(event => event.type)).toContain('tool_call')
+    expect(events.map(event => event.type)).toContain('tool_result')
+    expect(events.map(event => event.type)).not.toContain('error')
+    expect(result.stderr).toBe('')
+  }, LOADER_SMOKE_TEST_TIMEOUT_MS)
+
   it('prints a terminal model failure through the product headless profile command', async () => {
     const result = await runLoaderSmoke({
       label: 'product headless profile model failure snapshot',
