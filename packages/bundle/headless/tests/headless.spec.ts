@@ -506,12 +506,27 @@ describe('headless runner', () => {
     await test.ctx.fiber.dispose()
   })
 
-  it('rejects creating the requested Session when persistence is not mounted', async () => {
+  it('rejects --session-id when persistence is not mounted', async () => {
     const test = await bench({
       afterPrompt(session, message) { appendTurn(session, 1, message, 'created', true) },
     }, {
       sessionId: 'session-exact',
       observe: () => Promise.reject(new SessionQueryError('missing', 'SESSION_QUERY_SESSION_NOT_FOUND')),
+      omitPersistence: true,
+    })
+    const result = await test.run()
+    expect(result.code).toBe(1)
+    expect(result.err).toContain('requires the sessionPersistence service')
+    expect(result.out).toBe('')
+    await test.ctx.fiber.dispose()
+  })
+
+  it('rejects adopting a live Session when persistence is not mounted', async () => {
+    const test = await bench({
+      afterPrompt(session, message) { appendTurn(session, 1, message, 'live', true) },
+    }, {
+      sessionId: 'session-exact',
+      prelive: true,
       omitPersistence: true,
     })
     const result = await test.run()

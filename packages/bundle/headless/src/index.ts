@@ -250,6 +250,13 @@ async function resolveAgent(
   agentOptions: { provider: string; model: string },
   setup: (agentCtx: Context) => void,
 ): Promise<Agent> {
+  // Adopting a live identity and creating a missing one both promise the
+  // caller a log a later process can continue. Without a durable log the run
+  // would succeed, print the id, and still lose the whole history at exit, so
+  // a miscomposed profile fails loud before either path.
+  if (ctx.get('sessionPersistence') === undefined) {
+    throw new Error('headless --session-id requires the sessionPersistence service; the Session would not survive this process')
+  }
   const live = agents.get(sessionId)
   if (live !== undefined) {
     // A live identity skips adoption, not the rules that make adoption safe.
@@ -271,12 +278,6 @@ async function resolveAgent(
     return agent
   } catch (error: unknown) {
     if (!(error instanceof SessionQueryError) || error.code !== 'SESSION_QUERY_SESSION_NOT_FOUND') throw error
-  }
-  // Creating the requested identity without a durable log would succeed, print
-  // the id, and still lose the whole history at exit — the exact continuity
-  // `--session-id` promises. A miscomposed profile fails loud instead.
-  if (ctx.get('sessionPersistence') === undefined) {
-    throw new Error('headless --session-id requires the sessionPersistence service; the created Session would not survive this process')
   }
   const { agent } = await agents.create({
     sessionId,
