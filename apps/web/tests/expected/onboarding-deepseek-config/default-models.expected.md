@@ -63,6 +63,16 @@
             - img
           - button "删除模型 3":
             - img
+          - textbox "模型 ID 4":
+            - /placeholder: 模型 ID
+            - text: deepseek-v4-flash-vision-exp
+          - textbox "显示名称 4":
+            - /placeholder: 显示名称
+            - text: DeepSeek-V4-Flash-Vision-Exp
+          - button "容量 4":
+            - img
+          - button "删除模型 4":
+            - img
           - button "添加模型":
             - img
             - text: 添加模型
