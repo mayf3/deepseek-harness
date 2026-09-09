@@ -3327,12 +3327,18 @@ importers:
       '@types/react-dom':
         specifier: ~18.3.0
         version: 18.3.7(@types/react@18.3.31)
+      '@viz-js/viz':
+        specifier: 3.30.0
+        version: 3.30.0
       anser:
         specifier: ^2.3.5
         version: 2.3.5
       clsx:
         specifier: ^2.0.0
         version: 2.1.1
+      dompurify:
+        specifier: 3.4.11
+        version: 3.4.11
       katex:
         specifier: ^0.16.47
         version: 0.16.47
@@ -3345,6 +3351,9 @@ importers:
       mdast-util-math:
         specifier: ^3.0.0
         version: 3.0.0
+      mermaid:
+        specifier: 11.16.0
+        version: 11.16.0
       micromark-core-commonmark:
         specifier: ^2.0.3
         version: 2.0.3
@@ -14286,6 +14295,9 @@ packages:
   '@vitest/utils@4.1.8':
     resolution: {integrity: sha512-uOJamYALNhfJ6iolExyQM40yIQwDqYnkKtQ5VCiSe17E33H0aQ/u+1GlRuz4LZBk6Mm3sg90G9hEbmEt37C1Zg==}
 
+  '@viz-js/viz@3.30.0':
+    resolution: {integrity: sha512-2zmcP55QY44uQfZ+GvgNHmGd8S6KUD+2eMur9AbYybSzrOd/m8nMUg0ZircJNiJRKGgVBKAE8kh0hAwpUFUFQQ==}
+
   '@vscode/ripgrep-darwin-arm64@1.18.0':
     resolution: {integrity: sha512-r3ktHSvbFycQNF6sl7sNDPocpsI7J+mEzh1IaZFkY0spm3k2Z9t8hPAeOK7+p0l6p6/swkQC14XWX01low+94Q==}
     cpu: [arm64]
@@ -20894,6 +20906,8 @@ snapshots:
       '@vitest/pretty-format': 4.1.8
       convert-source-map: 2.0.0
       tinyrainbow: 3.1.0
+
+  '@viz-js/viz@3.30.0': {}
 
   '@vscode/ripgrep-darwin-arm64@1.18.0':
     optional: true

@@ -1,0 +1,24 @@
+- heading "Mermaid previews" [level=1]
+- button "Source"
+- button "Copy"
+- tooltip "Copy"
+- img "Mermaid diagram"
+- button "Source"
+- button "Copy"
+- img "Mermaid diagram"
+- button "Source"
+- button "Copy"
+- status: Unable to render this diagram. The source is shown below.
+- code: flowchart LR A[unfinished
+- button "Source"
+- button "Copy"
+- img "Mermaid diagram"
+- button "Source"
+- button "Copy"
+- img "Graphviz diagram"
+- button "Source"
+- button "Copy"
+- img "SVG preview"
+- button "Source"
+- button "Copy"
+- iframe

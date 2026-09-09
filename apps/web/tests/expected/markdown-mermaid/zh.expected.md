@@ -1,0 +1,23 @@
+- heading "Mermaid previews" [level=1]
+- button "源码"
+- button "复制"
+- img "Mermaid 图表"
+- button "源码"
+- button "复制"
+- img "Mermaid 图表"
+- button "源码"
+- button "复制"
+- status: 无法渲染此图表，源码如下。
+- code: flowchart LR A[unfinished
+- button "源码"
+- button "复制"
+- img "Mermaid 图表"
+- button "源码"
+- button "复制"
+- img "Graphviz 图表"
+- button "源码"
+- button "复制"
+- img "SVG 预览"
+- button "源码"
+- button "复制"
+- iframe
