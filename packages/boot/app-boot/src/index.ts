@@ -780,9 +780,6 @@ export async function assertEntriesActivated(ctx: Context, binName: string): Pro
  * complete plugin set.
  * @returns the root context once every entry has started, or as soon as a
  * surface disposed the tree while startup was still in flight.
- * @throws a labelled error after disposing the partial context — `host
- * preparation failed` when `prepare` threw before any config-tree entry
- * mounted, `plugin tree failed to load` afterwards.
  */
 export async function boot(
   binName: string,
@@ -792,45 +789,21 @@ export async function boot(
   bareModuleBaseUrl?: string,
 ): Promise<Context> {
   const ctx = new Context()
-  // Two failure labels: `prepare` runs before any config-tree entry mounts,
-  // so its failure is host setup, not the plugin tree.
-  let stage = 'host preparation failed'
-  try {
-    ctx.baseUrl = pathToFileURL(dirname(absoluteConfigPath)).href + '/'
-    ctx.provide('dshHomePath', dshHomePath)
-    await ctx.plugin(Loader)
-    await prepare?.(ctx)
-    stage = 'plugin tree failed to load'
-    await mountRootInclude(ctx, absoluteConfigPath, patches, bareModuleBaseUrl)
-    // A surface can finish and dispose the whole tree while startup is still
-    // in flight, before the last entry settles. The Loader service goes with
-    // it, and the activation audit describes a live tree — reading `ctx.loader`
-    // past this point would throw a TypeError over an app that exited exactly
-    // as asked. Transactional group updates settle
-    // lifecycle inside the mount, so the teardown can land before it returns;
-    // re-check after every await.
-    await ctx.get('loader')?.await()
-    if (ctx.get('loader') === undefined) return ctx
-    await assertEntriesActivated(ctx, binName)
-    return ctx
-  } catch (cause) {
-    // Root-fiber disposal contains cleanup failures per observer (Cordis
-    // fiber.ts hardening) and a repeated call returns the settled single-shot
-    // result, so this await cannot reject and replace `cause`.
-    await ctx.fiber.dispose()
-    const detail = cause instanceof Error ? cause.message : String(cause)
-    // The transactional Loader wraps a failing entry apply in one message per
-    // tree layer; every layer's message is folded into `detail` above, and the
-    // deepest cause is the plugin's own thrown error, whose stack names the
-    // real failure site — append it so the startup diagnostic preserves the
-    // original activation error instead of only the wrap chain.
-    let deepest: unknown = cause
-    while (deepest instanceof Error && deepest.cause !== undefined) deepest = deepest.cause
-    const stack = deepest instanceof AggregateError
-      ? `\n${deepest.stack ?? deepest.message}\n${deepest.errors.map(formatActivationError).join('\n')}`
-      : deepest instanceof Error && deepest !== cause ? `\n${deepest.stack ?? deepest.message}` : ''
-    throw new Error(`${binName}: ${stage}: ${detail}${stack}`, { cause })
-  }
+  ctx.baseUrl = pathToFileURL(dirname(absoluteConfigPath)).href + '/'
+  ctx.provide('dshHomePath', dshHomePath)
+  await ctx.plugin(Loader)
+  await prepare?.(ctx)
+  await mountRootInclude(ctx, absoluteConfigPath, patches, bareModuleBaseUrl)
+  await ctx.loader.await()
+  // A surface can finish and dispose the whole tree while that await is still
+  // pending: the TUI renders as soon as its own fiber starts, so an `/exit`
+  // typed before the last entry settles tears the context down under us. The
+  // Loader service goes with it, and the activation audit describes a live
+  // tree — reading `ctx.loader` here would throw a TypeError over an app that
+  // exited exactly as asked.
+  if (ctx.get('loader') === undefined) return ctx
+  await assertEntriesActivated(ctx, binName)
+  return ctx
 }
 
 /** Prompt-section name for the harness-source location line an app bin adds after boot. */

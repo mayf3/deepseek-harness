@@ -77,10 +77,11 @@ export async function apply(ctx: Context): Promise<void> {
       for (const id of [...ids].reverse()) {
         // Tree teardown (group.stop) can have removed the entry already;
         // nothing is left to unmount or await then.
-        if (ctx.loader.store[id] === undefined) continue
-        // remove() disposes the entry transactionally, so the chooser's unload
-        // signals completion only after that face quiesced.
-        await ctx.loader.remove(id)
+        const entry = ctx.loader.store[id]
+        if (entry === undefined) continue
+        const fiber = entry.fiber
+        ctx.loader.remove(id)
+        await fiber?.dispose()
       }
     }
     try {

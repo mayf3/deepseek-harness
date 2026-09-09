@@ -729,22 +729,6 @@ describe('boot', () => {
     }
   })
 
-  it('disposes partial host setup and labels non-Error preparation failures', async () => {
-    const dir = tmp()
-    const failure = 42
-    let disposed = false
-    const task = boot(NAME, join(dir, 'cordis.yml'), undefined, (ctx) => {
-      ctx.effect(() => () => { disposed = true })
-      throw failure
-    })
-
-    await expect(task).rejects.toMatchObject({
-      message: `${NAME}: host preparation failed: ${failure}`,
-      cause: failure,
-    })
-    expect(disposed).toBe(true)
-  })
-
   it('exposes dshHomePath to Loader config expressions', async () => {
     const dir = tmp()
     const dshHome = join(dir, 'home')
@@ -851,9 +835,9 @@ describe('boot', () => {
     const deepest = new Error('stackless deep failure')
     delete (deepest as { stack?: string }).stack
     await expect(boot(NAME, join(dir, 'cordis.yml'), undefined, () => {
-      throw new Error('wrapped setup failure', { cause: deepest })
+      throw new Error('host preparation failed', { cause: deepest })
     })).rejects.toThrow(
-      `${NAME}: host preparation failed: wrapped setup failure\nstackless deep failure`,
+      `${NAME}: plugin tree failed to load: host preparation failed\nstackless deep failure`,
     )
   })
 

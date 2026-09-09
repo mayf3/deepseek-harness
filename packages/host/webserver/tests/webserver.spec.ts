@@ -12,7 +12,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { afterEach, describe, expect, it } from 'vitest'
-import { Context } from '@deepseek-ai/cordis'
+import { Context, FiberState } from '@deepseek-ai/cordis'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
 import Include from '@deepseek-ai/cordis-plugin-include'
 import HttpServer, { renderIndexInjections } from '../src/index.ts'
@@ -361,17 +361,25 @@ describe('real Loader composition', () => {
     const firstRoot = root
     root = undefined // keep the first composition's files until the end
 
+    // loader.await() never rejects (allSettled); the bind failure surfaces as
+    // a FAILED fiber whose error escapes as a late rejection — the shape the
+    // boot's installFailLoud is contracted to catch. Capture it here the same
+    // way, and assert it really is the bind error.
+    const rejections: unknown[] = []
+    const onUnhandled = (err: unknown): void => { rejections.push(err) }
+    process.on('unhandledRejection', onUnhandled)
     let second: Context | undefined
     try {
-      let failure: unknown
-      try {
-        await loadComposition(takenPort)
-      } catch (error) {
-        failure = error
+      second = await loadComposition(takenPort)
+      const entry = [...second.loader.entries()].find(e => e.options.name === '@deepseek-ai/dsh-host-webserver')
+      expect(entry?.fiber?.state).toBe(FiberState.FAILED)
+      // The rejection escapes a tick after loader.await() settles; bounded poll.
+      for (let i = 0; i < 100 && rejections.length === 0; i++) {
+        await new Promise(resolve => setTimeout(resolve, 10))
       }
-      second = context
-      expect(String(failure)).toMatch(/failed to apply loader entry.*EADDRINUSE/)
+      expect(rejections.map(String).join('\n')).toContain('EADDRINUSE')
     } finally {
+      process.off('unhandledRejection', onUnhandled)
       await second?.fiber.dispose()
       context = first
       if (root !== undefined) await rm(root, { recursive: true, force: true })
