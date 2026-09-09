@@ -1,6 +1,7 @@
 /* The card width leaves four categories on the first row and three on the
    second. The doubled selector overrides the Modal card geometry. */
 .dialog.dialog {
+  gap: 38px;
   width: min(488px, 100%);
   border-radius: 18px;
 }
@@ -9,6 +10,7 @@
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+  margin-top: -14px;
 }
 
 .chip {
@@ -18,7 +20,7 @@
   border-radius: 14px;
   corner-shape: round;
   background: transparent;
-  color: var(--dsw-alias-label-secondary);
+  color: var(--dsw-alias-label-primary);
   font: inherit;
   font-size: 13px;
   line-height: 18px;
@@ -59,7 +61,7 @@
   margin-top: 18px;
   padding: 12px 14px;
   border: 0.5px solid var(--dsw-alias-border-l4);
-  border-radius: 12px;
+  border-radius: 16px;
   background: var(--dsw-alias-bg-layer-1);
   color: var(--dsw-alias-label-primary);
   font: inherit;
@@ -71,7 +73,7 @@
 }
 
 .detail::placeholder {
-  color: var(--dsw-alias-label-tertiary);
+  color: var(--dsw-alias-label-caption);
 }
 
 .detail:focus {
@@ -91,9 +93,9 @@
 .submit {
   width: 100%;
   height: 44px;
-  border-radius: 22px;
-  corner-shape: round;
+  border-radius: 18px;
   font-size: 14px;
+  font-weight: 500;
 }
 
 /* The design's ringed green check, not the warning tint the Toast icon seat defaults to. */
