@@ -597,6 +597,60 @@ describe('auditStartupEntries', () => {
     ].join('\n'))
   })
 
+  it('describes nested, stackless, non-error, pending, and unexpected failures', async () => {
+    const warn = vi.fn()
+    const circular = new Error('circular failure')
+    ;(circular as { cause?: unknown }).cause = circular
+    const stackless = new Error('stackless failure')
+    delete (stackless as { stack?: string }).stack
+    const deepestWithStack = new Error('deep failure with stack')
+    const deepestWithoutStack = new Error('deep failure without stack')
+    delete (deepestWithoutStack as { stack?: string }).stack
+    const wrappedStack = new Error('wrapped stack', { cause: deepestWithStack })
+    const wrappedStackless = new Error('wrapped stackless', { cause: deepestWithoutStack })
+    const wrappedValue = new Error('wrapped value', { cause: 'plain cause' })
+
+    await auditStartupEntries(ctxWith([
+      { fiber: fiber(3, circular), options: { id: 'circular', name: './circular.mjs' } },
+      { fiber: fiber(3, stackless), options: { id: 'stackless', name: './stackless.mjs' } },
+      {
+        fiber: fiber(3, wrappedStack),
+        options: { id: 'deep-stack', name: './deep-stack.mjs' },
+      },
+      {
+        fiber: fiber(3, wrappedStackless),
+        options: { id: 'deep-stackless', name: './deep-stackless.mjs' },
+      },
+      {
+        fiber: fiber(3, wrappedValue),
+        options: { id: 'plain-cause', name: './plain-cause.mjs' },
+      },
+      { fiber: fiber(3, 42), options: { id: 'number-error', name: './number-error.mjs' } },
+      {
+        fiber: fiber(0, undefined, { first: {}, second: {} }),
+        options: { id: 'multiple-dependencies', name: './multiple-dependencies.mjs' },
+      },
+      {
+        fiber: fiber(0),
+        options: { id: 'unknown-dependency', name: './unknown-dependency.mjs' },
+      },
+      { fiber: fiber(1), options: { id: 'unexpected-state', name: './unexpected-state.mjs' } },
+    ]), NAME, warn)
+
+    expect(warn).toHaveBeenCalledOnce()
+    const diagnostic = String(warn.mock.calls[0]![0])
+    expect(diagnostic).toContain(`${NAME}: warning: 9 entries did not activate`)
+    expect(diagnostic).toContain(`circular (./circular.mjs): ${circular.stack!}`)
+    expect(diagnostic).toContain('stackless (./stackless.mjs): stackless failure')
+    expect(diagnostic).toContain(`deep-stack (./deep-stack.mjs): ${wrappedStack.stack!}\n${deepestWithStack.stack!}`)
+    expect(diagnostic).toContain(`deep-stackless (./deep-stackless.mjs): ${wrappedStackless.stack!}\ndeep failure without stack`)
+    expect(diagnostic).toContain(`plain-cause (./plain-cause.mjs): ${wrappedValue.stack!}\nplain cause`)
+    expect(diagnostic).toContain('number-error (./number-error.mjs): 42')
+    expect(diagnostic).toContain('multiple-dependencies (./multiple-dependencies.mjs): pending (waiting for services: first, second)')
+    expect(diagnostic).toContain('unknown-dependency (./unknown-dependency.mjs): pending (waiting for services: unknown)')
+    expect(diagnostic).toContain('unexpected-state (./unexpected-state.mjs): fiber state 1')
+  })
+
   it('rejects required failures after warning about optional failures', async () => {
     const warn = vi.fn()
     const requiredError = new Error('address already in use')
