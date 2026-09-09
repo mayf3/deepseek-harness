@@ -51,7 +51,7 @@ HTML runs in a Blob iframe with exactly `sandbox="allow-scripts"`, without `allo
 
 Shared copy comes from `sidebarDocumentPreview`; each builtin renderer owns its localized labels.
 
-Initial reads, additional pages, and HTML/PDF preparation share a loading indicator that respects reduced-motion preferences. Loaded pages stay visible while another page loads. PDF pages form one vertical, width-fitted sequence and render lazily near the viewport. Code previews show source line numbers by default without including them in copied text; plain text uses the same font size and line height as code.
+Initial reads, additional pages, and HTML/PDF preparation share a loading indicator that respects reduced-motion preferences. Loaded pages stay visible while another page loads. PDF pages form one vertical, width-fitted sequence and render lazily near the viewport. Code previews show source line numbers by default without including them in copied text; plain text uses the same font size and line height as code. Code sits on the pane's own background rather than the chat card's fill, and with wrap off both axes scroll in the shared document scroller while the copy banner stays pinned to the visible width.
 
 <a id="navigation"></a>
 ## Navigation
