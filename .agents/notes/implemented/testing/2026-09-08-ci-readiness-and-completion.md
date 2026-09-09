@@ -12,6 +12,8 @@ Another [Windows coverage run](https://github.com/deepseek-harness/deepseek-harn
 
 The [ACP coverage run](https://github.com/deepseek-harness/deepseek-harness/actions/runs/34242280527/job/102115221228) exhausts a one-second registry poll after transport failure. Disconnect cleanup includes cancellation, output draining, persistence, and owner disposal; registry removal alone does not establish complete teardown.
 
+A [worker-runtime coverage failure](https://github.com/deepseek-harness/deepseek-harness/actions/runs/34248221544/job/102135631932) exhausts the slow-binding fixture's one-second compute allowance. Concurrent native Windows reproductions exceed that allowance before calling the binding. Worker initialization contributes measured active time; the delayed binding contributes idle time.
+
 ## Decision
 
 The [webhook browser test](../../../../apps/web/tests/github-ready-review.e2e.ts) observes the model request caused by delivery before checking Session registration. The [feedback test](../../../../apps/web/tests/feedback-command.e2e.ts) waits for the empty composer and enabled attachment control before comparing ARIA output. Matching consecutive snapshots cannot prove that the command RPC has settled: its event stream can publish the acknowledgement first.
@@ -23,6 +25,8 @@ The [publint runner tests](../../../../scripts/publint-all.spec.ts) pass the act
 The [ACP disconnect tests](../../../../packages/acp/acp/tests/dispose.spec.ts) await the real session handle disposer for both EOF and transport failure. A barrier holds disposal pending while the test checks ownership, then releases it before awaiting completion and checking both registries. Neither case invokes plugin disposal to trigger the behavior under test. The independent teardown hook releases the barrier before disposing the captured Context, including when the test body times out.
 
 The [subagent teardown decision](2026-09-07-subagent-teardown-test-budgets.md) owns lifecycle cleanup budgets. The [persistent PowerShell decision](2026-09-07-pwsh-ci-observable-completion.md) owns exact versus inferred terminal readiness; a one-shot process's completion promise has different semantics.
+
+The [worker-runtime binding test](../../../../packages/code-runtime/code-runtime-worker-thread/tests/runtime.spec.ts) allows five seconds of compute for source-worker initialization and delays the binding for 6.5 seconds. Charging that idle delay would still exceed the entire compute allowance. The case retains its 15-second test limit and 30-second wall ceiling, registers Context and reply-timer cleanup, and leaves the hot-loop, decoy-dispatch, wall-ceiling, and abort controls at their existing limits. Production budgets remain unchanged.
 
 ## Alternatives considered
 

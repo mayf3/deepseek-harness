@@ -314,7 +314,8 @@ describe.skipIf(MODE === 'record')('web e2e: details panel follows the current S
 
     try {
       await page.setViewportSize({ width: 1024, height: viewport.height })
-      await expect.poll(() => columns(page)).toEqual([280, 400, 344])
+      // Frame measurement and the grid transition can finish after setViewportSize returns.
+      await expect.poll(() => columns(page), { timeout: 5_000 }).toEqual([280, 400, 344])
       await dragSidebar(page, 420)
       await expect.poll(() => columns(page)).toEqual([420, 604, 0])
       expect(await column.locator('[data-sidebar-right-open]').count()).toBe(0)
