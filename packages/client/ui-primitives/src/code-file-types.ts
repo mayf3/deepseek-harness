@@ -1,4 +1,4 @@
-/** Full-color code and configuration glyphs supplied by square-code-icons v1. */
+/** Code and configuration categories with embedded full-color glyphs. */
 export const CODE_FILE_TYPES = [
   'angular',
   'c',

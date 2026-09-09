@@ -77,6 +77,7 @@ const EXTENSION_TYPES: Readonly<Record<string, ClassifiedFileType>> = {
   pdf: 'pdf',
   ppt: 'ppt',
   pptx: 'ppt',
+  key: 'ppt',
   mp4: 'video',
   mov: 'video',
   m4v: 'video',
@@ -87,8 +88,13 @@ const EXTENSION_TYPES: Readonly<Record<string, ClassifiedFileType>> = {
   mpeg: 'video',
   doc: 'word',
   docx: 'word',
+  rtf: 'word',
+  odt: 'word',
+  pages: 'word',
   xls: 'excel',
   xlsx: 'excel',
+  xlsm: 'excel',
+  numbers: 'excel',
 }
 
 const NAME_TYPES: Readonly<Record<string, ClassifiedFileType>> = {

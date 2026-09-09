@@ -10,7 +10,7 @@ Status: implemented
 
 ## 决策
 
-`ui-primitives` 统一拥有一套 Cordis-free 的文件分类与渲染 API。`fileExtension(path)` 对两种路径分隔符采用共享的 basename 与最终点号语义。`classifyFileType(path)` 不区分大小写，并返回闭合的 `FileType` 联合：传统的 `code`、`excel`、`folder`、`html`、`image`、`markdown`、`other`、`pdf`、`ppt`、`video`、`word` 类别，以及从所提供 `square-code-icons` 映射接入的细分 `CodeFileType` 集合。解析按完整文件名、文件名前缀、文件名后缀、可选项目上下文、扩展名的顺序执行。路径分类器返回 `folder` 之外的全部成员；调用方确认条目是目录时，通过 `FileTypeIcon` 的显式 `type` 覆盖指定目录。未知扩展名、无扩展名和末尾点号回退到 `other`，但共享表识别 `Dockerfile`、`Makefile`、`package.json`、`.gitignore`、`README`、`CHANGELOG` 等具名文件。
+`ui-primitives` 统一拥有一套 Cordis-free 的文件分类与渲染 API。`fileExtension(path)` 对两种路径分隔符采用共享的 basename 与最终点号语义。`classifyFileType(path)` 不区分大小写，并返回闭合的 `FileType` 联合：传统的 `code`、`excel`、`folder`、`html`、`image`、`markdown`、`other`、`pdf`、`ppt`、`video`、`word` 类别，以及由 `CodeFileIcon` 渲染的细分 `CodeFileType` 集合。解析按完整文件名、文件名前缀、文件名后缀、可选项目上下文、扩展名的顺序执行。路径分类器返回 `folder` 之外的全部成员；调用方确认条目是目录时，通过 `FileTypeIcon` 的显式 `kind` 覆盖指定目录。未知扩展名、无扩展名和末尾点号回退到 `other`，但共享表识别 `Dockerfile`、`Makefile`、`package.json`、`.gitignore`、`README`、`CHANGELOG` 等具名文件。
 
 `FileTypeIcon` 接受路径、共享 `IconProps`、可选的显式类型和可选的项目文件快照。传统文件类型把所提供的 28px 文档与文件夹轮廓渲染为 inline SVG。Excel、Markdown、PDF、PPT、Word 的前景标记围绕自身视觉中心缩放至 122%，其余带标记的传统图形使用 112%；文件底板与折角保持源图几何，通用文件不凭空增加中心标记。底板使用实色分类颜色，前景标记与普通折角使用白色，通用文件使用较深的灰色折角。CSS 通过静态设计 token 分配所提供的分类调色板：code/HTML/Markdown 使用 DeepSeek 蓝，Word 使用较浅的 DeepSeek 蓝，Excel 使用绿色，folder/PPT 使用两档琥珀色，PDF 使用红色，未知文件使用中性灰。image 与 video 通过组件本地变量共用所提供的紫色，因为设计平台没有匹配的紫色 token。调用方可通过 `--dsh-file-type-icon-color` 覆盖传统底板颜色。
 
