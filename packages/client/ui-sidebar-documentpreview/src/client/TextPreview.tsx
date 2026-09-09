@@ -10,7 +10,7 @@
  * with the same reload. The type's controls, viewer choice, wrap and reload, sit at the end of
  * the path row; the Sidebar's strip carries none of them.
  */
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode, RefObject } from 'react'
 import clsx from 'clsx'
 import type { ObservableSnapshot } from '@deepseek-ai/dsh-client-store'
@@ -69,13 +69,6 @@ export type TextPreviewProps =
   & InjectFace<TextPreviewInjected>
   & PropsLocale<'sidebarDocumentPreview'>
 
-/** The selected renderer's scrolling element; code owns an inner scrollport. */
-function scrollportOf(body: HTMLDivElement | null): HTMLElement | null {
-  if (body === null) return null
-  const code = body.querySelector('[data-code-preview]')
-  return code?.querySelector<HTMLElement>('[data-code-block-content]') ?? body
-}
-
 /**
  * The text type's body, registered under `sidebar.right.pane.tab` as `text`.
  * @param props - composed slot props.
@@ -102,6 +95,7 @@ export function TextPreview({
   const current = (state?.mode ?? 'text-pages') === mode ? state : undefined
   const bodyRef = useRef<HTMLDivElement | null>(null)
   const scrollportRef = useRef<HTMLElement | null>(null)
+  const storedScrollTopRef = useRef(0)
   const pathRef = useRef<HTMLDivElement | null>(null)
   const pathTextRef = useRef<HTMLSpanElement | null>(null)
   const [menuOpen, setMenuOpen] = useState(false)
@@ -114,11 +108,17 @@ export function TextPreview({
   const loaded = useMemo(() => loadedPages(pages ?? {}), [pages])
   const loadedThrough = lastLineLoaded(loaded)
   const hasContent = loaded.length > 0 || current?.complete !== undefined
-
-  useLayoutEffect(() => {
-    scrollportRef.current = scrollportOf(bodyRef.current)
-    return () => { scrollportRef.current = null }
-  }, [hasContent, selected?.id])
+  storedScrollTopRef.current = state?.scrollTop ?? 0
+  const bindBody = useCallback((body: HTMLDivElement | null): void => {
+    const previous = bodyRef.current
+    bodyRef.current = body
+    if (scrollportRef.current === null || scrollportRef.current === previous) scrollportRef.current = body
+  }, [])
+  const bindScrollport = useCallback((scrollport: HTMLElement | null): void => {
+    const next = scrollport ?? bodyRef.current
+    scrollportRef.current = next
+    if (scrollport !== null) scrollport.scrollTop = storedScrollTopRef.current
+  }, [])
 
   // First mount reads the first page; a body coming back to a tab with content
   // reads nothing, because the store outlives the body.
@@ -280,7 +280,7 @@ export function TextPreview({
         </Tooltip>
       </div>
       <div
-        ref={bodyRef}
+        ref={bindBody}
         className={clsx(css.body, state.wrap && css.wrap)}
         data-textpreview-body
         data-textpreview-wrap={state.wrap ? '' : undefined}
@@ -298,7 +298,7 @@ export function TextPreview({
           <LoadingIndicator className={css.statusLine} label={t('loading')} />
         )}
         {content !== undefined && renderSlot('sidebar.right.tab.document', {
-          resourceAddress: tab.contentId, content, wrap: state.wrap,
+          resourceAddress: tab.contentId, content, wrap: state.wrap, scrollportRef: bindScrollport,
         }, {
           entryKey: selected.id, hookContext: useTabInfo,
           fallback: <p className={css.statusLine}>{t('rendererUnavailable', { name: selected.title() })}</p>,

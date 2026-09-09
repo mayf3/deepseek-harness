@@ -426,6 +426,28 @@ describe('TextPreview — the file\'s metadata', () => {
 })
 
 describe('TextPreview — navigation and view', () => {
+  it('rebinds scrolling when the selected Slot body is replaced without changing the renderer id', async () => {
+    const h = harness({ 1: page(1, ['a', 'b', 'c'], true) })
+    const code = codeProps(h, { revision: 1 })
+    const fallback: TextPreviewProps = { ...code, renderSlot: () => <div data-late-renderer /> }
+    const view = render(<TextPreview {...fallback} />)
+    await settle()
+    const outer = body(view.container)
+    fireEvent.scroll(outer, { target: { scrollTop: 120 } })
+    expect(h.instance.getSnapshot().byTab[TAB_ID]?.scrollTop).toBe(120)
+
+    view.rerender(<TextPreview {...code} />)
+    const inner = scrollport(view.container)
+    expect(inner).not.toBe(outer)
+    expect(inner.scrollTop).toBe(120)
+    fireEvent.scroll(inner, { target: { scrollTop: 240 } })
+    expect(h.instance.getSnapshot().byTab[TAB_ID]?.scrollTop).toBe(240)
+
+    view.rerender(<TextPreview {...fallback} />)
+    fireEvent.scroll(outer, { target: { scrollTop: 360 } })
+    expect(h.instance.getSnapshot().byTab[TAB_ID]?.scrollTop).toBe(360)
+  })
+
   it.each([
     ['Code', 'code', 2 * LINE_HEIGHT],
     ['Plain text', PLAIN_BODY_ID, 2 * LINE_HEIGHT],

@@ -1,6 +1,6 @@
-/* The pane body is a block scroller with a definite height, not a flex
-   container, so the preview takes that height outright: the header row stays
-   put and the file body below is the one scroller, however short the file. */
+/* The preview takes the pane's definite height outright, so the header stays
+   put while the body below owns the remaining height. A renderer may replace
+   the body's scrolling role with an inner scrollport. */
 .preview {
   display: flex;
   flex: 1 1 auto;
