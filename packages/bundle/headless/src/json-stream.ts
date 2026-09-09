@@ -14,6 +14,9 @@ import type { SessionEvent } from '@deepseek-ai/dsh-session'
 /** Default per-string and per-key cap applied to every bounded projected payload. */
 export const MAX_STRING_BYTES = 8 * 1024
 
+/** Default cap on one projected event's serialized bytes; the terminal `final` is exempt. */
+export const MAX_EVENT_BYTES = 32 * 1024
+
 /** The stdout sink a projection writes newline-delimited events to. */
 export interface JsonSink {
   /** Write one chunk of the event stream. */
@@ -95,8 +98,37 @@ export function boundJsonEvent(
   return bounded
 }
 
-/** Parse raw tool-call arguments, keeping the unparsed string when it is not JSON. */
+/**
+ * Serialize one projected payload under both limits: every string and key is
+ * capped at `maxStringBytes`, and the serialized line at `maxEventBytes`. When
+ * the line is still too long, scalar fields survive and structured fields are
+ * dropped; when even those are too long, only `type` and `truncated` remain.
+ * @param event - the event payload to serialize.
+ * @param maxStringBytes - per-string and per-key byte cap.
+ * @param maxEventBytes - cap on the serialized line.
+ * @returns the bounded JSON line, without a trailing newline.
+ */
+export function boundJsonLine(
+  event: Record<string, unknown>,
+  maxStringBytes: number = MAX_STRING_BYTES,
+  maxEventBytes: number = MAX_EVENT_BYTES,
+): string {
+  const bounded = boundJsonEvent(event, maxStringBytes)
+  const line = JSON.stringify(bounded)
+  if (Buffer.byteLength(line, 'utf8') <= maxEventBytes) return line
+  const scalars = Object.create(null) as Record<string, unknown>
+  for (const [key, value] of Object.entries(bounded)) {
+    if (value === null || typeof value !== 'object') scalars[key] = value
+  }
+  scalars.truncated = true
+  const short = JSON.stringify(scalars)
+  if (Buffer.byteLength(short, 'utf8') <= maxEventBytes) return short
+  return JSON.stringify({ type: bounded.type, truncated: true })
+}
+
+/** Parse raw tool-call arguments as the executor does: empty input is `{}`, invalid JSON stays text. */
 function parseArguments(raw: string): unknown {
+  if (raw === '') return {}
   try {
     return JSON.parse(raw) as unknown
   } catch {
@@ -138,7 +170,7 @@ export function projectJsonRun(
   let stepUsage: SessionEvent<'assistant/message'>['data']['usage']
 
   const write = (event: Record<string, unknown>): void => {
-    sink.write(`${JSON.stringify(boundJsonEvent(event, maxStringBytes))}\n`)
+    sink.write(`${boundJsonLine(event, maxStringBytes)}\n`)
   }
 
   const onSessionEvent = (session: unknown, event: SessionEvent): void => {

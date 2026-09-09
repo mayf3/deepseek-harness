@@ -672,6 +672,23 @@ describe('headless runner', () => {
     await test.ctx.fiber.dispose()
   })
 
+  it('rejects a preset appended after the observation snapshot was taken', async () => {
+    const test = await bench({ afterPrompt: () => {} }, {
+      sessionId: 'session-exact',
+      observe: () => Promise.resolve({
+        header: { cwd: process.cwd() },
+        events: [],
+        [Symbol.dispose]() {},
+      }),
+    })
+    const session = test.ctx.sessions.create(brandString<SessionId>('session-exact'), { meta: { cwd: process.cwd() } })
+    selectPreset(session, 'minimal')
+    const result = await test.run()
+    expect(result.code).toBe(1)
+    expect(result.err).toContain('runs under agent preset "minimal"')
+    await test.ctx.fiber.dispose()
+  })
+
   it('fails when a live event below the captured Session length cannot be read', async () => {
     let capturedLength = 0
     const test = await bench({

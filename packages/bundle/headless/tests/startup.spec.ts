@@ -182,6 +182,19 @@ describe('headless command-line provider', () => {
     expect(observed.exits).toEqual([1])
   })
 
+  it('does not install the JSON error override for a --json option value', async () => {
+    const { observed } = await bootStartup(['--session-id', '--json'], { stdinIsTty: true })
+    expect(observed.out).toContain('a task is required')
+    expect(observed.out).not.toContain('"type":"error"')
+    expect(observed.exits).toEqual([1])
+  })
+
+  it('does not install the JSON error override for a --json positional after --', async () => {
+    const { task, observed } = await bootStartup(['--', '--json'], { stdinIsTty: false })
+    expect(task).toEqual({ task: '--json', sessionId: undefined, json: false })
+    expect(observed.out).not.toContain('"type":"error"')
+  })
+
   it('rejects a blank positional task instead of reading stdin', async () => {
     const { task, observed } = await bootStartup(['   '], { stdinIsTty: false })
     expect(observed.out).toContain('a task is required')

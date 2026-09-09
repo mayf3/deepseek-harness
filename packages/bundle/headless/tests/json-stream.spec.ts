@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest'
 import type { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
-import { boundJsonEvent, projectJsonRun, type JsonProjectionOptions } from '../src/json-stream.ts'
+import { boundJsonEvent, boundJsonLine, MAX_STRING_BYTES, projectJsonRun, type JsonProjectionOptions } from '../src/json-stream.ts'
 
 interface ProjectionHarness {
   readonly lines: string[]
@@ -241,6 +241,28 @@ describe('--json projection', () => {
     const test = harness({ maxStringBytes: 5 }, 's1')
     test.emitSession(assistantMessage([{ type: 'text', text: 'ééé' }]))
     expect(test.parsed()[1]).toEqual({ type: 'text', text: 'éé', truncated: true })
+  })
+
+  it('normalizes empty tool arguments to an empty object like the executor', () => {
+    const test = harness({}, 's1')
+    test.emitSession({
+      type: 'tool/call',
+      data: { turn: 1, step: 1, callId: 'empty', name: 'bash', arguments: '' },
+    } as unknown as SessionEvent)
+    expect(test.parsed()[1]).toEqual({ type: 'tool_call', callId: 'empty', tool: 'bash', input: {} })
+  })
+
+  it('bounds one whole event line, dropping structured fields before scalars', () => {
+    const input = Array.from({ length: 20_000 }, (_, index) => index)
+    const line = boundJsonLine({ type: 'tool_call', callId: 'c', tool: 'bash', input }, MAX_STRING_BYTES, 1024)
+    expect(Buffer.byteLength(line, 'utf8')).toBeLessThanOrEqual(1024)
+    expect(JSON.parse(line)).toEqual({ type: 'tool_call', callId: 'c', tool: 'bash', truncated: true })
+  })
+
+  it('reduces a payload to its type when even its scalars exceed the line cap', () => {
+    const line = boundJsonLine({ type: 'text', text: 'x'.repeat(2000) }, 4096, 64)
+    expect(JSON.parse(line)).toEqual({ type: 'text', truncated: true })
+    expect(JSON.parse(boundJsonLine({ type: 'text', text: 'ok' }))).toEqual({ type: 'text', text: 'ok' })
   })
 
   it('writes the terminal final event without bounding its answer', () => {

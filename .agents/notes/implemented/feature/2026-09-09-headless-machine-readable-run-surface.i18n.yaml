@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-09-09-headless-machine-readable-run-surface.md
-2026-09-09-headless-machine-readable-run-surface.md: 0284f3b7de060f14bd4eb19b04865a12ba9334b4
-2026-09-09-headless-machine-readable-run-surface.zh.md: 59c8f97941d2af87d098b830bf737f90e76a9ae2
+2026-09-09-headless-machine-readable-run-surface.md: a109bc08817c208ae08a0d1316f3831b7c2656c4
+2026-09-09-headless-machine-readable-run-surface.zh.md: d2a7cc74270abab8051b0ab86cd1854a77554f78

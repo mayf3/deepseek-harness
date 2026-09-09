@@ -264,6 +264,10 @@ async function resolveAgent(
     using observation = await query.observeSession(sessionId)
     assertAdoptable(observation.header, observation.events, sessionId)
     const { agent } = await agents.resume({ resumeSessionId: sessionId, agentOptions, setup })
+    // The observation is a snapshot: another writer may have appended a preset
+    // selection before this process took the write lease. Re-check the log
+    // resume actually attached, now that no other writer can append.
+    assertAdoptable(agent.session.header, liveEvents(agent.session), sessionId)
     return agent
   } catch (error: unknown) {
     if (!(error instanceof SessionQueryError) || error.code !== 'SESSION_QUERY_SESSION_NOT_FOUND') throw error

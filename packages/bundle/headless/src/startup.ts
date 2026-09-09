@@ -61,6 +61,23 @@ Examples:
 }
 
 /**
+ * Whether the raw invocation asks for the machine-readable stream. The scan
+ * stops at `--` and skips a `--session-id` value, so a literal `--json` used as
+ * an option value or a positional never installs the JSON error override.
+ * @param argv - the invocation's raw arguments.
+ * @returns whether `--json` is a real flag of this invocation.
+ */
+function jsonRequested(argv: readonly string[]): boolean {
+  for (let index = 0; index < argv.length; index += 1) {
+    const argument = argv[index]
+    if (argument === '--') return false
+    if (argument === '--json') return true
+    if (argument === '--session-id') index += 1
+  }
+  return false
+}
+
+/**
  * Parse and provide the one-shot task as an ordinary Cordis service. The
  * command's action publishes the task; a missing task on an interactive stdin
  * is a usage error, so on rejection (and on `--help`) nothing is provided.
@@ -71,7 +88,7 @@ export function apply(ctx: Context): void {
   // The raw snapshot decides the JSON contract: Commander rejects a grammar
   // error (an unknown option, a missing option value) before the action runs,
   // and such a rejection still owes a --json caller the error event.
-  if ((ctx.get('cmdlineArgs')?.get() ?? []).includes('--json')) {
+  if (jsonRequested(ctx.get('cmdlineArgs')?.get() ?? [])) {
     const originalError = program.error.bind(program)
     program.error = (message: string, errorOptions?: Parameters<typeof originalError>[1]): never => {
       // The event message matches the runner's runtime errors, which carry no
