@@ -1,11 +1,11 @@
 /** Relocatable, integrity-recorded production packages carried by one Desktop release. */
 
 import { createHash } from 'node:crypto'
-import { existsSync, lstatSync, readdirSync, readFile, readFileSync, writeFileSync } from 'node:fs'
+import { lstatSync, readdirSync, readFile, readFileSync, writeFileSync } from 'node:fs'
 import { isAbsolute, join, relative, sep } from 'node:path'
 import { promisify } from 'node:util'
 import { valid } from 'semver'
-import { DESKTOP_HOST_PACKAGE, DESKTOP_HOST_RUNTIME_FILES } from './core-package-set.ts'
+import { DESKTOP_HOST_PACKAGE } from './core-package-set.ts'
 import { parseDesktopRelease, type DesktopRelease } from './release.ts'
 
 /** Descriptor at the root of the immutable Desktop resource tree. */
@@ -143,22 +143,21 @@ export function writeDesktopRuntime(
 }
 
 /**
- * Read release metadata and check shared manifests and Host entries without scanning runtime contents.
+ * Read packaged metadata and check shared package records.
  * @param root - Current application's runtime resources.
- * @param electronVersion - Expected shell version.
- * @param target - Required execution target; defaults to the current process.
- * @returns Validated runtime descriptor.
+ * @returns Runtime metadata whose release compatibility is verified during packaging.
  */
-export function readDesktopRuntime(
-  root: string, electronVersion: string, target: { platform: NodeJS.Platform; arch: string } = process,
-): DesktopRuntimeDescriptor {
+export function readDesktopRuntime(root: string): DesktopRuntimeDescriptor {
   const value: unknown = JSON.parse(readFileSync(join(root, DESKTOP_RUNTIME_FILE), 'utf8'))
-  if (!record(value) || value.schemaVersion !== 1 || value.platform !== target.platform || value.arch !== target.arch
+  if (!record(value) || typeof value.platform !== 'string' || typeof value.arch !== 'string'
     || !Array.isArray(value.sharedPackages) || !Array.isArray(value.files)) {
-    throw new Error('desktop runtime: invalid descriptor or incompatible platform/architecture')
+    throw new Error('desktop runtime: invalid descriptor')
   }
-  const release = parseDesktopRelease(value.release)
-  if (release.version !== electronVersion) throw new Error(`desktop runtime: ${release.version} does not match Electron ${electronVersion}`)
+  if (!record(value.release) || typeof value.release.version !== 'string'
+    || typeof value.release.nodeVersion !== 'string' || typeof value.release.pnpmVersion !== 'string') {
+    throw new Error('desktop runtime: invalid release fields')
+  }
+  const release = value.release as unknown as DesktopRelease
   const sharedPackages = value.sharedPackages.map((entry: unknown): DesktopSharedPackage => {
     if (!record(entry) || typeof entry.name !== 'string' || !PACKAGE_NAME.test(entry.name)
       || typeof entry.version !== 'string' || valid(entry.version) === null || entry.path !== `node_modules/${entry.name}`) {
@@ -169,34 +168,14 @@ export function readDesktopRuntime(
   if (new Set(sharedPackages.map(entry => entry.name)).size !== sharedPackages.length) {
     throw new Error('desktop runtime: duplicate shared package')
   }
-  const files = value.files.map((entry: unknown): DesktopRuntimeFile => {
-    if (!record(entry) || typeof entry.path !== 'string' || typeof entry.bytes !== 'number'
-      || !Number.isSafeInteger(entry.bytes) || entry.bytes < 0 || typeof entry.executable !== 'boolean'
-      || typeof entry.sha256 !== 'string' || !/^[a-f0-9]{64}$/u.test(entry.sha256)) {
-      throw new Error('desktop runtime: invalid file inventory')
-    }
-    runtimePath(root, entry.path)
-    return { path: entry.path, bytes: entry.bytes, sha256: entry.sha256, executable: entry.executable }
-  }).sort((a, b) => a.path < b.path ? -1 : a.path > b.path ? 1 : 0)
-  for (const entry of sharedPackages) {
-    const manifest: unknown = JSON.parse(readFileSync(join(runtimePath(root, entry.path), 'package.json'), 'utf8'))
-    if (!record(manifest) || manifest.name !== entry.name || manifest.version !== entry.version) {
-      throw new Error(`desktop runtime: shared package metadata mismatch for ${entry.name}`)
-    }
-  }
+  const files = value.files as DesktopRuntimeFile[]
   for (const name of ['@deepseek-ai/dsh', DESKTOP_HOST_PACKAGE]) {
     if (sharedPackages.find(entry => entry.name === name)?.version !== release.version) {
       throw new Error(`desktop runtime: missing or mismatched ${name}`)
     }
   }
-  for (const file of DESKTOP_HOST_RUNTIME_FILES) {
-    const path = `node_modules/${DESKTOP_HOST_PACKAGE}/${file}`
-    if (!files.some(entry => entry.path === path) || !existsSync(runtimePath(root, path))
-      || !lstatSync(runtimePath(root, path)).isFile()) {
-      throw new Error(`desktop runtime: missing Host file ${file}`)
-    }
-  }
-  return { schemaVersion: 1, release, platform: target.platform, arch: target.arch, sharedPackages, files }
+  return { schemaVersion: value.schemaVersion as 1, release, platform: value.platform as NodeJS.Platform,
+    arch: value.arch, sharedPackages, files }
 }
 
 /**
@@ -209,7 +188,18 @@ export function readDesktopRuntime(
 export async function verifyDesktopRuntime(
   root: string, electronVersion: string, target: { platform: NodeJS.Platform; arch: string } = process,
 ): Promise<DesktopRuntimeDescriptor> {
-  const descriptor = readDesktopRuntime(root, electronVersion, target)
+  const descriptor = readDesktopRuntime(root)
+  if (descriptor.schemaVersion !== 1 || descriptor.platform !== target.platform || descriptor.arch !== target.arch) {
+    throw new Error('desktop runtime: invalid descriptor or incompatible platform/architecture')
+  }
+  const release = parseDesktopRelease(descriptor.release)
+  if (release.version !== electronVersion) throw new Error(`desktop runtime: ${release.version} does not match Electron ${electronVersion}`)
+  for (const entry of descriptor.sharedPackages) {
+    const manifest: unknown = JSON.parse(readFileSync(join(runtimePath(root, entry.path), 'package.json'), 'utf8'))
+    if (!record(manifest) || manifest.name !== entry.name || manifest.version !== entry.version) {
+      throw new Error(`desktop runtime: shared package metadata mismatch for ${entry.name}`)
+    }
+  }
   const actual = await inventoryRuntimeForVerification(root)
   // Windows has no portable Unix executable permission bits.
   const comparable = (items: readonly DesktopRuntimeFile[]): unknown => process.platform === 'win32'

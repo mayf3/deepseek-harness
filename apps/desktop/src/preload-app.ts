@@ -17,6 +17,10 @@ const startup: DshDesktopStartupApi = {
     },
   },
   openPlugins: () => ipcRenderer.invoke(DESKTOP_IPC.pluginsOpen) as Promise<void>,
+  disablePlugins: () => ipcRenderer.invoke(DESKTOP_IPC.pluginsDisableAll) as Promise<void>,
+  restart: () => ipcRenderer.invoke(DESKTOP_IPC.applicationRestart) as Promise<void>,
+  close: () => ipcRenderer.invoke(DESKTOP_IPC.applicationClose) as Promise<void>,
+  resetConfiguration: () => ipcRenderer.invoke(DESKTOP_IPC.configurationReset) as Promise<void>,
 }
 
 contextBridge.exposeInMainWorld('dshDesktop', location.protocol === 'dsh-app:' && location.hostname === 'shell'

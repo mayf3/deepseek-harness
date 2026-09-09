@@ -14,7 +14,7 @@
 | 共享模块 | 宿主 API 可能依赖模块实例身份。 | Desktop 用目录软链接或 Windows junction 把每个内置第一方包连接到 profile；普通插件依赖保留在本地。 |
 | 状态归属 | 共享可执行依赖图会让 CLI 与 Desktop 相互改变 dsh、Cordis、插件或原生模块版本，而两个桌面进程还可能争用同一个 profile。 | Electron 在访问任何 profile 前获取进程生命周期单实例锁，并独占 `$DSH_HOME/profiles/desktop` 及其包管理器状态。CLI 与 Desktop 共享 `$DSH_HOME` 下受支持的产品数据，但绝不共享可执行包、插件激活、锁文件或 `node_modules`。 |
 | 通信 | 监听 Web 服务会引入端口归属、认证、CORS 与暴露风险；Electron 与上游 Node.js 之间也需要明确的跨进程协议。 | 应用不打开 Web 端口。`dsh-app://` 承载 Web 资源和 Fetch 流量；分帧字节管道以背压传输有界请求与响应分块，Node IPC 只承载子进程生命周期控制。 |
-| 激活 | 依赖解析、生命周期脚本、原生模块与插件启动都可能失败，目录替换期间进程也可能中断。 | 发布与插件变更先在 staging 准备，替换 profile 后启动实际后端；失败或中断的激活由事务日志和一个 rollback profile 恢复。 |
+| 插件变更 | 包安装和 Host 启动可能失败。 | Desktop 停止 Host 后直接修改当前 profile。失败保留部分修改供用户修复，不自动回滚 profile。 |
 | 更新 | 桌面壳与 dsh 独立更新会重新产生版本分裂，而桌面壳未变化的数据块不应强制完整传输。 | Electron 壳、匹配的 dsh 运行时、Node.js 与 pnpm 组成一个已签名更新单元。平台更新产物可以复用未变化的数据块，但运行时版本选择绝不脱离 Desktop 发布。 |
 
 [Electron 打包与更新 Agent Note](../../.agents/notes/implemented/architecture/2026-08-25-electron-desktop-packaging-and-updates.zh.md)记录了这些决策背后的理由、替代方案、安全约束和发布验证要求。
@@ -29,17 +29,19 @@ Electron 根据应用 locale 选择类型化的中英文字典，并以英文作
 
 ### 运行时与插件激活
 
-签名资源中的 `resources/dsh/desktop-runtime.json` 绑定 shell 版本、内置 Node 版本、平台、架构、共享包版本和最终文件清单。启动检查发布元数据、共享包 manifest 和必要的 Host 入口文件，不枚举运行时目录树或计算其文件哈希。完整的文件完整性验证在打包时执行。首次启动不会把核心包复制到 profile 存储或通过 pnpm 安装核心包。
+签名资源中的 `resources/dsh/desktop-runtime.json` 绑定 shell 版本、内置 Node 版本、平台、架构、共享包版本和最终文件清单。启动读取元数据，并检查共享包记录。发布 schema、shell 版本、目标兼容性和文件完整性在打包时验证。首次启动不会把核心包复制到 profile 存储或通过 pnpm 安装核心包。
 
 1. 主窗口在准备 profile 或启动后端前显示本地加载页。新 profile 创建 manifest 和共享包链接，然后激活并启动一次实际后端。
-2. 兼容的应用升级把插件文件和配置复制到 staging，刷新共享链接，并检查已启用插件的 peer 要求。插件版本和锁文件保持不变；不运行 pnpm。
+2. 兼容的应用升级在当前 profile 中刷新共享链接，并检查已启用插件的 peer 要求。插件文件、配置、版本和锁文件留在原处；不运行 pnpm。
 3. 内置 Node 版本、平台或架构变化时，禁用脚本重新安装锁定的插件依赖图，验证并链接宿主包，然后运行已批准的待执行构建并再次验证。
 4. 插件添加、更新和删除使用内置 pnpm 及 Desktop 独有的包管理器状态。保留的宿主包必须声明为 peer；共享包的嵌套副本和别名会被验证拒绝。普通插件依赖必须解析到 profile 内部。
-5. 激活会停止活动后端，记录运行时身份和下一次目录移动，并替换 profile，同时保留一个回滚副本。复制不共享可写硬链接。替换后启动实际后端；激活失败会恢复旧 profile；属于其他运行时的 profile 不能在当前 shell 下启动。
+5. 插件变更在修改当前 profile 前停止后端。准备成功后启动 Host。包操作或 Host 启动失败保留已修改文件并报告错误；修复安装后重试。Desktop 不创建 staging 目录、激活日志或回滚副本。
 
-加载页不依赖 Host。启动失败在同一个主窗口显示，并提供重试和插件管理操作。加载期间关闭应用会等待正在启动的子进程退出。后端启动失败时，Electron 拥有的插件窗口仍然可用。可以停用一个或全部插件后重试，同时保留其文件、精确版本和配置。停用只移除激活条目。已停用插件仍可更新或删除。应用回滚和 profile 回滚分别处理；每次启动后端前都会检查运行时兼容性。
+加载页不依赖 Host。每个启动和后端错误页均保留诊断，并提供三个操作：重启应用、禁用全部第三方插件并重启 Host、重置 Desktop 并重启 Host。页面始终显示应用文件缺失或损坏时的重装提示。禁用插件会保留文件；没有启用的第三方插件时，不再检查它们的安装依赖图。插件管理仍可从应用菜单打开。每次启动后端前都会检查运行时兼容性；插件变更不自动回滚。
 
-包事务持有独占锁直到 pnpm 进程退出。共享链接在 macOS/Linux 使用目录软链接，在 Windows 使用 junction；清理只移除链接，不删除其目标。共享包使用文件系统的规范路径识别，因此 Windows 路径大小写变化不会单独触发 profile 激活。原生构建遵循 profile 中经过审查的 `allowBuilds` 列表；新安装的包如果需要构建但未在列表中获准，事务会失败。
+重置会删除 `$DSH_HOME/profiles/desktop` 内除当前持有的事务锁之外的全部内容，再初始化内置 profile。Desktop 配置和已安装第三方插件会被删除，不保留备份。共享任务、设置和 Harness home 的 `.env` 不受影响。壳资源或 preload 故障使用独立内嵌页面，保留相同的三个操作和诊断；其按钮不依赖 preload。
+
+包事务独占持有 `$DSH_HOME/profiles/desktop/lock`，直到 pnpm 进程退出。重置保留目录及其锁，直到初始化和 Host 启动完成。共享链接在 macOS/Linux 使用目录软链接，在 Windows 使用 junction；清理只移除链接，不删除其目标。共享包使用文件系统的规范路径识别，因此 Windows 路径大小写变化不会单独触发 profile 激活。原生构建遵循 profile 中经过审查的 `allowBuilds` 列表；新安装的包如果需要构建但未在列表中获准，事务会失败。
 
 ## 开发
 
@@ -57,7 +59,7 @@ pnpm run dev:desktop
 pnpm run start:desktop
 ```
 
-Workspace 开发使用调用命令的 Node.js 运行当前 CLI 与私有 Desktop Host 包，并禁用桌面包修改；只有该模式明确链接的一次性 profile 可以从自身目录外解析 bundle。需要验证内置 Node.js、内置 pnpm、内置 dsh 资源、插件安装、staging 和 rollback 时，应运行未封装安装器的应用目录。
+Workspace 开发使用调用命令的 Node.js 运行当前 CLI 与私有 Desktop Host 包，并禁用桌面包修改；只有该模式明确链接的一次性 profile 可以从自身目录外解析 bundle。需要验证内置 Node.js、内置 pnpm、内置 dsh 资源、插件安装和修复时，应运行未封装安装器的应用目录。
 
 ## 打包
 
@@ -182,7 +184,7 @@ pnpm run prepare:desktop
 
 ## 底层开发覆盖项
 
-`DSH_DESKTOP_NODE_BINARY`、`DSH_DESKTOP_PNPM_ENTRY`、`DSH_DESKTOP_DSH_DIR` 和 `DSH_DESKTOP_DEV_PROJECT_DIR` 可以为未打包 Electron 进程选择明确的资源。打包应用会忽略这些变量，并从 `process.resourcesPath` 解析签名资源。
+未打包的 Electron 进程使用应用目录下的 `.desktop-build/development/project` 作为开发项目。`DSH_DESKTOP_NODE_BINARY`、`DSH_DESKTOP_PNPM_ENTRY` 和 `DSH_DESKTOP_DSH_DIR` 用于选择明确的运行时资源。打包应用会忽略这些变量，从 `process.resourcesPath` 解析签名资源，并使用受管 Desktop profile。
 
 ## 已知限制
 

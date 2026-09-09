@@ -83,7 +83,7 @@ describe('desktop backend controller', () => {
   it('publishes preparation errors and permits retry', async () => {
     const f = fixture()
     await expect(f.controller.start(async () => { throw new Error('invalid profile') })).rejects.toThrow('invalid profile')
-    expect(f.controller.state).toEqual({ phase: 'error', message: 'invalid profile' })
+    expect(f.controller.state).toEqual({ phase: 'error', message: 'invalid profile', recovery: 'restart' })
     expect(f.create).not.toHaveBeenCalled()
     f.ready.resolve()
     await f.controller.start(async () => {})
@@ -101,7 +101,7 @@ describe('desktop backend controller', () => {
     await f.stopping.promise
     f.exited.resolve()
     await rejected
-    expect(f.controller.state).toEqual({ phase: 'error', message: 'plugin failed' })
+    expect(f.controller.state).toEqual({ phase: 'error', message: 'plugin failed', recovery: 'restart' })
     expect(f.host.stop).toHaveBeenCalledTimes(1)
     await f.controller.close()
   })
@@ -111,7 +111,7 @@ describe('desktop backend controller', () => {
     f.ready.resolve()
     await f.controller.start(async () => {})
     f.fail(new Error('transport failed'))
-    expect(f.controller.state).toEqual({ phase: 'error', message: 'transport failed' })
+    expect(f.controller.state).toEqual({ phase: 'error', message: 'transport failed', recovery: 'restart' })
     expect(f.controller.host).toBeUndefined()
     await f.stopping.promise
     const prepare = vi.fn(async () => {})
@@ -135,7 +135,7 @@ describe('desktop backend controller', () => {
     await f.stopping.promise
     f.exited.resolve()
     await rejected
-    expect(f.states).toEqual([{ phase: 'starting' }, { phase: 'error', message: 'immediate failure' }])
+    expect(f.states).toEqual([{ phase: 'starting' }, { phase: 'error', message: 'immediate failure', recovery: 'restart' }])
     await f.controller.close()
   })
 

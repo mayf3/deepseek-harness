@@ -1,7 +1,9 @@
 /** Owns one backend startup and its quiescent teardown independently of windows. */
 
+import { desktopErrorState, type DesktopRecovery } from './startup-error.ts'
+
 /** Backend availability presented by the desktop window. */
-export type DesktopBackendState = { readonly phase: 'starting' } | { readonly phase: 'ready' } | { readonly phase: 'error'; readonly message: string }
+export type DesktopBackendState = { readonly phase: 'starting' } | { readonly phase: 'ready' } | { readonly phase: 'error'; readonly message: string; readonly recovery?: DesktopRecovery }
 
 /** Child lifecycle owned by the desktop backend controller. */
 export interface DesktopBackendHost {
@@ -78,7 +80,7 @@ export class DesktopBackendController<Host extends DesktopBackendHost> {
         try { await this.cleanup(attempt) } catch (cleanupError) {
           if (cleanupError !== error) failure = new AggregateError([error, cleanupError], 'desktop backend startup and cleanup failed')
         }
-        if (!cancelled) this.update({ phase: 'error', message: failure instanceof Error ? failure.message : String(failure) })
+        if (!cancelled) this.update(desktopErrorState(failure))
         throw failure
       }
     }).finally(() => { if (this.pending === pending) this.pending = undefined })
@@ -130,9 +132,9 @@ export class DesktopBackendController<Host extends DesktopBackendHost> {
     if (this.current.phase !== 'ready') return
     attempt.cancelled = true
     const cleanup = this.cleanup(attempt)
-    this.update({ phase: 'error', message: error.message })
+    this.update(desktopErrorState(error))
     void cleanup.catch((cleanupError: unknown) => {
-      if (this.attempt === attempt) this.update({ phase: 'error', message: cleanupError instanceof Error ? cleanupError.message : String(cleanupError) })
+      if (this.attempt === attempt) this.update(desktopErrorState(new AggregateError([error, cleanupError], 'Desktop backend failed and could not stop')))
     })
   }
 

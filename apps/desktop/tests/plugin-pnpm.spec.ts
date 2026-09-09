@@ -47,8 +47,8 @@ it('installs a real pnpm graph, then executes approved scripts with the shared h
     const realPnpm = join(import.meta.dirname, '../node_modules/pnpm/bin/pnpm.mjs')
     writeFileSync(pnpm, `process.argv = process.argv.map(arg => arg === '--config.registry=https://registry.npmjs.org/' ? ${JSON.stringify(`--config.registry=${origin}`)} : arg); await import(${JSON.stringify(pathToFileURL(realPnpm).href)})`)
     const manager = new DesktopProjectManager(resolveDesktopPaths(join(root, '.dsh')), { node: process.execPath, pnpm, dsh })
-    const hooks: DesktopProjectHooks = { beforeActivate: async () => {}, afterActivate: async () => {} }
-    await manager.applyRelease('1.0.0', hooks)
+    const hooks: DesktopProjectHooks = { beforeChange: async () => {}, afterChange: async () => {} }
+    await manager.applyRelease()
     await manager.mutate({ type: 'plugin-add', spec: 'fixture-plugin@1.0.0' }, hooks)
     expect(manager.listPlugins()).toEqual([{ name: 'fixture-plugin', version: '1.0.0', enabled: true }])
     const built = JSON.parse(readFileSync(join(manager.paths.profile, 'node_modules/node-pty/built.json'), 'utf8')) as { node: string; host: string }

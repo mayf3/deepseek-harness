@@ -4,6 +4,8 @@ Status: implemented
 
 [English](2026-08-25-electron-desktop-packaging-and-updates.md) | 中文
 
+本记录中的 profile staging、目录切换恢复和自动回滚由[直接修改 profile 决策](2026-09-09-desktop-in-place-profile.zh.md)取代。其他决策继续有效。
+
 ## 问题
 
 DeepSeek Harness 需要一个复用 Web UI 的 Electron 桌面应用。该应用无需系统 Node.js 或 pnpm 即可工作，通过应用内置 pnpm 安装 dsh 与桌面插件，并通过一个面向用户的流程更新完整桌面发布。

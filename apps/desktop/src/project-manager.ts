@@ -1,8 +1,7 @@
-/** Transactional owner of the reserved desktop profile and its private pnpm state. */
+/** In-place owner of the reserved desktop profile and its private pnpm state. */
 
 import { valid } from 'semver'
 import { spawn } from 'node:child_process'
-import { randomUUID } from 'node:crypto'
 import {
   existsSync,
   fsyncSync,
@@ -12,13 +11,13 @@ import {
   openSync,
   closeSync,
   readFileSync,
+  readdirSync,
   realpathSync,
-  renameSync,
   unlinkSync,
   writeFileSync,
   writeSync,
 } from 'node:fs'
-import { basename, delimiter, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
+import { delimiter, dirname, join, resolve, sep } from 'node:path'
 import {
   DESKTOP_HOST_PACKAGE,
   desktopCorePackageOverrides,
@@ -27,9 +26,10 @@ import {
 import type { DesktopPaths } from './paths.ts'
 import { removeOwnedDirectory } from './owned-directory.ts'
 import type { DesktopRelease } from './release.ts'
+import { DesktopStartupError } from './startup-error.ts'
 import { desktopRuntimeId, readDesktopRuntime, type DesktopRuntimeDescriptor } from './runtime-tree.ts'
 import {
-  copyDesktopProfile, desktopPluginLockHash, linkDesktopHostPackages, readDesktopProfileState,
+  desktopPluginLockHash, linkDesktopHostPackages, readDesktopProfileState,
   unlinkDesktopHostPackages, validateDesktopPluginGraph, type DesktopProfileState,
 } from './profile-packages.ts'
 
@@ -53,16 +53,6 @@ interface DesktopProjectManifest {
   }
 }
 
-/** Journaled activation step used for crash recovery. */
-interface DesktopPendingTransaction {
-  readonly schemaVersion: 1
-  readonly id: string
-  readonly stagingProfile: string
-  readonly fromRuntimeId: string | null
-  readonly toRuntimeId: string
-  readonly step: 'prepared' | 'active-moved' | 'staging-activated'
-}
-
 /** Exact executables the desktop shell bundles. */
 export interface DesktopRuntimeExecutables {
   readonly node: string
@@ -70,12 +60,12 @@ export interface DesktopRuntimeExecutables {
   readonly dsh: string
 }
 
-/** Hooks that bind project replacement to the active backend lifecycle. */
+/** Hooks that stop the backend before profile writes and restart it after success. */
 export interface DesktopProjectHooks {
-  /** Stop the active backend and await process exit before directory moves. */
-  beforeActivate(): Promise<void>
-  /** Start the selected active project after commit or rollback. */
-  afterActivate(): Promise<void>
+  /** Stop the active backend and await process exit before modifying its files. */
+  beforeChange(): Promise<void>
+  /** Start the modified profile after package preparation succeeds. */
+  afterChange(): Promise<void>
 }
 
 /** Supported dependency mutation. */
@@ -124,11 +114,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null
 }
 
-function isDescendant(root: string, target: string): boolean {
-  const child = relative(root, target)
-  return child !== '' && child !== '..' && !child.startsWith(`..${sep}`) && !isAbsolute(child)
-}
-
 function assertPackageName(name: string): void {
   if (!PACKAGE_NAME_PATTERN.test(name)) throw new Error(`desktop project: invalid npm package name ${JSON.stringify(name)}`)
 }
@@ -163,6 +148,11 @@ export function packageNameFromSpec(spec: string): string | undefined {
 }
 
 function projectManifest(projectDir: string): DesktopProjectManifest {
+  try { return readProjectManifest(projectDir) }
+  catch (error) { throw new DesktopStartupError('configuration', error) }
+}
+
+function readProjectManifest(projectDir: string): DesktopProjectManifest {
   const path = join(projectDir, 'package.json')
   const value = readJson(path)
   const dsh = isRecord(value) && isRecord(value.dsh) ? value.dsh : undefined
@@ -183,11 +173,11 @@ function projectManifest(projectDir: string): DesktopProjectManifest {
 function profilePluginNames(projectDir: string): readonly string[] {
   const bundles = projectManifest(projectDir).dsh.profile.bundles
   if (!DESKTOP_PROFILE_BUNDLES.every((bundle, index) => bundles[index] === bundle)) {
-    throw new Error('desktop project: profile must begin with the built-in desktop bundle list')
+    throw new DesktopStartupError('configuration', new Error('desktop project: profile must begin with the built-in desktop bundle list'))
   }
   const plugins = bundles.slice(DESKTOP_PROFILE_BUNDLES.length)
   if (new Set(bundles).size !== bundles.length) {
-    throw new Error('desktop project: profile bundle list contains a duplicate package')
+    throw new DesktopStartupError('configuration', new Error('desktop project: profile bundle list contains a duplicate package'))
   }
   for (const plugin of plugins) assertPackageName(plugin)
   return plugins
@@ -234,7 +224,7 @@ function inspectPlugin(projectDir: string, requestedName: string): DesktopPlugin
   return { name: requestedName, version: manifest.version, enabled: profilePluginNames(projectDir).includes(requestedName) }
 }
 
-/** Transactional desktop npm project manager. */
+/** Desktop npm project manager with direct writes and no rollback. */
 export class DesktopProjectManager {
   private lockDescriptor: number | undefined
   private descriptor: DesktopRuntimeDescriptor | undefined
@@ -248,48 +238,36 @@ export class DesktopProjectManager {
     readonly runtime: DesktopRuntimeExecutables,
   ) {}
 
-  /** Recover an interrupted directory replacement before reading the active project. */
-  recover(): void {
-    if (!existsSync(this.paths.pending)) return
-    const value = readJson(this.paths.pending)
-    if (!isRecord(value) || value.schemaVersion !== 1
-      || typeof value.id !== 'string' || typeof value.stagingProfile !== 'string'
-      || !isDescendant(this.paths.staging, value.stagingProfile)
-      || value.stagingProfile !== join(this.paths.staging, value.id, 'profile')
-      || (value.fromRuntimeId !== null && (typeof value.fromRuntimeId !== 'string' || !/^[a-f0-9]{64}$/u.test(value.fromRuntimeId)))
-      || typeof value.toRuntimeId !== 'string' || !/^[a-f0-9]{64}$/u.test(value.toRuntimeId)
-      || (value.step !== 'prepared' && value.step !== 'active-moved' && value.step !== 'staging-activated')) {
-      throw new Error(`desktop project: invalid activation journal ${this.paths.pending}`)
-    }
-    const pending: DesktopPendingTransaction = {
-      schemaVersion: 1,
-      id: value.id,
-      stagingProfile: value.stagingProfile,
-      fromRuntimeId: value.fromRuntimeId,
-      toRuntimeId: value.toRuntimeId,
-      step: value.step,
-    }
-    if (pending.step === 'staging-activated' && !existsSync(pending.stagingProfile) && existsSync(this.paths.profile)) {
-      if (readDesktopProfileState(this.paths.profile)?.runtimeId !== pending.toRuntimeId) {
-        throw new Error('desktop project: activated profile does not match its journal')
-      }
-      removeOwnedDirectory(this.paths.profile)
-    }
-    if (!existsSync(this.paths.profile) && pending.fromRuntimeId !== null && existsSync(this.paths.rollback)) {
-      if (readDesktopProfileState(this.paths.rollback)?.runtimeId !== pending.fromRuntimeId) {
-        throw new Error('desktop project: rollback profile does not match its journal')
-      }
-      mkdirSync(dirname(this.paths.profile), { recursive: true })
-      renameSync(this.paths.rollback, this.paths.profile)
-    }
-    removeOwnedDirectory(pending.stagingProfile)
-    unlinkSync(this.paths.pending)
-  }
-
   /** Read the active desktop plugin inventory. */
   listPlugins(): readonly DesktopPluginRecord[] {
     if (!existsSync(this.paths.profile)) return []
     return pluginRecords(this.paths.profile)
+  }
+
+  /** @returns Whether the profile enables any third-party bundle, without loading plugin files. */
+  hasEnabledPlugins(): boolean {
+    return existsSync(this.paths.profile) && profilePluginNames(this.paths.profile).length > 0
+  }
+
+  /**
+   * Reinitialize the profile, deleting configuration and third-party packages without a backup.
+   * @param hooks - Stop the Host before resetting files; restart after preparation succeeds.
+   * @returns Completion of reset; the held lock and shared product data are preserved.
+   */
+  async resetConfiguration(hooks: DesktopProjectHooks): Promise<void> {
+    await this.withLock(async () => {
+      await hooks.beforeChange()
+      this.descriptor = this.readRuntime()
+      for (const entry of readdirSync(this.paths.profile, { withFileTypes: true })) {
+        const path = join(this.paths.profile, entry.name)
+        if (path === this.paths.lock) continue
+        if (entry.isDirectory()) removeOwnedDirectory(path)
+        else unlinkSync(path)
+      }
+      createPluginProfile(this.paths.profile)
+      this.prepareProfile(this.paths.profile)
+      await hooks.afterChange()
+    })
   }
 
   /** Read the dsh version supplied by this application's verified resources. */
@@ -316,6 +294,11 @@ export class DesktopProjectManager {
     return this.descriptor
   }
 
+  private readRuntime(): DesktopRuntimeDescriptor {
+    try { return readDesktopRuntime(this.runtime.dsh) }
+    catch (error) { throw new DesktopStartupError('reinstall', error) }
+  }
+
   private prepareProfile(projectDir: string): void {
     const runtime = this.currentRuntime()
     linkDesktopHostPackages(projectDir, this.runtime.dsh, runtime)
@@ -323,14 +306,13 @@ export class DesktopProjectManager {
   }
 
   /** Read release metadata and reconcile its external profile without installing core packages. */
-  async applyRelease(electronVersion: string, hooks: DesktopProjectHooks): Promise<boolean> {
+  async applyRelease(): Promise<boolean> {
     return this.withLock(async () => {
-      this.recover()
-      const target = readDesktopRuntime(this.runtime.dsh, electronVersion)
+      const target = this.readRuntime()
       this.descriptor = target
       const previous = readDesktopProfileState(this.paths.profile)
-      if (existsSync(this.paths.profile) && previous === undefined) {
-        throw new Error('desktop project: existing profile is not a Desktop plugin profile')
+      if (previous === undefined && readdirSync(this.paths.profile).some(name => join(this.paths.profile, name) !== this.paths.lock)) {
+        throw new DesktopStartupError('configuration', new Error('desktop project: existing profile is not a Desktop plugin profile'))
       }
       if (previous?.runtimeId === desktopRuntimeId(target)
         && previous.lockHash === desktopPluginLockHash(this.paths.profile)
@@ -341,37 +323,38 @@ export class DesktopProjectManager {
         validateDesktopPluginGraph(this.paths.profile, this.runtime.dsh, target, profilePluginNames(this.paths.profile))
         return false
       }
-      const stagingProfile = this.newStagingProfile()
-      try {
-        if (previous === undefined) createPluginProfile(stagingProfile)
-        else copyDesktopProfile(this.paths.profile, stagingProfile)
-        await this.reconcileProfile(stagingProfile, previous)
-        await this.activate(stagingProfile, hooks)
-        return true
-      } catch (error) {
-        removeOwnedDirectory(stagingProfile)
-        throw error
-      }
+      if (previous === undefined) createPluginProfile(this.paths.profile)
+      await this.reconcileProfile(this.paths.profile, previous)
+      return true
     })
   }
 
-  /** Apply an exact plugin dependency or activation change through a staging project. */
+  /** Modify the current profile while its backend is stopped; failures retain partial changes. */
   async mutate(mutation: DesktopProjectMutation, hooks: DesktopProjectHooks): Promise<void> {
     await this.withLock(async () => {
-      this.recover()
       this.currentRuntime()
       if (!existsSync(this.paths.profile)) throw new Error('desktop project: active profile is not installed')
-      const stagingProfile = this.newStagingProfile()
-      try {
-        copyDesktopProfile(this.paths.profile, stagingProfile)
-        await this.applyMutation(stagingProfile, mutation)
-        await this.reconcileProfile(stagingProfile, readDesktopProfileState(stagingProfile),
-          mutation.type !== 'plugin-toggle' && mutation.type !== 'plugins-disable-all')
-        await this.activate(stagingProfile, hooks)
-      } catch (error) {
-        removeOwnedDirectory(stagingProfile)
-        throw error
+      await hooks.beforeChange()
+      if (mutation.type === 'plugins-disable-all') {
+        const manifest = projectManifest(this.paths.profile)
+        writeJson(join(this.paths.profile, 'package.json'), {
+          ...manifest,
+          dsh: { ...manifest.dsh, profile: { ...manifest.dsh.profile, bundles: [...DESKTOP_PROFILE_BUNDLES] } },
+        })
+        this.prepareProfile(this.paths.profile)
+        await hooks.afterChange()
+        return
       }
+      const previous = readDesktopProfileState(this.paths.profile)
+      const packagesChanged = mutation.type !== 'plugin-toggle'
+      if (packagesChanged) unlinkDesktopHostPackages(this.paths.profile)
+      try {
+        await this.applyMutation(this.paths.profile, mutation)
+      } finally {
+        if (packagesChanged) linkDesktopHostPackages(this.paths.profile, this.runtime.dsh, this.currentRuntime())
+      }
+      await this.reconcileProfile(this.paths.profile, previous, packagesChanged)
+      await hooks.afterChange()
     })
   }
 
@@ -394,13 +377,7 @@ export class DesktopProjectManager {
     this.prepareProfile(projectDir)
   }
 
-  private newStagingProfile(): string {
-    const path = join(this.paths.staging, randomUUID(), 'profile')
-    mkdirSync(path, { recursive: true, mode: 0o700 })
-    return path
-  }
-
-  private async applyMutation(projectDir: string, mutation: DesktopProjectMutation): Promise<void> {
+  private async applyMutation(projectDir: string, mutation: Exclude<DesktopProjectMutation, { type: 'plugins-disable-all' }>): Promise<void> {
     switch (mutation.type) {
       case 'plugin-add': {
         const requestedName = packageNameFromSpec(mutation.spec)
@@ -442,9 +419,6 @@ export class DesktopProjectManager {
           )
         }
         return
-      case 'plugins-disable-all':
-        writeProfilePlugins(projectDir, pluginRecords(projectDir).map(plugin => ({ ...plugin, enabled: false })))
-        return
       case 'plugin-toggle': {
         assertPackageName(mutation.name)
         const plugins = pluginRecords(projectDir)
@@ -456,42 +430,6 @@ export class DesktopProjectManager {
       }
       default:
         mutation satisfies never
-    }
-  }
-
-  private async activate(stagingProfile: string, hooks: DesktopProjectHooks): Promise<void> {
-    const pending: DesktopPendingTransaction = {
-      schemaVersion: 1,
-      id: basename(dirname(stagingProfile)),
-      stagingProfile,
-      fromRuntimeId: readDesktopProfileState(this.paths.profile)?.runtimeId ?? null,
-      toRuntimeId: desktopRuntimeId(this.currentRuntime()),
-      step: 'prepared',
-    }
-    writeJson(this.paths.pending, pending)
-    let activeMoved = false
-    let stagingActivated = false
-    try {
-      await hooks.beforeActivate()
-      removeOwnedDirectory(this.paths.rollback)
-      mkdirSync(dirname(this.paths.rollback), { recursive: true, mode: 0o700 })
-      writeJson(this.paths.pending, { ...pending, step: 'active-moved' } satisfies DesktopPendingTransaction)
-      if (existsSync(this.paths.profile)) {
-        renameSync(this.paths.profile, this.paths.rollback)
-        activeMoved = true
-      }
-      mkdirSync(dirname(this.paths.profile), { recursive: true, mode: 0o700 })
-      writeJson(this.paths.pending, { ...pending, step: 'staging-activated' } satisfies DesktopPendingTransaction)
-      renameSync(stagingProfile, this.paths.profile)
-      stagingActivated = true
-      await hooks.afterActivate()
-      unlinkSync(this.paths.pending)
-    } catch (error) {
-      if (stagingActivated) removeOwnedDirectory(this.paths.profile)
-      if (activeMoved && existsSync(this.paths.rollback)) renameSync(this.paths.rollback, this.paths.profile)
-      if (existsSync(this.paths.pending)) unlinkSync(this.paths.pending)
-      await hooks.afterActivate().catch(() => undefined)
-      throw error
     }
   }
 
@@ -586,7 +524,8 @@ export class DesktopProjectManager {
   }
 
   private async withLock<T>(operation: () => Promise<T>): Promise<T> {
-    mkdirSync(this.paths.root, { recursive: true, mode: 0o700 })
+    mkdirSync(this.paths.profile, { recursive: true, mode: 0o700 })
+    if (lstatSync(this.paths.profile).isSymbolicLink()) throw new Error('desktop project: profile directory must not be a link')
     let descriptor: number
     try {
       descriptor = openSync(this.paths.lock, 'wx', 0o600)

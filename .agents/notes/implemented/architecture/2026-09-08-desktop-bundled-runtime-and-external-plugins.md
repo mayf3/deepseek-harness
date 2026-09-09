@@ -4,6 +4,8 @@ Status: implemented
 
 English | [中文](2026-09-08-desktop-bundled-runtime-and-external-plugins.zh.md)
 
+Profile staging, directory-swap recovery, and automatic rollback described here are superseded by the [in-place profile decision](2026-09-09-desktop-in-place-profile.md). Other decisions remain active.
+
 ## Problem
 
 Installing the core dependency graph during Desktop initialization repeats work already done by the release builder. An offline store eliminates downloads but retains extraction, package-manager startup, and installation costs. Users need the application to start with its production packages present while retaining ordinary npm plugin installation and plugin state across application upgrades.
@@ -44,7 +46,7 @@ The [immediate-window decision](2026-09-09-desktop-immediate-window-and-direct-s
 
 ## Alternatives considered
 
-Full runtime verification belongs to packaging. Startup reads the descriptor, validates release and target compatibility, checks shared manifests and required Host entries, and uses the recorded runtime identity for profile reuse. It neither enumerates nor hashes installed runtime files, including on first launch or after an upgrade. Reading every file before backend loading adds startup I/O proportional to the distribution size. Installed content changes therefore are not detected by a startup checksum comparison; unusable modules fail when loaded. Build-time verification still rejects changed, missing, extra, or linked files against the recorded inventory.
+Full runtime verification belongs to packaging. Startup reads the descriptor, checks shared package records and required Host entries, and uses the recorded runtime identity for profile reuse. The [release-validation decision](2026-09-09-desktop-build-release-validation.md) assigns release and target compatibility checks to packaging. It neither enumerates nor hashes installed runtime files, including on first launch or after an upgrade. Reading every file before backend loading adds startup I/O proportional to the distribution size. Installed content changes therefore are not detected by a startup checksum comparison; unusable modules fail when loaded. Build-time verification still rejects changed, missing, extra, or linked files against the recorded inventory.
 
 - **Install the bundled offline seed at startup.** This preserves an ordinary pnpm installation procedure but repeats core extraction and installation on every affected machine. Materialized resources remove that work at the cost of more application files and release-builder responsibility.
 - **Link all host dependencies into plugins.** This unnecessarily couples ordinary plugin dependencies to the host. Only the explicit shared inventory is linked; private packages retain independent versions.
