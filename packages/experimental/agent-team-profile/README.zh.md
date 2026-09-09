@@ -34,7 +34,7 @@ pnpm dsh plugin --profile headless add ./packages/experimental/agent-team-profil
 pnpm dsh --profile headless "Use Agent Teams to split this task between two teammates, wait, and summarize."
 ```
 
-profile 必须已经包含 `@deepseek-ai/dsh-base`，本层会使用其中的 Subagent service 与 provider 配置行。执行 `dsh plugin --profile <name> remove @deepseek-ai/dsh-experimental-agent-team-profile` 移除本包时，bundle 也会从 profile 的有序层列表中移除。
+profile 必须已经包含 `@deepseek-ai/dsh-base`，本层会使用其中的 Subagent 服务与提供方配置行。执行 `dsh plugin --profile <name> remove @deepseek-ai/dsh-experimental-agent-team-profile` 移除本包时，bundle 也会从 profile 的有序层列表中移除。
 
 ### 获得的功能
 
@@ -48,13 +48,13 @@ profile 必须已经包含 `@deepseek-ai/dsh-base`，本层会使用其中的 Su
 <details>
 <summary>实现细节——点击展开</summary>
 
-本包的运行时内容是 [`cordis.patch.yml`](cordis.patch.yml)。在 `dsh-base` 之后应用时，patch 会禁用 `tool-subagent-control` 与 `tool-subagent-list-agents`，把 fresh 与 fork Subagent 行设置为 `one-shot`，并以显式 provider 和限制插入 Team service 与工具行。
+本包的运行时内容是 [`cordis.patch.yml`](cordis.patch.yml)。在 `dsh-base` 之后应用时，patch 会禁用 `tool-subagent-control` 与 `tool-subagent-list-agents`，把 fresh 与 fork Subagent 行设置为 `one-shot`，并以显式提供方和限制插入 Team 服务与工具行。
 
 | 文件 | 职责 |
 |---|---|
 | [`cordis.patch.yml`](cordis.patch.yml) | 叠加在 `dsh-base` 之上的有序 patch |
 | [`src/index.ts`](src/index.ts) | 空模块入口；patch 是运行时内容 |
-| — | 不发布运行时不变式伴生入口；本包是静态 bundle，不持有可独立观察的运行时关系。 |
+| — | 不发布运行时不变式伴生入口；本包只携带静态 profile patch，所激活的可变关系由 Team domain 与工具包负责。 |
 
 </details>
 
@@ -64,7 +64,7 @@ profile 必须已经包含 `@deepseek-ai/dsh-base`，本层会使用其中的 Su
 ## 进一步探索
 
 - [实验性包](../README.zh.md)——孵化状态与发布排除规则。
-- [Agent Teams service](../agent-team/README.zh.md)——持久 roster、消息与任务板行为。
+- [Agent Teams 服务](../agent-team/README.zh.md)——持久 roster、消息与任务板行为。
 - [Agent Teams 工具](../tool-agent-team/README.zh.md)——Team-scoped 模型工具表层。
 - [Base bundle](../../bundle/base/README.zh.md)——本 patch 扩展的 profile 层。
 
@@ -77,7 +77,7 @@ profile 必须已经包含 `@deepseek-ai/dsh-base`，本层会使用其中的 Su
 
 #### 模型会看到什么
 
-Team 策略与 schema 由 [`@deepseek-ai/dsh-experimental-tool-agent-team`](../tool-agent-team/README.zh.md) 所有。本 bundle 只改变 composition：Team-scoped `list_agents`、`send_message` 与 `interrupt_agent` 会替代已禁用的全局 continuable-child control。`subagent` 与 `subagent_fork` 仍作为一次性 delegation 工具可用，其子 agent 不会获得 continuable-child `report` 工具。
+Team 策略与 schema 属于 [`@deepseek-ai/dsh-experimental-tool-agent-team`](../tool-agent-team/README.zh.md)。本 bundle 只改变 composition：Team-scoped `list_agents`、`send_message` 与 `interrupt_agent` 会替代已禁用的全局 continuable-child control。`subagent` 与 `subagent_fork` 仍作为一次性 delegation 工具可用，其子 agent（智能体）不会获得 continuable-child `report` 工具。
 
 #### Token 影响
 
@@ -93,7 +93,7 @@ Team 策略与 schema 由 [`@deepseek-ai/dsh-experimental-tool-agent-team`](../t
 
 - **仅限源码 checkout**——正式 npm、CLI、Web 与 Python 发布产物都不包含这个私有包。
 - **共享 checkout**——所有 teammate 都观察同一个工作目录；本 bundle 不提供 worktree 隔离或文件系统锁。
-- **需要 base profile**——本 patch 依赖 `dsh-base` 提供的配置行 id 与 Subagent provider；它不是独立 profile。
+- **需要 base profile**——本 patch 依赖 `dsh-base` 提供的配置行 id 与 Subagent 提供方；它不是独立 profile。
 
 <a id="dev-note"></a>
 ### 开发备注

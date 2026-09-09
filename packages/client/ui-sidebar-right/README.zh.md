@@ -36,7 +36,7 @@ kind: "package-reference"
 <a id="presentations"></a>
 ## 呈现形态
 
-普通与全屏共用同一棵面板内容树，切换不会重挂载Tab。普通面板贴靠右栏；全屏面板覆盖窗口并保留宽屏底层列宽。窗口低于768px时打开右栏自动全屏；窄屏退出全屏会收起右栏，变宽不重新打开已关闭的右栏。 全屏打开时，底层列宽保持不变，直到滑入结束后才无过渡地准备普通轨道。 全屏面板退场前，关闭先准备全宽会话区，恢复先准备普通右轨道；退场期间底层不播放宽度动画。
+普通与全屏共用同一棵面板内容树，切换不会重挂载 Tab。普通面板贴靠右栏；全屏面板覆盖窗口并保留宽屏底层列宽。窗口低于 768 px 时打开右栏会自动全屏；窄屏退出全屏会收起右栏，变宽不会重新打开已关闭的右栏。全屏打开时，底层列宽保持不变，直到滑入结束后才无过渡地准备普通轨道。全屏面板退场前，关闭会先准备全宽会话区，恢复会先准备普通右轨道；退场期间底层不播放宽度动画。
 
 | 形态 | 轨道 | 面板 |
 |---|---|---|
@@ -73,7 +73,7 @@ kind: "package-reference"
 tab 类型分两阶段注册，随包发布的引导类型走的正是别的包的类型走的同一条公开路径（`ui-sidebar-documentpreview` 是活的证明）。两个阶段都在类型自己的 `ctx.effect` 里，因此注册与创建它的插件同生共死。
 
 1. **类型**——`ctx.sidebarRightTabs.register({ id, kind, patterns?, priority?, canOpen?, title, guide? })`，一份没有运行时钩子的静态声明，返回 disposer。`id` 是这个实现在 tab 系统里的身份，在全部注册中唯一（包名是天然取值；随包引导页是 `@deepseek-ai/dsh-client-ui-sidebar-right/guide`）：一旦 extension 可以接管 builtin 的 kind，kind 就不再唯一，所以实现要自己命名，同一 `id` 的第二次注册会 throw。资源类型给出 `patterns`，即作用于 `dsh-resource://` 地址的 glob：含 `:` 的匹配整个地址（`dsh-resource://file/**`）；不含的匹配 URI 路径的任意深度且忽略大小写（`*.md`），不是 URI 的地址不匹配任何这类模式。页类型——引导页、文件树——不给出模式，按 kind 打开。`canOpen(address)` 否决一次命中。`title(address)` 是 tab chip 的文字，在 tab 打开时捕获。`guide` 列出引导页的入口框；选中一个即把贡献它的类型作为页打开。一个 `kind` 最多承载一份 `builtin` 与一份 `extension` 注册（extension 生效；它离开后 builtin 恢复）；kind 上的其它任何撞名都 throw。`id` 同时也是该类型正文与标题注册时用的 key，因此 extension 与它接管的 builtin 各占一个格位，席位渲染生效的那个。
-2. **正文**——`ctx.slots.register({ name: 'sidebar.right.pane.tab', key: definition.id }, Body)` 通过框架注入的 `useTabInfo()` 读取 `{ sidebar, panel, tab }`。`sidebar` 提供开合与全屏信息，`panel.id` 命名所在格，`tab` 包含原记录字段、`visible`、`navigation`、`signal` 和 `actions`。这些字段不再作为平铺owner props传入；类型自己的store仍使用 `useStore`/`actions`。可选标题注册及引导替换共享该hook；未注册标题时使用打开时保存的文本。
+2. **正文**——`ctx.slots.register({ name: 'sidebar.right.pane.tab', key: definition.id }, Body)` 通过框架注入的 `useTabInfo()` 读取 `{ sidebar, panel, tab }`。`sidebar` 提供开合与全屏信息，`panel.id` 命名所在格，`tab` 包含原记录字段、`visible`、`navigation`、`signal` 和 `actions`。这些字段不再作为平铺 owner props 传入；类型自己的 store 仍使用 `useStore`/`actions`。可选标题注册及引导替换共享该 hook；未注册标题时使用打开时保存的文本。
 
 由哪个类型打开资源遵循编辑器解析器的惯例：`patterns` 命中的类型先按 `priority` 档排序——`extension`（产品外的类型，最高档，也是未命名时的默认）、`builtin`、`fallback`（任何更具体的类型都应胜过的通用查看器）——再按命中模式的长度，再按注册顺序；`canOpen` 会剔除候选。各档是字符串字面量，因此别的包里的类型不需要从这里做运行时导入。`candidates(address)` 返回排序，`claim(address, kind?)` 返回决定；指定 `kind` 时跳过它的 glob 但保留它的 `canOpen`。
 
@@ -89,14 +89,14 @@ tab 类型分两阶段注册，随包发布的引导类型走的正是别的包�
 <a id="the-tab-domain"></a>
 ## Tab 域
 
-Tab域按（Session，Tab id）保留导航、中止信号与绑定动作；私有装配回调收养各会话的store，并在每次提交时对齐记录。记录消失或插件卸载才中止signal，收起和切会话不销毁记录；undo恢复的是新occurrence。`useTabInfo()` 组合框架绑定的store与导航hook，不在组件中手写订阅或在渲染时创建记录。`tab.actions` 始终作用于自己的会话；`tab.visible` 区分正文与标题，浮窗不受整栏收起影响。`adopt` 不在公开控制器上。
+Tab 域按（Session，Tab id）保留导航、中止信号与绑定动作；私有装配回调收养各会话的 store，并在每次提交时对齐记录。记录消失或插件卸载时才中止 signal，收起和切换会话不会销毁记录；undo 恢复的是新 occurrence。`useTabInfo()` 组合框架绑定的 store 与导航 hook，不在组件中手写订阅或在渲染时创建记录。`tab.actions` 始终作用于自己的会话；`tab.visible` 区分正文与标题，浮窗不受整栏收起影响。`adopt` 不在公开控制器上。
 
 <a id="the-guide"></a>
 ## 引导页
 
 默认页取决于已注册的引导入口数，不取决于 tab 类型数或已打开的 tab 数。恰好一个入口时直接打开对应页面（随包组合中为 Files）；没有入口或有多个入口时打开引导页。单入口生成的默认页在增加其他 tab 后仍不可关闭。任何格的最后一个 tab 也不可关闭；其他 tab 可以关闭。chip、上下文菜单与 `close` API 使用同一规则。显式添加引导页始终打开引导，即使只有一个入口。
 
-引导 tab 是一个居中标题、其下一行说明，以及各已注册类型贡献的每个 `guide` 条目一个入口框，按 `order` 排列。选中一个框会调用 `tab.actions.openTab(entry.kind, { replaceTab: true })`，于是引导页让位给它打开的页。一个格最多持有一个引导 tab。tab 条的添加控件只在该格没有引导 tab 时绘制，并以 `openTab('guide', { paneId, revealIfOpened: false })` 在该格打开一个，这样别的格里的引导页不会截走这次点击；把引导页开进已有引导页的格则改为聚焦它；把引导页拖入、放入或收回到这样的格会合并进去——来者关闭，该格自己的被聚焦；对引导页 `duplicateTab` 不记录任何东西。分栏或被清空的根格使用相同的默认页规则，每个新格一个 tab。普通的 `openTab('guide')` 保留每次打开都有的整树聚焦。产品最多保留左右两格，默认均分，分隔条限定20%～80%。宽度不足以容纳两格时不允许新分栏；已有两格时，正文拖放用于跨格移动，不再创建第三格。 达到两格上限时隐藏分栏控件；关闭回单格后恢复。
+引导 tab 是一个居中标题、其下一行说明，以及各已注册类型贡献的每个 `guide` 条目一个入口框，按 `order` 排列。选中一个框会调用 `tab.actions.openTab(entry.kind, { replaceTab: true })`，于是引导页让位给它打开的页。一个格最多持有一个引导 tab。tab 条的添加控件只在该格没有引导 tab 时绘制，并以 `openTab('guide', { paneId, revealIfOpened: false })` 在该格打开一个，这样别的格里的引导页不会截走这次点击；把引导页开进已有引导页的格则改为聚焦它；把引导页拖入、放入或收回到这样的格会合并进去——来者关闭，该格自己的被聚焦；对引导页 `duplicateTab` 不记录任何东西。分栏或被清空的根格使用相同的默认页规则，每个新格一个 tab。普通的 `openTab('guide')` 保留每次打开都有的整树聚焦。产品最多保留左右两格，默认均分，分隔条限定在 20%～80%。宽度不足以容纳两格时不允许新分栏；已有两格时，正文拖放用于跨格移动，不再创建第三格。达到两格上限时隐藏分栏控件；关闭回单格后恢复。
 
 <a id="copy"></a>
 ## 文案
@@ -106,11 +106,11 @@ Tab域按（Session，Tab id）保留导航、中止信号与绑定动作；私�
 <a id="model-experience"></a>
 ## 模型体验
 
-None, as the package is a browser-side UI plugin layer that registers nothing model-facing.
+无，因为本包是浏览器侧 UI 插件层，不注册任何面向模型的内容。
 
-#### KV Cache effect
+#### KV Cache 影响
 
-None; this package neither assembles nor sends a provider request.
+无；本包既不组装也不发送提供方请求。
 
 ## 已知限制与延期工作
 
@@ -134,4 +134,4 @@ None; this package neither assembles nor sends a provider request.
 
 </details>
 
-**运行时不变量：** 不发布 companion。两个服务（`sidebarRight`、`sidebarRightTabs`）在同一个 effect 内经 `ctx.reflect.provide` 提供并随之拆除；席位绑定与 Tab 域 occurrence 的生命周期由本包的 spec 直接断言，不存在会与之分歧的独立观察。
+**运行时不变式：** 不发布伴生入口。两个服务（`sidebarRight`、`sidebarRightTabs`）在同一个 effect 内经 `ctx.reflect.provide` 提供并随之拆除；席位绑定与 Tab 域 occurrence 的生命周期由本包的 spec 直接断言，不存在会与之分歧的独立观察。

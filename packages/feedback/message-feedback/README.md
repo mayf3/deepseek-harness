@@ -28,7 +28,7 @@ Mount `dsh-message-feedback` alongside `sessions` and `sessionPersistence`. It n
 
 | Field | Default | Meaning |
 |---|---|---|
-| `maxNoteBytes` | required | Positive safe-integer maximum UTF-8 bytes in one optional note. |
+| `maxNoteBytes` | required | Positive safe integer specifying the maximum UTF-8 byte length of one optional note. |
 
 A supplied note must contain a non-whitespace character and fit the configured byte limit. Blank notes return `note-blank`; oversized notes return `note-too-large`. Accepted text is preserved exactly, including surrounding whitespace. Omitting a note clears it. Note validation precedes Session lookup.
 
@@ -55,7 +55,7 @@ Live operations append through `Session.append` and await `sessions.flush`, then
 
 A per-Session queue serializes operations within one service instance; the persistence write handle excludes competing cold writers. Disposal stops admission and drains admitted operations before releasing the service. Persistence failures reject instead of becoming business failures. A failed flush does not roll back an accepted event; callers can list and retry with its version. Successful no-op mutations also flush the current prefix.
 
-Cold material mutations notify `feedback/committed` after flush with a borrowed read-only canonical prefix; observers must deep-clone it before transferring ownership. Observers finish before write ownership is released, must not await another feedback operation for that Session, and cannot reject an already committed mutation. Live consumers observe `session/event`.
+Cold material mutations emit `feedback/committed` after flush with a borrowed read-only canonical prefix; observers must deep-clone it before transferring ownership. Observers finish before write ownership is released, must not await another feedback operation for that Session, and cannot reject an already committed mutation. Live consumers observe `session/event`.
 
 ### Source map
 

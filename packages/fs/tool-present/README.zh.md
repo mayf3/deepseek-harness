@@ -25,7 +25,7 @@ kind: "package-reference"
 <a id="use-this-package"></a>
 ## 使用本包
 
-`standard`、`ptc` 与 `cordis` Agent preset 挂载本插件。创建文件后，以 `files: [{ path, description? }]` 调用 `present`。文件必须存在于 Session 工作区内，且为普通文件。文件缺失、为目录或路径位于工作区外时，调用失败。
+`standard`、`ptc` 与 `cordis` agent preset 挂载本插件。创建文件后，以 `files: [{ path, description? }]` 调用 `present`。文件必须存在于 Session 工作区内，且为普通文件。文件缺失、为目录或路径位于工作区外时，调用失败。
 
 在 Agent 的 Cordis 组合中挂载，并提供 `tools`、`fs` 和 `turnBoundary` Session 投影：
 
@@ -39,7 +39,7 @@ kind: "package-reference"
 |---|---|---|
 | `maxFiles` | `8` | 每次调用的最大文件数，为正整数 |
 
-挂载时校验文件数量上限。工具要求 Agent Session 具有工作区和已开始的 turn。交付归调用方 Session 所有；父 Session 如需声明交付子 Agent 创建的文件，必须自行调用 `present`。
+挂载时校验文件数量上限。工具要求 Agent Session 具有工作区和尚未结束的轮次。交付归调用方 Session 所有；父 Session 如需声明交付子 Agent 创建的文件，必须自行调用 `present`。
 
 -----
 

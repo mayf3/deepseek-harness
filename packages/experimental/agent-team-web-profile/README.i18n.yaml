@@ -3,4 +3,4 @@
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write packages/experimental/agent-team-web-profile/README.md
 README.md: 41a6cc3ae09dc1dd0ac7d30b6a888b3337044ae5
-README.zh.md: 5620833eaf68c3ab891ff16df40fa38deb55ff48
+README.zh.md: b9f5a97c2f7129913014fa9e1bd3aa6fb27685a6

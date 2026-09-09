@@ -86,4 +86,4 @@ kind: "package-reference"
 
 </details>
 
-**运行时不变式：** 不发布伴生入口。插件持有一个 slot 注册和按 Session 的 controller map，两者由同一 effect disposer 释放；生命周期测试已直接观察该关系。
+**运行时不变式：** 不发布伴生入口。插件持有一个 slot 注册和一个按 Session 划分的控制器 map，两者都由同一个 effect disposer 释放。生命周期 spec 证明，所属 fiber 释放时会撤销该注册并丢弃所有控制器，因此不存在需要在运行时检查的第二权威来源。

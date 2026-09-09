@@ -44,7 +44,7 @@ kind: "package-reference"
 
 一切宿主相关的东西都通过 props 进入：
 
-| 契约 | 承载内容 |
+| 约定 | 承载内容 |
 |---|---|
 | `DockLabels` | 每一个渲染出来的字符串，已本地化，含无障碍名称 |
 | `TabRenderer` | 一个 tab 的正文（`renderTab`），以及可选的 chip 或浮窗头部显示的标题（`renderTabTitle`，回退到记录的 `title`）；嵌入方按 `tab.kind` 分发 |
@@ -52,7 +52,7 @@ kind: "package-reference"
 
 `DockController` 原样满足 `DockIntents`，所以最简单的嵌入就是把 controller 直接交给 `DockSurface`。经由自己 store 路由的嵌入方则实现同名方法。有两个 props 承载的是控制策略而非手势：`canSplit`（整面有效，即格预算；用 `splitPaneDisabled` 禁用分栏控件）与 `canAddTab(paneId)`（按格，省略添加控件；不传则每格都画）。隐藏添加控件不会移动 tab 条里的其它任何东西。套件自己再加一条策略，即下文的空间规则，它用 `splitPaneNarrow` 禁用某格的分栏控件；`onRoom(fits)` 上报其读数，让以编程方式分栏的嵌入方能遵守同一规则。
 
-`dropZones="horizontal"` 提供左右两个半区提示；预算或宽度不允许再拆时，正文整格接收移动。`minPaneFraction` 控制预览的最小比例，`planResizeSplit` 接受相同最小值以约束提交；Sidebar使用0.2并在自己的store限制两格。通用引擎仍保留原有树与其它分割方向。 `hideSplitAtCapacity` 在达到窗格预算时隐藏分栏控件，默认值为 false；宽度不足的控件仍以禁用状态显示。
+`dropZones="horizontal"` 提供左右两个半区提示；预算或宽度不允许再拆时，正文整格接收移动。`minPaneFraction` 控制预览的最小比例，`planResizeSplit` 接受相同最小值以约束提交；Sidebar 使用 0.2，并在自己的 store 中限制为两格。通用引擎仍保留原有树与其他分割方向。`hideSplitAtCapacity` 在达到窗格预算时隐藏分栏控件，默认值为 `false`；宽度不足的控件仍以禁用状态显示。
 
 tab 的 `kind` 是不透明字符串。种子 tab 是工厂（`DockControllerOptions`），因此新格里放什么由嵌入方决定，与本包无关。内容身份是二元组（`kind`、`contentId`）：`findContentTab(state, contentId, kind?)` 在任意位置找到展示它的 tab，`findPaneContentTab(state, paneId, contentId, kind?)` 在一个格内找；`planOpenContent` 会聚焦该 tab 而非再开一个，除非被告知 `revealIfOpened: false`；显式的 `index` 把新 tab 放到 tab 条的某个位置而非末尾。
 
@@ -65,8 +65,8 @@ tab 的 `kind` 是不透明字符串。种子 tab 是工厂（`DockControllerOpt
 
 - **手势开始时捕获指针。** 不捕获的话，指针经过的任何滚动容器都可能接管手势，浏览器会将其报告为指针取消和拖动中止。捕获是加固——无论如何都由 window 监听器承载手势，所以没有该 API 的环境照样可用。
 - **chip 让位；tab 条末端的控件永不让位。** chip 盒是 tab 条里唯一会收缩的部分（`flex: 0 1 auto; min-width: 0; overflow: hidden`）；添加、分栏与 chrome 控件都是 `flex: none`，因此在任何不窄于它们自身的格里（带 chrome 约 130px，不带约 72px）都保持宽度与位置。停靠面的 `min-width: 0` 与格的 `overflow: hidden` 阻止正文里最长的不换行行把格撑出自己的盒子——正是那种情况把控件和正文滚动条推到了屏幕外。
-- **chip 盒不是滚动容器。** 横向滚动容器会把按下并移动据为己有；tab 转而收缩、省略、然后被裁切。
-- **分栏需要给两个可用的半格留出空间。** 格被等分成两半，因此每一半都必须容得下不可收缩的部分：tab 条的固定部分——按 tab 条宽减去 chip 盒与填充条测得，即内边距、间隙以及该格绘制的每个控件（含它自己的 chrome，所以右上格要求更多）——加上一枚最小尺寸的 chip——`.tab` 在 content-box 上声明 `min-width: 44px`，所以它的足印是 44px 加 10px + 5px 内边距，即 59px，从已渲染 chip 的计算样式读取（读不到时用样式表数值）；两半之间的分隔条取其渲染厚度（4px）。纵向分栏只由边缘落下产生，它要求每一半容得下 tab 条（36px）加 48px 正文：正文 12px 内边距内一行 13px、行高 1.6 的次级文字。`geometry.ts` 里的 `halvesFit` 是算术；`measure.ts` 在每次提交后与停靠面尺寸变化时读取矩形，因为布局状态只携带比例、从不携带像素，引擎的 planner 也保持如此。没有空间的格保留分栏控件，以 `splitPaneNarrow` 禁用，并且在该轴上不提供边缘落区（松手就不是移动）。用户随后把格拖窄——拖分隔条或拖嵌入方的列——的格保持原尺寸：规则只决定它的下一次分栏。
+- **chip 盒不是滚动容器。** 横向滚动容器会把按下并移动的手势据为己有；tab 转而收缩、省略、然后被裁切。
+- **分栏需要给两个可用的半格留出空间。** 格被等分成两半，因此每一半都必须容得下不可收缩的部分：tab 条的固定部分——按 tab 条宽减去 chip 盒与填充条测得，即内边距、间隙以及该格绘制的每个控件（含它自己的 chrome，所以右上格要求更多）——加上一枚最小尺寸的 chip——`.tab` 在 content-box 上声明 `min-width: 44px`，所以它的足印是 44px 加 10px + 5px 内边距，即 59px，从已渲染 chip 的计算样式读取（读不到时用样式表数值）；两半之间的分隔条取其渲染厚度（4px）。纵向分栏只由边缘落下产生，它要求每一半容得下 tab 条（36px）加 48px 正文：正文 12px 内边距内一行 13px、行高 1.6 的次级文字。`geometry.ts` 里的 `halvesFit` 是算术；`measure.ts` 在每次提交后与停靠面尺寸变化时读取矩形，因为布局状态只携带比例、从不携带像素，引擎的 planner 也保持如此。没有空间的格保留分栏控件，以 `splitPaneNarrow` 禁用，并且在该轴上不提供边缘落区（松手就不是移动）。用户随后拖窄的格——通过拖动分隔条或嵌入方的列——会保持原尺寸：规则只决定它的下一次分栏。
 - **焦点落在 click 而不是按下。** 在 `pointerdown` 与第一次 `pointermove` 之间的状态变化会重建被按下的子树，而被替换的元素会取消指针。这也避免拖动先记录一条多余的焦点操作。chip、标签条各控件以及嵌入方 chrome 上的 click 都止于标签条：它们各自上报的意图已决定了活动格，或本就是嵌入方自己的事，所以格自身的点击聚焦不再多记一条。浮动面板的抓手与角柄同样通过手势上报——原地松开的按下是一次 click，抬起面板；真正的拖动只记录移动或缩放，由该操作自己抬起面板——而按在面板主体上则直接抬起它。点击本已活动的格、点击或按键选中该格本已选中的 chip，或按下本已活动且在最上层的面板，什么都不改变，也什么都不记录。
 - **嵌套在可拖动 chip 里的控件要拦住自己的按下。** 否则按下会开始拖动、捕获指针，嵌套控件的 click 就永远落不下。
 - **强调色用平台的强调 token，绝不用 `--dsw-alias-brand-primary`。** 本平台把 `brand-primary` 绑定到近黑（浅色）或近白（深色）的前景色，因此悬停的分隔条、落点光标与落区提示都用 `--dsw-alias-brand-primary-new-colorprimary-new-color`，与轨迹视图一致。浮窗的边框无论是否活动都是同一条 `--dsw-alias-border-l2` 细线：活动浮窗本就在最上层并投下阴影；围它一圈更深的边框读起来像缺陷。
@@ -76,16 +76,16 @@ tab 的 `kind` 是不透明字符串。种子 tab 是工厂（`DockControllerOpt
 
 静态 ESM 为 Web 壳的 Vite 构建保留第三方导入；独立消费方自行提供开发依赖（[依赖规则](../AGENTS.md#dependency-declaration)）。
 
-本包静态链接：tsdown 的 `staticLinked` 预设在 `lib/index.js` 产出一个浏览器 ESM bundle（所有裸说明符保持为 import，sourcemap 链回源码），并把样式表按其相对 `src` 的路径放到 `lib/` 下；Web 外壳按包名解析并自行打包该产物，因此 vite 仍是 class 哈希的唯一拥有者。有一个后果是承重的——套件只保留**一张**样式表 `dockkit.module.css`，因为消费方按文件名去重注入的样式表，撞名会静默丢掉一张。
+本包静态链接：tsdown 的 `staticLinked` 预设在 `lib/index.js` 产出一个浏览器 ESM bundle（所有裸说明符保持为 import，sourcemap 链回源码），并把样式表按其相对 `src` 的路径放到 `lib/` 下；Web 外壳按包名解析并自行打包该产物，因此 vite 仍是 class 哈希的唯一拥有者。有一个后果至关重要——套件只保留**一张**样式表 `dockkit.module.css`，因为消费方按文件名去重注入的样式表，撞名会静默丢掉一张。
 
 <a id="model-experience"></a>
 ## 模型体验
 
-None, as the package is a browser-side docking layout engine and component set that registers nothing model-facing.
+无；本包是浏览器侧停靠布局引擎与组件集，不注册任何面向模型的内容。
 
-#### KV Cache effect
+#### KV Cache 影响
 
-None; this package neither assembles nor sends a provider request.
+无；本包既不组装也不发送提供方请求。
 
 ## 已知限制与延期工作
 
@@ -94,7 +94,7 @@ None; this package neither assembles nor sends a provider request.
 - **尺寸语义刻意保持精简**：比例权重加一处最小尺寸夹取。没有吸附、优先级或首选尺寸，因此完整 splitview 的级联挤压行为不存在。
 - **触控未调优。** 手势基于 pointer 事件，并在滚动容器可能干扰处设置了 `touch-action`，但没有做过触控专项调优。
 - **无障碍不完整**：分隔条没有 `separator` 角色，也没有键盘路径去分栏、移动或浮出。
-- **没有发布样式表契约。** 消费方拿到的是哈希化的模块类名；套件除读取的 `--dsw-*` 自定义属性外不暴露任何主题 API。
+- **没有发布样式表约定。** 消费方拿到的是哈希化的模块类名；套件除读取的 `--dsw-*` 自定义属性外不暴露任何主题 API。
 
 <a id="dev-note"></a>
 ### 开发备注
@@ -106,4 +106,4 @@ None; this package neither assembles nor sends a provider request.
 
 </details>
 
-**运行时不变量：** 不发布 companion。引擎是作用于纯数据的纯函数，组件只上报意图；操作序列的可逆性与 settle 规则由本包的引擎 spec 直接断言，不提供也不观察任何 cordis 服务。
+**运行时不变量：** 不发布 companion。引擎是作用于纯数据的纯函数，组件只上报意图；操作序列的可逆性与 settle 规则由本包的引擎 spec 直接断言，不提供也不观察任何 Cordis 服务。

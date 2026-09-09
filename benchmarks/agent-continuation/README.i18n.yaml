@@ -3,4 +3,4 @@
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write benchmarks/agent-continuation/README.md
 README.md: 3d38f008c4ee95c794e4e7fbd3d874d1d668b1ce
-README.zh.md: 189dcae8eea8716dbcb24b1fe2b08f1113caf36d
+README.zh.md: 04c6e9bc8c66202b7800f4931b2226f420c428fb
