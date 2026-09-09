@@ -128,6 +128,8 @@ fs.appendFileSync(${JSON.stringify(openLog)}, JSON.stringify({ path, action, con
       const revealResponse = page.waitForResponse(response => response.url().includes('action=reveal') && response.request().method() === 'POST')
       await page.getByRole('menuitem', { name: process.platform === 'darwin' ? /Show in Finder/ : /Open containing folder/ }).click()
       expect((await revealResponse).status()).toBe(204)
+      expect(await row.getByRole('button', { name: 'Open report.txt in sidebar', exact: true })
+        .evaluate(button => button === document.activeElement)).toBe(true)
       await expect.poll(opened).toHaveLength(beforeReveal + 1)
       expect((await opened()).at(-1)).toEqual({ action: 'reveal', content: null, path: await realpath(process.platform === 'darwin' ? join(cwd, 'report.txt') : cwd) })
       for (const [name, bytes] of [['report.txt', 'EDITED_REPORT\n'], ['说明.txt', 'EDITED_NOTE\n']] as const) {

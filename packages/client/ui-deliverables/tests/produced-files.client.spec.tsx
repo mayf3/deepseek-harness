@@ -555,13 +555,24 @@ describe('plugin registration', () => {
     service?.forClosing(delivered, SessionId('child-session'))?.resolve('report.docx')?.open()
     expect(fetcher).toHaveBeenCalledWith('/api/present.open?sessionId=child-session&seq=2&index=0', { method: 'POST', signal: expect.any(AbortSignal) as AbortSignal })
     const face = entry!.inject!(SessionId('child-session') as never) as unknown as DeliverablesInjected
+    fetcher.mockResolvedValueOnce(Response.json({ name: 'desktop', available: true, fileManager: 'finder' }))
     await face.reloadPresentedHost()
+    expect(face.hooks.presentedHost.getSnapshot()).toMatchObject({ name: 'desktop' })
+    ctx.emit('connection/reset')
+    expect(face.hooks.presentedHost.getSnapshot()).toBeNull()
     await face.openPresented(SessionId('child-session'), 2, 0)
     expect(face.hooks.presentedOpen.getSnapshot()['/api/present.open?sessionId=child-session&seq=2&index=0']).toBe('opened')
     // A turn that produced nothing yields no vocabulary at all.
     expect(service?.forClosing(tailOwner(undefined, 2), SessionId('viewed-session'))).toBeUndefined()
 
+    fetcher.mockResolvedValueOnce(Response.json({ name: 'last-host', available: true, fileManager: 'finder' }))
+    await face.reloadPresentedHost()
     await fiber.dispose()
+    const reset = vi.fn()
+    const unsubscribe = face.hooks.presentedHost.subscribe(reset)
+    ctx.emit('connection/reset')
+    expect(reset).not.toHaveBeenCalled()
+    unsubscribe()
     expect(ctx.slots.entries('conversation.chat.turnTail')).toHaveLength(0)
     expect(ctx.slots.entries('tool.call.toolview')).toHaveLength(0)
     // Fiber teardown retracts the service: the consumer's ctx.get sees the off state.

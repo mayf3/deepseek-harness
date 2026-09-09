@@ -5,10 +5,12 @@ export const NS = 'deliverables'
 
 /** Simplified Chinese dictionary (the key-set source of truth). */
 export const zh = {
-  'presented.revealError': '无法打开所在文件夹，请重试',
+  'presented.revealError': '无法在文件管理器中显示，请重试',
+  'presented.directoryError': '无法打开所在文件夹，请重试',
+  'presented.directoryOpening': '正在打开所在文件夹…',
   'presented.directoryOpened': '已请求打开所在文件夹',
   'presented.revealed': '已请求在文件管理器中显示',
-  'presented.revealing': '正在打开所在文件夹…',
+  'presented.revealing': '正在文件管理器中显示…',
   'presented.unavailable': '此主机没有可用的桌面，无法打开文件或文件夹',
   'presented.retry': '重试',
   'presented.hostError': '无法读取主机桌面信息',
@@ -44,10 +46,12 @@ export const zh = {
 
 /** English dictionary (same key set). */
 export const en: Record<DeliverablesKey, string> = {
-  'presented.revealError': 'Could not open containing folder. Try again.',
+  'presented.revealError': 'Could not show in file manager. Try again.',
+  'presented.directoryError': 'Could not open containing folder. Try again.',
+  'presented.directoryOpening': 'Opening containing folder…',
   'presented.directoryOpened': 'Requested opening containing folder',
   'presented.revealed': 'Requested display in file manager',
-  'presented.revealing': 'Opening containing folder…',
+  'presented.revealing': 'Showing in file manager…',
   'presented.unavailable': 'This Host has no desktop available to open files or folders',
   'presented.retry': 'Retry',
   'presented.hostError': 'Could not read the Host desktop information',

@@ -331,7 +331,7 @@ describe('canOpenNativePath', () => {
 describe('native file manager', () => {
   it.each([
     ['darwin', 'finder', '/tmp/my report.txt', 'open', ['-R', '/tmp/my report.txt']],
-    ['win32', 'explorer', 'C:\\work\\my report.txt', 'explorer.exe', ['/select,C:\\work\\my report.txt']],
+    ['win32', 'explorer', 'C:\\work\\my report.txt', 'explorer.exe', ['/select,', 'file:///C:/work/my%20report.txt']],
     ['linux', 'directory', '/tmp/a $b; report.txt', 'xdg-open', ['/tmp']],
   ] as const)('reveals through %s without opening the file association', async (platform, manager, path, command, args) => {
     const run = vi.fn<PathOpenerRunner>(async () => ({ stdout: '', stderr: '' }))
@@ -347,7 +347,7 @@ describe('native file manager', () => {
     expect(nativeFileManager(internals)).toBe('explorer')
     await revealNativePath('/mnt/c/work/报告.txt', signal(), internals)
     expect(run.mock.calls.map(([cmd, args]) => [cmd, args])).toEqual([
-      ['wslpath', ['-w', '/mnt/c/work/报告.txt']], ['explorer.exe', ['/select,C:\\work\\报告.txt']],
+      ['wslpath', ['-w', '/mnt/c/work/报告.txt']], ['explorer.exe', ['/select,', 'file:///C:/work/%E6%8A%A5%E5%91%8A.txt']],
     ])
   })
 
@@ -377,4 +377,39 @@ it('uses the native runner for a file-manager handoff when none is injected', as
   execFileMock.mockImplementation((_command, _args, _options, callback) => { callback(null, '', '') })
   await revealNativePath('/tmp/report.txt', signal())
   expect(execFileMock).toHaveBeenCalled()
+})
+
+
+it.each(['win32', 'linux'] as const)('accepts Explorer delegate exit 1 through the native runner on %s', async (platform) => {
+  execFileMock.mockImplementation((command, _args, _options, callback) => {
+    if (command === 'wslpath') callback(null, 'C:\\work\\report.txt', '')
+    else callback(Object.assign(new Error('delegated'), { code: 1 }), '', '')
+  })
+  await expect(revealNativePath(platform === 'win32' ? 'C:\\work\\report.txt' : '/mnt/c/work/report.txt', signal(),
+    { platform, env: { WSL_DISTRO_NAME: 'Ubuntu' } })).resolves.toBeUndefined()
+})
+
+it.each([2, 'ENOENT', undefined])('preserves Explorer failure %s', async (code) => {
+  const failure = Object.assign(new Error('launch failed'), code === undefined ? {} : { code })
+  execFileMock.mockImplementation((_command, _args, _options, callback) => { callback(failure, '', '') })
+  await expect(revealNativePath('C:\\file.txt', signal(), { platform: 'win32' })).rejects.toMatchObject({ code })
+})
+
+it('preserves cancellation even when Explorer returns delegate exit 1', async () => {
+  const abort = new AbortController()
+  const reason = new Error('cancelled')
+  const run = vi.fn<PathOpenerRunner>(async () => {
+    abort.abort(reason)
+    throw Object.assign(new Error('delegated'), { code: 1 })
+  })
+  await expect(revealNativePath('C:\\file.txt', abort.signal, { platform: 'win32', run })).rejects.toBe(reason)
+})
+
+it.each([
+  ['C:\\my files\\报告,#%.txt', 'file:///C:/my%20files/%E6%8A%A5%E5%91%8A%2C%23%25.txt'],
+  ['\\\\server\\share\\a,b.txt', 'file://server/share/a%2Cb.txt'],
+])('preserves special characters in the Explorer target %s', async (path, target) => {
+  const run = vi.fn<PathOpenerRunner>().mockResolvedValue({ stdout: '', stderr: '' })
+  await revealNativePath(path, signal(), { platform: 'win32', run })
+  expect(run).toHaveBeenCalledWith('explorer.exe', ['/select,', target], expect.any(AbortSignal))
 })

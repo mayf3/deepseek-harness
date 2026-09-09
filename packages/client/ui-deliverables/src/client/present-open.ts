@@ -13,6 +13,7 @@ export class PresentedOpenController {
   /** Native destination metadata, or a retryable read failure. */
   readonly host = createSnapshotStore<PresentedHost | 'error' | null>(null)
   private loading: Promise<void> | undefined
+  private metadata = new AbortController()
   private readonly lifetime = new AbortController()
   private readonly pending = new Set<Promise<void>>()
 
@@ -47,25 +48,38 @@ export class PresentedOpenController {
     if (this.lifetime.signal.aborted) return
     if (this.loading !== undefined) return this.loading
     this.host.set(null)
-    const task = this.readHost()
+    const task = this.readHost(AbortSignal.any([this.lifetime.signal, this.metadata.signal]))
     this.loading = task
     this.pending.add(task)
     try { await task }
-    finally { this.loading = undefined; this.pending.delete(task) }
+    finally {
+      if (this.loading === task) this.loading = undefined
+      this.pending.delete(task)
+    }
   }
 
-  private async readHost(): Promise<void> {
+  /** Invalidate desktop metadata on connection replacement; mounted cards request the new Host. */
+  resetHost(): void {
+    const wasLoading = this.loading !== undefined
+    this.metadata.abort()
+    this.metadata = new AbortController()
+    this.loading = undefined
+    this.host.set(null)
+    if (wasLoading) void this.loadHost()
+  }
+
+  private async readHost(signal: AbortSignal): Promise<void> {
     let host: PresentedHost | 'error' = 'error'
     try {
-      const response = await fetch(PRESENT_HOST_PATH, { signal: this.lifetime.signal })
+      const response = await fetch(PRESENT_HOST_PATH, { signal })
       if (response.ok) {
         const value: unknown = await response.json()
         if (isPresentedHost(value)) host = value
       }
     } catch {
-      // HTTP, JSON, and transport failures leave a retryable metadata read.
+      host = 'error'
     }
-    if (!this.lifetime.signal.aborted) this.host.set(host)
+    if (!signal.aborted) this.host.set(host)
   }
 
   /** Cancel outstanding requests and wait until no request can publish state. */

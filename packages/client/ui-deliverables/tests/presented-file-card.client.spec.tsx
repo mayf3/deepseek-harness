@@ -128,3 +128,39 @@ it.each([
   expect(view.getByText(expected)).toBeTruthy()
   expect(view.queryByText(description)).toBeNull()
 })
+
+
+it('does not reopen a menu after a shared native request settles', () => {
+  const p = props()
+  const view = render(<PresentedFileCard {...p} />)
+  fireEvent.click(view.getByRole('button', { name: 'More file actions for out/report.pdf' }))
+  expect(view.getByRole('menu')).toBeTruthy()
+  view.rerender(<PresentedFileCard {...p} phase="opening" />)
+  expect(view.queryByRole('menu')).toBeNull()
+  view.rerender(<PresentedFileCard {...p} phase="opened" />)
+  expect(view.queryByRole('menu')).toBeNull()
+})
+
+it('keeps focus on the available preview button after selecting a native action', () => {
+  const p = props()
+  const view = render(<PresentedFileCard {...p} />)
+  fireEvent.click(view.getByRole('button', { name: 'More file actions for out/report.pdf' }))
+  const item = view.getByRole('menuitem', { name: 'Show in Finder' })
+  item.focus()
+  fireEvent.click(item)
+  view.rerender(<PresentedFileCard {...p} phase="revealing" />)
+  const preview = view.getByRole('button', { name: 'Open out/report.pdf in sidebar' })
+  expect(document.activeElement).toBe(preview)
+  view.rerender(<PresentedFileCard {...p} phase="revealed" />)
+  expect(document.activeElement).toBe(preview)
+})
+
+it.each([en, zh])('distinguishes directory-only progress and errors in each locale', (dictionary) => {
+  const p = { ...props(), t: makeTranslate(dictionary) }
+  const view = render(<PresentedFileCard {...p} phase="revealing" />)
+  expect(view.getByText(dictionary['presented.revealing'])).toBeTruthy()
+  view.rerender(<PresentedFileCard {...p} phase="revealing" host={{ ...p.host, fileManager: 'directory' }} />)
+  expect(view.getByText(dictionary['presented.directoryOpening'])).toBeTruthy()
+  view.rerender(<PresentedFileCard {...p} phase="revealError" host={{ ...p.host, fileManager: 'directory' }} />)
+  expect(view.getByText(dictionary['presented.directoryError'])).toBeTruthy()
+})

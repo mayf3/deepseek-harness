@@ -48,7 +48,7 @@ const MEASURE_STYLE: CSSProperties = { visibility: 'hidden', left: 0, top: 0 }
 
 /**
  * Render an anchored dropdown menu.
- * @param props.autoFocus - focus the first item on open and enable arrow-key navigation; Escape restores the trigger.
+ * @param props.autoFocus - focus the first item on open and enable arrow-key navigation; Escape focuses the anchor's first button.
  * @param props.open - whether the list is showing (owner-controlled).
  * @param props.anchor - the trigger element (rendered in place).
  * @param props.items - selectable rows and optional separators.

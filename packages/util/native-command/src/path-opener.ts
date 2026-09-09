@@ -11,6 +11,7 @@
 
 import { release as osRelease } from 'node:os'
 import { dirname, extname } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { runNativeCommand, type NativeCommandRunner } from './runner.ts'
 
 /** Testable command boundary; native implementations never invoke a shell. */
@@ -222,7 +223,7 @@ export function nativeFileManager(internals: PathOpenerInternals = {}): NativeFi
  * @param path - absolute file path already authorized by the caller.
  * @param signal - caller lifetime; abort terminates the native command.
  * @param internals - platform, environment, and command runner for adapter tests.
- * @returns after the file-manager command accepts the request; launch failures reject.
+ * @returns after command completion; Explorer exit 1 is accepted as a delegated handoff, not proof of selection.
  */
 export async function revealNativePath(
   path: string, signal: AbortSignal, internals: PathOpenerInternals = {},
@@ -243,7 +244,15 @@ export async function revealNativePath(
       windowsPath = translated.stdout.replace(/[\r\n]+$/, '')
       if (windowsPath === '') throw new Error('wslpath returned no Windows path')
     }
-    await run('explorer.exe', [`/select,${windowsPath}`], signal)
+    // Explorer parses commas itself; a file URI preserves commas and whitespace in the path.
+    const target = pathToFileURL(windowsPath, { windows: true }).href.replaceAll(',', '%2C')
+    try {
+      await run('explorer.exe', ['/select,', target], signal)
+    } catch (error) {
+      signal.throwIfAborted()
+      // Explorer can exit 1 after delegating to the existing desktop process.
+      if (!(error instanceof Error) || !('code' in error) || error.code !== 1) throw error
+    }
     return
   }
   if (manager === 'directory') {

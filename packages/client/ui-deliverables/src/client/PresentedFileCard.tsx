@@ -1,5 +1,5 @@
 /** File identity and explicit default-app or file-manager actions for one delivery. */
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { resolveWorkspacePath } from '@deepseek-ai/dsh-util-workspace-path'
 import {
   Menu, LinkIcon, classifyLinkPath, IconRightUpOutline16,
@@ -31,15 +31,23 @@ export function PresentedFileCard({ file, cwd, phase, host, onPreview, onAction,
   onAction: (action: PresentedAction) => void
 } & PropsLocale<typeof NS>) {
   const [menuOpen, setMenuOpen] = useState(false)
+  const previewRef = useRef<HTMLButtonElement>(null)
   const pending = phase === 'opening' || phase === 'revealing'
   const menuDisabled = pending || host === null || !host.available
+  if (menuDisabled && menuOpen) setMenuOpen(false)
   const reveal = host?.fileManager ?? 'directory'
-  const act = (action: PresentedAction) => { setMenuOpen(false); onAction(action) }
+  const act = (action: PresentedAction) => {
+    setMenuOpen(false)
+    previewRef.current?.focus()
+    onAction(action)
+  }
   const name = basename(file.path)
   const metadata = name.match(/\.([^.]+)$/)?.[1]?.toUpperCase() ?? t('presented.file')
   const status = phase === undefined
     ? cardDescription(file.description, metadata)
-    : t(phase === 'revealed' && reveal === 'directory' ? 'presented.directoryOpened' : `presented.${phase}`)
+    : t(reveal === 'directory' && phase === 'revealed' ? 'presented.directoryOpened'
+      : reveal === 'directory' && phase === 'revealing' ? 'presented.directoryOpening'
+        : reveal === 'directory' && phase === 'revealError' ? 'presented.directoryError' : `presented.${phase}`)
   return <div className={css.file} data-presented-file>
     <button type="button" className={css.cardPreview} title={resolveWorkspacePath(cwd, file.path)}
       aria-label={t('presented.previewCard', { name: file.path })} onClick={onPreview} />
@@ -54,7 +62,7 @@ export function PresentedFileCard({ file, cwd, phase, host, onPreview, onAction,
         </span>
       </div>
       <div className={css.split}>
-        <button type="button" className={css.open}
+        <button ref={previewRef} type="button" className={css.open}
           aria-label={t('presented.previewButton', { name: file.path })}
           onClick={onPreview}>{t('presented.action')}</button>
         <Menu className={css.menuAnchor} open={menuOpen && !menuDisabled} autoFocus portal align="end" onClose={() => { setMenuOpen(false) }}
