@@ -315,7 +315,7 @@ export function unrelatedRead(): void {
       expect(rejected.error).toBeUndefined()
       expect(rejected.signal).toBeNull()
       expect(rejected.status, output).toBe(1)
-      const diagnostics = output.split('\n').filter(line => line.includes('typescript(no-deprecated)'))
+      const diagnostics = output.split('\n').filter(line => /:\d+:\d+: `\w+` is deprecated\./.test(line))
       for (const path of testPaths) {
         const reported = diagnostics.filter(line => line.startsWith(`${path}:`))
         expect(reported, output).toHaveLength(1)
@@ -327,6 +327,9 @@ export function unrelatedRead(): void {
       for (const method of ['snapshotEvents', 'eventAt', 'ownEvents', 'oldApi']) {
         expect(output).toContain(`\`${method}\` is deprecated`)
       }
+      expect(output).toContain(
+        'See the [Agent Note](../../../../.agents/notes/implemented/architecture/2026-09-09-deprecate-synchronous-session-event-reads.md).',
+      )
     } finally {
       await Promise.all([
         ...paths.map(path => rm(join(repositoryRoot, path), { force: true })),

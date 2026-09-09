@@ -16,7 +16,7 @@ All operations that synchronously read arbitrary positions or ranges of Session 
 
 The three methods carry this rule in `@deprecated` JSDoc. This is an API-use decision; the current Session implementation still retains the complete event sequence in memory.
 
-Repository test files may call these three readers to inspect emitted events and exercise Session history behavior. Their existing lint override allows `snapshotEvents`, `eventAt`, and `ownEvents`; all other deprecated names remain errors. This allowance also covers unrelated declarations with the same three names under the current linter. It does not apply to production source or ordinary repository scripts.
+Repository test files, including `scripts/**/*.spec.{ts,tsx}`, may call these three readers to inspect emitted events and exercise Session history behavior. The test-file lint override allows `snapshotEvents`, `eventAt`, and `ownEvents`; all other deprecated names remain errors. This allowance also covers unrelated declarations with the same three names under the current linter. It does not apply to production source or non-test repository scripts.
 
 ### State needed after resume
 
@@ -44,7 +44,7 @@ Fork and a small number of operations may genuinely need a complete historical s
 
 New domain behavior must make its event data and projected state sufficient for resumed execution. User-requested history may still load progressively, and genuine full-history operations still have a storage path to design. This decision does not claim that resume or fork already avoids loading the complete log.
 
-Existing calls outside test files carry line-scoped `typescript/no-deprecated` waivers with a migration-deferral reason. Remove a waiver when its call migrates; copying a waiver to a new production call violates this policy. The executable lint check accepts test reads and existing waived reads, rejects unwaived production reads, and rejects unrelated deprecated APIs in tests. Documentation checks verify the source-equivalent API declarations and bilingual records.
+Calls outside test files carry line-scoped `typescript/no-deprecated` waivers that identify deferred migration or delegation between deprecated readers. Remove a waiver when its deprecated call is removed; copying a waiver to a new production call violates this policy. The executable lint check accepts test reads and existing waived reads, rejects unwaived production reads, and rejects unrelated deprecated APIs in tests. Documentation checks verify the source-equivalent API declarations and bilingual records.
 
 ## Related decisions
 
