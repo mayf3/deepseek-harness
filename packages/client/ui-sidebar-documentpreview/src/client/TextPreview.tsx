@@ -176,8 +176,7 @@ export function TextPreview({
     && observedVersion !== current.version && observedVersion !== current.observedVersion
   const loadNext = (): void => {
     if (!canRead || current?.loading || current?.eof) return
-    if (mode === 'text-pages') loadPage(tab.id, file, next, signal, meta.value?.version)
-    else loadAll(tab.id, file, signal, meta.value?.version)
+    loadPage(tab.id, file, next, signal, meta.value?.version)
   }
   const reload = (): void => {
     if (!canRead) return

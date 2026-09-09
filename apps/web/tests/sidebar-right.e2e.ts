@@ -950,7 +950,8 @@ describe('web e2e: shipped right Sidebar', () => {
       expect(await column.locator('[data-dockkit-tab-close]').count()).toBe(0)
       expect(await column.locator('[data-dockkit-tab-quiet]').count()).toBe(1)
       await column.locator('[data-dockkit-tab]').first().click({ button: 'right' })
-      expect(await page.locator('[data-dockkit-tab-menu]').count()).toBe(0)
+      await expect(page.locator('[data-dockkit-tab-menu]')).toBeHidden()
+      expect(await page.getByRole('menu').count()).toBe(0)
 
       // Any other tab standing alone closes together with the column. Open the
       // sample file, close the guide (an ordinary close with two tabs), then
