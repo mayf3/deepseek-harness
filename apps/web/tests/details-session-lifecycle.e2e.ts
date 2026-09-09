@@ -233,6 +233,10 @@ describe.skipIf(MODE === 'record')('web e2e: details panel follows the current S
     const close = async (): Promise<void> => {
       await column.locator('[data-sidebar-right-toggle]').click()
       await expect.poll(() => column.locator('[data-sidebar-right-open]').count()).toBe(0)
+      // Closing publishes state before the frame's grid transition finishes.
+      await appFrame(page).evaluate(async (frame) => {
+        await Promise.allSettled(frame.getAnimations().map(animation => animation.finished))
+      })
       await expect.poll(() => detailsTrack(page)).toBe(0)
       await panel.waitFor({ state: 'hidden' })
     }
