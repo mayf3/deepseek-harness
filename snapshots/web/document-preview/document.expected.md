@@ -3,7 +3,7 @@
 ## Sidebar tabs
 
 - Default tab: Files
-- Files close buttons (alone -> with guide -> restored): 0 -> 0 -> 0
+- Files close buttons (alone -> with guide -> restored): 1 -> 1 -> 1
 - Manual guide close buttons: 1
 - Add buttons (Files -> guide -> Files): 1 -> 0 -> 1
 

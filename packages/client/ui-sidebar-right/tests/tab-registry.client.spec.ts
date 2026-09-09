@@ -210,7 +210,7 @@ describe('SidebarRightTabRegistry — ids and page types', () => {
       kind: 'files',
       priority: 'builtin',
       title: () => 'Files',
-      guide: [{ order: 10, title: () => 'Files', description: () => 'Browse' }],
+      guide: [{ order: 10, title: () => 'Files' }],
     })
     expect(ranked(registry, 'dsh-resource://file/session/s/a.txt')).toEqual([])
     expect(registry.get('files')?.title('x')).toBe('Files')
@@ -258,7 +258,7 @@ describe('SidebarRightTabRegistry — lifetime', () => {
 
   it('collects every type\'s guide entries in order, reference-stable between changes', () => {
     const registry = new SidebarRightTabRegistry(new Context())
-    const entry = (order: number) => ({ order, title: () => `#${order}`, description: () => '' })
+    const entry = (order: number) => ({ order, title: () => `#${order}` })
     registry.register(typeFor('files', [], { guide: [entry(10)] }))
     const first = registry.guide()
     expect(registry.guide()).toBe(first)
