@@ -426,7 +426,7 @@ describe('ProducedFiles row', () => {
     const openFile = vi.fn<(path: string) => void>()
 
     const view = render(<ProducedFiles matched={paths} openFile={openFile} t={t} />)
-    expect(view.getByText('产物')).toBeTruthy()
+    expect(view.getByText('本轮文件改动')).toBeTruthy()
     const row = view.container.querySelector('[data-produced-files-row]')
     if (!(row instanceof HTMLElement)) throw new Error('produced row missing')
     expect(within(row).getAllByRole('button')).toHaveLength(6)
@@ -595,7 +595,7 @@ describe('presented files', () => {
     expect(view.queryByRole('link')).toBeNull()
     fireEvent.click(view.getByRole('button', { name: 'Open report-0.docx in default app' }))
     expect(props.openPresented).toHaveBeenCalledWith('child-session', 2, 0)
-    expect(view.queryByText('Produced')).toBeNull()
+    expect(view.queryByText('Files changed this turn')).toBeNull()
   })
 })
 
@@ -617,7 +617,7 @@ it.each([{}, { turn: '1', callId: 'bad', files: [] },
   const owner = tailOwner(deliverablesOf(value), 5)
   const matched = selectDeliverables(owner)!
   const view = render(<Deliverables {...openProps()} matched={matched} openFile={owner.openFile} sessionId={SessionId('session')} t={makeTranslate(en)} />)
-  expect(view.getByText('Produced')).toBeTruthy()
+  expect(view.getByText('Files changed this turn')).toBeTruthy()
   expect(view.queryByText('Deliverables')).toBeNull()
 })
 

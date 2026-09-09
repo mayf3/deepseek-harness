@@ -1,0 +1,103 @@
+- banner:
+  - navigation "会话层级":
+    - button "简单画一个 SVG 表示冯诺依曼" [disabled]
+  - img
+  - text: 标准模式
+  - button "Session 日志":
+    - text: Session 日志
+    - img
+  - button "展开侧栏":
+    - img
+  - tablist:
+    - tab "对话" [selected]
+    - tab "轨迹"
+- button "系统提示词":
+  - img
+  - img
+  - text: 系统提示词
+- text: 简单画一个 SVG 表示冯诺依曼架构, 保存为 von-neumann.svg {{clock}}
+- button "复制":
+  - img
+- button "2 次工具调用 · 1 条消息" [expanded]:
+  - text: 2 次工具调用 · 1 条消息
+  - img
+- button "上下文注入 @deepseek-ai/dsh-system-prompt":
+  - img
+  - img
+  - text: 上下文注入 @deepseek-ai/dsh-system-prompt
+- button "思考 The user wants a simple SVG diagram of the von Neumann architecture, saved as von-neumann.svg. Let me create a clean SVG showing CPU (control unit, ALU), memory, input, and output with bidirectional data/control buses.":
+  - img
+  - img
+  - text: 思考 The user wants a simple SVG diagram of the von Neumann architecture, saved as von-neumann.svg. Let me create a clean SVG showing CPU (control unit, ALU), memory, input, and output with bidirectional data/control buses.
+- paragraph: 我来创建一个冯诺依曼架构的 SVG 示意图。
+- button "写入 von-neumann.svg +83 -0":
+  - img
+  - img
+  - text: 写入
+  - button "von-neumann.svg"
+  - text: +83 -0
+- button "思考 The file is created. Let me present it as a deliverable.":
+  - img
+  - img
+  - text: 思考 The file is created. Let me present it as a deliverable.
+- button "交付文件 已交付 von-neumann.svg":
+  - img
+  - text: 交付文件 已交付 von-neumann.svg
+- paragraph:
+  - text: 已创建
+  - code:
+    - button "在默认程序中打开 von-neumann.svg": von-neumann.svg
+  - text: ，一个简洁的冯诺依曼架构示意图，包含：
+- list:
+  - listitem:
+    - strong: CPU（中央处理器）
+    - text: ：内含控制单元 CU、算术逻辑单元 ALU 和寄存器组
+  - listitem:
+    - strong: 内存储器 Memory
+    - text: ：标注"指令和数据统一存放"（存储程序思想）
+  - listitem:
+    - strong: 输入设备 / 输出设备
+    - text: ：分别用绿色和粉色表示数据流向
+  - listitem:
+    - strong: 总线连接
+    - text: ：CPU 与内存间的地址总线，以及 CPU 与 I/O 设备间的数据/控制线，箭头标明数据流向
+- paragraph: 下方附一行核心思想说明：指令与数据以二进制统一存储在存储器中。用浏览器打开该 SVG 文件即可查看。
+- text: 本轮文件改动
+- button "打开 {{cwd}}/workspace/von-neumann.svg": von-neumann.svg
+- text: 交付文件
+- button "在默认程序中打开 von-neumann.svg":
+  - text: von-neumann.svg SVG 冯诺依曼架构示意图 SVG
+  - img
+  - text: 打开
+- button "复制":
+  - img
+- button "好的回答":
+  - img
+- button "有问题的回答":
+  - img
+- button "在新对话中分支":
+  - img
+- button "用量 32K tok":
+  - img
+  - text: 用量 32K tok
+- button "用时 {{duration}}":
+  - img
+  - text: 用时 {{duration}}
+- text: {{clock}}
+- textbox "发消息或创建任务, / 调用指令, @ 文件或对话"
+- button "指令":
+  - img
+- button "添加附件":
+  - img
+- button "访问模式，当前：工作区内修改": 工作区内修改
+- button "选择模型，当前 DeepSeek-V4-Flash":
+  - text: DeepSeek-V4-Flash
+  - img
+- button "上下文已用 8%"
+- button "发送消息" [disabled]
+- button "1 轮 3 步 · {{throughput}} tok/s":
+  - img
+  - text: 1 轮 3 步{{throughput}} tok/s
+- button "32K tok · 缓存命中 75%":
+  - img
+  - text: 32K tok缓存命中 75%

@@ -36,7 +36,7 @@ The `present` tool row shows running, delivered, failed, or interrupted status; 
 
 ### The row
 
-The row uses CSS container-width bands to show a responsive prefix of up to six file chips. Flexbox shrinks and ellipsizes basename text, while CSS selects the matching localized `+ N files` label for omitted paths; the full path remains available as the title, and the row performs no JavaScript layout observation or horizontal scrolling.
+The “Files changed this turn” row lists successful file-tool mutations; final file deliveries require `present`. It uses CSS container-width bands to show a responsive prefix of up to six file chips. Flexbox shrinks and ellipsizes basename text, while CSS selects the matching localized `+ N files` label for omitted paths; the full path remains available as the title, and the row performs no JavaScript layout observation or horizontal scrolling.
 
 ### Inline-code links
 

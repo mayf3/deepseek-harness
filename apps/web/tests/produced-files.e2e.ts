@@ -147,15 +147,15 @@ describe('web e2e: a finished turn ends with the files it produced', () => {
     await expect.poll(() => row.getByText('+ 4 files', { exact: true }).isVisible()).toBe(true)
 
     await page.setViewportSize({ width: 780, height: 900 })
-    await expect.poll(() => chips.count()).toBe(5)
+    await expect.poll(() => chips.count()).toBe(4)
     expect(await chips.nth(0).innerText()).toBe('关于我.md')
     expect(await chips.nth(1).innerText()).toBe('index.html')
-    expect(await chips.nth(4).innerText()).toBe('app.ts')
-    await expect.poll(() => row.getByText('+ 5 files', { exact: true }).isVisible()).toBe(true)
+    expect(await chips.nth(3).innerText()).toBe('styles.css')
+    await expect.poll(() => row.getByText('+ 6 files', { exact: true }).isVisible()).toBe(true)
     // Chips open in the right Sidebar's text preview, and a directory is not
     // something that preview can show, so the row offers no folder action.
     expect(await page.getByRole('button', { name: /folder/i }).count()).toBe(0)
-    expect(await page.getByText('Produced', { exact: true }).count()).toBe(1)
+    expect(await page.getByText('Files changed this turn', { exact: true }).count()).toBe(1)
 
     const tops = await row.locator(':scope > *:visible').evaluateAll(elements =>
       elements.map(element => element.getBoundingClientRect().top))
