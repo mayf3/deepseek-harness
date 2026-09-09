@@ -1056,8 +1056,15 @@ describe('built-in conversation node Definitions', () => {
     const finalNode = (node(finalizedPacked, 'assistant-step')?.data as AssistantChatData).finalNode
     expect(finalNode).toMatchObject({
       blocks: [{ kind: 'text', text: 'done' }],
-      timing: { firstTokenTime: null },
+      timing: { firstTokenTime: 1_999 },
     })
+
+    const windowed = assembler(finalizedInputs.slice(2), true)
+    const timing = () => (node(snapshot(windowed), 'assistant-step')?.data as AssistantChatData).finalNode?.timing
+    expect(timing()).toMatchObject({ stepStartTime: null, firstTokenTime: 1_999 })
+    windowed.prepend(finalizedInputs.slice(0, 2), false)
+    windowed.flush()
+    expect(timing()).toEqual(finalNode?.timing)
 
     const namedToolHistory = [
       at(40, 'turn/start', { turn: 3 }),
@@ -1083,7 +1090,7 @@ describe('built-in conversation node Definitions', () => {
     const namedTool = (node(namedToolPacked, 'assistant-step')?.data as AssistantChatData).finalNode
     expect(namedTool).toMatchObject({
       blocks: [{ kind: 'tool-call', callId: 'call-2', name: 'read', argsRaw: '' }],
-      timing: { firstTokenTime: null },
+      timing: { firstTokenTime: 4_000 },
     })
   })
 

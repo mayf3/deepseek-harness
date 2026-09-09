@@ -33,6 +33,8 @@ Selection, timeline navigation, folding, and search cover the React-visible wind
 
 ### The timing overview
 
+Historical replies retain TTFT, generation duration, and throughput when their recorded streams contain token timestamps. TTFT measures from the Step start to its first token, including output from an earlier retry attempt; an unloaded Step start or a stream without tokens leaves the corresponding metric unavailable.
+
 A fixed Overview above the ledger projects real record start/duration timing from left to right; Assistant spans divide recorded TTFT from decoding, and a 500 ms hover reveals exact clock and duration details. Dragging an interval focuses the ledger on every record active at any point in that inclusive range; wheel gestures zoom the time domain; a right-button click clears the selected interval, and a right-button drag pans an already zoomed viewport. The initial view and streaming updates stay at the tail; scrolling upward suspends following so new records do not interrupt inspection of earlier rows.
 
 -----
