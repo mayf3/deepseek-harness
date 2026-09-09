@@ -273,6 +273,26 @@ describe('TrajectoryTable', () => {
     expect(screen.getByRole('button', { name: 'Thinking' }).getAttribute('aria-expanded')).toBe('true')
   })
 
+  it('opens thinking on another record after collapsing the selected record', () => {
+    const turns: readonly TrajectoryTurnModel[] = [{
+      turn: 1,
+      groups: [{
+        title: 'Step 1',
+        cells: [1, 2].map(index => ({
+          index, kind: 'message', text: `Answer ${index}`, outputDetail: `Answer ${index}`,
+          thinkingDetail: `Reasoning ${index}`, timeSeconds: 1,
+        })),
+      }],
+    }]
+    render(<TrajectoryTable turns={turns} {...FOLD_PROPS} />)
+    fireEvent.click(screen.getByRole('row', { name: /ASSISTANT, Answer 1/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'Thinking' }))
+    expect(screen.getByRole('button', { name: 'Thinking' }).getAttribute('aria-expanded')).toBe('false')
+    fireEvent.click(screen.getByRole('row', { name: /ASSISTANT, Answer 2/ }))
+    expect(screen.getByRole('button', { name: 'Thinking' }).getAttribute('aria-expanded')).toBe('true')
+    expect(screen.getByText('Reasoning 2')).toBeTruthy()
+  })
+
   it('keeps raw HTML tags in a Markdown-derived context preview', () => {
     const html = [
       '<background-job-complete id="trajectory-ui-watch">',
