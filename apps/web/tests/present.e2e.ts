@@ -122,6 +122,7 @@ fs.appendFileSync(${JSON.stringify(openLog)}, JSON.stringify({ path, action, con
       const row = page.locator('[data-presented-files-row]')
       await row.waitFor()
       expect(await row.getByRole('button').count()).toBe(4)
+      expect(await row.getByTitle(join(cwd, 'report.txt'), { exact: true }).innerText()).toBe('report.txt')
       const beforeReveal = (await opened()).length
       await row.getByRole('button', { name: 'More file actions for report.txt', exact: true }).click()
       const revealResponse = page.waitForResponse(response => response.url().includes('action=reveal') && response.request().method() === 'POST')

@@ -8,6 +8,7 @@ import { en, zh } from '../src/client/locales.ts'
 
 afterEach(cleanup)
 const props = () => ({
+  cwd: undefined,
   file: { path: 'out/report.pdf', description: 'Final report', seq: 4, index: 1 },
   host: { name: 'remote-desktop', available: true, fileManager: 'finder' as const },
   phase: undefined,
@@ -92,4 +93,16 @@ it('supports keyboard selection and returns focus to the trigger on Escape', () 
   expect(document.activeElement).toBe(items[0])
   fireEvent.keyDown(document.activeElement!, { key: 'Escape' })
   expect(document.activeElement).toBe(trigger)
+})
+
+
+it('shortens the workspace prefix while retaining the full location on hover and in action labels', () => {
+  const p = props()
+  const path = '/work/reports/result.pdf'
+  const view = render(<PresentedFileCard {...p} cwd="/work" file={{ ...p.file, path }} />)
+  expect(view.getByTitle(path).textContent).toBe('reports/result.pdf')
+  fireEvent.click(view.getByRole('button', { name: `Open ${path} in default app` }))
+  expect(p.onAction).toHaveBeenCalledWith('open')
+  view.rerender(<PresentedFileCard {...p} cwd="/work" />)
+  expect(view.getByTitle('/work/out/report.pdf').textContent).toBe('out/report.pdf')
 })

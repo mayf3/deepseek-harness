@@ -1,5 +1,6 @@
 /** File identity and explicit default-app or file-manager actions for one delivery. */
 import { useState } from 'react'
+import { relativizeToCwd, resolveWorkspacePath } from '@deepseek-ai/dsh-util-workspace-path'
 import {
   Button, Menu, LinkIcon, classifyLinkPath, IconRightUpOutline16,
   IconChevronDownOutline14, IconFolderOpenOutline16,
@@ -13,11 +14,12 @@ import css from './Deliverables.module.css'
 
 /**
  * Render independent file actions without nesting buttons inside a clickable card.
- * @param props - durable file metadata, Host capabilities, gesture status, and localized copy.
+ * @param props - durable file metadata, Session workspace root, Host capabilities, gesture status, and localized copy.
  * @returns the file card and its anchored action menu.
  */
-export function PresentedFileCard({ file, phase, host, onAction, t }: {
+export function PresentedFileCard({ file, cwd, phase, host, onAction, t }: {
   file: PresentedPath
+  cwd: string | undefined
   phase: PresentedOpenPhase | undefined
   host: PresentedHost | null
   onAction: (action: PresentedAction) => void
@@ -42,7 +44,9 @@ export function PresentedFileCard({ file, phase, host, onAction, t }: {
       </div>
     </div>
     <div className={css.footer}>
-      <span className={css.path}><IconFolderOpenOutline16 /><span>{file.path}</span></span>
+      <span className={css.path} title={resolveWorkspacePath(cwd, file.path)}>
+        <IconFolderOpenOutline16 /><span>{relativizeToCwd(file.path, cwd)}</span>
+      </span>
       <div className={css.split}>
         <Button segment="start" className={css.open} icon={<IconRightUpOutline16 />} disabled={disabled}
           aria-label={t('presented.open', { name: file.path })} onClick={() => { act('open') }}>
