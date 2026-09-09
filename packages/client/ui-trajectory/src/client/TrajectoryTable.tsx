@@ -1546,14 +1546,20 @@ function MarkdownRecordContent({
   )
 }
 
-function RecordTiming({ record, t }: { record: TableRecord; t: TrajectoryTranslate }) {
+function RecordTiming({
+  record,
+  preview = false,
+  t,
+}: { record: TableRecord; preview?: boolean; t: TrajectoryTranslate }) {
   return record.cell.kind === 'message' && record.cell.assistantMetrics !== undefined
     ? <AssistantTimingPanel metrics={record.cell.assistantMetrics} t={t} />
     : (
       <dl className={css.overview}>
         <div><dt>{t('timing.started')}</dt><StartedAtValue timestamp={record.cell.startedAt ?? null} t={t} /></div>
         <div><dt>{t('timing.duration')}</dt><dd>{formatElapsedSeconds(record.cell.timeSeconds, t)}</dd></div>
-        <div><dt>{t('timing.source')}</dt><dd>{record.cell.timeSeconds === null ? t('timing.notAvailable') : t('timing.sessionTimestamps')}</dd></div>
+        {!preview && (
+          <div><dt>{t('timing.source')}</dt><dd>{record.cell.timeSeconds === null ? t('timing.notAvailable') : t('timing.sessionTimestamps')}</dd></div>
+        )}
       </dl>
     )
 }
@@ -1562,14 +1568,16 @@ function RequestTiming({
   assistant,
   anchor,
   request,
+  preview = false,
   t,
 }: {
   assistant: TableRecord | undefined
   anchor: TableRecord | undefined
   request: TrajectoryRequestNumber | undefined
+  preview?: boolean
   t: TrajectoryTranslate
 }) {
-  if (assistant !== undefined) return <RecordTiming record={assistant} t={t} />
+  if (assistant !== undefined) return <RecordTiming record={assistant} preview={preview} t={t} />
   if (request?.startedAt !== undefined) {
     const duration = request.completedAt === null || request.completedAt === undefined
       ? null
@@ -1578,10 +1586,12 @@ function RequestTiming({
       <dl className={css.overview}>
         <div><dt>{t('timing.started')}</dt><StartedAtValue timestamp={request.startedAt} t={t} /></div>
         <div><dt>{t('timing.duration')}</dt><dd>{formatElapsedSeconds(duration, t)}</dd></div>
-        <div>
-          <dt>{t('timing.source')}</dt>
-          <dd>{duration === null ? t('timing.sessionTimestampsRunning') : t('timing.sessionTimestamps')}</dd>
-        </div>
+        {!preview && (
+          <div>
+            <dt>{t('timing.source')}</dt>
+            <dd>{duration === null ? t('timing.sessionTimestampsRunning') : t('timing.sessionTimestamps')}</dd>
+          </div>
+        )}
       </dl>
     )
   }
@@ -2932,6 +2942,7 @@ export function TrajectoryTable({
                       assistant={selectedRequestAssistant}
                       anchor={selectedRequestAnchor}
                       request={selectedRequestInfo}
+                      preview
                       t={t}
                     />
                   </OverviewSection>
@@ -3157,12 +3168,12 @@ export function TrajectoryTable({
                         selectRequest(selectedAssistantRequestTarget, 'timing')
                       }}
                     >
-                      <RecordTiming record={selected} t={t} />
+                      <RecordTiming record={selected} preview t={t} />
                     </OverviewSection>
                   )}
                   {(selected.cell.kind === 'tool' || selected.cell.kind === 'subtool') && (
                     <OverviewSection label={t('tab.timing')} onOpen={() => { activateTab('timing') }}>
-                      <RecordTiming record={selected} t={t} />
+                      <RecordTiming record={selected} preview t={t} />
                     </OverviewSection>
                   )}
                 </div>
