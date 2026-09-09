@@ -99,6 +99,18 @@ const DEFAULT_MODELS: DeepSeekCatalogModel[] = [
     imageMaxBytes: DEFAULT_REQUEST_IMAGE_MAX_BYTES,
     systemPromptUpdate: 'in-history',
   },
+  {
+    id: 'deepseek-v4-flash',
+    name: 'DeepSeek-V4-Flash',
+    description: 'Fast, efficient, and economical; suited to focused, routine, or parallel tasks.',
+    contextWindow: DEFAULT_CONTEXT_WINDOW,
+  },
+  {
+    id: 'deepseek-v4-pro',
+    name: 'DeepSeek-V4-Pro',
+    description: 'Stronger agentic coding, knowledge, and difficult reasoning; suited to complex or quality-critical tasks at higher cost.',
+    contextWindow: DEFAULT_CONTEXT_WINDOW,
+  },
 ]
 
 const MODEL_MODALITIES = ['text', 'image'] as const satisfies readonly ModelModality[]
@@ -124,7 +136,7 @@ export interface Config {
   maxTokens?: number
   /** Positive context capacity used when the selected model has no exact value (default 1,000,000). */
   defaultContextWindow?: number
-  /** Advisory models shown by discovery consumers; defaults to DeepSeek-V41-Flash. */
+  /** Advisory models shown by discovery consumers; defaults to V41 Flash, V4 Flash, and V4 Pro. */
   models?: DeepSeekCatalogModel[]
   /** Maximum provider idle time while one stream read is outstanding (default five minutes). */
   streamIdleTimeoutMs?: number

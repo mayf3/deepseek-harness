@@ -21,6 +21,7 @@ const SNAPSHOT_DIR = fileURLToPath(new URL('./expected/onboarding-deepseek-confi
 const WELCOME_EXPECTED = join(SNAPSHOT_DIR, 'welcome.expected.md')
 const MISSING_EXPECTED = join(SNAPSHOT_DIR, 'missing.expected.md')
 const MODELS_EXPECTED = join(SNAPSHOT_DIR, 'models.expected.md')
+const DEFAULT_MODELS_EXPECTED = join(SNAPSHOT_DIR, 'default-models.expected.md')
 const MODE = webSnapshotMode()
 
 describe.skipIf(MODE === 'record')('web e2e: first-run DeepSeek credential setup', () => {
@@ -204,7 +205,11 @@ describe.skipIf(MODE === 'record')('web e2e: first-run DeepSeek credential setup
     await settings.getByText('自定义设置').click()
     expect(await settings.getByLabel('模型 ID 1').inputValue()).toBe('deepseek-flash')
     expect(await settings.getByLabel('显示名称 1').inputValue()).toBe('DeepSeek-V41-Flash')
-    expect(await settings.getByRole('button', { name: /删除模型/ }).count()).toBe(1)
+    expect(await settings.getByLabel('模型 ID 2').inputValue()).toBe('deepseek-v4-flash')
+    expect(await settings.getByLabel('模型 ID 3').inputValue()).toBe('deepseek-v4-pro')
+    expect(await settings.getByRole('button', { name: /删除模型/ }).count()).toBe(3)
+    const defaultModels = await captureStableAria(page, '[role="dialog"]', scaffold.workspaceCwd)
+    await compareOrRefreshGolden(DEFAULT_MODELS_EXPECTED, defaultModels, MODE)
     await settings.getByLabel('显示名称 1').fill('Configured Flash')
     await settings.getByRole('button', { name: '保存', exact: true }).click()
     await settings.getByLabel('模型 ID 1').waitFor({ state: 'detached', timeout: 15_000 })
@@ -219,7 +224,9 @@ describe.skipIf(MODE === 'record')('web e2e: first-run DeepSeek credential setup
     })
     await deepSeek.locator('xpath=ancestor::li').getByRole('button', { name: '编辑' }).click()
     await settings.getByText('自定义设置').click()
-    await settings.getByRole('button', { name: /删除模型/ }).first().click()
+    for (let index = 0; index < 3; index++) {
+      await settings.getByRole('button', { name: /删除模型/ }).first().click()
+    }
     await settings.getByRole('button', { name: '添加模型' }).click()
     const customModelId = settings.getByLabel('模型 ID 1')
     await customModelId.fill('private-preview')
@@ -263,7 +270,7 @@ describe.skipIf(MODE === 'record')('web e2e: first-run DeepSeek credential setup
   it('keeps the fixture inventory closed', async () => {
     await assertFixtureInventory(
       SNAPSHOT_DIR,
-      ['welcome.expected.md', 'missing.expected.md', 'models.expected.md'],
+      ['welcome.expected.md', 'missing.expected.md', 'models.expected.md', 'default-models.expected.md'],
     )
   })
 })
