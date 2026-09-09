@@ -73,7 +73,7 @@ The pure `./types` entry declares `PresentedFile` and the Session event without 
 
 #### What the model sees
 
-The [present schema](../../../docs/tool-catalog.md#present) asks for existing workspace files: “Declare existing workspace files as final deliverables. The user opens the current source files; their contents are not copied or preserved. Create the files before calling this tool.” Results report `Presented <path>` for each file; the program result and durable event contain paths and optional descriptions.
+The [present schema](../../../docs/tool-catalog.md#present) asks for existing workspace files: “Declare existing workspace files as final deliverables. When a file you create or update is an output the user asked to receive, you must call present after writing it and before your final response, including files created through Bash or code execution. Mentioning its path in your reply does not replace this call. The files must already exist. The user opens the current source files; their contents are not copied or preserved.” Results report `Presented <path>` for each file; the program result and durable event contain paths and optional descriptions.
 
 #### Token effect
 

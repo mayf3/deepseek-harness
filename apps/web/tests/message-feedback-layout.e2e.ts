@@ -231,28 +231,32 @@ describe('web e2e: the feedback note editor floats above the column', () => {
   }
 
   /**
-   * Resize to a viewport and read the row once its width stops moving. The
-   * frame eases its column tracks, so reading straight after a resize can
-   * report the previous viewport's relation.
+   * Resize and wait for fonts, frame transitions, and column-width publication
+   * before reading the row and the portaled editor.
    * @param width - viewport width to settle at.
    * @param editorOpen - whether the note editor is currently open; reads the popover relations when so.
    * @returns the row's (and popover's) readings at that width.
    */
   const settleAt = async (width: number, editorOpen: boolean): Promise<PopoverMetrics> => {
     await page.setViewportSize({ width, height: 900 })
-    let previous = -1
-    await expect.poll(async () => {
-      const current = await page.evaluate(() =>
-        document.querySelector('[data-conversation-scroll]')?.clientWidth ?? -1)
-      const settled = current === previous
-      previous = current
-      return settled
-    }, { timeout: 10_000 }).toBe(true)
-    // The popover is JS-positioned from the trigger rect and re-places on
-    // resize/scroll, so once the column width stops moving we nudge it to the
-    // final layout; otherwise the panel can sit at a transient position from
-    // mid-resize and the anchor reading would be off.
-    await page.evaluate(() => window.dispatchEvent(new Event('resize')))
+    await page.evaluate(async () => { await document.fonts.ready })
+    await page.waitForFunction(() => {
+      const frame = document.querySelector('[style*="grid-template-columns"]')
+      const root = frame?.querySelector<HTMLElement>('div[data-phase]')
+      if (frame === null) return false
+      const tracks = getComputedStyle(frame).gridTemplateColumns.split(' ').map(Number.parseFloat)
+      // This sweep keeps the default sidebar preference and the right column closed.
+      return tracks[0] === (window.innerWidth < 1024 ? 56 : 280) && tracks.at(-1) === 0
+        && frame.getAnimations().every(animation =>
+          animation.playState === 'finished' || animation.playState === 'idle')
+        && root !== undefined && root !== null
+        && root.style.getPropertyValue('--dsh-conversation-column-width') === `${String(root.offsetWidth)}px`
+    }, undefined, { timeout: 10_000 })
+    // The resize listener schedules a React update; its return is not a commit barrier.
+    await page.evaluate(async () => {
+      window.dispatchEvent(new Event('resize'))
+      await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => { resolve() })))
+    })
     return measurePopover(page, width, editorOpen)
   }
 

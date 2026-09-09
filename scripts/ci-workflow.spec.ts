@@ -837,7 +837,7 @@ describe('Weighted approval workflow', () => {
       'timeout-minutes': 2,
     })
     expect(record).toBeDefined()
-    expect(record?.run).toContain('This is by automated Angry Turtle Cyborg, not a human')
+    expect(record?.run).toBe("echo 'Recorded a weighted approval review event.'")
     expect(recordSteps).toHaveLength(1)
     expect(JSON.stringify(publisher)).not.toContain('github.event.pull_request.head')
     expect(JSON.stringify(publisher)).not.toContain('secrets.')
