@@ -1,10 +1,9 @@
 - banner:
   - navigation "Session hierarchy":
     - button "Use the read tool twice" [disabled]
-  - button "Session log":
-    - text: Session log
+  - button "More actions":
     - img
-  - button "Open the sidebar":
+  - button "Open right sidebar":
     - img
   - tablist:
     - tab "Chat" [selected]
@@ -16,7 +15,7 @@
   - img
   - img
   - text: System prompt
-- text: "Use the read tool twice in one assistant message: read a.txt and b.txt. Then reply with the single word DONE and stop. 7/25 {{clock}}"
+- text: "Use the read tool twice in one assistant message: read a.txt and b.txt. Then reply with the single word DONE and stop. {{clock}}"
 - button "Copy":
   - img
 - tooltip "Copy"
@@ -37,7 +36,7 @@
 - button "Ran for {{duration}}":
   - img
   - text: Ran for {{duration}}
-- text: 7/25 {{clock}}
+- text: {{clock}}
 - button "Read a.txt":
   - img
   - img
@@ -48,7 +47,11 @@
   - img
   - text: Read
   - button "b.txt"
-- text: Now give the final answer. 7/25 {{clock}}
+- button "System prompt":
+  - img
+  - img
+  - text: System prompt
+- text: Now give the final answer. {{clock}}
 - button "Copy":
   - img
 - paragraph: DONE
@@ -63,7 +66,7 @@
 - button "Ran for {{duration}}":
   - img
   - text: Ran for {{duration}}
-- text: 7/25 {{clock}}
+- text: {{clock}}
 - textbox "Message or run a task, / commands, @ files or sessions"
 - button "Commands":
   - img

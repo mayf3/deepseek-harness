@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-`dsh-shell` defines the executor service (`ctx.shell`) that runs shell commands for the harness: one `execute` returns the live handle, and the foreground result, the background cursor, and the timeout-promotion offer are projections over it. Every shell executor in the repository — local Bash, sandboxed Bash, local PowerShell, sandboxed PowerShell — implements this one contract, so the model-facing `bash` and `pwsh` tools work unchanged over any of them. Callers pass a request and receive a fully-resolved spec with explicit defaults and caps before any command runs. The service itself never renders anything to a model; the shell tools own all model-visible output and sandbox guidance.
+Use `ctx.shell` to run shell commands with bounded output or keep them running as background work. One execution handle supports foreground results, background reads, and timeout promotion. A profile can select local or sandboxed Bash or PowerShell execution without changing callers. Resolve requests before execution to make the working directory, timeout, and output limits explicit. Command exits, timeouts, and caller aborts return results; only infrastructure failures reject, while the `bash` and `pwsh` tools own model-visible rendering and sandbox guidance.
 
 ## Table of Contents
 

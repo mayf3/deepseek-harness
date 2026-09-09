@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-`dsh-tool-workflow` 把 `workflow` 工具交给模型：以 JavaScript 编排脚本、身份块与可选参数调用它，它会在 `ctx.workflowEngine` 上运行脚本，把工作扇出到多个 subagent，直到脚本的最终值返回。该工具拥有模型侧 schema、系统提示词中的使用指导与结果包络；脚本解析、执行、上限与取消位于引擎之后。默认前台执行——父级轮次会阻塞到整个工作流结算，非正常结束是错误，绝不是部分输出——而 `run_in_background: true` 会把运行注册为带实时观察 record 的自有后台任务并立刻返回其任务 id。仅当用户明确要求工作流式或大型多 agent 编排时选择它；一两项委派时优先使用普通 subagent 调用。
+`dsh-tool-workflow` 让模型运行 JavaScript 编排，将工作委派给多个 subagent，并返回最终 JSON 值。仅当用户明确要求工作流或大型多 agent 编排时使用；一两项委派应优先使用普通 subagent 调用。前台执行等待所有工作结束；取消或异常完成返回错误，而不是部分成功。`run_in_background: true` 立即返回自有任务 id，并提供实时输出。部署方可以用 `toolName` 重命名工具，用 `maxResultChars` 限制渲染结果。
 
 ## 目录
 

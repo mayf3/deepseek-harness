@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-`dsh-jobs-local` runs background jobs inside the harness process: work keeps running while the agent moves on, and the owning agent can read, wait on, list, and cancel it, with completion delivered as an in-session notice when `dsh-tool-jobs` is also mounted. It implements the `dsh-jobs` contract with in-memory records handed out as fresh projections, never live state. A per-owner concurrency limit (default 10) bounds how many jobs one agent can have running or stopping at once, and every job keeps a bounded in-memory output ring (256 KiB live, trimmed to 16 KiB at settlement) that the registry fills from the producer's pull sources at `pumpPollMs` (default 150 ms) and from pushed appends.
+`dsh-jobs-local` runs background jobs inside the harness process while the agent continues. The owning agent can read, wait on, list, and cancel its jobs; mounting `dsh-tool-jobs` also delivers completion notices in-session. Configurable concurrency and output-retention limits bound resource use. Producers can supply output for periodic reading or append it directly; users can observe retained output without consuming the agent's unread output. Jobs end when their owner or the harness shuts down.
 
 ## Table of Contents
 

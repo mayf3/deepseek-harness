@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-`dsh-jobs` lets tools run long work as background jobs: the work gets a stable `<kind>-N` id, keeps running while the agent moves on, and the owning agent can read its output, wait for it with a timeout, or request cancellation at any time. Jobs belong to the agent session that started them, so one agent's work is never visible to another, and completion reaches the owner as an in-session notice rather than by polling. Every job owns one bounded output ring: the registry pumps the producer's pull sources into it and accepts pushed appends, the model consumes it through a registry-kept cursor, and any number of observers (the Web client) read it at absolute byte offsets without touching that cursor.
+`dsh-jobs` lets tools keep long-running work active while an agent continues. Each job receives a stable `<kind>-N` id, and its owning agent can read output, wait with a timeout, or request cancellation. Ownership is scoped to the agent session, so other agents cannot inspect or stop the job; completion arrives as an in-session notice without polling. Users can watch retained live output without consuming what the agent can read. Background jobs can start only when the deployment supplies job execution.
 
 ## Table of Contents
 

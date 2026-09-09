@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-`dsh-host-open-in-app` 是 open-in-app 功能的主机半边：解析本机实际持有哪些目录应用——每个都解析为已验证、可直接使用的启动器——并在 `ctx.webServer` 上注册三条路由：已解析的应用列表、逐应用图标、以及在其中打开 workspace 目录的启动端点。目录是一份固定白名单；解析每主机进程执行一次，产出的映射由所有路由共享，因此点击、展开菜单或刷新页面都不会重新执行检测。所有路由都位于组合 `connection` 服务的信任栅栏与浏览器认证之后；解析用的主机命令在配置的期限内、不经 shell 执行，PATH 名称经 subprocess 能力在进程内解析，各应用适配器以清理过凭据的环境和各自的 Windows 可见性策略 detached 派生（文件管理器例外，走 OS shell 的 open verb，即 `dsh-native-command` 的路径打开器）。随发行版一起出货的消费方是 [`dsh-client-ui-open-in-app`](../../client/ui-open-in-app/README.zh.md) 中的浏览器分体按钮；该功能由社区插件 `@dsh-plugins/open-anywhere` 转正而来。
+将 `dsh-host-open-in-app` 与其[浏览器配套包](../../client/ui-open-in-app/README.zh.md)一起使用，让用户能在已安装的编辑器、Git GUI、终端或文件管理器中打开 workspace 目录。本包提供固定的应用目录，并只显示主机能够验证的条目；新安装的应用在重启后出现，而检测到启动器缺失时会移除对应条目。请求须通过部署的浏览器认证与主机来源信任检查。检测与启动命令使用可配置的期限，且不会把继承的凭据传给启动的应用。
 
 ## 目录
 

@@ -48,7 +48,7 @@ function harness() {
   })
   const pin = vi.fn<(address: string, signal: AbortSignal) => void>()
   const { controller, adopt } = createSidebarRightController(tabs, pin)
-  const instance = createSidebarRightStore(() => 'seed').create()
+  const instance = createSidebarRightStore(() => ({ kind: 'guide', title: 'seed' })).create()
   const layout = (): LayoutState => {
     const surface = instance.getSnapshot().bySession[SESSION]
     if (surface === undefined) throw new Error('expected a surface')
@@ -445,7 +445,7 @@ describe('SidebarRightController — a tab\'s own actions', () => {
     const guideOccurrence = controller.tabDomain.occurrence(SESSION, guide)
     // The user switches sessions: the other seat binds with the other session's
     // own instance, whose store knows nothing of this session.
-    const other = createSidebarRightStore(() => 'seed').create(OTHER)
+    const other = createSidebarRightStore(() => ({ kind: 'guide', title: 'seed' })).create(OTHER)
     const releaseOther = adopt(OTHER, other)
     other.actions.open(OTHER)
     const otherSurface = other.getSnapshot().bySession[OTHER]
@@ -519,7 +519,7 @@ describe('SidebarRightController — a tab\'s own actions', () => {
     // Adopting another instance for the session ends the earlier adoption's
     // subscription with its routing: the old store's commits sync nothing, the
     // new store's commits reconcile the session against its own layout.
-    const replacement = createSidebarRightStore(() => 'seed').create()
+    const replacement = createSidebarRightStore(() => ({ kind: 'guide', title: 'seed' })).create()
     const third = adopt(SESSION, replacement)
     const pins = pin.mock.calls.length
     instance.actions.openContent(SESSION, { kind: 'text', contentId: 'dsh-resource://file/session/s-test/c.txt', title: 'c' }, () => {})

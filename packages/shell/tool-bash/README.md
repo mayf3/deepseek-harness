@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-`dsh-tool-bash` gives the agent a `bash` tool that runs commands through the mounted shell executor and returns stdout, stderr, and exit markers. Each call runs in a fresh shell — no cwd, variables, or functions survive — and long-running commands reach the background two ways — `run_in_background` up front, or automatically when a foreground call hits its timeout — as jobs the agent collects with `job_output` and stops with `job_kill`. Every call runs with the managed `DSH_*` environment from `dsh-shell-env`, and under a sandboxing executor a denied command may be retried once with a wider `sandbox_permissions` mode plus a `justification` through user approval. Non-zero exits are reported, not failed, so the agent decides how to react. Mount it together with an executor provider such as `dsh-bash-local` or `dsh-bash-sandbox` and the `dsh-shell-env` plugin.
+`dsh-tool-bash` runs Bash commands and returns stdout, stderr, and exit markers. Each call uses a fresh shell; cwd, variables, and functions do not persist. `run_in_background` or a foreground timeout promotes work to a job collected with `job_output` and stopped with `job_kill`. Commands receive the managed `DSH_*` environment; sandbox denials can be retried once with wider `sandbox_permissions`, a `justification`, and user approval. Nonzero exits are results for the agent to interpret. Mount an executor such as `dsh-bash-local` or `dsh-bash-sandbox` with `dsh-shell-env`.
 
 ## Table of Contents
 

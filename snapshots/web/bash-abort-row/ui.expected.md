@@ -1,10 +1,9 @@
 - banner:
   - navigation "Session hierarchy":
     - 'button "Run two shell commands: wait" [disabled]'
-  - button "Session log":
-    - text: Session log
+  - button "More actions":
     - img
-  - button "Open the sidebar":
+  - button "Open right sidebar":
     - img
   - tablist:
     - tab "Chat" [selected]
@@ -38,9 +37,9 @@
   - text: DeepSeek-V4-Flash
   - img
 - button "Send message" [disabled]
-- button "1 turns 1 steps · {{throughput}} tok/s":
+- button "1 turns 1 steps":
   - img
-  - text: 1 turns 1 steps{{throughput}} tok/s
+  - text: 1 turns 1 steps
 - button "20 tok · Cache hit 0%":
   - img
   - text: 20 tokCache hit 0%
