@@ -76,7 +76,7 @@ Chain 中不存在 `flatMap`、spread expansion、中间 event array 或 schedul
 
 源继承数量在 EOF 前可能未知：V2 从种子标记推导它，而 V1→V2 可以改变事件数量。迁移链将这种缺失传递给下一个 Stage，而不伪造数量。[V2 到 V3 继承规则](../../../../packages/session/session-format-v2-to-v3/README.zh.md#sequence-references)支持此情况；需要 header 提供数量的旧 Stage 仍在数量缺失时拒绝。这使有种子的多跳恢复无需保留中间产物数组。
 
-V3 是已发布的 Session 格式：[dsh-v0.1.5-alpha.1](https://github.com/deepseek-harness/deepseek-harness/releases/tag/dsh-v0.1.5-alpha.1) 已交付 [V3 写入器](https://github.com/deepseek-harness/deepseek-harness/blob/dsh-v0.1.5-alpha.1/packages/core/session/src/types.ts#L88)。产品的 alpha 发布同样确立已发布的持久化格式。V0 至 V3 保留各自已发布的语义；迁移期间已提交代际的字节保持不变。后续结构性变更必须按[版本规则](2026-08-10-session-log-version-mechanism.zh.md)添加下一条相邻迁移边，而非修改 V2→V3。普通事件新增遵循该规则的必需事件拒绝机制，而非自动分配版本。已有 V3 文件不会重新执行入边迁移；集成测试使用隔离、可丢弃的 home 和未变更的历史输入。
+[版本与发布状态参考](../../../../docs/session-format-status.zh.md)拥有已发布格式记录，并指明代码中的写入器真源。已发布格式保留其语义；迁移期间已提交代际的字节保持不变。后续结构性变更必须按[版本规则](2026-08-10-session-log-version-mechanism.zh.md)添加下一条相邻迁移边，而非修改已发布转换。普通事件新增遵循该规则的必需事件拒绝机制，而非自动分配版本。当前格式文件不会重新执行入边迁移；集成测试使用隔离、可丢弃的 home 和未变更的历史输入。
 
 [已提交语料清单](../../../../packages/test-support/llm-replay/tests/session-format-corpus-inventory.ts) 按源路径、代际与精确拒绝原因标识有意不支持的历史转换。保留这些产物不能迫使迁移改变时序，也不能允许统一跳过：每个清单中的产物仍必须抛出类型化迁移拒绝，未列入的产物必须还原。原生当前代际 fixture 不经过入边，因此不能被归为不支持。没有版本 header 的测试框架协议示例保持为独立的显式类别。语料测试在还原成功和拒绝后都检查源字节；它不通过改写历史证据来满足当前 reader。
 
