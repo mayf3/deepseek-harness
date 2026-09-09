@@ -4,10 +4,11 @@
  * `workspaceFiles`.
  *
  * File reads follow the composed filesystem's read access, including paths
- * outside the workspace. The Session's policy supplies the base for relative
- * paths, not a read-containment restriction. Directory listings and change
- * observations remain workspace-scoped. File-kind checks and configured read
- * caps apply to every preview; this service exposes no mutations.
+ * outside the workspace. The selected Session header supplies the base for
+ * relative paths, with the sandbox policy root as its no-cwd fallback, not a
+ * read-containment restriction. Directory listings and change observations
+ * remain workspace-scoped. File-kind checks and configured read caps apply to
+ * every preview; this service exposes no mutations.
  *
  * A page is cut from `streamText`, which decodes and rejects non-UTF-8 as it
  * goes, so the file is read only up to the first character past the page and
@@ -59,7 +60,7 @@ export interface WorkspaceFileScope {
 
 declare module '@deepseek-ai/dsh-typert-protocol' {
   interface TypertLookupMap {
-    /** Resolve a Session id to file paths without loading its event body or activating an Agent. */
+    /** Resolve a Session id to its workspace root without loading its event body or activating an Agent. */
     workspaceFileScope: TypertLookup<WorkspaceFileScope, SessionId>
   }
 }
