@@ -1,7 +1,7 @@
 /** Reject one ambiguous origin label from maintained tracked files. */
 
 import { execFileSync } from 'node:child_process'
-import { existsSync, lstatSync, readFileSync, readlinkSync } from 'node:fs'
+import { lstatSync, readFileSync, readlinkSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 
@@ -55,10 +55,16 @@ function trackedFiles(repoRoot: string): string[] {
   return files
 }
 
-function readTrackedSource(repoRoot: string, file: string): string | undefined {
+/**
+ * Read one tracked file without following a symlink to its target.
+ * @param repoRoot - Repository root containing the tracked path.
+ * @param file - Repository-relative tracked path.
+ * @returns File text, the symlink target, or undefined when the path is absent or not a file.
+ */
+export function readTrackedSource(repoRoot: string, file: string): string | undefined {
   const path = resolve(repoRoot, file)
-  if (!existsSync(path)) return undefined
-  const stat = lstatSync(path)
+  const stat = lstatSync(path, { throwIfNoEntry: false })
+  if (stat === undefined) return undefined
   if (stat.isSymbolicLink()) return readlinkSync(path)
   return stat.isFile() ? readFileSync(path, 'utf8') : undefined
 }

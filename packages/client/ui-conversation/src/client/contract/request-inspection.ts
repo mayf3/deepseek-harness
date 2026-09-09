@@ -133,7 +133,7 @@ interface RequestViewBase {
   error?: string
   /** Stable provider code for localized presentation of known failures. */
   errorCode?: string
-  providerInfo?: AssistantProviderMetadataView
+  providerMetadata?: AssistantProviderMetadataView
   requestConfig?: AssistantRequestConfig
   usage?: unknown
   /** Assistant message or compaction summary sequence produced by this request. */

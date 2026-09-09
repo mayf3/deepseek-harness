@@ -397,7 +397,7 @@ describe('Trajectory conversation Definitions', () => {
       purpose: 'assistant',
       resultSeq: 3,
       status: 'error',
-      providerInfo: { provider: 'test', model: 'test' },
+      providerMetadata: { provider: 'test', model: 'test' },
     }])
   })
 
