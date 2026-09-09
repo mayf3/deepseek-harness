@@ -58,22 +58,38 @@ function boundKey(key: string, maxBytes: number, state: BoundState): string {
   return truncateUtf8(key, maxBytes)
 }
 
+/** Maximum container depth one projected payload keeps before the tail is cut. */
+const MAX_DEPTH = 64
+
 /** Recursively cap every string in one JSON-serializable value, keys included. */
-function boundValue(value: unknown, maxBytes: number, state: BoundState): unknown {
+function boundValue(value: unknown, maxBytes: number, state: BoundState, depth = 0): unknown {
   if (typeof value === 'string') {
     if (Buffer.byteLength(value, 'utf8') <= maxBytes) return value
     state.truncated = true
     return truncateUtf8(value, maxBytes)
   }
-  if (Array.isArray(value)) return value.map(item => boundValue(item, maxBytes, state))
+  if (Array.isArray(value)) {
+    // A legal but pathologically deep argument would otherwise recurse until
+    // the stack overflows, and the isolated listener would silently drop the
+    // event; cut the tail at a depth no real tool schema reaches.
+    if (depth >= MAX_DEPTH) {
+      state.truncated = true
+      return '[truncated: depth]'
+    }
+    return value.map(item => boundValue(item, maxBytes, state, depth + 1))
+  }
   if (value !== null && typeof value === 'object') {
+    if (depth >= MAX_DEPTH) {
+      state.truncated = true
+      return '[truncated: depth]'
+    }
     // A null prototype keeps a literal `__proto__` key as data instead of
     // invoking the inherited setter, which would silently drop it. Two keys
     // that share a truncated prefix collide last-wins; only a payload naming
     // two multi-kilobyte keys can reach that.
     const bounded = Object.create(null) as Record<string, unknown>
     for (const [key, item] of Object.entries(value)) {
-      bounded[boundKey(key, maxBytes, state)] = boundValue(item, maxBytes, state)
+      bounded[boundKey(key, maxBytes, state)] = boundValue(item, maxBytes, state, depth + 1)
     }
     return bounded
   }
@@ -82,8 +98,8 @@ function boundValue(value: unknown, maxBytes: number, state: BoundState): unknow
 
 /**
  * Bound every string and key in one projected payload, adding `truncated: true`
- * when any was cut. Exported so the runner applies the same limit to its
- * process-level `error` event.
+ * when any was cut. {@link boundJsonLine} composes this with the whole-line cap;
+ * this form stays exported for callers that need the bounded object.
  * @param event - the event payload to bound.
  * @param maxStringBytes - per-string and per-key byte cap.
  * @returns a copy with every over-long string and key truncated.

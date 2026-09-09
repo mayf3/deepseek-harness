@@ -28,7 +28,7 @@ import { SessionQueryError } from '@deepseek-ai/dsh-session-query'
 import type {} from '@deepseek-ai/cordis-plugin-loader'
 import type {} from '@deepseek-ai/dsh-cmdline'
 import type {} from '@deepseek-ai/dsh-session-query'
-import { projectJsonRun, boundJsonEvent } from './json-stream.ts'
+import { projectJsonRun, boundJsonLine } from './json-stream.ts'
 
 /** Stable Cordis plugin name. */
 export const name = 'headless-runner'
@@ -284,7 +284,7 @@ async function resolveAgent(
 /** Report an unexpected direct-driver failure and request a failing exit. */
 function fail(io: HeadlessIo, error: unknown, json: boolean): void {
   const message = error instanceof Error ? error.message : String(error)
-  if (json) io.stdout.write(`${JSON.stringify(boundJsonEvent({ type: 'error', message }))}\n`)
+  if (json) io.stdout.write(`${boundJsonLine({ type: 'error', message })}\n`)
   io.stderr.write(`dsh: ${message}\n`)
   io.exit(1)
 }

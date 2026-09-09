@@ -265,6 +265,24 @@ describe('--json projection', () => {
     expect(JSON.parse(boundJsonLine({ type: 'text', text: 'ok' }))).toEqual({ type: 'text', text: 'ok' })
   })
 
+  it('caps an error line even when control characters expand under JSON escaping', () => {
+    const line = boundJsonLine({ type: 'error', message: '\u0000'.repeat(MAX_STRING_BYTES) })
+    expect(Buffer.byteLength(line, 'utf8')).toBeLessThanOrEqual(32 * 1024)
+    expect(JSON.parse(line)).toEqual({ type: 'error', truncated: true })
+  })
+
+  it('cuts a payload that nests past the depth budget instead of overflowing the stack', () => {
+    let deepArray: unknown = 'leaf'
+    for (let level = 0; level < 200; level += 1) deepArray = [deepArray]
+    expect(JSON.parse(boundJsonLine({ type: 'tool_call', input: deepArray })))
+      .toMatchObject({ type: 'tool_call', truncated: true })
+
+    let deepObject: unknown = 'leaf'
+    for (let level = 0; level < 200; level += 1) deepObject = { next: deepObject }
+    expect(JSON.parse(boundJsonLine({ type: 'tool_call', input: deepObject })))
+      .toMatchObject({ type: 'tool_call', truncated: true })
+  })
+
   it('writes the terminal final event without bounding its answer', () => {
     const test = harness({ maxStringBytes: 4 })
     test.projection.finish('abcdefgh')

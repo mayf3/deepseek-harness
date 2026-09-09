@@ -9,7 +9,7 @@
 import { Command } from 'commander'
 import type { Context } from '@deepseek-ai/cordis'
 import { parseCmdline } from '@deepseek-ai/dsh-cmdline'
-import { boundJsonEvent } from './json-stream.ts'
+import { boundJsonLine } from './json-stream.ts'
 
 /** Stable Cordis plugin name. */
 export const name = 'headless-startup'
@@ -93,8 +93,8 @@ export function apply(ctx: Context): void {
     program.error = (message: string, errorOptions?: Parameters<typeof originalError>[1]): never => {
       // The event message matches the runner's runtime errors, which carry no
       // commander `error: ` prefix; the stderr line keeps commander's text.
-      const payload = boundJsonEvent({ type: 'error', message: message.replace(/^error: /, '') })
-      internals.stdout.write(`${JSON.stringify(payload)}\n`)
+      const payload = boundJsonLine({ type: 'error', message: message.replace(/^error: /, '') })
+      internals.stdout.write(`${payload}\n`)
       return originalError(message, errorOptions)
     }
   }
