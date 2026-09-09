@@ -68,14 +68,14 @@ Loader 结算后，app-boot 按稳定 id 对每个已启用 entry 分类。Optio
 
 | 失败模式 | Entry 结果 | 启动措施 |
 |---|---|---|
-| 根 YAML 无法读取或解析、不是 entry list，或同一 group 内 id 重复 | 没有有效 candidate tree | 拒绝并拆卸；不接受部分应用 |
+| 根 YAML 无法读取或解析，或不是 entry list | Bootstrap Include 失败 | 拒绝并拆卸；不接受部分应用 |
 | Plugin module 无法 import | Entry 没有 fiber | Optional 时警告；required 时拒绝并拆卸 |
 | Config expression 求值或 plugin config schema 在 activation 时失败 | Fiber 为 `FAILED`，保留校验错误 | Optional 时警告；required 时拒绝并拆卸 |
 | 同步 `apply()` throw | Fiber 为 `FAILED`，保留抛出的错误 | Optional 时警告；required 时拒绝并拆卸 |
-| 异步 `apply()` reject | Fiber 为 `FAILED`，保留 rejection | Optional 时警告；required 时拒绝并拆卸 |
+| 异步 `apply()` throw | Fiber 为 `FAILED`，保留抛出的错误 | Optional 时警告；required 时拒绝并拆卸 |
 | 必需的 injected service 始终未出现 | Fiber 保持 `PENDING`，并指出缺失 service | Optional 时警告；required 时拒绝并拆卸 |
 
-Loader 在 reconcile group 时消费 activation rejection；app-boot 只为取得已记录的原因而 await failed fiber。进程级 fail-loud handler 只处理不属于任何 Loader entry 的 detached asynchronous failure。
+App-boot 读取 failed fiber 来报告已记录的错误，并在一个进程检查点内合并 Loader 重复的 rejection 通知。无关的未处理 rejection 仍然致命。之后的 config HMR 会报告失败，但不会再次应用 required 启动策略，也不会恢复旧 plugin config；有效修改可以恢复失败的 entry。
 
 如果你的应用持有终端，它可以在进程退出前把终端交还，你的 shell 绝不会残留在 raw 模式。交还过程有界：卡住的清理只会延迟致命退出，而不会取消它。
 
@@ -99,7 +99,6 @@ Loader 在 reconcile group 时消费 activation rejection；app-boot 只为取�
 - **两个 Loader builtin。** `mountRootInclude` 把 `cordis:include` 与 `cordis:group` 注册为 Loader builtin：group 行能把一个提供方与它的消费方放进同一个 `isolate` realm，而位于本工作区之外的 agent preset 无法按名称解析 `@deepseek-ai/cordis-plugin-group`。两者都通过宿主的模块管线加载，而非被包含树自身的说明符解析。
 - **由 consumer 持有严格语义。** 普通 Loader group 保留成功 sibling。App-boot 在首次结算后应用全局 required-entry policy；agent preset 与动态多 entry 组合在需要 all-or-nothing setup 时，持有并拆卸各自的独立 generation。
 - **Profile 模块后备机制。** 裸插件 specifier 由 Loader 从配置目录解析。普通 Node 会为安装依赖闭包中的每个包维护一个符号链接。打包可执行文件无法让操作系统符号链接进入 pkg 的 `/snapshot` 树，因此会按 Node ESM 条件读取已安装包的 export map，并写入重新导出虚拟模块 URL 的真实代理包。缺失 export 保持不可用，错误 export map 会让启动失败，跨进程 writer lock 则会在不暴露部分代理的情况下替换陈旧条目。所选外部组合包若不在安装闭包中，则会获得 profile 本地的 `.dsh-module-fallback` 链接；已有 pnpm 条目优先，后续闭包发现会排除投影链接，清理也只删除 dsh 自有链接。
-- **单一 rejection 检查点。** `assertEntriesActivated` 把折入启动诊断的确切原因保持到下一个进程级 rejection 检查点可见，使 `installFailLoud` 能合并 Loader 的重复通知，而所有无关的未处理 rejection 仍然致命。
 - **更新完成。** App boot 通过 `internal/update` waterfall 观察重启失败。实时 patch 重载在检查激活状态前等待配置树中的 fiber；单独调用 `Fiber.update()` 或 `Entry.update()` 不能确定重启成功。
 - **两阶段失败标签。** `boot()` 区分 `host preparation failed`（`prepare` 在任何配置树条目挂载前抛出）与 `plugin tree failed to load`。插件诊断包含原始堆栈、嵌套原因和聚合错误中的各项失败。
 

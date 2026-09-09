@@ -272,7 +272,7 @@ export async function watchUserPatches(
     await ctx.loader.await()
     await Promise.allSettled([...ctx.loader.entries()].map(entry => Promise.resolve(entry.fiber?.await())))
     const failures = await inactiveEntries(ctx)
-    if (failures.length > 0) ctx.logger.warn(activationDiagnostic(binName, 'warning', failures))
+    if (failures.length > 0) throw new Error(activationDiagnostic(binName, 'warning', failures).trimEnd())
   })
   try {
     return await register
@@ -732,8 +732,8 @@ function formatActivationError(error: unknown): string {
 }
 
 interface InactiveEntry {
-  /** Loader entry id used by the required-startup policy. */
-  id: string
+  /** Loader entry used to identify the bootstrap Include and required ids. */
+  entry: Entry
   /** Complete diagnostic beginning with the entry id and module specifier. */
   diagnostic: string
 }
@@ -751,7 +751,7 @@ async function inactiveEntries(ctx: Context): Promise<InactiveEntry[]> {
     if (entry.disabled) continue
     const subject = `${entry.options.id} (${entry.options.name})`
     if (fiber === undefined) {
-      failures.push({ id: entry.options.id, diagnostic: `${subject}: failed to import` })
+      failures.push({ entry, diagnostic: `${subject}: failed to import` })
       continue
     }
     const state = fiber.state
@@ -761,18 +761,18 @@ async function inactiveEntries(ctx: Context): Promise<InactiveEntry[]> {
         await fiber.await()
       } catch (error) {
         rejectionReasons.push(error)
-        failures.push({ id: entry.options.id, diagnostic: `${subject}: ${formatActivationError(error)}` })
+        failures.push({ entry, diagnostic: `${subject}: ${formatActivationError(error)}` })
       }
       continue
     }
     if (state === FIBER_PENDING) {
       const missing = Object.keys(fiber.inject).filter(service => fiber.ctx.get(service) === undefined)
       failures.push({
-        id: entry.options.id,
+        entry,
         diagnostic: `${subject}: pending (waiting for ${missing.length === 1 ? 'service' : 'services'}: ${missing.join(', ') || 'unknown'})`,
       })
     } else {
-      failures.push({ id: entry.options.id, diagnostic: `${subject}: fiber state ${String(state)}` })
+      failures.push({ entry, diagnostic: `${subject}: fiber state ${String(state)}` })
     }
   }
   if (rejectionReasons.length > 0) await observeLoaderRejectionCheckpoint(rejectionReasons)
@@ -796,11 +796,12 @@ function activationDiagnostic(
  * Inactive entries from the global required list reject startup. Other
  * inactive entries produce one warning and leave successful siblings running.
  * Required ids absent from the tree, and disabled required entries, are ignored.
+ * The bootstrap Include must activate so unreadable or invalid root config is fatal.
  * @param ctx - the settled context whose Loader entries to audit.
  * @param binName - the diagnostic prefix on optional-entry warnings.
  * @param warn - sink for optional-entry warnings.
- * @returns after all optional failures are warned when no required entry failed.
- * @throws when an enabled entry in {@link REQUIRED_STARTUP_ENTRY_IDS} is inactive.
+ * @returns after all optional failures are warned when required startup entries are active.
+ * @throws when the bootstrap Include or an enabled entry in {@link REQUIRED_STARTUP_ENTRY_IDS} is inactive.
  */
 export async function auditStartupEntries(
   ctx: Context,
@@ -811,7 +812,8 @@ export async function auditStartupEntries(
   const required: InactiveEntry[] = []
   const optional: InactiveEntry[] = []
   for (const failure of failures) {
-    const target = requiredStartupEntryIds.has(failure.id) ? required : optional
+    const target = failure.entry === bootstrapIncludes.get(ctx)
+      || requiredStartupEntryIds.has(failure.entry.options.id) ? required : optional
     target.push(failure)
   }
   if (optional.length > 0) warn(activationDiagnostic(binName, 'warning', optional))
@@ -843,7 +845,7 @@ export async function auditStartupEntries(
  * @param bareModuleBaseUrl - optional installed-host base for bare package
  * names; use it when the host, rather than the configuration project, owns the
  * complete plugin set.
- * @returns the root context once every entry has started, or as soon as a
+ * @returns the root context after the initial startup audit, or as soon as a
  * surface disposed the tree while startup was still in flight.
  * @throws a labelled error after disposing the partial context — `host
  * preparation failed` when `prepare` threw before any config-tree entry

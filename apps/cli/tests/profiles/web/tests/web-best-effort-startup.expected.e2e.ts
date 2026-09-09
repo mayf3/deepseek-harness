@@ -175,6 +175,7 @@ describe.skipIf(!builtArtifactsExist)('dsh Web profile best-effort startup', () 
       rmSync(fixture.root, { recursive: true, force: true })
     }
 
+    expect(result.signal).toBeUndefined()
     expect({
       exitCode: result.exitCode,
       timedOut: result.timedOut,
@@ -229,6 +230,8 @@ describe.skipIf(!builtArtifactsExist)('dsh Web profile best-effort startup', () 
         timeout: 90_000,
         killSignal: 'SIGKILL',
       })
+      expect(result.timedOut).toBe(false)
+      expect(result.signal).toBeUndefined()
       expect(result.exitCode).toBe(1)
       expect(result.stdout).not.toContain('dsh web: http://')
       expect(result.stderr).toContain('required startup failure')
@@ -238,6 +241,55 @@ describe.skipIf(!builtArtifactsExist)('dsh Web profile best-effort startup', () 
         blocker.close((error) => { if (error === undefined) resolve(); else reject(error) })
       })
       rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('fails and cleans up when detached work rejects after application startup', async () => {
+    const fixture = createFixture()
+    const plugin = join(fixture.root, 'detached.mjs')
+    writeFileSync(plugin, [
+      'export function apply(ctx) {',
+      '  ctx.effect(() => ctx.get("appReady").onReady(() => {',
+      '    void Promise.reject(new Error("detached Web failure"))',
+      '  }))',
+      '}',
+      '',
+    ].join('\n'))
+    writeFileSync(fixture.patch, readFileSync(fixture.patch, 'utf8') + [
+      '- insert:',
+      '    - id: detached-probe',
+      `      name: ${pathToFileURL(plugin).href}`,
+      '',
+    ].join('\n'))
+    try {
+      const result = await execa(process.execPath, [
+        dshBin,
+        '--profile', 'web',
+        '--patch', fixture.patch,
+        '--no-open',
+        '--port', '0',
+      ], {
+        cwd: fixture.root,
+        env: {
+          ...process.env,
+          DEEPSEEK_API_KEY: 'keyless-web-detached-no-call',
+          DSH_AGENTS_HOME: join(fixture.root, '.agents'),
+          DSH_HOME: fixture.home,
+          DSH_TELEMETRY_DISABLED: '1',
+          NODE_NO_WARNINGS: '1',
+        },
+        input: '',
+        reject: false,
+        timeout: 90_000,
+        killSignal: 'SIGKILL',
+      })
+      expect(result.timedOut).toBe(false)
+      expect(result.signal).toBeUndefined()
+      expect(result.exitCode).toBe(1)
+      expect(result.stderr).toContain('fatal load failure: Error: detached Web failure')
+      expect(readFileSync(fixture.events, 'utf8')).toBe('good apply\ngood dispose\n')
+    } finally {
+      rmSync(fixture.root, { recursive: true, force: true })
     }
   })
 })

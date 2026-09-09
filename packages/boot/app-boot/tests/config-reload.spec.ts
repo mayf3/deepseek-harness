@@ -195,6 +195,71 @@ describe('include patches layered over one base', () => {
   })
 })
 
+describe('best-effort config failure recovery', () => {
+  it.each([
+    ['import', undefined, undefined],
+    ['sync apply', 'export function apply(_ctx, config) { if (config.fail) throw new Error("reload sync failure") }\n', 3],
+    ['async apply', 'export async function apply(_ctx, config) { await Promise.resolve(); if (config.fail) throw new Error("reload async failure") }\n', 3],
+    ['dependency', 'export const inject = ["reloadMissing"]\nexport function apply() {}\n', 0],
+  ] as const)('keeps siblings after a required-id %s failure during HMR', async (_kind, source, state) => {
+    const base = '- id: good\n  name: ./noop.mjs\n'
+    const { ctx, dir, include } = await bootTree(base, {
+      ...source === undefined ? {} : { 'failure.mjs': source },
+      'provider.mjs': 'export function apply(ctx) { ctx.provide("reloadMissing", true) }\n',
+    })
+    try {
+      const good = [...ctx.loader.entries()].find(entry => entry.options.id === 'good')!.fiber
+      writeFileSync(join(dir, 'cordis.yml'), base + '- id: webserver\n  name: ./failure.mjs\n  config: { fail: true }\n')
+      await include.refresh()
+      await ctx.loader.await()
+      const failed = [...ctx.loader.entries()].find(entry => entry.options.id === 'webserver')!
+      expect(failed.fiber?.state).toBe(state)
+      expect(good?.state).toBe(2)
+      expect(ctx.fiber.state).toBe(2)
+
+      const recovery = `- id: webserver\n  name: ./${source === undefined ? 'noop' : 'failure'}.mjs\n  config: { fail: false }\n`
+      const provider = state === 0 ? '- id: provider\n  name: ./provider.mjs\n' : ''
+      writeFileSync(join(dir, 'cordis.yml'), base + recovery + provider)
+      await include.refresh()
+      await ctx.loader.await()
+      expect([...ctx.loader.entries()].find(entry => entry.options.id === 'webserver')?.fiber?.state).toBe(2)
+      expect([...ctx.loader.entries()].find(entry => entry.options.id === 'good')?.fiber).toBe(good)
+    } finally {
+      await ctx.fiber.dispose()
+    }
+  })
+
+  it('keeps the previous fiber config after schema rejection and retries a valid edit', async () => {
+    const config = (value: number | string): string => `- id: webserver\n  name: ./schema.mjs\n  config: { value: ${JSON.stringify(value)} }\n`
+    const { ctx, dir, include } = await bootTree(config(1), {
+      'schema.mjs': [
+        'export const Config = { "~standard": { version: 1, vendor: "app-boot-test", validate(config) {',
+        '  return typeof config.value === "number" ? { value: config } : { issues: [{ message: "expected number" }] }',
+        '} } }',
+        'export function apply(ctx, config) { ctx.provide("validatedValue", config.value) }',
+        '',
+      ].join('\n'),
+    })
+    try {
+      writeFileSync(join(dir, 'cordis.yml'), config('invalid'))
+      await include.refresh()
+      await ctx.loader.await()
+      const entry = [...ctx.loader.entries()].find(candidate => candidate.options.id === 'webserver')!
+      expect(entry.options.config).toEqual({ value: 'invalid' })
+      expect(entry.fiber?.config).toEqual({ value: 1 })
+      expect(ctx.get('validatedValue')).toBe(1)
+
+      writeFileSync(join(dir, 'cordis.yml'), config(2))
+      await include.refresh()
+      await ctx.loader.await()
+      expect(entry.fiber?.config).toEqual({ value: 2 })
+      expect(ctx.get('validatedValue')).toBe(2)
+    } finally {
+      await ctx.fiber.dispose()
+    }
+  })
+})
+
 describe('shipped builtins', () => {
   it('lets a booted composition share one isolate realm across a group of rows', async () => {
     // The reason `boot()` registers `cordis:group`: a composition — notably an

@@ -916,6 +916,40 @@ describe('boot', () => {
     }
   })
 
+  it.each([
+    ['missing', undefined, 'config file not found'],
+    ['malformed', 'invalid: [unclosed\n', 'unexpected end'],
+    ['non-array', 'entries: []\n', 'top-level array'],
+  ])('rejects a %s root configuration', async (_kind, content, message) => {
+    const dir = tmp()
+    const configPath = join(dir, 'cordis.yml')
+    if (content !== undefined) writeFileSync(configPath, content)
+    let ctx: Context | undefined
+    try {
+      await expect(boot(NAME, configPath).then((value) => { ctx = value })).rejects.toThrow(message)
+    } finally {
+      await ctx?.fiber.dispose()
+    }
+  })
+
+  it.each([
+    ['import', undefined, '', 'failed to import'],
+    ['config schema', 'export const Config = { "~standard": { version: 1, vendor: "app-boot-test", validate() { return { issues: [{ message: "schema failure" }] } } } }\nexport function apply() {}\n', '', 'schema failure'],
+    ['config expression', 'export function apply() {}\n', '  config: { value: !!js "JSON.parse(\'invalid\')" }\n', 'SyntaxError'],
+    ['sync apply', 'export function apply() { throw new Error("sync failure") }\n', '', 'sync failure'],
+    ['async apply', 'export async function apply() { await Promise.resolve(); throw new Error("async failure") }\n', '', 'async failure'],
+    ['missing dependency', 'export const inject = ["missingRequiredService"]\nexport function apply() {}\n', '', 'missingRequiredService'],
+  ])('disposes startup after a required %s failure', async (_kind, source, config, message) => {
+    const dir = tmp()
+    if (source !== undefined) writeFileSync(join(dir, 'required.mjs'), source)
+    writeFileSync(join(dir, 'cordis.yml'), `- id: webserver\n  name: ./required.mjs\n${config}`)
+    let disposed = false
+    await expect(boot(NAME, join(dir, 'cordis.yml'), undefined, (ctx) => {
+      ctx.effect(() => () => { disposed = true })
+    })).rejects.toThrow(message)
+    expect(disposed).toBe(true)
+  })
+
   it('disposes successful entries and rejects when a required entry fails', async () => {
     const dir = tmp()
     let disposed = false

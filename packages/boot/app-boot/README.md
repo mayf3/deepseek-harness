@@ -68,14 +68,14 @@ After the Loader settles, app-boot classifies each enabled entry by stable id. O
 
 | Failure pattern | Entry result | Startup action |
 |---|---|---|
-| The root YAML cannot be read or parsed, is not an entry list, or repeats an id in one group | No valid candidate tree | Reject and dispose; no partial application is accepted |
+| The root YAML cannot be read or parsed, or is not an entry list | Bootstrap Include fails | Reject and dispose; no partial application is accepted |
 | A plugin module cannot be imported | Entry has no fiber | Warn if optional; reject and dispose if required |
 | Config expression evaluation or the plugin's config schema fails during activation | Fiber is `FAILED` with the validation error | Warn if optional; reject and dispose if required |
 | Synchronous `apply()` throws | Fiber is `FAILED` with the thrown error | Warn if optional; reject and dispose if required |
-| Asynchronous `apply()` rejects | Fiber is `FAILED` with the rejection | Warn if optional; reject and dispose if required |
+| Asynchronous `apply()` throws | Fiber is `FAILED` with the thrown error | Warn if optional; reject and dispose if required |
 | Required injected services never appear | Fiber remains `PENDING` and names the missing services | Warn if optional; reject and dispose if required |
 
-The Loader consumes activation rejections while reconciling the group, and app-boot awaits a failed fiber only to recover its recorded reason. The process-level fail-loud handler is reserved for detached asynchronous failures that no Loader entry owns.
+App-boot reads failed fibers to report their recorded errors and coalesces duplicate Loader rejection notifications through one process checkpoint. Unrelated unhandled rejections remain fatal. Later config HMR reports failures without repeating the required-startup policy or restoring previous plugin config; a valid edit can recover the failed entry.
 
 If your app owns the terminal, it can hand the terminal back before the process exits, so your shell is never left in raw mode. The handoff is bounded: a stuck cleanup delays the fatal exit but never cancels it.
 
@@ -99,7 +99,6 @@ This section explains how the outcomes above are realized and points at the code
 - **Two Loader builtins.** `mountRootInclude` registers `cordis:include` and `cordis:group` as Loader builtins: a group row gives one `isolate` realm to a provider and its consumers together, and an agent preset outside this workspace cannot resolve `@deepseek-ai/cordis-plugin-group` by name. Both load through the ambient module pipeline rather than the included tree's own specifier resolution.
 - **Consumer-owned strictness.** Ordinary Loader groups keep successful siblings. App-boot applies the global required-entry policy after initial settlement; agent presets and dynamic multi-entry compositions own and dispose their separate generation when they require all-or-nothing setup.
 - **Profile module fallback.** Bare plugin specifiers resolve through the Loader from the config directory. Plain Node maintains one symlink per package in the installation dependency closure. A packaged executable instead reads each installed export map with Node ESM conditions and writes real proxy packages that re-export virtual module URLs, because an operating-system symlink cannot enter pkg's `/snapshot` tree. Missing exports stay unavailable, malformed maps fail startup, and a cross-process writer lock replaces stale entries without exposing partial proxies. A selected external bundle absent from the installation closure receives a profile-local `.dsh-module-fallback` link; existing pnpm entries win, projected links are excluded from later closure discovery, and cleanup removes only dsh-owned links.
-- **One rejection checkpoint.** `assertEntriesActivated` keeps the exact reasons it folds into the boot diagnostic visible through the next process rejection checkpoint, so `installFailLoud` coalesces Loader's duplicate notification while unrelated unhandled rejections remain fatal.
 - **Update completion.** App boot observes restart failures through the `internal/update` waterfall. Live patch reloads wait for the tree's fibers before auditing activation; `Fiber.update()` and `Entry.update()` alone do not establish restart success.
 - **Two-stage failure labels.** `boot()` distinguishes `host preparation failed` — `prepare` threw before any config-tree entry mounted — from `plugin tree failed to load`. Plugin diagnostics include original stacks, nested causes, and aggregate member failures.
 

@@ -178,15 +178,15 @@ describe('loadOptionalPatches', () => {
   })
 })
 
-function writeTree(dir: string): string {
+function writeTree(dir: string, id = 'noop', asyncApply = false): string {
   writeFileSync(join(dir, 'noop.mjs'), [
     'export const name = "noop"',
-    'export function apply(_ctx, config = {}) {',
+    `export ${asyncApply ? 'async ' : ''}function apply(_ctx, config = {}) {`,
     '  if (config.fail) throw new Error("candidate config failed")',
     '}',
     '',
   ].join('\n'))
-  writeFileSync(join(dir, 'cordis.yml'), '- id: noop\n  name: ./noop.mjs\n  config:\n    value: base\n')
+  writeFileSync(join(dir, 'cordis.yml'), `- id: ${id}\n  name: ./noop.mjs\n  config:\n    value: base\n`)
   return join(dir, 'cordis.yml')
 }
 
@@ -406,12 +406,16 @@ describe('boot with user patches', () => {
     }
   })
 
-  it('applies live patches, reports failures without rollback, and recovers after a later edit', { timeout: 20_000 }, async () => {
+  it.each([
+    { id: 'noop', asyncApply: false },
+    { id: 'webserver', asyncApply: false },
+    { id: 'webserver', asyncApply: true },
+  ])('keeps HMR best effort and recovers ($id, async apply: $asyncApply)', { timeout: 20_000 }, async ({ id, asyncApply }) => {
     const dir = tmp()
     const userDir = tmp()
     const filename = join(userDir, PROFILE_PATCH_FILENAME)
-    const basePatches = [{ id: 'noop', config: { value: 'generated' } }]
-    const ctx = await boot(NAME, writeTree(dir), basePatches)
+    const basePatches = [{ id, config: { value: 'generated' } }]
+    const ctx = await boot(NAME, writeTree(dir, id, asyncApply), basePatches)
     onTestFinished(() => ctx.fiber.dispose())
     await ctx.plugin(Timer)
     await ctx.plugin(Hmr, { root: [], ignored: [], debounce: 0 })
@@ -439,29 +443,29 @@ describe('boot with user patches', () => {
     expect(watchers).toHaveLength(1)
     const watcher = watchers[0]!
     try {
-      writeFileSync(filename, '- id: noop\n  config:\n    value: live\n')
+      writeFileSync(filename, `- id: ${id}\n  config:\n    value: live\n`)
       watcher.emit('add', filename)
-      await eventually(() => (entryConfig(ctx, 'noop') as { value?: string }).value === 'live', 'user patch addition was not applied')
+      await eventually(() => (entryConfig(ctx, id) as { value?: string }).value === 'live', 'user patch addition was not applied')
 
-      writeFileSync(filename, '- id: noop\n  config:\n    fail: true\n')
+      writeFileSync(filename, `- id: ${id}\n  config:\n    fail: true\n`)
       watcher.emit('change', filename)
       await eventually(() => failures.length === 1, 'failed candidate was not reported')
       expect(failures[0]).toBeInstanceOf(Error)
-      expect(entryConfig(ctx, 'noop')).toMatchObject({ fail: true })
+      expect(entryConfig(ctx, id)).toMatchObject({ fail: true })
 
       writeFileSync(filename, 'invalid: [unclosed\n')
       watcher.emit('change', filename)
       await eventually(() => failures.length === 2, 'parse failure was not reported')
       expect(failures[1]).toBeInstanceOf(Error)
-      expect(entryConfig(ctx, 'noop')).toMatchObject({ fail: true })
+      expect(entryConfig(ctx, id)).toMatchObject({ fail: true })
 
-      writeFileSync(filename, '- id: noop\n  config:\n    value: recovered\n')
+      writeFileSync(filename, `- id: ${id}\n  config:\n    value: recovered\n`)
       watcher.emit('change', filename)
-      await eventually(() => (entryConfig(ctx, 'noop') as { value?: string }).value === 'recovered', 'valid recovery was not applied')
+      await eventually(() => (entryConfig(ctx, id) as { value?: string }).value === 'recovered', 'valid recovery was not applied')
 
       unlinkSync(filename)
       watcher.emit('unlink', filename)
-      await eventually(() => (entryConfig(ctx, 'noop') as { value?: string }).value === 'generated', 'user patch removal did not restore the app-owned patch')
+      await eventually(() => (entryConfig(ctx, id) as { value?: string }).value === 'generated', 'user patch removal did not restore the app-owned patch')
       expect(failures).toHaveLength(2)
 
       // Default compose: the user layer IS the whole patch list, so a
@@ -470,9 +474,9 @@ describe('boot with user patches', () => {
       const disposeDefault = await watchUserPatches(ctx, { binName: NAME, filename })
       expect(watchers).toHaveLength(2)
       try {
-        writeFileSync(filename, '- id: noop\n  config:\n    value: identity\n')
+        writeFileSync(filename, `- id: ${id}\n  config:\n    value: identity\n`)
         watchers[1]!.emit('add', filename)
-        await eventually(() => (entryConfig(ctx, 'noop') as { value?: string }).value === 'identity', 'default-compose user patch was not applied')
+        await eventually(() => (entryConfig(ctx, id) as { value?: string }).value === 'identity', 'default-compose user patch was not applied')
       } finally {
         await disposeDefault()
       }
