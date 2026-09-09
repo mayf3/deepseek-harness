@@ -46,4 +46,4 @@ snapshot normalizer 会把 `childCreatedAt` 归零，因为它来自 process clo
 
 Session 观察和客户端快照通过 `projections.values.subagentCatalog` 暴露直接子级列表。目录状态变化时，projection 变更通知发布完整列表。每次视图计算成本为 O(D)，因此 D 次创建的累计视图工作量可能为 O(D²)；这沿用既有 projection 机制。直接子级和后代列表仍使用 Session 语料库与子级身份 projection。
 
-不认识该 required event 的 backend 会按既有 Session event 机制拒绝日志。pre-release format policy 不要求为旧日志保留 fallback scan。
+不认识该 required event 的 backend 会按既有 Session event 机制拒绝日志。目录投影不通过扫描旧子级日志来重建缺失的父级事实。

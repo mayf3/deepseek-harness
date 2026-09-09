@@ -15,7 +15,7 @@ The [event-sourced model](2026-06-11-event-sourced-sessions.md) makes the append
 Persistence is a **capability seam** with an abstract Service Definition ([capability seams](2026-06-13-capability-seams.md), the `dsh-shell` template), not loop or core logic:
 
 1. **Interface** (`dsh-session-persistence`, `ctx.sessionPersistence`) — an abstract `SessionPersistence` service: `create`/`open`/`stat`/`list`/`flush`, with `create`/`open` returning per-session `SessionHandle`s that carry `read`/`append`/`flush`/`close` ([handle-based seam](2026-08-27-handle-based-session-persistence.md)). Its persisted unit IS the existing `SessionEvent` (`{ type, seq, time, data }`), reused verbatim — no conversion type.
-2. **Implementation** (`dsh-session-persistence-jsonl`) — an append-only logical JSONL log per session: a `SessionHeader` line followed by storage records that losslessly represent the contiguous `SessionEvent` stream. Current v2 writes one event per row; frozen v0 and v1 readers retain their historical packed-delta representation. [Checksummed Zstandard frames](2026-07-19-zstandard-jsonl-session-logs.md) are the default physical encoding, with raw lines configurable.
+2. **Implementation** (`dsh-session-persistence-jsonl`) — an append-only logical JSONL log per session: a `SessionHeader` line followed by storage records that losslessly represent the contiguous `SessionEvent` stream. The current format writes one event per row; frozen v0 and v1 readers retain their historical packed-delta representation. [Checksummed Zstandard frames](2026-07-19-zstandard-jsonl-session-logs.md) are the default physical encoding, with raw lines configurable.
 
 Key durable, contested choices:
 

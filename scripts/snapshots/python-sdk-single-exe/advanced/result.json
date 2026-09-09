@@ -1578,8 +1578,16 @@
       }
     },
     {
-      "type": "feedback/message-put",
+      "type": "feedback/record",
       "seq": 70,
+      "time": 0,
+      "data": {
+        "category": "other"
+      }
+    },
+    {
+      "type": "feedback/message-put",
+      "seq": 71,
       "time": 0,
       "data": {
         "sessionId": "{{parent}}",
@@ -1587,6 +1595,7 @@
           "messageId": "{{message:1}}",
           "rating": "negative",
           "note": "Explain the result.",
+          "category": "task-result",
           "version": "{{feedback-version:1}}",
           "createdAt": 0,
           "updatedAt": 0
@@ -1595,7 +1604,7 @@
     },
     {
       "type": "feedback/message-put",
-      "seq": 71,
+      "seq": 72,
       "time": 0,
       "data": {
         "sessionId": "{{parent}}",
@@ -1611,7 +1620,7 @@
     },
     {
       "type": "feedback/message-delete",
-      "seq": 72,
+      "seq": 73,
       "time": 0,
       "data": {
         "sessionId": "{{parent}}",
@@ -1620,7 +1629,7 @@
     },
     {
       "type": "turn/end",
-      "seq": 73,
+      "seq": 74,
       "time": 0,
       "data": {
         "turn": 1,
@@ -4673,8 +4682,22 @@
       "payload": {
         "sessionId": "{{parent}}",
         "event": {
-          "type": "feedback/message-put",
+          "type": "feedback/record",
           "seq": 70,
+          "time": 0,
+          "data": {
+            "category": "other"
+          }
+        }
+      }
+    },
+    {
+      "method": "session.event",
+      "payload": {
+        "sessionId": "{{parent}}",
+        "event": {
+          "type": "feedback/message-put",
+          "seq": 71,
           "time": 0,
           "data": {
             "sessionId": "{{parent}}",
@@ -4682,6 +4705,7 @@
               "messageId": "{{message:1}}",
               "rating": "negative",
               "note": "Explain the result.",
+              "category": "task-result",
               "version": "{{feedback-version:1}}",
               "createdAt": 0,
               "updatedAt": 0
@@ -4696,7 +4720,7 @@
         "sessionId": "{{parent}}",
         "event": {
           "type": "feedback/message-put",
-          "seq": 71,
+          "seq": 72,
           "time": 0,
           "data": {
             "sessionId": "{{parent}}",
@@ -4718,7 +4742,7 @@
         "sessionId": "{{parent}}",
         "event": {
           "type": "feedback/message-delete",
-          "seq": 72,
+          "seq": 73,
           "time": 0,
           "data": {
             "sessionId": "{{parent}}",
@@ -4733,7 +4757,7 @@
         "sessionId": "{{parent}}",
         "event": {
           "type": "turn/end",
-          "seq": 73,
+          "seq": 74,
           "time": 0,
           "data": {
             "turn": 1,
