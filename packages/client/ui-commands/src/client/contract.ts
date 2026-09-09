@@ -41,8 +41,7 @@ export interface PopupSelectSpec {
 
 /**
  * Business registration for the action command kind: a bare invocation
- * consumes the trigger token and runs one client-side callback (the menu's
- * File row opens the composer's file picker). It submits nothing, so an
+ * consumes the trigger token and runs one client-side callback. It submits nothing, so an
  * attachment-carrying draft never refuses it.
  */
 export interface ActionSpec {
