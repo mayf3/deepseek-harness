@@ -329,6 +329,12 @@ async function run(ctx: Context, config: Config, io: HeadlessIo): Promise<void> 
   // Early process shutdown can dispose the tree while settlement is pending.
   if (agents === undefined || defaultModel === undefined || sessions === undefined) return
 
+  // A Cordis overlay sets the row directly and bypasses the CLI trim check, so
+  // the same public setting must fail here rather than become a blank identity.
+  if (config.sessionId !== undefined && config.sessionId.trim() === '') {
+    throw new Error('headless-runner: sessionId must not be blank')
+  }
+
   const task = config.task === undefined || config.task === '-'
     ? await internals.readStdin()
     : config.task
@@ -356,6 +362,11 @@ async function run(ctx: Context, config: Config, io: HeadlessIo): Promise<void> 
     })).agent
     : await resolveAgent(ctx, agents, sessionId, agentOptions, setup)
   await agent.whenIdle()
+  if (config.sessionId !== undefined) {
+    // A live Session can select an agent preset while the runner awaits idle;
+    // re-read its log so the rejection cannot be outrun by that timing.
+    assertAdoptable(agent.session.header, liveEvents(agent.session), sessionId)
+  }
   const firstSeq = agent.session.seq
   const projection = config.json === true ? projectJsonRun(ctx, agent, io.stdout) : undefined
   const stopReasoning = projection === undefined ? streamReasoning(ctx, agent, io.stderr) : undefined

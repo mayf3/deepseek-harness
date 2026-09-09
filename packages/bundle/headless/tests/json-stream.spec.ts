@@ -34,6 +34,19 @@ function assistantMessage(content: unknown[], usage?: unknown): SessionEvent {
   } as unknown as SessionEvent
 }
 
+/** One discarded attempt whose stream reports the given usage sample. */
+function attemptWithUsage(usage: unknown): SessionEvent {
+  return {
+    type: 'assistant/attempt',
+    data: { turn: 1, step: 1, stream: [{ type: 'chunk', chunk: { type: 'usage', usage } }] },
+  } as unknown as SessionEvent
+}
+
+/** One step boundary event closing the accumulated usage window. */
+function stepEnd(): SessionEvent {
+  return { type: 'step/end', data: { turn: 1, step: 1 } } as unknown as SessionEvent
+}
+
 /** One tool result event with the given surface placement. */
 function toolResult(
   callId: string,
@@ -298,6 +311,85 @@ describe('--json projection', () => {
     for (let level = 0; level < 200; level += 1) deepObject = { next: deepObject }
     expect(JSON.parse(boundJsonLine({ type: 'tool_call', input: deepObject })))
       .toMatchObject({ type: 'tool_call', truncated: true })
+  })
+
+  it('sums retried attempt usage into the step total and drops an unshared bucket', () => {
+    const test = harness()
+    test.emitSession(attemptWithUsage({ inputTokens: 10, outputTokens: 2, totalTokens: 12, cacheReadTokens: 4 }))
+    test.emitSession(assistantMessage(
+      [{ type: 'text', text: 'ok' }],
+      { inputTokens: 3, outputTokens: 1, totalTokens: 4 },
+    ))
+    test.emitSession(stepEnd())
+    expect(test.parsed().at(-1)).toEqual({
+      type: 'status', phase: 'step_end', turn: 1, step: 1,
+      usage: { inputTokens: 13, outputTokens: 3, totalTokens: 16 },
+    })
+  })
+
+  it('sums every optional bucket both attempts report', () => {
+    const test = harness()
+    const sample = {
+      inputTokens: 2, outputTokens: 1, totalTokens: 3,
+      cacheReadTokens: 1, cacheWriteTokens: 1, reasoningTokens: 1,
+    }
+    test.emitSession(attemptWithUsage(sample))
+    test.emitSession(attemptWithUsage(sample))
+    test.emitSession(stepEnd())
+    expect(test.parsed().at(-1)).toMatchObject({
+      usage: {
+        inputTokens: 4, outputTokens: 2, totalTokens: 6,
+        cacheReadTokens: 2, cacheWriteTokens: 2, reasoningTokens: 2,
+      },
+    })
+  })
+
+  it('drops a bucket only the later attempt reports', () => {
+    const test = harness()
+    test.emitSession(attemptWithUsage({ inputTokens: 1, outputTokens: 1 }))
+    test.emitSession(attemptWithUsage({ inputTokens: 1, outputTokens: 1, cacheWriteTokens: 2 }))
+    test.emitSession(stepEnd())
+    const usage = (test.parsed().at(-1) as { usage: Record<string, unknown> }).usage
+    expect(usage).toEqual({ inputTokens: 2, outputTokens: 2 })
+    expect(usage).not.toHaveProperty('cacheWriteTokens')
+  })
+
+  it('reads a message usage sample from its stream when the field is absent', () => {
+    const test = harness()
+    test.emitSession({
+      type: 'assistant/message',
+      data: {
+        turn: 1,
+        step: 1,
+        stream: [{ type: 'chunk', chunk: { type: 'usage', usage: { inputTokens: 5, outputTokens: 1 } } }],
+        message: {
+          role: 'assistant',
+          content: [{ type: 'text', text: 'hi' }],
+          source: { kind: 'model', provider: 'p', model: 'm' },
+        },
+      },
+    } as unknown as SessionEvent)
+    test.emitSession(stepEnd())
+    expect(test.parsed().at(-1)).toMatchObject({ usage: { inputTokens: 5, outputTokens: 1 } })
+  })
+
+  it('keeps an earlier attempt sample when the committed message reports none', () => {
+    const test = harness()
+    test.emitSession(attemptWithUsage({ inputTokens: 7, outputTokens: 3 }))
+    test.emitSession(assistantMessage([{ type: 'text', text: 'ok' }]))
+    test.emitSession(stepEnd())
+    expect(test.parsed().at(-1)).toMatchObject({ usage: { inputTokens: 7, outputTokens: 3 } })
+  })
+
+  it('ignores an attempt that reports no usage sample', () => {
+    const test = harness()
+    test.emitSession({
+      type: 'assistant/attempt',
+      data: { turn: 1, step: 1, stream: [] },
+    } as unknown as SessionEvent)
+    test.emitSession(assistantMessage([{ type: 'text', text: 'ok' }], { inputTokens: 1, outputTokens: 1 }))
+    test.emitSession(stepEnd())
+    expect(test.parsed().at(-1)).toMatchObject({ usage: { inputTokens: 1, outputTokens: 1 } })
   })
 
   it('writes the terminal final event without bounding its answer', () => {

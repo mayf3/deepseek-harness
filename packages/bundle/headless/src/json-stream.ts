@@ -9,6 +9,7 @@
 
 import type { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
+import { lastAssistantStreamChunk } from '@deepseek-ai/dsh-llm/assistant-stream'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 
 /** Default per-string and per-key cap applied to every bounded projected payload. */
@@ -176,6 +177,42 @@ function resultText(blocks: readonly { type: string; text?: string }[]): string 
     .join('')
 }
 
+/** Provider token accounting for one step, as carried by `assistant/message`. */
+type StepUsage = NonNullable<SessionEvent<'assistant/message'>['data']['usage']>
+
+/** The usage a provider reported in one attempt's stream, if any. */
+function streamUsage(stream: SessionEvent<'assistant/message'>['data']['stream']): StepUsage | undefined {
+  return lastAssistantStreamChunk(stream, 'usage')?.usage
+}
+
+/**
+ * Accumulate one step's usage across its attempts. A retried attempt keeps its
+ * usage only in its `assistant/attempt` stream, so the committed message alone
+ * would under-report billed tokens; an optional bucket is summed only when
+ * every contribution reports it.
+ * @param total - usage accumulated so far.
+ * @param next - usage reported by the next attempt.
+ * @returns the accumulated usage, or `undefined` when neither side reports any.
+ */
+function addUsage(total: StepUsage | undefined, next: StepUsage | undefined): StepUsage | undefined {
+  if (next === undefined) return total
+  if (total === undefined) return next
+  const sum = (a: number | undefined, b: number | undefined): number | undefined =>
+    a === undefined || b === undefined ? undefined : a + b
+  const totalTokens = sum(total.totalTokens, next.totalTokens)
+  const cacheReadTokens = sum(total.cacheReadTokens, next.cacheReadTokens)
+  const cacheWriteTokens = sum(total.cacheWriteTokens, next.cacheWriteTokens)
+  const reasoningTokens = sum(total.reasoningTokens, next.reasoningTokens)
+  return {
+    inputTokens: total.inputTokens + next.inputTokens,
+    outputTokens: total.outputTokens + next.outputTokens,
+    ...totalTokens === undefined ? {} : { totalTokens },
+    ...cacheReadTokens === undefined ? {} : { cacheReadTokens },
+    ...cacheWriteTokens === undefined ? {} : { cacheWriteTokens },
+    ...reasoningTokens === undefined ? {} : { reasoningTokens },
+  }
+}
+
 /**
  * Project one Agent's run as newline-delimited JSON on `sink`.
  *
@@ -198,7 +235,7 @@ export function projectJsonRun(
 ): JsonProjection {
   const maxStringBytes = options.maxStringBytes ?? MAX_STRING_BYTES
   let disposed = false
-  let stepUsage: SessionEvent<'assistant/message'>['data']['usage']
+  let stepUsage: StepUsage | undefined
 
   const write = (event: Record<string, unknown>): void => {
     sink.write(`${boundJsonLine(event, maxStringBytes)}\n`)
@@ -213,8 +250,13 @@ export function projectJsonRun(
       case 'step/start':
         write({ type: 'status', phase: 'step_start', turn: event.data.turn, step: event.data.step })
         return
+      case 'assistant/attempt':
+        // A retried attempt has no committed message; its billed tokens live
+        // only in the stream, so accumulate them into the step's total.
+        stepUsage = addUsage(stepUsage, streamUsage(event.data.stream))
+        return
       case 'assistant/message':
-        stepUsage = event.data.usage
+        stepUsage = addUsage(stepUsage, event.data.usage ?? streamUsage(event.data.stream))
         for (const block of event.data.message.content) {
           if (block.type === 'reasoning') write({ type: 'thinking', text: block.text })
           else if (block.type === 'text') write({ type: 'text', text: block.text })

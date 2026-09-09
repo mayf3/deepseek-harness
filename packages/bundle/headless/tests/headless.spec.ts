@@ -54,6 +54,8 @@ interface BenchOptions {
   prelive?: boolean
   /** Header facts for that pre-registered live Agent. */
   preliveMeta?: { cwd?: string; origin?: 'subagent'; agentPreset?: string }
+  /** Run when the live path reads persistence, e.g. to mutate the live log. */
+  onStat?: (agent: Agent) => void
 }
 
 const frameStates = new WeakMap<Agent, { attemptId: ReturnType<typeof LlmAttemptId>; revision: number; index: number }>()
@@ -180,9 +182,13 @@ async function bench(script: Script, options: BenchOptions = {}): Promise<{
     const observe = options.observe ?? (() => Promise.reject(new SessionQueryError('missing', 'SESSION_QUERY_SESSION_NOT_FOUND')))
     ctx.provide('sessionQuery', { observeSession: () => observe() } as never)
   }
+  let preliveAgent: Agent | undefined
   if (options.omitPersistence !== true) {
     ctx.provide('sessionPersistence', {
-      stat: () => Promise.resolve(options.unbackedPersistence === true ? undefined : { header: {} }),
+      stat: () => {
+        if (options.onStat !== undefined && preliveAgent !== undefined) options.onStat(preliveAgent)
+        return Promise.resolve(options.unbackedPersistence === true ? undefined : { header: {} })
+      },
     } as never)
   }
   return {
@@ -197,10 +203,10 @@ async function bench(script: Script, options: BenchOptions = {}): Promise<{
         ctx.provide('appExit', (code: number) => { order.push('exit'); resolve(code) })
       })
       if (options.prelive === true || options.preliveMeta !== undefined) {
-        await ctx.agents.create({
+        preliveAgent = (await ctx.agents.create({
           sessionId: brandString<SessionId>(options.sessionId ?? 'session-exact'),
           meta: { cwd: process.cwd(), ...options.preliveMeta },
-        })
+        })).agent
       }
       apply(ctx, {
         ...options.useStdin === true ? {} : { task: options.task ?? 'do the thing' },
@@ -695,6 +701,15 @@ describe('headless runner', () => {
     await test.ctx.fiber.dispose()
   })
 
+  it('rejects a whitespace-only session identity from configuration', async () => {
+    const test = await bench({ afterPrompt: () => {} }, { sessionId: '   ' })
+    const result = await test.run()
+    expect(result.code).toBe(1)
+    expect(result.err).toContain('sessionId must not be blank')
+    expect(result.out).toBe('')
+    await test.ctx.fiber.dispose()
+  })
+
   it('reuses a live Agent already registered under the requested identity', async () => {
     const test = await bench({
       afterPrompt(session, message) { appendTurn(session, 1, message, 'live answer', true) },
@@ -756,6 +771,21 @@ describe('headless runner', () => {
     const result = await test.run()
     expect(result.code).toBe(1)
     expect(result.err).toContain('runs under agent preset "minimal"')
+    await test.ctx.fiber.dispose()
+  })
+
+  it('rejects a preset selected while the runner awaits idle', async () => {
+    const test = await bench({
+      afterPrompt(session, message) { appendTurn(session, 1, message, 'live', true) },
+    }, {
+      sessionId: 'session-exact',
+      prelive: true,
+      onStat: (agent) => { selectPreset(agent.session, 'minimal') },
+    })
+    const result = await test.run()
+    expect(result.code).toBe(1)
+    expect(result.err).toContain('runs under agent preset "minimal"')
+    expect(result.out).toBe('')
     await test.ctx.fiber.dispose()
   })
 
