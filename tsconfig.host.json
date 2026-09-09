@@ -61,7 +61,6 @@
     "apps/web/tests/message-actions.e2e.ts",
     "apps/web/tests/open-in-app-ssh.e2e.ts",
     "apps/web/tests/message-feedback.e2e.ts",
-    "apps/web/tests/message-feedback-layout.e2e.ts",
     "apps/web/tests/markdown-images.e2e.ts",
     "apps/web/tests/reference-composer.e2e.ts",
     "apps/web/tests/markdown-wide-table.e2e.ts",
