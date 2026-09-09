@@ -679,6 +679,7 @@ export const FOUNDATION_TYPE_NAMES: ReadonlySet<string> = new Set([
   'ReadonlyMap',
   'Request',
   'Response',
+  'ReturnType',
   'Uint8Array',
 ])
 

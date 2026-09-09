@@ -247,7 +247,7 @@ describe('LocalJobRegistry.start', () => {
     await ctx.agents.register(otherOwner)
     expect(() => ctx.jobs.start(producer({ owner: otherOwner }).spec)).not.toThrow()
 
-    detachOld()
+    await detachOld()
     const replacement = stubAgent(ctx, 'shared-session')
     await ctx.agents.register(replacement)
     expect(() => ctx.jobs.start(producer({ owner: replacement }).spec)).not.toThrow()
@@ -637,7 +637,7 @@ describe('LocalJobRegistry owner isolation', () => {
     const ctx = await harness()
     const staleOwner = stubAgent(ctx, 'owner')
     const unregisterStale = await ctx.agents.register(staleOwner)
-    unregisterStale()
+    await unregisterStale()
 
     const currentOwner = stubAgent(ctx, 'owner')
     await ctx.agents.register(currentOwner)
@@ -772,7 +772,7 @@ describe('LocalJobRegistry owner cleanup', () => {
     }
 
     start(oldOwner, 'old job')
-    detachOld()
+    await detachOld()
     const replacement = stubAgent(ctx, 'owner')
     await ctx.agents.register(replacement)
     const replacementId = start(replacement, 'replacement job')

@@ -77,6 +77,8 @@ Electron 通过内置的上游 Node.js 进程启动私有 Desktop Host 包；该
 - **Agent 事件**（`agent/*`）携带活跃 `Agent`：inbox、步骤、状态、请求、验证、续跑。要观察或拦截进行中的工作时，使用它。
 - **能力事件**无需导入循环即可向某个 seam（`fs/*`、`tools/*`、`telemetry/*`）附加策略和适配器。
 
+AgentLoop 在启动已排队工作前等待串行 `agent/created` 初始化。初始化失败会回滚创建；[agent-loop](../packages/core/agent-loop/README.zh.md#understand-the-implementation)定义 teardown 顺序。
+
 [事件映射](event-producer-consumer.zh.md)列出每个事件的生产方与消费方。
 
 <a id="turn-flow"></a>

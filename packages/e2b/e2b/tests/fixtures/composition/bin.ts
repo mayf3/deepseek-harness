@@ -207,7 +207,7 @@ try {
   })}\n`)
 } finally {
   if (terminalId !== undefined) await ctx.terminals.kill(owner, terminalId, 'fixture cleanup').catch(() => false)
-  unregisterOwner()
+  await unregisterOwner()
   await ownerFiber.dispose()
   await ctx.fiber.dispose()
 }

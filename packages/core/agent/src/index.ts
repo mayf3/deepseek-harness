@@ -107,7 +107,7 @@ export interface CreateAgentOptions {
    * the exact publication boundary. Everything registered through `agentCtx`
    * (scoped tools, prompt sections/variables, `restrict()`, listeners, awaited
    * child plugins) exists before `session/created`, `agent/created`,
-   * `agent/session-start`, and the first prompt assembly. A setup
+   * and the first prompt assembly. A setup
    * throw/rejection, commit throw, or owner disposal rolls the scope back
    * without publishing either id.
    *
@@ -172,8 +172,8 @@ export interface AgentFactory {
   /**
    * Create a new agent on a caller-supplied session id. Async because creation
    * awaits unpublished setup, invokes its optional synchronous commit, inserts
-   * both session and agent, emits their creation notifications in order, emits
-   * `agent/session-start`, and only then starts the loop. The sequence is
+   * both session and agent, announces session creation, and awaits serial
+   * `agent/created` listeners before releasing queued work. The sequence is
    * rollback-covered, but notifications delivered before a later listener
    * failure remain observable; every agent or session creation announcement
    * that began is paired by `agent/disposed` or `session/disposed` during
@@ -185,7 +185,7 @@ export interface AgentFactory {
    * ownership from the factory object's registration context.
    * @param ownerCtx - caller-bound context that owns the transaction and live handle.
    * @param options - agent/session identity, configuration, optional live parent, and setup.
-   * @returns the owned handle after setup, both announcements, and loop start complete.
+   * @returns the owned handle after setup and both creation announcements complete.
    */
   createAgent(ownerCtx: Context, options: CreateAgentOptions): Promise<AgentHandle>
   /**
@@ -422,6 +422,7 @@ export class AgentRegistry extends Service {
    * requires passing the carrier). The entry is a runtime root; factory-backed
    * creation uses `options.parentAgent` for child ownership. Await the registration before using the agent.
    * @param agent - the already-constructed agent to record in the store.
+   * @param source - creation source; defaults to fresh startup.
    * @returns the awaitable Cordis effect disposer (single-shot; a repeat call
    *   returns undefined without awaiting an in-flight teardown). Exact
    *   identity is load-bearing: a composite (generator) effect that owns a
@@ -524,6 +525,8 @@ export class AgentRegistry extends Service {
   /**
    * Announce an agent previously inserted with {@link enter}.
    * @param agent - the live inserted agent to announce.
+   * @param source - fresh creation, resume, clear, or compaction source.
+   * @param signal - optional factory initialization cancellation signal passed to listeners.
    * @returns completion of the serial creation listeners; a listener failure rejects.
    * @throws if `agent` is not the exact live registry entry for its id, or its
    *   creation announcement already began (including a reentrant call from a

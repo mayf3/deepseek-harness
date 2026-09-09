@@ -58,7 +58,7 @@ describe('AgentRegistry', () => {
     const context = ctx.typert.contexts.getHost('agent')
     expect(context?.resolve(agent.id)).toBe(agent.ctx)
 
-    disposeAgent()
+    await disposeAgent()
     expect(lookup?.resolve(agent.id)).toBeUndefined()
     await agentFiber.dispose()
     expect(ctx.typert.lookups.get('agent')).toBeUndefined()
@@ -79,7 +79,7 @@ describe('AgentRegistry', () => {
     expect(ctx.agents.roots()).toEqual([agent])
     await expect(Promise.resolve(ctx.agents.register(stubAgent('a1')))).rejects.toThrow(/already registered/)
 
-    dispose()
+    await dispose()
     expect(ctx.agents.get(agent.id)).toBeUndefined()
     expect(lifecycle).toEqual(['created:a1', 'disposed:a1'])
   })
@@ -100,9 +100,9 @@ describe('AgentRegistry', () => {
     const root = stubAgent('root')
     const child = stubAgent('child')
     const detachRoot = ctx.agents.enter(root, undefined)
-    await ctx.agents.announce(root)
+    await ctx.agents.announce(root, 'startup')
     const detachChild = ctx.agents.enter(child, root)
-    await ctx.agents.announce(child)
+    await ctx.agents.announce(child, 'startup')
 
     expect(ctx.agents.list()).toEqual([root, child])
     expect(ctx.agents.roots()).toEqual([root])
@@ -154,12 +154,12 @@ describe('AgentRegistry', () => {
   it('awaits each creation listener before the next listener and registration completion', async () => {
     const ctx = new Context()
     await ctx.plugin(AgentRegistry)
-    const entered = Promise.withResolvers<void>()
-    const release = Promise.withResolvers<void>()
+    const entered = Promise.withResolvers<undefined>()
+    const release = Promise.withResolvers<undefined>()
     const order: string[] = []
     ctx.on('agent/created', async () => {
       order.push('first:start')
-      entered.resolve()
+      entered.resolve(undefined)
       await release.promise
       order.push('first:end')
     })
@@ -170,12 +170,12 @@ describe('AgentRegistry', () => {
     try {
       await entered.promise
       expect(order).toEqual(['first:start'])
-      await expect(ctx.agents.announce(agent)).rejects.toThrow('already announced')
-      release.resolve()
+      await expect(ctx.agents.announce(agent, 'startup')).rejects.toThrow('already announced')
+      release.resolve(undefined)
       await ready
       expect(order).toEqual(['first:start', 'first:end', 'second', 'ready'])
     } finally {
-      release.resolve()
+      release.resolve(undefined)
       await registration()
       await ctx.fiber.dispose()
     }
@@ -191,8 +191,8 @@ describe('AgentRegistry', () => {
     const first = stubAgent('split')
     const detachFirst = ctx.agents.enter(first, undefined)
     expect(lifecycle).toEqual([])
-    await ctx.agents.announce(first)
-    await expect(ctx.agents.announce(first)).rejects.toThrow(/already announced/)
+    await ctx.agents.announce(first, 'startup')
+    await expect(ctx.agents.announce(first, 'startup')).rejects.toThrow(/already announced/)
     detachFirst()
     detachFirst()
 
@@ -200,7 +200,7 @@ describe('AgentRegistry', () => {
     const detachReplacement = ctx.agents.enter(replacement, undefined)
     detachFirst()
     expect(ctx.agents.get(replacement.id)).toBe(replacement)
-    await expect(ctx.agents.announce(first)).rejects.toThrow(/not live/)
+    await expect(ctx.agents.announce(first, 'startup')).rejects.toThrow(/not live/)
     detachReplacement()
     expect(lifecycle).toEqual(['created:split', 'disposed:split'])
   })
@@ -218,7 +218,7 @@ describe('AgentRegistry', () => {
     ctx.on('agent/created', () => void order.push(`second:${ctx.agents.get(agent.id) === agent}`))
     ctx.on('agent/disposed', () => void order.push('disposed'))
     const detach = ctx.agents.enter(agent, undefined)
-    await ctx.agents.announce(agent)
+    await ctx.agents.announce(agent, 'startup')
     expect(order).toEqual(['first:true', 'after-detach:true', 'second:true', 'disposed'])
     expect(ctx.agents.get(agent.id)).toBeUndefined()
   })
@@ -325,12 +325,12 @@ describe('AgentRegistry factory seam', () => {
     const { factory, calls } = stubFactory()
     ctx.agents.setFactory(factory)
     const parent = stubAgent('parent')
-    const unregister = ctx.agents.register(parent)
+    const unregister = await ctx.agents.register(parent)
 
     await ctx.agents.create({ sessionId: SessionId('child'), parentAgent: parent })
 
     expect(calls.create[0]?.options.parentAgent).toBe(parent)
-    unregister()
+    await unregister()
   })
 
   it('rejects a second factory and clears the slot with its owner (HMR)', async () => {

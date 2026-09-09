@@ -231,9 +231,8 @@ describe('goal projection unit', () => {
     expect(state).toBeDefined()
     Object.assign(state!, { failure })
 
-    expect(() => {
-      agentEvents(bench.ctx, bench.agent).emit('agent/session-start', { source: 'resume' })
-    }).not.toThrow()
+    await expect(agentEvents(bench.ctx, bench.agent).serial('agent/created', { source: 'resume' }))
+      .resolves.toBeUndefined()
     expect(() => bench.ctx.goals.get(bench.agent)).toThrow(failure)
     expect(bench.tailValues().goal).toMatchObject({ goal: { objective: 'poisoned replay' } })
   })
