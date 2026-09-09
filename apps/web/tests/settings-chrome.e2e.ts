@@ -24,9 +24,10 @@ import { ZH_BROWSER_LOCALE, saveFailureShot } from './support.ts'
 const SNAPSHOT_DIR = fileURLToPath(new URL('./expected/settings-chrome', import.meta.url))
 const DIALOG_EXPECTED = join(SNAPSHOT_DIR, 'dialog.expected.md')
 const PLUGINS_EXPECTED = join(SNAPSHOT_DIR, 'plugins.expected.md')
+const PLUGIN_INSTANCES_EXPECTED = join(SNAPSHOT_DIR, 'plugin-instances.expected.md')
 // The English fallback surface: a browser naming no shipped language.
 const DIALOG_EN_EXPECTED = join(SNAPSHOT_DIR, 'dialog-en.expected.md')
-const PLUGIN_ROW_SELECTOR = '[data-plugin-entry$="ui-settings"]'
+const PLUGIN_ROW_SELECTOR = '[data-plugin-scope="preset"] [data-plugin-entry="tool-subagent"]'
 const MODE = webSnapshotMode()
 
 describe('web e2e: settings modal and General preferences', () => {
@@ -114,7 +115,8 @@ describe('web e2e: settings modal and General preferences', () => {
     const expectedPluginCount = [...scaffold.ctx.loader.entries()]
       .filter(entry => !entry.options.group)
       .length
-    expect(await dialog.getByRole('searchbox', { name: '搜索插件' }).count()).toBe(1)
+    const pluginSearch = dialog.getByRole('searchbox', { name: '搜索插件' })
+    expect(await pluginSearch.count()).toBe(1)
     // Every Loader entry appears exactly once in the global group — rows the
     // presets took over included, preset compositions excluded.
     expect(await dialog.locator('[data-plugin-scope="global"] [data-plugin-entry]').count())
@@ -130,6 +132,35 @@ describe('web e2e: settings modal and General preferences', () => {
       scaffold.workspaceCwd,
     )
     await compareOrRefreshGolden(PLUGINS_EXPECTED, pluginsSnapshot, MODE)
+    await pluginSearch.fill('tool-subagent')
+    const instanceRows = [
+      ['tool-subagent', '已启用'],
+      ['tool-subagent-fork', '已启用'],
+      ['tool-subagent-codex', '已停用'],
+      ['tool-subagent-claude-code', '已停用'],
+    ] as const
+    for (const [entryId, status] of instanceRows) {
+      const row = dialog.locator(`[data-plugin-scope="preset"] [data-plugin-entry="${entryId}"]`)
+      const trigger = row.getByRole('button', { name: `tool-subagent, ${entryId}, ${status}`, exact: true })
+      await trigger.waitFor({ timeout: 10_000 })
+      expect(await trigger.getAttribute('aria-expanded')).toBe('false')
+      const identity = row.locator('code')
+      expect(await identity.textContent()).toBe(entryId)
+      expect(await identity.getAttribute('title')).toBe(entryId)
+    }
+    const instancesSnapshot = await captureStableAria(
+      page,
+      '[data-plugin-scope="preset"] ul',
+      scaffold.workspaceCwd,
+    )
+    await compareOrRefreshGolden(PLUGIN_INSTANCES_EXPECTED, instancesSnapshot, MODE)
+    await dialog.getByRole('button', {
+      name: 'tool-subagent, tool-subagent-claude-code, 已停用',
+      exact: true,
+    }).click()
+    expect(await dialog.locator('[data-plugin-entry="tool-subagent-claude-code"] button')
+      .getAttribute('aria-expanded')).toBe('true')
+    await pluginSearch.fill('')
     // Close path 1: Escape.
     await page.keyboard.press('Escape')
     await expect.poll(() => page.getByRole('dialog', { name: '设置' }).count(), { timeout: 5_000 }).toBe(0)
@@ -669,6 +700,11 @@ describe('web e2e: settings modal and General preferences', () => {
 
   it.skipIf(MODE === 'record')('keeps the fixture inventory closed', async () => {
     expect(tripwire.warnings).toEqual([])
-    await assertFixtureInventory(SNAPSHOT_DIR, ['dialog-en.expected.md', 'dialog.expected.md', 'plugins.expected.md'])
+    await assertFixtureInventory(SNAPSHOT_DIR, [
+      'dialog-en.expected.md',
+      'dialog.expected.md',
+      'plugin-instances.expected.md',
+      'plugins.expected.md',
+    ])
   })
 })

@@ -15,7 +15,7 @@ Status: implemented
 持久化是一个具有抽象 Service Definition 的**能力 seam**（[能力 seam](2026-06-13-capability-seams.zh.md)，`dsh-shell` 模板），而非循环或核心逻辑：
 
 1. **接口**（`dsh-session-persistence`，`ctx.sessionPersistence`）：一个抽象的 `SessionPersistence` 服务，提供 `create`/`open`/`stat`/`list`/`flush`，其中 `create`/`open` 返回逐会话的 `SessionHandle`，句柄承载 `read`/`append`/`flush`/`close`（[基于句柄的 seam](2026-08-27-handle-based-session-persistence.zh.md)）。其持久化单元就是现有的 `SessionEvent`（`{ type, seq, time, data }`），原样复用，无转换类型。
-2. **实现**（`dsh-session-persistence-jsonl`）：每个会话一个仅追加的逻辑 JSONL 日志：先是一行 `SessionHeader`，随后是无损表示连续 `SessionEvent` 流的存储记录。当前 v2 每个事件写一行；冻结的 v0 与 v1 reader 保留其历史 packed-delta 表示。[带校验和的 Zstandard 帧](2026-07-19-zstandard-jsonl-session-logs.zh.md)是默认物理编码，也可通过配置使用原始行。
+2. **实现**（`dsh-session-persistence-jsonl`）：每个会话一个仅追加的逻辑 JSONL 日志：先是一行 `SessionHeader`，随后是无损表示连续 `SessionEvent` 流的存储记录。当前格式每个事件写一行；冻结的 v0 与 v1 reader 保留其历史 packed-delta 表示。[带校验和的 Zstandard 帧](2026-07-19-zstandard-jsonl-session-logs.zh.md)是默认物理编码，也可通过配置使用原始行。
 
 长期有效、存在争议的关键选择：
 
