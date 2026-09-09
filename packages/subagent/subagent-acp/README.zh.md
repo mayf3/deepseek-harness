@@ -93,8 +93,6 @@ spawn、初始化或新建会话失败会在发布前拒绝，通常先证明 ma
 
 一次启动先解析子 agent 的工作目录（配置的 `cwd` 覆盖值，否则取父会话 cwd），经子进程 seam spawn 命令，完成 ACP `initialize` 与 `newSession` 握手，然后才发布运行。兑现意味着远程会话已就绪、所有权已转移给调用方。dispose（资源释放）是幂等的：先关闭 stdin 并按配置的宽限等待协作式完全停稳，再经 SIGTERM 升级到 SIGKILL，并等待整个 managed range 退出。清理失败会作为有序的安全事实保持可观察，且绝不声称已经完全停稳。
 
-[资源释放测试](tests/subagent-acp.spec.ts)在 lane 预算内观察真实子进程退出，区分 POSIX 信号升级与 Windows 强制终止；清理先等待子进程退出，再删除标记目录。参见[清理测试决策](../../../.agents/notes/implemented/testing/2026-09-07-subagent-teardown-test-budgets.zh.md)。
-
 ### 停止原因映射
 
 运行结果会把 ACP 终态映射进共享的停止原因词汇（`completed`、`max-tokens`、`refusal`、`aborted` 或 `error`），实现见 [`src/run.ts`](src/run.ts)。

@@ -426,7 +426,7 @@ describe.skipIf(!hasPwsh)('PwshLocalExecutor.start (background process handles)'
     const { bash } = await setup()
     const barrier = commandBarrier()
     const proc = bash.start(bash.resolve({
-      command: `Write-Output ready; ${barrier.command}; Write-Output done`,
+      command: `Write-Output ready; [Console]::Out.Flush(); ${barrier.command}; Write-Output done`,
       env: barrier.env,
     }))
     expect(proc.status).toBe('running')
@@ -459,7 +459,7 @@ describe.skipIf(!hasPwsh)('PwshLocalExecutor.start (background process handles)'
     const { bash } = await setup()
     const barrier = commandBarrier()
     const proc = bash.start(bash.resolve({
-      command: `Write-Output first; ${barrier.command}; Write-Output second`,
+      command: `Write-Output first; [Console]::Out.Flush(); ${barrier.command}; Write-Output second`,
       env: barrier.env,
     }))
     const first = await readUntil(proc, 'first\n', task.timeout)

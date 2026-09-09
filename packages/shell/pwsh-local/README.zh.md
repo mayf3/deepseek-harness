@@ -68,8 +68,6 @@ if (result.timedOut) console.log('timed out after', result.timeoutMs)
 
 调用 `start` 即可在后台运行命令；它立即返回句柄，且不应用任何超时。`readOutput()` 把流增量合并为一次消费式读取，并在 `[stderr]` 分段下标记 stderr；`kill()` 终止由提供方管理的 range；`done` 在 direct command 关闭时结算且绝不 reject。job id、所有权、轮询与通知属于通用 `ctx.jobs` 运行时，工具层会把句柄注册进去。
 
-真实进程测试先等待 `done`，再断言完整输出，并使用私有文件屏障检查部分输出。轮询继承执行 lane 的预算，Context 释放先于临时目录删除；参见[完成状态观察决策](../../../.agents/notes/implemented/testing/2026-09-08-ci-completion-observations.zh.md)。
-
 <a id="adjusting-budgets-at-runtime"></a>
 ### 运行时调整预算
 

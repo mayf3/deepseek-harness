@@ -16,8 +16,6 @@ The [Codex test](../../../../packages/subagent/subagent-codex/tests/real-product
 
 The [native Windows CI decision](../process/2026-08-08-native-windows-pull-request-ci.md) continues to own lane scheduling and budgets. This change only removes conflicting local deadlines and strengthens resource-lifetime assertions; it does not establish a Windows process-kill or filesystem defect.
 
-The TERM-trapping ACP case also waits under the lane budget and checks the actual child outcome: `SIGKILL` on POSIX, or a nonzero exit from direct Windows force termination. Readiness follows trap installation. Failure cleanup joins the captured child before removing its private marker directory; the fixture’s EOF and termination grace periods remain unchanged.
-
 ## Alternatives considered
 
 - Increase production grace periods or filesystem retries: the failures do not demonstrate incorrect product timing or exhausted removal retries.

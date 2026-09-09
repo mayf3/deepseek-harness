@@ -86,8 +86,6 @@ Model code can reach `parentPort` and forge traffic, so every inbound message is
 
 Two independent budgets exist because the peer is hostile: `computeMs` meters the worker's measured busy time (`eventLoopUtilization()` polling every 25 ms), so a hot loop expires it whether or not a decoy dispatch is in flight, while a program idling on a slow binding accrues nothing; `maxWallMs` backstops what busy time cannot see, such as a promise nobody resolves. Both funnel into `worker.terminate()`. `maxWallMs` is range-checked at load against `MAX_TIMER_DELAY_MS` because `setTimeout` clamps a longer delay to 1 ms.
 
-[Budget tests](tests/budget.spec.ts) control host clocks and measured ELU input while keeping worker execution and binding messages real. [Runtime tests](tests/runtime.spec.ts) separately exercise hot-loop containment with actual measurements.
-
 ### Output ledger
 
 `maxOutputBytes` accounts the JSON serialization of the outer `logs` array plus the completion value or failure-message payload; fixed `CodeRunResult` field names and envelope syntax are outside that ledger. At or below the cap the exact value returns; a lossy completion is `invalid-output`, and a combined overflow is `output-limit` rather than a substituted inspected string. The failure retains a fitting captured prefix of the logs.

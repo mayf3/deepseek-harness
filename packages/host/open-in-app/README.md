@@ -79,8 +79,6 @@ The package splits into a data table and three roles. [`src/catalog.ts`](src/cat
 
 [`src/index.ts`](src/index.ts) registers the three routes on `ctx.webServer`: `GET /open-in-app/apps` (the resolution map's keys), `GET /open-in-app/icon/<id>` (the extracted icon, cached in memory per process), and `POST /open-in-app/open` (launches the map's verified launcher directly — never a re-detection). Every route asks the composition's `connection` service for a rejection first; the complete trust story — the Host/Origin fence and browser authentication — has one home in the [`src/index.ts`](src/index.ts) module comment. On top of that fence the open route validates its body at the wire: an `application/json` media type, a 64 KiB ceiling, a resolved-available catalog id, and an absolute path naming an existing directory. Resolution and icon commands run through [`@deepseek-ai/dsh-native-command`](../../util/native-command/README.md) (argv, never a shell) under their respective deadlines; PATH names go through `ctx.subprocess.resolveExecutable()` in-process.
 
-[Launch settlement tests](tests/launch-detached.spec.ts) use controlled watch time and late process events to verify one settlement without relying on child startup speed; real-process launch cases remain in [resolver tests](tests/resolver.spec.ts).
-
 </details>
 
 -----

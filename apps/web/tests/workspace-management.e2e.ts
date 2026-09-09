@@ -121,7 +121,7 @@ describe('web e2e: workspace management (create / rename / flat view / hover aff
    * Reveal and click a row action, re-hovering if a projection update replaces
    * the row before its hover-only button becomes visible.
    */
-  async function clickHoverAction(row: Locator, name: string | RegExp): Promise<void> {
+  async function clickHoverAction(row: Locator, name: string): Promise<void> {
     const button = row.getByRole('button', { name })
     await expect.poll(async () => {
       await row.hover()
@@ -593,17 +593,24 @@ describe('web e2e: workspace management (create / rename / flat view / hover aff
 
   it('archives the seeded session from its row menu, hiding it durably across reload', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-ws-archive'))
-    const sessionRow = await seededSessionRow()
+    const initialRow = await seededSessionRow()
     // Selecting the seed hides any blank stray left by Workspace deletion,
     // so archiving this last visible Ungrouped Session must remove the bucket.
-    await sessionRow.click()
+    await initialRow.click()
+    const { title } = await scaffold.ctx.sessionController.rename({
+      sessionId: SessionId(SEED_ID), title: `Archive target ${SEED_ID}`,
+    })
+    // A user-owned title binds the locator to this seed across restoration.
+    const sessionRow = page.getByRole('treeitem').filter({
+      has: page.getByText(title, { exact: true }),
+    })
+    await expect.poll(() => sessionRow.count(), { timeout: 10_000 }).toBe(1)
     await expect.poll(() => sessionRow.getAttribute('aria-selected'), { timeout: 10_000 }).toBe('true')
     const ungroupedSection = page.getByText('Ungrouped', { exact: true }).locator('..').locator('..').locator('..')
     await expect.poll(() => ungroupedSection.locator('[role="treeitem"]').count(), { timeout: 10_000 }).toBe(2)
     // Row menu: hover reveals the actions button; Archive session commits
     // without a confirmation dialog (non-destructive: log + accounting stay).
-    // Opening a cold Session can replace its fallback title after selection.
-    await clickHoverAction(sessionRow, /^Session actions for /)
+    await clickHoverAction(sessionRow, `Session actions for ${title}`)
     await page.getByRole('menuitem', { name: 'Archive session' }).click()
     // The row disappears on the archive-set echo; with no other visible
     // stray, the whole Ungrouped bucket withdraws.

@@ -9,11 +9,7 @@
 
 ## 完成状态观察
 
-GitHub webhook 场景先等待确定性模型适配器收到首个请求，再检查已创建的 Session；HTTP 202 只确认分发。受控的 Workspace 创建屏障验证这一区别，而不引入短轮询期限。参见[完成状态观察决策](../../../.agents/notes/implemented/testing/2026-09-08-ci-completion-observations.zh.md)。
-
-Queue 布局断言等待响应式框架稳定，并在一次浏览器执行中采样相关的两个矩形；分开的往返可能观察到不同布局状态。详情面板关闭断言先等待框架正在运行的过渡结束，再检查宽度为零；已发布的关闭状态本身不代表几何布局已稳定。
-
-反馈选择等待菜单关闭，排队图片捕获等待接纳后的持久化附件，宽表格测量等待框架轨道和观察器发布的会话宽度与渲染几何一致。
+依赖状态的用例使用 Workspace、接纳、附件和模型流屏障，区分可见中间状态与已完成操作。详情关闭等待框架过渡结束；归档验证为 seed Session 设置显式标题，并跨重载跟踪该身份。参见 [CI fixture 同步决策](../../../.agents/notes/implemented/testing/2026-09-08-ci-completion-observations.zh.md)。
 
 ## 这些是 Host 面的测试
 

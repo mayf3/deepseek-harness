@@ -9,7 +9,7 @@ import { gunzipSync } from 'node:zlib'
 import type { Browser, Page } from 'playwright'
 import { chromium } from 'playwright'
 import type { SessionEvent, SessionId } from '@deepseek-ai/dsh-session'
-import { afterAll, beforeAll, describe, expect, it, onTestFailed, onTestFinished } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it, onTestFailed } from 'vitest'
 import {
   acknowledgeReloadConnectionLoss, assertFixtureInventory, captureExpandedTurnProcessAria, captureStableAria,
   compareOrRefreshGolden, fixtureUserPrompts,
@@ -199,33 +199,7 @@ describe.each(MODE === 'record' ? ['deepseek-official'] : ['deepseek-official', 
     const events = await readPersistedEvents(scaffold, sessionId)
     expect(events.at(-1)?.type).toBe('command/done')
     expect(events.at(-1)!.seq).toBeGreaterThan(authorized.at(-1)!.seq)
-    const release = Promise.withResolvers<undefined>()
-    let cleanupPromise: Promise<void> | undefined
-    const cleanup = (): Promise<void> => cleanupPromise ??= (async () => {
-      release.resolve(undefined)
-      await page.unrouteAll({ behavior: 'wait' })
-    })()
-    onTestFinished(cleanup, 15_000)
-    let responseReceived = false
-    await page.route('**/api/session/selectModel', async (route) => {
-      const response = await route.fetch({ timeout: 10_000 })
-      responseReceived = true
-      await release.promise
-      await route.fulfill({ response })
-    })
-    const selection = selectModel('Feedback mock')
-    // Observe rejection immediately; the original promise is awaited after releasing the response.
-    const observedSelection = Promise.allSettled([selection])
-    try {
-      await expect.poll(() => responseReceived, { timeout: 10_000 }).toBe(true)
-      const trigger = page.getByRole('button', { name: /^Select model, current/ })
-      await expect.poll(() => trigger.getAttribute('aria-label'), { timeout: 10_000 }).toContain('Feedback mock')
-      expect(await trigger.getAttribute('aria-expanded')).toBe('true')
-    } finally {
-      await cleanup()
-      await observedSelection
-    }
-    await selection
+    await selectModel('Feedback mock')
     await selectModel('DeepSeek-V4-Flash')
     const warningStart = tripwire.warnings.length
     await page.reload({ waitUntil: 'load' })

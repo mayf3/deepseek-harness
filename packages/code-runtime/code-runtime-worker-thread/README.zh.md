@@ -86,8 +86,6 @@ kind: "package-reference"
 
 存在两个独立预算，因为对端不可信：`computeMs` 计量 worker 的实测忙碌时间（每 25 ms 轮询一次 `eventLoopUtilization()`），因此热循环无论是否有诱饵 dispatch 在途都会到期，而等待慢绑定的程序不累计；`maxWallMs` 为忙碌时间无法观测的情况兜底，例如永远不会 resolve 的 promise。二者最终都会调用 `worker.terminate()`。`maxWallMs` 在加载时对照 `MAX_TIMER_DELAY_MS` 做范围校验，因为 `setTimeout` 会把更长的延迟限制为 1 ms。
 
-[预算测试](tests/budget.spec.ts)控制宿主时钟与实测 ELU 输入，同时保留真实 worker 执行和绑定消息。[运行时测试](tests/runtime.spec.ts)独立使用真实测量验证热循环约束。
-
 ### 输出账本
 
 `maxOutputBytes` 统计外层 `logs` 数组加完成值或失败消息载荷的 JSON 序列化；固定的 `CodeRunResult` 字段名与信封语法不计入这份账本。未超过上限时返回精确值；有损完成值属于 `invalid-output`，组合溢出属于 `output-limit`，不会用 inspected string 代替。失败会保留日志中能容纳的已捕获前缀。

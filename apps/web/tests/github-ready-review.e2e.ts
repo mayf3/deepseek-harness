@@ -36,11 +36,9 @@ const REPLY = 'Review complete: no actionable findings.'
 /** Deterministic model response for the webhook-created Session. */
 class ReviewAdapter extends LlmAdapter {
   readonly requests: GenerateOptions[] = []
-  readonly firstRequest = Promise.withResolvers<undefined>()
 
   override async * stream(options: GenerateOptions): AsyncIterable<StreamChunk> {
     this.requests.push(options)
-    this.firstRequest.resolve(undefined)
     yield { type: 'block-start', index: 0, blockType: 'text' }
     yield { type: 'block-end', index: 0, block: { type: 'text', text: REPLY } }
     yield { type: 'finish', reason: { kind: 'stop' } }
@@ -158,6 +156,7 @@ describe.skipIf(MODE === 'record')('web e2e: GitHub ready-for-review', () => {
       return await createWorkspace(...args)
     })
     onTestFinished(() => {
+      off()
       release.resolve(undefined)
       create.mockRestore()
     })
