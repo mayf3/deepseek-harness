@@ -15,7 +15,7 @@ The [`weighted-approval` workflow](../workflows/weighted-approval.yml) publishes
 
 ## Approval scoring
 
-The weighted approval workflow publishes the `weighted approval` commit status on the pull request head. Branch rules must require this status with GitHub Actions as its expected source; a context-only requirement can accept a same-named status from another integration. The status succeeds at two approval points, remains pending below two points or while the pull request is a draft, fails while a write-capable reviewer has an effective `CHANGES_REQUESTED` review, and reports an error when policy evaluation fails.
+The weighted approval workflow publishes the `weighted approval` commit status on the pull request head. Branch rules must require this status with GitHub Actions as its expected source; a context-only requirement can accept a same-named status from another integration. A completed evaluation returns `success` at two approval points and `pending` below two points, while the pull request is a draft, or while a write-capable reviewer has an effective `CHANGES_REQUESTED` review. If evaluation fails, the publisher writes an `error` status.
 
 Reviewers whose calculated base repository permission is `write` or `admin` count. The [approval policy](approval-policy.json) gives `@07akioni`, `@imccyu`, `@tianyicui`, `@tianyicui-bot`, `@turtle1999`, and `@turtle2099` two points each; every other write-capable reviewer gets one point. The pull-request author and reviewers without write permission do not count.
 
