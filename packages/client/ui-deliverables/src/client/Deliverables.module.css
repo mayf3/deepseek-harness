@@ -1,0 +1,14 @@
+/** Immutable file deliveries at the end of a turn. */
+.root { display: flex; flex-direction: column; gap: 8px; min-width: 0; margin-top: 12px; }
+.label { font-size: 12px; color: var(--dsw-alias-label-secondary); }
+.presented { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr)); gap: 8px; }
+.file { display: flex; align-items: center; gap: 12px; min-width: 0; padding: 14px; border: 0.5px solid var(--dsw-alias-border-l2); border-radius: 12px; background: var(--dsw-alias-bg-layer-1); color: var(--dsw-alias-label-primary); text-decoration: none; font: inherit; text-align: left; cursor: pointer; }
+.file:hover { background: var(--dsw-alias-bg-layer-2); border-color: var(--dsw-alias-border-l3); }
+.file:focus-visible { outline: 2px solid var(--dsw-alias-link); outline-offset: 2px; }
+.fileIcon { flex: 0 0 auto; width: 24px; height: 24px; }
+.details { display: flex; flex-direction: column; gap: 4px; min-width: 0; flex: 1; }
+.fileName { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; font-weight: 500; }
+.metadata { color: var(--dsw-alias-label-tertiary); font-size: 11px; }
+.description { color: var(--dsw-alias-label-secondary); font-size: 12px; overflow-wrap: anywhere; }
+.open { display: flex; flex-direction: column; align-items: center; gap: 4px; flex: 0 0 auto; color: var(--dsw-alias-link); font-size: 11px; }
+.file:disabled { cursor: wait; opacity: 0.65; }

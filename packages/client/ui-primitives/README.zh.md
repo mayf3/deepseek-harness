@@ -25,6 +25,8 @@ kind: "package-library"
 <a id="use-this-package"></a>
 ## 使用本包
 
+本包是 Web 壳的构建输入。静态 ESM 为 Vite 保留第三方导入和样式；独立消费方自行提供开发依赖（[依赖规则](../AGENTS.md#dependency-declaration)）。
+
 只要 Web 客户端需要标准控件或 agent 输出渲染器，就用这些原子组件拼装功能 UI。它们只经 React 渲染，并从主题取得 `--dsw-*` 设计 token，因此无需导入主题或 slot 系统即可适配任意插件。
 
 <a id="component-catalog"></a>
@@ -50,7 +52,7 @@ kind: "package-library"
 | `HoverCard` | 指针可停留、可选中的悬停预览；可选带复制按钮。 |
 | `Toast` | 顶部居中的瞬时横幅，保持时长由所有者的 `holdMs` 决定。 |
 | `JsonTree`、`JsonBlock` | 只读 JSON 查看。 |
-| `MarkdownText`、`CodeBlock` | 不可信 GFM 与 TeX 数学，以及高亮代码。 |
+| `MarkdownText`、`CodeBlock` | 不可信 GFM 与 TeX 数学，以及高亮代码。`CodeBlock` 可通过 `lineNumbers` 开启行号；复制的源码不含行号栏。 |
 | `TerminalBlock`、`ReadBlock`、`DiffBlock`、`SearchBlock`、`WebBlock` | 与各类工具结果意图对应的 agent 输出卡片。 |
 | `icons/*`、`FishLogo`、`BrandWordmark`、`ReferenceIcon`、`LinkIcon`、`DocumentFileIcon` | 字形与品牌标识，全部随 `currentColor`。 |
 

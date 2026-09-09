@@ -8,8 +8,10 @@
  * jsdom lays nothing out, so the gesture specs hand the surface a layout: panes
  * of one width side by side, each 600px tall with a 36px strip and 100px chips.
  */
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, onTestFinished, vi } from 'vitest'
 import type { DockIntents } from '../src/contract/adapter.ts'
 import type { PaneId, TabId } from '../src/contract/types.ts'
 import { DockController } from '../src/engine/controller.ts'
@@ -18,7 +20,7 @@ import { FLOAT_DEFAULT_SIZE, FLOAT_MIN_SIZE } from '../src/engine/constraints.ts
 import { floatRectAt } from '../src/engine/geometry.ts'
 import { DockSurface, type DockSurfaceProps } from '../src/components/DockSurface.tsx'
 import type { TabMenuExtras } from '../src/contract/adapter.ts'
-import { FloatLayer } from '../src/components/FloatLayer.tsx'
+import { FloatLayer, type FloatLayerProps } from '../src/components/FloatLayer.tsx'
 import { dockPaneIds, getPane } from '../src/engine/tree.ts'
 import { TEST_LABELS, asPane, asTab, fileTab, seededController } from './fixtures.client.ts'
 
@@ -53,7 +55,7 @@ function renderSurface(
   intents: DockIntents,
   canSplit = true,
   renderTabMenuItems?: TabMenuExtras,
-  options: Pick<DockSurfaceProps, 'dropZones' | 'minPaneFraction'> = {},
+  options: Pick<DockSurfaceProps, 'dropZones' | 'minPaneFraction' | 'canCloseTab'> = {},
 ) {
   const snapshot = controller.getSnapshot()
   return render(
@@ -456,6 +458,83 @@ describe('DockSurface', () => {
     expect(screen.queryByRole('menu')).toBeNull()
   })
 
+  it('offers close only for tabs the embedder allows', () => {
+    const controller = seededController()
+    const allowed = controller.openContent({ contentId: 'resource:a', title: 'A', kind: 'test' })
+    const intents = spyIntents()
+    renderSurface(controller, intents, true, undefined, { canCloseTab: tabId => tabId === allowed })
+    expect(screen.getByRole('button', { name: TEST_LABELS.closeTab }).getAttribute('data-dockkit-tab-close')).toBe(allowed)
+    fireEvent.contextMenu(screen.getByRole('tab', { name: 'Start' }))
+    expect(screen.queryByRole('menu')).toBeNull()
+    fireEvent.contextMenu(screen.getByRole('tab', { name: /A/u }))
+    fireEvent.click(screen.getByRole('menuitem', { name: TEST_LABELS.closeTab }))
+    expect(intents.closeTab).toHaveBeenCalledExactlyOnceWith(allowed)
+  })
+
+  it.each([
+    ['absent', undefined],
+    ['null', null],
+    ['conditional', false],
+    ['empty array', []],
+    ['empty text', ''],
+  ])('hides close and creates no popup when extras are %s', (_, extras) => {
+    const controller = seededController()
+    const intents = spyIntents()
+    renderSurface(controller, intents, true, extras === undefined ? undefined : () => extras, { canCloseTab: () => false })
+    expect(screen.queryByRole('button', { name: TEST_LABELS.closeTab })).toBeNull()
+    fireEvent.contextMenu(screen.getByRole('tab'))
+    expect(screen.queryByRole('menuitem', { name: TEST_LABELS.closeTab })).toBeNull()
+    expect(screen.queryByRole('menu')).toBeNull()
+    expect(intents.closeTab).not.toHaveBeenCalled()
+  })
+
+  it('updates chip and open-menu close controls when eligibility props change', () => {
+    const controller = seededController()
+    const intents = spyIntents()
+    const props: DockSurfaceProps = {
+      state: controller.getSnapshot().state,
+      canSplit: true,
+      intents,
+      labels: TEST_LABELS,
+      renderTab: () => null,
+      canCloseTab: () => false,
+    }
+    const { rerender } = render(<DockSurface {...props} />)
+    expect(screen.queryByRole('button', { name: TEST_LABELS.closeTab })).toBeNull()
+    rerender(<DockSurface {...props} canCloseTab={() => true} />)
+    expect(screen.getByRole('button', { name: TEST_LABELS.closeTab })).toBeDefined()
+    fireEvent.contextMenu(screen.getByRole('tab'))
+    expect(screen.getByRole('menuitem', { name: TEST_LABELS.closeTab })).toBeDefined()
+    rerender(<DockSurface {...props} />)
+    expect(screen.queryByRole('button', { name: TEST_LABELS.closeTab })).toBeNull()
+    expect(screen.queryByRole('menu')).toBeNull()
+    rerender(<DockSurface {...props} canCloseTab={() => true} />)
+    fireEvent.click(screen.getByRole('menuitem', { name: TEST_LABELS.closeTab }))
+    expect(intents.closeTab).toHaveBeenCalledTimes(1)
+    expect(screen.queryByRole('menu')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: TEST_LABELS.closeTab }))
+    expect(intents.closeTab).toHaveBeenCalledTimes(2)
+  })
+
+  it.each([false, true])('hides the popup when an extras component renders no content inside a wrapper: %s', (wrapped) => {
+    const EmptyExtras = () => null
+    renderSurface(seededController(), spyIntents(), true,
+      () => wrapped ? <div style={{ display: 'contents' }}><EmptyExtras /></div> : <EmptyExtras />,
+      { canCloseTab: () => false })
+    fireEvent.contextMenu(screen.getByRole('tab'))
+    const menu = document.querySelector<HTMLElement>('[data-dockkit-tab-menu]')
+    if (menu === null) throw new Error('expected the extras component menu')
+    // Vitest stubs CSS Modules; bind the real stylesheet's menu selector to its generated class.
+    const style = document.createElement('style')
+    style.textContent = readFileSync(resolve(import.meta.dirname, '../src/components/dockkit.module.css'), 'utf8')
+      .replaceAll(/\.menu(?=[:\s{])/g, `.${menu.className}`)
+    document.head.append(style)
+    onTestFinished(() => { style.remove() })
+    expect(menu.querySelectorAll('[role^="menuitem"]')).toHaveLength(0)
+    expect(getComputedStyle(menu).display).toBe('none')
+    expect(screen.queryByRole('menu')).toBeNull()
+  })
+
   it('toggles the menu closed on a second secondary press, and dismisses it on a press anywhere else', () => {
     const controller = seededController()
     renderSurface(controller, spyIntents())
@@ -501,7 +580,7 @@ describe('DockSurface', () => {
     expect(document.querySelector('[data-dockkit-tab-more]')).toBeNull()
   })
 
-  it('appends embedder menu items after its own, and hands them the tab and a dismiss', () => {
+  it.each([true, false])('keeps embedder menu items and their tab and dismiss when close is allowed: %s', (canClose) => {
     const controller = seededController()
     const acted = vi.fn<(contentId: string) => void>()
     const extras: TabMenuExtras = (tab, dismiss) => (
@@ -514,17 +593,20 @@ describe('DockSurface', () => {
         embedder item
       </button>
     )
-    renderSurface(controller, spyIntents(), true, extras)
+    const intents = spyIntents()
+    renderSurface(controller, intents, true, extras, { canCloseTab: () => canClose })
     fireEvent.contextMenu(screen.getByRole('tab'))
 
     // Order is contract: the kit's own item stays in the same place in every
     // menu, so an embedder item cannot displace it.
-    expect(screen.getAllByRole('menuitem').map(item => item.textContent)).toEqual([
-      TEST_LABELS.closeTab, 'embedder item',
-    ])
+    expect(screen.getAllByRole('menuitem').map(item => item.textContent)).toEqual(
+      canClose ? [TEST_LABELS.closeTab, 'embedder item'] : ['embedder item'],
+    )
+    expect(screen.queryByRole('button', { name: TEST_LABELS.closeTab }) !== null).toBe(canClose)
 
     fireEvent.click(screen.getByTestId('extra'))
     expect(acted).toHaveBeenCalledWith('seed:start')
+    expect(intents.closeTab).not.toHaveBeenCalled()
     expect(screen.queryByRole('menu')).toBeNull()
   })
 
@@ -895,7 +977,12 @@ describe('FloatLayer', () => {
   }
 
   /** One floating panel over a spied intent set. */
-  function floating(): { intents: ReturnType<typeof spyIntents>; paneId: PaneId; tabId: TabId; panel: HTMLElement } {
+  function floating(canCloseTab?: FloatLayerProps['canCloseTab']): {
+    intents: ReturnType<typeof spyIntents>
+    paneId: PaneId
+    tabId: TabId
+    panel: HTMLElement
+  } {
     const controller = seededController()
     const tabId = controller.openContent({ contentId: 'dsh-resource://file/session/s/a.txt', title: 'a.txt', kind: 'file' })
     const paneId = controller.floatTab(tabId, { x: 100, y: 80, width: 300, height: 200 })
@@ -906,6 +993,7 @@ describe('FloatLayer', () => {
         intents={intents}
         labels={TEST_LABELS}
         renderTab={tab => <p data-testid="float-body">{tab.title}</p>}
+        {...canCloseTab === undefined ? {} : { canCloseTab }}
       />,
     )
     const panel = document.querySelector<HTMLElement>(`[data-dockkit-float="${paneId}"]`)
@@ -925,6 +1013,17 @@ describe('FloatLayer', () => {
     const { intents, tabId } = floating()
     fireEvent.click(screen.getByRole('button', { name: TEST_LABELS.closeFloat }))
     expect(intents.closeTab).toHaveBeenCalledWith(tabId)
+  })
+
+  it('hides a floating tab close control when the embedder disallows it', () => {
+    const canCloseTab = vi.fn(() => false)
+    const { intents, tabId } = floating(canCloseTab)
+    expect(canCloseTab).toHaveBeenCalledWith(tabId)
+    expect(screen.queryByRole('button', { name: TEST_LABELS.closeFloat })).toBeNull()
+    expect(screen.getByTestId('float-body').textContent).toBe('a.txt')
+    fireEvent.click(screen.getByRole('button', { name: TEST_LABELS.dockFloat }))
+    expect(intents.unfloatPane).toHaveBeenCalledTimes(1)
+    expect(intents.closeTab).not.toHaveBeenCalled()
   })
 
   it('raises a panel on a press on its body, but not from a press on its controls, grip, or corner', () => {

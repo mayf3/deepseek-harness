@@ -25,6 +25,8 @@ Use `dsh-client-ui-primitives` to build web-client controls and render agent out
 <a id="use-this-package"></a>
 ## Use this package
 
+This package is a Web-shell build input. Its static ESM retains third-party imports and styles for Vite; independent consumers supply its development dependencies ([dependency rules](../AGENTS.md#dependency-declaration)).
+
 Compose feature UI from these atoms whenever the web client needs a standard control or an agent-output renderer. They render through React only and take `--dsw-*` design tokens from the theme, so they fit any plugin without importing the theme or the slot system.
 
 <a id="component-catalog"></a>
@@ -50,7 +52,7 @@ Check this table before writing a control in a feature package. A plugin cannot 
 | `HoverCard` | Hover preview the pointer can rest on and select from; optional copy button. |
 | `Toast` | Transient top-center banner held for the owner's `holdMs`. |
 | `JsonTree`, `JsonBlock` | Read-only JSON inspection. |
-| `MarkdownText`, `CodeBlock` | Untrusted GFM with TeX math, and highlighted code. |
+| `MarkdownText`, `CodeBlock` | Untrusted GFM with TeX math, and highlighted code. `CodeBlock` accepts opt-in `lineNumbers`; copied source excludes the gutter. |
 | `TerminalBlock`, `ReadBlock`, `DiffBlock`, `SearchBlock`, `WebBlock` | The agent-output card matching each tool-result intent. |
 | `icons/*`, `FishLogo`, `BrandWordmark`, `ReferenceIcon`, `LinkIcon`, `DocumentFileIcon` | Glyphs and brand marks, all riding `currentColor`. |
 

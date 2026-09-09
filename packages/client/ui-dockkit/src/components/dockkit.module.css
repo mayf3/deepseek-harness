@@ -269,6 +269,10 @@
   border-radius: 6px;
 }
 
+.menu:not(:has([role='menuitem'], [role='menuitemcheckbox'], [role='menuitemradio'])) {
+  display: none;
+}
+
 .menuItem {
   padding: 5px 8px;
   color: var(--dsw-alias-label-primary);
