@@ -60,7 +60,7 @@ Status: implemented
 
 [V2 到 V3 规范](../../../../packages/session/session-format-v2-to-v3/README.zh.md#system-head)负责系统头节点转换与消息身份；其[引用规则](../../../../packages/session/session-format-v2-to-v3/README.zh.md#sequence-references)和[源拒绝](../../../../packages/session/session-format-v2-to-v3/README.zh.md#source-audit)定义保留内容与不支持的输入。迁移布局与原生请求语义等价，而非与原生录制逐字节相同。有效 V2 源在当前步骤不变量下可能没有保持顺序的转换方式；拒绝它优于移动历史或放宽归属。历史接收坐标不得变为对转换后日志的确认。
 
-[已发布格式策略](2026-08-31-released-session-format-migrations.zh.md)既覆盖 V0、V1、V2，也覆盖 V3。V2-to-V3 转换保留其已发布的语义；已有 V3 代际不会重跑该迁移边。投影缓存版本 4 独立于 Session 格式，并不意味着 Session V4。
+[已发布格式策略](2026-08-31-released-session-format-migrations.zh.md)保留每条已发布转换的语义；已有目标格式代际不会重跑其入边。投影缓存版本独立于 Session 格式版本。
 
 [规范信封规范](../../../../packages/session/session-format-v2-to-v3/README.zh.md#canonical-envelopes)定义与结构转换的组合；[规范信封决策](2026-09-06-v3-canonical-session-envelopes.zh.md)负责严格准入的依据。
 
