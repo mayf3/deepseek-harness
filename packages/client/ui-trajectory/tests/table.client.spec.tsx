@@ -231,7 +231,12 @@ describe('TrajectoryTable', () => {
     expect(panel.querySelector('[data-summary-scroll-region]')).toBeNull()
   })
 
-  it('keeps long thinking collapsed until the user asks to render it', () => {
+  it.each([
+    { outputDetail: undefined, toolCall: false },
+    { outputDetail: 'Visible answer', toolCall: false },
+    { outputDetail: undefined, toolCall: true },
+    { outputDetail: 'Visible answer', toolCall: true },
+  ])('opens thinking with output=$outputDetail and toolCall=$toolCall', ({ outputDetail, toolCall }) => {
     const thinking = 'private chain '.repeat(1_000)
     const turns: readonly TrajectoryTurnModel[] = [{
       turn: 1,
@@ -242,6 +247,10 @@ describe('TrajectoryTable', () => {
           kind: 'message',
           text: 'private chain…',
           thinkingDetail: thinking,
+          outputDetail,
+          sourceBlocks: toolCall ? [{
+            type: 'tool-call', content: '{}', callId: 'call-1', toolName: 'read',
+          }] : undefined,
           timeSeconds: 1,
         }],
       }],
@@ -249,14 +258,19 @@ describe('TrajectoryTable', () => {
     render(<TrajectoryTable turns={turns} {...FOLD_PROPS} />)
 
     fireEvent.click(screen.getByRole('row', { name: /ASSISTANT/ }))
+    fireEvent.click(screen.getByRole('tab', { name: 'Preview' }))
     const toggle = screen.getByRole('button', { name: 'Thinking' })
-    expect(toggle.getAttribute('aria-expanded')).toBe('false')
-    expect(screen.queryByText(thinking)).toBeNull()
-
-    fireEvent.click(toggle)
-    expect(screen.getByRole('button', { name: 'Thinking' })).toBe(toggle)
     expect(toggle.getAttribute('aria-expanded')).toBe('true')
     expect(toggle.parentElement?.textContent?.length).toBeGreaterThan(thinking.length)
+
+    fireEvent.click(toggle)
+    expect(toggle.getAttribute('aria-expanded')).toBe('false')
+    expect(screen.queryByText(thinking)).toBeNull()
+    fireEvent.click(screen.getByRole('tab', { name: 'Summary' }))
+    expect(screen.getByRole('button', { name: 'Thinking' }).getAttribute('aria-expanded')).toBe('false')
+    fireEvent.click(screen.getByRole('tab', { name: 'Preview' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Thinking' }))
+    expect(screen.getByRole('button', { name: 'Thinking' }).getAttribute('aria-expanded')).toBe('true')
   })
 
   it('keeps raw HTML tags in a Markdown-derived context preview', () => {
