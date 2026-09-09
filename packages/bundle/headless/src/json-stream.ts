@@ -141,7 +141,10 @@ export function boundJsonLine(
   return JSON.stringify({ type: bounded.type, truncated: true })
 }
 
-/** Parse raw tool-call arguments as the executor does: empty input is `{}`, invalid JSON stays text. */
+/**
+ * Parse raw tool-call arguments as the executor does: empty input is `{}`,
+ * invalid or non-round-trippable JSON (a non-finite number) stays text.
+ */
 function parseArguments(raw: string): unknown {
   if (raw === '') return {}
   const seen = { nonFinite: false }

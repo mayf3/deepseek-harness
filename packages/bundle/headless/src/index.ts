@@ -265,22 +265,24 @@ async function resolveAgent(
   if (persistence === undefined) {
     throw new Error('headless --session-id requires the sessionPersistence service; the Session would not survive this process')
   }
+  // A later process holds no live Agent and has to find the id through the
+  // query service, so every --session-id run requires it even when this
+  // process already has the identity live.
+  const query = ctx.get('sessionQuery')
+  if (query === undefined) {
+    throw new Error('headless --session-id requires the sessionQuery service; dsh-base provides it')
+  }
   const live = agents.get(sessionId)
   if (live !== undefined) {
     // A live identity skips adoption, not the rules that make adoption safe.
     assertAdoptable(live.session.header, liveEvents(live.session), sessionId)
-    // The service can be mounted while this particular Agent was registered in
-    // memory (a custom factory or direct `agents.register`); the backend then
-    // holds no write handle for it and `session/flush` stores nothing. A stored
-    // record proves the id is actually persistence-backed.
+    // A stored record rules out an Agent registered only in memory, whose
+    // `session/flush` would store nothing; write-handle ownership itself is
+    // not queryable through the persistence contract.
     if (await persistence.stat(sessionId) === undefined) {
       throw new Error(`live session "${sessionId}" has no persisted record, so the one-shot runner cannot promise it survives this process`)
     }
     return live
-  }
-  const query = ctx.get('sessionQuery')
-  if (query === undefined) {
-    throw new Error('headless --session-id requires the sessionQuery service; dsh-base provides it')
   }
   try {
     using observation = await query.observeSession(sessionId)

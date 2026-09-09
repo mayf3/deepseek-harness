@@ -44,6 +44,8 @@ interface BenchOptions {
   sessionId?: string
   json?: boolean
   observe?: () => Promise<ObservationStub>
+  /** Leave the query service unmounted to exercise the fail-loud path. */
+  omitSessionQuery?: boolean
   /** Leave the persistence service unmounted to exercise the fail-loud path. */
   omitPersistence?: boolean
   /** Mount the service but make it report no stored record for any id. */
@@ -174,8 +176,9 @@ async function bench(script: Script, options: BenchOptions = {}): Promise<{
       return { agent, dispose: () => Promise.resolve() }
     },
   })
-  if (options.observe !== undefined) {
-    ctx.provide('sessionQuery', { observeSession: () => options.observe!() } as never)
+  if (options.omitSessionQuery !== true && (options.sessionId !== undefined || options.observe !== undefined)) {
+    const observe = options.observe ?? (() => Promise.reject(new SessionQueryError('missing', 'SESSION_QUERY_SESSION_NOT_FOUND')))
+    ctx.provide('sessionQuery', { observeSession: () => observe() } as never)
   }
   if (options.omitPersistence !== true) {
     ctx.provide('sessionPersistence', {
@@ -670,10 +673,25 @@ describe('headless runner', () => {
   })
 
   it('requires the Session query service for an exact Session identity', async () => {
-    const test = await bench({ afterPrompt: () => {} }, { sessionId: 'session-exact' })
+    const test = await bench({ afterPrompt: () => {} }, { sessionId: 'session-exact', omitSessionQuery: true })
     const result = await test.run()
     expect(result.code).toBe(1)
     expect(result.err).toContain('requires the sessionQuery service')
+    await test.ctx.fiber.dispose()
+  })
+
+  it('requires the Session query service even when a live Agent holds the identity', async () => {
+    const test = await bench({
+      afterPrompt(session, message) { appendTurn(session, 1, message, 'live', true) },
+    }, {
+      sessionId: 'session-exact',
+      prelive: true,
+      omitSessionQuery: true,
+    })
+    const result = await test.run()
+    expect(result.code).toBe(1)
+    expect(result.err).toContain('requires the sessionQuery service')
+    expect(result.out).toBe('')
     await test.ctx.fiber.dispose()
   })
 
