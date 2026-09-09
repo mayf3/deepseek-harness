@@ -54,7 +54,7 @@ kind: "package-library"
 | `JsonTree`、`JsonBlock` | 只读 JSON 查看。 |
 | `MarkdownText`、`CodeBlock` | 不可信 GFM 与 TeX 数学，以及高亮代码。`CodeBlock` 可通过 `lineNumbers` 开启行号；复制的源码不含行号栏。 |
 | `TerminalBlock`、`ReadBlock`、`DiffBlock`、`SearchBlock`、`WebBlock` | 与各类工具结果意图对应的 agent 输出卡片。 |
-| `icons/*`、`FishLogo`、`BrandWordmark`、`ReferenceIcon`、`LinkIcon`、`DocumentFileIcon` | 字形与品牌标识。`LinkIcon` 只用于 14px 的可点击链接分类，`DocumentFileIcon` 只用于没有文件路径可供分类的场景。 |
+| `icons/*`、`FishLogo`、`BrandWordmark`、`ReferenceIcon`、`LinkIcon` | 字形与品牌标识。`LinkIcon` 用于 14px 的可点击链接分类。 |
 | `FileTypeIcon`、`classifyFileType`、`fileExtension` | 按类别着色的 28px 文件或文件夹图形，以及它背后共享的不区分大小写文件名映射。代码与配置文件使用细分的全彩技术图形；链接前置图形使用 `LinkIcon`，图片内容使用图片预览。 |
 
 有三组容易混淆：

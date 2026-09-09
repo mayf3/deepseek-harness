@@ -48,6 +48,7 @@ export function classifyLinkPath(path: string): LinkIconKind {
     case 'markdown':
     case 'other':
     case 'video': return 'other'
+    default: return assertNever(type)
   }
 }
 

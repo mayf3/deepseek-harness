@@ -130,6 +130,7 @@ const EXTENSION_TYPES: Readonly<Record<string, CodeFileType>> = {
   'dart': 'dart',
   'dtd': 'xml',
   'edn': 'clojure',
+  'env': 'env',
   'erl': 'erlang',
   'es6': 'javascript',
   'escript': 'erlang',

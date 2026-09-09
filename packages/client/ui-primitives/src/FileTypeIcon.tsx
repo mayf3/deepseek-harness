@@ -51,7 +51,6 @@ const EXTENSION_TYPES: Readonly<Record<string, ClassifiedFileType>> = {
   vue: 'code',
   svelte: 'code',
   astro: 'code',
-  env: 'code',
   bat: 'code',
   cmd: 'code',
   csv: 'code',

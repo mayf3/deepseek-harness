@@ -12,13 +12,13 @@ Status: implemented
 
 `ui-primitives` 统一拥有一套 Cordis-free 的文件分类与渲染 API。`fileExtension(path)` 对两种路径分隔符采用共享的 basename 与最终点号语义。`classifyFileType(path)` 不区分大小写，并返回闭合的 `FileType` 联合：传统的 `code`、`excel`、`folder`、`html`、`image`、`markdown`、`other`、`pdf`、`ppt`、`video`、`word` 类别，以及由 `CodeFileIcon` 渲染的细分 `CodeFileType` 集合。解析按完整文件名、文件名前缀、文件名后缀、可选项目上下文、扩展名的顺序执行。路径分类器返回 `folder` 之外的全部成员；调用方确认条目是目录时，通过 `FileTypeIcon` 的显式 `kind` 覆盖指定目录。未知扩展名、无扩展名和末尾点号回退到 `other`，但共享表识别 `Dockerfile`、`Makefile`、`package.json`、`.gitignore`、`README`、`CHANGELOG` 等具名文件。
 
-`FileTypeIcon` 接受路径、共享 `IconProps`、可选的显式类型和可选的项目文件快照。传统文件类型把所提供的 28px 文档与文件夹轮廓渲染为 inline SVG。Excel、Markdown、PDF、PPT、Word 的前景标记围绕自身视觉中心缩放至 122%，其余带标记的传统图形使用 112%；文件底板与折角保持源图几何，通用文件不凭空增加中心标记。底板使用实色分类颜色，前景标记与普通折角使用白色，通用文件使用较深的灰色折角。CSS 通过静态设计 token 分配所提供的分类调色板：code/HTML/Markdown 使用 DeepSeek 蓝，Word 使用较浅的 DeepSeek 蓝，Excel 使用绿色，folder/PPT 使用两档琥珀色，PDF 使用红色，未知文件使用中性灰。image 与 video 通过组件本地变量共用所提供的紫色，因为设计平台没有匹配的紫色 token。调用方可通过 `--dsh-file-type-icon-color` 覆盖传统底板颜色。
+`FileTypeIcon` 接受路径、共享 `IconProps`、显式 `kind`和可选的项目文件快照。传统文件类型把所提供的 28px 文档与文件夹轮廓渲染为 inline SVG。Excel、Markdown、PDF、PPT、Word 的前景标记围绕自身视觉中心缩放至 122%，其余带标记的传统图形使用 112%；文件底板与折角保持源图几何，通用文件不凭空增加中心标记。底板使用实色分类颜色，前景标记与普通折角使用白色，通用文件使用较深的灰色折角。CSS 通过静态设计 token 分配所提供的分类调色板：code/HTML/Markdown 使用 DeepSeek 蓝，Word 使用较浅的 DeepSeek 蓝，Excel 使用绿色，folder/PPT 使用两档琥珀色，PDF 使用红色，未知文件使用中性灰。image 与 video 通过组件本地变量共用所提供的紫色，因为设计平台没有匹配的紫色 token。调用方可通过 `--dsh-file-type-icon-color` 覆盖传统底板颜色。
 
-已识别的代码与配置文件把对应的 20px 方形图稿缩放到请求的图标尺寸。这些技术标记保留自身内嵌的多色填充，是普通 current-color 图标规则的明确例外。映射让 React 优先于 TypeScript/JavaScript、Angular 文件名后缀优先于基础扩展名，并按文件名识别 Docker/Node/Git/Make/CMake；只有可选项目快照包含内容带 `flutter:` 的 `pubspec.yaml` 时才选择 Flutter。Markdown 与 SVG 仍由传统 Markdown 和图片类别拥有。所有传统与技术 SVG 都是 `aria-hidden` 的，拥有文件身份的卡片、行或按钮提供无障碍名称。
+已识别的代码与配置文件把对应的 20px 方形图稿缩放到请求的图标尺寸。这些技术标记保留自身内嵌的多色填充，是普通 current-color 图标规则的明确例外。映射让 React 优先于 TypeScript/JavaScript、Angular 文件名后缀优先于基础扩展名，并按文件名识别 Docker/Node/Git/Make/CMake；只有可选项目快照包含内容带 `flutter:` 的 `pubspec.yaml` 时才选择 Flutter。Markdown 与 SVG 仍由传统 Markdown 和图片类别拥有。CSV 和 TSV 在文件卡片、文件行及预览标题中使用 code 图标，其可点击链接也使用 code。`.env` 和以 `.env` 结尾的文件名均使用环境配置图标。所有传统与技术 SVG 都是 `aria-hidden` 的，拥有文件身份的卡片、行或按钮提供无障碍名称。
 
 `LinkIcon` 委托 `classifyFileType` 做扩展名分类，再把精细结果折叠进原有链接词汇：code 与 HTML 使用 `code`，图片使用 `image`，PDF/Word/Excel/PPT 使用 `document`，Markdown、video 与未知文件使用 `other`。无扩展名文件在链接语境中仍是 `other`，因此[可点击链接决策](2026-09-04-web-clickable-link-styles.zh.md)定义的 14px 外观不变。
 
-附件上传卡片、已发送消息文件卡片、排队文件行和工作区文件行渲染 `FileTypeIcon`。显式交付卡片也使用 28px 的 `FileTypeIcon`，并通过 `fileExtension` 提供默认元数据。两处元数据行使用 `fileExtension`，不再保留本地解析器；`.env` 这样的前导点 basename 会显示 `ENV`，无后缀或末尾点号则不显示扩展名 label。图片内容继续渲染为预览而不是文件类型图形，产物文件链接与 Markdown 文件提及继续使用 `LinkIcon`，因为它们属于链接表面。
+附件上传卡片、已发送消息文件卡片、排队文件行和工作区文件行渲染 `FileTypeIcon`。Files 标签页标题使用显式的 `folder` 类别，尺寸为 16px。显式交付卡片也使用 28px 的 `FileTypeIcon`，并通过 `fileExtension` 提供默认元数据。两处元数据行使用 `fileExtension`，不再保留本地解析器；`.env` 这样的前导点 basename 会显示 `ENV`，无后缀或末尾点号则不显示扩展名 label。图片内容继续渲染为预览而不是文件类型图形，产物文件链接与 Markdown 文件提及继续使用 `LinkIcon`，因为它们属于链接表面。
 
 ## 备选方案
 
