@@ -1,5 +1,5 @@
 import clsx from 'clsx'
-import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react'
 import type {
   CSSProperties,
   KeyboardEvent as ReactKeyboardEvent,
@@ -63,6 +63,105 @@ type JsonPath = readonly (number | string)[]
 interface RowTarget {
   path: JsonPath
   value: unknown
+}
+
+type CopyMode = 'json' | 'path' | 'prettyJson' | 'value'
+
+interface CopySnapshot {
+  id: string
+  target: RowTarget
+  state: 'idle' | 'copied' | 'failed'
+  menuOpen: boolean
+}
+
+/** Notify only the old and new row actions; JSON values do not subscribe to hover state. */
+function createCopyStore() {
+  let current: CopySnapshot | undefined
+  const listeners = new Map<string, Set<() => void>>()
+  return {
+    get: () => current,
+    set(next: CopySnapshot | undefined) {
+      const previous = current?.id
+      current = next
+      for (const id of new Set([previous, next?.id])) {
+        if (id === undefined) continue
+        for (const listener of listeners.get(id) ?? []) listener()
+      }
+    },
+    subscribe(id: string, listener: () => void) {
+      let row = listeners.get(id)
+      if (row === undefined) listeners.set(id, row = new Set())
+      row.add(listener)
+      return () => {
+        row.delete(listener)
+        if (row.size === 0) listeners.delete(id)
+      }
+    },
+  }
+}
+
+function JsonCopyAction({ store, target, persistent, labels, onCopy, onClose }: {
+  store: ReturnType<typeof createCopyStore>
+  target: RowTarget
+  persistent: boolean
+  labels: JsonTreeLabels
+  onCopy: (target: RowTarget, mode: CopyMode) => Promise<void>
+  onClose: () => void
+}) {
+  const id = pathId(target.path)
+  const subscribe = useCallback((listener: () => void) => store.subscribe(id, listener), [id, store])
+  const getSnapshot = () => {
+    const current = store.get()
+    return current?.id === id ? current : undefined
+  }
+  const snapshot = useSyncExternalStore(subscribe, getSnapshot, getSnapshot)
+  const buttonRef = useRef<HTMLButtonElement>(null)
+  const state = snapshot?.state ?? 'idle'
+  const object = typeof target.value === 'object' && target.value !== null
+  const copyTitle = state === 'copied'
+    ? labels.copied
+    : state === 'failed'
+      ? labels.copyFailed
+      : object ? labels.copyPrettyJson : labels.copyValue
+  return (
+    <span className={css.copySlot}>
+      {(persistent || snapshot !== undefined) && (
+        <Menu
+          open={snapshot?.menuOpen === true}
+          compact
+          portal
+          align="end"
+          anchor={(
+            <button
+              ref={buttonRef}
+              type="button"
+              className={css.actionButton}
+              data-json-copy-button
+              data-state={state}
+              aria-label={copyTitle}
+              title={labels.copyButtonTitle(copyTitle)}
+              onClick={() => void onCopy(target, object ? 'prettyJson' : 'value')}
+              onContextMenu={(event) => {
+                event.preventDefault()
+                event.stopPropagation()
+                store.set({ id, target, state, menuOpen: true })
+              }}
+            >
+              {state === 'copied'
+                ? <IconCheckOutline16 size={12} />
+                : <IconCopyOutline16 size={12} />}
+            </button>
+          )}
+          items={object ? objectCopyMenuItems(labels) : valueCopyMenuItems(labels)}
+          onSelect={(mode) => {
+            void onCopy(target, mode as CopyMode)
+          }}
+          onClose={onClose}
+          getAnchorRect={() => (buttonRef.current as HTMLButtonElement).getBoundingClientRect()}
+        />
+      )}
+    </span>
+  )
 }
 
 function isExpandableValue(value: unknown): value is object | unknown[] {
@@ -273,6 +372,8 @@ function JsonString({
   useLayoutEffect(() => {
     if (!expanded) return
     const raw = rawRef.current as HTMLPreElement
+    // Keep raw text within the window and clipping ancestors outside the tree.
+    // Capture scrolling because an ancestor can move the string without resizing it.
     const clips: HTMLElement[] = []
     const tree = raw.closest<HTMLElement>(`.${css.root}`) as HTMLElement
     for (let parent = tree.parentElement; parent !== null; parent = parent.parentElement) {
@@ -292,13 +393,13 @@ function JsonString({
       raw.style.maxHeight = `${Math.max(16, available - 4)}px`
     }
     measure()
-    const observer = new ResizeObserver(measure)
-    observer.observe(raw)
-    for (const clip of clips) observer.observe(clip)
+    const observer = typeof ResizeObserver === 'undefined' ? undefined : new ResizeObserver(measure)
+    observer?.observe(raw)
+    for (const clip of clips) observer?.observe(clip)
     window.addEventListener('resize', measure)
     window.addEventListener('scroll', measure, true)
     return () => {
-      observer.disconnect()
+      observer?.disconnect()
       window.removeEventListener('resize', measure)
       window.removeEventListener('scroll', measure, true)
     }
@@ -319,6 +420,7 @@ function JsonString({
         >
           {value}
         </pre>
+        {!lastElement && <span className={css.punctuation}>,</span>}
         <div className={css.stringActions}>
           {stringWrapping !== undefined && (
             <button
@@ -539,7 +641,7 @@ function formattedPath(path: JsonPath): string {
   }, '$')
 }
 
-function copyText(target: RowTarget, mode: 'json' | 'path' | 'prettyJson' | 'value'): string {
+function copyText(target: RowTarget, mode: CopyMode): string {
   if (mode === 'path') return formattedPath(target.path)
   if (mode === 'prettyJson') return JSON.stringify(target.value, null, 2)
   if (mode === 'json') return JSON.stringify(target.value)
@@ -604,12 +706,9 @@ export function JsonTree({
       : pathId([Array.isArray(data) ? firstExpandableIndex : firstExpandableEntry[0]])
     : isExpandableValue(data) && rootEntries.length > 0 ? pathId([]) : null
   const activeRowRef = useRef<HTMLElement>()
-  const copyButtonRef = useRef<HTMLButtonElement | null>(null)
-  const copyMenuOpenRef = useRef(false)
   const resetTimer = useRef<ReturnType<typeof setTimeout>>()
-  const [copyTarget, setCopyTarget] = useState<RowTarget>()
-  const [copyState, setCopyState] = useState<'idle' | 'copied' | 'failed'>('idle')
-  const [copyMenuOpen, setCopyMenuOpen] = useState(false)
+  const copySequence = useRef(0)
+  const [copyStore] = useState(createCopyStore)
   const [tabStopId, setTabStopId] = useState<string | null>(initialTabStopId)
 
   const setActiveRow = (row: HTMLElement | undefined) => {
@@ -619,113 +718,65 @@ export function JsonTree({
   }
 
   const clearCopyTarget = () => {
+    copySequence.current += 1
+    if (resetTimer.current !== undefined) clearTimeout(resetTimer.current)
     setActiveRow(undefined)
-    setCopyTarget(undefined)
-    setCopyState('idle')
-    copyMenuOpenRef.current = false
-    setCopyMenuOpen(false)
+    copyStore.set(undefined)
   }
 
   useEffect(() => () => {
+    copySequence.current += 1
     if (resetTimer.current !== undefined) clearTimeout(resetTimer.current)
     activeRowRef.current?.removeAttribute('data-json-copy-active')
   }, [])
 
   useEffect(() => {
-    activeRowRef.current?.removeAttribute('data-json-copy-active')
-    activeRowRef.current = undefined
-    copyMenuOpenRef.current = false
-    setCopyTarget(undefined)
-    setCopyState('idle')
-    setCopyMenuOpen(false)
+    clearCopyTarget()
     setTabStopId(initialTabStopId)
   }, [data, expandTopLevel, initialTabStopId])
 
   const handleRowHover = (row: HTMLElement, target: RowTarget) => {
-    if (!copyable || copyMenuOpenRef.current) return
+    if (!copyable || copyStore.get()?.menuOpen) return
     if (activeRowRef.current === row) return
     setActiveRow(row)
-    setCopyState('idle')
-    copyMenuOpenRef.current = false
-    setCopyMenuOpen(false)
-    setCopyTarget(target)
+    copyStore.set({ id: pathId(target.path), target, state: 'idle', menuOpen: false })
   }
 
   const handleRootMouseOver = (event: ReactMouseEvent<HTMLDivElement>) => {
-    if (!copyable || copyMenuOpenRef.current) return
+    if (!copyable || copyStore.get()?.menuOpen) return
     /* v8 ignore next -- browser mouse events delivered through React target an Element. */
     if (!(event.target instanceof Element)) return
     if (event.target.closest('[data-json-copy-button]') === null) clearCopyTarget()
   }
 
-  const copy = async (target: RowTarget, mode: 'json' | 'path' | 'prettyJson' | 'value') => {
-    setCopyTarget(target)
+  const copy = async (target: RowTarget, mode: CopyMode) => {
+    const sequence = ++copySequence.current
+    const snapshot: CopySnapshot = {
+      id: pathId(target.path), target, state: 'idle', menuOpen: false,
+    }
+    copyStore.set(snapshot)
+    let state: CopySnapshot['state']
     try {
       await navigator.clipboard.writeText(copyText(target, mode))
-      setCopyState('copied')
+      state = 'copied'
     } catch {
-      setCopyState('failed')
+      state = 'failed'
     }
+    const current = copyStore.get()
+    if (sequence !== copySequence.current || current?.target !== target) return
+    copyStore.set({ ...current, state })
     if (resetTimer.current !== undefined) clearTimeout(resetTimer.current)
-    resetTimer.current = setTimeout(() => { setCopyState('idle') }, 1_500)
+    resetTimer.current = setTimeout(() => {
+      const current = copyStore.get()
+      if (current?.target === target) copyStore.set({ ...current, state: 'idle' })
+    }, 1_500)
   }
 
   const [rootOpen, rootClose] = bracketOf(data)
-  const renderCopy = copyable ? (target: RowTarget, persistent = false) => {
-    const active = copyTarget !== undefined && pathId(copyTarget.path) === pathId(target.path)
-    const state = active ? copyState : 'idle'
-    const object = typeof target.value === 'object' && target.value !== null
-    const copyTitle = state === 'copied'
-      ? labels.copied
-      : state === 'failed'
-        ? labels.copyFailed
-        : object ? labels.copyPrettyJson : labels.copyValue
-    return (
-      <span className={css.copySlot}>
-        {(persistent || active) && (
-          <Menu
-            open={active && copyMenuOpen}
-            compact
-            portal
-            align="end"
-            anchor={(
-              <button
-                type="button"
-                className={css.actionButton}
-                data-json-copy-button
-                data-state={state}
-                aria-label={copyTitle}
-                title={labels.copyButtonTitle(copyTitle)}
-                onClick={() => void copy(target, object ? 'prettyJson' : 'value')}
-                onContextMenu={(event) => {
-                  event.preventDefault()
-                  event.stopPropagation()
-                  copyButtonRef.current = event.currentTarget
-                  setCopyTarget(target)
-                  copyMenuOpenRef.current = true
-                  setCopyMenuOpen(true)
-                }}
-              >
-                {state === 'copied'
-                  ? <IconCheckOutline16 size={12} />
-                  : <IconCopyOutline16 size={12} />}
-              </button>
-            )}
-            items={object ? objectCopyMenuItems(labels) : valueCopyMenuItems(labels)}
-            onSelect={(id) => {
-              void copy(target, id as 'json' | 'path' | 'prettyJson' | 'value')
-              copyMenuOpenRef.current = false
-              setCopyMenuOpen(false)
-            }}
-            onClose={clearCopyTarget}
-            getAnchorRect={() => (
-              copyButtonRef.current as HTMLButtonElement
-            ).getBoundingClientRect()}
-          />
-        )}
-      </span>
-    )
-  } : undefined
+  const renderCopy = copyable ? (target: RowTarget, persistent = false) => (
+    <JsonCopyAction store={copyStore} target={target} persistent={persistent} labels={labels}
+      onCopy={copy} onClose={clearCopyTarget} />
+  ) : undefined
 
   return (
     <div
@@ -733,7 +784,7 @@ export function JsonTree({
       style={{ '--json-tree-collapsed-lines': collapsedStringLines } as CSSProperties}
       onMouseOver={handleRootMouseOver}
       onMouseLeave={() => {
-        if (!copyMenuOpenRef.current) clearCopyTarget()
+        if (!copyStore.get()?.menuOpen) clearCopyTarget()
       }}
     >
       {expandTopLevel
