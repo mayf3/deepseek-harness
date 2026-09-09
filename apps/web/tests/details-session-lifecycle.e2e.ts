@@ -16,8 +16,8 @@ const SNAPSHOT_DIR = fileURLToPath(new URL('../../../snapshots/web/details-sessi
 const HANDLES_EXPECTED = join(SNAPSHOT_DIR, 'handles.expected.md')
 const SIDEBAR_EXPECTED = join(SNAPSHOT_DIR, 'sidebar.expected.md')
 const SHOT_DIR = fileURLToPath(new URL('../../../.artifacts/screenshots/0907-sidebar-rules', import.meta.url))
-const FIXTURE = fileURLToPath(new URL('../../../snapshots/web/lifecycle-chrome/session.v2.jsonl', import.meta.url))
-const SEED_FIXTURE = fileURLToPath(new URL('../../../snapshots/web/seeded-history/session.v2.jsonl', import.meta.url))
+const FIXTURE = fileURLToPath(new URL('../../../snapshots/web/lifecycle-chrome/session.v3.jsonl', import.meta.url))
+const SEED_FIXTURE = fileURLToPath(new URL('../../../snapshots/web/seeded-history/session.v3.jsonl', import.meta.url))
 const PROMPT = 'Reply with the single word LIGHTHOUSE and stop.'
 const MODE = webSnapshotMode()
 
@@ -226,11 +226,15 @@ describe.skipIf(MODE === 'record')('web e2e: details panel follows the current S
       await page.locator('[data-sidebar-right-expand]').click()
       await expect.poll(() => column.locator('[data-sidebar-right-open]').count()).toBe(1)
       await expect.poll(() => columns(page)).toEqual(normalColumns)
+      // The panel's slide completes independently of the frame's grid tracks.
+      await expect.poll(() => panel.evaluate(element => getComputedStyle(element).transform))
+        .toBe('none')
     }
     const close = async (): Promise<void> => {
       await column.locator('[data-sidebar-right-toggle]').click()
       await expect.poll(() => column.locator('[data-sidebar-right-open]').count()).toBe(0)
       await expect.poll(() => detailsTrack(page)).toBe(0)
+      await panel.waitFor({ state: 'hidden' })
     }
 
     await select(original, 'LIGHTHOUSE')
@@ -239,8 +243,10 @@ describe.skipIf(MODE === 'record')('web e2e: details panel follows the current S
     // CSS width assigned by the grid solver.
     await expect.poll(() => sidebarSnapshot(page), { timeout: 5_000 })
       .toMatchObject({ mode: 'push', panelContentWidth: normalWidth, panelOuterWidth: normalWidth + 1, resizeHandleWidth: 8 })
-    await column.locator('[data-sidebar-right-guide-entry="files"]').click()
-    await column.locator('[data-files-state="tree"]').waitFor({ timeout: 15_000 })
+    await expect.poll(async () => ({
+      filesVisible: await column.locator('[data-files-state="tree"]').isVisible(),
+      errors: tripwire.pageErrors,
+    })).toEqual({ filesVisible: true, errors: [] })
     await column.locator('[data-dockkit-add-tab]').click()
     const split = column.locator('[data-dockkit-split-button]').first()
     await expect.poll(() => split.isDisabled()).toBe(false)
@@ -249,7 +255,7 @@ describe.skipIf(MODE === 'record')('web e2e: details panel follows the current S
     await panes.first().locator('[data-dockkit-tab]').filter({ hasText: 'Files' }).click()
     await expect.poll(() => panes.first().locator('[data-files-state="tree"]').count()).toBe(1)
     const retainedA = await paneSnapshot(page)
-    expect(retainedA.map(pane => pane.tabs.map(tab => tab.title))).toEqual([['Files', 'Start'], ['Start']])
+    expect(retainedA.map(pane => pane.tabs.map(tab => tab.title))).toEqual([['Files', 'Start'], ['Files']])
     await checkpoint('A normal: two panes')
 
     await column.locator('[data-sidebar-right-mode="fullscreen"]').click()
@@ -268,7 +274,7 @@ describe.skipIf(MODE === 'record')('web e2e: details panel follows the current S
     await expect.poll(() => detailsTrack(page)).toBe(0)
     await open()
     expect(await panel.getAttribute('data-sidebar-right-panel')).toBe('push')
-    await column.locator('[data-sidebar-right-guide-entry="files"]').click()
+    await column.locator('[data-files-state="tree"]').waitFor({ timeout: 15_000 })
     const workspaceDirectory = column.locator('[data-files-entry="directory"] > button').filter({ hasText: /^workspace$/ })
     await workspaceDirectory.waitFor({ timeout: 15_000 })
     await workspaceDirectory.click()

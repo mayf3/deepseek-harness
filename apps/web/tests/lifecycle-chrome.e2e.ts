@@ -15,7 +15,7 @@ import { fileURLToPath } from 'node:url'
 import { join } from 'node:path'
 import type { Browser, Page, WebSocketRoute } from 'playwright'
 import { chromium } from 'playwright'
-import { afterAll, beforeAll, describe, expect, it, onTestFailed } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it, onTestFailed, onTestFinished } from 'vitest'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import {
   acknowledgeReloadConnectionLoss, assertFixtureInventory, captureExpandedTurnProcessAria,
@@ -27,7 +27,7 @@ import {
 } from './support.ts'
 
 const SNAPSHOT_DIR = fileURLToPath(new URL('../../../snapshots/web/lifecycle-chrome', import.meta.url))
-const FIXTURE = join(SNAPSHOT_DIR, 'session.v2.jsonl')
+const FIXTURE = join(SNAPSHOT_DIR, 'session.v3.jsonl')
 const REPLAY_OVERRIDE = join(SNAPSHOT_DIR, 'replay.override.json')
 const HERO_EXPECTED = join(SNAPSHOT_DIR, 'hero.expected.md')
 const COMMAND_MENU_EXPECTED = join(SNAPSHOT_DIR, 'command-menu.expected.md')
@@ -72,10 +72,17 @@ describe('web e2e: lifecycle & chrome (workspace flow / reload / dark mode)', ()
 
   it.skipIf(MODE === 'record')('opens the shared slash menu from plus with only Command candidates', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-command-menu-launcher'))
+    const input = page.locator('[data-composer-input]').first()
+    onTestFinished(async () => {
+      await input.press('Escape')
+      await writeComposerDraft(page, input, '')
+      await page.getByRole('listbox', { name: 'Trigger suggestions' }).waitFor({ state: 'hidden' })
+    })
     const launcher = page.getByRole('button', { name: 'Commands' })
     await launcher.click()
     const menu = page.getByRole('listbox', { name: 'Trigger suggestions' })
-    await menu.waitFor({ timeout: 10_000 })
+    await menu.getByRole('option').first().waitFor({ timeout: 10_000 })
+    await menu.getByRole('status').waitFor({ state: 'hidden', timeout: 10_000 })
     const snapshot = await captureStableAria(page, '[role="listbox"]', scaffold.workspaceCwd)
     await compareOrRefreshGolden(COMMAND_MENU_EXPECTED, snapshot, MODE)
     expect(snapshot).toContain('text: Commands')
@@ -84,9 +91,9 @@ describe('web e2e: lifecycle & chrome (workspace flow / reload / dark mode)', ()
     const launchedBox = await menu.boundingBox()
     await page.locator('[data-composer-input]').first().press('Escape')
     await expect.poll(() => menu.count()).toBe(0)
-    const input = page.locator('[data-composer-input]').first()
     await writeComposerDraft(page, input, '/')
-    await menu.waitFor({ timeout: 10_000 })
+    await menu.getByRole('option').first().waitFor({ timeout: 10_000 })
+    await menu.getByRole('status').waitFor({ state: 'hidden', timeout: 10_000 })
     const typedBox = await menu.boundingBox()
     expect(launchedBox).not.toBeNull()
     expect(typedBox).not.toBeNull()
@@ -114,7 +121,8 @@ describe('web e2e: lifecycle & chrome (workspace flow / reload / dark mode)', ()
       const launcher = zhPage.getByRole('button', { name: '指令' })
       await launcher.click()
       const menu = zhPage.getByRole('listbox', { name: '触发候选建议' })
-      await menu.waitFor({ timeout: 10_000 })
+      await menu.getByRole('option').first().waitFor({ timeout: 10_000 })
+      await menu.getByRole('status').waitFor({ state: 'hidden', timeout: 10_000 })
       const snapshot = await captureStableAria(zhPage, '[role="listbox"]', scaffold.workspaceCwd)
       await compareOrRefreshGolden(COMMAND_MENU_ZH_EXPECTED, snapshot, MODE)
       expect(zhTripwire.pageErrors).toEqual([])
@@ -205,6 +213,17 @@ describe('web e2e: lifecycle & chrome (workspace flow / reload / dark mode)', ()
     const observeTurn = async () => {
       const originalViewport = page.viewportSize() ?? { width: 1680, height: 1000 }
       if (MODE !== 'record') await page.setViewportSize({ width: 480, height: 1000 })
+      const observedReasoning = Promise.withResolvers<undefined>()
+      const releaseStream = MODE === 'record' ? undefined : scaffold.ctx.on('llm/stream', async function* (_options, next) {
+        let reasoning = false
+        for await (const chunk of next()) {
+          if (reasoning && chunk.type !== 'reasoning-delta') {
+            await observedReasoning.promise
+          }
+          if (chunk.type === 'reasoning-delta') reasoning = true
+          yield chunk
+        }
+      })
       try {
         await input.press('Enter')
         if (MODE !== 'record') {
@@ -220,8 +239,11 @@ describe('web e2e: lifecycle & chrome (workspace flow / reload / dark mode)', ()
             })
           }, { timeout: 10_000, interval: 10 }).toBe(true)
         }
+        observedReasoning.resolve(undefined)
         return await settled
       } finally {
+        observedReasoning.resolve(undefined)
+        releaseStream?.()
         if (MODE !== 'record') await page.setViewportSize(originalViewport)
       }
     }
@@ -443,7 +465,7 @@ describe('web e2e: lifecycle & chrome (workspace flow / reload / dark mode)', ()
   it.skipIf(MODE === 'record')('keeps the fixture inventory closed', async () => {
     expect(tripwire.warnings).toEqual([])
     await assertFixtureInventory(SNAPSHOT_DIR, [
-      'session.v2.jsonl', 'replay.override.json', 'command-menu.expected.md',
+      'session.v3.jsonl', 'replay.override.json', 'command-menu.expected.md',
       'command-menu-fuzzy.expected.md', 'command-menu-zh.expected.md', 'connection-error.expected.md',
       'hero.expected.md', 'plan-active.expected.md',
       'reloaded.expected.md', 'reloaded-expanded.expected.md',

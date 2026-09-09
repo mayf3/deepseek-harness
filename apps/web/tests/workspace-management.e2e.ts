@@ -28,7 +28,7 @@ import { newEnglishPage, saveFailureShot } from './support.ts'
 const SNAPSHOT_DIR = fileURLToPath(new URL('../../../snapshots/web/workspace-management', import.meta.url))
 // The seed is another scenario's committed fixture, reused read-only: this
 // spec needs any one cold session row, not new recorded content.
-const SEED = fileURLToPath(new URL('../../../snapshots/web/seeded-history/session.v2.jsonl', import.meta.url))
+const SEED = fileURLToPath(new URL('../../../snapshots/web/seeded-history/session.v3.jsonl', import.meta.url))
 const MODE = webSnapshotMode()
 const BROWSER_EXPECTED = join(SNAPSHOT_DIR, 'directory-browser.expected.md')
 const SEED_ID = 'workspace-management-web-e2e'
@@ -57,7 +57,10 @@ describe('web e2e: workspace management (create / rename / flat view / hover aff
     await dialog.getByRole('button', { name: 'Edit path' }).click()
     const pathInput = dialog.locator('input[aria-label="Edit path"]')
     await pathInput.fill(path)
-    await pathInput.press('Enter')
+    // Enter's keydown can retire the editor before keyup; target the focused keyboard, not that retiring node.
+    await page.keyboard.press('Enter')
+    await pathInput.waitFor({ state: 'detached', timeout: 10_000 })
+    await dialog.getByRole('button', { name: 'Edit path', exact: true }).waitFor()
     return dialog
   }
 
@@ -85,9 +88,8 @@ describe('web e2e: workspace management (create / rename / flat view / hover aff
   }
 
   /**
-   * Adopt an existing directory, waiting for the adoption to settle host-side
-   * (workspace registered + the flow's New-Session agent up), so later test
-   * steps can't race the in-flight blank-session attach.
+   * Adopt an existing directory. Fresh-agent callers also wait for the
+   * browser's Session switch and composer focus before starting another flow.
    */
   async function adoptDirectory(path: string, options: { waitForAgent?: boolean } = {}): Promise<void> {
     const agentsBefore = scaffold.ctx.agents.list().length
@@ -105,6 +107,13 @@ describe('web e2e: workspace management (create / rename / flat view / hover aff
     if (options.waitForAgent === true) {
       await expect.poll(() => scaffold.ctx.agents.list().length, { timeout: 10_000 })
         .toBeGreaterThan(agentsBefore)
+      // Host publication precedes the create RPC response. A late Session
+      // switch focuses the composer and cancels an open path editor on blur.
+      await expect.poll(
+        () => page.locator('[data-composer-input][contenteditable="true"]')
+          .evaluate(element => element === document.activeElement),
+        { timeout: 10_000 },
+      ).toBe(true)
     }
   }
 

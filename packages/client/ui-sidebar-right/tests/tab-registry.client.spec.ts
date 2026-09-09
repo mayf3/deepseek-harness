@@ -11,6 +11,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { SidebarRightTabRegistry } from '../src/client/tab-registry.ts'
 import type { SidebarRightTabDefinition } from '../src/client/tab-registry.ts'
+import { defaultSeed } from '../src/client/contract/seed.ts'
 
 /** A type recognizing `patterns`, titled by its kind. */
 function typeFor(
@@ -27,6 +28,11 @@ function ranked(registry: SidebarRightTabRegistry, address: string): string[] {
 }
 
 describe('SidebarRightTabRegistry — recognition', () => {
+  it('rejects default-page resolution when the selected kind is not registered', () => {
+    expect(() => defaultSeed(new SidebarRightTabRegistry(new Context())))
+      .toThrow('default tab kind "guide" is not registered')
+  })
+
   it('matches a pattern containing ":" against the whole address', () => {
     const registry = new SidebarRightTabRegistry(new Context())
     registry.register(typeFor('guide', ['sidebar://guide']))

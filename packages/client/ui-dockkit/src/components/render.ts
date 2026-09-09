@@ -27,6 +27,8 @@ export interface PaneCallbacks {
   readonly hideSplitAtCapacity?: boolean
   /** Whether a pane's strip draws the add control. */
   readonly canAddTab: (paneId: PaneId) => boolean
+  /** Whether a tab's chip and menu offer close. */
+  readonly canCloseTab: (tabId: TabId) => boolean
   /** Live drop preview, or `undefined` while nothing is being dragged. */
   readonly dropTarget: DropTarget | undefined
   /** Show both horizontal landing regions while a body split is being targeted. */

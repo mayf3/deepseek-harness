@@ -22,8 +22,8 @@ const MODE = webSnapshotMode()
 const SNAPSHOT_DIR = fileURLToPath(new URL('../../../snapshots/web/workflow-run', import.meta.url))
 const UI_LIVE_EXPECTED = join(SNAPSHOT_DIR, 'ui-live.expected.md')
 const UI_EXPECTED = join(SNAPSHOT_DIR, 'ui.expected.md')
-const PARENT_FIXTURE = join(REPO_ROOT, 'snapshots/session/workflow-run/session.v2.jsonl')
-const CHILD_FIXTURE = join(REPO_ROOT, 'snapshots/session/workflow-run/session.1.v2.jsonl')
+const PARENT_FIXTURE = join(REPO_ROOT, 'snapshots/session/workflow-run/session.v3.jsonl')
+const CHILD_FIXTURE = join(REPO_ROOT, 'snapshots/session/workflow-run/session.1.v3.jsonl')
 const CHILD_PROMPT = 'Reply with exactly the word WF_CHILD_OK and nothing else.'
 
 describe.skipIf(MODE === 'record')('web e2e: durable workflow run in Chat', () => {
@@ -114,11 +114,13 @@ describe.skipIf(MODE === 'record')('web e2e: durable workflow run in Chat', () =
     await runDisclosure.press('Space')
     expect(await disclosures.count()).toBe(2)
     expect(await phaseDisclosure.getAttribute('aria-expanded')).toBe('true')
-    await member.focus()
-
     const lightColor = await member.locator('[data-member-label]').evaluate(element => getComputedStyle(element).color)
     await page.setViewportSize({ width: 560, height: 800 })
     await page.evaluate(() => { document.body.setAttribute('data-ds-dark-theme', '') })
+    // Exercise keyboard focus after the responsive layout has changed.
+    await phaseDisclosure.focus()
+    await phaseDisclosure.press('Tab')
+    await expect.poll(() => member.evaluate(element => element.matches(':focus-visible'))).toBe(true)
     const darkNarrow = await page.locator('[data-workflow-run]').evaluate((element) => {
       const panel = element as HTMLElement
       panel.style.width = '356px'
