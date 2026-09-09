@@ -14,8 +14,11 @@ import type { SessionEvent } from '@deepseek-ai/dsh-session'
 /** Default per-string and per-key cap applied to every bounded projected payload. */
 export const MAX_STRING_BYTES = 8 * 1024
 
-/** Default cap on one projected event's serialized bytes; the terminal `final` is exempt. */
+/** Default cap on one projected event's serialized bytes, newline included; the terminal `final` is exempt. */
 export const MAX_EVENT_BYTES = 32 * 1024
+
+/** Bytes every newline-delimited writer appends after one serialized event. */
+const LINE_TERMINATOR_BYTES = 1
 
 /** The stdout sink a projection writes newline-delimited events to. */
 export interface JsonSink {
@@ -115,12 +118,14 @@ function boundJsonEvent(
 
 /**
  * Serialize one projected payload under both limits: every string and key is
- * capped at `maxStringBytes`, and the serialized line at `maxEventBytes`. When
- * the line is still too long, scalar fields survive and structured fields are
- * dropped; when even those are too long, only `type` and `truncated` remain.
+ * capped at `maxStringBytes`, and the serialized line at `maxEventBytes`. The
+ * line cap reserves the newline the writer appends, so the complete record
+ * stays within it. When the line is still too long, scalar fields survive and
+ * structured fields are dropped; when even those are too long, only `type` and
+ * `truncated` remain.
  * @param event - the event payload to serialize.
  * @param maxStringBytes - per-string and per-key byte cap.
- * @param maxEventBytes - cap on the serialized line.
+ * @param maxEventBytes - cap on the serialized line plus its trailing newline.
  * @returns the bounded JSON line, without a trailing newline.
  */
 export function boundJsonLine(
@@ -128,16 +133,17 @@ export function boundJsonLine(
   maxStringBytes: number = MAX_STRING_BYTES,
   maxEventBytes: number = MAX_EVENT_BYTES,
 ): string {
+  const limit = maxEventBytes - LINE_TERMINATOR_BYTES
   const bounded = boundJsonEvent(event, maxStringBytes)
   const line = JSON.stringify(bounded)
-  if (Buffer.byteLength(line, 'utf8') <= maxEventBytes) return line
+  if (Buffer.byteLength(line, 'utf8') <= limit) return line
   const scalars = Object.create(null) as Record<string, unknown>
   for (const [key, value] of Object.entries(bounded)) {
     if (value === null || typeof value !== 'object') scalars[key] = value
   }
   scalars.truncated = true
   const short = JSON.stringify(scalars)
-  if (Buffer.byteLength(short, 'utf8') <= maxEventBytes) return short
+  if (Buffer.byteLength(short, 'utf8') <= limit) return short
   return JSON.stringify({ type: bounded.type, truncated: true })
 }
 

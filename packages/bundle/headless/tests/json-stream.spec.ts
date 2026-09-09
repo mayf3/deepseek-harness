@@ -276,8 +276,16 @@ describe('--json projection', () => {
 
   it('caps an error line even when control characters expand under JSON escaping', () => {
     const line = boundJsonLine({ type: 'error', message: '\u0000'.repeat(MAX_STRING_BYTES) })
-    expect(Buffer.byteLength(line, 'utf8')).toBeLessThanOrEqual(32 * 1024)
+    expect(Buffer.byteLength(line, 'utf8') + 1).toBeLessThanOrEqual(32 * 1024)
     expect(JSON.parse(line)).toEqual({ type: 'error', truncated: true })
+  })
+
+  it('reserves the trailing newline inside the whole-line cap', () => {
+    // A 64-byte line exactly fills a 64-byte cap; the writer's newline must
+    // force the scalar fallback rather than write 65 bytes.
+    const line = boundJsonLine({ type: 'text', text: 'x'.repeat(39) }, 4096, 64)
+    expect(Buffer.byteLength(line, 'utf8') + 1).toBeLessThanOrEqual(64)
+    expect(JSON.parse(line)).toEqual({ type: 'text', truncated: true })
   })
 
   it('cuts a payload that nests past the depth budget instead of overflowing the stack', () => {
