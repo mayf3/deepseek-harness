@@ -73,6 +73,18 @@ describe('dsh path helpers', () => {
     }
   })
 
+  it('resolves configured cache homes before the environment', () => {
+    vi.stubEnv('DSH_HOME', '~/env-dsh')
+    try {
+      expect(dshCachePath({ dshHome: '~/explicit-dsh' })).toBe(join(homedir(), 'explicit-dsh', 'cache'))
+      expect(dshCachePath({ dshHome: './explicit-dsh' }, 'attachments', 'request-images'))
+        .toBe(resolve('./explicit-dsh/cache/attachments/request-images'))
+      expect(dshCachePath({}, 'attachments')).toBe(join(homedir(), 'env-dsh', 'cache', 'attachments'))
+    } finally {
+      vi.unstubAllEnvs()
+    }
+  })
+
   it('canonicalizes a watcher ancestor while preserving a missing suffix', async () => {
     const root = await mkdtemp(join(tmpdir(), 'dsh-watch-path-'))
     const target = join(root, 'target')

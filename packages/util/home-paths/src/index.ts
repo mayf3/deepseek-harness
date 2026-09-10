@@ -100,12 +100,15 @@ export function dshHomePath(...segments: string[]): string {
 }
 
 /**
- * Join path segments onto the resolved Harness home's `cache` directory without creating it.
- * @param segments - path segments appended to the cache directory; an empty list returns the cache directory itself.
+ * Join path segments onto the resolved Harness home's `cache` directory without creating it; no arguments returns the directory itself.
+ * @param optionsOrSegment - explicit home override, or the first path segment; omission uses the default home resolution.
+ * @param segments - additional path segments after the first child, if any.
  * @returns the normalized absolute cache path.
  */
-export function dshCachePath(...segments: string[]): string {
-  return dshHomePath('cache', ...segments)
+export function dshCachePath(optionsOrSegment: { dshHome?: string } | string = {}, ...segments: string[]): string {
+  const configured = typeof optionsOrSegment === 'string' ? undefined : optionsOrSegment.dshHome
+  const children = typeof optionsOrSegment === 'string' ? [optionsOrSegment, ...segments] : segments
+  return join(resolveDshHome(configured), 'cache', ...children)
 }
 
 /**
