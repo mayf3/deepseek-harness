@@ -2,6 +2,7 @@
 #define WIN32_LEAN_AND_MEAN
 #define UNICODE
 #include <windows.h>
+#include <tlhelp32.h>
 #include <objidl.h>
 #include <commctrl.h>
 #include <dwmapi.h>
@@ -9,6 +10,38 @@
 #include <new>
 
 using namespace Gdiplus;
+
+// Match the affected executable, not another user's or directory's same-named application.
+// Returns 0 while running, 1 when absent, and -1 if the process list cannot be read.
+extern "C" __declspec(dllexport) int __cdecl InstallerFindProcess(LPCWSTR executable) {
+    WCHAR target[32768];
+    DWORD length = GetLongPathNameW(executable, target, ARRAYSIZE(target));
+    LPCWSTR expected = length > 0 && length < ARRAYSIZE(target) ? target : executable;
+    LPCWSTR filename = wcsrchr(expected, L'\\');
+    filename = filename ? filename + 1 : expected;
+    HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+    if (snapshot == INVALID_HANDLE_VALUE) return -1;
+    PROCESSENTRY32W entry = {};
+    entry.dwSize = sizeof(entry);
+    int result = 1;
+    BOOL present = Process32FirstW(snapshot, &entry);
+    while (present) {
+        if (_wcsicmp(entry.szExeFile, filename) == 0) {
+            HANDLE process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, entry.th32ProcessID);
+            if (process) {
+                WCHAR path[32768];
+                DWORD count = ARRAYSIZE(path);
+                if (QueryFullProcessImageNameW(process, 0, path, &count) && _wcsicmp(path, expected) == 0) result = 0;
+                CloseHandle(process);
+                if (result == 0) break;
+            }
+        }
+        present = Process32NextW(snapshot, &entry);
+    }
+    if (!present && GetLastError() != ERROR_NO_MORE_FILES) result = -1;
+    CloseHandle(snapshot);
+    return result;
+}
 
 struct ProgressPage {
     HWND source;

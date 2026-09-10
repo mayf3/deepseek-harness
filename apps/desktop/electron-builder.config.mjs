@@ -66,14 +66,17 @@ export function createElectronBuilderConfig(
     electronDist: buildPaths.electron,
     electronFuses: { runAsNode: true },
     beforeBuild: async () => {
-      if (resolvedPlatform !== 'win32') return
+      if (resolvedPlatform !== 'win32') return true
       await promisify(execFile)('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File',
-        fileURLToPath(new URL('./scripts/prepare-windows-installer.ps1', import.meta.url))], {
-        env: scrubWindowsSigningEnvironment(process.env), windowsHide: true,
+        fileURLToPath(new URL('./scripts/prepare-windows-installer.ps1', import.meta.url)),
+        '-OutputDirectory', join(buildPaths.root, 'installer-ui')], {
+        env: scrubWindowsSigningEnvironment(env), windowsHide: true,
       })
       if (windowsSigner !== undefined) {
         await windowsSigner({ path: join(buildPaths.root, 'installer-ui', 'window-frame.dll'), hash: 'sha256', isNest: false })
       }
+      // A falsy result tells electron-builder to omit its production node_modules collection.
+      return true
     },
     files: [
       'lib/*.js',

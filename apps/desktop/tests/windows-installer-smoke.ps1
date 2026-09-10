@@ -1,6 +1,7 @@
 <# Native installation checks use a unique product identity and a private directory. #>
 [CmdletBinding()]
 param([Parameter(Mandatory)][string]$Installer, [Parameter(Mandatory)][string]$ProductName,
+    [Parameter(Mandatory)][string]$RegistryKey,
     [Parameter(Mandatory)][string]$OutputDirectory)
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'windows-installer-ui.ps1')
@@ -28,7 +29,9 @@ function Wait-Control([Diagnostics.Process]$Process, [string]$Text, [switch]$Dia
     throw "Missing '$Text': $([InstallerCapture]::VisibleText($Process.Id))"
 }
 function Start-Setup([string]$Theme, [string]$Path = $installPath) {
-    $process = Start-Process -FilePath $Installer -ArgumentList ('/THEME=' + $Theme + ' /D=' + $Path) -PassThru -WindowStyle Hidden
+    $arguments = '/THEME=' + $Theme
+    if ($Path) { $arguments += ' /D=' + $Path }
+    $process = Start-Process -FilePath $Installer -ArgumentList $arguments -PassThru -WindowStyle Hidden
     $processes.Add($process)
     $timer = [Diagnostics.Stopwatch]::StartNew()
     do {
@@ -69,7 +72,13 @@ function Finish-Setup([Diagnostics.Process]$Process, [bool]$Launch, [string]$The
     }
     $window = [InstallerCapture]::Find($Process.Id)
     [void][InstallerCapture]::Save($window, (Join-Path $OutputDirectory ($Theme + '-finish.png')))
-    Click-Control $Process $copy.INSTALLER_FINISH
+    if ($Launch) {
+        $finish = Wait-Control $Process $copy.INSTALLER_FINISH
+        [void][InstallerCapture]::SendMessage($window, 0x28, $finish, [IntPtr]1)
+        [void][InstallerCapture]::PostMessage($finish, 0x100, [IntPtr]13, [IntPtr]::Zero)
+    } else {
+        Click-Control $Process $copy.INSTALLER_FINISH
+    }
     if (-not $Process.WaitForExit(10000) -or $Process.ExitCode -ne 0) { throw 'Finish did not exit successfully' }
 }
 function Run-Silent([string]$Arguments, [int]$Code) {
@@ -87,16 +96,19 @@ try {
     [void][InstallerCapture]::Save($window, (Join-Path $OutputDirectory 'light-path.png'))
     Click-Control $process $copy.INSTALLER_BROWSE
     Dismiss $process $copy.INSTALLER_CHOOSE_PATH
+    [void][InstallerCapture]::SendMessage($window, 0x28, $edit, [IntPtr]1)
     [void][InstallerCapture]::SendMessage($edit, 0xC, [IntPtr]::Zero, 'C:\Windows\Harness Installer Test')
-    Click-Control $process $copy.INSTALLER_INSTALL
+    [void][InstallerCapture]::PostMessage($edit, 0x100, [IntPtr]13, [IntPtr]::Zero)
     Dismiss $process $copy.INSTALLER_PATH_INVALID
     [void][InstallerCapture]::SendMessage($edit, 0xC, [IntPtr]::Zero, $installPath)
     Click-Control $process $copy.INSTALLER_INSTALL
     Finish-Setup $process $false light
     if (-not (Test-Path -LiteralPath $appPath) -or (Test-Path -LiteralPath (Join-Path $installPath 'launched.txt'))) { throw 'Unchecked launch behavior failed' }
-    $results.Add('install-path-picker-and-unchecked-launch')
+    $results.Add('enter-validates-current-path-and-unchecked-launch')
 
-    $process = Start-Setup dark
+    $process = Start-Setup dark ''
+    Click-Control $process $copy.INSTALLER_CHOOSE_PATH
+    [void](Wait-Control $process $installPath)
     [void][InstallerCapture]::Save([InstallerCapture]::Find($process.Id), (Join-Path $OutputDirectory 'dark-welcome.png'))
     Click-Control $process $copy.INSTALLER_INSTALL
     Finish-Setup $process $true dark
@@ -108,7 +120,7 @@ try {
     } while ($timer.Elapsed.TotalSeconds -lt 15)
     if (-not $app -or $app.Path -ne $appPath) { throw 'Finish did not launch the installed test application' }
     $processes.Add($app)
-    $results.Add('upgrade-and-checked-launch')
+    $results.Add('registered-directory-and-checked-launch')
 
     $process = Start-Setup dark
     Click-Control $process $copy.INSTALLER_INSTALL
@@ -123,14 +135,28 @@ try {
     if (-not $app.WaitForExit(10000)) { throw 'Test application did not exit' }
     $results.Add('running-app-preserved-and-native-progress-hidden')
 
-    Run-Silent ('/S --updated /D=' + $installPath) 0
+    $otherPath = Join-Path $OutputDirectory 'Other Installation'
+    New-Item -ItemType Directory -Path $otherPath | Out-Null
+    $otherApp = Join-Path $otherPath ($ProductName + '.exe')
+    Copy-Item -LiteralPath $appPath -Destination $otherApp
+    $otherProcess = Start-Process -FilePath $otherApp -PassThru -WindowStyle Hidden
+    $processes.Add($otherProcess)
+    [void](Wait-Control $otherProcess 'Installer test application is running.' -Dialog)
+    Run-Silent '/S --updated' 0
+    if ($otherProcess.HasExited) { throw 'Unrelated installation was stopped' }
+    Dismiss $otherProcess 'Installer test application is running.'
+    if (-not $otherProcess.WaitForExit(10000)) { throw 'Unrelated test application did not exit' }
+    if (-not (Test-Path -LiteralPath $appPath)) { throw 'Silent update moved the registered installation' }
+    $registration = Get-ItemProperty ('HKCU:\Software\' + $RegistryKey)
+    if ($registration.InstallLocation.TrimEnd('\') -ne $installPath) { throw 'Silent update changed InstallLocation' }
+    $results.Add('silent-update-retains-directory-and-ignores-unrelated-process')
     Run-Silent ('/S /allusers /D=' + $installPath) 2
     $foreign = Join-Path $OutputDirectory 'Foreign App'
     New-Item -ItemType Directory -Path $foreign | Out-Null
     Set-Content -LiteralPath (Join-Path $foreign 'keep.txt') -Value 'preserved'
     Run-Silent ('/S /D=' + $foreign) 2
     if ((Get-Content -LiteralPath (Join-Path $foreign 'keep.txt')) -ne 'preserved') { throw 'Foreign directory changed' }
-    $results.Add('silent-update-and-invalid-destination-rejection')
+    $results.Add('invalid-destination-rejection')
 } finally {
     foreach ($process in $processes) {
         if (-not $process.HasExited) { $process.Kill(); $process.WaitForExit() }

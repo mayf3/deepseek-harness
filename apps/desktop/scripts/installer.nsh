@@ -70,7 +70,7 @@
 !macroend
 
 !macro customWelcomePage
-  Page custom InstallerWelcome
+  Page custom InstallerWelcome InstallerWelcomeLeave
 !macroend
 
 !macro customPageAfterChangeDir
@@ -79,17 +79,21 @@
 !macroend
 
 !macro customFinishPage
-  Page custom InstallerFinish
+  Page custom InstallerFinish InstallerFinishLeave
 !macroend
 
 !macro customCheckAppRunning
-  ${nsProcess::FindProcess} "${APP_EXECUTABLE_FILENAME}" $R0
+  !ifdef BUILD_UNINSTALLER
+    InitPluginsDir
+    File "/oname=$PLUGINSDIR\window-frame.dll" "${INSTALLER_BUILD_DIR}\window-frame.dll"
+  !endif
+  System::Call '$PLUGINSDIR\window-frame.dll::InstallerFindProcess(w "$INSTDIR\${APP_EXECUTABLE_FILENAME}") i.R0 ?c'
   ${If} $R0 == 0
     ${If} ${isUpdated}
       StrCpy $R1 0
       ${DoWhile} $R0 == 0
         Sleep 250
-        ${nsProcess::FindProcess} "${APP_EXECUTABLE_FILENAME}" $R0
+        System::Call '$PLUGINSDIR\window-frame.dll::InstallerFindProcess(w "$INSTDIR\${APP_EXECUTABLE_FILENAME}") i.R0 ?c'
         IntOp $R1 $R1 + 1
         ${If} $R1 >= 40
           ${ExitDo}
@@ -102,7 +106,11 @@
       Quit
     ${EndIf}
   ${EndIf}
-  ${nsProcess::Unload}
+  ${If} $R0 < 0
+    MessageBox MB_OK|MB_ICONEXCLAMATION "$(INSTALLER_UI_ERROR)" /SD IDOK
+    SetErrorLevel 2
+    Quit
+  ${EndIf}
 !macroend
 
 !ifndef BUILD_UNINSTALLER

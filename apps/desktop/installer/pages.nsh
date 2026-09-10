@@ -198,25 +198,28 @@ FunctionEnd
 
 Function InstallerStart
     Pop $0
-    ${If} $InstallerPhase == "success"
-        ${NSD_GetState} $InstallerLaunch $0
-        ${If} $0 == ${BST_CHECKED}
-            StrCpy $0 ""
-            ${If} ${isUpdated}
-                StrCpy $0 "--updated"
-            ${EndIf}
-            ${StdUtils.ExecShellAsUser} $1 "$launchLink" "open" "$0"
-        ${EndIf}
-        SendMessage $HWNDPARENT ${WM_NOTIFY_OUTER_NEXT} 1 0
-        Return
-    ${EndIf}
+    SendMessage $HWNDPARENT ${WM_NOTIFY_OUTER_NEXT} 1 0
+FunctionEnd
+
+; Page leave callbacks also run when Enter activates NSIS's hidden default button.
+Function InstallerWelcomeLeave
     ${NSD_GetText} $InstallerEdit $InstallerPath
     Call InstallerPreflight
     ${If} $InstallerError != ""
         MessageBox MB_OK|MB_ICONEXCLAMATION "$InstallerError"
-        Return
+        Abort
     ${EndIf}
-    SendMessage $HWNDPARENT ${WM_NOTIFY_OUTER_NEXT} 1 0
+FunctionEnd
+
+Function InstallerFinishLeave
+    ${NSD_GetState} $InstallerLaunch $0
+    ${If} $0 == ${BST_CHECKED}
+        StrCpy $0 ""
+        ${If} ${isUpdated}
+            StrCpy $0 "--updated"
+        ${EndIf}
+        ${StdUtils.ExecShellAsUser} $1 "$launchLink" "open" "$0"
+    ${EndIf}
 FunctionEnd
 
 Function InstallerExpandPath

@@ -14,7 +14,7 @@ The installer adds custom welcome, progress, and completion pages through electr
 
 NSIS native controls preserve directory editing, folder selection, checkbox state, and keyboard interaction. An x86 Win32/GDI+ helper retains DWM shadows and draws installation progress on the UI thread while the stock installation worker runs. Stock page visibility is suppressed even when NSIS shows the page after MUI's callback. Windows 11 supplies the outer corner radius; Windows 10 retains its supported frame appearance.
 
-Installation is per-user. Paths are validated before installation writes, and a running application is left running while setup exits after a native acknowledgement. Completion launches only when selected. Silent updates retain the existing electron-builder command-line behavior. The installation engine does not add transactional rollback or take ownership of first-launch profile preparation.
+Installation is per-user. Welcome-page leave validation reads the current edit control for mouse and keyboard navigation; the debounced inline hint is not an installation authority. Running-process checks match the affected executable path, leaving other installations independent. Completion-page leave honors the launch checkbox for both mouse and keyboard navigation. Electron-builder resolves the registered directory before custom initialization, so silent updates without `/D=` retain that directory. The installation engine does not add transactional rollback or take ownership of first-launch profile preparation.
 
 ## Alternatives considered
 
@@ -26,6 +26,6 @@ Installation is per-user. Paths are validated before installation writes, and a 
 
 ## Consequences
 
-Windows packaging additionally requires the x86 Visual C++ compiler and Windows SDK. The helper is signed by the same signer as other Windows artifacts. Progress is an estimate derived from stock NSIS progress, not a remaining-time promise.
+Windows packaging additionally requires the x86 Visual C++ compiler and Windows SDK. The helper is signed by the same signer as other Windows artifacts. The preparation hook returns true on every platform: electron-builder treats a falsy return as external dependency ownership and omits its production node_modules collection. Progress is an estimate derived from stock NSIS progress, not a remaining-time promise.
 
 The native installer regression uses a unique product identity and private installation directory to verify path rejection, folder selection, launch choices, upgrade, running-process preservation, hidden stock progress, and uninstall. Its screenshots and expected behavior belong to Desktop tests rather than recorded Session snapshots. Signed release qualification still requires the configured certificate and token, and actual Windows update artifacts.

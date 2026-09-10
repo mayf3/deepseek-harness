@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-09-10-windows-native-installer-pages.md
-2026-09-10-windows-native-installer-pages.md: 26a15b6eb929658b125539b2fe5ea05976c3e857
-2026-09-10-windows-native-installer-pages.zh.md: c28c48ee43230800ed8392b7dc0886bef07499a2
+2026-09-10-windows-native-installer-pages.md: e56d46b19320815354df17741c0af770196f7fcb
+2026-09-10-windows-native-installer-pages.zh.md: ce302609b596262215e0ec63d6b76a72a35557d9

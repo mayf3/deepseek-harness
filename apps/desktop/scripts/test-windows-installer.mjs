@@ -15,7 +15,8 @@ const appRoot = fileURLToPath(new URL('..', import.meta.url))
 const require = createRequire(import.meta.url)
 const { build, Platform, Arch } = require('electron-builder')
 const { getMakeNsisPath } = require('app-builder-lib/out/toolsets/windows.js')
-const id = randomUUID().replaceAll('-', '')
+const guid = randomUUID()
+const id = guid.replaceAll('-', '')
 const productName = `Harness Installer Test ${id.slice(0, 8)}`
 const outputRoot = join(appRoot, '.desktop-build', 'installer-tests')
 await mkdir(outputRoot, { recursive: true })
@@ -55,11 +56,11 @@ SectionEnd
   const config = createElectronBuilderConfig()
   await build({ projectDir: appRoot, prepackaged: payload, targets: Platform.WINDOWS.createTarget(['nsis'], Arch.x64), publish: 'never',
     config: { ...config, productName, artifactName: 'installer-test.exe', directories: { output },
-      nsis: { ...config.nsis, include }, beforeBuild: undefined, afterPack: undefined, afterSign: undefined, artifactBuildCompleted: undefined },
+      nsis: { ...config.nsis, guid, include }, beforeBuild: undefined, afterPack: undefined, afterSign: undefined, artifactBuildCompleted: undefined },
   })
   const result = await execute('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File',
     join(appRoot, 'tests', 'windows-installer-smoke.ps1'), '-Installer', join(output, 'installer-test.exe'),
-    '-ProductName', productName, '-OutputDirectory', output], childOptions)
+    '-ProductName', productName, '-RegistryKey', guid, '-OutputDirectory', output], childOptions)
   process.stdout.write(result.stdout)
 } finally {
   for (const name of Object.keys(process.env)) if (!(name in previousEnvironment)) delete process.env[name]

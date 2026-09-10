@@ -2,10 +2,11 @@
   "launchCheckboxState": 1,
   "nativeProgressVisible": false,
   "cases": [
-    "install-path-picker-and-unchecked-launch",
-    "upgrade-and-checked-launch",
+    "enter-validates-current-path-and-unchecked-launch",
+    "registered-directory-and-checked-launch",
     "running-app-preserved-and-native-progress-hidden",
-    "silent-update-and-invalid-destination-rejection",
+    "silent-update-retains-directory-and-ignores-unrelated-process",
+    "invalid-destination-rejection",
     "uninstall"
   ]
 }

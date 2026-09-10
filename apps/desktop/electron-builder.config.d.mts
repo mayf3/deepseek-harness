@@ -27,7 +27,7 @@ export interface DesktopElectronBuilderConfig {
     readonly allowToChangeInstallationDirectory: false
     readonly installerLanguages: readonly ['en_US', 'zh_CN']
   }
-  readonly beforeBuild: () => Promise<void>
+  readonly beforeBuild: () => Promise<boolean>
   readonly artifactBuildCompleted: (artifact: { readonly file: string }) => Promise<void> | undefined
   readonly publish: readonly [{ readonly provider: 'generic', readonly url: string }] | null
 }
