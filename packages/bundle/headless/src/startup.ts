@@ -10,6 +10,7 @@ import { Command, CommanderError } from 'commander'
 import type { Context } from '@deepseek-ai/cordis'
 import { parseCmdline } from '@deepseek-ai/dsh-cmdline'
 import { boundJsonLine } from './json-stream.ts'
+import { internals } from './startup-internals.ts'
 
 /** Stable Cordis plugin name. */
 export const name = 'headless-startup'
@@ -28,15 +29,6 @@ export interface HeadlessStartupValues {
   sessionId: string | undefined
   /** Whether stdout carries the machine-readable event stream instead of final text. */
   json: boolean
-}
-
-/** Process facts the provider reads; tests substitute them. */
-export const internals: {
-  stdinIsTty: () => boolean
-  stdout: { write(chunk: string): unknown }
-} = {
-  stdinIsTty: () => process.stdin.isTTY,
-  stdout: process.stdout,
 }
 
 /**

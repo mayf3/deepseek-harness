@@ -16,9 +16,9 @@ import { afterEach, describe, expect, it } from 'vitest'
 import {
   apply,
   HEADLESS_STARTUP_SERVICE,
-  internals as startupInternals,
   type HeadlessStartupValues,
 } from '../src/startup.ts'
+import { internals as startupInternals } from '../src/startup-internals.ts'
 
 /** What one boot of the fixture tree observed. */
 interface Observed {
