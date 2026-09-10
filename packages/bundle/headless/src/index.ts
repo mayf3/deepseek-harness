@@ -40,7 +40,7 @@ export const inject = ['agentDefaultModel', 'agents', 'sessions']
 export interface Config {
   /** The prompt text for the single run; absent when the task arrives on stdin. */
   task?: string
-  /** Exact Session identity to adopt or create; absent for a fresh random identity. */
+  /** Exact Session identity to adopt; absent for a fresh random identity. An id with no stored Session fails. */
   sessionId?: string
   /** Whether stdout carries the machine-readable event stream instead of final text. */
   json?: boolean
@@ -241,11 +241,12 @@ function assertAdoptable(header: AdoptableHeader, events: Iterable<SessionEvent>
 }
 
 /**
- * Resolve the Agent for one run: reuse a live identity, adopt the persisted
- * Session with the requested id, or create that exact id when no log exists.
+ * Resolve the Agent for one run: reuse a live identity or adopt the persisted
+ * Session with the requested id. The identity must already exist; a first round
+ * omits the option instead, so a typo cannot pass as a brand-new conversation.
  * @param ctx - plugin context carrying the Session query service.
  * @param agents - the core Agent registry.
- * @param sessionId - exact Session identity to adopt or create.
+ * @param sessionId - exact Session identity to adopt.
  * @param agentOptions - provider/model pair for this run.
  * @param setup - per-Agent scope setup installing the model selection.
  * @returns the live, resumed, or freshly created Agent.
@@ -295,14 +296,12 @@ async function resolveAgent(
     return agent
   } catch (error: unknown) {
     if (!(error instanceof SessionQueryError) || error.code !== 'SESSION_QUERY_SESSION_NOT_FOUND') throw error
+    // --session-id resumes a conversation that already exists; starting a new
+    // one is the no-id path, which generates its own identity and reports it in
+    // the `session` event. Creating the requested id here would turn a typo
+    // into a brand-new empty history the caller believes it is continuing.
+    throw new Error(`session "${sessionId}" does not exist; omit --session-id to start a new Session`)
   }
-  const { agent } = await agents.create({
-    sessionId,
-    meta: { cwd: process.cwd() },
-    agentOptions,
-    setup,
-  })
-  return agent
 }
 
 /** Report an unexpected direct-driver failure and request a failing exit. */

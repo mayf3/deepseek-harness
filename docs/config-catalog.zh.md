@@ -823,7 +823,7 @@ export interface Config {
 export interface Config {
   /** The prompt text for the single run; absent when the task arrives on stdin. */
   task?: string
-  /** Exact Session identity to adopt or create; absent for a fresh random identity. */
+  /** Exact Session identity to adopt; absent for a fresh random identity. An id with no stored Session fails. */
   sessionId?: string
   /** Whether stdout carries the machine-readable event stream instead of final text. */
   json?: boolean

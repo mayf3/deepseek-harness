@@ -251,7 +251,7 @@ describe('headless stream-json snapshots', () => {
     expect(result.stderr).toBe(await readFile(headlessReasoningExpected, 'utf8'))
   }, LOADER_SMOKE_TEST_TIMEOUT_MS)
 
-  it('projects the same run as JSON events with an exact session identity', async () => {
+  it('projects the same run as JSON events under a generated session identity', async () => {
     const task = 'Prove the machine-readable product headless profile path.'
     const result = await runLoaderSmoke({
       label: 'product headless profile json snapshot',
@@ -260,7 +260,7 @@ describe('headless stream-json snapshots', () => {
       configPath: headlessOverlayPath,
       binArgs: [
         '--profile', 'headless', '--patch', headlessOverlayPath,
-        '--json', '--session-id', 'headless-json-session', task,
+        '--json', task,
       ],
       tsconfigPath,
       env: {
@@ -271,7 +271,8 @@ describe('headless stream-json snapshots', () => {
     })
 
     const events = result.stdout.trim().split('\n').map(line => JSON.parse(line) as JsonObject)
-    expect(events[0]).toMatchObject({ type: 'session', sessionId: 'headless-json-session' })
+    expect(events[0]).toMatchObject({ type: 'session' })
+    expect(events[0]?.sessionId).toMatch(/^session-/)
     expect(typeof events[0]?.cwd).toBe('string')
     expect(events.at(-1)).toMatchObject({ type: 'final', text: 'CLI tool round trip complete: CLI_TOOL_ROUND_TRIP' })
     expect(events.map(event => event.type)).toContain('thinking')
@@ -279,6 +280,32 @@ describe('headless stream-json snapshots', () => {
     expect(events.map(event => event.type)).toContain('tool_result')
     expect(events.map(event => event.type)).not.toContain('error')
     expect(result.stderr).toBe('')
+  }, LOADER_SMOKE_TEST_TIMEOUT_MS)
+
+  it('fails the JSON run when --session-id names no stored Session', async () => {
+    const result = await runLoaderSmoke({
+      label: 'product headless profile unknown session',
+      tempDirPrefix: 'headless-snapshot-profile-unknown-session-',
+      binScript: dshBinScript,
+      configPath: headlessOverlayPath,
+      binArgs: [
+        '--profile', 'headless', '--patch', headlessOverlayPath,
+        '--json', '--session-id', 'headless-unknown-session', 'Continue the conversation.',
+      ],
+      tsconfigPath,
+      expectedExitCode: 1,
+      env: {
+        DSH_TELEMETRY_DISABLED: '1',
+        NODE_OPTIONS: [process.env.NODE_OPTIONS, '--disable-warning=ExperimentalWarning'].filter(Boolean).join(' '),
+      },
+    })
+
+    const events = result.stdout.trim().split('\n').map(line => JSON.parse(line) as JsonObject)
+    expect(events).toEqual([{
+      type: 'error',
+      message: 'session "headless-unknown-session" does not exist; omit --session-id to start a new Session',
+    }])
+    expect(result.stderr).toContain('omit --session-id to start a new Session')
   }, LOADER_SMOKE_TEST_TIMEOUT_MS)
 
   it('prints a terminal model failure through the product headless profile command', async () => {

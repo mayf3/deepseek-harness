@@ -44,14 +44,14 @@ agent 会完成该任务，把提供方的每个非空推理（reasoning）增�
 | 字段 | 默认值 | 含义 |
 |---|---|---|
 | `task` | stdin | 任务文本；省略或传 `-` 时由 stdin 提供 |
-| `sessionId` | `session-<uuid>` | 要沿用或创建的精确 Session 标识 |
+| `sessionId` | `session-<uuid>` | 要沿用的精确 Session 标识；未知 id 会失败 |
 | `json` | `false` | 把本次运行投影为 stdout 上的按行 JSON 事件 |
 
 生成的[配置目录](../../../docs/config-catalog.zh.md#deepseek-aidsh-headless)是所有受支持字段及其 JSDoc 的完整真源。
 
 ### 选择 Session 标识
 
-每次调用默认使用全新的 `session-<uuid>` 标识。传入 `--session-id <id>` 可自行命名：该 id 对应的持久化 Session 存在时 runner 会沿用，否则创建；两条路径都要求已组合 `sessionPersistence` 与 `sessionQuery` 服务，因此缺少任一服务的 profile 会显式失败，而不会返回一个历史随进程消失的 id；存活身份还必须已有持久化记录，因为仅注册在内存中的 Agent 不会写入任何内容。标识是不透明的，因此会原样使用调用方给出的字符串，包括空白字符。沿用被限定在当前工作目录内，并拒绝子 agent 或 fork 会话、未记录工作目录的会话、运行在本 profile 不组合的 agent preset 下的会话，以及 preset 记录畸形的会话——该检查读取 Session 日志当前记录的 preset，因此在空白期切换过 preset 的会话同样会被拒绝。因此监督进程无法在另一套组合下悄悄驱动他人的会话；任一不匹配都会在任务运行前失败。
+每次调用默认使用全新的 `session-<uuid>` 标识，`--json` 会在开头的 `session` 事件里报告它。传入 `--session-id <id>` 延续这段对话：runner 沿用该 id 对应的持久化 Session，而该 id 没有持久化 Session 时会在任务运行前失败，而不是悄悄开出一段空历史。沿用要求已组合 `sessionPersistence` 与 `sessionQuery` 服务，因此缺少任一服务的 profile 会显式失败，而不会返回一个历史随进程消失的 id；存活身份还必须已有持久化记录，因为仅注册在内存中的 Agent 不会写入任何内容。标识是不透明的，因此会原样使用调用方给出的字符串，包括空白字符。沿用被限定在当前工作目录内，并拒绝子 agent 或 fork 会话、未记录工作目录的会话、运行在本 profile 不组合的 agent preset 下的会话，以及 preset 记录畸形的会话——该检查读取 Session 日志当前记录的 preset，因此在空白期切换过 preset 的会话同样会被拒绝。因此监督进程无法在另一套组合下悄悄驱动他人的会话；任一不匹配都会在任务运行前失败。
 
 ### 机器可读输出
 

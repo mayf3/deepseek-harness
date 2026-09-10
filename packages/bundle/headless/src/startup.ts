@@ -24,7 +24,7 @@ export const HEADLESS_STARTUP_SERVICE = 'headlessStartup'
 export interface HeadlessStartupValues {
   /** The task text this invocation asked for; absent when the runner reads stdin. */
   task: string | undefined
-  /** Exact Session identity to adopt or create; absent for a fresh random identity. */
+  /** Exact Session identity to adopt; absent for a fresh random identity. */
   sessionId: string | undefined
   /** Whether stdout carries the machine-readable event stream instead of final text. */
   json: boolean
@@ -49,14 +49,14 @@ function headlessCommand(): Command {
     .description('Answer one task and exit; the answer goes to stdout and diagnostics to stderr.')
     .helpOption('-h, --help', 'show this help')
     .option('--json', 'write newline-delimited run events to stdout instead of the final message')
-    .option('--session-id <id>', 'adopt the persisted Session with this id, or create it when absent')
+    .option('--session-id <id>', 'adopt the persisted Session with this id; an unknown id is an error')
     .argument('[task...]', 'the task text; multiple words are joined by spaces, and `-` reads stdin')
     .addHelpText('after', `
 Examples:
   dsh --profile headless "run the tests"          answer one task and exit
   echo "run the tests" | dsh --profile headless   read the task from stdin
   dsh --profile headless --json "run the tests"   emit machine-readable run events
-  dsh --profile headless --session-id session-… "continue"   adopt a Session
+  dsh --profile headless --session-id session-… "continue"   resume an existing Session
 `)
 }
 

@@ -505,7 +505,7 @@ describe('headless runner', () => {
     await test.ctx.fiber.dispose()
   })
 
-  it('creates the exact requested Session when the query reports it missing', async () => {
+  it('rejects --session-id when the query reports the id missing', async () => {
     const seen: string[] = []
     const test = await bench({
       afterPrompt(session, message) {
@@ -516,8 +516,11 @@ describe('headless runner', () => {
       sessionId: 'session-exact',
       observe: () => Promise.reject(new SessionQueryError('missing', 'SESSION_QUERY_SESSION_NOT_FOUND')),
     })
-    expect(await test.run()).toMatchObject({ code: 0, out: 'created\n', err: '' })
-    expect(seen).toEqual(['session-exact'])
+    const result = await test.run()
+    expect(result.code).toBe(1)
+    expect(result.err).toContain('session "session-exact" does not exist; omit --session-id to start a new Session')
+    expect(result.out).toBe('')
+    expect(seen).toEqual([])
     await test.ctx.fiber.dispose()
   })
 

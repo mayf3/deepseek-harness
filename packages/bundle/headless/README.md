@@ -44,14 +44,14 @@ The task and run options are supplied through three settings:
 | Field | Default | Meaning |
 |---|---|---|
 | `task` | stdin | The task text; stdin supplies it when omitted or `-` |
-| `sessionId` | `session-<uuid>` | Exact Session identity to adopt or create |
+| `sessionId` | `session-<uuid>` | Exact Session identity to adopt; an unknown id fails |
 | `json` | `false` | Project the run as newline-delimited events on stdout |
 
 The generated [configuration catalog](../../../docs/config-catalog.md#deepseek-aidsh-headless) is the exhaustive source for every accepted field and its JSDoc.
 
 ### Choosing the session identity
 
-Every invocation defaults to a fresh `session-<uuid>` identity. Pass `--session-id <id>` to name it yourself: the runner adopts the persisted Session with that id when one exists, and creates it otherwise. Both paths require the composed `sessionPersistence` and `sessionQuery` services, so a profile that omits either fails loudly instead of returning an id whose history dies with the process; a live identity must also carry a stored record, because an Agent registered only in memory would flush nothing. The identity is opaque, so the exact string is used, whitespace included. Adoption is scoped to the current working directory and refuses a Session that is a subagent or forked session, that recorded no working directory, that runs under an agent preset this profile does not compose, or whose preset record is malformed — the check reads the preset the Session log currently records, so a Session that switched preset while blank is rejected too. A supervisor therefore cannot silently drive someone else's conversation under a different composition; any mismatch fails before the task runs.
+Every invocation defaults to a fresh `session-<uuid>` identity, which `--json` reports in its opening `session` event. Pass `--session-id <id>` to continue that conversation: the runner adopts the persisted Session with that id, and an id with no stored Session fails before the task runs rather than quietly opening an empty history. Adoption requires the composed `sessionPersistence` and `sessionQuery` services, so a profile that omits either fails loudly instead of returning an id whose history dies with the process; a live identity must also carry a stored record, because an Agent registered only in memory would flush nothing. The identity is opaque, so the exact string is used, whitespace included. Adoption is scoped to the current working directory and refuses a Session that is a subagent or forked session, that recorded no working directory, that runs under an agent preset this profile does not compose, or whose preset record is malformed — the check reads the preset the Session log currently records, so a Session that switched preset while blank is rejected too. A supervisor therefore cannot silently drive someone else's conversation under a different composition; any mismatch fails before the task runs.
 
 ### Machine-readable output
 
