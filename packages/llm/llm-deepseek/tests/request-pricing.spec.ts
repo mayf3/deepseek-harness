@@ -49,8 +49,17 @@ describe('DeepSeek request-image pricing', () => {
     const image = ref('photo', 1920, 1080)
     const prices = deepSeekImageRequestPricing(connection(), 'vision').priceImages([block(image)])
     expect(prices).toEqual([{
-      visualTokens: 369,
+      visualTokens: 407,
       text: requestImageHandleText(image, { width: 1066, height: 600 }),
+    }])
+  })
+
+  it.each([[8192, 1], [1, 8192]])('prices a %sx%s image at the token cap within the default pixel budget', (width, height) => {
+    const image = ref('thin', width, height)
+    const prices = deepSeekImageRequestPricing(connection(), 'vision').priceImages([block(image)])
+    expect(prices).toEqual([{
+      visualTokens: 1024,
+      text: requestImageHandleText(image, { width, height }),
     }])
   })
 
@@ -60,7 +69,7 @@ describe('DeepSeek request-image pricing', () => {
       models: [{ ...VISION_MODEL, imagePixelBudget: 'low' as const }],
     })
     const prices = deepSeekImageRequestPricing(options, 'vision').priceImages([block(image)])
-    expect(prices[0]!.visualTokens).toBe(201)
+    expect(prices[0]!.visualTokens).toBe(184)
   })
 
   it('builds handle and placeholder text through the supplied access resolution', () => {
@@ -73,7 +82,7 @@ describe('DeepSeek request-image pricing', () => {
     ).priceImages([block(images[0]!, true), block(images[1]!)])
     expect(prices[0]).toEqual({ visualTokens: 0, text: offloadedImageText(images[0]!, access) })
     expect(prices[1]).toEqual({
-      visualTokens: 349,
+      visualTokens: 422,
       text: requestImageHandleText(images[1]!, { width: 800, height: 800 }, access),
     })
     expect(prices[1]?.text).toContain('/world/attachments/photo.png')
@@ -87,8 +96,8 @@ describe('DeepSeek request-image pricing', () => {
     ).priceImages([block(images[0]!, true), block(images[1]!), block(images[2]!)])
     expect(prices).toEqual([
       { visualTokens: 0, text: offloadedImageText(images[0]!) },
-      { visualTokens: 349, text: requestImageHandleText(images[1]!, { width: 800, height: 800 }) },
-      { visualTokens: 349, text: requestImageHandleText(images[2]!, { width: 800, height: 800 }) },
+      { visualTokens: 422, text: requestImageHandleText(images[1]!, { width: 800, height: 800 }) },
+      { visualTokens: 422, text: requestImageHandleText(images[2]!, { width: 800, height: 800 }) },
     ])
   })
 
@@ -98,6 +107,6 @@ describe('DeepSeek request-image pricing', () => {
       connection({ maxRequestFilesBytes: 2 * 1024 * 1024, imageOffloadByteQuantum: 1 }),
       'vision',
     ).priceImages([block(oversized)])
-    expect(prices.map(price => price.visualTokens)).toEqual([349])
+    expect(prices.map(price => price.visualTokens)).toEqual([422])
   })
 })
