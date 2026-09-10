@@ -11,7 +11,7 @@ export const zh = {
   'nav.cancel': '放弃整组问题',
   'option.recommended': '推荐',
   'custom.placeholder': '输入你的答案',
-  'action.skip': '跳过本题',
+  'action.skip': '跳过',
   'action.next': '下一题',
   'plan.header': '计划待审',
   'plan.approve': '确认执行',
