@@ -43,6 +43,7 @@ describe('web e2e: workspace recency', () => {
     tripwire = watchConsole(page)
     await page.addInitScript(({ account, ids, timestamps }) => {
       if (localStorage.getItem('dsh.workspace.view.v5') !== null) return
+      localStorage.setItem('dsh.sessions.current', JSON.stringify({ sessionId: ids[0] }))
       localStorage.setItem('dsh.workspace.view.v5', JSON.stringify({
         groupBy: 'workspace', orderBy: 'updated', groupExpansion: { [account]: true },
         sessionOrderByAccount: { [account]: [...ids].reverse(), __flat_session_order__: [...ids].reverse() },
