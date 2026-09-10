@@ -129,7 +129,7 @@ export async function listPullRequestReviews(api, repository, pullNumber) {
 /**
  * Evaluate approval points from current reviews and repository permissions.
  * @param {{event: unknown, policySource: string, api: (path: string, options?: {method?: string, body?: unknown}) => Promise<unknown>}} options Runtime inputs.
- * @returns {Promise<{pull: {repository: string, number: number, headSha: string}, state: 'failure' | 'pending' | 'success', description: string, points: number, requiredPoints: number, approvals: Array<{login: string, points: number}>, blockers: string[], ignoredReviewers: string[]}>} Approval decision and status payload fields.
+ * @returns {Promise<{pull: {repository: string, number: number, headSha: string}, state: 'pending' | 'success', description: string, points: number, requiredPoints: number, approvals: Array<{login: string, points: number}>, blockers: string[], ignoredReviewers: string[]}>} Approval decision and status payload fields.
  */
 export async function evaluateApproval({ event, policySource, api }) {
   const pull = pullRequestFromEvent(event)
@@ -169,7 +169,7 @@ export async function evaluateApproval({ event, policySource, api }) {
     return next
   }, 0)
   if (blockers.length > 0) {
-    return approvalResult(pull, policy.requiredPoints, approvals, blockers, ignoredReviewers, 'failure',
+    return approvalResult(pull, policy.requiredPoints, approvals, blockers, ignoredReviewers, 'pending',
       `${blockers.length} blocking change request${blockers.length === 1 ? '' : 's'}`)
   }
   const state = points >= policy.requiredPoints ? 'success' : 'pending'

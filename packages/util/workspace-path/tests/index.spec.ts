@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
-  abbreviateHomePath, fileAddressFor, isAbsoluteWorkspacePath, parseFileAddress, pathPartsOf, resolveWorkspacePath,
-  workspaceTitleOf,
+  abbreviateHomePath, fileAddressFor, isAbsoluteWorkspacePath, parseFileAddress, pathPartsOf, relativizeToCwd,
+  resolveWorkspacePath, workspaceTitleOf,
 } from '@deepseek-ai/dsh-util-workspace-path'
 
 describe('Workspace path helpers', () => {
@@ -77,5 +77,20 @@ describe('Workspace path helpers', () => {
   it('makes a separator-less or separator-only path all name', () => {
     expect(pathPartsOf('notes.md')).toEqual({ directory: '', name: 'notes.md' })
     expect(pathPartsOf('/')).toEqual({ directory: '', name: '/' })
+  })
+
+  it.each([
+    ['/work/report.txt', '/work', 'report.txt'],
+    ['/work/reports/result.pdf', '/work/', 'reports/result.pdf'],
+    ['/work-other/report.txt', '/work', '/work-other/report.txt'],
+    ['/other/report.txt', '/work', '/other/report.txt'],
+    ['report.txt', '/work', 'report.txt'],
+    ['/work/report.txt', undefined, '/work/report.txt'],
+    ['/work/report.txt', '', '/work/report.txt'],
+    ['/report.txt', '/', 'report.txt'],
+    [String.raw`C:\work\reports\result.pdf`, String.raw`C:\work`, String.raw`reports\result.pdf`],
+    [String.raw`\\server\share\report.txt`, String.raw`\\server\share`, 'report.txt'],
+  ])('displays %s relative to %s only within that workspace', (path, cwd, label) => {
+    expect(relativizeToCwd(path, cwd)).toBe(label)
   })
 })
