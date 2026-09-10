@@ -111,8 +111,8 @@ export interface SidebarRightPlacement {
   /** Take this tab's place — its pane and its strip slot — and close it in the same step. */
   readonly replaceTab?: TabId
   /**
-   * Defaults to `true`: a tab already showing the same (kind, contentId) is
-   * focused and handed `params`. `false` opens another tab regardless.
+   * Resource tabs reveal an existing (kind, contentId) by default; `false`
+   * permits duplicates. Pages always deduplicate within the target pane.
    */
   readonly revealIfOpened?: boolean
 }
@@ -184,7 +184,7 @@ export interface ISidebarRight {
    * splits.
    * @param paneId - the pane to split; defaults to the active docked pane.
    * @returns the new pane's id, or `undefined` when nothing was split: the pane
-   *   is missing or floating, the budget is spent, or two halves would not fit.
+   *   is missing, floating, or empty, the budget is spent, or two halves would not fit.
    */
   split(paneId?: PaneId): PaneId | undefined
   /**
