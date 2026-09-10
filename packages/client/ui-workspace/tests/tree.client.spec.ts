@@ -506,6 +506,17 @@ describe('createWorkspaceViewStore', () => {
     })
   })
 
+  it('retains positions when reselecting Manual and discards them on mode switches', () => {
+    const store = createWorkspaceViewStore().create()
+    store.actions.setSessionOrder('alpha', ['two', 'one'])
+    store.actions.setOrderBy('manual')
+    expect(store.getSnapshot()).toMatchObject({ orderBy: 'manual', sessionOrderByAccount: { alpha: ['two', 'one'] } })
+    store.actions.setOrderBy('updated')
+    expect(store.getSnapshot()).toMatchObject({ orderBy: 'updated', sessionOrderByAccount: {} })
+    store.actions.setOrderBy('manual')
+    expect(store.getSnapshot().sessionOrderByAccount).toEqual({})
+  })
+
   it('removes view state outside the retained Workspace key set', () => {
     const store = createWorkspaceViewStore().create()
     store.actions.setGroupExpanded('', true)

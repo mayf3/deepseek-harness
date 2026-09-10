@@ -95,8 +95,10 @@ function useNativeDragAcceptance(active: boolean): void {
   }, [active])
 }
 
-/** Reconcile a stored view order with the Workspace's current session account. */
-function reconciledSessionOrder(sessionIds: readonly SessionId[], stored: readonly string[] | undefined): SessionId[] {
+/** Preserve manual positions, prepend new blanks, and append other new account members. */
+function reconciledSessionOrder(
+  sessionIds: readonly SessionId[], stored: readonly string[] | undefined, summaries: SessionListState['byId'],
+): SessionId[] {
   if (stored === undefined) return [...sessionIds]
   const byId = new Map(sessionIds.map(id => [id as string, id]))
   const ordered: SessionId[] = []
@@ -109,7 +111,8 @@ function reconciledSessionOrder(sessionIds: readonly SessionId[], stored: readon
   }
   for (const id of sessionIds) {
     if (included.has(id)) continue
-    ordered.push(id)
+    if (summaries[id]?.blank === true) ordered.unshift(id)
+    else ordered.push(id)
   }
   return ordered
 }
@@ -271,15 +274,18 @@ function SessionTree({
     const accounted = new Set(workspaces.flatMap(workspace => workspace.sessionIds))
     return list.ids.filter((id: SessionId) => list.byId[id] !== undefined && !accounted.has(id))
   }, [list, workspaces])
-  const orderedWorkspaces = useMemo(() => workspaces.map(workspace => ({
-    ...workspace,
-    sessionIds: orderBy === 'updated'
-      ? [...workspace.sessionIds].sort((a, b) => compareSessionRecency(a, b, list.byId))
-      : reconciledSessionOrder(workspace.sessionIds, sessionOrderByAccount[workspace.workspaceId]),
-  })), [list, orderBy, sessionOrderByAccount, workspaces])
+  const orderedWorkspaces = useMemo(() => workspaces.map((workspace) => {
+    const recent = [...workspace.sessionIds].sort((a, b) => compareSessionRecency(a, b, list.byId))
+    return {
+      ...workspace,
+      sessionIds: orderBy === 'updated'
+        ? recent
+        : reconciledSessionOrder(recent, sessionOrderByAccount[workspace.workspaceId], list.byId),
+    }
+  }), [list, orderBy, sessionOrderByAccount, workspaces])
   const orderedUngroupedSessionIds = useMemo(() => {
     const recent = [...ungroupedSessionIds].sort((a, b) => compareSessionRecency(a, b, list.byId))
-    return orderBy === 'updated' ? recent : reconciledSessionOrder(recent, sessionOrderByAccount[UNGROUPED_KEY])
+    return orderBy === 'updated' ? recent : reconciledSessionOrder(recent, sessionOrderByAccount[UNGROUPED_KEY], list.byId)
   }, [list, orderBy, sessionOrderByAccount, ungroupedSessionIds])
   useEffect(() => {
     if (list.phase !== 'ready' || orderBy !== 'manual') return
@@ -592,12 +598,12 @@ function FlatList({
   const rows = useMemo(() => {
     if (orderBy === 'updated') return baseRows
     const byId = new Map(baseRows.map(row => [row.id, row]))
-    return reconciledSessionOrder(sessionIds, sessionOrderByAccount[FLAT_SESSION_ORDER_KEY])
+    return reconciledSessionOrder(sessionIds, sessionOrderByAccount[FLAT_SESSION_ORDER_KEY], list.byId)
       .flatMap((id) => {
         const row = byId.get(id)
         return row === undefined ? [] : [row]
       })
-  }, [baseRows, orderBy, sessionOrderByAccount, sessionIds])
+  }, [baseRows, list.byId, orderBy, sessionOrderByAccount, sessionIds])
   useEffect(() => {
     if (list.phase !== 'ready' || orderBy !== 'manual') return
     const previous = sessionOrderByAccount[FLAT_SESSION_ORDER_KEY]
@@ -803,33 +809,6 @@ export function WorkspaceBrowser({
   const orderBy = useStore(s => s.orderBy)
   const groupExpansion = useStore(s => s.groupExpansion)
   const sessionOrderByAccount = useStore(s => s.sessionOrderByAccount)
-  const currentBlankSessionId = useSessions((state) => {
-    const current = state.current
-    return current !== undefined && state.byId[current]?.blank === true ? current : undefined
-  })
-  const currentBlankAccount = currentBlankSessionId === undefined
-    || workspacePhase !== 'ready'
-    ? undefined
-    : owningGroupKey(workspaces, currentBlankSessionId)
-  const promotedBlank = useRef<{ sessionId: SessionId; accountKey: string } | undefined>(undefined)
-  useEffect(() => {
-    if (currentBlankSessionId === undefined || currentBlankAccount === undefined) {
-      promotedBlank.current = undefined
-      return
-    }
-    const promoted = promotedBlank.current
-    if (promoted !== undefined && promoted.sessionId === currentBlankSessionId
-      && promoted.accountKey === currentBlankAccount) return
-    promotedBlank.current = { sessionId: currentBlankSessionId, accountKey: currentBlankAccount }
-    if (orderBy !== 'manual') return
-    for (const accountKey of new Set([currentBlankAccount, FLAT_SESSION_ORDER_KEY])) {
-      const previous = sessionOrderByAccount[accountKey] ?? []
-      actions.setSessionOrder(accountKey, [
-        currentBlankSessionId,
-        ...previous.filter(id => id !== currentBlankSessionId),
-      ])
-    }
-  }, [actions.setSessionOrder, currentBlankAccount, currentBlankSessionId, orderBy, sessionOrderByAccount])
   useEffect(() => {
     if (workspacePhase !== 'ready') return
     actions.retainAccountKeys([

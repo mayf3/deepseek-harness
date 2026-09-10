@@ -1,6 +1,6 @@
 /** Recency and saved manual order through the shipped Web composition. */
 import { readFile } from 'node:fs/promises'
-import { join } from 'node:path'
+import { basename, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { chromium, type Browser, type Page } from 'playwright'
 import { afterAll, beforeAll, describe, expect, it, onTestFailed } from 'vitest'
@@ -59,7 +59,7 @@ describe('web e2e: workspace recency', () => {
     await scaffold?.close()
   })
 
-  it('ignores legacy order, saves a drag as Manual, and restores each mode after reload', async () => {
+  it('pauses current recency in Manual, preserves drags on reload, and resets on Last updated', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-workspace-recency'))
     const titles = () => page.locator('[role="treeitem"]:not([aria-expanded]) [class*="title"]').allTextContents()
     const pick = async (name: string): Promise<void> => {
@@ -72,7 +72,7 @@ describe('web e2e: workspace recency', () => {
       await captureStableAria(page, '[role="tree"][aria-label="Sessions"]', scaffold.workspaceCwd), MODE,
     )
     await pick('Manual')
-    await expect.poll(titles).toEqual([...TITLES].reverse())
+    await expect.poll(titles).toEqual(TITLES)
     await pick('Last updated')
     await expect.poll(titles).toEqual(TITLES)
     const source = page.getByRole('treeitem').filter({ has: page.getByText(TITLES[2]!, { exact: true }) })
@@ -93,8 +93,32 @@ describe('web e2e: workspace recency', () => {
     await expect.poll(titles).toEqual(TITLES)
     acknowledgeReloadConnectionLoss(tripwire, recencyWarningStart)
     await pick('Manual')
-    await expect.poll(titles).toEqual([...TITLES].reverse())
-    await assertFixtureInventory(SNAPSHOT_DIR, ['sidebar.expected.md'])
+    await expect.poll(titles).toEqual(TITLES)
+    await pick('Last updated')
+    await pick('WorkSpace')
+    const workspaceTitle = basename(scaffold.workspaceCwd)
+    await page.getByRole('treeitem').filter({ has: page.getByText(workspaceTitle, { exact: true }) }).hover()
+    await page.getByRole('button', { name: `New session in ${workspaceTitle}` }).click()
+    await expect.poll(titles).toEqual(['New Session', ...TITLES])
+    await pick('Manual')
+    await expect.poll(titles).toEqual(['New Session', ...TITLES])
+    await compareOrRefreshGolden(
+      join(SNAPSHOT_DIR, 'manual-blank.expected.md'),
+      await captureStableAria(page, '[role="tree"][aria-label="Sessions"]', scaffold.workspaceCwd), MODE,
+    )
+    const blank = page.getByRole('treeitem').filter({ has: page.getByText('New Session', { exact: true }) })
+    const oldest = page.getByRole('treeitem').filter({ has: page.getByText(TITLES[2]!, { exact: true }) })
+    await blank.dragTo(oldest, { targetPosition: { x: 30, y: 30 } })
+    await expect.poll(titles).toEqual([...TITLES, 'New Session'])
+    const blankWarningStart = tripwire.warnings.length
+    await page.reload({ waitUntil: 'load' })
+    await expect.poll(titles).toEqual([...TITLES, 'New Session'])
+    acknowledgeReloadConnectionLoss(tripwire, blankWarningStart)
+    await pick('Last updated')
+    await expect.poll(titles).toEqual(['New Session', ...TITLES])
+    await pick('Manual')
+    await expect.poll(titles).toEqual(['New Session', ...TITLES])
+    await assertFixtureInventory(SNAPSHOT_DIR, ['sidebar.expected.md', 'manual-blank.expected.md'])
     expect(tripwire.pageErrors).toEqual([])
     expect(tripwire.warnings).toEqual([])
   })

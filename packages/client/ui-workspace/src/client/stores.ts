@@ -52,7 +52,10 @@ export function createWorkspaceViewStore(): EngineStoreHandle<WorkspaceViewState
     persist: 'dsh.workspace.view.v5',
     actions: {
       setGroupBy: (d, mode: SessionGroupBy) => { d.groupBy = mode },
-      setOrderBy: (d, mode: SessionOrderBy) => { d.orderBy = mode },
+      setOrderBy: (d, mode: SessionOrderBy) => {
+        if (mode !== d.orderBy) d.sessionOrderByAccount = {}
+        d.orderBy = mode
+      },
       setGroupExpanded: (d, key: string, expanded: boolean) => { d.groupExpansion[key] = expanded },
       retainAccountKeys: (d, workspaceKeys: readonly string[]) => {
         const retained = new Set(workspaceKeys)
@@ -64,6 +67,7 @@ export function createWorkspaceViewStore(): EngineStoreHandle<WorkspaceViewState
         )
       },
       setSessionOrder: (d, accountKey: string, order: string[]) => {
+        if (d.orderBy === 'updated') d.sessionOrderByAccount = {}
         d.orderBy = 'manual'
         d.sessionOrderByAccount[accountKey] = order
       },
