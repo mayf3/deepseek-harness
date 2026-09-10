@@ -52,6 +52,8 @@ Collect mode keeps the last `maxBytes` of a stream in memory — errors and fina
 
 Normal disposal terminates every running managed range and terminal session and awaits quiescence. During a JavaScript-observable host exit — direct `process.exit()`, default uncaught exceptions, default unhandled rejections — synchronous finalization asks a Linux scope to kill its members, kills each Windows runner so its sole Job handle closes, and uses the existing PGID, `taskkill`, or captured-identity operation for fallbacks. It creates no promises or timers and does not claim quiescence. The same exit removes the private per-process spill directory when it holds no completed spill file; completed spill files remain as full-output recovery artifacts until an external cleanup. Unhandled `SIGTERM`/`SIGINT`/`SIGHUP`, `SIGKILL`, fatal OOM, native crashes, and power loss need an external supervisor.
 
+Linux ordinary and terminal cancellation preserves the observed termination signal even before the bootstrap consumes its launch request. An unconsumed request still reports startup failure when no matching termination was requested; a recorded pre-exec error always takes precedence. `waitForExit()` independently proves the scope empty.
+
 ### What can go wrong
 
 An executable that cannot be resolved fails loud with a stable error. `done` rejects when spawn or provider failure prevents a direct outcome, and that rejection does not prove whether target execution began. `waitForExit()` rejects if the selected owner can no longer prove its range empty, and cleanup still attempts termination. A read past the retained tail is `lossy` and points at the spill file when one exists. A fallback process group or observed terminal session can miss a descendant that escapes before observation — see the limitations below.
@@ -91,8 +93,6 @@ Each spawn selects one owner for both signalling and quiescence. Supported Linux
 ### Main flow
 
 A spawn synchronously validates the final argv, cwd, and environment, selects containment before the user command can run, and returns a handle while target identity remains private. Linux ordinary and terminal launches use a private one-shot request whose scoped bootstrap restores the target cwd and environment, resolves the executable, clears close-on-exec on fd 0 through fd 2, and enters libc `execve()` with the original argv. Windows ordinary launches isolate runner fd 0 through fd 2, reserve fd 3 for IPC, and carry target stdio on fd 4 through fd 6; the runner resolves those CRT descriptors to OS handles, creates the target suspended, assigns it to the Job, resumes it, and closes only the carrier descriptors. `done` settles the direct command after its stdio barrier, while `waitForExit()` separately waits for the selected scope, Job, process group, or observed session to become empty.
-
-A Linux launcher terminated by a signal reports that signal even before its bootstrap consumes the target request; an explicit bootstrap error still rejects `done`. This preserves cancellation and timeout results without treating an unsignaled bootstrap failure as success.
 
 ### Safety invariants
 

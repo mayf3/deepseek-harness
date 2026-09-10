@@ -17,6 +17,7 @@ import {
   writeLinuxStartupError,
 } from '../src/runner-protocol.ts'
 import { SUBPROCESS_RUNNER_ENV } from '../src/runner-launch.ts'
+import { bindManagedProcess } from '../src/spawn.ts'
 
 const childProcessMocks = vi.hoisted(() => ({
   execFile: vi.fn(),
@@ -197,6 +198,33 @@ describe('Linux native capability selection', () => {
 })
 
 describe('Linux scope establishment and quiescence', () => {
+  it.each(['abort', 'terminate'] as const)('settles and cleans a managed handle after early %s', async (action) => {
+    const { child, result, requestPath } = launch(async () => missingUnit())
+    const controller = new AbortController()
+    const handle = bindManagedProcess({ ...spec(), signal: controller.signal }, result)
+    if (action === 'abort') controller.abort(new Error('cancelled'))
+    else handle.terminate()
+    expect(child.kills).toEqual(['SIGTERM'])
+    child.exit(null, 'SIGTERM')
+    child.stdout.end()
+    child.stderr.end()
+    await expect(handle.done).resolves.toEqual({ exitCode: null, signal: 'SIGTERM' })
+    await expect(handle.waitForExit()).resolves.toBe(true)
+    expect(existsSync(linuxLaunchFilesFromLocator(requestPath).directory)).toBe(false)
+  })
+
+  it.each([
+    { exitCode: 1, signal: null },
+    { exitCode: null, signal: 'SIGSEGV' as const },
+  ])('retains unrelated bootstrap failure $exitCode / $signal after a termination request', async (outcome) => {
+    const { child, result } = launch(async () => missingUnit())
+    result.owner.signal('SIGTERM')
+    child.exit(outcome.exitCode, outcome.signal)
+    await expect(result.direct).rejects.toThrow('before its bootstrap consumed')
+    await expect(result.owner.waitForExit()).resolves.toBeUndefined()
+    result.owner.cleanup?.()
+  })
+
   it('does not mistake pre-establishment unit absence for quiescence and settles an empty range after cancellation', async () => {
     const { child, result, requestPath, spawnSync } = launch(async () => missingUnit())
     const waiting = result.owner.waitForExit()
@@ -245,15 +273,6 @@ describe('Linux scope establishment and quiescence', () => {
 
     child.exit(null, 'SIGKILL')
     await expect(result.direct).resolves.toEqual({ exitCode: null, signal: 'SIGKILL' })
-    result.owner.cleanup?.()
-  })
-
-  it.each(['SIGTERM', 'SIGKILL'] as const)('reports %s before bootstrap consumption as a signal outcome', async (signal) => {
-    const { child, result, requestPath } = launch(async () => missingUnit())
-    expect(existsSync(requestPath)).toBe(true)
-    child.exit(null, signal)
-    await expect(result.direct).resolves.toEqual({ exitCode: null, signal })
-    await expect(result.owner.waitForExit()).resolves.toBeUndefined()
     result.owner.cleanup?.()
   })
 
@@ -346,23 +365,27 @@ describe('Linux scope establishment and quiescence', () => {
     launched.result.owner.cleanup?.()
   })
 
-  it('reports child termination before request consumption to the direct result and settles the empty range', async () => {
+  it.each([
+    { exitCode: 127, signal: null },
+    { exitCode: null, signal: 'SIGTERM' as const },
+  ])('rejects unexpected bootstrap exit $exitCode / $signal and settles the empty range', async (outcome) => {
     const { child, result } = launch(async () => missingUnit())
-    child.exit(127, null)
+    child.exit(outcome.exitCode, outcome.signal)
     await expect(result.direct).rejects.toThrow('before its bootstrap consumed')
     await expect(result.owner.waitForExit()).resolves.toBeUndefined()
     result.owner.cleanup?.()
   })
 
-  it('reconstructs a pre-exec startup error instead of exposing bootstrap exit 127', async () => {
+  it('preserves a recorded pre-exec failure even when cancellation also terminates the bootstrap', async () => {
     const { child, result, requestPath } = launch(async () => missingUnit())
     const files = linuxLaunchFilesFromLocator(requestPath)
+    result.owner.signal('SIGTERM')
     unlinkSync(requestPath)
     writeLinuxStartupError(files, {
       type: 'error',
       error: { name: 'Error', message: 'spawn tool ENOENT', code: 'ENOENT' },
     })
-    child.exit(127, null)
+    child.exit(null, 'SIGTERM')
     await expect(result.direct).rejects.toMatchObject({ code: 'ENOENT' })
     result.owner.cleanup?.()
   })
@@ -549,6 +572,27 @@ describe('Linux PTY bootstrap reuse', () => {
     graceMs: 100,
   } as const
 
+  it.each(['SIGTERM', 'SIGKILL'] as const)('preserves %s before bootstrap consumption and joins the empty scope', async (signal) => {
+    const scope = prepareLinuxTerminalScope(terminalSpec, { TARGET: 'yes' }, {
+      spawnSync: vi.fn(() => missingUnit()) as never,
+      systemctlQuery: async () => missingUnit(),
+    })
+    const requestPath = scope.env[SUBPROCESS_RUNNER_ENV]
+    if (requestPath === undefined) throw new Error('missing PTY request')
+    directories.push(linuxLaunchFilesFromLocator(requestPath).directory)
+    let running = true
+    const kill = vi.fn()
+    const owner = scope.bindOwner({ running: () => running, signal: kill })
+    owner.signal(signal)
+    expect(kill).toHaveBeenCalledExactlyOnceWith(signal)
+    running = false
+    expect(existsSync(requestPath)).toBe(true)
+    expect(scope.resolveOutcome({ exitCode: 0, signal })).toEqual({ exitCode: 0, signal })
+    await expect(owner.waitForExit()).resolves.toBeUndefined()
+    scope.cleanup()
+    expect(existsSync(linuxLaunchFilesFromLocator(requestPath).directory)).toBe(false)
+  })
+
   it('uses the same request/bootstrap, preserves argv, and cleans after owner settlement', async () => {
     const scope = prepareLinuxTerminalScope(terminalSpec, { TARGET: 'yes' }, {
       systemdRun: '/bin/systemd-run',
@@ -579,15 +623,6 @@ describe('Linux PTY bootstrap reuse', () => {
     })
     expect(() => scope.resolveOutcome({ exitCode: 127, signal: null })).toThrow('bad cwd')
     scope.cleanup()
-  })
-
-  it.each(['SIGTERM', 'SIGKILL'] as const)('preserves PTY %s before bootstrap consumption', (signal) => {
-    const scope = prepareLinuxTerminalScope(terminalSpec, { TARGET: 'yes' })
-    try {
-      expect(scope.resolveOutcome({ exitCode: null, signal })).toEqual({ exitCode: null, signal })
-    } finally {
-      scope.cleanup()
-    }
   })
 
   it('uses default owner dependencies and rejects an unconsumed request', () => {
