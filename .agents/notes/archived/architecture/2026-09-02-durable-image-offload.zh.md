@@ -1,6 +1,7 @@
 # Agent Note: 以表层替换实现持久的图片 offload
 
 Status: implemented
+Archived: 2026-09-10
 
 [English](2026-09-02-durable-image-offload.md) | 中文
 

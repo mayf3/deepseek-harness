@@ -1,6 +1,7 @@
 # Agent Note: Durable image offload by surface replacement
 
 Status: implemented
+Archived: 2026-09-10
 
 English | [中文](2026-09-02-durable-image-offload.zh.md)
 

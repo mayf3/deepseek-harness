@@ -26,6 +26,15 @@ interface UserMessage extends Message {
  */
 interface SessionEventMap {
   /**
+   * Permanently omit the selected input-image occurrences from subsequent
+   * model requests. Each target names a current user/message or tool/result
+   * node; image indexes are zero-based depth-first positions within that
+   * message, including nested tool results and already offloaded images.
+   * Targets are unique and each index list is nonempty and strictly increasing.
+   * This event changes derived content without replacing message nodes.
+   */
+  'image/offload': { targets: ImageOffloadTarget[] }
+  /**
    * Opens turn `turn` before the loop claims queued input or runs pre-step.
    * Rejection, empty input, cancellation, or failure may close it with no
    * step; otherwise the following identified `user/message` event or batch
@@ -341,6 +350,18 @@ type SurfaceIntent<T extends SurfaceEventType = SurfaceEventType> = {
 
 `assistant/message` 不能携带 `sourceEventSeqs`；它的 `stream` 拥有精确 provider 证据。其他 surface event 不引用较早 event 时省略该字段，需要引用时使用完整非空 list。
 
+`image/offload` 使用逐节点的明确索引，不增加 surface 节点，但改变派生输入内容。`contentGeneration` 推进，使请求系列和派生缓存刷新。重建函数通过 `deriveEventMessage(event, offloadedMessages)` 应用 `foldSurface(events).offloadedMessages`。
+
+```ts type-equiv
+/** Exact input-image occurrences selected by one durable offload decision. */
+interface ImageOffloadTarget {
+  /** Current message-producing event containing these occurrences. */
+  seq: SessionSeq
+  /** Zero-based depth-first image indexes within the immutable message. */
+  imageIndexes: number[]
+}
+```
+
 ### `SessionSurface`：实时只读 surface 投影
 
 `Session.surface` 返回会话稳定的 `SessionSurface` 视图。同一个增量管理器在提交前校验追加候选事件，并根据已提交事件推进该投影；调用方可以观察成员关系和替换代次，但不能调用校验。
@@ -354,6 +375,8 @@ interface SessionSurface {
   readonly nodes: readonly SessionSeq[]
   /** Monotonic count of committed positional replacements. */
   readonly replaceGeneration: number
+  /** Monotonic count of committed replacements and image-offload decisions. */
+  readonly contentGeneration: number
 }
 ```
 
@@ -382,6 +405,8 @@ interface SurfaceFoldResult {
   nodes: SessionSeq[]
   /** Replacement operations in event order. */
   replacements: SurfaceFoldReplacement[]
+  /** Immutable image-offloaded messages, keyed by their original event sequences. */
+  offloadedMessages: ReadonlyMap<SessionSeq, Message>
 }
 ```
 
@@ -568,21 +593,21 @@ declare class Session {
    * append records its `surfaceOp`, so a raw event with no marker (a chunk, a
    * turn boundary) is correctly absent, and a compaction `replace` deletes the
    * shadowed nodes from the derivation. The projection rules are
-   * {@link deriveEventMessage}, folded per node.
+   * {@link deriveEventMessage}, with logged image-offload selections applied
+   * without changing node membership or message identity.
    *
-   * CACHED: each surface node is projected exactly once, when first seen — a
-   * call costs O(new nodes), and a surface rewrite (a `replace`;
-   * {@link SessionSurface.replaceGeneration}) rebuilds. The returned array is
+   * CACHED: pure tail growth costs O(new nodes); a replacement or image offload
+   * ({@link SessionSurface.contentGeneration}) rebuilds. The returned array is
    * a fresh snapshot per call (later appends never grow an array a caller
    * already holds); the `Message` objects in it are SHARED and **deep-frozen**.
-   * Their content reuses the already frozen durable event data, so the cache
-   * needs no second deep clone and consumers still cannot mutate the log.
+   * Unchanged content reuses frozen event data; offloaded blocks are frozen
+   * derived copies. Consumers cannot mutate the log through either form.
    * @returns a fresh array of the shared, frozen derived history.
    */
   deriveMessages(): Message[];
   /**
-   * Instance face of the pure per-node `deriveEventMessage` export from
-   * `surface.ts`.
+   * Project one event with all committed image-offload selections applied.
+   * The original durable event remains unchanged.
    * @param event - the event to project.
    * @returns the derived message, or null when the event produces none.
    */

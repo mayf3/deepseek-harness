@@ -488,14 +488,14 @@ Source: [`packages/compaction/compaction-basic/src/types.ts:38`](../packages/com
 
 ## `@deepseek-ai/dsh-compaction-image-offload`
 
-Requires: `agents` · `tokenMeter`
+Requires: `agents`
 
 ```ts config-catalog
 /** The executor has no configuration; image-capable routes own their budgets. */
 export type Config = Readonly<Record<string, never>>
 ```
 
-Source: [`packages/compaction/compaction-image-offload/src/index.ts:23`](../packages/compaction/compaction-image-offload/src/index.ts)
+Source: [`packages/compaction/compaction-image-offload/src/index.ts:21`](../packages/compaction/compaction-image-offload/src/index.ts)
 
 <a id="deepseek-aidsh-compaction-tool-result-pruner"></a>
 

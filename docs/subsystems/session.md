@@ -26,6 +26,15 @@ interface UserMessage extends Message {
  */
 interface SessionEventMap {
   /**
+   * Permanently omit the selected input-image occurrences from subsequent
+   * model requests. Each target names a current user/message or tool/result
+   * node; image indexes are zero-based depth-first positions within that
+   * message, including nested tool results and already offloaded images.
+   * Targets are unique and each index list is nonempty and strictly increasing.
+   * This event changes derived content without replacing message nodes.
+   */
+  'image/offload': { targets: ImageOffloadTarget[] }
+  /**
    * Opens turn `turn` before the loop claims queued input or runs pre-step.
    * Rejection, empty input, cancellation, or failure may close it with no
    * step; otherwise the following identified `user/message` event or batch
@@ -339,6 +348,18 @@ Required for `SurfaceEventType` events — every message-producing event must de
 
 `assistant/message` cannot carry `sourceEventSeqs`; its `stream` owns exact provider evidence. Other surface events omit the field when they cite no earlier event and use a complete non-empty list when they do.
 
+`image/offload` uses exact per-node indexes. It changes derived input content without adding a surface node; `contentGeneration` advances so request series and cached derivation are refreshed. Reconstructors apply `foldSurface(events).offloadedMessages` through `deriveEventMessage(event, offloadedMessages)`.
+
+```ts type-equiv
+/** Exact input-image occurrences selected by one durable offload decision. */
+interface ImageOffloadTarget {
+  /** Current message-producing event containing these occurrences. */
+  seq: SessionSeq
+  /** Zero-based depth-first image indexes within the immutable message. */
+  imageIndexes: number[]
+}
+```
+
 ### `SessionSurface` — the live readonly surface projection
 
 `Session.surface` returns the session's stable `SessionSurface` view. The same incremental manager validates append candidates before commit and advances this projection from committed events; callers can observe membership and replacement generation but cannot invoke validation.
@@ -352,6 +373,8 @@ interface SessionSurface {
   readonly nodes: readonly SessionSeq[]
   /** Monotonic count of committed positional replacements. */
   readonly replaceGeneration: number
+  /** Monotonic count of committed replacements and image-offload decisions. */
+  readonly contentGeneration: number
 }
 ```
 
@@ -380,6 +403,8 @@ interface SurfaceFoldResult {
   nodes: SessionSeq[]
   /** Replacement operations in event order. */
   replacements: SurfaceFoldReplacement[]
+  /** Immutable image-offloaded messages, keyed by their original event sequences. */
+  offloadedMessages: ReadonlyMap<SessionSeq, Message>
 }
 ```
 
@@ -566,21 +591,21 @@ declare class Session {
    * append records its `surfaceOp`, so a raw event with no marker (a chunk, a
    * turn boundary) is correctly absent, and a compaction `replace` deletes the
    * shadowed nodes from the derivation. The projection rules are
-   * {@link deriveEventMessage}, folded per node.
+   * {@link deriveEventMessage}, with logged image-offload selections applied
+   * without changing node membership or message identity.
    *
-   * CACHED: each surface node is projected exactly once, when first seen — a
-   * call costs O(new nodes), and a surface rewrite (a `replace`;
-   * {@link SessionSurface.replaceGeneration}) rebuilds. The returned array is
+   * CACHED: pure tail growth costs O(new nodes); a replacement or image offload
+   * ({@link SessionSurface.contentGeneration}) rebuilds. The returned array is
    * a fresh snapshot per call (later appends never grow an array a caller
    * already holds); the `Message` objects in it are SHARED and **deep-frozen**.
-   * Their content reuses the already frozen durable event data, so the cache
-   * needs no second deep clone and consumers still cannot mutate the log.
+   * Unchanged content reuses frozen event data; offloaded blocks are frozen
+   * derived copies. Consumers cannot mutate the log through either form.
    * @returns a fresh array of the shared, frozen derived history.
    */
   deriveMessages(): Message[];
   /**
-   * Instance face of the pure per-node `deriveEventMessage` export from
-   * `surface.ts`.
+   * Project one event with all committed image-offload selections applied.
+   * The original durable event remains unchanged.
    * @param event - the event to project.
    * @returns the derived message, or null when the event produces none.
    */

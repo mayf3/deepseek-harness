@@ -247,9 +247,8 @@ interface LlmFailure {
   /**
    * With code `IMAGE_OFFLOAD_REQUIRED`: how many more of the oldest retained
    * image occurrences the route needs offloaded before the same request fits
-   * its exact byte accounting. `dsh-compaction-image-offload` replaces the
-   * surface nodes carrying that many oldest retained occurrences with copies
-   * marked `offloaded` and retries the step.
+   * its exact byte accounting. `dsh-compaction-image-offload` records the
+   * selected occurrences in an `image/offload` event and retries the step.
    */
   readonly offloadImages?: number
 }
@@ -257,7 +256,7 @@ interface LlmFailure {
 
 ## Request-image pricing
 
-An adapter whose provider charges visual tokens for request images declares per-route pricing by overriding `LlmAdapter.imageRequestPricing`, and `ctx.llm.imageRequestPricing(provider, model)` resolves it synchronously for consumers. The token meter resolves the routed model's pricing on every measurement so compaction pressure, retention, and range selection price image history as the routed request actually sends it; the DeepSeek adapter prices each retained occurrence at its per-model pixel-budget projection with the published v4 vision accounting and each occurrence a surface replacement marks offloaded as its placeholder text, while provider usage remains the authoritative anchor for completed requests.
+An adapter whose provider charges visual tokens for request images declares per-route pricing by overriding `LlmAdapter.imageRequestPricing`, and `ctx.llm.imageRequestPricing(provider, model)` resolves it synchronously for consumers. The token meter resolves the routed model's pricing on every measurement so compaction pressure, retention, and range selection price image history as the routed request actually sends it; the DeepSeek adapter prices each retained occurrence at its per-model pixel-budget projection with the published v4 vision accounting and each occurrence selected by a logged image-offload decision as its placeholder text, while provider usage remains the authoritative anchor for completed requests.
 
 ```ts type-equiv
 /**

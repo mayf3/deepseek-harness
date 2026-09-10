@@ -490,14 +490,14 @@ export interface ModelCompactPolicyConfig extends CompactionPolicyConfig {
 
 ## `@deepseek-ai/dsh-compaction-image-offload`
 
-需要：`agents` · `tokenMeter`
+需要：`agents`
 
 ```ts config-catalog
 /** The executor has no configuration; image-capable routes own their budgets. */
 export type Config = Readonly<Record<string, never>>
 ```
 
-来源：[`packages/compaction/compaction-image-offload/src/index.ts:23`](../packages/compaction/compaction-image-offload/src/index.ts)
+来源：[`packages/compaction/compaction-image-offload/src/index.ts:21`](../packages/compaction/compaction-image-offload/src/index.ts)
 
 <a id="deepseek-aidsh-compaction-tool-result-pruner"></a>
 

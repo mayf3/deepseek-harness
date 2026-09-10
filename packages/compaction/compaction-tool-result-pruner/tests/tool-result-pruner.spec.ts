@@ -5,6 +5,7 @@ import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import SessionStore, {
   Session,
   SessionId,
+  SessionSeq,
 } from '@deepseek-ai/dsh-session'
 import type { SurfaceEvent } from '@deepseek-ai/dsh-session'
 import * as SessionInvariant from '@deepseek-ai/dsh-session/invariant'
@@ -78,6 +79,24 @@ function appendToolStep(
 }
 
 describe('tool-result pruning configuration', () => {
+  it('preserves a logged image offload when pruning the same result later', () => {
+    const session = Session.create(SessionId('prune-offloaded'))
+    const seq = appendToolStep(session, 1, 'shot', [
+      { type: 'text', text: 'x'.repeat(200) },
+      { type: 'image', attachment: {
+        attachmentId: `sha256:${'a'.repeat(64)}` as never, mediaType: 'image/png', bytes: 1, width: 1, height: 1,
+      } },
+    ])
+    session.append('image/offload', { targets: [{ seq: SessionSeq(seq), imageIndexes: [0] }] })
+    const pruned = service().pruneSession(session)
+    expect(pruned.pruned).toHaveLength(1)
+    const replacement = session.snapshotEvents().at(-1)!
+    expect(replacement.type).toBe('tool/result')
+    expect(JSON.stringify(session.deriveEventMessage(replacement))).toContain('"offloaded":true')
+    expect(JSON.stringify(Session.create(SessionId('restored-offloaded'), session.snapshotEvents()).deriveMessages())).toContain('"offloaded":true')
+    expect(JSON.stringify(session.eventAt(SessionSeq(seq)))).not.toContain('offloaded')
+  })
+
   it('resolves detached immutable defaults and partial overrides', () => {
     const raw = { thresholdChars: 100, headChars: 20, tailChars: 10 }
     const resolved = resolveConfig(raw)

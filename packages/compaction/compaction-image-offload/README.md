@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-Image-heavy conversations continue when older images exceed a model route's budget. The plugin permanently replaces those images with text naming each attachment and its read-only path, then retries the request without spending the provider retry budget. Later requests retain that choice across route changes, resume, and replay. Token accounting follows the replacements, and provider cache reuse ends at the first changed message.
+Image-heavy conversations continue when older images exceed a model route's budget. The plugin permanently replaces those images with text naming each attachment and its available read-only path, then retries without spending the provider retry budget. Later requests retain that choice across route changes, resume, and replay. Token accounting follows the logged selections, and provider cache reuse ends at the first changed message.
 
 ## Table of Contents
 
@@ -25,7 +25,7 @@ Image-heavy conversations continue when older images exceed a model route's budg
 <a id="use-this-package"></a>
 ## Use this package
 
-Mount this plugin in every composition that runs the agent loop with an image-capable route and the token meter. The shipped `dsh` base does. Without it, an `IMAGE_OFFLOAD_REQUIRED` failure reaches ordinary recovery and ends the turn as an error. The plugin has no configuration: the DeepSeek adapter enforces its file-mode and inline-fallback budgets, the pi-ai adapter its base64 bound, and each reports the count it needs offloaded.
+Mount this plugin in every composition that runs the agent loop with an image-capable route. The shipped `dsh` base does. Without it, an `IMAGE_OFFLOAD_REQUIRED` failure reaches ordinary recovery and ends the turn as an error. The plugin has no configuration: the DeepSeek adapter enforces its file-mode and inline-fallback budgets, the pi-ai adapter its base64 bound, and each reports the count it needs offloaded.
 
 ### Minimal configuration
 
@@ -35,7 +35,7 @@ Mount this plugin in every composition that runs the agent loop with an image-ca
 
 ### What you can observe
 
-Each offload appends, per replaced node, one `compaction/prune` event carrying the node's heuristic token price and then the replacement node itself: a `user/message` or `tool/result` copy of the original with the affected image blocks marked `offloaded: true`, a `surfaceOp` of `replace`, and `sourceEventSeqs` naming the original. The original event stays in the log untouched. The retried request follows; the loop logs a fresh `request/header` after the surface change, as it does after any compaction.
+Each decision appends one `image/offload` event identifying the selected occurrences by current message-event sequence and depth-first image index. The message events and surface node identities remain unchanged. The retried request follows a fresh `request/header` identifying a new message series.
 
 ### Failures and recovery
 
@@ -49,9 +49,9 @@ The plugin acts only on `IMAGE_OFFLOAD_REQUIRED` failures that carry `offloadIma
 <details>
 <summary>Implementation internals — click to expand</summary>
 
-The plugin is one function plugin with one `agent/request-error` listener. `offloadOldestImages()` walks `session.surface.nodes`, marks the first `offloadImages` retained occurrences across `user/message` and `tool/result` nodes, nested tool results included, and for each changed node appends the `compaction/prune` shadow price followed by the marked copy under `surfaceOp: { op: 'replace' }`. It reuses the compaction seam's events and the session's replacement mechanism; no session or agent-loop change exists for it.
+The recovery listener owns selection and retry policy. It reads Session's projected messages, selects the oldest retained input images in request order, and commits the complete selection in one event. Session validates and applies those exact references during append and replay; its shared derivation supplies requests, compaction, and later message rewrites. Token measurement folds the same selections without replacement shadow prices.
 
-No runtime invariant companion is published: Session validates each replacement's surface metadata, and the `compaction/prune` protocol is owned by the compaction seam's companion.
+No runtime invariant companion is published: Session rejects invalid or repeated image references before commit, and this executor retains no separate mutable offload state.
 
 </details>
 
@@ -60,9 +60,9 @@ No runtime invariant companion is published: Session validates each replacement'
 <a id="further-exploration"></a>
 ## Further Exploration
 
-- [Durable image offload by surface replacement](../../../.agents/notes/implemented/architecture/2026-09-02-durable-image-offload.md) — the decision this executor implements and the alternatives it replaced.
-- [compaction seam](../compaction/README.md) — the `compaction/prune` shadow-price protocol.
-- [compaction-tool-result-pruner](../compaction-tool-result-pruner/README.md) — the sibling executor that trims tool outputs by the same replacement mechanism.
+- [Dedicated image-offload events](../../../.agents/notes/implemented/architecture/2026-09-10-image-offload-events.md) — durable selections, ownership, and rejected alternatives.
+- [compaction seam](../compaction/README.md) — the neighboring summary and text-pruning operations.
+- [compaction-tool-result-pruner](../compaction-tool-result-pruner/README.md) — the sibling executor that trims tool outputs while preserving image selections.
 - [dsh-llm](../../llm/llm/README.md) — `ImageBlock.offloaded`, `IMAGE_OFFLOAD_REQUIRED`, and the placeholder projection.
 - [llm-deepseek adapter](../../llm/llm-deepseek/README.md) and [llm-pi-ai adapter](../../llm/llm-pi-ai/README.md) — the route budgets that report offload counts.
 
@@ -75,15 +75,15 @@ No runtime invariant companion is published: Session validates each replacement'
 
 #### What the model sees
 
-Every image occurrence a replacement marked reaches the model as the route's placeholder text (`offloadedImageText`) naming the attachment and its read-only path instead of the image; unmarked occurrences stay images. The set never shrinks on its own, so the model can rely on an offloaded image staying offloaded and read it back through the path when it needs the content again.
+Every selected image occurrence reaches the model as placeholder text (`offloadedImageText`) naming the attachment and its available read-only path; unselected occurrences stay images. Selections persist across requests. A new tool read may introduce a new occurrence of the same attachment without restoring the old one.
 
 #### Token effect
 
-An offloaded occurrence costs its placeholder text instead of visual tokens. The token meter prices the replaced node from the marks on the surface.
+An offloaded occurrence costs its placeholder text instead of visual tokens. The token meter applies the logged selections when pricing each node. Reference-only heuristic counts exclude offload metadata.
 
 #### KV Cache effect
 
-A replacement turns earlier images into placeholder text, so provider cache reuse ends at the first replaced message for that request. Because the replacement never reverts, the prefix stays stable afterwards.
+A selection turns earlier images into placeholder text, so provider cache reuse ends at the first changed image for that request. The selected occurrences remain omitted afterwards.
 
 ## Known Limitations and Deferred Work
 

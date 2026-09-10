@@ -4703,9 +4703,6 @@ importers:
       '@deepseek-ai/dsh-agent-loop-testkit':
         specifier: workspace:^
         version: link:../../test-support/agent-loop-testkit
-      '@deepseek-ai/dsh-compaction':
-        specifier: workspace:^
-        version: link:../compaction
       '@deepseek-ai/dsh-llm':
         specifier: workspace:^
         version: link:../../llm/llm
@@ -4715,9 +4712,6 @@ importers:
       '@deepseek-ai/dsh-session-projection':
         specifier: workspace:^
         version: link:../../session/session-projection
-      '@deepseek-ai/dsh-token-meter':
-        specifier: workspace:^
-        version: link:../../llm/token-meter
 
   packages/compaction/compaction-tool-result-pruner:
     dependencies:

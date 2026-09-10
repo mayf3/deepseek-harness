@@ -51,9 +51,8 @@ export interface LlmFailure {
   /**
    * With code `IMAGE_OFFLOAD_REQUIRED`: how many more of the oldest retained
    * image occurrences the route needs offloaded before the same request fits
-   * its exact byte accounting. `dsh-compaction-image-offload` replaces the
-   * surface nodes carrying that many oldest retained occurrences with copies
-   * marked `offloaded` and retries the step.
+   * its exact byte accounting. `dsh-compaction-image-offload` records the
+   * selected occurrences in an `image/offload` event and retries the step.
    */
   readonly offloadImages?: number
 }
@@ -81,9 +80,9 @@ export interface ImageBlock {
   /** Immutable bytes and intrinsic display metadata owned by the attachment service. */
   attachment: ImageAttachmentRef
   /**
-   * Set on a surface replacement once the occurrence is offloaded from
-   * requests: every route sends its placeholder text, which names the image
-   * and its read-only path, instead of the image.
+   * Derived from a durable image-offload decision or preserved by a message
+   * rewrite. Every route sends placeholder text naming the image and its
+   * available read-only path instead of image bytes.
    */
   offloaded?: true
 }

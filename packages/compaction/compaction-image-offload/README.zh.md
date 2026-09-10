@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-当较早的图片超出模型路由的预算时，图片密集的会话仍可继续。本插件永久将这些图片替换为注明附件及其只读路径的文本，然后重试请求，不消耗提供方重试预算。后续请求在切换路由、恢复和回放时都保留这一选择。token 计量随替换更新，提供方缓存只能复用到第一条被修改的消息之前。
+当较早的图片超出模型路由的预算时，图片密集的会话仍可继续。本插件永久将这些图片替换为注明附件及其可用只读路径的文本，然后重试，不消耗提供方重试预算。后续请求在切换路由、恢复和回放时都保留这一选择。token 计量随日志记录的选择更新，提供方缓存只能复用到第一条被修改的消息之前。
 
 ## 目录
 
@@ -25,7 +25,7 @@ kind: "package-reference"
 <a id="use-this-package"></a>
 ## 使用本包
 
-凡是运行 agent loop、带有支持图片的路由并挂了 token meter 的组合，都应挂载本插件，随附的 `dsh` 基础配置已经挂载。没有它，`IMAGE_OFFLOAD_REQUIRED` 失败会进入普通恢复并以错误结束该轮次。本插件没有配置：DeepSeek adapter 执行其 file 模式和内联回退预算，pi-ai adapter 执行其 base64 上限，各自上报需要省略的数量。
+凡是运行 agent loop（智能体循环）并带有支持图片的路由的组合，都应挂载本插件，随附的 `dsh` 基础配置已经挂载。没有它，`IMAGE_OFFLOAD_REQUIRED` 失败会进入普通恢复并以错误结束该轮次。本插件没有配置：DeepSeek 适配器执行其 file 模式和内联回退预算，pi-ai 适配器执行其 base64 上限，各自上报需要省略的数量。
 
 ### 最小可用组合
 
@@ -35,7 +35,7 @@ kind: "package-reference"
 
 ### 你可以观察到什么
 
-每次省略会为每个被替换节点追加一条携带该节点启发式 token 价格的 `compaction/prune` 事件，紧接着追加替换节点本身：原消息的 `user/message` 或 `tool/result` 副本，受影响的图片块标了 `offloaded: true`，`surfaceOp` 为 `replace`，`sourceEventSeqs` 指向原节点。原事件原封不动留在日志里。随后是重试的请求；表层变化后 loop 会像任何一次 compaction 之后一样记录新的 `request/header`。
+每次决定追加一条 `image/offload` 事件，通过当前消息事件的序号和消息内深度优先的图片序号指定省略位置。消息事件和表层节点标识保持不变。重试请求前会追加新的 `request/header`，标明新的消息序列。
 
 ### 失败与恢复
 
@@ -49,9 +49,9 @@ kind: "package-reference"
 <details>
 <summary>实现内部——点击展开</summary>
 
-本插件是只有一个 `agent/request-error` 监听器的函数插件。`offloadOldestImages()` 遍历 `session.surface.nodes`，在 `user/message` 和 `tool/result` 节点（含嵌套工具结果）中给前 `offloadImages` 个保留的出现位置打标记，对每个有变化的节点先追加 `compaction/prune` 影子价格，再以 `surfaceOp: { op: 'replace' }` 追加带标记的副本。它复用 compaction seam 的事件和 session 的替换机制，没有为它改动 session 或 agent loop。
+恢复监听器负责选图和重试策略。它读取 Session 派生的消息，按请求顺序选取最早的保留输入图片，并用一条事件提交本次选择。Session 在追加和回放时校验并应用这些确切引用，共享派生结果供请求、压缩（compaction）和后续消息改写使用。token 测量应用同一份选择，不依赖替换影子价格。
 
-本包不发布运行时 invariant 伴生插件：Session 校验每次替换的表层元数据，`compaction/prune` 协议由 compaction seam 的伴生插件负责。
+本包不发布运行时 invariant 伴生插件：Session 在提交前拒绝无效或重复省略的图片引用，执行器不维护独立可变的省略状态。
 
 </details>
 
@@ -60,9 +60,9 @@ kind: "package-reference"
 <a id="further-exploration"></a>
 ## 进一步探索
 
-- [以表层替换实现持久的图片 offload](../../../.agents/notes/implemented/architecture/2026-09-02-durable-image-offload.zh.md)——本执行器实现的决定及其替代的方案。
-- [compaction seam](../compaction/README.zh.md)——`compaction/prune` 影子定价协议。
-- [compaction-tool-result-pruner](../compaction-tool-result-pruner/README.zh.md)——用同一替换机制修剪工具输出的兄弟执行器。
+- [独立的图片省略事件](../../../.agents/notes/implemented/architecture/2026-09-10-image-offload-events.zh.md)，记录持久选择、职责和被否决的方案。
+- [compaction seam](../compaction/README.zh.md)，相邻的摘要和文本剪枝操作。
+- [compaction-tool-result-pruner](../compaction-tool-result-pruner/README.zh.md)，保留图片选择并修剪工具输出的兄弟执行器。
 - [dsh-llm](../../llm/llm/README.zh.md)——`ImageBlock.offloaded`、`IMAGE_OFFLOAD_REQUIRED` 与占位投影。
 - [llm-deepseek 适配器](../../llm/llm-deepseek/README.zh.md)与 [llm-pi-ai 适配器](../../llm/llm-pi-ai/README.zh.md)——上报省略数量的路由预算。
 
@@ -75,15 +75,15 @@ kind: "package-reference"
 
 #### 模型看到的内容
 
-替换标记过的每个图片出现位置，以路由的占位文本（`offloadedImageText`）到达模型，文本注明附件及其只读路径而不是图片本身；未标记的出现位置仍是图片。该集合不会自行缩小，模型可以确信被省略的图片会一直被省略，再需要内容时通过路径读回。
+每个选中的图片出现位置以占位文本（`offloadedImageText`）到达模型，文本注明附件及其可用只读路径，未选中的位置仍是图片。选择在后续请求中持续生效。新的工具读取可以引入同一附件的新出现位置，不会恢复旧位置。
 
 #### Token 影响
 
-被省略的出现位置只花费占位文本，不再花费视觉 token。token meter 按表层上的标记为被替换节点定价。
+被省略的出现位置只花费占位文本，不再花费视觉 token。token meter 为每个节点定价时应用日志记录的选择。仅针对引用的启发式计数不计入省略元数据。
 
 #### KV Cache 影响
 
-一次替换把较早的图片换成占位文本，该请求的 provider 缓存复用因此止于第一条被替换的消息。替换永不回退，之后的前缀保持稳定。
+一次选择把较早的图片换成占位文本，该请求的提供方缓存复用因此止于第一张被修改的图片。所选位置之后仍保持省略。
 
 ## 已知限制与延期工作
 

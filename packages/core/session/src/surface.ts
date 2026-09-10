@@ -11,6 +11,7 @@
 import type { Message } from '@deepseek-ai/dsh-llm'
 import { SessionLogOffset, SessionSeq } from './types.ts'
 import { KNOWN_SESSION_EVENT_TYPES } from './known-event-types.ts'
+import { offloadMessageImages } from './image-offload.ts'
 import type {
   SessionEvent,
   SessionSeqCursor,
@@ -79,17 +80,21 @@ export function isReplacementSurfaceEvent(
 /**
  * Project a single event into the LLM message it derives to, or null when it
  * produces none — a non-surface event (attempt, boundary, log-only record) or an
- * empty-content assistant/message (which exists only to host usage). This is
- * THE per-node projection rule: `Session.deriveMessages` folds it over the
- * live surface, external reconstructors and pure projections fold the same
- * function over a log prefix's surface to rebuild the exact messages any
- * request was built from. The returned message is the already frozen message
- * nested in the event wrapper and shared by delivery, durable history, and
- * model requests.
+ * empty-content assistant/message (which exists only to host usage). A caller
+ * reconstructing model input supplies the same prefix's `offloadedMessages`
+ * from {@link foldSurface}; without that map this function reads original
+ * event content. Session instance methods apply the live projection. Messages
+ * are immutable and unchanged content retains its durable identity.
  * @param event - the event to project.
+ * @param offloadedMessages - image projections from the same log prefix's surface fold.
  * @returns the derived message, or null when the event produces none.
  */
-export function deriveEventMessage(event: SessionEvent): Message | null {
+export function deriveEventMessage(
+  event: SessionEvent,
+  offloadedMessages?: ReadonlyMap<SessionSeq, Message>,
+): Message | null {
+  const projected = offloadedMessages?.get(event.seq)
+  if (projected !== undefined) return projected
   // Intentionally non-exhaustive: only message-producing events derive
   // history; turn/step boundaries, failed attempts, and errors are trace/replay
   // data.
@@ -184,6 +189,8 @@ export interface SurfaceFoldResult {
   nodes: SessionSeq[]
   /** Replacement operations in event order. */
   replacements: SurfaceFoldReplacement[]
+  /** Immutable image-offloaded messages, keyed by their original event sequences. */
+  offloadedMessages: ReadonlyMap<SessionSeq, Message>
 }
 
 /** Readonly live projection of the message-producing session events. */
@@ -192,12 +199,16 @@ export interface SessionSurface {
   readonly nodes: readonly SessionSeq[]
   /** Monotonic count of committed positional replacements. */
   readonly replaceGeneration: number
+  /** Monotonic count of committed replacements and image-offload decisions. */
+  readonly contentGeneration: number
 }
 
 /** Mutable state shared by complete and incremental folds. */
 interface SurfaceFoldState {
   nodes: SessionSeq[]
   replaceGeneration: number
+  contentGeneration: number
+  offloadedMessages: Map<SessionSeq, Message>
 }
 
 /** A validated replacement transition that has not mutated fold state yet. */
@@ -211,10 +222,50 @@ interface SurfaceReplacePlan extends SurfaceFoldReplacement {
 type SurfacePlan =
   | { kind: 'append'; seq: SessionSeq }
   | SurfaceReplacePlan
+  | { kind: 'image-offload'; messages: ReadonlyMap<SessionSeq, Message> }
 
 /** Create an empty surface fold state. */
 function createFoldState(): SurfaceFoldState {
-  return { nodes: [], replaceGeneration: 0 }
+  return { nodes: [], replaceGeneration: 0, contentGeneration: 0, offloadedMessages: new Map() }
+}
+
+/** Validate exact image references before publishing any part of the decision. */
+function planImageOffload(
+  state: SurfaceFoldState,
+  event: SessionEvent<'image/offload'>,
+  events: readonly SessionEvent[],
+  baseSeq: SessionLogOffset,
+): Extract<SurfacePlan, { kind: 'image-offload' }> {
+  const data: unknown = event.data
+  if (!isRecord(data) || Object.keys(data).length !== 1 || !Array.isArray(data['targets']) || data['targets'].length === 0) {
+    throw new Error('image/offload: data must contain a nonempty targets array')
+  }
+  const messages = new Map<SessionSeq, Message>()
+  const nodes = new Set(state.nodes)
+  for (const target of data['targets'] as unknown[]) {
+    if (!isRecord(target) || Object.keys(target).length !== 2 || !isEventSeq(target['seq'])
+      || !Array.isArray(target['imageIndexes']) || target['imageIndexes'].length === 0) {
+      throw new Error('image/offload: each target must contain a seq and nonempty imageIndexes')
+    }
+    const seq = target['seq']
+    if (messages.has(seq)) throw new Error(`image/offload: duplicate target seq ${seq}`)
+    if (!nodes.has(seq)) throw new Error(`image/offload: target seq ${seq} is not a current surface node`)
+    const source = events[seq - baseSeq]
+    if (source?.type !== 'user/message' && source?.type !== 'tool/result') {
+      throw new Error(`image/offload: target seq ${seq} must be user/message or tool/result`)
+    }
+    let previous = -1
+    for (const index of target['imageIndexes'] as unknown[]) {
+      if (!isEventSeq(index) || index <= previous) {
+        throw new Error('image/offload: imageIndexes must be strictly increasing non-negative safe integers')
+      }
+      previous = index
+    }
+    const message = state.offloadedMessages.get(seq)
+      ?? (source.type === 'user/message' ? source.data : source.data.message)
+    messages.set(seq, offloadMessageImages(message, target['imageIndexes'] as number[]))
+  }
+  return { kind: 'image-offload', messages }
 }
 
 /** Whether a runtime value is a non-negative safe event sequence. */
@@ -429,6 +480,7 @@ function planSurfaceEvent(
     throw new Error(`session event seq ${event.seq} is not contiguous; expected ${expectedSeq}`)
   }
   const surfaceOp = validateSurfaceMetadata(event)
+  if (event.type === 'image/offload') return planImageOffload(state, event, events, baseSeq)
   if (surfaceOp === undefined) return
   if (surfaceOp === 'append') {
     return { kind: 'append', seq: event.seq }
@@ -468,6 +520,10 @@ function applySurfacePlan(
   } else if (plan?.kind === 'replace') {
     state.nodes.splice(plan.startIdx, plan.endIdx - plan.startIdx + 1, plan.seq)
     state.replaceGeneration += 1
+    state.contentGeneration += 1
+  } else if (plan?.kind === 'image-offload') {
+    for (const [seq, message] of plan.messages) state.offloadedMessages.set(seq, message)
+    state.contentGeneration += 1
   }
   if (plan?.kind !== 'replace') return
   return {
@@ -497,7 +553,7 @@ export function foldSurface(events: readonly SessionEvent[]): SurfaceFoldResult 
     )
     if (replacement !== undefined) replacements.push(replacement)
   }
-  return { nodes: [...state.nodes], replacements }
+  return { nodes: [...state.nodes], replacements, offloadedMessages: new Map(state.offloadedMessages) }
 }
 
 /** Incremental ordered surface view and append-boundary validator. */
@@ -538,6 +594,22 @@ export class SurfaceManager implements SessionSurface {
   get replaceGeneration(): number {
     if (this._lastProcessedSeq < this.baseSeq + this.log.length - 1) this._processDelta()
     return this._state.replaceGeneration
+  }
+
+  /** Monotonic count of committed changes to existing model-visible content. */
+  get contentGeneration(): number {
+    if (this._lastProcessedSeq < this.baseSeq + this.log.length - 1) this._processDelta()
+    return this._state.contentGeneration
+  }
+
+  /**
+   * Project one message with every committed image-offload decision applied.
+   * @param event - message-producing or log-only event.
+   * @returns its immutable projected message, or null when it produces none.
+   */
+  deriveEventMessage(event: SessionEvent): Message | null {
+    if (this._lastProcessedSeq < this.baseSeq + this.log.length - 1) this._processDelta()
+    return deriveEventMessage(event, this._state.offloadedMessages)
   }
 
   /** Surface event sequences in model-visible order. */
