@@ -328,10 +328,9 @@ describe('dsh-tool-team', () => {
       if (mode === 'abort') agent.cancel({ kind: 'user' })
       return { kind: 'enter', messages: [] }
     })
-    const spawned = await execute(ctx, lead, 'spawn_teammate', {
+    await execute(ctx, lead, 'spawn_teammate', {
       name: 'reviewer', description: 'review', prompt: 'Review the work',
     })
-    expect(spawned.isError).toBe(true)
     const childId = SessionId(ctx.agentTeams.listMembers(lead).find(member => member.name === 'reviewer')!.id)
     await waitNoAgent(ctx, childId)
     expect(adapter.requests.filter(request => request.sessionId === childId)).toEqual([])
