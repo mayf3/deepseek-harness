@@ -72,10 +72,10 @@ export interface ConnectionStateSource {
 export const inject: string[] = []
 
 /**
- * Carrier override installed on the page global before plugin boot. The served
- * web app leaves it unset and gets HTTP + WebSocket; a shell that owns a
- * different physical transport (the worker preview's postMessage tunnel)
- * provides both halves here instead of forking this plugin.
+ * Physical carrier selected when the Connection service is installed. The
+ * served web app omits it and gets HTTP + WebSocket; a shell that owns a
+ * different transport (the worker preview's postMessage tunnel) provides both
+ * halves instead of forking this plugin.
  */
 export interface ClientTransportHooks {
   /**
@@ -109,6 +109,22 @@ export interface ClientTransportHooks {
 interface ClientTransportGlobal {
   __DSH_TRANSPORT__?: ClientTransportHooks
   __DSH_CONNECTION_RECOVERY__?: unknown
+}
+
+/** Browser location fields used to select fixture mode and loopback authority. */
+export interface ConnectionLocation {
+  readonly hostname: string
+  readonly search: string
+}
+
+/** Instance-local inputs for installing a Connection service. */
+export interface ConnectionInstallOptions {
+  /** Explicit physical carrier; omit for the browser HTTP + WebSocket carrier. */
+  readonly transport?: ClientTransportHooks
+  /** Resolved reconnect timing; omitted fields use controller defaults. */
+  readonly recovery?: ConnectionRecoveryConfig
+  /** Page location; omit for a non-browser composition. */
+  readonly location?: ConnectionLocation
 }
 
 /**
@@ -182,15 +198,16 @@ function watchBrowserNetwork(controller: ConnectionController): () => void {
 }
 
 /**
- * Client plugin body: pick physical carriers by page mode and provide ctx.connection.
- * @param ctx - client cordis context.
+ * Install one Context-owned Connection service from explicit composition inputs.
+ * @param ctx - client Cordis context.
+ * @param options - physical carrier, reconnect timing, and page location.
  */
-export function apply(ctx: Context): void {
-  const pageLocation = typeof location === 'undefined' ? undefined : location
+export function installConnection(ctx: Context, options: ConnectionInstallOptions = {}): void {
+  const pageLocation = options.location
   const fixture = pageLocation !== undefined && new URLSearchParams(pageLocation.search).has('fixture')
   const fixtureRpc = fixture ? createFixtureConnectionRpc() : undefined
-  const transport = (globalThis as ClientTransportGlobal).__DSH_TRANSPORT__
-  const recovery = resolveConnectionConfig((globalThis as ClientTransportGlobal).__DSH_CONNECTION_RECOVERY__)
+  const transport = options.transport
+  const recovery = options.recovery ?? {}
   const rpc = fixtureRpc ?? transport?.rpc ?? createWebConnectionRpc(transport?.fetch, transport?.openStream)
   let generationSource: ConnectionGenerationSource | undefined
   let owner: ConnectionOwner | undefined
@@ -293,4 +310,19 @@ export function apply(ctx: Context): void {
     },
   }
   ctx.provide('connection', handle)
+}
+
+/**
+ * Client plugin body: read the page composition and install its Connection service.
+ * @param ctx - client Cordis context.
+ */
+export function apply(ctx: Context): void {
+  const globals = globalThis as ClientTransportGlobal
+  const pageLocation = typeof location === 'undefined' ? undefined : location
+  const transport = globals.__DSH_TRANSPORT__
+  installConnection(ctx, {
+    ...(transport === undefined ? {} : { transport }),
+    recovery: resolveConnectionConfig(globals.__DSH_CONNECTION_RECOVERY__),
+    ...(pageLocation === undefined ? {} : { location: pageLocation }),
+  })
 }
