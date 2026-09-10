@@ -59,7 +59,8 @@ async function timed(label: string, action: () => Promise<void>): Promise<void> 
  * Both lanes settle before cleanup or rejection. The ZIP contains a stapled App; the DMG
  * carries its own ticket and encloses the signed App without an individually stapled ticket.
  * @param request - Signed directory build, release version, architecture, and credentials.
- * @param build - Runs electron-builder to completion with publishing disabled.
+ * @param build - Runs electron-builder with publishing disabled; resolves only after its DMG
+ * notarization and verification hook succeeds, and rejects on build or hook failure.
  * @param apple - Apple signing, copying, and notarization operations.
  * @returns Resolves after both qualified payloads, ZIP metadata, and the stapled App are in the final directory.
  */

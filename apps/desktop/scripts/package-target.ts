@@ -238,6 +238,7 @@ export function desktopElectronBuilderArguments(
     'never',
     ...(directory ? ['--dir'] : []),
     ...(artifact === undefined ? [] : [
+      ...(target.platform === 'darwin' ? ['--config.mac.notarize=false'] : []),
       '--prepackaged', artifact.appPath,
       '--config.directories.output', artifact.output,
     ]),

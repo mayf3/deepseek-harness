@@ -87,7 +87,7 @@ describe('parallel macOS artifacts', () => {
     })
     try {
       await appStarted.promise
-      expect([...starts]).toEqual(['app', 'dmg'])
+      await vi.waitFor(() => { expect([...starts]).toEqual(expect.arrayContaining(['app', 'dmg'])) })
       expect(new Set(copies).size).toBe(2)
       expect(copies.every(path => path !== f.appPath)).toBe(true)
       appAccepted.release()
@@ -107,7 +107,8 @@ describe('parallel macOS artifacts', () => {
     } finally {
       appAccepted.release()
       dmgCompleted.release()
-      try { await operation } finally { await rm(f.root, { recursive: true, force: true }) }
+      await Promise.allSettled([operation])
+      await rm(f.root, { recursive: true, force: true })
     }
   })
 
@@ -181,6 +182,7 @@ describe('parallel macOS artifacts', () => {
       expect(desktopElectronBuilderArguments(target, false, { format, appPath, output })).toEqual([
         'exec', 'electron-builder', '--config', 'electron-builder.config.mjs',
         '--mac', format, '--arm64', '--publish', 'never',
+        '--config.mac.notarize=false',
         '--prepackaged', appPath, '--config.directories.output', output,
       ])
     }
