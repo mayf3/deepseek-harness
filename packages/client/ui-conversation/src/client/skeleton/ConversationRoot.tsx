@@ -4,6 +4,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import clsx from 'clsx'
+import type { SessionSnapshot } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { WorkspaceId } from '@deepseek-ai/dsh-workspace/types'
 import type { ConversationSlotProps, InputZone } from '../contract/slots.ts'
 import { conversationPhase } from '../contract/snapshot.ts'
@@ -12,6 +13,18 @@ import css from './ConversationRoot.module.css'
 
 /** Full props composed from the slot contract. */
 export type ConversationRootProps = ConversationSlotProps
+
+type ConversationPhase = 'settling' | 'hero' | 'active'
+
+type ConversationContentProps = Omit<ConversationRootProps, 'useSession' | 'useConversation'> & {
+  session: SessionSnapshot | undefined
+  phase: ConversationPhase
+  hero: boolean
+  onHandleStart: () => number
+  onHandleDrag: (width: number) => void
+  onHandleCommit: (width: number) => void
+  onHandleEnd: () => void
+}
 
 /** localStorage key for the dragged transcript width preference (px). */
 const WIDTH_PREF_KEY = 'dsh.conversation.contentWidth'
@@ -132,54 +145,15 @@ export function ConversationRoot(props: ConversationRootProps) {
   return <ConversationMainPanel {...props} />
 }
 
-function ConversationMainPanel({
-  sessionId, useSession, useSessions, useSessionPendingInteraction,
-  useWorkspaces, useConversation, useInput, useComposerBlock,
-  renderSlot, renderSlotChain, selectWorkspace, t,
-}: ConversationRootProps) {
+function ConversationMainPanel(props: ConversationRootProps) {
+  const { sessionId, useSession, useSessions, useConversation, renderSlot } = props
   const session = useSession(s => s)
-  const pendingInteraction = useSessionPendingInteraction(snapshot =>
-    sessionId === undefined ? undefined : snapshot.get(sessionId))
   const conversation = useConversation(s => s)
   const shellPhase = session === undefined || conversation === undefined
     ? 'blank'
     : conversationPhase(session, conversation)
   const openState = session?.openState
-  const inputState = useInput(s => s)
-  const cwd = useSessions(s => sessionId === undefined ? undefined : s.byId[sessionId]?.cwd)
   const summaryBlank = useSessions(s => sessionId === undefined ? undefined : s.byId[sessionId]?.blank)
-  const workspaces = useWorkspaces(s => s)
-  // A plugin this package cannot import (ui-model-selection) says this session cannot
-  // send; its reason is already localized by whoever raised it.
-  const composerBlock = useComposerBlock(block => block)
-
-  const [pickerOpen, setPickerOpen] = useState(false)
-  const [pendingWorkspaceId, setPendingWorkspaceId] = useState<WorkspaceId | undefined>()
-  const pickerAnchor = useRef<HTMLButtonElement>(null)
-
-  // Publishes the two live measurements floating View chrome reads off the
-  // scroll body: the seat's height as --dsh-composer-height, so controls clear
-  // the composer as it grows, and the scrollport's own height as
-  // --dsh-conversation-viewport-height, so a control can sit in the band the
-  // seat leaves visible. Callback ref, not an effect; stable identity prevents
-  // observer churn while the first blank session fills the resident body
-  // outlet.
-  const seatObserver = useRef<ResizeObserver | null>(null)
-  const seatResizeRef = useCallback((seat: HTMLDivElement | null): void => {
-    seatObserver.current?.disconnect()
-    seatObserver.current = null
-    const scroller = seat?.parentElement ?? null
-    if (seat === null || scroller === null) return
-    seatObserver.current = new ResizeObserver(() => {
-      scroller.style.setProperty('--dsh-composer-height', `${seat.offsetHeight}px`)
-      scroller.style.setProperty(
-        '--dsh-conversation-viewport-height',
-        `${scroller.clientHeight}px`,
-      )
-    })
-    seatObserver.current.observe(seat)
-    seatObserver.current.observe(scroller)
-  }, [])
 
   // Publishes the column's live width as --dsh-conversation-column-width so
   // the shared width axis can adapt (see the .root CSS), and re-clamps a
@@ -238,23 +212,6 @@ function ConversationMainPanel({
     if (root !== null) publishWidths(root)
   }, [publishWidths])
 
-  const sessionWorkspace = sessionId === undefined
-    ? undefined
-    : workspaces.items.find(workspace => workspace.sessionIds.includes(sessionId))
-  const pendingWorkspace = workspaces.items.find(
-    workspace => workspace.workspaceId === pendingWorkspaceId,
-  )
-
-  // Clear the pending pick once the session lands in it, or when the picked
-  // workspace disappears from a ready list (deleted from the sidebar).
-  useEffect(() => {
-    if (pendingWorkspaceId === undefined) return
-    if (sessionWorkspace?.workspaceId === pendingWorkspaceId
-      || (workspaces.phase === 'ready' && pendingWorkspace === undefined)) {
-      setPendingWorkspaceId(undefined)
-    }
-  }, [pendingWorkspaceId, sessionWorkspace?.workspaceId, workspaces.phase, pendingWorkspace])
-
   // While a session is still replaying (loading + blank) the hero/docked
   // choice is unknowable — render the composer hidden instead of flashing
   // the centered hero and snapping to the docked bar (or vice versa).
@@ -275,6 +232,84 @@ function ConversationMainPanel({
   )
   const hero = sessionId === undefined
     || (shellPhase === 'blank' && (openState === 'open' || summaryBlank === true))
+  const phase = settling ? 'settling' : hero ? 'hero' : 'active'
+
+  return (
+    <div ref={rootResizeRef} className={css.root} data-phase={phase}>
+      {sessionId === undefined ? null : renderSlot('conversation.session.header', {})}
+      <ConversationContent
+        {...props}
+        session={session}
+        phase={phase}
+        hero={hero}
+        onHandleStart={onHandleStart}
+        onHandleDrag={onHandleDrag}
+        onHandleCommit={onHandleCommit}
+        onHandleEnd={onHandleEnd}
+      />
+    </div>
+  )
+}
+
+function ConversationContent({
+  sessionId, session, phase, hero, useSessions, useSessionPendingInteraction,
+  useWorkspaces, useInput, useComposerBlock, renderSlot, renderSlotChain,
+  selectWorkspace, t, onHandleStart, onHandleDrag, onHandleCommit, onHandleEnd,
+}: ConversationContentProps) {
+  const pendingInteraction = useSessionPendingInteraction(snapshot =>
+    sessionId === undefined ? undefined : snapshot.get(sessionId))
+  const inputState = useInput(s => s)
+  const cwd = useSessions(s => sessionId === undefined ? undefined : s.byId[sessionId]?.cwd)
+  const workspaces = useWorkspaces(s => s)
+  // A plugin this package cannot import (ui-model-selection) says this session cannot
+  // send; its reason is already localized by whoever raised it.
+  const composerBlock = useComposerBlock(block => block)
+
+  const [pickerOpen, setPickerOpen] = useState(false)
+  const [pendingWorkspaceId, setPendingWorkspaceId] = useState<WorkspaceId | undefined>()
+  const pickerAnchor = useRef<HTMLButtonElement>(null)
+
+  // Publishes the two live measurements floating View chrome reads off the
+  // scroll body: the seat's height as --dsh-composer-height, so controls clear
+  // the composer as it grows, and the scrollport's own height as
+  // --dsh-conversation-viewport-height, so a control can sit in the band the
+  // seat leaves visible. Callback ref, not an effect; stable identity prevents
+  // observer churn while the first blank session fills the resident body
+  // outlet.
+  const seatObserver = useRef<ResizeObserver | null>(null)
+  const seatResizeRef = useCallback((seat: HTMLDivElement | null): void => {
+    seatObserver.current?.disconnect()
+    seatObserver.current = null
+    const scroller = seat?.parentElement ?? null
+    if (seat === null || scroller === null) return
+    seatObserver.current = new ResizeObserver(() => {
+      scroller.style.setProperty('--dsh-composer-height', `${seat.offsetHeight}px`)
+      scroller.style.setProperty(
+        '--dsh-conversation-viewport-height',
+        `${scroller.clientHeight}px`,
+      )
+    })
+    seatObserver.current.observe(seat)
+    seatObserver.current.observe(scroller)
+  }, [])
+
+  const sessionWorkspace = sessionId === undefined
+    ? undefined
+    : workspaces.items.find(workspace => workspace.sessionIds.includes(sessionId))
+  const pendingWorkspace = workspaces.items.find(
+    workspace => workspace.workspaceId === pendingWorkspaceId,
+  )
+
+  // Clear the pending pick once the session lands in it, or when the picked
+  // workspace disappears from a ready list (deleted from the sidebar).
+  useEffect(() => {
+    if (pendingWorkspaceId === undefined) return
+    if (sessionWorkspace?.workspaceId === pendingWorkspaceId
+      || (workspaces.phase === 'ready' && pendingWorkspace === undefined)) {
+      setPendingWorkspaceId(undefined)
+    }
+  }, [pendingWorkspaceId, sessionWorkspace?.workspaceId, workspaces.phase, pendingWorkspace])
+
   const zone: InputZone | undefined =
     session === undefined || inputState === undefined ? undefined : { session, input: inputState }
 
@@ -356,7 +391,6 @@ function ConversationMainPanel({
     </div>
   )
 
-  const phase = settling ? 'settling' : hero ? 'hero' : 'active'
   const composer = renderSlotChain(
     'conversation.composer',
     { sessionId, session, pendingInteraction },
@@ -374,26 +408,23 @@ function ConversationMainPanel({
   )
 
   return (
-    <div ref={rootResizeRef} className={css.root} data-phase={phase}>
-      {sessionId === undefined ? null : renderSlot('conversation.session.header', {})}
-      <div className={css.body}>
-        <div className={css.scrollBody} data-conversation-scroll="">
-          {sessionId === undefined ? null : renderSlot('conversation.session', {})}
-          {composerSeat}
-        </div>
-        {/* Width handles only while a transcript is on screen; the hero has no
-            content column to size. */}
-        {phase === 'active' && (['left', 'right'] as const).map(side => (
-          <WidthHandle
-            key={side}
-            side={side}
-            onStart={onHandleStart}
-            onDrag={onHandleDrag}
-            onCommit={onHandleCommit}
-            onEnd={onHandleEnd}
-          />
-        ))}
+    <div className={css.body}>
+      <div className={css.scrollBody} data-conversation-scroll="">
+        {sessionId === undefined ? null : renderSlot('conversation.session', {})}
+        {composerSeat}
       </div>
+      {/* Width handles only while a transcript is on screen; the hero has no
+          content column to size. */}
+      {phase === 'active' && (['left', 'right'] as const).map(side => (
+        <WidthHandle
+          key={side}
+          side={side}
+          onStart={onHandleStart}
+          onDrag={onHandleDrag}
+          onCommit={onHandleCommit}
+          onEnd={onHandleEnd}
+        />
+      ))}
     </div>
   )
 }
