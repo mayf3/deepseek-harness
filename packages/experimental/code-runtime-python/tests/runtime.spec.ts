@@ -1517,10 +1517,14 @@ describe('PythonCodeRuntime — programs and bindings', () => {
       const { runtime } = await setup({ maxLogBytes: 3072, maxWallMs: 30_000 })
       result = await runtime.run({
         program: [
-          'import os',
-          'for _ in range(6000):',
+          'import os, time',
+          // One byte per chunk on every host: a plain yield lets a loaded
+          // reader coalesce, and the coalesced chunk is what the bound below
+          // measures. The payload stays above the 2048 discriminator, so a
+          // raw-byte undercount still flushes the whole residual at EOF.
+          'for _ in range(3200):',
           '    os.write(1, b"\\xff")',
-          '    os.sched_yield()',
+          '    time.sleep(0.001)',
           'return None',
         ].join('\n'),
         bindings: [],
@@ -1534,7 +1538,10 @@ describe('PythonCodeRuntime — programs and bindings', () => {
     // merged buffer stays well under 2048. A raw-byte undercount would let it
     // reach ~3072 before flushing, so 2048 discriminates.
     expect(maxConcat).toBeLessThan(2048)
-  })
+    // The paced payload costs ~3.2s deterministically, which is above the
+    // 5000ms default the local unit entry grants, so the case carries its own
+    // bound instead of relying on the lane to widen it.
+  }, 20_000)
 
   it('charges a structurally-valid but illegal UTF-8 sequence its U+FFFD-decoded cost', async () => {
     // A CESU-8 lone surrogate `ED A0 80` is structurally well-formed (a 3-byte
@@ -1559,12 +1566,15 @@ describe('PythonCodeRuntime — programs and bindings', () => {
       const { runtime } = await setup({ maxLogBytes: 3072, maxWallMs: 30_000 })
       result = await runtime.run({
         program: [
-          'import os',
+          'import os, time',
           'seq = (0xed, 0xa0, 0x80)',
-          'for _ in range(2000):',
+          // 1100 sequences are 3300 raw bytes, past the 3072-byte budget a
+          // raw-byte undercount reaches, so the undercount flushes above the
+          // 2048 discriminator instead of only at EOF.
+          'for _ in range(1100):',
           '    for b in seq:',
           '        os.write(1, bytes((b,)))',
-          '        os.sched_yield()',
+          '        time.sleep(0.001)',
           'return None',
         ].join('\n'),
         bindings: [],
@@ -1579,7 +1589,10 @@ describe('PythonCodeRuntime — programs and bindings', () => {
     // largest merged buffer stays well under 2048. Charging the structural width
     // 3 would need ~1024 raw bytes, tripling the peak past 2048.
     expect(maxConcat).toBeLessThan(2048)
-  })
+    // The paced payload costs ~3.3s deterministically, which is above the
+    // 5000ms default the local unit entry grants, so the case carries its own
+    // bound instead of relying on the lane to widen it.
+  }, 20_000)
 
   it('charges a lone surrogate its full six escaped bytes, not three', async () => {
     // A forged `log` frame carrying `\ud800` escapes materializes lone
