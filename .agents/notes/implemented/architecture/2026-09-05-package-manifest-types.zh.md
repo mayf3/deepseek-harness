@@ -10,13 +10,11 @@ Status: implemented
 
 ## 决策
 
-[`@deepseek-ai/dsh-package-manifest`](../../../../packages/util/package-manifest/README.zh.md) 在一个纯类型文件中拥有 `DshManifest` 及其成员声明。本包属于现有工具库分组，不导出运行时值。作者声明与启动器生成的模块后备元数据有明确区分。
-
-作者元数据保留在 `package.json.dsh` 下：可选的 `manifestVersion` 标识格式 `1`，`categories` 承载自由发现标签，`engines.dsh` 以 SemVer 范围声明兼容的宿主版本。npm 包身份和 Node 要求沿用顶层字段。Categories 是可扩展标签，而非封闭的角色枚举，因此 `skills`、`tools` 等标签不限制包的组合。
+[`@deepseek-ai/dsh-package-manifest`](../../../../packages/util/package-manifest/README.zh.md) 在一个纯类型文件中拥有 `DshManifest` 及其成员声明。本包属于现有工具库分组，不导出运行时值。[公共包元数据决策](2026-09-10-public-package-manifest.zh.md) 拥有公共字段范围及其与内部工具元数据的划分。
 
 各读取方直接导入共享声明。启动器保留 profile 加载、原始 JSON 检查、默认值和解析后的运行时数据。客户端模块保留归一化的启动图。镜像打包器将声明路径解析为目录。Session 目录生成器派生带有已解析导入路径的只读校验结果；原始输入和发现规则仍由本地负责。
 
-App-boot 声明生产依赖，因为其发布的声明文件引用共享类型。客户端模块、私有打包器和根脚本使用开发依赖，因为其发布 API 不暴露这些类型。每个包消费方都有 TypeScript 项目引用。外部作者从工具包导入；app-boot 不提供兼容性再导出。
+App-boot 声明生产依赖，因为其发布的声明文件引用共享类型。客户端模块使用开发依赖，因为其发布 API 不暴露这些类型。内部镜像打包器和 Session 目录声明保留在各自读取方。每个包消费方都有 TypeScript 项目引用。外部作者从工具包导入；app-boot 不提供兼容性再导出。
 
 ## 考虑过的替代方案
 

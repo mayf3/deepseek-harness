@@ -10,13 +10,11 @@ External packages need Harness manifest types without depending on boot or clien
 
 ## Decision
 
-[`@deepseek-ai/dsh-package-manifest`](../../../../packages/util/package-manifest/README.md) owns `DshManifest` and its member declarations in one type-only file. The package belongs to the existing utility group and exports no runtime values. Author declarations and launcher-generated module fallback metadata are explicitly distinguished.
-
-Author metadata stays under `package.json.dsh`: optional `manifestVersion` identifies format `1`, `categories` carries free-form discovery tags, and `engines.dsh` declares compatible host versions as a SemVer range. Npm package identity and Node requirements retain their top-level fields. Categories are extensible tags rather than a closed role enum, so labels such as `skills` and `tools` do not constrain package composition.
+[`@deepseek-ai/dsh-package-manifest`](../../../../packages/util/package-manifest/README.md) owns `DshManifest` and its member declarations in one type-only file. The package belongs to the existing utility group and exports no runtime values. The [public package metadata decision](2026-09-10-public-package-manifest.md) owns the public field set and the separation from internal tool metadata.
 
 Readers import the shared declarations directly. Boot retains profile loading, raw JSON checks, defaults, and resolved runtime data. Client modules retain their normalized boot graph. The image packer resolves declared paths into directories. The Session catalog generator derives a read-only validated entry with a resolved import path; raw inputs and discovery rules remain local.
 
-App-boot declares a production dependency because its published declarations reference the shared types. Client modules, the private packer, and root scripts use development dependencies because their published APIs do not expose these types. Every package consumer has a TypeScript project reference. External authors import from the utility package; app-boot provides no compatibility re-exports.
+App-boot declares a production dependency because its published declarations reference the shared types. Client modules use a development dependency because their published APIs do not expose these types. Internal image-packer and Session catalog declarations stay with their readers. Every package consumer has a TypeScript project reference. External authors import from the utility package; app-boot provides no compatibility re-exports.
 
 ## Alternatives considered
 
