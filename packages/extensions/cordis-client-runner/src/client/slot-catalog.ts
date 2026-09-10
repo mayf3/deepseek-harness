@@ -2356,13 +2356,14 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     occupants: [
       'client-ui-sidebar-documentpreview CodeBody',
       'client-ui-sidebar-documentpreview HtmlBody',
+      'client-ui-sidebar-documentpreview ImageBody',
       'client-ui-sidebar-documentpreview MarkdownBody',
       'client-ui-sidebar-documentpreview PdfBody',
       'client-ui-sidebar-documentpreview TextBody',
     ],
     replaceRisk: 'none',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'sidebar.right.tab.document\', () => ctx.slots.register(\n      { name: \'sidebar.right.tab.document\', key: \'<one key the owner dispatches>\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
-    source: 'packages/client/ui-sidebar-documentpreview/src/client/document/contract.ts:23',
+    source: 'packages/client/ui-sidebar-documentpreview/src/client/document/contract.ts:24',
   },
   {
     key: 'sidebar.right.tab.guide',
