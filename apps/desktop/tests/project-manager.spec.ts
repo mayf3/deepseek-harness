@@ -92,9 +92,13 @@ describe('desktop external plugin profile', () => {
     const patch = join(manager.paths.profile, 'node_modules/plugin/bundle.yml')
     unlinkSync(patch)
     await manager.mutate({ type: 'plugins-disable-all' }, hooks({ afterChange: async () => {
-      expect(manager.hasEnabledPlugins()).toBe(false)
+      expect((JSON.parse(readFileSync(join(manager.paths.profile, 'package.json'), 'utf8')) as {
+        dsh: { profile: { bundles: string[] } }
+      }).dsh.profile.bundles).not.toContain('plugin')
     } }))
-    expect(manager.hasEnabledPlugins()).toBe(false)
+    expect((JSON.parse(readFileSync(join(manager.paths.profile, 'package.json'), 'utf8')) as {
+      dsh: { profile: { bundles: string[] } }
+    }).dsh.profile.bundles).not.toContain('plugin')
     expect(existsSync(join(manager.paths.profile, 'node_modules/plugin/package.json'))).toBe(true)
     expect(calls(root)).toHaveLength(2)
     await expect(manager.applyRelease()).resolves.toBe(false)

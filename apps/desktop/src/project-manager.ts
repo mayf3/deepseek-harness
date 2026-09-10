@@ -238,11 +238,6 @@ export class DesktopProjectManager {
     return pluginRecords(this.paths.profile)
   }
 
-  /** @returns Whether the profile enables any third-party bundle, without loading plugin files. */
-  hasEnabledPlugins(): boolean {
-    return existsSync(this.paths.profile) && profilePluginNames(this.paths.profile).length > 0
-  }
-
   /**
    * Reinitialize the profile, deleting configuration and third-party packages without a backup.
    * @param hooks - Stop the Host before resetting files; restart after preparation succeeds.
