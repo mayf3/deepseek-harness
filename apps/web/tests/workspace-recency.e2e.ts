@@ -66,10 +66,15 @@ describe('web e2e: workspace recency', () => {
       await page.getByRole('button', { name: 'View options' }).click()
       await page.getByRole('menuitem', { name, exact: true }).click()
     }
+    const captureSidebar = async (): Promise<string> => {
+      await page.getByRole('button', { name: 'View options' }).hover()
+      await expect.poll(() => page.getByRole('button', { name: /^Session actions for / }).count()).toBe(0)
+      return captureStableAria(page, '[role="tree"][aria-label="Sessions"]', scaffold.workspaceCwd)
+    }
     await expect.poll(titles).toEqual(TITLES)
     await compareOrRefreshGolden(
       join(SNAPSHOT_DIR, 'sidebar.expected.md'),
-      await captureStableAria(page, '[role="tree"][aria-label="Sessions"]', scaffold.workspaceCwd), MODE,
+      await captureSidebar(), MODE,
     )
     await pick('Manual')
     await expect.poll(titles).toEqual(TITLES)
@@ -104,7 +109,7 @@ describe('web e2e: workspace recency', () => {
     await expect.poll(titles).toEqual(['New Session', ...TITLES])
     await compareOrRefreshGolden(
       join(SNAPSHOT_DIR, 'manual-blank.expected.md'),
-      await captureStableAria(page, '[role="tree"][aria-label="Sessions"]', scaffold.workspaceCwd), MODE,
+      await captureSidebar(), MODE,
     )
     const blank = page.getByRole('treeitem').filter({ has: page.getByText('New Session', { exact: true }) })
     const oldest = page.getByRole('treeitem').filter({ has: page.getByText(TITLES[2]!, { exact: true }) })
