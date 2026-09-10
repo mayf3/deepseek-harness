@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, unlinkSync, realpathSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -77,13 +77,13 @@ describe('desktop external plugin profile', () => {
     await manager.mutate({ type: 'plugin-add', spec: 'plugin@1.0.0' }, hooks())
     const manifest = join(manager.paths.profile, 'node_modules/plugin/package.json')
     writeFileSync(manifest, '{broken')
-    await expect(manager.applyRelease()).resolves.toBe(false)
+    await expect(manager.applyRelease()).resolves.toBeUndefined()
     await manager.mutate({ type: 'plugins-disable-all' }, hooks())
-    await expect(manager.applyRelease()).resolves.toBe(false)
+    await expect(manager.applyRelease()).resolves.toBeUndefined()
     expect(readFileSync(manifest, 'utf8')).toBe('{broken')
     await manager.resetConfiguration(hooks())
     expect(existsSync(manifest)).toBe(false)
-    await expect(manager.applyRelease()).resolves.toBe(false)
+    await expect(manager.applyRelease()).resolves.toBeUndefined()
   })
 
   it('disables every third-party bundle without reading a broken plugin patch declaration', async () => {
@@ -102,7 +102,7 @@ describe('desktop external plugin profile', () => {
     }).dsh.profile.bundles).not.toContain('plugin')
     expect(existsSync(join(manager.paths.profile, 'node_modules/plugin/package.json'))).toBe(true)
     expect(calls(root)).toHaveLength(1)
-    await expect(manager.applyRelease()).resolves.toBe(false)
+    await expect(manager.applyRelease()).resolves.toBeUndefined()
   })
 
   it('resets the entire profile without backups while retaining its lock and shared data', async () => {
@@ -134,7 +134,7 @@ describe('desktop external plugin profile', () => {
     }))
     expect(manager.listPlugins()).toEqual([])
     expect(existsSync(join(profile, 'node_modules/plugin'))).toBe(false)
-    expect(existsSync(join(profile, 'cordis.patch.yml'))).toBe(false)
+    expect(readFileSync(join(profile, 'cordis.patch.yml'), 'utf8')).toContain('[]')
     expect(existsSync(join(profile, '.env'))).toBe(false)
     expect(existsSync(join(profile, '.extra'))).toBe(false)
     expect(existsSync(join(profile, 'external-link'))).toBe(false)
@@ -143,7 +143,7 @@ describe('desktop external plugin profile', () => {
     expect(readFileSync(homeEnvironment, 'utf8')).toBe('HOME_SETTING=retained')
     expect(readdirSync(profile).some(name => name.includes('backup'))).toBe(false)
     expect(calls(root)).toHaveLength(1)
-    await expect(manager.applyRelease()).resolves.toBe(false)
+    await expect(manager.applyRelease()).resolves.toBeUndefined()
     expect(existsSync(homeEnvironment)).toBe(true)
   })
 
@@ -227,34 +227,27 @@ describe('desktop external plugin profile', () => {
     mkdirSync(manager.paths.profile, { recursive: true })
     writeFileSync(join(manager.paths.profile, '.DS_Store'), 'metadata')
     writeFileSync(join(manager.paths.profile, 'user-file'), 'retain')
-    await expect(manager.applyRelease()).resolves.toBe(true)
+    await expect(manager.applyRelease()).resolves.toBeUndefined()
     expect(readFileSync(join(manager.paths.profile, '.DS_Store'), 'utf8')).toBe('metadata')
     expect(readFileSync(join(manager.paths.profile, 'user-file'), 'utf8')).toBe('retain')
+    expect(readFileSync(join(manager.paths.profile, 'cordis.patch.yml'), 'utf8')).toContain('[]')
+    expect(existsSync(join(manager.paths.profile, 'desktop-runtime-state.json'))).toBe(false)
   })
 
   it('initializes and restarts offline without executing pnpm', async () => {
     const { root, manager } = setup()
-    await expect(manager.applyRelease()).resolves.toBe(true)
-    await expect(manager.applyRelease()).resolves.toBe(false)
+    await expect(manager.applyRelease()).resolves.toBeUndefined()
+    await expect(manager.applyRelease()).resolves.toBeUndefined()
     expect(manager.listPlugins()).toEqual([])
     expect(calls(root)).toEqual([])
-    expect(realpathSync(join(manager.paths.profile, 'node_modules/@deepseek-ai/cordis'))).toBe(realpathSync(join(manager.runtime.dsh, 'node_modules/@deepseek-ai/cordis')))
     expect(JSON.parse(readFileSync(join(manager.paths.profile, 'package.json'), 'utf8'))).toMatchObject({ dependencies: {} })
-  })
-
-  it('repairs a removed managed link without running pnpm', async () => {
-    const { root, manager } = setup()
-    await manager.applyRelease()
-    unlinkSync(join(manager.paths.profile, 'node_modules/@deepseek-ai/cordis'))
-    await expect(manager.applyRelease()).resolves.toBe(true)
-    expect(calls(root)).toEqual([])
   })
 
   it.skipIf(process.platform !== 'win32')('reuses the profile when the launch path changes only Windows letter casing', async () => {
     const { manager } = setup()
     await manager.applyRelease()
     const relaunched = new DesktopProjectManager(manager.paths, { ...manager.runtime, dsh: manager.runtime.dsh.toUpperCase() })
-    await expect(relaunched.applyRelease()).resolves.toBe(false)
+    await expect(relaunched.applyRelease()).resolves.toBeUndefined()
   })
 
   it.each(['changed', 'same-size', 'extra', 'missing'])('starts and reuses a profile without checking %s runtime bytes', async (operation) => {
@@ -263,14 +256,14 @@ describe('desktop external plugin profile', () => {
     if (operation === 'same-size') writeFileSync(join(manager.runtime.dsh, 'package.json'), '{"type":"Module"}\n')
     if (operation === 'extra') writeFileSync(join(manager.runtime.dsh, 'extra'), '')
     if (operation === 'missing') unlinkSync(join(manager.runtime.dsh, 'package.json'))
-    await expect(manager.applyRelease()).resolves.toBe(true)
+    await expect(manager.applyRelease()).resolves.toBeUndefined()
     const relaunched = new DesktopProjectManager(manager.paths, manager.runtime)
-    await expect(relaunched.applyRelease()).resolves.toBe(false)
+    await expect(relaunched.applyRelease()).resolves.toBeUndefined()
     expect(existsSync(manager.paths.profile)).toBe(true)
     expect(calls(root)).toEqual([])
   })
 
-  it('installs plugins with pnpm script settings and restores host links', async () => {
+  it('installs plugins with pnpm script settings', async () => {
     const { root, manager } = setup()
     await manager.applyRelease()
     await manager.mutate({ type: 'plugin-add', spec: '@scope/plugin@2.0.0' }, hooks())
@@ -280,7 +273,7 @@ describe('desktop external plugin profile', () => {
     ])
     expect(calls(root).every(call => call.registry === process.env.NPM_CONFIG_REGISTRY)).toBe(true)
     expect(JSON.parse(readFileSync(join(manager.paths.profile, 'package.json'), 'utf8'))).toMatchObject({ dependencies: { '@scope/plugin': '2.0.0' } })
-    await expect(manager.applyRelease()).resolves.toBe(false)
+    await expect(manager.applyRelease()).resolves.toBeUndefined()
     expect(calls(root)).toHaveLength(1)
   })
 
@@ -288,11 +281,9 @@ describe('desktop external plugin profile', () => {
     const { manager } = setup()
     await manager.applyRelease()
     await manager.mutate({ type: 'plugin-add', spec: '@deepseek-ai/cordis@2.0.0' }, hooks())
-    expect(manager.listPlugins()).toEqual([{ name: '@deepseek-ai/cordis', version: '2.0.0', enabled: true }])
-    await expect(manager.applyRelease()).resolves.toBe(false)
+    expect(manager.listPlugins()).toEqual([{ name: '@deepseek-ai/cordis', version: '2.0.0', enabled: false }])
+    await expect(manager.applyRelease()).resolves.toBeUndefined()
     await manager.mutate({ type: 'plugin-remove', name: '@deepseek-ai/cordis' }, hooks())
-    expect(realpathSync(join(manager.paths.profile, 'node_modules/@deepseek-ai/cordis')))
-      .toBe(realpathSync(join(manager.runtime.dsh, 'node_modules/@deepseek-ai/cordis')))
   })
 
   it('retains disabled plugin versions through updates and enables them explicitly', async () => {
@@ -318,12 +309,11 @@ describe('desktop external plugin profile', () => {
     const nextRoot = join(root, 'relocated', 'dsh')
     runtimeFixture(nextRoot, '1.1.0')
     const next = new DesktopProjectManager(manager.paths, { ...manager.runtime, dsh: nextRoot })
-    await expect(next.applyRelease()).resolves.toBe(true)
+    await expect(next.applyRelease()).resolves.toBeUndefined()
     expect(next.listPlugins()).toEqual(manager.listPlugins())
-    expect(next.releaseVersion()).toBe('1.1.0')
+    expect(next.dshVersion()).toBe('1.1.0')
     expect(readFileSync(join(manager.paths.profile, 'cordis.patch.yml'), 'utf8')).toBe('[]\n')
     expect(calls(root)).toHaveLength(1)
-    expect(realpathSync(join(manager.paths.profile, 'node_modules/@deepseek-ai/cordis'))).toBe(realpathSync(join(nextRoot, 'node_modules/@deepseek-ai/cordis')))
     expect(readFileSync(join(manager.paths.profile, 'node_modules/plugin/bundle.yml'), 'utf8')).toBe('[]\n')
   })
 
@@ -346,10 +336,10 @@ describe('desktop external plugin profile', () => {
     const dsh = join(root, 'next-major')
     runtimeFixture(dsh, '2.0.0')
     const next = new DesktopProjectManager(manager.paths, { ...manager.runtime, dsh })
-    await expect(next.applyRelease()).resolves.toBe(true)
-    expect(next.releaseVersion()).toBe('2.0.0')
+    await expect(next.applyRelease()).resolves.toBeUndefined()
+    expect(next.dshVersion()).toBe('2.0.0')
     await next.mutate({ type: 'plugins-disable-all' }, hooks())
-    expect(next.releaseVersion()).toBe('2.0.0')
+    expect(next.dshVersion()).toBe('2.0.0')
     expect(next.listPlugins()).toEqual([{ name: 'plugin', version: '1.0.0', enabled: false }])
   })
 
@@ -368,7 +358,7 @@ describe('desktop external plugin profile', () => {
     expect(starts).toBe(phase === 'before' ? 0 : 1)
   })
 
-  it('keeps partial package changes and restores host links after pnpm fails', async () => {
+  it('keeps partial package changes available for recovery after pnpm fails', async () => {
     const { root, manager } = setup()
     await manager.applyRelease()
     const failingPnpm = join(root, 'failing.mjs')
@@ -382,8 +372,6 @@ describe('desktop external plugin profile', () => {
     expect(worker.listPlugins()).toEqual([{ name: 'plugin', version: '1.0.0', enabled: false }])
     expect(starts).toBe(0)
     expect(existsSync(manager.paths.lock)).toBe(false)
-    expect(realpathSync(join(manager.paths.profile, 'node_modules/@deepseek-ai/cordis')))
-      .toBe(realpathSync(join(manager.runtime.dsh, 'node_modules/@deepseek-ai/cordis')))
     writeFileSync(join(manager.paths.profile, 'desktop-packages-pending'), '')
     await manager.applyRelease()
     await manager.mutate({ type: 'plugins-disable-all' }, hooks({ afterChange: async () => { starts++ } }))

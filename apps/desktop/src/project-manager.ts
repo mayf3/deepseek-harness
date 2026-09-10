@@ -11,7 +11,6 @@ import {
   closeSync,
   readFileSync,
   readdirSync,
-  realpathSync,
   unlinkSync,
   writeFileSync,
   writeSync,
@@ -25,11 +24,12 @@ import {
 import type { DesktopPaths } from './paths.ts'
 import { removeOwnedDirectory } from './owned-directory.ts'
 import type { DesktopRelease } from './release.ts'
-import { desktopRuntimeId, readDesktopRuntime, type DesktopRuntimeDescriptor } from './runtime-tree.ts'
+import { readDesktopRuntime, type DesktopRuntimeDescriptor } from './runtime-tree.ts'
 import {
-  desktopPluginLockHash, linkDesktopHostPackages, readDesktopProfileState,
-  unlinkDesktopHostPackages,
-} from './profile-packages.ts'
+  initProfile, readProfileManifest, readProfilePlugins, reconcileProfilePlugins,
+  unlinkProfileModuleFallback, writeProfileBundles,
+} from '@deepseek-ai/dsh-app-boot'
+import { migrateDesktopProfileLinks } from './profile-packages.ts'
 
 /** Desktop plugin record derived from the installed profile. */
 export interface DesktopPluginRecord {
@@ -37,17 +37,6 @@ export interface DesktopPluginRecord {
   /** Installed version, or the dependency spec when installed metadata is unavailable. */
   readonly version: string
   readonly enabled: boolean
-}
-
-/** Installed desktop project manifest slice. */
-interface DesktopProjectManifest {
-  readonly [key: string]: unknown
-  readonly dependencies: Record<string, string>
-  readonly dsh: {
-    readonly profile: {
-      readonly bundles: string[]
-    }
-  }
 }
 
 /** Exact executables the desktop shell bundles. */
@@ -88,10 +77,6 @@ function writeJson(path: string, value: unknown): void {
   writeFileSync(path, `${JSON.stringify(value, undefined, 2)}\n`, { mode: 0o600 })
 }
 
-function readJson(path: string): unknown {
-  return JSON.parse(readFileSync(path, 'utf8'))
-}
-
 function workspaceFile(overrides: Readonly<Record<string, string>> = {}): string {
   const entries = Object.entries(overrides).sort(([left], [right]) => left.localeCompare(right))
   const overrideSection = entries.length === 0
@@ -114,54 +99,6 @@ function migrateProfileSettings(projectDir: string): void {
   }
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
-}
-
-function projectManifest(projectDir: string): DesktopProjectManifest {
-  const path = join(projectDir, 'package.json')
-  const value = readJson(path)
-  if (!isRecord(value)) throw new Error(`desktop project: ${path} must hold a JSON object`)
-  const manifest = value as { dependencies?: Record<string, string>; dsh?: { profile?: { bundles?: string[] } } }
-  return { ...value, dependencies: manifest.dependencies ?? {},
-    dsh: { ...manifest.dsh, profile: { ...manifest.dsh?.profile, bundles: manifest.dsh?.profile?.bundles ?? [] } } }
-}
-
-function installedManifest(projectDir: string, name: string): Record<string, unknown> | undefined {
-  let value: unknown
-  try {
-    value = readJson(join(projectDir, 'node_modules', name, 'package.json'))
-  } catch {
-    // Unreadable installed metadata must not prevent listing or removing a dependency.
-    return undefined
-  }
-  return isRecord(value) ? value : undefined
-}
-
-function pluginRecords(projectDir: string): readonly DesktopPluginRecord[] {
-  const manifest = projectManifest(projectDir)
-  return Object.entries(manifest.dependencies).sort(([left], [right]) => left.localeCompare(right)).map(([name, spec]) => {
-    const installed = installedManifest(projectDir, name)
-    return { name, version: typeof installed?.version === 'string' ? installed.version : spec,
-      enabled: manifest.dsh.profile.bundles.includes(name) }
-  })
-}
-
-function writeProfileBundles(projectDir: string, bundles: readonly string[]): void {
-  const manifest = projectManifest(projectDir)
-  writeJson(join(projectDir, 'package.json'), {
-    ...manifest,
-    dsh: { ...manifest.dsh, profile: { ...manifest.dsh.profile, bundles } },
-  })
-}
-
-function exportsPatch(projectDir: string, name: string): boolean {
-  const manifest = installedManifest(projectDir, name)
-  const dsh = manifest?.dsh
-  const bundle = isRecord(dsh) ? dsh.bundle : undefined
-  return isRecord(bundle) && bundle.patch !== undefined
-}
-
 /** Desktop npm project manager with direct writes and no rollback. */
 export class DesktopProjectManager {
   private lockDescriptor: number | undefined
@@ -179,7 +116,9 @@ export class DesktopProjectManager {
   /** Read the active desktop plugin inventory. */
   listPlugins(): readonly DesktopPluginRecord[] {
     if (!existsSync(this.paths.profile)) return []
-    return pluginRecords(this.paths.profile)
+    return readProfilePlugins(this.pluginLocation(this.paths.profile)).dependencies
+      .map(({ name, version, enabled }) => ({ name, version, enabled }))
+      .sort((left, right) => left.name.localeCompare(right.name))
   }
 
   /**
@@ -198,7 +137,6 @@ export class DesktopProjectManager {
         else unlinkSync(path)
       }
       createPluginProfile(this.paths.profile)
-      this.prepareProfile(this.paths.profile)
       await hooks.afterChange()
     })
   }
@@ -206,13 +144,6 @@ export class DesktopProjectManager {
   /** Read the dsh version supplied by this application's verified resources. */
   dshVersion(): string {
     return this.currentRuntime().release.version
-  }
-
-  /** Read the release most recently applied to the active profile. */
-  releaseVersion(): string {
-    const state = readDesktopProfileState(this.paths.profile)
-    if (state === undefined) throw new Error('desktop project: active profile has no runtime state')
-    return state.version
   }
 
   /** @returns Whether application resources support profile recovery. */
@@ -230,27 +161,17 @@ export class DesktopProjectManager {
     return readDesktopRuntime(this.runtime.dsh)
   }
 
-  private prepareProfile(projectDir: string): void {
-    linkDesktopHostPackages(projectDir, this.runtime.dsh, this.currentRuntime())
+  private pluginLocation(profileDir: string) {
+    return { binName: 'dsh', profileDir, installAnchor: join(this.runtime.dsh, 'node_modules', DSH_PACKAGE, 'package.json') }
   }
 
-  /** Read release metadata and reconcile its external profile without installing core packages. */
-  async applyRelease(): Promise<boolean> {
-    return this.withLock(() => {
-      const target = this.readRuntime()
-      this.descriptor = target
+  /** Load application metadata and initialize missing profile files without installing packages. */
+  async applyRelease(): Promise<void> {
+    await this.withLock(() => {
+      this.descriptor = this.readRuntime()
       migrateProfileSettings(this.paths.profile)
-      const previous = readDesktopProfileState(this.paths.profile)
-      if (previous?.runtimeId === desktopRuntimeId(target)
-        && previous.lockHash === desktopPluginLockHash(this.paths.profile)
-        && previous.links.every(link => existsSync(link.target)
-          && existsSync(join(this.paths.profile, 'node_modules', link.name))
-          && realpathSync.native(link.target) === realpathSync.native(join(this.runtime.dsh, 'node_modules', link.name)))) {
-        return false
-      }
-      if (!existsSync(join(this.paths.profile, 'package.json'))) createPluginProfile(this.paths.profile)
-      this.prepareProfile(this.paths.profile)
-      return true
+      migrateDesktopProfileLinks(this.paths.profile)
+      createPluginProfile(this.paths.profile)
     })
   }
 
@@ -261,52 +182,34 @@ export class DesktopProjectManager {
       if (!existsSync(this.paths.profile)) throw new Error('desktop project: active profile is not installed')
       await hooks.beforeChange()
       if (mutation.type === 'plugins-disable-all') {
-        const manifest = projectManifest(this.paths.profile)
-        writeJson(join(this.paths.profile, 'package.json'), {
-          ...manifest,
-          dsh: { ...manifest.dsh, profile: { ...manifest.dsh.profile, bundles: [...DESKTOP_PROFILE_BUNDLES] } },
-        })
-        this.prepareProfile(this.paths.profile)
-        await hooks.afterChange()
-        return
-      }
-      const packagesChanged = mutation.type !== 'plugin-toggle'
-      if (packagesChanged) unlinkDesktopHostPackages(this.paths.profile)
-      try {
+        writeProfileBundles(this.paths.profile, readProfileManifest('dsh', this.paths.profile), DESKTOP_PROFILE_BUNDLES)
+      } else {
         await this.applyMutation(this.paths.profile, mutation)
-      } finally {
-        if (packagesChanged) linkDesktopHostPackages(this.paths.profile, this.runtime.dsh, this.currentRuntime())
       }
       await hooks.afterChange()
     })
   }
 
   private async applyMutation(projectDir: string, mutation: Exclude<DesktopProjectMutation, { type: 'plugins-disable-all' }>): Promise<void> {
-    const before = projectManifest(projectDir)
-    const bundles = before.dsh.profile.bundles
+    const location = this.pluginLocation(projectDir)
+    const before = readProfilePlugins(location)
+    const bundles = before.manifest.dsh?.profile?.bundles ?? []
     switch (mutation.type) {
       case 'plugin-add':
       case 'plugin-update': {
-        const dependencies = new Set(Object.keys(before.dependencies))
-        const disabled = new Set([...dependencies].filter(name => !bundles.includes(name) && exportsPatch(projectDir, name)))
         const spec = mutation.type === 'plugin-add' ? mutation.spec : `${mutation.name}@${mutation.version}`
+        unlinkProfileModuleFallback(projectDir)
         await this.runPnpm(projectDir, ['add', '--', spec])
-        const after = projectManifest(projectDir)
-        const installed = new Set(Object.keys(after.dependencies))
-        const active = bundles.filter(name => !(dependencies.has(name) || installed.has(name))
-          || (installed.has(name) && exportsPatch(projectDir, name)))
-        for (const name of installed) {
-          if (!active.includes(name) && !disabled.has(name) && exportsPatch(projectDir, name)) active.push(name)
-        }
-        writeProfileBundles(projectDir, active)
+        reconcileProfilePlugins({ ...location, before, preserveDisabled: true })
         return
       }
       case 'plugin-remove':
+        unlinkProfileModuleFallback(projectDir)
         await this.runPnpm(projectDir, ['remove', '--', mutation.name])
-        writeProfileBundles(projectDir, bundles.filter(name => name !== mutation.name))
+        reconcileProfilePlugins({ ...location, before, preserveDisabled: true })
         return
       case 'plugin-toggle':
-        writeProfileBundles(projectDir, mutation.enabled
+        writeProfileBundles(projectDir, before.manifest, mutation.enabled
           ? bundles.includes(mutation.name) ? bundles : [...bundles, mutation.name]
           : bundles.filter(name => name !== mutation.name))
         return
@@ -419,7 +322,7 @@ export class DesktopProjectManager {
 export function createRuntimeProjectMetadata(projectDir: string, release: DesktopRelease): void {
   mkdirSync(projectDir, { recursive: true, mode: 0o700 })
   const packageSet = verifyDesktopCorePackageSet(projectDir, release.version)
-  const manifest: DesktopProjectManifest = {
+  const manifest = {
     name: PROJECT_NAME,
     private: true,
     version: '0.0.0',
@@ -457,10 +360,5 @@ export function createDevelopmentProjectMetadata(projectDir: string, release: De
 
 /** Create the first external plugin profile without running a package manager. */
 export function createPluginProfile(projectDir: string): void {
-  mkdirSync(projectDir, { recursive: true, mode: 0o700 })
-  writeJson(join(projectDir, 'package.json'), {
-    name: PROJECT_NAME, private: true, version: '0.0.0', dependencies: {},
-    dsh: { profile: { bundles: [...DESKTOP_PROFILE_BUNDLES] } },
-  } satisfies DesktopProjectManifest)
-  writeFileSync(join(projectDir, 'pnpm-workspace.yaml'), workspaceFile(), { mode: 0o600 })
+  initProfile(projectDir, DESKTOP_PROFILE_BUNDLES)
 }

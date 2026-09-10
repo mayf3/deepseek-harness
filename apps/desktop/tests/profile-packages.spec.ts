@@ -1,48 +1,126 @@
-import { execFileSync } from 'node:child_process'
-import { existsSync, mkdtempSync, rmSync, unlinkSync, writeFileSync } from 'node:fs'
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, rmSync, rmdirSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
-import { pathToFileURL } from 'node:url'
+import { dirname, join } from 'node:path'
 import { afterEach, expect, it } from 'vitest'
-import { createPluginProfile } from '../src/project-manager.ts'
-import { linkDesktopHostPackages, unlinkDesktopHostPackages } from '../src/profile-packages.ts'
-import { runtimeFixture, writePackage } from './runtime-fixture.ts'
+import { DESKTOP_PROFILE_STATE, migrateDesktopProfileLinks } from '../src/profile-packages.ts'
 
 const roots: string[] = []
-function fixture() {
-  const root = mkdtempSync(join(tmpdir(), 'desktop-profile-'))
-  roots.push(root)
-  const dsh = join(root, 'dsh')
-  const runtime = runtimeFixture(dsh)
-  const profile = join(root, 'profile')
-  createPluginProfile(profile)
-  linkDesktopHostPackages(profile, dsh, runtime)
-  return { root, dsh, runtime, profile }
-}
-afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }) })
+const symlinks: string[] = []
 
-it('loads one shared ESM instance from both host and external plugin while keeping ordinary dependencies private', () => {
-  const { dsh, profile } = fixture()
-  writePackage(join(dsh, 'node_modules'), 'ordinary', {}, 'export default "host"')
-  writePackage(join(profile, 'node_modules'), 'ordinary', {}, 'export default "plugin"')
-  const plugin = writePackage(join(profile, 'node_modules'), 'plugin', {
-    peerDependencies: { '@deepseek-ai/cordis': '^1.0.0' }, dependencies: { ordinary: '1.0.0' },
-  }, 'export { identity } from "@deepseek-ai/cordis"; export { default as ordinary } from "ordinary"')
-  const entry = join(dsh, 'check.mjs')
-  writeFileSync(entry, `import {identity} from '@deepseek-ai/cordis'; import ordinary from 'ordinary'; import * as plugin from ${JSON.stringify(pathToFileURL(join(plugin, 'index.js')).href)}; console.log(JSON.stringify({same:identity===plugin.identity, host:ordinary, plugin:plugin.ordinary}))`)
-  const output = execFileSync(process.execPath, [entry], { encoding: 'utf8', env: { ...process.env, NODE_OPTIONS: '', NODE_PATH: '' } })
-  expect(JSON.parse(output)).toEqual({ same: true, host: 'host', plugin: 'plugin' })
+function fixture() {
+  const root = mkdtempSync(join(tmpdir(), 'desktop-profile-migration-'))
+  roots.push(root)
+  const profile = join(root, 'profile')
+  const target = join(root, 'runtime-package')
+  mkdirSync(join(profile, 'node_modules'), { recursive: true })
+  mkdirSync(target)
+  return { root, profile, target }
+}
+
+function link(target: string, path: string): void {
+  mkdirSync(dirname(path), { recursive: true })
+  symlinkSync(target, path, process.platform === 'win32' ? 'junction' : 'dir')
+  symlinks.push(path)
+}
+
+function writeState(profile: string, links: unknown): void {
+  writeFileSync(join(profile, DESKTOP_PROFILE_STATE), JSON.stringify({
+    schemaVersion: 'obsolete', runtimeId: null, version: 8, lockHash: false, links,
+  }))
+}
+
+afterEach(() => {
+  for (const path of symlinks.splice(0).reverse()) {
+    try {
+      if (lstatSync(path).isSymbolicLink()) unlinkSync(path)
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+    }
+  }
+  for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true })
 })
-it('removes broken owned links without following them', () => {
-  const { root, profile } = fixture()
-  writePackage(join(profile, 'node_modules'), 'plugin')
-  rmSync(join(root, 'dsh'), { recursive: true })
-  expect(() =>{  unlinkDesktopHostPackages(profile) }).not.toThrow()
+
+it('removes recorded links and state without interpreting obsolete runtime fields', () => {
+  const { profile, target } = fixture()
+  const packagePath = join(profile, 'node_modules', '@deepseek-ai', 'cordis')
+  link(target, packagePath)
+  writeFileSync(join(target, 'package.json'), '{"name":"@deepseek-ai/cordis"}')
+  writeState(profile, [{ name: '@deepseek-ai/cordis', target }])
+  migrateDesktopProfileLinks(profile)
+  expect(existsSync(packagePath)).toBe(false)
+  expect(existsSync(join(profile, DESKTOP_PROFILE_STATE))).toBe(false)
+  expect(readFileSync(join(target, 'package.json'), 'utf8')).toContain('@deepseek-ai/cordis')
+  expect(() => { migrateDesktopProfileLinks(profile) }).not.toThrow()
 })
-it('preserves a pnpm package that replaced a managed link', () => {
-  const { profile } = fixture()
-  unlinkSync(join(profile, 'node_modules/@deepseek-ai/cordis'))
-  writePackage(join(profile, 'node_modules'), '@deepseek-ai/cordis')
-  expect(() =>{  unlinkDesktopHostPackages(profile) }).not.toThrow()
-  expect(existsSync(join(profile, 'node_modules/@deepseek-ai/cordis/package.json'))).toBe(true)
+
+it('removes an owned broken link without following its target', () => {
+  const { profile, target } = fixture()
+  const packagePath = join(profile, 'node_modules', 'plugin')
+  link(target, packagePath)
+  writeState(profile, [{ name: 'plugin', target }])
+  rmdirSync(target)
+  migrateDesktopProfileLinks(profile)
+  expect(() => lstatSync(packagePath)).toThrow()
+  expect(existsSync(join(profile, DESKTOP_PROFILE_STATE))).toBe(false)
+})
+
+it('preserves a pnpm-installed directory replacing a recorded link', () => {
+  const { profile, target } = fixture()
+  const packagePath = join(profile, 'node_modules', 'plugin')
+  mkdirSync(packagePath)
+  writeFileSync(join(packagePath, 'package.json'), '{"name":"plugin","version":"2.0.0"}')
+  writeState(profile, [{ name: 'plugin', target }])
+  migrateDesktopProfileLinks(profile)
+  expect(readFileSync(join(packagePath, 'package.json'), 'utf8')).toContain('2.0.0')
+  expect(existsSync(join(profile, DESKTOP_PROFILE_STATE))).toBe(false)
+})
+
+it('preserves changed and unrecorded package links', () => {
+  const { root, profile, target } = fixture()
+  const replacement = join(root, 'user-package')
+  mkdirSync(replacement)
+  const changed = join(profile, 'node_modules', 'changed')
+  const unrecorded = join(profile, 'node_modules', 'unrecorded')
+  link(replacement, changed)
+  link(target, unrecorded)
+  const changedTarget = readlinkSync(changed)
+  const unrecordedTarget = readlinkSync(unrecorded)
+  writeState(profile, [{ name: 'changed', target }])
+  migrateDesktopProfileLinks(profile)
+  expect(readlinkSync(changed)).toBe(changedTarget)
+  expect(readlinkSync(unrecorded)).toBe(unrecordedTarget)
+})
+
+it('leaves an uninitialized profile untouched', () => {
+  const { root } = fixture()
+  const missingProfile = join(root, 'absent-profile')
+  migrateDesktopProfileLinks(missingProfile)
+  expect(existsSync(missingProfile)).toBe(false)
+})
+
+it.each(['../../outside', '../outside', '@scope/../../outside', '..\\outside'])('rejects escaping package name %s before removing any links', (name) => {
+  const { root, profile, target } = fixture()
+  const packagePath = join(profile, 'node_modules', 'owned')
+  const outside = join(root, 'outside')
+  link(target, packagePath)
+  link(target, outside)
+  writeState(profile, [{ name: 'owned', target }, { name, target }])
+  expect(() => { migrateDesktopProfileLinks(profile) }).toThrow('invalid legacy package link')
+  expect(lstatSync(packagePath).isSymbolicLink()).toBe(true)
+  expect(lstatSync(outside).isSymbolicLink()).toBe(true)
+  expect(existsSync(join(profile, DESKTOP_PROFILE_STATE))).toBe(true)
+})
+
+it.each(['node_modules', 'node_modules/@scope'])('preserves package links beneath redirected %s', (parent) => {
+  const { root, profile, target } = fixture()
+  const external = join(root, 'external')
+  mkdirSync(external)
+  const packagePath = join(external, 'plugin')
+  link(target, packagePath)
+  if (parent === 'node_modules') rmdirSync(join(profile, 'node_modules'))
+  link(external, join(profile, parent))
+  writeState(profile, [{ name: parent === 'node_modules' ? 'plugin' : '@scope/plugin', target }])
+  migrateDesktopProfileLinks(profile)
+  expect(lstatSync(packagePath).isSymbolicLink()).toBe(true)
+  expect(existsSync(join(profile, DESKTOP_PROFILE_STATE))).toBe(false)
 })

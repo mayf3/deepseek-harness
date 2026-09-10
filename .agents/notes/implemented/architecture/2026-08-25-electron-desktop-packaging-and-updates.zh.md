@@ -48,7 +48,6 @@ Electron 拥有 `.dsh/profiles/desktop` 保留 profile。[内置运行时决策]
       pnpm-lock.yaml
       lock
       pnpm-workspace.yaml
-      desktop-runtime-state.json
       node_modules/
   sessions/
   storages/

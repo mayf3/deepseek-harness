@@ -16,6 +16,10 @@ Status: implemented
 
 [内置运行时决策](2026-09-08-desktop-bundled-runtime-and-external-plugins.zh.md)保留独立运行时与插件存储、内置 Node.js 和 pnpm，以及明确的包归属。[原位修改决策](2026-09-09-desktop-in-place-profile.zh.md)保留包事务与部分失败恢复。公开 CLI 继续拒绝保留的 Desktop profile。
 
+App-boot 负责已安装依赖发现、安装目录优先的 bundle 声明解析及 pnpm 成功后的 bundle 列表更新。CLI 选择自动激活；Desktop 显式保留通过 UI 禁用的 bundle。策略差异属于可见的启用控件，元数据处理与协调逻辑仍然共享。
+
+共享 `initProfile` 创建缺失的 profile 文件并保留现有内容。Host 的 `healIsolatedProfileModuleFallback` 是安装包与 bundle 投影的唯一归属方；包操作在 pnpm 前通过共享 `unlinkProfileModuleFallback` 仅分离它自己拥有的链接。pnpm 管理的目录保持优先。Desktop 不维护第二套运行时状态、锁文件哈希或链接协调机制。`desktop-runtime-state.json` 的一次性清理仅移除与记录匹配的链接，并清除该元数据。
+
 本记录部分取代[打包决策](2026-08-25-electron-desktop-packaging-and-updates.zh.md)中的私有组合与无端口传输。该设计避免监听端口，并使用分帧字节管道避免 Base64 膨胀与跨版本 V8 序列化。共享 HTTP 放弃无端口保证，将服务与认证交给已有 Web 实现。发布身份、签名、进程归属及原生壳功能仍是有效决策。
 
 ## Alternatives considered
@@ -23,6 +27,8 @@ Status: implemented
 **维护第二套后端组合与传输。** 这允许应用不监听端口，但每项 Web 路由、重载行为、认证变化和流式能力都需要 Desktop 实现或明确省略。只有无法使用 Web 实现、且足以承担持续维护成本的桌面产品需求，才支持重新引入这种方案。
 
 **合并 CLI 与 Desktop 插件安装。** 共享启动代码不要求共享可执行依赖。独立安装允许分别验收发布与插件版本，共享会话和设置则仍由已有数据归属方负责。
+
+**保留 Desktop 链接账本与 manifest 协调器。** 这些机制重复共享 profile 逻辑，并可能因派生元数据漂移而拒绝原本可用的安装。单一模块补全归属方可以保护 pnpm 目录，无需在插件 profile 中维护发布身份。
 
 ## Consequences
 

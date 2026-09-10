@@ -7,6 +7,7 @@ import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { c } from 'tar'
 import { expect, it } from 'vitest'
+import { healIsolatedProfileModuleFallback, loadProfileDirectory } from '@deepseek-ai/dsh-app-boot'
 import { DesktopProjectManager, type DesktopProjectHooks } from '../src/project-manager.ts'
 import { resolveDesktopPaths } from '../src/paths.ts'
 import { runtimeFixture, writePackage } from './runtime-fixture.ts'
@@ -45,7 +46,14 @@ it('installs a real pnpm graph and executes scripts approved by user configurati
     runtimeFixture(dsh)
     const pnpm = join(import.meta.dirname, '../node_modules/pnpm/bin/pnpm.mjs')
     const manager = new DesktopProjectManager(resolveDesktopPaths(join(root, '.dsh')), { node: process.execPath, pnpm, dsh })
-    const hooks: DesktopProjectHooks = { beforeChange: async () => {}, afterChange: async () => {} }
+    const installAnchor = join(dsh, 'node_modules', '@deepseek-ai', 'dsh', 'package.json')
+    const hooks: DesktopProjectHooks = {
+      beforeChange: async () => {},
+      afterChange: async () => {
+        const profile = loadProfileDirectory('desktop test', manager.paths.profile, installAnchor)
+        healIsolatedProfileModuleFallback({ installAnchor, profile })
+      },
+    }
     await manager.applyRelease()
     writeFileSync(join(manager.paths.profile, '.npmrc'), `registry=${origin}\n`)
     writeFileSync(join(manager.paths.profile, 'pnpm-workspace.yaml'), `packages:\n  - .\nnodeLinker: hoisted\nautoInstallPeers: false\nstoreDir: ${JSON.stringify(join(root, 'store'))}\nallowBuilds:\n  node-pty: true\n`)

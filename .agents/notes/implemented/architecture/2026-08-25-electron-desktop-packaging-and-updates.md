@@ -48,7 +48,6 @@ The renderer uses `nodeIntegration: false`, `contextIsolation: true`, and `sandb
       pnpm-lock.yaml
       lock
       pnpm-workspace.yaml
-      desktop-runtime-state.json
       node_modules/
   sessions/
   storages/

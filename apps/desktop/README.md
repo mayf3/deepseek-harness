@@ -11,7 +11,7 @@ The desktop application is an Electron shell around the complete dsh Web applica
 | Release identity | The shell API, Web client, backend, and plugin graph are qualified as one combination; independent versions would create untested combinations and ambiguous update availability. | Electron and `@deepseek-ai/dsh` always have the same exact version. A dsh upgrade is a Desktop release, even when the shell code is unchanged. |
 | Runtime | Electron's Node.js carries Electron patches, fuses, ABI, and lifecycle constraints, while system runtimes and package-manager state are uncontrolled. | dsh runs under the bundled upstream Node.js and every package operation uses the bundled pnpm. Package-manager configuration and the Host environment follow the user's settings. |
 | Package sources | Core installation at startup adds work even when offline. | `extraResources/dsh` carries a complete production dependency tree; the profile installs only external plugins. |
-| Shared modules | Host APIs can depend on module identity. | Desktop links every bundled first-party package into the profile using directory symlinks, or Windows junctions; ordinary plugin dependencies remain local. |
+| Shared modules | Host APIs can depend on module identity. | The shared profile runner projects missing installation and bundle dependencies inside the Desktop profile; pnpm-managed packages take precedence. |
 | State ownership | Sharing executable dependency graphs would let CLI and Desktop change each other's dsh, Cordis, plugin, or native-module versions, while two desktop processes could race on the same profile. | Electron acquires its process-lifetime single-instance lock before any profile access and exclusively owns `$DSH_HOME/profiles/desktop` plus its package-manager state. CLI and Desktop share supported product data under `$DSH_HOME`, but never executable packages, plugin activation, lockfiles, or `node_modules`. |
 | Transport | Reusing Web serving and authentication keeps application behavior in one implementation. | Electron loads the Host’s authenticated HTTP URL directly; child IPC carries lifecycle messages, and the local shell protocol serves startup and management pages. |
 | Plugin changes | Package installation and Host startup can fail. | Desktop stops the Host and modifies the current profile directly. Failures retain partial changes for explicit repair; there is no automatic profile rollback. |
@@ -25,23 +25,27 @@ Electron owns `$DSH_HOME/profiles/desktop`. Its `dependencies` contains packages
 
 The local startup page exposes startup status and available recovery actions. The product renderer uses the Web application’s HTTP APIs. The separate plugin window receives structured list, install, remove, update, and update-check operations; neither renderer receives filesystem access, raw Electron IPC, a shell, or arbitrary pnpm arguments.
 
+The product UI retains Web actions, including "Open In..." through the shared authenticated HTTP routes. Desktop supplies its native directory picker as a profile overlay.
+
 Electron chooses typed English or Chinese shell copy from its application locale and falls back to English. Menus, native dialogs, the startup page, and the plugin-management renderer use the same locale payload; the repository Client UI i18n gate checks these desktop sources.
 
 ### Runtime and plugin activation
 
 The signed `resources/dsh/desktop-runtime.json` binds the shell version, bundled Node version, platform, architecture, shared package versions, and final file inventory. Startup reads the metadata and checks shared package records. Release schema, shell version, target compatibility, and file integrity are verified during packaging. Core packages are never copied into profile storage or installed by pnpm at first launch.
 
-1. The main window displays a local loading page before profile preparation or backend startup. A fresh profile creates its manifest and shared package links while preserving unrelated files, then starts the actual backend once. Unchanged startups reuse the profile without scanning installed plugin manifests.
-2. A compatible application upgrade refreshes shared links in the current profile without checking plugin peer requirements. Plugin files, configuration, versions, and lockfile remain in place; pnpm does not run.
+1. The main window displays a local loading page before profile preparation or backend startup. Shared profile initialization creates missing manifest, empty user patch, and pnpm workspace files without overwriting existing files. The actual Host starts once and supplies missing module links through the shared profile runner.
+2. On application upgrades, the shared profile runner refreshes its owned module links without checking plugin peer requirements. Plugin files, configuration, versions, and lockfile remain in place; pnpm does not run.
 3. Changes to bundled Node, platform, or architecture preserve installed plugins. Native incompatibilities surface during loading and can be repaired through pnpm.
 4. Plugin add, update, and remove operations use bundled pnpm with its normal user and profile configuration. Desktop does not override the registry, npmrc, cache, or store, and new profiles add no build allowlist or strict-build setting. The plugin-management page has an inline version form with cancellation; versions and ranges pass to pnpm, including the installed version for a reinstall. Package specs pass to pnpm, including local directories, Git, tarballs, and aliases. Relative paths resolve from the Desktop profile directory. Packages declaring `dsh.bundle.patch` activate as bundles; ordinary dependencies remain installed without activation. Desktop does not scan plugin dependency graphs or validate patch files before Host startup. Custom profile metadata and bundle order are retained. Unreadable installed metadata does not block listing, disabling, or removing dependencies; the list uses the dependency spec when the installed version is unavailable.
 5. Plugin changes stop the backend before modifying the current profile. Successful preparation starts the Host. Package or Host startup failures retain modified files and report the error. Desktop creates no staging directories, activation journals, or rollback copies.
+
+CLI and Desktop use the same installed-dependency inventory and bundle reconciliation. Bundle declarations resolve with the same installation-first precedence as startup. CLI operations automatically enable installed bundles; Desktop preserves bundles disabled through its UI across updates. Neither path requires readable installed metadata to list or remove a dependency.
 
 The loading page does not depend on the Host. Errors offer restart and reinstallation guidance. Disabling plugins and resetting Desktop are offered when runtime resources support profile recovery, including development mode; early initialization failures expose restart alone. The plugin manager remains available through the application menu. Plugin changes have no automatic rollback.
 
 Reset deletes every entry in `$DSH_HOME/profiles/desktop` except the held transaction lock, then initializes the built-in profile. It removes Desktop configuration and installed third-party packages without a backup. Shared tasks, settings, and the Harness-home `.env` are untouched. Shell resource and preload failures use a self-contained document with the available recovery actions and diagnostics; its controls do not require preload.
 
-Package transactions hold `$DSH_HOME/profiles/desktop/lock` exclusively through pnpm process exit. Reset preserves the directory and its lock until initialization and Host startup finish. Shared links use directory symlinks on macOS/Linux and junctions on Windows; cleanup removes links without deleting their targets. Canonical filesystem paths identify shared packages, so Windows path casing alone does not trigger profile activation. Native builds follow pnpm’s configured build policy. Release preparation owns its separate build-time allowlist.
+Package transactions hold `$DSH_HOME/profiles/desktop/lock` exclusively through pnpm process exit. Before pnpm runs, the shared module-fallback helper removes only its owned links and preserves pnpm-managed directories; the Host recreates needed links on startup. Reset preserves the profile directory and its lock until initialization and Host startup finish. Link cleanup preserves target directories. Native builds follow pnpm’s configured build policy; release preparation owns its separate build-time allowlist.
 
 ## Develop
 
@@ -196,7 +200,6 @@ An unpackaged Electron process uses `.desktop-build/development/project` under i
 
 ## Known limitations
 
-- The Web "Open In..." action is disabled in Desktop because its host plugin requires HTTP routes; Desktop does not provide a `webServer`.
 - Release signing, notarization, update hosting, and previous-version installed-artifact qualification require the production release environment.
 - Dependency lifecycle scripts follow pnpm’s build permissions; Desktop provides no separate approval dialog.
 - The desktop shell shares sessions, settings, credentials, workspaces, and storage under `$DSH_HOME` with CLI dsh, while executable packages, plugin activation, and lockfiles remain separate.

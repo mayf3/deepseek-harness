@@ -16,6 +16,10 @@ The shared runner owns profile and Harness-home patches, proxy setup, telemetry 
 
 The [bundled-runtime decision](2026-09-08-desktop-bundled-runtime-and-external-plugins.md) retains separate runtime and plugin storage, bundled Node.js and pnpm, and explicit package ownership. The [in-place decision](2026-09-09-desktop-in-place-profile.md) retains package transactions and partial-failure recovery. The public CLI continues to reject the reserved Desktop profile.
 
+App-boot owns installed-dependency discovery, installation-first bundle declaration resolution, and bundle-list updates after pnpm succeeds. CLI selects automatic activation; Desktop explicitly preserves bundles disabled through its UI. The policy difference belongs to the visible activation control, while metadata handling and reconciliation remain shared.
+
+Shared `initProfile` creates missing profile files and preserves existing content. The Host’s `healIsolatedProfileModuleFallback` is the sole owner of installation and bundle projections; package operations use shared `unlinkProfileModuleFallback` to detach only its own links before pnpm. pnpm-managed directories retain priority. Desktop maintains no second runtime-state, lockfile hash, or link reconciliation mechanism. One-time cleanup of `desktop-runtime-state.json` removes only matching recorded links and retires that metadata.
+
 This partially supersedes the private composition and portless transport in the [packaging decision](2026-08-25-electron-desktop-packaging-and-updates.md). That design avoided listening ports and used framed byte pipes to avoid Base64 expansion and cross-version V8 serialization. Shared HTTP gives up the portless guarantee and assigns serving and authentication to the existing Web implementation. Release identity, signing, process ownership, and native shell features remain active decisions.
 
 ## Alternatives considered
@@ -23,6 +27,8 @@ This partially supersedes the private composition and portless transport in the 
 **Maintain a second backend composition and carrier.** This permits a portless application, but every Web route, reload behavior, authentication change, and stream capability needs a Desktop implementation or explicit omission. Reintroduction requires a desktop product requirement that cannot use the Web implementation and justifies that continuing cost.
 
 **Merge CLI and Desktop plugin installations.** Shared boot code does not require shared executable dependencies. Separate installations allow independently qualified releases and plugin versions while their existing data owners govern shared sessions and settings.
+
+**Keep a Desktop link ledger and manifest reconciler.** These duplicate shared profile mechanisms and can reject otherwise usable installations when derived metadata drifts. A single fallback owner can protect pnpm directories without maintaining release identity in the plugin profile.
 
 ## Consequences
 

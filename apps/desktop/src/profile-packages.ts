@@ -1,29 +1,14 @@
-/** Desktop-owned host links and applied runtime identity. */
+/** One-time removal of package links recorded by Desktop profile management. */
 
-import { createHash } from 'node:crypto'
-import { existsSync, lstatSync, mkdirSync, readFileSync, readlinkSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs'
+import { lstatSync, readFileSync, readlinkSync, unlinkSync } from 'node:fs'
 import { dirname, isAbsolute, join, resolve } from 'node:path'
-import { desktopRuntimeId, runtimePath, type DesktopRuntimeDescriptor } from './runtime-tree.ts'
 
-/** Applied runtime identity and the only links Desktop may replace. */
+/** Legacy Desktop package-link ownership file. */
 export const DESKTOP_PROFILE_STATE = 'desktop-runtime-state.json'
 
-/** Durable ownership of a package-directory link. */
-export interface DesktopPackageLink {
+interface DesktopPackageLink {
   readonly name: string
   readonly target: string
-}
-
-/** Runtime identity and managed links; package preparation may still be pending. */
-export interface DesktopProfileState {
-  readonly schemaVersion: 1
-  readonly runtimeId: string
-  readonly version: string
-  readonly nodeVersion: string
-  readonly platform: string
-  readonly arch: string
-  readonly lockHash: string
-  readonly links: readonly DesktopPackageLink[]
 }
 
 const PACKAGE_NAME = /^(?:@[a-z0-9][a-z0-9._~-]*\/[a-z0-9][a-z0-9._~-]*|[a-z0-9][a-z0-9._~-]*)$/u
@@ -40,76 +25,32 @@ function stat(path: string): ReturnType<typeof lstatSync> | undefined {
 }
 
 /**
- * Read profile state without interpreting an unpublished predecessor format.
+ * Remove recorded links still owned by Desktop and delete their legacy state file.
+ * Installed directories, changed links, and links beneath redirected package directories are retained.
  * @param profile - Desktop profile directory.
- * @returns Validated state, or undefined for an uninitialized profile.
  */
-export function readDesktopProfileState(profile: string): DesktopProfileState | undefined {
-  const path = join(profile, DESKTOP_PROFILE_STATE)
-  if (!existsSync(path)) return undefined
-  const value: unknown = JSON.parse(readFileSync(path, 'utf8'))
-  if (!record(value) || value.schemaVersion !== 1 || typeof value.runtimeId !== 'string'
-    || !/^[a-f0-9]{64}$/u.test(value.runtimeId) || typeof value.version !== 'string'
-    || typeof value.nodeVersion !== 'string' || typeof value.platform !== 'string' || typeof value.arch !== 'string'
-    || typeof value.lockHash !== 'string' || !Array.isArray(value.links)) {
-    throw new Error('desktop profile: invalid runtime state')
-  }
+export function migrateDesktopProfileLinks(profile: string): void {
+  const statePath = join(profile, DESKTOP_PROFILE_STATE)
+  if (stat(statePath) === undefined) return
+  const value: unknown = JSON.parse(readFileSync(statePath, 'utf8'))
+  if (!record(value) || !Array.isArray(value.links)) throw new Error('desktop profile: invalid legacy package links')
   const links = value.links.map((link: unknown): DesktopPackageLink => {
     if (!record(link) || typeof link.name !== 'string' || !PACKAGE_NAME.test(link.name)
       || typeof link.target !== 'string' || !isAbsolute(link.target)) {
-      throw new Error('desktop profile: invalid managed link')
+      throw new Error('desktop profile: invalid legacy package link')
     }
     return { name: link.name, target: link.target }
   })
-  if (new Set(links.map(link => link.name)).size !== links.length) throw new Error('desktop profile: duplicate managed link')
-  return { schemaVersion: 1, runtimeId: value.runtimeId, version: value.version, nodeVersion: value.nodeVersion,
-    platform: value.platform, arch: value.arch, lockHash: value.lockHash, links }
-}
-
-/**
- * Hash the plugin lockfile, including the empty-profile case.
- * @param profile - Desktop profile directory.
- * @returns Lockfile content identity.
- */
-export function desktopPluginLockHash(profile: string): string {
-  const lock = join(profile, 'pnpm-lock.yaml')
-  return createHash('sha256').update(existsSync(lock) ? readFileSync(lock) : '').digest('hex')
-}
-
-/**
- * Remove only recorded host links, without following even broken targets.
- * @param profile - Desktop profile.
- */
-export function unlinkDesktopHostPackages(profile: string): void {
-  for (const link of readDesktopProfileState(profile)?.links ?? []) {
-    const path = join(profile, 'node_modules', link.name)
-    const entry = stat(path)
-    if (entry === undefined) continue
-    if (!entry.isSymbolicLink() || resolve(dirname(path), readlinkSync(path)) !== resolve(link.target)) {
-      continue
+  const modules = join(profile, 'node_modules')
+  if (stat(modules)?.isDirectory() === true) {
+    for (const link of links) {
+      const path = join(modules, link.name)
+      if (dirname(path) !== modules && stat(dirname(path))?.isDirectory() !== true) continue
+      if (stat(path)?.isSymbolicLink() === true
+        && resolve(dirname(path), readlinkSync(path)) === resolve(link.target)) {
+        unlinkSync(path)
+      }
     }
-    unlinkSync(path)
   }
-}
-
-/**
- * Supply missing profile packages from this application's real package directories.
- * @param profile - Candidate profile.
- * @param root - Current immutable runtime directory.
- * @param runtime - Verified release descriptor.
- */
-export function linkDesktopHostPackages(profile: string, root: string, runtime: DesktopRuntimeDescriptor): void {
-  unlinkDesktopHostPackages(profile)
-  const links = runtime.sharedPackages
-    .filter(entry => stat(join(profile, 'node_modules', entry.name)) === undefined)
-    .map(entry => ({ name: entry.name, target: runtimePath(root, entry.path) }))
-  for (const link of links) {
-    const path = join(profile, 'node_modules', link.name)
-    mkdirSync(dirname(path), { recursive: true })
-    symlinkSync(link.target, path, process.platform === 'win32' ? 'junction' : 'dir')
-  }
-  const state: DesktopProfileState = { schemaVersion: 1, runtimeId: desktopRuntimeId(runtime), version: runtime.release.version,
-    nodeVersion: runtime.release.nodeVersion, platform: runtime.platform, arch: runtime.arch,
-    lockHash: desktopPluginLockHash(profile), links }
-  writeFileSync(join(profile, DESKTOP_PROFILE_STATE), `${JSON.stringify(state, undefined, 2)}\n`, { mode: 0o600 })
+  unlinkSync(statePath)
 }
