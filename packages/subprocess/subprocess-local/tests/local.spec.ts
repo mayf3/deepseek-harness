@@ -400,8 +400,7 @@ describe('LocalSubprocessRuntime', () => {
       expect((service as unknown as { terminals: Set<SubprocessTerminalHandle> }).terminals.size).toBe(1)
       exitListener?.({ exitCode: 0 })
       await handle.done
-      await new Promise(resolve => setImmediate(resolve))
-      expect((service as unknown as { terminals: Set<SubprocessTerminalHandle> }).terminals.size).toBe(0)
+      await expect.poll(() => (service as unknown as { terminals: Set<SubprocessTerminalHandle> }).terminals.size).toBe(0)
       await fiber.dispose()
     } finally {
       vi.doUnmock('node-pty')
@@ -617,9 +616,11 @@ describe('LocalSubprocessRuntime', () => {
       const handle = await ctx.subprocess.spawnTerminal({
         argv: ['shell'], cwd: process.cwd(), rows: 24, cols: 80, graceMs: 1,
       })
+      const terminate = vi.spyOn(handle, 'terminate')
       exitListener?.({ exitCode: 0 })
       await handle.done
-      await expect(handle.terminate()).rejects.toThrow('surviving pids: 124')
+      await expect.poll(() => terminate.mock.calls.length).toBe(1)
+      await expect(terminate.mock.results[0]?.value).rejects.toThrow('surviving pids: 124')
       expect((ctx.subprocess as unknown as { terminals: Set<SubprocessTerminalHandle> }).terminals.size).toBe(1)
       await fiber.dispose()
       expect(disposalErrors).toHaveLength(1)
