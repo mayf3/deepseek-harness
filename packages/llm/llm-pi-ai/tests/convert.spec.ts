@@ -119,7 +119,7 @@ describe('toPiContext', () => {
 
     expect(readImageRequest).toHaveBeenCalledWith(
       attachment,
-      { maxPixels: 2048 * 2048, maxBytes: 1024 * 1024 },
+      { projection: { kind: 'pixel-budget' as const, maxPixels: 2048 * 2048 }, maxBytes: 1024 * 1024 },
       undefined,
     )
     expect(context.messages[0]).toEqual({

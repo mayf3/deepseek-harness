@@ -9,6 +9,7 @@ import type {
   ImageMediaType,
   ImageAttachmentRef,
   ImageRequestPolicy,
+  ImageRequestProjection,
   RequestImageAttachment,
   StoredImageAttachment,
 } from '@deepseek-ai/dsh-attachment'
@@ -22,7 +23,7 @@ import {
 import { detectImage, encodedAlphaIsCompatible, probeImage } from './image.ts'
 
 /** Transform version included in every cache and upload-index identity. */
-export const REQUEST_IMAGE_TRANSFORM_VERSION = 'request-image-v5'
+export const REQUEST_IMAGE_TRANSFORM_VERSION = 'request-image-v6'
 
 interface EncodedRequestImage {
   data: Uint8Array
@@ -47,15 +48,36 @@ function checkedInteger(value: number, name: string): number {
 }
 
 function validatePolicy(policy: ImageRequestPolicy): void {
-  checkedInteger(policy.maxPixels, 'Image request maxPixels')
+  const { projection } = policy
+  if (projection.kind === 'pixel-budget') {
+    checkedInteger(projection.maxPixels, 'Image request maxPixels')
+  } else {
+    checkedInteger(projection.patchSize, 'Image request patchSize')
+    checkedInteger(projection.downsampleRatio, 'Image request downsampleRatio')
+    checkedInteger(projection.maxTokens, 'Image request maxTokens')
+  }
+  if (policy.maxDimension !== undefined) checkedInteger(policy.maxDimension, 'Image request maxDimension')
   checkedInteger(policy.maxBytes, 'Image request maxBytes')
+}
+
+/** Projection fields in a fixed key order so equal policies digest identically. */
+function projectionDescriptor(projection: ImageRequestProjection): Record<string, number | string> {
+  return projection.kind === 'pixel-budget'
+    ? { kind: projection.kind, maxPixels: projection.maxPixels }
+    : {
+      kind: projection.kind,
+      patchSize: projection.patchSize,
+      downsampleRatio: projection.downsampleRatio,
+      maxTokens: projection.maxTokens,
+    }
 }
 
 function descriptor(attachment: ImageAttachmentRef, policy: ImageRequestPolicy): string {
   return JSON.stringify({
     transformVersion: REQUEST_IMAGE_TRANSFORM_VERSION,
     attachmentId: attachment.attachmentId,
-    routePixelBudget: policy.maxPixels,
+    projection: projectionDescriptor(policy.projection),
+    maxDimension: policy.maxDimension ?? null,
     encodedByteBudget: policy.maxBytes,
     encoding: {
       webpQualities: IMAGE_ENCODING_QUALITIES,
@@ -70,7 +92,7 @@ function descriptor(attachment: ImageAttachmentRef, policy: ImageRequestPolicy):
 /**
  * Complete deterministic identity for one attachment and route-owned request policy.
  * @param attachment - provider-independent durable normalized attachment reference.
- * @param policy - route-owned pixel and byte policy.
+ * @param policy - route-owned projection, per-side cap, and byte policy.
  * @returns branded digest over every request transform input.
  */
 export function requestImageVariantId(
@@ -80,9 +102,11 @@ export function requestImageVariantId(
   return ImageVariantId(`sha256:${digest(descriptor(attachment, policy))}`)
 }
 
+/** Resize by the source long edge only, so the encoder rounds the short edge exactly as the projection did. */
 function pipeline(attachment: StoredImageAttachment, width: number, height: number): Sharp {
+  const byWidth = attachment.ref.width >= attachment.ref.height
   return sourcePipeline(attachment)
-    .resize({ width, height, fit: 'inside', withoutEnlargement: true })
+    .resize({ ...byWidth ? { width } : { height }, withoutEnlargement: true })
 }
 
 function sourcePipeline(attachment: StoredImageAttachment): Sharp {
@@ -94,7 +118,7 @@ async function createRequestImage(
   policy: ImageRequestPolicy,
   hasAlpha: boolean,
 ): Promise<EncodedRequestImage> {
-  const dimensions = requestImageDimensions(attachment.ref.width, attachment.ref.height, policy.maxPixels)
+  const dimensions = requestImageDimensions(attachment.ref.width, attachment.ref.height, policy)
   if (dimensions.width === attachment.ref.width
     && dimensions.height === attachment.ref.height
     && attachment.data.byteLength <= policy.maxBytes) {
@@ -126,7 +150,7 @@ async function readCached(
   try {
     const data = new Uint8Array(await readFile(path, { signal }))
     const detected = await probeImage(data)
-    const maximum = requestImageDimensions(attachment.ref.width, attachment.ref.height, policy.maxPixels)
+    const maximum = requestImageDimensions(attachment.ref.width, attachment.ref.height, policy)
     if (detected.depth !== 'uchar' || detected.space !== 'srgb'
       || detected.width > maximum.width || detected.height > maximum.height
       || !encodedAlphaIsCompatible(expectedAlpha, detected)) return undefined

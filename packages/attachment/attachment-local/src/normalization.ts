@@ -79,14 +79,10 @@ function preparedPipeline(data: Uint8Array, width: number, height: number): Shar
 
 /** Dimensions under the total-pixel budget, then the long-edge cap, without changing aspect ratio. */
 function initialDimensions(detected: DetectedImage, policy: NormalizationPolicy): { width: number; height: number } {
-  const budgeted = requestImageDimensions(detected.width, detected.height, policy.maxPixels)
-  const longEdge = Math.max(budgeted.width, budgeted.height)
-  if (longEdge <= policy.maxDimension) return budgeted
-  const scale = policy.maxDimension / longEdge
-  return {
-    width: Math.max(1, Math.floor(budgeted.width * scale)),
-    height: Math.max(1, Math.floor(budgeted.height * scale)),
-  }
+  return requestImageDimensions(detected.width, detected.height, {
+    projection: { kind: 'pixel-budget', maxPixels: policy.maxPixels },
+    maxDimension: policy.maxDimension,
+  })
 }
 
 /**

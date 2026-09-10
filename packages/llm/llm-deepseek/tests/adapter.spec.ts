@@ -20,7 +20,7 @@ import { SessionId } from '@deepseek-ai/dsh-session'
 import DeepSeekLlmApiExtensionRegistry from '@deepseek-ai/dsh-deepseek-llm-api-extensions'
 import type { PreparedDeepSeekLlmApiExtensions } from '@deepseek-ai/dsh-deepseek-llm-api-extensions'
 import * as LlmDeepSeek from '@deepseek-ai/dsh-llm-deepseek'
-import { DeepSeekAdapter, resolveAdapterOptions } from '@deepseek-ai/dsh-llm-deepseek'
+import { DEEPSEEK_IMAGE_TOKEN_GRID, DeepSeekAdapter, resolveAdapterOptions } from '@deepseek-ai/dsh-llm-deepseek'
 import { httpErrorCode } from '../src/adapter.ts'
 import { resolveRequestImagePolicy } from '../src/request-pricing.ts'
 import { assemble } from './assemble.ts'
@@ -145,15 +145,15 @@ describe('request image policy', () => {
   it.each([
     [
       { id: 'default' },
-      { maxPixels: 640_000, maxBytes: 1024 * 1024 },
+      { projection: DEEPSEEK_IMAGE_TOKEN_GRID, maxDimension: 4096, maxBytes: 2 * 1024 * 1024 },
     ],
     [
       { id: 'low', imagePixelBudget: 'low' as const },
-      { maxPixels: 512 * 512, maxBytes: 1024 * 1024 },
+      { projection: { kind: 'pixel-budget' as const, maxPixels: 512 * 512 }, maxDimension: 4096, maxBytes: 2 * 1024 * 1024 },
     ],
     [
       { id: 'custom', imagePixelBudget: 320_000, imageMaxBytes: 512_000 },
-      { maxPixels: 320_000, maxBytes: 512_000 },
+      { projection: { kind: 'pixel-budget' as const, maxPixels: 320_000 }, maxDimension: 4096, maxBytes: 512_000 },
     ],
   ])('resolves route-owned defaults and overrides for %s', (model, expected) => {
     expect(resolveRequestImagePolicy(model)).toEqual(expected)
@@ -407,7 +407,7 @@ describe('DeepSeekAdapter against a mock server', () => {
       bytes: 3,
     }])
     expect(signalSeen[0]).toBeInstanceOf(AbortSignal)
-    expect(policies).toEqual([{ maxPixels: 640_000, maxBytes: 1024 * 1024 }])
+    expect(policies).toEqual([{ projection: DEEPSEEK_IMAGE_TOKEN_GRID, maxDimension: 4096, maxBytes: 2 * 1024 * 1024 }])
   })
 
   it('falls back to one all-base64 request when Files API resolution fails', async () => {
@@ -621,7 +621,7 @@ describe('DeepSeekAdapter against a mock server', () => {
 
     expect(attachmentMocks.readImageRequest).toHaveBeenCalledWith(
       recent,
-      { maxPixels: 640_000, maxBytes: 1024 * 1024 },
+      { projection: DEEPSEEK_IMAGE_TOKEN_GRID, maxDimension: 4096, maxBytes: 2 * 1024 * 1024 },
       expect.any(AbortSignal),
     )
     const body = server.requests[0] as { messages: unknown[] }
@@ -672,13 +672,13 @@ describe('DeepSeekAdapter against a mock server', () => {
     expect(attachmentMocks.readImageRequest).toHaveBeenNthCalledWith(
       1,
       imageRef,
-      { maxPixels: 512 * 512, maxBytes: 512_000 },
+      { projection: { kind: 'pixel-budget' as const, maxPixels: 512 * 512 }, maxDimension: 4096, maxBytes: 512_000 },
       expect.any(AbortSignal),
     )
     expect(attachmentMocks.readImageRequest).toHaveBeenNthCalledWith(
       2,
       imageRef,
-      { maxPixels: 320_000, maxBytes: 1024 * 1024 },
+      { projection: { kind: 'pixel-budget' as const, maxPixels: 320_000 }, maxDimension: 4096, maxBytes: 2 * 1024 * 1024 },
       expect.any(AbortSignal),
     )
   })

@@ -325,7 +325,7 @@ describe('PiAiAdapter provider routing', () => {
 
     expect(result.finish.kind).toBe('error')
     expect(readImageRequest).toHaveBeenCalledWith(ref, {
-      maxPixels: 2048 * 2048,
+      projection: { kind: 'pixel-budget' as const, maxPixels: 2048 * 2048 },
       maxBytes: 1024 * 1024,
     }, expect.any(AbortSignal))
     expect(JSON.stringify(server.requests[0])).toContain(MODEL_IMAGE_PATH)

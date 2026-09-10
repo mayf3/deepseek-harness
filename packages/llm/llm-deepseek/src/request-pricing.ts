@@ -1,6 +1,6 @@
 /**
  * Provider-side request-image pricing for DeepSeek routes: reproduces the
- * adapter's deterministic request projection (per-model pixel budget,
+ * adapter's deterministic request projection (per-model projection,
  * oldest-first offload under the raw-byte and count budgets) and prices every
  * retained image with the published vision-token accounting. Consumed
  * synchronously by the token meter through `LlmAdapter.imageRequestPricing`;
@@ -12,36 +12,43 @@
 import { offloadedImageText, offloadedImagePrefixCount, requestImageHandleText, textOnlyImageText } from '@deepseek-ai/dsh-llm'
 import type { ImageAttachmentAccessResolver, LlmImageRequestPrice, LlmImageRequestPricing } from '@deepseek-ai/dsh-llm'
 import { requestImageDimensions } from '@deepseek-ai/dsh-attachment'
-import type { ImageAttachmentRef, ImageRequestPolicy } from '@deepseek-ai/dsh-attachment'
-import { deepSeekImageTokens } from './image-tokens.ts'
+import type { ImageAttachmentRef, ImageRequestPolicy, ImageRequestProjection } from '@deepseek-ai/dsh-attachment'
+import { DEEPSEEK_IMAGE_TOKEN_GRID, deepSeekImageTokens } from './image-tokens.ts'
 import type { DeepSeekCatalogModel, DeepSeekConnectionOptions } from './adapter.ts'
 
 /** Default bound on accumulated file-referenced image bytes per request. */
 export const DEFAULT_MAX_REQUEST_FILES_BYTES = 128 * 1024 * 1024
 /** Provider request image-count limit. */
 export const DEFAULT_MAX_IMAGES_PER_REQUEST = 600
-/** Default total-pixel budget for harness request-image projection. */
-export const DEFAULT_REQUEST_IMAGE_PIXEL_BUDGET = 640_000
 /** Total-pixel budget matching provider low-detail image input. */
 export const DEFAULT_LOW_DETAIL_IMAGE_PIXEL_BUDGET = 512 * 512
 /** Encoded-byte target for one deterministic model-request image; the smallest quality-ladder output is used when no quality fits. */
-export const DEFAULT_REQUEST_IMAGE_MAX_BYTES = 1024 * 1024
+export const DEFAULT_REQUEST_IMAGE_MAX_BYTES = 2 * 1024 * 1024
+/**
+ * Provider per-side limit for a request carrying 15 or more images, applied
+ * to every request image so the image count never changes a projection.
+ */
+export const REQUEST_IMAGE_MAX_DIMENSION = 4096
 
 /**
- * Resolve the request-image budgets owned by one DeepSeek model route.
+ * Resolve the request-image policy owned by one DeepSeek model route: the
+ * published token grid unless the model overrides it with a pixel budget,
+ * the provider per-side limit, and the encoded-byte target.
  * @param model - Advertised model route and its optional image overrides.
- * @returns Complete pixel and encoded-byte budgets.
+ * @returns Complete projection, per-side cap, and encoded-byte target.
  * @internal
  */
 export function resolveRequestImagePolicy(model: DeepSeekCatalogModel): ImageRequestPolicy {
-  const maxPixels = model.imagePixelBudget === 'low'
-    ? DEFAULT_LOW_DETAIL_IMAGE_PIXEL_BUDGET
-    : model.imagePixelBudget ?? DEFAULT_REQUEST_IMAGE_PIXEL_BUDGET
+  const projection: ImageRequestProjection = model.imagePixelBudget === undefined
+    ? DEEPSEEK_IMAGE_TOKEN_GRID
+    : {
+      kind: 'pixel-budget',
+      maxPixels: model.imagePixelBudget === 'low' ? DEFAULT_LOW_DETAIL_IMAGE_PIXEL_BUDGET : model.imagePixelBudget,
+    }
   return {
-    maxPixels,
-    maxBytes: model.imageMaxBytes === undefined
-      ? DEFAULT_REQUEST_IMAGE_MAX_BYTES
-      : model.imageMaxBytes,
+    projection,
+    maxDimension: REQUEST_IMAGE_MAX_DIMENSION,
+    maxBytes: model.imageMaxBytes ?? DEFAULT_REQUEST_IMAGE_MAX_BYTES,
   }
 }
 
@@ -95,7 +102,7 @@ export function deepSeekImageRequestPricing(
         if (index < offloaded) {
           return { visualTokens: 0, text: offloadedImageText(ref, resolveAccess?.(ref)) }
         }
-        const dimensions = requestImageDimensions(ref.width, ref.height, policy.maxPixels)
+        const dimensions = requestImageDimensions(ref.width, ref.height, policy)
         return {
           visualTokens: deepSeekImageTokens(dimensions.width, dimensions.height),
           text: requestImageHandleText(ref, dimensions, resolveAccess?.(ref)),

@@ -22,7 +22,8 @@ export { AttachmentId, ImageVariantId } from './brand.ts'
 export { AttachmentError, isAttachmentError, isImageAdmissionError } from './error.ts'
 export type { AttachmentErrorCode, ImageAdmissionErrorCode } from './error.ts'
 export { admitEncodedFile, admitEncodedImages } from './admission.ts'
-export { requestImageDimensions } from './request-projection.ts'
+export { requestImageDimensions, tokenGridProjection } from './request-projection.ts'
+export type { ProjectedDimensions } from './request-projection.ts'
 export type {
   AttachmentId as AttachmentIdType,
   AdmittedPromptContentPart,
@@ -33,6 +34,7 @@ export type {
   ImageAttachmentLimits,
   ImageAttachmentRef,
   ImageRequestPolicy,
+  ImageRequestProjection,
   ImageMediaType,
   PromptContentPart,
   RequestImageAttachment,
@@ -40,6 +42,7 @@ export type {
   SaveFileStreamAttachment,
   SaveImageAttachment,
   StoredImageAttachment,
+  TokenGridProjection,
 } from './types.ts'
 
 declare module '@deepseek-ai/cordis' {
@@ -241,7 +244,7 @@ export abstract class AttachmentStore extends Service {
   /**
    * Generate or read one deterministic model-request version from the stored normalized image.
    * @param ref - durable provider-independent normalized attachment reference.
-   * @param policy - exact route pixel budget and encoded-byte target; a target no ladder quality meets yields the smallest ladder output.
+   * @param policy - route projection, optional per-side cap, and byte target; an unmet target yields the smallest ladder output.
    * @param signal - optional cancellation.
    * @returns request bytes and the cache/upload identity covering every transform input.
    */

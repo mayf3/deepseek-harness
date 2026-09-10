@@ -48,7 +48,7 @@ describe('local request-image cache', () => {
     const first = await attachments.saveImage({ data: await image(8, 4), mediaType: 'image/png' })
     const second = await attachments.saveImage({ data: await image(4, 8), mediaType: 'image/png' })
     const firstStored = await attachments.readImage(first)
-    const policy = { maxPixels: 1_000, maxBytes: 1024 * 1024 }
+    const policy = { projection: { kind: 'pixel-budget' as const, maxPixels: 1_000 }, maxBytes: 1024 * 1024 }
 
     const request = await attachments.readImageRequest(first, policy)
     const batch = await Promise.all([first, second].map(
@@ -63,17 +63,52 @@ describe('local request-image cache', () => {
     const attachments = await store()
     const attachment = await attachments.saveImage({ data: await image(8, 4), mediaType: 'image/png' })
 
-    await expect(attachments.readImageRequest(attachment, { maxPixels: 0, maxBytes: 100 }))
+    await expect(attachments.readImageRequest(attachment, { projection: { kind: 'pixel-budget' as const, maxPixels: 0 }, maxBytes: 100 }))
       .rejects.toThrow('Image request maxPixels must be a positive integer')
-    await expect(attachments.readImageRequest(attachment, { maxPixels: 100, maxBytes: 0 }))
+    await expect(attachments.readImageRequest(attachment, { projection: { kind: 'pixel-budget' as const, maxPixels: 100 }, maxBytes: 0 }))
       .rejects.toThrow('Image request maxBytes must be a positive integer')
+    await expect(attachments.readImageRequest(attachment, { projection: { kind: 'pixel-budget' as const, maxPixels: 100 }, maxDimension: 0, maxBytes: 100 }))
+      .rejects.toThrow('Image request maxDimension must be a positive integer')
+    for (const field of ['patchSize', 'downsampleRatio', 'maxTokens'] as const) {
+      const projection = { kind: 'token-grid' as const, patchSize: 14, downsampleRatio: 3, maxTokens: 1024, [field]: 1.5 }
+      await expect(attachments.readImageRequest(attachment, { projection, maxBytes: 100 }))
+        .rejects.toThrow(`Image request ${field} must be a positive integer`)
+    }
+  })
+
+  it('projects onto a token grid, caps the long edge, and keys the cache by projection', async () => {
+    const attachments = await store()
+    const grid = { kind: 'token-grid' as const, patchSize: 14, downsampleRatio: 3, maxTokens: 1024 }
+    const square = await attachments.saveImage({ data: await image(2048, 2048), mediaType: 'image/png' })
+    const small = await attachments.saveImage({ data: await image(800, 800), mediaType: 'image/png' })
+    const thin = await attachments.saveImage({ data: await image(8000, 40), mediaType: 'image/png' })
+    const wide = await attachments.saveImage({ data: await image(1920, 1080), mediaType: 'image/png' })
+    const tall = await attachments.saveImage({ data: await image(1080, 1920), mediaType: 'image/png' })
+
+    const squareRequest = await attachments.readImageRequest(square, { projection: grid, maxBytes: 2 * 1024 * 1024 })
+    const smallRequest = await attachments.readImageRequest(small, { projection: grid, maxBytes: 2 * 1024 * 1024 })
+    const thinRequest = await attachments.readImageRequest(thin, { projection: grid, maxDimension: 4096, maxBytes: 2 * 1024 * 1024 })
+    const budgeted = await attachments.readImageRequest(square, { projection: { kind: 'pixel-budget' as const, maxPixels: 1302 * 1302 }, maxBytes: 2 * 1024 * 1024 })
+    const uncapped = await attachments.readImageRequest(thin, { projection: grid, maxBytes: 2 * 1024 * 1024 })
+    const wideRequest = await attachments.readImageRequest(wide, { projection: grid, maxBytes: 2 * 1024 * 1024 })
+    const tallRequest = await attachments.readImageRequest(tall, { projection: grid, maxBytes: 2 * 1024 * 1024 })
+
+    expect(squareRequest).toMatchObject({ width: 1302, height: 1302, mediaType: 'image/jpeg' })
+    expect(smallRequest).toMatchObject({ width: 800, height: 800, mediaType: 'image/png' })
+    expect(smallRequest.data).toEqual((await attachments.readImage(small)).data)
+    expect(thinRequest).toMatchObject({ width: 4096, height: 20 })
+    expect(uncapped).toMatchObject({ width: 8000, height: 40 })
+    expect(wideRequest).toMatchObject({ width: 1708, height: 961 })
+    expect(tallRequest).toMatchObject({ width: 961, height: 1708 })
+    expect(budgeted.variantId).not.toBe(squareRequest.variantId)
+    expect(uncapped.variantId).not.toBe(thinRequest.variantId)
   })
 
   it('keeps the smallest ladder output when the encoded-byte target is unreachable', async () => {
     const attachments = await store()
     const attachment = await attachments.saveImage({ data: await image(1, 1), mediaType: 'image/png' })
 
-    const request = await attachments.readImageRequest(attachment, { maxPixels: 1, maxBytes: 1 })
+    const request = await attachments.readImageRequest(attachment, { projection: { kind: 'pixel-budget' as const, maxPixels: 1 }, maxBytes: 1 })
 
     expect(request.mediaType).toBe('image/jpeg')
     expect(request.bytes).toBeGreaterThan(1)
@@ -83,7 +118,7 @@ describe('local request-image cache', () => {
   it('regenerates invalid, oversized, incompatible, or mismatched cached variants', async () => {
     const attachments = await store()
     const attachment = await attachments.saveImage({ data: await image(64, 32), mediaType: 'image/png' })
-    const policy = { maxPixels: 16 * 16, maxBytes: 4_096 }
+    const policy = { projection: { kind: 'pixel-budget' as const, maxPixels: 16 * 16 }, maxBytes: 4_096 }
     const initial = await attachments.readImageRequest(attachment, policy)
     const hash = String(initial.variantId).slice('sha256:'.length)
     const path = join(attachments.root, 'request-images', hash.slice(0, 2), hash)
@@ -132,10 +167,10 @@ describe('local request-image cache', () => {
       data: await image(2048, 1024), mediaType: 'image/png', name: 'wide.png',
     })
 
-    const squareRequest = await attachments.readImageRequest(square, { maxPixels: 640_000, maxBytes: 1024 * 1024 })
-    const wideRequest = await attachments.readImageRequest(wide, { maxPixels: 640_000, maxBytes: 1024 * 1024 })
-    const repeated = await attachments.readImageRequest(wide, { maxPixels: 640_000, maxBytes: 1024 * 1024 })
-    const low = await attachments.readImageRequest(wide, { maxPixels: 512 * 512, maxBytes: 1024 * 1024 })
+    const squareRequest = await attachments.readImageRequest(square, { projection: { kind: 'pixel-budget' as const, maxPixels: 640_000 }, maxBytes: 1024 * 1024 })
+    const wideRequest = await attachments.readImageRequest(wide, { projection: { kind: 'pixel-budget' as const, maxPixels: 640_000 }, maxBytes: 1024 * 1024 })
+    const repeated = await attachments.readImageRequest(wide, { projection: { kind: 'pixel-budget' as const, maxPixels: 640_000 }, maxBytes: 1024 * 1024 })
+    const low = await attachments.readImageRequest(wide, { projection: { kind: 'pixel-budget' as const, maxPixels: 512 * 512 }, maxBytes: 1024 * 1024 })
 
     expect(squareRequest).toMatchObject({ width: 800, height: 800 })
     expect(wideRequest).toMatchObject({ width: 1130, height: 565 })
@@ -175,8 +210,8 @@ describe('local request-image cache', () => {
     const photo = await attachments.saveImage({ data: photoSource, mediaType: 'image/png' })
     const alpha = await attachments.saveImage({ data: alphaSource, mediaType: 'image/png' })
 
-    const photoRequest = await attachments.readImageRequest(photo, { maxPixels: 128 * 128, maxBytes: 1024 * 1024 })
-    const alphaRequest = await attachments.readImageRequest(alpha, { maxPixels: 128 * 128, maxBytes: 4_096 })
+    const photoRequest = await attachments.readImageRequest(photo, { projection: { kind: 'pixel-budget' as const, maxPixels: 128 * 128 }, maxBytes: 1024 * 1024 })
+    const alphaRequest = await attachments.readImageRequest(alpha, { projection: { kind: 'pixel-budget' as const, maxPixels: 128 * 128 }, maxBytes: 4_096 })
 
     expect(photoRequest.mediaType).toBe('image/jpeg')
     expect(alphaRequest.mediaType).toBe('image/webp')
@@ -192,7 +227,7 @@ describe('local request-image cache', () => {
     }).toColourspace('rgb16').png().toBuffer())
     const attachment = await attachments.saveImage({ data: source, mediaType: 'image/png' })
 
-    const request = await attachments.readImageRequest(attachment, { maxPixels: 16 * 16, maxBytes: 1024 * 1024 })
+    const request = await attachments.readImageRequest(attachment, { projection: { kind: 'pixel-budget' as const, maxPixels: 16 * 16 }, maxBytes: 1024 * 1024 })
 
     expect(request.bytes).toBeLessThanOrEqual(1024 * 1024)
     expect(request.width * request.height).toBeLessThanOrEqual(16 * 16)
@@ -206,7 +241,7 @@ describe('local request-image cache', () => {
     const source = await complexOpaqueAlphaImage(64, 32)
     const attachment = await attachments.saveImage({ data: source, mediaType: 'image/png' })
 
-    const request = await attachments.readImageRequest(attachment, { maxPixels: 16 * 16, maxBytes: 1024 * 1024 })
+    const request = await attachments.readImageRequest(attachment, { projection: { kind: 'pixel-budget' as const, maxPixels: 16 * 16 }, maxBytes: 1024 * 1024 })
 
     expect(request.mediaType).toBe('image/webp')
     await expect(sharp(request.data).metadata()).resolves.toMatchObject({ hasAlpha: false })
@@ -228,7 +263,7 @@ describe('local request-image cache', () => {
     }).png().toBuffer())
     const attachment = await attachments.saveImage({ data: source, mediaType: 'image/png' })
 
-    const request = await attachments.readImageRequest(attachment, { maxPixels: 640_000, maxBytes: 1024 * 1024 })
+    const request = await attachments.readImageRequest(attachment, { projection: { kind: 'pixel-budget' as const, maxPixels: 640_000 }, maxBytes: 1024 * 1024 })
 
     expect(request).toMatchObject({ width: 800, height: 800 })
     expect(request.bytes).toBeLessThanOrEqual(1024 * 1024)
@@ -241,7 +276,7 @@ describe('local request-image cache', () => {
     })
     const run = vi.spyOn(CompressionLimiter.prototype, 'run')
     const controller = new AbortController()
-    const policy = { maxPixels: 640_000, maxBytes: 1024 * 1024 }
+    const policy = { projection: { kind: 'pixel-budget' as const, maxPixels: 640_000 }, maxBytes: 1024 * 1024 }
 
     const cancelled = attachments.readImageRequest(attachment, policy, controller.signal)
     const completed = attachments.readImageRequest(attachment, policy)
@@ -271,7 +306,7 @@ describe('local request-image cache', () => {
     const controller = new AbortController()
     const request = attachments.readImageRequest(
       attachment,
-      { maxPixels: 640_000, maxBytes: 1024 * 1024 },
+      { projection: { kind: 'pixel-budget' as const, maxPixels: 640_000 }, maxBytes: 1024 * 1024 },
       controller.signal,
     )
     await vi.waitFor(() => {
@@ -304,7 +339,7 @@ describe('local request-image cache', () => {
       return actualRead(ref, signal)
     })
     const controller = new AbortController()
-    const policy = { maxPixels: 640_000, maxBytes: 1024 * 1024 }
+    const policy = { projection: { kind: 'pixel-budget' as const, maxPixels: 640_000 }, maxBytes: 1024 * 1024 }
     const cancelled = attachments.readImageRequest(attachment, policy, controller.signal)
     await vi.waitFor(() => {
       expect(calls).toBe(1)

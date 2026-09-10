@@ -272,7 +272,7 @@ async function toPiContextWithImages(
 ): Promise<PiContext> {
   const { attachments, resolveImageAccess, maxRequestImageBytes } = images
   const requestImagePolicy = images.requestImagePolicy ?? {
-    maxPixels: DEFAULT_REQUEST_IMAGE_PIXEL_BUDGET,
+    projection: { kind: 'pixel-budget', maxPixels: DEFAULT_REQUEST_IMAGE_PIXEL_BUDGET },
     maxBytes: DEFAULT_REQUEST_IMAGE_MAX_BYTES,
   }
   assertSupportedImageRoles(options.messages)
