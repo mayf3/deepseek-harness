@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
@@ -43,34 +43,42 @@ async function complexOpaqueAlphaImage(width: number, height: number): Promise<U
 }
 
 afterEach(async () => {
+  vi.unstubAllEnvs()
   await Promise.all(homes.splice(0).map(home => rm(home, { recursive: true, force: true })))
 })
 
 describe('local request-image cache', () => {
   it('rebuilds a cleared cache without moving or losing durable attachments', async () => {
-    const dshHome = await home()
-    const attachments = new LocalAttachmentStore(new Context(), { dshHome })
-    const attachment = await attachments.saveImage({ data: await image(64, 32), mediaType: 'image/png' })
-    const stored = await attachments.readImage(attachment)
-    const fileData = Uint8Array.of(0, 1, 2, 255)
-    const file = await attachments.saveFile({ data: fileData, name: 'notes.bin' })
-    const policy = { maxPixels: 16 * 16, maxBytes: 4_096 }
-    const initial = await attachments.readImageRequest(attachment, policy)
-    const hash = String(initial.variantId).slice('sha256:'.length)
-    const cacheRoot = join(dshHome, 'cache')
-    const path = join(cacheRoot, 'attachments', 'request-images', hash.slice(0, 2), hash)
+    const fallbackHome = await home()
+    vi.stubEnv('DSH_HOME', fallbackHome)
+    try {
+      const dshHome = await home()
+      const attachments = new LocalAttachmentStore(new Context(), { dshHome })
+      const attachment = await attachments.saveImage({ data: await image(64, 32), mediaType: 'image/png' })
+      const stored = await attachments.readImage(attachment)
+      const fileData = Uint8Array.of(0, 1, 2, 255)
+      const file = await attachments.saveFile({ data: fileData, name: 'notes.bin' })
+      const policy = { maxPixels: 16 * 16, maxBytes: 4_096 }
+      const initial = await attachments.readImageRequest(attachment, policy)
+      const hash = String(initial.variantId).slice('sha256:'.length)
+      const cacheRoot = join(dshHome, 'cache')
+      const path = join(cacheRoot, 'attachments', 'request-images', hash.slice(0, 2), hash)
 
-    expect(attachments.root).toBe(join(dshHome, 'attachments', 'v1'))
-    await expect(readFile(path)).resolves.toEqual(Buffer.from(initial.data))
-    await expect(readFile(join(attachments.root, 'request-images', hash.slice(0, 2), hash)))
-      .rejects.toMatchObject({ code: 'ENOENT' })
-    await rm(cacheRoot, { recursive: true })
+      expect(attachments.root).toBe(join(dshHome, 'attachments', 'v1'))
+      await expect(readFile(path)).resolves.toEqual(Buffer.from(initial.data))
+      await expect(readFile(join(attachments.root, 'request-images', hash.slice(0, 2), hash)))
+        .rejects.toMatchObject({ code: 'ENOENT' })
+      await rm(cacheRoot, { recursive: true })
 
-    const reopened = new LocalAttachmentStore(new Context(), { dshHome })
-    await expect(reopened.readImage(attachment)).resolves.toEqual(stored)
-    await expect(readFile(reopened.fileHostPath(file))).resolves.toEqual(Buffer.from(fileData))
-    await expect(reopened.readImageRequest(attachment, policy)).resolves.toEqual(initial)
-    await expect(readFile(path)).resolves.toEqual(Buffer.from(initial.data))
+      const reopened = new LocalAttachmentStore(new Context(), { dshHome })
+      await expect(reopened.readImage(attachment)).resolves.toEqual(stored)
+      await expect(readFile(reopened.fileHostPath(file))).resolves.toEqual(Buffer.from(fileData))
+      await expect(reopened.readImageRequest(attachment, policy)).resolves.toEqual(initial)
+      await expect(readFile(path)).resolves.toEqual(Buffer.from(initial.data))
+      await expect(readdir(fallbackHome)).resolves.toEqual([])
+    } finally {
+      vi.unstubAllEnvs()
+    }
   })
 
   it('passes through an in-budget attachment and composes ordered request reads', async () => {
