@@ -128,7 +128,11 @@ function WidthHandle(props: {
   )
 }
 
-export function ConversationRoot({
+export function ConversationRoot(props: ConversationRootProps) {
+  return <ConversationMainPanel {...props} />
+}
+
+function ConversationMainPanel({
   sessionId, useSession, useSessions, useSessionPendingInteraction,
   useWorkspaces, useConversation, useInput, useComposerBlock,
   renderSlot, renderSlotChain, selectWorkspace, t,
