@@ -580,6 +580,24 @@ describe('assertEntriesActivated', () => {
     ]), NAME)).rejects.toThrow(`${NAME}: 2 entries did not activate\nstackless: stackless failure\nplain: plain failure`)
   })
 
+  it('preserves nested activation causes and aggregate member failures', async () => {
+    const original = new Error('tool discovery failed')
+    const aggregate = new AggregateError([original, 'transport closed'], 'connection failed', {
+      cause: new Error('server rejected discovery'),
+    })
+    const wrapper = new Error('plugin activation failed', { cause: aggregate })
+    await expect(assertEntriesActivated(ctxWith([
+      { fiber: fiber(3, wrapper), options: { name: 'wrapped-plugin' } },
+    ]), NAME)).rejects.toThrow([
+      `${NAME}: 1 entry did not activate`,
+      `wrapped-plugin: ${wrapper.stack!}`,
+      aggregate.stack!,
+      (aggregate.cause as Error).stack!,
+      original.stack!,
+      'transport closed',
+    ].join('\n'))
+  })
+
   it('reports unresolved services for pending entries', async () => {
     let awaitCalls = 0
     const expected = [

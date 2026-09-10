@@ -706,15 +706,19 @@ const FIBER_PENDING = 0 as FiberState.PENDING
 const FIBER_ACTIVE = 2 as FiberState.ACTIVE
 const FIBER_FAILED = 3 as FiberState.FAILED
 
-/** Render a thrown plugin value without discarding an Error's original stack. */
+/** Render plugin stacks, nested causes, and aggregate member failures. */
 function formatActivationError(error: unknown): string {
-  return error instanceof Error ? error.stack ?? error.message : String(error)
+  if (!(error instanceof Error)) return String(error)
+  const details = [error.stack ?? error.message]
+  if (error.cause !== undefined) details.push(formatActivationError(error.cause))
+  if (error instanceof AggregateError) details.push(...error.errors.map(formatActivationError))
+  return details.join('\n')
 }
 
 /**
  * Reject a settled Loader tree when an enabled entry failed or remains inactive.
- * Plugin failures include the original thrown stack; pending entries name their
- * unresolved services because no plugin error exists for that state. Active
+ * Plugin failures include original stacks, nested causes, and aggregate members.
+ * Pending entries name their unresolved services because no plugin error exists for that state. Active
  * entries require no further wait; only failed fibers are awaited to recover
  * their private rejection reason.
  * @param ctx - the settled context whose Loader entries to audit.
