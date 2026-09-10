@@ -19,7 +19,8 @@ import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import type { Session, SessionId, UserMessage } from '@deepseek-ai/dsh-session'
 import { SessionQueryError } from '@deepseek-ai/dsh-session-query'
 import { createInboxStub } from '@deepseek-ai/dsh-agent-loop-testkit'
-import { apply, Config, internals } from '../src/index.ts'
+import { apply, Config } from '../src/index.ts'
+import { internals } from '../src/runner-internals.ts'
 
 const originalInternals = { ...internals }
 afterEach(() => { Object.assign(internals, originalInternals) })

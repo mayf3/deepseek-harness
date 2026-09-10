@@ -828,7 +828,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/bundle/headless/src/index.ts:40`](../packages/bundle/headless/src/index.ts)
+Source: [`packages/bundle/headless/src/index.ts:41`](../packages/bundle/headless/src/index.ts)
 
 <a id="deepseek-aidsh-hooks-claude-code"></a>
 

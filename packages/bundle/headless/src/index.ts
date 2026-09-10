@@ -28,6 +28,7 @@ import { SessionQueryError } from '@deepseek-ai/dsh-session-query'
 import type {} from '@deepseek-ai/cordis-plugin-loader'
 import type {} from '@deepseek-ai/dsh-cmdline'
 import type {} from '@deepseek-ai/dsh-session-query'
+import { internals } from './runner-internals.ts'
 import { projectJsonRun, boundJsonLine } from './json-stream.ts'
 
 /** Stable Cordis plugin name. */
@@ -64,21 +65,6 @@ interface HeadlessIo {
   stderr: { write(chunk: string): unknown }
   /** Request process exit with `code` after the tree disposes. */
   exit(code: number): void
-}
-
-/** The process streams the runner reads and writes; tests substitute captures. */
-export const internals: {
-  stdout: HeadlessIo['stdout']
-  stderr: HeadlessIo['stderr']
-  readStdin: () => Promise<string>
-} = {
-  stdout: process.stdout,
-  stderr: process.stderr,
-  readStdin: async () => {
-    const chunks: Buffer[] = []
-    for await (const chunk of process.stdin as AsyncIterable<Buffer>) chunks.push(chunk)
-    return Buffer.concat(chunks).toString('utf8')
-  },
 }
 
 /** Aggregate the last assistant text and turn outcome in one owned interval. */
