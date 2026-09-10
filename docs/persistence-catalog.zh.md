@@ -405,7 +405,7 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 #### `deliverables/presented` — 仅日志
 
 ```ts persistence-catalog
-/** Declared workspace files from a successful final present result, including nested calls. */
+/** Declared filesystem files from a successful final present result, including nested calls. */
 'deliverables/presented': { turn: number; callId: ToolCallId; files: PresentedFile[] }
 ```
 
@@ -446,10 +446,10 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
  * One recorded human remark about this session. Log-only and independent
  * of its trigger; it never enters model context or derived history.
  */
-'feedback/record': { text: string }
+'feedback/record': FeedbackRecord
 ```
 
-来源：[`packages/feedback/command-feedback/src/index.ts:25`](../packages/feedback/command-feedback/src/index.ts)
+来源：[`packages/feedback/command-feedback/src/types.ts:40`](../packages/feedback/command-feedback/src/types.ts)
 
 ### `goal/*`
 
