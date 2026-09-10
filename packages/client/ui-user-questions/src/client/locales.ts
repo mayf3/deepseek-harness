@@ -33,7 +33,7 @@ export const en = {
   'nav.cancel': 'Dismiss all questions',
   'option.recommended': 'Recommended',
   'custom.placeholder': 'Type your answer',
-  'action.skip': 'Skip this question',
+  'action.skip': 'Skip',
   'action.next': 'Next',
   'plan.header': 'Plan review',
   'plan.approve': 'Approve',
