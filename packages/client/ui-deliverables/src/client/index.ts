@@ -65,18 +65,15 @@ export function apply(ctx: ClientContext): void {
   // via ctx.get, so its absence — this plugin composed out — is the off state.
   const t = ctx.locale.bind(NS)
   const mentions: ChatFileMentions = {
-    forClosing(owner, sessionId) {
+    forClosing(owner) {
       // Same claim test the turn-tail chain entry runs: no produced files,
       // no vocabulary — the two surfaces agree by construction.
       const paths = selectProducedFiles(owner)
       const presented = presentedForClosing(owner)
       if (paths === null && presented.length === 0) return undefined
-      const deliveries = new Map(presented.map(file => [file.path, file]))
-      return producedFileMentions([...new Set([...paths ?? [], ...deliveries.keys()])], (path) => {
-        const file = deliveries.get(path)
-        if (file === undefined) owner.openFile(path)
-        else void opener.open(sessionId, file.seq, file.index)
-      }, path => t(deliveries.has(path) ? 'presented.open' : 'produced.open', { name: path }))
+      const deliveries = new Set(presented.map(file => file.path))
+      return producedFileMentions([...new Set([...paths ?? [], ...deliveries])], owner.openFile,
+        path => t(deliveries.has(path) ? 'presented.previewButton' : 'produced.open', { name: path }))
     },
   }
   ctx.provide('chatFileMentions', mentions)
