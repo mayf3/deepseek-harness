@@ -3,8 +3,6 @@
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import type { Agent } from '@deepseek-ai/dsh-agent'
-import { createUserMessage } from '@deepseek-ai/dsh-llm'
-import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import { TeamTaskId } from '@deepseek-ai/dsh-experimental-agent-team'
 import type { TeamMemberView } from '@deepseek-ai/dsh-experimental-agent-team'
 import { defineTool } from '@deepseek-ai/dsh-tools'
@@ -157,38 +155,6 @@ function callingAgent(agent: Agent | undefined, toolName: string): Agent {
   return agent
 }
 
-/** Identify the plugin-owned reminder without interpreting user-authored text. */
-function isIdentity(event: SessionEvent): event is SessionEvent<'user/message'> {
-  return event.type === 'user/message'
-    && event.data.source.kind === 'plugin' && event.data.source.plugin === name
-}
-
-/** Keep member identity after inherited history and restore it if compaction removes it. */
-function installIdentity(agent: Agent, ctx: Context): () => void {
-  const membership = ctx.agentTeams.membership(agent)
-  // Ordinary forks of teammates become Leads even when the inherited reminder
-  // is shadowed by a summary. Their full inherited log still identifies it.
-  const inheritedIdentity = agent.session.snapshotEvents().slice(0, agent.session.inheritedEventCount).some(isIdentity)
-  if (membership.role === 'lead' && !inheritedIdentity) return () => {}
-  const text = membership.role === 'teammate'
-    ? `<system-reminder>\nYou are teammate "${membership.name}".\n</system-reminder>`
-    : '<system-reminder>\nYou are the Team Lead.\n</system-reminder>'
-  return agent.ctx.on('agent/pre-step', async ({ messages, step, signal }, next) => {
-    const decision = await next()
-    if (decision.kind === 'reject' || signal.aborted) return decision
-    if (decision.messages.length === 0 && (step === 1 || messages.length > 0)) return decision
-    const retained = agent.session.surface.nodes.map(seq => agent.session.eventAt(seq)).findLast(event =>
-      event !== undefined && isIdentity(event))
-    if (retained !== undefined && isIdentity(retained)
-      && retained.data.content.some(block => block.type === 'text' && block.text === text)) return decision
-    const reminder = createUserMessage({
-      content: [{ type: 'text', text }],
-      source: { kind: 'plugin', plugin: name, form: 'snapshot', sections: [{ name: 'team:identity', text }] },
-    })
-    return { ...decision, messages: [reminder, ...decision.messages] }
-  }, { prepend: true })
-}
-
 /** Register the complete Team tool set in one exact Agent scope. */
 function install(agent: Agent, ctx: Context, config: Required<Config>): () => void {
   const scoped = agent.ctx
@@ -200,7 +166,6 @@ function install(agent: Agent, ctx: Context, config: Required<Config>): () => vo
       order: scoped.systemPrompt.getSectionOrder('TEAM_POLICY'),
       text: POLICY,
     }))
-    register(installIdentity(agent, ctx))
 
     register(scoped.tools.register(defineTool({
       name: 'spawn_teammate',
@@ -222,7 +187,10 @@ function install(agent: Agent, ctx: Context, config: Required<Config>): () => vo
         return await ctx.agentTeams.spawnTeammate(agent, {
           name: args.name,
           description: args.description,
-          prompt: [{ type: 'text', text: args.prompt }],
+          prompt: [
+            { type: 'text', text: `<system-reminder>\nYou are teammate "${args.name.trim()}".\n</system-reminder>\n\n` },
+            { type: 'text', text: args.prompt },
+          ],
           context,
           provider: context === 'fork' ? config.forkProvider : config.freshProvider,
           signal: exec.signal,

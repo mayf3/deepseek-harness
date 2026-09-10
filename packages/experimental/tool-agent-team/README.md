@@ -25,7 +25,7 @@ This package lets the model create named teammates, send them messages, inspect 
 <a id="use-this-package"></a>
 ## Use this package
 
-Add this package on top of `@deepseek-ai/dsh-experimental-agent-team` when the model should run a team through tools. Once mounted, every team member — the Lead and each teammate — gets the same nine tools plus a policy paragraph that states its own role and name.
+Add this package on top of `@deepseek-ai/dsh-experimental-agent-team` when the model should run a team through tools. Once mounted, every team member — the Lead and each teammate — gets the same nine tools plus the same coordination policy. `spawn_teammate` prefixes the initial task with the teammate’s role and name.
 
 ### When to choose it
 
@@ -96,7 +96,7 @@ The [Agent Teams Agent Note](../../../.agents/notes/implemented/feature/2026-08-
 
 ### Policy and tools
 
-One `team:policy` section on the member scope teaches each member its role and the coordination rules; the fixed text and the nine tool registrations are declared in [`src/index.ts`](src/index.ts). The nine tool schemas appear only in Team member scopes, so non-Team subagents keep the default catalog. Scoped registrations with the same names as the legacy global continuable-subagent controls shadow those globals for team members only.
+One `team:policy` section on the member scope states the shared coordination rules; the fixed text and the nine tool registrations are declared in [`src/index.ts`](src/index.ts). The nine tool schemas appear only in Team member scopes, so non-Team subagents keep the default catalog. Scoped registrations with the same names as the legacy global continuable-subagent controls shadow those globals for team members only.
 
 ### Scoped registration and teardown
 
@@ -125,15 +125,15 @@ Read these pages when the package-level contract is not enough. They move from t
 
 #### What the model sees
 
-One shared system policy states the explicit-delegation requirement, shared-cwd behavior, filesystem stale-version recovery, Bash/formatter/codegen risk, task and write-scope coordination, Steer delivery, the no-retry mailbox rule, and the Lead's duty to wait before answering. All nine Team schemas are identical for Leads and teammates; execution enforces Lead-only operations. Before a teammate's first task, a durable user message states `<system-reminder>\nYou are teammate "<name>".\n</system-reminder>`. Leads receive no identity reminder unless an ordinary fork inherits one from a teammate; that fork receives `You are the Team Lead.` instead. Identity reminders contain no Team id and work when runtime context is disabled.
+One shared system policy states the explicit-delegation requirement, shared-cwd behavior, filesystem stale-version recovery, Bash/formatter/codegen risk, task and write-scope coordination, Steer delivery, the no-retry mailbox rule, and the Lead's duty to wait before answering. All nine Team schemas are identical for Leads and teammates; execution enforces Lead-only operations. `spawn_teammate` prefixes its initial user message with `<system-reminder>\nYou are teammate "<name>".\n</system-reminder>`, followed by a blank line and the task. The prefix contains no Team id and works when runtime context is disabled. Forks inherit history without an additional Lead identity message.
 
 #### Token effect
 
-Fixed policy and schema cost on every Team member request. A retained identity reminder is reused across steps and cold recovery; if compaction removes it, the plugin appends it before the next admitted step. Tool calls add compact JSON roster, task, wait, or receipt results. Peer content is retained by the Team domain in the target's history.
+Fixed policy and schema cost on every Team member request. The initial identity text follows ordinary history through later steps, cold recovery, and compaction; the plugin neither scans for it nor reinserts it. Tool calls add compact JSON roster, task, wait, or receipt results. Peer content is retained by the Team domain in the target's history.
 
 #### KV Cache effect
 
-With the same provider/model, shared system policy, and tool schemas, a fork retains the parent request prefix and appends its reminder and task. Tool results and peer messages append after the reusable request prefix. Sessions recorded with identity inside the system prompt can change that prefix on their first request under this layout; actual provider cache hits remain best-effort.
+With the same provider/model, shared system policy, and tool schemas, a fork retains the parent request prefix and appends the initial task with its identity prefix. Tool results and peer messages append after the reusable request prefix. Sessions recorded with identity inside the system prompt can change that prefix on their first request under this layout; actual provider cache hits remain best-effort.
 
 ## Known Limitations and Deferred Work
 

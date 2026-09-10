@@ -174,10 +174,8 @@ function lead(messages) {
 
 class TeamFixtureAdapter extends LlmAdapter {
   async * stream(options) {
-    const snapshot = options.messages.findLast(message => message.role === 'user'
-      && message.source.kind === 'plugin' && message.source.form === 'snapshot'
-      && message.source.sections.some(section => section.name === 'team:identity'))
-    const identity = snapshot?.source.sections.find(section => section.name === 'team:identity')?.text
+    const initial = options.messages.findLast(message => message.role === 'user' && message.source.kind === 'user')
+    const identity = initial?.content[0]?.text?.trimEnd()
     const chunks = identity === '<system-reminder>\nYou are teammate "researcher".\n</system-reminder>'
       ? researcher(options.messages)
       : identity === '<system-reminder>\nYou are teammate "implementer".\n</system-reminder>'

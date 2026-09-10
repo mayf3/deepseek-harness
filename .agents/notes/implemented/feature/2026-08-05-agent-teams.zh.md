@@ -22,7 +22,7 @@ Lead 必须等待所需工作后才能给出最终答案。进程 teardown 仍�
 
 ## Team identity
 
-工具插件在 teammate 的首次任务前追加持久化 user-role `<system-reminder>`，只声明 `You are teammate "<name>".`。共享 system 策略和全部工具 schema 在成员间保持一致；执行时检查角色权限。Team 工具根据调用者确定 Team，并接受成员名字，因此模型不需要 Team id。普通 Lead 不接收身份消息。继承 teammate 提醒的普通 fork 会收到 `You are the Team Lead.`；即使摘要遮蔽了提醒，继承日志仍可识别这种情况。pre-step 监听器复用最新保留的提醒，并在压缩移除提醒后恢复它，冷恢复后也同样处理。它保留被拒绝或清空的步骤，不依赖可选的运行时上下文组装。把身份放进 system prompt 会在继承历史之前改变前缀；只信赖一次性提醒则让摘要决定身份是否保留。已有的 system 内嵌身份可能需要一次提示词协调；保留的事件格式代际保持不变。
+工具 `spawn_teammate` 在初始任务前加上 user-role `<system-reminder>`，声明 `You are teammate "<name>".`。身份和任务进入同一条持久化收件箱消息。共享 system 策略和全部工具 schema 在成员间保持一致；执行时检查角色权限。Team 工具根据调用者确定 Team，并接受成员名字，因此模型不需要 Team id。身份随普通历史经历冷恢复和压缩；插件不检查提醒是否保留，也不添加替代消息。fork 继承已记录文本，不补发 Lead 身份修正。把身份放进 system prompt 会在继承历史之前改变前缀；把它留在初始任务中既保留此前缀，也无需每步维护身份提醒。已有的 system 内嵌身份可能需要一次提示词协调；保留的事件格式代际保持不变。
 
 ## Provisioning and recovery
 

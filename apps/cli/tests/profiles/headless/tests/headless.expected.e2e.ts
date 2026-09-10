@@ -661,20 +661,15 @@ describe('headless stream-json snapshots', () => {
           return (JSON.parse(data.arguments) as JsonObject).action === 'complete'
         })
         const identityReminders = logs.flatMap((log) => {
-          const identities = parseJsonl(log.content).flatMap((row) => {
-            if (row.type !== 'user/message') return []
-            const source = (row.data as JsonObject).source as JsonObject
-            if (source.kind !== 'plugin' || source.form !== 'snapshot' || !Array.isArray(source.sections)) return []
-            const sections: unknown[] = source.sections
-            return sections.filter(section => (section as JsonObject).name === 'team:identity')
-          })
-          const reminder = (identities.at(-1) as JsonObject | undefined)?.text
-          if (log === parent) {
-            expect(identities).toEqual([])
-            return []
-          }
-          if (typeof reminder !== 'string') throw new Error('Teammate Session has no identity reminder')
-          return [reminder]
+          if (log === parent) return []
+          const initial = parseJsonl(log.content).find(row => row.type === 'user/message'
+            && ((row.data as JsonObject).source as JsonObject).kind === 'user')
+          if (initial === undefined) throw new Error('Teammate Session has no initial task')
+          const content = (initial.data as JsonObject).content as JsonObject[]
+          expect(content).toHaveLength(2)
+          const identity = content[0]!.text
+          if (typeof identity !== 'string') throw new Error('Teammate initial task has no identity text')
+          return [identity.trimEnd()]
         }).sort()
         projection = {
           sessions: logs.length,

@@ -735,7 +735,7 @@ export interface Config {
 }
 ```
 
-来源：[`packages/experimental/tool-agent-team/src/index.ts:19`](../packages/experimental/tool-agent-team/src/index.ts)
+来源：[`packages/experimental/tool-agent-team/src/index.ts:17`](../packages/experimental/tool-agent-team/src/index.ts)
 
 <a id="deepseek-aidsh-file-reference-local"></a>
 
