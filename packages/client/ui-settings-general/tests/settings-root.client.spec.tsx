@@ -165,12 +165,32 @@ describe('SettingsRoot trigger', () => {
     expect(screen.getByRole('button', { name: 'Reconnecting automatically, reconnect now' }).textContent)
       .toContain('Reconnecting...')
 
+    // An attempt that resolves instantly still shows the connecting pill for
+    // its 800ms minimum before the confirmation replaces it.
     mounted.setConnectionState('connected')
-    expect(screen.getByRole('status', { name: 'Connected' })).toBeTruthy()
-    act(() => { vi.advanceTimersByTime(1_999) })
-    expect(screen.getByRole('status', { name: 'Connected' })).toBeTruthy()
-    act(() => { vi.advanceTimersByTime(1) })
     expect(screen.queryByRole('status')).toBeNull()
+    act(() => { vi.advanceTimersByTime(800) })
+    expect(screen.getByRole('status', { name: 'Connected' })).toBeTruthy()
+    act(() => { vi.advanceTimersByTime(1_199) })
+    expect(screen.getByRole('status', { name: 'Connected' })).toBeTruthy()
+    // The confirmation window closes at 2s, then the pill fades for 150ms.
+    act(() => { vi.advanceTimersByTime(1) })
+    act(() => { vi.advanceTimersByTime(150) })
+    expect(screen.queryByRole('status')).toBeNull()
+  })
+
+  it('names automatic and manual retry attempts and confirms at once after a long attempt', () => {
+    vi.useFakeTimers()
+    const mounted = mount({ dictionary: zh })
+    mounted.setConnectionState('connecting')
+    const attempt = screen.getByRole('button', { name: '连接中断，正在自动重试，点击立即重连' })
+    expect(attempt.textContent).toContain('自动重连中')
+    fireEvent.click(attempt)
+    expect(mounted.reconnect).toHaveBeenCalledOnce()
+    expect(attempt.textContent).toContain('重新连接中')
+    act(() => { vi.advanceTimersByTime(800) })
+    mounted.setConnectionState('connected')
+    expect(screen.getByRole('status', { name: '连接成功' })).toBeTruthy()
   })
 
   it('keeps the reconnect indicator out of the collapsed rail', () => {

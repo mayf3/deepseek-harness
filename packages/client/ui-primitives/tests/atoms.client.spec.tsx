@@ -489,4 +489,27 @@ describe('ConnectionIndicator', () => {
     expect(screen.queryByRole('button')).toBeNull()
     expect(screen.getByRole('status', { name: 'Connected' })).toBeTruthy()
   })
+
+  it('fades out for the exit duration before unmounting', () => {
+    vi.useFakeTimers()
+    try {
+      const labels = {
+        disconnectedLabel: 'Disconnected, retry',
+        connectingLabel: 'Connecting',
+        recoveredLabel: 'Connected',
+        reconnectActionLabel: 'Disconnected, reconnect now',
+        restartActionLabel: 'Connecting, restart now',
+        onReconnect: vi.fn(),
+      }
+      const { container, rerender } = render(
+        <ConnectionIndicator state="disconnected" {...labels} />,
+      )
+      rerender(<ConnectionIndicator state={undefined} {...labels} />)
+      expect(screen.getByRole('button', { name: 'Disconnected, reconnect now' })).toBeTruthy()
+      act(() => { vi.advanceTimersByTime(150) })
+      expect(container.firstChild).toBeNull()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
 })
