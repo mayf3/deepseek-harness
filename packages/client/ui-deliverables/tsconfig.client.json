@@ -52,6 +52,9 @@
     },
     {
       "path": "../../fs/tool-present"
+    },
+    {
+      "path": "../../util/workspace-path"
     }
   ]
 }
