@@ -97,7 +97,7 @@ None; this package neither assembles nor sends a provider request.
 These limits define when the native interaction is unavailable or fragile. They are current package constraints, not a task backlog.
 
 - **Linux requires desktop tooling** — with neither Zenity nor KDialog installed, `pick` rejects with an actionable error; it does not fall back to a typed-path prompt (the browse backend is that fallback at the composition level).
-- **Windows has no mechanism fallback** — the child-process picker through packaged koffi is the only native tier, so a COM refusal or dialog crash surfaces the failure; the browse backend remains the fallback at the composition level. The real-worker smoke accepts normal abort closure or the specific FileOpenDialog class-unavailable HRESULT `0x80040111`; that refusal validates error propagation, not successful dialog display. Other native errors and forced termination fail the smoke.
+- **Windows has no mechanism fallback** — the child-process picker through packaged koffi is the only native tier, so a COM refusal or dialog crash surfaces the failure; the browse backend remains the fallback at the composition level.
 - **Windows foreground grant relies on injected input** — the child synthesizes an Alt press before `Show` so the dialog can take the foreground from a background host; where synthesized input is suppressed (secure desktops, restricted remote sessions, an elevated foreground window), the dialog may still open behind other windows. The technique is validated on Windows 11 only.
 
 <a id="dev-note"></a>

@@ -3,7 +3,7 @@
  * the WM_CLOSE abort service (including the show-race retry and the kill
  * last resort) against fakes, plus the real spawn plumbing — POSIX hosts
  * prove the default path rejects cleanly (koffi cannot load ole32 there),
- * and win32 hosts auto-abort a real dialog or report COM class unavailability.
+ * and win32 hosts briefly open and auto-abort a real dialog.
  */
 
 import { EventEmitter } from 'node:events'
@@ -40,10 +40,6 @@ function harness(overrides: Partial<Win32DialogInternals> = {}): Harness {
 }
 
 const live = (): AbortSignal => new AbortController().signal
-const REAL_DIALOG_REJECTION = new RegExp([
-  '^(?:native directory picker aborted|',
-  String.raw`win32 folder dialog failed: Error: CoCreateInstance\(FileOpenDialog\) failed: HRESULT 0x80040111)(?:\r?\n|$)`,
-].join(''))
 
 describe('pickWin32Directory', () => {
   it('resolves the selected path and the cancellation null', async () => {
@@ -155,25 +151,13 @@ describe('pickWin32Directory', () => {
     await expect(pickWin32Directory(live())).rejects.toThrow('win32 folder dialog failed')
   }, 30_000)
 
-  it('rejects unrelated native failures and forced termination as dialog smoke outcomes', () => {
-    expect('native directory picker aborted').toMatch(REAL_DIALOG_REJECTION)
-    expect('win32 folder dialog failed: Error: CoCreateInstance(FileOpenDialog) failed: HRESULT 0x80040111\n    at createFolderDialog').toMatch(REAL_DIALOG_REJECTION)
-    for (const message of [
-      'win32 folder dialog failed: Error: CoCreateInstance(FileOpenDialog) failed: HRESULT 0x80004005',
-      'win32 folder dialog worker exited before reporting a result',
-      'native directory picker aborted (dialog unresponsive; worker killed)',
-    ]) expect(message).not.toMatch(REAL_DIALOG_REJECTION)
-  })
-
-  it.skipIf(process.platform !== 'win32')('abort-closes a real dialog or reports its unavailable COM class', async () => {
+  // win32 hosts run the true COM smoke instead: a real dialog opens briefly
+  // and the abort service closes it (the same lever a disconnecting client pulls).
+  it.skipIf(process.platform !== 'win32')('opens and abort-closes a real dialog', async () => {
     const controller = new AbortController()
-    const timer = setTimeout(() => {
+    setTimeout(() => {
       controller.abort()
     }, 400)
-    try {
-      await expect(pickWin32Directory(controller.signal)).rejects.toThrow(REAL_DIALOG_REJECTION)
-    } finally {
-      clearTimeout(timer)
-    }
+    await expect(pickWin32Directory(controller.signal)).rejects.toThrow('native directory picker aborted')
   }, 30_000)
 })
