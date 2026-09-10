@@ -288,7 +288,7 @@ async function resolveAgent(
     const { agent } = await agents.resume({ resumeSessionId: sessionId, agentOptions, setup })
     // The observation is a snapshot: another writer may have appended a preset
     // selection before this process took the write lease. Re-check the log
-    // resume actually attached, now that no other writer can append.
+    // resume actually attached, now that no other process can append.
     assertAdoptable(agent.session.header, liveEvents(agent.session), sessionId)
     return agent
   } catch (error: unknown) {
