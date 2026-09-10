@@ -447,7 +447,7 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
     throw new Error('deepSeekMissingCredential is a keyless replay/refresh option')
   }
   const maskDeepSeekCredential = mode !== 'record' && options.deepSeekMissingCredential === true
-  const messages = options.deepSeekMessages === true || options.deepSeekMissingCredential === true
+  const messages = options.deepSeekMessages === true
   const originalDeepSeekCredential = process.env.DEEPSEEK_API_KEY
   let credentialEnvironmentRestored = false
   const restoreCredentialEnvironment = (): void => {
@@ -523,7 +523,7 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
     ...surfacePatches,
     // Keyless scenarios retain the recorded default; explicit scenario overlays win.
     ...messages
-      ? [{ id: 'agent-default-model', config: { provider: 'deepseek-messages', model: 'deepseek-v4-flash' } }]
+      ? [{ id: 'agent-default-model', config: { provider: 'deepseek-messages', model: maskDeepSeekCredential ? 'deepseek-flash' : 'deepseek-v4-flash' } }]
       : mode === 'record' || options.deepSeekMissingCredential === true
         ? []
         : [{ id: 'agent-default-model', config: { provider: 'deepseek-official', model: 'deepseek-v4-flash' } }],
@@ -641,8 +641,10 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
           baseURL: options.deepSeekSearch.baseURL,
         },
       }],
-    { id: 'llm-deepseek', disabled: messages || mode !== 'record' },
-    { id: 'llm-deepseek-messages', disabled: !messages || (mode !== 'record' && !maskDeepSeekCredential) },
+    ...maskDeepSeekCredential && !messages ? [] : [
+      { id: 'llm-deepseek', disabled: messages || mode !== 'record' },
+      { id: 'llm-deepseek-messages', disabled: !messages || (mode !== 'record' && !maskDeepSeekCredential) },
+    ],
   ]
 
   // Sessions inherit the gateway's process.cwd() default; run the boot from
@@ -731,7 +733,7 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
     port = boundPort
 
     // Fill the open llm seam on the settled root ctx. Ordinary keyless modes
-    // disable both direct adapters; the first-run lane keeps Messages but has no
+    // disable both direct adapters; the first-run lane keeps the selected adapter but has no
     // replay fixture and never streams. The direct install, unlike the plugin
     // row, returns the ReplayHandle for the teardown consumption check.
     if (options.replayProvidersOnly) {

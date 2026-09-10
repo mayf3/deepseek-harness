@@ -1,4 +1,4 @@
-/** Shipped Web Messages defaults, credential reuse, and recovery from a saved Chat Completions selection. */
+/** Opt-in Web Messages configuration, credential reuse, and recovery from a saved Chat Completions selection. */
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -12,19 +12,18 @@ import { connectFreshWorkspaceZh, saveFailureShot, ZH_BROWSER_LOCALE } from './s
 
 const EXPECTED = fileURLToPath(new URL('./expected/deepseek-messages-settings/', import.meta.url))
 
-describe.skipIf(webSnapshotMode() === 'record')('web e2e: DeepSeek Messages default', () => {
+describe.skipIf(webSnapshotMode() === 'record')('web e2e: DeepSeek Messages opt-in', () => {
   let scaffold: WebScaffold
   let browser: Browser
   let page: Page
   let tripwire: ReturnType<typeof watchConsole>
 
   beforeAll(async () => {
-    scaffold = await launchWebScaffold({ deepSeekMissingCredential: true })
+    scaffold = await launchWebScaffold({ deepSeekMissingCredential: true, deepSeekMessages: true })
     browser = await chromium.launch()
     page = await browser.newPage({ viewport: { width: 1680, height: 1000 }, locale: ZH_BROWSER_LOCALE })
     tripwire = watchConsole(page)
     await page.goto(scaffold.authenticatedUrl, { waitUntil: 'load' })
-    await page.getByRole('button', { name: '稍后配置', exact: true }).click()
   }, 120_000)
 
   afterAll(async () => {
@@ -39,7 +38,7 @@ describe.skipIf(webSnapshotMode() === 'record')('web e2e: DeepSeek Messages defa
     onTestFailed(() => saveFailureShot(page, 'web-e2e-deepseek-messages-settings'))
     expect(scaffold.ctx.llm.listProviders()).toContainEqual({ id: 'deepseek-messages', name: 'DeepSeek' })
     expect(scaffold.ctx.llm.listProviders().some(provider => provider.id === 'deepseek-official')).toBe(false)
-    expect(scaffold.ctx.agentDefaultModel.currentSelection()).toEqual({ provider: 'deepseek-messages', model: 'deepseek-v4-flash' })
+    expect(scaffold.ctx.agentDefaultModel.currentSelection()).toEqual({ provider: 'deepseek-messages', model: 'deepseek-flash' })
     await page.getByRole('button', { name: '设置', exact: true }).click()
     const dialog = page.getByRole('dialog', { name: '设置', exact: true })
     await dialog.getByRole('button', { name: '模型', exact: true }).click()
@@ -53,6 +52,7 @@ describe.skipIf(webSnapshotMode() === 'record')('web e2e: DeepSeek Messages defa
       await captureStableAria(page, '[role="dialog"]', scaffold.workspaceCwd), webSnapshotMode())
     await messages.getByLabel('API 密钥', { exact: true }).fill('sk-e2e-messages')
     await messages.getByLabel('API 地址', { exact: true }).fill('https://messages.example/anthropic')
+    expect(await messages.getByLabel('模型 ID 1').inputValue()).toBe('deepseek-flash')
     await messages.getByLabel('显示名称 1', { exact: true }).fill('Messages Flash')
     await messages.getByRole('button', { name: '保存', exact: true }).click()
     await dialog.getByText('已保存 DeepSeek (deepseek-messages)。', { exact: true }).waitFor()
@@ -60,6 +60,9 @@ describe.skipIf(webSnapshotMode() === 'record')('web e2e: DeepSeek Messages defa
     const settings = await readFile(join(scaffold.harnessHome, 'settings.yaml'), 'utf8')
     expect(settings).toContain('https://messages.example/anthropic')
     expect(settings).toContain('llm-deepseek-messages:')
+    await expect(scaffold.ctx.llm.resolveModelInfo('deepseek-messages', 'deepseek-flash')).resolves.toMatchObject({
+      name: 'Messages Flash', inputModalities: ['text', 'image'], systemPromptUpdate: 'in-history',
+    })
     expect(settings).not.toContain('llm-deepseek:')
     expect(settings).not.toContain('sk-e2e-')
     const credentials = await readFile(join(scaffold.harnessHome, '.credentials.yaml'), 'utf8')

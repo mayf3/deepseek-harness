@@ -27,7 +27,7 @@ kind: "package-reference"
 
 在 Cordis 组合中将本插件与 `dsh-llm` 一起挂载，并选择 `provider: deepseek-messages`。模型 ID 原样发送，目录仅供发现使用。
 
-[Web profile](../../bundle/web-app/README.zh.md) 默认使用本适配器作为 DeepSeek 提供方，并禁用 Chat Completions。**DeepSeek** 卡片和首次启动引导使用 `DEEPSEEK_API_KEY`；端点和模型修改通过 `llm-deepseek-messages` 即时生效。提供方 ID 保持为 `deepseek-messages`，与显示名称相互独立。
+[Web profile](../../bundle/web-app/README.zh.md) 包含本适配器但默认禁用，使用 Chat Completions。启用后，**DeepSeek** 卡片使用 `DEEPSEEK_API_KEY`；端点和模型修改通过 `llm-deepseek-messages` 即时生效。提供方 ID 保持为 `deepseek-messages`，与显示名称相互独立。
 
 ### 最小配置
 
@@ -48,7 +48,7 @@ kind: "package-reference"
 |---|---|---|
 | `apiKeyEnv` | `DEEPSEEK_API_KEY` | 凭据引用；通过 credentials 服务解析，服务未挂载时读取启动环境 |
 | `thinking` / `reasoningEffort` | enabled / high | `off`、`low`、`high`、`max`；禁用思考的部署仅允许 off |
-| `models` | V4 Flash、Pro、Flash Vision Exp | 发现目录及模型容量、图片配置覆盖 |
+| `models` | V41 Flash、V4 Flash、Pro、Flash Vision Exp | 发现目录及模型容量、图片配置覆盖 |
 | `maxTokens` / `defaultContextWindow` | 256000 / 1000000 | 默认输出上限和上下文容量 |
 | `maxInlineRequestImageBytes` / `maxImagesPerRequest` | 20 MiB / 600 | 保留的 base64 字节数和图片出现次数 |
 | `streamIdleTimeoutMs` | 300000 | 等待服务端响应的最长空闲时间 |
@@ -61,11 +61,11 @@ kind: "package-reference"
 
 未声明历史追加能力时，最后一条 system 消息提供完整的顶层 `system` 提示词，也适用于携带多版快照的直接调用。最后一条快照为空时，清空历史提示词。代理循环在继续或恢复这些路由时，也会将更新归并到系统头节点；从支持追加的路由切换过来时也如此。单次调用的 `GenerateOptions.system` 仍作为独立前缀。非文本 system 内容会被拒绝。
 
-仅当端点与模型将最后一次 system 更新视为完整的有效提示词时，设置 `models[].systemPromptUpdate: in-history`。默认模型和未列入目录的模型均不启用。支持该能力的路由将初始提示词保留在顶层字段中，把后续快照序列化为原生 `role: system` 消息。[Anthropic 位置规则](https://platform.claude.com/docs/en/build-with-claude/mid-conversation-system-messages)要求更新位于用户轮次（包括全部工具结果）之后、下一条助手消息之前。适配器将循环较早接纳的 system 映射到该位置，不改写持久化消息或对话轮次的相对顺序。缺少前置用户轮次的更新、空的历史内更新会被拒绝；循环负责的清空操作会在序列化前归并历史。
+仅当端点与模型将最后一次 system 更新视为完整的有效提示词时，设置 `models[].systemPromptUpdate: in-history`。默认的 `deepseek-flash` 条目（DeepSeek-V41-Flash）启用该能力，并接受文本和图片；V4 与未列入目录的模型不启用历史内 system 更新。自定义 `models` 列表会替换默认目录。支持该能力的路由将初始提示词保留在顶层字段中，把后续快照序列化为原生 `role: system` 消息。[Anthropic 位置规则](https://platform.claude.com/docs/en/build-with-claude/mid-conversation-system-messages)要求更新位于用户轮次（包括全部工具结果）之后、下一条助手消息之前。适配器将循环较早接纳的 system 映射到该位置，不改写持久化消息或对话轮次的相对顺序。缺少前置用户轮次的更新、空的历史内更新会被拒绝；循环负责的清空操作会在序列化前归并历史。
 
 ```yaml
 models:
-  - id: deepseek-v4-flash
+  - id: my-model
     systemPromptUpdate: in-history
 ```
 

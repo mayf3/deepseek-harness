@@ -77,7 +77,12 @@ describe('direct Messages HTTP', () => {
       'x-deepseek-harness-session-id': 'session-test', 'x-deepseek-harness-compact': '1',
     }, body: { thinking: { type: 'enabled' }, output_config: { effort: 'high' } } })
     expect(llm.providerInfo('deepseek-messages')).toEqual({ id: 'deepseek-messages', name: 'DeepSeek' })
-    expect(await llm.listModels('deepseek-messages')).toHaveLength(3)
+    expect((await llm.listModels('deepseek-messages')).map(model => model.id)).toEqual([
+      'deepseek-flash', 'deepseek-v4-flash', 'deepseek-v4-pro', 'deepseek-v4-flash-vision-exp',
+    ])
+    expect(await llm.resolveModel('deepseek-messages', 'deepseek-flash')).toMatchObject({
+      name: 'DeepSeek-V41-Flash', inputModalities: ['text', 'image'], systemPromptUpdate: 'in-history',
+    })
     expect(await llm.resolveModel('deepseek-messages', MODEL)).toMatchObject({ id: MODEL })
     expect(llm.imageRequestPricing('deepseek-messages', MODEL)).toBeDefined()
   })
@@ -187,14 +192,18 @@ describe('Cordis provider composition', () => {
     return { ctx, http }
   }
 
-  it.each([false, true])('updates, clears and restores prompts across continued and resumed sessions, in-history=%s', async (inHistory) => {
+  it.each([
+    { model: MODEL, inHistory: false },
+    { model: MODEL, inHistory: true },
+    { model: 'deepseek-flash', inHistory: true },
+  ])('updates, clears and restores prompts across continued and resumed sessions, model=$model in-history=$inHistory', async ({ model, inHistory }) => {
     const { ctx, http } = await boot()
-    if (inHistory) await ctx.settings.update(Messages.name, { models: [{ id: MODEL, systemPromptUpdate: 'in-history' }] })
+    if (inHistory && model === MODEL) await ctx.settings.update(Messages.name, { models: [{ id: model, systemPromptUpdate: 'in-history' }] })
     let prompt = 'first prompt'
     ctx.on('system-prompt/assemble', async (_assembly, _context, next) => ({
       ...await next(), sections: [{ name: 'test', text: prompt, order: 0 }],
     }))
-    const agentOptions = { provider: 'deepseek-messages', model: MODEL }
+    const agentOptions = { provider: 'deepseek-messages', model }
     const agent = await ctx.agentLoop.create(SessionId('prompt-update'), agentOptions)
     await send(agent, 'first')
     prompt = 'second prompt'

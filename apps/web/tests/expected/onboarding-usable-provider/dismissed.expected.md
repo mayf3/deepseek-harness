@@ -23,7 +23,7 @@
     - listitem:
       - text: DeepSeek
       - img "API 密钥缺失"
-      - button "编辑 DeepSeek (deepseek-messages)": 编辑
+      - button "编辑 DeepSeek (deepseek-official)": 编辑
   - text: 提供方
   - combobox "提供方":
     - option "amazon-bedrock"

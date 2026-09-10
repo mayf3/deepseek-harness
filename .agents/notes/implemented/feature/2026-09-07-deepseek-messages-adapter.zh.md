@@ -20,7 +20,7 @@ Status: implemented
 
 系统提示词更新在端点与模型显式声明支持时，使用现有[路由能力](2026-09-02-in-history-system-prompt-replacement.zh.md)。Messages 保留初始顶层 system，在对应的用户或工具结果轮次之后，将后续快照发送为原生 system 轮次，保留此前发送的前缀。这个位置不同于循环先 system、后 user 的接纳顺序；序列化既不改写持久化日志，也不改变对话轮次的顺序。未声明能力的路由将最新快照归并到顶层，直接压缩调用也如此。仅凭协议或模型名称推断能力并不充分，因为支持情况和更新语义取决于实际部署的端点。
 
-Web profile 选择 Messages 适配器并禁用 Chat Completions 适配器。配置卡片和模型分组均显示 DeepSeek，提供方 ID 保持为 `deepseek-messages`，设置仍位于 `llm-deepseek-messages`。首次启动引导面向该路由并复用 `DEEPSEEK_API_KEY`。显示名称与提供方 ID 分离，使协议选择和已记录的请求标识保持明确。已保存的选择仍由用户控制，输入框可以切换它们而不改写 Session 历史。
+Web profile 保留 Chat Completions，并包含默认禁用、需显式启用的 Messages 行。首次启动引导面向 Chat Completions，并复用 `DEEPSEEK_API_KEY`。启用的 Messages 适配器显示 DeepSeek，同时保留 `deepseek-messages` 提供方 ID 和 `llm-deepseek-messages` 设置命名空间。已保存的选择仍由用户控制；启用协议不会复制端点覆盖值或改写 Session 历史。两个适配器均将 `deepseek-flash` 显示为 DeepSeek-V41-Flash，声明文本/图片输入与历史内 system 更新，同时保留 V4 目录条目及其能力。
 
 ## 考虑过的替代方案
 
@@ -34,6 +34,6 @@ Web profile 选择 Messages 适配器并禁用 Chat Completions 适配器。配�
 
 ## 结果
 
-该包负责协议校验、停止原因映射、取消和错误分类，因此协议变化需要维护适配器。不支持的内容和不完整的流会明确报错。现有重试消费者负责重试；现有装配器在输出达到上限时丢弃未完成的工具调用。共享 base 保留 Chat Completions，Web 覆盖层拥有 Messages 默认值。
+该包负责协议校验、停止原因映射、取消和错误分类，因此协议变化需要维护适配器。不支持的内容和不完整的流会明确报错。现有重试消费者负责重试；现有装配器在输出达到上限时丢弃未完成的工具调用。共享 base 与 Web 默认使用 Chat Completions；Messages 需要显式启用。
 
 验证覆盖协议夹具、真实 Loader 组合、逐文件单元覆盖率、[已记录 Session 回放](../../../../snapshots/session/deepseek-messages-replay/snapshot.yml)与[未知回放版本](../../../../snapshots/session/deepseek-messages-degraded-replay/snapshot.yml)，Web Messages Session 回放，以及凭证控制的文本、思考、工具续接、图片和取消请求。真实网关检查证明与已配置网关的兼容性，不能证明与所有 Anthropic 代理兼容。

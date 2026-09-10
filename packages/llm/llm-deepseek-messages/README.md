@@ -27,7 +27,7 @@ Use DeepSeek through an Anthropic Messages endpoint while retaining Harness tool
 
 Mount this plugin beside `dsh-llm` in a Cordis composition and select `provider: deepseek-messages`. Model ids pass through unchanged; the catalog is advisory.
 
-The [Web profile](../../bundle/web-app/README.md) uses this adapter as its default DeepSeek provider and disables Chat Completions. The **DeepSeek** card and first-run prompt use `DEEPSEEK_API_KEY`; endpoint and model edits apply live under `llm-deepseek-messages`. The provider id remains `deepseek-messages` independently of its display name.
+The [Web profile](../../bundle/web-app/README.md) includes this adapter disabled by default and uses Chat Completions. When enabled, the **DeepSeek** card uses `DEEPSEEK_API_KEY`; endpoint and model edits apply live under `llm-deepseek-messages`. The provider id remains `deepseek-messages` independently of its display name.
 
 ### Minimal configuration
 
@@ -48,7 +48,7 @@ The [Web profile](../../bundle/web-app/README.md) uses this adapter as its defau
 |---|---|---|
 | `apiKeyEnv` | `DEEPSEEK_API_KEY` | Credential reference; credentials service, or launch environment when that service is absent |
 | `thinking` / `reasoningEffort` | enabled / high | `off`, `low`, `high`, `max`; disabled deployment policy permits only off |
-| `models` | V4 Flash, Pro, Flash Vision Exp | Advisory catalog and exact-model capacity/image overrides |
+| `models` | V41 Flash, V4 Flash, Pro, Flash Vision Exp | Advisory catalog and exact-model capacity/image overrides |
 | `maxTokens` / `defaultContextWindow` | 256000 / 1000000 | Default output cap and context capacity |
 | `maxInlineRequestImageBytes` / `maxImagesPerRequest` | 20 MiB / 600 | Retained base64 bytes and image occurrences |
 | `streamIdleTimeoutMs` | 300000 | Maximum idle wait for the provider |
@@ -61,11 +61,11 @@ Tools use native `tool_use` and `tool_result` blocks. Adjacent user messages are
 
 Without an in-history capability declaration, the latest system message supplies the complete top-level `system` prompt, including for direct calls carrying multiple snapshots. An empty latest snapshot clears the historical prompt. The agent loop also consolidates updates at the system head when continuing or resuming these routes, including after switching from a capable route. One-shot `GenerateOptions.system` remains a separate prefix. Non-text system content is rejected.
 
-Set `models[].systemPromptUpdate: in-history` only for an endpoint/model that treats the latest system update as the complete effective prompt. Default and unlisted models do not enable it. Capable routes keep the initial prompt in the top-level field and serialize later snapshots as native `role: system` messages. [Anthropic placement rules](https://platform.claude.com/docs/en/build-with-claude/mid-conversation-system-messages) put updates after the user turn, including all tool results, and before the next assistant. The adapter maps the loop's earlier system admission to that position without changing durable messages or the relative order of conversation turns. An update without a user turn to follow, or an empty in-history update, is rejected; loop-owned clearing consolidates the history before serialization.
+Set `models[].systemPromptUpdate: in-history` only for an endpoint/model that treats the latest system update as the complete effective prompt. The default `deepseek-flash` entry (DeepSeek-V41-Flash) enables it and accepts text and images; V4 and unlisted models do not enable system updates in history. A custom `models` list replaces the defaults. Capable routes keep the initial prompt in the top-level field and serialize later snapshots as native `role: system` messages. [Anthropic placement rules](https://platform.claude.com/docs/en/build-with-claude/mid-conversation-system-messages) put updates after the user turn, including all tool results, and before the next assistant. The adapter maps the loop's earlier system admission to that position without changing durable messages or the relative order of conversation turns. An update without a user turn to follow, or an empty in-history update, is rejected; loop-owned clearing consolidates the history before serialization.
 
 ```yaml
 models:
-  - id: deepseek-v4-flash
+  - id: my-model
     systemPromptUpdate: in-history
 ```
 

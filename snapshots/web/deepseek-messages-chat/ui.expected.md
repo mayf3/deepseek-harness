@@ -3,10 +3,9 @@
     - button "只回复 MESSAGES_WEB_READY，不调用" [disabled]
   - img
   - text: 标准模式
-  - button "Session 日志":
-    - text: Session 日志
+  - button "更多操作":
     - img
-  - button "展开侧栏":
+  - button "打开右侧边栏":
     - img
   - tablist:
     - tab "对话" [selected]

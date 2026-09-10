@@ -13,14 +13,6 @@
 
 # ── surface-specific values the base deliberately omits ─────────────────────
 
-- id: llm-deepseek
-  disabled: true
-
-- id: agent-default-model
-  config:
-    provider: deepseek-messages
-    model: deepseek-v4-flash
-
 - id: system-prompt
   config:
     personaSuffix: Your working directory is {{cwd}}.
@@ -52,6 +44,7 @@
 - insert:
     - id: llm-deepseek-messages
       name: '@deepseek-ai/dsh-llm-deepseek-messages'
+      disabled: true
       config:
         apiKeyEnv: DEEPSEEK_API_KEY
 

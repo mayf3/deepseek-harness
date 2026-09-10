@@ -253,7 +253,7 @@ describe('inline images', () => {
   // Only the read operation is consumed by image preparation; the transport is mocked, not durable content.
   const attachments = { readImageRequest: async () => version } as unknown as AttachmentStore
   const signal = new AbortController().signal
-  it('keeps image bytes inside tool results and deduplicates normalization', async () => {
+  it.each(['deepseek-flash', model])('keeps image bytes inside tool results and deduplicates normalization for %s', async (model) => {
     const history = [assistant([call()]), result('a', [image, image])]
     const prepared = await prepareImages(history, connection, model, attachments, access, signal)
     expect(prepared.versions.size).toBe(1)

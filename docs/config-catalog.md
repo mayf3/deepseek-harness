@@ -1117,7 +1117,7 @@ export interface Config {
   maxTokens?: number
   /** Context capacity for models without an explicit entry; defaults to 1000000. */
   defaultContextWindow?: number
-  /** Advisory catalog; omission advertises V4 Flash, Pro, and Flash Vision Exp. */
+  /** Advisory catalog; omission advertises V41 Flash, V4 Flash, Pro, and Flash Vision Exp. */
   models?: CatalogModel[]
   /** Maximum idle time while waiting on the provider; defaults to 300000 ms. */
   streamIdleTimeoutMs?: number

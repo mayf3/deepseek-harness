@@ -41,7 +41,7 @@ export interface Config {
   maxTokens?: number
   /** Context capacity for models without an explicit entry; defaults to 1000000. */
   defaultContextWindow?: number
-  /** Advisory catalog; omission advertises V4 Flash, Pro, and Flash Vision Exp. */
+  /** Advisory catalog; omission advertises V41 Flash, V4 Flash, Pro, and Flash Vision Exp. */
   models?: CatalogModel[]
   /** Maximum idle time while waiting on the provider; defaults to 300000 ms. */
   streamIdleTimeoutMs?: number
@@ -70,6 +70,12 @@ const modelSchema: z<CatalogModel> = z.object({
 })
 
 const catalog: CatalogModel[] = [
+  {
+    id: 'deepseek-flash', name: 'DeepSeek-V41-Flash',
+    inputModalities: ['text', 'image'],
+    imagePixelBudget: 640_000, imageMaxBytes: 1024 * 1024,
+    systemPromptUpdate: 'in-history',
+  },
   { id: 'deepseek-v4-flash', name: 'DeepSeek-V4-Flash' },
   { id: 'deepseek-v4-pro', name: 'DeepSeek-V4-Pro' },
   { id: 'deepseek-v4-flash-vision-exp', name: 'DeepSeek-V4-Flash-Vision-Exp', inputModalities: ['text', 'image'] },
