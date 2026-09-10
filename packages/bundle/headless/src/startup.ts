@@ -6,7 +6,7 @@
  * @module @deepseek-ai/dsh-headless/startup
  */
 
-import { Command } from 'commander'
+import { Command, CommanderError } from 'commander'
 import type { Context } from '@deepseek-ai/cordis'
 import { parseCmdline } from '@deepseek-ai/dsh-cmdline'
 import { boundJsonLine } from './json-stream.ts'
@@ -89,13 +89,15 @@ export function apply(ctx: Context): void {
   // error (an unknown option, a missing option value) before the action runs,
   // and such a rejection still owes a --json caller the error event.
   if (jsonRequested(ctx.get('cmdlineArgs')?.get() ?? [])) {
-    const originalError = program.error.bind(program)
-    program.error = (message: string, errorOptions?: Parameters<typeof originalError>[1]): never => {
+    program.error = (message: string, errorOptions?: Parameters<Command['error']>[1]): never => {
       // The event message matches the runner's runtime errors, which carry no
-      // commander `error: ` prefix; the stderr line keeps commander's text.
+      // commander `error: ` prefix.
       const payload = boundJsonLine({ type: 'error', message: message.replace(/^error: /, '') })
       internals.stdout.write(`${payload}\n`)
-      return originalError(message, errorOptions)
+      // The JSON contract keeps stderr to `dsh:` diagnostics, so commander's
+      // own print of this message must not run; throwing the same control-flow
+      // error still leaves through the launcher's exit path.
+      throw new CommanderError(1, errorOptions?.code ?? 'commander.error', message)
     }
   }
   program.action(() => {

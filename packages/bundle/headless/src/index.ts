@@ -359,8 +359,9 @@ async function run(ctx: Context, config: Config, io: HeadlessIo): Promise<void> 
     : await resolveAgent(ctx, agents, sessionId, agentOptions, setup)
   await agent.whenIdle()
   if (config.sessionId !== undefined) {
-    // A live Session can select an agent preset while the runner awaits idle;
-    // re-read its log so the rejection cannot be outrun by that timing.
+    // The resume-time check read a snapshot; an overlay can still append a
+    // preset selection between it and the interval this run now owns, so
+    // re-read the log the runner holds before submitting the task.
     assertAdoptable(agent.session.header, liveEvents(agent.session), sessionId)
   }
   const firstSeq = agent.session.seq

@@ -24,6 +24,7 @@ import {
 interface Observed {
   exits: number[]
   out: string
+  err: string
   runnerConfig?: unknown
 }
 
@@ -56,7 +57,7 @@ async function bootStartup(
 ): Promise<{ task: HeadlessStartupValues | undefined; observed: Observed }> {
   const dir = mkdtempSync(join(tmpdir(), 'dsh-headless-startup-'))
   tempDirs.push(dir)
-  const observed: Observed = { exits: [], out: '' }
+  const observed: Observed = { exits: [], out: '', err: '' }
   writeFileSync(join(dir, 'row.mjs'), 'export function apply(_ctx, config) { globalThis.__headlessStartupObserved.runnerConfig = config }\n')
   // Loader imports through Node's resolver, so this fixture delegates to the
   // source-plane plugin already imported by the test.
@@ -79,8 +80,17 @@ export const apply = ctx => globalThis.__headlessStartupApply(ctx)
     '',
   ].join('\n'))
   const observing = { write: (chunk: string) => { observed.out += chunk; return true } }
+  // Commander's own output keeps landing in `out` so existing assertions see
+  // the full transcript, while `err` isolates what stderr actually carried.
+  const observingErr = {
+    write: (chunk: string) => {
+      observed.out += chunk
+      observed.err += chunk
+      return true
+    },
+  }
   cmdlineInternals.stdout = observing
-  cmdlineInternals.stderr = observing
+  cmdlineInternals.stderr = observingErr
   startupInternals.stdinIsTty = () => options.stdinIsTty === true
   startupInternals.stdout = observing
   const globals = globalThis as unknown as {
@@ -163,6 +173,7 @@ describe('headless command-line provider', () => {
       message: 'a task is required, for example: dsh --profile headless "run the tests"',
     })
     expect(task).toBeUndefined()
+    expect(observed.err).toBe('')
     expect(observed.exits).toEqual([1])
   })
 
@@ -171,6 +182,7 @@ describe('headless command-line provider', () => {
     const first = JSON.parse(observed.out.trim().split('\n')[0] ?? '{}') as { type: string; message: string }
     expect(first.type).toBe('error')
     expect(first.message).toContain('--session-id requires a non-empty session id')
+    expect(observed.err).toBe('')
     expect(observed.exits).toEqual([1])
   })
 
@@ -179,6 +191,7 @@ describe('headless command-line provider', () => {
     const first = JSON.parse(observed.out.trim().split('\n')[0] ?? '{}') as { type: string; message: string }
     expect(first).toEqual({ type: 'error', message: "unknown option '--bogus'" })
     expect(task).toBeUndefined()
+    expect(observed.err).toBe('')
     expect(observed.exits).toEqual([1])
   })
 

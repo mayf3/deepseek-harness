@@ -52,6 +52,8 @@ interface BenchOptions {
   prelive?: boolean
   /** Header facts for that pre-registered live Agent. */
   preliveMeta?: { cwd?: string; origin?: 'subagent'; agentPreset?: string }
+  /** Run when the runner awaits idle, e.g. to append to the attached log. */
+  onWhenIdle?: (agent: Agent) => void
 }
 
 const frameStates = new WeakMap<Agent, { attemptId: ReturnType<typeof LlmAttemptId>; revision: number; index: number }>()
@@ -147,7 +149,10 @@ async function bench(script: Script, options: BenchOptions = {}): Promise<{
       },
       steer: () => {},
       inject: () => {},
-      whenIdle: () => idle,
+      whenIdle: () => {
+        options.onWhenIdle?.(agent)
+        return idle
+      },
     }
     await createOptions.setup?.(ownerCtx, agent)
     ctx.agents.register(agent)
@@ -769,6 +774,24 @@ describe('headless runner', () => {
     const result = await test.run()
     expect(result.code).toBe(1)
     expect(result.err).toContain('runs under agent preset "minimal"')
+    await test.ctx.fiber.dispose()
+  })
+
+  it('rejects a preset an overlay appends while the runner awaits idle', async () => {
+    const test = await bench({ afterPrompt: () => {} }, {
+      sessionId: 'session-exact',
+      observe: () => Promise.resolve({
+        header: { cwd: process.cwd() },
+        events: [],
+        [Symbol.dispose]() {},
+      }),
+      onWhenIdle: (agent) => { selectPreset(agent.session, 'minimal') },
+    })
+    test.ctx.sessions.create(brandString<SessionId>('session-exact'), { meta: { cwd: process.cwd() } })
+    const result = await test.run()
+    expect(result.code).toBe(1)
+    expect(result.err).toContain('runs under agent preset "minimal"')
+    expect(result.out).toBe('')
     await test.ctx.fiber.dispose()
   })
 
