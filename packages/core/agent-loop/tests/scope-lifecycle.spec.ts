@@ -833,32 +833,6 @@ describe('agent scope lifecycle', () => {
     await ctx.fiber.dispose()
   })
 
-  it('rechecks caller liveness after creation listeners before unlocking the driver', async () => {
-    const ctx = await harness()
-    const starts: string[] = []
-    let ownerCtx!: Context
-    let creating!: ReturnType<typeof ctx.agents.create>
-    ctx.on('agent/status', ({ agent, status }) => { if (status === 'running') starts.push(agent.id) })
-    ctx.on('agent/created', ({ agent }) => {
-      if (agent.id === SessionId('listener-dispose-s')) disposeCurrentLifecycle(ownerCtx)
-    })
-
-    const owner = await ctx.plugin(Object.assign((inner: Context) => {
-      ownerCtx = inner
-      creating = inner.agents.create({
-        sessionId: SessionId('listener-dispose-s'),
-        agentOptions: { provider: 'mock', model: 'mock' },
-      })
-    }, { inject: ['agents'] }))
-
-    await expect(creating).rejects.toThrow(/owner disposed during setup/)
-    await owner.dispose()
-    expect(starts).toEqual([])
-    expect(ctx.agents.get(SessionId('listener-dispose-s')) === undefined).toBe(true)
-    expect(ctx.sessions.get(SessionId('listener-dispose-s')) === undefined).toBe(true)
-    await ctx.fiber.dispose()
-  })
-
   it('rechecks caller liveness after agent/created before starting the driver', async () => {
     const ctx = await harness()
     let ownerCtx!: Context
