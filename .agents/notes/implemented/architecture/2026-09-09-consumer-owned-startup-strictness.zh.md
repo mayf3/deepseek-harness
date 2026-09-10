@@ -18,6 +18,8 @@ Required id 为 `agent-loop`、`webserver`、`modules`、`connection`、`headles
 
 该审计只在应用首次启动时运行。之后的 config HMR 仍采用 best effort，并保留 failed candidate 供后续修复。
 
+该策略适用于 [Web host 启动](2026-07-24-web-config-tree-boot-and-transport-layering.zh.md)，包括其 [client 插件名册](2026-07-23-client-plugin-loading-model.zh.md)。[按会话的 preset](2026-08-03-per-session-agent-presets.zh.md)持有独立的严格子树审计。
+
 ## 考虑过的替代方案
 
 - **给 vendored Loader 增加 transactional 与 best-effort mode。** 拒绝，因为严格语义属于应用或资源 owner，而一个 Loader group 包含互不相关的 plugin。Mode 还会扩大 vendor patch，并要求 caller 为每个 group 选择 policy。

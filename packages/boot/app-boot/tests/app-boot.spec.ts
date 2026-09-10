@@ -1026,6 +1026,25 @@ describe('boot', () => {
     })).rejects.toThrow(`${NAME}: host preparation failed: host refused`)
   })
 
+  it.each([false, true])('rejects and disposes when an error cause is cyclic (indirect: %s)', async (indirect) => {
+    const failure = new Error('cyclic setup failure')
+    const next = indirect ? new Error('nested failure', { cause: failure }) : failure
+    let reads = 0
+    Object.defineProperty(failure, 'cause', {
+      get() {
+        // Bound a regressed synchronous traversal so it cannot hang the test worker.
+        if (++reads > 10) throw new Error('cause traversal did not terminate')
+        return next
+      },
+    })
+    const dispose = vi.fn()
+    await expect(boot(NAME, join(tmp(), 'cordis.yml'), [], (ctx) => {
+      ctx.effect(() => dispose)
+      throw failure
+    })).rejects.toThrow(`${NAME}: host preparation failed: cyclic setup failure`)
+    expect(dispose).toHaveBeenCalledOnce()
+  })
+
   it('expands a stackless aggregate at the deepest activation cause', async () => {
     const dir = tmp()
     const aggregate = new AggregateError([

@@ -854,7 +854,8 @@ export async function auditStartupEntries(
  * surface disposed the tree while startup was still in flight.
  * @throws a labelled error after disposing the partial context — `host
  * preparation failed` when `prepare` threw before any config-tree entry
- * mounted, `plugin tree failed to load` afterwards.
+ * mounted, `plugin tree failed to load` afterwards. Cyclic causes terminate
+ * diagnostic traversal without replacing the original cause.
  */
 export async function boot(
   binName: string,
@@ -896,7 +897,11 @@ export async function boot(
     const detail = cause instanceof Error ? cause.message : String(cause)
     // A wrapper can carry an activation error whose original stack names the failed plugin.
     let deepest: unknown = cause
-    while (deepest instanceof Error && deepest.cause !== undefined) deepest = deepest.cause
+    const seen = new Set<Error>()
+    while (deepest instanceof Error && !seen.has(deepest) && deepest.cause !== undefined) {
+      seen.add(deepest)
+      deepest = deepest.cause
+    }
     const stack = deepest instanceof AggregateError
       ? `\n${deepest.stack ?? deepest.message}\n${deepest.errors.map(formatActivationError).join('\n')}`
       : deepest instanceof Error && deepest !== cause ? `\n${deepest.stack ?? deepest.message}` : ''
