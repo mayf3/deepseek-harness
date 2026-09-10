@@ -142,7 +142,7 @@ export function projectUserText(
         data-ref-chip={referenceKind ?? slashKind}
         title={label}
         onClick={(event) => {
-          if (event.detail > 1 || event.currentTarget.ownerDocument.getSelection()?.isCollapsed === false) return
+          if (event.detail > 1 || (event.detail !== 0 && event.currentTarget.ownerDocument.getSelection()?.isCollapsed === false)) return
           open()
         }}
       >

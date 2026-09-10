@@ -3,7 +3,7 @@
 // with their marker while user-disabled quadrants stay hidden. A real
 // chromium connects a fresh workspace seeded with all four policy quadrants;
 // no model call is issued, so a stray stream fails loud on the open LLM seam.
-import { mkdir, writeFile } from 'node:fs/promises'
+import { mkdir, symlink, writeFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import { join } from 'node:path'
 import type { Browser, Page } from 'playwright'
@@ -56,7 +56,8 @@ const SKILLS: readonly SeedSkill[] = [
 
 async function seedSkills(workspaceCwd: string): Promise<void> {
   for (const skill of SKILLS) {
-    const directory = join(workspaceCwd, 'workspace', '.agents', 'skills', skill.name)
+    const root = join(workspaceCwd, 'workspace', '.agents', 'skills')
+    const directory = skill.name === 'policy-shared' ? join(workspaceCwd, 'linked-skills', skill.name) : join(root, skill.name)
     await mkdir(directory, { recursive: true })
     const policyLines = skill.frontmatter === '' ? [] : skill.frontmatter.trimEnd().split('\n')
     await writeFile(join(directory, 'SKILL.md'), [
@@ -69,6 +70,10 @@ async function seedSkills(workspaceCwd: string): Promise<void> {
       `# ${skill.name}`,
       '',
     ].join('\n'))
+    if (skill.name === 'policy-shared') {
+      await mkdir(root, { recursive: true })
+      await symlink(join(directory, 'SKILL.md'), join(root, `${skill.name}.md`))
+    }
   }
 }
 
@@ -174,8 +179,10 @@ describe('web e2e: skill invocation policy through the real host', () => {
     await expect.poll(() => preview.textContent()).toContain('Reference preview fixture.')
     expect(await input.textContent()).toBe(draft)
     await file.hover()
-    await skill.click()
+    await skill.dblclick()
     await expect.poll(() => preview.textContent()).toContain('policy-shared')
+    await expect.poll(() => page.evaluate(() => document.getSelection()?.toString())).not.toBe('')
+    expect(await input.textContent()).toBe(draft)
     await skill.hover()
     await expect.poll(() => skill.evaluate(el => getComputedStyle(el).backgroundColor)).toBe(skillBackground)
     expect(tripwire.pageErrors).toEqual([])

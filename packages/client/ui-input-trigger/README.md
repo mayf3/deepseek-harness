@@ -31,7 +31,7 @@ Mount this plugin alongside `ui-conversation`; the menu then appears in the inpu
 
 The composer surface keeps focus while the menu is open: rows pick on mousedown, the highlight rides `aria-activedescendant`, and a pointer press outside both the menu and the composer card dismisses it. Space and Enter adjudication polls the optional `matchSpace`/`matchEnter` hooks in registration order; the first non-undefined answer wins, and a source can refuse a submission it cannot consume whole. Tab acts on the highlighted completion: a candidate declaring `drill: true` routes through `onPick` with `action: 'drill'`, while an ordinary candidate settles through `action: 'pick'`; without a highlight, Tab passes untouched so native focus traversal survives. A drillable row's trailing chevron exposes the same second verb to pointer users. A source implementing the optional `header` hook additionally publishes crumbs above its group: the pipeline re-polls it on every hit with the live query and whether a drill, rather than typing, produced it, and a crumb pick routes back through `onPick` with `action: 'drill'`.
 
-A source may implement `openReference(session, reference)` to open a draft reference without submitting it. Chips route by source name; editable tokens route through the current source lexicon. Returning `false`, a missing source, or a disposed controller leaves the editor gesture unchanged.
+A source may implement `openReference(session, reference)` to open a draft reference without submitting it. Acceptance may precede asynchronous catalog loading. Chips route by source name; editable tokens route through the current source lexicon. Returning `false`, a missing source, or a disposed controller leaves the editor gesture unchanged.
 
 -----
 

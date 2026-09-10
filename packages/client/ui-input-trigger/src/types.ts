@@ -215,7 +215,7 @@ export interface InputTriggerSource {
    * Open a reference preview without changing or submitting the draft.
    * @param session - session owning the composer.
    * @param reference - source-owned id and optional chip glyph; text references retain their trigger.
-   * @returns whether this source opened the reference; false leaves the editor gesture unchanged.
+   * @returns whether this source accepted the preview, possibly awaiting its catalog; false leaves the editor gesture unchanged.
    */
   openReference?(session: ClientSessionContext, reference: Pick<ReferenceInsert, 'ref' | 'appearance'>): boolean
   /** Reference codec; required for sources producing insert outcomes. */

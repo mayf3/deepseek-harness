@@ -95,13 +95,13 @@ export function apply(ctx: ClientContext): void {
     }
   }
 
-  const fetchCatalog = (sessionId: SessionId): Promise<readonly SkillEntry[]> => {
-    if (sessions.subagentAddress(sessionId) !== undefined) return Promise.resolve([])
+  const fetchCatalog = (sessionId: SessionId): CatalogFetch => {
     const existing = fetches.get(sessionId)
-    if (existing !== undefined) return existing.promise
+    if (existing !== undefined) return existing
     const abort = new AbortController()
     const promise = (async () => {
       const result = await skills.list({ sessionId }, abort.signal)
+      abort.signal.throwIfAborted()
       if (!result.ok) throw new Error(`skills/list failed: ${result.error.code}: ${result.error.message}`)
       return result.value.skills
     })()
@@ -118,7 +118,7 @@ export function apply(ctx: ClientContext): void {
         if (fetches.get(sessionId) === entry) fetches.delete(sessionId)
       },
     )
-    return promise
+    return entry
   }
 
   const invalidate = (key: SessionId): void => {
@@ -142,7 +142,8 @@ export function apply(ctx: ClientContext): void {
     name: 'skill',
     order: 2,
     async candidates(session, { query, signal }) {
-      const skills = await fetchCatalog(session.sessionId)
+      if (sessions.subagentAddress(session.sessionId) !== undefined) return []
+      const skills = await fetchCatalog(session.sessionId).promise
       // Superseded keystroke: the shared fetch stays warm, this caller yields.
       if (signal.aborted) return []
       // The same ranking as the command group of this menu: case-insensitive
@@ -158,7 +159,8 @@ export function apply(ctx: ClientContext): void {
     warm(session) {
       // Fire-and-forget scope-birth prewarm; the shared fetch reports
       // through candidates.
-      fetchCatalog(session.sessionId).catch(() => {})
+      if (sessions.subagentAddress(session.sessionId) !== undefined) return
+      fetchCatalog(session.sessionId).promise.catch(() => {})
     },
     lexicon(session) {
       return fetches.get(session.sessionId)?.settled?.map(skill => skill.name)
@@ -174,10 +176,22 @@ export function apply(ctx: ClientContext): void {
       }
     },
     openReference(session, { ref }) {
-      const path = fetches.get(session.sessionId)?.settled?.find(skill => `/${skill.name}` === ref)?.path
-      if (path === undefined) return false
+      if (sessions.subagentAddress(session.sessionId) !== undefined) return false
       const cwd = sessions.list.getSnapshot().byId[session.sessionId]?.cwd
-      ctx.sidebarRight.openResource(fileAddressFor(session.sessionId, cwd, path))
+      const open = (catalog: readonly SkillEntry[]): boolean => {
+        const path = catalog.find(skill => `/${skill.name}` === ref)?.path
+        if (path === undefined) return false
+        ctx.sidebarRight.openResource(fileAddressFor(session.sessionId, cwd, path))
+        return true
+      }
+      const settled = fetches.get(session.sessionId)?.settled
+      if (settled !== undefined) return open(settled)
+      const entry = fetchCatalog(session.sessionId)
+      void entry.promise.then((catalog) => {
+        if (!entry.abort.signal.aborted) open(catalog)
+      }).catch((error: unknown) => {
+        if (!entry.abort.signal.aborted) console.error('[ui-skill] reference preview failed:', error)
+      })
       return true
     },
     onPick({ candidate }) {

@@ -309,7 +309,7 @@ export class InputTriggerController {
    * Route a chip to its owner or an editable token to its current lexicon owner.
    * @param source - chip source name; undefined for editable text.
    * @param reference - source-owned id and optional chip glyph.
-   * @returns whether an owner opened the reference.
+   * @returns whether an owner accepted the preview, possibly awaiting its catalog.
    */
   openReference(source: string | undefined, reference: Pick<ReferenceInsert, 'ref' | 'appearance'>): boolean {
     if (this.disposed) return false

@@ -132,11 +132,13 @@ describe('projectUserText', () => {
     range.selectNodeContents(button)
     selection.addRange(range)
     fireEvent.click(button, { detail: 1 })
-    selection.removeAllRanges()
-    fireEvent.click(button, { detail: 2 })
     expect(openFile).not.toHaveBeenCalled()
     fireEvent.click(button, { detail: 0 })
     expect(openFile).toHaveBeenCalledWith('notes.md')
+    selection.removeAllRanges()
+    openFile.mockClear()
+    fireEvent.click(button, { detail: 2 })
+    expect(openFile).not.toHaveBeenCalled()
   })
 
   it('renders undecorated text as one inline run', () => {

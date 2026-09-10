@@ -151,6 +151,9 @@ describe('Chat inject API', () => {
     injected.openSkill('review')
     expect(sessionOf).toHaveBeenCalledWith(b.runtime.sessions.scope(ROOT))
     expect(openReference).toHaveBeenCalledWith('skill', { ref: '/review' })
+    vi.spyOn(b.runtime.sessions, 'scope').mockReturnValueOnce(undefined)
+    injected.openSkill('review')
+    expect(openReference).toHaveBeenCalledTimes(1)
     await b.runtime.dispose()
   })
 

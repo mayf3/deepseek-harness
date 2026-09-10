@@ -182,7 +182,7 @@ describe.skipIf(MODE === 'record')('web e2e: user-explicit skill invocation thro
     expect(tripwire.warnings).toEqual([])
   })
 
-  it('keeps its snapshot inventory closed' , async () => {
+  it('keeps its snapshot inventory closed', async () => {
     await assertFixtureInventory(SNAPSHOT_DIR, ['ui.expected.md', 'ui-expanded.expected.md'])
   })
 })

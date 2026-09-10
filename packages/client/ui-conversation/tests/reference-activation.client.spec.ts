@@ -48,9 +48,12 @@ describe('reference activation', () => {
     expect(open).toHaveBeenCalledTimes(2)
   })
 
-  it('leaves double clicks, text selections, invalid chips, and ordinary text to the editor', () => {
+  it('opens once in a double-click sequence and leaves selections, invalid chips, and ordinary text to the editor', () => {
     const { editor, root, chip, text, open, click } = bench()
+    click(text.getKey(), 1)
     click(text.getKey(), 2)
+    expect(open).toHaveBeenCalledTimes(1)
+    open.mockClear()
     root.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     editor.update(() => { text.select(0, 3) }, { discrete: true })
     click(text.getKey())
