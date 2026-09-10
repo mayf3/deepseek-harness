@@ -12,7 +12,7 @@ Status: implemented
 
 [`DshPackageManifest`](../../../../packages/util/package-manifest/src/types.ts) 描述 DSH 使用的 package.json 字段，其中 `name` 和 `version` 必填。其可选的 `dsh` 成员使用 `DshManifest` 描述公共组合与作者元数据。该类型只选取所需 npm 字段，不是完整的 package.json schema（模式）。App-boot 通过 `Partial` 适配无需发布身份的本地 profile。
 
-运行时要求位于顶层 `engines`：`dsh`、`node` 和 `npm` 均为可选版本字符串，也允许其他 engine 名称。`dsh.manifestVersion` 标识声明格式 `1`；`dsh.categories` 承载自由发现标签，不限制包的组合。当前安装器和加载器不强制检查格式与 DSH 兼容性声明。
+运行时要求位于顶层 `engines`：`dsh`、`node` 和 `npm` 均为可选版本字符串，也允许其他 engine 名称。`dsh.manifestVersion` 标识声明格式 `1`。当前安装器和加载器不强制检查格式与 DSH 兼容性声明。
 
 镜像打包器拥有 `configTrees`，工作区目录生成器拥有 Session 迁移声明，app-boot 拥有生成的模块后备元数据。这些内部工具仍可读取既有磁盘字段，但公共 manifest 类型不暴露这些字段。此范围细化了[共享声明归属决策](2026-09-05-package-manifest-types.zh.md)，后者的包位置与依赖规则仍然有效。
 

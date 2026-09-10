@@ -37,7 +37,6 @@ const manifest: DshPackageManifest = {
   engines: { node: '>=24', dsh: '0.1.5-alpha.1' },
   dsh: {
     manifestVersion: 1,
-    categories: ['skills', 'tools'],
     bundle: { patch: './cordis.patch.yml' },
     client,
   },
@@ -46,12 +45,11 @@ const manifest: DshPackageManifest = {
 
 `DshPackageManifest` describes the package.json fields used by DSH, with required `name` and `version`; it is not an exhaustive npm schema. Local profile readers use `Partial<DshPackageManifest>` because profiles need no published version. `DshManifest` describes only public author fields under `dsh`. TypeScript checks the example and erases `import type`; these interfaces do not parse JSON or write a file.
 
-The following metadata fields are optional. Omitting them leaves the format version, tags, or compatible host versions undeclared; readers do not infer defaults.
+The following metadata fields are optional. Omitting them leaves the format version or compatible host versions undeclared; readers do not infer defaults.
 
 | Field | Meaning |
 |---|---|
 | `dsh.manifestVersion` | Manifest format identifier; the declared format is `1`, independent of the npm package version and Session format version. |
-| `dsh.categories` | Free-form discovery tags such as `skills` and `tools`, with no fixed taxonomy or effect on plugin loading. |
 | `engines.dsh` | Author-declared compatible DSH versions as a SemVer range, including exact prerelease versions. This field sits beside `engines.node` and `engines.npm`; an engines object may omit `dsh`. |
 
 Public composition declarations are defined in [`src/types.ts`](src/types.ts). Internal `configTrees`, `sessionFormatMigration`, and generated `moduleFallback` metadata remain owned by their image-packer, catalog, and launcher readers; the public types do not expose them.

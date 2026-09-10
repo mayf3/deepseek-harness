@@ -37,7 +37,6 @@ const manifest: DshPackageManifest = {
   engines: { node: '>=24', dsh: '0.1.5-alpha.1' },
   dsh: {
     manifestVersion: 1,
-    categories: ['skills', 'tools'],
     bundle: { patch: './cordis.patch.yml' },
     client,
   },
@@ -46,12 +45,11 @@ const manifest: DshPackageManifest = {
 
 `DshPackageManifest` 描述 DSH 使用的 package.json 字段，其中 `name` 和 `version` 必填；它不是完整的 npm schema（模式）。本地 profile 读取方使用 `Partial<DshPackageManifest>`，因为 profile 无需发布版本。`DshManifest` 仅描述 `dsh` 下的公共作者字段。TypeScript 检查示例并删除 `import type`；这些接口不解析 JSON，也不写入文件。
 
-以下元数据字段均可选。省略时，格式版本、标签或兼容的宿主版本保持未声明状态；读取方不推断默认值。
+以下元数据字段均可选。省略时，格式版本或兼容的宿主版本保持未声明状态；读取方不推断默认值。
 
 | 字段 | 含义 |
 |---|---|
 | `dsh.manifestVersion` | manifest（元数据清单）格式标识；声明的格式为 `1`，独立于 npm 包版本和 Session 格式版本。 |
-| `dsh.categories` | `skills`、`tools` 等自由发现标签，无固定分类体系，不影响插件加载。 |
 | `engines.dsh` | 作者声明的兼容 DSH 版本，使用 SemVer 范围，也可填写精确的预发布版本。此字段与 `engines.node`、`engines.npm` 并列；engines 对象可省略 `dsh`。 |
 
 公共组合声明定义在 [`src/types.ts`](src/types.ts) 中。内部 `configTrees`、`sessionFormatMigration` 和生成的 `moduleFallback` 元数据分别由镜像打包器、目录生成器和启动器读取方拥有；公共类型不暴露这些字段。

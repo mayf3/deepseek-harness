@@ -28,8 +28,6 @@ export interface DshPackageManifest {
 export interface DshManifest {
   /** Manifest format version, independent of the npm package and Session format versions. */
   manifestVersion?: 1
-  /** Free-form discovery tags, such as `skills` or `tools`; do not affect plugin loading. */
-  categories?: string[]
   /** Bundle metadata consumed by the profile launcher. */
   bundle?: DshBundleManifest
   /** Profile metadata consumed by the profile launcher. */
