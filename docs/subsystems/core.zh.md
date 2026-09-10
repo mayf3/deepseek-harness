@@ -344,7 +344,7 @@ type RequestErrorAction = { kind: 'retry' } | undefined
 
 `agent/pre-step` 是请求推导前唯一的 waterfall（瀑布式）监听器链。`agent/turn-stopping` 在轮次没有工具或 steering（中途引导）后续时运行，先于最后一次 steering 排空。
 
-`agent/session-start` 携带 `SessionStartSource`（会话生命周期为何开始；桥接层据此匹配其 SessionStart）：
+`agent/created` 携带 `SessionStartSource`（会话生命周期为何开始；桥接层据此匹配其 SessionStart）：
 
 ```ts type-equiv
 /** Why a session lifecycle began; seeded creates are `startup`, while persisted loads are `resume`. */

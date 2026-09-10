@@ -336,7 +336,7 @@ type RequestErrorAction = { kind: 'retry' } | undefined
 
 `agent/pre-step` is the only waterfall listener chain before request derivation. `agent/turn-stopping` runs when a turn has no tool or steering continuation, before one final steering drain.
 
-`agent/session-start` carries a `SessionStartSource` (why the session lifecycle began; a bridge keys its SessionStart matcher on it):
+`agent/created` carries a `SessionStartSource` (why the session lifecycle began; a bridge keys its SessionStart matcher on it):
 
 ```ts type-equiv
 /** Why a session lifecycle began; seeded creates are `startup`, while persisted loads are `resume`. */
