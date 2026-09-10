@@ -191,6 +191,17 @@
   opacity: 1;
 }
 
+.detailsBodyWrap {
+  position: relative;
+}
+
+.detailsBodyWrap .inspectButton {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  margin: 0;
+}
+
 /* Solid hover fill (a translucent token would let content bleed through). */
 .inspectButton:hover {
   background: var(--dsw-alias-interactive-bg-hover-solid);

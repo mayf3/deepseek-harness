@@ -1,0 +1,117 @@
+/** Keyed recorded-result rows sharing the compact detail body. */
+import { useMemo } from 'react'
+import type { Context } from '@deepseek-ai/cordis'
+import {
+  IconAgentPresetOutline16, IconBranchOutline16, IconChecklistOutline14, IconClockOutline16,
+  IconCodeOutline16, IconCordisPluginOutline14, IconGoalOutline16, IconSearchOutline16,
+} from '@deepseek-ai/dsh-client-ui-primitives'
+import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
+import type { ToolCallViewProps } from '../../contract/slots.ts'
+import { CONVERSATION_NS as NS } from '../../locale.ts'
+import { ToolRow } from '../components/ToolRow.tsx'
+import { detailsCardModel } from '../models/details-card-model.ts'
+import { parsedToolCall } from '../models/raw-tool-call.ts'
+import { toolRowModel } from '../models/tool-call-model.ts'
+
+const TITLE_KEYS = {
+  create_goal: 'tool.title.createGoal',
+  get_goal: 'tool.title.getGoal',
+  update_goal: 'tool.title.updateGoal',
+  schedule_create: 'tool.title.createSchedule',
+  schedule_list: 'tool.title.listSchedules',
+  schedule_delete: 'tool.title.deleteSchedule',
+  cordis_inspect_list: 'tool.title.inspectProviders',
+  cordis_inspect_query: 'tool.title.queryRuntime',
+  cordis_inspect_self: 'tool.title.inspectPlugins',
+  workflow: 'tool.title.workflow',
+  ralph: 'tool.title.ralph',
+  session_event_read: 'tool.title.readEvent',
+  session_event_search: 'tool.title.searchEvents',
+  session_event_trace: 'tool.title.traceEvent',
+  session_search: 'tool.title.searchSessions',
+  session_trace: 'tool.title.traceSession',
+  list_subagent_models: 'tool.title.listModels',
+  subagent: 'tool.title.subagent',
+  list_agents: 'tool.title.listAgents',
+  send_message: 'tool.title.sendMessage',
+  interrupt_agent: 'tool.title.interruptAgent',
+  job_list: 'tool.title.listJobs',
+  job_output: 'tool.title.readJob',
+  job_kill: 'tool.title.killJob',
+  terminal_open: 'tool.title.openTerminal',
+  terminal_read: 'tool.title.readTerminal',
+  terminal_list: 'tool.title.listTerminals',
+  terminal_signal: 'tool.title.signalTerminal',
+  terminal_close: 'tool.title.closeTerminal',
+  lsp: 'tool.title.lsp',
+  spawn_teammate: 'tool.title.spawnTeammate',
+  team_task_create: 'tool.title.createTeamTask',
+  team_task_get: 'tool.title.getTeamTask',
+  team_task_update: 'tool.title.updateTeamTask',
+  team_task_list: 'tool.title.listTeamTasks',
+  wait_agent: 'tool.title.waitAgent',
+} as const
+
+const LSP_TITLE_KEYS = {
+  goToDefinition: 'tool.title.findDefinition',
+  findReferences: 'tool.title.findReferences',
+  goToImplementation: 'tool.title.findImplementation',
+  hover: 'tool.title.hoverSymbol',
+} as const
+
+function detailIcon(toolName: string) {
+  if (toolName.startsWith('schedule_')) return <IconClockOutline16 size={14} />
+  if (toolName.endsWith('_goal')) return <IconGoalOutline16 size={14} />
+  if (toolName.startsWith('cordis_')) return <IconCordisPluginOutline14 />
+  if (toolName.startsWith('terminal_')) return <IconCodeOutline16 size={14} />
+  if (toolName.startsWith('session_') || toolName === 'lsp') return <IconSearchOutline16 size={14} />
+  if (toolName.startsWith('job_') || toolName.startsWith('team_task_')) return <IconChecklistOutline14 />
+  if (toolName === 'workflow' || toolName === 'ralph') return <IconBranchOutline16 size={14} />
+  return <IconAgentPresetOutline16 size={14} />
+}
+
+/**
+ * Present recorded entities, receipts, and report fields in the existing expandable row.
+ * @param props - Tool call, row actions, and locale supplied by the keyed slot.
+ * @returns A Tool row with structured details or generic input/output.
+ */
+export function DetailsRow({ toolName, block, cwd, home, openFile, inspect, t }: ToolCallViewProps & PropsLocale<'conversation'>) {
+  const model = toolRowModel(toolName, block, cwd, home)
+  const locale = document.documentElement.lang || 'en'
+  const details = useMemo(() => detailsCardModel(block, t, locale), [block, t, locale])
+  const operation = toolName === 'lsp' ? parsedToolCall(block)?.args.operation : undefined
+  const titleKey = typeof operation === 'string' && Object.hasOwn(LSP_TITLE_KEYS, operation)
+    ? LSP_TITLE_KEYS[operation as keyof typeof LSP_TITLE_KEYS]
+    : Object.hasOwn(TITLE_KEYS, toolName) ? TITLE_KEYS[toolName as keyof typeof TITLE_KEYS] : model.titleKey
+  return (
+    <ToolRow
+      t={t}
+      variant={model.variant}
+      toolName={toolName}
+      icon={detailIcon(toolName)}
+      title={t(titleKey)}
+      summary={details?.summary ?? (toolName === 'schedule_list' && details !== null
+        ? t('detail.schedule.count', { count: details.items.length })
+        : details?.items[0]?.title ?? details?.empty ?? model.summary)}
+      details={details}
+      bodyRaw={model.bodyRaw}
+      output={model.output}
+      errorSummary={model.errorSummary}
+      state={model.state}
+      inspect={inspect}
+      onOpenFile={openFile}
+    />
+  )
+}
+
+/** Register recorded-result details through the standard atomic Tool slot. */
+export const detailsToolview = {
+  name: 'details-toolview',
+  inject: ['slots'],
+  apply(ctx: Context): void {
+    for (const key of Object.keys(TITLE_KEYS)) {
+      ctx.slots.inject('tool.call.toolview', () =>
+        ctx.slots.register({ name: 'tool.call.toolview', key, locale: NS }, DetailsRow))
+    }
+  },
+}
