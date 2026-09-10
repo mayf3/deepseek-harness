@@ -12,7 +12,7 @@ Best-effort Loader reconciliation preserves usable plugins, but applications sti
 
 DSH owns startup strictness outside vendored Cordis. App-boot audits the settled initial tree against one global list of stable entry ids. A listed entry that is present, enabled, and not active rejects startup and disposes the application. A listed id that is absent or disabled has no effect. The bootstrap Include is required by entry identity because a missing or invalid root configuration prevents application assembly. Other inactive entries produce one warning and leave successful siblings running.
 
-The required ids are `agent-loop`, `webserver`, `headless-runner`, `acp`, and `sdk-jsonrpc-server`. They represent shared Agent execution and the endpoints of the shipped Web, headless, ACP, and SDK applications. Their injected providers do not need separate list entries: a missing provider leaves the listed endpoint pending or failed.
+The required ids are `agent-loop`, `webserver`, `modules`, `connection`, `headless-runner`, `acp`, and `sdk-jsonrpc-server`. They represent shared Agent execution, application endpoints, and Web bootstrap/transport. Web needs its client module registry and authenticated connection even when the HTTP server can listen without them. Providers already required through injection need no separate entry: their absence leaves a listed consumer pending or failed.
 
 The audit runs only during initial application boot. Later config HMR remains best effort and keeps the failed candidate visible for repair.
 
@@ -28,4 +28,4 @@ Stable required entry ids are part of application assembly. Renaming one require
 
 ## Testing
 
-App-boot unit tests cover absent and disabled required ids, optional import failure, config evaluation failure, synchronous and asynchronous `apply()` failure, pending dependencies, and required failure teardown. The built Web-profile acceptance serves the full UI with optional failures and exits nonzero when the required HTTP port is occupied.
+App-boot unit tests cover absent and disabled required ids, optional import failure, config evaluation failure, synchronous and asynchronous `apply()` failure, pending dependencies, and required failure teardown. The built Web-profile acceptance serves the full UI with optional failures and exits nonzero without readiness when the required HTTP port is occupied or `modules` or `connection` cannot activate.

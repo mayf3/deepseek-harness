@@ -696,13 +696,14 @@ const FIBER_FAILED = 3 as FiberState.FAILED
  * Entry ids whose presence defines a usable DSH application.
  *
  * The list is global rather than profile metadata. Missing or disabled ids do
- * not affect startup; an enabled listed entry must activate. Surface endpoints
- * cover their injected providers, while `agent-loop` covers shared Agent
- * execution.
+ * not affect startup; an enabled listed entry must activate. The list covers
+ * shared Agent execution, application endpoints, and Web bootstrap/transport.
  */
 export const REQUIRED_STARTUP_ENTRY_IDS: readonly string[] = Object.freeze([
   'agent-loop',
   'webserver',
+  'modules',
+  'connection',
   'headless-runner',
   'acp',
   'sdk-jsonrpc-server',

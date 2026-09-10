@@ -161,7 +161,9 @@ describe.skipIf(!builtArtifactsExist)('dsh Web profile best-effort startup', () 
       const cookie = auth.headers.get('set-cookie')?.split(';', 1)[0]
       if (cookie === undefined) throw new Error('Web authentication response did not set a cookie')
       const page = await fetch(new URL('/', startup.url), { headers: { cookie } })
-      expect(await page.text()).toContain('<div id="root"></div>')
+      const html = await page.text()
+      expect(html).toContain('<div id="root"></div>')
+      expect(html).toContain('__DSH_BOOT__')
       expect(readFileSync(fixture.events, 'utf8')).toBe('good apply\n')
       expect(startup.stderr).toContain('web-probe-import-failure')
       expect(startup.stderr).toContain('@deepseek-ai/dsh-tool-todo')
@@ -189,6 +191,43 @@ describe.skipIf(!builtArtifactsExist)('dsh Web profile best-effort startup', () 
         "timedOut": false,
       }
     `)
+  })
+
+  it.each(['modules', 'connection'])('fails the full Web profile when required %s cannot activate', async (id) => {
+    const fixture = createFixture()
+    writeFileSync(fixture.patch, `${readFileSync(fixture.patch, 'utf8')}- id: ${id}\n  inject: [webProbeMissingRequiredService]\n`)
+    try {
+      const result = await execa(process.execPath, [
+        dshBin,
+        '--profile', 'web',
+        '--patch', fixture.patch,
+        '--no-open',
+        '--port', '0',
+      ], {
+        cwd: fixture.root,
+        env: {
+          ...process.env,
+          DEEPSEEK_API_KEY: 'keyless-web-required-no-call',
+          DSH_AGENTS_HOME: join(fixture.root, '.agents'),
+          DSH_HOME: fixture.home,
+          DSH_TELEMETRY_DISABLED: '1',
+          NODE_NO_WARNINGS: '1',
+        },
+        input: '',
+        reject: false,
+        timeout: 90_000,
+        killSignal: 'SIGKILL',
+      })
+      expect(result.timedOut).toBe(false)
+      expect(result.signal).toBeUndefined()
+      expect(result.exitCode).toBe(1)
+      expect(result.stdout).not.toContain('dsh web: http://')
+      expect(result.stderr).toContain('required startup failure')
+      expect(result.stderr).toContain(`${id} (@deepseek-ai/dsh-client-${id}): pending (waiting for service: webProbeMissingRequiredService)`)
+      expect(readFileSync(fixture.events, 'utf8')).toBe('good apply\ngood dispose\n')
+    } finally {
+      rmSync(fixture.root, { recursive: true, force: true })
+    }
   })
 
   it('fails the full Web profile when its required HTTP server cannot bind', async () => {

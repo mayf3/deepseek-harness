@@ -532,11 +532,13 @@ describe('auditStartupEntries', () => {
     await: error === undefined ? async () => undefined : async () => { throw error },
   })
 
-  it('pins the global list to shared execution and application endpoints', () => {
+  it('pins the global list to shared execution, application endpoints, and Web startup', () => {
     expect(Object.isFrozen(REQUIRED_STARTUP_ENTRY_IDS)).toBe(true)
     expect(REQUIRED_STARTUP_ENTRY_IDS).toEqual([
       'agent-loop',
       'webserver',
+      'modules',
+      'connection',
       'headless-runner',
       'acp',
       'sdk-jsonrpc-server',
@@ -546,10 +548,14 @@ describe('auditStartupEntries', () => {
 
   it('ignores active, disabled, and absent required entries', async () => {
     const warn = vi.fn()
-    await expect(auditStartupEntries(ctxWith([
-      { fiber: fiber(2), options: { id: 'active', name: 'active' } },
-      { fiber: fiber(3, new Error('disabled failure')), disabled: true, options: { id: 'webserver', name: 'disabled' } },
-    ]), NAME, warn)).resolves.toBeUndefined()
+    await expect(auditStartupEntries(ctxWith([]), NAME, warn)).resolves.toBeUndefined()
+    for (const disabled of [false, true]) {
+      await expect(auditStartupEntries(ctxWith(REQUIRED_STARTUP_ENTRY_IDS.map(id => ({
+        fiber: disabled ? fiber(3, new Error('disabled failure')) : fiber(2),
+        disabled,
+        options: { id, name: './required.mjs' },
+      }))), NAME, warn)).resolves.toBeUndefined()
+    }
     expect(warn).not.toHaveBeenCalled()
   })
 
@@ -649,16 +655,16 @@ describe('auditStartupEntries', () => {
     expect(diagnostic).toContain('unexpected-state (./unexpected-state.mjs): fiber state 1')
   })
 
-  it('rejects required failures after warning about optional failures', async () => {
+  it.each(['webserver', 'modules', 'connection'])('rejects required %s failures after warning about optional failures', async (id) => {
     const warn = vi.fn()
     const requiredError = new Error('address already in use')
     const optionalError = new Error('todo unavailable')
     await expect(auditStartupEntries(ctxWith([
-      { fiber: fiber(3, requiredError), options: { id: 'webserver', name: '@deepseek-ai/dsh-host-webserver' } },
+      { fiber: fiber(3, requiredError), options: { id, name: './required.mjs' } },
       { fiber: fiber(3, optionalError), options: { id: 'tool-todo', name: '@deepseek-ai/dsh-tool-todo' } },
     ]), NAME, warn)).rejects.toThrow([
       'required startup failure: 1 entry did not activate',
-      `webserver (@deepseek-ai/dsh-host-webserver): ${requiredError.stack!}`,
+      `${id} (./required.mjs): ${requiredError.stack!}`,
     ].join('\n'))
     expect(warn).toHaveBeenCalledWith(`${NAME}: warning: 1 entry did not activate\ntool-todo (@deepseek-ai/dsh-tool-todo): ${optionalError.stack!}\n`)
   })
