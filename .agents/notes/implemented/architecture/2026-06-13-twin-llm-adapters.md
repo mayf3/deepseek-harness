@@ -26,4 +26,4 @@ The rule they enforce: **anything the StreamChunk vocabulary cannot express for 
 
 The twin doubles adapter and key-gated e2e maintenance—both cover V4 Flash and Pro across representative reasoning modes—in exchange for continuous seam-neutrality validation and a second implementation example. Both use `apiKey`, `baseURL`, and `models`; the direct-fetch adapter exposes `thinking`/`reasoningEffort`, while pi-ai exposes one `reasoning` level. A future conformance suite could justify retiring one adapter through a superseding Agent Note.
 
-The [Messages adapter](../feature/2026-09-07-deepseek-messages-adapter.md) adds a direct Anthropic-protocol route alongside this pair; it preserves the same stream conventions.
+The [Messages adapter](../feature/2026-09-07-deepseek-messages-adapter.md) adds an Anthropic-protocol implementation inside `llm-deepseek`; it preserves the same stream conventions.

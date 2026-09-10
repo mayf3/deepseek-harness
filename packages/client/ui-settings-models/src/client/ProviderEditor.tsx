@@ -42,11 +42,7 @@ import styles from './ModelsSection.module.css'
 /** Per-adapter-family curated field sets (unknown namespaces get the hint alone). */
 type EditorLayout = 'deepseek' | 'pi-ai' | 'unknown'
 
-/** Public protocol roots shown independently of launch-environment overrides. */
-const DEEPSEEK_PUBLIC_BASE_URLS = {
-  'llm-deepseek': 'https://api.deepseek.com',
-  'llm-deepseek-messages': 'https://api.deepseek.com/anthropic',
-}
+
 
 /** Props of {@link ProviderEditor}. */
 export interface ProviderEditorProps {
@@ -134,7 +130,7 @@ export function pathOps(
 
 /** The editor layout the owning namespace selects. */
 function layoutOf(ns: string): EditorLayout {
-  if (ns === 'llm-deepseek' || ns === 'llm-deepseek-messages') return 'deepseek'
+  if (ns === 'llm-deepseek') return 'deepseek'
   if (ns === 'llm-pi-ai') return 'pi-ai'
   return 'unknown'
 }
@@ -417,14 +413,16 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
                 type="text"
                 value={stringAt(draft, 'baseURL') ?? ''}
                 placeholder={family === 'deepseek'
-                  ? DEEPSEEK_PUBLIC_BASE_URLS[namespace.ns as keyof typeof DEEPSEEK_PUBLIC_BASE_URLS]
+                  ? t(stringAt(fallback, 'protocol') === 'messages' ? 'deepSeekMessagesBaseUrl' : 'deepSeekChatBaseUrl')
                   : stringAt(fallback, 'baseURL') ?? t('baseUrlDefault')}
+                aria-describedby={family === 'deepseek' ? `${props.provider}-endpoint-hint` : undefined}
                 aria-label={t('baseUrl')}
                 disabled={disabled}
                 onChange={(event) => {
                   setField('baseURL', event.target.value === '' ? undefined : event.target.value)
                 }}
               />
+              {family === 'deepseek' ? <span id={`${props.provider}-endpoint-hint`} className={styles['advancedHint']}>{t('deepSeekEndpointHint')}</span> : null}
             </div>
             {/* The protocol sits beside the endpoint it describes, as it does
                 on the create card. */}

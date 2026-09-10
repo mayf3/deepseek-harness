@@ -1,8 +1,8 @@
 /** Protocol invariants at JSON/SSE boundaries, including partial and failed responses. */
 import { describe, expect, it } from 'vitest'
-import { translate } from '../src/translate.ts'
-import { parseSse } from '../src/sse.ts'
-import { providerError } from '../src/transport.ts'
+import { translate } from '../../src/protocols/messages/translate.ts'
+import { parseSse } from '../../src/protocols/messages/sse.ts'
+import { providerError } from '../../src/protocols/messages/transport.ts'
 import { assemble, chunks, end, events, MODEL, sse, start, textEvents } from './helpers.ts'
 
 describe('Messages stream', () => {

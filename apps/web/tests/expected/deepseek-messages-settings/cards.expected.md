@@ -21,13 +21,17 @@
   - paragraph: 填入各提供方的 API 密钥即可使用其模型。
   - list:
     - listitem:
-      - text: DeepSeek deepseek-messages API 密钥
+      - text: DeepSeek
+      - img "API 密钥已配置"
+      - button "编辑 DeepSeek (deepseek-official)": 编辑
+      - text: DeepSeek deepseek-official API 密钥
       - textbox "API 密钥":
-        - /placeholder: 输入 API 密钥
+        - /placeholder: 已配置——输入新值可替换
       - group:
         - text: 自定义设置 API 地址
         - textbox "API 地址":
           - /placeholder: https://api.deepseek.com/anthropic
+        - text: 请填写与当前连接配置兼容的 API 地址。
         - region "模型目录":
           - text: 模型目录 正在使用适配器默认模型
           - textbox "模型 ID 1":

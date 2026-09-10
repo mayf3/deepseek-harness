@@ -665,11 +665,11 @@ describe('ModelsSection', () => {
     ])
   })
 
-  it('edits Messages credentials, endpoint, and model rows in their own namespace', async () => {
+  it('edits the shared DeepSeek card while preserving the YAML protocol selection', async () => {
     const namespace: SettingsNamespaceView = {
       ...wireNamespaces()[0]!,
-      ns: 'llm-deepseek-messages',
-      value: { apiKeyEnv: 'DEEPSEEK_MESSAGES_API_KEY', models: DEFAULT_DEEPSEEK_MODELS },
+      ns: 'llm-deepseek',
+      value: { protocol: 'messages', apiKeyEnv: 'DEEPSEEK_API_KEY', models: DEFAULT_DEEPSEEK_MODELS },
       user: {},
     }
     const { face, mutate, set } = scriptedFace({
@@ -677,8 +677,8 @@ describe('ModelsSection', () => {
     })
     const { ProviderEditor } = await import('../src/client/ProviderEditor.tsx')
     render(<ProviderEditor
-      provider="deepseek-messages"
-      displayName="DeepSeek Messages"
+      provider="deepseek-official"
+      displayName="DeepSeek"
       namespace={namespace}
       schema={settingsSchema}
       settingsPath={[]}
@@ -690,13 +690,15 @@ describe('ModelsSection', () => {
     fireEvent.click(screen.getByText(en.customized))
     expect(screen.getByLabelText<HTMLInputElement>(en.baseUrl).placeholder)
       .toBe('https://api.deepseek.com/anthropic')
+    expect(screen.queryByLabelText(en.customApi)).toBeNull()
+    expect(screen.getByText(en.deepSeekEndpointHint)).toBeTruthy()
     fireEvent.change(screen.getByLabelText(en.keyInput), { target: { value: 'sk-messages-test' } })
     fireEvent.change(screen.getByLabelText(en.baseUrl), { target: { value: 'https://messages.example/anthropic' } })
     fireEvent.change(screen.getByLabelText(`${en.modelName} 1`), { target: { value: 'Messages Flash' } })
     fireEvent.click(screen.getByText(en.apply))
-    await waitFor(() => { expect(set).toHaveBeenCalledWith('DEEPSEEK_MESSAGES_API_KEY', 'sk-messages-test') })
+    await waitFor(() => { expect(set).toHaveBeenCalledWith('DEEPSEEK_API_KEY', 'sk-messages-test') })
     expect(mutate.mock.calls).toEqual([[
-      'llm-deepseek-messages',
+      'llm-deepseek',
       [
         { op: 'set', path: ['baseURL'], value: 'https://messages.example/anthropic' },
         { op: 'set', path: ['models'], value: [

@@ -4,21 +4,22 @@ import { createAssistantMessage, createMessage, createSystemMessage, createToolR
 import type { ContentBlock, GenerateOptions, Message } from '@deepseek-ai/dsh-llm'
 import { AttachmentId, ImageVariantId } from '@deepseek-ai/dsh-attachment'
 import type { AttachmentStore, ImageAttachmentRef, RequestImageAttachment } from '@deepseek-ai/dsh-attachment'
-import { resolveOptions, modelInfo } from '../src/config.ts'
-import type { Config } from '../src/config.ts'
-import { imagePricing, prepareImages } from '../src/images.ts'
-import { readReplay, replayState } from '../src/replay.ts'
-import { serialize } from '../src/serialize.ts'
+import { resolveAdapterOptions } from '../../src/config.ts'
+import { modelInfo } from '../../src/common/model-info.ts'
+import type { Config } from '../../src/config.ts'
+import { imagePricing, prepareImages } from '../../src/protocols/messages/images.ts'
+import { readReplay, replayState } from '../../src/protocols/messages/replay.ts'
+import { serialize } from '../../src/protocols/messages/serialize.ts'
 import { MODEL, options, user } from './helpers.ts'
 
-const connection = resolveOptions({})
+const connection = resolveAdapterOptions({ protocol: 'messages' })
 const call = (id = 'a'): ContentBlock => ({ type: 'tool-call', id: ToolCallId(id), name: 'read', arguments: '{"path":"a"}' })
-const assistant = (content: ContentBlock[]) => createAssistantMessage({ content, source: { provider: 'deepseek-messages', model: MODEL } })
+const assistant = (content: ContentBlock[]) => createAssistantMessage({ content, source: { provider: 'deepseek-official', model: MODEL } })
 const result = (id = 'a', content: ContentBlock[] = [{ type: 'text', text: 'result' }]) => createToolResultMessage({ callId: ToolCallId(id), content, isError: false })
 const body = (messages: Message[] = [user()], overrides: Partial<GenerateOptions> = {}) => serialize(
   options({ messages, ...overrides }), connection, messages, new Map(), () => undefined,
 )
-const capable = resolveOptions({ models: [{ id: MODEL, systemPromptUpdate: 'in-history' }] })
+const capable = resolveAdapterOptions({ protocol: 'messages', models: [{ id: MODEL, systemPromptUpdate: 'in-history' }] })
 const nativeBody = (messages: Message[]) => serialize(options({ messages }), capable, messages, new Map(), () => undefined)
 
 describe('Messages request conversion', () => {
@@ -133,9 +134,10 @@ describe('Messages request conversion', () => {
     expect(body([user()], { purpose: 'session-title', temperature: 0 })).toMatchObject({ thinking: { type: 'disabled' }, temperature: 0 })
     expect(() => body([user()], { temperature: 0 })).toThrow(/temperature/)
     expect(() => body([user()], { reasoningEffort: ReasoningEffortId('medium') })).toThrow(/effort/)
-    const disabled = resolveOptions({ thinking: 'disabled' })
+    const disabled = resolveAdapterOptions({ protocol: 'messages', thinking: 'disabled' })
+    expect(serialize(options(), disabled, [user()], new Map(), () => undefined).thinking).toEqual({ type: 'disabled' })
     expect(() => serialize(options({ reasoningEffort: ReasoningEffortId('high') }), disabled, [user()], new Map(), () => undefined)).toThrow(/effort/)
-    const capped = resolveOptions({ models: [{ id: MODEL, maxTokens: 321 }] })
+    const capped = resolveAdapterOptions({ protocol: 'messages', models: [{ id: MODEL, maxTokens: 321 }] })
     expect(serialize(options(), capped, [user()], new Map(), () => undefined).max_tokens).toBe(321)
   })
 
@@ -153,7 +155,7 @@ describe('Messages request conversion', () => {
 
   it('preserves own signed thinking, omits absent signatures and validates durable metadata', () => {
     const content: ContentBlock[] = [{ type: 'reasoning', text: '' }, { type: 'text', text: 'answer' }]
-    const source = { provider: 'deepseek-messages', model: MODEL, replayState: replayState(MODEL, [{ type: 'reasoning', signature: 'signed' }, { type: 'text' }]) }
+    const source = { provider: 'deepseek-official', model: MODEL, replayState: replayState(MODEL, [{ type: 'reasoning', signature: 'signed' }, { type: 'text' }]) }
     const message = createAssistantMessage({ content, source })
     expect(body([user(), message, user()]).messages[1]?.content).toEqual([{ type: 'thinking', thinking: '', signature: 'signed' }, { type: 'text', text: 'answer' }])
     expect(body([assistant([{ type: 'reasoning', text: 'foreign thought' }])]).messages[0]?.content).toEqual([{ type: 'thinking', thinking: 'foreign thought' }])
@@ -174,7 +176,7 @@ describe('Messages request conversion', () => {
     { response: { kind: 'deepseek-messages', version: 1, model: MODEL }, blocks: [{ type: 'tool-call' }] },
     { response: { kind: 'deepseek-messages', version: 1, model: MODEL }, blocks: [{ type: 'reasoning', signature: 3 }] },
   ].map(state => ({ state })))('degrades unusable replay state with a diagnostic %#', ({ state }) => {
-    const message = createAssistantMessage({ content: [{ type: 'reasoning', text: 'think' }], source: { provider: 'deepseek-messages', model: MODEL, replayState: state } })
+    const message = createAssistantMessage({ content: [{ type: 'reasoning', text: 'think' }], source: { provider: 'deepseek-official', model: MODEL, replayState: state } })
     const onDegrade = vi.fn()
     expect(readReplay(message, MODEL, onDegrade)).toBeUndefined()
     expect(onDegrade).toHaveBeenCalledExactlyOnceWith(expect.any(String))
@@ -184,7 +186,7 @@ describe('Messages request conversion', () => {
   it.each([MODEL, 'different-model'])('keeps durable content when replay degrades for %s', async (model) => {
     const message = createAssistantMessage({
       content: [{ type: 'reasoning', text: 'Read the file.' }, { type: 'text', text: 'Checking a.' }, call()],
-      source: { provider: 'deepseek-messages', model: MODEL, replayState: replayState(MODEL, [
+      source: { provider: 'deepseek-official', model: MODEL, replayState: replayState(MODEL, [
         { type: 'reasoning', signature: 'do-not-send' }, { type: 'text', signature: 'invalid-for-text' }, { type: 'tool-call' },
       ]) },
     })
@@ -201,7 +203,7 @@ describe('Messages request conversion', () => {
   it('keeps valid cross-model and foreign history quiet and propagates diagnostic failures', () => {
     const onDegrade = vi.fn()
     const message = createAssistantMessage({ content: [{ type: 'reasoning', text: 'think' }], source: {
-      provider: 'deepseek-messages', model: MODEL, replayState: replayState(MODEL, [{ type: 'reasoning', signature: '' }]),
+      provider: 'deepseek-official', model: MODEL, replayState: replayState(MODEL, [{ type: 'reasoning', signature: '' }]),
     } })
     expect(readReplay(message, MODEL, onDegrade)).toEqual([{ type: 'reasoning', signature: '' }])
     expect(readReplay(message, 'different-model', onDegrade)).toBeUndefined()
@@ -214,7 +216,7 @@ describe('Messages request conversion', () => {
 
   it('still rejects invalid tool JSON after discarding unusable replay metadata', () => {
     const message = createAssistantMessage({ content: [{ type: 'tool-call', id: ToolCallId('a'), name: 'read', arguments: '{' }], source: {
-      provider: 'deepseek-messages', model: MODEL, replayState: { response: {}, blocks: [] },
+      provider: 'deepseek-official', model: MODEL, replayState: { response: {}, blocks: [] },
     } })
     expect(() => body([message, result()])).toThrow(/historical tool input is invalid JSON/)
   })
@@ -222,14 +224,14 @@ describe('Messages request conversion', () => {
 
 describe('validated configuration', () => {
   it('advertises exact model metadata and allows unlisted text models', () => {
-    expect(modelInfo(connection, 'deepseek-messages', MODEL)).toMatchObject({ context: { contextWindow: 1_000_000 }, defaultMaxTokens: 256_000, reasoning: { defaultEffort: 'high' } })
-    expect(modelInfo(connection, 'deepseek-messages', 'custom').inputModalities).toEqual(['text'])
-    expect(modelInfo(connection, 'deepseek-messages', MODEL).systemPromptUpdate).toBeUndefined()
-    expect(modelInfo(connection, 'deepseek-messages', 'custom').systemPromptUpdate).toBeUndefined()
-    expect(modelInfo(capable, 'deepseek-messages', MODEL).systemPromptUpdate).toBe('in-history')
-    expect(modelInfo(capable, 'deepseek-messages', 'custom').systemPromptUpdate).toBeUndefined()
-    expect(modelInfo(resolveOptions({ thinking: 'disabled' }), 'deepseek-messages', MODEL).reasoning?.efforts).toEqual([{ id: 'off', name: 'off' }])
-    expect(resolveOptions({ baseURL: 'https://example.com/anthropic///' }).baseURL).toBe('https://example.com/anthropic')
+    expect(modelInfo(connection, 'deepseek-official', MODEL)).toMatchObject({ context: { contextWindow: 1_000_000 }, defaultMaxTokens: 256_000, reasoning: { defaultEffort: 'high' } })
+    expect(modelInfo(connection, 'deepseek-official', 'custom').inputModalities).toEqual(['text'])
+    expect(modelInfo(connection, 'deepseek-official', MODEL).systemPromptUpdate).toBeUndefined()
+    expect(modelInfo(connection, 'deepseek-official', 'custom').systemPromptUpdate).toBeUndefined()
+    expect(modelInfo(capable, 'deepseek-official', MODEL).systemPromptUpdate).toBe('in-history')
+    expect(modelInfo(capable, 'deepseek-official', 'custom').systemPromptUpdate).toBeUndefined()
+    expect(modelInfo(resolveAdapterOptions({ protocol: 'messages', thinking: 'disabled' }), 'deepseek-official', MODEL).reasoning?.efforts).toMatchObject([{ id: 'off', name: 'Off' }])
+    expect(resolveAdapterOptions({ protocol: 'messages', baseURL: 'https://example.com/anthropic///' }).baseURL).toBe('https://example.com/anthropic///')
   })
   it.each([
     { thinking: 'disabled', reasoningEffort: 'high' }, { models: [{ id: '' }] },
@@ -240,7 +242,7 @@ describe('validated configuration', () => {
     { maxTokens: 0 }, { streamIdleTimeoutMs: 0 },
     { models: [{ id: MODEL, systemPromptUpdate: 'unsupported' }] },
   ])('rejects invalid composition input %#', (value) => {
-    expect(() => resolveOptions(value as Config)).toThrow()
+    expect(() => resolveAdapterOptions({ ...value, protocol: 'messages' } as Config)).toThrow()
   })
 })
 
@@ -266,7 +268,7 @@ describe('inline images', () => {
     expect(imagePricing(connection, MODEL, access).priceImages([ref])[0]?.visualTokens).toBe(0)
   })
   it('offloads an oldest prefix using exact encoded bytes and preserves durable references', async () => {
-    const config = resolveOptions({
+    const config = resolveAdapterOptions({ protocol: 'messages',
       maxInlineRequestImageBytes: 4, inlineImageOffloadByteQuantum: 1, maxImagesPerRequest: 2, imageOffloadCountQuantum: 1,
     })
     const history = [result('a', [image, image])]

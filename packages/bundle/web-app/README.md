@@ -36,9 +36,9 @@ dsh --profile web --no-open --port 8080
 
 After startup you see a `dsh web:` line whose root URL carries a fresh process token. Unless `--no-open` or an SSH session suppresses it, the default browser opens that URL, receives a signed cookie, and redirects to the clean root page. You know it worked when the page loads and you can chat with the agent. Two failures to expect: if the frontend is not built, startup stops with a build hint (`pnpm run build` in a checkout); if the browser cannot be opened, a credential-free diagnostic prints to stderr while the server keeps running — open the printed startup URL yourself.
 
-**Settings → Models** shows **DeepSeek** through Chat Completions, using `DEEPSEEK_API_KEY`. The Web default is `deepseek-official` / `deepseek-flash` (DeepSeek-V41-Flash). The [Messages adapter](../../llm/llm-deepseek-messages/README.md) is included with `disabled: true`; an explicit patch can enable its `llm-deepseek-messages` row and select `deepseek-messages` / `deepseek-flash` in `agent-default-model`. Disable the `llm-deepseek` row in that patch to show only the Messages provider.
+**Settings → Models** displays **DeepSeek**, using `DEEPSEEK_API_KEY`. The default is `deepseek-official` / `deepseek-flash` (DeepSeek-V41-Flash). The [DeepSeek plugin](../../llm/llm-deepseek/README.md#choose-a-protocol) defaults to Chat Completions; set `protocol: messages` in Cordis YAML to switch. Web has no protocol selector.
 
-Saved model selections override the composition default. Select a model under **DeepSeek** in the composer to save the default for later sessions without rewriting earlier request headers. Messages endpoint and model settings belong to `llm-deepseek-messages`; Chat Completions endpoint overrides are not copied.
+Saved model selections override the composition default. Both protocols share `deepseek-official` and `llm-deepseek` settings, so switching preserves model selections and credential references. Endpoint overrides retain their values; the settings card lets users supply a compatible API address.
 
 ### Configuration
 

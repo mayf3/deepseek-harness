@@ -2,15 +2,16 @@
 import { createServer } from 'node:http'
 import type { IncomingHttpHeaders, ServerResponse } from 'node:http'
 import { once } from 'node:events'
-import { object } from '../src/replay.ts'
+import { object } from '../../src/protocols/messages/replay.ts'
 import { BlockAssembler, createAssistantMessage, createUserMessage } from '@deepseek-ai/dsh-llm'
 import type { GenerateOptions, StreamChunk } from '@deepseek-ai/dsh-llm'
-import { DeepSeekMessagesAdapter, resolveOptions } from '../src/index.ts'
-import type { Config } from '../src/index.ts'
+import { resolveAdapterOptions } from '../../src/index.ts'
+import { DeepSeekMessagesAdapter } from '../../src/protocols/messages/adapter.ts'
+import type { Config } from '../../src/config.ts'
 
 export const MODEL = 'deepseek-v4-flash'
 export const user = (text = 'hello') => createUserMessage({ source: { kind: 'user' }, content: [{ type: 'text', text }] })
-export const options = (overrides: Partial<GenerateOptions> = {}): GenerateOptions => ({ provider: 'deepseek-messages', model: MODEL, messages: [user()], ...overrides })
+export const options = (overrides: Partial<GenerateOptions> = {}): GenerateOptions => ({ provider: 'deepseek-official', model: MODEL, messages: [user()], ...overrides })
 export const start = { type: 'message_start', message: { id: 'msg_1', model: MODEL, usage: { input_tokens: 12, output_tokens: 1 } } }
 export const end = (reason = 'end_turn') => [
   { type: 'message_delta', delta: { stop_reason: reason }, usage: { output_tokens: 5 } },
@@ -31,11 +32,11 @@ export async function assemble(stream: AsyncIterable<StreamChunk>) {
   const assembler = new BlockAssembler()
   const output = await chunks(stream)
   for (const chunk of output) assembler.push(chunk)
-  const message = createAssistantMessage({ content: assembler.blocks(), source: { provider: 'deepseek-messages', model: MODEL, ...assembler.replayState === undefined ? {} : { replayState: assembler.replayState } } })
+  const message = createAssistantMessage({ content: assembler.blocks(), source: { provider: 'deepseek-official', model: MODEL, ...assembler.replayState === undefined ? {} : { replayState: assembler.replayState } } })
   return { output, message, assembler }
 }
 export function adapter(config: Config = {}) {
-  return new DeepSeekMessagesAdapter({ connection: () => resolveOptions(config), apiKey: () => Promise.resolve('test-key'), userId: () => 'test-user', attachments: () => undefined, imageAccess: () => undefined })
+  return new DeepSeekMessagesAdapter({ connection: () => resolveAdapterOptions(Object.assign({}, config, { protocol: 'messages' as const })), apiKey: () => Promise.resolve('test-key'), userId: () => 'test-user', attachments: () => undefined, imageAccess: () => undefined })
 }
 export async function server(reply: (response: ServerResponse, count: number) => void = response => response.end(sse(textEvents))) {
   const requests: { path: string; headers: IncomingHttpHeaders; body: Record<string, unknown> }[] = []

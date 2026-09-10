@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { deepSeekImageTokens } from '../src/image-tokens.ts'
+import { deepSeekImageTokens } from '../src/common/image-tokens.ts'
 
 describe('DeepSeek v4 image tokens', () => {
   // Reference values from the provider's published image token calculator

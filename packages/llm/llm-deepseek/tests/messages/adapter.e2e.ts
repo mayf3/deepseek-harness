@@ -7,7 +7,7 @@ import { Context, LoggerLevel } from '@deepseek-ai/cordis'
 import LocalAttachments from '@deepseek-ai/dsh-attachment-local'
 import LlmRuntime, { createSystemMessage, createToolResultMessage, ReasoningEffortId } from '@deepseek-ai/dsh-llm'
 import type { Message } from '@deepseek-ai/dsh-llm'
-import * as Messages from '../src/index.ts'
+import * as Messages from '../../src/index.ts'
 import { assemble, options, user } from './helpers.ts'
 
 const cleanups: (() => Promise<unknown>)[] = []
@@ -22,7 +22,7 @@ async function boot(inHistory = false) {
   const ctx = new Context()
   cleanups.push(() => ctx.fiber.dispose())
   await ctx.plugin(LlmRuntime)
-  await ctx.plugin(Messages, { maxTokens: 4096,
+  await ctx.plugin(Messages, { protocol: 'messages', maxTokens: 4096,
     ...inHistory ? { models: [{ id: 'deepseek-v4-flash', systemPromptUpdate: 'in-history' as const }] } : {},
   })
   return ctx

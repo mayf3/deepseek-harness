@@ -521,9 +521,10 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
   const patches: PatchOptions[] = [
     ...basePatches,
     ...surfacePatches,
-    // Keyless scenarios retain the recorded default; explicit scenario overlays win.
+    // The historical Messages fixture retains its recorded route during replay;
+    // live configuration uses the shared DeepSeek route. Explicit overlays win.
     ...messages
-      ? [{ id: 'agent-default-model', config: { provider: 'deepseek-messages', model: maskDeepSeekCredential ? 'deepseek-flash' : 'deepseek-v4-flash' } }]
+      ? [{ id: 'agent-default-model', config: { provider: mode === 'record' || maskDeepSeekCredential ? 'deepseek-official' : 'deepseek-messages', model: maskDeepSeekCredential ? 'deepseek-flash' : 'deepseek-v4-flash' } }]
       : mode === 'record' || options.deepSeekMissingCredential === true
         ? []
         : [{ id: 'agent-default-model', config: { provider: 'deepseek-official', model: 'deepseek-v4-flash' } }],
@@ -642,8 +643,8 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
         },
       }],
     ...maskDeepSeekCredential && !messages ? [] : [
-      { id: 'llm-deepseek', disabled: messages || mode !== 'record' },
-      { id: 'llm-deepseek-messages', disabled: !messages || (mode !== 'record' && !maskDeepSeekCredential) },
+      { id: 'llm-deepseek', disabled: mode !== 'record' && !maskDeepSeekCredential,
+        config: { protocol: messages ? 'messages' : 'chat-completions' } },
     ],
   ]
 
@@ -733,7 +734,7 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
     port = boundPort
 
     // Fill the open llm seam on the settled root ctx. Ordinary keyless modes
-    // disable both direct adapters; the first-run lane keeps the selected adapter but has no
+    // disable the direct adapter; the first-run lane keeps the selected adapter but has no
     // replay fixture and never streams. The direct install, unlike the plugin
     // row, returns the ReplayHandle for the teardown consumption check.
     if (options.replayProvidersOnly) {

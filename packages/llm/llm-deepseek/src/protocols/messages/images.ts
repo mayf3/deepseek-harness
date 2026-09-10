@@ -4,12 +4,10 @@ import { requestImageDimensions } from '@deepseek-ai/dsh-attachment'
 import type { AttachmentStore, ImageAttachmentRef, RequestImageAttachment } from '@deepseek-ai/dsh-attachment'
 import { contentHasImage, LlmError, offloadedImagePrefixCount, offloadedImageText, offloadRequestImagesWithPolicy, requestImageHandleText, textOnlyImageText } from '@deepseek-ai/dsh-llm'
 import type { ContentBlock, ImageAttachmentAccessResolver, LlmImageRequestPricing, Message } from '@deepseek-ai/dsh-llm'
-import { deepSeekImageTokens } from '@deepseek-ai/dsh-llm-deepseek'
-import type { CatalogModel, Connection } from './config.ts'
+import { deepSeekImageTokens } from '../../common/image-tokens.ts'
+import type { DeepSeekConnectionOptions as Connection } from '../../common/types.ts'
+import { resolveRequestImagePolicy as policy } from '../../common/request-pricing.ts'
 
-function policy(model: CatalogModel) {
-  return { maxPixels: model.imagePixelBudget ?? 640_000, maxBytes: model.imageMaxBytes ?? 1024 * 1024 }
-}
 
 function bounds(connection: Connection) {
   return {

@@ -10,21 +10,21 @@ Status: implemented
 
 ## 决策
 
-[Messages 适配器](../../../../packages/llm/llm-deepseek-messages/README.zh.md) 拥有独立的提供者路由和配置命名空间。每次尝试发送一个 HTTP 请求，将 SSE 分帧委托给 `eventsource-parser`，并把内容块事件转换为现有 LLM 流协议。[双适配器决策](../architecture/2026-06-13-twin-llm-adapters.zh.md) 继续约束直接 fetch 和库实现；Messages 增加直接协议实现，无需修改代理循环。
+[DeepSeek 适配器](../../../../packages/llm/llm-deepseek/README.zh.md)通过一个 `deepseek-official` 路由和 `llm-deepseek` 设置命名空间支持多个协议。`common/` 共享配置、模型目录和能力解析；`protocols/chat-completions/` 与 `protocols/messages/` 分别负责协议序列化、流转换和传输。`protocol` 配置在 Cordis YAML 中选择实现，默认 `chat-completions`。已有 `PreparedAdapterCall` 冻结协议、端点、凭据引用与模型能力，重试保持同一代配置，后续调用读取新配置。
 
 适配器遵循 [DeepSeek 兼容文档](https://api-docs.deepseek.com/zh-cn/guides/anthropic_api) 和 [Anthropic 流协议](https://platform.claude.com/docs/en/build-with-claude/streaming)。pi-ai 的 Anthropic 实现为相邻用户消息、累计用量、工具参数分片和可选思考签名的处理提供参考。DeepSeek 通过 `output_config.effort` 设置思考强度；Anthropic 思考 token 预算不控制 DeepSeek 思考强度。
 
-助手内容块保留持久化的模型可见内容。带版本的 `ReplayEnvelope` 仅保存模型标识、对齐的块类型以及内容块未包含的签名。同模型续接原样恢复签名，包括空签名；外部历史不生成虚构签名。不可用的元数据遵循现有[回放降级规则](../architecture/2026-07-14-provider-routed-llm-adapters.zh.md)：请求省略签名并记录警告，保留持久化内容；工具参数等内容校验仍会正常报错。提供者回放数据对循环保持不透明，同时能够随 Session 持久化和内容块裁剪保留。
+助手内容块保留持久化的模型可见内容。带版本的 `ReplayEnvelope` 仅保存协议格式、模型标识、对齐的块类型以及内容块未包含的签名。同模型续接原样恢复签名，包括空签名；外部历史不生成虚构签名。不可用的元数据遵循现有[回放降级规则](../architecture/2026-07-14-provider-routed-llm-adapters.zh.md)：请求省略签名并记录警告，保留持久化内容；工具参数等内容校验仍会正常报错。提供者回放数据对循环保持不透明，同时能够随 Session 持久化和内容块裁剪保留。
 
 图片请求使用附件服务生成的、有预算限制的内联 base64 版本。共享附件卸载机制和 DeepSeek token 计量使请求与计量策略保持一致。此适配器不负责 Files 上传，因为其端点和缓存所有权与 chat-completions 不同；增加上传支持需要定义 Messages 专属的生命周期和错误策略。
 
 系统提示词更新在端点与模型显式声明支持时，使用现有[路由能力](2026-09-02-in-history-system-prompt-replacement.zh.md)。Messages 保留初始顶层 system，在对应的用户或工具结果轮次之后，将后续快照发送为原生 system 轮次，保留此前发送的前缀。这个位置不同于循环先 system、后 user 的接纳顺序；序列化既不改写持久化日志，也不改变对话轮次的顺序。未声明能力的路由将最新快照归并到顶层，直接压缩调用也如此。仅凭协议或模型名称推断能力并不充分，因为支持情况和更新语义取决于实际部署的端点。
 
-Web profile 保留 Chat Completions，并包含默认禁用、需显式启用的 Messages 行。首次启动引导面向 Chat Completions，并复用 `DEEPSEEK_API_KEY`。启用的 Messages 适配器显示 DeepSeek，同时保留 `deepseek-messages` 提供方 ID 和 `llm-deepseek-messages` 设置命名空间。已保存的选择仍由用户控制；启用协议不会复制端点覆盖值或改写 Session 历史。两个适配器均将 `deepseek-flash` 显示为 DeepSeek-V41-Flash，声明文本/图片输入与历史内 system 更新，同时保留 V4 目录条目及其能力。
+Web 始终显示 DeepSeek，不提供协议选择器。两个协议共用 `baseURL` 与 `apiKeyEnv`，没有嵌套的协议配置表。未提供地址覆盖时使用当前协议的官方默认值；Messages 为 `https://api.deepseek.com/anthropic`。切换协议保留已有端点覆盖，部署者负责其兼容性。模型目录只维护一份，包含 `deepseek-flash` 的文本/图片和历史内 system 更新能力，也保留 V4 条目。
 
 ## 考虑过的替代方案
 
-**在 `llm-deepseek` 中增加协议开关。** 这会把两套序列化、端点根路径和回放格式绑定到同一路由。独立注册使部署能够明确选择协议并同时挂载两个适配器。
+**每个协议独立插件。** 这会重复凭据配置、模型目录、设置卡片和 provider ID，并迫使用户在底层协议变化时重选模型。单插件中的协议目录保留实现隔离；Responses 可以增加自己的实现而不改变用户配置结构。
 
 **把新路由委托给 pi-ai 或 Anthropic SDK。** 两者均提供持续维护的协议实现，但所需的直接适配器需要 DeepSeek 专属配置、附件策略、凭证解析和重试所有权。小型流转换器配合持续维护的 SSE 解析器使这些职责保持明确；库实现适配器仍可独立使用。
 

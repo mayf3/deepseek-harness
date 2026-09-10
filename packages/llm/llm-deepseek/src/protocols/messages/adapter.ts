@@ -4,8 +4,8 @@ import { attributionHeaders, LlmAdapter, LlmError } from '@deepseek-ai/dsh-llm'
 import type { GenerateOptions, ImageAttachmentAccessResolver, PreparedAdapterCall, StreamChunk } from '@deepseek-ai/dsh-llm'
 import type { AttachmentStore } from '@deepseek-ai/dsh-attachment'
 import { idleWatchdog, timeoutOf } from '@deepseek-ai/dsh-timeout'
-import { modelInfo } from './config.ts'
-import type { Connection } from './config.ts'
+import { modelInfo } from '../../common/model-info.ts'
+import type { DeepSeekConnectionOptions as Connection } from '../../common/types.ts'
 import { imagePricing, prepareImages } from './images.ts'
 import { serialize } from './serialize.ts'
 import { parseSse } from './sse.ts'
@@ -88,7 +88,7 @@ export class DeepSeekMessagesAdapter extends LlmAdapter {
     })
     const key = await this.dependencies.apiKey(connection)
     signal.throwIfAborted()
-    const response = await fetch(`${connection.baseURL}/v1/messages`, {
+    const response = await fetch(`${connection.baseURL.replace(/\/+$/u, '')}/v1/messages`, {
       method: 'POST', signal, body: JSON.stringify(body),
       headers: {
         ...attributionHeaders(),

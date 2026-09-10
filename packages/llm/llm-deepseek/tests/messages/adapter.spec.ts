@@ -21,8 +21,8 @@ import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import LocalCredentials from '@deepseek-ai/dsh-credentials-local'
 import FileSettings from '@deepseek-ai/dsh-settings-file'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
-import * as Completions from '@deepseek-ai/dsh-llm-deepseek'
-import * as Messages from '../src/index.ts'
+import { DeepSeekMessagesAdapter } from '../../src/protocols/messages/adapter.ts'
+import * as Messages from '../../src/index.ts'
 import { adapter, assemble, chunks, MODEL, options, server, sse, textEvents, user } from './helpers.ts'
 
 const cleanup: (() => Promise<unknown>)[] = []
@@ -55,7 +55,7 @@ describe('direct Messages HTTP', () => {
   it('continues without a diagnostic callback when replay metadata is unusable', async () => {
     const http = await endpoint()
     const message = createAssistantMessage({ content: [{ type: 'text', text: 'Remember 731.' }], source: {
-      provider: 'deepseek-messages', model: MODEL, replayState: { response: {}, blocks: [] },
+      provider: 'deepseek-official', model: MODEL, replayState: { response: {}, blocks: [] },
     } })
     const response = await assemble(adapter({ baseURL: http.url }).stream(options({ messages: [user(), message, user()] })))
     expect(response.assembler.finish.kind).toBe('stop')
@@ -76,15 +76,15 @@ describe('direct Messages HTTP', () => {
       'user-agent': expect.stringContaining('deepseek-harness/') as string, 'x-deepseek-harness-user-id': 'test-user',
       'x-deepseek-harness-session-id': 'session-test', 'x-deepseek-harness-compact': '1',
     }, body: { thinking: { type: 'enabled' }, output_config: { effort: 'high' } } })
-    expect(llm.providerInfo('deepseek-messages')).toEqual({ id: 'deepseek-messages', name: 'DeepSeek' })
-    expect((await llm.listModels('deepseek-messages')).map(model => model.id)).toEqual([
+    expect(llm.providerInfo('deepseek-official')).toEqual({ id: 'deepseek-official', name: 'DeepSeek' })
+    expect((await llm.listModels('deepseek-official')).map(model => model.id)).toEqual([
       'deepseek-flash', 'deepseek-v4-flash', 'deepseek-v4-pro', 'deepseek-v4-flash-vision-exp',
     ])
-    expect(await llm.resolveModel('deepseek-messages', 'deepseek-flash')).toMatchObject({
+    expect(await llm.resolveModel('deepseek-official', 'deepseek-flash')).toMatchObject({
       name: 'DeepSeek-V41-Flash', inputModalities: ['text', 'image'], systemPromptUpdate: 'in-history',
     })
-    expect(await llm.resolveModel('deepseek-messages', MODEL)).toMatchObject({ id: MODEL })
-    expect(llm.imageRequestPricing('deepseek-messages', MODEL)).toBeDefined()
+    expect(await llm.resolveModel('deepseek-official', MODEL)).toMatchObject({ id: MODEL })
+    expect(llm.imageRequestPricing('deepseek-official', MODEL)).toBeDefined()
   })
 
   it.each([true, false])('maps non-2xx responses (JSON=%s)', async (json) => {
@@ -94,12 +94,12 @@ describe('direct Messages HTTP', () => {
 
   it('freezes endpoint and defaults for a prepared call while the next call sees new settings', async () => {
     const first = await endpoint(), second = await endpoint()
-    let config = Messages.resolveOptions({ baseURL: first.url, maxTokens: 10, models: [{ id: MODEL, systemPromptUpdate: 'in-history' }] })
-    const llm = new Messages.DeepSeekMessagesAdapter({ connection: () => config, apiKey: snapshot => Promise.resolve(snapshot.maxTokens === 10 ? 'first' : 'second'), userId: () => 'user', attachments: () => undefined, imageAccess: () => undefined })
-    const prepared = await llm.prepareCall('deepseek-messages', MODEL)
-    config = Messages.resolveOptions({ baseURL: second.url, maxTokens: 20 })
+    let config = Messages.resolveAdapterOptions({ protocol: 'messages', baseURL: first.url, maxTokens: 10, models: [{ id: MODEL, systemPromptUpdate: 'in-history' }] })
+    const llm = new DeepSeekMessagesAdapter({ connection: () => config, apiKey: snapshot => Promise.resolve(snapshot.maxTokens === 10 ? 'first' : 'second'), userId: () => 'user', attachments: () => undefined, imageAccess: () => undefined })
+    const prepared = await llm.prepareCall('deepseek-official', MODEL)
+    config = Messages.resolveAdapterOptions({ protocol: 'messages', baseURL: second.url, maxTokens: 20 })
     expect(prepared.model.systemPromptUpdate).toBe('in-history')
-    expect((await llm.resolveModel('deepseek-messages', MODEL)).systemPromptUpdate).toBeUndefined()
+    expect((await llm.resolveModel('deepseek-official', MODEL)).systemPromptUpdate).toBeUndefined()
     await chunks(prepared.stream(options()))
     await chunks(llm.stream(options()))
     expect(first.requests[0]).toMatchObject({ headers: { 'x-api-key': 'first' }, body: { max_tokens: 10 } })
@@ -140,9 +140,9 @@ describe('Cordis provider composition', () => {
     const { ctx, home } = await context()
     vi.stubEnv('DEEPSEEK_API_KEY', 'test-key')
     await ctx.plugin(LlmRuntime)
-    await ctx.plugin(Messages, { baseURL: http.url })
+    await ctx.plugin(Messages, { protocol: 'messages', baseURL: http.url })
     const model = 'deepseek-v4-flash-vision-exp'
-    const price = () => ctx.llm.imageRequestPricing('deepseek-messages', model)!
+    const price = () => ctx.llm.imageRequestPricing('deepseek-official', model)!
     const dummy = { attachmentId: AttachmentId(`sha256:${'a'.repeat(64)}`), width: 1, height: 1, bytes: 3, mediaType: 'image/png' as const }
     expect(price().priceImages([dummy])[0]?.text).toBeDefined()
     await ctx.plugin(LocalAttachments, { dshHome: home })
@@ -171,8 +171,8 @@ describe('Cordis provider composition', () => {
     await ctx.plugin(Loader)
     ctx.loader.builtins.include = Include
     const modules = new Map<string, unknown>([
-      ['@deepseek-ai/dsh-llm', LlmRuntime], ['@deepseek-ai/dsh-llm-deepseek', Completions],
-      ['@deepseek-ai/dsh-llm-deepseek-messages', Messages], ['@deepseek-ai/dsh-credentials-local', LocalCredentials], ['@deepseek-ai/dsh-settings-file', FileSettings],
+      ['@deepseek-ai/dsh-llm', LlmRuntime], ['@deepseek-ai/dsh-llm-deepseek', Messages],
+      ['@deepseek-ai/dsh-credentials-local', LocalCredentials], ['@deepseek-ai/dsh-settings-file', FileSettings],
       ['@deepseek-ai/dsh-agent', AgentRegistry], ['@deepseek-ai/dsh-agent-loop', AgentLoop],
       ['@deepseek-ai/dsh-session', SessionStore], ['@deepseek-ai/dsh-session-projection', SessionProjectionRegistry],
       ['@deepseek-ai/dsh-system-prompt', SystemPrompt], ['@deepseek-ai/dsh-tools', ToolRuntime],
@@ -203,7 +203,7 @@ describe('Cordis provider composition', () => {
     ctx.on('system-prompt/assemble', async (_assembly, _context, next) => ({
       ...await next(), sections: [{ name: 'test', text: prompt, order: 0 }],
     }))
-    const agentOptions = { provider: 'deepseek-messages', model }
+    const agentOptions = { provider: 'deepseek-official', model }
     const agent = await ctx.agentLoop.create(SessionId('prompt-update'), agentOptions)
     await send(agent, 'first')
     prompt = 'second prompt'
@@ -240,8 +240,7 @@ describe('Cordis provider composition', () => {
       'data: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\n',
       'data: [DONE]\n\n',
     ].join('')))
-    await ctx.settings.update('llm-deepseek', { baseURL: http.url, models: [{ id: MODEL, systemPromptUpdate: 'in-history' }] })
-    if (inHistory) await ctx.settings.update(Messages.name, { models: [{ id: MODEL, systemPromptUpdate: 'in-history' }] })
+    await ctx.settings.update('llm-deepseek', { protocol: 'chat-completions', baseURL: http.url, models: [{ id: MODEL, systemPromptUpdate: 'in-history' }] })
     let prompt = 'old prompt'
     ctx.on('system-prompt/assemble', async (_assembly, _context, next) => ({
       ...await next(), sections: [{ name: 'test', text: prompt, order: 0 }],
@@ -256,7 +255,8 @@ describe('Cordis provider composition', () => {
     const seed = [...agent.session.snapshotEvents()]
     const saved = JSON.stringify(seed)
     messagesProtocol = true
-    selection.current = { provider: 'deepseek-messages', model: MODEL }
+    await ctx.settings.update(Messages.name, { protocol: 'messages', models: [{ id: MODEL, ...inHistory ? { systemPromptUpdate: 'in-history' } : {} }] })
+    selection.current = { provider: 'deepseek-official', model: MODEL }
     await send(agent, 'switch')
     const { agent: resumed } = await ctx.agents.create({ sessionId: SessionId('switch-resume'), agentOptions: selection.current, seed })
     await send(resumed, 'resume')
@@ -290,14 +290,15 @@ describe('Cordis provider composition', () => {
     const { ctx, http } = await boot()
     const warnings: unknown[][] = []
     ctx.logger.exporter({ levels: { default: LoggerLevel.WARN }, export: (message) => { if (message.type === 'warn') warnings.push(message.args) } })
-    const fixture = await readFile(new URL('../../../../snapshots/session/deepseek-messages-degraded-replay/session.v2.jsonl', import.meta.url), 'utf8')
+    const fixture = await readFile(new URL('../../../../../snapshots/session/deepseek-messages-degraded-replay/session.v2.jsonl', import.meta.url), 'utf8')
     const records = fixture.trim().split('\n').map(line => JSON.parse(line) as { type: string; data: { message?: Message } })
     const assistant = records.find(record => record.type === 'assistant/message')!.data.message!
+    if (assistant.source.kind === 'model') assistant.source.provider = 'deepseek-official'
     const result = records.find(record => record.type === 'tool/result')!.data.message!
     const saved = JSON.stringify([assistant, result])
     const response = await assemble(ctx.llm.stream(options({ messages: [user(), assistant, result] })))
     expect(response.assembler.finish.kind).toBe('stop')
-    expect(warnings).toEqual([[`llm-deepseek-messages: unusable replay state on assistant history for route "deepseek-messages/${MODEL}"; sending that message as provider-neutral content (DeepSeek Messages replay: unsupported kind or version)`]])
+    expect(warnings).toEqual([[`llm-deepseek: unusable Messages replay state on assistant history for route "deepseek-official/${MODEL}"; sending provider-neutral content (DeepSeek Messages replay: unsupported kind or version)`]])
     expect(http.requests).toHaveLength(1)
     expect(http.requests[0]?.body.messages).toEqual([
       { role: 'user', content: [{ type: 'text', text: 'hello' }] },
@@ -310,9 +311,9 @@ describe('Cordis provider composition', () => {
     expect(JSON.stringify([assistant, result])).toBe(saved)
   })
 
-  it('loads both routes from YAML, rotates settings and credentials, then removes disposed registrations', async () => {
+  it('loads one provider from YAML, rotates settings and credentials, then removes disposed registrations', async () => {
     const { ctx, http } = await boot()
-    expect(ctx.llm.listProviders().map(provider => provider.id)).toEqual(expect.arrayContaining(['deepseek-official', 'deepseek-messages']))
+    expect(ctx.llm.listProviders().map(provider => provider.id)).toEqual(['deepseek-official'])
     expect((await assemble(ctx.llm.stream(options()))).assembler.finish.kind).toBe('stop')
     expect(http.requests[0]?.headers['x-api-key']).toBe('stored-key')
     const second = await endpoint()
@@ -336,10 +337,10 @@ describe('Cordis provider composition', () => {
   it('uses environment credentials and reports missing or malformed keys without network access', async () => {
     const http = await endpoint()
     const { ctx } = await context()
-    vi.stubEnv('DEEPSEEK_MESSAGES_BASE_URL', http.url)
+    vi.stubEnv('DEEPSEEK_BASE_URL', http.url)
     vi.stubEnv('DEEPSEEK_API_KEY', 'env-key')
     await ctx.plugin(LlmRuntime)
-    const fiber = ctx.plugin(Messages)
+    const fiber = ctx.plugin(Messages, { protocol: 'messages' })
     await fiber
     await chunks(ctx.llm.stream(options()))
     expect(http.requests[0]?.headers['x-api-key']).toBe('env-key')
