@@ -8,6 +8,7 @@ import { DesktopProjectManager, packageNameFromSpec, type DesktopProjectHooks } 
 import { runtimeFixture } from './runtime-fixture.ts'
 
 const roots: string[] = []
+const releaseWorkers: Array<() => Promise<void>> = []
 function temporaryRoot(): string {
   const root = mkdtempSync(join(tmpdir(), 'dsh-desktop-test-'))
   roots.push(root)
@@ -59,7 +60,14 @@ function calls(root: string): { args: string[]; registry: string }[] {
   const path = join(root, 'pnpm-log.jsonl')
   return existsSync(path) ? readFileSync(path, 'utf8').trim().split('\n').map(line => JSON.parse(line) as { args: string[]; registry: string }) : []
 }
-afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }) })
+afterEach(async () => {
+  const cleanups = releaseWorkers.splice(0)
+  const directories = roots.splice(0)
+  const results = await Promise.allSettled(cleanups.map(cleanup => cleanup()))
+  for (const root of directories) rmSync(root, { recursive: true, force: true })
+  const failures: unknown[] = results.flatMap((result): unknown[] => result.status === 'rejected' ? [result.reason] : [])
+  if (failures.length > 0) throw new AggregateError(failures, 'desktop worker cleanup failed')
+})
 
 describe('desktop external plugin profile', () => {
   it('starts with disabled plugins even when their installed manifests are corrupt', async () => {
@@ -299,7 +307,7 @@ describe('desktop external plugin profile', () => {
     expect(manager.listPlugins()).toEqual([])
   })
 
-  it('holds the transaction lock until the pnpm worker exits', async () => {
+  it('holds the transaction lock until the pnpm worker exits', async ({ task, signal }) => {
     const { root, manager } = setup()
     await manager.applyRelease()
     const ready = join(root, 'ready')
@@ -309,8 +317,20 @@ describe('desktop external plugin profile', () => {
     const worker = new DesktopProjectManager(manager.paths, { ...manager.runtime, pnpm: blocker })
     await worker.applyRelease()
     const pending = worker.mutate({ type: 'plugin-add', spec: 'plugin@1.0.0' }, hooks())
+    // Teardown observes failures even if the runner has abandoned the test body.
+    const completed = pending.then(value => ({ value }), (error: unknown) => ({ error }))
+    releaseWorkers.push(async () => {
+      writeFileSync(release, 'continue')
+      const outcome = await completed
+      if ('error' in outcome) throw outcome.error
+    })
     try {
-      await expect.poll(() => existsSync(ready)).toBe(true)
+      // Child startup shares the test budget; an aborted poll must not resume ownership assertions.
+      await expect.poll(() => {
+        signal.throwIfAborted()
+        return existsSync(ready)
+      }, { timeout: task.timeout }).toBe(true)
+      signal.throwIfAborted()
       expect(readFileSync(manager.paths.lock, 'utf8').trim()).toBe(readFileSync(ready, 'utf8'))
       await expect(manager.applyRelease()).rejects.toThrow(/another package transaction/u)
     } finally {

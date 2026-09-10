@@ -47,7 +47,7 @@ import {
   redactSessionSnapshotIds,
   normalizeSessionSnapshots,
   parseSessionFixtureName,
-  scrubRequestHeaders,
+  scrubModelRequestBulk,
   scrubSessionSnapshot,
   sessionFixtureFiles,
   sessionFixtureName,
@@ -296,8 +296,8 @@ export interface LaunchOptions {
    */
   extraOverlayPath?: string
   /**
-   * Additional source-checkout package manifests whose dependency closures
-   * supply private profile layers named by {@link extraOverlayPath}.
+   * Additional package manifests whose dependency closures supply experimental
+   * profile layers named by {@link extraOverlayPath}.
    */
   extraInstallAnchors?: string[]
   /**
@@ -515,6 +515,10 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
   const patches: PatchOptions[] = [
     ...basePatches,
     ...surfacePatches,
+    // Keyless scenarios retain the recorded default; explicit scenario overlays win.
+    ...mode === 'record' || options.deepSeekMissingCredential === true
+      ? []
+      : [{ id: 'agent-default-model', config: { provider: 'deepseek-official', model: 'deepseek-v4-flash' } }],
     ...extraOverlayPatches,
     // The roster's shipped presets are the plugin's own, bundled inside
     // `dsh-agent-presets` and prepended by it. Pin only the machine-local
@@ -1080,9 +1084,10 @@ async function assertReplaySession(
 }
 
 /**
- * Record-mode fixture write-back: harvest the live session, scrub request
- * headers to {{system}}/{{tools}}, tokenize the run-local cwd and Harness Home, redact opaque
- * identities with typed relationship-preserving tokens, and write the fixture.
+ * Record-mode fixture write-back: harvest the live session, scrub the
+ * system-prompt text to {{system}} and header tool schemas to {{tools}},
+ * tokenize the run-local cwd, redact opaque identities with typed
+ * relationship-preserving tokens, and write the fixture.
  * A manifest-retained historical generation makes the write-back a no-op.
  * @param scaffold - the record-mode scaffold.
  * @param sessionId - the driven session.
@@ -1555,7 +1560,7 @@ export async function assertFixtureInventory(dir: string, expected: string[]): P
   }
   for (const entry of artifacts.filter(name => name.endsWith('.jsonl'))) {
     const content = await readFile(join(dir, entry), 'utf8')
-    expect(scrubRequestHeaders(content), `${dir}/${entry} carries request-header bulk`).toBe(content)
+    expect(scrubModelRequestBulk(content), `${dir}/${entry} carries prompt text or tool-schema bulk`).toBe(content)
     expect(redactSessionSnapshotIds([content]), `${dir}/${entry} carries unredacted identities`).toEqual([content])
   }
 }

@@ -8,10 +8,9 @@
       - img
   - img
   - text: Standard mode
-  - button "Session log":
-    - text: Session log
+  - button "More actions":
     - img
-  - button "Open the sidebar":
+  - button "Open right sidebar":
     - img
   - tablist:
     - tab "Chat" [selected]
@@ -49,7 +48,12 @@
 - button "Ran for {{duration}}":
   - img
   - text: Ran for {{duration}}
-- text: {{clock}} Now give the same explanation to a human reader. {{clock}}
+- text: {{clock}}
+- button "System prompt":
+  - img
+  - img
+  - text: System prompt
+- text: Now give the same explanation to a human reader. {{clock}}
 - button "Copy":
   - img
 - button "Thought for a while" [expanded]:

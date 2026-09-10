@@ -25,7 +25,7 @@ kind: "package-reference"
 <a id="use-this-package"></a>
 ## 使用本包
 
-在 `ctx.sandbox` 后挂载此提供方并配一个受限执行器，执行器 spawn 的每条命令都会在你解析的策略下受限运行。随附的 [base bundle](../../bundle/base/cordis.patch.yml)拥有默认策略与执行器接线。
+在 `ctx.sandbox` 后挂载此提供方并配一个受限执行器，执行器 spawn 的每条命令都会在你解析的策略下受限运行。随附的[基础组合包](../../bundle/base/cordis.patch.yml)拥有默认策略与执行器接线。
 
 ### 何时选择
 
@@ -54,7 +54,7 @@ kind: "package-reference"
 
 ### 失败与恢复
 
-不受支持的平台或不可用的 runner 会快速失败：`confine()` 抛出 `SANDBOX_UNAVAILABLE` 并列出该平台的 runner 选项，消费方会呈现该错误，而不是让命令不受限制地运行。启动后拒绝自身 profile 的 runner 由其致命 stderr 签名与退出码识别，因此损坏的沙箱不会被误认为被拒绝的命令。`runnerCommand` 覆盖是操作方断言：它跳过功能探测，并假定配置的 runner 诚实实现与 bwrap 兼容的 profile。
+不受支持的平台或不可用的 runner 会拒绝执行：`confine()` 抛出 `SANDBOX_UNAVAILABLE` 并列出该平台的 runner 选项，消费方会呈现该错误，而不是让命令不受限制地运行。启动后拒绝自身 profile 的 runner 由其致命 stderr 签名与退出码识别，因此损坏的沙箱不会被误认为被拒绝的命令。`runnerCommand` 覆盖是操作方断言：它跳过功能探测，并假定配置的 runner 诚实实现与 bwrap 兼容的 profile。
 
 -----
 
@@ -68,13 +68,13 @@ kind: "package-reference"
 
 ### runner 选择
 
-选择按平台优先、探测其次：每个平台都有 runner 链（`linux`：`bwrap` 再 Landlock；`darwin`：Seatbelt；`win32`：ACL 受限令牌 runner）。唯一候选直接选择、不探测；竞争候选按链序各执行一次功能探测，首个可用结论在提供方生命周期内缓存。没有链的平台、或链上所有探测都失败时，平台不可用，并在 `confine()` 处快速失败。
+选择按平台优先、探测其次：每个平台都有 runner 链（`linux`：`bwrap` 再 Landlock；`darwin`：Seatbelt；`win32`：ACL 受限令牌 runner）。唯一候选直接选择、不探测；竞争候选按链序各执行一次功能探测，首个可用结论在提供方生命周期内缓存。没有链的平台、或链上所有探测都失败时，平台不可用，`confine()` 会拒绝执行。
 
 ### 平台 profile
 
 bwrap profile 组合只读宿主根目录、全新 `/dev` 与私有 PID 命名空间中的 `/proc`——命令可管理其后代，但看不到宿主进程，因此 procfs 魔法链接无法绕过挂载；`workspace-write` 另加临时的 `/tmp` 与可写工作区绑定挂载。[私有 PID 笔记](../../../.agents/notes/implemented/bug-fix/2026-08-06-bwrap-private-pid-namespace.zh.md)记录该边界。
 
-Landlock launcher 以 npm 分发的原生插件（`@deepseek-ai/node-addon-landlock-run`）提供平台 launcher、功能探测与授权词汇；此提供方只做模式到授权的映射，把路径解析与探测解析保留在带版本的 binary 中。
+`@deepseek-ai/node-addon-system/landlock-run` API 提供平台 launcher、功能探测与授权词汇；此提供方只做模式到授权的映射，把路径解析与探测解析保留在带版本的 binary 中。
 
 Seatbelt profile 默认允许，带 `(deny file-write*)` 与来自共享 `writableRoots` 辅助函数的写入 allow-list，因此恰好管辖模式承诺的文件操作；每个根目录都经过规范化，因为 Seatbelt 匹配解析后的路径（`/tmp` 就是 `/private/tmp`）。
 
@@ -90,7 +90,7 @@ Windows 档为每个工作区保留一个确定性写入 SID 和常驻 ACE，同
 |---|---|
 | [`src/index.ts`](src/index.ts) | 插件入口：runner 链选择、功能探测、逐调用包装、ACL 授权生命周期 |
 | [`src/profiles.ts`](src/profiles.ts) | 各平台 profile 构建器：bwrap 挂载、Landlock 授权、Seatbelt SBPL |
-| — | 不发布运行时不变式伴生入口；故障关闭约定在包装边界强制执行。 |
+| — | 不发布运行时不变式伴生入口；除所属 seam 强制执行的约定外，本包不公开独立的事件序列或可变数据关系。 |
 
 </details>
 

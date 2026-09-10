@@ -1,9 +1,10 @@
 import { mkdir, mkdtemp, readFile, readdir, realpath, rm, symlink, writeFile } from 'node:fs/promises'
+import * as fsPromises from 'node:fs/promises'
 import { once } from 'node:events'
 import { tmpdir } from 'node:os'
 import { delimiter, join, relative, sep } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
-import { afterAll, describe, expect, it, vi } from 'vitest'
+import { afterAll, describe, expect, it, vi, type TestContext } from 'vitest'
 import { PROTOCOL_VERSION } from '@agentclientprotocol/sdk'
 import { runScenario, snapshotSpillRoot, type AgentUnderTest, type InputStep } from '../src/harness.ts'
 import { launchAcpTestAgent } from '../src/launcher.ts'
@@ -73,6 +74,21 @@ async function scenario(behavior: object): Promise<{ dir: string; fixtureFile: s
   tempDirs.push(dir)
   await writeFile(join(dir, 'behavior.json'), JSON.stringify(behavior))
   return { dir, fixtureFile: join(dir, 'session.jsonl') }
+}
+
+/** Keep immutable-log diagnostics independent of initial filesystem harvest latency. */
+function isolateDiagnosticTimeout(onTestFinished: TestContext['onTestFinished']): void {
+  const waitFor = vi.waitFor
+  const wait = vi.spyOn(vi, 'waitFor')
+  onTestFinished(() => { wait.mockRestore() })
+  wait.mockImplementation(async (callback, options) => {
+    if (typeof options !== 'object' || options.timeout !== 20) return waitFor(callback, options)
+    try {
+      return await callback()
+    } catch (error) {
+      return waitFor(() => { throw error }, options)
+    }
+  })
 }
 
 const boot: InputStep[] = [{ op: 'initialize' }, { op: 'newSession' }]
@@ -984,7 +1000,39 @@ describe('runScenario', () => {
     )).rejects.toThrow(/did not persist goal phase "blocked" within 20ms/)
   })
 
-  it('waitForSubagentTurnEnd requires a closed child work turn', { timeout: 20_000 }, async () => {
+  it('identifies the child wait when its first log harvest outlasts the deadline', async () => {
+    const { fixtureFile } = await scenario({})
+    const reading = Promise.withResolvers<undefined>()
+    const release = Promise.withResolvers<undefined>()
+    let pendingRead: Promise<unknown> | undefined
+    const originalReaddir = readdir
+    const spy = vi.spyOn(fsPromises, 'readdir').mockImplementation(async (...args) => {
+      if (pendingRead === undefined && String(args[0]).includes('acp-snap-sessions-')) {
+        const read = release.promise.then(() => originalReaddir(...args))
+        pendingRead = read
+        reading.resolve(undefined)
+        return await read
+      }
+      return await originalReaddir(...args)
+    })
+    const run = runScenario(
+      { steps: [...boot, { op: 'waitForSubagentTurnEnd', child: 2, timeoutMs: 20 }] },
+      { agent: AGENT, mode: 'replay', fixtureFile },
+    )
+    const rejected = expect(run).rejects.toThrow(/subagent child #2 did not persist closed turn 1 within 20ms/)
+    try {
+      await Promise.race([reading.promise, rejected])
+      expect(pendingRead).toBeDefined()
+      await rejected
+    } finally {
+      release.resolve(undefined)
+      await Promise.allSettled([pendingRead, run, rejected])
+      spy.mockRestore()
+    }
+  })
+
+  it('waitForSubagentTurnEnd requires a closed child work turn', { timeout: 20_000 }, async ({ onTestFinished }) => {
+    isolateDiagnosticTimeout(onTestFinished)
     const closed = await scenario({
       prompt: 'hang-until-cancel',
       persistLogsOnCancel: true,
@@ -1096,7 +1144,8 @@ describe('runScenario', () => {
     )).rejects.toThrow(new RegExp(`did not persist session/title after turn/end within ${titleDiagnosticTimeoutMs}ms`))
   })
 
-  it('waitForEventAfterTurnEnd holds the app for a typed post-boundary record and times out otherwise', { timeout: 20_000 }, async () => {
+  it('waitForEventAfterTurnEnd holds the app for a typed post-boundary record and times out otherwise', { timeout: 20_000 }, async ({ onTestFinished }) => {
+    isolateDiagnosticTimeout(onTestFinished)
     const late = await scenario({
       prompt: 'hang-until-cancel',
       persistLogsOnCancel: true,

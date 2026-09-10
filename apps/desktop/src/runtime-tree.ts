@@ -189,6 +189,8 @@ export async function verifyDesktopRuntime(
   root: string, electronVersion: string, target: { platform: NodeJS.Platform; arch: string } = process,
 ): Promise<DesktopRuntimeDescriptor> {
   const descriptor = readDesktopRuntime(root)
+  // readDesktopRuntime preserves the disk schema value without validating release compatibility.
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
   if (descriptor.schemaVersion !== 1 || descriptor.platform !== target.platform || descriptor.arch !== target.arch) {
     throw new Error('desktop runtime: invalid descriptor or incompatible platform/architecture')
   }
