@@ -73,7 +73,7 @@ mock.streams.fail('session/follow', new Error('gone'))
 await mock.streams.drained('session/follow')
 ```
 
-失败的流让消费方的下一次读取以给定的 `Error` reject。消费方取消（打开时的 `signal`，或提前 `return`）结束迭代而不抛错，并把该流记为 `cancelled`。
+失败的流让消费方的下一次读取以给定的 `Error` reject。消费方取消（打开时的 signal 或 iterator 提前 `return()`）会中止 `StreamHandle.signal`、结束迭代而不抛错，并把该流记为 `cancelled`。
 
 ### 接上客户端
 

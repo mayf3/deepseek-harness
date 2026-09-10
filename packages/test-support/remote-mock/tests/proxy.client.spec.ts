@@ -170,7 +170,7 @@ describe('RemoteMock.remote stream proxies', () => {
     expect(mock.log.streams('session/control').map(entry => entry.state)).toEqual(['ended', 'ended'])
   })
 
-  it('shares stream spies with the carrier, preserves its args, and forwards each caller signal', async () => {
+  it('shares stream spies with the carrier, preserves its args, and reflects each caller cancellation', async () => {
     const signals: AbortSignal[] = []
     const script = vi.fn((_args: readonly unknown[], stream: StreamHandle) => {
       signals.push(stream.signal)
@@ -192,7 +192,8 @@ describe('RemoteMock.remote stream proxies', () => {
     await expect(wire.next()).resolves.toEqual({ value: baseline, done: false })
     expect(control.mock.calls).toEqual([[localController.signal], [request, wireController.signal]])
     expect(script.mock.calls.map(([args]) => args)).toEqual([[], [request]])
-    expect(signals).toEqual([localController.signal, wireController.signal])
+    expect(signals).toHaveLength(2)
+    expect(signals.map(signal => signal.aborted)).toEqual([false, false])
     expect(mock.log.streams('session/control').map(entry => entry.args)).toEqual([[], [request]])
 
     const waiting = local.next()
@@ -200,6 +201,7 @@ describe('RemoteMock.remote stream proxies', () => {
     await expect(waiting).resolves.toEqual({ value: undefined, done: true })
     await wire.return!()
     await mock.streams.drained('session/control')
+    expect(signals.map(signal => signal.aborted)).toEqual([true, true])
     expect(mock.streams.push('session/control', baseline)).toBe(0)
     expect(mock.log.streams('session/control').map(entry => entry.state)).toEqual(['cancelled', 'cancelled'])
   })

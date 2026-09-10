@@ -10,7 +10,7 @@ export interface StreamHandle {
   end(): void
   /** Fail the consumer's next read with `error` after the queued items drain. */
   fail(error: Error): void
-  /** Consumer cancellation. */
+  /** Aborts when the opening signal aborts or the consumer returns early. */
   readonly signal: AbortSignal
 }
 
@@ -52,9 +52,11 @@ export class MockStream implements StreamHandle, AsyncIterable<unknown> {
   private settled: Settled | undefined
   private waiting: { readonly resolve: (result: IteratorResult<unknown>) => void; readonly reject: (error: unknown) => void } | undefined
   private drainWaiters: (() => void)[] = []
+  private readonly cancellation = new AbortController()
+  readonly signal = this.cancellation.signal
 
   /** Consumer cancellation listener; attached while the stream is open, removed when it settles or cancels. */
-  private readonly onAbort = (): void => { this.cancel() }
+  private readonly onAbort = (): void => { this.cancel(this.sourceSignal.reason) }
 
   /** Items pushed but not yet pulled by the consumer. */
   get queued(): number {
@@ -63,11 +65,11 @@ export class MockStream implements StreamHandle, AsyncIterable<unknown> {
 
   /**
    * @param record - log entry this stream updates.
-   * @param signal - consumer cancellation.
+   * @param sourceSignal - cancellation from the caller that opened the stream.
    */
-  constructor(readonly record: StreamRecord, readonly signal: AbortSignal) {
-    if (signal.aborted) this.cancel()
-    else signal.addEventListener('abort', this.onAbort, { once: true })
+  constructor(readonly record: StreamRecord, private readonly sourceSignal: AbortSignal) {
+    if (sourceSignal.aborted) this.cancel(sourceSignal.reason)
+    else sourceSignal.addEventListener('abort', this.onAbort, { once: true })
   }
 
   push(item: unknown): void {
@@ -148,7 +150,7 @@ export class MockStream implements StreamHandle, AsyncIterable<unknown> {
     if (this.record.state !== 'open') return
     this.record.state = state
     this.settled = settled
-    this.signal.removeEventListener('abort', this.onAbort)
+    this.sourceSignal.removeEventListener('abort', this.onAbort)
     this.wakeDrained()
     // A pending read exists only while the queue is empty: push() resolves it directly instead of queueing.
     const waiting = this.waiting
@@ -157,12 +159,14 @@ export class MockStream implements StreamHandle, AsyncIterable<unknown> {
     void this.finish(settled).then(waiting.resolve, waiting.reject)
   }
 
-  private cancel(): void {
+  private cancel(reason?: unknown): void {
     if (this.record.state === 'open') {
       this.record.state = 'cancelled'
-      this.signal.removeEventListener('abort', this.onAbort)
+      this.sourceSignal.removeEventListener('abort', this.onAbort)
       const waiting = this.waiting
       this.waiting = undefined
+      this.queue.length = 0
+      this.cancellation.abort(reason)
       waiting?.resolve({ value: undefined, done: true })
     }
     // Whether cancelled or left after the producer settled, the consumer pulls nothing more: drop what it left.

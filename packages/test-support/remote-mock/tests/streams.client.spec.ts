@@ -95,6 +95,21 @@ describe('RemoteMock streams', () => {
     expect(mock.log.streams().map(entry => entry.state)).toEqual(['cancelled', 'cancelled', 'cancelled'])
   })
 
+  it('aborts the stream handle signal when the consumer returns', async () => {
+    let signal: AbortSignal | undefined
+    const mock = RemoteMock.create().stream('s/f', (_args, stream) => {
+      signal = stream.signal
+      stream.push('first')
+    })
+    const reader = mock.open('s/f', [], idle())[Symbol.asyncIterator]()
+    await expect(reader.next()).resolves.toEqual({ value: 'first', done: false })
+    await expect(reader.return!()).resolves.toEqual({ value: undefined, done: true })
+    expect({
+      state: mock.log.streams('s/f')[0]?.state,
+      signalAborted: signal?.aborted,
+    }).toEqual({ state: 'cancelled', signalAborted: true })
+  })
+
   it('runs script functions with the open args and fails the stream when they throw or reject', async () => {
     const mock = RemoteMock.create()
       .stream('s/echo', (args, stream) => {

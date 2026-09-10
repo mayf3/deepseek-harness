@@ -73,7 +73,7 @@ mock.streams.fail('session/follow', new Error('gone'))
 await mock.streams.drained('session/follow')
 ```
 
-A failed stream rejects the consumer's next read with the given `Error`. Consumer cancellation (the open `signal`, or an early `return`) ends the iteration without throwing and logs the stream as `cancelled`.
+A failed stream rejects the consumer's next read with the given `Error`. Consumer cancellation (the opening signal or an early iterator `return()`) aborts `StreamHandle.signal`, ends the iteration without throwing, and logs the stream as `cancelled`.
 
 ### Connect a client
 
