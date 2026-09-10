@@ -661,8 +661,16 @@ describe('background sandbox facts', () => {
 
   it('disposal kills wrapped background jobs (inherited HMR safety)', async () => {
     const { ctx, bash } = await setup()
-    const task = bash.start(bash.resolve({ command: 'sleep 30' }))
-    await ctx.fiber.dispose()
+    const task = bash.start(bash.resolve({ command: 'echo ready; sleep 30' }))
+    let output = ''
+    try {
+      await expect.poll(() => {
+        output += task.readOutput().delta
+        return output
+      }).toContain('ready')
+    } finally {
+      await ctx.fiber.dispose()
+    }
     expect(task.status).toBe('killed')
   })
 })

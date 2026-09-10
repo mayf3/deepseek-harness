@@ -205,7 +205,7 @@ describe('Linux scope establishment and quiescence', () => {
     expect(spawnSync).toHaveBeenCalledWith('/bin/systemctl', expect.arrayContaining([
       'kill', '--kill-whom=all', '--signal=SIGTERM',
     ]), expect.anything())
-    const direct = expect(result.direct).rejects.toThrow('before its bootstrap consumed')
+    const direct = expect(result.direct).resolves.toEqual({ exitCode: null, signal: 'SIGTERM' })
     child.exit(null, 'SIGTERM')
     await direct
     await expect(waiting).resolves.toBeUndefined()
@@ -245,6 +245,15 @@ describe('Linux scope establishment and quiescence', () => {
 
     child.exit(null, 'SIGKILL')
     await expect(result.direct).resolves.toEqual({ exitCode: null, signal: 'SIGKILL' })
+    result.owner.cleanup?.()
+  })
+
+  it.each(['SIGTERM', 'SIGKILL'] as const)('reports %s before bootstrap consumption as a signal outcome', async (signal) => {
+    const { child, result, requestPath } = launch(async () => missingUnit())
+    expect(existsSync(requestPath)).toBe(true)
+    child.exit(null, signal)
+    await expect(result.direct).resolves.toEqual({ exitCode: null, signal })
+    await expect(result.owner.waitForExit()).resolves.toBeUndefined()
     result.owner.cleanup?.()
   })
 
@@ -570,6 +579,15 @@ describe('Linux PTY bootstrap reuse', () => {
     })
     expect(() => scope.resolveOutcome({ exitCode: 127, signal: null })).toThrow('bad cwd')
     scope.cleanup()
+  })
+
+  it.each(['SIGTERM', 'SIGKILL'] as const)('preserves PTY %s before bootstrap consumption', (signal) => {
+    const scope = prepareLinuxTerminalScope(terminalSpec, { TARGET: 'yes' })
+    try {
+      expect(scope.resolveOutcome({ exitCode: null, signal })).toEqual({ exitCode: null, signal })
+    } finally {
+      scope.cleanup()
+    }
   })
 
   it('uses default owner dependencies and rejects an unconsumed request', () => {

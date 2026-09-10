@@ -393,6 +393,7 @@ describe('LocalSubprocessRuntime', () => {
       const ctx = new Context()
       const fiber = await ctx.plugin(IsolatedLocalSubprocessRuntime)
       const service = ctx.subprocess as InstanceType<typeof IsolatedLocalSubprocessRuntime>
+      service.internals = { platform: 'darwin' }
       const handle = await ctx.subprocess.spawnTerminal({
         argv: ['shell'], cwd: process.cwd(), rows: 24, cols: 80, graceMs: 1,
       })
@@ -600,6 +601,7 @@ describe('LocalSubprocessRuntime', () => {
       ctx.logger.error = ((error: unknown) => { disposalErrors.push(error) }) as typeof ctx.logger.error
       const fiber = await ctx.plugin(IsolatedLocalSubprocessRuntime)
       const alive = new Set([124])
+      ;(ctx.subprocess as InstanceType<typeof IsolatedLocalSubprocessRuntime>).internals = { platform: 'darwin' }
       ;(ctx.subprocess as InstanceType<typeof IsolatedLocalSubprocessRuntime>).terminalInspector = {
         foregroundPgid: () => 123,
         isStdinWaiting: () => false,
@@ -617,7 +619,7 @@ describe('LocalSubprocessRuntime', () => {
       })
       exitListener?.({ exitCode: 0 })
       await handle.done
-      await new Promise(resolve => setTimeout(resolve, 10))
+      await expect(handle.terminate()).rejects.toThrow('surviving pids: 124')
       expect((ctx.subprocess as unknown as { terminals: Set<SubprocessTerminalHandle> }).terminals.size).toBe(1)
       await fiber.dispose()
       expect(disposalErrors).toHaveLength(1)
