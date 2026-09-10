@@ -183,6 +183,7 @@ it('assembles the shipped Web transport, catalog, guidance, and defaults', async
   })
   try {
     expect(scaffold.ctx.commands.list(commandHandle.agent)).toContainEqual({
+      definitionId: '@deepseek-ai/dsh-command-feedback',
       name: 'feedback',
       description: 'Record feedback about this session',
       input: { hint: '<text>' },
