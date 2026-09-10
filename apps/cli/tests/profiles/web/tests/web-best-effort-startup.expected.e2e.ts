@@ -78,6 +78,9 @@ function createFixture(): Fixture {
     `      name: ${pathToFileURL(join(root, 'async-failure.mjs')).href}`,
     '    - id: web-probe-pending',
     `      name: ${pathToFileURL(join(root, 'pending.mjs')).href}`,
+    '    - id: web-probe-disabled-failure',
+    `      name: ${pathToFileURL(join(root, 'good.mjs')).href}`,
+    '      disabled: !!js "JSON.parse(\'invalid\')"',
     '',
   ].join('\n'))
   return { root, home, patch, events, stop }
@@ -98,7 +101,7 @@ async function waitForStartup(
   let settled = false
   const finish = (): void => {
     if (settled || url === undefined) return
-    if (!stderrText.includes('dsh: warning: 5 entries did not activate')) return
+    if (!stderrText.includes('dsh: warning: 6 entries did not activate')) return
     if (!stderrText.includes('web async apply failure')) return
     if (!stderrText.includes('webProbeMissingService')) return
     settled = true
@@ -170,6 +173,8 @@ describe.skipIf(!builtArtifactsExist)('dsh Web profile best-effort startup', () 
       expect(startup.stderr).toContain('web sync apply failure')
       expect(startup.stderr).toContain('web async apply failure')
       expect(startup.stderr).toContain('pending (waiting for service: webProbeMissingService)')
+      expect(startup.stderr).toContain('web-probe-disabled-failure')
+      expect(startup.stderr).toContain('disabled expression failed: SyntaxError')
     } finally {
       writeFileSync(fixture.stop, 'stop')
       result = await child
@@ -193,9 +198,20 @@ describe.skipIf(!builtArtifactsExist)('dsh Web profile best-effort startup', () 
     `)
   })
 
-  it.each(['modules', 'connection'])('fails the full Web profile when required %s cannot activate', async (id) => {
+  it.each([
+    ['modules', 'missing dependency'],
+    ['connection', 'missing dependency'],
+    ['modules', 'disabled expression'],
+    ['connection', 'disabled expression'],
+  ])('fails the full Web profile on required %s %s failure', async (id, failure) => {
     const fixture = createFixture()
-    writeFileSync(fixture.patch, `${readFileSync(fixture.patch, 'utf8')}- id: ${id}\n  inject: [webProbeMissingRequiredService]\n`)
+    const patch = failure === 'disabled expression'
+      ? 'disabled: !!js "JSON.parse(\'invalid\')"'
+      : 'inject: [webProbeMissingRequiredService]'
+    const diagnostic = failure === 'disabled expression'
+      ? 'disabled expression failed: SyntaxError'
+      : 'pending (waiting for service: webProbeMissingRequiredService)'
+    writeFileSync(fixture.patch, `${readFileSync(fixture.patch, 'utf8')}- id: ${id}\n  ${patch}\n`)
     try {
       const result = await execa(process.execPath, [
         dshBin,
@@ -223,7 +239,7 @@ describe.skipIf(!builtArtifactsExist)('dsh Web profile best-effort startup', () 
       expect(result.exitCode).toBe(1)
       expect(result.stdout).not.toContain('dsh web: http://')
       expect(result.stderr).toContain('required startup failure')
-      expect(result.stderr).toContain(`${id} (@deepseek-ai/dsh-client-${id}): pending (waiting for service: webProbeMissingRequiredService)`)
+      expect(result.stderr).toContain(`${id} (@deepseek-ai/dsh-client-${id}): ${diagnostic}`)
       expect(readFileSync(fixture.events, 'utf8')).toBe('good apply\ngood dispose\n')
     } finally {
       rmSync(fixture.root, { recursive: true, force: true })

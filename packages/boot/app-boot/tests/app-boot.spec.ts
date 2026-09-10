@@ -580,6 +580,26 @@ describe('auditStartupEntries', () => {
     ].join('\n'))
   })
 
+  it.each([
+    { id: 'tool-todo', required: false },
+    { id: 'webserver', required: true },
+  ])('reports a throwing disabled expression on $id (required: $required)', async ({ id, required }) => {
+    const error = new Error('disabled evaluation failed')
+    const warn = vi.fn()
+    const result = auditStartupEntries(ctxWith([{
+      options: { id, name: './plugin.mjs' },
+      get disabled(): boolean { throw error },
+    }]), NAME, warn)
+    const detail = `${id} (./plugin.mjs): disabled expression failed: ${error.stack!}`
+    if (required) {
+      await expect(result).rejects.toThrow(`required startup failure: 1 entry did not activate\n${detail}`)
+      expect(warn).not.toHaveBeenCalled()
+    } else {
+      await expect(result).resolves.toBeUndefined()
+      expect(warn).toHaveBeenCalledExactlyOnceWith(`${NAME}: warning: 1 entry did not activate\n${detail}\n`)
+    }
+  })
+
   it('preserves nested activation causes and aggregate member failures', async () => {
     const warn = vi.fn()
     const original = new Error('tool discovery failed')
@@ -867,7 +887,7 @@ describe('boot', () => {
     expect(ctx.get('loader')).toBeUndefined()
   })
 
-  it('keeps successful entries and warns about optional import, config, sync apply, async apply, and dependency failures', async () => {
+  it('keeps successful entries and warns about optional import, config, disabled, sync apply, async apply, and dependency failures', async () => {
     const dir = tmp()
     const configPath = join(dir, 'cordis.yml')
     const config = [
@@ -879,6 +899,9 @@ describe('boot', () => {
       '  name: ./noop.mjs',
       '  config:',
       '    value: !!js "JSON.parse(\'invalid\')"',
+      '- id: disabled-failure',
+      '  name: ./noop.mjs',
+      '  disabled: !!js "JSON.parse(\'invalid\')"',
       '- id: sync-failure',
       '  name: ./sync-failure.mjs',
       '- id: async-failure',
@@ -902,13 +925,15 @@ describe('boot', () => {
       const entries = [...ctx.loader.entries()]
       expect(entries.find(entry => entry.options.id === 'good')?.fiber?.state).toBe(2)
       expect(entries.find(entry => entry.options.id === 'import-failure')?.fiber).toBeUndefined()
+      expect(entries.find(entry => entry.options.id === 'disabled-failure')?.fiber).toBeUndefined()
       for (const id of ['invalid-config', 'sync-failure', 'async-failure']) {
         expect(entries.find(entry => entry.options.id === id)?.fiber?.state).toBe(3)
       }
       expect(entries.find(entry => entry.options.id === 'waiting')?.fiber?.state).toBe(0)
       const warning = write.mock.calls.map(call => String(call[0])).join('')
-      expect(warning).toContain(`${NAME}: warning: 5 entries did not activate`)
+      expect(warning).toContain(`${NAME}: warning: 6 entries did not activate`)
       expect(warning).toContain('import-failure (./missing.mjs): failed to import')
+      expect(warning).toContain('disabled-failure (./noop.mjs): disabled expression failed: SyntaxError')
       expect(warning).toContain('SyntaxError: Unexpected token')
       expect(warning).toContain('sync apply failure')
       expect(warning).toContain('async apply failure')
@@ -940,6 +965,7 @@ describe('boot', () => {
     ['import', undefined, '', 'failed to import'],
     ['config schema', 'export const Config = { "~standard": { version: 1, vendor: "app-boot-test", validate() { return { issues: [{ message: "schema failure" }] } } } }\nexport function apply() {}\n', '', 'schema failure'],
     ['config expression', 'export function apply() {}\n', '  config: { value: !!js "JSON.parse(\'invalid\')" }\n', 'SyntaxError'],
+    ['disabled expression', 'export function apply() {}\n', '  disabled: !!js "JSON.parse(\'invalid\')"\n', 'required startup failure: 1 entry did not activate\nwebserver (./required.mjs): disabled expression failed: SyntaxError'],
     ['sync apply', 'export function apply() { throw new Error("sync failure") }\n', '', 'sync failure'],
     ['async apply', 'export async function apply() { await Promise.resolve(); throw new Error("async failure") }\n', '', 'async failure'],
     ['missing dependency', 'export const inject = ["missingRequiredService"]\nexport function apply() {}\n', '', 'missingRequiredService'],

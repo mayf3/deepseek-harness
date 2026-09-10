@@ -453,20 +453,30 @@ describe('boot with user patches', () => {
       expect(failures[0]).toBeInstanceOf(Error)
       expect(entryConfig(ctx, id)).toMatchObject({ fail: true })
 
+      writeFileSync(filename, `- id: ${id}\n  disabled: !!js "JSON.parse('invalid')"\n`)
+      watcher.emit('change', filename)
+      await eventually(() => failures.length === 2, 'disabled expression failure was not reported')
+      expect(failures[1]?.message).toContain(`${id} (./noop.mjs): disabled expression failed: SyntaxError`)
+      expect([...ctx.loader.entries()].find(entry => entry.options.id === id)?.options.disabled)
+        .toEqual({ __jsExpr: "JSON.parse('invalid')" })
+
       writeFileSync(filename, 'invalid: [unclosed\n')
       watcher.emit('change', filename)
-      await eventually(() => failures.length === 2, 'parse failure was not reported')
-      expect(failures[1]).toBeInstanceOf(Error)
-      expect(entryConfig(ctx, id)).toMatchObject({ fail: true })
+      await eventually(() => failures.length === 3, 'parse failure was not reported')
+      expect(failures[2]).toBeInstanceOf(Error)
+      expect([...ctx.loader.entries()].find(entry => entry.options.id === id)?.options.disabled)
+        .toEqual({ __jsExpr: "JSON.parse('invalid')" })
 
       writeFileSync(filename, `- id: ${id}\n  config:\n    value: recovered\n`)
       watcher.emit('change', filename)
       await eventually(() => (entryConfig(ctx, id) as { value?: string }).value === 'recovered', 'valid recovery was not applied')
+      await ctx.loader.await()
+      expect([...ctx.loader.entries()].find(entry => entry.options.id === id)?.fiber?.state).toBe(2)
 
       unlinkSync(filename)
       watcher.emit('unlink', filename)
       await eventually(() => (entryConfig(ctx, id) as { value?: string }).value === 'generated', 'user patch removal did not restore the app-owned patch')
-      expect(failures).toHaveLength(2)
+      expect(failures).toHaveLength(3)
 
       // Default compose: the user layer IS the whole patch list, so a
       // fresh generation replaces the app-owned layer instead of stacking on it.

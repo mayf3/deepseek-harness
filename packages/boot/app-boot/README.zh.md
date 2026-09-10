@@ -70,6 +70,7 @@ Loader 结算后，app-boot 按稳定 id 对每个已启用 entry 分类。Optio
 |---|---|---|
 | 根 YAML 无法读取或解析，或不是 entry list | Bootstrap Include 失败 | 拒绝并拆卸；不接受部分应用 |
 | Plugin module 无法 import | Entry 没有 fiber | Optional 时警告；required 时拒绝并拆卸 |
+| Entry 的 `disabled: !!js` 表达式抛出异常 | Entry 无法确定禁用状态；报告求值错误 | Optional 时警告；required 时拒绝并拆卸 |
 | Config expression 求值或 plugin config schema 在 activation 时失败 | Fiber 为 `FAILED`，保留校验错误 | Optional 时警告；required 时拒绝并拆卸 |
 | 同步 `apply()` throw | Fiber 为 `FAILED`，保留抛出的错误 | Optional 时警告；required 时拒绝并拆卸 |
 | 异步 `apply()` throw | Fiber 为 `FAILED`，保留抛出的错误 | Optional 时警告；required 时拒绝并拆卸 |

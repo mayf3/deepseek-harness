@@ -738,17 +738,22 @@ interface InactiveEntry {
 }
 
 /**
- * Collect enabled Loader entries that did not become active. Failed fibers are
- * awaited to recover their recorded rejection reason and coalesce duplicate
- * Loader notifications through the next process rejection checkpoint.
+ * Collect Loader activation failures and disabled-expression errors. Failed
+ * fibers are awaited to recover their recorded rejection reason and coalesce
+ * duplicate Loader notifications through the next process rejection checkpoint.
  */
 async function inactiveEntries(ctx: Context): Promise<InactiveEntry[]> {
   const failures: InactiveEntry[] = []
   const rejectionReasons: unknown[] = []
   for (const entry of ctx.loader.entries()) {
-    const fiber = entry.fiber
-    if (entry.disabled) continue
     const subject = `${entry.options.id} (${entry.options.name})`
+    try {
+      if (entry.disabled) continue
+    } catch (error) {
+      failures.push({ entry, diagnostic: `${subject}: disabled expression failed: ${formatActivationError(error)}` })
+      continue
+    }
+    const fiber = entry.fiber
     if (fiber === undefined) {
       failures.push({ entry, diagnostic: `${subject}: failed to import` })
       continue
@@ -795,12 +800,13 @@ function activationDiagnostic(
  * Inactive entries from the global required list reject startup. Other
  * inactive entries produce one warning and leave successful siblings running.
  * Required ids absent from the tree, and disabled required entries, are ignored.
+ * A throwing disabled expression is an entry failure, not a disabled entry.
  * The bootstrap Include must activate so unreadable or invalid root config is fatal.
  * @param ctx - the settled context whose Loader entries to audit.
  * @param binName - the diagnostic prefix on optional-entry warnings.
  * @param warn - sink for optional-entry warnings.
- * @returns after all optional failures are warned when required startup entries are active.
- * @throws when the bootstrap Include or an enabled entry in {@link REQUIRED_STARTUP_ENTRY_IDS} is inactive.
+ * @returns after optional warnings if required startup checks pass.
+ * @throws when the bootstrap Include or a required entry is inactive or its disabled expression throws.
  */
 export async function auditStartupEntries(
   ctx: Context,

@@ -70,6 +70,7 @@ After the Loader settles, app-boot classifies each enabled entry by stable id. O
 |---|---|---|
 | The root YAML cannot be read or parsed, or is not an entry list | Bootstrap Include fails | Reject and dispose; no partial application is accepted |
 | A plugin module cannot be imported | Entry has no fiber | Warn if optional; reject and dispose if required |
+| An entry's `disabled: !!js` expression throws | Entry cannot determine its disabled state; report the evaluation error | Warn if optional; reject and dispose if required |
 | Config expression evaluation or the plugin's config schema fails during activation | Fiber is `FAILED` with the validation error | Warn if optional; reject and dispose if required |
 | Synchronous `apply()` throws | Fiber is `FAILED` with the thrown error | Warn if optional; reject and dispose if required |
 | Asynchronous `apply()` throws | Fiber is `FAILED` with the thrown error | Warn if optional; reject and dispose if required |

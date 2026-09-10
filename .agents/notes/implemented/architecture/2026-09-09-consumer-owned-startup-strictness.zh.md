@@ -14,6 +14,8 @@ DSH 在 vendored Cordis 之外持有启动严格语义。App-boot 用一份全�
 
 Required id 为 `agent-loop`、`webserver`、`modules`、`connection`、`headless-runner`、`acp` 和 `sdk-jsonrpc-server`。它们分别代表共享 Agent 执行、应用 endpoint，以及 Web 启动与传输。即使 HTTP server 不依赖它们也能监听，Web 仍需要客户端模块注册表和经过认证的连接。通过注入已成为必需项的 provider 不需要单列：它们缺失时，已列出的消费方会保持 pending 或失败。
 
+审计将 `disabled` 表达式抛出的异常视为 entry 失败，而不是 entry 已禁用，因为求值未能确定是否跳过它。该失败遵循相同的 optional/required 策略。
+
 该审计只在应用首次启动时运行。之后的 config HMR 仍采用 best effort，并保留 failed candidate 供后续修复。
 
 ## 考虑过的替代方案

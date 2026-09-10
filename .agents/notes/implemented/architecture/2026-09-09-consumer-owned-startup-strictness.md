@@ -14,6 +14,8 @@ DSH owns startup strictness outside vendored Cordis. App-boot audits the settled
 
 The required ids are `agent-loop`, `webserver`, `modules`, `connection`, `headless-runner`, `acp`, and `sdk-jsonrpc-server`. They represent shared Agent execution, application endpoints, and Web bootstrap/transport. Web needs its client module registry and authenticated connection even when the HTTP server can listen without them. Providers already required through injection need no separate entry: their absence leaves a listed consumer pending or failed.
 
+The audit treats a throwing `disabled` expression as an entry failure, not a disabled entry, because evaluation never established whether to skip it. The same optional/required policy applies to that failure.
+
 The audit runs only during initial application boot. Later config HMR remains best effort and keeps the failed candidate visible for repair.
 
 ## Alternatives considered
