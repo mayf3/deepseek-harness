@@ -206,11 +206,13 @@ test('ignores a reviewer whose collaborator permission lookup returns 404', asyn
   assert.deepEqual(result.ignoredReviewers, ['former-writer'])
 })
 
-test('blocks on a write-capable change request but ignores the author and read-only blockers', async () => {
-  const result = await evaluateApproval({
+test('keeps the status pending on a write-capable change request while ignoring the author and read-only reviewers', async () => {
+  const statuses = []
+  const result = await runApprovalCheck({
     event: pullRequestEvent({ author: 'author' }),
     policySource,
-    api: async (path) => {
+    runUrl: 'https://github.example/actions/runs/1',
+    api: async (path, options = {}) => {
       if (path.includes('/reviews?')) {
         return [
           review('turtle1999', 'APPROVED'),
@@ -222,13 +224,25 @@ test('blocks on a write-capable change request but ignores the author and read-o
       if (path.includes('/collaborators/turtle1999/permission')) return { permission: 'admin' }
       if (path.includes('/collaborators/blocker/permission')) return { permission: 'write' }
       if (path.includes('/collaborators/reader/permission')) return { permission: 'read' }
+      if (path.includes('/statuses/')) {
+        statuses.push(options.body)
+        return {}
+      }
       throw new Error(`unexpected API path ${path}`)
     },
+    write: () => {},
   })
-  assert.equal(result.state, 'failure')
+  assert.equal(result.state, 'pending')
+  assert.equal(result.description, '1 blocking change request.')
   assert.equal(result.points, 2)
   assert.deepEqual(result.blockers, ['blocker'])
   assert.deepEqual(result.ignoredReviewers, ['reader'])
+  assert.deepEqual(statuses, [{
+    state: 'pending',
+    context: 'weighted approval',
+    description: '1 blocking change request.',
+    target_url: 'https://github.example/actions/runs/1',
+  }])
 })
 
 test('keeps drafts pending without reading reviews', async () => {
@@ -266,12 +280,12 @@ test('publishes the required status and replaces stale success with error on eva
       body: {
         state: 'success',
         context: 'weighted approval',
-        description: 'This is by automated Angry Turtle Cyborg, not a human: 2/2 approval points.',
+        description: '2/2 approval points.',
         target_url: 'https://github.example/actions/runs/1',
       },
     },
   })
-  assert.equal(output[0], 'This is by automated Angry Turtle Cyborg, not a human')
+  assert.equal(output[0], 'Approval score: 2/2.')
 
   const failures = []
   await assert.rejects(runApprovalCheck({
@@ -289,6 +303,7 @@ test('publishes the required status and replaces stale success with error on eva
     write: () => {},
   }), /reviews unavailable/u)
   assert.equal(failures[0].options.body.state, 'error')
+  assert.equal(failures[0].options.body.description, 'Approval evaluation failed.')
 })
 
 test('sends authenticated JSON and escapes an API error body', async () => {

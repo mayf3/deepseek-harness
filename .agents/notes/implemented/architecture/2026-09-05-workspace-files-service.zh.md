@@ -20,23 +20,23 @@ Web 客户端需要从一个未必在 Host 机器上的浏览器查看会话工�
 
 | 面 | 包 | 文件 | 依赖 |
 |---|---|---|---|
-| Host | `api/workspace-files/tsconfig.host.json` | `src/index.ts`（`WorkspaceFiles`、`Config`、围栏、切页器）、`src/changes.ts`（`WorkspaceChangeFeed`）、`src/types.ts`（线路类型、错误码） | `dsh-fs`、`dsh-sandbox-policy`、`dsh-typert-protocol`、`dsh-agent`、`dsh-session` |
-| Client | `api/workspace-files/tsconfig.client.json` | `src/client/index.ts`（插件体）、`provider.ts`、`change-feed.ts`、`remote.ts`、`types.ts`，以及共享的 `src/types.ts` | `dsh-api-gateway/client`、`dsh-api-session-controller/client`、`dsh-client-resources`、`dsh-util-workspace-path`、`dsh-typert-protocol`，以及本包生成的 `./remote` |
+| Host | `api/workspace-files/tsconfig.host.json` | `src/index.ts`（`WorkspaceFiles`、`Config`、围栏、切页器）、`src/changes.ts`（`WorkspaceChangeFeed`）、`src/types.ts`（线路类型、错误码） | `dsh-fs`、`dsh-sandbox-policy`、`dsh-typert-protocol`、`dsh-session`、`dsh-session-persistence` |
+| Client | `api/workspace-files/tsconfig.client.json` | `src/client/index.ts`（插件体）、`provider.ts`、`change-feed.ts`、`remote.ts`、`types.ts`，以及共享的 `src/types.ts` | `dsh-api-gateway/client`、`dsh-session/types`、`dsh-client-resources`、`dsh-client-ui-slots`、`dsh-util-workspace-path`、`dsh-typert-protocol`，以及本包生成的 `./remote` |
 
 `api/remotes` 和两个根聚合分别引用匹配的 Host/Client 叶子。包导出 `.`、`./client`、`./types`、`./typert` 和 `./remote`，web-app 中单个 `workspace-files` 条目供应两面。Client 插件注入 `['resources', 'remote', 'remote.workspaceFiles']`；资源模型直接从协议包取结果类型，Sidebar 参数声明归文本预览，因此 Client 编译图不再反向依赖 Remote 装配或右栏 UI。
 
 ### `workspaceFiles` Remote 命名空间
 
-每个 Host 方法首参都是目标 `Agent`，由 Gateway 从线路上的 Session 身份解析而来，因此 Client 调用 `remote.workspaceFiles.stat(sessionId, path, signal)`，从不自行命名根。七个签名照 `src/index.ts` 的声明：
+每个 Host 方法首参都是 `WorkspaceFileScope`。Gateway 从线路上的 Session 身份解析它：优先读取 live Session header，cold Session 则只调用 `SessionPersistence.stat`；不会激活 Agent、读取事件正文或回退到父 Session。scope 携带所选 Session id 及其 `cwd`，仅当该 header 没有 `cwd` 时才使用沙箱策略的部署根。Client 传入 Session id，从不自行命名根。七个签名照 `src/index.ts` 的声明：
 
 ```ts ignore-check
-@Remote async read(agent: Agent, path: string, range: WorkspaceFileRange, signal: AbortSignal): Promise<WorkspaceFileText>
-@Remote async readBytes(agent: Agent, path: string, range: WorkspaceByteRange, signal: AbortSignal): Promise<WorkspaceFileBytes>
-@Remote async readAll(agent: Agent, path: string, signal: AbortSignal): Promise<WorkspaceFileBytes>
-@Remote async readRelated(agent: Agent, path: string, relativePath: string, signal: AbortSignal): Promise<WorkspaceFileBytes>
-@Remote async stat(agent: Agent, path: string, signal: AbortSignal): Promise<WorkspaceFileStat>
-@Remote async list(agent: Agent, path: string, signal: AbortSignal): Promise<WorkspaceDirectoryListing>
-@Remote({ mode: 'stream' }) changes(agent: Agent, signal: AbortSignal): AsyncIterable<WorkspaceFileWatchFrame>
+@Remote async read(workspaceFileScope: WorkspaceFileScope, path: string, range: WorkspaceFileRange, signal: AbortSignal): Promise<WorkspaceFileText>
+@Remote async readBytes(workspaceFileScope: WorkspaceFileScope, path: string, range: WorkspaceByteRange, signal: AbortSignal): Promise<WorkspaceFileBytes>
+@Remote async readAll(workspaceFileScope: WorkspaceFileScope, path: string, signal: AbortSignal): Promise<WorkspaceFileBytes>
+@Remote async readRelated(workspaceFileScope: WorkspaceFileScope, path: string, relativePath: string, signal: AbortSignal): Promise<WorkspaceFileBytes>
+@Remote async stat(workspaceFileScope: WorkspaceFileScope, path: string, signal: AbortSignal): Promise<WorkspaceFileStat>
+@Remote async list(workspaceFileScope: WorkspaceFileScope, path: string, signal: AbortSignal): Promise<WorkspaceDirectoryListing>
+@Remote({ mode: 'stream' }) changes(workspaceFileScope: WorkspaceFileScope, signal: AbortSignal): AsyncIterable<WorkspaceFileWatchFrame>
 ```
 
 - **`stat`** 返回 `WorkspaceFileStat { absolutePath, version, bytes? }`：文件身份、不透明的新鲜度令牌，以及后端报得出时的大小。它只接受普通文件。
@@ -57,7 +57,7 @@ Web 客户端需要从一个未必在 Host 机器上的浏览器查看会话工�
 `read`、`readBytes`、`readAll`、`readRelated` 与 `stat` 共享普通文件检查，之后依赖文件系统后端的读取权限。`list` 共享路径检查，但还会检查工作区包含关系；`changes` 则把观察过滤到工作区根内。服务执行以下检查：
 
 1. **路径本身。** `lstat` 在跟随任何东西之前检查路径：缺失路径为 `not-found`；符号链接——不论指向哪里，包括指回工作区内——对文件方法为 `not-regular-file`（kind 为 `symlink`），对 `list` 为 `not-directory`。空路径是 `gateway/bad-request`。
-2. **`list` 的工作区包含。** 目录解析为目标，由 `ctx.fs.contains(root, target)` 判定，其中 `root` 是以同样方式解析的 `sandboxPolicy.resolve({ session }).workspaceRoot`。`..` 爬出或根外绝对目录为 `outside-workspace`。`changes` 对观察到的目标使用相同的后端包含判定。
+2. **`list` 的工作区包含。** 目录解析为目标，由 `ctx.fs.contains(root, target)` 判定，其中 `root` 是从所选 Session header 解析出的 `WorkspaceFileScope.workspaceRoot`。`..` 爬出或根外绝对目录为 `outside-workspace`。`changes` 对观察到的目标使用相同的后端包含判定。
 3. **上限。** 超过 `maxBytes` 的页或窗口，或 `read` 索要超过 `maxLines` 的行数，一律拒绝、绝不截短，因为悄悄截短的页读起来就像整页；超过 `maxEntries` 的列表被截断并如实报告。全文及关联文件读取超过 `maxFileBytes` 时被拒绝。
 4. **文本。** 仅限 `read`：到页末为止不是 UTF-8 的内容、后端 8 KiB 开头样本里的 NUL 字节，或页内任何位置的 NUL 字节，都是 `not-text`；页之后的字节不检查。
 
@@ -131,7 +131,7 @@ Client 导出向 `ctx.resources` 注册一个 `ResourceProvider<'file'>`，存�
 
 ## Consequences
 
-- 工作区文件访问由 `api/workspace-files` 的 Host/Client 两面共同承担；Session Controller 不携带其中任何实现，两面的编译与运行时入口保持独立。
+- 工作区文件访问由 `api/workspace-files` 的 Host/Client 两面共同承担；Session Controller 不携带其中任何实现，两面的编译与运行时入口保持独立。header-only Session scope 让普通、subagent、live 与 cold Session 都能解析自己的相对路径，不需要 Agent 生命周期，也不回退父 Session。
 - 任意大小的文件都能打开：文本按行页、任何文件按字节窗口，在 Host 上各自只花一页或一窗内存；全文读取则受 `maxFileBytes` 约束；代价是消费者自己拼装页面，且单行超过 `maxBytes` 的行没有任何页，因为页按行切。
 - 每个文件系统提供者现在都提供开窗的原始读取。`fs-e2b` 为此付出传输被跳过前缀的代价，因为其 SDK 不能 seek；`fs-local` 能 seek。
 - 线路上的路径是规范的：`absolutePath` 与变更帧以符号链接已解析的拼法命名文件。跟随者绑定到成功的 `stat.absolutePath`，因此同一文件的另一种拼法——经符号链接到达的工作区根——也使用该规范变更键。
@@ -142,7 +142,7 @@ Client 导出向 `ctx.resources` 注册一个 `ResourceProvider<'file'>`，存�
 
 ## Testing
 
-`packages/api/workspace-files/tests` 中的 Host spec 覆盖分页读取（整文件、嵌套路径、空文件、多字节 UTF-8、行窗口边界、缺省与被拒的 limit、保留回车）、字节窗口（缺省值、后面还有内容的中段窗口、恰好与变短的尾窗、越界与空文件、NUL 与非法 UTF-8 经 base64 往返、与 `stat` 一致的版本、作为 `too-large` 的上限、坏范围、远超上限的文件的一个窗口、无大小时推断的 `eof`）、`stat`、工作区外读取及后端拒绝、带包含限制、截断、符号链接子项与 `not-directory` 的 `list`，以及由 `fs/observed` 驱动并按根过滤的 `changes` 流。`packages/api/workspace-files/tests` 中的 Client spec 覆盖提供者的帧（开头 stat、失败帧、不带内容的写入、消失、恢复、中止）、变更流（每会话一条流、按归一路径扇出、排队的帧、因 signal 或 Host 关闭而结束）、不支持地址的各种情形，以及随 fiber 的注册与释放。`fs/fs`、`fs-local` 与 `fs-e2b` 的 spec 钉住 `readByteRange` 的范围语义——中段窗口、短于所求的尾窗、越界与零长窗口、错误、中止以及 e2b 的取消——`dsh-util-workspace-path` 的 spec 钉住文件地址语法。`readAll` 与 `readRelated` 的 spec 覆盖全文读取上限、工作区外基准与关联路径，以及 Host 后端授权。connection fixture 为 web e2e 套件提供 `stat`、分页 `read`、`list` 与一帧可选启用的 `changes`。
+`packages/api/workspace-files/tests` 中的 Host spec 覆盖 live 与 cold subagent Session 的 header-only scope 解析、部署 fallback、缺失身份与 lookup 释放；分页读取（整文件、嵌套路径、空文件、多字节 UTF-8、行窗口边界、缺省与拒绝的 limit、保留回车）；字节窗口（缺省、中段与尾窗、越界与空文件、base64 往返、版本、上限、坏范围以及无大小时的 `eof`）；`stat`；工作区外读取及后端拒绝；`list` 的包含、截断、符号链接与 `not-directory`；以及由 `fs/observed` 驱动并按根过滤的 `changes`。Client spec 覆盖提供者帧、变更流、不支持地址及注册与释放。`fs/fs`、`fs-local` 与 `fs-e2b` spec 钉住 `readByteRange`；`dsh-util-workspace-path` spec 钉住文件地址语法。connection fixture 为 web e2e 套件提供 `stat`、分页 `read`、`list` 与一帧可选启用的 `changes`。
 
 ## Deferred
 

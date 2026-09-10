@@ -23,11 +23,9 @@ import { PLAIN_BODY_ID } from '../src/client/text/index.ts'
 import { ABSOLUTE_PATH, ADDRESS, PATH, SESSION, TAB_ID, failure, harness, page, settle } from './fixtures.client.ts'
 
 const LINE_HEIGHT = 20
-const CODE_TOOLBAR_HEIGHT = 36
 
 const originals = {
   offsetTop: Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'offsetTop'),
-  offsetHeight: Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'offsetHeight'),
   scrollTop: Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'scrollTop'),
 }
 
@@ -46,13 +44,6 @@ beforeAll(() => {
     configurable: true,
     get(this: HTMLElement & { __scrollTop?: number }) { return this.__scrollTop ?? 0 },
     set(this: HTMLElement & { __scrollTop?: number }, value: number) { this.__scrollTop = value },
-  })
-  Object.defineProperty(HTMLElement.prototype, 'offsetHeight', {
-    configurable: true,
-    get(this: HTMLElement) {
-      return this.parentElement?.classList.contains('md-code-block') === true
-        && this.parentElement.firstElementChild === this ? CODE_TOOLBAR_HEIGHT : 0
-    },
   })
 })
 
@@ -107,6 +98,10 @@ function body(container: HTMLElement): HTMLElement {
   return element
 }
 
+function scrollport(container: HTMLElement): HTMLElement {
+  return container.querySelector<HTMLElement>('[data-code-block-content]') ?? body(container)
+}
+
 function lines(container: HTMLElement): string[] {
   return Array.from(container.querySelectorAll('[data-textpreview-line]'), row => row.textContent ?? '')
 }
@@ -149,6 +144,56 @@ describe('TextPreview — pages', () => {
     view.rerender(<TextPreview {...h.props()} />)
     expect(view.container.querySelector('[data-textpreview-path]')?.textContent).toBe(ABSOLUTE_PATH)
     expect(view.container.querySelector('[data-textpreview-path]')?.getAttribute('title')).toBe(ABSOLUTE_PATH)
+  })
+
+  it('marks the path clipped while its text is wider than its box, re-reading on resize', async () => {
+    class FakeResizeObserver implements ResizeObserver {
+      static latest: FakeResizeObserver | undefined
+      readonly observe = vi.fn()
+      readonly unobserve = vi.fn()
+      readonly disconnect = vi.fn()
+      constructor(private readonly callback: ResizeObserverCallback) {
+        FakeResizeObserver.latest = this
+      }
+
+      fire(): void {
+        this.callback([], this)
+      }
+    }
+    vi.stubGlobal('ResizeObserver', FakeResizeObserver)
+    let boxWidth = 300
+    const offsetWidth = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'offsetWidth')
+    const clientWidth = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'clientWidth')
+    Object.defineProperty(HTMLElement.prototype, 'offsetWidth', { configurable: true, get: () => 200 })
+    Object.defineProperty(HTMLElement.prototype, 'clientWidth', { configurable: true, get: () => boxWidth })
+    try {
+      const h = harness({ 1: page(1, ['one'], true) })
+      const view = render(<TextPreview {...h.props()} />)
+      await settle()
+      const path = view.container.querySelector<HTMLElement>('[data-textpreview-path]')
+      const text = path?.firstElementChild
+      expect(path?.hasAttribute('data-textpreview-path-clipped')).toBe(false)
+      const observer = FakeResizeObserver.latest
+      if (observer === undefined) throw new Error('expected the path to observe its size')
+      expect(observer.observe).toHaveBeenCalledWith(path)
+      expect(observer.observe).toHaveBeenCalledWith(text)
+
+      boxWidth = 120
+      act(() => { observer.fire() })
+      expect(path?.hasAttribute('data-textpreview-path-clipped')).toBe(true)
+
+      boxWidth = 300
+      act(() => { observer.fire() })
+      expect(path?.hasAttribute('data-textpreview-path-clipped')).toBe(false)
+      view.unmount()
+      expect(observer.disconnect).toHaveBeenCalledTimes(1)
+    } finally {
+      vi.unstubAllGlobals()
+      for (const [name, descriptor] of [['offsetWidth', offsetWidth], ['clientWidth', clientWidth]] as const) {
+        if (descriptor === undefined) Reflect.deleteProperty(HTMLElement.prototype, name)
+        else Object.defineProperty(HTMLElement.prototype, name, descriptor)
+      }
+    }
   })
 
   it('reads the first page on first mount and draws its lines, offering the next', async () => {
@@ -211,14 +256,34 @@ describe('TextPreview — pages', () => {
     const h = harness({ 1: failure('workspace-file/not-text', { path: PATH }) })
     const view = render(<TextPreview {...h.props()} />)
     await settle()
-    expect(view.container.querySelector('[data-textpreview-failed]')?.getAttribute('data-textpreview-failed')).toBe('workspace-file/not-text')
+    const failed = view.container.querySelector('[data-textpreview-failed]')
+    expect(failed?.getAttribute('data-textpreview-failed')).toBe('workspace-file/not-text')
     expect(view.container.textContent).toContain('error.notText')
+    // Nothing read yet: the failure stands as the body, under the file's type sheet.
+    expect(failed?.querySelector('svg')).not.toBeNull()
     expect(view.container.querySelector('[data-textpreview-more]')).toBeNull()
     h.script(1, page(1, ['one'], true))
     click(view.container, '[data-textpreview-retry]')
     await settle()
     expect(h.read).toHaveBeenLastCalledWith(SESSION, PATH, 1, h.controller.signal)
     expect(lines(view.container)).toEqual(['one\n'])
+    expect(view.container.querySelector('[data-textpreview-failed]')).toBeNull()
+  })
+
+  it('says why a later page failed on a line under the pages already read', async () => {
+    const h = harness({ 1: page(1, ['a'], false), 2: failure('workspace-file/too-large', { path: PATH, limit: 1024 }) })
+    const view = render(<TextPreview {...h.props()} />)
+    await settle()
+    click(view.container, '[data-textpreview-more]')
+    await settle()
+    const failed = view.container.querySelector('[data-textpreview-failed]')
+    expect(failed?.getAttribute('data-textpreview-failed')).toBe('workspace-file/too-large')
+    expect(failed?.querySelector('svg')).toBeNull()
+    expect(lines(view.container)).toEqual(['a\n'])
+    h.script(2, page(2, ['b'], true))
+    click(view.container, '[data-textpreview-retry]')
+    await settle()
+    expect(lines(view.container)).toEqual(['a\n', 'b\n'])
     expect(view.container.querySelector('[data-textpreview-failed]')).toBeNull()
   })
 
@@ -326,6 +391,27 @@ describe('TextPreview — the file\'s metadata', () => {
     expect(view.container.querySelector('[data-textpreview-changed]')).toBeNull()
   })
 
+  it('says a metadata-and-read failure once and retries the content read', async () => {
+    const h = harness({ 1: failure('workspace-file/outside-workspace', { path: PATH }) })
+    h.setFailure(new RemoteError('workspace-file/outside-workspace', 'outside', { path: PATH }))
+    const view = render(<TextPreview {...h.props()} />)
+    await settle()
+    // With nothing read the body's failure is the whole story: a metadata bar
+    // above it would repeat the same line.
+    expect(view.container.querySelector('[data-textpreview-meta-failed]')).toBeNull()
+    expect(view.container.querySelector('[data-textpreview-failed]')?.getAttribute('data-textpreview-failed'))
+      .toBe('workspace-file/outside-workspace')
+    h.script(1, page(1, ['a'], true))
+    click(view.container, '[data-textpreview-retry]')
+    await settle()
+    expect(h.read).toHaveBeenCalledTimes(2)
+    expect(lines(view.container)).toEqual(['a\n'])
+    h.setFailure(undefined)
+    view.rerender(<TextPreview {...h.props()} />)
+    expect(view.container.querySelector('[data-textpreview-meta-failed]')).toBeNull()
+    expect(view.container.querySelector('[data-textpreview-failed]')).toBeNull()
+  })
+
   it('draws a page holding one empty line as one line, and nothing for a page past the end', async () => {
     const h = harness({ 1: page(1, [''], false), 2: page(2, [], true) })
     const view = render(<TextPreview {...h.props()} />)
@@ -340,8 +426,31 @@ describe('TextPreview — the file\'s metadata', () => {
 })
 
 describe('TextPreview — navigation and view', () => {
+  it('rebinds scrolling when the selected Slot body is replaced without changing the renderer id', async () => {
+    const h = harness({ 1: page(1, ['a', 'b', 'c'], true) })
+    const code = codeProps(h, { revision: 1 })
+    const fallback: TextPreviewProps = { ...code, renderSlot: () => <div data-late-renderer /> }
+    const view = render(<TextPreview {...fallback} />)
+    await settle()
+    const outer = body(view.container)
+    fireEvent.scroll(outer, { target: { scrollTop: 120 } })
+    expect(h.instance.getSnapshot().byTab[TAB_ID]?.scrollTop).toBe(120)
+
+    view.rerender(<TextPreview {...code} />)
+    const inner = scrollport(view.container)
+    expect(inner).not.toBe(outer)
+    expect(inner.scrollTop).toBe(120)
+    fireEvent.scroll(inner, { target: { scrollTop: 240 } })
+    expect(h.instance.getSnapshot().byTab[TAB_ID]?.scrollTop).toBe(240)
+
+    view.rerender(<TextPreview {...fallback} />)
+    expect(outer.scrollTop).toBe(240)
+    fireEvent.scroll(outer, { target: { scrollTop: 360 } })
+    expect(h.instance.getSnapshot().byTab[TAB_ID]?.scrollTop).toBe(360)
+  })
+
   it.each([
-    ['Code', 'code', 2 * LINE_HEIGHT - CODE_TOOLBAR_HEIGHT],
+    ['Code', 'code', 2 * LINE_HEIGHT],
     ['Plain text', PLAIN_BODY_ID, 2 * LINE_HEIGHT],
   ])('retries a Markdown line navigation after switching to %s', async (_name, rendererId, expectedScrollTop) => {
     PendingIntersectionObserver.instances = []
@@ -369,7 +478,7 @@ describe('TextPreview — navigation and view', () => {
     expect(h.instance.getSnapshot().byTab[TAB_ID]?.revision).toBeUndefined()
     act(() => { h.instance.actions.selected(TAB_ID, rendererId) })
     await waitFor(() => { expect(h.instance.getSnapshot().byTab[TAB_ID]?.revision).toBe(1) })
-    expect(body(view.container).scrollTop).toBe(expectedScrollTop)
+    expect(scrollport(view.container).scrollTop).toBe(expectedScrollTop)
   })
 
   it('lands on code lines before and after syntax highlighting is ready', async () => {
@@ -381,13 +490,20 @@ describe('TextPreview — navigation and view', () => {
     expect(view.container.querySelector('[data-code-preview] pre.shiki')).toBeNull()
     expect(view.container.querySelectorAll('[data-code-preview] pre .line')).toHaveLength(3)
     expect(body(view.container).scrollTop).toBe(0)
+    const codeScrollport = scrollport(view.container)
+    expect(codeScrollport.scrollTop).toBe(LINE_HEIGHT)
     expect(h.instance.getSnapshot().byTab[TAB_ID]?.revision).toBe(1)
+    fireEvent.scroll(body(view.container), { target: { scrollTop: 300 } })
+    expect(h.instance.getSnapshot().byTab[TAB_ID]?.scrollTop).toBe(LINE_HEIGHT)
+    fireEvent.scroll(codeScrollport, { target: { scrollTop: 300 } })
+    expect(h.instance.getSnapshot().byTab[TAB_ID]?.scrollTop).toBe(300)
 
     const block = view.container.querySelector('[data-code-preview] .md-code-block')!
     act(() => { PendingIntersectionObserver.instances[0]!.intersect(block) })
     await waitFor(() => { expect(view.container.querySelector('[data-code-preview] pre.shiki')).not.toBeNull() })
+    expect(scrollport(view.container)).toBe(codeScrollport)
     view.rerender(<TextPreview {...codeProps(h, { params: { line: 3 }, revision: 2 })} />)
-    expect(body(view.container).scrollTop).toBe(2 * LINE_HEIGHT - CODE_TOOLBAR_HEIGHT)
+    expect(codeScrollport.scrollTop).toBe(2 * LINE_HEIGHT)
     expect(h.instance.getSnapshot().byTab[TAB_ID]?.revision).toBe(2)
   })
 

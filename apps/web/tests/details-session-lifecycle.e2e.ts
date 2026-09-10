@@ -233,6 +233,10 @@ describe.skipIf(MODE === 'record')('web e2e: details panel follows the current S
     const close = async (): Promise<void> => {
       await column.locator('[data-sidebar-right-toggle]').click()
       await expect.poll(() => column.locator('[data-sidebar-right-open]').count()).toBe(0)
+      // Closing publishes state before the frame's grid transition finishes.
+      await appFrame(page).evaluate(async (frame) => {
+        await Promise.allSettled(frame.getAnimations().map(animation => animation.finished))
+      })
       await expect.poll(() => detailsTrack(page)).toBe(0)
       await panel.waitFor({ state: 'hidden' })
     }
@@ -279,7 +283,8 @@ describe.skipIf(MODE === 'record')('web e2e: details panel follows the current S
     await workspaceDirectory.waitFor({ timeout: 15_000 })
     await workspaceDirectory.click()
     await expect.poll(() => workspaceDirectory.getAttribute('aria-expanded')).toBe('true')
-    await expect.poll(() => column.locator('[data-files-row="loading"]').count()).toBe(0)
+    // The child listing crosses the same Remote as the root listing above.
+    await column.locator('[data-files-row="loading"]').waitFor({ state: 'hidden', timeout: 15_000 })
     expect(await column.locator('[data-files-row="failed"]').count()).toBe(0)
     const retainedB = await paneSnapshot(page)
     expect(retainedB.map(pane => pane.tabs.map(tab => tab.title))).toEqual([['Files']])
@@ -314,7 +319,8 @@ describe.skipIf(MODE === 'record')('web e2e: details panel follows the current S
 
     try {
       await page.setViewportSize({ width: 1024, height: viewport.height })
-      await expect.poll(() => columns(page)).toEqual([280, 400, 344])
+      // Frame measurement and the grid transition can finish after setViewportSize returns.
+      await expect.poll(() => columns(page), { timeout: 5_000 }).toEqual([280, 400, 344])
       await dragSidebar(page, 420)
       await expect.poll(() => columns(page)).toEqual([420, 604, 0])
       expect(await column.locator('[data-sidebar-right-open]').count()).toBe(0)

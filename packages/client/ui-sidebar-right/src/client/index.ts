@@ -30,6 +30,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type {} from './contract/slots.ts'
 import { GuideBody, type GuideInjected } from './tabs/guide/GuideBody.tsx'
+import { GuideTitle } from './tabs/guide/GuideTitle.tsx'
 import { ExpandButton } from './shell/ExpandButton.tsx'
 import { RightbarSeat, type SidebarRightInjected } from './shell/SidebarRight.tsx'
 import { RightbarRoot } from './shell/RightbarRoot.tsx'
@@ -183,7 +184,6 @@ export function apply(ctx: ClientContext): void {
     const disposeGuide = ctx.slots.inject('sidebar.right.pane.tab', () => ctx.slots.register({
       name: 'sidebar.right.pane.tab',
       key: GUIDE_ID,
-      locale: NS,
       children: {
         'sidebar.right.tab.guide': {
           kind: 'chain', scope: 'session', inject: { hooks: { tabInfo: guideTabInfoFactory } },
@@ -191,7 +191,12 @@ export function apply(ctx: ClientContext): void {
       },
       inject: () => guideInjected,
     }, GuideBody))
+    const disposeGuideTitle = ctx.slots.inject('sidebar.right.pane.tab.title', () => ctx.slots.register(
+      { name: 'sidebar.right.pane.tab.title', key: GUIDE_ID },
+      GuideTitle,
+    ))
     return () => {
+      disposeGuideTitle()
       disposeGuide()
       disposeExpand()
       disposeSeat()
