@@ -165,7 +165,11 @@ export function ConversationSessionHeader({
  * @param props - Strict Session input/store, view ledger, and render shares.
  * @returns the active view area, or null while the Session remains blank.
  */
-export function ConversationSession({
+export function ConversationSession(props: ConversationSessionProps) {
+  return <DefaultConversationViews {...props} />
+}
+
+function DefaultConversationViews({
   useSession, useConversation, useConversationViews, useInput, inputActions, useStore, actions,
   renderSlot, bindDraftMirror, openView,
 }: ConversationSessionProps) {
