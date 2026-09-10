@@ -14,7 +14,7 @@ The desktop application is an Electron shell around the dsh Web UI. It opens no 
 | Shared modules | Host APIs can depend on module identity. | Desktop links every bundled first-party package into the profile using directory symlinks, or Windows junctions; ordinary plugin dependencies remain local. |
 | State ownership | Sharing executable dependency graphs would let CLI and Desktop change each other's dsh, Cordis, plugin, or native-module versions, while two desktop processes could race on the same profile. | Electron acquires its process-lifetime single-instance lock before any profile access and exclusively owns `$DSH_HOME/profiles/desktop` plus its package-manager state. CLI and Desktop share supported product data under `$DSH_HOME`, but never executable packages, plugin activation, lockfiles, or `node_modules`. |
 | Transport | A listening Web service adds port ownership, authentication, CORS, and exposure concerns; Electron and upstream Node.js also need an explicit cross-process protocol. | The application opens no Web port. `dsh-app://` carries Web assets and Fetch traffic; framed byte pipes carry bounded request and response chunks with backpressure, while Node IPC carries only child lifecycle control. |
-| Activation | Dependency resolution, lifecycle scripts, native modules, and plugin startup can fail, and a process can stop during directory replacement. | Release and plugin changes install in staging, boot a complete backend health check, and replace the active profile only after success; a journal and one rollback profile cover interrupted replacement. |
+| Activation | Dependency resolution, lifecycle scripts, native modules, and plugin startup can fail, and a process can stop during directory replacement. | Release and plugin changes prepare in staging and start the actual backend after profile replacement; a journal and one rollback profile cover failed or interrupted activation. |
 | Updates | Independent shell and dsh updates would recreate version splits, while unchanged shell blocks should not require a complete transfer. | The Electron shell, matching dsh runtime, Node.js, and pnpm form one signed update unit. Platform update artifacts may reuse unchanged blocks, but runtime version selection never splits from the Desktop release. |
 
 The [Electron packaging and update Agent Note](../../.agents/notes/implemented/architecture/2026-08-25-electron-desktop-packaging-and-updates.md) owns the rationale, alternatives, security constraints, and release qualification requirements behind these decisions.
@@ -23,23 +23,23 @@ The [Electron packaging and update Agent Note](../../.agents/notes/implemented/a
 
 Electron owns `$DSH_HOME/profiles/desktop`. Its `dependencies` contains only installed external plugins at exact versions; `dsh.profile.bundles` contains the built-in bundles followed by enabled plugins. The signed application supplies dsh, the private Desktop Host, and their production packages from `resources/dsh`. Shared package links resolve to those actual directories. Both host and plugins execute in the same bundled upstream Node process, with normal realpath resolution; Desktop does not enable `--preserve-symlinks`. The CLI cannot boot or mutate this profile.
 
-The main dsh renderer receives only the desktop protocol marker. The separate plugin window receives structured list, install, remove, update, and update-check operations; neither renderer receives filesystem access, raw Electron IPC, a shell, or arbitrary pnpm arguments.
+The local startup page exposes startup status, retry, and plugin-management actions; the loaded dsh renderer receives only the desktop protocol marker. The separate plugin window receives structured list, install, remove, update, and update-check operations; neither renderer receives filesystem access, raw Electron IPC, a shell, or arbitrary pnpm arguments.
 
-Electron chooses typed English or Chinese shell copy from its application locale and falls back to English. Menus, native dialogs, and the plugin-management renderer use the same locale payload; the repository Client UI i18n gate checks these desktop sources.
+Electron chooses typed English or Chinese shell copy from its application locale and falls back to English. Menus, native dialogs, the startup page, and the plugin-management renderer use the same locale payload; the repository Client UI i18n gate checks these desktop sources.
 
 ### Runtime and plugin activation
 
-The signed `resources/dsh/desktop-runtime.json` binds the shell version, bundled Node version, platform, architecture, shared package versions, and final file inventory. Startup verifies the tree before creating host links. Core packages are never copied into profile storage or installed by pnpm at first launch.
+The signed `resources/dsh/desktop-runtime.json` binds the shell version, bundled Node version, platform, architecture, shared package versions, and final file inventory. Startup checks release metadata, shared package manifests, and required Host entry files without enumerating or hashing the runtime tree. Full file integrity verification runs during packaging. Core packages are never copied into profile storage or installed by pnpm at first launch.
 
-1. A fresh profile creates its manifest and shared package links, then boots and stops the complete backend before activation.
-2. A compatible application upgrade copies plugin files and configuration into staging, refreshes shared links, checks enabled plugins’ peer requirements, and runs the same backend health check. Plugin versions and lockfile remain unchanged; pnpm does not run.
+1. The main window displays a local loading page before profile preparation or backend startup. A fresh profile creates its manifest and shared package links, then activates and starts the actual backend once.
+2. A compatible application upgrade copies plugin files and configuration into staging, refreshes shared links, and checks enabled plugins’ peer requirements. Plugin versions and lockfile remain unchanged; pnpm does not run.
 3. A changed bundled Node version, platform, or architecture reinstalls the locked plugin graph with scripts disabled, validates and links host packages, then runs approved pending builds and validates again.
 4. Plugin add, update, and remove operations use bundled pnpm and Desktop-owned package-manager state. Reserved host packages must be peers; nested copies and aliases of shared packages fail validation. Ordinary plugin dependencies must resolve inside the profile.
-5. Activation stops the active backend, records runtime identities and the next directory move, and replaces the profile while retaining one rollback copy. Copies do not share writable hardlinks. A failed activation restores the previous profile; a profile belonging to another runtime cannot boot under the current shell.
+5. Activation stops the active backend, records runtime identities and the next directory move, and replaces the profile while retaining one rollback copy. Copies do not share writable hardlinks. The actual backend starts after replacement; failed activation restores the previous profile; a profile belonging to another runtime cannot boot under the current shell.
 
-The Electron-owned plugin window remains available when backend startup fails. Disable one plugin or all plugins to retry with their files, exact versions, and configuration retained. Disabling removes only activation entries. Updating or removing an installed plugin remains available while it is disabled. Application rollback and profile rollback are separate; runtime compatibility is checked before any backend starts.
+The loading page does not depend on the Host. Startup failures appear in the same main window with retry and plugin-management actions. Closing during loading waits for the pending child to exit. The Electron-owned plugin window remains available when backend startup fails. Disable one plugin or all plugins to retry with their files, exact versions, and configuration retained. Disabling removes only activation entries. Updating or removing an installed plugin remains available while it is disabled. Application rollback and profile rollback are separate; runtime compatibility is checked before any backend starts.
 
-Package transactions hold an exclusive lock through pnpm process exit. Shared links use directory symlinks on macOS/Linux and junctions on Windows; hardlinks are unsuitable because they cannot represent package directories and would retain old file content after application replacement. Native builds follow the profile’s reviewed `allowBuilds` list; installing a new build-requiring package without approval in that list fails the transaction.
+Package transactions hold an exclusive lock through pnpm process exit. Shared links use directory symlinks on macOS/Linux and junctions on Windows; cleanup removes links without deleting their targets. Canonical filesystem paths identify shared packages, so Windows path casing alone does not trigger profile activation. Native builds follow the profile’s reviewed `allowBuilds` list; installing a new build-requiring package without approval in that list fails the transaction.
 
 ## Develop
 
@@ -90,6 +90,12 @@ The macOS arm64 command requires Apple Silicon. The macOS x64 command runs on In
 
 Each target owns its packed package inputs, prepared runtime, package set, dsh tree, pnpm preparation state, unpacked application, update metadata, and final artifacts under `apps/desktop/.desktop-build/targets/<target>/`. The Node.js archive cache remains shared under `.desktop-build/downloads` because every archive name includes its version, platform, and architecture and is verified before extraction. A target build never consumes another target's mutable preparation state.
 
+### Runtime file selection
+
+Production packages first pass through npm's publication rules and dependency installation. [Desktop's file policy](scripts/runtime-file-policy.ts) then filters the immutable `resources/dsh/node_modules` copy before signing and integrity sealing. It omits TypeScript declarations, recognized JavaScript/CSS/TypeScript source maps, TypeScript build caches, Domino's test directory, selected native compiler outputs, and node-pty prebuilds for other platforms. It preserves runtime JavaScript, native modules and their DLL/EXE helpers, WASM, unknown assets, licenses, and notices. The policy does not alter npm tarballs, the bundled package manager, or user-installed plugin files.
+
+The packaged application runs compiled JavaScript and pre-generated Typert metadata; it does not compile TypeScript plugins. Source-level debugger navigation and editor declarations remain available in development packages. [Copy-policy tests](tests/runtime-file-policy.spec.ts) cover exclusions and retained assets; the [payload smoke](tests/fixtures/runtime-payload-smoke.mjs) exercises the resulting native modules and HTML converter under the bundled Node.
+
 ### Upload updates
 
 `DSH_DESKTOP_AUTO_UPDATE_ENV` selects `test` or `production` for both the URL embedded during packaging and the later COS upload; an absent value selects `test`. Test packaging requires its HTTPS origin in `DOWNLOAD_TEST_ORIGIN`, while the production origin remains `https://download.deepseek.com`. Upload additionally requires the selected deployment's COS bucket in `DOWNLOAD_TEST_COS_BUCKET` or `DOWNLOAD_PROD_COS_BUCKET`. The target path is `_/harness/desktop/stable/<target>/`, where `target` is `mac-arm64`, `mac-x64`, or `win-x64`.
@@ -121,7 +127,21 @@ macOS signing visits real files without following Framework symlink aliases. PAK
 
 Company proxies can accelerate uploads to Apple's notarization service. See the company internal documentation for configuration.
 
+### Unsigned Windows test installer
+
+On Windows x64, use the complete unsigned packaging command for local installation testing:
+
+```sh
+pnpm run package:desktop:win:x64:unsigned
+```
+
+The command requires `DSH_DESKTOP_APP_ID` and the normal build dependencies, including Python and Visual C++ build tools for native modules. Set `PYTHON` to the Python executable when it is absent from `PATH`. It writes the installer to `.desktop-build/targets/win-x64/unsigned-artifacts/`, omits automatic-update configuration, strips signing credentials, and creates no release completion record. It does not require EV credentials or an update origin. The signed packaging and upload commands retain their release requirements.
+
 ### Windows EV signing
+
+Windows packaging fixes the 7-Zip filter to `BCJ` for compatibility with the bundled NSIS decoder. This preserves ARM64 binaries carried by dependencies in x64 installers; automatic ARM64 filtering produces entries that this decoder cannot extract.
+
+NSIS removes its temporary extraction tree during installation, before the completion page or an automatic launch. The installed production packages remain ordinary files; startup does not extract them again. Installation still writes the complete application tree.
 
 Windows release packaging requires `DSH_DESKTOP_WINDOWS_CER_FILE` to identify the public GlobalSign EV leaf certificate, `DSH_DESKTOP_WINDOWS_SIGNTOOL` to identify the SafeNet-compatible SignTool executable, `DSH_DESKTOP_WINDOWS_KEY_CONTAINER` to identify the matching private-key container, and `DSH_DESKTOP_WINDOWS_TOKEN_PIN` to contain the SafeNet Token Password. The certificate file remains outside source control, and the matching private key stays on the USB token. Set the four inputs before running the fixed Windows target:
 
@@ -133,7 +153,7 @@ $env:DSH_DESKTOP_WINDOWS_TOKEN_PIN = '<SafeNet Token Password>'
 pnpm run package:desktop:win:x64
 ```
 
-Insert and unlock the token before packaging. The electron-builder hook passes each artifact to the CRLF `scripts/windows-sign.cmd`, which invokes the configured SignTool once with `/f`, SafeNet `/kc "[{{PIN}}]=container"`, `/csp "eToken Base Cryptographic Provider"`, a SHA-256 file digest, and a DigiCert SHA-256 RFC 3161 timestamp. The hook never substitutes electron-builder's bundled SignTool and never retries a failed signing request. Windows packaging fails instead of emitting unsigned artifacts when the SignTool, certificate, container, PIN, token, or signature is unavailable.
+Insert and unlock the token before packaging. The electron-builder hook passes each artifact to the CRLF `scripts/windows-sign.cmd`, which invokes the configured SignTool once with `/f`, SafeNet `/kc "[{{PIN}}]=container"`, `/csp "eToken Base Cryptographic Provider"`, a SHA-256 file digest, and a DigiCert SHA-256 RFC 3161 timestamp. The hook never substitutes electron-builder's bundled SignTool and never retries a failed signing request. Windows release packaging fails instead of emitting unsigned artifacts when the SignTool, certificate, container, PIN, token, or signature is unavailable.
 
 The PIN cannot contain `]`, a quote, or a line break because those characters delimit the SafeNet `/kc` value or its CMD argument. The CMD disables delayed expansion so a PIN containing `!` reaches SafeNet unchanged. Packaging withholds every `DSH_DESKTOP_WINDOWS_*` field from build and runtime-preparation subprocesses, gives electron-builder only the four configured inputs, gives the signing CMD only the validated signing fields in an otherwise scrubbed environment, clears those fields before SignTool starts, and redacts SignTool diagnostics. SafeNet still requires the PIN in the SignTool process command line. Inject it as an ephemeral secret only on a controlled self-hosted Windows runner with the physical token attached; never commit it, put it in `.env`, or persist it as a Windows user or system environment variable.
 
@@ -158,9 +178,9 @@ An unpacked artifact contains Electron, the materialized dsh production tree, up
 
 ## Updates
 
-A packaged application checks its target-specific release stream ten seconds after the main window opens; the localized **Check for Updates…** menu item triggers the same check manually. An available release opens one native confirmation dialog. Accepting it waits for an in-flight check, downloads and verifies the signed Desktop release, stops the dsh child, and hands installation plus restart to electron-updater. The next launch reconciles the version-bound runtime before reopening the product window.
+A packaged application checks its target-specific release stream ten seconds after the main window opens; the localized **Check for Updates…** menu item triggers the same check manually. An available release opens one native confirmation dialog. Accepting it waits for an in-flight check, downloads and verifies the signed Desktop release, stops the dsh child, and hands installation plus restart to electron-updater. The next launch displays the local loading page while reconciling the version-bound runtime.
 
-Electron-builder always emits generic-provider channel metadata for the deployment selected by `DSH_DESKTOP_AUTO_UPDATE_ENV`. NSIS differential packages and the macOS ZIP target allow electron-updater to reuse unchanged blocks; the manually installed DMG is notarized without a blockmap because it is not a macOS updater payload. The runtime and shell still form one signed Desktop release. macOS signing and notarization credentials use electron-builder's standard environment; Windows EV signing uses the public certificate, validated SignTool, SafeNet container, and runner PIN described above. The required Desktop release environment selects the application and platform signature identities that the build verifies.
+Signed packaging emits generic-provider channel metadata for the deployment selected by `DSH_DESKTOP_AUTO_UPDATE_ENV`. NSIS differential packages and the macOS ZIP target allow electron-updater to reuse unchanged blocks; the manually installed DMG is notarized without a blockmap because it is not a macOS updater payload. The runtime and shell still form one signed Desktop release. macOS signing and notarization credentials use electron-builder's standard environment; Windows EV signing uses the public certificate, validated SignTool, SafeNet container, and runner PIN described above. The required Desktop release environment selects the application and platform signature identities that the build verifies.
 
 ## Low-level development overrides
 

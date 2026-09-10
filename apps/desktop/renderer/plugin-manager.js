@@ -32,8 +32,8 @@ async function main() {
 
   async function render() {
     const backend = await api.backend.status()
-    document.querySelector('#recovery').hidden = backend.ready
-    document.querySelector('#startup-error').textContent = backend.error ?? ''
+    document.querySelector('#recovery').hidden = backend.phase !== 'error'
+    document.querySelector('#startup-error').textContent = backend.phase === 'error' ? backend.message : ''
     const plugins = await api.plugins.list()
     list.replaceChildren(...plugins.map(plugin => {
       const item = document.createElement('li')

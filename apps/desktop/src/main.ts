@@ -15,6 +15,7 @@ import {
 import { resolveDesktopPaths } from './paths.ts'
 import { DesktopProjectManager, type DesktopProjectHooks } from './project-manager.ts'
 import { DesktopHostProcess } from './host-process.ts'
+import { DesktopBackendController, type DesktopBackendState } from './backend-controller.ts'
 import { DESKTOP_IPC, type DesktopUpdateState } from './ipc.ts'
 import { formatDesktopMessage, resolveDesktopLocale } from './locale.ts'
 import { claimDesktopSingleInstance } from './single-instance.ts'
@@ -79,13 +80,13 @@ function developmentHostInspectPort(enabled: boolean): number | undefined {
   return port
 }
 
-function createWindow(preload: string): BrowserWindow {
+function createWindow(preload: string, show = false): BrowserWindow {
   const window = new BrowserWindow({
     width: 1280,
     height: 840,
     minWidth: 880,
     minHeight: 600,
-    show: false,
+    show,
     webPreferences: {
       preload,
       nodeIntegration: false,
@@ -137,8 +138,9 @@ async function main(): Promise<void> {
   const activeProject = development ?? paths.profile
   const hostInspectPort = developmentHostInspectPort(development !== undefined)
   const manager = new DesktopProjectManager(paths, resources)
-  let host: DesktopHostProcess | undefined
-  let startupError: string | undefined
+  let pageError: string | undefined
+  let quitting = false
+  let startup: Promise<void> | undefined
   let mainWindow: BrowserWindow | undefined
   let pluginWindow: BrowserWindow | undefined
   let shellInstallerOwnsQuit = false
@@ -147,6 +149,38 @@ async function main(): Promise<void> {
   const messages = locale.messages
   const appPreload = fileURLToPath(new URL('./preload-app.cjs', import.meta.url))
   const managementPreload = fileURLToPath(new URL('./preload.cjs', import.meta.url))
+  const startupUrl = `${SCHEME}://shell/startup.html`
+  const applicationUrl = `${SCHEME}://app/index.html`
+  let navigation: { window: BrowserWindow; url: string; promise: Promise<void> } | undefined
+
+  const navigateMain = (url: string): Promise<void> => {
+    const window = mainWindow
+    if (quitting || window === undefined || window.isDestroyed()) return Promise.resolve()
+    if (navigation?.window === window && navigation.url === url) return navigation.promise
+    const next = { window, url, promise: Promise.resolve() }
+    next.promise = window.loadURL(url).catch((error: unknown) => {
+      if (quitting || window.isDestroyed() || navigation !== next) return
+      navigation = undefined
+      throw error
+    })
+    navigation = next
+    return next.promise
+  }
+  const backendState = (): DesktopBackendState => pageError === undefined
+    ? backend.state : { phase: 'error', message: pageError }
+  const publishBackend = (state: DesktopBackendState): void => {
+    for (const window of BrowserWindow.getAllWindows()) {
+      window.webContents.send(DESKTOP_IPC.backendState, state)
+    }
+  }
+  const backend = new DesktopBackendController((onFailure) => {
+    if (development === undefined) manager.assertProfileRuntime(activeProject)
+    return new DesktopHostProcess(resources.node, development ?? resources.dsh, activeProject, hostInspectPort, process.env, onFailure)
+  }, (state) => {
+    if (state.phase === 'starting') pageError = undefined
+    publishBackend(backendState())
+    if (state.phase === 'error') void navigateMain(startupUrl).catch((error: unknown) => { console.error(error) })
+  })
 
   const publishUpdate = (state: DesktopUpdateState): DesktopUpdateState => {
     updateState = state
@@ -156,78 +190,39 @@ async function main(): Promise<void> {
     return state
   }
 
-  const startHost = async (projectDir = activeProject): Promise<DesktopHostProcess> => {
-    if (development === undefined) manager.assertProfileRuntime(projectDir)
-    const next = new DesktopHostProcess(resources.node, development ?? resources.dsh, projectDir, hostInspectPort)
-    try {
-      await next.start()
-      return next
-    } catch (error) {
-      await next.stop()
-      throw error
-    }
-  }
   const hooks: DesktopProjectHooks = {
-    healthCheck: async (projectDir) => {
-      const active = host
-      host = undefined
-      await active?.stop()
-      let healthFailure: unknown
-      let probe: DesktopHostProcess | undefined
-      try {
-        probe = await startHost(projectDir)
-        await probe.stop()
-      } catch (error) {
-        healthFailure = error
-        await probe?.stop().catch(() => undefined)
-      }
-      let restartFailure: unknown
-      if (active !== undefined) {
-        try {
-          host = await startHost()
-        } catch (error) {
-          restartFailure = error
-        }
-      }
-      if (healthFailure !== undefined && restartFailure !== undefined) {
-        throw new AggregateError([
-          errorOf(healthFailure, 'desktop project: staged health check failed'),
-          errorOf(restartFailure, 'desktop project: active backend restart failed'),
-        ], 'desktop project: staged health check and active backend restart failed')
-      }
-      if (healthFailure !== undefined) throw errorOf(healthFailure, 'desktop project: staged health check failed')
-      if (restartFailure !== undefined) throw errorOf(restartFailure, 'desktop project: active backend restart failed')
-    },
-    beforeActivate: async () => {
-      const active = host
-      host = undefined
-      await active?.stop()
-    },
-    afterActivate: async () => {
-      host = await startHost()
-    },
+    beforeActivate: () => backend.stop(),
+    afterActivate: () => backend.start(async () => {}),
   }
 
-  const reconcileBackend = async (): Promise<void> => {
-    try {
-      if (development === undefined) {
-        await manager.applyRelease(app.getVersion(), { ...hooks, beforeActivate: async () => {}, afterActivate: async () => {} })
-      }
-      host = await startHost()
-      startupError = undefined
-    } catch (error) {
-      startupError = errorOf(error, messages.startupFailed).message
+  const showStartupError = async (error: unknown): Promise<void> => {
+    if (quitting) return
+    pageError = errorOf(error, messages.startupFailed).message
+    await navigateMain(startupUrl)
+    publishBackend(backendState())
+  }
+  const reconcileBackend = (): Promise<void> => {
+    startup ??= (async () => {
+      pageError = undefined
+      await navigateMain(startupUrl)
+      await backend.start(async () => {
+        if (development === undefined) {
+          await manager.applyRelease(app.getVersion(), { beforeActivate: async () => {}, afterActivate: async () => {} })
+        }
+      })
+      if (backend.host !== undefined) await navigateMain(applicationUrl)
+    })().catch(async (error: unknown) => {
+      await showStartupError(error)
       throw error
-    }
+    }).finally(() => { startup = undefined })
+    return startup
   }
 
   const updates = new DesktopUpdateCoordinator(
     publishUpdate,
     async () => {
       shellInstallerOwnsQuit = true
-      const active = host
-      host = undefined
-      await active?.stop()
+      await backend.stop()
     },
   )
 
@@ -235,7 +230,7 @@ async function main(): Promise<void> {
     const url = new URL(request.url)
     if (url.hostname === 'shell') return serveShellAsset(request)
     if (url.hostname !== 'app') return Promise.resolve(new Response(null, { status: 404 }))
-    const active = host
+    const active = backend.host
     if (active === undefined) return Promise.resolve(new Response('backend unavailable', { status: 503 }))
     return active.fetch(request)
   })
@@ -245,10 +240,16 @@ async function main(): Promise<void> {
     if (development !== undefined) {
       throw new Error('dsh desktop: plugin package changes require a packaged application')
     }
-    await manager.mutate(mutation, hooks)
-    startupError = undefined
-    if (mainWindow !== undefined && !mainWindow.isDestroyed()) mainWindow.webContents.reload()
-    else focusPrimaryWindow()
+    await startup?.catch(() => undefined)
+    pageError = undefined
+    await navigateMain(startupUrl)
+    try {
+      await manager.mutate(mutation, hooks)
+      await navigateMain(applicationUrl)
+    } catch (error) {
+      await showStartupError(error)
+      throw error
+    }
   }
   ipcMain.handle(DESKTOP_IPC.localeGet, (event) => {
     assertDesktopSender(event, ['shell'])
@@ -280,11 +281,11 @@ async function main(): Promise<void> {
   ipcMain.handle(DESKTOP_IPC.pluginsDisableAll, event => mutate(event, { type: 'plugins-disable-all' }))
   ipcMain.handle(DESKTOP_IPC.backendStatus, (event) => {
     assertDesktopSender(event, ['shell'])
-    return { ready: host !== undefined, ...(startupError === undefined ? {} : { error: startupError }) }
+    return backendState()
   })
   ipcMain.handle(DESKTOP_IPC.backendRetry, async (event) => {
     assertDesktopSender(event, ['shell'])
-    if (host === undefined) await reconcileBackend()
+    await reconcileBackend()
     focusPrimaryWindow()
   })
   ipcMain.handle(DESKTOP_IPC.updatesCheck, async (event) => {
@@ -350,6 +351,10 @@ async function main(): Promise<void> {
     pluginWindow.once('closed', () => { pluginWindow = undefined })
     void pluginWindow.loadURL(`${SCHEME}://shell/plugin-manager.html`)
   }
+  ipcMain.handle(DESKTOP_IPC.pluginsOpen, (event) => {
+    assertDesktopSender(event, ['shell'])
+    openPluginWindow()
+  })
 
   Menu.setApplicationMenu(Menu.buildFromTemplate([{
     label: process.platform === 'darwin' ? app.name : messages.application,
@@ -367,36 +372,23 @@ async function main(): Promise<void> {
   }]))
 
   const createMainWindow = (): BrowserWindow => {
-    const window = createWindow(appPreload)
+    const window = createWindow(appPreload, true)
     mainWindow = window
-    window.once('ready-to-show', () => { if (!window.isDestroyed()) window.show() })
     window.on('closed', () => { if (mainWindow === window) mainWindow = undefined })
     return window
   }
   focusPrimaryWindow = () => {
-    if (host === undefined) { openPluginWindow(); return }
     const window = mainWindow
     if (window === undefined || window.isDestroyed()) {
-      const replacement = createMainWindow()
-      void replacement.loadURL(`${SCHEME}://app/index.html`)
+      createMainWindow()
+      void navigateMain(backendState().phase === 'ready' ? applicationUrl : startupUrl)
+        .catch((error: unknown) => { console.error(error) })
       return
     }
     if (window.isMinimized()) window.restore()
     window.show()
     window.focus()
   }
-
-  await reconcileBackend().catch(() => undefined)
-  if (host === undefined) openPluginWindow()
-  else {
-    mainWindow = createMainWindow()
-    await mainWindow.loadURL(`${SCHEME}://app/index.html`)
-  }
-  if (mainWindow !== undefined && development !== undefined && process.env.DSH_DESKTOP_OPEN_DEVTOOLS !== '0') {
-    mainWindow.webContents.openDevTools({ mode: 'detach' })
-  }
-  publishUpdate(updateState)
-  setTimeout(() => { void checkAndPrompt(false) }, 10_000)
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) focusPrimaryWindow()
@@ -405,13 +397,23 @@ async function main(): Promise<void> {
     if (process.platform !== 'darwin') app.quit()
   })
   app.on('before-quit', (event) => {
-    if (shellInstallerOwnsQuit) return
-    if (host === undefined) return
+    if (shellInstallerOwnsQuit || quitting) return
     event.preventDefault()
-    const active = host
-    host = undefined
-    void active.stop().finally(() => { app.quit() })
+    quitting = true
+    void backend.close().catch((error: unknown) => { console.error(error) }).finally(() => { app.quit() })
   })
+
+  mainWindow = createMainWindow()
+  await reconcileBackend().catch(() => undefined)
+  // Window lifecycle callbacks run while backend startup is pending.
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+  if (quitting) return
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+  if (mainWindow !== undefined && development !== undefined && process.env.DSH_DESKTOP_OPEN_DEVTOOLS !== '0') {
+    mainWindow.webContents.openDevTools({ mode: 'detach' })
+  }
+  publishUpdate(updateState)
+  setTimeout(() => { void checkAndPrompt(false) }, 10_000)
 }
 
 const ownsDesktopInstance = claimDesktopSingleInstance(app, () => { focusPrimaryWindow() })

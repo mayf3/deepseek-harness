@@ -12,8 +12,8 @@ import {
   openSync,
   closeSync,
   readFileSync,
+  realpathSync,
   renameSync,
-  rmSync,
   unlinkSync,
   writeFileSync,
   writeSync,
@@ -25,8 +25,9 @@ import {
   verifyDesktopCorePackageSet,
 } from './core-package-set.ts'
 import type { DesktopPaths } from './paths.ts'
+import { removeOwnedDirectory } from './owned-directory.ts'
 import type { DesktopRelease } from './release.ts'
-import { desktopRuntimeId, verifyDesktopRuntime, type DesktopRuntimeDescriptor } from './runtime-tree.ts'
+import { desktopRuntimeId, readDesktopRuntime, type DesktopRuntimeDescriptor } from './runtime-tree.ts'
 import {
   copyDesktopProfile, desktopPluginLockHash, linkDesktopHostPackages, readDesktopProfileState,
   unlinkDesktopHostPackages, validateDesktopPluginGraph, type DesktopProfileState,
@@ -69,10 +70,8 @@ export interface DesktopRuntimeExecutables {
   readonly dsh: string
 }
 
-/** Hooks that bind project replacement to backend lifecycle and health. */
+/** Hooks that bind project replacement to the active backend lifecycle. */
 export interface DesktopProjectHooks {
-  /** Prove the staged dependency graph while the active backend is stopped. */
-  healthCheck(projectDir: string): Promise<void>
   /** Stop the active backend and await process exit before directory moves. */
   beforeActivate(): Promise<void>
   /** Start the selected active project after commit or rollback. */
@@ -161,17 +160,6 @@ export function packageNameFromSpec(spec: string): string | undefined {
   assertPackageName(name)
   if (versionAt !== -1) assertVersion(spec.slice(versionAt + 1))
   return name
-}
-
-function removeOwnedDirectory(path: string): void {
-  if (!existsSync(path)) return
-  const stat = lstatSync(path)
-  if (stat.isSymbolicLink()) {
-    unlinkSync(path)
-    return
-  }
-  if (!stat.isDirectory()) throw new Error(`desktop project: owned directory path is not a directory: ${path}`)
-  rmSync(path, { recursive: true })
 }
 
 function projectManifest(projectDir: string): DesktopProjectManifest {
@@ -324,7 +312,7 @@ export class DesktopProjectManager {
   }
 
   private currentRuntime(): DesktopRuntimeDescriptor {
-    if (this.descriptor === undefined) throw new Error('desktop project: runtime has not been verified')
+    if (this.descriptor === undefined) throw new Error('desktop project: runtime metadata has not been loaded')
     return this.descriptor
   }
 
@@ -334,11 +322,11 @@ export class DesktopProjectManager {
     validateDesktopPluginGraph(projectDir, this.runtime.dsh, runtime, profilePluginNames(projectDir))
   }
 
-  /** Verify this release and reconcile its external profile without installing core packages. */
+  /** Read release metadata and reconcile its external profile without installing core packages. */
   async applyRelease(electronVersion: string, hooks: DesktopProjectHooks): Promise<boolean> {
     return this.withLock(async () => {
       this.recover()
-      const target = verifyDesktopRuntime(this.runtime.dsh, electronVersion)
+      const target = readDesktopRuntime(this.runtime.dsh, electronVersion)
       this.descriptor = target
       const previous = readDesktopProfileState(this.paths.profile)
       if (existsSync(this.paths.profile) && previous === undefined) {
@@ -347,8 +335,9 @@ export class DesktopProjectManager {
       if (previous?.runtimeId === desktopRuntimeId(target)
         && previous.lockHash === desktopPluginLockHash(this.paths.profile)
         && previous.links.length === target.sharedPackages.length
-        && previous.links.every(link => link.target === join(this.runtime.dsh, 'node_modules', link.name)
-          && existsSync(join(this.paths.profile, 'node_modules', link.name)))) {
+        && previous.links.every(link => existsSync(link.target)
+          && existsSync(join(this.paths.profile, 'node_modules', link.name))
+          && realpathSync.native(link.target) === realpathSync.native(join(this.runtime.dsh, 'node_modules', link.name)))) {
         validateDesktopPluginGraph(this.paths.profile, this.runtime.dsh, target, profilePluginNames(this.paths.profile))
         return false
       }
@@ -357,7 +346,6 @@ export class DesktopProjectManager {
         if (previous === undefined) createPluginProfile(stagingProfile)
         else copyDesktopProfile(this.paths.profile, stagingProfile)
         await this.reconcileProfile(stagingProfile, previous)
-        await hooks.healthCheck(stagingProfile)
         await this.activate(stagingProfile, hooks)
         return true
       } catch (error) {
@@ -379,7 +367,6 @@ export class DesktopProjectManager {
         await this.applyMutation(stagingProfile, mutation)
         await this.reconcileProfile(stagingProfile, readDesktopProfileState(stagingProfile),
           mutation.type !== 'plugin-toggle' && mutation.type !== 'plugins-disable-all')
-        await hooks.healthCheck(stagingProfile)
         await this.activate(stagingProfile, hooks)
       } catch (error) {
         removeOwnedDirectory(stagingProfile)

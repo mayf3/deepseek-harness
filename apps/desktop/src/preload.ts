@@ -2,6 +2,7 @@
 
 import { contextBridge, ipcRenderer } from 'electron'
 import { DESKTOP_IPC, type DshDesktopApi, type DesktopUpdateState } from './ipc.ts'
+import type { DesktopBackendState } from './backend-controller.ts'
 
 const api: DshDesktopApi = {
   protocolVersion: 1,
@@ -17,6 +18,11 @@ const api: DshDesktopApi = {
   backend: {
     status: () => ipcRenderer.invoke(DESKTOP_IPC.backendStatus) as ReturnType<DshDesktopApi['backend']['status']>,
     retry: () => ipcRenderer.invoke(DESKTOP_IPC.backendRetry) as Promise<void>,
+    subscribe(listener) {
+      const handle = (_event: Electron.IpcRendererEvent, state: DesktopBackendState): void => { listener(state) }
+      ipcRenderer.on(DESKTOP_IPC.backendState, handle)
+      return () => { ipcRenderer.off(DESKTOP_IPC.backendState, handle) }
+    },
   },
   updates: {
     check: () => ipcRenderer.invoke(DESKTOP_IPC.updatesCheck) as Promise<DesktopUpdateState>,

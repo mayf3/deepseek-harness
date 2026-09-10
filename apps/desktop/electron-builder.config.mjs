@@ -1,4 +1,5 @@
 import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import {
   resolveDesktopAppId,
   resolveMacOSNotarizationEnvironment,
@@ -11,7 +12,7 @@ import {
   installWindowsNsisBootstrapSigner,
 } from './scripts/windows-sign.mjs'
 import { resolveDesktopAutoUpdateConfig } from './scripts/desktop-auto-update-environment.mjs'
-import { desktopTargetBuildPaths } from './scripts/desktop-build-paths.mjs'
+import { desktopTargetBuildPaths, resolveDesktopBuildTarget } from './scripts/desktop-build-paths.mjs'
 
 /**
  * Create electron-builder configuration from one release environment.
@@ -29,11 +30,16 @@ export function createElectronBuilderConfig(
   const targetPlatform = env.DSH_DESKTOP_TARGET_PLATFORM
   const resolvedPlatform = targetPlatform ?? hostPlatform
   const resolvedArch = env.DSH_DESKTOP_TARGET_ARCH ?? hostArch
+  if (env.DSH_DESKTOP_UNSIGNED !== undefined && !['0', '1'].includes(env.DSH_DESKTOP_UNSIGNED)) {
+    throw new Error('desktop package: DSH_DESKTOP_UNSIGNED must be 0 or 1')
+  }
+  const unsigned = env.DSH_DESKTOP_UNSIGNED === '1'
+  if (unsigned && resolvedPlatform !== 'win32') throw new Error('desktop package: unsigned builds require Windows')
   const packagesMacOS = targetPlatform === 'darwin' || (targetPlatform === undefined && hostPlatform === 'darwin')
   const packagesWindows = targetPlatform === 'win32'
   const macOSSigning = packagesMacOS ? resolveMacOSSigningEnvironment(env) : undefined
   if (packagesMacOS) resolveMacOSNotarizationEnvironment(env)
-  const windowsSigner = packagesWindows
+  const windowsSigner = packagesWindows && !unsigned
     ? createWindowsTokenSigner({
         certificateFile: env.DSH_DESKTOP_WINDOWS_CER_FILE,
         signTool: env.DSH_DESKTOP_WINDOWS_SIGNTOOL,
@@ -44,13 +50,13 @@ export function createElectronBuilderConfig(
   if (windowsSigner !== undefined) {
     installWindowsNsisBootstrapSigner({ sign: windowsSigner })
   }
-  const update = resolveDesktopAutoUpdateConfig(env, resolvedPlatform, resolvedArch)
-  const buildPaths = desktopTargetBuildPaths(update.target)
+  const update = unsigned ? undefined : resolveDesktopAutoUpdateConfig(env, resolvedPlatform, resolvedArch)
+  const buildPaths = desktopTargetBuildPaths(resolveDesktopBuildTarget(env, hostPlatform, hostArch))
   return {
     appId,
     productName: 'DeepSeek Harness',
     artifactName: 'deepseek-harness-${version}-${os}-${arch}.${ext}',
-    directories: { output: buildPaths.artifacts },
+    directories: { output: unsigned ? join(buildPaths.root, 'unsigned-artifacts') : buildPaths.artifacts },
     asar: true,
     files: [
       'lib/*.js',
@@ -80,13 +86,13 @@ export function createElectronBuilderConfig(
     },
     afterPack: async context => {
       const { verifyDesktopRuntime } = await import('./lib/types/runtime-tree.js')
-      verifyDesktopRuntime(join(context.packager.getResourcesDir(context.appOutDir), 'dsh'),
+      await verifyDesktopRuntime(join(context.packager.getResourcesDir(context.appOutDir), 'dsh'),
         context.packager.appInfo.version, { platform: resolvedPlatform, arch: resolvedArch })
     },
     afterSign: async context => {
       if (context.electronPlatformName !== 'darwin') return
       const { verifyDesktopRuntime } = await import('./lib/types/runtime-tree.js')
-      verifyDesktopRuntime(join(context.appOutDir, `${context.packager.appInfo.productFilename}.app`, 'Contents', 'Resources', 'dsh'),
+      await verifyDesktopRuntime(join(context.appOutDir, `${context.packager.appInfo.productFilename}.app`, 'Contents', 'Resources', 'dsh'),
         context.packager.appInfo.version, { platform: 'darwin', arch: resolvedArch })
       verifyMacOSSignatureAfterSign(context, macOSSigning ?? resolveMacOSSigningEnvironment(env))
     },
@@ -99,7 +105,7 @@ export function createElectronBuilderConfig(
       )
     },
     win: {
-      forceCodeSigning: true,
+      forceCodeSigning: !unsigned,
       signtoolOptions: {
         sign: windowsSigner,
         signingHashAlgorithms: ['sha256'],
@@ -111,11 +117,12 @@ export function createElectronBuilderConfig(
       target: ['AppImage'],
     },
     nsis: {
+      include: fileURLToPath(new URL('./scripts/installer.nsh', import.meta.url)),
       oneClick: false,
       allowToChangeInstallationDirectory: true,
       differentialPackage: true,
     },
-    publish: [{ provider: 'generic', url: update.publicUrl }],
+    publish: update === undefined ? null : [{ provider: 'generic', url: update.publicUrl }],
   }
 }
 

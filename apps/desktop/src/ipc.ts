@@ -2,11 +2,13 @@
 
 import type { DesktopPluginRecord } from './project-manager.ts'
 import type { DesktopLocale } from './locale.ts'
+import type { DesktopBackendState } from './backend-controller.ts'
 
 /** IPC channel names kept private to the desktop application bundle. */
 export const DESKTOP_IPC = {
   localeGet: 'dsh-desktop:locale-get',
   pluginsList: 'dsh-desktop:plugins-list',
+  pluginsOpen: 'dsh-desktop:plugins-open',
   pluginsAdd: 'dsh-desktop:plugins-add',
   pluginsRemove: 'dsh-desktop:plugins-remove',
   pluginsUpdate: 'dsh-desktop:plugins-update',
@@ -14,6 +16,7 @@ export const DESKTOP_IPC = {
   pluginsDisableAll: 'dsh-desktop:plugins-disable-all',
   backendStatus: 'dsh-desktop:backend-status',
   backendRetry: 'dsh-desktop:backend-retry',
+  backendState: 'dsh-desktop:backend-state',
   updatesCheck: 'dsh-desktop:updates-check',
   updatesInstall: 'dsh-desktop:updates-install',
   updatesState: 'dsh-desktop:updates-state',
@@ -39,12 +42,18 @@ export interface DshDesktopApi {
     disableAll(): Promise<void>
   }
   readonly backend: {
-    status(): Promise<{ readonly ready: boolean; readonly error?: string }>
+    status(): Promise<DesktopBackendState>
     retry(): Promise<void>
+    subscribe(listener: (state: DesktopBackendState) => void): () => void
   }
   readonly updates: {
     check(): Promise<DesktopUpdateState>
     install(): Promise<void>
     subscribe(listener: (state: DesktopUpdateState) => void): () => void
   }
+}
+
+/** Startup-page controls, unavailable to backend-provided application documents. */
+export interface DshDesktopStartupApi extends Pick<DshDesktopApi, 'protocolVersion' | 'locale' | 'backend'> {
+  openPlugins(): Promise<void>
 }

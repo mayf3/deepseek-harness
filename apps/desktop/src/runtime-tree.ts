@@ -1,8 +1,9 @@
 /** Relocatable, integrity-recorded production packages carried by one Desktop release. */
 
 import { createHash } from 'node:crypto'
-import { lstatSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, lstatSync, readdirSync, readFile, readFileSync, writeFileSync } from 'node:fs'
 import { isAbsolute, join, relative, sep } from 'node:path'
+import { promisify } from 'node:util'
 import { valid } from 'semver'
 import { DESKTOP_HOST_PACKAGE, DESKTOP_HOST_RUNTIME_FILES } from './core-package-set.ts'
 import { parseDesktopRelease, type DesktopRelease } from './release.ts'
@@ -36,6 +37,7 @@ export interface DesktopRuntimeDescriptor {
 }
 
 const PACKAGE_NAME = /^(?:@[a-z0-9][a-z0-9._~-]*\/[a-z0-9][a-z0-9._~-]*|[a-z0-9][a-z0-9._~-]*)$/u
+const readRuntimeFile = promisify(readFile)
 
 function record(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -55,27 +57,59 @@ export function runtimePath(root: string, path: string): string {
   return join(root, ...path.split('/'))
 }
 
-/**
- * Inventory a materialized runtime without following links or including its descriptor.
- * @param root - Self-contained runtime directory.
- * @returns Sorted final-file inventory.
- */
-export function inventoryDesktopRuntime(root: string): DesktopRuntimeFile[] {
-  const files: DesktopRuntimeFile[] = []
+function runtimeFiles(root: string): { path: string; name: string }[] {
+  const files: { path: string; name: string }[] = []
   const visit = (directory: string): void => {
     for (const entry of readdirSync(directory, { withFileTypes: true })) {
       const path = join(directory, entry.name)
       const name = relative(root, path).split(sep).join('/')
       if (name === DESKTOP_RUNTIME_FILE) continue
       if (entry.isDirectory()) visit(path)
-      else if (entry.isFile()) {
-        const body = readFileSync(path)
-        files.push({ path: name, bytes: body.byteLength, sha256: createHash('sha256').update(body).digest('hex'),
-          executable: (lstatSync(path).mode & 0o111) !== 0 })
-      } else throw new Error(`desktop runtime: unsupported filesystem entry ${name}`)
+      else if (entry.isFile()) files.push({ path, name })
+      else throw new Error(`desktop runtime: unsupported filesystem entry ${name}`)
     }
   }
   visit(root)
+  return files
+}
+
+function runtimeFile(path: string, name: string, body: Buffer): DesktopRuntimeFile {
+  return { path: name, bytes: body.byteLength, sha256: createHash('sha256').update(body).digest('hex'),
+    // Windows has no portable Unix executable permission bits.
+    executable: process.platform !== 'win32' && (lstatSync(path).mode & 0o111) !== 0 }
+}
+
+/**
+ * Inventory a materialized runtime without following links or including its descriptor.
+ * @param root - Self-contained runtime directory.
+ * @returns Sorted final-file inventory; executable permissions are false on Windows.
+ */
+export function inventoryDesktopRuntime(root: string): DesktopRuntimeFile[] {
+  return runtimeFiles(root).map(({ path, name }) => runtimeFile(path, name, readFileSync(path)))
+    .sort((a, b) => a.path < b.path ? -1 : a.path > b.path ? 1 : 0)
+}
+
+async function inventoryRuntimeForVerification(root: string): Promise<DesktopRuntimeFile[]> {
+  const entries = runtimeFiles(root)
+  const files: DesktopRuntimeFile[] = []
+  const remaining = entries.values()
+  let failed = false
+  const workers = Array.from({ length: Math.min(8, entries.length) }, async () => {
+    while (!failed) {
+      const next = remaining.next()
+      if (next.done) return
+      const { path, name } = next.value
+      try {
+        files.push(runtimeFile(path, name, await readRuntimeFile(path)))
+      } catch (error) {
+        failed = true
+        throw error
+      }
+    }
+  })
+  // Failure returns only after every outstanding file read has closed its descriptor.
+  const results = await Promise.allSettled(workers)
+  for (const result of results) if (result.status === 'rejected') throw result.reason
   return files.sort((a, b) => a.path < b.path ? -1 : a.path > b.path ? 1 : 0)
 }
 
@@ -109,13 +143,13 @@ export function writeDesktopRuntime(
 }
 
 /**
- * Verify the runtime before linking any of its packages into writable state.
+ * Read release metadata and check shared manifests and Host entries without scanning runtime contents.
  * @param root - Current application's runtime resources.
  * @param electronVersion - Expected shell version.
  * @param target - Required execution target; defaults to the current process.
  * @returns Validated runtime descriptor.
  */
-export function verifyDesktopRuntime(
+export function readDesktopRuntime(
   root: string, electronVersion: string, target: { platform: NodeJS.Platform; arch: string } = process,
 ): DesktopRuntimeDescriptor {
   const value: unknown = JSON.parse(readFileSync(join(root, DESKTOP_RUNTIME_FILE), 'utf8'))
@@ -144,13 +178,6 @@ export function verifyDesktopRuntime(
     runtimePath(root, entry.path)
     return { path: entry.path, bytes: entry.bytes, sha256: entry.sha256, executable: entry.executable }
   }).sort((a, b) => a.path < b.path ? -1 : a.path > b.path ? 1 : 0)
-  const actual = inventoryDesktopRuntime(root)
-  // Windows has no portable Unix executable permission bits.
-  const comparable = (items: readonly DesktopRuntimeFile[]): unknown => process.platform === 'win32'
-    ? items.map(({ executable: _executable, ...item }) => item) : items
-  if (JSON.stringify(comparable(files)) !== JSON.stringify(comparable(actual))) {
-    throw new Error('desktop runtime: integrity verification failed')
-  }
   for (const entry of sharedPackages) {
     const manifest: unknown = JSON.parse(readFileSync(join(runtimePath(root, entry.path), 'package.json'), 'utf8'))
     if (!record(manifest) || manifest.name !== entry.name || manifest.version !== entry.version) {
@@ -163,11 +190,34 @@ export function verifyDesktopRuntime(
     }
   }
   for (const file of DESKTOP_HOST_RUNTIME_FILES) {
-    if (!files.some(entry => entry.path === `node_modules/${DESKTOP_HOST_PACKAGE}/${file}`)) {
+    const path = `node_modules/${DESKTOP_HOST_PACKAGE}/${file}`
+    if (!files.some(entry => entry.path === path) || !existsSync(runtimePath(root, path))
+      || !lstatSync(runtimePath(root, path)).isFile()) {
       throw new Error(`desktop runtime: missing Host file ${file}`)
     }
   }
   return { schemaVersion: 1, release, platform: target.platform, arch: target.arch, sharedPackages, files }
+}
+
+/**
+ * Verify every packaged runtime file against its recorded bytes and permissions at build time.
+ * @param root - Materialized runtime resources.
+ * @param electronVersion - Expected shell version.
+ * @param target - Required execution target; defaults to the current process.
+ * @returns Validated runtime descriptor.
+ */
+export async function verifyDesktopRuntime(
+  root: string, electronVersion: string, target: { platform: NodeJS.Platform; arch: string } = process,
+): Promise<DesktopRuntimeDescriptor> {
+  const descriptor = readDesktopRuntime(root, electronVersion, target)
+  const actual = await inventoryRuntimeForVerification(root)
+  // Windows has no portable Unix executable permission bits.
+  const comparable = (items: readonly DesktopRuntimeFile[]): unknown => process.platform === 'win32'
+    ? items.map(({ executable: _executable, ...item }) => item) : items
+  if (JSON.stringify(comparable(descriptor.files)) !== JSON.stringify(comparable(actual))) {
+    throw new Error('desktop runtime: integrity verification failed')
+  }
+  return descriptor
 }
 
 /**

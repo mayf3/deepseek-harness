@@ -1,7 +1,7 @@
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { DesktopHostProcess } from '../src/host-process.ts'
 
 const roots: string[] = []
@@ -75,6 +75,30 @@ afterEach(() => {
 })
 
 describe('desktop host process', () => {
+  it('reports a fatal event after readiness once and stops the child', async () => {
+    const runtime = projectWithHost(`
+process.send({ type: 'ready', protocolVersion: 3, dshVersion: '1.0.0' })
+function onRequestFrame(frame) {
+  if (frame.type === 1) process.send({ type: 'fatal', message: 'plugin unavailable' })
+}
+`)
+    const failure = vi.fn()
+    const host = new DesktopHostProcess(process.execPath, runtime, runtime, undefined, process.env, failure)
+    try {
+      await host.start()
+      await expect(host.fetch(new Request('dsh-app://app/'))).rejects.toThrow('plugin unavailable')
+      await host.stop()
+      expect(failure).toHaveBeenCalledTimes(1)
+      expect(failure).toHaveBeenCalledWith(new Error('plugin unavailable'))
+    } finally { await host.stop() }
+  })
+
+  it('settles teardown when the executable cannot be spawned', async () => {
+    const runtime = projectWithHost('function onRequestFrame() {}')
+    const host = new DesktopHostProcess(join(runtime, 'missing-node'), runtime, runtime)
+    try { await expect(host.start()).rejects.toThrow() } finally { await host.stop() }
+  })
+
   it('loads the resource entry with a separate profile and scrubs Node resolution overrides', async () => {
     const runtime = projectWithHost(`
 process.send({ type: 'ready', protocolVersion: 3, dshVersion: 'split-runtime' })
