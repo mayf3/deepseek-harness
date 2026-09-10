@@ -1,5 +1,6 @@
 /** Runtime inspection, session queries, and workflow reports from recorded text. */
 import type { ToolDetailsModel } from '../components/ToolDetails.tsx'
+import { hasSpillNotice } from '@deepseek-ai/dsh-spill-policy/notice'
 import {
   detailJson, detailList, detailRecord, inspectionItems,
   type DetailItem, type DetailTranslate,
@@ -157,6 +158,7 @@ function traceDetails(name: string, text: string, t: DetailTranslate, locale: st
 export function inspectionDetails(
   name: string, args: Record<string, unknown>, text: string, t: DetailTranslate, locale: string,
 ): ToolDetailsModel | null {
+  if (hasSpillNotice(text)) return null
   switch (name) {
     case 'cordis_inspect_list':
     case 'cordis_inspect_query':

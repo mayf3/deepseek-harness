@@ -43,7 +43,7 @@ function DetailItem({ item, t, onOpenFile }: { item: ToolDetailItem } & DetailCo
       {item.title !== undefined && (
         <div className={css.heading}>
           {status !== undefined && (
-            <span className={css.status} aria-label={item.change?.label ?? status.label}>
+            <span className={css.status} role="img" aria-label={item.change?.label ?? status.label}>
               {item.change?.value === 'added' ? '+'
                 : item.change?.value === 'removed' ? '−'
                   : status.value === 'completed' ? <IconCheckOutline14 />
@@ -61,7 +61,7 @@ function DetailItem({ item, t, onOpenFile }: { item: ToolDetailItem } & DetailCo
           {status !== undefined && (
             <span className={css.statusText}>
               {item.previousStatus !== undefined && (
-                <><span className={css.previous}>{item.previousStatus}</span><span aria-hidden> → </span></>
+                <><span className={css.previous}>{item.previousStatus}</span><span> → </span></>
               )}
               <span>{status.label}</span>
               {item.change?.value === 'updated' && item.previousStatus === undefined && <span> · {item.change.label}</span>}

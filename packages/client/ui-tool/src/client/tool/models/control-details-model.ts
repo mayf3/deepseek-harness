@@ -5,6 +5,8 @@ import {
   type DetailItem, type DetailTranslate,
 } from './detail-model-shared.ts'
 
+const OUTPUT_TRUNCATED = '\n[output truncated]'
+
 function arg(args: Record<string, unknown>, key: string): string {
   const value = args[key]
   return typeof value === 'string' ? value : ''
@@ -152,7 +154,12 @@ export function controlDetails(name: string, args: Record<string, unknown>, text
     case 'job_output': {
       const match = /\n\[status: ([^,\]\n]+)(?:, ([^\]\n]+))?\]$/u.exec(text)
       if (match === null || match[1] === undefined) return null
-      return detailList([{ title: target, badge: detailBadge(match[1], t), fields: [], ...(match[2] === undefined ? {} : { description: match[2] }), code: { text: text.slice(0, match.index) } }], `${target} · ${detailBadge(match[1], t).label}`, t)
+      const output = text.slice(0, match.index)
+      const truncated = output.endsWith(OUTPUT_TRUNCATED)
+      const code = truncated ? output.slice(0, -OUTPUT_TRUNCATED.length) : output
+      const description = [match[2], truncated ? t('detail.output.truncated') : undefined]
+        .filter((value): value is string => value !== undefined).join(' · ')
+      return detailList([{ title: target, badge: detailBadge(match[1], t), fields: [], ...(description === '' ? {} : { description }), code: { text: code } }], `${target} · ${detailBadge(match[1], t).label}`, t)
     }
     case 'job_kill':
       if (text === `requested cancellation of job ${target}`) return receipt(target, t('detail.receipt.cancel'), t, [], arg(args, 'reason'))

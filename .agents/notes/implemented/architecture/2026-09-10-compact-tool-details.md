@@ -24,4 +24,4 @@ This scoped visual change is an exception to the visual-equivalence requirement 
 
 ## Consequences
 
-Seven tool names gain readable details without changing Host tools, Session events, or public Client exports. The adapters own recognition of their recorded result formats; unsupported data remains inspectable as raw text. The authored tool-details Session replay covers their assembled rendering.
+The 36 registered tool names gain readable details without changing Host tools, Session events, or public Client exports. `detailsCardModel` recognizes goal and schedule JSON, `controlDetails` recognizes agent, teammate, job, terminal, and LSP receipts, and `inspectionDetails` recognizes Cordis, workflow, Ralph, and Session query reports; any other result remains inspectable as raw text. The authored tool-details Session replay covers their assembled rendering.

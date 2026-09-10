@@ -3,7 +3,8 @@ import type { ToolCallBlock } from '@deepseek-ai/dsh-client-ui-chat/client'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ToolDetailsModel } from '../components/ToolDetails.tsx'
 import type { TodoBaseline } from './todo-history.ts'
-import { detailsCardModel } from './details-card-model.ts'
+import { detailsCardModel, todosDetail } from './details-card-model.ts'
+import { detailRecord } from './detail-model-shared.ts'
 
 /**
  * Compare this write with its predecessor in the loaded call history.
@@ -19,8 +20,17 @@ export function todoDiffModel(
   hasMore: boolean,
   t: TranslateNS<'conversation'>,
 ): { details: ToolDetailsModel; summary: string | null } | null {
-  const current = detailsCardModel(block, t, 'en')
-  if (current === null || !('kind' in block)) return null
+  if (!('kind' in block) || block.isError) return null
+  let current: ToolDetailsModel | null
+  if ('kind' in block && block.call?.name === 'todo_write') {
+    let args: unknown
+    try { args = JSON.parse(block.call.argsRaw) }
+    catch { return null }
+    current = detailRecord(args) ? todosDetail(args, t) : null
+  } else {
+    current = detailsCardModel(block, t, 'en')
+  }
+  if (current === null) return null
   const previous: ToolDetailsModel | null = baseline?.todos === undefined ? null : { items: baseline.todos.map(todo => ({
     title: todo.content, status: { value: todo.status, label: t(`detail.todo.${todo.status}`) }, fields: [],
   })) }

@@ -63,8 +63,9 @@ export function TodoRow({ toolName, block, inspect, useTodoHistory, useSession, 
       toolName={toolName}
       icon={<IconChecklistOutline14 />}
       title={t('todo.rowTitle')}
-      summary={diff?.summary ?? summary.text}
-      summarySuffix={diff?.summary == null && summary.extra > 0 ? `+${summary.extra}` : null}
+      summary={summary.text}
+      summarySuffix={[diff?.summary, summary.extra > 0 ? `+${summary.extra}` : null]
+        .filter((part): part is string => part !== null && part !== undefined).join(' · ') || null}
       bodyRaw={model.bodyRaw}
       output={model.output}
       details={diff?.details}

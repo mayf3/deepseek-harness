@@ -5,28 +5,27 @@ import type { ToolDetailsModel } from '../components/ToolDetails.tsx'
 import { parsedToolCall, singleResultText } from './raw-tool-call.ts'
 import { controlDetails } from './control-details-model.ts'
 import { inspectionDetails } from './inspection-details-model.ts'
+import { detailJson, detailRecord, nonempty } from './detail-model-shared.ts'
 
 type Translate = TranslateNS<'conversation'>
 type DetailItem = ToolDetailsModel['items'][number]
-
-function isObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
-}
-
-function nonempty(value: unknown): value is string {
-  return typeof value === 'string' && value.trim() !== ''
-}
 
 function count(value: unknown): value is number {
   return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0
 }
 
-function todosDetail(args: Record<string, unknown>, t: Translate): ToolDetailsModel | null {
+/**
+ * Derive the compact todo list from a todo_write call.
+ * @param args - Parsed todo_write arguments.
+ * @param t - Conversation dictionary translator.
+ * @returns Localized todo details, or null for unsupported input.
+ */
+export function todosDetail(args: Record<string, unknown>, t: Translate): ToolDetailsModel | null {
   if (!Array.isArray(args.todos)) return null
   const items: DetailItem[] = []
   const seen = new Set<string>()
   for (const todo of args.todos) {
-    if (!isObject(todo) || !nonempty(todo.content)) return null
+    if (!detailRecord(todo) || !nonempty(todo.content)) return null
     const status = todo.status
     if (status !== 'completed' && status !== 'in_progress' && status !== 'pending') return null
     const title = todo.content.trim()
@@ -38,10 +37,10 @@ function todosDetail(args: Record<string, unknown>, t: Translate): ToolDetailsMo
 }
 
 function goalDetail(value: unknown, t: Translate): ToolDetailsModel | null {
-  if (!isObject(value)) return null
+  if (!detailRecord(value)) return null
   if (value.goal === null) return { items: [], empty: t('detail.goal.empty') }
   const goal = value.goal
-  if (!isObject(goal) || !nonempty(goal.id) || !nonempty(goal.objective)
+  if (!detailRecord(goal) || !nonempty(goal.id) || !nonempty(goal.objective)
     || !count(goal.revision) || !count(goal.roundsStarted) || !count(goal.maxGoalRounds)) return null
   const phase = goal.phase
   if (phase !== 'active' && phase !== 'paused' && phase !== 'blocked' && phase !== 'complete') return null
@@ -51,7 +50,7 @@ function goalDetail(value: unknown, t: Translate): ToolDetailsModel | null {
     { label: t('detail.goal.rounds'), value: `${goal.roundsStarted} / ${goal.maxGoalRounds}` },
   ]
   if (goal.blockedReason !== undefined) {
-    if (!isObject(goal.blockedReason) || !nonempty(goal.blockedReason.code) || !nonempty(goal.blockedReason.message)) return null
+    if (!detailRecord(goal.blockedReason) || !nonempty(goal.blockedReason.code) || !nonempty(goal.blockedReason.message)) return null
     fields.push({ label: t('detail.goal.reason'), value: goal.blockedReason.message })
   }
   return { items: [{ title: goal.objective, fields }] }
@@ -65,7 +64,7 @@ function interval(seconds: number, t: Translate): string {
 }
 
 function scheduleItem(value: unknown, t: Translate, locale: string): DetailItem | null {
-  if (!isObject(value) || !nonempty(value.id) || !nonempty(value.prompt)
+  if (!detailRecord(value) || !nonempty(value.id) || !nonempty(value.prompt)
     || typeof value.scheduledAt !== 'string' || value.deliveryMode !== 'session-local'
     || (value.state !== 'scheduled' && value.state !== 'overdue')) return null
   const date = new Date(value.scheduledAt)
@@ -112,13 +111,8 @@ export function detailsCardModel(block: ToolCallBlock, t: Translate, locale: str
   if (text === undefined) return null
   const details = controlDetails(call.name, call.args, text, t) ?? inspectionDetails(call.name, call.args, text, t, locale)
   if (details !== null) return details
-  let value: unknown
-  try {
-    value = JSON.parse(text)
-  } catch {
-    // Persisted text may come from an older tool implementation or contain a spill notice.
-    return null
-  }
+  const value = detailJson(text)
+  if (value === undefined) return null
   switch (call.name) {
     case 'create_goal':
     case 'get_goal':
@@ -138,7 +132,7 @@ export function detailsCardModel(block: ToolCallBlock, t: Translate, locale: str
       return { items, empty: t('detail.schedule.empty') }
     }
     case 'schedule_delete':
-      if (!isObject(value) || !nonempty(value.id) || value.deleted !== true) return null
+      if (!detailRecord(value) || !nonempty(value.id) || value.deleted !== true) return null
       return { items: [{ title: value.id, fields: [{ label: t('detail.state'), value: t('detail.schedule.deleted') }] }] }
     default: return null
   }

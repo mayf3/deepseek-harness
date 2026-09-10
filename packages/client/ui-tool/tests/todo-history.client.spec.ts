@@ -67,6 +67,15 @@ describe('recorded todo history', () => {
     expect(todoDiffModel(call(first), undefined, false, t)?.details.caption).toBe('Previous list unavailable')
   })
 
+  it('publishes immutable lookup snapshots when the index changes', () => {
+    const view = todoHistoryView.create()
+    const firstSnapshot = view.replace({ nodes: [{ id: 'call-1', data: { todos: first } }] } as never)
+    const secondSnapshot = view.apply({ upserts: [{ id: 'call-1', data: { todos: second } }] } as never)
+    expect(firstSnapshot.get('call-1')?.todos).toEqual(first)
+    expect(secondSnapshot.get('call-1')?.todos).toEqual(second)
+    expect(view.empty.get('call-1')).toBeUndefined()
+  })
+
   it('distinguishes relative reordering from positions shifted by an insertion', () => {
     const moved = todoDiffModel(call([first[1], first[0], first[2]]), { todos: first }, false, t)
     expect(moved?.details.items.map(item => item.change?.label)).toEqual(['Reordered', 'Reordered'])

@@ -24,4 +24,4 @@ Status: implemented
 
 ## 影响
 
-七个工具名称获得可读详情，无需修改 Host 工具、Session 事件或公共 Client 导出。适配器负责识别各自记录的结果格式；不支持的数据仍可作为原始文本查看。手工编写的 tool-details Session 回放覆盖它们在完整页面中的呈现。
+已注册的 36 个工具名称获得可读详情，无需修改 Host 工具、Session 事件或公共 Client 导出。`detailsCardModel` 识别目标和定时任务 JSON，`controlDetails` 识别 Agent、teammate、作业、终端和 LSP 回执，`inspectionDetails` 识别 Cordis、workflow、Ralph 和 Session 查询报告；其他结果仍可作为原始文本查看。手工编写的 tool-details Session 回放覆盖它们在完整页面中的呈现。

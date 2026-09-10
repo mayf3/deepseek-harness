@@ -56,7 +56,7 @@ describe.skipIf(MODE === 'record')('web e2e: compact Tool details', () => {
     for (const row of await rows.all()) {
       await row.getByRole('button', { expanded: false }).first().click()
       expect(await row.getByRole('listitem').count()).toBeGreaterThan(0)
-      expect(await row.getByText('Output', { exact: true }).count()).toBe(0)
+      expect(await row.locator('[class*="ioCard"]').count()).toBe(0)
       expect(await row.getByRole('button', { name: 'Inspect', exact: true }).count()).toBe(1)
     }
     const changedTodos = page.locator('[data-tool="todo_write"]').nth(1)

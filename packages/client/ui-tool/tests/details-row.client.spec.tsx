@@ -90,7 +90,9 @@ describe('DetailsRow', () => {
 
   it('registers the supported tool names through the scoped keyed slot', () => {
     const register = vi.fn((_spec: unknown, _component: unknown) => () => undefined)
-    const inject = vi.fn((_name: string, callback: () => () => void) => callback())
+    const inject = vi.fn((_name: string, callback: () => Iterable<() => void>) => {
+      for (const dispose of callback()) dispose()
+    })
     detailsToolview.apply({ slots: { inject, register } } as never)
     expect(register.mock.calls).toHaveLength(36)
     expect(register.mock.calls.map(([spec]) => spec)).toContainEqual({ name: 'tool.call.toolview', key: 'cordis_inspect_query', locale: 'conversation' })

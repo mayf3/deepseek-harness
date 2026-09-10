@@ -63,19 +63,25 @@ interface TodoHistoryNode extends ConversationViewNode {
 export const todoHistoryView: ConversationViewDefinition<TodoHistoryNode, TodoHistory> = {
   target: 'tool-todo-history',
   create: () => {
-    const calls = new Map<string, TodoBaseline>()
-    const snapshot = (): TodoHistory => ({ get: callId => calls.get(callId) })
-    const upsert = (nodes: readonly TodoHistoryNode[]): TodoHistory => {
-      for (const node of nodes) calls.set(node.id, node.data)
-      return snapshot()
+    let calls = new Map<string, TodoBaseline>()
+    const snapshot = (source: ReadonlyMap<string, TodoBaseline>): TodoHistory => ({ get: callId => source.get(callId) })
+    let current: TodoHistory = snapshot(calls)
+    const publish = (next: Map<string, TodoBaseline>): TodoHistory => {
+      calls = next
+      current = snapshot(next)
+      return current
     }
     return {
-      empty: snapshot(),
-      replace: ({ nodes }) => { calls.clear(); return upsert(nodes) },
-      apply: ({ upserts }) => upsert(upserts),
+      empty: current,
+      replace: ({ nodes }) => publish(new Map(nodes.map(node => [node.id, node.data]))),
+      apply: ({ upserts }) => {
+        if (upserts.length === 0) return current
+        const next = new Map(calls)
+        for (const node of upserts) next.set(node.id, node.data)
+        return publish(next)
+      },
     }
   },
-  isActive: () => false,
 }
 
 /**

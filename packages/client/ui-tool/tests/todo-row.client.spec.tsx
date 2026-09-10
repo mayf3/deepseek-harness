@@ -155,13 +155,16 @@ describe('TodoRow', () => {
   it('injects the keyed toolview declaration directly', () => {
     expect(todoToolview.name).toBe('todo-toolview')
     expect(todoToolview.inject).toEqual(['slots', 'uiConversation'])
-    const register = vi.fn(() => () => undefined)
+    const register = vi.fn((_spec: unknown, _component: unknown) => () => undefined)
     const inject = vi.fn((_name: string, callback: () => () => void) => callback())
     todoToolview.apply({
       slots: { inject, register },
       uiConversation: { events: { register: vi.fn() }, views: { register: vi.fn() } },
     } as never)
     expect(inject).toHaveBeenCalledWith('tool.call.toolview', expect.any(Function))
-    expect(register).toHaveBeenCalledWith({ name: 'tool.call.toolview', key: 'todo_write', locale: NS, inject: expect.any(Function) }, TodoRow)
+    const [spec, component] = register.mock.calls[0] ?? []
+    expect(spec).toMatchObject({ name: 'tool.call.toolview', key: 'todo_write', locale: NS })
+    expect((spec as { inject?: unknown } | undefined)?.inject).toEqual(expect.any(Function))
+    expect(component).toBe(TodoRow)
   })
 })

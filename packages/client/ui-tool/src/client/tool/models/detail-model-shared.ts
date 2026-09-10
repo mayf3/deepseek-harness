@@ -17,6 +17,15 @@ export function detailRecord(value: unknown): value is Record<string, unknown> {
 }
 
 /**
+ * Check a recorded string field that must contain visible text.
+ * @param value - Parsed field value.
+ * @returns Whether the field is a non-empty string after trimming.
+ */
+export function nonempty(value: unknown): value is string {
+  return typeof value === 'string' && value.trim() !== ''
+}
+
+/**
  * Decode an entire JSON result without accepting a partial prefix.
  * @param text - Recorded text.
  * @returns Parsed JSON, or undefined for non-JSON output.
