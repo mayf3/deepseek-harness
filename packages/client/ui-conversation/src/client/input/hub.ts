@@ -121,7 +121,6 @@ export class InputHub implements SessionInputResolver {
           shell.consumeToken(req.guard) ? true : undefined),
         actx.on('slash/input-insert-text', req =>
           shell.insertText(req.text, req.span, req.continue === true) ? true : undefined),
-        actx.on('slash/input-pick-files', () => shell.pickFiles() ? true : undefined),
       ]
       return () => {
         for (const off of offs) off()
@@ -157,6 +156,23 @@ export class InputHub implements SessionInputResolver {
    */
   keyboard(id: SessionId): ComposerKeyboard {
     return this.shell(id)
+  }
+
+  /**
+   * Query file intake without creating a Session input.
+   * @param id - target Session.
+   * @returns whether its mounted composer currently accepts files.
+   */
+  canPickFiles(id: SessionId): boolean {
+    return this.shells.get(id)?.canPickFiles() === true
+  }
+
+  /**
+   * Open the target composer's file dialog under its live intake policy.
+   * @param id - target Session.
+   */
+  pickFiles(id: SessionId): void {
+    this.shells.get(id)?.pickFiles()
   }
 
   /**

@@ -29,11 +29,11 @@ kind: "package-reference"
 
 ### 种类与装饰
 
-贡献项是客户端自有命令——与宿主命令同名会明确报错。它的 UI 是 popupSelect 规格或动作：裸调用在消费掉触发 token 之后运行的一个回调，它不提交任何内容，因此绝不会拒绝带附件的草稿。菜单里的「文件」行就是本包自己的动作；只要 composer 接受文件，它就经会话作用域的 `slash/input-pick-files` 事件打开 composer 的文件选择器，子智能体上不提供。装饰为**已存在的**宿主命令添加裸调用弹窗或动作：宿主命令保留其目录行、参数声明与生命周期记账，被装饰的名字在会话目录中无宿主行时永不触发。菜单查询按顺序且不区分大小写地模糊匹配命令名与标题的子序列；前缀排名最高，输入查询后匹配项平铺列出，不再带小节标题。
+贡献项是客户端自有命令，与宿主命令同名会明确报错。它的 UI 是 popupSelect 规格或动作：裸调用消费触发 token 后运行回调，不提交消息。业务包负责自己的动作及可用性，输入框通过同一 API 注册「文件」。装饰为已有宿主命令添加裸调用弹窗或动作，并保留其目录行、参数认领与生命周期记录；没有匹配的宿主行时不触发。菜单查询按顺序、不区分大小写地模糊匹配命令名与标题的子序列，前缀优先，不显示小节标题。
 
 ### 内置行的展示面
 
-宿主描述符只携带英文文案，因此 `src/client/presentation.ts` 拥有六个内置宿主命令在客户端的展示面：目录行的说明与规范英文文案相同时，它从 `command` 词典取得本地化的标题、说明、图标与声明 token；同名的作用域覆盖或第三方命令保留自己的说明，只有小节位置跟随名字；不在两个小节清单里的行按目录顺序排在「指令」小节末尾。中文下选中「计划」会在 composer 填入 `/计划 `，提交仍执行 `/plan `；键入的 `/计划` 或 `/目标` 在任何语言下的空格与回车裁决中都同样解析，因此在一种语言下写的草稿在另一种语言下照样能提交。贡献项自带 `label`、`description` 与 `icon`，每次生成候选项时读取，语言切换后下一次打开菜单即生效，无需重新注册。
+内置命令定义携带稳定的 `definitionId`。客户端按标识选择本地化标题、说明、图标和输入写法，修改宿主说明不会改变选择结果。没有匹配标识的同名覆盖保留自己的文案，也不获得内置别名。在任何界面语言下，中英文写法都通过同一个会话有效目录解析，草稿保留手输写法，提交使用宿主注册名。贡献项提供自己的 `label`、`description` 和 `icon`，每次生成候选项时读取。空查询按名称确定小节顺序，未列出的行排在「指令」末尾。
 
 ### 带附件提交
 
@@ -47,7 +47,7 @@ composer 携带图片或通用文件提交时，只有声明了 `input.attachmen
 <details>
 <summary>实现细节——点击展开</summary>
 
-`src/client/contract.ts` 是固定的业务约定：`CommandUiContract.register(name, spec)` 与 `decorate(name, spec)` 是业务包消费的全部内容。`CommandDirectory` 是唯一的 wire 派生缓存，以会话为 key：普通会话经 `command.list({sessionId})` 拉取；条目由转发的 `commands/change` owner 事件软失效、由 `connection/reset` 硬失效，并以 epoch 把关，被取代的旧拉取永远无法覆盖更新的结果。`matchSpace` 只凭该缓存同步应答；`matchEnter` 在 SubmitAttempt 信号上强等缓存，预热失败即拒绝。`command.execute` 返回匹配结果后，浏览器发布本地 `command/executed` 确认；其他客户端经宿主事件流收到持久命令节点，但收不到这条确认。`PopupSelectController` 是不含界面的外壳状态；`PopupSelectView` 自注册进 `conversation.input.overlay`，按会话解析。`presentation.ts` 持有小节清单、内置行的展示面与本地化 token 的解析；`candidates` 对空查询分小节、对输入的查询经共享的 `rankByName` 排序。
+`src/client/contract.ts` 定义贡献项和装饰的注册接口。`CommandDirectory` 负责会话级协议缓存，并通过 `resolution.ts` 解析输入命令；该模块负责内置命令标识匹配和本地化输入写法。`matchSpace` 同步读取就绪缓存，`matchEnter` 等待缓存就绪，预热失败或取消时拒绝。转发的目录和连接事件使缓存失效。宿主执行匹配的命令后，本浏览器发布 `command/executed`，其他客户端只观察持久命令事件。`PopupSelectController` 负责弹窗状态，`PopupSelectView` 占据输入浮层。`presentation.ts` 负责行标题、图标和分节，展示与解析辅助函数均留在插件内部。
 
 </details>
 

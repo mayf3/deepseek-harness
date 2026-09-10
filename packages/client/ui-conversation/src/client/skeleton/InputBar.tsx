@@ -273,12 +273,11 @@ export const InputBar = memo(function InputBar({
     intakeFiles, uploadsPending, showToast, t, canAcceptDrop,
   }
 
-  // The menu's File row opens the same hidden input the drop path feeds,
-  // under the drop gate the row itself cannot see.
   useEffect(() => {
     if (keyboard === undefined) return
-    return keyboard.bindFilePicker(() => {
-      if (gate.current.canAcceptDrop) fileInputRef.current?.click()
+    return keyboard.bindFilePicker({
+      available: () => gate.current.canAcceptDrop && fileInputRef.current !== null,
+      open: () => { fileInputRef.current?.click() },
     })
   }, [keyboard])
 

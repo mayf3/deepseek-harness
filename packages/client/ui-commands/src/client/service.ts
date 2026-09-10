@@ -29,7 +29,8 @@ import type { CommandContribution, CommandDecoration, CommandUiContract } from '
 import type { CommandDescriptor } from './directory.ts'
 import { CommandDirectory } from './directory.ts'
 import { PopupSelectController } from './popup.ts'
-import { builtinRowFace, claimToken, resolveCommandName, sectionRows } from './presentation.ts'
+import { builtinRowFace, sectionRows } from './presentation.ts'
+import { claimToken } from './resolution.ts'
 import type { TokenSegment } from './popup.ts'
 
 declare module '@deepseek-ai/cordis' {
@@ -201,7 +202,7 @@ export class CommandUiRuntime extends Service implements CommandUiContract {
       seen.add(c.name)
       rows.push({
         name: c.name,
-        ...(builtinRowFace(c.name, c.description, this.t) ?? { description: c.description }),
+        ...(builtinRowFace(c, this.t) ?? { description: c.description }),
         ...(c.input !== undefined ? { hint: c.input.hint } : {}),
       })
     }
@@ -239,7 +240,7 @@ export class CommandUiRuntime extends Service implements CommandUiContract {
       this.invoke(name, decoration.ui, pick.session, { via: 'menu', span: pick.span })
       return 'handled'
     }
-    if (desc.input !== undefined) return { claim: this.leadingClaim(desc, pick.session, claimToken(desc.name, desc.description, this.t)) }
+    if (desc.input !== undefined) return { claim: this.leadingClaim(desc, pick.session, claimToken(desc, this.t)) }
     // Menu-pick execute consumes the trigger span before the detached run
     // (scoped event; the input owns the CAS guard).
     this.consumeVia(pick.session.sessionId, { via: 'menu', span: pick.span })
@@ -250,9 +251,8 @@ export class CommandUiRuntime extends Service implements CommandUiContract {
   /** Decision table, space column: hot-key sync check; only host leadingInput claims. */
   private matchSpace(session: ClientSessionContext, token: string): PickOutcome {
     if (!token.startsWith('/')) return undefined
-    const name = resolveCommandName(token.slice(1))
-    if (this.live.contributions.has(name)) return undefined // popup and action kinds never claim on space
-    const desc = this.directory.resolve(session.sessionId, name)
+    if (this.live.contributions.has(token.slice(1))) return undefined // popup and action kinds never claim on space
+    const desc = this.directory.resolve(session.sessionId, token.slice(1))
     if (desc === undefined || desc.input === undefined) return undefined
     return { claim: this.leadingClaim(desc, session, token.slice(1)) }
   }
@@ -284,23 +284,23 @@ export class CommandUiRuntime extends Service implements CommandUiContract {
     const ws = trimmed.search(/\s/)
     const token = ws === -1 ? trimmed : trimmed.slice(0, ws)
     const bare = ws === -1
-    const name = resolveCommandName(token.slice(1))
-    if (name === '') return undefined
-    // The Host line always carries the catalog name.
-    const canonical = `/${name}${trimmed.slice(token.length)}`
+    const typedName = token.slice(1)
+    if (typedName === '') return undefined
     const refuseAttachments = (): never => {
-      throw new Error(this.t('notice.attachmentsUnsupported', { command: name }))
+      throw new Error(this.t('notice.attachmentsUnsupported', { command: typedName }))
     }
-    const contribution = this.live.contributions.get(name)
+    const contribution = this.live.contributions.get(typedName)
     if (contribution !== undefined && contribution.available(session)) {
       if (!bare) return undefined
       if (envelope.attachments > 0 && contribution.ui.kind !== 'action') refuseAttachments()
-      this.invoke(name, contribution.ui, session, { via: 'enter', token })
+      this.invoke(typedName, contribution.ui, session, { via: 'enter', token })
       return 'handled'
     }
     await this.directory.ensureReady(session.sessionId, signal)
-    const desc = this.directory.resolve(session.sessionId, name)
+    const desc = this.directory.resolve(session.sessionId, typedName)
     if (desc === undefined) return undefined
+    const name = desc.name
+    const canonical = `/${name}${trimmed.slice(token.length)}`
     // Bare enter on a decorated host command opens its popup; an argued line
     // never consults the decoration (the claim/detached paths below own it).
     if (bare) {

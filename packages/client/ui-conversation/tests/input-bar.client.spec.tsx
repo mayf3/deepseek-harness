@@ -952,9 +952,10 @@ describe('running and lock semantics', () => {
     expect(textarea.getAttribute('aria-disabled')).not.toBe('true')
     expect(view.container.querySelector<HTMLInputElement>('input[type="file"]')?.disabled).toBe(true)
     expect(attachmentOwner(slotCalls).canAcceptDrop).toBe(false)
-    // The menu's File row reaches the same gate: a bound picker stays shut.
     const click = vi.spyOn(HTMLInputElement.prototype, 'click')
-    expect(shell.pickFiles()).toBe(true)
+    onTestFinished(() => { click.mockRestore() })
+    expect(shell.canPickFiles()).toBe(false)
+    expect(shell.pickFiles()).toBe(false)
     expect(click).not.toHaveBeenCalled()
     click.mockRestore()
     fireEvent.click(button)
@@ -994,9 +995,36 @@ describe('running and lock semantics', () => {
     expect(attachmentOwner(slotCalls).canAcceptDrop).toBe(true)
     // The menu's File row opens the hidden input through the bound picker.
     const click = vi.spyOn(HTMLInputElement.prototype, 'click')
+    onTestFinished(() => { click.mockRestore() })
+    expect(shell.canPickFiles()).toBe(true)
     expect(shell.pickFiles()).toBe(true)
     expect(click).toHaveBeenCalledOnce()
     click.mockRestore()
+  })
+
+  it.each([
+    ['removed session', { disabled: true }],
+    ['inert composer', { inert: true }],
+    ['blocked composer', { blocked: { reason: 'waiting' } }],
+  ])('%s hides and refuses the File action', (_name, state) => {
+    const { shell, view } = bench({ ...state, addFiles: () => null })
+    const input = view.container.querySelector<HTMLInputElement>('input[type="file"]')!
+    const open = vi.spyOn(input, 'click')
+    expect(shell.canPickFiles()).toBe(false)
+    expect(shell.pickFiles()).toBe(false)
+    expect(open).not.toHaveBeenCalled()
+  })
+
+  it('file action availability follows mount and live composer state', () => {
+    const { props, view, shell } = bench({ addFiles: () => null })
+    expect(shell.canPickFiles()).toBe(true)
+    view.rerender(<InputBar {...props} disabled />)
+    expect(shell.canPickFiles()).toBe(false)
+    view.rerender(<InputBar {...props} />)
+    expect(shell.canPickFiles()).toBe(true)
+    view.unmount()
+    expect(shell.canPickFiles()).toBe(false)
+    expect(shell.pickFiles()).toBe(false)
   })
 
   it('parent-offline running continuable locks Send but keeps independent Stop usable', () => {

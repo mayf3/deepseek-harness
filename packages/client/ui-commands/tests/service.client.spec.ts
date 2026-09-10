@@ -8,8 +8,9 @@
  * lifecycle, and the directory invalidation event subscriptions.
  */
 import { Context } from '@deepseek-ai/cordis'
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, it, onTestFinished, vi } from 'vitest'
 import type { CommandResult } from '@deepseek-ai/dsh-commands/types'
+import { CommandDefinitionId } from '@deepseek-ai/dsh-commands/brand'
 import { createScope, scopeOf } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { RemoteError, TestRemote } from '@deepseek-ai/dsh-client-test-runtime'
@@ -18,6 +19,7 @@ import type { ClientSessionContext, ConsumeTokenRequest, InputTriggerPick, Input
 import type { CommandContribution, CommandDecoration, PopupSelectSpec, SelectOption } from '../src/client/contract.ts'
 import type { CommandDescriptor } from '../src/client/directory.ts'
 import { CommandUiRuntime } from '../src/client/service.ts'
+import { en, zh, type CommandKey } from '../src/client/locales.ts'
 
 const sid = (k: string): SessionId => k as SessionId
 
@@ -257,7 +259,7 @@ describe('candidates', () => {
   it('localizes canonical built-in and contribution descriptions on every candidate request', async () => {
     let locale = 'zh'
     const commands: CommandDescriptor[] = [
-      { name: 'compact', description: 'Compact older conversation history' },
+      { definitionId: CommandDefinitionId('@deepseek-ai/dsh-command-compact'), name: 'compact', description: 'Compact older conversation history' },
       { name: 'goal', description: 'scoped goal override' },
       { name: 'custom', description: 'plugin-authored copy' },
     ]
@@ -292,14 +294,14 @@ describe('candidates', () => {
   })
 
   describe('menu presentation (design doc for #3567)', () => {
-    /** The shipped catalog in Host registration order, with the canonical English descriptions. */
+    /** First-party definitions plus an unrelated command, in Host registration order. */
     const SHIPPED: CommandDescriptor[] = [
-      { name: 'compact', description: 'Compact older conversation history' },
-      { name: 'export', description: 'Download this Session log as a ZIP archive' },
-      { name: 'feedback', description: 'Record feedback about this session', input: { hint: '<text>' } },
-      { name: 'goal', description: 'Set or view the goal for a long-running task', input: { hint: '<objective>', attachments: true } },
-      { name: 'permission', description: 'Switch the permission preset (sandbox mode + approval policy)', input: { hint: '<preset>' } },
-      { name: 'plan', description: 'Enter or leave plan mode', input: { hint: '[off|message]', attachments: true } },
+      { definitionId: CommandDefinitionId('@deepseek-ai/dsh-command-compact'), name: 'compact', description: 'Compact older conversation history' },
+      { definitionId: CommandDefinitionId('@deepseek-ai/dsh-session-log-export'), name: 'export', description: 'Download this Session log as a ZIP archive' },
+      { definitionId: CommandDefinitionId('@deepseek-ai/dsh-command-feedback'), name: 'feedback', description: 'Record feedback about this session', input: { hint: '<text>' } },
+      { definitionId: CommandDefinitionId('@deepseek-ai/dsh-command-goal'), name: 'goal', description: 'Set or view the goal for a long-running task', input: { hint: '<objective>', attachments: true } },
+      { definitionId: CommandDefinitionId('@deepseek-ai/dsh-permission-presets'), name: 'permission', description: 'Switch the permission preset (sandbox mode + approval policy)', input: { hint: '<preset>' } },
+      { definitionId: CommandDefinitionId('@deepseek-ai/dsh-plan-mode'), name: 'plan', description: 'Enter or leave plan mode', input: { hint: '[off|message]', attachments: true } },
       { name: 'deploy', description: 'third-party command' },
     ]
     const Glyph = () => null
@@ -345,11 +347,35 @@ describe('candidates', () => {
       expect(rows[8]).toEqual({ name: 'deploy', description: 'third-party command', section: 'command:section.commands' })
     })
 
-    it('a Host row of a built-in name with another description is not the built-in command', async () => {
-      const commands: CommandDescriptor[] = [{ name: 'goal', description: 'scoped goal', input: { hint: 'x' } }]
+    it('a same-name override keeps its own presentation even when it copies the first-party description', async () => {
+      const commands: CommandDescriptor[] = [{ name: 'goal', description: en['description.goal'], input: { hint: 'x' } }]
       const { source } = await bench({ commands: () => Promise.resolve({ commands }) })
       const [row] = await source.candidates(proj('s1'), req(''))
-      expect(row).toEqual({ name: 'goal', description: 'scoped goal', hint: 'x', section: 'command:section.add' })
+      expect(row).toEqual({ name: 'goal', description: en['description.goal'], hint: 'x', section: 'command:section.add' })
+      expect(source.matchSpace!(proj('s1'), '/目标')).toBeUndefined()
+      expect(await source.matchEnter!(proj('s1'), '/目标 x', new AbortController().signal, { attachments: 0 })).toBeUndefined()
+      expect(source.matchSpace!(proj('s1'), '/goal')).toHaveProperty('claim.name', 'goal')
+    })
+
+    it.each([['en', en], ['zh', zh]] as const)('description edits preserve menu claims and bilingual parsing under %s', async (_locale, dictionary) => {
+      const commands = SHIPPED.map(command => ({ ...command, description: command.description + '.' }))
+      const { fiber, source, warm } = await bench({
+        commands: () => Promise.resolve({ commands }),
+        translate: (_namespace, key) => dictionary[key as CommandKey],
+      })
+      onTestFinished(() => fiber.dispose())
+      await warm(proj('s1'))
+      const rows = await source.candidates(proj('s1'), req(''))
+      for (const name of ['goal', 'plan', 'feedback'] as const) {
+        expect(rows.find(row => row.name === name)?.label).toBe(dictionary[`label.${name}`])
+        const picked = menuPick(source, name, proj('s1'))
+        expect(picked).toHaveProperty('claim.token', `/${dictionary[`token.${name}`]} `)
+        for (const spelling of [en[`token.${name}`], zh[`token.${name}`]]) {
+          expect(source.matchSpace!(proj('s1'), `/${spelling}`)).toHaveProperty('claim.name', name)
+          expect(await source.matchEnter!(proj('s1'), `/${spelling} text`, new AbortController().signal, { attachments: 0 }))
+            .toHaveProperty('claim.token', `/${spelling} `)
+        }
+      }
     })
 
     it('a typed query ranks rows flat by name or label and drops the section headings', async () => {

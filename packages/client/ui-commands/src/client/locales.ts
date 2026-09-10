@@ -1,15 +1,14 @@
 /**
  * `command` namespace dictionaries: the composer menu's section headings,
  * the client face (title, description, claim token) of the built-in Host
- * commands whose catalog descriptors carry English text only, the File row's
- * title, and the popupSelect shell's copy.
+ * commands whose catalog descriptors carry English text only, and the
+ * popupSelect shell's copy.
  */
 
 /** Simplified Chinese dictionary (the key-set source of truth). */
 export const zh = {
   'section.add': '添加',
   'section.commands': '指令',
-  'label.file': '文件',
   'label.goal': '目标',
   'label.plan': '计划',
   'label.feedback': '反馈',
@@ -41,15 +40,10 @@ export const zh = {
 /** The command namespace key union. */
 export type CommandKey = keyof typeof zh
 
-/**
- * English dictionary, checked complete against the zh key set. Each
- * `description.*` entry is byte-equal to the Host descriptor it localizes:
- * that equality is how a catalog row is recognized as the built-in command.
- */
+/** English dictionary, checked complete against the zh key set. */
 export const en = {
   'section.add': 'Add',
   'section.commands': 'Commands',
-  'label.file': 'File',
   'label.goal': 'Goal',
   'label.plan': 'Plan',
   'label.feedback': 'Feedback',

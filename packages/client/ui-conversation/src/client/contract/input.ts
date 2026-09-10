@@ -176,12 +176,6 @@ declare module '@deepseek-ai/cordis' {
      * @mode bail
      */
     'slash/input-insert-text'(request: InsertTextRequest): true | undefined
-    /**
-     * Open the composer's file picker for the scoped session (the menu's
-     * File row); true when a mounted composer accepting files opened it.
-     * @mode bail
-     */
-    'slash/input-pick-files'(): true | undefined
   }
 }
 
@@ -298,12 +292,11 @@ export interface ComposerKeyboard {
   /** Dismiss the popupSelect shell (any interaction outside the box). */
   dismissPopup(): void
   /**
-   * Bind the composer's file-picker opener for the scoped pick-files event;
-   * the composer decides inside `open` whether intake is currently allowed.
-   * @param open - opens the native file dialog.
+   * Bind the mounted composer's file action and live intake availability.
+   * @param picker - availability query and native file-dialog opener.
    * @returns the unbind disposer.
    */
-  bindFilePicker(open: () => void): () => void
+  bindFilePicker(picker: { available(): boolean; open(): void }): () => void
 }
 
 /** One independently addressable row projected from the transient queue snapshot. */

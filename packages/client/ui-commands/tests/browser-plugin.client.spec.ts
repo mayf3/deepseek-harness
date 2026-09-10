@@ -7,7 +7,7 @@
  * (HMR safety), and the service satisfies the frozen CommandUiContract.
  */
 import { Context } from '@deepseek-ai/cordis'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, onTestFinished } from 'vitest'
 import { createScope, scopeOf } from '@deepseek-ai/dsh-api-session-controller/client'
 import { SlotRegistry } from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
@@ -76,23 +76,13 @@ describe('apply', () => {
     expect(slots.entries('conversation.input.overlay')).toHaveLength(0)
   })
 
-  it('registers the File row: an action that consumes the token and opens the scoped file picker; absent on a subagent', async () => {
-    const { sources, mint } = await bench()
+  it('provides no File action without its composer owner', async () => {
+    const { fiber, sources } = await bench()
+    onTestFinished(() => fiber.dispose())
     const source = sources.get('/ command')!
     const req = { query: '', position: 'leading' as const, drilled: false, signal: new AbortController().signal }
-    const rows = await source.candidates({ sessionId: sid('s1') }, req)
-    expect(rows).toEqual([{ name: 'file', label: 'File', icon: expect.any(Function) as never, section: 'Add' }])
+    expect(await source.candidates({ sessionId: sid('s1') }, req)).toEqual([])
     expect(await source.candidates({ sessionId: sid('child') }, req)).toEqual([])
-    const scope = mint('s1')
-    const picks: string[] = []
-    scope.ctx.on('slash/input-consume-token', () => { picks.push('consume'); return true })
-    scope.ctx.on('slash/input-pick-files', () => { picks.push('pick-files'); return true })
-    const span = { start: 0, end: 5, draftRev: 1 }
-    expect(source.onPick({ candidate: rows[0]!, session: { sessionId: sid('s1') }, position: 'leading', via: 'menu', action: 'pick', span })).toBe('handled')
-    expect(picks).toEqual(['consume', 'pick-files'])
-    // A session without a live scope runs nothing and throws nothing.
-    expect(source.onPick({ candidate: rows[0]!, session: { sessionId: sid('gone') }, position: 'leading', via: 'menu', action: 'pick', span })).toBe('handled')
-    expect(picks).toHaveLength(2)
   })
 
   it('the overlay inject resolves the per-session popup controller by sessionId and fails loud on an unknown id', async () => {

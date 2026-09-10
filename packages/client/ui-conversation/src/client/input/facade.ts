@@ -21,7 +21,7 @@ import { registerPlainText } from '@lexical/plain-text'
 import { createEmptyHistoryState, registerHistory } from '@lexical/history'
 import { mergeRegister } from '@lexical/utils'
 import type {
-  ArbitrateKey, ArbitrateOutcome, CommandClaim, ConsumeTokenRequest, DraftAttachmentId,
+  ArbitrateKey, ArbitrateOutcome, CommandClaim, ComposerKeyboard, ConsumeTokenRequest, DraftAttachmentId,
   InputActions, InputEffect, InputNotice, InputState, InputTriggerController, PickOutcome,
   Occurrence, QueuedMessage, ReferenceInsert, SessionInput, SubmitAttempt, SubmitAttachment,
   SubmitOutcome, TokenSpan,
@@ -156,7 +156,7 @@ export class SessionInputShell implements SessionInput {
   /** Draft persistence mirror (Conversation store write; receives the clipboard projection). */
   private mirrorFn: ((text: string) => void) | undefined
   /** The mounted composer's file-picker opener (scoped pick-files event target). */
-  private filePickerFn: (() => void) | undefined
+  private filePicker: Parameters<ComposerKeyboard['bindFilePicker']>[0] | undefined
   /** Live lexicon subscription disposer; undefined until the controller resolves. */
   private lexiconOff: (() => void) | undefined
   /** Default sends retained until admission settles or scope disposal releases their attachments. */
@@ -613,24 +613,32 @@ export class SessionInputShell implements SessionInput {
   }
 
   /**
-   * Bind the composer's file-picker opener (ComposerKeyboard face; unbind on unmount).
-   * @param open - opens the native file dialog.
+   * Bind the mounted composer's file action and live intake availability.
+   * @param picker - availability query and native file-dialog opener.
    * @returns the unbind disposer.
    */
-  bindFilePicker(open: () => void): () => void {
-    this.filePickerFn = open
+  bindFilePicker(picker: Parameters<ComposerKeyboard['bindFilePicker']>[0]): () => void {
+    this.filePicker = picker
     return () => {
-      if (this.filePickerFn === open) this.filePickerFn = undefined
+      if (this.filePicker === picker) this.filePicker = undefined
     }
   }
 
   /**
-   * Open the bound file picker (scoped pick-files event listener body).
-   * @returns whether a composer was bound to open it.
+   * Read the mounted composer's live file-intake availability.
+   * @returns false when no accepting composer is mounted.
+   */
+  canPickFiles(): boolean {
+    return this.filePicker?.available() === true
+  }
+
+  /**
+   * Open the native file dialog when the mounted composer accepts files.
+   * @returns whether the opener was called.
    */
   pickFiles(): boolean {
-    if (this.filePickerFn === undefined) return false
-    this.filePickerFn()
+    if (this.filePicker === undefined || !this.filePicker.available()) return false
+    this.filePicker.open()
     return true
   }
 
