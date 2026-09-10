@@ -15,7 +15,6 @@ File-mention providers receive the viewed Session ID with the closing-turn owner
 ## Table of Contents
 
 - [System prompt row](#system-prompt-row)
-- [Mermaid previews](#mermaid-previews)
 - [Turn token usage](#turn-token-usage)
 - [Turn Process Folding](#turn-process-folding)
 - [Scroll ownership](#scroll-ownership)
@@ -29,13 +28,6 @@ File-mention providers receive the viewed Session ID with the closing-turn owner
 ## System prompt row
 
 Each nonempty appended `system/message` owns a collapsed prompt row, including a complete prompt at the start of a headerless window; the same-step header does not duplicate it. Chat also shows a collapsed `System prompt` row for a non-empty initial request, explicit message-series start, or `system/message` surface node replacement whose text differs, reading the last nonempty surviving system node in surface order at the `request/header`; a non-initial request whose preceding header is outside the loaded history window also shows one. A resume repeats the row even when its system text is unchanged, including after pagination supplies the preceding header and system node; same-series config-only or tool-only changes, tool steps, and retries create no repetition, and a `system/message` event is never rendered as a transcript message. The row appears before that request's user messages, matching the provider envelope, and expands to the exact model-visible text with its original line breaks. A request whose system node is empty or outside the loaded window creates no row until the page holding the node arrives.
-
-<a id="mermaid-previews"></a>
-## Mermaid previews
-
-Settled Assistant Markdown shows `mermaid` code fences as diagrams. Diagrams have no language banner. Source/Preview and Copy icon actions appear on hover or keyboard focus and remain visible on touch devices; both views copy the original Mermaid source. Streaming fences remain code until the message settles; invalid diagrams show an error and their source without disrupting other blocks. Chat enables the shared [Mermaid preview primitive](../ui-primitives/README.md) through localized labels. Chat also previews `graphviz`/`dot`, `svg`, and static `html` fences in isolated iframes, with the same default visualization, source switching, and copying. HTML scripts, navigation, and remote resources are disabled. This is a presentation change and adds no model prompt, tool, or Session event.
-
------
 
 <a id="turn-token-usage"></a>
 ## Turn token usage

@@ -4,7 +4,6 @@ import { tmpdir } from 'node:os'
 import { describe, expect, it } from 'vitest'
 import {
   CLAUDE_AGENT_SDK_PACKAGE,
-  assertPreviewDistribution,
   assertRuntimeLicenses,
   claudeDistributionFromManifest,
   collectPythonDependencies,
@@ -394,28 +393,5 @@ describe('manifestPatterns', () => {
       'native/system/package.json',
       'native/system/packages/*/package.json',
     ])
-  })
-})
-
-describe('preview distribution licenses', () => {
-  const dependencies = { mermaid: '11.16.0', '@viz-js/viz': '3.30.0', dompurify: '3.4.11' }
-  const sources = [
-    'pkg:docker/emscripten/emsdk@5.0.7?platform=linux%2Famd64',
-    'https://github.com/libexpat/libexpat/releases/download/R_2_8_4/expat-2.8.4.tar.gz',
-    'https://gitlab.com/api/v4/projects/4207231/packages/generic/graphviz-releases/16.0.0/graphviz-16.0.0.tar.gz',
-  ]
-  it('accepts the reviewed wrapper and native sources', () => {
-    expect(() => { assertPreviewDistribution(dependencies, sources) }).not.toThrow()
-    const notices = readFileSync(resolve(root, 'packages/client/ui-primitives/THIRD_PARTY_PREVIEW_NOTICES.txt'), 'utf8')
-    expect(notices).toContain('Eclipse Public License - v 2.0')
-    expect(notices).toContain(sources[2])
-    expect(notices).toContain(readFileSync(resolve(root, 'packages/client/ui-primitives/node_modules/mermaid/LICENSE'), 'utf8').trim())
-    expect(notices).toContain(readFileSync(resolve(root, 'packages/client/ui-primitives/node_modules/dompurify/LICENSE'), 'utf8').trim())
-  })
-  it.each(Object.keys(dependencies))('rejects an unreviewed %s upgrade', (name) => {
-    expect(() => { assertPreviewDistribution({ ...dependencies, [name]: '99.0.0' }, sources) }).toThrow('preview notices: review')
-  })
-  it.each([sources.slice(1), [...sources, 'https://example.com/new-library'], [...sources.slice(0, 2), 'graphviz-next']])('rejects changed embedded sources', (...uris) => {
-    expect(() => { assertPreviewDistribution(dependencies, uris) }).toThrow('native sources')
   })
 })

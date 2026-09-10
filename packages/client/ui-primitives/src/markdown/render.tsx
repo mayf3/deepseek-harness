@@ -23,11 +23,6 @@ import type * as Md from 'mdast'
 import type {} from 'mdast-util-math'
 import { normalizeUri } from 'micromark-util-sanitize-uri'
 import { CodeBlock } from './CodeBlock.tsx'
-import { SourcePreview } from './SourcePreview.tsx'
-import { renderGraphviz } from './graphviz.ts'
-import { renderHtml, renderSvg } from './preview-document.ts'
-import { renderMermaid } from './mermaid.ts'
-import type { PreviewLabels } from './SourcePreview.tsx'
 import { renderTexToReact } from './katex.tsx'
 import { LinkIcon, classifyLinkPath } from '../LinkIcon.tsx'
 import type { PositionedBlock } from './incremental.ts'
@@ -45,15 +40,6 @@ export interface MarkdownCodeLabels {
 export interface MarkdownLabels {
   code: MarkdownCodeLabels
   footnotes: string
-  /** Opt into settled Mermaid, Graphviz, SVG, and static HTML previews with complete localized labels. */
-  preview?: {
-    mermaid: PreviewLabels
-    graphviz: PreviewLabels
-    svg: PreviewLabels
-    html: PreviewLabels
-    preview: string
-    source: string
-  }
 }
 
 function sanitizeUrl(url: string): string {
@@ -408,24 +394,8 @@ function renderCode(node: Md.Code, key: Key, context: MarkdownRenderContext): Re
       streaming={context.streaming}
       copyLabel={context.labels.code.copyLabel}
       copiedLabel={context.labels.code.copiedLabel}
-      preview={context.streaming ? undefined : fencePreview(lang, node.value, context.labels)}
     />
   )
-}
-
-/** Resolve the supported fence language without treating arbitrary HTML in Markdown as a preview. */
-function fencePreview(lang: string | undefined, code: string, labels: MarkdownLabels) {
-  if (labels.preview === undefined) return undefined
-  const kind = lang === 'dot' ? 'graphviz' : lang
-  if (kind !== 'mermaid' && kind !== 'graphviz' && kind !== 'svg' && kind !== 'html') return undefined
-  const render = { mermaid: renderMermaid, graphviz: renderGraphviz, svg: renderSvg, html: renderHtml }[kind]
-  return {
-    content: (
-      <SourcePreview key={kind} code={code} labels={labels.preview[kind]} render={render} document={kind === 'html'} />
-    ),
-    previewLabel: labels.preview.preview,
-    sourceLabel: labels.preview.source,
-  }
 }
 
 /** A list is loose when it or any of its items is spread; every item then keeps its paragraphs. */

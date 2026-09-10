@@ -3,7 +3,6 @@
 import { describe, expect, it } from 'vitest'
 import {
   checkDshFamilyVersion,
-  checkWorkspaceManifest,
   checkExperimentalDependencyIsolation,
   checkExperimentalManifest,
   expectedDshPackageFiles,
@@ -143,17 +142,4 @@ describe('package payload constraints', () => {
       'lib/types/**/*.d.ts',
     ])
   })
-})
-
-it('requires preview license notices in the published UI primitives payload', () => {
-  const name = '@deepseek-ai/dsh-client-ui-primitives'
-  const files = expectedDshPackageFiles({ name })
-  expect(files).toContain('THIRD_PARTY_PREVIEW_NOTICES.txt')
-  const check = (entries: readonly string[]) => checkWorkspaceManifest({
-    dir: 'packages/client/ui-primitives', manifest: { name, files: [...entries] },
-  }).filter(message => message.includes('package.json files'))
-  expect(check(files)).toEqual([])
-  expect(check(files.filter(file => file !== 'THIRD_PARTY_PREVIEW_NOTICES.txt'))).toEqual([
-    expect.stringContaining('package.json files must be'),
-  ])
 })
