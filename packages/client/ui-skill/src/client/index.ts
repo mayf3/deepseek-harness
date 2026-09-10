@@ -30,11 +30,13 @@
  * accent row derived only from each logged call/result slice.
  */
 // Type-only: the carrier types, the forwarded Host-event face and the ctx.remote merge.
+import type {} from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import type { SkillEntry } from '@deepseek-ai/dsh-api-remotes/client'
 import type {} from '@deepseek-ai/dsh-api-session-controller/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { InputTriggerServiceContract, InputTriggerSource } from '@deepseek-ai/dsh-client-ui-input-trigger/client'
+import { fileAddressFor } from '@deepseek-ai/dsh-util-workspace-path'
 import { rankByName } from '@deepseek-ai/dsh-client-ui-primitives'
 // Type-only: pulls the locale plugin's Context merge (ctx.locale).
 import type {} from '@deepseek-ai/dsh-client-locale/client'
@@ -59,7 +61,7 @@ interface CatalogFetch {
 }
 
 /** Required services: reference source faces plus the tool-row and locale registries. */
-export const inject = ['inputTriggers', 'sessions', 'slots', 'locale', 'remote', 'remote.skills']
+export const inject = ['inputTriggers', 'sessions', 'slots', 'locale', 'remote', 'remote.skills', 'sidebarRight']
 
 /**
  * Client plugin body: register the '/' source, dictionaries, and keyed tool row.
@@ -170,6 +172,13 @@ export function apply(ctx: ClientContext): void {
         listeners.delete(listener)
         if (listeners.size === 0) lexiconListeners.delete(key)
       }
+    },
+    openReference(session, { ref }) {
+      const path = fetches.get(session.sessionId)?.settled?.find(skill => `/${skill.name}` === ref)?.path
+      if (path === undefined) return false
+      const cwd = sessions.list.getSnapshot().byId[session.sessionId]?.cwd
+      ctx.sidebarRight.openResource(fileAddressFor(session.sessionId, cwd, path))
+      return true
     },
     onPick({ candidate }) {
       // Plain-text-reference decision (web-input-machine note): the pick

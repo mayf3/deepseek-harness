@@ -24,7 +24,7 @@ import type { ClientSessionContext, InputTriggerSource } from '@deepseek-ai/dsh-
 import { apply, inject } from '../src/client/index.ts'
 import { SkillRow as SkillToolRow } from '../src/client/SkillRow.tsx'
 
-type SkillRow = { name: string; description: string; whenToUse?: string; modelInvocable?: boolean }
+type SkillRow = { name: string; description: string; whenToUse?: string; path?: string; modelInvocable?: boolean }
 type ListResult =
   | { ok: true; value: { skills: SkillRow[] } }
   | { ok: false; error: RemoteFailure }
@@ -62,17 +62,20 @@ function providePresentation(ctx: Context): PresentationCapture {
 /** Boot the plugin over fake slash/connection faces; returns the captured source and its ctx. */
 async function bench(list: ListFn, addressed?: SessionId) {
   const ctx = new Context()
+  ctx.provide('sidebarRight', { openResource: vi.fn() })
   let captured: InputTriggerSource | undefined
   ctx.provide('inputTriggers', { registerSource: (src: InputTriggerSource) => { captured = src; return () => {} } })
   ctx.provide('sessions', {
+    list: { getSnapshot: () => ({ byId: {} }) },
     subagentAddress: (id: SessionId) => id === addressed
       ? { parentSessionId: sid('parent'), childSessionId: id, mode: 'continuable' as const }
       : undefined,
   })
   const remote = new TestRemote(ctx, { skills: { list } })
   providePresentation(ctx)
-  await ctx.plugin({ inject: [...inject], apply }).await()
-  return { ctx, source: captured!, remote }
+  const fiber = ctx.plugin({ inject: [...inject], apply })
+  await fiber.await()
+  return { ctx, source: captured!, remote, fiber }
 }
 
 const CATALOG: SkillRow[] = [
@@ -102,11 +105,12 @@ const req = (query: string, signal?: AbortSignal) =>
 
 describe('apply', () => {
   it('declares the services it binds', () => {
-    expect(inject).toEqual(['inputTriggers', 'sessions', 'slots', 'locale', 'remote', 'remote.skills'])
+    expect(inject).toEqual(['inputTriggers', 'sessions', 'slots', 'locale', 'remote', 'remote.skills', 'sidebarRight'])
   })
 
   it('registers the dedicated skill row and its locale dictionaries', async () => {
     const ctx = new Context()
+    ctx.provide('sidebarRight', { openResource: vi.fn() })
     ctx.provide('inputTriggers', { registerSource: () => () => {} })
     ctx.provide('sessions', { subagentAddress: () => undefined })
     new TestRemote(ctx, { skills: { list: listOk(CATALOG) } })
@@ -142,6 +146,7 @@ describe('apply', () => {
 
   it('registers the "/" skill source; disposal frees the name (HMR safety)', async () => {
     const ctx = new Context()
+    ctx.provide('sidebarRight', { openResource: vi.fn() })
     // InputTriggerService itself injects 'sessions'; the stub unblocks its fiber.
     ctx.provide('sessions', {})
     await ctx.plugin(InputTriggerService).await()
@@ -381,5 +386,25 @@ describe('user-only marking', () => {
       { name: 'shared-skill', description: 'both surfaces' },
       { name: 'user-only-skill', description: '仅用户 · user surface only' },
     ])
+  })
+})
+
+describe('reference preview', () => {
+  it('opens the current session catalog path and refuses absent or invalidated paths', async () => {
+    const { ctx, source, fiber } = await bench(listOk([
+      { name: 'review', description: 'Review', path: '/skills/review/SKILL.md' },
+      { name: 'virtual', description: 'Virtual' },
+    ]))
+    const openResource = vi.spyOn(ctx.sidebarRight, 'openResource')
+    const session = { sessionId: sid('preview') }
+    expect(source.openReference?.(session, { ref: '/review' })).toBe(false)
+    await source.candidates(session, { query: '', position: 'inline', drilled: false, signal: new AbortController().signal })
+    expect(source.openReference?.(session, { ref: '/virtual' })).toBe(false)
+    expect(source.openReference?.(session, { ref: '/missing' })).toBe(false)
+    expect(source.openReference?.(session, { ref: '/review' })).toBe(true)
+    expect(openResource).toHaveBeenCalledWith('dsh-resource://file/session/preview//skills/review/SKILL.md')
+    ctx.emit('connection/reset')
+    expect(source.openReference?.(session, { ref: '/review' })).toBe(false)
+    await fiber.dispose()
   })
 })
