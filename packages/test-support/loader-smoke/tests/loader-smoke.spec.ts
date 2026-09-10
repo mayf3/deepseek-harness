@@ -49,7 +49,6 @@ describe('runLoaderSmoke', () => {
     try {
       const result = await runLoaderSmoke({
         label: 'shared cwd fixture',
-        tempDirPrefix: 'loader-smoke-shared-unused-',
         cwd,
         binScript: fixture('success'),
         configPath,

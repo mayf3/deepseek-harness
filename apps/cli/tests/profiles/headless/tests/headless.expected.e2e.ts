@@ -321,7 +321,6 @@ describe('headless stream-json snapshots', () => {
     try {
       const first = await runLoaderSmoke({
         label: 'product headless profile resume first wake',
-        tempDirPrefix: 'headless-session-resume-',
         cwd,
         binScript: dshBinScript,
         configPath: headlessOverlayPath,
@@ -336,7 +335,6 @@ describe('headless stream-json snapshots', () => {
 
       const second = await runLoaderSmoke({
         label: 'product headless profile resume second wake',
-        tempDirPrefix: 'headless-session-resume-',
         cwd,
         binScript: dshBinScript,
         configPath: headlessOverlayPath,
