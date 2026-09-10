@@ -190,6 +190,8 @@ These limits define where the adapter stops and future work begins. They are cur
 - **Images are input-only durable attachments** — direct external URLs and assistant image output are not supported; DeepSeek input normally uses the Files API and uses inline base64 only for per-request recovery.
 - The default catalog pre-registers `deepseek-flash` and its text/image and in-history capabilities without probing gateway availability. Requests can fail with `INVALID_REQUEST` until the gateway enables the id. With `DEEPSEEK_API_KEY` and a supporting gateway configured, `DEEPSEEK_FLASH_E2E=1` enables the Chat Completions check in [this package's e2e suite](tests/adapter.e2e.ts).
 
+- The default request-image projection caps total pixels at 640,000, below the provider's roughly 1300×1300 processing budget, so it can discard usable detail. Each model's `imagePixelBudget` can override this default; changing the default affects request content and needs separate snapshot verification ([decision](../../../.agents/notes/implemented/bug-fix/2026-09-10-deepseek-image-token-calculator-v41.md)).
+
 <a id="dev-note"></a>
 ### Dev Note
 

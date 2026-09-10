@@ -38,9 +38,9 @@ function gridTokens(gridHeight: number, gridWidth: number): number {
   return gridHeight * (gridWidth + 1) + 2
 }
 
-/** Token grid the padded pixel dimensions project onto. */
-function gridCells(paddedPixels: number): number {
-  return ceilDiv(intDiv(paddedPixels, PATCH_SIZE), DOWNSAMPLE_RATIO)
+/** Token-cell count along one padded pixel axis. */
+function gridCells(paddedLength: number): number {
+  return ceilDiv(intDiv(paddedLength, PATCH_SIZE), DOWNSAMPLE_RATIO)
 }
 
 /** Solve the largest grid within `budget` tokens preserving the aspect ratio. */

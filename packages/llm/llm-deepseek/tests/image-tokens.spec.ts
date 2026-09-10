@@ -16,6 +16,8 @@ describe('DeepSeek image tokens', () => {
     [2000, 2000, 994],
     [5000, 5000, 994],
     [300, 50, 200],
+    [8192, 100, 593],
+    [16, 8192, 590],
   ])('prices %sx%s as %s tokens', (width, height, expected) => {
     expect(deepSeekImageTokens(width, height)).toBe(expected)
   })
@@ -33,19 +35,14 @@ describe('DeepSeek image tokens', () => {
   })
 
   it('solves a one-row grid for an extremely wide image', () => {
-    // Width-dominant aspect drives the solver's single-row branch; no
-    // aspect-ratio clamp applies, so the row fills the whole budget.
     expect(deepSeekImageTokens(9000, 1)).toBe(1024)
-    expect(deepSeekImageTokens(8192, 100)).toBe(593)
   })
 
   it('solves a one-column grid for an extremely tall image', () => {
-    // Height-dominant aspect drives the solver's single-column branch.
     expect(deepSeekImageTokens(1, 9000)).toBe(1024)
-    expect(deepSeekImageTokens(16, 8192)).toBe(590)
   })
 
-  it('converges through a second projection pass when the first is not a fixpoint', () => {
+  it('converges through repeated projection passes when the first is not a fixpoint', () => {
     expect(deepSeekImageTokens(12, 1123)).toBe(380)
     expect(deepSeekImageTokens(89, 2076)).toBe(254)
   })

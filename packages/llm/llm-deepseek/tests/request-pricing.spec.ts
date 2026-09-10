@@ -49,6 +49,15 @@ describe('DeepSeek request-image pricing', () => {
     }])
   })
 
+  it.each([[8192, 1], [1, 8192]])('prices a %sx%s image at the token cap within the default pixel budget', (width, height) => {
+    const image = ref('thin', width, height)
+    const prices = deepSeekImageRequestPricing(connection(), 'vision').priceImages([image])
+    expect(prices).toEqual([{
+      visualTokens: 1024,
+      text: requestImageHandleText(image, { width, height }),
+    }])
+  })
+
   it('honors the low-detail pixel budget preset', () => {
     const image = ref('photo', 4096, 4096)
     const options = resolveAdapterOptions({
