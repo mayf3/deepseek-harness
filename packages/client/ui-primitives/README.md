@@ -1,5 +1,5 @@
 ---
-description: "Shared React UI atoms for the dsh web client: controls, icons, markdown and math rendering, and the terminal/read/diff/search/web output cards (zero cordis)."
+description: "Shared React UI atoms for the dsh web client: controls, icons, markdown and math rendering, and the terminal/read/diff/search/web output cards (zero Cordis)."
 kind: "package-library"
 ---
 
@@ -86,7 +86,7 @@ The atoms cannot read the application locale, so every piece of user-facing copy
 <details>
 <summary>Implementation internals — click to expand</summary>
 
-The package is one separation: presentational React atoms with zero Cordis and zero slot knowledge, styled only through `--dsw-*` tokens, while every feature-specific concern (locale, session data, composition) stays in the composing plugin.
+The package enforces one separation: presentational React atoms with zero Cordis and zero slot knowledge, styled only through `--dsw-*` tokens, while every feature-specific concern (locale, session data, composition) stays in the composing plugin.
 
 ### Source map
 
