@@ -181,6 +181,8 @@ describe('web e2e: plugin manager', () => {
     expect(await rowToggle.getAttribute('aria-checked')).toBe('true')
     expect(await presetRow.getAttribute('data-plugin-source')).toBe('user')
     expect(await presetRow.getByText('本地', { exact: true }).count()).toBe(1)
+    const settingsSection = dialog.locator('[data-settings-scope="preset/standard"]')
+    await expect.poll(() => settingsSection.getByRole('button', { name: /^展开设置:/ }).count(), { timeout: 10_000 }).toBe(4)
     const detailSnapshot = await captureStableAria(page, '[data-preset-detail="standard"]', scaffold.workspaceCwd)
     await compareOrRefreshGolden(DETAIL_EXPECTED, detailSnapshot, MODE)
 

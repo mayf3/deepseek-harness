@@ -2,7 +2,7 @@
   - img
   - text: Agent 预设 标准模式
 - heading "标准模式" [level=2]
-- text: 内置 当前使用
+- text: 内置 新任务默认
 - paragraph: 功能完整的编码 Agent，支持文件编辑、Shell、文件与网页检索、Skills、计划、目标、子代理和工作流。
 - heading "能力" [level=3]
 - button "给 标准模式 添加能力": 添加

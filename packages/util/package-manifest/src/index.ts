@@ -7,11 +7,10 @@ export type {
   BundleStage,
   DshBundleManifest,
   DshClientManifest,
-  DshConfigTreeDeclaration,
+  DshEnginesManifest,
   DshManifest,
-  DshModuleFallbackManifest,
+  DshPackageManifest,
   DshPluginDeclaration,
   DshProfileManifest,
-  DshSessionFormatMigrationManifest,
   ProfilePatchReload,
 } from './types.ts'

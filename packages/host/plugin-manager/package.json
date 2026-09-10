@@ -1,7 +1,7 @@
 {
   "name": "@deepseek-ai/dsh-host-plugin-manager",
   "description": "The plugins Remote of the Web host: pluginManager as a Typert service that relays each call to the shared plugin manager and maps its failures onto Remote error codes",
-  "version": "0.1.5-alpha.1",
+  "version": "0.1.5-rc.1",
   "publishConfig": {
     "access": "public"
   },

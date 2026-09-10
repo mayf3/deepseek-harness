@@ -3,10 +3,9 @@
     - button "Use one run_code program to" [disabled]
   - img
   - text: PTC mode
-  - button "Session log":
-    - text: Session log
+  - button "More actions":
     - img
-  - button "Open the sidebar":
+  - button "Open right sidebar":
     - img
   - tablist:
     - tab "Chat" [selected]
@@ -56,25 +55,26 @@
   - code: present
   - text: succeeded for
   - code:
-    - button "Open report.txt in default app": report.txt
+    - button "Open report.txt in sidebar": report.txt
   - text: and
   - code:
-    - button "Open 说明.txt in default app": 说明.txt
+    - button "Open 说明.txt in sidebar": 说明.txt
   - text: ", after which the program deliberately threw the string"
   - code: AFTER_PRESENT
   - text: — no retries, no extra files.
 - paragraph: PRESENT_DONE
-- text: Deliverables
-- button "Open report.txt in default app":
-  - text: report.txt TXT delivered report
-  - status: Opened in default app
+- button "Preview report.txt in sidebar"
+- text: report.txt
+- status: Opened in default app
+- button "Open report.txt in sidebar": Open
+- button "More file actions for report.txt":
   - img
-  - text: Open
-- button "Open 说明.txt in default app":
-  - text: 说明.txt TXT delivered note
-  - status: Opened in default app
+- button "Preview 说明.txt in sidebar"
+- text: 说明.txt
+- status: Opened in default app
+- button "Open 说明.txt in sidebar": Open
+- button "More file actions for 说明.txt":
   - img
-  - text: Open
 - button "Copy":
   - img
 - button "Good response":
