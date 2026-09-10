@@ -138,7 +138,11 @@ export interface LoaderSmokeOptions {
   readonly tempDirPrefix: string
   /** Existing parent for the generated cwd; defaults to the platform temporary directory. */
   readonly tempDirParent?: string
-  /** Existing process cwd to reuse instead of a fresh temporary directory; the caller owns its cleanup. */
+  /**
+   * Existing directory to use as the process cwd instead of a fresh temporary
+   * one; the caller owns its cleanup, and `tempDirPrefix`/`tempDirParent` are
+   * ignored.
+   */
   readonly cwd?: string
   /** Absolute app-bin source path (`<pkg>/src/bin.ts`); the `lib` bin is derived from it. */
   readonly binScript: string

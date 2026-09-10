@@ -241,15 +241,16 @@ function assertAdoptable(header: AdoptableHeader, events: Iterable<SessionEvent>
 }
 
 /**
- * Resolve the Agent for one run: reuse a live identity or adopt the persisted
- * Session with the requested id. The identity must already exist; a first round
- * omits the option instead, so a typo cannot pass as a brand-new conversation.
+ * Resolve the Agent for one run: adopt the persisted Session with the requested
+ * id. The identity must already exist, and no Agent may be live under it; a
+ * first round omits the option instead, so a typo cannot pass as a brand-new
+ * conversation.
  * @param ctx - plugin context carrying the Session query service.
  * @param agents - the core Agent registry.
  * @param sessionId - exact Session identity to adopt.
  * @param agentOptions - provider/model pair for this run.
  * @param setup - per-Agent scope setup installing the model selection.
- * @returns the live or resumed Agent.
+ * @returns the resumed Agent.
  */
 async function resolveAgent(
   ctx: Context,
@@ -258,32 +259,28 @@ async function resolveAgent(
   agentOptions: { provider: string; model: string },
   setup: (agentCtx: Context) => void,
 ): Promise<Agent> {
-  // Reusing a live identity and resuming a stored one both promise the caller
-  // a log a later process can continue. Without a durable log the run would
-  // succeed, print the id, and still lose the whole history at exit, so a
-  // miscomposed profile fails loud before either path.
-  const persistence = ctx.get('sessionPersistence')
-  if (persistence === undefined) {
+  // Resuming promises the caller a log a later process can continue. Without a
+  // durable log the run would succeed, print the id, and still lose the whole
+  // history at exit, so a miscomposed profile fails loud before the resume.
+  if (ctx.get('sessionPersistence') === undefined) {
     throw new Error('headless --session-id requires the sessionPersistence service; the Session would not survive this process')
   }
   // A later process holds no live Agent and has to find the id through the
-  // query service, so every --session-id run requires it even when this
-  // process already has the identity live.
+  // query service, so every --session-id run requires it.
   const query = ctx.get('sessionQuery')
   if (query === undefined) {
     throw new Error('headless --session-id requires the sessionQuery service; dsh-base provides it')
   }
   const live = agents.get(sessionId)
   if (live !== undefined) {
-    // A live identity skips adoption, not the rules that make adoption safe.
+    // A live Agent already has an owner that may still drive it, and `whenIdle`
+    // is not a single-message signal: folding its next interval into this run
+    // would mix that owner's events — even its final answer — into the stream.
+    // The runner cannot claim an exclusive interval over an Agent it did not
+    // create, so it refuses the identity; the adoptability rules run first so a
+    // real mismatch is named instead of the generic refusal.
     assertAdoptable(live.session.header, liveEvents(live.session), sessionId)
-    // A stored record rules out an Agent registered only in memory, whose
-    // `session/flush` would store nothing; write-handle ownership itself is
-    // not queryable through the persistence contract.
-    if (await persistence.stat(sessionId) === undefined) {
-      throw new Error(`live session "${sessionId}" has no persisted record, so the one-shot runner cannot promise it survives this process`)
-    }
-    return live
+    throw new Error(`session "${sessionId}" is live in this process, so the one-shot runner cannot own an exclusive run interval`)
   }
   try {
     using observation = await query.observeSession(sessionId)

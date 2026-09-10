@@ -22,7 +22,7 @@ Status: implemented
 
 每次运行的 `--model` 覆盖被明确排除在范围之外；组合默认模型仍然权威。
 
-改动范围限于 `packages/bundle/headless`：`src/startup.ts`、`src/index.ts`、新增的 `src/json-stream.ts`、包清单与 `tsconfig.json`，以及测试。不修改任何 core session、持久化、session-controller、base 组合或 launcher 文件。
+改动范围限于 `packages/bundle/headless`：`src/startup.ts`、`src/index.ts`、新增的 `src/json-stream.ts`、包清单与 `tsconfig.json`，以及测试。产品 profile 的期望测试位于 `apps/cli/tests/profiles/headless/tests/headless.expected.e2e.ts`，端到端覆盖两种输出模式；为此给 `packages/test-support/loader-smoke` harness 增加了一个可选的调用方自有 `cwd`，让两次唤醒共享同一个世界。不修改任何 core session、持久化、session-controller、base 组合或 launcher 文件。
 
 ### 命令行契约
 
@@ -65,7 +65,7 @@ dsh --profile headless [--json] [--session-id <id>] [<task>... | -]
 
 `--session-id <id>` 是只采用：先观察持久化会话并 resume，日志不存在时失败。首轮不传该 flag，由运行时生成身份并在 `session` 事件里报告；后续每一轮都用该值指名并续接历史。请求的 id 没有持久化日志时报错，而不是开一段新会话，因此写错或过期的 id 不会静默开出一段调用方自以为在续接的空历史，JSONL 存储拒绝已存在日志 id 的问题（见 [session persistence](../../implemented/architecture/2026-06-14-session-persistence.zh.md)）也不会出现在这条路径上。标识是不透明的，因此 runner 只在 trim 后的值上校验非空，并把调用方的原始字符串（含空白字符）原样传下去。
 
-采用时会比较持久化会话记录的 cwd 与进程 cwd，因为会话按项目目录组织（见 [project session directories](../../implemented/architecture/2026-07-24-project-session-directories.zh.md)）。不一致时以 `dsh:` 诊断退出 1，而不是静默续接一个根目录在别处的会话；未记录 cwd 的会话出于同样理由被拒绝。运行在 agent preset 下的会话被拒绝，因为本 bundle 不组合任何 preset roster：在这里 resume 它，会用 headless 的工具与提示词运行它，而不是它日志当前记录的组合。该检查读取日志当前记录的 preset——创建 header 再叠加任何 `agent-preset/selected` 事件——因为空白会话可能在创建后切换 preset，而 header 始终只是创建事实；畸形的选择记录会失败关闭，而不会读成「无 preset」。带父会话或子 agent 关联的会话——包括用户 fork 出的会话——被拒绝。当某个存活 Agent 已经持有请求的 id 时，上述检查全部执行，并在 runner 等待 idle 后再次执行，因此存活身份无法绕过它们，在该窗口内选中的 preset 也仍会被拒绝。纯空白的 `sessionId` 在 CLI 与直接配置两条路径上都会被拒绝。两个存活进程不能写同一个 id；存储的写租约已经会拒绝第二个写入者。runner 通过已组合的 `sessionQuery` 服务读取观察结果，并在请求 `--session-id` 却没有该服务时显式失败——即便本进程已有存活 Agent 持有该 id，因为后续进程仍需找到它；若所请求的身份缺少让它持久化的 `sessionPersistence` 服务，同样显式失败；存活身份还必须已有持久化记录，因为仅注册在内存中的身份不会写入任何内容。
+采用时会比较持久化会话记录的 cwd 与进程 cwd，因为会话按项目目录组织（见 [project session directories](../../implemented/architecture/2026-07-24-project-session-directories.zh.md)）。不一致时以 `dsh:` 诊断退出 1，而不是静默续接一个根目录在别处的会话；未记录 cwd 的会话出于同样理由被拒绝。运行在 agent preset 下的会话被拒绝，因为本 bundle 不组合任何 preset roster：在这里 resume 它，会用 headless 的工具与提示词运行它，而不是它日志当前记录的组合。该检查读取日志当前记录的 preset——创建 header 再叠加任何 `agent-preset/selected` 事件——因为空白会话可能在创建后切换 preset，而 header 始终只是创建事实；畸形的选择记录会失败关闭，而不会读成「无 preset」。带父会话或子 agent 关联的会话——包括用户 fork 出的会话——被拒绝。本进程已存在持有请求 id 的存活 Agent 时直接拒绝：它的 owner 可能仍在驱动它，而 `whenIdle` 不是单条消息的完成信号，runner 无法对它取得独占区间。resume 后的日志会在 runner 等待 idle 后再次检查，因此该窗口内选中的 preset 仍会被拒绝。纯空白的 `sessionId` 在 CLI 与直接配置两条路径上都会被拒绝。两个存活进程不能写同一个 id；存储的写租约已经会拒绝第二个写入者。runner 通过已组合的 `sessionQuery` 服务读取观察结果，并在请求 `--session-id` 却没有该服务时显式失败——观察结果正是它找到待 resume id 的途径；若所请求的身份缺少让它持久化的 `sessionPersistence` 服务，同样显式失败。
 
 ## 后果
 
@@ -74,7 +74,7 @@ dsh --profile headless [--json] [--session-id <id>] [<task>... | -]
 - 默认模式不变：纯文本运行向 stdout 写一行最终助手消息、stderr 无输出，退出码仍跟随终端原因。
 - `--json` 的 stdout 逐行可解析为 JSON，以 `session` 开头、以 `final` 结尾，不含纯文本。该模式下 stderr 不承载推理。
 - 发生重试的步骤只为最终提交的 attempt 发布 `text` 与 `thinking`，因此被丢弃的 attempt 不会在事件流中留下任何痕迹。
-- 两次连续的相同 `--session-id` 运行共享历史，而请求一个没有持久化日志的 id 会在任务运行前退出 1。cwd 不一致、未记录 cwd、属于子 agent 或 fork 会话、运行在 agent preset 下、preset 记录畸形，或存活身份没有持久化记录的运行都以诊断退出 1，无论身份是存活还是持久化的。
+- 两次连续的相同 `--session-id` 运行共享历史，而请求一个没有持久化日志的 id 会在任务运行前退出 1。cwd 不一致、未记录 cwd、属于子 agent 或 fork 会话、运行在 agent preset 下、preset 记录畸形，或本进程已存在同 id 存活 Agent 的运行都以诊断退出 1。
 - 无位置参数但 stdin 有管道输入时任务被采纳，只有空白的位置参数会被拒绝而不会消费管道，交互式无任务调用仍以用法错误失败。
 - 单元覆盖落在 `packages/bundle/headless/tests/startup.spec.ts`、`tests/headless.spec.ts` 与 `tests/json-stream.spec.ts`。`apps/cli/tests/profiles/headless/tests/headless.expected.e2e.ts` 的产品 headless profile 期望测试端到端覆盖两种输出模式。
 

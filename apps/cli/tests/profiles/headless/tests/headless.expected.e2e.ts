@@ -356,7 +356,10 @@ describe('headless stream-json snapshots', () => {
       })
       const secondEvents = second.stdout.trim().split('\n').map(line => JSON.parse(line) as JsonObject)
       expect(secondEvents[0]).toMatchObject({ type: 'session', sessionId })
-      expect(secondEvents.at(-1)).toMatchObject({ type: 'final' })
+      expect(secondEvents.at(-1)).toMatchObject({
+        type: 'final',
+        text: 'CLI tool round trip complete: CLI_TOOL_ROUND_TRIP',
+      })
     } finally {
       await rm(cwd, { recursive: true, force: true })
     }
