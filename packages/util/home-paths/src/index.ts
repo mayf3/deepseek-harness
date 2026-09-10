@@ -100,6 +100,15 @@ export function dshHomePath(...segments: string[]): string {
 }
 
 /**
+ * Join path segments onto the resolved Harness home's `cache` directory without creating it.
+ * @param segments - path segments appended to the cache directory; an empty list returns the cache directory itself.
+ * @returns the normalized absolute cache path.
+ */
+export function dshCachePath(...segments: string[]): string {
+  return dshHomePath('cache', ...segments)
+}
+
+/**
  * Describe a resolved harness home symbolically for user-facing display.
  *
  * It never returns an absolute machine path: the default home is labelled
