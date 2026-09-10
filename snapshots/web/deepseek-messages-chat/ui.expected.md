@@ -41,9 +41,7 @@
   - text: 用时 {{duration}}
 - text: {{clock}}
 - textbox "发消息或创建任务, / 调用指令, @ 文件或对话"
-- button "指令":
-  - img
-- button "添加附件":
+- button "添加文件或调用指令":
   - img
 - button "访问模式，当前：工作区内修改": 工作区内修改
 - button "选择模型，当前 DeepSeek-V4-Flash，推理等级 high":
