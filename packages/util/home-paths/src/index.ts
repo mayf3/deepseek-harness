@@ -106,9 +106,8 @@ export function dshHomePath(...segments: string[]): string {
  * @returns the normalized absolute cache path.
  */
 export function dshCachePath(optionsOrSegment: { dshHome?: string } | string = {}, ...segments: string[]): string {
-  const configured = typeof optionsOrSegment === 'string' ? undefined : optionsOrSegment.dshHome
-  const children = typeof optionsOrSegment === 'string' ? [optionsOrSegment, ...segments] : segments
-  return join(resolveDshHome(configured), 'cache', ...children)
+  if (typeof optionsOrSegment === 'string') return dshHomePath('cache', optionsOrSegment, ...segments)
+  return join(resolveDshHome(optionsOrSegment.dshHome), 'cache', ...segments)
 }
 
 /**
