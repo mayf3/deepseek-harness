@@ -167,8 +167,8 @@ async function writeCached(path: string, data: Uint8Array): Promise<void> {
 }
 
 /**
- * Generate or reuse one request image below the local attachment root.
- * @param root - absolute versioned attachment storage root.
+ * Generate or reuse one request image below the local attachment cache root.
+ * @param root - absolute attachment cache root; variants use its `request-images` child.
  * @param attachment - verified normalized attachment bytes and reference.
  * @param target - exact route-chosen dimensions and byte target; a target above the source keeps the source size.
  * @param signal - optional cancellation for cache I/O and image transformation.

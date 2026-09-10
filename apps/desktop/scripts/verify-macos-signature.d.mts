@@ -8,31 +8,31 @@ import type { MacOSSigningEnvironment } from './desktop-release-environment.mjs'
 export function assertMacOSSignatureDetails(details: string, expected: MacOSSigningEnvironment): void
 
 /**
- * Require the signature properties Apple validates for executable seed content.
+ * Require the signature properties Apple validates for executable runtime content.
  * @param details - Output from `codesign --display --verbose=4`.
  * @param expected - Public release identity.
  */
-export function assertMacOSSeedSignatureDetails(details: string, expected: MacOSSigningEnvironment): void
+export function assertMacOSRuntimeSignatureDetails(details: string, expected: MacOSSigningEnvironment): void
 
 /**
- * Sign one Mach-O file embedded in the seed store.
+ * Sign one Mach-O file embedded in the runtime tree.
  * @param path - Writable standalone Mach-O file.
  * @param identifier - Stable code-signing identifier derived from the release app ID and CAS digest.
  * @param expected - Public release identity.
  * @returns Resolves after codesign exits successfully.
  */
-export function signMacOSSeedCode(
+export function signMacOSRuntimeCode(
   path: string,
   identifier: string,
   expected: MacOSSigningEnvironment,
 ): Promise<void>
 
 /**
- * Verify one Mach-O file embedded in the seed store.
+ * Verify one Mach-O file embedded in the runtime tree.
  * @param path - Mach-O file to inspect.
  * @param expected - Public release identity.
  */
-export function verifyMacOSSeedCode(path: string, expected: MacOSSigningEnvironment): void
+export function verifyMacOSRuntimeCode(path: string, expected: MacOSSigningEnvironment): void
 
 /**
  * Verify the full application signature and its release owner.
