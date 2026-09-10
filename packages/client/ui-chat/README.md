@@ -14,6 +14,7 @@ File-mention providers receive the viewed Session ID with the closing-turn owner
 
 ## Table of Contents
 
+- [Reference previews](#reference-previews)
 - [System prompt row](#system-prompt-row)
 - [Turn token usage](#turn-token-usage)
 - [Completed-turn footer](#completed-turn-footer)
@@ -24,6 +25,11 @@ File-mention providers receive the viewed Session ID with the closing-turn owner
 - [Dev Note](#dev-note)
 
 -----
+
+<a id="reference-previews"></a>
+## Reference previews
+
+Sent file references and skills confirmed by the message’s logged invocation open in the right Sidebar. File paths use the viewed Session; skill names resolve through its current input-trigger source. Both use the prose file-link dotted underline on hover or focus. Sessions, directories, and command labels remain non-navigating references.
 
 <a id="system-prompt-row"></a>
 ## System prompt row
