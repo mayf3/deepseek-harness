@@ -6,6 +6,32 @@ import type { ToolCallId } from '@deepseek-ai/dsh-llm/brand'
 /** Authenticated POST route for opening a workspace file on the Host desktop. */
 export const PRESENT_OPEN_PATH = '/api/present.open'
 
+/** Authenticated desktop availability and destination metadata. */
+export const PRESENT_HOST_PATH = '/api/present.host'
+
+/** Native file action selected by an explicit user gesture. */
+export type PresentedAction = 'open' | 'reveal'
+
+/** Serving Host information; file-manager names never derive from the browser's OS. */
+export interface PresentedHost {
+  name: string
+  available: boolean
+  fileManager: 'finder' | 'explorer' | 'directory' | null
+}
+
+/**
+ * Validate desktop metadata received over HTTP.
+ * @param value - decoded response.
+ * @returns whether all displayed and actionable fields are supported.
+ */
+export function isPresentedHost(value: unknown): value is PresentedHost {
+  if (typeof value !== 'object' || value === null) return false
+  const host = value as Record<string, unknown>
+  return typeof host.name === 'string' && typeof host.available === 'boolean'
+    && (host.fileManager === null || host.fileManager === 'finder'
+      || host.fileManager === 'explorer' || host.fileManager === 'directory')
+}
+
 /**
  * Validate a file declaration read from a Session log.
  * @param value - decoded durable data.

@@ -9,6 +9,7 @@
  */
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-api-remotes/client'
+import type {} from '@deepseek-ai/dsh-client-connection/client'
 import type { ChatFileMentions } from '@deepseek-ai/dsh-client-ui-chat/client'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
@@ -41,6 +42,7 @@ export const inject = ['slots', 'locale', 'uiConversation', 'remote', 'remote.se
 export function apply(ctx: ClientContext): void {
   const opener = new PresentedOpenController()
   ctx.effect(() => () => opener.dispose())
+  ctx.on('connection/reset', () => { opener.resetHost() })
   ctx.uiConversation.events.register(deliverablesDefinition)
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-deliverables: dictionaries')
   ctx.slots.inject(
@@ -50,8 +52,9 @@ export function apply(ctx: ClientContext): void {
       select: selectDeliverables,
       locale: NS,
       inject: (): DeliverablesInjected => ({
-        hooks: { presentedOpen: opener.state },
-        openPresented: (sessionId, seq, index) => opener.open(sessionId, seq, index),
+        hooks: { presentedOpen: opener.state, presentedHost: opener.host },
+        reloadPresentedHost: () => opener.loadHost(),
+        openPresented: (sessionId, seq, index, action) => opener.open(sessionId, seq, index, action),
       }),
     }, Deliverables),
   )

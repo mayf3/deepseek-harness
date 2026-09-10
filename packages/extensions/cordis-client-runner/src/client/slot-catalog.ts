@@ -847,6 +847,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     occupants: [
       'client-ui-commands PopupSelectView id \'command-popup\'',
       'client-ui-input-trigger MenuView id \'slash-menu\'',
+      'client-ui-message-feedback FeedbackDialog id \'feedback-dialog\'',
     ],
     replaceRisk: 'none',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'conversation.input.overlay\', () => ctx.slots.register(\n      { name: \'conversation.input.overlay\', id: \'my-entry\', order: 100, label: \'My entry\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
@@ -2355,13 +2356,14 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     occupants: [
       'client-ui-sidebar-documentpreview CodeBody',
       'client-ui-sidebar-documentpreview HtmlBody',
+      'client-ui-sidebar-documentpreview ImageBody',
       'client-ui-sidebar-documentpreview MarkdownBody',
       'client-ui-sidebar-documentpreview PdfBody',
       'client-ui-sidebar-documentpreview TextBody',
     ],
     replaceRisk: 'none',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'sidebar.right.tab.document\', () => ctx.slots.register(\n      { name: \'sidebar.right.tab.document\', key: \'<one key the owner dispatches>\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
-    source: 'packages/client/ui-sidebar-documentpreview/src/client/document/contract.ts:23',
+    source: 'packages/client/ui-sidebar-documentpreview/src/client/document/contract.ts:24',
   },
   {
     key: 'sidebar.right.tab.guide',
