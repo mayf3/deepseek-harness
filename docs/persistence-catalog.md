@@ -403,7 +403,7 @@ Source: [`packages/compaction/compaction/src/types.ts:34`](../packages/compactio
 #### `deliverables/presented` — log-only
 
 ```ts persistence-catalog
-/** Declared workspace files from a successful final present result, including nested calls. */
+/** Declared filesystem files from a successful final present result, including nested calls. */
 'deliverables/presented': { turn: number; callId: ToolCallId; files: PresentedFile[] }
 ```
 
@@ -422,7 +422,7 @@ Source: [`packages/fs/tool-present/src/types.ts:15`](../packages/fs/tool-present
 'feedback/message-delete': MessageFeedbackDelete
 ```
 
-Source: [`packages/feedback/message-feedback/src/types.ts:55`](../packages/feedback/message-feedback/src/types.ts)
+Source: [`packages/feedback/message-feedback/src/types.ts:58`](../packages/feedback/message-feedback/src/types.ts)
 
 <a id="feedbackmessage-put--log-only"></a>
 
@@ -433,7 +433,7 @@ Source: [`packages/feedback/message-feedback/src/types.ts:55`](../packages/feedb
 'feedback/message-put': MessageFeedbackPut
 ```
 
-Source: [`packages/feedback/message-feedback/src/types.ts:53`](../packages/feedback/message-feedback/src/types.ts)
+Source: [`packages/feedback/message-feedback/src/types.ts:56`](../packages/feedback/message-feedback/src/types.ts)
 
 <a id="feedbackrecord--log-only"></a>
 
@@ -444,10 +444,10 @@ Source: [`packages/feedback/message-feedback/src/types.ts:53`](../packages/feedb
  * One recorded human remark about this session. Log-only and independent
  * of its trigger; it never enters model context or derived history.
  */
-'feedback/record': { text: string }
+'feedback/record': FeedbackRecord
 ```
 
-Source: [`packages/feedback/command-feedback/src/index.ts:25`](../packages/feedback/command-feedback/src/index.ts)
+Source: [`packages/feedback/command-feedback/src/types.ts:40`](../packages/feedback/command-feedback/src/types.ts)
 
 ### `goal/*`
 

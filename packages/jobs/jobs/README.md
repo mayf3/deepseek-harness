@@ -95,7 +95,7 @@ Each read or control operation accepts an optional caller `SessionId`; omitting 
 
 Read these pages when the package-level contract is not enough. They move from the job types to the shipped implementation, the model-facing controls, and the design records.
 
-- [Background task runtime subsystem](../../../docs/subsystems/jobs.md) — the job types, projection fields, and `ctx.jobs` cordis surface.
+- [Background task runtime subsystem](../../../docs/subsystems/jobs.md) — the job types, projection fields, and `ctx.jobs` Cordis surface.
 - [jobs group map](../README.md) — the sibling group page and its package table.
 - [Process-local registry](../jobs-local/README.md) — the shipped implementation that runs jobs in this process.
 - [Model-facing job controls](../tool-jobs/README.md) — the `job_output`, `job_list`, and `job_kill` tools and completion notices.

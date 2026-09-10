@@ -162,10 +162,10 @@ interface ToolArgsMap {
     /** children (default) lists direct children only; descendants walks the complete tree below you. */
     scope?: "children" | "descendants";
   } & Record<string, JsonValue>;
-  /** Declare existing workspace files as final deliverables. The user opens the current source files; their contents are not copied or preserved. Create the files before calling this tool. */
+  /** Declare existing files accessible through the Session filesystem as final deliverables. When a file you create or update is an output the user asked to receive, you must call present after writing it and before your final response, including files created through Bash or code execution. Mentioning its path in your reply does not replace this call. The files must already exist. The user opens the current source files; their contents are not copied or preserved. */
   present: {
     files: {
-      /** Path of an existing file inside the workspace. */
+      /** Path of an existing regular file. Relative paths use the Session working directory. */
       path: string;
       /** Brief description for the user. */
       description?: string;

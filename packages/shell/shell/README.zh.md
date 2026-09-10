@@ -1,5 +1,5 @@
 ---
-description: "面向开发者与维护者的 bash 执行器 seam 说明，用于选择、组合或实现基于 ctx.shell 的命令执行。"
+description: "面向开发者与维护者的 shell 执行器 seam 说明，用于选择、组合或实现基于 ctx.shell 的命令执行。"
 kind: "package-reference"
 ---
 
@@ -25,7 +25,7 @@ kind: "package-reference"
 <a id="use-this-package"></a>
 ## 使用本包
 
-当 agent 或进程内插件需要运行 shell 命令并读取输出、保持进程运行并轮询它，或让前台命令有办法活过自己的 deadline 时，使用 `ctx.shell`。执行方法只有一个——`execute(spec)` 返回活句柄——「前台」是调用方等待什么的属性，而不是 spawn 的属性。它是每个 shell 执行器与面向模型的 `bash`/`pwsh` 工具共同依赖的约定，因此基于它编写的代码可以运行在任意执行器实现之上。
+当 agent（智能体）或进程内插件需要运行 shell 命令并读取输出、保持进程运行并轮询它，或让前台命令有办法活过自己的 deadline 时，使用 `ctx.shell`。执行方法只有一个——`execute(spec)` 返回活句柄——「前台」是调用方等待什么的属性，而不是 spawn 的属性。它是每个 shell 执行器与面向模型的 `bash`/`pwsh` 工具共同依赖的约定，因此基于它编写的代码可以运行在任意执行器实现之上。
 
 ### 前台命令
 
@@ -38,7 +38,7 @@ console.log(result.exitCode, result.stdout.text)
 
 ### 后台进程
 
-以 `onExpiry: 'none'` 解析请求并保留句柄：不布置任何 deadline，进程一直跑到被 kill 或自行结束。用 `readOutput()` 增量读取输出——连续读取绝不会重复交付，有损读取会指向完整流的 spill 文件。用 `kill()` 终止提供方管理的 range（直接命令结束后返回 `false`），并等待 `done` 完成直接命令结算。job id、所有权、轮询与通知属于通用 `ctx.jobs` 运行时，工具层会把句柄注册进去。`ShellProcess.observed` 在同一份捕获流上暴露非消费的偏移读取器——供独立于消费游标的观察者使用，例如任务注册表的拉取源——包括被拒绝的 spawn 留在 stderr 上的 `spawn failed: …` 提示。
+以 `onExpiry: 'none'` 解析请求并保留句柄：不布置任何 deadline，进程一直跑到被 kill 或自行结束。用 `readOutput()` 增量读取输出——连续读取绝不会重复交付，有损读取会指向完整流的 spill 文件。用 `kill()` 终止由提供方管理的进程范围（直接命令结束后返回 `false`），并等待 `done` 完成直接命令结算。job id、所有权、轮询与通知属于通用 `ctx.jobs` 运行时，工具层会把句柄注册进去。`ShellProcess.observed` 在同一份捕获流上暴露非消费的偏移读取器——供独立于消费游标的观察者使用，例如任务注册表的拉取源——包括被拒绝的 spawn 留在 stderr 上的 `spawn failed: …` 提示。
 
 ### 超时转移 offer
 
@@ -87,7 +87,7 @@ seam 本身不是执行器：每个组合只挂载一个提供方，工具即可
 | [`src/index.ts`](src/index.ts) | 插件入口：抽象 `ShellExecutor` 服务与共享设置命名空间 |
 | [`src/types.ts`](src/types.ts) | 请求/spec 词汇、`ShellExecution`、`ShellPromotionOffer`、`ShellRunResult` 与沙箱事实 |
 | [`src/render.ts`](src/render.ts) | `parseExitStatus`：shell 工具共享的退出状态标记约定 |
-| — | 不发布运行时不变式伴生入口；执行器与策略负责观察。 |
+| — | 不发布运行时不变式伴生入口；该无状态 Service Definition 负责请求／结果类型，执行器与策略负责观察。 |
 
 ### 设置命名空间
 
@@ -108,7 +108,7 @@ seam 本身不是执行器：每个组合只挂载一个提供方，工具即可
 
 - [Bash 执行器子系统](../../../docs/subsystems/shell.zh.md) —— 请求/spec 词汇、结果与完整的服务约定。
 - [bash-local](../bash-local/README.zh.md) —— 默认 POSIX 执行器：全新的 `bash -c` 进程、预算与 deadline。
-- [bash-sandbox](../bash-sandbox/README.zh.md) —— 受限执行器：沙箱模式、拒绝与升权。
+- [bash-sandbox](../bash-sandbox/README.zh.md) —— 沙箱执行器：沙箱模式、拒绝与升权。
 - [tool-bash](../tool-bash/README.zh.md) —— 基于该 seam 的面向模型 `bash` 工具。
 - [能力 seam 笔记](../../../.agents/notes/implemented/architecture/2026-06-13-capability-seams.zh.md) —— 本 seam 遵循的 Service Definition / Provider / Consumer 拆分。
 
