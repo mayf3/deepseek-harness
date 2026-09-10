@@ -16,23 +16,18 @@ function startup(locale = 'en', status: Promise<DesktopBackendState> = Promise.r
   })
   const listeners = new Set<(state: DesktopBackendState) => void>()
   const unsubscribe = vi.fn(() => { listeners.clear() })
-  const retry = vi.fn(async () => {})
-  const openPlugins = vi.fn(async () => {})
   const disablePlugins = vi.fn(async () => {})
   const resetConfiguration = vi.fn(async () => {})
   const restart = vi.fn(async () => {})
-  const close = vi.fn(async () => {})
   const queried = Promise.withResolvers<undefined>()
   const api: DshDesktopStartupApi = {
     protocolVersion: 1,
     locale: async () => resolveDesktopLocale(locale),
     backend: {
       status: () => { queried.resolve(undefined); return status },
-      retry,
       subscribe: (listener) => { listeners.add(listener); return unsubscribe },
     },
-    openPlugins,
-    disablePlugins, resetConfiguration, restart, close,
+    disablePlugins, resetConfiguration, restart,
   }
   Object.defineProperty(dom.window, 'dshDesktop', { value: api })
   runInContext(readFileSync(new URL('../renderer/startup.js', import.meta.url), 'utf8'), dom.getInternalVMContext())
@@ -54,8 +49,8 @@ function startup(locale = 'en', status: Promise<DesktopBackendState> = Promise.r
         ? [...document.querySelectorAll<HTMLButtonElement>('#actions button')].filter(button => !button.hidden).map(button => button.textContent)
         : [element(selector).textContent]),
   ].join('\n')
-  return { dom, document, element, button, publish, copy, retry, openPlugins,
-    disablePlugins, resetConfiguration, restart, close, unsubscribe, queried: queried.promise }
+  return { dom, document, element, button, publish, copy,
+    disablePlugins, resetConfiguration, restart, unsubscribe, queried: queried.promise }
 }
 
 it('shows English loading and recovery actions without a Host document', async () => {
@@ -70,7 +65,7 @@ it('shows English loading and recovery actions without a Host document', async (
   expect(page.element('#actions').hidden).toBe(true)
   expect(page.button('#restart').disabled).toBe(true)
   expect(page.button('#disable-plugins').disabled).toBe(true)
-  page.publish({ phase: 'error', message: 'Plugin failed to load' })
+  page.publish({ phase: 'error', profileRecovery: true, message: 'Plugin failed to load' })
   expect(page.copy()).toMatchInlineSnapshot(`
     "DeepSeek Harness could not start
     Choose a recovery action below. Disabling third-party plugins retains their files.
@@ -98,7 +93,7 @@ it('shows Chinese loading and recovery copy', async () => {
     "正在启动 DeepSeek Harness…
     准备就绪后将自动打开工作区。"
   `)
-  page.publish({ phase: 'error', message: '插件加载失败' })
+  page.publish({ phase: 'error', profileRecovery: true, message: '插件加载失败' })
   expect(page.copy()).toMatchInlineSnapshot(`
     "DeepSeek Harness 无法启动
     请选择下方的恢复操作。禁用第三方插件会保留插件文件。
@@ -115,7 +110,7 @@ it('renders diagnostic markup as text and exposes failures from recovery actions
   const page = startup()
   await expect.poll(() => page.element('#title').textContent).not.toBe('')
   const diagnostic = '<img src=x onerror="window.compromised=true">'
-  page.publish({ phase: 'error', message: diagnostic })
+  page.publish({ phase: 'error', profileRecovery: true, message: diagnostic })
   expect(page.element('#error').textContent).toBe(diagnostic)
   expect(page.element('#error').childElementCount).toBe(0)
   page.restart.mockRejectedValueOnce(new page.dom.window.Error('Retry failed'))
@@ -129,7 +124,7 @@ it('keeps subscribed state when initial status arrives late and detaches on page
   const initial = Promise.withResolvers<DesktopBackendState>()
   const page = startup('en', initial.promise)
   await page.queried
-  page.publish({ phase: 'error', message: 'Fresh startup failure' })
+  page.publish({ phase: 'error', profileRecovery: true, message: 'Fresh startup failure' })
   initial.resolve({ phase: 'starting' })
   await initial.promise
   expect(page.element('#error').textContent).toBe('Fresh startup failure')
@@ -145,24 +140,24 @@ it('keeps subscribed state when initial status arrives late and detaches on page
 it.each(['en', 'zh-CN'])('offers recovery actions with %s guidance and preserves diagnostic text', async (locale) => {
   const page = startup(locale)
   await expect.poll(() => page.button('#restart').disabled).toBe(true)
-  for (const recovery of ['plugins', 'configuration', 'reinstall', 'restart'] as const) {
-    page.publish({ phase: 'error', recovery, message: 'Failure details' })
-    await expect(`${page.copy()}\n`).toMatchFileSnapshot(fileURLToPath(new URL(`./expected/startup-${locale}-${recovery}.txt`, import.meta.url)))
-    expect(page.button('#disable-plugins').hidden).toBe(false)
-    expect(page.button('#reset-configuration').hidden).toBe(false)
-    const action = recovery === 'plugins' ? '#disable-plugins' : recovery === 'configuration'
-      ? '#reset-configuration' : '#restart'
+  page.publish({ phase: 'error', profileRecovery: true, message: 'Failure details' })
+  await expect(`${page.copy()}\n`).toMatchFileSnapshot(fileURLToPath(new URL(`./expected/startup-${locale}-profile.txt`, import.meta.url)))
+  for (const action of ['#disable-plugins', '#reset-configuration', '#restart']) {
+    page.publish({ phase: 'error', profileRecovery: true, message: 'Failure details' })
     page.button(action).click()
     expect(page.element('#actions').hidden).toBe(true)
   }
   expect(page.disablePlugins).toHaveBeenCalledOnce()
   expect(page.resetConfiguration).toHaveBeenCalledOnce()
-  expect(page.close).not.toHaveBeenCalled()
-  expect(page.restart).toHaveBeenCalledTimes(2)
+  expect(page.restart).toHaveBeenCalledOnce()
+  page.publish({ phase: 'error', profileRecovery: false, message: 'Failure details' })
+  expect(page.button('#disable-plugins').hidden).toBe(true)
+  expect(page.button('#reset-configuration').hidden).toBe(true)
+  await expect(`${page.copy()}\n`).toMatchFileSnapshot(fileURLToPath(new URL(`./expected/startup-${locale}-restart.txt`, import.meta.url)))
 })
 
 it('keeps emergency diagnostics inert without shell assets', () => {
-  const html = startupFailureDocument(resolveDesktopLocale('zh-CN'), '<script>alert(1)</script>')
+  const html = startupFailureDocument(resolveDesktopLocale('zh-CN'), '<script>alert(1)</script>', true)
   const dom = new JSDOM(html)
   expect(dom.window.document.querySelector('script')).toBeNull()
   expect(dom.window.document.querySelector('pre')?.textContent).toBe('<script>alert(1)</script>')
@@ -170,5 +165,11 @@ it('keeps emergency diagnostics inert without shell assets', () => {
   expect([...dom.window.document.querySelectorAll('form')].map(form => form.action)).toEqual([
     'dsh-recovery://restart', 'dsh-recovery://plugins', 'dsh-recovery://reset',
   ])
+  dom.window.close()
+})
+
+it('offers only restart before emergency profile recovery is available', () => {
+  const dom = new JSDOM(startupFailureDocument(resolveDesktopLocale('en'), 'Resources unavailable'))
+  expect([...dom.window.document.querySelectorAll('form')].map(form => form.action)).toEqual(['dsh-recovery://restart'])
   dom.window.close()
 })

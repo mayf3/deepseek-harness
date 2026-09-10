@@ -4,7 +4,7 @@ Status: implemented
 
 [English](2026-09-08-desktop-bundled-runtime-and-external-plugins.md) | 中文
 
-本记录中的 profile staging、目录切换恢复和自动回滚由[直接修改 profile 决策](2026-09-09-desktop-in-place-profile.zh.md)取代。其他决策继续有效。
+profile 修改与恢复遵循[直接修改 profile 决策](2026-09-09-desktop-in-place-profile.zh.md)。
 
 ## 问题
 
@@ -34,15 +34,15 @@ profile manifest 分别记录精确的已安装插件依赖和已启用 bundle �
 
 ## 事务与升级
 
-首次启动创建 profile 元数据和宿主链接，不运行 pnpm。兼容的发布变化或应用移动会把插件文件复制到 staging，刷新链接，并验证已启用的 peer。Node 版本、平台或架构变化时，激活前会重新安装锁定的插件依赖图。可写 staging 与回滚文件使用独立副本，不使用指向活动 profile 的硬链接。
+首次启动创建 profile 元数据和宿主链接，不运行 pnpm，并保留无关文件。兼容的发布变化或应用移动会直接刷新链接并验证已启用的 peer。Node 版本、平台或架构变化时，会重新安装锁定的插件依赖图并运行获准的原生构建。
 
-共享包目录使用原生规范路径识别。Windows 启动器可能改变路径大小写而不移动应用；字符串相等判断会触发不必要的 staging 和后端替换。事务清理在移除真实目录前，显式解除每一个嵌套目录链接。Windows 夹具在 Electron 44 下复现了递归 `fs.rmSync` 沿嵌套 junction 删除目标文件，而内置上游 Node 24.17 会保留它们。因此清理验收包含真实 Electron 运行时；仅在 Node 下测试不能证明目标文件会保留。
+共享包目录使用原生规范路径识别。Windows 启动器可能改变路径大小写而不移动应用；字符串相等判断会触发不必要的 profile 准备。profile 清理在移除真实目录前，显式解除每一个嵌套目录链接。Windows 夹具在 Electron 44 下复现了递归 `fs.rmSync` 沿嵌套 junction 删除目标文件，而内置上游 Node 24.17 会保留它们。因此清理验收包含真实 Electron 运行时；仅在 Node 下测试不能证明目标文件会保留。
 
 依赖修改先禁用脚本安装，验证插件依赖图和宿主链接，运行经过审查的待执行生命周期构建，再次验证。这允许已批准的原生依赖解析宿主 peer，同时阻止意外的重复宿主包进入启动过程。`allowBuilds` 策略保持明确；不受支持且需要构建的依赖会使事务失败。
 
-事务日志记录源与目标运行时身份以及目录移动阶段。Desktop 等待 pnpm 退出，并在替换前停止活动后端。失败或中断的激活会恢复完整 profile。运行时身份不匹配会阻止恢复的 profile 在其他应用版本下启动。事务日志覆盖 profile 文件，不覆盖任意插件启动副作用或持久 Session 写入。
+Desktop 在包修改前停止 Host，并等待 pnpm 退出后再重启它。[直接修改决策](2026-09-09-desktop-in-place-profile.zh.md)规定部分失败和持久重试状态的处理方式。记录的宿主链接用于识别自有目录，与包操作是否完成相互独立。
 
-[立即显示窗口决策](2026-09-09-desktop-immediate-window-and-direct-start.zh.md)负责直接启动 Host 和主窗口恢复，取代 staging 后端探针。用户可以打开插件管理，更新、移除、停用或重新启用插件，并重试启动。不兼容插件不会被静默删除或自动降级。应用回滚与 profile 回滚是独立操作；每次后端启动都要求当前运行时身份。
+[立即显示窗口决策](2026-09-09-desktop-immediate-window-and-direct-start.zh.md)规定实际 Host 启动和主窗口恢复。用户可以更新、删除、禁用或重新启用插件并重试启动。不兼容插件不会被静默删除或自动降级。每次后端启动都要求当前运行时标识。
 
 ## 考虑过的替代方案
 

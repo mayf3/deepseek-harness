@@ -4,7 +4,7 @@ Status: implemented
 
 English | [中文](2026-09-08-desktop-bundled-runtime-and-external-plugins.zh.md)
 
-Profile staging, directory-swap recovery, and automatic rollback described here are superseded by the [in-place profile decision](2026-09-09-desktop-in-place-profile.md). Other decisions remain active.
+Profile mutation and recovery follow the [in-place profile decision](2026-09-09-desktop-in-place-profile.md).
 
 ## Problem
 
@@ -34,15 +34,15 @@ The profile manifest records exact installed plugin dependencies separately from
 
 ## Transactions and upgrades
 
-First launch creates profile metadata and host links without running pnpm. A compatible release change or application relocation copies plugin files into staging, refreshes links, and validates enabled peers. Node version, platform, or architecture changes reinstall the locked plugin graph before activation. Writable staging and rollback files are independent copies, never hardlinks into the active profile.
+First launch creates profile metadata and host links without running pnpm, preserving unrelated files. Compatible release changes or application relocation refresh links and validate enabled peers in place. Node version, platform, or architecture changes reinstall the locked plugin graph and run approved native builds.
 
-Native canonical paths identify shared package directories. Windows launchers can vary path casing without moving the application; string equality would trigger unnecessary staging and backend replacement. Transaction cleanup explicitly unlinks every nested directory link before removing real directories. A Windows fixture under Electron 44 reproduces recursive `fs.rmSync` deleting files through a nested junction, while bundled upstream Node 24.17 preserves them. Cleanup qualification therefore includes the real Electron runtime; Node-only tests do not establish target preservation.
+Native canonical paths identify shared package directories. Windows launchers can vary path casing without moving the application; string equality would trigger unnecessary profile preparation. Profile cleanup explicitly unlinks every nested directory link before removing real directories. A Windows fixture under Electron 44 reproduces recursive `fs.rmSync` deleting files through a nested junction, while bundled upstream Node 24.17 preserves them. Cleanup qualification therefore includes the real Electron runtime; Node-only tests do not establish target preservation.
 
 Dependency mutations install with scripts disabled, validate the plugin graph and host links, run the reviewed pending lifecycle builds, and validate again. This permits approved native dependencies to resolve host peers while preventing accidental duplicate host packages from reaching startup. The `allowBuilds` policy remains explicit; unsupported build-requiring dependencies fail the transaction.
 
-The transaction journal records source and target runtime identities and directory-move phases. Desktop waits for pnpm exit and stops the active backend before replacement. A failed or interrupted activation restores a complete profile. A runtime identity mismatch prevents the restored profile from booting under a different application release. The journal covers profile files, not arbitrary plugin startup effects or durable Session writes.
+Desktop stops the Host before package mutations and waits for pnpm exit before restarting it. The [in-place decision](2026-09-09-desktop-in-place-profile.md) owns partial failures and persistent retry state. Recorded host links identify owned directories independently of package-operation completion.
 
-The [immediate-window decision](2026-09-09-desktop-immediate-window-and-direct-start.md) owns direct Host startup and recovery in the main window, replacing staged backend probes. Users can open plugin management to update, remove, disable, or re-enable plugins and retry startup. Incompatible plugins are not silently deleted or automatically downgraded. Application rollback and profile rollback are separate operations; each backend launch requires the current runtime identity.
+The [immediate-window decision](2026-09-09-desktop-immediate-window-and-direct-start.md) owns direct Host startup and recovery in the main window. Users can update, remove, disable, or re-enable plugins and retry startup. Incompatible plugins are not silently deleted or automatically downgraded. Each backend launch requires the current runtime identity.
 
 ## Alternatives considered
 

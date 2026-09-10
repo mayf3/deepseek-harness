@@ -4,7 +4,7 @@ Status: implemented
 
 English | [中文](2026-08-25-electron-desktop-packaging-and-updates.zh.md)
 
-Profile staging, directory-swap recovery, and automatic rollback described here are superseded by the [in-place profile decision](2026-09-09-desktop-in-place-profile.md). Other decisions remain active.
+Profile mutation and recovery follow the [in-place profile decision](2026-09-09-desktop-in-place-profile.md).
 
 ## Problem
 
@@ -28,7 +28,7 @@ The browser Web UI, dsh backend, existing `dsh plugin` CLI, user npm, and user p
 
 | Owner | Responsibility |
 |---|---|
-| Electron shell | Window and child lifecycle, framed byte pipes, lifecycle IPC, custom protocol, reserved desktop profile, plugin GUI, update coordination, rollback |
+| Electron shell | Window and child lifecycle, framed byte pipes, lifecycle IPC, custom protocol, reserved desktop profile, plugin GUI, update coordination |
 | Bundled Node.js and pnpm | Execute dsh and install exact desktop-project dependencies without consulting user `PATH` or pnpm state |
 | Desktop profile | External plugin dependencies, ordered enabled bundles, and shared links defined by the bundled-runtime decision |
 | Private Desktop Host package | Electron-only child-process entry and composition overlay installed with dsh but excluded from the public CLI package and npm publication |
@@ -43,10 +43,6 @@ The renderer uses `nodeIntegration: false`, `contextIsolation: true`, and `sandb
 ```text
 ~/.dsh/
   desktop/
-    staging/<transaction-id>/profile/
-    rollback/profile/
-    pending.json
-    lock
     pnpm/
       store/
       cache/
@@ -56,6 +52,8 @@ The renderer uses `nodeIntegration: false`, `contextIsolation: true`, and `sandb
     desktop/
       package.json
       pnpm-lock.yaml
+      lock
+      desktop-packages-pending
       pnpm-workspace.yaml
       desktop-runtime-state.json
       node_modules/
@@ -67,9 +65,9 @@ The renderer uses `nodeIntegration: false`, `contextIsolation: true`, and `sandb
 
 ## Installation and resolution
 
-The installer never mutates the active profile in place. It copies profile metadata into a transaction staging directory and applies an exact dependency change with the bundled pnpm. Activation stops the active backend, persists each next `pending.json` phase before its corresponding filesystem move, moves the active profile to `rollback/profile`, moves staging into `.dsh/profiles/desktop`, and restarts. Recovery combines the write-ahead phase with the actual active, rollback, and staging directories so either write-to-move interruption retains or restores a complete profile.
+Desktop stops the Host before modifying its profile in place. Package failures retain partial changes for explicit repair; profile mutation and package-retry ownership follow the [in-place decision](2026-09-09-desktop-in-place-profile.md).
 
-The process-lifetime Electron lock is the authoritative Desktop owner. The package transaction lock is depth defense and records the process that can still mutate package state: Electron between package operations and the spawned pnpm PID while pnpm runs. The owner change is truncated, written, and synchronized through the already-open exclusive lock file. If Electron terminates during pnpm execution, a later process observes the live worker and refuses to start a competing store or staging transaction; after that worker exits, the stale PID can be recovered.
+The process-lifetime Electron lock is the authoritative Desktop owner. The package transaction lock is depth defense and records the process that can still mutate package state: Electron between package operations and the spawned pnpm PID while pnpm runs. The owner change is truncated, written, and synchronized through the already-open exclusive lock file. If Electron terminates during pnpm execution, a later process observes the live worker and refuses to start a competing package transaction; after that worker exits, the stale PID can be recovered.
 
 Core materialization, first launch, plugin installation, and shared-module resolution follow the [bundled-runtime decision](2026-09-08-desktop-bundled-runtime-and-external-plugins.md). The actual Host composes enabled desktop plugins contributing `dsh.client` code when it starts.
 
@@ -79,7 +77,7 @@ Electron update uses one `electron-updater` release stream and signed `electron-
 
 The [immediate-window decision](2026-09-09-desktop-immediate-window-and-direct-start.md) owns the local loading page, direct Host startup, and recovery in the main window. Profile reconciliation follows the [bundled-runtime decision](2026-09-08-desktop-bundled-runtime-and-external-plugins.md).
 
-`DSH_DESKTOP_AUTO_UPDATE_ENV` selects the test deployment by default or the production deployment for both the target-specific generic-provider URL and COS destination. Release automation supplies the test HTTPS origin through `DOWNLOAD_TEST_ORIGIN` and each deployment's bucket through `DOWNLOAD_TEST_COS_BUCKET` or `DOWNLOAD_PROD_COS_BUCKET`; keeping mutable test routing and COS storage identities out of source lets deployment infrastructure change without a code release, while the public production origin remains fixed. Packaging resolves only the public updater URL, disables electron-builder publishing, removes every COS credential field from its subprocess environment, and writes a completion record only after electron-builder and every signing or notarization hook succeeds. Target upload additionally requires the selected bucket, then requires the completion record, root dsh version, Desktop version, version-derived channel metadata, artifact names, sizes, and SHA-512 values to agree before it reads the selected credentials or sends data. It uploads immutable versioned updater payloads and any separate blockmaps before replacing the channel metadata emitted by electron-builder, and it never deletes historical objects. Stable versions use the `latest` metadata name; prereleases use the first semantic-version prerelease identifier. NSIS embeds its blockmap in the signed executable; the macOS ZIP carries a separate blockmap. Both let electron-updater download changed blocks when supported, while application replacement and the local pnpm staging transaction remain separate operations.
+`DSH_DESKTOP_AUTO_UPDATE_ENV` selects the test deployment by default or the production deployment for both the target-specific generic-provider URL and COS destination. Release automation supplies the test HTTPS origin through `DOWNLOAD_TEST_ORIGIN` and each deployment's bucket through `DOWNLOAD_TEST_COS_BUCKET` or `DOWNLOAD_PROD_COS_BUCKET`; keeping mutable test routing and COS storage identities out of source lets deployment infrastructure change without a code release, while the public production origin remains fixed. Packaging resolves only the public updater URL, disables electron-builder publishing, removes every COS credential field from its subprocess environment, and writes a completion record only after electron-builder and every signing or notarization hook succeeds. Target upload additionally requires the selected bucket, then requires the completion record, root dsh version, Desktop version, version-derived channel metadata, artifact names, sizes, and SHA-512 values to agree before it reads the selected credentials or sends data. It uploads immutable versioned updater payloads and any separate blockmaps before replacing the channel metadata emitted by electron-builder, and it never deletes historical objects. Stable versions use the `latest` metadata name; prereleases use the first semantic-version prerelease identifier. NSIS embeds its blockmap in the signed executable; the macOS ZIP carries a separate blockmap. Both let electron-updater download changed blocks when supported, while application replacement and the local pnpm package operation remain separate operations.
 
 ## Security and release policy
 
@@ -109,10 +107,10 @@ The bundled upstream Node.js and pnpm are expected to add about 35–50 MB compr
 |---|---|
 | Shell | `apps/desktop` owns Electron windows, restricted preloads, the custom protocol, child lifecycle, project transactions, the plugin GUI, update coordination, and electron-builder configuration. |
 | Installed runtime | Private `@deepseek-ai/dsh-desktop-host` boots the portless desktop composition from the active project and streams API and asset responses over validated framed byte pipes. |
-| Package state | Bundled Node.js executes immutable core resources; bundled pnpm modifies only the external plugin graph in Desktop staging. |
+| Package state | Bundled Node.js executes immutable core resources; bundled pnpm modifies only the external plugin graph in the Desktop profile. |
 | Qualification | macOS packaging requires the configured company identity and notary credentials, verifies every native runtime file before inventory generation, verifies the completed application signature, and requires notarization plus Gatekeeper acceptance for both the application and DMG. Windows packaging requires the configured public certificate, SafeNet private-key container, Token Password, and SignTool, and verifies every produced signature. Update hosting, previous-version installed-artifact tests, and platform GUI recordings remain release-environment gates. |
 
-`dev:desktop` builds the current workspace, projects the built CLI and private Desktop Host packages plus their dependency links into a disposable project, uses an isolated Harness home, opens the Main, Renderer, and Host debuggers, and starts unpackaged Electron without preparing release resources. Package mutation is disabled in this mode because its linked dependency graph is not a pnpm-installed desktop project. Fixed macOS arm64, macOS x64, and Windows x64 package commands pass one target through runtime preparation, runtime preparation, and electron-builder; each also has an unpacked-directory variant for release-path verification before installer generation.
+`dev:desktop` builds the current workspace, projects the built CLI and private Desktop Host packages plus their dependency links into a disposable project, uses an isolated Harness home, opens the Main, Renderer, and Host debuggers, and starts unpackaged Electron without preparing release resources. Package mutation is disabled in this mode because its linked dependency graph is not a pnpm-installed desktop project. Fixed macOS arm64, macOS x64, and Windows x64 package commands pass one target through runtime preparation, dsh preparation, and electron-builder; each also has an unpacked-directory variant for release-path verification before installer generation.
 
 ## Alternatives considered
 
@@ -146,7 +144,7 @@ The bundled upstream Node.js and pnpm are expected to add about 35–50 MB compr
 - The backend and browser application cannot mutate desktop packages.
 - npm/CLI dsh and Electron never resolve or install plugins from each other's `node_modules`.
 - The active backend and Web UI report the same dsh version and a compatible shell API before the product UI loads.
-- Failed installation, backend activation, or update leaves the current profile usable or restores `rollback/profile` after restart.
+- Package or Host failures retain partial profile changes and expose recovery controls; no automatic profile rollback is promised.
 - One Desktop version binds Electron and dsh; every dsh update arrives through one Electron update dialog and one user-visible restart.
 - Shared `.dsh` data rejects incompatible readers before migration or mutation.
 - No loopback listener is opened, and the sandboxed renderer cannot access arbitrary filesystem or Electron APIs.
@@ -162,7 +160,7 @@ The bundled upstream Node.js and pnpm are expected to add about 35–50 MB compr
 | First launch | Check bundled release metadata and create profile links without installing core dependencies |
 | Desktop profile | One Electron-owned reserved profile for external plugins and shared package links |
 | Plugin management | Electron-only GUI and package service; no CLI, backend, or browser installation path |
-| Activation | Staging project, journaled directory replacement, actual Host startup, one rollback copy |
+| Activation | In-place package changes followed by actual Host startup |
 | Initial platforms | macOS arm64/x64 and Windows x64; Linux has no supported release target |
 | Update behavior | Background check, explicit confirmation before differential download and restart, startup dsh reconciliation |
 
@@ -170,11 +168,11 @@ The bundled upstream Node.js and pnpm are expected to add about 35–50 MB compr
 
 Plugin lifecycle scripts execute third-party code. The allowed registry, package policy, exact versions, integrity, `allowBuilds`, and diagnostics require security review before GUI installation ships.
 
-Updating the bound dsh can invalidate plugin peer dependencies or native modules. Dependency validation rejects incompatible metadata before replacement; actual Host startup can fail after replacement and trigger profile rollback.
+Updating the bound dsh can invalidate plugin peer dependencies or native modules. Reconciliation validates changed dependencies and rebuilds native packages; failures require explicit repair through the recovery UI.
 
 An npm-installed dsh and desktop dsh may have different versions while sharing durable data. Each shared owner must enforce its format version and process lock before reading, migrating, or writing.
 
-Directory replacement differs across operating systems and can be interrupted. The activation journal and installed-artifact fault tests must prove recovery at every filesystem move.
+Interrupted package operations retain a pending marker. Installed-artifact tests must verify that a later launch retries the locked installation and approved native builds.
 
 Code signing, notarization, and update hosting require production release infrastructure. Repository tests alone cannot complete that qualification.
 

@@ -21,15 +21,12 @@ it('provides startup controls and a removable state subscription to shell docume
   const api = electron.contextBridge.exposeInMainWorld.mock.calls[0]?.[1] as DshDesktopStartupApi
   await api.locale()
   await api.backend.status()
-  await api.backend.retry()
-  await api.openPlugins()
   await api.disablePlugins()
   await api.resetConfiguration()
   await api.restart()
-  await api.close()
   expect(electron.ipcRenderer.invoke.mock.calls).toEqual([
-    [DESKTOP_IPC.localeGet], [DESKTOP_IPC.backendStatus], [DESKTOP_IPC.backendRetry], [DESKTOP_IPC.pluginsOpen],
-    [DESKTOP_IPC.pluginsDisableAll], [DESKTOP_IPC.configurationReset], [DESKTOP_IPC.applicationRestart], [DESKTOP_IPC.applicationClose],
+    [DESKTOP_IPC.localeGet], [DESKTOP_IPC.backendStatus],
+    [DESKTOP_IPC.pluginsDisableAll], [DESKTOP_IPC.configurationReset], [DESKTOP_IPC.applicationRestart],
   ])
   const listener = vi.fn()
   const dispose = api.backend.subscribe(listener)
