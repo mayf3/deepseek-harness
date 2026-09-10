@@ -126,10 +126,50 @@ interface StoredImageAttachment {
 ```
 
 ```ts type-equiv
+/** Aspect-preserving downscale rule of one request image; small images are never enlarged. */
+type ImageRequestProjection =
+  | {
+    /** Hard cap on width multiplied by height. */
+    kind: 'pixel-budget'
+    /** Maximum width multiplied by height after projection. */
+    maxPixels: number
+  }
+  | {
+    /**
+     * Largest aspect-preserving patch grid whose token count
+     * `rows × (columns + 1) + 2` fits `maxTokens`; the DeepSeek published vision layout.
+     */
+    kind: 'token-grid'
+    /** Patch edge in pixels; a downscaled edge is a whole number of patches. */
+    patchSize: number
+    /** Patches per token cell along each axis. */
+    downsampleRatio: number
+    /** Token cap for one image. */
+    maxTokens: number
+  }
+```
+
+```ts type-equiv
+/** Dimensions a `token-grid` projection retains for one image and the tokens it charges. */
+interface TokenGridProjection {
+  /** Retained width: the patch-padded source when it fits, otherwise the solved width. */
+  width: number
+  /** Retained height: the patch-padded source when it fits, otherwise the solved height. */
+  height: number
+  /** Tokens charged for the retained grid. */
+  tokens: number
+  /** Whether the patch-padded source already fits `maxTokens` without downscaling. */
+  unscaled: boolean
+}
+```
+
+```ts type-equiv
 /** Deterministic request-image policy selected by one exact model route. */
 interface ImageRequestPolicy {
-  /** Maximum width multiplied by height after aspect-preserving projection. */
-  maxPixels: number
+  /** Downscale rule applied before the per-side cap. */
+  projection: ImageRequestProjection
+  /** Maximum width and maximum height after projection; omission bounds the long edge by the projection alone. */
+  maxDimension?: number
   /** Encoded-byte target before base64 expansion or Files API upload; the smallest quality-ladder output is kept when no quality fits. */
   maxBytes: number
 }
@@ -157,7 +197,7 @@ interface RequestImageAttachment {
 }
 ```
 
-`saveImage()` 准备并原子提交提供方无关的规范化附件，然后直接返回 `ImageAttachmentRef`。`saveImages()` 在发布批次前为每个成员各准备一次经过验证的附件，因此校验拒绝不会留下部分对象，发布也不会重复解码或选择质量。`admitPromptContent()` 在文件凭证解析后接收完整且有序的 Host prompt，把 base64 图片上传替换为持久引用，并让持久文件引用原样通过。`admitEncodedImages()` 支持其他 wire 入口，把张数、聚合字节和有序批量准入交给 `saveImages()`。`admitEncodedFile()` 让编码协议适配器使用服务拥有的规范 base64 准入，`isAttachmentError()` 让这些适配器无需导入实现辅助函数即可识别稳定的附件错误。`readImage()` 校验来自已授权会话路径的规范化附件。`imageHostPath()` 只公开提供方所持对象的宿主位置，不判断当前工具执行环境能否读取它。`readImageRequest()` 按确切路由的像素和字节预算派生并缓存确定性请求版本。该版本包含编码字节和元数据，不包含执行环境路径。新条目在发布前完整解码，缓存命中只做有界元数据探测。调用方需要有序批次时，对单数方法使用 `Promise.all`。本地实现按需编码首选候选、合并相同请求身份的并发任务、允许每个等待方单独取消、没有等待方时停止共享任务，并通过实例级限流器限制全部变换，默认同时执行两项。该服务不规定保留策略：恢复和 fork 后的会话可能共享对象，因此基于引用的垃圾回收会延期实现，不与单个会话的删除绑定。
+`saveImage()` 准备并原子提交提供方无关的规范化附件，然后直接返回 `ImageAttachmentRef`。`saveImages()` 在发布批次前为每个成员各准备一次经过验证的附件，因此校验拒绝不会留下部分对象，发布也不会重复解码或选择质量。`admitPromptContent()` 在文件凭证解析后接收完整且有序的 Host prompt，把 base64 图片上传替换为持久引用，并让持久文件引用原样通过。`admitEncodedImages()` 支持其他 wire 入口，把张数、聚合字节和有序批量准入交给 `saveImages()`。`admitEncodedFile()` 让编码协议适配器使用服务拥有的规范 base64 准入，`isAttachmentError()` 让这些适配器无需导入实现辅助函数即可识别稳定的附件错误。`readImage()` 校验来自已授权会话路径的规范化附件。`imageHostPath()` 只公开提供方所持对象的宿主位置，不判断当前工具执行环境能否读取它。`readImageRequest()` 按确切路由的投影规则、可选单边上限和编码字节目标派生并缓存确定性请求版本。该版本包含编码字节和元数据，不包含执行环境路径。新条目在发布前完整解码，缓存命中只做有界元数据探测。调用方需要有序批次时，对单数方法使用 `Promise.all`。本地实现按需编码首选候选、合并相同请求身份的并发任务、允许每个等待方单独取消、没有等待方时停止共享任务，并通过实例级限流器限制全部变换，默认同时执行两项。该服务不规定保留策略：恢复和 fork 后的会话可能共享对象，因此基于引用的垃圾回收会延期实现，不与单个会话的删除绑定。
 
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 
@@ -280,7 +320,7 @@ fileHostPath(ref: FileAttachmentRef): string | undefined
 /**
  * Generate or read one deterministic model-request version from the stored normalized image.
  * @param ref - durable provider-independent normalized attachment reference.
- * @param policy - exact route pixel budget and encoded-byte target; a target no ladder quality meets yields the smallest ladder output.
+ * @param policy - route projection, optional per-side cap, and byte target; an unmet target yields the smallest ladder output.
  * @param signal - optional cancellation.
  * @returns request bytes and the cache/upload identity covering every transform input.
  */
