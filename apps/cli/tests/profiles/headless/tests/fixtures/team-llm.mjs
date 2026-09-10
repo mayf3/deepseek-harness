@@ -178,13 +178,9 @@ class TeamFixtureAdapter extends LlmAdapter {
       && message.source.kind === 'plugin' && message.source.form === 'snapshot'
       && message.source.sections.some(section => section.name === 'team:identity'))
     const identity = snapshot?.source.sections.find(section => section.name === 'team:identity')?.text
-    if (!identity?.startsWith('<system-reminder>\nYour Team role is ')
-      || !identity.endsWith('\n</system-reminder>')) {
-      throw new Error('Team request is missing its durable identity reminder')
-    }
-    const chunks = identity.includes('your Team name is researcher;')
+    const chunks = identity === '<system-reminder>\nYou are teammate "researcher".\n</system-reminder>'
       ? researcher(options.messages)
-      : identity.includes('your Team name is implementer;')
+      : identity === '<system-reminder>\nYou are teammate "implementer".\n</system-reminder>'
         ? implementer(options.messages)
         : lead(options.messages)
     for (const chunk of chunks) {

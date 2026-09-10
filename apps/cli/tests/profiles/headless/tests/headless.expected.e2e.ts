@@ -660,7 +660,7 @@ describe('headless stream-json snapshots', () => {
           if (data.name !== 'team_task_update' || typeof data.arguments !== 'string') return false
           return (JSON.parse(data.arguments) as JsonObject).action === 'complete'
         })
-        const identityReminders = logs.map((log) => {
+        const identityReminders = logs.flatMap((log) => {
           const identities = parseJsonl(log.content).flatMap((row) => {
             if (row.type !== 'user/message') return []
             const source = (row.data as JsonObject).source as JsonObject
@@ -669,8 +669,12 @@ describe('headless stream-json snapshots', () => {
             return sections.filter(section => (section as JsonObject).name === 'team:identity')
           })
           const reminder = (identities.at(-1) as JsonObject | undefined)?.text
-          if (typeof reminder !== 'string') throw new Error('Team Session has no identity reminder')
-          return reminder.replace(String(parent.header.id), '<team-id>')
+          if (log === parent) {
+            expect(identities).toEqual([])
+            return []
+          }
+          if (typeof reminder !== 'string') throw new Error('Teammate Session has no identity reminder')
+          return [reminder]
         }).sort()
         projection = {
           sessions: logs.length,
@@ -712,13 +716,10 @@ describe('headless stream-json snapshots', () => {
         "deliveredMessages": 2,
         "identityReminders": [
           "<system-reminder>
-      Your Team role is lead; your Team name is lead; Team id is <team-id>.
+      You are teammate "implementer".
       </system-reminder>",
           "<system-reminder>
-      Your Team role is teammate; your Team name is implementer; Team id is <team-id>.
-      </system-reminder>",
-          "<system-reminder>
-      Your Team role is teammate; your Team name is researcher; Team id is <team-id>.
+      You are teammate "researcher".
       </system-reminder>",
         ],
         "memberEdges": 4,

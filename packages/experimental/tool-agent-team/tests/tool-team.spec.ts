@@ -18,7 +18,7 @@ import { renderPrompt, renderContextSnapshot } from '@deepseek-ai/dsh-system-pro
 import * as ToolSubagentControl from '@deepseek-ai/dsh-tool-subagent-control'
 import { defineContentToolFixture } from '@deepseek-ai/dsh-tools'
 import { serializeRequest } from '../../../llm/llm-deepseek/src/serialize.ts'
-import { MockAdapter, textResponse } from '../../../core/agent-loop/tests/mock-adapter.ts'
+import { MockAdapter, textResponse, toolCallResponse } from '../../../core/agent-loop/tests/mock-adapter.ts'
 import TeamService from '../../agent-team/src/index.ts'
 import * as toolTeam from '../src/index.ts'
 
@@ -145,7 +145,7 @@ describe('dsh-tool-team', () => {
     expect(leadPrompt).toContain('Task readiness never starts an owner')
     expect(leadPrompt).toContain('returns noProgress immediately')
     expect(leadPrompt).not.toContain('Your Team role')
-    expect(renderContextSnapshot(leadAssembly)).toContain('Your Team role is lead')
+    expect(renderContextSnapshot(leadAssembly)).toBe('')
 
     const spawned = await execute(ctx, lead, 'spawn_teammate', {
       name: 'tool-worker',
@@ -159,7 +159,9 @@ describe('dsh-tool-team', () => {
     expect(childAssembly.tools.map(schema => schema.name).filter(name => TOOL_NAMES.includes(name)).sort())
       .toEqual(TOOL_NAMES)
     expect(renderPrompt(childAssembly)).toBe(leadPrompt)
-    expect(renderContextSnapshot(childAssembly)).toContain('Your Team role is teammate; your Team name is tool-worker')
+    expect(renderContextSnapshot(childAssembly)).not.toContain('team:identity')
+    expect(child.session.deriveMessages().some(message => message.content.some(block =>
+      block.type === 'text' && block.text === '<system-reminder>\nYou are teammate "tool-worker".\n</system-reminder>'))).toBe(true)
     const initialPrompt = child.session.snapshotEvents().find(event => event.type === 'user/message'
       && event.data.source.kind === 'user')
     expect(initialPrompt?.type === 'user/message'
@@ -199,9 +201,11 @@ describe('dsh-tool-team', () => {
     } else {
       expect(JSON.stringify(childRequest.messages)).not.toContain('Parent task')
     }
-    const latest = childRequest.messages.at(-1)
+    const taskIndex = childRequest.messages.findIndex(message => message.content === 'Review the work')
+    const latest = childRequest.messages[taskIndex - 1]
+    expect(taskIndex).toBeGreaterThan(0)
     expect(latest?.role).toBe('user')
-    expect(latest?.content).toContain(`<system-reminder>\nYour Team role is teammate; your Team name is reviewer; Team id is ${lead.id}.\n</system-reminder>`)
+    expect(latest?.content).toContain('<system-reminder>\nYou are teammate "reviewer".\n</system-reminder>')
     await using persisted = await ctx.sessionPersistence.open(childId, 'read')
     const { events } = await persisted.read()
     expect(events.some(event => event.type === 'user/message'
@@ -210,7 +214,7 @@ describe('dsh-tool-team', () => {
       && event.data.source.sections.some(section => section.name === 'team:identity'))).toBe(true)
   })
 
-  it('starts an ordinary fork with a new Lead identity without replacing the inherited request prefix', async () => {
+  it('keeps an ordinary Lead fork free of identity reminders without replacing the inherited prefix', async () => {
     const { ctx, lead, adapter } = await setup([textResponse('parent answer'), textResponse('fork answer')])
     await runTurn(lead, 'Parent task')
     const seed = lead.session.snapshotEvents()
@@ -228,45 +232,125 @@ describe('dsh-tool-team', () => {
     const childRequest = serializeRequest(adapter.requests[1]!)
     expect(childRequest.tools).toEqual(parentRequest.tools)
     expect(childRequest.messages.slice(0, parentRequest.messages.length)).toEqual(parentRequest.messages)
-    expect(childRequest.messages.at(-1)?.content).toContain(`Your Team role is lead; your Team name is lead; Team id is ${childId}.`)
+    expect(childRequest.messages.at(-1)?.content).toBe('Continue independently')
+    expect(JSON.stringify(childRequest.messages)).not.toContain('system-reminder')
     expect(handle.agent.session.snapshotEvents().slice(0, seed.length)).toEqual(seed)
     expect(ctx.agentTeams.listMembers(handle.agent).map(member => member.name)).toEqual(['lead'])
     await handle.dispose()
   })
 
-  it('reissues identity after its retained snapshot is compacted away', async () => {
-    const { lead, adapter } = await setup([textResponse('first'), textResponse('second'), textResponse('third')])
-    await runTurn(lead, 'First task')
-    await runTurn(lead, 'Second task')
-    const identityEvents = () => lead.session.snapshotEvents().filter(event => event.type === 'user/message'
-      && event.data.source.kind === 'plugin' && event.data.source.form === 'snapshot'
-      && event.data.source.sections.some(section => section.name === 'team:identity'))
-    expect(identityEvents()).toHaveLength(1)
-    const identity = identityEvents()[0]!
-    lead.session.append('user/message', createUserMessage({
-      content: [{ type: 'text', text: 'Compacted earlier context.' }],
-      source: { kind: 'plugin', plugin: 'test-compaction' },
-    }), {
-      surfaceOp: { op: 'replace', startSeq: identity.seq, endSeq: identity.seq },
-      sourceEventSeqs: [identity.seq],
+  it('reissues teammate identity after compaction removes its retained reminder', async () => {
+    const { ctx, lead, adapter } = await setup([
+      toolCallResponse('first-list', 'list_agents', {}),
+      toolCallResponse('second-list', 'list_agents', {}),
+      textResponse('done'),
+    ])
+    ctx.on('agent/pre-step', async ({ agent, step }, next) => {
+      if (step === 3) {
+        const identity = agent.session.snapshotEvents().find(event => event.type === 'user/message'
+          && event.data.source.kind === 'plugin' && event.data.source.plugin === toolTeam.name)
+        if (identity === undefined) throw new Error('expected initial teammate reminder')
+        agent.session.append('user/message', createUserMessage({
+          content: [{ type: 'text', text: 'Compacted earlier context.' }],
+          source: { kind: 'plugin', plugin: 'test-compaction' },
+        }), {
+          surfaceOp: { op: 'replace', startSeq: identity.seq, endSeq: identity.seq },
+          sourceEventSeqs: [identity.seq],
+        })
+      }
+      return next()
     })
-    await runTurn(lead, 'Third task')
-    expect(identityEvents()).toHaveLength(2)
-    const refreshed = identityEvents()[1]!
-    expect(refreshed.type).toBe('user/message')
-    if (refreshed.type !== 'user/message') throw new Error('expected identity message')
-    expect(adapter.requests[2]!.messages.at(-1)?.content).toEqual(refreshed.data.content)
+    const spawned = await execute(ctx, lead, 'spawn_teammate', {
+      name: 'reviewer', description: 'review', prompt: 'Review the work',
+    })
+    const childId = spawnedChildId(spawned)
+    await waitNoAgent(ctx, childId)
+    const reminder = '<system-reminder>\nYou are teammate "reviewer".\n</system-reminder>'
+    const first = serializeRequest(adapter.requests[0]!).messages
+    expect(first[first.findIndex(message => message.content === 'Review the work') - 1]?.content).toBe(reminder)
+    expect(adapter.requests[1]!.messages.filter(message => message.content.some(block =>
+      block.type === 'text' && block.text === reminder))).toHaveLength(1)
+    expect(serializeRequest(adapter.requests[2]!).messages.at(-1)?.content).toBe(reminder)
+    await using persisted = await ctx.sessionPersistence.open(childId, 'read')
+    const { events } = await persisted.read()
+    expect(events.filter(event => event.type === 'user/message'
+      && event.data.source.kind === 'plugin' && event.data.source.plugin === toolTeam.name)).toHaveLength(2)
   })
 
-  it('rejects a suppressed Team identity before sending any model request', async () => {
-    const { lead, adapter } = await setup([])
-    lead.ctx.systemPrompt.suppressRuntimeContext()
-    await runTurn(lead, 'Do work')
-    const end = lead.session.snapshotEvents().at(-1)
-    expect(end?.type).toBe('turn/end')
-    if (end?.type !== 'turn/end' || end.data.reason.kind !== 'error') throw new Error('expected failed turn')
-    expect(end.data.reason.error.message).toContain('required runtime context "team:identity"')
-    expect(adapter.requests).toEqual([])
+  it.each([false, true])('corrects inherited teammate identity on an ordinary fork, compacted=%s', async (compacted) => {
+    const { ctx, lead, adapter } = await setup([textResponse('review done'), textResponse('independent work')])
+    const spawned = await execute(ctx, lead, 'spawn_teammate', {
+      name: 'reviewer', description: 'review', prompt: 'Review the work',
+    })
+    const teammateId = spawnedChildId(spawned)
+    await waitNoAgent(ctx, teammateId)
+    await using persisted = await ctx.sessionPersistence.open(teammateId, 'read')
+    const { events: seed } = await persisted.read()
+    const handle = await ctx.agents.create({
+      sessionId: SessionId('fork-from-teammate'),
+      seed,
+      inheritedEventCount: SessionLogOffset(seed.length),
+      meta: { parentSession: teammateId, isSeeded: true },
+      agentOptions: { provider: 'mock', model: 'mock' },
+      signal: SIGNAL,
+    })
+    try {
+      if (compacted) {
+        const identity = seed.find(event => event.type === 'user/message'
+          && event.data.source.kind === 'plugin' && event.data.source.plugin === toolTeam.name)
+        if (identity === undefined) throw new Error('expected inherited identity')
+        handle.agent.session.append('user/message', createUserMessage({
+          content: [{ type: 'text', text: 'The reviewer completed its task.' }],
+          source: { kind: 'plugin', plugin: 'test-compaction' },
+        }), {
+          surfaceOp: { op: 'replace', startSeq: identity.seq, endSeq: identity.seq },
+          sourceEventSeqs: [identity.seq],
+        })
+      }
+      await runTurn(handle.agent, 'Continue independently')
+      const request = serializeRequest(adapter.requests.find(request => request.sessionId === handle.agent.id)!)
+      const taskIndex = request.messages.findIndex(message => message.content === 'Continue independently')
+      expect(request.messages[taskIndex - 1]?.content).toBe('<system-reminder>\nYou are the Team Lead.\n</system-reminder>')
+      expect(taskIndex).toBeGreaterThan(0)
+      expect(ctx.agentTeams.membership(handle.agent).role).toBe('lead')
+      expect(handle.agent.session.snapshotEvents().slice(0, seed.length)).toEqual(seed)
+    } finally {
+      await handle.dispose()
+    }
+  })
+
+  it.each(['reject', 'empty', 'abort'] as const)('does not revive a teammate step after %s', async (mode) => {
+    const { ctx, lead, adapter } = await setup([])
+    ctx.on('agent/pre-step', async ({ agent }, next) => {
+      const decision = await next()
+      if (agent === lead) return decision
+      if (mode === 'reject') return { kind: 'reject' }
+      if (mode === 'abort') agent.cancel({ kind: 'user' })
+      return { kind: 'enter', messages: [] }
+    })
+    const spawned = await execute(ctx, lead, 'spawn_teammate', {
+      name: 'reviewer', description: 'review', prompt: 'Review the work',
+    })
+    expect(spawned.isError).toBe(true)
+    const childId = SessionId(ctx.agentTeams.listMembers(lead).find(member => member.name === 'reviewer')!.id)
+    await waitNoAgent(ctx, childId)
+    expect(adapter.requests.filter(request => request.sessionId === childId)).toEqual([])
+    await using persisted = await ctx.sessionPersistence.open(childId, 'read')
+    const { events } = await persisted.read()
+    expect(events.filter(event => event.type === 'user/message'
+      && event.data.source.kind === 'plugin' && event.data.source.plugin === toolTeam.name)).toEqual([])
+  })
+
+  it('keeps teammate reminders when runtime context is suppressed', async () => {
+    const { ctx, lead, adapter } = await setup([textResponse('worker done')])
+    ctx.systemPrompt.suppressRuntimeContext()
+    const spawned = await execute(ctx, lead, 'spawn_teammate', {
+      name: 'reviewer', description: 'review', prompt: 'Review the work',
+    })
+    expect(spawned.isError, text(spawned)).toBe(false)
+    await waitNoAgent(ctx, spawnedChildId(spawned))
+    expect(serializeRequest(adapter.requests[0]!).messages.at(-2)?.content)
+      .toBe('<system-reminder>\nYou are teammate "reviewer".\n</system-reminder>')
   })
 
   it('returns actionable no-progress output and renders structured wait cancellation', async () => {
@@ -533,9 +617,9 @@ describe('dsh-tool-team', () => {
     const resumed = await waitRunning(ctx, childId)
     expect((await assembly(ctx, resumed)).tools.map(schema => schema.name)
       .filter(name => TOOL_NAMES.includes(name)).sort()).toEqual(TOOL_NAMES)
-    expect(renderContextSnapshot(await assembly(ctx, resumed))).toContain('Your Team role is teammate; your Team name is cold-worker')
+    expect(renderContextSnapshot(await assembly(ctx, resumed))).not.toContain('You are teammate')
     const childRequests = () => adapter.requests.filter(request => request.messages.some(message => message.role === 'user'
-      && message.content.some(block => block.type === 'text' && block.text.includes('your Team name is cold-worker'))))
+      && message.content.some(block => block.type === 'text' && block.text.includes('You are teammate "cold-worker".'))))
     await vi.waitFor(() => { expect(childRequests()).toHaveLength(2) })
     const firstMessages = childRequests()[0]!.messages
     expect(childRequests()[1]!.messages.slice(0, firstMessages.length)).toEqual(firstMessages)
