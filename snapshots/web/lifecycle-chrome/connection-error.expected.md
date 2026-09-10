@@ -1,4 +1,4 @@
 - button "Settings":
   - img
   - text: Settings
-- button "Reconnecting automatically, reconnect now": Reconnecting
+- button "Reconnecting, reconnect now": Reconnecting

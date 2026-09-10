@@ -428,7 +428,7 @@ describe('web e2e: lifecycle & chrome (workspace flow / reload / dark mode)', ()
       await recoveryPage.context().setOffline(false)
       await expect.poll(() => recoveryPage.evaluate(() => navigator.onLine)).toBe(true)
       const connecting = recoveryPage.getByRole('button', {
-        name: 'Reconnecting automatically, reconnect now', exact: true,
+        name: 'Reconnecting, reconnect now', exact: true,
       })
       await connecting.waitFor({ timeout: 10_000 })
       expect(await connecting.innerText()).toMatch(/^Reconnecting\.{1,3}$/)

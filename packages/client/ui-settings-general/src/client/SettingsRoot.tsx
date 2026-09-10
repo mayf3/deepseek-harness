@@ -117,7 +117,6 @@ export function SettingsRoot(props: SettingsRootComponentProps) {
   const [completedOnboarding, setCompletedOnboarding] = useState<ReadonlySet<string>>(() => new Set())
   const [showRecovery, setShowRecovery] = useState(false)
   const [holdConnecting, setHoldConnecting] = useState(false)
-  const [manualRetry, setManualRetry] = useState(false)
   const connectingShownAt = useRef<number | undefined>(undefined)
   const triggerButton = useRef<HTMLButtonElement | null>(null)
   const wasOpen = useRef(open)
@@ -163,16 +162,21 @@ export function SettingsRoot(props: SettingsRootComponentProps) {
     }
     if (previous !== 'disconnected' && previous !== 'connecting') return
     setShowRecovery(true)
+  }, [connectionState])
+
+  // The confirmation window starts when the recovered pill becomes visible,
+  // which the connecting minimum-visible hold can delay past the transition.
+  useLayoutEffect(() => {
+    if (!showRecovery || holdConnecting) return
     const timeout = window.setTimeout(() => { setShowRecovery(false) }, RECOVERY_CONFIRMATION_MS)
     return () => { window.clearTimeout(timeout) }
-  }, [connectionState])
+  }, [showRecovery, holdConnecting])
 
   useLayoutEffect(() => {
     if (connectionState === 'connecting') {
       connectingShownAt.current = Date.now()
       return
     }
-    setManualRetry(false)
     const shownAt = connectingShownAt.current
     if (shownAt === undefined) return
     connectingShownAt.current = undefined
@@ -185,11 +189,6 @@ export function SettingsRoot(props: SettingsRootComponentProps) {
       setHoldConnecting(false)
     }
   }, [connectionState])
-
-  const manualReconnect = useCallback(() => {
-    setManualRetry(true)
-    reconnect()
-  }, [reconnect])
 
   const completeOnboardingStep = useCallback((id: string) => {
     setCompletedOnboarding((previous) => {
@@ -224,11 +223,11 @@ export function SettingsRoot(props: SettingsRootComponentProps) {
         <ConnectionIndicator
           state={wide ? connectionIndicator : undefined}
           disconnectedLabel={t('connection.error')}
-          connectingLabel={t(manualRetry ? 'connection.reconnecting' : 'connection.connecting')}
+          connectingLabel={t('connection.connecting')}
           recoveredLabel={t('connection.connected')}
           reconnectActionLabel={t('connection.reconnect')}
           restartActionLabel={t('connection.restart')}
-          onReconnect={manualReconnect}
+          onReconnect={reconnect}
         />
       </div>
       {open && (

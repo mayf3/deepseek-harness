@@ -119,7 +119,7 @@ describe('ui-settings-general apply', () => {
     const t = c.ctx.locale.bind(NS)
     expect(t('title')).toBe('设置')
     expect(t('connection.error')).toBe('连接异常，刷新重试')
-    expect(t('connection.connecting')).toBe('自动重连中')
+    expect(t('connection.connecting')).toBe('重新连接中')
     expect(t('connection.connected')).toBe('连接成功')
     c.ctx.locale.setLocale('en')
     expect(t('close')).toBe('Close')

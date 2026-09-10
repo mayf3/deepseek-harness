@@ -162,7 +162,7 @@ describe('SettingsRoot trigger', () => {
     expect(mounted.reconnect).toHaveBeenCalledOnce()
 
     mounted.setConnectionState('connecting')
-    expect(screen.getByRole('button', { name: 'Reconnecting automatically, reconnect now' }).textContent)
+    expect(screen.getByRole('button', { name: 'Reconnecting, reconnect now' }).textContent)
       .toContain('Reconnecting...')
 
     // An attempt that resolves instantly still shows the connecting pill for
@@ -171,7 +171,8 @@ describe('SettingsRoot trigger', () => {
     expect(screen.queryByRole('status')).toBeNull()
     act(() => { vi.advanceTimersByTime(800) })
     expect(screen.getByRole('status', { name: 'Connected' })).toBeTruthy()
-    act(() => { vi.advanceTimersByTime(1_199) })
+    // The confirmation window is measured from visibility, not the transition.
+    act(() => { vi.advanceTimersByTime(1_999) })
     expect(screen.getByRole('status', { name: 'Connected' })).toBeTruthy()
     // The confirmation window closes at 2s, then the pill fades for 150ms.
     act(() => { vi.advanceTimersByTime(1) })
@@ -179,18 +180,40 @@ describe('SettingsRoot trigger', () => {
     expect(screen.queryByRole('status')).toBeNull()
   })
 
-  it('names automatic and manual retry attempts and confirms at once after a long attempt', () => {
+  it('keeps the attempt label steady through the hold and confirms for the full window', () => {
     vi.useFakeTimers()
     const mounted = mount({ dictionary: zh })
     mounted.setConnectionState('connecting')
-    const attempt = screen.getByRole('button', { name: '连接中断，正在自动重试，点击立即重连' })
-    expect(attempt.textContent).toContain('自动重连中')
+    const attempt = screen.getByRole('button', { name: '连接中断，正在重试，点击立即重连' })
+    expect(attempt.textContent).toContain('重新连接中')
     fireEvent.click(attempt)
     expect(mounted.reconnect).toHaveBeenCalledOnce()
     expect(attempt.textContent).toContain('重新连接中')
+    // An attempt that resolves mid-hold keeps its label until the hold ends.
+    act(() => { vi.advanceTimersByTime(100) })
+    mounted.setConnectionState('connected')
+    expect(screen.getByRole('button', { name: '连接中断，正在重试，点击立即重连' }).textContent)
+      .toContain('重新连接中')
+    act(() => { vi.advanceTimersByTime(700) })
+    expect(screen.getByRole('status', { name: '连接成功' })).toBeTruthy()
+    // The full two-second confirmation follows the delayed appearance.
+    act(() => { vi.advanceTimersByTime(1_999) })
+    expect(screen.getByRole('status', { name: '连接成功' })).toBeTruthy()
+    act(() => { vi.advanceTimersByTime(1) })
+    act(() => { vi.advanceTimersByTime(150) })
+    expect(screen.queryByRole('status')).toBeNull()
+  })
+
+  it('skips the hold when the attempt already stayed visible long enough', () => {
+    vi.useFakeTimers()
+    const mounted = mount()
+    mounted.setConnectionState('connecting')
     act(() => { vi.advanceTimersByTime(800) })
     mounted.setConnectionState('connected')
-    expect(screen.getByRole('status', { name: '连接成功' })).toBeTruthy()
+    expect(screen.getByRole('status', { name: 'Connected' })).toBeTruthy()
+    act(() => { vi.advanceTimersByTime(2_000) })
+    act(() => { vi.advanceTimersByTime(150) })
+    expect(screen.queryByRole('status')).toBeNull()
   })
 
   it('keeps the reconnect indicator out of the collapsed rail', () => {
