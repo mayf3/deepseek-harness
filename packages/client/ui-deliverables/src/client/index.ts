@@ -1,7 +1,7 @@
 /**
  * Deliverables plugin, browser half: registers the produced-files row into
  * the chat view's turn-tail chain, and provides the `chatFileMentions`
- * service that links inline-code mentions of produced files in the closing
+ * service that links inline-code mentions of produced or delivered files in the closing
  * prose. All policy lives here — the supported mutation calls, mention
  * matching, chip cap, and copy — so
  * composing this plugin out of cordis.yml removes both surfaces entirely;
@@ -66,14 +66,11 @@ export function apply(ctx: ClientContext): void {
   const t = ctx.locale.bind(NS)
   const mentions: ChatFileMentions = {
     forClosing(owner) {
-      // Same claim test the turn-tail chain entry runs: no produced files,
-      // no vocabulary — the two surfaces agree by construction.
       const paths = selectProducedFiles(owner)
       const presented = presentedForClosing(owner)
       if (paths === null && presented.length === 0) return undefined
-      const deliveries = new Set(presented.map(file => file.path))
-      return producedFileMentions([...new Set([...paths ?? [], ...deliveries])], owner.openFile,
-        path => t(deliveries.has(path) ? 'presented.previewButton' : 'produced.open', { name: path }))
+      return producedFileMentions([...new Set([...paths ?? [], ...presented.map(file => file.path)])], owner.openFile,
+        path => t('presented.previewButton', { name: path }))
     },
   }
   ctx.provide('chatFileMentions', mentions)

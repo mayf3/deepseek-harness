@@ -547,6 +547,7 @@ describe('plugin registration', () => {
     )
     const service = (ctx as unknown as { get(name: string): ChatFileMentions | undefined }).get('chatFileMentions')
     const mentions = service?.forClosing(owner, SessionId('viewed-session'))
+    expect(mentions?.resolve('report.html')?.label).toBe('Open site/report.html in sidebar')
     mentions?.resolve('report.html')?.open()
     expect(opened).toEqual(['site/report.html'])
     const fetcher = vi.fn().mockResolvedValue(new Response(null, { status: 204 }))
