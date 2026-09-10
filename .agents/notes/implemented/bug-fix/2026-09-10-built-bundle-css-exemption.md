@@ -22,6 +22,6 @@ The Dockkit exemption admits Node's unknown-`.css`-extension refusal for any sty
 
 ## Consequences
 
-The sweep reports the Dockkit bundle when it stops importing for any reason other than a `.css` import, and the entry no longer asserts which stylesheet fails. [Scoped resolve/load hooks](../../../../packages/experimental/webworker-runtime/tests/compile/transform-corpus.spec.ts) exercise an admitted Dockkit stylesheet, the dependency's source stylesheet, another extension, an arbitrary message, another error code, and a stale exemption without modifying shared build artifacts.
+The sweep reports the Dockkit bundle when it stops importing for any reason other than Node's unknown-`.css`-extension refusal, and the entry no longer asserts which stylesheet fails. [Scoped resolve/load hooks](../../../../packages/experimental/webworker-runtime/tests/compile/transform-corpus.spec.ts) exercise an admitted Dockkit stylesheet, the dependency's source stylesheet, another extension, an arbitrary message, another error code, and a stale exemption without modifying shared build artifacts.
 
 The [CI observation decision](../testing/2026-09-08-ci-completion-observations.md) keeps the fixture completion and isolation decisions it owns; its built-client classification paragraph keeps the sweep summary and links here for the admitted evidence.

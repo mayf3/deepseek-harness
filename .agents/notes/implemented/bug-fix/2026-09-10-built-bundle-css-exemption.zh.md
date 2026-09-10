@@ -22,6 +22,6 @@ Dockkit 豁免接受 Node 对任意样式表因未知 `.css` 扩展名而拒绝�
 
 ## 后果
 
-只要 Dockkit bundle 因 `.css` 导入之外的任何原因停止导入，sweep 就会报告它，该条目也不再断言失败的是哪个样式表。[限定范围的 resolve/load hook](../../../../packages/experimental/webworker-runtime/tests/compile/transform-corpus.spec.ts)覆盖被接受的 Dockkit 样式表、依赖的源样式表、其他扩展名、任意消息、其他错误码和陈旧豁免，不修改共享构建产物。
+只要 Dockkit bundle 因 Node 未知 `.css` 扩展名拒绝之外的任何原因停止导入，sweep 就会报告它，该条目也不再断言失败的是哪个样式表。[限定范围的 resolve/load hook](../../../../packages/experimental/webworker-runtime/tests/compile/transform-corpus.spec.ts)覆盖被接受的 Dockkit 样式表、依赖的源样式表、其他扩展名、任意消息、其他错误码和陈旧豁免，不修改共享构建产物。
 
 [CI 观察决策](../testing/2026-09-08-ci-completion-observations.zh.md)保留其拥有的 fixture 完成与隔离决策；其已构建 Client 导入分类段落保留 sweep 摘要，并就被接受的证据链接到本文。
