@@ -126,52 +126,22 @@ interface StoredImageAttachment {
 ```
 
 ```ts type-equiv
-/** Aspect-preserving downscale rule of one request image; small images are never enlarged. */
-type ImageRequestProjection =
-  | {
-    /** Hard cap on width multiplied by height. */
-    kind: 'pixel-budget'
-    /** Maximum width multiplied by height after projection. */
-    maxPixels: number
-  }
-  | {
-    /**
-     * Largest aspect-preserving patch grid whose token count
-     * `rows × (columns + 1) + 2` fits `maxTokens`; the DeepSeek published vision layout.
-     */
-    kind: 'token-grid'
-    /** Patch edge in pixels; a downscaled edge is a whole number of patches. */
-    patchSize: number
-    /** Patches per token cell along each axis. */
-    downsampleRatio: number
-    /** Token cap for one image. */
-    maxTokens: number
-  }
-```
-
-```ts type-equiv
-/** Dimensions a `token-grid` projection retains for one image and the tokens it charges. */
-interface TokenGridProjection {
-  /** Retained width: the patch-padded source when it fits, otherwise the solved width. */
+/** Deterministic request-image target selected by one exact model route for one attachment. */
+interface ImageRequestTarget {
+  /** Target width in pixels; a target above the source keeps the source width. */
   width: number
-  /** Retained height: the patch-padded source when it fits, otherwise the solved height. */
+  /** Target height in pixels; a target above the source keeps the source height. */
   height: number
-  /** Tokens charged for the retained grid. */
-  tokens: number
-  /** Whether the patch-padded source already fits `maxTokens` without downscaling. */
-  unscaled: boolean
+  /** Encoded-byte target before base64 expansion or Files API upload; the smallest quality-ladder output is kept when no quality fits. */
+  maxBytes: number
 }
 ```
 
 ```ts type-equiv
-/** Deterministic request-image policy selected by one exact model route. */
-interface ImageRequestPolicy {
-  /** Downscale rule applied before the per-side cap. */
-  projection: ImageRequestProjection
-  /** Maximum width and maximum height after projection; omission bounds the long edge by the projection alone. */
-  maxDimension?: number
-  /** Encoded-byte target before base64 expansion or Files API upload; the smallest quality-ladder output is kept when no quality fits. */
-  maxBytes: number
+/** Integer width and height of one projected image. */
+interface ProjectedDimensions {
+  width: number
+  height: number
 }
 ```
 
@@ -197,7 +167,7 @@ interface RequestImageAttachment {
 }
 ```
 
-`saveImage()` prepares and atomically commits a provider-independent normalized attachment before returning its `ImageAttachmentRef`. `saveImages()` prepares every validated attachment once before publishing the batch, so validation rejection leaves no partial objects and publication does not repeat decoding or quality selection. `admitPromptContent()` accepts the complete ordered Host prompt after file receipt resolution, replaces base64 image uploads with durable references, and passes durable file references unchanged. `admitEncodedImages()` supports other wire entries and delegates count, aggregate-byte, and ordered batch admission to `saveImages()`. `admitEncodedFile()` gives encoded protocol adapters the same service-owned canonical-base64 admission, and `isAttachmentError()` lets those adapters recognize stable attachment failures without importing implementation helpers. `readImage()` verifies a normalized attachment from an authorized session path. `imageHostPath()` exposes only the provider-owned host object location; it does not decide whether the current tool execution world can read it. `readImageRequest()` derives and caches one deterministic request version under an exact route projection rule, optional per-side cap, and encoded-byte target. That version contains encoded bytes and metadata but no execution-world path. New entries are fully decoded before publication, while cache hits use a bounded metadata probe. Callers use `Promise.all` over the singular method when they need an ordered batch. The local implementation lazily encodes preferred candidates, singleflights equal request identities, lets each waiter cancel independently, stops shared work when no waiter remains, and bounds all transforms with its instance-level limiter, which defaults to two simultaneous transformations. The service is retention-neutral: resumed and forked sessions may share objects, so reference-aware garbage collection is deferred rather than tied to one session's deletion.
+`saveImage()` prepares and atomically commits a provider-independent normalized attachment before returning its `ImageAttachmentRef`. `saveImages()` prepares every validated attachment once before publishing the batch, so validation rejection leaves no partial objects and publication does not repeat decoding or quality selection. `admitPromptContent()` accepts the complete ordered Host prompt after file receipt resolution, replaces base64 image uploads with durable references, and passes durable file references unchanged. `admitEncodedImages()` supports other wire entries and delegates count, aggregate-byte, and ordered batch admission to `saveImages()`. `admitEncodedFile()` gives encoded protocol adapters the same service-owned canonical-base64 admission, and `isAttachmentError()` lets those adapters recognize stable attachment failures without importing implementation helpers. `readImage()` verifies a normalized attachment from an authorized session path. `imageHostPath()` exposes only the provider-owned host object location; it does not decide whether the current tool execution world can read it. `readImageRequest()` derives and caches one deterministic request version at an exact route-chosen target size and encoded-byte target. That version contains encoded bytes and metadata but no execution-world path. New entries are fully decoded before publication, while cache hits use a bounded metadata probe. Callers use `Promise.all` over the singular method when they need an ordered batch. The local implementation lazily encodes preferred candidates, singleflights equal request identities, lets each waiter cancel independently, stops shared work when no waiter remains, and bounds all transforms with its instance-level limiter, which defaults to two simultaneous transformations. The service is retention-neutral: resumed and forked sessions may share objects, so reference-aware garbage collection is deferred rather than tied to one session's deletion.
 
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 
@@ -320,11 +290,11 @@ fileHostPath(ref: FileAttachmentRef): string | undefined
 /**
  * Generate or read one deterministic model-request version from the stored normalized image.
  * @param ref - durable provider-independent normalized attachment reference.
- * @param policy - route projection, optional per-side cap, and byte target; an unmet target yields the smallest ladder output.
+ * @param target - route-chosen dimensions and byte target; an unmet byte target yields the smallest ladder output.
  * @param signal - optional cancellation.
  * @returns request bytes and the cache/upload identity covering every transform input.
  */
-readImageRequest( ref: ImageAttachmentRef, policy: ImageRequestPolicy, signal?: AbortSignal, ): Promise<RequestImageAttachment>
+readImageRequest( ref: ImageAttachmentRef, target: ImageRequestTarget, signal?: AbortSignal, ): Promise<RequestImageAttachment>
 ```
 
 Source: [`packages/attachment/attachment/src/index.ts`](../../packages/attachment/attachment/src/index.ts)

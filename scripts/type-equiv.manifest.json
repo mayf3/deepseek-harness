@@ -1003,18 +1003,13 @@
     },
     {
       "doc": "docs/subsystems/attachment.md",
-      "symbol": "ImageRequestProjection",
+      "symbol": "ImageRequestTarget",
       "source": "packages/attachment/attachment/src/types.ts"
     },
     {
       "doc": "docs/subsystems/attachment.md",
-      "symbol": "TokenGridProjection",
-      "source": "packages/attachment/attachment/src/types.ts"
-    },
-    {
-      "doc": "docs/subsystems/attachment.md",
-      "symbol": "ImageRequestPolicy",
-      "source": "packages/attachment/attachment/src/types.ts"
+      "symbol": "ProjectedDimensions",
+      "source": "packages/attachment/attachment/src/request-projection.ts"
     },
     {
       "doc": "docs/subsystems/attachment.md",

@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-09-10-deepseek-v41-request-image-projection.md
-2026-09-10-deepseek-v41-request-image-projection.md: 32b1eb4251ec12005879551bfad363a98034291b
-2026-09-10-deepseek-v41-request-image-projection.zh.md: 0360dcc655e1b366ca7169784b63e2650ee3dd09
+2026-09-10-deepseek-v41-request-image-projection.md: 87f79f244dcf61039fe27ef170ba654ee7a1a62a
+2026-09-10-deepseek-v41-request-image-projection.zh.md: a5d8a4e99a3c7b4f3fc26f385ae1e764b535fe15

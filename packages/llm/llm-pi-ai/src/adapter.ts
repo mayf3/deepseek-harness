@@ -373,7 +373,7 @@ export class PiAiAdapter extends LlmAdapter {
           resolveImageAccess: ref => this.config.resolveImageAccess?.(attachments, ref),
           maxRequestImageBytes: profile.maxRequestImageBytes,
           requestImagePolicy: {
-            projection: { kind: 'pixel-budget', maxPixels: profile.requestImagePixelBudget },
+            maxPixels: profile.requestImagePixelBudget,
             maxBytes: profile.requestImageMaxBytes,
           },
         }, onReplayDegrade)

@@ -132,46 +132,12 @@ export interface StoredImageAttachment {
   data: Uint8Array
 }
 
-/** Aspect-preserving downscale rule of one request image; small images are never enlarged. */
-export type ImageRequestProjection =
-  | {
-    /** Hard cap on width multiplied by height. */
-    kind: 'pixel-budget'
-    /** Maximum width multiplied by height after projection. */
-    maxPixels: number
-  }
-  | {
-    /**
-     * Largest aspect-preserving patch grid whose token count
-     * `rows × (columns + 1) + 2` fits `maxTokens`; the DeepSeek published vision layout.
-     */
-    kind: 'token-grid'
-    /** Patch edge in pixels; a downscaled edge is a whole number of patches. */
-    patchSize: number
-    /** Patches per token cell along each axis. */
-    downsampleRatio: number
-    /** Token cap for one image. */
-    maxTokens: number
-  }
-
-/** Dimensions a `token-grid` projection retains for one image and the tokens it charges. */
-export interface TokenGridProjection {
-  /** Retained width: the patch-padded source when it fits, otherwise the solved width. */
+/** Deterministic request-image target selected by one exact model route for one attachment. */
+export interface ImageRequestTarget {
+  /** Target width in pixels; a target above the source keeps the source width. */
   width: number
-  /** Retained height: the patch-padded source when it fits, otherwise the solved height. */
+  /** Target height in pixels; a target above the source keeps the source height. */
   height: number
-  /** Tokens charged for the retained grid. */
-  tokens: number
-  /** Whether the patch-padded source already fits `maxTokens` without downscaling. */
-  unscaled: boolean
-}
-
-/** Deterministic request-image policy selected by one exact model route. */
-export interface ImageRequestPolicy {
-  /** Downscale rule applied before the per-side cap. */
-  projection: ImageRequestProjection
-  /** Maximum width and maximum height after projection; omission bounds the long edge by the projection alone. */
-  maxDimension?: number
   /** Encoded-byte target before base64 expansion or Files API upload; the smallest quality-ladder output is kept when no quality fits. */
   maxBytes: number
 }
