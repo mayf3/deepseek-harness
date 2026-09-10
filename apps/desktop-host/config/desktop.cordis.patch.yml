@@ -1,30 +1,7 @@
-# Electron reuses the browser composition without its network and browser-launch rows.
-
-- id: web-startup
-  disabled: true
-
-- id: webserver
-  disabled: true
-
-- id: web-runtime
-  disabled: true
-
-- id: client-hmr
-  disabled: true
-
-- id: open-in-app
-  disabled: true
-
-- id: ui-open-in-app
-  disabled: true
+# Desktop uses the native directory picker in its embedded Web UI.
 
 - id: directory-picker
   disabled: true
-
-- id: connection
-  inject:
-    - credentials
-  config: {}
 
 - insert:
     - id: directory-picker-native

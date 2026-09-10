@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto'
 import { execFileSync } from 'node:child_process'
 import { createServer } from 'node:http'
-import { mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -11,7 +11,7 @@ import { DesktopProjectManager, type DesktopProjectHooks } from '../src/project-
 import { resolveDesktopPaths } from '../src/paths.ts'
 import { runtimeFixture, writePackage } from './runtime-fixture.ts'
 
-it('installs a real pnpm graph, then executes approved scripts with the shared host instance', async () => {
+it('installs a real pnpm graph and executes scripts approved by user configuration', async () => {
   const root = realpathSync(mkdtempSync(join(tmpdir(), 'desktop-real-pnpm-')))
   const server = createServer()
   const archives = new Map<string, Buffer>()
@@ -21,7 +21,7 @@ it('installs a real pnpm graph, then executes approved scripts with the shared h
         ? { dependencies: { 'node-pty': '1.0.0' }, peerDependencies: { '@deepseek-ai/cordis': '^1.0.0' }, dsh: { bundle: { patch: 'bundle.yml' } } }
         : { scripts: { install: 'node install.cjs' } }, 'export {identity} from "@deepseek-ai/cordis"')
       writeFileSync(join(path, 'bundle.yml'), '[]\n')
-      writeFileSync(join(path, 'install.cjs'), 'require("node:fs").writeFileSync("built.json", JSON.stringify({node:process.execPath, host:require.resolve("@deepseek-ai/cordis")}))')
+      writeFileSync(join(path, 'install.cjs'), 'require("node:fs").writeFileSync("built.json", JSON.stringify({node:process.execPath}))')
       const tarball = join(root, `${name}.tgz`)
       await c({ file: tarball, cwd: join(path, '..'), gzip: true }, [name])
       archives.set(name, readFileSync(tarball))
@@ -43,20 +43,21 @@ it('installs a real pnpm graph, then executes approved scripts with the shared h
     })
     const dsh = join(root, 'dsh')
     runtimeFixture(dsh)
-    const pnpm = join(root, 'pnpm.mjs')
-    const realPnpm = join(import.meta.dirname, '../node_modules/pnpm/bin/pnpm.mjs')
-    writeFileSync(pnpm, `process.argv = process.argv.map(arg => arg === '--config.registry=https://registry.npmjs.org/' ? ${JSON.stringify(`--config.registry=${origin}`)} : arg); await import(${JSON.stringify(pathToFileURL(realPnpm).href)})`)
+    const pnpm = join(import.meta.dirname, '../node_modules/pnpm/bin/pnpm.mjs')
     const manager = new DesktopProjectManager(resolveDesktopPaths(join(root, '.dsh')), { node: process.execPath, pnpm, dsh })
     const hooks: DesktopProjectHooks = { beforeChange: async () => {}, afterChange: async () => {} }
     await manager.applyRelease()
+    writeFileSync(join(manager.paths.profile, '.npmrc'), `registry=${origin}\n`)
+    writeFileSync(join(manager.paths.profile, 'pnpm-workspace.yaml'), `packages:\n  - .\nnodeLinker: hoisted\nautoInstallPeers: false\nstoreDir: ${JSON.stringify(join(root, 'store'))}\nallowBuilds:\n  node-pty: true\n`)
     await manager.mutate({ type: 'plugin-add', spec: 'fixture-plugin@1.0.0' }, hooks)
     expect(manager.listPlugins()).toEqual([{ name: 'fixture-plugin', version: '1.0.0', enabled: true }])
-    const built = JSON.parse(readFileSync(join(manager.paths.profile, 'node_modules/node-pty/built.json'), 'utf8')) as { node: string; host: string }
+    const built = JSON.parse(readFileSync(join(manager.paths.profile, 'node_modules/node-pty/built.json'), 'utf8')) as { node: string }
     expect(realpathSync(built.node)).toBe(realpathSync(process.execPath))
-    expect(built.host).toBe(join(dsh, 'node_modules/@deepseek-ai/cordis/index.js'))
     const entry = join(dsh, 'identity.mjs')
     writeFileSync(entry, `import {identity} from '@deepseek-ai/cordis'; import {identity as plugin} from ${JSON.stringify(pathToFileURL(join(manager.paths.profile, 'node_modules/fixture-plugin/index.js')).href)}; console.log(identity === plugin)`)
     expect(execFileSync(process.execPath, [entry], { encoding: 'utf8' }).trim()).toBe('true')
+    await manager.mutate({ type: 'plugin-update', name: 'fixture-plugin', version: '^1.0.0' }, hooks)
+    expect(manager.listPlugins()[0]?.version).toBe('1.0.0')
     await manager.mutate({ type: 'plugin-remove', name: 'fixture-plugin' }, hooks)
     expect(manager.listPlugins()).toEqual([])
   } finally {
@@ -67,6 +68,36 @@ it('installs a real pnpm graph, then executes approved scripts with the shared h
         else resolve()
       })
     })
+    rmSync(root, { recursive: true, force: true })
+  }
+}, 30_000)
+
+it.each(['directory', 'file', 'tarball', 'plain'] as const)('installs a %s source through pnpm', async (source) => {
+  const root = realpathSync(mkdtempSync(join(tmpdir(), 'desktop-local-pnpm-')))
+  try {
+    const dsh = join(root, 'dsh')
+    runtimeFixture(dsh)
+    const packageDir = writePackage(join(root, 'local packages'), 'local-plugin', {
+      ...(source === 'plain' ? {} : { dsh: { bundle: { patch: 'missing.yml' } } }),
+      peerDependencies: { '@deepseek-ai/cordis': '^999.0.0' },
+    })
+    const tarball = join(root, 'local-plugin.tgz')
+    await c({ file: tarball, cwd: join(packageDir, '..'), gzip: true }, ['local-plugin'])
+    const spec = source === 'directory' ? packageDir : source === 'file' ? `file:${packageDir}` : tarball
+    const manager = new DesktopProjectManager(resolveDesktopPaths(join(root, '.dsh')), {
+      node: process.execPath, pnpm: join(import.meta.dirname, '../node_modules/pnpm/bin/pnpm.mjs'), dsh,
+    })
+    const hooks: DesktopProjectHooks = { beforeChange: async () => {}, afterChange: async () => {} }
+    await manager.applyRelease()
+    await manager.mutate({ type: 'plugin-add', spec }, hooks)
+    expect(manager.listPlugins()).toEqual([{ name: 'local-plugin', version: '1.0.0', enabled: source !== 'plain' }])
+    expect(existsSync(join(manager.paths.profile, 'node_modules/local-plugin/missing.yml'))).toBe(false)
+    await manager.mutate({ type: 'plugins-disable-all' }, hooks)
+    expect(manager.listPlugins()[0]?.enabled).toBe(false)
+    await manager.mutate({ type: 'plugin-remove', name: 'local-plugin' }, hooks)
+    expect(manager.listPlugins()).toEqual([])
+    expect(existsSync(join(packageDir, 'package.json'))).toBe(true)
+  } finally {
     rmSync(root, { recursive: true, force: true })
   }
 }, 30_000)

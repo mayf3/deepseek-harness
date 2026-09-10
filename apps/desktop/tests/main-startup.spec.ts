@@ -39,22 +39,26 @@ const harness = await vi.hoisted(async () => {
     isMinimized() { return false }
     async loadURL(url: string) {
       this.urls.push(url)
-      if (url === 'dsh-app://app/index.html') navigated.resolve()
+      if (url.startsWith('http://')) navigated.resolve()
     }
     static getAllWindows() { return windows.filter(window => !window.destroyed) }
     close() { this.destroyed = true; this.emit('closed') }
   }
   class FakeHost {
+    url = 'http://127.0.0.1:3080/?token=test'
     readonly ready = deferred()
     readonly exited = deferred()
     readonly stopping = deferred()
-    readonly start = vi.fn(() => { hostStarted.resolve(); return this.ready.promise })
+    readonly start = vi.fn(() => { hostStarted.resolve(); return this.ready.promise.then(() => ({ url: this.url })) })
     readonly stop = vi.fn(() => {
       this.stopping.resolve()
       this.ready.reject(new Error('child stopped'))
       return this.exited.promise
     })
-    constructor(readonly node: string, readonly runtime: string, readonly profile: string) { hosts.push(this) }
+    constructor(
+      readonly node: string, readonly runtime: string, readonly profile: string,
+      readonly inspectPort?: number, readonly environment?: NodeJS.ProcessEnv, readonly onFailure?: (error: Error) => void,
+    ) { hosts.push(this) }
   }
   const app = Object.assign(new EventEmitter(), {
     isPackaged: true,
@@ -75,8 +79,8 @@ const harness = await vi.hoisted(async () => {
   return {
     windows, hosts, handlers, app, FakeWindow, FakeHost,
     dialog: { showErrorBox: vi.fn(), showMessageBox: vi.fn() },
+    openExternal: vi.fn(),
     applyRelease: vi.fn(() => { preparing.resolve(); return prepared.promise }),
-    assertProfileRuntime: vi.fn(),
     canRecoverProfile: vi.fn(() => true),
     get preparing() { return preparing }, get prepared() { return prepared },
     get hostStarted() { return hostStarted }, get navigated() { return navigated },
@@ -98,6 +102,7 @@ vi.mock('electron', () => ({
   app: harness.app,
   BrowserWindow: harness.FakeWindow,
   dialog: harness.dialog,
+  shell: { openExternal: harness.openExternal },
   ipcMain: {
     handle: (channel: string, handler: (event: { senderFrame: { url: string } }) => unknown) => { harness.handlers.set(channel, handler) },
   },
@@ -108,7 +113,6 @@ vi.mock('../src/paths.ts', () => ({ resolveDesktopPaths: () => ({ profile: 'desk
 vi.mock('../src/project-manager.ts', () => ({
   DesktopProjectManager: class {
     readonly applyRelease = harness.applyRelease
-    readonly assertProfileRuntime = harness.assertProfileRuntime
     canRecoverProfile = harness.canRecoverProfile
     async mutate(_mutation: unknown, hooks: { beforeChange(): Promise<void>; afterChange(): Promise<void> }) {
       await hooks.beforeChange()
@@ -155,6 +159,61 @@ afterEach(async () => {
 })
 
 describe('desktop main startup', () => {
+  it('navigates to each Host authentication URL when retry replaces a failed backend', async () => {
+    await import('../src/main.ts')
+    await harness.preparing.promise
+    harness.prepared.resolve()
+    await harness.hostStarted.promise
+    const first = harness.hosts[0]!
+    first.url = 'http://127.0.0.1:40001/?token=first'
+    first.ready.resolve()
+    await harness.navigated.promise
+    const window = harness.windows[0]!
+    expect(window.urls.at(-1)).toBe(first.url)
+    await Promise.resolve(invoke(DESKTOP_IPC.backendRetry))
+    first.onFailure!(new Error('backend exited'))
+    await harness.errorPublished.promise
+    await first.stopping.promise
+    first.exited.resolve()
+    const nextStarted = harness.nextHostStart()
+    const retry = Promise.resolve(invoke(DESKTOP_IPC.backendRetry))
+    await nextStarted
+    const replacement = harness.hosts[1]!
+    replacement.url = 'http://127.0.0.1:40002/?token=replacement'
+    replacement.ready.resolve()
+    await retry
+    expect(harness.windows).toHaveLength(1)
+    expect(window.urls).toEqual([
+      'dsh-app://shell/startup.html', first.url, 'dsh-app://shell/startup.html', replacement.url,
+    ])
+    expect(harness.openExternal).not.toHaveBeenCalled()
+  })
+
+  it('opens message links externally while retaining same-origin application navigation', async () => {
+    await import('../src/main.ts')
+    await harness.preparing.promise
+    harness.prepared.resolve()
+    await harness.hostStarted.promise
+    harness.hosts[0]!.ready.resolve()
+    await harness.navigated.promise
+    const window = harness.windows[0]!
+    const openWindow = window.webContents.setWindowOpenHandler.mock.calls[0]![0] as
+      (details: { url: string }) => { action: string }
+    const source = 'https://example.com/source?q=reference'
+    expect(openWindow({ url: source })).toEqual({ action: 'deny' })
+    expect(harness.openExternal).toHaveBeenCalledWith(source)
+    harness.openExternal.mockClear()
+    const external = { preventDefault: vi.fn() }
+    window.webContents.emit('will-navigate', external, 'https://example.com/document')
+    expect(external.preventDefault).toHaveBeenCalledOnce()
+    expect(harness.openExternal).toHaveBeenCalledWith('https://example.com/document')
+    harness.openExternal.mockClear()
+    const internal = { preventDefault: vi.fn() }
+    window.webContents.emit('will-navigate', internal, 'http://127.0.0.1:3080/session/task-1')
+    expect(internal.preventDefault).not.toHaveBeenCalled()
+    expect(harness.openExternal).not.toHaveBeenCalled()
+  })
+
   it('exits with a diagnostic when both initialization and emergency navigation fail', async () => {
     const exited = Promise.withResolvers<undefined>()
     vi.spyOn(harness.app, 'getLocale').mockImplementationOnce(() => { throw new Error('locale unavailable') })
@@ -210,7 +269,7 @@ describe('desktop main startup', () => {
     harness.hosts[1]!.ready.resolve()
     await harness.navigated.promise
     expect(event.preventDefault).toHaveBeenCalled()
-    expect(window.urls.at(-1)).toBe('dsh-app://app/index.html')
+    expect(window.urls.at(-1)).toBe('http://127.0.0.1:3080/?token=test')
   })
 
   it('allows a full profile reset for an unclassified startup failure', async () => {
@@ -245,7 +304,8 @@ describe('desktop main startup', () => {
     expect(harness.dialog.showErrorBox).not.toHaveBeenCalled()
   })
 
-  it('offers plugin recovery and disables plugins before restarting in the same window', async () => {
+  it.each([true, false])('offers plugin recovery and disables plugins in packaged=%s mode', async (packaged) => {
+    harness.app.isPackaged = packaged
     harness.pluginsEnabled = true
     await import('../src/main.ts')
     await harness.preparing.promise
@@ -297,7 +357,6 @@ describe('desktop main startup', () => {
     harness.hosts[0]!.ready.resolve()
     await Promise.all([retry, secondRetry, harness.navigated.promise])
     expect(harness.applyRelease).toHaveBeenCalledTimes(1)
-    expect(harness.assertProfileRuntime).toHaveBeenCalledWith('desktop-test-profile')
     expect(harness.hosts[0]).toMatchObject({
       node: join('desktop-test-resources', 'runtime', 'node', process.platform === 'win32' ? 'node.exe' : 'node'),
       runtime: join('desktop-test-resources', 'dsh'),
@@ -305,18 +364,20 @@ describe('desktop main startup', () => {
     })
     expect(harness.hosts[0]!.start).toHaveBeenCalledTimes(1)
     expect(harness.windows).toHaveLength(1)
-    expect(window.urls).toEqual(['dsh-app://shell/startup.html', 'dsh-app://app/index.html'])
+    expect(window.urls).toEqual(['dsh-app://shell/startup.html', 'http://127.0.0.1:3080/?token=test'])
     expect(invoke(DESKTOP_IPC.backendStatus)).toEqual({ phase: 'ready' })
   })
 
-  it('starts the unpackaged Host from the application development directory', async () => {
+  it('prepares an independent plugin profile for the unpackaged Host', async () => {
     harness.app.isPackaged = false
+    vi.stubEnv('DSH_DESKTOP_DSH_DIR', undefined)
     await import('../src/main.ts')
+    await harness.preparing.promise
+    harness.prepared.resolve()
     await harness.hostStarted.promise
     const project = join(harness.app.getAppPath(), '.desktop-build', 'development', 'project')
-    expect(harness.hosts[0]).toMatchObject({ node: 'test-node', runtime: project, profile: project })
-    expect(harness.applyRelease).not.toHaveBeenCalled()
-    expect(harness.assertProfileRuntime).not.toHaveBeenCalled()
+    expect(harness.hosts[0]).toMatchObject({ node: 'test-node', runtime: project, profile: 'desktop-test-profile' })
+    expect(harness.applyRelease).toHaveBeenCalledOnce()
     harness.hosts[0]!.ready.resolve()
     await harness.navigated.promise
     expect(harness.dialog.showErrorBox).not.toHaveBeenCalled()
@@ -342,7 +403,7 @@ describe('desktop main startup', () => {
     harness.hosts[1]!.ready.resolve()
     await retry
     expect(harness.windows).toHaveLength(1)
-    expect(harness.windows[0]!.urls.at(-1)).toBe('dsh-app://app/index.html')
+    expect(harness.windows[0]!.urls.at(-1)).toBe('http://127.0.0.1:3080/?token=test')
     expect(harness.dialog.showErrorBox).not.toHaveBeenCalled()
   })
 

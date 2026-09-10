@@ -462,9 +462,7 @@ function profileDependencyNames(manifest: ProfileManifest): string[] {
 }
 
 /** Resolve the installation generation that every profile must find through the fallback directory. */
-function resolveModuleFallbackEntries(
-  installAnchor: string,
-): { entries: ModuleFallbackEntry[]; packageNames: ReadonlySet<string> } {
+function resolveInstallationPackageDirectories(installAnchor: string): Map<string, string> {
   const appManifest = readModuleFallbackManifest(installAnchor)
   const links = new Map<string, string>()
   /* v8 ignore next -- a real app manifest always declares its name */
@@ -488,6 +486,14 @@ function resolveModuleFallbackEntries(
       queue.push({ anchor: manifestPath, manifest: readModuleFallbackManifest(manifestPath) })
     }
   }
+  return links
+}
+
+/** Resolve installation packages as filesystem links or packaged-executable proxies. */
+function resolveModuleFallbackEntries(
+  installAnchor: string,
+): { entries: ModuleFallbackEntry[]; packageNames: ReadonlySet<string> } {
+  const links = resolveInstallationPackageDirectories(installAnchor)
   const entries = !isPackagedExecutable()
     ? [...links].map(([packageName, packageDir]) => ({ kind: 'symlink' as const, packageName, packageDir }))
     : [...links].flatMap(([packageName, packageDir]) => {
@@ -559,6 +565,17 @@ export async function healProfilesModuleFallback(options: ProfileModuleFallbackO
   if (profile !== undefined) healProfileModuleFallback(profile, packageNames)
 }
 
+/**
+ * Supply an application-owned profile with filesystem packages from its installation and selected bundles.
+ * All fallback links belong to the profile; no shared Harness-home directory is written.
+ * Existing pnpm-managed packages remain authoritative. The caller serializes profile mutations.
+ * @param options - owning installation package.json and the loaded application profile.
+ */
+export function healIsolatedProfileModuleFallback(options: { installAnchor: string; profile: Profile }): void {
+  const installationLinks = resolveInstallationPackageDirectories(options.installAnchor)
+  healProfileModuleFallback(options.profile, new Set(installationLinks.keys()), installationLinks)
+}
+
 /** Heal one module-fallback generation while the cross-process writer lock is held. */
 function healProfilesModuleFallbackLocked(entries: readonly ModuleFallbackEntry[], modulesDir: string): void {
   for (const entry of entries) {
@@ -608,7 +625,10 @@ function dependencyClosure(
 }
 
 /** Reconcile packages carried only by selected bundles into one profile. */
-function healProfileModuleFallback(profile: Profile, installationPackageNames: ReadonlySet<string>): void {
+function healProfileModuleFallback(
+  profile: Profile, installationPackageNames: ReadonlySet<string>,
+  installationLinks: ReadonlyMap<string, string> = new Map(),
+): void {
   const profileModulesDir = join(profile.dir, 'node_modules')
   const ownedModulesDir = join(profile.dir, PROFILE_MODULE_FALLBACK_DIR, 'node_modules')
   mkdirSync(profileModulesDir, { recursive: true })
@@ -631,10 +651,11 @@ function healProfileModuleFallback(profile: Profile, installationPackageNames: R
     }
   })
   for (const layer of profile.layers) bundleLinks.delete(layer.packageName)
+  const links = new Map([...installationLinks, ...bundleLinks])
   for (const packageName of ownedPackageNames(ownedModulesDir)) {
-    if (!bundleLinks.has(packageName)) removeProfileSymlink(profileModulesDir, ownedModulesDir, packageName)
+    if (!links.has(packageName)) removeProfileSymlink(profileModulesDir, ownedModulesDir, packageName)
   }
-  for (const [packageName, target] of bundleLinks) {
+  for (const [packageName, target] of links) {
     const ownedLink = join(ownedModulesDir, packageName)
     mkdirSync(dirname(ownedLink), { recursive: true })
     ensureSymlink(ownedLink, target)
