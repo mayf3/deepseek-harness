@@ -249,7 +249,7 @@ function assertAdoptable(header: AdoptableHeader, events: Iterable<SessionEvent>
  * @param sessionId - exact Session identity to adopt.
  * @param agentOptions - provider/model pair for this run.
  * @param setup - per-Agent scope setup installing the model selection.
- * @returns the live, resumed, or freshly created Agent.
+ * @returns the live or resumed Agent.
  */
 async function resolveAgent(
   ctx: Context,
@@ -258,10 +258,10 @@ async function resolveAgent(
   agentOptions: { provider: string; model: string },
   setup: (agentCtx: Context) => void,
 ): Promise<Agent> {
-  // Adopting a live identity and creating a missing one both promise the
-  // caller a log a later process can continue. Without a durable log the run
-  // would succeed, print the id, and still lose the whole history at exit, so
-  // a miscomposed profile fails loud before either path.
+  // Reusing a live identity and resuming a stored one both promise the caller
+  // a log a later process can continue. Without a durable log the run would
+  // succeed, print the id, and still lose the whole history at exit, so a
+  // miscomposed profile fails loud before either path.
   const persistence = ctx.get('sessionPersistence')
   if (persistence === undefined) {
     throw new Error('headless --session-id requires the sessionPersistence service; the Session would not survive this process')
