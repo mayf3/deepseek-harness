@@ -2,14 +2,9 @@
 
 .chip {
   display: inline-flex;
-  align-items: center;
+  align-items: baseline;
   gap: 3px;
   max-width: 240px;
-  padding: 0 6px;
-  border-radius: 6px;
-  vertical-align: bottom;
-  line-height: 22px;
-  height: 22px;
   color: var(--dsw-alias-state-business-primary);
   user-select: none;
 }
@@ -21,6 +16,7 @@
 
 .icon {
   flex: none;
+  align-self: center;
 }
 
 .label {

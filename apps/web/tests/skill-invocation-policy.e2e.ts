@@ -129,13 +129,36 @@ describe('web e2e: skill invocation policy through the real host', () => {
   it('opens skill and file references beside the unchanged draft with matching hover backgrounds', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-reference-preview'))
     const input = page.locator('[data-composer-input]').first()
-    await writeComposerDraft(page, input, '/policy-shared @meeting-notes')
+    await writeComposerDraft(page, input, '/policy-shared hello @meeting-notes')
     const menu = page.getByRole('listbox', { name: 'Trigger suggestions' })
     const option = menu.getByRole('option', { name: /meeting-notes\.md/ })
     await option.click()
     const skill = input.locator('[data-composer-text-ref]').filter({ hasText: '/policy-shared' })
     const file = input.locator('[data-composer-chip]')
     const draft = await input.textContent()
+    const alignment = await input.evaluate((el) => {
+      const skill = el.querySelector<HTMLElement>('[data-composer-text-ref]')!
+      const chip = el.querySelector<HTMLElement>('[data-composer-chip] span')!
+      const plain = el.querySelector<HTMLElement>('[data-lexical-text]:not([data-composer-text-ref])')!
+      const textTop = (element: Element): number => {
+        const range = el.ownerDocument.createRange()
+        range.selectNodeContents(element)
+        return range.getBoundingClientRect().top
+      }
+      return {
+        skillTop: skill.getBoundingClientRect().top,
+        fileTop: chip.getBoundingClientRect().top,
+        skillHeight: skill.getBoundingClientRect().height,
+        fileHeight: chip.getBoundingClientRect().height,
+        skillTextTop: textTop(skill),
+        fileTextTop: textTop(chip.lastElementChild!),
+        plainTextTop: textTop(plain),
+      }
+    })
+    expect(alignment.fileHeight).toBeCloseTo(alignment.skillHeight, 0)
+    expect(alignment.fileTop).toBeCloseTo(alignment.skillTop, 0)
+    expect(alignment.fileTextTop).toBeCloseTo(alignment.plainTextTop, 0)
+    expect(alignment.skillTextTop).toBeCloseTo(alignment.plainTextTop, 0)
     await skill.hover()
     const skillBackground = await skill.evaluate(el => getComputedStyle(el).backgroundColor)
     expect(skillBackground).not.toBe('rgba(0, 0, 0, 0)')
