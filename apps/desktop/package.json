@@ -7,6 +7,7 @@
   "type": "module",
   "main": "lib/main.js",
   "scripts": {
+    "test:installer": "node scripts/test-windows-installer.mjs",
     "build": "tsc -b && tsdown",
     "dev": "tsx scripts/dev.ts",
     "start": "tsx scripts/dev.ts --skip-build",

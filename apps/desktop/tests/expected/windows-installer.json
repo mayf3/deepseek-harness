@@ -1,0 +1,11 @@
+{
+  "launchCheckboxState": 1,
+  "nativeProgressVisible": false,
+  "cases": [
+    "install-path-picker-and-unchecked-launch",
+    "upgrade-and-checked-launch",
+    "running-app-preserved-and-native-progress-hidden",
+    "silent-update-and-invalid-destination-rejection",
+    "uninstall"
+  ]
+}

@@ -1,5 +1,7 @@
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { execFile } from 'node:child_process'
+import { promisify } from 'node:util'
 import {
   resolveDesktopAppId,
   resolveMacOSNotarizationEnvironment,
@@ -10,6 +12,7 @@ import { verifyMacOSSignatureAfterSign } from './scripts/verify-macos-signature.
 import {
   createWindowsTokenSigner,
   installWindowsNsisBootstrapSigner,
+  scrubWindowsSigningEnvironment,
 } from './scripts/windows-sign.mjs'
 import { resolveDesktopAutoUpdateConfig } from './scripts/desktop-auto-update-environment.mjs'
 import { desktopTargetBuildPaths, resolveDesktopBuildTarget } from './scripts/desktop-build-paths.mjs'
@@ -62,6 +65,16 @@ export function createElectronBuilderConfig(
     asar: true,
     electronDist: buildPaths.electron,
     electronFuses: { runAsNode: true },
+    beforeBuild: async () => {
+      if (resolvedPlatform !== 'win32') return
+      await promisify(execFile)('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File',
+        fileURLToPath(new URL('./scripts/prepare-windows-installer.ps1', import.meta.url))], {
+        env: scrubWindowsSigningEnvironment(process.env), windowsHide: true,
+      })
+      if (windowsSigner !== undefined) {
+        await windowsSigner({ path: join(buildPaths.root, 'installer-ui', 'window-frame.dll'), hash: 'sha256', isNest: false })
+      }
+    },
     files: [
       'lib/*.js',
       'lib/*.cjs',
@@ -131,7 +144,10 @@ export function createElectronBuilderConfig(
     nsis: {
       include: fileURLToPath(new URL('./scripts/installer.nsh', import.meta.url)),
       oneClick: false,
-      allowToChangeInstallationDirectory: true,
+      perMachine: false,
+      allowElevation: false,
+      allowToChangeInstallationDirectory: false,
+      installerLanguages: ['en_US', 'zh_CN'],
       differentialPackage: true,
     },
     publish: update === undefined ? null : [{ provider: 'generic', url: update.publicUrl }],

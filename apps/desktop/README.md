@@ -153,6 +153,16 @@ pnpm run package:desktop:win:x64:unsigned
 
 The command requires `DSH_DESKTOP_APP_ID` and the normal build dependencies, including Python and Visual C++ build tools for native modules. Set `PYTHON` to the Python executable when it is absent from `PATH`. It writes the installer to `.desktop-build/targets/win-x64/unsigned-artifacts/`, omits automatic-update configuration, strips signing credentials, and creates no release completion record. It does not require EV credentials or an update origin. The signed packaging and upload commands retain their release requirements.
 
+### Windows installer interface
+
+The Windows installer uses native NSIS pages with light and dark palettes, system shadows, an editable installation directory, and a finish page whose launch checkbox is selected by default. Installation is restricted to the current user. The directory picker and typed paths share validation; new destinations must be empty, and nonempty destinations must be registered installations. Running applications produce a native prompt and leave the application running.
+
+The theme follows Windows at startup; `/THEME=light`, `/THEME=dark`, and `/THEME=auto` select a palette explicitly. The progress page reads the stock installation progress as an estimate. Electron-builder owns extraction, existing-version removal, registry entries, shortcuts, and uninstallers; installation failures do not promise full transactional rollback. First-launch profile preparation remains a separate Desktop operation.
+
+Windows packaging compiles an x86 Win32/GDI+ helper with Visual C++ Build Tools and a Windows SDK; signed builds sign this helper through the configured Windows signer. The [installer decision](../../.agents/notes/implemented/architecture/2026-09-10-windows-native-installer-pages.md) records the NSIS integration and release checks.
+
+Run `pnpm --dir apps/desktop run test:installer` from the repository root on an interactive Windows x64 desktop to build and exercise a small native test payload through the production installer configuration. Each run uses a unique product identity, installs into its own directory, uninstalls it, and retains screenshots and results under `.desktop-build/installer-tests/`.
+
 ### Windows EV signing
 
 For this project's SafeNet token, `SignTool Error: No private key is available.` indicates an incorrect PIN. Stop all signing attempts immediately and wait for the user to correct the PIN before continuing. Five incorrect PIN attempts lock the token. Do not retry packaging or signing probes after this error. The signer serializes token operations and rejects all queued tasks after the first failure.
