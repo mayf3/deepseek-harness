@@ -29,6 +29,14 @@
           <button id="install" type="submit"></button>
         </div>
       </form>
+      <form id="update-form" hidden aria-labelledby="update-label">
+        <label id="update-label" for="update-version"></label>
+        <div class="install-row">
+          <input id="update-version" name="update-version" autocomplete="off" required>
+          <button id="update-submit" type="submit"></button>
+          <button id="update-cancel" class="quiet" type="button"></button>
+        </div>
+      </form>
       <p id="status" role="status" aria-live="polite"></p>
       <section aria-labelledby="installed-heading">
         <h2 id="installed-heading"></h2>

@@ -17,7 +17,7 @@ async function main(): Promise<void> {
     profile: 'desktop',
     resolvedProfile: { profile, installAnchor },
     patchFiles: [fileURLToPath(new URL('../config/desktop.cordis.patch.yml', import.meta.url))],
-    args: ['--no-open'],
+    args: ['--no-open', '--port', '19387'],
   })
   const stop = async (): Promise<void> => {
     // Startup failure is reported by main; shutdown only owns a tree that booted.

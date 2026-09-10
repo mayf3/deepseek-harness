@@ -2,7 +2,7 @@
 
 [English](README.md) | 中文
 
-桌面应用是完整 dsh Web 应用外的一层 Electron 壳。内置上游 Node.js 子进程启动共享 profile runner，Electron 加载其带认证的 HTTP URL。Web 负责客户端资源、API 路由与响应流；Node IPC 承载子进程就绪与关闭。
+桌面应用是完整 dsh Web 应用外的一层 Electron 壳。内置上游 Node.js 子进程启动共享 profile runner，Electron 加载其带认证的 HTTP URL。Web 负责客户端资源、API 路由与响应流；Node IPC 承载子进程就绪与关闭。Desktop 默认使用端口 `19387`，与 Web 的 `3080` 分开；可通过 `webserver.config.port` patch 覆盖。
 
 ## 关键技术决策
 
@@ -34,7 +34,7 @@ Electron 根据应用 locale 选择类型化的英文或中文桌面壳文案，
 1. 主窗口在 profile 准备或后端启动前显示本地加载页。新 profile 创建清单和共享包链接，保留无关文件，然后启动一次实际后端。未变化的启动复用 profile，不扫描已安装插件的清单。
 2. 兼容的应用升级在当前 profile 中刷新共享链接，不检查插件的 peer 要求。插件文件、配置、版本和锁文件留在原处；不运行 pnpm。
 3. 内置 Node 版本、平台或架构变化时保留已安装插件。原生兼容性问题在加载时报错，可通过 pnpm 修复。
-4. 插件添加、更新和删除使用内置 pnpm 及其正常的用户和 profile 配置。Desktop 不覆盖 registry、npmrc、缓存或 store，新 profile 不添加构建许可列表或严格构建设置。更新版本及范围交给 pnpm。包规格交给 pnpm，包括本地目录、Git、tarball 和别名。相对路径从 Desktop profile 目录解析。声明 `dsh.bundle.patch` 的包作为 bundle 启用；普通依赖安装后不自动启用。Desktop 不扫描插件依赖图，也不在 Host 启动前验证 patch 文件。自定义 profile 元数据和 bundle 顺序会保留。已安装元数据不可读时，仍能列出、禁用和删除依赖；无法读取已安装版本时，列表使用依赖规格。
+4. 插件添加、更新和删除使用内置 pnpm 及其正常的用户和 profile 配置。Desktop 不覆盖 registry、npmrc、缓存或 store，新 profile 不添加构建许可列表或严格构建设置。插件管理页提供可取消的行内版本表单；版本和范围交给 pnpm，也允许提交已安装版本以重装。包规格交给 pnpm，包括本地目录、Git、tarball 和别名。相对路径从 Desktop profile 目录解析。声明 `dsh.bundle.patch` 的包作为 bundle 启用；普通依赖安装后不自动启用。Desktop 不扫描插件依赖图，也不在 Host 启动前验证 patch 文件。自定义 profile 元数据和 bundle 顺序会保留。已安装元数据不可读时，仍能列出、禁用和删除依赖；无法读取已安装版本时，列表使用依赖规格。
 5. 插件变更在直接修改当前 profile 前停止后端。准备成功后启动 Host。包操作或 Host 启动失败会保留已修改文件并报告错误。Desktop 不创建 staging 目录、激活日志或回滚副本。
 
 加载页不依赖 Host。错误页提供重启和重装指导。运行时资源支持 profile 恢复时，即可禁用插件和重置 Desktop，包括开发模式；早期初始化失败只提供重启。应用菜单仍提供插件管理器入口。插件修改不自动回滚。

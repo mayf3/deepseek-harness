@@ -24,6 +24,12 @@ async function main() {
   const form = document.querySelector('#install-form')
   const input = document.querySelector('#package-spec')
   const refresh = document.querySelector('#refresh')
+  const updateForm = document.querySelector('#update-form')
+  const updateVersion = document.querySelector('#update-version')
+  let updateName = ''
+  let updateTrigger
+  document.querySelector('#update-submit').textContent = messages.update
+  document.querySelector('#update-cancel').textContent = messages.cancel
 
   function setBusy(busy, statusMessage = '') {
     for (const control of document.querySelectorAll('button, input')) control.disabled = busy
@@ -53,9 +59,13 @@ async function main() {
       update.type = 'button'
       update.textContent = messages.update
       update.addEventListener('click', () => {
-        const next = window.prompt(message('targetVersion', { name: plugin.name }), plugin.version)?.trim()
-        if (next === undefined || next === '' || next === plugin.version) return
-        void run(() => api.plugins.update(plugin.name, next), message('updating', { name: plugin.name }))
+        updateName = plugin.name
+        updateTrigger = update
+        document.querySelector('#update-label').textContent = message('targetVersion', { name: plugin.name })
+        updateVersion.value = plugin.version
+        updateForm.hidden = false
+        updateVersion.focus()
+        updateVersion.select()
       })
       const actions = document.createElement('span')
       actions.className = 'package-actions'
@@ -105,6 +115,18 @@ async function main() {
       await api.plugins.add(spec)
       input.value = ''
     }, message('installing', { spec }))
+  })
+  updateForm.addEventListener('submit', (event) => {
+    event.preventDefault()
+    const version = updateVersion.value.trim()
+    if (version === '') return
+    const name = updateName
+    updateForm.hidden = true
+    void run(() => api.plugins.update(name, version), message('updating', { name }))
+  })
+  document.querySelector('#update-cancel').addEventListener('click', () => {
+    updateForm.hidden = true
+    updateTrigger.focus()
   })
   document.querySelector('#retry').addEventListener('click', () => void run(() => api.backend.retry(), messages.retry))
   document.querySelector('#disable-all').addEventListener('click', () => void run(() => api.plugins.disableAll(), messages.changingActivation))
