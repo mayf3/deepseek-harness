@@ -4,6 +4,8 @@ Status: implemented
 
 English | [中文](2026-08-25-electron-desktop-packaging-and-updates.zh.md)
 
+Profile staging, directory-swap recovery, and automatic rollback described here are superseded by the [in-place profile decision](2026-09-09-desktop-in-place-profile.md). Other decisions remain active.
+
 ## Problem
 
 DeepSeek Harness needs an Electron desktop application that reuses the Web UI, works without system Node.js or pnpm, installs dsh and desktop plugins through an application-bundled pnpm, and updates the complete desktop release through one user-facing flow.

@@ -1,11 +1,11 @@
 import { execFileSync } from 'node:child_process'
-import { mkdtempSync, readFileSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { afterEach, expect, it } from 'vitest'
 import { createPluginProfile } from '../src/project-manager.ts'
-import { copyDesktopProfile, linkDesktopHostPackages, unlinkDesktopHostPackages, validateDesktopPluginGraph } from '../src/profile-packages.ts'
+import { linkDesktopHostPackages, unlinkDesktopHostPackages, validateDesktopPluginGraph } from '../src/profile-packages.ts'
 import { runtimeFixture, writePackage } from './runtime-fixture.ts'
 
 const roots: string[] = []
@@ -58,12 +58,9 @@ it('refuses to satisfy a plugin dependency from an ancestor CLI project', () => 
   writePackage(join(profile, 'node_modules'), 'plugin', { dependencies: { ambient: '1.0.0' } })
   expect(() =>{  validateDesktopPluginGraph(profile, dsh, runtime, ['plugin']) }).toThrow(/outside its owned packages/u)
 })
-it('copies writable plugin bytes independently and removes broken owned links without following them', () => {
+it('removes broken owned links without following them', () => {
   const { root, profile } = fixture()
   writePackage(join(profile, 'node_modules'), 'plugin')
-  copyDesktopProfile(profile, join(root, 'copy'))
-  writeFileSync(join(root, 'copy/node_modules/plugin/index.js'), 'changed')
-  expect(readFileSync(join(profile, 'node_modules/plugin/index.js'), 'utf8')).toContain('identity')
   rmSync(join(root, 'dsh'), { recursive: true })
   expect(() =>{  unlinkDesktopHostPackages(profile) }).not.toThrow()
 })

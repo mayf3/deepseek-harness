@@ -14,7 +14,7 @@ The desktop application is an Electron shell around the dsh Web UI. It opens no 
 | Shared modules | Host APIs can depend on module identity. | Desktop links every bundled first-party package into the profile using directory symlinks, or Windows junctions; ordinary plugin dependencies remain local. |
 | State ownership | Sharing executable dependency graphs would let CLI and Desktop change each other's dsh, Cordis, plugin, or native-module versions, while two desktop processes could race on the same profile. | Electron acquires its process-lifetime single-instance lock before any profile access and exclusively owns `$DSH_HOME/profiles/desktop` plus its package-manager state. CLI and Desktop share supported product data under `$DSH_HOME`, but never executable packages, plugin activation, lockfiles, or `node_modules`. |
 | Transport | A listening Web service adds port ownership, authentication, CORS, and exposure concerns; Electron and upstream Node.js also need an explicit cross-process protocol. | The application opens no Web port. `dsh-app://` carries Web assets and Fetch traffic; framed byte pipes carry bounded request and response chunks with backpressure, while Node IPC carries only child lifecycle control. |
-| Activation | Dependency resolution, lifecycle scripts, native modules, and plugin startup can fail, and a process can stop during directory replacement. | Release and plugin changes prepare in staging and start the actual backend after profile replacement; a journal and one rollback profile cover failed or interrupted activation. |
+| Plugin changes | Package installation and Host startup can fail. | Desktop stops the Host and modifies the current profile directly. Failures retain partial changes for explicit repair; there is no automatic profile rollback. |
 | Updates | Independent shell and dsh updates would recreate version splits, while unchanged shell blocks should not require a complete transfer. | The Electron shell, matching dsh runtime, Node.js, and pnpm form one signed update unit. Platform update artifacts may reuse unchanged blocks, but runtime version selection never splits from the Desktop release. |
 
 The [Electron packaging and update Agent Note](../../.agents/notes/implemented/architecture/2026-08-25-electron-desktop-packaging-and-updates.md) owns the rationale, alternatives, security constraints, and release qualification requirements behind these decisions.
@@ -29,17 +29,19 @@ Electron chooses typed English or Chinese shell copy from its application locale
 
 ### Runtime and plugin activation
 
-The signed `resources/dsh/desktop-runtime.json` binds the shell version, bundled Node version, platform, architecture, shared package versions, and final file inventory. Startup checks release metadata, shared package manifests, and required Host entry files without enumerating or hashing the runtime tree. Full file integrity verification runs during packaging. Core packages are never copied into profile storage or installed by pnpm at first launch.
+The signed `resources/dsh/desktop-runtime.json` binds the shell version, bundled Node version, platform, architecture, shared package versions, and final file inventory. Startup reads the metadata and checks shared package records. Release schema, shell version, target compatibility, and file integrity are verified during packaging. Core packages are never copied into profile storage or installed by pnpm at first launch.
 
 1. The main window displays a local loading page before profile preparation or backend startup. A fresh profile creates its manifest and shared package links, then activates and starts the actual backend once.
-2. A compatible application upgrade copies plugin files and configuration into staging, refreshes shared links, and checks enabled plugins’ peer requirements. Plugin versions and lockfile remain unchanged; pnpm does not run.
+2. A compatible application upgrade refreshes shared links in the current profile and checks enabled plugins’ peer requirements. Plugin files, configuration, versions, and lockfile remain in place; pnpm does not run.
 3. A changed bundled Node version, platform, or architecture reinstalls the locked plugin graph with scripts disabled, validates and links host packages, then runs approved pending builds and validates again.
 4. Plugin add, update, and remove operations use bundled pnpm and Desktop-owned package-manager state. Reserved host packages must be peers; nested copies and aliases of shared packages fail validation. Ordinary plugin dependencies must resolve inside the profile.
-5. Activation stops the active backend, records runtime identities and the next directory move, and replaces the profile while retaining one rollback copy. Copies do not share writable hardlinks. The actual backend starts after replacement; failed activation restores the previous profile; a profile belonging to another runtime cannot boot under the current shell.
+5. Plugin changes stop the backend before modifying the current profile. Successful preparation starts the Host. Package or Host startup failures retain modified files and report the error; repair the installation and retry. Desktop creates no staging directories, activation journals, or rollback copies.
 
-The loading page does not depend on the Host. Startup failures appear in the same main window with retry and plugin-management actions. Closing during loading waits for the pending child to exit. The Electron-owned plugin window remains available when backend startup fails. Disable one plugin or all plugins to retry with their files, exact versions, and configuration retained. Disabling removes only activation entries. Updating or removing an installed plugin remains available while it is disabled. Application rollback and profile rollback are separate; runtime compatibility is checked before any backend starts.
+The loading page does not depend on the Host. Every startup and backend error page retains diagnostics and offers three actions: restart the application, disable all third-party plugins and restart the Host, or reset Desktop and restart the Host. Reinstallation guidance is always visible for missing or damaged application files. Disabling plugins retains their files and skips their installation graph when none are enabled. The plugin manager remains available through the application menu. Runtime compatibility is checked before any backend starts; plugin changes have no automatic rollback.
 
-Package transactions hold an exclusive lock through pnpm process exit. Shared links use directory symlinks on macOS/Linux and junctions on Windows; cleanup removes links without deleting their targets. Canonical filesystem paths identify shared packages, so Windows path casing alone does not trigger profile activation. Native builds follow the profile’s reviewed `allowBuilds` list; installing a new build-requiring package without approval in that list fails the transaction.
+Reset deletes every entry in `$DSH_HOME/profiles/desktop` except the held transaction lock, then initializes the built-in profile. It removes Desktop configuration and installed third-party packages without a backup. Shared tasks, settings, and the Harness-home `.env` are untouched. Shell resource and preload failures use a self-contained document with the same three actions and diagnostics; its controls do not require preload.
+
+Package transactions hold `$DSH_HOME/profiles/desktop/lock` exclusively through pnpm process exit. Reset preserves the directory and its lock until initialization and Host startup finish. Shared links use directory symlinks on macOS/Linux and junctions on Windows; cleanup removes links without deleting their targets. Canonical filesystem paths identify shared packages, so Windows path casing alone does not trigger profile activation. Native builds follow the profile’s reviewed `allowBuilds` list; installing a new build-requiring package without approval in that list fails the transaction.
 
 ## Develop
 
@@ -57,7 +59,7 @@ After an explicit build, `start:desktop` reconstructs the disposable project and
 pnpm run start:desktop
 ```
 
-Workspace development runs the current CLI and private Desktop Host packages under the invoking Node.js and disables desktop package mutations. Its explicitly linked disposable profile is the only mode allowed to resolve bundles outside its own directory. Use an unpacked application to exercise the bundled Node.js, bundled pnpm, bundled dsh resources, plugin installation, staging, and rollback paths.
+Workspace development runs the current CLI and private Desktop Host packages under the invoking Node.js and disables desktop package mutations. Its explicitly linked disposable profile is the only mode allowed to resolve bundles outside its own directory. Use an unpacked application to exercise the bundled Node.js, bundled pnpm, bundled dsh resources, plugin installation and repair paths.
 
 ## Package
 
@@ -184,7 +186,7 @@ Signed packaging emits generic-provider channel metadata for the deployment sele
 
 ## Low-level development overrides
 
-`DSH_DESKTOP_NODE_BINARY`, `DSH_DESKTOP_PNPM_ENTRY`, `DSH_DESKTOP_DSH_DIR`, and `DSH_DESKTOP_DEV_PROJECT_DIR` select explicit resources for an unpackaged Electron process. Packaged applications ignore these variables and resolve signed resources from `process.resourcesPath`.
+An unpackaged Electron process uses `.desktop-build/development/project` under its application directory as its development project. `DSH_DESKTOP_NODE_BINARY`, `DSH_DESKTOP_PNPM_ENTRY`, and `DSH_DESKTOP_DSH_DIR` select explicit runtime resources. Packaged applications ignore these variables, resolve signed resources from `process.resourcesPath`, and use the managed Desktop profile.
 
 ## Known limitations
 

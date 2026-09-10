@@ -16,6 +16,9 @@ export const DESKTOP_IPC = {
   pluginsDisableAll: 'dsh-desktop:plugins-disable-all',
   backendStatus: 'dsh-desktop:backend-status',
   backendRetry: 'dsh-desktop:backend-retry',
+  applicationRestart: 'dsh-desktop:application-restart',
+  applicationClose: 'dsh-desktop:application-close',
+  configurationReset: 'dsh-desktop:configuration-reset',
   backendState: 'dsh-desktop:backend-state',
   updatesCheck: 'dsh-desktop:updates-check',
   updatesInstall: 'dsh-desktop:updates-install',
@@ -56,4 +59,8 @@ export interface DshDesktopApi {
 /** Startup-page controls, unavailable to backend-provided application documents. */
 export interface DshDesktopStartupApi extends Pick<DshDesktopApi, 'protocolVersion' | 'locale' | 'backend'> {
   openPlugins(): Promise<void>
+  disablePlugins(): Promise<void>
+  restart(): Promise<void>
+  close(): Promise<void>
+  resetConfiguration(): Promise<void>
 }

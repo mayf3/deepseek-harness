@@ -1,10 +1,12 @@
 import { readFileSync } from 'node:fs'
 import { runInContext } from 'node:vm'
+import { fileURLToPath } from 'node:url'
 import { JSDOM } from 'jsdom'
 import { expect, it, onTestFinished, vi } from 'vitest'
 import type { DesktopBackendState } from '../src/backend-controller.ts'
 import type { DshDesktopStartupApi } from '../src/ipc.ts'
 import { resolveDesktopLocale } from '../src/locale.ts'
+import { startupFailureDocument } from '../src/startup-document.ts'
 
 function startup(locale = 'en', status: Promise<DesktopBackendState> = Promise.resolve({ phase: 'starting' })) {
   const dom = new JSDOM(readFileSync(new URL('../renderer/startup.html', import.meta.url), 'utf8'), { runScripts: 'outside-only' })
@@ -16,6 +18,10 @@ function startup(locale = 'en', status: Promise<DesktopBackendState> = Promise.r
   const unsubscribe = vi.fn(() => { listeners.clear() })
   const retry = vi.fn(async () => {})
   const openPlugins = vi.fn(async () => {})
+  const disablePlugins = vi.fn(async () => {})
+  const resetConfiguration = vi.fn(async () => {})
+  const restart = vi.fn(async () => {})
+  const close = vi.fn(async () => {})
   const queried = Promise.withResolvers<undefined>()
   const api: DshDesktopStartupApi = {
     protocolVersion: 1,
@@ -26,6 +32,7 @@ function startup(locale = 'en', status: Promise<DesktopBackendState> = Promise.r
       subscribe: (listener) => { listeners.add(listener); return unsubscribe },
     },
     openPlugins,
+    disablePlugins, resetConfiguration, restart, close,
   }
   Object.defineProperty(dom.window, 'dshDesktop', { value: api })
   runInContext(readFileSync(new URL('../renderer/startup.js', import.meta.url), 'utf8'), dom.getInternalVMContext())
@@ -42,12 +49,13 @@ function startup(locale = 'en', status: Promise<DesktopBackendState> = Promise.r
   }
   const publish = (state: DesktopBackendState): void => { for (const listener of listeners) listener(state) }
   const copy = (): string => [element('#title').textContent, element('#description').textContent,
-    ...['#error', '#actions'].filter(selector => !element(selector).hidden)
+    ...['#reset-advice', '#reinstall-advice', '#error', '#actions'].filter(selector => !element(selector).hidden)
       .flatMap(selector => selector === '#actions'
-        ? [button('#retry').textContent, button('#plugins').textContent]
+        ? [...document.querySelectorAll<HTMLButtonElement>('#actions button')].filter(button => !button.hidden).map(button => button.textContent)
         : [element(selector).textContent]),
   ].join('\n')
-  return { dom, document, element, button, publish, copy, retry, openPlugins, unsubscribe, queried: queried.promise }
+  return { dom, document, element, button, publish, copy, retry, openPlugins,
+    disablePlugins, resetConfiguration, restart, close, unsubscribe, queried: queried.promise }
 }
 
 it('shows English loading and recovery actions without a Host document', async () => {
@@ -60,22 +68,23 @@ it('shows English loading and recovery actions without a Host document', async (
   expect(page.element('main').getAttribute('aria-busy')).toBe('true')
   expect(page.element('#spinner').hidden).toBe(false)
   expect(page.element('#actions').hidden).toBe(true)
-  expect(page.button('#retry').disabled).toBe(true)
-  expect(page.button('#plugins').disabled).toBe(true)
+  expect(page.button('#restart').disabled).toBe(true)
+  expect(page.button('#disable-plugins').disabled).toBe(true)
   page.publish({ phase: 'error', message: 'Plugin failed to load' })
   expect(page.copy()).toMatchInlineSnapshot(`
     "DeepSeek Harness could not start
-    The application could not start. Retry or manage Desktop plugins to resolve the problem.
+    Choose a recovery action below. Disabling third-party plugins retains their files.
+    Reset Desktop deletes all Desktop profile configuration and third-party plugins without a backup, then starts a fresh profile. Shared tasks and settings are retained.
+    If application files are missing or damaged, close the application and reinstall it. Your tasks are stored separately.
     Plugin failed to load
-    Retry startup
-    Manage plugins"
+    Close and restart
+    Disable all third-party plugins and retry
+    Reset Desktop and retry"
   `)
   expect(page.element('main').getAttribute('aria-busy')).toBe('false')
   expect(page.element('#spinner').hidden).toBe(true)
-  page.button('#plugins').click()
-  expect(page.openPlugins).toHaveBeenCalledOnce()
-  page.button('#retry').click()
-  expect(page.retry).toHaveBeenCalledOnce()
+  page.button('#restart').click()
+  expect(page.restart).toHaveBeenCalledOnce()
   expect(page.element('#actions').hidden).toBe(true)
   expect(page.element('#error').textContent).toBe('')
   expect(page.element('main').getAttribute('aria-busy')).toBe('true')
@@ -92,10 +101,13 @@ it('shows Chinese loading and recovery copy', async () => {
   page.publish({ phase: 'error', message: '插件加载失败' })
   expect(page.copy()).toMatchInlineSnapshot(`
     "DeepSeek Harness 无法启动
-    应用未能启动。你可以重试，或管理桌面插件以解决问题。
+    请选择下方的恢复操作。禁用第三方插件会保留插件文件。
+    重置 Desktop 会删除桌面端的全部 profile 配置和第三方插件，不保留备份，然后重新初始化并启动。共享任务和设置会保留。
+    如果应用文件缺失或损坏，请关闭应用并重新安装。任务数据存储在独立位置。
     插件加载失败
-    重试启动
-    管理插件"
+    关闭并重启
+    禁用全部第三方插件并重试
+    重置 Desktop 并重试"
   `)
 })
 
@@ -106,14 +118,11 @@ it('renders diagnostic markup as text and exposes failures from recovery actions
   page.publish({ phase: 'error', message: diagnostic })
   expect(page.element('#error').textContent).toBe(diagnostic)
   expect(page.element('#error').childElementCount).toBe(0)
-  page.openPlugins.mockRejectedValueOnce(new page.dom.window.Error('Cannot open plugin manager'))
-  page.button('#plugins').click()
-  await expect.poll(() => page.element('#error').textContent).toBe('Cannot open plugin manager')
-  page.retry.mockRejectedValueOnce(new page.dom.window.Error('Retry failed'))
-  page.button('#retry').click()
+  page.restart.mockRejectedValueOnce(new page.dom.window.Error('Retry failed'))
+  page.button('#restart').click()
   await expect.poll(() => page.element('#error').textContent).toBe('Retry failed')
-  expect(page.button('#retry').disabled).toBe(false)
-  expect(page.button('#plugins').disabled).toBe(false)
+  expect(page.button('#restart').disabled).toBe(false)
+  expect(page.button('#disable-plugins').disabled).toBe(false)
 })
 
 it('keeps subscribed state when initial status arrives late and detaches on pagehide', async () => {
@@ -131,4 +140,35 @@ it('keeps subscribed state when initial status arrives late and detaches on page
   expect(page.element('#error').textContent).toBe('Fresh startup failure')
   page.dom.window.dispatchEvent(new page.dom.window.Event('pagehide'))
   expect(page.unsubscribe).toHaveBeenCalledOnce()
+})
+
+it.each(['en', 'zh-CN'])('offers recovery actions with %s guidance and preserves diagnostic text', async (locale) => {
+  const page = startup(locale)
+  await expect.poll(() => page.button('#restart').disabled).toBe(true)
+  for (const recovery of ['plugins', 'configuration', 'reinstall', 'restart'] as const) {
+    page.publish({ phase: 'error', recovery, message: 'Failure details' })
+    await expect(`${page.copy()}\n`).toMatchFileSnapshot(fileURLToPath(new URL(`./expected/startup-${locale}-${recovery}.txt`, import.meta.url)))
+    expect(page.button('#disable-plugins').hidden).toBe(false)
+    expect(page.button('#reset-configuration').hidden).toBe(false)
+    const action = recovery === 'plugins' ? '#disable-plugins' : recovery === 'configuration'
+      ? '#reset-configuration' : '#restart'
+    page.button(action).click()
+    expect(page.element('#actions').hidden).toBe(true)
+  }
+  expect(page.disablePlugins).toHaveBeenCalledOnce()
+  expect(page.resetConfiguration).toHaveBeenCalledOnce()
+  expect(page.close).not.toHaveBeenCalled()
+  expect(page.restart).toHaveBeenCalledTimes(2)
+})
+
+it('keeps emergency diagnostics inert without shell assets', () => {
+  const html = startupFailureDocument(resolveDesktopLocale('zh-CN'), '<script>alert(1)</script>')
+  const dom = new JSDOM(html)
+  expect(dom.window.document.querySelector('script')).toBeNull()
+  expect(dom.window.document.querySelector('pre')?.textContent).toBe('<script>alert(1)</script>')
+  expect(dom.window.document.querySelector('p')?.textContent).toContain('重新安装')
+  expect([...dom.window.document.querySelectorAll('form')].map(form => form.action)).toEqual([
+    'dsh-recovery://restart', 'dsh-recovery://plugins', 'dsh-recovery://reset',
+  ])
+  dom.window.close()
 })

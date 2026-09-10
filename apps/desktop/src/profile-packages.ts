@@ -1,10 +1,11 @@
 /** Desktop-owned host links and validation of the external plugin dependency graph. */
 
 import { createHash } from 'node:crypto'
-import { cpSync, existsSync, lstatSync, mkdirSync, readFileSync, readlinkSync, realpathSync, readdirSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs'
+import { existsSync, lstatSync, mkdirSync, readFileSync, readlinkSync, realpathSync, readdirSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { satisfies } from 'semver'
+import { DesktopStartupError } from './startup-error.ts'
 import { desktopRuntimeId, runtimePath, type DesktopRuntimeDescriptor } from './runtime-tree.ts'
 
 /** Applied runtime identity and the only links Desktop may replace. */
@@ -52,6 +53,11 @@ function inside(root: string, path: string): boolean {
  * @returns Validated state, or undefined for an uninitialized profile.
  */
 export function readDesktopProfileState(profile: string): DesktopProfileState | undefined {
+  try { return readProfileState(profile) }
+  catch (error) { throw new DesktopStartupError('configuration', error) }
+}
+
+function readProfileState(profile: string): DesktopProfileState | undefined {
   const path = join(profile, DESKTOP_PROFILE_STATE)
   if (!existsSync(path)) return undefined
   const value: unknown = JSON.parse(readFileSync(path, 'utf8'))
@@ -85,7 +91,7 @@ export function desktopPluginLockHash(profile: string): string {
 
 /**
  * Remove only recorded host links, without following even broken targets.
- * @param profile - Active or copied profile.
+ * @param profile - Desktop profile.
  */
 export function unlinkDesktopHostPackages(profile: string): void {
   for (const link of readDesktopProfileState(profile)?.links ?? []) {
@@ -97,25 +103,6 @@ export function unlinkDesktopHostPackages(profile: string): void {
     }
     unlinkSync(path)
   }
-}
-
-/**
- * Copy plugin files without copying host packages or sharing writable hardlinks.
- * @param source - Active Desktop profile.
- * @param target - Empty transaction profile directory.
- */
-export function copyDesktopProfile(source: string, target: string): void {
-  const owned = readDesktopProfileState(source)?.links ?? []
-  for (const link of owned) {
-    const path = join(source, 'node_modules', link.name)
-    const entry = stat(path)
-    if (entry !== undefined && (!entry.isSymbolicLink() || resolve(dirname(path), readlinkSync(path)) !== resolve(link.target))) {
-      throw new Error(`desktop profile: refusing to copy unowned package ${link.name}`)
-    }
-  }
-  const links = new Set(owned.map(link => join(source, 'node_modules', link.name)))
-  cpSync(source, target, { recursive: true, verbatimSymlinks: true, force: false, errorOnExist: true,
-    filter: path => !links.has(path) })
 }
 
 /**
@@ -191,10 +178,14 @@ export function validateDesktopPluginGraph(
   profile: string, root: string, runtime: DesktopRuntimeDescriptor, activePlugins: readonly string[],
 ): void {
   const profileRoot = realpathSync.native(profile)
-  const shared = new Map(runtime.sharedPackages.map(entry => [entry.name, realpathSync.native(runtimePath(root, entry.path))]))
+  const shared = new Map(runtime.sharedPackages.map((entry) => {
+    try { return [entry.name, realpathSync.native(runtimePath(root, entry.path))] as const }
+    catch (error) { throw new DesktopStartupError('reinstall', error) }
+  }))
   for (const [name, path] of shared) {
     if (packageFrom(profile, name) !== path) throw new Error(`desktop profile: missing or incorrect host link ${name}`)
   }
+  if (activePlugins.length === 0) return
   const scanned = new Set<string>()
   const scan = (modules: string): void => {
     if (!existsSync(modules)) return
@@ -247,8 +238,12 @@ export function validateDesktopPluginGraph(
     }
   }
   for (const name of activePlugins) {
-    const path = packageFrom(profile, name)
-    if (path === undefined || !inside(profileRoot, path)) throw new Error(`desktop profile: missing local plugin ${name}`)
-    visit(path, name)
+    try {
+      const path = packageFrom(profile, name)
+      if (path === undefined || !inside(profileRoot, path)) throw new Error(`desktop profile: missing local plugin ${name}`)
+      visit(path, name)
+    } catch (error) {
+      throw new DesktopStartupError('plugins', error)
+    }
   }
 }
