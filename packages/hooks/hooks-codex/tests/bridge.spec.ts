@@ -80,7 +80,8 @@ describe('hooks-codex bridge', () => {
     const inject = vi.fn()
     const agent = { id: session.id, session, ctx, inject } as unknown as Agent
 
-    await ctx.agents.register(agent, 'resume')
+    ctx.effect(() => ctx.agents.enter(agent, undefined))
+    await ctx.agents.announce(agent, 'resume')
 
     expect(inject).toHaveBeenCalledWith(expect.objectContaining({
       content: [{ type: 'text', text: 'resumed context' }],

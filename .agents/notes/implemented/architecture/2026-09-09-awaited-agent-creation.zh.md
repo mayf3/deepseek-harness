@@ -10,7 +10,7 @@ Status: implemented
 
 ## 决策
 
-`agent/created` 是工厂 setup 完成且进入注册表后的串行初始化事件。每个监听器完成后才启动下一个；抛出或拒绝会使创建失败，并跳过后续监听器。载荷保留 `SessionStartSource`，并接受工厂的取消信号。调用方等待 `register()` 与 `announce()` 完成。
+`agent/created` 是工厂 setup 完成且进入注册表后的串行初始化事件。每个监听器完成后才启动下一个；抛出或拒绝会使创建失败，并跳过后续监听器。载荷保留 `SessionStartSource`，并接受工厂的取消信号。调用方等待 `register()` 与 `announce()` 完成。生命周期来源由工厂发布时通过 `announce()` 指定；`register()` 宣告全新启动。
 
 AgentLoop 在 setup 与创建分发期间保留现有的维护活动。初始化期间输入可以进入收件箱，但只有成功完成后驱动器才会启动。失败会取消该活动而不唤醒已排队输入；有序 teardown 拥有收件箱清理。区分这两项操作，能够在另一条 teardown 已移除收件箱投影时保留初始化错误。
 

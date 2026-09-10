@@ -104,7 +104,7 @@ The package is built on one separation: the public `Agent` surface and registry 
 
 ### Registry and lifecycle
 
-`AgentRegistry` keeps one entry per live agent with its carrier and creator relation. Await `register()` to finish serial creation listeners before using an already-constructed agent; the async factory uses the split `enter()`/`announce()` pair so setup and initialization stay rollback-covered. A detach requested during creation waits for every awaited listener to settle, and each detach is bound to the exact entry, so a stale disposer cannot remove a later same-id replacement. Teardown stops and drains the loop, unwinds the scope, detaches the agent, then detaches the session; the id becomes reusable after private cleanup.
+`AgentRegistry` keeps one entry per live agent with its carrier and creator relation. Await `register()` to finish serial creation listeners with source `startup` before using an already-constructed agent; the async factory uses the split `enter()`/`announce()` pair so setup and initialization stay rollback-covered. A detach requested during creation waits for every awaited listener to settle, and each detach is bound to the exact entry, so a stale disposer cannot remove a later same-id replacement. Teardown stops and drains the loop, unwinds the scope, detaches the agent, then detaches the session; the id becomes reusable after private cleanup.
 
 ### Initiator scope
 

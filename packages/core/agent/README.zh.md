@@ -104,7 +104,7 @@ await handle.agent.whenIdle()
 
 ### 注册表与生命周期
 
-`AgentRegistry` 为每个实时 agent 保留一个条目，含其载体与创建者关系。使用已构造的 agent 前，等待 `register()` 完成串行创建监听器；异步工厂使用拆分的 `enter()`/`announce()` 对，使 setup 与初始化始终受回滚保护。创建期间请求的 detach 会等待所有已调用的异步监听器结算，且每次 detach 都绑定到确切条目，因此陈旧 disposer 无法移除之后出现的同 id 替代项。Teardown 停止并排空循环、撤销作用域、detach agent，再 detach 会话；私有清理完成后该 id 即可复用。
+`AgentRegistry` 为每个实时 agent 保留一个条目，含其载体与创建者关系。使用已构造的 agent 前，等待 `register()` 以 `startup` 来源完成串行创建监听器；异步工厂使用拆分的 `enter()`/`announce()` 对，使 setup 与初始化始终受回滚保护。创建期间请求的 detach 会等待所有已调用的异步监听器结算，且每次 detach 都绑定到确切条目，因此陈旧 disposer 无法移除之后出现的同 id 替代项。Teardown 停止并排空循环、撤销作用域、detach agent，再 detach 会话；私有清理完成后该 id 即可复用。
 
 ### 发起方作用域
 

@@ -827,7 +827,7 @@ async create(options: CreateAgentOptions): Promise<AgentHandle>
 async resume(options: ResumeAgentOptions): Promise<AgentHandle>
 
 /**
- * Register a live agent. Rejects if the id is already registered or a
+ * Register a live agent with source `startup`. Rejects if the id is already registered or a
  * serial `agent/created` listener fails. Emits `agent/disposed`
  * when the calling fiber is disposed — both with the agent's scope carrier
  * (`scopeTarget(agent, agent)`): the subject is the agent in hand, so the
@@ -836,7 +836,6 @@ async resume(options: ResumeAgentOptions): Promise<AgentHandle>
  * requires passing the carrier). The entry is a runtime root; factory-backed
  * creation uses `options.parentAgent` for child ownership. Await the registration before using the agent.
  * @param agent - the already-constructed agent to record in the store.
- * @param source - creation source; defaults to fresh startup.
  * @returns the awaitable Cordis effect disposer (single-shot; a repeat call
  *   returns undefined without awaiting an in-flight teardown). Exact
  *   identity is load-bearing: a composite (generator) effect that owns a
@@ -846,7 +845,7 @@ async resume(options: ResumeAgentOptions): Promise<AgentHandle>
  *   owner unload, unregistering the agent (and emitting `agent/disposed`)
  *   while its final turn is still draining.
  */
-register(agent: Agent, source: SessionStartSource = 'startup'): ReturnType<Context['effect']>
+register(agent: Agent): ReturnType<Context['effect']>
 
 /**
  * Insert an already-constructed agent without announcing it. This is the

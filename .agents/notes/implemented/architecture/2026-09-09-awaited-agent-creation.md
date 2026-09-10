@@ -10,7 +10,7 @@ Shared presets install tools and prompt sections separately for each Agent. That
 
 ## Decision
 
-`agent/created` is the serial initialization event after factory setup and registry entry. Each listener finishes before the next starts; a throw or rejection fails creation and skips later listeners. The payload retains `SessionStartSource` and accepts the factory's cancellation signal. `register()` and `announce()` are awaited by their callers.
+`agent/created` is the serial initialization event after factory setup and registry entry. Each listener finishes before the next starts; a throw or rejection fails creation and skips later listeners. The payload retains `SessionStartSource` and accepts the factory's cancellation signal. `register()` and `announce()` are awaited by their callers. Lifecycle source selection belongs to factory publication through `announce()`; `register()` announces fresh startup.
 
 AgentLoop holds its existing maintenance activity through setup and creation dispatch. Input may enter the inbox during initialization, but the driver starts only after successful completion. Failure cancels that activity without waking queued input; ordered teardown owns inbox cleanup. Keeping these operations separate preserves the initialization error when another teardown has already removed the inbox projection.
 
