@@ -153,7 +153,7 @@
 - paragraph:
   - text: Wrote
   - code:
-    - button "Open site/report.html": report.html
+    - button "Open site/report.html in sidebar": report.html
   - text: plus two
   - code: style.css
   - text: copies;

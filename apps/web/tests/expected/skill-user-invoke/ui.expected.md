@@ -1,6 +1,6 @@
 - banner:
   - navigation "Session hierarchy":
-    - button "/user-invoke-demo and confirm the fixtur" [disabled]
+    - button "/user-invoke-demo @\"meeting notes.md\" an" [disabled]
   - img
   - text: Standard mode
   - button "More actions":
@@ -14,7 +14,11 @@
   - img
   - img
   - text: System prompt
-- text: /user-invoke-demo and confirm the fixture wiring {{clock}}
+- button "/user-invoke-demo"
+- button "meeting notes.md":
+  - img
+  - text: meeting notes.md
+- text: and confirm the fixture wiring {{clock}}
 - button "Copy":
   - img
 - button "Thought for a while":

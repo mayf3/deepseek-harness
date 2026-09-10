@@ -9,7 +9,7 @@
  */
 import type { ComponentType } from 'react'
 import type {
-  PickOutcome, TokenSpan,
+  PickOutcome, ReferenceInsert, TokenSpan,
 } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { IconProps } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
@@ -222,6 +222,13 @@ export interface InputTriggerSource {
    * @returns unsubscribe.
    */
   subscribeLexicon?(session: ClientSessionContext, listener: () => void): () => void
+  /**
+   * Open a reference preview without changing or submitting the draft.
+   * @param session - session owning the composer.
+   * @param reference - source-owned id and optional chip glyph; text references retain their trigger.
+   * @returns whether this source accepted the preview, possibly awaiting its catalog; false leaves the editor gesture unchanged.
+   */
+  openReference?(session: ClientSessionContext, reference: Pick<ReferenceInsert, 'ref' | 'appearance'>): boolean
   /** Reference codec; required for sources producing insert outcomes. */
   readonly codec?: ReferenceCodec
 }

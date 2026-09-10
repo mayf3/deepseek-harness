@@ -140,6 +140,12 @@ export interface InputTriggerController {
     signal: AbortSignal,
     envelope: { readonly attachments: number },
   ): Promise<PickOutcome>
+  /**
+   * @param source - chip owner, or undefined for a text reference.
+   * @param reference - source id and glyph.
+   * @returns whether a preview opened.
+   */
+  openReference(source: string | undefined, reference: Pick<ReferenceInsert, 'ref' | 'appearance'>): boolean
   /** @param source - source name. @param hit - synthetic trigger hit. */
   toggleSource(source: string, hit: InputTriggerHit): void
 }

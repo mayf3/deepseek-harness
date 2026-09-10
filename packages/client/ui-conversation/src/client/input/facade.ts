@@ -28,6 +28,7 @@ import type {
 } from '../contract/input.ts'
 import type { InputSubmitMode } from '../contract/composer-submission.ts'
 import { SubmitMachine } from './machine.ts'
+import { registerReferenceActivation } from './editor/reference-activation.ts'
 import { ReferenceChipNode, $createReferenceChipNode } from './editor/chip-node.tsx'
 import { refreshClaimDecoration, registerClaimDecoration } from './editor/claim-decor.ts'
 import { registerTextRefDecoration, rescanTextRefs, TextRefNode } from './editor/text-ref.ts'
@@ -180,6 +181,8 @@ export class SessionInputShell implements SessionInput {
     })
     this.unregister = mergeRegister(
       registerPlainText(this.editor),
+      registerReferenceActivation(this.editor, (source, reference) =>
+        this.deps.inputTriggers?.()?.openReference(source, reference) ?? false),
       registerHistory(this.editor, createEmptyHistoryState(), HISTORY_MERGE_DELAY_MS),
       this.editor.registerUpdateListener(() => { this.onEditorUpdate() }),
       registerClaimDecoration(this.editor, () => this.activeClaimToken()),
