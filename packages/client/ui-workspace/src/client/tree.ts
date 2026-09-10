@@ -130,8 +130,9 @@ export function workspaceLabel(cwd: string | undefined): string {
   return base !== '' ? base : cwd
 }
 
-/** Recency comparator: newest first, id as the deterministic tiebreak (ids are unique per group). */
+/** Recency comparator: provisional blanks first, then newest update, id as the deterministic tiebreak (ids are unique per group). */
 function byRecency(a: SessionSummary, b: SessionSummary): number {
+  if (a.blank !== b.blank) return a.blank ? -1 : 1
   if (b.updatedAt !== a.updatedAt) return b.updatedAt - a.updatedAt
   return a.id < b.id ? -1 : 1
 }
@@ -324,7 +325,7 @@ export function deriveGroups(
 
 /**
  * Derive the flat session list ("In one list" mode): every session — fork
- * children included — as a top-level row, strictly newest-first. No grouping,
+ * children included — as a top-level row, newest-first after the provisional blank. No grouping,
  * no parent/child adjacency. Content search lives outside this derivation
  * (see {@link deriveSearchResults}).
  * @param list - sessions list snapshot.

@@ -113,6 +113,69 @@ function rerender(b: ReturnType<typeof mount>, overrides: Partial<WorkspaceBrows
 }
 
 describe('WorkspaceBrowser', () => {
+  it.each(['workspace', 'flat', 'ungrouped'] as const)('keeps %s recency independent of arrival order and saved manual positions', (mode) => {
+    localStorage.clear()
+    const preferences = createWorkspaceViewStore().create()
+    preferences.actions.setGroupBy(mode === 'flat' ? 'flat' : 'workspace')
+    const account = mode === 'ungrouped' ? UNGROUPED_KEY : 'alpha'
+    preferences.actions.setSessionOrder(account, ['older', 'newer'])
+    preferences.actions.setSessionOrder(UNGROUPED_KEY, ['older', 'newer'])
+    preferences.actions.setSessionOrder(FLAT_SESSION_ORDER_KEY, ['older', 'newer'])
+    preferences.actions.setGroupExpanded(account, true)
+    preferences.actions.setGroupExpanded(UNGROUPED_KEY, true)
+    preferences.actions.setOrderBy('updated')
+    const b = mount({
+      useSessions: hook(sessionState([summary('newer', 100)])),
+      useWorkspaces: hook(workspaceState(mode === 'ungrouped' ? [] : [workspace(account, ['older', 'newer'])])),
+    })
+    const names = () => screen.getAllByRole('treeitem')
+      .filter(row => row.getAttribute('aria-expanded') === null)
+      .map(row => row.textContent?.includes('newer') ? 'newer' : 'older')
+    expect(names()).toEqual(['newer'])
+    rerender(b, { useSessions: hook(sessionState([summary('older', 20), summary('newer', 100)])) })
+    expect(names()).toEqual(['newer', 'older'])
+    rerender(b, { useSessions: hook(sessionState([summary('older', 80), summary('newer', 100)])) })
+    expect(names()).toEqual(['newer', 'older'])
+    rerender(b, { useSessions: hook(sessionState([summary('older', 120), summary('newer', 100)])) })
+    expect(names()).toEqual(['older', 'newer'])
+    rerender(b, { useSessions: hook(sessionState([summary('older', 80), summary('newer', 100)])) })
+    expect(names()).toEqual(['newer', 'older'])
+    expect(b.store.getSnapshot().sessionOrderByAccount[account]).toEqual(['older', 'newer'])
+    b.view.unmount()
+    const restored = mount({
+      useSessions: hook(sessionState([summary('older', 80), summary('newer', 100)])),
+      useWorkspaces: b.props.useWorkspaces,
+    })
+    expect(names()).toEqual(['newer', 'older'])
+    act(() => { restored.store.actions.setOrderBy('manual') })
+    expect(names()).toEqual(['older', 'newer'])
+  })
+
+  it.each(['workspace', 'flat'] as const)('keeps the provisional blank first and time ties stable in %s recency', (groupBy) => {
+    localStorage.clear()
+    const preferences = createWorkspaceViewStore().create()
+    preferences.actions.setGroupBy(groupBy)
+    preferences.actions.setGroupExpanded('alpha', true)
+    const b = mount({
+      useSessions: hook(sessionState([
+        summary('tie-b', 100), summary('blank', 1, { blank: true }), summary('tie-a', 100),
+      ], { current: sid('blank') })),
+      useWorkspaces: hook(workspaceState([workspace('alpha', ['missing', 'tie-b', 'blank', 'tie-a'])])),
+    })
+    const rows = () => screen.getAllByRole('treeitem').filter(row => row.getAttribute('aria-expanded') === null)
+    expect(rows().map(row => row.textContent)).toEqual([
+      expect.stringContaining('新会话'), expect.stringContaining('tie-a'), expect.stringContaining('tie-b'),
+    ])
+    expect(b.store.getSnapshot().sessionOrderByAccount).toEqual({})
+    rerender(b, { useSessions: hook(sessionState([
+      summary('tie-b', 100), summary('blank', 1), summary('tie-a', 100),
+    ], { current: sid('blank') })) })
+    expect(rows().map(row => row.textContent)).toEqual([
+      expect.stringContaining('tie-a'), expect.stringContaining('tie-b'), expect.stringContaining('blank'),
+    ])
+    expect(b.store.getSnapshot().orderBy).toBe('updated')
+  })
+
   it('moves focus into Workspace controls without selecting a Session while a main panel is active', () => {
     const panelInfo = { activePanelId: 'panel-a' as MainPanelId }
     const b = mount({
@@ -165,7 +228,7 @@ describe('WorkspaceBrowser', () => {
     const b = mount({ useWorkspaces: hook(pending) })
     act(() => {
       b.store.actions.setGroupExpanded('deleted', true)
-      b.store.actions.syncSessionOrderAccount('deleted', ['session'], { session: 1 })
+      b.store.actions.setSessionOrder('deleted', ['session'])
     })
     expect(b.store.getSnapshot().groupExpansion).toEqual({ deleted: true })
 
@@ -173,7 +236,6 @@ describe('WorkspaceBrowser', () => {
     await waitFor(() => {
       expect(b.store.getSnapshot().groupExpansion).toEqual({})
       expect(b.store.getSnapshot().sessionOrderByAccount).toEqual({ [UNGROUPED_KEY]: [] })
-      expect(b.store.getSnapshot().sessionUpdatedAtByAccount).toEqual({ [UNGROUPED_KEY]: {} })
     })
   })
 
@@ -252,8 +314,10 @@ describe('WorkspaceBrowser', () => {
     fireEvent.click(screen.getByRole('button', { name: '视图选项' }))
     fireEvent.click(screen.getByRole('menuitem', { name: '最近更新' }))
     await waitFor(() => {
-      expect(b.store.getSnapshot().sessionOrderByAccount[FLAT_SESSION_ORDER_KEY])
-        .toEqual(['one', 'two', 'three'])
+      expect(screen.getAllByRole('treeitem').map(row => row.textContent)).toEqual([
+        expect.stringContaining('one'), expect.stringContaining('two'), expect.stringContaining('three'),
+      ])
+      expect(b.store.getSnapshot().sessionOrderByAccount[FLAT_SESSION_ORDER_KEY]).toEqual(['two', 'three', 'one'])
     })
 
     fireEvent.click(screen.getByRole('button', { name: '视图选项' }))
@@ -384,10 +448,12 @@ describe('WorkspaceBrowser', () => {
     expect(screen.queryByText('session-6')).toBeNull()
   })
 
-  it('shares one editable order across modes and promotes only while Last updated is active', async () => {
+  it('restores manual positions after recency updates and switches to Manual on drag', async () => {
+    const insertSessionBefore = vi.fn(async () => {})
     const initial = sessionState([summary('one', 3), summary('two', 2)])
     const b = mount({
       useSessions: hook(initial),
+      insertSessionBefore,
       useWorkspaces: hook(workspaceState([workspace('alpha', ['two', 'one'])])),
     })
     fireEvent.click(screen.getByText('alpha'))
@@ -404,33 +470,31 @@ describe('WorkspaceBrowser', () => {
       top: 150, bottom: 184, left: 0, right: 200, width: 200, height: 34, x: 0, y: 150, toJSON: () => ({}),
     })
     fireEvent.dragStart(one, { dataTransfer: dragData() })
+    fireDrag(one, 'drop', 180)
+    expect(b.store.getSnapshot().orderBy).toBe('updated')
+    expect(insertSessionBefore).not.toHaveBeenCalled()
+    fireEvent.dragStart(one, { dataTransfer: dragData() })
     fireDrag(two, 'drop', 180)
+    expect(b.store.getSnapshot().orderBy).toBe('manual')
+    expect(insertSessionBefore).toHaveBeenCalledWith(wid('alpha'), sid('one'), undefined)
     expect(b.store.getSnapshot().sessionOrderByAccount.alpha).toEqual(['two', 'one'])
 
     fireEvent.click(screen.getByRole('button', { name: '视图选项' }))
     fireEvent.click(screen.getByRole('menuitem', { name: '手动排序' }))
     expect(screen.getAllByRole('treeitem').slice(1)[0]?.textContent).toContain('two')
 
-    // User activity updates the timestamp baseline in Manual mode without
-    // changing the shared visual order.
     const updated = sessionState([summary('one', 4), summary('two', 2)])
     rerender(b, { useSessions: hook(updated) })
-    await waitFor(() => {
-      expect(b.store.getSnapshot().sessionUpdatedAtByAccount.alpha).toEqual({ one: 4, two: 2 })
-    })
     expect(b.store.getSnapshot().sessionOrderByAccount.alpha).toEqual(['two', 'one'])
     expect(screen.getAllByRole('treeitem').slice(1)[0]?.textContent).toContain('two')
 
-    // Entering Last updated performs one complete recency sort.
     fireEvent.click(screen.getByRole('button', { name: '视图选项' }))
     fireEvent.click(screen.getByRole('menuitem', { name: '最近更新' }))
     await waitFor(() => {
-      expect(b.store.getSnapshot().sessionOrderByAccount.alpha).toEqual(['one', 'two'])
+      expect(b.store.getSnapshot().sessionOrderByAccount.alpha).toEqual(['two', 'one'])
       expect(screen.getAllByRole('treeitem').slice(1)[0]?.textContent).toContain('one')
     })
 
-    // A later user activity timestamp promotes that Session once while the
-    // mode remains active.
     const promoted = sessionState([summary('one', 4), summary('two', 5)])
     rerender(b, { useSessions: hook(promoted) })
     await waitFor(() => {
@@ -1232,7 +1296,10 @@ describe('WorkspaceBrowser', () => {
     fireEvent.click(screen.getByRole('button', { name: '视图选项' }))
     fireEvent.click(screen.getByRole('menuitem', { name: '最近更新' }))
     await waitFor(() => {
-      expect(b.store.getSnapshot().sessionOrderByAccount[UNGROUPED_KEY]).toEqual(['one', 'two', 'three'])
+      expect(screen.getAllByRole('treeitem').slice(1).map(row => row.textContent)).toEqual([
+        expect.stringContaining('one'), expect.stringContaining('two'), expect.stringContaining('three'),
+      ])
+      expect(b.store.getSnapshot().sessionOrderByAccount[UNGROUPED_KEY]).toEqual(['three', 'one', 'two'])
     })
     dragAfter('one', 'three')
     expect(b.store.getSnapshot().sessionOrderByAccount[UNGROUPED_KEY]).toEqual(['two', 'three', 'one'])
