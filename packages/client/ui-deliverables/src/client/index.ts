@@ -1,7 +1,7 @@
 /**
  * Deliverables plugin, browser half: registers the produced-files row into
  * the chat view's turn-tail chain, and provides the `chatFileMentions`
- * service that links inline-code mentions of produced files in the closing
+ * service that links inline-code mentions of produced or delivered files in the closing
  * prose. All policy lives here — the supported mutation calls, mention
  * matching, chip cap, and copy — so
  * composing this plugin out of cordis.yml removes both surfaces entirely;
@@ -9,6 +9,7 @@
  */
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-api-remotes/client'
+import type {} from '@deepseek-ai/dsh-client-connection/client'
 import type { ChatFileMentions } from '@deepseek-ai/dsh-client-ui-chat/client'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
@@ -41,6 +42,7 @@ export const inject = ['slots', 'locale', 'uiConversation', 'remote', 'remote.se
 export function apply(ctx: ClientContext): void {
   const opener = new PresentedOpenController()
   ctx.effect(() => () => opener.dispose())
+  ctx.on('connection/reset', () => { opener.resetHost() })
   ctx.uiConversation.events.register(deliverablesDefinition)
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-deliverables: dictionaries')
   ctx.slots.inject(
@@ -50,8 +52,9 @@ export function apply(ctx: ClientContext): void {
       select: selectDeliverables,
       locale: NS,
       inject: (): DeliverablesInjected => ({
-        hooks: { presentedOpen: opener.state },
-        openPresented: (sessionId, seq, index) => opener.open(sessionId, seq, index),
+        hooks: { presentedOpen: opener.state, presentedHost: opener.host },
+        reloadPresentedHost: () => opener.loadHost(),
+        openPresented: (sessionId, seq, index, action) => opener.open(sessionId, seq, index, action),
       }),
     }, Deliverables),
   )
@@ -62,18 +65,12 @@ export function apply(ctx: ClientContext): void {
   // via ctx.get, so its absence — this plugin composed out — is the off state.
   const t = ctx.locale.bind(NS)
   const mentions: ChatFileMentions = {
-    forClosing(owner, sessionId) {
-      // Same claim test the turn-tail chain entry runs: no produced files,
-      // no vocabulary — the two surfaces agree by construction.
+    forClosing(owner) {
       const paths = selectProducedFiles(owner)
       const presented = presentedForClosing(owner)
       if (paths === null && presented.length === 0) return undefined
-      const deliveries = new Map(presented.map(file => [file.path, file]))
-      return producedFileMentions([...new Set([...paths ?? [], ...deliveries.keys()])], (path) => {
-        const file = deliveries.get(path)
-        if (file === undefined) owner.openFile(path)
-        else void opener.open(sessionId, file.seq, file.index)
-      }, path => t(deliveries.has(path) ? 'presented.open' : 'produced.open', { name: path }))
+      return producedFileMentions([...new Set([...paths ?? [], ...presented.map(file => file.path)])], owner.openFile,
+        path => t('presented.previewButton', { name: path }))
     },
   }
   ctx.provide('chatFileMentions', mentions)

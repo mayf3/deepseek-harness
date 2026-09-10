@@ -18,7 +18,7 @@
  * Tab types register in two stages: the type itself into `ctx.sidebarRightTabs`,
  * its body into the keyed `sidebar.right.pane.tab` seat under the same kind. The
  * guide registers through those stages unmodified, exactly as a type shipped
- * from another package does — `ui-sidebar-textpreview` is the live proof.
+ * from another package does — `ui-sidebar-documentpreview` is the live proof.
  */
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-client-resources/client'
@@ -30,6 +30,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type {} from './contract/slots.ts'
 import { GuideBody, type GuideInjected } from './tabs/guide/GuideBody.tsx'
+import { GuideTitle } from './tabs/guide/GuideTitle.tsx'
 import { ExpandButton } from './shell/ExpandButton.tsx'
 import { RightbarSeat, type SidebarRightInjected } from './shell/SidebarRight.tsx'
 import { RightbarRoot } from './shell/RightbarRoot.tsx'
@@ -40,6 +41,7 @@ import { en, zh } from './locales.ts'
 import { GUIDE_ID, guideDefinition } from './tabs/guide/definition.ts'
 import { guideTabInfoFactory, tabInfoFactory } from './tab-info.ts'
 import type { TabId } from '@deepseek-ai/dsh-client-ui-dockkit'
+import { defaultSeed } from './contract/seed.ts'
 
 export type { RightbarSeatProps, SidebarRightInjected, SidebarRightPresentation } from './shell/SidebarRight.tsx'
 export type { GuideBodyProps, GuideInjected } from './tabs/guide/GuideBody.tsx'
@@ -118,7 +120,7 @@ export function apply(ctx: ClientContext): void {
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-sidebar-right: dictionaries')
 
   ctx.effect(() => {
-    const handle = createSidebarRightStore(() => t('tab.guide.title'))
+    const handle = createSidebarRightStore(() => defaultSeed(tabs))
     // The runtime mints one instance of this handle per session (the scope key
     // is the session id) and caches it per key. Each is adopted as it is minted,
     // so a tab's own action reaches its session's store while another session
@@ -182,7 +184,6 @@ export function apply(ctx: ClientContext): void {
     const disposeGuide = ctx.slots.inject('sidebar.right.pane.tab', () => ctx.slots.register({
       name: 'sidebar.right.pane.tab',
       key: GUIDE_ID,
-      locale: NS,
       children: {
         'sidebar.right.tab.guide': {
           kind: 'chain', scope: 'session', inject: { hooks: { tabInfo: guideTabInfoFactory } },
@@ -190,7 +191,12 @@ export function apply(ctx: ClientContext): void {
       },
       inject: () => guideInjected,
     }, GuideBody))
+    const disposeGuideTitle = ctx.slots.inject('sidebar.right.pane.tab.title', () => ctx.slots.register(
+      { name: 'sidebar.right.pane.tab.title', key: GUIDE_ID },
+      GuideTitle,
+    ))
     return () => {
+      disposeGuideTitle()
       disposeGuide()
       disposeExpand()
       disposeSeat()
