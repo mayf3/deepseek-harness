@@ -40,6 +40,7 @@ describe('web e2e: requested SVG is explicitly delivered', () => {
     }
     scaffold = await launchWebScaffold({
       compareReplaySession: true,
+      extraOverlayPath: fileURLToPath(new URL('./present-svg.overlay.yml', import.meta.url)),
       ...(replayOverride === undefined ? {} : { replayFixture: FIXTURE, replayOverride }),
     })
     browser = await chromium.launch()
@@ -101,7 +102,7 @@ describe('web e2e: requested SVG is explicitly delivered', () => {
     expect(events.some(event => event.type === 'assistant/message' && event.seq > delivery.seq
       && event.data.message.content.some(block => block.type === 'text'))).toBe(true)
 
-    const card = page.locator('[data-presented-files-row]').getByRole('button').filter({ hasText: FILE })
+    const card = page.locator('[data-presented-file]').filter({ hasText: FILE })
     await card.waitFor({ state: 'visible' })
     expect(await card.count()).toBe(1)
     expect(await page.getByText('产物', { exact: true }).count()).toBe(0)
@@ -114,6 +115,7 @@ describe('web e2e: requested SVG is explicitly delivered', () => {
 
   it.skipIf(MODE === 'record')('replays the delivered file and Chinese conversation', async () => {
     await assertFinalWorkspaceSnapshot(DIR, cwd)
+    await expect.poll(() => page.getByRole('button', { name: `${FILE} 的更多文件操作`, exact: true }).isDisabled()).toBe(true)
     // Delivery owns the transcript; navigation and composer chrome have separate scenarios.
     const aria = await captureExpandedTurnProcessAria(page, '[data-chat-flow]', scaffold.workspaceCwd)
     await compareOrRefreshGolden(join(DIR, 'ui.expected.md'), aria, MODE)

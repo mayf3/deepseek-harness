@@ -18,6 +18,12 @@ Session log 在发布后必须能升级格式，而最先发布的运行时决�
 
 **逐事件的 `ignorable` 标记吸收词汇表增长，普通的新增事件永远不用升版本。**事件词汇表由挂载了哪些插件决定，单个版本整数描述不了它。读取器遇到不认识的事件类型时拒绝解读日志，除非该事件的信封带 `ignorable: true`。默认为必需：忘写标记的后果是把一个本可恢复的会话拒绝过头（体验问题），而默认可忽略会让同样的疏忽静默恢复出残缺会话（安全事故）。架构保证了这条规则成立：模型可见内容只经四种带 `surfaceOp` 标记的 surface 事件加 `request/header`、`request/context` 折叠进入重建，危险的未知事件恰好是那些不进 surface 但改变日志其余部分解读方式的事件（`session/end-seed` 是现存例子）。
 
+### 写入器与发布真源
+
+`SESSION_FORMAT_VERSION` 拥有工作区写入器版本号；[发布状态参考](../../../../docs/session-format-status.zh.md)拥有唯一的双语 `latestReleasedVersion` 与 `evidenceTag` 记录。发布状态独立于源码开发而变化，因此通过比较这两个事实推导状态，而不另行维护 `released` 布尔值。一般文档链接到这些真源；固定版本约定与历史证据保留明确版本号。
+
+[文档标准检查](../../../../scripts/doc-standard.spec.ts)在不访问网络的情况下，校验记录结构、双语一致性、证据链接一致性及本地发布版本与写入器版本的大小关系。它证明内部一致性，而非发布事实或记录新鲜度。[发布流程](../process/2026-08-10-npm-release-sequences.zh.md)要求发布操作者在更高格式交付后核实发布并更新记录。这让兼容性评审不依赖凭据与 GitHub 可用性，同时明确人工维护新鲜度的义务。
+
 ## 影响
 
 v0（0812 发布）交付的内容：分方向的拒绝并带原始日志路径；基于生成的已知词汇清单（`KNOWN_SESSION_EVENT_TYPES`，由 `gen-persistence-catalog` 从所有 `SessionEventMap` 声明合并生成，`verify-persistence-catalog` 保证新鲜）的未知事件守卫；`ignorable` 信封字段被种子校验、JSONL 和 BFF 线上 schema 接受。V1 添加静态相邻 catalog、恒等 v0-to-v1 迁移边、仅 header descriptor、精确代际 JSONL 发布与[已发布 Session 格式](2026-08-31-released-session-format-migrations.zh.md)定义的当前专用恢复。[历史 Session 只读迁移准备](2026-09-05-read-only-session-migration-preparation.zh.md)负责内存恢复与写入发布之间的 JSONL 时序。V2 让物理 codec 对普通事件词汇与 payload 新增项保持中立：相邻迁移边冻结 released source 与 target 清单，同版本恢复则应用已安装的 known-event set 与当前 payload 语义。第一方 writer 不通过 `Session.append` 设置 `ignorable`，而一个仓库外插件仍依赖该字段；同版本保留由[外部插件保留决策](2026-08-30-retain-ignorable-external-session-events.zh.md)定义，更严格的历史规则由 [alpha 迁移拒绝决策](2026-08-31-alpha-historical-unknown-event-refusal.zh.md)定义。未知类型守卫仍只在读取侧生效，因为 append 时的词汇拒绝会中断活跃 Session 的持久化。JSONL 会在当前 header 或事件解析前从最小原始 header 分类外来版本，因此结构完全不同的未来格式会报告升级方向而不是"损坏"。
@@ -28,3 +34,5 @@ v0（0812 发布）交付的内容：分方向的拒绝并带原始日志路径�
 - **未知事件默认可忽略**：把忘写标记的后果从可见的过度拒绝反转成静默损坏。
 - **在仅 header 列表期间迁移**：让便宜清单改变存储，而且需要读取事件正文才能计算 header 无法证明的事实。列表返回 descriptor，事件正文读取负责发布。
 - **插件运行时注册已知事件类型**：不予采用，因为该方案会让已知集依赖插件组合，而且只注册事件名称，无法判定省略事件是否安全。持久化的 `ignorable` 标记把该分类保留在每条记录中；[外部插件保留决策](2026-08-30-retain-ignorable-external-session-events.zh.md)定义当前消费方约束。
+- **重复发布标记或运行时状态服务**：为不控制 Session 执行的维护信息增加另一个可变真源。写入器常量与发布记录已经足够。
+- **依赖网络的文档门禁或发布自动化**：网络查询会把本地文档检查耦合到凭据与 GitHub 可用性；记录一致性不需要运行时服务或发布工作流变更。核实发布仍是发布操作者的明确义务。
