@@ -4784,15 +4784,15 @@ describe('PythonCodeRuntime — hostile peer', () => {
     // One-byte data events force the fragment-count limit independently of pipe
     // coalescing. The input-list bound rejects missing seals; copied bytes reject
     // repeatedly merging the sealed prefix. Both regressions preserve log text.
-    const realConcat = Buffer.concat
+    const realConcat = Buffer.concat.bind(Buffer)
     const previousSplitStdout = splitStdout.value
     let copied = 0
     let maxParts = 0
-    Buffer.concat = (list: readonly Uint8Array[], total?: number): Buffer<ArrayBuffer> => {
+    const concatSpy = vi.spyOn(Buffer, 'concat').mockImplementation((list: readonly Uint8Array[], total?: number): Buffer<ArrayBuffer> => {
       for (const part of list) copied += part.length
       maxParts = Math.max(maxParts, list.length)
       return realConcat(list, total)
-    }
+    })
     let result: CodeRunResult
     try {
       splitStdout.value = true
@@ -4806,7 +4806,7 @@ describe('PythonCodeRuntime — hostile peer', () => {
         bindings: [],
       })
     } finally {
-      Buffer.concat = realConcat
+      concatSpy.mockRestore()
       splitStdout.value = previousSplitStdout
     }
     expect(result.error).toBeUndefined()
