@@ -8,6 +8,8 @@ English | [中文](2026-09-10-hosted-image-test-assumptions.zh.md)
 
 The [failover leg](../process/2026-09-09-blacksmith-failover-leg.md) runs this suite on pools this repository does not own — Blacksmith's ephemeral images, and the in-house `vm-backup` and `dsh-win-ci` standbys. On the hosted image the coverage lanes failed on host properties their cases never named: whether the host offered a usable user-systemd scope decided which containment a mocked PTY exit raced; the wall-clock grace a managed scope needed before it could take a `SIGKILL` was below what a loaded image provides; a starved reader coalesced writes the illegal-UTF-8 residual cases assumed arrived as separate chunks; and a Windows Server image refuses `CoCreateInstance(CLSID_FileOpenDialog)` outright.
 
+The stray-fragment sealing case also assumed `os.sched_yield()` would produce at least 1024 stdout data events. In [run 34474886667](https://github.com/deepseek-harness/deepseek-harness/actions/runs/34474886667), its assertions passed without reaching the seal branch, so Linux coverage failed.
+
 ## Decision
 
 Every case names the host property it depends on, so the same revision reports the same verdict on the in-house pool and on a hosted image.
@@ -19,6 +21,8 @@ Terminal cases that drive a mocked PTY exit pin the containment they need (`inte
 `plugin-config dispose graces reach the real ACP run` configures 5000ms dispose graces. At 150ms the hosted image escalated while the scope could not take the signal — `systemctl` failed the kill (`Failed to send signal SIGKILL to auxiliary processes: Invalid argument`) and the teardown reported a failure the configuration never asked for. Its mock refuses stdin EOF and `SIGTERM` by design, so the case waits out both graces (~10s) and carries a 30s case budget, above the 5000ms default the local unit entry grants.
 
 Both illegal-UTF-8 residual cases in `packages/experimental/code-runtime-python/tests/runtime.spec.ts` pace their writes with `time.sleep(0.001)`: `os.sched_yield()` lets a loaded reader coalesce the writes into one chunk, and the coalesced chunk is what the wrapped `Buffer.concat` measures (the hosted image measured 2563 against the 2048 bound with a correct implementation). Their payloads stay above that bound — 3200 bytes for the `0xFF` case and 1100 `ED A0 80` sequences, 3300 raw bytes, for the CESU-8 case, past the 3072-byte budget a raw-byte undercount reaches — so the undercount still flushes above 2048. Each carries a 20s case budget for the paced writes plus the interpreter start.
+
+The stray-fragment case keeps the real CPython child but splits that child's stdout data events into single-byte buffers. This fixture controls the fragment count regardless of kernel coalescing and restores its opt-in flag and `Buffer.concat` wrapper in `finally`. It asserts the complete 60000-byte log, a maximum concat input count of 1024, and the existing 256 KiB copy budget. Removing the seal fails the input-count assertion; repeatedly merging the sealed prefix fails the copy budget.
 
 The Linux coverage lane grants `DSH_COVERAGE_TEST_TIMEOUT_MS: '90000'`, matching the Windows coverage lane, because the disposal cases in `subprocess-local` and `bash-sandbox` exceed the 5000ms default when the lane's partitions, workers, and sibling gates share one host.
 
@@ -33,6 +37,8 @@ The Windows folder-dialog smoke probes `CoCreateInstance(CLSID_FileOpenDialog)` 
 **Keeping the `linux-scope.ts` probe mocks.** Rejected as inert: the platform pin selects the fallback path before either probe is called, so the mock changed no execution path.
 
 **Cutting the illegal-UTF-8 payloads to keep the cases fast.** Rejected: below the 2048 bound the assertion can no longer fail for the undercount it names, which leaves the regression unguarded.
+
+**Pacing the fragment-count case with sleeps.** Rejected: the operating system still owns pipe-read boundaries, so sleeps cannot guarantee the 1024 fragments this branch requires. Controlling the data-event boundary preserves the real subprocess and gives the branch a deterministic stimulus.
 
 ## Consequences
 

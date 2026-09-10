@@ -28,7 +28,7 @@ import type { CodeBindingFunction, CodeJsonValue, CodeRunResult } from '@deepsee
  * records the same race and solves it with argv-based identity; recording the
  * mkdtempSync results is the fs-mock equivalent.
  */
-const { failNextCopyOf, stagedDirs, tempDirs, tempFiles } = vi.hoisted(() => ({
+const { failNextCopyOf, stagedDirs, tempDirs, tempFiles, splitStdout } = vi.hoisted(() => ({
   failNextCopyOf: { value: undefined as string | undefined },
   stagedDirs: [] as string[],
   // Test-created temp dirs/files, registered by the helpers below and removed
@@ -38,7 +38,28 @@ const { failNextCopyOf, stagedDirs, tempDirs, tempFiles } = vi.hoisted(() => ({
   // tests themselves build).
   tempDirs: [] as string[],
   tempFiles: [] as string[],
+  splitStdout: { value: false },
 }))
+vi.mock('node:child_process', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:child_process')>()
+  return {
+    ...actual,
+    spawn(...args: Parameters<typeof actual.spawn>) {
+      const child = actual.spawn(...args)
+      if (splitStdout.value && child.stdout !== null) {
+        // The kernel may coalesce writes; this case owns the data-event boundaries.
+        const emit = child.stdout.emit.bind(child.stdout)
+        child.stdout.emit = (event: string | symbol, ...values: unknown[]): boolean => {
+          const chunk = values[0]
+          if (event !== 'data' || !Buffer.isBuffer(chunk)) return emit(event, ...values)
+          for (let index = 0; index < chunk.length; index += 1) emit('data', chunk.subarray(index, index + 1))
+          return true
+        }
+      }
+      return child
+    },
+  }
+})
 vi.mock('node:fs', async (importOriginal) => {
   const actual = await importOriginal<typeof import('node:fs')>()
   return {
@@ -59,10 +80,9 @@ vi.mock('node:fs', async (importOriginal) => {
 })
 
 /**
- * Integration suite over REAL python3 subprocesses (no subprocess mocks — it is
- * cheap and local, per docs/testing.md's real-over-mock policy; the only mock is
- * `node:fs.copyFileSync` for the staging-failure cases). Each test builds a fresh
- * runtime so budgets can be tuned per case.
+ * Integration suite over real python3 subprocesses. The staging-failure cases
+ * mock `copyFileSync`; the fragment-count case controls stdout data-event boundaries.
+ * Each test builds a fresh runtime so budgets can be tuned per case.
  */
 async function setup(config: Config = {}) {
   const ctx = new Context()
@@ -93,6 +113,7 @@ function makeTempDirSync(prefix: string): string {
 // Remove every fixture this file created, so repeated runs do not accumulate
 // `dsh-*` directories and wrappers in the shared tmpdir.
 afterEach(() => {
+  splitStdout.value = false
   for (const dir of tempDirs.splice(0)) rmSync(dir, { recursive: true, force: true })
   for (const file of tempFiles.splice(0)) rmSync(file, { force: true })
 })
@@ -4760,54 +4781,38 @@ describe('PythonCodeRuntime — hostile peer', () => {
   }, 40_000)
 
   it('seals trickled stray fragments into blocks without recopying the sealed prefix', async () => {
-    // The stray-capture buffer has the same object-overhead exposure as the fd-3
-    // reader above: each newline-free `data` chunk is its own Buffer, so a
-    // program pacing single-byte `os.write(1, ...)` accumulates one object per
-    // write, which the serialized-cost counter cannot see. Past MAX_PENDING_CHUNKS
-    // the fragments seal into a finished block; re-merging the whole residual at
-    // each threshold instead would copy the sealed prefix again and again, making
-    // the cumulative copy volume quadratic. `Buffer.concat` is wrapped to measure
-    // that volume — both shapes admit the same final log entry, so the copy total
-    // is the discriminator. maxLogBytes is raised so the trickle is retained,
-    // not truncated, which is what forces the fragments to accumulate and seal.
-    const realConcat = Buffer.concat.bind(Buffer)
+    // One-byte data events force the fragment-count limit independently of pipe
+    // coalescing. The input-list bound rejects missing seals; copied bytes reject
+    // repeatedly merging the sealed prefix. Both regressions preserve log text.
+    const realConcat = Buffer.concat
+    const previousSplitStdout = splitStdout.value
     let copied = 0
+    let maxParts = 0
     Buffer.concat = (list: readonly Uint8Array[], total?: number): Buffer<ArrayBuffer> => {
       for (const part of list) copied += part.length
+      maxParts = Math.max(maxParts, list.length)
       return realConcat(list, total)
     }
     let result: CodeRunResult
     try {
+      splitStdout.value = true
       const { runtime } = await setup({ maxLogBytes: 200_000, maxWallMs: 30_000 })
       result = await runtime.run({
         program: [
           'import os',
-          'for _ in range(60000):',
-          '    os.write(1, b"x")',
-          '    os.sched_yield()',
-          'os.write(1, b"\\n")',
+          'os.write(1, b"x" * 60000 + b"\\n")',
           'return "done"',
         ].join('\n'),
         bindings: [],
       })
     } finally {
       Buffer.concat = realConcat
+      splitStdout.value = previousSplitStdout
     }
     expect(result.error).toBeUndefined()
     expect(result.value).toBe('done')
-    // The trickle coalesces into one log line (no interior newlines). Its exact
-    // length depends on pipe coalescing, but it is one entry and non-empty.
-    expect(result.logs.length).toBe(1)
-    expect((result.logs[0] as string).length).toBeGreaterThan(0)
-    // Sealing appends a finished block rather than re-merging everything held, so
-    // each byte is copied a bounded number of times. Re-merging the whole
-    // residual at every seal threshold instead makes the cumulative copy volume
-    // quadratic. Measured like the fd-3 sibling above rather than reasoned about:
-    // this sealed shape copies about 120 KB for 60000 trickled bytes, the
-    // re-merging shape about 538 KB (the stray path adds one whole-residual
-    // concat at the terminating newline over the fd-3 sibling's 119/540, landing
-    // at the same order). 256 KiB sits between them with margin on both sides, so
-    // reverting the seal to a re-merge turns this assertion red.
+    expect(result.logs).toEqual(['x'.repeat(60000)])
+    expect(maxParts).toBe(1024)
     expect(copied).toBeLessThan(256 * 1024)
   }, 40_000)
 
