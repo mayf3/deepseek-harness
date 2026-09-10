@@ -462,8 +462,7 @@ describe('ConnectionIndicator', () => {
   it('renders outage, attempt progress, and recovered states without a native tooltip', () => {
     const reconnect = vi.fn()
     const labels = {
-      disconnectedLabel: 'Disconnected',
-      reconnectLabel: 'Reconnect',
+      disconnectedLabel: 'Disconnected, retry',
       connectingLabel: 'Connecting',
       recoveredLabel: 'Connected',
       reconnectActionLabel: 'Disconnected, reconnect now',
@@ -476,8 +475,7 @@ describe('ConnectionIndicator', () => {
     expect(container.firstChild).toBeNull()
     rerender(<ConnectionIndicator state="disconnected" {...labels} />)
     const indicator = screen.getByRole('button', { name: 'Disconnected, reconnect now' })
-    expect(indicator.textContent).toContain('Disconnected')
-    expect(indicator.textContent).toContain('Reconnect')
+    expect(indicator.textContent).toContain('Disconnected, retry')
     expect(indicator.hasAttribute('title')).toBe(false)
     expect(indicator.querySelector('svg')).toBeTruthy()
     fireEvent.click(indicator)
