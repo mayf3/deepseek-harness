@@ -33,7 +33,7 @@ import { resolveDshHome, dshHomePath, dshCachePath } from '@deepseek-ai/dsh-home
 
 const home = resolveDshHome()                // configured path, else $DSH_HOME, else ~/.dsh
 const settings = dshHomePath('settings')     // join one child onto the resolved home
-const cache = dshCachePath('models')        // $DSH_HOME/cache/models, default ~/.dsh/cache/models
+const cache = dshCachePath('models')         // $DSH_HOME/cache/models, default ~/.dsh/cache/models
 ```
 
 显式配置的路径优先级最高，然后是 `$DSH_HOME`，最后是默认的 `~/.dsh`。空或仅含空白的 `$DSH_HOME` 视为未设置，因此空白的覆盖值绝不会把主目录解析到当前工作目录。

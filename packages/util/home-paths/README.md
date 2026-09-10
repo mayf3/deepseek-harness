@@ -33,7 +33,7 @@ import { resolveDshHome, dshHomePath, dshCachePath } from '@deepseek-ai/dsh-home
 
 const home = resolveDshHome()                // configured path, else $DSH_HOME, else ~/.dsh
 const settings = dshHomePath('settings')     // join one child onto the resolved home
-const cache = dshCachePath('models')        // $DSH_HOME/cache/models, default ~/.dsh/cache/models
+const cache = dshCachePath('models')         // $DSH_HOME/cache/models, default ~/.dsh/cache/models
 ```
 
 An explicit configured path has the highest precedence, then `$DSH_HOME`, then the default `~/.dsh`. An empty or whitespace-only `$DSH_HOME` is treated as unset, so a blank override never resolves the home to the current working directory.
