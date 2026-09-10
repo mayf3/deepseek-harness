@@ -77,6 +77,7 @@ const harness = await vi.hoisted(async () => {
     dialog: { showErrorBox: vi.fn(), showMessageBox: vi.fn() },
     applyRelease: vi.fn(() => { preparing.resolve(); return prepared.promise }),
     assertProfileRuntime: vi.fn(),
+    canRecoverProfile: vi.fn(() => true),
     get preparing() { return preparing }, get prepared() { return prepared },
     get hostStarted() { return hostStarted }, get navigated() { return navigated },
     get errorPublished() { return errorPublished }, get quitCompleted() { return quitCompleted },
@@ -108,7 +109,7 @@ vi.mock('../src/project-manager.ts', () => ({
   DesktopProjectManager: class {
     readonly applyRelease = harness.applyRelease
     readonly assertProfileRuntime = harness.assertProfileRuntime
-    hasEnabledPlugins() { return harness.pluginsEnabled }
+    canRecoverProfile = harness.canRecoverProfile
     async mutate(_mutation: unknown, hooks: { beforeChange(): Promise<void>; afterChange(): Promise<void> }) {
       await hooks.beforeChange()
       harness.pluginsEnabled = false
@@ -145,6 +146,8 @@ afterEach(async () => {
   for (const host of harness.hosts) { host.ready.resolve(); host.exited.resolve() }
   harness.app.quit()
   await harness.quitCompleted.promise
+  vi.restoreAllMocks()
+  harness.canRecoverProfile.mockReturnValue(true)
   vi.clearAllTimers()
   vi.useRealTimers()
   vi.unstubAllEnvs()
@@ -152,6 +155,43 @@ afterEach(async () => {
 })
 
 describe('desktop main startup', () => {
+  it('exits with a diagnostic when both initialization and emergency navigation fail', async () => {
+    const exited = Promise.withResolvers<undefined>()
+    vi.spyOn(harness.app, 'getLocale').mockImplementationOnce(() => { throw new Error('locale unavailable') })
+    vi.spyOn(harness.FakeWindow.prototype, 'loadURL').mockRejectedValueOnce(new Error('emergency navigation failed'))
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    harness.app.exit.mockImplementationOnce(() => { exited.resolve(undefined) })
+    await import('../src/main.ts')
+    await exited.promise
+    expect(harness.app.exit).toHaveBeenCalledWith(1)
+    expect(console.error).toHaveBeenCalledWith(expect.objectContaining({ message: 'emergency navigation failed' }))
+  })
+
+  it('withholds profile recovery after application resources fail to load', async () => {
+    harness.canRecoverProfile.mockReturnValue(false)
+    await import('../src/main.ts')
+    await harness.preparing.promise
+    harness.prepared.reject(new Error('runtime resources missing'))
+    await harness.errorPublished.promise
+    expect(invoke(DESKTOP_IPC.backendStatus)).toMatchObject({ phase: 'error', profileRecovery: false })
+    const window = harness.windows[0]!
+    window.webContents.emit('preload-error', {}, 'preload-app.cjs', new Error('preload unavailable'))
+    const html = decodeURIComponent(window.urls.at(-1)!)
+    expect(html).toContain('dsh-recovery://restart')
+    expect(html).not.toContain('dsh-recovery://reset')
+    expect(html).not.toContain('dsh-recovery://plugins')
+  })
+
+  it('reloads a crashed startup renderer in the same window', async () => {
+    await import('../src/main.ts')
+    await harness.preparing.promise
+    const window = harness.windows[0]!
+    window.webContents.emit('render-process-gone', {}, { reason: 'crashed' })
+    await harness.errorPublished.promise
+    expect(window.urls).toEqual(['dsh-app://shell/startup.html', 'dsh-app://shell/startup.html'])
+    expect(invoke(DESKTOP_IPC.backendStatus)).toMatchObject({ phase: 'error', message: 'Desktop renderer exited: crashed' })
+  })
+
   it.each(['plugins', 'reset'])('runs %s recovery from a document with a broken preload', async (action) => {
     await import('../src/main.ts')
     await harness.preparing.promise
@@ -214,7 +254,7 @@ describe('desktop main startup', () => {
     harness.hosts[0]!.exited.resolve()
     harness.hosts[0]!.ready.reject(new Error('Plugin initialization failed'))
     await harness.errorPublished.promise
-    expect(invoke(DESKTOP_IPC.backendStatus)).toMatchObject({ recovery: 'plugins' })
+    expect(invoke(DESKTOP_IPC.backendStatus)).toMatchObject({ phase: 'error', profileRecovery: true })
     const nextStarted = harness.nextHostStart()
     const recovery = Promise.resolve(invoke(DESKTOP_IPC.pluginsDisableAll))
     await nextStarted
@@ -293,7 +333,7 @@ describe('desktop main startup', () => {
     first.ready.reject(new Error('plugin composition failed'))
     await harness.errorPublished.promise
     await failedRetry
-    expect(invoke(DESKTOP_IPC.backendStatus)).toEqual({ phase: 'error', message: 'plugin composition failed', recovery: 'restart' })
+    expect(invoke(DESKTOP_IPC.backendStatus)).toEqual({ phase: 'error', message: 'plugin composition failed', profileRecovery: true })
     expect(harness.windows[0]!.urls).toEqual(['dsh-app://shell/startup.html'])
     const nextStarted = harness.nextHostStart()
     const retry = Promise.resolve(invoke(DESKTOP_IPC.backendRetry))

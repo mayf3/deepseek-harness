@@ -19,7 +19,9 @@ async function main() {
     document.querySelector('#error').textContent = failed ? state.message : ''
     document.querySelector('#actions').hidden = !failed
     for (const button of document.querySelectorAll('#actions button')) button.disabled = !failed
-    document.querySelector('#reset-advice').hidden = !failed
+    for (const selector of ['#disable-plugins', '#reset-configuration', '#reset-advice']) {
+      document.querySelector(selector).hidden = !failed || !state.profileRecovery
+    }
     document.querySelector('#reinstall-advice').hidden = !failed
   }
   let changed = false

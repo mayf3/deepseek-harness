@@ -1,9 +1,9 @@
 /** Owns one backend startup and its quiescent teardown independently of windows. */
 
-import { desktopErrorState, type DesktopRecovery } from './startup-error.ts'
+import { desktopErrorState } from './startup-error.ts'
 
 /** Backend availability presented by the desktop window. */
-export type DesktopBackendState = { readonly phase: 'starting' } | { readonly phase: 'ready' } | { readonly phase: 'error'; readonly message: string; readonly recovery?: DesktopRecovery }
+export type DesktopBackendState = { readonly phase: 'starting' } | { readonly phase: 'ready' } | { readonly phase: 'error'; readonly message: string; readonly profileRecovery?: boolean }
 
 /** Child lifecycle owned by the desktop backend controller. */
 export interface DesktopBackendHost {

@@ -70,13 +70,13 @@ afterEach(async () => {
 })
 
 describe('desktop external plugin profile', () => {
-  it('starts with disabled plugins even when their installed manifests are corrupt', async () => {
+  it('reuses plugin files without scanning manifests and can disable or reset them', async () => {
     const { manager } = setup()
     await manager.applyRelease()
     await manager.mutate({ type: 'plugin-add', spec: 'plugin@1.0.0' }, hooks())
     const manifest = join(manager.paths.profile, 'node_modules/plugin/package.json')
     writeFileSync(manifest, '{broken')
-    await expect(manager.applyRelease()).rejects.toThrow()
+    await expect(manager.applyRelease()).resolves.toBe(false)
     await manager.mutate({ type: 'plugins-disable-all' }, hooks())
     await expect(manager.applyRelease()).resolves.toBe(false)
     expect(readFileSync(manifest, 'utf8')).toBe('{broken')
@@ -119,7 +119,7 @@ describe('desktop external plugin profile', () => {
     mkdirSync(shared)
     writeFileSync(join(shared, 'sentinel'), 'preserve')
     symlinkSync(shared, join(profile, 'external-link'), process.platform === 'win32' ? 'junction' : 'dir')
-    await expect(manager.applyRelease()).rejects.toMatchObject({ recovery: 'configuration' })
+    await expect(manager.applyRelease()).rejects.toThrow()
     await manager.resetConfiguration(hooks({
       beforeChange: async () => { expect(readFileSync(join(profile, 'cordis.patch.yml'), 'utf8')).toBe(': broken') },
       afterChange: async () => {
@@ -146,7 +146,8 @@ describe('desktop external plugin profile', () => {
   it('reports damaged application metadata as a reinstall failure', async () => {
     const { manager } = setup()
     writeFileSync(join(manager.runtime.dsh, 'desktop-runtime.json'), '{broken')
-    await expect(manager.applyRelease()).rejects.toMatchObject({ recovery: 'reinstall' })
+    await expect(manager.applyRelease()).rejects.toThrow()
+    expect(manager.canRecoverProfile()).toBe(false)
   })
 
   it('accepts registry names and tags but rejects alternate sources and flags', () => {
@@ -155,6 +156,58 @@ describe('desktop external plugin profile', () => {
     for (const spec of ['file:../plugin', '--registry=evil', 'https://example.test/plugin.tgz']) {
       expect(() => packageNameFromSpec(spec)).toThrow(/unsupported npm package spec/u)
     }
+  })
+
+  it('retries installation after an interrupted runtime rebuild removed plugin files', async () => {
+    const { root, manager } = setup()
+    await manager.applyRelease()
+    await manager.mutate({ type: 'plugin-add', spec: 'plugin@1.0.0' }, hooks())
+    const dsh = join(root, 'new-node')
+    runtimeFixture(dsh, '1.1.0', '24.18.0')
+    const failing = join(root, 'fail-install.mjs')
+    writeFileSync(failing, 'process.exitCode = 1')
+    const worker = new DesktopProjectManager(manager.paths, { ...manager.runtime, dsh, pnpm: failing })
+    await expect(worker.applyRelease()).rejects.toThrow('pnpm exited with 1')
+    expect(existsSync(join(manager.paths.profile, 'node_modules/plugin'))).toBe(false)
+    const retry = new DesktopProjectManager(manager.paths, { ...manager.runtime, dsh })
+    await expect(retry.applyRelease()).resolves.toBe(true)
+    expect(retry.listPlugins()).toEqual([{ name: 'plugin', version: '1.0.0', enabled: true }])
+    await expect(retry.applyRelease()).resolves.toBe(false)
+  })
+
+  it('preserves unknown files when initializing a profile', async () => {
+    const { manager } = setup()
+    mkdirSync(manager.paths.profile, { recursive: true })
+    writeFileSync(join(manager.paths.profile, '.DS_Store'), 'metadata')
+    writeFileSync(join(manager.paths.profile, 'user-file'), 'retain')
+    await expect(manager.applyRelease()).resolves.toBe(true)
+    expect(readFileSync(join(manager.paths.profile, '.DS_Store'), 'utf8')).toBe('metadata')
+    expect(readFileSync(join(manager.paths.profile, 'user-file'), 'utf8')).toBe('retain')
+  })
+
+  it.each(['plugin-add', 'runtime-change'] as const)('retries failed rebuild after %s across manager instances', async (operation) => {
+    const { root, manager } = setup()
+    await manager.applyRelease()
+    let dsh = manager.runtime.dsh
+    if (operation === 'runtime-change') {
+      await manager.mutate({ type: 'plugin-add', spec: 'plugin@1.0.0' }, hooks())
+      dsh = join(root, 'new-node')
+      runtimeFixture(dsh, '1.1.0', '24.18.0')
+    }
+    const failing = join(root, 'fail-rebuild.mjs')
+    writeFileSync(failing, `await import(${JSON.stringify(pathToFileURL(manager.runtime.pnpm).href)}); if (process.argv.includes('rebuild')) process.exitCode = 1`)
+    const worker = new DesktopProjectManager(manager.paths, { ...manager.runtime, dsh, pnpm: failing })
+    if (operation === 'plugin-add') {
+      await worker.applyRelease()
+      await expect(worker.mutate({ type: 'plugin-add', spec: 'plugin@1.0.0' }, hooks())).rejects.toThrow('pnpm exited with 1')
+    } else await expect(worker.applyRelease()).rejects.toThrow('pnpm exited with 1')
+    expect(() => { worker.assertProfileRuntime(worker.paths.profile) }).toThrow('package preparation is incomplete')
+    const count = calls(root).length
+    const retry = new DesktopProjectManager(manager.paths, { ...manager.runtime, dsh })
+    await expect(retry.applyRelease()).resolves.toBe(true)
+    expect(calls(root).slice(count).map(call => call.args.find(arg => !arg.startsWith('--config.')))).toEqual(['install', 'rebuild'])
+    await expect(retry.applyRelease()).resolves.toBe(false)
+    expect(calls(root)).toHaveLength(count + 2)
   })
 
   it('initializes and restarts offline without executing pnpm', async () => {
@@ -207,6 +260,8 @@ describe('desktop external plugin profile', () => {
     expect(calls(root).every(call => call.registry === 'https://registry.npmjs.org/')).toBe(true)
     expect(JSON.parse(readFileSync(join(manager.paths.profile, 'package.json'), 'utf8'))).toMatchObject({ dependencies: { '@scope/plugin': '2.0.0' } })
     await expect(manager.mutate({ type: 'plugin-add', spec: '@deepseek-ai/cordis' }, hooks())).rejects.toThrow(/host-owned/u)
+    await expect(manager.applyRelease()).resolves.toBe(false)
+    expect(calls(root)).toHaveLength(2)
   })
 
   it('retains disabled plugin versions through updates and enables them explicitly', async () => {

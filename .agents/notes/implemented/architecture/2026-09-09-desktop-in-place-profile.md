@@ -16,6 +16,8 @@ Package or Host failures retain partial changes for repair and retry. There is n
 
 This supersedes staging and rollback in [2026-08-25-electron-desktop-packaging-and-updates](2026-08-25-electron-desktop-packaging-and-updates.md), [2026-09-08-desktop-bundled-runtime-and-external-plugins](2026-09-08-desktop-bundled-runtime-and-external-plugins.md), [2026-09-09-desktop-immediate-window-and-direct-start](2026-09-09-desktop-immediate-window-and-direct-start.md). Other release, module-identity, and window-lifecycle decisions remain active.
 
+A persistent `desktop-packages-pending` marker precedes package writes or native-runtime rebuilding and is removed only after installation, approved builds, and validation succeed. A later launch with that marker reinstalls the locked graph and retries pending builds even when recorded runtime metadata already matches. Ordinary unchanged startups reuse the profile without scanning the plugin dependency graph; package mutations and runtime reconciliation retain validation.
+
 ## Alternatives considered
 
 Staging protects the previous installation at the cost of copying and crash recovery. Versioned directories still need preparation, selection, and cleanup. Direct writes give up automatic recovery; reintroduction requires an unattended-recovery product requirement that justifies these costs.

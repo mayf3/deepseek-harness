@@ -26,7 +26,6 @@ import {
 import type { DesktopPaths } from './paths.ts'
 import { removeOwnedDirectory } from './owned-directory.ts'
 import type { DesktopRelease } from './release.ts'
-import { DesktopStartupError } from './startup-error.ts'
 import { desktopRuntimeId, readDesktopRuntime, type DesktopRuntimeDescriptor } from './runtime-tree.ts'
 import {
   desktopPluginLockHash, linkDesktopHostPackages, readDesktopProfileState,
@@ -123,11 +122,11 @@ function assertVersion(version: string): void {
 }
 
 /**
- * Validate one registry package spec and return its requested package name when explicit.
+ * Validate one registry package spec and return its package name.
  * @param spec - npm registry name with an optional version or tag.
- * @returns package name, or undefined when the spec's final name is registry-resolved.
+ * @returns Requested package name.
  */
-export function packageNameFromSpec(spec: string): string | undefined {
+export function packageNameFromSpec(spec: string): string {
   if (spec === '' || spec.startsWith('-') || /[\s\\]/u.test(spec) || spec.includes('://') || spec.startsWith('file:')) {
     throw new Error(`desktop project: unsupported npm package spec ${JSON.stringify(spec)}`)
   }
@@ -148,11 +147,6 @@ export function packageNameFromSpec(spec: string): string | undefined {
 }
 
 function projectManifest(projectDir: string): DesktopProjectManifest {
-  try { return readProjectManifest(projectDir) }
-  catch (error) { throw new DesktopStartupError('configuration', error) }
-}
-
-function readProjectManifest(projectDir: string): DesktopProjectManifest {
   const path = join(projectDir, 'package.json')
   const value = readJson(path)
   const dsh = isRecord(value) && isRecord(value.dsh) ? value.dsh : undefined
@@ -173,11 +167,11 @@ function readProjectManifest(projectDir: string): DesktopProjectManifest {
 function profilePluginNames(projectDir: string): readonly string[] {
   const bundles = projectManifest(projectDir).dsh.profile.bundles
   if (!DESKTOP_PROFILE_BUNDLES.every((bundle, index) => bundles[index] === bundle)) {
-    throw new DesktopStartupError('configuration', new Error('desktop project: profile must begin with the built-in desktop bundle list'))
+    throw new Error('desktop project: profile must begin with the built-in desktop bundle list')
   }
   const plugins = bundles.slice(DESKTOP_PROFILE_BUNDLES.length)
   if (new Set(bundles).size !== bundles.length) {
-    throw new DesktopStartupError('configuration', new Error('desktop project: profile bundle list contains a duplicate package'))
+    throw new Error('desktop project: profile bundle list contains a duplicate package')
   }
   for (const plugin of plugins) assertPackageName(plugin)
   return plugins
@@ -284,10 +278,18 @@ export class DesktopProjectManager {
 
   /** Reject a profile whose dependency links were prepared for another runtime. */
   assertProfileRuntime(projectDir: string): void {
+    if (existsSync(this.pendingPackages)) throw new Error('desktop project: package preparation is incomplete; retry startup')
     if (readDesktopProfileState(projectDir)?.runtimeId !== desktopRuntimeId(this.currentRuntime())) {
       throw new Error('desktop project: profile does not match this application runtime')
     }
   }
+
+  /** @returns Whether application resources support profile recovery. */
+  canRecoverProfile(): boolean {
+    return this.descriptor !== undefined && existsSync(this.runtime.node) && existsSync(this.runtime.dsh)
+  }
+
+  private get pendingPackages(): string { return join(this.paths.profile, 'desktop-packages-pending') }
 
   private currentRuntime(): DesktopRuntimeDescriptor {
     if (this.descriptor === undefined) throw new Error('desktop project: runtime metadata has not been loaded')
@@ -295,8 +297,8 @@ export class DesktopProjectManager {
   }
 
   private readRuntime(): DesktopRuntimeDescriptor {
-    try { return readDesktopRuntime(this.runtime.dsh) }
-    catch (error) { throw new DesktopStartupError('reinstall', error) }
+    this.descriptor = undefined
+    return readDesktopRuntime(this.runtime.dsh)
   }
 
   private prepareProfile(projectDir: string): void {
@@ -311,16 +313,12 @@ export class DesktopProjectManager {
       const target = this.readRuntime()
       this.descriptor = target
       const previous = readDesktopProfileState(this.paths.profile)
-      if (previous === undefined && readdirSync(this.paths.profile).some(name => join(this.paths.profile, name) !== this.paths.lock)) {
-        throw new DesktopStartupError('configuration', new Error('desktop project: existing profile is not a Desktop plugin profile'))
-      }
-      if (previous?.runtimeId === desktopRuntimeId(target)
+      if (!existsSync(this.pendingPackages) && previous?.runtimeId === desktopRuntimeId(target)
         && previous.lockHash === desktopPluginLockHash(this.paths.profile)
         && previous.links.length === target.sharedPackages.length
         && previous.links.every(link => existsSync(link.target)
           && existsSync(join(this.paths.profile, 'node_modules', link.name))
           && realpathSync.native(link.target) === realpathSync.native(join(this.runtime.dsh, 'node_modules', link.name)))) {
-        validateDesktopPluginGraph(this.paths.profile, this.runtime.dsh, target, profilePluginNames(this.paths.profile))
         return false
       }
       if (previous === undefined) createPluginProfile(this.paths.profile)
@@ -360,28 +358,30 @@ export class DesktopProjectManager {
 
   private async reconcileProfile(projectDir: string, previous: DesktopProfileState | undefined, packagesChanged = false): Promise<void> {
     const target = this.currentRuntime()
-    this.prepareProfile(projectDir)
-    const rebuild = previous !== undefined && pluginRecords(projectDir).length > 0
-      && (previous.nodeVersion !== target.release.nodeVersion || previous.platform !== target.platform || previous.arch !== target.arch)
+    const rebuild = (!packagesChanged && existsSync(this.pendingPackages))
+      || (previous !== undefined && pluginRecords(projectDir).length > 0
+      && (previous.nodeVersion !== target.release.nodeVersion || previous.platform !== target.platform || previous.arch !== target.arch))
     if (rebuild) {
+      writeFileSync(this.pendingPackages, '')
       unlinkDesktopHostPackages(projectDir)
       removeOwnedDirectory(join(projectDir, 'node_modules'))
       await this.runPnpm(projectDir, ['install', '--frozen-lockfile', '--ignore-scripts'])
     }
     if (rebuild || packagesChanged) await this.finishPackageOperation(projectDir)
+    else this.prepareProfile(projectDir)
   }
 
   private async finishPackageOperation(projectDir: string): Promise<void> {
     this.prepareProfile(projectDir)
     await this.runPnpm(projectDir, ['rebuild', '--pending'])
     this.prepareProfile(projectDir)
+    unlinkSync(this.pendingPackages)
   }
 
   private async applyMutation(projectDir: string, mutation: Exclude<DesktopProjectMutation, { type: 'plugins-disable-all' }>): Promise<void> {
     switch (mutation.type) {
       case 'plugin-add': {
         const requestedName = packageNameFromSpec(mutation.spec)
-        if (requestedName === undefined) throw new Error('desktop project: plugin package name is required')
         if (this.currentRuntime().sharedPackages.some(entry => entry.name === requestedName)) {
           throw new Error(`desktop project: cannot install host-owned package ${requestedName}`)
         }
@@ -445,6 +445,7 @@ export class DesktopProjectManager {
     const inherited = Object.fromEntries(Object.entries(process.env).filter(([name]) => (
       name !== 'NODE_OPTIONS' && name !== 'NODE_PATH' && !/^DSH_DESKTOP_/u.test(name) && !/^(?:npm|pnpm|corepack)_/iu.test(name)
     )))
+    writeFileSync(this.pendingPackages, '')
     await new Promise<void>((settle, reject) => {
       const child = spawn(this.runtime.node, [
         this.runtime.pnpm,
@@ -581,7 +582,6 @@ export function createRuntimeProjectMetadata(projectDir: string, release: Deskto
     workspaceFile(desktopCorePackageOverrides(packageSet)),
     { mode: 0o600 },
   )
-  writeJson(join(projectDir, 'desktop-release.json'), release)
 }
 
 /**
@@ -603,7 +603,6 @@ export function createDevelopmentProjectMetadata(projectDir: string, release: De
   }
   writeJson(join(projectDir, 'package.json'), manifest)
   writeFileSync(join(projectDir, 'pnpm-workspace.yaml'), workspaceFile(), { mode: 0o600 })
-  writeJson(join(projectDir, 'desktop-release.json'), release)
 }
 
 /** Create the first external plugin profile without running a package manager. */

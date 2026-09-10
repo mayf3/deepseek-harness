@@ -1,6 +1,6 @@
 /** Materialize the complete production runtime before publishing Desktop resources. */
 
-import { spawn } from 'node:child_process'
+import { spawn, execFile } from 'node:child_process'
 import { copyFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { delimiter, dirname, join, relative, resolve } from 'node:path'
@@ -138,6 +138,13 @@ async function main(): Promise<void> {
     }
     writeDesktopRuntime(DSH_OUTPUT_ROOT, release, packageSet.packages.map(entry => entry.name), target)
     const descriptor = await verifyDesktopRuntime(DSH_OUTPUT_ROOT, release.version, target)
+    await new Promise<void>((accept, reject) => {
+      execFile(NODE, [join(APP_ROOT, 'tests/fixtures/runtime-payload-smoke.mjs'), DSH_OUTPUT_ROOT],
+        { timeout: 120_000, env: { ...process.env, NODE_OPTIONS: '' } }, (error, stdout, stderr) => {
+          if (error !== null) reject(new Error(`desktop native payload smoke failed: ${stderr}`, { cause: error }))
+          else { process.stdout.write(stdout); accept() }
+        })
+    })
     await smokeDesktopRuntime(DSH_OUTPUT_ROOT, NODE, descriptor)
     await verifyDesktopRuntime(DSH_OUTPUT_ROOT, release.version, target)
   } catch (error) {

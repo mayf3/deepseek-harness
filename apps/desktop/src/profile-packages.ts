@@ -5,7 +5,6 @@ import { existsSync, lstatSync, mkdirSync, readFileSync, readlinkSync, realpathS
 import { createRequire } from 'node:module'
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { satisfies } from 'semver'
-import { DesktopStartupError } from './startup-error.ts'
 import { desktopRuntimeId, runtimePath, type DesktopRuntimeDescriptor } from './runtime-tree.ts'
 
 /** Applied runtime identity and the only links Desktop may replace. */
@@ -17,7 +16,7 @@ export interface DesktopPackageLink {
   readonly target: string
 }
 
-/** Facts from the last successfully validated profile. */
+/** Runtime identity and managed links; package preparation may still be pending. */
 export interface DesktopProfileState {
   readonly schemaVersion: 1
   readonly runtimeId: string
@@ -53,11 +52,6 @@ function inside(root: string, path: string): boolean {
  * @returns Validated state, or undefined for an uninitialized profile.
  */
 export function readDesktopProfileState(profile: string): DesktopProfileState | undefined {
-  try { return readProfileState(profile) }
-  catch (error) { throw new DesktopStartupError('configuration', error) }
-}
-
-function readProfileState(profile: string): DesktopProfileState | undefined {
   const path = join(profile, DESKTOP_PROFILE_STATE)
   if (!existsSync(path)) return undefined
   const value: unknown = JSON.parse(readFileSync(path, 'utf8'))
@@ -179,8 +173,7 @@ export function validateDesktopPluginGraph(
 ): void {
   const profileRoot = realpathSync.native(profile)
   const shared = new Map(runtime.sharedPackages.map((entry) => {
-    try { return [entry.name, realpathSync.native(runtimePath(root, entry.path))] as const }
-    catch (error) { throw new DesktopStartupError('reinstall', error) }
+    return [entry.name, realpathSync.native(runtimePath(root, entry.path))] as const
   }))
   for (const [name, path] of shared) {
     if (packageFrom(profile, name) !== path) throw new Error(`desktop profile: missing or incorrect host link ${name}`)
@@ -238,12 +231,8 @@ export function validateDesktopPluginGraph(
     }
   }
   for (const name of activePlugins) {
-    try {
-      const path = packageFrom(profile, name)
-      if (path === undefined || !inside(profileRoot, path)) throw new Error(`desktop profile: missing local plugin ${name}`)
-      visit(path, name)
-    } catch (error) {
-      throw new DesktopStartupError('plugins', error)
-    }
+    const path = packageFrom(profile, name)
+    if (path === undefined || !inside(profileRoot, path)) throw new Error(`desktop profile: missing local plugin ${name}`)
+    visit(path, name)
   }
 }
