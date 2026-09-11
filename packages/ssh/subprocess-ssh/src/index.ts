@@ -132,7 +132,12 @@ class RemoteProcess implements SubprocessHandle {
             }))
           } else {
             socket.end()
-            socket.pipe(name === 'stdout' ? this.out : this.err)
+            const output = name === 'stdout' ? this.out : this.err
+            const closeSocket = (): void => { socket.destroy() }
+            output.once('close', closeSocket)
+            socket.once('close', () => { output.off('close', closeSocket) })
+            if (output.destroyed) closeSocket()
+            else socket.pipe(output)
           }
         }
         if (name === 'stdin') this.inbound.pipe(socket)
@@ -172,6 +177,16 @@ class RemoteProcess implements SubprocessHandle {
 
   async waitForExit(signal?: AbortSignal): Promise<boolean> {
     if (this.quiescent) return true
+    if (signal?.aborted) return false
+    if (signal === undefined) return this.observeExit()
+    const cancelled = Promise.withResolvers<boolean>()
+    const abort = (): void => { cancelled.resolve(false) }
+    signal.addEventListener('abort', abort, { once: true })
+    try { return await Promise.race([this.observeExit(signal), cancelled.promise]) }
+    finally { signal.removeEventListener('abort', abort) }
+  }
+
+  private async observeExit(signal?: AbortSignal): Promise<boolean> {
     try { await this.started } catch {
       // Startup errors remain on done; a prepared process must first finish termination.
       if (this.termination !== undefined) await this.termination
