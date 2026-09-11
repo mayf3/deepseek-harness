@@ -37,7 +37,7 @@ describe.skipIf(process.platform !== 'win32')('managed Windows ACL control pipe'
       const chunks = []; let received = 0;
       channel.on('data', chunk => {
         chunks.push(chunk); received += chunk.length;
-        if (received === 262144) channel.end(Buffer.concat(chunks), () => channel.destroy());
+        if (received === 262144) channel.write(Buffer.concat(chunks), () => channel.destroy());
       });
     `
     const handle = ctx.subprocess.spawn({

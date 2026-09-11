@@ -16,6 +16,6 @@ channel.on('data', (chunk: Buffer) => {
   received += chunk.length
   if (received === size) {
     channel.removeAllListeners('data')
-    channel.end(Buffer.concat(chunks), () => { channel.destroy() })
+    channel.write(Buffer.concat(chunks), () => { channel.destroy() })
   }
 })
