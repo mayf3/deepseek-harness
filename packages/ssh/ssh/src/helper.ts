@@ -27,9 +27,9 @@ async function services() {
   const ctx = new Context()
   const fibers = [await ctx.plugin(SessionProjectionRegistry)]
   fibers.push(await ctx.plugin(SandboxPolicyService, { mode: 'read-only', workspaceRoot: process.cwd() }))
-  fibers.push(await ctx.plugin(SandboxedFileSystem, { cwd: process.cwd(), diffBasisMaxBytes: 10 * 1024 * 1024 }))
+  fibers.push(await ctx.plugin(SandboxedFileSystem, { cwd: process.cwd() }))
   fibers.push(await ctx.plugin(LocalSubprocessRuntime))
-  fibers.push(await ctx.plugin(LocalSandboxProvider, { runnerCommand: [], runnerFailureSignatures: [], probeTimeoutMs: 5000 }))
+  fibers.push(await ctx.plugin(LocalSandboxProvider))
   return { ctx, close: async () => { for (const fiber of fibers.reverse()) await fiber.dispose() } }
 }
 

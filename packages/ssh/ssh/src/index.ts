@@ -259,7 +259,7 @@ export class SshConnection extends Service {
     this.directory = await mkdtemp('/tmp/dsh-ssh-')
     if (this.closed) throw new Error('SSH connection closed before startup')
     const quote = (value: string): string => `'${value.replaceAll("'", "'\\''")}'`
-    const command = [this.config.node, this.config.helper].map(quote).join(' ')
+    const command = [this.config.node, '--disable-sigusr1', this.config.helper].map(quote).join(' ')
     const child = spawn('ssh', [
       '-T', '-M', '-S', this.controlPath(), '-o', 'ControlPersist=no', '-o', 'BatchMode=yes',
       '-o', 'StrictHostKeyChecking=yes', '-o', 'ForwardAgent=no', '-o', 'ClearAllForwardings=yes',

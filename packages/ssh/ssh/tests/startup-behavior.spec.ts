@@ -160,7 +160,7 @@ describe.skipIf(process.platform === 'win32')('SSH connection startup', () => {
     const argv = transport.spawn.mock.calls[0]?.[1] as string[]
     expect(argv).toContain('StrictHostKeyChecking=yes')
     expect(argv).toContain('ForwardAgent=no')
-    expect(argv.at(-1)).toBe("'/remote/node' '/remote/helper'\\''s file.js'")
+    expect(argv.at(-1)).toBe("'/remote/node' '--disable-sigusr1' '/remote/helper'\\''s file.js'")
     expect(test.calls[0]?.params).toEqual({ protocol: 1, workspace: '/remote/workspace', leaseMs: 30_000, bootstrapPath: '/remote/process.js' })
   })
 

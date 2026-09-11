@@ -60,6 +60,8 @@ Each stream reservation has a random 256-bit TLS pre-shared key carried only by 
 
 Connection disposal joins forwarding and cancellation subprocesses and partially established streams before removing local resources. Transport loss rejects pending operations and invalidates the connection. The helper starts managed cleanup on SSH EOF, termination signals or heartbeat expiry. A disconnected client cannot confirm the remote outcome; operations are never reconnected or replayed automatically.
 
+The helper starts with `--disable-sigusr1`, so a same-user process signal cannot open its Node debugger.
+
 </details>
 
 -----

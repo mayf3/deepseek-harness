@@ -22,7 +22,7 @@ Each stream receives a fresh 256-bit TLS pre-shared key through private administ
 
 Collected stdout and stderr carry bounded tail snapshots through handlers that only update output observations. Capture continues while a snapshot is waiting for transport. Final snapshots preserve raw-byte offsets, and completed spill files use the local provider’s retained-output storage after connection disposal.
 
-Readiness verifies the installed helper digest and, when PTC is configured, the installed Node bootstrap digest. These checks pin expected deployment artifacts; they do not authenticate a malicious remote operating system. File-effect confinement delegates to the remote local sandbox provider and retains its full/partial disclosure and platform limitations.
+Readiness verifies the installed helper digest and, when PTC is configured, the installed Node bootstrap digest. These checks pin expected deployment artifacts; they do not authenticate a malicious remote operating system. The helper disables Node debugger activation through `SIGUSR1`: file-effect confinement can still permit same-user signals, which must not expose the helper's unrestricted filesystem and process services. File-effect confinement delegates to the remote local sandbox provider and retains its full/partial disclosure and platform limitations.
 
 Path canonicalization belongs where the files exist. The shared policy resolver preserves absolute execution-world spelling; enforcing providers resolve symlinks and `..` on their own filesystem. Headless records and validates cwd through `ctx.fs`. Host-path projection remains unavailable for SSH, so Node execution requires an explicitly installed remote bootstrap.
 
