@@ -327,8 +327,7 @@ export class RemoteProcesses {
   }
 
   private async release(id: SshProcessId): Promise<void> {
-    const record = this.records.get(id)
-    if (record === undefined) return
+    const record = this.record(id)
     record.release ??= (async () => {
       clearTimeout(record.expiry)
       record.controller.abort(new Error('SSH process reservation closed'))

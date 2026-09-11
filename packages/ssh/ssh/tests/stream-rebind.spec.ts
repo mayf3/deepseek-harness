@@ -8,12 +8,13 @@ import { describe, expect, it } from 'vitest'
 import LocalFileSystem from '@deepseek-ai/dsh-fs-local'
 import LocalSubprocessRuntime from '@deepseek-ai/dsh-subprocess-local'
 import LocalSandboxProvider from '@deepseek-ai/dsh-sandbox-local'
+import { SandboxUnavailableError } from '@deepseek-ai/dsh-sandbox'
 import type { SubprocessHandle } from '@deepseek-ai/dsh-subprocess'
 import { RemoteProcesses } from '../src/helper-processes.ts'
 import { authenticateStream } from '../src/stream-security.ts'
 
 describe.skipIf(process.platform === 'win32')('SSH stream pathname replacement', () => {
-  it('keeps the key and payload private when a workspace-write process rebinds and relays the listener', async () => {
+  it('keeps the key and payload private when a workspace-write process rebinds and relays the listener', async ({ skip }) => {
     const root = await realpath(await mkdtemp('/tmp/dsh-ssh-rebind-'))
     const ctx = new Context()
     const fs = ctx.plugin(LocalFileSystem, { cwd: root })
@@ -24,6 +25,11 @@ describe.skipIf(process.platform === 'win32')('SSH stream pathname replacement',
     const sockets: Socket[] = []
     let attacker: SubprocessHandle | undefined
     try {
+      try { await ctx.sandbox.confine(['true'], { mode: 'workspace-write', workspaceRoot: root }) }
+      catch (error) {
+        if (error instanceof SandboxUnavailableError) skip('No local process confinement backend is available')
+        throw error
+      }
       const prepared = await owner.prepare({
         argv: [process.execPath, '-e', 'const s=new(require(\'node:net\').Socket)({fd:7,readable:true,writable:true});const chunks=[];s.on(\'data\',v=>chunks.push(v));s.on(\'end\',()=>s.end(Buffer.concat(chunks)));'],
         cwd: root, graceMs: 500,

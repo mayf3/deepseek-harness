@@ -1,6 +1,7 @@
 /** Real helper dispatch over private in-memory transport, without changing the Harness process cwd. */
 import { symlink, writeFile } from 'node:fs/promises'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
+import { LocalSandboxProvider } from '@deepseek-ai/dsh-sandbox-local'
 import { z } from 'zod'
 import { createHelperHarness as helper } from './fixtures/helper.ts'
 import { targetSchema, writeResultSchema, editResultSchema, infoSchema, entriesSchema } from '../src/schemas.ts'
@@ -85,12 +86,16 @@ describe.skipIf(process.platform === 'win32')('SSH helper runtime', () => {
 
   it('refuses unconfined sandbox requests and resolves executables in the helper world', async () => {
     const test = await helper()
+    const confine = vi.spyOn(LocalSandboxProvider.prototype, 'confine').mockImplementation(async argv => ({
+      argv: ['confined', ...argv], enforcement: 'full',
+    }))
     try {
       await expect(test.client.request('sandbox', { argv: ['true'], policy: { mode: 'danger-full-access', workspaceRoot: test.root } }, z.unknown())).rejects.toThrow('does not need')
       expect(await test.client.request('executable', { command: process.execPath, env: { REMOVED: null } }, z.string())).toBe(process.execPath)
       expect(await test.client.request('executable', { command: process.execPath }, z.string())).toBe(process.execPath)
       const wrapped = await test.client.request('sandbox', { argv: ['true'], policy: policy(test.root) }, z.looseObject({ argv: z.array(z.string()), enforcement: z.enum(['full', 'partial']) }))
-      expect(wrapped.argv.at(-1)).toBe('true')
-    } finally { await test.close() }
+      expect(wrapped.argv).toEqual(['confined', 'true'])
+      expect(confine).toHaveBeenCalledWith(['true'], policy(test.root), expect.any(AbortSignal))
+    } finally { confine.mockRestore(); await test.close() }
   })
 })
