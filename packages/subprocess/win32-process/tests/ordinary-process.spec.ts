@@ -75,11 +75,11 @@ function api(overrides: Partial<CurrentTokenProcessBindings> = {}): CurrentToken
 }
 
 describe('ordinary Job process operations', () => {
-  it('supplies fd 7 in the child CRT startup table and releases its temporary inheritance', () => {
+  it.each([3, 2])('supplies fd 7 with standard handle type %s and releases its temporary inheritance', (standardType) => {
     let descriptorBytes: Buffer | undefined
     const flags = vi.fn(() => 1)
     const bindings = api({
-      getFileType: vi.fn(() => 3),
+      getFileType: vi.fn(handle => handle === 107n ? 3 : standardType),
       setHandleInformation: flags,
       createProcessW: vi.fn((_app, _line, _pa, _ta, _inherit, _flags, _env, _cwd, startupPointer, processInfo) => {
         const startup = koffi.decode(startupPointer, STARTUPINFOW) as { cbReserved2: number; lpReserved2: NativePtr }
@@ -93,7 +93,8 @@ describe('ordinary Job process operations', () => {
     }))).toEqual({ pid: 1234, process: 60n, job: 50n })
     const bytes = descriptorBytes as Buffer
     expect(bytes.readUInt32LE(0)).toBe(8)
-    expect([...bytes.subarray(4, 12)]).toEqual([9, 9, 9, 0, 0, 0, 0, 9])
+    const standardFlag = standardType === 3 ? 9 : 65
+    expect([...bytes.subarray(4, 12)]).toEqual([standardFlag, standardFlag, standardFlag, 0, 0, 0, 0, 9])
     expect(bytes.readBigUInt64LE(12 + 7 * 8)).toBe(107n)
     expect(bytes.readBigUInt64LE(12 + 3 * 8)).toBe(0xffff_ffff_ffff_ffffn)
     expect(flags).toHaveBeenCalledWith(107n, 1, 1)

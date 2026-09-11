@@ -7588,6 +7588,9 @@ importers:
         specifier: ^3.1.0
         version: 3.1.1
     devDependencies:
+      '@deepseek-ai/dsh-subprocess-local':
+        specifier: workspace:^
+        version: link:../../subprocess/subprocess-local
       '@deepseek-ai/cordis':
         specifier: workspace:^
         version: link:../../../vendor/cordis

@@ -24,6 +24,21 @@ afterEach(async () => {
 })
 
 describe('managed subprocess control pipe', () => {
+  it('leaves the channel absent on an ordinary spawn', async () => {
+    ctx = new Context()
+    await ctx.plugin(LocalSubprocessRuntime)
+    handle = ctx.subprocess.spawn({
+      argv: [process.execPath, '-e', 'process.stdout.write("plain")'],
+      cwd: process.cwd(),
+      stdio: { stdin: 'ignore', stdout: { maxBytes: 32 }, stderr: { maxBytes: 32 } },
+      graceMs: 1000,
+    })
+    expect(handle.control).toBeUndefined()
+    expect(await handle.done).toEqual({ exitCode: 0, signal: null })
+    expect(handle.collected.stdout?.readFrom(0).text).toBe('plain')
+    expect(await handle.waitForExit()).toBe(true)
+  })
+
   it('returns exact binary control bytes independently of stdout and stderr', async () => {
     root = await mkdtemp(join(tmpdir(), 'dsh-control-'))
     ctx = new Context()
