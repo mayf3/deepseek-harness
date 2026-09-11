@@ -39,6 +39,7 @@ const SEATS = [
 function localeView(preference: string, revision = 0): SettingsNamespaceView {
   return {
     ns: LOCALE_SETTINGS_NAMESPACE,
+    registered: true,
     // The Remote wire serializes nested Schema values before the client rehydrates them.
     schema: JSON.parse(JSON.stringify(LocaleSettingsSchema.toJSON())) as SettingsNamespaceView['schema'],
     value: { preference },
@@ -50,7 +51,7 @@ function localeView(preference: string, revision = 0): SettingsNamespaceView {
 
 async function client(mock: RemoteMock, start: () => Promise<TestClient>, hasDocument = false) {
   const settings = mock.remote.settings
-  settings.describe.mockResolvedValue(ok({ writable: true, hasDocument, namespaces: [localeView('zh')] }))
+  settings.describe.mockResolvedValue(ok({ writable: true, hasDocument, namespaces: [localeView('zh')], scopes: [] }))
   const c = await start()
   // The locale adopts the Host preference once the describe mirror holds the document.
   await c.ctx.settingsScope.describe().ensure()

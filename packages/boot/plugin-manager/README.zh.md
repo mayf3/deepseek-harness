@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-`dsh-plugin-manager` 负责改动 profile 的插件。`PluginInstaller` 只需要磁盘上的 profile：在那里运行 pnpm，在子进程里探测本次新增的每个包，并把在 profile 里没有位置的包再移除——`dsh plugin add` 在任何插件启动之前就用它。`PluginManager` 需要启动好的树：经 `profileRuntime` 启用与停用组合包、重试失败的组合包、在全局或某个预设的用户层里增删行、报告依赖方，并把 manifest、探针记录与实时树折叠成每个包的一份视图。失败带 `plugins/*` 代码；[`dsh-host-plugin-manager`](../../host/plugin-manager/README.zh.md) 把管理器暴露为 `plugins` Remote。
+`dsh-plugin-manager` 通过 CLI 与 Web 宿主安装包并管理它们声明的插件行。安装读取元信息，不执行模块。管理器启停整份组合包层，编辑全局或预设用户 patch，重试失败并报告当前运行问题。失败携带 `plugins/*` 错误码；[Host 适配器](../../host/plugin-manager/README.zh.md) 通过 Remote 暴露这些操作。
 
 ## 目录
 
@@ -39,7 +39,7 @@ declare const installAnchor: string
 const installer = new PluginInstaller({
   profileDir, profileName: 'web', installAnchor,
   loadProfile: () => loadProfile('dsh', 'web', installAnchor, undefined, { userLayer: false }),
-  config: { pnpmCommand: 'pnpm', installTimeoutMs: 600_000, probeTimeoutMs: 20_000, installLogTailBytes: 16_384 },
+  config: { pnpmCommand: 'pnpm', installTimeoutMs: 600_000, installLogTailBytes: 16_384 },
   installLog: (chunk) => process.stdout.write(chunk.text),
   color: process.stdout.isTTY,
 })
@@ -47,7 +47,7 @@ const outcome = await installer.add('@acme/dsh-sql-tool')
 console.log(outcome.installed, outcome.removed)
 ```
 
-`add` 接受一个 pnpm spec——registry 名字、`github:` 或 git URL、tarball、绝对路径——运行 `pnpm add`，记录 pnpm 写进 `dependencies` 的内容，并探测每个新包。`pnpm add` 成功还不等于装好了插件：既不声明组合包也不声明插件模块的包，或者某个行 id 已被已组合层占有的组合包，会再以 `pnpm remove` 移除并连同原因列在 `removed` 里；探针拒绝的包保留在原处，留给视图说明。新组合包保持停用并列在 `installedOnly` 里，由调用方决定是否启用——CLI 一律启用，Web 宿主只在被要求时启用。非零退出、spawn 失败或超时都以 `plugins/install-failed` 与日志尾部让调用失败，并把 profile manifest 恢复到运行前的样子。
+`add` 在 profile 中执行 pnpm，核对 `dependencies`，并按当前行归属静态检查新组合包声明。冲突组合包会被移除并给出原因；未声明或声明不可读的包保持已安装。新组合包保持禁用，除非调用方启用。pnpm 执行失败会恢复运行前的 manifest，并通过 `plugins/install-failed` 报告日志尾部。
 
 ### 管理已启动的 profile
 
@@ -72,11 +72,11 @@ const manager = new PluginManager(ctx, {
 console.log(await manager.list())
 ```
 
-`list` 为 profile 知道的每个包返回一份视图：模板组合包与已安装的组合包，以及其他每个已安装的依赖。视图携带 manifest 事实（名字、版本、标题、描述、`engines.dsh`），这个包是什么（`bundle`、`plugin` 或 `library`），谁提供它（`builtin` 或 `external`），它的行何时挂载（`boot` 或 `runtime`），是否已安装与已启用，以及折叠出的 `status`：已启用的组合包按活跃行的多少是 `running`、`partial` 或 `failed`；已安装但不在层列表中的组合包是 `disabled`；探针拒绝时是 `not-enableable` 并附原因；在启动时才应用变更的 profile 上 manifest 与在线树不一致时是 `restart-required`；库或插件模块是 `plain`，它们被添加进组合而不是被启用。组合包已组合时行来自在线树——阶段、被谁停用，以及隔离行记录的失败——否则来自探针记录，id 保持各自 patch 声明的样子。`addable` 列出包在 `dsh.plugins` 里声明的模块，各自带默认配置与探针的判定。
+`list` 报告包身份、`bundle` / `plugin` / `unknown` 分类、trust、stage、安装与启用状态。运行行携带实际阶段与失败；禁用组合包显示静态 patch 声明。`addable` 只来自 `dsh.plugins`，包括表示主入口的 `.` 和声明的默认配置。行更新失败后，活跃实例可能保留先前配置。包的 `issues` 还报告其 patch 覆盖的失败行，但不转移这些行的归属。
 
-`add` 就是安装器的 `add` 加上运行中 agent 数的守卫，`enable` 让每个新装的组合包一并进入层列表。`enable` 把已安装的组合包放进层列表，并在 live profile 上经 profile runtime 带着它重新组合树。这次重新组合就是 Loader 自己的事务：树拒绝的组合包——`boot` 阶段而行抛错的组合包——回滚，层列表恢复，调用以点名原因的 `plugins/enable-failed` 失败，而原本运行的树继续运行。`runtime` 阶段而行失败的组合包则被隔离：调用成功，视图报告该行的失败，`retry` 从头重新组合它。`disable` 是反向操作；模板组合包不是依赖，无法停用。在 `patchReload` 为 `startup` 的 profile 上，两者只写 manifest 并报告 `effect: 'restart'`。`uninstall` 在组合包已启用时先停用它，删除每一条点名该包模块的用户层行，运行 `pnpm remove`，并忘掉探针记录。
+`enable` 选择整份组合包层，并在实时 profile 中重组。逐行失败保留启用选择与成功的其他行；结果报告 `issues`，列表可显示 `partial` 或 `failed`。准备失败会撤销启用选择，并抛出 `plugins/enable-failed`。`disable` 移除整层，包括覆盖。`retry` 先禁用并等待清理，再启用。仅启动时生效的 profile 报告 `effect: restart`。`uninstall` 禁用组合包、删除用户插入的引用、执行 pnpm remove 并清理过期发现记录。
 
-`addRow` 把一条点名该包某个模块的行——`plugin` 包的主导出，或某个 `dsh.plugins` 条目——插入 profile 的全局 `cordis.patch.yml`（`target: { kind: 'global' }`）或某个 agent preset 的用户层（`{ kind: 'preset', preset }`，经 roster 的 `overlayPathFor`）。行 id 未给出时由包名与子路径派生；已被占用的 id 以 `plugins/row-conflict` 失败。`removeRow` 移除一条插入的行，`setRowDisabled` 为任意行写入或移除 `disabled: true`——只写拒绝，因此组合包自己的 `!!js` 门被恢复而不是被覆盖。全局层当场在线重新组合；preset 的层在其下一个常驻代际生效。`dependents` 说明停用或移除一个包会搁浅什么：其行提供而包外的行注入的服务，以及点名其模块的用户层行。
+`addRow` 将显式声明的 `dsh.plugins` 模块写入 profile 的全局 `cordis.patch.yml` 或预设用户层。它保留声明的默认配置，检查目标行 id，不在挂载前 import。`removeRow` 删除用户插入。`setRowDisabled` 写入或删除 `disabled: true`，保留组合包自己的条件。全局编辑在实时 profile 中立即重组；预设编辑应用于后续代际。`dependents` 报告注入依赖方与用户层模块引用。
 
 管理器一次只跑一个变更——上一个还在跑时再调用会以 `plugins/busy` 失败并点名正在进行的操作——`add` 与 `uninstall` 在有会话运行时拒绝改动 `node_modules`，报 `plugins/agents-running`。每次变更之后在上下文上发出 `plugins/changed` 事件，安装运行把 pnpm 的输出以 `plugins/install-log` 分块发出，每块都写明所跑的命令行与所在的 profile 目录，开了颜色时还带着 pnpm 的 SGR 转义。
 
@@ -102,25 +102,25 @@ subprocess seam 会清洗形似密钥的变量且没有 shell 模式，而 pnpm 
 
 ### 重试即先停用再启用
 
-Loader 的事务性更新不会碰未改变的行，因此一条失败的隔离行在普通的重新组合中不会重新启动。重试把组合包移出层列表再放回去：两次重新组合，manifest 首尾如一。
+重试移除整层，并等待已移除 fiber 清理完成后再添加。它不依赖合成 group，也不会静默补偿失败插件的副作用。
 
 ### 管理器自己读什么，别人交给它什么
 
-管理器经它所在的上下文读取 Loader 树、reflect store 与 `pluginFailures` 注册表。属于别的包的东西——profile runtime、preset roster、agent 注册表——都经 `PluginManagerOptions` 以按调用读取的读取器交进来，roster 只以 `PresetLayers` 的形态交进来：层文件路径、preset 列表，以及行操作需要的组合行。因此本包只依赖 app-boot（其 `./patch-file` 导出负责读写各层），不依赖任何组合 preset 或 agent 的包。
+管理器读取 Loader 条目、reflect 存储与条目自身诊断。profile、预设和 agent 信息通过逐次调用的读取器提供。[Host 适配器](../../host/plugin-manager/README.zh.md) 在状态稳定后将 Loader 生命周期变化转换为 `plugins/changed` 通知，包括等待中的行在提供方出现后恢复运行。
 
 ### 源码地图
 
 | 文件 | 职责 |
 |---|---|
 | [`src/index.ts`](src/index.ts) | 包 API：类、选项、类型与失败码的 re-export |
-| [`src/installer.ts`](src/installer.ts) | `PluginInstaller`：流式输出的 pnpm 运行、探针记录缓存与装后检查 |
+| [`src/installer.ts`](src/installer.ts) | `PluginInstaller`：pnpm 流式输出、静态声明与装后检查 |
 | [`src/manager.ts`](src/manager.ts) | `PluginManager`：已启动 profile 上的每项操作、一次一个的互斥、用户层编辑与依赖查询 |
-| [`src/view.ts`](src/view.ts) | 视图折叠：把 manifest、探针与在线树的行折成一份 `PluginPackageView`，以及行归属遍历 |
+| [`src/view.ts`](src/view.ts) | 将 manifest、声明与实际行状态组合为 `PluginPackageView`，并查询行归属 |
 | [`src/modules.ts`](src/modules.ts) | 声明的 `dsh.plugins` 模块：行命名、派生行 id 及其 wire 视图 |
 | [`src/helpers.ts`](src/helpers.ts) | 共享词汇：诊断前缀、工具边界、spawn 测试缝与 manifest 读取器 |
 | [`src/types.ts`](src/types.ts) | 载荷、`plugins/changed` 与 `plugins/install-log` 事件，以及 `plugins/*` 失败码及其 details |
 | [`src/errors.ts`](src/errors.ts) | `PluginOperationError` 与按码区分的失败联合 |
-| — | 不发布运行时不变量伴随件；每份视图都在每次调用时从 manifest、探针缓存与 Loader 持有的状态折叠而来。 |
+| — | 不发布独立运行不变量模块；每次调用直接从 manifest、静态声明与 Loader 状态生成视图。 |
 
 </details>
 
@@ -131,7 +131,7 @@ Loader 的事务性更新不会碰未改变的行，因此一条失败的隔离�
 
 当管理器的契约还不够时读这些：它驱动的运行时、它编辑的文件，以及调用它的表面。
 
-- [App boot](../app-boot/README.zh.md)——profile runtime、外部组合包隔离与包探针。
+- [App boot](../app-boot/README.zh.md)——profile runtime、外部组合包隔离与静态包声明。
 - [补丁文件](../app-boot/README.zh.md#patch-files)——用户层的行如何读写。
 - [Agent presets](../../preset/agent-presets/README.zh.md)——preset 目标所写的每预设用户层。
 - [宿主插件管理器](../../host/plugin-manager/README.zh.md)——本管理器之上的 `plugins` Remote。

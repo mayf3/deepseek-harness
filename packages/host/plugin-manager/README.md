@@ -41,7 +41,6 @@ A manager failure reaches the client as a `RemoteError` with the same `code` and
 |---|---|---|
 | `pnpmCommand` | `pnpm` | The executable, resolved through `PATH` like the `dsh plugin` command. |
 | `installTimeoutMs` | `600000` | Bound on one install or remove run. |
-| `probeTimeoutMs` | `20000` | Bound on one package probe. |
 | `installLogTailBytes` | `16384` | How much trailing output an install failure reports. |
 
 -----
@@ -54,7 +53,7 @@ A manager failure reaches the client as a `RemoteError` with the same `code` and
 
 ### A relay, not a second manager
 
-The constructor builds one `PluginManager` with readers into the context — `ctx.get('profileRuntime')`, `ctx.get('agentPresets')`, and the running-agent count from `ctx.get('agents')` — so what is composed is read when a call arrives, not when the row mounts. Every Remote method is `relay(() => this.manager.x(...))`: a `PluginOperationError` becomes the Remote error of its code through one exhaustive switch, and anything else is rethrown. Tests hand a manager in through `PluginManagerInternals.manager`; the spawn and probe seams pass through to the manager.
+The adapter supplies per-call profile, preset and agent readers to one `PluginManager`, relays each Remote method, and maps domain errors. It observes native entry/status events and publishes a coalesced `plugins/changed` notification after Loader and queued profile recomposition settle. Disposal cancels pending notifications and removes the listeners. Tests may replace the manager, pnpm spawner or static metadata reader.
 
 ### Source map
 

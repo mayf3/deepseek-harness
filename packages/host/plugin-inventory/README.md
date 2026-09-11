@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-Clients can call `pluginInventory/list` to display the host’s current plugins in load order, including each entry’s identifier, module specifier, effective enablement, and live phase. Deployments with an agent-preset roster also report each preset’s metadata, health, and flattened plugin composition; without a roster, preset data is absent. Each response is a point-in-time, read-only snapshot for display and diagnostics: it cannot mutate plugins and provides no history, provenance, or change subscription.
+Clients call `pluginInventory/list` for a read-only snapshot of non-group Loader entries, their provenance, effective enablement, running phase, and current failures. Deployments with an agent-preset roster also report each preset’s metadata and composition. The snapshot carries no durable history or change subscription.
 
 ## Table of Contents
 
@@ -31,7 +31,7 @@ Call `pluginInventory/list` when a client or settings page needs to show what is
 
 Each row is one non-group Loader entry: its entry id, the exact module specifier, the effective enablement (including disabled ancestor groups), and the current root Fiber phase. `pending` means the entry waits to load, `loading` that it is being read, `active` that it is running, `failed` that its fiber rejected, and `unloading` that it is being torn down; `null` means no live root Fiber exists at all. Structural group rows are skipped.
 
-When the profile launcher composed the tree, each row also says who supplied it: `trust` is `builtin` for a row of the installation's own bundles, `external` for a row of a bundle the user installed, and `user` for a row the user's own patch file inserted that the composition left out, `package` names that bundle with its version and, for an external row, the id the bundle's own patch declared before the launcher prefixed it, and a disabled row carries `disabledBy` — `user` when a user patch file disabled it, or a group holding it, with a literal `disabled: true`, `composition` for a bundle's own gate or tombstone. A row an isolated external bundle failed to start is gone from the tree; it is still listed, with `fiberPhase: 'failed'` and a `failure` naming the stage and message, from the launcher's failure registry. Without the launcher every row reads `builtin` and none carries a package or failure.
+`trust` identifies the supplying bundle, `package` names it with its version, and `disabledBy` distinguishes a user override from a composition condition. Explicit row ids remain unchanged. Failed entries remain in the Loader tree; `failure` reports import, activation, update, disabled-expression, or missing-service issues. An `active` fiber may still have an update failure and run its previous valid config. Conflicting rows omitted before loading are projected from `ProfileRuntime.conflicts`. Without profile provenance, rows carry no package.
 
 ### Per-preset compositions
 
@@ -55,7 +55,7 @@ The gateway is a direct projection with no second lifecycle truth: every `list()
 
 ### The phase mapping
 
-Fiber states map onto the public phase vocabulary, with `disposed` folding into `null` — an entry whose fiber is gone has no live root to report. The phase therefore never distinguishes why no live root exists: the entry may never have started, or its fiber may already have been disposed.
+Fiber states map onto the public phase vocabulary, with `disposed` folding into `null`. An enabled entry with a recorded failure and no fiber reports `failed`; a normally disabled entry without a live fiber reports `null`.
 
 ### Source map
 
@@ -98,7 +98,7 @@ None; this package neither assembles nor sends a provider request.
 
 These limits define what a point-in-time inventory cannot tell a client. They are current package constraints, not a task backlog.
 
-- **Point-in-time state only** — the result contains no durable failure history or subscription; a missing root Fiber is reported as `null`, regardless of why no live root exists.
+- **Point-in-time state only** — the result contains no durable failure history or subscription; removing an entry removes its diagnostics.
 - **No mutation** — the service cannot enable, disable, add, or remove plugins in either plane; provenance stops at the bundle layer, so a row a user patch or a `--patch` overlay inserted carries no package.
 - **Presets appear only with a roster** — a deployment without `dsh-agent-presets` serves Loader entries alone; the `agentPresets` field is absent rather than empty.
 

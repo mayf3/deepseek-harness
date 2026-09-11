@@ -1,7 +1,7 @@
 /**
  * `dsh plugin add` and `remove` through the shared installer: a temporary
  * harness home, a fake pnpm that stages packages and edits the manifest the
- * way the real one does, and a fake probe. Nothing boots.
+ * way the real one does, and a static metadata reader. Nothing boots.
  */
 
 import { EventEmitter } from 'node:events'
@@ -11,7 +11,7 @@ import { join } from 'node:path'
 import { PassThrough } from 'node:stream'
 import type { ChildProcess } from 'node:child_process'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { readProfileManifest, resolveProfileDir, type probePackage } from '@deepseek-ai/dsh-app-boot'
+import { readProfileManifest, resolveProfileDir, type readPackageMetadata } from '@deepseek-ai/dsh-app-boot'
 import type { SpawnLike } from '@deepseek-ai/dsh-plugin-manager'
 import { runPlugin } from '../src/plugin.ts'
 
@@ -93,19 +93,17 @@ function fakePnpm(calls: string[][], failWith?: { code: number } | { error: Node
   }
 }
 
-/** A probe that reads the staged manifest: a package with `dsh.bundle` is a bundle, anything else a library. */
-const fakeProbe: typeof probePackage = (options) => {
+/** Static fixture declarations: a bundle or an unknown package. */
+const fakeMetadata: typeof readPackageMetadata = (options) => {
   const manifest = JSON.parse(readFileSync(join(options.profileDir, 'node_modules', options.packageName, 'package.json'), 'utf8')) as { dsh?: { bundle?: unknown } }
-  return Promise.resolve({
+  return {
     packageName: options.packageName,
-    kind: manifest.dsh?.bundle === undefined ? 'library' : 'bundle',
-    ok: true,
+    kind: manifest.dsh?.bundle === undefined ? 'unknown' : 'bundle',
     cordisSameCopy: null,
     rows: [],
     overrides: [],
     addable: [],
-    checkedAt: new Date().toISOString(),
-  })
+  }
 }
 
 describe('dsh plugin', () => {
@@ -114,7 +112,7 @@ describe('dsh plugin', () => {
     const descriptor = Object.getOwnPropertyDescriptor(process.stdout, 'isTTY')
     Object.defineProperty(process.stdout, 'isTTY', { value: true, configurable: true })
     try {
-      expect(await runPlugin('web', ['add', 'ext-bundle'], { spawn: fakePnpm(calls), probe: fakeProbe })).toBe(0)
+      expect(await runPlugin('web', ['add', 'ext-bundle'], { spawn: fakePnpm(calls), metadata: fakeMetadata })).toBe(0)
     } finally {
       if (descriptor === undefined) delete (process.stdout as { isTTY?: boolean }).isTTY
       else Object.defineProperty(process.stdout, 'isTTY', descriptor)
@@ -123,32 +121,32 @@ describe('dsh plugin', () => {
     expect(stdout).toContain('\u001b[32m+\u001b[39m ext-bundle')
   })
 
-  it('add initializes the profile, installs through the installer, enables the new bundle, and removes a plain library again', async () => {
+  it('add enables the new bundle and retains an undeclared dependency', async () => {
     const calls: string[][] = []
 
-    const code = await runPlugin('web', ['add', 'ext-bundle', 'ext-lib'], { spawn: fakePnpm(calls), probe: fakeProbe })
+    const code = await runPlugin('web', ['add', 'ext-bundle', 'ext-lib'], { spawn: fakePnpm(calls), metadata: fakeMetadata })
 
     expect(code).toBe(0)
     const profileDir = resolveProfileDir('web', home)
     expect(stderr).toContain(`dsh: initialized profile web at ${profileDir}`)
-    expect(calls).toEqual([['add', 'ext-bundle'], ['add', 'ext-lib'], ['remove', 'ext-lib']])
+    expect(calls).toEqual([['add', 'ext-bundle'], ['add', 'ext-lib']])
     const manifest = readProfileManifest('dsh', profileDir)
     expect(Object.keys(manifest.dependencies ?? {})).toContain('ext-bundle')
-    expect(Object.keys(manifest.dependencies ?? {})).not.toContain('ext-lib')
+    expect(Object.keys(manifest.dependencies ?? {})).toContain('ext-lib')
     expect(manifest.dsh?.profile?.bundles).toContain('ext-bundle')
     // The log reaches its readers plain: colours are off for the child and stripped from what it still prints.
-    expect(spawnEnvs).toEqual(['0', '0', '0'])
+    expect(spawnEnvs).toEqual(['0', '0'])
     expect(stdout).toContain('+ ext-bundle')
     expect(stdout).not.toContain('\u001b[')
-    expect(stderr).toContain('dsh: removed ext-lib again: declares neither a dsh bundle nor a plugin module')
-    expect(existsSync(join(profileDir, '.dsh-plugins', 'ext-bundle.json'))).toBe(true)
+    expect(stderr).toContain('ext-lib declares no dsh.bundle')
+    expect(existsSync(join(profileDir, '.dsh-plugins', 'ext-bundle.json'))).toBe(false)
   })
 
   it('remove goes through the installer and forgets the probe record', async () => {
     const calls: string[][] = []
-    await runPlugin('web', ['add', 'ext-bundle'], { spawn: fakePnpm(calls), probe: fakeProbe })
+    await runPlugin('web', ['add', 'ext-bundle'], { spawn: fakePnpm(calls), metadata: fakeMetadata })
 
-    const code = await runPlugin('web', ['remove', 'ext-bundle'], { spawn: fakePnpm(calls), probe: fakeProbe })
+    const code = await runPlugin('web', ['remove', 'ext-bundle'], { spawn: fakePnpm(calls), metadata: fakeMetadata })
 
     expect(code).toBe(0)
     expect(calls).toEqual([['add', 'ext-bundle'], ['remove', 'ext-bundle']])
@@ -160,13 +158,13 @@ describe('dsh plugin', () => {
   })
 
   it('reports a failed pnpm run with its exit code, the git hint, and a missing pnpm as 127', async () => {
-    const failed = await runPlugin('web', ['add', 'github:acme/plugin'], { spawn: fakePnpm([], { code: 1 }), probe: fakeProbe })
+    const failed = await runPlugin('web', ['add', 'github:acme/plugin'], { spawn: fakePnpm([], { code: 1 }), metadata: fakeMetadata })
     expect(failed).toBe(1)
     expect(stderr).toContain('dsh: pnpm failed in profile directory')
     expect(stderr).toContain('git-hosted plugins build on install via their prepare script')
 
     const error = Object.assign(new Error('spawn pnpm ENOENT'), { code: 'ENOENT' })
-    const missing = await runPlugin('web', ['add', 'ext-bundle'], { spawn: fakePnpm([], { error }), probe: fakeProbe })
+    const missing = await runPlugin('web', ['add', 'ext-bundle'], { spawn: fakePnpm([], { error }), metadata: fakeMetadata })
     expect(missing).toBe(127)
     expect(stderr).toContain('dsh: pnpm not found on PATH')
   })

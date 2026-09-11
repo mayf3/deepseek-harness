@@ -21,15 +21,10 @@ export interface EntryOptions {
   inject?: Inject | null
 }
 
-/** The step of an entry update that failed. */
-export type EntryUpdateStage = 'import' | 'dispose' | 'apply' | 'rollback'
-
-/** The failure of one entry update, carrying the step that failed so callers need not parse the message. */
-export class EntryUpdateError extends Error {
-  constructor(readonly stage: EntryUpdateStage, options: EntryOptions, cause: unknown) {
-    const detail = cause instanceof Error ? cause.message : String(cause)
-    super(`failed to ${stage} loader entry ${options.id} (${options.name}): ${detail}`, { cause })
-  }
+/** Failure of the latest entry import, activation, or option update. */
+export interface EntryFailure {
+  stage: 'import' | 'activation' | 'update'
+  error: unknown
 }
 
 function takeEntries(object: {}, keys: string[]) {
@@ -55,6 +50,8 @@ export class Entry {
 
   public ctx: Context
   public fiber?: Fiber
+  /** Latest failed attempt; an active fiber can still run its previous config. */
+  public lastFailure?: EntryFailure
   public parent!: EntryGroup
   // safety: call `entry.update()` immediately after creating an entry
   public options = {} as EntryOptions
@@ -124,6 +121,15 @@ export class Entry {
 
   /** Merge new options, restart as needed, and persist through the parent tree. */
   async update(options: Partial<EntryOptions>, create = false, force = false) {
+    try {
+      await this.updateOptions(options, create, force)
+    } catch (error) {
+      if (this.lastFailure?.error !== error) this.lastFailure = { stage: 'update', error }
+      throw error
+    }
+  }
+
+  private async updateOptions(options: Partial<EntryOptions>, create: boolean, force: boolean) {
     const legacy = { ...this.options }
 
     // step 1: update options
@@ -142,6 +148,7 @@ export class Entry {
 
     // step 2: execute
     if (this.disabled) {
+      this.lastFailure = undefined
       this.fiber?.dispose()
       return
     }
@@ -152,6 +159,7 @@ export class Entry {
         .keys({ ...this.options, ...legacy })
         .filter(key => !deepEqual(this.options[key], legacy[key]))
       if (!diff.length && !force) return
+      if (diff.includes('config') || this.options.group) this.lastFailure = undefined
       this.context.emit('loader/partial-dispose', this, legacy, true)
       this._patchContext(diff)
     } else {
@@ -184,18 +192,25 @@ export class Entry {
   }
 
   private async _init() {
+    this.lastFailure = undefined
     let exports: any
     try {
       exports = await this.parent.tree.import(this.options.name, this.getOuterStack)
     } catch (error) {
+      this.lastFailure = { stage: 'import', error }
       this.ctx.logger.error(error)
       return
     } finally {
       this._initTask = undefined
     }
-    const plugin = this.loader.unwrapExports(exports)
-    this._patchContext([])
-    this.loader.showLog(this, 'apply')
-    this.fiber = this.ctx.registry.plugin(plugin, this.options.config, this.getOuterStack)
+    try {
+      const plugin = this.loader.unwrapExports(exports)
+      this._patchContext([])
+      this.loader.showLog(this, 'apply')
+      this.fiber = this.ctx.registry.plugin(plugin, this.options.config, this.getOuterStack)
+    } catch (error) {
+      this.lastFailure = { stage: 'activation', error }
+      throw error
+    }
   }
 }

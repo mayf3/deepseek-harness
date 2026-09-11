@@ -7,26 +7,25 @@
 
 import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 
-/** What an installed package is: a bundle layer, a plugin module, or a plain library. */
-export type PluginPackageKind = 'bundle' | 'plugin' | 'library'
+/** What an installed package is: a bundle layer, declared plugin modules, or an unknown package. */
+export type PluginPackageKind = 'bundle' | 'plugin' | 'unknown'
 
 /** Who supplied a package: the installation's own bundles, or a dependency the user installed. */
 export type PluginPackageTrust = 'builtin' | 'external'
 
-/** When a bundle's rows mount: isolated at `runtime` (the default), or with the built-in rows at `boot`. */
+/** Startup failure policy: external runtime rows are optional; boot rows are required. */
 export type PluginPackageStage = 'boot' | 'runtime'
 
 /**
- * The state one package is in, folded from the profile manifest, the probe
- * record, and the live tree:
+ * The state one package is in, folded from the manifest, declarations, and current entries:
  *
- * - `running`: enabled and every row active;
- * - `partial`: enabled with at least one row failed or waiting;
+ * - `running`: enabled, all enabled rows active, and no current issue;
+ * - `partial`: at least one active row, with a failed attempt or unresolved dependency;
  * - `failed`: enabled and no row active;
  * - `disabled`: installed and not in the layer list;
- * - `not-enableable`: installed but the probe refused it (import failure, foreign cordis copy);
+ * - `not-enableable`: bundle declarations cannot be read;
  * - `restart-required`: its manifest state and the live tree disagree, which a profile without live reload resolves at the next start;
- * - `plain`: a library or plugin module, which is added to a composition rather than enabled.
+ * - `plain`: a bundle-less package; explicitly declared modules can be added to a composition.
  */
 export type PluginPackageStatus =
   | 'running'
@@ -54,7 +53,7 @@ export interface PluginPackageRowView {
   readonly disabledBy?: 'user' | 'composition'
   /** Root-fiber phase, or null when the row has no live fiber. */
   readonly phase: PluginRowPhase
-  /** The recorded startup failure of an isolated row, when one is recorded. */
+  /** The current row issue, which can coexist with an active old fiber after an update fails. */
   readonly failure?: { readonly stage: string; readonly message: string }
 }
 
@@ -68,17 +67,12 @@ export interface PluginPackageAddableView {
   readonly title?: string
   /** Default row config, when declared. */
   readonly config?: JsonValue
-  /** Whether the probe imported the module and found a plugin. */
-  readonly ok: boolean
-  /** The probe's import failure, when `ok` is false. */
-  readonly error?: string
-  /** The module's `Config` schema envelope, when it declares one. */
-  readonly configSchema?: JsonValue
+
 }
 
 /** One package as the manager sees it. */
 export interface PluginPackageView {
-  /** The package name; also the row-id prefix and group id of an isolated bundle. */
+  /** The installed package name. */
   readonly name: string
   /** The installed version, when the manifest declares one. */
   readonly version?: string
@@ -98,16 +92,16 @@ export interface PluginPackageView {
   readonly reason?: string
   /** The harness version range the package declares in `engines.dsh`. */
   readonly enginesDsh?: string
-  /** Whether the package shares the harness's cordis copy; null when the probe could not tell. */
+  /** Whether physical Cordis resolution matches the harness; null when unavailable. */
   readonly cordisSameCopy: boolean | null
-  /** The rows the bundle contributes, from the live tree when enabled, else from the probe. */
+  /** The rows the bundle contributes, from the live tree when enabled, else from its static patch. */
   readonly rows: readonly PluginPackageRowView[]
+  /** Current issues in owned rows or existing rows this bundle overrides; ownership is unchanged. */
+  readonly issues?: readonly PluginRowIssue[]
   /** Ids of built-in rows the bundle's patch overrides. */
   readonly overrides: readonly string[]
   /** Agent-plane modules the package declares addable. */
   readonly addable: readonly PluginPackageAddableView[]
-  /** ISO time of the probe record this view was folded from, when one exists. */
-  readonly probedAt?: string
   /** Whether the profile applies user patch files while running; false means changes wait for a restart. */
   readonly liveReload: boolean
 }
@@ -121,7 +115,7 @@ export type PluginRowTarget =
 export interface PluginInstallRejection {
   /** The package name. */
   readonly name: string
-  /** Why it was removed: not a dsh package, or a row id another layer already owns. */
+  /** Why the bundle was rejected, such as a conflicting row id or invalid stage. */
   readonly reason: string
 }
 
@@ -147,6 +141,16 @@ export interface PluginEnableResult {
   readonly changed: boolean
   /** `live` when the tree was recomposed, `restart` when the profile applies changes at its next start. */
   readonly effect: 'live' | 'restart'
+  /** Current row issues after a live application; absent when no issues were observed or application waits for restart. */
+  readonly issues?: readonly PluginRowIssue[]
+}
+
+/** Serializable outcome for an entry whose requested behavior is not fully active. */
+export interface PluginRowIssue {
+  readonly entryId: string
+  readonly moduleName: string
+  readonly stage: string
+  readonly message: string
 }
 
 /** One row outside a package that injects a service one of its rows provides. */
@@ -182,7 +186,7 @@ export interface PluginRowAddition {
 }
 
 /** Why the manager changed something, for a listener deciding what to refresh. */
-export type PluginChangeReason = 'install' | 'uninstall' | 'enable' | 'disable' | 'retry' | 'row'
+export type PluginChangeReason = 'install' | 'uninstall' | 'enable' | 'disable' | 'retry' | 'row' | 'runtime'
 
 /** One chunk of an install run's output. */
 export interface PluginInstallLogChunk {
@@ -211,9 +215,9 @@ export interface PluginOperationDetailsMap {
   'plugins/unavailable': { readonly reason: string }
   /** The package is not a profile dependency. */
   'plugins/not-installed': { readonly packageName: string }
-  /** The package cannot be enabled or added, with the probe's reason. */
+  /** The package cannot be enabled or added, with the declaration or request error. */
   'plugins/not-enableable': { readonly packageName: string; readonly reason: string }
-  /** Enabling composed the bundle and the tree rejected it; the layer list was restored. */
+  /** Preparation or the root Include rejected enablement; the layer selection was reverted. */
   'plugins/enable-failed': { readonly packageName: string; readonly reason: string }
   /** pnpm exited non-zero, could not be spawned, or timed out. */
   'plugins/install-failed': { readonly spec: string; readonly exitCode: number | null; readonly log: string }

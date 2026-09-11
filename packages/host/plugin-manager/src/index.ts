@@ -10,7 +10,7 @@
 
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
-import type { probePackage } from '@deepseek-ai/dsh-app-boot'
+import type { readPackageMetadata } from '@deepseek-ai/dsh-app-boot'
 import type {} from '@deepseek-ai/dsh-agent'
 import type {} from '@deepseek-ai/dsh-agent-presets'
 import {
@@ -44,16 +44,14 @@ export interface Config {
   pnpmCommand: string
   /** Bound on one install or remove run, in milliseconds. */
   installTimeoutMs: number
-  /** Bound on one package probe, in milliseconds. */
-  probeTimeoutMs: number
   /** How many trailing bytes of an install run's output an install failure reports. */
   installLogTailBytes: number
 }
 
-/** Test seams: the child spawner, the package probe, or a manager standing in for the shared one. */
+/** Test seams: the child spawner, the static metadata reader, or a manager standing in for the shared one. */
 export interface PluginManagerInternals {
   spawn?: SpawnLike
-  probe?: typeof probePackage
+  metadata?: typeof readPackageMetadata
   /** The manager every call relays to; defaults to one over this context's profile runtime. */
   manager?: PluginManager
 }
@@ -73,7 +71,6 @@ export class PluginManagerRemote extends TypertRemoteService {
   static Config: z<Config> = z.object({
     pnpmCommand: z.string().default('pnpm'),
     installTimeoutMs: z.number().min(1_000).default(600_000),
-    probeTimeoutMs: z.number().min(1_000).default(20_000),
     installLogTailBytes: z.number().min(256).default(16_384),
   })
 
@@ -87,8 +84,25 @@ export class PluginManagerRemote extends TypertRemoteService {
       presets: () => ctx.get('agentPresets'),
       runningAgents: () => (ctx.get('agents')?.list() ?? []).filter(agent => agent.status === 'running').length,
       ...internals.spawn === undefined ? {} : { spawn: internals.spawn },
-      ...internals.probe === undefined ? {} : { probe: internals.probe },
+      ...internals.metadata === undefined ? {} : { metadata: internals.metadata },
     })
+    const loader = ctx.loader
+    let generation = 0
+    let disposed = false
+    ctx.effect(() => () => { disposed = true })
+    const refresh = (): void => {
+      const requested = ++generation
+      // Loader events precede asynchronous import/update completion; publish only after settlement.
+      void Promise.resolve().then(async () => {
+        await loader.await()
+        await ctx.get('profileRuntime')?.whenIdle()
+        if (!disposed && requested === generation) ctx.emit('plugins/changed', { reason: 'runtime' })
+      }).catch((error: unknown) => { ctx.logger.warn('plugin inventory refresh failed', error) })
+    }
+    ctx.on('internal/status', (fiber) => { if (fiber.entry !== undefined) refresh() }, { global: true })
+    ctx.on('loader/entry-init', refresh, { global: true })
+    ctx.on('loader/partial-dispose', refresh, { global: true })
+
   }
 
   /**
@@ -101,7 +115,7 @@ export class PluginManagerRemote extends TypertRemoteService {
   }
 
   /**
-   * Install a package with pnpm, probe it, and leave it disabled unless asked otherwise.
+   * Install a package with pnpm, read its declarations, and leave it disabled unless asked otherwise.
    * @param spec - what to install, in pnpm's own vocabulary.
    * @param options - `enable` puts every newly installed bundle into the layer list at once.
    * @returns what the run installed and enabled.
@@ -112,7 +126,7 @@ export class PluginManagerRemote extends TypertRemoteService {
   }
 
   /**
-   * Remove a package from the profile with its user-layer rows and probe record.
+   * Remove a package from the profile with its user-layer rows and any obsolete discovery cache.
    * @param packageName - the installed dependency to remove.
    */
   @Remote('uninstall')
