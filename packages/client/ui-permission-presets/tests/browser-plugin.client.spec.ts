@@ -53,9 +53,16 @@ async function bench() {
   onTestFinished(() => { mock.assertNoUnmatched() })
   let catalog = CATALOG
   let catalogCalls = 0
+  let catalogFailure: string | undefined
   const permissionPresets = {
     catalog: () => {
       catalogCalls += 1
+      if (catalogFailure !== undefined) {
+        return Promise.resolve({
+          ok: false as const,
+          error: { code: 'gateway/internal', message: catalogFailure },
+        })
+      }
       return Promise.resolve({ ok: true as const, value: catalog })
     },
   }
@@ -113,6 +120,7 @@ async function bench() {
       catalog = value
       remote.emit('permission-presets/catalog-changed', [])
     },
+    setCatalogFailure: (message: string | undefined) => { catalogFailure = message },
     setResult: (r: { ok: boolean; matched?: boolean }) => { commandResult = r },
     decoration: () => decoration,
     popup: (): PopupSelectSpec => {
@@ -225,6 +233,26 @@ describe('ui-permission browser plugin', () => {
     // A projection that vanished between availability and open throws.
     await expect(b.popup().options({ sessionId: sid('ghost') }, new AbortController().signal))
       .rejects.toThrow(/not available on this host/)
+  })
+
+  it('keeps the picker available after a failed catalog read and recovers on the next open', async () => {
+    const b = await bench()
+    const c = b.decoration()!
+    const proj = { sessionId: sid('s1') }
+    b.values.set(sid('s1'), { currentValue: 'workspace-write' })
+    b.setCatalogFailure('catalog read failed')
+    b.setCatalog(CATALOG)
+
+    await expect(b.popup().options(proj, new AbortController().signal))
+      .rejects.toThrow('catalog read failed')
+    // The failed read clears the catalog. The command stays available so the
+    // picker keeps its own retry entry, and a later open re-reads the catalog.
+    expect(c.available(proj)).toBe(true)
+
+    b.setCatalogFailure(undefined)
+    const recovered = await b.popup().options(proj, new AbortController().signal)
+    expect(recovered.map(option => option.id))
+      .toEqual(['read-only', 'workspace-write', 'danger-full-access', 'auto'])
   })
 
   it('localizes the Auto description instead of displaying host English copy', async () => {

@@ -217,6 +217,10 @@ describe('tool-call-model', () => {
     })).autoReviewDenial).toEqual({ reason: null })
     expect(toolRowModel('bash', result({
       isError: true,
+      error: { name: 'AutoReviewDeniedError', code: 'AUTO_REVIEW_DENIED', reason: 42 },
+    } as never)).autoReviewDenial).toEqual({ reason: null })
+    expect(toolRowModel('bash', result({
+      isError: true,
       error: { name: 'AutoReviewDeniedError', code: 'OTHER' },
     })).autoReviewDenial).toBeNull()
     expect(toolRowModel('bash', result({

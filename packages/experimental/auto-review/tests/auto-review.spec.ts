@@ -1431,7 +1431,7 @@ describe('cancellation and integration teardown', () => {
     await reinstalled.dispose()
   })
 
-  it('loads without a configured read-only preset', async () => {
+  it('publishes Auto without validating the preset table at load', async () => {
     const invalid = new Context()
     contexts.push(invalid)
     await invalid.plugin(LlmRuntime)

@@ -40,6 +40,8 @@ The integration uses only the latest `request/header.config` provider/model and 
 | `FILTERED_HISTORY` | Current compaction surface's sourced human/direct-parent messages, checkpoints, image/attachment facts, and historical call names with logged arguments |
 | `PENDING_ACTION` | Tool name, description, parameter schema, and parsed arguments |
 
+The reviewer builds those two action sections from the Session's complete action history: an authorization is any matching earlier call, and a duplicate identity has to be visible anywhere in the log rather than inside a recent window, so neither the Session projections nor a bounded read serves the decision. The read is the deprecated synchronous `snapshotEvents()` under a line-scoped `typescript/no-deprecated` waiver that names this note.
+
 The main agent's V3 `system/message` nodes, assistant text/reasoning, and tool results are excluded. The current call must belong to the open step recorded by `step/start`; missing step ownership fails closed. It appears only in `PENDING_ACTION`; an unstarted sibling has no historical call fact. Native schema comes from the latest request header. PTC captures a frozen schema at binding construction and passes it through the scheduler into `ToolExecution`; descriptions and parameter schemas never enter start/settle events or the Session/SDK wire. Missing, inconsistent, or ambiguous action facts reject the call without consulting the live registry. An oversized request fails closed without summarization, truncation, another compaction pass, or a small output-token budget.
 
 ### Result and cancellation

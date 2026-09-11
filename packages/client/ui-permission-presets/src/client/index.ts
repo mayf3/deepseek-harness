@@ -172,10 +172,10 @@ export function apply(ctx: ClientContext): void {
 
   ctx.effect(() => command.decorate({
     name: 'permission',
-    // Both halves must exist: the Session exposes its current value and the
-    // active Host generation has supplied a complete selectable catalog.
-    available: session => selectionOf(sessionFor(session)) !== undefined
-      && catalog.store.getSnapshot().value !== null,
+    // The Session's current value alone decides availability. A missing catalog
+    // surfaces through `options()`, which keeps the picker's own retry entry
+    // reachable after a failed read instead of hiding the command.
+    available: session => selectionOf(sessionFor(session)) !== undefined,
     ui: {
       kind: 'popupSelect',
       options: async (session) => {

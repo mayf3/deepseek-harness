@@ -362,7 +362,7 @@ function snapshotAutoReview(agent: Agent, exec: ToolExecution): ReviewSnapshot {
   // and PTC starts carry the authorizations and duplicate identities this call is
   // compared against, and the direct parent's initial prompt sets the delegated
   // scope. No projection or paged reader exposes those records yet.
-  // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
+  // oxlint-disable-next-line typescript/no-deprecated -- Reviewer needs the whole action history; no projection or paged reader exists yet.
   const events = session.snapshotEvents()
   const nodes = [...session.surface.nodes]
   const header = session.requestHeader()

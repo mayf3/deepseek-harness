@@ -119,7 +119,9 @@ function deriveAutoReviewDenial(block: ToolCallBlock): AutoReviewDenial | null {
   if (!('kind' in block) || !block.isError) return null
   const error = block.error
   if (error?.name !== 'AutoReviewDeniedError' || error.code !== 'AUTO_REVIEW_DENIED') return null
-  return { reason: error.reason ?? null }
+  // A durable record reaches this renderer without a type check on `reason`, so
+  // a non-string value degrades to the no-reason copy exactly as a missing one.
+  return { reason: typeof error.reason === 'string' ? error.reason : null }
 }
 
 /**
