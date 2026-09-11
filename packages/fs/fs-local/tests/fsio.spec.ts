@@ -8,7 +8,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { chmod, mkdtemp, readFile, rename, rm, stat, symlink, unlink, writeFile, mkdir, readdir, realpath } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { isAbsolute, join, relative } from 'node:path'
+import { isAbsolute, join, parse, relative, resolve } from 'node:path'
 import { createServer } from 'node:net'
 import {
   applyLiteralEdit,
@@ -102,8 +102,25 @@ describe('resolveLocalTarget', () => {
     expect((await resolveLocalTarget(cwd, target.displayPath)).targetKey).toBe(target.targetKey)
   })
 
-  it('rejects parent traversal through a missing directory hierarchy', async () => {
+  it.skipIf(process.platform === 'win32')('rejects parent traversal through a missing directory hierarchy', async () => {
     await expect(resolveLocalTarget(dir, 'missing/deeper/../created.txt')).rejects.toMatchObject({ code: 'FS_NOT_FOUND' })
+  })
+
+  it.skipIf(process.platform !== 'win32')('preserves native drive-relative cwd and path resolution', async () => {
+    await mkdir(join(dir, 'nested'))
+    await writeFile(join(dir, 'created.txt'), 'native')
+    const drive = parse(dir).root.slice(0, 2)
+    const driveCwd = `${drive}${relative(process.cwd(), dir)}`
+    for (const cwd of [dir, driveCwd]) {
+      for (const requested of ['created.txt', `${drive}nested/../created.txt`]) {
+        const target = await resolveLocalTarget(cwd, requested)
+        const expected = resolve(cwd, requested)
+        expect(target.displayPath).toBe(expected)
+        expect(target.targetKey).toBe(await realpath(expected))
+      }
+    }
+    const missing = await resolveLocalTarget(dir, 'missing/deeper/../created.txt')
+    expect(missing.targetKey).toBe(join(await realpath(dir), 'missing', 'created.txt'))
   })
 
   it.skipIf(process.platform === 'win32')('resolves parent traversal after a symlink in the provider filesystem', async () => {

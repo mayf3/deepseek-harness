@@ -148,7 +148,9 @@ export async function resolveLocalTarget(cwd: string, path: string): Promise<Loc
   if (path.trim().length === 0) throw new FsError('file_path must be a non-empty string', 'FS_NOT_FOUND')
   const absoluteCwd = isAbsolute(cwd) ? cwd : `${process.cwd()}${sep}${cwd}`
   const raw = isAbsolute(path) ? path : `${absoluteCwd}${sep}${path}`
-  const displayPath = /(?:^|[\\/])\.\.(?:[\\/]|$)/u.test(raw) ? raw : resolve(cwd, path)
+  const physicalSpelling = /(?:^|[\\/])\.\.(?:[\\/]|$)/u.test(raw) ? raw : resolve(cwd, path)
+  /* v8 ignore next -- Native Windows tests cover DOS drive-relative resolution; POSIX preserves physical traversal. */
+  const displayPath = process.platform === 'win32' ? resolve(cwd, path) : physicalSpelling
   try {
     // Prefer the file's own realpath (resolves a symlinked file to its target).
     return { displayPath, targetKey: FsTargetKey(await realpath(displayPath)) }
@@ -169,6 +171,7 @@ export async function resolveLocalTarget(cwd: string, path: string): Promise<Loc
   while (true) {
     try {
       const realAncestor = await realpath(ancestor)
+      /* v8 ignore next -- POSIX rejects this traversal; Windows normalizes parent segments before filesystem lookup. */
       if (missing.includes('..')) throw new FsError(`cannot resolve "${displayPath}": parent traversal crosses a missing directory`, 'FS_NOT_FOUND')
       // On Windows, realpath of a regular file succeeds where POSIX returns
       // ENOTDIR (the OS reports ENOENT for `regular-file/child`, not ENOTDIR).
