@@ -25,10 +25,15 @@ export interface TerminalIoReport {
 }
 
 async function measure(capacityBytes: number, mode: string): Promise<TerminalIoReport> {
-  const chunkBytes = mode === 'tiny' ? 16 : CHUNK_BYTES
+  const chunkBytes = mode === 'filtered' ? 64 * 1024 : mode === 'tiny' ? 16 : CHUNK_BYTES
   const chunk = Buffer.alloc(chunkBytes, 'x')
+  if (mode === 'filtered') {
+    // Each decoded callback has 56 KiB of discarded OSC followed by an 8 KiB string slice.
+    chunk.write('\x1b]0;', 0)
+    chunk[56 * 1024 - 1] = 7
+  }
   const prefillBytes = mode === 'steady' ? capacityBytes : 0
-  const timedBytes = mode === 'steady' ? MIB : 5 * MIB
+  const timedBytes = mode === 'filtered' ? 513 * chunkBytes : mode === 'steady' ? MIB : 5 * MIB
   const output = new Readable({ read() {} })
   const ended = Promise.withResolvers<SubprocessOutcome>()
   const writeReady = Promise.withResolvers<void>()
@@ -94,7 +99,7 @@ assertBuiltBenchmarkRuntime(import.meta.url, {
 })
 const capacityBytes = Number(process.argv[2])
 const mode = process.argv[3]
-if (![128 * 1024, 4 * MIB].includes(capacityBytes) || (mode !== 'steady' && mode !== 'full' && mode !== 'tiny')) {
-  throw new Error('usage: terminal-io.worker.js <131072|4194304> <steady|full|tiny>')
+if (![128 * 1024, 4 * MIB].includes(capacityBytes) || (mode !== 'steady' && mode !== 'full' && mode !== 'tiny' && mode !== 'filtered')) {
+  throw new Error('usage: terminal-io.worker.js <131072|4194304> <steady|full|tiny|filtered>')
 }
 console.log(JSON.stringify(await measure(capacityBytes, mode)))

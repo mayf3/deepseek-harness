@@ -65,8 +65,18 @@ class BoundedTextBuffer {
     private readonly maxLines?: number,
   ) {}
 
+  get truncated(): boolean {
+    return this.dropped
+  }
+
+  get isEmpty(): boolean {
+    return this.head === undefined
+  }
+
   append(text: string): void {
     if (text.length === 0) return
+    // Sanitized text can be a slice retaining discarded controls; copy UTF-16 without replacing lone surrogates.
+    text = Buffer.from(text, 'utf16le').toString('utf16le')
     this.bytes += Buffer.byteLength(text)
     const tail = this.tail
     if (tail !== undefined) {
@@ -84,7 +94,7 @@ class BoundedTextBuffer {
       tail.text += text
     } else {
       if (tail !== undefined && tail.text.length <= COALESCED_CHUNK_UNITS) {
-        // Seal small fragments into owned storage before retaining another chunk.
+        // Copy coalesced fragments into one string; large tails already own their storage.
         tail.text = Buffer.from(tail.text, 'utf16le').toString('utf16le')
       }
       const chunk: TextChunk = { text, start: 0, next: undefined }
@@ -562,7 +572,7 @@ export class LocalPtySession implements TerminalBackendSession {
         return
       }
       const elapsed = Date.now() - operation.startedAt
-      const startupHasOutput = !this.initializing || this.scrollback.snapshot().text.length > 0
+      const startupHasOutput = !this.initializing || !this.scrollback.isEmpty
       const acceptsStdinWait = startupHasOutput && foreground !== undefined
         && operation.acceptsStdinWait(foreground.processGroupId, foreground.inputWaiting)
       if (elapsed >= this.config.exactProbeAfterMs && acceptsStdinWait) {
@@ -687,7 +697,7 @@ export class LocalPtySession implements TerminalBackendSession {
   private settleActive(waitReason: TerminalWaitReason, retainOwnership = false): void {
     const operation = this.active
     if (operation === undefined) return
-    const scrollbackTruncated = this.scrollback.snapshot().truncated
+    const scrollbackTruncated = this.scrollback.truncated
     if (retainOwnership) {
       this.stopPolling()
       this.activeAbort?.()

@@ -250,7 +250,7 @@ describe('LocalPtySession incremental output compatibility', () => {
     expect(await operation.done).toMatchObject({ viewport: 'fresh', truncated: true, waitReason: 'session_exit' })
   })
 
-  it('preserves split surrogate pairs when sealed coalesced text reaches the eviction head', () => {
+  it('preserves split surrogate pairs when copied coalesced text reaches the eviction head', () => {
     const limit = 4100
     const { session } = fixture({ scrollbackMaxBytes: limit, maxReadBytes: limit })
     // Lone UTF-16 halves cannot pass through the session's TextDecoder unchanged.

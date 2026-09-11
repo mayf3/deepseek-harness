@@ -17,7 +17,7 @@ function median(values: readonly number[]): number {
   return [...values].sort((a, b) => a - b)[Math.floor(values.length / 2)] as number
 }
 
-async function sample(capacity: number, mode: 'steady' | 'full' | 'tiny'): Promise<TerminalIoReport> {
+async function sample(capacity: number, mode: 'steady' | 'full' | 'tiny' | 'filtered'): Promise<TerminalIoReport> {
   const outcome = await runBuiltBenchmarkWorker<TerminalIoReport>({
     worker: WORKER, args: [String(capacity), mode], timeoutMs: 120_000, exposeGc: true,
   })
@@ -49,6 +49,12 @@ it('bounds steady overflow cost as retained terminal capacity grows 32 times', a
 it('bounds retained memory when five MiB arrives in sixteen-byte chunks', async () => {
   const report = await sample(4 * MIB, 'tiny')
   console.log(JSON.stringify({ scenario: 'terminal-tiny-chunks', report, heapBudgetBytes: MAX_RETAINED_HEAP_BYTES }))
+  expect(report.retainedHeapBytes).toBeLessThanOrEqual(MAX_RETAINED_HEAP_BYTES)
+})
+
+it('releases filtered OSC storage behind retained visible string slices', async () => {
+  const report = await sample(4 * MIB, 'filtered')
+  console.log(JSON.stringify({ scenario: 'terminal-filtered-chunks', report, heapBudgetBytes: MAX_RETAINED_HEAP_BYTES }))
   expect(report.retainedHeapBytes).toBeLessThanOrEqual(MAX_RETAINED_HEAP_BYTES)
 })
 
