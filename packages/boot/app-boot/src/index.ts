@@ -699,7 +699,7 @@ const FIBER_FAILED = 3 as FiberState.FAILED
  * not affect startup; an enabled listed entry must activate. The list covers
  * shared Agent execution, application endpoints, and Web bootstrap/transport.
  */
-export const REQUIRED_STARTUP_ENTRY_IDS: readonly string[] = Object.freeze([
+const requiredStartupEntryIds = new Set<string>([
   'agent-loop',
   'webserver',
   'modules',
@@ -708,8 +708,6 @@ export const REQUIRED_STARTUP_ENTRY_IDS: readonly string[] = Object.freeze([
   'acp',
   'sdk-jsonrpc-server',
 ])
-
-const requiredStartupEntryIds = new Set<string>(REQUIRED_STARTUP_ENTRY_IDS)
 
 /** Render plugin stacks, nested causes, and aggregate member failures once per error. */
 function formatActivationError(error: unknown): string {

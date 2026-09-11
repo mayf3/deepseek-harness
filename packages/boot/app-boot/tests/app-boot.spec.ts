@@ -9,7 +9,6 @@ import {
   addHarnessSourceSection, auditStartupEntries, boot,
   FAIL_LOUD_RELEASE_TIMEOUT_MS, HARNESS_SOURCE_SECTION,
   installFailLoud, loadEnv, loadLayeredEnv, loadOverlayPatches, resolveConfigPath, type FailLoudProcess,
-  REQUIRED_STARTUP_ENTRY_IDS,
 } from '../src/index.ts'
 
 const NAME = 'dsh-test-bin'
@@ -505,6 +504,16 @@ describe('installFailLoud', () => {
 })
 
 describe('auditStartupEntries', () => {
+  const requiredIds = [
+    'agent-loop',
+    'webserver',
+    'modules',
+    'connection',
+    'headless-runner',
+    'acp',
+    'sdk-jsonrpc-server',
+  ]
+
   interface FakeEntry {
     fiber?: {
       state: number
@@ -532,25 +541,11 @@ describe('auditStartupEntries', () => {
     await: error === undefined ? async () => undefined : async () => { throw error },
   })
 
-  it('pins the global list to shared execution, application endpoints, and Web startup', () => {
-    expect(Object.isFrozen(REQUIRED_STARTUP_ENTRY_IDS)).toBe(true)
-    expect(REQUIRED_STARTUP_ENTRY_IDS).toEqual([
-      'agent-loop',
-      'webserver',
-      'modules',
-      'connection',
-      'headless-runner',
-      'acp',
-      'sdk-jsonrpc-server',
-    ])
-    expect(REQUIRED_STARTUP_ENTRY_IDS).not.toContain('tool-todo')
-  })
-
   it('ignores active, disabled, and absent required entries', async () => {
     const warn = vi.fn()
     await expect(auditStartupEntries(ctxWith([]), NAME, warn)).resolves.toBeUndefined()
     for (const disabled of [false, true]) {
-      await expect(auditStartupEntries(ctxWith(REQUIRED_STARTUP_ENTRY_IDS.map(id => ({
+      await expect(auditStartupEntries(ctxWith(requiredIds.map(id => ({
         fiber: disabled ? fiber(3, new Error('disabled failure')) : fiber(2),
         disabled,
         options: { id, name: './required.mjs' },
@@ -675,7 +670,7 @@ describe('auditStartupEntries', () => {
     expect(diagnostic).toContain('unexpected-state (./unexpected-state.mjs): fiber state 1')
   })
 
-  it.each(['webserver', 'modules', 'connection'])('rejects required %s failures after warning about optional failures', async (id) => {
+  it.each(requiredIds)('rejects required %s failures after warning about optional failures', async (id) => {
     const warn = vi.fn()
     const requiredError = new Error('address already in use')
     const optionalError = new Error('todo unavailable')
