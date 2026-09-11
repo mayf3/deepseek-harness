@@ -360,7 +360,7 @@ test('sends authenticated JSON and escapes an API error body', async () => {
   await assert.rejects(failing('/failure'), /"::error::untrusted\\nbody"/u)
 })
 
-for (const [ownedLines, totalLines, expectedPoints] of [[0, 100, 1], [25, 100, 1.5], [49, 100, 1.98], [50, 100, 2], [51, 100, 2], [100, 100, 2], [0, 0, 1]]) {
+for (const [ownedLines, totalLines, expectedPoints] of [[0, 100, 1], [1, 8, 1.5], [24, 100, 1.96], [1, 4, 2], [25, 100, 2], [26, 100, 2], [100, 100, 2], [0, 0, 1]]) {
   test(`scores ${ownedLines}/${totalLines} old production lines as ${expectedPoints} points`, async () => {
     let measurements = 0
     const result = await evaluateApproval({
@@ -437,5 +437,5 @@ test('revokes a previous success before starting expensive attribution', async (
       return {}
     },
   })
-  assert.deepEqual(states, ['pending', 'pending'])
+  assert.deepEqual(states, ['pending', 'success'])
 })

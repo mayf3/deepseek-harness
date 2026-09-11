@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/process/2026-09-11-production-blame-approval-weight.md
-2026-09-11-production-blame-approval-weight.md: 5e0b767ba60ea92a0c510436f87ba21059c0f9e5
-2026-09-11-production-blame-approval-weight.zh.md: ce6afa0a8ad9cdd910e7fff1ffbeffddbd513f5e
+2026-09-11-production-blame-approval-weight.md: 047525734865866acc107508ca577e68b71e443c
+2026-09-11-production-blame-approval-weight.zh.md: 520c20b5361a150ca3919f5956fd3eef1a860e70

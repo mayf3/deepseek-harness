@@ -168,7 +168,7 @@ export async function evaluateApproval({ event, policySource, api, getOwnership 
       if (approval.points !== 1) continue
       const ownedLines = ownership.reviewerLines[approval.login.toLowerCase()] ?? 0
       approval.ownership = { ownedLines, totalLines: ownership.totalLines }
-      if (ownership.totalLines > 0) approval.points = Math.min(2, 1 + 2 * ownedLines / ownership.totalLines)
+      if (ownership.totalLines > 0) approval.points = Math.min(2, 1 + 4 * ownedLines / ownership.totalLines)
     }
   }
   approvals.sort((left, right) => left.login.localeCompare(right.login, 'en'))
