@@ -110,6 +110,15 @@ describe('client bundle purity gate', () => {
     expect(() => resolveId('@deepseek-ai/dsh-spill-policy/notice/internal')).toThrow(/purity/)
   })
 
+  it('admits only pure message projection entries, not recovery plugins or format codecs', () => {
+    expect(resolveId('@deepseek-ai/dsh-session-format-catalog/message-projections')).toBeNull()
+    expect(resolveId('@deepseek-ai/dsh-compaction-image-offload/projection')).toBeNull()
+    expect(() => resolveId('@deepseek-ai/dsh-session-format-catalog')).toThrow(/purity/)
+    expect(() => resolveId('@deepseek-ai/dsh-compaction-image-offload')).toThrow(/purity/)
+    expect(() => resolveId('@deepseek-ai/dsh-session-format-catalog/message-projections/internal')).toThrow(/purity/)
+    expect(() => resolveId('@deepseek-ai/dsh-compaction-image-offload/projection/internal')).toThrow(/purity/)
+  })
+
   it('lets exact generated Remote contributions inline without admitting their package implementation', () => {
     expect(resolveId('@deepseek-ai/dsh-goal/remote')).toBeNull()
     expect(() => resolveId('@deepseek-ai/dsh-goal')).toThrow(/purity/)
