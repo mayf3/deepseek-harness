@@ -184,6 +184,17 @@ describe('FilesBody', () => {
     expect(view.container.querySelector('[data-files-reload]')?.getAttribute('aria-label')).toBe(zh.reload)
   })
 
+  it('captures the body scroll offset and restores it when a tab switch remounts the tree', async () => {
+    const { view, script, instance, remount } = mountBody()
+    await act(() => script.settle({ ok: true, value: ROOT_LEVEL }))
+    const body = view.container.querySelector('[data-files-body]')!
+    fireEvent.scroll(body, { target: { scrollTop: 120 } })
+    expect(instance.getSnapshot().byTab[TAB]!.scrollTop).toBe(120)
+    view.unmount()
+    const back = remount()
+    expect(back.container.querySelector('[data-files-body]')!.scrollTop).toBe(120)
+  })
+
   it('an aborted record is forgotten and not seeded again while the body is still mounted', async () => {
     const { view, script, controller, instance } = mountBody()
     await act(() => script.settle({ ok: true, value: ROOT_LEVEL }))
