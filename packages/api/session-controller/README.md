@@ -37,7 +37,7 @@ The Session object also carries local submission echoes: `session.beginSubmissio
 
 The user-invocable `skills/list` metadata includes the winning provider’s optional instruction-file `path`. The composer can preview that file without loading every skill body or activating a cold Agent.
 
-Fork copies history through the selected completed turn, including its `turn/end`. Events after that point, including queued input and model-setting changes, are excluded. An omitted or past-end anchor selects the last completed turn; an anchor inside an unfinished turn is rejected.
+Fork copies history through the selected completed turn and retains following events until the next turn starts or the inbox changes. The stopping event and all later events are excluded; titles and model settings are inherited only when recorded before that stop. An omitted or past-end anchor selects the last completed turn; an anchor inside an unfinished turn is rejected.
 
 
 <a id="session-media-references"></a>

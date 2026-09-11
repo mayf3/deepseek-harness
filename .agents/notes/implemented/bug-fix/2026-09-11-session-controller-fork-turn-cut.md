@@ -1,4 +1,4 @@
-# Agent Note: Session Controller forks stop at the selected turn end
+# Agent Note: Session Controller forks exclude the next inbox change
 
 Status: implemented
 
@@ -10,20 +10,20 @@ A user input enters the durable inbox before its `turn/start`. Extending a compl
 
 ## Decision
 
-The [Session Controller](../../../../packages/api/session-controller/README.md) copies the contiguous prefix through the selected `turn/end`, inclusive. Explicit anchors select the first closing event at or after the anchor; omitted and past-end anchors select the last closing event. No event after that closing event belongs to the seed, including queued input, titles, and model settings.
+The [Session Controller](../../../../packages/api/session-controller/README.md) selects a completed `turn/end` and copies its contiguous prefix plus following events up to, but excluding, the first `turn/start` or `agent/inbox/spliced`. Explicit anchors select the first closing event at or after the anchor; omitted and past-end anchors select the last closing event. Both next-turn and next-step inbox changes stop the extension.
 
-The lower-level `SessionStore.fork()` retains its explicit stable-event semantics from the [log-only event decision](../simplification/2026-07-28-remove-synthetic-log-only-turns.md). Selecting a completed turn in the controller does not request a later stable event.
+This retains title and model-setting events before the first inbox change, consistent with the [log-only event decision](../simplification/2026-07-28-remove-synthetic-log-only-turns.md). The lower-level `SessionStore.fork()` retains its explicit stable-event semantics.
 
 ## Alternatives considered
 
-**Stop only at the next inbox event.** Event-type exceptions still copy unrelated state changes after the selected turn and require the controller to classify plugin-owned events.
+**Stop exactly at the selected turn end.** This drops standalone title and model-setting events recorded after the turn even when no input follows them.
 
-**Copy the tail and clear the child's inbox.** Clearing adds child events to cancel input that lies outside the requested prefix, while still inheriting other state from after the selected turn.
+**Copy the tail and clear the child's inbox.** Clearing adds child events to cancel input that the fork can exclude from its seed.
 
 ## Consequences
 
-A fork inherits the configuration recorded through its selected turn. Later configuration and title events are excluded. The client may independently assign the child's fork title. Events already inside the selected prefix retain their ordinary replay semantics; this decision does not redefine pending input inserted before the selected closing event.
+An asynchronous title or plugin event can occur after an inbox change; the fork excludes it along with the rest of that tail. Event ordering does not guarantee that every late plugin result is inherited. The client independently assigns a fork title from the displayed source title when available. Events already inside the selected completed-turn prefix retain their ordinary replay semantics; this decision does not redefine pending input inserted before the selected closing event.
 
 ## Verification
 
-Controller tests execute the production loop and check that sending C after forking A excludes the parent's later B from child history and produces one model request. Message, closing-event, omitted, and past-end anchors share this assertion. Model-routing coverage excludes a later configuration change. The Web message-actions snapshot seeds a queued input after the completed turn and verifies the branch action creates a child without that input or its inbox insertion.
+Controller tests execute the production loop and check that sending C after forking A excludes the parent's later B from child history and produces one model request, while retaining a title between A's end and B's insertion. Message, closing-event, omitted, and past-end anchors share this assertion. Model-routing coverage retains settings before either inbox destination and excludes later titles and settings. The Web message-actions snapshot places B's inbox insertion between completed turns and verifies the branch action creates a child without B or its insertion.
