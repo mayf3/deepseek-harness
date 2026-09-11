@@ -29,19 +29,20 @@ kind: "package-reference"
 
 ### 运行一个程序
 
-向运行时提供程序源码与一个或多个绑定命名空间。每个命名空间会成为程序内的一个全局异步函数对象——PTC mode 在 `tools` 下传入一个。程序作为异步函数的函数体运行，因此顶层 `await`／`return` 可用；无损 JSON 完成值成为 `result.value`，每个输出通道在 `result.logs` 中保留自身顺序而跨通道交错由后端决定，任何失败都以 `result.error` 报告并带有可分支的 kind。运行时绝不会因程序失败而 reject——reject 意味着你误用了 seam，例如在 dispose（资源释放）后提交运行。
+向运行时提供程序与绑定命名空间，然后依次调用 `resolve(request)` 和 `run(spec)`。解析根据提供方能力验证可选 cwd、timeout 与沙箱策略，并填入部署默认值。程序作为异步函数体运行，支持顶层 `await` 与 `return`；无损 JSON 完成值成为 `result.value`，捕获文本成为 `result.logs`，程序失败成为 `result.error`。每个输出通道保持自身顺序，跨通道交错由后端决定。
 
 ```text
-const result = await ctx.codeRuntime.run({
+const spec = ctx.codeRuntime.resolve({
   program: 'return await tools.add({ a: 1, b: 2 })',
   bindings: [{ global: 'tools', functions: { add: async (args) => args.a + args.b } }],
 })
+const result = await ctx.codeRuntime.run(spec)
 // result.value === 3
 ```
 
 ### 选择后端
 
-后端声明两个你可以依赖的描述符：`language`——程序必须使用的源语言，已知值为 `'typescript'` 与 `'python'`——以及 `isolation`——执行基底（`'worker-thread'`、`'process'`、`'container'`），仅供部署与诊断使用，不构成安全声明。[`dsh-code-runtime-node`](../code-runtime-node/README.zh.md) 在全新的 Node Worker 线程中执行 TypeScript；私有的 [`dsh-experimental-code-runtime-python`](../../experimental/code-runtime-python/README.zh.md) 包在全新的 CPython 子进程中执行 Python，供选择性组合使用。
+后端以 `language` 与 `isolation` 提供诊断描述符；两者都不授予权限或证明约束。[`dsh-code-runtime-node`](../code-runtime-node/README.zh.md) 在全新的受管 Node 进程中按已解析沙箱策略执行可擦除 TypeScript。私有的 [`dsh-experimental-code-runtime-python`](../../experimental/code-runtime-python/README.zh.md) 提供方在全新 CPython 子进程中执行 Python，不提供文件约束。`sandboxMode` 声明提供方的部署文件策略模式；不支持该能力时则缺省。
 
 ### 可移植地命名绑定
 
@@ -49,7 +50,7 @@ binding-global 与 error-class 名称是语言可移植的：必须匹配 `[A-Za
 
 ### 可能出什么问题
 
-失败以 `result.error` 返回，并带正交的 `kind`：程序抛出或解析失败（`exception`）、预算到期（`timeout`）、运行被中止（`abort`）、执行基底终止（`worker-exit`）、完成值不是无损 JSON（`invalid-output`），或序列化输出超过上限（`output-limit`）。每种 kind 都带一条可反馈给模型的消息。`run()` 只在 seam 误用时 reject，例如在 dispose 后提交运行，或绑定名称不符合可移植标识符规则。
+失败以 `result.error` 返回，带正交的 `kind`：`exception`、`timeout`、`abort`、`worker-exit`、`invalid-output`、`output-limit`、`protocol` 或 `sandbox-unavailable`。提供方在成功或失败之外，单独返回适用的 `result.sandbox` 事实。无效或不支持的执行选项在 `resolve` 期间失败；`run` 拒绝调用方误用，例如未解析输入、无效绑定名或资源释放后的调用。
 
 -----
 
@@ -63,17 +64,17 @@ binding-global 与 error-class 名称是语言可移植的：必须匹配 `[A-Za
 
 ### 设计理念
 
-本包是代码执行能力 seam 的 Service Definition 角色（[能力 seam](../../../.agents/notes/implemented/architecture/2026-06-13-capability-seams.zh.md)）：一个注册为 `ctx.codeRuntime` 的抽象 `CodeRuntime extends Service`，加上两个后端与消费方共享的词汇。提供方继承 `CodeRuntime`、实现 `run` 并注册服务；消费方（`dsh-tools` 中的 PTC mode）生成面向模型的 SDK 并桥接工具分发。按约定，运行时不了解工具与会话：它接收程序与具名异步绑定，返回 `{ value, logs, error? }`。
+本包是代码执行能力 seam 的 Service Definition 角色（[能力 seam](../../../.agents/notes/implemented/architecture/2026-06-13-capability-seams.zh.md)）：一个注册为 `ctx.codeRuntime` 的抽象 `CodeRuntime extends Service`，加上两个后端与消费方共享的词汇。提供方继承 `CodeRuntime`、实现 `resolve` 和 `run` 并注册服务；消费方（`dsh-tools` 中的 PTC mode）生成面向模型的 SDK 并桥接工具分发。按约定，运行时不了解工具与会话：它接收程序、具名异步绑定和已解析执行选项，然后返回捕获输出、执行结果与适用的沙箱事实。
 
 ### 服务 API
 
-约定是后端实现的三个成员：`run(request)` 针对请求的绑定执行一段程序，并把每个程序结果——解析／转换失败、抛出异常、无效完成值、输出溢出、预算到期、中止或基底终止——都作为结果 `error` 字段 resolve，reject 只留给调用方误用，例如在 dispose 后提交运行；`language` 与 `isolation` 是只读描述符，为部署与诊断标注源语言与执行基底。
+`resolve(request)` 负责支持选项的验证与部署默认值。`run(spec)` 执行完整输入，并在清理后返回程序结果。语言和执行基底描述符指导呈现；`sandboxMode` 表示消费方能否传入已解析文件策略。描述符与程序成功结果都不能代替后端报告的强制能力事实。
 
 穷尽式语义见[代码运行时子系统参考](../../../docs/subsystems/code-runtime.zh.md)；确切签名见 [`src/index.ts`](src/index.ts)。
 
 ### 词汇
 
-`CodeRunRequest`（`program`、`bindings`、`signal?`）携带运行时操作所需的全部内容；默认值（时间预算、输出上限）来自各提供方的已验证配置，绝不是 `run()` 内部隐藏的 `??`。`bindings` 是 `CodeBindingNamespace` 列表（`global` + `functions` + 可选 `errorClass`），每个命名空间作为程序内的一个全局异步可调用函数对象公开，返回 `CodeJsonValue`——seam 的结构性无损 JSON 类型。`errorClass` 描述符点名真实的程序全局构造器，以及用于接收被拒绝成员名称的自有属性，因此后端永远不会得知 `ToolCallError` 之类的 Consumer 术语。`CodeRunResult` 报告无损 JSON 完成值 `value?`、通道内有序且跨通道交错由后端决定的 `logs: string[]`，以及 `error?`（`CodeRunFailure`：正交 `kind` + 可反馈给模型的 `message`）。完整约定见 `src/types.ts`。
+`CodeRunRequest` 携带程序、Host 绑定、取消和可选执行选择。`CodeRunSpec` 要求已解析的 cwd 与经过时间截止。`CodeBindingNamespace` 声明程序全局对象与可选的类型化拒绝构造器。`CodeRunResult` 将日志／值、失败与 `CodeRunSandbox` 事实分开；确切字段与提供方义务见 [`src/types.ts`](src/types.ts)。
 
 ### 可移植标识符
 
@@ -84,7 +85,7 @@ binding-global 与 error-class 名称是语言可移植的：必须匹配标识�
 | 文件 | 职责 |
 |---|---|
 | [`src/index.ts`](src/index.ts) | 插件入口：抽象 `CodeRuntime` 服务与可移植标识符排除集 |
-| [`src/types.ts`](src/types.ts) | 词汇：`CodeRunRequest`、`CodeBindingNamespace`、`CodeJsonValue`、`CodeRunResult`、`CodeRunFailure` |
+| [`src/types.ts`](src/types.ts) | 词汇：`CodeRunRequest`、`CodeRunSpec`、绑定、结果、失败与沙箱事实 |
 | — | 不发布运行时不变式伴生入口；本包不公开任何独立的事件序列或可变数据关系，相关约束仅由其所属 seam 的约定实施。 |
 
 </details>
@@ -97,7 +98,7 @@ binding-global 与 error-class 名称是语言可移植的：必须匹配标识�
 当包级约定不够用时阅读以下内容。它们从 PTC mode 消费方进入后端与能力 seam 模型。
 
 - [PTC mode Agent Note](../../../.agents/notes/implemented/feature/2026-06-15-ptc.zh.md)——工具注册表如何消费 `ctx.codeRuntime` 并把 `run_code` 呈现给模型。
-- [Worker 线程后端](../code-runtime-node/README.zh.md)——已发布的 TypeScript 执行后端。
+- [Node 进程后端](../code-runtime-node/README.zh.md)——已发布的 TypeScript 执行后端。
 - [实验性 Python 后端](../../experimental/code-runtime-python/README.zh.md)——私有的 CPython 子进程提供方及其 fd-3 协议。
 - [代码运行时子系统参考](../../../docs/subsystems/code-runtime.zh.md)——请求／结果词汇、绑定与 `ctx.codeRuntime` 的 cordis 接口面。
 - [能力 seam](../../../.agents/notes/implemented/architecture/2026-06-13-capability-seams.zh.md)——Service Definition / Service Provider / Consumer 拆分。
@@ -122,8 +123,8 @@ binding-global 与 error-class 名称是语言可移植的：必须匹配标识�
 
 - **`run()` 是一次性的**——`logs` 只有在 `CodeRunResult` resolve 后才能获得；seam 不提供正在运行的程序所产生输出的流式日志或进度接口。
 - **运行之间不保留状态**——每次请求都在全新环境中运行；持久 REPL 风格内核在某个后端带来自己的日志方案之前保持延期。
-- **worker 线程后端已发布；Python process 后端是私有实验包；`'container'` 没有实现**——强安全边界需要等待容器后端。
-- **中间 binding 值没有字节上限**——实现仍受 structured-clone 成本与进程内存约束，而提供方或执行器可能已经应用自己的获取上限。
+- **提供方的约束能力不同**——已发布 Node 提供方强制执行已解析文件策略，私有实验性 Python 提供方拒绝显式策略。不提供容器提供方。
+- **提供方之间没有统一的绑定字节上限**——各提供方负责自己的传输限制；绑定仍可能在结果到达这些限制前分配内存。
 
 <a id="dev-note"></a>
 ### 开发备注

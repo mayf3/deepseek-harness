@@ -100,12 +100,14 @@ describe('Node program process', () => {
 
   it('disposes active programs and rejects later execution', async () => {
     const { ctx, run, runtime } = await setup()
+    const spec = runtime.resolve({ program: '', bindings: [] })
     const entered = Promise.withResolvers<undefined>()
     const active = run({ program: 'await tools.enter({}); await new Promise(() => {})', bindings: bindings({ enter: async () => { entered.resolve(undefined); return null } }) })
     await entered.promise
     await ctx.fiber.dispose()
     expect((await active).error?.kind).toBe('abort')
-    await expect(run({ program: '', bindings: [] })).rejects.toThrow('disposal')
+    await expect(runtime.run(spec)).rejects.toThrow('disposal')
+    expect(() => runtime.resolve({ program: '', bindings: [] })).toThrow('disposal')
     expect(runtime.isolation).toBe('process')
   })
 
@@ -139,4 +141,15 @@ describe('Node program process', () => {
     expect(result.sandbox).toMatchObject({ mode: 'workspace-write', denied: true })
     await expect(readFile(join(outside, 'denied.txt'))).rejects.toMatchObject({ code: 'ENOENT' })
   })
+})
+
+it('preserves empty console entries and bounds native output overflow', async () => {
+  const { run } = await setup({ maxOutputBytes: 100 })
+  const lines = await run({ program: 'console.log("a"); console.log(""); console.log("b")', bindings: [] })
+  expect(lines.logs).toEqual(['a', '', 'b'])
+  const overflow = await run({ program: 'const fs=await import("node:fs"); fs.writeSync(1,"HEAD-"+"x".repeat(100000));', bindings: [] })
+  expect(overflow.error?.kind).toBe('output-limit')
+  expect(overflow.logs.join('')).toContain('HEAD-')
+  const bytes = Buffer.byteLength(JSON.stringify(overflow.logs)) + Buffer.byteLength(JSON.stringify(overflow.error?.message))
+  expect(bytes).toBeLessThanOrEqual(100)
 })

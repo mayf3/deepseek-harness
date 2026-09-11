@@ -3,7 +3,7 @@ import { copyFile, mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import type { Duplex } from 'node:stream'
+import { Duplex } from 'node:stream'
 import { expect, it, onTestFinished } from 'vitest'
 import { JsonChannel } from '../src/channel.ts'
 import { decodeCodeJsonWire, encodeCodeJsonWire } from '../src/json-wire.ts'
@@ -25,7 +25,9 @@ it('boots an unbuilt source closure outside the workspace and exchanges tool rep
   const completed = Promise.withResolvers<unknown>()
   child.once('error', error => completed.reject(error))
   child.once('exit', (code) => { if (code !== 0) completed.reject(new Error(`child exit ${code}: ${stderr}`)) })
-  const channel = new JsonChannel(child.stdio[7] as Duplex, 100_000, (raw) => {
+  const control = Array.from(child.stdio)[7]
+  if (!(control instanceof Duplex)) { child.kill(); await finished; throw new Error('missing child control channel') }
+  const channel = new JsonChannel(control, 100_000, (raw) => {
     const message = raw as { type: string; id?: number; args?: unknown; value?: unknown; error?: unknown }
     if (message.type === 'ready') {
       void channel.send({ type: 'boot', data: {

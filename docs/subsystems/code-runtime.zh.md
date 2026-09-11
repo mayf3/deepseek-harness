@@ -2,20 +2,18 @@
 
 [English](code-runtime.md) | 中文
 
-代码执行 seam 是一个[能力 seam](../../.agents/notes/implemented/architecture/2026-06-13-capability-seams.zh.md)：其 Service Definition（[dsh-code-runtime](../../packages/code-runtime/code-runtime)，`ctx.codeRuntime`）使用宿主提供的异步绑定运行一段模型编写的程序，并报告其打印内容与返回值。代码执行是**一项可选能力**，不属于 agent loop（智能体循环）主干，因此其词汇定义在此而非 [core.md](core.zh.md) 中。各后端的执行基底与源语言不同，这两项均为服务上的只读描述符；worker-thread Service Provider 与工具注册表 Consumer 的约定见 [PTC mode 基础设计](../../.agents/notes/implemented/feature/2026-06-15-ptc.zh.md) 和[类型化返回约定](../../.agents/notes/implemented/feature/2026-07-20-ptc-typed-tool-returns.zh.md)。
+代码执行[能力 seam](../../.agents/notes/implemented/architecture/2026-06-13-capability-seams.zh.md)通过 [dsh-code-runtime](../../packages/code-runtime/code-runtime) 提供 `ctx.codeRuntime`。它针对 Host 绑定运行一个程序，报告输出、失败与适用的沙箱事实。代码执行是可选能力，不属于[智能体循环主干](core.zh.md)。[PTC 基础](../../.agents/notes/implemented/feature/2026-06-15-ptc.zh.md)负责注册表呈现，[类型化返回约定](../../.agents/notes/implemented/feature/2026-07-20-ptc-typed-tool-returns.zh.md)负责绑定值，[沙箱 Node 决策](../../.agents/notes/implemented/architecture/2026-09-11-sandboxed-node-code-runtime.zh.md)负责已发布的执行提供方。
 
 源码：[`packages/code-runtime/code-runtime/src/types.ts`](../../packages/code-runtime/code-runtime/src/types.ts)
 
 ## 运行：请求进，结果出
 
-`CodeRunRequest` 携带**运行时要处理的一切内容**。按照「包边界处显式优于隐式」的规则，默认值（时间预算、输出上限）来自实现的已校验配置，绝不是 `run()` 内部隐藏的 `??`：
+`CodeRunRequest` 包含程序、绑定、取消和可选执行选择。提供方的 `resolve` 验证支持的选择并应用部署默认值；`run` 接收目录与截止时间明确的 `CodeRunSpec`。无法强制执行所请求策略的提供方在程序执行前拒绝请求：
 
 ```ts type-equiv
 /**
- * One run: the program source plus everything the runtime acts on. Per the
- * explicit-over-implicit convention, defaulting (time budgets, output caps)
- * is the implementation's validated config — a request carries no optional
- * tuning knobs for a hidden `??` to fill in.
+ * Caller inputs for one program. The provider's resolve method validates supported
+ * options and supplies directory, deadline, and authority before execution.
  */
 interface CodeRunRequest {
   /**
@@ -27,6 +25,12 @@ interface CodeRunRequest {
   program: string
   /** Host functions exposed to the program, one global object per namespace. */
   bindings: CodeBindingNamespace[]
+  /** Working directory in the mounted filesystem and subprocess execution world. */
+  cwd?: string
+  /** Requested elapsed execution time; the provider's resolver validates and caps it. */
+  timeoutMs?: number
+  /** Resolved authority for this execution. Providers without confinement reject an explicit policy. */
+  sandboxPolicy?: SandboxExecutionPolicy
   /**
    * Abort the run: the runtime stops the program (hard, even mid-loop) and
    * resolves with a {@link CodeRunFailure} of kind `'abort'`. In-flight
@@ -36,7 +40,29 @@ interface CodeRunRequest {
 }
 ```
 
-结果将错误报告为一个**字段**，而不是让 `run()` 返回被拒绝的 Promise。报告程序失败是调用方的职责，不走异常路径（与 `ShellExecutor.run` 失败时仍正常完成的约定一致）：
+```ts type-equiv
+/** Fully resolved execution inputs; run never supplies a missing directory or timeout. */
+interface CodeRunSpec extends CodeRunRequest {
+  /** Absolute directory in the provider's execution world. */
+  cwd: string
+  /** Positive finite execution deadline in milliseconds, after provider capping. */
+  timeoutMs: number
+}
+```
+
+```ts type-equiv
+/** File confinement applied to a program, independently of its terminal outcome. */
+interface CodeRunSandbox {
+  /** File-effect mode used for this execution. */
+  mode: SandboxMode
+  /** Whether an observed failure matches the selected backend's denial diagnostics. */
+  denied: boolean
+  /** Completeness reported by the selected confining backend; absent for full access. */
+  enforcement?: SandboxEnforcement
+}
+```
+
+程序失败通过 `CodeRunResult.error` 返回；无效调用输入可能在执行前拒绝。沙箱模式、观察到的拒绝与强制完整性是独立事实，因此程序成功本身不能证明每项请求限制均已强制执行：
 
 ```ts type-equiv
 /**
@@ -45,6 +71,8 @@ interface CodeRunRequest {
  * an exception path.
  */
 interface CodeRunResult {
+  /** Applied file policy and observed denial, when the provider enforces file policy. */
+  sandbox?: CodeRunSandbox
   /**
    * The program's completion value (its top-level `return`), when it ran to
    * completion and the value crossed the runtime's lossless-JSON boundary.
@@ -65,7 +93,7 @@ interface CodeRunResult {
 
 ## 绑定：宿主函数作为程序全局变量
 
-每个 `CodeBindingNamespace` 在程序内成为一个由异步可调用函数组成的全局对象（PTC mode Consumer 传入一个：`tools`）。参数与返回值必须是无损 JSON，且跨越边界时不受 seam 层字节上限约束；运行时可以通过结构化克隆桥接它们。命名空间可以声明程序可见的错误类，而无需让运行时知道 Consumer 的名称：运行时会注入真实构造函数，并将被拒绝的调用转为该类的实例。运行时也将绑定名视为不可信输入（`__proto__` 是普通自有属性，绝不会发生原型碰撞）：
+每个 `CodeBindingNamespace` 成为一个异步可调用函数的全局对象；PTC 传入 `tools`。参数与返回值必须是无损 JSON。提供方强制各自的传输上限；seam 不设统一的绑定字节上限。可选错误类描述符创建程序可见的类型化拒绝，无需在运行时内点名消费方。绑定名是自有属性，因此 `__proto__` 不能遍历原型：
 
 ```ts type-equiv
 /**
@@ -154,7 +182,7 @@ type CodeBindingFunction = (args: unknown) => Promise<CodeJsonValue>
  */
 interface CodeRunFailure {
   /** The failure class (see the interface doc for each kind's meaning). */
-  kind: 'exception' | 'timeout' | 'abort' | 'worker-exit' | 'invalid-output' | 'output-limit'
+  kind: 'exception' | 'timeout' | 'abort' | 'worker-exit' | 'invalid-output' | 'output-limit' | 'protocol' | 'sandbox-unavailable'
   /** Human-readable detail, suitable for feeding back to a model to self-correct. */
   message: string
 }
@@ -162,7 +190,7 @@ interface CodeRunFailure {
 
 ## 服务
 
-`CodeRuntime`（`ctx.codeRuntime`，抽象服务，定义于 [`packages/code-runtime/code-runtime/src/index.ts`](../../packages/code-runtime/code-runtime/src/index.ts)）由 `run(request)` 加两个只读描述符组成：`language`（程序必须使用的语言，已知值为 `'typescript'` 与 `'python'`，即 `dsh-tools` 能呈现的那些，TypeScript 后端已发布、Python 后端为实验性且私有（未发布）；生成语言相关展示的 Consumer 据此切换，遇到无法展示的语言时应显式报错）和 `isolation`（执行基底，`'worker-thread'`、`'process'`、`'container'`；仅为诊断标签，**不构成安全承诺**）。实现必须保证各次运行彼此隔离（无跨运行状态），并在 dispose（资源释放）时等待系统完全停稳：teardown 要等到所有进行中的运行均已终止并结算后才完成。
+`CodeRuntime` 定义于 [`src/index.ts`](../../packages/code-runtime/code-runtime/src/index.ts)。`resolve(request)` 返回完整执行输入，`run(spec)` 执行它们。`language` 选择支持的程序呈现；`isolation` 描述执行基底，不作安全声明。`sandboxMode` 声明文件策略支持，不提供约束的提供方返回 `undefined`。每个实现将各次运行的程序状态分离，并在资源释放期间终止且等待活跃执行。
 
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 

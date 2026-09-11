@@ -85,7 +85,7 @@ kind: "package-reference"
 
 - [tools 包](../tools/README.zh.md)——工具呈现模式与 `presentAs` API。
 - [agent-presets 包](../../preset/agent-presets/README.zh.md)——preset 如何组合 agent 及其常驻挂载。
-- [code-runtime worker-thread 包](../../code-runtime/code-runtime-node/README.zh.md)——PTC 模式所需的 TypeScript 运行时。
+- [Node code-runtime 包](../../code-runtime/code-runtime-node/README.zh.md)——PTC 模式所需的 TypeScript 运行时。
 - [PTC mode 执行器塌缩 note](../../../.agents/notes/implemented/bug-fix/2026-08-07-ptc-executor-collapse.zh.md)——通告面与可调用面为何保持一致。
 - [core 分组地图](../README.zh.md)——core 各包如何组合。
 

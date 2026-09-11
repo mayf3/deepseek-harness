@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-This private experimental package lets source-checkout compositions run model-generated Python in a fresh CPython 3.10+ subprocess for each request. Programs can use top-level `await` and `return`, call configured bindings, and write normal stdout/stderr while receiving explicit completion or failure results. Resource budgets and process-group teardown contain runaway work, but the subprocess is not a security boundary: model code has bash-equivalent trust, no state persists across runs, and no shipped profile enables this runtime.
+This private experimental package lets source-checkout compositions run model-generated Python in a fresh CPython 3.10+ subprocess for each request. Programs can use top-level `await` and `return`, call configured bindings, and write normal stdout/stderr while receiving explicit completion or failure results. Resource budgets and process-group teardown contain runaway work, but the subprocess is not a security boundary: direct Python operations have no filesystem sandbox, no state persists across runs, and no shipped profile enables this runtime.
 
 ## Table of Contents
 
@@ -25,7 +25,9 @@ This private experimental package lets source-checkout compositions run model-ge
 <a id="use-this-package"></a>
 ## Use this package
 
-Choose this private experimental package only in an explicit source-checkout composition. Register `PythonCodeRuntime` beside `dsh-tools` and `run()` executes each program in a fresh CPython 3.10+ subprocess, resolving with `result.value` on success and `result.error` on failure (the orthogonal `CodeRunFailure.kind` taxonomy classifies parse failures, thrown exceptions, invalid completions, output overflows, budget expiry, aborts, and substrate death). It rejects only for seam misuse — a malformed binding namespace, or a call after disposal. Configuration is rejected at load: a non-Unix platform; an explicit `pythonBin` that is not an executable regular file or a bare name that does not resolve on `PATH`; a non-CPython, pre-3.10, or probe-failing interpreter; a non-positive or non-integer budget; a `maxLogBytes` below the truncation-marker floor (64); a timer value `setTimeout` would clamp; a budget larger than the effective fd-3 frame cap (lowered when the host heap cannot safely parse a near-cap frame); or an `addressSpaceMb`/output-budget pair whose worst-case peak would breach `RLIMIT_AS`.
+Choose this private experimental package only in an explicit source-checkout composition. Register `PythonCodeRuntime` beside `dsh-tools`; `run(resolve(request))` executes each program in a fresh CPython 3.10+ subprocess, resolving with `result.value` on success and `result.error` on failure (the orthogonal `CodeRunFailure.kind` taxonomy classifies parse failures, thrown exceptions, invalid completions, output overflows, budget expiry, aborts, and substrate death). It rejects only for seam misuse — a malformed binding namespace, or a call after disposal. Configuration is rejected at load: a non-Unix platform; an explicit `pythonBin` that is not an executable regular file or a bare name that does not resolve on `PATH`; a non-CPython, pre-3.10, or probe-failing interpreter; a non-positive or non-integer budget; a `maxLogBytes` below the truncation-marker floor (64); a timer value `setTimeout` would clamp; a budget larger than the effective fd-3 frame cap (lowered when the host heap cannot safely parse a near-cap frame); or an `addressSpaceMb`/output-budget pair whose worst-case peak would breach `RLIMIT_AS`.
+
+`resolve(request)` accepts an absolute `cwd` and uses the provider's configured `maxWallMs` deadline (600,000 ms by default). Explicit `timeoutMs` overrides and sandbox policies are unsupported and reject before execution. This provider does not advertise `sandboxMode` or return confinement facts.
 
 ### What you get
 
@@ -89,7 +91,7 @@ Read these when the runtime contract is not enough. They move from the seam defi
 - [Code runtime seam](../../code-runtime/code-runtime/README.md) — the abstract contract this backend implements.
 - [fd-3 protocol Agent Note](../../../.agents/notes/implemented/architecture/2026-07-31-code-runtime-python-fd3-protocol.md) — design rationale and wire contract.
 - [Settlement-fixes Agent Note](../../../.agents/notes/archived/bug-fix/2026-07-31-code-runtime-python-settlement-fixes.md) — settlement, metering, and containment fixes and their regression cases.
-- [Worker-thread backend](../../code-runtime/code-runtime-node/README.md) — the released TypeScript sibling.
+- [Node process backend](../../code-runtime/code-runtime-node/README.md) — the released TypeScript sibling.
 - [Code runtime subsystem reference](../../../docs/subsystems/code-runtime.md) — request/result vocabulary, bindings, and failure taxonomy.
 
 -----
@@ -114,7 +116,7 @@ These limits define what the package does and does not cover; they are current p
 - **A descendant that escapes the child's process group with `setsid()` is not reaped by the group teardown** — `kill(-pid)` cannot reach it; the run still settles on the value the done frame decided, and the close-deadline backstop forces settlement if the orphan holds the pipes open, but the orphan itself outlives the fiber until it exits on its own.
 - **A `log` frame that arrives after settlement is dropped** — once the run has settled, host-side capture is closed; a late fd-3 `log` frame (from a thread that outlived the done frame) is discarded rather than appended to `logs`.
 - **A binding REPLY value has no seam-level byte or depth cap** — `maxValueBytes` meters only the done frame's completion value; a wide binding reply is rebuilt host-side (`snapshotJsonValue` traversal) and encoded whole, bounded on both sides only by process memory (like a binding argument, which has no child-side budget either).
-- **No shipped profile mounts this provider** — the keyless `ptc-python-turn` snapshot replaces the headless PTC runtime through the real Loader; released profiles continue to use the worker-thread backend.
+- **No shipped profile mounts this provider** — the keyless `ptc-python-turn` snapshot replaces the headless PTC runtime through the real Loader; released profiles use the sandboxed Node process backend.
 - **Cross-channel log interleaving is backend-dependent** — Python stdout, stderr, and fd-3 log frames travel independently; each channel preserves its own order, while their total order in `result.logs` may differ.
 - **CPython 3.10 or newer is required** — the configured executable is resolved and version-probed at load; unsupported interpreters fail before `ctx.codeRuntime` is registered.
 - **The truncation-marker text and the tempdir prefix keep the pre-rename short names** — the marker `[dsh-code-runtime-python] log capture truncated at <N> bytes` and the `dsh-code-runtime-python-` tempdir prefix are byte-anchored by tests and are independent of the npm package name; promotion (dropping the `experimental-` prefix) does not rename them.

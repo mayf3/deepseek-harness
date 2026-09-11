@@ -29,19 +29,20 @@ Choose this package when you compose a deployment that executes model-written pr
 
 ### Run a program
 
-Give the runtime a program source and one or more binding namespaces. Each namespace becomes one global object of async functions inside the program — PTC mode passes one under `tools`. The program runs as the body of an async function, so top-level `await` and `return` work; a lossless-JSON completion becomes `result.value`, each output channel preserves its own order in `result.logs` while cross-channel interleaving is backend-dependent, and any failure is reported in `result.error` with a kind you can branch on. The runtime never rejects for a program failure — rejection means you misused the seam, for example by submitting a run after disposal.
+Give the runtime a program and binding namespaces, then call `resolve(request)` followed by `run(spec)`. Resolution validates optional cwd, timeout and sandbox policy against the provider's capabilities and fills deployment defaults. The program runs as an async function body, so top-level `await` and `return` work; a lossless-JSON completion becomes `result.value`, captured text becomes `result.logs`, and program failures become `result.error`. Each output channel preserves its own order, while cross-channel interleaving is backend-dependent.
 
 ```text
-const result = await ctx.codeRuntime.run({
+const spec = ctx.codeRuntime.resolve({
   program: 'return await tools.add({ a: 1, b: 2 })',
   bindings: [{ global: 'tools', functions: { add: async (args) => args.a + args.b } }],
 })
+const result = await ctx.codeRuntime.run(spec)
 // result.value === 3
 ```
 
 ### Choose a backend
 
-Backends declare two descriptors you can rely on: `language` — what the program must be written in, with `'typescript'` and `'python'` as the well-known values — and `isolation` — the execution substrate (`'worker-thread'`, `'process'`, `'container'`), a label for deployments and diagnostics, not a security claim. [`dsh-code-runtime-node`](../code-runtime-node/README.md) executes TypeScript in a fresh Node worker thread; the private [`dsh-experimental-code-runtime-python`](../../experimental/code-runtime-python/README.md) package executes Python in a fresh CPython subprocess for opt-in compositions.
+Backends expose `language` and `isolation` as diagnostic descriptors; neither grants authority or proves confinement. [`dsh-code-runtime-node`](../code-runtime-node/README.md) executes erasable TypeScript in a fresh managed Node process under the resolved sandbox policy. The private [`dsh-experimental-code-runtime-python`](../../experimental/code-runtime-python/README.md) provider executes Python in a fresh CPython subprocess without file confinement. `sandboxMode` advertises a provider's deployment file-policy mode, or is absent when that capability is unsupported.
 
 ### Name your bindings portably
 
@@ -49,7 +50,7 @@ Binding-global and error-class names are language-portable: they must match `[A-
 
 ### What can go wrong
 
-Failures arrive as `result.error` with an orthogonal `kind`: the program threw or failed to parse (`exception`), a budget expired (`timeout`), the run was aborted (`abort`), the execution substrate died (`worker-exit`), the completion value was not lossless JSON (`invalid-output`), or the serialized output exceeded the cap (`output-limit`). Each kind carries a model-feedable message. `run()` rejects only for seam misuse, such as a run submitted after disposal or a binding name that fails the portable-identifier rules.
+Failures arrive as `result.error` with an orthogonal `kind`: `exception`, `timeout`, `abort`, `worker-exit`, `invalid-output`, `output-limit`, `protocol` or `sandbox-unavailable`. Providers return applicable `result.sandbox` facts separately from success or failure. Invalid or unsupported execution options fail during `resolve`; `run` rejects caller misuse, such as unresolved inputs, invalid binding names or a call after disposal.
 
 -----
 
@@ -63,17 +64,17 @@ This section explains the design behind the seam; observable behavior is fully c
 
 ### Design concept
 
-The package is the Service Definition role of the code-execution capability seam ([capability seams](../../../.agents/notes/implemented/architecture/2026-06-13-capability-seams.md)): an abstract `CodeRuntime extends Service` registered as `ctx.codeRuntime`, plus the vocabulary both backends and the consumer share. Providers subclass `CodeRuntime`, implement `run`, and register the service; the consumer (PTC mode in `dsh-tools`) generates the model-facing SDK and bridges tool dispatch. The runtime stays ignorant of tools and sessions by contract: it receives a program and named async bindings and returns `{ value, logs, error? }`.
+The package is the Service Definition role of the code-execution capability seam ([capability seams](../../../.agents/notes/implemented/architecture/2026-06-13-capability-seams.md)): an abstract `CodeRuntime extends Service` registered as `ctx.codeRuntime`, plus the vocabulary both backends and the consumer share. Providers subclass `CodeRuntime`, implement `resolve` and `run`, and register the service; the consumer (PTC mode in `dsh-tools`) generates the model-facing SDK and bridges tool dispatch. The runtime stays ignorant of tools and sessions by contract: it receives a program, named async bindings and resolved execution options, then returns captured output, the outcome and applicable sandbox facts.
 
 ### Service API
 
-The contract is three members a backend implements: `run(request)` executes one program against the request's bindings and resolves every program outcome — parse/transform failure, thrown exception, invalid completion, output overflow, budget expiry, abort, or substrate death — as a result `error` field, with rejection reserved for caller misuse such as a run submitted after disposal; `language` and `isolation` are read-only descriptors labeling the source language and execution substrate for deployments and diagnostics.
+`resolve(request)` owns supported option validation and deployment defaulting. `run(spec)` executes the complete inputs and resolves program outcomes after cleanup. Language and substrate descriptors guide presentation; `sandboxMode` indicates whether the consumer can pass a resolved file policy. Neither descriptors nor a successful program result substitute for the backend's reported enforcement facts.
 
 The exhaustive semantics live in the [code runtime subsystem reference](../../../docs/subsystems/code-runtime.md); the exact signatures are in [`src/index.ts`](src/index.ts).
 
 ### Vocabulary
 
-`CodeRunRequest` (`program`, `bindings`, `signal?`) carries everything the runtime acts on; defaulting (time budgets, output caps) is each provider's validated config, never a hidden `??` inside `run()`. `bindings` is a list of `CodeBindingNamespace`s (`global` + `functions` + optional `errorClass`), each exposed to the program as one global object of async callables returning `CodeJsonValue` — the seam's structural lossless-JSON type. An `errorClass` descriptor names a real program-global constructor and the own property that receives the rejected member name, so backends never learn consumer terms such as `ToolCallError`. `CodeRunResult` reports the lossless-JSON completion `value?`, per-channel-ordered `logs: string[]` with backend-dependent cross-channel interleaving, and `error?` (`CodeRunFailure`: orthogonal `kind` + model-feedable `message`). See `src/types.ts` for the full contracts.
+`CodeRunRequest` carries the program, host bindings, cancellation and optional execution choices. `CodeRunSpec` requires the resolved cwd and elapsed deadline. `CodeBindingNamespace` declares program globals and optional typed rejection constructors. `CodeRunResult` separates logs/value, failure and `CodeRunSandbox` facts; exact fields and provider obligations live in [`src/types.ts`](src/types.ts).
 
 ### Portable identifiers
 
@@ -84,7 +85,7 @@ Binding-global and error-class names are language-portable: they must match the 
 | File | Role |
 |---|---|
 | [`src/index.ts`](src/index.ts) | Plugin entry: abstract `CodeRuntime` service and the portable-identifier exclusion sets |
-| [`src/types.ts`](src/types.ts) | Vocabulary: `CodeRunRequest`, `CodeBindingNamespace`, `CodeJsonValue`, `CodeRunResult`, `CodeRunFailure` |
+| [`src/types.ts`](src/types.ts) | Vocabulary: `CodeRunRequest`, `CodeRunSpec`, bindings, results, failures and sandbox facts |
 | — | No runtime invariant companion is published; this package exposes no independent event sequence or mutable data relation beyond contracts enforced at its owning seam. |
 
 </details>
@@ -97,7 +98,7 @@ Binding-global and error-class names are language-portable: they must match the 
 Read these when the package-level contract is not enough. They move from the PTC mode consumer to the backends and the capability-seam model.
 
 - [PTC mode Agent Note](../../../.agents/notes/implemented/feature/2026-06-15-ptc.md) — how the tool registry consumes `ctx.codeRuntime` and presents `run_code` to the model.
-- [Worker-thread backend](../code-runtime-node/README.md) — the shipped TypeScript execution backend.
+- [Node process backend](../code-runtime-node/README.md) — the shipped TypeScript execution backend.
 - [Experimental Python backend](../../experimental/code-runtime-python/README.md) — the private CPython subprocess provider and its fd-3 protocol.
 - [Code runtime subsystem reference](../../../docs/subsystems/code-runtime.md) — request/result vocabulary, bindings, and the `ctx.codeRuntime` cordis surface.
 - [Capability seams](../../../.agents/notes/implemented/architecture/2026-06-13-capability-seams.md) — the Service Definition / Service Provider / Consumer split.
@@ -122,8 +123,8 @@ These limits define what the seam cannot do; they are current package constraint
 
 - **`run()` is one-shot** — `logs` arrive only on the resolved `CodeRunResult`; the seam exposes no streaming-log or progress API for a live program's output.
 - **No state survives between runs** — every request runs against a fresh world; a persistent REPL-style kernel is deferred until a backend brings its own logging story.
-- **The worker-thread backend ships; the Python process backend is private experimental; `'container'` has no implementation** — a hard security boundary awaits a container backend.
-- **Intermediate binding values have no byte cap** — implementations remain subject to structured-clone cost and process memory, while a provider or executor may already have imposed its own acquisition bound.
+- **Providers have different confinement capabilities** — the shipped Node provider enforces a resolved file policy, while the private experimental Python provider rejects an explicit policy. No container provider is supplied.
+- **No uniform binding byte cap applies across providers** — each provider owns its transport limits; a binding can still allocate memory before its result reaches those limits.
 
 <a id="dev-note"></a>
 ### Dev Note

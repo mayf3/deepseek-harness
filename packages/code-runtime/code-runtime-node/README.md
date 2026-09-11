@@ -1,5 +1,5 @@
 ---
-description: "Worker-thread code execution for users and maintainers composing, sizing, or debugging the shipped TypeScript backend that runs each program in a fresh Node worker."
+description: "Run TypeScript programs in fresh Node processes with the session filesystem sandbox, managed cleanup, and configurable execution and output limits."
 kind: "package-reference"
 ---
 
@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-This package lets PTC compositions execute model-written TypeScript with host-provided bindings and receive the completion value, ordered logs, or a structured failure. Each request starts with no state from earlier runs, and failures such as syntax errors, budget expiry, aborts, memory exhaustion, and output overflow are returned instead of thrown. Treat executed code as bash-equivalent: the package limits environment exposure and resource use, but does not isolate code from the host. Configurable compute, wall-clock, heap, and output limits terminate the run and bound its results.
+Execute model-written TypeScript under the same platform sandbox policy as Bash, with host-provided functions available as async bindings. Each call starts a fresh Node process and returns captured logs, an exact JSON value, or a structured failure. Direct Node APIs remain available within the selected restrictions. Elapsed deadlines, output bounds and a V8 heap limit constrain execution; cancellation and completion terminate the managed process range. A requested restricted mode fails when its sandbox backend is unavailable.
 
 ## Table of Contents
 
@@ -25,40 +25,51 @@ This package lets PTC compositions execute model-written TypeScript with host-pr
 <a id="use-this-package"></a>
 ## Use this package
 
-Mount this backend with the code-runtime seam when a composition should execute model-written TypeScript programs; PTC mode in `dsh-tools` then drives it through `ctx.codeRuntime` whenever the model calls `run_code`. Every execution cap is validated config, so you can size the runtime for your deployment from `cordis.yml`.
+Mount this provider in a composition that supplies `fs`, `subprocess`, `sandbox` and `sandboxPolicy`. PTC mode in `dsh-tools` supplies the calling Session's directory and standing policy; direct runtime consumers resolve those options before execution.
 
-### Minimal configuration
+### Configuration
+
+Configure the provider row after its required services are available:
 
 ```yaml
-- name: '@deepseek-ai/dsh-code-runtime'
 - name: '@deepseek-ai/dsh-code-runtime-node'
   config:
-    computeMs: 60000            # busy-time budget (measured event-loop active time)
-    maxWallMs: 600000           # wall-clock ceiling; never pauses for anything
-    maxOutputBytes: 67108864    # combined serialized outer-output cap (64 MiB)
-    maxOldGenerationSizeMb: 512 # worker heap cap
+    timeoutMs: 120000
+    maxTimeoutMs: 600000
+    maxOutputBytes: 67108864
+    maxOldGenerationSizeMb: 512
+    maxMessageBytes: 134217728
+    maxPendingCalls: 128
+    graceMs: 3000
 ```
 
 | Field | Default | Meaning |
 |---|---|---|
-| `computeMs` | `60,000` | Busy-time budget: the run fails with `timeout` once the worker's measured event-loop active time exceeds it |
-| `maxWallMs` | `600,000` | Wall-clock ceiling, the backstop for waits that busy time cannot see; at most `2_147_483_647` |
-| `maxOutputBytes` | `67,108,864` | Hard cap for serialized logs plus the completion value or failure message; at least `4` |
-| `maxOldGenerationSizeMb` | `512` | Worker heap cap; overflow kills the worker and surfaces as `worker-exit` |
+| `timeoutMs` | `120,000` | Default elapsed execution deadline, including nested tool and approval waits |
+| `maxTimeoutMs` | `600,000` | Elapsed deadline ceiling applied by the resolver |
+| `maxOutputBytes` | `67,108,864` | Combined serialized logs and completion or diagnostic budget |
+| `maxOldGenerationSizeMb` | `512` | V8 old-generation heap limit in MiB |
+| `maxMessageBytes` | `134,217,728` | Limit for a control frame, outstanding argument bytes and queued control writes |
+| `maxPendingCalls` | `128` | Maximum simultaneous host binding calls |
+| `graceMs` | `3,000` | Managed termination and output-drain grace |
+| `nodeExecutable` | Current Node executable | Executable resolved in the subprocess execution world |
+| `bootstrapPath` | Package bootstrap | Optional absolute path to a preinstalled built bootstrap in that world |
 
-Every field is validated and defaulted at load; there are no other tunables. The generated [configuration catalog](../../../docs/config-catalog.md#deepseek-aidsh-code-runtime-node) is the exhaustive source for every accepted field.
+The [configuration catalog](../../../docs/config-catalog.md#deepseek-aidsh-code-runtime-node) defines accepted config fields. `resolve(request)` supplies cwd, the capped timeout and the execution policy; `run(spec)` accepts those resolved inputs and does not fill missing values.
 
-### What a run returns
+### Execution and results
 
-A successful run returns the program's lossless-JSON completion value as `result.value` and the text it printed, in order, as `result.logs`. Top-level `await` and `return` work, and the program can call the host-provided binding functions (PTC mode exposes one `tools` object) as ordinary async calls.
+Programs are async function bodies: top-level `await` and `return` work, and only erasable TypeScript is accepted. A successful call returns its lossless-JSON value as `result.value` and captured text as `result.logs`. `result.sandbox` reports the selected mode, observed denial and the backend's full or partial enforcement independently of the program outcome.
 
-### Containment, not a security boundary
+Direct filesystem, network and subprocess operations remain Node operations, subject to the selected OS sandbox. Nested host bindings cross the control channel; PTC tool calls retain the registry's visibility, ordering, logging and approval rules. Running a program does not change the Session's standing policy or automatically replay it after a denial.
 
-A program runs with authority comparable to the bash tool: it can reach Node APIs, and the backend deliberately does not promise isolation from the host. What it does provide is containment — a separate isolate, an empty environment (no ambient credentials, no inherited loader flags), a configurable heap cap, and hard termination that also stops a hot synchronous loop. OS processes a program spawns survive `terminate()` and need deployment-level cleanup.
+### Deadlines and cancellation
 
-### What can go wrong
+The elapsed deadline covers runtime setup and execution, including time awaiting nested tools or approval. It is not a CPU meter. Timeout or cancellation stops a synchronous loop through the host's managed process owner; successful completion also cleans that managed range. The timer stops when an outcome is selected, before cleanup, so the returned call can take longer than its execution deadline while cleanup settles.
 
-Every program outcome resolves as a result, so a failed run is a `result.error`, not a rejection: a syntax error or non-erasable TypeScript (`enum`, namespaces) fails as `exception` before any worker spawns; budget expiry is `timeout`; the abort signal is `abort`; a heap overflow or other worker death is `worker-exit`; a completion value that is not lossless JSON is `invalid-output`; and serialized output beyond the cap is `output-limit` — with the fitting captured log prefix retained. Rejection means caller misuse, such as a run submitted after disposal.
+### Failures
+
+Program parse errors and thrown exceptions are `exception`; deadline expiry is `timeout`; cancellation is `abort`; malformed or excessive control traffic is `protocol`; unavailable confinement is `sandbox-unavailable`; early process exit or failed managed cleanup is `worker-exit`. The substrate-independent failure name remains `worker-exit` for process providers. Lossy completions are `invalid-output`, and an oversized outer result is `output-limit`, retaining the fitting log prefix. Invalid or unsupported options and calls after disposal reject as caller misuse.
 
 -----
 
@@ -68,43 +79,29 @@ Every program outcome resolves as a result, so a failed run is a `result.error`,
 <details>
 <summary>Implementation internals — click to expand</summary>
 
-This section explains the design behind the backend; observable behavior is fully covered in [Use this package](#use-this-package).
+The host owns policy, deadlines, binding lookup and process cleanup. The child owns program evaluation and binding proxies; model-written code is an untrusted peer even when its messages use the expected control descriptor.
 
-### Design concept
+### Launch and control
 
-The backend rests on one separation: **containment, not a security boundary**. Model code has bash-equivalent trust (the [PTC mode Agent Note](../../../.agents/notes/implemented/feature/2026-06-15-ptc.md) Trust posture), so the design optimizes for reconstructability and bounded resource use rather than for a hard multi-tenant boundary — that awaits a container-class backend. Each run gets one fresh worker, so a program's world dies with its worker: no cross-run state exists to leak or to log, and a run is reconstructable from the session log alone.
+The host strips erasable types, resolves the executable and bootstrap in the configured execution world, wraps the argv through `ctx.sandbox`, and spawns through `ctx.subprocess`. The child adopts the inherited control channel and clears its environment before evaluating the program. Explicit Node arguments avoid inheriting host loader or inspector flags.
 
-### Execution flow
+Length-framed JSON travels separately from stdout/stderr. The host bounds frames and queued writes, validates call identity and declared binding names before dispatch, and refuses invalid traffic. Output capture meters serialized logs plus the completion or diagnostic; fixed result-envelope fields and sandbox metadata are outside that ledger.
 
-A run is type-stripped host-side (`node:module`'s `stripTypeScriptTypes`, position-preserving), wrapped as the body of an async function so top-level `await`/`return` work, and sent to a fresh worker whose bootstrap materializes the binding namespaces. Binding calls cross the message port as lossless JSON and are answered at most once per call id. Log text streams to the host eagerly so a killed program still shows what it printed. Exactly one outcome settles the run — a `done` frame, a budget expiry, an abort, or worker death — after which the host terminates the worker and awaits its exit.
+### Source and built bootstraps
 
-### Hostile-peer port
-
-Model code can reach `parentPort` and forge traffic, so every inbound message is shape-validated and rebuilt field by field before anything reads it: forged extra fields never ride along, a non-number call id can never be echoed into a reply, binding names resolve as own properties only (a forged `constructor` cannot walk a prototype chain), and junk drops silently. Worker-side namespaces are null-prototype, so `__proto__`-shaped binding names are ordinary keys.
-
-### Budgets
-
-Two independent budgets exist because the peer is hostile: `computeMs` meters the worker's measured busy time (`eventLoopUtilization()` polling every 25 ms), so a hot loop expires it whether or not a decoy dispatch is in flight, while a program idling on a slow binding accrues nothing; `maxWallMs` backstops what busy time cannot see, such as a promise nobody resolves. Both funnel into `worker.terminate()`. `maxWallMs` is range-checked at load against `MAX_TIMER_DELAY_MS` because `setTimeout` clamps a longer delay to 1 ms.
-
-### Output ledger
-
-`maxOutputBytes` accounts the JSON serialization of the outer `logs` array plus the completion value or failure-message payload; fixed `CodeRunResult` field names and envelope syntax are outside that ledger. At or below the cap the exact value returns; a lossy completion is `invalid-output`, and a combined overflow is `output-limit` rather than a substituted inspected string. The failure retains a fitting captured prefix of the logs.
+Source execution loads an erasable-only bootstrap closure without relying on sibling built exports. Built execution uses the packaged `process.js` entry. An execution world that cannot map the host bootstrap requires a preinstalled compatible `bootstrapPath`; a host path is never assumed to name the same remote file.
 
 ### Source map
 
 | File | Role |
 |---|---|
-| [`src/index.ts`](src/index.ts) | Plugin entry: `Config` schema, `NodeCodeRuntime`, run orchestration, output ledger |
-| [`src/worker.ts`](src/worker.ts) | Source-mode worker entry (erasable TypeScript, no `lib/` dependency) |
-| [`src/bootstrap.ts`](src/bootstrap.ts) | Worker-side bootstrap: namespace materialization, console shim, log capture |
-| [`src/protocol.ts`](src/protocol.ts) | Port message vocabulary between host and worker |
-| [`src/worker-json.ts`](src/worker-json.ts) | Worker-side lossless-JSON encode/decode |
-| [`src/output-json.ts`](src/output-json.ts) | Byte metering and truncation for the outer ledger |
-| — | No runtime invariant companion is published; this process-boundary implementation exposes no same-process event relation; worker protocol and built-worker tests cover it. |
-
-### The worker entry, unbuilt and built
-
-Source mode loads erasable-only `src/worker.ts` through Node's native type stripping; its transitive runtime closure contains only Node built-ins and relative source modules, so a fresh checkout never requires a sibling workspace package's unbuilt `lib/` export. Built mode passes the sibling `lib/worker.cjs` as a filesystem path because pkg's VFS Worker hook expects CommonJS; the same path works under ordinary Node.
+| [`src/index.ts`](src/index.ts) | Configuration, resolution, policy, bindings and managed execution |
+| [`src/launch.ts`](src/launch.ts) | Executable/bootstrap arguments and execution-world asset mapping |
+| [`src/process.ts`](src/process.ts) | Child handshake, environment clearing and program lifecycle |
+| [`src/bootstrap.ts`](src/bootstrap.ts) | Program evaluation, binding proxies and output capture |
+| [`src/channel.ts`](src/channel.ts) | Framing, bounded writes and protocol failures |
+| [`src/output-ledger.ts`](src/output-ledger.ts) | Host accounting for the outer result |
+| — | No runtime invariant companion is published; framing and process cleanup are enforced across the process boundary rather than through independent same-process observations. |
 
 </details>
 
@@ -113,19 +110,19 @@ Source mode loads erasable-only `src/worker.ts` through Node's native type strip
 <a id="further-exploration"></a>
 ## Further Exploration
 
-Read these when the backend contract is not enough. They move from the seam definition to the consumer and the configuration surface.
+Read the service contract before using the provider directly; the decisions explain policy and consumer ownership.
 
-- [Code runtime seam](../code-runtime/README.md) — the abstract contract this backend implements.
-- [PTC mode Agent Note](../../../.agents/notes/implemented/feature/2026-06-15-ptc.md) — how `dsh-tools` consumes `ctx.codeRuntime` and presents `run_code`.
-- [Code runtime subsystem reference](../../../docs/subsystems/code-runtime.md) — request/result vocabulary, bindings, and failure taxonomy.
-- [Generated configuration catalog](../../../docs/config-catalog.md#deepseek-aidsh-code-runtime-node) — every accepted config field and its source declaration.
+- [Code runtime service](../code-runtime/README.md) — requests, resolved specs and results.
+- [Sandboxed Node decision](../../../.agents/notes/implemented/architecture/2026-09-11-sandboxed-node-code-runtime.md) — security, lifecycle and timeout tradeoffs.
+- [PTC foundation](../../../.agents/notes/implemented/feature/2026-06-15-ptc.md) — registry presentation and nested tool dispatch.
+- [Subprocess provider](../../subprocess/subprocess-local/README.md) — managed process ranges and platform limitations.
 
 -----
 
 <a id="model-experience"></a>
 ## Model Experience
 
-Indirectly, through PTC mode in `dsh-tools`, which renders the exact outer value when it fits or an explicit `invalid-output` / `output-limit` failure, while only the outer `run_code` result enters model context under its ordinary spill policy and binding traffic plus intermediate values remain execution-local.
+Indirectly, through PTC mode in `dsh-tools`, which returns captured logs and the completion value or a failure with sandbox facts. Intermediate binding traffic stays outside model history; the outer result follows the ordinary tool spill policy.
 
 #### KV Cache effect
 
@@ -135,15 +132,15 @@ No direct invalidation; the named consumer owns any request-prefix changes.
 
 <a id="known-limitations-and-deferred-work"></a>
 
+These limits qualify the execution guarantees and retained output.
 
-These limits define when the backend is a poor fit or needs special operational care. They are current package constraints, not a task backlog.
-
-- **OS processes a program spawns survive termination** — `worker.terminate()` ends the thread only, weaker than bash-local's process-group kill; orphan cleanup is a deployment concern until a container backend exists.
-- **Type-strip rides Node's experimental `stripTypeScriptTypes` API** — amaro or sucrase are the named drop-in replacements if the relied-on behavior shifts.
-- **`computeMs` expiry can overshoot by up to one poll interval** — busy time is sampled every 25 ms (an internal constant, deliberately not config).
-- **Programs get a five-method `console` shim** (`log`/`info`/`warn`/`error`/`debug`) — deliberately not Node's full console API.
-- **Intermediate binding values have no byte cap** — a program can exhaust process or worker memory with a value that never becomes outer output.
-- **The default 64 MiB cap is a rejection boundary, not recoverable storage** — outer spill can save only the bounded logs and diagnostic returned after `output-limit`; bytes rejected beyond the runtime cap never reach the spill layer.
+- **Confinement inherits the selected backend's limits** — full and partial enforcement are reported separately; sandbox policy and managed-process containment are distinct guarantees.
+- **The heap cap is not a process-tree memory limit** — native allocations and descendant memory are outside the V8 old-generation bound. No process-tree CPU meter is supplied.
+- **Cleanup inherits subprocess observability** — escaped descendants on a fallback platform may remain outside the managed range; see the subprocess provider's stated limits.
+- **Execution is one-shot** — no yield/wait API, live result stream or retained program state exists between calls.
+- **Output caps reject rather than retain every byte** — spill can preserve only the bounded result delivered by this provider.
+- **Bindings are bounded at transport admission** — control limits do not bound the memory a host binding allocates while producing its result.
+- **The console shim has five methods** — `log`, `info`, `warn`, `error` and `debug`.
 
 <a id="dev-note"></a>
 ### Dev Note
@@ -151,6 +148,6 @@ These limits define when the backend is a poor fit or needs special operational 
 <details>
 <summary>Working context for maintainers — click to expand</summary>
 
-None.
+The [timeout discussion](../../../.agents/notes/implemented/architecture/2026-09-11-sandboxed-node-code-runtime.md#deferred-timeout-design) records open choices about yielding, total lifetime, approval wait accounting and process-tree CPU/RSS limits. Those choices do not change the configured elapsed deadline.
 
 </details>

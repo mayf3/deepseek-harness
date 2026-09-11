@@ -9,7 +9,7 @@ kind: "package-group"
 
 ## 概述
 
-`code-runtime/` 组让模型编写一个程序，以普通异步调用的方式调用宿主提供的函数，然后只返回程序的打印输出和返回值。如需在隔离的 Node Worker 中执行，请选择 TypeScript 后端；如需 CPython 进程，请选择实验性 Python 后端。每次运行都不会保留之前程序的状态。失败会作为结果返回，供调用方诊断或提供给模型。
+`code-runtime/` 组让模型编写一个程序，以普通异步调用的方式调用宿主提供的函数，然后只返回程序的打印输出和返回值。如需在全新 Node 进程中按所配沙箱策略执行，请选择 TypeScript 后端；如需 CPython 进程，请选择实验性 Python 后端。每次运行都不会保留之前程序的状态。失败会作为结果返回，供调用方诊断或提供给模型。
 
 ## 目录
 
@@ -27,7 +27,7 @@ kind: "package-group"
 | 包 | 角色 | ctx 键 |
 |---|---|---|
 | [`code-runtime/`](code-runtime/README.zh.md) | 定义代码运行时做什么：针对宿主提供的绑定运行一个程序，并报告其打印和返回的内容 | `ctx.codeRuntime` |
-| [`code-runtime-node/`](code-runtime-node/README.zh.md) | 在全新的 Node Worker 线程中执行 TypeScript 程序 | 注册 `ctx.codeRuntime` |
+| [`code-runtime-node/`](code-runtime-node/README.zh.md) | 在全新受管 Node 进程中按已解析沙箱策略执行 TypeScript | 注册 `ctx.codeRuntime` |
 | [`experimental/code-runtime-python/`](../experimental/code-runtime-python/README.zh.md) | 实验性 Python 后端：负责 Node 宿主与 CPython 子进程之间的 fd-3 协议，以及 CPython 运行时实现 | — |
 
 -----

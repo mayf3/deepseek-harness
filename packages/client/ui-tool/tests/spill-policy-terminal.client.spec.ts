@@ -2,7 +2,8 @@
 import { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { ToolResultNode } from '@deepseek-ai/dsh-client-ui-chat/client'
-import { mountRuntime } from '../../../code-runtime/code-runtime-node/tests/setup.ts'
+import { CodeRuntime } from '@deepseek-ai/dsh-code-runtime'
+import type { CodeRunRequest, CodeRunSpec, CodeRunResult } from '@deepseek-ai/dsh-code-runtime'
 import { ToolCallId } from '@deepseek-ai/dsh-llm'
 import { Session, SessionId } from '@deepseek-ai/dsh-session'
 import { SpillLocator, SpillStore, type SaveTextSpill, type SpillRef } from '@deepseek-ai/dsh-spill'
@@ -40,7 +41,22 @@ async function executeShell(text: string, nested: boolean, name = 'bash', maxInl
     await ctx.plugin(ToolRuntime, { mode: 'both' })
     await ctx.plugin(MemorySpillStore)
     await ctx.plugin(SpillPolicy, { maxInlineBytes })
-    if (nested) await mountRuntime(ctx, {})
+    if (nested) {
+      // The real registry and spill policy own nested output; evaluator execution has its own process suite.
+      class BindingRuntime extends CodeRuntime {
+        readonly language = 'typescript'
+        readonly isolation = 'fixture'
+        resolve(request: CodeRunRequest): CodeRunSpec {
+          return { ...request, cwd: process.cwd(), timeoutMs: 120_000 }
+        }
+        async run(spec: CodeRunSpec): Promise<CodeRunResult> {
+          const tool = spec.bindings.find(binding => binding.global === 'tools')?.functions[name]
+          if (tool === undefined) throw new Error('missing fixture binding')
+          return { logs: [], value: await tool(shellArgs) }
+        }
+      }
+      await ctx.plugin(BindingRuntime)
+    }
     ctx.effect(() => ctx.tools.register(defineContentToolFixture({
       name,
       description: 'Return deterministic shell text without spawning a process.',

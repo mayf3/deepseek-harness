@@ -2110,6 +2110,16 @@
       "doc": "packages/client/ui-conversation/README.md",
       "symbol": "ComposerChainProps",
       "source": "packages/client/ui-conversation/src/client/contract/slots.ts"
+    },
+    {
+      "doc": "docs/subsystems/code-runtime.md",
+      "symbol": "CodeRunSpec",
+      "source": "packages/code-runtime/code-runtime/src/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/code-runtime.md",
+      "symbol": "CodeRunSandbox",
+      "source": "packages/code-runtime/code-runtime/src/types.ts"
     }
   ]
 }

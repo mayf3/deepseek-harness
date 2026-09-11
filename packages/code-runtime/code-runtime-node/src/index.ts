@@ -18,6 +18,7 @@ import { JsonChannel } from './channel.ts'
 import { bootstrapArgs } from './launch.ts'
 import type { LaunchConfig } from './launch.ts'
 import { OutputLedger } from './output-ledger.ts'
+import { drainOutput } from './output-stream.ts'
 import { decodeCodeJsonWire, encodeCodeJsonWire } from './json-wire.ts'
 import type { ProgramBootData } from './protocol.ts'
 
@@ -98,6 +99,7 @@ export class NodeCodeRuntime extends CodeRuntime {
    * @returns Complete execution inputs with a capped deadline.
    */
   resolve(request: CodeRunRequest): CodeRunSpec {
+    if (this.disposed) throw new Error('code-runtime-node: resolve after disposal')
     const sandboxPolicy = request.sandboxPolicy ?? this.ctx.sandboxPolicy.resolve()
     const cwd = request.cwd ?? sandboxPolicy.workspaceRoot
     if (!isAbsolute(cwd)) throw new Error('code-runtime-node: cwd must be absolute')
@@ -148,6 +150,7 @@ export class NodeCodeRuntime extends CodeRuntime {
     let settled = false
     let timedOut = false
     let outputOverflow = false
+    let overflowResult: CodeRunResult | undefined
     let stderr = ''
     let parsing = true
     const wallTimer = setTimeout(() => { timedOut = true; controller.abort('execution deadline reached') }, spec.timeoutMs)
@@ -159,9 +162,16 @@ export class NodeCodeRuntime extends CodeRuntime {
       channel?.close()
       void (async () => {
         if (handle !== undefined) {
-          handle.terminate()
           try {
+            handle.terminate()
             await Promise.all([handle.done.catch(() => {}), handle.waitForExit()])
+            const drained = await Promise.all([
+              drainOutput(handle.stdout, this.config.graceMs),
+              drainOutput(handle.stderr, this.config.graceMs),
+            ])
+            if (drained.includes(false) && failure === undefined) {
+              failure = { kind: 'worker-exit', message: 'Node process output did not close cleanly' }
+            }
           } catch (error: unknown) {
             failure = { kind: 'worker-exit', message: `managed process cleanup failed: ${messageOf(error)}` }
           } finally {
@@ -169,7 +179,7 @@ export class NodeCodeRuntime extends CodeRuntime {
             handle.stderr?.destroy()
           }
         }
-        const outcome = outputOverflow ? output.limit(logs)
+        const outcome = outputOverflow ? overflowResult ?? output.limit(logs)
           : failure === undefined ? output.success(logs, value) : output.failure(logs, failure)
         result.resolve({ ...outcome, sandbox: { ...sandbox } })
       })()
@@ -203,24 +213,38 @@ export class NodeCodeRuntime extends CodeRuntime {
       if ('pkg' in process && this.config.bootstrapPath === undefined) env.DSH_CODE_RUNTIME_NODE = '1'
       handle = this.ctx.subprocess.spawn({ argv: confined?.argv ?? argv, cwd: spec.cwd, env, stdio: { stdin: 'ignore', stdout: 'pipe', stderr: 'pipe', control: 'pipe' }, graceMs: this.config.graceMs, signal })
       const launched = handle
-      if (launched.control === undefined) throw new Error('subprocess provider did not supply the requested control channel')
+      if (launched.control === undefined || launched.stdout === undefined || launched.stderr === undefined) {
+        throw new Error('subprocess provider did not supply the requested control and output pipes')
+      }
       const admit = (text: string): void => {
-        if (outputOverflow || text.length === 0) return
+        if (outputOverflow) return
         if (!output.admit(text, logs)) {
           outputOverflow = true
+          overflowResult = output.limit([...logs, text])
           finish({ kind: 'output-limit', message: `outer output exceeded ${this.config.maxOutputBytes} bytes` })
         }
       }
       const stdoutDecoder = new StringDecoder('utf8')
       const stderrDecoder = new StringDecoder('utf8')
-      handle.stdout?.on('data', (chunk: Buffer) => { admit(stdoutDecoder.write(chunk)) })
-      handle.stdout?.on('end', () => { admit(stdoutDecoder.end()) })
+      handle.stdout?.on('data', (chunk: Buffer) => {
+        const text = stdoutDecoder.write(chunk)
+        if (text.length > 0) admit(text)
+      })
+      handle.stdout?.on('end', () => {
+        const text = stdoutDecoder.end()
+        if (text.length > 0) admit(text)
+      })
+      handle.stdout?.on('error', (error: Error) => { finish({ kind: 'worker-exit', message: messageOf(error) }) })
       handle.stderr?.on('data', (chunk: Buffer) => {
         const text = stderrDecoder.write(chunk)
         stderr = (stderr + text).slice(-this.config.maxOutputBytes)
-        admit(text)
+        if (text.length > 0) admit(text)
       })
-      handle.stderr?.on('end', () => { admit(stderrDecoder.end()) })
+      handle.stderr?.on('end', () => {
+        const text = stderrDecoder.end()
+        if (text.length > 0) admit(text)
+      })
+      handle.stderr?.on('error', (error: Error) => { finish({ kind: 'worker-exit', message: messageOf(error) }) })
       let ready = false
       let nextId = 1
       let pending = 0
@@ -233,7 +257,6 @@ export class NodeCodeRuntime extends CodeRuntime {
           : { kind: 'worker-exit', message: `Node process exited before completing (${String(outcome.exitCode)})${stderr ? `: ${stderr}` : ''}` })
       }
       const transport: JsonChannel = new JsonChannel(launched.control, this.config.maxMessageBytes, (raw, bytes) => {
-        if (settled) return
         if (!record(raw)) { protocolFailure('invalid control frame'); return }
         if (!ready) {
           if (raw.type !== 'ready') { protocolFailure('program frame arrived before bootstrap readiness'); return }

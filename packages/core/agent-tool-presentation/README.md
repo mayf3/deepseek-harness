@@ -85,7 +85,7 @@ The package-level contract is enough for most consumers; read these when you nee
 
 - [tools package](../tools/README.md) — the tool presentation modes and `presentAs` API.
 - [agent-presets package](../../preset/agent-presets/README.md) — how presets compose agents and their standing mounts.
-- [code-runtime worker-thread package](../../code-runtime/code-runtime-node/README.md) — the TypeScript runtime a PTC mode needs.
+- [Node code-runtime package](../../code-runtime/code-runtime-node/README.md) — the TypeScript runtime a PTC mode needs.
 - [PTC mode executor-collapse note](../../../.agents/notes/implemented/bug-fix/2026-08-07-ptc-executor-collapse.md) — why the announced and callable surfaces stay the same.
 - [Core group map](../README.md) — how the core packages compose.
 

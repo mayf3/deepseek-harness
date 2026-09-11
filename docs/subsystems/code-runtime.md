@@ -2,20 +2,18 @@
 
 English | [中文](code-runtime.zh.md)
 
-The code-execution seam — a [capability seam](../../.agents/notes/implemented/architecture/2026-06-13-capability-seams.md) whose Service Definition ([dsh-code-runtime](../../packages/code-runtime/code-runtime), `ctx.codeRuntime`) runs one model-written program against host-provided async bindings and reports what it printed and returned. Code execution is **one optional capability**, not part of the agent-loop spine — so its vocabulary lives here, not in [core.md](core.md). Backends differ by execution substrate and source language, both readonly descriptors on the service; the worker-thread Service Provider and tool-registry Consumer are specified by the [PTC mode foundation](../../.agents/notes/implemented/feature/2026-06-15-ptc.md) and [typed-return contract](../../.agents/notes/implemented/feature/2026-07-20-ptc-typed-tool-returns.md).
+The code-execution [capability seam](../../.agents/notes/implemented/architecture/2026-06-13-capability-seams.md) supplies `ctx.codeRuntime` through [dsh-code-runtime](../../packages/code-runtime/code-runtime). It runs one program against host bindings and reports output, failure and applicable sandbox facts. Code execution is optional rather than part of [the agent-loop spine](core.md). The [PTC foundation](../../.agents/notes/implemented/feature/2026-06-15-ptc.md) owns registry presentation, the [typed-return contract](../../.agents/notes/implemented/feature/2026-07-20-ptc-typed-tool-returns.md) owns binding values, and the [sandboxed Node decision](../../.agents/notes/implemented/architecture/2026-09-11-sandboxed-node-code-runtime.md) owns the shipped execution provider.
 
 Source: [`packages/code-runtime/code-runtime/src/types.ts`](../../packages/code-runtime/code-runtime/src/types.ts)
 
 ## The run: request in, result out
 
-A `CodeRunRequest` carries **everything the runtime acts on** — per the "explicit > implicit at package boundaries" rule, defaulting (time budgets, output caps) is the implementation's validated config, never a hidden `??` inside `run()`:
+`CodeRunRequest` contains the program, bindings, cancellation and optional execution choices. The provider's `resolve` validates supported choices and applies its deployment defaults; `run` receives a `CodeRunSpec` with an explicit directory and deadline. A provider that cannot enforce a requested policy rejects it before program execution:
 
 ```ts type-equiv
 /**
- * One run: the program source plus everything the runtime acts on. Per the
- * explicit-over-implicit convention, defaulting (time budgets, output caps)
- * is the implementation's validated config — a request carries no optional
- * tuning knobs for a hidden `??` to fill in.
+ * Caller inputs for one program. The provider's resolve method validates supported
+ * options and supplies directory, deadline, and authority before execution.
  */
 interface CodeRunRequest {
   /**
@@ -27,6 +25,12 @@ interface CodeRunRequest {
   program: string
   /** Host functions exposed to the program, one global object per namespace. */
   bindings: CodeBindingNamespace[]
+  /** Working directory in the mounted filesystem and subprocess execution world. */
+  cwd?: string
+  /** Requested elapsed execution time; the provider's resolver validates and caps it. */
+  timeoutMs?: number
+  /** Resolved authority for this execution. Providers without confinement reject an explicit policy. */
+  sandboxPolicy?: SandboxExecutionPolicy
   /**
    * Abort the run: the runtime stops the program (hard, even mid-loop) and
    * resolves with a {@link CodeRunFailure} of kind `'abort'`. In-flight
@@ -36,7 +40,29 @@ interface CodeRunRequest {
 }
 ```
 
-The result reports an error as a **field**, never a rejection of `run()` — reporting a failed program is the caller's job, not an exception path (matching `ShellExecutor.run`'s resolve-on-failure contract):
+```ts type-equiv
+/** Fully resolved execution inputs; run never supplies a missing directory or timeout. */
+interface CodeRunSpec extends CodeRunRequest {
+  /** Absolute directory in the provider's execution world. */
+  cwd: string
+  /** Positive finite execution deadline in milliseconds, after provider capping. */
+  timeoutMs: number
+}
+```
+
+```ts type-equiv
+/** File confinement applied to a program, independently of its terminal outcome. */
+interface CodeRunSandbox {
+  /** File-effect mode used for this execution. */
+  mode: SandboxMode
+  /** Whether an observed failure matches the selected backend's denial diagnostics. */
+  denied: boolean
+  /** Completeness reported by the selected confining backend; absent for full access. */
+  enforcement?: SandboxEnforcement
+}
+```
+
+Program failures resolve through `CodeRunResult.error`; invalid caller inputs may reject before execution. Sandbox mode, observed denial and enforcement completeness are separate facts, so a successful program does not by itself prove that every requested restriction was enforced:
 
 ```ts type-equiv
 /**
@@ -45,6 +71,8 @@ The result reports an error as a **field**, never a rejection of `run()` — rep
  * an exception path.
  */
 interface CodeRunResult {
+  /** Applied file policy and observed denial, when the provider enforces file policy. */
+  sandbox?: CodeRunSandbox
   /**
    * The program's completion value (its top-level `return`), when it ran to
    * completion and the value crossed the runtime's lossless-JSON boundary.
@@ -65,7 +93,7 @@ interface CodeRunResult {
 
 ## Bindings: host functions as program globals
 
-Each `CodeBindingNamespace` becomes one global object of async callables inside the program (the PTC mode consumer passes one: `tools`). Arguments and resolutions must be lossless JSON and cross without a seam-level byte cap; the runtime may bridge them through structured clone. A namespace may declare a program-visible error class without making the runtime know the consumer's names: the runtime injects the real constructor and turns rejected calls into its instances. A runtime also treats binding names as hostile input (`__proto__` is an ordinary own property, never a prototype collision):
+Each `CodeBindingNamespace` becomes a global object of async callables; PTC passes `tools`. Arguments and resolutions must be lossless JSON. Providers enforce their own transport caps; the seam sets no uniform binding-byte limit. An optional error-class descriptor creates program-visible typed rejections without naming a consumer inside the runtime. Binding names are own properties, so `__proto__` cannot traverse a prototype:
 
 ```ts type-equiv
 /**
@@ -154,7 +182,7 @@ Failure kinds are **orthogonal outcomes reported independently** (per [defensive
  */
 interface CodeRunFailure {
   /** The failure class (see the interface doc for each kind's meaning). */
-  kind: 'exception' | 'timeout' | 'abort' | 'worker-exit' | 'invalid-output' | 'output-limit'
+  kind: 'exception' | 'timeout' | 'abort' | 'worker-exit' | 'invalid-output' | 'output-limit' | 'protocol' | 'sandbox-unavailable'
   /** Human-readable detail, suitable for feeding back to a model to self-correct. */
   message: string
 }
@@ -162,7 +190,7 @@ interface CodeRunFailure {
 
 ## The service
 
-`CodeRuntime` (`ctx.codeRuntime`, abstract — defined in [`packages/code-runtime/code-runtime/src/index.ts`](../../packages/code-runtime/code-runtime/src/index.ts)) is `run(request)` plus two readonly descriptors: `language` (what the program must be written in — `'typescript'` and `'python'` are the well-known values, those `dsh-tools` presents, the TypeScript backend released and the Python backend experimental and private (not published); a consumer generating language-specific presentation switches on it and fails loud on one it cannot present) and `isolation` (the execution substrate — `'worker-thread'`, `'process'`, `'container'`; a diagnostic label, **not a security claim**). Implementations must keep runs isolated from each other (no cross-run state) and dispose to quiescence: in-flight runs are terminated and awaited before teardown completes.
+`CodeRuntime` is defined in [`src/index.ts`](../../packages/code-runtime/code-runtime/src/index.ts). `resolve(request)` returns complete execution inputs, and `run(spec)` executes them. `language` selects supported program presentation; `isolation` describes the substrate without claiming security. `sandboxMode` advertises file-policy support, with `undefined` for a provider that does not supply confinement. Each implementation keeps program state separate between runs and terminates and awaits active executions during disposal.
 
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 
