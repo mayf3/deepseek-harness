@@ -10,7 +10,6 @@ import { describe, expect, it } from 'vitest'
 import type { EntryOptions } from '@deepseek-ai/cordis-plugin-loader'
 import type { PatchOptions } from '@deepseek-ai/cordis-plugin-include'
 import { claimLayerIds, composeProfileStack, formatRowConflict, type ProfileLayer } from '../src/index.ts'
-import { CONTAINED_GROUP_MODULE } from '../src/external-bundles.ts'
 
 const NAME = 'dsh-test-bin'
 
@@ -102,8 +101,8 @@ describe('claimLayerIds', () => {
 
   it('leaves out a bundle whose config override of its own group lists an id twice', () => {
     const self = layer('self', 'external', [
-      { insert: [{ id: 'row', name: 'self/row' }] },
-      { id: 'bundle/self', config: [{ id: 'row', name: 'self/row' }, { id: 'row', name: 'self/row-again' }] },
+      { insert: [{ id: 'self-group', name: 'cordis:group', group: true, config: [{ id: 'row', name: 'self/row' }] }] },
+      { id: 'self-group', config: [{ id: 'row', name: 'self/row' }, { id: 'row', name: 'self/row-again' }] },
     ])
     const { skipped, composed } = claimLayerIds([base, self])
     expect(skipped.get('self')?.map(conflict => conflict.message)).toEqual(['row "row" is declared twice by self'])
@@ -120,7 +119,7 @@ describe('claimLayerIds', () => {
     expect(owners.has('x')).toBe(false)
     expect(owners.get('y')?.packageName).toBe('clean')
     expect([...composed.keys()]).toEqual(['clean'])
-    expect(composed.get('clean')?.patches[1]).toEqual({ id: 'bundle/clean', insert: [{ id: 'y', name: 'clean' }] })
+    expect(composed.get('clean')?.patches[0]).toEqual({ insert: [{ id: 'y', name: 'clean' }] })
   })
 
   it('gives the earlier external bundle the id and leaves the later one out whole', () => {
@@ -128,7 +127,7 @@ describe('claimLayerIds', () => {
     const second = layer('second', 'external', [{ insert: [{ id: 'hello', name: 'second' }, { id: 'only-second', name: 'second/x' }] }])
     const { owners, skipped } = claimLayerIds([base, first, second])
     expect(owners.get('hello')?.packageName).toBe('first')
-    expect(owners.get('bundle/first')?.packageName).toBe('first')
+    expect(owners.has('bundle/first')).toBe(false)
     expect(owners.has('only-second')).toBe(false)
     expect(skipped.get('second')?.map(conflict => conflict.rowId)).toEqual(['hello'])
   })
@@ -160,8 +159,8 @@ describe('composeProfileStack', () => {
       ] },
     ])
     expect(stack.layers.map(current => current.label)).toEqual(['@deepseek-ai/dsh-base', 'ext', '/p/cordis.patch.yml', '/home/cordis.patch.yml'])
-    expect(stack.layers[1]?.patches[0]?.insert?.[0]).toMatchObject({ id: 'bundle/ext', name: CONTAINED_GROUP_MODULE })
-    expect([...stack.owners.keys()]).toEqual(['settings', 'tools', 'tool-bash', 'ext-tool', 'bundle/ext'])
+    expect(stack.layers[1]?.patches[0]?.insert?.[0]).toMatchObject({ id: 'ext-tool', name: 'ext' })
+    expect([...stack.owners.keys()]).toEqual(['settings', 'tools', 'tool-bash', 'ext-tool'])
     expect(stack.layers[2]?.patches).toEqual([
       { id: 'settings', config: { path: '/x' } },
       { insert: [{ id: 'mine', name: 'mine' }] },

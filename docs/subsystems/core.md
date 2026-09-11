@@ -913,6 +913,13 @@ Facts and recomposition of the booted profile.
 originOf(rowId: string): RowOrigin | undefined
 
 /**
+ * Resolve provenance within its Loader tree; nested includes inherit their owning entry.
+ * @param entry - the live entry, including an entry inside another Include.
+ * @returns its supplying bundle, or undefined for a user-owned entry.
+ */
+originOfEntry(entry: Entry): RowOrigin | undefined
+
+/**
  * Row ids the user patch layers disable with a literal `disabled: true`,
  * as the committed composition read them. The set describes the running
  * tree: a user file the include rejected, or one that cannot be parsed,
@@ -932,22 +939,15 @@ userDisabledRowIds(): ReadonlySet<string>
 userDisables(entry: Entry): boolean
 
 /**
- * Recompose the host tree from the profile's layers and the user patch files
- * as they stand now. The root Include re-applies the stack transactionally:
- * a row whose options changed is updated in place, a row that appeared is
- * created, a row that vanished is disposed, and a failure rolls the whole
- * update back with the previous tree still running. The candidate profile,
- * its ownership, and its conflicts become the committed composition only
- * once the update holds; until then, and after a rejection, `current`,
- * `layers`, `originOf`, and `conflicts` keep describing the running tree.
- * Calls queue: one that arrives while another is in flight starts after it
- * settled and reads what it committed. A rejection is that call's outcome
- * alone and does not stop the ones behind it.
- * @param options - `reloadBundles` re-reads the profile manifest first, so a
- * bundle enabled or installed since boot joins the stack.
- * @throws when the root include is not mounted, or the Loader rejected the update.
+ * Apply a fresh profile stack and wait for live entries and removed fibers to settle.
+ * Parse/composition failures leave the applied stack unchanged. Accepted options
+ * can coexist with failed entries or fibers running their previous valid config.
+ * Calls serialize; a failed call does not block later changes.
+ * @param options - whether to reread installed bundle layers from disk.
+ * @returns current entry issues after application, without rolling back successful siblings.
+ * @throws when preparation fails or the root Include cannot accept the update.
  */
-async recompose(options: { reloadBundles?: boolean } = {}): Promise<void>
+async recompose(options: { reloadBundles?: boolean } = {}): Promise<readonly EntryIssue[]>
 ```
 
 Source: [`packages/boot/app-boot/src/profile-runtime.ts`](../../packages/boot/app-boot/src/profile-runtime.ts)

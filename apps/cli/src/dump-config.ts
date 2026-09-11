@@ -53,7 +53,7 @@ export function runDumpConfig(
       userLayers.push({ label: absolute, patches: loadOverlayPatches(NAME, absolute) })
     }
   }
-  // The same composition boot mounts: external bundles as contained groups,
+  // The same composition boot mounts: bundle layers in their declared order,
   // a bundle or row left out by an id conflict reported, not shown.
   const stack = composeProfileStack(NAME, loaded.layers, userLayers)
   for (const conflict of stack.conflicts) process.stderr.write(`${NAME}: ${formatRowConflict(conflict)}\n`)

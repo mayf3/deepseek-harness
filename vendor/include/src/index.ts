@@ -50,8 +50,7 @@ function retryableWriteError(error: unknown): boolean {
  * values are cloned before they join the list for the same reason: a later
  * patch that inserts into or overrides a row an earlier patch introduced
  * mutates the copy, never the patch, so applying one patch list twice (the
- * Loader rolling a rejected update back to the previous one) yields the same
- * tree each time. Inserted entries are
+ * profile recomposition or a file refresh) yields the same tree each time. Inserted entries are
  * indexed as they are added, so a later patch in the same list can target a
  * row an earlier patch inserted. A patch that matches nothing warns and is
  * skipped.

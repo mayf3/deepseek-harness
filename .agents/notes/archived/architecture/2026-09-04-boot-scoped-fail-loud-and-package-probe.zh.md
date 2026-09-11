@@ -1,6 +1,7 @@
 # Agent Note: fail-loud 只在启动期，包在子进程里探测
 
 Status: implemented
+Archived: 2026-09-11
 
 [English](2026-09-04-boot-scoped-fail-loud-and-package-probe.md) | 中文
 

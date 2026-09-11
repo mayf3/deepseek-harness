@@ -24,7 +24,6 @@ import {
   healProfilesModuleFallback,
   initProfile,
   installFailLoud,
-  installRuntimeGuards,
   loadOptionalPatches,
   loadOverlayPatches,
   loadProfile,
@@ -307,9 +306,7 @@ export async function runProfile(options: RunProfileOptions): Promise<{ ctx: Con
   const composed = await composeProfile(options.profile, options.patchFiles, options.fromDefaultProfile)
   const app: { current?: Context; runtime?: ProfileRuntime } = {}
   const appReady = createAppReady()
-  let uninstallRuntimeGuards = (): void => {}
   const shutdown = createProcessShutdown(async () => {
-    uninstallRuntimeGuards()
     await app.current?.fiber.dispose()
     await disposeProxy()
   })
@@ -325,7 +322,7 @@ export async function runProfile(options: RunProfileOptions): Promise<{ ctx: Con
   // complete; SIGINT is a user interrupt and reports 130.
   process.on('SIGTERM', () => { interrupt(0) })
   process.on('SIGINT', () => { interrupt(130) })
-  const uninstallFailLoud = installFailLoud(NAME, process, async () => {
+  installFailLoud(NAME, process, async () => {
     await app.current?.fiber.dispose()
   })
 
@@ -358,8 +355,16 @@ export async function runProfile(options: RunProfileOptions): Promise<{ ctx: Con
   for (const conflict of composed.stack.conflicts) process.stderr.write(`${NAME}: ${formatRowConflict(conflict)}\n`)
   // Cloned for the same insert-aliasing reason as composeFor: the boot
   // application must not mutate the objects later reloads recompose from.
-  const ctx = await boot(NAME, rootConfig, structuredClone(composed.stack.patches), (hostCtx) => {
+  const ctx = await boot(NAME, rootConfig, structuredClone(composed.stack.patches), async (hostCtx) => {
     app.current = hostCtx
+    await hostCtx.plugin(ProfileRuntime, {
+      profile: composed.profile,
+      stack: composed.stack,
+      loadProfile: () => prepareProfile(options.profile),
+      compose: composeFor,
+      rootEntry: () => rootIncludeEntry(hostCtx),
+    })
+    app.runtime = hostCtx.profileRuntime
     // Before any config-tree entry mounts, so plugins resolve all launch-time
     // environment values from the same immutable provenance snapshot.
     hostCtx.provide(DSH_LAUNCH_ENVIRONMENT_KEY, options.environment)
@@ -372,21 +377,8 @@ export async function runProfile(options: RunProfileOptions): Promise<{ ctx: Con
     })
   })
   app.current = ctx
-  // The tree is up: a later unhandled rejection is a plugin's stray
-  // continuation, not a load failure, and must not take every session down.
-  uninstallFailLoud()
-  uninstallRuntimeGuards = installRuntimeGuards(NAME, (line) => { process.stderr.write(`${line}\n`) })
   if (!signalShutdown.signal.aborted && ctx.fiber.state === FiberState.ACTIVE && ctx.get('loader') !== undefined) {
     warnNestedFiberFailures(ctx, NAME, (line) => { process.stderr.write(`${line}\n`) })
-    await ctx.plugin(ProfileRuntime, {
-      profile: composed.profile,
-      stack: composed.stack,
-      loadProfile: () => prepareProfile(options.profile),
-      compose: composeFor,
-      rootEntry: () => rootIncludeEntry(ctx),
-    })
-    const runtime = ctx.get('profileRuntime')
-    if (runtime !== undefined) app.runtime = runtime
   }
   // A live-reload profile can dispose the whole tree while post-boot watcher
   // setup is in flight — a signal or appExit. Loader presence and fiber state

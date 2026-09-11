@@ -5,7 +5,7 @@
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
-import type { Entry, EntryOptions } from '@deepseek-ai/cordis-plugin-loader'
+import Loader, { type Entry, type EntryOptions } from '@deepseek-ai/cordis-plugin-loader'
 import type { PatchOptions } from '@deepseek-ai/cordis-plugin-include'
 import { claimLayerIds, ProfileRuntime, type ComposedStack, type Profile, type ProfileLayer } from '../src/index.ts'
 
@@ -28,6 +28,7 @@ async function harness(
 ): Promise<{ ctx: Context; runtime: ProfileRuntime; compose: ReturnType<typeof vi.fn> }> {
   const ctx = new Context()
   contexts.push(ctx)
+  await ctx.plugin(Loader)
   // The conflicts, when given, belong to the reloaded profile only.
   const compose = vi.fn((current: Profile): ComposedStack => {
     const patches = [{ id: `composed-for-${current.layers.length}` }] as PatchOptions[]
@@ -70,11 +71,11 @@ describe('ProfileRuntime', () => {
       // Declares an id the first external layer owns: left out whole, so none of its rows has an origin.
       layer('late', 'external', [{ insert: [{ id: 'tool', name: 'late' }, { id: 'late-only', name: 'late/x' }] }]),
     ])
-    expect(runtime.originOf('settings')).toEqual({ trust: 'builtin', packageName: '@deepseek-ai/dsh-base', version: '2.0.0' })
-    expect(runtime.originOf('child')).toEqual({ trust: 'builtin', packageName: '@deepseek-ai/dsh-base', version: '2.0.0' })
-    expect(runtime.originOf('tool')).toEqual({ trust: 'external', packageName: 'ext', version: '2.0.0' })
-    expect(runtime.originOf('bundle/ext')).toEqual({ trust: 'external', packageName: 'ext', version: '2.0.0' })
-    expect(runtime.originOf('svc')).toEqual({ trust: 'external', packageName: 'boot-ext', version: '2.0.0' })
+    expect(runtime.originOf('settings')).toEqual({ trust: 'builtin', stage: 'runtime', packageName: '@deepseek-ai/dsh-base', version: '2.0.0' })
+    expect(runtime.originOf('child')).toEqual({ trust: 'builtin', stage: 'runtime', packageName: '@deepseek-ai/dsh-base', version: '2.0.0' })
+    expect(runtime.originOf('tool')).toEqual({ trust: 'external', stage: 'runtime', packageName: 'ext', version: '2.0.0' })
+    expect(runtime.originOf('bundle/ext')).toBeUndefined()
+    expect(runtime.originOf('svc')).toEqual({ trust: 'external', stage: 'boot', packageName: 'boot-ext', version: '2.0.0' })
     expect(runtime.originOf('late-only')).toBeUndefined()
     expect(runtime.originOf('user-row')).toBeUndefined()
   })
@@ -88,7 +89,7 @@ describe('ProfileRuntime', () => {
 
   it('omits the version when the layer has none', async () => {
     const { runtime } = await harness([{ ...layer('local', 'builtin', [{ insert: [{ id: 'r', name: 'local' }] }]), version: undefined }])
-    expect(runtime.originOf('r')).toEqual({ trust: 'builtin', packageName: 'local' })
+    expect(runtime.originOf('r')).toEqual({ trust: 'builtin', stage: 'runtime', packageName: 'local' })
   })
 
   it('reports the user-disabled rows of the committed composition and keeps them when the include rejects an update', async () => {
@@ -127,7 +128,7 @@ describe('ProfileRuntime', () => {
     expect(runtime.layers).toHaveLength(2)
     expect(update).toHaveBeenLastCalledWith({ config: { path: 'file:///root/cordis.yml', patches: [{ id: 'composed-for-2' }] } })
     // Provenance, conflicts, and the user-disabled rows follow the reloaded profile once the update holds.
-    expect(runtime.originOf('bundle/b')).toEqual({ trust: 'external', packageName: 'b', version: '2.0.0' })
+    expect(runtime.originOf('bundle/b')).toBeUndefined()
     expect(runtime.conflicts).toEqual(conflicts)
     expect([...runtime.userDisabledRowIds()]).toEqual(['reloaded-off'])
   })
@@ -167,7 +168,7 @@ describe('ProfileRuntime', () => {
     const first = runtime.recompose()
     const second = runtime.recompose()
     await expect(first).rejects.toThrow('rejected')
-    await expect(second).resolves.toBeUndefined()
+    await expect(second).resolves.toEqual([])
   })
 
   it('keeps the committed profile, provenance, and conflicts when the root include rejects the update', async () => {

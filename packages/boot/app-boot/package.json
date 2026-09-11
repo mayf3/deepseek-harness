@@ -23,7 +23,6 @@
   },
   "files": [
     "lib/index.js",
-    "lib/probe-child.js",
     "lib/types/**/*.d.ts"
   ],
   "license": "MIT",

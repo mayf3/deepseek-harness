@@ -1,6 +1,7 @@
 # Agent Note: External bundles mount as contained groups with owned row ids
 
 Status: implemented
+Archived: 2026-09-11
 
 English | [中文](2026-09-04-external-bundles-as-contained-groups.zh.md)
 

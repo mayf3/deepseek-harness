@@ -8,7 +8,7 @@ import SystemPrompt, { renderPrompt } from '@deepseek-ai/dsh-system-prompt'
 import {
   addHarnessSourceSection, auditStartupEntries, boot,
   FAIL_LOUD_RELEASE_TIMEOUT_MS, HARNESS_SOURCE_SECTION,
-  installFailLoud, loadEnv, loadLayeredEnv, loadOverlayPatches, resolveConfigPath, type FailLoudProcess,
+  installFailLoud, ProfileRuntime, loadEnv, loadLayeredEnv, loadOverlayPatches, resolveConfigPath, type FailLoudProcess,
 } from '../src/index.ts'
 
 const NAME = 'dsh-test-bin'
@@ -420,7 +420,16 @@ describe('installFailLoud', () => {
     installFailLoud(NAME, proc)
     const error = new Error('assembled activation failure')
     const warn = vi.fn()
+    let checkpoint!: () => void
+    const atCheckpoint = new Promise<void>((resolve) => { checkpoint = resolve })
+    let release!: () => void
+    const schedule = vi.spyOn(globalThis, 'setImmediate').mockImplementationOnce(((callback: () => void) => {
+      release = callback
+      checkpoint()
+      return {} as NodeJS.Immediate
+    }))
     const audit = auditStartupEntries({
+      get: () => ({ originOfEntry: () => ({ trust: 'external', stage: 'runtime' }) }),
       loader: {
         entries: () => ['broken-a', 'broken-b'].map(name => ({
           options: { id: name, name },
@@ -433,11 +442,15 @@ describe('installFailLoud', () => {
         })),
       },
     } as unknown as Context, NAME, warn)
-    await Promise.resolve()
-    await Promise.resolve()
-    proc.handlers[0]!(error)
-    expect(proc.written).toEqual([])
-    expect(proc.exits).toEqual([])
+    await atCheckpoint
+    try {
+      proc.handlers[0]!(error)
+      expect(proc.written).toEqual([])
+      expect(proc.exits).toEqual([])
+    } finally {
+      schedule.mockRestore()
+      release()
+    }
     await audit
     expect(warn).toHaveBeenCalledWith(expect.stringContaining('assembled activation failure'))
     proc.handlers[0]!(error)
@@ -504,15 +517,7 @@ describe('installFailLoud', () => {
 })
 
 describe('auditStartupEntries', () => {
-  const requiredIds = [
-    'agent-loop',
-    'webserver',
-    'modules',
-    'connection',
-    'headless-runner',
-    'acp',
-    'sdk-jsonrpc-server',
-  ]
+  const requiredIds = ['required-a', 'webserver', 'headless-runner']
 
   interface FakeEntry {
     fiber?: {
@@ -526,6 +531,7 @@ describe('auditStartupEntries', () => {
   }
 
   const ctxWith = (entries: FakeEntry[]): Context => ({
+    get: () => ({ originOfEntry: (entry: FakeEntry) => requiredIds.includes(entry.options.id) ? undefined : { trust: 'external', stage: 'runtime' } }),
     loader: { entries: () => entries.values() },
   }) as unknown as Context
 
@@ -551,6 +557,9 @@ describe('auditStartupEntries', () => {
         options: { id, name: './required.mjs' },
       }))), NAME, warn)).resolves.toBeUndefined()
     }
+    await expect(auditStartupEntries(ctxWith([{
+      options: { id: 'recovered', name: './plugin.mjs' }, fiber: fiber(3),
+    }]), NAME, warn)).resolves.toBeUndefined()
     expect(warn).not.toHaveBeenCalled()
   })
 
@@ -915,7 +924,9 @@ describe('boot', () => {
     const write = vi.spyOn(process.stderr, 'write').mockImplementation(() => true)
     let ctx: Context | undefined
     try {
-      ctx = await boot(NAME, configPath)
+      ctx = await boot(NAME, configPath, [], (ctx) => {
+        ctx.provide('profileRuntime', { originOfEntry: () => ({ trust: 'external', stage: 'runtime' }) } as unknown as ProfileRuntime)
+      })
       expect(ctx.get('goodStarted')).toBe(true)
       const entries = [...ctx.loader.entries()]
       expect(entries.find(entry => entry.options.id === 'good')?.fiber?.state).toBe(2)

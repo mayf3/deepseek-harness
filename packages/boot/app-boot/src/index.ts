@@ -20,7 +20,7 @@ import { createLaunchEnvironmentSnapshot, type LaunchEnvironmentSnapshot } from 
 import type {} from '@deepseek-ai/cordis-plugin-hmr'
 import { watchConfig } from './watch-config.ts'
 import type {} from '@deepseek-ai/dsh-system-prompt'
-import { ContainedGroup, ensurePluginFailures, isContainedEntry } from './contained-group.ts'
+import { formatEntryError, inspectEntryIssues, isObservedEntryRejection } from './entry-issues.ts'
 import { visitPatchRows } from './patch-rows.ts'
 
 declare module '@deepseek-ai/cordis' {
@@ -52,20 +52,17 @@ export {
   type ProfileModuleFallbackOptions,
   type ProfileTemplate,
 } from './profile.ts'
-export { ensurePluginFailures } from './contained-group.ts'
+export { entryIssue, inspectEntryIssues, type EntryIssue } from './entry-issues.ts'
 export {
-  bundleGroupId, disableBundle, enableBundle, reconcileInstalledBundles,
-  type BundleReconciliation, type ComposedExternalLayer, type DuplicateRow,
+  disableBundle, enableBundle, reconcileInstalledBundles,
+  type BundleReconciliation, type AnalyzedBundleLayer, type DuplicateRow,
 } from './external-bundles.ts'
 export {
   claimLayerIds, composeProfileStack, formatRowConflict,
   type ComposedStack, type LayerOwnership, type RowConflict, type StackUserLayer,
 } from './compose-stack.ts'
 export { ProfileRuntime, type RowOrigin } from './profile-runtime.ts'
-export {
-  PLUGIN_PROBE_DIR, probePackage, readProbeCache, writeProbeCache,
-  type PluginProbe, type PluginProbeRow, type ProbeOptions,
-} from './probe.ts'
+export { readPackageMetadata, type PackageMetadata, type PackageMetadataOptions, type PackageMetadataRow } from './package-metadata.ts'
 
 /**
  * Resolve the config to boot. Replay swaps a `cordis.yml` basename for
@@ -274,7 +271,7 @@ export async function watchUserPatches(
   if (hmr === undefined) throw new Error(`${binName}: user patch-layer watching requires the Cordis HMR service`)
   const entry = bootstrapIncludes.get(ctx)
   if (entry === undefined) throw new Error(`${binName}: user patch-layer watching requires the root Include entry`)
-  const reapply = options.reapply ?? (async (): Promise<void> => {
+  const apply = options.reapply ?? (async (): Promise<void> => {
     // Re-read the include's non-patch options per refresh so a writer that
     // updates another option between refreshes is not silently reverted.
     const { patches: _previousPatches, ...includeConfig } = entry.options.config as Include.Config
@@ -284,11 +281,14 @@ export async function watchUserPatches(
         patches: loadOptionalPatches(binName, filename) ?? [],
       },
     })
+  })
+  const reapply = async (): Promise<void> => {
+    await apply()
     await ctx.loader.await()
     await Promise.allSettled([...ctx.loader.entries()].map(entry => Promise.resolve(entry.fiber?.await())))
     const failures = await inactiveEntries(ctx)
     if (failures.length > 0) throw new Error(activationDiagnostic(binName, 'warning', failures).trimEnd())
-  })
+  }
   const register = watchConfig(ctx, filename, hmr.config, reapply)
   try {
     return await register
@@ -566,10 +566,6 @@ export async function mountRootInclude(
   // by name. Both builtins load through the ambient module pipeline, so neither
   // depends on the included tree's own specifier resolution.
   ctx.loader.builtins.group = Group
-  // `cordis:contained-group`: the group external bundles mount under, whose
-  // rows fail individually and are recorded on the root's failure registry.
-  ctx.loader.builtins['contained-group'] = ContainedGroup
-  ensurePluginFailures(ctx)
   // Pinned id: the bootstrap include is app glue, not a config row, and its
   // id appears in Loader failure chains — a random id would make startup
   // diagnostics unstable across runs (and snapshot fixtures).
@@ -604,33 +600,6 @@ export interface FailLoudProcess {
    * a test observes.
    */
   exit(code: number): void
-}
-
-// Loader rc.5 derives and drops a rejected promise after a fiber fails. Keep
-// exact reasons already folded into the boot diagnostic visible through the
-// next process rejection checkpoint so the process guard can coalesce them.
-const assembledActivationRejections = new Map<unknown, number>()
-
-function retainAssembledRejection(reason: unknown): void {
-  assembledActivationRejections.set(reason, (assembledActivationRejections.get(reason) ?? 0) + 1)
-}
-
-function releaseAssembledRejection(reason: unknown): void {
-  const count = assembledActivationRejections.get(reason)
-  if (count === undefined || count === 1) {
-    assembledActivationRejections.delete(reason)
-  } else {
-    assembledActivationRejections.set(reason, count - 1)
-  }
-}
-
-async function observeLoaderRejectionCheckpoint(reasons: readonly unknown[]): Promise<void> {
-  for (const reason of reasons) retainAssembledRejection(reason)
-  try {
-    await new Promise<void>(resolve => setImmediate(resolve))
-  } finally {
-    for (const reason of reasons) releaseAssembledRejection(reason)
-  }
 }
 
 /**
@@ -675,7 +644,7 @@ export function installFailLoud(
 ): () => void {
   let exiting = false
   const handler = (err: unknown): void => {
-    if (assembledActivationRejections.has(err)) return
+    if (isObservedEntryRejection(err)) return
     // A release in flight already owns the exit. Swallow later rejections
     // (teardown's own included) rather than reporting a second failure over the
     // real one or letting Node kill the process before the terminal is back.
@@ -710,92 +679,12 @@ export function installFailLoud(
   return uninstall
 }
 
-/** The slice of `process` {@link installRuntimeGuards} needs. */
-export interface RuntimeGuardProcess {
-  on(event: 'unhandledRejection' | 'uncaughtException', handler: (err: unknown) => void): unknown
-  off(event: 'unhandledRejection' | 'uncaughtException', handler: (err: unknown) => void): unknown
-  exit(code: number): unknown
-}
-
-/**
- * The post-boot replacement for {@link installFailLoud}. Once the tree is up,
- * an unhandled rejection is no longer a load failure: it is most likely a
- * plugin's stray continuation, and exiting would take every session down for
- * it. The rejection is reported and the process keeps running; nothing is
- * stopped or attributed to a plugin, built-in or external, so this is a
- * process-level policy chosen over exiting, not an isolation of the plugin
- * that produced it. An uncaught exception leaves the process in an unknown
- * state, so it is reported and the process exits, as Node would — but with
- * the origin named.
- * @param binName - the diagnostic prefix on each report.
- * @param report - sink for the report lines.
- * @param proc - the process slice to register on; defaults to `process`.
- * @returns a disposer removing both handlers.
- */
-export function installRuntimeGuards(
-  binName: string,
-  report: (line: string) => void,
-  proc: RuntimeGuardProcess = process,
-): () => void {
-  const onRejection = (err: unknown): void => {
-    report(`${binName}: unhandled rejection after boot (not attributed to a plugin; the process keeps running): ${formatActivationError(err)}`)
-  }
-  const onException = (err: unknown): void => {
-    report(`${binName}: uncaught exception after boot; exiting: ${formatActivationError(err)}`)
-    proc.exit(1)
-  }
-  proc.on('unhandledRejection', onRejection)
-  proc.on('uncaughtException', onException)
-  return () => {
-    proc.off('unhandledRejection', onRejection)
-    proc.off('uncaughtException', onException)
-  }
-}
-
 /**
  * Value mirrors used because Cordis's const enum has no runtime object to import.
  * Keep aligned with `packages/extensions/tool-cordis/src/fiber-state.ts` and
  * `packages/client/web/src/loader-status.ts`.
  */
-const FIBER_PENDING = 0 as FiberState.PENDING
-const FIBER_ACTIVE = 2 as FiberState.ACTIVE
 const FIBER_FAILED = 3 as FiberState.FAILED
-
-/**
- * Entry ids whose presence defines a usable DSH application.
- *
- * The list is global rather than profile metadata. Missing or disabled ids do
- * not affect startup; an enabled listed entry must activate. The list covers
- * shared Agent execution, application endpoints, and Web bootstrap/transport.
- */
-const requiredStartupEntryIds = new Set<string>([
-  'agent-loop',
-  'webserver',
-  'modules',
-  'connection',
-  'headless-runner',
-  'acp',
-  'sdk-jsonrpc-server',
-])
-
-/** Render plugin stacks, nested causes, and aggregate member failures once per error. */
-function formatActivationError(error: unknown): string {
-  const details: string[] = []
-  const seen = new Set<Error>()
-  function visit(value: unknown): void {
-    if (!(value instanceof Error)) {
-      details.push(String(value))
-      return
-    }
-    if (seen.has(value)) return
-    seen.add(value)
-    details.push(value.stack ?? value.message)
-    if (value.cause !== undefined) visit(value.cause)
-    if (value instanceof AggregateError) value.errors.forEach(visit)
-  }
-  visit(error)
-  return details.join('\n')
-}
 
 interface InactiveEntry {
   /** Loader entry used to identify the bootstrap Include and required ids. */
@@ -810,44 +699,16 @@ interface InactiveEntry {
  * duplicate Loader notifications through the next process rejection checkpoint.
  */
 async function inactiveEntries(ctx: Context): Promise<InactiveEntry[]> {
-  const failures: InactiveEntry[] = []
-  const rejectionReasons: unknown[] = []
-  for (const entry of ctx.loader.entries()) {
-    const subject = `${entry.options.id} (${entry.options.name})`
-    try {
-      if (entry.disabled) continue
-    } catch (error) {
-      failures.push({ entry, diagnostic: `${subject}: disabled expression failed: ${formatActivationError(error)}` })
-      continue
-    }
-    const fiber = entry.fiber
-    if (fiber === undefined) {
-      failures.push({ entry, diagnostic: `${subject}: failed to import` })
-      continue
-    }
-    const state = fiber.state
-    if (state === FIBER_ACTIVE) continue
-    if (state === FIBER_FAILED) {
-      try {
-        await fiber.await()
-      } catch (error) {
-        rejectionReasons.push(error)
-        failures.push({ entry, diagnostic: `${subject}: ${formatActivationError(error)}` })
-      }
-      continue
-    }
-    if (state === FIBER_PENDING) {
-      const missing = Object.keys(fiber.inject).filter(service => fiber.ctx.get(service) === undefined)
-      failures.push({
-        entry,
-        diagnostic: `${subject}: pending (waiting for ${missing.length === 1 ? 'service' : 'services'}: ${missing.join(', ') || 'unknown'})`,
-      })
-    } else {
-      failures.push({ entry, diagnostic: `${subject}: fiber state ${String(state)}` })
-    }
-  }
-  if (rejectionReasons.length > 0) await observeLoaderRejectionCheckpoint(rejectionReasons)
-  return failures
+  return (await inspectEntryIssues(ctx)).map(issue => ({
+    entry: issue.entry,
+    diagnostic: `${issue.entry.options.id} (${issue.entry.options.name}): ${issue.stage === 'disabled-expression' ? 'disabled expression failed: ' : ''}${issue.message}`,
+  }))
+}
+
+/** The policy follows row provenance, including the owner of nested Includes. */
+function isOptionalEntry(ctx: Context, entry: Entry): boolean {
+  const origin = ctx.get('profileRuntime')?.originOfEntry(entry)
+  return origin?.trust === 'external' && origin.stage === 'runtime'
 }
 
 /** Render an inactive-entry diagnostic with a count and severity label. */
@@ -864,9 +725,9 @@ function activationDiagnostic(
 /**
  * Apply DSH startup policy to a settled Loader tree.
  *
- * Inactive entries from the global required list reject startup. Other
+ * Inactive built-in, boot-staged, and unowned entries reject startup. External runtime
  * inactive entries produce one warning and leave successful siblings running.
- * Required ids absent from the tree, and disabled required entries, are ignored.
+ * Disabled entries are ignored. Provenance is read from the prepared profile runtime.
  * A throwing disabled expression is an entry failure, not a disabled entry.
  * The bootstrap Include must activate so unreadable or invalid root config is fatal.
  * @param ctx - the settled context whose Loader entries to audit.
@@ -885,7 +746,7 @@ export async function auditStartupEntries(
   const optional: InactiveEntry[] = []
   for (const failure of failures) {
     const target = failure.entry === bootstrapIncludes.get(ctx)
-      || requiredStartupEntryIds.has(failure.entry.options.id) ? required : optional
+      || !isOptionalEntry(ctx, failure.entry) ? required : optional
     target.push(failure)
   }
   if (optional.length > 0) warn(activationDiagnostic(binName, 'warning', optional))
@@ -917,7 +778,7 @@ export function warnNestedFiberFailures(
       // that entry; the entry's own root fiber is the one the entry holds.
       const owner = fiber.entry
       if (fiber.state !== FIBER_FAILED || owner === undefined || owner.fiber === fiber) continue
-      if (isContainedEntry(owner)) continue
+      if (isOptionalEntry(ctx, owner)) continue
       count += 1
       warn(`${binName}: nested fiber under ${owner.options.name} failed (${runtime.name}); the entry itself stays active`)
     }
@@ -935,7 +796,7 @@ export function warnNestedFiberFailures(
  * embeds Include while leaving Loader external, so the built include tree and
  * host share one Loader peer. Loader settlement drains entry work without
  * rejecting the whole tree. The final {@link auditStartupEntries} call rejects
- * failures in the global required list and warns about other failed, missing,
+ * failures in required profile rows and warns about other failed, missing,
  * and pending entries while successful siblings remain active. Later unhandled
  * rejections remain covered by {@link installFailLoud}. Built bins need the Loader's native
  * helper for bare plugin specifiers; relative specifiers do not.
@@ -1001,7 +862,7 @@ export async function boot(
       deepest = deepest.cause
     }
     const stack = deepest instanceof AggregateError
-      ? `\n${deepest.stack ?? deepest.message}\n${deepest.errors.map(formatActivationError).join('\n')}`
+      ? `\n${deepest.stack ?? deepest.message}\n${deepest.errors.map(formatEntryError).join('\n')}`
       : deepest instanceof Error && deepest !== cause ? `\n${deepest.stack ?? deepest.message}` : ''
     throw new Error(`${binName}: ${stage}: ${detail}${stack}`, { cause })
   }
