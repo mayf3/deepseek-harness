@@ -51,7 +51,7 @@ PR opening initializes an empty Project `Start Date` for every referenced Issue,
 <a id="configuration-and-limitations"></a>
 ## Configuration and limitations
 
-[config.json](config.json) selects the repository, Project, field names, statuses, lifecycle actor, and time zone. The policy reads the Project custom single-select `Priority` field, not a native organization Issue Priority field. Maintainers set Project Priority manually; skill guidance that directs edits to native Issue fields does not populate this value. There is no field migration, Priority synchronization, or metadata auto-repair.
+[config.json](config.json) selects the repository, Project, field names, statuses, lifecycle actor, and time zone. The policy reads the Project custom single-select `Priority` field, not a native organization Issue Priority field. Maintainers set Project Priority manually; skill guidance that directs edits to native Issue fields does not populate this value. Issue audits remove PR-only kinds and retired label aliases before validating the remaining metadata. There is no field migration or Priority synchronization.
 
 Lifecycle processing is event-driven, not a reconciler. Omitted events do not repair Project state, and concurrent Project mutations have no atomic compare-and-swap. Selective evaluation does not redesign required-check authority or guarantee measured Actions-minute savings. The [selective-evaluation decision](../../.agents/notes/implemented/process/2026-09-07-selective-issue-policy-evaluation.md) records the trade-offs.
 

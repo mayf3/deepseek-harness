@@ -51,7 +51,7 @@ PR 打开时，工作流按配置时区中的 PR 创建日期，为每个被引�
 <a id="configuration-and-limitations"></a>
 ## 配置与限制
 
-[config.json](config.json)选择仓库、Project、字段名、状态、生命周期操作者和时区。策略读取 Project 自定义单选 `Priority` 字段，而非组织原生 Issue Priority 字段。维护者手动设置 Project Priority；指引编辑原生 Issue 字段的 skill 不会填充该值。不提供字段迁移、Priority 同步或元数据自动修复。
+[config.json](config.json)选择仓库、Project、字段名、状态、生命周期操作者和时区。策略读取 Project 自定义单选 `Priority` 字段，而非组织原生 Issue Priority 字段。维护者手动设置 Project Priority；指引编辑原生 Issue 字段的 skill 不会填充该值。Issue 审计先移除 PR 专用 kind 标签和已停用的标签别名，再校验其余元数据。不提供字段迁移或 Priority 同步。
 
 生命周期处理由事件驱动，不是协调器。被省略的事件不会修复 Project 状态，并发 Project mutation 也没有原子比较并交换保护。选择性求值不重新设计必需检查的权威来源，也不保证已测得的 Actions 分钟节省。[选择性求值决策](../../.agents/notes/implemented/process/2026-09-07-selective-issue-policy-evaluation.zh.md)记录取舍。
 

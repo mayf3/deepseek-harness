@@ -34,7 +34,7 @@ This scheduling decision partially supersedes the no-op-job scheduling in [event
 
 Informational-only validation needs repository access but not Project credentials. Resolving validation still fails when required Project reads or field checks fail. Preflight and final validation each read live REST state, duplicating repository requests rather than caching a verdict. Avoiding Project reads and token creation does not guarantee fewer total API requests. The required policy job still allocates a runner; this is not a zero-cost required check.
 
-Maintainers manually manage the Project custom Priority field. Native Issue-field skill guidance does not update that value. There is no Priority synchronization, field migration, label repair, or change to [presentation-neutral policy](2026-09-03-semantic-issue-templates-and-policy.md).
+Maintainers manually manage the Project custom Priority field. Native Issue-field skill guidance does not update that value. There is no Priority synchronization, field migration, or change to [presentation-neutral policy](2026-09-03-semantic-issue-templates-and-policy.md).
 
 Omitted lifecycle events cannot repair stale Project state. Event replay and concurrent writes retain the races documented by the lifecycle and planning-field owners. Actual Actions-minute savings and live GitHub App access require operational observation, not inference from a mocked API test.
 

@@ -34,7 +34,7 @@ Status: implemented
 
 仅含信息型引用的校验需要仓库访问，但不需要 Project 凭据。解决型校验在所需 Project 读取或字段检查失败时仍会失败。预检与最终校验各自读取实时 REST 状态，重复仓库请求而不缓存结论。避免 Project 读取与 token 创建不保证减少 API 请求总数。必需策略 job 仍分配 runner；它并非零成本的必需检查。
 
-维护者手动管理 Project 自定义 Priority 字段。原生 Issue 字段的 skill 指引不会更新该值。不提供 Priority 同步、字段迁移或标签修复，也不改变[不检查展示形式的策略](2026-09-03-semantic-issue-templates-and-policy.zh.md)。
+维护者手动管理 Project 自定义 Priority 字段。原生 Issue 字段的 skill 指引不会更新该值。不提供 Priority 同步或字段迁移，也不改变[不检查展示形式的策略](2026-09-03-semantic-issue-templates-and-policy.zh.md)。
 
 被省略的生命周期事件不能修复过时的 Project 状态。事件重放和并发写入仍有生命周期与规划字段文档记录的竞态。实际 Actions 分钟节省与 GitHub App 实际访问权限需要运营观察，不能从模拟 API 测试推断。
 
