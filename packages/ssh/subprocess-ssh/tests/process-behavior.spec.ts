@@ -1,5 +1,5 @@
 /** Remote process transport, output observations, and managed cleanup through the public provider. */
-import { duplexPair, type Duplex } from 'node:stream'
+import { duplexPair, type Duplex, type Readable } from 'node:stream'
 import { Context } from '@deepseek-ai/cordis'
 import { describe, expect, it, onTestFinished, vi } from 'vitest'
 import { z } from 'zod'
@@ -110,9 +110,10 @@ async function setup(options: { pause?: 'prepare' | 'connect' | 'start'; failPre
     release: () => { gate.resolve(undefined) }, stream, closeStream, snapshots, close }
 }
 
-async function readAll(stream: NodeJS.ReadableStream): Promise<string> {
+/** Read incoming bytes without closing a duplex's outgoing half. */
+async function readAll(stream: Readable): Promise<string> {
   const chunks: Buffer[] = []
-  for await (const value of stream) chunks.push(Buffer.from(value as Uint8Array))
+  for await (const value of stream.iterator({ destroyOnReturn: false })) chunks.push(Buffer.from(value as Uint8Array))
   return Buffer.concat(chunks).toString()
 }
 
@@ -176,6 +177,7 @@ describe('SSH ordinary process behavior', () => {
     await test.started
     expect(await readAll(test.stream('stdin'))).toBe('ordinary input')
     expect(await readAll(test.stream('control'))).toBe('private input')
+    expect(test.stream('control').destroyed).toBe(false)
     test.stream('stdout').end('ordinary output')
     test.stream('stderr').end('diagnostic output')
     test.stream('control').end('private output')

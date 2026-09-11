@@ -93,6 +93,8 @@ describe.skipIf(process.platform === 'win32')('SSH stream capabilities', () => {
       socket.on('error', () => {})
       await once(socket, 'connect')
       const closed = once(socket, 'close')
+      // Drain a possible TLS alert so the raw peer can observe EOF.
+      socket.resume()
       socket.end(Buffer.from('{"type":"request","method":"process.start","id":"forged","params":{}}'))
       await closed
       const legitimate = await connect(prepared.streams.stdout!, prepared.streams.stdout!.capability)
