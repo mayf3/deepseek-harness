@@ -1025,6 +1025,8 @@ Requires: `llm`
  * reasoning effort resolves to `high`.
  */
 export interface Config {
+  /** Wire protocol; defaults to chat-completions. Configure through Cordis YAML. */
+  protocol?: DeepSeekProtocol
   /** Credential reference (environment-variable name) resolved per request; defaults to `DEEPSEEK_API_KEY`. */
   apiKeyEnv?: string
   /** Endpoint base; falls back to $DEEPSEEK_BASE_URL from a trusted environment layer, then the public API. */
@@ -1065,6 +1067,9 @@ export interface Config {
   retryPolicy?: RetryPolicyConfig
 }
 
+/** Supported wire implementations; Responses is not yet implemented. */
+export type DeepSeekProtocol = 'chat-completions' | 'messages'
+
 /** One optional model entry advertised by the direct-fetch adapter. */
 export interface DeepSeekCatalogModel {
   /** Wire model id accepted by the configured endpoint. */
@@ -1079,7 +1084,11 @@ export interface DeepSeekCatalogModel {
   maxTokens?: number
   /** Accepted request modalities; omission is text-only. */
   inputModalities?: ModelModality[]
-  /** Total-pixel budget for one deterministic request preview, or the 512-by-512 `low` preset. */
+  /**
+   * Total-pixel budget replacing the published token-grid projection for one
+   * deterministic request preview, or the 512-by-512 `low` preset; omission
+   * projects onto the token grid.
+   */
   imagePixelBudget?: number | 'low'
   /** Encoded-byte target for one deterministic request preview; the smallest quality-ladder output is used when no quality fits. */
   imageMaxBytes?: number
@@ -1094,7 +1103,7 @@ export interface DeepSeekCatalogModel {
 
 Depends on: [`ModelModality`](../packages/llm/llm/src/index.ts) · [`RetryPolicyConfig`](../packages/llm/llm/src/index.ts) · [`SystemPromptUpdate`](../packages/llm/llm/src/index.ts)
 
-Source: [`packages/llm/llm-deepseek/src/index.ts:134`](../packages/llm/llm-deepseek/src/index.ts)
+Source: [`packages/llm/llm-deepseek/src/config.ts:25`](../packages/llm/llm-deepseek/src/config.ts)
 
 <a id="deepseek-aidsh-llm-pi-ai"></a>
 
@@ -2607,7 +2616,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/core/system-prompt/src/index.ts:242`](../packages/core/system-prompt/src/index.ts)
+Source: [`packages/core/system-prompt/src/index.ts:246`](../packages/core/system-prompt/src/index.ts)
 
 <a id="deepseek-aidsh-terminal-bash"></a>
 
