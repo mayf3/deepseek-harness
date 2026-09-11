@@ -48,15 +48,17 @@ export class PermissionCatalogDirectory {
       this.refresh()
     })
     this.stopGeneration = this.connection.generation.subscribe(() => {
-      this.invalidate()
       this.syncGeneration()
     })
     this.syncGeneration()
   }
 
-  /** Publish one invalidation tick for consumers holding displayed options. */
+  /**
+   * Publish one invalidation tick for consumers holding displayed options.
+   * Both callers are disposal-guarded, and disposal unsubscribes them, so a
+   * disposed directory cannot reach this.
+   */
   private invalidate(): void {
-    if (this.disposed) return
     this.invalidations.set({ count: this.invalidations.getSnapshot().count + 1 })
   }
 
@@ -112,6 +114,9 @@ export class PermissionCatalogDirectory {
     if (this.disposed) return
     const generationId = this.connection.generation.getSnapshot()?.id
     if (this.initialized && generationId === this.generationId) return
+    // Only an actual change withdraws displayed options: the first sync, and a
+    // notification repeating the generation already published, leave them alone.
+    if (this.initialized) this.invalidate()
     this.initialized = true
     this.generationId = generationId
     ++this.epoch

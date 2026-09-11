@@ -237,8 +237,8 @@ describe('PermissionCatalogDirectory', () => {
 
     generation.set(1)
     expect(calls).toBe(1)
-    // A repeated notification for the same generation is not an invalidation.
-    expect(directory.invalidations.getSnapshot()).toEqual({ count: 1 })
+    // A notification repeating the published generation is not an invalidation.
+    expect(directory.invalidations.getSnapshot()).toEqual({ count: 0 })
 
     generation.setSilently(2)
     await expect(directory.load()).resolves.toEqual(SECOND)
@@ -276,6 +276,8 @@ describe('PermissionCatalogDirectory', () => {
     await Promise.resolve()
 
     expect(directory.store.getSnapshot()).toBe(before)
+    // A listener that fires after disposal publishes nothing.
+    expect(directory.invalidations.getSnapshot()).toEqual({ count: 0 })
     expect(calls).toBe(1)
     await expect(directory.load()).rejects.toThrow(/disposed/)
   })
