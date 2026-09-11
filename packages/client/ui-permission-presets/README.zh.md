@@ -31,7 +31,7 @@ kind: "package-reference"
 
 选中即提交 `/permission <preset>` 命令行。带参形式（直接键入 `/permission <preset>`）仍直接切换；装饰只替换裸调用。内置标签在英文界面中是 `Read Only`、`Workspace Write`、`Full access` 和 `Auto review`，在中文界面中是「仅可查看」「工作区内修改」「完全权限」和 `Auto review`。显式 host 标签保持原样，未知 kebab-case 名称渲染为 Title Case；`auto` 带有 `EXP` badge，并在可见选择时要求实验风险确认。`custom` 只是显示状态，绝非目标。
 
-实时目录撤销某个预设时，composer 关闭对应的待确认对话框，并用 Session 的当前值替代已不可用的乐观选择。每次共享目录发布还会关闭已打开的 slash 选择器或其确认对话框，不消费草稿；重新打开时读取当前目录。已经提交的命令在响应结束前继续保持忙碌状态。
+实时目录撤销某个预设时，composer 关闭对应的待确认对话框，并用 Session 的当前值替代已不可用的乐观选择。每次目录失效（无 payload 的通知或连接代际变更）会关闭已打开的 slash 选择器或其确认对话框，不消费草稿；而发布某个 picker 正在等待的读取结果时，该 picker 保持打开并保留失败与重试状态；重新打开时读取当前目录。已经提交的命令在响应结束前继续保持忙碌状态。
 
 ### 设置行
 
@@ -45,7 +45,7 @@ kind: "package-reference"
 <details>
 <summary>实现细节——点击展开</summary>
 
-General Settings 行经 `ctx.settingsScope` 读取显式暴露的 `permission` Settings 描述符，并携带描述符 revision 写入一条 `settings.mutate` 路径操作；其 observable 经 slot 系统的 `hooks` compartment 传递，因此 React 钩子绑定归渲染器，推送失效通知会重新获取描述符。该值只在之后创建会话时读取。当前会话界面是挂在宿主 `/permission` 命令上的 popupSelect 装饰（`ctx.commandUi.decorate`）：宿主命令保留斜杠菜单行、带参形式与持久生命周期记账，装饰只把裸调用替换为选择器。一个进程级目录会在首次 Remote 读取前订阅无 payload 的目录通知，并且只发布当前连接代际中最新的完整成功结果。胜出的读取失败或连接 reset 会清空旧快照，使选择器在后续既有触发重试前处于本地不可用状态；旧连接代际与 dispose 后才返回的结果会被忽略。它的公共状态只有 `{ value }`，失败仅供命令式加载内部使用。slash popup 与 composer seat 共用这份目录，而 Session `permissions` 投影只提供 `currentValue`。Full access 与 Auto review 各自携带本地化确认文案；Auto 还携带由共享 popup 外壳渲染的 badge。
+General Settings 行经 `ctx.settingsScope` 读取显式暴露的 `permission` Settings 描述符，并携带描述符 revision 写入一条 `settings.mutate` 路径操作；其 observable 经 slot 系统的 `hooks` compartment 传递，因此 React 钩子绑定归渲染器，推送失效通知会重新获取描述符。该值只在之后创建会话时读取。当前会话界面是挂在宿主 `/permission` 命令上的 popupSelect 装饰（`ctx.commandUi.decorate`）：宿主命令保留斜杠菜单行、带参形式与持久生命周期记账，装饰只把裸调用替换为选择器。一个进程级目录会在首次 Remote 读取前订阅无 payload 的目录通知，并且只发布当前连接代际中最新的完整成功结果。胜出的读取失败或连接 reset 会清空旧快照，使选择器在后续既有触发重试前处于本地不可用状态；旧连接代际与 dispose 后才返回的结果会被忽略。它的公共 observable 是 `{ value }` 与 `invalidations`（每次目录通知或连接代际变更打一个点）；失败仅供命令式加载内部使用。slash popup 与 composer seat 共用这份目录，而 Session `permissions` 投影只提供 `currentValue`。Full access 与 Auto review 各自携带本地化确认文案；Auto 还携带由共享 popup 外壳渲染的 badge。
 
 </details>
 

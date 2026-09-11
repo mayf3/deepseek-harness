@@ -195,8 +195,11 @@ describe('PermissionCatalogDirectory', () => {
       },
     })
     const directory = new PermissionCatalogDirectory(ctx)
+    expect(directory.invalidations.getSnapshot()).toEqual({ count: 0 })
 
     generation.set(undefined)
+    // Generation loss and replacement each withdraw displayed options once.
+    expect(directory.invalidations.getSnapshot()).toEqual({ count: 1 })
     expect(directory.store.getSnapshot()).toEqual({ value: null })
     directory.refresh()
     await expect(directory.load()).rejects.toThrow(/no active Host connection/)
@@ -206,6 +209,7 @@ describe('PermissionCatalogDirectory', () => {
     expect(directory.store.getSnapshot()).toEqual({ value: null })
 
     generation.set(2)
+    expect(directory.invalidations.getSnapshot()).toEqual({ count: 2 })
     expect(directory.store.getSnapshot()).toEqual({ value: null })
     newRead.resolve({ ok: true, value: SECOND })
     await expect(directory.load()).resolves.toEqual(SECOND)
@@ -233,6 +237,8 @@ describe('PermissionCatalogDirectory', () => {
 
     generation.set(1)
     expect(calls).toBe(1)
+    // A repeated notification for the same generation is not an invalidation.
+    expect(directory.invalidations.getSnapshot()).toEqual({ count: 1 })
 
     generation.setSilently(2)
     await expect(directory.load()).resolves.toEqual(SECOND)

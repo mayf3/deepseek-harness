@@ -153,7 +153,7 @@ async function bench() {
 }
 
 describe('ui-permission browser plugin', () => {
-  it('dismisses stale slash choices when the catalog publishes and removes that subscription on disposal', async () => {
+  it('dismisses stale slash choices on a catalog invalidation and removes that subscription on disposal', async () => {
     const b = await bench()
     const initial = b.dismissed.length
     b.setCatalog({ options: CATALOG.options.filter(option => option.value !== 'auto') })
