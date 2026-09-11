@@ -916,6 +916,7 @@ export class ToolRuntime extends Service {
   private requireCodeTransport(): ToolDefinition {
     this.ptcTransport ??= createRunCodeTool(this, {
       requireRuntime: () => this.requireCodeRuntime(this.defaultMode),
+      peekApprover: () => this.ctx.get('approval'),
       resolveSandboxPolicy: (exec) => {
         const policy = this.ctx.get('sandboxPolicy')
         if (policy === undefined) throw new Error('dsh-tools: confined code runtime requires sandboxPolicy')

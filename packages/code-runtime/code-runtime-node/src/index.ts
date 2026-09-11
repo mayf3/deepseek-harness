@@ -93,6 +93,10 @@ export class NodeCodeRuntime extends CodeRuntime {
 
   override get sandboxMode(): SandboxMode { return this.ctx.sandboxPolicy.defaultMode }
 
+  override get timeout(): { defaultMs: number; maxMs: number } {
+    return { defaultMs: Math.min(this.config.timeoutMs, this.config.maxTimeoutMs), maxMs: this.config.maxTimeoutMs }
+  }
+
   /**
    * Resolve an execution under explicit or deployment policy.
    * @param request - Program, bindings, optional cwd/deadline, and resolved authority.

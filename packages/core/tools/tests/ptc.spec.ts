@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { createUserMessage, ToolCallId  } from '@deepseek-ai/dsh-llm'
 import { createScope } from '@deepseek-ai/dsh-scope'
@@ -10,6 +10,7 @@ import ToolRuntime, { CodeRunFailedError, RUN_CODE_NAME, TOOL_ABORTED_BEFORE_DIS
 import type { Config, JsonSchemaNode, PostToolDecision, ToolExecutionResult } from '@deepseek-ai/dsh-tools'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { Session, SessionId } from '@deepseek-ai/dsh-session'
+import ApprovalService, { type ApprovalOutcome, type ApprovalRequest } from '@deepseek-ai/dsh-user-approval'
 import type { SessionEventMap } from '@deepseek-ai/dsh-session'
 import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 import SandboxPolicy from '@deepseek-ai/dsh-sandbox-policy'
@@ -1966,5 +1967,171 @@ describe('PTC standing file policy and sandbox outcomes', () => {
       expect(text.includes('enforcement: full')).toBe('enforcement' in sandbox)
       expect(text.includes('operation denied')).toBe(sandbox.denied)
     } finally { await ctx.fiber.dispose() }
+  })
+})
+
+describe('per-program execution controls', () => {
+  async function controlledSetup(approval = true) {
+    const state = await setup()
+    await state.ctx.plugin(SessionProjections)
+    await state.ctx.plugin(SandboxPolicy, { mode: 'read-only', workspaceRoot: process.cwd() })
+    if (approval) await state.ctx.plugin(ApprovalService, { policy: 'ask' })
+    Object.defineProperties(state.runtime, {
+      sandboxMode: { get: () => 'read-only' },
+      timeout: { get: () => ({ defaultMs: 120_000, maxMs: 600_000 }) },
+    })
+    const session = Session.create(SessionId('program-controls'))
+    session.append('turn/start', { turn: 1 })
+    const agent = { session } as unknown as Agent
+    const execute = (args: Record<string, unknown>, signal = testToolSignal) => state.tools.execute({
+      callId: ToolCallId('program-controls'), name: RUN_CODE_NAME,
+      arguments: { code: 'program', description: 'Test execution controls', ...args }, agent, signal,
+    })
+    return { ...state, agent, session, execute }
+  }
+
+  it('advertises configured timeout values and one-execution scope only when supported', async () => {
+    const { ctx, tools } = await controlledSetup()
+    try {
+      const schema = tools.schemas().find(tool => tool.name === RUN_CODE_NAME)!
+      expect(JSON.stringify(schema.parameters)).toContain('Default 120000; capped at 600000')
+      expect(JSON.stringify(schema.parameters)).toContain('sandbox_permissions')
+      expect(schema.description).toContain('Nested tools retain their own policies')
+    } finally { await ctx.fiber.dispose() }
+    const python = await setup({ runtime: { language: 'python' } })
+    try {
+      const schema = python.tools.schemas().find(tool => tool.name === RUN_CODE_NAME)!
+      expect(JSON.stringify(schema.parameters)).not.toContain('timeoutMs')
+      expect(JSON.stringify(schema.parameters)).not.toContain('sandbox_permissions')
+      const rejected = await python.tools.execute({
+        callId: ToolCallId('hidden-timeout'), name: RUN_CODE_NAME, signal: testToolSignal,
+        arguments: { code: 'pass', description: 'Try unsupported timeout', timeoutMs: 5 },
+      })
+      expect(rejected.isError).toBe(true)
+      expect(python.runtime.lastRequest).toBeUndefined()
+    } finally { await python.ctx.fiber.dispose() }
+  })
+
+  it.each([0, -1, Number.NaN, Number.POSITIVE_INFINITY, '1000'])('rejects invalid timeout %s before runtime execution', async (timeoutMs) => {
+    const { ctx, runtime, execute } = await controlledSetup()
+    try {
+      expect((await execute({ timeoutMs })).isError).toBe(true)
+      expect(runtime.lastRequest).toBeUndefined()
+    } finally { await ctx.fiber.dispose() }
+  })
+
+  it('forwards an explicit timeout to the runtime resolver', async () => {
+    const { ctx, runtime, execute } = await controlledSetup()
+    const resolver = vi.spyOn(runtime, 'resolve')
+    try {
+      expect((await execute({ timeoutMs: 900_000 })).isError).toBe(false)
+      expect(resolver.mock.calls[0]?.[0].timeoutMs).toBe(900_000)
+    } finally { await ctx.fiber.dispose() }
+  })
+
+  it.each([
+    { sandbox_permissions: 'workspace-write' },
+    { justification: 'Need writes' },
+    { sandbox_permissions: 'workspace-write', justification: ' ' },
+    { sandbox_permissions: 'read-only', justification: 'No widening' },
+  ])('rejects invalid escalation pairing or mode: %j', async (args) => {
+    const { ctx, runtime, execute } = await controlledSetup()
+    const ask = vi.fn(() => Promise.resolve<ApprovalOutcome>('allowed-once'))
+    ctx.on('approval/request', ask)
+    try {
+      expect((await execute(args)).isError).toBe(true)
+      expect(ask).not.toHaveBeenCalled()
+      expect(runtime.lastRequest).toBeUndefined()
+    } finally { await ctx.fiber.dispose() }
+  })
+
+  it.each(['rejected', 'cancelled', 'unavailable'] as const)('does not start a program after approval returns %s', async (outcome) => {
+    const { ctx, runtime, session, execute } = await controlledSetup()
+    ctx.on('approval/request', () => Promise.resolve<ApprovalOutcome>(outcome))
+    try {
+      expect((await execute({ sandbox_permissions: 'workspace-write', justification: 'Write generated source' })).isError).toBe(true)
+      expect(runtime.lastRequest).toBeUndefined()
+      expect(session.snapshotEvents().filter(event => event.type === 'approval/decided').map(event => event.data)).toMatchObject([{ outcome }])
+    } finally { await ctx.fiber.dispose() }
+  })
+
+  it('fails closed when no approval service is mounted', async () => {
+    const { ctx, runtime, execute } = await controlledSetup(false)
+    try {
+      const result = await execute({ sandbox_permissions: 'workspace-write', justification: 'Write generated source' })
+      expect(result.isError).toBe(true)
+      expect(runtime.lastRequest).toBeUndefined()
+    } finally { await ctx.fiber.dispose() }
+  })
+
+  it('cancels an outstanding approval without launching the program', async () => {
+    const { ctx, runtime, execute } = await controlledSetup()
+    const asked = Promise.withResolvers<undefined>()
+    const answer = Promise.withResolvers<ApprovalOutcome>()
+    const controller = new AbortController()
+    ctx.on('approval/request', () => { asked.resolve(undefined); return answer.promise })
+    const result = execute({ sandbox_permissions: 'workspace-write', justification: 'Write generated source' }, controller.signal)
+    try {
+      await asked.promise
+      controller.abort('cancel outer approval')
+      expect((await result).isError).toBe(true)
+      expect(runtime.lastRequest).toBeUndefined()
+    } finally { answer.resolve('cancelled'); await result; await ctx.fiber.dispose() }
+  })
+
+  it('reports prior effects after a denial and never requests approval or replays implicitly', async () => {
+    const { ctx, runtime, execute } = await controlledSetup()
+    const ask = vi.fn(() => Promise.resolve<ApprovalOutcome>('allowed-once'))
+    ctx.on('approval/request', ask)
+    let effects = 0
+    runtime.behavior = () => {
+      effects++
+      return Promise.resolve({ logs: ['first effect completed'],
+        error: { kind: 'exception', message: 'access denied' },
+        sandbox: { mode: 'read-only', denied: true, enforcement: 'full' } })
+    }
+    try {
+      const result = await execute({})
+      expect(result.isError).toBe(true)
+      expect(JSON.stringify(result.content)).toContain('first effect completed')
+      expect(JSON.stringify(result.content)).toContain('Earlier effects may already have completed')
+      expect(effects).toBe(1)
+      expect(ask).not.toHaveBeenCalled()
+    } finally { await ctx.fiber.dispose() }
+  })
+
+  it('waits for outer approval before resolving execution and keeps nested tool approvals independent', async () => {
+    const { ctx, runtime, agent, execute } = await controlledSetup()
+    const asked = Promise.withResolvers<undefined>()
+    const answer = Promise.withResolvers<ApprovalOutcome>()
+    const requests: ApprovalRequest[] = []
+    ctx.on('approval/request', (req) => {
+      requests.push(req)
+      if (req.toolName === RUN_CODE_NAME) { asked.resolve(undefined); return answer.promise }
+      return Promise.resolve<ApprovalOutcome>('rejected')
+    })
+    registerEcho(ctx)
+    ctx.on('tools/pre-execute', (exec, next) => exec.name === 'echo'
+      ? Promise.resolve({ kind: 'ask', reason: 'Nested tool has its own approval' }) : next())
+    runtime.behavior = async (request) => {
+      expect(request.sandboxPolicy?.mode).toBe('workspace-write')
+      expect(ctx.sandboxPolicy.resolve({ session: agent.session }).mode).toBe('read-only')
+      const value = await request.bindings[0]!.functions.echo!({ value: 'nested' })
+        .then(() => 'unexpected nested grant', () => 'nested approval rejected')
+      return { logs: [], value }
+    }
+    const resolver = vi.spyOn(runtime, 'resolve')
+    const result = execute({ sandbox_permissions: 'workspace-write', justification: 'Write generated source', timeoutMs: 1234 })
+    try {
+      await asked.promise
+      expect(resolver).not.toHaveBeenCalled()
+      expect(runtime.lastRequest).toBeUndefined()
+      answer.resolve('allowed-once')
+      const completed = await result
+      expect(completed.isError).toBe(false)
+      expect(requests.map(req => req.toolName)).toEqual([RUN_CODE_NAME, 'echo'])
+      expect(runtime.lastRequest?.timeoutMs).toBe(1234)
+      expect(ctx.sandboxPolicy.resolve({ session: agent.session }).mode).toBe('read-only')
+    } finally { answer.resolve('cancelled'); await result; await ctx.fiber.dispose() }
   })
 })

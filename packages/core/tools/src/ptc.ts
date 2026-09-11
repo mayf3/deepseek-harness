@@ -10,7 +10,9 @@ import { brandString } from '@deepseek-ai/dsh-brand'
 import { createUserMessage, HarnessError } from '@deepseek-ai/dsh-llm'
 import type { ContentBlock, ToolCallId } from '@deepseek-ai/dsh-llm'
 import type { CodeBindingFunction, CodeRunResult, CodeRunSandbox, CodeRuntime } from '@deepseek-ai/dsh-code-runtime'
+import { approveEscalation, ESCALATION_TARGETS, validateEscalationArgs } from '@deepseek-ai/dsh-sandbox'
 import type { SandboxExecutionPolicy } from '@deepseek-ai/dsh-sandbox'
+import type { ApprovalService } from '@deepseek-ai/dsh-user-approval'
 import { snapshotJsonValue, type JsonValue } from '@deepseek-ai/dsh-util-values'
 import { defineTool, parameterSchemaSpecToJsonSchema } from './schema.ts'
 import { TOOL_RUNTIME_SCHEDULER } from './index.ts'
@@ -95,6 +97,30 @@ const RUN_CODE_DESCRIPTION_PARAM_DESCRIPTION
   = 'Clear, concise description of what this program does in active voice, '
     + '5-10 words (shown in the UI). Examples: "Count TODO markers across packages"; '
     + '"Read failing test and its fixture"; "Rename config key in every cordis.yml".'
+
+const RUN_CODE_CONTROLS = {
+  timeoutMs: { type: 'number', description: 'Positive elapsed-time budget in milliseconds, capped by the deployment maximum.' },
+  sandbox_permissions: { type: 'string', enum: [...ESCALATION_TARGETS], description: 'Wider sandbox mode for this complete program execution; requires justification and approval.' },
+  justification: { type: 'string', description: 'Reason this complete program needs wider access, shown to the user for approval.' },
+} as const
+
+function controlParameters(runtime: CodeRuntime | undefined) {
+  return {
+    ...runtime?.timeout === undefined ? {} : {
+      timeoutMs: { ...RUN_CODE_CONTROLS.timeoutMs,
+        description: `Positive elapsed-time budget in milliseconds, including nested tool and approval waits. Default ${runtime.timeout.defaultMs}; capped at ${runtime.timeout.maxMs}. Zero does not disable the deadline.` },
+    },
+    ...runtime?.sandboxMode === undefined ? {} : {
+      sandbox_permissions: RUN_CODE_CONTROLS.sandbox_permissions,
+      justification: RUN_CODE_CONTROLS.justification,
+    },
+  }
+}
+
+function escalationGuidance(runtime: CodeRuntime | undefined): string {
+  return runtime?.sandboxMode === undefined ? ''
+    : ' A sandbox escalation approves this complete program for one execution only. Nested tools retain their own policies and approvals. Request wider access only after evidence of a denial. Earlier effects may already have completed: inspect them before explicitly retrying. Programs are never replayed automatically.'
+}
 
 /**
  * Resolve the {@link RunCodeFlavor} for the loaded runtime's language, read at
@@ -265,6 +291,8 @@ type RunCodeOutput = { logs: string[]; result?: JsonValue; sandbox?: CodeRunSand
  * off its public service API and flow here as closures instead.
  */
 export interface RunCodeBridgeOptions {
+  /** Reads the approval channel when a program requests a wider sandbox mode. */
+  peekApprover: () => ApprovalService | undefined
   /** Resolves standing Session authority only for a runtime that enforces file policy. */
   resolveSandboxPolicy: (exec: ToolRunContext) => SandboxExecutionPolicy
   /** Resolves `ctx.codeRuntime` or throws the loud misconfiguration error (shared with the registry's assembly-time checks). */
@@ -311,6 +339,7 @@ export function createRunCodeTool(registry: ToolRuntime, options: RunCodeBridgeO
         required: true,
         description: RUN_CODE_DESCRIPTION_PARAM_DESCRIPTION,
       },
+      ...RUN_CODE_CONTROLS,
     },
     output: {
       schema: {
@@ -334,7 +363,7 @@ export function createRunCodeTool(registry: ToolRuntime, options: RunCodeBridgeO
         const rendered = value.result === undefined ? '' : renderValue(value.result)
         const parts = [value.logs.join('\n'), rendered].filter(part => part.length > 0)
         if (value.sandbox?.enforcement === 'partial') parts.push('File sandbox enforcement is partial on this host.')
-        if (value.sandbox?.denied) parts.push(`The ${value.sandbox.mode} file sandbox denied an operation.`)
+        if (value.sandbox?.denied) parts.push(`The ${value.sandbox.mode} file sandbox denied an operation.${escalationGuidance(peekRuntime())}`)
         return [{ type: 'text', text: parts.length > 0 ? parts.join('\n') : '(run_code completed with no output)' }]
       },
     },
@@ -343,6 +372,29 @@ export function createRunCodeTool(registry: ToolRuntime, options: RunCodeBridgeO
         throw new Error('invalid description: expected a non-empty string')
       }
       const runtime = requireRuntime()
+      validateEscalationArgs(args.sandbox_permissions, args.justification)
+      if (args.timeoutMs !== undefined && runtime.timeout === undefined) {
+        throw new Error('timeoutMs is not available for this code runtime')
+      }
+      if (args.timeoutMs !== undefined && (!Number.isFinite(args.timeoutMs) || args.timeoutMs <= 0)) {
+        throw new Error('invalid timeoutMs: expected a positive finite number')
+      }
+      const standingPolicy = runtime.sandboxMode === undefined ? undefined : options.resolveSandboxPolicy(exec)
+      let policy = standingPolicy
+      if (args.sandbox_permissions !== undefined && args.justification !== undefined) {
+        if (standingPolicy === undefined) throw new Error('sandbox_permissions is not available for this code runtime')
+        const approvedMode = await approveEscalation({
+          requestedMode: args.sandbox_permissions,
+          justification: args.justification,
+          effectiveMode: standingPolicy.mode,
+          subject: 'program',
+        }, {
+          approver: options.peekApprover(), agent: exec.agent, callId: exec.callId,
+          toolName: RUN_CODE_NAME, signal: exec.signal,
+        })
+        policy = { ...standingPolicy, mode: approvedMode }
+      }
+      exec.signal.throwIfAborted()
 
       // The run-scoped abort: follows the outer signal in, and fires when the
       // run settles for ANY reason, so an in-flight sub-dispatch is aborted
@@ -639,7 +691,8 @@ export function createRunCodeTool(registry: ToolRuntime, options: RunCodeBridgeO
             }],
             signal: runController.signal,
             ...exec.agent?.session.header.cwd !== undefined ? { cwd: exec.agent.session.header.cwd } : {},
-            ...runtime.sandboxMode !== undefined ? { sandboxPolicy: options.resolveSandboxPolicy(exec) } : {},
+            ...policy !== undefined ? { sandboxPolicy: policy } : {},
+            ...args.timeoutMs !== undefined ? { timeoutMs: args.timeoutMs } : {},
           }))
         } finally {
           // Abort sub-dispatches and drain every in-flight dispatch before
@@ -653,7 +706,7 @@ export function createRunCodeTool(registry: ToolRuntime, options: RunCodeBridgeO
           const logsText = result.logs.length > 0 ? `\nCaptured output:\n${result.logs.join('\n')}` : ''
           const sandboxText = result.sandbox === undefined ? ''
             : `\nFile sandbox: ${result.sandbox.mode}${result.sandbox.enforcement === undefined ? '' : `; enforcement: ${result.sandbox.enforcement}`}${result.sandbox.denied ? '; operation denied' : ''}.`
-          throw new CodeRunFailedError(`code run failed (${result.error.kind}): ${result.error.message}${logsText}${sandboxText}`)
+          throw new CodeRunFailedError(`code run failed (${result.error.kind}): ${result.error.message}${logsText}${sandboxText}${result.sandbox?.denied ? escalationGuidance(runtime) : ''}`)
         }
         return {
           logs: result.logs,
@@ -682,7 +735,7 @@ export function createRunCodeTool(registry: ToolRuntime, options: RunCodeBridgeO
   // is the least invasive point that still emits the loaded runtime's language.
   Object.defineProperty(definition, 'description', {
     enumerable: true,
-    get: () => resolveFlavor(peekRuntime).description,
+    get: () => resolveFlavor(peekRuntime).description + escalationGuidance(peekRuntime()),
   })
   Object.defineProperty(definition, 'parameters', {
     enumerable: true,
@@ -691,6 +744,7 @@ export function createRunCodeTool(registry: ToolRuntime, options: RunCodeBridgeO
     get: () => parameterSchemaSpecToJsonSchema({
       code: { type: 'string', required: true, description: resolveFlavor(peekRuntime).codeDescription },
       description: { type: 'string', required: true, description: RUN_CODE_DESCRIPTION_PARAM_DESCRIPTION },
+      ...controlParameters(peekRuntime()),
     }) as unknown as Record<string, unknown>,
   })
   return definition
