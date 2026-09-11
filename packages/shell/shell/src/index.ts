@@ -85,10 +85,11 @@ export abstract class ShellExecutor extends Service {
   abstract resolve(request: ShellExecRequest): ShellExecSpec
 
   /**
-   * Run a command in the foreground; resolves when it finishes.
+   * Run preparation and the foreground command under the resolved timeout.
    * @param spec - a resolved spec from {@link resolve}, never a raw request.
    * @returns the outcome; nonzero exits, timeout kills, and abort kills
    *   resolve with a descriptive result rather than reject.
+   * @throws on preparation failure or caller cancellation before process publication.
    */
   abstract run(spec: ShellExecSpec): Promise<ShellRunResult>
 

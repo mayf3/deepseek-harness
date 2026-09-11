@@ -2110,9 +2110,10 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       },
       {
         signature: 'abstract run(spec: ShellExecSpec): Promise<ShellRunResult>',
-        description: 'Run a command in the foreground; resolves when it finishes.',
+        description: 'Run preparation and the foreground command under the resolved timeout.',
         parameters: [{ name: 'spec', description: 'a resolved spec from {@link resolve}, never a raw request.' }],
         returns: 'the outcome; nonzero exits, timeout kills, and abort kills resolve with a descriptive result rather than reject.',
+        throws: ['on preparation failure or caller cancellation before process publication.'],
       },
       {
         signature: 'abstract start(spec: ShellExecSpec): Promise<ShellProcess>',

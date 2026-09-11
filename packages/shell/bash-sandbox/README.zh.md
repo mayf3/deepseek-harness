@@ -75,7 +75,7 @@ kind: "package-reference"
 
 ### 设计概念
 
-本执行器是 `ctx.shell` seam 的沙箱 Service Provider：它继承 `dsh-bash-local` 的进程机制，通过 `ctx.sandbox.confine()` 等待每条命令的精确 `['bash', '-c', command]` argv 完成限制准备，再直接 spawn 返回的 argv。前台和后台准备均携带执行信号，并在 spawn 前重新检查取消状态。由哪种平台 runner 限制命令、以及是否有 runner 可用，属于提供方职责；本包只负责 bash 侧：所选模式、强制执行完整度，以及结果上的拒绝分类。
+本执行器是 `ctx.shell` seam 的沙箱 Service Provider：它继承 `dsh-bash-local` 的进程机制，通过 `ctx.sandbox.confine()` 等待每条命令的精确 `['bash', '-c', command]` argv 完成限制准备，再直接 spawn 返回的 argv。前台准备使用本地执行器与命令共享的 deadline；在 spawn 前超时不会声明 enforcement 事实。后台准备只跟随调用方信号。两条路径都在 spawn 前重新检查取消状态。由哪种平台 runner 限制命令、以及是否有 runner 可用，属于提供方职责；本包只负责 bash 侧：所选模式、强制执行完整度，以及结果上的拒绝分类。
 
 ### 源码地图
 
