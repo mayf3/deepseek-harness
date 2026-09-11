@@ -149,6 +149,7 @@ test('accepts one two-point approval from a write-capable reviewer', async () =>
   const result = await evaluateApproval({
     event: pullRequestEvent(),
     policySource,
+    getOwnership: async () => ({ totalLines: 0, reviewerLines: {} }),
     api: async (path) => {
       calls.push(path)
       if (path.includes('/reviews?')) return [review('07akioni', 'APPROVED')]
@@ -166,6 +167,7 @@ test('accepts two one-point approvals and ignores reviews without write access',
   const result = await evaluateApproval({
     event: pullRequestEvent(),
     policySource,
+    getOwnership: async () => ({ totalLines: 0, reviewerLines: {} }),
     api: async (path) => {
       if (path.includes('/reviews?')) {
         return [
@@ -183,8 +185,8 @@ test('accepts two one-point approvals and ignores reviews without write access',
   assert.equal(result.state, 'success')
   assert.equal(result.points, 2)
   assert.deepEqual(result.approvals, [
-    { login: 'writer-a', points: 1 },
-    { login: 'writer-b', points: 1 },
+    { login: 'writer-a', points: 1, ownership: { ownedLines: 0, totalLines: 0 } },
+    { login: 'writer-b', points: 1, ownership: { ownedLines: 0, totalLines: 0 } },
   ])
   assert.deepEqual(result.ignoredReviewers, ['reader'])
 })
@@ -193,6 +195,7 @@ test('keeps one one-point approval pending without failing the status', async ()
   const result = await evaluateApproval({
     event: pullRequestEvent(),
     policySource,
+    getOwnership: async () => ({ totalLines: 0, reviewerLines: {} }),
     api: async (path) => {
       if (path.includes('/reviews?')) return [review('writer', 'APPROVED')]
       if (path.includes('/collaborators/writer/permission')) return { permission: 'write' }
@@ -227,6 +230,7 @@ test('keeps the status pending on a write-capable change request while ignoring 
   const result = await runApprovalCheck({
     event: pullRequestEvent({ author: 'author' }),
     policySource,
+    getOwnership: async () => ({ totalLines: 0, reviewerLines: {} }),
     runUrl: 'https://github.example/actions/runs/1',
     api: async (path, options = {}) => {
       if (path.includes('/reviews?')) {
@@ -265,6 +269,7 @@ test('keeps drafts pending without reading reviews', async () => {
   const result = await evaluateApproval({
     event: pullRequestEvent({ draft: true }),
     policySource,
+    getOwnership: async () => ({ totalLines: 0, reviewerLines: {} }),
     api: async () => { throw new Error('draft evaluation must not call GitHub') },
   })
   assert.equal(result.state, 'pending')
@@ -278,6 +283,7 @@ test('publishes the required status and replaces stale success with error on eva
   const result = await runApprovalCheck({
     event: pullRequestEvent(),
     policySource,
+    getOwnership: async () => ({ totalLines: 0, reviewerLines: {} }),
     runUrl: 'https://github.example/actions/runs/1',
     api: async (path, options = {}) => {
       calls.push({ path, options })
@@ -307,6 +313,7 @@ test('publishes the required status and replaces stale success with error on eva
   await assert.rejects(runApprovalCheck({
     event: pullRequestEvent(),
     policySource,
+    getOwnership: async () => ({ totalLines: 0, reviewerLines: {} }),
     runUrl: 'https://github.example/actions/runs/2',
     api: async (path, options = {}) => {
       if (path.includes('/reviews?')) throw new Error('reviews unavailable')
@@ -345,4 +352,65 @@ test('sends authenticated JSON and escapes an API error body', async () => {
     fetchImpl: async () => new Response('::error::untrusted\nbody', { status: 422 }),
   })
   await assert.rejects(failing('/failure'), /"::error::untrusted\\nbody"/u)
+})
+
+for (const [ownedLines, totalLines, expectedPoints] of [[0, 100, 1], [25, 100, 1.5], [49, 100, 1.98], [50, 100, 2], [51, 100, 2], [100, 100, 2], [0, 0, 1]]) {
+  test(`scores ${ownedLines}/${totalLines} old production lines as ${expectedPoints} points`, async () => {
+    let measurements = 0
+    const result = await evaluateApproval({
+      event: pullRequestEvent(), policySource,
+      getOwnership: async () => {
+        measurements++
+        return { totalLines, reviewerLines: { writer: ownedLines } }
+      },
+      api: async path => path.includes('/reviews?')
+        ? [review('Writer', 'APPROVED')]
+        : { permission: 'write' },
+    })
+    assert.equal(result.points, expectedPoints)
+    assert.equal(result.state, expectedPoints === 2 ? 'success' : 'pending')
+    assert.equal(measurements, 1)
+    assert.deepEqual(result.approvals[0].ownership, { ownedLines, totalLines })
+  })
+}
+
+test('shares one measurement across reviewers without overriding a change request', async () => {
+  let measurements = 0
+  const result = await evaluateApproval({
+    event: pullRequestEvent(), policySource,
+    getOwnership: async () => {
+      measurements++
+      return { totalLines: 2, reviewerLines: { first: 1, second: 1 } }
+    },
+    api: async path => path.includes('/reviews?')
+      ? [review('first', 'APPROVED'), review('second', 'APPROVED'), review('blocker', 'CHANGES_REQUESTED')]
+      : { permission: 'write' },
+  })
+  assert.equal(measurements, 1)
+  assert.equal(result.points, 4)
+  assert.equal(result.state, 'pending')
+})
+
+test('does not fetch history when approvals already have two-point weights', async () => {
+  const result = await evaluateApproval({
+    event: pullRequestEvent(), policySource,
+    getOwnership: async () => { throw new Error('unexpected history fetch') },
+    api: async path => path.includes('/reviews?') ? [review('turtle1999', 'APPROVED')] : { permission: 'write' },
+  })
+  assert.equal(result.points, 2)
+})
+
+test('publishes error when production attribution fails', async () => {
+  const states = []
+  await assert.rejects(runApprovalCheck({
+    event: pullRequestEvent(), policySource, runUrl: 'https://github.example/run/1',
+    getOwnership: async () => { throw new Error('incomplete history') },
+    api: async (path, options) => {
+      if (path.includes('/reviews?')) return [review('writer', 'APPROVED')]
+      if (path.includes('/permission')) return { permission: 'write' }
+      states.push(options.body.state)
+      return {}
+    },
+  }), /incomplete history/u)
+  assert.deepEqual(states, ['error'])
 })

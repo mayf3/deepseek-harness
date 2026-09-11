@@ -4,6 +4,8 @@ import { readFileSync } from 'node:fs'
 import process from 'node:process'
 import { pathToFileURL } from 'node:url'
 
+import { productionOwnership } from './blame-ownership.mjs'
+
 const API_VERSION = '2026-03-10'
 const MAX_PULL_REQUEST_REVIEWS = 3_000
 const PAGE_SIZE = 100
@@ -128,10 +130,10 @@ export async function listPullRequestReviews(api, repository, pullNumber) {
 
 /**
  * Evaluate approval points from current reviews and repository permissions.
- * @param {{event: unknown, policySource: string, api: (path: string, options?: {method?: string, body?: unknown}) => Promise<unknown>}} options Runtime inputs.
- * @returns {Promise<{pull: {repository: string, number: number, headSha: string}, state: 'pending' | 'success', description: string, points: number, requiredPoints: number, approvals: Array<{login: string, points: number}>, blockers: string[], ignoredReviewers: string[]}>} Approval decision and status payload fields.
+ * @param {{event: unknown, policySource: string, api: (path: string, options?: {method?: string, body?: unknown}) => Promise<unknown>, getOwnership?: typeof productionOwnership}} options Runtime inputs.
+ * @returns {Promise<{pull: {repository: string, number: number, headSha: string}, state: 'pending' | 'success', description: string, points: number, requiredPoints: number, approvals: Array<{login: string, points: number, ownership?: {ownedLines: number, totalLines: number}}>, blockers: string[], ignoredReviewers: string[]}>} Approval decision and status payload fields.
  */
-export async function evaluateApproval({ event, policySource, api }) {
+export async function evaluateApproval({ event, policySource, api, getOwnership = productionOwnership }) {
   const pull = pullRequestFromEvent(event)
   const policy = parseApprovalPolicy(policySource)
   if (pull.draft) {
@@ -160,12 +162,21 @@ export async function evaluateApproval({ event, policySource, api }) {
       })
     }
   }
+  if (approvals.some(approval => approval.points === 1)) {
+    const ownership = await getOwnership(pull, api)
+    for (const approval of approvals) {
+      if (approval.points !== 1) continue
+      const ownedLines = ownership.reviewerLines[approval.login.toLowerCase()] ?? 0
+      approval.ownership = { ownedLines, totalLines: ownership.totalLines }
+      if (ownership.totalLines > 0) approval.points = Math.min(2, 1 + 2 * ownedLines / ownership.totalLines)
+    }
+  }
   approvals.sort((left, right) => left.login.localeCompare(right.login, 'en'))
   blockers.sort((left, right) => left.localeCompare(right, 'en'))
   ignoredReviewers.sort((left, right) => left.localeCompare(right, 'en'))
   const points = approvals.reduce((total, approval) => {
     const next = total + approval.points
-    if (!Number.isSafeInteger(next)) throw new Error('approval points exceed the safe integer range')
+    if (!Number.isFinite(next) || next > Number.MAX_SAFE_INTEGER) throw new Error('approval points exceed the safe integer range')
     return next
   }, 0)
   if (blockers.length > 0) {
@@ -186,20 +197,21 @@ export async function evaluateApproval({ event, policySource, api }) {
 
 /**
  * Evaluate and publish the required commit status, publishing an error status when evaluation fails.
- * @param {{event: unknown, policySource: string, api: (path: string, options?: {method?: string, body?: unknown}) => Promise<unknown>, runUrl: string, write?: (line: string) => void}} options Runtime inputs.
+ * @param {{event: unknown, policySource: string, api: (path: string, options?: {method?: string, body?: unknown}) => Promise<unknown>, runUrl: string, write?: (line: string) => void, getOwnership?: typeof productionOwnership}} options Runtime inputs.
  * @returns {Promise<Awaited<ReturnType<typeof evaluateApproval>>>} Published approval decision.
  */
-export async function runApprovalCheck({ event, policySource, api, runUrl, write = line => process.stdout.write(`${line}\n`) }) {
+export async function runApprovalCheck({ event, policySource, api, runUrl, getOwnership = productionOwnership, write = line => process.stdout.write(`${line}\n`) }) {
   const pull = pullRequestFromEvent(event)
   let result
   try {
-    result = await evaluateApproval({ event, policySource, api })
+    result = await evaluateApproval({ event, policySource, api, getOwnership })
   } catch (error) {
     await publishStatus(api, pull, 'error', 'Approval evaluation failed.', runUrl)
     throw error
   }
   write(`Approval score: ${result.points}/${result.requiredPoints}.`)
-  writeList(write, 'Counted approvals', result.approvals.map(({ login, points }) => `@${login}: ${points}`))
+  writeList(write, 'Counted approvals', result.approvals.map(({ login, points, ownership }) =>
+    `@${login}: ${points}${ownership ? ` (${ownership.ownedLines}/${ownership.totalLines} old production lines)` : ''}`))
   writeList(write, 'Blocking change requests', result.blockers.map(login => `@${login}`))
   writeList(write, 'Ignored reviewers without write access', result.ignoredReviewers.map(login => `@${login}`))
   await publishStatus(api, pull, result.state, result.description, runUrl)

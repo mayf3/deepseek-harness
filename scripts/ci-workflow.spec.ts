@@ -912,6 +912,14 @@ describe('Weighted approval workflow', () => {
         'persist-credentials': false,
       },
     })
+    const pythonJob = workflowJob(loadWorkflow('.github/workflows/ci.yml'), 'python-sdk')
+    expect(pythonJob.steps).toContainEqual({
+      name: 'Test production blame scoring',
+      run: "uv run --python 3.10 --with-requirements .github/review-ownership/requirements.txt python -m unittest discover -s .github/review-ownership -p 'test_*.py'",
+    })
+    expect(steps.find(step => step.name === 'Install production lexer')).toMatchObject({
+      run: 'python3 -m pip install -r .github/review-ownership/requirements.txt',
+    })
     expect(publish).toMatchObject({
       env: {
         GITHUB_TOKEN: '${{ github.token }}',
