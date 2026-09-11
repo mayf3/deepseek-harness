@@ -55,7 +55,7 @@ describe('managed subprocess control pipe', () => {
     if (channel === undefined) throw new Error('requested control pipe is absent')
     const received = (async () => {
       const chunks: Buffer[] = []
-      for await (const chunk of channel) chunks.push(Buffer.from(chunk))
+      for await (const chunk of channel) chunks.push(Buffer.from(chunk as Uint8Array))
       return Buffer.concat(chunks)
     })()
     channel.write(input)

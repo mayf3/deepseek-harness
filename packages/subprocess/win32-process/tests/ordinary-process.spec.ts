@@ -102,13 +102,16 @@ describe('ordinary Job process operations', () => {
   })
 
   it('refuses a control carrier that is not a pipe before creating the target', () => {
-    const bindings = api({ getFileType: vi.fn(() => 1) })
+    const createProcessW = vi.fn()
+    const closeHandle = vi.fn(() => 1)
+    const setHandleInformation = vi.fn(() => 1)
+    const bindings = api({ getFileType: vi.fn(() => 1), createProcessW, closeHandle, setHandleInformation })
     expect(() => spawnCurrentTokenJobProcess(bindings, options({
       stdio: { stdin: 4, stdout: 5, stderr: 6, control: 7 },
     }))).toThrow('not a Windows pipe')
-    expect(bindings.createProcessW).not.toHaveBeenCalled()
-    expect(bindings.closeHandle).toHaveBeenCalledWith(50n)
-    expect(bindings.setHandleInformation).toHaveBeenCalledWith(107n, 1, 0)
+    expect(createProcessW).not.toHaveBeenCalled()
+    expect(closeHandle).toHaveBeenCalledWith(50n)
+    expect(setHandleInformation).toHaveBeenCalledWith(107n, 1, 0)
   })
 
   it('creates suspended, assigns the Job, and resumes before returning', () => {
