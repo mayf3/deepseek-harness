@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/simplification/2026-09-10-derived-workspace-recency.md
-2026-09-10-derived-workspace-recency.md: d1a9565e6d638928e3503573ee4165fde83c884e
-2026-09-10-derived-workspace-recency.zh.md: 620d293e2dc4b13b88696a7745fc33fffbe5d853
+2026-09-10-derived-workspace-recency.md: 909edd63a99f7f590257a0493a3f8907c5f2722c
+2026-09-10-derived-workspace-recency.zh.md: fcca801bfaa5a01b48f46a0e2782c2b54c17bf4a

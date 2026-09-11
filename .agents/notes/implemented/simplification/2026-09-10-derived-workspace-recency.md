@@ -12,9 +12,11 @@ An editable activity-promoted list can disagree with its displayed timestamps wi
 
 Last updated is a pure projection of current Session summaries: ordinary rows sort by descending `updatedAt`, with Session id as the tie-break. The selected blank New Session precedes ordinary rows until its first prompt. Grouped, Ungrouped, and flat views use the same policy. Reloads and delayed summaries require no observed-timestamp history or promotion events in the view store.
 
-Only Manual uses the browser-persisted order. A Session drag saves the visible ordering after the move and selects Manual atomically. Real Workspace drags also call the existing Host reorder operation; Workspace-group order remains Host-owned. Entering Manual freezes the current chronological ordering. Returning to Last updated discards the manual layout; entering Manual again starts from the current timestamps. Every account initializes from recency. Newly encountered blank rows enter first; their saved manual positions survive the first prompt and reloads.
+Only Manual uses browser-persisted Session display order. A Session drag snapshots every active account, applies the move to its browser-local account, and selects Manual atomically. Entering Manual also freezes every active account from the current chronological ordering. Returning to Last updated discards the manual layout; entering Manual again starts from the current timestamps. Reconciliation retains saved members that remain in the Workspace account, removes departed members, and appends newly known members at the end, newest first when several arrive together. New members without summaries wait for the summary, while previously saved slots survive a temporarily missing summary. Workspace membership and Workspace-group order remain Host-owned; Workspace-group drags still call the Host reorder operation.
 
-The existing persistence key retains grouping, expansion, and saved positions. Legacy mixed orders remain usable as manual positions but cannot affect Last updated. The obsolete observed-timestamp field has no consumer. Current metadata still owns timestamp accuracy: a cold summary without prompt metadata can fall back to creation time, independently of view ordering.
+The selected blank New Session is a display invariant applied after either base order: it remains first and cannot start a drag. Its first prompt removes the blank state. Manual then keeps the existing first slot and allows dragging; Last updated projects it from the prompt timestamp. The ordering subscription and reconciliation remain mounted when the sidebar is collapsed or search replaces the list body.
+
+The persistence key stores grouping, expansion, and saved Manual positions. Persisted observed-timestamp data is removed when active account keys are retained. Current metadata owns timestamp accuracy: a cold summary without prompt metadata can fall back to creation time, independently of view ordering.
 
 ## Alternatives considered
 
@@ -28,10 +30,10 @@ The existing persistence key retains grouping, expansion, and saved positions. L
 
 ## Consequences
 
-Manual pauses automatic sorting of the current list. The default is Last updated, and reloads retain the selected mode and current manual positions. Chronological browsing gives up persistent drag exceptions. The view store retains manual-order membership reconciliation and blank-row creation placement, but owns no activity timestamps.
+Manual pauses automatic sorting of the current list. The default is Last updated, and reloads retain the selected mode and current manual positions. Chronological browsing gives up persistent drag exceptions. The view store owns manual Session positions but no activity timestamps; the Host Session-account order does not participate in this browser's display order.
 
 The archived sidebar note remains frozen historical evidence; its folding and Workspace-order decisions are outside this change. No active note owns the superseded shared-order policy.
 
 ## Testing
 
-Component regressions cover older first arrivals, corrected and decreasing timestamps, discarded-layout isolation, mode-switch cycles, blank insertion, reloads, and automatic Manual selection on drag. The recorded-session Web scenario exercises the shipped composition with legacy persisted positions, native dragging, grouped and flat views, and reloads. Existing folding cases retain the provisional blank quota.
+Component regressions cover older first arrivals, corrected and decreasing timestamps, delayed summaries, discarded-layout isolation, atomic mode switches, blank insertion and drag prevention, the first-prompt transition, collapsed-sidebar reconciliation, reloads, and automatic Manual selection on drag. The recorded-session Web scenario exercises the shipped composition with persisted positions, native dragging, grouped and flat views, a pinned blank, and reloads. Existing folding cases retain the provisional blank quota.

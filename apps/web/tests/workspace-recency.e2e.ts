@@ -35,21 +35,18 @@ describe('web e2e: workspace recency', () => {
       await scaffold.ctx.sessionController.rename({ sessionId: id, title })
       ids.push(id)
     }
-    const summaries = await scaffold.ctx.sessionController.list({}, new AbortController().signal)
-    const timestamps = Object.fromEntries(summaries.items.map(item => [item.sessionId, item.updatedAt]))
     browser = await chromium.launch()
     page = await newEnglishPage(browser)
     await page.clock.setFixedTime(now)
     tripwire = watchConsole(page)
-    await page.addInitScript(({ account, ids, timestamps }) => {
+    await page.addInitScript(({ account, ids }) => {
       if (localStorage.getItem('dsh.workspace.view.v5') !== null) return
       localStorage.setItem('dsh.sessions.current', JSON.stringify({ sessionId: ids[0] }))
       localStorage.setItem('dsh.workspace.view.v5', JSON.stringify({
         groupBy: 'workspace', orderBy: 'updated', groupExpansion: { [account]: true },
         sessionOrderByAccount: { [account]: [...ids].reverse(), __flat_session_order__: [...ids].reverse() },
-        sessionUpdatedAtByAccount: { [account]: timestamps, __flat_session_order__: timestamps },
       }))
-    }, { account: workspace.id, ids, timestamps })
+    }, { account: workspace.id, ids })
     await page.goto(scaffold.authenticatedUrl, { waitUntil: 'load' })
     await page.waitForSelector('[class*="frame"]', { timeout: 30_000 })
   })
@@ -112,12 +109,10 @@ describe('web e2e: workspace recency', () => {
       await captureSidebar(), MODE,
     )
     const blank = page.getByRole('treeitem').filter({ has: page.getByText('New Session', { exact: true }) })
-    const oldest = page.getByRole('treeitem').filter({ has: page.getByText(TITLES[2]!, { exact: true }) })
-    await blank.dragTo(oldest, { targetPosition: { x: 30, y: 30 } })
-    await expect.poll(titles).toEqual([...TITLES, 'New Session'])
+    await expect.poll(() => blank.getAttribute('draggable')).toBe('false')
     const blankWarningStart = tripwire.warnings.length
     await page.reload({ waitUntil: 'load' })
-    await expect.poll(titles).toEqual([...TITLES, 'New Session'])
+    await expect.poll(titles).toEqual(['New Session', ...TITLES])
     acknowledgeReloadConnectionLoss(tripwire, blankWarningStart)
     await pick('Last updated')
     await expect.poll(titles).toEqual(['New Session', ...TITLES])

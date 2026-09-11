@@ -5,8 +5,8 @@ import type { SessionPendingInteractionBase } from '@deepseek-ai/dsh-client-ui-s
 import type { ScheduleId, ScheduleRecord } from '@deepseek-ai/dsh-schedule/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import {
-  deriveFlat, deriveGroups, deriveSearchResults, owningGroupKey, workspaceLabel,
-  UNGROUPED_KEY,
+  deriveFlat, deriveGroups, deriveSearchResults, orderByRecency, owningGroupKey,
+  pinCurrentBlank, reconcileManualOrder, workspaceLabel, UNGROUPED_KEY,
 } from '../src/client/tree.ts'
 import { createWorkspaceViewStore } from '../src/client/stores.ts'
 
@@ -48,8 +48,36 @@ describe('owningGroupKey', () => {
   })
 })
 
+describe('Session ordering', () => {
+  it('orders known members by recency with a stable identity tie-break', () => {
+    const summaries = list(summary('tie-b', 20), summary('older', 10), summary('tie-a', 20)).byId
+    expect(orderByRecency(
+      [sid('unknown'), sid('tie-b'), sid('older'), sid('tie-a')],
+      summaries,
+    )).toEqual([sid('tie-a'), sid('tie-b'), sid('older')])
+  })
+
+  it('reconciles retained manual slots and appends newly known members by recency', () => {
+    const summaries = list(summary('kept', 1), summary('newer', 30), summary('older', 20)).byId
+    expect(reconcileManualOrder(
+      [sid('saved-without-summary'), sid('kept'), sid('newer'), sid('older'), sid('new-without-summary')],
+      ['departed', 'saved-without-summary', 'kept'],
+      summaries,
+    )).toEqual([
+      sid('saved-without-summary'), sid('kept'), sid('newer'), sid('older'),
+    ])
+  })
+
+  it('pins only the selected blank without changing the base order', () => {
+    expect(pinCurrentBlank([sid('newer'), sid('blank'), sid('older')], sid('blank')))
+      .toEqual([sid('blank'), sid('newer'), sid('older')])
+    expect(pinCurrentBlank([sid('newer'), sid('older')], undefined))
+      .toEqual([sid('newer'), sid('older')])
+  })
+})
+
 describe('deriveGroups', () => {
-  it('keeps Host Workspace and sessionIds order without Client recency sorting', () => {
+  it('keeps caller-supplied Workspace and sessionIds order', () => {
     const sessions = list(summary('newer', 20), summary('older', 10))
     const workspaces = [workspace('first', ['older', 'newer']), workspace('empty', [])]
     const groups = deriveGroups(sessions, workspaces, noArchive, noAttention, view(['first']))
@@ -506,14 +534,32 @@ describe('createWorkspaceViewStore', () => {
     })
   })
 
-  it('retains positions when reselecting Manual and discards them on mode switches', () => {
+  it('retains positions when reselecting Manual and snapshots the supplied order on mode switches', () => {
     const store = createWorkspaceViewStore().create()
     store.actions.setSessionOrder('alpha', ['two', 'one'])
     store.actions.setOrderBy('manual')
     expect(store.getSnapshot()).toMatchObject({ orderBy: 'manual', sessionOrderByAccount: { alpha: ['two', 'one'] } })
     store.actions.setOrderBy('updated')
     expect(store.getSnapshot()).toMatchObject({ orderBy: 'updated', sessionOrderByAccount: {} })
-    store.actions.setOrderBy('manual')
+    store.actions.setOrderBy('manual', { alpha: ['one', 'two'] })
+    expect(store.getSnapshot().sessionOrderByAccount).toEqual({ alpha: ['one', 'two'] })
+  })
+
+  it('snapshots every account when a recency drag selects Manual', () => {
+    const store = createWorkspaceViewStore().create()
+    store.actions.setSessionOrder('alpha', ['two', 'one'], {
+      alpha: ['one', 'two'],
+      beta: ['three'],
+    })
+    expect(store.getSnapshot()).toMatchObject({
+      orderBy: 'manual',
+      sessionOrderByAccount: { alpha: ['two', 'one'], beta: ['three'] },
+    })
+  })
+
+  it('ignores reconciliation writes outside Manual', () => {
+    const store = createWorkspaceViewStore().create()
+    store.actions.syncSessionOrders({ alpha: ['one'] })
     expect(store.getSnapshot().sessionOrderByAccount).toEqual({})
   })
 
