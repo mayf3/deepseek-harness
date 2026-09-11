@@ -615,6 +615,33 @@ describe('the sub-dispatch scheduler (native concurrency contract)', () => {
     expect(safe.order.indexOf('start:r3')).toBeGreaterThan(safe.order.indexOf('end:r1'))
   })
 
+  it('holds later dispatches while settled results await log storage', async () => {
+    const { ctx, runtime } = await setup({ maxParallelSubCalls: 1 })
+    const calls = registerEcho(ctx)
+    const { agent } = fakeAgent()
+    const release = Promise.withResolvers<undefined>()
+    const blocked = Promise.withResolvers<undefined>()
+    let pendingLogs = 0
+    ctx.on('tools/ptc-dispatch-log', async (_dispatch, next) => {
+      if (++pendingLogs === 2) blocked.resolve(undefined)
+      await release.promise
+      return next()
+    })
+    runtime.behavior = async request => ({ logs: [], value: await Promise.all(
+      [0, 1, 2, 3].map(value => request.bindings[0]!.functions.echo!({ value: String(value) })),
+    ) })
+    const running = runCode(ctx, 'program', { agent })
+    try {
+      await blocked.promise
+      // Synchronous executors exhaust their unblocked microtasks before this checkpoint.
+      await new Promise<void>(resolve => setImmediate(resolve))
+      expect(calls).toHaveLength(2)
+      release.resolve(undefined)
+      expect((await running).isError).toBe(false)
+      expect(calls).toHaveLength(4)
+    } finally { release.resolve(undefined); await running; await ctx.fiber.dispose() }
+  })
+
   it('maxParallelSubCalls caps the overlap window', async () => {
     const { ctx, runtime } = await setup({ mode: 'ptc', maxParallelSubCalls: 2 })
     const gated = registerGated(ctx, 'safe_read', true)
@@ -2016,6 +2043,19 @@ describe('per-program execution controls', () => {
     const { ctx, runtime, execute } = await controlledSetup()
     try {
       expect((await execute({ timeoutMs })).isError).toBe(true)
+      expect(runtime.lastRequest).toBeUndefined()
+    } finally { await ctx.fiber.dispose() }
+  })
+
+  it('rejects escalation fields for a runtime without confinement support', async () => {
+    const { ctx, tools, runtime } = await setup()
+    try {
+      const result = await tools.execute({
+        callId: ToolCallId('unsupported-escalation'), name: RUN_CODE_NAME, signal: testToolSignal,
+        arguments: { code: 'return 1', description: 'Try an unsupported mode', sandbox_permissions: 'workspace-write', justification: 'Need file writes' },
+      })
+      expect(result.isError).toBe(true)
+      expect(JSON.stringify(result.content)).toContain('sandbox_permissions is not available for this code runtime')
       expect(runtime.lastRequest).toBeUndefined()
     } finally { await ctx.fiber.dispose() }
   })

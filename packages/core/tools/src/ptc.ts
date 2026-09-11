@@ -105,6 +105,8 @@ const RUN_CODE_CONTROLS = {
 } as const
 
 function controlParameters(runtime: CodeRuntime | undefined) {
+  // Catalog readers have no mounted runtime; real model assembly requires one.
+  if (runtime === undefined) return RUN_CODE_CONTROLS
   return {
     ...runtime?.timeout === undefined ? {} : {
       timeoutMs: { ...RUN_CODE_CONTROLS.timeoutMs,

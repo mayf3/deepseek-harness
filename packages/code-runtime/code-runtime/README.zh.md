@@ -68,6 +68,8 @@ binding-global 与 error-class 名称是语言可移植的：必须匹配 `[A-Za
 
 ### 服务 API
 
+只读 `timeout` 描述符为支持逐次覆盖的提供方公开 `{ defaultMs, maxMs }`；`undefined` 表示消费方必须省略该字段。它报告呈现值，验证与截断仍由 `resolve` 负责。
+
 `resolve(request)` 负责支持选项的验证与部署默认值。`run(spec)` 执行完整输入，并在清理后返回程序结果。语言和执行基底描述符指导呈现；`sandboxMode` 表示消费方能否传入已解析文件策略。描述符与程序成功结果都不能代替后端报告的强制能力事实。
 
 穷尽式语义见[代码运行时子系统参考](../../../docs/subsystems/code-runtime.zh.md)；确切签名见 [`src/index.ts`](src/index.ts)。

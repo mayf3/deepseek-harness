@@ -68,6 +68,8 @@ The package is the Service Definition role of the code-execution capability seam
 
 ### Service API
 
+The readonly `timeout` descriptor exposes `{ defaultMs, maxMs }` for a provider supporting per-call overrides; `undefined` means that the consumer must omit the field. It reports presentation values, while `resolve` remains the validation and clamping authority.
+
 `resolve(request)` owns supported option validation and deployment defaulting. `run(spec)` executes the complete inputs and resolves program outcomes after cleanup. Language and substrate descriptors guide presentation; `sandboxMode` indicates whether the consumer can pass a resolved file policy. Neither descriptors nor a successful program result substitute for the backend's reported enforcement facts.
 
 The exhaustive semantics live in the [code runtime subsystem reference](../../../docs/subsystems/code-runtime.md); the exact signatures are in [`src/index.ts`](src/index.ts).
