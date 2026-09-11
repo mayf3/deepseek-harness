@@ -2284,7 +2284,7 @@ export interface Config {
   bootstrapPath?: string
   /** SHA-256 of bootstrapPath; both fields must be supplied together. */
   bootstrapHash?: string
-  /** Bound on connection establishment and individual administrative requests. */
+  /** Connection and administrative-request deadline, at most 2,147,483,647 milliseconds. */
   requestTimeoutMs?: number
   /** Maximum JSON payload bytes per helper request or response. */
   maxFrameBytes?: number

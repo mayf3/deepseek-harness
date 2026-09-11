@@ -39,7 +39,7 @@ Install the built helper and its matching runtime dependencies on the remote hos
 | `node`, `helper`, `workspace` | required | Absolute remote Node executable, bundled helper entry and default workspace |
 | `helperHash` | required | Lowercase SHA-256 of the installed helper entry |
 | `bootstrapPath`, `bootstrapHash` | omitted | Paired remote PTC entry and its lowercase SHA-256 |
-| `requestTimeoutMs` | `30000` | Connection and administrative-request deadline |
+| `requestTimeoutMs` | `30000` | Connection and administrative-request deadline, from 1 through 2,147,483,647 ms |
 | `maxFrameBytes` | `67108864` | Per-message JSON payload ceiling, at most 64 MiB |
 | `maxPending` | `128` | Ordinary outstanding requests; heartbeat and bounded cleanup requests have reserved capacity |
 | `leaseMs` | `30000` | Helper heartbeat lease, from 3000 to 600000 ms |

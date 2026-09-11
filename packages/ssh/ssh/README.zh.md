@@ -39,7 +39,7 @@ kind: "package-reference"
 | `node`、`helper`、`workspace` | 必填 | 远端 Node 可执行文件、辅助程序打包入口和默认工作区的绝对路径 |
 | `helperHash` | 必填 | 已安装辅助程序入口的小写 SHA-256 |
 | `bootstrapPath`、`bootstrapHash` | 省略 | 成对提供的远端 PTC 入口及其小写 SHA-256 |
-| `requestTimeoutMs` | `30000` | 连接与管理请求的截止时限 |
+| `requestTimeoutMs` | `30000` | 连接与管理请求的截止时限，范围为 1 至 2,147,483,647 毫秒 |
 | `maxFrameBytes` | `67108864` | 每条 JSON 消息的负载上限，最大为 64 MiB |
 | `maxPending` | `128` | 普通未完成请求的数量上限；心跳与有界清理请求使用预留容量 |
 | `leaseMs` | `30000` | 辅助进程心跳租期，范围为 3000 至 600000 毫秒 |
