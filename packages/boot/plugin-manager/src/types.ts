@@ -21,7 +21,7 @@ export type PluginPackageStage = 'boot' | 'runtime'
  *
  * - `running`: enabled, all enabled rows active, and no current issue;
  * - `partial`: at least one active row, with a failed attempt or unresolved dependency;
- * - `failed`: enabled and no row active;
+ * - `failed`: enabled with no active row, or the requested live layer selection has not been applied;
  * - `disabled`: installed and not in the layer list;
  * - `not-enableable`: bundle declarations cannot be read;
  * - `restart-required`: its manifest state and the live tree disagree, which a profile without live reload resolves at the next start;
