@@ -69,8 +69,11 @@ describe('direct Messages HTTP', () => {
   it('uses the Messages endpoint, authentication, attribution and final usage', async () => {
     const http = await endpoint()
     const llm = adapter({ baseURL: http.url })
-    const response = await assemble(llm.stream(options({ sessionId: SessionId('session-test'), purpose: 'compaction' })))
+    const response = await assemble(llm.stream(options({ model: 'deepseek-flash', sessionId: SessionId('session-test'), purpose: 'compaction' })), 'deepseek-flash')
     expect(response.message.content).toEqual([{ type: 'text', text: 'Hello 世界' }])
+    expect(response.message.source).toMatchObject({
+      model: 'deepseek-flash', replayState: { response: { model: 'deepseek-flash' } },
+    })
     expect(http.requests[0]).toMatchObject({ path: '/anthropic/v1/messages', headers: {
       'x-api-key': 'test-key', 'anthropic-version': '2023-06-01',
       'user-agent': expect.stringContaining('deepseek-harness/') as string, 'x-deepseek-harness-user-id': 'test-user',

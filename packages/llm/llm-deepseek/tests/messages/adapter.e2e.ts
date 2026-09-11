@@ -1,4 +1,7 @@
-/** Real Messages round trips against the official protocol root; skip without credentials. */
+/**
+ * Real Messages round trips use the official root and require credentials.
+ * System-update checks additionally require DEEPSEEK_IN_HISTORY_MODEL.
+ */
 import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -10,12 +13,13 @@ import type { Message } from '@deepseek-ai/dsh-llm'
 import * as Messages from '../../src/index.ts'
 import { assemble, options, user } from './helpers.ts'
 
+const IN_HISTORY_MODEL = process.env.DEEPSEEK_IN_HISTORY_MODEL
 const cleanups: (() => Promise<unknown>)[] = []
 afterEach(async () => {
   while (cleanups.length) await cleanups.pop()!()
   vi.unstubAllEnvs()
 })
-async function boot(inHistory = false) {
+async function boot(models?: Messages.Config['models']) {
   const home = await mkdtemp(join(tmpdir(), 'dsh-messages-e2e-'))
   cleanups.push(() => rm(home, { recursive: true, force: true }))
   vi.stubEnv('DSH_HOME', home)
@@ -26,19 +30,21 @@ async function boot(inHistory = false) {
     protocol: 'messages',
     baseURL: Messages.MESSAGES_BASE_URL,
     maxTokens: 4096,
-    ...inHistory ? { models: [{ id: 'deepseek-v4-flash', systemPromptUpdate: 'in-history' as const }] } : {},
+    ...models === undefined ? {} : { models },
   })
   return ctx
 }
 const tool = { name: 'lookup_value', description: 'Read the requested value. Always call this tool to obtain a value.', parameters: { type: 'object', properties: { key: { type: 'string' } }, required: ['key'] } }
 
 describe.skipIf(!process.env.DEEPSEEK_API_KEY)('DeepSeek Messages real API', () => {
-  it.each([false, true])('updates system instructions during a conversation, in-history=%s', async (inHistory) => {
-    const ctx = await boot(inHistory)
+  it.skipIf(!IN_HISTORY_MODEL).each([false, true])('updates system instructions during a conversation, in-history=%s', async (inHistory) => {
+    const model = IN_HISTORY_MODEL as string
+    // Each case owns the capability, even for a model with an in-history catalog default.
+    const ctx = await boot([{ id: model, ...inHistory ? { systemPromptUpdate: 'in-history' as const } : {} }])
     const history: Message[] = [createSystemMessage('Reply to every user message with exactly PROMPT_FIRST.', 'test'), user('Answer now.')]
     const reply = async (expected: string) => {
       const saved = JSON.stringify(history)
-      const response = await assemble(ctx.llm.stream(options({ messages: history, reasoningEffort: ReasoningEffortId('off') })))
+      const response = await assemble(ctx.llm.stream(options({ model, messages: history, reasoningEffort: ReasoningEffortId('high') })), model)
       expect(response.assembler.finish.kind).toBe('stop')
       expect(response.message.content.filter(block => block.type === 'text').map(block => block.text).join('')).toContain(expected)
       expect(JSON.stringify(history)).toBe(saved)

@@ -28,11 +28,11 @@ export async function chunks(stream: AsyncIterable<StreamChunk>) {
   for await (const chunk of stream) result.push(chunk)
   return result
 }
-export async function assemble(stream: AsyncIterable<StreamChunk>) {
+export async function assemble(stream: AsyncIterable<StreamChunk>, model = MODEL) {
   const assembler = new BlockAssembler()
   const output = await chunks(stream)
   for (const chunk of output) assembler.push(chunk)
-  const message = createAssistantMessage({ content: assembler.blocks(), source: { provider: 'deepseek-official', model: MODEL, ...assembler.replayState === undefined ? {} : { replayState: assembler.replayState } } })
+  const message = createAssistantMessage({ content: assembler.blocks(), source: { provider: 'deepseek-official', model, ...assembler.replayState === undefined ? {} : { replayState: assembler.replayState } } })
   return { output, message, assembler }
 }
 export function adapter(config: Config = {}) {
