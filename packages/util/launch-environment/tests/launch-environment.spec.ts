@@ -2,17 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import {
   createLaunchEnvironmentSnapshot, DSH_LAUNCH_ENVIRONMENT_KEY, launchedThroughSsh, launchEnvironmentOf,
-  SENSITIVE_ENV_PATTERN, withoutSensitiveEnv,
 } from '../src/index.ts'
-
-describe('withoutSensitiveEnv', () => {
-  it('drops credential-shaped names, case-insensitively, and unset values', () => {
-    expect(withoutSensitiveEnv({
-      PATH: '/bin', DEEPSEEK_API_KEY: 'k', npm_config_token: 't', Secret_Thing: 's', DB_PASSWORD: 'p', UNSET: undefined,
-    })).toEqual({ PATH: '/bin' })
-    expect(SENSITIVE_ENV_PATTERN.test('HOME')).toBe(false)
-  })
-})
 
 const layered = createLaunchEnvironmentSnapshot([
   { source: 'process', values: { SHARED: 'from-process', ONLY_PROCESS: 'p' } },

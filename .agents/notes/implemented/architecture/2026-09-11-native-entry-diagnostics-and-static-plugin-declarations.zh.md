@@ -24,7 +24,7 @@ Status: implemented
 
 ## Alternatives considered
 
-**保留 contained group 和子进程 probe。** [原组设计](../../archived/architecture/2026-09-04-external-bundles-as-contained-groups.md) 防止事务式 Loader 回滚，并为已移除行提供失败记录。原生条目会同时保留成功行与失败行，包装只增加身份，并未提供整层组合所缺少的整包启停能力。[原 probe 设计](../../archived/architecture/2026-09-04-boot-scoped-fail-loud-and-package-probe.md) 为发现阶段的执行设定边界，并发现未声明导出与 schema。静态声明避免这次执行，同时放弃自动主入口识别和挂载前 schema。未来的执行沙箱需要独立设计进程归属与清理，不能把发现 probe 视为运行隔离。
+**保留 contained group 和子进程 probe。** contained group 防止事务式 Loader 回滚，并为已移除行提供失败记录。原生条目会同时保留成功行与失败行，包装只增加身份，并未提供整层组合所缺少的整包启停能力。子进程 probe 为发现阶段的执行设定边界，并发现未声明导出与 schema。静态声明避免这次执行，同时放弃自动主入口识别和挂载前 schema。未来的执行沙箱需要独立设计进程归属与清理，不能把发现 probe 视为运行隔离。
 
 **在 Host 内 import 并 try/catch。** 拒绝，因为发现阶段可能产生不可逆副作用、退出 Host 或阻塞事件循环。捕获异常无法恢复隔离。通过解析源码推断插件导出会增加一个结果不完整的 JavaScript 解释器。
 
