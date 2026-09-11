@@ -13,7 +13,8 @@ import { resolveDesktopPaths } from '../src/paths.ts'
 import { runtimeFixture, writePackage } from './runtime-fixture.ts'
 
 it('installs a real pnpm graph and executes scripts approved by user configuration', async () => {
-  const root = realpathSync(mkdtempSync(join(tmpdir(), 'desktop-real-pnpm-')))
+  // pnpm resolves its cwd natively; use the same spelling for Windows 8.3 temp paths.
+  const root = realpathSync.native(mkdtempSync(join(tmpdir(), 'desktop-real-pnpm-')))
   const server = createServer()
   const archives = new Map<string, Buffer>()
   try {
@@ -59,7 +60,14 @@ it('installs a real pnpm graph and executes scripts approved by user configurati
     writeFileSync(join(manager.paths.profile, 'pnpm-workspace.yaml'), `packages:\n  - .\nnodeLinker: hoisted\nautoInstallPeers: false\nstoreDir: ${JSON.stringify(join(root, 'store'))}\nallowBuilds:\n  fixture-script-dependency: true\n`)
     await manager.mutate({ type: 'plugin-add', spec: 'fixture-plugin@1.0.0' }, hooks)
     expect(manager.listPlugins()).toEqual([{ name: 'fixture-plugin', version: '1.0.0', enabled: true }])
-    const built = JSON.parse(readFileSync(join(manager.paths.profile, 'node_modules/fixture-script-dependency/built.json'), 'utf8')) as { node: string }
+    const builtPath = join(manager.paths.profile, 'node_modules/fixture-script-dependency/built.json')
+    if (!existsSync(builtPath)) {
+      const config = (name: string): string => execFileSync(process.execPath, [pnpm, 'config', 'get', name], {
+        cwd: manager.paths.profile, encoding: 'utf8',
+      }).trim()
+      throw new Error(`pnpm install script produced no output: ignoreScripts=${config('ignoreScripts')}, allowBuilds=${config('allowBuilds')}`)
+    }
+    const built = JSON.parse(readFileSync(builtPath, 'utf8')) as { node: string }
     expect(realpathSync(built.node)).toBe(realpathSync(process.execPath))
     const entry = join(dsh, 'identity.mjs')
     writeFileSync(entry, `import {identity} from '@deepseek-ai/cordis'; import {identity as plugin} from ${JSON.stringify(pathToFileURL(join(manager.paths.profile, 'node_modules/fixture-plugin/index.js')).href)}; console.log(identity === plugin)`)
@@ -81,7 +89,7 @@ it('installs a real pnpm graph and executes scripts approved by user configurati
 }, 30_000)
 
 it.each(['directory', 'file', 'tarball', 'plain'] as const)('installs a %s source through pnpm', async (source) => {
-  const root = realpathSync(mkdtempSync(join(tmpdir(), 'desktop-local-pnpm-')))
+  const root = realpathSync.native(mkdtempSync(join(tmpdir(), 'desktop-local-pnpm-')))
   try {
     const dsh = join(root, 'dsh')
     runtimeFixture(dsh)
