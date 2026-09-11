@@ -364,6 +364,12 @@ describe('compaction-image-offload', () => {
     await agent.whenIdle()
     expect(adapter.requests).toHaveLength(1)
     expect(decisions(agent.session)).toEqual([])
+    expect(ctx.waterfall('compaction/summary-error', {
+      session: agent.session,
+      sourceEventSeqs: agent.session.surface.nodes,
+      error: new LlmError('summary budget exceeded', IMAGE_OFFLOAD_REQUIRED_CODE, { offloadImages: 1 }),
+    }, () => false)).toBe(false)
+    expect(decisions(agent.session)).toEqual([])
   })
 
   it('leaves every other failure to downstream recovery', async () => {

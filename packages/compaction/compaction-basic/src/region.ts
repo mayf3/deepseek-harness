@@ -400,7 +400,7 @@ async function summarizeCompaction(
       summaryResult = await dependencies.summarize(prepared.input, agent, signal)
       break
     } catch (error: unknown) {
-      signal?.throwIfAborted()
+      if (signal?.aborted === true) throw error
       assertStable(dependencies, agent.session, prepared)
       if (!dependencies.recover(error, agent, prepared.shadowedSeqs, signal)) throw error
       prepared = prepareCompaction(dependencies, agent.session,
