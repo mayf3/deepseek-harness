@@ -60,7 +60,7 @@ profile 是同一套 dsh 安装提供不同应用界面的方式：`web`、`head
 
 已安装依赖默认为 `external`；模板组合包和 `dsh.profile.firstParty` 中的包为 `builtin`。有效 stage 依次取 `dsh.profile.stages[package]`、包的 `dsh.bundle.stage`，最后默认为 `runtime`。stage 决定启动失败策略，不表示稍后执行。组合包 patch 保留声明的 id、父组和顺序。内置与 boot 阶段层优先占有 id；可选组合包有重复 id 时整层被排除并报告，冲突的用户插入则逐行排除。`dependencies` 记录安装；`dsh.profile.bundles` 选择启用的层，包括它们的全部插入和覆盖。
 
-launcher 在任何配置行挂载前提供 `ctx.profileRuntime`。它拥有行来源、已接受的组合、冲突和用户禁用行信息。文件监听与管理操作共用它的串行重组队列。重组等待当前条目和已移除 fiber 完成后，发布已接受的选项并报告逐行问题；更新失败时，fiber 可能仍使用先前的有效配置运行。`installFailLoud` 保持到应用关闭，处理进程级未处理 rejection。
+launcher 在任何配置行挂载前提供 `ctx.profileRuntime`。它拥有行来源、已接受的组合、冲突和用户禁用行信息。文件监听与管理操作共用它的串行重组队列。重组等待当前条目和已移除 fiber 完成后，发布已接受的选项并报告逐行问题；更新失败时，fiber 可能仍使用先前的有效配置运行。`installFailLoud` 保持到应用关闭，处理进程级未处理 rejection。 观测方可等待 `whenIdle()` 后，再发布包含组合归属的刷新视图。
 
 ### 预览生效配置
 

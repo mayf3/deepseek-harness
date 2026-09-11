@@ -183,6 +183,16 @@ export class ProfileRuntime extends Service {
     this.committed = { profile, stack }
     return inspectEntryIssues(this.ctx)
   }
+
+  /**
+   * Wait for recompositions already queued when called, including removed-fiber cleanup.
+   * Observers may read accepted composition facts afterwards; a failed operation
+   * still reports its error to its caller and does not reject this observation.
+   * @returns after the current recomposition queue settles.
+   */
+  whenIdle(): Promise<void> {
+    return this.queue
+  }
 }
 
 /** The walk behind {@link ProfileRuntime.userDisables}: the entry, then each group holding it, outward. */
