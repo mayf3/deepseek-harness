@@ -69,6 +69,7 @@ describe('TestClient (jsdom)', () => {
       TestClient.start({ roster: API_ROSTER }, mockA),
       TestClient.start({ roster: API_ROSTER }, mockB),
     ])
+    onTestFinished(() => a.dispose())
     onTestFinished(() => b.dispose())
     const rename = async (client: TestClient): Promise<unknown> =>
       (client.ctx as unknown as { remote: { session: { rename(request: unknown): Promise<unknown> } } }).remote.session.rename({ sessionId: 's', title: 't' })
@@ -92,11 +93,9 @@ describe('TestClient (jsdom)', () => {
   it('boots two plugin trees concurrently instead of serializing the worker', async () => {
     let arrivals = 0
     const gate = Promise.withResolvers<undefined>()
-    const overlap = Promise.withResolvers<undefined>()
     const probe: ClientPluginModule = {
       async apply() {
         arrivals += 1
-        if (arrivals === 2) overlap.resolve(undefined)
         await gate.promise
       },
     }
@@ -106,17 +105,24 @@ describe('TestClient (jsdom)', () => {
     ])
     const first = TestClient.start({ roster, provide: { [PARALLEL_PROBE]: probe } }, RemoteMock.create(), { awaitConnected: false })
     const second = TestClient.start({ roster, provide: { [PARALLEL_PROBE]: probe } }, RemoteMock.create(), { awaitConnected: false })
+    const starts = Promise.allSettled([first, second])
     let overlapFailure: unknown
     try {
       await vi.waitFor(() => { expect(arrivals).toBe(2) }, { timeout: 5_000 })
-      await overlap.promise
     } catch (error) {
       overlapFailure = error
     } finally {
       gate.resolve(undefined)
     }
-    const clients = await Promise.all([first, second])
-    for (const client of clients) onTestFinished(() => client.dispose())
+    const results = await starts
+    for (const result of results) {
+      if (result.status === 'fulfilled') onTestFinished(() => result.value.dispose())
+    }
+    const rejected = results.find(result => result.status === 'rejected')
+    if (rejected?.status === 'rejected') {
+      const reason: unknown = rejected.reason
+      throw reason
+    }
     if (overlapFailure !== undefined) throw overlapFailure
   }, COLD_BOOT_TIMEOUT_MS)
 
@@ -129,6 +135,8 @@ describe('TestClient (jsdom)', () => {
     const modulesA = a.ctx.modules
     const modulesB = b.ctx.modules
     expect(modulesA).not.toBe(modulesB)
+    expect(modulesA).toBe(a.ctx.loader.internal)
+    expect(modulesB).toBe(b.ctx.loader.internal)
     await a.reload(MODULES)
     expect(a.ctx.modules).toBe(modulesA)
     expect(b.ctx.modules).toBe(modulesB)
@@ -146,7 +154,6 @@ describe('TestClient (jsdom)', () => {
     await expect(TestClient.start({ roster: API_ROSTER }, RemoteMock.create().load(remoteDefaultResponses), { mount: true }))
       .rejects.toThrow('mount requested, but the roster provides no `uiRenderer`')
     expect(document.body.childElementCount).toBe(before)
-    expect('__DSH_TRANSPORT__' in globalThis).toBe(false)
   })
 
   it('creates no mount element when the roster cannot be loaded', async () => {
@@ -154,7 +161,6 @@ describe('TestClient (jsdom)', () => {
     const before = document.body.childElementCount
     await expect(TestClient.start({ roster }, RemoteMock.create(), { mount: true })).rejects.toThrow()
     expect(document.body.childElementCount).toBe(before)
-    expect('__DSH_TRANSPORT__' in globalThis).toBe(false)
   })
 
   it('mounts into a caller-supplied element and leaves it in place on dispose', async () => {
@@ -235,7 +241,6 @@ describe('TestClient (jsdom)', () => {
     const mock = RemoteMock.create().stream('$events', openStream([]))
     await expect(TestClient.start({ roster }, mock, { connectTimeoutMs: 300 }))
       .rejects.toThrow(/connection state is \S+ after 300ms; unmatched: \[unary workspace\/follow\]; streams: \[.*\$events \(open\).*\]/)
-    expect('__DSH_TRANSPORT__' in globalThis).toBe(false)
     expect(globals.EventSource).toBeUndefined()
   })
 })

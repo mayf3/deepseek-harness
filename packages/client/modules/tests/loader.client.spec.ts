@@ -123,8 +123,12 @@ function bench(
 }
 
 describe('Cordis plugin face', () => {
-  it('rejects activation before the shell installs a client Loader internal', () => {
-    expect(() => { apply(new Context()) }).toThrow('the Loader has no client module system')
+  it('rejects a Loader whose internal is absent or not a client module system', () => {
+    for (const internal of [undefined, { version: 'worker' }]) {
+      const ctx = new Context()
+      ctx.provide('loader', { internal } as never)
+      expect(() => { apply(ctx) }).toThrow('the Loader has no client module system')
+    }
   })
 })
 

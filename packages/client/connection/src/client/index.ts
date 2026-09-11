@@ -121,7 +121,7 @@ export interface ConnectionLocation {
 export interface ConnectionInstallOptions {
   /** Explicit physical carrier; omit for the browser HTTP + WebSocket carrier. */
   readonly transport?: ClientTransportHooks
-  /** Resolved reconnect timing; omitted fields use controller defaults. */
+  /** Reconnect timing overrides; omitted fields use controller defaults. */
   readonly recovery?: ConnectionRecoveryConfig
   /** Page location; omit for a non-browser composition. */
   readonly location?: ConnectionLocation

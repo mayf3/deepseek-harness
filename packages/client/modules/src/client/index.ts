@@ -11,6 +11,7 @@
  * @module @deepseek-ai/dsh-client-modules/client
  */
 import type { Context } from '@deepseek-ai/cordis'
+import type { Loader } from '@deepseek-ai/cordis-plugin-loader'
 import { ClientModuleSystem } from './system.ts'
 import { parseBootManifest } from './manifest.ts'
 import type {
@@ -55,8 +56,8 @@ export const inject = ['loader']
  * @param ctx - client root context.
  */
 export function apply(ctx: Context): void {
-  const loader = ctx.get('loader') as { readonly internal?: unknown } | undefined
-  const modules = loader?.internal as ClientModuleLoader | undefined
+  const loader: Loader = ctx.loader
+  const modules = loader.internal as unknown as ClientModuleLoader | undefined
   if (modules?.version !== 'client') {
     throw new Error('client-modules: the Loader has no client module system')
   }

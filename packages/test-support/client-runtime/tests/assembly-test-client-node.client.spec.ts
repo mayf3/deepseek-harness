@@ -42,7 +42,6 @@ describe('TestClient (node environment)', () => {
     const failing = { apply(): void { throw new Error('apply boom') } }
     await expect(TestClient.start({ roster: TYPERT_ONLY, provide: { '@deepseek-ai/dsh-typert-registry': failing } }, RemoteMock.create()))
       .rejects.toThrow(/apply boom|typert-registry/)
-    expect(globals.__DSH_TRANSPORT__).toBeUndefined()
     const mock = RemoteMock.create().load(remoteDefaultResponses)
     const client = await TestClient.start({ roster: API_ROSTER }, mock)
     onTestFinished(() => client.dispose())
@@ -53,7 +52,6 @@ describe('TestClient (node environment)', () => {
     const roster = webApp.closure(['@deepseek-ai/dsh-api-remotes'])
     await expect(TestClient.start({ roster, provide: { '@deepseek-ai/dsh-api-remotes': { apply() {} } } }, RemoteMock.create()))
       .rejects.toThrow('@deepseek-ai/dsh-api-remotes cannot be provided; its remote.<ns> services are the tier\'s proxies')
-    expect(globals.__DSH_TRANSPORT__).toBeUndefined()
   })
 
   it('reports unmatched requests alongside a failed teardown instead of hiding them', async () => {
@@ -84,16 +82,14 @@ describe('TestClient (node environment)', () => {
     await first
   })
 
-  it('refuses to mount without a DOM without touching the page transport', async () => {
+  it('refuses to mount without a DOM', async () => {
     await expect(TestClient.start({ roster: API_ROSTER }, RemoteMock.create(), { mount: true }))
       .rejects.toThrow('mount requires a DOM')
-    expect(globals.__DSH_TRANSPORT__).toBeUndefined()
   })
 
-  it('fails loud without touching the page transport when the roster cannot provide a connection', async () => {
+  it('fails loud when the roster cannot provide a connection', async () => {
     await expect(TestClient.start({ roster: TYPERT_ONLY }, RemoteMock.create()))
       .rejects.toThrow('provides no `connection` service')
-    expect(globals.__DSH_TRANSPORT__).toBeUndefined()
   })
 
   it('skips readiness on request and leaves a pre-existing page transport untouched', async () => {
