@@ -55,8 +55,9 @@ export class PermissionCatalogDirectory {
 
   /**
    * Publish one invalidation tick for consumers holding displayed options.
-   * Both callers are disposal-guarded, and disposal unsubscribes them, so a
-   * disposed directory cannot reach this.
+   * Neither caller can run after disposal: `dispose()` unsubscribes the
+   * catalog-changed listener, and `syncGeneration()` returns early when the
+   * directory is disposed.
    */
   private invalidate(): void {
     this.invalidations.set({ count: this.invalidations.getSnapshot().count + 1 })

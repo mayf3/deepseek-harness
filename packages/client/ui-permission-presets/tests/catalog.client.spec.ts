@@ -243,11 +243,14 @@ describe('PermissionCatalogDirectory', () => {
     generation.setSilently(2)
     await expect(directory.load()).resolves.toEqual(SECOND)
     expect(calls).toBe(2)
+    // A generation change observed by load() withdraws displayed options too.
+    expect(directory.invalidations.getSnapshot()).toEqual({ count: 1 })
 
     generation.setSilently(3)
     directory.refresh()
     await vi.waitFor(() => { expect(directory.store.getSnapshot().value).toEqual(FIRST) })
     expect(calls).toBe(3)
+    expect(directory.invalidations.getSnapshot()).toEqual({ count: 2 })
     directory.dispose()
   })
 
@@ -270,6 +273,9 @@ describe('PermissionCatalogDirectory', () => {
     directory.dispose()
     directory.dispose()
     directory.refresh()
+    // The pending generation change makes both assertions below depend on the
+    // disposed guard rather than on the same-generation early return.
+    generation.setSilently(2)
     lateGenerationListener()
     read.resolve({ ok: true, value: FIRST })
     await read.promise
