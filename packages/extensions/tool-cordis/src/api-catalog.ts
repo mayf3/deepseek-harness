@@ -1870,7 +1870,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     description: 'In-memory session store (`ctx.sessions`).\n\nPersistence is intentionally not implemented here — the agent lifecycle attaches a session-log writer to each published session\'s write handle; a session published outside that lifecycle persists nothing.',
     methods: [
       {
-        signature: 'registerMessageProjection(projection: SessionMessageProjection): () => void',
+        signature: 'registerMessageProjection(projection: SessionMessageProjection): () => Promise<void>',
         description: 'Register one event interpreter for live creation, restore, and fork. Disposing the contribution makes sessions that used it refuse further derivation.',
         parameters: [{ name: 'projection', description: 'pure definition owned by the event\'s plugin.' }],
         returns: 'the fiber-owned disposer.',

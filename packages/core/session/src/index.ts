@@ -922,7 +922,7 @@ export class SessionStore extends Service {
    * @returns the fiber-owned disposer.
    * @throws when another definition already owns this event type.
    */
-  registerMessageProjection(projection: SessionMessageProjection): () => void {
+  registerMessageProjection(projection: SessionMessageProjection): () => Promise<void> {
     if (this.projections.some(item => item.type === projection.type)) {
       throw new Error(`session message projection "${projection.type}" is already registered`)
     }

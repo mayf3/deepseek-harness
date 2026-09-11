@@ -25,7 +25,7 @@ describe('first-party Session format catalog', () => {
       header: { ...session.header, delegationDepth: 0 }, inheritedEventCount: 0,
       events: [...session.snapshotEvents() as unknown as SessionFormatEvent[], { type: 'image/offload', seq: 1, time: 0, data: { targets: [{ seq: 0, imageIndexes: [0] }] } }],
     }
-    expect(() => validateInstalledCurrentSessionArtifact(artifact)).toThrow(/image index 0 does not exist/)
+    expect(() => { validateInstalledCurrentSessionArtifact(artifact) }).toThrow(/image index 0 does not exist/)
   })
   it('statically owns the complete adjacent v0 to v3 chain', () => {
     const header = {
