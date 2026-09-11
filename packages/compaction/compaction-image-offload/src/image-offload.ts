@@ -16,7 +16,8 @@ export function offloadOldestImages(session: Session, sourceEventSeqs: readonly 
   const targets: ImageOffloadTarget[] = []
   for (const seq of sourceEventSeqs) {
     if (count === 0) break
-    // oxlint-disable-next-line typescript/no-non-null-assertion -- current surface nodes index the durable log
+    // Existing Session history read; migration deferred. Current surface nodes index the durable log.
+    // oxlint-disable-next-line typescript/no-non-null-assertion, typescript/no-deprecated
     const event = session.eventAt(seq)!
     if (event.type !== 'user/message' && event.type !== 'tool/result') continue
     // oxlint-disable-next-line typescript/no-non-null-assertion -- both input node types produce a message
