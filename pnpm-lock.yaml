@@ -724,6 +724,12 @@ importers:
       '@deepseek-ai/dsh-subagent':
         specifier: workspace:^
         version: link:../packages/subagent/subagent
+      '@deepseek-ai/dsh-subprocess':
+        specifier: workspace:^
+        version: link:../packages/subprocess/subprocess
+      '@deepseek-ai/dsh-terminal':
+        specifier: workspace:^
+        version: link:../packages/terminal/terminal
       '@deepseek-ai/dsh-token-meter':
         specifier: workspace:^
         version: link:../packages/llm/token-meter
@@ -733,6 +739,9 @@ importers:
       '@deepseek-ai/dsh-typert-protocol':
         specifier: workspace:^
         version: link:../packages/typert/protocol
+      '@xterm/headless':
+        specifier: ^6.0.0
+        version: 6.0.0
       playwright:
         specifier: ^1.49.0
         version: 1.61.1
