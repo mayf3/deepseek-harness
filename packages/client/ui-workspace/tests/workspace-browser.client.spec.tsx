@@ -280,6 +280,51 @@ describe('WorkspaceBrowser', () => {
     })
   })
 
+  it.each(['workspace', 'flat', 'ungrouped'] as const)('retains the new Session position through a %s Workspace reconnect', (mode) => {
+    const account = mode === 'flat' ? FLAT_SESSION_ORDER_KEY : mode === 'ungrouped' ? UNGROUPED_KEY : 'alpha'
+    const old = summary('old', 10)
+    const absent = summary('absent', 5)
+    const blank = summary('blank', 1, { blank: true })
+    const groups = (ids: string[]) => workspaceState(mode === 'ungrouped' ? [] : [workspace('alpha', ids)])
+    const preferences = createWorkspaceViewStore().create()
+    preferences.actions.setGroupBy(mode === 'flat' ? 'flat' : 'workspace')
+    preferences.actions.setGroupExpanded(account, true)
+    preferences.actions.setSessionOrder(account, ['old', 'absent'], {})
+    const b = mount({
+      useSessions: hook(sessionState([old, absent])),
+      useWorkspaces: hook(groups(['old', 'absent'])),
+    })
+    const names = () => screen.getAllByRole('treeitem')
+      .filter(row => row.getAttribute('aria-expanded') === null)
+      .map(row => row.textContent)
+    rerender(b, {
+      useSessions: hook(sessionState([old, blank], { current: blank.id })),
+      useWorkspaces: hook({ ...groups(['old', 'blank']), state: 'loading' }),
+    })
+    expect(names()).toEqual([expect.stringContaining('新会话'), expect.stringContaining('old')])
+    expect(b.store.getSnapshot().sessionOrderByAccount[account]).toEqual(['blank', 'old', 'absent'])
+
+    rerender(b, {
+      useSessions: hook(sessionState([old, { ...blank, blank: false, updatedAt: 20 }], { current: blank.id })),
+    })
+    expect(names()).toEqual([expect.stringContaining('blank'), expect.stringContaining('old')])
+    expect(b.store.getSnapshot().sessionOrderByAccount[account]).toEqual(['blank', 'old', 'absent'])
+
+    rerender(b, {
+      useSessions: hook(sessionState([old, absent, { ...blank, blank: false, updatedAt: 20 }], { current: blank.id })),
+      useWorkspaces: hook(groups(['old', 'absent', 'blank'])),
+    })
+    expect(names()).toEqual([
+      expect.stringContaining('blank'), expect.stringContaining('old'), expect.stringContaining('absent'),
+    ])
+    expect(b.store.getSnapshot().sessionOrderByAccount[account]).toEqual(['blank', 'old', 'absent'])
+    rerender(b, {
+      useSessions: hook(sessionState([old, { ...blank, blank: false, updatedAt: 20 }], { current: blank.id })),
+      useWorkspaces: hook(groups(['old', 'blank'])),
+    })
+    expect(b.store.getSnapshot().sessionOrderByAccount[account]).toEqual(['blank', 'old'])
+  })
+
   it('reconciles a late blank and its first prompt while the sidebar is collapsed', async () => {
     const old = summary('old', 10)
     const blank = summary('blank', 1, { blank: true })

@@ -789,6 +789,28 @@ export function WorkspaceBrowser({
     ])
   }, [actions.retainAccountKeys, workspacePhase, workspaces])
   useEffect(() => {
+    if (list.phase !== 'ready' || workspaceReady || orderBy !== 'manual' || currentBlank === undefined) return
+    // A first prompt can end blank pinning before the Workspace baseline arrives.
+    // Preserve saved members until that baseline can establish departures.
+    const changed: Record<string, readonly string[]> = {}
+    for (const [key, ids] of Object.entries(activeSessionOrders)) {
+      if (key !== FLAT_SESSION_ORDER_KEY && workspacePhase !== 'ready') continue
+      const saved = sessionOrderByAccount[key] ?? []
+      if (ids[0] !== currentBlank || saved[0] === currentBlank) continue
+      changed[key] = [currentBlank, ...saved.filter(id => id !== currentBlank)]
+    }
+    if (Object.keys(changed).length > 0) actions.syncSessionOrders(changed)
+  }, [
+    actions.syncSessionOrders,
+    activeSessionOrders,
+    currentBlank,
+    list.phase,
+    orderBy,
+    sessionOrderByAccount,
+    workspacePhase,
+    workspaceReady,
+  ])
+  useEffect(() => {
     if (list.phase !== 'ready' || !workspaceReady || orderBy !== 'manual') return
     const changed = Object.fromEntries(Object.entries(activeSessionOrders).filter(([key, ids]) => {
       const saved = sessionOrderByAccount[key]

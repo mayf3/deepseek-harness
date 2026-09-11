@@ -2,7 +2,7 @@
 import { readFile } from 'node:fs/promises'
 import { basename, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { chromium, type Browser, type Page } from 'playwright'
+import { chromium, type Browser, type Page, type WebSocketRoute } from 'playwright'
 import { afterAll, beforeAll, describe, expect, it, onTestFailed } from 'vitest'
 import {
   acknowledgeReloadConnectionLoss, assertFixtureInventory, captureStableAria, compareOrRefreshGolden,
@@ -20,6 +20,9 @@ describe('web e2e: workspace recency', () => {
   let browser: Browser
   let page: Page
   let tripwire: ReturnType<typeof watchConsole>
+  let socket: WebSocketRoute
+  let holdWorkspace = false
+  let releaseWorkspace: (() => void) | undefined
 
   beforeAll(async () => {
     scaffold = await launchWebScaffold({})
@@ -37,6 +40,29 @@ describe('web e2e: workspace recency', () => {
     }
     browser = await chromium.launch()
     page = await newEnglishPage(browser)
+    await page.routeWebSocket('**/api/remote.mux', (route) => {
+      socket = route
+      const server = route.connectToServer()
+      let heldStream: string | undefined
+      const pending: (string | Buffer)[] = []
+      server.onMessage((message) => {
+        const frame = JSON.parse(String(message)) as {
+          type: string
+          streamId: string
+          value?: { type: string; value?: { archivedSessionIds?: string[] } }
+        }
+        if (holdWorkspace && frame.type === 'item' && frame.value?.type === 'baseline'
+          && frame.value.value?.archivedSessionIds !== undefined) {
+          heldStream = frame.streamId
+          releaseWorkspace = () => {
+            heldStream = undefined
+            for (const buffered of pending.splice(0)) route.send(buffered)
+          }
+        }
+        if (frame.streamId === heldStream) pending.push(message)
+        else route.send(message)
+      })
+    })
     await page.clock.setFixedTime(now)
     tripwire = watchConsole(page)
     await page.addInitScript(({ account, ids }) => {
@@ -98,11 +124,27 @@ describe('web e2e: workspace recency', () => {
     await expect.poll(titles).toEqual(TITLES)
     await pick('Last updated')
     await pick('WorkSpace')
+    await pick('Manual')
+    const reconnectWarningStart = tripwire.warnings.length
+    holdWorkspace = true
+    await socket.close()
+    await expect.poll(() => releaseWorkspace !== undefined).toBe(true)
     const workspaceTitle = basename(scaffold.workspaceCwd)
     await page.getByRole('treeitem').filter({ has: page.getByText(workspaceTitle, { exact: true }) }).hover()
     await page.getByRole('button', { name: `New session in ${workspaceTitle}` }).click()
+    await pick('In one list')
     await expect.poll(titles).toEqual(['New Session', ...TITLES])
-    await pick('Manual')
+    await expect.poll(() => page.evaluate(() => {
+      const { sessionId } = JSON.parse(localStorage.getItem('dsh.sessions.current')!) as { sessionId: string }
+      const { sessionOrderByAccount } = JSON.parse(localStorage.getItem('dsh.workspace.view.v5')!) as {
+        sessionOrderByAccount: Record<string, string[]>
+      }
+      return sessionOrderByAccount.__flat_session_order__?.[0] === sessionId
+    })).toBe(true)
+    holdWorkspace = false
+    releaseWorkspace!()
+    await pick('WorkSpace')
+    acknowledgeReloadConnectionLoss(tripwire, reconnectWarningStart)
     await expect.poll(titles).toEqual(['New Session', ...TITLES])
     await compareOrRefreshGolden(
       join(SNAPSHOT_DIR, 'manual-blank.expected.md'),
