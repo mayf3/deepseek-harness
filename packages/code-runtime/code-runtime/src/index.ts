@@ -121,6 +121,9 @@ export abstract class CodeRuntime extends Service {
    */
   abstract readonly isolation: string
 
+  /** Provider-owned program usage guidance for consumers to present alongside the source language. */
+  get executionInstructions(): string { return '' }
+
   /** Deployment file-policy mode, or undefined for a provider without confinement support. */
   get sandboxMode(): SandboxMode | undefined { return undefined }
 

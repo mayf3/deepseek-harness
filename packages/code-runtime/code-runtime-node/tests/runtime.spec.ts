@@ -132,6 +132,7 @@ describe('Node program process', () => {
 
   it('uses the default deadline and caps explicit requests', async () => {
     const { runtime } = await setup()
+    expect(runtime.executionInstructions).toBe('Each call runs in a fresh Node process. Node APIs are available through await import(...). Relative paths use the supplied working directory; process.env starts empty. Direct filesystem access follows this execution\'s sandbox policy.')
     expect(runtime.resolve({ program: '', bindings: [] }).timeoutMs).toBe(120_000)
     expect(runtime.resolve({ program: '', bindings: [], timeoutMs: 900_000 }).timeoutMs).toBe(600_000)
     for (const timeoutMs of [0, -1, NaN, Infinity]) expect(() => runtime.resolve({ program: '', bindings: [], timeoutMs })).toThrow()

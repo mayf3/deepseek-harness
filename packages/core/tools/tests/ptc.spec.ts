@@ -2005,6 +2005,7 @@ describe('per-program execution controls', () => {
     if (approval) await state.ctx.plugin(ApprovalService, { policy: 'ask' })
     Object.defineProperties(state.runtime, {
       sandboxMode: { get: () => 'read-only' },
+      executionInstructions: { get: () => 'Programs start with an empty environment.' },
       timeout: { get: () => ({ defaultMs: 120_000, maxMs: 600_000 }) },
     })
     const session = Session.create(SessionId('program-controls'))
@@ -2024,12 +2025,15 @@ describe('per-program execution controls', () => {
       expect(JSON.stringify(schema.parameters)).toContain('Default 120000; capped at 600000')
       expect(JSON.stringify(schema.parameters)).toContain('sandbox_permissions')
       expect(schema.description).toContain('Nested tools retain their own policies')
+      expect(schema.description).toContain('Programs start with an empty environment.')
+      expect(schema.description).toContain("The working directory is the Session's current directory.")
     } finally { await ctx.fiber.dispose() }
     const python = await setup({ runtime: { language: 'python' } })
     try {
       const schema = python.tools.schemas().find(tool => tool.name === RUN_CODE_NAME)!
       expect(JSON.stringify(schema.parameters)).not.toContain('timeoutMs')
       expect(JSON.stringify(schema.parameters)).not.toContain('sandbox_permissions')
+      expect(schema.description).not.toContain('Programs start with an empty environment.')
       const rejected = await python.tools.execute({
         callId: ToolCallId('hidden-timeout'), name: RUN_CODE_NAME, signal: testToolSignal,
         arguments: { code: 'pass', description: 'Try unsupported timeout', timeoutMs: 5 },

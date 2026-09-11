@@ -64,6 +64,9 @@ export class NodeCodeRuntime extends CodeRuntime {
   })
   readonly language = 'typescript'
   readonly isolation = 'process'
+  override get executionInstructions(): string {
+    return 'Each call runs in a fresh Node process. Node APIs are available through await import(...). Relative paths use the supplied working directory; process.env starts empty. Direct filesystem access follows this execution\'s sandbox policy.'
+  }
   private readonly config: ResolvedConfig
   private readonly live = new Set<LiveRun>()
   private disposed = false

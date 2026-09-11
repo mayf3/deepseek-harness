@@ -126,7 +126,7 @@ Under `ptc` or `both`, the registry exposes the reserved `run_code` transport pl
 
 New sub-calls use `<parent>:ptc:<n>` ids. Consumers treat these ids as opaque and correlate events by exact equality; restored historical ids retain their original bytes. The [PTC mode decision](../../../.agents/notes/implemented/feature/2026-06-15-ptc.md) owns durable naming and restoration rules.
 
-`run_code` accepts `timeoutMs` when the mounted runtime supports an override; its schema reports the configured default and maximum. The Node default is 120,000 ms with a 600,000 ms cap, including nested tool and approval waits. A wider `sandbox_permissions` mode requires a non-empty `justification` and approval before the program starts. The grant applies to that complete execution; standing Session policy and nested tools retain their own authority. Programs are never replayed automatically: inspect earlier effects before explicitly retrying a denied program.
+`run_code` accepts `timeoutMs` when the mounted runtime supports an override; its schema reports the configured default and maximum, the runtime's usage instructions and the Session working directory. The Node default is 120,000 ms with a 600,000 ms cap, including nested tool and approval waits. A wider `sandbox_permissions` mode requires a non-empty `justification` and approval before the program starts. The grant applies to that complete execution; standing Session policy and nested tools retain their own authority. Programs are never replayed automatically: inspect earlier effects before explicitly retrying a denied program.
 
 <a id="extension-points"></a>
 ### Extension points

@@ -192,7 +192,7 @@ interface CodeRunFailure {
 
 ## 服务
 
-`CodeRuntime` 定义于 [`src/index.ts`](../../packages/code-runtime/code-runtime/src/index.ts)。`resolve(request)` 返回完整执行输入，`run(spec)` 执行它们。`language` 选择支持的程序呈现；`isolation` 描述执行基底，不作安全声明。`sandboxMode` 声明文件策略支持，不提供约束的提供方返回 `undefined`。每个实现将各次运行的程序状态分离，并在资源释放期间终止且等待活跃执行。
+`CodeRuntime` 定义于 [`src/index.ts`](../../packages/code-runtime/code-runtime/src/index.ts)。`resolve(request)` 返回完整执行输入，`run(spec)` 执行它们。`executionInstructions` 提供由运行时拥有的使用说明，供消费方呈现。`language` 选择支持的程序呈现；`isolation` 描述执行基底，不作安全声明。`sandboxMode` 声明文件策略支持，不提供约束的提供方返回 `undefined`。每个实现将各次运行的程序状态分离，并在资源释放期间终止且等待活跃执行。
 
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 

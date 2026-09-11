@@ -192,7 +192,7 @@ interface CodeRunFailure {
 
 ## The service
 
-`CodeRuntime` is defined in [`src/index.ts`](../../packages/code-runtime/code-runtime/src/index.ts). `resolve(request)` returns complete execution inputs, and `run(spec)` executes them. `language` selects supported program presentation; `isolation` describes the substrate without claiming security. `sandboxMode` advertises file-policy support, with `undefined` for a provider that does not supply confinement. Each implementation keeps program state separate between runs and terminates and awaits active executions during disposal.
+`CodeRuntime` is defined in [`src/index.ts`](../../packages/code-runtime/code-runtime/src/index.ts). `resolve(request)` returns complete execution inputs, and `run(spec)` executes them. `executionInstructions` supplies provider-owned usage guidance for consumer presentation. `language` selects supported program presentation; `isolation` describes the substrate without claiming security. `sandboxMode` advertises file-policy support, with `undefined` for a provider that does not supply confinement. Each implementation keeps program state separate between runs and terminates and awaits active executions during disposal.
 
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 

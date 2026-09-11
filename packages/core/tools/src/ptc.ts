@@ -737,7 +737,13 @@ export function createRunCodeTool(registry: ToolRuntime, options: RunCodeBridgeO
   // is the least invasive point that still emits the loaded runtime's language.
   Object.defineProperty(definition, 'description', {
     enumerable: true,
-    get: () => resolveFlavor(peekRuntime).description + escalationGuidance(peekRuntime()),
+    get: () => {
+      const runtime = peekRuntime()
+      const instructions = runtime?.executionInstructions
+      return resolveFlavor(peekRuntime).description
+        + (instructions ? ` ${instructions} The working directory is the Session's current directory.` : '')
+        + escalationGuidance(runtime)
+    },
   })
   Object.defineProperty(definition, 'parameters', {
     enumerable: true,
