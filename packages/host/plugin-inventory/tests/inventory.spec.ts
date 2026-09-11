@@ -64,14 +64,14 @@ describe('PluginInventoryGateway', () => {
         moduleName: 'cordis:active',
         enabled: true,
         fiberPhase: 'active',
-        trust: 'builtin',
+
       },
       {
         entryId: pendingId,
         moduleName: 'cordis:pending',
         enabled: true,
         fiberPhase: 'pending',
-        trust: 'builtin',
+
         failure: { stage: 'inject-pending', message: 'pending (waiting for service: neverReady)' },
       },
       {
@@ -79,7 +79,7 @@ describe('PluginInventoryGateway', () => {
         moduleName: 'cordis:not-installed',
         enabled: false,
         fiberPhase: null,
-        trust: 'builtin',
+
         disabledBy: 'composition',
       },
     ]))
@@ -90,7 +90,7 @@ describe('PluginInventoryGateway', () => {
       moduleName: 'cordis:active',
       enabled: false,
       fiberPhase: null,
-      trust: 'builtin',
+
       disabledBy: 'composition',
     })
 
@@ -105,10 +105,10 @@ describe('PluginInventoryGateway', () => {
     const bare = await ctx.loader.create({ name: 'cordis:active' })
     const off = await ctx.loader.create({ name: 'cordis:active', disabled: true })
     const origins = new Map<string, RowOrigin>([
-      [versioned, { trust: 'external', stage: 'runtime', packageName: 'ext', version: '1.2.3' }],
-      [bare, { trust: 'external', stage: 'runtime', packageName: 'ext' }],
-      [off, { trust: 'external', stage: 'runtime', packageName: 'ext' }],
-      ['gone', { trust: 'external', stage: 'runtime', packageName: 'ext' }],
+      [versioned, { packageName: 'ext', version: '1.2.3' }],
+      [bare, { packageName: 'ext' }],
+      [off, { packageName: 'ext' }],
+      ['gone', { packageName: 'ext' }],
     ])
     ctx.provide('profileRuntime', {
       originOfEntry: (entry: { id: string }) => origins.get(entry.id),
@@ -131,24 +131,24 @@ describe('PluginInventoryGateway', () => {
     // digits is listed first by the entry store regardless of creation order.
     const byId = (left: { entryId: string }, right: { entryId: string }): number => left.entryId.localeCompare(right.entryId)
     expect([...entries].sort(byId)).toEqual([
-      { entryId: versioned, moduleName: 'cordis:active', enabled: true, fiberPhase: 'active', trust: 'external', package: { name: 'ext', version: '1.2.3' } },
-      { entryId: bare, moduleName: 'cordis:active', enabled: true, fiberPhase: 'active', trust: 'external', package: { name: 'ext' }, failure: { stage: 'update', message: 'invalid config' } },
-      { entryId: off, moduleName: 'cordis:active', enabled: false, fiberPhase: null, trust: 'external', package: { name: 'ext' }, disabledBy: 'user' },
+      { entryId: versioned, moduleName: 'cordis:active', enabled: true, fiberPhase: 'active', package: { name: 'ext', version: '1.2.3' } },
+      { entryId: bare, moduleName: 'cordis:active', enabled: true, fiberPhase: 'active', package: { name: 'ext' }, failure: { stage: 'update', message: 'invalid config' } },
+      { entryId: off, moduleName: 'cordis:active', enabled: false, fiberPhase: null, package: { name: 'ext' }, disabledBy: 'user' },
       // A failed row the tree no longer holds is attributed through the runtime.
-      { entryId: 'gone', moduleName: './dsh-missing-fixture.mjs', enabled: true, fiberPhase: 'failed', trust: 'external', package: { name: 'ext' }, failure: { stage: 'import', message: 'failed to import: boom' } },
-      { entryId: 'orphan', moduleName: './dsh-missing-fixture.mjs', enabled: true, fiberPhase: 'failed', trust: 'builtin', failure: { stage: 'import', message: 'failed to import: lost' } },
+      { entryId: 'gone', moduleName: './dsh-missing-fixture.mjs', enabled: true, fiberPhase: 'failed', package: { name: 'ext' }, failure: { stage: 'import', message: 'failed to import: boom' } },
+      { entryId: 'orphan', moduleName: './dsh-missing-fixture.mjs', enabled: true, fiberPhase: 'failed', failure: { stage: 'import', message: 'failed to import: lost' } },
       // A row the composition left out is listed from the runtime's conflicts, under the layer that lost.
       {
-        entryId: 'conflict:late:tool', moduleName: 'late', enabled: true, fiberPhase: 'failed', trust: 'external',
+        entryId: 'conflict:late:tool', moduleName: 'late', enabled: true, fiberPhase: 'failed',
         package: { name: 'late', version: '9.9.9' }, failure: { stage: 'conflict', message: 'row "tool" is already declared by ext' },
       },
       {
-        entryId: 'conflict:/p/cordis.patch.yml:mine', moduleName: 'twice', enabled: true, fiberPhase: 'failed', trust: 'user',
+        entryId: 'conflict:/p/cordis.patch.yml:mine', moduleName: 'twice', enabled: true, fiberPhase: 'failed',
         failure: { stage: 'conflict', message: 'row "mine" is already declared by ext' },
       },
       // A bundle the layer list no longer names keeps its package, without a version.
       {
-        entryId: 'conflict:gone:x', moduleName: 'gone/x', enabled: true, fiberPhase: 'failed', trust: 'external',
+        entryId: 'conflict:gone:x', moduleName: 'gone/x', enabled: true, fiberPhase: 'failed',
         package: { name: 'gone' }, failure: { stage: 'conflict', message: 'row "x" is declared twice by gone' },
       },
     ].sort(byId))

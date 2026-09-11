@@ -12,12 +12,6 @@ export type PluginFiberPhase =
   | 'unloading'
   | null
 
-/**
- * Who supplied a Loader row: the installation itself, an installed external
- * bundle, or the user's own patch file (a row of theirs the composition left out).
- */
-export type PluginTrust = 'builtin' | 'external' | 'user'
-
 /** Why a row is disabled: the composition's own gate or tombstone, or the user's patch layer. */
 export type PluginDisabledBy = 'composition' | 'user'
 
@@ -45,8 +39,6 @@ export interface PluginInventoryEntry {
   /** Effective Loader enablement, including disabled ancestor groups. */
   readonly enabled: boolean
   readonly fiberPhase: PluginFiberPhase
-  /** Who supplied the row; `builtin` when no profile runtime is composed. */
-  readonly trust: PluginTrust
   /** The bundle package that inserted the row, when one did. */
   readonly package?: PluginPackageRef
   /** Present exactly when `enabled` is false. */

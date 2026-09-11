@@ -111,7 +111,7 @@ dsh --profile demo
 
 `dsh plugin --profile demo remove dsh-hello-plugin` removes both the dependency and the layer.
 
-An installed bundle mounts as an external layer: the dump shows its rows inside one group named `bundle/dsh-hello-plugin`, and each row keeps the id your patch declares, so the row above is `hello` in the mounted tree and a user patch that targets it names that id. Row ids are shared across every layer: if another layer already declares one of yours, or your patch declares one twice, the whole bundle is left out and the reason is printed at boot and shown in the plugin list. A row of yours that fails to start is isolated and reported in the plugin list instead of stopping `dsh`; if your bundle provides a service the built-in rows inject, declare `dsh.bundle.stage: boot` so it mounts like a built-in one and fails loud.
+A bundle mounts its rows under the parents declared in its patch and keeps their ids: the row above remains `hello`. Layers claim ids in profile order; a bundle that repeats an id or declares an earlier layer’s id is omitted whole and reported at startup and in the plugin list. A failed row outside the [required startup ids](../../../architecture.md) produces a warning while successful siblings remain active. A required consumer that cannot activate, including because its provider failed, still rejects startup.
 
 ## The loading order
 

@@ -2,6 +2,7 @@
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context, type Plugin } from '@deepseek-ai/cordis'
 import Loader, { type EntryOptions } from '@deepseek-ai/cordis-plugin-loader'
@@ -26,8 +27,8 @@ const configured: Plugin.Object<{ value: number }> = {
 }
 const nested: Plugin.Function = (ctx) => { ctx.inject([], () => { throw new Error('nested failure') }) }
 const waiting: Plugin.Object = { inject: ['testService'], apply() {} }
-function layer(trust: ProfileLayer['trust'], stage: ProfileLayer['stage'], patches: PatchOptions[]): ProfileLayer {
-  return { packageName: 'pkg', version: undefined, packageDir: '/pkg', patchPath: '/pkg/patch.yml', trust, stage, patches }
+function layer(patches: PatchOptions[]): ProfileLayer {
+  return { packageName: 'pkg', version: undefined, packageDir: '/pkg', patchPath: '/pkg/patch.yml', patches }
 }
 async function profileBoot(layers: ProfileLayer[], user: PatchOptions[] = []): Promise<Context> {
   const dir = mkdtempSync(join(tmpdir(), 'dsh-entry-policy-'))
@@ -35,7 +36,7 @@ async function profileBoot(layers: ProfileLayer[], user: PatchOptions[] = []): P
   const path = join(dir, 'cordis.yml')
   writeFileSync(path, '[]\n')
   const profile: Profile = { name: 'test', dir, layers: [...layers], patches: [], patchPath: join(dir, 'cordis.patch.yml'), patchReload: 'live' }
-  const compose = (current: Profile) => composeProfileStack('test', current.layers, [{ label: profile.patchPath, patches: user }])
+  const compose = (current: Profile) => composeProfileStack(current.layers, [{ label: profile.patchPath, patches: user }])
   const stack = compose(profile)
   const ctx = await boot('test', path, stack.patches, async (ctx) => {
     Object.assign(ctx.loader.builtins, { good, bad, asyncBad, configured, waiting, nested })
@@ -55,32 +56,30 @@ const failures: EntryOptions[] = [
   { id: 'gate', name: 'cordis:good', disabled: { __jsExpr: 'missing.disabled' } as unknown as boolean },
 ]
 describe('entry startup policy', () => {
-  it.each(failures)('keeps a failing external runtime row and its successful sibling: $id', async (row) => {
-    const ctx = await profileBoot([layer('external', 'runtime', [{ insert: [row, { id: 'ok', name: 'cordis:good' }] }])])
+  it.each(failures)('keeps a failing bundle row and its successful sibling: $id', async (row) => {
+    const ctx = await profileBoot([layer([{ insert: [row, { id: 'ok', name: 'cordis:good' }] }])])
     expect(ctx.loader.resolve('include:ok').fiber?.state).toBe(2)
     const entry = ctx.loader.resolve(`include:${row.id}`)
     expect((await entryIssue(entry))?.message).toBeTruthy()
-    expect(ctx.profileRuntime.originOfEntry(entry)).toMatchObject({ trust: 'external', stage: 'runtime' })
+    expect(ctx.profileRuntime.originOfEntry(entry)).toMatchObject({ packageName: 'pkg' })
     expect([...ctx.loader.entries()].some(e => e.options.name === 'cordis:contained-group')).toBe(false)
   })
-  it.each([
-    ['builtin', 'boot'], ['builtin', 'runtime'], ['external', 'boot'],
-  ] as const)('rejects %s/%s failures regardless of module id', async (trust, stage) => {
-    for (const row of failures) {
-      await expect(profileBoot([layer(trust, stage, [{ insert: [row] }])])).rejects.toThrow('required startup failure')
-    }
+  it.each(failures)('rejects a required id even when a bundle introduces it: $id', async (row) => {
+    await expect(profileBoot([layer([{ insert: [{ ...row, id: 'webserver' }] }])])).rejects.toThrow('required startup failure')
   })
-  it('keeps user rows strict and does not transfer ownership with a config override', async () => {
-    await expect(profileBoot([], [{ insert: [{ id: 'user', name: 'cordis:bad' }] }])).rejects.toThrow('required startup failure')
-    const builtin = layer('builtin', 'runtime', [{ insert: [{ id: 'webserver', name: 'cordis:configured', config: { value: 1 } }] }])
-    const ext = { ...layer('external', 'runtime', [{ id: 'webserver', config: { value: -1 } }]), packageName: 'ext' }
-    await expect(profileBoot([builtin, ext])).rejects.toThrow('negative value')
+  it('keeps user rows and overrides of unlisted providers optional', async () => {
+    const builtin = layer([{ insert: [{ id: 'provider', name: 'cordis:configured', config: { value: 1 } }] }])
+    const ext = { ...layer([{ id: 'provider', config: { value: -1 } }]), packageName: 'ext' }
+    const ctx = await profileBoot([builtin, ext], [{ insert: [{ id: 'user', name: 'cordis:bad' }, { id: 'ok', name: 'cordis:good' }] }])
+    expect(ctx.loader.resolve('include:ok').fiber?.state).toBe(2)
+    expect((await inspectEntryIssues(ctx)).map(issue => issue.entry.options.id)).toEqual(['provider', 'user'])
+    expect(ctx.profileRuntime.originOf('provider')?.packageName).toBe('pkg')
   })
-  it('rejects a builtin consumer left pending by an optional provider failure', async () => {
+  it('rejects a required consumer left pending by an optional provider failure', async () => {
     await expect(profileBoot([
-      layer('builtin', 'boot', [{ insert: [{ id: 'consumer', name: 'cordis:waiting' }] }]),
-      { ...layer('external', 'runtime', [{ insert: [{ id: 'provider', name: 'cordis:bad' }] }]), packageName: 'ext' },
-    ])).rejects.toThrow('consumer')
+      layer([{ insert: [{ id: 'webserver', name: 'cordis:waiting' }] }]),
+      { ...layer([{ insert: [{ id: 'provider', name: 'cordis:bad' }] }]), packageName: 'ext' },
+    ])).rejects.toThrow('webserver')
   })
   it('preserves anonymous provenance and nested Include provenance without matching unrelated root ids', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'dsh-nested-entry-'))
@@ -88,26 +87,26 @@ describe('entry startup policy', () => {
     const path = join(dir, 'nested.yml')
     writeFileSync(path, '- id: shared\n  name: cordis:bad\n')
     const ctx = await profileBoot([
-      layer('builtin', 'boot', [{ insert: [{ id: 'shared', name: 'cordis:good' }] }]),
-      { ...layer('external', 'runtime', [{ insert: [
+      layer([{ insert: [{ id: 'shared', name: 'cordis:good' }] }]),
+      { ...layer([{ insert: [
         { name: 'cordis:good' } as EntryOptions,
-        { id: 'nested', name: 'cordis:include', config: { path } },
+        { id: 'nested', name: 'cordis:include', config: { path: pathToFileURL(path).href } },
       ] }]), packageName: 'ext' },
     ])
-    expect(ctx.profileRuntime.originOfEntry(ctx.loader.resolve('include:shared'))?.trust).toBe('builtin')
-    expect(ctx.profileRuntime.originOfEntry(ctx.loader.resolve('include:nested:shared'))?.trust).toBe('external')
+    expect(ctx.profileRuntime.originOfEntry(ctx.loader.resolve('include:shared'))?.packageName).toBe('pkg')
+    expect(ctx.profileRuntime.originOfEntry(ctx.loader.resolve('include:nested:shared'))?.packageName).toBe('ext')
     const anonymous = [...ctx.loader.entries()].find(e => e.options.id.startsWith('anonymous/'))!
     expect(ctx.profileRuntime.originOfEntry(anonymous)?.packageName).toBe('ext')
   })
 })
 describe('entry diagnostics', () => {
   it('disables every part of a bundle layer and restores overrides while preserving user row choices', async () => {
-    const base = layer('builtin', 'boot', [{ insert: [
+    const base = layer([{ insert: [
       { id: 'webserver', name: 'cordis:configured', config: { value: 1 } },
       { id: 'tools', name: 'cordis:group', group: true, config: [] },
       { id: 'ui', name: 'cordis:group', group: true, config: [] },
     ] }])
-    const ext = { ...layer('external', 'runtime', [
+    const ext = { ...layer([
       { insert: [{ id: 'own', name: 'cordis:group', group: true, config: [{ id: 'child', name: 'cordis:good' }] }] },
       { id: 'tools', insert: [{ id: 'tool', name: 'cordis:good' }] },
       { id: 'ui', insert: [{ id: 'panel', name: 'cordis:good' }] },
@@ -170,7 +169,7 @@ describe('entry diagnostics', () => {
       { id: 'config', name: 'cordis:configured', config: { value: 1 } },
       { id: 'ok', name: 'cordis:good' },
     ] }]
-    const ctx = await profileBoot([layer('external', 'runtime', patches)])
+    const ctx = await profileBoot([layer(patches)])
     let release!: () => void
     let started!: () => void
     const removing = new Promise<void>((resolve) => { started = resolve })
@@ -193,19 +192,20 @@ describe('entry diagnostics', () => {
 })
 
 describe('nested continuation diagnostics', () => {
-  it('reports required nested failures without treating them as entry activation failures', async () => {
+  it('reports nested failures without treating them as entry activation failures', async () => {
     const ctx = await profileBoot([
-      layer('builtin', 'boot', [{ insert: [{ id: 'required', name: 'cordis:nested' }] }]),
-      { ...layer('external', 'runtime', [{ insert: [
+      layer([{ insert: [{ id: 'required', name: 'cordis:nested' }] }]),
+      { ...layer([{ insert: [
         { id: 'optional', name: 'cordis:nested' }, { id: 'failed-entry', name: 'cordis:bad' },
       ] }]), packageName: 'ext' },
     ])
     await expect(ctx.plugin(() => { throw new Error('unowned failure') })).rejects.toThrow('unowned failure')
     await Promise.allSettled([...ctx.registry.values()].flatMap(runtime => [...runtime.fibers].map(fiber => fiber.await())))
     const lines: string[] = []
-    expect(warnNestedFiberFailures(ctx, 'test', (line) => { lines.push(line) })).toBe(1)
+    const count = warnNestedFiberFailures(ctx, 'test', (line) => { lines.push(line) })
+    expect(count, lines.join('\n')).toBe(2)
     expect(lines[0]).toContain('cordis:nested')
     expect(ctx.loader.resolve('include:required').fiber?.state).toBe(2)
-    expect(warnNestedFiberFailures(ctx, 'test')).toBe(1)
+    expect(warnNestedFiberFailures(ctx, 'test')).toBe(2)
   })
 })

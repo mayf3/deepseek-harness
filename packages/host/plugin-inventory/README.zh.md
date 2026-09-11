@@ -31,7 +31,7 @@ kind: "package-reference"
 
 每一行是一个非组 Loader 条目：其条目 id、精确模块标识、有效启用状态（含被禁用的祖先组）与当前根 Fiber 阶段。`pending` 表示条目等待加载，`loading` 表示正在读取，`active` 表示正在运行，`failed` 表示其 fiber 被拒绝，`unloading` 表示正在拆除；`null` 表示完全不存在存活的根 Fiber。结构性的 group 行会被跳过。
 
-`trust` 标识提供该行的组合包，`package` 给出包名与版本，`disabledBy` 区分用户覆盖与组合条件。显式行 id 保持不变。失败条目留在 Loader 树中；`failure` 报告导入、激活、更新、disabled 表达式或缺失服务问题。`active` fiber 也可能更新失败，并继续运行先前的有效配置。加载前因冲突被排除的行从 `ProfileRuntime.conflicts` 投影。没有 profile 来源时，行不携带 package。
+`package` 给出提供该行的组合包名与版本，`disabledBy` 区分用户覆盖与组合条件。显式行 id 保持不变。失败条目留在 Loader 树中；`failure` 报告导入、激活、更新、disabled 表达式或缺失服务问题。`active` fiber 也可能更新失败，并继续运行先前的有效配置。加载前因冲突被排除的行从 `ProfileRuntime.conflicts` 投影。没有 profile 来源时，行不携带 package。
 
 ### 每个预设的组合
 

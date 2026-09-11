@@ -45,7 +45,6 @@ export {
   resolveBundleDir,
   resolveProfileDir,
   writeProfileManifest,
-  type BundleTrust,
   type Profile,
   type ProfileLayer,
   type ProfileManifest,
@@ -705,11 +704,23 @@ async function inactiveEntries(ctx: Context): Promise<InactiveEntry[]> {
   }))
 }
 
-/** The policy follows row provenance, including the owner of nested Includes. */
-function isOptionalEntry(ctx: Context, entry: Entry): boolean {
-  const origin = ctx.get('profileRuntime')?.originOfEntry(entry)
-  return origin?.trust === 'external' && origin.stage === 'runtime'
-}
+/**
+ * Entry ids whose presence defines a usable DSH application.
+ *
+ * The list is global rather than profile metadata. Missing or disabled ids do
+ * not affect startup; an enabled listed entry must activate. The list covers
+ * shared Agent execution, application endpoints, and Web bootstrap/transport.
+ */
+const requiredStartupEntryIds = new Set<string>([
+  'agent-loop',
+  'webserver',
+  'modules',
+  'connection',
+  'headless-runner',
+  'acp',
+  'sdk-jsonrpc-server',
+])
+
 
 /** Render an inactive-entry diagnostic with a count and severity label. */
 function activationDiagnostic(
@@ -725,9 +736,9 @@ function activationDiagnostic(
 /**
  * Apply DSH startup policy to a settled Loader tree.
  *
- * Inactive built-in, boot-staged, and unowned entries reject startup. External runtime
- * inactive entries produce one warning and leave successful siblings running.
- * Disabled entries are ignored. Provenance is read from the prepared profile runtime.
+ * An enabled entry in the global required-id list must activate; absent and disabled
+ * ids do not affect startup. Other inactive entries produce one warning and leave
+ * successful siblings running, with or without a profile runtime.
  * A throwing disabled expression is an entry failure, not a disabled entry.
  * The bootstrap Include must activate so unreadable or invalid root config is fatal.
  * @param ctx - the settled context whose Loader entries to audit.
@@ -746,7 +757,7 @@ export async function auditStartupEntries(
   const optional: InactiveEntry[] = []
   for (const failure of failures) {
     const target = failure.entry === bootstrapIncludes.get(ctx)
-      || !isOptionalEntry(ctx, failure.entry) ? required : optional
+      || requiredStartupEntryIds.has(failure.entry.options.id) ? required : optional
     target.push(failure)
   }
   if (optional.length > 0) warn(activationDiagnostic(binName, 'warning', optional))
@@ -758,9 +769,8 @@ export async function auditStartupEntries(
 /**
  * Nested plugin fibers (a `ctx.inject()` continuation inside a plugin) fail
  * without touching their entry's root fiber, so the activation audit above
- * cannot see them. Report every failed nested fiber under a built-in entry
- * through `warn`, one line per fiber. Advisory in this release; it becomes
- * part of the fatal audit once shipped compositions are known clean.
+ * cannot see them. Report every failed nested fiber through `warn`, one line
+ * per fiber, without rejecting startup.
  * @param ctx - the settled context whose runtimes to inspect.
  * @param binName - the diagnostic prefix on each warning.
  * @param warn - sink for the warning lines; defaults to the context logger.
@@ -777,8 +787,7 @@ export function warnNestedFiberFailures(
       // The Loader stamps every fiber created inside an entry's context with
       // that entry; the entry's own root fiber is the one the entry holds.
       const owner = fiber.entry
-      if (fiber.state !== FIBER_FAILED || owner === undefined || owner.fiber === fiber) continue
-      if (isOptionalEntry(ctx, owner)) continue
+      if (fiber.state !== FIBER_FAILED || owner === undefined || owner.fiber?.uid === fiber.uid) continue
       count += 1
       warn(`${binName}: nested fiber under ${owner.options.name} failed (${runtime.name}); the entry itself stays active`)
     }
@@ -796,7 +805,7 @@ export function warnNestedFiberFailures(
  * embeds Include while leaving Loader external, so the built include tree and
  * host share one Loader peer. Loader settlement drains entry work without
  * rejecting the whole tree. The final {@link auditStartupEntries} call rejects
- * failures in required profile rows and warns about other failed, missing,
+ * failures in the global required list and warns about other failed, missing,
  * and pending entries while successful siblings remain active. Later unhandled
  * rejections remain covered by {@link installFailLoud}. Built bins need the Loader's native
  * helper for bare plugin specifiers; relative specifiers do not.

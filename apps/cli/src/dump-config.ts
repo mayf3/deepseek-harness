@@ -55,7 +55,7 @@ export function runDumpConfig(
   }
   // The same composition boot mounts: bundle layers in their declared order,
   // a bundle or row left out by an id conflict reported, not shown.
-  const stack = composeProfileStack(NAME, loaded.layers, userLayers)
+  const stack = composeProfileStack(loaded.layers, userLayers)
   for (const conflict of stack.conflicts) process.stderr.write(`${NAME}: ${formatRowConflict(conflict)}\n`)
   const layers: ConfigDumpLayer[] = stack.layers.map(layer => ({ label: layer.label, patches: layer.patches }))
   // The dump anchors on the same empty root file the boot includes.

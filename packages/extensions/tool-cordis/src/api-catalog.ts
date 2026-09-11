@@ -3855,14 +3855,6 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type BrandedNumber<B extends string> = number & {\n    readonly [BRAND]: B;\n};',
   },
   {
-    name: 'BundleStage',
-    declaration: 'export type BundleStage = \'boot\' | \'runtime\';',
-  },
-  {
-    name: 'BundleTrust',
-    declaration: 'export type BundleTrust = \'builtin\' | \'external\';',
-  },
-  {
     name: 'ClientArtifactBaseline',
     declaration: 'export interface ClientArtifactBaseline {\n    readonly path: string;\n    readonly mtimeMs: number;\n    readonly size: number;\n}',
   },
@@ -5012,7 +5004,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'RowOrigin',
-    declaration: 'export interface RowOrigin {\n    readonly trust: BundleTrust;\n    readonly stage: BundleStage;\n    readonly packageName: string;\n    readonly version?: string;\n}',
+    declaration: 'export interface RowOrigin {\n    readonly packageName: string;\n    readonly version?: string;\n}',
   },
   {
     name: 'RunnerFailureRule',

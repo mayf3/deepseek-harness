@@ -244,7 +244,7 @@ async function composeProfile(
   const overlays: StackUserLayer[] = patchFiles.map(file => ({
     label: `--patch ${resolve(file)}`, patches: loadOverlayPatches(NAME, resolve(file)),
   }))
-  const composed = composeProfileStack(NAME, profile.layers, [...userLayersOf(profile), ...overlays])
+  const composed = composeProfileStack(profile.layers, [...userLayersOf(profile), ...overlays])
   const rows = new Set<string>()
   for (const row of composeEntries([composed.patches])) {
     if (typeof row.id === 'string') rows.add(row.id)
@@ -253,7 +253,7 @@ async function composeProfile(
   if (telemetryPatch !== undefined) overlays.push({ label: 'DSH_TELEMETRY_DISABLED', patches: [telemetryPatch] })
   const stack = telemetryPatch === undefined
     ? composed
-    : composeProfileStack(NAME, profile.layers, [...userLayersOf(profile), ...overlays])
+    : composeProfileStack(profile.layers, [...userLayersOf(profile), ...overlays])
   return { profile, stack, overlays }
 }
 
@@ -340,7 +340,7 @@ export async function runProfile(options: RunProfileOptions): Promise<{ ctx: Con
   // would bake a user override into the bundle's in-memory insert row, so
   // removing the override could never revert the row to the bundle default.
   const composeFor = (profile: Profile): ComposedStack => {
-    const stack = composeProfileStack(NAME, profile.layers, [...userLayersOf(profile), ...composed.overlays])
+    const stack = composeProfileStack(profile.layers, [...userLayersOf(profile), ...composed.overlays])
     return { ...stack, patches: structuredClone(stack.patches) }
   }
   // Every recomposition after boot — a watched user file, a bundle enabled

@@ -323,7 +323,6 @@ describe('web-app runtime glue', () => {
   ])('announces readiness=$announces after the $id sibling fails', async ({ id, announces }) => {
     stageDist()
     const ctx = new Context()
-    ctx.provide('profileRuntime', { originOfEntry: () => announces ? { trust: 'external', stage: 'runtime' } : undefined } as unknown as AppBoot.ProfileRuntime)
     onTestFinished(() => ctx.fiber.dispose())
     ctx.baseUrl = 'file:///'
     ctx.provide('webServer', fakeHttpServer().server)

@@ -10,7 +10,7 @@ Status: implemented
 
 ## Decision
 
-**启动严格程度由行来源决定。** 只有外部 runtime 组合包引入的行是可选行。内置、boot 阶段、无归属行以及启动 Include 均为必需。profile 的 stage 覆盖作者声明，默认值为 runtime；firstParty 声明与模板来源决定 trust。stage 改变失败策略，不改变执行时间。配置覆盖保留目标行的所有者。嵌套 Include 继承所属条目的来源，不能用其局部 id 查询无关的根级行。
+**启动严格程度仍由消费者负责。** App-boot 使用[全局必需条目 id](2026-09-09-consumer-owned-startup-strictness.zh.md) 和启动 Include 的身份。包来源不改变审查规则：其他行失败只产生警告。组合包元数据没有 trust 或 stage 策略。行归属只用于诊断和管理操作；嵌套 Include 继承所属条目的包，不能匹配无关的根级 id。
 
 **组合包启停选择整份 patch 层。** 原生行和作者声明的组保留显式 id 与父组。匿名组合包行在独立执行副本中获得确定性的 id。禁用组合包会从所有目标组中移除其插入与覆盖；持久化的用户行覆盖在重新启用后保留。加载前检查所有权：严格层优先占有 id，可选层冲突时整包排除，用户插入冲突时逐行排除。为显式 id 加前缀会破坏作者表达式与用户 patch；依赖作者自行避免冲突则允许 Loader 静默改变父组。
 
@@ -28,7 +28,7 @@ Status: implemented
 
 **在 Host 内 import 并 try/catch。** 拒绝，因为发现阶段可能产生不可逆副作用、退出 Host 或阻塞事件循环。捕获异常无法恢复隔离。通过解析源码推断插件导出会增加一个结果不完整的 JavaScript 解释器。
 
-**使用全局必需插件 id 列表。** 拒绝，因为 id 无法描述来源、外部 boot 提供方、自定义 profile 或嵌套 Include 树。已有的 profile trust 与 stage 声明负责这些区别。
+**通过包来源选择启动严格程度。** 拒绝，因为安装来源不能说明应用入口是否可用。消费者拥有的必需 id 列表已表达该要求，也包括提供方失败导致必需消费者等待的情况。
 
 **通过回滚全部实时更新或忽略所有启动后 rejection 恢复。** 插件副作用发生后，两者都不能保证恢复安全状态。逐行结果与保留的用户选择可以被观测；进程级脱离管理失败无法可靠归属到某行，因此仍然致命。
 
@@ -38,4 +38,4 @@ Status: implemented
 
 ## Verification
 
-`packages/boot/app-boot/tests/entry-issues.spec.ts` 覆盖 trust 与 stage、导入/配置/apply/disabled/pending 失败、嵌套与匿名来源、失败更新后的活跃旧配置、恢复及已移除 fiber 的清理等待。组合测试覆盖重复归属与父组保持。静态元信息测试使用导入时写文件的 fixture，确认未执行、保留未知包并拒绝无效声明。inventory 测试直接验证 Loader 失败与组合冲突，不依赖历史失败注册表。进程处理与用户 patch 测试保留脱离管理失败的致命策略，以及尽力执行的实时重载诊断。
+`packages/boot/app-boot/tests/entry-issues.spec.ts` 覆盖必需 id 策略、导入/配置/apply/disabled/pending 失败、嵌套与匿名来源、失败更新后的活跃旧配置、恢复及已移除 fiber 的清理等待。组合测试覆盖重复归属与父组保持。静态元信息测试使用导入时写文件的 fixture，确认未执行、保留未知包并拒绝无效声明。inventory 测试直接验证 Loader 失败与组合冲突，不依赖历史失败注册表。进程处理与用户 patch 测试保留脱离管理失败的致命策略，以及尽力执行的实时重载诊断。

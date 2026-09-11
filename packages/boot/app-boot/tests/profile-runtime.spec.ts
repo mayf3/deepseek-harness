@@ -14,8 +14,8 @@ afterEach(async () => {
   await Promise.all(contexts.splice(0).map(ctx => ctx.fiber.dispose()))
 })
 
-function layer(packageName: string, trust: ProfileLayer['trust'], patches: PatchOptions[], stage: ProfileLayer['stage'] = 'runtime'): ProfileLayer {
-  return { packageName, version: '2.0.0', packageDir: '/nowhere', patchPath: '/nowhere/p.yml', trust, stage, patches }
+function layer(packageName: string, patches: PatchOptions[]): ProfileLayer {
+  return { packageName, version: '2.0.0', packageDir: '/nowhere', patchPath: '/nowhere/p.yml', patches }
 }
 
 function profile(layers: ProfileLayer[]): Profile {
@@ -54,7 +54,7 @@ async function harness(
 
 describe('ProfileRuntime', () => {
   it('exposes the booted profile\'s facts', async () => {
-    const { runtime } = await harness([layer('@deepseek-ai/dsh-base', 'builtin', [])])
+    const { runtime } = await harness([layer('@deepseek-ai/dsh-base', [])])
     expect(runtime.profileName).toBe('web')
     expect(runtime.dir).toBe('/profiles/web')
     expect(runtime.patchPath).toBe('/profiles/web/cordis.patch.yml')
@@ -65,44 +65,44 @@ describe('ProfileRuntime', () => {
 
   it('attributes rows to the layer that owns their id', async () => {
     const { runtime } = await harness([
-      layer('@deepseek-ai/dsh-base', 'builtin', [{ insert: [{ id: 'settings', name: 'x' }, { name: 'anonymous' } as EntryOptions, { id: 'grp', name: 'cordis:group', group: true, config: [{ id: 'child', name: 'y' }] }] }]),
-      layer('ext', 'external', [{ insert: [{ id: 'tool', name: 'ext' }] }]),
-      layer('boot-ext', 'external', [{ insert: [{ id: 'svc', name: 'boot-ext' }] }], 'boot'),
+      layer('@deepseek-ai/dsh-base', [{ insert: [{ id: 'settings', name: 'x' }, { name: 'anonymous' } as EntryOptions, { id: 'grp', name: 'cordis:group', group: true, config: [{ id: 'child', name: 'y' }] }] }]),
+      layer('ext', [{ insert: [{ id: 'tool', name: 'ext' }] }]),
+      layer('provider-ext', [{ insert: [{ id: 'svc', name: 'provider-ext' }] }]),
       // Declares an id the first external layer owns: left out whole, so none of its rows has an origin.
-      layer('late', 'external', [{ insert: [{ id: 'tool', name: 'late' }, { id: 'late-only', name: 'late/x' }] }]),
+      layer('late', [{ insert: [{ id: 'tool', name: 'late' }, { id: 'late-only', name: 'late/x' }] }]),
     ])
-    expect(runtime.originOf('settings')).toEqual({ trust: 'builtin', stage: 'runtime', packageName: '@deepseek-ai/dsh-base', version: '2.0.0' })
-    expect(runtime.originOf('child')).toEqual({ trust: 'builtin', stage: 'runtime', packageName: '@deepseek-ai/dsh-base', version: '2.0.0' })
-    expect(runtime.originOf('tool')).toEqual({ trust: 'external', stage: 'runtime', packageName: 'ext', version: '2.0.0' })
+    expect(runtime.originOf('settings')).toEqual({ packageName: '@deepseek-ai/dsh-base', version: '2.0.0' })
+    expect(runtime.originOf('child')).toEqual({ packageName: '@deepseek-ai/dsh-base', version: '2.0.0' })
+    expect(runtime.originOf('tool')).toEqual({ packageName: 'ext', version: '2.0.0' })
     expect(runtime.originOf('bundle/ext')).toBeUndefined()
-    expect(runtime.originOf('svc')).toEqual({ trust: 'external', stage: 'boot', packageName: 'boot-ext', version: '2.0.0' })
+    expect(runtime.originOf('svc')).toEqual({ packageName: 'provider-ext', version: '2.0.0' })
     expect(runtime.originOf('late-only')).toBeUndefined()
     expect(runtime.originOf('user-row')).toBeUndefined()
   })
 
   it('does not descend into a group row whose config is not a list', async () => {
     const { runtime } = await harness([
-      layer('odd', 'builtin', [{ insert: [{ id: 'g', name: 'cordis:group', group: true, config: {} as never }] }]),
+      layer('odd', [{ insert: [{ id: 'g', name: 'cordis:group', group: true, config: {} as never }] }]),
     ])
     expect(runtime.originOf('g')?.packageName).toBe('odd')
   })
 
   it('omits the version when the layer has none', async () => {
-    const { runtime } = await harness([{ ...layer('local', 'builtin', [{ insert: [{ id: 'r', name: 'local' }] }]), version: undefined }])
-    expect(runtime.originOf('r')).toEqual({ trust: 'builtin', stage: 'runtime', packageName: 'local' })
+    const { runtime } = await harness([{ ...layer('local', [{ insert: [{ id: 'r', name: 'local' }] }]), version: undefined }])
+    expect(runtime.originOf('r')).toEqual({ packageName: 'local' })
   })
 
   it('reports the user-disabled rows of the committed composition and keeps them when the include rejects an update', async () => {
     const entry = { options: { config: { path: 'file:///root/cordis.yml' } }, update: vi.fn(async () => { throw new Error('rejected') }) } as unknown as Entry
-    const reloaded = profile([layer('a', 'builtin', []), layer('b', 'external', [])])
-    const { runtime } = await harness([layer('a', 'builtin', [])], { rootEntry: () => entry, reloaded })
+    const reloaded = profile([layer('a', []), layer('b', [])])
+    const { runtime } = await harness([layer('a', [])], { rootEntry: () => entry, reloaded })
     expect([...runtime.userDisabledRowIds()]).toEqual(['booted-off'])
     await expect(runtime.recompose({ reloadBundles: true })).rejects.toThrow('rejected')
     expect([...runtime.userDisabledRowIds()]).toEqual(['booted-off'])
   })
 
   it('tells a row the user disabled through a group holding it from one the composition gates', async () => {
-    const { runtime } = await harness([layer('a', 'builtin', [])])
+    const { runtime } = await harness([layer('a', [])])
     const chain = (ids: string[]): Entry => ids.reduceRight<Entry | undefined>(
       (parent, id) => ({ options: { id }, parent: { ctx: { fiber: { entry: parent } } } } as unknown as Entry), undefined,
     ) as Entry
@@ -115,9 +115,9 @@ describe('ProfileRuntime', () => {
   it('recomposes through the root include, optionally re-reading the profile first, and commits on acceptance', async () => {
     const update = vi.fn(async () => {})
     const entry = { options: { config: { path: 'file:///root/cordis.yml', patches: [{ id: 'old' }] } }, update } as unknown as Entry
-    const reloaded = profile([layer('a', 'builtin', []), layer('b', 'external', [])])
+    const reloaded = profile([layer('a', []), layer('b', [])])
     const conflicts = [{ rowId: 'x', moduleName: 'm', layer: 'late', packageName: 'late', declaredBy: 'a', message: 'row "x" is already declared by a' }]
-    const { runtime, compose } = await harness([layer('a', 'builtin', [])], { rootEntry: () => entry, reloaded, conflicts })
+    const { runtime, compose } = await harness([layer('a', [])], { rootEntry: () => entry, reloaded, conflicts })
 
     await runtime.recompose()
     expect(compose).toHaveBeenLastCalledWith(expect.objectContaining({ layers: expect.any(Array) as ProfileLayer[] }))
@@ -136,7 +136,7 @@ describe('ProfileRuntime', () => {
   it('recomposes through a plugin context handle and publishes the accepted profile', async () => {
     const update = vi.fn(async () => {})
     const entry = { options: { config: { path: 'file:///root/cordis.yml' } }, update } as unknown as Entry
-    const reloaded = profile([layer('external', 'external', [])])
+    const reloaded = profile([layer('external', [])])
     const { ctx, runtime } = await harness([], { rootEntry: () => entry, reloaded })
     const caller = ctx.plugin({ inject: ['loader'], apply() {} })
     await caller.await()
@@ -157,8 +157,8 @@ describe('ProfileRuntime', () => {
       if (applied.length === 1) await gate
     })
     const entry = { options: { config: { path: 'file:///root/cordis.yml' } }, update } as unknown as Entry
-    const reloaded = profile([layer('a', 'builtin', []), layer('b', 'external', [])])
-    const { runtime, compose } = await harness([layer('a', 'builtin', [])], { rootEntry: () => entry, reloaded })
+    const reloaded = profile([layer('a', []), layer('b', [])])
+    const { runtime, compose } = await harness([layer('a', [])], { rootEntry: () => entry, reloaded })
     // Enabling a bundle re-reads the profile and waits on the tree; a watcher fires meanwhile.
     const enabling = runtime.recompose({ reloadBundles: true })
     const watching = runtime.recompose()
@@ -183,7 +183,7 @@ describe('ProfileRuntime', () => {
       if (calls === 1) throw new Error('rejected')
     })
     const entry = { options: { config: { path: 'file:///root/cordis.yml' } }, update } as unknown as Entry
-    const { runtime } = await harness([layer('a', 'builtin', [])], { rootEntry: () => entry })
+    const { runtime } = await harness([layer('a', [])], { rootEntry: () => entry })
     const first = runtime.recompose()
     const second = runtime.recompose()
     await expect(first).rejects.toThrow('rejected')
@@ -193,9 +193,9 @@ describe('ProfileRuntime', () => {
 
   it('keeps the committed profile, provenance, and conflicts when the root include rejects the update', async () => {
     const entry = { options: { config: { path: 'file:///root/cordis.yml' } }, update: vi.fn(async () => { throw new Error('rejected') }) } as unknown as Entry
-    const reloaded = profile([layer('a', 'builtin', []), layer('b', 'external', [])])
+    const reloaded = profile([layer('a', []), layer('b', [])])
     const conflicts = [{ rowId: 'x', moduleName: 'm', layer: 'late', packageName: 'late', declaredBy: 'a', message: 'row "x" is already declared by a' }]
-    const { runtime } = await harness([layer('a', 'builtin', [])], { rootEntry: () => entry, reloaded, conflicts })
+    const { runtime } = await harness([layer('a', [])], { rootEntry: () => entry, reloaded, conflicts })
     await expect(runtime.recompose({ reloadBundles: true })).rejects.toThrow('rejected')
     expect(runtime.current.layers).toHaveLength(1)
     expect(runtime.layers.map(current => current.packageName)).toEqual(['a'])

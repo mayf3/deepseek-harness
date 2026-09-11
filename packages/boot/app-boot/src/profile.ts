@@ -34,7 +34,7 @@ import { withFileLock } from '@deepseek-ai/dsh-atomic-write'
 import type { EntryOptions } from '@deepseek-ai/cordis-plugin-loader'
 import { applyEntryPatches, type PatchOptions } from '@deepseek-ai/cordis-plugin-include'
 import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
-import type { BundleStage, DshPackageManifest, ProfilePatchReload } from '@deepseek-ai/dsh-package-manifest'
+import type { DshPackageManifest, ProfilePatchReload } from '@deepseek-ai/dsh-package-manifest'
 import { resolve as resolvePackage, type Package as ResolvePackageManifest } from 'resolve.exports'
 import { loadOverlayPatches } from './index.ts'
 
@@ -46,13 +46,6 @@ export const PROFILE_PATCH_FILENAME = 'cordis.patch.yml'
 
 /** Profile-private package links projected into its pnpm-managed node_modules. */
 const PROFILE_MODULE_FALLBACK_DIR = '.dsh-module-fallback'
-
-/**
- * Who supplied a bundle layer. `builtin` layers come with the installation
- * (template bundles) or are declared first-party by the profile; `external`
- * layers are pnpm-managed dependencies the user installed.
- */
-export type BundleTrust = 'builtin' | 'external'
 
 /** Installation-owned defaults used when a shipped profile is first opened. */
 export interface ProfileTemplate {
@@ -75,10 +68,6 @@ export interface ProfileLayer {
   packageDir: string
   /** Absolute path of the bundle's patch file. */
   patchPath: string
-  /** Who supplied the layer; decides row ownership priority and startup failure policy. */
-  trust: BundleTrust
-  /** Effective mount stage: the profile's override, else the bundle's declaration, else `runtime`. */
-  stage: BundleStage
   /** The parsed patch list. */
   patches: PatchOptions[]
 }
@@ -688,18 +677,6 @@ export function writeProfileManifest(dir: string, manifest: ProfileManifest): vo
   writeFileSync(join(dir, 'package.json'), JSON.stringify(manifest, undefined, 2) + '\n')
 }
 
-/**
- * Validate one bundle stage value read from a manifest; an unknown value is a
- * misconfiguration and fails at load.
- */
-function readBundleStage(binName: string, packageName: string, value: unknown): BundleStage {
-  if (value === undefined) return 'runtime'
-  if (value === 'boot' || value === 'runtime') return value
-  throw new Error(
-    `${binName}: bundle ${JSON.stringify(packageName)} declares stage ${JSON.stringify(value)}; expected "boot" or "runtime"`,
-  )
-}
-
 /** Return whether two bundle lists have the same values in the same order. */
 function sameBundles(left: readonly string[], right: readonly string[]): boolean {
   return left.length === right.length && left.every((value, index) => value === right[index])
@@ -806,9 +783,6 @@ export function loadProfileDirectory(
     )
   }
   const patchReload = rawPatchReload ?? DEFAULT_PROFILE_PATCH_RELOAD
-  const dependencies = new Set(Object.keys(manifest.dependencies ?? {}))
-  const firstParty = new Set(manifest.dsh?.profile?.firstParty ?? [])
-  const stages = manifest.dsh?.profile?.stages ?? {}
   const layers = bundles.map((packageName): ProfileLayer => {
     const packageDir = resolveBundleDir(binName, packageName, installAnchor, dir)
     const bundleManifest = JSON.parse(readFileSync(join(packageDir, 'package.json'), 'utf8')) as ProfileManifest
@@ -817,18 +791,11 @@ export function loadProfileDirectory(
       throw new Error(`${binName}: profile bundle ${JSON.stringify(packageName)} declares no dsh.bundle in its package.json`)
     }
     const patchPath = join(packageDir, declared)
-    // Provenance, not the package name, decides trust: a template bundle is
-    // never a dependency, and everything pnpm added is out-of-tree — a fork
-    // that kept a first-party name still lands in `dependencies`.
-    const trust: BundleTrust = dependencies.has(packageName) && !firstParty.has(packageName) ? 'external' : 'builtin'
-    const stage = readBundleStage(binName, packageName, stages[packageName] ?? bundleManifest.dsh?.bundle?.stage)
     return {
       packageName,
       version: bundleManifest.version,
       packageDir,
       patchPath,
-      trust,
-      stage,
       patches: loadOverlayPatches(binName, patchPath),
     }
   })

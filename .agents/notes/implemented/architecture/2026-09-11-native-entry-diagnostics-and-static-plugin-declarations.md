@@ -10,7 +10,7 @@ Third-party plugin failures must leave the application’s management endpoints 
 
 ## Decision
 
-**Startup strictness belongs to row provenance.** Only rows introduced by an external runtime bundle are optional. Built-in, boot-staged, unowned rows and the bootstrap Include are required. Profile stage overrides author stage, which defaults to runtime; first-party declarations and template provenance determine trust. Stage changes failure policy, not execution timing. A config override retains the target row’s owner. Nested Includes inherit their owning entry’s provenance; their local ids are never resolved against unrelated root rows.
+**Startup strictness remains consumer-owned.** App-boot uses the [global required entry ids](2026-09-09-consumer-owned-startup-strictness.md) and the bootstrap Include identity. Package origin does not change the audit: all other rows may fail with a warning. Bundle metadata has no trust or stage policy. Row ownership only attributes diagnostics and management operations; nested Includes inherit their owning entry’s package without matching unrelated root ids.
 
 **Bundle enablement selects a whole patch layer.** Native rows and author-written groups retain their explicit ids and parents. Anonymous bundle rows receive deterministic ids on detached execution copies. Disabling a bundle removes its inserts and overrides across every target group; persistent user row overrides survive re-enablement. Ownership is checked before loading: strict layers claim ids first, optional collisions omit the whole losing bundle, and conflicting user inserts are omitted per row. Prefixing explicit ids would break author expressions and user patches; relying on authors to avoid collisions permits silent Loader reparenting.
 
@@ -28,7 +28,7 @@ Third-party plugin failures must leave the application’s management endpoints 
 
 **Import inside the Host with try/catch.** Rejected because discovery could execute irreversible side effects, exit the Host or block its event loop. Catching exceptions cannot restore that isolation. Parsing source to infer plugin exports would add another JavaScript interpreter with incomplete results.
 
-**Use a global list of required plugin ids.** Rejected because ids do not describe provenance, external boot providers, custom profiles or nested Include trees. Existing profile trust and stage declarations already own those distinctions.
+**Select startup strictness from package provenance.** Rejected because installation source does not establish whether an application endpoint can work. The consumer-owned required-id list already captures that requirement, including providers whose failure leaves a required consumer pending.
 
 **Recover by rolling back every live update or ignoring all post-boot rejections.** Neither can establish a safe restored state after plugin effects run. Per-row outcomes and retained user choices are observable; process-level detached failures cannot be attributed reliably to a row and remain fatal.
 
@@ -38,4 +38,4 @@ Installed metadata, enabled layer selection and current runtime health are indep
 
 ## Verification
 
-`packages/boot/app-boot/tests/entry-issues.spec.ts` covers trust and stage, import/config/apply/disabled/pending failures, nested and anonymous provenance, active old config after failed updates, recovery, and awaited removed-fiber teardown. Composition tests cover duplicate ownership and unchanged parents. Static metadata tests use an import-time file-writing fixture and assert no execution, retain unknown packages, and reject malformed declarations. Inventory tests verify actual Loader failures and composition conflicts without a historical failure registry. Process-guard and user-patch tests retain fatal detached failures and best-effort live reload diagnostics.
+`packages/boot/app-boot/tests/entry-issues.spec.ts` covers required-id policy, import/config/apply/disabled/pending failures, nested and anonymous provenance, active old config after failed updates, recovery, and awaited removed-fiber teardown. Composition tests cover duplicate ownership and unchanged parents. Static metadata tests use an import-time file-writing fixture and assert no execution, retain unknown packages, and reject malformed declarations. Inventory tests verify actual Loader failures and composition conflicts without a historical failure registry. Process-guard and user-patch tests retain fatal detached failures and best-effort live reload diagnostics.
