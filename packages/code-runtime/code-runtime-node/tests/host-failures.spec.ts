@@ -376,6 +376,7 @@ describe('Node runtime host failures', () => {
     const h = await setup()
     h.onBoot(() => {
       for (const stream of [h.stdout, h.stderr]) {
+        stream.write(Buffer.from([0xef, 0xbb, 0xbf]))
         stream.write(Buffer.from([0xe2]))
         stream.write(Buffer.from([0x82, 0xac]))
         stream.end(Buffer.from([0xe2]))
@@ -384,6 +385,7 @@ describe('Node runtime host failures', () => {
     })
     const result = await h.start()
     expect(result.error).toBeUndefined()
+    expect(result.logs.filter(text => text === '\uFEFF')).toHaveLength(2)
     expect(result.logs.filter(text => text === '€')).toHaveLength(2)
     expect(result.logs.filter(text => text === '�')).toHaveLength(2)
   })
@@ -436,6 +438,7 @@ describe('Node runtime host failures', () => {
       expect((await h.start()).error).toBeUndefined()
       const spec = h.spawn.mock.calls[0]?.[0]
       expect(spec?.env?.DSH_CODE_RUNTIME_NODE).toBe('1')
+      expect(Object.hasOwn(spec?.env ?? {}, 'PATH')).toBe(false)
       expect(spec?.argv.at(-1)).toBe('134217728')
       expect(Object.entries(spec?.env ?? {}).filter(([, value]) => value !== undefined)).toEqual([['DSH_CODE_RUNTIME_NODE', '1']])
     } finally {

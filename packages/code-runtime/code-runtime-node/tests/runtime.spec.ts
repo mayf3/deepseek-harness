@@ -1,9 +1,9 @@
 import { mkdtemp, mkdir, readFile, rm, symlink } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { createServer, type Socket } from 'node:net'
-import { join } from 'node:path'
+import { delimiter, join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
-import { describe, expect, it, onTestFinished } from 'vitest'
+import { describe, expect, it, onTestFinished, vi } from 'vitest'
 import type { CodeBindingFunction, CodeBindingNamespace, CodeRunRequest } from '@deepseek-ai/dsh-code-runtime'
 import type { Config } from '../src/index.ts'
 import { mountRuntime } from './setup.ts'
@@ -173,6 +173,34 @@ describe('Node program process', () => {
     expect(result.error?.kind).toBe('exception')
     expect(result.sandbox).toMatchObject({ mode: 'read-only', denied: true })
     await expect(readFile(path)).rejects.toMatchObject({ code: 'ENOENT' })
+  })
+
+  it.skipIf(process.platform === 'win32')('starts a confining launcher found only through the execution PATH', async () => {
+    const { ctx, runtime, run, root } = await setup({}, 'read-only')
+    const confine = ctx.sandbox.confine.bind(ctx.sandbox)
+    const policy = runtime.resolve({ program: '', bindings: [] }).sandboxPolicy
+    if (policy === undefined || policy.mode === 'danger-full-access') throw new Error('expected confined policy')
+    const wrapped = confine([process.execPath, '--version'], policy)
+    const original = wrapped.argv[0]
+    if (original === undefined) throw new Error('expected sandbox launcher')
+    const executable = await ctx.subprocess.resolveExecutable(original)
+    const alias = 'ptc-private-sandbox-launcher'
+    await symlink(executable, join(root, alias))
+    const previousPath = process.env.PATH
+    const substitute = vi.spyOn(ctx.sandbox, 'confine').mockImplementation((argv, selected) => {
+      const result = confine(argv, selected)
+      return { ...result, argv: [alias, ...result.argv.slice(1)] }
+    })
+    try {
+      process.env.PATH = `${root}${delimiter}${previousPath ?? ''}`
+      const result = await run({ program: 'return { env: Object.keys(process.env) };', bindings: [] })
+      expect(result.error).toBeUndefined()
+      expect(result.value).toEqual({ env: [] })
+    } finally {
+      substitute.mockRestore()
+      if (previousPath === undefined) delete process.env.PATH
+      else process.env.PATH = previousPath
+    }
   })
 
   it('permits workspace writes and denies a symlink to a sibling outside it', async () => {

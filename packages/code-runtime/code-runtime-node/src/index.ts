@@ -1,7 +1,6 @@
 /** Confined Node programs with host-owned bindings, output limits, and managed process cleanup. */
 import { stripTypeScriptTypes } from 'node:module'
 import { isAbsolute } from 'node:path'
-import { StringDecoder } from 'node:string_decoder'
 import { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { CodeRuntime } from '@deepseek-ai/dsh-code-runtime'
@@ -44,6 +43,7 @@ type ResolvedConfig = Required<Omit<Config, 'bootstrapPath'>> & Pick<Config, 'bo
 interface LiveRun { controller: AbortController; finished: Promise<void> }
 const STRIP_PREFIX = 'async function __dsh_program__() {\n'
 const STRIP_SUFFIX = '\n}'
+const STARTUP_ENVIRONMENT = new Set(['PATH', 'PATHEXT', 'SYSTEMROOT', 'WINDIR'])
 
 function messageOf(error: unknown): string { return error instanceof Error ? error.message : String(error) }
 function record(value: unknown): value is Record<string, unknown> { return typeof value === 'object' && value !== null && !Array.isArray(value) }
@@ -213,7 +213,10 @@ export class NodeCodeRuntime extends CodeRuntime {
       const argv = [executable, `--max-old-space-size=${this.config.maxOldGenerationSizeMb}`, ...bootstrapArgs(this.ctx.fs, this.config, this.config.maxMessageBytes)]
       confined = policy.mode === 'danger-full-access' ? undefined : this.ctx.sandbox.confine(argv, { ...policy, mode: policy.mode })
       if (confined !== undefined) sandbox.enforcement = confined.enforcement
-      const env: NodeJS.ProcessEnv = Object.fromEntries(Object.keys(process.env).map(key => [key, undefined]))
+      // Native launchers need executable search and Windows system paths until the child clears its environment.
+      const env: NodeJS.ProcessEnv = Object.fromEntries(Object.keys(process.env)
+        .filter(key => !STARTUP_ENVIRONMENT.has(key.toUpperCase()))
+        .map(key => [key, undefined]))
       if ('pkg' in process && this.config.bootstrapPath === undefined) env.DSH_CODE_RUNTIME_NODE = '1'
       handle = this.ctx.subprocess.spawn({ argv: confined?.argv ?? argv, cwd: spec.cwd, env, stdio: { stdin: 'ignore', stdout: 'pipe', stderr: 'pipe', control: 'pipe' }, graceMs: this.config.graceMs, signal })
       const launched = handle
@@ -228,24 +231,24 @@ export class NodeCodeRuntime extends CodeRuntime {
           finish({ kind: 'output-limit', message: `outer output exceeded ${this.config.maxOutputBytes} bytes` })
         }
       }
-      const stdoutDecoder = new StringDecoder('utf8')
-      const stderrDecoder = new StringDecoder('utf8')
+      const stdoutDecoder = new TextDecoder('utf-8', { ignoreBOM: true })
+      const stderrDecoder = new TextDecoder('utf-8', { ignoreBOM: true })
       handle.stdout?.on('data', (chunk: Buffer) => {
-        const text = stdoutDecoder.write(chunk)
+        const text = stdoutDecoder.decode(chunk, { stream: true })
         if (text.length > 0) admit(text)
       })
       handle.stdout?.on('end', () => {
-        const text = stdoutDecoder.end()
+        const text = stdoutDecoder.decode()
         if (text.length > 0) admit(text)
       })
       handle.stdout?.on('error', (error: Error) => { finish({ kind: 'worker-exit', message: messageOf(error) }) })
       handle.stderr?.on('data', (chunk: Buffer) => {
-        const text = stderrDecoder.write(chunk)
+        const text = stderrDecoder.decode(chunk, { stream: true })
         stderr = (stderr + text).slice(-this.config.maxOutputBytes)
         if (text.length > 0) admit(text)
       })
       handle.stderr?.on('end', () => {
-        const text = stderrDecoder.end()
+        const text = stderrDecoder.decode()
         if (text.length > 0) admit(text)
       })
       handle.stderr?.on('error', (error: Error) => { finish({ kind: 'worker-exit', message: messageOf(error) }) })

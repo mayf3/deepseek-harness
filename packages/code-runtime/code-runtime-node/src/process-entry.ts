@@ -2,4 +2,4 @@
 import { openInheritedControlChannel } from '@deepseek-ai/dsh-subprocess/control'
 import { runNodeMain } from './process.ts'
 
-await runNodeMain(openInheritedControlChannel(), Number(process.argv[2]), process)
+void runNodeMain(openInheritedControlChannel(), Number(process.argv[2]), process)
