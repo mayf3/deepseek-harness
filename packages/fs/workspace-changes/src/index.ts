@@ -2,13 +2,12 @@
  * Records the files each top-level turn changed as a durable `workspace/changes`
  * Session event, derived from git working-tree snapshots taken at turn start
  * and turn end plus the hunks file tools persist for paths git does not cover.
+ * Only a working directory inside a git repository is recorded.
  */
 import { realpathSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { join } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
-import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
 import type {} from '@deepseek-ai/dsh-agent'
 import type { Session } from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-subprocess'
@@ -25,33 +24,21 @@ export const name = 'workspace-changes'
 /** Services used to run git and observe turns. */
 export const inject = ['subprocess']
 
-/** Directories excluded from shadow repositories, where no `.gitignore` exists. */
-export const DEFAULT_SHADOW_EXCLUDES: readonly string[] = [
-  '.git/', '.dsh/', '.DS_Store', 'node_modules/', '.venv/', 'venv/', '__pycache__/', '.pytest_cache/', '.mypy_cache/',
-  'dist/', 'build/', 'out/', 'target/', '.cache/', '.next/', '.nuxt/', '.turbo/', 'coverage/',
-]
-
-/** Snapshot bounds and shadow repository placement. Invalid values fail plugin load. */
+/** Snapshot bounds. Invalid values fail plugin load. */
 export interface Config {
-  /** Harness home that holds shadow repositories under `workspace-changes/`; defaults to `$DSH_HOME`, then `~/.dsh`. */
-  dshHome?: string
   /** Milliseconds one git command may run before the turn's record is abandoned. */
   timeoutMs: number
   /** Bytes of git output retained per command; a larger diff listing abandons the record. */
   outputMaxBytes: number
   /** Maximum files carried by one event; `total` still reports the complete count. */
   maxFiles: number
-  /** `info/exclude` patterns for shadow repositories. */
-  shadowExcludes: string[]
 }
 
 /** Schemastery validation for {@link Config}. */
 export const Config: z<Config> = z.object({
-  dshHome: z.string(),
   timeoutMs: z.number().default(30_000),
   outputMaxBytes: z.number().default(8 * 1024 * 1024),
   maxFiles: z.number().default(500),
-  shadowExcludes: z.array(z.string()).default([...DEFAULT_SHADOW_EXCLUDES]),
 })
 
 function eligible(session: Session): string | undefined {
@@ -84,8 +71,8 @@ async function resolveGit(ctx: Context, signal: AbortSignal): Promise<string | n
 }
 
 /**
- * Observe top-level turns of every Session with a working directory and append
- * their change summaries.
+ * Observe top-level turns of every Session whose working directory lies in a
+ * git repository and append their change summaries.
  * @param ctx - host context with `subprocess`.
  * @param config - validated bounds and placement.
  */
@@ -100,7 +87,6 @@ export function apply(ctx: Context, config: Config): void {
     for (const recorder of recorders.values()) recorder.dispose()
     recorders.clear()
   })
-  const shadow = { home: join(resolveDshHome(config.dshHome), 'workspace-changes'), excludes: config.shadowExcludes }
   const roots = temporaryRoots()
   const home = realpathSync.native(homedir())
   let runner: Promise<GitRunner | null> | undefined
@@ -118,7 +104,7 @@ export function apply(ctx: Context, config: Config): void {
     let recorder = recorders.get(session)
     if (recorder === undefined) {
       recorder = new TurnRecorder(session, cwd, {
-        git: gitRunner(), shadow, home, temporaryRoots: roots, maxFiles: config.maxFiles,
+        git: gitRunner(), home, temporaryRoots: roots, maxFiles: config.maxFiles,
         warn: (message) => { ctx.logger.warn(message) },
       })
       recorders.set(session, recorder)

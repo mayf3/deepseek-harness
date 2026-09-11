@@ -3,7 +3,7 @@ import { realpath } from 'node:fs/promises'
 import { relative } from 'node:path'
 import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
 import type { FileDiff } from '@deepseek-ai/dsh-tools'
-import { diffTrees, ignoredPaths, locateGitWorkspace, snapshotTree, type GitRunner, type GitWorkspace, type ShadowRepositoryOptions } from './git.ts'
+import { diffTrees, ignoredPaths, locateGitWorkspace, snapshotTree, type GitRunner, type GitWorkspace } from './git.ts'
 import { fileDiffsOf, hunkLineCounts } from './numstat.ts'
 import { absolutePathOf, compareDisplay, displayPathOf, durablePathOf, isInside, isTemporaryPath, toPosix } from './paths.ts'
 import type { WorkspaceChangedFile } from './types.ts'
@@ -12,7 +12,6 @@ import type { WorkspaceChangedFile } from './types.ts'
 export interface RecorderEnvironment {
   /** Resolves to the runner, or null when git is unavailable and no turn records anything. */
   git: Promise<GitRunner | null>
-  shadow: ShadowRepositoryOptions
   /** Canonical absolute home directory abbreviated as `~` in display paths. */
   home: string
   /** Temporary roots whose files never enter a summary. */
@@ -38,7 +37,8 @@ async function canonicalPath(path: string): Promise<string> {
 /**
  * Serializes one Session's git work: the turn-start snapshot, the turn-end
  * snapshot with its diff, and the appended `workspace/changes` event. Tool
- * execution waits for pending work so a snapshot never races a mutation.
+ * execution waits for pending work so a snapshot never races a mutation. A
+ * working directory outside any repository records nothing.
  */
 export class TurnRecorder {
   private chain: Promise<void> = Promise.resolve()
@@ -68,7 +68,8 @@ export class TurnRecorder {
       if (git === null) return
       // git reports symlink-resolved paths; every comparison uses that form.
       const cwd = await realpath(this.cwd)
-      const workspace = await locateGitWorkspace(git, cwd, this.env.shadow, signal)
+      const workspace = await locateGitWorkspace(git, cwd, signal)
+      if (workspace === null) return
       const tree = await snapshotTree(git, workspace, signal)
       this.baseline = { git, workspace, tree, cwd }
     })

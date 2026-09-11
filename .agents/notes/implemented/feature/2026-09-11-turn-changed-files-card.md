@@ -14,7 +14,7 @@ The Host [workspace-changes](../../../../packages/fs/workspace-changes/README.md
 
 The recorder snapshots the working tree with git at turn start and turn end: `add --all` into a private index seeded from the repository's index, then `write-tree`. The two tree ids are diffed with `diff-tree -r -M --numstat`, so the summary contains exactly the turn's changes — the user's earlier uncommitted work, staged or not, is part of the baseline — and commits the model makes mid-turn cannot hide changes. The repository's own index, work tree, and refs are never modified. On a 10k-file repository one snapshot costs about 60 ms and the diff about 10 ms; the baseline runs concurrently with the first model request, and tool execution waits for it.
 
-Git is the default executable on `PATH`; no environment plugin is consulted. Three tiers cover the workspace: a working directory inside a repository uses that repository; a working directory outside any repository uses a shadow repository under the Harness home, with its git directory there and its work tree pointing at the working directory, so the user's directory gains no `.git`; without git the plugin records nothing and the card is absent. Nested repositories and submodules are gitlinks and are not descended into. Shadow repositories take their excludes from configuration because no `.gitignore` exists there.
+Git is the default executable on `PATH`; no environment plugin is consulted. Only a working directory inside a git repository is recorded; outside any repository, or without git, the plugin records nothing and the card is absent. Nested repositories and submodules are gitlinks and are not descended into.
 
 Changes outside snapshot coverage are handled by source. File-tool edits to ignored files and to files outside the work tree join the same list with counts summed from the hunks the tools persist with their results, so no extra baseline is captured. Files under the temporary directories are omitted unless they lie inside the working directory; a file left in `/tmp` needs `present` to reach the user. Shell edits outside coverage are a known limitation.
 
@@ -36,10 +36,12 @@ The recorder appends inside the turn on `agent/turn-stopping` and again after `t
 
 **An environment-provider seam for locating git** was raised by the team but not settled; the plugin uses `PATH` and keeps its lookup in one place.
 
+**A shadow repository for working directories outside any repository** — a git directory under the Harness home with the work tree pointing at the working directory — would give those users the card without adding a `.git`, but a shadow repository has no `.gitignore`, and a configured exclude list cannot reliably keep build outputs, caches, and dependency trees out of every project layout. It is deferred until that exclude policy is settled; the recorder already treats the repository as an input, so adding the tier changes only where the snapshot goes.
+
 ## Consequences
 
 Every turn with tool results costs two snapshots and one diff on the Host, and writes blob and tree objects for the changed files into the repository's object store; unreferenced trees are pruned by the repository's own garbage collection, after which only the recorded counts remain. Edits the user makes during a turn are attributed to it. Hunk-based counts for uncovered files are sums over edits rather than a first-to-last diff.
 
-The Web bundle alone mounts the recorder, so headless, SDK, and ACP logs are unchanged; recorded Web scenarios gain the event and the card. The card replaces the Chinese and English "Files changed" row; prose file mentions still resolve against mutation-call paths and deliveries.
+The Web bundle alone mounts the recorder, so headless, SDK, and ACP logs are unchanged; recorded Web scenarios gain the event and the card only when their workspace is a git repository, which one dedicated scenario seeds. The card replaces the Chinese and English "Files changed" row; prose file mentions still resolve against mutation-call paths and deliveries.
 
 Focused tests cover repository and shadow tiers with real git, coverage classification, ordering, caps, disposal, the macOS stub, the changed-file and folder routes, the card's fold and gesture states, and a Loader composition. The keyless Web scenarios replay the recorder end to end.

@@ -6288,9 +6288,6 @@ importers:
       '@deepseek-ai/dsh-agent':
         specifier: workspace:^
         version: link:../../core/agent
-      '@deepseek-ai/dsh-home-paths':
-        specifier: workspace:^
-        version: link:../../util/home-paths
       '@deepseek-ai/dsh-llm':
         specifier: workspace:^
         version: link:../../llm/llm

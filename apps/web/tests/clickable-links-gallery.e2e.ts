@@ -41,7 +41,7 @@ const UI_EXPECTED = fileURLToPath(new URL('./expected/clickable-links-gallery/ui
 // The golden holds the show-in-folder affordance; pin the native-opener
 // capability so headless Linux CI and desktop developer hosts expose the same
 // UI branch (same pin as produced-files.e2e.ts, whose overlay this shares).
-const OVERLAY = fileURLToPath(new URL('./produced-files.overlay.yml', import.meta.url))
+const OVERLAY = fileURLToPath(new URL('./changed-files.overlay.yml', import.meta.url))
 const MODE = webSnapshotMode()
 const SEED_ID = 'clickable-links-gallery-web-e2e'
 const DONE = 'LINK_GALLERY_DONE'
@@ -343,13 +343,12 @@ describe('web e2e: clickable links gallery', () => {
     expect(await markdown.locator(`img[src="${imageUrl}"]`).count()).toBe(1)
 
     // Produced files: one unique-basename mention links; the shared basename
-    // and the unwritten file stay inert code. Seven produced paths overflow
-    // the chip row; the failed write joins neither surface.
+    // and the unwritten file stay inert code. The seeded session carries no
+    // recorded change summary, so no changed-files card follows the prose.
     const mentions = markdown.locator('code button')
     expect(await mentions.count()).toBe(1)
     expect(await mentions.first().getAttribute('title')).toBe('site/report.html')
-    expect(await page.getByText('Files changed', { exact: true }).count()).toBe(1)
-    expect(await page.locator('[class*="centerCol"] button[aria-label^="Open "]').count()).toBeGreaterThanOrEqual(5)
+    expect(await page.locator('[data-changed-files]').count()).toBe(0)
     expect(await page.locator('button[aria-label="Open c/broken.css"]').count()).toBe(0)
 
     // Tool rows: five writes, the edit, and the read carry the dotted file
@@ -406,13 +405,11 @@ describe('web e2e: clickable links gallery', () => {
     const styleOf = async (target: ReturnType<Page['locator']>, property: string): Promise<string> =>
       target.evaluate((el, p) => getComputedStyle(el).getPropertyValue(p), property)
     const guideLink = markdown.locator(`a[href="${GUIDE_URL}"]`).first()
-    const chip = page.locator('button[aria-label="Open site/report.html"]').first()
     for (const [name, link] of [
       ['markdown anchor', guideLink],
       ['file mention', mentions.first()],
       ['search source', sourceLink.first()],
       ['fetch url', page.locator(`a[href="${FETCH_URL}"]`).first()],
-      ['produced chip', chip],
     ] as const) {
       expect.soft(await styleOf(link, 'color'), `${name} color`).toBe(LINK_BLUE)
       expect.soft(await styleOf(link, 'font-weight'), `${name} weight`).toBe('500')
@@ -423,9 +420,8 @@ describe('web e2e: clickable links gallery', () => {
     expect(await styleOf(guideLink, 'text-decoration-line')).toBe('underline')
     expect(await styleOf(guideLink, 'text-decoration-style')).toBe('dotted')
     expect(await styleOf(guideLink, 'text-underline-offset')).toBe('3px')
-    await chip.hover()
-    expect(await styleOf(chip, 'text-decoration-style')).toBe('dotted')
-    expect(await styleOf(chip, 'background-color')).toBe('rgba(0, 0, 0, 0)')
+    await mentions.first().hover()
+    expect(await styleOf(mentions.first(), 'text-decoration-style')).toBe('dotted')
     // The excluded grey affordance: tool-row file links keep their own color.
     expect(await styleOf(page.locator('button[class*="fileLink"]').first(), 'color')).not.toBe(LINK_BLUE)
   }, 90_000)

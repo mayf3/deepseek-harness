@@ -1,5 +1,5 @@
 /** Git command bounds, snapshot recovery, and diff failure reporting. */
-import { mkdir, writeFile } from 'node:fs/promises'
+import { realpath, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
@@ -56,9 +56,9 @@ describe('snapshots and diffs', () => {
     expect(() => git(cwd, 'merge', 'side')).toThrow()
     expect(git(cwd, 'status', '--porcelain')).toContain('UU f.txt')
     const { git: runnerGit } = await runner()
-    const workspace = await locateGitWorkspace(runnerGit, cwd, { home: join(cwd, 'unused'), excludes: [] }, signal)
-    expect(workspace.kind).toBe('repository')
-    const tree = await snapshotTree(runnerGit, workspace, signal)
+    const workspace = await locateGitWorkspace(runnerGit, cwd, signal)
+    expect(workspace?.root).toBe(await realpath(cwd))
+    const tree = await snapshotTree(runnerGit, workspace!, signal)
     expect(tree).toMatch(/^[0-9a-f]{40,64}$/)
     expect(git(cwd, 'status', '--porcelain')).toContain('UU f.txt')
   })
@@ -66,12 +66,13 @@ describe('snapshots and diffs', () => {
   it('fails loudly when the addressed repository cannot be written or diffed', async () => {
     const cwd = await scratchDir('dsh-git-broken-', cleanups)
     const { git: runnerGit } = await runner()
-    const broken = { kind: 'shadow' as const, root: cwd, gitDir: join(cwd, 'missing'), env: { GIT_DIR: join(cwd, 'missing'), GIT_WORK_TREE: cwd } }
+    expect(await locateGitWorkspace(runnerGit, cwd, signal)).toBeNull()
+    const broken = { root: cwd, gitDir: join(cwd, 'missing') }
     await expect(snapshotTree(runnerGit, broken, signal)).rejects.toThrow('git add in')
     await expect(ignoredPaths(runnerGit, broken, ['x'], signal)).rejects.toThrow('git check-ignore failed')
     expect(await ignoredPaths(runnerGit, broken, [], signal)).toEqual(new Set())
     git(cwd, 'init', '-q')
-    const workspace = await locateGitWorkspace(runnerGit, cwd, { home: join(cwd, 'unused'), excludes: [] }, signal)
+    const workspace = (await locateGitWorkspace(runnerGit, cwd, signal))!
     await expect(diffTrees(runnerGit, workspace, 'a'.repeat(40), 'b'.repeat(40), signal)).rejects.toThrow('git diff-tree failed')
     await writeFile(join(cwd, 'many.txt'), Array.from({ length: 50 }, (_, index) => `line ${index}`).join('\n'))
     const before = await snapshotTree(runnerGit, workspace, signal)
@@ -83,17 +84,6 @@ describe('snapshots and diffs', () => {
     expect((await diffTrees(runnerGit, workspace, before, after, signal)).length).toBe(21)
   })
 
-  it('refuses a shadow home whose git directory cannot be initialized', async () => {
-    const cwd = await scratchDir('dsh-git-shadow-broken-', cleanups)
-    const home = join(cwd, 'home')
-    const { git: runnerGit } = await runner()
-    const probe = await locateGitWorkspace(runnerGit, cwd, { home, excludes: ['x/'] }, signal)
-    expect(probe.kind).toBe('shadow')
-    await mkdir(join(probe.gitDir, 'objects', 'broken'), { recursive: true })
-    await writeFile(join(probe.gitDir, 'HEAD'), 'not a ref')
-    await writeFile(join(probe.gitDir, 'config'), '[core]\n\tbare = maybe\n')
-    await expect(locateGitWorkspace(runnerGit, cwd, { home, excludes: [] }, signal)).rejects.toThrow('git init of shadow repository')
-  })
 })
 
 describe('TurnRecorder', () => {
@@ -104,7 +94,7 @@ describe('TurnRecorder', () => {
     const warnings: string[] = []
     let release!: (runner: GitRunner | null) => void
     const gate = new Promise<GitRunner | null>((resolve) => { release = resolve })
-    const env = { git: gate, shadow: { home: join(cwd, 'home'), excludes: [] }, home: '', temporaryRoots: temporaryRoots(), maxFiles: 10, warn: (m: string) => { warnings.push(m) } }
+    const env = { git: gate, home: '', temporaryRoots: temporaryRoots(), maxFiles: 10, warn: (m: string) => { warnings.push(m) } }
     const disposed = new TurnRecorder(session, cwd, env)
     disposed.start(1)
     await new Promise(resolve => setTimeout(resolve, 5))

@@ -22,9 +22,8 @@ async function boot(config: Partial<WorkspaceChanges.Config> = {}) {
   cleanups.push(() => ctx.fiber.dispose())
   await ctx.plugin(SessionStore)
   await ctx.plugin(LocalSubprocessRuntime)
-  const dshHome = config.dshHome ?? await scratchDir('dsh-workspace-changes-home-', cleanups)
-  const fiber = await ctx.plugin(WorkspaceChanges, { ...config, dshHome } as WorkspaceChanges.Config)
-  return { ctx, fiber, dshHome }
+  const fiber = await ctx.plugin(WorkspaceChanges, config as WorkspaceChanges.Config)
+  return { ctx, fiber }
 }
 
 async function repository(): Promise<string> {
@@ -170,10 +169,9 @@ describe('workspace-changes in a repository', () => {
   })
 
   it('warns and skips the turn when its git work fails', async () => {
-    const cwd = await scratchDir('dsh-workspace-changes-warn-', cleanups)
-    const blocker = join(cwd, 'blocker')
-    await writeFile(blocker, 'not a directory')
-    const { ctx } = await boot({ dshHome: blocker })
+    const cwd = await repository()
+    const { ctx } = await boot()
+    vi.spyOn(ctx.subprocess, 'resolveExecutable').mockResolvedValue(join(cwd, 'missing-git'))
     const warn = vi.spyOn(ctx.logger, 'warn').mockImplementation(() => undefined)
     const session = ctx.sessions.create(SessionId('warn'), { meta: { cwd } })
     startTurn(session, 1)
@@ -185,7 +183,7 @@ describe('workspace-changes in a repository', () => {
     expect(changes(session)).toEqual([])
     const own = warn.mock.calls.map(call => String(call[0])).filter(message => message.startsWith('workspace-changes:'))
     expect(own).toHaveLength(1)
-    expect(own[0]).toContain('ENOTDIR')
+    expect(own[0]).toContain('missing-git')
   })
 
   it('rejects non-positive bounds at load', async () => {
@@ -198,43 +196,27 @@ describe('workspace-changes in a repository', () => {
 })
 
 describe('workspace-changes without a repository', () => {
-  it('snapshots into a shadow repository under the Harness home and excludes that home', async () => {
+  it('records nothing for a working directory outside any git repository', async () => {
     const cwd = await scratchDir('dsh-workspace-changes-plain-', cleanups)
-    const dshHome = join(cwd, '.dsh')
     await writeFile(join(cwd, 'existing.txt'), 'before\n')
-    const { ctx } = await boot({ dshHome })
+    const { ctx } = await boot()
+    const warn = vi.spyOn(ctx.logger, 'warn').mockImplementation(() => undefined)
     const session = ctx.sessions.create(SessionId('plain'), { meta: { cwd } })
     startTurn(session, 1)
     await settle(ctx, session)
     await writeFile(join(cwd, 'existing.txt'), 'after\nmore\n')
-    await mkdir(join(cwd, 'node_modules'), { recursive: true })
-    await writeFile(join(cwd, 'node_modules', 'dep.js'), 'module\n')
-    await writeFile(join(dshHome, 'settings.yaml'), 'changed: true\n')
-    toolCall(session, 1, 'write', { file_path: 'node_modules/dep.js' }, {
-      meta: { diffs: [{ path: 'node_modules/dep.js', oldText: null, newText: 'module\n' }] },
+    toolCall(session, 1, 'write', { file_path: 'existing.txt' }, {
+      meta: { diffs: [{ path: 'existing.txt', oldText: 'before', newText: 'after\nmore' }] },
     })
     endTurn(session, 1)
     await settle(ctx, session)
-    const [first] = changes(session)
-    expect(first!.files).toEqual([
-      { path: 'existing.txt', display: 'existing.txt', added: 2, deleted: 1 },
-      { path: 'node_modules/dep.js', display: 'node_modules/dep.js', added: 1, deleted: 0 },
-    ])
-    const shadows = join(dshHome, 'workspace-changes')
-    expect((await stat(shadows)).isDirectory()).toBe(true)
+    expect(changes(session)).toEqual([])
+    expect(warn.mock.calls.filter(call => String(call[0]).startsWith('workspace-changes:'))).toEqual([])
     await expect(stat(join(cwd, '.git'))).rejects.toThrow()
-
-    startTurn(session, 2)
-    await settle(ctx, session)
-    await writeFile(join(cwd, 'second.txt'), 's\n')
-    toolCall(session, 2, 'bash', { command: 'x' })
-    endTurn(session, 2)
-    await settle(ctx, session)
-    expect(changes(session).at(-1)!.files.map(file => file.display)).toEqual(['second.txt'])
   })
 
   it('drops a disposed session’s recorder and starts afresh on its next turn', async () => {
-    const cwd = await scratchDir('dsh-workspace-changes-disposed-', cleanups)
+    const cwd = await repository()
     const { ctx, fiber } = await boot()
     const session = ctx.sessions.create(SessionId('disposed'), { meta: { cwd } })
     startTurn(session, 1)
@@ -264,7 +246,7 @@ describe('workspace-changes without a repository', () => {
   })
 
   it('ignores subagent sessions and sessions without a working directory', async () => {
-    const cwd = await scratchDir('dsh-workspace-changes-skip-', cleanups)
+    const cwd = await repository()
     const { ctx } = await boot()
     const sessions = [
       ctx.sessions.create(SessionId('child'), { meta: { cwd, delegationDepth: 1 } }),

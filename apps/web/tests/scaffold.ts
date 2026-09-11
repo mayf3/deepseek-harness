@@ -38,6 +38,7 @@ import Group from '@deepseek-ai/cordis-plugin-group'
 import {
   captureExpectedWorkspaceSnapshot,
   captureWorkspaceSnapshot,
+  type CaptureWorkspaceSnapshotOptions,
   assertSessionFixtureVersion,
   formatSystemPromptSnapshot,
   formatToolSchemasSnapshot,
@@ -64,7 +65,6 @@ import {
   type Profile,
 } from '@deepseek-ai/dsh-app-boot'
 import { dshHomePath } from '@deepseek-ai/dsh-home-paths'
-import { DEFAULT_SHADOW_EXCLUDES } from '@deepseek-ai/dsh-workspace-changes'
 import { LlmAdapter } from '@deepseek-ai/dsh-llm'
 import type {
   LlmModelInfo, LlmProviderInfo, LlmResolvedModelInfo, RetryPolicyConfig, StreamChunk,
@@ -128,13 +128,16 @@ export function webSnapshotMode(): WebSnapshotMode {
  * Compare a session-driven Web scenario's complete workspace with its committed independent expected state.
  * @param scenarioDir - Absolute recorded-session scenario directory.
  * @param workspaceRoot - Absolute cwd used by the controlled session.
+ * @param options - Root entries the scenario owns outside the expected state, such as a `.git` directory it initialized.
  */
-export async function assertFinalWorkspaceSnapshot(scenarioDir: string, workspaceRoot: string): Promise<void> {
+export async function assertFinalWorkspaceSnapshot(
+  scenarioDir: string, workspaceRoot: string, options: CaptureWorkspaceSnapshotOptions = {},
+): Promise<void> {
   const manifestPath = join(scenarioDir, 'snapshot.yml')
   const manifest = parseSnapshotManifest(await readFile(manifestPath, 'utf8'), manifestPath)
   expect(manifest.workspace?.final, `${manifest.scenario ?? scenarioDir}: mutating Web scenario declares workspace.final`)
     .toBe(true)
-  const actual = await captureWorkspaceSnapshot(workspaceRoot)
+  const actual = await captureWorkspaceSnapshot(workspaceRoot, options)
   const expected = await captureExpectedWorkspaceSnapshot(join(scenarioDir, 'workspace.expected'))
   expect(actual, `${manifest.scenario ?? scenarioDir}: complete final workspace`).toEqual(expected)
 }
@@ -606,16 +609,6 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
       : [{ id: 'connection', config: { trustedHosts: [options.remoteAuthority] } }],
     { id: 'settings', config: { dshHome: harnessHome } },
     { id: 'credentials', config: { dshHome: harnessHome } },
-    // Turn change summaries snapshot the temp workspace into a shadow
-    // repository under the owned harness home; the scaffold's other in-workspace
-    // roots stay out of every snapshot so goldens depend only on scenario files.
-    {
-      id: 'workspace-changes',
-      config: {
-        dshHome: harnessHome,
-        shadowExcludes: [...DEFAULT_SHADOW_EXCLUDES, '.agents-home/', '.bundled-skills/', '.dsh-storages/'],
-      },
-    },
     // The shipped directory-picker row is the -auto chooser, which resolves
     // the interaction from the RUNNING host (display, SSH launch, bind). The
     // lane's goldens are interaction-specific (workspace-management drives

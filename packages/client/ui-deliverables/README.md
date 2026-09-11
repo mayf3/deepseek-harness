@@ -25,7 +25,7 @@ This package renders the changed-files card a finished turn ends with — the fi
 <a id="use-this-package"></a>
 ## Use this package
 
-Mount this plugin alongside `ui-conversation` and the Host [workspace-changes](../../fs/workspace-changes/README.md) plugin; a finished turn then ends with the changed-files card between the closing message's body and its action footer. Without a recorded summary — no git on the Host, or the plugin composed out — the card is absent and only deliveries and prose links remain.
+Mount this plugin alongside `ui-conversation` and the Host [workspace-changes](../../fs/workspace-changes/README.md) plugin; a finished turn then ends with the changed-files card between the closing message's body and its action footer. Without a recorded summary — a workspace outside any git repository, no git on the Host, or the plugin composed out — the card is absent and only deliveries and prose links remain.
 
 <a id="explicit-deliveries"></a>
 ### Explicit deliveries
