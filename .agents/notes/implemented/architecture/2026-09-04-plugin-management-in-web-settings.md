@@ -22,7 +22,7 @@ The Host could manage a profile's plugins — install, enable, disable, retry, c
 
 **The install verb is `add`.** The client namespace service reserves `install` and `remove` for its own members and refuses a mounted method of that name at page load, after every unit suite has passed. The Host's method is `plugins/add`, as on the CLI, and `packages/api/remotes/tests/remote-method-names.host.spec.ts` checks every `@Remote('<name>')` in the workspace against the names the gateway's own source reserves.
 
-**The web e2e scaffold can mount a profile runtime.** `launchWebScaffold({ profileRuntime })` links fixture packages into the scaffold profile and mounts `ProfileRuntime` over it with `patchReload: 'startup'`, so the manager has a profile to manage while the booted tree never recomposes under a scenario.
+**The web e2e scaffold supports live and startup-only profiles.** `launchWebScaffold({ profileRuntime })` links fixture packages into an isolated profile. Its `patchReload` choice defaults to `startup`; live scenarios compose bundle and user layers through the profile runtime. The browser enable/disable regression checks both the manifest and actual Loader rows without restarting the scaffold.
 
 Package discovery and runtime health follow [native entry diagnostics and static declarations](2026-09-11-native-entry-diagnostics-and-static-plugin-declarations.md). Every declared module remains addable without a preflight execution verdict; unknown packages remain installed. Active rows retain visible update failures, and failed overrides identify their target entries without transferring ownership.
 

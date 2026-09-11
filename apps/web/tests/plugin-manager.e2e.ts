@@ -20,6 +20,7 @@ import { ZH_BROWSER_LOCALE, saveFailureShot } from './support.ts'
 const SNAPSHOT_DIR = fileURLToPath(new URL('./expected/plugin-manager', import.meta.url))
 const MANAGER_EXPECTED = join(SNAPSHOT_DIR, 'manager.expected.md')
 const DETAIL_EXPECTED = join(SNAPSHOT_DIR, 'preset-detail.expected.md')
+const LIVE_EXPECTED = join(SNAPSHOT_DIR, 'live-enabled.expected.md')
 const FIXTURE_PLUGINS = fileURLToPath(new URL('./fixtures/plugins', import.meta.url))
 const MODE = webSnapshotMode()
 
@@ -227,6 +228,52 @@ describe('web e2e: plugin manager', () => {
 
   it.skipIf(MODE === 'record')('keeps the fixture inventory closed', async () => {
     expect(tripwire.warnings).toEqual([])
-    await assertFixtureInventory(SNAPSHOT_DIR, ['manager.expected.md', 'preset-detail.expected.md'])
+    await assertFixtureInventory(SNAPSHOT_DIR, ['manager.expected.md', 'preset-detail.expected.md', 'live-enabled.expected.md'])
   })
+})
+
+
+describe('web e2e: live plugin management', () => {
+  it('applies bundle enable and disable through the Remote without a restart', async () => {
+    const scaffold = await launchWebScaffold({
+      profileRuntime: { patchReload: 'live', packages: [{ dir: join(FIXTURE_PLUGINS, 'fixture-bundle') }] },
+    })
+    let browser: Browser | undefined
+    try {
+      browser = await chromium.launch()
+      const page = await browser.newPage({ viewport: { width: 1680, height: 1000 }, locale: ZH_BROWSER_LOCALE })
+      const tripwire = watchConsole(page)
+      onTestFailed(() => saveFailureShot(page, 'web-e2e-plugin-manager-live'))
+      await page.goto(scaffold.authenticatedUrl, { waitUntil: 'load' })
+      await page.getByRole('navigation', { name: '全局面板' }).getByRole('button', { name: '插件', exact: true }).click()
+      const panel = page.locator('[data-plugin-panel]')
+      const toggle = panel.getByRole('switch', { name: '启用 示例组合包' })
+      await toggle.waitFor({ timeout: 20_000 })
+      const mounted = () => [...scaffold.ctx.loader.entries()].find(entry => entry.options.id === 'fixture-row')
+      const bundles = async () => {
+        const text = await readFile(join(scaffold.harnessHome, 'profiles', 'scaffold', 'package.json'), 'utf8')
+        return (JSON.parse(text) as { dsh: { profile: { bundles: string[] } } }).dsh.profile.bundles
+      }
+      expect(mounted()).toBeUndefined()
+      await toggle.click()
+      await expect.poll(() => mounted()?.fiber?.state, { timeout: 10_000 }).toBe(2)
+      await expect.poll(bundles).toEqual(['@fixture/bundle'])
+      await expect.poll(() => toggle.getAttribute('aria-checked')).toBe('true')
+      expect(await panel.getByText('需重启', { exact: true }).count()).toBe(0)
+      expect(await panel.getByText(/以下更改会在下次启动生效/).count()).toBe(0)
+      const snapshot = await captureStableAria(page, '[data-plugin-panel]', scaffold.workspaceCwd)
+      await compareOrRefreshGolden(LIVE_EXPECTED, snapshot, MODE)
+
+      await toggle.click()
+      await expect.poll(mounted, { timeout: 10_000 }).toBeUndefined()
+      await expect.poll(bundles).toEqual([])
+      await expect.poll(() => toggle.getAttribute('aria-checked')).toBe('false')
+      expect(await panel.getByText('需重启', { exact: true }).count()).toBe(0)
+      expect(await panel.getByText(/以下更改会在下次启动生效/).count()).toBe(0)
+      expect(tripwire.pageErrors).toEqual([])
+    } finally {
+      await browser?.close()
+      await scaffold.close()
+    }
+  }, 60_000)
 })

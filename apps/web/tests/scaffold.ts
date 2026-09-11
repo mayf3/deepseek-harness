@@ -33,8 +33,7 @@ import { expect } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { DSH_LAUNCH_ENVIRONMENT_KEY, type LaunchEnvironmentSnapshot } from '@deepseek-ai/dsh-launch-environment'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
-import Include, { type PatchOptions } from '@deepseek-ai/cordis-plugin-include'
-import Group from '@deepseek-ai/cordis-plugin-group'
+import type { PatchOptions } from '@deepseek-ai/cordis-plugin-include'
 import {
   captureExpectedWorkspaceSnapshot,
   captureWorkspaceSnapshot,
@@ -57,7 +56,7 @@ import {
   type NormalizeContext,
 } from '@deepseek-ai/dsh-session-snapshot'
 import {
-  auditStartupEntries, claimLayerIds,
+  auditStartupEntries, composeProfileStack, mountRootInclude, rootIncludeEntry,
   composeEntries,
   healProfilesModuleFallback,
   loadOverlayPatches,
@@ -308,11 +307,11 @@ export interface LaunchOptions {
    * manager has a profile to manage. Each package directory is linked into
    * the profile as an installed dependency (`file:` in its manifest, a
    * symlink under its `node_modules`); `enabled` lists a bundle in
-   * `dsh.profile.bundles`. The profile applies layer changes at its next
-   * start, so an enable or disable is reported as pending and the booted tree
-   * never recomposes under the scenario.
+   * `dsh.profile.bundles`. `patchReload` selects live recomposition or
+   * changes applied at the next start; it defaults to `startup`.
    */
   profileRuntime?: {
+    patchReload?: Profile['patchReload']
     packages: { dir: string; enabled?: boolean }[]
   }
   /**
@@ -670,6 +669,7 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
   try {
     process.chdir(workspaceCwd)
     const profileDir = join(harnessHome, 'profiles', 'scaffold')
+    const profilePatchReload = options.profileRuntime?.patchReload ?? 'startup'
     const extraLayers: Profile['layers'] = await Promise.all((options.extraInstallAnchors ?? []).map(async (anchor) => {
       const manifest = JSON.parse(await readFile(anchor, 'utf8')) as { name?: unknown }
       if (typeof manifest.name !== 'string' || manifest.name === '') {
@@ -698,7 +698,7 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
         layers: extraLayers,
         patchPath: join(profileDir, 'cordis.patch.yml'),
         patches: [],
-        patchReload: 'startup',
+        patchReload: profilePatchReload,
       },
     })
     await mkdir(profileDir, { recursive: true })
@@ -716,7 +716,7 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
       writeProfileManifest(profileDir, {
         name: 'dsh-profile-scaffold',
         dependencies,
-        dsh: { profile: { bundles, patchReload: 'startup' } },
+        dsh: { profile: { bundles, patchReload: profilePatchReload } },
       })
     }
     const rootConfig = join(profileDir, 'cordis.yml')
@@ -735,36 +735,27 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
       },
     })
     await ctx.plugin(Loader)
-    ctx.loader.builtins.include = Include
-    // `cordis:group` beside it, exactly as `boot()` registers it: a group row is
-    // how a preset gives one `isolate` realm to a provider and its consumers,
-    // and a preset resolving package names from its own directory cannot reach
-    // `@deepseek-ai/cordis-plugin-group` by name.
-    ctx.loader.builtins.group = Group
-    let rootIncludeId: string | undefined = undefined
+    let rootPatches = patches
     if (options.profileRuntime !== undefined) {
       // Provenance is available before any configuration entry activates.
-      // The scaffold profile applies layer changes at startup.
       const readProfile = (): Profile => loadProfile('dsh', 'scaffold', INSTALL_ANCHOR, harnessHome)
       const profile = readProfile()
-      // The scaffold's own patches, with the id ownership the runtime answers `originOf` from.
-      const compose = (): ComposedStack => ({
-        patches, layers: [{ label: 'scaffold', patches }], owners: claimLayerIds(profile.layers).owners, conflicts: [], skippedBundles: [],
-        userDisabledRowIds: new Set<string>(),
-      })
+      const compose = (current: Profile): ComposedStack => composeProfileStack('web e2e scaffold', current.layers, [
+        { label: 'scaffold', patches },
+        { label: current.patchPath, patches: current.patches },
+      ])
+      const stack = compose(profile)
+      rootPatches = stack.patches
       await ctx.plugin(ProfileRuntime, {
         profile,
-        stack: compose(),
+        stack,
         installAnchor: INSTALL_ANCHOR,
         loadProfile: readProfile,
         compose,
-        rootEntry: () => [...ctx.loader.entries()].find(entry => entry.id === rootIncludeId),
+        rootEntry: () => rootIncludeEntry(ctx),
       })
     }
-    rootIncludeId = await ctx.loader.create({
-      name: 'cordis:include',
-      config: { path: pathToFileURL(rootConfig).href, patches },
-    })
+    await mountRootInclude(ctx, rootConfig, rootPatches)
     await ctx.loader.await()
     await auditStartupEntries(ctx, 'web e2e scaffold')
     if (options.welcomeNoticePending !== true) {

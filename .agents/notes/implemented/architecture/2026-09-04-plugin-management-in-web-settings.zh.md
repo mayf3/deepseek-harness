@@ -22,7 +22,7 @@ Status: implemented
 
 **安装动词是 `add`。** 客户端的命名空间服务把 `install` 与 `remove` 留给自己的成员，并在页面加载时——所有单测都通过之后——拒绝同名的挂载方法。宿主的方法与 CLI 一样叫 `plugins/add`，`packages/api/remotes/tests/remote-method-names.host.spec.ts` 用网关源码自己保留的名字检查工作区里每一个 `@Remote('<name>')`。
 
-**web e2e 脚手架可以挂 profile runtime。** `launchWebScaffold({ profileRuntime })` 把 fixture 包链接进脚手架 profile，并以 `patchReload: 'startup'` 在其上挂载 `ProfileRuntime`，于是管理器有 profile 可管，而启动好的树在场景之下绝不重新组合。
+**Web e2e 脚手架支持实时和仅启动时生效的 profile。** `launchWebScaffold({ profileRuntime })` 将 fixture 包链接到隔离的 profile。`patchReload` 默认选择 `startup`；实时场景通过 profile runtime 组合 bundle 与用户层。浏览器启停回归同时检查清单和实际 Loader 行，期间不重启脚手架。
 
 包发现与运行健康遵循[原生条目诊断与静态声明](2026-09-11-native-entry-diagnostics-and-static-plugin-declarations.zh.md)。每个声明模块均可添加，不依赖执行预检结论；未知包保持已安装。活跃行仍显示更新失败，失败的覆盖会标识目标条目而不转移归属。
 

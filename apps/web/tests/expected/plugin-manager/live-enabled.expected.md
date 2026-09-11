@@ -1,0 +1,11 @@
+- heading "插件管理" [level=1]
+- paragraph: 管理已安装的插件。
+- button "刷新"
+- button "添加插件"
+- heading "插件包" [level=3]
+- text: 1 个
+- list:
+  - listitem:
+    - button "查看 示例组合包": 示例组合包
+    - text: "Web e2e fixture: a bundle whose one row is an inert plugin."
+    - switch "启用 示例组合包" [checked]

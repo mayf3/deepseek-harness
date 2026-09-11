@@ -1,5 +1,4 @@
-# Web e2e fixture bundle: one inert row, so enabling it changes the profile
-# manifest without composing anything the scaffold tree would notice.
+# Web e2e fixture bundle: one inert row whose mount state exposes live layer changes.
 - insert:
     - id: fixture-row
       name: '@fixture/bundle'
