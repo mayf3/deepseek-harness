@@ -3128,7 +3128,7 @@ Sources: [`packages/session/session-title/src/types.ts:30`](../packages/session/
 | Property | Presence | Type |
 |---|---|---|
 | `kind` | required | `"provider"` |
-| `model` | optional | [`packages/session/session-title/src/types.ts#SessionTitleModelProvenance`](#persistence-type-packagessessionsession-titlesrctypestssessiontitlemodelprovenance) |
+| `model` | optional | [`packages/session/session-title/src/types.ts#SessionTitleModelIdentity`](#persistence-type-packagessessionsession-titlesrctypestssessiontitlemodelidentity) |
 | `provider` | required | `string` |
 
 <a id="persistence-type-eventstepend"></a>
@@ -3260,7 +3260,7 @@ Sources: [`packages/subagent/tool-subagent/src/model-selection-state.ts:17`](../
 
 SHA-256: `ba77b58995e36f14bb13886b0493d0a1a63d5db10b1a6cd9f6ac65a72cf832ec`
 
-Array of [`packages/session/session-title/src/types.ts#SessionTitleModelProvenance`](#persistence-type-packagessessionsession-titlesrctypestssessiontitlemodelprovenance).
+Array of [`packages/session/session-title/src/types.ts#SessionTitleModelIdentity`](#persistence-type-packagessessionsession-titlesrctypestssessiontitlemodelidentity).
 
 <a id="persistence-type-eventsystemmessage"></a>
 
@@ -5528,7 +5528,7 @@ Sources: [`packages/session/session-title-llm/src/index.ts:27`](../packages/sess
 | `maxTokens` | required | `number` |
 | `messageSeqs` | required | [`SessionEventEnvelope[38].sourceEventSeqs`](#persistence-type-sessioneventenvelope38sourceeventseqs) |
 | `messages` | required | [`event:session/title-llm-request.data.messages`](#persistence-type-eventsessiontitle-llm-requestdatamessages) |
-| `route` | required | [`packages/session/session-title/src/types.ts#SessionTitleModelProvenance`](#persistence-type-packagessessionsession-titlesrctypestssessiontitlemodelprovenance) |
+| `route` | required | [`packages/session/session-title/src/types.ts#SessionTitleModelIdentity`](#persistence-type-packagessessionsession-titlesrctypestssessiontitlemodelidentity) |
 | `system` | required | `string` |
 | `titleProvider` | required | `string` |
 
@@ -5546,9 +5546,9 @@ Sources: [`packages/session/session-title/src/types.ts:41`](../packages/session/
 | `source` | required | [`packages/session/session-title/src/types.ts#SessionTitleSource`](#persistence-type-packagessessionsession-titlesrctypestssessiontitlesource) |
 | `title` | required | `string` |
 
-<a id="persistence-type-packagessessionsession-titlesrctypestssessiontitlemodelprovenance"></a>
+<a id="persistence-type-packagessessionsession-titlesrctypestssessiontitlemodelidentity"></a>
 
-### `packages/session/session-title/src/types.ts#SessionTitleModelProvenance`
+### `packages/session/session-title/src/types.ts#SessionTitleModelIdentity`
 
 SHA-256: `07e1a58c58b593f507b8e7f25723bb0aa42baae6e00f5ecfddf28cb1e64d3235`
 

@@ -185,7 +185,7 @@ interface SessionEventMap {
     expect(detail?.sources).toEqual(['packages/domain/payload/src/detail.ts:2'])
   })
 
-  it('keeps shared scalar provenance at real aliases and omits plain property references', () => {
+  it('keeps shared scalar declaration metadata at real aliases and omits plain property references', () => {
     const root = fixture([
       'type Label = string',
       "type Done = 'done'",

@@ -3130,7 +3130,7 @@ SHA-256: `b81e9de81a481b24e1e1f9adf038bfc59e57b4f35ce62f8f1e45284186f4f812`
 | 属性 | 存在性 | 类型 |
 |---|---|---|
 | `kind` | 必需 | `"provider"` |
-| `model` | 可选 | [`packages/session/session-title/src/types.ts#SessionTitleModelProvenance`](#persistence-type-packagessessionsession-titlesrctypestssessiontitlemodelprovenance) |
+| `model` | 可选 | [`packages/session/session-title/src/types.ts#SessionTitleModelIdentity`](#persistence-type-packagessessionsession-titlesrctypestssessiontitlemodelidentity) |
 | `provider` | 必需 | `string` |
 
 <a id="persistence-type-eventstepend"></a>
@@ -3262,7 +3262,7 @@ SHA-256: `0d47a8f3d847243c4488e755ad4cab7a04ac5d4621b9c81865524cf3f4d8536f`
 
 SHA-256: `ba77b58995e36f14bb13886b0493d0a1a63d5db10b1a6cd9f6ac65a72cf832ec`
 
-[`packages/session/session-title/src/types.ts#SessionTitleModelProvenance`](#persistence-type-packagessessionsession-titlesrctypestssessiontitlemodelprovenance) 的数组。
+[`packages/session/session-title/src/types.ts#SessionTitleModelIdentity`](#persistence-type-packagessessionsession-titlesrctypestssessiontitlemodelidentity) 的数组。
 
 <a id="persistence-type-eventsystemmessage"></a>
 
@@ -5530,7 +5530,7 @@ SHA-256: `08936f7648f573f7539800e1ec2852fbbcba05e1a20487a1e5acf2a0fce1e2de`
 | `maxTokens` | 必需 | `number` |
 | `messageSeqs` | 必需 | [`SessionEventEnvelope[38].sourceEventSeqs`](#persistence-type-sessioneventenvelope38sourceeventseqs) |
 | `messages` | 必需 | [`event:session/title-llm-request.data.messages`](#persistence-type-eventsessiontitle-llm-requestdatamessages) |
-| `route` | 必需 | [`packages/session/session-title/src/types.ts#SessionTitleModelProvenance`](#persistence-type-packagessessionsession-titlesrctypestssessiontitlemodelprovenance) |
+| `route` | 必需 | [`packages/session/session-title/src/types.ts#SessionTitleModelIdentity`](#persistence-type-packagessessionsession-titlesrctypestssessiontitlemodelidentity) |
 | `system` | 必需 | `string` |
 | `titleProvider` | 必需 | `string` |
 
@@ -5548,9 +5548,9 @@ SHA-256: `b56f6a885da3dc394c69a3e3cc5c0cfc4da15601b63fda4989eee8f40efc5be4`
 | `source` | 必需 | [`packages/session/session-title/src/types.ts#SessionTitleSource`](#persistence-type-packagessessionsession-titlesrctypestssessiontitlesource) |
 | `title` | 必需 | `string` |
 
-<a id="persistence-type-packagessessionsession-titlesrctypestssessiontitlemodelprovenance"></a>
+<a id="persistence-type-packagessessionsession-titlesrctypestssessiontitlemodelidentity"></a>
 
-### `packages/session/session-title/src/types.ts#SessionTitleModelProvenance`
+### `packages/session/session-title/src/types.ts#SessionTitleModelIdentity`
 
 SHA-256: `07e1a58c58b593f507b8e7f25723bb0aa42baae6e00f5ecfddf28cb1e64d3235`
 

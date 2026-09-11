@@ -15,7 +15,7 @@ import {
   type SchemaProperty,
 } from './persistence-schema-model.ts'
 
-interface Provenance {
+interface DeclarationMetadata {
   readonly names: Set<string>
   readonly sources: Set<string>
 }
@@ -204,7 +204,7 @@ function validateReachableDeclarations(
 class SchemaExtractor {
   readonly nodes: SchemaNode[] = []
   private readonly cache = new Map<ts.Type, number>()
-  private readonly provenance = new Map<number, Provenance>()
+  private readonly declarationMetadata = new Map<number, DeclarationMetadata>()
 
   private readonly checker: ts.TypeChecker
 
@@ -387,11 +387,11 @@ class SchemaExtractor {
       const schema = canonicalizeSchema(this.nodes, id)
       const digest = schemaDigest(schema)
       const item = types.get(digest) ?? { schema, names: new Set<string>(), sources: new Set<string>() }
-      const provenance = this.provenance.get(id)
-      for (const name of provenance?.names ?? []) item.names.add(name)
-      for (const source of provenance?.sources ?? []) item.sources.add(source)
+      const declarationMetadata = this.declarationMetadata.get(id)
+      for (const name of declarationMetadata?.names ?? []) item.names.add(name)
+      for (const source of declarationMetadata?.sources ?? []) item.sources.add(source)
       const kind = schema.nodes[0]?.kind
-      if (kind !== 'primitive' && kind !== 'literal' && (provenance === undefined || provenance.names.size === 0)) {
+      if (kind !== 'primitive' && kind !== 'literal' && (declarationMetadata === undefined || declarationMetadata.names.size === 0)) {
         for (const path of paths.get(id) ?? []) item.names.add(path)
       }
       types.set(digest, item)
@@ -409,7 +409,7 @@ class SchemaExtractor {
   }
 
   private record(id: number, type: ts.Type): void {
-    const item = this.provenance.get(id) ?? { names: new Set<string>(), sources: new Set<string>() }
+    const item = this.declarationMetadata.get(id) ?? { names: new Set<string>(), sources: new Set<string>() }
     const declarations = new Set([
       ...this.declarationSources.get(type) ?? [],
       ...type.aliasSymbol?.declarations ?? [],
@@ -424,7 +424,7 @@ class SchemaExtractor {
       const position = source.getLineAndCharacterOfPosition(declaration.getStart())
       item.sources.add(`${file}:${String(position.line + 1)}`)
     }
-    this.provenance.set(id, item)
+    this.declarationMetadata.set(id, item)
   }
 
   private fail(type: ts.Type, site: ts.Node, reason: string): never {

@@ -45,7 +45,7 @@ export interface PersistenceRoot {
   readonly schema: CanonicalSchema
 }
 
-/** One reachable structural type and its non-fingerprinted source provenance. */
+/** One reachable structural type and its non-fingerprinted source declaration metadata. */
 export interface PersistenceType {
   readonly digest: string
   readonly schema: CanonicalSchema

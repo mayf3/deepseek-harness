@@ -13686,7 +13686,7 @@
         ]
       },
       "names": [
-        "packages/session/session-title/src/types.ts#SessionTitleModelProvenance",
+        "packages/session/session-title/src/types.ts#SessionTitleModelIdentity",
         "packages/subagent/tool-subagent/src/model-selection.ts#AllowedModelRoute"
       ],
       "sources": [

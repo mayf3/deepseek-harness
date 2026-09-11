@@ -144,7 +144,7 @@ function definition(entry: TypeDisplay, entries: ReadonlyMap<string, TypeDisplay
 
 /**
  * Render every tracked root with its exact digest and resolved type reference.
- * @param inventory - complete current-source schemas and provenance.
+ * @param inventory - complete current-source schemas and declaration metadata.
  * @param locale - generated document language.
  * @returns Markdown index including the history and contributor workflow links.
  */
@@ -160,7 +160,7 @@ export function renderPersistenceSchemaIndex(inventory: PersistenceSchemaInvento
 
 /**
  * Render every reachable type once, with links for shared and recursive definitions.
- * @param inventory - complete current-source schemas and provenance.
+ * @param inventory - complete current-source schemas and declaration metadata.
  * @param locale - generated document language.
  * @returns Markdown definitions whose anchors use names or owning paths instead of hashes.
  */
