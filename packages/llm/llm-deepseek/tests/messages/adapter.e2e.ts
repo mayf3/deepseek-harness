@@ -1,4 +1,4 @@
-/** Real Messages protocol round trips; credentialless CI skips these provider checks. */
+/** Real Messages round trips against the official protocol root; skip without credentials. */
 import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -22,7 +22,10 @@ async function boot(inHistory = false) {
   const ctx = new Context()
   cleanups.push(() => ctx.fiber.dispose())
   await ctx.plugin(LlmRuntime)
-  await ctx.plugin(Messages, { protocol: 'messages', maxTokens: 4096,
+  await ctx.plugin(Messages, {
+    protocol: 'messages',
+    baseURL: Messages.MESSAGES_BASE_URL,
+    maxTokens: 4096,
     ...inHistory ? { models: [{ id: 'deepseek-v4-flash', systemPromptUpdate: 'in-history' as const }] } : {},
   })
   return ctx
