@@ -46,6 +46,7 @@ describe('managed subprocess control pipe', () => {
     expect(await handle.waitForExit(AbortSignal.timeout(10_000))).toBe(true)
     await ctx.fiber.dispose()
     expect(channel.destroyed).toBe(true)
+    expect(channel.closed).toBe(true)
   }, 15_000)
 
   it('closes the caller endpoint when service disposal terminates an active program', async () => {

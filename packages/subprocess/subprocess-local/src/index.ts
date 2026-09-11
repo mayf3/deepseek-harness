@@ -113,7 +113,10 @@ export class LocalSubprocessRuntime extends SubprocessRuntime {
       pending.push(terminal.terminate().then(() => { this.terminals.delete(terminal) }))
     }
     const outcomes = await Promise.allSettled(pending)
-    for (const control of this.controlChannels) control.destroy()
+    await Promise.all([...this.controlChannels].map(control => new Promise<void>((resolveClose) => {
+      control.once('close', () => { resolveClose() })
+      control.destroy()
+    })))
     this.controlChannels.clear()
     const failures: unknown[] = []
     for (const outcome of outcomes) {
