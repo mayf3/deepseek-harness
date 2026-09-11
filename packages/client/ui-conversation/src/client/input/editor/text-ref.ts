@@ -88,7 +88,7 @@ export function registerTextRefDecoration(
   const getMatch = (text: string): { start: number; end: number } | null => {
     const claim = activeToken()
     for (const range of scanTextRefs(text, lexiconOf())) {
-      if (claim !== null && range.start === 0 && text.slice(range.start, range.end) === claim) continue
+      if (claim !== null && range.start === 0 && text.slice(range.start, range.end) === claim.trimEnd()) continue
       return { start: range.start, end: range.end }
     }
     return null
