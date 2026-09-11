@@ -54,6 +54,7 @@
     "apps/web/tests/rail-search-expand.e2e.ts",
     "apps/web/tests/conversation-column-overflow.e2e.ts",
     "apps/web/tests/ptc-round.e2e.ts",
+    "apps/web/tests/ptc-escalation.e2e.ts",
     "apps/web/tests/present.e2e.ts",
     "apps/web/tests/present-svg.e2e.ts",
     "apps/web/tests/composer-draft-scroll.e2e.ts",

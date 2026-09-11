@@ -108,11 +108,11 @@ function controlParameters(runtime: CodeRuntime | undefined) {
   // Catalog readers have no mounted runtime; real model assembly requires one.
   if (runtime === undefined) return RUN_CODE_CONTROLS
   return {
-    ...runtime?.timeout === undefined ? {} : {
+    ...runtime.timeout === undefined ? {} : {
       timeoutMs: { ...RUN_CODE_CONTROLS.timeoutMs,
         description: `Positive elapsed-time budget in milliseconds, including nested tool and approval waits. Default ${runtime.timeout.defaultMs}; capped at ${runtime.timeout.maxMs}. Zero does not disable the deadline.` },
     },
-    ...runtime?.sandboxMode === undefined ? {} : {
+    ...runtime.sandboxMode === undefined ? {} : {
       sandbox_permissions: RUN_CODE_CONTROLS.sandbox_permissions,
       justification: RUN_CODE_CONTROLS.justification,
     },
