@@ -75,9 +75,9 @@ describe('Node program process', () => {
     vi.stubEnv('TEMP', temp)
     vi.stubEnv('TMP', tmp)
     vi.stubEnv('DSH_TEST_RUNTIME_SECRET', 'must-not-inherit')
-    const childCode = 'const fs=require("node:fs"); const path=require("node:path"); const temp=require("node:os").tmpdir(); const file=path.join(temp,"native-temp.txt"); fs.writeFileSync(file,"native-temp"); process.stdout.write(JSON.stringify({file,temp,env:Object.keys(process.env)}));'
+    const childCode = 'const fs=require("node:fs"); const path=require("node:path"); const temp=require("node:os").tmpdir(); const file=path.join(temp,"native-temp.txt"); fs.writeFileSync(file,"native-temp"); fs.writeFileSync("native-observation.json",JSON.stringify({file,temp,env:Object.keys(process.env)}));'
     const result = await run({
-      program: `const {spawnSync}=await import("node:child_process"); const child=spawnSync(process.execPath,["-e",${JSON.stringify(childCode)}],{encoding:"utf8"}); if(child.status!==0) throw new Error(child.error?.message ?? child.stderr); const native=JSON.parse(child.stdout); return {env:Object.keys(process.env),native,observed:await tools.inspect({path:native.file})};`,
+      program: `const {spawnSync}=await import("node:child_process"); const child=spawnSync(process.execPath,["-e",${JSON.stringify(childCode)}],{stdio:"inherit"}); if(child.status!==0) throw new Error(child.error?.message ?? "native child failed"); const native=JSON.parse((await import("node:fs")).readFileSync("native-observation.json","utf8")); return {env:Object.keys(process.env),native,observed:await tools.inspect({path:native.file})};`,
       bindings: bindings({ inspect: async (args) => {
         const path = (args as { path: string }).path
         expect(path.startsWith(`${temp}\\dsh-`)).toBe(true)
