@@ -137,6 +137,16 @@ describe('local request-image cache', () => {
     expect(enlarged.variantId).not.toBe(thinRequest.variantId)
   })
 
+  it('encodes the rounded short edge at the route target', async () => {
+    const attachments = await store()
+    const attachment = await attachments.saveImage({ data: await image(1224, 1429), mediaType: 'image/png' })
+    const request = await attachments.readImageRequest(attachment, {
+      width: 1187, height: 1386, maxBytes: 2 * 1024 * 1024,
+    })
+    expect(request).toMatchObject({ width: 1187, height: 1386 })
+    await expect(sharp(request.data).metadata()).resolves.toMatchObject({ width: 1187, height: 1386 })
+  })
+
   it('keeps the smallest ladder output when the encoded-byte target is unreachable', async () => {
     const attachments = await store()
     const attachment = await attachments.saveImage({ data: await image(1, 1), mediaType: 'image/png' })

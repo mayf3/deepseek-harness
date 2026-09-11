@@ -49,6 +49,13 @@ describe('DeepSeek image tokens', () => {
 })
 
 describe('DeepSeek request image dimensions', () => {
+  it('can cross a token-cell boundary when preserving the source aspect ratio', () => {
+    const sent = deepSeekRequestImageDimensions(1224, 1429)
+    expect(sent).toEqual({ width: 1187, height: 1386 })
+    expect(deepSeekImageTokens(1224, 1429)).toBe(959)
+    expect(deepSeekImageTokens(sent.width, sent.height)).toBe(992)
+  })
+
   it.each([
     [800, 800, 800, 800],
     [1302, 1302, 1302, 1302],

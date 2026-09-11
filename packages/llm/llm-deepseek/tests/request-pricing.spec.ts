@@ -61,6 +61,15 @@ describe('DeepSeek request-image pricing', () => {
     }])
   })
 
+  it('prices the sent dimensions when aspect-preserving projection changes the token grid', () => {
+    const image = ref('portrait', 1224, 1429)
+    const prices = deepSeekImageRequestPricing(connection(), 'vision').priceImages([image])
+    expect(prices).toEqual([{
+      visualTokens: 992,
+      text: requestImageHandleText(image, { width: 1187, height: 1386 }),
+    }])
+  })
+
   it('honors a numeric pixel budget override', () => {
     const image = ref('photo', 4096, 4096)
     const options = resolveAdapterOptions({

@@ -122,8 +122,9 @@ function sameResize(a: GridResize, b: GridResize): boolean {
  * Dimensions the harness sends so the provider keeps the whole image: the
  * source itself when its patch-padded grid fits the token cap, otherwise the
  * source aspect ratio at the solved grid's long edge. The provider pads the
- * short edge to whole patches on its side, so the token count equals the
- * solved grid's. Small images are never enlarged.
+ * short edge to whole patches on its side. Rounding the aspect-preserving
+ * short edge can change the token count from the source's solved grid;
+ * request pricing uses the sent dimensions. Small images are never enlarged.
  * @param width - positive integer source width in pixels.
  * @param height - positive integer source height in pixels.
  * @returns the request dimensions to encode.
