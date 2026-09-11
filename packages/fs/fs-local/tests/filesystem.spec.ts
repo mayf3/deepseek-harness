@@ -325,7 +325,7 @@ describe('readByteRange', () => {
 
   it('reads a window from the middle of a file larger than the window', async () => {
     await writeFile(join(dir, 'ramp.bin'), ramp)
-    const window = await fs.readByteRange(await fs.resolve('ramp.bin'), { offset: 100, length: 4 })
+    const window = await fs.readByteRange(await fs.resolve('ramp.bin'), { offset: 100, length: 4 }, new AbortController().signal)
     expect([...window]).toEqual([100, 101, 102, 103])
   })
 
