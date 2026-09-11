@@ -14,7 +14,7 @@ Status: implemented
 
 私有 Desktop Host 针对独立归属的 Desktop profile 调用 CLI 的共享 profile runner。完整 Web 组合负责认证、HTTP 路由、客户端资源、RPC 与响应流。Electron 加载子进程报告的认证 URL。子进程 IPC 承载就绪与关闭；应用请求直接通过 HTTP 传输。
 
-共享 runner 负责 profile 与 Harness-home patch、代理设置、遥测默认值、模块补全、配置重载及应用生命周期。Web 与 Desktop 共享应用机制，各自决定部署默认值。Desktop 使用独立的默认监听端口，使两个应用可以同时运行；profile 配置可以覆盖该端口。原生目录选择是具有可见 UI 用途的 Desktop overlay；壳窗口、菜单、插件管理、恢复及更新仍由 Electron 负责。
+共享 runner 负责 profile 与 Harness-home patch、代理设置、遥测默认值、模块补全、配置重载及应用生命周期。Desktop 以共享 Web 模板的 bundle 列表和 patch 重载策略初始化 profile，并使用 Web 的自动目录选择机制，让应用默认值由一处维护。Desktop 使用独立的默认监听端口，使两个应用可以同时运行；profile 配置可以覆盖该端口。壳窗口、菜单、插件管理、恢复及更新仍由 Electron 负责。
 
 [内置运行时决策](2026-09-08-desktop-bundled-runtime-and-external-plugins.zh.md)保留独立运行时与插件存储、内置 pnpm，以及明确的包归属。[原位修改决策](2026-09-09-desktop-in-place-profile.zh.md)保留包事务与部分失败恢复。公开 CLI 继续拒绝保留的 Desktop profile。
 

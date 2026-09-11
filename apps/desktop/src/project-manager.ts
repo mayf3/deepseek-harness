@@ -27,8 +27,8 @@ import { removeOwnedDirectory } from './owned-directory.ts'
 import type { DesktopRelease } from './release.ts'
 import { readDesktopRuntime, type DesktopRuntimeDescriptor } from './runtime-tree.ts'
 import {
-  initProfile, readProfileManifest, readProfilePlugins, reconcileProfilePlugins,
-  unlinkProfileModuleFallback, writeProfileBundles,
+  initProfile, PROFILE_TEMPLATES, readProfileManifest, readProfilePlugins, reconcileProfilePlugins,
+  unlinkProfileModuleFallback, writeProfileBundles, type ProfileTemplate,
 } from '@deepseek-ai/dsh-app-boot'
 import { migrateDesktopProfileLinks } from './profile-packages.ts'
 
@@ -67,7 +67,7 @@ export type DesktopProjectMutation =
 const PROJECT_NAME = '@deepseek-ai/dsh-desktop-runtime'
 const DSH_PACKAGE = '@deepseek-ai/dsh'
 const CORE_BUILD_PACKAGE = '@deepseek-ai/dsh-subprocess-local'
-const DESKTOP_PROFILE_BUNDLES = ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app'] as const
+const WEB_PROFILE = PROFILE_TEMPLATES.web as ProfileTemplate
 const WORKSPACE_SETTINGS = 'nodeLinker: hoisted\nautoInstallPeers: false\n'
 const MAX_PNPM_DIAGNOSTIC_BYTES = 64 * 1024
 
@@ -184,7 +184,7 @@ export class DesktopProjectManager {
       if (!existsSync(this.paths.profile)) throw new Error('desktop project: active profile is not installed')
       await hooks.beforeChange()
       if (mutation.type === 'plugins-disable-all') {
-        writeProfileBundles(this.paths.profile, readProfileManifest('dsh', this.paths.profile), DESKTOP_PROFILE_BUNDLES)
+        writeProfileBundles(this.paths.profile, readProfileManifest('dsh', this.paths.profile), WEB_PROFILE.bundles)
       } else {
         await this.applyMutation(this.paths.profile, mutation)
       }
@@ -329,7 +329,7 @@ export function createRuntimeProjectMetadata(projectDir: string, release: Deskto
     private: true,
     version: '0.0.0',
     dependencies: desktopCorePackageOverrides(packageSet),
-    dsh: { profile: { bundles: [...DESKTOP_PROFILE_BUNDLES] } },
+    dsh: { profile: { bundles: [...WEB_PROFILE.bundles], patchReload: WEB_PROFILE.patchReload } },
   }
   writeJson(join(projectDir, 'package.json'), manifest)
   writeFileSync(
@@ -354,7 +354,7 @@ export function createDevelopmentProjectMetadata(projectDir: string, release: De
       [DSH_PACKAGE]: release.version,
       [DESKTOP_HOST_PACKAGE]: release.version,
     },
-    dsh: { profile: { bundles: [...DESKTOP_PROFILE_BUNDLES] } },
+    dsh: { profile: { bundles: [...WEB_PROFILE.bundles], patchReload: WEB_PROFILE.patchReload } },
   }
   writeJson(join(projectDir, 'package.json'), manifest)
   writeFileSync(join(projectDir, 'pnpm-workspace.yaml'), workspaceFile(), { mode: 0o600 })
@@ -362,5 +362,5 @@ export function createDevelopmentProjectMetadata(projectDir: string, release: De
 
 /** Create the first external plugin profile without running a package manager. */
 export function createPluginProfile(projectDir: string): void {
-  initProfile(projectDir, DESKTOP_PROFILE_BUNDLES)
+  initProfile(projectDir, WEB_PROFILE.bundles, WEB_PROFILE.patchReload)
 }

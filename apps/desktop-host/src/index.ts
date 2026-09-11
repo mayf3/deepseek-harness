@@ -1,7 +1,6 @@
 /** Launch the Desktop profile through the Web application and report its URL to Electron. */
 
 import { join } from 'node:path'
-import { fileURLToPath } from 'node:url'
 import { loadLayeredEnv, loadProfileDirectory } from '@deepseek-ai/dsh-app-boot'
 import { runProfile } from '@deepseek-ai/dsh/profile-boot'
 import type {} from '@deepseek-ai/dsh-client-connection'
@@ -16,7 +15,7 @@ async function main(): Promise<void> {
     environment: loadLayeredEnv('dsh'),
     profile: 'desktop',
     resolvedProfile: { profile, installAnchor },
-    patchFiles: [fileURLToPath(new URL('../config/desktop.cordis.patch.yml', import.meta.url))],
+    patchFiles: [],
     args: ['--no-open', '--port', '19387'],
   })
   const stop = async (): Promise<void> => {
