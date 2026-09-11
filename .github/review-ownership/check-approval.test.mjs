@@ -260,6 +260,11 @@ test('keeps the status pending on a write-capable change request while ignoring 
   assert.deepEqual(statuses, [{
     state: 'pending',
     context: 'weighted approval',
+    description: 'Evaluating approval points.',
+    target_url: 'https://github.example/actions/runs/1',
+  }, {
+    state: 'pending',
+    context: 'weighted approval',
     description: '1 blocking change request.',
     target_url: 'https://github.example/actions/runs/1',
   }])
@@ -325,8 +330,9 @@ test('publishes the required status and replaces stale success with error on eva
     },
     write: () => {},
   }), /reviews unavailable/u)
-  assert.equal(failures[0].options.body.state, 'error')
-  assert.equal(failures[0].options.body.description, 'Approval evaluation failed.')
+  assert.equal(failures[0].options.body.state, 'pending')
+  assert.equal(failures[1].options.body.state, 'error')
+  assert.equal(failures[1].options.body.description, 'Approval evaluation failed.')
 })
 
 test('sends authenticated JSON and escapes an API error body', async () => {
@@ -412,5 +418,24 @@ test('publishes error when production attribution fails', async () => {
       return {}
     },
   }), /incomplete history/u)
-  assert.deepEqual(states, ['error'])
+  assert.deepEqual(states, ['pending', 'error'])
+})
+
+
+test('revokes a previous success before starting expensive attribution', async () => {
+  const states = []
+  await runApprovalCheck({
+    event: pullRequestEvent(), policySource, runUrl: 'https://github.example/run/1', write: () => {},
+    getOwnership: async () => {
+      assert.deepEqual(states, ['pending'])
+      return { totalLines: 100, reviewerLines: { writer: 25 } }
+    },
+    api: async (path, options) => {
+      if (path.includes('/reviews?')) return [review('writer', 'APPROVED')]
+      if (path.includes('/permission')) return { permission: 'write' }
+      states.push(options.body.state)
+      return {}
+    },
+  })
+  assert.deepEqual(states, ['pending', 'pending'])
 })

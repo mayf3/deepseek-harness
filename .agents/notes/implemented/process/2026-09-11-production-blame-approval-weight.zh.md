@@ -12,7 +12,7 @@ Status: implemented
 
 [审批策略](../../../../.github/review-ownership/README.md) 按变更旧生产代码行的归属比例，以 `min(2, 1 + 2 × ownedLines / totalLines)` 调整一分批准的权重。归属比例为 0% 时计一分，25% 时计 1.5 分，50% 及以上时计两分。分数在与两分通过线比较前不做舍入。合并基点同时提供代码分类和 blame 依据，GitHub 将归属提交关联到评审者账号。无法关联账号的作者仍计入分母。新增行没有原作者，不计入行数；分母为空时不提升权重。
 
-发布器读取完整 Git 历史，不检出 PR 代码。维护中的词法分析器区分仓库各源码语言中的注释与代码。作者查询按提交批量执行，所有评审者共用一次统计。现有的[待定状态语义](2026-09-09-blocked-weighted-approvals-remain-pending.zh.md)和[评审事件验证](2026-09-10-approval-review-workflow-identity.zh.md)仍是独立要求。
+发布器在评估前将头提交标记为待定，避免历史拉取中断后保留此前的成功状态。它读取完整 Git 历史，不检出 PR 代码。维护中的词法分析器区分仓库各源码语言中的注释与代码。作者查询按提交批量执行，所有评审者共用一次统计。现有的[待定状态语义](2026-09-09-blocked-weighted-approvals-remain-pending.zh.md)和[评审事件验证](2026-09-10-approval-review-workflow-identity.zh.md)仍是独立要求。
 
 ## Alternatives considered
 

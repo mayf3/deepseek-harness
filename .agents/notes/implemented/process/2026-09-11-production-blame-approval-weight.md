@@ -12,7 +12,7 @@ A fixed one-point reviewer weight does not reflect authorship of the code a pull
 
 The [approval policy](../../../../.github/review-ownership/README.md) scales a one-point approval by `min(2, 1 + 2 × ownedLines / totalLines)` over changed old production lines. Ownership of 0% gives one point, 25% gives 1.5 points, and 50% or more gives two points. Scores are not rounded before comparison with the two-point success threshold. The merge base supplies both classification and blame, while GitHub associates blame commits with reviewer accounts. Unlinked authors remain in the denominator. Additions have no prior owner and contribute no lines; an empty denominator produces no boost.
 
-The publisher reads complete Git history without checking out PR code. A maintained lexer separates comments from code across the repository’s source languages. Author lookups batch commits and all reviewers share one measurement. Existing [pending-status semantics](2026-09-09-blocked-weighted-approvals-remain-pending.md) and [review-event validation](2026-09-10-approval-review-workflow-identity.md) remain independent requirements.
+The publisher marks the head pending before evaluation, so an interrupted history fetch cannot preserve an earlier success. It reads complete Git history without checking out PR code. A maintained lexer separates comments from code across the repository’s source languages. Author lookups batch commits and all reviewers share one measurement. Existing [pending-status semantics](2026-09-09-blocked-weighted-approvals-remain-pending.md) and [review-event validation](2026-09-10-approval-review-workflow-identity.md) remain independent requirements.
 
 ## Alternatives considered
 

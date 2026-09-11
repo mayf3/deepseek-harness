@@ -202,6 +202,7 @@ export async function evaluateApproval({ event, policySource, api, getOwnership 
  */
 export async function runApprovalCheck({ event, policySource, api, runUrl, getOwnership = productionOwnership, write = line => process.stdout.write(`${line}\n`) }) {
   const pull = pullRequestFromEvent(event)
+  await publishStatus(api, pull, 'pending', 'Evaluating approval points.', runUrl)
   let result
   try {
     result = await evaluateApproval({ event, policySource, api, getOwnership })
