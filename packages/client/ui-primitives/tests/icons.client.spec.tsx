@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import * as primitives from '@deepseek-ai/dsh-client-ui-primitives'
 import {
   IconAlarmClockOutline16, IconApiOutline14, IconArchiveOutline20, IconFolderClose16,
-  IconGoalOutline16, IconSendOutline16,
+  IconGoalOutline16, IconSendOutline14,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 
 afterEach(cleanup)
@@ -40,7 +40,7 @@ describe('ic_ds_ icon set', () => {
   })
 
   it('size and className props land on the root svg', () => {
-    const { container } = render(<IconSendOutline16 size={20} className="x" />)
+    const { container } = render(<IconSendOutline14 size={20} className="x" />)
     const svg = container.querySelector('svg')!
     expect(svg.getAttribute('width')).toBe('20')
     expect(svg.getAttribute('height')).toBe('20')
