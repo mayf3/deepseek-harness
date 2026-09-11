@@ -220,7 +220,9 @@ export class NodeCodeRuntime extends CodeRuntime {
       const packaged = 'pkg' in process && this.config.bootstrapPath === undefined
       const heapFlag = `--max-old-space-size=${this.config.maxOldGenerationSizeMb}`
       const argv = [executable, ...packaged ? [] : [heapFlag], ...bootstrapArgs(this.ctx.fs, this.config, this.config.maxMessageBytes)]
-      confined = policy.mode === 'danger-full-access' ? undefined : this.ctx.sandbox.confine(argv, { ...policy, mode: policy.mode })
+      confined = policy.mode === 'danger-full-access' ? undefined : await this.ctx.sandbox.confine(argv, { ...policy, mode: policy.mode }, signal)
+      // oxlint-disable-next-line typescript/no-unnecessary-condition -- Cancellation can settle during awaited confinement.
+      if (settled) return await result.promise
       if (confined !== undefined) sandbox.enforcement = confined.enforcement
       // Native launchers need executable search and Windows system paths before the child installs its model environment.
       const env: NodeJS.ProcessEnv = Object.fromEntries(Object.keys(process.env)

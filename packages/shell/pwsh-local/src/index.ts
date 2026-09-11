@@ -278,13 +278,14 @@ export class PwshLocalExecutor extends ShellExecutor {
     }
   }
 
-  start(spec: ShellExecSpec): ShellProcess {
-    return this.startArgv(spec, this.argv(spec))
+  async start(spec: ShellExecSpec): Promise<ShellProcess> {
+    return Promise.resolve(this.startArgv(spec, this.argv(spec)))
   }
 
   /** Background start of an exact argv (the confining subclass re-wraps it). */
   protected startArgv(spec: ShellExecSpec, argv: readonly string[]): ShellProcess {
     // Background runs ignore timeoutMs; callers stop them through kill() or spec.signal.
+    spec.signal?.throwIfAborted()
     const running = this.ctx.subprocess.spawn(this.spawnSpec(spec, this.config.maxOutputBytes, spec.signal, argv))
     const collected = PwshLocalExecutor.collected(running)
 

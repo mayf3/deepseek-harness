@@ -15,7 +15,7 @@ const sandboxUsable = await (async () => {
   const probe = new Context()
   try {
     await probe.plugin(Sandbox, {})
-    probe.sandbox.confine([process.execPath, '--version'], { mode: 'read-only', workspaceRoot: process.cwd() })
+    await probe.sandbox.confine([process.execPath, '--version'], { mode: 'read-only', workspaceRoot: process.cwd() })
     return true
   } catch (error: unknown) {
     if (error instanceof SandboxUnavailableError) return false
@@ -255,15 +255,15 @@ describe('Node program process', () => {
     const confine = ctx.sandbox.confine.bind(ctx.sandbox)
     const policy = runtime.resolve({ program: '', bindings: [] }).sandboxPolicy
     if (policy === undefined || policy.mode === 'danger-full-access') throw new Error('expected confined policy')
-    const wrapped = confine([process.execPath, '--version'], { ...policy, mode: policy.mode })
+    const wrapped = await confine([process.execPath, '--version'], { ...policy, mode: policy.mode })
     const original = wrapped.argv[0]
     if (original === undefined) throw new Error('expected sandbox launcher')
     const executable = await ctx.subprocess.resolveExecutable(original)
     const alias = 'ptc-private-sandbox-launcher'
     await symlink(executable, join(root, alias))
     const previousPath = process.env.PATH
-    const substitute = vi.spyOn(ctx.sandbox, 'confine').mockImplementation((argv, selected) => {
-      const result = confine(argv, selected)
+    const substitute = vi.spyOn(ctx.sandbox, 'confine').mockImplementation(async (argv, selected, signal) => {
+      const result = await confine(argv, selected, signal)
       return { ...result, argv: [alias, ...result.argv.slice(1)] }
     })
     try {

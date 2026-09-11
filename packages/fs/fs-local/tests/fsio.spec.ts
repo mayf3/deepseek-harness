@@ -8,7 +8,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { chmod, mkdtemp, readFile, rename, rm, stat, symlink, unlink, writeFile, mkdir, readdir, realpath } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { isAbsolute, join, relative } from 'node:path'
 import { createServer } from 'node:net'
 import {
   applyLiteralEdit,
@@ -91,6 +91,32 @@ describe('resolveLocalTarget', () => {
 
   it('rejects a blank path', async () => {
     await expect(resolveLocalTarget(dir, '   ')).rejects.toMatchObject({ code: 'FS_NOT_FOUND' })
+  })
+
+  it('anchors a relative cwd before retaining parent traversal in a display path', async () => {
+    await mkdir(join(dir, 'nested'))
+    const cwd = relative(process.cwd(), dir)
+    const target = await resolveLocalTarget(cwd, 'nested/../created.txt')
+    expect(isAbsolute(target.displayPath)).toBe(true)
+    expect(target.targetKey).toBe(join(await realpath(dir), 'created.txt'))
+    expect((await resolveLocalTarget(cwd, target.displayPath)).targetKey).toBe(target.targetKey)
+  })
+
+  it('rejects parent traversal through a missing directory hierarchy', async () => {
+    await expect(resolveLocalTarget(dir, 'missing/deeper/../created.txt')).rejects.toMatchObject({ code: 'FS_NOT_FOUND' })
+  })
+
+  it.skipIf(process.platform === 'win32')('resolves parent traversal after a symlink in the provider filesystem', async () => {
+    const physical = join(dir, 'physical')
+    await mkdir(join(physical, 'nested'), { recursive: true })
+    await mkdir(join(dir, 'lexical'))
+    await symlink(join(physical, 'nested'), join(dir, 'lexical', 'link'))
+    const cwd = `${join(dir, 'lexical', 'link')}/..`
+    const before = await resolveLocalTarget(cwd, 'created.txt')
+    expect(before.targetKey).toBe(join(await realpath(physical), 'created.txt'))
+    await writeFile(join(physical, 'created.txt'), 'physical')
+    expect((await resolveLocalTarget(dir, 'lexical/link/../created.txt')).targetKey).toBe(before.targetKey)
+    await expect(resolveLocalTarget(dir, 'missing/../created.txt')).rejects.toMatchObject({ code: 'FS_NOT_FOUND' })
   })
 
   it('rejects a path whose ancestor is a file with a structured FsError (ENOTDIR)', async () => {

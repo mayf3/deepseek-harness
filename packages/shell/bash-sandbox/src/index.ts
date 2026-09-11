@@ -93,7 +93,8 @@ export class SandboxBashExecutor extends LocalBashExecutor {
       const result = await super.run(spec)
       return { ...result, sandbox: { mode, denied: false } }
     }
-    const confined = this.confine(spec.command, { ...policy, mode })
+    const confined = await this.confine(spec.command, { ...policy, mode }, spec.signal)
+    spec.signal?.throwIfAborted()
     let result: ShellRunResult
     try {
       result = await this.runArgv(spec, confined.argv)
@@ -114,13 +115,12 @@ export class SandboxBashExecutor extends LocalBashExecutor {
     return { ...result, sandbox: { mode, denied: classifyDenial(result, confined.denialSignatures), enforcement: confined.enforcement } }
   }
 
-  override start(spec: ShellExecSpec): ShellProcess {
+  override async start(spec: ShellExecSpec): Promise<ShellProcess> {
     const policy = spec.sandboxPolicy as SandboxExecutionPolicy
     const { mode } = policy
     if (mode === 'danger-full-access') return super.start(spec)
-    // Once startArgv returns, install facts synchronously; promise settlement
-    // cannot run before start() returns.
-    const confined = this.confine(spec.command, { ...policy, mode })
+    const confined = await this.confine(spec.command, { ...policy, mode }, spec.signal)
+    spec.signal?.throwIfAborted()
     let proc: ShellProcess
     try {
       proc = this.startArgv(spec, confined.argv)
@@ -174,10 +174,11 @@ export class SandboxBashExecutor extends LocalBashExecutor {
    * executor's subprocess path.
    * @param command - shell source for the confined inner `bash -c`.
    * @param policy - resolved confined execution policy.
+   * @param signal - cancellation of confinement preparation.
    * @returns the provider's exact argv and settlement-classification facts.
    */
-  private confine(command: string, policy: SandboxPolicy): ConfinedArgv {
-    return this.ctx.sandbox.confine(['bash', '-c', command], policy)
+  private confine(command: string, policy: SandboxPolicy, signal?: AbortSignal): Promise<ConfinedArgv> {
+    return this.ctx.sandbox.confine(['bash', '-c', command], policy, signal)
   }
 }
 

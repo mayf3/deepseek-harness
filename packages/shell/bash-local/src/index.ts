@@ -241,8 +241,8 @@ export class LocalBashExecutor extends ShellExecutor {
     }
   }
 
-  start(spec: ShellExecSpec): ShellProcess {
-    return this.startArgv(spec, ['bash', '-c', spec.command])
+  async start(spec: ShellExecSpec): Promise<ShellProcess> {
+    return Promise.resolve(this.startArgv(spec, ['bash', '-c', spec.command]))
   }
 
   /**
@@ -256,6 +256,7 @@ export class LocalBashExecutor extends ShellExecutor {
    */
   protected startArgv(spec: ShellExecSpec, argv: readonly string[]): ShellProcess {
     // Background runs ignore timeoutMs; callers stop them through kill() or spec.signal.
+    spec.signal?.throwIfAborted()
     const running = this.ctx.subprocess.spawn(this.spawnSpec(spec, argv, this.config.maxOutputBytes, spec.signal))
     const collected = LocalBashExecutor.collected(running)
 

@@ -138,21 +138,21 @@ describe('Node runtime host failures', () => {
 
   it('fails a required unavailable sandbox before spawning', async () => {
     const h = await setup({}, 'read-only')
-    vi.spyOn(h.ctx.sandbox, 'confine').mockImplementation(() => { throw new SandboxUnavailableError('read-only') })
+    vi.spyOn(h.ctx.sandbox, 'confine').mockRejectedValue(new SandboxUnavailableError('read-only'))
     expect((await h.start()).error?.kind).toBe('sandbox-unavailable')
     expect(h.spawn).not.toHaveBeenCalled()
   })
 
   it('keeps partial enforcement separate from a successful program', async () => {
     const h = await setup({}, 'read-only')
-    vi.spyOn(h.ctx.sandbox, 'confine').mockImplementation(argv => confinement([...argv]))
+    vi.spyOn(h.ctx.sandbox, 'confine').mockImplementation(async argv => confinement([...argv]))
     h.onBoot(() => { h.emit({ type: 'done', value: encodeCodeJsonWire(42) }) })
     expect(await h.start()).toEqual({ logs: [], value: 42, sandbox: { mode: 'read-only', denied: false, enforcement: 'partial' } })
   })
 
   it.each([['EACCES: blocked', true], ['EPERM: unrelated dialect', false]] as const)('uses only the selected denial dialect for %s', async (message, denied) => {
     const h = await setup({}, 'read-only')
-    vi.spyOn(h.ctx.sandbox, 'confine').mockImplementation(argv => confinement([...argv]))
+    vi.spyOn(h.ctx.sandbox, 'confine').mockImplementation(async argv => confinement([...argv]))
     h.onBoot(() => { h.emit({ type: 'done', error: { kind: 'exception', message } }) })
     const result = await h.start()
     expect(result.error).toEqual({ kind: 'exception', message })
@@ -161,7 +161,7 @@ describe('Node runtime host failures', () => {
 
   it('distinguishes fatal sandbox startup output from a program denial', async () => {
     const h = await setup({}, 'read-only')
-    vi.spyOn(h.ctx.sandbox, 'confine').mockImplementation(argv => confinement([...argv]))
+    vi.spyOn(h.ctx.sandbox, 'confine').mockImplementation(async argv => confinement([...argv]))
     h.onBoot(() => {
       h.stderr.write('sandbox-fatal: runner could not initialize')
       h.direct.resolve({ exitCode: 1, signal: null })
@@ -209,6 +209,30 @@ describe('Node runtime host failures', () => {
     })
     expect((await h.start({ ...request, signal: controller.signal }, NO_INITIAL_FRAME)).error?.kind).toBe('abort')
     expect(h.spawn).not.toHaveBeenCalled()
+  })
+
+  it('does not launch when confinement resolves after cancellation', async () => {
+    const h = await setup({}, 'read-only')
+    const entered = Promise.withResolvers<AbortSignal>()
+    const response = Promise.withResolvers<ConfinedArgv>()
+    vi.spyOn(h.ctx.sandbox, 'confine').mockImplementation((_argv, _policy, signal) => {
+      entered.resolve(signal!)
+      return response.promise
+    })
+    const controller = new AbortController()
+    const pending = h.start({ ...request, signal: controller.signal }, NO_INITIAL_FRAME)
+    try {
+      const signal = await entered.promise
+      expect(signal.aborted).toBe(false)
+      controller.abort('confinement cancelled')
+      expect(signal.aborted).toBe(true)
+      response.resolve(confinement([process.execPath]))
+      expect((await pending).error).toEqual({ kind: 'abort', message: 'confinement cancelled' })
+      expect(h.spawn).not.toHaveBeenCalled()
+    } finally {
+      response.resolve(confinement([process.execPath]))
+      await pending
+    }
   })
 
   it('reports an early control EOF using the direct process result', async () => {
@@ -422,7 +446,7 @@ describe('Node runtime host failures', () => {
   it.each([true, false])('attributes a failed confined spawn only with runner evidence (%s)', async (runnerFailed) => {
     const h = await setup({}, 'read-only')
     const runner = '/sandbox-runner'
-    vi.spyOn(h.ctx.sandbox, 'confine').mockImplementation(argv => confinement([runner, ...argv]))
+    vi.spyOn(h.ctx.sandbox, 'confine').mockImplementation(async argv => confinement([runner, ...argv]))
     h.onBoot(() => {
       h.direct.reject(Object.assign(new Error('spawn rejected'), runnerFailed ? { code: 'ENOENT', path: runner, syscall: `spawn ${runner}` } : {}))
     })

@@ -10,7 +10,7 @@ import { spawnSync } from 'node:child_process'
 import { chmodSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterAll, describe, expect, it } from 'vitest'
+import { afterAll, describe, expect, it, vi } from 'vitest'
 import { Context, Service } from '@deepseek-ai/cordis'
 import { SandboxProvider, SandboxUnavailableError } from '@deepseek-ai/dsh-sandbox'
 import type { ConfinedArgv, RunnerFailureRule, SandboxExecutionPolicy, SandboxPolicy } from '@deepseek-ai/dsh-sandbox'
@@ -54,14 +54,14 @@ function throwingSubprocessRuntime(error: unknown): new (ctx: Context) => Servic
 }
 
 async function setup(
-  behavior: (argv: readonly string[], policy: SandboxPolicy) => ConfinedArgv = passthrough,
+  behavior: (argv: readonly string[], policy: SandboxPolicy, signal?: AbortSignal) => ConfinedArgv | Promise<ConfinedArgv> = passthrough,
   subprocess: new (ctx: Context) => Service = LocalSubprocessRuntime,
 ): Promise<{ executor: SandboxPwshExecutor; calls: ConfineCall[] }> {
   const calls: ConfineCall[] = []
   class FakeSandboxProvider extends SandboxProvider {
-    confine(argv: readonly string[], policy: SandboxPolicy): ConfinedArgv {
+    async confine(argv: readonly string[], policy: SandboxPolicy, signal?: AbortSignal): Promise<ConfinedArgv> {
       calls.push({ argv: [...argv], policy })
-      return behavior(argv, policy)
+      return behavior(argv, policy, signal)
     }
   }
   const ctx = new Context()
@@ -148,6 +148,32 @@ describe('helpers (pure)', () => {
       expect(matchesSignature(0, 'access is denied', ['access is denied'])).toBe(false)
       expect(matchesSignature(null, 'access is denied', ['access is denied'])).toBe(false)
     })
+  })
+})
+
+describe('SandboxPwshExecutor asynchronous confinement', () => {
+  it.each(['run', 'start'] as const)('cancels %s before a late confinement reply can spawn', async (operation) => {
+    const entered = Promise.withResolvers<AbortSignal>()
+    const response = Promise.withResolvers<ConfinedArgv>()
+    const spawned = vi.fn()
+    class Subprocess extends Service {
+      constructor(ctx: Context) { super(ctx, 'subprocess') }
+      spawn(): never { spawned(); throw new Error('unexpected process allocation') }
+    }
+    const { executor } = await setup((_argv, _policy, signal) => {
+      entered.resolve(signal!)
+      return response.promise
+    }, Subprocess)
+    const controller = new AbortController()
+    const reason = new Error('cancel pending confinement')
+    const pending = executor[operation](executor.resolve({ command: 'Write-Output ready', signal: controller.signal }))
+    const rejected = expect(pending).rejects.toBe(reason)
+    const signal = await entered.promise
+    controller.abort(reason)
+    expect(signal.aborted).toBe(true)
+    response.resolve(passthrough(['pwsh']))
+    await rejected
+    expect(spawned).not.toHaveBeenCalled()
   })
 })
 
@@ -283,7 +309,7 @@ describe.skipIf(!pwshAvailable())('SandboxPwshExecutor', () => {
 
   it('background confined runs stamp clean facts at settlement', async () => {
     const { executor } = await setup()
-    const clean = executor.start(executor.resolve({ command: 'echo background-ok', sandboxPolicy: RO }))
+    const clean = await executor.start(executor.resolve({ command: 'echo background-ok', sandboxPolicy: RO }))
     await clean.done
     expect(clean.sandbox).toEqual({ mode: 'read-only', denied: false, enforcement: 'full' })
   }, 30_000)
@@ -292,7 +318,7 @@ describe.skipIf(!pwshAvailable())('SandboxPwshExecutor', () => {
   // coverage lives in tests/acl.e2e.ts.
   it.skipIf(process.platform === 'win32')('background denied writes stamp denied facts at settlement', async () => {
     const { executor } = await setup()
-    const denied = executor.start(executor.resolve({
+    const denied = await executor.start(executor.resolve({
       command: deniedWriteCommand,
       sandboxPolicy: RO,
     }))
@@ -307,7 +333,7 @@ describe.skipIf(!pwshAvailable())('SandboxPwshExecutor', () => {
       denialSignatures: [],
       runnerFailureRules: [{ fatalSignatures: ['fake-runner: '] }],
     }))
-    const proc = executor.start(executor.resolve({ command: 'echo never', sandboxPolicy: RO }))
+    const proc = await executor.start(executor.resolve({ command: 'echo never', sandboxPolicy: RO }))
     await proc.done
     expect(proc.sandbox).toEqual({ mode: 'read-only', denied: false, enforcement: 'full', runnerFailed: true })
     // The failure note surfaces through the read path.
@@ -317,7 +343,7 @@ describe.skipIf(!pwshAvailable())('SandboxPwshExecutor', () => {
 
   it('danger-full-access background runs bypass confine and carry no facts', async () => {
     const { executor, calls } = await setup()
-    const proc = executor.start(executor.resolve({
+    const proc = await executor.start(executor.resolve({
       command: 'echo full-bg',
       sandboxPolicy: { mode: 'danger-full-access', workspaceRoot: '/ws' },
     }))
