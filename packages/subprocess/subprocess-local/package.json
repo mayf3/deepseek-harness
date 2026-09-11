@@ -23,14 +23,19 @@
       "default": "./lib/runner.js"
     },
     "./src/*": "./src/*",
-    "./package.json": "./package.json"
+    "./package.json": "./package.json",
+    "./output": {
+      "types": "./lib/types/output.d.ts",
+      "default": "./lib/output.js"
+    }
   },
   "files": [
     "lib/index.js",
     "lib/runner.js",
     "lib/runner-*.js",
     "scripts/ensure-spawn-helper.mjs",
-    "lib/types/**/*.d.ts"
+    "lib/types/**/*.d.ts",
+    "lib/output.js"
   ],
   "scripts": {
     "postinstall": "node scripts/ensure-spawn-helper.mjs"
