@@ -741,7 +741,8 @@ export function createRunCodeTool(registry: ToolRuntime, options: RunCodeBridgeO
       const runtime = peekRuntime()
       const instructions = runtime?.executionInstructions
       return resolveFlavor(peekRuntime).description
-        + (instructions ? ` ${instructions} The working directory is the Session's current directory.` : '')
+        + (instructions ? ` ${instructions}` : '')
+        + (runtime === undefined ? '' : " The working directory is the Session's current directory.")
         + escalationGuidance(runtime)
     },
   })

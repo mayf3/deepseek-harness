@@ -2034,6 +2034,7 @@ describe('per-program execution controls', () => {
       expect(JSON.stringify(schema.parameters)).not.toContain('timeoutMs')
       expect(JSON.stringify(schema.parameters)).not.toContain('sandbox_permissions')
       expect(schema.description).not.toContain('Programs start with an empty environment.')
+      expect(schema.description).toContain("The working directory is the Session's current directory.")
       const rejected = await python.tools.execute({
         callId: ToolCallId('hidden-timeout'), name: RUN_CODE_NAME, signal: testToolSignal,
         arguments: { code: 'pass', description: 'Try unsupported timeout', timeoutMs: 5 },

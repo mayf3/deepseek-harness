@@ -132,11 +132,18 @@ describe('Node program process', () => {
 
   it('uses the default deadline and caps explicit requests', async () => {
     const { runtime } = await setup()
+    expect(runtime.timeout).toEqual({ defaultMs: 120_000, maxMs: 600_000 })
     expect(runtime.executionInstructions).toBe('Each call runs in a fresh Node process. Node APIs are available through await import(...). Relative paths use the supplied working directory; process.env starts empty. Direct filesystem access follows this execution\'s sandbox policy.')
     expect(runtime.resolve({ program: '', bindings: [] }).timeoutMs).toBe(120_000)
     expect(runtime.resolve({ program: '', bindings: [], timeoutMs: 900_000 }).timeoutMs).toBe(600_000)
     for (const timeoutMs of [0, -1, NaN, Infinity]) expect(() => runtime.resolve({ program: '', bindings: [], timeoutMs })).toThrow()
     await expect(runtime.run({ program: '', bindings: [], cwd: process.cwd(), timeoutMs: 1000 })).rejects.toThrow('sandbox policy')
+  })
+
+  it('advertises the capped default when the deployment maximum is lower', async () => {
+    const { runtime } = await setup({ timeoutMs: 2000, maxTimeoutMs: 1000 })
+    expect(runtime.timeout).toEqual({ defaultMs: 1000, maxMs: 1000 })
+    expect(runtime.timeout.defaultMs).toBe(runtime.resolve({ program: '', bindings: [] }).timeoutMs)
   })
 
   it.each(['for (;;) {}', 'await new Promise(() => {})'])('ends an unfinished program at its elapsed deadline: %s', async (program) => {

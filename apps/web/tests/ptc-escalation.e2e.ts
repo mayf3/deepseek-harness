@@ -19,6 +19,7 @@ const UI_EXPECTED = join(SNAPSHOT_DIR, 'approval.expected.md')
 const MODE = webSnapshotMode()
 const PROMPT = 'Use run_code with timeoutMs 120000 and direct Node filesystem access to create approved.txt in the working directory containing exactly "approved\\n". '
   + 'Use await import("node:fs/promises") and writeFile; do not call nested tools. First attempt the write under the current read-only sandbox without escalation. '
+  + 'In that first program, catch only filesystem errors with code EPERM, EACCES or EROFS and return exactly "EXPECTED_SANDBOX_DENIAL"; rethrow any other error. '
   + 'If the sandbox denies it, explicitly retry the program with sandbox_permissions "workspace-write" and justification "Create the file requested by the user". '
   + 'I will answer the approval prompt. After the file is written, reply DONE and stop.'
 
@@ -67,6 +68,8 @@ describe('web e2e: PTC program sandbox escalation', () => {
     expect(calls.every(event => event.data.name === 'run_code')).toBe(true)
     expect(JSON.stringify(calls[0]?.data)).toContain('node:fs/promises')
     expect(JSON.stringify(calls.at(-1)?.data)).toContain('workspace-write')
+    const results = events.filter(event => event.type === 'tool/result')
+    expect(JSON.stringify(results[0]?.data)).toContain('EXPECTED_SANDBOX_DENIAL')
     const file = join(scaffold.workspaceCwd, 'workspace', 'approved.txt')
     await expect(readFile(file, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' })
     if (MODE !== 'record') {
