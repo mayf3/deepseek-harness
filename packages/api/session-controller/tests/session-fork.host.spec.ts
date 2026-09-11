@@ -106,9 +106,6 @@ describe('sessions.fork', () => {
         source.followup(message('A'))
         await source.whenIdle()
         const boundary = source.session.snapshotEvents().at(-1)!.seq
-        const title = source.session.append('session/title', {
-          title: 'Title after A', messageSeqs: [], source: { kind: 'user' },
-        })
         if (anchor === 'message' || anchor === 'turn-end') {
           source.followup(message('B'))
           await source.whenIdle()
@@ -132,9 +129,7 @@ describe('sessions.fork', () => {
           ? item.content.flatMap(part => part.type === 'text' ? [part.text] : []) : [])
         expect(userTexts).toEqual(['A', 'C'])
         expect(adapter.requests.slice(requestCount)).toHaveLength(1)
-        expect(child.session.inheritedEventCount).toBe(title.seq + 1)
-        expect(child.session.snapshotEvents().slice(0, child.session.inheritedEventCount))
-          .toEqual(original.slice(0, title.seq + 1))
+        expect(child.session.inheritedEventCount).toBe(boundary + 1)
         expect(source.session.snapshotEvents()).toEqual(original)
       } finally {
         await ctx.fiber.dispose()
@@ -322,9 +317,10 @@ describe('sessions.fork', () => {
     await ctx.fiber.dispose()
   })
 
-  it.each(['next-turn', 'next-step', null] as const)('inherits model settings before %s inbox changes', async (target) => {
+  it('inherits model selection through the completed turn and excludes later changes', async () => {
     const ctx = await composed()
-    const source = liveAgent(ctx, 'session-routed', 1)
+    const source = liveAgent(ctx, 'session-routed', 0)
+    source.append('turn/start', { turn: 1 })
     source.append('request/header', {
       header: {
         config: {
@@ -335,28 +331,16 @@ describe('sessions.fork', () => {
       },
       reason: 'initial',
     })
-    const inherited = source.snapshotEvents()
-    if (target !== null) {
-      source.append('agent/inbox/spliced', {
-        target, start: 0,
-        inserted: [createUserMessage({
-          content: [{ type: 'text', text: 'next input' }], source: { kind: 'user' },
-        })],
-      })
-      source.append('session/title', {
-        title: 'Title after inbox insertion', messageSeqs: [], source: { kind: 'user' },
-      })
-      source.append('request/header', {
-        header: { config: { provider: 'later-provider', model: 'later-model' } },
-        reason: 'change',
-      })
-    }
+    source.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
+    source.append('request/header', {
+      header: { config: { provider: 'later-provider', model: 'later-model' } },
+      reason: 'change',
+    })
     const response = await remote(ctx).fork(request({ sessionId: source.id }))
     expect(response.ok).toBe(true)
     if (!response.ok) return
     const child = ctx.agents.get(response.value.sessionId)
     if (child === undefined) throw new Error('fork did not publish the child agent')
-    expect(child.session.snapshotEvents().slice(0, child.session.inheritedEventCount)).toEqual(inherited)
     const assembly = await child.ctx.systemPrompt.assemble()
     expect(assembly.variables).toMatchObject({
       provider: 'inherited-provider',

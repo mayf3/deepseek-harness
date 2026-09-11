@@ -240,12 +240,7 @@ export class SessionCommandController {
         { sessionId: request.sessionId },
       )
     }
-    let cut = SessionLogOffset(boundary.seq + 1)
-    while (cut < source.events.length
-      && source.events[cut]?.type !== 'turn/start'
-      && source.events[cut]?.type !== 'agent/inbox/spliced') {
-      cut = SessionLogOffset(cut + 1)
-    }
+    const cut = SessionLogOffset(boundary.seq + 1)
     let workspace: Workspace | undefined
     try {
       workspace = await this.forkWorkspace(source.header)
