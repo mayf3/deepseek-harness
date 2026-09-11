@@ -57,9 +57,6 @@
   "peerDependenciesMeta": {
     "@deepseek-ai/dsh-agent-presets": {
       "optional": true
-    },
-    "@deepseek-ai/dsh-app-boot": {
-      "optional": true
     }
   },
   "devDependencies": {
