@@ -100,6 +100,7 @@ These limits define the current deliverables vocabulary. They are current packag
 - **Terminal-created files require explicit delivery** — the card lists them once git records the change, but delivery cards and clickable references still require `present`.
 - **Declarations do not preserve file contents** — reopening or transferring a Session requires source files accessible through the viewed Session’s filesystem. Missing files, directories, and final symbolic links return 404.
 - **Folder opening needs a Host desktop** — without one the card header is inert and rows fall back to the right Sidebar's text preview, which shows files only.
+- **Package-local header glyph** — the card's angle-bracket mark lives in `src/client/icons.tsx` until the shared icon set carries it; its props already match the shared icon contract.
 - **Files outside the workspace open by absolute path only** — the recorded path is the Host path at recording time; a moved workspace or a different viewing Session cannot relocate it.
 
 <a id="dev-note"></a>

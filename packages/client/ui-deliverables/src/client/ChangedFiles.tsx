@@ -1,12 +1,13 @@
 /** The changed-files card: a folder-opening header, per-file line counts, and a three-row fold. */
 import { useState } from 'react'
 import { resolveWorkspacePath } from '@deepseek-ai/dsh-util-workspace-path'
-import { IconChevronDownOutline14, IconChevronUpOutline14, IconCodeOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconChevronDownOutline14, IconChevronUpOutline14 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { WorkspaceChangedFile } from '@deepseek-ai/dsh-workspace-changes/types'
 import { changedFileUrl } from '../changes.ts'
 import type { PresentedHost } from '../presented.ts'
+import { IconCodeBracketsOutline16 } from './icons.tsx'
 import type { PresentedOpenPhase } from './present-open.ts'
 import type { ChangesTurnData } from './turn-deliverables.ts'
 import type { NS } from './locales.ts'
@@ -64,7 +65,7 @@ export function ChangedFiles({ changes, cwd, sessionId, host, phases, onOpen, op
     : folderPhase === 'opened' ? t('changes.folderOpened')
       : folderPhase === undefined ? undefined : t('changes.folderError')
   const summary = <>
-    <span className={css.tile}><IconCodeOutline16 /></span>
+    <span className={css.tile}><IconCodeBracketsOutline16 size={18} /></span>
     <span className={css.titles}>
       <span className={css.title}>{t('changes.title', { count: String(changes.total) })}</span>
       <span className={css.stat} role={folderStatus === undefined ? undefined : 'status'} data-error={folderPhase === 'error' || folderPhase === 'nativeUnavailable' ? true : undefined}>
