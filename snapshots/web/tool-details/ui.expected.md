@@ -9,14 +9,20 @@
     - term: Rounds
     - definition: 0 / 8
 - button "Inspect"
-- button "Update to-do list 3 added" [expanded]:
+- button "Update to-do list 1/3 completed · Render compact fields and lists 3 added" [expanded]:
   - img
-  - text: Update to-do list 3 added
+  - text: Update to-do list 1/3 completed · Render compact fields and lists 3 added
 - text: Initial list
 - list:
-  - listitem: + Keep the existing row and expansion controls Completed
-  - listitem: + Render compact fields and lists In progress
-  - listitem: + Review the narrow layout Pending
+  - listitem:
+    - img "Added": +
+    - text: Keep the existing row and expansion controls Completed
+  - listitem:
+    - img "Added": +
+    - text: Render compact fields and lists In progress
+  - listitem:
+    - img "Added": +
+    - text: Review the narrow layout Pending
 - button "Inspect"
 - button "Create reminder Review the build and open the demo" [expanded]:
   - img
@@ -75,22 +81,28 @@
     - term: Status
     - definition: Deleted
 - button "Inspect"
-- button "Update to-do list 1 added · 1 updated · 1 removed" [expanded]:
+- button "Update to-do list 2/3 completed 1 added · 1 updated · 1 removed" [expanded]:
   - img
-  - text: Update to-do list 1 added · 1 updated · 1 removed
+  - text: Update to-do list 2/3 completed 1 added · 1 updated · 1 removed
 - text: Changes since the previous list
 - list:
   - listitem:
-    - img
-    - text: Render compact fields and lists In progressCompleted
-  - listitem: + Publish the reviewed cards Pending
-  - listitem: − Review the narrow layout Pending
+    - img "Status changed":
+      - img
+    - text: Render compact fields and lists In progress → Completed
+  - listitem:
+    - img "Added": +
+    - text: Publish the reviewed cards Pending
+  - listitem:
+    - img "Removed": −
+    - text: Review the narrow layout Pending
 - group:
   - img
   - text: 1 unchanged
   - list:
     - listitem:
-      - img
+      - img "Completed":
+        - img
       - text: Keep the existing row and expansion controls Completed
 - button "Inspect"
 - button "Inspect providers 2 inspect providers" [expanded]:
