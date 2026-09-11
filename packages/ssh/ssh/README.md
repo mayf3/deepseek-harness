@@ -31,7 +31,7 @@ Compose this service with [`fs-ssh`](../fs-ssh/README.md), [`subprocess-ssh`](..
 
 Both endpoints require Linux or macOS. The local `ssh` command must support connection multiplexing and Unix-socket forwarding; the server must permit that forwarding. Configure the alias, credentials and known-host entry before startup: the service enables `BatchMode`, requires strict host-key checking, disables agent forwarding and adds no interactive authentication flow.
 
-Install the built helper and its matching runtime dependencies on the remote host. Keep Node, helper and PTC bootstrap artifacts outside a sandbox backend’s replaced temporary tree, such as bwrap’s private `/tmp`; the workspace may still be under `/tmp`. Digest verification detects an unexpected installed artifact, not a malicious SSH host.
+Install the built helper and its matching runtime dependencies on the remote host. Keep Node, helper, bootstrap and their dependencies outside the workspace and writable temporary roots. They must also remain outside a backend’s replaced temporary tree, such as bwrap’s private `/tmp`; the workspace may still be under `/tmp`. Digest verification detects an unexpected installed artifact after helper startup; it does not make writable deployment files safe to execute or authenticate a malicious SSH host.
 
 | Field | Default | Meaning |
 |---|---|---|
