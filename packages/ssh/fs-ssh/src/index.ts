@@ -1,5 +1,6 @@
 /** Filesystem provider preserving remote identities and helper-owned atomic mutations. */
 import { posix } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { FileSystem, FsError } from '@deepseek-ai/dsh-fs'
 import type { FsDirEntry, FsEditOutcome, FsEditRequest, FsErrorCode, FsInfo, FsPathInfo, FsTarget, FsVersion, FsWriteIntent, FsWriteOutcome } from '@deepseek-ai/dsh-fs'
 import type { SandboxExecutionPolicy, SandboxMode } from '@deepseek-ai/dsh-sandbox'
@@ -28,9 +29,7 @@ export class SshFileSystem extends FileSystem {
   override processPath(target: FsTarget): string { return String(target.targetKey) }
 
   override fileUrl(target: FsTarget): string {
-    const url = new URL('file:///')
-    url.pathname = this.processPath(target)
-    return url.href
+    return pathToFileURL(this.processPath(target)).href
   }
 
   override contains(parent: FsTarget, child: FsTarget): boolean {

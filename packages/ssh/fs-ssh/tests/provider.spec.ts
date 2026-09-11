@@ -1,4 +1,5 @@
 import { Context, Service } from '@deepseek-ai/cordis'
+import { fileURLToPath } from 'node:url'
 import { FsError, FsTargetKey, FsVersion, type FsTarget } from '@deepseek-ai/dsh-fs'
 import type { SandboxExecutionPolicy } from '@deepseek-ai/dsh-sandbox'
 import { RemoteOperationError } from '@deepseek-ai/dsh-ssh/protocol'
@@ -30,6 +31,18 @@ async function setup() {
 }
 
 describe('SSH filesystem provider', () => {
+  it.each([
+    ['literal%20name.ts', 'literal%2520name.ts'],
+    ['back\\slash.ts', 'back%5Cslash.ts'],
+    ['line\nfeed.ts', 'line%0Afeed.ts'],
+  ])('preserves the POSIX filename %j in a file URL', async (name, encoded) => {
+    const { fs } = await setup()
+    const path = `/remote/work/${name}`
+    const url = fs.fileUrl({ targetKey: FsTargetKey(path), displayPath: path })
+    expect(url).toBe(`file:///remote/work/${encoded}`)
+    expect(fileURLToPath(url)).toBe(path)
+  })
+
   it('keeps remote canonical paths and sends relative spelling to the remote resolver', async () => {
     const { fs, dispatch } = await setup()
     dispatch.mockResolvedValue({ targetKey: '/remote/physical/file #?.txt', displayPath: 'link/../file #?.txt' })
