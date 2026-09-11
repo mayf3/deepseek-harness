@@ -84,6 +84,20 @@ function unitState(loadState: string, activeState: string) {
   return { status: 0, stdout: `LoadState=${loadState}\nActiveState=${activeState}\n`, stderr: '' }
 }
 
+function activeUnitWithTasks(tasks: string) {
+  return { status: 0, stdout: `LoadState=loaded\nActiveState=active\nTasksCurrent=${tasks}\n`, stderr: '' }
+}
+
+/** Deny every real process-group signal so a fake child never reaches a live host group. */
+function denyProcessGroups(): void {
+  vi.spyOn(process, 'kill').mockImplementation(() => { throw new Error('missing process group') })
+}
+
+/** Record the systemctl invocations a scope owner makes, succeeding unless a case overrides it. */
+function recordingSystemctl() {
+  return vi.fn((_command: string, _args: readonly string[]) => ({ status: 0, stdout: '', stderr: '' }))
+}
+
 function spec() {
   return {
     argv: ['tool', 'literal arg'],
@@ -446,11 +460,74 @@ describe('Linux scope establishment and quiescence', () => {
       ['LoadState=loaded\nLoadState=loaded\nActiveState=active\n', 'duplicate LoadState'],
       ['LoadState=loaded\n', 'incomplete state'],
       ['LoadState=loaded\nActiveState=inactive\nOther=value\n', 'incomplete state'],
+      ['LoadState=loaded\nActiveState=active\nTasksCurrent=0\nOther=value\n', 'incomplete state'],
     ] as const) {
       const launched = launch(async () => ({ status: 0, stdout, stderr: '' }))
       await expect(launched.result.owner.waitForExit()).rejects.toThrow(message)
       launched.result.owner.cleanup?.()
     }
+  })
+
+  it('rejects a manager process count that is neither numeric nor the unset sentinel', async () => {
+    const launched = launch(async () => activeUnitWithTasks('many'))
+    await expect(launched.result.owner.waitForExit()).rejects.toThrow('non-numeric TasksCurrent')
+    launched.result.owner.cleanup?.()
+  })
+
+  it('releases an active scope left with no processes once its client has gone', async () => {
+    // Regression: the manager's empty cgroup never ends this unit on its own.
+    denyProcessGroups()
+    const spawnSync = recordingSystemctl()
+    const launched = launch(async () => activeUnitWithTasks('0'), { spawnSync: spawnSync as never })
+    launched.result.owner.signal('SIGKILL')
+    launched.child.exit(null, 'SIGKILL')
+    await expect(launched.result.owner.waitForExit()).resolves.toBeUndefined()
+    expect(spawnSync.mock.calls.map(call => call[1])).toEqual([
+      ['--user', 'kill', '--kill-whom=all', '--signal=SIGKILL', expect.stringMatching(/\.scope$/u)],
+      ['--user', 'stop', expect.stringMatching(/\.scope$/u)],
+    ])
+    launched.result.owner.cleanup?.()
+  })
+
+  it('concludes the empty range even when releasing the leftover scope fails', async () => {
+    denyProcessGroups()
+    const spawnSync = recordingSystemctl()
+      .mockImplementationOnce(() => ({ status: 0, stdout: '', stderr: '' }))
+      .mockImplementationOnce(() => { throw new Error('systemctl is gone') })
+    const launched = launch(async () => activeUnitWithTasks('0'), { spawnSync: spawnSync as never })
+    launched.result.owner.signal('SIGKILL')
+    launched.child.exit(null, 'SIGKILL')
+    await expect(launched.result.owner.waitForExit()).resolves.toBeUndefined()
+    launched.result.owner.cleanup?.()
+  })
+
+  it('keeps waiting while the client still owns an active scope with no processes', async () => {
+    denyProcessGroups()
+    const spawnSync = recordingSystemctl()
+    const states = [activeUnitWithTasks('0'), unloadedUnit()]
+    const launched = launch(async () => states.shift() ?? unloadedUnit(), {
+      spawnSync: spawnSync as never,
+    })
+    launched.result.owner.signal('SIGTERM')
+    await expect(launched.result.owner.waitForExit()).resolves.toBeUndefined()
+    expect(spawnSync.mock.calls.map(call => call[1]?.[1])).toEqual(['kill'])
+    launched.result.owner.cleanup?.()
+  })
+
+  it('keeps waiting for an active empty scope no termination has requested', async () => {
+    const states = [activeUnitWithTasks('0'), unloadedUnit()]
+    const launched = launch(async () => states.shift() ?? unloadedUnit())
+    await expect(launched.result.owner.waitForExit()).resolves.toBeUndefined()
+    expect(launched.spawnSync).not.toHaveBeenCalled()
+    launched.result.owner.cleanup?.()
+  })
+
+  it('treats an unset process count as unknown and keeps waiting', async () => {
+    const states = [activeUnitWithTasks('[not set]'), unloadedUnit()]
+    const launched = launch(async () => states.shift() ?? unloadedUnit())
+    await expect(launched.result.owner.waitForExit()).resolves.toBeUndefined()
+    expect(launched.spawnSync).not.toHaveBeenCalled()
+    launched.result.owner.cleanup?.()
   })
 
   it('keeps signal failures scoped to final kill proof and stays idempotent after stop', async () => {
