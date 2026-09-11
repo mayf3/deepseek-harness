@@ -137,6 +137,20 @@ export interface LocalDirEntry {
 }
 
 /**
+ * Anchor a path using native drive semantics and POSIX physical parent traversal.
+ * @param cwd - provider base directory for relative paths.
+ * @param path - non-empty requested path.
+ * @returns absolute display spelling shared by target resolution and no-follow metadata.
+ */
+export function localDisplayPath(cwd: string, path: string): string {
+  const absoluteCwd = isAbsolute(cwd) ? cwd : `${process.cwd()}${sep}${cwd}`
+  const raw = isAbsolute(path) ? path : `${absoluteCwd}${sep}${path}`
+  const physicalSpelling = /(?:^|[\\/])\.\.(?:[\\/]|$)/u.test(raw) ? raw : resolve(cwd, path)
+  /* v8 ignore next -- Native Windows tests cover DOS drive-relative resolution; POSIX preserves physical traversal. */
+  return process.platform === 'win32' ? resolve(cwd, path) : physicalSpelling
+}
+
+/**
  * Resolve a path to its absolute display path and realpath identity. For a missing target,
  * realpath the nearest existing ancestor and append the missing suffix, preserving identity
  * across symlinked ancestors before and after creation.
@@ -146,11 +160,7 @@ export interface LocalDirEntry {
  */
 export async function resolveLocalTarget(cwd: string, path: string): Promise<LocalTarget> {
   if (path.trim().length === 0) throw new FsError('file_path must be a non-empty string', 'FS_NOT_FOUND')
-  const absoluteCwd = isAbsolute(cwd) ? cwd : `${process.cwd()}${sep}${cwd}`
-  const raw = isAbsolute(path) ? path : `${absoluteCwd}${sep}${path}`
-  const physicalSpelling = /(?:^|[\\/])\.\.(?:[\\/]|$)/u.test(raw) ? raw : resolve(cwd, path)
-  /* v8 ignore next -- Native Windows tests cover DOS drive-relative resolution; POSIX preserves physical traversal. */
-  const displayPath = process.platform === 'win32' ? resolve(cwd, path) : physicalSpelling
+  const displayPath = localDisplayPath(cwd, path)
   try {
     // Prefer the file's own realpath (resolves a symlinked file to its target).
     return { displayPath, targetKey: FsTargetKey(await realpath(displayPath)) }
