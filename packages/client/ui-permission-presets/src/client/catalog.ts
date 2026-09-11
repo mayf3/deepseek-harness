@@ -18,6 +18,14 @@ export class PermissionCatalogDirectory {
     value: null,
   })
 
+  /**
+   * One tick per invalidation (a catalog notification or a connection-generation
+   * change), published before the replacement read starts. Consumers that must
+   * drop displayed options subscribe here instead of to {@link store}, whose
+   * publications also settle a read a displayed surface is waiting for.
+   */
+  readonly invalidations: SnapshotStore<{ count: number }> = createSnapshotStore({ count: 0 })
+
   private readonly connection: ConnectionHandle
   private readonly stopCatalog: () => void
   private readonly stopGeneration: () => void
@@ -36,12 +44,20 @@ export class PermissionCatalogDirectory {
   constructor(private readonly ctx: ClientContext) {
     this.connection = ctx.get('connection') as ConnectionHandle
     this.stopCatalog = ctx.remote.$on('permission-presets/catalog-changed', () => {
+      this.invalidate()
       this.refresh()
     })
     this.stopGeneration = this.connection.generation.subscribe(() => {
+      this.invalidate()
       this.syncGeneration()
     })
     this.syncGeneration()
+  }
+
+  /** Publish one invalidation tick for consumers holding displayed options. */
+  private invalidate(): void {
+    if (this.disposed) return
+    this.invalidations.set({ count: this.invalidations.getSnapshot().count + 1 })
   }
 
   /** Force a fresh complete read for the active connection generation. */

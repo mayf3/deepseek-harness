@@ -134,7 +134,10 @@ export function apply(ctx: ClientContext): void {
   const catalog = new PermissionCatalogDirectory(ctx)
   ctx.effect(() => () => { catalog.dispose() }, 'ui-permission: process catalog directory')
   ctx.effect(
-    () => catalog.store.subscribe(() => { command.dismiss('permission') }),
+    // Only an invalidation makes displayed options stale; publishing the result
+    // of a read a displayed picker waits for must leave it open with its failure
+    // and retry state intact.
+    () => catalog.invalidations.subscribe(() => { command.dismiss('permission') }),
     'ui-permission: dismiss stale slash choices',
   )
 

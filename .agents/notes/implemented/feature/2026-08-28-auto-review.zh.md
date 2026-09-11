@@ -40,7 +40,7 @@ Integration 只使用最新 `request/header.config` 的 provider／model 与 shi
 | `FILTERED_HISTORY` | 当前 compaction surface 中带来源的 human／直接父级消息、checkpoint、图片／附件事实，以及历史调用名称与日志参数 |
 | `PENDING_ACTION` | 工具名称、描述、参数 schema 与解析后的 arguments |
 
-reviewer 从 Session 的完整动作历史构建这两个动作分节：授权是任何匹配的更早调用，而重复身份必须在整份日志的任何位置都可见，而不是只在近期窗口内可见，因此 Session 投影与有界读取都无法支撑该判定。这次读取使用已废弃的同步 `snapshotEvents()`，并带有指认本 note 的行级 `typescript/no-deprecated` 豁免。
+reviewer 从 Session 的完整动作历史构建这两个动作分节：授权是符合 `REVIEW_POLICY` 来源规则的那个更早调用，而重复或冲突的身份必须在整份日志的任何位置都可见，而不是只在近期窗口内可见，因此 Session 投影与有界读取都无法支撑该判定。这次读取使用已废弃的同步 `snapshotEvents()`，并带有行级 `typescript/no-deprecated` 豁免。
 
 主 agent 的 V3 `system/message` 节点、assistant 正文／reasoning 与 tool results 全部排除。当前调用必须属于 `step/start` 记录的开放 step；缺少 step 归属时拒绝执行。该调用只在 `PENDING_ACTION` 出现；尚未开始的 sibling 没有历史调用事实。原生 schema 来自最新 request header。PTC 在 binding 构造时捕获冻结 schema，经由调度器传入 `ToolExecution`；描述与参数 schema 不进入开始／结算事件或 Session／SDK wire。动作事实缺失、不一致或有歧义时拒绝调用，不查询 live registry。超窗请求直接拒绝，不做摘要、截断、额外 compaction 或设置小型输出 token 预算。
 
@@ -56,7 +56,7 @@ Reviewer 可以输出 reasoning blocks，随后恰好一个 JSON text block 和�
 
 ### 进程目录与 child
 
-Permission owner 通过生成的 `permissionPresets` Remote 方法发布一份完整进程目录；BFF 显式挂载它，并转发无 payload 的失效事件。一个浏览器目录在读取前订阅，为两个选择器提供数据。Epoch 与 connection-generation 检查只发布胜出的完整结果。胜出读取失败或 connection reset 会清空旧快照；只有后续既有读取、通知或 reset 才重试。已 dispose 或陈旧的结算不能发布。每次共享快照发布都通过命令 owner 关闭 slash 选择器与待确认对话框，同时保留草稿；重新打开时加载当前目录。Session 投影只携带当前选择，因此目录安装或移除不写 Session 事件或序号。
+Permission owner 通过生成的 `permissionPresets` Remote 方法发布一份完整进程目录；BFF 显式挂载它，并转发无 payload 的失效事件。一个浏览器目录在读取前订阅，为两个选择器提供数据。Epoch 与 connection-generation 检查只发布胜出的完整结果。胜出读取失败或 connection reset 会清空旧快照；只有后续既有读取、通知或 reset 才重试。已 dispose 或陈旧的结算不能发布。每次目录失效都通过命令 owner 关闭 slash 选择器与待确认对话框，同时保留草稿，因此等待自身读取的选择器仍保留失败与重试状态；重新打开时加载当前目录。Session 投影只携带当前选择，因此目录安装或移除不写 Session 事件或序号。
 
 Auto 带右上标 `EXP`。两个可见当前会话选择器都要求实验确认；显式 `/permission auto` 已构成同意。Composer 使用通用 Menu 既有 portal 定位保持在视口内，同时保留 218–360px 边界。Slash popup 保留 `min(220px, 100%)` 与 `max-width: 100%`，窄 composer 将 trigger 折叠时也一样。
 

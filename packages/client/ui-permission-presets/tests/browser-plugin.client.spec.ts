@@ -17,6 +17,7 @@ import { remoteDefaultResponses } from '@deepseek-ai/dsh-client-test-runtime/src
 import { RemoteMock } from '@deepseek-ai/dsh-remote-mock'
 import { apply as settingsApply, inject as settingsInject } from '@deepseek-ai/dsh-client-ui-settings/client'
 import type { CommandDecoration, PopupSelectSpec } from '@deepseek-ai/dsh-client-ui-commands/client'
+import { PopupSelectController } from '@deepseek-ai/dsh-client-ui-commands/client'
 import type {
   PermissionCatalog, PermissionSelection,
 } from '@deepseek-ai/dsh-permission-presets/client'
@@ -83,12 +84,21 @@ async function bench() {
   await ctx.plugin({ inject: [...settingsInject], apply: settingsApply }).await()
   let decoration: CommandDecoration | undefined
   const dismissed: string[] = []
+  // The production dismissal path drives this controller; the plugin's own
+  // contract only reaches it through `commandUi.dismiss`.
+  const shell = new PopupSelectController<{ sessionId: SessionId }>({
+    consume: () => true,
+    focusComposer: () => {},
+  })
   ctx.provide('commandUi', {
     decorate(c: CommandDecoration) {
       decoration = c
       return () => { decoration = undefined }
     },
-    dismiss(name: string) { dismissed.push(name) },
+    dismiss(name: string) {
+      dismissed.push(name)
+      if (shell.state.getSnapshot().command === name) shell.dismiss()
+    },
   })
   const values = new Map<SessionId, PermissionSelection>()
   const commands: string[] = []
@@ -123,6 +133,13 @@ async function bench() {
     setCatalogFailure: (message: string | undefined) => { catalogFailure = message },
     setResult: (r: { ok: boolean; matched?: boolean }) => { commandResult = r },
     decoration: () => decoration,
+    shell: () => shell,
+    openShell: (): PopupSelectController<{ sessionId: SessionId }> => {
+      const ui = decoration!.ui
+      if (ui.kind !== 'popupSelect') throw new Error('expected the popupSelect kind')
+      shell.open('permission', ui, { sessionId: sid('s1') }, { via: 'enter', token: '/permission' })
+      return shell
+    },
     popup: (): PopupSelectSpec => {
       const ui = decoration!.ui
       if (ui.kind !== 'popupSelect') throw new Error('expected the popupSelect kind')
@@ -170,7 +187,7 @@ describe('ui-permission browser plugin', () => {
     expect(b.catalogCalls()).toBe(1)
   })
 
-  it('availability follows the projection and catalog; options mark the current value active', async () => {
+  it('availability follows the session projection; options mark the current value active', async () => {
     const b = await bench()
     const c = b.decoration()!
     const proj = { sessionId: sid('s1') }
@@ -253,6 +270,35 @@ describe('ui-permission browser plugin', () => {
     const recovered = await b.popup().options(proj, new AbortController().signal)
     expect(recovered.map(option => option.id))
       .toEqual(['read-only', 'workspace-write', 'danger-full-access', 'auto'])
+  })
+
+  it('keeps the open picker and its retry through the real popup shell after a failed read', async () => {
+    const b = await bench()
+    b.values.set(sid('s1'), { currentValue: 'workspace-write' })
+    b.setCatalogFailure('catalog read failed')
+    b.setCatalog(CATALOG)
+
+    const shell = b.openShell()
+    await vi.waitFor(() => { expect(shell.state.getSnapshot().status).toBe('failed') })
+    const failed = shell.state.getSnapshot()
+    expect(failed.open).toBe(true)
+    expect(failed.error).toBe('gateway/internal: catalog read failed')
+
+    b.setCatalogFailure(undefined)
+    shell.retry()
+    await vi.waitFor(() => { expect(shell.state.getSnapshot().status).toBe('ready') })
+    expect(shell.state.getSnapshot().options.map(option => option.id))
+      .toEqual(['read-only', 'workspace-write', 'danger-full-access', 'auto'])
+  })
+
+  it('closes an open picker only when the catalog is invalidated', async () => {
+    const b = await bench()
+    b.values.set(sid('s1'), { currentValue: 'workspace-write' })
+    const shell = b.openShell()
+    await vi.waitFor(() => { expect(shell.state.getSnapshot().status).toBe('ready') })
+
+    b.setCatalog({ options: CATALOG.options.filter(option => option.value !== 'auto') })
+    await vi.waitFor(() => { expect(shell.state.getSnapshot().open).toBe(false) })
   })
 
   it('localizes the Auto description instead of displaying host English copy', async () => {
