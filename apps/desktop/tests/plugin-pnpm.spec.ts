@@ -17,9 +17,9 @@ it('installs a real pnpm graph and executes scripts approved by user configurati
   const server = createServer()
   const archives = new Map<string, Buffer>()
   try {
-    for (const name of ['fixture-plugin', 'node-pty']) {
+    for (const name of ['fixture-plugin', 'fixture-script-dependency']) {
       const path = writePackage(join(root, 'packages'), name, name === 'fixture-plugin'
-        ? { dependencies: { 'node-pty': '1.0.0' }, peerDependencies: { '@deepseek-ai/cordis': '^1.0.0' }, dsh: { bundle: { patch: 'bundle.yml' } } }
+        ? { dependencies: { 'fixture-script-dependency': '1.0.0' }, peerDependencies: { '@deepseek-ai/cordis': '^1.0.0' }, dsh: { bundle: { patch: 'bundle.yml' } } }
         : { scripts: { install: 'node install.cjs' } }, 'export {identity} from "@deepseek-ai/cordis"')
       writeFileSync(join(path, 'bundle.yml'), '[]\n')
       writeFileSync(join(path, 'install.cjs'), 'require("node:fs").writeFileSync("built.json", JSON.stringify({node:process.execPath}))')
@@ -39,7 +39,7 @@ it('installs a real pnpm graph and executes scripts approved by user configurati
       response.setHeader('content-type', 'application/json')
       response.end(JSON.stringify({ name, 'dist-tags': { latest: '1.0.0' }, versions: { '1.0.0': {
         name, version: '1.0.0', dist: { tarball: `${origin}/${name}.tgz`, integrity: `sha512-${createHash('sha512').update(archive).digest('base64')}` },
-        ...(name === 'fixture-plugin' ? { dependencies: { 'node-pty': '1.0.0' }, peerDependencies: { '@deepseek-ai/cordis': '^1.0.0' } } : {}),
+        ...(name === 'fixture-plugin' ? { dependencies: { 'fixture-script-dependency': '1.0.0' }, peerDependencies: { '@deepseek-ai/cordis': '^1.0.0' } } : { scripts: { install: 'node install.cjs' } }),
       } }, time: { '1.0.0': '2020-01-01T00:00:00.000Z' } }))
     })
     const dsh = join(root, 'dsh')
@@ -56,10 +56,10 @@ it('installs a real pnpm graph and executes scripts approved by user configurati
     }
     await manager.applyRelease()
     writeFileSync(join(manager.paths.profile, '.npmrc'), `registry=${origin}\n`)
-    writeFileSync(join(manager.paths.profile, 'pnpm-workspace.yaml'), `packages:\n  - .\nnodeLinker: hoisted\nautoInstallPeers: false\nstoreDir: ${JSON.stringify(join(root, 'store'))}\nallowBuilds:\n  node-pty: true\n`)
+    writeFileSync(join(manager.paths.profile, 'pnpm-workspace.yaml'), `packages:\n  - .\nnodeLinker: hoisted\nautoInstallPeers: false\nstoreDir: ${JSON.stringify(join(root, 'store'))}\nallowBuilds:\n  fixture-script-dependency: true\n`)
     await manager.mutate({ type: 'plugin-add', spec: 'fixture-plugin@1.0.0' }, hooks)
     expect(manager.listPlugins()).toEqual([{ name: 'fixture-plugin', version: '1.0.0', enabled: true }])
-    const built = JSON.parse(readFileSync(join(manager.paths.profile, 'node_modules/node-pty/built.json'), 'utf8')) as { node: string }
+    const built = JSON.parse(readFileSync(join(manager.paths.profile, 'node_modules/fixture-script-dependency/built.json'), 'utf8')) as { node: string }
     expect(realpathSync(built.node)).toBe(realpathSync(process.execPath))
     const entry = join(dsh, 'identity.mjs')
     writeFileSync(entry, `import {identity} from '@deepseek-ai/cordis'; import {identity as plugin} from ${JSON.stringify(pathToFileURL(join(manager.paths.profile, 'node_modules/fixture-plugin/index.js')).href)}; console.log(identity === plugin)`)

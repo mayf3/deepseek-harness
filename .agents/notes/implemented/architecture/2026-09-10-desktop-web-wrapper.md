@@ -16,6 +16,8 @@ The shared runner owns profile and Harness-home patches, proxy setup, telemetry 
 
 The [bundled-runtime decision](2026-09-08-desktop-bundled-runtime-and-external-plugins.md) retains separate runtime and plugin storage, bundled Node.js and pnpm, and explicit package ownership. The [in-place decision](2026-09-09-desktop-in-place-profile.md) retains package transactions and partial-failure recovery. The public CLI continues to reject the reserved Desktop profile.
 
+Independent package ownership prevents CLI and Desktop from modifying each other’s installations; it does not define a stricter Desktop plugin policy. Desktop delegates registry, store, Git, tarball, local-path, and ordinary-package installation to pnpm with normal user and profile configuration. The Host inherits `NODE_OPTIONS`, `NODE_PATH`, and npm/pnpm environment variables. User build configuration determines which dependency lifecycle scripts execute. This replaces Desktop-specific source, environment, and build restrictions with the same package-manager and loader responsibilities used by Web.
+
 App-boot owns installed-dependency discovery, installation-first bundle declaration resolution, and bundle-list updates after pnpm succeeds. CLI selects automatic activation; Desktop explicitly preserves bundles disabled through its UI. The policy difference belongs to the visible activation control, while metadata handling and reconciliation remain shared.
 
 Shared `initProfile` creates missing profile files and preserves existing content. The Host’s `healIsolatedProfileModuleFallback` is the sole owner of installation and bundle projections; package operations use shared `unlinkProfileModuleFallback` to detach only its own links before pnpm. pnpm-managed directories retain priority. Desktop maintains no second runtime-state, lockfile hash, or link reconciliation mechanism. One-time cleanup of `desktop-runtime-state.json` removes only matching recorded links and retires that metadata.
@@ -30,8 +32,12 @@ This partially supersedes the private composition and portless transport in the 
 
 **Keep a Desktop link ledger and manifest reconciler.** These duplicate shared profile mechanisms and can reject otherwise usable installations when derived metadata drifts. A single fallback owner can protect pnpm directories without maintaining release identity in the plugin profile.
 
+**Pin registry and store settings, filter runtime environment, and admit only approved plugin sources.** Those rules constrain execution and package selection, but make the same user configuration behave differently in Desktop and Web. Separate installation ownership remains useful without those restrictions. A Desktop-only restriction requires a distinct product requirement instead of following automatically from packaging or plugin isolation.
+
 ## Consequences
 
 Desktop inherits Web features through the same boot and serving path. HTTP listener ownership and authentication remain part of application startup, and Electron must load the ready URL instead of assuming a port or translating requests. The independent loading and recovery window remains available before the Web application starts.
+
+User-selected runtime options, package sources, and permitted lifecycle scripts can affect Host execution, load third-party code, or cause startup failure. Desktop accepts these effects under the same configuration ownership as Web; the signed core runtime does not attest to user-installed plugin code. Package or loading failures retain explicit repair and the independent recovery UI rather than triggering stricter admission checks or automatic rollback.
 
 Verification requires shared-runner coverage, authenticated HTTP asset and API delivery, configuration reload, native directory selection, child shutdown, and recovery after plugin failure. Installed-platform and real-model GUI qualification remain distinct from unit tests; this note records no measured startup or transfer improvement.

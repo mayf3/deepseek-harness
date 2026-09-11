@@ -16,6 +16,8 @@ Status: implemented
 
 [内置运行时决策](2026-09-08-desktop-bundled-runtime-and-external-plugins.zh.md)保留独立运行时与插件存储、内置 Node.js 和 pnpm，以及明确的包归属。[原位修改决策](2026-09-09-desktop-in-place-profile.zh.md)保留包事务与部分失败恢复。公开 CLI 继续拒绝保留的 Desktop profile。
 
+独立包归属防止 CLI 与 Desktop 修改彼此的安装，不代表 Desktop 采用更严格的插件策略。Desktop 将 registry、store、Git、tarball、本地路径及普通包安装交给 pnpm，并遵循正常用户与 profile 配置。Host 继承 `NODE_OPTIONS`、`NODE_PATH` 及 npm/pnpm 环境变量。用户构建配置决定哪些依赖生命周期脚本可以执行。这以 Web 使用的相同包管理器和加载器职责取代 Desktop 专用的来源、环境及构建限制。
+
 App-boot 负责已安装依赖发现、安装目录优先的 bundle 声明解析及 pnpm 成功后的 bundle 列表更新。CLI 选择自动激活；Desktop 显式保留通过 UI 禁用的 bundle。策略差异属于可见的启用控件，元数据处理与协调逻辑仍然共享。
 
 共享 `initProfile` 创建缺失的 profile 文件并保留现有内容。Host 的 `healIsolatedProfileModuleFallback` 是安装包与 bundle 投影的唯一归属方；包操作在 pnpm 前通过共享 `unlinkProfileModuleFallback` 仅分离它自己拥有的链接。pnpm 管理的目录保持优先。Desktop 不维护第二套运行时状态、锁文件哈希或链接协调机制。`desktop-runtime-state.json` 的一次性清理仅移除与记录匹配的链接，并清除该元数据。
@@ -30,8 +32,12 @@ App-boot 负责已安装依赖发现、安装目录优先的 bundle 声明解析
 
 **保留 Desktop 链接账本与 manifest 协调器。** 这些机制重复共享 profile 逻辑，并可能因派生元数据漂移而拒绝原本可用的安装。单一模块补全归属方可以保护 pnpm 目录，无需在插件 profile 中维护发布身份。
 
+**固定 registry 与 store、过滤运行时环境，并仅允许批准的插件来源。** 这些规则限制执行和包选择，却使同一用户配置在 Desktop 与 Web 中产生不同行为。独立安装归属无需这些限制仍然有用。Desktop 专用限制需要独立的产品需求，不能仅由打包或插件隔离推导而来。
+
 ## Consequences
 
 Desktop 通过相同启动与服务路径继承 Web 功能。HTTP 监听归属与认证仍属于应用启动，Electron 必须加载就绪 URL，而不是假设端口或转换请求。独立加载与恢复窗口在 Web 应用启动前仍可用。
+
+用户选择的运行时选项、包来源及允许的生命周期脚本可以影响 Host 执行、加载第三方代码或导致启动失败。Desktop 按与 Web 相同的配置归属接受这些影响；签名核心运行时不为用户安装的插件代码背书。包操作或加载失败保留显式修复及独立恢复 UI，不触发更严格的准入检查或自动回滚。
 
 验证需要覆盖共享 runner、认证 HTTP 资源与 API 传输、配置重载、原生目录选择、子进程关闭及插件失败恢复。安装后平台验收与真实模型 GUI 验收独立于单元测试；本记录不声称已测得启动或传输提升。

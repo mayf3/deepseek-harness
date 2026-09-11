@@ -99,6 +99,16 @@ describe('desktop host process', () => {
     expect(failure).toHaveBeenCalledWith(new Error('dsh desktop host exited with 7: plugin crashed'))
   })
 
+  it('retains only recent diagnostics from a noisy child', async () => {
+    const runtime = projectWithHost('process.stderr.write(\'discarded-prefix\' + \'x\'.repeat(70_000) + \'recent-failure\', () => { process.exitCode = 7; process.disconnect() })')
+    const failure = await hostProcess(runtime).start().catch((error: unknown) => error)
+    expect(failure).toBeInstanceOf(Error)
+    const message = (failure as Error).message
+    expect(message).not.toContain('discarded-prefix')
+    expect(message.endsWith('recent-failure')).toBe(true)
+    expect(message.length).toBeLessThan(66_000)
+  })
+
   it('settles teardown when the executable cannot be spawned', async () => {
     const runtime = projectWithHost()
     const host = new DesktopHostProcess(join(runtime, 'missing-node'), runtime, runtime)

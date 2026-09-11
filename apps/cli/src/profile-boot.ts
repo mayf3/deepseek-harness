@@ -222,6 +222,8 @@ function allPatches(composed: ComposedProfile): PatchOptions[] {
  * then the telemetry switch.
  * @param name - the profile name.
  * @param patchFiles - `--patch` overlay paths, in argv order.
+ * @param fromDefaultProfile - shipped template for a missing named profile.
+ * @param resolvedProfile - application-owned profile and installation; bypasses named discovery.
  * @returns the profile and its patch layers.
  */
 async function composeProfile(

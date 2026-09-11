@@ -15,6 +15,8 @@ interface FatalEvent {
 
 type DesktopHostEvent = ReadyEvent | FatalEvent
 
+const MAX_HOST_DIAGNOSTIC_CHARS = 64 * 1024
+
 function isDesktopHostEvent(message: unknown): message is DesktopHostEvent {
   if (typeof message !== 'object' || message === null || !('type' in message)) return false
   const candidate = message as Record<string, unknown>
@@ -96,7 +98,7 @@ export class DesktopHostProcess {
     })
     this.child = child
     child.stderr?.setEncoding('utf8')
-    child.stderr?.on('data', (chunk: string) => { this.stderr += chunk })
+    child.stderr?.on('data', (chunk: string) => { this.stderr = (this.stderr + chunk).slice(-MAX_HOST_DIAGNOSTIC_CHARS) })
     child.stdout?.pipe(process.stdout)
     child.on('message', (message: unknown) => {
       if (!isDesktopHostEvent(message)) {

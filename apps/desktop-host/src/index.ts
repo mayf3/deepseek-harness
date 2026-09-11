@@ -31,13 +31,13 @@ async function main(): Promise<void> {
   process.once('disconnect', () => { void stop() })
   const { ctx } = await application
   const url = ctx.connection.authenticatedUrl(`http://127.0.0.1:${String(ctx.webServer.port)}`)
-  process.send?.({ type: 'ready', url })
+  if (process.connected) process.send?.({ type: 'ready', url }, (error) => { if (error !== null) console.error(error) })
 }
 
 if (import.meta.main) {
   main().catch((error: unknown) => {
     const message = error instanceof Error ? error.message : String(error)
-    process.send?.({ type: 'fatal', message })
+    if (process.connected) process.send?.({ type: 'fatal', message }, (error) => { if (error !== null) console.error(error) })
     console.error(error)
     process.exitCode = 1
     if (process.connected) process.disconnect()

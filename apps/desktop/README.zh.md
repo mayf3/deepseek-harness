@@ -43,6 +43,8 @@ CLI 与 Desktop 共用已安装依赖清单及 bundle 列表协调逻辑。bundl
 
 加载页不依赖 Host。错误页提供重启和重装指导。运行时资源支持 profile 恢复时，即可禁用插件和重置 Desktop，包括开发模式；早期初始化失败只提供重启。应用菜单仍提供插件管理器入口。插件修改不自动回滚。
 
+Host 错误诊断仅保留 stderr 输出的最后 64 Ki 个字符。更早的输出会被丢弃，避免长期运行的 Host 使壳的诊断缓冲区无限增长。
+
 重置删除 `$DSH_HOME/profiles/desktop` 中除所持事务锁外的所有条目，然后初始化内置 profile。它删除 Desktop 配置和已安装第三方包，不保留备份。共享任务、设置和 Harness-home `.env` 保持不变。壳资源和 preload 失败时使用独立文档显示可用恢复操作和诊断；其控件不依赖 preload。
 
 包事务独占 `$DSH_HOME/profiles/desktop/lock` 直到 pnpm 进程退出。pnpm 运行前，共享模块补全 helper 仅移除其拥有的链接，并保留 pnpm 管理的目录；Host 在启动时重新创建所需链接。重置保留 profile 目录与锁，直到初始化和 Host 启动结束。链接清理保留目标目录。原生构建遵循 pnpm 配置的构建策略；发布准备负责独立的构建时许可列表。

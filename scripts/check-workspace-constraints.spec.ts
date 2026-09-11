@@ -1,8 +1,10 @@
 /** Experimental-package publication and dependency constraints. */
 
+import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import {
   checkDshFamilyVersion,
+  checkWorkspaceManifest,
   checkExperimentalDependencyIsolation,
   checkExperimentalManifest,
   expectedDshPackageFiles,
@@ -142,4 +144,11 @@ describe('package payload constraints', () => {
       'lib/types/**/*.d.ts',
     ])
   })
+})
+
+it('publishes CLI runtime declarations and rejects a payload that omits them', () => {
+  const manifest = JSON.parse(readFileSync(new URL('../apps/cli/package.json', import.meta.url), 'utf8')) as WorkspaceManifest['manifest']
+  expect(checkWorkspaceManifest({ dir: 'apps/cli', manifest })).toEqual([])
+  expect(checkWorkspaceManifest({ dir: 'apps/cli', manifest: { ...manifest, files: ['lib/*.js'] } }))
+    .toEqual([expect.stringContaining('@deepseek-ai/dsh: package.json files must be ["lib/*.js","lib/types/*.d.ts"]')])
 })

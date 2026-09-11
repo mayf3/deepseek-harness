@@ -43,6 +43,8 @@ CLI and Desktop use the same installed-dependency inventory and bundle reconcili
 
 The loading page does not depend on the Host. Errors offer restart and reinstallation guidance. Disabling plugins and resetting Desktop are offered when runtime resources support profile recovery, including development mode; early initialization failures expose restart alone. The plugin manager remains available through the application menu. Plugin changes have no automatic rollback.
 
+Host error diagnostics retain only the last 64 Ki characters written to stderr. Earlier output is discarded so a long-running Host does not grow the shell’s diagnostic buffer indefinitely.
+
 Reset deletes every entry in `$DSH_HOME/profiles/desktop` except the held transaction lock, then initializes the built-in profile. It removes Desktop configuration and installed third-party packages without a backup. Shared tasks, settings, and the Harness-home `.env` are untouched. Shell resource and preload failures use a self-contained document with the available recovery actions and diagnostics; its controls do not require preload.
 
 Package transactions hold `$DSH_HOME/profiles/desktop/lock` exclusively through pnpm process exit. Before pnpm runs, the shared module-fallback helper removes only its owned links and preserves pnpm-managed directories; the Host recreates needed links on startup. Reset preserves the profile directory and its lock until initialization and Host startup finish. Link cleanup preserves target directories. Native builds follow pnpm’s configured build policy; release preparation owns its separate build-time allowlist.

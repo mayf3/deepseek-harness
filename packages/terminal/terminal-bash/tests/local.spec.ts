@@ -330,7 +330,9 @@ describe.skipIf(!hasPwsh)('terminal-bash pwsh real shell', () => {
         timeoutMs: 8_000,
       }, 'pwsh')
       const created = await ctx.terminals.spawn(agent, { type: 'shell', name: 'main', cwd: root })
-      expect(created.motd).toContain('dsh> ')
+      // Linux stdin-wait evidence can arrive before the PTY delivers the rendered prompt.
+      await expect.poll(() => ctx.terminals.read(agent, created.sessionId, { offset: 0, count: 100 }).text, { timeout: 8_000 })
+        .toContain('dsh> ')
 
       const releaseFile = join(root, 'release-command')
       // Hold the command across the silence settlement without relying on host load.
