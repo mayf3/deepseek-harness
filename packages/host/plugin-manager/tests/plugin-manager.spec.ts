@@ -45,19 +45,21 @@ async function mount(manager?: PluginManager): Promise<PluginManagerRemote> {
 }
 
 describe('PluginManagerRemote', () => {
-  it('waits for queued profile recomposition before publishing refreshed ownership', async () => {
+  it('waits for queued profile recomposition before publishing changed issues', async () => {
     const ctx = new Context()
     contexts.push(ctx)
     await ctx.plugin(Loader)
-    ctx.loader.builtins.good = () => {}
+    ctx.loader.builtins.good = { inject: ['missingService'], apply() {} }
     const id = await ctx.loader.create({ name: 'cordis:good' })
     await ctx.plugin(PluginManagerRemote, CONFIG)
+    await new Promise<void>(resolve => setImmediate(resolve))
     let release!: () => void
     const gate = new Promise<void>((resolve) => { release = resolve })
     const whenIdle = vi.fn(() => gate)
     ctx.provide('profileRuntime', { whenIdle } as never)
     const changes: string[] = []
     ctx.on('plugins/changed', ({ reason }) => { changes.push(reason) })
+    ctx.provide('missingService', {})
     ctx.emit('loader/entry-init', ctx.loader.resolve(id))
     try {
       await vi.waitFor(() => { expect(whenIdle).toHaveBeenCalledOnce() })
@@ -125,6 +127,124 @@ describe('PluginManagerRemote', () => {
     expect(changes).toHaveLength(count)
   })
 
+  it('keeps unrelated healthy changes and unchanged errors silent, but reports error changes and recovery', async () => {
+    const ctx = new Context()
+    contexts.push(ctx)
+    await ctx.plugin(Loader)
+    ctx.loader.builtins.good = () => {}
+    const id = await ctx.loader.create({ name: 'cordis:good' })
+    const entry = ctx.loader.resolve(id)
+    const changes: string[] = []
+    ctx.on('plugins/changed', ({ reason }) => { changes.push(reason) })
+    await ctx.plugin(PluginManagerRemote, CONFIG)
+    await new Promise<void>(resolve => setImmediate(resolve))
+    await entry.update({ config: { healthy: true } })
+    await ctx.loader.await()
+    await new Promise<void>(resolve => setImmediate(resolve))
+    expect(changes).toEqual([])
+
+    entry.lastFailure = { stage: 'update', error: 'first update failed' }
+    ctx.emit('loader/entry-init', entry)
+    await vi.waitFor(() => { expect(changes).toEqual(['runtime']) })
+    ctx.emit('loader/entry-init', entry)
+    await new Promise<void>(resolve => setImmediate(resolve))
+    expect(changes).toEqual(['runtime'])
+    entry.lastFailure = { stage: 'update', error: 'different update failed' }
+    ctx.emit('loader/entry-init', entry)
+    await vi.waitFor(() => { expect(changes).toEqual(['runtime', 'runtime']) })
+    delete entry.lastFailure
+    ctx.emit('loader/entry-init', entry)
+    await vi.waitFor(() => { expect(changes).toEqual(['runtime', 'runtime', 'runtime']) })
+  })
+
+  it('shares one pending refresh across a burst of Loader events', async () => {
+    const ctx = new Context()
+    contexts.push(ctx)
+    await ctx.plugin(Loader)
+    ctx.loader.builtins.waiting = { inject: ['lateService'], apply() {} }
+    const id = await ctx.loader.create({ name: 'cordis:waiting' })
+    const entry = ctx.loader.resolve(id)
+    const changes: string[] = []
+    ctx.on('plugins/changed', ({ reason }) => { changes.push(reason) })
+    await ctx.plugin(PluginManagerRemote, CONFIG)
+    await vi.waitFor(() => { expect(changes).toEqual(['runtime']) })
+    const gate = Promise.withResolvers<undefined>()
+    const whenIdle = vi.fn(() => gate.promise)
+    ctx.provide('profileRuntime', { whenIdle } as never)
+    const settle = vi.spyOn(ctx.loader, 'await')
+    try {
+      ctx.emit('loader/entry-init', entry)
+      await vi.waitFor(() => { expect(whenIdle).toHaveBeenCalledOnce() })
+      for (let i = 0; i < 100; i++) ctx.emit('loader/entry-init', entry)
+      expect(settle).toHaveBeenCalledOnce()
+      expect(whenIdle).toHaveBeenCalledOnce()
+      ctx.provide('lateService', {})
+      gate.resolve(undefined)
+      await vi.waitFor(() => { expect(changes).toEqual(['runtime', 'runtime']) })
+      expect(entry.fiber?.state).toBe(2)
+    } finally {
+      gate.resolve(undefined)
+      settle.mockRestore()
+    }
+  })
+
+  it('discards a diagnostic snapshot changed while it was being read', async () => {
+    const ctx = new Context()
+    contexts.push(ctx)
+    await ctx.plugin(Loader)
+    ctx.loader.builtins.good = () => {}
+    const id = await ctx.loader.create({ name: 'cordis:good' })
+    const entry = ctx.loader.resolve(id)
+    await ctx.plugin(PluginManagerRemote, CONFIG)
+    await new Promise<void>(resolve => setImmediate(resolve))
+    const changes: string[] = []
+    ctx.on('plugins/changed', ({ reason }) => { changes.push(reason) })
+    entry.lastFailure = { stage: 'update', error: new Error('transient failure') }
+    const read = vi.spyOn(entry, 'disabled', 'get').mockImplementationOnce(() => {
+      queueMicrotask(() => {
+        delete entry.lastFailure
+        ctx.emit('loader/entry-init', entry)
+      })
+      return false
+    })
+    try {
+      ctx.emit('loader/entry-init', entry)
+      await vi.waitFor(() => { expect(read).toHaveBeenCalledTimes(2) })
+      await new Promise<void>(resolve => setImmediate(resolve))
+      expect(changes).toEqual([])
+    } finally {
+      read.mockRestore()
+    }
+  })
+
+  it('cancels publication when disposed during the diagnostic read', async () => {
+    const ctx = new Context()
+    contexts.push(ctx)
+    await ctx.plugin(Loader)
+    ctx.loader.builtins.good = () => {}
+    const id = await ctx.loader.create({ name: 'cordis:good' })
+    const entry = ctx.loader.resolve(id)
+    const remote = ctx.plugin(PluginManagerRemote, CONFIG)
+    await remote
+    await new Promise<void>(resolve => setImmediate(resolve))
+    const changes: string[] = []
+    ctx.on('plugins/changed', ({ reason }) => { changes.push(reason) })
+    entry.lastFailure = { stage: 'update', error: new Error('update failed') }
+    const disposed = Promise.withResolvers<undefined>()
+    const read = vi.spyOn(entry, 'disabled', 'get').mockImplementationOnce(() => {
+      queueMicrotask(() => { void remote.dispose().then(() => { disposed.resolve(undefined) }, disposed.reject) })
+      return false
+    })
+    try {
+      ctx.emit('loader/entry-init', entry)
+      await disposed.promise
+      await new Promise<void>(resolve => setImmediate(resolve))
+      expect(changes).toEqual([])
+    } finally {
+      read.mockRestore()
+    }
+  })
+
   it('publishes the plugins namespace with one direct method per operation', async () => {
     const remote = await mount()
     expect(remote.typertRemote).toMatchObject({ serviceKey: 'pluginManager', namespace: 'plugins' })
@@ -183,6 +303,7 @@ describe('PluginManagerRemote', () => {
     await ctx.plugin(Loader)
     ctx.provide('profileRuntime', {
       dir: profileDir, profileName: 'web', installAnchor: join(profileDir, 'package.json'), patchReload: 'startup', current: { layers: [] },
+      whenIdle: async () => {},
     } as never)
     const metadata: typeof readPackageMetadata = options => ({
       packageName: options.packageName, kind: 'plugin', cordisSameCopy: null, rows: [], overrides: [], addable: [{ name: '.' }],

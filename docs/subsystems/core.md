@@ -944,7 +944,7 @@ The row injects only the Loader; the profile runtime, the preset roster, and the
 @Remote('add') async add(spec: string, options?: { enable?: boolean }): Promise<PluginInstallResult>
 
 /**
- * Remove a package from the profile with its user-layer rows and any obsolete discovery cache.
+ * Remove a package from the profile with its user-layer rows.
  * @param packageName - the installed dependency to remove.
  */
 @Remote('uninstall') async uninstall(packageName: string): Promise<void>

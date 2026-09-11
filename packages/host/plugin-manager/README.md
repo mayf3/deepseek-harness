@@ -53,7 +53,7 @@ A manager failure reaches the client as a `RemoteError` with the same `code` and
 
 ### A relay, not a second manager
 
-The adapter supplies per-call profile, preset and agent readers to one `PluginManager`, relays each Remote method, and maps domain errors. It observes native entry/status events and publishes a coalesced `plugins/changed` notification after Loader and queued profile recomposition settle. Disposal cancels pending notifications and removes the listeners. Tests may replace the manager, pnpm spawner or static metadata reader.
+The adapter supplies per-call profile, preset and agent readers to one `PluginManager`, relays each Remote method, and maps domain errors. It coalesces native entry/status events into one reader, waits for Loader and queued profile recomposition to settle, and publishes `plugins/changed` only when the row diagnostics change. Management operations retain their own change notifications. Disposal cancels pending notifications and removes the listeners. Tests may replace the manager, pnpm spawner or static metadata reader.
 
 ### Source map
 

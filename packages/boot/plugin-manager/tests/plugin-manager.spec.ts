@@ -382,7 +382,6 @@ describe('PluginManager', () => {
       // Rows come from static declarations while the bundle is not composed, under the ids the patch declares.
       expect(bundle?.rows).toEqual([{ entryId: 'hello', rowId: 'hello', moduleName: 'cordis:good', enabled: true, phase: null }])
       expect(bundle?.addable).toEqual([{ moduleName: 'ext-bundle/extra.js', declaredName: './extra.js', title: 'Extra' }])
-      expect(existsSync(join(staged.profileDir, '.dsh-plugins'))).toBe(false)
     })
 
     it('reads a composed bundle\'s rows from the live tree with their failures', async () => {
@@ -558,7 +557,6 @@ describe('PluginManager', () => {
       })
       expect(calls).toEqual([['pnpm', 'add', 'ext-lib']])
       expect(manifestOf(staged.profileDir).dependencies).toHaveProperty('ext-lib')
-      expect(existsSync(join(staged.profileDir, '.dsh-plugins', 'ext-lib.json'))).toBe(false)
       expect((await manager.list()).some(view => view.name === 'ext-lib')).toBe(true)
     })
 
@@ -718,7 +716,6 @@ describe('PluginManager', () => {
       expect(result).toMatchObject({ installed: ['ext-new'], enabled: ['ext-new'], installedOnly: [], plain: [] })
       expect(manifestOf(staged.profileDir).dsh.profile.bundles).toEqual(['ext-new'])
       expect(entryIds(ctx)).toEqual(expect.arrayContaining(['include:hello']))
-      expect(existsSync(join(staged.profileDir, '.dsh-plugins'))).toBe(false)
       expect(changes.map(change => change.reason)).toEqual(['enable', 'install'])
       expect((await manager.list()).find(view => view.name === 'ext-new')?.status).toBe('running')
     })
@@ -1011,7 +1008,6 @@ describe('PluginManager', () => {
       await manager.enable('ext-bundle')
       await manager.addRow('ext-bundle', { kind: 'global' }, { module: './extra.js' })
       expect(entryIds(ctx)).toEqual(expect.arrayContaining(['include:hello', 'include:ext-bundle/extra.js']))
-      expect(existsSync(join(staged.profileDir, '.dsh-plugins', 'ext-bundle.json'))).toBe(false)
 
       await manager.uninstall('ext-bundle')
 
@@ -1020,7 +1016,6 @@ describe('PluginManager', () => {
       expect(entryIds(ctx)).not.toContain('include:hello')
       expect(entryIds(ctx)).not.toContain('include:ext-bundle/extra.js')
       expect(readFileSync(join(staged.profileDir, 'cordis.patch.yml'), 'utf8')).toBe('[]\n')
-      expect(existsSync(join(staged.profileDir, '.dsh-plugins', 'ext-bundle.json'))).toBe(false)
       expect(changes.map(change => change.reason)).toEqual(['enable', 'row', 'disable', 'uninstall'])
       await expect(manager.uninstall('ext-bundle')).rejects.toMatchObject({ code: 'plugins/not-installed' })
     })

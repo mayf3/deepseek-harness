@@ -1431,7 +1431,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       },
       {
         signature: '@Remote(\'uninstall\') async uninstall(packageName: string): Promise<void>',
-        description: 'Remove a package from the profile with its user-layer rows and any obsolete discovery cache.',
+        description: 'Remove a package from the profile with its user-layer rows.',
         parameters: [{ name: 'packageName', description: 'the installed dependency to remove.' }],
       },
       {
