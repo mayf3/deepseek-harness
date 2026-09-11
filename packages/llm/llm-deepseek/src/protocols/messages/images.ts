@@ -1,12 +1,11 @@
 /** Deterministic inline image projection and matching conservative token pricing. */
 
-import { requestImageDimensions } from '@deepseek-ai/dsh-attachment'
 import type { AttachmentStore, ImageAttachmentRef, RequestImageAttachment } from '@deepseek-ai/dsh-attachment'
 import { contentHasImage, LlmError, offloadedImagePrefixCount, offloadedImageText, offloadRequestImagesWithPolicy, requestImageHandleText, textOnlyImageText } from '@deepseek-ai/dsh-llm'
 import type { ContentBlock, ImageAttachmentAccessResolver, LlmImageRequestPricing, Message } from '@deepseek-ai/dsh-llm'
 import { deepSeekImageTokens } from '../../common/image-tokens.ts'
 import type { DeepSeekConnectionOptions as Connection } from '../../common/types.ts'
-import { resolveRequestImagePolicy as policy } from '../../common/request-pricing.ts'
+import { resolveRequestImageTarget } from '../../common/request-pricing.ts'
 
 
 function bounds(connection: Connection) {
@@ -55,7 +54,9 @@ export async function prepareImages(
   const retained = offload(messages)
   for (const message of retained) {
     for (const ref of imageRefs(message.content)) {
-      if (!versions.has(ref.attachmentId)) versions.set(ref.attachmentId, await attachments.readImageRequest(ref, policy(model), signal))
+      if (!versions.has(ref.attachmentId)) {
+        versions.set(ref.attachmentId, await attachments.readImageRequest(ref, resolveRequestImageTarget(model, ref), signal))
+      }
     }
   }
   return { messages: offload(retained, ref => (versions.get(ref.attachmentId) as RequestImageAttachment).bytes), versions }
@@ -76,7 +77,7 @@ export function imagePricing(connection: Connection, modelId: string, access: Im
     const omitted = offloadedImagePrefixCount(refs.map(ref => 4 * Math.ceil(ref.bytes / 3)), bounds(connection))
     return refs.map((ref, index) => {
       if (index < omitted) return { visualTokens: 0, text: offloadedImageText(ref, access(ref)) }
-      const dimensions = requestImageDimensions(ref.width, ref.height, policy(model).maxPixels)
+      const dimensions = resolveRequestImageTarget(model, ref)
       return {
         visualTokens: deepSeekImageTokens(dimensions.width, dimensions.height),
         text: requestImageHandleText(ref, dimensions, access(ref)),

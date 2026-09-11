@@ -34,7 +34,7 @@ import type {
 } from '@deepseek-ai/dsh-deepseek-llm-api-extensions'
 import { serializeRequest, serializeRequestWithImages } from './serialize.ts'
 import type { ImageWireLocation } from './serialize.ts'
-import { deepSeekImageRequestPricing, resolveRequestImagePolicy } from '../../common/request-pricing.ts'
+import { deepSeekImageRequestPricing, resolveRequestImageMaxBytes, resolveRequestImageTarget } from '../../common/request-pricing.ts'
 import { catalogModelInfo, modelInfo } from '../../common/model-info.ts'
 import type { DeepSeekAdapterOptions, DeepSeekCatalogModel, DeepSeekConnectionOptions } from '../../common/types.ts'
 import type { DeepSeekFileStore } from './file-store.ts'
@@ -71,10 +71,9 @@ async function prepareRequestImages(
 ): Promise<Map<AttachmentId, RequestImageAttachment>> {
   const refs = new Map<AttachmentId, ImageAttachmentRef>()
   for (const message of options.messages) collectImageRefs(message.content, refs)
-  const policy = resolveRequestImagePolicy(model)
   const orderedRefs = [...refs.values()]
   const projected = await Promise.all(orderedRefs.map(
-    ref => attachments.readImageRequest(ref, policy, signal),
+    ref => attachments.readImageRequest(ref, resolveRequestImageTarget(model, ref), signal),
   ))
   return new Map(orderedRefs.map((ref, index) => (
     [ref.attachmentId, projected[index] as RequestImageAttachment]
@@ -349,18 +348,18 @@ export class ChatCompletionsAdapter extends LlmAdapter {
 
     const fileConnection = { baseURL: connection.baseURL, apiKey }
     const model = connection.models.find(entry => entry.id === options.model)
-    const policy = model === undefined ? undefined : resolveRequestImagePolicy(model)
+    const maxBytes = model === undefined ? undefined : resolveRequestImageMaxBytes(model)
     const resolveImageAccess = attachments === undefined
       ? undefined
       : (ref: ImageAttachmentRef): ImageAttachmentAccess | undefined => this.config.resolveImageAccess?.(attachments, ref)
     const imageAccessOptions = resolveImageAccess === undefined ? {} : { resolveImageAccess }
-    const requestMessages = policy === undefined ? options.messages : offloadRequestImagesWithPolicy(options.messages, {
+    const requestMessages = maxBytes === undefined ? options.messages : offloadRequestImagesWithPolicy(options.messages, {
       representation: 'raw',
       maxBytes: connection.maxRequestFilesBytes,
       maxImages: connection.maxImagesPerRequest,
       byteQuantum: connection.imageOffloadByteQuantum,
       countQuantum: connection.imageOffloadCountQuantum,
-      byteLength: ref => Math.min(ref.bytes, policy.maxBytes),
+      byteLength: ref => Math.min(ref.bytes, maxBytes),
       placeholder: ref => offloadedImageText(ref, resolveImageAccess?.(ref)),
     })
     const requestOptions = requestMessages === options.messages ? options : { ...options, messages: [...requestMessages] }

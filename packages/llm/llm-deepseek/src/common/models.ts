@@ -1,6 +1,5 @@
 /** Default catalog shared by every DeepSeek protocol. */
 import { DEFAULT_CONTEXT_WINDOW } from './defaults.ts'
-import { DEFAULT_REQUEST_IMAGE_PIXEL_BUDGET, DEFAULT_REQUEST_IMAGE_MAX_BYTES } from './request-pricing.ts'
 import type { DeepSeekCatalogModel } from './types.ts'
 
 /** Advisory official model entries; deployments may replace the catalog. */
@@ -10,8 +9,6 @@ export const DEFAULT_MODELS: DeepSeekCatalogModel[] = [
     name: 'DeepSeek-V41-Flash',
     contextWindow: DEFAULT_CONTEXT_WINDOW,
     inputModalities: ['text', 'image'],
-    imagePixelBudget: DEFAULT_REQUEST_IMAGE_PIXEL_BUDGET,
-    imageMaxBytes: DEFAULT_REQUEST_IMAGE_MAX_BYTES,
     systemPromptUpdate: 'in-history',
   },
   {
@@ -31,7 +28,5 @@ export const DEFAULT_MODELS: DeepSeekCatalogModel[] = [
     name: 'DeepSeek-V4-Flash-Vision-Exp',
     contextWindow: DEFAULT_CONTEXT_WINDOW,
     inputModalities: ['text', 'image'],
-    imagePixelBudget: DEFAULT_REQUEST_IMAGE_PIXEL_BUDGET,
-    imageMaxBytes: DEFAULT_REQUEST_IMAGE_MAX_BYTES,
   },
 ]

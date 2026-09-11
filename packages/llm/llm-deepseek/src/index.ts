@@ -33,11 +33,12 @@ export {
   DEFAULT_MAX_IMAGES_PER_REQUEST,
   DEFAULT_MAX_REQUEST_FILES_BYTES,
   DEFAULT_REQUEST_IMAGE_MAX_BYTES,
-  DEFAULT_REQUEST_IMAGE_PIXEL_BUDGET,
+  REQUEST_IMAGE_MAX_DIMENSION,
   deepSeekImageRequestPricing,
-  resolveRequestImagePolicy,
+  resolveRequestImageMaxBytes,
+  resolveRequestImageTarget,
 } from './common/request-pricing.ts'
-export { deepSeekImageTokens } from './common/image-tokens.ts'
+export { deepSeekImageTokens, deepSeekRequestImageDimensions } from './common/image-tokens.ts'
 export { DeepSeekFileStore, MAX_CHAT_IMAGE_BYTES } from './protocols/chat-completions/file-store.ts'
 export type { DeepSeekFileConnection, DeepSeekFilePolicy, DeepSeekFileReference } from './protocols/chat-completions/file-store.ts'
 export { DeepSeekFilesClient, MAX_FILE_EXPIRY_SECONDS, MAX_FILE_UPLOAD_BYTES, MAX_STORED_FILE_BYTES, MAX_STORED_FILE_COUNT, MIN_FILE_EXPIRY_SECONDS } from './protocols/chat-completions/files-api.ts'
