@@ -1065,6 +1065,14 @@ userDisables(entry: Entry): boolean
  * @throws when preparation fails or the root Include cannot accept the update.
  */
 async recompose(options: { reloadBundles?: boolean } = {}): Promise<readonly EntryIssue[]>
+
+/**
+ * Wait for recompositions already queued when called, including removed-fiber cleanup.
+ * Observers may read accepted composition facts afterwards; a failed operation
+ * still reports its error to its caller and does not reject this observation.
+ * @returns after the current recomposition queue settles.
+ */
+whenIdle(): Promise<void>
 ```
 
 Source: [`packages/boot/app-boot/src/profile-runtime.ts`](../../packages/boot/app-boot/src/profile-runtime.ts)

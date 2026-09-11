@@ -1512,6 +1512,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'current entry issues after application, without rolling back successful siblings.',
         throws: ['when preparation fails or the root Include cannot accept the update.'],
       },
+      {
+        signature: 'whenIdle(): Promise<void>',
+        description: 'Wait for recompositions already queued when called, including removed-fiber cleanup. Observers may read accepted composition facts afterwards; a failed operation still reports its error to its caller and does not reject this observation.',
+        parameters: [],
+        returns: 'after the current recomposition queue settles.',
+      },
     ],
   },
   {

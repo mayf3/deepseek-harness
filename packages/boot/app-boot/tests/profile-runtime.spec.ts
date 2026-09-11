@@ -149,10 +149,14 @@ describe('ProfileRuntime', () => {
     // Enabling a bundle re-reads the profile and waits on the tree; a watcher fires meanwhile.
     const enabling = runtime.recompose({ reloadBundles: true })
     const watching = runtime.recompose()
+    const observed = vi.fn()
+    const idle = runtime.whenIdle().then(observed)
     await Promise.resolve()
     expect(applied).toEqual(['composed-for-2'])
+    expect(observed).not.toHaveBeenCalled()
     release()
-    await Promise.all([enabling, watching])
+    await Promise.all([enabling, watching, idle])
+    expect(observed).toHaveBeenCalledOnce()
     // The watcher composed from the profile the enable committed, not the one before it.
     expect(applied).toEqual(['composed-for-2', 'composed-for-2'])
     expect(compose.mock.calls.at(-1)?.[0]).toBe(reloaded)
@@ -171,6 +175,7 @@ describe('ProfileRuntime', () => {
     const second = runtime.recompose()
     await expect(first).rejects.toThrow('rejected')
     await expect(second).resolves.toEqual([])
+    await expect(runtime.whenIdle()).resolves.toBeUndefined()
   })
 
   it('keeps the committed profile, provenance, and conflicts when the root include rejects the update', async () => {

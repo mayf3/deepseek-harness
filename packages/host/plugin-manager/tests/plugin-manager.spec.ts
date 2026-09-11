@@ -45,6 +45,27 @@ async function mount(manager?: PluginManager): Promise<PluginManagerRemote> {
 }
 
 describe('PluginManagerRemote', () => {
+  it('waits for queued profile recomposition before publishing refreshed ownership', async () => {
+    const ctx = new Context()
+    contexts.push(ctx)
+    await ctx.plugin(Loader)
+    ctx.loader.builtins.good = () => {}
+    const id = await ctx.loader.create({ name: 'cordis:good' })
+    await ctx.plugin(PluginManagerRemote, CONFIG)
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => { release = resolve })
+    const whenIdle = vi.fn(() => gate)
+    ctx.provide('profileRuntime', { whenIdle } as never)
+    const changes: string[] = []
+    ctx.on('plugins/changed', ({ reason }) => { changes.push(reason) })
+    ctx.emit('loader/entry-init', ctx.loader.resolve(id))
+    try {
+      await vi.waitFor(() => { expect(whenIdle).toHaveBeenCalledOnce() })
+      expect(changes).toEqual([])
+    } finally { release() }
+    await vi.waitFor(() => { expect(changes).toEqual(['runtime']) })
+  })
+
   it('reports a failed refresh and cancels publication when disposed during settlement', async () => {
     const ctx = new Context()
     contexts.push(ctx)

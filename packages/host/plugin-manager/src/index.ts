@@ -95,6 +95,7 @@ export class PluginManagerRemote extends TypertRemoteService {
       // Loader events precede asynchronous import/update completion; publish only after settlement.
       void Promise.resolve().then(async () => {
         await loader.await()
+        await ctx.get('profileRuntime')?.whenIdle()
         if (!disposed && requested === generation) ctx.emit('plugins/changed', { reason: 'runtime' })
       }).catch((error: unknown) => { ctx.logger.warn('plugin inventory refresh failed', error) })
     }
