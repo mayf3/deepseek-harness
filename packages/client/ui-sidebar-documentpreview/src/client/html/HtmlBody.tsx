@@ -49,7 +49,7 @@ function HtmlFrame({ data, readRelative, t }: FrameInput & { t: HtmlBodyProps['t
   }, [data, readRelative])
 
   if (frame?.data !== data || frame.readRelative !== readRelative) {
-    return <LoadingIndicator className={css.status} label={t('loading')} />
+    return <LoadingIndicator className={`${css.status} ${css.opening}`} label={t('loading')} iconOnly />
   }
   if (frame.url === undefined) return <p className={css.status} role="alert">{t('failed')}</p>
   return <iframe key={frame.url} className={css.frame} src={frame.url} sandbox="allow-scripts" title={t('frame')} data-html-preview />
