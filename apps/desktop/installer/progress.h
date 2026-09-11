@@ -1,4 +1,4 @@
-// Real worker fractions drive the long stages; short stages retain bounded estimates.
+// 7-Zip work drives extraction; directory promotion, registration, and cleanup use bounded estimates.
 #pragma once
 #include <algorithm>
 #include <cmath>
@@ -28,9 +28,9 @@ struct InstallProgress {
             stage = nextStage;
             stageStarted = now;
         }
-        const double boundaries[] = {0, 2, 25, 92, 94, 99};
-        if (stage == 0 || stage >= 3) {
-            const double seconds = stage == 0 ? 3.0 : stage == 3 ? 1.0 : 11.0;
+        const double boundaries[] = {0, 2, 94, 96, 98, 99};
+        if (stage != 1) {
+            const double seconds = stage == 0 ? 3.0 : stage == 4 ? 11.0 : 1.0;
             fraction = 1 - std::exp(-static_cast<double>(now - stageStarted) / (seconds * 1000));
         }
         const double next = boundaries[stage] + (boundaries[stage + 1] - boundaries[stage]) *
@@ -53,7 +53,7 @@ struct InstallProgress {
     }
 
     int CaptionStage() const {
-        const double boundaries[] = {0, 2, 25, 92, 94};
+        const double boundaries[] = {0, 2, 94, 96, 98};
         int caption = 0;
         while (caption < stage && value >= boundaries[caption + 1]) ++caption;
         return caption;

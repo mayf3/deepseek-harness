@@ -6,6 +6,7 @@ import { createRequire } from 'node:module'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
+import { createWindowsTokenSigner, installWindowsNsisBootstrapSigner, scrubWindowsSigningEnvironment } from './windows-sign.mjs'
 
 if (process.platform !== 'win32' || process.arch !== 'x64') {
   throw new Error('Installer UI checks require an interactive Windows x64 desktop')
@@ -24,6 +25,12 @@ const output = await mkdtemp(join(outputRoot, 'run-'))
 const payload = join(output, 'payload')
 await mkdir(join(payload, 'resources'), { recursive: true })
 const previousEnvironment = { ...process.env }
+const sign = process.argv.includes('--signed') ? createWindowsTokenSigner({
+  certificateFile: process.env.DSH_DESKTOP_WINDOWS_CER_FILE,
+  signTool: process.env.DSH_DESKTOP_WINDOWS_SIGNTOOL,
+  tokenPin: process.env.DSH_DESKTOP_WINDOWS_TOKEN_PIN,
+  keyContainer: process.env.DSH_DESKTOP_WINDOWS_KEY_CONTAINER,
+}) : undefined
 try {
   Object.assign(process.env, {
     DSH_DESKTOP_APP_ID: `com.deepseek.harness.installertest.n${id}`,
@@ -31,10 +38,16 @@ try {
     DSH_DESKTOP_UNSIGNED: '1', CSC_IDENTITY_AUTO_DISCOVERY: 'false', ELECTRON_BUILDER_7Z_FILTER: 'BCJ',
   })
   const { createElectronBuilderConfig } = await import('../electron-builder.config.mjs')
-  const { scrubWindowsSigningEnvironment } = await import('./windows-sign.mjs')
   const childOptions = { env: scrubWindowsSigningEnvironment(process.env), windowsHide: true, maxBuffer: 8 * 1024 * 1024 }
   await execute('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File',
-    join(appRoot, 'scripts', 'prepare-windows-installer.ps1'), '-OutputDirectory', join(output, 'ui'), '-TestProgress'], childOptions)
+    join(appRoot, 'scripts', 'prepare-windows-installer.ps1'), '-OutputDirectory', join(output, 'ui'), '-CompileProgressOnly'], childOptions)
+  const progressTest = join(output, 'ui', 'progress-test.exe')
+  if (sign) {
+    await sign({ path: progressTest, hash: 'sha256', isNest: false })
+    await sign({ path: join(output, 'ui', 'window-frame.dll'), hash: 'sha256', isNest: false })
+    installWindowsNsisBootstrapSigner({ sign })
+  }
+  await execute(progressTest, [], childOptions)
   const payloadSource = join(output, 'payload.nsi')
   await writeFile(payloadSource, `Unicode true
 RequestExecutionLevel user
@@ -50,13 +63,15 @@ Section
 SectionEnd
 `)
   const compiler = await getMakeNsisPath()
-  const copySmoke = join(output, 'copy-smoke.exe')
-  await execute(compiler.path, ['/V2', `/DOUTPUT_FILE=${copySmoke}`, `/DSOURCE_DLL=${join(output, 'ui', 'window-frame.dll')}`,
-    join(appRoot, 'tests', 'fixtures', 'installer-copy-smoke.nsi')], { ...childOptions, env: { ...childOptions.env, ...compiler.env } })
   await execute(compiler.path, ['/V2', payloadSource], { ...childOptions, env: { ...childOptions.env, ...compiler.env } })
+  if (sign) await sign({ path: join(payload, `${productName}.exe`), hash: 'sha256', isNest: false })
   const include = join(output, 'include.nsh')
   await writeFile(include, `!define INSTALLER_BUILD_DIR "${join(output, 'ui')}"\n!include "${join(appRoot, 'scripts', 'installer.nsh')}"\n`)
   const config = createElectronBuilderConfig()
+  if (sign) {
+    config.win.forceCodeSigning = true
+    config.win.signtoolOptions.sign = sign
+  }
   await build({ projectDir: appRoot, prepackaged: payload, targets: Platform.WINDOWS.createTarget(['nsis'], Arch.x64), publish: 'never',
     config: { ...config, productName, artifactName: 'installer-test.exe', directories: { output },
       nsis: { ...config.nsis, guid, include }, beforeBuild: undefined, afterPack: undefined, afterSign: undefined, artifactBuildCompleted: undefined },

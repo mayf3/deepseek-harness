@@ -82,7 +82,7 @@
   Page custom InstallerFinish InstallerFinishLeave
 !macroend
 
-; The pinned builder's worker publishes stages around its extraction and copy operations.
+; Installation work publishes stage changes without disturbing the NSIS caller.
 !macro InstallerPublishStage Stage
   ; Extraction owns the stack and error flag across these callbacks.
   Push $0
@@ -101,42 +101,22 @@
   Pop $0
 !macroend
 
-!macro customInstallerExtractStart
-  !insertmacro InstallerPublishStage 1
-!macroend
-
 !macro customInstallerExtract Archive
-  ; Private telemetry in the hidden detail label avoids the reused NSIS instruction counter.
-  Nsis7z::ExtractWithDetails "${Archive}" "HarnessExtract:%s"
-!macroend
-
-!macro customInstallerCopyStart
-  !insertmacro InstallerPublishStage 2
-!macroend
-
-!macro customInstallerCopyFiles Source Destination
-  Push $0
-  Push $1
-  StrCpy $0 0
-  ${If} ${Errors}
-    StrCpy $0 1
-  ${EndIf}
+  !insertmacro InstallerPublishStage 1
   System::Store /NOUNLOAD "S"
-  System::Call /NOUNLOAD '$PLUGINSDIR\window-frame.dll::InstallerCopyFiles(p $HWNDPARENT, w "${Source}", w "${Destination}") i.s ?c'
+  System::Call /NOUNLOAD '$PLUGINSDIR\window-frame.dll::InstallerExtract(p $HWNDPARENT, w "$PLUGINSDIR\dsh-7za.exe", w "${Archive}", w "$INSTDIR", w "$PLUGINSDIR\extract.log") i.s ?c'
   System::Store "L"
-  Pop $1
-  ${If} $1 < 0
-  ${OrIf} $0 == 1
-    SetErrors
-  ${Else}
-    ClearErrors
+  Pop $R0
+  StrCpy $R1 "$R0"
+  ${If} $R0 != 0
+    Push $0
+    FileOpen $0 "$PLUGINSDIR\extract.log" r
+    ${IfNot} ${Errors}
+      FileRead $0 $R1
+      FileClose $0
+    ${EndIf}
+    Pop $0
   ${EndIf}
-  Pop $1
-  Pop $0
-!macroend
-
-!macro customInstallerFilesReady
-  !insertmacro InstallerPublishStage 3
 !macroend
 
 !macro customCheckAppRunning
@@ -180,10 +160,8 @@
   ${If} ${Errors}
     StrCpy $0 1
   ${EndIf}
-  ; Finish can launch the app while NSIS removes its remaining plugin directory.
   !insertmacro InstallerPublishStage 4
   !insertmacro dshFinishDirectories
-  RMDir /r "$PLUGINSDIR\7z-out"
   ${If} $0 == 1
     SetErrors
   ${Else}

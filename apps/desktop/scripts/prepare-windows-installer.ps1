@@ -1,6 +1,6 @@
 <# Compile the x86 DWM helper and raster assets embedded in the NSIS installer. #>
 [CmdletBinding()]
-param([string]$OutputDirectory, [switch]$TestProgress)
+param([string]$OutputDirectory, [switch]$TestProgress, [switch]$CompileProgressOnly)
 $ErrorActionPreference = 'Stop'
 $installerRoot = Join-Path $PSScriptRoot '../installer'
 if (-not $OutputDirectory) { $OutputDirectory = Join-Path $PSScriptRoot '../.desktop-build/targets/win-x64/installer-ui' }
@@ -18,25 +18,17 @@ $compileLines = @('@echo off', ('call "{0}" >nul' -f $vcvars), 'if errorlevel 1 
 [IO.File]::WriteAllLines($compileScript, $compileLines, [Text.Encoding]::Default)
 & $env:ComSpec /d /c $compileScript
 if ($LASTEXITCODE -ne 0) { throw 'Native installer helper compilation failed.' }
-if ($TestProgress) {
+if ($TestProgress -or $CompileProgressOnly) {
     $testSource = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../tests/windows-installer-progress.cpp'))
     $testExecutable = Join-Path $output 'progress-test.exe'
     $testScript = Join-Path $output 'compile-progress-test.cmd'
     [IO.File]::WriteAllLines($testScript, @('@echo off', ('call "{0}" >nul' -f $vcvars), 'if errorlevel 1 exit /b %errorlevel%', ('cl /nologo /MT /W4 /WX /EHsc "{0}" /Fo"{1}" /Fe"{2}"' -f $testSource, (Join-Path $output 'progress-test.obj'), $testExecutable)), [Text.Encoding]::Default)
     & $env:ComSpec /d /c $testScript
     if ($LASTEXITCODE -ne 0) { throw 'Progress test compilation failed.' }
-    & $testExecutable
-    if ($LASTEXITCODE -ne 0) { throw 'Progress timeline regression failed.' }
-    $copySource = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../tests/windows-installer-copy.cpp'))
-    $copyExecutable = Join-Path $output 'copy-test.exe'
-    $copyScript = Join-Path $output 'compile-copy-test.cmd'
-    [IO.File]::WriteAllLines($copyScript, @('@echo off', ('call "{0}" >nul' -f $vcvars), 'if errorlevel 1 exit /b %errorlevel%', ('cl /nologo /std:c++17 /MT /W4 /WX /EHsc "{0}" /Fo"{1}" /Fe"{2}" /link user32.lib ole32.lib shell32.lib uuid.lib' -f $copySource, (Join-Path $output 'copy-test.obj'), $copyExecutable)), [Text.Encoding]::Default)
-    & $env:ComSpec /d /c $copyScript
-    if ($LASTEXITCODE -ne 0) { throw 'Copy test compilation failed.' }
-    $copyRoot = Join-Path $output ('copy-test-' + [Guid]::NewGuid().ToString('N'))
-    New-Item -ItemType Directory $copyRoot | Out-Null
-    & $copyExecutable $copyRoot
-    if ($LASTEXITCODE -ne 0) { throw 'Shell copy regression failed.' }
+    if ($TestProgress) {
+        & $testExecutable
+        if ($LASTEXITCODE -ne 0) { throw 'Progress timeline regression failed.' }
+    }
 }
 Add-Type -AssemblyName System.Drawing
 foreach ($asset in @('brand', 'brand-2x', 'brand-dark', 'brand-dark-2x', 'uninstaller-sidebar')) {

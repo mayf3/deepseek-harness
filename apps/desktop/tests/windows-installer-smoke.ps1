@@ -119,9 +119,6 @@ function Run-Silent([string]$Arguments, [int]$Code) {
     if ($process.ExitCode -ne $Code) { throw "Silent setup returned $($process.ExitCode), expected $Code" }
 }
 try {
-    $copySmoke = Start-Process -FilePath (Join-Path $OutputDirectory 'copy-smoke.exe') -PassThru -WindowStyle Hidden
-    $processes.Add($copySmoke)
-    if (-not $copySmoke.WaitForExit(60000) -or $copySmoke.ExitCode -ne 0) { throw 'NSIS copy hook did not preserve registers, stack, or error flags' }
     $process = Start-Setup light
     $window = [InstallerCapture]::Find($process.Id)
     [void][InstallerCapture]::Save($window, (Join-Path $OutputDirectory 'light-welcome.png'))
@@ -172,7 +169,8 @@ try {
     $window = [InstallerCapture]::Find($process.Id)
     $source = [InstallerCapture]::FindClass($window, 'msctls_progress32')
     if ($source -eq [IntPtr]::Zero) { throw 'Stock progress source is missing' }
-    # The running-app dialog holds the worker while native range/position resets are replayed.
+    # Directory staging finishes before the running-app prompt; promotion has not started.
+    if ([InstallerCapture]::GetProp($window, 'HarnessInstaller.Stage').ToInt32() -ne 1) { throw 'Running-app prompt reached the wrong installation stage' }
     $previous = [InstallerCapture]::Progress($window)
     foreach ($sample in @(@(100, 95), @(100, 59), @(1000, 0), @(1000, 950), @(100, 59), @(100, 100))) {
         [void][InstallerCapture]::SendMessage($source, 0x406, [IntPtr]::Zero, [IntPtr]$sample[0])
@@ -181,7 +179,7 @@ try {
         if ($percent -lt $previous -or $percent -ge 100) { throw "Progress regressed or completed before success: $previous -> $percent" }
         $previous = $percent
     }
-    if ($previous -ge 2) { throw 'Internal progress escaped the preparation stage' }
+    if ($previous -gt 94) { throw 'Internal progress escaped the extraction stage' }
     $results.Add('progress-remains-monotonic-across-native-resets')
     [void][InstallerCapture]::Save([InstallerCapture]::Find($process.Id), (Join-Path $OutputDirectory 'dark-progress.png'))
     Dismiss $process $copy.INSTALLER_RUNNING

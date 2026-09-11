@@ -10,10 +10,17 @@ LangString decompressionFailed ${LANG_ENGLISH} "Payload extraction failed"
 !macro installApplicationFiles
   !insertmacro dshExtractPayload "${PAYLOAD_FILE}"
 !macroend
-!include "..\..\scripts\installer-directories.nsh"
+!ifdef SOURCE_DLL
+  !include "..\..\scripts\installer.nsh"
+!else
+  !include "..\..\scripts\installer-directories.nsh"
+!endif
 
 Section
   InitPluginsDir
+  !ifdef SOURCE_DLL
+    File "/oname=$PLUGINSDIR\window-frame.dll" "${SOURCE_DLL}"
+  !endif
   StrCpy $INSTDIR "${TARGET_DIR}"
   !insertmacro dshStageApplication
   !ifdef CANCELLED

@@ -11,7 +11,7 @@
 #include <new>
 #include <algorithm>
 #include "progress.h"
-#include "file-copy.h"
+#include "extract.h"
 
 using namespace Gdiplus;
 
@@ -49,7 +49,6 @@ extern "C" __declspec(dllexport) int __cdecl InstallerFindProcess(LPCWSTR execut
 
 struct ProgressPage {
     InstallProgress progress{GetTickCount64()};
-    HWND extractionDetail;
     bool dark;
     UINT dpi;
     ULONG_PTR gdiplus;
@@ -111,15 +110,7 @@ static LRESULT CALLBACK ProgressProc(HWND window, UINT message, WPARAM wparam, L
             graphics.SetSmoothingMode(SmoothingModeAntiAlias);
             graphics.DrawImage(page->brand, Rect(0, 174, 600, 196));
             const int stage = static_cast<int>(reinterpret_cast<INT_PTR>(GetPropW(GetParent(window), L"HarnessInstaller.Stage")));
-            double fraction = 0;
-            if (stage == 1) {
-                WCHAR detail[128] = {};
-                int extracted = 0;
-                GetWindowTextW(page->extractionDetail, detail, ARRAYSIZE(detail));
-                if (swscanf_s(detail, L"HarnessExtract:%d%%", &extracted) == 1) fraction = extracted / 100.0;
-            } else if (stage == 2) {
-                fraction = reinterpret_cast<UINT_PTR>(GetPropW(GetParent(window), L"HarnessInstaller.CopyProgress")) / 10000.0;
-            }
+            const double fraction = reinterpret_cast<UINT_PTR>(GetPropW(GetParent(window), L"HarnessInstaller.ExtractProgress")) / 100.0;
             page->progress.Advance(stage, fraction, GetTickCount64());
             const int percent = static_cast<int>(page->progress.value);
             SolidBrush track(page->dark ? Color(255, 97, 102, 107) : Color(255, 233, 236, 242));
@@ -175,7 +166,6 @@ extern "C" __declspec(dllexport) HWND __cdecl InstallerShowProgress(HWND parent,
     }
     ShowWindow(stockPage, SW_HIDE);
     page->dark = dark != FALSE;
-    page->extractionDetail = GetDlgItem(stockPage, 1006);
     page->dpi = dpi;
     const WCHAR* captions[] = {preparing, extracting, copying, registering, cleaning};
     for (int i = 0; i < 5; ++i) lstrcpynW(page->captions[i], captions[i], 128);
