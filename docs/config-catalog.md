@@ -401,9 +401,9 @@ export interface Config {
 
 Source: [`packages/client/hmr/src/index.ts:31`](../packages/client/hmr/src/index.ts)
 
-<a id="deepseek-aidsh-code-runtime-worker-thread"></a>
+<a id="deepseek-aidsh-code-runtime-node"></a>
 
-## `@deepseek-ai/dsh-code-runtime-worker-thread`
+## `@deepseek-ai/dsh-code-runtime-node`
 
 ```ts config-catalog
 /** Plugin config: every execution cap, changeable from `cordis.yml` (no hardcoded tunables). */
@@ -436,7 +436,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/code-runtime/code-runtime-worker-thread/src/index.ts:25`](../packages/code-runtime/code-runtime-worker-thread/src/index.ts)
+Source: [`packages/code-runtime/code-runtime-node/src/index.ts:25`](../packages/code-runtime/code-runtime-node/src/index.ts)
 
 <a id="deepseek-aidsh-compaction-basic"></a>
 

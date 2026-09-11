@@ -1,7 +1,7 @@
 /** Host budget decisions use controlled clocks and ELU samples; worker execution and binding transport stay real. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
-import { WorkerThreadCodeRuntime } from '@deepseek-ai/dsh-code-runtime-worker-thread'
+import { NodeCodeRuntime } from '@deepseek-ai/dsh-code-runtime-node'
 import type { CodeRunResult } from '@deepseek-ai/dsh-code-runtime'
 
 const meter = vi.hoisted(() => ({ sample: vi.fn() }))
@@ -52,7 +52,7 @@ describe('worker budgets with controlled ELU samples and real binding transport'
   })
 
   async function pendingBinding(): Promise<void> {
-    await ctx.plugin(WorkerThreadCodeRuntime, { computeMs: 1_000, maxWallMs: 30_000 })
+    await ctx.plugin(NodeCodeRuntime, { computeMs: 1_000, maxWallMs: 30_000 })
     let entered!: () => void
     const ready = new Promise<void>((resolve) => { entered = resolve })
     const binding = new Promise<string>((resolve) => { release = () => { resolve('slow-done') } })

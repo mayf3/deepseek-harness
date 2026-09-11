@@ -21,7 +21,7 @@ import type { PostToolDecision, ToolExecution, ToolExecutionToken } from '@deeps
 import { SpillLocator, SpillStore } from '@deepseek-ai/dsh-spill'
 import type { SaveTextSpill, SpillRef } from '@deepseek-ai/dsh-spill'
 import * as SpillPolicy from '@deepseek-ai/dsh-spill-policy'
-import { WorkerThreadCodeRuntime } from '@deepseek-ai/dsh-code-runtime-worker-thread'
+import { NodeCodeRuntime } from '@deepseek-ai/dsh-code-runtime-node'
 
 const testToolSignal = new AbortController().signal
 
@@ -193,7 +193,7 @@ describe('outer PTC mode failure capture', () => {
     await ctx.plugin(ToolRuntime, { mode: 'ptc' })
     await ctx.plugin(StubStore)
     await ctx.plugin(SpillPolicy, { maxInlineBytes: 200 })
-    await ctx.plugin(WorkerThreadCodeRuntime, { maxOutputBytes: 500 })
+    await ctx.plugin(NodeCodeRuntime, { maxOutputBytes: 500 })
     const events: unknown[] = []
     const agent = {
       session: {
@@ -242,7 +242,7 @@ describe('the durable dispatch-log arm', () => {
     await ctx.plugin(ToolRuntime, { mode: 'ptc' })
     await ctx.plugin(StubStore)
     await ctx.plugin(SpillPolicy, { maxInlineBytes })
-    await ctx.plugin(WorkerThreadCodeRuntime, {})
+    await ctx.plugin(NodeCodeRuntime, {})
     const events: { type: string; data: unknown }[] = []
     const agent = {
       session: {
@@ -316,7 +316,7 @@ describe('the durable dispatch-log arm', () => {
     await ctx.plugin(ToolRuntime, { mode: 'ptc' })
     await ctx.plugin(StubStore)
     await ctx.plugin(SpillPolicy, { maxInlineBytes: 100 })
-    await ctx.plugin(WorkerThreadCodeRuntime, {})
+    await ctx.plugin(NodeCodeRuntime, {})
     // A spill backend that hangs until released.
     let releaseSave!: () => void
     const gate = new Promise<void>((resolve) => { releaseSave = resolve })
@@ -380,7 +380,7 @@ describe('the durable dispatch-log arm', () => {
     await ctx.plugin(ToolRuntime, { mode: 'ptc', maxParallelSubCalls: 1 })
     await ctx.plugin(StubStore)
     await ctx.plugin(SpillPolicy, { maxInlineBytes: 100 })
-    await ctx.plugin(WorkerThreadCodeRuntime, {})
+    await ctx.plugin(NodeCodeRuntime, {})
     const store = ctx.spillStore as StubStore
     const releases: (() => void)[] = []
     store.gate = () => new Promise<void>((resolve) => { releases.push(resolve) })
@@ -433,7 +433,7 @@ describe('the durable dispatch-log arm', () => {
     await ctx.plugin(ToolRuntime, { mode: 'ptc' })
     await ctx.plugin(StubStore)
     await ctx.plugin(SpillPolicy, { maxInlineBytes: 100 })
-    await ctx.plugin(WorkerThreadCodeRuntime, {})
+    await ctx.plugin(NodeCodeRuntime, {})
     ;(ctx.spillStore as StubStore).fail = true
     const warn = vi.spyOn(ctx.logger, 'warn').mockImplementation(() => {})
     const events: { type: string; data: unknown }[] = []

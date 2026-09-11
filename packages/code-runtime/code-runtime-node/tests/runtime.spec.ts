@@ -1,7 +1,7 @@
 import { describe, expect, it, onTestFinished } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
-import { WorkerThreadCodeRuntime } from '@deepseek-ai/dsh-code-runtime-worker-thread'
-import type { Config } from '@deepseek-ai/dsh-code-runtime-worker-thread'
+import { NodeCodeRuntime } from '@deepseek-ai/dsh-code-runtime-node'
+import type { Config } from '@deepseek-ai/dsh-code-runtime-node'
 import type { CodeBindingFunction, CodeBindingNamespace, CodeRunResult } from '@deepseek-ai/dsh-code-runtime'
 
 /**
@@ -11,8 +11,8 @@ import type { CodeBindingFunction, CodeBindingNamespace, CodeRunResult } from '@
  */
 async function setup(config: Config = {}) {
   const ctx = new Context()
-  await ctx.plugin(WorkerThreadCodeRuntime, config)
-  const runtime = ctx.codeRuntime as WorkerThreadCodeRuntime
+  await ctx.plugin(NodeCodeRuntime, config)
+  const runtime = ctx.codeRuntime as NodeCodeRuntime
   return { ctx, runtime }
 }
 
@@ -25,7 +25,7 @@ function tools(functions: Record<string, (args: unknown) => Promise<unknown>>): 
   }]
 }
 
-describe('WorkerThreadCodeRuntime — programs and bindings (real workers)', () => {
+describe('NodeCodeRuntime — programs and bindings (real workers)', () => {
   it('registers with the seam descriptors', async () => {
     const { runtime } = await setup()
     expect(runtime.language).toBe('typescript')
@@ -170,7 +170,7 @@ describe('WorkerThreadCodeRuntime — programs and bindings (real workers)', () 
   })
 })
 
-describe('WorkerThreadCodeRuntime — budgets and containment (real workers)', () => {
+describe('NodeCodeRuntime — budgets and containment (real workers)', () => {
   it('ends a hot loop at the compute budget — including behind a pending decoy dispatch', async () => {
     const { runtime } = await setup({ computeMs: 300, maxWallMs: 30_000 })
     const result = await runtime.run({
@@ -447,7 +447,7 @@ describe('WorkerThreadCodeRuntime — budgets and containment (real workers)', (
   }, 15_000)
 })
 
-describe('WorkerThreadCodeRuntime — hostile programs (real workers)', () => {
+describe('NodeCodeRuntime — hostile programs (real workers)', () => {
   it('survives forged port traffic: unknown binding names, duplicate ids, junk shapes', async () => {
     const { runtime } = await setup()
     const result = await runtime.run({
@@ -790,7 +790,7 @@ describe('WorkerThreadCodeRuntime — hostile programs (real workers)', () => {
   })
 })
 
-describe('WorkerThreadCodeRuntime — seam misuse and lifecycle', () => {
+describe('NodeCodeRuntime — seam misuse and lifecycle', () => {
   it('rejects invalid and duplicate binding globals loudly', async () => {
     const { runtime } = await setup()
     const cases: [string, RegExp][] = [
@@ -853,23 +853,23 @@ describe('WorkerThreadCodeRuntime — seam misuse and lifecycle', () => {
 
   it('rejects config values that are not positive numbers', async () => {
     const ctx = new Context()
-    await expect(ctx.plugin(WorkerThreadCodeRuntime, { computeMs: -1 })).rejects.toThrow(/positive number/)
+    await expect(ctx.plugin(NodeCodeRuntime, { computeMs: -1 })).rejects.toThrow(/positive number/)
   })
 
   it('rejects a maxWallMs above Node\'s maximum timer delay', async () => {
     // setTimeout clamps a delay past 2^31-1 ms to 1 ms, so the positivity check
     // alone would accept a 25-day ceiling that expires on the first tick.
     const ctx = new Context()
-    await expect(ctx.plugin(WorkerThreadCodeRuntime, { maxWallMs: 2_147_483_648 }))
+    await expect(ctx.plugin(NodeCodeRuntime, { maxWallMs: 2_147_483_648 }))
       .rejects.toThrow(/maxWallMs must be at most 2147483647/)
     // The boundary itself is usable.
-    await expect(ctx.plugin(WorkerThreadCodeRuntime, { maxWallMs: 2_147_483_647 })).resolves.toBeTruthy()
+    await expect(ctx.plugin(NodeCodeRuntime, { maxWallMs: 2_147_483_647 })).resolves.toBeTruthy()
   })
 
   it('requires maxOutputBytes to fit the smallest counted outer payloads', async () => {
     const ctx = new Context()
-    await expect(ctx.plugin(WorkerThreadCodeRuntime, { maxOutputBytes: 3 })).rejects.toThrow(/safe integer of at least 4/)
-    await expect(ctx.plugin(WorkerThreadCodeRuntime, { maxOutputBytes: 4.5 })).rejects.toThrow(/safe integer of at least 4/)
+    await expect(ctx.plugin(NodeCodeRuntime, { maxOutputBytes: 3 })).rejects.toThrow(/safe integer of at least 4/)
+    await expect(ctx.plugin(NodeCodeRuntime, { maxOutputBytes: 4.5 })).rejects.toThrow(/safe integer of at least 4/)
   })
 
   it('keeps runs isolated: no state survives from one run to the next', async () => {
@@ -881,8 +881,8 @@ describe('WorkerThreadCodeRuntime — seam misuse and lifecycle', () => {
 
   it('disposal aborts in-flight runs, awaits worker exit, and rejects later runs', async () => {
     const ctx = new Context()
-    const fiber = await ctx.plugin(WorkerThreadCodeRuntime)
-    const runtime = ctx.codeRuntime as WorkerThreadCodeRuntime
+    const fiber = await ctx.plugin(NodeCodeRuntime)
+    const runtime = ctx.codeRuntime as NodeCodeRuntime
     const inflight: Promise<CodeRunResult> = runtime.run({ program: 'for (;;) {}', bindings: [] })
     // Give the worker a moment to actually start spinning.
     await new Promise(resolve => setTimeout(resolve, 200))
@@ -894,8 +894,8 @@ describe('WorkerThreadCodeRuntime — seam misuse and lifecycle', () => {
 
   it('removes ctx.codeRuntime when the providing fiber disposes (HMR safety)', async () => {
     const ctx = new Context()
-    const fiber = await ctx.plugin(WorkerThreadCodeRuntime)
-    expect(ctx.get('codeRuntime')).toBeInstanceOf(WorkerThreadCodeRuntime)
+    const fiber = await ctx.plugin(NodeCodeRuntime)
+    expect(ctx.get('codeRuntime')).toBeInstanceOf(NodeCodeRuntime)
     await fiber.dispose()
     expect(ctx.get('codeRuntime')).toBeUndefined()
   })

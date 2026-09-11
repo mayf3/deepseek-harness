@@ -1604,9 +1604,9 @@ importers:
       '@deepseek-ai/dsh-cmdline':
         specifier: workspace:^
         version: link:../../boot/cmdline
-      '@deepseek-ai/dsh-code-runtime-worker-thread':
+      '@deepseek-ai/dsh-code-runtime-node':
         specifier: workspace:^
-        version: link:../../code-runtime/code-runtime-worker-thread
+        version: link:../../code-runtime/code-runtime-node
       '@deepseek-ai/dsh-util-values':
         specifier: workspace:^
         version: link:../../util/values
@@ -1922,9 +1922,9 @@ importers:
       '@deepseek-ai/dsh-cmdline':
         specifier: workspace:^
         version: link:../../boot/cmdline
-      '@deepseek-ai/dsh-code-runtime-worker-thread':
+      '@deepseek-ai/dsh-code-runtime-node':
         specifier: workspace:^
-        version: link:../../code-runtime/code-runtime-worker-thread
+        version: link:../../code-runtime/code-runtime-node
       '@deepseek-ai/dsh-cordis-client-runner':
         specifier: workspace:^
         version: link:../../extensions/cordis-client-runner
@@ -4242,9 +4242,9 @@ importers:
       '@deepseek-ai/dsh-client-ui-slots':
         specifier: workspace:^
         version: link:../ui-slots
-      '@deepseek-ai/dsh-code-runtime-worker-thread':
+      '@deepseek-ai/dsh-code-runtime-node':
         specifier: workspace:^
-        version: link:../../code-runtime/code-runtime-worker-thread
+        version: link:../../code-runtime/code-runtime-node
       '@deepseek-ai/dsh-llm':
         specifier: workspace:^
         version: link:../../llm/llm
@@ -4585,7 +4585,7 @@ importers:
         specifier: workspace:^
         version: link:../../../vendor/cordis
 
-  packages/code-runtime/code-runtime-worker-thread:
+  packages/code-runtime/code-runtime-node:
     dependencies:
       '@deepseek-ai/dsh-util-values':
         specifier: workspace:^
@@ -9050,9 +9050,9 @@ importers:
       '@deepseek-ai/dsh-agent':
         specifier: workspace:^
         version: link:../../core/agent
-      '@deepseek-ai/dsh-code-runtime-worker-thread':
+      '@deepseek-ai/dsh-code-runtime-node':
         specifier: workspace:^
-        version: link:../../code-runtime/code-runtime-worker-thread
+        version: link:../../code-runtime/code-runtime-node
       '@deepseek-ai/dsh-llm':
         specifier: workspace:^
         version: link:../../llm/llm
@@ -10929,9 +10929,9 @@ importers:
       '@deepseek-ai/dsh-code-runtime':
         specifier: workspace:^
         version: link:../../packages/code-runtime/code-runtime
-      '@deepseek-ai/dsh-code-runtime-worker-thread':
+      '@deepseek-ai/dsh-code-runtime-node':
         specifier: workspace:^
-        version: link:../../packages/code-runtime/code-runtime-worker-thread
+        version: link:../../packages/code-runtime/code-runtime-node
       '@deepseek-ai/dsh-command-compact':
         specifier: workspace:^
         version: link:../../packages/compaction/command-compact

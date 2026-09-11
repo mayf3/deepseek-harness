@@ -41,7 +41,7 @@ const result = await ctx.codeRuntime.run({
 
 ### Choose a backend
 
-Backends declare two descriptors you can rely on: `language` — what the program must be written in, with `'typescript'` and `'python'` as the well-known values — and `isolation` — the execution substrate (`'worker-thread'`, `'process'`, `'container'`), a label for deployments and diagnostics, not a security claim. [`dsh-code-runtime-worker-thread`](../code-runtime-worker-thread/README.md) executes TypeScript in a fresh Node worker thread; the private [`dsh-experimental-code-runtime-python`](../../experimental/code-runtime-python/README.md) package executes Python in a fresh CPython subprocess for opt-in compositions.
+Backends declare two descriptors you can rely on: `language` — what the program must be written in, with `'typescript'` and `'python'` as the well-known values — and `isolation` — the execution substrate (`'worker-thread'`, `'process'`, `'container'`), a label for deployments and diagnostics, not a security claim. [`dsh-code-runtime-node`](../code-runtime-node/README.md) executes TypeScript in a fresh Node worker thread; the private [`dsh-experimental-code-runtime-python`](../../experimental/code-runtime-python/README.md) package executes Python in a fresh CPython subprocess for opt-in compositions.
 
 ### Name your bindings portably
 
@@ -97,7 +97,7 @@ Binding-global and error-class names are language-portable: they must match the 
 Read these when the package-level contract is not enough. They move from the PTC mode consumer to the backends and the capability-seam model.
 
 - [PTC mode Agent Note](../../../.agents/notes/implemented/feature/2026-06-15-ptc.md) — how the tool registry consumes `ctx.codeRuntime` and presents `run_code` to the model.
-- [Worker-thread backend](../code-runtime-worker-thread/README.md) — the shipped TypeScript execution backend.
+- [Worker-thread backend](../code-runtime-node/README.md) — the shipped TypeScript execution backend.
 - [Experimental Python backend](../../experimental/code-runtime-python/README.md) — the private CPython subprocess provider and its fd-3 protocol.
 - [Code runtime subsystem reference](../../../docs/subsystems/code-runtime.md) — request/result vocabulary, bindings, and the `ctx.codeRuntime` cordis surface.
 - [Capability seams](../../../.agents/notes/implemented/architecture/2026-06-13-capability-seams.md) — the Service Definition / Service Provider / Consumer split.

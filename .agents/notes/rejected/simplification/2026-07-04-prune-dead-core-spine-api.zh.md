@@ -16,7 +16,7 @@ Status: rejected — stale 2026-07 inventory: rows were pruned piecemeal or gain
 | `ToolExecutionResult.callId` | 每个钩子已经接收不可变的 `ToolExecution`；循环和 ACP（Agent Client Protocol）通过调用/会话事件关联。没有消费方读取这个重复的结果字段。 | 移除该字段、复制/不匹配守卫，以及证明该重复不可能不一致的测试。 |
 | `ReactLoopAgent` 根导出 | 包外的命名导入都是测试；生产代码面向 `Agent` 编程，通过 `ctx.agents` 创建/恢复。 | 将返回类型和接口类型设为 `Agent`，将具体循环类改为包内部；保留有意设计的同步、仅配置的 `AgentLoop.create()` 路径。 |
 | `workflow-worker-thread` 的 protocol/runtime/session 再导出与命名的 `WorkerThreadWorkflowEngine` | 所有通过包名导入的消费方都使用默认引擎；工作流 Agent Note 已将 worker 协议格式（wire format）定义为私有。 | 保留默认插件类/配置约定；移除重复的命名类导出，将协议模块保持为源码私有。 |
-| `code-runtime-worker` 的 protocol/bootstrap 再导出 | 包外的生产/e2e 消费方使用 `WorkerThreadCodeRuntime` 和配置，而非 `BootstrapPort`、`PatchableStream` 或 worker 消息/启动类型。 | 保留运行时类/配置约定，将其协议格式/bootstrap 词汇改为源码私有。 |
+| `code-runtime-worker` 的 protocol/bootstrap 再导出 | 包外的生产/e2e 消费方使用 `NodeCodeRuntime` 和配置，而非 `BootstrapPort`、`PatchableStream` 或 worker 消息/启动类型。 | 保留运行时类/配置约定，将其协议格式/bootstrap 词汇改为源码私有。 |
 | ACP 的 `agentOptions` 根导出 | 该辅助函数只有同文件和 ACP 测试消费方；唯一的包外生产消费方挂载的是插件命名空间。 | 保留 `name`、`inject`、`Config`、`AcpConfig` 和 `apply`；将 `agentOptions` 改为源码私有，通过桥接层行为测试。 |
 | `providerWording` 与 `completedTurnPrefix` 根导出 | 各有一个同包生产调用者；只有 balanced-prefix 辅助函数有一个同包白盒测试。 | 改为源码私有，测试提供方行为。 |
 | `depthOf`、`SubagentDepthError`、`waitForExit` 与 `exitsWithin` 根导出 | 生产 subagent 后端消费的是进程内 runner 和子进程构造/dispose（资源释放）辅助函数，而非这些强制机制和测试内部实现。`SENSITIVE_ENV_PATTERN` 不在其中，因为 SDK helper 会将它应用于调用方传入的环境。 | 保留深度与退出行为，但将剩余辅助函数和 error 改为源码私有；通过 spawn 和 dispose 测试。保持共享凭据正则公开。 |

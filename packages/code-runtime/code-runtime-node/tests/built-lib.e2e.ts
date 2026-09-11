@@ -19,9 +19,9 @@ describe.skipIf(!built)('built lib real load path (plain node)', () => {
   it('runs a TypeScript program with a binding through lib/index.js and its lib/worker.cjs entry', async () => {
     const script = `
       const { Context } = await import('@deepseek-ai/cordis')
-      const { WorkerThreadCodeRuntime } = await import('@deepseek-ai/dsh-code-runtime-worker-thread')
+      const { NodeCodeRuntime } = await import('@deepseek-ai/dsh-code-runtime-node')
       const ctx = new Context()
-      await ctx.plugin(WorkerThreadCodeRuntime, {})
+      await ctx.plugin(NodeCodeRuntime, {})
       const result = await ctx.codeRuntime.run({
         program: 'const doubled: number = await tools.double({ n: 21 }); console.log("halfway", doubled); let failure; try { await tools.fail({}) } catch (error) { failure = { typed: error instanceof ToolCallError, name: error.name, toolName: error.toolName, message: error.message } } return { doubled, failure };',
         bindings: [{

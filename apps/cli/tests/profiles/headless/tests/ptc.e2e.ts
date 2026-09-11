@@ -18,7 +18,7 @@ import * as BashEnvPlugin from '@deepseek-ai/dsh-shell-env'
 import LocalSubprocessRuntime from '@deepseek-ai/dsh-subprocess-local'
 import * as ToolBash from '@deepseek-ai/dsh-tool-bash'
 import * as LlmDeepSeek from '@deepseek-ai/dsh-llm-deepseek'
-import { WorkerThreadCodeRuntime } from '@deepseek-ai/dsh-code-runtime-worker-thread'
+import { NodeCodeRuntime } from '@deepseek-ai/dsh-code-runtime-node'
 import LocalFileSystem from '@deepseek-ai/dsh-fs-local'
 import * as ToolFs from '@deepseek-ai/dsh-tool-fs'
 import * as WorkspaceContext from '@deepseek-ai/dsh-agent-instructions'
@@ -64,7 +64,7 @@ async function ptcModeHarness(cwd: string): Promise<Context> {
   await harness.plugin(BashEnvPlugin)
   await harness.plugin(LocalBashExecutor, { cwd, timeoutMs: 30_000 })
   await harness.plugin(ToolBash)
-  await harness.plugin(WorkerThreadCodeRuntime, {})
+  await harness.plugin(NodeCodeRuntime, {})
   return harness
 }
 
@@ -81,7 +81,7 @@ async function workspacePtcModeHarness(): Promise<Context> {
   await harness.plugin(WorkspaceContext, { maxBytes: 65536 })
   await harness.plugin(AgentLoop, { agents: [] })
   await harness.plugin(LlmDeepSeek, { models: [{ id: 'deepseek-v4-flash' }] })
-  await harness.plugin(WorkerThreadCodeRuntime, {})
+  await harness.plugin(NodeCodeRuntime, {})
   return harness
 }
 
@@ -119,7 +119,7 @@ async function typedPtcModeHarness(): Promise<Context> {
   const harness = new Context()
   await harness.plugin(SystemPrompt)
   await harness.plugin(ToolRuntime, { mode: 'ptc' })
-  await harness.plugin(WorkerThreadCodeRuntime, {})
+  await harness.plugin(NodeCodeRuntime, {})
   return harness
 }
 
