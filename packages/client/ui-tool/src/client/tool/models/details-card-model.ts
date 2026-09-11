@@ -14,6 +14,16 @@ function count(value: unknown): value is number {
   return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0
 }
 
+function formatDate(date: Date, locale: string, fallback: string): string {
+  try {
+    return new Intl.DateTimeFormat(locale, {
+      year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit', timeZoneName: 'short',
+    }).format(date)
+  } catch {
+    return fallback
+  }
+}
+
 /**
  * Derive the compact todo list from a todo_write call.
  * @param args - Parsed todo_write arguments.
@@ -82,9 +92,7 @@ function scheduleItem(value: unknown, t: Translate, locale: string): DetailItem 
       break
     default: return null
   }
-  const dateText = new Intl.DateTimeFormat(locale, {
-    year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit', timeZoneName: 'short',
-  }).format(date)
+  const dateText = formatDate(date, locale, value.scheduledAt)
   return {
     title: value.prompt,
     fields: [

@@ -182,4 +182,13 @@ describe('detailsCardModel fallback contract', () => {
     expect(detailsCardModel(output('todo_write', 'x', { todos: [{ content: 'x', status: 'unknown' }] }), t, 'en')).toBeNull()
     expect(detailsCardModel(output('schedule_create', '{"id":"s","prompt":"x","kind":"at","scheduledAt":"invalid","state":"scheduled","deliveryMode":"session-local"}'), t, 'en')).toBeNull()
   })
+
+  it('keeps recorded dates readable when the document language is invalid', () => {
+    const scheduledAt = '2026-09-10T09:00:00.000Z'
+    const model = detailsCardModel(output('schedule_create', JSON.stringify({
+      id: 'schedule-1', prompt: 'Review the build', kind: 'at', scheduledAt,
+      state: 'scheduled', deliveryMode: 'session-local',
+    })), t, 'en_US')
+    expect(model?.items[0]?.fields).toContainEqual({ label: 'Scheduled for', value: scheduledAt })
+  })
 })

@@ -77,7 +77,7 @@ function detailIcon(toolName: string) {
  */
 export function DetailsRow({ toolName, block, cwd, home, openFile, inspect, t }: ToolCallViewProps & PropsLocale<'conversation'>) {
   const model = toolRowModel(toolName, block, cwd, home)
-  const locale = document.documentElement.lang || 'en'
+  const locale = document.documentElement.lang
   const details = useMemo(() => detailsCardModel(block, t, locale), [block, t, locale])
   const operation = toolName === 'lsp' ? parsedToolCall(block)?.args.operation : undefined
   const titleKey = typeof operation === 'string' && Object.hasOwn(LSP_TITLE_KEYS, operation)

@@ -8,9 +8,12 @@ import {
 
 function dateText(value: string | number, locale: string): string {
   const date = new Date(value)
-  return Number.isFinite(date.getTime())
-    ? new Intl.DateTimeFormat(locale, { dateStyle: 'medium', timeStyle: 'short' }).format(date)
-    : String(value)
+  if (!Number.isFinite(date.getTime())) return String(value)
+  try {
+    return new Intl.DateTimeFormat(locale, { dateStyle: 'medium', timeStyle: 'short' }).format(date)
+  } catch {
+    return String(value)
+  }
 }
 
 function cordisDetails(name: string, args: Record<string, unknown>, value: unknown, t: DetailTranslate): ToolDetailsModel | null {
