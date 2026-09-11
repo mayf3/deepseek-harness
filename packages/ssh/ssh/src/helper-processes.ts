@@ -337,7 +337,6 @@ export class RemoteProcesses {
     this.closing = true
     const releases = [...this.records.keys()].map(id => this.release(id))
     const outcomes = await Promise.allSettled([...releases, ...this.cleanups])
-    while (this.cleanups.size > 0) outcomes.push(...await Promise.allSettled([...this.cleanups]))
     const errors = [...new Set(outcomes.flatMap(result => result.status === 'rejected' ? [result.reason as unknown] : []))]
     if (errors.length > 0) throw new AggregateError(errors, 'SSH remote process cleanup failed')
   }
@@ -374,7 +373,7 @@ export class RemoteProcesses {
   }
 
   private async rememberCompleted(id: SshProcessId, record: ProcessRecord, result: Promise<Completion>): Promise<void> {
-    if (this.records.get(id) !== record) return
+    if (this.records.get(id) !== record || record.release !== undefined) return
     const cleanup = this.trackCleanup(async () => {
       await Promise.all(Object.values(record.endpoints).map(closeEndpoint))
       await rm(record.directory, { recursive: true, force: true })

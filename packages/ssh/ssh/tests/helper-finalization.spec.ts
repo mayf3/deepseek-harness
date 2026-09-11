@@ -122,4 +122,38 @@ describe.skipIf(process.platform === 'win32')('SSH helper finalization ownership
     await expect(test.owner.done(test.id)).rejects.toThrow('Unknown or expired SSH process handle')
     expect(await readdir(test.root)).toEqual([])
   })
+
+  it('leaves completion owned by a release that is still observing the native range', async () => {
+    const child = nativeProcess()
+    const firstEntered = Promise.withResolvers<undefined>()
+    const secondEntered = Promise.withResolvers<undefined>()
+    const first = Promise.withResolvers<undefined>()
+    const second = Promise.withResolvers<undefined>()
+    child.waitForExit.mockImplementationOnce(async () => {
+      firstEntered.resolve(undefined)
+      await first.promise
+      return true
+    }).mockImplementationOnce(async () => {
+      secondEntered.resolve(undefined)
+      await second.promise
+      return true
+    })
+    const test = await harness(child, false)
+    onTestFinished(() => { first.resolve(undefined); second.resolve(undefined) })
+    child.finish()
+    await firstEntered.promise
+    const closed = test.owner.close()
+    try {
+      await secondEntered.promise
+      first.resolve(undefined)
+      await setImmediate()
+      second.resolve(undefined)
+      await closed
+      await expect(test.owner.done(test.id)).rejects.toThrow('Unknown or expired SSH process handle')
+    } finally {
+      first.resolve(undefined)
+      second.resolve(undefined)
+      await closed
+    }
+  })
 })
