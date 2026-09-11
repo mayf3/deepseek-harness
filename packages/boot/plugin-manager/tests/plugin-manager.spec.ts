@@ -229,7 +229,9 @@ async function bootProfile(staged: StagedHome, internals: Internals = {}, config
   const log: PluginInstallLogChunk[] = []
   ctx.on('plugins/changed', (change) => { changes.push(change) })
   ctx.on('plugins/install-log', (chunk) => { log.push(chunk) })
-  const manager = managerOver(ctx, internals, config)
+  const host = ctx.plugin({ inject: ['loader'], apply() {} })
+  await host.await()
+  const manager = managerOver(host.ctx, internals, config)
   return { ctx, manager, runtime: ctx.profileRuntime, changes, log }
 }
 
@@ -464,6 +466,26 @@ describe('PluginManager', () => {
 
       expect(views.find(view => view.name === 'ext-broken')).toMatchObject({ status: 'disabled' })
       expect(views.find(view => view.name === 'ext-later')).toMatchObject({ status: 'restart-required', liveReload: false })
+    })
+
+    it('reports unapplied live selections as failures instead of requiring a restart', async () => {
+      const staged = await stageHome()
+      stagePackage(staged.profileDir, 'ext-live', { patch: BUNDLE_ONE_ROW })
+      addDependency(staged.profileDir, 'ext-live')
+      const initial = manifestOf(staged.profileDir)
+      initial.dsh.profile.bundles = ['ext-live']
+      writeFileSync(join(staged.profileDir, 'package.json'), JSON.stringify(initial))
+      const { ctx, manager } = await bootProfile(staged)
+      try {
+        initial.dsh.profile.bundles = []
+        writeFileSync(join(staged.profileDir, 'package.json'), JSON.stringify(initial))
+        const [view] = await manager.list()
+        expect(view).toMatchObject({ enabled: false, liveReload: true, status: 'failed', reason: expect.stringContaining('not been applied') as string })
+        expect(view?.rows[0]?.phase).toBe('active')
+      } finally {
+        await ctx.fiber.dispose()
+        rmSync(staged.home, { recursive: true, force: true })
+      }
     })
 
     it('reports unreadable declarations and treats physical peer identity as advisory', async () => {
