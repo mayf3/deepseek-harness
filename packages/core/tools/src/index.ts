@@ -919,7 +919,7 @@ export class ToolRuntime extends Service {
       resolveSandboxPolicy: (exec) => {
         const policy = this.ctx.get('sandboxPolicy')
         if (policy === undefined) throw new Error('dsh-tools: confined code runtime requires sandboxPolicy')
-        return policy.resolve({ session: exec.agent?.session })
+        return policy.resolve(exec.agent === undefined ? {} : { session: exec.agent.session })
       },
       // The language-aware description/parameters getters read the runtime
       // without demanding one, so a native-default process can still project
