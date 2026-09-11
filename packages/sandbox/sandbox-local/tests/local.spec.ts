@@ -405,7 +405,7 @@ describe('the windows-acl probe (runner invocation contract)', () => {
     expect(probeWindowsAcl).toHaveBeenCalledTimes(1)
     expect(confined.argv.slice(-4)).toEqual(['--mode', 'read-only', '--', 'true'])
     expect(confined.enforcement).toBe('partial')
-    expect(confined.denialSignatures).toEqual(['access is denied', 'access to the path', 'permission denied'])
+    expect(confined.denialSignatures).toEqual(['access is denied', 'access to the path', 'permission denied', 'operation not permitted'])
     expect(confined.runnerFailureRules).toEqual([{ allowedExitCodes: [127], fatalSignatures: ['windows-acl-run: '] }])
   })
 
@@ -439,28 +439,33 @@ describe('the windows-acl probe (runner invocation contract)', () => {
       windowsAclRunnerEntry: absentRunnerEntry(),
     })
     const confined = sandbox.confine(['true'], RO)
-    expect(confined.argv.slice(0, 3)).toEqual([process.execPath, '--import', import.meta.resolve('tsx/esm')])
+    expect(confined.argv.slice(0, 2)).toEqual([process.execPath, '--import'])
+    expect(confined.argv[2]).toMatch(/^data:text\/javascript,/)
     expect(confined.argv[3]).toMatch(/runner\.ts$/)
   })
 
-  it('loads the source preload from a cwd outside the checkout', async () => {
+  it('loads the full source runner independently of cwd and ambient tsconfig', async () => {
     const cwd = mkdtempSync(join(tmpdir(), 'dsh-acl-source-cwd-'))
     tempDirs.push(cwd)
+    writeFileSync(join(cwd, 'tsconfig.json'), '{ invalid workspace configuration')
     const { sandbox } = await setup({}, {
       chain: ['windows-acl', 'bwrap'],
       probeWindowsAcl: () => true,
       windowsAclRunnerEntry: absentRunnerEntry(),
     })
     const { argv } = sandbox.confine(['true'], RO)
-    const result = spawnSync(argv[0]!, [...argv.slice(1, 3), '-e', 'process.stdout.write("source-loader-ready")'], {
-      cwd,
-      encoding: 'utf8',
-      timeout: 5000,
-      env: { ...process.env, NODE_OPTIONS: undefined, TSX_TSCONFIG_PATH: undefined },
-    })
-    expect(result.error).toBeUndefined()
-    expect(result.status, result.stderr).toBe(0)
-    expect(result.stdout).toBe('source-loader-ready')
+    for (const ambientConfig of [undefined, join(cwd, 'absent-ambient-tsconfig.json')]) {
+      const result = spawnSync(argv[0]!, argv.slice(1, 4), {
+        cwd,
+        encoding: 'utf8',
+        timeout: 5000,
+        env: { ...process.env, NODE_OPTIONS: undefined, TSX_TSCONFIG_PATH: ambientConfig },
+      })
+      expect(result.error).toBeUndefined()
+      expect(result.signal).toBeNull()
+      expect(result.status, result.stderr).toBe(127)
+      expect(result.stderr).toBe('windows-acl-run: missing --workspace\n')
+    }
   }, 10_000)
 
   it('reads an empty runner invocation as unusable (the probe\'s empty-argv guard)', async () => {
