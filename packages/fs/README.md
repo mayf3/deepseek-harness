@@ -35,6 +35,7 @@ Eight packages plus the remote sibling `fs-e2b` play the filesystem roles; the s
 | [`tool-fs-search/`](tool-fs-search/README.md) | Model-facing `glob` and `grep` discovery tools backed by the packaged ripgrep binary | registers on `ctx.tools` |
 | [`tool-str-replace-editor/`](tool-str-replace-editor/README.md) | Standalone `str_replace_editor` tool: `view`, `create`, `str_replace`, and `insert` over `ctx.fs` | registers on `ctx.tools` |
 | [`tool-present/`](tool-present/README.md) | Explicit immutable snapshots of delivered files | registers on `ctx.tools` |
+| [`workspace-changes/`](workspace-changes/README.md) | Per-turn changed-file summaries recorded from git working-tree snapshots | listens to `session/event`, appends `workspace/changes` |
 
 The policy is a plugin, not a service the tools inject: removing it leaves the bare provider's unconditional mutation behavior instead of breaking the tools. The mode fence in `fs-sandbox` and the read-before-edit gate compose. `tool-fs-search` deliberately does not extend the provider contract — search is a process-backed ripgrep workflow, so filesystem backends stay free of a universal search API.
 

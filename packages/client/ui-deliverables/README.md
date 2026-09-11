@@ -1,5 +1,5 @@
 ---
-description: "Produced-files and clickable file references for the Web GUI: the deliverables row a finished turn ends with, and inline-code links in the closing prose; for users and maintainers of the deliverables experience."
+description: "Changed files, deliveries, and clickable file references for the Web GUI: the changed-files card and delivery cards a finished turn ends with, and inline-code links in the closing prose; for users and maintainers of the deliverables experience."
 kind: "package-reference"
 ---
 
@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-This package renders the deliverables row a finished turn ends with — the files the mutation tools created or modified — and links matching inline-code references in the closing prose, so a mentioned file opens in the right Sidebar. The linked paths come from successful mutations and explicit deliveries, never from the closing prose — a produced file is listed whether or not the model remembered to name it. The shipped Web patch is the only composition that loads this package; removing its cordis.yml entry removes the guidance, row, and prose links together.
+This package renders the changed-files card a finished turn ends with — the files the turn changed, with the line counts the Host recorded from git snapshots — plus cards for explicitly delivered files, and links matching inline-code references in the closing prose so a mentioned file opens in the right Sidebar. Listed and linked paths come from the recorded summary, successful mutations, and explicit deliveries, never from the prose. The shipped Web patch is the only composition that loads this package; removing its cordis.yml entry removes the guidance, cards, and prose links together.
 
 ## Table of Contents
 
@@ -25,7 +25,7 @@ This package renders the deliverables row a finished turn ends with — the file
 <a id="use-this-package"></a>
 ## Use this package
 
-Mount this plugin alongside `ui-conversation`; a finished turn then ends with the produced-files row between the closing message's body and its action footer. Each chip opens the file through the owner's `openFile`, which the chat view routes to the right Sidebar as a text-preview tab, with relative paths resolved against the session cwd. The row offers no folder action: the Sidebar has no directory form, so an omitted-file remainder is a label only.
+Mount this plugin alongside `ui-conversation` and the Host [workspace-changes](../../fs/workspace-changes/README.md) plugin; a finished turn then ends with the changed-files card between the closing message's body and its action footer. Without a recorded summary — no git on the Host, or the plugin composed out — the card is absent and only deliveries and prose links remain.
 
 <a id="explicit-deliveries"></a>
 ### Explicit deliveries
@@ -34,9 +34,9 @@ The Web `standard`, `ptc`, and `cordis` presets expose `present` for final files
 
 The `present` tool row shows running, delivered, failed, or interrupted status; expanding a settled row reveals its recorded result. The collapsible card grid retains every delivered file. Both menu actions share pending state and show progress, acknowledgement, or an action-specific retryable error. Desktop information is read when delivery cards appear and invalidated on connection replacement; responses from a replaced connection cannot publish metadata. Selecting a native menu action returns keyboard focus to the available Sidebar Open button. Pending actions close the menu until another explicit gesture. A missing desktop disables the Open menu; a failed desktop-information read offers Retry. It requires a desktop and a suitable default application on the serving Host; a remote browser does not open applications on its own device.
 
-### The row
+### The changed-files card
 
-The “Files changed” row lists successful file-tool mutations; final file deliveries require `present`. The first file section starts 20px below the closing prose, a following explicit-delivery section starts 16px below the row, and the action footer starts 20px below the last file section. The row uses CSS container-width bands to show a responsive prefix of up to six file chips. Flexbox shrinks and ellipsizes basename text, while CSS selects the matching localized `+ N files` label for omitted paths; the full path remains available as the title, and the row performs no JavaScript layout observation or horizontal scrolling.
+The card renders the turn's latest `workspace/changes` event: its header names the complete changed-file count with the summed added and deleted lines, and each row shows one file's display path with its own counts, or “binary” for a binary file. Rows appear in the recorded display order, so repository files above the working directory and files outside it sort first. Three rows show before a fold; a control below reveals every recorded file and, once expanded, collapses the list again from the bottom. With a Host desktop available, the header opens the deepest workspace folder containing the listed files in the file manager and each row opens its file in the default application, both through authenticated Host actions that share the delivery cards' pending, acknowledged, and retryable-error states in place of the counts. Without a desktop the header is a plain label and rows preview their files in the right Sidebar. The first file section starts 20px below the closing prose, a following explicit-delivery section starts 16px below the card, and the action footer starts 20px below the last file section. Final file deliveries still require `present`.
 
 ### Inline-code links
 
@@ -50,9 +50,9 @@ The closing prose links produced or delivered paths: an inline-code token resolv
 <details>
 <summary>Implementation internals — click to expand</summary>
 
-The Node half registers the static `ui:deliverable-file-references` system-prompt section asking the model to mention primary files from successful creation or modification calls and to write those and any other changed-file references as Markdown inline code. The browser half registers a wrapper around `ProducedFiles` and explicit deliveries into the chat view's `conversation.chat.turnTail` hole. `deliverablesDefinition` folds each Turn's successful first-party mutation calls into `DeliverablesTurnData` from the validated raw arguments of `write`, `edit`, and mutating `str_replace_editor` commands. Reads, deletes, unsupported tools, malformed calls, and failed results contribute nothing. A new mutation tool needs an explicit Client contribution before it joins the list. The package also provides the `chatFileMentions` service the chat view consults per closing message; composing the plugin out removes both surfaces and leaves the view's empty chain at zero cost.
+The Node half registers the static `ui:deliverable-file-references` system-prompt section asking the model to mention primary files from successful creation or modification calls and to write those and any other changed-file references as Markdown inline code. The browser half registers a wrapper around the changed-files card and explicit deliveries into the chat view's `conversation.chat.turnTail` hole. `deliverablesDefinition` folds each Turn's latest validated `workspace/changes` event into `DeliverablesTurnData.changes`, its `deliverables/presented` events into deliveries, and the successful first-party mutation calls of `write`, `edit`, and mutating `str_replace_editor` commands into produced paths from their validated raw arguments; the produced paths feed only the prose mention resolver. Reads, deletes, unsupported tools, malformed calls, malformed events, and failed results contribute nothing. The package also provides the `chatFileMentions` service the chat view consults per closing message; composing the plugin out removes both surfaces and leaves the view's empty chain at zero cost.
 
-Native opening uses an authenticated POST addressed by the viewed Session, event sequence, and original file index. The Host reads the viewed Session header with the declaration and passes its cwd, or the deployment workspace root when absent, to `workspaceFiles.stat`. This uses the same composed filesystem as Sidebar previews and does not activate an Agent, including for child Sessions. Native actions require the canonical process path to map from a Host path back to that same process path. Providers without this mapping return 422 and the card directs the user to Sidebar preview; a same-named Host file is insufficient. The same configured desktop availability governs metadata and execution. Edits affect subsequent opens; deletion returns an error. No file-content copy or attachment is created. Plugin disposal cancels and awaits pending native-open requests.
+Native opening uses an authenticated POST addressed by the viewed Session, event sequence, and original file index; the changed-files route omits the index to open the common folder, which the Host derives from the recorded workspace-relative paths and verifies as a directory. The Host reads the viewed Session header with the declaration or summary and passes its cwd, or the deployment workspace root when absent, to `workspaceFiles.stat`. This uses the same composed filesystem as Sidebar previews and does not activate an Agent, including for child Sessions. Native actions require the canonical process path to map from a Host path back to that same process path. Providers without this mapping return 422 and the card directs the user to Sidebar preview; a same-named Host file is insufficient. The same configured desktop availability governs metadata and execution. Edits affect subsequent opens; deletion returns an error. No file-content copy or attachment is created. Plugin disposal cancels and awaits pending native-open requests.
 
 </details>
 
@@ -61,10 +61,12 @@ Native opening uses an authenticated POST addressed by the viewed Session, event
 <a id="further-exploration"></a>
 ## Further Exploration
 
-Read these pages when the deliverables surface is not enough. They move from the row to the turn-tail hole and the decisions behind the vocabulary.
+Read these pages when the deliverables surface is not enough. They move from the card to the Host recorder, the turn-tail hole, and the decisions behind the vocabulary.
 
+- [workspace-changes](../../fs/workspace-changes/README.md) — the Host plugin that records the summary the card renders.
 - [ui-conversation](../ui-conversation/README.md) — declares the `conversation.chat.turnTail` hole and renders the closing prose.
-- [Workspace file links](../../../.agents/notes/implemented/feature/2026-07-31-web-workspace-file-links.md) — the decision behind the produced-files row; its Host open path is superseded by the [right Sidebar](../../../.agents/notes/implemented/feature/2026-09-04-right-sidebar-docking-infrastructure.md).
+- [Turn changed-files card](../../../.agents/notes/implemented/feature/2026-09-11-turn-changed-files-card.md) — the decision behind git-recorded summaries replacing the mutation-call row.
+- [Workspace file links](../../../.agents/notes/implemented/feature/2026-07-31-web-workspace-file-links.md) — the decision behind the earlier produced-files row; its Host open path is superseded by the [right Sidebar](../../../.agents/notes/implemented/feature/2026-09-04-right-sidebar-docking-infrastructure.md).
 - [Inline file mentions](../../../.agents/notes/archived/feature/2026-08-07-web-inline-file-mentions.md) — the decision behind clickable mentions in the closing prose.
 - [Client package map](../README.md) — adjacent browser UI packages.
 
@@ -95,9 +97,10 @@ The section is static at first-party order 9000 for the lifetime of the package 
 These limits define the current deliverables vocabulary. They are current package constraints, not a general file-linking comparison or a task backlog.
 
 - **Mention matching is exact path or unique basename only** — a suffix mention stays inert; widening the matcher is deferred until a real closing-message shape needs it.
-- **Terminal-created files require explicit delivery** — call `present` to make them available as delivery cards and clickable references.
+- **Terminal-created files require explicit delivery** — the card lists them once git records the change, but delivery cards and clickable references still require `present`.
 - **Declarations do not preserve file contents** — reopening or transferring a Session requires source files accessible through the viewed Session’s filesystem. Missing files, directories, and final symbolic links return 404.
-- **Directories have no destination** — chips open files in the right Sidebar's text preview, which shows files only; the former native folder handoff is gone rather than replaced.
+- **Folder opening needs a Host desktop** — without one the card header is inert and rows fall back to the right Sidebar's text preview, which shows files only.
+- **Files outside the workspace open by absolute path only** — the recorded path is the Host path at recording time; a moved workspace or a different viewing Session cannot relocate it.
 
 <a id="dev-note"></a>
 ### Dev Note

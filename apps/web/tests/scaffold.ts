@@ -64,6 +64,7 @@ import {
   type Profile,
 } from '@deepseek-ai/dsh-app-boot'
 import { dshHomePath } from '@deepseek-ai/dsh-home-paths'
+import { DEFAULT_SHADOW_EXCLUDES } from '@deepseek-ai/dsh-workspace-changes'
 import { LlmAdapter } from '@deepseek-ai/dsh-llm'
 import type {
   LlmModelInfo, LlmProviderInfo, LlmResolvedModelInfo, RetryPolicyConfig, StreamChunk,
@@ -596,6 +597,16 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
       : [{ id: 'connection', config: { trustedHosts: [options.remoteAuthority] } }],
     { id: 'settings', config: { dshHome: harnessHome } },
     { id: 'credentials', config: { dshHome: harnessHome } },
+    // Turn change summaries snapshot the temp workspace into a shadow
+    // repository under the owned harness home; the scaffold's other in-workspace
+    // roots stay out of every snapshot so goldens depend only on scenario files.
+    {
+      id: 'workspace-changes',
+      config: {
+        dshHome: harnessHome,
+        shadowExcludes: [...DEFAULT_SHADOW_EXCLUDES, '.agents-home/', '.bundled-skills/', '.dsh-storages/'],
+      },
+    },
     // The shipped directory-picker row is the -auto chooser, which resolves
     // the interaction from the RUNNING host (display, SSH launch, bind). The
     // lane's goldens are interaction-specific (workspace-management drives

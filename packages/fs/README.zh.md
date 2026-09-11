@@ -35,6 +35,7 @@ kind: "package-group"
 | [`tool-fs-search/`](tool-fs-search/README.zh.md) | 由打包 ripgrep 二进制支持的面向模型 `glob` 与 `grep` 发现工具 | 注册到 `ctx.tools` |
 | [`tool-str-replace-editor/`](tool-str-replace-editor/README.zh.md) | 独立的 `str_replace_editor` 工具：基于 `ctx.fs` 的 `view`、`create`、`str_replace` 与 `insert` | 注册到 `ctx.tools` |
 | [`tool-present/`](tool-present/README.zh.md) | 显式保存交付文件的不可变快照 | 注册到 `ctx.tools` |
+| [`workspace-changes/`](workspace-changes/README.zh.md) | 由 git 工作树快照记录的每轮改动文件摘要 | 监听 `session/event`，追加 `workspace/changes` |
 
 策略是插件，不是工具注入的服务：移除它会留下裸提供方的无条件变更行为，而不会破坏工具。`fs-sandbox` 的模式围栏与编辑前读取门禁可以组合。`tool-fs-search` 有意不扩展提供方约定——搜索是由进程支持的 ripgrep 工作流，因此文件系统后端无需承担通用搜索 API。
 

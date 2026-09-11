@@ -3438,6 +3438,30 @@ export interface Config {
 
 Source: [`packages/workflow/workflow-worker-thread/src/index.ts:32`](../packages/workflow/workflow-worker-thread/src/index.ts)
 
+<a id="deepseek-aidsh-workspace-changes"></a>
+
+## `@deepseek-ai/dsh-workspace-changes`
+
+Requires: `subprocess`
+
+```ts config-catalog
+/** Snapshot bounds and shadow repository placement. Invalid values fail plugin load. */
+export interface Config {
+  /** Harness home that holds shadow repositories under `workspace-changes/`; defaults to `$DSH_HOME`, then `~/.dsh`. */
+  dshHome?: string
+  /** Milliseconds one git command may run before the turn's record is abandoned. */
+  timeoutMs: number
+  /** Bytes of git output retained per command; a larger diff listing abandons the record. */
+  outputMaxBytes: number
+  /** Maximum files carried by one event; `total` still reports the complete count. */
+  maxFiles: number
+  /** `info/exclude` patterns for shadow repositories. */
+  shadowExcludes: string[]
+}
+```
+
+Source: [`packages/fs/workspace-changes/src/index.ts:35`](../packages/fs/workspace-changes/src/index.ts)
+
 ## Loadable plugins with no config
 
 These load from a `cordis.yml` entry with no `config:` block; they declare no configuration API.

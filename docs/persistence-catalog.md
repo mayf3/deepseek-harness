@@ -1146,3 +1146,16 @@ Source: [`packages/core/session/src/types.ts:297`](../packages/core/session/src/
 ```
 
 Source: [`packages/web/web-search-deepseek/src/provider.ts:83`](../packages/web/web-search-deepseek/src/provider.ts)
+
+### `workspace/*`
+
+<a id="workspacechanges--log-only"></a>
+
+#### `workspace/changes` — log-only
+
+```ts persistence-catalog
+/** Files changed by a completed top-level turn; the latest event for one turn replaces earlier ones. */
+'workspace/changes': WorkspaceChangesData
+```
+
+Source: [`packages/fs/workspace-changes/src/types.ts:36`](../packages/fs/workspace-changes/src/types.ts)

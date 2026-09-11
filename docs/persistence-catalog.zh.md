@@ -1148,3 +1148,16 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 ```
 
 来源：[`packages/web/web-search-deepseek/src/provider.ts:83`](../packages/web/web-search-deepseek/src/provider.ts)
+
+### `workspace/*`
+
+<a id="workspacechanges--log-only"></a>
+
+#### `workspace/changes` — 仅日志
+
+```ts persistence-catalog
+/** Files changed by a completed top-level turn; the latest event for one turn replaces earlier ones. */
+'workspace/changes': WorkspaceChangesData
+```
+
+Source: [`packages/fs/workspace-changes/src/types.ts:36`](../packages/fs/workspace-changes/src/types.ts)
