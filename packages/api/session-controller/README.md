@@ -39,7 +39,6 @@ The user-invocable `skills/list` metadata includes the winning provider’s opti
 
 Fork copies history through the selected completed turn, including its `turn/end`. Events after that point, including queued input and model-setting changes, are excluded. An omitted or past-end anchor selects the last completed turn; an anchor inside an unfinished turn is rejected.
 
-
 <a id="session-media-references"></a>
 ## Session media references
 

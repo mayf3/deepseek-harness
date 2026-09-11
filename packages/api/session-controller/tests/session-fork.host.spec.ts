@@ -331,16 +331,23 @@ describe('sessions.fork', () => {
       },
       reason: 'initial',
     })
-    source.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
+    const boundary = source.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
+    const inherited = source.snapshotEvents()
+    source.append('session/title', {
+      title: 'Title after the selected turn', messageSeqs: [], source: { kind: 'user' },
+    })
+    source.append('turn/start', { turn: 2 })
     source.append('request/header', {
       header: { config: { provider: 'later-provider', model: 'later-model' } },
       reason: 'change',
     })
-    const response = await remote(ctx).fork(request({ sessionId: source.id }))
+    source.append('turn/end', { turn: 2, reason: { kind: 'completed' } })
+    const response = await remote(ctx).fork(request({ sessionId: source.id, atSeq: boundary.seq }))
     expect(response.ok).toBe(true)
     if (!response.ok) return
     const child = ctx.agents.get(response.value.sessionId)
     if (child === undefined) throw new Error('fork did not publish the child agent')
+    expect(child.session.snapshotEvents().slice(0, child.session.inheritedEventCount)).toEqual(inherited)
     const assembly = await child.ctx.systemPrompt.assemble()
     expect(assembly.variables).toMatchObject({
       provider: 'inherited-provider',
