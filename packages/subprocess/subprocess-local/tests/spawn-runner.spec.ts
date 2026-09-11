@@ -126,6 +126,17 @@ async function runWindows(
 }
 
 describe('closed runner protocol', () => {
+  it('preserves the explicit control request and rejects other transport values', () => {
+    const files = track(createLinuxLaunchFiles({ cwd: '/target', env: {}, control: 'pipe' }))
+    expect(consumeLinuxLaunchRequest(files.requestPath)).toEqual({ cwd: '/target', env: {}, control: 'pipe' })
+    expect(parseWindowsStartRequest({ type: 'start', cwd: 'C:\\target', env: {}, control: 'pipe' }))
+      .toEqual({ type: 'start', cwd: 'C:\\target', env: {}, control: 'pipe' })
+    const invalid = track(createLinuxLaunchFiles({ cwd: '/target', env: {} }))
+    writeFileSync(invalid.requestPath, JSON.stringify({ cwd: '/target', env: {}, control: 'ipc' }))
+    expect(() => consumeLinuxLaunchRequest(invalid.requestPath)).toThrow('invalid Linux launch request')
+    expect(() => parseWindowsStartRequest({ type: 'start', cwd: 'C:\\target', env: {}, control: 'ipc' })).toThrow()
+  })
+
   it('creates, consumes, reports through, and cleans one private Linux exchange', () => {
     const files = track(createLinuxLaunchFiles({ cwd: '/target', env: { A: '1' } }))
     if (process.platform !== 'win32') {
@@ -714,7 +725,7 @@ describe('Windows Job runner protocol owner', () => {
     expect(host.env).toEqual({ SAFE: 'bootstrap' })
   })
 
-  it('closes every target carrier before the first Windows poll', async () => {
+  it.each([undefined, 'pipe'] as const)('closes every target carrier with control %s before the first Windows poll', async (control) => {
     const events: string[] = []
     const interval = vi.spyOn(globalThis, 'setInterval').mockImplementation((callback: () => void) => {
       events.push('interval')
@@ -730,8 +741,8 @@ describe('Windows Job runner protocol owner', () => {
           return 0
         }),
       })
-      await runWindows(host, native)
-      expect(events).toEqual(['close:4', 'close:5', 'close:6', 'interval', 'poll'])
+      await runWindows(host, native, { type: 'start', cwd: 'C:\\target', env: {}, ...control === undefined ? {} : { control } })
+      expect(events).toEqual(['close:4', 'close:5', 'close:6', ...control === 'pipe' ? ['close:7'] : [], 'interval', 'poll'])
       expect(host.sent).toEqual([{ type: 'target-exit', exitCode: 0 }])
       expect(host.exitCode).toBe(0)
     } finally {

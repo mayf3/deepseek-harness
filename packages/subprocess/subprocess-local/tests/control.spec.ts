@@ -2,6 +2,7 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { once } from 'node:events'
 import { afterEach, describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import type { SubprocessHandle } from '@deepseek-ai/dsh-subprocess'
@@ -24,6 +25,24 @@ afterEach(async () => {
 })
 
 describe('managed subprocess control pipe', () => {
+  it('closes the caller endpoint when service disposal terminates an active program', async () => {
+    ctx = new Context()
+    await ctx.plugin(LocalSubprocessRuntime)
+    handle = ctx.subprocess.spawn({
+      argv: [process.execPath, '--input-type=module', '-e',
+        'import { Socket } from "node:net"; const c = new Socket({fd:7,readable:true,writable:true}); c.write("ready"); setInterval(()=>{},60000)'],
+      cwd: process.cwd(),
+      stdio: { stdin: 'ignore', stdout: { maxBytes: 32 }, stderr: { maxBytes: 32 }, control: 'pipe' },
+      graceMs: 1000,
+    })
+    const channel = handle.control
+    if (channel === undefined) throw new Error('requested control pipe is absent')
+    await once(channel, 'data')
+    await ctx.fiber.dispose()
+    expect(channel.destroyed).toBe(true)
+    expect(await handle.waitForExit()).toBe(true)
+  })
+
   it('leaves the channel absent on an ordinary spawn', async () => {
     ctx = new Context()
     await ctx.plugin(LocalSubprocessRuntime)
