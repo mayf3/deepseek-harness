@@ -551,6 +551,7 @@ export class LocalSandboxProvider extends SandboxProvider {
   /**
    * The windows-acl runner argv prefix: the built lib/runner.js entry when
    * present (production), else the package source through tsx (development).
+   * Resolve the source preload in this installation, independently of target cwd.
    * The prefix stays `[node, runner, ...]` — a future native-exe runner keeps
    * the same argv contract and only swaps these entries.
    */
@@ -560,7 +561,7 @@ export class LocalSandboxProvider extends SandboxProvider {
     const builtEntry = this.internals.windowsAclRunnerEntry ?? fileURLToPath(import.meta.resolve('@deepseek-ai/dsh-sandbox-windows-acl/runner'))
     if (existsSync(builtEntry)) return [process.execPath, builtEntry]
     const sourceEntry = fileURLToPath(import.meta.resolve('@deepseek-ai/dsh-sandbox-windows-acl/src/runner.ts'))
-    return [process.execPath, '--import', 'tsx/esm', sourceEntry]
+    return [process.execPath, '--import', import.meta.resolve('tsx/esm'), sourceEntry]
   }
 }
 

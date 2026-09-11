@@ -80,6 +80,8 @@ Seatbelt profile 默认允许，带 `(deny file-write*)` 与来自共享 `writab
 
 Windows 档为每个工作区保留一个确定性写入 SID 和常驻 ACE，同时为每个活跃的会话/工作区对分配一个随机私有临时目录，以及不同的 SID 和可撤销 ACE——共享工作区的会话共享其预期写权限，却不会继承彼此的临时目录权限。新的提供方总会选择新的临时路径和 SID，因此崩溃残留既无法阻止恢复的会话，也无法向其授权。该档报告 `partial` 强制执行，因为受限令牌必须保留 Everyone，且 NTFS 硬链接会把同一文件对象别名为多个路径。
 
+构建后的 ACL runner 缺失时，源码启动使用从本安装目录解析出的 `tsx/esm` 模块 URL。命令的工作目录不需要包含 Harness 源码检出或独立的加载器依赖。
+
 ### 拒绝与 runner 失败方言
 
 每个 runner 的内核都有自己的拒绝方言，随每次包装以 `denialSignatures` 携带，`runnerFailureRules` 则给出每个 runner 的致命签名，因此消费方先分类 runner 拒绝，再检查拒绝签名。精确的字符串与退出码位于 [`src/index.ts`](src/index.ts)。

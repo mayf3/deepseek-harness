@@ -7,6 +7,7 @@
  * are all exercised through the real `confine()` path.
  */
 
+import { spawnSync } from 'node:child_process'
 import { mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -438,9 +439,29 @@ describe('the windows-acl probe (runner invocation contract)', () => {
       windowsAclRunnerEntry: absentRunnerEntry(),
     })
     const confined = sandbox.confine(['true'], RO)
-    expect(confined.argv.slice(0, 3)).toEqual([process.execPath, '--import', 'tsx/esm'])
+    expect(confined.argv.slice(0, 3)).toEqual([process.execPath, '--import', import.meta.resolve('tsx/esm')])
     expect(confined.argv[3]).toMatch(/runner\.ts$/)
   })
+
+  it('loads the source preload from a cwd outside the checkout', async () => {
+    const cwd = mkdtempSync(join(tmpdir(), 'dsh-acl-source-cwd-'))
+    tempDirs.push(cwd)
+    const { sandbox } = await setup({}, {
+      chain: ['windows-acl', 'bwrap'],
+      probeWindowsAcl: () => true,
+      windowsAclRunnerEntry: absentRunnerEntry(),
+    })
+    const { argv } = sandbox.confine(['true'], RO)
+    const result = spawnSync(argv[0]!, [...argv.slice(1, 3), '-e', 'process.stdout.write("source-loader-ready")'], {
+      cwd,
+      encoding: 'utf8',
+      timeout: 5000,
+      env: { ...process.env, NODE_OPTIONS: undefined, TSX_TSCONFIG_PATH: undefined },
+    })
+    expect(result.error).toBeUndefined()
+    expect(result.status, result.stderr).toBe(0)
+    expect(result.stdout).toBe('source-loader-ready')
+  }, 10_000)
 
   it('reads an empty runner invocation as unusable (the probe\'s empty-argv guard)', async () => {
     // windowsAclRunnerInvocation always yields [node, ...] in product; an

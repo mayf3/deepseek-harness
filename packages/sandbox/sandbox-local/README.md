@@ -80,6 +80,8 @@ The Seatbelt profile is allow-default with `(deny file-write*)` plus write allow
 
 The Windows rung keeps one deterministic write SID and standing ACE per workspace, while every live session/workspace pair gets a random private temp directory with a distinct SID and revocable ACE — sessions sharing a workspace share its intended write authority without inheriting one another's temp authority. A fresh provider always chooses a new temp path and SID, so crash residue cannot block or authorize a resumed session. The rung reports `partial` enforcement because the restricted token must retain Everyone and NTFS hard links alias one file object across paths.
 
+When the built ACL runner is absent, source launch uses the `tsx/esm` module URL resolved from this installation. The command's working directory does not need a Harness checkout or its own loader dependency.
+
 ### Denial and runner-failure dialects
 
 Each runner's kernel speaks its own denial dialect, carried on every wrap as `denialSignatures`, and `runnerFailureRules` give each runner's fatal signature, so consumers classify a runner refusal before checking denial signatures. The exact strings and exit codes live in [`src/index.ts`](src/index.ts).
