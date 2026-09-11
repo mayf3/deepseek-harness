@@ -65,6 +65,8 @@ export function extractPersistenceSchema(root: string): PersistenceSchemaInvento
     rootDir: root,
     noUnusedLocals: false,
     noUnusedParameters: false,
+    // Reachable declaration-file errors must not become opaque any values.
+    skipLibCheck: false,
     strict: true,
     exactOptionalPropertyTypes: true,
   }
@@ -93,7 +95,6 @@ export function extractPersistenceSchema(root: string): PersistenceSchemaInvento
     if (found === undefined) throw new PersistenceSchemaError(`persistence schema: missing compiler root ${name}`)
     return found
   }
-  const extraction = new SchemaExtractor(root, program)
   const eventNamesDeclaration = declaration('EventNamesRoot')
   const compiledEvents = stringLiterals(checker.getTypeFromTypeNode(eventNamesDeclaration.type), 'keyof SessionEventMap')
   const discoveredEvents = new Set(events.map(event => event.name))
@@ -108,11 +109,6 @@ export function extractPersistenceSchema(root: string): PersistenceSchemaInvento
     if (!events.some(event => event.name === name)) throw new PersistenceSchemaError(`persistence schema: surface event ${name} has no declaration`)
   }
   const header = declaration('HeaderRoot')
-  const roots: RootInput[] = [{
-    key: 'SessionHeader',
-    kind: 'header',
-    node: extraction.convert(checker.getTypeFromTypeNode(header.type), header),
-  }]
   const physicalFile = resolve(root, 'packages/session/session-persistence-jsonl/src/format.ts')
   const physical = program.getSourceFile(physicalFile)?.statements
     .filter((node): node is ts.InterfaceDeclaration | ts.TypeAliasDeclaration =>
@@ -120,7 +116,13 @@ export function extractPersistenceSchema(root: string): PersistenceSchemaInvento
     .filter(declaration => declaration.name.text === 'HeaderLine')
   if (physical?.length !== 1) throw new PersistenceSchemaError('persistence schema: expected one current JSONL HeaderLine declaration')
   const physicalHeader = physical[0] as ts.InterfaceDeclaration | ts.TypeAliasDeclaration
-  validateReachableDeclarations(program, root, [...declarations.values(), physicalHeader])
+  const declarationSources = validateReachableDeclarations(program, root, [...declarations.values(), physicalHeader])
+  const extraction = new SchemaExtractor(root, program, declarationSources)
+  const roots: RootInput[] = [{
+    key: 'SessionHeader',
+    kind: 'header',
+    node: extraction.convert(checker.getTypeFromTypeNode(header.type), header),
+  }]
   roots.push({ key: 'JsonlHeaderLine', kind: 'header', node: extraction.convert(checker.getTypeAtLocation(physicalHeader), physicalHeader) })
   const envelopes: number[] = []
   for (const [index, event] of events.entries()) {
@@ -149,10 +151,15 @@ function hostSourceFiles(root: string, configPath: string, seen = new Set<string
   ]
 }
 
-function validateReachableDeclarations(program: ts.Program, root: string, roots: readonly ts.Node[]): void {
+function validateReachableDeclarations(
+  program: ts.Program,
+  root: string,
+  roots: readonly ts.Node[],
+): ReadonlyMap<ts.Type, readonly ts.Node[]> {
   const checker = program.getTypeChecker()
   const visited = new Set<ts.Node>()
   const declarations = new Map<ts.SourceFile, ts.Node[]>()
+  const definitions = new Map<ts.Type, ts.Node[]>()
   const visit = (node: ts.Node): void => {
     if (visited.has(node)) return
     visited.add(node)
@@ -161,6 +168,13 @@ function validateReachableDeclarations(program: ts.Program, root: string, roots:
       const scopes = declarations.get(file) ?? []
       scopes.push(node)
       declarations.set(file, scopes)
+      if (isNamedTypeDeclaration(node) || ts.isTypeLiteralNode(node)) {
+        // Primitive aliases share checker types with unaliased properties.
+        const type = checker.getTypeAtLocation(node)
+        const entries = definitions.get(type) ?? []
+        entries.push(node)
+        definitions.set(type, entries)
+      }
     }
     const target = ts.isTypeReferenceNode(node) ? node.typeName
       : ts.isExpressionWithTypeArguments(node) ? node.expression
@@ -184,6 +198,7 @@ function validateReachableDeclarations(program: ts.Program, root: string, roots:
       return start !== undefined && scopes.some(scope => start >= scope.getStart() && start < scope.end)
     }))
   if (errors.length > 0) throw new PersistenceSchemaError(errors.map(diagnosticText).join('\n'))
+  return definitions
 }
 
 class SchemaExtractor {
@@ -193,20 +208,24 @@ class SchemaExtractor {
 
   private readonly checker: ts.TypeChecker
 
-  constructor(private readonly root: string, program: ts.Program) {
+  constructor(
+    private readonly root: string,
+    program: ts.Program,
+    private readonly declarationSources: ReadonlyMap<ts.Type, readonly ts.Node[]>,
+  ) {
     this.checker = program.getTypeChecker()
   }
 
   convert(type: ts.Type, site: ts.Node): number {
     const cached = this.cache.get(type)
     if (cached !== undefined) {
-      this.record(cached, type, site)
+      this.record(cached, type)
       return cached
     }
     const id = this.nodes.length
     this.nodes.push({ kind: 'primitive', type: 'never' })
     this.cache.set(type, id)
-    this.record(id, type, site)
+    this.record(id, type)
     const add = (node: SchemaNode): number => { this.nodes[id] = node; return id }
     const flags = type.flags
     if (flags & ts.TypeFlags.Any) {
@@ -371,7 +390,10 @@ class SchemaExtractor {
       const provenance = this.provenance.get(id)
       for (const name of provenance?.names ?? []) item.names.add(name)
       for (const source of provenance?.sources ?? []) item.sources.add(source)
-      if (provenance === undefined || provenance.names.size === 0) for (const path of paths.get(id) ?? []) item.names.add(path)
+      const kind = schema.nodes[0]?.kind
+      if (kind !== 'primitive' && kind !== 'literal' && (provenance === undefined || provenance.names.size === 0)) {
+        for (const path of paths.get(id) ?? []) item.names.add(path)
+      }
       types.set(digest, item)
     }
     return {
@@ -386,18 +408,20 @@ class SchemaExtractor {
     }
   }
 
-  private record(id: number, type: ts.Type, site: ts.Node): void {
+  private record(id: number, type: ts.Type): void {
     const item = this.provenance.get(id) ?? { names: new Set<string>(), sources: new Set<string>() }
-    const symbol = type.aliasSymbol ?? type.getSymbol()
-    if (symbol !== undefined && !symbol.name.startsWith('__')) {
-      for (const declaration of symbol.declarations ?? []) {
-        const file = slash(relative(this.root, declaration.getSourceFile().fileName))
-        if (trackedSource(file)) item.names.add(`${file}#${symbol.name}`)
-      }
-    }
-    const file = slash(relative(this.root, site.getSourceFile().fileName))
-    if (trackedSource(file)) {
-      const position = site.getSourceFile().getLineAndCharacterOfPosition(site.getStart())
+    const declarations = new Set([
+      ...this.declarationSources.get(type) ?? [],
+      ...type.aliasSymbol?.declarations ?? [],
+      ...type.getSymbol()?.declarations ?? [],
+    ])
+    for (const declaration of declarations) {
+      if (!isNamedTypeDeclaration(declaration) && !ts.isTypeLiteralNode(declaration) && !ts.isEnumMember(declaration)) continue
+      const source = declaration.getSourceFile()
+      const file = slash(relative(this.root, source.fileName))
+      if (!trackedSource(file)) continue
+      if (isNamedTypeDeclaration(declaration)) item.names.add(`${file}#${declaration.name.text}`)
+      const position = source.getLineAndCharacterOfPosition(declaration.getStart())
       item.sources.add(`${file}:${String(position.line + 1)}`)
     }
     this.provenance.set(id, item)
@@ -408,6 +432,10 @@ class SchemaExtractor {
     const position = site.getSourceFile().getLineAndCharacterOfPosition(site.getStart())
     throw new PersistenceSchemaError(`persistence schema: ${source}:${String(position.line + 1)}: ${reason}: ${this.checker.typeToString(type)}`)
   }
+}
+
+function isNamedTypeDeclaration(node: ts.Node): node is ts.TypeAliasDeclaration | ts.InterfaceDeclaration | ts.EnumDeclaration {
+  return ts.isTypeAliasDeclaration(node) || ts.isInterfaceDeclaration(node) || ts.isEnumDeclaration(node)
 }
 
 function stringLiterals(type: ts.Type, name: string): Set<string> {

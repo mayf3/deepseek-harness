@@ -13565,12 +13565,8 @@
           }
         ]
       },
-      "names": [
-        "event:web/deepseek-search-llm-request.data.body.tools[0].type"
-      ],
-      "sources": [
-        "packages/web/web-search-deepseek/src/provider.ts:73"
-      ]
+      "names": [],
+      "sources": []
     },
     {
       "digest": "023a355b2be0d688fb6e4df8388dadb942761d46cfe96d0f499aae9631a159d4",
@@ -13598,7 +13594,7 @@
         "event:turn/end.data.reason[2]"
       ],
       "sources": [
-        "packages/core/session/src/types.ts:285"
+        "packages/core/session/src/types.ts:205"
       ]
     },
     {
@@ -13612,14 +13608,8 @@
           }
         ]
       },
-      "names": [
-        "event:feedback/message-put.data.item.category[3]",
-        "event:feedback/record.data.category[3]"
-      ],
-      "sources": [
-        "packages/feedback/command-feedback/src/types.ts:31",
-        "packages/feedback/message-feedback/src/types.ts:28"
-      ]
+      "names": [],
+      "sources": []
     },
     {
       "digest": "05d2ae1e0c7f8770f83f9a09047afb39a335d8ac986df3193659aa1e581472cf",
@@ -13647,7 +13637,7 @@
         "packages/interaction/user-approval/src/index.ts#ApprovalPolicy"
       ],
       "sources": [
-        "packages/interaction/user-approval/src/index.ts:34"
+        "packages/interaction/user-approval/src/index.ts:60"
       ]
     },
     {
@@ -13662,336 +13652,10 @@
         ]
       },
       "names": [
-        "JsonlHeaderLine.createdAt",
-        "JsonlHeaderLine.delegationDepth",
-        "JsonlHeaderLine.version",
-        "SessionEventEnvelope[0].seq[0]",
-        "SessionEventEnvelope[0].time",
-        "SessionEventEnvelope[10].time",
-        "SessionEventEnvelope[11].time",
-        "SessionEventEnvelope[12].time",
-        "SessionEventEnvelope[13].time",
-        "SessionEventEnvelope[14].time",
-        "SessionEventEnvelope[15].time",
-        "SessionEventEnvelope[16].time",
-        "SessionEventEnvelope[17].time",
-        "SessionEventEnvelope[18].time",
-        "SessionEventEnvelope[19].time",
-        "SessionEventEnvelope[1].time",
-        "SessionEventEnvelope[20].time",
-        "SessionEventEnvelope[21].time",
-        "SessionEventEnvelope[22].time",
-        "SessionEventEnvelope[23].time",
-        "SessionEventEnvelope[24].time",
-        "SessionEventEnvelope[25].time",
-        "SessionEventEnvelope[26].time",
-        "SessionEventEnvelope[27].time",
-        "SessionEventEnvelope[28].time",
-        "SessionEventEnvelope[29].time",
-        "SessionEventEnvelope[2].time",
-        "SessionEventEnvelope[30].time",
-        "SessionEventEnvelope[31].time",
-        "SessionEventEnvelope[32].time",
-        "SessionEventEnvelope[33].time",
-        "SessionEventEnvelope[34].time",
-        "SessionEventEnvelope[35].time",
-        "SessionEventEnvelope[36].time",
-        "SessionEventEnvelope[37].time",
-        "SessionEventEnvelope[38].time",
-        "SessionEventEnvelope[39].time",
-        "SessionEventEnvelope[3].time",
-        "SessionEventEnvelope[40].time",
-        "SessionEventEnvelope[41].time",
-        "SessionEventEnvelope[42].time",
-        "SessionEventEnvelope[43].time",
-        "SessionEventEnvelope[44].time",
-        "SessionEventEnvelope[45].time",
-        "SessionEventEnvelope[46].time",
-        "SessionEventEnvelope[47].time",
-        "SessionEventEnvelope[48].time",
-        "SessionEventEnvelope[49].time",
-        "SessionEventEnvelope[4].time",
-        "SessionEventEnvelope[50].time",
-        "SessionEventEnvelope[51].time",
-        "SessionEventEnvelope[52].time",
-        "SessionEventEnvelope[53].time",
-        "SessionEventEnvelope[54].time",
-        "SessionEventEnvelope[55].time",
-        "SessionEventEnvelope[5].time",
-        "SessionEventEnvelope[6].time",
-        "SessionEventEnvelope[7].time",
-        "SessionEventEnvelope[8].time",
-        "SessionEventEnvelope[9].time",
-        "SessionHeader.createdAt",
-        "SessionHeader.delegationDepth",
-        "event:agent-preset/selected.time",
-        "event:agent/inbox/spliced.data.inserted[0].content[0][2].attachment.bytes",
-        "event:agent/inbox/spliced.data.inserted[0].content[0][2].attachment.height",
-        "event:agent/inbox/spliced.data.inserted[0].content[0][2].attachment.originalDimensions.height",
-        "event:agent/inbox/spliced.data.inserted[0].content[0][2].attachment.originalDimensions.width",
-        "event:agent/inbox/spliced.data.inserted[0].content[0][2].attachment.width",
-        "event:agent/inbox/spliced.data.inserted[0].content[0][3].attachment.bytes",
-        "event:agent/inbox/spliced.data.inserted[0].source[14].revision",
-        "event:agent/inbox/spliced.data.inserted[0].source[14].round",
-        "event:agent/inbox/spliced.data.inserted[0].source[15].references[0].capturedFormatVersion",
-        "event:agent/inbox/spliced.data.inserted[0].source[15].references[0].inputIndex",
-        "event:agent/inbox/spliced.data.inserted[0].source[15].references[0].omittedBytes",
-        "event:agent/inbox/spliced.data.inserted[0].source[15].references[0].omittedMessages",
-        "event:agent/inbox/spliced.data.inserted[0].source[15].references[0].originalMessages",
-        "event:agent/inbox/spliced.data.inserted[0].source[15].references[0].retainedMessages",
-        "event:agent/inbox/spliced.data.removedCount",
-        "event:agent/inbox/spliced.data.start",
-        "event:agent/inbox/spliced.time",
-        "event:approval/asked.time",
-        "event:approval/decided.time",
-        "event:approval/policy.time",
-        "event:assistant/attempt.data.step",
-        "event:assistant/attempt.data.stream[0][0].dt[0]",
-        "event:assistant/attempt.data.stream[0][0].index",
-        "event:assistant/attempt.data.stream[0][0].time0",
-        "event:assistant/attempt.data.stream[0][1].index",
-        "event:assistant/attempt.data.stream[0][1].time0",
-        "event:assistant/attempt.data.stream[0][2].index",
-        "event:assistant/attempt.data.stream[0][2].time0",
-        "event:assistant/attempt.data.stream[0][3].chunk[0].index",
-        "event:assistant/attempt.data.stream[0][3].chunk[1].index",
-        "event:assistant/attempt.data.stream[0][3].chunk[2].index",
-        "event:assistant/attempt.data.stream[0][3].chunk[3].index",
-        "event:assistant/attempt.data.stream[0][3].chunk[4].index",
-        "event:assistant/attempt.data.stream[0][3].chunk[5].usage.cacheReadTokens",
-        "event:assistant/attempt.data.stream[0][3].chunk[5].usage.cacheWriteTokens",
-        "event:assistant/attempt.data.stream[0][3].chunk[5].usage.inputTokens",
-        "event:assistant/attempt.data.stream[0][3].chunk[5].usage.outputTokens",
-        "event:assistant/attempt.data.stream[0][3].chunk[5].usage.reasoningTokens",
-        "event:assistant/attempt.data.stream[0][3].chunk[5].usage.totalTokens",
-        "event:assistant/attempt.data.stream[0][3].chunk[6].reason[3].failure.providerRetryAfterMs",
-        "event:assistant/attempt.data.stream[0][3].chunk[6].reason[3].failure.status",
-        "event:assistant/attempt.data.stream[0][3].time",
-        "event:assistant/attempt.data.turn",
-        "event:assistant/attempt.time",
-        "event:assistant/message.data.step",
-        "event:assistant/message.data.turn",
-        "event:assistant/message.time",
-        "event:command/done.time",
-        "event:command/run.time",
-        "event:compaction/end.data.turn[1]",
-        "event:compaction/end.time",
-        "event:compaction/prune.data.shadowedTokenCount",
-        "event:compaction/prune.time",
-        "event:compaction/start.time",
-        "event:compaction/summary.data[0].maxTokens",
-        "event:compaction/summary.data[0].shadowedTokenCount",
-        "event:compaction/summary.data[1].maxTokens",
-        "event:compaction/summary.data[1].shadowedTokenCount",
-        "event:compaction/summary.time",
-        "event:deliverables/presented.data.turn",
-        "event:deliverables/presented.time",
-        "event:feedback/message-delete.time",
-        "event:feedback/message-put.data.item.createdAt",
-        "event:feedback/message-put.data.item.updatedAt",
-        "event:feedback/message-put.time",
-        "event:feedback/record.time",
-        "event:goal/change.data[0].createdAt",
-        "event:goal/change.data[0].goal.maxGoalRounds",
-        "event:goal/change.data[0].goal.revision",
-        "event:goal/change.data[0].roundsStarted",
-        "event:goal/change.data[0].updatedAt",
-        "event:goal/change.data[1].cleared.revision",
-        "event:goal/change.data[1].clearedAt",
-        "event:goal/change.time",
-        "event:hook/invoked.data.turn",
-        "event:hook/invoked.time",
-        "event:hook/result.data.durationMs",
-        "event:hook/result.data.exitCode",
-        "event:hook/result.data.turn",
-        "event:hook/result.time",
-        "event:llm/retry-started.data.retry",
-        "event:llm/retry-started.data.step",
-        "event:llm/retry-started.data.turn",
-        "event:llm/retry-started.time",
-        "event:llm/retry.data[0].delayMs",
-        "event:llm/retry.data[0].maxRetries",
-        "event:llm/retry.data[0].retry",
-        "event:llm/retry.data[0].step",
-        "event:llm/retry.data[0].turn",
-        "event:llm/retry.data[1].delayMs",
-        "event:llm/retry.data[1].retry",
-        "event:llm/retry.data[1].step",
-        "event:llm/retry.data[1].turn",
-        "event:llm/retry.time",
-        "event:model/selection.time",
-        "event:permission/preset.time",
-        "event:plan/mode.time",
-        "event:request/context.data.contextWindow",
-        "event:request/context.time",
-        "event:request/header.data.header.config.maxTokens",
-        "event:request/header.data.header.config.temperature",
-        "event:request/header.time",
-        "event:sandbox/mode.time",
-        "event:schedule/change.data[0].schedule[0].afterSeconds",
-        "event:schedule/change.data[0].schedule[2].everySeconds",
-        "event:schedule/change.time",
-        "event:session-log-deepseek/delivery-accepted.data.sessionFormatVersion",
-        "event:session-log-deepseek/delivery-accepted.time",
-        "event:session/end-seed.time",
-        "event:session/title-llm-request.data.maxTokens",
-        "event:session/title-llm-request.time",
-        "event:session/title.time",
-        "event:step/end.data.step",
-        "event:step/end.data.turn",
-        "event:step/end.time",
-        "event:step/start.data.step",
-        "event:step/start.data.turn",
-        "event:step/start.time",
-        "event:subagent/catalog.data[0].childCreatedAt",
-        "event:subagent/catalog.data[1].childCreatedAt",
-        "event:subagent/catalog.time",
-        "event:subagent/descriptor.data[0].version",
-        "event:subagent/descriptor.data[1].version",
-        "event:subagent/descriptor.time",
-        "event:subagent/model-selection-policy.time",
-        "event:system/message.data.step",
-        "event:system/message.data.turn",
-        "event:system/message.time",
-        "event:team/member.time",
-        "event:team/message/delivered.time",
-        "event:team/message/queued.time",
-        "event:team/task.data.task.revision",
-        "event:team/task.time",
-        "event:todo/write.time",
-        "event:tool-workflow/agent-end.data.seq",
-        "event:tool-workflow/agent-end.time",
-        "event:tool-workflow/agent-start.data.seq",
-        "event:tool-workflow/agent-start.time",
-        "event:tool-workflow/run-end.time",
-        "event:tool-workflow/run-start.time",
-        "event:tool/call.data.step",
-        "event:tool/call.data.turn",
-        "event:tool/call.time",
-        "event:tool/ptc-dispatch-start.time",
-        "event:tool/ptc-dispatch.time",
-        "event:tool/result.data.meta[2]",
-        "event:tool/result.data.meta[5][0][2]",
-        "event:tool/result.data.step",
-        "event:tool/result.data.turn",
-        "event:tool/result.time",
-        "event:turn/end.data.turn",
-        "event:turn/end.time",
-        "event:turn/start.data.turn",
-        "event:turn/start.time",
-        "event:user/message.time",
-        "event:web/deepseek-search-llm-request.data.body.max_tokens",
-        "event:web/deepseek-search-llm-request.data.body.tools[0].max_uses",
-        "event:web/deepseek-search-llm-request.time",
         "packages/core/session/src/types.ts#SessionSeq"
       ],
       "sources": [
-        "packages/attachment/attachment/src/types.ts:17",
-        "packages/attachment/attachment/src/types.ts:19",
-        "packages/attachment/attachment/src/types.ts:21",
-        "packages/attachment/attachment/src/types.ts:29",
-        "packages/attachment/attachment/src/types.ts:30",
-        "packages/attachment/attachment/src/types.ts:45",
-        "packages/compaction/compaction/src/types.ts:38",
-        "packages/compaction/compaction/src/types.ts:40",
-        "packages/compaction/compaction/src/types.ts:51",
-        "packages/compaction/compaction/src/types.ts:72",
-        "packages/compaction/compaction/src/types.ts:84",
-        "packages/compaction/compaction/src/types.ts:86",
-        "packages/compaction/compaction/src/types.ts:88",
-        "packages/context/session-reference/src/types.ts:22",
-        "packages/context/session-reference/src/types.ts:23",
-        "packages/context/session-reference/src/types.ts:25",
-        "packages/context/session-reference/src/types.ts:26",
-        "packages/context/session-reference/src/types.ts:27",
-        "packages/context/session-reference/src/types.ts:28",
-        "packages/context/session-reference/src/types.ts:30",
-        "packages/core/agent/src/types.ts:89",
-        "packages/core/agent/src/types.ts:90",
-        "packages/core/session/src/types.ts:102",
-        "packages/core/session/src/types.ts:122",
-        "packages/core/session/src/types.ts:248",
-        "packages/core/session/src/types.ts:276",
-        "packages/core/session/src/types.ts:285",
-        "packages/core/session/src/types.ts:287",
-        "packages/core/session/src/types.ts:289",
-        "packages/core/session/src/types.ts:310",
-        "packages/core/session/src/types.ts:322",
-        "packages/core/session/src/types.ts:323",
-        "packages/core/session/src/types.ts:335",
-        "packages/core/session/src/types.ts:341",
-        "packages/core/session/src/types.ts:354",
-        "packages/core/session/src/types.ts:355",
-        "packages/core/session/src/types.ts:359",
-        "packages/core/session/src/types.ts:436",
-        "packages/core/session/src/types.ts:469",
-        "packages/core/session/src/types.ts:471",
-        "packages/experimental/agent-team/src/types.ts:76",
-        "packages/feedback/message-feedback/src/types.ts:32",
-        "packages/feedback/message-feedback/src/types.ts:34",
-        "packages/fs/tool-present/src/types.ts:15",
-        "packages/goal/goal/src/domain.ts:29",
-        "packages/goal/goal/src/domain.ts:30",
-        "packages/goal/goal/src/domain.ts:31",
-        "packages/goal/goal/src/domain.ts:40",
-        "packages/goal/goal/src/domain.ts:50",
-        "packages/goal/goal/src/domain.ts:52",
-        "packages/goal/goal/src/types.ts:24",
-        "packages/goal/goal/src/types.ts:68",
-        "packages/hooks/hook-protocol/src/types.ts:20",
-        "packages/hooks/hook-protocol/src/types.ts:32",
-        "packages/hooks/hook-protocol/src/types.ts:36",
-        "packages/hooks/hook-protocol/src/types.ts:38",
-        "packages/interaction/commands/src/types.ts:116",
-        "packages/llm/llm-retry/src/types.ts:19",
-        "packages/llm/llm-retry/src/types.ts:20",
-        "packages/llm/llm-retry/src/types.ts:24",
-        "packages/llm/llm-retry/src/types.ts:25",
-        "packages/llm/llm-retry/src/types.ts:26",
-        "packages/llm/llm-retry/src/types.ts:32",
-        "packages/llm/llm-retry/src/types.ts:33",
-        "packages/llm/llm-retry/src/types.ts:37",
-        "packages/llm/llm-retry/src/types.ts:38",
-        "packages/llm/llm-retry/src/types.ts:45",
-        "packages/llm/llm-retry/src/types.ts:46",
-        "packages/llm/llm-retry/src/types.ts:47",
-        "packages/llm/llm/src/assistant-stream.ts:23",
-        "packages/llm/llm/src/assistant-stream.ts:24",
-        "packages/llm/llm/src/assistant-stream.ts:25",
-        "packages/llm/llm/src/assistant-stream.ts:30",
-        "packages/llm/llm/src/assistant-stream.ts:31",
-        "packages/llm/llm/src/assistant-stream.ts:37",
-        "packages/llm/llm/src/assistant-stream.ts:38",
-        "packages/llm/llm/src/assistant-stream.ts:44",
-        "packages/llm/llm/src/call-config.ts:27",
-        "packages/llm/llm/src/call-config.ts:28",
-        "packages/llm/llm/src/types.ts:150",
-        "packages/llm/llm/src/types.ts:151",
-        "packages/llm/llm/src/types.ts:159",
-        "packages/llm/llm/src/types.ts:160",
-        "packages/llm/llm/src/types.ts:161",
-        "packages/llm/llm/src/types.ts:162",
-        "packages/llm/llm/src/types.ts:391",
-        "packages/llm/llm/src/types.ts:392",
-        "packages/llm/llm/src/types.ts:393",
-        "packages/llm/llm/src/types.ts:394",
-        "packages/llm/llm/src/types.ts:395",
-        "packages/llm/llm/src/types.ts:46",
-        "packages/llm/llm/src/types.ts:48",
-        "packages/schedule/schedule/src/types.ts:21",
-        "packages/schedule/schedule/src/types.ts:47",
-        "packages/session/session-log-deepseek/src/types.ts:85",
-        "packages/session/session-log-deepseek/src/types.ts:87",
-        "packages/session/session-persistence-jsonl/src/format.ts:84",
-        "packages/session/session-persistence-jsonl/src/format.ts:86",
-        "packages/session/session-persistence-jsonl/src/format.ts:91",
-        "packages/session/session-title-llm/src/index.ts:39",
-        "packages/subagent/subagent/src/catalog.ts:28",
-        "packages/subagent/subagent/src/descriptor.ts:53",
-        "packages/web/web-search-deepseek/src/provider.ts:64",
-        "packages/web/web-search-deepseek/src/provider.ts:75",
-        "packages/workflow/tool-workflow/src/types.ts:22",
-        "packages/workflow/tool-workflow/src/types.ts:31"
+        "packages/core/session/src/types.ts:31"
       ]
     },
     {
@@ -14026,9 +13690,8 @@
         "packages/subagent/tool-subagent/src/model-selection.ts#AllowedModelRoute"
       ],
       "sources": [
-        "packages/session/session-title-llm/src/index.ts:33",
-        "packages/session/session-title/src/types.ts:33",
-        "packages/subagent/tool-subagent/src/model-selection-state.ts:19"
+        "packages/session/session-title/src/types.ts:20",
+        "packages/subagent/tool-subagent/src/model-selection.ts:9"
       ]
     },
     {
@@ -14042,14 +13705,8 @@
           }
         ]
       },
-      "names": [
-        "event:feedback/message-put.data.item.category[6]",
-        "event:feedback/record.data.category[6]"
-      ],
-      "sources": [
-        "packages/feedback/command-feedback/src/types.ts:31",
-        "packages/feedback/message-feedback/src/types.ts:28"
-      ]
+      "names": [],
+      "sources": []
     },
     {
       "digest": "08936f7648f573f7539800e1ec2852fbbcba05e1a20487a1e5acf2a0fce1e2de",
@@ -15188,7 +14845,7 @@
         "packages/session/session-title-llm/src/index.ts#SessionTitleLlmRequestEventData"
       ],
       "sources": [
-        "packages/core/session/src/types.ts:472"
+        "packages/session/session-title-llm/src/index.ts:27"
       ]
     },
     {
@@ -15536,7 +15193,7 @@
         "packages/llm/llm/src/message.ts#AssistantMessage"
       ],
       "sources": [
-        "packages/core/session/src/types.ts:324"
+        "packages/llm/llm/src/message.ts:148"
       ]
     },
     {
@@ -15664,7 +15321,7 @@
         "event:turn/end.data.reason[1]"
       ],
       "sources": [
-        "packages/core/session/src/types.ts:285"
+        "packages/core/session/src/types.ts:203"
       ]
     },
     {
@@ -16141,9 +15798,7 @@
       "names": [
         "event:compaction/summary.data"
       ],
-      "sources": [
-        "packages/core/session/src/types.ts:472"
-      ]
+      "sources": []
     },
     {
       "digest": "0a8a062bc9c3c0d97fd97742262f2ea53dd32297f834e81114870d38ac3dc6da",
@@ -16156,12 +15811,8 @@
           }
         ]
       },
-      "names": [
-        "event:subagent/model-selection-policy.type"
-      ],
-      "sources": [
-        "packages/core/session/src/types.ts:467"
-      ]
+      "names": [],
+      "sources": []
     },
     {
       "digest": "0aa62ab51b36c0e64b134bd03ba8725d758744180a1a447da49beaad194f219f",
@@ -16191,9 +15842,7 @@
       "names": [
         "event:request/header.data.header.tools[0].parameters"
       ],
-      "sources": [
-        "packages/llm/llm/src/types.ts:415"
-      ]
+      "sources": []
     },
     {
       "digest": "0acd94fe8794574c9ae72c7855ee16d29c546096d4af760d16d1225385764555",
@@ -16230,7 +15879,7 @@
         "packages/llm/llm/src/types.ts#ReplayEnvelope"
       ],
       "sources": [
-        "packages/llm/llm/src/types.ts:401"
+        "packages/llm/llm/src/types.ts:368"
       ]
     },
     {
@@ -16878,12 +16527,8 @@
           }
         ]
       },
-      "names": [
-        "event:turn/start.type"
-      ],
-      "sources": [
-        "packages/core/session/src/types.ts:467"
-      ]
+      "names": [],
+      "sources": []
     },
     {
       "digest": "0b6d718c693fdf7f06dcccb0bcbbabe78cc63514eafc62d6b2a3899735279d6f",
@@ -16920,7 +16565,7 @@
         "packages/goal/goal/src/types.ts#GoalRef"
       ],
       "sources": [
-        "packages/goal/goal/src/domain.ts:39"
+        "packages/goal/goal/src/types.ts:20"
       ]
     },
     {
@@ -16968,7 +16613,7 @@
         "event:team/message/delivered.data"
       ],
       "sources": [
-        "packages/core/session/src/types.ts:472"
+        "packages/experimental/agent-team/src/types.ts:227"
       ]
     },
     {
@@ -16982,12 +16627,8 @@
           }
         ]
       },
-      "names": [
-        "event:assistant/attempt.data.stream[0][3].chunk[5].type"
-      ],
-      "sources": [
-        "packages/llm/llm/src/types.ts:396"
-      ]
+      "names": [],
+      "sources": []
     },
     {
       "digest": "0c4205180f75b9ee1e0d878bd9a9851628b5dc18448486389d9c5fdc3f1ccda3",
@@ -17000,15 +16641,8 @@
           }
         ]
       },
-      "names": [
-        "event:agent/inbox/spliced.data.inserted[0].content[0][5].isError[0]",
-        "event:tool/result.data.meta[3]",
-        "event:tool/result.data.meta[5][0][3]"
-      ],
-      "sources": [
-        "packages/core/session/src/types.ts:359",
-        "packages/llm/llm/src/types.ts:105"
-      ]
+      "names": [],
+      "sources": []
     },
     {
       "digest": "0d47a8f3d847243c4488e755ad4cab7a04ac5d4621b9c81865524cf3f4d8536f",
@@ -17056,7 +16690,7 @@
         "event:subagent/model-selection-policy.data"
       ],
       "sources": [
-        "packages/core/session/src/types.ts:472"
+        "packages/subagent/tool-subagent/src/model-selection-state.ts:17"
       ]
     },
     {
@@ -17091,13 +16725,10 @@
         ]
       },
       "names": [
-        "event:agent/inbox/spliced.data.inserted[0].source[3]",
+        "event:agent/inbox/spliced.data.inserted[0].source[1]",
         "event:system/message.data.message.source[0]"
       ],
-      "sources": [
-        "packages/llm/llm/src/message.ts:139",
-        "packages/llm/llm/src/message.ts:160"
-      ]
+      "sources": []
     },
     {
       "digest": "0e10d7c096b47e61defe372a5fc8bd37d835199410eac44367f95c45082498bd",
@@ -17156,9 +16787,7 @@
       "names": [
         "event:subagent/catalog.data[1]"
       ],
-      "sources": [
-        "packages/core/session/src/types.ts:472"
-      ]
+      "sources": []
     },
     {
       "digest": "0e560aad8fa9f338a60e76cbce6593ce93486ab30d6dd7833b8b5b07c6e6963d",
@@ -17450,15 +17079,7 @@
         "event:team/message/queued.data.message.content",
         "event:tool/ptc-dispatch.data.content"
       ],
-      "sources": [
-        "packages/compaction/compaction/src/types.ts:37",
-        "packages/compaction/compaction/src/types.ts:57",
-        "packages/compaction/compaction/src/types.ts:63",
-        "packages/core/tools/src/types.ts:22",
-        "packages/experimental/agent-team/src/types.ts:111",
-        "packages/llm/llm/src/message.ts:137",
-        "packages/llm/llm/src/types.ts:104"
-      ]
+      "sources": []
     },
     {
       "digest": "0e7b2a97f54f1afdb8cdfad1635abe9145327db539bfb69b4045c19d8c17755d",
@@ -17471,12 +17092,8 @@
           }
         ]
       },
-      "names": [
-        "event:schedule/change.type"
-      ],
-      "sources": [
-        "packages/core/session/src/types.ts:467"
-      ]
+      "names": [],
+      "sources": []
     },
     {
       "digest": "0f46153645c297846a3fad3911636659ca4717a5e7d71c9f50bffacd312115ef",
@@ -17824,7 +17441,7 @@
         "packages/experimental/agent-team/src/types.ts#TeamMessageSnapshot"
       ],
       "sources": [
-        "packages/experimental/agent-team/src/types.ts:225"
+        "packages/experimental/agent-team/src/types.ts:106"
       ]
     },
     {
@@ -17838,12 +17455,8 @@
           }
         ]
       },
-      "names": [
-        "event:compaction/prune.type"
-      ],
-      "sources": [
-        "packages/core/session/src/types.ts:467"
-      ]
+      "names": [],
+      "sources": []
     },
     {
       "digest": "119abe2b9c0b2f46ecb31d82b9acba4d4b30e049f655e2475e8b4ae12d5a9e25",
@@ -17910,7 +17523,7 @@
         "event:hook/invoked.data"
       ],
       "sources": [
-        "packages/core/session/src/types.ts:472"
+        "packages/hooks/hook-protocol/src/types.ts:19"
       ]
     },
     {
@@ -17959,7 +17572,7 @@
         "event:approval/policy.data"
       ],
       "sources": [
-        "packages/core/session/src/types.ts:472"
+        "packages/interaction/user-approval/src/index.ts:33"
       ]
     },
     {
@@ -17973,12 +17586,8 @@
           }
         ]
       },
-      "names": [
-        "event:sandbox/mode.data.mode[0]"
-      ],
-      "sources": [
-        "packages/sandbox/sandbox-policy/src/session-mode.ts:34"
-      ]
+      "names": [],
+      "sources": []
     },
     {
       "digest": "137ac60e26bcb192210d9a32a704b73b0924ed34019323defa1b787be95bd45e",
@@ -17991,12 +17600,8 @@
           }
         ]
       },
-      "names": [
-        "SessionHeader.version"
-      ],
-      "sources": [
-        "packages/core/session/src/types.ts:98"
-      ]
+      "names": [],
+      "sources": []
     },
     {
       "digest": "13d3d180f977bf78081d487ffa0ecb75857349bcab29a5a3fb48189fca2a6176",
@@ -18424,7 +18029,7 @@
         "packages/core/tools/src/types.ts#PtcDispatchEventData"
       ],
       "sources": [
-        "packages/core/session/src/types.ts:472"
+        "packages/core/tools/src/types.ts:20"
       ]
     },
     {
@@ -18438,12 +18043,8 @@
           }
         ]
       },
-      "names": [
-        "event:assistant/attempt.data.stream[0][3].type"
-      ],
-      "sources": [
-        "packages/llm/llm/src/assistant-stream.ts:44"
-      ]
+      "names": [],
+      "sources": []
     },
     {
       "digest": "142c37d302aa22a0a57915b5255939d3ca91c1811ca13fddcf84cf76ea00758a",
@@ -18456,12 +18057,8 @@
           }
         ]
       },
-      "names": [
-        "event:llm/retry.data[1].mode"
-      ],
-      "sources": [
-        "packages/llm/llm-retry/src/types.ts:35"
-      ]
+      "names": [],
+      "sources": []
     },
     {
       "digest": "15196447222782e773eb943c92b18316ce96b9af0f0cfddb6e57ba8274ecc5ff",
@@ -18623,7 +18220,7 @@
         "event:deliverables/presented.data"
       ],
       "sources": [
-        "packages/core/session/src/types.ts:472"
+        "packages/fs/tool-present/src/types.ts:15"
       ]
     },
     {
@@ -18637,12 +18234,8 @@
           }
         ]
       },
-      "names": [
-        "event:hook/invoked.data.dialect[1]"
-      ],
-      "sources": [
-        "packages/hooks/hook-protocol/src/types.ts:22"
-      ]
+      "names": [],
+      "sources": []
     },
     {
       "digest": "1571525adc95a24e5d25b5a6440df401cd7cdd881b745178e85f5a333435cd1b",
@@ -18655,12 +18248,8 @@
           }
         ]
       },
-      "names": [
-        "event:approval/policy.data.policy[0]"
-      ],
-      "sources": [
-        "packages/interaction/user-approval/src/index.ts:34"
-      ]
+      "names": [],
+      "sources": []
     },
     {
       "digest": "16d0507cb94b4cfc84a87446b1ba7652d6ec1d65ee1684789e747e30d542800e",
@@ -18673,14 +18262,8 @@
           }
         ]
       },
-      "names": [
-        "event:agent/inbox/spliced.data.inserted[0].source[11].form",
-        "event:agent/inbox/spliced.data.inserted[0].source[8].form"
-      ],
-      "sources": [
-        "packages/llm/llm/src/message.ts:95",
-        "packages/subagent/subagent/src/continuation-messages.ts:18"
-      ]
+      "names": [],
+      "sources": []
     },
     {
       "digest": "17aae616ef020b8b9f011ec398ec935450fb06d3e2a0722c456f63aeaf5ff728",
@@ -18693,12 +18276,8 @@
           }
         ]
       },
-      "names": [
-        "event:schedule/change.data[0].schedule[1].kind"
-      ],
-      "sources": [
-        "packages/schedule/schedule/src/types.ts:31"
-      ]
+      "names": [],
+      "sources": []
     },
     {
       "digest": "17d1afb770d9941936130996da00dc86782cfef731d8d6526162c301256a4ac3",
@@ -18726,7 +18305,7 @@
         "event:session/end-seed.data"
       ],
       "sources": [
-        "packages/core/session/src/types.ts:472"
+        "packages/core/session/src/types.ts:400"
       ]
     },
     {
@@ -18773,7 +18352,7 @@
         "packages/schedule/schedule/src/types.ts#ScheduleDeleteChange"
       ],
       "sources": [
-        "packages/core/session/src/types.ts:472"
+        "packages/schedule/schedule/src/types.ts:79"
       ]
     },
     {
@@ -18877,12 +18456,8 @@
           }
         ]
       },
-      "names": [
-        "event:team/member.type"
-      ],
-      "sources": [
-        "packages/core/session/src/types.ts:467"
-      ]
+      "names": [],
+      "sources": []
     },
     {
       "digest": "18fce9540bb20897a66275499faee6b8296c97e9901fa1ff45a191772448ad1a",
@@ -18895,12 +18470,8 @@
           }
         ]
       },
-      "names": [
-        "event:sandbox/mode.data.mode[2]"
-      ],
-      "sources": [
-        "packages/sandbox/sandbox-policy/src/session-mode.ts:34"
-      ]
+      "names": [],
+      "sources": []
     },
     {
       "digest": "1922cd79a70806c17758185a6ef0458bc1fb3900363906733421c16414da2509",
@@ -18913,12 +18484,8 @@
           }
         ]
       },
-      "names": [
-        "event:agent/inbox/spliced.data.inserted[0].source[13].kind"
-      ],
-      "sources": [
-        "packages/skill/skill/src/index.ts:147"
-      ]
+      "names": [],
+      "sources": []
     },
     {
       "digest": "1986c2664009c99155e44795676c887fa67f7c55cd2d5e6b648ff763e0ab033a",
@@ -18931,12 +18498,8 @@
           }
         ]
       },
-      "names": [
-        "event:compaction/end.type"
-      ],
-      "sources": [
-        "packages/core/session/src/types.ts:467"
-      ]
+      "names": [],
+      "sources": []
     },
     {
       "digest": "1a2718b00937b236a0d0910ef5dab2f9f8b65e4bde410cc21f15fbbf29f584d3",
@@ -18949,12 +18512,8 @@
           }
         ]
       },
-      "names": [
-        "event:deliverables/presented.type"
-      ],
-      "sources": [
-        "packages/core/session/src/types.ts:467"
-      ]
+      "names": [],
+      "sources": []
     },
     {
       "digest": "1ab2ef1296f157ba96998f179bb5daa9d21a82480da2901127aeab2730797c92",
@@ -18981,9 +18540,7 @@
       "names": [
         "event:command/done.data.kind"
       ],
-      "sources": [
-        "packages/interaction/commands/src/types.ts:114"
-      ]
+      "sources": []
     },
     {
       "digest": "1b5649238876e28811e80f10ec67a00c197ad3babd4ecc61a22b09064b88c597",
@@ -19011,7 +18568,7 @@
         "event:session/title.data.source[0]"
       ],
       "sources": [
-        "packages/session/session-title/src/types.ts:47"
+        "packages/session/session-title/src/types.ts:29"
       ]
     },
     {
@@ -19188,12 +18745,8 @@
           }
         ]
       },
-      "names": [
-        "event:session/end-seed.type"
-      ],
-      "sources": [
-        "packages/core/session/src/types.ts:467"
-      ]
+      "names": [],
+      "sources": []
     },
     {
       "digest": "1c5a58f4599bd4a9711712551ffe2442a5e5fcd0758bafe630cc4ead850bdaa7",
@@ -19206,12 +18759,8 @@
           }
         ]
       },
-      "names": [
-        "event:system/message.type"
-      ],
-      "sources": [
-        "packages/core/session/src/types.ts:467"
-      ]
+      "names": [],
+      "sources": []
     },
     {
       "digest": "1d5f04a03ea75fc8eeece544129eba0f49f0c82046e9c404461920390135c7b2",
@@ -19224,12 +18773,8 @@
           }
         ]
       },
-      "names": [
-        "event:model/selection.type"
-      ],
-      "sources": [
-        "packages/core/session/src/types.ts:467"
-      ]
+      "names": [],
+      "sources": []
     },
     {
       "digest": "1d76406cbb2ddadb0dbbb51e9d8bc6cf678fed455cf8eb512f36f7c86d37a62f",
@@ -19254,10 +18799,10 @@
         ]
       },
       "names": [
-        "event:assistant/attempt.data.stream[0][3].chunk[6].reason[0]"
+        "event:assistant/attempt.data.stream[0][3].chunk[6].reason[3]"
       ],
       "sources": [
-        "packages/llm/llm/src/types.ts:399"
+        "packages/llm/llm/src/types.ts:131"
       ]
     },
     {
@@ -19271,12 +18816,8 @@
           }
         ]
       },
-      "names": [
-        "event:goal/change.data[0].operation[4]"
-      ],
-      "sources": [
-        "packages/goal/goal/src/domain.ts:27"
-      ]
+      "names": [],
+      "sources": []
     },
     {
       "digest": "1d9cb3caa96100b18b1911fa3ff8c751ef6992971a03c5f4d9aefc1a0004a345",
@@ -19312,9 +18853,7 @@
       "names": [
         "event:deliverables/presented.data.files"
       ],
-      "sources": [
-        "packages/fs/tool-present/src/types.ts:15"
-      ]
+      "sources": []
     },
     {
       "digest": "1df34a6c086866ffdc2dd9e8e5c581c3751a010cdf6b8538a7327f7a3237f0b4",
@@ -19492,7 +19031,7 @@
         "packages/goal/goal/src/domain.ts#GoalSnapshotChangeMeta"
       ],
       "sources": [
-        "packages/core/session/src/types.ts:472"
+        "packages/goal/goal/src/domain.ts:24"
       ]
     },
     {
@@ -19506,14 +19045,8 @@
           }
         ]
       },
-      "names": [
-        "event:assistant/attempt.data.stream[0][3].chunk[6].reason[3].kind",
-        "event:turn/end.data.reason[1].kind"
-      ],
-      "sources": [
-        "packages/core/session/src/types.ts:203",
-        "packages/llm/llm/src/types.ts:134"
-      ]
+      "names": [],
+      "sources": []
     },
     {
       "digest": "1e346446e183ee76f48d7994c97ecb302bddc682abb60b8a10ea0bb26223a69c",
@@ -19526,12 +19059,8 @@
           }
         ]
       },
-      "names": [
-        "event:goal/change.data[0].operation[5]"
-      ],
-      "sources": [
-        "packages/goal/goal/src/domain.ts:27"
-      ]
+      "names": [],
+      "sources": []
     },
     {
       "digest": "1e75cbc0af53f62e5685d751108dc9f6320fe835aed222e579a2a0080dc8fc59",
@@ -19939,9 +19468,7 @@
       "names": [
         "event:compaction/summary.data[0]"
       ],
-      "sources": [
-        "packages/core/session/src/types.ts:472"
-      ]
+      "sources": []
     },
     {
       "digest": "1ebc6f9ff3aa9e3a38f8695f49bacdab1f8b7a3832741853ca46f40af56ccd01",
@@ -19954,20 +19481,8 @@
           }
         ]
       },
-      "names": [
-        "event:team/task.data.task.status[0]",
-        "event:todo/write.data.todos[0].status[0]",
-        "event:tool-workflow/agent-end.data.outcome[0]",
-        "event:tool-workflow/run-end.data.stopReason[0]",
-        "event:turn/end.data.reason[0].kind"
-      ],
-      "sources": [
-        "packages/core/session/src/types.ts:201",
-        "packages/experimental/agent-team/src/types.ts:79",
-        "packages/todo/tool-todo/src/types.ts:25",
-        "packages/workflow/tool-workflow/src/types.ts:32",
-        "packages/workflow/tool-workflow/src/types.ts:38"
-      ]
+      "names": [],
+      "sources": []
     },
     {
       "digest": "1f0133217eeeffd8d387baf1ec8ed9856e719bcd999dc08e48624cba96d75fd7",
@@ -19980,14 +19495,8 @@
           }
         ]
       },
-      "names": [
-        "event:agent/inbox/spliced.data.inserted[0].content[0][4].type",
-        "event:assistant/attempt.data.stream[0][3].chunk[0].blockType[4]"
-      ],
-      "sources": [
-        "packages/llm/llm/src/types.ts:391",
-        "packages/llm/llm/src/types.ts:92"
-      ]
+      "names": [],
+      "sources": []
     },
     {
       "digest": "1f8c126cfab3df812cd115cfc23e3256f0fa2383400f4ce91ecad313577e59b0",
@@ -20094,7 +19603,7 @@
         "packages/core/session/src/types.ts#TurnEndCancelCause"
       ],
       "sources": [
-        "packages/core/session/src/types.ts:203"
+        "packages/core/session/src/types.ts:195"
       ]
     },
     {
@@ -20123,7 +19632,7 @@
         "event:plan/mode.data"
       ],
       "sources": [
-        "packages/core/session/src/types.ts:472"
+        "packages/plan/plan-mode/src/index.ts:47"
       ]
     },
     {
@@ -20137,16 +19646,8 @@
           }
         ]
       },
-      "names": [
-        "event:approval/decided.data.outcome[1]",
-        "event:tool-workflow/agent-end.data.outcome[2]",
-        "event:tool-workflow/run-end.data.stopReason[2]"
-      ],
-      "sources": [
-        "packages/interaction/user-approval/src/types.ts:57",
-        "packages/workflow/tool-workflow/src/types.ts:32",
-        "packages/workflow/tool-workflow/src/types.ts:38"
-      ]
+      "names": [],
+      "sources": []
     },
     {
       "digest": "2152caf1a71e588e4df2358a806dea24936c1c47131134f01a12939d12cdc0c0",
@@ -20198,7 +19699,7 @@
         "packages/experimental/agent-team/src/types.ts#TeamMessageSource"
       ],
       "sources": [
-        "packages/llm/llm/src/message.ts:139"
+        "packages/experimental/agent-team/src/types.ts:115"
       ]
     },
     {
@@ -20212,14 +19713,8 @@
           }
         ]
       },
-      "names": [
-        "event:team/task.data.task.status[1]",
-        "event:todo/write.data.todos[0].status[1]"
-      ],
-      "sources": [
-        "packages/experimental/agent-team/src/types.ts:79",
-        "packages/todo/tool-todo/src/types.ts:25"
-      ]
+      "names": [],
+      "sources": []
     },
     {
       "digest": "237c004c73b6b288246816e0d7fde16e09c63a47aa3b1227383d7afe58666163",
@@ -20232,16 +19727,8 @@
           }
         ]
       },
-      "names": [
-        "event:goal/change.data[0].kind",
-        "event:goal/change.data[1].kind",
-        "event:goal/change.type"
-      ],
-      "sources": [
-        "packages/core/session/src/types.ts:467",
-        "packages/goal/goal/src/domain.ts:25",
-        "packages/goal/goal/src/domain.ts:36"
-      ]
+      "names": [],
+      "sources": []
     },
     {
       "digest": "23cf7e0cf3fec1283b60fa15713506169bc9c079a08e124d1cb9733baca80b40",
@@ -20469,9 +19956,7 @@
       "names": [
         "event:system/message.data.message.source"
       ],
-      "sources": [
-        "packages/llm/llm/src/message.ts:160"
-      ]
+      "sources": []
     },
     {
       "digest": "2517ba143a271508d3ca35126d5aca8f7f1facf5aaddce4adf011832042fa2b9",
@@ -20638,7 +20123,7 @@
         "packages/web/web-search-deepseek/src/provider.ts#DeepSeekSearchLlmRequest"
       ],
       "sources": [
-        "packages/core/session/src/types.ts:472"
+        "packages/web/web-search-deepseek/src/provider.ts:56"
       ]
     },
     {
@@ -20652,14 +20137,8 @@
           }
         ]
       },
-      "names": [
-        "event:goal/change.data[0].goal.phase[0]",
-        "event:turn/end.data.reason[2].kind"
-      ],
-      "sources": [
-        "packages/core/session/src/types.ts:205",
-        "packages/goal/goal/src/types.ts:64"
-      ]
+      "names": [],
+      "sources": []
     },
     {
       "digest": "26718e15e7e395bce9642dba5bbe09b3b1a4ce2213d20d566cd9207d7fc5fb78",
@@ -20762,14 +20241,8 @@
           }
         ]
       },
-      "names": [
-        "event:schedule/change.data[2].operation",
-        "event:schedule/change.data[3].operation"
-      ],
-      "sources": [
-        "packages/schedule/schedule/src/types.ts:88",
-        "packages/schedule/schedule/src/types.ts:95"
-      ]
+      "names": [],
+      "sources": []
     },
     {
       "digest": "2765e9119edf5816ac1ab4c95c5ee32c90403f3742962eff11544f7752d59d2e",
@@ -20782,12 +20255,8 @@
           }
         ]
       },
-      "names": [
-        "event:agent/inbox/spliced.data.inserted[0].source[0].kind"
-      ],
-      "sources": [
-        "packages/llm/llm/src/message.ts:25"
-      ]
+      "names": [],
+      "sources": []
     },
     {
       "digest": "277b61f9c6f8170425fa6ffe06cfa14376757a896a4749cb82a687d7364c4fc9",
@@ -20800,14 +20269,8 @@
           }
         ]
       },
-      "names": [
-        "event:agent/inbox/spliced.data.inserted[0].content[0][3].type",
-        "event:assistant/attempt.data.stream[0][3].chunk[0].blockType[3]"
-      ],
-      "sources": [
-        "packages/llm/llm/src/types.ts:391",
-        "packages/llm/llm/src/types.ts:85"
-      ]
+      "names": [],
+      "sources": []
     },
     {
       "digest": "27cd736e794a0f8703a155fb697820cede894d10776586dd3df24d24c9465c0e",
@@ -20859,11 +20322,7 @@
         "packages/llm/llm/src/types.ts#LlmFailure"
       ],
       "sources": [
-        "packages/core/session/src/types.ts:211",
-        "packages/llm/llm-retry/src/types.ts:27",
-        "packages/llm/llm-retry/src/types.ts:39",
-        "packages/llm/llm/src/types.ts:134",
-        "packages/llm/llm/src/types.ts:135"
+        "packages/llm/llm/src/types.ts:40"
       ]
     },
     {
@@ -20920,7 +20379,7 @@
         "packages/schedule/schedule/src/types.ts#AfterScheduleRecord"
       ],
       "sources": [
-        "packages/schedule/schedule/src/types.ts:75"
+        "packages/schedule/schedule/src/types.ts:13"
       ]
     },
     {
@@ -20946,10 +20405,10 @@
         ]
       },
       "names": [
-        "event:assistant/attempt.data.stream[0][3].chunk[6].reason[1]"
+        "event:assistant/attempt.data.stream[0][3].chunk[6].reason[4]"
       ],
       "sources": [
-        "packages/llm/llm/src/types.ts:399"
+        "packages/llm/llm/src/types.ts:132"
       ]
     },
     {
@@ -21314,7 +20773,9 @@
       "names": [
         "packages/core/session/src/types.ts#SessionHeader"
       ],
-      "sources": []
+      "sources": [
+        "packages/core/session/src/types.ts:93"
+      ]
     },
     {
       "digest": "2ab12a0e345658f9342816d773fe610f049982bcad82631f43b9205abe43e5ee",
@@ -21380,9 +20841,7 @@
       "names": [
         "event:agent/inbox/spliced.data.inserted[0].source[17].changes"
       ],
-      "sources": [
-        "packages/context/agent-instructions/src/state.ts:45"
-      ]
+      "sources": []
     },
     {
       "digest": "2abb711460e6238d851c30f3e4bdd87a2aa1887ee70575b3d3b7b25610673095",
@@ -21428,7 +20887,7 @@
         "event:assistant/attempt.data.stream[0][3].chunk[2]"
       ],
       "sources": [
-        "packages/llm/llm/src/assistant-stream.ts:44"
+        "packages/llm/llm/src/types.ts:393"
       ]
     },
     {
@@ -21442,12 +20901,8 @@
           }
         ]
       },
-      "names": [
-        "event:tool/ptc-dispatch-start.type"
-      ],
-      "sources": [
-        "packages/core/session/src/types.ts:467"
-      ]
+      "names": [],
+      "sources": []
     },
     {
       "digest": "2c4c21f19f426a58f2dac914e34313aa43f8408972de857a486d1f086d5adb6c",
@@ -21460,12 +20915,8 @@
           }
         ]
       },
-      "names": [
-        "event:approval/decided.data.outcome[0]"
-      ],
-      "sources": [
-        "packages/interaction/user-approval/src/types.ts:57"
-      ]
+      "names": [],
+      "sources": []
     },
     {
       "digest": "2c64d4bc7264fd3f8bed47e96ab8a593bce05a1e4e1c436dcd244a3b7e0c2a9d",
@@ -21478,12 +20929,8 @@
           }
         ]
       },
-      "names": [
-        "event:step/start.type"
-      ],
-      "sources": [
-        "packages/core/session/src/types.ts:467"
-      ]
+      "names": [],
+      "sources": []
     },
     {
       "digest": "2ce7ef3b3daebf95815c7ae454a751d3e67ca7a22e2e0734fe2942df393bb66c",
@@ -21526,13 +20973,10 @@
         ]
       },
       "names": [
-        "event:agent/inbox/spliced.data.inserted[0].source[8]",
+        "event:agent/inbox/spliced.data.inserted[0].source[6]",
         "event:system/message.data.message.source[5]"
       ],
-      "sources": [
-        "packages/llm/llm/src/message.ts:139",
-        "packages/llm/llm/src/message.ts:160"
-      ]
+      "sources": []
     },
     {
       "digest": "2d11ca7b0d4493e244b74eba093227866b33249841e59a1e9bf56afed38604c3",
@@ -21592,12 +21036,8 @@
           }
         ]
       },
-      "names": [
-        "event:team/member.data.member.context[1]"
-      ],
-      "sources": [
-        "packages/experimental/agent-team/src/types.ts:52"
-      ]
+      "names": [],
+      "sources": []
     },
     {
       "digest": "2e49ede7fb3a592cce8919ebe982f6ca1c1f67abe4def359ffc028c85e6d1ad8",
@@ -22753,12 +22193,8 @@
           }
         ]
       },
-      "names": [
-        "event:agent/inbox/spliced.data.inserted[0].source[18].kind"
-      ],
-      "sources": [
-        "packages/experimental/agent-team/src/types.ts:116"
-      ]
+      "names": [],
+      "sources": []
     },
     {
       "digest": "2f0aefb72ab453c4bf21a6687f436775d359dc6f8f10410fd4c0615b20bd9d76",
@@ -22945,7 +22381,7 @@
         "event:request/header.data"
       ],
       "sources": [
-        "packages/core/session/src/types.ts:472"
+        "packages/core/session/src/types.ts:365"
       ]
     },
     {
@@ -22984,7 +22420,7 @@
         "packages/attachment/attachment/src/types.ts#ImageMediaType"
       ],
       "sources": [
-        "packages/attachment/attachment/src/types.ts:15"
+        "packages/attachment/attachment/src/types.ts:8"
       ]
     },
     {
@@ -23028,13 +22464,10 @@
         ]
       },
       "names": [
-        "event:agent/inbox/spliced.data.inserted[0].source[5]",
+        "event:agent/inbox/spliced.data.inserted[0].source[3]",
         "event:system/message.data.message.source[2]"
       ],
-      "sources": [
-        "packages/llm/llm/src/message.ts:139",
-        "packages/llm/llm/src/message.ts:160"
-      ]
+      "sources": []
     },
     {
       "digest": "2fe5026daf14bd4ff2b7bfb7cf9791c302d9cbba06802178b6dfec00b892698f",
@@ -23086,7 +22519,7 @@
         "packages/core/tools/src/types.ts#PtcDispatchStartEventData"
       ],
       "sources": [
-        "packages/core/session/src/types.ts:472"
+        "packages/core/tools/src/types.ts:11"
       ]
     },
     {
@@ -23560,7 +22993,7 @@
         "packages/session/session-title/src/types.ts#SessionTitleSource"
       ],
       "sources": [
-        "packages/session/session-title/src/types.ts:47"
+        "packages/session/session-title/src/types.ts:28"
       ]
     },
     {
@@ -23594,7 +23027,7 @@
         "packages/llm/llm/src/call-config.ts#LlmCallConfigAdapterDefaults"
       ],
       "sources": [
-        "packages/core/session/src/types.ts:236"
+        "packages/llm/llm/src/call-config.ts:36"
       ]
     },
     {
@@ -23701,7 +23134,7 @@
         "packages/core/session/src/types.ts#SurfaceOp"
       ],
       "sources": [
-        "packages/core/session/src/types.ts:443"
+        "packages/core/session/src/types.ts:434"
       ]
     },
     {
@@ -23715,14 +23148,8 @@
           }
         ]
       },
-      "names": [
-        "event:goal/change.data[0].operation[0]",
-        "event:request/header.data.reason[1]"
-      ],
-      "sources": [
-        "packages/core/session/src/types.ts:367",
-        "packages/goal/goal/src/domain.ts:27"
-      ]
+      "names": [],
+      "sources": []
     },
     {
       "digest": "3516f54b427775f483febe8e938e4e10f9afd3583610861547bbe2999ed4d8d9",
@@ -24868,7 +24295,7 @@
         "packages/llm/llm-retry/src/types.ts#LlmRetryEventData"
       ],
       "sources": [
-        "packages/core/session/src/types.ts:472"
+        "packages/llm/llm-retry/src/types.ts:16"
       ]
     },
     {
@@ -24882,12 +24309,8 @@
           }
         ]
       },
-      "names": [
-        "event:approval/policy.type"
-      ],
-      "sources": [
-        "packages/core/session/src/types.ts:467"
-      ]
+      "names": [],
+      "sources": []
     },
     {
       "digest": "37184378c6439257d105c4e2022d80fc9c3a3f7c7f6ac661b00bc9f18d871006",
@@ -25000,12 +24423,8 @@
           }
         ]
       },
-      "names": [
-        "event:approval/decided.type"
-      ],
-      "sources": [
-        "packages/core/session/src/types.ts:467"
-      ]
+      "names": [],
+      "sources": []
     },
     {
       "digest": "37cbc9cf06d494cfe5c67f078af1605eacb8e4c2c853e9e26455b73de0ee7ccf",
@@ -25107,14 +24526,8 @@
           }
         ]
       },
-      "names": [
-        "event:agent/inbox/spliced.data.inserted[0].source[15].form",
-        "event:agent/inbox/spliced.data.inserted[0].source[9].form"
-      ],
-      "sources": [
-        "packages/context/session-reference/src/types.ts:16",
-        "packages/llm/llm/src/message.ts:96"
-      ]
+      "names": [],
+      "sources": []
     },
     {
       "digest": "3860b4757d512a2869be833acb0faf834335b1b056bf3f83df5474dce95f8fa6",
@@ -25188,7 +24601,7 @@
         "event:assistant/attempt.data.stream[0][2]"
       ],
       "sources": [
-        "packages/core/session/src/types.ts:335"
+        "packages/llm/llm/src/assistant-stream.ts:35"
       ]
     },
     {
@@ -25217,7 +24630,7 @@
         "packages/feedback/message-feedback/src/types.ts#MessageFeedbackRating"
       ],
       "sources": [
-        "packages/feedback/message-feedback/src/types.ts:24"
+        "packages/feedback/message-feedback/src/types.ts:17"
       ]
     },
     {
@@ -25915,7 +25328,7 @@
         "event:assistant/attempt.data.stream[0][3]"
       ],
       "sources": [
-        "packages/core/session/src/types.ts:335"
+        "packages/llm/llm/src/assistant-stream.ts:44"
       ]
     },
     {
@@ -26018,7 +25431,7 @@
         "packages/subagent/subagent/src/catalog.ts#SubagentCatalogEvent"
       ],
       "sources": [
-        "packages/core/session/src/types.ts:472"
+        "packages/subagent/subagent/src/catalog.ts:24"
       ]
     },
     {
@@ -26122,12 +25535,8 @@
           }
         ]
       },
-      "names": [
-        "event:llm/retry.data[0].mode"
-      ],
-      "sources": [
-        "packages/llm/llm-retry/src/types.ts:22"
-      ]
+      "names": [],
+      "sources": []
     },
     {
       "digest": "3bd652ebfa8726b3ce3937a4f1bd2759e02f86b3a08a20f9e41a8513656fbc5f",
@@ -26157,9 +25566,7 @@
         "packages/core/session/src/types.ts#OptionalSessionSeq"
       ],
       "sources": [
-        "packages/compaction/compaction/src/types.ts:24",
-        "packages/compaction/compaction/src/types.ts:72",
-        "packages/context/session-reference/src/types.ts:23"
+        "packages/core/session/src/types.ts:64"
       ]
     },
     {
@@ -26258,14 +25665,8 @@
           }
         ]
       },
-      "names": [
-        "event:agent/inbox/spliced.data.inserted[0].content[0][1].type",
-        "event:assistant/attempt.data.stream[0][3].chunk[0].blockType[1]"
-      ],
-      "sources": [
-        "packages/llm/llm/src/types.ts:391",
-        "packages/llm/llm/src/types.ts:61"
-      ]
+      "names": [],
+      "sources": []
     },
     {
       "digest": "3cfc3a56502da1f8c6153c2c56657bab4b749056968634dd0991d325ec1c919f",
@@ -26302,7 +25703,7 @@
         "packages/core/tools/src/index.ts#ToolRestriction"
       ],
       "sources": [
-        "packages/subagent/subagent/src/descriptor.ts:85"
+        "packages/core/tools/src/index.ts:673"
       ]
     },
     {
@@ -26420,7 +25821,7 @@
         "packages/feedback/message-feedback/src/types.ts#MessageFeedbackItem"
       ],
       "sources": [
-        "packages/feedback/message-feedback/src/types.ts:42"
+        "packages/feedback/message-feedback/src/types.ts:20"
       ]
     },
     {
@@ -26493,7 +25894,7 @@
         "event:turn/end.data.reason[3]"
       ],
       "sources": [
-        "packages/core/session/src/types.ts:285"
+        "packages/core/session/src/types.ts:211"
       ]
     },
     {
@@ -26507,12 +25908,8 @@
           }
         ]
       },
-      "names": [
-        "event:request/header.type"
-      ],
-      "sources": [
-        "packages/core/session/src/types.ts:467"
-      ]
+      "names": [],
+      "sources": []
     },
     {
       "digest": "3e2ece4967cfebe95f450a93f45523dff99d6749f6269f2f60f84dfecfcf3693",
@@ -26525,12 +25922,8 @@
           }
         ]
       },
-      "names": [
-        "event:agent/inbox/spliced.data.target[1]"
-      ],
-      "sources": [
-        "packages/core/agent/src/types.ts:88"
-      ]
+      "names": [],
+      "sources": []
     },
     {
       "digest": "3e4e7683b0192c9f0e6a75c59076108f017892cdb302a98032c2632fd79c356f",
@@ -26583,7 +25976,7 @@
         "event:compaction/start.data"
       ],
       "sources": [
-        "packages/core/session/src/types.ts:472"
+        "packages/compaction/compaction/src/types.ts:24"
       ]
     },
     {
@@ -26672,12 +26065,8 @@
           }
         ]
       },
-      "names": [
-        "event:agent/inbox/spliced.data.inserted[0].content[0][2].attachment.mediaType[1]"
-      ],
-      "sources": [
-        "packages/attachment/attachment/src/types.ts:15"
-      ]
+      "names": [],
+      "sources": []
     },
     {
       "digest": "40390271dffbed81bffa514370ad1c3c19a13ad10c3647c9c0eae31126c95a5f",
@@ -27740,8 +27129,7 @@
         "packages/llm/llm/src/message.ts#UserMessage"
       ],
       "sources": [
-        "packages/core/agent/src/types.ts:91",
-        "packages/core/session/src/types.ts:472"
+        "packages/llm/llm/src/message.ts:143"
       ]
     },
     {
@@ -27850,12 +27238,8 @@
           }
         ]
       },
-      "names": [
-        "event:turn/end.type"
-      ],
-      "sources": [
-        "packages/core/session/src/types.ts:467"
-      ]
+      "names": [],
+      "sources": []
     },
     {
       "digest": "44818000e56acb97afdb5045ce235eb55e3fb1ccabc9fc7d0750bb38f36a7f8e",
@@ -27868,12 +27252,8 @@
           }
         ]
       },
-      "names": [
-        "event:feedback/message-delete.type"
-      ],
-      "sources": [
-        "packages/core/session/src/types.ts:467"
-      ]
+      "names": [],
+      "sources": []
     },
     {
       "digest": "44c8c77aa9aa100b0d74d2deee85474b29faa6eee0ac0f662f7abe9931ddd7f2",
@@ -27886,12 +27266,8 @@
           }
         ]
       },
-      "names": [
-        "event:subagent/catalog.type"
-      ],
-      "sources": [
-        "packages/core/session/src/types.ts:467"
-      ]
+      "names": [],
+      "sources": []
     },
     {
       "digest": "4513e088d43e6c68425be30451b9f961cc264fe7318ca62681c41d4d78615986",
@@ -28005,7 +27381,7 @@
         "event:approval/asked.data"
       ],
       "sources": [
-        "packages/core/session/src/types.ts:472"
+        "packages/interaction/user-approval/src/types.ts:44"
       ]
     },
     {
@@ -28019,12 +27395,8 @@
           }
         ]
       },
-      "names": [
-        "event:session-log-deepseek/delivery-accepted.type"
-      ],
-      "sources": [
-        "packages/core/session/src/types.ts:467"
-      ]
+      "names": [],
+      "sources": []
     },
     {
       "digest": "48e5c9861f16ac07e78cb7b5ae9dabdf7bb85c58baed5a51b4ad275050ea58e3",
@@ -28244,7 +27616,7 @@
         "packages/subagent/subagent/src/continuation-messages.ts#AgentMessageSource"
       ],
       "sources": [
-        "packages/llm/llm/src/message.ts:139"
+        "packages/subagent/subagent/src/continuation-messages.ts:15"
       ]
     },
     {
@@ -28258,12 +27630,8 @@
           }
         ]
       },
-      "names": [
-        "event:llm/retry-started.type"
-      ],
-      "sources": [
-        "packages/core/session/src/types.ts:467"
-      ]
+      "names": [],
+      "sources": []
     },
     {
       "digest": "4aed17ec726b5397c29f6cb4bcd7905dc1a12bb6140f1657f073cd24380f2af8",
@@ -28318,9 +27686,7 @@
       "names": [
         "event:web/deepseek-search-llm-request.data.body.tools"
       ],
-      "sources": [
-        "packages/web/web-search-deepseek/src/provider.ts:72"
-      ]
+      "sources": []
     },
     {
       "digest": "4b7ddaf3710b88ff9b8df66304f5f97bf03688fd19730eedc2e9535203c820ea",
@@ -28376,9 +27742,7 @@
       "names": [
         "event:todo/write.data.todos"
       ],
-      "sources": [
-        "packages/todo/tool-todo/src/types.ts:31"
-      ]
+      "sources": []
     },
     {
       "digest": "4bb451330ff699f36b45539ceb0eb2606ead72084e2c5bb637c36cc80e2252db",
@@ -28406,7 +27770,7 @@
         "event:turn/end.data.reason[1].reason[3]"
       ],
       "sources": [
-        "packages/core/session/src/types.ts:203"
+        "packages/core/session/src/types.ts:192"
       ]
     },
     {
@@ -29186,7 +28550,7 @@
         "packages/llm/llm/src/message.ts#MessageSource"
       ],
       "sources": [
-        "packages/llm/llm/src/message.ts:139"
+        "packages/llm/llm/src/message.ts:128"
       ]
     },
     {
@@ -29201,217 +28565,6 @@
         ]
       },
       "names": [
-        "JsonlHeaderLine.agentPreset",
-        "JsonlHeaderLine.cwd",
-        "SessionEventEnvelope[0].type",
-        "SessionEventEnvelope[10].type",
-        "SessionEventEnvelope[11].type",
-        "SessionEventEnvelope[12].type",
-        "SessionEventEnvelope[13].type",
-        "SessionEventEnvelope[14].type",
-        "SessionEventEnvelope[15].type",
-        "SessionEventEnvelope[16].type",
-        "SessionEventEnvelope[17].type",
-        "SessionEventEnvelope[18].type",
-        "SessionEventEnvelope[19].type",
-        "SessionEventEnvelope[1].type",
-        "SessionEventEnvelope[20].type",
-        "SessionEventEnvelope[21].type",
-        "SessionEventEnvelope[22].type",
-        "SessionEventEnvelope[23].type",
-        "SessionEventEnvelope[24].type",
-        "SessionEventEnvelope[25].type",
-        "SessionEventEnvelope[26].type",
-        "SessionEventEnvelope[27].type",
-        "SessionEventEnvelope[28].type",
-        "SessionEventEnvelope[29].type",
-        "SessionEventEnvelope[2].type",
-        "SessionEventEnvelope[30].type",
-        "SessionEventEnvelope[31].type",
-        "SessionEventEnvelope[32].type",
-        "SessionEventEnvelope[33].type",
-        "SessionEventEnvelope[34].type",
-        "SessionEventEnvelope[35].type",
-        "SessionEventEnvelope[36].type",
-        "SessionEventEnvelope[37].type",
-        "SessionEventEnvelope[38].type",
-        "SessionEventEnvelope[39].type",
-        "SessionEventEnvelope[3].type",
-        "SessionEventEnvelope[40].type",
-        "SessionEventEnvelope[41].type",
-        "SessionEventEnvelope[42].type",
-        "SessionEventEnvelope[43].type",
-        "SessionEventEnvelope[44].type",
-        "SessionEventEnvelope[45].type",
-        "SessionEventEnvelope[46].type",
-        "SessionEventEnvelope[47].type",
-        "SessionEventEnvelope[48].type",
-        "SessionEventEnvelope[49].type",
-        "SessionEventEnvelope[4].type",
-        "SessionEventEnvelope[50].type",
-        "SessionEventEnvelope[51].type",
-        "SessionEventEnvelope[52].type",
-        "SessionEventEnvelope[53].type",
-        "SessionEventEnvelope[54].type",
-        "SessionEventEnvelope[55].type",
-        "SessionEventEnvelope[5].type",
-        "SessionEventEnvelope[6].type",
-        "SessionEventEnvelope[7].type",
-        "SessionEventEnvelope[8].type",
-        "SessionEventEnvelope[9].type",
-        "SessionHeader.agentPreset",
-        "SessionHeader.cwd",
-        "SessionHeader.id[0]",
-        "event:agent-preset/selected.data.agentPreset",
-        "event:agent/inbox/spliced.data.inserted[0].content[0][0].text",
-        "event:agent/inbox/spliced.data.inserted[0].content[0][1].text",
-        "event:agent/inbox/spliced.data.inserted[0].content[0][2].attachment.attachmentId[0]",
-        "event:agent/inbox/spliced.data.inserted[0].content[0][2].attachment.name",
-        "event:agent/inbox/spliced.data.inserted[0].content[0][3].attachment.name",
-        "event:agent/inbox/spliced.data.inserted[0].content[0][4].arguments",
-        "event:agent/inbox/spliced.data.inserted[0].content[0][4].id[0]",
-        "event:agent/inbox/spliced.data.inserted[0].content[0][4].name",
-        "event:agent/inbox/spliced.data.inserted[0].id[0]",
-        "event:agent/inbox/spliced.data.inserted[0].source[0].model",
-        "event:agent/inbox/spliced.data.inserted[0].source[0].provider",
-        "event:agent/inbox/spliced.data.inserted[0].source[10].clientTimeZone",
-        "event:agent/inbox/spliced.data.inserted[0].source[10].rpcId[0]",
-        "event:agent/inbox/spliced.data.inserted[0].source[12].summary",
-        "event:agent/inbox/spliced.data.inserted[0].source[13].name",
-        "event:agent/inbox/spliced.data.inserted[0].source[14].goalId[0]",
-        "event:agent/inbox/spliced.data.inserted[0].source[15].references[0].label",
-        "event:agent/inbox/spliced.data.inserted[0].source[15].references[0].sessionId",
-        "event:agent/inbox/spliced.data.inserted[0].source[16].entries[0].description",
-        "event:agent/inbox/spliced.data.inserted[0].source[16].entries[0].name",
-        "event:agent/inbox/spliced.data.inserted[0].source[17].baselineIdentity",
-        "event:agent/inbox/spliced.data.inserted[0].source[17].changes[0].digest",
-        "event:agent/inbox/spliced.data.inserted[0].source[17].changes[0].path",
-        "event:agent/inbox/spliced.data.inserted[0].source[17].changes[0].scope",
-        "event:agent/inbox/spliced.data.inserted[0].source[18].messageId[0]",
-        "event:agent/inbox/spliced.data.inserted[0].source[18].senderName",
-        "event:agent/inbox/spliced.data.inserted[0].source[18].teamId[0]",
-        "event:agent/inbox/spliced.data.inserted[0].source[19].deliveryId[0]",
-        "event:agent/inbox/spliced.data.inserted[0].source[19].provider",
-        "event:agent/inbox/spliced.data.inserted[0].source[19].ruleId[0]",
-        "event:agent/inbox/spliced.data.inserted[0].source[19].source[0]",
-        "event:agent/inbox/spliced.data.inserted[0].source[19].summary",
-        "event:agent/inbox/spliced.data.inserted[0].source[3].plugin",
-        "event:agent/inbox/spliced.data.inserted[0].source[4].plugin",
-        "event:agent/inbox/spliced.data.inserted[0].source[5].plugin",
-        "event:agent/inbox/spliced.data.inserted[0].source[6].plugin",
-        "event:agent/inbox/spliced.data.inserted[0].source[6].sections[0].name",
-        "event:agent/inbox/spliced.data.inserted[0].source[6].sections[0].text",
-        "event:agent/inbox/spliced.data.inserted[0].source[7].plugin",
-        "event:agent/inbox/spliced.data.inserted[0].source[7].summary",
-        "event:agent/inbox/spliced.data.inserted[0].source[8].plugin",
-        "event:agent/inbox/spliced.data.inserted[0].source[9].plugin",
-        "event:approval/asked.data.id[0]",
-        "event:approval/asked.data.reason",
-        "event:approval/asked.data.toolName",
-        "event:assistant/attempt.data.stream[0][0].texts[0]",
-        "event:assistant/attempt.data.stream[0][2].name",
-        "event:assistant/attempt.data.stream[0][3].chunk[1].text",
-        "event:assistant/attempt.data.stream[0][3].chunk[2].text",
-        "event:assistant/attempt.data.stream[0][3].chunk[3].argumentsDelta",
-        "event:assistant/attempt.data.stream[0][3].chunk[3].name",
-        "event:assistant/attempt.data.stream[0][3].chunk[6].reason[3].failure.code",
-        "event:assistant/attempt.data.stream[0][3].chunk[6].reason[3].failure.message",
-        "event:assistant/attempt.data.stream[0][3].chunk[6].reason[3].failure.requestId[0]",
-        "event:command/done.data.commandId[0]",
-        "event:command/done.data.text",
-        "event:command/run.data.args",
-        "event:command/run.data.name",
-        "event:compaction/end.data.compactionId[0]",
-        "event:compaction/end.data.error",
-        "event:compaction/summary.data[0].model",
-        "event:compaction/summary.data[0].provider",
-        "event:compaction/summary.data[1].model",
-        "event:compaction/summary.data[1].provider",
-        "event:deliverables/presented.data.files[0].description",
-        "event:deliverables/presented.data.files[0].path",
-        "event:feedback/message-put.data.item.note",
-        "event:feedback/message-put.data.item.version[0]",
-        "event:feedback/record.data.text",
-        "event:goal/change.data[0].goal.blockedReason.code",
-        "event:goal/change.data[0].goal.blockedReason.message",
-        "event:goal/change.data[0].goal.objective",
-        "event:hook/invoked.data.handlerId",
-        "event:hook/invoked.data.matcher",
-        "event:hook/invoked.data.point",
-        "event:hook/result.data.decision",
-        "event:hook/result.data.handlerId",
-        "event:hook/result.data.point",
-        "event:hook/result.data.stderrSummary",
-        "event:llm/retry.data[0].policyKey",
-        "event:llm/retry.data[0].provider",
-        "event:llm/retry.data[0].retryId[0]",
-        "event:llm/retry.data[1].policyKey",
-        "event:llm/retry.data[1].provider",
-        "event:model/selection.data.model",
-        "event:model/selection.data.provider",
-        "event:model/selection.data.reasoningEffort",
-        "event:permission/preset.data.preset",
-        "event:request/context.data.model",
-        "event:request/context.data.provider",
-        "event:request/header.data.header.config.model",
-        "event:request/header.data.header.config.provider",
-        "event:request/header.data.header.config.reasoningEffort[0]",
-        "event:request/header.data.header.config.stop[0]",
-        "event:request/header.data.header.tools[0].description",
-        "event:request/header.data.header.tools[0].name",
-        "event:request/header.data.header.tools[0].parameters.[key]",
-        "event:schedule/change.data[0].schedule[0].id[0]",
-        "event:schedule/change.data[0].schedule[0].prompt",
-        "event:schedule/change.data[0].schedule[0].scheduledAt",
-        "event:schedule/change.data[0].schedule[1].prompt",
-        "event:schedule/change.data[0].schedule[1].scheduledAt",
-        "event:schedule/change.data[0].schedule[2].prompt",
-        "event:schedule/change.data[0].schedule[2].scheduledAt",
-        "event:schedule/change.data[3].acceptedAt",
-        "event:session/title-llm-request.data.system",
-        "event:session/title-llm-request.data.titleProvider[0]",
-        "event:session/title.data.source[1].model.model",
-        "event:session/title.data.source[1].model.provider",
-        "event:session/title.data.source[1].provider[0]",
-        "event:session/title.data.title",
-        "event:subagent/catalog.data[0].label",
-        "event:subagent/catalog.data[1].label",
-        "event:subagent/descriptor.data[0].label",
-        "event:subagent/descriptor.data[0].provider",
-        "event:subagent/descriptor.data[1].agentModel",
-        "event:subagent/descriptor.data[1].agentProvider",
-        "event:subagent/descriptor.data[1].label",
-        "event:subagent/descriptor.data[1].persona",
-        "event:subagent/descriptor.data[1].provider",
-        "event:subagent/model-selection-policy.data.allowedModels[0].model",
-        "event:subagent/model-selection-policy.data.allowedModels[0].provider",
-        "event:team/member.data.member.description",
-        "event:team/member.data.member.error",
-        "event:team/member.data.member.name",
-        "event:team/member.data.member.provider",
-        "event:team/message/queued.data.message.senderName",
-        "event:team/task.data.task.blockedBy[0][0]",
-        "event:team/task.data.task.description",
-        "event:team/task.data.task.subject",
-        "event:todo/write.data.todos[0].content",
-        "event:tool-workflow/agent-end.data.runId[0]",
-        "event:tool-workflow/agent-start.data.label",
-        "event:tool-workflow/agent-start.data.phase",
-        "event:tool-workflow/run-start.data.name",
-        "event:tool/call.data.arguments",
-        "event:tool/call.data.name",
-        "event:tool/ptc-dispatch-start.data.name",
-        "event:tool/ptc-dispatch.data.name",
-        "event:tool/result.data.error.code",
-        "event:tool/result.data.error.name",
-        "event:tool/result.data.meta[1]",
-        "event:tool/result.data.meta[5][0][1]",
-        "event:tool/result.data.meta[5][0][6].[key]",
-        "event:turn/end.data.reason[1].reason[2].reason",
-        "event:web/deepseek-search-llm-request.data.apiVersion",
-        "event:web/deepseek-search-llm-request.data.body.messages[0].content[0].text",
-        "event:web/deepseek-search-llm-request.data.body.model",
-        "event:web/deepseek-search-llm-request.data.endpoint",
         "packages/api/session-controller/src/types.ts#SessionRequestId",
         "packages/attachment/attachment/src/brand.ts#AttachmentId",
         "packages/compaction/compaction/src/brand.ts#CompactionId",
@@ -29437,192 +28590,29 @@
         "packages/workflow/workflow/src/types.ts#WorkflowRunId"
       ],
       "sources": [
-        "packages/api/session-controller/src/types.ts:380",
-        "packages/api/session-controller/src/types.ts:87",
-        "packages/api/session-controller/src/types.ts:88",
-        "packages/api/session-controller/src/types.ts:89",
-        "packages/attachment/attachment/src/types.ts:13",
-        "packages/attachment/attachment/src/types.ts:23",
-        "packages/attachment/attachment/src/types.ts:41",
-        "packages/attachment/attachment/src/types.ts:43",
-        "packages/compaction/compaction/src/types.ts:24",
-        "packages/compaction/compaction/src/types.ts:35",
-        "packages/compaction/compaction/src/types.ts:36",
-        "packages/compaction/compaction/src/types.ts:42",
-        "packages/compaction/compaction/src/types.ts:49",
-        "packages/compaction/compaction/src/types.ts:72",
-        "packages/context/agent-instructions/src/render.ts:49",
-        "packages/context/agent-instructions/src/render.ts:50",
-        "packages/context/agent-instructions/src/render.ts:51",
-        "packages/context/agent-instructions/src/state.ts:44",
-        "packages/context/session-reference/src/types.ts:19",
-        "packages/context/session-reference/src/types.ts:20",
-        "packages/core/session/src/types.ts:100",
-        "packages/core/session/src/types.ts:104",
-        "packages/core/session/src/types.ts:106",
-        "packages/core/session/src/types.ts:129",
-        "packages/core/session/src/types.ts:191",
-        "packages/core/session/src/types.ts:244",
-        "packages/core/session/src/types.ts:246",
-        "packages/core/session/src/types.ts:341",
-        "packages/core/session/src/types.ts:358",
-        "packages/core/session/src/types.ts:359",
-        "packages/core/tools/src/types.ts:12",
-        "packages/core/tools/src/types.ts:13",
-        "packages/core/tools/src/types.ts:14",
-        "packages/core/tools/src/types.ts:15",
-        "packages/experimental/agent-team/src/types.ts:107",
-        "packages/experimental/agent-team/src/types.ts:108",
-        "packages/experimental/agent-team/src/types.ts:109",
-        "packages/experimental/agent-team/src/types.ts:110",
-        "packages/experimental/agent-team/src/types.ts:117",
-        "packages/experimental/agent-team/src/types.ts:118",
-        "packages/experimental/agent-team/src/types.ts:119",
-        "packages/experimental/agent-team/src/types.ts:120",
-        "packages/experimental/agent-team/src/types.ts:221",
-        "packages/experimental/agent-team/src/types.ts:223",
-        "packages/experimental/agent-team/src/types.ts:225",
-        "packages/experimental/agent-team/src/types.ts:229",
-        "packages/experimental/agent-team/src/types.ts:230",
-        "packages/experimental/agent-team/src/types.ts:231",
-        "packages/experimental/agent-team/src/types.ts:48",
-        "packages/experimental/agent-team/src/types.ts:49",
-        "packages/experimental/agent-team/src/types.ts:50",
-        "packages/experimental/agent-team/src/types.ts:51",
-        "packages/experimental/agent-team/src/types.ts:54",
-        "packages/experimental/agent-team/src/types.ts:75",
-        "packages/experimental/agent-team/src/types.ts:77",
-        "packages/experimental/agent-team/src/types.ts:78",
-        "packages/experimental/agent-team/src/types.ts:80",
-        "packages/experimental/agent-team/src/types.ts:81",
-        "packages/feedback/command-feedback/src/types.ts:29",
-        "packages/feedback/message-feedback/src/types.ts:22",
-        "packages/feedback/message-feedback/src/types.ts:26",
-        "packages/feedback/message-feedback/src/types.ts:30",
-        "packages/feedback/message-feedback/src/types.ts:40",
-        "packages/feedback/message-feedback/src/types.ts:48",
-        "packages/feedback/message-feedback/src/types.ts:50",
-        "packages/fs/tool-present/src/types.ts:15",
-        "packages/fs/tool-present/src/types.ts:7",
-        "packages/fs/tool-present/src/types.ts:9",
-        "packages/goal/goal/src/domain.ts:49",
-        "packages/goal/goal/src/types.ts:22",
-        "packages/goal/goal/src/types.ts:54",
-        "packages/goal/goal/src/types.ts:56",
-        "packages/goal/goal/src/types.ts:62",
-        "packages/hooks/hook-protocol/src/types.ts:21",
-        "packages/hooks/hook-protocol/src/types.ts:23",
-        "packages/hooks/hook-protocol/src/types.ts:24",
-        "packages/hooks/hook-protocol/src/types.ts:33",
-        "packages/hooks/hook-protocol/src/types.ts:34",
-        "packages/hooks/hook-protocol/src/types.ts:35",
-        "packages/hooks/hook-protocol/src/types.ts:37",
-        "packages/interaction/commands/src/types.ts:105",
-        "packages/interaction/commands/src/types.ts:113",
-        "packages/interaction/commands/src/types.ts:115",
-        "packages/interaction/permission-presets/src/index.ts:54",
-        "packages/interaction/user-approval/src/types.ts:45",
-        "packages/interaction/user-approval/src/types.ts:46",
-        "packages/interaction/user-approval/src/types.ts:47",
-        "packages/interaction/user-approval/src/types.ts:48",
-        "packages/interaction/user-approval/src/types.ts:56",
-        "packages/llm/llm-retry/src/types.ts:18",
-        "packages/llm/llm-retry/src/types.ts:21",
-        "packages/llm/llm-retry/src/types.ts:23",
-        "packages/llm/llm-retry/src/types.ts:31",
-        "packages/llm/llm-retry/src/types.ts:34",
-        "packages/llm/llm-retry/src/types.ts:36",
-        "packages/llm/llm-retry/src/types.ts:44",
-        "packages/llm/llm/src/assistant-stream.ts:26",
-        "packages/llm/llm/src/assistant-stream.ts:40",
-        "packages/llm/llm/src/assistant-stream.ts:41",
-        "packages/llm/llm/src/call-config.ts:24",
-        "packages/llm/llm/src/call-config.ts:25",
-        "packages/llm/llm/src/call-config.ts:26",
-        "packages/llm/llm/src/call-config.ts:29",
-        "packages/llm/llm/src/message.ts:104",
-        "packages/llm/llm/src/message.ts:12",
-        "packages/llm/llm/src/message.ts:133",
-        "packages/llm/llm/src/message.ts:14",
-        "packages/llm/llm/src/message.ts:31",
-        "packages/llm/llm/src/message.ts:67",
-        "packages/llm/llm/src/message.ts:69",
-        "packages/llm/llm/src/message.ts:93",
-        "packages/llm/llm/src/types.ts:103",
-        "packages/llm/llm/src/types.ts:392",
-        "packages/llm/llm/src/types.ts:393",
-        "packages/llm/llm/src/types.ts:394",
-        "packages/llm/llm/src/types.ts:412",
-        "packages/llm/llm/src/types.ts:413",
-        "packages/llm/llm/src/types.ts:415",
-        "packages/llm/llm/src/types.ts:42",
-        "packages/llm/llm/src/types.ts:44",
-        "packages/llm/llm/src/types.ts:50",
-        "packages/llm/llm/src/types.ts:56",
-        "packages/llm/llm/src/types.ts:62",
-        "packages/llm/llm/src/types.ts:94",
-        "packages/llm/llm/src/types.ts:95",
-        "packages/llm/llm/src/types.ts:97",
-        "packages/preset/agent-presets/src/session.ts:28",
-        "packages/schedule/schedule/src/types.ts:15",
-        "packages/schedule/schedule/src/types.ts:19",
-        "packages/schedule/schedule/src/types.ts:23",
-        "packages/schedule/schedule/src/types.ts:29",
-        "packages/schedule/schedule/src/types.ts:33",
-        "packages/schedule/schedule/src/types.ts:35",
-        "packages/schedule/schedule/src/types.ts:41",
-        "packages/schedule/schedule/src/types.ts:45",
-        "packages/schedule/schedule/src/types.ts:49",
-        "packages/schedule/schedule/src/types.ts:82",
-        "packages/schedule/schedule/src/types.ts:89",
-        "packages/schedule/schedule/src/types.ts:96",
-        "packages/schedule/schedule/src/types.ts:98",
-        "packages/session/session-log-deepseek/src/types.ts:83",
-        "packages/session/session-persistence-jsonl/src/format.ts:85",
-        "packages/session/session-persistence-jsonl/src/format.ts:87",
-        "packages/session/session-persistence-jsonl/src/format.ts:88",
-        "packages/session/session-persistence-jsonl/src/format.ts:92",
-        "packages/session/session-title-llm/src/index.ts:29",
-        "packages/session/session-title-llm/src/index.ts:35",
-        "packages/session/session-title/src/types.ts:22",
-        "packages/session/session-title/src/types.ts:24",
-        "packages/session/session-title/src/types.ts:32",
-        "packages/session/session-title/src/types.ts:43",
-        "packages/skill/skill/src/index.ts:149",
-        "packages/skill/tool-skill/src/index.ts:40",
-        "packages/subagent/subagent/src/catalog.ts:27",
-        "packages/subagent/subagent/src/catalog.ts:30",
-        "packages/subagent/subagent/src/catalog.ts:31",
-        "packages/subagent/subagent/src/continuation-messages.ts:20",
-        "packages/subagent/subagent/src/continuation-messages.ts:35",
-        "packages/subagent/subagent/src/continuation-messages.ts:37",
-        "packages/subagent/subagent/src/descriptor.ts:57",
-        "packages/subagent/subagent/src/descriptor.ts:68",
-        "packages/subagent/subagent/src/descriptor.ts:75",
-        "packages/subagent/subagent/src/descriptor.ts:77",
-        "packages/subagent/subagent/src/descriptor.ts:79",
-        "packages/subagent/subagent/src/descriptor.ts:81",
-        "packages/subagent/subagent/src/descriptor.ts:83",
-        "packages/subagent/tool-subagent/src/model-selection.ts:11",
-        "packages/subagent/tool-subagent/src/model-selection.ts:13",
-        "packages/todo/tool-todo/src/types.ts:23",
-        "packages/web/web-search-deepseek/src/provider.ts:58",
-        "packages/web/web-search-deepseek/src/provider.ts:60",
-        "packages/web/web-search-deepseek/src/provider.ts:63",
-        "packages/web/web-search-deepseek/src/provider.ts:69",
-        "packages/webhook/webhook/src/types.ts:76",
-        "packages/webhook/webhook/src/types.ts:77",
-        "packages/webhook/webhook/src/types.ts:78",
-        "packages/webhook/webhook/src/types.ts:79",
-        "packages/webhook/webhook/src/types.ts:81",
-        "packages/workflow/tool-workflow/src/types.ts:15",
-        "packages/workflow/tool-workflow/src/types.ts:16",
-        "packages/workflow/tool-workflow/src/types.ts:21",
-        "packages/workflow/tool-workflow/src/types.ts:23",
-        "packages/workflow/tool-workflow/src/types.ts:24",
-        "packages/workflow/tool-workflow/src/types.ts:25",
-        "packages/workflow/tool-workflow/src/types.ts:30",
-        "packages/workflow/tool-workflow/src/types.ts:37"
+        "packages/api/session-controller/src/types.ts:375",
+        "packages/attachment/attachment/src/brand.ts:6",
+        "packages/compaction/compaction/src/brand.ts:4",
+        "packages/core/session/src/types.ts:19",
+        "packages/experimental/agent-team/src/types.ts:20",
+        "packages/experimental/agent-team/src/types.ts:32",
+        "packages/experimental/agent-team/src/types.ts:8",
+        "packages/feedback/message-feedback/src/types.ts:14",
+        "packages/goal/goal/src/types.ts:17",
+        "packages/interaction/commands/src/brand.ts:31",
+        "packages/interaction/user-approval/src/types.ts:17",
+        "packages/llm/llm-retry/src/brand.ts:4",
+        "packages/llm/llm/src/brand.ts:16",
+        "packages/llm/llm/src/brand.ts:31",
+        "packages/llm/llm/src/brand.ts:43",
+        "packages/llm/llm/src/brand.ts:67",
+        "packages/schedule/schedule/src/types.ts:10",
+        "packages/session/session-title/src/index.ts:42",
+        "packages/session/session-title/src/types.ts:17",
+        "packages/webhook/webhook/src/brand.ts:12",
+        "packages/webhook/webhook/src/brand.ts:6",
+        "packages/webhook/webhook/src/brand.ts:9",
+        "packages/workflow/workflow/src/types.ts:13"
       ]
     },
     {
@@ -29636,12 +28626,8 @@
           }
         ]
       },
-      "names": [
-        "event:team/message/queued.type"
-      ],
-      "sources": [
-        "packages/core/session/src/types.ts:467"
-      ]
+      "names": [],
+      "sources": []
     },
     {
       "digest": "4e44c9118152f6829634bfd508e47669ab0497caffa380c94b4be91f9390d35d",
@@ -29654,16 +28640,8 @@
           }
         ]
       },
-      "names": [
-        "event:agent/inbox/spliced.data.inserted[0].content[0][0].type",
-        "event:assistant/attempt.data.stream[0][3].chunk[0].blockType[0]",
-        "event:web/deepseek-search-llm-request.data.body.messages[0].content[0].type"
-      ],
-      "sources": [
-        "packages/llm/llm/src/types.ts:391",
-        "packages/llm/llm/src/types.ts:55",
-        "packages/web/web-search-deepseek/src/provider.ts:68"
-      ]
+      "names": [],
+      "sources": []
     },
     {
       "digest": "4e887768586528565381dadbddee6cef555874148089f4579e0b4b1ad096fc9c",
@@ -29701,7 +28679,7 @@
         "packages/llm/llm/src/types.ts#TextBlock"
       ],
       "sources": [
-        "packages/llm/llm/src/message.ts:137",
+        "packages/llm/llm/src/types.ts:54",
         "packages/web/web-search-deepseek/src/provider.ts:67"
       ]
     },
@@ -29754,7 +28732,7 @@
         "packages/subagent/subagent/src/continuation-messages.ts#SubagentSettledMessageSource"
       ],
       "sources": [
-        "packages/llm/llm/src/message.ts:139"
+        "packages/subagent/subagent/src/continuation-messages.ts:30"
       ]
     },
     {
@@ -29768,12 +28746,8 @@
           }
         ]
       },
-      "names": [
-        "event:request/header.data.reason[3]"
-      ],
-      "sources": [
-        "packages/core/session/src/types.ts:367"
-      ]
+      "names": [],
+      "sources": []
     },
     {
       "digest": "4f91f187baeabef5c7950c4780d31bbe39f3345dff591a6cf26ac7e135ac1cf4",
@@ -30300,7 +29274,7 @@
         "event:turn/end.data"
       ],
       "sources": [
-        "packages/core/session/src/types.ts:472"
+        "packages/core/session/src/types.ts:285"
       ]
     },
     {
@@ -30328,9 +29302,7 @@
       "names": [
         "event:team/member.data.member.context"
       ],
-      "sources": [
-        "packages/experimental/agent-team/src/types.ts:52"
-      ]
+      "sources": []
     },
     {
       "digest": "511801b0a6470d98566e8385d3dffddb2b67f79fcf73ed6056f46c3cc0a245a7",
@@ -30343,12 +29315,8 @@
           }
         ]
       },
-      "names": [
-        "event:command/done.data.kind[1]"
-      ],
-      "sources": [
-        "packages/interaction/commands/src/types.ts:114"
-      ]
+      "names": [],
+      "sources": []
     },
     {
       "digest": "516da4cdd6d2f1e5ce488e648578ca51f40e458f707b803e5b24de870e799415",
@@ -30539,7 +29507,7 @@
         "packages/experimental/agent-team/src/types.ts#TeamTaskSnapshot"
       ],
       "sources": [
-        "packages/experimental/agent-team/src/types.ts:223"
+        "packages/experimental/agent-team/src/types.ts:74"
       ]
     },
     {
@@ -30595,7 +29563,7 @@
         "event:tool/result.data.meta[6]"
       ],
       "sources": [
-        "packages/core/session/src/types.ts:359"
+        "packages/util/values/src/index.ts:4"
       ]
     },
     {
@@ -30634,7 +29602,7 @@
         "packages/core/session/src/types.ts#RequestHeaderReason"
       ],
       "sources": [
-        "packages/core/session/src/types.ts:367"
+        "packages/core/session/src/types.ts:261"
       ]
     },
     {
@@ -30648,12 +29616,8 @@
           }
         ]
       },
-      "names": [
-        "event:agent-preset/selected.type"
-      ],
-      "sources": [
-        "packages/core/session/src/types.ts:467"
-      ]
+      "names": [],
+      "sources": []
     },
     {
       "digest": "55e3b6df99b0d19241e57618b04b84824c3df80ed102e440719139300ea703f6",
@@ -30715,7 +29679,7 @@
         "event:turn/end.data.reason[5]"
       ],
       "sources": [
-        "packages/core/session/src/types.ts:285"
+        "packages/core/session/src/types.ts:220"
       ]
     },
     {
@@ -30729,12 +29693,8 @@
           }
         ]
       },
-      "names": [
-        "event:tool/result.type"
-      ],
-      "sources": [
-        "packages/core/session/src/types.ts:467"
-      ]
+      "names": [],
+      "sources": []
     },
     {
       "digest": "5776e5553ff2dfe3f5bc202dbb1e7c9f93e35a531aebb7764c23b2b6153b2ccc",
@@ -30912,12 +29872,8 @@
           }
         ]
       },
-      "names": [
-        "event:assistant/attempt.data.stream[0][3].chunk[6].reason[0].kind"
-      ],
-      "sources": [
-        "packages/llm/llm/src/types.ts:131"
-      ]
+      "names": [],
+      "sources": []
     },
     {
       "digest": "587bb11da730e06aa52b62c087d217d6f8f22459b25f31cb9e1e1baf17944e5e",
@@ -30930,12 +29886,8 @@
           }
         ]
       },
-      "names": [
-        "event:session/title-llm-request.type"
-      ],
-      "sources": [
-        "packages/core/session/src/types.ts:467"
-      ]
+      "names": [],
+      "sources": []
     },
     {
       "digest": "58f94390b982f8a5ac1f4f235ba612557f4a1dc4a995d8b1cec63ce7639decb0",
@@ -30948,12 +29900,8 @@
           }
         ]
       },
-      "names": [
-        "event:agent/inbox/spliced.data.inserted[0].content[0][2].attachment.mediaType[0]"
-      ],
-      "sources": [
-        "packages/attachment/attachment/src/types.ts:15"
-      ]
+      "names": [],
+      "sources": []
     },
     {
       "digest": "5abab3a27fd2736660ecddd94b28d6bbf114986dd894880153bd1be3ccacb563",
@@ -30966,12 +29914,8 @@
           }
         ]
       },
-      "names": [
-        "event:assistant/attempt.data.stream[0][3].chunk[1].type"
-      ],
-      "sources": [
-        "packages/llm/llm/src/types.ts:392"
-      ]
+      "names": [],
+      "sources": []
     },
     {
       "digest": "5b232a9b9bfcc0fc6794dab7865bcf203a65785c5de5aa647a51228bff628413",
@@ -30984,12 +29928,8 @@
           }
         ]
       },
-      "names": [
-        "event:schedule/change.data[0].schedule[0].kind"
-      ],
-      "sources": [
-        "packages/schedule/schedule/src/types.ts:17"
-      ]
+      "names": [],
+      "sources": []
     },
     {
       "digest": "5b6fb1f226ff56402db08a6aae82af76100b14056271875f69ec526a1ae05d51",
@@ -31051,7 +29991,7 @@
         "event:command/done.data"
       ],
       "sources": [
-        "packages/core/session/src/types.ts:472"
+        "packages/interaction/commands/src/types.ts:112"
       ]
     },
     {
@@ -31065,14 +30005,8 @@
           }
         ]
       },
-      "names": [
-        "event:feedback/message-put.data.item.category[5]",
-        "event:feedback/record.data.category[5]"
-      ],
-      "sources": [
-        "packages/feedback/command-feedback/src/types.ts:31",
-        "packages/feedback/message-feedback/src/types.ts:28"
-      ]
+      "names": [],
+      "sources": []
     },
     {
       "digest": "5c45bf4c544a7211dcd8ba6ba7e5f1bc39b49e7a9df9d5cbdc8e87c22771b37b",
@@ -31175,16 +30109,7 @@
         "event:tool/result.sourceEventSeqs",
         "event:user/message.sourceEventSeqs"
       ],
-      "sources": [
-        "packages/compaction/compaction/src/types.ts:39",
-        "packages/compaction/compaction/src/types.ts:86",
-        "packages/core/session/src/types.ts:449",
-        "packages/llm/llm/src/assistant-stream.ts:25",
-        "packages/llm/llm/src/assistant-stream.ts:32",
-        "packages/llm/llm/src/assistant-stream.ts:39",
-        "packages/session/session-title-llm/src/index.ts:31",
-        "packages/session/session-title/src/types.ts:45"
-      ]
+      "sources": []
     },
     {
       "digest": "5d17f27a1ef9f7026c0232714adf7573961536d75f3303ca97973975f5af170e",
@@ -31197,12 +30122,8 @@
           }
         ]
       },
-      "names": [
-        "event:tool-workflow/agent-end.type"
-      ],
-      "sources": [
-        "packages/core/session/src/types.ts:467"
-      ]
+      "names": [],
+      "sources": []
     },
     {
       "digest": "5d542ac7bdf13310c46e1a884dec9fb18ad8c6e153cff207e639cd7bf9d7e694",
@@ -31261,9 +30182,7 @@
       "names": [
         "event:subagent/catalog.data[0]"
       ],
-      "sources": [
-        "packages/core/session/src/types.ts:472"
-      ]
+      "sources": []
     },
     {
       "digest": "5dd766ccd1702a1142ad8b4bd44f2242f8e8a6752669ad3de0a5d224329b1438",
@@ -31321,7 +30240,7 @@
         "event:compaction/prune.data"
       ],
       "sources": [
-        "packages/core/session/src/types.ts:472"
+        "packages/compaction/compaction/src/types.ts:82"
       ]
     },
     {
@@ -31401,12 +30320,8 @@
           }
         ]
       },
-      "names": [
-        "event:subagent/descriptor.type"
-      ],
-      "sources": [
-        "packages/core/session/src/types.ts:467"
-      ]
+      "names": [],
+      "sources": []
     },
     {
       "digest": "5ed158429dfa6a8633e6ba94b8c81190616c24b65c1777bf1c60cde9dd499a2f",
@@ -31553,7 +30468,7 @@
         "packages/llm/llm/src/types.ts#FinishReason"
       ],
       "sources": [
-        "packages/llm/llm/src/types.ts:399"
+        "packages/llm/llm/src/types.ts:139"
       ]
     },
     {
@@ -31846,9 +30761,7 @@
       "names": [
         "event:tool/result.data.message.content"
       ],
-      "sources": [
-        "packages/llm/llm/src/message.ts:166"
-      ]
+      "sources": []
     },
     {
       "digest": "5f26a6c20b37632f8f57729d171c671def4683d994ac6257a8dffcd855101627",
@@ -31989,7 +30902,7 @@
         "packages/subagent/subagent/src/descriptor.ts#OneShotSubagentDescriptorData"
       ],
       "sources": [
-        "packages/core/session/src/types.ts:472"
+        "packages/subagent/subagent/src/descriptor.ts:61"
       ]
     },
     {
@@ -33176,12 +32089,8 @@
           }
         ]
       },
-      "names": [
-        "event:llm/retry.type"
-      ],
-      "sources": [
-        "packages/core/session/src/types.ts:467"
-      ]
+      "names": [],
+      "sources": []
     },
     {
       "digest": "6132f7814b28287473605ebc6dacd63c7c699435452487da6152bc735b8ba8c4",
@@ -33520,7 +32429,7 @@
         "event:team/message/queued.data"
       ],
       "sources": [
-        "packages/core/session/src/types.ts:472"
+        "packages/experimental/agent-team/src/types.ts:225"
       ]
     },
     {
@@ -33534,12 +32443,8 @@
           }
         ]
       },
-      "names": [
-        "event:assistant/attempt.data.stream[0][2].type"
-      ],
-      "sources": [
-        "packages/llm/llm/src/assistant-stream.ts:36"
-      ]
+      "names": [],
+      "sources": []
     },
     {
       "digest": "62e6a429ff3f390a46ac39fb468692032f42936ca0db19b53454184189401379",
@@ -33586,9 +32491,7 @@
       "names": [
         "event:goal/change.data[0].operation"
       ],
-      "sources": [
-        "packages/goal/goal/src/domain.ts:27"
-      ]
+      "sources": []
     },
     {
       "digest": "62ecb62dc0fe1b5e70217f8a80c39256a40ee3a1917be14e5ca899d20c35f7fd",
@@ -33601,12 +32504,8 @@
           }
         ]
       },
-      "names": [
-        "event:agent/inbox/spliced.data.target[0]"
-      ],
-      "sources": [
-        "packages/core/agent/src/types.ts:88"
-      ]
+      "names": [],
+      "sources": []
     },
     {
       "digest": "6326a7ecfed005f3d54b737ab9d702da4daddb75cfc635d9096e9abb4788024e",
@@ -33914,7 +32813,7 @@
         "event:assistant/attempt.data.stream[0][3].chunk[4]"
       ],
       "sources": [
-        "packages/llm/llm/src/assistant-stream.ts:44"
+        "packages/llm/llm/src/types.ts:395"
       ]
     },
     {
@@ -33992,7 +32891,7 @@
         "event:assistant/attempt.data.stream[0][3].chunk[0]"
       ],
       "sources": [
-        "packages/llm/llm/src/assistant-stream.ts:44"
+        "packages/llm/llm/src/types.ts:391"
       ]
     },
     {
@@ -34089,7 +32988,7 @@
         "packages/subagent/subagent/src/descriptor.ts#ContinuableSubagentDescriptorData"
       ],
       "sources": [
-        "packages/core/session/src/types.ts:472"
+        "packages/subagent/subagent/src/descriptor.ts:72"
       ]
     },
     {
@@ -34159,10 +33058,10 @@
         ]
       },
       "names": [
-        "event:assistant/attempt.data.stream[0][3].chunk[6].reason[3]"
+        "event:assistant/attempt.data.stream[0][3].chunk[6].reason[0]"
       ],
       "sources": [
-        "packages/llm/llm/src/types.ts:399"
+        "packages/llm/llm/src/types.ts:134"
       ]
     },
     {
@@ -34210,7 +33109,7 @@
         "packages/schedule/schedule/src/types.ts#AtScheduleRecord"
       ],
       "sources": [
-        "packages/schedule/schedule/src/types.ts:75"
+        "packages/schedule/schedule/src/types.ts:27"
       ]
     },
     {
@@ -34304,7 +33203,7 @@
         "packages/experimental/agent-team/src/types.ts#TeamMemberSnapshot"
       ],
       "sources": [
-        "packages/experimental/agent-team/src/types.ts:221"
+        "packages/experimental/agent-team/src/types.ts:47"
       ]
     },
     {
@@ -34361,7 +33260,7 @@
         "packages/schedule/schedule/src/types.ts#EveryScheduleRecord"
       ],
       "sources": [
-        "packages/schedule/schedule/src/types.ts:75"
+        "packages/schedule/schedule/src/types.ts:39"
       ]
     },
     {
@@ -34408,7 +33307,7 @@
         "packages/skill/skill/src/index.ts#SkillInvocationSource"
       ],
       "sources": [
-        "packages/llm/llm/src/message.ts:139"
+        "packages/skill/skill/src/index.ts:146"
       ]
     },
     {
@@ -34470,7 +33369,7 @@
         "packages/llm/llm/src/call-config.ts#LlmCallConfig"
       ],
       "sources": [
-        "packages/core/session/src/types.ts:234"
+        "packages/llm/llm/src/call-config.ts:23"
       ]
     },
     {
@@ -34484,14 +33383,8 @@
           }
         ]
       },
-      "names": [
-        "event:assistant/attempt.data.stream[0][3].chunk[6].reason[2].kind",
-        "event:turn/end.data.reason[4].kind"
-      ],
-      "sources": [
-        "packages/core/session/src/types.ts:213",
-        "packages/llm/llm/src/types.ts:133"
-      ]
+      "names": [],
+      "sources": []
     },
     {
       "digest": "688e853dc149f0d30b31765c12ec7e3be74169bdf1a4c6463a10b945d50cc1b8",
@@ -34504,12 +33397,8 @@
           }
         ]
       },
-      "names": [
-        "event:assistant/attempt.data.stream[0][1].type"
-      ],
-      "sources": [
-        "packages/llm/llm/src/assistant-stream.ts:29"
-      ]
+      "names": [],
+      "sources": []
     },
     {
       "digest": "68f44f59e91c41395076cb77265981a601680ec8a381bbbeb6ab754ffdc94573",
@@ -34522,28 +33411,8 @@
           }
         ]
       },
-      "names": [
-        "event:agent/inbox/spliced.data.inserted[0].role",
-        "event:agent/inbox/spliced.data.inserted[0].source[10].kind",
-        "event:agent/inbox/spliced.data.inserted[0].source[2].kind",
-        "event:command/run.data.source.kind",
-        "event:session/title-llm-request.data.messages[0].role[0]",
-        "event:session/title.data.source[2].kind",
-        "event:tool/result.data.message.role",
-        "event:turn/end.data.reason[1].reason[0].kind",
-        "event:web/deepseek-search-llm-request.data.body.messages[0].role"
-      ],
-      "sources": [
-        "packages/api/session-controller/src/types.ts:380",
-        "packages/core/session/src/types.ts:189",
-        "packages/interaction/commands/src/types.ts:75",
-        "packages/llm/llm/src/message.ts:103",
-        "packages/llm/llm/src/message.ts:135",
-        "packages/llm/llm/src/message.ts:144",
-        "packages/llm/llm/src/message.ts:165",
-        "packages/session/session-title/src/types.ts:37",
-        "packages/web/web-search-deepseek/src/provider.ts:66"
-      ]
+      "names": [],
+      "sources": []
     },
     {
       "digest": "69d238a6e9b08d67f601b1825962963d8d3523cb69ebf6208c697dc5d058c199",
@@ -34556,12 +33425,8 @@
           }
         ]
       },
-      "names": [
-        "event:turn/end.data.reason[5].kind"
-      ],
-      "sources": [
-        "packages/core/session/src/types.ts:220"
-      ]
+      "names": [],
+      "sources": []
     },
     {
       "digest": "6a4f72e2e179e17b922f2a9392c0e1c8f8c707f32494372454850a3eb184a6e7",
@@ -34603,7 +33468,7 @@
         "event:agent/inbox/spliced.data.inserted[0].source[10]"
       ],
       "sources": [
-        "packages/llm/llm/src/message.ts:139"
+        "packages/api/session-controller/src/types.ts:380"
       ]
     },
     {
@@ -34617,12 +33482,8 @@
           }
         ]
       },
-      "names": [
-        "event:assistant/message.type"
-      ],
-      "sources": [
-        "packages/core/session/src/types.ts:467"
-      ]
+      "names": [],
+      "sources": []
     },
     {
       "digest": "6bbe793f6a93dc8d50a4d4d3fbb6f8ed15650bcb7e151d28669628f7b7c3fc25",
@@ -34720,7 +33581,7 @@
         "packages/goal/goal/src/types.ts#GoalSnapshot"
       ],
       "sources": [
-        "packages/goal/goal/src/domain.ts:28"
+        "packages/goal/goal/src/types.ts:60"
       ]
     },
     {
@@ -34749,7 +33610,7 @@
         "event:turn/end.data.reason[1].reason[1]"
       ],
       "sources": [
-        "packages/core/session/src/types.ts:203"
+        "packages/core/session/src/types.ts:190"
       ]
     },
     {
@@ -34763,12 +33624,8 @@
           }
         ]
       },
-      "names": [
-        "event:assistant/attempt.data.stream[0][3].chunk[6].reason[1].kind"
-      ],
-      "sources": [
-        "packages/llm/llm/src/types.ts:132"
-      ]
+      "names": [],
+      "sources": []
     },
     {
       "digest": "6c5a37d42ebdb12db4410699259335f1e149e3a0260425684c00b153afc8990d",
@@ -34805,7 +33662,7 @@
         "event:turn/end.data.reason[1].reason[2]"
       ],
       "sources": [
-        "packages/core/session/src/types.ts:203"
+        "packages/core/session/src/types.ts:191"
       ]
     },
     {
@@ -34819,12 +33676,8 @@
           }
         ]
       },
-      "names": [
-        "event:feedback/message-put.type"
-      ],
-      "sources": [
-        "packages/core/session/src/types.ts:467"
-      ]
+      "names": [],
+      "sources": []
     },
     {
       "digest": "6d63f25a28b70801937a46b1058be5f52d4efbaf3516141470463ae469b59c23",
@@ -34879,9 +33732,7 @@
       "names": [
         "event:request/header.data.header.tools"
       ],
-      "sources": [
-        "packages/core/session/src/types.ts:238"
-      ]
+      "sources": []
     },
     {
       "digest": "6e52dd55a1d48954ed5464ec46fe34d9eb65f709baabc9561e7a279910b0c406",
@@ -34909,7 +33760,7 @@
         "event:agent-preset/selected.data"
       ],
       "sources": [
-        "packages/core/session/src/types.ts:472"
+        "packages/preset/agent-presets/src/session.ts:28"
       ]
     },
     {
@@ -34923,12 +33774,8 @@
           }
         ]
       },
-      "names": [
-        "event:agent/inbox/spliced.data.inserted[0].source[16].kind"
-      ],
-      "sources": [
-        "packages/skill/tool-skill/src/index.ts:35"
-      ]
+      "names": [],
+      "sources": []
     },
     {
       "digest": "6f091fe32ab24407236090ca9d710bbaf59bb57466e9f3b8f1f6e4862bc863c6",
@@ -34941,12 +33788,8 @@
           }
         ]
       },
-      "names": [
-        "event:assistant/attempt.data.stream[0][3].chunk[2].type"
-      ],
-      "sources": [
-        "packages/llm/llm/src/types.ts:393"
-      ]
+      "names": [],
+      "sources": []
     },
     {
       "digest": "6f22a9d02b9a1f1157f3b0e7bdccd7e7b12b085c4efdb709dfc74a465cd4e590",
@@ -35056,7 +33899,7 @@
         "packages/context/agent-instructions/src/state.ts#AgentInstructionSource"
       ],
       "sources": [
-        "packages/llm/llm/src/message.ts:139"
+        "packages/context/agent-instructions/src/state.ts:37"
       ]
     },
     {
@@ -35070,12 +33913,8 @@
           }
         ]
       },
-      "names": [
-        "event:web/deepseek-search-llm-request.type"
-      ],
-      "sources": [
-        "packages/core/session/src/types.ts:467"
-      ]
+      "names": [],
+      "sources": []
     },
     {
       "digest": "6f72ece8f317cd080c4f20a93f1bf709965f5b81ac4669528f5a023191cfcf20",
@@ -35122,7 +33961,7 @@
         "packages/llm/llm-retry/src/types.ts#LlmRetryStartedEventData"
       ],
       "sources": [
-        "packages/core/session/src/types.ts:472"
+        "packages/llm/llm-retry/src/types.ts:43"
       ]
     },
     {
@@ -35136,12 +33975,8 @@
           }
         ]
       },
-      "names": [
-        "event:agent/inbox/spliced.data.inserted[0].source[6].form"
-      ],
-      "sources": [
-        "packages/llm/llm/src/message.ts:86"
-      ]
+      "names": [],
+      "sources": []
     },
     {
       "digest": "70b082fe78991edf13cf66e1b4d06cd2dcff9cacfd76f8cfb996bfb61939e7b2",
@@ -35154,12 +33989,8 @@
           }
         ]
       },
-      "names": [
-        "event:request/context.type"
-      ],
-      "sources": [
-        "packages/core/session/src/types.ts:467"
-      ]
+      "names": [],
+      "sources": []
     },
     {
       "digest": "7115142af1bff1ad9b52c3c785109bf5c989e77e3ddfe899014e213731352042",
@@ -36276,7 +35107,7 @@
         "event:agent/inbox/spliced.data"
       ],
       "sources": [
-        "packages/core/session/src/types.ts:472"
+        "packages/core/agent/src/types.ts:87"
       ]
     },
     {
@@ -36290,14 +35121,8 @@
           }
         ]
       },
-      "names": [
-        "event:feedback/message-put.data.item.category[4]",
-        "event:feedback/record.data.category[4]"
-      ],
-      "sources": [
-        "packages/feedback/command-feedback/src/types.ts:31",
-        "packages/feedback/message-feedback/src/types.ts:28"
-      ]
+      "names": [],
+      "sources": []
     },
     {
       "digest": "719c51f67074f97034a6c94297fe1f4b5d3c8d392c57586dab732aa5398c7a91",
@@ -36348,8 +35173,7 @@
         "packages/llm/llm/src/message.ts#ModelMessageSource"
       ],
       "sources": [
-        "packages/llm/llm/src/message.ts:139",
-        "packages/llm/llm/src/message.ts:150"
+        "packages/llm/llm/src/message.ts:24"
       ]
     },
     {
@@ -36414,7 +35238,7 @@
         "event:assistant/attempt.data.stream[0][1]"
       ],
       "sources": [
-        "packages/core/session/src/types.ts:335"
+        "packages/llm/llm/src/assistant-stream.ts:28"
       ]
     },
     {
@@ -36469,9 +35293,7 @@
         "event:tool/result.data.meta[5]",
         "event:tool/result.data.meta[5][0][5]"
       ],
-      "sources": [
-        "packages/core/session/src/types.ts:359"
-      ]
+      "sources": []
     },
     {
       "digest": "7382c4fc95fe8c5db65ca4d9da572b115d0dbb818b7f32c22ab040318ffbb4bc",
@@ -36484,12 +35306,8 @@
           }
         ]
       },
-      "names": [
-        "event:agent/inbox/spliced.data.inserted[0].source[17].changes[0].action[1]"
-      ],
-      "sources": [
-        "packages/context/agent-instructions/src/render.ts:48"
-      ]
+      "names": [],
+      "sources": []
     },
     {
       "digest": "757013fff5879d73d5753d8d1120faab56110e88ac3932485ab7e034d9e9ce61",
@@ -36534,10 +35352,10 @@
         ]
       },
       "names": [
-        "event:assistant/attempt.data.stream[0][3].chunk[0].blockType"
+        "packages/llm/llm/src/types.ts#ContentBlockType"
       ],
       "sources": [
-        "packages/llm/llm/src/types.ts:391"
+        "packages/llm/llm/src/types.ts:122"
       ]
     },
     {
@@ -36551,14 +35369,8 @@
           }
         ]
       },
-      "names": [
-        "event:goal/change.data[0].operation[3]",
-        "event:schedule/change.data[0].operation"
-      ],
-      "sources": [
-        "packages/goal/goal/src/domain.ts:27",
-        "packages/schedule/schedule/src/types.ts:74"
-      ]
+      "names": [],
+      "sources": []
     },
     {
       "digest": "763c8a20af487263a0080548274f7437ef4a86e0ba8769127d1ced10a72c664d",
@@ -36841,14 +35653,8 @@
           }
         ]
       },
-      "names": [
-        "event:approval/policy.data.source",
-        "event:sandbox/mode.data.source"
-      ],
-      "sources": [
-        "packages/interaction/user-approval/src/index.ts:36",
-        "packages/sandbox/sandbox-policy/src/session-mode.ts:36"
-      ]
+      "names": [],
+      "sources": []
     },
     {
       "digest": "7973d82bd129b261f16a9a20d44df834ec60efc52a63242b4943a2515ae0894f",
@@ -37373,7 +36179,7 @@
         "packages/llm/llm/src/message.ts#SystemMessage"
       ],
       "sources": [
-        "packages/core/session/src/types.ts:310"
+        "packages/llm/llm/src/message.ts:158"
       ]
     },
     {
@@ -37442,7 +36248,7 @@
         "event:todo/write.data"
       ],
       "sources": [
-        "packages/core/session/src/types.ts:472"
+        "packages/todo/tool-todo/src/types.ts:31"
       ]
     },
     {
@@ -37456,12 +36262,8 @@
           }
         ]
       },
-      "names": [
-        "event:session/title.type"
-      ],
-      "sources": [
-        "packages/core/session/src/types.ts:467"
-      ]
+      "names": [],
+      "sources": []
     },
     {
       "digest": "7af85bf70d4eafce63e739adae38ea85501e68df3a0e22f97f3a0be90fd9e4cb",
@@ -37585,7 +36387,7 @@
         "packages/feedback/message-feedback/src/types.ts#MessageFeedbackDelete"
       ],
       "sources": [
-        "packages/core/session/src/types.ts:472"
+        "packages/feedback/message-feedback/src/types.ts:46"
       ]
     },
     {
@@ -37822,7 +36624,7 @@
         "packages/goal/goal/src/domain.ts#GoalChangeMeta"
       ],
       "sources": [
-        "packages/core/session/src/types.ts:472"
+        "packages/goal/goal/src/domain.ts:44"
       ]
     },
     {
@@ -37896,7 +36698,7 @@
         "packages/feedback/command-feedback/src/types.ts#FeedbackRecord"
       ],
       "sources": [
-        "packages/core/session/src/types.ts:472"
+        "packages/feedback/command-feedback/src/types.ts:27"
       ]
     },
     {
@@ -37910,12 +36712,8 @@
           }
         ]
       },
-      "names": [
-        "event:agent/inbox/spliced.data.inserted[0].source[15].kind"
-      ],
-      "sources": [
-        "packages/context/session-reference/src/types.ts:14"
-      ]
+      "names": [],
+      "sources": []
     },
     {
       "digest": "7f5f2a8618c2ece530a18b1358b890fb57fb8c35705e47b66bff2296f8c6e889",
@@ -37967,7 +36765,7 @@
         "packages/llm/llm/src/types.ts#ToolSchema"
       ],
       "sources": [
-        "packages/core/session/src/types.ts:238"
+        "packages/llm/llm/src/types.ts:411"
       ]
     },
     {
@@ -38117,7 +36915,7 @@
         "packages/workflow/tool-workflow/src/types.ts#ToolWorkflowRunEndData"
       ],
       "sources": [
-        "packages/core/session/src/types.ts:472"
+        "packages/workflow/tool-workflow/src/types.ts:36"
       ]
     },
     {
@@ -38169,7 +36967,7 @@
         "packages/goal/goal/src/domain.ts#GoalMessageSource"
       ],
       "sources": [
-        "packages/llm/llm/src/message.ts:139"
+        "packages/goal/goal/src/domain.ts:47"
       ]
     },
     {
@@ -38183,12 +36981,8 @@
           }
         ]
       },
-      "names": [
-        "event:approval/decided.data.outcome[2]"
-      ],
-      "sources": [
-        "packages/interaction/user-approval/src/types.ts:57"
-      ]
+      "names": [],
+      "sources": []
     },
     {
       "digest": "814d9434e1ddf9078612b3b34322f26e9363b469213335007f7e9ba7fee9464e",
@@ -38225,7 +37019,7 @@
         "packages/llm/llm/src/types.ts#ReasoningBlock"
       ],
       "sources": [
-        "packages/llm/llm/src/message.ts:137"
+        "packages/llm/llm/src/types.ts:60"
       ]
     },
     {
@@ -38239,12 +37033,8 @@
           }
         ]
       },
-      "names": [
-        "event:agent/inbox/spliced.data.inserted[0].source[11].kind"
-      ],
-      "sources": [
-        "packages/subagent/subagent/src/continuation-messages.ts:16"
-      ]
+      "names": [],
+      "sources": []
     },
     {
       "digest": "829a2fb3be6efd4ba36aef8ed2d381a4c6fb2a0aaf50c823a6f3f8290786b809",
@@ -38257,12 +37047,8 @@
           }
         ]
       },
-      "names": [
-        "event:agent/inbox/spliced.type"
-      ],
-      "sources": [
-        "packages/core/session/src/types.ts:467"
-      ]
+      "names": [],
+      "sources": []
     },
     {
       "digest": "83079c8a3f733ac3fa603eefa0fbb4737ca4d8b69e7e2e7298b60f9ac4098693",
@@ -38359,7 +37145,7 @@
         "packages/context/agent-instructions/src/render.ts#AgentInstructionChange"
       ],
       "sources": [
-        "packages/context/agent-instructions/src/state.ts:45"
+        "packages/context/agent-instructions/src/render.ts:47"
       ]
     },
     {
@@ -38393,7 +37179,7 @@
         "packages/workflow/workflow/src/types.ts#WorkflowStopReason"
       ],
       "sources": [
-        "packages/workflow/tool-workflow/src/types.ts:38"
+        "packages/workflow/workflow/src/types.ts:63"
       ]
     },
     {
@@ -38427,7 +37213,7 @@
         "packages/goal/goal/src/types.ts#GoalBlockReason"
       ],
       "sources": [
-        "packages/goal/goal/src/types.ts:66"
+        "packages/goal/goal/src/types.ts:52"
       ]
     },
     {
@@ -38778,13 +37564,10 @@
         ]
       },
       "names": [
-        "event:agent/inbox/spliced.data.inserted[0].source[9]",
+        "event:agent/inbox/spliced.data.inserted[0].source[7]",
         "event:system/message.data.message.source[6]"
       ],
-      "sources": [
-        "packages/llm/llm/src/message.ts:139",
-        "packages/llm/llm/src/message.ts:160"
-      ]
+      "sources": []
     },
     {
       "digest": "86560bf0779bb2d93975405fe895d9d42c1020ab49fbbd2a06e1b3c74fbbc257",
@@ -39850,9 +38633,7 @@
       "names": [
         "event:agent/inbox/spliced.data.inserted"
       ],
-      "sources": [
-        "packages/core/agent/src/types.ts:91"
-      ]
+      "sources": []
     },
     {
       "digest": "86755151e6c4694ce5ae9511313e1e50f9fb6ead49c67d0a93c056e8650396c4",
@@ -40685,10 +39466,7 @@
         "event:assistant/attempt.data.stream",
         "event:assistant/message.data.stream"
       ],
-      "sources": [
-        "packages/core/session/src/types.ts:326",
-        "packages/core/session/src/types.ts:335"
-      ]
+      "sources": []
     },
     {
       "digest": "86d1d0e9cfebb240421187e3dc37fb71cc38a1501885cf32f8f9adef7b0a2bde",
@@ -40821,7 +39599,7 @@
         "packages/subagent/subagent/src/descriptor.ts#SubagentDescriptorData"
       ],
       "sources": [
-        "packages/core/session/src/types.ts:472"
+        "packages/subagent/subagent/src/descriptor.ts:89"
       ]
     },
     {
@@ -40855,7 +39633,7 @@
         "packages/llm/llm/src/message.ts#ContextSnapshotSection"
       ],
       "sources": [
-        "packages/llm/llm/src/message.ts:88"
+        "packages/llm/llm/src/message.ts:65"
       ]
     },
     {
@@ -40869,12 +39647,8 @@
           }
         ]
       },
-      "names": [
-        "event:team/member.data.member.phase[2]"
-      ],
-      "sources": [
-        "packages/experimental/agent-team/src/types.ts:53"
-      ]
+      "names": [],
+      "sources": []
     },
     {
       "digest": "8725743fcd3db5ddaf3e0aed550cd5d95785d8e30c9d4cbec11b7c90198d3603",
@@ -41728,7 +40502,7 @@
         "event:assistant/attempt.data"
       ],
       "sources": [
-        "packages/core/session/src/types.ts:472"
+        "packages/core/session/src/types.ts:335"
       ]
     },
     {
@@ -41785,7 +40559,7 @@
         "event:assistant/attempt.data.stream[0][3].chunk[3]"
       ],
       "sources": [
-        "packages/llm/llm/src/assistant-stream.ts:44"
+        "packages/llm/llm/src/types.ts:394"
       ]
     },
     {
@@ -41919,7 +40693,7 @@
         "event:permission/preset.data"
       ],
       "sources": [
-        "packages/core/session/src/types.ts:472"
+        "packages/interaction/permission-presets/src/index.ts:54"
       ]
     },
     {
@@ -41982,7 +40756,7 @@
         "event:hook/result.data"
       ],
       "sources": [
-        "packages/core/session/src/types.ts:472"
+        "packages/hooks/hook-protocol/src/types.ts:31"
       ]
     },
     {
@@ -41996,14 +40770,8 @@
           }
         ]
       },
-      "names": [
-        "event:session/title-llm-request.data.messages[0].role[1]",
-        "event:system/message.data.message.role"
-      ],
-      "sources": [
-        "packages/llm/llm/src/message.ts:135",
-        "packages/llm/llm/src/message.ts:159"
-      ]
+      "names": [],
+      "sources": []
     },
     {
       "digest": "8bb8c3751a6ce64b61aba1ec7ae798c00a5803c4d868a0430873216c6569ed52",
@@ -42045,7 +40813,7 @@
         "event:session-log-deepseek/delivery-accepted.data"
       ],
       "sources": [
-        "packages/core/session/src/types.ts:472"
+        "packages/session/session-log-deepseek/src/types.ts:81"
       ]
     },
     {
@@ -42059,12 +40827,8 @@
           }
         ]
       },
-      "names": [
-        "event:command/done.type"
-      ],
-      "sources": [
-        "packages/core/session/src/types.ts:467"
-      ]
+      "names": [],
+      "sources": []
     },
     {
       "digest": "8e8e91646a5cae3fc78f7532a0013ff2088ae47077642c2edd507a508209b8af",
@@ -42110,7 +40874,7 @@
         "packages/schedule/schedule/src/types.ts#OneShotScheduleDispatchChange"
       ],
       "sources": [
-        "packages/core/session/src/types.ts:472"
+        "packages/schedule/schedule/src/types.ts:86"
       ]
     },
     {
@@ -42455,7 +41219,7 @@
         "packages/llm/llm/src/types.ts#ImageBlock"
       ],
       "sources": [
-        "packages/llm/llm/src/message.ts:137"
+        "packages/llm/llm/src/types.ts:71"
       ]
     },
     {
@@ -42502,9 +41266,7 @@
       "names": [
         "event:web/deepseek-search-llm-request.data.body.messages[0].content"
       ],
-      "sources": [
-        "packages/web/web-search-deepseek/src/provider.ts:67"
-      ]
+      "sources": []
     },
     {
       "digest": "904bf499d98be4a3a5f836fcac533b6c4899569b018071e6604e1d32657d00fd",
@@ -42536,9 +41298,7 @@
       "names": [
         "event:agent/inbox/spliced.data.inserted[0].source[17].changes[0].action"
       ],
-      "sources": [
-        "packages/context/agent-instructions/src/render.ts:48"
-      ]
+      "sources": []
     },
     {
       "digest": "9096d1dd86a3da77a593e12cd95e596b2ef965fa94fcbee40e4bdcf0433924a1",
@@ -42650,7 +41410,7 @@
         "event:llm/retry.data[0]"
       ],
       "sources": [
-        "packages/core/session/src/types.ts:472"
+        "packages/llm/llm-retry/src/types.ts:17"
       ]
     },
     {
@@ -43048,7 +41808,7 @@
         "packages/interaction/user-approval/src/types.ts#ApprovalOutcome"
       ],
       "sources": [
-        "packages/interaction/user-approval/src/types.ts:57"
+        "packages/interaction/user-approval/src/types.ts:32"
       ]
     },
     {
@@ -43062,12 +41822,8 @@
           }
         ]
       },
-      "names": [
-        "event:web/deepseek-search-llm-request.data.body.tools[0].name"
-      ],
-      "sources": [
-        "packages/web/web-search-deepseek/src/provider.ts:74"
-      ]
+      "names": [],
+      "sources": []
     },
     {
       "digest": "938f7c7357bc403ea3b281a9dd016939df7a0880fc8db12612585be574d0d615",
@@ -43080,17 +41836,8 @@
           }
         ]
       },
-      "names": [
-        "event:agent/inbox/spliced.data.inserted[0].source[15].references[0].capturedThroughSeq[0]",
-        "event:compaction/end.data.turn[0]",
-        "event:tool/result.data.meta[0]",
-        "event:tool/result.data.meta[5][0][0]"
-      ],
-      "sources": [
-        "packages/compaction/compaction/src/types.ts:72",
-        "packages/context/session-reference/src/types.ts:23",
-        "packages/core/session/src/types.ts:359"
-      ]
+      "names": [],
+      "sources": []
     },
     {
       "digest": "93c33d9687613293f8c95d46c4d922fe9ceae83b84c384beff5c3315abe005f2",
@@ -43117,16 +41864,7 @@
         "event:team/task.data.task.blockedBy",
         "event:team/task.data.task.writeScopes"
       ],
-      "sources": [
-        "packages/core/tools/src/index.ts:675",
-        "packages/core/tools/src/index.ts:677",
-        "packages/experimental/agent-team/src/types.ts:81",
-        "packages/experimental/agent-team/src/types.ts:82",
-        "packages/llm/llm/src/assistant-stream.ts:26",
-        "packages/llm/llm/src/assistant-stream.ts:33",
-        "packages/llm/llm/src/assistant-stream.ts:42",
-        "packages/llm/llm/src/call-config.ts:29"
-      ]
+      "sources": []
     },
     {
       "digest": "93cbbc5a7fd0b1aa1ff1b9a6bb5ec52b073f48e5a5200365c45c0cd54059e1b9",
@@ -43184,7 +41922,7 @@
         "event:approval/decided.data"
       ],
       "sources": [
-        "packages/core/session/src/types.ts:472"
+        "packages/interaction/user-approval/src/types.ts:55"
       ]
     },
     {
@@ -43198,13 +41936,8 @@
           }
         ]
       },
-      "names": [
-        "event:subagent/catalog.data[0].version",
-        "event:subagent/catalog.data[1].version"
-      ],
-      "sources": [
-        "packages/subagent/subagent/src/catalog.ts:26"
-      ]
+      "names": [],
+      "sources": []
     },
     {
       "digest": "94c56aeb1564ad735eb773d88636b40761d063efa1610f1308004d32923f5378",
@@ -43217,14 +41950,8 @@
           }
         ]
       },
-      "names": [
-        "event:team/task.data.task.status[2]",
-        "event:todo/write.data.todos[0].status[2]"
-      ],
-      "sources": [
-        "packages/experimental/agent-team/src/types.ts:79",
-        "packages/todo/tool-todo/src/types.ts:25"
-      ]
+      "names": [],
+      "sources": []
     },
     {
       "digest": "95080295115fbd83544520ba247b68a03790131f6a2eac323d388758cb542f65",
@@ -43270,7 +41997,7 @@
         "event:assistant/attempt.data.stream[0][3].chunk[1]"
       ],
       "sources": [
-        "packages/llm/llm/src/assistant-stream.ts:44"
+        "packages/llm/llm/src/types.ts:392"
       ]
     },
     {
@@ -43284,14 +42011,8 @@
           }
         ]
       },
-      "names": [
-        "event:assistant/message.data.message.role",
-        "event:session/title-llm-request.data.messages[0].role[2]"
-      ],
-      "sources": [
-        "packages/llm/llm/src/message.ts:135",
-        "packages/llm/llm/src/message.ts:149"
-      ]
+      "names": [],
+      "sources": []
     },
     {
       "digest": "966fad765834f62051ad6f6a100f7ea38abe5f40f7ef3ae0b6dca0e31c7549a5",
@@ -43634,7 +42355,7 @@
         "packages/llm/llm/src/message.ts#ToolResultMessage"
       ],
       "sources": [
-        "packages/core/session/src/types.ts:356"
+        "packages/llm/llm/src/message.ts:164"
       ]
     },
     {
@@ -43663,7 +42384,7 @@
         "packages/core/agent/src/types.ts#InboxTarget"
       ],
       "sources": [
-        "packages/core/agent/src/types.ts:88"
+        "packages/core/agent/src/types.ts:30"
       ]
     },
     {
@@ -43717,7 +42438,7 @@
         "event:sandbox/mode.data"
       ],
       "sources": [
-        "packages/core/session/src/types.ts:472"
+        "packages/sandbox/sandbox-policy/src/session-mode.ts:33"
       ]
     },
     {
@@ -44390,7 +43111,7 @@
         "packages/llm/llm/src/types.ts#StreamChunk"
       ],
       "sources": [
-        "packages/llm/llm/src/assistant-stream.ts:44"
+        "packages/llm/llm/src/types.ts:390"
       ]
     },
     {
@@ -44613,7 +43334,7 @@
         "packages/workflow/tool-workflow/src/types.ts#ToolWorkflowAgentStartData"
       ],
       "sources": [
-        "packages/core/session/src/types.ts:472"
+        "packages/workflow/tool-workflow/src/types.ts:20"
       ]
     },
     {
@@ -44627,12 +43348,8 @@
           }
         ]
       },
-      "names": [
-        "event:assistant/attempt.data.stream[0][3].chunk[3].type"
-      ],
-      "sources": [
-        "packages/llm/llm/src/types.ts:394"
-      ]
+      "names": [],
+      "sources": []
     },
     {
       "digest": "9bdd77f2b39d9ae47be71e494eca8c9e950b0e99b89a4539f86c4a0e7d1398b6",
@@ -44915,8 +43632,7 @@
         "packages/llm/llm/src/types.ts#ToolResultBlock"
       ],
       "sources": [
-        "packages/llm/llm/src/message.ts:137",
-        "packages/llm/llm/src/message.ts:166"
+        "packages/llm/llm/src/types.ts:101"
       ]
     },
     {
@@ -44930,14 +43646,8 @@
           }
         ]
       },
-      "names": [
-        "event:feedback/message-put.data.item.category[0]",
-        "event:feedback/record.data.category[0]"
-      ],
-      "sources": [
-        "packages/feedback/command-feedback/src/types.ts:31",
-        "packages/feedback/message-feedback/src/types.ts:28"
-      ]
+      "names": [],
+      "sources": []
     },
     {
       "digest": "9e07693fd7cd9babe0688c22c986e4d519ae1c0e40eeea13b2dc583bed2abc86",
@@ -44950,12 +43660,8 @@
           }
         ]
       },
-      "names": [
-        "event:approval/policy.data.policy[1]"
-      ],
-      "sources": [
-        "packages/interaction/user-approval/src/index.ts:34"
-      ]
+      "names": [],
+      "sources": []
     },
     {
       "digest": "9e41386b3a0c9572b0d63078492ebb3997da7d3a830d44e0259418bd02f4bcb2",
@@ -45058,7 +43764,7 @@
         "event:agent/inbox/spliced.data.inserted[0].source[19]"
       ],
       "sources": [
-        "packages/llm/llm/src/message.ts:139"
+        "packages/webhook/webhook/src/types.ts:74"
       ]
     },
     {
@@ -45072,18 +43778,8 @@
           }
         ]
       },
-      "names": [
-        "event:team/member.data.version",
-        "event:team/message/delivered.data.version",
-        "event:team/message/queued.data.version",
-        "event:team/task.data.version"
-      ],
-      "sources": [
-        "packages/experimental/agent-team/src/types.ts:221",
-        "packages/experimental/agent-team/src/types.ts:223",
-        "packages/experimental/agent-team/src/types.ts:225",
-        "packages/experimental/agent-team/src/types.ts:228"
-      ]
+      "names": [],
+      "sources": []
     },
     {
       "digest": "a1082bd67be26461ebcc4cc9caba60ef548cd6ec625b51558d5cfa5b6b38718a",
@@ -45502,7 +44198,7 @@
         "event:tool/result.data"
       ],
       "sources": [
-        "packages/core/session/src/types.ts:472"
+        "packages/core/session/src/types.ts:353"
       ]
     },
     {
@@ -45586,12 +44282,8 @@
           }
         ]
       },
-      "names": [
-        "event:agent/inbox/spliced.data.inserted[0].source[1].kind"
-      ],
-      "sources": [
-        "packages/llm/llm/src/message.ts:30"
-      ]
+      "names": [],
+      "sources": []
     },
     {
       "digest": "a2418dd9dd938f04a3eaf1f27694b33facfb931b6e495dcfb4d5fcfa2ef82b28",
@@ -46524,7 +45216,7 @@
         "event:assistant/message.data"
       ],
       "sources": [
-        "packages/core/session/src/types.ts:472"
+        "packages/core/session/src/types.ts:321"
       ]
     },
     {
@@ -46538,18 +45230,8 @@
           }
         ]
       },
-      "names": [
-        "event:assistant/attempt.data.stream[0][3].chunk[6].reason[4].kind",
-        "event:command/done.data.kind[0]",
-        "event:tool-workflow/run-end.data.stopReason[1]",
-        "event:turn/end.data.reason[3].kind"
-      ],
-      "sources": [
-        "packages/core/session/src/types.ts:211",
-        "packages/interaction/commands/src/types.ts:114",
-        "packages/llm/llm/src/types.ts:135",
-        "packages/workflow/tool-workflow/src/types.ts:38"
-      ]
+      "names": [],
+      "sources": []
     },
     {
       "digest": "a3a259a1aa5401af786ce08c4a8419681d3000d73467991b5fc563389bc4ebd2",
@@ -46562,12 +45244,8 @@
           }
         ]
       },
-      "names": [
-        "event:hook/result.type"
-      ],
-      "sources": [
-        "packages/core/session/src/types.ts:467"
-      ]
+      "names": [],
+      "sources": []
     },
     {
       "digest": "a3edd1efd1fef21b72c55e213c8a8b24196b091abde2b89db52be0b2aaae3cfa",
@@ -46580,12 +45258,8 @@
           }
         ]
       },
-      "names": [
-        "event:sandbox/mode.data.mode[1]"
-      ],
-      "sources": [
-        "packages/sandbox/sandbox-policy/src/session-mode.ts:34"
-      ]
+      "names": [],
+      "sources": []
     },
     {
       "digest": "a40d12070f6f4a124f32fb3cc86e7857554702e32f0eda3080a25c4b9ac9b18c",
@@ -46706,7 +45380,7 @@
         "event:team/task.data"
       ],
       "sources": [
-        "packages/core/session/src/types.ts:472"
+        "packages/experimental/agent-team/src/types.ts:223"
       ]
     },
     {
@@ -46903,7 +45577,7 @@
         "event:assistant/attempt.data.stream[0][3].chunk[6]"
       ],
       "sources": [
-        "packages/llm/llm/src/assistant-stream.ts:44"
+        "packages/llm/llm/src/types.ts:397"
       ]
     },
     {
@@ -48030,7 +46704,7 @@
         "packages/hooks/hook-protocol/src/types.ts#HookDialect"
       ],
       "sources": [
-        "packages/hooks/hook-protocol/src/types.ts:22"
+        "packages/hooks/hook-protocol/src/types.ts:48"
       ]
     },
     {
@@ -48064,7 +46738,7 @@
         "packages/workflow/tool-workflow/src/types.ts#ToolWorkflowRunStartData"
       ],
       "sources": [
-        "packages/core/session/src/types.ts:472"
+        "packages/workflow/tool-workflow/src/types.ts:14"
       ]
     },
     {
@@ -48193,7 +46867,7 @@
         "event:command/run.data"
       ],
       "sources": [
-        "packages/core/session/src/types.ts:472"
+        "packages/interaction/commands/src/types.ts:105"
       ]
     },
     {
@@ -48207,12 +46881,8 @@
           }
         ]
       },
-      "names": [
-        "event:team/message/delivered.type"
-      ],
-      "sources": [
-        "packages/core/session/src/types.ts:467"
-      ]
+      "names": [],
+      "sources": []
     },
     {
       "digest": "a99f76fd149051c363f960bfeeb5b9509587ecaf7591a42797e4bfe810d8987a",
@@ -48265,7 +46935,7 @@
         "packages/todo/tool-todo/src/types.ts#TodoItem"
       ],
       "sources": [
-        "packages/todo/tool-todo/src/types.ts:31"
+        "packages/todo/tool-todo/src/types.ts:21"
       ]
     },
     {
@@ -48465,7 +47135,7 @@
         "packages/feedback/message-feedback/src/types.ts#MessageFeedbackPut"
       ],
       "sources": [
-        "packages/core/session/src/types.ts:472"
+        "packages/feedback/message-feedback/src/types.ts:38"
       ]
     },
     {
@@ -48479,23 +47149,8 @@
           }
         ]
       },
-      "names": [
-        "JsonlHeaderLine.isSeeded",
-        "SessionHeader.isSeeded",
-        "event:agent/inbox/spliced.data.inserted[0].content[0][5].isError",
-        "event:agent/inbox/spliced.data.inserted[0].source[15].references[0].compacted",
-        "event:agent/inbox/spliced.data.inserted[0].source[15].references[0].truncated",
-        "event:plan/mode.data.active",
-        "event:tool/ptc-dispatch.data.isError"
-      ],
-      "sources": [
-        "packages/context/session-reference/src/types.ts:24",
-        "packages/context/session-reference/src/types.ts:29",
-        "packages/core/session/src/types.ts:111",
-        "packages/core/tools/src/types.ts:21",
-        "packages/plan/plan-mode/src/index.ts:47",
-        "packages/session/session-persistence-jsonl/src/format.ts:89"
-      ]
+      "names": [],
+      "sources": []
     },
     {
       "digest": "aacda84a69739238aa782eea902d3073017d9d74b9808de2bf5a83c9738cbdc6",
@@ -48508,14 +47163,8 @@
           }
         ]
       },
-      "names": [
-        "JsonlHeaderLine.origin",
-        "SessionHeader.origin"
-      ],
-      "sources": [
-        "packages/core/session/src/types.ts:116",
-        "packages/session/session-persistence-jsonl/src/format.ts:90"
-      ]
+      "names": [],
+      "sources": []
     },
     {
       "digest": "ab7ec5f9eb2c6dfacca5da4c37cf7ba85d04172053ee6b1ebf1709ffcd99c1a7",
@@ -48544,8 +47193,8 @@
         "event:turn/end.data.reason[4]"
       ],
       "sources": [
-        "packages/core/session/src/types.ts:285",
-        "packages/llm/llm/src/types.ts:399"
+        "packages/core/session/src/types.ts:213",
+        "packages/llm/llm/src/types.ts:133"
       ]
     },
     {
@@ -48582,9 +47231,7 @@
       "names": [
         "event:agent/inbox/spliced.data.inserted[0].source[16].entries"
       ],
-      "sources": [
-        "packages/skill/tool-skill/src/index.ts:40"
-      ]
+      "sources": []
     },
     {
       "digest": "ac5a8baa3dda8fa667b4975d6a8b40a9bde47d8d754ca8ed6b8ce923a1651828",
@@ -48983,9 +47630,7 @@
       "names": [
         "event:compaction/summary.data[1]"
       ],
-      "sources": [
-        "packages/core/session/src/types.ts:472"
-      ]
+      "sources": []
     },
     {
       "digest": "acd36e1717d2b4ef9e98a8e6fac17ca1203f3f448e5bca51677f129a8f4999e2",
@@ -49017,9 +47662,7 @@
       "names": [
         "event:session/title-llm-request.data.messages[0].role"
       ],
-      "sources": [
-        "packages/llm/llm/src/message.ts:135"
-      ]
+      "sources": []
     },
     {
       "digest": "ad22a5ca5bbaab2e1440779cd3648e85ddfc6f73b5207394eda699555cf31430",
@@ -49032,12 +47675,8 @@
           }
         ]
       },
-      "names": [
-        "event:goal/change.data[0].operation[1]"
-      ],
-      "sources": [
-        "packages/goal/goal/src/domain.ts:27"
-      ]
+      "names": [],
+      "sources": []
     },
     {
       "digest": "ad3b56aa2fc1ad4250e7399295d34a8eae592e1907e85852e2291b2e498a30bc",
@@ -49050,12 +47689,8 @@
           }
         ]
       },
-      "names": [
-        "event:turn/end.data.reason[1].reason[4].kind"
-      ],
-      "sources": [
-        "packages/core/session/src/types.ts:195"
-      ]
+      "names": [],
+      "sources": []
     },
     {
       "digest": "ad92f473a03ae72599ff26c86e897c25e16269519ad2a87340f0bea946517af8",
@@ -49068,12 +47703,8 @@
           }
         ]
       },
-      "names": [
-        "event:tool-workflow/agent-start.type"
-      ],
-      "sources": [
-        "packages/core/session/src/types.ts:467"
-      ]
+      "names": [],
+      "sources": []
     },
     {
       "digest": "ada310bf0bdb8fed51f3b56ea63f6ea6b18bbd587f04fccb63a14ab0b2a24e05",
@@ -49098,16 +47729,17 @@
         ]
       },
       "names": [
-        "event:agent/inbox/spliced.data.inserted[0].source[2]",
-        "event:command/run.data.source",
+        "event:agent/inbox/spliced.data.inserted[0].source[0]",
         "event:session/title.data.source[2]",
-        "event:turn/end.data.reason[1].reason[0]"
+        "event:turn/end.data.reason[1].reason[0]",
+        "packages/interaction/commands/src/types.ts#CommandSource"
       ],
       "sources": [
-        "packages/core/session/src/types.ts:203",
-        "packages/interaction/commands/src/types.ts:105",
-        "packages/llm/llm/src/message.ts:139",
-        "packages/session/session-title/src/types.ts:47"
+        "packages/core/session/src/types.ts:189",
+        "packages/interaction/commands/src/types.ts:75",
+        "packages/interaction/commands/src/types.ts:79",
+        "packages/llm/llm/src/message.ts:103",
+        "packages/session/session-title/src/types.ts:35"
       ]
     },
     {
@@ -49261,12 +47893,8 @@
           }
         ]
       },
-      "names": [
-        "event:permission/preset.type"
-      ],
-      "sources": [
-        "packages/core/session/src/types.ts:467"
-      ]
+      "names": [],
+      "sources": []
     },
     {
       "digest": "aec150797b655c5f15ebb7a501454b0c208fbaccec9ace49d7de2171fc02f47d",
@@ -49279,14 +47907,8 @@
           }
         ]
       },
-      "names": [
-        "event:agent/inbox/spliced.data.inserted[0].source[16].form",
-        "event:agent/inbox/spliced.data.inserted[0].source[5].form"
-      ],
-      "sources": [
-        "packages/llm/llm/src/message.ts:84",
-        "packages/skill/tool-skill/src/index.ts:36"
-      ]
+      "names": [],
+      "sources": []
     },
     {
       "digest": "af0750d32d97d47b12b7361a587db41894b17e04c9a805fe212f0114aa2248c7",
@@ -49299,12 +47921,8 @@
           }
         ]
       },
-      "names": [
-        "event:todo/write.type"
-      ],
-      "sources": [
-        "packages/core/session/src/types.ts:467"
-      ]
+      "names": [],
+      "sources": []
     },
     {
       "digest": "aff60ef947c18b012644852bdd0d5bfe72065e061dd563787c76c646b4a10f6b",
@@ -49317,12 +47935,8 @@
           }
         ]
       },
-      "names": [
-        "event:hook/invoked.data.dialect[0]"
-      ],
-      "sources": [
-        "packages/hooks/hook-protocol/src/types.ts:22"
-      ]
+      "names": [],
+      "sources": []
     },
     {
       "digest": "b0127044ab31a702bddfd785d345f5abd7a70876746e895ce443afa3e60ddf2d",
@@ -49521,7 +48135,7 @@
         "packages/attachment/attachment/src/types.ts#ImageAttachmentRef"
       ],
       "sources": [
-        "packages/llm/llm/src/types.ts:74"
+        "packages/attachment/attachment/src/types.ts:11"
       ]
     },
     {
@@ -49573,7 +48187,7 @@
         "packages/core/session/src/types.ts#RequestContext"
       ],
       "sources": [
-        "packages/core/session/src/types.ts:472"
+        "packages/core/session/src/types.ts:242"
       ]
     },
     {
@@ -49594,9 +48208,7 @@
       "names": [
         "event:assistant/attempt.data.stream[0][3].chunk[6].replayState.blocks"
       ],
-      "sources": [
-        "packages/llm/llm/src/types.ts:379"
-      ]
+      "sources": []
     },
     {
       "digest": "b1ebd5cda47d90d980bb05bffc3f970c51537b9aff15b3bc3d639811727741b1",
@@ -49714,7 +48326,7 @@
         "event:team/member.data"
       ],
       "sources": [
-        "packages/core/session/src/types.ts:472"
+        "packages/experimental/agent-team/src/types.ts:221"
       ]
     },
     {
@@ -49728,12 +48340,8 @@
           }
         ]
       },
-      "names": [
-        "event:feedback/message-put.data.item.rating[1]"
-      ],
-      "sources": [
-        "packages/feedback/message-feedback/src/types.ts:24"
-      ]
+      "names": [],
+      "sources": []
     },
     {
       "digest": "b2d2a01e51341a3bfec809198952c8c830a7899f4cb6ecd3c1dc0b5d9a2af943",
@@ -49771,7 +48379,7 @@
         "packages/experimental/agent-team/src/types.ts#TeamTaskStatus"
       ],
       "sources": [
-        "packages/experimental/agent-team/src/types.ts:79"
+        "packages/experimental/agent-team/src/types.ts:71"
       ]
     },
     {
@@ -49785,12 +48393,8 @@
           }
         ]
       },
-      "names": [
-        "event:turn/end.data.reason[1].reason[3].kind"
-      ],
-      "sources": [
-        "packages/core/session/src/types.ts:192"
-      ]
+      "names": [],
+      "sources": []
     },
     {
       "digest": "b4d298d90c798fa4d1f5b030ce3ce8031c4c41beafdb05323bec8b2a06903b43",
@@ -49838,13 +48442,10 @@
         ]
       },
       "names": [
-        "event:agent/inbox/spliced.data.inserted[0].source[7]",
+        "event:agent/inbox/spliced.data.inserted[0].source[5]",
         "event:system/message.data.message.source[4]"
       ],
-      "sources": [
-        "packages/llm/llm/src/message.ts:139",
-        "packages/llm/llm/src/message.ts:160"
-      ]
+      "sources": []
     },
     {
       "digest": "b5086d249e8502e9ead1d39156bb8d559bde7951cac0f14ce150345b4e42a2bf",
@@ -50255,7 +48856,7 @@
         "packages/session/session-title/src/types.ts#SessionTitleEventData"
       ],
       "sources": [
-        "packages/core/session/src/types.ts:472"
+        "packages/session/session-title/src/types.ts:41"
       ]
     },
     {
@@ -50269,14 +48870,8 @@
           }
         ]
       },
-      "names": [
-        "event:team/member.data.member.phase[0]",
-        "event:tool-workflow/agent-end.data.outcome[1]"
-      ],
-      "sources": [
-        "packages/experimental/agent-team/src/types.ts:53",
-        "packages/workflow/tool-workflow/src/types.ts:32"
-      ]
+      "names": [],
+      "sources": []
     },
     {
       "digest": "b57ae1b37e52bee0a21cbdace168dc6a15582bcda8c306dad962c5dcc8a8e28b",
@@ -50289,12 +48884,8 @@
           }
         ]
       },
-      "names": [
-        "event:team/task.type"
-      ],
-      "sources": [
-        "packages/core/session/src/types.ts:467"
-      ]
+      "names": [],
+      "sources": []
     },
     {
       "digest": "b6ef9c6210be8350cd465f485cf520031fffa6bf3809c61a1e713e834c5982d0",
@@ -50322,7 +48913,7 @@
         "event:turn/end.data.reason[0]"
       ],
       "sources": [
-        "packages/core/session/src/types.ts:285"
+        "packages/core/session/src/types.ts:201"
       ]
     },
     {
@@ -50336,12 +48927,8 @@
           }
         ]
       },
-      "names": [
-        "event:agent/inbox/spliced.data.inserted[0].source[17].changes[0].action[2]"
-      ],
-      "sources": [
-        "packages/context/agent-instructions/src/render.ts:48"
-      ]
+      "names": [],
+      "sources": []
     },
     {
       "digest": "b79ada42962cad0190a9d465805260567621fa3a4abd757eb31e6016b52d5ab5",
@@ -50525,12 +49112,8 @@
           }
         ]
       },
-      "names": [
-        "event:agent/inbox/spliced.data.inserted[0].source[14].kind"
-      ],
-      "sources": [
-        "packages/goal/goal/src/domain.ts:48"
-      ]
+      "names": [],
+      "sources": []
     },
     {
       "digest": "b81e9de81a481b24e1e1f9adf038bfc59e57b4f35ce62f8f1e45284186f4f812",
@@ -50588,7 +49171,7 @@
         "event:session/title.data.source[1]"
       ],
       "sources": [
-        "packages/session/session-title/src/types.ts:47"
+        "packages/session/session-title/src/types.ts:30"
       ]
     },
     {
@@ -50627,7 +49210,7 @@
         "packages/goal/goal/src/types.ts#GoalPhase"
       ],
       "sources": [
-        "packages/goal/goal/src/types.ts:64"
+        "packages/goal/goal/src/types.ts:45"
       ]
     },
     {
@@ -50661,7 +49244,7 @@
         "packages/fs/tool-present/src/types.ts#PresentedFile"
       ],
       "sources": [
-        "packages/fs/tool-present/src/types.ts:15"
+        "packages/fs/tool-present/src/types.ts:5"
       ]
     },
     {
@@ -50675,12 +49258,8 @@
           }
         ]
       },
-      "names": [
-        "event:hook/invoked.type"
-      ],
-      "sources": [
-        "packages/core/session/src/types.ts:467"
-      ]
+      "names": [],
+      "sources": []
     },
     {
       "digest": "b978cff734e62143eb56c9125423ec275405eda969802d42aaf73ecb987d3b26",
@@ -50866,9 +49445,7 @@
       "names": [
         "event:web/deepseek-search-llm-request.data.body.messages"
       ],
-      "sources": [
-        "packages/web/web-search-deepseek/src/provider.ts:65"
-      ]
+      "sources": []
     },
     {
       "digest": "ba77b58995e36f14bb13886b0493d0a1a63d5db10b1a6cd9f6ac65a72cf832ec",
@@ -50904,9 +49481,7 @@
       "names": [
         "event:subagent/model-selection-policy.data.allowedModels"
       ],
-      "sources": [
-        "packages/subagent/tool-subagent/src/model-selection-state.ts:19"
-      ]
+      "sources": []
     },
     {
       "digest": "babf9ee4d1af62bf6c3a8103737f7a5e4e78ce179be835ce05a38803e15884b7",
@@ -51120,20 +49695,14 @@
         ]
       },
       "names": [
-        "event:agent/inbox/spliced.data.inserted[0].source[0].replayState",
+        "event:agent/inbox/spliced.data.inserted[0].source[8].replayState",
         "event:assistant/attempt.data.stream[0][3].chunk[6].replayState.blocks[0]",
         "event:assistant/attempt.data.stream[0][3].chunk[6].replayState.response",
         "event:request/header.data.header.tools[0].parameters.[value]",
         "event:tool/ptc-dispatch-start.data.arguments",
         "event:tool/ptc-dispatch.data.arguments"
       ],
-      "sources": [
-        "packages/core/tools/src/types.ts:16",
-        "packages/llm/llm/src/message.ts:20",
-        "packages/llm/llm/src/types.ts:370",
-        "packages/llm/llm/src/types.ts:379",
-        "packages/llm/llm/src/types.ts:415"
-      ]
+      "sources": []
     },
     {
       "digest": "bcf0caf62d964b2fcf5404bd5c909cfa9a21c3f3c96e6b7e36d9e33565223825",
@@ -51175,7 +49744,7 @@
         "SessionEventEnvelope[6].surfaceOp[1]"
       ],
       "sources": [
-        "packages/core/session/src/types.ts:443"
+        "packages/core/session/src/types.ts:436"
       ]
     },
     {
@@ -51189,12 +49758,8 @@
           }
         ]
       },
-      "names": [
-        "event:assistant/attempt.data.stream[0][3].chunk[6].type"
-      ],
-      "sources": [
-        "packages/llm/llm/src/types.ts:398"
-      ]
+      "names": [],
+      "sources": []
     },
     {
       "digest": "bf16d2e98a7f13894ded2cffe5ce857bf473954a0e3c0ed9bc7739e2e1c7b78a",
@@ -51207,12 +49772,8 @@
           }
         ]
       },
-      "names": [
-        "event:agent/inbox/spliced.data.inserted[0].source[12].kind"
-      ],
-      "sources": [
-        "packages/subagent/subagent/src/continuation-messages.ts:31"
-      ]
+      "names": [],
+      "sources": []
     },
     {
       "digest": "c0ea97bc89dfc46fa94eab956f5c3ee6af2f964aa7db6327cb18b451f207bef7",
@@ -51274,7 +49835,7 @@
         "packages/workflow/tool-workflow/src/types.ts#ToolWorkflowAgentEndData"
       ],
       "sources": [
-        "packages/core/session/src/types.ts:472"
+        "packages/workflow/tool-workflow/src/types.ts:29"
       ]
     },
     {
@@ -51382,7 +49943,7 @@
         "event:llm/retry.data[1]"
       ],
       "sources": [
-        "packages/core/session/src/types.ts:472"
+        "packages/llm/llm-retry/src/types.ts:30"
       ]
     },
     {
@@ -51430,7 +49991,7 @@
         "packages/llm/llm/src/types.ts#ToolCallBlock"
       ],
       "sources": [
-        "packages/llm/llm/src/message.ts:137"
+        "packages/llm/llm/src/types.ts:91"
       ]
     },
     {
@@ -51519,12 +50080,8 @@
           }
         ]
       },
-      "names": [
-        "event:step/end.type"
-      ],
-      "sources": [
-        "packages/core/session/src/types.ts:467"
-      ]
+      "names": [],
+      "sources": []
     },
     {
       "digest": "c2deb7c9183735d4e0fffddf5c623f4e34daa1c8e96b111982e957dfcbbcf896",
@@ -51557,7 +50114,7 @@
         "packages/workflow/workflow/src/types.ts#WorkflowAgentOutcome"
       ],
       "sources": [
-        "packages/workflow/tool-workflow/src/types.ts:32"
+        "packages/workflow/workflow/src/types.ts:110"
       ]
     },
     {
@@ -51571,12 +50128,8 @@
           }
         ]
       },
-      "names": [
-        "event:goal/change.data[0].goal.phase[3]"
-      ],
-      "sources": [
-        "packages/goal/goal/src/types.ts:64"
-      ]
+      "names": [],
+      "sources": []
     },
     {
       "digest": "c55a891c7aac496de6ee64c91c1fb65728c977314013033e42c863428aada854",
@@ -51717,7 +50270,7 @@
         "packages/core/session/src/types.ts#EpochHeader"
       ],
       "sources": [
-        "packages/core/session/src/types.ts:366"
+        "packages/core/session/src/types.ts:232"
       ]
     },
     {
@@ -51731,12 +50284,8 @@
           }
         ]
       },
-      "names": [
-        "event:tool/call.type"
-      ],
-      "sources": [
-        "packages/core/session/src/types.ts:467"
-      ]
+      "names": [],
+      "sources": []
     },
     {
       "digest": "c592ce75aab73fcab19c1d7845684c72cf402b78d2e1f2833a58ecf9f3598ed6",
@@ -51791,7 +50340,7 @@
         "packages/util/values/src/index.ts#JsonValue"
       ],
       "sources": [
-        "packages/core/session/src/types.ts:359"
+        "packages/util/values/src/index.ts:4"
       ]
     },
     {
@@ -51826,11 +50375,9 @@
         ]
       },
       "names": [
-        "event:agent/inbox/spliced.data.inserted[0].source[6].sections"
+        "event:agent/inbox/spliced.data.inserted[0].source[4].sections"
       ],
-      "sources": [
-        "packages/llm/llm/src/message.ts:88"
-      ]
+      "sources": []
     },
     {
       "digest": "c8e6f48878cc2a2f0dc59682280d81f407943fb503f32c64bf9ff3d9393c3eff",
@@ -51843,14 +50390,8 @@
           }
         ]
       },
-      "names": [
-        "event:goal/change.data[0].goal.phase[2]",
-        "event:team/member.data.member.phase[1]"
-      ],
-      "sources": [
-        "packages/experimental/agent-team/src/types.ts:53",
-        "packages/goal/goal/src/types.ts:64"
-      ]
+      "names": [],
+      "sources": []
     },
     {
       "digest": "c99e20441bf15341e9db54385e558e5c03d21dff2eb1ac08ccbf47c2d8747954",
@@ -51863,12 +50404,8 @@
           }
         ]
       },
-      "names": [
-        "event:feedback/record.type"
-      ],
-      "sources": [
-        "packages/core/session/src/types.ts:467"
-      ]
+      "names": [],
+      "sources": []
     },
     {
       "digest": "ca085dba2c877feceebf3c62f9d39c6c2a4d2314d97b94b3927a780fe8fe2bb2",
@@ -51881,12 +50418,8 @@
           }
         ]
       },
-      "names": [
-        "event:sandbox/mode.type"
-      ],
-      "sources": [
-        "packages/core/session/src/types.ts:467"
-      ]
+      "names": [],
+      "sources": []
     },
     {
       "digest": "ca13866102dfc53a503fccddeebc9caf667b8a06ef27217dd65de29f0495e65d",
@@ -51955,10 +50488,10 @@
         ]
       },
       "names": [
-        "event:assistant/attempt.data.stream[0][3].chunk[6].reason[4]"
+        "event:assistant/attempt.data.stream[0][3].chunk[6].reason[1]"
       ],
       "sources": [
-        "packages/llm/llm/src/types.ts:399"
+        "packages/llm/llm/src/types.ts:135"
       ]
     },
     {
@@ -52017,7 +50550,7 @@
         "event:compaction/end.data"
       ],
       "sources": [
-        "packages/core/session/src/types.ts:472"
+        "packages/compaction/compaction/src/types.ts:72"
       ]
     },
     {
@@ -52176,7 +50709,7 @@
         "packages/schedule/schedule/src/types.ts#ScheduleCreateChange"
       ],
       "sources": [
-        "packages/core/session/src/types.ts:472"
+        "packages/schedule/schedule/src/types.ts:72"
       ]
     },
     {
@@ -52190,12 +50723,8 @@
           }
         ]
       },
-      "names": [
-        "event:assistant/attempt.data.stream[0][3].chunk[0].type"
-      ],
-      "sources": [
-        "packages/llm/llm/src/types.ts:391"
-      ]
+      "names": [],
+      "sources": []
     },
     {
       "digest": "cc3e270ab982cbafff602b753647b6f056decb7fe4fd523afd2f157a65c3d622",
@@ -52715,12 +51244,8 @@
           }
         ]
       },
-      "names": [
-        "event:approval/asked.type"
-      ],
-      "sources": [
-        "packages/core/session/src/types.ts:467"
-      ]
+      "names": [],
+      "sources": []
     },
     {
       "digest": "cdca80b8dad24d4e7b1d5a288a8475ba8d8d46be385bd2da85f122ee836f1670",
@@ -52733,12 +51258,8 @@
           }
         ]
       },
-      "names": [
-        "event:tool-workflow/run-start.type"
-      ],
-      "sources": [
-        "packages/core/session/src/types.ts:467"
-      ]
+      "names": [],
+      "sources": []
     },
     {
       "digest": "cf6e3aaf1e2de6480aa0157730a41b9a492108a55304100b0f7e112711dd4331",
@@ -53023,7 +51544,7 @@
         "packages/goal/goal/src/domain.ts#GoalClearChangeMeta"
       ],
       "sources": [
-        "packages/core/session/src/types.ts:472"
+        "packages/goal/goal/src/domain.ts:35"
       ]
     },
     {
@@ -53037,12 +51558,8 @@
           }
         ]
       },
-      "names": [
-        "event:schedule/change.data[1].operation"
-      ],
-      "sources": [
-        "packages/schedule/schedule/src/types.ts:81"
-      ]
+      "names": [],
+      "sources": []
     },
     {
       "digest": "d28765f87d6b6ab408e0b2f3e7e297791b004b806d8e302c49903ebae815feb2",
@@ -53055,14 +51572,8 @@
           }
         ]
       },
-      "names": [
-        "event:subagent/catalog.data[0].mode",
-        "event:subagent/descriptor.data[0].mode"
-      ],
-      "sources": [
-        "packages/subagent/subagent/src/catalog.ts:30",
-        "packages/subagent/subagent/src/descriptor.ts:62"
-      ]
+      "names": [],
+      "sources": []
     },
     {
       "digest": "d489162978ec04f1f76f40a68c7715326f46ec4f696edf1f321efdf88545fc18",
@@ -53608,7 +52119,7 @@
         "event:system/message.data"
       ],
       "sources": [
-        "packages/core/session/src/types.ts:472"
+        "packages/core/session/src/types.ts:310"
       ]
     },
     {
@@ -53622,12 +52133,8 @@
           }
         ]
       },
-      "names": [
-        "event:agent/inbox/spliced.data.outcome"
-      ],
-      "sources": [
-        "packages/core/agent/src/types.ts:92"
-      ]
+      "names": [],
+      "sources": []
     },
     {
       "digest": "d595ec73b32b016a6055333c67a5d646032b22e672da1d4a09c5b1ae398a093a",
@@ -53879,12 +52386,8 @@
           }
         ]
       },
-      "names": [
-        "event:session/title.data.source[0].kind"
-      ],
-      "sources": [
-        "packages/session/session-title/src/types.ts:29"
-      ]
+      "names": [],
+      "sources": []
     },
     {
       "digest": "d8f868c6b3e7189de6c1ffe2ea04794ea2aa31315b6347d12536e46020afac87",
@@ -54013,7 +52516,7 @@
         "packages/schedule/schedule/src/types.ts#ScheduleRecord"
       ],
       "sources": [
-        "packages/schedule/schedule/src/types.ts:75"
+        "packages/schedule/schedule/src/types.ts:69"
       ]
     },
     {
@@ -54027,14 +52530,8 @@
           }
         ]
       },
-      "names": [
-        "event:goal/change.data[0].goal.phase[1]",
-        "event:goal/change.data[0].operation[2]"
-      ],
-      "sources": [
-        "packages/goal/goal/src/domain.ts:27",
-        "packages/goal/goal/src/types.ts:64"
-      ]
+      "names": [],
+      "sources": []
     },
     {
       "digest": "d9c462b9f62fdd3efc76a44b9524dc8781f6b91cd9c7e584b17d971defafebab",
@@ -54071,8 +52568,7 @@
         "packages/llm/llm/src/message.ts#ToolMessageSource"
       ],
       "sources": [
-        "packages/llm/llm/src/message.ts:139",
-        "packages/llm/llm/src/message.ts:167"
+        "packages/llm/llm/src/message.ts:29"
       ]
     },
     {
@@ -54452,144 +52948,8 @@
           }
         ]
       },
-      "names": [
-        "SessionEventEnvelope[0].ignorable",
-        "SessionEventEnvelope[10].ignorable",
-        "SessionEventEnvelope[11].ignorable",
-        "SessionEventEnvelope[12].ignorable",
-        "SessionEventEnvelope[13].ignorable",
-        "SessionEventEnvelope[14].ignorable",
-        "SessionEventEnvelope[15].ignorable",
-        "SessionEventEnvelope[16].ignorable",
-        "SessionEventEnvelope[17].ignorable",
-        "SessionEventEnvelope[18].ignorable",
-        "SessionEventEnvelope[19].ignorable",
-        "SessionEventEnvelope[1].ignorable",
-        "SessionEventEnvelope[20].ignorable",
-        "SessionEventEnvelope[21].ignorable",
-        "SessionEventEnvelope[22].ignorable",
-        "SessionEventEnvelope[23].ignorable",
-        "SessionEventEnvelope[24].ignorable",
-        "SessionEventEnvelope[25].ignorable",
-        "SessionEventEnvelope[26].ignorable",
-        "SessionEventEnvelope[27].ignorable",
-        "SessionEventEnvelope[28].ignorable",
-        "SessionEventEnvelope[29].ignorable",
-        "SessionEventEnvelope[2].ignorable",
-        "SessionEventEnvelope[30].ignorable",
-        "SessionEventEnvelope[31].ignorable",
-        "SessionEventEnvelope[32].ignorable",
-        "SessionEventEnvelope[33].ignorable",
-        "SessionEventEnvelope[34].ignorable",
-        "SessionEventEnvelope[35].ignorable",
-        "SessionEventEnvelope[36].ignorable",
-        "SessionEventEnvelope[37].ignorable",
-        "SessionEventEnvelope[38].ignorable",
-        "SessionEventEnvelope[39].ignorable",
-        "SessionEventEnvelope[3].ignorable",
-        "SessionEventEnvelope[40].ignorable",
-        "SessionEventEnvelope[41].ignorable",
-        "SessionEventEnvelope[42].ignorable",
-        "SessionEventEnvelope[43].ignorable",
-        "SessionEventEnvelope[44].ignorable",
-        "SessionEventEnvelope[45].ignorable",
-        "SessionEventEnvelope[46].ignorable",
-        "SessionEventEnvelope[47].ignorable",
-        "SessionEventEnvelope[48].ignorable",
-        "SessionEventEnvelope[49].ignorable",
-        "SessionEventEnvelope[4].ignorable",
-        "SessionEventEnvelope[50].ignorable",
-        "SessionEventEnvelope[51].ignorable",
-        "SessionEventEnvelope[52].ignorable",
-        "SessionEventEnvelope[53].ignorable",
-        "SessionEventEnvelope[54].ignorable",
-        "SessionEventEnvelope[55].ignorable",
-        "SessionEventEnvelope[5].ignorable",
-        "SessionEventEnvelope[6].ignorable",
-        "SessionEventEnvelope[7].ignorable",
-        "SessionEventEnvelope[8].ignorable",
-        "SessionEventEnvelope[9].ignorable",
-        "event:agent-preset/selected.ignorable",
-        "event:agent/inbox/spliced.data.inserted[0].content[0][5].isError[1]",
-        "event:agent/inbox/spliced.data.inserted[0].source[16].update",
-        "event:agent/inbox/spliced.data.inserted[0].source[17].baseline",
-        "event:agent/inbox/spliced.ignorable",
-        "event:approval/asked.ignorable",
-        "event:approval/decided.ignorable",
-        "event:approval/policy.ignorable",
-        "event:assistant/attempt.ignorable",
-        "event:assistant/message.data.interrupted",
-        "event:assistant/message.ignorable",
-        "event:command/done.ignorable",
-        "event:command/run.ignorable",
-        "event:compaction/end.ignorable",
-        "event:compaction/prune.ignorable",
-        "event:compaction/start.ignorable",
-        "event:compaction/summary.data[0].llmStreamCall",
-        "event:compaction/summary.ignorable",
-        "event:deliverables/presented.ignorable",
-        "event:feedback/message-delete.ignorable",
-        "event:feedback/message-put.ignorable",
-        "event:feedback/record.ignorable",
-        "event:goal/change.ignorable",
-        "event:hook/invoked.ignorable",
-        "event:hook/result.ignorable",
-        "event:llm/retry-started.ignorable",
-        "event:llm/retry.ignorable",
-        "event:model/selection.ignorable",
-        "event:permission/preset.ignorable",
-        "event:plan/mode.ignorable",
-        "event:request/context.ignorable",
-        "event:request/header.data.header.adapterDefaults.maxTokens",
-        "event:request/header.data.header.adapterDefaults.reasoningEffort",
-        "event:request/header.data.startsSeries",
-        "event:request/header.ignorable",
-        "event:sandbox/mode.ignorable",
-        "event:schedule/change.ignorable",
-        "event:session-log-deepseek/delivery-accepted.ignorable",
-        "event:session/end-seed.data.inherited",
-        "event:session/end-seed.ignorable",
-        "event:session/title-llm-request.ignorable",
-        "event:session/title.ignorable",
-        "event:step/end.ignorable",
-        "event:step/start.ignorable",
-        "event:subagent/catalog.ignorable",
-        "event:subagent/descriptor.ignorable",
-        "event:subagent/model-selection-policy.ignorable",
-        "event:system/message.ignorable",
-        "event:team/member.ignorable",
-        "event:team/message/delivered.ignorable",
-        "event:team/message/queued.ignorable",
-        "event:team/task.ignorable",
-        "event:todo/write.ignorable",
-        "event:tool-workflow/agent-end.ignorable",
-        "event:tool-workflow/agent-start.ignorable",
-        "event:tool-workflow/run-end.ignorable",
-        "event:tool-workflow/run-start.ignorable",
-        "event:tool/call.ignorable",
-        "event:tool/ptc-dispatch-start.ignorable",
-        "event:tool/ptc-dispatch.ignorable",
-        "event:tool/result.data.meta[4]",
-        "event:tool/result.data.meta[5][0][4]",
-        "event:tool/result.ignorable",
-        "event:turn/end.ignorable",
-        "event:turn/start.ignorable",
-        "event:user/message.ignorable",
-        "event:web/deepseek-search-llm-request.ignorable"
-      ],
-      "sources": [
-        "packages/compaction/compaction/src/types.ts:59",
-        "packages/context/agent-instructions/src/state.ts:42",
-        "packages/core/session/src/types.ts:328",
-        "packages/core/session/src/types.ts:359",
-        "packages/core/session/src/types.ts:369",
-        "packages/core/session/src/types.ts:400",
-        "packages/core/session/src/types.ts:483",
-        "packages/llm/llm/src/call-config.ts:37",
-        "packages/llm/llm/src/call-config.ts:38",
-        "packages/llm/llm/src/types.ts:105",
-        "packages/skill/tool-skill/src/index.ts:38"
-      ]
+      "names": [],
+      "sources": []
     },
     {
       "digest": "db6c5246911d47a7969f6b4cb47c7d0dbbde75c402710b22ace3672fa97bebe0",
@@ -54602,12 +52962,8 @@
           }
         ]
       },
-      "names": [
-        "event:agent/inbox/spliced.data.inserted[0].source[19].kind"
-      ],
-      "sources": [
-        "packages/webhook/webhook/src/types.ts:75"
-      ]
+      "names": [],
+      "sources": []
     },
     {
       "digest": "db874d463b0fdec77e9da1c4568f37cb70bd6596781eb93800db44fb8a116965",
@@ -54711,12 +53067,8 @@
           }
         ]
       },
-      "names": [
-        "event:turn/end.data.reason[1].reason[2].kind"
-      ],
-      "sources": [
-        "packages/core/session/src/types.ts:191"
-      ]
+      "names": [],
+      "sources": []
     },
     {
       "digest": "dd2780e7e07684332f7a9ab047237798d260e7eaffb1321cb38eca695d184c3d",
@@ -54729,12 +53081,8 @@
           }
         ]
       },
-      "names": [
-        "event:team/member.data.member.context[0]"
-      ],
-      "sources": [
-        "packages/experimental/agent-team/src/types.ts:52"
-      ]
+      "names": [],
+      "sources": []
     },
     {
       "digest": "dda6e111a8ccfc12f6e742e977a1a4e3549e8c03732a5ff6c8d7c3d4bcb7a412",
@@ -54777,13 +53125,10 @@
         ]
       },
       "names": [
-        "event:agent/inbox/spliced.data.inserted[0].source[4]",
+        "event:agent/inbox/spliced.data.inserted[0].source[2]",
         "event:system/message.data.message.source[1]"
       ],
-      "sources": [
-        "packages/llm/llm/src/message.ts:139",
-        "packages/llm/llm/src/message.ts:160"
-      ]
+      "sources": []
     },
     {
       "digest": "de25352d2dc4196309bd84b5bac6319f6d5c898ea0e82bb5ae66c5738d0d426f",
@@ -54796,12 +53141,8 @@
           }
         ]
       },
-      "names": [
-        "event:user/message.type"
-      ],
-      "sources": [
-        "packages/core/session/src/types.ts:467"
-      ]
+      "names": [],
+      "sources": []
     },
     {
       "digest": "de30b1fa12c75f81df6aa4096e1595296d2d04e2be14a7c29849cf8028b79048",
@@ -54814,12 +53155,8 @@
           }
         ]
       },
-      "names": [
-        "event:agent/inbox/spliced.data.inserted[0].content[0][2].attachment.mediaType[3]"
-      ],
-      "sources": [
-        "packages/attachment/attachment/src/types.ts:15"
-      ]
+      "names": [],
+      "sources": []
     },
     {
       "digest": "df5d9709b7db2a72510dc52052a23f0c38f39730af1504bab8bccabc14fae528",
@@ -54832,12 +53169,8 @@
           }
         ]
       },
-      "names": [
-        "event:feedback/message-put.data.item.rating[0]"
-      ],
-      "sources": [
-        "packages/feedback/message-feedback/src/types.ts:24"
-      ]
+      "names": [],
+      "sources": []
     },
     {
       "digest": "df843efd87c78cf8de98f8e0d0216956cd568d0d0e56a22c853663e274aa1a18",
@@ -54937,9 +53270,7 @@
       "names": [
         "event:agent/inbox/spliced.data.inserted[0].source[15].references"
       ],
-      "sources": [
-        "packages/context/session-reference/src/types.ts:18"
-      ]
+      "sources": []
     },
     {
       "digest": "dfce5db4aa42b7ebe0bb79eca92553587287e18c06b9eba85cbfb9d332e26acd",
@@ -54972,7 +53303,7 @@
         "packages/experimental/agent-team/src/types.ts#TeamMemberPhase"
       ],
       "sources": [
-        "packages/experimental/agent-team/src/types.ts:53"
+        "packages/experimental/agent-team/src/types.ts:44"
       ]
     },
     {
@@ -55327,8 +53658,7 @@
         "packages/llm/llm/src/types.ts#ContentBlock"
       ],
       "sources": [
-        "packages/llm/llm/src/message.ts:137",
-        "packages/llm/llm/src/types.ts:395"
+        "packages/llm/llm/src/types.ts:124"
       ]
     },
     {
@@ -55572,7 +53902,7 @@
         "packages/schedule/schedule/src/types.ts#ScheduleChange"
       ],
       "sources": [
-        "packages/core/session/src/types.ts:472"
+        "packages/schedule/schedule/src/types.ts:105"
       ]
     },
     {
@@ -55586,12 +53916,8 @@
           }
         ]
       },
-      "names": [
-        "event:compaction/start.type"
-      ],
-      "sources": [
-        "packages/core/session/src/types.ts:467"
-      ]
+      "names": [],
+      "sources": []
     },
     {
       "digest": "e31572180d6b28b73f073ad30ae19d5d82982d3daf984723984e23da1e7c459a",
@@ -55604,12 +53930,8 @@
           }
         ]
       },
-      "names": [
-        "event:session/title.data.source[1].kind"
-      ],
-      "sources": [
-        "packages/session/session-title/src/types.ts:31"
-      ]
+      "names": [],
+      "sources": []
     },
     {
       "digest": "e3528b95cff70d83a080a96666877da3f9dc205e71955d6bc5b9b315b9e0da22",
@@ -55862,7 +54184,7 @@
         "packages/core/session/src/types.ts#TurnEndReason"
       ],
       "sources": [
-        "packages/core/session/src/types.ts:285"
+        "packages/core/session/src/types.ts:224"
       ]
     },
     {
@@ -55977,12 +54299,8 @@
           }
         ]
       },
-      "names": [
-        "JsonlHeaderLine.type"
-      ],
-      "sources": [
-        "packages/session/session-persistence-jsonl/src/format.ts:83"
-      ]
+      "names": [],
+      "sources": []
     },
     {
       "digest": "e42b0f40b5d0b628c6e1c44a8fb9eda0780037a81959e1b93d2dfb47b46b0e87",
@@ -55995,12 +54313,8 @@
           }
         ]
       },
-      "names": [
-        "event:schedule/change.data[0].schedule[2].kind"
-      ],
-      "sources": [
-        "packages/schedule/schedule/src/types.ts:43"
-      ]
+      "names": [],
+      "sources": []
     },
     {
       "digest": "e438a9d4fb883b3e4a8d9fc8913aa1550ed50eb384bfbf943100a5605b537498",
@@ -56013,12 +54327,8 @@
           }
         ]
       },
-      "names": [
-        "SessionEventEnvelope[6].surfaceOp[0]"
-      ],
-      "sources": [
-        "packages/core/session/src/types.ts:443"
-      ]
+      "names": [],
+      "sources": []
     },
     {
       "digest": "e4c18e294232c3ba6c9f1999f168263cc55956147cfe4121720899be8e52edd1",
@@ -56070,7 +54380,7 @@
         "event:tool/call.data"
       ],
       "sources": [
-        "packages/core/session/src/types.ts:472"
+        "packages/core/session/src/types.ts:341"
       ]
     },
     {
@@ -56084,14 +54394,8 @@
           }
         ]
       },
-      "names": [
-        "event:feedback/message-put.data.item.category[2]",
-        "event:feedback/record.data.category[2]"
-      ],
-      "sources": [
-        "packages/feedback/command-feedback/src/types.ts:31",
-        "packages/feedback/message-feedback/src/types.ts:28"
-      ]
+      "names": [],
+      "sources": []
     },
     {
       "digest": "e5244812c495a80c2e78ba2c2690dca5f6b58ea8d3fe5531ff94a6f9ac5e5d66",
@@ -56104,14 +54408,8 @@
           }
         ]
       },
-      "names": [
-        "event:agent/inbox/spliced.data.inserted[0].content[0][5].type",
-        "event:assistant/attempt.data.stream[0][3].chunk[0].blockType[5]"
-      ],
-      "sources": [
-        "packages/llm/llm/src/types.ts:102",
-        "packages/llm/llm/src/types.ts:391"
-      ]
+      "names": [],
+      "sources": []
     },
     {
       "digest": "e5d3828df1ec3e2a66879de0659e0f4866d9cfffc00825ee731a66f8a0c03d98",
@@ -56124,14 +54422,8 @@
           }
         ]
       },
-      "names": [
-        "event:subagent/catalog.data[1].mode",
-        "event:subagent/descriptor.data[1].mode"
-      ],
-      "sources": [
-        "packages/subagent/subagent/src/catalog.ts:31",
-        "packages/subagent/subagent/src/descriptor.ts:73"
-      ]
+      "names": [],
+      "sources": []
     },
     {
       "digest": "e6063d0451dc02026fd9b54ad3f77c7b1b6392ad3e872a7737ac84e13ca72344",
@@ -56182,7 +54474,7 @@
         "packages/schedule/schedule/src/types.ts#EveryScheduleDispatchChange"
       ],
       "sources": [
-        "packages/core/session/src/types.ts:472"
+        "packages/schedule/schedule/src/types.ts:93"
       ]
     },
     {
@@ -56196,12 +54488,8 @@
           }
         ]
       },
-      "names": [
-        "event:turn/end.data.reason[1].reason[1].kind"
-      ],
-      "sources": [
-        "packages/core/session/src/types.ts:190"
-      ]
+      "names": [],
+      "sources": []
     },
     {
       "digest": "e654d28d1e6c471147310d2fba396d00969cfe6ed9022626d3f2c2312e0b1cbb",
@@ -56214,18 +54502,8 @@
           }
         ]
       },
-      "names": [
-        "event:agent/inbox/spliced.data.inserted[0].source[3].kind",
-        "event:agent/inbox/spliced.data.inserted[0].source[4].kind",
-        "event:agent/inbox/spliced.data.inserted[0].source[5].kind",
-        "event:agent/inbox/spliced.data.inserted[0].source[6].kind",
-        "event:agent/inbox/spliced.data.inserted[0].source[7].kind",
-        "event:agent/inbox/spliced.data.inserted[0].source[8].kind",
-        "event:agent/inbox/spliced.data.inserted[0].source[9].kind"
-      ],
-      "sources": [
-        "packages/llm/llm/src/message.ts:104"
-      ]
+      "names": [],
+      "sources": []
     },
     {
       "digest": "e72269f931559e901e5e8fe1cfcbd0669fb795f43cc038ff39fba62f60403c33",
@@ -56289,7 +54567,7 @@
         "event:assistant/attempt.data.stream[0][0]"
       ],
       "sources": [
-        "packages/core/session/src/types.ts:335"
+        "packages/llm/llm/src/assistant-stream.ts:21"
       ]
     },
     {
@@ -56403,12 +54681,8 @@
           }
         ]
       },
-      "names": [
-        "event:request/header.data.reason[0]"
-      ],
-      "sources": [
-        "packages/core/session/src/types.ts:367"
-      ]
+      "names": [],
+      "sources": []
     },
     {
       "digest": "e7e154d47d5fbc5366330fb4dade1f108c6dfe4335044d21ded14b7bf1dce084",
@@ -56421,12 +54695,8 @@
           }
         ]
       },
-      "names": [
-        "event:goal/change.data[1].operation"
-      ],
-      "sources": [
-        "packages/goal/goal/src/domain.ts:38"
-      ]
+      "names": [],
+      "sources": []
     },
     {
       "digest": "e7e8f1318170b8284f16ab45a557afd4675c96071c0f2a456636481dab20b427",
@@ -56439,12 +54709,8 @@
           }
         ]
       },
-      "names": [
-        "event:team/task.data.task.status[3]"
-      ],
-      "sources": [
-        "packages/experimental/agent-team/src/types.ts:79"
-      ]
+      "names": [],
+      "sources": []
     },
     {
       "digest": "e8d26e6993445743e6c4342c31b284c7d8f5574369abdd6021183af1a6b3538f",
@@ -56512,13 +54778,10 @@
         ]
       },
       "names": [
-        "event:agent/inbox/spliced.data.inserted[0].source[6]",
+        "event:agent/inbox/spliced.data.inserted[0].source[4]",
         "event:system/message.data.message.source[3]"
       ],
-      "sources": [
-        "packages/llm/llm/src/message.ts:139",
-        "packages/llm/llm/src/message.ts:160"
-      ]
+      "sources": []
     },
     {
       "digest": "e8de0f457fed5b9ff94dc4950b59ef75fd8ba8af665cc7899485924a62653367",
@@ -56531,16 +54794,8 @@
           }
         ]
       },
-      "names": [
-        "event:agent/inbox/spliced.data.inserted[0].source[12].form",
-        "event:agent/inbox/spliced.data.inserted[0].source[19].form",
-        "event:agent/inbox/spliced.data.inserted[0].source[7].form"
-      ],
-      "sources": [
-        "packages/llm/llm/src/message.ts:91",
-        "packages/subagent/subagent/src/continuation-messages.ts:33",
-        "packages/webhook/webhook/src/types.ts:80"
-      ]
+      "names": [],
+      "sources": []
     },
     {
       "digest": "e95f957154b2b1b58692af53d4131180b6dd19e2264869f876dbaa959991494e",
@@ -56553,12 +54808,8 @@
           }
         ]
       },
-      "names": [
-        "event:assistant/attempt.type"
-      ],
-      "sources": [
-        "packages/core/session/src/types.ts:467"
-      ]
+      "names": [],
+      "sources": []
     },
     {
       "digest": "eaa71be0fbf0f702df8ea6c11d0aa2f9782263d45a10d0fb14eda662f4bfe04c",
@@ -56586,7 +54837,7 @@
         "event:turn/end.data.reason[1].reason[4]"
       ],
       "sources": [
-        "packages/core/session/src/types.ts:203"
+        "packages/core/session/src/types.ts:195"
       ]
     },
     {
@@ -57111,12 +55362,8 @@
           }
         ]
       },
-      "names": [
-        "event:agent/inbox/spliced.data.inserted[0].content[0][2].attachment.mediaType[2]"
-      ],
-      "sources": [
-        "packages/attachment/attachment/src/types.ts:15"
-      ]
+      "names": [],
+      "sources": []
     },
     {
       "digest": "ec38b5949af8eacaf00df002f4acbe344f934f8a061e9cdc65a52a48e5f6dd93",
@@ -58039,7 +56286,7 @@
         "packages/llm/llm/src/assistant-stream.ts#AssistantStreamRecord"
       ],
       "sources": [
-        "packages/core/session/src/types.ts:335"
+        "packages/llm/llm/src/assistant-stream.ts:20"
       ]
     },
     {
@@ -58053,12 +56300,8 @@
           }
         ]
       },
-      "names": [
-        "event:assistant/attempt.data.stream[0][3].chunk[4].type"
-      ],
-      "sources": [
-        "packages/llm/llm/src/types.ts:395"
-      ]
+      "names": [],
+      "sources": []
     },
     {
       "digest": "ef11a3b7fa2033ae4279545ff8a8a2ee4e301b9b73e5b91654c48e6d08283545",
@@ -58092,7 +56335,8 @@
         "event:step/start.data"
       ],
       "sources": [
-        "packages/core/session/src/types.ts:472"
+        "packages/core/session/src/types.ts:287",
+        "packages/core/session/src/types.ts:289"
       ]
     },
     {
@@ -58106,12 +56350,8 @@
           }
         ]
       },
-      "names": [
-        "event:compaction/summary.type"
-      ],
-      "sources": [
-        "packages/core/session/src/types.ts:467"
-      ]
+      "names": [],
+      "sources": []
     },
     {
       "digest": "f051068babb7ebab80e9fd4fff3a70cfe54430c2ef3ca9bb77bb54db8bc34476",
@@ -59190,7 +57430,7 @@
         "packages/llm/llm/src/message.ts#Message"
       ],
       "sources": [
-        "packages/session/session-title-llm/src/index.ts:37"
+        "packages/llm/llm/src/message.ts:131"
       ]
     },
     {
@@ -59204,14 +57444,8 @@
           }
         ]
       },
-      "names": [
-        "event:feedback/message-put.data.item.category[1]",
-        "event:feedback/record.data.category[1]"
-      ],
-      "sources": [
-        "packages/feedback/command-feedback/src/types.ts:31",
-        "packages/feedback/message-feedback/src/types.ts:28"
-      ]
+      "names": [],
+      "sources": []
     },
     {
       "digest": "f09e5e7acf5ff5ccd193ff2eeec015fa2ff7c29d98bc465f8c3302058d47e29b",
@@ -59249,7 +57483,7 @@
         "packages/api/session-controller/src/types.ts#ModelSelection"
       ],
       "sources": [
-        "packages/core/session/src/types.ts:472"
+        "packages/api/session-controller/src/types.ts:86"
       ]
     },
     {
@@ -59263,12 +57497,8 @@
           }
         ]
       },
-      "names": [
-        "event:command/run.type"
-      ],
-      "sources": [
-        "packages/core/session/src/types.ts:467"
-      ]
+      "names": [],
+      "sources": []
     },
     {
       "digest": "f19bee84bf3d20904553cdcd57465232bc1c2a194f54c4d195292ba0487223a6",
@@ -59310,7 +57540,7 @@
         "packages/attachment/attachment/src/types.ts#FileAttachmentRef"
       ],
       "sources": [
-        "packages/llm/llm/src/types.ts:87"
+        "packages/attachment/attachment/src/types.ts:39"
       ]
     },
     {
@@ -59384,7 +57614,7 @@
         "event:assistant/attempt.data.stream[0][3].chunk[5]"
       ],
       "sources": [
-        "packages/llm/llm/src/assistant-stream.ts:44"
+        "packages/llm/llm/src/types.ts:396"
       ]
     },
     {
@@ -59447,7 +57677,7 @@
         "packages/llm/llm/src/types.ts#FileBlock"
       ],
       "sources": [
-        "packages/llm/llm/src/message.ts:137"
+        "packages/llm/llm/src/types.ts:84"
       ]
     },
     {
@@ -59462,10 +57692,10 @@
         ]
       },
       "names": [
-        "event:request/context.data.systemPromptUpdate"
+        "packages/llm/llm/src/types.ts#SystemPromptUpdate"
       ],
       "sources": [
-        "packages/core/session/src/types.ts:250"
+        "packages/llm/llm/src/types.ts:347"
       ]
     },
     {
@@ -60548,9 +58778,7 @@
       "names": [
         "event:session/title-llm-request.data.messages"
       ],
-      "sources": [
-        "packages/session/session-title-llm/src/index.ts:37"
-      ]
+      "sources": []
     },
     {
       "digest": "f56c5b59ca0161310c338d31dd16cf14287ccd602ff4181058df178c1c286d7f",
@@ -60689,7 +58917,7 @@
         "packages/context/session-reference/src/types.ts#SessionReferenceSource"
       ],
       "sources": [
-        "packages/llm/llm/src/message.ts:139"
+        "packages/context/session-reference/src/types.ts:13"
       ]
     },
     {
@@ -60703,12 +58931,8 @@
           }
         ]
       },
-      "names": [
-        "event:plan/mode.type"
-      ],
-      "sources": [
-        "packages/core/session/src/types.ts:467"
-      ]
+      "names": [],
+      "sources": []
     },
     {
       "digest": "f6cb462f808309e315fea634f1ed86268b8346bbcee6774d9097ca6eed7ac1f8",
@@ -60721,14 +58945,8 @@
           }
         ]
       },
-      "names": [
-        "SessionEventEnvelope[6].surfaceOp[1].op",
-        "event:agent/inbox/spliced.data.inserted[0].source[17].changes[0].action[0]"
-      ],
-      "sources": [
-        "packages/context/agent-instructions/src/render.ts:48",
-        "packages/core/session/src/types.ts:436"
-      ]
+      "names": [],
+      "sources": []
     },
     {
       "digest": "f757322e25914d63799c6235af4ed4b4f36d7d083fef40d6873a45e94fe6ad65",
@@ -61892,12 +60110,8 @@
           }
         ]
       },
-      "names": [
-        "event:request/header.data.reason[2]"
-      ],
-      "sources": [
-        "packages/core/session/src/types.ts:367"
-      ]
+      "names": [],
+      "sources": []
     },
     {
       "digest": "f88f1b7b6bb733f685f5fb6a8744a5db9199fa53c90463ea1a33bad51153671d",
@@ -61910,24 +60124,8 @@
           }
         ]
       },
-      "names": [
-        "event:agent/inbox/spliced.data.inserted[0].source[15].version",
-        "event:goal/change.data[0].version",
-        "event:goal/change.data[1].version",
-        "event:schedule/change.data[0].version",
-        "event:schedule/change.data[1].version",
-        "event:schedule/change.data[2].version",
-        "event:schedule/change.data[3].version"
-      ],
-      "sources": [
-        "packages/context/session-reference/src/types.ts:17",
-        "packages/goal/goal/src/domain.ts:26",
-        "packages/goal/goal/src/domain.ts:37",
-        "packages/schedule/schedule/src/types.ts:73",
-        "packages/schedule/schedule/src/types.ts:80",
-        "packages/schedule/schedule/src/types.ts:87",
-        "packages/schedule/schedule/src/types.ts:94"
-      ]
+      "names": [],
+      "sources": []
     },
     {
       "digest": "f90eb4ab2d3897bc20c521a038e3119d581f791ec974b1a0004f63a8ab9e232d",
@@ -61955,7 +60153,7 @@
         "event:turn/start.data"
       ],
       "sources": [
-        "packages/core/session/src/types.ts:472"
+        "packages/core/session/src/types.ts:276"
       ]
     },
     {
@@ -61969,12 +60167,8 @@
           }
         ]
       },
-      "names": [
-        "event:assistant/attempt.data.stream[0][0].type"
-      ],
-      "sources": [
-        "packages/llm/llm/src/assistant-stream.ts:22"
-      ]
+      "names": [],
+      "sources": []
     },
     {
       "digest": "fab2bb09bc5e3b9db0685e8f5500b029af1a2b33e70bc703c1d5d0f596fbc1fd",
@@ -62007,7 +60201,7 @@
         "packages/sandbox/sandbox/src/index.ts#SandboxMode"
       ],
       "sources": [
-        "packages/sandbox/sandbox-policy/src/session-mode.ts:34"
+        "packages/sandbox/sandbox/src/index.ts:29"
       ]
     },
     {
@@ -62021,12 +60215,8 @@
           }
         ]
       },
-      "names": [
-        "event:approval/decided.data.outcome[3]"
-      ],
-      "sources": [
-        "packages/interaction/user-approval/src/types.ts:57"
-      ]
+      "names": [],
+      "sources": []
     },
     {
       "digest": "fb5e0517050d2c6d40e5b8145db1f7c5ca7044d5d50fada6ff80e0b22c6ca973",
@@ -62039,12 +60229,8 @@
           }
         ]
       },
-      "names": [
-        "event:tool/ptc-dispatch.type"
-      ],
-      "sources": [
-        "packages/core/session/src/types.ts:467"
-      ]
+      "names": [],
+      "sources": []
     },
     {
       "digest": "fb8b6a2e53cb9cf44c551176de0fb77d1ddc60037b99a891ff8a860b6d5c29a0",
@@ -62057,14 +60243,8 @@
           }
         ]
       },
-      "names": [
-        "event:agent/inbox/spliced.data.inserted[0].content[0][2].type",
-        "event:assistant/attempt.data.stream[0][3].chunk[0].blockType[2]"
-      ],
-      "sources": [
-        "packages/llm/llm/src/types.ts:391",
-        "packages/llm/llm/src/types.ts:72"
-      ]
+      "names": [],
+      "sources": []
     },
     {
       "digest": "fbd2c74b346a1595b376139c587fadd23e4a21acc9c0abce342975b6cfc60986",
@@ -62077,12 +60257,8 @@
           }
         ]
       },
-      "names": [
-        "event:agent/inbox/spliced.data.inserted[0].source[17].kind"
-      ],
-      "sources": [
-        "packages/context/agent-instructions/src/state.ts:38"
-      ]
+      "names": [],
+      "sources": []
     },
     {
       "digest": "fc2ae6962f9f8801c2b1e414668e1e17cbb7544c4f39381198977a38bd10c093",
@@ -62157,7 +60333,7 @@
         "packages/skill/tool-skill/src/index.ts#SkillCatalogSource"
       ],
       "sources": [
-        "packages/llm/llm/src/message.ts:139"
+        "packages/skill/tool-skill/src/index.ts:34"
       ]
     },
     {
@@ -62190,9 +60366,7 @@
       "names": [
         "event:todo/write.data.todos[0].status"
       ],
-      "sources": [
-        "packages/todo/tool-todo/src/types.ts:25"
-      ]
+      "sources": []
     },
     {
       "digest": "fe792a6cd430494503837e21e79f91677704ccdd9e870c679aabd7d43ed47ddd",
@@ -62205,12 +60379,8 @@
           }
         ]
       },
-      "names": [
-        "event:tool-workflow/run-end.type"
-      ],
-      "sources": [
-        "packages/core/session/src/types.ts:467"
-      ]
+      "names": [],
+      "sources": []
     },
     {
       "digest": "fec5442b9ee4122e10514d81d5a43648003fe8bfb7ee2ba50c0cdbdd383ed394",
@@ -62263,9 +60433,7 @@
         "packages/llm/llm/src/types.ts#TokenUsage"
       ],
       "sources": [
-        "packages/compaction/compaction/src/types.ts:53",
-        "packages/core/session/src/types.ts:327",
-        "packages/llm/llm/src/types.ts:396"
+        "packages/llm/llm/src/types.ts:149"
       ]
     },
     {
@@ -62279,16 +60447,8 @@
           }
         ]
       },
-      "names": [
-        "event:agent/inbox/spliced.data.inserted[0].source[13].form",
-        "event:agent/inbox/spliced.data.inserted[0].source[17].form",
-        "event:agent/inbox/spliced.data.inserted[0].source[4].form"
-      ],
-      "sources": [
-        "packages/context/agent-instructions/src/state.ts:40",
-        "packages/llm/llm/src/message.ts:83",
-        "packages/skill/skill/src/index.ts:151"
-      ]
+      "names": [],
+      "sources": []
     }
   ]
 }

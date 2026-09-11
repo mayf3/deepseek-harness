@@ -164,6 +164,61 @@ interface SessionEventMap {
     expect(changed.types.some(item => isArbitraryJsonSchema(item.schema))).toBe(false)
   })
 
+  it('rejects invalid reachable declaration files despite inherited skipLibCheck', () => {
+    const root = fixture("export type { Payload } from './declared.js'")
+    put(root, 'packages/domain/payload/src/declared.d.ts', 'type Bad = ReturnType<42>; export interface Payload {value: Bad}')
+    expect(() => extractPersistenceSchema(root)).toThrow('TS2344')
+  })
+
+  it('preserves authored declaration-file any without checking unrelated declarations', () => {
+    const root = fixture("export type { Payload } from './declared.js'")
+    put(root, 'packages/domain/payload/src/declared.d.ts', 'type Declared = any; export interface Payload {value: Declared}; type Unrelated = ReturnType<42>')
+    const model = extractPersistenceSchema(root)
+    expect(model.types.some(item => item.schema.nodes[0]?.kind === 'opaque' && item.schema.nodes[0].reason === 'any')).toBe(true)
+  })
+
+  it('locates named transitive definitions at their declarations instead of their references', () => {
+    const root = fixture("import type { Detail as ImportedDetail } from './detail.js'\nexport interface Payload { first: ImportedDetail; second: ImportedDetail }")
+    put(root, 'packages/domain/payload/src/detail.ts', '/** Detailed payload. */\nexport interface Detail { code: string; done: true }\n')
+    const model = extractPersistenceSchema(root)
+    const detail = model.types.find(item => item.names.includes('packages/domain/payload/src/detail.ts#Detail'))
+    expect(detail?.sources).toEqual(['packages/domain/payload/src/detail.ts:2'])
+  })
+
+  it('keeps shared scalar provenance at real aliases and omits plain property references', () => {
+    const root = fixture([
+      'type Label = string',
+      "type Done = 'done'",
+      'export interface Payload {',
+      '  label: Label',
+      '  other: string',
+      '  state: Done',
+      "  fallback: 'done'",
+      '  count: number',
+      '}',
+    ].join('\n'))
+    const model = extractPersistenceSchema(root)
+    const string = model.types.find(item => item.schema.nodes[0]?.kind === 'primitive' && item.schema.nodes[0].type === 'string')
+    const literal = model.types.find(item => item.schema.nodes[0]?.kind === 'literal' && item.schema.nodes[0].value === 'done')
+    const number = model.types.find(item => item.schema.nodes[0]?.kind === 'primitive' && item.schema.nodes[0].type === 'number')
+    expect(string?.names).toEqual(['packages/domain/payload/src/types.ts#Label'])
+    expect(string?.sources).toEqual(['packages/domain/payload/src/types.ts:1'])
+    expect(literal?.names).toEqual(['packages/domain/payload/src/types.ts#Done'])
+    expect(literal?.sources).toEqual(['packages/domain/payload/src/types.ts:2'])
+    expect(number?.names).toEqual([])
+    expect(number?.sources).toEqual([])
+  })
+
+  it('uses the declaration of an anonymous object literal and never its containing property', () => {
+    const root = fixture('export interface Payload {\n  detail:\n    { code: string }\n}')
+    const model = extractPersistenceSchema(root)
+    const detail = model.types.find((item) => {
+      const node = item.schema.nodes[0]
+      return node?.kind === 'object' && node.properties.length === 1 && node.properties[0]?.name === 'code'
+    })
+    expect(detail?.sources).toEqual(['packages/domain/payload/src/types.ts:3'])
+  })
+
   it.each([
     ['missing type', 'export interface Payload {value: Missing}', 'TS2304'],
     ['callable value', 'export interface Payload {value: () => void}', 'callable data'],

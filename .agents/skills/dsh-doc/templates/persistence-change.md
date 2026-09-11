@@ -13,7 +13,7 @@ kind: persistence-change
 
 ## Skeleton
 
-The generator fills the machine declaration and schema companion. The following values illustrate the fields; use the actual generated root names, record ids, and digests.
+The generator fills the machine declaration, schema companion, and consistency records. Supply `--prose` JSON with `en` and `zh` objects, each containing authored `summary`, `compatibility`, and `verification` strings; the [cookbook](../../../../docs/cookbook/reviewing-persistence-type-changes.md) shows the complete operation. The following values illustrate the document fields; use the actual generated root names, record ids, and digests.
 
 ````markdown
 # Persistence change: <specific persisted change>
@@ -67,5 +67,6 @@ None.
 - The filename stem and `id` agree. A root's `previous` identifies its predecessor record; `null` introduces a root. Its `after` matches the generated companion schema digest; `null` records deletion.
 - One initial `baseline: true` record covers the complete inventory. Routine changes use `baseline: false` and preserve accepted predecessors. A version-bump record carries its own increasing `SessionHeader.version` transition.
 - Explain only the detected persistence-type changes. This kind permits the before/after facts and historical evidence needed for that transition; behavior-only changes remain out of scope.
-- Retain the generated JSON companion and re-record the bilingual consistency sidecar after reviewing both languages. Do not hand-maintain schema nodes or digests.
+- Record creation and terminal-record update generate the catalog pair and consistency sidecars. Review both languages and retain the generated companions. Direct prose edits still require re-recording pairing; do not hand-maintain schema nodes or digests.
+- Use explicit `--update` only for an unaccepted terminal record. It rejects baselines and depended-on records; `--prose` replaces its authored explanations, while omission preserves them. Accepted records receive successors.
 - The [folder reference](../../../../docs/persistence-changes/README.md) owns compatibility rules; the [cookbook](../../../../docs/cookbook/reviewing-persistence-type-changes.md) owns commands and recovery.

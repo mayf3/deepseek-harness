@@ -23,7 +23,7 @@ Each fact has one home: the tier whose job it is; elsewhere, link there.
 | [architecture.md](architecture.md) | Ordered map: composition, core packages, loop, seams, extension points; read before changing `packages/` | Type definitions (→ subsystems), per-package detail (→ package READMEs), decision rationale (→ Agent Notes), implementation-status annotations |
 | [subsystems/](subsystems/README.md) | One reference page per subsystem: type definitions, semantics, and the generated Cordis API | Behavior narration (→ architecture.md) |
 | [Agent Notes](../.agents/notes/README.md) | Active decision records: the why, what-was-given-up, and required verification; `implemented/` notes describe shipped reality in present tense | Migration plans, acceptance-task checklists, fixture walkthroughs, and spec-speak ("should…") once the decision has shipped; archived notes are frozen history, never current authority |
-| [postmortem/](postmortem/README.md) | Incident stories | — |
+| [postmortem/](postmortem/README.md) | Incident stories — the only tier where war-story narrative belongs | — |
 | [persistence-changes/](persistence-changes/README.md) | Historical acknowledgements of mechanically detected persistence-type changes, with generated schema companions | Behavior-only changes; current runtime contracts |
 | [cookbook/](cookbook/adding-a-package.md) | Step-by-step how-tos with numbered verify steps | Design rationale (→ the Agent Note each guide links) |
 | [user/](user/index.md) | Product-facing guides published by the documentation website | Generated reference tables, contributor procedures, decision history |

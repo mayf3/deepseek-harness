@@ -1,6 +1,7 @@
 /** Readable, linked persistence schemas rendered from the fingerprint inventory. */
 
 import { githubSlug } from './verify-md-links.ts'
+import { persistenceCatalogText, type PersistenceCatalogLocale } from './persistence-catalog-text.ts'
 import {
   canonicalizeSchema,
   schemaChildren,
@@ -58,7 +59,14 @@ function displays(inventory: PersistenceSchemaInventory): Map<string, TypeDispla
     }
     visit(0, root.key)
   }
-  const labels = inventory.types.map(type => ({ type, label: type.names[0] ?? paths.get(type.digest) ?? type.schema.nodes[0]?.kind ?? 'type' }))
+  const labels = inventory.types.map((type) => {
+    const node = nodeAt(type.schema, 0)
+    const label = node.kind === 'primitive' ? node.type
+      : node.kind === 'literal' ? JSON.stringify(node.value)
+        : node.kind === 'opaque' ? node.reason
+          : type.names[0] ?? paths.get(type.digest) ?? node.kind
+    return { type, label }
+  })
   const counts = new Map<string, number>()
   for (const { label } of labels) counts.set(label, (counts.get(label) ?? 0) + 1)
   const used = new Set<string>()
@@ -80,46 +88,55 @@ function reference(digest: string, entries: ReadonlyMap<string, TypeDisplay>): s
   return `[${code(entry.label)}](#${entry.anchor})`
 }
 
-function typeExpression(schema: CanonicalSchema, index: number, entries: ReadonlyMap<string, TypeDisplay>): string {
+function typeExpression(
+  schema: CanonicalSchema,
+  index: number,
+  entries: ReadonlyMap<string, TypeDisplay>,
+  locale: PersistenceCatalogLocale,
+): string {
   const node = nodeAt(schema, index)
   if (node.kind === 'primitive') return code(node.type)
   if (node.kind === 'literal') return code(JSON.stringify(node.value))
-  if (node.kind === 'opaque') return `${code(node.reason)} (opaque)`
+  if (node.kind === 'opaque') return `${code(node.reason)}${persistenceCatalogText[locale].opaque}`
   return reference(schemaDigest(canonicalizeSchema(schema.nodes, index)), entries)
 }
 
-function definition(entry: TypeDisplay, entries: ReadonlyMap<string, TypeDisplay>): string[] {
+function definition(entry: TypeDisplay, entries: ReadonlyMap<string, TypeDisplay>, locale: PersistenceCatalogLocale): string[] {
+  const text = persistenceCatalogText[locale]
   const schema = entry.type.schema
   const node = nodeAt(schema, 0)
   const lines = [`<a id="${entry.anchor}"></a>`, '', `### ${code(entry.label)}`, '', `SHA-256: ${code(entry.type.digest)}`, '']
   if (entry.type.sources.length > 0) {
-    lines.push(`Sources: ${entry.type.sources.map(source => `[${code(source)}](../${sourcePath(source)})`).join(' · ')}`, '')
+    lines.push(`${text.sources}${entry.type.sources.map(source => `[${code(source)}](../${sourcePath(source)})`).join(' · ')}`, '')
   }
-  const expression = (index: number): string => typeExpression(schema, index, entries)
+  const expression = (index: number): string => typeExpression(schema, index, entries, locale)
   switch (node.kind) {
     case 'object':
-      if (node.properties.length === 0 && node.indices.length === 0) lines.push('Empty object.', '')
+      if (node.properties.length === 0 && node.indices.length === 0) lines.push(text.emptyObject, '')
       else {
-        lines.push('| Property | Presence | Type |', '|---|---|---|')
+        lines.push(text.propertyColumns, '|---|---|---|')
         for (const property of node.properties) {
-          lines.push(`| ${code(property.name)} | ${property.optional ? 'optional' : 'required'} | ${expression(property.type)} |`)
+          lines.push(`| ${code(property.name)} | ${property.optional ? text.optional : text.required} | ${expression(property.type)} |`)
         }
-        for (const index of node.indices) lines.push(`| [${expression(index.key)}] | index signature | ${expression(index.value)} |`)
+        for (const index of node.indices) lines.push(`| [${expression(index.key)}] | ${text.index} | ${expression(index.value)} |`)
         lines.push('')
       }
       break
-    case 'array': lines.push(`Array of ${expression(node.element)}.`, ''); break
+    case 'array': lines.push(`${text.arrayPrefix}${expression(node.element)}${text.arraySuffix}`, ''); break
     case 'tuple':
-      lines.push('| Position | Presence | Type |', '|---|---|---|')
-      node.elements.forEach((element, index) => lines.push(`| ${String(index)} | ${element.rest ? 'rest' : element.optional ? 'optional' : 'required'} | ${expression(element.type)} |`))
+      lines.push(text.positionColumns, '|---|---|---|')
+      node.elements.forEach((element, index) => {
+        const presence = element.rest ? text.rest : element.optional ? text.optional : text.required
+        lines.push(`| ${String(index)} | ${presence} | ${expression(element.type)} |`)
+      })
       lines.push('')
       break
     case 'union':
-      lines.push('One of:', '', ...node.types.map(index => `- ${expression(index)}`), '')
+      lines.push(text.oneOf, '', ...node.types.map(index => `- ${expression(index)}`), '')
       break
     case 'primitive': lines.push(code(node.type), ''); break
     case 'literal': lines.push(code(JSON.stringify(node.value)), ''); break
-    case 'opaque': lines.push(`${code(node.reason)}: the declaration does not expose the stored value's internal fields.`, ''); break
+    case 'opaque': lines.push(`${code(node.reason)}${text.opaqueExplanation}`, ''); break
     default: assertNever(node)
   }
   return lines
@@ -128,15 +145,15 @@ function definition(entry: TypeDisplay, entries: ReadonlyMap<string, TypeDisplay
 /**
  * Render every tracked root with its exact digest and resolved type reference.
  * @param inventory - complete current-source schemas and provenance.
+ * @param locale - generated document language.
  * @returns Markdown index including the history and contributor workflow links.
  */
-export function renderPersistenceSchemaIndex(inventory: PersistenceSchemaInventory): string {
+export function renderPersistenceSchemaIndex(inventory: PersistenceSchemaInventory, locale: PersistenceCatalogLocale = 'en'): string {
   const entries = displays(inventory)
+  const text = persistenceCatalogText[locale]
   return [
-    '## Persistence type fingerprints', '',
-    'The [machine inventory](persistence-schema.json) contains every reachable normalized type and its SHA-256 digest. Root digests include referenced types. Comments, source locations, alias names, erased brands, readonly markers, and object property order do not affect these fingerprints. Tuple order, property names, value types, and optionality do.', '',
-    'The [change records](persistence-changes/README.md) acknowledge exact transitions using snapshots kept in this tree. Follow the [review workflow](cookbook/reviewing-persistence-type-changes.md) to classify a change and record it. These checks cover declared type structure; opaque payload contents and behavior without type changes are outside their scope.', '',
-    '| Root | Kind | SHA-256 | Resolved type |', '|---|---|---|---|',
+    `## ${text.fingerprints}`, '', text.fingerprintsIntro, '', text.historyIntro, '',
+    text.rootColumns, '|---|---|---|---|',
     ...inventory.roots.map(root => `| ${code(root.key)} | ${root.kind} | ${code(root.digest)} | ${reference(root.digest, entries)} |`), '',
   ].join('\n')
 }
@@ -144,15 +161,16 @@ export function renderPersistenceSchemaIndex(inventory: PersistenceSchemaInvento
 /**
  * Render every reachable type once, with links for shared and recursive definitions.
  * @param inventory - complete current-source schemas and provenance.
+ * @param locale - generated document language.
  * @returns Markdown definitions whose anchors use names or owning paths instead of hashes.
  */
-export function renderPersistenceSchemaDefinitions(inventory: PersistenceSchemaInventory): string {
+export function renderPersistenceSchemaDefinitions(inventory: PersistenceSchemaInventory, locale: PersistenceCatalogLocale = 'en'): string {
   const entries = displays(inventory)
+  const text = persistenceCatalogText[locale]
   const sorted = [...entries.values()].sort((left, right) => left.anchor < right.anchor ? -1 : left.anchor > right.anchor ? 1 : 0)
   return [
-    '## Resolved persistence types', '',
-    'Each definition appears once. References preserve sharing and recursion; the digest beside a definition includes its complete reachable structure. Source names and locations identify its declarations but are excluded from its digest.', '',
-    ...sorted.flatMap(entry => definition(entry, entries)),
+    `## ${text.definitions}`, '', text.definitionsIntro, '',
+    ...sorted.flatMap(entry => definition(entry, entries, locale)),
   ].join('\n')
 }
 

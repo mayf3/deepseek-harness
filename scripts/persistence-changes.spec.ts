@@ -6,17 +6,41 @@ import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { canonicalizeSchema, schemaDigest } from './persistence-schema-model.ts'
-import type { PersistenceRoot, PersistenceSchemaInventory, SchemaNode } from './persistence-schema-model.ts'
+import type { PersistenceRoot, PersistenceSchemaInventory, SchemaNode, SchemaProperty } from './persistence-schema-model.ts'
 import { extractPersistenceSchema } from './persistence-schema.ts'
+import { persistenceCatalogArtifacts } from './gen-persistence-catalog.ts'
 import {
   classifyPersistenceChange,
   loadPersistenceHistory,
   parsePersistenceSnapshot,
-  runPersistenceChanges,
+  runPersistenceChanges as executePersistenceChanges,
   validatePersistenceHistory,
   verifyPersistenceChanges,
 } from './persistence-changes.ts'
 import type { PersistenceChangeRecord, PersistenceHistoryEntry } from './persistence-changes.ts'
+
+function runPersistenceChanges(
+  args: readonly string[], root: string, extract: (root: string) => PersistenceSchemaInventory,
+): string {
+  return executePersistenceChanges(args, root, extract, (_root, current) => [{
+    path: 'docs/persistence-schema.json', content: JSON.stringify(current, null, 2) + '\n',
+  }])
+}
+
+function jsonResult(source: string): { ok: boolean; files: readonly string[] } {
+  return JSON.parse(source) as { ok: boolean; files: readonly string[] }
+}
+
+const AUTHORED_PROSE = {
+  en: { summary: 'Adds optional metadata.', compatibility: 'Readers may omit the metadata.', verification: 'The focused tests passed.' },
+  zh: { summary: '添加可选元数据。', compatibility: '读取方可省略元数据。', verification: '定向测试通过。' },
+}
+
+function proseFile(root: string): string {
+  const path = join(root, 'prose.json')
+  writeFileSync(path, JSON.stringify(AUTHORED_PROSE))
+  return path
+}
 
 const roots: string[] = []
 afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }) })
@@ -101,11 +125,24 @@ function baseline(root: string, schema = inventory()): void {
   commitCurrent(root, schema)
 }
 
+function unionBody(arms: readonly (readonly SchemaProperty[])[]): PersistenceRoot {
+  const nodes: SchemaNode[] = [
+    { kind: 'object', indices: [], properties: [{ name: 'data', type: 1, optional: false }] },
+    { kind: 'union', types: arms.map((_, index) => 5 + index) },
+    { kind: 'primitive', type: 'string' },
+    { kind: 'primitive', type: 'number' },
+    { kind: 'primitive', type: 'boolean' },
+    ...arms.map(properties => ({ kind: 'object' as const, indices: [], properties })),
+  ]
+  const schema = canonicalizeSchema(nodes, 0)
+  return { ...typeRoot('event:example/value', {}), schema, digest: schemaDigest(schema) }
+}
+
 describe('persistence change classification', () => {
   it('treats a new optional payload subtree as one additive change even with required descendants', () => {
     const before = typeRoot('event:example/value', { value: 'string' })
     const after = typeRoot('event:example/value', { value: 'string', 'details?': { name: 'string', count: 'number' } })
-    expect(classifyPersistenceChange(before, after)).toEqual([{ path: 'event:example/value.data.details', description: 'optional property added', requiresVersionBump: false }])
+    expect(classifyPersistenceChange(before, after)).toEqual([{ path: 'event:example/value.data.details', kind: 'optional-property-added', description: 'optional property added', requiresVersionBump: false }])
   })
 
   it('permits required-to-optional payload properties while rejecting opposite changes, type changes, and removals', () => {
@@ -134,6 +171,65 @@ describe('persistence change classification', () => {
     const differences = classifyPersistenceChange(unionRoot(false), unionRoot(true))
     expect(differences.length).toBeGreaterThan(0)
     expect(differences.every(change => !change.requiresVersionBump)).toBe(true)
+  })
+
+  it('allows optional additions across undiscriminated union arms', () => {
+    const first = [{ name: 'a', type: 2, optional: false }]
+    const second = [{ name: 'b', type: 3, optional: false }]
+    const extra = { name: 'x', type: 4, optional: true }
+    const differences = classifyPersistenceChange(unionBody([first, second]), unionBody([[...first, extra], [...second, extra]]))
+    expect(differences).toEqual([expect.objectContaining({ path: 'event:example/value.data.x', requiresVersionBump: false })])
+  })
+
+  it('allows required-to-optional fields across undiscriminated union arms', () => {
+    const before = unionBody([[{ name: 'a', type: 2, optional: false }], [{ name: 'b', type: 3, optional: false }]])
+    const after = unionBody([[{ name: 'a', type: 2, optional: true }], [{ name: 'b', type: 3, optional: true }]])
+    const differences = classifyPersistenceChange(before, after)
+    expect(differences.map(change => change.path).sort()).toEqual(['event:example/value.data.a', 'event:example/value.data.b'])
+    expect(differences.every(change => change.kind === 'property-made-optional' && !change.requiresVersionBump)).toBe(true)
+  })
+
+  it('finds a complete matching when one union arm has multiple additive successors', () => {
+    const required = [{ name: 'a', type: 2, optional: false }]
+    const optional = [{ name: 'a', type: 2, optional: true }]
+    const flexible = [{ name: '0', type: 4, optional: true }, ...optional]
+    const constrained = [...required, { name: 'z', type: 4, optional: true }]
+    const before = unionBody([required, optional])
+    for (const after of [unionBody([flexible, constrained]), unionBody([constrained, flexible])]) {
+      const differences = classifyPersistenceChange(before, after)
+      expect(differences.length).toBeGreaterThan(0)
+      expect(differences.every(change => !change.requiresVersionBump)).toBe(true)
+    }
+    const noCompleteMatching = unionBody([flexible, [{ name: 'different', type: 4, optional: true }]])
+    expect(classifyPersistenceChange(before, noCompleteMatching).some(change => change.requiresVersionBump)).toBe(true)
+  })
+
+  it('keeps union cardinality, property removal, new required fields, and value types strict', () => {
+    const first = [{ name: 'a', type: 2, optional: false }]
+    const second = [{ name: 'b', type: 3, optional: false }]
+    const third = [{ name: 'c', type: 4, optional: false }]
+    const before = unionBody([first, second])
+    const variants = [
+      unionBody([first, second, third]),
+      unionBody([first]),
+      unionBody([first, third]),
+      unionBody([[...first, { name: 'x', type: 4, optional: false }], [...second, { name: 'x', type: 4, optional: true }]]),
+      unionBody([[{ name: 'a', type: 3, optional: true }], [{ name: 'b', type: 3, optional: true }]]),
+    ]
+    for (const after of variants) expect(classifyPersistenceChange(before, after).some(change => change.requiresVersionBump)).toBe(true)
+  })
+
+  it('checks all recursive union arms without retaining provisional successes between candidates', () => {
+    const next = { name: 'next', type: 1, optional: true }
+    const first = [{ name: 'a', type: 2, optional: false }, next]
+    const second = [{ name: 'b', type: 3, optional: false }, next]
+    const extra = { name: 'x', type: 4, optional: true }
+    const before = unionBody([first, second])
+    const additive = unionBody([[...first, extra], [...second, extra]])
+    expect(classifyPersistenceChange(before, additive).every(change => !change.requiresVersionBump)).toBe(true)
+    const invalid = unionBody([[...first, extra], [{ name: 'b', type: 2, optional: false }, next, extra]])
+    expect(classifyPersistenceChange(before, invalid).some(change => change.requiresVersionBump)).toBe(true)
+    expect(classifyPersistenceChange(invalid, before).some(change => change.requiresVersionBump)).toBe(true)
   })
 
   it('preserves body scope through arrays and tuples and rejects a simultaneous value-type change', () => {
@@ -232,6 +328,7 @@ describe('persistence changes current-tree commands', () => {
     runPersistenceChanges(['--baseline', BASE_ID], root, () => before)
     expect(() => loadPersistenceHistory(root)).toThrow('complete compatibility')
     finishDocuments(root, BASE_ID)
+    rmSync(join(root, 'docs/persistence-schema.json'))
     expect(() => verifyPersistenceChanges(root, before)).toThrow('is missing')
     commitCurrent(root, before)
     const after = inventory({ value: 'string', 'label?': 'string' })
@@ -257,6 +354,79 @@ describe('persistence changes current-tree commands', () => {
     expect(() => loadPersistenceHistory(root)).toThrow('unreferenced')
   })
 
+  it('authors a complete pair from explicit prose and reports source changes even when generated artifacts are stale', () => {
+    const root = fixture()
+    baseline(root)
+    const after = inventory({ value: 'string', 'label?': 'string' })
+    const pending = jsonResult(runPersistenceChanges(['--check', '--json'], root, () => after))
+    expect(pending).toMatchObject({ ok: false, operation: 'check', code: 'stale-artifacts',
+      roots: [{ root: 'event:example/value', kind: 'event', before: inventory().roots[2]?.digest, after: after.roots[2]?.digest }], changes: [
+        { root: 'event:example/value', path: 'event:example/value.data.label', kind: 'optional-property-added', requiresVersionBump: false },
+      ] })
+    const written = jsonResult(runPersistenceChanges(['--record', NEXT_ID, '--decision', 'same-version', '--prose', proseFile(root), '--json'], root, () => after))
+    expect(written).toMatchObject({ ok: true, operation: 'record', recordId: NEXT_ID })
+    expect(written.files).toEqual([
+      'docs/persistence-schema.json', `docs/persistence-changes/${NEXT_ID}.md`, `docs/persistence-changes/${NEXT_ID}.zh.md`,
+      `docs/persistence-changes/${NEXT_ID}.i18n.yaml`, `docs/persistence-changes/${NEXT_ID}.schema.json`,
+    ])
+    expect(written).toMatchObject({ roots: [{ root: 'event:example/value', kind: 'event',
+      before: inventory().roots[2]?.digest, after: after.roots[2]?.digest }] })
+    expect(readFileSync(join(root, `docs/persistence-changes/${NEXT_ID}.md`), 'utf8')).toContain(AUTHORED_PROSE.en.compatibility)
+    expect(jsonResult(runPersistenceChanges(['--check', '--json'], root, () => after)).ok).toBe(true)
+  })
+
+  it('refreshes only a terminal acknowledgement while preserving its authored prose and predecessor', () => {
+    const root = fixture()
+    baseline(root)
+    const after = inventory({ value: 'string', 'label?': 'string' })
+    const prose = proseFile(root)
+    runPersistenceChanges(['--record', NEXT_ID, '--decision', 'same-version', '--prose', prose], root, () => after)
+    const path = join(root, `docs/persistence-changes/${NEXT_ID}.md`)
+    const beforeText = readFileSync(path, 'utf8')
+    const refreshed = inventory({ value: 'string', 'label?': 'string', 'extra?': 'number' })
+    runPersistenceChanges(['--update', NEXT_ID, '--decision', 'same-version'], root, () => refreshed)
+    const stripRecord = (value: string): string => value.replace(/```yaml persistence-change[\s\S]*?```/u, '')
+    expect(stripRecord(readFileSync(path, 'utf8'))).toBe(stripRecord(beforeText))
+    expect(loadPersistenceHistory(root).tips.get('event:example/value')?.id).toBe(NEXT_ID)
+    expect(loadPersistenceHistory(root).entries.find(entry => entry.record.id === NEXT_ID)?.record.changes[0]?.previous).toBe(BASE_ID)
+    expect(jsonResult(runPersistenceChanges(['--check', '--json'], root, () => refreshed)).ok).toBe(true)
+    const final = inventory({ value: 'string', 'label?': 'string', 'extra?': 'number', 'last?': 'boolean' })
+    runPersistenceChanges(['--record', '2026-09-11-successor', '--decision', 'same-version', '--prose', prose], root, () => final)
+    expect(() => runPersistenceChanges(['--update', NEXT_ID, '--decision', 'same-version'], root, () => final)).toThrow('with successors')
+    expect(() => runPersistenceChanges(['--update', BASE_ID, '--decision', 'same-version'], root, () => final)).toThrow('cannot update the persistence baseline')
+  })
+
+  it('completes a scaffold through update and rejects invalid prose or decisions before changing files', () => {
+    const root = fixture()
+    baseline(root)
+    const after = inventory({ value: 'string', 'label?': 'string' })
+    runPersistenceChanges(['--record', NEXT_ID, '--decision', 'same-version'], root, () => after)
+    const prose = proseFile(root)
+    runPersistenceChanges(['--update', NEXT_ID, '--decision', 'same-version', '--prose', prose], root, () => after)
+    expect(runPersistenceChanges(['--check'], root, () => after)).toContain('roots match')
+    expect(readFileSync(join(root, `docs/persistence-changes/${NEXT_ID}.md`), 'utf8')).not.toContain('TODO:')
+    const pairedPaths = ['.md', '.zh.md', '.i18n.yaml'].map(suffix => join(root, `docs/persistence-changes/${NEXT_ID}${suffix}`))
+    const completed = pairedPaths.map(path => readFileSync(path, 'utf8'))
+    runPersistenceChanges(['--update', NEXT_ID, '--decision', 'same-version', '--prose', prose], root, () => after)
+    expect(pairedPaths.map(path => readFileSync(path, 'utf8'))).toEqual(completed)
+    const path = join(root, `docs/persistence-changes/${NEXT_ID}.md`)
+    const before = readFileSync(path, 'utf8')
+    const invalid = inventory({ value: 'number' })
+    const result = jsonResult(runPersistenceChanges(['--update', NEXT_ID, '--decision', 'same-version', '--json'], root, () => invalid))
+    expect(result).toMatchObject({ ok: false, code: 'version-bump-required', changes: [expect.objectContaining({ kind: 'type-changed', requiresVersionBump: true })] })
+    expect(readFileSync(path, 'utf8')).toBe(before)
+    for (const value of [
+      { ...AUTHORED_PROSE, extra: 'unsupported' },
+      { ...AUTHORED_PROSE, en: { ...AUTHORED_PROSE.en, compatibility: '   ' } },
+      { ...AUTHORED_PROSE, zh: { ...AUTHORED_PROSE.zh, verification: 'TODO: record validation evidence.' } },
+      { ...AUTHORED_PROSE, zh: { ...AUTHORED_PROSE.zh, verification: '```text\nUnpaired code.\n```' } },
+    ]) {
+      writeFileSync(prose, JSON.stringify(value))
+      expect(() => runPersistenceChanges(['--update', NEXT_ID, '--decision', 'same-version', '--prose', prose], root, () => after)).toThrow()
+      expect(readFileSync(path, 'utf8')).toBe(before)
+    }
+  })
+
   it('executes the real CLI against a source-only temporary checkout without Git history', () => {
     const root = fixture()
     const physical = join(root, 'packages/session/session-persistence-jsonl/src')
@@ -272,31 +442,58 @@ describe('persistence changes current-tree commands', () => {
     const source = [
       '/** Stored header. */', 'export interface SessionHeader { version: 3; id: string }',
       '/** Stored event payloads. */', 'export interface SessionEventMap {', '/** Saved value. */',
-      "'example/value': { value: string }", '}', 'export type SurfaceEventType = never',
+      "'example/value': { value: string }", '}', '/** Surface event names. */', "export type SurfaceEventType = 'example/value'",
+      '/** Persisted event names. */', 'export type SessionEventType = keyof SessionEventMap',
+      '/** Surface placement. */', "export type SurfaceOp = 'append'", '/** Persisted event. */',
       'export type SessionEvent<K extends keyof SessionEventMap = keyof SessionEventMap> =',
-      '  { [P in K]: { type: P; seq: number; data: SessionEventMap[P] } }[K]', '',
+      '  { [P in K]: { type: P; seq: number; data: SessionEventMap[P]; surfaceOp: SurfaceOp } }[K]', '',
     ].join('\n')
     writeFileSync(join(session, 'types.ts'), source)
     const script = resolve(import.meta.dirname, 'persistence-changes.ts')
     const cli = (...args: string[]): ReturnType<typeof spawnSync> => spawnSync(process.execPath, ['--import', import.meta.resolve('tsx/esm'), script, '--root', root, ...args], {
       cwd: root, encoding: 'utf8', timeout: 120_000,
     })
-    const initialized = cli('--baseline', BASE_ID)
+    const prose = proseFile(root)
+    const initialized = cli('--baseline', BASE_ID, '--prose', prose)
     expect(initialized.error).toBeUndefined()
     expect(initialized.signal).toBeNull()
     expect(initialized.status, String(initialized.stderr)).toBe(0)
-    finishDocuments(root, BASE_ID)
-    commitCurrent(root, extractPersistenceSchema(root))
     const accepted = cli('--check')
     expect(accepted.error).toBeUndefined()
     expect(accepted.signal).toBeNull()
     expect(accepted.status, String(accepted.stderr)).toBe(0)
-    writeFileSync(join(session, 'types.ts'), source.replace('value: string', 'value: number'))
+    const optional = source.replace('value: string', 'value: string; label?: string')
+    writeFileSync(join(session, 'types.ts'), optional)
+    const authored = cli('--record', NEXT_ID, '--decision', 'same-version', '--prose', prose, '--json')
+    expect(authored.error).toBeUndefined()
+    expect(authored.signal).toBeNull()
+    expect(authored.status, String(authored.stderr)).toBe(0)
+    expect(JSON.parse(String(authored.stdout)) as unknown).toMatchObject({ ok: true, operation: 'record' })
+    const beforeUpdate = readFileSync(join(root, `docs/persistence-changes/${NEXT_ID}.md`), 'utf8')
+    writeFileSync(join(session, 'types.ts'), optional.replace('label?: string', 'label?: string; extra?: number'))
+    const updated = cli('--update', NEXT_ID, '--decision', 'same-version', '--json')
+    expect(updated.error).toBeUndefined()
+    expect(updated.signal).toBeNull()
+    expect(updated.status, String(updated.stderr)).toBe(0)
+    expect(JSON.parse(String(updated.stdout)) as unknown).toMatchObject({ ok: true, operation: 'update' })
+    expect(readFileSync(join(root, `docs/persistence-changes/${NEXT_ID}.md`), 'utf8').replace(/```yaml persistence-change[\s\S]*?```/u, ''))
+      .toBe(beforeUpdate.replace(/```yaml persistence-change[\s\S]*?```/u, ''))
+    const generated = extractPersistenceSchema(root)
+    for (const file of persistenceCatalogArtifacts(root, generated)) expect(readFileSync(join(root, file.path), 'utf8')).toBe(file.content)
+    verifyPersistenceChanges(root, generated)
+    writeFileSync(join(session, 'types.ts'), optional.replace('label?: string', 'label?: string; extra?: number').replace('value: string', 'value: number'))
     commitCurrent(root, extractPersistenceSchema(root))
     const rejected = cli('--check')
     expect(rejected.error).toBeUndefined()
     expect(rejected.signal).toBeNull()
     expect(rejected.status).toBe(1)
     expect(String(rejected.stderr)).toContain('version-bump required')
+    const structured = cli('--check', '--json')
+    expect(structured.error).toBeUndefined()
+    expect(structured.signal).toBeNull()
+    expect(structured.status).toBe(1)
+    expect(JSON.parse(String(structured.stdout)) as unknown).toMatchObject({
+      ok: false, code: 'unacknowledged-changes', changes: [expect.objectContaining({ kind: 'type-changed', requiresVersionBump: true })],
+    })
   })
 })

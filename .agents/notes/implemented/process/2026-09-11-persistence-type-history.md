@@ -10,13 +10,17 @@ A persisted event can retain the same payload type expression while a referenced
 
 ## Decision
 
-One normalized type model supplies the readable persistence catalog, the complete schema inventory, and transitive per-root digests. Roots identify the Session header, the event envelope, and every repository-declared event. Source locations, alias names, comments, and property order are presentation details outside the digest. Referenced and recursive types participate in structural comparison; opaque values retain explicit coverage limits.
+One normalized type model supplies the readable persistence catalog, the complete schema inventory, and transitive per-root digests. Roots identify the logical Session header, the physical JSONL header line, the event envelope, and every repository-declared event. Source locations, alias names, comments, and property order are presentation details outside the digest. Referenced and recursive types participate in structural comparison; opaque values retain explicit coverage limits.
 
 The dedicated [persistence-change records](../../../../docs/persistence-changes/README.md) bind acknowledgement to the after digest of each affected root. A generated companion stores complete after schemas. The initial record covers all roots; later records name each root's predecessor. A predecessor's after schema supplies the next before schema. Verification rejects ambiguous history and requires current source to match the terminal recorded state without consulting Git history or remote services.
 
 Automatic classification permits optional body additions, required-to-optional body changes, and ordinary event additions within one version. Other structural changes require a version-bump decision that includes an increasing header version in that record. The [format-version procedure](../../../../docs/cookbook/adding-a-session-format-version.md) continues to own adjacent migration work. Every structural difference requires an explicit record, including additions allowed within the same version.
 
 The new document kind preserves the compatibility reasoning and evidence for a historical type transition. Agent Notes retain mechanism-level decisions; they do not become a growing inventory of individual acknowledgements. Machine declarations remain identical across the bilingual pair and are parsed once.
+
+Record commands generate the bilingual catalog and consistency records from repository-owned templates. Authors can supply the two languages' summary, compatibility reasoning, and actual verification evidence as structured input. Generation supplies identifiers, digests, and snapshots; it never invents a compatibility explanation or test result. Structured check output retains a nonzero failure exit status and reports stable change kinds independently of human-readable descriptions.
+
+Explicit update refreshes an unaccepted terminal record without deleting its authored prose. It recomputes the transition against the remaining history and rejects the baseline or any record with dependants. Review acceptance is not a fact available from the tree, so authors preserve accepted records and add successors.
 
 ## Alternatives considered
 

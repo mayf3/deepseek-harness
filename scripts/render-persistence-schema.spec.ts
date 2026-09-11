@@ -64,4 +64,17 @@ describe('persistence schema catalog', () => {
     }
     expect(renderPersistenceSchemaDefinitions(inventory)).toContain('| `next` | optional | [`Recursive`](#persistence-type-recursive) |')
   })
+
+  it('uses intrinsic scalar labels even when an alias or reference supplied a name', () => {
+    const schema = canonicalizeSchema([{ kind: 'primitive', type: 'string' }], 0)
+    const digest = schemaDigest(schema)
+    const inventory: PersistenceSchemaInventory = {
+      formatVersion: 1,
+      roots: [],
+      types: [{ digest, schema, names: ['SessionHeader.agentPreset'], sources: [] }],
+    }
+    const rendered = renderPersistenceSchemaDefinitions(inventory)
+    expect(rendered).toContain('### `string`')
+    expect(rendered).not.toContain('### `SessionHeader.agentPreset`')
+  })
 })
