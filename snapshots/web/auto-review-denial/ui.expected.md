@@ -26,9 +26,7 @@
   - img
   - text: Bash Rejected by Auto review
 - textbox "Message or run a task, / commands, @ files or sessions"
-- button "Commands":
-  - img
-- button "Add attachment":
+- button "Add files or run commands":
   - img
 - 'button "Access mode, current: Auto review EXP"':
   - text: Auto review
@@ -73,9 +71,7 @@
 - text: "OUT Tool was not executed. Reason: ptc raw reason"
 - button "Inspect"
 - textbox "Message or run a task, / commands, @ files or sessions"
-- button "Commands":
-  - img
-- button "Add attachment":
+- button "Add files or run commands":
   - img
 - 'button "Access mode, current: Auto review EXP"':
   - text: Auto review
@@ -143,9 +139,7 @@
     - tab "Timing"
   - tabpanel "Result": "AutoReviewDeniedError: AUTO_REVIEW_DENIED Error: Auto review rejected tool \"bash\"; its body was not executed"
 - textbox "Message or run a task, / commands, @ files or sessions"
-- button "Commands":
-  - img
-- button "Add attachment":
+- button "Add files or run commands":
   - img
 - 'button "Access mode, current: Auto review EXP"':
   - text: Auto review

@@ -13,7 +13,7 @@ import { LlmAdapter, ToolCallId } from '@deepseek-ai/dsh-llm'
 import type { GenerateOptions, LlmResolvedModelInfo, StreamChunk } from '@deepseek-ai/dsh-llm'
 import { canonicalPath, writableRoots } from '@deepseek-ai/dsh-sandbox'
 import { SESSION_FORMAT_VERSION, SessionId, type SessionEvent } from '@deepseek-ai/dsh-session'
-import { composeEntries, loadOverlayPatches } from '@deepseek-ai/dsh-app-boot'
+import { auditStartupEntries, composeEntries, loadOverlayPatches } from '@deepseek-ai/dsh-app-boot'
 // These imports carry the tools/sandboxPolicy/approval Context merges.
 import { RUN_CODE_NAME } from '@deepseek-ai/dsh-tools'
 import type {} from '@deepseek-ai/dsh-sandbox-policy'
@@ -1005,9 +1005,13 @@ it('rolls back a failed shipped Auto initialization before publishing or interce
   // not an Auto reviewer or a supported host composition.
   const stopUnsupportedConflict = ctx.permissionPresets.registerAuto(() => {})
   try {
-    await expect(
-      autoEntry.update({ disabled: false }).then(() => ctx.loader.await()),
-    ).rejects.toThrow('preset "auto" is already registered')
+    // A failed optional entry settles the Loader without rejecting it and
+    // reports through the startup audit, which is where the conflict surfaces.
+    const warnings: string[] = []
+    await autoEntry.update({ disabled: false })
+    await ctx.loader.await()
+    await auditStartupEntries(ctx, 'web e2e scaffold', (line) => { warnings.push(line) })
+    expect(warnings.join('\n')).toContain('preset "auto" is already registered')
 
     const handle = await ctx.agents.create({
       sessionId: SessionId('shipped-auto-init-rollback'),
