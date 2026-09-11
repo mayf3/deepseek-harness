@@ -53,7 +53,7 @@ kind: "package-reference"
 
 ### 转接，不是第二个管理器
 
-适配器为一个 `PluginManager` 提供逐次调用的 profile、预设与 agent 读取器，转接各 Remote 方法并映射领域错误。它观测原生条目与状态事件，在 Loader 和已排队的 profile 重组完成后合并发布 `plugins/changed` 通知。销毁会取消待发通知并移除监听器。测试可替换管理器、pnpm 启动器或静态元信息读取器。
+适配器为一个 `PluginManager` 提供逐次调用的 profile、预设与 agent 读取器，转接各 Remote 方法并映射领域错误。它将原生条目与状态事件合并到一次读取中，等待 Loader 和已排队的 profile 重组完成后，仅在行诊断变化时发布 `plugins/changed` 通知。管理操作仍保留各自的变更通知。销毁会取消待发通知并移除监听器。测试可替换管理器、pnpm 启动器或静态元信息读取器。
 
 ### 源码地图
 

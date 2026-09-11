@@ -10,7 +10,7 @@
 
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
-import type { readPackageMetadata } from '@deepseek-ai/dsh-app-boot'
+import { inspectEntryIssues, type readPackageMetadata } from '@deepseek-ai/dsh-app-boot'
 import type {} from '@deepseek-ai/dsh-agent'
 import type {} from '@deepseek-ai/dsh-agent-presets'
 import {
@@ -87,21 +87,41 @@ export class PluginManagerRemote extends TypertRemoteService {
       ...internals.metadata === undefined ? {} : { metadata: internals.metadata },
     })
     const loader = ctx.loader
-    let generation = 0
     let disposed = false
+    let refreshing = false
+    let dirty = false
+    let previousIssues = '[]'
+    const invalidated = (): boolean => disposed || dirty
     ctx.effect(() => () => { disposed = true })
     const refresh = (): void => {
-      const requested = ++generation
-      // Loader events precede asynchronous import/update completion; publish only after settlement.
+      dirty = true
+      if (refreshing) return
+      refreshing = true
+      // One reader settles the latest tree; events during its read request another pass.
       void Promise.resolve().then(async () => {
-        await loader.await()
-        await ctx.get('profileRuntime')?.whenIdle()
-        if (!disposed && requested === generation) ctx.emit('plugins/changed', { reason: 'runtime' })
-      }).catch((error: unknown) => { ctx.logger.warn('plugin inventory refresh failed', error) })
+        while (dirty && !disposed) {
+          dirty = false
+          await loader.await()
+          await ctx.get('profileRuntime')?.whenIdle()
+          if (invalidated()) continue
+          const issues = await inspectEntryIssues(ctx)
+          if (invalidated()) continue
+          const next = JSON.stringify(issues.map(({ entry, stage, message }) =>
+            JSON.stringify([entry.id, entry.options.name, entry.fiber?.state, stage, message]),
+          ).sort())
+          if (next === previousIssues) continue
+          previousIssues = next
+          ctx.emit('plugins/changed', { reason: 'runtime' })
+        }
+      }).catch((error: unknown) => { ctx.logger.warn('plugin inventory refresh failed', error) }).finally(() => {
+        refreshing = false
+        if (dirty && !disposed) refresh()
+      })
     }
     ctx.on('internal/status', (fiber) => { if (fiber.entry !== undefined) refresh() }, { global: true })
     ctx.on('loader/entry-init', refresh, { global: true })
     ctx.on('loader/partial-dispose', refresh, { global: true })
+    refresh()
 
   }
 
@@ -126,7 +146,7 @@ export class PluginManagerRemote extends TypertRemoteService {
   }
 
   /**
-   * Remove a package from the profile with its user-layer rows and any obsolete discovery cache.
+   * Remove a package from the profile with its user-layer rows.
    * @param packageName - the installed dependency to remove.
    */
   @Remote('uninstall')

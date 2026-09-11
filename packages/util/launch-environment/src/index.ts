@@ -135,24 +135,3 @@ declare module '@deepseek-ai/cordis' {
     launchEnvironment?: LaunchEnvironmentSnapshot
   }
 }
-
-/**
- * Environment names that carry credentials — API keys, passwords, secrets,
- * tokens — matched case-insensitively. The one rule every harness child spawn
- * scrubs by, so the harness's own credentials never reach a child implicitly.
- */
-export const SENSITIVE_ENV_PATTERN = /KEY|PASSWORD|SECRET|TOKEN/i
-
-/**
- * An environment without its credential-shaped entries, for a child that must
- * not see the harness's credentials: a package probe, a spawned tool.
- * @param env - the environment to scrub, typically `process.env`.
- * @returns a fresh object holding every entry whose name is not credential-shaped and whose value is set.
- */
-export function withoutSensitiveEnv(env: NodeJS.ProcessEnv): Record<string, string> {
-  const scrubbed: Record<string, string> = {}
-  for (const [name, value] of Object.entries(env)) {
-    if (value !== undefined && !SENSITIVE_ENV_PATTERN.test(name)) scrubbed[name] = value
-  }
-  return scrubbed
-}
