@@ -358,6 +358,11 @@ function ptcAction(
  */
 function snapshotAutoReview(agent: Agent, exec: ToolExecution): ReviewSnapshot {
   const { session } = agent
+  // The reviewer's risk inputs are the whole action history: earlier native calls
+  // and PTC starts carry the authorizations and duplicate identities this call is
+  // compared against, and the direct parent's initial prompt sets the delegated
+  // scope. No projection or paged reader exposes those records yet.
+  // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
   const events = session.snapshotEvents()
   const nodes = [...session.surface.nodes]
   const header = session.requestHeader()

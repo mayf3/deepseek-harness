@@ -116,6 +116,7 @@ The denial appends an ordinary tool result; it does not rewrite earlier context 
 - Auto provides no file sandbox. The outer `run_code` transport and direct Node effects inside its worker do not pass through inner-tool review.
 - Model classification can be wrong. There are no deterministic tool exemptions, persistent grants, manual fallback, configurable policy, or retry layer.
 - In-process Auto children review their own calls. Out-of-process children retain their native permission systems after the parent delegation call is allowed.
+- The reviewer reads the Session action history through the deprecated synchronous `snapshotEvents()` reader under a line-scoped waiver. Prior calls, PTC starts, and the direct parent's initial prompt have no projection or paged reader yet, so the migration stays deferred by [the synchronous-read decision](../../../.agents/notes/implemented/architecture/2026-09-09-deprecate-synchronous-session-event-reads.md).
 
 <a id="dev-note"></a>
 ### Dev Note
