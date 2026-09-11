@@ -12,6 +12,8 @@ import type { Agent } from '@deepseek-ai/dsh-agent'
 import { Session, SessionId } from '@deepseek-ai/dsh-session'
 import type { SessionEventMap } from '@deepseek-ai/dsh-session'
 import type { JsonValue } from '@deepseek-ai/dsh-util-values'
+import SandboxPolicy from '@deepseek-ai/dsh-sandbox-policy'
+import SessionProjections from '@deepseek-ai/dsh-session-projection'
 
 const testToolSignal = new AbortController().signal
 
@@ -1908,5 +1910,61 @@ describe('per-agent presentation', () => {
 
     await expect(systemPrompt.assemble({ scope: agent }))
       .rejects.toThrow('mode "both" requires a code runtime')
+  })
+})
+
+
+class ConfinedFakeRuntime extends FakeRuntime {
+  override get sandboxMode() { return 'read-only' as const }
+}
+
+describe('PTC standing file policy and sandbox outcomes', () => {
+  it('requires a policy owner before dispatching a confined runtime', async () => {
+    const { ctx } = await setup({ runtime: false })
+    try {
+      await ctx.plugin(ConfinedFakeRuntime)
+      const result = await runCode(ctx, 'return 1')
+      expect(result.isError).toBe(true)
+      expect(result.content).toEqual([{ type: 'text', text: 'Error: dsh-tools: confined code runtime requires sandboxPolicy' }])
+      expect((ctx.codeRuntime as ConfinedFakeRuntime).lastRequest).toBeUndefined()
+    } finally { await ctx.fiber.dispose() }
+  })
+
+  it('resolves deployment policy for an agentless program', async () => {
+    const { ctx } = await setup({ runtime: false })
+    try {
+      await ctx.plugin(SessionProjections)
+      await ctx.plugin(SandboxPolicy, { mode: 'read-only', workspaceRoot: process.cwd() })
+      await ctx.plugin(ConfinedFakeRuntime)
+      const result = await runCode(ctx, 'return 1')
+      expect(result.isError).not.toBe(true)
+      expect((ctx.codeRuntime as ConfinedFakeRuntime).lastRequest?.sandboxPolicy).toEqual(ctx.sandboxPolicy.resolve())
+    } finally { await ctx.fiber.dispose() }
+  })
+
+  it('preserves partial enforcement and observed denial in successful output', async () => {
+    const { ctx, runtime } = await setup()
+    try {
+      runtime.behavior = async () => ({ logs: [], sandbox: { mode: 'read-only', enforcement: 'partial', denied: true } })
+      const result = await runCode(ctx, 'return 1')
+      expect(result.value).toEqual({ logs: [], sandbox: { mode: 'read-only', enforcement: 'partial', denied: true } })
+      expect(result.content).toEqual([{ type: 'text', text: 'File sandbox enforcement is partial on this host.\nThe read-only file sandbox denied an operation.' }])
+    } finally { await ctx.fiber.dispose() }
+  })
+
+  it.each([
+    { mode: 'danger-full-access' as const, denied: false },
+    { mode: 'read-only' as const, denied: true, enforcement: 'full' as const },
+  ])('includes the available sandbox facts with a failed program ($mode)', async (sandbox) => {
+    const { ctx, runtime } = await setup()
+    try {
+      runtime.behavior = async () => ({ logs: [], error: { kind: 'exception', message: 'failed' }, sandbox })
+      const result = await runCode(ctx, 'throw new Error("failed")')
+      expect(result.isError).toBe(true)
+      const text = result.content.filter(block => block.type === 'text').map(block => block.text).join('\n')
+      expect(text).toContain(`File sandbox: ${sandbox.mode}`)
+      expect(text.includes('enforcement: full')).toBe('enforcement' in sandbox)
+      expect(text.includes('operation denied')).toBe(sandbox.denied)
+    } finally { await ctx.fiber.dispose() }
   })
 })

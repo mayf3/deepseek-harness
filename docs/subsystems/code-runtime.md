@@ -179,6 +179,8 @@ Failure kinds are **orthogonal outcomes reported independently** (per [defensive
  * - `'worker-exit'` — the execution substrate died without settling (e.g. OOM).
  * - `'invalid-output'` — the completion value was not lossless JSON.
  * - `'output-limit'` — the serialized outer logs/value/diagnostic exceeded the configured cap.
+ * - `'protocol'` — the program sent invalid or over-budget control traffic.
+ * - `'sandbox-unavailable'` — required confinement could not be established.
  */
 interface CodeRunFailure {
   /** The failure class (see the interface doc for each kind's meaning). */
