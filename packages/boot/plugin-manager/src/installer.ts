@@ -7,7 +7,7 @@
 
 import { spawn as spawnChild } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
-import { readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import {
   awaitChildClose,
@@ -189,7 +189,7 @@ export class PluginInstaller {
   }
 
   /**
-   * Run `pnpm remove`, reconcile the layer list, and remove any obsolete discovery record.
+   * Run `pnpm remove` and reconcile the layer list.
    * @param packageName - the dependency to remove.
    * @throws {PluginOperationError} `plugins/install-failed` when pnpm fails.
    */
@@ -198,7 +198,6 @@ export class PluginInstaller {
     const before = readProfileManifest(NAME, profileDir)
     await this.runPnpm(['remove', packageName], packageName)
     reconcileInstalledBundles(NAME, profileDir, installAnchor, before, { autoEnable: false })
-    rmSync(join(profileDir, '.dsh-plugins', `${packageName.replaceAll('/', '__')}.json`), { force: true })
   }
 
   /**

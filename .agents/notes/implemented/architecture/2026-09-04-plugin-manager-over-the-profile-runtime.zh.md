@@ -1,43 +1,41 @@
-# Agent Note：插件管理器驱动 profile runtime
+# Agent Note: 插件管理器驱动 profile runtime
 
 Status: implemented
 
 [English](2026-09-04-plugin-manager-over-the-profile-runtime.md) | 中文
 
-本文中的启用事务、contained 失败记录和执行 probe 已由[原生条目诊断与静态声明](2026-09-11-native-entry-diagnostics-and-static-plugin-declarations.zh.md)取代。管理器与 Remote 的拆分、pnpm 进程选择、修改互斥和 patch 文件归属仍然适用。
+## Problem
 
-## 问题
+CLI 与 Web 需要相同的安装检查，而只有运行中的应用才能应用组合包变更或检查活跃行。把两类职责都放在 Web 宿主会迫使 CLI 依赖该宿主或重复实现安装器。Profile 清单、用户 patch 和 pnpm 操作也需要协调修改，避免并发请求覆盖彼此的意图。
 
-安装插件曾是只有终端能做的事：`dsh plugin --profile web add <spec>` 运行 pnpm，把找到的每个组合包追加进 `dsh.profile.bundles`，下次启动再组合。运行中的任何东西都无法得知哪些包装了但没启用，无法不手改 `package.json` 就关掉一个组合包，无法把某个包的模块加进 profile 的用户层或某个 agent preset，也说不出一个包的服务撑着哪些行。Web 界面能经 `pluginInventory/list` 列出行，仅此而已；而 launcher 的 `profileRuntime`（前一篇笔记）已经能在用户 patch 重载时重新组合树，`reconcileInstalledBundles` 也已经把安装与启用分开。缺的是执行这些操作并把每个包报告成一个整体的宿主服务。
+## Decision
 
-## 决定
+**一个业务管理器，一个 Remote 适配器。** `dsh-plugin-manager` 位于 app-boot 旁。`PluginInstaller` 操作 profile 文件和 pnpm，不需要运行中的 Loader；`PluginManager` 在其上增加面向运行中 profile 的组合包与行操作。CLI 共用安装器。`dsh-host-plugin-manager` 提供逐次调用的 profile runtime、预设层与运行中 agent 数读取器，转接方法并将 `PluginOperationError` 错误码映射为 Remote 错误。缺少 profile runtime 时在调用处报告 `plugins/unavailable`。管理器依赖预设层接口，不依赖预设或 agent 的实现。
 
-**一个管理器，一个 Remote。** boot 组里与 `app-boot` 并列的 `dsh-plugin-manager` 拥有插件管理做什么：`PluginInstaller` 只需要磁盘上的 profile（pnpm 运行、探针、装后检查），`PluginManager` 在其上加上已启动树的每项操作，每次拒绝都是带 `plugins/*` 码的 `PluginOperationError`。`dsh-host-plugin-manager` 提供 `pluginManager` 与 `plugins` Remote——`list`、`add`、`uninstall`、`enable`、`disable`、`retry`、`addRow`、`removeRow`、`setRowDisabled`、`dependents`——作为转接层：一个 Remote 方法对应一个管理器方法，一个穷尽的 switch 把失败转成同码的 Remote 错误（`plugins/bad-request` 转成 Gateway 的 `gateway/bad-request`）。管理器把 profile runtime、preset roster 与运行中 agent 数当作按调用读取的读取器接入，roster 只以 `PresetLayers`（层路径、preset 列表、组合行）的形态接入，因此既不依赖 roster 也不依赖 agent 注册表；`dsh plugin add` 与 `remove` 跑同一个安装器，CLI 与 Web 宿主共用一套准入规则，终端里不必启动 profile。每个操作都重新读取 profile manifest，并通过 CLI 所用的同一组 app-boot 助手——`reconcileInstalledBundles`、`enableBundle`、`disableBundle`——写回，因此 CLI 与管理器不可能对这个文件有分歧：`dependencies` 说装了什么，`dsh.profile.bundles` 说启用了什么。profile runtime 按调用解析而非注入，于是 web 组合包的这一行在不经 profile launcher 启动的组合里也能启动，并回答 `plugins/unavailable`。
+**同时只允许一个变更。** 重叠变更收到 `plugins/busy`，不进入可能携带过期假设的队列。有 agent 运行时，安装与移除以 `plugins/agents-running` 拒绝，因为 pnpm 会重写这些 agent 导入的模块。组合包与行编辑不改 `node_modules`，不使用这一限制。每次操作重新读取 profile 清单：依赖记录安装，`dsh.profile.bundles` 记录启用。
 
-**启用就是 Loader 的事务。** `enable` 把组合包放进层列表，在 `healProfilesModuleFallback` 链接好该组合包携带的包之后调用 `profileRuntime.recompose({ reloadBundles: true })`。被拒绝的重新组合——`boot` 阶段而行抛错的组合包——就是 Loader 回滚到原本运行的树；管理器恢复层列表并报告 `plugins/enable-failed`。`runtime` 阶段而行失败的组合包由受控组隔离并逐行报告。由于启动审计不会再跑一次，管理器在在线重新组合之后调用 `recordContainedStates`，而 `ContainedGroup.create` 现在把以 pending 状态完成创建的行记录下来而不是清除——重载会重新创建组里的每一行，等待中的行必须带着记录穿过这一过程。`retry` 是先停用再启用：Loader 的更新不碰未改变的行，只有离开再回来才能重启一条失败的隔离行。
+**pnpm 保留正常的启动环境。** 安装器使用 `node:child_process`，并在 Windows 上通过 shell 处理 `.cmd` 垫片。Registry 凭据与代理配置保持可用。输出以 job id 下的 `plugins/install-log` 流式发送，按请求保留终端颜色；启动失败、超时与非零退出以 `plugins/install-failed` 和有界日志尾部报告。add 失败时恢复保存的清单。安装后进行静态声明和组合包冲突检查；未知包保留安装，新组合包保持禁用，除非调用方请求启用。没有需要维护的发现缓存目录。
 
-**pnpm 按 CLI 的方式运行。** 经 `node:child_process`、带父进程环境、Windows 上开 `shell`，而不经 subprocess seam：seam 会清洗 pnpm 访问 registry 与代理所需的形似密钥的变量，也没有解析 `.cmd` shim 的 shell 模式。输出以某个 job id 下的 `plugins/install-log` 分块流式发出，每块写明命令行与 profile 目录，pnpm 的颜色为 Web 对话框的终端保留、对 stdout 不是终端的 CLI 去掉；非零退出、spawn 错误或超时即带日志尾部的 `plugins/install-failed`。新包被探测并保持停用，除非调用方要求 `enable`。
+**启用选择层，诊断描述实际行。** 组合包启用、非事务重组和显式 `dsh.plugins` 发现遵循[原生条目诊断与静态声明](2026-09-11-native-entry-diagnostics-and-static-plugin-declarations.zh.md)。管理器区分逐行问题与启用选择。`retry` 移除完整层，等待清理，再将其加入；仅保留不变的行选项不会重启失败插件。`list` 从清单、静态声明和当前 Loader 状态派生每个包的视图。
 
-**`pnpm add` 成功不等于装好了插件。** 运行前先给 manifest 拍快照，pnpm 失败时恢复，失败的 add 不会留下依赖。之后逐个裁决 pnpm 加进来的包：既不声明组合包也不声明插件模块的，或者行 id 已被已组合层占有的组合包（对当前各层加候选层跑 `claimLayerIds`），再以 `pnpm remove` 移除并连同原因报在 `removed` 里；探针拒绝的包保留，因为视图能解释它、`retry` 还能再试。管理器一次只跑一个变更，第二个以 `plugins/busy` 拒绝而不是排队——否则每次写入都会在 manifest、用户层或 `node_modules` 上竞争——`install` 与 `uninstall` 在任一 agent 运行时以 `plugins/agents-running` 拒绝，因为 pnpm 会重写那些会话正在 import 的目录。这三道守卫来自社区的 `dshmarket` 管理器，它每一条都是从一个 bug 学来的。
+**行通过 patch-file 写入器修改。** `addRow` 将声明的模块与配置插入 profile 用户 patch 或 roster 返回的预设覆盖层。`setRowDisabled` 写入或移除 `disabled: true`，用户撤销禁用时恢复作者原来的条件。全局修改重组运行中的树；预设修改影响后续常驻代际。
 
-**行经补丁文件写入器落地。** `addRow` 把 `{ id, name, config }` 插入 profile 的 `cordis.patch.yml` 或某个 agent preset 的用户层（经 roster 的 `overlayPathFor`），id 由包名与子路径派生；`setRowDisabled` 只写拒绝，写入或移除 `disabled: true`，因此组合包的 `!!js` 门被恢复而不是被覆盖。全局层当场重新组合；preset 的层在其下一个常驻代际生效。
+**运行时通知跟随诊断。** 原生条目与 fiber 事件共用一次待完成的读取。读取等待 Loader 和 profile 重组完成，再比较行身份、模块、fiber 阶段、失败阶段与消息。只有诊断集合变化才发送原因是 `runtime` 的 `plugins/changed`；健康状态波动和重复的相同失败保持安静。管理操作仍保留自己的完成通知。读取期间到来的事件请求再次读取，适配器销毁时取消发布。
 
-**每个包一份视图。** `list` 把 manifest、探针记录（缓存在 `.dsh-plugins/` 下，版本变化即刷新）与在线树折叠成一个 `status`：按活跃行数是 `running`、`partial` 或 `failed`；`disabled`；带探针原因的 `not-enableable`；`startup` 重载的 profile 上 manifest 与树不一致时是 `restart-required`；库或插件模块是 `plain`。行在已组合时来自树，否则来自探针，并已带上 launcher 将使用的前缀 id；树外组合包的 trust 来自 `layerTrust`，这也是 `loadProfile` 所用的同一条规则。
+## Alternatives considered
 
-## 考虑过的替代方案
+**通过 `ctx.subprocess` 运行 pnpm。** 它的隐式环境清洗会移除 registry 凭据，也缺少本调用方需要的 Windows shell 模式。为安装包而扩展工具子进程服务会扩大无关接口。
 
-**经 `ctx.subprocess` 运行 pnpm。** 本次否决：seam 没有 shell 模式且会清洗环境；为一个调用方给 seam 加上两者，比管理器本身改动更大，而 CLI 的 spawn 已被验证。
+**直接重启某个失败行。** 这会绕开整层组合，也无法顾及组合包中的 group 和覆盖。移除并重新加入层为其 Loader 条目提供完整生命周期。
 
-**`retry` 时原地重启失败的行。** 否决：行的 options 未变，Loader 的事务性更新不会碰它；手工重建一行会绕过组自己的创建路径及其失败记录。
+**把业务操作保留在 Web 宿主或 app-boot 入口文件。** 宿主会成为 CLI 依赖；把安装、流式输出与依赖查询放进 boot 入口则会让每个启动器耦合管理实现。独立的 boot 组包同时服务两类消费方。
 
-**不探测就启用组合包。** 否决：正是探针把无法 import、或解析到自己那份 cordis 副本的包，在树被要求挂载之前变成带原因的 `not-enableable` 视图。
+**每次 fiber 状态变化都广播。** 大部分变化不改变插件诊断。无条件通知会让客户端在无关工作期间重新读取包文件并渲染。比较诊断仍能报告失败发现与恢复；显式管理操作已经会报告自己的变更。
 
-**把操作留在宿主包里。** 评审后否决：`host/` 是 Web GUI 的那一半，`dsh plugin` 命令要复用安装路径就只能依赖一个 Web 宿主包，于是它一直保留着自己的、没有装后检查的 pnpm 转发器。放进 `app-boot` 一个文件的变体也被否决：每个 `dsh` 表面启动时都加载 `app-boot`，上千行的 pnpm 流式输出、探测与依赖检测应该与它并列，而不是塞进它。
+## Consequences
 
-## 后果
+实时 profile 支持不重启地修改组合包与行。模块代码更新仍需重启，因为 Node 会缓存 ESM 模块。`dependents` 报告注入关系，不报告任意应用依赖，`engines.dsh` 仅供参考。运行时通知不保证描述每一次健康的配置文件修改；它报告诊断变化，操作通知则报告管理变更。
 
-运行中的 Web 宿主可以在 live profile 上不重启地安装、启用、停用、重试与移除三方组合包，并把它们的模块加进全局层或某个 preset。更新已加载的包仍需重启（Node 的模块缓存）；`dependents` 止于注入边；`engines.dsh` 只报告不强制；客户端 UI 在后续 PR 到来。启用、停用与行编辑不受运行中会话限制：它们重组的是树，那是 Loader 的事务，不碰 `node_modules`。
+## Testing
 
-## 测试
-
-`packages/boot/plugin-manager/tests/plugin-manager.spec.ts` 覆盖实际 profile 文件与原生 Loader 树上的管理操作。Host 适配器测试覆盖直接转接、错误码与依赖恢复通知；`apps/cli/tests/plugin.spec.ts` 覆盖共用安装器。生命周期与静态发现的验证遵循取代这些机制的新笔记。
+管理器集成测试使用真实 profile 文件和原生 Loader 树；CLI 测试覆盖共用安装器。适配器测试覆盖 Remote 转接、失败变化与恢复、不变诊断不发通知、事件突发期间共用一次读取、profile 重组屏障以及等待期间的销毁。

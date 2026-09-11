@@ -10,7 +10,6 @@
 
 import { Context, Service } from '@deepseek-ai/cordis'
 import { proxyEnvironmentForChild } from '@deepseek-ai/dsh-http-proxy'
-import { SENSITIVE_ENV_PATTERN } from '@deepseek-ai/dsh-launch-environment'
 import { DSH_ENV_PREFIX } from './types.ts'
 import type { SubprocessHandle, SubprocessSpawnSpec } from './types.ts'
 import type { SubprocessTerminalHandle, SubprocessTerminalSpawnSpec } from './types.ts'
@@ -39,12 +38,11 @@ export type {
 /**
  * Credential-shaped environment names are NOT forwarded to children (the
  * harness's own `DEEPSEEK_API_KEY`/secrets must not leak into a spawned
- * process implicitly). One heuristic for every in-repo spawner, defined in
- * `dsh-launch-environment` so the package probe scrubs by the same rule; a
+ * process implicitly). One heuristic for every in-repo spawner; a
  * deliberately supplied entry survives because explicit env layers merge
  * after the scrub.
  */
-export { SENSITIVE_ENV_PATTERN }
+export const SENSITIVE_ENV_PATTERN = /KEY|PASSWORD|SECRET|TOKEN/i
 
 /**
  * The ambient parent environment minus credential-shaped names and minus all

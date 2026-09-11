@@ -219,7 +219,7 @@ export class PluginManager {
 
   /**
    * Remove a package from the profile: disable it when enabled, drop every
-   * user-layer row that names it, run `pnpm remove`, and clean obsolete discovery metadata.
+   * user-layer row that names it, and run `pnpm remove`.
    * @param packageName - the installed dependency to remove.
    * @throws {PluginOperationError} `plugins/not-installed`, `plugins/agents-running`,
    * or `plugins/install-failed` when pnpm exits non-zero.
