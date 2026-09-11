@@ -51,6 +51,8 @@ interface CommittedComposition {
 
 /** Facts and recomposition of the booted profile. */
 export class ProfileRuntime extends Service {
+  static inject = ['loader']
+
   private committed: CommittedComposition
   /** The recomposition in flight, or a settled promise; the next one chains behind it. */
   private queue: Promise<void> = Promise.resolve()
