@@ -1,4 +1,4 @@
-# Agent Note：fail-loud 只在启动期，包在子进程里探测
+# Agent Note: fail-loud 只在启动期，包在子进程里探测
 
 Status: implemented
 

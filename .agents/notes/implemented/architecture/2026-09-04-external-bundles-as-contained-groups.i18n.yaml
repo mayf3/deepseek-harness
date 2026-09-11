@@ -3,4 +3,4 @@
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-09-04-external-bundles-as-contained-groups.md
 2026-09-04-external-bundles-as-contained-groups.md: 023fc1efb803348b054e0c0118ba50c4564fc9c1
-2026-09-04-external-bundles-as-contained-groups.zh.md: c86edb796f42e09052e05349cee0cb9bba19911d
+2026-09-04-external-bundles-as-contained-groups.zh.md: d3c86b25767aa7235b91308f561adcdddfa052a6

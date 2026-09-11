@@ -1,4 +1,4 @@
-# Agent Note：外部组合包挂载为受控组，行 id 有归属
+# Agent Note: 外部组合包挂载为受控组，行 id 有归属
 
 Status: implemented
 
