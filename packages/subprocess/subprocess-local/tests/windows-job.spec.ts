@@ -154,8 +154,8 @@ describe('Windows parent runner contract', () => {
 
   it('rejects a clean exit when private IPC disconnects without a result', async () => {
     const { child, result } = launch()
-    const direct = result.direct.catch(error => error)
-    const range = result.owner.waitForExit().catch(error => error)
+    const direct = result.direct.catch((error: unknown) => error)
+    const range = result.owner.waitForExit().catch((error: unknown) => error)
     child.emit('disconnect')
     child.emit('exit', 0, null)
     expect(await direct).toBeInstanceOf(Error)
