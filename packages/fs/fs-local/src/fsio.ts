@@ -285,7 +285,7 @@ function listingIoError(displayPath: string, error: unknown): FsError {
 
 async function resolveListedChildTarget(parent: LocalTarget, name: string): Promise<LocalTarget> {
   const identity = await resolveLocalTarget(parent.targetKey, name)
-  return { displayPath: join(parent.displayPath, name), targetKey: identity.targetKey }
+  return { displayPath: localDisplayPath(parent.displayPath, name), targetKey: identity.targetKey }
 }
 
 /**
@@ -330,7 +330,7 @@ export async function listDirectory(target: LocalTarget, signal?: AbortSignal): 
         ...(childInfo?.type === 'file' ? { size: childInfo.size } : {}),
       })
     } catch (error: unknown) {
-      throw listingIoError(join(target.displayPath, entry.name), error)
+      throw listingIoError(localDisplayPath(target.displayPath, entry.name), error)
     }
     throwIfAborted(signal, 'list')
   }

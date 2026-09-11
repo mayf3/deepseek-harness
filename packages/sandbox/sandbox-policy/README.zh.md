@@ -45,7 +45,7 @@ kind: "package-reference"
 | 字段 | 默认值 | 含义 |
 |---|---|---|
 | `mode` | `read-only` | 会话起始的部署默认模式，加载时验证 |
-| `workspaceRoot` | `process.cwd()` | 无 agent 调用或没有 cwd 的会话在 `workspace-write` 下可写入的回退根目录；普通 agent 调用改用会话的不可变 cwd |
+| `workspaceRoot` | `process.cwd()` | 无 agent 调用或没有 cwd 的会话所用的绝对回退根目录；相对值在加载时拒绝。普通 agent 调用使用会话的不可变 cwd |
 
 生成的[配置目录](../../../docs/config-catalog.zh.md#deepseek-aidsh-sandbox-policy)是每个受支持字段及其 JSDoc 的穷尽式真源。
 

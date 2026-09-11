@@ -214,6 +214,22 @@ describe('probeNoFollow', () => {
 })
 
 describe('listDirectory', () => {
+  it.skipIf(process.platform === 'win32')('preserves physical parent traversal in displayed child paths', async () => {
+    const lexical = join(dir, 'lexical')
+    const physical = join(dir, 'physical')
+    await mkdir(lexical)
+    await mkdir(join(physical, 'nested'), { recursive: true })
+    await symlink(join(physical, 'nested'), join(lexical, 'link'))
+    await writeFile(join(lexical, 'same.txt'), 'lexical file')
+    await writeFile(join(physical, 'same.txt'), 'physical file')
+
+    const parent = await resolveLocalTarget(dir, 'lexical/link/..')
+    const entries = await listDirectory(parent)
+    const child = entries.find(entry => entry.name === 'same.txt')!
+    expect(await readFile(child.target.displayPath, 'utf8')).toBe('physical file')
+    expect((await resolveLocalTarget(dir, child.target.displayPath)).targetKey).toBe(child.target.targetKey)
+  })
+
   it('lists direct children in stable order without reading content', async () => {
     const root = join(dir, 'skills')
     await mkdir(join(root, 'dir-skill'), { recursive: true })

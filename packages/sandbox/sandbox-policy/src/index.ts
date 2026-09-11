@@ -72,7 +72,7 @@ export interface Config {
   /** File-sandbox mode a session starts from (default: `read-only`). */
   mode?: SandboxMode
   /**
-   * Fallback root for agentless calls and sessions without a cwd (default:
+   * Absolute fallback root for agentless calls and sessions without a cwd (default:
    * `process.cwd()`). Normal agent calls use their session cwd instead.
    */
   workspaceRoot?: string

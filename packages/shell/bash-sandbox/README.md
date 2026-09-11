@@ -92,7 +92,7 @@ For a confined mode, `resolve()` stamps the per-call policy (the session's mode 
 
 ### Invariants
 
-- **Fail closed** — a confined mode with no usable runner throws `SANDBOX_UNAVAILABLE`; unconfined passthrough never happens for a confined policy.
+- **Fail closed** — a confined mode with no usable runner rejects with `SANDBOX_UNAVAILABLE`; unconfined passthrough never happens for a confined policy.
 - **Deny-only at the seam** — this executor never grants permission; the approval flow lives in the tool layer.
 - **Per-process facts** — confinement facts are retained per handle until settlement, because a provider may vary enforcement between overlapping calls.
 - **File effects only** — the mode vocabulary claims only file effects.
