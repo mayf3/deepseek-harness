@@ -135,7 +135,8 @@ describe.skipIf(process.platform === 'win32')('SSH connection startup', () => {
   it.each([
     { host: '-option' }, { host: 'alias; command' }, { node: 'relative' }, { helperHash: 'bad' },
     { bootstrapPath: '/remote/bootstrap.js' }, { bootstrapHash: 'b'.repeat(64) },
-    { requestTimeoutMs: 0 }, { maxFrameBytes: 64 * 1024 * 1024 + 1 }, { maxPending: 129 }, { leaseMs: 2999 },
+    { requestTimeoutMs: 0 }, { requestTimeoutMs: 2_147_483_648 },
+    { maxFrameBytes: 64 * 1024 * 1024 + 1 }, { maxPending: 129 }, { leaseMs: 2999 },
   ])('rejects invalid deployment configuration before SSH starts: %j', (invalid) => {
     expect(() => setup({ config: invalid })).toThrow()
     expect(transport.spawn).not.toHaveBeenCalled()
