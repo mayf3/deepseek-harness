@@ -93,6 +93,35 @@ function executionPolicy(mode: SandboxMode, workspaceRoot = resolve(process.cwd(
 }
 
 describe('the provider hand-off', () => {
+  it('preserves cancellation when a pending subprocess launch later rejects', async () => {
+    const { ctx, bash } = await setup({}, () => passthrough(['node']))
+    const entered = Promise.withResolvers<undefined>()
+    const completion = Promise.withResolvers<never>()
+    const controller = new AbortController()
+    const reason = new Error('caller cancelled pending launch')
+    const reader: SubprocessOutputReader = { readFrom: () => ({ text: '', nextOffset: 0, lossy: false }) }
+    vi.spyOn(ctx.subprocess, 'spawn').mockImplementation(() => {
+      entered.resolve(undefined)
+      return {
+        stdin: undefined, stdout: undefined, stderr: undefined, control: undefined,
+        collected: { stdout: reader, stderr: reader }, done: completion.promise,
+        terminate: () => {}, waitForExit: () => Promise.resolve(true),
+      }
+    })
+    const pending = bash.run(bash.resolve({ command: 'true', signal: controller.signal }))
+    const rejected = expect(pending).rejects.toBe(reason)
+    try {
+      await entered.promise
+      controller.abort(reason)
+      completion.reject(Object.assign(new Error('launch refused'), { code: 'ENOENT', syscall: 'spawn node', path: 'node' }))
+      await rejected
+    } finally {
+      completion.reject(reason)
+      await pending.catch(() => {})
+      await ctx.fiber.dispose()
+    }
+  })
+
   it.each(['run', 'start'] as const)('cancels %s while confinement is pending without spawning', async (operation) => {
     const entered = Promise.withResolvers<AbortSignal>()
     const response = Promise.withResolvers<ConfinedArgv>()

@@ -9,8 +9,10 @@ interface Config { root: string }
 
 /** Empty provider-owned workspace; no operation accesses the host filesystem. */
 export default class ProviderCwdFileSystem extends FileSystem {
+  static inject = ['sandboxPolicy']
   static Config: schema<Config> = schema.object({ root: schema.string().required() })
-  constructor(ctx: Context, private readonly config: Config) { super(ctx) }
+  private readonly config: Config
+  constructor(ctx: Context, config: Config) { super(ctx); this.config = config }
 
   override get sandboxMode(): 'read-only' { return 'read-only' }
   override async resolve(path: string, opts?: { cwd?: string; signal?: AbortSignal }): Promise<FsTarget> {

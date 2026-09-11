@@ -9,7 +9,7 @@ import { CodeRuntime } from '@deepseek-ai/dsh-code-runtime'
 import { createScope, type Scope } from '@deepseek-ai/dsh-scope'
 import { mkdirSync, mkdtempSync, rmSync, symlinkSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join, resolve, sep } from 'node:path'
+import { join, sep } from 'node:path'
 import { turnBoundaryProjectionDefinition } from '@deepseek-ai/dsh-agent-loop'
 import { ToolCallId } from '@deepseek-ai/dsh-llm'
 import SystemPrompt, { renderPrompt } from '@deepseek-ai/dsh-system-prompt'
@@ -891,7 +891,7 @@ describe('sandbox escalation API (write/edit)', () => {
     await call(ctx, 'write', { file_path: 'a.txt', content: 'x' }, escalationAgent())
     expect(fs.stamped).toEqual([{
       mode: 'workspace-write',
-      workspaceRoot: resolve('/session-project'),
+      workspaceRoot: '/session-project',
       sessionId: SessionId('sess-fs-esc'),
     }])
   })
@@ -901,7 +901,7 @@ describe('sandbox escalation API (write/edit)', () => {
     await call(ctx, 'write', { file_path: 'a.txt', content: 'x' }, escalationAgent([{ type: 'sandbox/mode', data: { mode: 'read-only' } }]))
     expect(fs.stamped).toEqual([{
       mode: 'read-only',
-      workspaceRoot: resolve('/session-project'),
+      workspaceRoot: '/session-project',
       sessionId: SessionId('sess-fs-esc'),
     }])
   })
@@ -938,7 +938,7 @@ describe('sandbox escalation API (write/edit)', () => {
     })
     expect(fs.stamped).toEqual([{
       mode: 'danger-full-access',
-      workspaceRoot: resolve('/session-project'),
+      workspaceRoot: '/session-project',
       sessionId: SessionId('sess-fs-esc'),
     }])
   })
