@@ -4,6 +4,8 @@ Status: implemented
 
 English | [中文](2026-09-10-desktop-web-wrapper.zh.md)
 
+The [Electron runtime decision](2026-09-11-desktop-electron-node-runtime.md) supersedes the separate upstream Node executable; other decisions in this note remain applicable.
+
 ## Problem
 
 Separate Desktop composition and request transport require their own configuration, module loading, streaming, and asset-serving behavior. Those implementations can omit Web features even when the renderer is shared. Desktop needs its own installation and native controls without maintaining a second application backend.
@@ -14,7 +16,7 @@ The private Desktop Host invokes the CLI's shared profile runner against the ind
 
 The shared runner owns profile and Harness-home patches, proxy setup, telemetry defaults, module fallbacks, configuration reload, and application lifecycle. Web and Desktop share application mechanisms while owning their deployment defaults. Desktop uses a separate default listener port so both applications can run concurrently; profile configuration can override it. Native directory selection is a Desktop overlay with an observable UI purpose; shell windows, menus, plugin management, recovery, and updates remain Electron responsibilities.
 
-The [bundled-runtime decision](2026-09-08-desktop-bundled-runtime-and-external-plugins.md) retains separate runtime and plugin storage, bundled Node.js and pnpm, and explicit package ownership. The [in-place decision](2026-09-09-desktop-in-place-profile.md) retains package transactions and partial-failure recovery. The public CLI continues to reject the reserved Desktop profile.
+The [bundled-runtime decision](2026-09-08-desktop-bundled-runtime-and-external-plugins.md) retains separate runtime and plugin storage, bundled pnpm and explicit package ownership. The [in-place decision](2026-09-09-desktop-in-place-profile.md) retains package transactions and partial-failure recovery. The public CLI continues to reject the reserved Desktop profile.
 
 Independent package ownership prevents CLI and Desktop from modifying each other’s installations; it does not define a stricter Desktop plugin policy. Desktop delegates registry, store, Git, tarball, local-path, and ordinary-package installation to pnpm with normal user and profile configuration. The Host inherits `NODE_OPTIONS`, `NODE_PATH`, and npm/pnpm environment variables. User build configuration determines which dependency lifecycle scripts execute. This replaces Desktop-specific source, environment, and build restrictions with the same package-manager and loader responsibilities used by Web.
 

@@ -138,7 +138,6 @@ beforeEach(() => {
   vi.clearAllMocks()
   vi.useFakeTimers()
   harness.reset()
-  vi.stubEnv('DSH_DESKTOP_NODE_BINARY', 'test-node')
   vi.stubEnv('DSH_DESKTOP_PNPM_ENTRY', 'test-pnpm')
   vi.stubEnv('DSH_DESKTOP_DSH_DIR', 'test-runtime')
   vi.stubGlobal('process', { ...process, resourcesPath: 'desktop-test-resources' })
@@ -358,7 +357,7 @@ describe('desktop main startup', () => {
     await Promise.all([retry, secondRetry, harness.navigated.promise])
     expect(harness.applyRelease).toHaveBeenCalledTimes(1)
     expect(harness.hosts[0]).toMatchObject({
-      node: join('desktop-test-resources', 'runtime', 'node', process.platform === 'win32' ? 'node.exe' : 'node'),
+      node: process.execPath,
       runtime: join('desktop-test-resources', 'dsh'),
       profile: 'desktop-test-profile',
     })
@@ -376,7 +375,7 @@ describe('desktop main startup', () => {
     harness.prepared.resolve()
     await harness.hostStarted.promise
     const project = join(harness.app.getAppPath(), '.desktop-build', 'development', 'project')
-    expect(harness.hosts[0]).toMatchObject({ node: 'test-node', runtime: project, profile: 'desktop-test-profile' })
+    expect(harness.hosts[0]).toMatchObject({ node: process.execPath, runtime: project, profile: 'desktop-test-profile' })
     expect(harness.applyRelease).toHaveBeenCalledOnce()
     harness.hosts[0]!.ready.resolve()
     await harness.navigated.promise

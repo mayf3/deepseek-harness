@@ -1,7 +1,8 @@
-/** Bundled Node child lifecycle for the shared Web application. */
+/** Electron Node-mode child lifecycle for the shared Web application. */
 
 import { spawn, type ChildProcess } from 'node:child_process'
 import { join } from 'node:path'
+import { desktopNodeEnvironment } from './node-environment.ts'
 
 interface ReadyEvent {
   readonly type: 'ready'
@@ -48,7 +49,7 @@ export interface DesktopHostReady {
   readonly url: string
 }
 
-/** One Web backend running under the bundled upstream Node.js executable. */
+/** One Web backend running under the Electron executable in Node mode. */
 export class DesktopHostProcess {
   private child: ChildProcess | undefined
   private readyResolve!: (ready: DesktopHostReady) => void
@@ -63,7 +64,7 @@ export class DesktopHostProcess {
   private stopping = false
 
   /**
-   * @param node - Absolute bundled upstream Node.js executable.
+   * @param node - Absolute Electron executable in Node mode.
    * @param runtimeDir - Immutable packages carried by the current application.
    * @param projectDir - Desktop plugin profile and child working directory.
    * @param inspectPort - Optional loopback inspector port for workspace development.
@@ -87,13 +88,14 @@ export class DesktopHostProcess {
     if (this.child !== undefined) return this.readyPromise
     const entry = join(this.runtimeDir, 'node_modules', '@deepseek-ai', 'dsh-desktop-host', 'lib', 'index.js')
     const child = spawn(this.node, [
+      '--expose-internals',
       ...(this.inspectPort === undefined ? [] : [`--inspect=127.0.0.1:${String(this.inspectPort)}`]),
       entry,
       this.runtimeDir,
       this.projectDir,
     ], {
       cwd: this.projectDir,
-      env: this.environment,
+      env: desktopNodeEnvironment(this.node, undefined, this.environment),
       stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
     })
     this.child = child

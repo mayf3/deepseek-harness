@@ -6,6 +6,8 @@ English | [中文](2026-08-25-electron-desktop-packaging-and-updates.zh.md)
 
 Profile mutation and recovery follow the [in-place profile decision](2026-09-09-desktop-in-place-profile.md).
 
+The [Electron runtime decision](2026-09-11-desktop-electron-node-runtime.md) supersedes the separate upstream Node executable; other decisions in this note remain applicable.
+
 ## Problem
 
 DeepSeek Harness needs an Electron desktop application that reuses the Web UI, works without system Node.js or pnpm, installs dsh and desktop plugins through an application-bundled pnpm, and updates the complete desktop release through one user-facing flow.
@@ -16,7 +18,7 @@ The current GUI protocol binds the Web client and backend release. Independently
 
 ## Decision
 
-Ship a small Electron shell with a bundled upstream Node.js executable and pinned pnpm. The [thin-wrapper decision](2026-09-10-desktop-web-wrapper.md) owns Host boot and transport: the private Host runs the shared Web profile runner, Electron loads its authenticated HTTP URL, and child IPC carries lifecycle messages.
+Ship a small Electron shell and pinned pnpm; the [runtime decision](2026-09-11-desktop-electron-node-runtime.md) owns the executable choice. The [thin-wrapper decision](2026-09-10-desktop-web-wrapper.md) owns Host boot and transport: the private Host runs the shared Web profile runner, Electron loads its authenticated HTTP URL, and child IPC carries lifecycle messages.
 
 Electron owns the reserved profile at `.dsh/profiles/desktop`. The [bundled-runtime decision](2026-09-08-desktop-bundled-runtime-and-external-plugins.md) owns core resource storage, external plugin dependencies, shared package links, and profile reconciliation. The private Desktop Host remains outside the public CLI package and is never published to npm.
 
@@ -29,7 +31,7 @@ The browser Web UI, dsh backend, existing `dsh plugin` CLI, user npm, and user p
 | Owner | Responsibility |
 |---|---|
 | Electron shell | Window and child lifecycle, local shell pages, reserved desktop profile, plugin GUI, update coordination |
-| Bundled Node.js and pnpm | Execute dsh and install desktop-project dependencies using pnpm’s normal configuration |
+| Electron RunAsNode and pnpm | Execute dsh and install desktop-project dependencies using pnpm’s normal configuration |
 | Desktop profile | External plugin dependencies, ordered enabled bundles, and shared links defined by the bundled-runtime decision |
 | Private Desktop Host package | Electron-only child-process entry and composition overlay installed with dsh but excluded from the public CLI package and npm publication |
 | Installed dsh package | Backend, matching Web UI, boot manifest, client bundles, and product behavior |
@@ -85,13 +87,11 @@ Windows package invocations force `ELECTRON_BUILDER_7Z_FILTER=BCJ`. The bundled 
 
 Local Windows installation testing uses an explicit `--unsigned` package invocation with the same build and runtime preparation. It strips certificate inputs, isolates artifacts in `unsigned-artifacts`, and omits updater configuration and the release completion record. The regular package command explicitly selects signed mode even when its parent environment requests unsigned mode. This separation permits installation diagnosis without an EV token while preventing local test output from qualifying for release upload.
 
-NSIS extracts into its private `7z-out` directory before copying files into the application directory. Its default exit cleanup can overlap the backend's file reads after Finish launches the application. The [installer hook](../../../../apps/desktop/scripts/installer.nsh) removes only that extraction directory during `customInstall`, before interactive and silent launch branches. It preserves package archives, plugin DLLs, rollback directories, registers, and error status; the [native cleanup smoke](../../../../apps/desktop/tests/fixtures/installer-cleanup-smoke.nsi) checks these constraints. Moving cleanup into installation does not remove filesystem work, so total installation time and Finish-to-window time require separate measurements.
+Windows application replacement follows the [directory-installation decision](2026-09-11-windows-directory-installation.md): extract beside the destination with a command-line tool that returns failure status, then rename complete directories on the same volume. The installer retains the old directory through staging and restores it if promotion fails. Registration, shortcuts, and the signed uninstaller remain owned by electron-builder.
 
-Direct `Nsis7z::Extract` into the application directory is not enabled. A native [locked-file probe](../../../../apps/desktop/tests/fixtures/installer-write-failure-smoke.nsi) leaves an old locked file beside a new asset while reporting no error; the staged `CopyFiles` operation sets the error flag for the same failed replacement. An unchanged 737,557,488-byte payload on Windows took 172.625 seconds through extraction, copying, and cleanup versus 28.031 seconds through direct extraction, but that single sample per path does not justify losing failure detection. The clocks exclude registry changes, old-version removal, and post-extraction verification; system caches were not cleared. Desktop-specific payload filtering reduces the copied file set while retaining the installer's replacement-error handling. This handling is not a promise of complete installation rollback.
+Packaged applications ignore development resource and project environment overrides. Only an unpackaged Electron process can replace the pnpm entry, dsh resources, or active project.
 
-Packaged applications ignore development resource and project environment overrides. Only an unpackaged Electron process can replace the Node.js binary, pnpm entry, dsh resources, or active project.
-
-The bundled upstream Node.js and pnpm are expected to add about 35–50 MB compressed and 120–165 MB installed before the dsh production tree. Architecture-specific builds must report actual component-level size deltas.
+Architecture-specific builds report actual component-level compressed and installed sizes.
 
 ## Implementation
 
@@ -99,7 +99,7 @@ The bundled upstream Node.js and pnpm are expected to add about 35–50 MB compr
 |---|---|
 | Shell | `apps/desktop` owns Electron windows, restricted preloads, the custom protocol, child lifecycle, project transactions, the plugin GUI, update coordination, and electron-builder configuration. |
 | Installed runtime | Private `@deepseek-ai/dsh-desktop-host` invokes the shared profile runner and reports the authenticated Web URL to Electron. |
-| Package state | Bundled Node.js executes immutable core resources; bundled pnpm modifies only the external plugin graph in the Desktop profile. |
+| Package state | Electron RunAsNode executes immutable core resources; bundled pnpm modifies only the external plugin graph in the Desktop profile. |
 | Qualification | macOS packaging requires the configured company identity and notary credentials, verifies every native runtime file before inventory generation, verifies the completed application signature, and requires notarization plus Gatekeeper acceptance for both the application and DMG. Windows packaging requires the configured public certificate, SafeNet private-key container, Token Password, and SignTool, and verifies every produced signature. Update hosting, previous-version installed-artifact tests, and platform GUI recordings remain release-environment gates. |
 
 `dev:desktop` builds the current workspace, projects the built CLI and private Desktop Host packages plus their dependency links into a disposable project, uses an isolated Harness home, opens the Main, Renderer, and Host debuggers, and starts unpackaged Electron without preparing release resources. The development runtime supplies workspace links to a separate plugin profile; plugin management and recovery use the same flow as packaged applications. Fixed macOS arm64, macOS x64, and Windows x64 package commands pass one target through runtime preparation, dsh preparation, and electron-builder; each also has an unpacked-directory variant for release-path verification before installer generation.

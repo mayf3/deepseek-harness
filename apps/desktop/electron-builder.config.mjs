@@ -13,6 +13,7 @@ import {
 } from './scripts/windows-sign.mjs'
 import { resolveDesktopAutoUpdateConfig } from './scripts/desktop-auto-update-environment.mjs'
 import { desktopTargetBuildPaths, resolveDesktopBuildTarget } from './scripts/desktop-build-paths.mjs'
+import { installWindowsDirectoryInstaller } from './scripts/windows-directory-installer.mjs'
 
 /**
  * Create electron-builder configuration from one release environment.
@@ -37,6 +38,7 @@ export function createElectronBuilderConfig(
   if (unsigned && resolvedPlatform !== 'win32') throw new Error('desktop package: unsigned builds require Windows')
   const packagesMacOS = targetPlatform === 'darwin' || (targetPlatform === undefined && hostPlatform === 'darwin')
   const packagesWindows = targetPlatform === 'win32'
+  if (resolvedPlatform === 'win32') installWindowsDirectoryInstaller()
   const macOSSigning = packagesMacOS ? resolveMacOSSigningEnvironment(env) : undefined
   if (packagesMacOS) resolveMacOSNotarizationEnvironment(env)
   const windowsSigner = packagesWindows && !unsigned
@@ -58,6 +60,8 @@ export function createElectronBuilderConfig(
     artifactName: 'deepseek-harness-${version}-${os}-${arch}.${ext}',
     directories: { output: unsigned ? join(buildPaths.root, 'unsigned-artifacts') : buildPaths.artifacts },
     asar: true,
+    electronDist: buildPaths.electron,
+    electronFuses: { runAsNode: true },
     files: [
       'lib/*.js',
       'lib/*.cjs',
@@ -85,8 +89,16 @@ export function createElectronBuilderConfig(
       writeUpdateInfo: false,
     },
     afterPack: async context => {
-      const { verifyDesktopRuntime } = await import('./lib/types/runtime-tree.js')
-      await verifyDesktopRuntime(join(context.packager.getResourcesDir(context.appOutDir), 'dsh'),
+      const { verifyDesktopRuntime, writeDesktopRuntime } = await import('./lib/types/runtime-tree.js')
+      const runtimeRoot = join(context.packager.getResourcesDir(context.appOutDir), 'dsh')
+      if (resolvedPlatform === 'win32' && !unsigned) {
+        // Windows signs copied executable resources before afterPack runs.
+        const prepared = await verifyDesktopRuntime(buildPaths.dsh,
+          context.packager.appInfo.version, { platform: resolvedPlatform, arch: resolvedArch })
+        writeDesktopRuntime(runtimeRoot, prepared.release, prepared.sharedPackages.map(entry => entry.name),
+          { platform: resolvedPlatform, arch: resolvedArch })
+      }
+      await verifyDesktopRuntime(runtimeRoot,
         context.packager.appInfo.version, { platform: resolvedPlatform, arch: resolvedArch })
     },
     afterSign: async context => {

@@ -502,6 +502,9 @@ importers:
       '@deepseek-ai/dsh-home-paths':
         specifier: workspace:^
         version: link:../../packages/util/home-paths
+      '@electron/get':
+        specifier: ^5.1.0
+        version: 5.1.0
       '@electron/notarize':
         specifier: 2.5.0
         version: 2.5.0
@@ -519,7 +522,7 @@ importers:
         version: 26.15.3(dmg-builder@26.15.3)(electron-builder-squirrel-windows@26.15.3)
       electron:
         specifier: ^44.0.0
-        version: 44.0.0(supports-color@9.4.0)
+        version: 44.0.0
       electron-builder:
         specifier: ^26.15.3
         version: 26.15.3(electron-builder-squirrel-windows@26.15.3)
@@ -18954,7 +18957,7 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  '@electron/get@5.1.0(supports-color@9.4.0)':
+  '@electron/get@5.1.0':
     dependencies:
       debug: 4.4.3(supports-color@9.4.0)
       env-paths: 3.0.0
@@ -22011,10 +22014,10 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  electron@44.0.0(supports-color@9.4.0):
+  electron@44.0.0:
     dependencies:
       '@electron-internal/extract-zip': 1.0.5
-      '@electron/get': 5.1.0(supports-color@9.4.0)
+      '@electron/get': 5.1.0
       '@types/node': 24.13.3
     transitivePeerDependencies:
       - supports-color

@@ -1,4 +1,4 @@
-/** Build one release target with matching Electron, Node.js, and dsh architecture. */
+/** Build one release target with matching Electron and dsh architecture. */
 
 import { spawn } from 'node:child_process'
 import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'

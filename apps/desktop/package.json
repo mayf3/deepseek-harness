@@ -36,6 +36,7 @@
     "@aws-sdk/client-s3": "3.1067.0",
     "@deepseek-ai/dsh-app-boot": "workspace:^",
     "@deepseek-ai/dsh-home-paths": "workspace:^",
+    "@electron/get": "^5.1.0",
     "@electron/notarize": "2.5.0",
     "@types/js-yaml": "^4.0.9",
     "@types/node": "^22.20.0",

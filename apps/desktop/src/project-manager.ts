@@ -15,7 +15,8 @@ import {
   writeFileSync,
   writeSync,
 } from 'node:fs'
-import { delimiter, dirname, join } from 'node:path'
+import { join } from 'node:path'
+import { desktopNodeEnvironment } from './node-environment.ts'
 import {
   DESKTOP_HOST_PACKAGE,
   desktopCorePackageOverrides,
@@ -42,6 +43,7 @@ export interface DesktopPluginRecord {
 /** Exact executables the desktop shell bundles. */
 export interface DesktopRuntimeExecutables {
   readonly node: string
+  readonly nodeBin?: string
   readonly pnpm: string
   readonly dsh: string
 }
@@ -106,7 +108,7 @@ export class DesktopProjectManager {
 
   /**
    * @param paths - Electron-owned package state and reserved desktop profile paths.
-   * @param runtime - absolute bundled Node.js and pnpm entry paths.
+   * @param runtime - absolute Electron and pnpm entry paths.
    */
   constructor(
     readonly paths: DesktopPaths,
@@ -220,9 +222,9 @@ export class DesktopProjectManager {
 
   private async runPnpm(projectDir: string, args: readonly string[]): Promise<void> {
     await new Promise<void>((settle, reject) => {
-      const child = spawn(this.runtime.node, [this.runtime.pnpm, ...args], {
+      const child = spawn(this.runtime.node, ['--expose-internals', this.runtime.pnpm, ...args], {
         cwd: projectDir,
-        env: { ...process.env, PATH: `${dirname(this.runtime.node)}${delimiter}${process.env.PATH ?? ''}` },
+        env: desktopNodeEnvironment(this.runtime.node, this.runtime.nodeBin, process.env),
         stdio: ['ignore', 'pipe', 'pipe'],
       })
       let failure: Error | undefined

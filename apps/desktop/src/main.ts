@@ -16,6 +16,7 @@ import {
 import { resolveDesktopPaths } from './paths.ts'
 import { DesktopProjectManager, type DesktopProjectHooks } from './project-manager.ts'
 import { DesktopHostProcess } from './host-process.ts'
+import { desktopNodeEnvironment } from './node-environment.ts'
 import { DesktopBackendController, type DesktopBackendState } from './backend-controller.ts'
 import { DESKTOP_IPC, type DesktopUpdateState } from './ipc.ts'
 import { formatDesktopMessage, resolveDesktopLocale } from './locale.ts'
@@ -63,6 +64,7 @@ const MIME: Readonly<Record<string, string>> = {
 }
 
 interface RuntimeResources {
+  readonly nodeBin: string
   readonly node: string
   readonly pnpm: string
   readonly dsh: string
@@ -70,14 +72,14 @@ interface RuntimeResources {
 
 function runtimeResources(): RuntimeResources {
   const development = !app.isPackaged
-  const node = (development ? process.env.DSH_DESKTOP_NODE_BINARY : undefined)
-    ?? join(process.resourcesPath, 'runtime', 'node', process.platform === 'win32' ? 'node.exe' : 'node')
+  const node = process.execPath
+  const nodeBin = development ? join(app.getAppPath(), 'scripts', 'node-bin') : join(process.resourcesPath, 'runtime', 'bin')
   const pnpm = (development ? process.env.DSH_DESKTOP_PNPM_ENTRY : undefined)
     ?? (development ? join(app.getAppPath(), 'node_modules', 'pnpm', 'bin', 'pnpm.mjs')
       : join(process.resourcesPath, 'runtime', 'pnpm', 'bin', 'pnpm.mjs'))
   const dsh = (development ? process.env.DSH_DESKTOP_DSH_DIR : undefined)
     ?? (development ? join(app.getAppPath(), '.desktop-build', 'development', 'project') : join(process.resourcesPath, 'dsh'))
-  return { node, pnpm, dsh }
+  return { node, nodeBin, pnpm, dsh }
 }
 
 function developmentHostInspectPort(enabled: boolean): number | undefined {
@@ -215,7 +217,7 @@ async function main(): Promise<void> {
   const backend = new DesktopBackendController((onFailure) => {
     const hostInspectPort = developmentHostInspectPort(development)
     const host = new DesktopHostProcess(resources.node, resources.dsh, activeProject,
-      hostInspectPort, process.env, onFailure)
+      hostInspectPort, desktopNodeEnvironment(resources.node, resources.nodeBin, process.env), onFailure)
     return {
       start: async () => {
         const ready = await host.start()

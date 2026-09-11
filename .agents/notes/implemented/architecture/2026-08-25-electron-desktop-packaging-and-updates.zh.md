@@ -6,6 +6,8 @@ Status: implemented
 
 profile 修改与恢复遵循[直接修改 profile 决策](2026-09-09-desktop-in-place-profile.zh.md)。
 
+[Electron 运行时决策](2026-09-11-desktop-electron-node-runtime.zh.md)替代独立上游 Node 可执行文件的选择；本文其他决策仍然适用。
+
 ## 问题
 
 DeepSeek Harness 需要一个复用 Web UI 的 Electron 桌面应用。该应用无需系统 Node.js 或 pnpm 即可工作，通过应用内置 pnpm 安装 dsh 与桌面插件，并通过一个面向用户的流程更新完整桌面发布。
@@ -16,7 +18,7 @@ DeepSeek Harness 需要一个复用 Web UI 的 Electron 桌面应用。该应用
 
 ## 决策
 
-交付一个小型 Electron 壳，其中内置上游 Node.js 可执行文件和固定版本 pnpm。[薄壳决策](2026-09-10-desktop-web-wrapper.zh.md)负责 Host 启动与传输：私有 Host 运行共享 Web profile runner，Electron 加载其认证 HTTP URL，子进程 IPC 承载生命周期消息。
+交付小型 Electron 壳和固定版本 pnpm；[运行时决策](2026-09-11-desktop-electron-node-runtime.zh.md)持有可执行文件选择。[薄壳决策](2026-09-10-desktop-web-wrapper.zh.md)负责 Host 启动与传输：私有 Host 运行共享 Web profile runner，Electron 加载其认证 HTTP URL，子进程 IPC 承载生命周期消息。
 
 Electron 拥有 `.dsh/profiles/desktop` 保留 profile。[内置运行时决策](2026-09-08-desktop-bundled-runtime-and-external-plugins.zh.md)负责核心资源存储、外部插件依赖、共享包链接和 profile 协调。私有 Desktop Host 保持独立于公共 CLI 包，且不会发布到 npm。
 
@@ -29,7 +31,7 @@ Electron 拥有 `.dsh/profiles/desktop` 保留 profile。[内置运行时决策]
 | Owner | 职责 |
 |---|---|
 | Electron 壳 | 窗口与子进程生命周期、本地壳页面、保留 desktop profile、插件 GUI、更新协调 |
-| 内置 Node.js 与 pnpm | 执行 dsh 并安装桌面项目依赖，使用 pnpm 的正常配置 |
+| Electron RunAsNode 与 pnpm | 执行 dsh 并安装桌面项目依赖，使用 pnpm 的正常配置 |
 | Desktop profile | 由内置运行时决策定义的外部插件依赖、已启用 bundle 顺序和共享链接 |
 | 私有 Desktop Host 包 | 与 dsh 一起安装、但不进入公共 CLI 包或 npm 发布的 Electron 专用子进程入口与组合 overlay |
 | 已安装 dsh 包 | 后端、匹配的 Web UI、启动 manifest、客户端包和产品行为 |
@@ -85,13 +87,11 @@ Windows 打包调用强制设置 `ELECTRON_BUILDER_7Z_FILTER=BCJ`。内置的 7-
 
 本地 Windows 安装测试使用显式的 `--unsigned` 打包调用，并执行相同的构建和运行时准备。它清除证书输入，将产物隔离到 `unsigned-artifacts`，并省略更新器配置和发布完成记录。即使父进程环境请求未签名模式，常规打包命令也会显式选择签名模式。这样既能在没有 EV Token 时诊断安装问题，也能防止本地测试产物通过发布上传校验。
 
-NSIS 先解压到私有的 `7z-out` 目录，再把文件复制到应用目录。Finish 启动应用后，默认退出清理可能与后端的文件读取重叠。[安装器 hook](../../../../apps/desktop/scripts/installer.nsh) 在 `customInstall` 阶段仅删除该解压目录，早于交互和静默启动分支。它保留包归档、插件 DLL、回滚目录、寄存器和错误状态；[原生清理 smoke](../../../../apps/desktop/tests/fixtures/installer-cleanup-smoke.nsi) 检查这些约束。把清理移入安装阶段并不会减少文件系统工作，因此必须分别测量安装总耗时与点击 Finish 到窗口出现的耗时。
+Windows 应用替换遵循[目录安装决策](2026-09-11-windows-directory-installation.zh.md)：使用能返回失败状态的命令行工具解压到目标旁边，再在同卷内改名替换完整目录。安装器在暂存期间保留旧目录，正式替换失败时恢复旧目录。注册信息、快捷方式和签名卸载器仍由 electron-builder 持有。
 
-安装器不开启直接向应用目录执行 `Nsis7z::Extract`。原生[文件占用探针](../../../../apps/desktop/tests/fixtures/installer-write-failure-smoke.nsi)会在未报错的情况下留下被占用的旧文件和新资源；暂存后执行的 `CopyFiles` 在相同替换失败时会设置错误标志。Windows 上同一份 737,557,488 字节载荷经过解压、复制和清理耗时 172.625 秒，直接解压耗时 28.031 秒，但每条路径的单次样本不足以支持放弃失败检测。计时不包括注册表修改、旧版删除及解压后的验证，也没有清空系统缓存。桌面专用载荷过滤减少需要复制的文件，同时保留安装器的替换错误处理。这种处理并不承诺完整的安装回滚。
+打包应用会忽略开发资源和项目环境变量覆盖。只有未打包的 Electron 进程可以替换 pnpm 入口、dsh 资源 或活跃项目。
 
-打包应用会忽略开发资源和项目环境变量覆盖。只有未打包的 Electron 进程可以替换 Node.js 可执行文件、pnpm 入口、dsh 资源 或活跃项目。
-
-在种子 store 子集之外，内置上游 Node.js 与 pnpm 预计增加约 35–50 MB 压缩体积和 120–165 MB 安装体积。分架构构建必须报告实际组件级体积增量。
+分架构构建报告实际组件级压缩体积和安装体积。
 
 ## 实现
 
@@ -99,7 +99,7 @@ NSIS 先解压到私有的 `7z-out` 目录，再把文件复制到应用目录�
 |---|---|
 | 壳 | `apps/desktop` 负责 Electron 窗口、受限 preload、自定义协议、子进程生命周期、项目事务、插件 GUI、更新协调和 electron-builder 配置。 |
 | 已安装运行时 | 私有 `@deepseek-ai/dsh-desktop-host` 调用共享 profile runner，并向 Electron 报告认证 Web URL。 |
-| 包状态 | 内置 Node.js 执行不可变核心资源；内置 pnpm 只修改 Desktop profile 中的外部插件依赖图。 |
+| 包状态 | Electron RunAsNode 执行不可变核心资源；内置 pnpm 只修改 Desktop profile 中的外部插件依赖图。 |
 | 资格验证 | macOS 打包要求已配置的公司身份与公证凭据可用，在生成清单前验证每个原生运行时文件，验证完整应用签名，并要求应用和 DMG 都完成公证且通过 Gatekeeper。Windows 打包要求已配置的公开证书、SafeNet 私钥容器、Token Password 与 SignTool，并验证生成的每个签名。更新托管、跨上一版本的已安装产物测试和各平台 GUI 录制仍是发布环境门槛。 |
 
 `dev:desktop` 会构建当前 workspace，把已构建 CLI 包、私有 Desktop Host 包及其依赖链接投影为一次性项目，使用隔离的 Harness home，打开 Main、Renderer 和 Host 调试器，并在不准备发布资源的情况下启动未打包 Electron。开发运行时为独立的插件 profile 提供工作区链接；插件管理和恢复使用与打包应用相同的流程。固定的 macOS arm64、macOS x64 与 Windows x64 打包命令会把同一目标传给运行时准备、dsh 准备和 electron-builder；每条命令还提供未封装安装器的变体，用于在生成安装器前验证发布路径。

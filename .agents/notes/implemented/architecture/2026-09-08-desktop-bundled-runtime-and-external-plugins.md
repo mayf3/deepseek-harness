@@ -6,6 +6,8 @@ English | [中文](2026-09-08-desktop-bundled-runtime-and-external-plugins.zh.md
 
 Profile mutation and recovery follow the [in-place profile decision](2026-09-09-desktop-in-place-profile.md).
 
+The [Electron runtime decision](2026-09-11-desktop-electron-node-runtime.md) supersedes the separate upstream Node executable; other decisions in this note remain applicable.
+
 ## Problem
 
 Installing the core dependency graph during Desktop initialization repeats work already done by the release builder. An offline store eliminates downloads but retains extraction, package-manager startup, and installation costs. Users need the application to start with its production packages present while retaining ordinary npm plugin installation and plugin state across application upgrades.
@@ -14,7 +16,7 @@ Separate package directories can load duplicate Cordis or service modules. Retai
 
 ## Decision
 
-[Runtime preparation](../../../../apps/desktop/scripts/prepare-dsh.ts) materializes the production graph once at build time and ships it through `extraResources/dsh`. The Electron shell stays in ASAR. A bundled upstream Node process runs the private Desktop Host from resources and loads enabled plugins from `$DSH_HOME/profiles/desktop`.
+[Runtime preparation](../../../../apps/desktop/scripts/prepare-dsh.ts) materializes the production graph once at build time and ships it through `extraResources/dsh`. The Electron shell stays in ASAR. An Electron RunAsNode process runs the private Desktop Host from resources and loads enabled plugins from `$DSH_HOME/profiles/desktop`.
 
 This note owns core resource storage and external plugin dependencies. The [packaging decision](2026-08-25-electron-desktop-packaging-and-updates.md) retains release identity, signing, process ownership, and Electron-only plugin authorization. The [thin-wrapper decision](2026-09-10-desktop-web-wrapper.md) owns shared Web boot and HTTP transport.
 
@@ -24,7 +26,7 @@ The resource descriptor records the exact release, Node version, platform, archi
 
 The [Desktop file policy](../../../../apps/desktop/scripts/runtime-file-policy.ts) applies after production npm installation and before native signing or descriptor generation. npm publication lists serve library consumers and can include declarations, maps, tests, and native build inputs; they do not identify the files needed by the Desktop process. The Desktop copy omits declarations and recognized source maps because Host execution uses JavaScript and generated Typert artifacts. The Host inherits the user environment. Published npm packages and external plugin directories retain their own files. Source debugger navigation is a development-package capability.
 
-Package-specific exclusions remove Domino tests, fs-ext compilation outputs, Koffi's Windows import library, and non-target node-pty prebuilds and debug symbols. The policy retains native executable dependencies, node-pty's ConPTY source distribution, licenses, and unrecognized assets; broad `src`, `test`, `.ts`, or `.map` exclusions could remove executable code or runtime data. Copy tests preserve sentinel assets and seal the filtered inventory; the bundled-Node [payload smoke](../../../../apps/desktop/tests/fixtures/runtime-payload-smoke.mjs) verifies PTY output, native file seeking, FFI, image conversion, and HTML parsing. Runtime preparation still verifies every retained byte and boots the complete Host with an external plugin.
+Package-specific exclusions remove Domino tests, fs-ext compilation outputs, Koffi's Windows import library, and non-target node-pty prebuilds and debug symbols. The policy retains native executable dependencies, node-pty's ConPTY source distribution, licenses, and unrecognized assets; broad `src`, `test`, `.ts`, or `.map` exclusions could remove executable code or runtime data. Copy tests preserve sentinel assets and seal the filtered inventory; the Electron [payload smoke](../../../../apps/desktop/tests/fixtures/runtime-payload-smoke.mjs) verifies PTY output, native file seeking, FFI, image conversion, and HTML parsing. Runtime preparation still verifies every retained byte and boots the complete Host with an external plugin.
 
 The shared profile runner projects missing installation and selected-bundle dependencies within the Desktop profile. pnpm-installed packages take precedence. Links resolve to real package directories under normal Node resolution, so Host and plugin imports reaching the same export share its module instance. Distinct ESM and CommonJS conditional exports remain distinct entry points; a link cannot merge a package’s dual implementations.
 
@@ -52,7 +54,7 @@ Full runtime verification belongs to packaging. Startup reads the resource descr
 - **Force host dependency versions into plugins.** This unnecessarily couples ordinary plugin dependencies to the host. Shared fallback supplies missing packages while pnpm-owned entries retain independent versions.
 - **Use hardlinks.** They cannot represent directories, may not cross volumes, share writable bytes, and retain old inodes after application replacement. Directory symlinks and Windows junctions express the intended package target.
 - **Use `NODE_PATH` or preserve symlink paths.** These do not provide uniform ESM resolution or shared module identity. Normal package lookup through explicit links is directly testable.
-- **Keep core packages in ASAR.** The backend uses upstream Node rather than Electron’s patched filesystem. Ordinary `extraResources` also preserves native loading and subprocess paths.
+- **Keep core packages in ASAR.** Ordinary `extraResources` preserves native loading and subprocess paths. ASAR requires separate package-resolution qualification.
 
 ## Consequences
 

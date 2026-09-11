@@ -84,7 +84,7 @@ describe('desktop macOS release signature', () => {
     expect(ignored('/App.app/Contents/Frameworks/Electron.framework/Versions/A/Resources/en.lproj/locale.pak')).toBe(true)
     expect(ignored('/App.app/Contents/Frameworks/Electron.framework/Versions/A/Resources/resources.pak')).toBe(true)
     for (const path of [
-      '/App.app/Contents/Resources/runtime/node/node',
+      '/App.app/Contents/MacOS/DeepSeek Harness',
       '/App.app/Contents/Resources/runtime/pnpm/addon.node',
       '/App.app/Contents/Frameworks/Electron.framework/Versions/A/library.dylib',
       '/App.app/Contents/Frameworks/Electron.framework',

@@ -4,6 +4,8 @@ Status: implemented
 
 [English](2026-09-10-desktop-web-wrapper.md) | 中文
 
+[Electron 运行时决策](2026-09-11-desktop-electron-node-runtime.zh.md)替代独立上游 Node 可执行文件的选择；本文其他决策仍然适用。
+
 ## Problem
 
 独立的 Desktop 组合与请求传输需要分别维护配置、模块加载、流式响应与资源服务行为。即使共享渲染界面，这些实现也可能遗漏 Web 功能。Desktop 需要独立安装与原生控件，但不需要第二套应用后端。
@@ -14,7 +16,7 @@ Status: implemented
 
 共享 runner 负责 profile 与 Harness-home patch、代理设置、遥测默认值、模块补全、配置重载及应用生命周期。Web 与 Desktop 共享应用机制，各自决定部署默认值。Desktop 使用独立的默认监听端口，使两个应用可以同时运行；profile 配置可以覆盖该端口。原生目录选择是具有可见 UI 用途的 Desktop overlay；壳窗口、菜单、插件管理、恢复及更新仍由 Electron 负责。
 
-[内置运行时决策](2026-09-08-desktop-bundled-runtime-and-external-plugins.zh.md)保留独立运行时与插件存储、内置 Node.js 和 pnpm，以及明确的包归属。[原位修改决策](2026-09-09-desktop-in-place-profile.zh.md)保留包事务与部分失败恢复。公开 CLI 继续拒绝保留的 Desktop profile。
+[内置运行时决策](2026-09-08-desktop-bundled-runtime-and-external-plugins.zh.md)保留独立运行时与插件存储、内置 pnpm，以及明确的包归属。[原位修改决策](2026-09-09-desktop-in-place-profile.zh.md)保留包事务与部分失败恢复。公开 CLI 继续拒绝保留的 Desktop profile。
 
 独立包归属防止 CLI 与 Desktop 修改彼此的安装，不代表 Desktop 采用更严格的插件策略。Desktop 将 registry、store、Git、tarball、本地路径及普通包安装交给 pnpm，并遵循正常用户与 profile 配置。Host 继承 `NODE_OPTIONS`、`NODE_PATH` 及 npm/pnpm 环境变量。用户构建配置决定哪些依赖生命周期脚本可以执行。这以 Web 使用的相同包管理器和加载器职责取代 Desktop 专用的来源、环境及构建限制。
 
