@@ -913,7 +913,7 @@ Persistence is intentionally not implemented here — the agent lifecycle attach
  * @returns the fiber-owned disposer.
  * @throws when another definition already owns this event type.
  */
-registerMessageProjection(projection: SessionMessageProjection): () => void
+registerMessageProjection(projection: SessionMessageProjection): () => Promise<void>
 
 /**
  * Create a session owned by the calling fiber: disposing that fiber stops
