@@ -52,7 +52,9 @@ async function executeShell(text: string, nested: boolean, name = 'bash', maxInl
         async run(spec: CodeRunSpec): Promise<CodeRunResult> {
           const tool = spec.bindings.find(binding => binding.global === 'tools')?.functions[name]
           if (tool === undefined) throw new Error('missing fixture binding')
-          return { logs: [], value: await tool(shellArgs) }
+          const blocks = await tool(shellArgs)
+          expect(blocks).toEqual([{ type: 'text', text }])
+          return { logs: [], value: true }
         }
       }
       await ctx.plugin(BindingRuntime)
