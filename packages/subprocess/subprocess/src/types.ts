@@ -173,7 +173,7 @@ export interface SubprocessHandle {
   readonly stdout: Readable | undefined
   /** The child's raw stderr, present iff spawned with `stderr: 'pipe'`. */
   readonly stderr: Readable | undefined
-  /** Separate caller-owned byte channel, present exactly when requested in stdio. */
+  /** Separate caller-owned byte channel when requested; native startup failure may leave it absent. */
   readonly control: Duplex | undefined
   /** Offset-based readers for collect-mode streams (also readable after exit). */
   readonly collected: SubprocessCollectedOutputs

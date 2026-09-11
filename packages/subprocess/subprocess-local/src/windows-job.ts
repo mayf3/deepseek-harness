@@ -150,9 +150,29 @@ export function launchWindowsJob(
   const rangeExit = Promise.withResolvers<void>()
   let directResultType: WindowsRunnerResult['type'] | undefined
   let runnerSpawned = false
+  let runnerExit: { exitCode: number | null; signal: NodeJS.Signals | null } | undefined
+  let ipcDisconnected = false
   const failInfrastructure = (error: unknown): void => {
     direct.reject(error)
     rangeExit.reject(error)
+  }
+  const settleRange = (): void => {
+    if (!runnerSpawned || runnerExit === undefined) return
+    const { exitCode, signal } = runnerExit
+    if (exitCode === 0 && signal === null) {
+      if (directResultType !== undefined) {
+        rangeExit.resolve()
+        return
+      }
+      // The private IPC result may arrive after the process-exit notification.
+      if (!ipcDisconnected) return
+    }
+    const status = signal !== null
+      ? `signal ${signal}`
+      : exitCode === null ? 'without an exit status' : `exit code ${String(exitCode)}`
+    failInfrastructure(new Error(
+      `subprocess-local: Windows Job runner exited with ${status} before proving its managed range empty`,
+    ))
   }
 
   const owner = new WindowsJobOwner(
@@ -182,6 +202,7 @@ export function launchWindowsJob(
     } else {
       direct.reject(owner.mapStartFailure(deserializeRunnerError(result.error), result.error))
     }
+    settleRange()
   })
   child.once('spawn', () => {
     runnerSpawned = true
@@ -205,22 +226,13 @@ export function launchWindowsJob(
     }
     failInfrastructure(error)
   })
-  child.once('close', (exitCode, signal) => {
-    if (!runnerSpawned) return
-    const clean = exitCode === 0 && signal === null && directResultType !== undefined
-    if (clean) {
-      rangeExit.resolve()
-      return
-    }
-    const status = signal !== null
-      ? `signal ${signal}`
-      : exitCode === null
-        ? 'without an exit status'
-        : `exit code ${String(exitCode)}`
-    const error = new Error(
-      `subprocess-local: Windows Job runner exited with ${status} before proving its managed range empty`,
-    )
-    failInfrastructure(error)
+  child.once('exit', (exitCode, signal) => {
+    runnerExit = { exitCode, signal }
+    settleRange()
+  })
+  child.once('disconnect', () => {
+    ipcDisconnected = true
+    settleRange()
   })
 
   return {

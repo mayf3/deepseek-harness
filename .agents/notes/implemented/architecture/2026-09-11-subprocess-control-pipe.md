@@ -10,11 +10,13 @@ A managed Node program can write arbitrary bytes to stdout and stderr. A host pr
 
 ## Decision
 
-Ordinary subprocess requests optionally set `stdio.control: 'pipe'` and receive a raw `Duplex` as `handle.control`. The target opens fd 7 through `@deepseek-ai/dsh-subprocess/control`. The provider owns the environment marker; the child helper consumes it. Consumers own bounded framing, message validation, backpressure, and endpoint closure. Standard output collection and managed-range lifetime retain their existing semantics, and provider disposal closes any remaining endpoint after teardown.
+Ordinary subprocess requests optionally set `stdio.control: 'pipe'` and receive a raw `Duplex` as `handle.control`. The target opens fd 7 through `@deepseek-ai/dsh-subprocess/control`. The provider owns the environment marker; the child helper consumes it. Consumers own bounded framing, message validation, backpressure, and endpoint closure. Standard output collection and managed-range lifetime retain their existing semantics. The provider tracks open control endpoints independently until they close, including after their managed range exits, and disposal closes remaining endpoints after attempting range teardown.
 
 POSIX launchers preserve fd 7 across exec. Windows ordinary Job and restricted-token launchers place the pipe at slot 7 in the CRT startup descriptor table, preserve standard handles, and leave slots 3–6 closed in the payload. Each wrapper closes its carrier after transferring ownership. Handle inheritance is enabled only around process creation. This channel grants no host capability: the child remains untrusted, and every host tool request requires its usual dispatch and approval checks.
 
 Control pipes use Node's `overlapped` stdio disposition, which equals `pipe` on POSIX and creates Windows handles with `FILE_FLAG_OVERLAPPED`. Reads and writes can then proceed independently, including a child sending its first message before the host sends anything.
+
+Windows managed-range proof observes the runner process exit and its private IPC result independently of caller stream drains. A clean runner exit with a received result confirms its range; a clean exit without a result remains pending only until the IPC channel closes. Paused control output cannot delay this proof or prevent provider disposal from closing the endpoint.
 
 The filesystem and subprocess services remain replaceable together by remote providers. Neither the public handle nor its request exposes a host path, process identifier, execution-world flag, or transport negotiation catalogue. Terminal allocation remains asynchronous and does not gain an extra descriptor.
 
