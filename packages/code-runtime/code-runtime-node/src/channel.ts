@@ -7,6 +7,11 @@ import { jsonValueBytesUpTo } from './output-json.ts'
 const stringify = JSON.stringify
 const parse = JSON.parse
 
+interface PendingWrite {
+  promise: Promise<void>
+  finish(error?: Error): void
+}
+
 /** One co-shipped process channel; the consumer owns frame validation and terminal outcomes. */
 export class JsonChannel {
   private readonly stream: Duplex
@@ -19,7 +24,7 @@ export class JsonChannel {
   private payloadBytes = 0
   private queuedBytes = 0
   private closed = false
-  private tail: Promise<void> = Promise.resolve()
+  private readonly writes = new Set<PendingWrite>()
 
   constructor(
     stream: Duplex,
@@ -34,9 +39,14 @@ export class JsonChannel {
     stream.on('data', this.onData)
     stream.on('error', this.onError)
     stream.on('end', this.onEnd)
+    stream.on('close', this.onClose)
   }
 
-  private readonly onError = (error: Error): void => { if (!this.closed) this.failure(error, 'io') }
+  private readonly onError = (error: Error): void => {
+    this.finishWrites(error)
+    if (!this.closed) this.failure(error, 'io')
+  }
+  private readonly onClose = (): void => { this.finishWrites(new Error('control channel closed during a write')) }
   private readonly onEnd = (): void => { if (!this.closed) this.failure(new Error('control channel ended before the program settled'), 'io') }
   private readonly onData = (chunk: Buffer): void => {
     if (this.closed) return
@@ -73,7 +83,7 @@ export class JsonChannel {
   }
 
   /**
-   * Queue a bounded frame and honor stream backpressure.
+   * Submit a bounded frame immediately and await the stream's write receipt.
    * @param message - JSON-only co-shipped protocol value.
    * @returns Resolves when this frame has been written, or rejects after transport failure.
    */
@@ -87,28 +97,31 @@ export class JsonChannel {
     const header = Buffer.alloc(4)
     header.writeUInt32BE(body.length)
     this.queuedBytes += body.length
-    const write = async (): Promise<void> => {
-      if (this.closed) throw new Error('control channel is closed')
-      await new Promise<void>((resolve, reject) => {
-        const stop = (error?: Error): void => {
-          this.stream.off('error', onError)
-          this.stream.off('close', onClose)
-          if (error) reject(error)
-          else resolve()
-        }
-        const onError = (error: Error): void => { stop(error) }
-        const onClose = (): void => { stop(new Error('control channel closed during a write')) }
-        this.stream.once('error', onError)
-        this.stream.once('close', onClose)
-        this.stream.cork()
-        this.stream.write(header)
-        this.stream.write(body, (error) => { stop(error ?? undefined) })
-        this.stream.uncork()
-      })
+    const completion = Promise.withResolvers<void>()
+    const write: PendingWrite = {
+      promise: completion.promise,
+      finish: (error) => {
+        if (!this.writes.delete(write)) return
+        this.queuedBytes -= body.length
+        if (error) completion.reject(error)
+        else completion.resolve()
+      },
     }
-    const result = this.tail.then(write).finally(() => { this.queuedBytes -= body.length })
-    this.tail = result.catch(() => {})
-    return result
+    this.writes.add(write)
+    try {
+      // Writable preserves frame order; a Promise queue would delay logs behind a model hot loop.
+      this.stream.cork()
+      this.stream.write(header)
+      this.stream.write(body, (error) => { write.finish(error ?? undefined) })
+      this.stream.uncork()
+    } catch (error: unknown) {
+      write.finish(error instanceof Error ? error : new Error(String(error)))
+    }
+    return completion.promise
+  }
+
+  private finishWrites(error: Error): void {
+    for (const write of this.writes) write.finish(error)
   }
 
   /** Stop reads and close the owned endpoint; pending writes reject on closure. */
@@ -116,11 +129,12 @@ export class JsonChannel {
     if (this.closed) return
     this.closed = true
     this.payload = undefined
+    this.finishWrites(new Error('control channel is closed'))
     this.stream.off('data', this.onData)
     this.stream.off('end', this.onEnd)
     this.stream.destroy()
   }
 
   /** Wait for accepted writes to finish or fail. */
-  async drain(): Promise<void> { await this.tail }
+  async drain(): Promise<void> { await Promise.allSettled([...this.writes].map(write => write.promise)) }
 }

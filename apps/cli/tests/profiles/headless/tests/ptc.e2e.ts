@@ -1,7 +1,7 @@
 import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, onTestFinished, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import LlmRuntime, { createUserMessage, ToolCallId, HarnessError  } from '@deepseek-ai/dsh-llm'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
@@ -18,7 +18,9 @@ import * as BashEnvPlugin from '@deepseek-ai/dsh-shell-env'
 import LocalSubprocessRuntime from '@deepseek-ai/dsh-subprocess-local'
 import * as ToolBash from '@deepseek-ai/dsh-tool-bash'
 import * as LlmDeepSeek from '@deepseek-ai/dsh-llm-deepseek'
-import { mountRuntime } from '../../../../../../packages/code-runtime/code-runtime-node/tests/setup.ts'
+import NodeRuntime from '@deepseek-ai/dsh-code-runtime-node'
+import Sandbox from '@deepseek-ai/dsh-sandbox-local'
+import SandboxPolicy from '@deepseek-ai/dsh-sandbox-policy'
 import LocalFileSystem from '@deepseek-ai/dsh-fs-local'
 import * as ToolFs from '@deepseek-ai/dsh-tool-fs'
 import * as WorkspaceContext from '@deepseek-ai/dsh-agent-instructions'
@@ -112,6 +114,17 @@ function completion(result: ToolExecutionResult): unknown {
   const value = result.value
   if (typeof value !== 'object' || value === null || Array.isArray(value)) throw new Error('invalid run_code result')
   return value.result
+}
+
+async function mountRuntime(harness: Context): Promise<void> {
+  onTestFinished(async () => { await harness.fiber.dispose() })
+  if (!harness.get('sessions')) await harness.plugin(SessionStore)
+  if (!harness.get('fs')) await harness.plugin(LocalFileSystem)
+  if (!harness.get('subprocess')) await harness.plugin(LocalSubprocessRuntime)
+  if (!harness.get('sandbox')) await harness.plugin(Sandbox, {})
+  if (!harness.get('sessionProjections')) await harness.plugin(SessionProjectionRegistry)
+  if (!harness.get('sandboxPolicy')) await harness.plugin(SandboxPolicy, { mode: 'danger-full-access' })
+  await harness.plugin(NodeRuntime, {})
 }
 
 /** Keyless real-process harness for direct typed-binding acceptance tests. */

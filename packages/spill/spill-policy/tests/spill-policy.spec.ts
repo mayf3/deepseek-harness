@@ -8,12 +8,12 @@
  * result without an `isError`.
  */
 
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, it, onTestFinished, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
 import { createUserMessage, ToolCallId } from '@deepseek-ai/dsh-llm'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
-import { SessionId } from '@deepseek-ai/dsh-session'
+import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime, { defineContentToolFixture } from '@deepseek-ai/dsh-tools'
 import type { ToolDefinition } from '@deepseek-ai/dsh-tools'
@@ -21,7 +21,23 @@ import type { PostToolDecision, ToolExecution, ToolExecutionToken } from '@deeps
 import { SpillLocator, SpillStore } from '@deepseek-ai/dsh-spill'
 import type { SaveTextSpill, SpillRef } from '@deepseek-ai/dsh-spill'
 import * as SpillPolicy from '@deepseek-ai/dsh-spill-policy'
-import { mountRuntime } from '../../../code-runtime/code-runtime-node/tests/setup.ts'
+import NodeRuntime, { type Config as NodeRuntimeConfig } from '@deepseek-ai/dsh-code-runtime-node'
+import FileSystem from '@deepseek-ai/dsh-fs-local'
+import Subprocess from '@deepseek-ai/dsh-subprocess-local'
+import Sandbox from '@deepseek-ai/dsh-sandbox-local'
+import SandboxPolicy from '@deepseek-ai/dsh-sandbox-policy'
+import SessionProjections from '@deepseek-ai/dsh-session-projection'
+
+async function mountRuntime(ctx: Context, config: NodeRuntimeConfig = {}): Promise<void> {
+  onTestFinished(async () => { await ctx.fiber.dispose() })
+  if (!ctx.get('sessions')) await ctx.plugin(SessionStore)
+  if (!ctx.get('fs')) await ctx.plugin(FileSystem)
+  if (!ctx.get('subprocess')) await ctx.plugin(Subprocess)
+  if (!ctx.get('sandbox')) await ctx.plugin(Sandbox, {})
+  if (!ctx.get('sessionProjections')) await ctx.plugin(SessionProjections)
+  if (!ctx.get('sandboxPolicy')) await ctx.plugin(SandboxPolicy, { mode: 'danger-full-access' })
+  await ctx.plugin(NodeRuntime, config)
+}
 
 function observedAgent(ctx: Context, id: string, observe: (type: string, data: unknown) => void) {
   const session = ctx.sessions.create(SessionId(id), { meta: { cwd: process.cwd() } })

@@ -124,7 +124,7 @@ it('ignores callbacks already captured by an emission when an earlier listener c
   }
 })
 
-it('rejects queued writes if the owner closes before they start', async () => {
+it('rejects pending write receipts when the owner closes', async () => {
   const { a } = pair()
   const channel = new JsonChannel(a, 64, () => {}, () => {})
   const pending = channel.send({ n: 1 })
@@ -138,8 +138,10 @@ it('bounds queued frames while a receiver is not reading', async () => {
   const channel = new JsonChannel(stream, 32, () => {}, () => {})
   const pending = channel.send({ value: '1234567890' })
   await expect(channel.send({ value: '1234567890' })).rejects.toThrow('queued bytes')
+  const draining = channel.drain()
   channel.close()
   await expect(pending).rejects.toThrow('closed')
+  await draining
 })
 
 it.each(['error', 'close'])('settles a blocked write when the stream emits %s', async (event) => {
@@ -153,4 +155,12 @@ it.each(['error', 'close'])('settles a blocked write when the stream emits %s', 
   await expect(pending).rejects.toThrow(event === 'error' ? 'transport failed' : 'closed')
   if (event === 'error') expect(failure?.message).toBe('transport failed')
   channel.close()
+})
+
+
+it.each([new Error('write failed'), 'write failed'])('rejects a synchronous transport write failure: %s', async (failure) => {
+  const stream = new Duplex({ read() {}, write() { throw failure } })
+  const channel = new JsonChannel(stream, 64, () => {}, () => {})
+  onTestFinished(() => { channel.close() })
+  await expect(channel.send({ value: 1 })).rejects.toThrow('write failed')
 })

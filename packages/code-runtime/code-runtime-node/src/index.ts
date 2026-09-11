@@ -210,14 +210,19 @@ export class NodeCodeRuntime extends CodeRuntime {
       // Abort callbacks can settle execution before or during an awaited operation.
       // oxlint-disable-next-line typescript/no-unnecessary-condition
       if (settled) return await result.promise
-      const argv = [executable, `--max-old-space-size=${this.config.maxOldGenerationSizeMb}`, ...bootstrapArgs(this.ctx.fs, this.config, this.config.maxMessageBytes)]
+      const packaged = 'pkg' in process && this.config.bootstrapPath === undefined
+      const heapFlag = `--max-old-space-size=${this.config.maxOldGenerationSizeMb}`
+      const argv = [executable, ...packaged ? [] : [heapFlag], ...bootstrapArgs(this.ctx.fs, this.config, this.config.maxMessageBytes)]
       confined = policy.mode === 'danger-full-access' ? undefined : this.ctx.sandbox.confine(argv, { ...policy, mode: policy.mode })
       if (confined !== undefined) sandbox.enforcement = confined.enforcement
       // Native launchers need executable search and Windows system paths before the child installs its model environment.
       const env: NodeJS.ProcessEnv = Object.fromEntries(Object.keys(process.env)
         .filter(key => !STARTUP_ENVIRONMENT_NAMES.has(key.toUpperCase()))
         .map(key => [key, undefined]))
-      if ('pkg' in process && this.config.bootstrapPath === undefined) env.DSH_CODE_RUNTIME_NODE = '1'
+      if (packaged) {
+        env.DSH_CODE_RUNTIME_NODE = '1'
+        env.NODE_OPTIONS = heapFlag
+      }
       handle = this.ctx.subprocess.spawn({ argv: confined?.argv ?? argv, cwd: spec.cwd, env, stdio: { stdin: 'ignore', stdout: 'pipe', stderr: 'pipe', control: 'pipe' }, graceMs: this.config.graceMs, signal })
       const launched = handle
       if (launched.control === undefined || launched.stdout === undefined || launched.stderr === undefined) {
@@ -328,7 +333,10 @@ export class NodeCodeRuntime extends CodeRuntime {
         else void launched.done.then(processFinished, (failure: unknown) => { finish({ kind: 'worker-exit', message: messageOf(failure) }) })
       })
       channel = transport
-      void launched.done.then((outcome) => { setImmediate(() => { processFinished(outcome) }) }, (error: unknown) => { finish({ kind: confined !== undefined && isRunnerSpawnFailure(error, confined.argv[0], spec.cwd) ? 'sandbox-unavailable' : 'worker-exit', message: messageOf(error) }) })
+      void launched.done.then((outcome) => {
+        // Allow queued control-frame callbacks to run before classifying a command exit.
+        setImmediate(() => { processFinished(outcome) })
+      }, (error: unknown) => { finish({ kind: confined !== undefined && isRunnerSpawnFailure(error, confined.argv[0], spec.cwd) ? 'sandbox-unavailable' : 'worker-exit', message: messageOf(error) }) })
     } catch (error: unknown) {
       finish({ kind: error instanceof SandboxUnavailableError ? 'sandbox-unavailable' : parsing ? 'exception' : 'worker-exit', message: messageOf(error) })
     }

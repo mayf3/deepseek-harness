@@ -50,6 +50,11 @@
     "@deepseek-ai/dsh-session": "workspace:^",
     "@deepseek-ai/dsh-spill": "workspace:^",
     "@deepseek-ai/dsh-tools": "workspace:^",
-    "@deepseek-ai/cordis": "workspace:^"
+    "@deepseek-ai/cordis": "workspace:^",
+    "@deepseek-ai/dsh-fs-local": "workspace:^",
+    "@deepseek-ai/dsh-subprocess-local": "workspace:^",
+    "@deepseek-ai/dsh-sandbox-local": "workspace:^",
+    "@deepseek-ai/dsh-sandbox-policy": "workspace:^",
+    "@deepseek-ai/dsh-session-projection": "workspace:^"
   }
 }

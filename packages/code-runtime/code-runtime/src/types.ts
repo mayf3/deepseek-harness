@@ -106,7 +106,7 @@ export interface CodeRunSpec extends CodeRunRequest {
 export interface CodeRunSandbox {
   /** File-effect mode used for this execution. */
   mode: SandboxMode
-  /** Whether an observed failure matches the selected backend's denial diagnostics. */
+  /** Program failure text matched backend diagnostics; not enforcement proof or an exhaustive denial record. */
   denied: boolean
   /** Completeness reported by the selected confining backend; absent for full access. */
   enforcement?: SandboxEnforcement

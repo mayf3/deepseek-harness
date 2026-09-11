@@ -439,8 +439,9 @@ describe('Node runtime host failures', () => {
       const spec = h.spawn.mock.calls[0]?.[0]
       expect(spec?.env?.DSH_CODE_RUNTIME_NODE).toBe('1')
       expect(Object.hasOwn(spec?.env ?? {}, 'PATH')).toBe(false)
-      expect(spec?.argv.at(-1)).toBe('134217728')
-      expect(Object.entries(spec?.env ?? {}).filter(([, value]) => value !== undefined)).toEqual([['DSH_CODE_RUNTIME_NODE', '1']])
+      expect(spec?.argv).toEqual([process.execPath, '134217728'])
+      expect(Object.fromEntries(Object.entries(spec?.env ?? {}).filter(([, value]) => value !== undefined)))
+        .toEqual({ DSH_CODE_RUNTIME_NODE: '1', NODE_OPTIONS: '--max-old-space-size=512' })
     } finally {
       if (prior === undefined) Reflect.deleteProperty(process, 'pkg')
       else Object.defineProperty(process, 'pkg', prior)
