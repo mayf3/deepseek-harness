@@ -21,7 +21,7 @@
 .placeholder {
   width: 100%;
   aspect-ratio: 3 / 4;
-  background: var(--dsw-alias-bg-layer-2);
+  background: var(--dsw-alias-bg-skeleton);
 }
 
 .canvas {
