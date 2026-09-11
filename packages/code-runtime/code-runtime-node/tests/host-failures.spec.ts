@@ -38,6 +38,12 @@ async function setup(config: Config = {}, mode: 'read-only' | 'danger-full-acces
   const stderr = new PassThrough()
   const direct = Promise.withResolvers<SubprocessOutcome>()
   const messages: unknown[] = []
+  const terminate = vi.fn(() => {
+    stdout.end()
+    stderr.end()
+    direct.resolve({ exitCode: 0, signal: null })
+  })
+  const waitForExit = vi.fn(async () => true)
   const handle: SubprocessHandle = {
     stdin: undefined,
     stdout,
@@ -45,12 +51,8 @@ async function setup(config: Config = {}, mode: 'read-only' | 'danger-full-acces
     control,
     collected: {},
     done: direct.promise,
-    terminate: vi.fn(() => {
-      stdout.end()
-      stderr.end()
-      direct.resolve({ exitCode: 0, signal: null })
-    }),
-    waitForExit: vi.fn(async () => true),
+    terminate,
+    waitForExit,
   }
   const writes = new Set<Promise<void>>()
   let receive: (message: unknown) => void = () => {}
@@ -83,7 +85,8 @@ async function setup(config: Config = {}, mode: 'read-only' | 'danger-full-acces
     }
   }
   return {
-    ctx, runtime, handle, direct, stdout, stderr, control, peer, messages, spawn, resolveExecutable, emit, start, onBoot,
+    ctx, runtime, handle, terminate, waitForExit, direct, stdout, stderr, control, peer, messages,
+    spawn, resolveExecutable, emit, start, onBoot,
     receive: (callback: typeof receive) => { receive = callback },
   }
 }
@@ -179,8 +182,8 @@ describe('Node runtime host failures', () => {
     const h = await setup()
     h.spawn.mockReturnValue({ ...h.handle, control: undefined })
     expect((await h.start()).error?.message).toContain('did not supply the requested control')
-    expect(h.handle.terminate).toHaveBeenCalledOnce()
-    expect(h.handle.waitForExit).toHaveBeenCalledOnce()
+    expect(h.terminate).toHaveBeenCalledOnce()
+    expect(h.waitForExit).toHaveBeenCalledOnce()
   })
 
   it('reports an executable lookup failure without allocating a process', async () => {
@@ -269,7 +272,7 @@ describe('Node runtime host failures', () => {
     const binding = vi.fn(async () => null)
     h.onBoot(() => { h.emit(frame) })
     const result = await h.start(withBinding(binding))
-    expect(result.error).toEqual({ kind: 'protocol', message: expect.stringContaining(message) })
+    expect(result.error).toEqual({ kind: 'protocol', message: expect.stringContaining(message) as unknown })
     expect(binding).not.toHaveBeenCalled()
   })
 
@@ -307,7 +310,7 @@ describe('Node runtime host failures', () => {
       if (message.type === 'reply') h.emit({ type: 'done' })
     })
     expect((await h.start(withBinding(async () => Number.NaN))).error).toBeUndefined()
-    expect(h.messages).toContainEqual({ type: 'reply', id: 1, ok: false, message: expect.stringContaining('lossless JSON') })
+    expect(h.messages).toContainEqual({ type: 'reply', id: 1, ok: false, message: expect.stringContaining('lossless JSON') as unknown })
   })
 
   it('does not publish a late binding reply after the program has settled', async () => {
@@ -324,7 +327,7 @@ describe('Node runtime host failures', () => {
 
   it('reports failed managed cleanup even when the program returns successfully', async () => {
     const h = await setup()
-    vi.mocked(h.handle.waitForExit).mockRejectedValue(new Error('range cannot be observed'))
+    vi.mocked(h.waitForExit).mockRejectedValue(new Error('range cannot be observed'))
     h.onBoot(() => { h.emit({ type: 'done', value: encodeCodeJsonWire(42) }) })
     expect((await h.start()).error).toEqual({ kind: 'worker-exit', message: 'managed process cleanup failed: range cannot be observed' })
   })
@@ -350,5 +353,94 @@ describe('Node runtime host failures', () => {
     const result = await h.start()
     expect(result.error?.kind).toBe('output-limit')
     expect(result.logs).toEqual(['retained'])
+  })
+
+  it.each([undefined, { kind: 'exception', message: 'program failed' }] as const)('bounds incomplete raw output after completion with %j', async (failure) => {
+    const h = await setup({ graceMs: 5 })
+    const cleaning = Promise.withResolvers<undefined>()
+    vi.mocked(h.terminate).mockImplementation(() => { h.direct.resolve({ exitCode: 0, signal: null }) })
+    vi.mocked(h.waitForExit).mockImplementation(async () => { cleaning.resolve(undefined); return true })
+    h.onBoot(() => { h.emit(failure === undefined ? { type: 'done' } : { type: 'done', error: failure }) })
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    try {
+      const pending = h.start()
+      await cleaning.promise
+      await vi.advanceTimersByTimeAsync(5)
+      expect((await pending).error).toEqual(failure ?? { kind: 'worker-exit', message: 'Node process output did not close cleanly' })
+      expect(h.stdout.destroyed).toBe(true)
+      expect(h.stderr.destroyed).toBe(true)
+    } finally { vi.useRealTimers() }
+  })
+
+  it('decodes fragmented native output and preserves incomplete final UTF-8 bytes', async () => {
+    const h = await setup()
+    h.onBoot(() => {
+      for (const stream of [h.stdout, h.stderr]) {
+        stream.write(Buffer.from([0xe2]))
+        stream.write(Buffer.from([0x82, 0xac]))
+        stream.end(Buffer.from([0xe2]))
+      }
+      h.emit({ type: 'done' })
+    })
+    const result = await h.start()
+    expect(result.error).toBeUndefined()
+    expect(result.logs.filter(text => text === '€')).toHaveLength(2)
+    expect(result.logs.filter(text => text === '�')).toHaveLength(2)
+  })
+
+  it('keeps the fitting native-output prefix and ignores later overflow chunks', async () => {
+    const h = await setup({ maxOutputBytes: 256 })
+    vi.mocked(h.terminate).mockImplementation(() => {
+      h.stderr.end('later output')
+      h.stdout.end()
+      h.direct.resolve({ exitCode: 0, signal: null })
+    })
+    h.onBoot(() => { h.stdout.write('x'.repeat(1024)) })
+    const result = await h.start()
+    expect(result.error?.kind).toBe('output-limit')
+    expect(result.logs.join('')).toMatch(/^x+$/)
+    expect(Buffer.byteLength(JSON.stringify(result.logs))).toBeLessThanOrEqual(256)
+  })
+
+  it.each(['stdout', 'stderr'] as const)('reports a broken raw %s pipe', async (name) => {
+    const h = await setup()
+    h.onBoot(() => { h[name].emit('error', new Error(`${name} closed`)) })
+    expect((await h.start()).error).toEqual({ kind: 'worker-exit', message: `${name} closed` })
+  })
+
+  it('retains stderr when a ready process exits without a completion frame', async () => {
+    const h = await setup()
+    h.onBoot(() => {
+      h.stderr.write('native fatal detail')
+      h.direct.resolve({ exitCode: 9, signal: null })
+    })
+    expect((await h.start()).error).toEqual({ kind: 'worker-exit', message: 'Node process exited before completing (9): native fatal detail' })
+  })
+
+  it.each([true, false])('attributes a failed confined spawn only with runner evidence (%s)', async (runnerFailed) => {
+    const h = await setup({}, 'read-only')
+    const runner = '/sandbox-runner'
+    vi.spyOn(h.ctx.sandbox, 'confine').mockImplementation(argv => confinement([runner, ...argv]))
+    h.onBoot(() => {
+      h.direct.reject(Object.assign(new Error('spawn rejected'), runnerFailed ? { code: 'ENOENT', path: runner, syscall: `spawn ${runner}` } : {}))
+    })
+    expect((await h.start()).error).toEqual({ kind: runnerFailed ? 'sandbox-unavailable' : 'worker-exit', message: 'spawn rejected' })
+  })
+
+  it('selects the private packaged bootstrap without leaking ambient environment', async () => {
+    const h = await setup()
+    h.onBoot(() => { h.emit({ type: 'done' }) })
+    const prior = Object.getOwnPropertyDescriptor(process, 'pkg')
+    try {
+      Object.defineProperty(process, 'pkg', { configurable: true, value: {} })
+      expect((await h.start()).error).toBeUndefined()
+      const spec = h.spawn.mock.calls[0]?.[0]
+      expect(spec?.env?.DSH_CODE_RUNTIME_NODE).toBe('1')
+      expect(spec?.argv.at(-1)).toBe('134217728')
+      expect(Object.entries(spec?.env ?? {}).filter(([, value]) => value !== undefined)).toEqual([['DSH_CODE_RUNTIME_NODE', '1']])
+    } finally {
+      if (prior === undefined) Reflect.deleteProperty(process, 'pkg')
+      else Object.defineProperty(process, 'pkg', prior)
+    }
   })
 })

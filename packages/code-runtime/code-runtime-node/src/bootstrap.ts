@@ -20,7 +20,7 @@ function defineBindingErrorField(error: Error, key: string, value: string): void
   capturedObjectDefineProperty(error, key, attributes)
 }
 
-/** The port API the bootstrap needs — satisfied by `parentPort` and by the tests' fake. */
+/** Program messages and host replies transported by the private process channel. */
 export interface BootstrapPort {
   postMessage(message: ProgramToHost): void
   on(event: 'message', listener: (message: ReplyMessage) => void): void
@@ -76,7 +76,7 @@ export class LogBuffer {
       if (prefix.length > 0) {
         const prefixBytes = jsonStringBytesUpTo(prefix, availableBytes)
         /* v8 ignore next -- truncateJsonStringBytes guarantees the returned prefix fits. */
-        if (prefixBytes === undefined) throw new CapturedError('worker output ledger produced an oversized log prefix')
+        if (prefixBytes === undefined) throw new CapturedError('program output ledger produced an oversized log prefix')
         this.bytes += prefixBytes + separatorBytes
         this.entries += 1
         this.sink(prefix)
@@ -127,7 +127,7 @@ export function makeConsoleShim(logs: LogBuffer): Record<(typeof CONSOLE_LEVELS)
  * @param logs - the buffer captured writes are pushed into.
  * @param stream - the stream whose `write` slot is patched.
  * @returns the restore function (the in-process tests un-patch; the real
- *   worker never needs to).
+ *   child never needs to).
  */
 export function captureStreamWrites(logs: LogBuffer, stream: PatchableStream): () => void {
   // The slot's VALUE is stored for restore and reassigned — never invoked
@@ -154,7 +154,7 @@ const INSPECT_OPTIONS = { depth: 4, maxArrayLength: 100, maxStringLength: 10_000
  * Prepare the program's completion value for the done message. Only lossless
  * JSON crosses, and a value that does not fit the remaining combined outer
  * budget reports `output-limit`; the host revalidates hostile traffic and
- * remains authoritative for native pipe writes the worker cannot observe.
+ * remains authoritative for native pipe writes the program shim cannot observe.
  *
  * @param value - the program's completion value.
  * @param remainingOutputBytes - exact bytes left after captured logs.
@@ -205,7 +205,7 @@ function prepareFailure(
 
 /**
  * Prepare a thrown program value without sending an unbounded stack or
- * string across the worker port.
+ * string across the process channel.
  * @param error - the value thrown by the program.
  * @param remainingOutputBytes - exact bytes left after captured logs.
  * @param maxOutputBytes - the configured cap named in an overflow diagnostic.
@@ -306,7 +306,7 @@ export function wireReplies(port: BootstrapPort, pending: Map<number, PendingCal
  * @param data - the boot payload's namespace declarations (globals + names).
  * @param port - the port binding calls are posted to.
  * @param pending - the id-keyed map each posted call parks its handles in.
- * @param nextId - the shared mutable id counter (worker-issued correlation ids).
+ * @param nextId - the shared mutable id counter (program-issued correlation ids).
  * @param errorClasses - per-namespace constructors shared with program globals.
  * @returns one namespace object per declaration, in declaration order.
  */

@@ -405,38 +405,37 @@ Source: [`packages/client/hmr/src/index.ts:31`](../packages/client/hmr/src/index
 
 ## `@deepseek-ai/dsh-code-runtime-node`
 
+Requires: `fs` · `subprocess` · `sandbox` · `sandboxPolicy`
+
 ```ts config-catalog
-/** Plugin config: every execution cap, changeable from `cordis.yml` (no hardcoded tunables). */
-export interface Config {
-  /**
-   * Busy-time budget in milliseconds: the run fails with kind `'timeout'`
-   * once the worker's MEASURED event-loop active time
-   * (`worker.performance.eventLoopUtilization()`) exceeds this. Metering
-   * measured busy time — not wall time, not host-side pending-call
-   * bookkeeping — is what makes the budget both fair (a program awaiting a
-   * slow tool accrues nothing) and ungameable (a hot loop accrues whether
-   * or not a decoy dispatch is in flight).
-   */
-  computeMs?: number
-  /**
-   * Wall-clock ceiling in milliseconds; never pauses for anything. The
-   * backstop for what busy-time cannot see (a program awaiting a promise
-   * nobody will resolve). At most `2_147_483_647` (Node's maximum
-   * `setTimeout` delay, about 24.9 days): a longer value is rejected at load
-   * because `setTimeout` would clamp it to 1 ms.
-   */
-  maxWallMs?: number
-  /**
-   * Hard cap for serialized log-array, completion-value, and failure-message payloads;
-   * fixed result-envelope syntax is excluded.
-   */
+/** Deployment-varying runtime bounds and launch choices. */
+export interface Config extends LaunchConfig {
+  /** Default elapsed deadline, including nested tool and approval waits. */
+  timeoutMs?: number
+  /** Maximum elapsed deadline accepted by resolve. */
+  maxTimeoutMs?: number
+  /** Combined serialized logs, completion and diagnostic byte cap. */
   maxOutputBytes?: number
-  /** The worker's max old-generation heap in MiB (`resourceLimits`); overflow kills the worker, surfacing as kind `'worker-exit'`. */
+  /** V8 old-generation heap limit in MiB; native allocations are excluded. */
   maxOldGenerationSizeMb?: number
+  /** Maximum control frame, outstanding argument and queued control-output bytes. */
+  maxMessageBytes?: number
+  /** Maximum simultaneous host binding calls accepted from a program. */
+  maxPendingCalls?: number
+  /** Managed process termination and output-drain grace in milliseconds. */
+  graceMs?: number
+}
+
+/** Deployment-owned Node executable and optional preinstalled built bootstrap. */
+export interface LaunchConfig {
+  /** Executable in the subprocess world; defaults to the current Node executable. */
+  nodeExecutable?: string
+  /** Absolute preinstalled built bootstrap in the execution world. */
+  bootstrapPath?: string
 }
 ```
 
-Source: [`packages/code-runtime/code-runtime-node/src/index.ts:25`](../packages/code-runtime/code-runtime-node/src/index.ts)
+Source: [`packages/code-runtime/code-runtime-node/src/index.ts:26`](../packages/code-runtime/code-runtime-node/src/index.ts)
 
 <a id="deepseek-aidsh-compaction-basic"></a>
 
@@ -576,8 +575,7 @@ export interface Config {
    * rejects a float). The child sets the soft limit to `cpuSeconds` and the
    * hard limit to `cpuSeconds + 1`: the kernel delivers SIGXCPU at the soft
    * limit, which the host classifies as a `timeout`; the +1s hard limit is a
-   * SIGKILL backstop for a program that traps SIGXCPU. Granularity is seconds —
-   * a coarser counterpart to the worker backend's millisecond `computeMs`.
+   * SIGKILL backstop for a program that traps SIGXCPU. Granularity is whole seconds.
    */
   cpuSeconds?: number
   /** Wall-clock ceiling in milliseconds; backstops CPU time for programs awaiting a promise nobody resolves. */
@@ -3168,7 +3166,7 @@ export interface Config {
 export type ToolPresentationMode = 'native' | 'ptc' | 'both'
 ```
 
-Source: [`packages/core/tools/src/index.ts:647`](../packages/core/tools/src/index.ts)
+Source: [`packages/core/tools/src/index.ts:648`](../packages/core/tools/src/index.ts)
 
 <a id="deepseek-aidsh-typert-loader"></a>
 

@@ -25,8 +25,8 @@ describe('bounded process frames', () => {
   it('reassembles split binary headers and UTF-8 bodies', async () => {
     const { a, b } = pair()
     const received = Promise.withResolvers<unknown>()
-    const channel = new JsonChannel(a, 1000, value => received.resolve(value), error => received.reject(error))
-    onTestFinished(() => channel.close())
+    const channel = new JsonChannel(a, 1000, (value) => { received.resolve(value) }, (error) => { received.reject(error) })
+    onTestFinished(() => { channel.close() })
     const bytes = frame({ text: '你好🙂' })
     for (const byte of bytes) b.write(Buffer.from([byte]))
     expect(await received.promise).toEqual({ text: '你好🙂' })
@@ -39,8 +39,8 @@ describe('bounded process frames', () => {
     const channel = new JsonChannel(a, 1000, (value) => {
       received.push(value)
       if (received.length === 2) done.resolve(undefined)
-    }, error => done.reject(error))
-    const peer = new JsonChannel(b, 1000, () => {}, error => done.reject(error))
+    }, (error) => { done.reject(error) })
+    const peer = new JsonChannel(b, 1000, () => {}, (error) => { done.reject(error) })
     onTestFinished(() => { channel.close(); peer.close() })
     await Promise.all([peer.send({ n: 1 }), peer.send({ n: 2 })])
     await done.promise
@@ -51,8 +51,8 @@ describe('bounded process frames', () => {
   it.each([0, 65])('rejects a declared %i-byte frame before accepting its body', async (length) => {
     const { a, b } = pair()
     const failure = Promise.withResolvers<Error>()
-    const channel = new JsonChannel(a, 64, () => { throw new Error('must not dispatch') }, error => failure.resolve(error))
-    onTestFinished(() => channel.close())
+    const channel = new JsonChannel(a, 64, () => { throw new Error('must not dispatch') }, (error) => { failure.resolve(error) })
+    onTestFinished(() => { channel.close() })
     const header = Buffer.alloc(4)
     header.writeUInt32BE(length)
     b.write(header)
@@ -63,7 +63,7 @@ describe('bounded process frames', () => {
     for (const payload of [Buffer.from('{'), Buffer.from([0xff]), Buffer.from('{}')]) {
       const { a, b } = pair()
       const failure = Promise.withResolvers<Error>()
-      const channel = new JsonChannel(a, 64, () => { throw new Error('receiver failed') }, error => failure.resolve(error))
+      const channel = new JsonChannel(a, 64, () => { throw new Error('receiver failed') }, (error) => { failure.resolve(error) })
       const header = Buffer.alloc(4)
       header.writeUInt32BE(payload.length)
       b.write(Buffer.concat([header, payload]))
@@ -84,8 +84,8 @@ describe('bounded process frames', () => {
   it('reports peer EOF while a program is active', async () => {
     const { a, b } = pair()
     const failure = Promise.withResolvers<Error>()
-    const channel = new JsonChannel(a, 64, () => {}, error => failure.resolve(error))
-    onTestFinished(() => channel.close())
+    const channel = new JsonChannel(a, 64, () => {}, (error) => { failure.resolve(error) })
+    onTestFinished(() => { channel.close() })
     b.end()
     expect((await failure.promise).message).toContain('ended')
   })
@@ -117,7 +117,7 @@ it('ignores callbacks already captured by an emission when an earlier listener c
     const { a } = pair()
     let failures = 0
     const channel = new JsonChannel(a, 64, () => { throw new Error('closed channel dispatched') }, () => { failures += 1 })
-    a.prependOnceListener(event, () => channel.close())
+    a.prependOnceListener(event, () => { channel.close() })
     a.emit(event, frame({}))
     a.emit('error', new Error('late closed stream error'))
     expect(failures).toBe(0)

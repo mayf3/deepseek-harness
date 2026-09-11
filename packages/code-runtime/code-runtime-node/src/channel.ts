@@ -42,6 +42,8 @@ export class JsonChannel {
     if (this.closed) return
     try {
       let offset = 0
+      // receive can synchronously close the channel while dispatching a preceding frame.
+      // oxlint-disable-next-line typescript/no-unnecessary-condition
       while (offset < chunk.length && !this.closed) {
         if (this.payload === undefined) {
           const bytes = Math.min(4 - this.headerBytes, chunk.length - offset)

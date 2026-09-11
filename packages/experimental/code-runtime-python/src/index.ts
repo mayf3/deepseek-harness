@@ -45,8 +45,7 @@ export interface Config {
    * rejects a float). The child sets the soft limit to `cpuSeconds` and the
    * hard limit to `cpuSeconds + 1`: the kernel delivers SIGXCPU at the soft
    * limit, which the host classifies as a `timeout`; the +1s hard limit is a
-   * SIGKILL backstop for a program that traps SIGXCPU. Granularity is seconds —
-   * a coarser counterpart to the worker backend's millisecond `computeMs`.
+   * SIGKILL backstop for a program that traps SIGXCPU. Granularity is whole seconds.
    */
   cpuSeconds?: number
   /** Wall-clock ceiling in milliseconds; backstops CPU time for programs awaiting a promise nobody resolves. */
@@ -115,7 +114,7 @@ const IDENTIFIER = /^[A-Za-z_][A-Za-z0-9_]*$/
 const RESERVED_NAMES = PORTABLE_RESERVED_WORDS
 
 /**
- * The seam's shared backend-owned globals (`console` is the worker's slot;
+ * The seam's shared backend-owned globals (`console` is the Node provider's slot;
  * `__dsh_main__`/`__builtins__`/`__name__` are this bootstrap's wrapper and
  * seeded module globals). Shared so a namespace list valid on one backend is
  * valid on all — colliding with an owned slot would be silently overwritten
@@ -125,7 +124,7 @@ const RUNTIME_OWNED_GLOBALS = RESERVED_BINDING_GLOBALS
 
 /**
  * The seam's shared error-member exclusions (`RESERVED_ERROR_MEMBERS` +
- * dunder-form names) — enforced identically here and in the worker backend so
+ * dunder-form names) — enforced identically here and in the Node backend so
  * an errorClass valid on one backend is valid on all. Several dunders are
  * constrained CPython descriptors whose `setattr` raises while constructing
  * the very rejection it was meant to carry; the exact set is an interpreter
@@ -826,7 +825,7 @@ export class PythonCodeRuntime extends CodeRuntime {
   private readonly live = new Set<LiveRun>()
   private disposed = false
 
-  /* jscpd:ignore-start -- parallel to code-runtime-worker: sibling backends keep symmetric constructor/teardown/run shapes. */
+  /* jscpd:ignore-start -- parallel to code-runtime-node: sibling backends keep symmetric constructor/teardown/run shapes. */
   constructor(ctx: Context, config: Config) {
     super(ctx)
     // Reject at load on Windows: the bootstrap imports the POSIX-only `resource`
@@ -924,7 +923,7 @@ export class PythonCodeRuntime extends CodeRuntime {
       // which silently floors a float, so `maxLogBytes: 3.5` would truncate at 3
       // bytes child-side while the host meters and marks at 3.5 — the two sides
       // enforcing different public config. Reject the float at load, as the
-      // worker backend does for its byte budgets.
+      // Node backend does for its byte budgets.
       if (!Number.isInteger(this.config[key])) {
         throw new Error(`dsh-code-runtime-python: config.${key} must be a positive integer (the child reads it as an int, so a float diverges from the host), got ${String(this.config[key])}`)
       }
@@ -1126,7 +1125,7 @@ export class PythonCodeRuntime extends CodeRuntime {
         }
         // Any non-empty own attribute name is settable via setattr (the
         // program reads exotic names like `tool-name` with getattr), matching
-        // the seam contract and the worker backend — only the seam-excluded
+        // the seam contract and the Node backend — only the seam-excluded
         // and protocol-reserved members below are refused.
         if (memberNameProperty.length === 0) {
           throw new Error('dsh-code-runtime-python: errorClass.memberNameProperty must be a non-empty attribute name')
@@ -1931,7 +1930,7 @@ export class PythonCodeRuntime extends CodeRuntime {
                 // The seam requires a lossy resolution to REJECT descriptively,
                 // not silently coerce: a raw JSON.stringify would turn NaN/
                 // Infinity into null and drop undefined fields. Snapshot through
-                // the same lossless-JSON boundary the worker backend uses (also
+                // the same lossless-JSON boundary the Node backend uses (also
                 // iterative, so a deeply nested value cannot overflow the stack).
                 const value = snapshotJsonValue(resolved)
                 if (value === undefined) {
@@ -2390,7 +2389,7 @@ export class PythonCodeRuntime extends CodeRuntime {
       child.stdout.on('error', silenceStreamError)
       child.stderr.on('error', silenceStreamError)
 
-      /* jscpd:ignore-start -- wall-timer/abort/live-run wiring deliberately parallels code-runtime-worker; see the constructor note. */
+      /* jscpd:ignore-start -- wall-timer/abort/live-run wiring deliberately parallels code-runtime-node; see the constructor note. */
       const wallTimer = setTimeout(() => {
         finish({ error: { kind: 'timeout', message: `wall-clock ceiling reached (${this.config.maxWallMs}ms)` } })
       }, this.config.maxWallMs)

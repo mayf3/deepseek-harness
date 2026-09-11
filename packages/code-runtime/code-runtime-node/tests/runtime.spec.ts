@@ -1,5 +1,6 @@
 import { mkdtemp, mkdir, readFile, rm, symlink } from 'node:fs/promises'
 import { homedir } from 'node:os'
+import { createServer, type Socket } from 'node:net'
 import { join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
 import { describe, expect, it, onTestFinished } from 'vitest'
@@ -96,6 +97,52 @@ describe('Node program process', () => {
     await entered.promise
     controller.abort('stop')
     expect((await active).error).toEqual({ kind: 'abort', message: 'stop' })
+  })
+
+  it('closes a still-running descendant before returning the program result', async () => {
+    const { run } = await setup()
+    const connected = Promise.withResolvers<undefined>()
+    const disconnected = Promise.withResolvers<undefined>()
+    let peer: Socket | undefined
+    const server = createServer((socket) => {
+      peer = socket
+      // A terminated peer can reset its connection instead of sending FIN.
+      socket.on('error', () => {})
+      socket.once('close', () => { disconnected.resolve(undefined) })
+      connected.resolve(undefined)
+    })
+    onTestFinished(async () => {
+      peer?.destroy()
+      if (server.listening) await new Promise<void>((resolve, reject) => {
+        server.close((error) => { if (error) reject(error); else resolve() })
+      })
+    })
+    await new Promise<void>((resolve, reject) => {
+      server.once('error', reject)
+      server.listen(0, '127.0.0.1', resolve)
+    })
+    const address = server.address()
+    if (address === null || typeof address === 'string') throw new Error('expected bound TCP listener')
+    const child = `require('node:net').connect(${address.port},'127.0.0.1')`
+    const result = await run({
+      program: `const {spawn}=await import("node:child_process"); spawn(process.execPath,["-e",${JSON.stringify(child)}],{stdio:"ignore"}); await tools.connected({}); return 42;`,
+      bindings: bindings({ connected: async () => { await connected.promise; return null } }),
+    })
+    expect(result.error).toBeUndefined()
+    expect(result.value).toBe(42)
+    await disconnected.promise
+  })
+
+  it('applies the configured V8 old-generation ceiling to each fresh Node process', async () => {
+    const limits: number[] = []
+    for (const maxOldGenerationSizeMb of [32, 64]) {
+      const { run } = await setup({ maxOldGenerationSizeMb })
+      const result = await run({ program: 'return (await import("node:v8")).getHeapStatistics().heap_size_limit;', bindings: [] })
+      expect(result.error).toBeUndefined()
+      if (typeof result.value !== 'number') throw new Error('expected V8 heap limit')
+      limits.push(result.value)
+    }
+    expect(Number(limits[1]) - Number(limits[0])).toBe(32 * 1024 * 1024)
   })
 
   it('disposes active programs and rejects later execution', async () => {

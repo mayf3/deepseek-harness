@@ -27,7 +27,7 @@ it('clears process environment, dispatches a binding reply and flushes the termi
     if (message.type === 'ready') void peer.send({ type: 'boot', data: { code: 'console.log("ready"); return await tools.echo({});', namespaces: [{ global: 'tools', names: ['echo'] }], maxOutputBytes: 1024 } })
     if (message.type === 'call') void peer.send({ type: 'reply', id: message.id, ok: true, value: encodeCodeJsonWire(42) })
   }, () => {})
-  onTestFinished(() => peer.close())
+  onTestFinished(() => { peer.close() })
   await runNodeMain(child, 4096, state)
   expect(state.env).toEqual({})
   expect(state.exitCode).toBeUndefined()
@@ -42,7 +42,7 @@ it.each([0, -1, 1.5, 4294967296])('rejects an invalid bootstrap frame limit %i',
 it('rejects an unexpected first control frame', async () => {
   const { child, host } = endpoints()
   const peer = new JsonChannel(host, 4096, () => { void peer.send({ type: 'reply' }) }, () => {})
-  onTestFinished(() => peer.close())
+  onTestFinished(() => { peer.close() })
   await expect(runNodeMain(child, 4096, processState())).rejects.toThrow('expected program boot')
 })
 
@@ -60,7 +60,7 @@ it('contains program writes that exceed queued control output', async () => {
   const peer = new JsonChannel(host, 1024, (raw) => {
     if ((raw as { type: string }).type === 'ready') void peer.send({ type: 'boot', data: { code: 'for(let i=0;i<30;i++) console.log("x".repeat(100));', namespaces: [], maxOutputBytes: 8000 } })
   }, () => {})
-  onTestFinished(() => peer.close())
+  onTestFinished(() => { peer.close() })
   await runNodeMain(child, 1024, state)
   expect(state.exitCode).toBe(1)
 })

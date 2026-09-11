@@ -192,6 +192,8 @@ export class NodeCodeRuntime extends CodeRuntime {
     signal.addEventListener('abort', onAbort, { once: true })
     if (signal.aborted) onAbort()
     try {
+      // Abort callbacks can settle execution before or during an awaited operation.
+      // oxlint-disable-next-line typescript/no-unnecessary-condition
       if (settled) return await result.promise
       const stripped = stripTypeScriptTypes(STRIP_PREFIX + spec.program + STRIP_SUFFIX)
       parsing = false
@@ -205,6 +207,8 @@ export class NodeCodeRuntime extends CodeRuntime {
         maxOutputBytes: this.config.maxOutputBytes,
       }
       const executable = await this.ctx.subprocess.resolveExecutable(this.config.nodeExecutable, undefined, signal)
+      // Abort callbacks can settle execution before or during an awaited operation.
+      // oxlint-disable-next-line typescript/no-unnecessary-condition
       if (settled) return await result.promise
       const argv = [executable, `--max-old-space-size=${this.config.maxOldGenerationSizeMb}`, ...bootstrapArgs(this.ctx.fs, this.config, this.config.maxMessageBytes)]
       confined = policy.mode === 'danger-full-access' ? undefined : this.ctx.sandbox.confine(argv, { ...policy, mode: policy.mode })
@@ -261,7 +265,7 @@ export class NodeCodeRuntime extends CodeRuntime {
         if (!ready) {
           if (raw.type !== 'ready') { protocolFailure('program frame arrived before bootstrap readiness'); return }
           ready = true
-          void transport.send({ type: 'boot', data }).catch((error) => { protocolFailure(messageOf(error)) })
+          void transport.send({ type: 'boot', data }).catch((error: unknown) => { protocolFailure(messageOf(error)) })
           return
         }
         switch (raw.type) {
@@ -296,7 +300,7 @@ export class NodeCodeRuntime extends CodeRuntime {
             const args = decodeCodeJsonWire(raw.args)
             if (args === undefined) { protocolFailure('binding arguments must be lossless JSON'); return }
             if (++pending > this.config.maxPendingCalls || (pendingBytes += bytes) > this.config.maxMessageBytes) { protocolFailure('pending binding calls exceed configured limits'); return }
-            const id = raw.id as number
+            const id = raw.id
             void (async () => {
               let reply: unknown
               try {
@@ -310,7 +314,7 @@ export class NodeCodeRuntime extends CodeRuntime {
                 pendingBytes -= bytes
               }
               if (!settled) await transport.send(reply)
-            })().catch((error) => { protocolFailure(messageOf(error)) })
+            })().catch((error: unknown) => { protocolFailure(messageOf(error)) })
             return
           }
           default: protocolFailure('unknown control message')
@@ -318,10 +322,10 @@ export class NodeCodeRuntime extends CodeRuntime {
       }, (error, kind) => {
         if (kind === 'protocol') protocolFailure(messageOf(error))
         else if (ready) finish({ kind: 'worker-exit', message: messageOf(error) })
-        else void launched.done.then(processFinished, (failure) => { finish({ kind: 'worker-exit', message: messageOf(failure) }) })
+        else void launched.done.then(processFinished, (failure: unknown) => { finish({ kind: 'worker-exit', message: messageOf(failure) }) })
       })
       channel = transport
-      void launched.done.then((outcome) => { setImmediate(() => { processFinished(outcome) }) }, (error) => { finish({ kind: confined !== undefined && isRunnerSpawnFailure(error, confined.argv[0], spec.cwd) ? 'sandbox-unavailable' : 'worker-exit', message: messageOf(error) }) })
+      void launched.done.then((outcome) => { setImmediate(() => { processFinished(outcome) }) }, (error: unknown) => { finish({ kind: confined !== undefined && isRunnerSpawnFailure(error, confined.argv[0], spec.cwd) ? 'sandbox-unavailable' : 'worker-exit', message: messageOf(error) }) })
     } catch (error: unknown) {
       finish({ kind: error instanceof SandboxUnavailableError ? 'sandbox-unavailable' : parsing ? 'exception' : 'worker-exit', message: messageOf(error) })
     }

@@ -1,11 +1,11 @@
 /**
- * Lossless-JSON snapshots for the dependency-free source worker closure.
+ * Lossless-JSON snapshots for the dependency-free source bootstrap closure.
  * @module @deepseek-ai/dsh-code-runtime-node/json-wire
  */
 
 import type { CodeJsonValue } from '@deepseek-ai/dsh-code-runtime'
 
-/* jscpd:ignore-start -- the source worker mirrors session JSON helpers without workspace runtime imports */
+/* jscpd:ignore-start -- the source bootstrap mirrors session JSON helpers without workspace runtime imports */
 type IntrinsicCallable = (this: unknown, ...args: unknown[]) => unknown
 
 const intrinsicFunctionToString = Reflect.get(Function.prototype, 'toString') as IntrinsicCallable
@@ -139,9 +139,9 @@ type SnapshotTask =
   | { kind: 'leave'; source: object }
 
 /**
- * Validate and detach one worker-boundary value without loading another
+ * Validate and detach one process-boundary value without loading another
  * workspace package at runtime. This mirrors the session-owned canonical
- * JSON boundary while remaining safe to import from the unbuilt worker.
+ * JSON boundary while remaining safe to import from the unbuilt bootstrap.
  * Its iterative traversal adds no JavaScript call-stack depth limit.
  *
  * @param value - the candidate completion value.
@@ -242,17 +242,17 @@ interface ObjectWireToken {
   keys: string[]
 }
 
-type WorkerJsonToken = null | boolean | number | string | ArrayWireToken | ObjectWireToken
+type CodeJsonToken = null | boolean | number | string | ArrayWireToken | ObjectWireToken
 
 /**
  * A pre-order, bounded-depth transport for one lossless JSON value. Container
- * markers and scalar leaves share one flat token array, so `worker_threads`
- * never has to structured-clone the value's application nesting.
+ * markers and scalar leaves share one flat token array, so JSON serialization
+ * does not recurse through the value's application nesting.
  */
-export type CodeJsonWire = WorkerJsonToken[]
+export type CodeJsonWire = CodeJsonToken[]
 
 /**
- * Flatten one validated JSON value for the worker-thread message port.
+ * Flatten one validated JSON value for the process control channel.
  * @param value - the lossless JSON value to transport.
  * @returns a pre-order token stream whose own nesting is bounded.
  */
@@ -340,7 +340,7 @@ function containerToken(value: object): ArrayWireToken | ObjectWireToken | undef
 }
 
 /**
- * Rebuild one lossless JSON value from the flat worker-thread wire format.
+ * Rebuild one lossless JSON value from the flat process wire format.
  * Malformed or incomplete traffic returns `undefined`; traversal is iterative
  * and therefore independent of the transported value's application depth.
  * @param input - untrusted message-port payload.

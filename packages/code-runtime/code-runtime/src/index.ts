@@ -22,13 +22,13 @@ export type {
 
 /**
  * Binding globals EVERY backend refuses because SOME backend owns the slot in
- * the program's namespace: `console` (the worker's log capture), and
+ * the program's namespace: `console` (Node's log capture), and
  * `__dsh_main__`/`__builtins__`/`__name__` (the Python backend's bootstrap
  * wrapper and seeded module globals),
  * and `__debug__`. One shared set — rather than each backend refusing only its
  * own slots — keeps the portability promise real: a namespace list valid on
  * one backend is valid on all, so a caller cannot pick a name that works on
- * the worker and collides on Python (or vice versa). `__name__` et al. ARE
+ * Node and collides on Python (or vice versa). `__name__` et al. ARE
  * valid portable identifiers, so the identifier rule on
  * `CodeBindingNamespace.global` never rejects them — hence this explicit set.
  * (Error members differ: {@link DUNDER_MEMBER} refuses every dunder form
@@ -68,7 +68,7 @@ export const DUNDER_MEMBER = /^__.+__$/
 /**
  * Reserved words of every portable target language (ECMAScript ∪ Python),
  * refused as {@link CodeBindingNamespace.global} / error-class names by all
- * backends, one per language: the released TypeScript worker thread and the
+ * backends, one per language: the released TypeScript Node process and the
  * experimental, private CPython subprocess. The portable-identifier contract
  * promises a namespace list valid on one backend is valid on every backend; a
  * per-language check would let `lambda` pass the TypeScript backend and fail

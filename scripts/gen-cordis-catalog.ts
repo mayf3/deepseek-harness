@@ -396,6 +396,8 @@ export const LINK_MAP: Readonly<Record<string, string>> = {
   SubprocessTerminalHandle: 'subprocess.md',
   SubprocessTerminalSpawnSpec: 'subprocess.md',
   CodeRunRequest: 'code-runtime.md',
+  CodeRunSpec: 'code-runtime.md',
+  CodeRunSandbox: 'code-runtime.md',
   CodeRunResult: 'code-runtime.md',
   CompactionResult: 'compaction.md',
   CompactionTrigger: 'compaction.md',

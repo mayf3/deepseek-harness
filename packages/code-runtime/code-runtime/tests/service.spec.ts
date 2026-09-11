@@ -43,6 +43,7 @@ describe('CodeRuntime service seam', () => {
     const { runtime } = await setup()
     expect(runtime.language).toBe('typescript')
     expect(runtime.isolation).toBe('in-process-stub')
+    expect(runtime.sandboxMode).toBeUndefined()
 
     const calls: unknown[] = []
     const result = await runtime.run(runtime.resolve({

@@ -64,6 +64,8 @@ export async function runNodeMain(stream: Duplex, maxMessageBytes: number, proce
     await channel.drain()
   } finally {
     channel.close()
+    // Transport callbacks can set failed while the awaited program executes.
+    // oxlint-disable-next-line typescript/no-unnecessary-condition
     if (failed) processState.exitCode = 1
   }
 }
