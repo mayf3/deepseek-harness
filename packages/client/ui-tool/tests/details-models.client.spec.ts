@@ -190,5 +190,7 @@ describe('detailsCardModel fallback contract', () => {
       state: 'scheduled', deliveryMode: 'session-local',
     })), t, 'en_US')
     expect(model?.items[0]?.fields).toContainEqual({ label: 'Scheduled for', value: scheduledAt })
+    const trace = detailsCardModel(output('session_event_trace', 'Session s1 — title\nCreated: 1970-01-01T00:00:00.000Z'), t, 'en_US')
+    expect(trace?.items[0]?.fields).toContainEqual({ label: 'Time', value: '1970-01-01T00:00:00.000Z' })
   })
 })
