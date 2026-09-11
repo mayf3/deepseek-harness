@@ -16,7 +16,7 @@ public static class InstallerCapture {
     [DllImport("user32.dll")] static extern bool EnumChildWindows(IntPtr parent, WindowCallback callback, IntPtr data);
     [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr window);
     [DllImport("user32.dll")] public static extern bool IsWindow(IntPtr window);
-    [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern IntPtr GetProp(IntPtr window, string name);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern IntPtr GetProp(IntPtr window, string name);
     [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr window, out uint process);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetWindowText(IntPtr window, StringBuilder text, int count);
     [DllImport("user32.dll")] static extern bool GetWindowRect(IntPtr window, out Rect rect);
@@ -49,6 +49,20 @@ public static class InstallerCapture {
         Rect rect;
         if (!GetWindowRect(window, out rect) || !SetWindowPos(window, IntPtr.Zero, rect.Left + x, rect.Top + y, 0, 0, 0x15))
             throw new InvalidOperationException("Could not move window");
+    }
+
+    public static bool HasIncompleteWindow(int process) {
+        bool incomplete = false;
+        EnumWindows(delegate(IntPtr window, IntPtr unused) {
+            uint owner;
+            GetWindowThreadProcessId(window, out owner);
+            var title = new StringBuilder(256);
+            GetWindowText(window, title, title.Capacity);
+            if (owner == process && title.ToString().Contains(ProductName) && IsWindowVisible(window)
+                && GetProp(window, "HarnessInstaller.Ready") == IntPtr.Zero) incomplete = true;
+            return !incomplete;
+        }, IntPtr.Zero);
+        return incomplete;
     }
 
     public static IntPtr FindClass(IntPtr parent, string name) {

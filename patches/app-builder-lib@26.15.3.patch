@@ -1,0 +1,19 @@
+diff --git a/templates/nsis/include/extractAppPackage.nsh b/templates/nsis/include/extractAppPackage.nsh
+--- a/templates/nsis/include/extractAppPackage.nsh
++++ b/templates/nsis/include/extractAppPackage.nsh
+@@ -96,3 +96,9 @@
+   SetOutPath "$PLUGINSDIR\7z-out"
++  !ifmacrodef customInstallerExtractStart
++    !insertmacro customInstallerExtractStart
++  !endif
+   Nsis7z::Extract "${FILE}"
++  !ifmacrodef customInstallerCopyStart
++    !insertmacro customInstallerCopyStart
++  !endif
+   Pop $R0
+@@ -137,2 +143,5 @@
+   DoneExtract7za:
++  !ifmacrodef customInstallerFilesReady
++    !insertmacro customInstallerFilesReady
++  !endif
+ !macroend

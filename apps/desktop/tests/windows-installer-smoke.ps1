@@ -31,14 +31,15 @@ function Wait-Control([Diagnostics.Process]$Process, [string]$Text, [switch]$Dia
 function Start-Setup([string]$Theme, [string]$Path = $installPath) {
     $arguments = '/THEME=' + $Theme
     if ($Path) { $arguments += ' /D=' + $Path }
-    $process = Start-Process -FilePath $Installer -ArgumentList $arguments -PassThru -WindowStyle Hidden
+    $process = Start-Process -FilePath $Installer -ArgumentList $arguments -PassThru -WindowStyle Normal
     $processes.Add($process)
     $timer = [Diagnostics.Stopwatch]::StartNew()
     do {
         if ($process.HasExited) { throw "Setup exited: $($process.ExitCode)" }
+        if ([InstallerCapture]::HasIncompleteWindow($process.Id)) { throw 'Installer appeared before its page was ready' }
         $window = [InstallerCapture]::Find($process.Id)
         if ($window -ne [IntPtr]::Zero) { break }
-        Start-Sleep -Milliseconds 25
+        Start-Sleep -Milliseconds 5
     } while ($timer.Elapsed.TotalSeconds -lt 30)
     [InstallerCapture]::Reveal($window)
     [void](Wait-Control $process $copy.INSTALLER_INSTALL)
@@ -71,6 +72,7 @@ function Finish-Setup([Diagnostics.Process]$Process, [bool]$Launch, [string]$The
         }
     }
     $window = [InstallerCapture]::Find($Process.Id)
+    if ([InstallerCapture]::GetProp($window, 'HarnessInstaller.Stage').ToInt32() -ne 4) { throw 'Installation did not reach cleanup' }
     if ([InstallerCapture]::Bounds($window) -ne $Bounds) { throw 'Completion page moved or resized the installer' }
     [void][InstallerCapture]::Save($window, (Join-Path $OutputDirectory ($Theme + '-finish.png')))
     if ($Launch) {
@@ -123,6 +125,7 @@ try {
     if (-not (Test-Path -LiteralPath $appPath) -or (Test-Path -LiteralPath (Join-Path $installPath 'launched.txt'))) { throw 'Unchecked launch behavior failed' }
     $results.Add('enter-validates-current-path-and-unchecked-launch')
     $results.Add('completion-preserves-window-position')
+    $results.Add('welcome-ready-before-first-show')
 
     $process = Start-Setup dark ''
     Click-Control $process $copy.INSTALLER_CHOOSE_PATH
@@ -160,7 +163,7 @@ try {
         if ($percent -lt $previous -or $percent -ge 100) { throw "Progress regressed or completed before success: $previous -> $percent" }
         $previous = $percent
     }
-    if ($previous -le 20) { throw 'Progress never advanced' }
+    if ($previous -ge 2) { throw 'Internal progress escaped the preparation stage' }
     $results.Add('progress-remains-monotonic-across-native-resets')
     [void][InstallerCapture]::Save([InstallerCapture]::Find($process.Id), (Join-Path $OutputDirectory 'dark-progress.png'))
     Dismiss $process $copy.INSTALLER_RUNNING

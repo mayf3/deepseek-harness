@@ -1,7 +1,8 @@
 Var InstallerProgressWindow
 
 Function InstallerGuiInit
-    System::Call 'user32::SetWindowLongW(p $HWNDPARENT, i -16, i 0x900A0000)'
+    HideWindow
+    System::Call 'user32::SetWindowLongW(p $HWNDPARENT, i -16, i 0x800A0000)'
     System::Call 'user32::GetDC(p $HWNDPARENT) p.r0'
     System::Call 'gdi32::GetDeviceCaps(p r0, i 88) i.s'
     Pop $InstallerDpi
@@ -60,7 +61,7 @@ Function InstallerProgressShow
         StrCpy $0 1
         StrCpy $1 "$PLUGINSDIR\brand-dark-2x.bmp"
     ${EndIf}
-    System::Call '$PLUGINSDIR\window-frame.dll::InstallerShowProgress(p $HWNDPARENT, p $mui.InstFilesPage.ProgressBar, i r0, i $InstallerDpi, w r1, w "$(INSTALLER_NATIVE_PROGRESS)") p.s ?c'
+    System::Call '$PLUGINSDIR\window-frame.dll::InstallerShowProgress(p $HWNDPARENT, p $mui.InstFilesPage.ProgressBar, i r0, i $InstallerDpi, w r1, w "$(INSTALLER_NATIVE_PROGRESS)", w "$(INSTALLER_PROGRESS_EXTRACT)", w "$(INSTALLER_PROGRESS_COPY)", w "$(INSTALLER_PROGRESS_REGISTER)", w "$(INSTALLER_PROGRESS_CLEAN)") p.s ?c'
     Pop $InstallerProgressWindow
     ${If} $InstallerProgressWindow == 0
         MessageBox MB_OK|MB_ICONSTOP "$(INSTALLER_UI_ERROR)"
@@ -68,6 +69,7 @@ Function InstallerProgressShow
         Quit
     ${EndIf}
     System::Call 'user32::SetPropW(p $HWNDPARENT, w "HarnessInstaller.Ready", p 1)'
+    ShowWindow $HWNDPARENT 5
 FunctionEnd
 
 Function .onInstFailed

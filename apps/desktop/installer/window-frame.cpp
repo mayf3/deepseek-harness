@@ -10,6 +10,7 @@
 #include <gdiplus.h>
 #include <new>
 #include <algorithm>
+#include "progress.h"
 
 using namespace Gdiplus;
 
@@ -46,13 +47,12 @@ extern "C" __declspec(dllexport) int __cdecl InstallerFindProcess(LPCWSTR execut
 }
 
 struct ProgressPage {
-    HWND source;
-    int percent = 20;
+    InstallProgress progress{GetTickCount64()};
     bool dark;
     UINT dpi;
     ULONG_PTR gdiplus;
     Image* brand;
-    WCHAR caption[128];
+    WCHAR captions[5][128];
 };
 
 // NSIS shows its page after MUI's SHOW callback; keep its controls off screen.
@@ -67,6 +67,8 @@ static LRESULT CALLBACK HiddenPageProc(HWND window, UINT message, WPARAM wparam,
 }
 
 static void FillProgress(Graphics& graphics, Brush& brush, REAL width) {
+    if (width <= 0) return;
+    if (width < 4) { graphics.FillRectangle(&brush, 64.0f, 482.0f, width, 6.0f); return; }
     GraphicsPath path;
     path.AddArc(64.0f, 482.0f, 4.0f, 4.0f, 180.0f, 90.0f);
     path.AddArc(64.0f + width - 4, 482.0f, 4.0f, 4.0f, 270.0f, 90.0f);
@@ -106,29 +108,20 @@ static LRESULT CALLBACK ProgressProc(HWND window, UINT message, WPARAM wparam, L
             graphics.Clear(page->dark ? Color(255, 21, 21, 23) : Color(255, 255, 255, 255));
             graphics.SetSmoothingMode(SmoothingModeAntiAlias);
             graphics.DrawImage(page->brand, Rect(0, 174, 600, 196));
-            PBRANGE range = {};
-            SendMessageW(page->source, PBM_GETRANGE, FALSE, reinterpret_cast<LPARAM>(&range));
-            const LRESULT position = SendMessageW(page->source, PBM_GETPOS, 0, 0);
-            const LONGLONG span = static_cast<LONGLONG>(range.iHigh) - range.iLow;
-            // NSIS and extraction plugins reuse/reset the same control for local work.
-            // Retain the displayed maximum; only the success page confirms completion.
-            if (span > 0) {
-                const LONGLONG value = 20 + 75 * (static_cast<LONGLONG>(position) - range.iLow) / span;
-                const int bounded = static_cast<int>(std::max<LONGLONG>(20, std::min<LONGLONG>(95, value)));
-                page->percent = std::max(page->percent, bounded);
-            }
-            const int percent = page->percent;
+            const int stage = static_cast<int>(reinterpret_cast<INT_PTR>(GetPropW(GetParent(window), L"HarnessInstaller.Stage")));
+            page->progress.Advance(stage, GetTickCount64());
+            const int percent = static_cast<int>(page->progress.value);
             SolidBrush track(page->dark ? Color(255, 97, 102, 107) : Color(255, 233, 236, 242));
             SolidBrush ink(page->dark ? Color(255, 255, 255, 255) : Color(255, 15, 17, 21));
             FillProgress(graphics, track, 472.0f);
-            FillProgress(graphics, ink, 472.0f * percent / 100);
+            FillProgress(graphics, ink, 472.0f * static_cast<REAL>(page->progress.value) / 100);
             FontFamily family(L"Microsoft YaHei UI");
             Font font(&family, 14, FontStyleRegular, UnitPixel);
             StringFormat centered;
             centered.SetAlignment(StringAlignmentCenter);
             centered.SetLineAlignment(StringAlignmentCenter);
             WCHAR caption[160];
-            wsprintfW(caption, page->caption, percent);
+            wsprintfW(caption, page->captions[page->progress.stage], percent);
             SetWindowTextW(window, caption);
             graphics.DrawString(caption, -1, &font, RectF(48, 512, 504, 22), &centered, &ink);
             Font controls(&family, 16, FontStyleRegular, UnitPixel);
@@ -151,7 +144,8 @@ static LRESULT CALLBACK ProgressProc(HWND window, UINT message, WPARAM wparam, L
 
 // Runs on the NSIS UI thread; the stock installation section runs on its worker.
 extern "C" __declspec(dllexport) HWND __cdecl InstallerShowProgress(HWND parent, HWND source,
-        BOOL dark, UINT dpi, const WCHAR* brand, const WCHAR* caption) {
+        BOOL dark, UINT dpi, const WCHAR* brand, const WCHAR* preparing, const WCHAR* extracting,
+        const WCHAR* copying, const WCHAR* registering, const WCHAR* cleaning) {
     HINSTANCE module = GetModuleHandleW(nullptr);
     WNDCLASSW type = {};
     type.lpfnWndProc = ProgressProc;
@@ -163,7 +157,6 @@ extern "C" __declspec(dllexport) HWND __cdecl InstallerShowProgress(HWND parent,
     if (!page) return nullptr;
     GdiplusStartupInput startup;
     if (GdiplusStartup(&page->gdiplus, &startup, nullptr) != Ok) { delete page; return nullptr; }
-    page->source = source;
     HWND stockPage = GetParent(source);
     if (!SetWindowSubclass(stockPage, HiddenPageProc, 1, 0)) {
         GdiplusShutdown(page->gdiplus); delete page; return nullptr;
@@ -171,7 +164,8 @@ extern "C" __declspec(dllexport) HWND __cdecl InstallerShowProgress(HWND parent,
     ShowWindow(stockPage, SW_HIDE);
     page->dark = dark != FALSE;
     page->dpi = dpi;
-    lstrcpynW(page->caption, caption, 128);
+    const WCHAR* captions[] = {preparing, extracting, copying, registering, cleaning};
+    for (int i = 0; i < 5; ++i) lstrcpynW(page->captions[i], captions[i], 128);
     page->brand = new Image(brand);
     if (page->brand->GetLastStatus() != Ok) {
         delete page->brand; GdiplusShutdown(page->gdiplus); delete page; return nullptr;

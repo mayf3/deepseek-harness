@@ -165,6 +165,8 @@ Function InstallerCreate
     ${NSD_OnNotify} $InstallerButton InstallerPaintButton
     Call InstallerRender
     System::Call 'user32::SetPropW(p $HWNDPARENT, w "HarnessInstaller.Ready", p 1)'
+    ShowWindow $InstallerDialog 5
+    ShowWindow $HWNDPARENT 5
     nsDialogs::Show
     ${NSD_KillTimer} InstallerValidateEditedPath
     ${NSD_FreeImage} $InstallerImage
