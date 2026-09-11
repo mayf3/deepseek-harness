@@ -543,8 +543,8 @@ describe('Linux one-shot exec bootstrap', () => {
     })
   })
 
-  it('retries ENOEXEC through /bin/sh with the resolved file and original arguments', async () => {
-    const files = track(createLinuxLaunchFiles({ cwd: '/work', env: { PATH: 'bin' } }))
+  it.each([undefined, 'pipe'] as const)('retries ENOEXEC through /bin/sh with control %s', async (control) => {
+    const files = track(createLinuxLaunchFiles({ cwd: '/work', env: { PATH: 'bin' }, ...control === undefined ? {} : { control } }))
     const execve = vi.fn()
       .mockImplementationOnce(() => { throw Object.assign(new Error('exec format'), { code: 'ENOEXEC' }) })
       .mockImplementationOnce(() => { throw Object.assign(new Error('shell failed'), { code: 'EIO' }) })
@@ -555,8 +555,8 @@ describe('Linux one-shot exec bootstrap', () => {
       internals({ execve: execve as never }),
     )
     expect(execve.mock.calls).toEqual([
-      ['/work/bin/tool', ['tool', 'literal arg'], { PATH: 'bin' }],
-      ['/bin/sh', ['/bin/sh', '/work/bin/tool', 'literal arg'], { PATH: 'bin' }],
+      ['/work/bin/tool', ['tool', 'literal arg'], { PATH: 'bin' }, ...control === undefined ? [] : [control]],
+      ['/bin/sh', ['/bin/sh', '/work/bin/tool', 'literal arg'], { PATH: 'bin' }, ...control === undefined ? [] : [control]],
     ])
     expect(readLinuxStartupError(files.startupErrorPath)).toMatchObject({
       type: 'error', error: { code: 'EIO', path: 'tool' },

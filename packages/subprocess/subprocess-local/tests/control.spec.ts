@@ -5,9 +5,10 @@ import { fileURLToPath } from 'node:url'
 import { once } from 'node:events'
 import { afterEach, describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
-import type { SubprocessHandle } from '@deepseek-ai/dsh-subprocess'
+import type { SubprocessHandle, SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
 import { SUBPROCESS_CONTROL_ENV } from '@deepseek-ai/dsh-subprocess/control'
 import { LocalSubprocessRuntime } from '../src/index.ts'
+import { spawnSubprocess } from '../src/spawn.ts'
 
 const fixture = fileURLToPath(new URL('./fixtures/control-child.ts', import.meta.url))
 const helper = fileURLToPath(new URL('../../subprocess/src/control.ts', import.meta.url))
@@ -16,6 +17,8 @@ let root: string | undefined
 let handle: SubprocessHandle | undefined
 
 afterEach(async () => {
+  handle?.terminate()
+  await handle?.waitForExit()
   handle?.control?.destroy()
   await ctx?.fiber.dispose()
   if (root !== undefined) await rm(root, { recursive: true, force: true })
@@ -58,18 +61,19 @@ describe('managed subprocess control pipe', () => {
     expect(await handle.waitForExit()).toBe(true)
   })
 
-  it('returns exact binary control bytes independently of stdout and stderr', async () => {
+  it.each(['managed', 'fallback'] as const)('returns exact binary control bytes through %s independently of stdio', async (backend) => {
     root = await mkdtemp(join(tmpdir(), 'dsh-control-'))
     ctx = new Context()
     await ctx.plugin(LocalSubprocessRuntime)
     const input = Buffer.alloc(256 * 1024)
     for (let index = 0; index < input.length; index++) input[index] = index % 256
-    handle = ctx.subprocess.spawn({
+    const request: SubprocessSpawnSpec = {
       argv: [process.execPath, fixture, helper, String(input.length)],
       cwd: root,
       stdio: { stdin: 'ignore', stdout: { maxBytes: 1024 }, stderr: { maxBytes: 1024 }, control: 'pipe' },
       graceMs: 1000,
-    })
+    }
+    handle = backend === 'managed' ? ctx.subprocess.spawn(request) : spawnSubprocess(request)
     const channel = handle.control
     if (channel === undefined) throw new Error('requested control pipe is absent')
     const received = (async () => {
