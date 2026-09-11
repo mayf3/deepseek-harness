@@ -57,7 +57,7 @@ import {
   type NormalizeContext,
 } from '@deepseek-ai/dsh-session-snapshot'
 import {
-  assertEntriesLoaded, claimLayerIds,
+  auditStartupEntries, claimLayerIds,
   composeEntries,
   healProfilesModuleFallback,
   loadOverlayPatches,
@@ -746,7 +746,7 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
       config: { path: pathToFileURL(rootConfig).href, patches },
     })
     await ctx.loader.await()
-    assertEntriesLoaded(ctx, 'web e2e scaffold')
+    await auditStartupEntries(ctx, 'web e2e scaffold')
     if (options.profileRuntime !== undefined) {
       // The launcher mounts the runtime once the tree is up; the scaffold
       // profile is read from the harness home this boot pinned. Its
