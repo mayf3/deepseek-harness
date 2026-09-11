@@ -3,10 +3,25 @@ import { homedir } from 'node:os'
 import { createServer, type Socket } from 'node:net'
 import { delimiter, join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
+import Sandbox from '@deepseek-ai/dsh-sandbox-local'
+import { SandboxUnavailableError } from '@deepseek-ai/dsh-sandbox'
 import { describe, expect, it, onTestFinished, vi } from 'vitest'
 import type { CodeBindingFunction, CodeBindingNamespace, CodeRunRequest } from '@deepseek-ai/dsh-code-runtime'
 import type { Config } from '../src/index.ts'
 import { mountRuntime } from './setup.ts'
+
+/** Probe the sandbox independently so Node-runtime launch failures cannot skip enforcement tests. */
+const sandboxUsable = await (async () => {
+  const probe = new Context()
+  try {
+    await probe.plugin(Sandbox, {})
+    probe.sandbox.confine([process.execPath, '--version'], { mode: 'read-only', workspaceRoot: process.cwd() })
+    return true
+  } catch (error: unknown) {
+    if (error instanceof SandboxUnavailableError) return false
+    throw error
+  } finally { await probe.fiber.dispose() }
+})()
 
 async function setup(config: Config = {}, mode: 'read-only' | 'workspace-write' | 'danger-full-access' = 'danger-full-access') {
   const root = await mkdtemp(join(homedir(), '.dsh-node-runtime-test-'))
@@ -190,7 +205,7 @@ describe('Node program process', () => {
     expect((await run({ program, bindings: [] })).error?.kind).toBe('protocol')
   })
 
-  it('applies read-only confinement to direct Node filesystem writes', async () => {
+  it.skipIf(!sandboxUsable)('applies read-only confinement to direct Node filesystem writes', async () => {
     const { run, cwd } = await setup({}, 'read-only')
     const path = join(cwd, 'denied.txt')
     const result = await run({ program: `await (await import('node:fs/promises')).writeFile(${JSON.stringify(path)}, 'denied')`, bindings: [] })
@@ -199,7 +214,7 @@ describe('Node program process', () => {
     await expect(readFile(path)).rejects.toMatchObject({ code: 'ENOENT' })
   })
 
-  it.skipIf(process.platform === 'win32')('starts a confining launcher found only through the execution PATH', async () => {
+  it.skipIf(process.platform === 'win32' || !sandboxUsable)('starts a confining launcher found only through the execution PATH', async () => {
     const { ctx, runtime, run, root } = await setup({}, 'read-only')
     const confine = ctx.sandbox.confine.bind(ctx.sandbox)
     const policy = runtime.resolve({ program: '', bindings: [] }).sandboxPolicy
@@ -227,7 +242,7 @@ describe('Node program process', () => {
     }
   })
 
-  it('permits workspace writes and denies a symlink to a sibling outside it', async () => {
+  it.skipIf(!sandboxUsable)('permits workspace writes and denies a symlink to a sibling outside it', async () => {
     const { run, cwd, root } = await setup({}, 'workspace-write')
     const target = join(cwd, 'allowed.txt')
     expect((await run({ program: `await (await import('node:fs/promises')).writeFile(${JSON.stringify(target)}, 'allowed'); return true`, bindings: [] })).value).toBe(true)
