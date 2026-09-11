@@ -18,6 +18,7 @@ import { bootstrapArgs } from './launch.ts'
 import type { LaunchConfig } from './launch.ts'
 import { OutputLedger } from './output-ledger.ts'
 import { drainOutput } from './output-stream.ts'
+import { STARTUP_ENVIRONMENT_NAMES } from './environment.ts'
 import { decodeCodeJsonWire, encodeCodeJsonWire } from './json-wire.ts'
 import type { ProgramBootData } from './protocol.ts'
 
@@ -43,7 +44,6 @@ type ResolvedConfig = Required<Omit<Config, 'bootstrapPath'>> & Pick<Config, 'bo
 interface LiveRun { controller: AbortController; finished: Promise<void> }
 const STRIP_PREFIX = 'async function __dsh_program__() {\n'
 const STRIP_SUFFIX = '\n}'
-const STARTUP_ENVIRONMENT = new Set(['PATH', 'PATHEXT', 'SYSTEMROOT', 'WINDIR'])
 
 function messageOf(error: unknown): string { return error instanceof Error ? error.message : String(error) }
 function record(value: unknown): value is Record<string, unknown> { return typeof value === 'object' && value !== null && !Array.isArray(value) }
@@ -213,9 +213,9 @@ export class NodeCodeRuntime extends CodeRuntime {
       const argv = [executable, `--max-old-space-size=${this.config.maxOldGenerationSizeMb}`, ...bootstrapArgs(this.ctx.fs, this.config, this.config.maxMessageBytes)]
       confined = policy.mode === 'danger-full-access' ? undefined : this.ctx.sandbox.confine(argv, { ...policy, mode: policy.mode })
       if (confined !== undefined) sandbox.enforcement = confined.enforcement
-      // Native launchers need executable search and Windows system paths until the child clears its environment.
+      // Native launchers need executable search and Windows system paths before the child installs its model environment.
       const env: NodeJS.ProcessEnv = Object.fromEntries(Object.keys(process.env)
-        .filter(key => !STARTUP_ENVIRONMENT.has(key.toUpperCase()))
+        .filter(key => !STARTUP_ENVIRONMENT_NAMES.has(key.toUpperCase()))
         .map(key => [key, undefined]))
       if ('pkg' in process && this.config.bootstrapPath === undefined) env.DSH_CODE_RUNTIME_NODE = '1'
       handle = this.ctx.subprocess.spawn({ argv: confined?.argv ?? argv, cwd: spec.cwd, env, stdio: { stdin: 'ignore', stdout: 'pipe', stderr: 'pipe', control: 'pipe' }, graceMs: this.config.graceMs, signal })

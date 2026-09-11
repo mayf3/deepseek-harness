@@ -20,6 +20,9 @@ function processState(): ProgramProcess { return { env: { FIXTURE_SECRET: 'test'
 it('clears process environment, dispatches a binding reply and flushes the terminal frame', async () => {
   const { child, host } = endpoints()
   const state = processState()
+  const nativeEnvironment = state.env
+  nativeEnvironment.SystemRoot = 'C:\\Windows'
+  nativeEnvironment.PATH = '/native/bin'
   const messages: Record<string, unknown>[] = []
   const peer = new JsonChannel(host, 4096, (raw) => {
     const message = raw as Record<string, unknown>
@@ -30,6 +33,9 @@ it('clears process environment, dispatches a binding reply and flushes the termi
   onTestFinished(() => { peer.close() })
   await runNodeMain(child, 4096, state)
   expect(state.env).toEqual({})
+  expect(state.env).not.toBe(nativeEnvironment)
+  expect(Object.getPrototypeOf(state.env)).toBeNull()
+  expect(nativeEnvironment).toEqual({ SystemRoot: 'C:\\Windows', PATH: '/native/bin' })
   expect(state.exitCode).toBeUndefined()
   expect(decodeCodeJsonWire(messages.find(message => message.type === 'done')?.value)).toBe(42)
 })

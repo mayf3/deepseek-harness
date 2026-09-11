@@ -33,6 +33,23 @@ describe('Node program process', () => {
     expect(result.sandbox).toEqual({ mode: 'danger-full-access', denied: false })
   })
 
+  it('keeps native startup paths available for nested Node creation with an empty model environment', async () => {
+    const { run } = await setup()
+    const result = await run({
+      program: 'const {spawnSync}=await import("node:child_process"); const child=spawnSync(process.execPath,["-e","process.stdout.write(JSON.stringify(Object.keys(process.env)))"],{encoding:"utf8"}); return {env:Object.keys(process.env),status:child.status,error:child.error?.message ?? null,childKeys:JSON.parse(child.stdout || "[]")};',
+      bindings: [],
+    })
+    expect(result.error).toBeUndefined()
+    const value = result.value as { env: string[]; status: number | null; error: string | null; childKeys: string[] }
+    expect(value.env).toEqual([])
+    expect(value.status).toBe(0)
+    expect(value.error).toBeNull()
+    const nativeKeys = ['PATH', 'PATHEXT', 'SYSTEMROOT', 'WINDIR']
+    // CoreFoundation initializes this entry independently when a macOS child starts.
+    if (process.platform === 'darwin') nativeKeys.push('__CF_USER_TEXT_ENCODING')
+    expect(value.childKeys.filter(key => !nativeKeys.includes(key.toUpperCase()))).toEqual([])
+  })
+
   it('returns binding values and preserves typed binding rejection', async () => {
     const { run } = await setup()
     const result = await run({
@@ -180,7 +197,7 @@ describe('Node program process', () => {
     const confine = ctx.sandbox.confine.bind(ctx.sandbox)
     const policy = runtime.resolve({ program: '', bindings: [] }).sandboxPolicy
     if (policy === undefined || policy.mode === 'danger-full-access') throw new Error('expected confined policy')
-    const wrapped = confine([process.execPath, '--version'], policy)
+    const wrapped = confine([process.execPath, '--version'], { ...policy, mode: policy.mode })
     const original = wrapped.argv[0]
     if (original === undefined) throw new Error('expected sandbox launcher')
     const executable = await ctx.subprocess.resolveExecutable(original)
