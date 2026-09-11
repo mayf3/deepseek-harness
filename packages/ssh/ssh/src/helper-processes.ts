@@ -371,7 +371,6 @@ export class RemoteProcesses {
     server.on('connection', (socket: Socket) => {
       endpoint.pending.add(socket)
       socket.once('close', () => { endpoint.pending.delete(socket) })
-      socket.on('error', () => {})
     })
     server.on('tlsClientError', (_error, socket) => { socket.destroy() })
     server.on('secureConnection', (socket) => {

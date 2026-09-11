@@ -87,7 +87,7 @@ describe.skipIf(process.platform === 'win32')('SSH helper runtime', () => {
   it('refuses unconfined sandbox requests and resolves executables in the helper world', async () => {
     const test = await helper()
     const confine = vi.spyOn(LocalSandboxProvider.prototype, 'confine').mockImplementation(async argv => ({
-      argv: ['confined', ...argv], enforcement: 'full',
+      argv: ['confined', ...argv], enforcement: 'full', denialSignatures: [], runnerFailureRules: [],
     }))
     try {
       await expect(test.client.request('sandbox', { argv: ['true'], policy: { mode: 'danger-full-access', workspaceRoot: test.root } }, z.unknown())).rejects.toThrow('does not need')
