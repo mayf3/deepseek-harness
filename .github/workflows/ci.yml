@@ -121,6 +121,14 @@ jobs:
       DSH_COVERAGE_MAX_WORKERS: '6'
       DSH_COVERAGE_PARTITIONS: '4'
       DSH_GATE_CONCURRENCY: '3'
+      # Managed-scope teardown cases run past the default per-test budget when
+      # this lane's partitions, workers, and sibling gates share one host: the
+      # disposal cases in subprocess-local and bash-sandbox exceeded 5000ms on
+      # the hosted image (run 34449848541) while the same commit stayed inside
+      # the budget on the in-house pool; the lane is green with this value
+      # (run 34457655892). The Windows coverage lane grants the same budget for
+      # the same reason.
+      DSH_COVERAGE_TEST_TIMEOUT_MS: '90000'
       # A gate failure aborts the sibling gate instead of waiting out its
       # multi-minute instrumented run.
       DSH_GATE_FAIL_FAST: '1'

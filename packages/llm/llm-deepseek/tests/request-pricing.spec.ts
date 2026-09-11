@@ -49,17 +49,41 @@ describe('DeepSeek request-image pricing', () => {
     const image = ref('photo', 1920, 1080)
     const prices = deepSeekImageRequestPricing(connection(), 'vision').priceImages([block(image)])
     expect(prices).toEqual([{
-      visualTokens: 407,
-      text: requestImageHandleText(image, { width: 1066, height: 600 }),
+      visualTokens: 968,
+      text: requestImageHandleText(image, { width: 1708, height: 961 }),
     }])
   })
 
-  it.each([[8192, 1], [1, 8192]])('prices a %sx%s image at the token cap within the default pixel budget', (width, height) => {
+  it.each([
+    [8192, 1, 4096, 1, 832],
+    [1, 8192, 1, 4096, 1024],
+  ])('prices a %sx%s image at its per-side-capped %sx%s request dimensions', (width, height, cappedWidth, cappedHeight, tokens) => {
     const image = ref('thin', width, height)
     const prices = deepSeekImageRequestPricing(connection(), 'vision').priceImages([block(image)])
     expect(prices).toEqual([{
-      visualTokens: 1024,
-      text: requestImageHandleText(image, { width, height }),
+      visualTokens: tokens,
+      text: requestImageHandleText(image, { width: cappedWidth, height: cappedHeight }),
+    }])
+  })
+
+  it('prices the sent dimensions when aspect-preserving projection changes the token grid', () => {
+    const image = ref('portrait', 1224, 1429)
+    const prices = deepSeekImageRequestPricing(connection(), 'vision').priceImages([block(image)])
+    expect(prices).toEqual([{
+      visualTokens: 992,
+      text: requestImageHandleText(image, { width: 1187, height: 1386 }),
+    }])
+  })
+
+  it('honors a numeric pixel budget override', () => {
+    const image = ref('photo', 4096, 4096)
+    const options = resolveAdapterOptions({
+      models: [{ ...VISION_MODEL, imagePixelBudget: 640_000 }],
+    })
+    const prices = deepSeekImageRequestPricing(options, 'vision').priceImages([block(image)])
+    expect(prices).toEqual([{
+      visualTokens: 422,
+      text: requestImageHandleText(image, { width: 800, height: 800 }),
     }])
   })
 
@@ -104,7 +128,7 @@ describe('DeepSeek request-image pricing', () => {
   it('prices a retained oversized occurrence at its visual price: the surface, not the budget, decides offload', () => {
     const oversized = ref('first', 800, 800, 5 * 1024 * 1024)
     const prices = deepSeekImageRequestPricing(
-      connection({ maxRequestFilesBytes: 2 * 1024 * 1024, imageOffloadByteQuantum: 1 }),
+      connection({ maxRequestFilesBytes: 4 * 1024 * 1024, imageOffloadByteQuantum: 1 }),
       'vision',
     ).priceImages([block(oversized)])
     expect(prices.map(price => price.visualTokens)).toEqual([422])
