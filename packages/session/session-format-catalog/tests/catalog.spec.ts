@@ -22,7 +22,7 @@ describe('first-party Session format catalog', () => {
     const session = Session.create(SessionId('projection-catalog'))
     session.append('user/message', createUserMessage({ content: [{ type: 'text', text: 'no image' }], source: { kind: 'user' } }), { surfaceOp: 'append' })
     const artifact = {
-      header: session.header, inheritedEventCount: 0,
+      header: { ...session.header, delegationDepth: 0 }, inheritedEventCount: 0,
       events: [...session.snapshotEvents(), { type: 'image/offload', seq: 1, time: 0, data: { targets: [{ seq: 0, imageIndexes: [0] }] } }],
     }
     expect(() => validateInstalledCurrentSessionArtifact(artifact)).toThrow(/image index 0 does not exist/)

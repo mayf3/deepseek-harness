@@ -63,7 +63,10 @@ describe('plugin-owned message projections', () => {
     const ctx = new Context()
     contexts.push(ctx)
     await ctx.plugin(SessionStore)
-    const fiber = await ctx.plugin((owner) => { owner.sessions.registerMessageProjection(projection) })
+    const fiber = await ctx.plugin({
+      inject: ['sessions'],
+      apply(owner: Context) { owner.sessions.registerMessageProjection(projection) },
+    })
     expect(() => ctx.sessions.registerMessageProjection(projection)).toThrow(/already registered/)
     const live = ctx.sessions.create(SessionId('live'))
     const source = input(live)
@@ -75,7 +78,7 @@ describe('plugin-owned message projections', () => {
     const child = ctx.sessions.fork(live)
     expect(child.deriveMessages()).toEqual(before)
     const restored = ctx.sessions.prepare(SessionId('restore'), {
-      seed: live.snapshotEvents(), meta: { ...live.header, id: SessionId('restore') },
+      seed: [...live.snapshotEvents()], meta: { ...live.header, id: SessionId('restore') },
       inheritedEventCount: live.inheritedEventCount, eventState: 'shared-frozen',
     })
     expect(restored.deriveMessages()).toEqual(before)
