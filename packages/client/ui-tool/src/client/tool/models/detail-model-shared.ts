@@ -96,8 +96,8 @@ function scalar(value: unknown, t: DetailTranslate): string {
   return typeof value === 'string' ? value : JSON.stringify(value)
 }
 
-const TITLE_FIELDS = ['subject', 'title', 'name', 'pluginId', 'packageId', 'id', 'summary'] as const
-const DESCRIPTION_FIELDS = ['description', 'purpose'] as const
+const INSPECTION_KEY_ORDER = ['subject', 'title', 'name', 'pluginId', 'packageId', 'id', 'summary'] as const
+const INSPECTION_DETAIL_KEYS = ['description', 'purpose'] as const
 const MAX_INSPECTION_ITEMS = 40
 
 /**
@@ -117,8 +117,8 @@ export function inspectionItems(value: unknown, t: DetailTranslate, depth = 0): 
     return items.length === 0 ? [{ description: t('detail.empty'), fields: [] }] : items
   }
   if (!detailRecord(value)) return [{ description: scalar(value, t), fields: [] }]
-  const titleKey = TITLE_FIELDS.find(key => typeof value[key] === 'string' && value[key] !== '')
-  const descriptionKey = DESCRIPTION_FIELDS.find(key => typeof value[key] === 'string' && value[key] !== '')
+  const titleKey = INSPECTION_KEY_ORDER.find(key => typeof value[key] === 'string' && value[key] !== '')
+  const descriptionKey = INSPECTION_DETAIL_KEYS.find(key => typeof value[key] === 'string' && value[key] !== '')
   const title = titleKey === undefined ? undefined : String(value[titleKey])
   const fields: DetailItem['fields'][number][] = []
   const groups: NonNullable<DetailItem['groups']>[number][] = []
