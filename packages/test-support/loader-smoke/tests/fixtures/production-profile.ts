@@ -46,8 +46,6 @@ function overlayModuleLayers(path: string, patches: readonly PatchOptions[]): Pr
     version: undefined,
     packageDir,
     patchPath: path,
-    trust: 'builtin' as const,
-    stage: 'runtime' as const,
     patches: [],
   }))
 }

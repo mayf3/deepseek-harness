@@ -3949,14 +3949,6 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type BrandedNumber<B extends string> = number & {\n    readonly [BRAND]: B;\n};',
   },
   {
-    name: 'BundleStage',
-    declaration: 'export type BundleStage = \'boot\' | \'runtime\';',
-  },
-  {
-    name: 'BundleTrust',
-    declaration: 'export type BundleTrust = \'builtin\' | \'external\';',
-  },
-  {
     name: 'ClientArtifactBaseline',
     declaration: 'export interface ClientArtifactBaseline {\n    readonly path: string;\n    readonly mtimeMs: number;\n    readonly size: number;\n}',
   },
@@ -4949,20 +4941,12 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface PluginPackageRowView {\n    readonly entryId: string;\n    readonly rowId: string;\n    readonly moduleName: string;\n    readonly enabled: boolean;\n    readonly disabledBy?: \'user\' | \'composition\';\n    readonly phase: PluginRowPhase;\n    readonly failure?: {\n        readonly stage: string;\n        readonly message: string;\n    };\n}',
   },
   {
-    name: 'PluginPackageStage',
-    declaration: 'export type PluginPackageStage = \'boot\' | \'runtime\';',
-  },
-  {
     name: 'PluginPackageStatus',
     declaration: 'export type PluginPackageStatus = \'running\' | \'partial\' | \'failed\' | \'disabled\' | \'not-enableable\' | \'restart-required\' | \'plain\';',
   },
   {
-    name: 'PluginPackageTrust',
-    declaration: 'export type PluginPackageTrust = \'builtin\' | \'external\';',
-  },
-  {
     name: 'PluginPackageView',
-    declaration: 'export interface PluginPackageView {\n    readonly name: string;\n    readonly version?: string;\n    readonly title?: string;\n    readonly description?: string;\n    readonly kind: PluginPackageKind;\n    readonly trust: PluginPackageTrust;\n    readonly stage: PluginPackageStage;\n    readonly installed: boolean;\n    readonly enabled: boolean;\n    readonly status: PluginPackageStatus;\n    readonly reason?: string;\n    readonly enginesDsh?: string;\n    readonly cordisSameCopy: boolean | null;\n    readonly rows: readonly PluginPackageRowView[];\n    readonly issues?: readonly PluginRowIssue[];\n    readonly overrides: readonly string[];\n    readonly addable: readonly PluginPackageAddableView[];\n    readonly liveReload: boolean;\n}',
+    declaration: 'export interface PluginPackageView {\n    readonly name: string;\n    readonly version?: string;\n    readonly title?: string;\n    readonly description?: string;\n    readonly kind: PluginPackageKind;\n    readonly installed: boolean;\n    readonly enabled: boolean;\n    readonly status: PluginPackageStatus;\n    readonly reason?: string;\n    readonly enginesDsh?: string;\n    readonly cordisSameCopy: boolean | null;\n    readonly rows: readonly PluginPackageRowView[];\n    readonly issues?: readonly PluginRowIssue[];\n    readonly overrides: readonly string[];\n    readonly addable: readonly PluginPackageAddableView[];\n    readonly liveReload: boolean;\n}',
   },
   {
     name: 'PluginRowAddition',
@@ -5190,7 +5174,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'RowOrigin',
-    declaration: 'export interface RowOrigin {\n    readonly trust: BundleTrust;\n    readonly stage: BundleStage;\n    readonly packageName: string;\n    readonly version?: string;\n}',
+    declaration: 'export interface RowOrigin {\n    readonly packageName: string;\n    readonly version?: string;\n}',
   },
   {
     name: 'RunnerFailureRule',

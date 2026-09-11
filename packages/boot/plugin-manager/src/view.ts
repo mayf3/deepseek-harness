@@ -7,8 +7,7 @@
 
 import type { Context, FiberState } from '@deepseek-ai/cordis'
 import type { Entry } from '@deepseek-ai/cordis-plugin-loader'
-import { rootIncludeEntry, layerTrust, type EntryIssue, type PackageMetadata, type ProfileManifest, type ProfileRuntime } from '@deepseek-ai/dsh-app-boot'
-import type { BundleStage } from '@deepseek-ai/dsh-package-manifest'
+import { rootIncludeEntry, type EntryIssue, type PackageMetadata, type ProfileManifest, type ProfileRuntime } from '@deepseek-ai/dsh-app-boot'
 import { bundlesOf, dependenciesOf, messageOf, optional } from './helpers.ts'
 import type { PluginInstaller } from './installer.ts'
 import { addableView } from './modules.ts'
@@ -61,7 +60,6 @@ export function packageView(
   const installed = name in dependenciesOf(manifest)
   const enabled = bundlesOf(manifest).includes(name)
   const layer = runtime.layers.find(candidate => candidate.packageName === name)
-  const trust = layer?.trust ?? layerTrust(manifest, name)
   const liveReload = runtime.patchReload === 'live'
   let metadata: PackageMetadata | undefined
   let metadataFailure: string | undefined
@@ -78,8 +76,6 @@ export function packageView(
   } catch (error) {
     metadataFailure = messageOf(error)
   }
-  const stage: BundleStage = layer?.stage
-    ?? (manifest.dsh?.profile?.stages?.[name] ?? packageManifest?.dsh?.bundle?.stage ?? 'runtime')
   const kind = metadata?.kind ?? (layer !== undefined || packageManifest?.dsh?.bundle !== undefined ? 'bundle' : 'unknown')
   const composed = layer !== undefined
   const rootTree = rootIncludeEntry(ctx.root)?.subtree
@@ -100,8 +96,6 @@ export function packageView(
     ...optional('title', packageManifest?.dsh?.title),
     ...optional('description', packageManifest?.description),
     kind,
-    trust,
-    stage,
     installed,
     enabled,
     status,

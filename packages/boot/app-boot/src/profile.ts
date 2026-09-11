@@ -34,7 +34,7 @@ import { withFileLock } from '@deepseek-ai/dsh-atomic-write'
 import type { EntryOptions } from '@deepseek-ai/cordis-plugin-loader'
 import { applyEntryPatches, type PatchOptions } from '@deepseek-ai/cordis-plugin-include'
 import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
-import type { BundleStage, DshPackageManifest, ProfilePatchReload } from '@deepseek-ai/dsh-package-manifest'
+import type { DshPackageManifest, ProfilePatchReload } from '@deepseek-ai/dsh-package-manifest'
 import { resolve as resolvePackage, type Package as ResolvePackageManifest } from 'resolve.exports'
 import { loadOverlayPatches } from './index.ts'
 
@@ -46,13 +46,6 @@ export const PROFILE_PATCH_FILENAME = 'cordis.patch.yml'
 
 /** Profile-private package links projected into its pnpm-managed node_modules. */
 const PROFILE_MODULE_FALLBACK_DIR = '.dsh-module-fallback'
-
-/**
- * Who supplied a bundle layer. `builtin` layers come with the installation
- * (template bundles) or are declared first-party by the profile; `external`
- * layers are pnpm-managed dependencies the user installed.
- */
-export type BundleTrust = 'builtin' | 'external'
 
 /** Installation-owned defaults used when a shipped profile is first opened. */
 export interface ProfileTemplate {
@@ -75,10 +68,6 @@ export interface ProfileLayer {
   packageDir: string
   /** Absolute path of the bundle's patch file. */
   patchPath: string
-  /** Who supplied the layer; decides row ownership priority and startup failure policy. */
-  trust: BundleTrust
-  /** Effective mount stage: the profile's override, else the bundle's declaration, else `runtime`. */
-  stage: BundleStage
   /** The parsed patch list. */
   patches: PatchOptions[]
 }
@@ -688,33 +677,6 @@ export function writeProfileManifest(dir: string, manifest: ProfileManifest): vo
   writeFileSync(join(dir, 'package.json'), JSON.stringify(manifest, undefined, 2) + '\n')
 }
 
-/**
- * Who supplied one bundle of a profile. Provenance, not the package name,
- * decides: a template bundle is never a dependency, and everything pnpm
- * added is out-of-tree — a fork that kept a first-party name still lands in
- * `dependencies` — unless the profile lists it under `dsh.profile.firstParty`.
- * @param manifest - the profile manifest.
- * @param packageName - the bundle's package name.
- * @returns `external` for an installed third-party bundle, else `builtin`.
- */
-export function layerTrust(manifest: ProfileManifest, packageName: string): BundleTrust {
-  const installed = packageName in (manifest.dependencies ?? {})
-  const firstParty = manifest.dsh?.profile?.firstParty ?? []
-  return installed && !firstParty.includes(packageName) ? 'external' : 'builtin'
-}
-
-/**
- * Validate one bundle stage value read from a manifest; an unknown value is a
- * misconfiguration and fails at load.
- */
-function readBundleStage(binName: string, packageName: string, value: unknown): BundleStage {
-  if (value === undefined) return 'runtime'
-  if (value === 'boot' || value === 'runtime') return value
-  throw new Error(
-    `${binName}: bundle ${JSON.stringify(packageName)} declares stage ${JSON.stringify(value)}; expected "boot" or "runtime"`,
-  )
-}
-
 /** Return whether two bundle lists have the same values in the same order. */
 function sameBundles(left: readonly string[], right: readonly string[]): boolean {
   return left.length === right.length && left.every((value, index) => value === right[index])
@@ -798,19 +760,16 @@ export function resolveBundleDir(
 
 /**
  * Resolve one bundle into the layer it contributes: its directory through
- * the two resolution anchors, its patch list, its trust from the profile
- * manifest, and its stage from the profile's `dsh.profile.stages` override or
- * its own `dsh.bundle.stage`.
+ * the two resolution anchors and its declared patch list.
  * @param binName - the diagnostic prefix on thrown errors.
- * @param manifest - the profile manifest, for trust and stage overrides.
  * @param packageName - the bundle package.
  * @param installAnchor - absolute path of the dsh app's package.json (first resolution anchor).
  * @param dir - the profile directory (second resolution anchor).
  * @returns the resolved layer.
- * @throws when the package cannot be resolved, declares no `dsh.bundle`, or names an unknown stage.
+ * @throws when the package cannot be resolved, or declares no `dsh.bundle`.
  */
 export function resolveProfileLayer(
-  binName: string, manifest: ProfileManifest, packageName: string, installAnchor: string, dir: string,
+  binName: string, packageName: string, installAnchor: string, dir: string,
 ): ProfileLayer {
   const packageDir = resolveBundleDir(binName, packageName, installAnchor, dir)
   const bundleManifest = JSON.parse(readFileSync(join(packageDir, 'package.json'), 'utf8')) as ProfileManifest
@@ -819,14 +778,11 @@ export function resolveProfileLayer(
     throw new Error(`${binName}: profile bundle ${JSON.stringify(packageName)} declares no dsh.bundle in its package.json`)
   }
   const patchPath = join(packageDir, declared)
-  const stages = manifest.dsh?.profile?.stages ?? {}
   return {
     packageName,
     version: bundleManifest.version,
     packageDir,
     patchPath,
-    trust: layerTrust(manifest, packageName),
-    stage: readBundleStage(binName, packageName, stages[packageName] ?? bundleManifest.dsh?.bundle?.stage),
     patches: loadOverlayPatches(binName, patchPath),
   }
 }
@@ -856,7 +812,7 @@ export function loadProfileDirectory(
     )
   }
   const patchReload = rawPatchReload ?? DEFAULT_PROFILE_PATCH_RELOAD
-  const layers = bundles.map(packageName => resolveProfileLayer(binName, manifest, packageName, installAnchor, dir))
+  const layers = bundles.map(packageName => resolveProfileLayer(binName, packageName, installAnchor, dir))
   const patchPath = join(dir, PROFILE_PATCH_FILENAME)
   const patches = options.userLayer !== false && existsSync(patchPath)
     ? loadOverlayPatches(binName, patchPath)

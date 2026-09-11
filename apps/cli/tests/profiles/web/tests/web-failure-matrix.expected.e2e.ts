@@ -8,7 +8,6 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 import { execa } from 'execa'
 import { describe, expect, it } from 'vitest'
 import { FiberState } from '@deepseek-ai/cordis'
-import { stageStartupBundle } from '../../../startup-bundle.ts'
 
 const repoRoot = fileURLToPath(new URL('../../../../../../', import.meta.url))
 const bin = join(repoRoot, 'apps/cli/lib/bin.js')
@@ -173,8 +172,6 @@ describe.skipIf(!built)('Web process failure matrix', () => {
     it.each(failures)(`${required ? 'required' : 'optional'} startup %s`, async (failure, diagnostic) => {
       const f = fixture()
       writeFileSync(f.patch, f.render(id, failure))
-      stageStartupBundle(f.home, 'web', f.patch, required ? 'boot' : 'runtime')
-      writeFileSync(f.patch, '[]\n')
       const app = start(f)
       try {
         if (required) {
@@ -363,11 +360,7 @@ describe.skipIf(!built)('Web process failure matrix', () => {
       const patch = JSON.stringify([{ insert: [f.observer, f.witness(0), {
         id: 'matrix-optional-http', name: pathToFileURL(plugin).href, config: { port: address.port },
       }] }]) + '\n'
-      if (phase === 'startup') {
-        writeFileSync(f.patch, patch)
-        stageStartupBundle(f.home, 'web', f.patch)
-        writeFileSync(f.patch, '[]\n')
-      }
+      if (phase === 'startup') writeFileSync(f.patch, patch)
       app = start(f)
       const running = app
       await app.serves()

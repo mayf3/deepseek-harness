@@ -412,7 +412,7 @@ const SERVICE_ROLES: ServiceRole[] = [
     title: 'Booted profile facts and recomposition',
     mode: 'core',
     consumers: ['host-plugin-inventory', 'host-plugin-manager'],
-    note: 'Provided by the profile launcher after boot: the composed bundle layers with their trust and stage, each row\'s inserting layer, the rows user patch files disable, and the one recomposition path user patch reloads and runtime bundle changes share.',
+    note: 'Provided by the profile launcher before entries mount: the composed bundle layers, each row\'s inserting layer, the rows user patch files disable, and the one recomposition path user patch reloads and runtime bundle changes share.',
   },
   {
     key: 'commands',

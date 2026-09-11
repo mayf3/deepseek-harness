@@ -201,7 +201,7 @@ export class PluginInstaller {
   }
 
   /**
-   * Check a new bundle against the profile’s row ownership and stage rules.
+   * Check a new bundle against the profile’s row ownership rules.
    * Undeclared or unreadable packages remain installed for repair or removal.
    * @returns why the package is removed again, or undefined to keep it.
    */
@@ -215,7 +215,7 @@ export class PluginInstaller {
     if (metadata.kind !== 'bundle') return undefined
     const { profileDir, installAnchor } = this.options
     try {
-      const layer = resolveProfileLayer(NAME, readProfileManifest(NAME, profileDir), packageName, installAnchor, profileDir)
+      const layer = resolveProfileLayer(NAME, packageName, installAnchor, profileDir)
       const lost = claimLayerIds([...this.options.loadProfile().layers, layer]).skipped.get(packageName)
       if (lost === undefined) return undefined
       return lost.map(conflict => `row ${JSON.stringify(conflict.rowId)} is already declared by ${conflict.declaredBy}`).join('; ')

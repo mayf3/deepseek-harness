@@ -72,7 +72,7 @@ const manager = new PluginManager(ctx, {
 console.log(await manager.list())
 ```
 
-`list` reports package identity, `bundle` / `plugin` / `unknown` classification, trust, stage, installation and enablement. Runtime rows carry actual phases and failures; disabled bundles show static patch declarations. `addable` comes only from `dsh.plugins`, including `.` for the main export and declared defaults. An active row can retain its previous config after an update fails. Package `issues` also names failed rows its patch overrides, without transferring their ownership.
+`list` reports package identity, `bundle` / `plugin` / `unknown` classification, installation and enablement. Runtime rows carry actual phases and failures; disabled bundles show static patch declarations. `addable` comes only from `dsh.plugins`, including `.` for the main export and declared defaults. An active row can retain its previous config after an update fails. Package `issues` also names failed rows its patch overrides, without transferring their ownership.
 
 `enable` selects the whole bundle layer and recomposes live profiles. Per-row failures retain the enabled choice and successful siblings; results report `issues`, and the list can show `partial` or `failed`. Preparation failures revert the enable selection and raise `plugins/enable-failed`. `disable` removes the whole layer, including overrides. `retry` disables, awaits cleanup, and enables again. Startup-only profiles report `effect: restart`. Unapplied selections on live profiles report `failed`, preserving the rows actually running; `restart-required` is reserved for startup-only profiles. `uninstall` disables the bundle, removes user-inserted references, and runs pnpm remove.
 

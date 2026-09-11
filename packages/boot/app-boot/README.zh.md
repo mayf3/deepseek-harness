@@ -40,7 +40,7 @@ installFailLoud('dsh')
 const ctx = await boot('dsh', resolveConfigPath(argv[2], process.env.DSH_SNAPSHOT))
 ```
 
-启动策略由引入该行的组合包决定。只有 `external` / `runtime` 行可以在失败后输出警告，同时保留成功的其他行。内置、boot 阶段和无归属行均为必需行：启用但失败时会清理应用并拒绝启动。已禁用的行被忽略；启动 Include 始终为必需。未提供 profile 来源信息的直接调用采用严格策略。
+启动审查使用[全局必需条目 id](../../../.agents/notes/implemented/architecture/2026-09-09-consumer-owned-startup-strictness.zh.md)，另按条目身份将启动 Include 视为必需。已存在且启用的必需条目必须激活；缺失和禁用的 id 不影响启动。其余条目失败只产生警告并保留成功的兄弟条目，包括内置工具、用户 patch 行，以及没有 profile runtime 的直接 `boot()` 调用。
 
 <a id="profiles"></a>
 ### Profile
@@ -58,7 +58,7 @@ profile 是同一套 dsh 安装提供不同应用界面的方式：`web`、`head
 
 插入条目的插件名可以是绝对文件系统路径、文件 URL 或包标识符。patch 加载会把 `insert` 条目及其嵌套分组中的绝对路径以及相对于 patch 文件的 `./` 或 `../` 路径转换为文件 URL；对已有条目名称的断言及替换用的 `config` 值保持原样。
 
-已安装依赖默认为 `external`；模板组合包和 `dsh.profile.firstParty` 中的包为 `builtin`。有效 stage 依次取 `dsh.profile.stages[package]`、包的 `dsh.bundle.stage`，最后默认为 `runtime`。stage 决定启动失败策略，不表示稍后执行。组合包 patch 保留声明的 id、父组和顺序。内置与 boot 阶段层优先占有 id；可选组合包有重复 id 时整层被排除并报告，冲突的用户插入则逐行排除。`dependencies` 记录安装；`dsh.profile.bundles` 选择启用的层，包括它们的全部插入和覆盖。
+组合包 patch 保留声明的 id、父组和顺序。各层按 manifest 顺序占有行 id；组合包重复声明或使用已占用的 id 时整层被排除并报告，冲突的用户插入则逐行排除。`dependencies` 记录安装；`dsh.profile.bundles` 选择启用的层，包括它们的全部插入和覆盖。包元数据不决定启动严格程度。
 
 launcher 在任何配置行挂载前提供 `ctx.profileRuntime`。该运行时要求注入 Loader，支持从根上下文和插件上下文取得的句柄调用。它拥有行来源、已接受的组合、冲突和用户禁用行信息。文件监听与管理操作共用它的串行重组队列。重组等待当前条目和已移除 fiber 完成后，发布已接受的选项并报告逐行问题；更新失败时，fiber 可能仍使用先前的有效配置运行。`installFailLoud` 保持到应用关闭，处理进程级未处理 rejection。 观测方可等待 `whenIdle()` 后，再发布包含组合归属的刷新视图。
 
@@ -135,7 +135,7 @@ Loader 结算后，app-boot 将 optional 失败报告为警告；若已启用的
 
 - **与渠道无关的库。** 此包不包含 loader 钩子，也不提供开发模式接口；[`dsh` 应用](../../../apps/cli/README.zh.md) 持有自己的 Node 源码启动钩子，并在启动序列中使用这些 helper，构建后的消费方则使用普通 Node 包解析。
 - **两个 Loader builtin。** `mountRootInclude` 把 `cordis:include` 与 `cordis:group` 注册为 Loader builtin：group 行能把一个提供方与它的消费方放进同一个 `isolate` realm，而位于本工作区之外的 agent preset 无法按名称解析 `@deepseek-ai/cordis-plugin-group`。两者都通过宿主的模块管线加载，而非被包含树自身的说明符解析。
-- **消费方决定严格程度。** 普通 Loader 组保留成功的其他行。app-boot 在启动完成后按来源审计；agent preset 拥有并清理要求全部配置行激活的代际。行失败从 Loader 与 Fiber 读取，重复的 rejection 通知在一个进程检查点内合并。
+- **消费方决定严格程度。** 普通 Loader 组保留成功的其他行。app-boot 在启动完成后按必需条目 id 审计；agent preset 拥有并清理要求全部配置行激活的代际。行失败从 Loader 与 Fiber 读取，重复的 rejection 通知在一个进程检查点内合并。
 - **Profile 模块后备机制。** 裸插件 specifier 由 Loader 从配置目录解析。普通 Node 会为安装依赖闭包中的每个包维护一个符号链接。打包可执行文件无法让操作系统符号链接进入 pkg 的 `/snapshot` 树，因此会按 Node ESM 条件读取已安装包的 export map，并写入重新导出虚拟模块 URL 的真实代理包。缺失 export 保持不可用，错误 export map 会让启动失败，跨进程 writer lock 则会在不暴露部分代理的情况下替换陈旧条目。所选外部组合包若不在安装闭包中，则会获得 profile 本地的 `.dsh-module-fallback` 链接；已有 pnpm 条目优先，后续闭包发现会排除投影链接，清理也只删除 dsh 自有链接。
 - **更新完成。** 实时重载等待 Loader 工作后检查逐行问题。profile 重组还等待已移除 fiber 的清理，这些工作已不在当前 Loader 树中。单独完成 `Fiber.update()` 和 `Entry.update()` 不代表重启成功。
 - **两阶段失败标签。** `boot()` 区分 `host preparation failed`（`prepare` 在任何配置树条目挂载前抛出）与 `plugin tree failed to load`。插件诊断包含原始堆栈、嵌套原因和聚合错误中的各项失败。原因链出现循环时，诊断遍历会终止，不会替换原始原因。
@@ -149,7 +149,7 @@ Loader 结算后，app-boot 将 optional 失败报告为警告；若已启用的
 | 文件 | 职责 |
 |---|---|
 | [`src/index.ts`](src/index.ts) | 启动、环境层、fail-loud 处理、启动审计、patch 解析与监听、配置导出 |
-| [`src/profile.ts`](src/profile.ts) | profile 发现、初始化、带 trust 与 stage 的组合包解析、模块后备机制 |
+| [`src/profile.ts`](src/profile.ts) | profile 发现、初始化、组合包解析、模块后备机制 |
 | [`src/external-bundles.ts`](src/external-bundles.ts) | 组合包归属分析及安装、启用 manifest 列表 |
 | [`src/compose-stack.ts`](src/compose-stack.ts) | 整叠层的行 id 归属：`claimLayerIds`、`composeProfileStack`、冲突记录 |
 | [`src/entry-issues.ts`](src/entry-issues.ts) | 当前条目失败、未满足服务和诊断格式化 |
