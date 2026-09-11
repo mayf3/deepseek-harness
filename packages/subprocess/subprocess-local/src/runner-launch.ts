@@ -129,7 +129,7 @@ export function runnerStdio(
   if (!ipc) {
     if (spec.stdio.control === 'pipe') {
       while (targetStdio.length < SUBPROCESS_CONTROL_FD) targetStdio.push('ignore')
-      targetStdio.push('pipe')
+      targetStdio.push('overlapped')
     }
     return targetStdio
   }
@@ -142,7 +142,7 @@ export function runnerStdio(
     spec.stdio.stdout === 'inherit' ? 1 : 'pipe',
     spec.stdio.stderr === 'inherit' ? 2 : 'pipe',
   ]
-  if (spec.stdio.control === 'pipe') runner.push('pipe')
+  if (spec.stdio.control === 'pipe') runner.push('overlapped')
   return runner
 }
 

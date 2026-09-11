@@ -274,6 +274,9 @@ describe('runner launch inputs', () => {
     expect(parseRunnerTargetArgv(['--', 'node', 'a'])).toEqual(['node', 'a'])
     expect(() => parseRunnerTargetArgv(['node'])).toThrow('private -- delimiter')
     expect(runnerStdio(spec, false)).toEqual(['pipe', 'pipe', 'inherit'])
+    const withControl = { ...spec, stdio: { ...spec.stdio, control: 'pipe' as const } }
+    expect(runnerStdio(withControl, false)).toEqual(['pipe', 'pipe', 'inherit', 'ignore', 'ignore', 'ignore', 'ignore', 'overlapped'])
+    expect(runnerStdio(withControl, true)).toEqual(['ignore', 'ignore', 'ignore', 'ipc', 'pipe', 'pipe', 2, 'overlapped'])
     expect(runnerStdio(spec, true)).toEqual([
       'ignore', 'ignore', 'ignore', 'ipc', 'pipe', 'pipe', 2,
     ])

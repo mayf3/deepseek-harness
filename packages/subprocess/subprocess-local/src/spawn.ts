@@ -657,7 +657,7 @@ export function spawnSubprocess(spec: SubprocessSpawnSpec, internals: SpawnInter
   ]
   if (spec.stdio.control === 'pipe') {
     while (stdio.length < SUBPROCESS_CONTROL_FD) stdio.push('ignore')
-    stdio.push('pipe')
+    stdio.push('overlapped')
   }
   const child = (internals.spawn ?? spawn)(program as string, args, {
     cwd: spec.cwd,
