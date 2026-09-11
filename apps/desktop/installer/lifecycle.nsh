@@ -79,6 +79,10 @@ Function .onInstFailed
 FunctionEnd
 
 Function InstallerFinish
+    System::Call '$PLUGINSDIR\window-frame.dll::InstallerFinishProgress(p $InstallerProgressWindow) i.r0 ?c'
+    ${If} $0 == 0
+        Quit
+    ${EndIf}
     System::Call 'user32::DestroyWindow(p $InstallerProgressWindow)'
     StrCpy $InstallerPhase "success"
     Call InstallerCreate

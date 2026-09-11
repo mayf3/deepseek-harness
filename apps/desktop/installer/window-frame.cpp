@@ -11,6 +11,7 @@
 #include <new>
 #include <algorithm>
 #include "progress.h"
+#include "file-copy.h"
 
 using namespace Gdiplus;
 
@@ -48,6 +49,7 @@ extern "C" __declspec(dllexport) int __cdecl InstallerFindProcess(LPCWSTR execut
 
 struct ProgressPage {
     InstallProgress progress{GetTickCount64()};
+    HWND extractionDetail;
     bool dark;
     UINT dpi;
     ULONG_PTR gdiplus;
@@ -83,7 +85,7 @@ static LRESULT CALLBACK ProgressProc(HWND window, UINT message, WPARAM wparam, L
     if (message == WM_CREATE) {
         page = static_cast<ProgressPage*>(reinterpret_cast<CREATESTRUCTW*>(lparam)->lpCreateParams);
         SetWindowLongPtrW(window, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(page));
-        SetTimer(window, 1, 100, nullptr);
+        SetTimer(window, 1, 16, nullptr);
     }
     if (message == WM_ERASEBKGND) return 1;
     if (message == WM_TIMER) { InvalidateRect(window, nullptr, FALSE); return 0; }
@@ -109,7 +111,16 @@ static LRESULT CALLBACK ProgressProc(HWND window, UINT message, WPARAM wparam, L
             graphics.SetSmoothingMode(SmoothingModeAntiAlias);
             graphics.DrawImage(page->brand, Rect(0, 174, 600, 196));
             const int stage = static_cast<int>(reinterpret_cast<INT_PTR>(GetPropW(GetParent(window), L"HarnessInstaller.Stage")));
-            page->progress.Advance(stage, GetTickCount64());
+            double fraction = 0;
+            if (stage == 1) {
+                WCHAR detail[128] = {};
+                int extracted = 0;
+                GetWindowTextW(page->extractionDetail, detail, ARRAYSIZE(detail));
+                if (swscanf_s(detail, L"HarnessExtract:%d%%", &extracted) == 1) fraction = extracted / 100.0;
+            } else if (stage == 2) {
+                fraction = reinterpret_cast<UINT_PTR>(GetPropW(GetParent(window), L"HarnessInstaller.CopyProgress")) / 10000.0;
+            }
+            page->progress.Advance(stage, fraction, GetTickCount64());
             const int percent = static_cast<int>(page->progress.value);
             SolidBrush track(page->dark ? Color(255, 97, 102, 107) : Color(255, 233, 236, 242));
             SolidBrush ink(page->dark ? Color(255, 255, 255, 255) : Color(255, 15, 17, 21));
@@ -121,7 +132,7 @@ static LRESULT CALLBACK ProgressProc(HWND window, UINT message, WPARAM wparam, L
             centered.SetAlignment(StringAlignmentCenter);
             centered.SetLineAlignment(StringAlignmentCenter);
             WCHAR caption[160];
-            wsprintfW(caption, page->captions[page->progress.stage], percent);
+            wsprintfW(caption, page->captions[page->progress.CaptionStage()], percent);
             SetWindowTextW(window, caption);
             graphics.DrawString(caption, -1, &font, RectF(48, 512, 504, 22), &centered, &ink);
             Font controls(&family, 16, FontStyleRegular, UnitPixel);
@@ -131,6 +142,7 @@ static LRESULT CALLBACK ProgressProc(HWND window, UINT message, WPARAM wparam, L
             screen.DrawImage(&buffer, 0, 0);
         }
         EndPaint(window, &paint);
+        if (page->progress.value == 100) SetPropW(GetParent(window), L"HarnessInstaller.CompletedPercent", reinterpret_cast<HANDLE>(100));
         return 0;
     }
     if (message == WM_NCDESTROY && page) {
@@ -163,6 +175,7 @@ extern "C" __declspec(dllexport) HWND __cdecl InstallerShowProgress(HWND parent,
     }
     ShowWindow(stockPage, SW_HIDE);
     page->dark = dark != FALSE;
+    page->extractionDetail = GetDlgItem(stockPage, 1006);
     page->dpi = dpi;
     const WCHAR* captions[] = {preparing, extracting, copying, registering, cleaning};
     for (int i = 0; i < 5; ++i) lstrcpynW(page->captions[i], captions[i], 128);
@@ -174,6 +187,30 @@ extern "C" __declspec(dllexport) HWND __cdecl InstallerShowProgress(HWND parent,
         0, 0, MulDiv(600, dpi, 96), MulDiv(600, dpi, 96), parent, nullptr, module, page);
     if (!window) { delete page->brand; GdiplusShutdown(page->gdiplus); delete page; }
     return window;
+}
+
+// NSIS has already reported success. Pump the UI for the bounded final animation,
+// including a painted 100% frame, before constructing the interactive finish page.
+extern "C" __declspec(dllexport) BOOL __cdecl InstallerFinishProgress(HWND window) {
+    auto* page = reinterpret_cast<ProgressPage*>(GetWindowLongPtrW(window, GWLP_USERDATA));
+    if (!page) return FALSE;
+    const ULONGLONG started = GetTickCount64();
+    SetPropW(GetParent(window), L"HarnessInstaller.Succeeded", reinterpret_cast<HANDLE>(1));
+    page->progress.Complete(started);
+    while (IsWindow(window) && GetTickCount64() - started < 750) {
+        MSG message;
+        if (PeekMessageW(&message, nullptr, 0, 0, PM_REMOVE)) {
+            if (message.message == WM_QUIT) { PostQuitMessage(static_cast<int>(message.wParam)); return FALSE; }
+            TranslateMessage(&message);
+            DispatchMessageW(&message);
+        } else {
+            MsgWaitForMultipleObjectsEx(0, nullptr, 16, QS_ALLINPUT, MWMO_INPUTAVAILABLE);
+        }
+    }
+    if (!IsWindow(window)) return FALSE;
+    InvalidateRect(window, nullptr, FALSE);
+    UpdateWindow(window);
+    return TRUE;
 }
 
 static LRESULT CALLBACK FrameProc(HWND window, UINT message, WPARAM wparam,

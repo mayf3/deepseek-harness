@@ -82,7 +82,7 @@
   Page custom InstallerFinish InstallerFinishLeave
 !macroend
 
-; The pinned builder's extraction hooks only publish stages; its worker owns all file operations.
+; The pinned builder's worker publishes stages around its extraction and copy operations.
 !macro InstallerPublishStage Stage
   ; Extraction owns the stack and error flag across these callbacks.
   Push $0
@@ -105,8 +105,34 @@
   !insertmacro InstallerPublishStage 1
 !macroend
 
+!macro customInstallerExtract Archive
+  ; Private telemetry in the hidden detail label avoids the reused NSIS instruction counter.
+  Nsis7z::ExtractWithDetails "${Archive}" "HarnessExtract:%s"
+!macroend
+
 !macro customInstallerCopyStart
   !insertmacro InstallerPublishStage 2
+!macroend
+
+!macro customInstallerCopyFiles Source Destination
+  Push $0
+  Push $1
+  StrCpy $0 0
+  ${If} ${Errors}
+    StrCpy $0 1
+  ${EndIf}
+  System::Store /NOUNLOAD "S"
+  System::Call /NOUNLOAD '$PLUGINSDIR\window-frame.dll::InstallerCopyFiles(p $HWNDPARENT, w "${Source}", w "${Destination}") i.s ?c'
+  System::Store "L"
+  Pop $1
+  ${If} $1 < 0
+  ${OrIf} $0 == 1
+    SetErrors
+  ${Else}
+    ClearErrors
+  ${EndIf}
+  Pop $1
+  Pop $0
 !macroend
 
 !macro customInstallerFilesReady

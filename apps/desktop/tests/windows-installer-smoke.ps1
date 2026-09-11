@@ -59,7 +59,21 @@ function Dismiss([Diagnostics.Process]$Process, [string]$Text) {
     }
 }
 function Finish-Setup([Diagnostics.Process]$Process, [bool]$Launch, [string]$Theme, [string]$Bounds) {
-    [void](Wait-Control $Process $copy.INSTALLER_FINISH)
+    $timer = [Diagnostics.Stopwatch]::StartNew()
+    $previous = 0
+    $window = [InstallerCapture]::Find($Process.Id)
+    while ([InstallerCapture]::FindButton($Process.Id, $copy.INSTALLER_FINISH) -eq [IntPtr]::Zero) {
+        if ($Process.HasExited -or $timer.Elapsed.TotalSeconds -gt 30) { throw 'Installer did not complete' }
+        $visible = [InstallerCapture]::VisibleText($Process.Id)
+        if ($visible -match 'HarnessInstallerProgress[^\r\n]*?(\d+)%') {
+            $percent = [int]$Matches[1]
+            if ($percent -lt $previous) { throw 'Installation progress went backwards' }
+            if ($percent -eq 100 -and [InstallerCapture]::GetProp($window, 'HarnessInstaller.Succeeded') -eq [IntPtr]::Zero) { throw 'Installation showed 100% before success' }
+            $previous = $percent
+        }
+        Start-Sleep -Milliseconds 25
+    }
+    if ([InstallerCapture]::GetProp($window, 'HarnessInstaller.CompletedPercent').ToInt32() -ne 100) { throw 'Finish page replaced an incomplete progress bar' }
     $checkbox = Wait-Control $Process $copy.INSTALLER_LAUNCH
     $state = [InstallerCapture]::SendMessage($checkbox, 0xF0, [IntPtr]::Zero, [IntPtr]::Zero).ToInt32()
     if ($state -ne $expected.launchCheckboxState) { throw 'Unexpected launch checkbox default' }
@@ -105,6 +119,9 @@ function Run-Silent([string]$Arguments, [int]$Code) {
     if ($process.ExitCode -ne $Code) { throw "Silent setup returned $($process.ExitCode), expected $Code" }
 }
 try {
+    $copySmoke = Start-Process -FilePath (Join-Path $OutputDirectory 'copy-smoke.exe') -PassThru -WindowStyle Hidden
+    $processes.Add($copySmoke)
+    if (-not $copySmoke.WaitForExit(60000) -or $copySmoke.ExitCode -ne 0) { throw 'NSIS copy hook did not preserve registers, stack, or error flags' }
     $process = Start-Setup light
     $window = [InstallerCapture]::Find($process.Id)
     [void][InstallerCapture]::Save($window, (Join-Path $OutputDirectory 'light-welcome.png'))
@@ -126,6 +143,7 @@ try {
     $results.Add('enter-validates-current-path-and-unchecked-launch')
     $results.Add('completion-preserves-window-position')
     $results.Add('welcome-ready-before-first-show')
+    $results.Add('successful-install-paints-100-before-finish')
 
     $process = Start-Setup dark ''
     Click-Control $process $copy.INSTALLER_CHOOSE_PATH

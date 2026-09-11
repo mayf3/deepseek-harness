@@ -50,6 +50,9 @@ Section
 SectionEnd
 `)
   const compiler = await getMakeNsisPath()
+  const copySmoke = join(output, 'copy-smoke.exe')
+  await execute(compiler.path, ['/V2', `/DOUTPUT_FILE=${copySmoke}`, `/DSOURCE_DLL=${join(output, 'ui', 'window-frame.dll')}`,
+    join(appRoot, 'tests', 'fixtures', 'installer-copy-smoke.nsi')], { ...childOptions, env: { ...childOptions.env, ...compiler.env } })
   await execute(compiler.path, ['/V2', payloadSource], { ...childOptions, env: { ...childOptions.env, ...compiler.env } })
   const include = join(output, 'include.nsh')
   await writeFile(include, `!define INSTALLER_BUILD_DIR "${join(output, 'ui')}"\n!include "${join(appRoot, 'scripts', 'installer.nsh')}"\n`)

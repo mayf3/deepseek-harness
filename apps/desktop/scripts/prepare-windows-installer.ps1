@@ -14,7 +14,7 @@ $visualStudio = & $vswhere -latest -products '*' -requires Microsoft.VisualStudi
 if (-not $visualStudio) { throw 'Visual Studio C++ Build Tools are missing.' }
 $vcvars = Join-Path $visualStudio 'VC/Auxiliary/Build/vcvars32.bat'
 $compileScript = Join-Path $output 'compile-frame.cmd'
-$compileLines = @('@echo off', ('call "{0}" >nul' -f $vcvars), 'if errorlevel 1 exit /b %errorlevel%', ('cl /nologo /LD /MT /O1 /W4 /WX /EHsc "{0}" /Fo"{1}" /link /OUT:"{2}" /IMPLIB:"{3}" user32.lib comctl32.lib dwmapi.lib gdiplus.lib' -f $source, (Join-Path $output 'window-frame.obj'), $library, (Join-Path $output 'window-frame.lib')))
+$compileLines = @('@echo off', ('call "{0}" >nul' -f $vcvars), 'if errorlevel 1 exit /b %errorlevel%', ('cl /nologo /LD /MT /O1 /W4 /WX /EHsc "{0}" /Fo"{1}" /link /OUT:"{2}" /IMPLIB:"{3}" user32.lib comctl32.lib dwmapi.lib gdiplus.lib ole32.lib shell32.lib uuid.lib' -f $source, (Join-Path $output 'window-frame.obj'), $library, (Join-Path $output 'window-frame.lib')))
 [IO.File]::WriteAllLines($compileScript, $compileLines, [Text.Encoding]::Default)
 & $env:ComSpec /d /c $compileScript
 if ($LASTEXITCODE -ne 0) { throw 'Native installer helper compilation failed.' }
@@ -27,6 +27,16 @@ if ($TestProgress) {
     if ($LASTEXITCODE -ne 0) { throw 'Progress test compilation failed.' }
     & $testExecutable
     if ($LASTEXITCODE -ne 0) { throw 'Progress timeline regression failed.' }
+    $copySource = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../tests/windows-installer-copy.cpp'))
+    $copyExecutable = Join-Path $output 'copy-test.exe'
+    $copyScript = Join-Path $output 'compile-copy-test.cmd'
+    [IO.File]::WriteAllLines($copyScript, @('@echo off', ('call "{0}" >nul' -f $vcvars), 'if errorlevel 1 exit /b %errorlevel%', ('cl /nologo /std:c++17 /MT /W4 /WX /EHsc "{0}" /Fo"{1}" /Fe"{2}" /link user32.lib ole32.lib shell32.lib uuid.lib' -f $copySource, (Join-Path $output 'copy-test.obj'), $copyExecutable)), [Text.Encoding]::Default)
+    & $env:ComSpec /d /c $copyScript
+    if ($LASTEXITCODE -ne 0) { throw 'Copy test compilation failed.' }
+    $copyRoot = Join-Path $output ('copy-test-' + [Guid]::NewGuid().ToString('N'))
+    New-Item -ItemType Directory $copyRoot | Out-Null
+    & $copyExecutable $copyRoot
+    if ($LASTEXITCODE -ne 0) { throw 'Shell copy regression failed.' }
 }
 Add-Type -AssemblyName System.Drawing
 foreach ($asset in @('brand', 'brand-2x', 'brand-dark', 'brand-dark-2x', 'uninstaller-sidebar')) {

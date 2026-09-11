@@ -5,6 +5,7 @@
     "enter-validates-current-path-and-unchecked-launch",
     "completion-preserves-window-position",
     "welcome-ready-before-first-show",
+    "successful-install-paints-100-before-finish",
     "registered-directory-and-checked-launch",
     "launch-failure-retry-and-prompt-dismissal",
     "progress-remains-monotonic-across-native-resets",
