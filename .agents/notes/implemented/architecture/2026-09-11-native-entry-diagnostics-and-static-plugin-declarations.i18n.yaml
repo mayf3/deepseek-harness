@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-09-11-native-entry-diagnostics-and-static-plugin-declarations.md
-2026-09-11-native-entry-diagnostics-and-static-plugin-declarations.md: bf3a1ab9cab3a524eef1a31317b690f73713d41b
-2026-09-11-native-entry-diagnostics-and-static-plugin-declarations.zh.md: dcc781d753413fe062a190a9321de2a6677ab131
+2026-09-11-native-entry-diagnostics-and-static-plugin-declarations.md: f92c39aa961e134fa7d2f4fd9d926ebe3964cebb
+2026-09-11-native-entry-diagnostics-and-static-plugin-declarations.zh.md: 9aeea812c2caf7e92d0aa15c5287597f6f1408fd

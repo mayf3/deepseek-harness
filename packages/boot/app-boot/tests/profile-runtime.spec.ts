@@ -133,6 +133,21 @@ describe('ProfileRuntime', () => {
     expect([...runtime.userDisabledRowIds()]).toEqual(['reloaded-off'])
   })
 
+  it('recomposes through a plugin context handle and publishes the accepted profile', async () => {
+    const update = vi.fn(async () => {})
+    const entry = { options: { config: { path: 'file:///root/cordis.yml' } }, update } as unknown as Entry
+    const reloaded = profile([layer('external', 'external', [])])
+    const { ctx, runtime } = await harness([], { rootEntry: () => entry, reloaded })
+    const caller = ctx.plugin({ inject: ['loader'], apply() {} })
+    await caller.await()
+
+    const handle = caller.ctx.get('profileRuntime')!
+    await expect(handle.recompose({ reloadBundles: true })).resolves.toEqual([])
+    expect(update).toHaveBeenCalledOnce()
+    expect(runtime.layers.map(current => current.packageName)).toEqual(['external'])
+    await expect(handle.whenIdle()).resolves.toBeUndefined()
+  })
+
   it('runs recompositions one at a time, each from what the previous one committed', async () => {
     let release = (): void => {}
     const gate = new Promise<void>((resolve) => { release = resolve })
