@@ -8,8 +8,6 @@ Status: implemented
 
 [故障切换支路](../process/2026-09-09-blacksmith-failover-leg.zh.md)会把这套测试跑在本仓库不拥有的池上——Blacksmith 的临时镜像，以及自有的 `vm-backup` 与 `dsh-win-ci` 备用池。在托管镜像上，coverage 各通道的失败来自用例从未点明的宿主属性：宿主是否提供可用的用户级 systemd scope，决定了被 mock 的 PTY 退出会与哪种 containment 竞争；托管 scope 接受 `SIGKILL` 之前所需的墙钟宽限，低于负载镜像实际提供的量；读端被抢占时会把非法 UTF-8 残余用例假定为独立分块的写入合并成一个分块；以及 Windows Server 镜像直接拒绝 `CoCreateInstance(CLSID_FileOpenDialog)`。
 
-杂散输出的分片封块用例还假定 `os.sched_yield()` 会产生至少 1024 次 stdout data 事件。在 [run 34474886667](https://github.com/deepseek-harness/deepseek-harness/actions/runs/34474886667) 中，该用例的断言全部通过，却未进入封块分支，导致 Linux coverage 失败。
-
 ## 决策
 
 每个用例都点明它依赖的宿主属性，因此同一份修订在自有池与托管镜像上给出同样的结论。
@@ -22,7 +20,7 @@ Status: implemented
 
 `packages/experimental/code-runtime-python/tests/runtime.spec.ts` 的两个非法 UTF-8 残余用例都用 `time.sleep(0.001)` 控制写入节奏：`os.sched_yield()` 会让被抢占的读端把多次写入合并成一个分块，而被包裹的 `Buffer.concat` 测量的正是该分块（在正确实现下，托管镜像测得 2563，超过了 2048 的界）。两个用例的载荷都保持在该界之上——`0xFF` 用例 3200 字节，CESU-8 用例 1100 个 `ED A0 80` 序列（3300 原始字节，超过按原始字节计费会触及的 3072 字节预算）——因此少计仍然会在 2048 之上触发 flush。两者各自带有 20s 的用例预算，容纳带节奏的写入与解释器启动。
 
-分片封块用例保留真实的 CPython 子进程，但将该子进程的 stdout data 事件拆成单字节缓冲区。这个 fixture 控制分片数量，不再取决于内核是否合并写入，并在 `finally` 中恢复启用标志与 `Buffer.concat` 包装。它断言完整的 60000 字节日志、最大 concat 输入数量为 1024，以及原有的 256 KiB 复制预算。移除封块会触发输入数量断言；反复合并已封块的前缀会超出复制预算。
+`packages/experimental/code-runtime-python/tests/stray-fragments.spec.ts` 的原生输出分块封存测试保留真实 Python 子进程，但把 stdout 读取拆成单字节事件。操作系统的管道合并无法保证达到封存一块所需的 1024 个片段：[run 34465259316](https://github.com/deepseek-harness/deepseek-harness/actions/runs/34465259316) 的全部断言通过，却未覆盖该分支。可控读取覆盖反复封存和末尾换行合并；精确输出与复制总量上限检测字节丢失和前缀反复复制。
 
 Linux coverage 通道授予 `DSH_COVERAGE_TEST_TIMEOUT_MS: '90000'`，与 Windows coverage 通道一致，因为当该通道的分区、worker 与同级门禁共用一个宿主时，`subprocess-local` 与 `bash-sandbox` 的处置用例会超过 5000ms 默认值。
 
@@ -37,8 +35,6 @@ Windows 文件夹对话框冒烟测试改为通过 PowerShell 探测 `CoCreateIn
 **保留 `linux-scope.ts` 的探针 mock。** 因无效而否决：平台钉死会在任一探针被调用前就选中 fallback 路径，因此该 mock 没有改变任何执行路径。
 
 **削减非法 UTF-8 的载荷以让用例更快。** 否决：低于 2048 的界之后，断言再也无法为它所点名的少计而失败，等于让该回归失去守护。
-
-**用 sleep 控制分片数量用例的写入节奏。** 否决：管道读取的边界仍由操作系统决定，因此 sleep 无法保证该分支需要的 1024 个分片。控制 data 事件边界可以保留真实子进程，并确定性地触发该分支。
 
 ## 后果
 

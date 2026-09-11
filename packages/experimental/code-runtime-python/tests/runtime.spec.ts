@@ -28,7 +28,7 @@ import type { CodeBindingFunction, CodeJsonValue, CodeRunResult } from '@deepsee
  * records the same race and solves it with argv-based identity; recording the
  * mkdtempSync results is the fs-mock equivalent.
  */
-const { failNextCopyOf, stagedDirs, tempDirs, tempFiles, splitStdout } = vi.hoisted(() => ({
+const { failNextCopyOf, stagedDirs, tempDirs, tempFiles } = vi.hoisted(() => ({
   failNextCopyOf: { value: undefined as string | undefined },
   stagedDirs: [] as string[],
   // Test-created temp dirs/files, registered by the helpers below and removed
@@ -38,28 +38,7 @@ const { failNextCopyOf, stagedDirs, tempDirs, tempFiles, splitStdout } = vi.hois
   // tests themselves build).
   tempDirs: [] as string[],
   tempFiles: [] as string[],
-  splitStdout: { value: false },
 }))
-vi.mock('node:child_process', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('node:child_process')>()
-  return {
-    ...actual,
-    spawn(...args: Parameters<typeof actual.spawn>) {
-      const child = actual.spawn(...args)
-      if (splitStdout.value && child.stdout !== null) {
-        // The kernel may coalesce writes; this case owns the data-event boundaries.
-        const emit = child.stdout.emit.bind(child.stdout)
-        child.stdout.emit = (event: string | symbol, ...values: unknown[]): boolean => {
-          const chunk = values[0]
-          if (event !== 'data' || !Buffer.isBuffer(chunk)) return emit(event, ...values)
-          for (let index = 0; index < chunk.length; index += 1) emit('data', chunk.subarray(index, index + 1))
-          return true
-        }
-      }
-      return child
-    },
-  }
-})
 vi.mock('node:fs', async (importOriginal) => {
   const actual = await importOriginal<typeof import('node:fs')>()
   return {
@@ -80,9 +59,10 @@ vi.mock('node:fs', async (importOriginal) => {
 })
 
 /**
- * Integration suite over real python3 subprocesses. The staging-failure cases
- * mock `copyFileSync`; the fragment-count case controls stdout data-event boundaries.
- * Each test builds a fresh runtime so budgets can be tuned per case.
+ * Integration suite over REAL python3 subprocesses (no subprocess mocks — it is
+ * cheap and local, per docs/testing.md's real-over-mock policy; the only mock is
+ * `node:fs.copyFileSync` for the staging-failure cases). Each test builds a fresh
+ * runtime so budgets can be tuned per case.
  */
 async function setup(config: Config = {}) {
   const ctx = new Context()
@@ -113,7 +93,6 @@ function makeTempDirSync(prefix: string): string {
 // Remove every fixture this file created, so repeated runs do not accumulate
 // `dsh-*` directories and wrappers in the shared tmpdir.
 afterEach(() => {
-  splitStdout.value = false
   for (const dir of tempDirs.splice(0)) rmSync(dir, { recursive: true, force: true })
   for (const file of tempFiles.splice(0)) rmSync(file, { force: true })
 })
@@ -4777,42 +4756,6 @@ describe('PythonCodeRuntime — hostile peer', () => {
     // are coalesced by the pipe before they reach us, so the observed ratio is
     // smaller than the asymptotic one, and the threshold has to sit where a real
     // measurement lands rather than where the asymptote suggests.
-    expect(copied).toBeLessThan(256 * 1024)
-  }, 40_000)
-
-  it('seals trickled stray fragments into blocks without recopying the sealed prefix', async () => {
-    // One-byte data events force the fragment-count limit independently of pipe
-    // coalescing. The input-list bound rejects missing seals; copied bytes reject
-    // repeatedly merging the sealed prefix. Both regressions preserve log text.
-    const realConcat = Buffer.concat.bind(Buffer)
-    const previousSplitStdout = splitStdout.value
-    let copied = 0
-    let maxParts = 0
-    const concatSpy = vi.spyOn(Buffer, 'concat').mockImplementation((list: readonly Uint8Array[], total?: number): Buffer<ArrayBuffer> => {
-      for (const part of list) copied += part.length
-      maxParts = Math.max(maxParts, list.length)
-      return realConcat(list, total)
-    })
-    let result: CodeRunResult
-    try {
-      splitStdout.value = true
-      const { runtime } = await setup({ maxLogBytes: 200_000, maxWallMs: 30_000 })
-      result = await runtime.run({
-        program: [
-          'import os',
-          'os.write(1, b"x" * 60000 + b"\\n")',
-          'return "done"',
-        ].join('\n'),
-        bindings: [],
-      })
-    } finally {
-      concatSpy.mockRestore()
-      splitStdout.value = previousSplitStdout
-    }
-    expect(result.error).toBeUndefined()
-    expect(result.value).toBe('done')
-    expect(result.logs).toEqual(['x'.repeat(60000)])
-    expect(maxParts).toBe(1024)
     expect(copied).toBeLessThan(256 * 1024)
   }, 40_000)
 
