@@ -1,14 +1,12 @@
 /**
- * Worker-side execution logic, written as plain functions over an injected port so the unit
- * suite can run every line IN-PROCESS against a fake port (a real worker thread is a separate
- * V8 isolate the coverage provider cannot observe).
+ * Program evaluation, output capture, and host binding proxies over the process channel.
  * @module @deepseek-ai/dsh-code-runtime-node/src/bootstrap
  */
 
 import { inspect } from 'node:util'
-import type { DoneMessage, ReplyMessage, WorkerBootData, WorkerToHost } from './protocol.ts'
+import type { DoneMessage, ReplyMessage, ProgramBootData, ProgramToHost } from './protocol.ts'
 import { jsonStringBytesUpTo, jsonValueBytesUpTo, truncateJsonStringBytes } from './output-json.ts'
-import { decodeWorkerJson, encodeWorkerJson, snapshotCodeJsonValue } from './worker-json.ts'
+import { decodeCodeJsonWire, encodeCodeJsonWire, snapshotCodeJsonValue } from './json-wire.ts'
 
 const CapturedError = Error
 const capturedObjectCreate = Object.create
@@ -24,7 +22,7 @@ function defineBindingErrorField(error: Error, key: string, value: string): void
 
 /** The port API the bootstrap needs — satisfied by `parentPort` and by the tests' fake. */
 export interface BootstrapPort {
-  postMessage(message: WorkerToHost): void
+  postMessage(message: ProgramToHost): void
   on(event: 'message', listener: (message: ReplyMessage) => void): void
 }
 
@@ -121,7 +119,7 @@ export function makeConsoleShim(logs: LogBuffer): Record<(typeof CONSOLE_LEVELS)
 
 /**
  * Redirect a stream's `write` into the log buffer (the program-visible
- * `process.stdout`/`process.stderr` in the real worker), so raw writes land in emission order
+ * `process.stdout`/`process.stderr` in the Node child), so raw writes land in emission order
  * alongside console output instead of racing down a pipe. It preserves Node's optional callback
  * contract: the callback runs asynchronously after admission, even when the log budget drops
  * the write.
@@ -186,7 +184,7 @@ export function prepareCompletion(
   if (jsonValueBytesUpTo(snapshot, remainingOutputBytes) === undefined) {
     return outputLimit(maxOutputBytes)
   }
-  return { value: encodeWorkerJson(snapshot) }
+  return { value: encodeCodeJsonWire(snapshot) }
 }
 
 /** Build the fixed overflow fragment without carrying rejected variable bytes. */
@@ -265,7 +263,7 @@ function bindingFailure(errorClass: BindingErrorConstructor | undefined, memberN
  * @returns constructors keyed by their owning namespace global.
  */
 export function makeBindingErrorClasses(
-  data: Pick<WorkerBootData, 'namespaces'>,
+  data: Pick<ProgramBootData, 'namespaces'>,
 ): Map<string, BindingErrorConstructor> {
   const classes = new Map<string, BindingErrorConstructor>()
   for (const namespace of data.namespaces) {
@@ -278,7 +276,7 @@ export function makeBindingErrorClasses(
  * Route host replies into the pending-call map: each reply settles its call
  * at most once, and a reply for an unknown id (stray, or a duplicate answer
  * to an id already settled) is ignored. Shared wiring between
- * {@link runWorkerMain} and the tests that exercise {@link makeNamespaces}
+ * {@link runProgram} and the tests that exercise {@link makeNamespaces}
  * standalone.
  * @param port - the port whose `message` events carry the replies.
  * @param pending - the id-keyed map of unsettled binding calls.
@@ -289,7 +287,7 @@ export function wireReplies(port: BootstrapPort, pending: Map<number, PendingCal
     if (!entry) return
     pending.delete(message.id)
     if (message.ok) {
-      const value = decodeWorkerJson(message.value)
+      const value = decodeCodeJsonWire(message.value)
       if (value === undefined) entry.reject(new CapturedError('binding resolution must be lossless JSON'))
       else entry.resolve(value)
     } else {
@@ -313,7 +311,7 @@ export function wireReplies(port: BootstrapPort, pending: Map<number, PendingCal
  * @returns one namespace object per declaration, in declaration order.
  */
 export function makeNamespaces(
-  data: Pick<WorkerBootData, 'namespaces'>,
+  data: Pick<ProgramBootData, 'namespaces'>,
   port: BootstrapPort,
   pending: Map<number, PendingCall>,
   nextId: { value: number },
@@ -344,7 +342,7 @@ export function makeNamespaces(
               },
             })
             try {
-              port.postMessage({ type: 'call', id, global, name, args: encodeWorkerJson(detached) })
+              port.postMessage({ type: 'call', id, global, name, args: encodeCodeJsonWire(detached) })
             } catch (error: unknown) {
               pending.delete(id)
               const message = `binding arguments must be structured-cloneable: ${error instanceof CapturedError ? error.message : String(error)}`
@@ -366,9 +364,9 @@ export function makeNamespaces(
  * @param streams - stdout/stderr objects captured as program logs.
  * @returns after posting the done message.
  */
-export async function runWorkerMain(
+export async function runProgram(
   port: BootstrapPort,
-  data: WorkerBootData,
+  data: ProgramBootData,
   streams: { stdout: PatchableStream; stderr: PatchableStream },
 ): Promise<void> {
   const logs = new LogBuffer(

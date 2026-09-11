@@ -509,6 +509,8 @@ describe('the soft layer', () => {
     // Minimal scriptable runtime: the SDK section resolves ctx.codeRuntime at
     // assembly time (the ptc.spec fake's shape).
     class FakeRuntime extends CodeRuntime {
+      resolve(request: import('@deepseek-ai/dsh-code-runtime').CodeRunRequest): import('@deepseek-ai/dsh-code-runtime').CodeRunSpec { return { ...request, cwd: request.cwd ?? process.cwd(), timeoutMs: request.timeoutMs ?? 120_000 } }
+
       readonly language = 'typescript'
       readonly isolation = 'fake'
       run(_request: CodeRunRequest): Promise<CodeRunResult> { return Promise.resolve({ logs: [] }) }
@@ -531,6 +533,8 @@ describe('the soft layer', () => {
 
   it('keeps native wire schemas and the SDK in step under mode both', async () => {
     class FakeRuntime extends CodeRuntime {
+      resolve(request: import('@deepseek-ai/dsh-code-runtime').CodeRunRequest): import('@deepseek-ai/dsh-code-runtime').CodeRunSpec { return { ...request, cwd: request.cwd ?? process.cwd(), timeoutMs: request.timeoutMs ?? 120_000 } }
+
       readonly language = 'typescript'
       readonly isolation = 'fake'
       run(_request: CodeRunRequest): Promise<CodeRunResult> { return Promise.resolve({ logs: [] }) }
@@ -553,6 +557,8 @@ describe('the soft layer', () => {
 
   it('keeps the PTC mode SDK byte-identical across mode switches', async () => {
     class FakeRuntime extends CodeRuntime {
+      resolve(request: import('@deepseek-ai/dsh-code-runtime').CodeRunRequest): import('@deepseek-ai/dsh-code-runtime').CodeRunSpec { return { ...request, cwd: request.cwd ?? process.cwd(), timeoutMs: request.timeoutMs ?? 120_000 } }
+
       readonly language = 'typescript'
       readonly isolation = 'fake'
       run(_request: CodeRunRequest): Promise<CodeRunResult> { return Promise.resolve({ logs: [] }) }
@@ -926,6 +932,8 @@ describe('exit_plan_mode', () => {
   it('carries the exact plan through a PTC mode review and logs the nested dispatch', async () => {
     const plan = '# PTC mode plan\n\nUse the existing seam.'
     class ExitRuntime extends CodeRuntime {
+      resolve(request: import('@deepseek-ai/dsh-code-runtime').CodeRunRequest): import('@deepseek-ai/dsh-code-runtime').CodeRunSpec { return { ...request, cwd: request.cwd ?? process.cwd(), timeoutMs: request.timeoutMs ?? 120_000 } }
+
       readonly language = 'typescript'
       readonly isolation = 'fake'
       async run(request: CodeRunRequest): Promise<CodeRunResult> {

@@ -699,6 +699,8 @@ describe('tool-call scheduler: failure quiescence', () => {
 describe('PTC mode native-tool denial through the agent loop', () => {
   /** A minimal in-process code runtime for test purposes — never actually runs. */
   class FakeCodeRuntime extends CodeRuntime {
+    resolve(request: import('@deepseek-ai/dsh-code-runtime').CodeRunRequest): import('@deepseek-ai/dsh-code-runtime').CodeRunSpec { return { ...request, cwd: request.cwd ?? process.cwd(), timeoutMs: request.timeoutMs ?? 120_000 } }
+
     readonly language = 'typescript'
     readonly isolation = 'fake' as const
     async run(_request: CodeRunRequest): Promise<CodeRunResult> {

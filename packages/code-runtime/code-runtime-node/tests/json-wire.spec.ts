@@ -1,7 +1,7 @@
 import { runInNewContext } from 'node:vm'
 import { describe, expect, it } from 'vitest'
 import { snapshotJsonValue } from '@deepseek-ai/dsh-util-values'
-import { decodeWorkerJson, encodeWorkerJson, snapshotCodeJsonValue } from '../src/worker-json.ts'
+import { decodeCodeJsonWire, encodeCodeJsonWire, snapshotCodeJsonValue } from '../src/json-wire.ts'
 
 describe('snapshotCodeJsonValue', () => {
   it('matches the canonical scalar boundary', () => {
@@ -176,9 +176,9 @@ describe('flat worker JSON wire', () => {
     for (const value of values) {
       const snapshot = snapshotCodeJsonValue(value)
       expect(snapshot).not.toBeUndefined()
-      expect(decodeWorkerJson(encodeWorkerJson(snapshot!))).toEqual(snapshot)
+      expect(decodeCodeJsonWire(encodeCodeJsonWire(snapshot!))).toEqual(snapshot)
     }
-    const decoded = decodeWorkerJson(encodeWorkerJson(snapshotCodeJsonValue(withPrototypeKey)!)) as Record<string, unknown>
+    const decoded = decodeCodeJsonWire(encodeCodeJsonWire(snapshotCodeJsonValue(withPrototypeKey)!)) as Record<string, unknown>
     expect(Object.hasOwn(decoded, '__proto__')).toBe(true)
     expect(decoded.__proto__).toEqual({ safe: true })
   })
@@ -187,10 +187,10 @@ describe('flat worker JSON wire', () => {
     let value: unknown = 'leaf'
     for (let depth = 0; depth < 5_000; depth++) value = [value]
     const snapshot = snapshotCodeJsonValue(value)!
-    const wire = encodeWorkerJson(snapshot)
+    const wire = encodeCodeJsonWire(snapshot)
     expect(wire).toHaveLength(5_001)
 
-    let cursor = decodeWorkerJson(wire)
+    let cursor = decodeCodeJsonWire(wire)
     for (let depth = 0; depth < 5_000; depth++) {
       expect(Array.isArray(cursor)).toBe(true)
       cursor = Array.isArray(cursor) ? cursor[0] : undefined
@@ -246,12 +246,12 @@ describe('flat worker JSON wire', () => {
       [{ kind: 'object', keys: ['x'] }],
       [{ kind: 'object', keys: [], extra: true }],
     ]) {
-      expect(decodeWorkerJson(value)).toBeUndefined()
+      expect(decodeCodeJsonWire(value)).toBeUndefined()
     }
   })
 
   it('rejects invalid values passed through a forged static type', () => {
-    expect(() => encodeWorkerJson([undefined] as never)).toThrow(/sparse JSON array/)
-    expect(() => encodeWorkerJson({ value: undefined } as never)).toThrow(/undefined JSON object property/)
+    expect(() => encodeCodeJsonWire([undefined] as never)).toThrow(/sparse JSON array/)
+    expect(() => encodeCodeJsonWire({ value: undefined } as never)).toThrow(/undefined JSON object property/)
   })
 })

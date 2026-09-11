@@ -9,7 +9,8 @@
 import { brandString } from '@deepseek-ai/dsh-brand'
 import { createUserMessage, HarnessError } from '@deepseek-ai/dsh-llm'
 import type { ContentBlock, ToolCallId } from '@deepseek-ai/dsh-llm'
-import type { CodeBindingFunction, CodeRunResult, CodeRuntime } from '@deepseek-ai/dsh-code-runtime'
+import type { CodeBindingFunction, CodeRunResult, CodeRunSandbox, CodeRuntime } from '@deepseek-ai/dsh-code-runtime'
+import type { SandboxExecutionPolicy } from '@deepseek-ai/dsh-sandbox'
 import { snapshotJsonValue, type JsonValue } from '@deepseek-ai/dsh-util-values'
 import { defineTool, parameterSchemaSpecToJsonSchema } from './schema.ts'
 import { TOOL_RUNTIME_SCHEDULER } from './index.ts'
@@ -256,7 +257,7 @@ function renderValue(value: JsonValue): string {
 }
 
 /** Canonical value returned by the outer PTC mode transport. */
-type RunCodeOutput = { logs: string[]; result?: JsonValue }
+type RunCodeOutput = { logs: string[]; result?: JsonValue; sandbox?: CodeRunSandbox }
 
 /**
  * Registry-private capabilities the bridge receives at construction — the
@@ -264,6 +265,8 @@ type RunCodeOutput = { logs: string[]; result?: JsonValue }
  * off its public service API and flow here as closures instead.
  */
 export interface RunCodeBridgeOptions {
+  /** Resolves standing Session authority only for a runtime that enforces file policy. */
+  resolveSandboxPolicy: (exec: ToolRunContext) => SandboxExecutionPolicy
   /** Resolves `ctx.codeRuntime` or throws the loud misconfiguration error (shared with the registry's assembly-time checks). */
   requireRuntime: () => CodeRuntime
   /**
@@ -316,11 +319,22 @@ export function createRunCodeTool(registry: ToolRuntime, options: RunCodeBridgeO
         properties: {
           logs: { type: 'array', required: true, items: { type: 'string' } },
           result: { type: 'json' },
+          sandbox: {
+            type: 'object',
+            additionalProperties: false,
+            properties: {
+              mode: { type: 'string', required: true, enum: ['read-only', 'workspace-write', 'danger-full-access'] },
+              denied: { type: 'boolean', required: true },
+              enforcement: { type: 'string', enum: ['full', 'partial'] },
+            },
+          },
         },
       },
       render: (_args, value) => {
         const rendered = value.result === undefined ? '' : renderValue(value.result)
         const parts = [value.logs.join('\n'), rendered].filter(part => part.length > 0)
+        if (value.sandbox?.enforcement === 'partial') parts.push('File sandbox enforcement is partial on this host.')
+        if (value.sandbox?.denied) parts.push(`The ${value.sandbox.mode} file sandbox denied an operation.`)
         return [{ type: 'text', text: parts.length > 0 ? parts.join('\n') : '(run_code completed with no output)' }]
       },
     },
@@ -616,7 +630,7 @@ export function createRunCodeTool(registry: ToolRuntime, options: RunCodeBridgeO
       try {
         let result: CodeRunResult
         try {
-          result = await runtime.run({
+          result = await runtime.run(runtime.resolve({
             program: args.code,
             bindings: [{
               global: 'tools',
@@ -624,7 +638,9 @@ export function createRunCodeTool(registry: ToolRuntime, options: RunCodeBridgeO
               errorClass: { name: 'ToolCallError', memberNameProperty: 'toolName' },
             }],
             signal: runController.signal,
-          })
+            ...exec.agent?.session.header.cwd !== undefined ? { cwd: exec.agent.session.header.cwd } : {},
+            ...runtime.sandboxMode !== undefined ? { sandboxPolicy: options.resolveSandboxPolicy(exec) } : {},
+          }))
         } finally {
           // Abort sub-dispatches and drain every in-flight dispatch before
           // closing the turn (queued-unstarted ones are abandoned unlogged).
@@ -635,10 +651,13 @@ export function createRunCodeTool(registry: ToolRuntime, options: RunCodeBridgeO
 
         if (result.error) {
           const logsText = result.logs.length > 0 ? `\nCaptured output:\n${result.logs.join('\n')}` : ''
-          throw new CodeRunFailedError(`code run failed (${result.error.kind}): ${result.error.message}${logsText}`)
+          const sandboxText = result.sandbox === undefined ? ''
+            : `\nFile sandbox: ${result.sandbox.mode}${result.sandbox.enforcement === undefined ? '' : `; enforcement: ${result.sandbox.enforcement}`}${result.sandbox.denied ? '; operation denied' : ''}.`
+          throw new CodeRunFailedError(`code run failed (${result.error.kind}): ${result.error.message}${logsText}${sandboxText}`)
         }
         return {
           logs: result.logs,
+          ...result.sandbox === undefined ? {} : { sandbox: result.sandbox },
           ...result.value !== undefined ? { result: result.value } : {},
         }
       } finally {

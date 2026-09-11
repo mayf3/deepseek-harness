@@ -63,6 +63,7 @@ async function setup(script: Script, options: SetupOptions = {}) {
     ctx.provide('codeRuntime', {
       language: 'typescript',
       isolation: 'test',
+      resolve: (request: import('@deepseek-ai/dsh-code-runtime').CodeRunRequest) => ({ ...request, cwd: request.cwd ?? process.cwd(), timeoutMs: 120_000 }),
       run: options.codeRun ?? (() => Promise.resolve({ logs: [] })),
     } as never)
   }

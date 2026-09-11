@@ -10,6 +10,8 @@ import type { CodeRunRequest, CodeRunResult } from '@deepseek-ai/dsh-code-runtim
  * the smallest subclass that honors it.
  */
 class StubRuntime extends CodeRuntime {
+  resolve(request: import('@deepseek-ai/dsh-code-runtime').CodeRunRequest): import('@deepseek-ai/dsh-code-runtime').CodeRunSpec { return { ...request, cwd: request.cwd ?? process.cwd(), timeoutMs: request.timeoutMs ?? 120_000 } }
+
   readonly language = 'typescript'
   readonly isolation = 'in-process-stub'
   requests: CodeRunRequest[] = []
@@ -43,10 +45,10 @@ describe('CodeRuntime service seam', () => {
     expect(runtime.isolation).toBe('in-process-stub')
 
     const calls: unknown[] = []
-    const result = await runtime.run({
+    const result = await runtime.run(runtime.resolve({
       program: 'return 1',
       bindings: [{ global: 'tools', functions: { probe: async (args) => { calls.push(args); return null } } }],
-    })
+    }))
     expect(result).toEqual({ logs: [] })
     expect(calls).toEqual([{ from: 'stub' }])
     expect(runtime.requests).toHaveLength(1)
@@ -58,7 +60,7 @@ describe('CodeRuntime service seam', () => {
       logs: ['boom'],
       error: { kind: 'exception', message: 'boom' },
     }
-    const result = await runtime.run({ program: 'throw new Error("boom")', bindings: [] })
+    const result = await runtime.run(runtime.resolve({ program: 'throw new Error("boom")', bindings: [] }))
     expect(result.error).toEqual({ kind: 'exception', message: 'boom' })
     expect(result.value).toBeUndefined()
   })
@@ -67,7 +69,7 @@ describe('CodeRuntime service seam', () => {
     const { runtime } = await setup()
     const controller = new AbortController()
     controller.abort('cancelled')
-    const result = await runtime.run({ program: 'return 1', bindings: [], signal: controller.signal })
+    const result = await runtime.run(runtime.resolve({ program: 'return 1', bindings: [], signal: controller.signal }))
     expect(result.error).toEqual({ kind: 'abort', message: 'cancelled' })
   })
 

@@ -176,3 +176,5 @@ export abstract class SandboxProvider extends Service {
 }
 
 export default SandboxProvider
+
+export { classifyRunnerFailure, isRunnerSpawnFailure, matchesSignature } from './diagnostics.ts'

@@ -15,6 +15,7 @@ import type { UserMessage } from '@deepseek-ai/dsh-session'
 import { assertNever, deepFreeze, snapshotJsonValue, type JsonValue } from '@deepseek-ai/dsh-util-values'
 import type { PromptSection, ToolProviderResult } from '@deepseek-ai/dsh-system-prompt'
 import type { CodeRuntime } from '@deepseek-ai/dsh-code-runtime'
+import type {} from '@deepseek-ai/dsh-sandbox-policy'
 // Type-only: makes `ctx.get('approval')` resolve to the ApprovalService
 // augmentation. The seam stays optional at runtime — see `serviceAsk`.
 import type {} from '@deepseek-ai/dsh-user-approval'
@@ -915,6 +916,11 @@ export class ToolRuntime extends Service {
   private requireCodeTransport(): ToolDefinition {
     this.ptcTransport ??= createRunCodeTool(this, {
       requireRuntime: () => this.requireCodeRuntime(this.defaultMode),
+      resolveSandboxPolicy: (exec) => {
+        const policy = this.ctx.get('sandboxPolicy')
+        if (policy === undefined) throw new Error('dsh-tools: confined code runtime requires sandboxPolicy')
+        return policy.resolve({ session: exec.agent?.session })
+      },
       // The language-aware description/parameters getters read the runtime
       // without demanding one, so a native-default process can still project
       // the transport for an agent that chose code.

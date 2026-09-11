@@ -1,6 +1,6 @@
 {
   "name": "@deepseek-ai/dsh-code-runtime-node",
-  "description": "Worker-thread implementation of the DeepSeek Harness code-execution seam",
+  "description": "Sandboxed Node process implementation of the DeepSeek Harness code-execution capability",
   "version": "0.1.5-rc.2",
   "publishConfig": {
     "access": "public"
@@ -18,15 +18,14 @@
       "types": "./lib/types/index.d.ts",
       "default": "./lib/index.js"
     },
-    "./worker": {
-      "types": "./lib/types/worker.d.ts",
-      "default": "./lib/worker.cjs"
-    },
-    "./package.json": "./package.json"
+    "./package.json": "./package.json",
+    "./process": {
+      "default": "./lib/process.js"
+    }
   },
   "files": [
     "lib/index.js",
-    "lib/worker.cjs",
+    "lib/process.js",
     "lib/types/**/*.d.ts"
   ],
   "license": "MIT",
@@ -34,7 +33,11 @@
     "@deepseek-ai/cordis": "workspace:^",
     "@deepseek-ai/dsh-code-runtime": "workspace:^",
     "@deepseek-ai/dsh-session": "workspace:^",
-    "@deepseek-ai/dsh-timeout": "workspace:^"
+    "@deepseek-ai/dsh-timeout": "workspace:^",
+    "@deepseek-ai/dsh-fs": "workspace:^",
+    "@deepseek-ai/dsh-subprocess": "workspace:^",
+    "@deepseek-ai/dsh-sandbox": "workspace:^",
+    "@deepseek-ai/dsh-sandbox-policy": "workspace:^"
   },
   "dependencies": {
     "@deepseek-ai/dsh-util-values": "workspace:^",
@@ -44,6 +47,14 @@
     "@deepseek-ai/cordis": "workspace:^",
     "@deepseek-ai/dsh-code-runtime": "workspace:^",
     "@deepseek-ai/dsh-session": "workspace:^",
-    "@deepseek-ai/dsh-timeout": "workspace:^"
+    "@deepseek-ai/dsh-timeout": "workspace:^",
+    "@deepseek-ai/dsh-fs": "workspace:^",
+    "@deepseek-ai/dsh-subprocess": "workspace:^",
+    "@deepseek-ai/dsh-sandbox": "workspace:^",
+    "@deepseek-ai/dsh-sandbox-policy": "workspace:^",
+    "@deepseek-ai/dsh-fs-local": "workspace:^",
+    "@deepseek-ai/dsh-subprocess-local": "workspace:^",
+    "@deepseek-ai/dsh-session-projection": "workspace:^",
+    "@deepseek-ai/dsh-sandbox-local": "workspace:^"
   }
 }

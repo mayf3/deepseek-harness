@@ -2,7 +2,7 @@
 import { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { ToolResultNode } from '@deepseek-ai/dsh-client-ui-chat/client'
-import { NodeCodeRuntime } from '@deepseek-ai/dsh-code-runtime-node'
+import { mountRuntime } from '../../../code-runtime/code-runtime-node/tests/setup.ts'
 import { ToolCallId } from '@deepseek-ai/dsh-llm'
 import { Session, SessionId } from '@deepseek-ai/dsh-session'
 import { SpillLocator, SpillStore, type SaveTextSpill, type SpillRef } from '@deepseek-ai/dsh-spill'
@@ -40,7 +40,7 @@ async function executeShell(text: string, nested: boolean, name = 'bash', maxInl
     await ctx.plugin(ToolRuntime, { mode: 'both' })
     await ctx.plugin(MemorySpillStore)
     await ctx.plugin(SpillPolicy, { maxInlineBytes })
-    if (nested) await ctx.plugin(NodeCodeRuntime, {})
+    if (nested) await mountRuntime(ctx, {})
     ctx.effect(() => ctx.tools.register(defineContentToolFixture({
       name,
       description: 'Return deterministic shell text without spawning a process.',

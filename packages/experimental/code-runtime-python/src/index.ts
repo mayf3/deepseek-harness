@@ -20,7 +20,7 @@ import type { Duplex } from 'node:stream'
 import { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { CodeRuntime, DUNDER_MEMBER, PORTABLE_RESERVED_WORDS, RESERVED_BINDING_GLOBALS, RESERVED_ERROR_MEMBERS } from '@deepseek-ai/dsh-code-runtime'
-import type { CodeBindingErrorClass, CodeBindingFunction, CodeJsonValue, CodeRunFailure, CodeRunRequest, CodeRunResult } from '@deepseek-ai/dsh-code-runtime'
+import type { CodeBindingErrorClass, CodeBindingFunction, CodeJsonValue, CodeRunFailure, CodeRunRequest, CodeRunResult, CodeRunSpec } from '@deepseek-ai/dsh-code-runtime'
 import { snapshotJsonValue } from '@deepseek-ai/dsh-util-values'
 import { MAX_TIMER_DELAY_MS } from '@deepseek-ai/dsh-timeout'
 import type { BootMessage, ChildToHost, ReplyMessage } from './protocol.ts'
@@ -1030,13 +1030,26 @@ export class PythonCodeRuntime extends CodeRuntime {
   }
 
   /**
-   * Execute one program in a fresh Python subprocess. Success resolves with
-   * `result.value` (and no `result.error`); failure — parse failure, thrown
-   * exception, invalid completion, output overflow, budget expiry, abort, or
-   * substrate death — resolves with `result.error` set (classified by
-   * `CodeRunFailure.kind`). The method rejects only for seam misuse.
+   * Resolve directory and the experimental provider's configured wall deadline.
+   * @param request - Program inputs; explicit sandbox or timeout overrides are unsupported.
+   * @returns Complete inputs for the provider's run method.
+   * @throws When a requested override is unsupported or cwd is relative.
    */
-  async run(request: CodeRunRequest): Promise<CodeRunResult> {
+  resolve(request: CodeRunRequest): CodeRunSpec {
+    if (request.sandboxPolicy !== undefined) throw new Error('dsh-code-runtime-python: sandbox policy is unsupported')
+    if (request.timeoutMs !== undefined) throw new Error('dsh-code-runtime-python: per-call timeout is unsupported')
+    const cwd = request.cwd ?? process.cwd()
+    if (!isAbsolute(cwd)) throw new Error('dsh-code-runtime-python: cwd must be absolute')
+    return { ...request, cwd, timeoutMs: this.config.maxWallMs }
+  }
+
+  /**
+   * Execute a resolved Python program; this experimental provider has no file confinement.
+   * @param request - Resolved cwd, provider deadline, program and bindings.
+   * @returns Captured output and the program outcome.
+   */
+  async run(request: CodeRunSpec): Promise<CodeRunResult> {
+    if (request.sandboxPolicy !== undefined || request.timeoutMs !== this.config.maxWallMs) throw new Error('dsh-code-runtime-python: unsupported execution policy or timeout')
     if (this.disposed) throw new Error('dsh-code-runtime-python: run() after disposal')
     const bindings = this.validateBindings(request)
     if (request.signal?.aborted) {
@@ -1155,7 +1168,7 @@ export class PythonCodeRuntime extends CodeRuntime {
 
   /** Spawn the child for one validated run and drive it to settlement. */
   private execute(
-    request: CodeRunRequest,
+    request: CodeRunSpec,
     bindings: Map<string, ValidatedNamespace>,
     bootstrapPath: string,
   ): Promise<CodeRunResult> {
@@ -1182,6 +1195,7 @@ export class PythonCodeRuntime extends CodeRuntime {
       // run. The `_LogStream` replacement of `sys.stdout`/`sys.stderr` is
       // unaffected (it is a Python object, not the C-level stdio buffer).
       child = spawn(this.pythonBin, ['-u', '-I', bootstrapPath], {
+        cwd: request.cwd,
         // Preserve only the platform temp directory. macOS system Python emits a
         // startup warning when TMPDIR is absent; ambient credentials, PATH, HOME,
         // and other host state remain unavailable to model code.

@@ -6,6 +6,8 @@
  * @module @deepseek-ai/dsh-code-runtime/src/types
  */
 
+import type { SandboxEnforcement, SandboxExecutionPolicy, SandboxMode } from '@deepseek-ai/dsh-sandbox'
+
 /**
  * One host-side function exposed to the program as an async callable. The
  * runtime bridges calls to it (possibly across a serialization boundary), so
@@ -65,10 +67,8 @@ export interface CodeBindingNamespace {
 }
 
 /**
- * One run: the program source plus everything the runtime acts on. Per the
- * explicit-over-implicit convention, defaulting (time budgets, output caps)
- * is the implementation's validated config — a request carries no optional
- * tuning knobs for a hidden `??` to fill in.
+ * Caller inputs for one program. The provider's resolve method validates supported
+ * options and supplies directory, deadline, and authority before execution.
  */
 export interface CodeRunRequest {
   /**
@@ -80,12 +80,36 @@ export interface CodeRunRequest {
   program: string
   /** Host functions exposed to the program, one global object per namespace. */
   bindings: CodeBindingNamespace[]
+  /** Working directory in the mounted filesystem and subprocess execution world. */
+  cwd?: string
+  /** Requested elapsed execution time; the provider's resolver validates and caps it. */
+  timeoutMs?: number
+  /** Resolved authority for this execution. Providers without confinement reject an explicit policy. */
+  sandboxPolicy?: SandboxExecutionPolicy
   /**
    * Abort the run: the runtime stops the program (hard, even mid-loop) and
    * resolves with a {@link CodeRunFailure} of kind `'abort'`. In-flight
    * binding calls are the CALLER's to settle — the runtime only stops asking.
    */
   signal?: AbortSignal
+}
+
+/** Fully resolved execution inputs; run never supplies a missing directory or timeout. */
+export interface CodeRunSpec extends CodeRunRequest {
+  /** Absolute directory in the provider's execution world. */
+  cwd: string
+  /** Positive finite execution deadline in milliseconds, after provider capping. */
+  timeoutMs: number
+}
+
+/** File confinement applied to a program, independently of its terminal outcome. */
+export interface CodeRunSandbox {
+  /** File-effect mode used for this execution. */
+  mode: SandboxMode
+  /** Whether an observed failure matches the selected backend's denial diagnostics. */
+  denied: boolean
+  /** Completeness reported by the selected confining backend; absent for full access. */
+  enforcement?: SandboxEnforcement
 }
 
 /**
@@ -102,7 +126,7 @@ export interface CodeRunRequest {
  */
 export interface CodeRunFailure {
   /** The failure class (see the interface doc for each kind's meaning). */
-  kind: 'exception' | 'timeout' | 'abort' | 'worker-exit' | 'invalid-output' | 'output-limit'
+  kind: 'exception' | 'timeout' | 'abort' | 'worker-exit' | 'invalid-output' | 'output-limit' | 'protocol' | 'sandbox-unavailable'
   /** Human-readable detail, suitable for feeding back to a model to self-correct. */
   message: string
 }
@@ -113,6 +137,8 @@ export interface CodeRunFailure {
  * an exception path.
  */
 export interface CodeRunResult {
+  /** Applied file policy and observed denial, when the provider enforces file policy. */
+  sandbox?: CodeRunSandbox
   /**
    * The program's completion value (its top-level `return`), when it ran to
    * completion and the value crossed the runtime's lossless-JSON boundary.

@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import { EventEmitter } from 'node:events'
-import { LogBuffer, makeBindingErrorClasses, makeConsoleShim, makeNamespaces, captureStreamWrites, prepareCompletion, prepareException, runWorkerMain, wireReplies } from '../src/bootstrap.ts'
+import { LogBuffer, makeBindingErrorClasses, makeConsoleShim, makeNamespaces, captureStreamWrites, prepareCompletion, prepareException, runProgram, wireReplies } from '../src/bootstrap.ts'
 import type { BootstrapPort, PatchableStream, PendingCall } from '../src/bootstrap.ts'
-import type { ReplyMessage, WorkerToHost } from '../src/protocol.ts'
-import { decodeWorkerJson, encodeWorkerJson } from '../src/worker-json.ts'
+import type { ReplyMessage, ProgramToHost } from '../src/protocol.ts'
+import { decodeCodeJsonWire, encodeCodeJsonWire } from '../src/json-wire.ts'
 
 /**
  * An in-process stand-in for the worker's parentPort: the test plays the
@@ -12,12 +12,12 @@ import { decodeWorkerJson, encodeWorkerJson } from '../src/worker-json.ts'
  * isolate (real-worker behavior is pinned by runtime.spec.ts).
  */
 class FakePort implements BootstrapPort {
-  sent: WorkerToHost[] = []
+  sent: ProgramToHost[] = []
   private readonly emitter = new EventEmitter()
   /** Host-scripted responder; return undefined to leave the call pending. */
-  respond: (message: WorkerToHost) => ReplyMessage | undefined = () => undefined
+  respond: (message: ProgramToHost) => ReplyMessage | undefined = () => undefined
 
-  postMessage(message: WorkerToHost): void {
+  postMessage(message: ProgramToHost): void {
     this.sent.push(message)
     const reply = this.respond(message)
     if (reply) queueMicrotask(() => this.emitter.emit('message', reply))
@@ -35,13 +35,13 @@ class FakePort implements BootstrapPort {
     return this.sent.filter(message => message.type === 'log').map(message => message.text)
   }
 
-  done(): WorkerToHost | undefined {
+  done(): ProgramToHost | undefined {
     return this.sent.find(message => message.type === 'done')
   }
 
   doneValue(): unknown {
     const done = this.done()
-    return done?.type === 'done' && done.value !== undefined ? decodeWorkerJson(done.value) : undefined
+    return done?.type === 'done' && done.value !== undefined ? decodeCodeJsonWire(done.value) : undefined
   }
 }
 
@@ -140,7 +140,7 @@ describe('captureStreamWrites', () => {
 describe('prepareCompletion', () => {
   it('omits undefined and passes lossless JSON values exactly', () => {
     expect(prepareCompletion(undefined, 100)).toEqual({})
-    expect(prepareCompletion({ a: [1, 'two'] }, 100)).toEqual({ value: encodeWorkerJson({ a: [1, 'two'] }) })
+    expect(prepareCompletion({ a: [1, 'two'] }, 100)).toEqual({ value: encodeCodeJsonWire({ a: [1, 'two'] }) })
   })
 
   it('turns every lossy completion shape into invalid-output', () => {
@@ -162,7 +162,7 @@ describe('prepareCompletion', () => {
   })
 
   it('measures the exact JSON serialization at and over the boundary', () => {
-    expect(prepareCompletion('€', 5)).toEqual({ value: encodeWorkerJson('€') })
+    expect(prepareCompletion('€', 5)).toEqual({ value: encodeCodeJsonWire('€') })
     expect(prepareCompletion('€', 4)).toEqual({
       error: { kind: 'output-limit', message: 'outer output exceeded 4 bytes' },
     })
@@ -216,7 +216,7 @@ describe('makeNamespaces', () => {
   it('exposes prototype-colliding names as ordinary own properties', async () => {
     const port = new FakePort()
     port.respond = message => message.type === 'call'
-      ? { type: 'reply', id: message.id, ok: true, value: encodeWorkerJson(`${message.name}-ok`) }
+      ? { type: 'reply', id: message.id, ok: true, value: encodeCodeJsonWire(`${message.name}-ok`) }
       : undefined
     const pending = new Map<number, PendingCall>()
     wireReplies(port, pending)
@@ -311,15 +311,15 @@ describe('makeNamespaces', () => {
   })
 })
 
-describe('runWorkerMain', () => {
+describe('runProgram', () => {
   it('runs a program end-to-end: bindings, console, return value', async () => {
     const port = new FakePort()
     port.respond = (message) => {
       if (message.type !== 'call') return undefined
-      const args = decodeWorkerJson(message.args) as { n: number }
-      return { type: 'reply', id: message.id, ok: true, value: encodeWorkerJson(args.n * 2) }
+      const args = decodeCodeJsonWire(message.args) as { n: number }
+      return { type: 'reply', id: message.id, ok: true, value: encodeCodeJsonWire(args.n * 2) }
     }
-    await runWorkerMain(port, {
+    await runProgram(port, {
       ...BOOT,
       code: 'const doubled = await tools.double({ n: 21 }); console.log("got", doubled); return { doubled };',
       namespaces: [{ global: 'tools', names: ['double'] }],
@@ -330,7 +330,7 @@ describe('runWorkerMain', () => {
 
   it('reports worker-side log capture overflow before completing', async () => {
     const port = new FakePort()
-    await runWorkerMain(port, {
+    await runProgram(port, {
       maxOutputBytes: 4,
       code: 'console.log("12345"); return null',
       namespaces: [],
@@ -345,7 +345,7 @@ describe('runWorkerMain', () => {
 
   it('reports a thrown program error on the done message', async () => {
     const port = new FakePort()
-    await runWorkerMain(port, { ...BOOT, code: 'throw new Error("boom")', namespaces: [] }, fakeStreams())
+    await runProgram(port, { ...BOOT, code: 'throw new Error("boom")', namespaces: [] }, fakeStreams())
     const done = port.done()
     expect(done?.type).toBe('done')
     expect(done?.type === 'done' ? done.error?.kind : undefined).toBe('exception')
@@ -355,17 +355,17 @@ describe('runWorkerMain', () => {
 
   it('renders non-Error throws and stack-less Errors on the done message', async () => {
     const rawPort = new FakePort()
-    await runWorkerMain(rawPort, { ...BOOT, code: 'throw "raw-throw"', namespaces: [] }, fakeStreams())
+    await runProgram(rawPort, { ...BOOT, code: 'throw "raw-throw"', namespaces: [] }, fakeStreams())
     expect(rawPort.done()).toEqual({ type: 'done', error: { kind: 'exception', message: 'raw-throw' } })
 
     const barePort = new FakePort()
-    await runWorkerMain(barePort, { ...BOOT, code: 'const e = new Error("bare"); e.stack = undefined; throw e', namespaces: [] }, fakeStreams())
+    await runProgram(barePort, { ...BOOT, code: 'const e = new Error("bare"); e.stack = undefined; throw e', namespaces: [] }, fakeStreams())
     expect(barePort.done()).toEqual({ type: 'done', error: { kind: 'exception', message: 'bare' } })
   })
 
   it('replaces giant thrown strings and Error stacks before posting the done message', async () => {
     const rawPort = new FakePort()
-    await runWorkerMain(rawPort, {
+    await runProgram(rawPort, {
       maxOutputBytes: 64,
       code: 'throw "x".repeat(1_000_000)',
       namespaces: [],
@@ -376,7 +376,7 @@ describe('runWorkerMain', () => {
     })
 
     const stackPort = new FakePort()
-    await runWorkerMain(stackPort, {
+    await runProgram(stackPort, {
       maxOutputBytes: 64,
       code: 'throw new Error("x".repeat(1_000_000))',
       namespaces: [],
@@ -390,7 +390,7 @@ describe('runWorkerMain', () => {
   it('surfaces a host failure reply as a program-side rejection it can catch', async () => {
     const port = new FakePort()
     port.respond = message => message.type === 'call' ? { type: 'reply', id: message.id, ok: false, message: 'denied by host' } : undefined
-    await runWorkerMain(port, {
+    await runProgram(port, {
       ...BOOT,
       code: 'try { await tools.x({}) } catch (error) { return { caught: error instanceof ToolCallError, name: error.name, toolName: error.toolName, message: error.message } }',
       namespaces: [toolNamespace(['x'])],
@@ -403,7 +403,7 @@ describe('runWorkerMain', () => {
     port.respond = message => message.type === 'call'
       ? { type: 'reply', id: message.id, ok: false, message: 'helper denied' }
       : undefined
-    await runWorkerMain(port, {
+    await runProgram(port, {
       ...BOOT,
       code: 'try { await helpers.x({}) } catch (error) { return { caught: error instanceof HelperCallError, name: error.name, helperName: error.helperName, message: error.message } }',
       namespaces: [{
@@ -420,10 +420,10 @@ describe('runWorkerMain', () => {
     port.respond = (message) => {
       if (message.type !== 'call') return undefined
       // Deliver a stray reply first; the real one follows.
-      port.deliver({ type: 'reply', id: 9_999, ok: true, value: encodeWorkerJson('stray') })
-      return { type: 'reply', id: message.id, ok: true, value: encodeWorkerJson('real') }
+      port.deliver({ type: 'reply', id: 9_999, ok: true, value: encodeCodeJsonWire('stray') })
+      return { type: 'reply', id: message.id, ok: true, value: encodeCodeJsonWire('real') }
     }
-    await runWorkerMain(port, {
+    await runProgram(port, {
       ...BOOT,
       code: 'return await tools.x({})',
       namespaces: [{ global: 'tools', names: ['x'] }],
@@ -434,7 +434,7 @@ describe('runWorkerMain', () => {
   it('captures raw stream writes through the patched process streams', async () => {
     const port = new FakePort()
     const streams = fakeStreams()
-    await runWorkerMain(port, { ...BOOT, code: 'return 1', namespaces: [] }, streams)
+    await runProgram(port, { ...BOOT, code: 'return 1', namespaces: [] }, streams)
     streams.stdout.write('never seen — already restored? no: patch persists in worker')
     // The patch stays installed for the worker's lifetime; writes during the
     // program landed in order. Here the program wrote nothing via streams, so

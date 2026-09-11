@@ -18,7 +18,7 @@ import * as BashEnvPlugin from '@deepseek-ai/dsh-shell-env'
 import LocalSubprocessRuntime from '@deepseek-ai/dsh-subprocess-local'
 import * as ToolBash from '@deepseek-ai/dsh-tool-bash'
 import * as LlmDeepSeek from '@deepseek-ai/dsh-llm-deepseek'
-import { NodeCodeRuntime } from '@deepseek-ai/dsh-code-runtime-node'
+import { mountRuntime } from '../../../../../../packages/code-runtime/code-runtime-node/tests/setup.ts'
 import LocalFileSystem from '@deepseek-ai/dsh-fs-local'
 import * as ToolFs from '@deepseek-ai/dsh-tool-fs'
 import * as WorkspaceContext from '@deepseek-ai/dsh-agent-instructions'
@@ -60,11 +60,11 @@ async function ptcModeHarness(cwd: string): Promise<Context> {
   await harness.plugin(AgentRegistry)
   await harness.plugin(AgentLoop, { agents: [] })
   await harness.plugin(LlmDeepSeek)
-  await harness.plugin(LocalSubprocessRuntime)
+  if (harness.get('subprocess') === undefined) await harness.plugin(LocalSubprocessRuntime)
   await harness.plugin(BashEnvPlugin)
   await harness.plugin(LocalBashExecutor, { cwd, timeoutMs: 30_000 })
   await harness.plugin(ToolBash)
-  await harness.plugin(NodeCodeRuntime, {})
+  await mountRuntime(harness)
   return harness
 }
 
@@ -81,14 +81,14 @@ async function workspacePtcModeHarness(): Promise<Context> {
   await harness.plugin(WorkspaceContext, { maxBytes: 65536 })
   await harness.plugin(AgentLoop, { agents: [] })
   await harness.plugin(LlmDeepSeek, { models: [{ id: 'deepseek-v4-flash' }] })
-  await harness.plugin(NodeCodeRuntime, {})
+  await mountRuntime(harness)
   return harness
 }
 
 let keylessCall = 0
 const testToolSignal = new AbortController().signal
 
-/** Execute one outer PTC mode call through the real registry and worker. */
+/** Execute one outer PTC mode call through the real registry and Node process. */
 function runCode(
   harness: Context,
   code: string,
@@ -114,28 +114,28 @@ function completion(result: ToolExecutionResult): unknown {
   return value.result
 }
 
-/** Keyless real-worker harness for direct typed-binding acceptance tests. */
+/** Keyless real-process harness for direct typed-binding acceptance tests. */
 async function typedPtcModeHarness(): Promise<Context> {
   const harness = new Context()
   await harness.plugin(SystemPrompt)
   await harness.plugin(ToolRuntime, { mode: 'ptc' })
-  await harness.plugin(NodeCodeRuntime, {})
+  await mountRuntime(harness)
   return harness
 }
 
-/** Keyless real-worker harness with the task-owned bash lifecycle. */
+/** Keyless real-process harness with the task-owned bash lifecycle. */
 async function backgroundPtcModeHarness(cwd: string): Promise<Context> {
   const harness = await typedPtcModeHarness()
   await harness.plugin(LocalJobRegistry)
   await harness.plugin(ToolTasks, {})
-  await harness.plugin(LocalSubprocessRuntime)
+  if (harness.get('subprocess') === undefined) await harness.plugin(LocalSubprocessRuntime)
   await harness.plugin(BashEnvPlugin)
   await harness.plugin(LocalBashExecutor, { cwd, timeoutMs: 30_000 })
   await harness.plugin(ToolBash)
   return harness
 }
 
-describe('PTC mode typed values: keyless real-worker contracts', () => {
+describe('PTC mode typed values: keyless real-process contracts', () => {
   it('crosses a large intermediate value intact and exposes only typed tool failure fields', async () => {
     ctx = await typedPtcModeHarness()
     ctx.tools.register(defineTool({

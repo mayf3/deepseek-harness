@@ -39,10 +39,10 @@ it('seals stray fragments without recopying the sealed prefix', async () => {
     return realConcat(list, total)
   })
   try {
-    const result = await ctx.codeRuntime.run({
+    const result = await ctx.codeRuntime.run(ctx.codeRuntime.resolve({
       program: 'import os\nos.write(1, b"x" * 60000 + b"\\n")\nreturn "done"',
       bindings: [],
-    })
+    }))
     expect(result.error).toBeUndefined()
     expect(result.value).toBe('done')
     expect(result.logs).toEqual(['x'.repeat(60_000)])
@@ -70,10 +70,10 @@ it.each([
     return merged
   })
   try {
-    const result = await ctx.codeRuntime.run({
+    const result = await ctx.codeRuntime.run(ctx.codeRuntime.resolve({
       program: `import os\nos.write(1, ${payload})\nreturn None`,
       bindings: [],
-    })
+    }))
     expect(result.error).toBeUndefined()
     expect(result.logs.at(-1)).toBe(logTruncationMarker(3072))
     // Each raw byte decodes to U+FFFD (three UTF-8 bytes), so a 3072-byte

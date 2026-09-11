@@ -5,7 +5,8 @@
  */
 
 import { Context, Service } from '@deepseek-ai/cordis'
-import type { CodeRunRequest, CodeRunResult } from './types.ts'
+import type { CodeRunRequest, CodeRunResult, CodeRunSpec } from './types.ts'
+import type { SandboxMode } from '@deepseek-ai/dsh-sandbox'
 
 export type {
   CodeBindingErrorClass,
@@ -15,6 +16,8 @@ export type {
   CodeRunFailure,
   CodeRunRequest,
   CodeRunResult,
+  CodeRunSpec,
+  CodeRunSandbox,
 } from './types.ts'
 
 /**
@@ -118,20 +121,27 @@ export abstract class CodeRuntime extends Service {
    */
   abstract readonly isolation: string
 
+  /** Deployment file-policy mode, or undefined for a provider without confinement support. */
+  get sandboxMode(): SandboxMode | undefined { return undefined }
+
   constructor(ctx: Context) {
     super(ctx, 'codeRuntime')
   }
 
   /**
-   * Execute one program against the request's bindings and capture what it
-   * emitted. See the class doc for the resolution contract (error is a result
-   * field; rejection means Service Definition contract misuse only).
-   * @param request - the program, its bindings, and the abort signal; the
-   *   request carries everything the runtime acts on, with no hidden defaults.
-   * @returns the run's outcome: completion value (when transferable), the
-   *   ordered log capture, and the failure (if any).
+   * Resolve supported options and provider defaults before execution.
+   * @param request - Program, bindings, cancellation and optional execution choices.
+   * @returns Complete directory, deadline and supported authority for run.
+   * @throws When an explicit choice is invalid or unsupported by this provider.
    */
-  abstract run(request: CodeRunRequest): Promise<CodeRunResult>
+  abstract resolve(request: CodeRunRequest): CodeRunSpec
+
+  /**
+   * Execute resolved inputs; program outcomes resolve as result fields.
+   * @param spec - directory, deadline, program, bindings, cancellation and supported policy.
+   * @returns Captured output and the execution outcome.
+   */
+  abstract run(spec: CodeRunSpec): Promise<CodeRunResult>
 }
 
 export default CodeRuntime

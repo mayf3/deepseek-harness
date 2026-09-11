@@ -146,10 +146,10 @@ describe('PythonCodeRuntime — controlled subprocess pipes', () => {
     const ctx = new Context()
     const fiber = await ctx.plugin(PythonCodeRuntime)
     const runtime = ctx.codeRuntime as InstanceType<typeof PythonCodeRuntime>
-    const run = runtime.run({
+    const run = runtime.run(runtime.resolve({
       program: 'return 1',
       bindings: [{ global: 'tools', functions: { echo: async (value: unknown) => value as number } }],
-    })
+    }))
     onTestFinished(async () => {
       await fiber.dispose()
       await run
@@ -210,7 +210,7 @@ describe('PythonCodeRuntime — controlled subprocess pipes', () => {
     const fiber = await ctx.plugin(PythonCodeRuntime)
     const runtime = ctx.codeRuntime as InstanceType<typeof PythonCodeRuntime>
 
-    const result = await runtime.run({ program: 'return 1', bindings: [] })
+    const result = await runtime.run(runtime.resolve({ program: 'return 1', bindings: [] }))
 
     expect(result.error?.kind).toBe('worker-exit')
     expect(result.error?.message).toContain('failed to boot python subprocess')
@@ -240,7 +240,7 @@ describe('PythonCodeRuntime — controlled subprocess pipes', () => {
     const fiber = await ctx.plugin(PythonCodeRuntime)
     const runtime = ctx.codeRuntime as InstanceType<typeof PythonCodeRuntime>
 
-    const result = await runtime.run({ program: 'return 1', bindings: [] })
+    const result = await runtime.run(runtime.resolve({ program: 'return 1', bindings: [] }))
 
     expect(result.error?.kind).toBe('worker-exit')
     expect(result.error?.message).toContain('python spawn error')
@@ -258,7 +258,7 @@ describe('PythonCodeRuntime — controlled subprocess pipes', () => {
     const fiber = await ctx.plugin(PythonCodeRuntime)
     const runtime = ctx.codeRuntime as InstanceType<typeof PythonCodeRuntime>
 
-    const result = await runtime.run({ program: 'return 1', bindings: [] })
+    const result = await runtime.run(runtime.resolve({ program: 'return 1', bindings: [] }))
 
     expect(result.error?.kind).toBe('worker-exit')
     expect(result.error?.message).toContain('failed to boot python subprocess')
@@ -275,7 +275,7 @@ describe('PythonCodeRuntime — controlled subprocess pipes', () => {
     const fiber = await ctx.plugin(PythonCodeRuntime)
     const runtime = ctx.codeRuntime as InstanceType<typeof PythonCodeRuntime>
 
-    const result = await runtime.run({ program: 'return 1', bindings: [] })
+    const result = await runtime.run(runtime.resolve({ program: 'return 1', bindings: [] }))
 
     expect(result.error?.kind).toBe('worker-exit')
     expect(result.error?.message).toContain('python spawn error')
@@ -302,10 +302,10 @@ describe('PythonCodeRuntime — controlled subprocess pipes', () => {
     const fiber = await ctx.plugin(PythonCodeRuntime, { maxWallMs: 3000 })
     const runtime = ctx.codeRuntime as InstanceType<typeof PythonCodeRuntime>
 
-    const result = await runtime.run({
+    const result = await runtime.run(runtime.resolve({
       program: 'return 1',
       bindings: [{ global: 'tools', functions: { f: async () => 'x'.repeat(4 * 1024 * 1024) } }],
-    })
+    }))
 
     expect(result.error?.kind).toBe('timeout')
     // The drain wait settled on `close` and cleaned up after itself. The

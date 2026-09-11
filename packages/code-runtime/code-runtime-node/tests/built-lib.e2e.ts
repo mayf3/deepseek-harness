@@ -6,23 +6,29 @@ import { describe, expect, it } from 'vitest'
 
 /**
  * Keyless built-artifact smoke: plain Node imports the package by name through its exports map,
- * then exercises type stripping, sibling `worker.cjs` loading, bindings, and logs. Unit tests use
- * `src/worker.ts`; this pins the downstream `lib/index.js` path. It skips when `lib/` is absent,
+ * then exercises type stripping, sibling `process.js` loading, bindings, and logs. Unit tests use
+ * `src/process.ts`; this pins the downstream `lib/index.js` path. It skips when `lib/` is absent,
  * and CI runs it after the build.
  */
 
 const pkgDir = fileURLToPath(new URL('..', import.meta.url))
-const built = ['lib/index.js', 'lib/worker.cjs'].every(file => existsSync(join(pkgDir, file)))
+const built = ['lib/index.js', 'lib/process.js'].every(file => existsSync(join(pkgDir, file)))
   && existsSync(join(pkgDir, '../code-runtime/lib/index.js'))
 
 describe.skipIf(!built)('built lib real load path (plain node)', () => {
-  it('runs a TypeScript program with a binding through lib/index.js and its lib/worker.cjs entry', async () => {
+  it('runs a TypeScript program with a binding through lib/index.js and its lib/process.js entry', async () => {
     const script = `
       const { Context } = await import('@deepseek-ai/cordis')
       const { NodeCodeRuntime } = await import('@deepseek-ai/dsh-code-runtime-node')
       const ctx = new Context()
+      for (const name of ['session-projection', 'fs-local', 'subprocess-local', 'sandbox-local']) {
+        const plugin = await import('@deepseek-ai/dsh-' + name)
+        await ctx.plugin(plugin.default, {})
+      }
+      const { default: SandboxPolicy } = await import('@deepseek-ai/dsh-sandbox-policy')
+      await ctx.plugin(SandboxPolicy, { mode: 'read-only' })
       await ctx.plugin(NodeCodeRuntime, {})
-      const result = await ctx.codeRuntime.run({
+      const result = await ctx.codeRuntime.run(ctx.codeRuntime.resolve({
         program: 'const doubled: number = await tools.double({ n: 21 }); console.log("halfway", doubled); let failure; try { await tools.fail({}) } catch (error) { failure = { typed: error instanceof ToolCallError, name: error.name, toolName: error.toolName, message: error.message } } return { doubled, failure };',
         bindings: [{
           global: 'tools',
@@ -32,9 +38,9 @@ describe.skipIf(!built)('built lib real load path (plain node)', () => {
           },
           errorClass: { name: 'ToolCallError', memberNameProperty: 'toolName' },
         }],
-      })
+      }))
+      await ctx.fiber.dispose()
       console.log(JSON.stringify(result))
-      process.exit(0)
     `
     const { exitCode, stdout, stderr } = await execa(process.execPath, ['--input-type=module', '-e', script], {
       cwd: pkgDir,

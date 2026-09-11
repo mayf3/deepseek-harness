@@ -1,6 +1,6 @@
 /**
  * Lossless-JSON snapshots for the dependency-free source worker closure.
- * @module @deepseek-ai/dsh-code-runtime-node/worker-json
+ * @module @deepseek-ai/dsh-code-runtime-node/json-wire
  */
 
 import type { CodeJsonValue } from '@deepseek-ai/dsh-code-runtime'
@@ -249,15 +249,15 @@ type WorkerJsonToken = null | boolean | number | string | ArrayWireToken | Objec
  * markers and scalar leaves share one flat token array, so `worker_threads`
  * never has to structured-clone the value's application nesting.
  */
-export type WorkerJsonWire = WorkerJsonToken[]
+export type CodeJsonWire = WorkerJsonToken[]
 
 /**
  * Flatten one validated JSON value for the worker-thread message port.
  * @param value - the lossless JSON value to transport.
  * @returns a pre-order token stream whose own nesting is bounded.
  */
-export function encodeWorkerJson(value: CodeJsonValue): WorkerJsonWire {
-  const wire: WorkerJsonWire = []
+export function encodeCodeJsonWire(value: CodeJsonValue): CodeJsonWire {
+  const wire: CodeJsonWire = []
   const pending: CodeJsonValue[] = [value]
   for (let current = takeLast(pending); current !== undefined; current = takeLast(pending)) {
     if (current === null || typeof current === 'boolean' || typeof current === 'number' || typeof current === 'string') {
@@ -346,7 +346,7 @@ function containerToken(value: object): ArrayWireToken | ObjectWireToken | undef
  * @param input - untrusted message-port payload.
  * @returns the detached JSON value, or `undefined` when the wire is invalid.
  */
-export function decodeWorkerJson(input: unknown): CodeJsonValue | undefined {
+export function decodeCodeJsonWire(input: unknown): CodeJsonValue | undefined {
   try {
     if (!intrinsicArrayIsArray(input) || !isDenseArray(input) || input.length === 0) return undefined
     const wire = input as unknown[]
