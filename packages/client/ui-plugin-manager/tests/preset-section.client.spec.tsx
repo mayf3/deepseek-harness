@@ -37,7 +37,7 @@ function pkg(overrides: Partial<PluginPackageView> = {}): PluginPackageView {
     cordisSameCopy: true,
     rows: [],
     overrides: [],
-    addable: [{ moduleName: 'dsh-tool-foo', declaredName: '.', ok: true }],
+    addable: [{ moduleName: 'dsh-tool-foo', declaredName: '.' }],
     liveReload: true,
     ...overrides,
   }
@@ -120,7 +120,7 @@ describe('PresetPluginsSection', () => {
       packages: [
         pkg({ title: 'Foo tool', description: 'A foo.' }),
         pkg({ name: '@fixture/extra', addable: [] }),
-        pkg({ name: 'multi', addable: [{ moduleName: 'multi/a', declaredName: './a', title: 'A tool', ok: true }] }),
+        pkg({ name: 'multi', addable: [{ moduleName: 'multi/a', declaredName: './a', title: 'A tool' }] }),
       ],
       presets: [preset({ rows })],
     })
@@ -167,9 +167,9 @@ describe('PresetPluginsSection', () => {
           name: 'multi',
           title: 'Multi',
           addable: [
-            { moduleName: 'multi/a', declaredName: './a', title: 'A tool', ok: true },
-            { moduleName: 'multi/b', declaredName: './b', ok: true },
-            { moduleName: 'multi/c', declaredName: './c', ok: false, error: 'cannot import' },
+            { moduleName: 'multi/a', declaredName: './a', title: 'A tool' },
+            { moduleName: 'multi/b', declaredName: './b' },
+            { moduleName: 'multi/c', declaredName: './c' },
           ],
         }),
       ],
@@ -177,11 +177,11 @@ describe('PresetPluginsSection', () => {
     })
     const add = screen.getByRole('button', { name: 'Add a capability to 标准' })
     fireEvent.click(add)
-    // The module the preset carries and the one that cannot import are left out.
+    // Declared modules remain addable until this preset already carries them.
     expect(screen.getByRole('menuitem', { name: 'Foo tool' })).toBeTruthy()
     expect(screen.getByRole('menuitem', { name: 'Multi · ./b' })).toBeTruthy()
     expect(screen.queryByRole('menuitem', { name: 'A tool' })).toBeNull()
-    expect(screen.getAllByRole('menuitem')).toHaveLength(2)
+    expect(screen.getAllByRole('menuitem')).toHaveLength(3)
     fireEvent.click(screen.getByRole('menuitem', { name: 'Multi · ./b' }))
     expect(actions.addRow).toHaveBeenCalledWith('multi', './b', TARGET)
     expect(screen.queryByRole('menuitem')).toBeNull()
@@ -190,6 +190,7 @@ describe('PresetPluginsSection', () => {
     set({ presets: [preset({ rows: [
       { entryId: 'sub', moduleName: 'multi/a', enabled: true, fiberPhase: null, source: 'user' },
       { entryId: 'b', moduleName: 'multi/b', enabled: true, fiberPhase: null, source: 'user' },
+      { entryId: 'c', moduleName: 'multi/c', enabled: true, fiberPhase: null, source: 'user' },
       { entryId: 'foo', moduleName: 'dsh-tool-foo', enabled: true, fiberPhase: null, source: 'user' },
     ] })] })
     fireEvent.click(add)

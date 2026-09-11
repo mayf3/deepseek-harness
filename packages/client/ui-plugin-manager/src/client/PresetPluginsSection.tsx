@@ -38,7 +38,7 @@ function addChoices(packages: readonly PluginPackageView[], preset: PresetGroup,
   for (const pkg of packages) {
     const title = pkg.title ?? shortName(pkg.name)
     for (const entry of pkg.addable) {
-      if (!entry.ok || carried.has(entry.moduleName)) continue
+      if (carried.has(entry.moduleName)) continue
       items.push({
         id: JSON.stringify({ packageName: pkg.name, declaredName: entry.declaredName } satisfies AddChoice),
         label: entry.title ?? (entry.declaredName === '.' ? title : `${title} · ${entry.declaredName}`),

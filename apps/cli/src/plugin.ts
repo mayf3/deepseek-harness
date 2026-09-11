@@ -2,9 +2,8 @@
  * `dsh plugin --profile <name> <args...>` — profile plugin management from
  * the terminal. `add <spec...>` and `remove <name...>` go through the plugin
  * installer the Web host shares: pnpm runs in the profile directory, every
- * new package is probed, a package that declares neither a bundle nor a
- * plugin module (or whose row id a composed layer already owns) is removed
- * again with the reason printed, and every newly installed bundle joins the
+ * new package is read statically, a conflicting bundle is removed with its
+ * reason printed, undeclared packages remain installed, and every new bundle joins the
  * layer list — the CLI's install-and-enable semantics. Every other pnpm verb
  * is forwarded verbatim and followed by a reconcile of the
  * `dsh.profile.bundles` layer list against the installed state, so `update`
@@ -26,7 +25,7 @@ import {
   readProfileManifest,
   reconcileInstalledBundles,
   resolveProfileDir,
-  type probePackage,
+  type readPackageMetadata,
   type ProfileManifest,
 } from '@deepseek-ai/dsh-app-boot'
 import {
@@ -37,12 +36,12 @@ import { INSTALL_ANCHOR } from './profile-boot.ts'
 const NAME = 'dsh'
 
 /** The tooling bounds the command runs with; the Web host reads the same values from its config. */
-const TOOLING: PluginToolingConfig = { pnpmCommand: 'pnpm', installTimeoutMs: 600_000, probeTimeoutMs: 20_000, installLogTailBytes: 16_384 }
+const TOOLING: PluginToolingConfig = { pnpmCommand: 'pnpm', installTimeoutMs: 600_000, installLogTailBytes: 16_384 }
 
-/** Test seams: the child spawner and the package probe, so no pnpm or probe child runs. */
+/** Test seams: the child spawner and the static metadata reader. */
 export interface PluginCommandInternals {
   spawn?: SpawnLike
-  probe?: typeof probePackage
+  metadata?: typeof readPackageMetadata
 }
 
 /**

@@ -47,8 +47,6 @@ export interface PluginToolingConfig {
   readonly pnpmCommand: string
   /** Bound on one install or remove run, in milliseconds. */
   readonly installTimeoutMs: number
-  /** Bound on one package probe, in milliseconds. */
-  readonly probeTimeoutMs: number
   /** How many trailing bytes of an install run's output an install failure reports. */
   readonly installLogTailBytes: number
 }

@@ -146,7 +146,7 @@ describe('web e2e: plugin manager', () => {
     await expect.poll(() => toggle.getAttribute('aria-checked'), { timeout: 10_000 }).toBe('true')
     await panel.getByText('以下更改会在下次启动生效：示例组合包').waitFor({ timeout: 10_000 })
     expect(await panel.getByText('需重启', { exact: true }).count()).toBe(1)
-    // The pack's page lists its rows from the probe. A profile that applies
+    // The pack's page lists its rows from its static declarations. A profile that applies
     // patches at its next start keeps them read-only: no row switch.
     await panel.getByRole('button', { name: '查看 示例组合包' }).click()
     await panel.locator('[data-plugin-row]', { hasText: 'fixture-row' }).waitFor({ timeout: 10_000 })

@@ -99,6 +99,37 @@ describe('locale dictionaries', () => {
 })
 
 describe('PluginManagerPage', () => {
+  it('keeps a non-dependency override failure visible even when owned rows are waiting', () => {
+    renderTab({ packages: [pkg({
+      name: 'overrides', title: 'Overrides', enabled: true, status: 'partial',
+      rows: [{ entryId: 'wait', rowId: 'wait', moduleName: 'overrides', enabled: true, phase: 'pending' }],
+      issues: [{ entryId: 'include:core', moduleName: 'core', stage: 'update', message: 'Rejected config' }],
+    })] })
+    expect(screen.getByText(en.statusProblem)).toBeTruthy()
+    expect(screen.queryByText(en.statusWaiting)).toBeNull()
+  })
+
+  it('shows an active old instance with its failed update and identifies affected external rows', () => {
+    const { set } = renderTab({ packages: [pkg({
+      name: 'updates', title: 'Updates', enabled: true, status: 'partial',
+      rows: [{ entryId: 'include:own', rowId: 'own', moduleName: 'updates', enabled: true, phase: 'active', failure: { stage: 'update', message: 'Invalid updated config' } }],
+      issues: [
+        { entryId: 'include:own', moduleName: 'updates', stage: 'update', message: 'Invalid updated config' },
+        { entryId: 'include:webserver', moduleName: 'webserver', stage: 'update', message: 'Invalid port' },
+      ],
+    })] })
+    fireEvent.click(screen.getByRole('button', { name: 'View Updates' }))
+    expect(screen.getByText(en.rowUpdateFailed)).toBeTruthy()
+    expect(screen.getByText('Invalid updated config')).toBeTruthy()
+    expect(screen.getByText('include:webserver')).toBeTruthy()
+    expect(screen.getByText('Invalid port')).toBeTruthy()
+    expect(screen.getByText(en.partsCountRunning.replace('{count}', '1'), { exact: false })).toBeTruthy()
+    expect(screen.getByText(en.partsCountUpdateFailed.replace('{count}', '1'), { exact: false })).toBeTruthy()
+    set({ packages: [pkg({ name: 'updates', title: 'Updates', kind: 'unknown', status: 'plain', rows: [] })] })
+    expect(screen.getByText(en.unknownPackage)).toBeTruthy()
+    expect(screen.getByRole('button', { name: en.uninstallLabel.replace('{name}', 'Updates') })).toBeTruthy()
+  })
+
   it('asks the store once mounted and renders the loading, unavailable, error, and empty states', () => {
     const { actions, set } = renderTab({ status: 'loading' })
     expect(actions.ensure).toHaveBeenCalledTimes(1)
@@ -131,10 +162,10 @@ describe('PluginManagerPage', () => {
         pkg({ description: 'A sidebar.' }),
         firstPartyPackage,
         pkg({ name: 'unknown', trust: 'builtin', kind: 'plugin', status: 'plain' }),
-        pkg({ name: 'builtin-lib', trust: 'builtin', kind: 'library', status: 'plain' }),
+        pkg({ name: 'builtin-lib', trust: 'builtin', kind: 'unknown', status: 'plain' }),
         pkg({ name: 'broken-bundle', enabled: false, status: 'not-enableable', reason: 'foreign cordis' }),
         pkg({ name: 'dsh-tool-foo', kind: 'plugin', status: 'plain' }),
-        pkg({ name: 'some-lib', kind: 'library', status: 'plain' }),
+        pkg({ name: 'some-lib', kind: 'unknown', status: 'plain' }),
         pkg({ name: 'pending-bundle', title: 'Pending', enabled: true, status: 'restart-required' }),
         pkg({ name: 'dsh-untitled', enabled: false, status: 'restart-required', installed: false }),
         pkg({ name: 'off-bundle', enabled: false, status: 'disabled' }),
@@ -358,13 +389,13 @@ describe('PluginManagerPage', () => {
         pkg({
           name: 'dsh-tool-foo', kind: 'plugin', status: 'plain', title: 'Foo tools', reason: 'one module refused',
           addable: [
-            { moduleName: 'dsh-tool-foo', declaredName: '.', ok: true },
-            { moduleName: 'dsh-tool-foo/bar', declaredName: 'bar', title: 'Bar', ok: true },
-            { moduleName: 'dsh-tool-foo/broken', declaredName: 'broken', ok: false, error: 'no default export' },
-            { moduleName: 'dsh-tool-foo/silent', declaredName: 'silent', ok: false },
+            { moduleName: 'dsh-tool-foo', declaredName: '.' },
+            { moduleName: 'dsh-tool-foo/bar', declaredName: 'bar', title: 'Bar' },
+            { moduleName: 'dsh-tool-foo/broken', declaredName: 'broken' },
+            { moduleName: 'dsh-tool-foo/silent', declaredName: 'silent' },
           ],
         }),
-        pkg({ name: 'dsh-tool-bare', kind: 'plugin', status: 'plain', addable: [{ moduleName: 'dsh-tool-bare', declaredName: '.', ok: true }] }),
+        pkg({ name: 'dsh-tool-bare', kind: 'plugin', status: 'plain', addable: [{ moduleName: 'dsh-tool-bare', declaredName: '.' }] }),
       ],
       presets: [
         preset({ rows: [{ entryId: 'preset:foo', moduleName: 'dsh-tool-foo', source: 'user', enabled: true, fiberPhase: null }] }),
@@ -380,12 +411,12 @@ describe('PluginManagerPage', () => {
     const moduleText = (name: string): string | undefined => document.querySelector(`[data-plugin-module="${name}"]`)?.textContent
     expect(moduleText('dsh-tool-foo')).toBe(`Foo toolsdsh-tool-foo${en.moduleJoined.replace('{targets}', `${en.joinedGlobal}, 标准`)}${en.addTo}`)
     expect(moduleText('dsh-tool-foo/bar')).toBe(`Bardsh-tool-foo/bar${en.moduleNotJoined}${en.addTo}`)
-    expect(document.querySelector('[data-plugin-module="dsh-tool-foo/broken"]')?.getAttribute('data-state')).toBe('failed')
-    expect(moduleText('dsh-tool-foo/broken')).toContain(en.moduleBroken.replace('{error}', 'no default export'))
-    expect(moduleText('dsh-tool-foo/silent')).toContain(en.moduleBroken.replace('{error}', ''))
-    // Only an importable module offers Add to…; the menu marks the targets it joined.
+    expect(document.querySelector('[data-plugin-module="dsh-tool-foo/broken"]')?.getAttribute('data-state')).toBeNull()
+    expect(moduleText('dsh-tool-foo/broken')).toContain(en.moduleNotJoined)
+    expect(moduleText('dsh-tool-foo/silent')).toContain(en.moduleNotJoined)
+    // Every declared module offers Add to…; targets already joined stay marked.
     const menus = screen.getAllByRole('button', { name: en.addTo })
-    expect(menus).toHaveLength(2)
+    expect(menus).toHaveLength(4)
     fireEvent.click(menus[0] as HTMLElement)
     expect(screen.getByRole('menuitem', { name: en.addToGlobalAdded })).toBeTruthy()
     expect(screen.getByRole('menuitem', { name: en.addToPresetAdded.replace('{name}', '标准') })).toBeTruthy()
@@ -410,15 +441,15 @@ describe('PluginManagerPage', () => {
   it('offers Add to… for a plugin with importable modules, marking the targets it already joined', () => {
     const { actions } = renderTab({
       packages: [
-        pkg({ name: 'dsh-tool-foo', kind: 'plugin', status: 'plain', addable: [{ moduleName: 'dsh-tool-foo', declaredName: '.', ok: true }] }),
+        pkg({ name: 'dsh-tool-foo', kind: 'plugin', status: 'plain', addable: [{ moduleName: 'dsh-tool-foo', declaredName: '.' }] }),
         pkg({
           name: 'multi',
           kind: 'plugin',
           status: 'plain',
           addable: [
-            { moduleName: 'multi/a', declaredName: './a', title: 'A tool', ok: true },
-            { moduleName: 'multi/b', declaredName: './b', ok: true },
-            { moduleName: 'multi/c', declaredName: './c', ok: false, error: 'cannot import' },
+            { moduleName: 'multi/a', declaredName: './a', title: 'A tool' },
+            { moduleName: 'multi/b', declaredName: './b' },
+            { moduleName: 'multi/c', declaredName: './c' },
           ],
         }),
         pkg({ name: 'unloadable', kind: 'plugin', status: 'plain', reason: 'the package failed to import: x' }),
@@ -452,7 +483,7 @@ describe('PluginManagerPage', () => {
     fireEvent.click(multi!)
     expect(screen.getByText('A tool')).toBeTruthy()
     expect(screen.getByText('./b')).toBeTruthy()
-    expect(screen.queryByText('./c')).toBeNull()
+    expect(screen.getByText('./c')).toBeTruthy()
   })
 
   it('drives the install dialog through its phases and words each outcome', () => {
@@ -509,7 +540,7 @@ describe('PluginManagerPage', () => {
         installedOnly: ['b'],
         plain: ['c'],
         removed: [
-          { name: 'lodash', reason: 'declares neither a dsh bundle nor a plugin module' },
+          { name: 'invalid-bundle', reason: 'invalid stage' },
           { name: 'clash', reason: 'row "x" is already declared by y' },
         ],
       },
@@ -518,7 +549,7 @@ describe('PluginManagerPage', () => {
     expect(screen.getByText(en.installDoneBundle.replace('{name}', 'b'))).toBeTruthy()
     expect(screen.getByText(en.installDonePlugin.replace('{name}', 'c'))).toBeTruthy()
     expect(screen.getByText(en.installDoneOther.replace('{name}', 'd'))).toBeTruthy()
-    expect(screen.getByText(en.installRemovedLibrary.replace('{name}', 'lodash'))).toBeTruthy()
+    expect(screen.getByText(en.installRemovedInvalid.replace('{name}', 'invalid-bundle').replace('{reason}', 'invalid stage'))).toBeTruthy()
     expect(screen.getByText(en.installRemovedConflict.replace('{name}', 'clash').replace('{reason}', 'row "x" is already declared by y'))).toBeTruthy()
     // A finished run leaves Done as the only action.
     expect(screen.getByRole('button', { name: en.installClose })).toBeTruthy()

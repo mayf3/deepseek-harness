@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { Context, Service } from '@deepseek-ai/cordis'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { cleanup } from '@testing-library/react'
+import { cleanup, render } from '@testing-library/react'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import { SlotRegistry } from '@deepseek-ai/dsh-client-ui-renderer/client'
 import { resolveSlotLabel } from '@deepseek-ai/dsh-client-ui-slots'
@@ -69,6 +69,10 @@ describe('ui-plugin-manager browser plugin', () => {
     // The sidebar entry addresses the page by the same id and speaks the dictionary.
     const icon = b.slots.entries('sidebar.panellist')[0]!
     expect(icon.component).toBe(PluginsPanelIcon)
+    const unread = () => { throw new Error('The sidebar icon must not read application state') }
+    const glyph = render(<PluginsPanelIcon size={18} active={false}
+      usePanelInfo={unread} useSessions={unread} useSessionPendingInteraction={unread} useWorkspaces={unread} useResource={unread} />)
+    expect(glyph.container.querySelector('svg')?.getAttribute('width')).toBe('18')
     expect(icon.options).toMatchObject({ id: PANEL_ID, order: 0 })
     expect(icon.locale).toBe(NS)
     expect(resolveSlotLabel(icon.options.label)).toBe('插件')

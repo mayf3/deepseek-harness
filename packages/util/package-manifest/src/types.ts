@@ -34,9 +34,9 @@ export interface DshManifest {
   profile?: DshProfileManifest
   /** Client module loading and build metadata. */
   client?: DshClientManifest
-  /** Display title of the package, read by the package probe. */
+  /** Display title of the package, read without executing package code. */
   title?: string
-  /** Agent-plane modules the package declares addable to a composition, read by the package probe. */
+  /** Agent-plane modules the package declares addable to a composition, read without executing package code. */
   plugins?: DshPluginDeclaration[]
 }
 
@@ -53,16 +53,16 @@ export interface DshEnginesManifest {
 }
 
 /**
- * How an external bundle joins the tree. `runtime` (the default) mounts its
- * rows in a contained group: a failing row is isolated and recorded, and a
- * row id another layer owns leaves the bundle out. `boot` mounts them like
- * built-in rows: they claim ids first, and a failure stops the process.
+ * Startup policy for an external bundle. `runtime` (the default) permits
+ * failed rows while retaining successful siblings; conflicting row ids omit
+ * the whole bundle. `boot` rows are required and claim ids with built-in layers.
+ * This field does not delay execution until after startup.
  */
 export type BundleStage = 'boot' | 'runtime'
 
 /** One agent-plane module a package declares addable to a composition. */
 export interface DshPluginDeclaration {
-  /** The module's subpath or bare specifier, importable from the package. */
+  /** The package's export subpath, with `.` naming its main entry and `./tools` a subpath. */
   name: string
   /** Display title. */
   title?: string

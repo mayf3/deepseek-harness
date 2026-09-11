@@ -1,26 +1,12 @@
-/**
- * The `profileRuntime` service: the booted profile's facts and the one
- * recomposition entry point every live change to the host tree goes through —
- * user patch-file reloads, bundle enable/disable, and hot install. A
- * recomposition composes a candidate stack, applies it through the root
- * include, and publishes the profile, the stack's id ownership, and its
- * conflicts only once the include accepted it; a rejected update leaves the
- * committed composition in place, which describes the tree still running.
- * Recompositions run one at a time: each reads the committed composition
- * only after the previous one settled, so a watcher firing while a bundle is
- * being enabled recomposes the enabled tree instead of the one before it.
- * Before this service the composition closure lived in the launcher and
- * bundle layers were frozen at boot, so nothing in the tree could learn which
- * profile it ran in or add a layer while running.
- * @module @deepseek-ai/dsh-app-boot/profile-runtime
- */
+/** Serialized profile recomposition with declared provenance and observed per-entry outcomes. */
 
 import { Context, Service } from '@deepseek-ai/cordis'
 import type { Entry } from '@deepseek-ai/cordis-plugin-loader'
 import type Include from '@deepseek-ai/cordis-plugin-include'
-import type { ProfilePatchReload } from '@deepseek-ai/dsh-package-manifest'
+import type { BundleStage, ProfilePatchReload } from '@deepseek-ai/dsh-package-manifest'
 import type { ComposedStack, RowConflict } from './compose-stack.ts'
 import type { BundleTrust, Profile, ProfileLayer } from './profile.ts'
+import { inspectEntryIssues, type EntryIssue } from './entry-issues.ts'
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
@@ -33,6 +19,8 @@ declare module '@deepseek-ai/cordis' {
 export interface RowOrigin {
   /** Who supplied the layer that inserted the row. */
   readonly trust: BundleTrust
+  /** Effective startup-failure policy of the supplying bundle. */
+  readonly stage: BundleStage
   /** The bundle package that inserted the row. */
   readonly packageName: string
   /** The package's version, when its manifest declares one. */
@@ -122,9 +110,25 @@ export class ProfileRuntime extends Service {
     if (layer === undefined) return undefined
     return {
       trust: layer.trust,
+      stage: layer.stage,
       packageName: layer.packageName,
       ...layer.version === undefined ? {} : { version: layer.version },
     }
+  }
+
+  /**
+   * Resolve provenance within its Loader tree; nested includes inherit their owning entry.
+   * @param entry - the live entry, including an entry inside another Include.
+   * @returns its supplying bundle, or undefined for a user-owned entry.
+   */
+  originOfEntry(entry: Entry): RowOrigin | undefined {
+    const rootTree = this.options.rootEntry()?.subtree
+    let current: Entry | undefined = entry
+    while (current !== undefined) {
+      if (current.parent.tree === rootTree) return this.originOf(current.options.id)
+      current = current.parent.tree.ctx.fiber.entry
+    }
+    return undefined
   }
 
   /**
@@ -151,40 +155,50 @@ export class ProfileRuntime extends Service {
   }
 
   /**
-   * Recompose the host tree from the profile's layers and the user patch files
-   * as they stand now. The root Include re-applies the stack transactionally:
-   * a row whose options changed is updated in place, a row that appeared is
-   * created, a row that vanished is disposed, and a failure rolls the whole
-   * update back with the previous tree still running. The candidate profile,
-   * its ownership, and its conflicts become the committed composition only
-   * once the update holds; until then, and after a rejection, `current`,
-   * `layers`, `originOf`, and `conflicts` keep describing the running tree.
-   * Calls queue: one that arrives while another is in flight starts after it
-   * settled and reads what it committed. A rejection is that call's outcome
-   * alone and does not stop the ones behind it.
-   * @param options - `reloadBundles` re-reads the profile manifest first, so a
-   * bundle enabled or installed since boot joins the stack.
-   * @throws when the root include is not mounted, or the Loader rejected the update.
+   * Apply a fresh profile stack and wait for live entries and removed fibers to settle.
+   * Parse/composition failures leave the applied stack unchanged. Accepted options
+   * can coexist with failed entries or fibers running their previous valid config.
+   * Calls serialize; a failed call does not block later changes.
+   * @param options - whether to reread installed bundle layers from disk.
+   * @returns current entry issues after application, without rolling back successful siblings.
+   * @throws when preparation fails or the root Include cannot accept the update.
    */
-  async recompose(options: { reloadBundles?: boolean } = {}): Promise<void> {
+  async recompose(options: { reloadBundles?: boolean } = {}): Promise<readonly EntryIssue[]> {
     const run = this.queue.then(() => this.recomposeNow(options))
     this.queue = run.then(() => undefined, () => undefined)
     return run
   }
 
-  private async recomposeNow(options: { reloadBundles?: boolean }): Promise<void> {
+  private async recomposeNow(options: { reloadBundles?: boolean }): Promise<readonly EntryIssue[]> {
     const entry = this.options.rootEntry()
     if (entry === undefined) throw new Error('profileRuntime: the root include is not mounted')
     const profile = options.reloadBundles === true ? this.options.loadProfile() : this.committed.profile
     const stack = this.options.compose(profile)
     const { patches: _previousPatches, ...includeConfig } = entry.options.config as Include.Config
+    const before = [...this.ctx.loader.entries()].flatMap(row => row.fiber === undefined ? [] : [row.fiber])
     await entry.update({
       config: {
         ...includeConfig,
-        patches: stack.patches,
+        patches: structuredClone(stack.patches),
       },
     })
+    await this.ctx.loader.await()
+    const current = new Set([...this.ctx.loader.entries()].map(row => row.fiber))
+    // Removed entries are absent from Loader.getTasks(), but still own teardown.
+    await Promise.allSettled(before.filter(fiber => fiber.uid === null || !current.has(fiber)).map(fiber => fiber.await()))
+    await this.ctx.loader.await()
     this.committed = { profile, stack }
+    return inspectEntryIssues(this.ctx)
+  }
+
+  /**
+   * Wait for recompositions already queued when called, including removed-fiber cleanup.
+   * Observers may read accepted composition facts afterwards; a failed operation
+   * still reports its error to its caller and does not reject this observation.
+   * @returns after the current recomposition queue settles.
+   */
+  whenIdle(): Promise<void> {
+    return this.queue
   }
 }
 

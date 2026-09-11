@@ -29,11 +29,11 @@ Select **Plugins** in the sidebar. The page reads no Remote during plugin activa
 
 ### Installing a package
 
-**Add plugin** opens the install dialog. Enter what pnpm accepts — `dsh-better-sidebar@latest`, `/path/to/plugin`, a Git URL — and choose whether a newly installed pack is enabled right away. The dialog shows the run's progress as one terminal per pnpm command — the command line, pnpm's output streaming in with its colours, the exit code when it is not zero — and cannot be closed while the run is in flight. A line above the terminals names the profile directory pnpm installs into, and a finished run leaves **Done** as the only action until the spec changes, which starts the dialog over. Once pnpm exits, one sentence per package says what happened: a pack installed and enabled, a pack installed and waiting for its switch, a plugin installed and ready to join a preset, a package that is not a DSH plugin removed again, or a pack removed again because its row id conflicts with an installed one — the last with the Host's reason. A run or any other action the Host refuses because another change is still running, or because a session is running, shows that refusal in the Host's words.
+**Add plugin** accepts a pnpm package spec, local path or Git URL. The dialog shows the command, streamed output, and completion result, and stays open during installation. New bundles can be enabled immediately. Undeclared packages remain installed; invalid or conflicting bundle declarations may be rejected with the Host’s reason. A successful installation does not certify that a module can activate.
 
 ### Switching a plugin pack
 
-A pack's switch calls `plugins.enable` or `plugins.disable`. On a live-reload profile the tree recomposes before the switch settles; a profile that applies layer changes at its next start reports the change as *restart needed*, and the page names every such package in a banner until the restart. A pack the probe refused reads as a *problem* with the probe's reason in its expanded card and cannot be switched on; a pack whose components failed offers **Retry** in its expanded card, beside **Uninstall**. A built-in pack carries a locked switch. A disable first asks the Host what it would strand, with the switch inert meanwhile, and opens the confirmation only when something does.
+A pack’s switch changes its enabled layer selection. Live profiles recompose before the operation completes; startup-only profiles show a restart notice. Runtime failures leave successful components active and keep the pack enabled, with **Retry** and **Uninstall** on its page. Unreadable bundle declarations prevent enabling. Built-in packs have locked switches. Disabling first checks dependents and asks for confirmation when needed.
 
 ### Switching one row of a pack
 
@@ -41,11 +41,11 @@ A row's switch on the pack's page calls `plugins.setRowDisabled` against the pro
 
 ### Adding a plugin to a preset
 
-A plugin's card carries **Add to…**, listing every session and each preset; a target the plugin already joined is marked and disabled, and a package that declares several importable modules nests the targets under each module. The choice writes a row naming the module into the global user patch file or one preset's, through `plugins.addRow`. A preset's composition is managed on the preset's own detail page in the Agent presets section, where this package contributes the **Capabilities** section: one card per row with its switch, **Delete** on a row the person added, and an **Add** menu over the installed modules the preset does not carry yet. A switch writes `disabled: true` into that preset's user patch layer or removes the key again — a row the preset itself switched off stays locked, because the layer can only deny. Running and off are what the switch shows; no card tags them. Rows that declare no id cannot be switched.
+A package with explicit plugin declarations offers **Add to…** for every declared entry, including a declared main export. The menu marks targets already joined. Addition writes a global or preset user patch; it performs no import precheck. A package with no recognized declaration has no Add action and remains uninstallable. Preset rows are managed in the preset detail page’s **Capabilities** section, where switches write or remove the user’s `disabled: true` override and **Delete** removes a user insert.
 
 ### Reading a failure
 
-What the last action left to say sits above the groups: a restart notice, or the failure with the Host's own reason — a probe refusal, a rejected recomposition, a row id already taken. Dismiss it or let the next action replace it. A row waiting for a service another row provides — one the person switched off, say — reads as *waiting for a dependency* on the row and on its pack's tag, whether a live recomposition left its fiber pending or a fresh composition recorded the wait as a failure; the red *problem* is kept for a real failure.
+The page separates enablement, running phase and current issues. A missing service reads as *waiting for a dependency*. A row whose old instance remains active after invalid configuration reads *Running; latest update failed* with the actual error. The pack detail also identifies issues in other components its patch affects, preserving their original ownership. Runtime changes refresh the page after Loader and profile recomposition settle. Action refusals retain the Host’s reason.
 
 -----
 

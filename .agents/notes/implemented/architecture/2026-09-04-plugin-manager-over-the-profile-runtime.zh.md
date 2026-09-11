@@ -4,6 +4,8 @@ Status: implemented
 
 [English](2026-09-04-plugin-manager-over-the-profile-runtime.md) | 中文
 
+本文中的启用事务、contained 失败记录和执行 probe 已由[原生条目诊断与静态声明](2026-09-11-native-entry-diagnostics-and-static-plugin-declarations.zh.md)取代。管理器与 Remote 的拆分、pnpm 进程选择、修改互斥和 patch 文件归属仍然适用。
+
 ## 问题
 
 安装插件曾是只有终端能做的事：`dsh plugin --profile web add <spec>` 运行 pnpm，把找到的每个组合包追加进 `dsh.profile.bundles`，下次启动再组合。运行中的任何东西都无法得知哪些包装了但没启用，无法不手改 `package.json` 就关掉一个组合包，无法把某个包的模块加进 profile 的用户层或某个 agent preset，也说不出一个包的服务撑着哪些行。Web 界面能经 `pluginInventory/list` 列出行，仅此而已；而 launcher 的 `profileRuntime`（前一篇笔记）已经能在用户 patch 重载时重新组合树，`reconcileInstalledBundles` 也已经把安装与启用分开。缺的是执行这些操作并把每个包报告成一个整体的宿主服务。
@@ -38,4 +40,4 @@ Status: implemented
 
 ## 测试
 
-`packages/boot/plugin-manager/tests/plugin-manager.spec.ts` 经 `boot()` 启动一个临时 profile，带上 launcher 提供的 profile runtime 与一个按真实 pnpm 的方式编辑 manifest 的假 pnpm：视图折叠（已安装、已启用、已探测、等待中、用户停用、一方包、手写 manifest），带与不带启用的安装及其失败（退出码、spawn 错误、超时、日志尾部、失败后恢复的 manifest），装后移除库包与行 id 被别的层占有的组合包而探针拒绝的包保留，一次只跑一个变更的拒绝与会话运行中的拒绝，live 与 `startup` profile 上的启用与停用，boot 阶段的回滚，不稳定隔离行的重试，全局层与 preset 层里的行及其冲突，按提供服务与按用户层引用的依赖检测，以及卸载。`packages/host/plugin-manager/tests/plugin-manager.spec.ts` 钉住转接层：每个 Remote 方法及其参数、每个 `plugins/*` 码以失败为 cause 过线成 Remote 错误、通用拒绝过线成 `gateway/bad-request`，以及读向上下文的读取器。`apps/cli/tests/plugin.spec.ts` 用假 pnpm 与假探针钉住经安装器的 `dsh plugin add` 与 `remove`：新组合包被启用、普通库带原因被再移除，以及 pnpm 失败或缺失时的退出码。`packages/boot/app-boot/tests/contained-group.spec.ts` 钉住等待中的行记录跨重载保留。
+`packages/boot/plugin-manager/tests/plugin-manager.spec.ts` 覆盖实际 profile 文件与原生 Loader 树上的管理操作。Host 适配器测试覆盖直接转接、错误码与依赖恢复通知；`apps/cli/tests/plugin.spec.ts` 覆盖共用安装器。生命周期与静态发现的验证遵循取代这些机制的新笔记。

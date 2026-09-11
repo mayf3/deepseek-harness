@@ -27,7 +27,6 @@
   },
   "files": [
     "lib/index.js",
-    "lib/probe-child.js",
     "lib/patch-file.js",
     "lib/types/**/*.d.ts"
   ],

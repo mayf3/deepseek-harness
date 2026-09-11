@@ -6,6 +6,11 @@
   "type": "module",
   "main": "index.js",
   "dsh": {
-    "title": "示例插件"
+    "title": "示例插件",
+    "plugins": [
+      {
+        "name": "."
+      }
+    ]
   }
 }

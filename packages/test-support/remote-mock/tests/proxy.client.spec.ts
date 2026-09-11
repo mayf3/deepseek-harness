@@ -2,7 +2,7 @@
 import { describe, expect, it, onTestFinished, vi } from 'vitest'
 import { RemoteMock, frames, ok, openStream, type StreamHandle } from '../src/index.ts'
 
-const describeValue = (hasDocument: boolean) => ok({ writable: true, hasDocument, namespaces: [] })
+const describeValue = (hasDocument: boolean) => ok({ writable: true, hasDocument, namespaces: [], scopes: [] })
 const baseline = { type: 'baseline' as const, value: { queues: {}, jobs: {}, projections: {} } }
 
 async function drain(source: AsyncIterable<unknown>): Promise<unknown[]> {
@@ -36,7 +36,7 @@ describe('RemoteMock.remote unary proxies', () => {
   it('consumes native one-shot answers in FIFO order across direct and carrier calls, then uses the default handler', async () => {
     const fallback = describeValue(false)
     const local = describeValue(true)
-    const dispatched = { ...describeValue(false), value: { writable: false, hasDocument: false, namespaces: [] } }
+    const dispatched = { ...describeValue(false), value: { writable: false, hasDocument: false, namespaces: [], scopes: [] } }
     const carrier = describeValue(true)
     const handler = vi.fn(() => fallback)
     const mock = RemoteMock.create().unary('settings/describe', handler)
@@ -58,7 +58,7 @@ describe('RemoteMock.remote unary proxies', () => {
   it('records every business argument while the carrier keeps its signal out of positional args', async () => {
     const mock = RemoteMock.create()
     const mutate = mock.remote.settings.mutate
-    const result = ok({ ns: 'locale', schema: {}, value: { preference: 'en' }, applies: 'live' as const, secrets: [], revision: 8 })
+    const result = ok({ ns: 'locale', registered: true, schema: {}, value: { preference: 'en' }, applies: 'live' as const, secrets: [], revision: 8 })
     const ops = [{ op: 'set' as const, path: ['preference'], value: 'en' }]
     mutate.mockResolvedValue(result)
 
@@ -76,7 +76,7 @@ describe('RemoteMock.remote unary proxies', () => {
     const a = RemoteMock.create().load(table)
     const b = RemoteMock.create().load(table)
     const first = describeValue(true)
-    const second = { ...describeValue(true), value: { writable: false, hasDocument: true, namespaces: [] } }
+    const second = { ...describeValue(true), value: { writable: false, hasDocument: true, namespaces: [], scopes: [] } }
     a.remote.settings.describe.mockResolvedValueOnce(first)
     b.remote.settings.describe.mockResolvedValueOnce(second)
 
@@ -90,7 +90,7 @@ describe('RemoteMock.remote unary proxies', () => {
   it('keeps queued overrides on mockClear and restores the live default rule on mockReset', async () => {
     const original = describeValue(false)
     const updated = describeValue(true)
-    const override = { ...describeValue(false), value: { writable: false, hasDocument: false, namespaces: [] } }
+    const override = { ...describeValue(false), value: { writable: false, hasDocument: false, namespaces: [], scopes: [] } }
     const mock = RemoteMock.create().unary('settings/describe', original)
     const describe = mock.remote.settings.describe
     await describe()

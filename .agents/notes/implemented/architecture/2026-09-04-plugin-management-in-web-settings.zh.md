@@ -24,6 +24,8 @@ Status: implemented
 
 **web e2e 脚手架可以挂 profile runtime。** `launchWebScaffold({ profileRuntime })` 把 fixture 包链接进脚手架 profile，并以 `patchReload: 'startup'` 在其上挂载 `ProfileRuntime`，于是管理器有 profile 可管，而启动好的树在场景之下绝不重新组合。
 
+包发现与运行健康遵循[原生条目诊断与静态声明](2026-09-11-native-entry-diagnostics-and-static-plugin-declarations.zh.md)。每个声明模块均可添加，不依赖执行预检结论；未知包保持已安装。活跃行仍显示更新失败，失败的覆盖会标识目标条目而不转移归属。
+
 ## 考虑过的替代方案
 
 **在 `ui-settings` 内部放一个全局的 scope 选择。** 否决：插件标签页之外的表面绑定的是仅全局的命名空间，页面级选择会把它们改指向别处。

@@ -6,7 +6,7 @@
  * a restart is pending or something is wrong; the install dialog streaming
  * pnpm's output behind a fold; and the confirmation a destructive action
  * waits on, naming what still uses the package. Entry ids, module names,
- * kinds, and probe facts stay off the page. A card opens the package's own
+ * and module names stay in the detail view. A card opens the package's own
  * page: its version and source, its rows — each with its own switch on an
  * external pack composed on a live-reload profile — the built-in rows it
  * changes, the modules it declares addable, and its uninstall. A preset's
@@ -94,20 +94,23 @@ function isWaitingRow(row: RowView): boolean {
 
 /** A row with a recorded startup failure or a failed fiber; a wait for a service is not a failure. */
 function isFailedRow(row: RowView): boolean {
-  if (row.phase === 'active') return false
+  if (row.phase === 'active' && row.failure?.stage === 'inject-pending') return false
   return !isWaitingRow(row) && (row.failure !== undefined || row.phase === 'failed')
 }
 
 /** The tag one package carries: a pending restart, rows waiting for a service, a problem, or none. */
 function cardStatus(pkg: PluginPackageView): CardStatus | null {
   const base = pkg.kind === 'bundle' ? STATUS_OF[pkg.status] : pkg.reason === undefined ? null : 'problem'
-  if (base === 'problem' && pkg.kind === 'bundle' && pkg.enabled && pkg.rows.some(isWaitingRow) && !pkg.rows.some(isFailedRow)) return 'waiting'
+  if (base === 'problem' && pkg.kind === 'bundle' && pkg.enabled
+    && pkg.rows.some(isWaitingRow) && !pkg.rows.some(isFailedRow)
+    && !pkg.issues?.some(issue => issue.stage !== 'inject-pending')) return 'waiting'
   return base
 }
 
 /** The count line over a pack's components: the total, then only the states that occur. */
 function partsSummary(rows: readonly RowView[], t: Translate): string {
-  const failed = rows.filter(isFailedRow).length
+  const failed = rows.filter(row => row.phase !== 'active' && isFailedRow(row)).length
+  const updateFailed = rows.filter(row => row.phase === 'active' && isFailedRow(row)).length
   const waiting = rows.filter(isWaitingRow).length
   const off = rows.filter(row => !row.enabled && !isFailedRow(row) && !isWaitingRow(row)).length
   const running = rows.filter(row => row.enabled && row.phase === 'active').length
@@ -117,6 +120,7 @@ function partsSummary(rows: readonly RowView[], t: Translate): string {
     ...waiting > 0 ? [t('partsCountWaiting', { count: String(waiting) })] : [],
     ...off > 0 ? [t('partsCountOff', { count: String(off) })] : [],
     ...failed > 0 ? [t('partsCountFailed', { count: String(failed) })] : [],
+    ...updateFailed > 0 ? [t('partsCountUpdateFailed', { count: String(updateFailed) })] : [],
   ].join(' · ')
 }
 
@@ -152,7 +156,7 @@ function RowSwitch({ row, t, toggle }: { readonly row: RowView; readonly t: Tran
 /** What a row's state line says: the failure, why it is off, or the phase its fiber is in. */
 function rowStateText(row: RowView, t: Translate): string {
   if (isWaitingRow(row)) return t('rowPhasePending')
-  if (isFailedRow(row)) return t('rowStateFailed')
+  if (isFailedRow(row)) return t(row.phase === 'active' ? 'rowUpdateFailed' : 'rowStateFailed')
   if (!row.enabled) return t(row.disabledBy === 'user' ? 'partDisabledByUser' : 'partDisabledByComposition')
   return row.phase === null ? t('rowStateIdle') : t(PHASE_KEYS[row.phase])
 }
@@ -227,7 +231,7 @@ function RowsSection({ rows, t, toggle }: {
                     </span>
                     {rowToggle === undefined ? null : <RowSwitch row={row} t={t} toggle={rowToggle} />}
                   </div>
-                  {row.failure === undefined || row.phase === 'active' ? null : <p className={css.rowFailure}>{row.failure.message}</p>}
+                  {row.failure === undefined || (row.phase === 'active' && !isFailedRow(row)) ? null : <p className={css.rowFailure}>{row.failure.message}</p>}
                 </li>
               )
             })}
@@ -284,46 +288,40 @@ function ModulesSection({ pkg, t, busy, presets, globalModules, presetName, onAd
           const joined = joinedTargets(entry, presets, globalModules, t, presetName)
           const open = openMenu === entry.moduleName
           return (
-            <li key={entry.moduleName} className={css.row} data-plugin-module={entry.moduleName} {...entry.ok ? {} : { 'data-state': 'failed' }}>
+            <li key={entry.moduleName} className={css.row} data-plugin-module={entry.moduleName}>
               <div className={css.rowLine}>
                 <span className={css.rowIcon} aria-hidden="true"><IconCordisPluginOutline14 /></span>
                 <div className={css.rowMain}>
                   <span className={css.rowId}>{entry.title ?? (entry.declaredName === '.' ? title : entry.declaredName)}</span>
                   <span className={css.rowModule}>{entry.moduleName}</span>
                   <span className={css.rowNote}>
-                    {entry.ok
-                      ? joined.length > 0 ? t('moduleJoined', { targets: joined.join(t('joinedSeparator')) }) : t('moduleNotJoined')
-                      : t('moduleBroken', { error: entry.error ?? '' })}
+                    {joined.length > 0 ? t('moduleJoined', { targets: joined.join(t('joinedSeparator')) }) : t('moduleNotJoined')}
                   </span>
                 </div>
-                {entry.ok
-                  ? (
-                    <Menu
-                      open={open}
-                      onClose={() => { setOpenMenu(null) }}
-                      items={addTargets(entry, presets, globalModules, t, presetName)}
-                      onSelect={(id) => {
-                        setOpenMenu(null)
-                        const choice = JSON.parse(id) as AddChoice
-                        onAddRow(choice.declaredName, choice.target)
-                      }}
-                      align="end"
-                      portal
-                      anchor={(
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          aria-haspopup="menu"
-                          aria-expanded={open}
-                          disabled={busy}
-                          onClick={() => { setOpenMenu(open ? null : entry.moduleName) }}
-                        >
-                          {t('addTo')}
-                        </Button>
-                      )}
-                    />
-                  )
-                  : null}
+                <Menu
+                  open={open}
+                  onClose={() => { setOpenMenu(null) }}
+                  items={addTargets(entry, presets, globalModules, t, presetName)}
+                  onSelect={(id) => {
+                    setOpenMenu(null)
+                    const choice = JSON.parse(id) as AddChoice
+                    onAddRow(choice.declaredName, choice.target)
+                  }}
+                  align="end"
+                  portal
+                  anchor={(
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      aria-haspopup="menu"
+                      aria-expanded={open}
+                      disabled={busy}
+                      onClick={() => { setOpenMenu(open ? null : entry.moduleName) }}
+                    >
+                      {t('addTo')}
+                    </Button>
+                  )}
+                />
               </div>
             </li>
           )
@@ -396,7 +394,7 @@ function PackageCard({ pkg, t, busy, presets, globalModules, presetName, onOpen,
   const title = pkg.title ?? shortName(pkg.name)
   const builtin = pkg.trust === 'builtin'
   const status = cardStatus(pkg)
-  const addable = pkg.addable.filter(entry => entry.ok)
+  const addable = pkg.addable
   const [single] = addable
   const menuItems: MenuItem[] = single !== undefined && addable.length === 1
     ? addTargets(single, presets, globalModules, t, presetName)
@@ -484,6 +482,7 @@ function PackageDetail({
   const status = cardStatus(pkg)
   const retryable = bundle && pkg.enabled && (pkg.status === 'failed' || pkg.status === 'partial')
   const removable = pkg.installed && !builtin
+  const affectedIssues = (pkg.issues ?? []).filter(issue => !pkg.rows.some(row => row.entryId === issue.entryId))
   // A row's switch acts at once only on an external pack composed on a
   // profile that applies patches while it runs; elsewhere the rows stay read-only.
   const switchable = bundle && !builtin && pkg.enabled && pkg.liveReload
@@ -526,12 +525,27 @@ function PackageDetail({
         </div>
       </div>
       {pkg.reason === undefined || status === 'waiting' ? null : <p className={css.reason} role="status">{t('reasonLabel')}: {pkg.reason}</p>}
+      {pkg.kind === 'unknown' ? <p className={css.detailDesc}>{t('unknownPackage')}</p> : null}
       <dl className={css.facts}>
         {pkg.version === undefined ? null : <><dt>{t('versionLabel')}</dt><dd>{pkg.version}</dd></>}
         <dt>{t('sourceLabel')}</dt>
         <dd>{t(builtin ? 'sourceBuiltin' : 'sourceExternal')}</dd>
       </dl>
       <div className={css.detailSections}>
+        {affectedIssues.length === 0 ? null : (
+          <section className={css.detailSection} data-plugin-affected-issues>
+            <h4 className={css.sectionTitle}>{t('affectedIssuesLabel')}</h4>
+            <ul className={css.rows}>
+              {affectedIssues.map(issue => (
+                <li key={issue.entryId} className={css.row}>
+                  <span className={css.rowId}>{issue.entryId}</span>
+                  <span className={css.rowModule}>{issue.moduleName}</span>
+                  <p className={css.rowFailure}>{issue.message}</p>
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
         {bundle
           ? (
             <RowsSection
@@ -564,7 +578,7 @@ function PackageDetail({
 function removedText(entry: PluginInstallRejection, t: Translate): string {
   return entry.reason.startsWith('row ')
     ? t('installRemovedConflict', { name: entry.name, reason: entry.reason })
-    : t('installRemovedLibrary', { name: entry.name })
+    : t('installRemovedInvalid', { name: entry.name, reason: entry.reason })
 }
 
 /** Output lines an install run's terminal shows before its middle folds: the first and last six of a long pnpm log. */

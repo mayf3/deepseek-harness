@@ -4,7 +4,7 @@
  * @module @deepseek-ai/dsh-plugin-manager/modules
  */
 
-import type { PluginProbe } from '@deepseek-ai/dsh-app-boot'
+import type { PackageMetadata } from '@deepseek-ai/dsh-app-boot'
 import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 import { optional } from './helpers.ts'
 import type { PluginPackageAddableView } from './types.ts'
@@ -32,41 +32,17 @@ export function derivedRowId(packageName: string, declared: string): string {
 }
 
 /**
- * The modules a package offers a composition: what it declares in
- * `dsh.plugins`, and — for a plugin module — its main export as `.`, the
- * implicit entry `PluginManager.addRow` accepts without a declaration.
+ * The wire view of one declared addable module.
  * @param packageName - the package.
- * @param probe - the package's probe record, when one exists.
- * @returns the declared modules, with `.` first for a plugin module that does not declare it.
- */
-export function addableViews(packageName: string, probe: PluginProbe | undefined): PluginPackageAddableView[] {
-  const declared = (probe?.addable ?? []).map(entry => addableView(packageName, entry))
-  if (probe?.kind !== 'plugin' || declared.some(entry => entry.declaredName === '.')) return declared
-  return [{
-    moduleName: packageName,
-    declaredName: '.',
-    ...optional('title', probe.title),
-    ok: probe.ok,
-    ...optional('error', probe.reason),
-    ...optional('configSchema', probe.configSchema as JsonValue | undefined),
-  }, ...declared]
-}
-
-/**
- * The wire view of one probed addable module.
- * @param packageName - the package.
- * @param entry - the probe's record of the declared module.
+ * @param entry - the installed manifest’s module declaration.
  * @returns the view.
  */
-export function addableView(packageName: string, entry: PluginProbe['addable'][number]): PluginPackageAddableView {
+export function addableView(packageName: string, entry: PackageMetadata['addable'][number]): PluginPackageAddableView {
   return {
     moduleName: moduleSpecifier(packageName, entry.name),
     declaredName: entry.name,
     ...optional('title', entry.title),
-    // The probe read both from JSON: a manifest field and a child's report.
+    // Config comes from the installed JSON manifest.
     ...optional('config', entry.config as JsonValue | undefined),
-    ok: entry.ok,
-    ...optional('error', entry.error),
-    ...optional('configSchema', entry.configSchema as JsonValue | undefined),
   }
 }

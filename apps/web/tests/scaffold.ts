@@ -741,17 +741,10 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
     // and a preset resolving package names from its own directory cannot reach
     // `@deepseek-ai/cordis-plugin-group` by name.
     ctx.loader.builtins.group = Group
-    const rootIncludeId = await ctx.loader.create({
-      name: 'cordis:include',
-      config: { path: pathToFileURL(rootConfig).href, patches },
-    })
-    await ctx.loader.await()
-    await auditStartupEntries(ctx, 'web e2e scaffold')
+    let rootIncludeId: string | undefined = undefined
     if (options.profileRuntime !== undefined) {
-      // The launcher mounts the runtime once the tree is up; the scaffold
-      // profile is read from the harness home this boot pinned. Its
-      // composition stays the scaffold's own: the runtime only ever
-      // recomposes a live-reload profile, and this one applies at startup.
+      // Provenance is available before any configuration entry activates.
+      // The scaffold profile applies layer changes at startup.
       const readProfile = (): Profile => loadProfile('dsh', 'scaffold', INSTALL_ANCHOR, harnessHome)
       const profile = readProfile()
       // The scaffold's own patches, with the id ownership the runtime answers `originOf` from.
@@ -768,6 +761,12 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
         rootEntry: () => [...ctx.loader.entries()].find(entry => entry.id === rootIncludeId),
       })
     }
+    rootIncludeId = await ctx.loader.create({
+      name: 'cordis:include',
+      config: { path: pathToFileURL(rootConfig).href, patches },
+    })
+    await ctx.loader.await()
+    await auditStartupEntries(ctx, 'web e2e scaffold')
     if (options.welcomeNoticePending !== true) {
       await ctx.settings.mutate(WELCOME_NOTICE_SETTINGS_NAMESPACE, [{
         op: 'set', path: [WELCOME_NOTICE_ACK_FIELD], value: WELCOME_NOTICE_VERSION,
