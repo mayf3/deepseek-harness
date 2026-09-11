@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import type { PatchOptions } from '@deepseek-ai/cordis-plugin-include'
 import { disableBundle, enableBundle, reconcileInstalledBundles, readProfileManifest, type ProfileLayer } from '../src/index.ts'
-import { analyzeBundleLayer, exportsBundlePatch, isOptionalRuntimeLayer } from '../src/external-bundles.ts'
+import { analyzeBundleLayer, exportsBundlePatch } from '../src/external-bundles.ts'
 const NAME = 'dsh-test-bin'
 const roots: string[] = []
 const tmp = (): string => {
@@ -15,7 +15,7 @@ const tmp = (): string => {
 }
 afterEach(() => { roots.splice(0).forEach((root) => { rmSync(root, { recursive: true, force: true }) }) })
 function layer(patches: PatchOptions[]): ProfileLayer {
-  return { packageName: 'ext', version: undefined, packageDir: '/nowhere', patchPath: '/nowhere/patch.yml', trust: 'external', stage: 'runtime', patches }
+  return { packageName: 'ext', version: undefined, packageDir: '/nowhere', patchPath: '/nowhere/patch.yml', patches }
 }
 describe('analyzeBundleLayer', () => {
   it('preserves parents, explicit ids and overrides across several groups', () => {
@@ -32,6 +32,12 @@ describe('analyzeBundleLayer', () => {
     expect(result.overrides).toEqual(['webserver'])
     expect(result.duplicates).toEqual([])
   })
+  it('keeps array-valued plugin configuration out of the row inventory', () => {
+    const result = analyzeBundleLayer(layer([{ id: 'provider', config: ['value', { value: 42 }, null] }]))
+    expect([...result.rows]).toEqual([])
+    expect(result.duplicates).toEqual([])
+    expect(result.overrides).toEqual(['provider'])
+  })
   it('rejects repeated insert ids but permits restating children in the same group', () => {
     const patches: PatchOptions[] = [
       { insert: [{ id: 'group', name: 'cordis:group', group: true, config: [{ id: 'child', name: 'ext/child' }] }] },
@@ -39,13 +45,6 @@ describe('analyzeBundleLayer', () => {
       { insert: [{ id: 'child', name: 'ext/duplicate' }] },
     ]
     expect(analyzeBundleLayer(layer(patches)).duplicates).toEqual([{ rowId: 'child', moduleName: 'ext/duplicate' }])
-  })
-  it('makes only external runtime layers optional at startup', () => {
-    const ext = layer([])
-    expect(isOptionalRuntimeLayer(ext)).toBe(true)
-    expect(isOptionalRuntimeLayer({ ...ext, stage: 'boot' })).toBe(false)
-    expect(isOptionalRuntimeLayer({ ...ext, trust: 'builtin' })).toBe(false)
-    expect(isOptionalRuntimeLayer({ ...ext, trust: 'builtin', stage: 'boot' })).toBe(false)
   })
 })
 

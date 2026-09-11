@@ -52,14 +52,6 @@ export interface DshEnginesManifest {
   [engine: string]: string | undefined
 }
 
-/**
- * Startup policy for an external bundle. `runtime` (the default) permits
- * failed rows while retaining successful siblings; conflicting row ids omit
- * the whole bundle. `boot` rows are required and claim ids with built-in layers.
- * This field does not delay execution until after startup.
- */
-export type BundleStage = 'boot' | 'runtime'
-
 /** One agent-plane module a package declares addable to a composition. */
 export interface DshPluginDeclaration {
   /** The package's export subpath, with `.` naming its main entry and `./tools` a subpath. */
@@ -74,8 +66,6 @@ export interface DshPluginDeclaration {
 export interface DshBundleManifest {
   /** Patch file path relative to the declaring package root. */
   patch: string
-  /** Mount stage the bundle author asks for; the profile's `stages` overrides it. */
-  stage?: BundleStage
 }
 
 /** The bundle composition declared by a profile directory. */
@@ -90,14 +80,6 @@ export interface DshProfileManifest {
   disabledBundles?: string[]
   /** User patch lifecycle; omitted means `live` for custom profiles. */
   patchReload?: ProfilePatchReload
-  /** Deployer overrides of each external bundle's mount stage, by package name. */
-  stages?: Record<string, BundleStage>
-  /**
-   * Installed packages treated as built-in: not wrapped and fatal on failure.
-   * For first-party packages linked into a profile during development, where
-   * provenance alone would classify them external.
-   */
-  firstParty?: string[]
 }
 
 /** Whether user patch files reload while a profile remains active or apply only at startup. */

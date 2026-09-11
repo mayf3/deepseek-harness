@@ -681,8 +681,6 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
         version: undefined,
         packageDir,
         patchPath: join(packageDir, 'cordis.patch.yml'),
-        trust: 'builtin' as const,
-        stage: 'runtime' as const,
         patches: [],
       }
     }))

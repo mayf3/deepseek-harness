@@ -31,7 +31,7 @@ Call `pluginInventory/list` when a client or settings page needs to show what is
 
 Each row is one non-group Loader entry: its entry id, the exact module specifier, the effective enablement (including disabled ancestor groups), and the current root Fiber phase. `pending` means the entry waits to load, `loading` that it is being read, `active` that it is running, `failed` that its fiber rejected, and `unloading` that it is being torn down; `null` means no live root Fiber exists at all. Structural group rows are skipped.
 
-`trust` identifies the supplying bundle, `package` names it with its version, and `disabledBy` distinguishes a user override from a composition condition. Explicit row ids remain unchanged. Failed entries remain in the Loader tree; `failure` reports import, activation, update, disabled-expression, or missing-service issues. An `active` fiber may still have an update failure and run its previous valid config. Conflicting rows omitted before loading are projected from `ProfileRuntime.conflicts`. Without profile provenance, rows carry no package.
+`package` names the supplying bundle with its version, and `disabledBy` distinguishes a user override from a composition condition. Explicit row ids remain unchanged. Failed entries remain in the Loader tree; `failure` reports import, activation, update, disabled-expression, or missing-service issues. An `active` fiber may still have an update failure and run its previous valid config. Conflicting rows omitted before loading are projected from `ProfileRuntime.conflicts`. Without profile provenance, rows carry no package.
 
 ### Per-preset compositions
 

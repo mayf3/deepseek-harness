@@ -1,4 +1,4 @@
-# Invalid override of a builtin provider: an external patch retains the target's required startup policy.
+# Invalid optional provider override used to prove best-effort startup continues.
 
 - id: llm-pi-ai
   config:
