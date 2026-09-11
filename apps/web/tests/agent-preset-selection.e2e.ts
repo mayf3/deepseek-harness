@@ -320,7 +320,8 @@ describe('web e2e: agent-preset selection', () => {
     await writeComposerDraft(page, composer, '/')
     await expect.poll(() => menuOptions(page), { timeout: 15_000 })
       .not.toEqual(expect.arrayContaining([expect.stringContaining(SKILL_NAME)]))
-    const onMinimal = await menuOptions(page)
+    // Rows read as `Title Description`; the title is the capitalized command name.
+    const onMinimal = (await menuOptions(page)).map(option => option.toLowerCase())
     expect(onMinimal.some(option => option.startsWith('compact'))).toBe(false)
     expect(onMinimal.some(option => option.startsWith('plan'))).toBe(false)
     // Preset-scoped commands follow the switch; the client's own model command
@@ -340,7 +341,7 @@ describe('web e2e: agent-preset selection', () => {
     await writeComposerDraft(page, composer, '/')
     await expect.poll(() => menuOptions(page), { timeout: 15_000 })
       .toEqual(expect.arrayContaining([expect.stringContaining(SKILL_NAME)]))
-    const onStandard = await menuOptions(page)
+    const onStandard = (await menuOptions(page)).map(option => option.toLowerCase())
     expect(onStandard.some(option => option.startsWith('compact'))).toBe(true)
     expect(onStandard.some(option => option.startsWith('goal'))).toBe(true)
     expect(onStandard.some(option => option.startsWith('plan'))).toBe(true)
