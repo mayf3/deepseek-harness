@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; base-uri 'none'; form-action 'none'">
+    <title></title>
+    <link rel="stylesheet" href="welcome.css">
+    <script src="welcome.js" defer></script>
+  </head>
+  <body>
+    <div class="titlebar" aria-hidden="true"></div>
+    <main class="welcome" aria-labelledby="tagline">
+      <img class="brand" src="assets/welcome-brand.svg" alt="" width="472" height="40">
+      <h1 id="tagline" class="tagline"><span id="tagline-before"></span><em id="tagline-brand"></em><span id="tagline-after"></span></h1>
+      <form id="key-form" class="key-form" hidden novalidate>
+        <header class="key-heading">
+          <h1 id="key-title"></h1>
+          <p id="key-description"></p>
+        </header>
+        <div class="key-field">
+          <label id="key-label" class="visually-hidden" for="key-input"></label>
+          <input id="key-input" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" required aria-describedby="key-description key-error">
+          <p id="key-error" class="key-error" role="alert" hidden></p>
+        </div>
+      </form>
+      <div id="entry-actions" class="actions">
+        <button id="sign-in" class="primary" type="button" disabled></button>
+        <button id="api-key" class="secondary" type="button"></button>
+      </div>
+      <div id="key-actions" class="actions" hidden>
+        <button id="save-key" class="primary" type="submit" form="key-form" disabled></button>
+        <button id="skip-key" class="secondary" type="button"></button>
+        <button id="back-to-login" class="back" type="button"></button>
+      </div>
+    </main>
+  </body>
+</html>

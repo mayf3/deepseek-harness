@@ -7,6 +7,8 @@ export const DESKTOP_IPC = {
   boot: 'dsh-desktop:boot',
   bootFailed: 'dsh-desktop:boot-failed',
   directoryPick: 'dsh-desktop:directory-pick',
+  localeBootstrap: 'dsh-desktop:locale-bootstrap',
+  localeChanged: 'dsh-desktop:locale-changed',
   updatesStatus: 'dsh-desktop:updates-status',
   updatesOpen: 'dsh-desktop:updates-open',
   updatesPresentation: 'dsh-desktop:updates-presentation',

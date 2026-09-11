@@ -1,6 +1,6 @@
 /** Models section registration: slot declaration injection, the locale-following label thunk, and HMR recovery. */
 import { Context } from '@deepseek-ai/cordis'
-import { describe, expect, it, onTestFinished, vi } from 'vitest'
+import { afterEach, describe, expect, it, onTestFinished, vi } from 'vitest'
 import { resolveSlotLabel } from '@deepseek-ai/dsh-client-ui-slots'
 import { SlotRegistry } from '@deepseek-ai/dsh-client-ui-renderer/client'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
@@ -15,7 +15,11 @@ import {
 import { ModelsSection } from '../src/client/ModelsSection.tsx'
 import { DeepSeekOnboardingDialog } from '../src/client/DeepSeekOnboardingDialog.tsx'
 import { WelcomeNotice } from '../src/client/WelcomeNotice.tsx'
-import { apply as hostApply } from '../src/index.ts'
+import type { IndexInjection } from '@deepseek-ai/dsh-host-webserver'
+import * as hostPlugin from '../src/index.ts'
+import { ONBOARDING_CONFIG_GLOBAL } from '../src/onboarding-config.ts'
+
+afterEach(() => { vi.unstubAllGlobals() })
 
 // These specs assert the shipped Chinese copy. The lane has no jsdom `window`,
 // so browser-language detection never runs and a fresh LocaleRuntime opens on
@@ -62,8 +66,41 @@ function declare(slots: SlotRegistry): () => void {
 }
 
 describe('ui-settings-models apply', () => {
-  it('keeps the host Loader entry inert', () => {
-    expect(hostApply).not.toThrow()
+  it('lets a native shell own credential onboarding while retaining settings and the notice', async () => {
+    const { ctx, slots } = await bench()
+    declare(slots)
+    try {
+      const host = ctx.plugin(hostPlugin, { credentialOnboarding: false })
+      await host.await()
+      const rows: IndexInjection[] = []
+      ctx.emit('webserver/index-inject', rows)
+      expect(rows).toEqual([{ kind: 'global', name: ONBOARDING_CONFIG_GLOBAL, value: { credentialOnboarding: false } }])
+      for (const row of rows) if (row.kind === 'global') vi.stubGlobal(row.name, row.value)
+      const plugin = ctx.plugin({ inject: [...inject], apply })
+      await plugin.await()
+      expect(slots.entries('settings.onboarding').map(entry => entry.options.id)).toEqual(['welcome-notice'])
+      expect(slots.entries('settings.section').map(entry => entry.options.id)).toEqual(['models'])
+      await plugin.dispose()
+      expect(slots.entries('settings.onboarding')).toEqual([])
+      await host.dispose()
+      const after: IndexInjection[] = []
+      ctx.emit('webserver/index-inject', after)
+      expect(after).toEqual([])
+    } finally {
+      await ctx.fiber.dispose()
+    }
+  })
+
+  it('defaults to browser onboarding and rejects malformed bootstrap options', async () => {
+    expect(hostPlugin.Config({})).toEqual({ credentialOnboarding: true })
+    expect(hostPlugin.Config['~standard'].validate({ credentialOnboarding: 'false' })).toHaveProperty('issues')
+    const { ctx } = await bench()
+    try {
+      vi.stubGlobal(ONBOARDING_CONFIG_GLOBAL, { credentialOnboarding: 'false' })
+      expect(() => { apply(ctx) }).toThrow()
+    } finally {
+      await ctx.fiber.dispose()
+    }
   })
 
   it('declares the services it uses', () => {

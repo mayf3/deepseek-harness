@@ -446,6 +446,20 @@ export interface Config {
 
 Source: [`packages/client/hmr/src/index.ts:30`](../packages/client/hmr/src/index.ts)
 
+<a id="deepseek-aidsh-client-ui-settings-models"></a>
+
+## `@deepseek-ai/dsh-client-ui-settings-models`
+
+```ts config-catalog
+/** Onboarding options after schema defaults are applied. */
+export interface Config {
+  /** Offer the browser API-key step when no native shell owns credential onboarding. */
+  credentialOnboarding: boolean
+}
+```
+
+Source: [`packages/client/ui-settings-models/src/onboarding-config.ts:6`](../packages/client/ui-settings-models/src/onboarding-config.ts)
+
 <a id="deepseek-aidsh-client-ui-sidebar-documentpreview"></a>
 
 ## `@deepseek-ai/dsh-client-ui-sidebar-documentpreview`
@@ -3807,7 +3821,6 @@ These load from a `cordis.yml` entry with no `config:` block; they declare no co
 - `@deepseek-ai/dsh-client-ui-session` ([`packages/client/ui-session/src/index.ts`](../packages/client/ui-session/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-settings` ([`packages/client/ui-settings/src/index.ts`](../packages/client/ui-settings/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-settings-general` ([`packages/client/ui-settings-general/src/index.ts`](../packages/client/ui-settings-general/src/index.ts))
-- `@deepseek-ai/dsh-client-ui-settings-models` ([`packages/client/ui-settings-models/src/index.ts`](../packages/client/ui-settings-models/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-settings-plugin-inventory` ([`packages/client/ui-settings-plugin-inventory/src/index.ts`](../packages/client/ui-settings-plugin-inventory/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-settings-plugins` ([`packages/client/ui-settings-plugins/src/index.ts`](../packages/client/ui-settings-plugins/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-settings-unarchive-sessions` ([`packages/client/ui-settings-unarchive-sessions/src/index.ts`](../packages/client/ui-settings-unarchive-sessions/src/index.ts))

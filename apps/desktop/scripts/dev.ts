@@ -54,7 +54,7 @@ async function runPackageScript(script: string, cwd: string): Promise<void> {
   await run(process.execPath, [packageManager, 'run', script], cwd)
 }
 
-async function launchElectron(): Promise<void> {
+async function launchElectron(previewWelcome: boolean): Promise<void> {
   const require = createRequire(import.meta.url)
   const electron: unknown = require('electron')
   if (typeof electron !== 'string') throw new Error('desktop development: electron executable is unavailable')
@@ -77,6 +77,7 @@ async function launchElectron(): Promise<void> {
     `--remote-debugging-port=${String(rendererPort)}`,
     `--user-data-dir=${userData}`,
     APP_ROOT,
+    ...previewWelcome ? ['--preview-welcome'] : [],
   ], APP_ROOT, environment)
 }
 
@@ -110,7 +111,7 @@ async function main(): Promise<void> {
     release,
   })
   await preparePrimaryRuntime()
-  await launchElectron()
+  await launchElectron(values['preview-welcome'])
 }
 
 await main().catch((error: unknown) => {
