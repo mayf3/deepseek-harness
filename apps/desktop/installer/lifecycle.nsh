@@ -78,7 +78,6 @@ FunctionEnd
 
 Function InstallerFinish
     System::Call 'user32::DestroyWindow(p $InstallerProgressWindow)'
-    Call InstallerGuiInit
     StrCpy $InstallerPhase "success"
     Call InstallerCreate
 FunctionEnd

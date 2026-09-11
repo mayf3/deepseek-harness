@@ -3,7 +3,10 @@
   "nativeProgressVisible": false,
   "cases": [
     "enter-validates-current-path-and-unchecked-launch",
+    "completion-preserves-window-position",
     "registered-directory-and-checked-launch",
+    "launch-failure-retry-and-prompt-dismissal",
+    "progress-remains-monotonic-across-native-resets",
     "running-app-preserved-and-native-progress-hidden",
     "silent-update-retains-directory-and-ignores-unrelated-process",
     "invalid-destination-rejection",

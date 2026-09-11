@@ -1,5 +1,6 @@
 // Keeps the DWM frame and shadow while the NSIS page owns the entire client area.
 #define WIN32_LEAN_AND_MEAN
+#define NOMINMAX
 #define UNICODE
 #include <windows.h>
 #include <tlhelp32.h>
@@ -8,6 +9,7 @@
 #include <dwmapi.h>
 #include <gdiplus.h>
 #include <new>
+#include <algorithm>
 
 using namespace Gdiplus;
 
@@ -45,6 +47,7 @@ extern "C" __declspec(dllexport) int __cdecl InstallerFindProcess(LPCWSTR execut
 
 struct ProgressPage {
     HWND source;
+    int percent = 20;
     bool dark;
     UINT dpi;
     ULONG_PTR gdiplus;
@@ -103,9 +106,18 @@ static LRESULT CALLBACK ProgressProc(HWND window, UINT message, WPARAM wparam, L
             graphics.Clear(page->dark ? Color(255, 21, 21, 23) : Color(255, 255, 255, 255));
             graphics.SetSmoothingMode(SmoothingModeAntiAlias);
             graphics.DrawImage(page->brand, Rect(0, 174, 600, 196));
-            const LRESULT maximum = SendMessageW(page->source, PBM_GETRANGE, FALSE, 0);
+            PBRANGE range = {};
+            SendMessageW(page->source, PBM_GETRANGE, FALSE, reinterpret_cast<LPARAM>(&range));
             const LRESULT position = SendMessageW(page->source, PBM_GETPOS, 0, 0);
-            const int percent = maximum > 0 ? 20 + static_cast<int>(75 * position / maximum) : 20;
+            const LONGLONG span = static_cast<LONGLONG>(range.iHigh) - range.iLow;
+            // NSIS and extraction plugins reuse/reset the same control for local work.
+            // Retain the displayed maximum; only the success page confirms completion.
+            if (span > 0) {
+                const LONGLONG value = 20 + 75 * (static_cast<LONGLONG>(position) - range.iLow) / span;
+                const int bounded = static_cast<int>(std::max<LONGLONG>(20, std::min<LONGLONG>(95, value)));
+                page->percent = std::max(page->percent, bounded);
+            }
+            const int percent = page->percent;
             SolidBrush track(page->dark ? Color(255, 97, 102, 107) : Color(255, 233, 236, 242));
             SolidBrush ink(page->dark ? Color(255, 255, 255, 255) : Color(255, 15, 17, 21));
             FillProgress(graphics, track, 472.0f);
@@ -117,6 +129,7 @@ static LRESULT CALLBACK ProgressProc(HWND window, UINT message, WPARAM wparam, L
             centered.SetLineAlignment(StringAlignmentCenter);
             WCHAR caption[160];
             wsprintfW(caption, page->caption, percent);
+            SetWindowTextW(window, caption);
             graphics.DrawString(caption, -1, &font, RectF(48, 512, 504, 22), &centered, &ink);
             Font controls(&family, 16, FontStyleRegular, UnitPixel);
             graphics.DrawString(L"\x2212", -1, &controls, RectF(504, 8, 40, 32), &centered, &ink);

@@ -57,7 +57,7 @@ function Dismiss([Diagnostics.Process]$Process, [string]$Text) {
         Start-Sleep -Milliseconds 25
     }
 }
-function Finish-Setup([Diagnostics.Process]$Process, [bool]$Launch, [string]$Theme) {
+function Finish-Setup([Diagnostics.Process]$Process, [bool]$Launch, [string]$Theme, [string]$Bounds) {
     [void](Wait-Control $Process $copy.INSTALLER_FINISH)
     $checkbox = Wait-Control $Process $copy.INSTALLER_LAUNCH
     $state = [InstallerCapture]::SendMessage($checkbox, 0xF0, [IntPtr]::Zero, [IntPtr]::Zero).ToInt32()
@@ -71,13 +71,28 @@ function Finish-Setup([Diagnostics.Process]$Process, [bool]$Launch, [string]$The
         }
     }
     $window = [InstallerCapture]::Find($Process.Id)
+    if ([InstallerCapture]::Bounds($window) -ne $Bounds) { throw 'Completion page moved or resized the installer' }
     [void][InstallerCapture]::Save($window, (Join-Path $OutputDirectory ($Theme + '-finish.png')))
     if ($Launch) {
+        $hiddenApp = $appPath + '.hold'
+        Move-Item -LiteralPath $appPath -Destination $hiddenApp
+        try {
+            Click-Control $Process $copy.INSTALLER_FINISH
+            Dismiss $Process $copy.INSTALLER_LAUNCH_FAILED
+            if (-not [InstallerCapture]::IsWindowVisible($window)) { throw 'Launch failure did not restore the finish page' }
+        } finally {
+            Move-Item -LiteralPath $hiddenApp -Destination $appPath
+        }
         $finish = Wait-Control $Process $copy.INSTALLER_FINISH
         [void][InstallerCapture]::SendMessage($window, 0x28, $finish, [IntPtr]1)
         [void][InstallerCapture]::PostMessage($finish, 0x100, [IntPtr]13, [IntPtr]::Zero)
     } else {
         Click-Control $Process $copy.INSTALLER_FINISH
+    }
+    $timer = [Diagnostics.Stopwatch]::StartNew()
+    while ([InstallerCapture]::IsWindowVisible($window)) {
+        if ($timer.Elapsed.TotalSeconds -gt 2) { throw 'Finish did not dismiss the installer promptly' }
+        Start-Sleep -Milliseconds 25
     }
     if (-not $Process.WaitForExit(10000) -or $Process.ExitCode -ne 0) { throw 'Finish did not exit successfully' }
 }
@@ -101,17 +116,21 @@ try {
     [void][InstallerCapture]::PostMessage($edit, 0x100, [IntPtr]13, [IntPtr]::Zero)
     Dismiss $process $copy.INSTALLER_PATH_INVALID
     [void][InstallerCapture]::SendMessage($edit, 0xC, [IntPtr]::Zero, $installPath)
+    [InstallerCapture]::MoveBy($window, 73, -41)
+    $bounds = [InstallerCapture]::Bounds($window)
     Click-Control $process $copy.INSTALLER_INSTALL
-    Finish-Setup $process $false light
+    Finish-Setup $process $false light $bounds
     if (-not (Test-Path -LiteralPath $appPath) -or (Test-Path -LiteralPath (Join-Path $installPath 'launched.txt'))) { throw 'Unchecked launch behavior failed' }
     $results.Add('enter-validates-current-path-and-unchecked-launch')
+    $results.Add('completion-preserves-window-position')
 
     $process = Start-Setup dark ''
     Click-Control $process $copy.INSTALLER_CHOOSE_PATH
     [void](Wait-Control $process $installPath)
     [void][InstallerCapture]::Save([InstallerCapture]::Find($process.Id), (Join-Path $OutputDirectory 'dark-welcome.png'))
+    $bounds = [InstallerCapture]::Bounds([InstallerCapture]::Find($process.Id))
     Click-Control $process $copy.INSTALLER_INSTALL
-    Finish-Setup $process $true dark
+    Finish-Setup $process $true dark $bounds
     $timer = [Diagnostics.Stopwatch]::StartNew()
     do {
         $app = Get-Process -Name $ProductName -ErrorAction SilentlyContinue
@@ -121,6 +140,7 @@ try {
     if (-not $app -or $app.Path -ne $appPath) { throw 'Finish did not launch the installed test application' }
     $processes.Add($app)
     $results.Add('registered-directory-and-checked-launch')
+    $results.Add('launch-failure-retry-and-prompt-dismissal')
 
     $process = Start-Setup dark
     Click-Control $process $copy.INSTALLER_INSTALL
@@ -128,6 +148,20 @@ try {
     $visible = [InstallerCapture]::VisibleText($process.Id)
     if ($visible.Contains('msctls_progress32') -ne $expected.nativeProgressVisible) { throw 'Stock green progress bar is visible' }
     if (-not $visible.Contains('HarnessInstallerProgress')) { throw 'Custom progress page is missing' }
+    $window = [InstallerCapture]::Find($process.Id)
+    $source = [InstallerCapture]::FindClass($window, 'msctls_progress32')
+    if ($source -eq [IntPtr]::Zero) { throw 'Stock progress source is missing' }
+    # The running-app dialog holds the worker while native range/position resets are replayed.
+    $previous = [InstallerCapture]::Progress($window)
+    foreach ($sample in @(@(100, 95), @(100, 59), @(1000, 0), @(1000, 950), @(100, 59), @(100, 100))) {
+        [void][InstallerCapture]::SendMessage($source, 0x406, [IntPtr]::Zero, [IntPtr]$sample[0])
+        [void][InstallerCapture]::SendMessage($source, 0x402, [IntPtr]$sample[1], [IntPtr]::Zero)
+        $percent = [InstallerCapture]::Progress($window)
+        if ($percent -lt $previous -or $percent -ge 100) { throw "Progress regressed or completed before success: $previous -> $percent" }
+        $previous = $percent
+    }
+    if ($previous -le 20) { throw 'Progress never advanced' }
+    $results.Add('progress-remains-monotonic-across-native-resets')
     [void][InstallerCapture]::Save([InstallerCapture]::Find($process.Id), (Join-Path $OutputDirectory 'dark-progress.png'))
     Dismiss $process $copy.INSTALLER_RUNNING
     if (-not $process.WaitForExit(10000) -or $app.HasExited) { throw 'Running application was not preserved' }
@@ -157,6 +191,9 @@ try {
     Run-Silent ('/S /D=' + $foreign) 2
     if ((Get-Content -LiteralPath (Join-Path $foreign 'keep.txt')) -ne 'preserved') { throw 'Foreign directory changed' }
     $results.Add('invalid-destination-rejection')
+} catch {
+    Write-Output "Installer check failed: $_"
+    throw
 } finally {
     foreach ($process in $processes) {
         if (-not $process.HasExited) { $process.Kill(); $process.WaitForExit() }

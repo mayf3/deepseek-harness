@@ -14,7 +14,7 @@ public static class InstallerCapture {
     public delegate bool WindowCallback(IntPtr window, IntPtr data);
     [DllImport("user32.dll")] static extern bool EnumWindows(WindowCallback callback, IntPtr data);
     [DllImport("user32.dll")] static extern bool EnumChildWindows(IntPtr parent, WindowCallback callback, IntPtr data);
-    [DllImport("user32.dll")] static extern bool IsWindowVisible(IntPtr window);
+    [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr window);
     [DllImport("user32.dll")] public static extern bool IsWindow(IntPtr window);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern IntPtr GetProp(IntPtr window, string name);
     [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr window, out uint process);
@@ -38,6 +38,40 @@ public static class InstallerCapture {
     [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)] public static extern bool SetWindowText(IntPtr window, string text);
     [DllImport("user32.dll")] public static extern IntPtr SendMessage(IntPtr window, uint message, IntPtr wparam, IntPtr lparam);
     [StructLayout(LayoutKind.Sequential)] struct Rect { public int Left, Top, Right, Bottom; }
+
+    public static string Bounds(IntPtr window) {
+        Rect rect;
+        if (!GetWindowRect(window, out rect)) throw new InvalidOperationException("Could not read window bounds");
+        return rect.Left + "," + rect.Top + "," + rect.Right + "," + rect.Bottom;
+    }
+
+    public static void MoveBy(IntPtr window, int x, int y) {
+        Rect rect;
+        if (!GetWindowRect(window, out rect) || !SetWindowPos(window, IntPtr.Zero, rect.Left + x, rect.Top + y, 0, 0, 0x15))
+            throw new InvalidOperationException("Could not move window");
+    }
+
+    public static IntPtr FindClass(IntPtr parent, string name) {
+        IntPtr result = IntPtr.Zero;
+        EnumChildWindows(parent, delegate(IntPtr child, IntPtr unused) {
+            var kind = new StringBuilder(128);
+            GetClassName(child, kind, kind.Capacity);
+            if (kind.ToString() == name) result = child;
+            return result == IntPtr.Zero;
+        }, IntPtr.Zero);
+        return result;
+    }
+
+    public static int Progress(IntPtr parent) {
+        IntPtr window = FindClass(parent, "HarnessInstallerProgress");
+        if (window == IntPtr.Zero) throw new InvalidOperationException("Progress page is missing");
+        RedrawWindow(window, IntPtr.Zero, IntPtr.Zero, 0x101);
+        var text = new StringBuilder(128);
+        GetWindowText(window, text, text.Capacity);
+        var percent = System.Text.RegularExpressions.Regex.Match(text.ToString(), @"\d+");
+        if (!percent.Success) throw new InvalidOperationException("Progress caption is missing");
+        return int.Parse(percent.Value);
+    }
 
     public static IntPtr WaitForText(IntPtr parent, string expected, bool prefix) {
         var timer = System.Diagnostics.Stopwatch.StartNew();
