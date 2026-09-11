@@ -89,7 +89,7 @@ describe.skipIf(process.platform === 'win32')('SSH helper runtime', () => {
       await expect(test.client.request('sandbox', { argv: ['true'], policy: { mode: 'danger-full-access', workspaceRoot: test.root } }, z.unknown())).rejects.toThrow('does not need')
       expect(await test.client.request('executable', { command: process.execPath, env: { REMOVED: null } }, z.string())).toBe(process.execPath)
       expect(await test.client.request('executable', { command: process.execPath }, z.string())).toBe(process.execPath)
-      const wrapped = await test.client.request('sandbox', { argv: ['true'], policy: policy(test.root) }, z.object({ argv: z.array(z.string()), enforcement: z.enum(['full', 'partial']) }).passthrough())
+      const wrapped = await test.client.request('sandbox', { argv: ['true'], policy: policy(test.root) }, z.looseObject({ argv: z.array(z.string()), enforcement: z.enum(['full', 'partial']) }))
       expect(wrapped.argv.at(-1)).toBe('true')
     } finally { await test.close() }
   })

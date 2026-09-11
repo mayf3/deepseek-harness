@@ -12,15 +12,20 @@ export const SSH_STREAM_TLS_OPTIONS = {
  * @param socket - the connected OpenSSH forwarding socket.
  * @param capability - the per-stream 256-bit key encoded as hexadecimal.
  * @param timeoutMs - deadline for completing TLS authentication.
+ * @param signal - cancellation of authentication and the resulting TLS stream.
  * @returns an authenticated paused stream; the key is never transmitted as data.
  */
-export async function authenticateStream(socket: Socket, capability: string, timeoutMs: number): Promise<TLSSocket> {
+export async function authenticateStream(socket: Socket, capability: string, timeoutMs: number, signal?: AbortSignal): Promise<TLSSocket> {
+  if (signal?.aborted) { socket.destroy(); signal.throwIfAborted() }
   const stream = connect({
     ...SSH_STREAM_TLS_OPTIONS, socket, rejectUnauthorized: true,
     pskCallback: () => ({ psk: Buffer.from(capability, 'hex'), identity: 'dsh-stream' }),
     // PSK proves peer identity without an X.509 certificate or hostname.
     checkServerIdentity: () => undefined,
   })
+  const abort = (): void => { stream.destroy(signal?.reason instanceof Error ? signal.reason : new Error(String(signal?.reason))) }
+  signal?.addEventListener('abort', abort, { once: true })
+  stream.once('close', () => { signal?.removeEventListener('abort', abort) })
   try {
     await new Promise<void>((resolve, reject) => {
       const cleanup = (): void => {

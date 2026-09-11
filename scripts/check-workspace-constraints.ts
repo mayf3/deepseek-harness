@@ -177,11 +177,18 @@ const packageFileExtras: Readonly<Record<string, readonly string[]>> = {
   '@deepseek-ai/dsh-sandbox-windows-acl': ['lib/runner.js', 'lib/types-*.js'],
   '@deepseek-ai/dsh-skill-badge': ['assets'],
   '@deepseek-ai/dsh-subprocess': ['lib/control.js'],
+  // SSH launches a private helper and shares wire definitions and TLS setup
+  // between that helper and the connection owner.
+  '@deepseek-ai/dsh-ssh': [
+    'lib/helper.js', 'lib/protocol.js', 'lib/schemas.js',
+    'lib/protocol-*.js', 'lib/schemas-*.js', 'lib/stream-security-*.js',
+  ],
   // Ordinary native containment ships a path-loaded runner and its shared
   // runner chunk beside the existing node-pty permission repair.
   '@deepseek-ai/dsh-subprocess-local': [
     'lib/runner.js',
     'lib/runner-*.js',
+    'lib/output.js',
     'scripts/ensure-spawn-helper.mjs',
   ],
   // tsdown shares the repository/pack code between the lib entry and the bin

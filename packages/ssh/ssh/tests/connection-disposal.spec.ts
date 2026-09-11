@@ -225,7 +225,7 @@ describe.skipIf(process.platform === 'win32')('SSH stream establishment disposal
     socket.destroy()
     const result = await observed
     expect(result).toHaveProperty('error')
-    expect(String('error' in result ? result.error : '')).toMatch(/closed|lost|refused/)
+    expect(String('error' in result ? result.error : '')).toMatch(/clos(?:ed|ing)|lost|refused/)
     expect(errors).toEqual([])
     expect(socket.listenerCount('connect')).toBe(0)
     expect(socket.listenerCount('data')).toBe(0)
@@ -238,7 +238,7 @@ describe.skipIf(process.platform === 'win32')('SSH stream establishment disposal
     await service.dispose()
     const result = await observed
     expect(result).toHaveProperty('error')
-    expect(String('error' in result ? result.error : '')).toMatch(/closed|lost|refused/)
+    expect(String('error' in result ? result.error : '')).toMatch(/clos(?:ed|ing)|lost|refused/)
     expect(socket.destroyed).toBe(true)
     expect(socket.listenerCount('connect')).toBe(0)
     expect(socket.listenerCount('data')).toBe(0)

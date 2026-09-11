@@ -128,7 +128,7 @@ async request<T>(method: string, params: unknown, result: z.ZodType<T>, signal?:
 async connectStream(endpoint: SshStreamEndpoint, signal?: AbortSignal): Promise<Socket>
 
 /** Tear down the helper's remote managed ranges before releasing the SSH master when reachable. */
-async dispose(): Promise<void>
+dispose(): Promise<void>
 ```
 
 Source: [`packages/ssh/ssh/src/index.ts`](../../packages/ssh/ssh/src/index.ts)

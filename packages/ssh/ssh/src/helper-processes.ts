@@ -7,9 +7,9 @@ import { createServer, type Server } from 'node:tls'
 import type { Duplex, Readable, Writable } from 'node:stream'
 import { finished, pipeline } from 'node:stream/promises'
 import type { Context } from '@deepseek-ai/cordis'
-import type { SubprocessHandle, SubprocessSpawnSpec, SubprocessTerminalHandle, SubprocessTerminalSignal } from '@deepseek-ai/dsh-subprocess'
+import type { SubprocessHandle, SubprocessSpawnSpec, SubprocessTerminalHandle } from '@deepseek-ai/dsh-subprocess'
 import { OutputCollector, prepareManagedProcessBinding } from '@deepseek-ai/dsh-subprocess-local/output'
-import { doneSchema, outputSnapshotFrameLimit, spawnSchema, type SshStreamEndpoint } from './schemas.ts'
+import { doneSchema, outputSnapshotFrameLimit, spawnSchema, type SshProcessId, type SshStreamEndpoint } from './schemas.ts'
 import { z } from 'zod'
 import { SSH_STREAM_TLS_OPTIONS } from './stream-security.ts'
 import { SshRpcPeer } from './protocol.ts'
@@ -37,6 +37,18 @@ interface ProcessRecord {
   expiry: NodeJS.Timeout
 }
 
+/** Join TLS, underlying socket, and listener closure before removing their directory. */
+async function closeEndpoint(endpoint: Endpoint): Promise<void> {
+  const sockets = [...new Set([...(endpoint.socket === undefined ? [] : [endpoint.socket]), ...endpoint.pending])]
+  const closed = sockets.map(socket => new Promise<void>((resolve) => {
+    if (socket.closed) resolve()
+    else socket.once('close', () => { resolve() })
+  }))
+  const listenerClosed = new Promise<void>((resolve) => { endpoint.server.close(() => { resolve() }) })
+  for (const socket of sockets) socket.destroy()
+  await Promise.all([listenerClosed, ...closed])
+}
+
 /** Coalesce live tail updates while capture continues independently of network readers. */
 class CollectedOutputForwarder {
   private readonly peer: SshRpcPeer
@@ -53,18 +65,18 @@ class CollectedOutputForwarder {
     if (this.stopped) return
     this.dirty = true
     if (this.running !== undefined) return
-    this.running = this.flush().catch(() => { this.stopped = true; this.peer.close() }).finally(() => {
-      this.running = undefined
-      if (this.dirty && !this.stopped) this.offer()
-    })
+    this.running = this.flush()
   }
 
   private async flush(): Promise<void> {
-    while (this.dirty && !this.stopped) {
-      this.dirty = false
-      const snapshot = this.collector.snapshot()
-      await this.peer.request('snapshot', { tail: snapshot.bytes.toString('base64'), totalBytes: snapshot.totalBytes }, z.null())
-    }
+    try {
+      while (this.dirty && !this.stopped) {
+        this.dirty = false
+        const snapshot = this.collector.snapshot()
+        await this.peer.request('snapshot', { tail: snapshot.bytes.toString('base64'), totalBytes: snapshot.totalBytes }, z.null())
+      }
+    } catch { this.stopped = true; this.peer.close() }
+    finally { this.running = undefined }
   }
 
   async finish(): Promise<void> {
@@ -76,8 +88,8 @@ class CollectedOutputForwarder {
 
 /** Owns remote launch reservations through final process-range quiescence. */
 export class RemoteProcesses {
-  private readonly records = new Map<string, ProcessRecord>()
-  private readonly completed = new Map<string, unknown>()
+  private readonly records = new Map<SshProcessId, ProcessRecord>()
+  private readonly completed = new Map<SshProcessId, unknown>()
   private closing = false
 
   constructor(
@@ -90,10 +102,10 @@ export class RemoteProcesses {
    * @param raw - untrusted process request received over SSH.
    * @returns the reservation id and authenticated stream coordinates.
    */
-  async prepare(raw: unknown): Promise<{ id: string; streams: Partial<Record<Channel, SshStreamEndpoint>> }> {
+  async prepare(raw: unknown): Promise<{ id: SshProcessId; streams: Partial<Record<Channel, SshStreamEndpoint>> }> {
     if (this.closing || this.records.size >= this.limit) throw new Error('SSH process capacity unavailable')
     const request = spawnSchema.parse(raw)
-    const id = randomUUID()
+    const id = randomUUID() as SshProcessId
     const directory = join(this.root, id)
     const record: ProcessRecord = {
       request, directory, endpoints: {}, controller: new AbortController(),
@@ -130,7 +142,7 @@ export class RemoteProcesses {
    * @param signal - cancellation of pending process publication.
    * @returns the terminal pid when the request owns a PTY.
    */
-  async start(id: string, signal?: AbortSignal): Promise<{ pid?: number }> {
+  async start(id: SshProcessId, signal?: AbortSignal): Promise<{ pid?: number }> {
     const record = this.record(id)
     if (record.start !== undefined) throw new Error('SSH process launch was already requested')
     signal?.throwIfAborted()
@@ -141,7 +153,7 @@ export class RemoteProcesses {
     return record.terminal === undefined ? {} : { pid: record.terminal.pid }
   }
 
-  private async startOnce(id: string, record: ProcessRecord): Promise<void> {
+  private async startOnce(id: SshProcessId, record: ProcessRecord): Promise<void> {
     await Promise.all(Object.values(record.endpoints).map(endpoint => endpoint.connected))
     clearTimeout(record.expiry)
     if (this.closing) throw new Error('SSH helper is closing')
@@ -253,7 +265,7 @@ export class RemoteProcesses {
    * @param id - the started process reservation.
    * @returns the exit observation and remote spill paths.
    */
-  async done(id: string): Promise<unknown> {
+  async done(id: SshProcessId): Promise<unknown> {
     if (this.completed.has(id)) return this.completed.get(id)
     const record = this.record(id)
     if (record.start === undefined) throw new Error('SSH process has not started')
@@ -267,7 +279,7 @@ export class RemoteProcesses {
    * @param signal - cancellation of this observation, leaving ownership intact.
    * @returns whether the owned process range is empty.
    */
-  async wait(id: string, signal?: AbortSignal): Promise<boolean> {
+  async wait(id: SshProcessId, signal?: AbortSignal): Promise<boolean> {
     if (this.completed.has(id)) return true
     const record = this.record(id)
     await record.start
@@ -280,7 +292,7 @@ export class RemoteProcesses {
    * Terminate and await the managed range independently of output readers.
    * @param id - the process reservation to stop.
    */
-  async terminate(id: string): Promise<void> {
+  async terminate(id: SshProcessId): Promise<void> {
     if (this.completed.has(id)) return
     const record = this.record(id)
     record.controller.abort(new Error('SSH process termination requested'))
@@ -297,12 +309,12 @@ export class RemoteProcesses {
    * @param value - input bytes as text or the signal name.
    * @returns the operation's wire result.
    */
-  async terminal(id: string, operation: 'write' | 'inspect' | 'signal', value?: string): Promise<unknown> {
+  async terminal(id: SshProcessId, operation: 'write' | 'inspect' | 'signal', value?: string): Promise<unknown> {
     const terminal = this.record(id).terminal
     if (terminal === undefined) throw new Error('SSH handle does not own a terminal')
     if (operation === 'write') { await terminal.write(z.string().parse(value)); return null }
     if (operation === 'inspect') return await terminal.inspectForeground() ?? null
-    return terminal.signalForeground(z.enum(['SIGINT', 'SIGTERM', 'SIGKILL', 'SIGTSTP', 'SIGHUP']).parse(value) as SubprocessTerminalSignal)
+    return terminal.signalForeground(z.enum(['SIGINT', 'SIGTERM', 'SIGKILL', 'SIGTSTP', 'SIGHUP']).parse(value))
   }
 
   /** Stop every owned process on lease expiry or disconnect. */
@@ -314,18 +326,14 @@ export class RemoteProcesses {
     if (errors.length > 0) throw new AggregateError(errors, 'SSH remote process cleanup failed')
   }
 
-  private async release(id: string): Promise<void> {
+  private async release(id: SshProcessId): Promise<void> {
     const record = this.records.get(id)
     if (record === undefined) return
     record.release ??= (async () => {
       clearTimeout(record.expiry)
       record.controller.abort(new Error('SSH process reservation closed'))
       await record.preparing?.catch(() => {})
-      for (const endpoint of Object.values(record.endpoints)) {
-        for (const socket of endpoint.pending) socket.destroy()
-        endpoint.socket?.destroy()
-        endpoint.server.close()
-      }
+      await Promise.all(Object.values(record.endpoints).map(closeEndpoint))
       await record.start?.catch(() => {})
       record.ordinary?.terminate()
       if (record.ordinary !== undefined) await record.ordinary.waitForExit()
@@ -336,22 +344,18 @@ export class RemoteProcesses {
     await record.release
   }
 
-  private record(id: string): ProcessRecord {
+  private record(id: SshProcessId): ProcessRecord {
     const record = this.records.get(id)
     if (record === undefined) throw new Error('Unknown or expired SSH process handle')
     return record
   }
 
-  private async rememberCompleted(id: string, record: ProcessRecord, result: unknown): Promise<void> {
+  private async rememberCompleted(id: SshProcessId, record: ProcessRecord, result: unknown): Promise<void> {
     if (this.records.get(id) !== record) return
     this.records.delete(id)
     this.completed.set(id, result)
-    if (this.completed.size > this.limit * 4) this.completed.delete(this.completed.keys().next().value as string)
-    for (const endpoint of Object.values(record.endpoints)) {
-      endpoint.server.close()
-      for (const socket of endpoint.pending) socket.destroy()
-      endpoint.socket?.destroy()
-    }
+    if (this.completed.size > this.limit * 4) this.completed.delete(this.completed.keys().next().value as SshProcessId)
+    await Promise.all(Object.values(record.endpoints).map(closeEndpoint))
     await rm(record.directory, { recursive: true, force: true })
   }
 
@@ -365,7 +369,7 @@ export class RemoteProcesses {
     const endpoint: Endpoint = { path, capability: capability.toString('hex'), server, connected: connected.promise, pending: new Set() }
     server.maxConnections = 8
     void connected.promise.catch(() => {})
-    server.on('connection', (socket) => {
+    server.on('connection', (socket: Socket) => {
       endpoint.pending.add(socket)
       socket.once('close', () => { endpoint.pending.delete(socket) })
       socket.on('error', () => {})
@@ -387,9 +391,7 @@ export class RemoteProcesses {
       await chmod(path, 0o600)
       return endpoint
     } catch (error) {
-      for (const socket of endpoint.pending) socket.destroy()
-      endpoint.socket?.destroy()
-      await new Promise<void>((resolve) => { server.close(() => { resolve() }) })
+      await closeEndpoint(endpoint)
       throw error
     }
   }

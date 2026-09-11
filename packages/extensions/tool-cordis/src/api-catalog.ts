@@ -2209,11 +2209,6 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         parameters: [],
       },
       {
-        signature: 'readonly helperPath: string',
-        description: 'Installed helper entry in the remote filesystem.',
-        parameters: [],
-      },
-      {
         signature: 'async request<T>(method: string, params: unknown, result: z.ZodType<T>, signal?: AbortSignal, wait: boolean = false): Promise<T>',
         description: 'Send a helper operation; cancellation never replays an ambiguous mutation.',
         parameters: [{ name: 'method', description: 'the private helper operation.' }, { name: 'params', description: 'JSON request fields validated by the helper.' }, { name: 'result', description: 'response validation before returning provider-visible data.' }, { name: 'signal', description: 'cancellation, which does not undo completed remote effects.' }, { name: 'wait', description: 'allow a process observation to outlast the administrative deadline.' }],
@@ -2226,7 +2221,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'a paused socket; attach a consumer before resuming it.',
       },
       {
-        signature: 'async dispose(): Promise<void>',
+        signature: 'dispose(): Promise<void>',
         description: 'Tear down the helper\'s remote managed ranges before releasing the SSH master when reachable.',
         parameters: [],
       },

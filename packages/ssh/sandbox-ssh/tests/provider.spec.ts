@@ -79,7 +79,7 @@ describe('SSH sandbox provider', () => {
     const controller = new AbortController()
     const reason = new Error('cancel during confinement')
     state.dispatch.mockImplementationOnce((_method, _params, signal) => new Promise((_resolve, reject) => {
-      signal?.addEventListener('abort', () => { reject(signal.reason) }, { once: true })
+      signal?.addEventListener('abort', () => { reject(reason) }, { once: true })
     }))
     const pending = state.ctx.sandbox.confine(['true'], policy, controller.signal)
     const rejected = expect(pending).rejects.toBe(reason)

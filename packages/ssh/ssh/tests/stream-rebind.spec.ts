@@ -39,7 +39,7 @@ describe.skipIf(process.platform === 'win32')('SSH stream pathname replacement',
         argv: confined.argv, cwd: root, graceMs: 500,
         stdio: { stdin: 'ignore', stdout: 'pipe', stderr: { maxBytes: 4096 } },
       })
-      const [ready] = await once(attacker.stdout!, 'data')
+      const [ready] = await once(attacker.stdout!, 'data') as [Buffer]
       expect(Buffer.from(ready).toString()).toBe('rebound\n')
       let control: Socket | undefined
       for (const [name, value] of Object.entries(prepared.streams)) {
@@ -52,7 +52,7 @@ describe.skipIf(process.platform === 'win32')('SSH stream pathname replacement',
       }
       const secret = `private-process-payload-${randomUUID()}`
       const received: Buffer[] = []
-      const reading = (async () => { for await (const bytes of control!) received.push(Buffer.from(bytes)) })()
+      const reading = (async () => { for await (const bytes of control!) received.push(Buffer.from(bytes as Uint8Array)) })()
       await owner.start(prepared.id)
       control!.end(secret)
       await reading

@@ -83,7 +83,8 @@ export class SshConnection extends Service {
     }).refine(value => (value.bootstrapPath === undefined) === (value.bootstrapHash === undefined), 'bootstrapPath and bootstrapHash must be paired')
       .parse(config) as typeof this.config
     this.ready = this.start()
-    void this.ready.catch((error: unknown) => { this.fail(error instanceof Error ? error : new Error(String(error))) })
+    // Startup uses Node I/O, local validation, and Error-valued RPC failures.
+    void this.ready.catch((error: unknown) => { this.fail(error as Error) })
     ctx.effect(() => () => this.dispose())
   }
 
@@ -149,7 +150,7 @@ export class SshConnection extends Service {
       await this.controlCommand(['-O', 'forward', '-o', 'ExitOnForwardFailure=yes', '-L', forward], signal)
     } catch (error) { await cancelForward(); throw error }
     signal.throwIfAborted()
-    const socket = createConnection({ path: local, allowHalfOpen: true, signal })
+    const socket = createConnection({ path: local, allowHalfOpen: true })
     this.sockets.add(socket)
     socket.once('close', () => {
       this.sockets.delete(socket)
@@ -157,6 +158,7 @@ export class SshConnection extends Service {
     })
     await new Promise<void>((resolve, reject) => {
       const cleanup = (): void => {
+        signal.removeEventListener('abort', aborted)
         socket.off('connect', connected)
         socket.off('error', failed)
         socket.off('close', closed)
@@ -164,11 +166,13 @@ export class SshConnection extends Service {
       const connected = (): void => { cleanup(); resolve() }
       const failed = (error: Error): void => { cleanup(); reject(error) }
       const closed = (): void => { failed(new Error('SSH connection closed before stream establishment')) }
+      const aborted = (): void => { socket.destroy(signal.reason instanceof Error ? signal.reason : new Error(String(signal.reason))) }
       socket.once('connect', connected)
       socket.once('error', failed)
       socket.once('close', closed)
+      signal.addEventListener('abort', aborted, { once: true })
     })
-    const authenticated = await authenticateStream(socket, endpoint.capability, this.config.requestTimeoutMs)
+    const authenticated = await authenticateStream(socket, endpoint.capability, this.config.requestTimeoutMs, signal)
     this.sockets.add(authenticated)
     authenticated.on('error', () => { authenticated.destroy() })
     authenticated.once('close', () => { this.sockets.delete(authenticated) })
@@ -190,7 +194,8 @@ export class SshConnection extends Service {
       if (this.failure === undefined) await this.rpc?.request('close', {}, z.null(), AbortSignal.timeout(this.config.requestTimeoutMs))
     } finally {
       this.rpc?.close()
-      const socketClosures = [...this.sockets].map(socket => new Promise<void>((resolve) => {
+      // TLS wrappers release their reads before their underlying sockets close.
+      const socketClosures = [...this.sockets].reverse().map(socket => new Promise<void>((resolve) => {
         if (socket.closed) resolve()
         else { socket.once('close', () => { resolve() }); socket.destroy() }
       }))
@@ -232,7 +237,6 @@ export class SshConnection extends Service {
       force.unref()
     }
     combined.addEventListener('abort', escalate, { once: true })
-    if (combined.aborted) escalate()
     try { await result.promise }
     finally {
       await closed
@@ -247,7 +251,7 @@ export class SshConnection extends Service {
     this.lifetime.abort(error)
     if (this.heartbeat !== undefined) clearInterval(this.heartbeat)
     this.rpc?.close(error)
-    for (const socket of this.sockets) socket.destroy(error)
+    for (const socket of [...this.sockets].reverse()) socket.destroy(error)
     this.child?.kill('SIGTERM')
   }
 
@@ -279,7 +283,7 @@ export class SshConnection extends Service {
     let heartbeatPending: Promise<unknown> | undefined
     this.heartbeat = setInterval(() => {
       heartbeatPending ??= rpc.request('heartbeat', {}, z.null(), AbortSignal.timeout(this.config.leaseMs / 2))
-        .catch((error: unknown) => { this.fail(error instanceof Error ? error : new Error(String(error))) })
+        .catch((error: unknown) => { this.fail(error as Error) })
         .finally(() => { heartbeatPending = undefined })
     }, Math.floor(this.config.leaseMs / 3))
     this.heartbeat.unref()

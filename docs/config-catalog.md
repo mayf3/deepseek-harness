@@ -2286,14 +2286,14 @@ export interface Config {
   requestTimeoutMs?: number
   /** Maximum JSON payload bytes per helper request or response. */
   maxFrameBytes?: number
-  /** Maximum outstanding administrative requests. */
+  /** Maximum ordinary requests; heartbeat and bounded resource cleanup have reserved capacity. */
   maxPending?: number
   /** Remote helper lease; loss of heartbeats starts remote managed cleanup. */
   leaseMs?: number
 }
 ```
 
-Source: [`packages/ssh/ssh/src/index.ts:19`](../packages/ssh/ssh/src/index.ts)
+Source: [`packages/ssh/ssh/src/index.ts:17`](../packages/ssh/ssh/src/index.ts)
 
 <a id="deepseek-aidsh-storage-domain"></a>
 

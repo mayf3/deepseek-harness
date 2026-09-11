@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs'
 import { mkdtemp, rm } from 'node:fs/promises'
 import type { Readable, Writable } from 'node:stream'
 import { Context } from '@deepseek-ai/cordis'
-import { FsError, type FsTarget, type FsEditRequest, type FsWriteIntent, type FsVersion } from '@deepseek-ai/dsh-fs'
+import { FsError, type FsTarget, type FsWriteIntent, type FsVersion } from '@deepseek-ai/dsh-fs'
 import { SandboxedFileSystem } from '@deepseek-ai/dsh-fs-sandbox'
 import { LocalSubprocessRuntime } from '@deepseek-ai/dsh-subprocess-local'
 import { LocalSandboxProvider } from '@deepseek-ai/dsh-sandbox-local'
@@ -14,12 +14,14 @@ import type { SandboxExecutionPolicy, SandboxPolicy } from '@deepseek-ai/dsh-san
 import { z } from 'zod'
 import { SshRpcPeer, SSH_MAX_PROCESS_HANDLES, SSH_MAX_TEXT_STREAMS, SSH_PROTOCOL_VERSION } from './protocol.ts'
 import { RemoteProcesses } from './helper-processes.ts'
-import { editSchema, environmentSchema, intentSchema, policySchema, remotePath, targetSchema } from './schemas.ts'
+import { editSchema, environmentSchema, intentSchema, policySchema, processIdSchema, remotePath, targetSchema, textStreamIdSchema } from './schemas.ts'
+import type { SshTextStreamId } from './schemas.ts'
 
 const MAX_FRAME_BYTES = 64 * 1024 * 1024
 const MAX_TEXT_BYTES = 8 * 1024 * 1024
 const object = z.object({}).strict()
-const idRequest = z.object({ id: z.string().uuid() }).strict()
+const processIdRequest = z.object({ id: processIdSchema }).strict()
+const textStreamIdRequest = z.object({ id: textStreamIdSchema }).strict()
 
 async function services() {
   const ctx = new Context()
@@ -55,7 +57,7 @@ export async function runSshHelper(transport: HelperTransport): Promise<void> {
   const root = await mkdtemp('/tmp/dsh-ssh-')
   const processes = new RemoteProcesses(ctx, root, SSH_MAX_PROCESS_HANDLES, 30_000)
   const lifetime = new AbortController()
-  const iterators = new Map<string, { iterator: AsyncIterator<string>; controller: AbortController }>()
+  const iterators = new Map<SshTextStreamId, { iterator: AsyncIterator<string>; controller: AbortController }>()
   let lease: NodeJS.Timeout | undefined
   let leaseMs = 30_000
   let initialized = false
@@ -66,7 +68,7 @@ export async function runSshHelper(transport: HelperTransport): Promise<void> {
       if (lease !== undefined) clearTimeout(lease)
       lifetime.abort(new Error('SSH helper is closing'))
       for (const record of iterators.values()) record.controller.abort(lifetime.signal.reason)
-      await Promise.allSettled([...iterators.values()].map(record => record.iterator.return?.()))
+      await Promise.allSettled([...iterators.values()].map(async record => record.iterator.return?.()))
       iterators.clear()
       try { await processes.close() }
       finally {
@@ -108,12 +110,12 @@ export async function runSshHelper(transport: HelperTransport): Promise<void> {
     if (method === 'heartbeat') { object.parse(raw); touchLease(); return null }
     if (method === 'close') { object.parse(raw); await close(); return null }
     if (method === 'process.prepare') return processes.prepare(raw)
-    if (method === 'process.start') return processes.start(idRequest.parse(raw).id, signal)
-    if (method === 'process.done') return processes.done(idRequest.parse(raw).id)
-    if (method === 'process.wait') return processes.wait(idRequest.parse(raw).id, signal)
-    if (method === 'process.terminate') { await processes.terminate(idRequest.parse(raw).id); return null }
+    if (method === 'process.start') return processes.start(processIdRequest.parse(raw).id, signal)
+    if (method === 'process.done') return processes.done(processIdRequest.parse(raw).id)
+    if (method === 'process.wait') return processes.wait(processIdRequest.parse(raw).id, signal)
+    if (method === 'process.terminate') { await processes.terminate(processIdRequest.parse(raw).id); return null }
     if (method === 'terminal.write' || method === 'terminal.inspect' || method === 'terminal.signal') {
-      const input = z.object({ id: z.string().uuid(), value: z.string().optional() }).strict().parse(raw)
+      const input = z.object({ id: processIdSchema, value: z.string().optional() }).strict().parse(raw)
       return processes.terminal(input.id, method === 'terminal.write' ? 'write' : method === 'terminal.inspect' ? 'inspect' : 'signal', input.value)
     }
     if (method === 'executable') {
@@ -145,7 +147,7 @@ export async function runSshHelper(transport: HelperTransport): Promise<void> {
         try {
           signal.throwIfAborted()
           if (iterators.size >= SSH_MAX_TEXT_STREAMS) throw new Error('SSH text stream limit reached')
-          const id = randomUUID()
+          const id = randomUUID() as SshTextStreamId
           iterators.set(id, { iterator, controller })
           return id
         } catch (error) {
@@ -165,7 +167,7 @@ export async function runSshHelper(transport: HelperTransport): Promise<void> {
       return text
     }
     if (method === 'fs.next' || method === 'fs.streamClose') {
-      const { id } = idRequest.parse(raw)
+      const { id } = textStreamIdRequest.parse(raw)
       const record = iterators.get(id)
       if (record === undefined) throw new Error('Unknown SSH text stream')
       if (method === 'fs.streamClose') {
@@ -180,7 +182,7 @@ export async function runSshHelper(transport: HelperTransport): Promise<void> {
         signal.throwIfAborted()
         const next = await record.iterator.next()
         if (next.done) iterators.delete(id)
-        return { done: next.done ?? false, value: next.value ?? '' }
+        return { done: next.done ?? false, value: next.done ? '' : next.value }
       } catch (error) {
         iterators.delete(id)
         record.controller.abort(error)
@@ -214,7 +216,7 @@ export async function runSshHelper(transport: HelperTransport): Promise<void> {
         input.expected === undefined ? undefined : intentSchema.parse(input.expected) as FsWriteIntent, signal, resolved,
       )
       return ctx.fs.editText(
-        target, editSchema.parse(input.edit) as FsEditRequest,
+        target, editSchema.parse(input.edit),
         input.expected === undefined
           ? undefined : z.object({ version: z.string() }).strict().parse(input.expected) as { version: FsVersion },
         signal, resolved,

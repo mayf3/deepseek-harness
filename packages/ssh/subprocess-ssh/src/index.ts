@@ -7,6 +7,7 @@ import type { SubprocessCollectedOutputs, SubprocessHandle, SubprocessOutcome, S
 import { OutputCollector } from '@deepseek-ai/dsh-subprocess-local/output'
 import type { SshConnection } from '@deepseek-ai/dsh-ssh'
 import { doneSchema, foregroundSchema, outputSnapshotFrameLimit, outputSnapshotSchema, preparedSchema, remotePath, streamEndpointSchema } from '@deepseek-ai/dsh-ssh/schemas'
+import type { SshProcessId } from '@deepseek-ai/dsh-ssh/schemas'
 import { SshRpcPeer } from '@deepseek-ai/dsh-ssh/protocol'
 import { z } from 'zod'
 
@@ -32,11 +33,10 @@ class RemoteProcess implements SubprocessHandle {
   private readonly fromControl = new PassThrough()
   private readonly controller = new AbortController()
   private readonly started: Promise<void>
-  private id: string | undefined
+  private id: SshProcessId | undefined
   private sockets: Socket[] = []
   private quiescent = false
   private committed = false
-  private startRequested = false
   private termination: Promise<void> | undefined
   private readonly detachAbort: () => void
   private spills: { stdout?: string | undefined; stderr?: string | undefined } = {}
@@ -125,11 +125,11 @@ class RemoteProcess implements SubprocessHandle {
         if (name === 'stdout' || name === 'stderr') {
           const mode = this.spec.stdio[name]
           if (typeof mode === 'object') {
-            new SshRpcPeer(socket, socket, outputSnapshotFrameLimit(mode.maxBytes), 1, async (method, raw) => {
+            new SshRpcPeer(socket, socket, outputSnapshotFrameLimit(mode.maxBytes), 1, (method, raw) => Promise.resolve().then(() => {
               if (method !== 'snapshot') throw new Error('Unexpected SSH output-stream operation')
               this.updateCollection[name]?.(outputSnapshotSchema.parse(raw), false)
               return null
-            })
+            }))
           } else {
             socket.end()
             socket.pipe(name === 'stdout' ? this.out : this.err)
@@ -139,7 +139,6 @@ class RemoteProcess implements SubprocessHandle {
         if (name === 'control') { this.toControl.pipe(socket); socket.pipe(this.fromControl) }
       }
       this.controller.signal.throwIfAborted()
-      this.startRequested = true
       await this.ssh.request('process.start', { id: this.id }, z.object({}).strict(), this.controller.signal)
       this.committed = true
     } catch (error) {
@@ -173,14 +172,12 @@ class RemoteProcess implements SubprocessHandle {
 
   async waitForExit(signal?: AbortSignal): Promise<boolean> {
     if (this.quiescent) return true
-    try { await this.started } catch (error) {
+    try { await this.started } catch {
+      // Startup errors remain on done; a prepared process must first finish termination.
       if (this.termination !== undefined) await this.termination
-      if (this.quiescent || !this.startRequested) {
-        this.quiescent = true
-        this.detachAbort()
-        return true
-      }
-      throw error
+      this.quiescent = true
+      this.detachAbort()
+      return true
     }
     if (this.termination !== undefined) { await this.termination; return true }
     const result = await this.ssh.request('process.wait', { id: this.id }, z.boolean(), signal, true)
@@ -207,7 +204,7 @@ class RemoteProcess implements SubprocessHandle {
         new Promise<void>((resolve) => { timer = setTimeout(resolve, this.spec.graceMs) }),
       ])
     } finally {
-      if (timer !== undefined) clearTimeout(timer)
+      clearTimeout(timer)
       for (const dispose of disposers) dispose()
     }
   }

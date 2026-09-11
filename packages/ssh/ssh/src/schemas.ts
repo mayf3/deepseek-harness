@@ -1,5 +1,15 @@
 /** Strict JSON validation for SSH helper requests and remote observations. */
 import { z } from 'zod'
+import type { Branded } from '@deepseek-ai/dsh-brand'
+
+/** Identity of one prepared or running process in its owning SSH helper. */
+export type SshProcessId = Branded<'SshProcessId'>
+/** Identity of one open text iterator in its owning SSH helper. */
+export type SshTextStreamId = Branded<'SshTextStreamId'>
+/** Admit a process identity from the private helper protocol. */
+export const processIdSchema = z.uuid().transform((value): SshProcessId => value as SshProcessId)
+/** Admit a text iterator identity from the private helper protocol. */
+export const textStreamIdSchema = z.uuid().transform((value): SshTextStreamId => value as SshTextStreamId)
 
 /** A remote POSIX absolute path; spelling is preserved until remote canonicalization. */
 export const remotePath = z.string().min(1).refine(value => value.startsWith('/') && !value.includes('\0'), 'expected an absolute POSIX path')
@@ -47,11 +57,11 @@ export const streamEndpointSchema = z.object({ path: remotePath, capability: z.s
 /** A stream capability reaches only the authenticated SSH client and its helper. */
 export type SshStreamEndpoint = z.infer<typeof streamEndpointSchema>
 /** Prepared process and its independently authenticated stream endpoints. */
-export const preparedSchema = z.object({ id: z.string().uuid(), streams: z.partialRecord(z.enum(['stdin', 'stdout', 'stderr', 'control', 'terminal']), streamEndpointSchema) }).strict()
+export const preparedSchema = z.object({ id: processIdSchema, streams: z.partialRecord(z.enum(['stdin', 'stdout', 'stderr', 'control', 'terminal']), streamEndpointSchema) }).strict()
 /** Direct process exit facts. */
 export const outcomeSchema = z.object({ exitCode: z.number().int().nullable(), signal: z.string().nullable() }).strict()
 /** A bounded raw tail positioned in whole-stream byte coordinates. */
-export const outputSnapshotSchema = z.object({ tail: z.string().base64(), totalBytes: z.number().int().nonnegative() }).strict()
+export const outputSnapshotSchema = z.object({ tail: z.base64(), totalBytes: z.number().int().nonnegative() }).strict()
 /**
  * Bound one encoded tail and its RPC envelope by the declared collection budget.
  * @param maxBytes - the collector's retained raw-byte limit.

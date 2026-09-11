@@ -35,7 +35,7 @@ describe('SSH protocol wire and allocation bounds', () => {
     const controller = new AbortController()
     controller.abort('caller cancelled before allocation')
     const chunks: Buffer[] = []
-    output.on('data', (chunk) => { chunks.push(chunk) })
+    output.on('data', (chunk: Buffer) => { chunks.push(chunk) })
     await expect(connection.request('read', {}, z.null(), controller.signal)).rejects.toBe('caller cancelled before allocation')
     expect(chunks).toEqual([])
   })
@@ -44,7 +44,7 @@ describe('SSH protocol wire and allocation bounds', () => {
     const { connection, input, output } = peer({ pending: 1 })
     const sent = once(output, 'data')
     const first = connection.request('read', {}, z.string())
-    const [chunk] = await sent
+    const [chunk] = await sent as [Buffer]
     const request = JSON.parse(Buffer.from(chunk).subarray(4).toString()) as { id: string }
     await expect(connection.request('read', {}, z.string())).rejects.toThrow('pending request limit')
     input.write(frame({ type: 'result', id: request.id, value: 'first response' }))

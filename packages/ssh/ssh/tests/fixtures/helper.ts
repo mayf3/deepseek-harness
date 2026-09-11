@@ -23,7 +23,7 @@ export async function createHelperHarness(handshake = true, leaseMs = 30_000) {
   let closing: Promise<void> | undefined
   const close = () => {
     closing ??= (async () => {
-      for (const socket of sockets) socket.destroy()
+      for (const socket of [...sockets].reverse()) socket.destroy()
       client.close()
       controller.abort()
       try { await serving } finally { await rm(root, { recursive: true, force: true }) }

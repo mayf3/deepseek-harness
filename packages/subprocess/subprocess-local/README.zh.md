@@ -44,6 +44,8 @@ kind: "package-reference"
 
 收集模式在内存中保留一条流的最后 `maxBytes`——错误与最终结果通常聚集在末尾——并在配置了 `spill` 上限时把完整流追加到 OS 临时目录下每进程目录中的私有文件（`0700` 目录、`0600` 随机命名文件）。某条流大于 spill 上限时，会丢弃不完整的 spill，只返回带截断标记的尾部。读取基于偏移量且从不消费，因此后台读取与批量读取在退出前后都可以共存。
 
+`./output` 导出向进程适配器共享该收集器与保留 spill 的存储。`snapshot()` 返回保留的原始字节及总字节数，使远程适配器能够保留偏移量，而无需转发完整的流。
+
 ### 控制传输
 
 普通 spawn 可以请求 [subprocess 控制管道](../subprocess/README.zh.md#using-a-control-pipe)。Node 目标在所有受支持的宿主上均收到 fd 7；Windows 描述符编号依赖 CRT 初始化。POSIX runner 在 `execve` 时保留该描述符；Windows Job 和 ACL runner 在 Node 初始化前通过子进程的 CRT 启动表建立它，并在 spawn 后关闭自身的承载副本。标准流与 runner 的私有管理通道保持独立。

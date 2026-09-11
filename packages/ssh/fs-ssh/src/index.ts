@@ -6,7 +6,7 @@ import type { SandboxExecutionPolicy, SandboxMode } from '@deepseek-ai/dsh-sandb
 import type {} from '@deepseek-ai/dsh-sandbox-policy'
 import type {} from '@deepseek-ai/dsh-ssh'
 import { RemoteOperationError } from '@deepseek-ai/dsh-ssh/protocol'
-import { editResultSchema, entriesSchema, infoSchema, pathInfoSchema, targetSchema, writeResultSchema } from '@deepseek-ai/dsh-ssh/schemas'
+import { editResultSchema, entriesSchema, infoSchema, pathInfoSchema, targetSchema, textStreamIdSchema, writeResultSchema } from '@deepseek-ai/dsh-ssh/schemas'
 import { z } from 'zod'
 
 const errorCodes: Record<FsErrorCode, true> = {
@@ -51,7 +51,7 @@ export class SshFileSystem extends FileSystem {
   }
 
   override async streamText(target: FsTarget, signal?: AbortSignal): Promise<AsyncIterable<string>> {
-    const id = await this.call('fs.stream', { target }, z.string().uuid(), signal)
+    const id = await this.call('fs.stream', { target }, textStreamIdSchema, signal)
     const call = this.call.bind(this)
     return (async function* () {
       let ended = false
@@ -69,11 +69,11 @@ export class SshFileSystem extends FileSystem {
   }
 
   override async readBytes(target: FsTarget, signal: AbortSignal | undefined, maxBytes: number): Promise<Uint8Array> {
-    return Buffer.from(await this.call('fs.readBytes', { target, maxBytes }, z.string().base64(), signal), 'base64')
+    return Buffer.from(await this.call('fs.readBytes', { target, maxBytes }, z.base64(), signal), 'base64')
   }
 
   override async readByteRange(target: FsTarget, range: { offset: number; length: number }, signal?: AbortSignal): Promise<Uint8Array> {
-    return Buffer.from(await this.call('fs.readRange', { target, ...range }, z.string().base64(), signal), 'base64')
+    return Buffer.from(await this.call('fs.readRange', { target, ...range }, z.base64(), signal), 'base64')
   }
 
   override async listDir(target: FsTarget, signal?: AbortSignal): Promise<FsDirEntry[]> {

@@ -2,10 +2,11 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { createConnection, type Socket } from 'node:net'
 import { once } from 'node:events'
 import { Context } from '@deepseek-ai/cordis'
-import { describe, expect, it } from 'vitest'
+import { connect as tlsConnect } from 'node:tls'
+import { describe, expect, it, vi } from 'vitest'
 import { RemoteProcesses } from '../src/helper-processes.ts'
 import type { SshStreamEndpoint } from '../src/schemas.ts'
-import { authenticateStream } from '../src/stream-security.ts'
+import { authenticateStream, SSH_STREAM_TLS_OPTIONS } from '../src/stream-security.ts'
 
 async function connect(endpoint: SshStreamEndpoint, capability: string): Promise<Socket> {
   const socket = createConnection(endpoint.path)
@@ -15,6 +16,47 @@ async function connect(endpoint: SshStreamEndpoint, capability: string): Promise
 }
 
 describe.skipIf(process.platform === 'win32')('SSH stream capabilities', () => {
+  it('refuses an unknown TLS identity without consuming a legitimate reservation', async () => {
+    const root = await mkdtemp('/tmp/dsh-ssh-identity-')
+    const owner = new RemoteProcesses(new Context(), root, 1, 5000)
+    let stream: Socket | undefined
+    try {
+      const prepared = await owner.prepare({ argv: ['true'], cwd: root, graceMs: 100, terminal: { rows: 24, cols: 80 } })
+      const endpoint = prepared.streams.terminal!
+      const raw = createConnection(endpoint.path)
+      await once(raw, 'connect')
+      stream = tlsConnect({ ...SSH_STREAM_TLS_OPTIONS, socket: raw,
+        pskCallback: () => ({ identity: 'unknown-client', psk: Buffer.from(endpoint.capability, 'hex') }),
+      })
+      await expect(once(stream, 'secureConnect')).rejects.toThrow()
+      stream.destroy()
+      stream = await connect(endpoint, endpoint.capability)
+      expect(stream.destroyed).toBe(false)
+    } finally { stream?.destroy(); await owner.close(); await rm(root, { recursive: true, force: true }) }
+  })
+
+  it('publishes only one of two already-connected clients for the same reservation', async () => {
+    const root = await mkdtemp('/tmp/dsh-ssh-duplicate-')
+    const owner = new RemoteProcesses(new Context(), root, 1, 5000)
+    const sockets: Socket[] = []
+    try {
+      const prepared = await owner.prepare({ argv: ['true'], cwd: root, graceMs: 100, terminal: { rows: 24, cols: 80 } })
+      const endpoint = prepared.streams.terminal!
+      const raw = [createConnection(endpoint.path), createConnection(endpoint.path)]
+      await Promise.all(raw.map(socket => once(socket, 'connect')))
+      const clients = await Promise.allSettled(raw.map(socket => authenticateStream(socket, endpoint.capability, 5000)))
+      for (const result of clients) if (result.status === 'fulfilled') {
+        result.value.on('error', () => {})
+        sockets.push(result.value)
+      }
+      await vi.waitFor(() => { expect(sockets.filter(socket => !socket.destroyed)).toHaveLength(1) })
+    } finally {
+      for (const socket of sockets) socket.destroy()
+      await owner.close()
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+
   it('refuses another endpoint capability without consuming the legitimate reservation', async () => {
     const root = await mkdtemp('/tmp/dsh-ssh-auth-')
     const processes = new RemoteProcesses(new Context(), root, 4, 5000)

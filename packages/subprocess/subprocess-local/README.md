@@ -44,6 +44,8 @@ Absolute executable paths are verified; bare names resolve against the scrubbed 
 
 Collect mode keeps the last `maxBytes` of a stream in memory — errors and final results cluster at the end — and, when a `spill` cap is configured, appends the complete stream to a private file under a per-process directory in the OS temp dir (a `0700` directory, `0600` random-named files). A stream larger than the spill cap discards its incomplete spill and returns only the marked truncated tail. Reads are offset-based and non-consuming, so background and batch readers coexist before and after exit.
 
+The `./output` export shares this collector and retained-spill storage with process adapters. `snapshot()` returns the retained raw bytes and total byte count, allowing remote adapters to preserve offsets without forwarding the complete stream.
+
 ### Control transport
 
 An ordinary spawn can request the [subprocess control pipe](../subprocess/README.md#using-a-control-pipe). A Node target receives fd 7 on every supported host; Windows descriptor numbering requires CRT initialization. POSIX runners preserve that descriptor across `execve`; Windows Job and ACL runners establish it in the child's CRT startup table before Node initializes and close their own carrier copies after spawning. Standard streams and the runner's private management channel remain independent.

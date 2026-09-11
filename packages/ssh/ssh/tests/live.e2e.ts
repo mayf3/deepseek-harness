@@ -146,7 +146,7 @@ describe.skipIf(!enabled)('POSIX SSH runtime acceptance', () => {
       })
       const bytes = Buffer.from(Array.from({ length: 128 * 1024 }, (_, index) => index % 256))
       const chunks: Buffer[] = []
-      const receiving = (async () => { for await (const chunk of handle.control!) chunks.push(Buffer.from(chunk)) })()
+      const receiving = (async () => { for await (const chunk of handle.control!) chunks.push(Buffer.from(chunk as Uint8Array)) })()
       handle.control!.end(bytes)
       const result = await processResult(handle)
       await receiving
@@ -218,7 +218,7 @@ describe.skipIf(!enabled)('POSIX SSH runtime acceptance', () => {
         argv: [victim.hello.node, '-e', code], cwd: victim.root,
         stdio: { stdin: 'ignore', stdout: 'pipe', stderr: { maxBytes: 4096 } }, graceMs: 500,
       })
-      const [bytes] = await once(handle.stdout!, 'data')
+      const [bytes] = await once(handle.stdout!, 'data') as [Buffer]
       const scope = `/sys/fs/cgroup${Buffer.from(bytes).toString().trim().split('::')[1]}`
       expect(scope).toMatch(/dsh-subprocess-[^\n]+\.scope$/)
       const scopeTarget = await observer.ctx.fs.resolve(scope)

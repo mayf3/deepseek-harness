@@ -4,6 +4,7 @@ import { randomUUID } from 'node:crypto'
 import { EventEmitter } from 'node:events'
 import type { Readable, Writable } from 'node:stream'
 import { z } from 'zod'
+import type { Branded } from '@deepseek-ai/dsh-brand'
 
 /** Wire version shared by the installed helper and client package. */
 export const SSH_PROTOCOL_VERSION = 1
@@ -30,11 +31,13 @@ function requestClass(method: string): RequestClass {
 }
 
 const errorSchema = z.object({ name: z.string(), message: z.string(), code: z.string().optional() }).strict()
+type SshRpcRequestId = Branded<'SshRpcRequestId'>
+const requestIdSchema = z.string().transform((value): SshRpcRequestId => value as SshRpcRequestId)
 const frameSchema = z.discriminatedUnion('type', [
-  z.object({ type: z.literal('request'), id: z.string(), method: z.string(), params: z.unknown() }).strict(),
-  z.object({ type: z.literal('result'), id: z.string(), value: z.unknown() }).strict(),
-  z.object({ type: z.literal('error'), id: z.string(), error: errorSchema }).strict(),
-  z.object({ type: z.literal('cancel'), id: z.string() }).strict(),
+  z.object({ type: z.literal('request'), id: requestIdSchema, method: z.string(), params: z.unknown() }).strict(),
+  z.object({ type: z.literal('result'), id: requestIdSchema, value: z.unknown() }).strict(),
+  z.object({ type: z.literal('error'), id: requestIdSchema, error: errorSchema }).strict(),
+  z.object({ type: z.literal('cancel'), id: requestIdSchema }).strict(),
 ])
 type Frame = z.infer<typeof frameSchema>
 type RequestHandler = (method: string, params: unknown, signal: AbortSignal) => Promise<unknown>
@@ -53,8 +56,12 @@ export class RemoteOperationError extends Error {
 
 /** The peer owns pending calls and rejects ambiguous operations on connection loss; it never replays requests. */
 export class SshRpcPeer extends EventEmitter {
-  private readonly pending = new Map<string, { resolve(value: unknown): void; reject(error: Error): void; requestClass: RequestClass }>()
-  private readonly active = new Map<string, { controller: AbortController; requestClass: RequestClass }>()
+  private readonly pending = new Map<SshRpcRequestId, {
+    resolve(value: unknown): void
+    reject(error: Error): void
+    requestClass: RequestClass
+  }>()
+  private readonly active = new Map<SshRpcRequestId, { controller: AbortController; requestClass: RequestClass }>()
   private writeTail = Promise.resolve()
   private queuedBytes = 0
   private failure: Error | undefined
@@ -86,7 +93,7 @@ export class SshRpcPeer extends EventEmitter {
     if (this.failure !== undefined) throw this.failure
     const kind = requestClass(method)
     if (this.atCapacity(kind, this.pending.values())) throw new Error('SSH helper pending request limit reached')
-    const id = randomUUID()
+    const id = randomUUID() as SshRpcRequestId
     const result = Promise.withResolvers<unknown>()
     void result.promise.catch(() => {})
     this.pending.set(id, { ...result, requestClass: kind })
