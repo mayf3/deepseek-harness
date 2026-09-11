@@ -4,7 +4,6 @@
  */
 
 export type {
-  BundleStage,
   DshBundleManifest,
   DshClientManifest,
   DshEnginesManifest,

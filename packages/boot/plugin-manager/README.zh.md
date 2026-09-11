@@ -72,7 +72,7 @@ const manager = new PluginManager(ctx, {
 console.log(await manager.list())
 ```
 
-`list` 报告包身份、`bundle` / `plugin` / `unknown` 分类、trust、stage、安装与启用状态。运行行携带实际阶段与失败；禁用组合包显示静态 patch 声明。`addable` 只来自 `dsh.plugins`，包括表示主入口的 `.` 和声明的默认配置。行更新失败后，活跃实例可能保留先前配置。包的 `issues` 还报告其 patch 覆盖的失败行，但不转移这些行的归属。
+`list` 报告包身份、`bundle` / `plugin` / `unknown` 分类、安装与启用状态。运行行携带实际阶段与失败；禁用组合包显示静态 patch 声明。`addable` 只来自 `dsh.plugins`，包括表示主入口的 `.` 和声明的默认配置。行更新失败后，活跃实例可能保留先前配置。包的 `issues` 还报告其 patch 覆盖的失败行，但不转移这些行的归属。
 
 `enable` 选择整份组合包层，并在实时 profile 中重组。逐行失败保留启用选择与成功的其他行；结果报告 `issues`，列表可显示 `partial` 或 `failed`。准备失败会撤销启用选择，并抛出 `plugins/enable-failed`。`disable` 移除整层，包括覆盖。`retry` 先禁用并等待清理，再启用。仅启动时生效的 profile 报告 `effect: restart`。实时 profile 中尚未应用的选择报告 `failed`，并保留实际运行的行；`restart-required` 只用于仅启动时生效的 profile。`uninstall` 禁用组合包、删除用户插入的引用、执行 pnpm remove。
 

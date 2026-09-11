@@ -90,7 +90,6 @@ export class PluginInventoryGateway extends TypertRemoteService {
         moduleName: entry.options.name,
         enabled,
         fiberPhase: entry.fiber === undefined ? (failure === undefined ? null : 'failed') : FIBER_PHASE[entry.fiber.state],
-        trust: origin?.trust ?? 'builtin',
         ...origin === undefined ? {} : { package: packageRef(origin) },
         ...enabled ? {} : { disabledBy: runtime?.userDisables(entry) === true ? 'user' as const : 'composition' as const },
         ...failure === undefined ? {} : { failure: { stage: failure.stage, message: failure.message } },
@@ -106,7 +105,6 @@ export class PluginInventoryGateway extends TypertRemoteService {
           moduleName: conflict.moduleName,
           enabled: true,
           fiberPhase: 'failed',
-          trust: conflict.packageName === undefined ? 'user' : 'external',
           ...conflict.packageName === undefined
             ? {}
             : { package: packageRef({ packageName: conflict.packageName, ...version === undefined ? {} : { version } }) },

@@ -23,15 +23,6 @@ export interface AnalyzedBundleLayer {
 }
 
 /**
- * Whether an enabled bundle may fail without rejecting application startup.
- * @param layer - the resolved provenance and stage.
- * @returns true only for external runtime layers.
- */
-export function isOptionalRuntimeLayer(layer: ProfileLayer): boolean {
-  return layer.trust === 'external' && layer.stage === 'runtime'
-}
-
-/**
  * Inspect the rows a layer introduces without changing their ids or parents.
  * @param layer - the bundle patch list.
  * @returns its declared rows, duplicates, and external override targets.

@@ -8,7 +8,7 @@ import SystemPrompt, { renderPrompt } from '@deepseek-ai/dsh-system-prompt'
 import {
   addHarnessSourceSection, auditStartupEntries, boot,
   FAIL_LOUD_RELEASE_TIMEOUT_MS, HARNESS_SOURCE_SECTION,
-  installFailLoud, ProfileRuntime, loadEnv, loadLayeredEnv, loadOverlayPatches, resolveConfigPath, type FailLoudProcess,
+  installFailLoud, loadEnv, loadLayeredEnv, loadOverlayPatches, resolveConfigPath, type FailLoudProcess,
 } from '../src/index.ts'
 
 const NAME = 'dsh-test-bin'
@@ -429,7 +429,6 @@ describe('installFailLoud', () => {
       return {} as NodeJS.Immediate
     }))
     const audit = auditStartupEntries({
-      get: () => ({ originOfEntry: () => ({ trust: 'external', stage: 'runtime' }) }),
       loader: {
         entries: () => ['broken-a', 'broken-b'].map(name => ({
           options: { id: name, name },
@@ -517,7 +516,7 @@ describe('installFailLoud', () => {
 })
 
 describe('auditStartupEntries', () => {
-  const requiredIds = ['required-a', 'webserver', 'headless-runner']
+  const requiredIds = ['agent-loop', 'webserver', 'modules', 'connection', 'headless-runner', 'acp', 'sdk-jsonrpc-server']
 
   interface FakeEntry {
     fiber?: {
@@ -531,7 +530,6 @@ describe('auditStartupEntries', () => {
   }
 
   const ctxWith = (entries: FakeEntry[]): Context => ({
-    get: () => ({ originOfEntry: (entry: FakeEntry) => requiredIds.includes(entry.options.id) ? undefined : { trust: 'external', stage: 'runtime' } }),
     loader: { entries: () => entries.values() },
   }) as unknown as Context
 
@@ -924,9 +922,7 @@ describe('boot', () => {
     const write = vi.spyOn(process.stderr, 'write').mockImplementation(() => true)
     let ctx: Context | undefined
     try {
-      ctx = await boot(NAME, configPath, [], (ctx) => {
-        ctx.provide('profileRuntime', { originOfEntry: () => ({ trust: 'external', stage: 'runtime' }) } as unknown as ProfileRuntime)
-      })
+      ctx = await boot(NAME, configPath)
       expect(ctx.get('goodStarted')).toBe(true)
       const entries = [...ctx.loader.entries()]
       expect(entries.find(entry => entry.options.id === 'good')?.fiber?.state).toBe(2)

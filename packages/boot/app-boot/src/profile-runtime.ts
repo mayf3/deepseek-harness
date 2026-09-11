@@ -3,9 +3,9 @@
 import { Context, Service } from '@deepseek-ai/cordis'
 import type { Entry } from '@deepseek-ai/cordis-plugin-loader'
 import type Include from '@deepseek-ai/cordis-plugin-include'
-import type { BundleStage, ProfilePatchReload } from '@deepseek-ai/dsh-package-manifest'
+import type { ProfilePatchReload } from '@deepseek-ai/dsh-package-manifest'
 import type { ComposedStack, RowConflict } from './compose-stack.ts'
-import type { BundleTrust, Profile, ProfileLayer } from './profile.ts'
+import type { Profile, ProfileLayer } from './profile.ts'
 import { inspectEntryIssues, type EntryIssue } from './entry-issues.ts'
 
 declare module '@deepseek-ai/cordis' {
@@ -17,10 +17,6 @@ declare module '@deepseek-ai/cordis' {
 
 /** Where one mounted row came from. */
 export interface RowOrigin {
-  /** Who supplied the layer that inserted the row. */
-  readonly trust: BundleTrust
-  /** Effective startup-failure policy of the supplying bundle. */
-  readonly stage: BundleStage
   /** The bundle package that inserted the row. */
   readonly packageName: string
   /** The package's version, when its manifest declares one. */
@@ -111,8 +107,6 @@ export class ProfileRuntime extends Service {
     const layer = this.committed.stack.owners.get(rowId)
     if (layer === undefined) return undefined
     return {
-      trust: layer.trust,
-      stage: layer.stage,
       packageName: layer.packageName,
       ...layer.version === undefined ? {} : { version: layer.version },
     }

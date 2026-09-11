@@ -40,7 +40,7 @@ installFailLoud('dsh')
 const ctx = await boot('dsh', resolveConfigPath(argv[2], process.env.DSH_SNAPSHOT))
 ```
 
-Startup policy follows the bundle that introduced each row. Only `external` / `runtime` rows may fail with a warning while their successful siblings remain active. Built-in, boot-staged, and unowned rows are required: an enabled failure disposes the app and rejects startup. Disabled rows are ignored; the bootstrap Include is always required. Direct calls without profile provenance are strict.
+Startup audits use the [global required entry ids](../../../.agents/notes/implemented/architecture/2026-09-09-consumer-owned-startup-strictness.md), plus the bootstrap Include by identity. Present, enabled required entries must activate; absent and disabled ids do not affect startup. All other entry failures produce warnings and preserve successful siblings, including built-in tools, user patch rows, and direct `boot()` calls without a profile runtime.
 
 <a id="profiles"></a>
 ### Profiles
@@ -58,7 +58,7 @@ Profiles with `patchReload: live` watch both user patch files and apply the [rel
 
 Inserted plugin names may be absolute filesystem paths, file URLs, or package specifiers. Patch loading converts absolute paths and patch-relative `./` or `../` paths to file URLs within `insert` rows and their nested groups; existing-entry name assertions and replacement `config` values remain literal.
 
-Installed dependencies default to `external`; template bundles and packages in `dsh.profile.firstParty` are `builtin`. Effective stage is `dsh.profile.stages[package]`, then the package’s `dsh.bundle.stage`, then `runtime`. Stage selects startup failure policy, not a later execution phase. Bundle patches retain their declared ids, parents, and ordering. Built-in and boot-staged layers claim ids first; an optional bundle with a duplicate id is omitted whole and reported, while a conflicting user insert is omitted per row. `dependencies` records installation; `dsh.profile.bundles` selects enabled layers, including all their inserts and overrides.
+Bundle patches retain their declared ids, parents, and ordering. Layers claim row ids in manifest order; a bundle with a repeated or already claimed id is omitted whole and reported, while a conflicting user insert is omitted per row. `dependencies` records installation; `dsh.profile.bundles` selects enabled layers, including all their inserts and overrides. Package metadata does not select startup strictness.
 
 The launcher provides `ctx.profileRuntime` before any configuration entry mounts. The runtime requires Loader and supports calls through both root and plugin contexts. It owns row provenance, accepted composition, conflicts, and user-disabled rows. Watchers and management operations share its serial recomposition queue. Recomposition waits for current entries and removed fibers, then publishes accepted options and reports per-entry issues; a failed update can leave a fiber running its previous valid config. `installFailLoud` remains installed until shutdown for process-level unhandled rejections. Observers can await `whenIdle()` before publishing a refreshed view of composition ownership.
 
@@ -135,7 +135,7 @@ This section explains how the outcomes above are realized and points at the code
 
 - **Channel-neutral library.** The package carries no loader hooks and no dev-mode surface; the [`dsh` app](../../../apps/cli/README.md) owns its Node source-launch hook and consumes these helpers for the boot sequence, and built consumers use plain Node package resolution.
 - **Two Loader builtins.** `mountRootInclude` registers `cordis:include` and `cordis:group` as Loader builtins: a group row gives one `isolate` realm to a provider and its consumers together, and an agent preset outside this workspace cannot resolve `@deepseek-ai/cordis-plugin-group` by name. Both load through the ambient module pipeline rather than the included tree's own specifier resolution.
-- **Consumer-owned strictness.** Ordinary Loader groups keep successful siblings. App-boot audits provenance after startup settlement; agent presets own and clean up generations that require every configured entry to activate. Entry failures are read from the Loader and Fiber, with duplicate rejection notifications coalesced through one process checkpoint.
+- **Consumer-owned strictness.** Ordinary Loader groups keep successful siblings. App-boot audits required entry ids after startup settlement; agent presets own and clean up generations that require every configured entry to activate. Entry failures are read from the Loader and Fiber, with duplicate rejection notifications coalesced through one process checkpoint.
 - **Profile module fallback.** Bare plugin specifiers resolve through the Loader from the config directory. Plain Node maintains one symlink per package in the installation dependency closure. A packaged executable instead reads each installed export map with Node ESM conditions and writes real proxy packages that re-export virtual module URLs, because an operating-system symlink cannot enter pkg's `/snapshot` tree. Missing exports stay unavailable, malformed maps fail startup, and a cross-process writer lock replaces stale entries without exposing partial proxies. A selected external bundle absent from the installation closure receives a profile-local `.dsh-module-fallback` link; existing pnpm entries win, projected links are excluded from later closure discovery, and cleanup removes only dsh-owned links.
 - **Update completion.** Live reload waits for Loader work before inspecting entry issues. Profile recomposition also waits for removed fibers, whose cleanup is absent from the current Loader tree. `Fiber.update()` and `Entry.update()` alone do not establish restart success.
 - **Two-stage failure labels.** `boot()` distinguishes `host preparation failed` — `prepare` threw before any config-tree entry mounted — from `plugin tree failed to load`. Plugin diagnostics include original stacks, nested causes, and aggregate member failures. Cyclic causes terminate diagnostic traversal without replacing the original cause.
@@ -149,7 +149,7 @@ The exports each own one stage of the boot: config resolution and snapshot repla
 | File | Role |
 |---|---|
 | [`src/index.ts`](src/index.ts) | Boot, environment layers, fail-loud guard, startup audit, patch parsing and watching, config dump |
-| [`src/profile.ts`](src/profile.ts) | Profile discovery, initialization, bundle resolution with trust and stage, module fallback |
+| [`src/profile.ts`](src/profile.ts) | Profile discovery, initialization, bundle resolution, module fallback |
 | [`src/external-bundles.ts`](src/external-bundles.ts) | Bundle ownership analysis and installed/enabled manifest lists |
 | [`src/compose-stack.ts`](src/compose-stack.ts) | Row-id ownership across the stack: `claimLayerIds`, `composeProfileStack`, conflict records |
 | [`src/entry-issues.ts`](src/entry-issues.ts) | Current entry failures, unresolved services, and diagnostic formatting |

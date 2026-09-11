@@ -10,12 +10,6 @@ import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 /** What an installed package is: a bundle layer, declared plugin modules, or an unknown package. */
 export type PluginPackageKind = 'bundle' | 'plugin' | 'unknown'
 
-/** Who supplied a package: the installation's own bundles, or a dependency the user installed. */
-export type PluginPackageTrust = 'builtin' | 'external'
-
-/** Startup failure policy: external runtime rows are optional; boot rows are required. */
-export type PluginPackageStage = 'boot' | 'runtime'
-
 /**
  * The state one package is in, folded from the manifest, declarations, and current entries:
  *
@@ -81,8 +75,6 @@ export interface PluginPackageView {
   /** Free text from the manifest. */
   readonly description?: string
   readonly kind: PluginPackageKind
-  readonly trust: PluginPackageTrust
-  readonly stage: PluginPackageStage
   /** Whether the package is a profile dependency (installed by `dsh plugin add` or the manager). */
   readonly installed: boolean
   /** Whether the bundle is in the profile's layer list. */
@@ -115,7 +107,7 @@ export type PluginRowTarget =
 export interface PluginInstallRejection {
   /** The package name. */
   readonly name: string
-  /** Why the bundle was rejected, such as a conflicting row id or invalid stage. */
+  /** Why the bundle was rejected, such as a conflicting row id or unreadable composition. */
   readonly reason: string
 }
 
