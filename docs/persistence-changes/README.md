@@ -38,7 +38,7 @@ The [record template](../../.agents/skills/dsh-doc/templates/persistence-change.
 <a id="compatibility-rules"></a>
 ## Compatibility rules
 
-Every detected structural change requires an acknowledgement. These automatic rules apply to the complete change, so an allowed change cannot hide a simultaneous breaking change.
+Every detected structural change requires an acknowledgement. Record creation and update infer the minimum decision from these fixed rules; an explicit `--decision` is a checked assertion. The rules apply to the complete change, so an allowed change cannot hide a simultaneous breaking change.
 
 | Detected change | Minimum decision |
 |---|---|

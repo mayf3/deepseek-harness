@@ -1,7 +1,7 @@
 /** Current-tree persistence history rejects uncovered and incorrectly acknowledged type changes. */
 
 import { spawnSync } from 'node:child_process'
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -354,6 +354,51 @@ describe('persistence changes current-tree commands', () => {
     expect(() => loadPersistenceHistory(root)).toThrow('unreferenced')
   })
 
+  it.each([
+    ['optional field', inventory({ value: 'string', 'label?': 'string' })],
+    ['required-to-optional field', inventory({ 'value?': 'string' })],
+    ['ordinary event addition', { ...inventory(), roots: [...inventory().roots, typeRoot('event:example/added', { count: 'number' })] }],
+  ] as const)('infers same-version for %s', (_name, after) => {
+    const root = fixture()
+    baseline(root)
+    runPersistenceChanges(['--record', NEXT_ID, '--prose', proseFile(root)], root, () => after)
+    const changes = loadPersistenceHistory(root).entries.find(entry => entry.record.id === NEXT_ID)?.record.changes
+    expect(changes?.length).toBeGreaterThan(0)
+    expect(changes?.every(change => change.decision === 'same-version')).toBe(true)
+    verifyPersistenceChanges(root, after)
+  })
+
+  it('infers a version bump when the source includes its own increasing header version', () => {
+    const root = fixture()
+    baseline(root)
+    const after = inventory({ value: 'number' }, 4)
+    runPersistenceChanges(['--record', NEXT_ID, '--prose', proseFile(root)], root, () => after)
+    const changes = loadPersistenceHistory(root).entries.find(entry => entry.record.id === NEXT_ID)?.record.changes
+    expect(changes?.map(change => change.root).sort()).toEqual(['SessionHeader', 'event:example/value'])
+    expect(changes?.every(change => change.decision === 'version-bump')).toBe(true)
+    verifyPersistenceChanges(root, after)
+  })
+
+  it('rejects inferred bumps without a header transition and explicit incorrect assertions before writing', () => {
+    const root = fixture()
+    baseline(root)
+    const prose = proseFile(root)
+    const directory = join(root, 'docs/persistence-changes')
+    const files = readdirSync(directory).sort()
+    const inventoryPath = join(root, 'docs/persistence-schema.json')
+    const before = readFileSync(inventoryPath, 'utf8')
+    for (const [args, code] of [
+      [[], 'version-transition-required'],
+      [['--decision', 'same-version'], 'version-bump-required'],
+    ] as const) {
+      const result = jsonResult(runPersistenceChanges(['--record', NEXT_ID, '--prose', prose, '--json', ...args], root,
+        () => inventory({ value: 'number' })))
+      expect(result).toMatchObject({ ok: false, code, files: [], changes: [expect.objectContaining({ requiresVersionBump: true })] })
+      expect(readFileSync(inventoryPath, 'utf8')).toBe(before)
+      expect(readdirSync(directory).sort()).toEqual(files)
+    }
+  })
+
   it('authors a complete pair from explicit prose and reports source changes even when generated artifacts are stale', () => {
     const root = fixture()
     baseline(root)
@@ -384,7 +429,7 @@ describe('persistence changes current-tree commands', () => {
     const path = join(root, `docs/persistence-changes/${NEXT_ID}.md`)
     const beforeText = readFileSync(path, 'utf8')
     const refreshed = inventory({ value: 'string', 'label?': 'string', 'extra?': 'number' })
-    runPersistenceChanges(['--update', NEXT_ID, '--decision', 'same-version'], root, () => refreshed)
+    runPersistenceChanges(['--update', NEXT_ID], root, () => refreshed)
     const stripRecord = (value: string): string => value.replace(/```yaml persistence-change[\s\S]*?```/u, '')
     expect(stripRecord(readFileSync(path, 'utf8'))).toBe(stripRecord(beforeText))
     expect(loadPersistenceHistory(root).tips.get('event:example/value')?.id).toBe(NEXT_ID)
@@ -464,14 +509,14 @@ describe('persistence changes current-tree commands', () => {
     expect(accepted.status, String(accepted.stderr)).toBe(0)
     const optional = source.replace('value: string', 'value: string; label?: string')
     writeFileSync(join(session, 'types.ts'), optional)
-    const authored = cli('--record', NEXT_ID, '--decision', 'same-version', '--prose', prose, '--json')
+    const authored = cli('--record', NEXT_ID, '--prose', prose, '--json')
     expect(authored.error).toBeUndefined()
     expect(authored.signal).toBeNull()
     expect(authored.status, String(authored.stderr)).toBe(0)
     expect(JSON.parse(String(authored.stdout)) as unknown).toMatchObject({ ok: true, operation: 'record' })
     const beforeUpdate = readFileSync(join(root, `docs/persistence-changes/${NEXT_ID}.md`), 'utf8')
     writeFileSync(join(session, 'types.ts'), optional.replace('label?: string', 'label?: string; extra?: number'))
-    const updated = cli('--update', NEXT_ID, '--decision', 'same-version', '--json')
+    const updated = cli('--update', NEXT_ID, '--json')
     expect(updated.error).toBeUndefined()
     expect(updated.signal).toBeNull()
     expect(updated.status, String(updated.stderr)).toBe(0)

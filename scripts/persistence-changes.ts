@@ -705,8 +705,9 @@ function executeCommand(
   const id = identifier(values.baseline ?? values.record ?? values.update, 'record id')
   const directory = join(root, HISTORY_DIRECTORY)
   if (baseline && existsSync(directory) && readdirSync(directory).some(file => file.endsWith('.schema.json') || ID_PATTERN.test(file.replace(/\.md$/u, '')))) throw new Error('persistence baseline already exists; baseline creation cannot reset history')
-  const decision = baseline ? 'same-version' : values.decision
-  if (decision !== 'same-version' && decision !== 'version-bump') throw new Error('--record and --update require --decision same-version|version-bump')
+  if (values.decision !== undefined && values.decision !== 'same-version' && values.decision !== 'version-bump') {
+    throw new Error('--decision must be same-version or version-bump')
+  }
   const entries = baseline ? [] : readPersistenceEntries(root, update ? id : undefined)
   const existing = update ? entries.find(entry => entry.record.id === id) : undefined
   if (update && existing === undefined) throw new Error(`${id}: cannot update a missing acknowledgement`)
@@ -718,6 +719,8 @@ function executeCommand(
   const history = baseline ? undefined : validatePersistenceHistory(prior)
   const changed = baseline ? current.roots.map(root => root.key) : currentDifferences(history as PersistenceHistory, current)
   if (changed.length === 0) throw new Error('no persistence type changes to acknowledge')
+  const differences = history === undefined ? [] : reportedDifferences(history, current)
+  const decision = values.decision ?? (differences.some(change => change.requiresVersionBump) ? 'version-bump' : 'same-version')
   const roots = current.roots.filter(root => changed.includes(root.key))
   const change: PersistenceChangeRecord = { schemaVersion: 1, id, baseline, changes: changed.sort().map(key => ({
     root: key, previous: history?.tips.get(key)?.id ?? null,
@@ -744,12 +747,12 @@ function executeCommand(
   for (const file of outputs) writeFileSync(resolve(root, file.path), file.content, { flag: recordFiles.includes(file) && !update ? 'wx' : 'w' })
   const completion = baseline
     ? 'Complete both record documents and refresh their translation pairing.'
-    : `Complete the compatibility and verification prose with --update ${id} --prose FILE --decision ${decision}.`
+    : `Complete the compatibility and verification prose with --update ${id} --prose FILE.`
   const message = existing === undefined && prose === undefined
     ? `Created ${HISTORY_DIRECTORY}/${id}.md and paired schema files. ${completion}`
     : `${update ? 'Updated' : 'Created'} ${HISTORY_DIRECTORY}/${id}.md; schema artifacts and bilingual pairing are current.`
   return { schemaVersion: 1, ok: true, operation, recordId: id, message,
-    changes: history === undefined ? [] : reportedDifferences(history, current),
+    changes: differences,
     roots: rootTransitions(history, current), files: outputs.map(file => file.path) }
 }
 

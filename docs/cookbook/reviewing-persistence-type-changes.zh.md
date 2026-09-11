@@ -8,33 +8,35 @@ description: "在创建 PR 前，本地生成、确认并验证会话持久化�
 
 ## 概述
 
-在已安装依赖的贡献者检出目录中修改会话持久化类型声明后，使用本教程。你将检查结构差异、提供双语兼容性说明，并在本地运行与 CI 相同的检查。[记录参考](../persistence-changes/README.zh.md)解释文件和自动规则。所有比较输入都在检出目录中；不需要基线分支或网络访问。
+在已安装依赖的贡献者检出目录中修改会话持久化类型声明后，使用本教程。提供双语兼容性说明，再用一条命令分类变更并生成记录。[记录参考](../persistence-changes/README.zh.md)解释文件和自动规则。所有比较输入都在检出目录中；不需要基线分支或网络访问。
 
 ## 目录
 
-- [1. 检查变更](#generate)
-- [2. 提供说明并创建记录](#acknowledge)
-- [3. 验证结果](#verify)
-- [4. 更新尚未接受的记录](#competing-records)
+- [可选：检查变更](#generate)
+- [1. 记录变更](#acknowledge)
+- [2. 检查、提交并推送](#verify)
+- [更新尚未接受的记录](#competing-records)
 - [开发备注](#dev-note)
 
 -----
 
 <a id="generate"></a>
-## 1. 检查变更
+## 可选：检查变更
 
-编辑类型及其消费方后，在仓库根目录运行：
+若需在记录前预览，在仓库根目录运行：
 
 ```sh
 pnpm --silent run verify-persistence-changes --json
 ```
 
+消费 JSON 时使用 `--silent`：否则 pnpm 会把生命周期失败文本追加到标准输出。失败命令仍以退出码 1 结束。
+
 阅读报告中的根、路径、变更种类和版本要求。被引用类型可能影响多个事件摘要；检查每个受影响的根。在历史覆盖新 schema 之前，验证会失败。陈旧生成清单也会导致验证失败；记录命令会刷新它。若只改变展示细节且 `changes` 为空，运行 `pnpm run gen-persistence-catalog`；无需新增确认记录。
 
 <a id="acknowledge"></a>
-## 2. 提供说明并创建记录
+## 1. 记录变更
 
-根据[兼容性规则](../persistence-changes/README.zh.md#compatibility-rules)选择决策。编写包含 `en` 和 `zh` 的本地 JSON 文件，两者分别包含 `summary`、`compatibility` 和 `verification` 字符串。以下输入描述一个经过验证的钩子审计字段从必选改为可选的变更。用你所做变更的事实替换说明和测试证据；CLI（命令行界面）不会证明这些声明。
+编写包含 `en` 和 `zh` 的本地 JSON 文件，两者分别包含 `summary`、`compatibility` 和 `verification` 字符串。以下输入描述一个经过验证的钩子审计字段从必选改为可选的变更。用你所做变更的事实替换说明和测试证据；CLI（命令行界面）不会证明这些声明。
 
 将输入保存为 `.artifacts/persistence-change.prose.json`，必要时创建该被忽略的目录：
 
@@ -56,38 +58,44 @@ pnpm --silent run verify-persistence-changes --json
 用日期和描述性短名替换示例 id：
 
 ```sh
-pnpm --silent run persistence-changes --record 2026-09-11-poc-optional --decision same-version --prose .artifacts/persistence-change.prose.json --json
+pnpm --silent run persistence-changes --record 2026-09-11-poc-optional --prose .artifacts/persistence-change.prose.json --json
 ```
 
-命令创建记录对和完整的变更后 schema，更新两份生成目录与机器清单，并记录双语配对。提交 `files` 中列出的文件前，审阅人工说明和生成差异。说明输入是编写用文件；生成的文档保留说明内容。省略 `--prose` 会创建未完成草稿，验证将拒绝它们，直到说明补齐。
+命令在写入前验证历史和双语说明、推断最低版本决策，并检查所需的头部版本递增。它生成记录对、完整的变更后 schema、两份目录、机器清单和配对记录。提交前审阅说明及返回的 `changes`、`roots` 和 `files`。省略 `--prose` 会创建未完成草稿，验证将拒绝它们，直到说明补齐。
 
-对于需要升版本的变更，先遵循[添加会话格式版本](adding-a-session-format-version.zh.md)，再使用 `--decision version-bump`。记录必须包含其自身的 `SessionHeader.version` 递增转换。无关的历史升版本不能授权本次变更。日常变更不创建另一条基线。
+推断遵循[固定兼容性规则](../persistence-changes/README.zh.md#compatibility-rules)，不会更改源码或放宽规则。需要升版本时，先遵循[添加会话格式版本](adding-a-session-format-version.zh.md)。记录必须包含其自身的 `SessionHeader.version` 递增转换；无关的历史升版本不能授权它。日常变更不创建另一条基线。
 
 <a id="verify"></a>
-## 3. 验证结果
+## 2. 检查、提交并推送
 
-本地与 CI 运行相同检查：
+根据[测试政策](../testing.zh.md)选择变更所属模块的行为检查，再运行文档检查：
 
 ```sh
-pnpm --silent run verify-persistence-changes --json
+pnpm run doc-sync
 ```
 
-生成清单与源码一致、每次转换满足其分类要求、当前根与最终历史状态一致时，成功响应报告 `ok: true`。失败响应报告 `ok: false`，退出码为 1；JSON 可解析不代表成功。响应包含 `operation`、`message`、结构化 `changes`、`roots` 中逐根的变更前后摘要、生成的 `files`，以及适用时的失败 `code`。每个变更都有稳定的 `kind`；自动化不需要解析描述文本。
+`doc-sync` 检查持久化清单和目录新鲜度、完整历史及双语配对。记录命令的 `ok: true` 不能替代这些检查，也不能替代所属模块的行为与迁移测试。JSON 失败响应保留 `ok: false`、诊断 `code` 和退出码 1。结构化变更包含稳定种类和逐根的变更前后摘要，自动化无需解析描述文本。
 
-运行由变更代码决定的其他检查，包括配套人工文档的检查。记录生成负责其目录和记录的双语对；包 README 或其他双语页面的编辑仍遵循常规配对流程。持久化类型检查不能替代行为测试或迁移验证。
+记录生成负责其目录和记录的双语对；包 README 或其他双语页面的编辑仍遵循常规配对流程。审阅并暂存预期差异，然后正常提交和推送。暂存 lint、配对、空白 hooks，以及 pre-push Host/Client 类型检查仍须执行。
 
 <a id="competing-records"></a>
-## 4. 更新尚未接受的记录
+## 更新尚未接受的记录
 
 记录后源码再次变化时，审阅兼容性说明，并刷新同一条尚未接受的末端记录：
 
 ```sh
-pnpm --silent run persistence-changes --update 2026-09-11-poc-optional --decision same-version --prose .artifacts/persistence-change.prose.json --json
+pnpm --silent run persistence-changes --update 2026-09-11-poc-optional --prose .artifacts/persistence-change.prose.json --json
 ```
 
 命令刷新机器声明、schema、目录和配对。没有 `--prose` 时，它保留已有说明。更新会拒绝初始基线和被其他记录依赖的记录。目录本身无法识别哪些记录已获审阅接受：保留已接受历史，并创建后继。
 
 集成产生竞争末端记录时，根据剩余历史更新尚未接受的记录，再重新评估最终差异。无关根的确认无需刷新。[机制决策](../../.agents/notes/implemented/process/2026-09-11-persistence-type-history.zh.md)解释为何保留完整快照和逐根前驱。
+
+显式 `--decision` 仍是受检查的断言。若已有属性的值类型发生变化，下面这个故意错误的断言会在写入前失败：
+
+```sh
+pnpm --silent run persistence-changes --update 2026-09-11-poc-optional --decision same-version --json
+```
 
 <a id="dev-note"></a>
 ## 开发备注
