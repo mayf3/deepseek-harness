@@ -23,6 +23,8 @@ it('clears process environment, dispatches a binding reply and flushes the termi
   const nativeEnvironment = state.env
   nativeEnvironment.SystemRoot = 'C:\\Windows'
   nativeEnvironment.PATH = '/native/bin'
+  nativeEnvironment.TMP = 'C:\\sandbox-temp'
+  nativeEnvironment.TEMP = 'C:\\sandbox-temp'
   const messages: Record<string, unknown>[] = []
   const peer = new JsonChannel(host, 4096, (raw) => {
     const message = raw as Record<string, unknown>
@@ -35,7 +37,7 @@ it('clears process environment, dispatches a binding reply and flushes the termi
   expect(state.env).toEqual({})
   expect(state.env).not.toBe(nativeEnvironment)
   expect(Object.getPrototypeOf(state.env)).toBeNull()
-  expect(nativeEnvironment).toEqual({ SystemRoot: 'C:\\Windows', PATH: '/native/bin' })
+  expect(nativeEnvironment).toEqual({ SystemRoot: 'C:\\Windows', PATH: '/native/bin', TMP: 'C:\\sandbox-temp', TEMP: 'C:\\sandbox-temp' })
   expect(state.exitCode).toBeUndefined()
   expect(decodeCodeJsonWire(messages.find(message => message.type === 'done')?.value)).toBe(42)
 })

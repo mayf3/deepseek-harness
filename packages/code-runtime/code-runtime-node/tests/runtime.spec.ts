@@ -1,4 +1,4 @@
-import { mkdtemp, mkdir, readFile, rm, symlink } from 'node:fs/promises'
+import { mkdtemp, mkdir, readFile, readdir, rm, symlink } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { createServer, type Socket } from 'node:net'
 import { delimiter, join } from 'node:path'
@@ -59,10 +59,38 @@ describe('Node program process', () => {
     expect(value.env).toEqual([])
     expect(value.status).toBe(0)
     expect(value.error).toBeNull()
-    const nativeKeys = ['PATH', 'PATHEXT', 'SYSTEMROOT', 'WINDIR']
+    const nativeKeys = ['PATH', 'PATHEXT', 'SYSTEMROOT', 'WINDIR', 'TEMP', 'TMP']
     // CoreFoundation initializes this entry independently when a macOS child starts.
     if (process.platform === 'darwin') nativeKeys.push('__CF_USER_TEXT_ENCODING')
     expect(value.childKeys.filter(key => !nativeKeys.includes(key.toUpperCase()))).toEqual([])
+  })
+
+  it.skipIf(process.platform !== 'win32' || !sandboxUsable)('uses the common Windows grant lock and private native temp without exposing ambient values', async () => {
+    const { run, root } = await setup({}, 'workspace-write')
+    const temp = join(root, 'node-temp')
+    const tmp = join(root, 'win32-temp')
+    await mkdir(temp)
+    await mkdir(tmp)
+    onTestFinished(() => { vi.unstubAllEnvs() })
+    vi.stubEnv('TEMP', temp)
+    vi.stubEnv('TMP', tmp)
+    vi.stubEnv('DSH_TEST_RUNTIME_SECRET', 'must-not-inherit')
+    const childCode = 'const fs=require("node:fs"); const path=require("node:path"); const temp=require("node:os").tmpdir(); const file=path.join(temp,"native-temp.txt"); fs.writeFileSync(file,"native-temp"); process.stdout.write(JSON.stringify({file,temp,env:Object.keys(process.env)}));'
+    const result = await run({
+      program: `const {spawnSync}=await import("node:child_process"); const child=spawnSync(process.execPath,["-e",${JSON.stringify(childCode)}],{encoding:"utf8"}); if(child.status!==0) throw new Error(child.error?.message ?? child.stderr); const native=JSON.parse(child.stdout); return {env:Object.keys(process.env),native,observed:await tools.inspect({path:native.file})};`,
+      bindings: bindings({ inspect: async (args) => {
+        const path = (args as { path: string }).path
+        expect(path.startsWith(`${temp}\\dsh-`)).toBe(true)
+        return await readFile(path, 'utf8')
+      } }),
+    })
+    expect(result.error).toBeUndefined()
+    const value = result.value as { env: string[]; native: { env: string[]; temp: string }; observed: string }
+    expect(value.env).toEqual([])
+    expect(value.native.env).not.toContain('DSH_TEST_RUNTIME_SECRET')
+    expect(value.native.temp.startsWith(`${temp}\\dsh-`)).toBe(true)
+    expect(value.observed).toBe('native-temp')
+    expect((await readdir(join(tmp, 'dsh-acl-locks'))).some(name => name.endsWith('.lock'))).toBe(true)
   })
 
   it('returns binding values and preserves typed binding rejection', async () => {

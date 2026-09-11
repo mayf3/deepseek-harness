@@ -429,6 +429,21 @@ describe('Node runtime host failures', () => {
     expect((await h.start()).error).toEqual({ kind: runnerFailed ? 'sandbox-unavailable' : 'worker-exit', message: 'spawn rejected' })
   })
 
+  it('retains distinct native temp paths for the trusted launcher while removing other ambient values', async () => {
+    const h = await setup()
+    onTestFinished(() => { vi.unstubAllEnvs() })
+    vi.stubEnv('TEMP', 'fixture-temp-first')
+    vi.stubEnv('TMP', 'fixture-tmp-second')
+    vi.stubEnv('DSH_TEST_RUNTIME_SECRET', 'must-not-inherit')
+    h.onBoot(() => { h.emit({ type: 'done' }) })
+    expect((await h.start()).error).toBeUndefined()
+    const env = h.spawn.mock.calls[0]?.[0].env ?? {}
+    expect(Object.hasOwn(env, 'TEMP')).toBe(false)
+    expect(Object.hasOwn(env, 'TMP')).toBe(false)
+    expect(Object.hasOwn(env, 'DSH_TEST_RUNTIME_SECRET')).toBe(true)
+    expect(env.DSH_TEST_RUNTIME_SECRET).toBeUndefined()
+  })
+
   it('selects the private packaged bootstrap without leaking ambient environment', async () => {
     const h = await setup()
     h.onBoot(() => { h.emit({ type: 'done' }) })
