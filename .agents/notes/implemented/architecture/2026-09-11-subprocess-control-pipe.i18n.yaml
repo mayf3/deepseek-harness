@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-09-11-subprocess-control-pipe.md
-2026-09-11-subprocess-control-pipe.md: b9c58842961ff96ebfd6d3f9d8be9545ff5a79e0
-2026-09-11-subprocess-control-pipe.zh.md: 10539fd783363e068abf7f15bc0579efd29e95e6
+2026-09-11-subprocess-control-pipe.md: 54fbd8b42ddd5db9e06cde16eadb8d4753b7bbe0
+2026-09-11-subprocess-control-pipe.zh.md: 891bbc17e0638c5ab8e4002f993a9bc06940cfd4

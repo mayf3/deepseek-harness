@@ -14,11 +14,15 @@ Ordinary subprocess requests optionally set `stdio.control: 'pipe'` and receive 
 
 POSIX launchers preserve fd 7 across exec. Windows ordinary Job and restricted-token launchers place the pipe at slot 7 in the CRT startup descriptor table, preserve standard handles, and leave slots 3–6 closed in the payload. Each wrapper closes its carrier after transferring ownership. Handle inheritance is enabled only around process creation. This channel grants no host capability: the child remains untrusted, and every host tool request requires its usual dispatch and approval checks.
 
+Control pipes use Node's `overlapped` stdio disposition, which equals `pipe` on POSIX and creates Windows handles with `FILE_FLAG_OVERLAPPED`. Reads and writes can then proceed independently, including a child sending its first message before the host sends anything.
+
 The filesystem and subprocess services remain replaceable together by remote providers. Neither the public handle nor its request exposes a host path, process identifier, execution-world flag, or transport negotiation catalogue. Terminal allocation remains asynchronous and does not gain an extra descriptor.
 
 ## Alternatives considered
 
 **Stdout framing.** Native code and ordinary `process.stdout.write` can emit arbitrary bytes, so protocol integrity would depend on intercepting program output.
+
+**Synchronous Windows pipes.** A blocking read on an inherited synchronous pipe can prevent a concurrent write on the same handle from progressing. A parent-first echo does not expose this deadlock; child-first readiness and teardown require overlapped handles.
 
 **Node IPC.** The Windows process supervisor already uses a private IPC channel. Coupling payload requests to that management protocol would expose supervisor operations and complicate remote transport.
 
