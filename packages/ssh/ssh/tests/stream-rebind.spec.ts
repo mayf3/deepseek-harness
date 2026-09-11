@@ -32,7 +32,7 @@ describe.skipIf(process.platform === 'win32')('SSH stream pathname replacement',
       const endpoint = prepared.streams.control!
       const capture = `${root}/captured-tls`
       const relay = 'const fs=require(\'node:fs\'),net=require(\'node:net\'),p=process.argv[1];fs.renameSync(p,p+\'.saved\');net.createServer({allowHalfOpen:true},front=>{const back=net.createConnection({path:p+\'.saved\',allowHalfOpen:true});front.on(\'data\',v=>fs.appendFileSync(process.argv[2],v));back.on(\'data\',v=>fs.appendFileSync(process.argv[2],v));front.on(\'error\',()=>back.destroy());back.on(\'error\',()=>front.destroy());front.pipe(back).pipe(front)}).listen(p,()=>process.stdout.write(\'rebound\\n\'));'
-      const confined = ctx.sandbox.confine([process.execPath, '-e', relay, endpoint.path, capture], {
+      const confined = await ctx.sandbox.confine([process.execPath, '-e', relay, endpoint.path, capture], {
         mode: 'workspace-write', workspaceRoot: root,
       })
       attacker = ctx.subprocess.spawn({
@@ -48,7 +48,7 @@ describe.skipIf(process.platform === 'win32')('SSH stream pathname replacement',
         const secured = await authenticateStream(raw, value.capability, 5000)
         sockets.push(secured)
         if (name === 'control') control = secured
-        else secured.resume()
+        else { secured.end(); secured.resume() }
       }
       const secret = `private-process-payload-${randomUUID()}`
       const received: Buffer[] = []

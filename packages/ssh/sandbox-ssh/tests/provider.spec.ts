@@ -1,3 +1,4 @@
+/** Each confinement request resolves remotely before any subprocess receives its argv. */
 import { Context, Service } from '@deepseek-ai/cordis'
 import { SandboxUnavailableError, type SandboxPolicy } from '@deepseek-ai/dsh-sandbox'
 import { describe, expect, it, onTestFinished, vi } from 'vitest'
@@ -11,78 +12,78 @@ const completeFacts = {
 }
 
 async function setup(raw: unknown = completeFacts) {
-  const ready = Promise.withResolvers<{ node: string; workspace: string }>()
-  const entered = Promise.withResolvers<undefined>()
-  const dispatch = vi.fn(async (_method: string, _params: unknown) => { entered.resolve(undefined); return raw })
+  const dispatch = vi.fn(async (_method: string, _params: unknown, _signal?: AbortSignal) => raw)
   class Connection extends Service {
-    readonly helperPath = '/opt/dsh/helper.js'
-    readonly ready = ready.promise
     constructor(ctx: Context) { super(ctx, 'ssh') }
-    async request<T>(method: string, params: unknown, result: z.ZodType<T>): Promise<T> {
-      return result.parse(await dispatch(method, params))
+    async request<T>(method: string, params: unknown, result: z.ZodType<T>, signal?: AbortSignal): Promise<T> {
+      return result.parse(await dispatch(method, params, signal))
     }
   }
   const ctx = new Context()
   const connection = await ctx.plugin(Connection)
-  const fiber = ctx.plugin(SshSandboxProvider)
-  onTestFinished(async () => {
-    ready.resolve({ node: '/usr/bin/node', workspace: '/remote/work' })
-    await fiber.dispose()
-    await connection.dispose()
-  })
-  return { ctx, fiber, ready, dispatch, entered }
+  const fiber = await ctx.plugin(SshSandboxProvider)
+  onTestFinished(async () => { await fiber.dispose(); await connection.dispose() })
+  return { ctx, dispatch }
 }
 
 describe('SSH sandbox provider', () => {
-  it('refuses wrapping before remote backend readiness and then carries verified facts', async () => {
+  it('awaits remote policy resolution and returns the literal enforcing argv', async () => {
     const state = await setup()
-    expect(() => state.ctx.sandbox.confine(['/usr/bin/node', '-e', '42'], policy)).toThrow(SandboxUnavailableError)
-    expect(state.dispatch).not.toHaveBeenCalled()
-    state.ready.resolve({ node: '/usr/bin/node', workspace: '/remote/work' })
-    await state.fiber
-    expect(state.dispatch).toHaveBeenCalledWith('sandbox', {
-      argv: ['true'], policy: { mode: 'read-only', workspaceRoot: '/remote/work' },
-    })
+    const result = Promise.withResolvers<typeof completeFacts>()
+    state.dispatch.mockReturnValueOnce(result.promise)
     const argv = ['/usr/bin/node', '-e', 'console.log("shell $() ; quotes")']
-    const confined = state.ctx.sandbox.confine(argv, policy)
-    expect(confined.argv.slice(0, 3)).toEqual(['/usr/bin/node', '/opt/dsh/helper.js', '--confine'])
-    expect(JSON.parse(confined.argv[3]!)).toEqual({
-      policy, runner: '/usr/bin/bwrap', enforcement: 'full', denialSignatures: ['EROFS', 'EACCES'],
-    })
-    expect(confined.argv.slice(4)).toEqual(['--', ...argv])
-    expect(confined.enforcement).toBe('full')
-    expect(confined.denialSignatures).toEqual(['EROFS', 'EACCES'])
-    expect(confined.runnerFailureRules).toEqual([
-      ...completeFacts.runnerFailureRules, { allowedExitCodes: [127], fatalSignatures: ['dsh-ssh-sandbox: '] },
-    ])
-    expect(state.dispatch).toHaveBeenCalledTimes(1)
+    const controller = new AbortController()
+    let settled = false
+    const pending = state.ctx.sandbox.confine(argv, policy, controller.signal).then((value) => { settled = true; return value })
+    await Promise.resolve()
+    expect(settled).toBe(false)
+    expect(state.dispatch).toHaveBeenCalledWith('sandbox', { argv, policy }, controller.signal)
+    const response = { ...completeFacts, argv: ['/usr/bin/bwrap', '--', ...argv] }
+    result.resolve(response)
+    expect(await pending).toEqual(response)
   })
 
-  it('preserves partial enforcement and omitted runner-rule fields', async () => {
-    const state = await setup({ ...completeFacts, enforcement: 'partial', runnerFailureRules: [{ fatalSignatures: ['runner unavailable'] }] })
-    state.ready.resolve({ node: '/usr/bin/node', workspace: '/remote/work' })
-    await state.fiber
-    const confined = state.ctx.sandbox.confine(['true'], policy)
-    expect(confined.enforcement).toBe('partial')
-    expect(confined.runnerFailureRules[0]).toEqual({ fatalSignatures: ['runner unavailable'] })
+  it('obtains current backend facts for every execution policy', async () => {
+    const state = await setup()
+    expect((await state.ctx.sandbox.confine(['true'], policy)).enforcement).toBe('full')
+    const partial = { ...completeFacts, argv: ['/opt/landlock', '--', 'true'], enforcement: 'partial', runnerFailureRules: [{ fatalSignatures: ['runner unavailable'] }] }
+    state.dispatch.mockResolvedValueOnce(partial)
+    expect(await state.ctx.sandbox.confine(['true'], { ...policy, mode: 'read-only' })).toEqual(partial)
+    expect(state.dispatch).toHaveBeenCalledTimes(2)
   })
 
-  it.each([null, { ...completeFacts, enforcement: 'unknown' }, { ...completeFacts, runnerFailureRules: [{ fatalSignatures: 1 }] }])(
-    'refuses malformed backend observations during service readiness', async (raw) => {
+  it.each([null, { ...completeFacts, argv: [] }, { ...completeFacts, enforcement: 'unknown' }, { ...completeFacts, runnerFailureRules: [{ fatalSignatures: 1 }] }])(
+    'refuses malformed backend observations before exposing argv', async (raw) => {
       const state = await setup(raw)
-      const rejected = expect(state.fiber).rejects.toThrow()
-      state.ready.resolve({ node: '/usr/bin/node', workspace: '/remote/work' })
-      await rejected
-      expect(() => state.ctx.sandbox.confine(['true'], policy)).toThrow()
+      await expect(state.ctx.sandbox.confine(['true'], policy)).rejects.toBeInstanceOf(SandboxUnavailableError)
+      expect(state.dispatch).toHaveBeenCalledTimes(1)
     },
   )
 
-  it('propagates remote backend discovery failure before publishing a wrapper', async () => {
+  it.each([new Error('remote disconnected'), 'remote disconnected'])('reports unavailable confinement without fallback or replay', async (error) => {
     const state = await setup()
-    state.dispatch.mockRejectedValueOnce(new Error('remote sandbox unavailable'))
-    const rejected = expect(state.fiber).rejects.toThrow('remote sandbox unavailable')
-    state.ready.resolve({ node: '/usr/bin/node', workspace: '/remote/work' })
-    await rejected
+    state.dispatch.mockRejectedValueOnce(error)
+    await expect(state.ctx.sandbox.confine(['true'], policy)).rejects.toMatchObject({ name: 'SandboxUnavailableError', code: 'SANDBOX_UNAVAILABLE' })
     expect(state.dispatch).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not send an already-cancelled confinement request', async () => {
+    const state = await setup()
+    const reason = new Error('cancel before confinement')
+    await expect(state.ctx.sandbox.confine(['true'], policy, AbortSignal.abort(reason))).rejects.toBe(reason)
+    expect(state.dispatch).not.toHaveBeenCalled()
+  })
+
+  it('preserves cancellation while remote resolution is pending', async () => {
+    const state = await setup()
+    const controller = new AbortController()
+    const reason = new Error('cancel during confinement')
+    state.dispatch.mockImplementationOnce((_method, _params, signal) => new Promise((_resolve, reject) => {
+      signal?.addEventListener('abort', () => { reject(signal.reason) }, { once: true })
+    }))
+    const pending = state.ctx.sandbox.confine(['true'], policy, controller.signal)
+    const rejected = expect(pending).rejects.toBe(reason)
+    controller.abort(reason)
+    await rejected
   })
 })

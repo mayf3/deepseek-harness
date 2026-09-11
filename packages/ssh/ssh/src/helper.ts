@@ -200,7 +200,7 @@ async function confine(): Promise<void> {
     const { policy } = request
     if (policy.mode === 'danger-full-access' || process.argv[4] !== '--') throw new Error('Invalid remote sandbox invocation')
     const workspaceRoot = runtime.ctx.fs.processPath(await runtime.ctx.fs.resolve(policy.workspaceRoot))
-    const wrapped = runtime.ctx.sandbox.confine(process.argv.slice(5), { ...policy, workspaceRoot } as SandboxPolicy)
+    const wrapped = await runtime.ctx.sandbox.confine(process.argv.slice(5), { ...policy, workspaceRoot } as SandboxPolicy)
     if (wrapped.argv[0] !== request.runner || wrapped.enforcement !== request.enforcement
       || JSON.stringify(wrapped.denialSignatures) !== JSON.stringify(request.denialSignatures)) {
       throw new Error('Remote sandbox backend changed; this connection cannot attest the requested confinement')

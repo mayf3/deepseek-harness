@@ -25,7 +25,7 @@ English | [中文](README.zh.md)
 <a id="use-this-package"></a>
 ## Use this package
 
-Mount this provider with the shared [`SSH connection`](../ssh/README.md), SSH filesystem and SSH subprocess providers. It has no package-specific configuration. The service verifies the remote backend before the composition becomes ready, then exposes synchronous `confine()` using those established facts.
+Mount this provider with the shared [`SSH connection`](../ssh/README.md), SSH filesystem and SSH subprocess providers. It has no package-specific configuration. Await `confine(argv, policy, signal)` to resolve each policy and command through the running remote helper.
 
 Pass a complete `read-only` or `workspace-write` policy. The workspace is interpreted and canonicalized on the remote host. Consumers bypass `confine()` for `danger-full-access`; the connection does not invent an additional local/remote policy flag.
 
@@ -37,7 +37,7 @@ Pass a complete `read-only` or `workspace-write` policy. The workspace is interp
 <details>
 <summary>Implementation internals — click to expand</summary>
 
-The wrapper invokes the installed helper’s private confinement path, which rechecks the selected runner, enforcement level and denial signatures before running the payload. A changed backend refuses execution rather than returning stale enforcement facts. The subprocess provider remains responsible for fd 7 transport and managed process lifetime.
+The running helper canonicalizes the policy root and asks its loaded sandbox provider for the enforcing argv, enforcement level and runner-failure evidence. The SSH subprocess provider executes that returned argv directly and owns fd 7 transport and managed process lifetime. Cancellation or an unavailable backend rejects before the caller receives a command to launch.
 
 </details>
 

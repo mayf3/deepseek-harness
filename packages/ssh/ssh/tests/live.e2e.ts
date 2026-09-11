@@ -71,20 +71,21 @@ describe.skipIf(!enabled)('POSIX SSH runtime acceptance', () => {
         stdio: { stdin: 'ignore', stdout: 'pipe', stderr: 'pipe', control: 'pipe' },
       }, preparedSchema)
       const endpoint = prepared.streams.control!
-      const attack = 'const net=require(\'node:net\');const s=net.createConnection(process.argv[1]);let connected=false;let bytes=0;s.on(\'connect\',()=>{connected=true;const v=Buffer.from(JSON.stringify({type:\'request\',id:\'forged\',method:\'process.start\',params:{}}));const h=Buffer.alloc(4);h.writeUInt32BE(v.length);s.write(Buffer.concat([h,v]))});s.on(\'data\',b=>{bytes+=b.length});s.on(\'error\',()=>{});s.on(\'close\',()=>process.stdout.write(JSON.stringify({connected,bytes})));'
+      const attack = "let connected=false,secure=false;const s=require('node:tls').connect({path:process.argv[1],ciphers:'PSK-AES256-GCM-SHA384',minVersion:'TLSv1.2',maxVersion:'TLSv1.2',pskCallback:()=>({identity:'dsh-stream',psk:Buffer.alloc(32)}),checkServerIdentity:()=>undefined});s.on('connect',()=>{connected=true});s.on('secureConnect',()=>{secure=true});s.on('error',()=>{});s.on('close',()=>process.stdout.write(JSON.stringify({connected,secure})));"
       const attacker = test.ctx.subprocess.spawn({
-        argv: test.ctx.sandbox.confine([test.hello.node, '-e', attack, endpoint.path], {
+        argv: (await test.ctx.sandbox.confine([test.hello.node, '-e', attack, endpoint.path], {
           mode: 'read-only', workspaceRoot: test.root,
-        }).argv,
+        })).argv,
         cwd: test.root, stdio: { stdin: 'ignore', stdout: { maxBytes: 4096 }, stderr: { maxBytes: 4096 } }, graceMs: 500,
       })
       const observed = await processResult(attacker)
       expect(observed.exitCode).toBe(0)
-      expect(JSON.parse(observed.stdout as string)).toEqual({ connected: true, bytes: 0 })
+      expect(JSON.parse(observed.stdout as string)).toEqual({ connected: true, secure: false })
       const sockets = await Promise.all(Object.entries(prepared.streams).map(async ([name, value]) =>
         [name, await test.ctx.ssh.connectStream(value)] as const))
       const output: Buffer[] = []
       for (const [name, socket] of sockets) {
+        socket.end()
         socket.on('data', (chunk) => { if (name === 'stdout') output.push(Buffer.from(chunk)) })
         socket.resume()
       }
@@ -113,7 +114,7 @@ describe.skipIf(!enabled)('POSIX SSH runtime acceptance', () => {
       for await (const chunk of await ctx.fs.streamText(target)) chunks.push(chunk)
       expect(chunks.join('')).toBe('beta\n')
       const policy: SandboxPolicy = { mode: 'workspace-write', workspaceRoot: root }
-      const argv = ctx.sandbox.confine(['/bin/bash', '-c', 'cat text.txt; printf "shell\n" > text.txt'], policy).argv
+      const argv = (await ctx.sandbox.confine(['/bin/bash', '-c', 'cat text.txt; printf "shell\n" > text.txt'], policy)).argv
       const result = await processResult(ctx.subprocess.spawn({
         argv, cwd: root, stdio: { stdin: 'ignore', stdout: { maxBytes: 4096 }, stderr: { maxBytes: 4096 } }, graceMs: 500,
       }))
@@ -138,7 +139,7 @@ describe.skipIf(!enabled)('POSIX SSH runtime acceptance', () => {
     const test = await setup()
     try {
       const code = 'const fs=require(\'node:fs\');const s=new(require(\'node:net\').Socket)({fd:7,readable:true,writable:true,allowHalfOpen:true});let a=[];s.on(\'data\',b=>a.push(b));s.on(\'end\',()=>{let denied;try{fs.writeFileSync(\'forbidden\',\'bad\')}catch(e){denied=e.code}process.stdout.write(JSON.stringify({pid:process.pid,denied,cgroup:process.platform===\'linux\'?fs.readFileSync(\'/proc/self/cgroup\',\'utf8\'):\'\'}));process.stderr.write(\'stderr\');s.end(Buffer.concat(a))});'
-      const argv = test.ctx.sandbox.confine([test.hello.node, '-e', code], { mode: 'read-only', workspaceRoot: test.root }).argv
+      const argv = (await test.ctx.sandbox.confine([test.hello.node, '-e', code], { mode: 'read-only', workspaceRoot: test.root })).argv
       const handle = test.ctx.subprocess.spawn({
         argv, cwd: test.root,
         stdio: { stdin: 'ignore', stdout: { maxBytes: 4096 }, stderr: { maxBytes: 4096 }, control: 'pipe' }, graceMs: 1000,
@@ -166,7 +167,7 @@ describe.skipIf(!enabled)('POSIX SSH runtime acceptance', () => {
     try {
       const code = 'const s=new(require(\'node:net\').Socket)({fd:7,readable:true,writable:true});const b=Buffer.alloc(65536,120);let n=0;function pump(){while(n<10000){n++;if(!process.stdout.write(b))return}}process.stdout.on(\'drain\',pump);s.on(\'data\',v=>s.write(v));pump();setInterval(()=>{},1000);'
       handle = test.ctx.subprocess.spawn({
-        argv: test.ctx.sandbox.confine([test.hello.node, '-e', code], { mode: 'workspace-write', workspaceRoot: test.root }).argv,
+        argv: (await test.ctx.sandbox.confine([test.hello.node, '-e', code], { mode: 'workspace-write', workspaceRoot: test.root })).argv,
         cwd: test.root, stdio: { stdin: 'ignore', stdout: 'pipe', stderr: { maxBytes: 1024 }, control: 'pipe' }, graceMs: 500,
       })
       const reply = once(handle.control!, 'data')
