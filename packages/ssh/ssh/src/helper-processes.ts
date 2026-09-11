@@ -89,7 +89,9 @@ class CollectedOutputForwarder {
 /** Owns remote launch reservations through final process-range quiescence. */
 export class RemoteProcesses {
   private readonly records = new Map<SshProcessId, ProcessRecord>()
-  private readonly completed = new Map<SshProcessId, unknown>()
+  // Settled promises preserve the original rejection for late done requests.
+  private readonly completed = new Map<SshProcessId, Promise<Completion>>()
+  private readonly cleanups = new Set<Promise<void>>()
   private closing = false
 
   constructor(
@@ -149,7 +151,16 @@ export class RemoteProcesses {
     const abort = (): void => { record.controller.abort(signal?.reason) }
     signal?.addEventListener('abort', abort, { once: true })
     record.start = this.startOnce(id, record)
-    try { await record.start } finally { signal?.removeEventListener('abort', abort) }
+    try { await record.start }
+    catch (error) {
+      // AbortSignal reasons need not be Errors; retain the caller's rejection.
+      // eslint-disable-next-line @typescript-eslint/prefer-promise-reject-errors
+      const failed = Promise.reject<Completion>(error)
+      void failed.catch(() => {})
+      record.done = failed
+      await this.finishFailed(id, record, failed)
+      throw error
+    } finally { signal?.removeEventListener('abort', abort) }
     return record.terminal === undefined ? {} : { pid: record.terminal.pid }
   }
 
@@ -172,19 +183,16 @@ export class RemoteProcesses {
         signal: record.controller.signal,
       })
       record.terminal = terminal
-      if (record.controller.signal.aborted) {
-        await terminal.terminate()
-        record.controller.signal.throwIfAborted()
-      }
+      record.controller.signal.throwIfAborted()
       const socket = await (record.endpoints.terminal as Endpoint).connected
       const output = pipeline(terminal.output, socket).catch(() => {})
-      record.done = terminal.done.then(outcome => ({ outcome, spills: {}, collected: {} }))
-      void record.done.catch(() => {})
-      void record.done.then(async (result) => {
+      const done = terminal.done.then(outcome => ({ outcome, spills: {}, collected: {} }))
+      record.done = done
+      void done.then(async () => {
         await terminal.terminate()
         await output
-        await this.rememberCompleted(id, record, result)
-      }).catch(() => {})
+        await this.rememberCompleted(id, record, done)
+      }, () => this.finishFailed(id, record, done)).catch(() => {})
       return
     }
     const stdio = request.stdio as NonNullable<Request['stdio']>
@@ -193,6 +201,11 @@ export class RemoteProcesses {
     }
     const ordinary = this.ctx.subprocess.spawn(spec)
     record.ordinary = ordinary
+    const control = ordinary.control
+    if (record.endpoints.control !== undefined && control === undefined) {
+      void ordinary.done.catch(() => {})
+      throw new Error('Remote subprocess provider did not establish fd 7')
+    }
     const collectors: Partial<Record<'stdout' | 'stderr', OutputCollector>> = {}
     const stopCapture: Array<() => void> = []
     const forwarders: CollectedOutputForwarder[] = []
@@ -224,16 +237,16 @@ export class RemoteProcesses {
       void pipeline(socket, ordinary.stdin as Writable).catch(() => {})
     }
     if (record.endpoints.control !== undefined) {
-      const control = (ordinary as SubprocessHandle & { control?: Duplex }).control
-      if (control === undefined) { ordinary.terminate(); throw new Error('Remote subprocess provider did not establish fd 7') }
+      const channel = control as Duplex
       const socket = await record.endpoints.control.connected
-      socket.pipe(control).pipe(socket)
-      socket.on('error', () => { control.destroy() })
-      control.on('error', () => { socket.destroy() })
+      socket.pipe(channel).pipe(socket)
+      socket.on('error', () => { channel.destroy() })
+      channel.on('error', () => { socket.destroy() })
       streams.push(finished(socket, { readable: false, cleanup: true }).catch(() => {}))
     }
-    record.done = ordinary.done.then(async (outcome) => {
+    const done = ordinary.done.finally(() => {
       for (const stop of stopCapture) stop()
+    }).then(async (outcome) => {
       for (const forwarder of forwarders) forwarded.push(forwarder.finish())
       // A paused output reader may defer EOF, but must not retain the process-range owner.
       await Promise.race([
@@ -252,18 +265,19 @@ export class RemoteProcesses {
       }
       return { outcome, spills, collected }
     })
-    void record.done.catch(() => {})
-    void record.done.then(async (result) => {
+    record.done = done
+    void done.then(async () => {
       await ordinary.waitForExit()
       await Promise.all([...streams, ...forwarded])
-      await this.rememberCompleted(id, record, result)
-    }).catch(() => {})
+      await this.rememberCompleted(id, record, done)
+    }, () => this.finishFailed(id, record, done)).catch(() => {})
   }
 
   /**
    * Await the direct result without claiming all descendants have exited.
    * @param id - the started process reservation.
    * @returns the exit observation and remote spill paths.
+   * @throws the original startup or process failure while its completion is retained.
    */
   async done(id: SshProcessId): Promise<unknown> {
     if (this.completed.has(id)) return this.completed.get(id)
@@ -321,14 +335,16 @@ export class RemoteProcesses {
   async close(): Promise<void> {
     if (this.closing) return
     this.closing = true
-    const outcomes = await Promise.allSettled([...this.records.keys()].map(id => this.release(id)))
-    const errors = outcomes.flatMap(result => result.status === 'rejected' ? [result.reason as unknown] : [])
+    const releases = [...this.records.keys()].map(id => this.release(id))
+    const outcomes = await Promise.allSettled([...releases, ...this.cleanups])
+    while (this.cleanups.size > 0) outcomes.push(...await Promise.allSettled([...this.cleanups]))
+    const errors = [...new Set(outcomes.flatMap(result => result.status === 'rejected' ? [result.reason as unknown] : []))]
     if (errors.length > 0) throw new AggregateError(errors, 'SSH remote process cleanup failed')
   }
 
   private async release(id: SshProcessId): Promise<void> {
     const record = this.record(id)
-    record.release ??= (async () => {
+    record.release ??= this.trackCleanup(async () => {
       clearTimeout(record.expiry)
       record.controller.abort(new Error('SSH process reservation closed'))
       await record.preparing?.catch(() => {})
@@ -339,7 +355,7 @@ export class RemoteProcesses {
       if (record.terminal !== undefined) await record.terminal.terminate()
       this.records.delete(id)
       await rm(record.directory, { recursive: true, force: true })
-    })()
+    })
     await record.release
   }
 
@@ -349,13 +365,30 @@ export class RemoteProcesses {
     return record
   }
 
-  private async rememberCompleted(id: SshProcessId, record: ProcessRecord, result: unknown): Promise<void> {
+  private async finishFailed(id: SshProcessId, record: ProcessRecord, result: Promise<Completion>): Promise<void> {
+    clearTimeout(record.expiry)
+    record.ordinary?.terminate()
+    if (record.ordinary !== undefined) await record.ordinary.waitForExit()
+    if (record.terminal !== undefined) await record.terminal.terminate()
+    await this.rememberCompleted(id, record, result)
+  }
+
+  private async rememberCompleted(id: SshProcessId, record: ProcessRecord, result: Promise<Completion>): Promise<void> {
     if (this.records.get(id) !== record) return
+    const cleanup = this.trackCleanup(async () => {
+      await Promise.all(Object.values(record.endpoints).map(closeEndpoint))
+      await rm(record.directory, { recursive: true, force: true })
+    })
     this.records.delete(id)
     this.completed.set(id, result)
     if (this.completed.size > this.limit * 4) this.completed.delete(this.completed.keys().next().value as SshProcessId)
-    await Promise.all(Object.values(record.endpoints).map(closeEndpoint))
-    await rm(record.directory, { recursive: true, force: true })
+    await cleanup
+  }
+
+  private trackCleanup(work: () => Promise<void>): Promise<void> {
+    const pending = Promise.resolve().then(work)
+    this.cleanups.add(pending)
+    return pending.finally(() => { this.cleanups.delete(pending) })
   }
 
   private async endpoint(path: string): Promise<Endpoint> {

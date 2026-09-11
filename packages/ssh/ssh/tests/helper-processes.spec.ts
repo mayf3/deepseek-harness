@@ -132,7 +132,7 @@ describe.skipIf(process.platform === 'win32')('SSH helper process settlement', (
       await rejected
       expect(child.terminate).toHaveBeenCalledOnce()
       await test.owner.terminate(run.id)
-      expect(child.terminate).toHaveBeenCalledTimes(2)
+      expect(child.terminate).toHaveBeenCalledOnce()
     } finally { await test.close() }
   })
 
@@ -163,13 +163,21 @@ describe.skipIf(process.platform === 'win32')('SSH helper process settlement', (
   it('rejects a missing native control descriptor and still reaps the native process', async () => {
     const test = await harness()
     const child = ordinary()
-    test.spawn.mockReturnValue(child.handle)
+    child.waitForExit.mockResolvedValue(true)
+    test.spawn.mockImplementation(() => {
+      child.completion.reject(new Error('native descriptor allocation failed'))
+      return child.handle
+    })
     try {
       const run = await test.prepare({ ...ordinaryRequest, stdio: { ...ordinaryRequest.stdio, control: 'pipe' } })
       await expect(test.owner.start(run.id)).rejects.toThrow('did not establish fd 7')
       await test.owner.terminate(run.id)
       expect(child.terminate).toHaveBeenCalled()
       expect(child.waitForExit).toHaveBeenCalled()
+      await vi.waitFor(async () => { expect(await readdir(test.root)).toEqual([]) })
+      await expect(test.owner.done(run.id)).rejects.toThrow('did not establish fd 7')
+      const next = await test.owner.prepare(ordinaryRequest)
+      await test.owner.terminate(next.id)
     } finally { await test.close() }
   })
 
@@ -294,6 +302,40 @@ describe.skipIf(process.platform === 'win32')('SSH helper process settlement', (
       await done
       await test.owner.terminate(run.id)
       expect(child.terminate).toHaveBeenCalled()
+      await vi.waitFor(async () => { expect(await readdir(test.root)).toEqual([]) })
+      await expect(test.owner.done(run.id)).rejects.toThrow('terminal driver disconnected')
+      const next = await test.owner.prepare(terminalRequest)
+      await test.owner.terminate(next.id)
+    } finally { await test.close() }
+  })
+
+  it.each(['terminate', 'close'] as const)('joins a live terminal during %s', async (operation) => {
+    const test = await harness()
+    const child = terminal()
+    test.spawnTerminal.mockResolvedValue(child.handle)
+    try {
+      const run = await test.prepare(terminalRequest)
+      await test.owner.start(run.id)
+      if (operation === 'terminate') await test.owner.terminate(run.id)
+      else await test.owner.close()
+      expect(child.terminate).toHaveBeenCalled()
+    } finally { await test.close() }
+  })
+
+  it('retains a failed terminal whose native owner cannot confirm cleanup', async () => {
+    const test = await harness()
+    const child = terminal()
+    child.terminate.mockRejectedValue(new Error('terminal cleanup is unknown'))
+    test.spawnTerminal.mockResolvedValue(child.handle)
+    try {
+      const run = await test.prepare(terminalRequest)
+      await test.owner.start(run.id)
+      const failed = expect(test.owner.done(run.id)).rejects.toThrow('terminal driver failed')
+      child.completion.reject(new Error('terminal driver failed'))
+      await failed
+      await expect(test.owner.wait(run.id)).rejects.toThrow('terminal cleanup is unknown')
+      await expect(test.owner.prepare(ordinaryRequest)).rejects.toThrow('capacity unavailable')
+      await expect(test.owner.close()).rejects.toThrow('SSH remote process cleanup failed')
     } finally { await test.close() }
   })
 
