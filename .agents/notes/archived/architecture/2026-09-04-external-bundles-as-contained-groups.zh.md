@@ -1,6 +1,7 @@
-# Agent Note：外部组合包挂载为受控组，行 id 有归属
+# Agent Note: 外部组合包挂载为受控组，行 id 有归属
 
 Status: implemented
+Archived: 2026-09-11
 
 [English](2026-09-04-external-bundles-as-contained-groups.md) | 中文
 
@@ -14,7 +15,7 @@ Status: implemented
 
 **行 id 有归属，不改写。** `composeProfileStack` 在任何行挂载之前判定归属：一层引入的行包括它插入的行和它的 config 覆盖设为某个组子行的行；内置层与 boot 阶段的层先占有 id，它们之间重复即启动失败，而 config 覆盖重述同一层已声明的行只是这一层保留自己的子行；受控组合包声明了别的层已占有的 id、或把自己的某个 id 声明了两次时整层排除；用户层插入已被占用的 id 时该行丢弃，用户覆盖里的行由用户自己重述。被排除的行就是这次组合的冲突，每条自带消息：启动时打到 stderr，由 `ProfileRuntime` 作为已提交组合的一部分持有，在插件列表里按包显示。它们从不进入 `pluginFailures`，那里的记录只指真正到达 Loader 的行。启动、运行时重组与 `--dump-config` 走同一个函数，它把每个受控层只渲染一次，并一并返回 patch、每个 id 的归属与冲突。
 
-**受控组隔离行的失败。** `ContainedGroup extends Group` 覆盖 `create()`——这是事务性 `update()` 逐行等待的那一步：被拒的行记录到根上的 `pluginFailures` 注册表——树内 id、声明的行 id、模块、组、从 Loader 包装信息解析出的阶段、消息——组在没有它的情况下激活。记录写明隔离该行的受控组，中间隔着多少普通组都一样。组更新时，配置里不再有的行的记录随之丢掉；组卸载时——它的组合包被停用或卸载——它所有行的记录一并丢掉，因此没有失败会比产生它的组合活得更久。`assertEntriesActivated` 豁免受控行（失败或 pending 的行变成一条记录），内置行保留致命路径。挂起的行一旦其 fiber 就地激活——比如它等待的服务被重新打开——记录随即清除，因为已经结束的等待不是需要报告的失败。一条兜底规则封住"隔离反而藏起核心已坏"的 corner case：只要有组合包被隔离，而某个内置行停在 pending，启动仍然失败，诊断点名被隔离的组合包以及 `stage: boot` 这条出路。
+**受控组隔离行的失败。** `ContainedGroup extends Group` 覆盖 `create()`——这是事务性 `update()` 逐行等待的那一步：被拒的行记录到根上的 `pluginFailures` 注册表——树内 id、声明的行 id、模块、组、从 Loader 包装信息解析出的阶段、消息——组在没有它的情况下激活。记录写明隔离该行的受控组，中间隔着多少普通组都一样。组更新时，配置里不再有的行的记录随之丢掉；组卸载时——它的组合包被停用或卸载——它所有行的记录一并丢掉，因此没有失败会比产生它的组合活得更久。`assertEntriesActivated` 豁免受控行（失败或 pending 的行变成一条记录），内置行保留致命路径。一条兜底规则封住"隔离反而藏起核心已坏"的 corner case：只要有组合包被隔离，而某个内置行停在 pending，启动仍然失败，诊断点名被隔离的组合包以及 `stage: boot` 这条出路。
 
 **`stage: boot` 是显式的退出隔离。** 若组合包的行提供内置行所注入的服务，作者在 manifest 里声明 `dsh.bundle.stage: boot`，或部署者在 profile manifest 里设置 `dsh.profile.stages`，后者优先；这样的层不包组、按致命语义挂载。未知的 stage 值让 profile 加载失败。
 

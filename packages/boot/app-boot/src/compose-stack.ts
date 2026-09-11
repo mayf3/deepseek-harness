@@ -7,16 +7,16 @@
  * bundle whose id is already claimed, or which declares one of its own ids
  * twice, is skipped whole and recorded as a conflict; a user layer's insert
  * of a claimed id drops that row and records it. One composition yields the
- * patches, the owner of every id, and the conflicts, and each contained
- * layer is rendered once. Boot, live recomposition, and the config dump all
+ * patches, the owner of every id, and the conflicts, and each optional
+ * layer is analyzed once. Boot, live recomposition, and the config dump all
  * compose through here, so they agree.
  * @module @deepseek-ai/dsh-app-boot/compose-stack
  */
 
 import type { EntryOptions } from '@deepseek-ai/cordis-plugin-loader'
 import type { PatchOptions } from '@deepseek-ai/cordis-plugin-include'
-import { composeExternalLayer, isContainedLayer, type ComposedExternalLayer } from './external-bundles.ts'
-import { visitIdentifiedRows, visitRowTree } from './patch-rows.ts'
+import { analyzeBundleLayer, isOptionalRuntimeLayer, type AnalyzedBundleLayer } from './external-bundles.ts'
+import { visitIdentifiedRows, visitPatchRows, visitRowTree } from './patch-rows.ts'
 import type { ProfileLayer } from './profile.ts'
 
 /** One user-owned patch list in the stack: the profile file, the home file, or a `--patch` overlay. */
@@ -72,8 +72,8 @@ export interface LayerOwnership {
   readonly owners: Map<string, ProfileLayer>
   /** The conflicts of each external bundle left out, by package name. */
   readonly skipped: Map<string, RowConflict[]>
-  /** The composition of each contained layer that owns its ids, by package name; rendered once and mounted as is. */
-  readonly composed: Map<string, ComposedExternalLayer>
+  /** The analysis of each optional layer that owns its ids, by package name; rendered once and mounted as is. */
+  readonly composed: Map<string, AnalyzedBundleLayer>
 }
 
 /** One conflict with its message: the id's other declarer, or the losing layer itself declaring it twice. */
@@ -113,7 +113,7 @@ export function claimLayerIds(layers: readonly ProfileLayer[]): LayerOwnership {
   const owners = new Map<string, ProfileLayer>()
   const declaredUnder = new Map<string, string | undefined>()
   for (const layer of layers) {
-    if (isContainedLayer(layer)) continue
+    if (isOptionalRuntimeLayer(layer)) continue
     visitIdentifiedRows(layer.patches, ({ id, source, place, listed }) => {
       const owner = owners.get(id)
       if (owner === layer) {
@@ -132,11 +132,11 @@ export function claimLayerIds(layers: readonly ProfileLayer[]): LayerOwnership {
     })
   }
   const skipped = new Map<string, RowConflict[]>()
-  const composed = new Map<string, ComposedExternalLayer>()
+  const composed = new Map<string, AnalyzedBundleLayer>()
   for (const layer of layers) {
-    if (!isContainedLayer(layer)) continue
+    if (!isOptionalRuntimeLayer(layer)) continue
     const { packageName } = layer
-    const composition = composeExternalLayer(layer)
+    const composition = analyzeBundleLayer(layer)
     const conflicts: RowConflict[] = composition.duplicates.map(({ rowId, moduleName }) => (
       rowConflict({ rowId, moduleName, layer: packageName, packageName, declaredBy: packageName })
     ))
@@ -159,8 +159,8 @@ export function claimLayerIds(layers: readonly ProfileLayer[]): LayerOwnership {
 /**
  * Compose the stack the root include mounts: every bundle layer that owns its
  * ids, in manifest order, then the user layers with any insert of an already
- * owned id dropped. Patches are passed by reference; callers that mount them
- * clone, because the include pushes inserted rows into the tree as they are.
+ * owned id dropped. Bundle patches are copied before assigning anonymous ids;
+ * user patches remain shared input, so callers mount a detached execution copy.
  * @param binName - the diagnostic prefix on a thrown built-in duplicate.
  * @param layers - the profile's bundle layers, in manifest order.
  * @param userLayers - the user-owned layers, in application order.
@@ -170,6 +170,14 @@ export function claimLayerIds(layers: readonly ProfileLayer[]): LayerOwnership {
 export function composeProfileStack(
   binName: string, layers: readonly ProfileLayer[], userLayers: readonly StackUserLayer[],
 ): ComposedStack {
+  // Only anonymous bundle rows need an assigned id. The execution copy keeps
+  // provenance available after loading without modifying author-owned patches.
+  layers = layers.map((layer) => {
+    const patches = structuredClone(layer.patches)
+    let anonymous = 0
+    visitPatchRows(patches, (row) => { row.id ||= `anonymous/${layer.packageName}/${String(anonymous++)}` })
+    return { ...layer, patches }
+  })
   let ownership: LayerOwnership
   try {
     ownership = claimLayerIds(layers)

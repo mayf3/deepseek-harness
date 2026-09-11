@@ -4,9 +4,8 @@ import type { Context, FiberState } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/cordis-plugin-loader'
 // Type-only: the optional agent-preset roster resolved through `ctx.get`.
 import type {} from '@deepseek-ai/dsh-agent-presets'
-// Type-only: the optional profile runtime and contained-failure registry the
-// boot glue provides, both resolved through `ctx.get`.
-import type {} from '@deepseek-ai/dsh-app-boot'
+// Profile provenance and live entry diagnostics share the boot implementation.
+import { inspectEntryIssues } from '@deepseek-ai/dsh-app-boot'
 import { TypertRemoteService, Remote } from '@deepseek-ai/dsh-typert-protocol'
 // Typert-generated ./typert and ./remote artifacts import Zod at runtime.
 import type {} from 'zod'
@@ -78,40 +77,23 @@ export class PluginInventoryGateway extends TypertRemoteService {
   async list(): Promise<PluginInventorySnapshot> {
     const entries: PluginInventoryEntry[] = []
     const runtime = this.ctx.get('profileRuntime')
-    const failures = this.ctx.get('pluginFailures')
-    const listed = new Set<string>()
+    const failures = new Map((await inspectEntryIssues(this.ctx)).map(issue => [issue.entry, issue]))
     for (const entry of this.ctx.loader.entries()) {
       if (entry.options.group) continue
-      listed.add(entry.id)
       // Provenance and user patches address rows by the id the composition
       // declares; the tree-wide `entry.id` adds the owning include's prefix.
-      const origin = runtime?.originOf(entry.options.id)
-      const enabled = !entry.disabled
-      const failure = failures?.get(entry.id)
+      const origin = runtime?.originOfEntry(entry)
+      const failure = failures.get(entry)
+      const enabled = failure?.stage === 'disabled-expression' || !entry.disabled
       entries.push({
         entryId: pluginEntryId(entry.id),
         moduleName: entry.options.name,
         enabled,
-        fiberPhase: entry.fiber === undefined ? null : FIBER_PHASE[entry.fiber.state],
+        fiberPhase: entry.fiber === undefined ? (failure === undefined ? null : 'failed') : FIBER_PHASE[entry.fiber.state],
         trust: origin?.trust ?? 'builtin',
         ...origin === undefined ? {} : { package: packageRef(origin) },
         ...enabled ? {} : { disabledBy: runtime?.userDisables(entry) === true ? 'user' as const : 'composition' as const },
         ...failure === undefined ? {} : { failure: { stage: failure.stage, message: failure.message } },
-      })
-    }
-    // A row an isolated bundle failed to start is gone from the tree; the
-    // registry is its only record, and the list must still show it.
-    for (const failure of failures?.list() ?? []) {
-      if (listed.has(failure.entryId)) continue
-      const origin = runtime?.originOf(failure.rowId)
-      entries.push({
-        entryId: pluginEntryId(failure.entryId),
-        moduleName: failure.moduleName,
-        enabled: true,
-        fiberPhase: 'failed',
-        trust: origin?.trust ?? 'external',
-        ...origin === undefined ? {} : { package: packageRef(origin) },
-        failure: { stage: failure.stage, message: failure.message },
       })
     }
     // A row the composition left out never reached the tree; the conflict

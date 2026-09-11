@@ -40,7 +40,7 @@ installFailLoud('dsh')
 const ctx = await boot('dsh', resolveConfigPath(argv[2], process.env.DSH_SNAPSHOT))
 ```
 
-With that entry point, startup keeps every plugin that can activate. An enabled failed plugin produces a labelled warning. A failed required entry makes startup dispose the whole app and exit nonzero; required ids absent from a profile and disabled required entries do not affect startup. The global required list covers shared Agent execution, application endpoints, and Web bootstrap/transport: `agent-loop`, `webserver`, `modules`, `connection`, `headless-runner`, `acp`, and `sdk-jsonrpc-server`.
+Startup policy follows the bundle that introduced each row. Only `external` / `runtime` rows may fail with a warning while their successful siblings remain active. Built-in, boot-staged, and unowned rows are required: an enabled failure disposes the app and rejects startup. Disabled rows are ignored; the bootstrap Include is always required. Direct calls without profile provenance are strict.
 
 <a id="profiles"></a>
 ### Profiles
@@ -58,35 +58,9 @@ Profiles with `patchReload: live` watch both user patch files and apply the [rel
 
 Inserted plugin names may be absolute filesystem paths, file URLs, or package specifiers. Patch loading converts absolute paths and patch-relative `./` or `../` paths to file URLs within `insert` rows and their nested groups; existing-entry name assertions and replacement `config` values remain literal.
 
-A bundle you installed with `dsh plugin` is an **external** bundle: its rows mount under one contained group named `bundle/<package>` with the ids its patch declares, and a row that fails to start is isolated and recorded instead of stopping the process — the group and its other rows stay up, and the plugin list shows the failure. Template bundles are built in and keep failing loud. A bundle that provides a service built-in rows inject must mount like a built-in one: its author declares `dsh.bundle.stage: boot` in `package.json`, or you set `dsh.profile.stages` in the profile manifest, which wins. Even without that, an isolated failure that leaves a built-in row waiting for a service still stops the boot and names the isolated bundle. Two more profile-manifest fields shape this: `dsh.profile.firstParty` lists installed packages treated as built in (a first-party package linked in during development), and `dependencies` versus `dsh.profile.bundles` distinguishes a package that is merely installed from one whose layer is enabled. Row ids share one namespace across the stack, counting both the rows a layer inserts and the rows its patches set as a group's config: built-in layers own theirs first, an external bundle that declares an id another layer already owns, or declares one of its own ids twice, is left out whole and reported on stderr and in the plugin list, and a user-layer insert of a taken id is dropped and reported the same way.
+Installed dependencies default to `external`; template bundles and packages in `dsh.profile.firstParty` are `builtin`. Effective stage is `dsh.profile.stages[package]`, then the package’s `dsh.bundle.stage`, then `runtime`. Stage selects startup failure policy, not a later execution phase. Bundle patches retain their declared ids, parents, and ordering. Built-in and boot-staged layers claim ids first; an optional bundle with a duplicate id is omitted whole and reported, while a conflicting user insert is omitted per row. `dependencies` records installation; `dsh.profile.bundles` selects enabled layers, including all their inserts and overrides.
 
-After the tree is up the launcher provides `ctx.profileRuntime`, which holds the composition the tree runs — the profile, the installation anchor, the layer that owns each row, and the rows the composition left out — reads which rows the user patch files disable, and is the one entry point that recomposes the tree: the patch watchers and the [plugin manager](../../host/plugin-manager/README.md), enabling or retrying a bundle, all call it, recompositions run one at a time, and a rejected update leaves its facts describing the tree still running; `recordContainedStates` is what such a caller runs afterwards, because the boot audit does not run again. Startup's fail-loud rejection guard is uninstalled once the tree is up: an unhandled rejection after boot is reported and the process keeps running, with nothing stopped or attributed to a plugin; an uncaught exception is reported and exits.
-
-<a id="patch-files"></a>
-### Patch files
-
-Every layer above is a `cordis.patch.yml`: a top-level YAML sequence of the include plugin's `PatchOptions` — id-targeted overrides and `insert` lists — in the Loader's dialect, where `!!js` marks an expression the row's fiber evaluates. The `./patch-file` export is the one place that reads and writes such a file, so a file the boot accepts is a file the agent-preset roster and the plugin manager accept.
-
-Read a layer with `parsePatchList` (text in hand) or `readPatchListFile` (an absent file reads as `undefined`). Both anchor a relative `insert` row name such as `./plugin.js` to the file's own directory and fail loud on anything that is not a sequence of mappings, because a patch file that cannot be applied at all is a misconfiguration; a patch whose target row is absent stays a per-entry Loader warning.
-
-Write through `mutatePatchFile`. The callback receives a `PatchDocument` and edits it by row id, the way the Loader addresses rows:
-
-```ts
-import { mutatePatchFile } from '@deepseek-ai/dsh-app-boot/patch-file'
-
-const file = '/home/me/.dsh/profiles/web/cordis.patch.yml'
-await mutatePatchFile(file, (document) => {
-  document.setRowField('tool-web', 'disabled', true)      // the id-targeted patch is created when absent
-  document.deleteRowField('tool-web', 'config')           // a patch reduced to its id is removed whole
-  document.appendInsert({ id: 'tool-foo', name: 'dsh-tool-foo' })          // into the root list
-  document.appendInsert({ id: 'sql', name: 'dsh-sql' }, 'agents')          // into the group with that id
-  document.removeInsert('tool-foo')                       // an emptied insert patch is removed whole
-}, { binName: 'dsh', mode: 0o600, dirMode: 0o700 })
-```
-
-`setRowField` never accepts `id` or `insert`; `rowField` reads one key back, with a `!!js` scalar returned as its source text. `appendInsert` refuses an id the file already inserts, and `insertedRow`/`removeInsert` find rows inside inserted groups too. Values written are plain data; a `!!js` scalar on another key is left untouched, which is what lets a user layer revert a `disabled: true` it wrote without disturbing a bundle's `!!js` gate on a different row.
-
-`mutatePatchFile` takes the `<file>.lock` sibling the way `dsh-atomic-write` does, reads the file (absent reads as empty), applies the edit, replaces the file atomically with the stated permission bits when the text changed, and returns the patch list as re-read from the written text. An edit that changes nothing writes nothing.
+The launcher provides `ctx.profileRuntime` before any configuration entry mounts. It owns row provenance, accepted composition, conflicts, and user-disabled rows. Watchers and management operations share its serial recomposition queue. Recomposition waits for current entries and removed fibers, then publishes accepted options and reports per-entry issues; a failed update can leave a fiber running its previous valid config. `installFailLoud` remains installed until shutdown for process-level unhandled rejections.
 
 ### Previewing the effective configuration
 
@@ -111,7 +85,7 @@ After the Loader settles, app-boot reports optional failures as warnings and rej
 | Detached asynchronous work outside the `apply()` return Promise produces an unhandled rejection | Fatal: dispose the app and exit nonzero | Fatal: dispose the app and exit nonzero | Fatal: dispose the app and exit nonzero, regardless of entry id |
 | Entry is absent or explicitly disabled | Ignore it | Ignore it | Do not activate it; no required-startup audit |
 
-The required list above includes `modules` and `connection`; Web startup cannot succeed when either enabled entry fails. Failure of an optional provider can also prevent a required consumer from activating. Schema rejection before an existing entry updates is not a transactional rollback of sibling changes.
+An optional provider failure can leave a required consumer pending and prevent readiness. Overriding an existing row does not change its owner or startup policy. Schema rejection before an existing entry updates does not roll back successful sibling changes.
 
 The [Web process matrix](../../../apps/cli/tests/profiles/web/tests/web-failure-matrix.expected.e2e.ts) and [startup acceptance](../../../apps/cli/tests/profiles/web/tests/web-best-effort-startup.expected.e2e.ts) verify these outcomes through the shipped Web profile; [app-boot tests](tests/app-boot.spec.ts) also exercise root Include failures.
 
@@ -135,35 +109,27 @@ This section explains how the outcomes above are realized and points at the code
 
 - **Channel-neutral library.** The package carries no loader hooks and no dev-mode surface; the [`dsh` app](../../../apps/cli/README.md) owns its Node source-launch hook and consumes these helpers for the boot sequence, and built consumers use plain Node package resolution.
 - **Two Loader builtins.** `mountRootInclude` registers `cordis:include` and `cordis:group` as Loader builtins: a group row gives one `isolate` realm to a provider and its consumers together, and an agent preset outside this workspace cannot resolve `@deepseek-ai/cordis-plugin-group` by name. Both load through the ambient module pipeline rather than the included tree's own specifier resolution.
-- **Consumer-owned strictness.** Ordinary Loader groups keep successful siblings. App-boot applies the global required-entry policy after initial settlement; agent presets and dynamic multi-entry compositions own and dispose their separate generation when they require all-or-nothing setup. App-boot reads failed fibers to report their recorded errors and coalesces duplicate Loader rejection notifications through one process checkpoint.
+- **Consumer-owned strictness.** Ordinary Loader groups keep successful siblings. App-boot audits provenance after startup settlement; agent presets own and clean up generations that require every configured entry to activate. Entry failures are read from the Loader and Fiber, with duplicate rejection notifications coalesced through one process checkpoint.
 - **Profile module fallback.** Bare plugin specifiers resolve through the Loader from the config directory. Plain Node maintains one symlink per package in the installation dependency closure. A packaged executable instead reads each installed export map with Node ESM conditions and writes real proxy packages that re-export virtual module URLs, because an operating-system symlink cannot enter pkg's `/snapshot` tree. Missing exports stay unavailable, malformed maps fail startup, and a cross-process writer lock replaces stale entries without exposing partial proxies. A selected external bundle absent from the installation closure receives a profile-local `.dsh-module-fallback` link; existing pnpm entries win, projected links are excluded from later closure discovery, and cleanup removes only dsh-owned links.
-- **Update completion.** App boot observes restart failures through the `internal/update` waterfall. Live patch reloads wait for the tree's fibers before auditing activation; `Fiber.update()` and `Entry.update()` alone do not establish restart success.
+- **Update completion.** Live reload waits for Loader work before inspecting entry issues. Profile recomposition also waits for removed fibers, whose cleanup is absent from the current Loader tree. `Fiber.update()` and `Entry.update()` alone do not establish restart success.
 - **Two-stage failure labels.** `boot()` distinguishes `host preparation failed` — `prepare` threw before any config-tree entry mounted — from `plugin tree failed to load`. Plugin diagnostics include original stacks, nested causes, and aggregate member failures. Cyclic causes terminate diagnostic traversal without replacing the original cause.
 
 ### Helper behavior
 
 The exports each own one stage of the boot: config resolution and snapshot replay, layered environment loading, fail-loud reporting, activation auditing, patch parsing, root-include mounting, config dump rendering, live patch watching, profile composition, and the harness-source section. Per-export contracts live in the code, not this README — see [`src/index.ts`](src/index.ts) and [`src/profile.ts`](src/profile.ts).
 
-### Two parsers, one dialect
-
-Reading a patch file uses `js-yaml` with the include's `entryListSchema`, so `!!js` scalars become the expression nodes the Loader interpolates, exactly as the include mounts them. Writing uses the `yaml` package's comment-preserving `Document`: it keeps the unresolved `!!js` tag on the scalar it decorates (reported as a `TAG_RESOLVE_FAILED` warning, not an error) and prints it back verbatim, so an edit to one key never rewrites another key's expression. The written text is parsed back with the reading parser, which is the readback the writer's contract promises.
-
-### Addressing
-
-An id-targeted patch is the top-level item whose `id` matches and that carries no `insert`. An inserted row is searched in every `insert` list, recursing into inserted groups (`group: true` with a `config` list). A top-level item that is not a mapping, or an `insert` whose value is not a list, fails the parse.
-
 ### Source map
 
 | File | Role |
 |---|---|
-| [`src/index.ts`](src/index.ts) | Boot helpers: config resolution, environment loading, fail-loud guard and runtime guards, activation audit and `recordContainedStates`, patch-file loading through `./patch-file`, config dump, harness-source section |
-| [`src/profile.ts`](src/profile.ts) | Profile discovery, initialization, bundle resolution with `layerTrust` and stage, module fallback |
-| [`src/external-bundles.ts`](src/external-bundles.ts) | External layer composition (contained group, overrides), `bundleLayerPatches`, and the manifest operations behind install, enable, and disable |
+| [`src/index.ts`](src/index.ts) | Boot, environment layers, fail-loud guard, startup audit, patch parsing and watching, config dump |
+| [`src/profile.ts`](src/profile.ts) | Profile discovery, initialization, bundle resolution with trust and stage, module fallback |
+| [`src/external-bundles.ts`](src/external-bundles.ts) | Bundle ownership analysis and installed/enabled manifest lists |
 | [`src/compose-stack.ts`](src/compose-stack.ts) | Row-id ownership across the stack: `claimLayerIds`, `composeProfileStack`, conflict records |
-| [`src/contained-group.ts`](src/contained-group.ts) | The `cordis:contained-group` builtin and the `pluginFailures` registry |
+| [`src/entry-issues.ts`](src/entry-issues.ts) | Current entry failures, unresolved services, and diagnostic formatting |
 | [`src/profile-runtime.ts`](src/profile-runtime.ts) | The `profileRuntime` service: the committed composition (profile, row provenance, conflicts), user-disabled rows, recomposition |
-| [`src/patch-file.ts`](src/patch-file.ts) | The `./patch-file` export: `parsePatchList` and `readPatchListFile`, the comment-preserving `PatchDocument`, and `mutatePatchFile` under the writer lock |
-| [`src/probe.ts`](src/probe.ts) | The package probe and its per-profile cache; [`src/probe-child.ts`](src/probe-child.ts) is the child entry it spawns and [`src/probe-report.ts`](src/probe-report.ts) the report it validates |
+| [`src/package-metadata.ts`](src/package-metadata.ts) | Static manifest and patch declarations; no module execution or probe cache |
+| [`src/patch-file.ts`](src/patch-file.ts) | Public patch-file parser and atomic user-layer editor |
 | — | No runtime invariant companion is published; this presentation adapter owns no durable package-local event stream; boundary and replay tests cover its protocol mapping. |
 
 </details>
@@ -206,13 +172,10 @@ These limits describe when this boot library is a poor fit or needs special care
 - **Snapshot replay swapping is basename-specific** — only a config ending in `cordis.yml` or `cordis.yaml` maps to the sibling `cordis.snapshot.yml`; custom config names require caller-managed selection.
 - **Environment discovery is launch-scoped** — `loadLayeredEnv` reads only the invocation directory and Harness home once; it does not search parents or follow a workspace selected later. `loadEnv` remains the one-directory helper for non-product bins.
 - **A user patch replaces the whole matched config** — an id-targeted patch does not deep-merge, so a profile override restates the bundle fields it keeps.
-- **An external bundle's overrides are not isolated** — a patch it applies to a built-in row edits that row in place, so its effect stays when the bundle's own rows fail and it is the one thing a bundle can break outside its group.
+- **Overrides retain the target’s owner** — changing a built-in row can make that required row fail; successful updates to other rows remain applied. Disabling the bundle removes its whole patch layer, including overrides.
 - **A conflict is decided by order, not merit** — among external bundles the earlier layer in `dsh.profile.bundles` keeps a contested id, so uninstalling that bundle lets the later one mount on the next boot; the plugin list shows which bundle lost and to whom.
 - **The nested-fiber audit is advisory** — a failed `ctx.inject()` continuation under a built-in entry is reported, not fatal, until shipped compositions are known clean.
-- **Patch edits merge at the key level, not the row level** — `setRowField('x', 'config', value)` replaces the whole `config` mapping of that patch; a caller that wants one nested field changed reads the current value with `rowField` and writes the merged mapping back.
-- **The patch writer authors no expressions** — it emits plain data only; a `!!js` gate is something an author types into the file, never something an API call produces.
-- **Lock orphans are an operator action** — a lock file left by a crashed patch writer is never removed by a contender, which fails after the wait instead; `dsh-atomic-write` documents the same choice.
-- **The probe cannot run from a packaged executable** — `probe-child.js` sits inside the executable's `/snapshot` tree, which the plain Node child cannot read, so `probePackage` rejects there until the child entry is materialized outside the executable the way module proxies are.
+- **Declarations are not activation results** — `readPackageMetadata` reads `dsh.plugins` without importing modules. Declare `plugins: [{ name: "." }]` for a main export, or subpaths such as `./tools`; undeclared packages remain `unknown`. Config validation and execution diagnostics appear only after an actual mount. Physical Cordis resolution cannot detect an inlined copy.
 
 <a id="dev-note"></a>
 ### Dev Note

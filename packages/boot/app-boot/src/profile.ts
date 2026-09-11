@@ -75,7 +75,7 @@ export interface ProfileLayer {
   packageDir: string
   /** Absolute path of the bundle's patch file. */
   patchPath: string
-  /** Who supplied the layer; decides isolation, id prefixing, and failure semantics. */
+  /** Who supplied the layer; decides row ownership priority and startup failure policy. */
   trust: BundleTrust
   /** Effective mount stage: the profile's override, else the bundle's declaration, else `runtime`. */
   stage: BundleStage

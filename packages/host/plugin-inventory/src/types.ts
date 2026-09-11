@@ -29,10 +29,10 @@ export interface PluginPackageRef {
   readonly version?: string
 }
 
-/** A recorded failure of a row inside an isolated external bundle, or a row the composition left out. */
+/** A current entry failure or unresolved dependency, or a row the composition left out. */
 export interface PluginFailure {
   /** The lifecycle step that failed; `conflict` is a row another layer already declares. */
-  readonly stage: 'import' | 'apply' | 'inject-pending' | 'conflict' | 'unknown'
+  readonly stage: 'import' | 'activation' | 'update' | 'disabled-expression' | 'inject-pending' | 'conflict'
   /** The failure text. */
   readonly message: string
 }
@@ -51,7 +51,7 @@ export interface PluginInventoryEntry {
   readonly package?: PluginPackageRef
   /** Present exactly when `enabled` is false. */
   readonly disabledBy?: PluginDisabledBy
-  /** Present for a row an isolated bundle failed to start, or a row the composition left out. */
+  /** Present for a failed attempt or unresolved dependency, including updates that leave an old fiber active. */
   readonly failure?: PluginFailure
 }
 

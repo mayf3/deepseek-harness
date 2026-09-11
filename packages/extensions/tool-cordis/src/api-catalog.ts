@@ -1488,6 +1488,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the origin, or undefined for a row no bundle layer owns (a user or overlay row, or a bundle left out by a conflict).',
       },
       {
+        signature: 'originOfEntry(entry: Entry): RowOrigin | undefined',
+        description: 'Resolve provenance within its Loader tree; nested includes inherit their owning entry.',
+        parameters: [{ name: 'entry', description: 'the live entry, including an entry inside another Include.' }],
+        returns: 'its supplying bundle, or undefined for a user-owned entry.',
+      },
+      {
         signature: 'userDisabledRowIds(): ReadonlySet<string>',
         description: 'Row ids the user patch layers disable with a literal `disabled: true`, as the committed composition read them. The set describes the running tree: a user file the include rejected, or one that cannot be parsed, changes nothing here until a composition with it is accepted.',
         parameters: [],
@@ -1500,10 +1506,11 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'true when the user\'s patches disable the entry or one of the groups holding it.',
       },
       {
-        signature: 'async recompose(options: { reloadBundles?: boolean } = {}): Promise<void>',
-        description: 'Recompose the host tree from the profile\'s layers and the user patch files as they stand now. The root Include re-applies the stack transactionally: a row whose options changed is updated in place, a row that appeared is created, a row that vanished is disposed, and a failure rolls the whole update back with the previous tree still running. The candidate profile, its ownership, and its conflicts become the committed composition only once the update holds; until then, and after a rejection, `current`, `layers`, `originOf`, and `conflicts` keep describing the running tree. Calls queue: one that arrives while another is in flight starts after it settled and reads what it committed. A rejection is that call\'s outcome alone and does not stop the ones behind it.',
-        parameters: [{ name: 'options', description: '`reloadBundles` re-reads the profile manifest first, so a bundle enabled or installed since boot joins the stack.' }],
-        throws: ['when the root include is not mounted, or the Loader rejected the update.'],
+        signature: 'async recompose(options: { reloadBundles?: boolean } = {}): Promise<readonly EntryIssue[]>',
+        description: 'Apply a fresh profile stack and wait for live entries and removed fibers to settle. Parse/composition failures leave the applied stack unchanged. Accepted options can coexist with failed entries or fibers running their previous valid config. Calls serialize; a failed call does not block later changes.',
+        parameters: [{ name: 'options', description: 'whether to reread installed bundle layers from disk.' }],
+        returns: 'current entry issues after application, without rolling back successful siblings.',
+        throws: ['when preparation fails or the root Include cannot accept the update.'],
       },
     ],
   },
@@ -3936,6 +3943,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type BrandedNumber<B extends string> = number & {\n    readonly [BRAND]: B;\n};',
   },
   {
+    name: 'BundleStage',
+    declaration: 'export type BundleStage = \'boot\' | \'runtime\';',
+  },
+  {
     name: 'BundleTrust',
     declaration: 'export type BundleTrust = \'builtin\' | \'external\';',
   },
@@ -4334,6 +4345,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'EncodedImageAttachment',
     declaration: 'export interface EncodedImageAttachment {\n    mediaType: ImageMediaType;\n    data: string;\n    name?: string;\n}',
+  },
+  {
+    name: 'EntryIssue',
+    declaration: 'export interface EntryIssue {\n    readonly entry: Entry;\n    readonly stage: \'import\' | \'activation\' | \'update\' | \'disabled-expression\' | \'inject-pending\';\n    readonly message: string;\n    readonly error?: unknown;\n}',
   },
   {
     name: 'EpochHeader',
@@ -5165,7 +5180,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'RowOrigin',
-    declaration: 'export interface RowOrigin {\n    readonly trust: BundleTrust;\n    readonly packageName: string;\n    readonly version?: string;\n}',
+    declaration: 'export interface RowOrigin {\n    readonly trust: BundleTrust;\n    readonly stage: BundleStage;\n    readonly packageName: string;\n    readonly version?: string;\n}',
   },
   {
     name: 'RunnerFailureRule',

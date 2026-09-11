@@ -1,18 +1,4 @@
-/**
- * External bundle composition and the profile-manifest operations behind
- * installing, enabling, and disabling bundles.
- *
- * An external (`runtime` stage) bundle never mounts its rows directly into the
- * built-in tree: its inserted rows are wrapped in one contained group per
- * bundle, under the ids its patch declares. A group is the unit the Loader
- * updates transactionally, and the contained variant catches each row's
- * failure inside that transaction: the failing row is recorded, its siblings
- * mount, and the built-in tree never sees a rejection. Row ids stay as
- * declared; entry ids are unique per tree (`tree.store`), and
- * `compose-stack.ts` owns the tree-wide ownership check that shared id
- * namespace requires.
- * @module @deepseek-ai/dsh-app-boot/external-bundles
- */
+/** Bundle patch ownership and the profile manifest's installed/enabled layer lists. */
 
 import { join } from 'node:path'
 import type { PatchOptions } from '@deepseek-ai/cordis-plugin-include'
@@ -22,149 +8,52 @@ import {
   readProfileManifest, resolveBundleDir, writeProfileManifest, type ProfileLayer, type ProfileManifest,
 } from './profile.ts'
 
-/** Loader builtin name of the contained group every `runtime` bundle mounts under. */
-export const CONTAINED_GROUP_MODULE = 'cordis:contained-group'
-
-/** Prefix of the group id one external bundle's rows mount under. */
-export const BUNDLE_GROUP_PREFIX = 'bundle/'
-
-/**
- * The group id one external bundle's rows mount under. `/` rather than `:`
- * because `:` is the Loader's nested-id separator (`EntryTree.sep`), and an
- * id containing it would not resolve through `loader.update(id, …)`.
- * @param packageName - the bundle's package name.
- * @returns the group entry id.
- */
-export function bundleGroupId(packageName: string): string {
-  return `${BUNDLE_GROUP_PREFIX}${packageName}`
-}
-
-/** One id an external bundle's patch introduces twice: a row inserted again, or a row spelling the group's or a wrapper's id. */
+/** One row declared twice within a bundle layer. */
 export interface DuplicateRow {
-  /** The repeated id. */
   readonly rowId: string
-  /** The module the repeat names. */
   readonly moduleName: string
 }
 
-/** One external layer rendered as the patches the tree mounts. */
-export interface ComposedExternalLayer {
-  /**
-   * Patches in application order: the empty group insert, then the bundle's
-   * patches as written, each insert re-targeted into the group or a wrapper.
-   */
-  patches: PatchOptions[]
-  /**
-   * Every id the layer introduces — its inserted rows, the rows its config
-   * overrides set, its group, and each wrapper group — with the module each
-   * names; a repeated id keeps its first module.
-   */
-  rows: Map<string, string>
-  /**
-   * Ids the layer introduces more than once, in order of repetition. A config
-   * override restating a row under the group that already holds it is not
-   * one; the same id twice in one config list, or set under another group, is.
-   */
-  duplicates: DuplicateRow[]
-  /** Ids outside the bundle that its patch overrides; not containable, reported for visibility. */
-  overrides: string[]
+/** Static row ownership and overrides of one unmodified bundle patch list. */
+export interface AnalyzedBundleLayer {
+  readonly patches: PatchOptions[]
+  readonly rows: Map<string, string>
+  readonly duplicates: DuplicateRow[]
+  readonly overrides: string[]
 }
 
 /**
- * Whether a layer mounts isolated: an external bundle the profile does not
- * stage at boot.
- * @param layer - the resolved layer.
- * @returns true when the layer mounts as a contained group.
+ * Whether an enabled bundle may fail without rejecting application startup.
+ * @param layer - the resolved provenance and stage.
+ * @returns true only for external runtime layers.
  */
-export function isContainedLayer(layer: ProfileLayer): boolean {
+export function isOptionalRuntimeLayer(layer: ProfileLayer): boolean {
   return layer.trust === 'external' && layer.stage === 'runtime'
 }
 
 /**
- * Render one external bundle layer as contained patches in the order written.
- * The bundle's group is inserted empty first; each root insert becomes an
- * insert into that group, an insert into a row the bundle itself introduces
- * passes through, and every insert into one built-in group lands in one
- * wrapper group nested inside that target — the first insert creates it,
- * later ones insert into it, and a patch that replaces the target's config
- * has removed the wrapper, so the next insert creates a new one under the
- * same id. An id-targeted patch passes through unchanged and is reported as
- * an override when it addresses a row the bundle did not introduce; the rows
- * it sets as a group's config count as the bundle's own, since they mount
- * as children like inserted ones. Every id, declared or generated, goes
- * through one registration, so a row spelling a wrapper's id is a duplicate,
- * and so is a config row the bundle already declared under another group,
- * or listed twice: the Loader would move the first and reject the second.
- * Ids are indexed before any patch is emitted, so an insert into a group the
- * bundle introduces later in its list still counts as its own.
- * @param layer - the resolved external layer.
- * @returns the patches to mount, the ids the layer introduces, and the ids it repeats.
+ * Inspect the rows a layer introduces without changing their ids or parents.
+ * @param layer - the bundle patch list.
+ * @returns its declared rows, duplicates, and external override targets.
  */
-export function composeExternalLayer(layer: ProfileLayer): ComposedExternalLayer {
-  const groupId = bundleGroupId(layer.packageName)
+export function analyzeBundleLayer(layer: ProfileLayer): AnalyzedBundleLayer {
   const rows = new Map<string, string>()
   const declaredUnder = new Map<string, string | undefined>()
   const duplicates: DuplicateRow[] = []
-  const claim = (rowId: string, moduleName: string, target?: string): void => {
-    if (rows.has(rowId)) {
-      duplicates.push({ rowId, moduleName })
-      return
-    }
-    rows.set(rowId, moduleName)
-    declaredUnder.set(rowId, target)
-  }
   visitIdentifiedRows(layer.patches, ({ id, row, source, place, listed }) => {
-    // A root insert lands in the bundle's group: that is the group it declares under.
-    const target = place.target ?? groupId
-    if (source === 'config') {
-      // A config override restates the children it keeps: the same id declared
-      // under the same group before is that row. Twice in one list, or under
-      // another group, it would mount as a rejected duplicate or move the row.
-      if (listed.has(id) || (rows.has(id) && declaredUnder.get(id) !== target)) {
+    if (rows.has(id)) {
+      if (source === 'insert' || listed.has(id) || declaredUnder.get(id) !== place.target) {
         duplicates.push({ rowId: id, moduleName: row.name })
-      } else if (!rows.has(id)) {
-        rows.set(id, row.name)
-        declaredUnder.set(id, target)
       }
     } else {
-      claim(id, row.name, target)
+      rows.set(id, row.name)
+      declaredUnder.set(id, place.target)
     }
   })
-  claim(groupId, CONTAINED_GROUP_MODULE)
-  const wrappers = new Map<string, string>()
-  const generated = new Set<string>()
-  const overrides: string[] = []
-  const patches: PatchOptions[] = [{ insert: [{ id: groupId, name: CONTAINED_GROUP_MODULE, group: true, config: [] }] }]
-  for (const patch of layer.patches) {
-    if (patch.insert === undefined) {
-      if (patch.id !== undefined) {
-        if (!rows.has(patch.id)) overrides.push(patch.id)
-        // The target's children are replaced, wrapper included.
-        if (patch.config !== undefined) wrappers.delete(patch.id)
-      }
-      patches.push(structuredClone(patch))
-      continue
-    }
-    const inserted = structuredClone(patch.insert)
-    const target = patch.id ?? groupId
-    if (rows.has(target)) {
-      patches.push({ id: target, insert: inserted })
-      continue
-    }
-    const wrapper = wrappers.get(target)
-    if (wrapper !== undefined) {
-      patches.push({ id: wrapper, insert: inserted })
-      continue
-    }
-    const wrapperId = `${groupId}/in/${target}`
-    if (!generated.has(wrapperId)) {
-      generated.add(wrapperId)
-      claim(wrapperId, CONTAINED_GROUP_MODULE)
-    }
-    wrappers.set(target, wrapperId)
-    patches.push({ id: target, insert: [{ id: wrapperId, name: CONTAINED_GROUP_MODULE, group: true, config: inserted }] })
-  }
-  return { patches, rows, duplicates, overrides }
+  const overrides = layer.patches.flatMap(patch => (
+    patch.insert === undefined && patch.id !== undefined && !rows.has(patch.id) ? [patch.id] : []
+  ))
+  return { patches: layer.patches, rows, duplicates, overrides }
 }
 
 /**

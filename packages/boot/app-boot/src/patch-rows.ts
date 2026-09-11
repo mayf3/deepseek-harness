@@ -1,6 +1,6 @@
 /**
  * The one walk over the rows a patch list introduces. Composition, ownership,
- * the package probe, and patch loading all read those rows and their group
+ * static package metadata, and patch loading all read those rows and their group
  * children; sharing the walk keeps them reading the same tree.
  * @module @deepseek-ai/dsh-app-boot/patch-rows
  */

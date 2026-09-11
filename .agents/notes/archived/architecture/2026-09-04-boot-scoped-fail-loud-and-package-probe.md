@@ -1,6 +1,7 @@
 # Agent Note: Fail-loud is boot-scoped, and packages are probed in a child process
 
 Status: implemented
+Archived: 2026-09-11
 
 English | [中文](2026-09-04-boot-scoped-fail-loud-and-package-probe.zh.md)
 
