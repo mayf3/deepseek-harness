@@ -16,9 +16,9 @@ Status: implemented
 
 事件载荷为 `{ targets: [{ seq, imageIndexes }] }`。每个目标指向当前的 `user/message` 或 `tool/result` 节点。索引从零开始且严格递增，按内容深度优先顺序枚举所有图片，包括嵌套工具结果和先前省略的图片。相同附件 ID 的多次出现分别计数。位置替换改变 surface 顺序后，明确选择仍没有歧义，附件 ID 或原始日志前缀无法标识这个集合。
 
-事件不带 `surfaceOp`，不创建消息，也不替换消息节点。Session 在提交前校验全部目标，拒绝缺失或已被遮蔽的节点、输出图片、重复目标、无效索引和已被省略的位置。重建过程派生不可变消息副本，将记录的位置标为 `ImageBlock.offloaded: true`。原始事件、消息 ID、来源和未受影响的内容块保持不变。恢复、分叉和回放从日志应用相同的选择。
+事件不带 `surfaceOp`，不创建消息，也不替换消息节点。插件的纯投影在 Session 提交事件前校验全部目标，拒绝缺失或已被遮蔽的节点、输出图片、重复目标、无效索引和已被省略的位置。重建过程派生不可变消息副本，将记录的位置标为 `ImageBlock.offloaded: true`。原始事件、消息 ID、来源和未受影响的内容块保持不变。恢复、分叉和回放从日志应用相同的选择。
 
-选择策略、预算和重试策略保留在 compaction 插件中。Session 只负责持久数据校验和重建。实例方法 `deriveEventMessage()` 与 `deriveMessages()` 返回派生消息，纯重建函数将 `foldSurface(events).offloadedMessages` 传给导出的 `deriveEventMessage()`。需要保留图片的改写必须读取派生消息，包括工具结果裁剪和摘要输入。
+compaction 插件拥有选图、事件声明、图片校验与投影，以及重试策略。[插件拥有消息投影](2026-09-11-plugin-owned-message-projections.zh.md)负责通用 Session 集成和显式独立装配，取代由核心负责解释的职责划分。实例方法 `deriveEventMessage()` 与 `deriveMessages()` 返回派生消息，纯重建函数将 `foldSurface(events, projections).projectedMessages` 传给导出的 `deriveEventMessage()`。需要保留图片的改写必须读取派生消息，包括工具结果裁剪和摘要输入。
 
 消息替换和图片省略事件都会推进 `contentGeneration`，使历史缓存和请求系列刷新。`replaceGeneration` 只随替换推进，图片省略不能被判断为文本压缩成功。请求配置未变时写入原因是 `series` 的 `request/header`，配置同时变化时携带 `startsSeries: true`。
 
@@ -42,8 +42,8 @@ Token 计量将选择应用到受影响节点的图片出现位置，不替换�
 
 路由预算增加、内联回退结束或压缩减少上下文时，省略仍然有效。省略不删除附件字节。读取占位文本中的访问路径会创建新的图片出现位置，可以独立保留。执行环境路径仍在序列化时解析，与保留图片的标识文本一致。这个事件记录选择的图片集合，不记录文件系统映射。
 
-Session 增加必需事件的折叠和一个内容版本信号。重建模型输入的消费者必须使用派生消息。面向人的视图仍可从不可变事件显示原始图片。插件记录省略时不再需要 token-meter 或 compaction 服务。
+Session 调用已注册的纯投影，并维护一个内容版本信号。重建模型输入的消费方必须使用派生消息。面向人的视图仍可从不可变事件显示原始图片。插件记录省略时不需要 token-meter 或 compaction 服务。
 
 ## 测试
 
-Session 测试覆盖嵌套和重复图片、原子拒绝、缓存失效、纯折叠、恢复、分叉及原始事件不变。插件测试覆盖连续失败、当前 surface 顺序、无图可省略时的恢复、新请求头和释放。Token-meter 测试在仅重计所选位置价格时保留节点身份和已有用量锚点。工具结果裁剪和压缩测试保证后续改写读取派生历史。TypeScript 和 Python SDK 预期输出通过发布的 profile 覆盖必需事件。
+插件的投影测试覆盖嵌套和重复图片、原子拒绝、缓存失效、纯折叠、恢复、分叉及原始事件不变。恢复测试覆盖连续失败、当前 surface 顺序、无图可省略时的恢复、新请求头和释放。Token-meter 测试在仅重计所选位置价格时保留节点身份和已有用量锚点。工具结果裁剪和压缩测试保证后续改写读取派生历史。TypeScript 和 Python SDK 预期输出通过发布的 profile 覆盖必需事件。

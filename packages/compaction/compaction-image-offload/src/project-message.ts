@@ -1,4 +1,4 @@
-/** Exact application of logged image selections; selection policy belongs to compaction-image-offload. */
+/** Immutable application of the image occurrences recorded by image/offload. */
 
 import type { ContentBlock, Message } from '@deepseek-ai/dsh-llm'
 import { deepFreeze } from '@deepseek-ai/dsh-util-values'

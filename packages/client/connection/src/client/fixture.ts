@@ -1,5 +1,6 @@
 // Standalone browser fixture for UI development without a server.
 
+import { currentSessionMessageProjections } from '@deepseek-ai/dsh-session-format-catalog/message-projections'
 import {
   createAssistantMessage,
   createSystemMessage,
@@ -1278,7 +1279,7 @@ function contextBreakdownOf(log: readonly SessionEvent[]): FixtureContextBreakdo
     : headerEvent.data.header
   let systemTokens = 0
   let messageTokens = 0
-  for (const seq of foldSurface(log).nodes) {
+  for (const seq of foldSurface(log, currentSessionMessageProjections).nodes) {
     const event = log[seq]
     if (event === undefined) continue
     const message = deriveEventMessage(event)
@@ -3105,7 +3106,7 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
       const query = searchTokenSpans(request.query).tokens.map(token => token.value)
       const matches = sessions.flatMap((summary) => {
         const log = logs.get(summary.sessionId) ?? []
-        const current = new Set(foldSurface(log).nodes)
+        const current = new Set(foldSurface(log, currentSessionMessageProjections).nodes)
         const best = log.flatMap((event): FixtureSearchCandidate[] => {
           if (!current.has(event.seq)) return []
           const eventText = searchEventText(event)

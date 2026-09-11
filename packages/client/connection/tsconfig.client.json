@@ -53,6 +53,9 @@
     },
     {
       "path": "../../util/brand"
+    },
+    {
+      "path": "../../session/session-format-catalog"
     }
   ]
 }

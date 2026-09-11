@@ -1,3 +1,4 @@
+import { imageOffloadProjection } from '@deepseek-ai/dsh-compaction-image-offload/projection'
 import { describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { ToolCallId , createMessage, createToolResultMessage } from '@deepseek-ai/dsh-llm'
@@ -80,7 +81,7 @@ function appendToolStep(
 
 describe('tool-result pruning configuration', () => {
   it('preserves a logged image offload when pruning the same result later', () => {
-    const session = Session.create(SessionId('prune-offloaded'))
+    const session = Session.create(SessionId('prune-offloaded'), undefined, undefined, undefined, [imageOffloadProjection])
     const seq = appendToolStep(session, 1, 'shot', [
       { type: 'text', text: 'x'.repeat(200) },
       { type: 'image', attachment: {
@@ -93,7 +94,7 @@ describe('tool-result pruning configuration', () => {
     const replacement = session.snapshotEvents().at(-1)!
     expect(replacement.type).toBe('tool/result')
     expect(JSON.stringify(session.deriveEventMessage(replacement))).toContain('"offloaded":true')
-    expect(JSON.stringify(Session.create(SessionId('restored-offloaded'), session.snapshotEvents()).deriveMessages())).toContain('"offloaded":true')
+    expect(JSON.stringify(Session.create(SessionId('restored-offloaded'), session.snapshotEvents(), undefined, undefined, [imageOffloadProjection]).deriveMessages())).toContain('"offloaded":true')
     expect(JSON.stringify(session.eventAt(SessionSeq(seq)))).not.toContain('offloaded')
   })
 

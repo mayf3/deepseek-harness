@@ -1,3 +1,4 @@
+import { imageOffloadProjection } from '@deepseek-ai/dsh-compaction-image-offload/projection'
 import { describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import {
@@ -85,7 +86,7 @@ async function harness(pricing: (model: string) => LlmImageRequestPricing | unde
   const llm = new LlmRuntime(ctx)
   llm.registerAdapter(['mock'], new PricingAdapter(pricing))
   const meter = new TokenMeter(ctx)
-  return { ctx, meter, session: Session.create(SessionId('route-priced')) }
+  return { ctx, meter, session: Session.create(SessionId('route-priced'), undefined, undefined, undefined, [imageOffloadProjection]) }
 }
 
 /** Route price of one image-bearing message under the fixed pricing double. */
@@ -229,7 +230,7 @@ describe('request projection pricing', () => {
     expect(after.nodes.map(node => node.heuristicTokens)).toEqual(before.nodes.map(node => node.heuristicTokens))
     const breakdown = ctx.sessionProjections.snapshot(session).values.contextBreakdown
     expect(breakdown?.messageTokens).toBe(after.nodes.reduce((total, node) => total + node.heuristicTokens, 0))
-    const restored = Session.create(SessionId('offloaded-restored'), session.snapshotEvents())
+    const restored = Session.create(SessionId('offloaded-restored'), session.snapshotEvents(), undefined, undefined, [imageOffloadProjection])
     expect(meter.measure(restored).surfaceTokens).toBe(after.surfaceTokens)
   })
 

@@ -268,15 +268,6 @@ export type RequestHeaderReason = 'initial' | 'resume' | 'change' | 'series'
  */
 export interface SessionEventMap {
   /**
-   * Permanently omit the selected input-image occurrences from subsequent
-   * model requests. Each target names a current user/message or tool/result
-   * node; image indexes are zero-based depth-first positions within that
-   * message, including nested tool results and already offloaded images.
-   * Targets are unique and each index list is nonempty and strictly increasing.
-   * This event changes derived content without replacing message nodes.
-   */
-  'image/offload': { targets: ImageOffloadTarget[] }
-  /**
    * Opens turn `turn` before the loop claims queued input or runs pre-step.
    * Rejection, empty input, cancellation, or failure may close it with no
    * step; otherwise the following identified `user/message` event or batch
@@ -407,14 +398,6 @@ export interface SessionEventMap {
    * so tolerating concurrent writers needs a signal beyond the log.
    */
   'session/end-seed': { inherited?: true }
-}
-
-/** Exact input-image occurrences selected by one durable offload decision. */
-export interface ImageOffloadTarget {
-  /** Current message-producing event containing these occurrences. */
-  seq: SessionSeq
-  /** Zero-based depth-first image indexes within the immutable message. */
-  imageIndexes: number[]
 }
 
 /** The appendable event-type keys of {@link SessionEventMap}, plugin-merged extensions included. */

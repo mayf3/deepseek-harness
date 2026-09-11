@@ -49,11 +49,11 @@ The plugin acts only on `IMAGE_OFFLOAD_REQUIRED` failures that carry `offloadIma
 <details>
 <summary>Implementation internals — click to expand</summary>
 
-The recovery listener owns selection and retry policy. It reads Session's projected messages, selects the oldest retained input images in request order, and commits the complete selection in one event. Session validates and applies those exact references during append and replay; its shared derivation supplies requests, compaction, and later message rewrites. Token measurement folds the same selections without replacement shadow prices.
+This package owns the event declaration, reference validation, immutable image projection, selection, and retry policy. It registers `imageOffloadProjection` with Session before accepting image-offload events. The same browser-safe definition is exported from `./projection` for detached replay; the installed format catalog assembles it for offline readers. Missing registration rejects live restore, and unloading a used definition blocks further message derivation. Token measurement folds the same selections without replacement shadow prices.
 
 Summary failures use the synchronous `compaction/summary-error` waterfall. The plugin selects only the supplied summary region and returns true after recording an omission. The compaction backend re-derives and re-prices that region before retrying; each retry omits additional retained occurrences, so recovery ends when none remain. Cancellation and unrelated selection changes reject the summary. Recorded omissions survive later failure or cancellation.
 
-No runtime invariant companion is published: Session rejects invalid or repeated image references before commit, and this executor retains no separate mutable offload state.
+No runtime invariant companion is published: the pure projection rejects invalid or repeated image references before Session commits the event, and this executor retains no separate mutable offload state.
 
 </details>
 

@@ -1,3 +1,4 @@
+import { imageOffloadProjection } from '@deepseek-ai/dsh-compaction-image-offload/projection'
 import { describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import AgentLoop from '@deepseek-ai/dsh-agent-loop'
@@ -99,6 +100,7 @@ interface LoopHarness {
 async function loopHarness(): Promise<LoopHarness> {
   const ctx = new Context()
   await mountAgentLoopTestDependencies(ctx)
+  ctx.sessions.registerMessageProjection(imageOffloadProjection)
   await ctx.plugin(InvariantRegistry)
   await ctx.plugin(SessionInvariant)
   await ctx.plugin(AgentInvariant)

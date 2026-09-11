@@ -13,15 +13,17 @@ import type {} from '@deepseek-ai/dsh-compaction'
 import type { RequestErrorAction } from '@deepseek-ai/dsh-agent'
 import { IMAGE_OFFLOAD_REQUIRED_CODE, LlmError } from '@deepseek-ai/dsh-llm'
 import { offloadOldestImages } from './image-offload.ts'
+import { imageOffloadProjection } from './projection.ts'
 
 export const name = 'compaction-image-offload'
-export const inject = ['agents']
+export const inject = ['agents', 'sessions']
 
 /**
  * Mount agent and summary recovery listeners without configuration.
  * @param ctx - the plugin context.
  */
 export function apply(ctx: Context): void {
+  ctx.sessions.registerMessageProjection(imageOffloadProjection)
   ctx.on('agent/request-error', ({ agent, failure }, next): Promise<RequestErrorAction> => {
     if (failure.code !== IMAGE_OFFLOAD_REQUIRED_CODE || failure.offloadImages === undefined) return next()
     // A durable surface repair, not a provider retry: it spends no retry budget and logs no retry event.

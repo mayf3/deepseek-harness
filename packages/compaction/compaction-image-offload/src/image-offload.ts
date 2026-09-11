@@ -1,7 +1,8 @@
 /** Select and log permanent image omissions in current model-request order. */
 
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
-import type { ImageOffloadTarget, Session, SessionSeq } from '@deepseek-ai/dsh-session'
+import type { Session, SessionSeq } from '@deepseek-ai/dsh-session'
+import type { ImageOffloadTarget } from './projection.ts'
 
 /**
  * Record one decision omitting the oldest retained input-image occurrences.

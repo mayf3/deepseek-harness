@@ -36,7 +36,8 @@
   "dependencies": {
     "@deepseek-ai/dsh-credentials": "workspace:^",
     "@deepseek-ai/schemastery": "workspace:^",
-    "zod": "^4.4.3"
+    "zod": "^4.4.3",
+    "@deepseek-ai/dsh-session-format-catalog": "workspace:^"
   },
   "files": [
     "lib/index.js",
