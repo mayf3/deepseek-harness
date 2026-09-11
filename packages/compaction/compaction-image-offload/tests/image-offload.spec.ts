@@ -169,7 +169,9 @@ describe('summary image offload', () => {
       [{ seq: selected.start, imageIndexes: [0] }], [{ seq: selected.start, imageIndexes: [1] }],
     ])
     expect(agent.session.surface.replaceGeneration).toBe(0)
-    expect(agent.session.snapshotEvents().at(-1)).toMatchObject({ type: 'compaction/end', data: { error: expect.any(String) } })
+    const end = agent.session.snapshotEvents().at(-1)
+    expect(end?.type).toBe('compaction/end')
+    expect(end?.type === 'compaction/end' && typeof end.data.error).toBe('string')
   })
 
   it('preserves omission when a subsequent summary failure is terminal', async () => {
