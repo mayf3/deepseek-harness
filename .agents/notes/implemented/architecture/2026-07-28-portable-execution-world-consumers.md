@@ -56,7 +56,7 @@ The local filesystem, subprocess, terminal and LSP suites cover path identity, e
 
 **Implement remote filesystem operations only through shell commands.** Rejected because that discards structured filesystem identity, errors, streaming, version guards, and atomic mutation semantics already consumed by the file tools.
 
-**Add a generic distributed-runtime abstraction or reconnect live handles.** Rejected because the existing capability seams carry the demonstrated contracts, while remote identity alone cannot reconstruct callbacks, pending promises, authority, protocol state, or output cursors. A new layer would speculate about persistence and synchronization beyond the POC.
+**Add a generic distributed-runtime abstraction or reconnect live handles.** Rejected because the existing capability seams carry the demonstrated contracts, while remote identity alone cannot reconstruct callbacks, pending promises, authority, protocol state, or output cursors. A new layer would speculate about persistence and synchronization beyond the demonstrated consumer contracts.
 
 ## Consequences
 

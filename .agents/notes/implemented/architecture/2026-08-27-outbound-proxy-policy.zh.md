@@ -6,7 +6,7 @@ Status: implemented
 
 ## Problem
 
-Node 内置的 `fetch` 会忽略 `HTTP_PROXY` 与 `HTTPS_PROXY`。开发者运行的其他工具——curl、git、npm、pip——都遵循它们，所以代理后面的用户导出一次变量就期待一切随之生效。Harness 并没有：`setGlobalDispatcher`、`ProxyAgent` 与 `EnvHttpProxyAgent` 在 `packages/` 与 `apps/` 中出现次数为零，因此模型请求、每次 web 搜索、`web_fetch`、走 HTTP 的 MCP与 OTLP 导出器 全部直连，且是静默的，任何地方都没有诊断。
+Node 内置的 `fetch` 会忽略 `HTTP_PROXY` 与 `HTTPS_PROXY`。开发者运行的其他工具——curl、git、npm、pip——都遵循它们，所以代理后面的用户导出一次变量就期待一切随之生效。Harness 并没有：`setGlobalDispatcher`、`ProxyAgent` 与 `EnvHttpProxyAgent` 在 `packages/` 与 `apps/` 中出现次数为零，因此模型请求、每次 web 搜索、`web_fetch`、走 HTTP 的 MCP 与 OTLP 导出器全部直连，且是静默的，任何地方都没有诊断。
 
 仓库曾短暂拥有过答案，又在无人察觉时弄丢了。PR #971 在 `bin/dsh` 里设置了 `NODE_USE_ENV_PROXY=1`；十一天后 `bbb1b1cc38 cleanup: remove managed source installer` 整体删除了那个启动器，把该标志一并带走。留下的只有 `apps/cli/reference/README.md` 里的一句话，让读者去设置一个已经无人消费的变量。
 
@@ -24,9 +24,7 @@ Node 内置的 `fetch` 会忽略 `HTTP_PROXY` 与 `HTTPS_PROXY`。开发者运�
 
 那次修订一并引入的插件也随之删除。它让某个组合可以把策略写进 `cordis.yml`，但没有任何随附 bundle 挂载它，因此启动器那条路径是唯一可达的——而它的 `Config` 是那条配置分支唯一的供给方，别处无从到达。
 
-**每种调用需求对应一项操作。** `installProxyFromEnvironment`、`proxyRouteFor`、`proxyEnvironmentForChild` 与 `clearedProxyEnv` 分别负责安装、逐请求路由、子进程继承和 fixture 隔离。特定于 SDK 的工厂会通过共享 API 暴露各自的传输约束。`web-fetch-http` 在构造地址固定传输时使用已解析路由；OTLP 导出器保持直连。
-
-剩下的是 `installProxyFromEnvironment`、`proxyRouteFor`、`proxyEnvironmentForChild` 与 `clearedProxyEnv`——按「调用方需要策略的方式」各一个，而不是按 SDK 各一个。安装吸收了解析与诊断上报，因为没有调用方需要把它们分开：解析出来却不安装的策略什么也路由不了。
+**每种调用需求对应一项操作。** `installProxyFromEnvironment`、`proxyRouteFor`、`proxyEnvironmentForChild` 与 `clearedProxyEnv` 分别负责安装、逐请求路由、子进程继承和 fixture 隔离。特定于 SDK 的工厂会通过共享 API 暴露各自的传输约束。`web-fetch-http` 在构造地址固定传输时使用已解析路由；OTLP 导出器保持直连。安装包含解析与诊断上报，因为调用方需要一项同时解析并安装路由的操作。
 
 `proxyRouteFor` 还堵掉了旧访问器让人写得出来的一个缺陷。`web-fetch-http` 先读策略决定是否 pin，再读一次去构造传输；两次读取之间发生卸载，就会为第一次读取已判定走代理的 URL 返回一个直连且未 pin 的 agent。路由把两者一起交出，分支与请求便无从分歧。它携带的是进程级 dispatcher，dispose 时是 close 而非 destroy，因此策略被卸载时已经发出的请求仍会跑完。
 
