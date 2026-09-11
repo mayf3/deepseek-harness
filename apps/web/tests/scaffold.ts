@@ -738,7 +738,7 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
       // Provenance is available before any configuration entry activates.
       const readProfile = (): Profile => loadProfile('dsh', 'scaffold', INSTALL_ANCHOR, harnessHome)
       const profile = readProfile()
-      const compose = (current: Profile): ComposedStack => composeProfileStack('web e2e scaffold', current.layers, [
+      const compose = (current: Profile): ComposedStack => composeProfileStack(current.layers, [
         { label: 'scaffold', patches },
         { label: current.patchPath, patches: current.patches },
       ])

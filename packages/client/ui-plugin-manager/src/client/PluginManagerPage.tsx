@@ -366,7 +366,7 @@ function EnableSwitch({ pkg, title, t, busy, onSetEnabled }: {
   readonly onSetEnabled: (enabled: boolean) => void
 }): ReactNode {
   if (pkg.kind !== 'bundle') return null
-  const builtin = pkg.trust === 'builtin'
+  const builtin = !pkg.installed
   return (
     <Switch
       checked={pkg.enabled}
@@ -392,7 +392,7 @@ function PackageCard({ pkg, t, busy, presets, globalModules, presetName, onOpen,
 }): ReactNode {
   const [addMenu, setAddMenu] = useState(false)
   const title = pkg.title ?? shortName(pkg.name)
-  const builtin = pkg.trust === 'builtin'
+  const builtin = !pkg.installed
   const status = cardStatus(pkg)
   const addable = pkg.addable
   const [single] = addable
@@ -478,14 +478,14 @@ function PackageDetail({
 }): ReactNode {
   const title = pkg.title ?? shortName(pkg.name)
   const bundle = pkg.kind === 'bundle'
-  const builtin = pkg.trust === 'builtin'
+  const builtin = !pkg.installed
   const status = cardStatus(pkg)
   const retryable = bundle && pkg.enabled && (pkg.status === 'failed' || pkg.status === 'partial')
-  const removable = pkg.installed && !builtin
+  const removable = pkg.installed
   const affectedIssues = (pkg.issues ?? []).filter(issue => !pkg.rows.some(row => row.entryId === issue.entryId))
   // A row's switch acts at once only on an external pack composed on a
   // profile that applies patches while it runs; elsewhere the rows stay read-only.
-  const switchable = bundle && !builtin && pkg.enabled && pkg.liveReload
+  const switchable = bundle && pkg.installed && pkg.enabled && pkg.liveReload
   return (
     <div className={css.detail} data-plugin-detail={pkg.name}>
       <button type="button" className={css.crumb} aria-label={t('backToList')} onClick={onBack}>

@@ -12,8 +12,6 @@ const BUNDLE: PluginPackageView = {
   name: 'dsh-better-sidebar',
   version: '0.16.0',
   kind: 'bundle',
-  trust: 'external',
-  stage: 'runtime',
   installed: true,
   enabled: false,
   status: 'disabled',

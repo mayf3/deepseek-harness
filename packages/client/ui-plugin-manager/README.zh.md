@@ -52,6 +52,8 @@ kind: "package-reference"
 <a id="understand-the-implementation"></a>
 ## 理解实现
 
+插件管理依据 profile 的依赖记录：已安装组合包可启停，已安装包可移除，随安装提供的组合包保持锁定。这一区分不决定启动失败策略。
+
 <details>
 <summary>实现细节——点击展开</summary>
 

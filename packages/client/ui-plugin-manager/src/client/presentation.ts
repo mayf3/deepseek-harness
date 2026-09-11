@@ -100,7 +100,7 @@ export function presetRowCopy(
     return {
       title: addable?.title ?? pkg.title ?? shortName(pkg.name),
       ...pkg.description === undefined ? {} : { description: pkg.description },
-      local: pkg.trust === 'external',
+      local: pkg.installed,
     }
   }
   const harness = harnessCopy(t, row.moduleName, rowIdOf(row.entryId))

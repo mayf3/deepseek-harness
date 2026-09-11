@@ -29,8 +29,6 @@ function pkg(overrides: Partial<PluginPackageView> = {}): PluginPackageView {
     name: 'dsh-tool-foo',
     version: '0.1.0',
     kind: 'plugin',
-    trust: 'external',
-    stage: 'runtime',
     installed: true,
     enabled: false,
     status: 'plain',

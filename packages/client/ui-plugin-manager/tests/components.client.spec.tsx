@@ -22,8 +22,6 @@ function pkg(overrides: Partial<PluginPackageView> = {}): PluginPackageView {
     name: 'dsh-better-sidebar',
     version: '0.16.0',
     kind: 'bundle',
-    trust: 'external',
-    stage: 'runtime',
     installed: true,
     enabled: true,
     status: 'running',
@@ -154,15 +152,15 @@ describe('PluginManagerPage', () => {
   })
 
   it('lists every package as a card, tags only restarts, problems, and built-ins, and names what waits for a restart', () => {
-    const { version: _unversioned, ...firstPartyPackage } = pkg({
-      name: '@deepseek-ai/dsh-bundle-first-party', title: 'First party', trust: 'builtin', stage: 'boot',
+    const { version: _unversioned, ...bundledPackage } = pkg({
+      name: '@deepseek-ai/dsh-bundle-first-party', title: 'First party', installed: false,
     })
     const { actions } = renderTab({
       packages: [
         pkg({ description: 'A sidebar.' }),
-        firstPartyPackage,
-        pkg({ name: 'unknown', trust: 'builtin', kind: 'plugin', status: 'plain' }),
-        pkg({ name: 'builtin-lib', trust: 'builtin', kind: 'unknown', status: 'plain' }),
+        bundledPackage,
+        pkg({ name: 'unknown', installed: false, kind: 'plugin', status: 'plain' }),
+        pkg({ name: 'builtin-lib', installed: false, kind: 'unknown', status: 'plain' }),
         pkg({ name: 'broken-bundle', enabled: false, status: 'not-enableable', reason: 'foreign cordis' }),
         pkg({ name: 'dsh-tool-foo', kind: 'plugin', status: 'plain' }),
         pkg({ name: 'some-lib', kind: 'unknown', status: 'plain' }),
@@ -180,9 +178,9 @@ describe('PluginManagerPage', () => {
     // No kind tag, no running or off tag: the switch says that.
     expect(screen.getByText(en.statusProblem)).toBeTruthy()
     expect(screen.getAllByText(en.statusRestart)).toHaveLength(2)
-    expect(screen.getAllByText(en.builtinTag)).toHaveLength(3)
+    expect(screen.getAllByText(en.builtinTag)).toHaveLength(4)
     expect(screen.getByText('A sidebar.')).toBeTruthy()
-    expect(document.querySelectorAll('[data-tone]')).toHaveLength(6)
+    expect(document.querySelectorAll('[data-tone]')).toHaveLength(7)
 
     const sidebar = screen.getByRole('switch', { name: 'Enable better-sidebar' }) as HTMLButtonElement
     expect(sidebar.getAttribute('aria-checked')).toBe('true')
@@ -191,9 +189,9 @@ describe('PluginManagerPage', () => {
     expect(screen.getByRole('switch', { name: 'Enable broken-bundle' })).toHaveProperty('disabled', true)
     expect(screen.getByRole('switch', { name: 'Enable off-bundle' }).getAttribute('aria-checked')).toBe('false')
     // A built-in pack keeps a locked switch in the same list; a built-in plugin or library has none.
-    const firstParty = screen.getByRole('switch', { name: 'Enable First party' }) as HTMLButtonElement
-    expect(firstParty.disabled).toBe(true)
-    expect(firstParty.title).toBe(en.builtinLocked)
+    const bundled = screen.getByRole('switch', { name: 'Enable First party' }) as HTMLButtonElement
+    expect(bundled.disabled).toBe(true)
+    expect(bundled.title).toBe(en.builtinLocked)
     expect(screen.queryByRole('switch', { name: 'Enable unknown' })).toBeNull()
     expect(screen.queryByRole('switch', { name: 'Enable tool-foo' })).toBeNull()
 
@@ -237,7 +235,7 @@ describe('PluginManagerPage', () => {
         pkg({ name: 'no-rows', enabled: false, status: 'disabled' }),
         pkg({ name: 'dsh-tool-foo', kind: 'plugin', status: 'plain' }),
         pkg({
-          name: '@deepseek-ai/dsh-core-broken', title: 'Core', trust: 'builtin', status: 'failed',
+          name: '@deepseek-ai/dsh-core-broken', title: 'Core', installed: false, status: 'failed',
           rows: [{ entryId: 'include:core', rowId: 'core', moduleName: '@deepseek-ai/dsh-core-broken', enabled: true, phase: 'active' }],
         }),
       ],
@@ -333,7 +331,7 @@ describe('PluginManagerPage', () => {
         pkg({ name: 'many', rows: many }),
         pkg({ name: 'frozen', liveReload: false, rows: [{ entryId: 'include:frozen', rowId: 'frozen', moduleName: 'frozen', ...userOff }] }),
         pkg({ name: 'parked', enabled: false, status: 'disabled', rows: [{ entryId: 'include:parked', rowId: 'parked', moduleName: 'parked', ...userOff }] }),
-        pkg({ name: '@deepseek-ai/dsh-core', title: 'Core', trust: 'builtin', rows: [{ entryId: 'include:core', rowId: 'core', moduleName: '@deepseek-ai/dsh-core', ...userOff }] }),
+        pkg({ name: '@deepseek-ai/dsh-core', title: 'Core', installed: false, rows: [{ entryId: 'include:core', rowId: 'core', moduleName: '@deepseek-ai/dsh-core', ...userOff }] }),
       ],
     })
     const target = { kind: 'global' } as const
