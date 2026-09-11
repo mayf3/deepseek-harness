@@ -39,7 +39,7 @@ kind: "package-reference"
 <details>
 <summary>实现细节 — 点击展开</summary>
 
-辅助进程在启动前预留并认证全部所需流。stdout、stderr、stdin 与 fd 7 使用独立 SSH 通道；收集输出在主机保留有界尾部，可选完整 spill 文件存放于远端辅助进程的私有目录中，直至连接释放。
+辅助进程在启动前预留并认证全部所需流。stdout、stderr、stdin 与 fd 7 使用独立 SSH 通道。收集输出会发布最终的有界原始字节尾部与完整流字节偏移，因此网络延迟不会改变已完成的观测。可选 spill 文件使用远端本地提供方的私有保留输出目录。
 
 远端执行委托给 [`subprocess-local`](../../subprocess/subprocess-local/README.zh.md)。因此，原生进程归属及平台降级方式与该远端操作系统上的本地执行具有相同含义。SSH 承载请求与观察结果，本身不限制程序权限。
 
@@ -68,7 +68,7 @@ kind: "package-reference"
 
 <a id="known-limitations-and-deferred-work"></a>
 
-- 已完成进程的 spill 路径仅在所属辅助进程连接存活时可用。
+- 已完成的 spill 文件在连接释放后继续保留，直至外部临时文件清理。
 - 调用方必须消费或关闭原始输出流。独立通道允许在 stdout 暂停时继续传输控制消息，但不会消除逐流背压或共享网络拥塞。
 - SSH 连接丢失后，客户端无法确认远端终止；租期清理是远端动作，不等于客户端收到了成功确认。
 

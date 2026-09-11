@@ -8,6 +8,27 @@ import { z } from 'zod'
 /** Wire version shared by the installed helper and client package. */
 export const SSH_PROTOCOL_VERSION = 1
 
+/** Maximum prepared or running process handles owned by one helper. */
+export const SSH_MAX_PROCESS_HANDLES = 128
+/** Maximum open text iterators owned by one helper. */
+export const SSH_MAX_TEXT_STREAMS = 128
+
+const managementLimits = {
+  heartbeat: 1,
+  close: 1,
+  'process.terminate': SSH_MAX_PROCESS_HANDLES,
+  'fs.streamClose': SSH_MAX_TEXT_STREAMS,
+} as const
+type RequestClass = 'ordinary' | keyof typeof managementLimits
+
+function requestClass(method: string): RequestClass {
+  switch (method) {
+    case 'heartbeat': case 'close': case 'process.terminate': case 'fs.streamClose': return method
+    // All other private operations share the configured request budget.
+    default: return 'ordinary'
+  }
+}
+
 const errorSchema = z.object({ name: z.string(), message: z.string(), code: z.string().optional() }).strict()
 const frameSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('request'), id: z.string(), method: z.string(), params: z.unknown() }).strict(),
@@ -17,6 +38,10 @@ const frameSchema = z.discriminatedUnion('type', [
 ])
 type Frame = z.infer<typeof frameSchema>
 type RequestHandler = (method: string, params: unknown, signal: AbortSignal) => Promise<unknown>
+
+function operationError(error: unknown): Error {
+  return error instanceof Error ? error : new Error(String(error))
+}
 
 /** A remote error retains its typed filesystem or sandbox code. */
 export class RemoteOperationError extends Error {
@@ -28,8 +53,8 @@ export class RemoteOperationError extends Error {
 
 /** The peer owns pending calls and rejects ambiguous operations on connection loss; it never replays requests. */
 export class SshRpcPeer extends EventEmitter {
-  private readonly pending = new Map<string, { resolve(value: unknown): void; reject(error: Error): void }>()
-  private readonly active = new Map<string, AbortController>()
+  private readonly pending = new Map<string, { resolve(value: unknown): void; reject(error: Error): void; requestClass: RequestClass }>()
+  private readonly active = new Map<string, { controller: AbortController; requestClass: RequestClass }>()
   private writeTail = Promise.resolve()
   private queuedBytes = 0
   private failure: Error | undefined
@@ -45,7 +70,7 @@ export class SshRpcPeer extends EventEmitter {
     input.on('error', (error) => { this.close(error) })
     output.on('error', (error) => { this.close(error) })
     output.on('close', () => { this.close() })
-    void this.readFrames().catch((error) => { this.close(error instanceof Error ? error : new Error(String(error))) })
+    void this.readFrames().catch((error: unknown) => { this.close(operationError(error)) })
   }
 
   /**
@@ -59,24 +84,26 @@ export class SshRpcPeer extends EventEmitter {
   async request<T>(method: string, params: unknown, schema: z.ZodType<T>, signal?: AbortSignal): Promise<T> {
     signal?.throwIfAborted()
     if (this.failure !== undefined) throw this.failure
-    if (this.pending.size >= this.maxPending) throw new Error('SSH helper pending request limit reached')
+    const kind = requestClass(method)
+    if (this.atCapacity(kind, this.pending.values())) throw new Error('SSH helper pending request limit reached')
     const id = randomUUID()
     const result = Promise.withResolvers<unknown>()
     void result.promise.catch(() => {})
-    this.pending.set(id, result)
+    this.pending.set(id, { ...result, requestClass: kind })
     const abort = (): void => {
-      this.pending.delete(id)
+      // Keep the credit until the remote handler replies; cancellation does
+      // not mean its resource cleanup has finished.
       result.reject(new Error('SSH operation cancelled; a completed remote mutation is not rolled back'))
       void this.send({ type: 'cancel', id }).catch(() => {})
     }
     signal?.addEventListener('abort', abort, { once: true })
     try {
       void this.send({ type: 'request', id, method, params }).catch((error: unknown) => {
-        result.reject(error instanceof Error ? error : new Error(String(error)))
+        this.pending.delete(id)
+        result.reject(operationError(error))
       })
       return schema.parse(await result.promise)
     } finally {
-      this.pending.delete(id)
       signal?.removeEventListener('abort', abort)
     }
   }
@@ -90,14 +117,14 @@ export class SshRpcPeer extends EventEmitter {
     this.failure = error
     for (const pending of this.pending.values()) pending.reject(error)
     this.pending.clear()
-    for (const controller of this.active.values()) controller.abort(error)
+    for (const { controller } of this.active.values()) controller.abort(error)
     this.active.clear()
     this.input.destroy()
     this.output.destroy()
     this.emit('closed', error)
   }
 
-  private send(frame: Frame): Promise<void> {
+  private async send(frame: Frame): Promise<void> {
     if (this.failure !== undefined) return Promise.reject(this.failure)
     const body = Buffer.from(JSON.stringify(frame))
     if (body.length > this.maxFrameBytes || this.queuedBytes + body.length + 4 > this.maxFrameBytes * 2) {
@@ -121,7 +148,7 @@ export class SshRpcPeer extends EventEmitter {
         if (this.failure !== undefined) closed(this.failure)
       })
     })
-    this.writeTail = write.catch((error) => { this.close(error instanceof Error ? error : new Error(String(error))) })
+    this.writeTail = write.catch((error: unknown) => { this.close(operationError(error)) })
     return write.finally(() => { this.queuedBytes -= bytes.length })
   }
 
@@ -170,24 +197,32 @@ export class SshRpcPeer extends EventEmitter {
       return
     }
     if (frame.type === 'cancel') {
-      this.active.get(frame.id)?.abort(new Error('SSH caller cancelled the operation'))
+      this.active.get(frame.id)?.controller.abort(new Error('SSH caller cancelled the operation'))
       return
     }
-    if (this.handler === undefined || this.active.has(frame.id) || this.active.size >= this.maxPending) {
+    const kind = requestClass(frame.method)
+    if (this.handler === undefined || this.active.has(frame.id) || this.atCapacity(kind, this.active.values())) {
       throw new Error('SSH helper received an unexpected or excessive request')
     }
     const controller = new AbortController()
-    this.active.set(frame.id, controller)
+    this.active.set(frame.id, { controller, requestClass: kind })
     void this.handler(frame.method, frame.params, controller.signal).then(
       value => this.send({ type: 'result', id: frame.id, value: value ?? null }),
       (error: unknown) => {
-        const detail = error instanceof Error ? error : new Error(String(error))
+        const detail = operationError(error)
         const code = 'code' in detail && typeof detail.code === 'string' ? detail.code : undefined
         return this.send({ type: 'error', id: frame.id, error: {
           name: detail.name, message: detail.message, ...(code === undefined ? {} : { code }),
         } })
       },
-    ).catch((error) => { this.close(error instanceof Error ? error : new Error(String(error))) })
+    ).catch((error: unknown) => { this.close(operationError(error)) })
       .finally(() => { this.active.delete(frame.id) })
+  }
+
+  private atCapacity(kind: RequestClass, requests: Iterable<{ requestClass: RequestClass }>): boolean {
+    const limit = kind === 'ordinary' ? this.maxPending : managementLimits[kind]
+    let count = 0
+    for (const request of requests) if (request.requestClass === kind) count++
+    return count >= limit
   }
 }

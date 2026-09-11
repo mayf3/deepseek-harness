@@ -8,12 +8,14 @@ import type { Duplex, Readable, Writable } from 'node:stream'
 import { finished, pipeline } from 'node:stream/promises'
 import type { Context } from '@deepseek-ai/cordis'
 import type { SubprocessHandle, SubprocessSpawnSpec, SubprocessTerminalHandle, SubprocessTerminalSignal } from '@deepseek-ai/dsh-subprocess'
-import { OutputCollector } from '@deepseek-ai/dsh-subprocess-local/output'
-import { spawnSchema, type SshStreamEndpoint } from './schemas.ts'
+import { OutputCollector, prepareManagedProcessBinding } from '@deepseek-ai/dsh-subprocess-local/output'
+import { doneSchema, outputSnapshotFrameLimit, spawnSchema, type SshStreamEndpoint } from './schemas.ts'
 import { z } from 'zod'
 import { SSH_STREAM_TLS_OPTIONS } from './stream-security.ts'
+import { SshRpcPeer } from './protocol.ts'
 
 type Request = z.infer<typeof spawnSchema>
+type Completion = z.infer<typeof doneSchema>
 type Channel = 'stdin' | 'stdout' | 'stderr' | 'control' | 'terminal'
 interface Endpoint extends SshStreamEndpoint {
   server: Server
@@ -31,8 +33,45 @@ interface ProcessRecord {
   ordinary?: SubprocessHandle
   terminal?: SubprocessTerminalHandle
   start?: Promise<void>
-  done?: Promise<{ outcome: { exitCode: number | null; signal: NodeJS.Signals | null }; spills: { stdout?: string; stderr?: string } }>
+  done?: Promise<Completion>
   expiry: NodeJS.Timeout
+}
+
+/** Coalesce live tail updates while capture continues independently of network readers. */
+class CollectedOutputForwarder {
+  private readonly peer: SshRpcPeer
+  private dirty = false
+  private stopped = false
+  private running: Promise<void> | undefined
+
+  constructor(socket: Socket, private readonly collector: OutputCollector, maxBytes: number) {
+    this.peer = new SshRpcPeer(socket, socket, outputSnapshotFrameLimit(maxBytes), 1)
+    this.peer.once('closed', () => { this.stopped = true })
+  }
+
+  offer(): void {
+    if (this.stopped) return
+    this.dirty = true
+    if (this.running !== undefined) return
+    this.running = this.flush().catch(() => { this.stopped = true; this.peer.close() }).finally(() => {
+      this.running = undefined
+      if (this.dirty && !this.stopped) this.offer()
+    })
+  }
+
+  private async flush(): Promise<void> {
+    while (this.dirty && !this.stopped) {
+      this.dirty = false
+      const snapshot = this.collector.snapshot()
+      await this.peer.request('snapshot', { tail: snapshot.bytes.toString('base64'), totalBytes: snapshot.totalBytes }, z.null())
+    }
+  }
+
+  async finish(): Promise<void> {
+    this.offer()
+    while (this.running !== undefined) await this.running
+    this.peer.close()
+  }
 }
 
 /** Owns remote launch reservations through final process-range quiescence. */
@@ -127,12 +166,12 @@ export class RemoteProcesses {
       }
       const socket = await (record.endpoints.terminal as Endpoint).connected
       const output = pipeline(terminal.output, socket).catch(() => {})
-      record.done = terminal.done.then(outcome => ({ outcome, spills: {} }))
+      record.done = terminal.done.then(outcome => ({ outcome, spills: {}, collected: {} }))
       void record.done.catch(() => {})
       void record.done.then(async (result) => {
         await terminal.terminate()
         await output
-        this.rememberCompleted(id, record, result)
+        await this.rememberCompleted(id, record, result)
       }).catch(() => {})
       return
     }
@@ -143,20 +182,33 @@ export class RemoteProcesses {
     const ordinary = this.ctx.subprocess.spawn(spec)
     record.ordinary = ordinary
     const collectors: Partial<Record<'stdout' | 'stderr', OutputCollector>> = {}
+    const stopCapture: Array<() => void> = []
+    const forwarders: CollectedOutputForwarder[] = []
+    const forwarded: Promise<void>[] = []
     const streams: Promise<void>[] = []
     for (const name of ['stdout', 'stderr'] as const) {
       const stream = ordinary[name] as Readable
       const mode = stdio[name]
-      if (typeof mode === 'object') {
-        const collector = new OutputCollector(mode.maxBytes, mode.spill?.maxBytes, name, record.directory)
-        collectors[name] = collector
-        stream.on('data', (chunk: Buffer) => { collector.push(chunk) })
-      }
       const socket = await (record.endpoints[name] as Endpoint).connected
-      streams.push(pipeline(stream, socket).catch(() => {}))
+      if (typeof mode === 'object') {
+        const collector = new OutputCollector(mode.maxBytes, mode.spill?.maxBytes, name, prepareManagedProcessBinding().spillDir)
+        collectors[name] = collector
+        const forwarder = new CollectedOutputForwarder(socket, collector, mode.maxBytes)
+        forwarders.push(forwarder)
+        const receive = (chunk: Buffer): void => { collector.push(chunk); forwarder.offer() }
+        stream.on('data', receive)
+        stopCapture.push(() => {
+          stream.off('data', receive)
+          stream.destroy()
+          collector.seal()
+        })
+      } else {
+        streams.push(pipeline(stream, socket).catch(() => {}))
+      }
     }
     if (record.endpoints.stdin !== undefined) {
       const socket = await record.endpoints.stdin.connected
+      socket.end()
       void pipeline(socket, ordinary.stdin as Writable).catch(() => {})
     }
     if (record.endpoints.control !== undefined) {
@@ -169,24 +221,30 @@ export class RemoteProcesses {
       streams.push(finished(socket, { readable: false, cleanup: true }).catch(() => {}))
     }
     record.done = ordinary.done.then(async (outcome) => {
+      for (const stop of stopCapture) stop()
+      for (const forwarder of forwarders) forwarded.push(forwarder.finish())
       // A paused output reader may defer EOF, but must not retain the process-range owner.
       await Promise.race([
         Promise.all(streams),
         new Promise<void>((resolve) => { const timer = setTimeout(resolve, request.graceMs); timer.unref() }),
       ])
       const spills: { stdout?: string; stderr?: string } = {}
+      const collected: Completion['collected'] = {}
       for (const name of ['stdout', 'stderr'] as const) {
-        collectors[name]?.seal()
-        const path = collectors[name]?.readFrom(0).spillPath
+        const collector = collectors[name]
+        if (collector === undefined) continue
+        const snapshot = collector.snapshot()
+        collected[name] = { tail: snapshot.bytes.toString('base64'), totalBytes: snapshot.totalBytes }
+        const path = collector.readFrom(0).spillPath
         if (path !== undefined) spills[name] = path
       }
-      return { outcome, spills }
+      return { outcome, spills, collected }
     })
     void record.done.catch(() => {})
     void record.done.then(async (result) => {
       await ordinary.waitForExit()
-      await Promise.all(streams)
-      this.rememberCompleted(id, record, result)
+      await Promise.all([...streams, ...forwarded])
+      await this.rememberCompleted(id, record, result)
     }).catch(() => {})
   }
 
@@ -284,13 +342,17 @@ export class RemoteProcesses {
     return record
   }
 
-  private rememberCompleted(id: string, record: ProcessRecord, result: unknown): void {
+  private async rememberCompleted(id: string, record: ProcessRecord, result: unknown): Promise<void> {
     if (this.records.get(id) !== record) return
     this.records.delete(id)
     this.completed.set(id, result)
     if (this.completed.size > this.limit * 4) this.completed.delete(this.completed.keys().next().value as string)
-    // Completed spill files remain in the helper's private root until connection disposal.
-    for (const endpoint of Object.values(record.endpoints)) { endpoint.server.close(); endpoint.socket?.destroy() }
+    for (const endpoint of Object.values(record.endpoints)) {
+      endpoint.server.close()
+      for (const socket of endpoint.pending) socket.destroy()
+      endpoint.socket?.destroy()
+    }
+    await rm(record.directory, { recursive: true, force: true })
   }
 
   private async endpoint(path: string): Promise<Endpoint> {
@@ -320,8 +382,15 @@ export class RemoteProcesses {
     })
     server.on('error', (error) => { connected.reject(error) })
     server.on('close', () => { if (endpoint.socket === undefined) connected.reject(new Error('SSH stream reservation closed')) })
-    await new Promise<void>((resolve, reject) => { server.once('error', reject); server.listen(path, resolve) })
-    await chmod(path, 0o600)
-    return endpoint
+    try {
+      await new Promise<void>((resolve, reject) => { server.once('error', reject); server.listen(path, resolve) })
+      await chmod(path, 0o600)
+      return endpoint
+    } catch (error) {
+      for (const socket of endpoint.pending) socket.destroy()
+      endpoint.socket?.destroy()
+      await new Promise<void>((resolve) => { server.close(() => { resolve() }) })
+      throw error
+    }
   }
 }

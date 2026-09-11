@@ -166,6 +166,14 @@ describe('SSH filesystem provider', () => {
     expect(dispatch).toHaveBeenCalledTimes(1)
   })
 
+  it('preserves a primitive AbortSignal reason as a filesystem cancellation', async () => {
+    const { fs, dispatch } = await setup()
+    const signal = AbortSignal.abort('caller cancelled')
+    dispatch.mockImplementationOnce(async (_method, _params, cancellation) => { cancellation?.throwIfAborted() })
+    await expect(fs.readText(target, signal)).rejects.toMatchObject({ code: 'FS_ABORTED', message: 'caller cancelled' })
+    expect(dispatch).toHaveBeenCalledTimes(1)
+  })
+
   it.each([null, { targetKey: 'relative', displayPath: 'file' }, { targetKey: '/remote/file', displayPath: 1 }])(
     'rejects malformed target observations from the wire', async (raw) => {
       const { fs, dispatch } = await setup()

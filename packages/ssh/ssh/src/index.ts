@@ -4,7 +4,6 @@ import { spawn, execFile, type ChildProcessWithoutNullStreams } from 'node:child
 import { mkdtemp, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { createConnection, type Socket } from 'node:net'
-import { promisify } from 'node:util'
 import { Context, Service } from '@deepseek-ai/cordis'
 import schema from '@deepseek-ai/schemastery'
 import { z } from 'zod'
@@ -12,7 +11,6 @@ import { SshRpcPeer, SSH_PROTOCOL_VERSION } from './protocol.ts'
 import { helloSchema, type SshStreamEndpoint } from './schemas.ts'
 import { authenticateStream } from './stream-security.ts'
 
-const execute = promisify(execFile)
 type Hello = z.infer<typeof helloSchema>
 
 /** Deployment-owned SSH identity and installed helper; no model argument selects these values. */
@@ -35,7 +33,7 @@ export interface Config {
   requestTimeoutMs?: number
   /** Maximum JSON payload bytes per helper request or response. */
   maxFrameBytes?: number
-  /** Maximum outstanding administrative requests. */
+  /** Maximum ordinary requests; heartbeat and bounded resource cleanup have reserved capacity. */
   maxPending?: number
   /** Remote helper lease; loss of heartbeats starts remote managed cleanup. */
   leaseMs?: number
@@ -57,14 +55,15 @@ export class SshConnection extends Service {
 
   /** Verified remote helper coordinates; callers must await this before launch. */
   readonly ready: Promise<Hello>
-  /** Installed helper entry in the remote filesystem. */
-  readonly helperPath: string
   private rpc: SshRpcPeer | undefined
   private child: ChildProcessWithoutNullStreams | undefined
   private childClosed: Promise<void> | undefined
   private directory: string | undefined
   private heartbeat: NodeJS.Timeout | undefined
   private closed = false
+  private readonly lifetime = new AbortController()
+  private readonly operations = new Set<Promise<unknown>>()
+  private disposal: Promise<void> | undefined
   private failure: Error | undefined
   private sockets = new Set<Socket>()
   private nextSocket = 0
@@ -79,13 +78,12 @@ export class SshConnection extends Service {
       node: z.string().startsWith('/'), helper: z.string().startsWith('/'), helperHash: z.string().regex(/^[0-9a-f]{64}$/),
       workspace: z.string().startsWith('/'), requestTimeoutMs: z.number().int().positive(),
       bootstrapPath: z.string().startsWith('/').optional(), bootstrapHash: z.string().regex(/^[0-9a-f]{64}$/).optional(),
-      maxFrameBytes: z.number().int().positive().max(64 * 1024 * 1024), maxPending: z.number().int().positive(),
+      maxFrameBytes: z.number().int().positive().max(64 * 1024 * 1024), maxPending: z.number().int().positive().max(128),
       leaseMs: z.number().int().min(3000).max(600_000),
     }).refine(value => (value.bootstrapPath === undefined) === (value.bootstrapHash === undefined), 'bootstrapPath and bootstrapHash must be paired')
       .parse(config) as typeof this.config
-    this.helperPath = this.config.helper
     this.ready = this.start()
-    void this.ready.catch((error) => { this.fail(error instanceof Error ? error : new Error(String(error))) })
+    void this.ready.catch((error: unknown) => { this.fail(error instanceof Error ? error : new Error(String(error))) })
     ctx.effect(() => () => this.dispose())
   }
 
@@ -113,9 +111,10 @@ export class SshConnection extends Service {
    * @param wait - allow a process observation to outlast the administrative deadline.
    * @returns the validated remote result.
    */
-  async request<T>(method: string, params: unknown, result: z.ZodType<T>, signal?: AbortSignal, wait = false): Promise<T> {
+  async request<T>(method: string, params: unknown, result: z.ZodType<T>, signal?: AbortSignal, wait: boolean = false): Promise<T> {
+    this.assertOpen()
     await this.ready
-    if (this.failure !== undefined) throw this.failure
+    this.assertOpen()
     const bounded = wait ? signal : signal === undefined
       ? AbortSignal.timeout(this.config.requestTimeoutMs)
       : AbortSignal.any([signal, AbortSignal.timeout(this.config.requestTimeoutMs)])
@@ -129,29 +128,32 @@ export class SshConnection extends Service {
    * @returns a paused socket; attach a consumer before resuming it.
    */
   async connectStream(endpoint: SshStreamEndpoint, signal?: AbortSignal): Promise<Socket> {
+    return this.track(this.establishStream(endpoint, signal))
+  }
+
+  private async establishStream(endpoint: SshStreamEndpoint, signal?: AbortSignal): Promise<Socket> {
     const hello = await this.ready
+    this.assertOpen()
+    signal = signal === undefined ? this.lifetime.signal : AbortSignal.any([signal, this.lifetime.signal])
     const remote = endpoint.path
     if (!remote.startsWith(`${hello.root}/`) || /[:\r\n\0]/u.test(remote)) throw new Error('SSH helper returned an invalid stream path')
-    signal?.throwIfAborted()
+    signal.throwIfAborted()
     const local = join(this.directory as string, `s${this.nextSocket++}`)
     const forward = `${local}:${remote}`
     const cancelForward = async (): Promise<void> => {
-      if (!this.closed) await execute('ssh', ['-S', this.controlPath(), '-O', 'cancel', '-L', forward, this.config.host], {
-        timeout: this.config.requestTimeoutMs,
-      }).catch(() => {})
+      // An unavailable master already removed its forwarding listeners.
+      if (!this.closed) await this.controlCommand(['-O', 'cancel', '-L', forward]).catch(() => {})
       await rm(local, { force: true })
     }
     try {
-      await execute('ssh', ['-S', this.controlPath(), '-O', 'forward', '-o', 'ExitOnForwardFailure=yes', '-L', forward, this.config.host], {
-        timeout: this.config.requestTimeoutMs, ...(signal === undefined ? {} : { signal }), maxBuffer: 64 * 1024,
-      })
+      await this.controlCommand(['-O', 'forward', '-o', 'ExitOnForwardFailure=yes', '-L', forward], signal)
     } catch (error) { await cancelForward(); throw error }
-    if (this.closed) throw new Error('SSH connection closed before stream establishment')
-    const socket = createConnection({ path: local, allowHalfOpen: true, ...(signal === undefined ? {} : { signal }) })
+    signal.throwIfAborted()
+    const socket = createConnection({ path: local, allowHalfOpen: true, signal })
     this.sockets.add(socket)
     socket.once('close', () => {
       this.sockets.delete(socket)
-      void cancelForward().catch(() => {})
+      void this.track(cancelForward()).catch(() => {})
     })
     await new Promise<void>((resolve, reject) => {
       const cleanup = (): void => {
@@ -174,28 +176,75 @@ export class SshConnection extends Service {
   }
 
   /** Tear down the helper's remote managed ranges before releasing the SSH master when reachable. */
-  async dispose(): Promise<void> {
-    if (this.closed) return
+  dispose(): Promise<void> {
+    this.disposal ??= this.disposeOnce()
+    return this.disposal
+  }
+
+  private async disposeOnce(): Promise<void> {
     this.closed = true
+    this.lifetime.abort(new Error('SSH connection is closing'))
     if (this.heartbeat !== undefined) clearInterval(this.heartbeat)
     try {
       await this.ready.catch(() => {})
       if (this.failure === undefined) await this.rpc?.request('close', {}, z.null(), AbortSignal.timeout(this.config.requestTimeoutMs))
     } finally {
       this.rpc?.close()
-      for (const socket of this.sockets) socket.destroy()
+      const socketClosures = [...this.sockets].map(socket => new Promise<void>((resolve) => {
+        if (socket.closed) resolve()
+        else { socket.once('close', () => { resolve() }); socket.destroy() }
+      }))
       this.child?.kill('SIGTERM')
       const force = setTimeout(() => { this.child?.kill('SIGKILL') }, this.config.requestTimeoutMs)
       try { await this.childClosed } finally { clearTimeout(force) }
+      await Promise.all(socketClosures)
+      while (this.operations.size > 0) await Promise.allSettled([...this.operations])
       if (this.directory !== undefined) await rm(this.directory, { recursive: true, force: true })
     }
   }
 
   private controlPath(): string { return join(this.directory as string, 'master') }
 
+  private assertOpen(): void {
+    if (this.closed) throw new Error('SSH connection is closed')
+    if (this.failure !== undefined) throw this.failure
+  }
+
+  private track<T>(operation: Promise<T>): Promise<T> {
+    this.operations.add(operation)
+    void operation.finally(() => { this.operations.delete(operation) }).catch(() => {})
+    return operation
+  }
+
+  private async controlCommand(args: string[], signal?: AbortSignal): Promise<void> {
+    const signals = [this.lifetime.signal, AbortSignal.timeout(this.config.requestTimeoutMs)]
+    if (signal !== undefined) signals.push(signal)
+    const combined = AbortSignal.any(signals)
+    combined.throwIfAborted()
+    const result = Promise.withResolvers<undefined>()
+    const command = execFile('ssh', ['-S', this.controlPath(), ...args, this.config.host], {
+      signal: combined, maxBuffer: 64 * 1024,
+    }, (error) => { if (error === null) result.resolve(undefined); else result.reject(error) })
+    const closed = new Promise<void>((resolve) => { command.once('close', () => { resolve() }) })
+    let force: NodeJS.Timeout | undefined
+    const escalate = (): void => {
+      force = setTimeout(() => { command.kill('SIGKILL') }, this.config.requestTimeoutMs)
+      force.unref()
+    }
+    combined.addEventListener('abort', escalate, { once: true })
+    if (combined.aborted) escalate()
+    try { await result.promise }
+    finally {
+      await closed
+      combined.removeEventListener('abort', escalate)
+      if (force !== undefined) clearTimeout(force)
+    }
+  }
+
   private fail(error: Error): void {
     if (this.failure !== undefined) return
     this.failure = error
+    this.lifetime.abort(error)
     if (this.heartbeat !== undefined) clearInterval(this.heartbeat)
     this.rpc?.close(error)
     for (const socket of this.sockets) socket.destroy(error)
@@ -227,8 +276,11 @@ export class SshConnection extends Service {
     if (hello.hash !== this.config.helperHash) throw new Error('SSH helper digest differs from the configured artifact')
     if (hello.bootstrapHash !== this.config.bootstrapHash) throw new Error('SSH PTC bootstrap digest differs from the configured artifact')
     this.remote = hello
+    let heartbeatPending: Promise<unknown> | undefined
     this.heartbeat = setInterval(() => {
-      void rpc.request('heartbeat', {}, z.null(), AbortSignal.timeout(this.config.leaseMs / 2)).catch((error) => { this.fail(error instanceof Error ? error : new Error(String(error))) })
+      heartbeatPending ??= rpc.request('heartbeat', {}, z.null(), AbortSignal.timeout(this.config.leaseMs / 2))
+        .catch((error: unknown) => { this.fail(error instanceof Error ? error : new Error(String(error))) })
+        .finally(() => { heartbeatPending = undefined })
     }, Math.floor(this.config.leaseMs / 3))
     this.heartbeat.unref()
     return hello

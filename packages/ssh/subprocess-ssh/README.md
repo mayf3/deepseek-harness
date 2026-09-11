@@ -39,7 +39,7 @@ A direct exit reported by `done` does not prove managed-range quiescence; `waitF
 <details>
 <summary>Implementation internals — click to expand</summary>
 
-The helper reserves and authenticates all required streams before launch. Stdout, stderr, stdin and fd 7 use separate SSH channels; collected output retains a bounded host tail, and optional complete spill files live in the remote helper’s private directory until connection disposal.
+The helper reserves and authenticates all required streams before launch. Stdout, stderr, stdin and fd 7 use separate SSH channels. Collected output publishes a final bounded raw-tail snapshot with whole-stream byte offsets, so network lag cannot change the completed observation. Optional spill files use the local provider’s private retained-output directory on the remote host.
 
 Remote execution delegates to [`subprocess-local`](../../subprocess/subprocess-local/README.md). Native process ownership and platform fallbacks therefore have the same meaning as local execution on that remote OS. SSH carries requests and observations; it does not itself confine the payload.
 
@@ -68,7 +68,7 @@ This provider contributes no request-prefix content. Its consumers own model-vis
 
 <a id="known-limitations-and-deferred-work"></a>
 
-- Completed spill paths remain usable only while their helper connection lives.
+- Completed spill files survive connection disposal and remain available until external temporary-file cleanup.
 - Callers must consume or close raw output streams. Independent channels allow control progress when stdout is paused, but do not remove per-stream backpressure or shared-network congestion.
 - Loss of the SSH connection leaves remote termination unconfirmed from the client; lease cleanup is a remote action, not a successful client acknowledgement.
 

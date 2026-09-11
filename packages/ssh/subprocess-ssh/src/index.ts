@@ -6,7 +6,8 @@ import { SubprocessRuntime } from '@deepseek-ai/dsh-subprocess'
 import type { SubprocessCollectedOutputs, SubprocessHandle, SubprocessOutcome, SubprocessOutputMode, SubprocessSpawnSpec, SubprocessTerminalHandle, SubprocessTerminalSignal, SubprocessTerminalSpawnSpec } from '@deepseek-ai/dsh-subprocess'
 import { OutputCollector } from '@deepseek-ai/dsh-subprocess-local/output'
 import type { SshConnection } from '@deepseek-ai/dsh-ssh'
-import { doneSchema, foregroundSchema, preparedSchema, remotePath, streamEndpointSchema } from '@deepseek-ai/dsh-ssh/schemas'
+import { doneSchema, foregroundSchema, outputSnapshotFrameLimit, outputSnapshotSchema, preparedSchema, remotePath, streamEndpointSchema } from '@deepseek-ai/dsh-ssh/schemas'
+import { SshRpcPeer } from '@deepseek-ai/dsh-ssh/protocol'
 import { z } from 'zod'
 
 function environment(env?: NodeJS.ProcessEnv): Record<string, string | null> | undefined {
@@ -39,6 +40,7 @@ class RemoteProcess implements SubprocessHandle {
   private termination: Promise<void> | undefined
   private readonly detachAbort: () => void
   private spills: { stdout?: string | undefined; stderr?: string | undefined } = {}
+  private readonly updateCollection: Partial<Record<'stdout' | 'stderr', (snapshot: { tail: string; totalBytes: number }, final: boolean) => void>> = {}
 
   constructor(private readonly ssh: SshConnection, private readonly spec: SubprocessSpawnSpec) {
     this.stdin = spec.stdio.stdin === 'pipe' ? this.inbound : undefined
@@ -50,12 +52,29 @@ class RemoteProcess implements SubprocessHandle {
     const collect = (name: 'stdout' | 'stderr', stream: PassThrough, mode: SubprocessOutputMode) => {
       if (mode === 'pipe') return undefined
       if (mode === 'inherit') { stream.pipe(name === 'stdout' ? process.stdout : process.stderr, { end: false }); return undefined }
-      const collector = new OutputCollector(mode.maxBytes, undefined, name, '')
-      stream.on('data', (chunk: Buffer) => { collector.push(chunk) })
+      let collector = new OutputCollector(mode.maxBytes, undefined, name, '')
+      let base = 0
+      let total = 0
+      let finalized = false
+      this.updateCollection[name] = (snapshot, final): void => {
+        const bytes = Buffer.from(snapshot.tail, 'base64')
+        if (bytes.length > mode.maxBytes || snapshot.totalBytes < bytes.length) throw new Error('SSH helper returned invalid collected output coordinates')
+        if (finalized) return
+        if (snapshot.totalBytes < total) throw new Error('SSH helper rewound collected output')
+        finalized = final
+        collector = new OutputCollector(mode.maxBytes, undefined, name, '')
+        collector.push(bytes)
+        base = snapshot.totalBytes - bytes.length
+        total = snapshot.totalBytes
+      }
       return {
-        readFrom: (offset: number) => ({
-          ...collector.readFrom(offset), ...(this.spills[name] === undefined ? {} : { spillPath: this.spills[name] }),
-        }),
+        readFrom: (offset: number) => {
+          const snapshot = collector.readFrom(offset - base)
+          return {
+            ...snapshot, nextOffset: snapshot.nextOffset + base,
+            ...(this.spills[name] === undefined ? {} : { spillPath: this.spills[name] }),
+          }
+        },
       }
     }
     const stdout = collect('stdout', this.out, spec.stdio.stdout)
@@ -74,6 +93,12 @@ class RemoteProcess implements SubprocessHandle {
       const result = await ssh.request('process.done', { id: this.id }, doneSchema, undefined, true)
       await this.drainOutput()
       this.spills = result.spills
+      for (const name of ['stdout', 'stderr'] as const) {
+        const snapshot = result.collected[name]
+        const finish = this.updateCollection[name]
+        if ((snapshot === undefined) !== (finish === undefined)) throw new Error('SSH helper returned mismatched output collection modes')
+        if (snapshot !== undefined) finish?.(snapshot, true)
+      }
       return { exitCode: result.outcome.exitCode, signal: result.outcome.signal as NodeJS.Signals | null }
     }).catch((error: unknown) => {
       this.terminate()
@@ -97,8 +122,19 @@ class RemoteProcess implements SubprocessHandle {
         [name, await this.ssh.connectStream(path, this.controller.signal)] as const))
       this.sockets = sockets.map(([, socket]) => socket)
       for (const [name, socket] of sockets) {
-        if (name === 'stdout') socket.pipe(this.out)
-        if (name === 'stderr') socket.pipe(this.err)
+        if (name === 'stdout' || name === 'stderr') {
+          const mode = this.spec.stdio[name]
+          if (typeof mode === 'object') {
+            new SshRpcPeer(socket, socket, outputSnapshotFrameLimit(mode.maxBytes), 1, async (method, raw) => {
+              if (method !== 'snapshot') throw new Error('Unexpected SSH output-stream operation')
+              this.updateCollection[name]?.(outputSnapshotSchema.parse(raw), false)
+              return null
+            })
+          } else {
+            socket.end()
+            socket.pipe(name === 'stdout' ? this.out : this.err)
+          }
+        }
         if (name === 'stdin') this.inbound.pipe(socket)
         if (name === 'control') { this.toControl.pipe(socket); socket.pipe(this.fromControl) }
       }
@@ -154,7 +190,9 @@ class RemoteProcess implements SubprocessHandle {
 
   private async drainOutput(): Promise<void> {
     const disposers: Array<() => void> = []
-    const outputs = [this.out, this.err].map((stream) => {
+    const outputs = (['stdout', 'stderr'] as const).map((name) => {
+      if (typeof this.spec.stdio[name] === 'object') return Promise.resolve()
+      const stream = name === 'stdout' ? this.out : this.err
       if (stream.readableEnded || stream.destroyed) return Promise.resolve()
       return new Promise<void>((resolve) => {
         const done = (): void => { resolve() }
@@ -237,6 +275,7 @@ export class SshSubprocessRuntime extends SubprocessRuntime {
       signal.throwIfAborted()
       socket = await ssh.connectStream(streamEndpointSchema.parse(prepared.streams.terminal), signal)
       signal.throwIfAborted()
+      socket.end()
       const output = new PassThrough()
       socket.pipe(output)
       const started = await ssh.request('process.start', { id }, z.object({ pid: z.number().int().positive() }).strict(), signal)

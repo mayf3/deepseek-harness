@@ -25,10 +25,10 @@ import type {
 import {
   bindManagedProcess,
   childEnv,
-  prepareManagedProcessBinding,
   spawnSubprocess,
   validateSubprocessSpec,
 } from './spawn.ts'
+import { prepareManagedProcessBinding } from './output.ts'
 import type { LocalSubprocessHandle, SpawnInternals } from './spawn.ts'
 import {
   launchLinuxScope,

@@ -734,8 +734,10 @@ describe('LocalSubprocessRuntime', () => {
     vi.doMock('../src/spawn.ts', async importOriginal => ({
       ...await importOriginal<typeof import('../src/spawn.ts')>(),
       bindManagedProcess,
-      prepareManagedProcessBinding,
       spawnSubprocess,
+    }))
+    vi.doMock('../src/output.ts', async importOriginal => ({
+      ...await importOriginal<typeof import('../src/output.ts')>(), prepareManagedProcessBinding,
     }))
     const fibers: Array<{ dispose(): Promise<void> }> = []
     try {
@@ -778,6 +780,7 @@ describe('LocalSubprocessRuntime', () => {
       vi.doUnmock('../src/linux-scope.ts')
       vi.doUnmock('../src/windows-job.ts')
       vi.doUnmock('../src/spawn.ts')
+      vi.doUnmock('../src/output.ts')
       unmockWin32ForIsolatedRuntime()
       vi.resetModules()
     }

@@ -50,10 +50,24 @@ export type SshStreamEndpoint = z.infer<typeof streamEndpointSchema>
 export const preparedSchema = z.object({ id: z.string().uuid(), streams: z.partialRecord(z.enum(['stdin', 'stdout', 'stderr', 'control', 'terminal']), streamEndpointSchema) }).strict()
 /** Direct process exit facts. */
 export const outcomeSchema = z.object({ exitCode: z.number().int().nullable(), signal: z.string().nullable() }).strict()
-/** Final output locations are remote paths, never host copies. */
+/** A bounded raw tail positioned in whole-stream byte coordinates. */
+export const outputSnapshotSchema = z.object({ tail: z.string().base64(), totalBytes: z.number().int().nonnegative() }).strict()
+/**
+ * Bound one encoded tail and its RPC envelope by the declared collection budget.
+ * @param maxBytes - the collector's retained raw-byte limit.
+ * @returns the private snapshot frame limit, capped by the helper protocol ceiling.
+ */
+export function outputSnapshotFrameLimit(maxBytes: number): number {
+  return Math.min(64 * 1024 * 1024, maxBytes * 2 + 1024)
+}
+/** Direct exit, retained output snapshots, and optional complete spill locations. */
 export const doneSchema = z.object({
   outcome: outcomeSchema,
   spills: z.object({ stdout: remotePath.optional(), stderr: remotePath.optional() }).strict(),
+  collected: z.object({
+    stdout: outputSnapshotSchema.optional(),
+    stderr: outputSnapshotSchema.optional(),
+  }).strict(),
 }).strict()
 /** Remote terminal foreground observation. */
 export const foregroundSchema = z.object({ processGroupId: z.number().int().positive(), inputWaiting: z.boolean() }).strict().nullable()
