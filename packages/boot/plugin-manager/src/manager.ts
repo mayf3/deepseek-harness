@@ -517,7 +517,7 @@ export class PluginManager {
   /** Whether the target layer's composition already carries a row with `rowId`. */
   private async rowExists(runtime: ProfileRuntime, target: PluginRowTarget, rowId: string): Promise<boolean> {
     if (target.kind === 'global') {
-      const tree = rootIncludeEntry(this.ctx)?.subtree
+      const tree = rootIncludeEntry(this.ctx.root)?.subtree
       return [...this.ctx.loader.entries()].some(entry => entry.parent.tree === tree && entry.options.id === rowId)
         || (await readPatchListFile(NAME, runtime.patchPath, 'patches') ?? []).some(patch => patch.insert?.some(row => row.id === rowId))
     }

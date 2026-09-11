@@ -82,16 +82,18 @@ export function packageView(
     ?? (manifest.dsh?.profile?.stages?.[name] ?? packageManifest?.dsh?.bundle?.stage ?? 'runtime')
   const kind = metadata?.kind ?? (layer !== undefined || packageManifest?.dsh?.bundle !== undefined ? 'bundle' : 'unknown')
   const composed = layer !== undefined
-  const rootTree = rootIncludeEntry(ctx)?.subtree
+  const rootTree = rootIncludeEntry(ctx.root)?.subtree
   const affected = allIssues.filter(issue => runtime.originOfEntry(issue.entry)?.packageName === name
     || (issue.entry.parent.tree === rootTree && metadata?.overrides.includes(issue.entry.options.id)))
   const rows = composed ? composedRows(ctx, runtime, name, allIssues) : declaredRows(metadata)
   const status = packageStatus({ kind, installed, enabled, composed, liveReload, metadataFailure, rows, affected })
   const reason = metadataFailure ?? (status === 'restart-required'
     ? 'the profile applies layer changes at its next start'
-    : status === 'failed' || status === 'partial'
-      ? affected[0]?.message ?? rows.find(row => row.failure !== undefined)?.failure?.message
-      : undefined)
+    : status === 'failed' && enabled !== composed
+      ? 'the requested bundle state has not been applied to the live profile'
+      : status === 'failed' || status === 'partial'
+        ? affected[0]?.message ?? rows.find(row => row.failure !== undefined)?.failure?.message
+        : undefined)
   return {
     name,
     ...optional('version', packageManifest?.version),
@@ -129,7 +131,7 @@ function packageStatus(facts: {
 }): PluginPackageStatus {
   if (facts.kind !== 'bundle') return 'plain'
   if (facts.installed && facts.metadataFailure !== undefined) return 'not-enableable'
-  if (facts.enabled !== facts.composed) return 'restart-required'
+  if (facts.enabled !== facts.composed) return facts.liveReload ? 'failed' : 'restart-required'
   if (!facts.enabled) return 'disabled'
   const live = facts.rows.filter(row => row.enabled)
   if (live.length === 0) return facts.affected.length === 0 ? 'running' : 'failed'
