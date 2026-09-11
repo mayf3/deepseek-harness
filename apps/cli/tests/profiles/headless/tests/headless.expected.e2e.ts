@@ -17,6 +17,7 @@ import {
   scanZstdFrames,
 } from '@deepseek-ai/dsh-session-persistence-jsonl/src/zstd.ts'
 import { describe, expect, it } from 'vitest'
+import { stageStartupBundle } from '../../../startup-bundle.ts'
 
 const goldensDir = fileURLToPath(new URL('./expected/', import.meta.url))
 const goalScenarioDir = join(goldensDir, 'goal-tools')
@@ -277,10 +278,10 @@ describe('headless stream-json snapshots', () => {
       tempDirPrefix: 'headless-snapshot-startup-error-',
       binScript: dshBinScript,
       configPath: startupFailureConfigPath,
+      prepare: (cwd) => { stageStartupBundle(join(cwd, '.dsh'), 'headless', startupFailureConfigPath) },
       binArgs: [
         '--profile', 'headless',
         '--patch', headlessOverlayPath,
-        '--patch', startupFailureConfigPath,
         'Complete the task despite the unrelated startup failure.',
       ],
       tsconfigPath,
