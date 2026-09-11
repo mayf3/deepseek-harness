@@ -41,9 +41,13 @@ export const spawnSchema = z.object({
   terminal: z.object({ rows: z.number().int().positive(), cols: z.number().int().positive() }).strict().optional(),
 }).strict().refine(value => (value.stdio === undefined) !== (value.terminal === undefined), 'select ordinary or terminal execution')
 /** Connection handshake binds sockets and workspace to one helper process. */
-export const helloSchema = z.object({ protocol: z.literal(1), hash: z.string().regex(/^[0-9a-f]{64}$/), platform: z.enum(['linux', 'darwin']), nodeVersion: z.string(), node: remotePath, root: remotePath, workspace: remotePath }).strict()
+export const helloSchema = z.object({ protocol: z.literal(1), hash: z.string().regex(/^[0-9a-f]{64}$/), platform: z.enum(['linux', 'darwin']), nodeVersion: z.string(), node: remotePath, root: remotePath, workspace: remotePath, bootstrapHash: z.string().regex(/^[0-9a-f]{64}$/).optional() }).strict()
 /** A prepared process publishes its sockets before target code may execute. */
-export const preparedSchema = z.object({ id: z.string().uuid(), streams: z.partialRecord(z.enum(['stdin', 'stdout', 'stderr', 'control', 'terminal']), remotePath) }).strict()
+export const streamEndpointSchema = z.object({ path: remotePath, capability: z.string().regex(/^[0-9a-f]{64}$/) }).strict()
+/** A stream capability reaches only the authenticated SSH client and its helper. */
+export type SshStreamEndpoint = z.infer<typeof streamEndpointSchema>
+/** Prepared process and its independently authenticated stream endpoints. */
+export const preparedSchema = z.object({ id: z.string().uuid(), streams: z.partialRecord(z.enum(['stdin', 'stdout', 'stderr', 'control', 'terminal']), streamEndpointSchema) }).strict()
 /** Direct process exit facts. */
 export const outcomeSchema = z.object({ exitCode: z.number().int().nullable(), signal: z.string().nullable() }).strict()
 /** Final output locations are remote paths, never host copies. */

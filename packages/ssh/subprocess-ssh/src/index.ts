@@ -6,12 +6,14 @@ import { SubprocessRuntime } from '@deepseek-ai/dsh-subprocess'
 import type { SubprocessCollectedOutputs, SubprocessHandle, SubprocessOutcome, SubprocessOutputMode, SubprocessSpawnSpec, SubprocessTerminalHandle, SubprocessTerminalSignal, SubprocessTerminalSpawnSpec } from '@deepseek-ai/dsh-subprocess'
 import { OutputCollector } from '@deepseek-ai/dsh-subprocess-local/output'
 import type { SshConnection } from '@deepseek-ai/dsh-ssh'
-import { doneSchema, foregroundSchema, preparedSchema, remotePath } from '@deepseek-ai/dsh-ssh/schemas'
+import { doneSchema, foregroundSchema, preparedSchema, remotePath, streamEndpointSchema } from '@deepseek-ai/dsh-ssh/schemas'
 import { z } from 'zod'
 
 function environment(env?: NodeJS.ProcessEnv): Record<string, string | null> | undefined {
   return env === undefined ? undefined : Object.fromEntries(Object.entries(env).map(([key, value]) => [key, value ?? null]))
 }
+
+class RemoteCleanupError extends AggregateError {}
 
 /** One remote ordinary process; stdin and control remain usable during asynchronous SSH allocation. */
 class RemoteProcess implements SubprocessHandle {
@@ -21,6 +23,7 @@ class RemoteProcess implements SubprocessHandle {
   readonly control: Duplex | undefined
   readonly collected: SubprocessCollectedOutputs
   readonly done: Promise<SubprocessOutcome>
+  readonly streamsClosed: Promise<void>
   private readonly inbound = new PassThrough()
   private readonly out = new PassThrough()
   private readonly err = new PassThrough()
@@ -30,8 +33,10 @@ class RemoteProcess implements SubprocessHandle {
   private readonly started: Promise<void>
   private id: string | undefined
   private sockets: Socket[] = []
-  private failure: unknown
   private quiescent = false
+  private committed = false
+  private startRequested = false
+  private termination: Promise<void> | undefined
   private readonly detachAbort: () => void
   private spills: { stdout?: string | undefined; stderr?: string | undefined } = {}
 
@@ -60,13 +65,19 @@ class RemoteProcess implements SubprocessHandle {
     spec.signal?.addEventListener('abort', onAbort, { once: true })
     this.detachAbort = () => { spec.signal?.removeEventListener('abort', onAbort) }
     this.started = this.start()
+    this.streamsClosed = this.started.then(async () => {
+      await Promise.all(this.sockets.map(socket => socket.closed ? Promise.resolve() : new Promise<void>((resolve) => {
+        socket.once('close', () => { resolve() })
+      })))
+    }, () => {})
     this.done = this.started.then(async () => {
       const result = await ssh.request('process.done', { id: this.id }, doneSchema, undefined, true)
+      await this.drainOutput()
       this.spills = result.spills
       return { exitCode: result.outcome.exitCode, signal: result.outcome.signal as NodeJS.Signals | null }
     }).catch((error: unknown) => {
-      this.failure = error
       this.terminate()
+      for (const socket of this.sockets) socket.destroy()
       for (const stream of [this.inbound, this.out, this.err, this.toControl, this.fromControl]) {
         stream.destroy(error instanceof Error ? error : new Error(String(error)))
       }
@@ -92,41 +103,98 @@ class RemoteProcess implements SubprocessHandle {
         if (name === 'control') { this.toControl.pipe(socket); socket.pipe(this.fromControl) }
       }
       this.controller.signal.throwIfAborted()
+      this.startRequested = true
       await this.ssh.request('process.start', { id: this.id }, z.object({}).strict(), this.controller.signal)
+      this.committed = true
     } catch (error) {
-      await this.ssh.request('process.terminate', { id: this.id }, z.null()).catch(() => {})
+      this.terminate()
+      await this.termination?.catch(() => {})
       for (const socket of this.sockets) socket.destroy()
       throw error
     }
   }
 
   terminate(): void {
-    this.controller.abort(new Error('SSH process terminated'))
-    if (this.id !== undefined) void this.ssh.request('process.terminate', { id: this.id }, z.null()).catch((error: unknown) => { this.failure = error })
+    if (this.quiescent || this.termination !== undefined) return
+    if (!this.committed) this.controller.abort(new Error('SSH process terminated before launch acknowledgement'))
+    if (this.id !== undefined) {
+      this.termination = this.ssh.request('process.terminate', { id: this.id }, z.null()).then(() => {
+        this.quiescent = true
+        this.detachAbort()
+      }).catch((error: unknown) => {
+        // A connection unable to confirm termination must release its helper lease.
+        void this.ssh.dispose().catch(() => {})
+        throw error
+      })
+      void this.termination.catch(() => {})
+    }
+  }
+
+  closeStreams(): void {
+    for (const socket of this.sockets) socket.destroy()
+    for (const stream of [this.inbound, this.out, this.err, this.toControl, this.fromControl, this.control]) stream?.destroy()
   }
 
   async waitForExit(signal?: AbortSignal): Promise<boolean> {
     if (this.quiescent) return true
-    await this.started
-    if (this.failure !== undefined) throw this.failure
+    try { await this.started } catch (error) {
+      if (this.termination !== undefined) await this.termination
+      if (this.quiescent || !this.startRequested) {
+        this.quiescent = true
+        this.detachAbort()
+        return true
+      }
+      throw error
+    }
+    if (this.termination !== undefined) { await this.termination; return true }
     const result = await this.ssh.request('process.wait', { id: this.id }, z.boolean(), signal, true)
     if (result) { this.quiescent = true; this.detachAbort() }
     return result
+  }
+
+  private async drainOutput(): Promise<void> {
+    const disposers: Array<() => void> = []
+    const outputs = [this.out, this.err].map((stream) => {
+      if (stream.readableEnded || stream.destroyed) return Promise.resolve()
+      return new Promise<void>((resolve) => {
+        const done = (): void => { resolve() }
+        for (const event of ['end', 'close', 'error']) stream.once(event, done)
+        disposers.push(() => { for (const event of ['end', 'close', 'error']) stream.off(event, done) })
+      })
+    })
+    let timer: NodeJS.Timeout | undefined
+    try {
+      await Promise.race([
+        Promise.all(outputs),
+        new Promise<void>((resolve) => { timer = setTimeout(resolve, this.spec.graceMs) }),
+      ])
+    } finally {
+      if (timer !== undefined) clearTimeout(timer)
+      for (const dispose of disposers) dispose()
+    }
   }
 }
 
 /** SSH provider paired with the SSH filesystem; the remote helper selects POSIX process ownership. */
 export class SshSubprocessRuntime extends SubprocessRuntime {
   static inject = ['ssh']
-  private readonly live = new Set<SubprocessHandle>()
+  private readonly live = new Set<RemoteProcess>()
   private readonly terminals = new Set<SubprocessTerminalHandle>()
+  private readonly terminalAllocations = new Set<Promise<SubprocessTerminalHandle>>()
+  private readonly lifetime = new AbortController()
 
   constructor(ctx: Context) {
     super(ctx)
     ctx.effect(() => async () => {
+      this.lifetime.abort(new Error('SSH subprocess provider disposed'))
       for (const handle of this.live) handle.terminate()
       const results = await Promise.allSettled([
-        ...[...this.live].map(handle => handle.waitForExit()),
+        ...[...this.live].map(async (handle) => {
+          try { await handle.waitForExit() } finally { handle.closeStreams() }
+        }),
+        ...[...this.terminalAllocations].map(allocation => allocation.catch((error: unknown) => {
+          if (error instanceof RemoteCleanupError) throw error
+        })),
         ...[...this.terminals].map(handle => handle.terminate()),
       ])
       const errors = results.flatMap(result => result.status === 'rejected' ? [result.reason as unknown] : [])
@@ -139,28 +207,44 @@ export class SshSubprocessRuntime extends SubprocessRuntime {
   }
 
   override spawn(spec: SubprocessSpawnSpec): SubprocessHandle {
+    this.lifetime.signal.throwIfAborted()
     spec.signal?.throwIfAborted()
     const handle = new RemoteProcess(this.ctx.ssh, spec)
     this.live.add(handle)
-    void handle.done.then(() => handle.waitForExit()).then(() => { this.live.delete(handle) }).catch(() => {})
+    void handle.done.then(() => handle.waitForExit()).then(() => handle.streamsClosed)
+      .then(() => { this.live.delete(handle) }).catch(() => {})
     return handle
   }
 
   override async spawnTerminal(spec: SubprocessTerminalSpawnSpec): Promise<SubprocessTerminalHandle> {
+    this.lifetime.signal.throwIfAborted()
+    const signal = spec.signal === undefined ? this.lifetime.signal : AbortSignal.any([spec.signal, this.lifetime.signal])
+    signal.throwIfAborted()
+    const allocation = this.createTerminal(spec, signal)
+    this.terminalAllocations.add(allocation)
+    try { return await allocation } finally { this.terminalAllocations.delete(allocation) }
+  }
+
+  private async createTerminal(spec: SubprocessTerminalSpawnSpec, signal: AbortSignal): Promise<SubprocessTerminalHandle> {
     const ssh = this.ctx.ssh
     const prepared = await ssh.request('process.prepare', {
       argv: spec.argv, cwd: spec.cwd, env: environment(spec.env), graceMs: spec.graceMs,
       terminal: { rows: spec.rows, cols: spec.cols },
-    }, preparedSchema, spec.signal)
+    }, preparedSchema, signal)
     const id = prepared.id
     let socket: Socket | undefined
     try {
-      socket = await ssh.connectStream(z.string().parse(prepared.streams.terminal), spec.signal)
-      const started = await ssh.request('process.start', { id }, z.object({ pid: z.number().int().positive() }).strict(), spec.signal)
-      const output = socket
+      signal.throwIfAborted()
+      socket = await ssh.connectStream(streamEndpointSchema.parse(prepared.streams.terminal), signal)
+      signal.throwIfAborted()
+      const output = new PassThrough()
+      socket.pipe(output)
+      const started = await ssh.request('process.start', { id }, z.object({ pid: z.number().int().positive() }).strict(), signal)
+      signal.throwIfAborted()
       const done = ssh.request('process.done', { id }, doneSchema, undefined, true).then(result => ({ exitCode: result.outcome.exitCode, signal: result.outcome.signal as NodeJS.Signals | null }))
       void done.catch(() => {})
       let closing: Promise<void> | undefined
+      const abort = (): void => { void handle.terminate().catch(() => { void ssh.dispose().catch(() => {}) }) }
       const handle: SubprocessTerminalHandle = {
         pid: started.pid, output, done,
         write: async (data) => { await ssh.request('terminal.write', { id, value: data }, z.null()) },
@@ -168,17 +252,23 @@ export class SshSubprocessRuntime extends SubprocessRuntime {
         signalForeground: (signal: SubprocessTerminalSignal) => ssh.request('terminal.signal', { id, value: signal }, z.number().int().positive()),
         terminate: () => {
           closing ??= ssh.request('process.terminate', { id }, z.null(), undefined, true).then(() => {
+            socket?.destroy()
             output.destroy()
+            signal.removeEventListener('abort', abort)
             this.terminals.delete(handle)
           }).catch((error: unknown) => { closing = undefined; throw error })
           return closing
         },
       }
+      signal.addEventListener('abort', abort, { once: true })
       this.terminals.add(handle)
       return handle
     } catch (error) {
       socket?.destroy()
-      await ssh.request('process.terminate', { id }, z.null()).catch(() => {})
+      try { await ssh.request('process.terminate', { id }, z.null()) } catch (cleanupError) {
+        void ssh.dispose().catch(() => {})
+        throw new RemoteCleanupError([error, cleanupError], 'SSH terminal allocation failed and remote cleanup is unknown')
+      }
       throw error
     }
   }

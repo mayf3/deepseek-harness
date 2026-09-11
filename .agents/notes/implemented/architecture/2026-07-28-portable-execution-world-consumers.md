@@ -30,7 +30,7 @@ Generic consumers use that execution world:
 
 ## Remote provider ownership
 
-The [E2B provider removal](../simplification/2026-09-11-remove-e2b-providers.md) supersedes the E2B realization of this decision. The filesystem/subprocess agreement and asynchronous terminal contracts remain in force for remote implementations.
+The [E2B provider removal](../simplification/2026-09-11-remove-e2b-providers.md) supersedes the E2B realization of this decision. The filesystem/subprocess agreement and asynchronous terminal contracts remain in force for remote implementations. The [POSIX SSH providers](2026-09-11-posix-ssh-runtime.md) realize them through one installed helper and independent stream channels.
 
 A remote provider owns mutable files, command and terminal processes, language-server processes, and provider-private runtime files. The host owns Cordis and plugin objects, the agent loop, agent/session/goal state, session logs and persistence, model transport, authority, skills, subagent orchestration, terminal readiness and LSP protocol state. Moving execution does not imply workspace synchronization or durable remote handles.
 
@@ -62,7 +62,7 @@ The local filesystem, subprocess, terminal and LSP suites cover path identity, e
 
 ## Consequences
 
-A remote execution provider implements only its shared sandbox owner plus filesystem and subprocess adapters. Bash, PTY, and LSP compose above them, so fixes to those capabilities remain provider-neutral.
+A remote execution family supplies its shared connection owner and matching filesystem, subprocess and, for confined calls, sandbox providers. Bash, PTY, and LSP compose above them, so fixes to those capabilities remain provider-neutral.
 
 The fundamental interfaces are wider, and a filesystem/subprocess pair must agree on one execution world. The added operations are limited to facts and lifecycle mechanics that current generic consumers require; model schemas, protocol framing, readiness policy, and presentation do not leak into the providers.
 

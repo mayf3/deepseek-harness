@@ -1,7 +1,7 @@
 /** Bounded, versioned requests between an SSH client and its private remote helper. */
 
 import { randomUUID } from 'node:crypto'
-import { EventEmitter, once } from 'node:events'
+import { EventEmitter } from 'node:events'
 import type { Readable, Writable } from 'node:stream'
 import { z } from 'zod'
 
@@ -44,10 +44,18 @@ export class SshRpcPeer extends EventEmitter {
     super()
     input.on('error', (error) => { this.close(error) })
     output.on('error', (error) => { this.close(error) })
+    output.on('close', () => { this.close() })
     void this.readFrames().catch((error) => { this.close(error instanceof Error ? error : new Error(String(error))) })
   }
 
-  /** Send one request and validate its response before exposing it to the caller. */
+  /**
+   * Send one request and validate its response before exposing it to the caller.
+   * @param method - the private helper operation.
+   * @param params - JSON request fields.
+   * @param schema - validation for the remote response.
+   * @param signal - cancellation without rollback of remote effects.
+   * @returns the validated response or a transport/remote-operation rejection.
+   */
   async request<T>(method: string, params: unknown, schema: z.ZodType<T>, signal?: AbortSignal): Promise<T> {
     signal?.throwIfAborted()
     if (this.failure !== undefined) throw this.failure
@@ -63,7 +71,9 @@ export class SshRpcPeer extends EventEmitter {
     }
     signal?.addEventListener('abort', abort, { once: true })
     try {
-      await this.send({ type: 'request', id, method, params })
+      void this.send({ type: 'request', id, method, params }).catch((error: unknown) => {
+        result.reject(error instanceof Error ? error : new Error(String(error)))
+      })
       return schema.parse(await result.promise)
     } finally {
       this.pending.delete(id)
@@ -71,7 +81,10 @@ export class SshRpcPeer extends EventEmitter {
     }
   }
 
-  /** Fail pending operations and abort remote handlers without claiming their effects were undone. */
+  /**
+   * Fail pending operations and abort remote handlers without claiming rollback.
+   * @param error - the transport failure reported to all pending operations.
+   */
   close(error = new Error('SSH connection lost; remote operation outcome and cleanup are unknown')): void {
     if (this.failure !== undefined) return
     this.failure = error
@@ -96,7 +109,17 @@ export class SshRpcPeer extends EventEmitter {
     this.queuedBytes += bytes.length
     const write = this.writeTail.then(async () => {
       if (this.failure !== undefined) throw this.failure
-      if (!this.output.write(bytes)) await once(this.output, 'drain')
+      if (!this.output.write(bytes)) await new Promise<void>((resolve, reject) => {
+        const cleanup = (): void => {
+          this.output.off('drain', drained)
+          this.off('closed', closed)
+        }
+        const drained = (): void => { cleanup(); resolve() }
+        const closed = (error: Error): void => { cleanup(); reject(error) }
+        this.output.once('drain', drained)
+        this.once('closed', closed)
+        if (this.failure !== undefined) closed(this.failure)
+      })
     })
     this.writeTail = write.catch((error) => { this.close(error instanceof Error ? error : new Error(String(error))) })
     return write.finally(() => { this.queuedBytes -= bytes.length })

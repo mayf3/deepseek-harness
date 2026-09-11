@@ -1,23 +1,33 @@
 /** Remote process ownership and separately forwarded byte streams. */
-import { randomUUID } from 'node:crypto'
+import { randomBytes, randomUUID } from 'node:crypto'
 import { chmod, mkdir, rm } from 'node:fs/promises'
 import { join } from 'node:path'
-import { createServer, type Server, type Socket } from 'node:net'
+import type { Socket } from 'node:net'
+import { createServer, type Server } from 'node:tls'
 import type { Duplex, Readable, Writable } from 'node:stream'
 import { finished, pipeline } from 'node:stream/promises'
 import type { Context } from '@deepseek-ai/cordis'
 import type { SubprocessHandle, SubprocessSpawnSpec, SubprocessTerminalHandle, SubprocessTerminalSignal } from '@deepseek-ai/dsh-subprocess'
 import { OutputCollector } from '@deepseek-ai/dsh-subprocess-local/output'
-import { spawnSchema } from './schemas.ts'
+import { spawnSchema, type SshStreamEndpoint } from './schemas.ts'
 import { z } from 'zod'
+import { SSH_STREAM_TLS_OPTIONS } from './stream-security.ts'
 
 type Request = z.infer<typeof spawnSchema>
 type Channel = 'stdin' | 'stdout' | 'stderr' | 'control' | 'terminal'
-interface Endpoint { path: string; server: Server; connected: Promise<Socket>; socket?: Socket }
+interface Endpoint extends SshStreamEndpoint {
+  server: Server
+  connected: Promise<Socket>
+  pending: Set<Socket>
+  socket?: Socket
+}
 interface ProcessRecord {
   request: Request
   directory: string
   endpoints: Partial<Record<Channel, Endpoint>>
+  controller: AbortController
+  preparing?: Promise<void>
+  release?: Promise<void>
   ordinary?: SubprocessHandle
   terminal?: SubprocessTerminalHandle
   start?: Promise<void>
@@ -36,36 +46,59 @@ export class RemoteProcesses {
     private readonly limit: number, private readonly preparationMs: number,
   ) {}
 
-  /** Allocate private stream listeners; no target executes until start(). */
-  async prepare(raw: unknown): Promise<{ id: string; streams: Partial<Record<Channel, string>> }> {
+  /**
+   * Allocate private stream listeners; no target executes until start().
+   * @param raw - untrusted process request received over SSH.
+   * @returns the reservation id and authenticated stream coordinates.
+   */
+  async prepare(raw: unknown): Promise<{ id: string; streams: Partial<Record<Channel, SshStreamEndpoint>> }> {
     if (this.closing || this.records.size >= this.limit) throw new Error('SSH process capacity unavailable')
     const request = spawnSchema.parse(raw)
     const id = randomUUID()
     const directory = join(this.root, id)
-    await mkdir(directory, { mode: 0o700 })
     const record: ProcessRecord = {
-      request, directory, endpoints: {},
+      request, directory, endpoints: {}, controller: new AbortController(),
       expiry: setTimeout(() => { void this.release(id).catch(() => {}) }, this.preparationMs),
     }
     this.records.set(id, record)
     try {
-      const names: Channel[] = request.terminal === undefined
-        ? ['stdout', 'stderr', ...(request.stdio?.stdin === 'pipe' ? ['stdin' as const] : []), ...(request.stdio?.control === 'pipe' ? ['control' as const] : [])]
-        : ['terminal']
-      for (const name of names) record.endpoints[name] = await this.endpoint(join(directory, name))
-      return { id, streams: Object.fromEntries(Object.entries(record.endpoints).map(([name, endpoint]) => [name, endpoint.path])) }
+      record.preparing = (async () => {
+        await mkdir(directory, { mode: 0o700 })
+        record.controller.signal.throwIfAborted()
+        const names: Channel[] = request.terminal === undefined
+          ? ['stdout', 'stderr', ...(request.stdio?.stdin === 'pipe' ? ['stdin' as const] : []), ...(request.stdio?.control === 'pipe' ? ['control' as const] : [])]
+          : ['terminal']
+        for (const name of names) {
+          record.endpoints[name] = await this.endpoint(join(directory, name))
+          record.controller.signal.throwIfAborted()
+        }
+      })()
+      await record.preparing
+      return {
+        id,
+        streams: Object.fromEntries(Object.entries(record.endpoints).map(([name, endpoint]) =>
+          [name, { path: endpoint.path, capability: endpoint.capability }])),
+      }
     } catch (error) {
       await this.release(id)
       throw error
     }
   }
 
-  /** Start once all data channels are connected; duplicate starts refuse rather than replay. */
-  async start(id: string): Promise<{ pid?: number }> {
+  /**
+   * Start once all data channels are authenticated; duplicate starts refuse.
+   * @param id - the prepared process reservation.
+   * @param signal - cancellation of pending process publication.
+   * @returns the terminal pid when the request owns a PTY.
+   */
+  async start(id: string, signal?: AbortSignal): Promise<{ pid?: number }> {
     const record = this.record(id)
     if (record.start !== undefined) throw new Error('SSH process launch was already requested')
+    signal?.throwIfAborted()
+    const abort = (): void => { record.controller.abort(signal?.reason) }
+    signal?.addEventListener('abort', abort, { once: true })
     record.start = this.startOnce(id, record)
-    await record.start
+    try { await record.start } finally { signal?.removeEventListener('abort', abort) }
     return record.terminal === undefined ? {} : { pid: record.terminal.pid }
   }
 
@@ -73,8 +106,10 @@ export class RemoteProcesses {
     await Promise.all(Object.values(record.endpoints).map(endpoint => endpoint.connected))
     clearTimeout(record.expiry)
     if (this.closing) throw new Error('SSH helper is closing')
+    record.controller.signal.throwIfAborted()
     const request = record.request
-    const cwd = this.ctx.fs.processPath(await this.ctx.fs.resolve(request.cwd))
+    const cwd = this.ctx.fs.processPath(await this.ctx.fs.resolve(request.cwd, { signal: record.controller.signal }))
+    record.controller.signal.throwIfAborted()
     const env = request.env === undefined ? {} : Object.fromEntries(
       Object.entries(request.env).map(([key, value]) => [key, value ?? undefined]),
     )
@@ -83,8 +118,13 @@ export class RemoteProcesses {
         argv: request.argv, cwd,
         env: Object.fromEntries(Object.entries(env).filter((entry): entry is [string, string] => entry[1] !== undefined)),
         graceMs: request.graceMs, ...request.terminal,
+        signal: record.controller.signal,
       })
       record.terminal = terminal
+      if (record.controller.signal.aborted) {
+        await terminal.terminate()
+        record.controller.signal.throwIfAborted()
+      }
       const socket = await (record.endpoints.terminal as Endpoint).connected
       const output = pipeline(terminal.output, socket).catch(() => {})
       record.done = terminal.done.then(outcome => ({ outcome, spills: {} }))
@@ -97,7 +137,7 @@ export class RemoteProcesses {
       return
     }
     const stdio = request.stdio as NonNullable<Request['stdio']>
-    const spec: SubprocessSpawnSpec = { argv: request.argv, cwd, env, graceMs: request.graceMs,
+    const spec: SubprocessSpawnSpec = { argv: request.argv, cwd, env, graceMs: request.graceMs, signal: record.controller.signal,
       stdio: { stdin: stdio.stdin, stdout: 'pipe', stderr: 'pipe', ...(stdio.control === undefined ? {} : { control: stdio.control }) },
     }
     const ordinary = this.ctx.subprocess.spawn(spec)
@@ -150,7 +190,11 @@ export class RemoteProcesses {
     }).catch(() => {})
   }
 
-  /** Await the direct result without claiming all descendants have exited. */
+  /**
+   * Await the direct result without claiming all descendants have exited.
+   * @param id - the started process reservation.
+   * @returns the exit observation and remote spill paths.
+   */
   async done(id: string): Promise<unknown> {
     if (this.completed.has(id)) return this.completed.get(id)
     const record = this.record(id)
@@ -159,7 +203,12 @@ export class RemoteProcesses {
     return record.done
   }
 
-  /** Observe the same native managed range used for termination. */
+  /**
+   * Observe the native managed range used for termination.
+   * @param id - the started process reservation.
+   * @param signal - cancellation of this observation, leaving ownership intact.
+   * @returns whether the owned process range is empty.
+   */
   async wait(id: string, signal?: AbortSignal): Promise<boolean> {
     if (this.completed.has(id)) return true
     const record = this.record(id)
@@ -169,16 +218,27 @@ export class RemoteProcesses {
     throw new Error('SSH process was not started')
   }
 
-  /** Start managed termination without serializing it behind output. */
+  /**
+   * Terminate and await the managed range independently of output readers.
+   * @param id - the process reservation to stop.
+   */
   async terminate(id: string): Promise<void> {
     if (this.completed.has(id)) return
     const record = this.record(id)
+    record.controller.abort(new Error('SSH process termination requested'))
     record.ordinary?.terminate()
+    if (record.ordinary !== undefined) await record.ordinary.waitForExit()
     if (record.terminal !== undefined) await record.terminal.terminate()
-    if (record.start === undefined) await this.release(id)
+    if (record.ordinary === undefined && record.terminal === undefined) await this.release(id)
   }
 
-  /** Operate on the one terminal owned by the request id. */
+  /**
+   * Operate on the terminal owned by the request id.
+   * @param id - the terminal reservation.
+   * @param operation - terminal input, foreground observation, or signal delivery.
+   * @param value - input bytes as text or the signal name.
+   * @returns the operation's wire result.
+   */
   async terminal(id: string, operation: 'write' | 'inspect' | 'signal', value?: string): Promise<unknown> {
     const terminal = this.record(id).terminal
     if (terminal === undefined) throw new Error('SSH handle does not own a terminal')
@@ -199,13 +259,23 @@ export class RemoteProcesses {
   private async release(id: string): Promise<void> {
     const record = this.records.get(id)
     if (record === undefined) return
-    clearTimeout(record.expiry)
-    for (const endpoint of Object.values(record.endpoints)) { endpoint.socket?.destroy(); endpoint.server.close() }
-    record.ordinary?.terminate()
-    if (record.ordinary !== undefined) await record.ordinary.waitForExit()
-    if (record.terminal !== undefined) await record.terminal.terminate()
-    this.records.delete(id)
-    await rm(record.directory, { recursive: true, force: true })
+    record.release ??= (async () => {
+      clearTimeout(record.expiry)
+      record.controller.abort(new Error('SSH process reservation closed'))
+      await record.preparing?.catch(() => {})
+      for (const endpoint of Object.values(record.endpoints)) {
+        for (const socket of endpoint.pending) socket.destroy()
+        endpoint.socket?.destroy()
+        endpoint.server.close()
+      }
+      await record.start?.catch(() => {})
+      record.ordinary?.terminate()
+      if (record.ordinary !== undefined) await record.ordinary.waitForExit()
+      if (record.terminal !== undefined) await record.terminal.terminate()
+      this.records.delete(id)
+      await rm(record.directory, { recursive: true, force: true })
+    })()
+    await record.release
   }
 
   private record(id: string): ProcessRecord {
@@ -225,13 +295,26 @@ export class RemoteProcesses {
 
   private async endpoint(path: string): Promise<Endpoint> {
     const connected = Promise.withResolvers<Socket>()
-    const server = createServer({ allowHalfOpen: true })
-    const endpoint: Endpoint = { path, server, connected: connected.promise }
+    const capability = randomBytes(32)
+    const server = createServer({
+      ...SSH_STREAM_TLS_OPTIONS, allowHalfOpen: true, handshakeTimeout: this.preparationMs,
+      pskCallback: (_socket, identity) => identity === 'dsh-stream' ? capability : null,
+    })
+    const endpoint: Endpoint = { path, capability: capability.toString('hex'), server, connected: connected.promise, pending: new Set() }
+    server.maxConnections = 8
     void connected.promise.catch(() => {})
     server.on('connection', (socket) => {
-      if (endpoint.socket !== undefined) { socket.destroy(); return }
-      endpoint.socket = socket
+      endpoint.pending.add(socket)
+      socket.once('close', () => { endpoint.pending.delete(socket) })
       socket.on('error', () => {})
+    })
+    server.on('tlsClientError', (_error, socket) => { socket.destroy() })
+    server.on('secureConnection', (socket) => {
+      if (endpoint.socket !== undefined) { socket.destroy(); return }
+      socket.disableRenegotiation()
+      socket.pause()
+      socket.on('error', () => {})
+      endpoint.socket = socket
       server.close()
       connected.resolve(socket)
     })

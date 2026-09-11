@@ -64,6 +64,12 @@
     "@deepseek-ai/dsh-sandbox": "workspace:^",
     "@deepseek-ai/dsh-sandbox-local": "workspace:^",
     "@deepseek-ai/dsh-sandbox-policy": "workspace:^",
-    "@deepseek-ai/dsh-session-projection": "workspace:^"
+    "@deepseek-ai/dsh-session-projection": "workspace:^",
+    "@deepseek-ai/dsh-code-runtime-node": "workspace:^",
+    "@deepseek-ai/dsh-fs-ssh": "workspace:^",
+    "@deepseek-ai/dsh-subprocess-ssh": "workspace:^",
+    "@deepseek-ai/dsh-sandbox-ssh": "workspace:^",
+    "@deepseek-ai/dsh-lsp": "workspace:^",
+    "@deepseek-ai/dsh-lsp-stdio": "workspace:^"
   }
 }

@@ -2,8 +2,6 @@
 import { createHash } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { mkdtemp, rm } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { spawnSync } from 'node:child_process'
 import { Context } from '@deepseek-ai/cordis'
@@ -39,7 +37,7 @@ export async function runSshHelper(): Promise<void> {
   if (process.platform !== 'linux' && process.platform !== 'darwin') throw new Error('SSH helper requires a POSIX host')
   const runtime = await services()
   const { ctx } = runtime
-  const root = await mkdtemp(join(tmpdir(), 'dsh-ssh-'))
+  const root = await mkdtemp('/tmp/dsh-ssh-')
   const processes = new RemoteProcesses(ctx, root, 128, 30_000)
   const iterators = new Map<string, AsyncIterator<string>>()
   let lease: NodeJS.Timeout | undefined
@@ -71,19 +69,24 @@ export async function runSshHelper(): Promise<void> {
       if (initialized) throw new Error('SSH helper handshake already completed')
       const input = z.object({
         protocol: z.literal(SSH_PROTOCOL_VERSION), workspace: remotePath, leaseMs: z.number().int().min(3000).max(600_000),
+        bootstrapPath: remotePath.optional(),
       }).strict().parse(raw)
       const workspace = ctx.fs.processPath(await ctx.fs.resolve(input.workspace, { signal }))
       process.chdir(workspace)
       leaseMs = input.leaseMs
       initialized = true
       touchLease()
-      return { protocol: SSH_PROTOCOL_VERSION, hash: createHash('sha256').update(readFileSync(fileURLToPath(import.meta.url))).digest('hex'), platform: process.platform, nodeVersion: process.version, node: process.execPath, root, workspace }
+      return {
+        protocol: SSH_PROTOCOL_VERSION, hash: createHash('sha256').update(readFileSync(fileURLToPath(import.meta.url))).digest('hex'),
+        platform: process.platform, nodeVersion: process.version, node: process.execPath, root, workspace,
+        ...(input.bootstrapPath === undefined ? {} : { bootstrapHash: createHash('sha256').update(readFileSync(input.bootstrapPath)).digest('hex') }),
+      }
     }
     if (!initialized || cleanup !== undefined) throw new Error('SSH helper is not accepting operations')
     if (method === 'heartbeat') { object.parse(raw); touchLease(); return null }
     if (method === 'close') { object.parse(raw); await close(); return null }
     if (method === 'process.prepare') return processes.prepare(raw)
-    if (method === 'process.start') return processes.start(idRequest.parse(raw).id)
+    if (method === 'process.start') return processes.start(idRequest.parse(raw).id, signal)
     if (method === 'process.done') return processes.done(idRequest.parse(raw).id)
     if (method === 'process.wait') return processes.wait(idRequest.parse(raw).id, signal)
     if (method === 'process.terminate') { await processes.terminate(idRequest.parse(raw).id); return null }
@@ -191,10 +194,17 @@ export async function runSshHelper(): Promise<void> {
 async function confine(): Promise<void> {
   const runtime = await services()
   try {
-    const policy = policySchema.parse(JSON.parse(process.argv[3] ?? ''))
+    const request = z.object({
+      policy: policySchema, runner: z.string(), enforcement: z.enum(['full', 'partial']), denialSignatures: z.array(z.string()),
+    }).strict().parse(JSON.parse(process.argv[3] ?? ''))
+    const { policy } = request
     if (policy.mode === 'danger-full-access' || process.argv[4] !== '--') throw new Error('Invalid remote sandbox invocation')
     const workspaceRoot = runtime.ctx.fs.processPath(await runtime.ctx.fs.resolve(policy.workspaceRoot))
     const wrapped = runtime.ctx.sandbox.confine(process.argv.slice(5), { ...policy, workspaceRoot } as SandboxPolicy)
+    if (wrapped.argv[0] !== request.runner || wrapped.enforcement !== request.enforcement
+      || JSON.stringify(wrapped.denialSignatures) !== JSON.stringify(request.denialSignatures)) {
+      throw new Error('Remote sandbox backend changed; this connection cannot attest the requested confinement')
+    }
     const control = process.env.DSH_SUBPROCESS_CONTROL === 'pipe'
     const result = spawnSync(wrapped.argv[0] as string, wrapped.argv.slice(1), {
       stdio: control ? ['inherit', 'inherit', 'inherit', 'ignore', 'ignore', 'ignore', 'ignore', 7] : 'inherit',

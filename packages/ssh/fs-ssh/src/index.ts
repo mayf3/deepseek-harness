@@ -9,6 +9,12 @@ import { RemoteOperationError } from '@deepseek-ai/dsh-ssh/protocol'
 import { editResultSchema, entriesSchema, infoSchema, pathInfoSchema, targetSchema, writeResultSchema } from '@deepseek-ai/dsh-ssh/schemas'
 import { z } from 'zod'
 
+const errorCodes: Record<FsErrorCode, true> = {
+  FS_NOT_FOUND: true, FS_NOT_DIRECTORY: true, FS_NOT_TEXT: true, FS_NOT_REGULAR_FILE: true,
+  FS_TOO_LARGE: true, FS_PERMISSION_DENIED: true, FS_SANDBOX_DENIED: true, FS_IO_ERROR: true,
+  FS_STALE_VERSION: true, FS_NOT_OBSERVED: true, FS_AMBIGUOUS_EDIT: true, FS_EDIT_NOT_FOUND: true, FS_ABORTED: true,
+}
+
 /** Remote filesystem paired with the SSH subprocess and sandbox providers. */
 export class SshFileSystem extends FileSystem {
   static inject = ['ssh', 'sandboxPolicy']
@@ -91,7 +97,9 @@ export class SshFileSystem extends FileSystem {
 
   private async call<T>(method: string, params: unknown, schema: z.ZodType<T>, signal?: AbortSignal): Promise<T> {
     try { return await this.ctx.ssh.request(method, params, schema, signal) } catch (error) {
-      if (error instanceof RemoteOperationError && error.code?.startsWith('FS_')) throw new FsError(error.message, error.code as FsErrorCode, { cause: error })
+      if (error instanceof RemoteOperationError && error.code !== undefined && Object.hasOwn(errorCodes, error.code)) {
+        throw new FsError(error.message, error.code as FsErrorCode, { cause: error })
+      }
       throw new FsError(error instanceof Error ? error.message : String(error), signal?.aborted ? 'FS_ABORTED' : 'FS_IO_ERROR', { cause: error })
     }
   }
