@@ -39,3 +39,5 @@ Installed metadata, enabled layer selection and current runtime health are indep
 ## Verification
 
 `packages/boot/app-boot/tests/entry-issues.spec.ts` covers trust and stage, import/config/apply/disabled/pending failures, nested and anonymous provenance, active old config after failed updates, recovery, and awaited removed-fiber teardown. Composition tests cover duplicate ownership and unchanged parents. Static metadata tests use an import-time file-writing fixture and assert no execution, retain unknown packages, and reject malformed declarations. Inventory tests verify actual Loader failures and composition conflicts without a historical failure registry. Process-guard and user-patch tests retain fatal detached failures and best-effort live reload diagnostics.
+
+The [manager/Remote split](2026-09-04-plugin-manager-over-the-profile-runtime.md) remains in force. Manager integration tests cover retained unknown packages, static declarations, per-entry enable results, failed overrides with original ownership, and runtime-change notifications after dependency recovery.

@@ -946,7 +946,7 @@ The row injects only the Loader; the profile runtime, the preset roster, and the
 @Remote('list') async list(): Promise<PluginPackageView[]>
 
 /**
- * Install a package with pnpm, probe it, and leave it disabled unless asked otherwise.
+ * Install a package with pnpm, read its declarations, and leave it disabled unless asked otherwise.
  * @param spec - what to install, in pnpm's own vocabulary.
  * @param options - `enable` puts every newly installed bundle into the layer list at once.
  * @returns what the run installed and enabled.
@@ -954,7 +954,7 @@ The row injects only the Loader; the profile runtime, the preset roster, and the
 @Remote('add') async add(spec: string, options?: { enable?: boolean }): Promise<PluginInstallResult>
 
 /**
- * Remove a package from the profile with its user-layer rows and probe record.
+ * Remove a package from the profile with its user-layer rows and any obsolete discovery cache.
  * @param packageName - the installed dependency to remove.
  */
 @Remote('uninstall') async uninstall(packageName: string): Promise<void>

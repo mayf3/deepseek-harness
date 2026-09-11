@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-`dsh-plugin-manager` changes a profile's plugins. `PluginInstaller` needs the profile on disk: it runs pnpm there, probes every package a run added in a child process, and removes what has no place in a profile — `dsh plugin add` uses it before any plugin starts. `PluginManager` needs the booted tree: it enables and disables bundles through `profileRuntime`, retries failed ones, adds and removes rows in the global or a preset's user layer, reports dependents, and folds manifest, probe record, and live tree into one view per package. Failures carry `plugins/*` codes; [`dsh-host-plugin-manager`](../../host/plugin-manager/README.md) exposes the manager as the `plugins` Remote.
+`dsh-plugin-manager` installs packages and manages their declared plugin rows through the CLI and Web host. Installation reads metadata without executing modules. The manager enables whole bundle layers, edits global or preset user patches, retries failures, and reports current runtime issues. Failures carry `plugins/*` codes; the [Host adapter](../../host/plugin-manager/README.md) exposes the operations through Remote.
 
 ## Table of Contents
 
@@ -39,7 +39,7 @@ declare const installAnchor: string
 const installer = new PluginInstaller({
   profileDir, profileName: 'web', installAnchor,
   loadProfile: () => loadProfile('dsh', 'web', installAnchor, undefined, { userLayer: false }),
-  config: { pnpmCommand: 'pnpm', installTimeoutMs: 600_000, probeTimeoutMs: 20_000, installLogTailBytes: 16_384 },
+  config: { pnpmCommand: 'pnpm', installTimeoutMs: 600_000, installLogTailBytes: 16_384 },
   installLog: (chunk) => process.stdout.write(chunk.text),
   color: process.stdout.isTTY,
 })
@@ -47,7 +47,7 @@ const outcome = await installer.add('@acme/dsh-sql-tool')
 console.log(outcome.installed, outcome.removed)
 ```
 
-`add` takes a pnpm spec — a registry name, a `github:` or git URL, a tarball, an absolute path — runs `pnpm add`, records what pnpm wrote to `dependencies`, and probes every new package. A successful `pnpm add` is not yet an installed plugin: a package that declares neither a bundle nor a plugin module, or a bundle whose row id a composed layer already owns, is removed again with `pnpm remove` and listed under `removed` with the reason; a package the probe refused stays installed for a view to explain. New bundles are left disabled and listed under `installedOnly`, so the caller decides whether to enable them — the CLI always does, the Web host only when asked. A non-zero exit, a spawn failure, or the timeout fails the call with `plugins/install-failed` and the tail of the log, and the profile manifest is restored to what it was before the run.
+`add` runs pnpm in the profile, reconciles `dependencies`, and statically checks new bundle declarations against current row ownership. Conflicting bundles are removed with a reason; undeclared and unreadable packages remain installed. New bundles stay disabled unless the caller enables them. A failed pnpm run restores the pre-run manifest and reports `plugins/install-failed` with the log tail.
 
 ### Managing the booted profile
 
@@ -72,11 +72,11 @@ const manager = new PluginManager(ctx, {
 console.log(await manager.list())
 ```
 
-`list` returns one view per package the profile knows: its template and installed bundles and every other installed dependency. A view carries the manifest facts (name, version, title, description, `engines.dsh`), what the package is (`bundle`, `plugin`, or `library`), who supplied it (`builtin` or `external`), when its rows mount (`boot` or `runtime`), whether it is installed and enabled, and a folded `status`: `running`, `partial`, or `failed` for an enabled bundle by how many of its rows are active; `disabled` for an installed bundle outside the layer list; `not-enableable` when the probe refused it, with the reason; `restart-required` when the manifest and the live tree disagree on a profile that applies changes at its next start; `plain` for a library or plugin module, which is added to a composition rather than enabled. Rows come from the live tree while the bundle is composed — phase, disabled-by, and the recorded failure of an isolated row — and from the probe record otherwise, under the ids their patches declare. `addable` lists the modules the package declares in `dsh.plugins`, each with its default config and the probe's verdict.
+`list` reports package identity, `bundle` / `plugin` / `unknown` classification, trust, stage, installation and enablement. Runtime rows carry actual phases and failures; disabled bundles show static patch declarations. `addable` comes only from `dsh.plugins`, including `.` for the main export and declared defaults. An active row can retain its previous config after an update fails. Package `issues` also names failed rows its patch overrides, without transferring their ownership.
 
-`add` is the installer's `add` guarded by the running-agent count, with `enable` putting every newly installed bundle into the layer list at once. `enable` puts an installed bundle into the layer list and, on a live profile, recomposes the tree with it through the profile runtime. The recomposition is the Loader's own transaction: a bundle the tree rejects — a `boot`-stage bundle whose row throws — rolls back, the layer list is restored, and the call fails with `plugins/enable-failed` naming the reason, while the tree that was running keeps running. A `runtime`-stage bundle whose row fails is isolated instead: the call succeeds, the view reports the row's failure, and `retry` composes the bundle again from scratch. `disable` is the reverse; a template bundle, which is not a dependency, cannot be disabled. On a profile whose `patchReload` is `startup`, both write the manifest and report `effect: 'restart'`. `uninstall` disables the bundle when enabled, drops every user-layer row that names one of the package's modules, runs `pnpm remove`, and forgets the probe record.
+`enable` selects the whole bundle layer and recomposes live profiles. Per-row failures retain the enabled choice and successful siblings; results report `issues`, and the list can show `partial` or `failed`. Preparation failures revert the enable selection and raise `plugins/enable-failed`. `disable` removes the whole layer, including overrides. `retry` disables, awaits cleanup, and enables again. Startup-only profiles report `effect: restart`. `uninstall` disables the bundle, removes user-inserted references, runs pnpm remove, and cleans obsolete discovery records.
 
-`addRow` inserts a row naming one of the package's modules — its main export for a `plugin` package, or a `dsh.plugins` entry — into the profile's global `cordis.patch.yml` (`target: { kind: 'global' }`) or an agent preset's user layer (`{ kind: 'preset', preset }`, through the roster's `overlayPathFor`). The row id derives from the package name and subpath unless given; a taken id fails with `plugins/row-conflict`. `removeRow` removes an inserted row and `setRowDisabled` writes or removes a `disabled: true` for any row — deny-only, so a bundle's own `!!js` gate is restored rather than overridden. The global layer is recomposed live on the spot; a preset's layer reaches its next standing generation. `dependents` says what disabling or removing a package would strand: services its rows provide that rows outside it inject, and user-layer rows naming its modules.
+`addRow` writes an explicitly declared `dsh.plugins` module to the profile’s global `cordis.patch.yml` or a preset user layer. It preserves declared defaults, checks the target row id, and performs no pre-mount import. `removeRow` removes a user insert. `setRowDisabled` writes or removes `disabled: true`, preserving the bundle’s own condition. Global edits recompose immediately on live profiles; preset edits apply to subsequent generations. `dependents` reports injection dependents and user-layer module references.
 
 The manager runs one mutation at a time — a second call while one runs fails with `plugins/busy` naming the operation in flight — and `add` and `uninstall` refuse to change `node_modules` while a session is running, with `plugins/agents-running`. Every change is followed by a `plugins/changed` event on the context, and an install run emits pnpm's output as `plugins/install-log` chunks, each naming the command line it ran and the profile directory it ran in, and, with colour on, carrying pnpm's SGR escapes.
 
@@ -102,25 +102,25 @@ The subprocess seam scrubs secret-shaped variables and has no shell mode, and pn
 
 ### Retry is disable then enable
 
-The Loader's transactional update leaves an unchanged row alone, so a failed isolated row would not restart on a plain recomposition. Retry takes the bundle out of the layer list and puts it back: two recompositions, and the manifest ends as it began.
+Retry removes the entire layer and awaits removed-fiber cleanup before adding it again. It does not rely on changing a synthetic group or silently compensating for failed plugin effects.
 
 ### What the manager reads and what it is handed
 
-The manager reads the Loader tree, the reflect store, and the `pluginFailures` registry through the context it is built over. Everything that belongs to another package — the profile runtime, the preset roster, the agent registry — arrives through `PluginManagerOptions` as a reader called per call, and the roster only as `PresetLayers`: the layer path, the preset list, and the composition rows the row operations need. The package therefore depends on app-boot alone, whose `./patch-file` export reads and writes the layers, and on nothing that composes presets or agents.
+The manager reads Loader entries, the reflect store and entry-owned diagnostics. Profile, preset and agent facts arrive through per-call readers. The [Host adapter](../../host/plugin-manager/README.md) converts Loader lifecycle changes into `plugins/changed` notifications after settlement, including a pending row whose provider becomes available.
 
 ### Source map
 
 | File | Role |
 |---|---|
 | [`src/index.ts`](src/index.ts) | The package API: re-exports of the classes, options, types, and failure codes |
-| [`src/installer.ts`](src/installer.ts) | `PluginInstaller`: pnpm runs with streamed output, the probe record cache, and the post-install checks |
+| [`src/installer.ts`](src/installer.ts) | `PluginInstaller`: pnpm runs with streamed output, static declarations, and the post-install checks |
 | [`src/manager.ts`](src/manager.ts) | `PluginManager`: every operation over the booted profile, the one-at-a-time mutex, user-layer edits, and dependents |
-| [`src/view.ts`](src/view.ts) | The view fold: manifest, probe, and live-tree rows into one `PluginPackageView`, and the row-ownership walk |
+| [`src/view.ts`](src/view.ts) | The view fold: manifest, declarations, and live-tree rows into one `PluginPackageView`, and the row-ownership walk |
 | [`src/modules.ts`](src/modules.ts) | Declared `dsh.plugins` modules: row naming, derived row ids, and their wire view |
 | [`src/helpers.ts`](src/helpers.ts) | Shared vocabulary: the diagnostic prefix, tooling bounds, the spawn seam, and the manifest readers |
 | [`src/types.ts`](src/types.ts) | Payloads, the `plugins/changed` and `plugins/install-log` events, and the `plugins/*` failure codes with their details |
 | [`src/errors.ts`](src/errors.ts) | `PluginOperationError` and the code-discriminated failure union |
-| — | No runtime invariant companion is published; every view is folded from the manifest, the probe cache, and Loader-owned state on each call. |
+| — | No runtime invariant companion is published; every view is folded from the manifest, static declarations, and Loader-owned state on each call. |
 
 </details>
 
@@ -131,7 +131,7 @@ The manager reads the Loader tree, the reflect store, and the `pluginFailures` r
 
 Read these when the manager's contract is not enough: the runtime it drives, the files it edits, and the surfaces that call it.
 
-- [App boot](../app-boot/README.md) — the profile runtime, external bundle isolation, and the package probe.
+- [App boot](../app-boot/README.md) — the profile runtime, external bundle isolation, and static package declarations.
 - [Patch files](../app-boot/README.md#patch-files) — how user-layer rows are read and written.
 - [Agent presets](../../preset/agent-presets/README.md) — the per-preset user layer a preset target writes.
 - [Host plugin manager](../../host/plugin-manager/README.md) — the `plugins` Remote over this manager.

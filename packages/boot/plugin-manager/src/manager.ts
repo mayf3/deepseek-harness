@@ -13,8 +13,10 @@ import {
   healProfilesModuleFallback,
   loadProfile,
   readProfileManifest,
-  recordContainedStates,
-  type probePackage,
+  rootIncludeEntry,
+  inspectEntryIssues,
+  type EntryIssue,
+  type readPackageMetadata,
   type ProfileRuntime,
 } from '@deepseek-ai/dsh-app-boot'
 import { mutatePatchFile, readPatchListFile, type PatchRow } from '@deepseek-ai/dsh-app-boot/patch-file'
@@ -30,6 +32,7 @@ import type {
   PluginInstallResult,
   PluginPackageView,
   PluginRowAddition,
+  PluginRowIssue,
   PluginRowReference,
   PluginRowTarget,
   PluginServiceDependent,
@@ -72,8 +75,8 @@ export interface PluginManagerOptions {
   readonly runningAgents: () => number
   /** Test seam: the child spawner; defaults to `node:child_process`. */
   readonly spawn?: SpawnLike
-  /** Test seam: the package probe; defaults to app-boot's. */
-  readonly probe?: typeof probePackage
+  /** Test seam: the static metadata reader; defaults to app-boot’s. */
+  readonly metadata?: typeof readPackageMetadata
 }
 
 /**
@@ -157,7 +160,7 @@ export class PluginManager {
       // The chunks feed the Web install dialog's terminal, which draws SGR colour.
       color: true,
       ...this.options.spawn === undefined ? {} : { spawn: this.options.spawn },
-      ...this.options.probe === undefined ? {} : { probe: this.options.probe },
+      ...this.options.metadata === undefined ? {} : { metadata: this.options.metadata },
     })
   }
 
@@ -172,13 +175,14 @@ export class PluginManager {
     const manifest = readProfileManifest(NAME, runtime.dir)
     const names = [...new Set([...bundlesOf(manifest), ...Object.keys(dependenciesOf(manifest))])]
     const views: PluginPackageView[] = []
-    for (const name of names) views.push(await packageView(this.ctx, runtime, installer, manifest, name))
+    const issues = await inspectEntryIssues(this.ctx)
+    for (const name of names) views.push(packageView(this.ctx, runtime, installer, manifest, name, issues))
     return views
   }
 
 
   /**
-   * Install a package into the profile with pnpm, probe it, and leave it
+   * Install a package into the profile with pnpm, read its declarations, and leave it
    * disabled unless asked otherwise. The run's output is emitted as
    * `plugins/install-log` chunks carrying the returned `jobId`.
    * @param spec - what to install, in pnpm's own vocabulary: a registry
@@ -215,7 +219,7 @@ export class PluginManager {
 
   /**
    * Remove a package from the profile: disable it when enabled, drop every
-   * user-layer row that names it, run `pnpm remove`, and forget its probe.
+   * user-layer row that names it, run `pnpm remove`, and clean obsolete discovery metadata.
    * @param packageName - the installed dependency to remove.
    * @throws {PluginOperationError} `plugins/not-installed`, `plugins/agents-running`,
    * or `plugins/install-failed` when pnpm exits non-zero.
@@ -245,12 +249,12 @@ export class PluginManager {
 
   /**
    * Put an installed bundle into the layer list and, on a live profile,
-   * recompose the tree with it. A rejected recomposition restores the list
-   * and reports the tree's reason; the tree that was running keeps running.
+   * recompose the tree. Per-row failures retain enabled selection and successful siblings.
+   * Preparation failures revert enable selection and report their reason.
    * @param packageName - the installed bundle.
    * @returns whether the list changed and whether the change is live.
    * @throws {PluginOperationError} `plugins/not-installed`, `plugins/not-enableable`
-   * for a package that declares no bundle or whose probe refused it, or
+   * for a package without a readable bundle declaration, or
    * `plugins/enable-failed`.
    */
   async enable(packageName: string): Promise<PluginEnableResult> {
@@ -261,15 +265,11 @@ export class PluginManager {
     const runtime = this.runtime()
     const installer = this.installer(runtime)
     installer.assertInstalled(packageName)
-    const probe = await installer.probe(packageName).catch((error: unknown) => {
-      const reason = `cannot be probed: ${messageOf(error)}`
+    try {
+      installer.metadata(packageName)
+    } catch (error) {
+      const reason = `cannot read package declarations: ${messageOf(error)}`
       throw new PluginOperationError('plugins/not-enableable', `${NAME}: ${packageName} ${reason}`, { packageName, reason })
-    })
-    if (!probe.ok) {
-      // The probe states a reason with every refusal; the fallback keeps the type total.
-      /* v8 ignore next */
-      const reason = probe.reason ?? 'the probe refused it'
-      throw new PluginOperationError('plugins/not-enableable', `${NAME}: ${packageName} cannot be enabled: ${reason}`, { packageName, reason })
     }
     let changed: boolean
     try {
@@ -291,26 +291,19 @@ export class PluginManager {
           profile: loadProfile(NAME, runtime.profileName, runtime.installAnchor, undefined, { userLayer: false }),
         })
         await runtime.recompose({ reloadBundles: true })
-        // The boot audit does not run again; record what the bundle's rows
-        // came to, so the list shows a waiting or failed row with its reason.
-        await recordContainedStates(this.ctx)
       } catch (error) {
         const reason = messageOf(error)
         disableBundle(NAME, runtime.dir, packageName)
-        // The tree without the bundle is the tree that was running a moment
-        // ago; recomposing back to it is the update that already succeeded.
-        /* v8 ignore next */
-        await runtime.recompose({ reloadBundles: true }).catch(() => undefined)
         throw new PluginOperationError(
           'plugins/enable-failed',
-          `${NAME}: enabling ${packageName} failed and the layer list was restored: ${reason}`,
+          `${NAME}: enabling ${packageName} could not apply the layer; its enable selection was reverted: ${reason}`,
           { packageName, reason },
           { cause: error },
         )
       }
     }
     this.changed('enable', packageName)
-    return { changed, effect: 'live' }
+    return { changed, effect: 'live', ...this.issueResult(await inspectEntryIssues(this.ctx)) }
   }
 
   /**
@@ -338,12 +331,12 @@ export class PluginManager {
     }
     if (changed) await runtime.recompose({ reloadBundles: true })
     this.changed('disable', packageName)
-    return { changed, effect: 'live' }
+    return { changed, effect: 'live', ...this.issueResult(await inspectEntryIssues(this.ctx)) }
   }
 
   /**
-   * Compose an enabled bundle again from scratch: its group leaves the tree
-   * and returns, so rows that failed at boot get another start.
+   * Remove the whole bundle layer, await its cleanup, and enable it again.
+   * Every owned row gets a fresh activation attempt.
    * @param packageName - the enabled bundle.
    * @returns the enable outcome of the second step.
    * @throws {PluginOperationError} `plugins/bad-request` when the bundle is not enabled, or the enable failures.
@@ -372,7 +365,7 @@ export class PluginManager {
    * `id` overrides the derived row id, `config` overrides the declared default.
    * @returns where the row landed.
    * @throws {PluginOperationError} `plugins/not-installed`, `plugins/not-enableable`
-   * when the module is not one the probe found addable, `plugins/row-conflict`,
+   * when the module is absent from `dsh.plugins`, `plugins/row-conflict`,
    * or `plugins/unavailable` for a preset target without a roster.
    */
   async addRow(
@@ -391,18 +384,20 @@ export class PluginManager {
     const runtime = this.runtime()
     const installer = this.installer(runtime)
     installer.assertInstalled(packageName)
-    const probe = await installer.probe(packageName)
+    const metadata = installer.metadata(packageName)
     const declared = options?.module ?? '.'
-    const addable = declared === '.' && probe.kind === 'plugin'
-      ? { ok: true, config: undefined, error: undefined }
-      : probe.addable.find(entry => entry.name === declared)
-    if (addable === undefined || !addable.ok) {
-      const reason = addable?.error ?? `${declared} is not a module ${packageName} declares addable`
+    const addable = metadata.addable.find(entry => entry.name === declared)
+    if (addable === undefined) {
+      const reason = `${declared} is not a module ${packageName} declares addable`
       throw new PluginOperationError('plugins/not-enableable', `${NAME}: ${reason}`, { packageName, reason })
     }
     const moduleName = moduleSpecifier(packageName, declared)
     const rowId = options?.id ?? derivedRowId(packageName, declared)
-    const row: PatchRow = { id: rowId, name: moduleName, config: options?.config ?? addable.config ?? {} }
+    if (rowId.trim() === '' || rowId.includes(':')) {
+      throw new PluginOperationError('plugins/bad-request', `${NAME}: row ids must be nonempty and cannot contain ':'`, {})
+    }
+    const config = options?.config !== undefined ? options.config : addable.config !== undefined ? addable.config : {}
+    const row: PatchRow = { id: rowId, name: moduleName, config }
     if (await this.rowExists(runtime, target, rowId)) {
       throw new PluginOperationError('plugins/row-conflict', `${NAME}: a row ${JSON.stringify(rowId)} already exists`, { rowId, target })
     }
@@ -522,7 +517,8 @@ export class PluginManager {
   /** Whether the target layer's composition already carries a row with `rowId`. */
   private async rowExists(runtime: ProfileRuntime, target: PluginRowTarget, rowId: string): Promise<boolean> {
     if (target.kind === 'global') {
-      return [...this.ctx.loader.entries()].some(entry => entry.options.id === rowId)
+      const tree = rootIncludeEntry(this.ctx)?.subtree
+      return [...this.ctx.loader.entries()].some(entry => entry.parent.tree === tree && entry.options.id === rowId)
         || (await readPatchListFile(NAME, runtime.patchPath, 'patches') ?? []).some(patch => patch.insert?.some(row => row.id === rowId))
     }
     const composition = (await this.presets().compositionInventory()).find(candidate => candidate.id === target.preset)
@@ -551,6 +547,13 @@ export class PluginManager {
     // it returns, and the watcher's later pass composes the same text.
     if (target.kind === 'global' && runtime.patchReload === 'live') await runtime.recompose()
     return file
+  }
+
+  /** Project runtime objects into the operation's JSON result. */
+  private issueResult(issues: readonly EntryIssue[]): { issues?: PluginRowIssue[] } {
+    return issues.length === 0 ? {} : { issues: issues.map(issue => ({
+      entryId: issue.entry.id, moduleName: issue.entry.options.name, stage: issue.stage, message: issue.message,
+    })) }
   }
 
   private changed(reason: PluginChangeReason, packageName?: string): void {

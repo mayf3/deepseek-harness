@@ -41,7 +41,6 @@ kind: "package-reference"
 |---|---|---|
 | `pnpmCommand` | `pnpm` | 可执行文件，与 `dsh plugin` 命令一样经 `PATH` 解析。 |
 | `installTimeoutMs` | `600000` | 单次安装或移除运行的上限。 |
-| `probeTimeoutMs` | `20000` | 单次包探测的上限。 |
 | `installLogTailBytes` | `16384` | 安装失败时报告多少尾部输出。 |
 
 -----
@@ -54,7 +53,7 @@ kind: "package-reference"
 
 ### 转接，不是第二个管理器
 
-构造器构造一个 `PluginManager`，交给它读向上下文的读取器——`ctx.get('profileRuntime')`、`ctx.get('agentPresets')`，以及从 `ctx.get('agents')` 数出的运行中 agent 数——因此组合里有什么在调用到达时读取，而不是在行挂载时。每个 Remote 方法都是 `relay(() => this.manager.x(...))`：`PluginOperationError` 经一个穷尽的 switch 变成其码对应的 Remote 错误，其他东西原样重抛。测试经 `PluginManagerInternals.manager` 交入管理器；spawn 与探针的测试缝透传给管理器。
+适配器为一个 `PluginManager` 提供逐次调用的 profile、预设与 agent 读取器，转接各 Remote 方法并映射领域错误。它观测原生条目与状态事件，在 Loader 完成后合并发布 `plugins/changed` 通知。销毁会取消待发通知并移除监听器。测试可替换管理器、pnpm 启动器或静态元信息读取器。
 
 ### 源码地图
 

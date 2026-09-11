@@ -1,5 +1,5 @@
 /**
- * The view fold: one package's manifest facts, probe record, and live-tree
+ * The view fold: one package's manifest facts, static declarations, and live-tree
  * rows folded into the `PluginPackageView` the manager lists, plus the row
  * ownership walk the dependents query shares.
  * @module @deepseek-ai/dsh-plugin-manager/view
@@ -7,7 +7,7 @@
 
 import type { Context, FiberState } from '@deepseek-ai/cordis'
 import type { Entry } from '@deepseek-ai/cordis-plugin-loader'
-import { layerTrust, type PluginProbe, type ProfileManifest, type ProfileRuntime } from '@deepseek-ai/dsh-app-boot'
+import { rootIncludeEntry, layerTrust, type EntryIssue, type PackageMetadata, type ProfileManifest, type ProfileRuntime } from '@deepseek-ai/dsh-app-boot'
 import type { BundleStage } from '@deepseek-ai/dsh-package-manifest'
 import { bundlesOf, dependenciesOf, messageOf, optional } from './helpers.ts'
 import type { PluginInstaller } from './installer.ts'
@@ -41,46 +41,56 @@ export interface RowFacts {
 }
 
 /**
- * Fold one package's manifest, probe, and tree facts into its view.
- * @param ctx - the context whose Loader tree and failure registry the rows come from.
+ * Fold one package's manifest, declarations, and tree facts into its view.
+ * @param ctx - the context whose Loader tree and current entry diagnostics the rows come from.
  * @param runtime - the booted profile.
- * @param installer - the installer over the same profile, for the probe record and the installed manifest.
+ * @param installer - the installer over the same profile, for static declarations and the installed manifest.
  * @param manifest - the profile manifest, read once per list.
  * @param name - the package.
+ * @param allIssues - issues observed once for this list request.
  * @returns the view.
  */
-export async function packageView(
+export function packageView(
   ctx: Context,
   runtime: ProfileRuntime,
   installer: PluginInstaller,
   manifest: ProfileManifest,
   name: string,
-): Promise<PluginPackageView> {
+  allIssues: readonly EntryIssue[],
+): PluginPackageView {
   const installed = name in dependenciesOf(manifest)
   const enabled = bundlesOf(manifest).includes(name)
   const layer = runtime.layers.find(candidate => candidate.packageName === name)
   const trust = layer?.trust ?? layerTrust(manifest, name)
   const liveReload = runtime.patchReload === 'live'
-  let probe: PluginProbe | undefined
-  let probeFailure: string | undefined
+  let metadata: PackageMetadata | undefined
+  let metadataFailure: string | undefined
   if (installed) {
     try {
-      probe = await installer.probe(name)
+      metadata = installer.metadata(name)
     } catch (error) {
-      probeFailure = messageOf(error)
+      metadataFailure = messageOf(error)
     }
   }
-  const packageManifest = installer.readInstalledManifest(name)
+  let packageManifest: ReturnType<PluginInstaller['readInstalledManifest']>
+  try {
+    packageManifest = installer.readInstalledManifest(name)
+  } catch (error) {
+    metadataFailure = messageOf(error)
+  }
   const stage: BundleStage = layer?.stage
     ?? (manifest.dsh?.profile?.stages?.[name] ?? packageManifest?.dsh?.bundle?.stage ?? 'runtime')
-  const kind = probe?.kind ?? (layer !== undefined || packageManifest?.dsh?.bundle !== undefined ? 'bundle' : 'library')
+  const kind = metadata?.kind ?? (layer !== undefined || packageManifest?.dsh?.bundle !== undefined ? 'bundle' : 'unknown')
   const composed = layer !== undefined
-  const rows = composed ? composedRows(ctx, runtime, name) : probedRows(probe)
-  const status = packageStatus({ kind, installed, enabled, composed, liveReload, probe, probeFailure, rows })
-  const reason = probeFailure ?? probe?.reason ?? (status === 'restart-required'
+  const rootTree = rootIncludeEntry(ctx)?.subtree
+  const affected = allIssues.filter(issue => runtime.originOfEntry(issue.entry)?.packageName === name
+    || (issue.entry.parent.tree === rootTree && metadata?.overrides.includes(issue.entry.options.id)))
+  const rows = composed ? composedRows(ctx, runtime, name, allIssues) : declaredRows(metadata)
+  const status = packageStatus({ kind, installed, enabled, composed, liveReload, metadataFailure, rows, affected })
+  const reason = metadataFailure ?? (status === 'restart-required'
     ? 'the profile applies layer changes at its next start'
     : status === 'failed' || status === 'partial'
-      ? rows.find(row => row.failure !== undefined)?.failure?.message
+      ? affected[0]?.message ?? rows.find(row => row.failure !== undefined)?.failure?.message
       : undefined)
   return {
     name,
@@ -94,12 +104,14 @@ export async function packageView(
     enabled,
     status,
     ...optional('reason', reason),
-    ...optional('enginesDsh', probe?.enginesDsh),
-    cordisSameCopy: probe?.cordisSameCopy ?? null,
+    ...optional('enginesDsh', metadata?.enginesDsh),
+    cordisSameCopy: metadata?.cordisSameCopy ?? null,
     rows,
-    overrides: probe?.overrides ?? [],
-    addable: (probe?.addable ?? []).map(entry => addableView(name, entry)),
-    ...optional('probedAt', probe?.checkedAt),
+    overrides: metadata?.overrides ?? [],
+    addable: (metadata?.addable ?? []).map(entry => addableView(name, entry)),
+    ...affected.length === 0 ? {} : { issues: affected.map(issue => ({
+      entryId: issue.entry.id, moduleName: issue.entry.options.name, stage: issue.stage, message: issue.message,
+    })) },
     liveReload,
   }
 }
@@ -111,51 +123,38 @@ function packageStatus(facts: {
   enabled: boolean
   composed: boolean
   liveReload: boolean
-  probe: PluginProbe | undefined
-  probeFailure: string | undefined
+  metadataFailure: string | undefined
+  affected: readonly EntryIssue[]
   rows: readonly PluginPackageRowView[]
 }): PluginPackageStatus {
   if (facts.kind !== 'bundle') return 'plain'
-  if (facts.installed && (facts.probeFailure !== undefined || facts.probe?.ok === false)) return 'not-enableable'
+  if (facts.installed && facts.metadataFailure !== undefined) return 'not-enableable'
   if (facts.enabled !== facts.composed) return 'restart-required'
   if (!facts.enabled) return 'disabled'
   const live = facts.rows.filter(row => row.enabled)
-  if (live.length === 0) return 'running'
+  if (live.length === 0) return facts.affected.length === 0 ? 'running' : 'failed'
   const active = live.filter(row => row.phase === 'active').length
-  if (active === live.length) return 'running'
+  if (active === live.length && facts.affected.length === 0) return 'running'
   return active === 0 ? 'failed' : 'partial'
 }
 
-/** The rows a composed bundle owns in the live tree, plus rows only the failure registry knows. */
-function composedRows(ctx: Context, runtime: ProfileRuntime, name: string): PluginPackageRowView[] {
-  const failures = ctx.get('pluginFailures')
+/** Current native entries and failed groups belonging to the bundle. */
+function composedRows(ctx: Context, runtime: ProfileRuntime, name: string, issues: readonly EntryIssue[]): PluginPackageRowView[] {
+  const failures = new Map(issues.map(issue => [issue.entry, issue]))
   const rows: PluginPackageRowView[] = []
-  const listed = new Set<string>()
-  for (const { entry, rowId } of ownedEntries(ctx, runtime, name)) {
-    listed.add(entry.id)
-    const failure = failures?.get(entry.id)
+  for (const entry of ctx.loader.entries()) {
+    if (runtime.originOfEntry(entry)?.packageName !== name) continue
+    const failure = failures.get(entry)
+    if (entry.options.group && failure === undefined) continue
+    const enabled = failure?.stage === 'disabled-expression' || !entry.disabled
     rows.push({
       entryId: entry.id,
-      rowId,
+      rowId: entry.options.id,
       moduleName: entry.options.name,
-      enabled: !entry.disabled,
-      // The runtime walks the groups holding the entry: a row inside a group the user disabled is the user's doing.
-      ...entry.disabled ? { disabledBy: runtime.userDisables(entry) ? 'user' as const : 'composition' as const } : {},
-      phase: entry.fiber === undefined ? null : ROW_PHASE[entry.fiber.state],
+      enabled,
+      ...enabled ? {} : { disabledBy: runtime.userDisables(entry) ? 'user' as const : 'composition' as const },
+      phase: entry.fiber === undefined ? (failure === undefined ? null : 'failed') : ROW_PHASE[entry.fiber.state],
       ...failure === undefined ? {} : { failure: { stage: failure.stage, message: failure.message } },
-    })
-  }
-  /* v8 ignore next -- the root include provides the registry on every boot; the guard answers its optional type */
-  for (const failure of failures?.list() ?? []) {
-    if (listed.has(failure.entryId)) continue
-    if (runtime.originOf(failure.rowId)?.packageName !== name) continue
-    rows.push({
-      entryId: failure.entryId,
-      rowId: failure.rowId,
-      moduleName: failure.moduleName,
-      enabled: true,
-      phase: 'failed',
-      failure: { stage: failure.stage, message: failure.message },
     })
   }
   // A row the composition left out never reached the tree; the runtime's
@@ -186,15 +185,15 @@ export function ownedEntries(ctx: Context, runtime: ProfileRuntime, name: string
   for (const entry of ctx.loader.entries()) {
     if (entry.options.group) continue
     const rowId = entry.options.id
-    if (runtime.originOf(rowId)?.packageName !== name) continue
+    if (runtime.originOfEntry(entry)?.packageName !== name) continue
     found.push({ entry, rowId })
   }
   return found
 }
 
-/** The rows a bundle would contribute, from its probe record, when it is not composed. */
-function probedRows(probe: PluginProbe | undefined): PluginPackageRowView[] {
-  return (probe?.rows ?? []).map(row => ({
+/** The rows a bundle would contribute, from its patch declarations, when it is not composed. */
+function declaredRows(metadata: PackageMetadata | undefined): PluginPackageRowView[] {
+  return (metadata?.rows ?? []).map(row => ({
     entryId: row.id ?? row.name,
     rowId: row.id ?? row.name,
     moduleName: row.name,

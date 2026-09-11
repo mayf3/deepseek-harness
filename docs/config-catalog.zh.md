@@ -967,8 +967,6 @@ export interface Config {
   pnpmCommand: string
   /** Bound on one install or remove run, in milliseconds. */
   installTimeoutMs: number
-  /** Bound on one package probe, in milliseconds. */
-  probeTimeoutMs: number
   /** How many trailing bytes of an install run's output an install failure reports. */
   installLogTailBytes: number
 }
@@ -3608,6 +3606,7 @@ export interface Config {
 - `@deepseek-ai/dsh-output-retention`（[`packages/util/output-retention/src/index.ts`](../packages/util/output-retention/src/index.ts)）
 - `@deepseek-ai/dsh-package-manifest` ([`packages/util/package-manifest/src/index.ts`](../packages/util/package-manifest/src/index.ts))
 - `@deepseek-ai/dsh-plugin-manager`（[`packages/boot/plugin-manager/src/index.ts`](../packages/boot/plugin-manager/src/index.ts)）
+- `@deepseek-ai/dsh-remote-mock` ([`packages/test-support/remote-mock/src/index.ts`](../packages/test-support/remote-mock/src/index.ts))
 - `@deepseek-ai/dsh-sandbox-windows-acl`（[`packages/sandbox/sandbox-windows-acl/src/index.ts`](../packages/sandbox/sandbox-windows-acl/src/index.ts)）
 - `@deepseek-ai/dsh-scope`（[`packages/core/scope/src/index.ts`](../packages/core/scope/src/index.ts)）
 - `@deepseek-ai/dsh-sdk-client`（[`packages/sdk/client/src/index.ts`](../packages/sdk/client/src/index.ts)）

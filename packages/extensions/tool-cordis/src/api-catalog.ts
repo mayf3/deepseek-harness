@@ -1425,13 +1425,13 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       },
       {
         signature: '@Remote(\'add\') async add(spec: string, options?: { enable?: boolean }): Promise<PluginInstallResult>',
-        description: 'Install a package with pnpm, probe it, and leave it disabled unless asked otherwise.',
+        description: 'Install a package with pnpm, read its declarations, and leave it disabled unless asked otherwise.',
         parameters: [{ name: 'spec', description: 'what to install, in pnpm\'s own vocabulary.' }, { name: 'options', description: '`enable` puts every newly installed bundle into the layer list at once.' }],
         returns: 'what the run installed and enabled.',
       },
       {
         signature: '@Remote(\'uninstall\') async uninstall(packageName: string): Promise<void>',
-        description: 'Remove a package from the profile with its user-layer rows and probe record.',
+        description: 'Remove a package from the profile with its user-layer rows and any obsolete discovery cache.',
         parameters: [{ name: 'packageName', description: 'the installed dependency to remove.' }],
       },
       {
@@ -4908,7 +4908,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'PluginChangeReason',
-    declaration: 'export type PluginChangeReason = \'install\' | \'uninstall\' | \'enable\' | \'disable\' | \'retry\' | \'row\';',
+    declaration: 'export type PluginChangeReason = \'install\' | \'uninstall\' | \'enable\' | \'disable\' | \'retry\' | \'row\' | \'runtime\';',
   },
   {
     name: 'PluginDependents',
@@ -4916,7 +4916,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'PluginEnableResult',
-    declaration: 'export interface PluginEnableResult {\n    readonly changed: boolean;\n    readonly effect: \'live\' | \'restart\';\n}',
+    declaration: 'export interface PluginEnableResult {\n    readonly changed: boolean;\n    readonly effect: \'live\' | \'restart\';\n    readonly issues?: readonly PluginRowIssue[];\n}',
   },
   {
     name: 'PluginInstallLogChunk',
@@ -4932,11 +4932,11 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'PluginPackageAddableView',
-    declaration: 'export interface PluginPackageAddableView {\n    readonly moduleName: string;\n    readonly declaredName: string;\n    readonly title?: string;\n    readonly config?: JsonValue;\n    readonly ok: boolean;\n    readonly error?: string;\n    readonly configSchema?: JsonValue;\n}',
+    declaration: 'export interface PluginPackageAddableView {\n    readonly moduleName: string;\n    readonly declaredName: string;\n    readonly title?: string;\n    readonly config?: JsonValue;\n}',
   },
   {
     name: 'PluginPackageKind',
-    declaration: 'export type PluginPackageKind = \'bundle\' | \'plugin\' | \'library\';',
+    declaration: 'export type PluginPackageKind = \'bundle\' | \'plugin\' | \'unknown\';',
   },
   {
     name: 'PluginPackageRowView',
@@ -4956,11 +4956,15 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'PluginPackageView',
-    declaration: 'export interface PluginPackageView {\n    readonly name: string;\n    readonly version?: string;\n    readonly title?: string;\n    readonly description?: string;\n    readonly kind: PluginPackageKind;\n    readonly trust: PluginPackageTrust;\n    readonly stage: PluginPackageStage;\n    readonly installed: boolean;\n    readonly enabled: boolean;\n    readonly status: PluginPackageStatus;\n    readonly reason?: string;\n    readonly enginesDsh?: string;\n    readonly cordisSameCopy: boolean | null;\n    readonly rows: readonly PluginPackageRowView[];\n    readonly overrides: readonly string[];\n    readonly addable: readonly PluginPackageAddableView[];\n    readonly probedAt?: string;\n    readonly liveReload: boolean;\n}',
+    declaration: 'export interface PluginPackageView {\n    readonly name: string;\n    readonly version?: string;\n    readonly title?: string;\n    readonly description?: string;\n    readonly kind: PluginPackageKind;\n    readonly trust: PluginPackageTrust;\n    readonly stage: PluginPackageStage;\n    readonly installed: boolean;\n    readonly enabled: boolean;\n    readonly status: PluginPackageStatus;\n    readonly reason?: string;\n    readonly enginesDsh?: string;\n    readonly cordisSameCopy: boolean | null;\n    readonly rows: readonly PluginPackageRowView[];\n    readonly issues?: readonly PluginRowIssue[];\n    readonly overrides: readonly string[];\n    readonly addable: readonly PluginPackageAddableView[];\n    readonly liveReload: boolean;\n}',
   },
   {
     name: 'PluginRowAddition',
     declaration: 'export interface PluginRowAddition {\n    readonly target: PluginRowTarget;\n    readonly rowId: string;\n    readonly file: string;\n}',
+  },
+  {
+    name: 'PluginRowIssue',
+    declaration: 'export interface PluginRowIssue {\n    readonly entryId: string;\n    readonly moduleName: string;\n    readonly stage: string;\n    readonly message: string;\n}',
   },
   {
     name: 'PluginRowPhase',

@@ -62,6 +62,32 @@ profile 是同一套 dsh 安装提供不同应用界面的方式：`web`、`head
 
 launcher 在任何配置行挂载前提供 `ctx.profileRuntime`。它拥有行来源、已接受的组合、冲突和用户禁用行信息。文件监听与管理操作共用它的串行重组队列。重组等待当前条目和已移除 fiber 完成后，发布已接受的选项并报告逐行问题；更新失败时，fiber 可能仍使用先前的有效配置运行。`installFailLoud` 保持到应用关闭，处理进程级未处理 rejection。
 
+<a id="patch-files"></a>
+### 补丁文件
+
+上面的每一层都是一个 `cordis.patch.yml`：一个顶层 YAML 序列，元素是 include 插件的 `PatchOptions`——按 id 定位的覆盖与 `insert` 列表——采用 Loader 的方言，其中 `!!js` 标记一个由该行 fiber 求值的表达式。`./patch-file` 导出是读写这种文件的唯一地方，因此启动接受的文件就是 agent preset roster 与插件管理器接受的文件。
+
+用 `parsePatchList`（已有文本）或 `readPatchListFile`（文件不存在时读到 `undefined`）读取一层。两者都把 `insert` 行中相对的名字（如 `./plugin.js`）锚定到文件自己的目录，并对任何不是"映射序列"的内容直接报错，因为一个完全无法施加的补丁文件就是配置错误；而目标行不存在的单条补丁仍然只是 Loader 的逐条警告。
+
+通过 `mutatePatchFile` 写入。回调拿到一个 `PatchDocument`，按 Loader 寻址行的方式以行 id 编辑：
+
+```ts
+import { mutatePatchFile } from '@deepseek-ai/dsh-app-boot/patch-file'
+
+const file = '/home/me/.dsh/profiles/web/cordis.patch.yml'
+await mutatePatchFile(file, (document) => {
+  document.setRowField('tool-web', 'disabled', true)      // the id-targeted patch is created when absent
+  document.deleteRowField('tool-web', 'config')           // a patch reduced to its id is removed whole
+  document.appendInsert({ id: 'tool-foo', name: 'dsh-tool-foo' })          // into the root list
+  document.appendInsert({ id: 'sql', name: 'dsh-sql' }, 'agents')          // into the group with that id
+  document.removeInsert('tool-foo')                       // an emptied insert patch is removed whole
+}, { binName: 'dsh', mode: 0o600, dirMode: 0o700 })
+```
+
+`setRowField` 永远不接受 `id` 与 `insert`；`rowField` 读回一个键，`!!js` 标量以其源文本返回。`appendInsert` 拒绝文件已插入的 id；`insertedRow`/`removeInsert` 也能找到插入组内部的行。写入的值都是普通数据；别的键上的 `!!js` 标量原样不动，这正是用户层能撤回自己写的 `disabled: true` 而不惊动组合包在另一行上的 `!!js` 门的原因。
+
+`mutatePatchFile` 像 `dsh-atomic-write` 一样占用 `<file>.lock` 兄弟文件，读取文件（不存在按空处理），施加编辑，在文本有变化时以声明的权限位原子替换文件，然后返回从写入文本重新读出的补丁列表。什么都没改的编辑什么都不写。
+
 ### 预览生效配置
 
 启动前，你可以打印应用将挂载的确切配置：dump 会以 `!!js` 表达式原样展示组合后的条目列表，并按注释分组标明每个源文件及其 patch 层，输出是一份可加载的 YAML 文档。未匹配到任何行的 patch 会连同其层标签一起报告；配置缺失、无法解析或字段无效都会使 dump 失败。

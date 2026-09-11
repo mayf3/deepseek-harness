@@ -39,3 +39,5 @@ Status: implemented
 ## Verification
 
 `packages/boot/app-boot/tests/entry-issues.spec.ts` 覆盖 trust 与 stage、导入/配置/apply/disabled/pending 失败、嵌套与匿名来源、失败更新后的活跃旧配置、恢复及已移除 fiber 的清理等待。组合测试覆盖重复归属与父组保持。静态元信息测试使用导入时写文件的 fixture，确认未执行、保留未知包并拒绝无效声明。inventory 测试直接验证 Loader 失败与组合冲突，不依赖历史失败注册表。进程处理与用户 patch 测试保留脱离管理失败的致命策略，以及尽力执行的实时重载诊断。
+
+[管理器与 Remote 的拆分](2026-09-04-plugin-manager-over-the-profile-runtime.zh.md)继续适用。管理器集成测试覆盖未知包保留、静态声明、逐行启用结果、保留原归属的失败覆盖，以及依赖恢复后的运行变化通知。

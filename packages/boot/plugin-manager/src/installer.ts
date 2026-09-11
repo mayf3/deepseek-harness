@@ -1,6 +1,6 @@
 /**
- * Installing and removing packages in one profile with pnpm, and probing
- * them, over the profile on disk: nothing here touches a running tree, which
+ * Installing and removing packages with pnpm and reading static declarations
+ * from the profile on disk: nothing here touches a running tree, which
  * is what lets the `dsh plugin` command install before any plugin starts.
  * @module @deepseek-ai/dsh-plugin-manager/installer
  */
@@ -13,15 +13,12 @@ import {
   awaitChildClose,
   claimLayerIds,
   healProfilesModuleFallback,
-  PLUGIN_PROBE_DIR,
-  probePackage,
-  readProbeCache,
+  readPackageMetadata,
   readProfileManifest,
   reconcileInstalledBundles,
   resolveBundleDir,
   resolveProfileLayer,
-  writeProbeCache,
-  type PluginProbe,
+  type PackageMetadata,
   type Profile,
   type ProfileManifest,
 } from '@deepseek-ai/dsh-app-boot'
@@ -57,15 +54,15 @@ export interface PluginInstallerOptions {
   readonly color: boolean
   /** Test seam: the child spawner; defaults to `node:child_process`. */
   readonly spawn?: SpawnLike
-  /** Test seam: the package probe; defaults to app-boot's. */
-  readonly probe?: typeof probePackage
+  /** Test seam: the static metadata reader; defaults to app-boot’s. */
+  readonly metadata?: typeof readPackageMetadata
 }
 
 /** The installed package's manifest slice the view reads. */
 export type InstalledManifest = ProfileManifest & { description?: string; dsh?: ProfileManifest['dsh'] & { title?: string } }
 
 /**
- * Installs and removes packages in one profile with pnpm, and probes them.
+ * Installs and removes packages in one profile with pnpm, and reads their declarations.
  *
  * Every run reads the profile manifest afresh and writes it through the
  * app-boot helpers the `dsh plugin` command uses, so the CLI and the Web
@@ -76,14 +73,14 @@ export type InstalledManifest = ProfileManifest & { description?: string; dsh?: 
  */
 export class PluginInstaller {
   private readonly spawn: SpawnLike
-  private readonly probeRunner: typeof probePackage
+  private readonly metadataReader: typeof readPackageMetadata
 
   /**
    * @param options - the profile, the tooling bounds, and the output sink.
    */
   constructor(private readonly options: PluginInstallerOptions) {
     this.spawn = options.spawn ?? spawnChild
-    this.probeRunner = options.probe ?? probePackage
+    this.metadataReader = options.metadata ?? readPackageMetadata
   }
 
   /**
@@ -128,29 +125,20 @@ export class PluginInstaller {
   }
 
   /**
-   * The package's probe record, from the profile cache or a fresh probe
-   * written to it. A record for another installed version is not reused.
+   * Read the installed manifest and patch without executing modules or caching runtime verdicts.
    * @param packageName - the installed package.
-   * @returns the record.
+   * @returns its current static declarations.
    */
-  async probe(packageName: string): Promise<PluginProbe> {
-    const version = this.readInstalledManifest(packageName)?.version
-    const cached = readProbeCache(this.options.profileDir, packageName, version)
-    if (cached !== undefined) return cached
-    const probe = await this.probeRunner({
-      binName: NAME,
-      profileDir: this.options.profileDir,
-      installAnchor: this.options.installAnchor,
-      packageName,
-      timeoutMs: this.options.config.probeTimeoutMs,
+  metadata(packageName: string): PackageMetadata {
+    return this.metadataReader({
+      binName: NAME, profileDir: this.options.profileDir,
+      installAnchor: this.options.installAnchor, packageName,
     })
-    writeProbeCache(this.options.profileDir, probe)
-    return probe
   }
 
   /**
-   * Install a package with pnpm, probe every package the run added, and
-   * remove what has no place in a profile. New bundles are left disabled.
+   * Install with pnpm and reject bundles whose declarations conflict with the profile.
+   * Undeclared packages remain installed; new bundles are left disabled.
    * @param spec - what to install, in pnpm's own vocabulary: a registry
    * name, a `github:` or git URL, a tarball, or an absolute path.
    * @returns what the run installed and what it removed again.
@@ -182,7 +170,7 @@ export class PluginInstaller {
     const installed: string[] = []
     const removed: PluginInstallRejection[] = []
     for (const name of added) {
-      const reason = await this.rejection(name)
+      const reason = this.rejection(name)
       if (reason === undefined) {
         installed.push(name)
         continue
@@ -201,7 +189,7 @@ export class PluginInstaller {
   }
 
   /**
-   * Run `pnpm remove`, reconcile the layer list, and forget the probe record.
+   * Run `pnpm remove`, reconcile the layer list, and remove any obsolete discovery record.
    * @param packageName - the dependency to remove.
    * @throws {PluginOperationError} `plugins/install-failed` when pnpm fails.
    */
@@ -210,29 +198,22 @@ export class PluginInstaller {
     const before = readProfileManifest(NAME, profileDir)
     await this.runPnpm(['remove', packageName], packageName)
     reconcileInstalledBundles(NAME, profileDir, installAnchor, before, { autoEnable: false })
-    rmSync(join(profileDir, PLUGIN_PROBE_DIR, `${packageName.replaceAll('/', '__')}.json`), { force: true })
+    rmSync(join(profileDir, '.dsh-plugins', `${packageName.replaceAll('/', '__')}.json`), { force: true })
   }
 
   /**
-   * The post-install check of one package pnpm added: a package that is
-   * neither a bundle nor a plugin module has no place in a profile, and a
-   * bundle whose row id another layer already owns could only mount as a
-   * conflict record. A package the probe cannot run stays installed: the
-   * view reports it as not enableable with the probe's own reason.
+   * Check a new bundle against the profile’s row ownership and stage rules.
+   * Undeclared or unreadable packages remain installed for repair or removal.
    * @returns why the package is removed again, or undefined to keep it.
    */
-  private async rejection(packageName: string): Promise<string | undefined> {
-    let probe: PluginProbe
+  private rejection(packageName: string): string | undefined {
+    let metadata: PackageMetadata
     try {
-      probe = await this.probe(packageName)
+      metadata = this.metadata(packageName)
     } catch {
-      return undefined // the failure is re-derived on every list and shown there
+      return undefined // Keep unreadable declarations installed so the user can repair or remove the package.
     }
-    // A refused probe (an import that throws, another cordis copy) keeps the
-    // package: the view shows it as not enableable with the probe's reason.
-    if (!probe.ok) return undefined
-    if (probe.kind === 'library') return 'declares neither a dsh bundle nor a plugin module'
-    if (probe.kind !== 'bundle') return undefined
+    if (metadata.kind !== 'bundle') return undefined
     const { profileDir, installAnchor } = this.options
     try {
       const layer = resolveProfileLayer(NAME, readProfileManifest(NAME, profileDir), packageName, installAnchor, profileDir)

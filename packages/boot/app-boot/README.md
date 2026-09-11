@@ -62,6 +62,32 @@ Installed dependencies default to `external`; template bundles and packages in `
 
 The launcher provides `ctx.profileRuntime` before any configuration entry mounts. It owns row provenance, accepted composition, conflicts, and user-disabled rows. Watchers and management operations share its serial recomposition queue. Recomposition waits for current entries and removed fibers, then publishes accepted options and reports per-entry issues; a failed update can leave a fiber running its previous valid config. `installFailLoud` remains installed until shutdown for process-level unhandled rejections.
 
+<a id="patch-files"></a>
+### Patch files
+
+Every layer above is a `cordis.patch.yml`: a top-level YAML sequence of the include plugin's `PatchOptions` — id-targeted overrides and `insert` lists — in the Loader's dialect, where `!!js` marks an expression the row's fiber evaluates. The `./patch-file` export is the one place that reads and writes such a file, so a file the boot accepts is a file the agent-preset roster and the plugin manager accept.
+
+Read a layer with `parsePatchList` (text in hand) or `readPatchListFile` (an absent file reads as `undefined`). Both anchor a relative `insert` row name such as `./plugin.js` to the file's own directory and fail loud on anything that is not a sequence of mappings, because a patch file that cannot be applied at all is a misconfiguration; a patch whose target row is absent stays a per-entry Loader warning.
+
+Write through `mutatePatchFile`. The callback receives a `PatchDocument` and edits it by row id, the way the Loader addresses rows:
+
+```ts
+import { mutatePatchFile } from '@deepseek-ai/dsh-app-boot/patch-file'
+
+const file = '/home/me/.dsh/profiles/web/cordis.patch.yml'
+await mutatePatchFile(file, (document) => {
+  document.setRowField('tool-web', 'disabled', true)      // the id-targeted patch is created when absent
+  document.deleteRowField('tool-web', 'config')           // a patch reduced to its id is removed whole
+  document.appendInsert({ id: 'tool-foo', name: 'dsh-tool-foo' })          // into the root list
+  document.appendInsert({ id: 'sql', name: 'dsh-sql' }, 'agents')          // into the group with that id
+  document.removeInsert('tool-foo')                       // an emptied insert patch is removed whole
+}, { binName: 'dsh', mode: 0o600, dirMode: 0o700 })
+```
+
+`setRowField` never accepts `id` or `insert`; `rowField` reads one key back, with a `!!js` scalar returned as its source text. `appendInsert` refuses an id the file already inserts, and `insertedRow`/`removeInsert` find rows inside inserted groups too. Values written are plain data; a `!!js` scalar on another key is left untouched, which is what lets a user layer revert a `disabled: true` it wrote without disturbing a bundle's `!!js` gate on a different row.
+
+`mutatePatchFile` takes the `<file>.lock` sibling the way `dsh-atomic-write` does, reads the file (absent reads as empty), applies the edit, replaces the file atomically with the stated permission bits when the text changed, and returns the patch list as re-read from the written text. An edit that changes nothing writes nothing.
+
 ### Previewing the effective configuration
 
 Before you boot, you can print the exact configuration the app will mount: the dump shows the composed entry list with `!!js` expressions verbatim, grouped under comments naming each source file and the patch layers that changed it, as one loadable YAML document. Patches that match no row are reported with their layer label; a missing, unparsable, or invalid config fails the dump.
