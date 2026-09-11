@@ -8,13 +8,15 @@
  * its Settings row and invalidates that row on host settings changes.
  */
 import { Context } from '@deepseek-ai/cordis'
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, it, onTestFinished, vi } from 'vitest'
 import { SlotRegistry } from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
-import { TestRemote, scriptedSettingsRemote } from '@deepseek-ai/dsh-client-test-runtime'
+import { TestRemote } from '@deepseek-ai/dsh-client-test-runtime'
+import { remoteDefaultResponses } from '@deepseek-ai/dsh-client-test-runtime/src/assembly/remote-default-responses.ts'
+import { RemoteMock } from '@deepseek-ai/dsh-remote-mock'
 import { apply as settingsApply, inject as settingsInject } from '@deepseek-ai/dsh-client-ui-settings/client'
-import type { CommandDecoration } from '@deepseek-ai/dsh-client-ui-commands/client'
+import type { CommandDecoration, PopupSelectSpec } from '@deepseek-ai/dsh-client-ui-commands/client'
 import type {
   PermissionCatalog, PermissionSelection,
 } from '@deepseek-ai/dsh-permission-presets/client'
@@ -47,7 +49,8 @@ async function bench() {
   const locale = new LocaleRuntime(ctx)
   locale.setLocale('en')
   ctx.provide('locale', locale)
-  const settingsRemote = scriptedSettingsRemote()
+  const mock = RemoteMock.create().load(remoteDefaultResponses)
+  onTestFinished(() => { mock.assertNoUnmatched() })
   let catalog = CATALOG
   let catalogCalls = 0
   const permissionPresets = {
@@ -56,7 +59,7 @@ async function bench() {
       return Promise.resolve({ ok: true as const, value: catalog })
     },
   }
-  const remote = new TestRemote(ctx, { settings: settingsRemote.settings, permissionPresets })
+  const remote = new TestRemote(ctx, { settings: mock.remote.settings, permissionPresets })
   ctx.provide('connection', {
     generation: {
       getSnapshot: () => ({ id: 1, host: { home: '/host', isLoopback: true } }),
@@ -112,6 +115,11 @@ async function bench() {
     },
     setResult: (r: { ok: boolean; matched?: boolean }) => { commandResult = r },
     decoration: () => decoration,
+    popup: (): PopupSelectSpec => {
+      const ui = decoration!.ui
+      if (ui.kind !== 'popupSelect') throw new Error('expected the popupSelect kind')
+      return ui
+    },
     permissionRow: () => ctx.slots.entries('settings.general.item')
       .find(entry => entry.component === PermissionRow),
     permissionSelect: () => ctx.slots.entries('conversation.input.permission')
@@ -161,11 +169,11 @@ describe('ui-permission browser plugin', () => {
     expect(c.available(proj)).toBe(false)
     b.values.set(sid('s1'), { currentValue: 'custom' })
     expect(c.available(proj)).toBe(true)
-    const options = await c.ui.options(proj, new AbortController().signal)
+    const options = await b.popup().options(proj, new AbortController().signal)
     expect(options.map(option => option.id)).toEqual(['read-only', 'workspace-write', 'danger-full-access', 'auto'])
     expect(options.every(option => option.active !== true)).toBe(true)
     b.values.set(sid('s1'), { currentValue: 'workspace-write' })
-    const again = await c.ui.options(proj, new AbortController().signal)
+    const again = await b.popup().options(proj, new AbortController().signal)
     expect(again.find(option => option.id === 'workspace-write')?.active).toBe(true)
     expect(again.find(option => option.id === 'read-only')?.detail).toBe('Reads only.')
     expect(again.find(option => option.id === 'auto')?.detail)
@@ -190,7 +198,7 @@ describe('ui-permission browser plugin', () => {
       },
     })
     b.locale.setLocale('zh')
-    const localized = await c.ui.options(proj, new AbortController().signal)
+    const localized = await b.popup().options(proj, new AbortController().signal)
     expect(localized.map(option => option.label)).toEqual(['仅可查看', '工作区内修改', '完全权限', 'Auto review'])
     expect(localized.find(option => option.id === 'danger-full-access')?.confirmation).toEqual({
       title: '确认启用完全权限？',
@@ -206,16 +214,16 @@ describe('ui-permission browser plugin', () => {
       { value: '__proto__', name: '__proto__' },
       { value: 'plain', name: 'Ask Every Time' },
     ] })
-    let passthrough = await c.ui.options(proj, new AbortController().signal)
+    let passthrough = await b.popup().options(proj, new AbortController().signal)
     await vi.waitFor(async () => {
-      passthrough = await c.ui.options(proj, new AbortController().signal)
+      passthrough = await b.popup().options(proj, new AbortController().signal)
       expect(passthrough.map(option => option.label)).toHaveLength(5)
     })
     expect(passthrough.map(option => option.label)).toEqual([
       'Project Files', 'Operator Mode', 'Custom Mode', '__proto__', 'Ask Every Time',
     ])
     // A projection that vanished between availability and open throws.
-    await expect(c.ui.options({ sessionId: sid('ghost') }, new AbortController().signal))
+    await expect(b.popup().options({ sessionId: sid('ghost') }, new AbortController().signal))
       .rejects.toThrow(/not available on this host/)
   })
 
@@ -224,24 +232,23 @@ describe('ui-permission browser plugin', () => {
     b.ctx.locale.setLocale('zh')
     const proj = { sessionId: sid('s1') }
     b.values.set(sid('s1'), { currentValue: 'workspace-write' })
-    const options = await b.decoration()!.ui.options(proj, new AbortController().signal)
+    const options = await b.popup().options(proj, new AbortController().signal)
     expect(options.find(option => option.id === 'auto')?.detail)
       .toBe('无沙箱运行；每次原生工具调用和 PTC 内层调用前由同一模型进行实验性审查。')
   })
 
   it('a pick submits the /permission line; rejection and unmatched throw', async () => {
     const b = await bench()
-    const c = b.decoration()!
     const proj = { sessionId: sid('s1') }
     b.values.set(sid('s1'), { currentValue: 'workspace-write' })
-    await c.ui.onSelect({ id: 'danger-full-access', label: 'danger-full-access' }, proj)
+    await b.popup().onSelect({ id: 'danger-full-access', label: 'danger-full-access' }, proj)
     expect(b.commands).toEqual(['/permission danger-full-access'])
     b.setResult({ ok: false })
-    await expect(c.ui.onSelect({ id: 'read-only', label: 'read-only' }, proj)).rejects.toThrow(/permission switch failed/)
+    await expect(b.popup().onSelect({ id: 'read-only', label: 'read-only' }, proj)).rejects.toThrow(/permission switch failed/)
     b.setResult({ ok: true, matched: false })
-    await expect(c.ui.onSelect({ id: 'read-only', label: 'read-only' }, proj)).rejects.toThrow(/no \/permission command/)
+    await expect(b.popup().onSelect({ id: 'read-only', label: 'read-only' }, proj)).rejects.toThrow(/no \/permission command/)
     // An unmaterialized session throws before any submit.
-    await expect(c.ui.onSelect({ id: 'read-only', label: 'read-only' }, { sessionId: sid('ghost') }))
+    await expect(b.popup().onSelect({ id: 'read-only', label: 'read-only' }, { sessionId: sid('ghost') }))
       .rejects.toThrow(/not materialized/)
   })
 

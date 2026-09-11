@@ -944,6 +944,8 @@ def smoke_sdk_live() -> None:
                     "Use a tool to read that same file and copy its exact current content to the "
                     "new receipt path below, without changing the source file. "
                     "Preserve every byte; do not add a newline or byte-order mark. "
+                    f"{LIVE_API_SENTINEL} is only the completion acknowledgement, "
+                    "not a claim about the source or receipt contents. "
                     f"Then reply with exactly {LIVE_API_SENTINEL}.\n{receipt}"
                 )
                 verified = harness.run(verify_prompt, session_id=session_id)
@@ -1347,7 +1349,7 @@ def smoke_sdk_snapshot(base_url: str, executable: Path, update_snapshots: bool) 
         assert result.final_response == SNAPSHOT_FINAL_TEXT, result.final_response
         feedback_types = [event.get("type") for event in result.events
                           if str(event.get("type")).startswith("feedback/")]
-        if feedback_types != ["feedback/record", "feedback/message-put", "feedback/message-put", "feedback/message-delete"]:
+        if feedback_types != ["feedback/record", "feedback/record", "feedback/message-put", "feedback/message-put", "feedback/message-delete"]:
             raise AssertionError(f"advanced snapshot did not exercise all feedback mutations: {feedback_types}")
         methods = [notification.method for notification in result.notifications]
         if methods.count("subagent.started") != 2 or methods.count("subagent.finished") != 2:

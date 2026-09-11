@@ -57,7 +57,7 @@ import {
   type NormalizeContext,
 } from '@deepseek-ai/dsh-session-snapshot'
 import {
-  assertEntriesLoaded,
+  auditStartupEntries,
   composeEntries,
   healProfilesModuleFallback,
   loadOverlayPatches,
@@ -296,8 +296,8 @@ export interface LaunchOptions {
    */
   extraOverlayPath?: string
   /**
-   * Additional source-checkout package manifests whose dependency closures
-   * supply private profile layers named by {@link extraOverlayPath}.
+   * Additional package manifests whose dependency closures supply experimental
+   * profile layers named by {@link extraOverlayPath}.
    */
   extraInstallAnchors?: string[]
   /**
@@ -515,6 +515,10 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
   const patches: PatchOptions[] = [
     ...basePatches,
     ...surfacePatches,
+    // Keyless scenarios retain the recorded default; explicit scenario overlays win.
+    ...mode === 'record' || options.deepSeekMissingCredential === true
+      ? []
+      : [{ id: 'agent-default-model', config: { provider: 'deepseek-official', model: 'deepseek-v4-flash' } }],
     ...extraOverlayPatches,
     // The roster's shipped presets are the plugin's own, bundled inside
     // `dsh-agent-presets` and prepended by it. Pin only the machine-local
@@ -712,7 +716,7 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
       config: { path: pathToFileURL(rootConfig).href, patches },
     })
     await ctx.loader.await()
-    assertEntriesLoaded(ctx, 'web e2e scaffold')
+    await auditStartupEntries(ctx, 'web e2e scaffold')
     if (options.welcomeNoticePending !== true) {
       await ctx.settings.mutate(WELCOME_NOTICE_SETTINGS_NAMESPACE, [{
         op: 'set', path: [WELCOME_NOTICE_ACK_FIELD], value: WELCOME_NOTICE_VERSION,

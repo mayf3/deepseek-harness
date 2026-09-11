@@ -38,11 +38,9 @@ import {
 } from './adapter.ts'
 import type { DeepSeekCatalogModel, DeepSeekConnectionOptions } from './adapter.ts'
 import {
-  DEFAULT_LOW_DETAIL_IMAGE_PIXEL_BUDGET,
   DEFAULT_MAX_IMAGES_PER_REQUEST,
   DEFAULT_MAX_REQUEST_FILES_BYTES,
   DEFAULT_REQUEST_IMAGE_MAX_BYTES,
-  DEFAULT_REQUEST_IMAGE_PIXEL_BUDGET,
 } from './request-pricing.ts'
 
 export {
@@ -65,11 +63,12 @@ export {
   DEFAULT_MAX_IMAGES_PER_REQUEST,
   DEFAULT_MAX_REQUEST_FILES_BYTES,
   DEFAULT_REQUEST_IMAGE_MAX_BYTES,
-  DEFAULT_REQUEST_IMAGE_PIXEL_BUDGET,
+  REQUEST_IMAGE_MAX_DIMENSION,
   deepSeekImageRequestPricing,
-  resolveRequestImagePolicy,
+  resolveRequestImageMaxBytes,
+  resolveRequestImageTarget,
 } from './request-pricing.ts'
-export { deepSeekImageTokens } from './image-tokens.ts'
+export { deepSeekImageTokens, deepSeekRequestImageDimensions } from './image-tokens.ts'
 export { DeepSeekFileStore, MAX_CHAT_IMAGE_BYTES } from './file-store.ts'
 export type { DeepSeekFileConnection, DeepSeekFilePolicy, DeepSeekFileReference } from './file-store.ts'
 export { DeepSeekFilesClient, MAX_FILE_EXPIRY_SECONDS, MAX_FILE_UPLOAD_BYTES, MAX_STORED_FILE_BYTES, MAX_STORED_FILE_COUNT, MIN_FILE_EXPIRY_SECONDS } from './files-api.ts'
@@ -91,6 +90,13 @@ const PROVIDER = 'deepseek-official'
 
 const DEFAULT_MODELS: DeepSeekCatalogModel[] = [
   {
+    id: 'deepseek-flash',
+    name: 'DeepSeek-V41-Flash',
+    contextWindow: DEFAULT_CONTEXT_WINDOW,
+    inputModalities: ['text', 'image'],
+    systemPromptUpdate: 'in-history',
+  },
+  {
     id: 'deepseek-v4-flash',
     name: 'DeepSeek-V4-Flash',
     description: 'Fast, efficient, and economical; suited to focused, routine, or parallel tasks.',
@@ -107,8 +113,6 @@ const DEFAULT_MODELS: DeepSeekCatalogModel[] = [
     name: 'DeepSeek-V4-Flash-Vision-Exp',
     contextWindow: DEFAULT_CONTEXT_WINDOW,
     inputModalities: ['text', 'image'],
-    imagePixelBudget: DEFAULT_REQUEST_IMAGE_PIXEL_BUDGET,
-    imageMaxBytes: DEFAULT_REQUEST_IMAGE_MAX_BYTES,
   },
 ]
 
@@ -135,7 +139,7 @@ export interface Config {
   maxTokens?: number
   /** Positive context capacity used when the selected model has no exact value (default 1,000,000). */
   defaultContextWindow?: number
-  /** Advisory models shown by discovery consumers; defaults to V4 Flash, V4 Pro, and V4 Flash Vision Exp. */
+  /** Advisory models shown by discovery consumers; defaults to V41 Flash, V4 Flash, V4 Pro, and V4 Flash Vision Exp. */
   models?: DeepSeekCatalogModel[]
   /** Maximum provider idle time while one stream read is outstanding (default five minutes). */
   streamIdleTimeoutMs?: number
@@ -276,9 +280,7 @@ function resolveModels(models: readonly DeepSeekCatalogModel[] | undefined): Dee
       inputModalities: [...inputModalities],
       ...hasImage
         ? {
-          imagePixelBudget: model.imagePixelBudget === 'low'
-            ? DEFAULT_LOW_DETAIL_IMAGE_PIXEL_BUDGET
-            : model.imagePixelBudget ?? DEFAULT_REQUEST_IMAGE_PIXEL_BUDGET,
+          ...model.imagePixelBudget === undefined ? {} : { imagePixelBudget: model.imagePixelBudget },
           imageMaxBytes: model.imageMaxBytes ?? DEFAULT_REQUEST_IMAGE_MAX_BYTES,
         }
         : {},

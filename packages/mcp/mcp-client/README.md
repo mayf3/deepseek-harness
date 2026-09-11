@@ -67,7 +67,7 @@ Add one entry per server; nothing else is required. After the harness starts, th
 
 The generated [configuration catalog](../../../docs/config-catalog.md#deepseek-aidsh-mcp-client) is the exhaustive source for every accepted field.
 
-After startup, the server's tools appear as `mcp__<serverName>__<tool>` — try a prompt that uses one. If the initial connection fails, the harness still starts but no tools from that server appear, and an error is logged; set `failOnStartupError: true` to make a startup failure abort the harness instead.
+After startup, the server's tools appear as `mcp__<serverName>__<tool>` — try a prompt that uses one. If the initial connection fails, the harness still starts but no tools from that server appear, and an error is logged. Setting `failOnStartupError: true` rejects plugin activation; [app-boot's startup policy](../../boot/app-boot/README.md) still permits an optional MCP entry to fail without aborting the harness.
 
 ### Tool naming and coexistence
 
@@ -76,6 +76,7 @@ The model sees each tool under a stable server-qualified name: `mcp__<serverName
 - Two servers publishing the same tool name (for example `search`) coexist under their own namespaces.
 - Two entries using the same server name: the later one fails to load with a clear error.
 - A server that lists the same tool twice gets its tool list rejected as invalid, and the previous tool set stays active.
+- A repeated non-empty `tools/list` continuation cursor rejects that update immediately, including cycles through empty pages; the previous tool set stays active and later updates can still succeed.
 - An update that conflicts with an already-registered tool name is rejected entirely — you never get a partial tool set from that server.
 
 ### Calling tools and reading results

@@ -265,7 +265,7 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 }
 ```
 
-来源：[`packages/interaction/commands/src/types.ts:110`](../packages/interaction/commands/src/types.ts)
+来源：[`packages/interaction/commands/src/types.ts:112`](../packages/interaction/commands/src/types.ts)
 
 <a id="commandrun--log-only"></a>
 
@@ -285,7 +285,7 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 'command/run': { commandId: CommandId; name: string; args?: string; source: CommandSource }
 ```
 
-来源：[`packages/interaction/commands/src/types.ts:103`](../packages/interaction/commands/src/types.ts)
+来源：[`packages/interaction/commands/src/types.ts:105`](../packages/interaction/commands/src/types.ts)
 
 ### `compaction/*`
 
@@ -405,7 +405,7 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 #### `deliverables/presented` — 仅日志
 
 ```ts persistence-catalog
-/** Declared workspace files from a successful final present result, including nested calls. */
+/** Declared filesystem files from a successful final present result, including nested calls. */
 'deliverables/presented': { turn: number; callId: ToolCallId; files: PresentedFile[] }
 ```
 
@@ -424,7 +424,7 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 'feedback/message-delete': MessageFeedbackDelete
 ```
 
-来源：[`packages/feedback/message-feedback/src/types.ts:55`](../packages/feedback/message-feedback/src/types.ts)
+来源：[`packages/feedback/message-feedback/src/types.ts:58`](../packages/feedback/message-feedback/src/types.ts)
 
 <a id="feedbackmessage-put--log-only"></a>
 
@@ -435,7 +435,7 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 'feedback/message-put': MessageFeedbackPut
 ```
 
-来源：[`packages/feedback/message-feedback/src/types.ts:53`](../packages/feedback/message-feedback/src/types.ts)
+来源：[`packages/feedback/message-feedback/src/types.ts:56`](../packages/feedback/message-feedback/src/types.ts)
 
 <a id="feedbackrecord--log-only"></a>
 
@@ -446,10 +446,10 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
  * One recorded human remark about this session. Log-only and independent
  * of its trigger; it never enters model context or derived history.
  */
-'feedback/record': { text: string }
+'feedback/record': FeedbackRecord
 ```
 
-来源：[`packages/feedback/command-feedback/src/index.ts:25`](../packages/feedback/command-feedback/src/index.ts)
+来源：[`packages/feedback/command-feedback/src/types.ts:40`](../packages/feedback/command-feedback/src/types.ts)
 
 ### `goal/*`
 
@@ -572,7 +572,7 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 'permission/preset': { preset: string }
 ```
 
-来源：[`packages/interaction/permission-presets/src/index.ts:56`](../packages/interaction/permission-presets/src/index.ts)
+来源：[`packages/interaction/permission-presets/src/index.ts:57`](../packages/interaction/permission-presets/src/index.ts)
 
 ### `plan/*`
 
@@ -589,7 +589,7 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 'plan/mode': { active: boolean }
 ```
 
-来源：[`packages/plan/plan-mode/src/index.ts:46`](../packages/plan/plan-mode/src/index.ts)
+来源：[`packages/plan/plan-mode/src/index.ts:47`](../packages/plan/plan-mode/src/index.ts)
 
 ### `request/*`
 

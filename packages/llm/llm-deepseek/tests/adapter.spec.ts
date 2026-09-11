@@ -22,7 +22,7 @@ import type { PreparedDeepSeekLlmApiExtensions } from '@deepseek-ai/dsh-deepseek
 import * as LlmDeepSeek from '@deepseek-ai/dsh-llm-deepseek'
 import { DeepSeekAdapter, resolveAdapterOptions } from '@deepseek-ai/dsh-llm-deepseek'
 import { httpErrorCode } from '../src/adapter.ts'
-import { resolveRequestImagePolicy } from '../src/request-pricing.ts'
+import { resolveRequestImageTarget } from '../src/request-pricing.ts'
 import { assemble } from './assemble.ts'
 import { closeMockServers, mockServer, textEvents } from './mock-server.ts'
 import type { Behavior } from './mock-server.ts'
@@ -141,22 +141,29 @@ function successfulSseResponse(): Response {
   })
 }
 
-describe('request image policy', () => {
+describe('request image target', () => {
   it.each([
     [
       { id: 'default' },
-      { maxPixels: 640_000, maxBytes: 1024 * 1024 },
+      { width: 1302, height: 1302, maxBytes: 2 * 1024 * 1024 },
     ],
     [
       { id: 'low', imagePixelBudget: 'low' as const },
-      { maxPixels: 512 * 512, maxBytes: 1024 * 1024 },
+      { width: 512, height: 512, maxBytes: 2 * 1024 * 1024 },
     ],
     [
       { id: 'custom', imagePixelBudget: 320_000, imageMaxBytes: 512_000 },
-      { maxPixels: 320_000, maxBytes: 512_000 },
+      { width: 565, height: 565, maxBytes: 512_000 },
     ],
-  ])('resolves route-owned defaults and overrides for %s', (model, expected) => {
-    expect(resolveRequestImagePolicy(model)).toEqual(expected)
+  ])('resolves route-owned defaults and overrides for %s on a 4096x4096 source', (model, expected) => {
+    expect(resolveRequestImageTarget(model, { width: 4096, height: 4096 })).toEqual(expected)
+  })
+
+  it('caps every request image at the provider per-side limit', () => {
+    expect(resolveRequestImageTarget({ id: 'default' }, { width: 8192, height: 78 }))
+      .toEqual({ width: 4096, height: 39, maxBytes: 2 * 1024 * 1024 })
+    expect(resolveRequestImageTarget({ id: 'custom', imagePixelBudget: 640_000 }, { width: 10_000, height: 100 }))
+      .toEqual({ width: 4096, height: 41, maxBytes: 2 * 1024 * 1024 })
   })
 
   it('answers image request pricing from the current connection snapshot', () => {
@@ -379,7 +386,7 @@ describe('DeepSeekAdapter against a mock server', () => {
 
     await drain(adapter.stream({
       provider: 'deepseek-official',
-      model: 'deepseek-v4-flash-vision-exp',
+      model: 'deepseek-flash',
       messages: [createUserMessage({
         content: [
           { type: 'text', text: 'describe ' },
@@ -390,7 +397,7 @@ describe('DeepSeekAdapter against a mock server', () => {
     }))
 
     expect(server.requests[0]).toMatchObject({
-      model: 'deepseek-v4-flash-vision-exp',
+      model: 'deepseek-flash',
       messages: [{
         role: 'user',
         content: [
@@ -407,7 +414,7 @@ describe('DeepSeekAdapter against a mock server', () => {
       bytes: 3,
     }])
     expect(signalSeen[0]).toBeInstanceOf(AbortSignal)
-    expect(policies).toEqual([{ maxPixels: 640_000, maxBytes: 1024 * 1024 }])
+    expect(policies).toEqual([{ width: 1, height: 1, maxBytes: 2 * 1024 * 1024 }])
   })
 
   it('falls back to one all-base64 request when Files API resolution fails', async () => {
@@ -621,7 +628,7 @@ describe('DeepSeekAdapter against a mock server', () => {
 
     expect(attachmentMocks.readImageRequest).toHaveBeenCalledWith(
       recent,
-      { maxPixels: 640_000, maxBytes: 1024 * 1024 },
+      { width: 1, height: 1, maxBytes: 2 * 1024 * 1024 },
       expect.any(AbortSignal),
     )
     const body = server.requests[0] as { messages: unknown[] }
@@ -672,13 +679,13 @@ describe('DeepSeekAdapter against a mock server', () => {
     expect(attachmentMocks.readImageRequest).toHaveBeenNthCalledWith(
       1,
       imageRef,
-      { maxPixels: 512 * 512, maxBytes: 512_000 },
+      { width: 1, height: 1, maxBytes: 512_000 },
       expect.any(AbortSignal),
     )
     expect(attachmentMocks.readImageRequest).toHaveBeenNthCalledWith(
       2,
       imageRef,
-      { maxPixels: 320_000, maxBytes: 1024 * 1024 },
+      { width: 1, height: 1, maxBytes: 2 * 1024 * 1024 },
       expect.any(AbortSignal),
     )
   })
@@ -1697,6 +1704,7 @@ describe('plugin registration and config', () => {
     await ctx.plugin(LlmDeepSeek, { baseURL: 'http://127.0.0.1:1' })
     expect(ctx.llm.listProviders()).toEqual([{ id: 'deepseek-official', name: 'DeepSeek' }])
     await expect(ctx.llm.listModels('deepseek-official')).resolves.toEqual([
+      { provider: 'deepseek-official', id: 'deepseek-flash', name: 'DeepSeek-V41-Flash', inputModalities: ['text', 'image'] },
       {
         provider: 'deepseek-official',
         id: 'deepseek-v4-flash',
@@ -1713,11 +1721,13 @@ describe('plugin registration and config', () => {
       },
       { provider: 'deepseek-official', id: 'deepseek-v4-flash-vision-exp', name: 'DeepSeek-V4-Flash-Vision-Exp', inputModalities: ['text', 'image'] },
     ])
-    await expect(ctx.llm.resolveModelInfo('deepseek-official', 'deepseek-v4-flash'))
+    await expect(ctx.llm.resolveModelInfo('deepseek-official', 'deepseek-flash'))
       .resolves.toMatchObject({
         provider: 'deepseek-official',
-        id: 'deepseek-v4-flash',
-        name: 'DeepSeek-V4-Flash',
+        id: 'deepseek-flash',
+        name: 'DeepSeek-V41-Flash',
+        inputModalities: ['text', 'image'],
+        systemPromptUpdate: 'in-history',
         context: { contextWindow: 1_000_000 },
         defaultMaxTokens: 256_000,
         reasoning: {
@@ -1730,15 +1740,24 @@ describe('plugin registration and config', () => {
           defaultEffort: ReasoningEffortId('high'),
         },
       })
-    await expect(ctx.llm.resolveModelInfo('deepseek-official', 'deepseek-v4-flash-vision-exp'))
-      .resolves.toMatchObject({
-        provider: 'deepseek-official',
-        id: 'deepseek-v4-flash-vision-exp',
-        name: 'DeepSeek-V4-Flash-Vision-Exp',
-        inputModalities: ['text', 'image'],
-        context: { contextWindow: 1_000_000 },
-        defaultMaxTokens: 256_000,
-      })
+  })
+
+  it.each([
+    { model: 'deepseek-v4-flash', inputModalities: ['text'] },
+    { model: 'deepseek-v4-pro', inputModalities: ['text'] },
+    { model: 'deepseek-v4-flash-vision-exp', inputModalities: ['text', 'image'] },
+  ])('keeps $model available with its V4 capabilities', async ({ model, inputModalities }) => {
+    const ctx = new Context()
+    await ctx.plugin(LlmRuntime)
+    await ctx.plugin(LlmDeepSeek, { baseURL: 'http://127.0.0.1:1' })
+    const info = await ctx.llm.resolveModelInfo('deepseek-official', model)
+    expect(info).toMatchObject({
+      id: model,
+      inputModalities,
+      context: { contextWindow: 1_000_000 },
+      defaultMaxTokens: 256_000,
+    })
+    expect(info?.systemPromptUpdate).toBeUndefined()
   })
 
   it.each(['off', 'low', 'max'] as const)('uses the configured %s reasoning default', async (effort) => {
@@ -1824,6 +1843,7 @@ describe('plugin registration and config', () => {
     await ctx.plugin(LlmRuntime)
     LlmDeepSeek.apply(ctx, { baseURL: 'http://127.0.0.1:1' })
     await expect(ctx.llm.listModels('deepseek-official')).resolves.toEqual([
+      { provider: 'deepseek-official', id: 'deepseek-flash', name: 'DeepSeek-V41-Flash', inputModalities: ['text', 'image'] },
       {
         provider: 'deepseek-official',
         id: 'deepseek-v4-flash',
@@ -2154,7 +2174,7 @@ describe('plugin registration and config', () => {
     // First-boot onboarding: the route registers so models stay discoverable;
     // only the request itself needs a key.
     expect(ctx.llm.listProviders()).toEqual([{ id: 'deepseek-official', name: 'DeepSeek' }])
-    await expect(ctx.llm.listModels('deepseek-official')).resolves.toHaveLength(3)
+    await expect(ctx.llm.listModels('deepseek-official')).resolves.toHaveLength(4)
     const first = await assemble(ctx, { model: 'deepseek-v4-flash', messages: [] })
     expect(first.finish).toMatchObject({ kind: 'error', failure: { code: 'MISSING_CREDENTIAL' } })
     // The guidance leads with the managed credential store.
@@ -2242,7 +2262,7 @@ describe('plugin registration and config', () => {
     expect(adapter).toBeInstanceOf(DeepSeekAdapter)
     // Direct embedding shares the plugin's one resolve step, so it advertises
     // the same default catalog instead of a divergent empty one.
-    await expect(adapter.listModels('deepseek-official')).resolves.toHaveLength(3)
+    await expect(adapter.listModels('deepseek-official')).resolves.toHaveLength(4)
   })
 
   it('resolves connection facts and the credential exactly once per stream call', async () => {

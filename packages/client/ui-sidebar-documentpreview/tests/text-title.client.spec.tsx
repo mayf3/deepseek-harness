@@ -21,8 +21,8 @@ describe('TextTitle', () => {
   })
 
   it('picks the sheet from the title\'s extension', () => {
-    const markdown = render(<TextTitle {...props('notes.md')} />).container.querySelector('path')?.getAttribute('fill')
-    const pdf = render(<TextTitle {...props('paper.pdf')} />).container.querySelector('path')?.getAttribute('fill')
+    const markdown = render(<TextTitle {...props('notes.md')} />).container.querySelector('svg')?.innerHTML
+    const pdf = render(<TextTitle {...props('paper.pdf')} />).container.querySelector('svg')?.innerHTML
     expect(markdown).not.toBe(pdf)
   })
 })

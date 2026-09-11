@@ -46,4 +46,4 @@ Current-writer snapshot expectations include catalog facts even when replay inpu
 
 Session observations and client snapshots expose the direct-child list through `projections.values.subagentCatalog`. The projection change feed publishes a complete list when catalog state changes. Each view costs O(D), so D creations can incur O(D²) cumulative view work; this follows the existing projection mechanism. Direct-child and descendant listing still use the Session corpus and child identity projection.
 
-Backends that do not know the required event refuse the log under the existing Session event mechanism. Pre-release format policy requires no fallback scan for old logs.
+Backends that do not know the required event refuse the log under the existing Session event mechanism. Catalog projection does not reconstruct missing parent facts by scanning old child logs.

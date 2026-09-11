@@ -13,6 +13,7 @@
  */
 
 import { Context } from '@deepseek-ai/cordis'
+import { CommandDefinitionId } from '@deepseek-ai/dsh-commands/brand'
 import z from '@deepseek-ai/schemastery'
 import { z as zod } from 'zod'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
@@ -263,6 +264,7 @@ export class PermissionPresetService extends TypertRemoteService {
     // activates only when a command registry is composed.
     ctx.inject(['commands'], (commandCtx) => {
       commandCtx.commands.register({
+        definitionId: CommandDefinitionId('@deepseek-ai/dsh-permission-presets'),
         name: 'permission',
         description: 'Switch the permission preset (sandbox mode + approval policy)',
         input: { hint: '<preset>' },
