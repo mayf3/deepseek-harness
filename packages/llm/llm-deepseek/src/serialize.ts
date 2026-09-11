@@ -394,8 +394,8 @@ export function serializeRequest(
 /**
  * Reject a request whose retained occurrences, at their exact request-version
  * byte lengths under this representation, still exceed the route budget. The
- * failure names how many more of the oldest retained occurrences the agent
- * loop must offload; the surface, not this serializer, owns the offloaded set.
+ * failure names how many more oldest retained occurrences need durable
+ * omission before the request can be retried.
  */
 function assertRetainedImagesFit(messages: readonly Message[], images: ImageSerializationOptions): void {
   const representation = images.representation.kind === 'file' ? 'raw' : 'base64'

@@ -166,8 +166,7 @@ export function isHarnessError(value: unknown): value is HarnessError {
  * Canonical code for a request an image-capable route cannot send until more
  * of its images are offloaded. The failure's `offloadImages` names how many
  * more of the oldest retained occurrences must be offloaded;
- * `dsh-compaction-image-offload` replaces the surface nodes carrying them
- * with copies marked `offloaded` and retries the step, so the model never
- * receives an unlogged projection.
+ * `dsh-compaction-image-offload` records an `image/offload` selection before
+ * the agent or summarizer retries with freshly derived input.
  */
 export const IMAGE_OFFLOAD_REQUIRED_CODE = 'IMAGE_OFFLOAD_REQUIRED'

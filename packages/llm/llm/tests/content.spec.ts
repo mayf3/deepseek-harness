@@ -13,7 +13,6 @@ import {
   requiredImageOffload,
   resolveImageAttachmentAccess,
   requestImageHandleText,
-  visitImageBlocks,
 } from '../src/index.ts'
 import type { ContentBlock } from '../src/index.ts'
 
@@ -35,10 +34,10 @@ function image(bytes: number, offloaded?: true): Extract<ContentBlock, { type: '
   }
 }
 
-describe('visitImageBlocks', () => {
+describe('requiredImageOffload traversal', () => {
   it('visits image occurrences at every tool-result depth in message order', () => {
     const seen: number[] = []
-    visitImageBlocks([
+    const content: ContentBlock[] = [
       { type: 'text', text: 'before' },
       image(1),
       {
@@ -55,7 +54,12 @@ describe('visitImageBlocks', () => {
         ],
       },
       image(3),
-    ], block => seen.push(block.attachment.bytes))
+    ]
+    expect(requiredImageOffload([createUserMessage({ content, source })],
+      { representation: 'raw', maxImages: 0 }, (block) => {
+        seen.push(block.attachment.bytes)
+        return block.attachment.bytes
+      })).toBe(4)
     expect(seen).toEqual([1, 2, 4, 3])
   })
 })

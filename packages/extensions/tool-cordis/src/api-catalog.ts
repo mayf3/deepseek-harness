@@ -3203,6 +3203,14 @@ export const EVENT_API: readonly EventApiEntry[] = [
     parameters: [],
   },
   {
+    name: 'compaction/summary-error',
+    mode: 'waterfall',
+    signature: '\'compaction/summary-error\'(payload: { session: Session; sourceEventSeqs: readonly SessionSeq[]; error: unknown; signal?: AbortSignal }, next: () => boolean): boolean',
+    summary: 'Recover a failed summary request by synchronously recording a durable change to its selected input.',
+    description: 'Recover a failed summary request by synchronously recording a durable change to its selected input. Return true only after making progress; the provider re-derives and re-prices the selection before retrying. Call next() when the failure cannot be recovered. Decisions survive a later summary failure or cancellation.',
+    parameters: [{ name: 'payload', description: '.signal - optional compaction cancellation signal.' }, { name: 'next', description: 'delegate to the next recovery listener.' }],
+  },
+  {
     name: 'cordis/dynamic-package',
     mode: 'emit',
     signature: '\'cordis/dynamic-package\'(pkg: DynamicCordisPackage): void',

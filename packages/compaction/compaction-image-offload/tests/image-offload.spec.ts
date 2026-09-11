@@ -6,6 +6,11 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import AgentLoop from '@deepseek-ai/dsh-agent-loop'
+import type { Agent } from '@deepseek-ai/dsh-agent'
+import BasicCompactionEngine from '@deepseek-ai/dsh-compaction-basic'
+import TokenMeter from '@deepseek-ai/dsh-token-meter'
+import { ImageVariantId } from '@deepseek-ai/dsh-attachment'
+import { serializeRequestWithImages } from '@deepseek-ai/dsh-llm-deepseek/src/serialize.ts'
 import { mountAgentLoopTestDependencies } from '@deepseek-ai/dsh-agent-loop-testkit'
 import { createAssistantMessage, createToolResultMessage, createUserMessage, IMAGE_OFFLOAD_REQUIRED_CODE, LlmAdapter, LlmError, ToolCallId } from '@deepseek-ai/dsh-llm'
 import type { ContentBlock, GenerateOptions, StreamChunk } from '@deepseek-ai/dsh-llm'
@@ -18,13 +23,25 @@ type ScriptEntry = StreamChunk[] | (() => never)
 /** Replies one scripted stream per request and declares no retry policy. */
 class ScriptedAdapter extends LlmAdapter {
   readonly requests: GenerateOptions[] = []
+  serializeSummary = false
 
-  constructor(private readonly script: ScriptEntry[]) {
+  constructor(readonly script: ScriptEntry[]) {
     super()
   }
 
   async * stream(options: GenerateOptions): AsyncIterable<StreamChunk> {
     this.requests.push(options)
+    if (this.serializeSummary && options.purpose === 'compaction') {
+      await serializeRequestWithImages(options, {
+        representation: { kind: 'base64' },
+        requestImages: new Map([image('first').attachment].map(ref => [ref.attachmentId, {
+          variantId: ImageVariantId(`sha256:${'b'.repeat(64)}`), attachment: ref,
+          data: new Uint8Array(ref.bytes), mediaType: ref.mediaType, bytes: ref.bytes,
+          width: ref.width, height: ref.height, depth: 'uchar', space: 'srgb', hasAlpha: false,
+        }])),
+        maxRequestImageBytes: 1,
+      })
+    }
     const entry = this.script.shift()
     if (entry === undefined) throw new Error('script exhausted')
     if (typeof entry === 'function') entry()
@@ -50,7 +67,7 @@ async function harness(adapter: ScriptedAdapter): Promise<Context> {
   const ctx = new Context()
   contexts.push(ctx)
   await mountAgentLoopTestDependencies(ctx)
-  await ctx.plugin(Object.assign((inner: Context) => { offload.apply(inner, {}) }, { inject: offload.inject }))
+  await ctx.plugin(offload)
   await ctx.plugin(AgentLoop, { agents: [] })
   ctx.llm.registerAdapter(['mock'], adapter)
   return ctx
@@ -90,6 +107,119 @@ function replacements(session: Session): [number, number][] {
 function decisions(session: Session) {
   return session.snapshotEvents().filter(event => event.type === 'image/offload')
 }
+
+async function summaryHarness(script: ScriptEntry[]) {
+  const adapter = new ScriptedAdapter(script)
+  const ctx = await harness(adapter)
+  await ctx.plugin(TokenMeter)
+  const compact = new BasicCompactionEngine(ctx, { auto: false, summarizationProvider: 'mock', summarizationModel: 'summary' })
+  const agent = await ctx.agentLoop.create(SessionId('summary-offload'), { provider: 'mock', model: 'mock' })
+  return { ctx, compact, agent, adapter }
+}
+
+async function seedImages(agent: Agent, names: string[]) {
+  agent.followup(createUserMessage({
+    content: [{ type: 'text', text: 'conversation details '.repeat(400) }, ...names.map(image)],
+    source: { kind: 'user' },
+  }))
+  await agent.whenIdle()
+  const nodes = agent.session.surface.nodes
+  return { start: nodes.at(-2)!, end: nodes.at(-1)! }
+}
+
+describe('summary image offload', () => {
+  it.each([new Error('summary failed'), new LlmError('no count', IMAGE_OFFLOAD_REQUIRED_CODE)])('delegates unhandled summary errors: %s', async (error) => {
+    const { ctx, agent } = await summaryHarness([])
+    expect(ctx.waterfall('compaction/summary-error', { session: agent.session, sourceEventSeqs: [], error }, () => false)).toBe(false)
+    expect(decisions(agent.session)).toEqual([])
+  })
+
+  it('recovers the real summary serializer with a tighter image budget and fresh pricing', async () => {
+    const { compact, agent, adapter } = await summaryHarness([textResponse('answer'), textResponse('checkpoint')])
+    const span = await seedImages(agent, ['first', 'second'])
+    adapter.serializeSummary = true
+    const result = await compact.compactNow(agent, new AbortController().signal)
+    expect(result).not.toBeNull()
+    expect(adapter.requests.map(offloadedNames)).toEqual([[], [], ['first', 'second']])
+    expect(adapter.requests.slice(1).map(request => request.model)).toEqual(['summary', 'summary'])
+    const events = agent.session.snapshotEvents()
+    const types = events.map(event => event.type)
+    expect(types.filter(type => type === 'compaction/start')).toHaveLength(1)
+    expect(types.filter(type => type === 'compaction/end')).toHaveLength(1)
+    const [decision] = decisions(agent.session)
+    expect(decision?.data.targets).toEqual([{ seq: span.start, imageIndexes: [0, 1] }])
+    expect(decision!.seq).toBeLessThan(types.indexOf('compaction/summary'))
+    expect(events[span.start]).not.toHaveProperty('data.content.1.offloaded')
+    expect(types).not.toContain('compaction/prune')
+    expect(types).not.toContain('llm/retry')
+  })
+
+  it('offloads only the selected summary span and stops after exhausting its images', async () => {
+    const { compact, agent, adapter } = await summaryHarness([
+      textResponse('before'), textResponse('selected'), textResponse('after'),
+      offloadRequired(1), offloadRequired(1), offloadRequired(1),
+    ])
+    await seedImages(agent, ['outside-before'])
+    const selected = await seedImages(agent, ['first', 'second'])
+    await seedImages(agent, ['outside-after'])
+    agent.session.append('turn/start', { turn: 4 })
+    await expect(compact.compactRegion(selected.start, selected.end, agent)).rejects.toMatchObject({ code: IMAGE_OFFLOAD_REQUIRED_CODE })
+    expect(adapter.requests.slice(3).map(offloadedNames)).toEqual([[], ['first'], ['first', 'second']])
+    expect(decisions(agent.session).map(event => event.data.targets)).toEqual([
+      [{ seq: selected.start, imageIndexes: [0] }], [{ seq: selected.start, imageIndexes: [1] }],
+    ])
+    expect(agent.session.surface.replaceGeneration).toBe(0)
+    expect(agent.session.snapshotEvents().at(-1)).toMatchObject({ type: 'compaction/end', data: { error: expect.any(String) } })
+  })
+
+  it('preserves omission when a subsequent summary failure is terminal', async () => {
+    const { compact, agent, adapter } = await summaryHarness([
+      textResponse('answer'), offloadRequired(1), () => { throw new LlmError('provider outage', 'SERVER') },
+    ])
+    await seedImages(agent, ['first'])
+    await expect(compact.compactNow(agent, new AbortController().signal)).rejects.toMatchObject({ code: 'summary', cause: { code: 'SERVER' } })
+    expect(adapter.requests).toHaveLength(3)
+    expect(decisions(agent.session)).toHaveLength(1)
+    expect(agent.session.surface.replaceGeneration).toBe(0)
+  })
+
+  it('does not record a decision after cancellation during a failed summary', async () => {
+    const controller = new AbortController()
+    const reason = new Error('cancel summary')
+    const { compact, agent, adapter } = await summaryHarness([
+      textResponse('answer'), () => { controller.abort(reason); return offloadRequired(1)() },
+    ])
+    await seedImages(agent, ['first'])
+    await expect(compact.compactNow(agent, controller.signal)).rejects.toBe(reason)
+    expect(adapter.requests).toHaveLength(2)
+    expect(decisions(agent.session)).toEqual([])
+  })
+
+  it('does not retry when cancellation follows a durable omission', async () => {
+    const { ctx, compact, agent, adapter } = await summaryHarness([textResponse('answer'), offloadRequired(1)])
+    await seedImages(agent, ['first'])
+    const controller = new AbortController()
+    const reason = new Error('cancel after offload')
+    ctx.on('session/event', (_session, event) => { if (event.type === 'image/offload') controller.abort(reason) })
+    await expect(compact.compactNow(agent, controller.signal)).rejects.toBe(reason)
+    expect(adapter.requests).toHaveLength(2)
+    expect(decisions(agent.session)).toHaveLength(1)
+  })
+
+  it('rejects a concurrently changed selection before recording omission', async () => {
+    const { compact, agent, adapter } = await summaryHarness([textResponse('answer')])
+    const selected = await seedImages(agent, ['first'])
+    adapter.script.push(() => {
+      agent.session.append('user/message', createUserMessage({ content: [{ type: 'text', text: 'replacement' }], source: { kind: 'user' } }), {
+        surfaceOp: { op: 'replace', startSeq: selected.start, endSeq: selected.end },
+        sourceEventSeqs: [selected.start, selected.end],
+      })
+      return offloadRequired(1)()
+    })
+    await expect(compact.compactNow(agent, new AbortController().signal)).rejects.toMatchObject({ code: 'changed' })
+    expect(decisions(agent.session)).toEqual([])
+  })
+})
 
 describe('compaction-image-offload', () => {
   it('logs one exact image selection and retries without replacing the message', async () => {

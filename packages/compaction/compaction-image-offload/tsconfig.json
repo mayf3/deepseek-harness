@@ -10,7 +10,7 @@
   "references": [
     { "path": "../../../vendor/cosmokit" },
     { "path": "../../../vendor/cordis" },
-    { "path": "../../../vendor/schemastery" },
+    { "path": "../compaction" },
     { "path": "../../llm/llm" },
     { "path": "../../core/session" },
     { "path": "../../core/agent" }

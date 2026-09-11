@@ -35,7 +35,7 @@ Mount this plugin in every composition that runs the agent loop with an image-ca
 
 ### What you can observe
 
-Each decision appends one `image/offload` event identifying the selected occurrences by current message-event sequence and depth-first image index. The message events and surface node identities remain unchanged. The retried request follows a fresh `request/header` identifying a new message series.
+Each decision appends one `image/offload` event identifying the selected occurrences by current message-event sequence and depth-first image index. The message events and surface node identities remain unchanged. An agent retry follows a fresh `request/header` identifying a new message series. Summary retries remain inside the same compaction bracket.
 
 ### Failures and recovery
 
@@ -50,6 +50,8 @@ The plugin acts only on `IMAGE_OFFLOAD_REQUIRED` failures that carry `offloadIma
 <summary>Implementation internals — click to expand</summary>
 
 The recovery listener owns selection and retry policy. It reads Session's projected messages, selects the oldest retained input images in request order, and commits the complete selection in one event. Session validates and applies those exact references during append and replay; its shared derivation supplies requests, compaction, and later message rewrites. Token measurement folds the same selections without replacement shadow prices.
+
+Summary failures use the synchronous `compaction/summary-error` waterfall. The plugin selects only the supplied summary region and returns true after recording an omission. The compaction backend re-derives and re-prices that region before retrying; each retry omits additional retained occurrences, so recovery ends when none remain. Cancellation and unrelated selection changes reject the summary. Recorded omissions survive later failure or cancellation.
 
 No runtime invariant companion is published: Session rejects invalid or repeated image references before commit, and this executor retains no separate mutable offload state.
 

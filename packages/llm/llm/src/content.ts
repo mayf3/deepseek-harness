@@ -211,12 +211,11 @@ function base64Length(bytes: number): number {
 
 /**
  * Visit every image occurrence of typed content in message order, including
- * nested tool-result content. Budget accounting, adapter validation, and
- * pricing share this request-content walk.
+ * nested tool-result content.
  * @param content - typed model content blocks.
  * @param visit - called once per occurrence.
  */
-export function visitImageBlocks(content: readonly ContentBlock[], visit: (block: ImageBlock) => void): void {
+function visitImageBlocks(content: readonly ContentBlock[], visit: (block: ImageBlock) => void): void {
   for (const block of content) {
     if (block.type === 'image') visit(block)
     else if (block.type === 'tool-result') visitImageBlocks(block.content, visit)

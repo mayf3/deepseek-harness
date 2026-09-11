@@ -196,6 +196,7 @@ export const EVENT_SCOPE_PAGE: Record<string, string> = {
   'api-session': 'session.md',
   'approval': 'approval.md',
   'commands': 'commands.md',
+  'compaction': 'compaction.md',
   'cordis': 'extensions.md',
   'authorization': 'credentials.md',
   'credentials': 'credentials.md',

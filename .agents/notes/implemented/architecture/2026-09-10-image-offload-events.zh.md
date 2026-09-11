@@ -12,6 +12,8 @@ Status: implemented
 
 `dsh-compaction-image-offload` 在 `agent/request-error` waterfall 上负责恢复。`IMAGE_OFFLOAD_REQUIRED` 失败提供 `offloadImages`，插件按当前 surface 顺序选择该数量最旧且仍保留的输入图片出现位置，追加一个 `image/offload` 事件，再返回 `retry`。Assistant 输出图片不参与选择。没有保留的输入图片时，插件委托后续处理。其他失败不进入这项恢复。图片省略不消耗提供方重试预算，也不产生 `llm/retry`。
 
+摘要请求不经过 agent 错误 waterfall。`dsh-compaction-basic` 保留完整的 `LlmFailure`，检查取消和选区稳定性，再携带所选事件序号触发同步的 `compaction/summary-error`。同一个图片省略插件只在选区内记录省略。同步恢复使稳定性检查与决策相邻执行。后端随后重新派生输入并计价，包括判断摘要是否缩短输入的基准。每次重试都必须继续省略图片，无图可省略时委派失败。后续摘要失败或取消仍保留已经记录的省略，因此命令错误不声称会话未变。
+
 事件载荷为 `{ targets: [{ seq, imageIndexes }] }`。每个目标指向当前的 `user/message` 或 `tool/result` 节点。索引从零开始且严格递增，按内容深度优先顺序枚举所有图片，包括嵌套工具结果和先前省略的图片。相同附件 ID 的多次出现分别计数。位置替换改变 surface 顺序后，明确选择仍没有歧义，附件 ID 或原始日志前缀无法标识这个集合。
 
 事件不带 `surfaceOp`，不创建消息，也不替换消息节点。Session 在提交前校验全部目标，拒绝缺失或已被遮蔽的节点、输出图片、重复目标、无效索引和已被省略的位置。重建过程派生不可变消息副本，将记录的位置标为 `ImageBlock.offloaded: true`。原始事件、消息 ID、来源和未受影响的内容块保持不变。恢复、分叉和回放从日志应用相同的选择。
