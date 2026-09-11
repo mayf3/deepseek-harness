@@ -8,6 +8,7 @@ import type { Readable } from 'node:stream'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { execa } from 'execa'
 import { describe, expect, it } from 'vitest'
+import { stageStartupBundle } from '../../../startup-bundle.ts'
 
 const repoRoot = fileURLToPath(new URL('../../../../../../', import.meta.url))
 const dshBin = join(repoRoot, 'apps/cli/lib/bin.js')
@@ -46,6 +47,7 @@ function createFixture(): Fixture {
     '}',
     '',
   ].join('\n'))
+  writeFileSync(join(root, 'schema-failure.mjs'), 'export const Config = { "~standard": { version: 1, vendor: "startup", validate() { return { issues: [{ message: "web schema failure" }] } } } }; export function apply() {}\n')
   writeFileSync(join(root, 'sync-failure.mjs'), 'export function apply() { throw new Error("web sync apply failure") }\n')
   writeFileSync(join(root, 'async-failure.mjs'), [
     'export async function apply() {',
@@ -61,10 +63,9 @@ function createFixture(): Fixture {
   ].join('\n'))
   const patch = join(root, 'failures.patch.yml')
   writeFileSync(patch, [
-    '- id: tool-todo',
-    '  disabled: false',
-    '  config: {}',
     '- insert:',
+    '    - id: web-probe-schema-failure',
+    `      name: ${pathToFileURL(join(root, 'schema-failure.mjs')).href}`,
     '    - id: web-probe-good',
     `      name: ${pathToFileURL(join(root, 'good.mjs')).href}`,
     '      config:',
@@ -134,10 +135,10 @@ async function waitForStartup(
 describe.skipIf(!builtArtifactsExist)('dsh Web profile best-effort startup', () => {
   it('serves the full Web app while unrelated entries fail to start', async () => {
     const fixture = createFixture()
+    stageStartupBundle(fixture.home, 'web', fixture.patch)
     const child = execa(process.execPath, [
       dshBin,
       '--profile', 'web',
-      '--patch', fixture.patch,
       '--no-open',
       '--port', '0',
     ], {
@@ -169,7 +170,7 @@ describe.skipIf(!builtArtifactsExist)('dsh Web profile best-effort startup', () 
       expect(html).toContain('__DSH_BOOT__')
       expect(readFileSync(fixture.events, 'utf8')).toBe('good apply\n')
       expect(startup.stderr).toContain('web-probe-import-failure')
-      expect(startup.stderr).toContain('@deepseek-ai/dsh-tool-todo')
+      expect(startup.stderr).toContain('web schema failure')
       expect(startup.stderr).toContain('web sync apply failure')
       expect(startup.stderr).toContain('web async apply failure')
       expect(startup.stderr).toContain('pending (waiting for service: webProbeMissingService)')
@@ -316,11 +317,11 @@ describe.skipIf(!builtArtifactsExist)('dsh Web profile best-effort startup', () 
       `      name: ${pathToFileURL(plugin).href}`,
       '',
     ].join('\n'))
+    stageStartupBundle(fixture.home, 'web', fixture.patch)
     try {
       const result = await execa(process.execPath, [
         dshBin,
         '--profile', 'web',
-        '--patch', fixture.patch,
         '--no-open',
         '--port', '0',
       ], {
