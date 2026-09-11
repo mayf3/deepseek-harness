@@ -104,7 +104,7 @@ export class LocalSubprocessRuntime extends SubprocessRuntime {
       pending.push(Promise.all([
         handle.done.catch(() => {}),
         handle.waitForExit(),
-      ]).then(() => { this.live.delete(handle) }))
+      ]).then(() => { handle.control?.destroy(); this.live.delete(handle) }))
     }
     for (const terminal of this.terminals) {
       pending.push(terminal.terminate().then(() => { this.terminals.delete(terminal) }))

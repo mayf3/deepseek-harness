@@ -75,6 +75,41 @@ function api(overrides: Partial<CurrentTokenProcessBindings> = {}): CurrentToken
 }
 
 describe('ordinary Job process operations', () => {
+  it('supplies fd 7 in the child CRT startup table and releases its temporary inheritance', () => {
+    let descriptorBytes: Buffer | undefined
+    const flags = vi.fn(() => 1)
+    const bindings = api({
+      getFileType: vi.fn(() => 3),
+      setHandleInformation: flags,
+      createProcessW: vi.fn((_app, _line, _pa, _ta, _inherit, _flags, _env, _cwd, startupPointer, processInfo) => {
+        const startup = koffi.decode(startupPointer, STARTUPINFOW) as { cbReserved2: number; lpReserved2: NativePtr }
+        descriptorBytes = Buffer.from(koffi.decode(startup.lpReserved2, 'uint8', startup.cbReserved2) as number[])
+        koffi.encode(processInfo, PROCESS_INFORMATION, { hProcess: 60n, hThread: 61n, dwProcessId: 1234, dwThreadId: 5678 })
+        return 1
+      }),
+    })
+    expect(spawnCurrentTokenJobProcess(bindings, options({
+      stdio: { stdin: 4, stdout: 5, stderr: 6, control: 7 },
+    }))).toEqual({ pid: 1234, process: 60n, job: 50n })
+    const bytes = descriptorBytes as Buffer
+    expect(bytes.readUInt32LE(0)).toBe(8)
+    expect([...bytes.subarray(4, 12)]).toEqual([9, 9, 9, 0, 0, 0, 0, 9])
+    expect(bytes.readBigUInt64LE(12 + 7 * 8)).toBe(107n)
+    expect(bytes.readBigUInt64LE(12 + 3 * 8)).toBe(0xffff_ffff_ffff_ffffn)
+    expect(flags).toHaveBeenCalledWith(107n, 1, 1)
+    expect(flags).toHaveBeenCalledWith(107n, 1, 0)
+  })
+
+  it('refuses a control carrier that is not a pipe before creating the target', () => {
+    const bindings = api({ getFileType: vi.fn(() => 1) })
+    expect(() => spawnCurrentTokenJobProcess(bindings, options({
+      stdio: { stdin: 4, stdout: 5, stderr: 6, control: 7 },
+    }))).toThrow('not a Windows pipe')
+    expect(bindings.createProcessW).not.toHaveBeenCalled()
+    expect(bindings.closeHandle).toHaveBeenCalledWith(50n)
+    expect(bindings.setHandleInformation).toHaveBeenCalledWith(107n, 1, 0)
+  })
+
   it('creates suspended, assigns the Job, and resumes before returning', () => {
     const events: string[] = []
     const createProcessW = vi.fn((

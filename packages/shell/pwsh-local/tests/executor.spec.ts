@@ -206,6 +206,7 @@ describe('spawn construction (pure, every platform)', () => {
     override spawn(spec: SubprocessSpawnSpec): SubprocessHandle {
       this.specs.push(spec)
       return {
+        control: undefined,
         stdin: undefined,
         stdout: undefined,
         stderr: undefined,

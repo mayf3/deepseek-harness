@@ -307,6 +307,7 @@ describe('LocalBashExecutor.start (background process handles)', () => {
       }),
     }
     vi.spyOn(ctx.subprocess, 'spawn').mockReturnValue({
+      control: undefined,
       stdin: undefined,
       stdout: undefined,
       stderr: undefined,
@@ -336,6 +337,7 @@ describe('LocalBashExecutor.start (background process handles)', () => {
       value: () => { throw new Error('provider formatting must not escape') },
     })
     vi.spyOn(ctx.subprocess, 'spawn').mockReturnValue({
+      control: undefined,
       stdin: undefined,
       stdout: undefined,
       stderr: undefined,

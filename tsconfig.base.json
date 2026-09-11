@@ -401,6 +401,7 @@
       "@deepseek-ai/dsh-subagent-in-process-driver": ["./packages/subagent/subagent-in-process-driver/src"],
       "@deepseek-ai/dsh-subagent-spawn-in-process": ["./packages/subagent/subagent-spawn-in-process/src"],
       "@deepseek-ai/dsh-subprocess": ["./packages/subprocess/subprocess/src"],
+      "@deepseek-ai/dsh-subprocess/control": ["./packages/subprocess/subprocess/src/control.ts"],
       "@deepseek-ai/dsh-subprocess-local": ["./packages/subprocess/subprocess-local/src"],
       "@deepseek-ai/dsh-system-prompt": ["./packages/core/system-prompt/src"],
       "@deepseek-ai/dsh-system-prompt/invariant": ["./packages/core/system-prompt/src/invariant.ts"],
