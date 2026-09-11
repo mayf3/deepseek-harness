@@ -34,7 +34,7 @@ type WorkspaceViewActions = {
   setOrderBy: (
     draft: WorkspaceViewState,
     mode: SessionOrderBy,
-    initialOrders?: Readonly<Record<string, readonly string[]>>,
+    initialOrders: Readonly<Record<string, readonly string[]>>,
   ) => void
   setGroupExpanded: (draft: WorkspaceViewState, key: string, expanded: boolean) => void
   retainAccountKeys: (draft: WorkspaceViewState, workspaceKeys: readonly string[]) => void
@@ -46,7 +46,7 @@ type WorkspaceViewActions = {
     draft: WorkspaceViewState,
     accountKey: string,
     order: readonly string[],
-    initialOrders?: Readonly<Record<string, readonly string[]>>,
+    initialOrders: Readonly<Record<string, readonly string[]>>,
   ) => void
 }
 
@@ -72,7 +72,7 @@ export function createWorkspaceViewStore(): EngineStoreHandle<WorkspaceViewState
     persist: 'dsh.workspace.view.v5',
     actions: {
       setGroupBy: (d, mode: SessionGroupBy) => { d.groupBy = mode },
-      setOrderBy: (d, mode: SessionOrderBy, initialOrders = {}) => {
+      setOrderBy: (d, mode: SessionOrderBy, initialOrders) => {
         if (mode === d.orderBy) return
         d.sessionOrderByAccount = mode === 'manual' ? copySessionOrders(initialOrders) : {}
         d.orderBy = mode
@@ -92,7 +92,7 @@ export function createWorkspaceViewStore(): EngineStoreHandle<WorkspaceViewState
         if (d.orderBy !== 'manual') return
         Object.assign(d.sessionOrderByAccount, copySessionOrders(orders))
       },
-      setSessionOrder: (d, accountKey, order, initialOrders = {}) => {
+      setSessionOrder: (d, accountKey, order, initialOrders) => {
         if (d.orderBy === 'updated') d.sessionOrderByAccount = copySessionOrders(initialOrders)
         d.orderBy = 'manual'
         d.sessionOrderByAccount[accountKey] = [...order]

@@ -374,33 +374,36 @@ export function deriveGroups(
 }
 
 /**
- * Derive the flat session list ("In one list" mode): every session — fork
- * children included — as a top-level row, newest-first with the selected
- * provisional blank pinned first. No grouping, no parent/child adjacency.
- * Content search lives outside this derivation
- * (see {@link deriveSearchResults}).
+ * Select flat-list members without deriving row presentation or ordering.
  * @param list - sessions list snapshot.
  * @param archivedSessionIds - registry-global archive set.
+ * @returns known visible Session ids in list order, including ordinary forks and only the current blank.
+ */
+export function visibleSessionIds(
+  list: SessionListState,
+  archivedSessionIds: readonly SessionId[],
+): SessionId[] {
+  const archived = new Set(archivedSessionIds)
+  return list.ids.filter((id) => {
+    const s = list.byId[id]
+    return s !== undefined && sessionVisible(s, list.current, archived)
+  })
+}
+
+/**
+ * Derive flat rows from the browser's ordered visible Session ids.
+ * @param list - sessions list snapshot used to select the ids.
+ * @param sessionIds - known visible members in render order, including any pinned blank.
  * @param pendingInteractions - pending UI interactions by Session.
- * @returns flat rows in render order.
+ * @returns flat rows in the supplied order with current status indicators.
  */
 export function deriveFlat(
   list: SessionListState,
-  archivedSessionIds: readonly SessionId[],
+  sessionIds: readonly SessionId[],
   pendingInteractions: SessionPendingInteractions,
 ): SessionNode[] {
-  const archived = new Set(archivedSessionIds)
   const descendants = indexSubagentDescendants(list.byId)
-  const visibleIds: SessionId[] = []
-  for (const id of list.ids) {
-    const s = list.byId[id]
-    if (s === undefined || !sessionVisible(s, list.current, archived)) continue
-    visibleIds.push(id)
-  }
-  const currentBlank = list.current !== undefined && list.byId[list.current]?.blank === true
-    ? list.current
-    : undefined
-  return pinCurrentBlank(orderByRecency(visibleIds, list.byId), currentBlank)
+  return sessionIds
     .map(id => sessionNode(list.byId[id] as SessionSummary, descendants, pendingInteractions))
 }
 

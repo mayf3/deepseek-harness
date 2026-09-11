@@ -25,7 +25,7 @@ afterEach(cleanup)
 const scrollIntoView = vi.fn()
 beforeEach(() => {
   localStorage.clear()
-  createWorkspaceViewStore().create().actions.setOrderBy('manual')
+  createWorkspaceViewStore().create().actions.setOrderBy('manual', {})
   Element.prototype.scrollIntoView = scrollIntoView
   scrollIntoView.mockClear()
 })
@@ -117,9 +117,9 @@ describe('WorkspaceBrowser', () => {
     const preferences = createWorkspaceViewStore().create()
     preferences.actions.setGroupBy(mode === 'flat' ? 'flat' : 'workspace')
     const account = mode === 'ungrouped' ? UNGROUPED_KEY : 'alpha'
-    preferences.actions.setSessionOrder(account, ['older', 'newer'])
-    preferences.actions.setSessionOrder(UNGROUPED_KEY, ['older', 'newer'])
-    preferences.actions.setSessionOrder(FLAT_SESSION_ORDER_KEY, ['older', 'newer'])
+    preferences.actions.setSessionOrder(account, ['older', 'newer'], {})
+    preferences.actions.setSessionOrder(UNGROUPED_KEY, ['older', 'newer'], {})
+    preferences.actions.setSessionOrder(FLAT_SESSION_ORDER_KEY, ['older', 'newer'], {})
     preferences.actions.setGroupExpanded(account, true)
     preferences.actions.setGroupExpanded(UNGROUPED_KEY, true)
     localStorage.setItem('dsh.workspace.view.v5', JSON.stringify({ ...preferences.getSnapshot(), orderBy: 'updated' }))
@@ -146,7 +146,7 @@ describe('WorkspaceBrowser', () => {
       useWorkspaces: b.props.useWorkspaces,
     })
     expect(names()).toEqual(['newer', 'older'])
-    act(() => { restored.store.actions.setOrderBy('manual') })
+    act(() => { restored.store.actions.setOrderBy('manual', {}) })
     expect(names()).toEqual(['newer', 'older'])
   })
 
@@ -266,7 +266,7 @@ describe('WorkspaceBrowser', () => {
     const b = mount({ useWorkspaces: hook(pending) })
     act(() => {
       b.store.actions.setGroupExpanded('deleted', true)
-      b.store.actions.setSessionOrder('deleted', ['session'])
+      b.store.actions.setSessionOrder('deleted', ['session'], {})
     })
     expect(b.store.getSnapshot().groupExpansion).toEqual({ deleted: true })
 

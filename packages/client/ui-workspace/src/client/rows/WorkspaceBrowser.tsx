@@ -24,7 +24,7 @@ import type { WorkspaceBrowserProps } from '../contract/slots.ts'
 import type { SessionNode, SessionOrderBy } from '../tree.ts'
 import {
   deriveFlat, deriveGroups, deriveSearchResults, orderByRecency, owningGroupKey,
-  pinCurrentBlank, reconcileManualOrder, UNGROUPED_KEY,
+  pinCurrentBlank, reconcileManualOrder, UNGROUPED_KEY, visibleSessionIds,
 } from '../tree.ts'
 import { ProjectRowItem, SearchResultItem, SessionNodeItem } from './Rows.tsx'
 import { FLAT_SESSION_ORDER_KEY } from '../stores.ts'
@@ -505,7 +505,7 @@ function SessionTree({
 /** The flat "In one list" body: every session is one draggable top-level row. */
 function FlatList({
   list, sessionIds, useSessionPendingInteraction, open, forkSession, onSessionRename, onSessionArchive,
-  archivedSessionIds, usePanelInfo, setSessionOrder,
+  usePanelInfo, setSessionOrder,
   revealSessionId, onSessionRevealed, t,
 }: Pick<
   SessionTreeProps,
@@ -514,7 +514,6 @@ function FlatList({
   | 'forkSession'
   | 'onSessionRename'
   | 'onSessionArchive'
-  | 'archivedSessionIds'
   | 'usePanelInfo'
   | 'setSessionOrder'
   | 'revealSessionId'
@@ -526,17 +525,10 @@ function FlatList({
 }) {
   const panelActive = usePanelInfo(info => info.activePanelId !== null)
   const pendingInteractions = useSessionPendingInteraction(s => s)
-  const baseRows = useMemo(
-    () => deriveFlat(list, archivedSessionIds, pendingInteractions),
-    [list, archivedSessionIds, pendingInteractions],
+  const rows = useMemo(
+    () => deriveFlat(list, sessionIds, pendingInteractions),
+    [list, sessionIds, pendingInteractions],
   )
-  const rows = useMemo(() => {
-    const byId = new Map(baseRows.map(row => [row.id, row]))
-    return sessionIds.flatMap((id) => {
-      const row = byId.get(id)
-      return row === undefined ? [] : [row]
-    })
-  }, [baseRows, sessionIds])
   const [drag, setDrag] = useState<DragState | null>(null)
   const dropCommitted = useRef(false)
   useNativeDragAcceptance(drag !== null)
@@ -749,7 +741,7 @@ export function WorkspaceBrowser({
     return list.ids.filter(id => list.byId[id] !== undefined && !accounted.has(id))
   }, [list, workspaces])
   const flatMemberIds = useMemo(
-    () => deriveFlat(list, archivedSessionIds, new Map()).map(row => row.id),
+    () => visibleSessionIds(list, archivedSessionIds),
     [archivedSessionIds, list],
   )
   const orderedWorkspaces = useMemo(() => workspaces.map((workspace) => {
@@ -1183,7 +1175,6 @@ export function WorkspaceBrowser({
                 useSessionPendingInteraction={useSessionPendingInteraction}
                 open={open} forkSession={forkSession}
                 onSessionRename={onSessionRename} onSessionArchive={onSessionArchive}
-                archivedSessionIds={archivedSessionIds}
                 setSessionOrder={saveSessionOrder}
                 revealSessionId={revealSessionId}
                 onSessionRevealed={acknowledgeSessionReveal}

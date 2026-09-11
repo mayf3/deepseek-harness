@@ -6,7 +6,7 @@ import type { ScheduleId, ScheduleRecord } from '@deepseek-ai/dsh-schedule/clien
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import {
   deriveFlat, deriveGroups, deriveSearchResults, orderByRecency, owningGroupKey,
-  pinCurrentBlank, reconcileManualOrder, workspaceLabel, UNGROUPED_KEY,
+  pinCurrentBlank, reconcileManualOrder, visibleSessionIds, workspaceLabel, UNGROUPED_KEY,
 } from '../src/client/tree.ts'
 import { createWorkspaceViewStore } from '../src/client/stores.ts'
 
@@ -96,7 +96,7 @@ describe('deriveGroups', () => {
       sessions, [workspace('project', ['awaiting'])], noArchive, attention, view(['project']),
     )
     expect(grouped[0]!.sessions[0]).toMatchObject({ pendingInteraction: 'plan-review', running: true })
-    expect(deriveFlat(sessions, noArchive, attention)[0])
+    expect(deriveFlat(sessions, visibleSessionIds(sessions, noArchive), attention)[0])
       .toMatchObject({ pendingInteraction: 'plan-review', running: true })
   })
 
@@ -109,7 +109,7 @@ describe('deriveGroups', () => {
         { key: `${kind}:1`, kind, sessionId: awaiting.id },
       ]])
 
-      expect(deriveFlat(list(awaiting), noArchive, attention)[0]?.pendingInteraction).toBe(kind)
+      expect(deriveFlat(list(awaiting), [awaiting.id], attention)[0]?.pendingInteraction).toBe(kind)
     },
   )
 
@@ -175,7 +175,8 @@ describe('deriveGroups', () => {
     const plainNode = groups[0]!.sessions.find(session => session.id === plain.id)!
     expect(doneNode.completed).toBe(true)
     expect(plainNode.completed).toBe(false)
-    expect(deriveFlat(sessions, noArchive, noAttention).find(node => node.id === done.id)!.completed).toBe(true)
+    expect(deriveFlat(sessions, visibleSessionIds(sessions, noArchive), noAttention)
+      .find(node => node.id === done.id)!.completed).toBe(true)
     const search = deriveSearchResults(
       sessions, [workspace('first', ['done', 'plain'])], 'done', noArchive,
       noAttention, { items: [], hasMore: false }, 10,
@@ -206,7 +207,7 @@ describe('deriveGroups', () => {
     expect(deriveGroups(
       sessions, workspaces, noArchive, noAttention, view(['project']),
     )[0]!.sessions.map(node => [node.id, node.hasActiveSchedule])).toEqual(expected)
-    expect(deriveFlat(sessions, noArchive, noAttention)
+    expect(deriveFlat(sessions, visibleSessionIds(sessions, noArchive), noAttention)
       .map(node => [node.id, node.hasActiveSchedule])).toEqual(expected)
     expect(deriveSearchResults(
       sessions, workspaces, 'project', noArchive, noAttention, { items: [], hasMore: false }, 10,
@@ -238,8 +239,9 @@ describe('deriveGroups', () => {
     expect(groups[0]!.sessionCount).toBe(2)
     expect(groups[0]!.sessions[0]).toMatchObject({ running: false, runningSubagentCount: 2 })
     expect(groups[0]!.sessions[1]).toMatchObject({ running: false, runningSubagentCount: 1 })
-    expect(deriveFlat(sessions, noArchive, noAttention).map(node => [node.id, node.runningSubagentCount])).toEqual([
-      [fork.id, 1], [parent.id, 2],
+    expect(deriveFlat(sessions, visibleSessionIds(sessions, noArchive), noAttention)
+      .map(node => [node.id, node.runningSubagentCount])).toEqual([
+      [parent.id, 2], [fork.id, 1],
     ])
     expect(deriveSearchResults(
       sessions, [workspace('first', ['parent', 'fork'])], 'parent', noArchive,
@@ -322,40 +324,36 @@ describe('deriveGroups', () => {
 })
 
 describe('deriveFlat', () => {
-  it('flattens every session — fork children included — newest-first with id tiebreak', () => {
+  it('renders ordinary forks in the supplied order regardless of timestamps', () => {
     const parent = summary('parent', 10)
     const child = { ...summary('child', 30), parentId: parent.id }
     const tieB = summary('tie-b', 20)
     const tieA = summary('tie-a', 20)
-    const rows = deriveFlat(list(parent, child, tieB, tieA), noArchive, noAttention)
-    expect(rows.map(row => row.id)).toEqual([sid('child'), sid('tie-a'), sid('tie-b'), sid('parent')])
+    const rows = deriveFlat(list(parent, child, tieB, tieA), [parent.id, tieA.id, child.id, tieB.id], noAttention)
+    expect(rows.map(row => row.id)).toEqual([parent.id, tieA.id, child.id, tieB.id])
   })
 
   it('hides subagent-origin rows but keeps ordinary forks', () => {
     const parent = summary('parent', 1)
     const fork = { ...summary('fork', 2), parentId: parent.id }
     const subagent = { ...summary('subagent', 3), parentId: parent.id, origin: 'subagent' as const }
-    const rows = deriveFlat(
-      { ...list(parent, fork, subagent), current: subagent.id },
-      noArchive,
-      noAttention,
-    )
-    expect(rows.map(row => row.id)).toEqual([fork.id, parent.id])
+    const ids = visibleSessionIds({ ...list(parent, fork, subagent), current: subagent.id }, noArchive)
+    expect(ids).toEqual([parent.id, fork.id])
   })
 
   it('tolerates ids whose summary has not landed yet', () => {
     const partial: SessionListState = { ...list(summary('present', 1)), ids: [sid('ghost'), sid('present')] }
-    expect(deriveFlat(partial, noArchive, noAttention).map(row => row.id)).toEqual([sid('present')])
+    expect(visibleSessionIds(partial, noArchive)).toEqual([sid('present')])
   })
 
   it('shows only the current blank session and excludes blanks from search', () => {
     const currentBlank = { ...summary('current-blank', 9), blank: true }
     const staleBlank = { ...summary('stale-blank', 8), blank: true }
     const sessions = {
-      ...list(summary('real', 1), currentBlank, staleBlank),
+      ...list(currentBlank, summary('real', 1), staleBlank),
       current: currentBlank.id,
     }
-    const rows = deriveFlat(sessions, noArchive, noAttention)
+    const rows = deriveFlat(sessions, visibleSessionIds(sessions, noArchive), noAttention)
     expect(rows.map(row => row.id)).toEqual([currentBlank.id, sid('real')])
     expect(rows.map(row => row.title)).toEqual(['', 'real'])
     expect(rows.map(row => row.blank)).toEqual([true, false])
@@ -364,7 +362,7 @@ describe('deriveFlat', () => {
   it('hides archived sessions in flat mode', () => {
     const kept = summary('kept', 1)
     const gone = summary('gone', 2)
-    expect(deriveFlat(list(kept, gone), archived('gone'), noAttention).map(row => row.id)).toEqual([kept.id])
+    expect(visibleSessionIds(list(kept, gone), archived('gone'))).toEqual([kept.id])
   })
 })
 
@@ -523,9 +521,9 @@ describe('createWorkspaceViewStore', () => {
     expect(store.getSnapshot().groupBy).toBe('workspace')
     expect(store.getSnapshot().orderBy).toBe('updated')
     store.actions.setGroupBy('flat')
-    store.actions.setOrderBy('updated')
+    store.actions.setOrderBy('updated', {})
     store.actions.setGroupExpanded('alpha', true)
-    store.actions.setSessionOrder('alpha', ['one', 'two'])
+    store.actions.setSessionOrder('alpha', ['one', 'two'], {})
     expect(store.getSnapshot().groupBy).toBe('flat')
     expect(store.getSnapshot()).toMatchObject({
       orderBy: 'manual',
@@ -536,10 +534,10 @@ describe('createWorkspaceViewStore', () => {
 
   it('retains positions when reselecting Manual and snapshots the supplied order on mode switches', () => {
     const store = createWorkspaceViewStore().create()
-    store.actions.setSessionOrder('alpha', ['two', 'one'])
-    store.actions.setOrderBy('manual')
+    store.actions.setSessionOrder('alpha', ['two', 'one'], {})
+    store.actions.setOrderBy('manual', {})
     expect(store.getSnapshot()).toMatchObject({ orderBy: 'manual', sessionOrderByAccount: { alpha: ['two', 'one'] } })
-    store.actions.setOrderBy('updated')
+    store.actions.setOrderBy('updated', {})
     expect(store.getSnapshot()).toMatchObject({ orderBy: 'updated', sessionOrderByAccount: {} })
     store.actions.setOrderBy('manual', { alpha: ['one', 'two'] })
     expect(store.getSnapshot().sessionOrderByAccount).toEqual({ alpha: ['one', 'two'] })
@@ -568,8 +566,8 @@ describe('createWorkspaceViewStore', () => {
     store.actions.setGroupExpanded('', true)
     store.actions.setGroupExpanded('alpha', true)
     store.actions.setGroupExpanded('deleted', true)
-    store.actions.setSessionOrder('alpha', ['alpha-session'])
-    store.actions.setSessionOrder('deleted', ['deleted-session'])
+    store.actions.setSessionOrder('alpha', ['alpha-session'], {})
+    store.actions.setSessionOrder('deleted', ['deleted-session'], {})
 
     store.actions.retainAccountKeys(['', 'alpha'])
 
