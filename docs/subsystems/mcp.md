@@ -4,13 +4,14 @@ English | [中文](mcp.zh.md)
 
 ## Summary
 
-Model Context Protocol (MCP) connects the model to tools supplied by external servers. Each configured server contributes ordinary harness tools with cancellation, permission checks, recorded results, and supported image output. The official SDK negotiates modern or supported legacy protocol revisions. This reference covers the MCP package group's responsibilities, scope, and composition choices; the [client README](../../packages/mcp/mcp-client/README.md) owns server configuration.
+Model Context Protocol (MCP) connects the model to tools supplied by external servers. Each configured server contributes ordinary harness tools with cancellation, permission checks, recorded results, and supported image output. Optional shared tools discover and read resources, while server instructions join the logged system prompt. The official SDK negotiates modern or supported legacy protocol revisions. This reference covers the MCP package group's responsibilities, scope, and composition choices; the [client README](../../packages/mcp/mcp-client/README.md) owns server configuration.
 
 ## Table of Contents
 
 - [Configuration](#configuration)
 - [Responsibilities and scope](#responsibilities-and-scope)
 - [Protocol and results](#protocol-and-results)
+- [Resources and instructions](#resources-and-instructions)
 - [Limits](#limits)
 - [Further reading](#further-reading)
 
@@ -25,6 +26,8 @@ MCP is opt-in. Mount one `@deepseek-ai/dsh-mcp-client` entry for each server in 
 |---|---|
 | Server identity, local process or HTTP endpoint, credentials, and process environment | [Client configuration](../../packages/mcp/mcp-client/README.md#use-this-package) |
 | Tool-call timeout, startup failure policy, and reconnection | [Client configuration](../../packages/mcp/mcp-client/README.md#use-this-package) |
+| Resource discovery and reading | Mount the [MCP resource service](../../packages/mcp/mcp-resources/README.md#use-this-package); it has no configuration fields |
+| Server instruction size limit | Client `maxInstructionBytes`; the composition supplies [system-prompt assembly](system-prompt.md) |
 | Permission decisions and supported image output | [Tool execution](tools.md) and [attachments](attachment.md) |
 
 Protocol negotiation follows the SDK's supported revisions; there is no product setting that forces a protocol revision. The [configuration catalog](../config-catalog.md#deepseek-aidsh-mcp-client) lists accepted client fields and defaults.
@@ -35,6 +38,8 @@ Protocol negotiation follows the SDK's supported revisions; there is no product 
 ## Responsibilities and scope
 
 The client is a per-server connection plugin and a consumer of the harness tool registry. It does not publish a shared `ctx.mcp` service. The external server implements MCP operations; the SDK owns protocol exchange; the client adapts discovered tools to harness execution.
+
+`mcp-resources` is an optional shared service and tool consumer. It defines the resource-provider interface, selects providers in the caller's scope, and registers one shared set of resource tools. Each MCP client provides resource operations through its own connection. Mounting the resource service does not create connections or change which servers are configured.
 
 Configured `serverName` identifies a server in its registration scope. Two entries in that scope cannot reserve the same name; separate Agent scopes can reuse it. Public tool names include the configured server name, so equally named tools from different servers remain distinct. Registration effects own names and discovered tools; plugin disposal closes the connection and removes its contributions.
 
@@ -51,10 +56,21 @@ The result adapter retains canonical MCP JSON for programmatic callers and prepa
 
 -----
 
+<a id="resources-and-instructions"></a>
+## Resources and instructions
+
+Resource calls require an explicit configured server name. The shared registry resolves that name in the calling Agent's scope before dispatch; unavailable servers fail without a network request. Discovery and reads are on demand, including for servers that expose resources without tools. The [resource package](../../packages/mcp/mcp-resources/README.md) owns pagination and content rendering; its generated tool schemas live in the [tool catalog](../tool-catalog.md#deepseek-aidsh-mcp-resources).
+
+Resource providers remain connection-owned. Scope disposal removes registrations; the MCP client controls cancellation and recovery. Canonical results retain complete JSON for programmatic callers, while the text projection replaces binary blobs with descriptions. Returned text enters ordinary tool history; content is not fetched merely because a server connects.
+
+When system-prompt assembly is composed, the client publishes nonblank server instructions as a scoped, server-attributed section. Instructions remain literal text and pass the configured size limit before publication. A replacement connection publishes instructions only after discovery succeeds; absent instructions add no section. The [system-prompt subsystem](system-prompt.md) owns assembly and recording.
+
+-----
+
 <a id="limits"></a>
 ## Limits
 
-This composition exposes server tools. It does not expose MCP resources, server instructions, prompt templates, human-input elicitation, or task-based execution. Servers without a tools capability connect with an empty tool set. Connection and discovery timeouts follow the SDK; the client has no separate settings for them.
+MCP prompt templates, human-input elicitation, task-based execution, and resource subscriptions are unsupported. Resource access requires the optional resource service; binary resources remain programmatic data with text descriptions for the model. Servers without a tools capability connect with an empty tool set. Connection and discovery timeouts follow the SDK; the client has no separate settings for them.
 
 -----
 
@@ -62,6 +78,7 @@ This composition exposes server tools. It does not expose MCP resources, server 
 ## Further reading
 
 - [MCP package group](../../packages/mcp/README.md) — package entry points.
+- [MCP resources](../../packages/mcp/mcp-resources/README.md) — shared tools and resource-provider semantics.
 - [Third-party memory servers](../user/guide/mcp-memory.md) — product configuration guide.
 - [Protocol negotiation decision](../../.agents/notes/implemented/feature/2026-09-12-mcp-sdk-protocol-negotiation.md) — SDK ownership and compatibility decisions.
 
