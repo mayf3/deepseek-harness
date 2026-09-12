@@ -40,7 +40,7 @@ harness 由 `packages/` 下的 npm 包组装而成，按能力系列分组：会
 | [`ssh/`](ssh/README.zh.md) | POSIX 远端连接及配套文件系统、子进程与沙箱提供方 |
 | [`shell/`](shell/README.zh.md) | Bash 能力系列：执行器 seam、本地实现、面向模型的工具 |
 | [`terminal/`](terminal/README.zh.md) | 持久 PTY 能力系列：限定所有者范围的会话、本地实现、面向模型的工具 |
-| [`code-runtime/`](code-runtime/README.zh.md) | 代码执行能力族：Service Definition + 沙箱 Node 提供方 + PTC mode Consumer |
+| [`ptc-runtime/`](ptc-runtime/README.zh.md) | 代码执行能力族：Service Definition + 沙箱 Node 提供方 + PTC mode Consumer |
 | [`sandbox/`](sandbox/README.zh.md) | 进程限制 seam；bwrap、Landlock、Seatbelt 后端 |
 | [`fs/`](fs/README.zh.md) | 文件系统能力系列：seam、本地实现、面向模型的文件工具、发现工具 |
 | [`lsp/`](lsp/README.zh.md) | LSP 能力系列：seam、通用 stdio 提供方和 `lsp` 工具 |

@@ -21,7 +21,7 @@ import type { PostToolDecision, ToolExecution, ToolExecutionToken } from '@deeps
 import { SpillLocator, SpillStore } from '@deepseek-ai/dsh-spill'
 import type { SaveTextSpill, SpillRef } from '@deepseek-ai/dsh-spill'
 import * as SpillPolicy from '@deepseek-ai/dsh-spill-policy'
-import NodeRuntime, { type Config as NodeRuntimeConfig } from '@deepseek-ai/dsh-code-runtime-node'
+import NodeRuntime, { type Config as NodeRuntimeConfig } from '@deepseek-ai/dsh-ptc-runtime-node'
 import FileSystem from '@deepseek-ai/dsh-fs-local'
 import Subprocess from '@deepseek-ai/dsh-subprocess-local'
 import Sandbox from '@deepseek-ai/dsh-sandbox-local'

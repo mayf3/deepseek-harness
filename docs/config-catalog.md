@@ -401,42 +401,6 @@ export interface Config {
 
 Source: [`packages/client/hmr/src/index.ts:31`](../packages/client/hmr/src/index.ts)
 
-<a id="deepseek-aidsh-code-runtime-node"></a>
-
-## `@deepseek-ai/dsh-code-runtime-node`
-
-Requires: `fs` · `subprocess` · `sandbox` · `sandboxPolicy`
-
-```ts config-catalog
-/** Deployment-varying runtime bounds and launch choices. */
-export interface Config extends LaunchConfig {
-  /** Default elapsed deadline, including nested tool and approval waits. */
-  timeoutMs?: number
-  /** Maximum elapsed deadline accepted by resolve. */
-  maxTimeoutMs?: number
-  /** Combined serialized logs, completion and diagnostic byte cap. */
-  maxOutputBytes?: number
-  /** V8 old-generation heap limit in MiB; native allocations are excluded. */
-  maxOldGenerationSizeMb?: number
-  /** Maximum control frame, outstanding argument and queued control-output bytes. */
-  maxMessageBytes?: number
-  /** Maximum simultaneous host binding calls accepted from a program. */
-  maxPendingCalls?: number
-  /** Managed process termination and output-drain grace in milliseconds. */
-  graceMs?: number
-}
-
-/** Deployment-owned Node executable and optional preinstalled built bootstrap. */
-export interface LaunchConfig {
-  /** Executable in the subprocess world; defaults to the current Node executable. */
-  nodeExecutable?: string
-  /** Absolute preinstalled built bootstrap in the execution world. */
-  bootstrapPath?: string
-}
-```
-
-Source: [`packages/code-runtime/code-runtime-node/src/index.ts:26`](../packages/code-runtime/code-runtime-node/src/index.ts)
-
 <a id="deepseek-aidsh-compaction-basic"></a>
 
 ## `@deepseek-ai/dsh-compaction-basic`
@@ -563,72 +527,6 @@ export interface Config {
 
 Source: [`packages/experimental/agent-team/src/types.ts:130`](../packages/experimental/agent-team/src/types.ts)
 
-<a id="deepseek-aidsh-experimental-code-runtime-python"></a>
-
-## `@deepseek-ai/dsh-experimental-code-runtime-python`
-
-```ts config-catalog
-/** Plugin config: every cap, changeable from `cordis.yml` (no hardcoded tunables). */
-export interface Config {
-  /**
-   * RLIMIT_CPU in whole seconds (a positive integer — `setrlimit` in the child
-   * rejects a float). The child sets the soft limit to `cpuSeconds` and the
-   * hard limit to `cpuSeconds + 1`: the kernel delivers SIGXCPU at the soft
-   * limit, which the host classifies as a `timeout`; the +1s hard limit is a
-   * SIGKILL backstop for a program that traps SIGXCPU. Granularity is whole seconds.
-   */
-  cpuSeconds?: number
-  /** Wall-clock ceiling in milliseconds; backstops CPU time for programs awaiting a promise nobody resolves. */
-  maxWallMs?: number
-  /**
-   * RLIMIT_AS in mebibytes; caps address space so a runaway allocation fails
-   * cleanly. Not applied on Darwin, where the dyld shared cache mapped into
-   * every process at exec exceeds any practical cap and the kernel rejects
-   * the call; `cpuSeconds` and `maxWallMs` still bound the run there. Bounds
-   * `maxLogBytes`/`maxValueBytes` at load on EVERY platform (this static check
-   * runs on Darwin too, where only the runtime `setrlimit` is skipped): each
-   * budget times a worst-case Unicode expansion must fit this byte count minus a
-   * fixed interpreter baseline, so a near-budget output cannot breach the address
-   * space during the child's build-and-encode.
-   */
-  addressSpaceMb?: number
-  /**
-   * Shared byte budget for captured log text (host-side ledger). Bounded at load
-   * against `addressSpaceMb`: the child builds and encodes a near-budget entry
-   * under RLIMIT_AS with several copies live at once, so this cap times the
-   * worst-case Unicode expansion must fit the address space left after the
-   * interpreter baseline (see `addressSpaceMb`) — a load-time rejection, not a
-   * runtime clamp. Also bounded at load by the host's configured heap like
-   * `maxValueBytes` (see its JSDoc): the effective frame cap minus the frame
-   * envelope.
-   */
-  maxLogBytes?: number
-  /**
-   * Byte cap for the completion value. Bounded at load against `addressSpaceMb`
-   * the same way `maxLogBytes` is: the child builds and encodes a near-budget
-   * value under RLIMIT_AS with several copies live at once, so this cap times the
-   * worst-case Unicode expansion must fit the address space left after the
-   * interpreter baseline. Both budgets are ALSO bounded at load by the host's
-   * configured heap: the effective frame cap (the protocol cap, or a lower
-   * heap-derived ceiling when the host heap cannot safely parse a near-cap
-   * frame — see `hostFrameParseCeiling`) minus the frame envelope, so a budget
-   * whose honest frame could OOM the host's own JSON.parse is rejected up
-   * front.
-   */
-  maxValueBytes?: number
-  /** SIGTERM→SIGKILL grace period on kill, matching bash-local's default. */
-  graceMs?: number
-  /**
-   * Absolute path, relative path, or basename of a CPython 3.10+ interpreter.
-   * Resolved and validated once at plugin load under a five-second force-kill
-   * deadline; a basename searches `PATH`.
-   */
-  pythonBin?: string
-}
-```
-
-Source: [`packages/experimental/code-runtime-python/src/index.ts:42`](../packages/experimental/code-runtime-python/src/index.ts)
-
 <a id="deepseek-aidsh-experimental-inspector"></a>
 
 ## `@deepseek-ai/dsh-experimental-inspector`
@@ -696,6 +594,72 @@ export interface InspectorOptions {
 ```
 
 Source: [`packages/experimental/inspector/src/index.ts:66`](../packages/experimental/inspector/src/index.ts)
+
+<a id="deepseek-aidsh-experimental-ptc-runtime-python"></a>
+
+## `@deepseek-ai/dsh-experimental-ptc-runtime-python`
+
+```ts config-catalog
+/** Plugin config: every cap, changeable from `cordis.yml` (no hardcoded tunables). */
+export interface Config {
+  /**
+   * RLIMIT_CPU in whole seconds (a positive integer — `setrlimit` in the child
+   * rejects a float). The child sets the soft limit to `cpuSeconds` and the
+   * hard limit to `cpuSeconds + 1`: the kernel delivers SIGXCPU at the soft
+   * limit, which the host classifies as a `timeout`; the +1s hard limit is a
+   * SIGKILL backstop for a program that traps SIGXCPU. Granularity is whole seconds.
+   */
+  cpuSeconds?: number
+  /** Wall-clock ceiling in milliseconds; backstops CPU time for programs awaiting a promise nobody resolves. */
+  maxWallMs?: number
+  /**
+   * RLIMIT_AS in mebibytes; caps address space so a runaway allocation fails
+   * cleanly. Not applied on Darwin, where the dyld shared cache mapped into
+   * every process at exec exceeds any practical cap and the kernel rejects
+   * the call; `cpuSeconds` and `maxWallMs` still bound the run there. Bounds
+   * `maxLogBytes`/`maxValueBytes` at load on EVERY platform (this static check
+   * runs on Darwin too, where only the runtime `setrlimit` is skipped): each
+   * budget times a worst-case Unicode expansion must fit this byte count minus a
+   * fixed interpreter baseline, so a near-budget output cannot breach the address
+   * space during the child's build-and-encode.
+   */
+  addressSpaceMb?: number
+  /**
+   * Shared byte budget for captured log text (host-side ledger). Bounded at load
+   * against `addressSpaceMb`: the child builds and encodes a near-budget entry
+   * under RLIMIT_AS with several copies live at once, so this cap times the
+   * worst-case Unicode expansion must fit the address space left after the
+   * interpreter baseline (see `addressSpaceMb`) — a load-time rejection, not a
+   * runtime clamp. Also bounded at load by the host's configured heap like
+   * `maxValueBytes` (see its JSDoc): the effective frame cap minus the frame
+   * envelope.
+   */
+  maxLogBytes?: number
+  /**
+   * Byte cap for the completion value. Bounded at load against `addressSpaceMb`
+   * the same way `maxLogBytes` is: the child builds and encodes a near-budget
+   * value under RLIMIT_AS with several copies live at once, so this cap times the
+   * worst-case Unicode expansion must fit the address space left after the
+   * interpreter baseline. Both budgets are ALSO bounded at load by the host's
+   * configured heap: the effective frame cap (the protocol cap, or a lower
+   * heap-derived ceiling when the host heap cannot safely parse a near-cap
+   * frame — see `hostFrameParseCeiling`) minus the frame envelope, so a budget
+   * whose honest frame could OOM the host's own JSON.parse is rejected up
+   * front.
+   */
+  maxValueBytes?: number
+  /** SIGTERM→SIGKILL grace period on kill, matching bash-local's default. */
+  graceMs?: number
+  /**
+   * Absolute path, relative path, or basename of a CPython 3.10+ interpreter.
+   * Resolved and validated once at plugin load under a five-second force-kill
+   * deadline; a basename searches `PATH`.
+   */
+  pythonBin?: string
+}
+```
+
+Source: [`packages/experimental/ptc-runtime-python/src/index.ts:42`](../packages/experimental/ptc-runtime-python/src/index.ts)
 
 <a id="deepseek-aidsh-experimental-tool-agent-team"></a>
 
@@ -1686,6 +1650,42 @@ export interface Config {
 ```
 
 Source: [`packages/llm/plugin-package-inventory-deepseek/src/index.ts:31`](../packages/llm/plugin-package-inventory-deepseek/src/index.ts)
+
+<a id="deepseek-aidsh-ptc-runtime-node"></a>
+
+## `@deepseek-ai/dsh-ptc-runtime-node`
+
+Requires: `fs` · `subprocess` · `sandbox` · `sandboxPolicy`
+
+```ts config-catalog
+/** Deployment-varying runtime bounds and launch choices. */
+export interface Config extends LaunchConfig {
+  /** Default elapsed deadline, including nested tool and approval waits. */
+  timeoutMs?: number
+  /** Maximum elapsed deadline accepted by resolve. */
+  maxTimeoutMs?: number
+  /** Combined serialized logs, completion and diagnostic byte cap. */
+  maxOutputBytes?: number
+  /** V8 old-generation heap limit in MiB; native allocations are excluded. */
+  maxOldGenerationSizeMb?: number
+  /** Maximum control frame, outstanding argument and queued control-output bytes. */
+  maxMessageBytes?: number
+  /** Maximum simultaneous host binding calls accepted from a program. */
+  maxPendingCalls?: number
+  /** Managed process termination and output-drain grace in milliseconds. */
+  graceMs?: number
+}
+
+/** Deployment-owned Node executable and optional preinstalled built bootstrap. */
+export interface LaunchConfig {
+  /** Executable in the subprocess world; defaults to the current Node executable. */
+  nodeExecutable?: string
+  /** Absolute preinstalled built bootstrap in the execution world. */
+  bootstrapPath?: string
+}
+```
+
+Source: [`packages/ptc-runtime/ptc-runtime-node/src/index.ts:26`](../packages/ptc-runtime/ptc-runtime-node/src/index.ts)
 
 <a id="deepseek-aidsh-pwsh-local"></a>
 
@@ -3180,7 +3180,7 @@ export interface Config {
    * sends only `run_code` plus a generated SDK prompt and collapses the
    * executor to the same surface (a model-direct call may only name
    * `run_code`; `run_code` SDK sub-dispatches keep every visible tool); `both`
-   * sends both forms. PTC mode requires a `ctx.codeRuntime` whose `language`
+   * sends both forms. PTC mode requires a `ctx.ptcRuntime` whose `language`
    * has a registered SDK renderer (TypeScript or Python) and fail prompt
    * assembly when it is absent or has no renderer. Under `ptc`, native names
    * in `toolOrder` are invalid.
@@ -3544,13 +3544,13 @@ These load from a `cordis.yml` entry with no `config:` block; they declare no co
 Abstract service classes — a deployment loads a concrete implementation package instead ([capability seams](../.agents/notes/implemented/architecture/2026-06-13-capability-seams.md)).
 
 - `@deepseek-ai/dsh-attachment` — abstract `AttachmentStore` ([`packages/attachment/attachment/src/index.ts`](../packages/attachment/attachment/src/index.ts))
-- `@deepseek-ai/dsh-code-runtime` — abstract `CodeRuntime` ([`packages/code-runtime/code-runtime/src/index.ts`](../packages/code-runtime/code-runtime/src/index.ts))
 - `@deepseek-ai/dsh-compaction` — abstract `CompactionEngine` ([`packages/compaction/compaction/src/index.ts`](../packages/compaction/compaction/src/index.ts))
 - `@deepseek-ai/dsh-credentials` — abstract `CredentialProvider` ([`packages/credentials/credentials/src/index.ts`](../packages/credentials/credentials/src/index.ts))
 - `@deepseek-ai/dsh-file-reference` — abstract `FileReferenceService` ([`packages/context/file-reference/src/index.ts`](../packages/context/file-reference/src/index.ts))
 - `@deepseek-ai/dsh-fs` — abstract `FileSystem` ([`packages/fs/fs/src/index.ts`](../packages/fs/fs/src/index.ts))
 - `@deepseek-ai/dsh-host-directory-picker` — abstract `DirectoryPicker` ([`packages/host/directory-picker/src/index.ts`](../packages/host/directory-picker/src/index.ts))
 - `@deepseek-ai/dsh-jobs` — abstract `JobRegistry` ([`packages/jobs/jobs/src/index.ts`](../packages/jobs/jobs/src/index.ts))
+- `@deepseek-ai/dsh-ptc-runtime` — abstract `PtcRuntime` ([`packages/ptc-runtime/ptc-runtime/src/index.ts`](../packages/ptc-runtime/ptc-runtime/src/index.ts))
 - `@deepseek-ai/dsh-sandbox` — abstract `SandboxProvider` ([`packages/sandbox/sandbox/src/index.ts`](../packages/sandbox/sandbox/src/index.ts))
 - `@deepseek-ai/dsh-session-persistence` — abstract `SessionPersistence` ([`packages/session/session-persistence/src/index.ts`](../packages/session/session-persistence/src/index.ts))
 - `@deepseek-ai/dsh-session-query` — abstract `SessionQueryEngine` ([`packages/session-query/session-query/src/index.ts`](../packages/session-query/session-query/src/index.ts))

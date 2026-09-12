@@ -381,9 +381,9 @@ importers:
       '@deepseek-ai/dsh-experimental-agent-team-profile':
         specifier: workspace:^
         version: link:../../packages/experimental/agent-team-profile
-      '@deepseek-ai/dsh-experimental-code-runtime-python':
+      '@deepseek-ai/dsh-experimental-ptc-runtime-python':
         specifier: workspace:^
-        version: link:../../packages/experimental/code-runtime-python
+        version: link:../../packages/experimental/ptc-runtime-python
       '@deepseek-ai/dsh-experimental-tool-agent-team':
         specifier: workspace:^
         version: link:../../packages/experimental/tool-agent-team
@@ -1604,9 +1604,9 @@ importers:
       '@deepseek-ai/dsh-cmdline':
         specifier: workspace:^
         version: link:../../boot/cmdline
-      '@deepseek-ai/dsh-code-runtime-node':
+      '@deepseek-ai/dsh-ptc-runtime-node':
         specifier: workspace:^
-        version: link:../../code-runtime/code-runtime-node
+        version: link:../../ptc-runtime/ptc-runtime-node
       '@deepseek-ai/dsh-util-values':
         specifier: workspace:^
         version: link:../../util/values
@@ -1925,9 +1925,9 @@ importers:
       '@deepseek-ai/dsh-cmdline':
         specifier: workspace:^
         version: link:../../boot/cmdline
-      '@deepseek-ai/dsh-code-runtime-node':
+      '@deepseek-ai/dsh-ptc-runtime-node':
         specifier: workspace:^
-        version: link:../../code-runtime/code-runtime-node
+        version: link:../../ptc-runtime/ptc-runtime-node
       '@deepseek-ai/dsh-cordis-client-runner':
         specifier: workspace:^
         version: link:../../extensions/cordis-client-runner
@@ -4245,9 +4245,9 @@ importers:
       '@deepseek-ai/dsh-client-ui-slots':
         specifier: workspace:^
         version: link:../ui-slots
-      '@deepseek-ai/dsh-code-runtime':
+      '@deepseek-ai/dsh-ptc-runtime':
         specifier: workspace:^
-        version: link:../../code-runtime/code-runtime
+        version: link:../../ptc-runtime/ptc-runtime
       '@deepseek-ai/dsh-llm':
         specifier: workspace:^
         version: link:../../llm/llm
@@ -4582,7 +4582,7 @@ importers:
         specifier: ^6.0.3
         version: 6.0.3
 
-  packages/code-runtime/code-runtime:
+  packages/ptc-runtime/ptc-runtime:
     devDependencies:
       '@deepseek-ai/cordis':
         specifier: workspace:^
@@ -4591,7 +4591,7 @@ importers:
         specifier: workspace:^
         version: link:../../sandbox/sandbox
 
-  packages/code-runtime/code-runtime-node:
+  packages/ptc-runtime/ptc-runtime-node:
     dependencies:
       '@deepseek-ai/dsh-util-values':
         specifier: workspace:^
@@ -4603,9 +4603,9 @@ importers:
       '@deepseek-ai/cordis':
         specifier: workspace:^
         version: link:../../../vendor/cordis
-      '@deepseek-ai/dsh-code-runtime':
+      '@deepseek-ai/dsh-ptc-runtime':
         specifier: workspace:^
-        version: link:../code-runtime
+        version: link:../ptc-runtime
       '@deepseek-ai/dsh-fs':
         specifier: workspace:^
         version: link:../../fs/fs
@@ -5156,9 +5156,9 @@ importers:
       '@deepseek-ai/dsh-agent':
         specifier: workspace:^
         version: link:../agent
-      '@deepseek-ai/dsh-code-runtime':
+      '@deepseek-ai/dsh-ptc-runtime':
         specifier: workspace:^
-        version: link:../../code-runtime/code-runtime
+        version: link:../../ptc-runtime/ptc-runtime
       '@deepseek-ai/dsh-scope':
         specifier: workspace:^
         version: link:../scope
@@ -5246,9 +5246,9 @@ importers:
       '@deepseek-ai/dsh-agent':
         specifier: workspace:^
         version: link:../agent
-      '@deepseek-ai/dsh-code-runtime':
+      '@deepseek-ai/dsh-ptc-runtime':
         specifier: workspace:^
-        version: link:../../code-runtime/code-runtime
+        version: link:../../ptc-runtime/ptc-runtime
       '@deepseek-ai/dsh-invariants':
         specifier: workspace:^
         version: link:../../runtime-diagnostics/invariants
@@ -5481,7 +5481,7 @@ importers:
         specifier: ^18.2.0
         version: 18.3.1(react@18.3.1)
 
-  packages/experimental/code-runtime-python:
+  packages/experimental/ptc-runtime-python:
     dependencies:
       '@deepseek-ai/schemastery':
         specifier: link:../../../vendor/schemastery
@@ -5490,9 +5490,9 @@ importers:
       '@deepseek-ai/cordis':
         specifier: workspace:^
         version: link:../../../vendor/cordis
-      '@deepseek-ai/dsh-code-runtime':
+      '@deepseek-ai/dsh-ptc-runtime':
         specifier: workspace:^
-        version: link:../../code-runtime/code-runtime
+        version: link:../../ptc-runtime/ptc-runtime
       '@deepseek-ai/dsh-timeout':
         specifier: workspace:^
         version: link:../../util/timeout
@@ -6030,9 +6030,9 @@ importers:
       '@deepseek-ai/dsh-attachment':
         specifier: workspace:^
         version: link:../../attachment/attachment
-      '@deepseek-ai/dsh-code-runtime':
+      '@deepseek-ai/dsh-ptc-runtime':
         specifier: workspace:^
-        version: link:../../code-runtime/code-runtime
+        version: link:../../ptc-runtime/ptc-runtime
       '@deepseek-ai/dsh-fs':
         specifier: workspace:^
         version: link:../fs
@@ -7419,9 +7419,9 @@ importers:
       '@deepseek-ai/dsh-agent-loop':
         specifier: workspace:^
         version: link:../../core/agent-loop
-      '@deepseek-ai/dsh-code-runtime':
+      '@deepseek-ai/dsh-ptc-runtime':
         specifier: workspace:^
-        version: link:../../code-runtime/code-runtime
+        version: link:../../ptc-runtime/ptc-runtime
       '@deepseek-ai/dsh-commands':
         specifier: workspace:^
         version: link:../../interaction/commands
@@ -9086,9 +9086,9 @@ importers:
       '@deepseek-ai/dsh-agent':
         specifier: workspace:^
         version: link:../../core/agent
-      '@deepseek-ai/dsh-code-runtime-node':
+      '@deepseek-ai/dsh-ptc-runtime-node':
         specifier: workspace:^
-        version: link:../../code-runtime/code-runtime-node
+        version: link:../../ptc-runtime/ptc-runtime-node
       '@deepseek-ai/dsh-fs-local':
         specifier: workspace:^
         version: link:../../fs/fs-local
@@ -9179,9 +9179,9 @@ importers:
       '@deepseek-ai/dsh-brand':
         specifier: workspace:^
         version: link:../../util/brand
-      '@deepseek-ai/dsh-code-runtime-node':
+      '@deepseek-ai/dsh-ptc-runtime-node':
         specifier: workspace:^
-        version: link:../../code-runtime/code-runtime-node
+        version: link:../../ptc-runtime/ptc-runtime-node
       '@deepseek-ai/dsh-fs':
         specifier: workspace:^
         version: link:../../fs/fs
@@ -11104,12 +11104,12 @@ importers:
       '@deepseek-ai/dsh-brand':
         specifier: workspace:^
         version: link:../../packages/util/brand
-      '@deepseek-ai/dsh-code-runtime':
+      '@deepseek-ai/dsh-ptc-runtime':
         specifier: workspace:^
-        version: link:../../packages/code-runtime/code-runtime
-      '@deepseek-ai/dsh-code-runtime-node':
+        version: link:../../packages/ptc-runtime/ptc-runtime
+      '@deepseek-ai/dsh-ptc-runtime-node':
         specifier: workspace:^
-        version: link:../../packages/code-runtime/code-runtime-node
+        version: link:../../packages/ptc-runtime/ptc-runtime-node
       '@deepseek-ai/dsh-command-compact':
         specifier: workspace:^
         version: link:../../packages/compaction/command-compact

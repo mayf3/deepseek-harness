@@ -9,7 +9,7 @@
 import { brandString } from '@deepseek-ai/dsh-brand'
 import { createUserMessage, HarnessError } from '@deepseek-ai/dsh-llm'
 import type { ContentBlock, ToolCallId } from '@deepseek-ai/dsh-llm'
-import type { CodeBindingFunction, CodeRunResult, CodeRunSandbox, CodeRuntime } from '@deepseek-ai/dsh-code-runtime'
+import type { PtcBindingFunction, PtcRunResult, PtcRunSandbox, PtcRuntime } from '@deepseek-ai/dsh-ptc-runtime'
 import { approveEscalation, ESCALATION_TARGETS, validateEscalationArgs } from '@deepseek-ai/dsh-sandbox'
 import type { SandboxExecutionPolicy } from '@deepseek-ai/dsh-sandbox'
 import type { ApprovalService } from '@deepseek-ai/dsh-user-approval'
@@ -25,7 +25,7 @@ export const RUN_CODE_NAME = 'run_code'
 /**
  * The language-specific `run_code` schema text: the tool `description` and its
  * `code` parameter description, kept together so a language's two model-facing
- * strings share one source of truth. Keyed by `CodeRuntime.language`, mirroring
+ * strings share one source of truth. Keyed by `PtcRuntime.language`, mirroring
  * `SDK_RENDERERS` in {@link ./index.ts}. The emitted flavor MUST match the
  * semantics the same language's SDK instructions promise, so the model never
  * receives a TypeScript schema beside a Python SDK (or vice versa).
@@ -75,17 +75,17 @@ const PYTHON_FLAVOR: RunCodeFlavor = {
  * {@link RUN_CODE_FLAVORS} here and `SDK_RENDERERS` in {@link ./index.ts} — are
  * checked against this union with `satisfies`, so a language added to one and
  * not the other fails `typecheck` instead of waiting for a runtime that reports
- * it. The tables stay declared `Record<string, …>` because `CodeRuntime.language`
+ * it. The tables stay declared `Record<string, …>` because `PtcRuntime.language`
  * is an unconstrained `string`: this union pins what the harness ships, while the
  * `Object.hasOwn` guards reject what a mounted runtime may report.
  */
-export type CodeSdkLanguage = 'typescript' | 'python'
+export type PtcSdkLanguage = 'typescript' | 'python'
 
-/** Per-language `run_code` schema flavors (see {@link RunCodeFlavor}); one entry per {@link CodeSdkLanguage}. */
+/** Per-language `run_code` schema flavors (see {@link RunCodeFlavor}); one entry per {@link PtcSdkLanguage}. */
 const RUN_CODE_FLAVORS: Record<string, RunCodeFlavor> = {
   typescript: TYPESCRIPT_FLAVOR,
   python: PYTHON_FLAVOR,
-} satisfies Record<CodeSdkLanguage, RunCodeFlavor>
+} satisfies Record<PtcSdkLanguage, RunCodeFlavor>
 
 /**
  * The `description` parameter's model-facing description: language-independent
@@ -104,7 +104,7 @@ const RUN_CODE_CONTROLS = {
   justification: { type: 'string', description: 'Reason this complete program needs wider access, shown to the user for approval.' },
 } as const
 
-function controlParameters(runtime: CodeRuntime | undefined) {
+function controlParameters(runtime: PtcRuntime | undefined) {
   // Catalog readers have no mounted runtime; real model assembly requires one.
   if (runtime === undefined) return RUN_CODE_CONTROLS
   return {
@@ -119,7 +119,7 @@ function controlParameters(runtime: CodeRuntime | undefined) {
   }
 }
 
-function escalationGuidance(runtime: CodeRuntime | undefined): string {
+function escalationGuidance(runtime: PtcRuntime | undefined): string {
   return runtime?.sandboxMode === undefined ? ''
     : ' A sandbox escalation approves this complete program for one execution only. Nested tools retain their own policies and approvals. Request wider access only after evidence of a denial. Earlier effects may already have completed: inspect them before explicitly retrying. Programs are never replayed automatically.'
 }
@@ -130,20 +130,20 @@ function escalationGuidance(runtime: CodeRuntime | undefined): string {
  * the SDK section's language. `peekRuntime` returns `undefined` only when no
  * runtime is mounted, which reaches this function through definition readers
  * and `schemas()` — the doc-catalog harvest is the only shipped one, and none
- * of them feeds a model, because `wireSchemas` calls `requireCodeRuntime`
+ * of them feeds a model, because `wireSchemas` calls `requirePtcRuntime`
  * before projecting — so that path degrades to {@link TYPESCRIPT_FLAVOR}. A
  * mounted runtime whose language has no flavor entry fails loud, exactly as
- * `requireCodeRuntime` rejects it at assembly. Keeping this table in step with
- * `SDK_RENDERERS` is the compiler's job ({@link CodeSdkLanguage}); what this
+ * `requirePtcRuntime` rejects it at assembly. Keeping this table in step with
+ * `SDK_RENDERERS` is the compiler's job ({@link PtcSdkLanguage}); what this
  * guard owns is the runtime-supplied language neither table knows, which never
  * yields a wrong-language schema for a real runtime.
  */
-function resolveFlavor(peekRuntime: () => CodeRuntime | undefined): RunCodeFlavor {
+function resolveFlavor(peekRuntime: () => PtcRuntime | undefined): RunCodeFlavor {
   const runtime = peekRuntime()
   if (runtime === undefined) {
     // No runtime mounted: reached by definition readers and `schemas()`, of
     // which the doc-catalog harvest is the only shipped one. None feeds a
-    // model — `wireSchemas` calls `requireCodeRuntime` before projecting, so
+    // model — `wireSchemas` calls `requirePtcRuntime` before projecting, so
     // the assembly path never arrives here. Degrade to the TS default.
     return TYPESCRIPT_FLAVOR
   }
@@ -285,7 +285,7 @@ function renderValue(value: JsonValue): string {
 }
 
 /** Canonical value returned by the outer PTC mode transport. */
-type RunCodeOutput = { logs: string[]; result?: JsonValue; sandbox?: CodeRunSandbox }
+type RunCodeOutput = { logs: string[]; result?: JsonValue; sandbox?: PtcRunSandbox }
 
 /**
  * Registry-private capabilities the bridge receives at construction — the
@@ -297,15 +297,15 @@ export interface RunCodeBridgeOptions {
   peekApprover: () => ApprovalService | undefined
   /** Resolves standing Session authority only for a runtime that enforces file policy. */
   resolveSandboxPolicy: (exec: ToolRunContext) => SandboxExecutionPolicy
-  /** Resolves `ctx.codeRuntime` or throws the loud misconfiguration error (shared with the registry's assembly-time checks). */
-  requireRuntime: () => CodeRuntime
+  /** Resolves `ctx.ptcRuntime` or throws the loud misconfiguration error (shared with the registry's assembly-time checks). */
+  requireRuntime: () => PtcRuntime
   /**
-   * Reads `ctx.codeRuntime` without throwing: `undefined` when none is mounted.
+   * Reads `ctx.ptcRuntime` without throwing: `undefined` when none is mounted.
    * Lets schema emission tell "no runtime" (degrade to TS; the readers that
    * reach it are {@link resolveFlavor}'s) apart from "unknown language" (fail
    * loud).
    */
-  peekRuntime: () => CodeRuntime | undefined
+  peekRuntime: () => PtcRuntime | undefined
   /** The run's overlap cap for parallel-classified sub-calls (the registry passes its validated `maxParallelSubCalls`). */
   maxParallel: number
   /** Runs the contained `tools/ptc-dispatch-log` waterfall over one settled sub-dispatch (the registry's private invoker). */
@@ -376,7 +376,7 @@ export function createRunCodeTool(registry: ToolRuntime, options: RunCodeBridgeO
       const runtime = requireRuntime()
       validateEscalationArgs(args.sandbox_permissions, args.justification)
       if (args.timeoutMs !== undefined && runtime.timeout === undefined) {
-        throw new Error('timeoutMs is not available for this code runtime')
+        throw new Error('timeoutMs is not available for this PTC runtime')
       }
       if (args.timeoutMs !== undefined && (!Number.isFinite(args.timeoutMs) || args.timeoutMs <= 0)) {
         throw new Error('invalid timeoutMs: expected a positive finite number')
@@ -384,7 +384,7 @@ export function createRunCodeTool(registry: ToolRuntime, options: RunCodeBridgeO
       const standingPolicy = runtime.sandboxMode === undefined ? undefined : options.resolveSandboxPolicy(exec)
       let policy = standingPolicy
       if (args.sandbox_permissions !== undefined && args.justification !== undefined) {
-        if (standingPolicy === undefined) throw new Error('sandbox_permissions is not available for this code runtime')
+        if (standingPolicy === undefined) throw new Error('sandbox_permissions is not available for this PTC runtime')
         const approvedMode = await approveEscalation({
           requestedMode: args.sandbox_permissions,
           justification: args.justification,
@@ -528,7 +528,7 @@ export function createRunCodeTool(registry: ToolRuntime, options: RunCodeBridgeO
       // would be narrowed away by control flow analysis.
       const runOver = (): boolean => runController.signal.aborted
 
-      const binding = (name: string): CodeBindingFunction => async (rawArgs: unknown): Promise<JsonValue> => {
+      const binding = (name: string): PtcBindingFunction => async (rawArgs: unknown): Promise<JsonValue> => {
         if (runOver()) {
           throw new Error(`run_code run is over (${String(runController.signal.reason)}); ${name} not dispatched`)
         }
@@ -671,7 +671,7 @@ export function createRunCodeTool(registry: ToolRuntime, options: RunCodeBridgeO
       // own key (a plain-object assignment would hit the prototype setter,
       // silently dropping the binding), and the runtime host resolves
       // binding names as own properties only.
-      const functions: Record<string, CodeBindingFunction> = Object.create(null) as Record<string, CodeBindingFunction>
+      const functions: Record<string, PtcBindingFunction> = Object.create(null) as Record<string, PtcBindingFunction>
       // Enumerate the CALLING AGENT's visible set (scoped tools join,
       // restricted globals vanish) — the same view the SDK section declared,
       // so a program can bind exactly what its prompt promised; sub-dispatch
@@ -682,7 +682,7 @@ export function createRunCodeTool(registry: ToolRuntime, options: RunCodeBridgeO
       }
 
       try {
-        let result: CodeRunResult
+        let result: PtcRunResult
         try {
           result = await runtime.run(runtime.resolve({
             program: args.code,

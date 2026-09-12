@@ -8,7 +8,7 @@
 
 文件系统身份、可执行文件查找、进程 cwd、沙箱工作区根目录及语言服务器文件 URL 都指向 SSH 主机。提供方在文件实际存在的位置规范化路径，保留文件系统对 `symlink/..` 的解释。策略解析器保留执行环境中的绝对路径写法，不尝试在 Harness 主机上解析远端路径。
 
-`processPath()` 提供配套子进程提供方可用的路径。SSH 的 `processPathFromHostPath()` 仍不可用；安装远端产物不意味着任意主机路径可移植。因此 [`NodeCodeRuntime`](../../packages/code-runtime/code-runtime-node/README.zh.md) 使用显式安装并经过摘要验证的远端引导程序。
+`processPath()` 提供配套子进程提供方可用的路径。SSH 的 `processPathFromHostPath()` 仍不可用；安装远端产物不意味着任意主机路径可移植。因此 [`NodePtcRuntime`](../../packages/ptc-runtime/ptc-runtime-node/README.zh.md) 使用显式安装并经过摘要验证的远端引导程序。
 
 ## 传输与信任
 
@@ -20,7 +20,7 @@
 
 进程先预留，再连接流，且启动最多接受一次。`done` 报告直接结果，`waitForExit` 观察远端托管进程范围。终端操作保留共享异步 API。准备阶段取消、已启动进程终止及提供方释放都通过辅助进程释放各自资源。
 
-管理截止时限约束单次 RPC 观察，不替代 Bash 或代码运行时消费方选择的执行截止时限。远端等待可以持续挂起，同时其他请求继续推进。SSH 丢失会使待处理操作失效；辅助进程 EOF、信号及租期到期会启动远端清理。客户端如实报告未确认结果，绝不通过重连重放可能已执行的操作。
+管理截止时限约束单次 RPC 观察，不替代 Bash 或PTC 运行时消费方选择的执行截止时限。远端等待可以持续挂起，同时其他请求继续推进。SSH 丢失会使待处理操作失效；辅助进程 EOF、信号及租期到期会启动远端清理。客户端如实报告未确认结果，绝不通过重连重放可能已执行的操作。
 
 ## 组合范围
 
@@ -67,7 +67,7 @@ declare class SshConnection extends Service {
   constructor(ctx: Context, config: Config);
   /** Hold plugin readiness until the remote identity and helper digest are verified. */
   async [Service.init](): Promise<void>;
-  /** Verified remote Node executable for the paired code runtime. */
+  /** Verified remote Node executable for the paired PTC runtime. */
   get nodeExecutable(): string;
   /** Verified preinstalled PTC entry; unconfigured runtimes fail before program execution. */
   get bootstrapPath(): string;

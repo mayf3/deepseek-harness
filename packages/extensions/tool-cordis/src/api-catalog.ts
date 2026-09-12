@@ -643,36 +643,6 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
-    key: 'codeRuntime',
-    summary: 'Registers one `ctx.codeRuntime` implementation.',
-    description: 'Registers one `ctx.codeRuntime` implementation. Program, budget, abort, and substrate failures resolve in CodeRunResult; only Service Definition contract misuse rejects. Implementations bridge structured-cloneable bindings, materialize each declared namespace rejection class, treat programs as hostile peers, isolate runs from one another, and terminate and await in-flight runs during disposal.',
-    methods: [
-      {
-        signature: 'abstract readonly language: string',
-        description: 'The source language run expects `program` to be written in, as a lowercase identifier. Informational, not gating — a consumer that generates language-specific presentation (typed SDK stubs, usage instructions) switches on it and fails loud on a language it cannot present. Well-known values: `\'typescript\'` and `\'python\'`, those `dsh-tools` presents; the TypeScript backend is released, the Python backend is experimental and private (not published).',
-        parameters: [],
-      },
-      {
-        signature: 'abstract readonly isolation: string',
-        description: 'The execution substrate, as a lowercase identifier. Informational, not gating — a descriptor so deployments and diagnostics can tell backends apart, not a security claim. Well-known values: `\'worker-thread\'`, `\'process\'`, `\'container\'`.',
-        parameters: [],
-      },
-      {
-        signature: 'abstract resolve(request: CodeRunRequest): CodeRunSpec',
-        description: 'Resolve supported options and provider defaults before execution.',
-        parameters: [{ name: 'request', description: 'Program, bindings, cancellation and optional execution choices.' }],
-        returns: 'Complete directory, deadline and supported authority for run.',
-        throws: ['When an explicit choice is invalid or unsupported by this provider.'],
-      },
-      {
-        signature: 'abstract run(spec: CodeRunSpec): Promise<CodeRunResult>',
-        description: 'Execute resolved inputs; program outcomes resolve as result fields.',
-        parameters: [{ name: 'spec', description: 'directory, deadline, program, bindings, cancellation and supported policy.' }],
-        returns: 'Captured output and the execution outcome.',
-      },
-    ],
-  },
-  {
     key: 'commands',
     summary: 'Human-command registry.',
     description: 'Human-command registry. Plain-context definitions are global; definitions registered through a command-injected child of an agent context shadow globals for that agent.',
@@ -1378,6 +1348,36 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Select whether plan mode should be active. Between turns the method appends the change immediately because no in-turn pre-step will run until another prompt starts a turn. The open-turn fold is the idle signal: agent status stays `running` through post-turn checkpointing, when no further in-turn pre-step runs. During an open turn the selection remains pending until the next accepted in-turn pre-step. Repeated selection of the current or already-pending state is a no-op.',
         parameters: [{ name: 'agent', description: 'The agent to switch.' }, { name: 'active', description: 'Whether plan mode should be active.' }],
         returns: 'what happened: `committed` (logged now), `queued` (awaiting the next accepted in-turn pre-step), `cancelled` (an opposite pending selection was cleared; the logged state already matches), or `noop` (already in that state).',
+      },
+    ],
+  },
+  {
+    key: 'ptcRuntime',
+    summary: 'Registers one `ctx.ptcRuntime` implementation.',
+    description: 'Registers one `ctx.ptcRuntime` implementation. Program, budget, abort, and substrate failures resolve in PtcRunResult; only Service Definition contract misuse rejects. Implementations bridge structured-cloneable bindings, materialize each declared namespace rejection class, treat programs as hostile peers, isolate runs from one another, and terminate and await in-flight runs during disposal.',
+    methods: [
+      {
+        signature: 'abstract readonly language: string',
+        description: 'The source language run expects `program` to be written in, as a lowercase identifier. Informational, not gating — a consumer that generates language-specific presentation (typed SDK stubs, usage instructions) switches on it and fails loud on a language it cannot present. Well-known values: `\'typescript\'` and `\'python\'`, those `dsh-tools` presents; the TypeScript backend is released, the Python backend is experimental and private (not published).',
+        parameters: [],
+      },
+      {
+        signature: 'abstract readonly isolation: string',
+        description: 'The execution substrate, as a lowercase identifier. Informational, not gating — a descriptor so deployments and diagnostics can tell backends apart, not a security claim. Well-known values: `\'worker-thread\'`, `\'process\'`, `\'container\'`.',
+        parameters: [],
+      },
+      {
+        signature: 'abstract resolve(request: PtcRunRequest): PtcRunSpec',
+        description: 'Resolve supported options and provider defaults before execution.',
+        parameters: [{ name: 'request', description: 'Program, bindings, cancellation and optional execution choices.' }],
+        returns: 'Complete directory, deadline and supported authority for run.',
+        throws: ['When an explicit choice is invalid or unsupported by this provider.'],
+      },
+      {
+        signature: 'abstract run(spec: PtcRunSpec): Promise<PtcRunResult>',
+        description: 'Execute resolved inputs; program outcomes resolve as result fields.',
+        parameters: [{ name: 'spec', description: 'directory, deadline, program, bindings, cancellation and supported policy.' }],
+        returns: 'Captured output and the execution outcome.',
       },
     ],
   },
@@ -3828,42 +3828,6 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface ClientArtifactBaseline {\n    readonly path: string;\n    readonly mtimeMs: number;\n    readonly size: number;\n}',
   },
   {
-    name: 'CodeBindingErrorClass',
-    declaration: 'export interface CodeBindingErrorClass {\n    name: string;\n    memberNameProperty: string;\n}',
-  },
-  {
-    name: 'CodeBindingFunction',
-    declaration: 'export type CodeBindingFunction = (args: unknown) => Promise<CodeJsonValue>;',
-  },
-  {
-    name: 'CodeBindingNamespace',
-    declaration: 'export interface CodeBindingNamespace {\n    global: string;\n    functions: Record<string, CodeBindingFunction>;\n    errorClass?: CodeBindingErrorClass;\n}',
-  },
-  {
-    name: 'CodeJsonValue',
-    declaration: 'export type CodeJsonValue = null | boolean | number | string | CodeJsonValue[] | {\n    [key: string]: CodeJsonValue;\n};',
-  },
-  {
-    name: 'CodeRunFailure',
-    declaration: 'export interface CodeRunFailure {\n    kind: \'exception\' | \'timeout\' | \'abort\' | \'worker-exit\' | \'invalid-output\' | \'output-limit\' | \'protocol\' | \'sandbox-unavailable\';\n    message: string;\n}',
-  },
-  {
-    name: 'CodeRunRequest',
-    declaration: 'export interface CodeRunRequest {\n    program: string;\n    bindings: CodeBindingNamespace[];\n    cwd?: string;\n    timeoutMs?: number;\n    sandboxPolicy?: SandboxExecutionPolicy;\n    signal?: AbortSignal;\n}',
-  },
-  {
-    name: 'CodeRunResult',
-    declaration: 'export interface CodeRunResult {\n    sandbox?: CodeRunSandbox;\n    value?: CodeJsonValue;\n    logs: string[];\n    error?: CodeRunFailure;\n}',
-  },
-  {
-    name: 'CodeRunSandbox',
-    declaration: 'export interface CodeRunSandbox {\n    mode: SandboxMode;\n    denied: boolean;\n    enforcement?: SandboxEnforcement;\n}',
-  },
-  {
-    name: 'CodeRunSpec',
-    declaration: 'export interface CodeRunSpec extends CodeRunRequest {\n    cwd: string;\n    timeoutMs: number;\n}',
-  },
-  {
     name: 'CollectedOutput',
     declaration: 'export interface CollectedOutput {\n    text: string;\n    truncated: boolean;\n    spillPath?: string;\n}',
   },
@@ -4880,8 +4844,44 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface PruneResult {\n    readonly pruned: readonly PrunedEntry[];\n    readonly charsRemoved: number;\n}',
   },
   {
+    name: 'PtcBindingErrorClass',
+    declaration: 'export interface PtcBindingErrorClass {\n    name: string;\n    memberNameProperty: string;\n}',
+  },
+  {
+    name: 'PtcBindingFunction',
+    declaration: 'export type PtcBindingFunction = (args: unknown) => Promise<PtcJsonValue>;',
+  },
+  {
+    name: 'PtcBindingNamespace',
+    declaration: 'export interface PtcBindingNamespace {\n    global: string;\n    functions: Record<string, PtcBindingFunction>;\n    errorClass?: PtcBindingErrorClass;\n}',
+  },
+  {
     name: 'PtcDispatchLog',
     declaration: 'export interface PtcDispatchLog {\n    readonly exec: ToolExecution;\n    readonly agent?: Agent;\n    readonly subCallId: ToolCallId;\n    readonly name: string;\n    readonly isError: boolean;\n    readonly content: ContentBlock[];\n}',
+  },
+  {
+    name: 'PtcJsonValue',
+    declaration: 'export type PtcJsonValue = null | boolean | number | string | PtcJsonValue[] | {\n    [key: string]: PtcJsonValue;\n};',
+  },
+  {
+    name: 'PtcRunFailure',
+    declaration: 'export interface PtcRunFailure {\n    kind: \'exception\' | \'timeout\' | \'abort\' | \'worker-exit\' | \'invalid-output\' | \'output-limit\' | \'protocol\' | \'sandbox-unavailable\';\n    message: string;\n}',
+  },
+  {
+    name: 'PtcRunRequest',
+    declaration: 'export interface PtcRunRequest {\n    program: string;\n    bindings: PtcBindingNamespace[];\n    cwd?: string;\n    timeoutMs?: number;\n    sandboxPolicy?: SandboxExecutionPolicy;\n    signal?: AbortSignal;\n}',
+  },
+  {
+    name: 'PtcRunResult',
+    declaration: 'export interface PtcRunResult {\n    sandbox?: PtcRunSandbox;\n    value?: PtcJsonValue;\n    logs: string[];\n    error?: PtcRunFailure;\n}',
+  },
+  {
+    name: 'PtcRunSandbox',
+    declaration: 'export interface PtcRunSandbox {\n    mode: SandboxMode;\n    denied: boolean;\n    enforcement?: SandboxEnforcement;\n}',
+  },
+  {
+    name: 'PtcRunSpec',
+    declaration: 'export interface PtcRunSpec extends PtcRunRequest {\n    cwd: string;\n    timeoutMs: number;\n}',
   },
   {
     name: 'ReadFileLine',

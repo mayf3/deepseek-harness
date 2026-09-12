@@ -5,7 +5,7 @@
 
 import { describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
-import { CodeRuntime } from '@deepseek-ai/dsh-code-runtime'
+import { PtcRuntime } from '@deepseek-ai/dsh-ptc-runtime'
 import { createScope, type Scope } from '@deepseek-ai/dsh-scope'
 import { mkdirSync, mkdtempSync, rmSync, symlinkSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -1047,8 +1047,8 @@ function withPersona(...sections: string[]): string {
 }
 
 /** Schema assembly only: these cases never execute user code. */
-class GuidanceCodeRuntime extends CodeRuntime {
-  resolve(request: import('@deepseek-ai/dsh-code-runtime').CodeRunRequest): import('@deepseek-ai/dsh-code-runtime').CodeRunSpec { return { ...request, cwd: request.cwd ?? process.cwd(), timeoutMs: request.timeoutMs ?? 120_000 } }
+class GuidancePtcRuntime extends PtcRuntime {
+  resolve(request: import('@deepseek-ai/dsh-ptc-runtime').PtcRunRequest): import('@deepseek-ai/dsh-ptc-runtime').PtcRunSpec { return { ...request, cwd: request.cwd ?? process.cwd(), timeoutMs: request.timeoutMs ?? 120_000 } }
 
   readonly language = 'typescript'
   readonly isolation = 'fake'
@@ -1059,7 +1059,7 @@ describe('scope-aware PTC guidance', () => {
   it.each(['ptc', 'both'] as const)('uses capability visibility in %s mode', async (mode) => {
     const ctx = new Context()
     await ctx.plugin(SystemPrompt)
-    await ctx.plugin(GuidanceCodeRuntime)
+    await ctx.plugin(GuidancePtcRuntime)
     await ctx.plugin(ToolRuntime, { mode })
     await ctx.plugin(FakeFs)
     await ctx.plugin(ToolFs)

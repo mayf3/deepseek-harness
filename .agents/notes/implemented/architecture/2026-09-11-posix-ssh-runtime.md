@@ -54,4 +54,4 @@ Security evidence requires both a same-user connector and a replaced socket list
 
 ## Deferred work
 
-Persistent remote reconnection needs a separate operation-identity and recovery design; it cannot reuse live callback handles after disconnect. Broader Web support needs provider-owned workspace resources. Stronger resource accounting or revised PTC yield/wait and timeout policy belongs to the [Node runtime reference](../../../../packages/code-runtime/code-runtime-node/README.md), not the SSH administrative request deadline.
+Persistent remote reconnection needs a separate operation-identity and recovery design; it cannot reuse live callback handles after disconnect. Broader Web support needs provider-owned workspace resources. Stronger resource accounting or revised PTC yield/wait and timeout policy belongs to the [Node runtime reference](../../../../packages/ptc-runtime/ptc-runtime-node/README.md), not the SSH administrative request deadline.

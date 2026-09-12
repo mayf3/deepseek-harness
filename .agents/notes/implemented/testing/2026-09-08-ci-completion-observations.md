@@ -22,7 +22,7 @@ The [whole-queue steering test](../../../../apps/web/tests/steering.e2e.ts) wait
 
 The [workspace-management test](../../../../apps/web/tests/workspace-management.e2e.ts) waits for restored composer focus before the next directory-dialog gesture. Its archive case gives the known seed id an explicit user title through the Session controller, then uses that exact title to identify the row across reload. An unrelated restored row cannot satisfy that locator; the durable archive assertion still checks the seed id and retained log.
 
-The [Node runtime tests](../../../../packages/code-runtime/code-runtime-node/tests/runtime.spec.ts) exercise real managed-process execution, binding transport, elapsed deadlines and cancellation. The [sandboxed Node decision](../architecture/2026-09-11-sandboxed-node-code-runtime.md) supersedes the worker ELU budget and its controlled-sample tests; real process and transport evidence remains necessary.
+The [Node runtime tests](../../../../packages/ptc-runtime/ptc-runtime-node/tests/runtime.spec.ts) exercise real managed-process execution, binding transport, elapsed deadlines and cancellation. The [sandboxed Node decision](../architecture/2026-09-11-sandboxed-node-ptc-runtime.md) supersedes the worker ELU budget and its controlled-sample tests; real process and transport evidence remains necessary.
 
 The [detached-launch tests](../../../../packages/host/open-in-app/tests/launch-detached.spec.ts) control watch time and deliver late process events through the real launcher's registered callbacks. They check one settlement, one unref, and no child kill. Real-process environment and early-exit cases remain in the [resolver tests](../../../../packages/host/open-in-app/tests/resolver.spec.ts).
 

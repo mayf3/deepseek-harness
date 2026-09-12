@@ -62,7 +62,7 @@ The Python client launches the packaged `dsh` command with the selected profile 
 
 ## Packaged workflow and code execution
 
-`dsh-workflow-worker-thread` uses a built sibling `lib/worker.cjs` inside the executable's VFS; its host passes a filesystem path because pkg's Worker hook reads and compiles that entry as CommonJS. Its unbuilt source launch retains a data-URL bootstrap. `dsh-code-runtime-node` instead starts a managed child through the executable's private Node bootstrap dispatch, with a dedicated control channel. The [sandboxed Node decision](2026-09-11-sandboxed-node-code-runtime.md) owns that process and policy lifecycle.
+`dsh-workflow-worker-thread` uses a built sibling `lib/worker.cjs` inside the executable's VFS; its host passes a filesystem path because pkg's Worker hook reads and compiles that entry as CommonJS. Its unbuilt source launch retains a data-URL bootstrap. `dsh-ptc-runtime-node` instead starts a managed child through the executable's private Node bootstrap dispatch, with a dedicated control channel. The [sandboxed Node decision](2026-09-11-sandboxed-node-ptc-runtime.md) owns that process and policy lifecycle.
 
 ## Testing
 

@@ -62,7 +62,7 @@ Python 客户端使用所选 profile（默认 `sdk`）、有序 patch 文件和�
 
 ## 打包后的工作流与代码执行
 
-`dsh-workflow-worker-thread` 使用可执行文件 VFS 内构建后的同级 `lib/worker.cjs`；Host 传入文件系统路径，因为 pkg 的 Worker hook 会读取该入口并按 CommonJS 编译。未构建的源代码启动保留 data-URL bootstrap。`dsh-code-runtime-node` 则通过可执行文件的私有 Node bootstrap 分派启动受管子进程，使用专用控制通道。[沙箱 Node 决策](2026-09-11-sandboxed-node-code-runtime.zh.md)负责其进程与策略生命周期。
+`dsh-workflow-worker-thread` 使用可执行文件 VFS 内构建后的同级 `lib/worker.cjs`；Host 传入文件系统路径，因为 pkg 的 Worker hook 会读取该入口并按 CommonJS 编译。未构建的源代码启动保留 data-URL bootstrap。`dsh-ptc-runtime-node` 则通过可执行文件的私有 Node bootstrap 分派启动受管子进程，使用专用控制通道。[沙箱 Node 决策](2026-09-11-sandboxed-node-ptc-runtime.zh.md)负责其进程与策略生命周期。
 
 ## 测试
 

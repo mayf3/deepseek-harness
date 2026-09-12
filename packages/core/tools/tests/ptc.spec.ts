@@ -4,8 +4,8 @@ import { createUserMessage, ToolCallId  } from '@deepseek-ai/dsh-llm'
 import { createScope } from '@deepseek-ai/dsh-scope'
 import type { Scope } from '@deepseek-ai/dsh-scope'
 import SystemPrompt, { renderPrompt } from '@deepseek-ai/dsh-system-prompt'
-import { CodeRuntime } from '@deepseek-ai/dsh-code-runtime'
-import type { CodeRunRequest, CodeRunResult } from '@deepseek-ai/dsh-code-runtime'
+import { PtcRuntime } from '@deepseek-ai/dsh-ptc-runtime'
+import type { PtcRunRequest, PtcRunResult } from '@deepseek-ai/dsh-ptc-runtime'
 import ToolRuntime, { CodeRunFailedError, RUN_CODE_NAME, TOOL_ABORTED_BEFORE_DISPATCH, defineContentToolFixture, defineTool } from '@deepseek-ai/dsh-tools'
 import type { Config, JsonSchemaNode, PostToolDecision, ToolExecutionResult } from '@deepseek-ai/dsh-tools'
 import type { Agent } from '@deepseek-ai/dsh-agent'
@@ -26,21 +26,21 @@ const testToolSignal = new AbortController().signal
  * Service Definition / Service Provider / Consumer roles the seam promises.
  */
 
-/** A scriptable in-repo CodeRuntime: each test sets `behavior` to drive the bindings however it needs. */
-class FakeRuntime extends CodeRuntime {
-  resolve(request: import('@deepseek-ai/dsh-code-runtime').CodeRunRequest): import('@deepseek-ai/dsh-code-runtime').CodeRunSpec { return { ...request, cwd: request.cwd ?? process.cwd(), timeoutMs: request.timeoutMs ?? 120_000 } }
+/** A scriptable in-repo PtcRuntime: each test sets `behavior` to drive the bindings however it needs. */
+class FakeRuntime extends PtcRuntime {
+  resolve(request: import('@deepseek-ai/dsh-ptc-runtime').PtcRunRequest): import('@deepseek-ai/dsh-ptc-runtime').PtcRunSpec { return { ...request, cwd: request.cwd ?? process.cwd(), timeoutMs: request.timeoutMs ?? 120_000 } }
 
   readonly language: string
   readonly isolation = 'fake'
-  behavior: (request: CodeRunRequest) => Promise<CodeRunResult> = () => Promise.resolve({ logs: [] })
-  lastRequest?: CodeRunRequest
+  behavior: (request: PtcRunRequest) => Promise<PtcRunResult> = () => Promise.resolve({ logs: [] })
+  lastRequest?: PtcRunRequest
 
   constructor(ctx: Context, config: { language?: string } = {}) {
     super(ctx)
     this.language = config.language ?? 'typescript'
   }
 
-  run(request: CodeRunRequest): Promise<CodeRunResult> {
+  run(request: PtcRunRequest): Promise<PtcRunResult> {
     this.lastRequest = request
     return this.behavior(request)
   }
@@ -60,7 +60,7 @@ async function setup(options: SetupOptions = {}) {
   let runtime: FakeRuntime | undefined
   if (options.runtime !== false) {
     await ctx.plugin(FakeRuntime, options.runtime ?? {})
-    runtime = ctx.codeRuntime as FakeRuntime
+    runtime = ctx.ptcRuntime as FakeRuntime
   }
   return { ctx, tools: ctx.tools, systemPrompt: ctx.systemPrompt, runtime: runtime! }
 }
@@ -407,9 +407,9 @@ describe('mode-aware wire contribution', () => {
     expect(text(first)).toBe(text(second))
   })
 
-  it('rejects every assembly when a non-native mode has no code runtime', async () => {
+  it('rejects every assembly when a non-native mode has no PTC runtime', async () => {
     const { systemPrompt } = await setup({ mode: 'ptc', runtime: false })
-    await expect(systemPrompt.assemble()).rejects.toThrow(/requires a code runtime/)
+    await expect(systemPrompt.assemble()).rejects.toThrow(/requires a PTC runtime/)
   })
 
   it('rejects every assembly when the runtime language has no registered SDK renderer', async () => {
@@ -428,7 +428,7 @@ describe('mode-aware wire contribution', () => {
   })
 
   it("assembles under a python runtime in mode 'both' as well, SDK and schema together", async () => {
-    // `both` reaches the same wireSchemas/requireCodeRuntime/SDK-section code
+    // `both` reaches the same wireSchemas/requirePtcRuntime/SDK-section code
     // as `ptc`, so this pins the mode-by-language matrix rather than a
     // separate path — including that the `wireSchemas` projection behind
     // `assembly.tools` picks the Python flavor under `both` instead of hitting
@@ -473,12 +473,12 @@ describe('mode-aware wire contribution', () => {
 
   it('resolves the run_code schema flavor lazily and fails loud on a language absent from the flavor table', async () => {
     // The flavor getter reads the runtime directly (peekRuntime), so it — not
-    // requireCodeRuntime — owns the flavor-table guard. Keeping
+    // requirePtcRuntime — owns the flavor-table guard. Keeping
     // RUN_CODE_FLAVORS in step with SDK_RENDERERS is the compiler's job (both
-    // are `satisfies`-checked against CodeSdkLanguage), so what the guard
+    // are `satisfies`-checked against PtcSdkLanguage), so what the guard
     // covers is a mounted runtime naming a language absent from both tables,
     // which throws when the schema is projected. Assembly's
-    // requireCodeRuntime rejects such a language earlier; this reaches the
+    // requirePtcRuntime rejects such a language earlier; this reaches the
     // guard on its own.
     const { ctx } = await setup({ mode: 'ptc', runtime: { language: 'ruby' } })
     const definition = ctx.tools.get(RUN_CODE_NAME)
@@ -1369,7 +1369,7 @@ describe('the run_code dispatch bridge', () => {
     await ctx.plugin(ToolRuntime, { mode: 'ptc' })
     const result = await runCode(ctx, 'program')
     expect(result.isError).toBe(true)
-    expect((result.content[0] as { text: string }).text).toContain('requires a code runtime')
+    expect((result.content[0] as { text: string }).text).toContain('requires a PTC runtime')
   })
 
   it('presents the model-authored description as the execute-card title over the program input', async () => {
@@ -1397,7 +1397,7 @@ describe('the run_code dispatch bridge', () => {
     ['result only', { logs: [], value: 'returned' }, 'returned'],
     ['logs plus result', { logs: ['printed'], value: 'returned' }, 'printed\nreturned'],
     ['no output', { logs: [] }, '(run_code completed with no output)'],
-  ] as [string, CodeRunResult, string][])('keeps %s in durable content without a result presenter', async (_name, output, text) => {
+  ] as [string, PtcRunResult, string][])('keeps %s in durable content without a result presenter', async (_name, output, text) => {
     const { ctx, runtime } = await setup({ mode: 'ptc' })
     runtime.behavior = () => Promise.resolve(output)
 
@@ -1652,7 +1652,7 @@ describe('the run_code dispatch bridge', () => {
     expect(text.length).toBeLessThan(11_000)
   })
 
-  it('short-circuits a pre-aborted outer signal before the code runtime', async () => {
+  it('short-circuits a pre-aborted outer signal before the PTC runtime', async () => {
     const { ctx, runtime } = await setup({ mode: 'ptc' })
     const calls = registerEcho(ctx)
     runtime.behavior = (request) => {
@@ -1937,7 +1937,7 @@ describe('per-agent presentation', () => {
     scope.ctx.tools.presentAs('both')
 
     await expect(systemPrompt.assemble({ scope: agent }))
-      .rejects.toThrow('mode "both" requires a code runtime')
+      .rejects.toThrow('mode "both" requires a PTC runtime')
   })
 })
 
@@ -1953,8 +1953,8 @@ describe('PTC standing file policy and sandbox outcomes', () => {
       await ctx.plugin(ConfinedFakeRuntime)
       const result = await runCode(ctx, 'return 1')
       expect(result.isError).toBe(true)
-      expect(result.content).toEqual([{ type: 'text', text: 'Error: dsh-tools: confined code runtime requires sandboxPolicy' }])
-      expect((ctx.codeRuntime as ConfinedFakeRuntime).lastRequest).toBeUndefined()
+      expect(result.content).toEqual([{ type: 'text', text: 'Error: dsh-tools: confined PTC runtime requires sandboxPolicy' }])
+      expect((ctx.ptcRuntime as ConfinedFakeRuntime).lastRequest).toBeUndefined()
     } finally { await ctx.fiber.dispose() }
   })
 
@@ -1966,7 +1966,7 @@ describe('PTC standing file policy and sandbox outcomes', () => {
       await ctx.plugin(ConfinedFakeRuntime)
       const result = await runCode(ctx, 'return 1')
       expect(result.isError).not.toBe(true)
-      expect((ctx.codeRuntime as ConfinedFakeRuntime).lastRequest?.sandboxPolicy).toEqual(ctx.sandboxPolicy.resolve())
+      expect((ctx.ptcRuntime as ConfinedFakeRuntime).lastRequest?.sandboxPolicy).toEqual(ctx.sandboxPolicy.resolve())
     } finally { await ctx.fiber.dispose() }
   })
 
@@ -2060,7 +2060,7 @@ describe('per-program execution controls', () => {
         arguments: { code: 'return 1', description: 'Try an unsupported mode', sandbox_permissions: 'workspace-write', justification: 'Need file writes' },
       })
       expect(result.isError).toBe(true)
-      expect(JSON.stringify(result.content)).toContain('sandbox_permissions is not available for this code runtime')
+      expect(JSON.stringify(result.content)).toContain('sandbox_permissions is not available for this PTC runtime')
       expect(runtime.lastRequest).toBeUndefined()
     } finally { await ctx.fiber.dispose() }
   })

@@ -22,7 +22,7 @@ Status: implemented
 
 [Workspace 管理测试](../../../../apps/web/tests/workspace-management.e2e.ts)在下一次目录对话框操作前等待恢复后的 composer 焦点。归档用例通过 Session controller 为已知 seed id 设置显式用户标题，再用该精确标题跨重载定位行。无关的恢复行无法匹配该定位器；持久化归档断言仍检查 seed id 和保留的日志。
 
-[Node 运行时测试](../../../../packages/code-runtime/code-runtime-node/tests/runtime.spec.ts)执行真实受管进程、绑定传输、经过时间截止与取消。[沙箱 Node 决策](../architecture/2026-09-11-sandboxed-node-code-runtime.zh.md)取代 worker ELU 预算及其受控样本测试；真实进程与传输证据仍然必要。
+[Node 运行时测试](../../../../packages/ptc-runtime/ptc-runtime-node/tests/runtime.spec.ts)执行真实受管进程、绑定传输、经过时间截止与取消。[沙箱 Node 决策](../architecture/2026-09-11-sandboxed-node-ptc-runtime.zh.md)取代 worker ELU 预算及其受控样本测试；真实进程与传输证据仍然必要。
 
 [分离启动测试](../../../../packages/host/open-in-app/tests/launch-detached.spec.ts)控制观察时间，并通过真实 launcher 登记的回调发送迟到进程事件。测试检查仅完成一次、仅 unref 一次且不终止子进程。[Resolver 测试](../../../../packages/host/open-in-app/tests/resolver.spec.ts)保留真实进程的环境变量和提前退出用例。
 

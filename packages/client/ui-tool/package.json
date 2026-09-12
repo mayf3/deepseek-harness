@@ -71,7 +71,7 @@
     "@deepseek-ai/dsh-util-workspace-path": "workspace:^",
     "@deepseek-ai/dsh-attachment": "workspace:^",
     "clsx": "^2.0.0",
-    "@deepseek-ai/dsh-code-runtime": "workspace:^"
+    "@deepseek-ai/dsh-ptc-runtime": "workspace:^"
   },
   "files": [
     "lib/index.js",

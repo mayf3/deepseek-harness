@@ -58,7 +58,7 @@ kind: "package-reference"
 <a id="model-experience"></a>
 ## 模型体验
 
-间接通过 Bash、终端、LSP 和代码运行时消费方产生影响，由它们展示既有结果与远端路径。
+间接通过 Bash、终端、LSP 和PTC 运行时消费方产生影响，由它们展示既有结果与远端路径。
 
 #### KV Cache 影响
 

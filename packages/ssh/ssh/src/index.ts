@@ -91,7 +91,7 @@ export class SshConnection extends Service {
   /** Hold plugin readiness until the remote identity and helper digest are verified. */
   async [Service.init](): Promise<void> { await this.ready }
 
-  /** Verified remote Node executable for the paired code runtime. */
+  /** Verified remote Node executable for the paired PTC runtime. */
   get nodeExecutable(): string {
     if (this.remote === undefined) throw new Error('SSH helper is not ready')
     return this.remote.node

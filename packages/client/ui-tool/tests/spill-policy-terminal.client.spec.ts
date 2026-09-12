@@ -2,8 +2,8 @@
 import { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { ToolResultNode } from '@deepseek-ai/dsh-client-ui-chat/client'
-import { CodeRuntime } from '@deepseek-ai/dsh-code-runtime'
-import type { CodeRunRequest, CodeRunSpec, CodeRunResult } from '@deepseek-ai/dsh-code-runtime'
+import { PtcRuntime } from '@deepseek-ai/dsh-ptc-runtime'
+import type { PtcRunRequest, PtcRunSpec, PtcRunResult } from '@deepseek-ai/dsh-ptc-runtime'
 import { ToolCallId } from '@deepseek-ai/dsh-llm'
 import { Session, SessionId } from '@deepseek-ai/dsh-session'
 import { SpillLocator, SpillStore, type SaveTextSpill, type SpillRef } from '@deepseek-ai/dsh-spill'
@@ -43,13 +43,13 @@ async function executeShell(text: string, nested: boolean, name = 'bash', maxInl
     await ctx.plugin(SpillPolicy, { maxInlineBytes })
     if (nested) {
       // The real registry and spill policy own nested output; evaluator execution has its own process suite.
-      class BindingRuntime extends CodeRuntime {
+      class BindingRuntime extends PtcRuntime {
         readonly language = 'typescript'
         readonly isolation = 'fixture'
-        resolve(request: CodeRunRequest): CodeRunSpec {
+        resolve(request: PtcRunRequest): PtcRunSpec {
           return { ...request, cwd: process.cwd(), timeoutMs: 120_000 }
         }
-        async run(spec: CodeRunSpec): Promise<CodeRunResult> {
+        async run(spec: PtcRunSpec): Promise<PtcRunResult> {
           const tool = spec.bindings.find(binding => binding.global === 'tools')?.functions[name]
           if (tool === undefined) throw new Error('missing fixture binding')
           const blocks = await tool(shellArgs)

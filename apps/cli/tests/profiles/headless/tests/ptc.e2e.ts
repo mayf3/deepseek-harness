@@ -18,7 +18,7 @@ import * as BashEnvPlugin from '@deepseek-ai/dsh-shell-env'
 import LocalSubprocessRuntime from '@deepseek-ai/dsh-subprocess-local'
 import * as ToolBash from '@deepseek-ai/dsh-tool-bash'
 import * as LlmDeepSeek from '@deepseek-ai/dsh-llm-deepseek'
-import NodeRuntime from '@deepseek-ai/dsh-code-runtime-node'
+import NodeRuntime from '@deepseek-ai/dsh-ptc-runtime-node'
 import Sandbox from '@deepseek-ai/dsh-sandbox-local'
 import SandboxPolicy from '@deepseek-ai/dsh-sandbox-policy'
 import LocalFileSystem from '@deepseek-ai/dsh-fs-local'
@@ -44,7 +44,7 @@ let workdir: string | undefined
 
 afterEach(async () => {
   // Always dispose, even on failure/retry/timeout: agent-loop teardown stops
-  // the loop, the executor kills stray processes, and the code runtime's
+  // the loop, the executor kills stray processes, and the PTC runtime's
   // dispose awaits worker exits.
   await ctx?.fiber.dispose()
   ctx = undefined

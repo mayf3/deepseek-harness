@@ -44,7 +44,7 @@ kind: "package-reference"
 | `maxPending` | `128` | 普通未完成请求的数量上限；心跳与有界清理请求使用预留容量 |
 | `leaseMs` | `30000` | 辅助进程心跳租期，范围为 3000 至 600000 毫秒 |
 
-使用 PTC 时，配置两个引导字段，并将验证后的 `ctx.ssh.nodeExecutable` 与 `ctx.ssh.bootstrapPath` 传给 [`NodeCodeRuntime`](../../code-runtime/code-runtime-node/README.zh.md)。仅使用文件系统和 Bash 时可以省略这对字段。未配置 PTC 部署时，`bootstrapPath` getter 会拒绝访问。
+使用 PTC 时，配置两个引导字段，并将验证后的 `ctx.ssh.nodeExecutable` 与 `ctx.ssh.bootstrapPath` 传给 [`NodePtcRuntime`](../../ptc-runtime/ptc-runtime-node/README.zh.md)。仅使用文件系统和 Bash 时可以省略这对字段。未配置 PTC 部署时，`bootstrapPath` getter 会拒绝访问。
 
 -----
 

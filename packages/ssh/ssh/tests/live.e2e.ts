@@ -7,7 +7,7 @@ import { setTimeout as delay } from 'node:timers/promises'
 import { Context } from '@deepseek-ai/cordis'
 import { describe, expect, it } from 'vitest'
 import { z } from 'zod'
-import { NodeCodeRuntime } from '@deepseek-ai/dsh-code-runtime-node'
+import { NodePtcRuntime } from '@deepseek-ai/dsh-ptc-runtime-node'
 import Lsp from '@deepseek-ai/dsh-lsp'
 import * as LspStdio from '@deepseek-ai/dsh-lsp-stdio'
 import { SessionProjectionRegistry } from '@deepseek-ai/dsh-session-projection'
@@ -247,12 +247,12 @@ describe.skipIf(!enabled)('POSIX SSH runtime acceptance', () => {
 
   it.skipIf(bootstrap === undefined)('runs PTC remotely with empty environment, bindings, denial and a bounded hot loop', async () => {
     const test = await setup()
-    const fiber = test.ctx.plugin(NodeCodeRuntime, {
+    const fiber = test.ctx.plugin(NodePtcRuntime, {
       nodeExecutable: test.ctx.ssh.nodeExecutable, bootstrapPath: test.ctx.ssh.bootstrapPath,
     })
     try {
       await fiber
-      const runtime = test.ctx.codeRuntime
+      const runtime = test.ctx.ptcRuntime
       const bindings = [{ global: 'tools', functions: { echo: async (input: unknown) => String(input) } }]
       const policy: SandboxPolicy = { mode: 'workspace-write', workspaceRoot: test.root }
       const result = await runtime.run(runtime.resolve({

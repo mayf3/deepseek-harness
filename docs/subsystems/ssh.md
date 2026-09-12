@@ -8,7 +8,7 @@ The [SSH provider family](../../packages/ssh/README.md) supplies one remote file
 
 Filesystem identities, executable lookup, process cwd, sandbox workspace roots and language-server file URLs refer to the SSH host. Providers canonicalize paths where the files exist, preserving filesystem interpretation of `symlink/..`. The policy resolver carries absolute execution-world spelling without trying to resolve remote paths on the Harness host.
 
-`processPath()` supplies a path usable by the paired subprocess provider. `processPathFromHostPath()` remains unavailable for SSH; installing a remote artifact does not make an arbitrary host path portable. [`NodeCodeRuntime`](../../packages/code-runtime/code-runtime-node/README.md) therefore takes an explicitly installed, digest-verified remote bootstrap.
+`processPath()` supplies a path usable by the paired subprocess provider. `processPathFromHostPath()` remains unavailable for SSH; installing a remote artifact does not make an arbitrary host path portable. [`NodePtcRuntime`](../../packages/ptc-runtime/ptc-runtime-node/README.md) therefore takes an explicitly installed, digest-verified remote bootstrap.
 
 ## Transport and trust
 
@@ -20,7 +20,7 @@ Deployment authentication, installed artifact verification and per-stream TLS au
 
 A process is reserved before its streams are connected, and launch is accepted at most once. `done` reports the direct result; `waitForExit` observes the remote managed range. Terminal operations retain the asynchronous shared API. Preparation cancellation, launched-process termination and provider disposal release their owned resources through the helper.
 
-Administrative deadlines bound individual RPC observations; they do not replace the execution deadline chosen by a Bash or code-runtime consumer. Remote waits can remain pending while other requests progress. SSH loss invalidates pending operations; helper EOF, signals and lease expiry start remote cleanup. The client reports unconfirmed outcomes honestly and never reconnects to replay a possibly executed action.
+Administrative deadlines bound individual RPC observations; they do not replace the execution deadline chosen by a Bash or ptc-runtime consumer. Remote waits can remain pending while other requests progress. SSH loss invalidates pending operations; helper EOF, signals and lease expiry start remote cleanup. The client reports unconfirmed outcomes honestly and never reconnects to replay a possibly executed action.
 
 ## Composition scope
 
@@ -67,7 +67,7 @@ declare class SshConnection extends Service {
   constructor(ctx: Context, config: Config);
   /** Hold plugin readiness until the remote identity and helper digest are verified. */
   async [Service.init](): Promise<void>;
-  /** Verified remote Node executable for the paired code runtime. */
+  /** Verified remote Node executable for the paired PTC runtime. */
   get nodeExecutable(): string;
   /** Verified preinstalled PTC entry; unconfigured runtimes fail before program execution. */
   get bootstrapPath(): string;
