@@ -119,6 +119,8 @@ This section explains the design decisions behind the bridge and points at the c
 | [`src/transport.ts`](src/transport.ts) | Transport factory: stdio spawn with scrubbed env, Streamable HTTP |
 | — | No runtime invariant companion is published; MCP generations contribute through the tool registry, but the bridge exposes no independent server-to-tool snapshot after an asynchronous resync. |
 
+The exported `createMcpToolDefinition(ctx, options)` adapts an upstream tool schema and raw-result callback to the same canonical values, errors, and durable image projection. Callers own registration, cancellation deadlines, and provider teardown. The native Cua Driver provider uses this adapter without opening an MCP transport.
+
 ### Lifecycle and sync
 
 `apply` resolves the reconnect policy, reserves the `serverName` inside the current registration scope, starts the supervisor, and awaits the initial connection plus discovery. Independent Agent scopes may reuse the same namespace because their tools and transports are isolated; a duplicate inside one scope fails at load. The supervisor serializes every sync — initial, notification, and reconnect — through one queue so two syncs can never interleave their dispose-previous/register-next swap. Disposal cancels pending reconnects, closes the live client, waits for the in-flight attempt and queued syncs to quiesce, and unregisters the current generation.

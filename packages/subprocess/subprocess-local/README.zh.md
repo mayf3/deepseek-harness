@@ -58,7 +58,7 @@ kind: "package-reference"
 
 正常 dispose 会终止每个仍在运行的受管范围与终端会话并等待其完全停稳。在 JavaScript 可观察的宿主退出期间——直接 `process.exit()`、默认未捕获异常、默认未处理 rejection——同步最终清理会请求 Linux scope 终止其成员，同步终止每个 Windows runner 以关闭其唯一 Job handle，并为 fallback 使用既有 PGID、`taskkill` 或已捕获身份操作。它不创建 Promise 或定时器，也不声称已经完全停稳。同一退出阶段会删除未持有任何已完成 spill 文件的每进程私有 spill 目录；已完成的 spill 文件作为完整输出恢复产物保留，直到外部机制清理。未处理的 `SIGTERM`/`SIGINT`/`SIGHUP`、`SIGKILL`、fatal OOM、native crash 与断电需要外部 supervisor。
 
-Linux 普通进程和终端进程即使在 bootstrap 消费启动请求前被取消，也会保留实际观察到的终止信号。如果没有请求对应的终止信号，未消费的请求仍会报启动失败；已记录的 pre-exec 错误始终优先。`waitForExit()` 独立证明 scope 已为空，其中也包括 payload 在进入该 scope 的 cgroup 前就被杀死、manager 因此让它保持 active 却没有任何进程的 scope。状态查询期间若发出终止信号，会重新查询后再判定清理是否成功。请求终止后，启动请求已消费且 scope 进程数为零即可证明完全停稳，无需等待直接进程的退出通知。即使最终信号发送失败，之后证明范围已为空仍可成功结束；未获得这一证明的 active 范围仍报告信号失败。
+Linux 普通进程和终端进程即使在 bootstrap 消费启动请求前被取消，也会保留实际观察到的终止信号。如果没有请求对应的终止信号，未消费的请求仍会报启动失败；已记录的 pre-exec 错误始终优先。`waitForExit()` 独立证明 scope 已为空，其中也包括 payload 在进入该 scope 的 cgroup 前就被杀死、manager 因此让它保持 active 却没有任何进程的 scope。状态查询期间若发出终止信号，会重新查询后再判定清理是否成功。请求终止后，启动请求已消费且 scope 进程数为零即可证明完全停稳，无需等待直接进程的退出通知。如果最终 scope 信号发送失败，直接进程接受 `SIGKILL` 或被独立确认已不存在，owner 才可以等待一次尚未送达的直接进程停稳通知，再重新查询尚未证明为空的 active 范围。此等待独立于输出排空和整个范围的停稳。新取得的 scope 状态必须证明范围已为空；仍有进程存活或进程数未知时，仍报告信号失败。
 
 ### 可能出错的地方
 
@@ -137,6 +137,7 @@ spill 文件以 `0600` 权限、`O_EXCL` 与随机名称在 `0700` 每进程目�
 
 这些限制说明本提供方何时不合适，或何时需要特别的运维注意。它们是当前包约束，不是通用平台对比或任务积压。
 
+- **Linux 直接进程退出没有独立截止时间**——直接 `SIGKILL` 获得确认后，不可中断的内核 I/O 可能让 dispose 无限期等待；`graceMs` 和 scope 查询的轮询预算不限制此等待。
 - **native ownership 有明确宿主要求**——Linux 需要可读的 user manager 与 `systemd-run --expand-environment=no`；旧版 systemd 使用带告警的 PGID fallback。macOS 因没有受支持的公开 persistent owner，始终使用该 fallback。
 - **native 选择具有有界的每次 spawn 成本**——Linux 会重复检查 bootstrap 入口、libc `execve`/`fcntl` bindings、存活的 user manager 与 literal-argv scope 支持，直到这套完整探测首次成功；后续符合条件的普通命令或终端 spawn 只重新检查存活的 user manager。Windows 会在每次普通 spawn 前重新检查 runner 入口、bindings 与当前 Job 支持。Linux 深度探测的成功状态与 fallback 告警去重会在提供方生命周期内持续保留。所有探测都会在用户命令可能运行前完成，子进程探测的超时为 5 秒。每次 Linux 启动都会创建私有请求目录，以 50 毫秒间隔检查尚未确定的 scope 建立状态；scope 已建立且仍 active 后，查询间隔按指数增长，最多为 5 秒。Windows 普通命令会保留一个 runner 与一条 IPC 通道，直到 Job 报告活动进程数为零。目标会直接继承标准句柄，不使用 named-pipe stdio 或结果文件。
 - **Windows Job inheritance 有明确排除项**——普通后代默认继承 Job，但 breakaway 进程不在保证范围。目标只在 Job 分配后启动；runner 若在 create-to-assignment 极窄区间遭外力终止，可能留下 suspended target。
