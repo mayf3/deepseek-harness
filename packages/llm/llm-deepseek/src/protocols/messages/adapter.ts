@@ -120,7 +120,7 @@ export class DeepSeekMessagesAdapter extends LlmAdapter {
       }, this.dependencies.prepareExtensions)
       signal.throwIfAborted()
       const response = await fetch(`${connection.baseURL.replace(/\/+$/u, '')}/v1/messages`, {
-        method: 'POST', signal, body: extensions.payload,
+        method: 'POST', signal, body: extensions.payload, redirect: 'error',
         headers: {
           ...attributionHeaders(),
           'content-type': 'application/json', 'accept': 'text/event-stream',

@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { AttachmentId, ImageVariantId } from '@deepseek-ai/dsh-attachment'
 import type { ImageAttachmentRef, RequestImageAttachment } from '@deepseek-ai/dsh-attachment'
-import { DeepSeekFileStore, MAX_CHAT_IMAGE_BYTES } from '../src/common/file-store.ts'
+import { DeepSeekFileStore, MAX_IMAGE_BYTES } from '../src/common/file-store.ts'
 import { DeepSeekFileId } from '../src/common/file-id.ts'
 import { deepSeekFileScope, DeepSeekUploadIndex } from '../src/common/upload-index.ts'
 
@@ -68,7 +68,7 @@ function uploadFetch(now: () => number = () => NOW) {
 }
 
 describe('DeepSeekFileStore', () => {
-  it('separates native Files namespaces and refreshes native reuse from the original upload time', async () => {
+  it('separates native Files reuse, invalidation, and expiry from the chat namespace', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'dsh-native-file-store-'))
     roots.push(dir)
     let now = NOW
@@ -90,12 +90,19 @@ describe('DeepSeekFileStore', () => {
     expect(first.record.scope).not.toBe(chat.record.scope)
     const reopened = new DeepSeekFileStore({ index, fetch: fetchImpl, now: () => now })
     expect((await reopened.ensureUploaded(VERSION, native, POLICY)).record).toEqual(first.record)
+    await reopened.invalidate(VERSION, chat.record.fileId, native)
+    expect((await reopened.ensureUploaded(VERSION, native, POLICY)).record).toEqual(first.record)
     expect(uploads).toBe(2)
-    now = first.record.expiresAt - POLICY.refreshMarginSeconds * 1_000
-    const refreshed = await reopened.ensureUploaded(VERSION, native, POLICY)
-    expect(refreshed.record.fileId).not.toBe(first.record.fileId)
-    expect(refreshed.record.expiresAt).toBe(now + POLICY.expiresAfterSeconds * 1_000)
+    await reopened.invalidate(VERSION, first.record.fileId, native)
+    const replacement = await reopened.ensureUploaded(VERSION, native, POLICY)
+    expect(replacement.record.fileId).not.toBe(first.record.fileId)
+    expect((await reopened.ensureUploaded(VERSION, CONNECTION, POLICY)).record).toEqual(chat.record)
     expect(uploads).toBe(3)
+    now = replacement.record.expiresAt - POLICY.refreshMarginSeconds * 1_000
+    const refreshed = await reopened.ensureUploaded(VERSION, native, POLICY)
+    expect(refreshed.record.fileId).not.toBe(replacement.record.fileId)
+    expect(refreshed.record.expiresAt).toBe(now + POLICY.expiresAfterSeconds * 1_000)
+    expect(uploads).toBe(4)
   })
 
   it('reclaims the oldest owned native file across descending pages before retrying an upload', async () => {
@@ -287,12 +294,12 @@ describe('DeepSeekFileStore', () => {
     await expect(retried).resolves.toMatchObject({ record: { fileId: 'file-api-retry' } })
   })
 
-  it('rejects a request version above the chat per-image limit before transport', async () => {
+  it.each(['chat-completions', 'messages'] as const)('rejects a request version above the %s per-image limit before transport', async (protocol) => {
     const fetchImpl = vi.fn() as typeof fetch
     const store = new DeepSeekFileStore({ now: () => NOW, fetch: fetchImpl })
-    const oversized = { ...VERSION, bytes: MAX_CHAT_IMAGE_BYTES + 1 }
-    await expect(store.ensureUploaded(oversized, CONNECTION, POLICY))
-      .rejects.toMatchObject({ code: 'INVALID_REQUEST' })
+    const oversized = { ...VERSION, bytes: MAX_IMAGE_BYTES + 1 }
+    await expect(store.ensureUploaded(oversized, { ...CONNECTION, protocol }, POLICY))
+      .rejects.toMatchObject({ code: 'INVALID_REQUEST', message: 'DeepSeek image exceeds the 32 MiB per-image limit.' })
     expect(fetchImpl).not.toHaveBeenCalled()
   })
 

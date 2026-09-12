@@ -8,8 +8,8 @@ import { deepSeekFileScope, DeepSeekUploadIndex } from './upload-index.ts'
 import type { DeepSeekUploadRecord } from './upload-index.ts'
 import type { DeepSeekProtocol } from './types.ts'
 
-/** DeepSeek chat accepts at most 32 MiB per image even when it is referenced by file id. */
-export const MAX_CHAT_IMAGE_BYTES = 32 * 1024 * 1024
+/** Shared Files-store limit for each request image, including file-id references. */
+export const MAX_IMAGE_BYTES = 32 * 1024 * 1024
 const OWNED_FILE_PREFIX = 'dsh-'
 
 /** Resolved file-store policy from the plugin configuration. */
@@ -191,8 +191,8 @@ export class DeepSeekFileStore {
     policy: DeepSeekFilePolicy,
     signal: AbortSignal,
   ): Promise<DeepSeekFileReference> {
-    if (version.bytes > MAX_CHAT_IMAGE_BYTES) {
-      throw new LlmError('DeepSeek chat image exceeds the 32 MiB per-image limit.', 'INVALID_REQUEST')
+    if (version.bytes > MAX_IMAGE_BYTES) {
+      throw new LlmError('DeepSeek image exceeds the 32 MiB per-image limit.', 'INVALID_REQUEST')
     }
     const scope = fileScope(connection)
     const now = this.now()
@@ -244,7 +244,7 @@ export class DeepSeekFileStore {
   }
 
   /**
-   * Invalidate one exact local mapping after the chat endpoint rejects its remote id.
+   * Invalidate one exact local mapping after a model request rejects its remote id.
    * @param version - request-image version whose remote generation failed.
    * @param fileId - exact rejected file id.
    * @param connection - endpoint and API-key snapshot.
@@ -313,11 +313,12 @@ export class DeepSeekFileStore {
       for (const file of page.data) {
         if (!file.filename.startsWith(OWNED_FILE_PREFIX)) continue
         owned.push({ id: file.id, createdAt: file.createdAt })
-        if (connection.protocol === 'messages') {
-          // Messages offers no ascending-order query; retain the oldest candidates across every page.
-          owned.sort((left, right) => left.createdAt - right.createdAt)
-          if (owned.length > count) owned.pop()
-        } else if (owned.length === count) break
+        if (connection.protocol === 'chat-completions' && owned.length === count) break
+      }
+      if (connection.protocol === 'messages') {
+        // Messages offers no ascending-order query; retain the oldest candidates across every page.
+        owned.sort((left, right) => left.createdAt - right.createdAt)
+        owned.splice(count)
       }
       if (!page.hasMore || page.lastId === undefined || page.lastId === after) break
       after = page.lastId

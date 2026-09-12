@@ -84,7 +84,7 @@ kind: "package-reference"
     protocol: chat-completions
 ```
 
-`protocol` 默认为 `messages`，官方根地址为 `https://api.deepseek.com/anthropic`；`chat-completions` 使用 `https://api.deepseek.com`。随产品交付的官方组合显式选择 Messages。两种协议都不要求填写 `baseURL`：当 `baseURL` 与 `$DEEPSEEK_BASE_URL` 均未设置时使用当前协议的官方默认值。切换协议保留已有端点覆盖，用户需要填写与选定协议兼容的地址。Chat 追加 `/chat/completions`，Messages 追加 `/v1/messages`；除去末尾斜线之外，不推测或删除自定义路径中的 `/v1` 等后缀。两种协议共用 `llm-deepseek` 设置、`apiKeyEnv` 与 `deepseek-official`，因此已保存的模型选择仍然有效。
+`protocol` 默认为 `messages`，官方根地址为 `https://api.deepseek.com/anthropic`；`chat-completions` 使用 `https://api.deepseek.com`。随产品交付的官方组合显式选择 Messages。两种协议都不要求填写 `baseURL`：当 `baseURL` 与 `$DEEPSEEK_BASE_URL` 均未设置时使用当前协议的官方默认值。切换协议保留已有端点覆盖，用户需要填写与选定协议兼容的地址。显式填写的 `https://api.deepseek.com` 是 Chat 根地址：删除该覆盖即可使用官方 Messages 默认值，也可以改填 `https://api.deepseek.com/anthropic`。Chat 追加 `/chat/completions`，Messages 追加 `/v1/messages`；除去末尾斜线之外，不推测或删除自定义路径中的 `/v1` 等后缀。两种协议共用 `llm-deepseek` 设置、`apiKeyEnv` 与 `deepseek-official`，因此已保存的模型选择仍然有效。
 
 Messages 以内容块发送文本、思考、工具调用和工具结果，以 `output_config.effort` 发送推理强度，并以 Files 引用或内联 base64 发送图片。声明 `systemPromptUpdate: in-history` 的模型保留初始顶层 system，在对应 user/tool-result 轮次之后发送新的 system 快照；未声明能力时，使用最新快照作为顶层 system。回放元数据记录 Messages 格式、模型和签名；Chat 请求只序列化持久化内容，不发送这些签名。无效的 Messages 回放元数据产生警告并省略签名，不丢弃文本或工具历史。
 
@@ -92,9 +92,9 @@ Messages 以内容块发送文本、思考、工具调用和工具结果，以 `
 
 支持图片的路由为每个持久引用选定请求目标，再把它解析为确定性请求版本。省略 `imagePixelBudget` 时按官方公布的视觉 token 网格定目标，即 14 px patch、3:1 降采样、单图最多 1024 token，因此正方形图片最多保留 1302×1302 像素，16:9 图片以 1708×961 发送、对应提供方 1708×966 的网格；正整数会用总像素预算取代网格，`low` 使用总计 512×512 像素。每张请求图片单边最多 4096 像素，这是提供方对包含 15 张及以上图片的请求的限制；`imageMaxBytes` 默认为 2 MiB。带 alpha 的图片使用 effort 0 的 WebP，不透明图片使用 JPEG，并采用 85/75/60 质量阶梯；全部候选都超过目标时保留最小输出。每张保留图片前都有文本，注明完整附件 id 与实际请求尺寸。当前文件系统可以映射附件提供方的宿主对象时，该文本还携带只读执行世界路径与可写副本使用的扩展名。纯文本与未列出路由接收稳定附件占位符，而持久历史继续保留图片引用。
 
-两种协议通常通过各自的 DeepSeek Files 端点上传这些确切请求字节，并发送 file-id 引用。Messages 在配置的基址下使用 `/v1/files`，Files 请求与包含 file id 的 Messages 请求均携带 `anthropic-beta: files-api-2025-04-14`；Chat 使用 `/files`。文件解析失败或超时会按内联预算，用内联 base64 重建整份模型请求；一次请求绝不混用 file id 与内联图片。调用方取消会停止请求。
+两种协议通常通过各自的 DeepSeek Files 端点上传这些确切请求字节，并发送 file-id 引用。Messages 在配置的基址下使用 `/v1/files`，Files 请求与包含 file id 的 Messages 请求均携带 `anthropic-beta: files-api-2025-04-14`；Chat 使用 `/files`。Messages 模型请求与所有 Files 请求拒绝重定向，确保凭据仅发送到配置的源。文件解析失败或超时会按内联预算，用内联 base64 重建整份模型请求；一次请求绝不混用 file id 与内联图片。调用方取消会停止请求。
 
-缓存 id 按端点与 API key 限定作用域，在到期前刷新，根据提供方的陈旧文件错误失效，并通过带等待方局部取消的 singleflight 解析。Messages 文件元数据不含远端过期时间，因此本地复用期限使用原始上传时间加 `fileExpiresAfterSeconds`；这不保证远端文件删除。配额失败会先删除一批配置数量的最旧 harness 文件，再重试一次上传。
+缓存 id 按端点与 API key 限定作用域，在到期前刷新，根据提供方的陈旧文件错误失效，并通过带等待方局部取消的 singleflight 解析。两种上传都通过 `expires_after[anchor]=created_at` 与 `expires_after[seconds]` 请求过期。Messages 文件元数据不含远端过期时间，因此本地复用期限使用原始上传时间加 `fileExpiresAfterSeconds`；这不保证远端文件删除。配额失败会先删除一批配置数量的最旧 harness 文件，再重试一次上传。
 
 Files 模式通过 `maxRequestFilesBytes` 与 `maxImagesPerRequest` 限制保留请求版本；内联回退有独立 base64 预算。两种模式都按配置的字节或数量量子移除最旧前缀。每张省略图片都有自己的模型可见占位符，包含显示名或附件 id，以及可用时的规范化尺寸、媒体类型与当前只读路径。分阶高水位策略避免每新增一张图片都改写旧请求前缀。
 

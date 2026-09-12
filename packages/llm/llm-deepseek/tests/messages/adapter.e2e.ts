@@ -60,7 +60,7 @@ describe.skipIf(!process.env.DEEPSEEK_API_KEY)('DeepSeek Messages real API', () 
     await reply('PROMPT_CLEARED')
   })
 
-  it('uploads and reuses a Files image across Messages requests', async () => {
+  it('uploads, lists, retrieves, and reuses a Files image across Messages requests', async () => {
     const ctx = await boot()
     await ctx.plugin(LocalAttachments)
     const fetchImpl = globalThis.fetch
@@ -96,6 +96,20 @@ describe.skipIf(!process.env.DEEPSEEK_API_KEY)('DeepSeek Messages real API', () 
     expect(uploads).toHaveLength(1)
     expect(bodies).toHaveLength(2)
     expect(bodies.every(body => body.includes(`"file_id":"${uploads[0]}"`) && !body.includes('"type":"base64"'))).toBe(true)
+    const fileId = Messages.DeepSeekFileId(uploads[0]!)
+    const retrieved = await files.retrieve(fileId)
+    expect(retrieved).toMatchObject({ id: fileId, bytes: attachment.bytes, purpose: 'user_data' })
+    expect(retrieved.expiresAt).toBeUndefined()
+    let page = await files.list({ limit: 1_000 })
+    const cursors = new Set<string>()
+    while (!page.data.some(file => file.id === fileId) && page.hasMore) {
+      expect(page.lastId).toBeDefined()
+      const after = page.lastId!
+      expect(cursors.has(after)).toBe(false)
+      cursors.add(after)
+      page = await files.list({ after, limit: 1_000 })
+    }
+    expect(page.data).toContainEqual(retrieved)
   })
 
   it.each(['off', 'low', 'high', 'max'])('streams text with %s effort', async (effort) => {

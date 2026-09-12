@@ -1,3 +1,5 @@
+import { once } from 'node:events'
+import { createServer } from 'node:http'
 import { describe, expect, it, vi } from 'vitest'
 import { userAgent } from '@deepseek-ai/dsh-llm'
 import { DeepSeekFileId } from '../src/common/file-id.ts'
@@ -36,6 +38,7 @@ describe('DeepSeekFilesClient', () => {
       expect(requestUrl(url)).toBe('https://gateway.example/custom/route/v1/files')
       const headers = new Headers(init?.headers)
       expect(headers.get('x-api-key')).toBe('key')
+      expect(headers.get('anthropic-version')).toBe('2023-06-01')
       expect(headers.get('anthropic-beta')).toBe('files-api-2025-04-14')
       expect(headers.has('authorization')).toBe(false)
       const form = init?.body as FormData
@@ -64,6 +67,53 @@ describe('DeepSeekFilesClient', () => {
     await expect(client.list({ after: DeepSeekFileId('file-before'), limit: 1_000, order: 'asc' })).resolves.toMatchObject({ data: [{ bytes: 3 }], hasMore: false })
     await expect(client.retrieve(DeepSeekFileId('file-api-one'))).resolves.toMatchObject({ id: 'file-api-one', bytes: 3 })
     await expect(client.delete(DeepSeekFileId('file-api-one'))).resolves.toBeUndefined()
+  })
+
+  it('accepts an empty Messages list with null cursors', async () => {
+    const client = new DeepSeekFilesClient({ protocol: 'messages', baseURL: 'https://gateway.example', apiKey: 'key',
+      fetch: async () => new Response(JSON.stringify({ data: [], first_id: null, last_id: null, has_more: false })),
+    })
+    await expect(client.list()).resolves.toEqual({ data: [], hasMore: false })
+  })
+
+  it.each(['first_id', 'last_id'])('rejects a Messages list with a numeric %s', async (cursor) => {
+    const client = new DeepSeekFilesClient({ protocol: 'messages', baseURL: 'https://gateway.example', apiKey: 'key',
+      fetch: async () => new Response(JSON.stringify({ data: [], first_id: null, last_id: null, has_more: false, [cursor]: 1 })),
+    })
+    await expect(client.list()).rejects.toMatchObject({ code: 'INVALID_RESPONSE' })
+  })
+
+  it.for(['messages', 'chat-completions'] as const)('refuses a redirected %s Files request before contacting another origin', async (protocol, { onTestFinished }) => {
+    const forwarded: string[] = []
+    const origins: string[] = []
+    const destination = createServer((request, response) => {
+      forwarded.push(String(request.headers['x-api-key'] ?? request.headers.authorization))
+      response.end(JSON.stringify(protocol === 'messages' ? messagesFile() : file()))
+    })
+    const source = createServer((_request, response) => {
+      response.writeHead(307, { location: `${origins[0]}/file-api-one` })
+      response.end()
+    })
+    for (const server of [destination, source]) {
+      server.listen(0, '127.0.0.1')
+      onTestFinished(async () => {
+        server.closeAllConnections()
+        await new Promise<void>((resolve, reject) => {
+          server.close((error) => {
+            if (error) reject(error)
+            else resolve()
+          })
+        })
+      })
+      await once(server, 'listening')
+      const address = server.address()
+      if (address === null || typeof address === 'string') throw new Error('expected a TCP server address')
+      origins.push(`http://127.0.0.1:${address.port}`)
+    }
+    const client = new DeepSeekFilesClient({ protocol, baseURL: origins[1]!, apiKey: 'redirect-test-key' })
+    const error = await client.retrieve(DeepSeekFileId('file-api-one')).catch((cause: unknown) => cause)
+    expect(forwarded).toEqual([])
+    expect(error).toMatchObject({ code: 'TRANSPORT' })
   })
 
   it.each([null, [], { type: 'wrong' }, { mime_type: null }, { created_at: 'invalid' }, { created_at: 123 }, { size_bytes: -1 }])('rejects malformed Messages file metadata %#', async (value) => {

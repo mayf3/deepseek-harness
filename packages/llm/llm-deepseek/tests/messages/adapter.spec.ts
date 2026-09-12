@@ -96,6 +96,30 @@ describe('direct Messages HTTP', () => {
     await expect(chunks(adapter({ baseURL: http.url }).stream(options()))).rejects.toMatchObject({ code: 'RATE_LIMIT', failure: { status: 429, providerRetryAfterMs: 3000 } })
   })
 
+  it('refuses redirects before credentials reach another origin or request extensions are accepted', async () => {
+    const destination = await endpoint()
+    const source = await endpoint((response) => {
+      response.writeHead(307, { location: `${destination.url}/v1/messages` })
+      response.end()
+    })
+    const accept = vi.fn(async () => {})
+    const prepare = vi.fn(async () => ({ fields: {}, accept }))
+    const files = new DeepSeekFileStore()
+    const llm = new DeepSeekMessagesAdapter({
+      connection: () => Messages.resolveAdapterOptions({ protocol: 'messages', baseURL: source.url }),
+      apiKey: () => Promise.resolve('test-key'), userId: () => 'test-user',
+      attachments: () => undefined, imageAccess: () => undefined, files: () => files,
+      prepareExtensions: prepare,
+    })
+    const error = await chunks(llm.stream(options())).catch((cause: unknown) => cause)
+    expect(source.requests).toHaveLength(1)
+    expect(source.requests[0]?.headers['x-api-key']).toBe('test-key')
+    expect(destination.requests).toEqual([])
+    expect(error).toMatchObject({ code: 'TRANSPORT' })
+    expect(prepare).toHaveBeenCalledOnce()
+    expect(accept).not.toHaveBeenCalled()
+  })
+
   it('freezes endpoint and defaults for a prepared call while the next call sees new settings', async () => {
     const first = await endpoint(), second = await endpoint()
     let config = Messages.resolveAdapterOptions({ protocol: 'messages', baseURL: first.url, maxTokens: 10, models: [{ id: MODEL, systemPromptUpdate: 'in-history' }] })

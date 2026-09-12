@@ -20,14 +20,15 @@ export const MAX_STORED_FILE_COUNT = 10_000
 /** Current per-key storage quota. */
 export const MAX_STORED_FILE_BYTES = 25 * 1024 * 1024 * 1024
 
-/** Validated file object returned by the OpenAI-compatible endpoint. */
+/** Validated file metadata normalized from either DeepSeek Files protocol. */
 export interface DeepSeekFileObject {
   id: DeepSeekFileIdType
   bytes: number
   createdAt: number
   filename: string
+  /** Chat Completions purpose; synthesized as `user_data` for Messages. */
   purpose: 'user_data'
-  /** Reported remote expiry for Chat Completions; Messages uploads derive a conservative local reuse deadline. */
+  /** Remote Chat Completions expiry or the upload-time Messages reuse deadline; Messages list/retrieve omit this field. */
   expiresAt?: number
 }
 
@@ -142,7 +143,7 @@ function providerErrorDetail(value: unknown): { message?: string; detail: string
   }
 }
 
-/** Direct client for protocol-specific Files endpoints, retaining the configured URL root. */
+/** Direct Files client retaining the configured URL root and refusing redirects before credentials can leave its origin. */
 export class DeepSeekFilesClient {
   private readonly baseURL: string
   private readonly apiKey: string
@@ -171,10 +172,12 @@ export class DeepSeekFilesClient {
       const headers = new Headers(attributionHeaders())
       if (this.protocol === 'messages') {
         headers.set('x-api-key', this.apiKey)
+        headers.set('anthropic-version', '2023-06-01')
         headers.set('anthropic-beta', MESSAGES_FILES_BETA)
       } else headers.set('authorization', `Bearer ${this.apiKey}`)
       response = await this.fetchImpl(`${this.baseURL}${path}`, {
         ...init,
+        redirect: 'error',
         headers,
         ...signal === undefined ? {} : { signal },
       })
@@ -233,7 +236,7 @@ export class DeepSeekFilesClient {
   /**
    * List one page of files. Ordering applies only to Chat Completions; Messages owns its page order.
    * @param options - pagination, ordering, and cancellation.
-   * @returns the validated page.
+   * @returns the validated page with null Messages cursors omitted.
    */
   async list(options: {
     after?: DeepSeekFileIdType
@@ -249,15 +252,17 @@ export class DeepSeekFilesClient {
     const value = await response.json() as unknown
     if (value === null || typeof value !== 'object' || Array.isArray(value)) throw invalidResponse('list')
     const wire = value as { object?: unknown; data?: unknown; first_id?: unknown; last_id?: unknown; has_more?: unknown }
+    const firstId = this.protocol === 'messages' ? wire.first_id ?? undefined : wire.first_id
+    const lastId = this.protocol === 'messages' ? wire.last_id ?? undefined : wire.last_id
     if ((this.protocol === 'chat-completions' && wire.object !== 'list') || !Array.isArray(wire.data) || typeof wire.has_more !== 'boolean'
-      || (wire.first_id !== undefined && typeof wire.first_id !== 'string')
-      || (wire.last_id !== undefined && typeof wire.last_id !== 'string')) {
+      || (firstId !== undefined && typeof firstId !== 'string')
+      || (lastId !== undefined && typeof lastId !== 'string')) {
       throw invalidResponse('list')
     }
     return {
       data: wire.data.map(item => this.parseFile(item, 'list')),
-      ...typeof wire.first_id === 'string' ? { firstId: DeepSeekFileId(wire.first_id) } : {},
-      ...typeof wire.last_id === 'string' ? { lastId: DeepSeekFileId(wire.last_id) } : {},
+      ...typeof firstId === 'string' ? { firstId: DeepSeekFileId(firstId) } : {},
+      ...typeof lastId === 'string' ? { lastId: DeepSeekFileId(lastId) } : {},
       hasMore: wire.has_more,
     }
   }
