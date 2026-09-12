@@ -62,6 +62,7 @@ class FakeChild extends EventEmitter {
 
 const directories: string[] = []
 
+// Every test must isolate fake PIDs from host signals, including cases without custom mocks.
 beforeEach(() => { denyProcessGroups() })
 
 afterEach(() => {
