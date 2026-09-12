@@ -48,6 +48,17 @@ describe('persistence schema catalog', () => {
     expect(before).not.toBe(after)
   })
 
+  it('renders historical source locations without linking them to current files', () => {
+    const inventory = fixture()
+    const definitions = renderPersistenceSchemaDefinitions(inventory, 'en', () => undefined)
+    expect(definitions).toContain('Sources: `packages/core/example/src/types.ts:8`')
+    expect(definitions).not.toContain('(../packages/')
+    const index = renderPersistenceSchemaIndex(inventory, 'en', ['[Historical schema](v0.schema.json)'])
+    expect(index).toContain('[Historical schema](v0.schema.json)')
+    expect(index).not.toContain('(persistence-schema.json)')
+    expect(renderPersistenceSchemaDefinitions(inventory)).toContain('(../packages/core/example/src/types.ts)')
+  })
+
   it('refuses a current inventory that omits a referenced definition', () => {
     const complete = fixture()
     const missing: PersistenceSchemaInventory = { ...complete, types: [] }
