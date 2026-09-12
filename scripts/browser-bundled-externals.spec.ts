@@ -1,13 +1,16 @@
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs'
+import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { browserBundledExternals, browserPackageOfFile, browserSourceAliases } from './browser-bundled-externals.ts'
 
 const roots: string[] = []
+const dependencyLinks: string[] = []
 const repositoryRoot = resolve(import.meta.dirname, '..')
 
 afterEach(() => {
+  for (const link of dependencyLinks.splice(0)) unlinkSync(link)
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true })
 })
 
@@ -78,7 +81,9 @@ describe('browser dependency discovery', () => {
     await expect(browserBundledExternals(root)).rejects.toThrow('has no browser build config')
   })
 
-  it.each([false, true])('follows shell aliases, CSS and lazy imports without writing output (symlinked root: %s)', async (linked) => {
+  it.each([
+    ['Rollup', false], ['Rollup', true], ['Rolldown', false], ['Rolldown', true],
+  ] as const)('follows shell aliases, CSS and lazy imports without writing output (%s, symlinked root: %s)', async (bundler, linked) => {
     const root = fixture()
     library(root, 'shell-lib')
     library(root, 'lazy-lib')
@@ -96,7 +101,13 @@ describe('browser dependency discovery', () => {
     ].join('\n'))
     const app = join(root, 'apps/web')
     write(root, 'apps/web/package.json', '{"name":"@fixture/web","type":"module","exports":{"./dist/*":"./dist/*"}}')
-    symlinkSync(resolve(repositoryRoot, 'apps/web/node_modules'), join(app, 'node_modules'), 'junction')
+    const owner = bundler === 'Rollup' ? resolve(repositoryRoot, 'apps/web/package.json')
+      : createRequire(resolve(repositoryRoot, 'package.json')).resolve('vitest/package.json')
+    const viteDirectory = dirname(createRequire(owner).resolve('vite/package.json'))
+    const viteLink = join(app, 'node_modules/vite')
+    mkdirSync(dirname(viteLink), { recursive: true })
+    symlinkSync(viteDirectory, viteLink, 'junction')
+    dependencyLinks.push(viteLink)
     write(root, 'apps/web/index.html', '<script type="module" src="./main.ts"></script>')
     write(root, 'apps/web/main.ts', 'import { output, lazy } from "@fixture/static"; console.log(output); void lazy()')
     write(root, 'apps/web/vite.config.ts', `
@@ -104,7 +115,13 @@ describe('browser dependency discovery', () => {
       export default ({ mode }) => {
         if (mode !== 'production') throw new Error('notice discovery must use the production build mode')
         return {
-          plugins: productWebBundleIsolation(${JSON.stringify(root)}, ${JSON.stringify(app)}),
+          plugins: [...productWebBundleIsolation(${JSON.stringify(root)}, ${JSON.stringify(app)}), {
+            name: 'fixture-bundler-engine',
+            generateBundle() {
+              const actual = typeof this.meta.rolldownVersion === 'string' ? 'Rolldown' : 'Rollup'
+              if (actual !== ${JSON.stringify(bundler)}) throw new Error('unexpected bundler: ' + actual)
+            },
+          }],
           build: { rollupOptions: { input: { index: ${JSON.stringify(join(app, 'index.html'))}, preview: "missing-preview.ts" } } }
         }
       }
