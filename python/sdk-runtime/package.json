@@ -80,6 +80,7 @@
     "@deepseek-ai/dsh-session-reference": "workspace:^",
     "@deepseek-ai/dsh-session-telemetry": "workspace:^",
     "@deepseek-ai/dsh-session-title": "workspace:^",
+    "@deepseek-ai/dsh-session-title-llm": "workspace:^",
     "@deepseek-ai/dsh-settings": "workspace:^",
     "@deepseek-ai/dsh-shell": "workspace:^",
     "@deepseek-ai/dsh-shell-env": "workspace:^",

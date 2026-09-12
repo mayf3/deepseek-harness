@@ -59,9 +59,12 @@ import {
 import {
   auditStartupEntries,
   composeEntries,
+  createProfileResolutionGeneration,
   healProfilesModuleFallback,
   loadOverlayPatches,
+  PluginPackages,
   type Profile,
+  type ProfileResolutionMode,
 } from '@deepseek-ai/dsh-app-boot'
 import { dshHomePath } from '@deepseek-ai/dsh-home-paths'
 import { LlmAdapter } from '@deepseek-ai/dsh-llm'
@@ -288,6 +291,8 @@ export interface WebScaffold {
 
 /** Options for {@link launchWebScaffold}. */
 export interface LaunchOptions {
+  /** Profile resolver backend used by this test Host; defaults to runtime coverage. */
+  profileResolutionMode?: Extract<ProfileResolutionMode, 'dual' | 'runtime'>
   /** Enable the real Open In rows with deterministic launch-environment facts. */
   openInAppEnvironment?: LaunchEnvironmentSnapshot
   /** Compare the replayed root session with `replayFixture`; defaults on for a manifest-owned canonical recording. */
@@ -684,21 +689,19 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
         patches: [],
       }
     }))
-    // Mirror the production launcher: the shared installation closure keeps
-    // its carrier-specific fallback, while private bundle dependencies stay
-    // isolated to this synthetic scaffold profile.
-    await healProfilesModuleFallback({
-      installAnchor: INSTALL_ANCHOR,
-      home: harnessHome,
-      profile: {
-        name: 'scaffold',
-        dir: profileDir,
-        layers: extraLayers,
-        patchPath: join(profileDir, 'cordis.patch.yml'),
-        patches: [],
-        patchReload: 'startup',
-      },
-    })
+    const profile: Profile = {
+      name: 'scaffold',
+      dir: profileDir,
+      layers: extraLayers,
+      patchPath: join(profileDir, 'cordis.patch.yml'),
+      patches: [],
+      patchReload: 'startup',
+    }
+    const profileResolutionMode = options.profileResolutionMode ?? 'runtime'
+    const resolutionOptions = { installAnchor: INSTALL_ANCHOR, home: harnessHome, profile }
+    const resolution = profileResolutionMode === 'runtime'
+      ? await createProfileResolutionGeneration(resolutionOptions)
+      : await healProfilesModuleFallback(resolutionOptions)
     await mkdir(profileDir, { recursive: true })
     const rootConfig = join(profileDir, 'cordis.yml')
     await writeFile(rootConfig, '[]\n')
@@ -714,6 +717,10 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
       exit: (code) => {
         throw new Error(`web e2e scaffold: the web app requested exit ${String(code)} with no arguments to reject`)
       },
+    })
+    await ctx.plugin(PluginPackages, {
+      generation: resolution,
+      behavior: profileResolutionMode === 'dual' ? 'verify' : 'enforce',
     })
     await ctx.plugin(Loader)
     ctx.loader.builtins.include = Include
