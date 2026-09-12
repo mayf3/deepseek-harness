@@ -8,6 +8,7 @@ import { describe, expect, it, vi, beforeEach } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime from '@deepseek-ai/dsh-tools'
+import McpResources from '@deepseek-ai/dsh-mcp-resources'
 import { ToolCallId } from '@deepseek-ai/dsh-llm'
 import type { Config } from '@deepseek-ai/dsh-mcp-client'
 
@@ -29,6 +30,8 @@ const { mockConnect, mockClose, mockListTools, mockCallTool, mockSetNotification
     connect = mockConnect
     close = mockClose
     getServerCapabilities = () => ({ tools: {} })
+    getInstructions(): string | undefined { return undefined }
+    listResources = async () => ({ resources: [] })
     listTools = mockListTools
     callTool = mockCallTool
     constructor(_info: unknown, options: { listChanged: { tools: { onChanged: () => void } } }) {
@@ -129,6 +132,49 @@ describe('reconnect supervisor', () => {
     mockListTools.mockResolvedValue(listing('remote'))
     mockCallTool.mockResolvedValue({ content: [{ type: 'text', text: 'ok' }] })
     ctx = await mountRegistry()
+  })
+
+  it('keeps instructions withdrawn when disposal interrupts initial discovery', async () => {
+    const listingGate: PromiseWithResolvers<ReturnType<typeof listing>> = Promise.withResolvers()
+    const instructionSpy = vi.spyOn(MockClient.prototype, 'getInstructions').mockReturnValue('Instructions after discovery.')
+    mockListTools.mockImplementation(() => listingGate.promise)
+    const handle = startConnection(ctx, stdioConfig(), resolveReconnectPolicy(undefined, 'reconnect'))
+    try {
+      await vi.waitFor(() => { expect(mockListTools).toHaveBeenCalled() })
+      const disposing = handle.dispose()
+      listingGate.resolve(listing('remote'))
+      await disposing
+      expect(handle.instructions()).toBe('')
+    } finally {
+      instructionSpy.mockRestore()
+      listingGate.resolve(listing('remote'))
+      await handle.dispose()
+      await ctx.fiber.dispose()
+    }
+  })
+
+  it('rejects resource reads while a replacement connection is still negotiating', async () => {
+    await ctx.plugin(McpResources)
+    const config = stdioConfig({ initialDelayMs: 2, maxDelayMs: 8, maxAttempts: 2 })
+    const handle = startConnection(ctx, config, resolveReconnectPolicy(config.reconnect, 'reconnect'))
+    const reconnectGate: PromiseWithResolvers<void> = Promise.withResolvers()
+    try {
+      await handle.ready
+      ctx.mcpResources.register('srv', handle.resources)
+      mockConnect.mockImplementationOnce(() => reconnectGate.promise)
+      instances[0]!.onclose?.()
+      await vi.waitFor(() => { expect(instances).toHaveLength(2) })
+      const result = await ctx.tools.execute({
+        name: 'list_mcp_resources', arguments: { server: 'srv' },
+        callId: nextCallId(), signal: testToolSignal,
+      })
+      expect(result.isError).toBe(true)
+      expect(JSON.stringify(result.content)).toContain('server is disconnected')
+    } finally {
+      reconnectGate.resolve()
+      await handle.dispose()
+      await ctx.fiber.dispose()
+    }
   })
 
   it('reconnects after a transport close, re-syncs tools through the new generation, and serves calls', async () => {

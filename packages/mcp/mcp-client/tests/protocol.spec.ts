@@ -9,6 +9,7 @@ import { serveStdio } from '@modelcontextprotocol/server/stdio'
 import { ToolCallId } from '@deepseek-ai/dsh-llm'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime from '@deepseek-ai/dsh-tools'
+import McpResources from '@deepseek-ai/dsh-mcp-resources'
 import { startConnection, resolveReconnectPolicy } from '../src/connection.ts'
 import type { Config } from '../src/index.ts'
 
@@ -20,7 +21,7 @@ const config: Config = {
   toolCallTimeoutMs: 60_000, failOnStartupError: true,
 }
 
-async function connect(server: McpServer): Promise<Context> {
+async function connect(server: McpServer, options?: { resources: true }): Promise<Context> {
   const ctx = new Context()
   await ctx.plugin(SystemPrompt)
   await ctx.plugin(ToolRuntime)
@@ -34,6 +35,10 @@ async function connect(server: McpServer): Promise<Context> {
     await ctx.fiber.dispose()
   })
   expect(await connection.ready).toEqual({})
+  if (options?.resources) {
+    await ctx.plugin(McpResources)
+    ctx.mcpResources.register('fixture', connection.resources)
+  }
   return ctx
 }
 
@@ -45,6 +50,39 @@ describe('modern MCP connections', () => {
     }))
     const ctx = await connect(server)
     expect(ctx.tools.schemas()).toEqual([])
+  })
+
+  it('reads resources and preserves explicit list and template cursors through the SDK', async () => {
+    const server = new McpServer({ name: 'resources', version: '1' })
+    server.registerResource('memo', 'memo://readme', {}, async () => ({
+      contents: [{ uri: 'memo://readme', text: 'memo' }],
+    }))
+    const seen: (string | undefined)[] = []
+    server.server.setRequestHandler('resources/list', async (request) => {
+      const cursor = request.params?.cursor
+      seen.push(cursor)
+      return { resources: [{ name: 'memo', uri: 'memo://readme' }] }
+    })
+    server.server.setRequestHandler('resources/templates/list', async (request) => {
+      seen.push(request.params?.cursor)
+      return { resourceTemplates: [] }
+    })
+    const ctx = await connect(server, { resources: true })
+    for (const name of ['list_mcp_resources', 'list_mcp_resource_templates']) {
+      for (const cursor of [undefined, 'opaque-page']) {
+        const result = await ctx.tools.execute({
+          name, arguments: { server: 'fixture', ...cursor === undefined ? {} : { cursor } },
+          callId: ToolCallId(name), signal: new AbortController().signal,
+        })
+        expect(result.isError).toBe(false)
+      }
+    }
+    expect(seen).toEqual([undefined, 'opaque-page', undefined, 'opaque-page'])
+    const read = await ctx.tools.execute({
+      name: 'read_mcp_resource', arguments: { server: 'fixture', uri: 'memo://readme' },
+      callId: ToolCallId('read-resource'), signal: new AbortController().signal,
+    })
+    expect(read).toMatchObject({ isError: false, value: { contents: [{ uri: 'memo://readme', text: 'memo' }] } })
   })
 
   it('updates tools through the SDK modern list-change subscription', async () => {

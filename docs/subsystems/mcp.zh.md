@@ -64,3 +64,30 @@ stdio 和 Streamable HTTP 都使用官方 SDK 的协商、发现、协议校验�
 - [MCP 包组](../../packages/mcp/README.zh.md) — 包入口。
 - [第三方记忆服务器](../user/guide/mcp-memory.zh.md) — 产品配置指南。
 - [协议协商决策](../../.agents/notes/implemented/feature/2026-09-12-mcp-sdk-protocol-negotiation.zh.md) — SDK 职责与兼容性决策。
+
+<!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
+
+<a id="cordis-surface"></a>
+
+## Cordis API
+
+Generated from source by `scripts/gen-cordis-catalog.ts` (verified fresh by `pnpm run verify-cordis-catalog` in doc-sync; regenerate with `pnpm run gen-cordis-catalog`) — the language sides differ only in locale-specific paired document paths. Signature blocks use a `ts cordis-catalog` fence and keep the original source JSDoc; dispatch modes are defined in the [primer](../cordis-primer.zh.md#dispatch-modes), and the framework-inherited `ctx` API lives in [cordis-api/inherited.md](../cordis-api/inherited.md).
+
+<a id="ctxmcpresources--mcpresourceruntime"></a>
+
+### `ctx.mcpResources` — `McpResourceRuntime`
+
+Scoped resource access plus three tools shared by configured MCP servers.
+
+```ts cordis-catalog
+/**
+ * Register one server in the caller's Cordis scope.
+ * @param server - configured server name, unique in this scope.
+ * @param provider - connection-owned resource operations.
+ * @returns the effect disposer for this exact registration.
+ */
+register(server: string, provider: McpResourceProvider): () => void
+```
+
+Source: [`packages/mcp/mcp-resources/src/index.ts`](../../packages/mcp/mcp-resources/src/index.ts)
+<!-- END GENERATED cordis-surface -->

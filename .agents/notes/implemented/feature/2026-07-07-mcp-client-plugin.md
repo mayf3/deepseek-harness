@@ -22,7 +22,7 @@ Use the official [`@modelcontextprotocol/client`](https://github.com/modelcontex
 
 ### Scope
 
-MCP Client only (no server side — ACP already covers the "expose harness as an agent" role). Bridge **Tools** only — Resources and Prompts are deferred (they require harness-side consumption mechanisms that don't exist yet, and design space is large).
+MCP Client only, with no server-side implementation. This package registers tools; [resources and server instructions](2026-09-12-mcp-resources-and-instructions.md) use shared resource tools and logged literal system-prompt sections respectively. MCP prompt templates are unsupported.
 
 ### Plugin shape
 
@@ -173,7 +173,7 @@ Rejected by the connect-once design: it added a partial-availability state (tool
 
 ### Bridge Resources and Prompts
 
-Deferred. Resources need a harness-side mechanism to decide WHEN to inject content (system prompt? on demand? model-triggered?). Prompts need a "prompt template" concept the harness lacks. Both require their own design; Tools are the high-value, low-risk starting point.
+The [on-demand resource decision](2026-09-12-mcp-resources-and-instructions.md) owns resource consumption. MCP prompt templates remain unimplemented because they need a separate user-selection and invocation mechanism.
 
 ### Raw model-facing tool names with an optional `toolPrefix`
 
