@@ -208,6 +208,13 @@ describe('gate graph validation', () => {
     expect(ids).toContain('concrete-terms')
   })
 
+  it('checks retrospective releases alongside the current persistence history', () => {
+    for (const mode of ['doc-sync', 'ci-static'] as const) {
+      const ids = withPnpmEntrypoint(() => gatesForMode(mode).map(subject => subject.id))
+      expect(ids).toEqual(expect.arrayContaining(['persistence-changes', 'persistence-releases']))
+    }
+  })
+
   it('keeps package-group subsystem ownership in the documentation gate', () => {
     const ids = withPnpmEntrypoint(() => gatesForMode('doc-sync').map(subject => subject.id))
 
