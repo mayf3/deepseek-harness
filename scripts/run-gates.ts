@@ -745,6 +745,7 @@ function docSyncLeafGates(options: {
     pnpmScript('persistence-changes', 'verify-persistence-changes', { label: 'persistence type history' }),
     pnpmScript('session-format-catalog', 'verify-session-format-catalog', { label: 'Session format catalog' }),
     pnpmScript('public-repository-links', 'verify-public-repository-links', { label: 'public repository links', quick: true }),
+    pnpmScript('repository-references', 'verify-repository-references', { label: 'repository references', quick: true }),
     pnpmScript('concrete-terms', 'verify-concrete-terms', { label: 'concrete terms', quick: true }),
     pnpmScript('doc-refs', 'verify-doc-refs', { label: 'doc refs', quick: true }),
     pnpmScript('subsystem-pages', 'verify-subsystem-pages', { label: 'subsystem pages' }),

@@ -194,6 +194,20 @@ describe('gate graph validation', () => {
     expect(ids).toContain('concrete-terms')
   })
 
+  it('checks all maintained repository references locally and in CI', () => {
+    const { scripts } = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as {
+      scripts: Record<string, string>
+    }
+    for (const mode of ['doc-sync', 'doc-quick', 'ci-static'] as const) {
+      const gates = withPnpmEntrypoint(() => gatesForMode(mode))
+      expect(gates).toContainEqual(expect.objectContaining({
+        id: 'repository-references',
+        displayCommand: 'pnpm run verify-repository-references',
+      }))
+    }
+    expect(scripts['verify-repository-references']).toBe('tsx scripts/verify-repository-references.ts')
+  })
+
   it('keeps package-group subsystem ownership in the documentation gate', () => {
     const ids = withPnpmEntrypoint(() => gatesForMode('doc-sync').map(subject => subject.id))
 

@@ -71,6 +71,6 @@ Hunt these in any doc; [dsh-doc](../.agents/skills/dsh-doc/SKILL.md) runs this l
 - Emphasis inflation: bold, CAPS, or "critically" everywhere means nothing stands out. Reserve emphasis for the clause that changes behavior.
 - Spec-speak in `implemented/` Agent Notes: "should", migration plans, acceptance checklists. An implemented Agent Note describes what is, per the [implemented-note instructions](../.agents/notes/implemented/AGENTS.md).
 
-## Cross-reference with machine-checkable links, never free prose
+## Repository references
 
-Link repository references with relative Markdown paths, never bare filenames or Agent Note numbers. `verify-md-links` rejects missing targets and dead `#fragment` anchors.
+Use relative Markdown links for current files and tags or PR numbers for historical references. `verify-md-links` checks local targets. [Reference validation](../scripts/verify-repository-references.ts) rejects actual commit identifiers and disallowed organization URLs in maintained files.
