@@ -1,7 +1,7 @@
 /** Keep experimental packages outside default installations, runtime imports, and shipped compositions. */
 
 import { existsSync, globSync, readFileSync, statSync } from 'node:fs'
-import { dirname, relative, resolve } from 'node:path'
+import { basename, dirname, extname, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { JSDOM } from 'jsdom'
 import ts from 'typescript'
@@ -137,11 +137,14 @@ export function verifyDefaultProductIsolation(root: string): ProductIsolationRes
     const source = inlineSource ?? readFileSync(path, 'utf8')
     for (const specifier of collectRuntimeSourceSpecifiers(path, source)) sourceReference(specifier, path)
     for (const specifier of runtimeLocalSpecifiers(path, source)) {
-      const target = resolveSource(path, specifier)
-      const resolved = target ?? resolve(dirname(path), specifier)
-      const owner = ownerOf(resolved)
+      const local = followLocal && specifier.startsWith('/')
+        ? resolve(root, 'apps/web', `.${specifier.replace(/[?#].*$/, '')}`)
+        : resolve(dirname(path), specifier.replace(/[?#].*$/, ''))
+      const target = resolveSource(local)
+      const resolved = target ?? local
+      const owner = directories.get(resolved) ?? ownerOf(resolved)
       if (owner !== undefined && isExperimental(owner)) add(owner, display(path))
-      if (/[^/]*cordis[^/]*\.ya?ml$/.test(resolved)) scanConfig(resolved)
+      if (/cordis[^/]*\.ya?ml$/.test(basename(resolved))) scanConfig(resolved)
       if (followLocal && target !== undefined) scanSource(target, true)
     }
   }
@@ -165,28 +168,27 @@ export function verifyDefaultProductIsolation(root: string): ProductIsolationRes
       if (Array.isArray(entry.insert)) entry.insert.forEach(visit)
       if ((entry.name === '@deepseek-ai/cordis-plugin-include' || entry.name === 'cordis:include') && isRecord(entry.config)) {
         if (!composedWeb && Array.isArray(entry.config.patches)) entry.config.patches.forEach(visit)
-        const paths = typeof entry.config.path === 'string' ? [entry.config.path] : entry.config.path
-        if (Array.isArray(paths)) {
-          for (const included of paths) {
-            if (typeof included !== 'string') continue
-            const filename = included.startsWith('file:') ? fileURLToPath(included) : resolve(dirname(path), included)
-            if (!composedWeb) {
-              scanConfig(filename)
-              continue
-            }
-            if (includeStack.has(filename)) {
-              failures.push(`${display(path)}: cyclic Include path ${display(filename)}`)
-              continue
-            }
-            const content = loadCordisYaml(readFileSync(filename, 'utf8'))
-            if (!Array.isArray(content)) {
-              failures.push(`${display(filename)}: included composition must contain an entry array`)
-              continue
-            }
-            const entries = applyEntryPatches(content as EntryOptions[], entry.config.patches as PatchOptions[] | undefined, () => {})
-            scanEntries(entries, filename, true, new Set([...includeStack, filename]))
-          }
+        const included = entry.config.path
+        if (typeof included !== 'string') return
+        const filename = included.startsWith('file:') ? fileURLToPath(included) : resolve(dirname(path), included)
+        if (includeStack.has(filename)) {
+          failures.push(`${display(path)}: cyclic Include path ${display(filename)}`)
+          return
         }
+        const nestedStack = new Set([...includeStack, filename])
+        const initial = Array.isArray(entry.config.initial) ? entry.config.initial : undefined
+        if (initial !== undefined) scanEntries(initial, filename, false, nestedStack)
+        if (!composedWeb) {
+          if (existsSync(filename) || initial === undefined) scanConfig(filename)
+          return
+        }
+        const content = existsSync(filename) ? loadCordisYaml(readFileSync(filename, 'utf8')) : initial
+        if (!Array.isArray(content)) {
+          failures.push(`${display(filename)}: included composition must contain an entry array`)
+          return
+        }
+        const entries = applyEntryPatches(content as EntryOptions[], entry.config.patches as PatchOptions[] | undefined, () => {})
+        scanEntries(entries, filename, true, nestedStack)
       }
     }
     document.forEach(visit)
@@ -265,8 +267,11 @@ export function verifyDefaultProductIsolation(root: string): ProductIsolationRes
     }
     if (manifest.dsh?.bundle?.patch !== undefined) scanConfig(resolve(pkg.directory, manifest.dsh.bundle.patch))
     for (const tree of manifest.dsh?.configTrees ?? []) {
-      for (const path of globSync('**/*.{yml,yaml}', { cwd: resolve(pkg.directory, tree.path),
-        exclude: ['**/*.i18n.yaml', '**/preset.yml'] })) scanConfig(resolve(pkg.directory, tree.path, path))
+      const treePath = resolve(pkg.directory, tree.path)
+      const files = existsSync(treePath) && statSync(treePath).isDirectory()
+        ? globSync('**/*.{yml,yaml}', { cwd: treePath, exclude: ['**/*.i18n.yaml', '**/preset.yml'] }) : []
+      if (files.length === 0) failures.push(`${display(treePath)}: declared config tree has no composition files`)
+      for (const path of files) scanConfig(resolve(treePath, path))
     }
     if (display(pkg.directory) === 'apps/web') continue
     const files = globSync('src/**/*.{ts,tsx,mts,cts,js,mjs,cjs}', { cwd: pkg.directory,
@@ -282,21 +287,27 @@ function barePackageName(specifier: string): string {
   return /^(?:@[^/]+\/)?[^/@]+/.exec(specifier)?.[0] ?? specifier
 }
 
-function resolveSource(from: string, specifier: string): string | undefined {
-  const path = resolve(dirname(from), specifier.replace(/[?#].*$/, ''))
-  if (!/\.(?:[cm]?[jt]sx?)$/.test(path) && /\.[^/]+$/.test(path)) return undefined
-  const base = path.replace(/\.[cm]?js$/, '')
-  return [path, `${base}.ts`, `${base}.tsx`, `${path}/index.ts`, `${path}/index.tsx`]
+function resolveSource(path: string): string | undefined {
+  const extension = extname(path)
+  if (extension !== '' && !/^\.[cm]?[jt]sx?$/.test(extension)
+    && !(existsSync(path) && statSync(path).isDirectory())) return undefined
+  const extensions = ['.mjs', '.js', '.mts', '.ts', '.jsx', '.tsx']
+  const typed = extension === '.js' ? [path.replace(/\.js$/, '.ts'), path.replace(/\.js$/, '.tsx')]
+    : extension === '.mjs' ? [path.replace(/\.mjs$/, '.mts')]
+      : extension === '.cjs' ? [path.replace(/\.cjs$/, '.cts')] : []
+  return [path, ...typed, ...extension === '' ? extensions.map(suffix => `${path}${suffix}`) : [],
+    ...extensions.map(suffix => resolve(path, `index${suffix}`))]
     .find(candidate => existsSync(candidate) && statSync(candidate).isFile())
 }
 
 function runtimeLocalSpecifiers(path: string, source: string): Set<string> {
-  const specifiers = collectRuntimeLocalSourceSpecifiers(path, source)
+  const specifiers = collectRuntimeLocalSourceSpecifiers(path, source, true)
   const file = ts.createSourceFile(path, source, ts.ScriptTarget.Latest, true)
   const visit = (node: ts.Node): void => {
     if (ts.isNewExpression(node) && ts.isIdentifier(node.expression) && node.expression.text === 'URL') {
       const first = node.arguments?.[0]
-      if (first !== undefined && ts.isStringLiteralLike(first) && first.text.startsWith('.')) specifiers.add(first.text)
+      if (first !== undefined && ts.isStringLiteralLike(first)
+        && (first.text.startsWith('.') || first.text.startsWith('/'))) specifiers.add(first.text)
     }
     ts.forEachChild(node, visit)
   }

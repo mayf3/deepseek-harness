@@ -27,7 +27,7 @@ function manifest(root: string, path: string, fields: Record<string, unknown>): 
 }
 
 function fixture(): string {
-  const root = mkdtempSync(join(tmpdir(), 'dsh-default-isolation-'))
+  const root = mkdtempSync(join(tmpdir(), 'dsh.default-isolation-'))
   roots.push(root)
   write(root, 'apps/cli/package.json', { name: '@deepseek-ai/dsh', dependencies: { [core]: 'workspace:^' } })
   write(root, 'apps/cli/src/bin.ts', 'export {}\n')
@@ -127,6 +127,68 @@ describe('default product isolation', () => {
   })
 
   it.each([
+    "import '/src/preview.ts'",
+    "export * from '/src/preview.ts'",
+    "await import('/src/preview.ts')",
+    "new Worker(new URL('/src/preview.ts', import.meta.url))",
+  ])('follows Web-root runtime reference %s', (source) => {
+    const root = fixture()
+    write(root, 'apps/web/src/main.ts', source)
+    write(root, 'apps/web/src/preview.ts', `import '${experimental}'\n`)
+
+    expect(verifyDefaultProductIsolation(root).failures.join('\n')).toContain(experimental)
+  })
+
+  it('does not follow type-only Web-root references', () => {
+    const root = fixture()
+    write(root, 'apps/web/src/main.ts', "import type { Value } from '/src/preview.ts'\nexport type { Value } from '/src/preview.ts'\n")
+    write(root, 'apps/web/src/preview.ts', `import '${experimental}'\n`)
+
+    expect(verifyDefaultProductIsolation(root).failures).toEqual([])
+  })
+
+  it.each(['.js', '.jsx', '.mjs', '.ts', '.tsx', '.mts'])('follows extensionless Web imports to %s in a dotted checkout', (extension) => {
+    const root = fixture()
+    write(root, 'apps/web/src/main.ts', "import './preview'\n")
+    write(root, `apps/web/src/preview${extension}`, `import '${experimental}'\n`)
+
+    expect(verifyDefaultProductIsolation(root).failures.join('\n')).toContain(experimental)
+  })
+
+  it.each(['.js', '.jsx', '.mjs'])('follows Web directory imports to index%s', (extension) => {
+    const root = fixture()
+    write(root, 'apps/web/src/main.ts', "import './preview'\n")
+    write(root, `apps/web/src/preview/index${extension}`, `import '${experimental}'\n`)
+
+    expect(verifyDefaultProductIsolation(root).failures.join('\n')).toContain(experimental)
+  })
+
+  it.each([['.mjs', '.mts'], ['.cjs', '.cts']])('follows %s runtime requests to their %s source', (request, source) => {
+    const root = fixture()
+    write(root, 'apps/web/src/main.ts', `import './preview${request}'\n`)
+    write(root, `apps/web/src/preview${source}`, `import '${experimental}'\n`)
+
+    expect(verifyDefaultProductIsolation(root).failures.join('\n')).toContain(experimental)
+  })
+
+  it('follows a Web directory import whose directory name contains a dot', () => {
+    const root = fixture()
+    write(root, 'apps/web/src/main.ts', "import './preview.v1'\n")
+    write(root, 'apps/web/src/preview.v1/index.js', `import '${experimental}'\n`)
+
+    expect(verifyDefaultProductIsolation(root).failures.join('\n')).toContain(experimental)
+  })
+
+  it('identifies a relative package-directory import using its exact directory owner', () => {
+    const root = fixture()
+    write(root, 'apps/web/src/main.ts', "import '../../../packages/experimental/prototype'\n")
+    manifest(root, 'packages/experimental/prototype/package.json', { main: 'src/entry.js' })
+    write(root, 'packages/experimental/prototype/src/entry.js', 'export {}\n')
+
+    expect(verifyDefaultProductIsolation(root).failures.join('\n')).toContain(experimental)
+  })
+
+  it.each([
     [{ name: experimental, disabled: true }],
     [{ group: true, config: [{ name: experimental }] }],
     [{ insert: [{ name: experimental }] }],
@@ -148,6 +210,43 @@ describe('default product isolation', () => {
     expect(verifyDefaultProductIsolation(root).failures.join('\n')).toContain(experimental)
   })
 
+  it.each([false, true])('checks Include.initial when its file exists: %s', (existing) => {
+    const root = fixture()
+    const included = join(root, 'included.yml')
+    if (existing) write(root, 'included.yml', [{ name: core }])
+    write(root, patch, [{ insert: [{ name: 'cordis:include', config: {
+      path: pathToFileURL(included).href,
+      initial: [{ name: experimental }],
+    } }] }])
+
+    expect(verifyDefaultProductIsolation(root).failures.join('\n')).toContain(experimental)
+  })
+
+  it('accepts a missing Include file initialized with stable entries and applies its patches', () => {
+    const root = fixture()
+    write(root, patch, [{ insert: [{ name: 'cordis:include', config: {
+      path: pathToFileURL(join(root, 'included.yml')).href,
+      initial: [{ id: 'feature', group: true, config: [{ name: core }] }],
+    } }] }])
+    expect(verifyDefaultProductIsolation(root).failures).toEqual([])
+    write(root, patch, [{ insert: [{ name: 'cordis:include', config: {
+      path: pathToFileURL(join(root, 'included.yml')).href,
+      initial: [{ id: 'feature', group: true, config: [{ name: core }] }],
+      patches: [{ id: 'feature', config: [{ name: experimental }] }],
+    } }] }])
+    expect(verifyDefaultProductIsolation(root).failures.join('\n')).toContain(experimental)
+  })
+
+  it('rejects an Include.initial tree that includes its own generated file', () => {
+    const root = fixture()
+    const path = pathToFileURL(join(root, 'included.yml')).href
+    write(root, patch, [{ insert: [{ name: 'cordis:include', config: {
+      path, initial: [{ name: 'cordis:include', config: { path } }],
+    } }] }])
+
+    expect(verifyDefaultProductIsolation(root).failures.join('\n')).toContain('cyclic Include path included.yml')
+  })
+
   it('checks default profile bundle names and declared config trees', () => {
     const root = fixture()
     write(root, profile, `export const PROFILE_TEMPLATES = { web: { bundles: ['${experimental}'] } }\n`
@@ -157,6 +256,22 @@ describe('default product isolation', () => {
     const failures = verifyDefaultProductIsolation(root).failures.join('\n')
     expect(failures).toContain(`${profile} -> ${experimental}`)
     expect(failures).toContain('apps/cli/config/extra.cordis.yml')
+  })
+
+  it.each([false, true])('rejects a declared config tree without composition files when its directory exists: %s', (existing) => {
+    const root = fixture()
+    manifest(root, 'apps/cli/package.json', { dsh: { configTrees: [{ path: './config' }] } })
+    if (existing) write(root, 'apps/cli/config/README.i18n.yaml', 'en: test\n')
+
+    expect(verifyDefaultProductIsolation(root).failures.join('\n')).toContain('apps/cli/config')
+  })
+
+  it('does not classify ordinary YAML as a Cordis config because of an ancestor directory name', () => {
+    const root = fixture()
+    write(root, 'packages/core/core/src/cordis/index.ts', "new URL('./ordinary.yml', import.meta.url)\n")
+    write(root, 'packages/core/core/src/cordis/ordinary.yml', 'ordinary: data\n')
+
+    expect(verifyDefaultProductIsolation(root).failures).toEqual([])
   })
 
   it('checks desktop configuration reached through a source URL', () => {
@@ -192,6 +307,18 @@ describe('default product isolation', () => {
     } }] }])
 
     expect(verifyDefaultProductIsolation(root).failures.join('\n')).toContain(`included tree/cordis.yml -> ${experimental}`)
+  })
+
+  it('checks the replacement Include path after an id-only Web patch', () => {
+    const root = fixture()
+    write(root, 'original.yml', [{ name: core }])
+    write(root, 'replacement.yml', [{ name: experimental }])
+    write(root, patch, [
+      { insert: [{ id: 'feature-include', name: 'cordis:include', config: { path: pathToFileURL(join(root, 'original.yml')).href } }] },
+      { id: 'feature-include', config: { path: pathToFileURL(join(root, 'replacement.yml')).href } },
+    ])
+
+    expect(verifyDefaultProductIsolation(root).failures.join('\n')).toContain(`replacement.yml -> ${experimental}`)
   })
 
   it('reports an empty effective Web tree even when the raw patch names a package', () => {

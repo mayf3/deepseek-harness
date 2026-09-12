@@ -36,4 +36,4 @@ This check enforces the existing [experimental dependency isolation rules](../ar
 
 ## Consequences
 
-Experimental packages may publish without joining default installations or compositions. Source, effective composition, build-input, installed-dependency, and runtime-registry checks provide independent evidence. Runtime smokes observe startup and Client activation; they do not replace tests for every later user-triggered execution path or for explicitly installed profile extensions.
+Experimental packages may publish without joining default installations or compositions. Source, effective composition, build-input, installed-dependency, and runtime-registry checks provide independent evidence. The SDK's [source-launch compatibility patch](../../../../apps/cli/src/sdk-source.cordis.patch.yml) is selected by a computed filesystem path and is outside static configuration discovery. Runtime smokes observe startup and Client activation; they do not replace tests for every later user-triggered execution path or for explicitly installed profile extensions.

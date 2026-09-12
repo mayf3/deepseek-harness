@@ -36,4 +36,4 @@ Status: implemented
 
 ## Consequences
 
-实验包可以发布而不加入默认安装或组合。源码、最终组合、构建输入、安装依赖和运行时 registry 检查提供相互独立的证据。运行时 smoke 观察启动和 Client 激活；它们不替代后续每条用户触发路径的测试，也不替代显式安装的 profile 扩展测试。
+实验包可以发布而不加入默认安装或组合。源码、最终组合、构建输入、安装依赖和运行时 registry 检查提供相互独立的证据。SDK 的[源码启动兼容 patch](../../../../apps/cli/src/sdk-source.cordis.patch.yml) 通过计算出的文件路径选择，不在静态配置发现范围内。运行时 smoke 观察启动和 Client 激活；它们不替代后续每条用户触发路径的测试，也不替代显式安装的 profile 扩展测试。
