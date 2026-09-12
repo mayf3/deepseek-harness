@@ -60,7 +60,7 @@ Permission owner 通过生成的 `permissionPresets` Remote 方法发布一份�
 
 Auto 带右上标 `EXP`。两个可见当前会话选择器都要求实验确认；显式 `/permission auto` 已构成同意。Composer 使用通用 Menu 既有 portal 定位保持在视口内，同时保留 218–360px 边界。Slash popup 保留 `min(220px, 100%)` 与 `max-width: 100%`，窄 composer 将 trigger 折叠时也一样。
 
-[委派时权限捕获](2026-07-25-subagent-policy-inheritance.zh.md)在首次 await 前记录 Auto 或 Full access，并在 fork seed 与 sandbox／approval override 之后追加该既有 preset event。单次与可继续创建共用此规则；cold resume 只读取 child 日志。后续 parent 切换不改变该 child，后续 child 自己的切换仍可胜出。Read Only 与 Workspace Write 保留 sandbox 继承加 `approval: never`，因此可能保持 `custom`。Auto child 使用既有 lineage 与消息独立分类每次调用，不增加父 call metadata、delegation provenance、receipt、Header／descriptor 字段或 Session format。进程外 child 在父委派获准后保留自己的权限系统。
+[委派时权限捕获](2026-07-25-subagent-policy-inheritance.zh.md)在首次 await 前记录 Auto 或 Full access，并在 fork seed 与 sandbox／approval override 之后追加该既有 preset event。单次与可继续创建共用此规则；cold resume 只读取 child 日志。后续 parent 切换不改变该 child，后续 child 自己的切换仍可胜出。Read Only 与 Workspace Write 保留 sandbox 继承加 `approval: never`，因此可能保持 `custom`。Auto child 使用既有 lineage 与消息独立分类每次调用，不增加父 call metadata、委派记录、receipt、Header／descriptor 字段或 Session format。进程外 child 在父委派获准后保留自己的权限系统。
 
 ## 考虑过的替代方案
 

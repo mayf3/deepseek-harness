@@ -14,7 +14,7 @@ Auto 或 Full access 预设身份以及沙箱与审批覆盖项都是按会话�
 
 继承的 Auto 或 Full access 身份会成为一条 `permission/preset` 事件，捕获的沙箱值与钉定的审批值则会在子 agent 工厂的未发布设置阶段成为带来源标记的 `sandbox/mode` 与 `approval/policy` 事件。会话构造函数已把 `Session.firstLiveSeq` 固定在 constructor seed 之后，而 `Session.inheritedEventCount` 保留精确的 fork 前缀长度，因此继承事实会排在 fork 历史之后，却不改变其谱系 cut。生命周期本地遥测从 `firstLiveSeq` 开始，因此排除 constructor seed，并包含这些未发布设置事件。因此，既有的末事件胜出折叠会让委派快照压过陈旧的 fork 历史，并让子 agent 后续的切换压过该快照。孙代 agent 会折叠其父级已记录的状态，因此无需另一套继承机制即可组合此规则。
 
-Auto review 不会把这条继承的 preset 事件变成授权回执。每次 child 调用仍会重新分类：普通项目内工作为低风险并直接允许；中风险工作必须在 child 创建 prompt 或已核验的 human／直接父级消息中得到点名动作、准确目标和范围的明确授权，且不存在未解决冲突；高风险工作始终拒绝。`parentSession`、创建 prompt 与既有 `agent-message.senderSessionId` 足以在 one-shot、continuable 与 cold resume 路径中恢复这份上下文；不会新增父 call id、解析后的任务 metadata、delegation provenance、review receipt 或 Session format migration。
+Auto review 不会把这条继承的 preset 事件变成授权回执。每次 child 调用仍会重新分类：普通项目内工作为低风险并直接允许；中风险工作必须在 child 创建 prompt 或已核验的 human／直接父级消息中得到点名动作、准确目标和范围的明确授权，且不存在未解决冲突；高风险工作始终拒绝。`parentSession`、创建 prompt 与既有 `agent-message.senderSessionId` 足以在 one-shot、continuable 与 cold resume 路径中恢复这份上下文；不会新增父 call id、解析后的任务 metadata、委派记录、review receipt 或 Session format migration。
 
 普通的会话追加会在发布前校验继承事件，持久化层则在会话公布时捕获完整的未发布日志。因此，任何已物化的子 agent 日志都会在首批数据中存下继承事件；不存在第二套策略存储、schema 字段或查询索引。`source: 'delegation'` 标记让审批叙述能够区分继承与子 agent 侧的用户切换。
 
