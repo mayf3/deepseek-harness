@@ -276,7 +276,7 @@ function usesEmittedTreeDefaults(manifest: PackageManifest): boolean {
     exportDefault(manifest, subpath)?.startsWith('./lib/types/') === true)
 }
 
-/** Experimental manifest requirements, including explicit public exceptions. */
+/** Experimental manifest requirements, including explicit private exceptions. */
 export function checkExperimentalManifest({ dir, manifest }: WorkspaceManifest): string[] {
   if (!experimentalPackageDirectory.test(dir)) return []
   const label = manifest.name ?? dir

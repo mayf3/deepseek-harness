@@ -1,21 +1,20 @@
-/** Experimental packages that publish with the dsh release family without changing names. */
-export const PUBLIC_EXPERIMENTAL_PACKAGE_DIRECTORIES = [
-  'packages/experimental/agent-team',
-  'packages/experimental/agent-team-profile',
-  'packages/experimental/agent-team-web-profile',
-  'packages/experimental/client-ui-agent-team',
-  'packages/experimental/tool-agent-team',
-  'packages/experimental/computer-use-cua-driver-mcp',
-  'packages/experimental/computer-use-cua-driver-native',
+/** Experimental packages excluded from public releases and npm baselines. */
+export const PRIVATE_EXPERIMENTAL_PACKAGE_DIRECTORIES = [
+  'packages/experimental/auto-review',
+  'packages/experimental/inspector',
+  'packages/experimental/ptc-runtime-python',
+  'packages/experimental/webworker-packer',
+  'packages/experimental/webworker-runtime',
 ] as const
 
-const publicExperimentalPackageDirectories = new Set<string>(PUBLIC_EXPERIMENTAL_PACKAGE_DIRECTORIES)
+const privateExperimentalPackageDirectories = new Set<string>(PRIVATE_EXPERIMENTAL_PACKAGE_DIRECTORIES)
 
 /**
- * Whether an experimental package is an explicit public-release exception.
+ * Whether an experimental package publishes under the default-public policy.
  * @param directory - repository-relative package directory.
  * @returns Whether the package publishes with the dsh family.
  */
 export function isPublicExperimentalPackageDirectory(directory: string): boolean {
-  return publicExperimentalPackageDirectories.has(directory)
+  return /^packages\/experimental\/[^/]+$/.test(directory)
+    && !privateExperimentalPackageDirectories.has(directory)
 }

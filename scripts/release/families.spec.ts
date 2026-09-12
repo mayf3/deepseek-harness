@@ -42,7 +42,7 @@ afterEach(() => {
 })
 
 describe('release families', () => {
-  it('publishes allowlisted experimental packages while excluding private prototypes', () => {
+  it('retains public experimental packages while excluding private prototypes', () => {
     const members = releaseFamily('dsh').members(resolve(import.meta.dirname, '../..'))
 
     expect(members
@@ -66,6 +66,25 @@ describe('release families', () => {
     write(join(root, 'apps/private/package.json'), '{"name":"@deepseek-ai/dsh-private","version":"0.0.1","private":true}\n')
 
     expect(releaseFamily('dsh').members(root).map(entry => entry.name)).toEqual(['@deepseek-ai/dsh-public'])
+  })
+
+  it('publishes unlisted experimental packages while retaining private exclusions', () => {
+    const root = mkdtempSync(join(tmpdir(), 'dsh-release-experimental-'))
+    roots.push(root)
+    write(join(root, 'packages/experimental/prototype/package.json'), JSON.stringify({
+      name: '@deepseek-ai/dsh-experimental-prototype',
+      version: '0.0.1',
+      publishConfig: { access: 'public' },
+    }))
+    write(join(root, 'packages/experimental/inspector/package.json'), JSON.stringify({
+      name: '@deepseek-ai/dsh-experimental-inspector',
+      version: '0.0.1',
+      private: true,
+    }))
+
+    expect(releaseFamily('dsh').members(root).map(entry => entry.name)).toEqual([
+      '@deepseek-ai/dsh-experimental-prototype',
+    ])
   })
 
   it('bumps private dsh workspaces without adding release tags', () => {
