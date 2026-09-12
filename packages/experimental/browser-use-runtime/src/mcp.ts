@@ -1,6 +1,7 @@
 /** Session-owned MCP browser processes and provider catalog activation. @module */
 
 import type { Context } from '@deepseek-ai/cordis'
+import type { Agent } from '@deepseek-ai/dsh-agent'
 import Schema from '@deepseek-ai/schemastery'
 import { BrowserUseProviderName } from '@deepseek-ai/dsh-browser-use/brand'
 import * as McpClient from '@deepseek-ai/dsh-mcp-client'
@@ -86,12 +87,14 @@ export interface SessionMcpOptions {
 
 /**
  * Reserve browser use and discover one MCP catalog before each Session's first request.
+ * A busy attachment contributes no browser tools to other Sessions, which can continue their turns.
  * Calls are serialized per Session; unload closes every server before releasing registration.
  * @param ctx - provider context supplying browser use, Agents, and tools.
  * @param options - provider identity, attachment exclusivity, and executable configuration.
  */
 export function mountSessionMcp(ctx: Context, options: SessionMcpOptions): void {
   let resources!: SessionResources<Scope>
+  const inheritedMasks = new WeakMap<Agent, Scope>()
   ctx.effect(function* () {
     yield ctx.browserUse.register(BrowserUseProviderName(options.name))
     resources = new SessionResources(ctx, {
@@ -146,6 +149,21 @@ export function mountSessionMcp(ctx: Context, options: SessionMcpOptions): void 
   ctx.on('system-prompt/prepare', async ({ agent, signal }) => {
     if (agent === undefined) return
     signal?.throwIfAborted()
+    if (!resources.available(agent)) {
+      const inherited = ctx.tools.schemas(agent).filter(tool => tool.name.startsWith(`mcp__${options.name}__`))
+      if (inherited.length > 0) {
+        let scope = inheritedMasks.get(agent)
+        if (scope === undefined) {
+          scope = createScope(ctx, agent)
+          const owned = scope
+          agent.ctx.effect(() => () => owned.dispose(), `${options.name}.inherited-tools`)
+          inheritedMasks.set(agent, scope)
+        }
+        // Restrictions hide inherited tools; this Agent's later own registrations remain visible.
+        scope.ctx.tools.restrict({ deny: inherited.map(tool => tool.name) })
+      }
+      return
+    }
     await resources.get(agent, signal)
     signal?.throwIfAborted()
   })

@@ -9,7 +9,7 @@ vi.mock('@browserbasehq/stagehand', async () => import('./fixtures/stagehand.ts'
 
 const runtimes: NativeBrowserRuntime[] = []
 const config: NativeBrowserConfig = {
-  mode: 'launch', headless: true, operationTimeoutMs: 30000, shutdownGraceMs: 5000,
+  mode: 'attach', cdpEndpoint: 'http://fixture', headless: true, operationTimeoutMs: 30000, shutdownGraceMs: 5000,
 }
 const generate = async (): Promise<never> => { throw new Error('Unexpected model call in browser cleanup test') }
 
@@ -29,10 +29,19 @@ it('preserves the external browser when attachment initialization fails', async 
   expect(fixture.browsers[0]?.pages.map(page => page.currentURL)).toEqual(['about:blank'])
 })
 
-it('closes an owned browser even when Stagehand cleanup fails', async () => {
+it('leaves Chromium owned by the host when Stagehand cleanup fails', async () => {
   const runtime = await openNativeBrowser(config, generate)
   runtimes.push(runtime)
   fixture.stagehandClose = () => { throw new Error('Stagehand cleanup failed') }
   await expect(runtime.close()).rejects.toThrow('Stagehand cleanup failed')
-  expect(fixture.browsers[0]?.closed).toBe(true)
+  expect(fixture.browsers[0]?.closed).toBe(false)
+})
+
+
+it('returns a native screenshot as canonical text and image content', async () => {
+  const runtime = await openNativeBrowser(config, generate)
+  runtimes.push(runtime)
+  expect(await runtime.execute('screenshot', { fullPage: true })).toMatchObject({
+    content: [{ type: 'text', text: 'Screenshot of tab tab-1.' }, { type: 'image', mimeType: 'image/png' }],
+  })
 })

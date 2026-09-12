@@ -9,6 +9,7 @@ export const screenshotBase64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAA
 /** Controllable external operations and acquired browser handles. */
 export const fixture: {
   browsers: FixtureBrowser[]
+  connections: Map<string, FixtureBrowser>
   createError?: Error
   create?: (model: ClientLLM) => Promise<void>
   navigate?: (page: FixturePage) => Promise<void>
@@ -16,11 +17,13 @@ export const fixture: {
   actResult?: { success: boolean; message: string }
   interrupt?: Promise<void>
   stagehandClose?: () => void
-} = { browsers: [] }
+  screenshot?: () => Promise<void>
+} = { browsers: [], connections: new Map() }
 
 /** Reset fixture state after the previous test has closed its contexts. */
 export function resetFixture(): void {
   fixture.browsers = []
+  fixture.connections.clear()
   delete fixture.createError
   delete fixture.create
   delete fixture.navigate
@@ -28,6 +31,7 @@ export function resetFixture(): void {
   delete fixture.actResult
   delete fixture.interrupt
   delete fixture.stagehandClose
+  delete fixture.screenshot
 }
 
 /** A browser tab with only the operations exercised by the provider. */
@@ -37,7 +41,10 @@ export class FixturePage {
   async goto(url: string): Promise<void> { this.currentURL = url; await fixture.navigate?.(this) }
   async url(): Promise<string> { return this.currentURL }
   async title(): Promise<string> { return 'Fixture heading' }
-  async screenshot(): Promise<Buffer> { return Buffer.from(screenshotBase64, 'base64') }
+  async screenshot(): Promise<Buffer> {
+    await Promise.race([fixture.screenshot?.(), this.owner.connectionClosed.then(() => { throw new Error('Fixture connection closed') })])
+    return Buffer.from(screenshotBase64, 'base64')
+  }
   async close(): Promise<void> { this.owner.pages = this.owner.pages.filter(page => page !== this) }
 }
 
@@ -47,6 +54,7 @@ export class FixtureBrowser {
   active: FixturePage
   closed = false
   stagehandClosed = false
+  connectionClosed: Promise<void> = new Promise(() => {})
   readonly context = {
     pages: async (): Promise<FixturePage[]> => this.pages,
     activePage: async (): Promise<FixturePage | undefined> => this.pages.includes(this.active) ? this.active : this.pages[0],
@@ -74,6 +82,8 @@ export const localBrowser = {
     return browser
   },
   async connect(options: unknown): Promise<FixtureBrowser> {
+    const existing = fixture.connections.get((options as { cdpUrl: string }).cdpUrl)
+    if (existing !== undefined) return existing
     const browser = new FixtureBrowser('connected', options)
     fixture.browsers.push(browser)
     return browser
@@ -83,7 +93,7 @@ export const localBrowser = {
 /** Native wrapper that exercises the public custom-generation callback. */
 export class Stagehand {
   private readonly closed: PromiseWithResolvers<void> = Promise.withResolvers()
-  constructor(readonly browser: FixtureBrowser, readonly model: ClientLLM) {}
+  constructor(readonly browser: FixtureBrowser, readonly model: ClientLLM) { browser.connectionClosed = this.closed.promise }
   static async create(options: { browser: FixtureBrowser; model: ClientLLM }): Promise<Stagehand> {
     await fixture.create?.(options.model)
     if (fixture.createError) throw fixture.createError

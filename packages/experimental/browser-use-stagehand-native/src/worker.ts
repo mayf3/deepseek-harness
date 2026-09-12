@@ -1,4 +1,4 @@
-/** Isolated attachment owns SDK sockets while the host owns model inference. */
+/** Isolated browser runtime owns SDK resources while the host owns model inference. */
 
 import { parentPort, workerData } from 'node:worker_threads'
 import { ClientLLMSchema } from '@browserbasehq/stagehand'
@@ -9,9 +9,10 @@ import { answer, request } from './worker-rpc.ts'
 
 const port = parentPort
 if (port === null) throw new Error('Stagehand attachment requires a Worker parent')
-const { extensionId, ...config } = z.object({
-  mode: z.literal('attach'),
-  cdpEndpoint: z.string(),
+const { extensionId, cdpEndpoint, executablePath, ...config } = z.object({
+  mode: z.enum(['launch', 'attach']),
+  cdpEndpoint: z.string().optional(),
+  executablePath: z.string().optional(),
   extensionId: z.string().optional(),
   headless: z.boolean(),
   operationTimeoutMs: z.number().int().positive(),
@@ -20,7 +21,11 @@ const { extensionId, ...config } = z.object({
 const generate = ClientLLMSchema.shape.generate.implementAsync(params => request(port, 'generate', params) as ReturnType<ClientLLM['generate']>)
 const methodSchema = z.enum(Object.keys(browserInputs) as [keyof typeof browserInputs, ...Array<keyof typeof browserInputs>])
 const opening = openNativeBrowser(
-  { ...config, ...extensionId === undefined ? {} : { extensionId } },
+  {
+    ...config, ...extensionId === undefined ? {} : { extensionId },
+    ...cdpEndpoint === undefined ? {} : { cdpEndpoint },
+    ...executablePath === undefined ? {} : { executablePath },
+  },
   async params => generate(params),
 )
 // Initialization failure stays observable through the host's ready request.
@@ -31,5 +36,8 @@ port.on('message', (raw: unknown) => {
     if (method === 'ready') return
     if (method === 'close') return native.close()
     return native.execute(methodSchema.parse(method), args)
-  }).catch((error: unknown) => { throw error })
+  }).catch((error: unknown) => {
+    console.error('Stagehand Worker protocol failed:', error)
+    process.exit(1)
+  })
 })

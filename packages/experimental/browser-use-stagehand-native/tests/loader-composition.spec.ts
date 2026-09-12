@@ -21,7 +21,24 @@ import ToolRuntime from '@deepseek-ai/dsh-tools'
 import * as Provider from '../src/index.ts'
 import { resetFixture, screenshotBase64 } from './fixtures/stagehand.ts'
 
-vi.mock('@browserbasehq/stagehand', async () => import('./fixtures/stagehand.ts'))
+vi.mock('@browserbasehq/stagehand', async importActual => ({
+  ...await import('./fixtures/stagehand.ts'),
+  ClientLLMSchema: (await importActual<typeof import('@browserbasehq/stagehand')>()).ClientLLMSchema,
+}))
+vi.mock('@puppeteer/browsers', async () => import('./fixtures/chromium.ts'))
+vi.mock('node:worker_threads', async (importActual) => {
+  const actual = await importActual<typeof import('node:worker_threads')>()
+  return {
+    ...actual,
+    Worker: class extends actual.Worker {
+      constructor(entry: string | URL, options: import('node:worker_threads').WorkerOptions) {
+        const hooks = new URL('../../../../snapshots/session/browser-use-stagehand-native/native-fixture.mjs', import.meta.url)
+        const bootstrap = `import { installExternalBrowserHooks } from ${JSON.stringify(hooks.href)}; installExternalBrowserHooks(); await import(${JSON.stringify(String(entry))});`
+        super(new URL(`data:text/javascript,${encodeURIComponent(bootstrap)}`), options)
+      }
+    },
+  }
+})
 
 class BrowserModel extends LlmAdapter {
   mainRequests: GenerateOptions[] = []

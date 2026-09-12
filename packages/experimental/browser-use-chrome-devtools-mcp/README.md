@@ -35,7 +35,7 @@ Mount both entries in a profile composition that supplies Agents, tools, and sys
     headless: true
 ```
 
-Use `mode: attach` and set `endpoint` to an HTTP(S) debugging URL or WS(S) browser endpoint to operate an existing browser. The first live Session claims it until that Session unloads; another Session fails acquisition. Cleanup disconnects and leaves the external browser and its pages running.
+Use `mode: attach` and set `endpoint` to an HTTP(S) debugging URL or WS(S) browser endpoint to operate an existing browser. A Session claims the attachment while loading its browser tools and retains it until unloading. Other Sessions and subagents continue their turns without these tools; a later turn can acquire the attachment after cleanup. Direct calls from another Session fail. Cleanup disconnects and leaves the external browser and its pages running.
 
 | Field | Default | Meaning |
 |---|---|---|

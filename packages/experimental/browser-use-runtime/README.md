@@ -27,9 +27,9 @@ Browser providers use this library to reuse a browser across one Session's turns
 
 This public experimental library is a dependency of the browser providers. It has no plugin entry or mount configuration. The [browser-use service](../../browser-use/browser-use/README.md) remains independent of the library.
 
-Native providers construct `SessionResources` from the package root, supplying resource acquisition and cleanup callbacks. Calls pass the exact live Agent to `run()`; stale owners and a second owner of an exclusive attachment fail before acquisition. Providers keep their registration until `dispose()` finishes.
+Native providers construct `SessionResources` from the package root, supplying resource acquisition and cleanup callbacks. Calls pass the exact live Agent to `run()`; stale owners and a second owner of an exclusive attachment fail before acquisition. Canceling an acquisition wait leaves initialization available to other callers in the same Session; Session disposal aborts and awaits that initialization. Providers keep their registration until `dispose()` finishes.
 
-MCP providers use `mountSessionMcp` from `@deepseek-ai/dsh-experimental-browser-use-runtime/mcp`. They supply their fixed server name, executable, arguments, and ownership policy. The helper mounts one scoped MCP client per live Session and discovers tools during `system-prompt/prepare`, before ordinary tool-schema collection for its first model request. Startup or discovery failure rejects that step after cleanup. Reconnection is disabled; a closed client does not silently replace the Session's browser state.
+MCP providers use `mountSessionMcp` from `@deepseek-ai/dsh-experimental-browser-use-runtime/mcp`. They supply their fixed server name, executable, arguments, and ownership policy. The helper mounts one scoped MCP client per live Session and discovers tools during `system-prompt/prepare`, before ordinary tool-schema collection for its first model request. A busy attachment leaves other Sessions without this provider's tools while their turns continue; after cleanup, a later request can acquire it. Startup or discovery failure rejects that step after cleanup. Reconnection is disabled; a closed client does not silently replace the Session's browser state.
 
 -----
 
@@ -41,7 +41,7 @@ MCP providers use `mountSessionMcp` from `@deepseek-ai/dsh-experimental-browser-
 
 The [resource manager](src/index.ts) keys ownership by live Agent identity and joins operation cancellation with owner disposal. Each resource has one acquisition promise and one operation queue. Failed acquisition releases its reservation only after the provider callback rolls back acquired resources.
 
-Disposal closes resources before waiting for running operations, allowing connection teardown to interrupt upstream APIs without abort support. A failed close rejects disposal and retains ownership. Agent-scoped cleanup prevents a resumed Session with the same durable id from inheriting a previous browser.
+Disposed-cause cancellation starts resource cleanup before AgentHandle waits for idle. Cleanup closes resources before waiting for running operations, allowing connection teardown to interrupt upstream APIs without abort support. A failed close rejects disposal and retains ownership. Agent-scoped cleanup prevents a resumed Session with the same durable id from inheriting a previous browser.
 
 The [MCP helper](src/mcp.ts) places discovery and execution in each Agent's scope. It retains the provider registration through resource cleanup and uses the [MCP client](../../mcp/mcp-client/README.md) for transport, schema discovery, result conversion, and durable image admission.
 

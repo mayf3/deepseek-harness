@@ -1,6 +1,6 @@
 /** Chromium inspection and automation through the pinned Chrome DevTools MCP server. @module */
 
-import { createRequire } from 'node:module'
+import { fileURLToPath } from 'node:url'
 import type { Context } from '@deepseek-ai/cordis'
 import { BrowserMcpConfig, mountSessionMcp, validateBrowserMcpConfig } from '@deepseek-ai/dsh-experimental-browser-use-runtime/mcp'
 
@@ -24,8 +24,7 @@ export const Config: typeof BrowserMcpConfig = BrowserMcpConfig
  */
 export function apply(ctx: Context, config: Config): void {
   validateBrowserMcpConfig(config)
-  const require = createRequire(import.meta.url)
-  const cli = require.resolve('chrome-devtools-mcp/build/src/bin/chrome-devtools-mcp.js')
+  const cli = fileURLToPath(import.meta.resolve('chrome-devtools-mcp/build/src/bin/chrome-devtools-mcp.js'))
   const args = [cli, '--no-usage-statistics']
   if (config.mode === 'attach') {
     args.push(/^wss?:/u.test(config.endpoint) ? '--ws-endpoint' : '--browser-url', config.endpoint)

@@ -70,6 +70,17 @@ export class SessionResources<T> {
   constructor(private readonly ctx: Context, private readonly options: SessionResourceOptions<T>) {}
 
   /**
+   * Check admission without reserving or acquiring a browser.
+   * @param agent - exact live Agent that would own the resource.
+   * @returns whether this owner can use or acquire the configured browser.
+   */
+  available(agent: Agent): boolean {
+    return this.disposing === undefined && !this.disposedOwners.has(agent)
+      && this.ctx.get('agents')?.get(agent.id) === agent
+      && (this.entries.has(agent) || !this.options.exclusive || this.entries.size === 0)
+  }
+
+  /**
    * Obtain the current activation's resource, acquiring it once when absent.
    * @param agent - exact live owner, never merely a durable Session id.
    * @param signal - optional cancellation of this wait; acquisition remains Session-owned.
@@ -79,13 +90,15 @@ export class SessionResources<T> {
     signal?.throwIfAborted()
     const entry = this.entry(agent)
     const resource = await (signal === undefined ? entry.ready : awaitOperation(entry.ready, signal))
+    signal?.throwIfAborted()
     entry.controller.signal.throwIfAborted()
     return resource.value
   }
 
   /**
    * Run after earlier operations on this Session settle; other Sessions proceed independently.
-   * Cancellation reaches the provider operation and prevents queued work from starting.
+   * Cancellation stops this caller's acquisition wait without canceling Session-owned initialization.
+   * It reaches an active provider operation and prevents queued work from starting.
    * @param agent - exact live resource owner.
    * @param signal - cancellation for this operation.
    * @param operation - provider call, which must retain ownership until its work settles.
@@ -95,14 +108,24 @@ export class SessionResources<T> {
     signal.throwIfAborted()
     const entry = this.entry(agent)
     const combined = AbortSignal.any([signal, entry.controller.signal])
+    const releaseDisposed = () => {
+      const reason = signal.reason as { kind?: unknown } | undefined
+      if (reason?.kind !== 'disposed') return
+      this.disposedOwners.add(agent)
+      // AgentHandle waits for idle before disposing its scope; close interrupts the owned operation first.
+      void this.closeEntry(agent, entry).catch((error: unknown) => {
+        this.ctx.logger.warn(`${this.options.label}: browser cleanup during Session cancellation failed: ${String(error)}`)
+      })
+    }
+    signal.addEventListener('abort', releaseDisposed, { once: true })
     const task = entry.tail.then(async () => {
       combined.throwIfAborted()
-      const resource = await entry.ready
+      const resource = await awaitOperation(entry.ready, combined)
       combined.throwIfAborted()
       const result = await operation(resource.value, combined)
       combined.throwIfAborted()
       return result
-    })
+    }).finally(() => { signal.removeEventListener('abort', releaseDisposed) })
     // The queue tracks settlement independently of a caller observing its error.
     entry.tail = task.then(() => {}, () => {})
     return task
@@ -153,7 +176,8 @@ export class SessionResources<T> {
       }),
       tail: Promise.resolve(),
     }
-    entry.tail = entry.ready.then(() => {}, () => {})
+    // Acquisition can outlive every canceled caller; later consumers still receive its failure.
+    void entry.ready.catch(() => {})
     this.entries.set(agent, entry)
     return entry
   }

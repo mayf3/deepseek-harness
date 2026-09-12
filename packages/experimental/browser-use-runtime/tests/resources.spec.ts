@@ -51,6 +51,7 @@ describe('Session browser resource ownership', () => {
     expect(await resources.get(resumed.agent)).not.toBe(first)
     await resources.dispose()
     expect(close).toHaveBeenCalledTimes(3)
+    expect(resources.available(b.agent)).toBe(false)
     await expect(resources.get(b.agent)).rejects.toThrow('not a live browser owner')
   })
 
@@ -68,15 +69,22 @@ describe('Session browser resource ownership', () => {
         return { value: {}, async close() { closing.resolve(undefined); await released.promise } }
       },
     })
+    expect(resources.available(a.agent)).toBe(true)
+    expect(resources.available(b.agent)).toBe(true)
     const first = resources.get(a.agent)
+    expect(resources.available(a.agent)).toBe(true)
+    expect(resources.available(b.agent)).toBe(false)
     await expect(resources.get(b.agent)).rejects.toThrow('already reserved')
     opened.resolve(undefined)
     await first
     const disposing = a.dispose()
     await closing.promise
+    expect(resources.available(a.agent)).toBe(false)
+    expect(resources.available(b.agent)).toBe(false)
     await expect(resources.get(b.agent)).rejects.toThrow('already reserved')
     released.resolve(undefined)
     await disposing
+    expect(resources.available(b.agent)).toBe(true)
     await resources.get(b.agent)
     await resources.dispose()
   })
@@ -152,25 +160,86 @@ describe('Session browser resource ownership', () => {
     await resources.dispose()
   })
 
-  it('cancels a waiting turn without transferring or abandoning its pending acquisition', async () => {
+  it.each(['get', 'run'] as const)('cancels one %s caller while another waiter retains the same acquisition', async (kind) => {
     const { ctx, owner } = await fixture()
     const a = owner('a')
+    const b = owner('b')
     const entered = Promise.withResolvers<undefined>()
     const release = Promise.withResolvers<undefined>()
     const close = vi.fn(async () => {})
-    const open = vi.fn(async () => { entered.resolve(undefined); await release.promise; return { value: 1, close } })
-    const resources = new SessionResources(ctx, { label: 'test', exclusive: false, open })
+    let acquisitionSignal: AbortSignal | undefined
+    const open = vi.fn(async (_agent: Agent, signal: AbortSignal) => {
+      acquisitionSignal = signal
+      entered.resolve(undefined)
+      await release.promise
+      return { value: 1, close }
+    })
+    const resources = new SessionResources(ctx, { label: 'test', exclusive: true, open })
     const controller = new AbortController()
-    const acquiring = resources.get(a.agent, controller.signal)
-    const rejected = expect(acquiring).rejects.toThrow('cancel turn')
-    await entered.promise
-    controller.abort(new Error('cancel turn'))
-    await rejected
-    release.resolve(undefined)
-    expect(await resources.get(a.agent, new AbortController().signal)).toBe(1)
-    expect(open).toHaveBeenCalledOnce()
-    await resources.dispose()
+    const execute = vi.fn(async (value: number) => value)
+    const acquiring = kind === 'get'
+      ? resources.get(a.agent, controller.signal)
+      : resources.run(a.agent, controller.signal, execute)
+    const canceled = acquiring.catch((error: unknown) => error)
+    const retained = resources.get(a.agent, new AbortController().signal).catch((error: unknown) => error)
+    try {
+      await entered.promise
+      controller.abort(new Error('cancel turn'))
+      expect(await canceled).toMatchObject({ message: 'cancel turn' })
+      expect(acquisitionSignal?.aborted).toBe(false)
+      expect(resources.available(b.agent)).toBe(false)
+      expect(execute).not.toHaveBeenCalled()
+      release.resolve(undefined)
+      expect(await retained).toBe(1)
+      expect(await resources.get(a.agent)).toBe(1)
+      expect(open).toHaveBeenCalledOnce()
+    } finally {
+      release.resolve(undefined)
+      await resources.dispose()
+    }
     expect(close).toHaveBeenCalledOnce()
+  })
+
+  it('honors caller cancellation between shared readiness and the waiting continuation', async () => {
+    const { ctx, owner } = await fixture()
+    const a = owner('a')
+    const ready = Promise.withResolvers<undefined>()
+    const resources = new SessionResources(ctx, {
+      label: 'test', exclusive: false,
+      async open() { await ready.promise; return { value: 1, close: async () => {} } },
+    })
+    const controller = new AbortController()
+    const error = new Error('cancel ready waiter')
+    const retained = resources.get(a.agent)
+    const canceled = resources.get(a.agent, controller.signal).catch((failure: unknown) => failure)
+    const abort = retained.then(() => { controller.abort(error) })
+    try {
+      ready.resolve(undefined)
+      await abort
+      expect(await canceled).toBe(error)
+      expect(await retained).toBe(1)
+      expect(await resources.get(a.agent)).toBe(1)
+    } finally {
+      ready.resolve(undefined)
+      await resources.dispose()
+    }
+  })
+
+  it('retains a late initialization failure after its only caller canceled before waiting', async () => {
+    const { ctx, owner } = await fixture()
+    const a = owner('a')
+    const b = owner('b')
+    const ready = Promise.withResolvers<never>()
+    const open = vi.fn().mockImplementationOnce(() => ready.promise).mockResolvedValue({ value: 1, close: async () => {} })
+    const resources = new SessionResources<number>(ctx, { label: 'test', exclusive: true, open })
+    const controller = new AbortController()
+    const running = resources.run(a.agent, controller.signal, async value => value)
+    controller.abort(new Error('cancel before waiting'))
+    await expect(running).rejects.toThrow('cancel before waiting')
+    ready.reject(new Error('late browser startup failed'))
+    await vi.waitFor(() => { expect(resources.available(b.agent)).toBe(true) })
+    expect(await resources.get(b.agent)).toBe(1)
+    await resources.dispose()
   })
 
   it('reports non-Error cancellation and acquisition failures through cancellable waits', async () => {
@@ -261,4 +330,27 @@ describe('Session browser resource ownership', () => {
     await expect(resources.dispose()).rejects.toThrow('browser cleanup failed')
     await expect(resources.get(b.agent)).rejects.toThrow('not a live browser owner')
   })
+})
+
+
+it('reports early disposal cleanup failure while retaining the owned resource', async () => {
+  const { ctx, owner } = await fixture()
+  const a = owner('early-close-failure')
+  const entered = Promise.withResolvers<undefined>()
+  const stopped = Promise.withResolvers<undefined>()
+  const warning = vi.spyOn(ctx.logger, 'warn')
+  const resources = new SessionResources(ctx, {
+    label: 'early-close', exclusive: true,
+    open: async () => ({ value: {}, async close() { stopped.resolve(undefined); throw new Error('Close failed') } }),
+  })
+  const controller = new AbortController()
+  const running = resources.run(a.agent, controller.signal, async () => { entered.resolve(undefined); await stopped.promise })
+  const canceled = expect(running).rejects.toMatchObject({ kind: 'disposed' })
+  await entered.promise
+  controller.abort({ kind: 'disposed' })
+  await canceled
+  await a.dispose()
+  expect(warning).toHaveBeenCalledWith(expect.stringContaining('cleanup during Session cancellation failed'))
+  await expect(resources.dispose()).rejects.toThrow('browser cleanup failed')
+  warning.mockRestore()
 })

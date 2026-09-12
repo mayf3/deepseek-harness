@@ -36,7 +36,7 @@ class FixtureModel extends LlmAdapter {
   }
   async * stream(options: GenerateOptions): AsyncIterable<StreamChunk> {
     this.requests.push(options)
-    if (options.messages.at(-1)?.content[0]?.type === 'text') {
+    if (options.tools?.some(tool => tool.name === TOOL) && options.messages.at(-1)?.content[0]?.type === 'text') {
       const call = { type: 'tool-call' as const, id: ToolCallId('visit'), name: TOOL, arguments: '{"label":"fixture"}' }
       yield { type: 'block-start', index: 0, blockType: 'tool-call' }
       yield { type: 'tool-call-delta', index: 0, id: call.id, name: call.name, argumentsDelta: call.arguments }
@@ -91,6 +91,14 @@ function execute(ctx: Context, agent: Agent, name = TOOL) {
   return ctx.tools.execute({ agent, name, arguments: name === TOOL ? { label: 'direct' } : {}, callId: ToolCallId('direct'), signal: new AbortController().signal })
 }
 
+function registerIndependentTool(ctx: Context) {
+  ctx.tools.register({
+    name: 'unrelated', description: 'An independent capability.', parameters: { type: 'object' },
+    output: { schema: { type: 'boolean' }, render: () => [{ type: 'text', text: 'Independent.' }] },
+    execute: async () => true,
+  })
+}
+
 async function events(root: string) {
   return (await readFile(join(root, 'events.ndjson'), 'utf8')).trim().split('\n').map(line => JSON.parse(line) as { event: string; pid: number; name?: string })
 }
@@ -105,6 +113,26 @@ it('requires a browser mode and validates launch and attachment settings', () =>
   for (const endpoint of ['http://localhost:bad/path', 'http://localhost trailing-junk', 'file:///tmp/browser', 'http://localhost/ ']) {
     expect(() => { validateBrowserMcpConfig({ mode: 'attach', endpoint }) }).toThrow('browser endpoint')
   }
+})
+
+it('waits for SystemPrompt through the required ToolRuntime before reserving the provider', async () => {
+  const ctx = new Context()
+  contexts.push(ctx)
+  await ctx.plugin(BrowserUse)
+  await ctx.plugin(Agents)
+  const tools = ctx.plugin(Tools)
+  const browser = ctx.plugin({
+    inject: ['browserUse', 'agents', 'tools'],
+    apply(provider: Context) {
+      mountSessionMcp(provider, { name: 'browser-fixture', exclusive: true, command: process.execPath, args: [fixture] })
+    },
+  })
+  await Promise.all([tools, browser])
+  expect(ctx.get('tools')).toBeUndefined()
+  expect(ctx.browserUse.providerName).toBeUndefined()
+  await ctx.plugin(SystemPrompt)
+  await Promise.all([tools, browser])
+  expect(ctx.browserUse.providerName).toBe('browser-fixture')
 })
 
 describe('Session MCP Loader composition', () => {
@@ -140,16 +168,60 @@ describe('Session MCP Loader composition', () => {
     expect(closed.filter(event => event.event === 'exit').map(event => event.pid).sort()).toEqual(closed.filter(event => event.event === 'start').map(event => event.pid).sort())
   })
 
-  it('rejects a second attached Session until the first owner finishes cleanup', async () => {
-    const { ctx, root } = await load(true)
+  it('keeps unrelated and child Sessions running without a busy attachment and admits a later owner', async () => {
+    const { ctx, root, model } = await load(true)
+    registerIndependentTool(ctx)
     const first = await ctx.agents.create({ sessionId: SessionId('first') })
-    const second = await ctx.agents.create({ sessionId: SessionId('second') })
+    const second = await ctx.agents.create({ sessionId: SessionId('second'), agentOptions: { provider: 'fixture', model: 'fixture' } })
+    const child = await ctx.agents.create({ sessionId: SessionId('child'), agentOptions: { provider: 'fixture', model: 'fixture' } })
+    bindScopeParent(child.agent, first.agent)
     await warm(ctx, first.agent)
-    await expect(warm(ctx, second.agent)).rejects.toThrow('already reserved')
+    expect(ctx.tools.schemas(child.agent).some(tool => tool.name === TOOL)).toBe(true)
+    for (const { agent } of [second, child]) {
+      agent.followup(createUserMessage({ content: [{ type: 'text', text: 'Answer without using the browser.' }], source: { kind: 'user' } }))
+    }
+    await Promise.all([second.agent.whenIdle(), child.agent.whenIdle()])
+    expect(model.requests).toHaveLength(2)
+    expect(model.requests.map(request => request.tools?.map(tool => tool.name))).toEqual([['unrelated'], ['unrelated']])
+    for (const { agent } of [second, child]) {
+      expect(ctx.tools.schemas(agent).map(tool => tool.name)).toEqual(['unrelated'])
+      expect((await execute(ctx, agent)).isError).toBe(true)
+      expect((await execute(ctx, agent, 'unrelated')).isError).toBe(false)
+      expect((await warm(ctx, agent)).tools.map(tool => tool.name)).toEqual(['unrelated'])
+    }
+    first.agent.ctx.tools.register({
+      name: 'mcp__browser-fixture__late', description: 'A newly discovered browser operation.', parameters: { type: 'object' },
+      output: { schema: { type: 'boolean' }, render: () => [{ type: 'text', text: 'Late browser result.' }] },
+      execute: async () => true,
+    })
+    expect(ctx.tools.schemas(child.agent).filter(tool => tool.name.startsWith('mcp__browser-fixture__')).map(tool => tool.name)).toEqual(['mcp__browser-fixture__late'])
+    expect((await warm(ctx, child.agent)).tools.map(tool => tool.name)).toEqual(['unrelated'])
+    expect((await execute(ctx, child.agent, 'mcp__browser-fixture__late')).isError).toBe(true)
     expect((await events(root)).filter(event => event.event === 'start')).toHaveLength(1)
+    expect((await events(root)).filter(event => event.event === 'call')).toEqual([])
+    expect((await execute(ctx, first.agent)).isError).toBe(false)
     await first.dispose()
-    await warm(ctx, second.agent)
+    expect((await warm(ctx, child.agent)).tools.some(tool => tool.name === TOOL)).toBe(true)
+    expect((await execute(ctx, child.agent)).isError).toBe(false)
+    expect((await warm(ctx, second.agent)).tools.map(tool => tool.name)).toEqual(['unrelated'])
+    await child.dispose()
+    expect((await warm(ctx, second.agent)).tools.some(tool => tool.name === TOOL)).toBe(true)
     expect((await execute(ctx, second.agent)).isError).toBe(false)
+  })
+
+  it('allows another Session to answer while attached-browser discovery is pending', async () => {
+    const { ctx, root, model, browser } = await load(true, 'hold')
+    const first = await ctx.agents.create({ sessionId: SessionId('first') })
+    const second = await ctx.agents.create({ sessionId: SessionId('second'), agentOptions: { provider: 'fixture', model: 'fixture' } })
+    const preparing = warm(ctx, first.agent).catch((error: unknown) => error)
+    await vi.waitFor(async () => { expect((await events(root))[0]?.event).toBe('start') })
+    second.agent.followup(createUserMessage({ content: [{ type: 'text', text: 'Answer without using the browser.' }], source: { kind: 'user' } }))
+    await second.agent.whenIdle()
+    expect(model.requests).toHaveLength(1)
+    expect(model.requests[0]?.tools ?? []).toEqual([])
+    expect((await events(root)).filter(event => event.event === 'start')).toHaveLength(1)
+    await browser.dispose()
+    expect(await preparing).toBeInstanceOf(Error)
   })
 
   it('rolls back failed discovery and stops a child when unload interrupts discovery', async () => {
@@ -185,11 +257,7 @@ describe('Session MCP Loader composition', () => {
     const child = await ctx.agents.create({ sessionId: SessionId('child') })
     bindScopeParent(child.agent, owner.agent)
     await warm(ctx, owner.agent)
-    ctx.tools.register({
-      name: 'unrelated', description: 'An independent capability.', parameters: { type: 'object' },
-      output: { schema: { type: 'boolean' }, render: () => [{ type: 'text', text: 'Independent.' }] },
-      execute: async () => true,
-    })
+    registerIndependentTool(ctx)
     expect((await execute(ctx, owner.agent, 'unrelated')).content).toEqual([{ type: 'text', text: 'Independent.' }])
     expect((await execute(ctx, child.agent)).content).toEqual([{ type: 'text', text: 'Error: browser-fixture: browser tool belongs to another Session' }])
     expect((await events(root)).filter(event => event.event === 'call')).toEqual([])

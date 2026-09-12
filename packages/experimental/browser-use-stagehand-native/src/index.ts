@@ -11,9 +11,10 @@ import { SessionResources } from '@deepseek-ai/dsh-experimental-browser-use-runt
 import { createMcpToolDefinition } from '@deepseek-ai/dsh-mcp-client'
 import { z } from 'zod'
 import { generateWithSessionModel } from './model.ts'
-import { browserInputs, openNativeBrowser } from './native.ts'
+import { browserInputs } from './native.ts'
 import type { BrowserMethod, NativeBrowserRuntime } from './native.ts'
-import { openAttachedBrowser } from './worker-client.ts'
+import { openBrowserWorker } from './worker-client.ts'
+import { launchChromium } from './launch.ts'
 import type {} from '@deepseek-ai/dsh-agent'
 import type {} from '@deepseek-ai/dsh-browser-use'
 import type {} from '@deepseek-ai/dsh-system-prompt'
@@ -37,11 +38,11 @@ export interface Config {
   executablePath?: string
   /** Hide an owned browser's window. */
   headless?: boolean
-  /** Deadline passed to Stagehand navigation and action operations. */
+  /** Deadline for Chromium startup and Stagehand navigation/action operations. */
   operationTimeoutMs?: number
   /** Maximum output tokens for each auxiliary Session-model generation. */
   maxOutputTokens?: number
-  /** Grace for native attachment cleanup before its Worker is terminated. */
+  /** Grace for native SDK cleanup before its connection Worker is terminated. */
   shutdownGraceMs?: number
 }
 
@@ -61,9 +62,12 @@ export const Config: Schema<Config, ResolvedConfig> = Schema.object({
 })
 
 interface BrowserResource {
-  native: NativeBrowserRuntime
+  native: {
+    execute(method: BrowserMethod, args: unknown, signal: AbortSignal): Promise<unknown>
+    close(): Promise<void>
+  }
   inferences: Set<ReturnType<ClientLLM['generate']>>
-  inferenceSignal?: AbortSignal
+  inferenceSignal: AbortSignal
 }
 
 const GUIDANCE = `Stagehand browser tools control a browser owned by this Session or an explicitly configured existing browser. Use the tab ids returned by stagehand_tabs. Inspect current pages before acting after reconnecting, cancellation, or a resumed Session; browser state is not restored from the Session log. A completed action does not prove the requested outcome, so verify it from fresh page state.
@@ -108,25 +112,58 @@ export function apply(ctx: Context, input: Config): void {
           void inference.then(() => { inferences.delete(inference) }, () => { inferences.delete(inference) })
           return inference
         }
-        const native = config.mode === 'attach'
-          ? await openAttachedBrowser(config, generate, signal)
-          : await openNativeBrowser(config, generate)
+        const chromium = config.mode === 'launch' ? await launchChromium(config, signal) : undefined
+        const connect = (connectionSignal: AbortSignal) => openBrowserWorker({
+          mode: 'attach', headless: config.headless,
+          operationTimeoutMs: config.operationTimeoutMs, shutdownGraceMs: config.shutdownGraceMs,
+          ...config.extensionId === undefined ? {} : { extensionId: config.extensionId },
+          ...config.cdpEndpoint === undefined ? {} : { cdpEndpoint: config.cdpEndpoint },
+          ...chromium === undefined ? {} : { cdpEndpoint: chromium.endpoint },
+        }, generate, connectionSignal, (message) => { ctx.logger.warn(message) })
+        let connection: NativeBrowserRuntime | undefined
+        try {
+          connection = await connect(signal)
+        } catch (error) {
+          await chromium?.close()
+          throw error
+        }
+        const native: BrowserResource['native'] = {
+          async execute(method, args, operationSignal) {
+            const current = connection ??= await connect(operationSignal)
+            try {
+              return await current.execute(method, args, operationSignal)
+            } finally {
+              if (operationSignal.aborted) {
+                await current.close()
+                connection = undefined
+              }
+            }
+          },
+          async close() { await connection?.close() },
+        }
+        const close = async () => {
+          const results = await Promise.allSettled([native.close(), chromium?.close()])
+          const errors = results.flatMap(result => result.status === 'rejected' ? [result.reason as unknown] : [])
+          if (errors.length > 0) throw new AggregateError(errors, 'Stagehand browser cleanup failed')
+        }
         try {
           signal.throwIfAborted()
-          const acquired: BrowserResource = resource = { native, inferences }
+          const acquired: BrowserResource = resource = {
+            native, inferences, inferenceSignal: AbortSignal.abort(new Error('Stagehand inference requires an active browser tool call')),
+          }
           return {
             value: acquired,
             async close() {
-              delete acquired.inferenceSignal
+              acquired.inferenceSignal = AbortSignal.abort(new Error('Stagehand browser is closing'))
               try {
-                await native.close()
+                await close()
               } finally {
                 await Promise.allSettled(inferences)
               }
             },
           }
         } catch (error) {
-          await native.close()
+          await close()
           throw error
         }
       },
@@ -158,10 +195,11 @@ function mountTools(ctx: Context, resources: SessionResources<BrowserResource>):
       name: toolName,
       rawName: method,
       description: descriptions[method],
-      inputSchema: z.record(z.string(), z.json()).parse(z.toJSONSchema(browserInputs[method])),
+      inputSchema: { ...z.record(z.string(), z.json()).parse(z.toJSONSchema(browserInputs[method])), type: 'object' },
       async call(args) {
         const agent = ctx.agents.requireInitiator()
-        return (await resources.get(agent)).native.execute(method, args)
+        const resource = await resources.get(agent)
+        return resource.native.execute(method, args, resource.inferenceSignal)
       },
     }))
   }
@@ -180,7 +218,6 @@ function mountTools(ctx: Context, resources: SessionResources<BrowserResource>):
       try {
         return await ctx.agents.withInitiator(agent, next)
       } finally {
-        delete resource.inferenceSignal
         inference.abort(new Error('Stagehand browser operation has settled'))
         await Promise.allSettled(resource.inferences)
         exec.signal = upstreamSignal

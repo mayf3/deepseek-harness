@@ -35,7 +35,7 @@ kind: "package-reference"
     headless: true
 ```
 
-使用 `mode: attach`，并在 `endpoint` 中设置 HTTP(S) 调试 URL 或 WS(S) 浏览器端点，即可操作已有浏览器。第一个活动 Session 会持续占用连接直到卸载；其他 Session 无法获取该连接。清理只断开连接，保留外部浏览器及其页面。
+使用 `mode: attach`，并在 `endpoint` 中设置 HTTP(S) 调试 URL 或 WS(S) 浏览器端点，即可操作已有浏览器。Session 在加载浏览器工具时占用附加连接，并持续保留直到卸载。其他 Session 和子 Agent 可继续各自的轮次，但不获得这些工具；清理完成后，后续轮次可以获取附加连接。其他 Session 的直接调用会失败。清理只断开连接，保留外部浏览器及其页面。
 
 | 字段 | 默认值 | 含义 |
 |---|---|---|

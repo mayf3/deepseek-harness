@@ -37,18 +37,18 @@ Mount this provider in a profile that supplies Agents, Sessions, an LLM route, t
     headless: true
 ```
 
-Install a Chrome or Chromium executable that supports the pinned Stagehand SDK. Native startup happens on the first browser tool call. Stagehand manages its runtime extension; an incompatible or unavailable runtime rejects startup.
+Install a Chrome or Chromium executable that supports the pinned Stagehand SDK. Native startup happens on the first browser tool call. Default discovery uses the standard stable Chrome installation path; select other Chrome or Chromium installations with `executablePath`. Stagehand manages its runtime extension; an incompatible or unavailable runtime rejects startup.
 
 | Field | Default | Meaning |
 |---|---|---|
 | `mode` | `launch` | Start a fresh browser or `attach` to an existing browser. |
 | `cdpEndpoint` | Required for `attach` | HTTP or WebSocket debugging endpoint selected by the profile. |
 | `extensionId` | Load bundled extension | Installed Stagehand extension to use in an existing browser. |
-| `executablePath` | Upstream discovery | Installed browser executable, for `launch` only. |
+| `executablePath` | Installed stable Chrome | Chrome or Chromium executable, for `launch` only. |
 | `headless` | `true` | Hide a launched browser's window. |
-| `operationTimeoutMs` | `30000` | Timeout passed to navigation and natural-language actions. |
+| `operationTimeoutMs` | `30000` | Deadline for Chromium startup, navigation, and natural-language actions. |
 | `maxOutputTokens` | `4096` | Output-token cap for each auxiliary model request. |
-| `shutdownGraceMs` | `5000` | Grace for attachment SDK cleanup before terminating its Worker. |
+| `shutdownGraceMs` | `5000` | Grace for SDK cleanup before terminating the connection Worker. |
 
 An existing Chromium browser must expose CDP and permit the Stagehand extension to connect to it. The verified local setup uses `--remote-debugging-port=0`, `--remote-allow-origins=*`, `--enable-unsafe-extension-debugging`, and a dedicated `--user-data-dir`. Set `cdpEndpoint` to Chrome's reported endpoint.
 
@@ -79,9 +79,9 @@ env -u NODE_USE_ENV_PROXY DSH_STAGEHAND_E2E=1 pnpm exec vitest run --config vite
 
 [SessionResources](../browser-use-runtime/README.md) owns lazy acquisition, serialization, and teardown for each exact live Agent. The provider retains the browser-use registration until cleanup settles. The [native provider](src/index.ts) registers its tools through the existing MCP result adapter, which saves screenshots as durable attachments.
 
-Launch mode embeds the SDK directly. Attachment runs the SDK in a dedicated Worker because the pinned SDK's browser close operation also closes an attached browser. Cleanup releases Stagehand state and terminates that Worker, which closes its sockets while preserving the external browser. The host continues to own model selection, credentials, and inference logging. Tool completion and disposal cancel auxiliary inference and wait for its logging and cleanup to settle.
+The host owns each launched Chromium process and its temporary profile before waiting for CDP readiness. Chromium receives the standard scrubbed child environment, preserving paths, locale, and proxy settings while excluding credential-shaped variables and DSH identity. Both modes connect the SDK inside a dedicated Worker. The Worker receives no ambient environment except the explicit source TypeScript configuration path, so its CDP connection does not inherit host proxy settings. Cleanup terminates the connection Worker after the configured SDK grace; launch also kills and awaits its owned Chromium process before removing the profile. Attached external browsers remain open. The host owns model selection, credentials, and inference logging, and disposal waits for outstanding inference to settle.
 
-The [model adapter](src/model.ts) implements Stagehand's public custom-generation callback. It prepares the selected DSH model route and asks it to call one result tool whose argument schema contains Stagehand's requested JSON schema. It logs and flushes the complete auxiliary request before dispatch and the assembled response before returning validated data to Stagehand. Plain-text answers, other tools, multiple calls, truncation, and schema mismatches fail the operation. Auxiliary records do not enter the main conversation's model history.
+The [model adapter](src/model.ts) implements Stagehand's public custom-generation callback. It prepares the selected DSH model route and asks it to call one result tool whose argument schema contains Stagehand's requested JSON schema. It logs and flushes the complete auxiliary request before dispatch and the assembled response before returning validated data to Stagehand. Plain-text answers, other tools, multiple calls, truncation, and schema mismatches fail the operation. Auxiliary records do not enter the main conversation's model history. An unmatched request means no settled output was persisted; it may still be running or may have been interrupted, and the request alone does not prove model dispatch.
 
 No invariant companion is published: every browser operation uses the resource owner's single acquired handle, with no separately maintained browser relationship to compare.
 
@@ -166,9 +166,9 @@ The provider inherits the pinned Stagehand SDK's browser and extension requireme
 - **Chromium only** — Firefox and WebKit are outside this provider's scope.
 - **Live browser state** — Session replay restores recorded conversation data, not a browser process, cookies, or tab handles.
 - **Structured inference** — the selected model must produce a schema-valid result tool call. This provider supports text inputs for Stagehand's three AI primitives; it does not expose Stagehand's autonomous agent or per-call model overrides.
-- **Cancellation** — DSH cancels auxiliary inference and waits for active work to settle. Stagehand browser methods do not share an end-to-end abort API, and delivered input is not rolled back.
+- **Cancellation** — DSH closes the SDK connection Worker and drains auxiliary inference. The live Session retains launched Chromium and reconnects on the next tool call. Input already delivered is not rolled back.
 - **Existing browser access** — an attached browser can also be changed by its user; the reservation coordinates DSH Sessions only.
-- **Cleanup failure** — failed native cleanup retains the provider reservation; restart the host before selecting another provider.
+- **Cleanup failure** — SDK cleanup that exceeds its grace logs a warning and releases the Worker. Failed owned-process or profile cleanup retains the provider reservation; restart the host before selecting another provider.
 
 <a id="dev-note"></a>
 ### Dev Note

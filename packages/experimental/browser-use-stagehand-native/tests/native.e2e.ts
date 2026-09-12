@@ -3,12 +3,12 @@
 import { createServer } from 'node:http'
 import { execFile, spawn } from 'node:child_process'
 import { once } from 'node:events'
-import { mkdtemp, rm } from 'node:fs/promises'
+import { chmod, mkdtemp, readFile, rm, writeFile, access } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
-import { expect, it } from 'vitest'
+import { expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { mountAgentLoopTestDependencies, mountAgentLoopTestHarness } from '@deepseek-ai/dsh-agent-loop-testkit'
 import LocalAttachmentStore from '@deepseek-ai/dsh-attachment-local'
@@ -138,6 +138,129 @@ it.skipIf(process.env.DSH_STAGEHAND_E2E !== '1' || !process.env.DEEPSEEK_API_KEY
     expect(agent.session.snapshotEvents().some(event => event.type === 'browser-use/stagehand-llm-result')).toBe(true)
   } finally {
     await ctx.fiber.dispose()
+    await new Promise<void>((resolve, reject) => { server.close((error) => { if (error) reject(error); else resolve() }) })
+  }
+})
+
+
+// The executable wrapper uses a POSIX shebang; the ordinary browser smoke runs on every platform.
+it.skipIf(process.env.DSH_STAGEHAND_E2E !== '1' || process.platform === 'win32')('scrubs real Chromium environment and closes it during canceled Stagehand initialization', { timeout: 120_000, retry: 0 }, async () => {
+  const executable = process.env.DSH_BROWSER_EXECUTABLE
+  if (executable === undefined) throw new Error('DSH_STAGEHAND_E2E requires DSH_BROWSER_EXECUTABLE')
+  const root = await mkdtemp(join(tmpdir(), 'dsh-stagehand-acquire-'))
+  const marker = join(root, 'browser.json')
+  const wrapper = join(root, 'chrome.mjs')
+  const sockets = new Set<import('node:stream').Duplex>()
+  const connected: PromiseWithResolvers<void> = Promise.withResolvers()
+  const stalled = createServer()
+  stalled.on('upgrade', (_request, socket) => {
+    sockets.add(socket)
+    socket.on('close', () => { sockets.delete(socket) })
+    connected.resolve()
+  })
+  const ctx = new Context()
+  vi.stubEnv('BROWSER_FIXTURE_API_TOKEN', 'do-not-forward')
+  vi.stubEnv('DSH_BROWSER_FIXTURE_ID', 'do-not-forward')
+  vi.stubEnv('BROWSER_FIXTURE_PUBLIC', 'visible')
+  try {
+    stalled.listen(0, '127.0.0.1')
+    await once(stalled, 'listening')
+    const address = stalled.address()
+    if (address === null || typeof address === 'string') throw new Error('No stalled CDP listener')
+    const endpoint = `ws://127.0.0.1:${address.port}/devtools/browser/stalled`
+    await writeFile(wrapper, [
+      `#!${process.execPath}`,
+      'import { spawn } from \'node:child_process\'',
+      'import { writeFileSync } from \'node:fs\'',
+      `const child = spawn(${JSON.stringify(executable)}, process.argv.slice(2), { stdio: ['ignore', 'ignore', 'pipe'], env: process.env })`,
+      `writeFileSync(${JSON.stringify(marker)}, JSON.stringify({ pid: child.pid, token: process.env.BROWSER_FIXTURE_API_TOKEN ?? null, identity: process.env.DSH_BROWSER_FIXTURE_ID ?? null, publicValue: process.env.BROWSER_FIXTURE_PUBLIC, profile: process.argv.find(value => value.startsWith('--user-data-dir=')).slice('--user-data-dir='.length) }))`,
+      'let output = \'\'',
+      `child.stderr.on('data', chunk => { output += chunk.toString(); if (output.includes('DevTools listening on ')) { process.stderr.write(${JSON.stringify(`DevTools listening on ${endpoint}\n`)}); output = '' } })`,
+      'child.on(\'error\', error => { console.error(error); process.exit(1) })',
+      'child.on(\'exit\', code => process.exit(code ?? 1))',
+      '',
+    ].join('\n'))
+    await chmod(wrapper, 0o700)
+    await mountAgentLoopTestDependencies(ctx)
+    await ctx.plugin(BrowserUseRegistry)
+    await mountAgentLoopTestHarness(ctx)
+    await ctx.plugin(Provider, { mode: 'launch', executablePath: wrapper })
+    const owner = await ctx.agents.create({ sessionId: SessionId('stagehand-stalled-init') })
+    const operation = owner.agent.runMaintenance(signal => ctx.tools.execute({
+      agent: owner.agent, name: 'stagehand_tabs', arguments: { action: 'list' }, callId: ToolCallId('stalled-init'), signal,
+    }))
+    await connected.promise
+    const browser = JSON.parse(await readFile(marker, 'utf8')) as { pid: number; token: unknown; identity: unknown; publicValue: string; profile: string }
+    expect(browser.token).toBeNull()
+    expect(browser.identity).toBeNull()
+    expect(browser.publicValue).toBe('visible')
+    expect(() => process.kill(browser.pid, 0)).not.toThrow()
+    await owner.dispose()
+    expect((await operation).isError).toBe(true)
+    await vi.waitFor(() => { expect(() => process.kill(browser.pid, 0)).toThrow() })
+    await expect(access(browser.profile)).rejects.toThrow()
+  } finally {
+    for (const socket of sockets) socket.destroy()
+    await ctx.fiber.dispose()
+    await new Promise<void>((resolve, reject) => { stalled.close((error) => { if (error) reject(error); else resolve() }) })
+    vi.unstubAllEnvs()
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
+it.skipIf(process.env.DSH_STAGEHAND_E2E !== '1')('keeps Chromium state when a canceled model operation reconnects', { timeout: 120_000, retry: 0 }, async () => {
+  const executable = process.env.DSH_BROWSER_EXECUTABLE
+  if (executable === undefined) throw new Error('DSH_STAGEHAND_E2E requires DSH_BROWSER_EXECUTABLE')
+  const entered: PromiseWithResolvers<void> = Promise.withResolvers()
+  const aborted: PromiseWithResolvers<void> = Promise.withResolvers()
+  const release: PromiseWithResolvers<void> = Promise.withResolvers()
+  class CanceledModel extends LlmAdapter {
+    async * stream(options: GenerateOptions): AsyncIterable<StreamChunk> {
+      expect(JSON.stringify(options.messages)).toContain('Keep this page')
+      options.signal?.addEventListener('abort', () => { aborted.resolve() }, { once: true })
+      entered.resolve()
+      await release.promise
+      yield { type: 'finish', reason: { kind: 'aborted', failure: { code: 'ABORTED', message: 'Canceled browser inference' } } }
+    }
+  }
+  const server = createServer((_request, response) => {
+    response.setHeader('content-type', 'text/html')
+    response.end('<!doctype html><title>Retained browser</title><h1>Keep this page</h1>')
+  })
+  const ctx = new Context()
+  try {
+    server.listen(0, '127.0.0.1')
+    await once(server, 'listening')
+    const address = server.address()
+    if (address === null || typeof address === 'string') throw new Error('No cancellation fixture listener')
+    const url = `http://127.0.0.1:${address.port}/retained`
+    await mountAgentLoopTestDependencies(ctx)
+    await ctx.plugin(BrowserUseRegistry)
+    ctx.llm.registerAdapter(['cancel-fixture'], new CanceledModel())
+    await mountAgentLoopTestHarness(ctx)
+    await ctx.plugin(Provider, { mode: 'launch', executablePath: executable })
+    const owner = await ctx.agents.create({
+      sessionId: SessionId('stagehand-cancel-reconnect'), agentOptions: { provider: 'cancel-fixture', model: 'fixture' },
+    })
+    const call = (method: string, args: unknown) => owner.agent.runMaintenance(signal => ctx.tools.execute({
+      agent: owner.agent, name: `stagehand_${method}`, arguments: args, callId: ToolCallId(`reconnect-${method}`), signal,
+    }))
+    expect((await call('navigate', { url })).isError).toBe(false)
+    const extraction = call('extract', { instruction: 'Read the heading' })
+    await entered.promise
+    owner.agent.cancel({ kind: 'user' })
+    await aborted.promise
+    release.resolve()
+    expect((await extraction).isError).toBe(true)
+    const tabs = await call('tabs', { action: 'list' })
+    expect(tabs.isError, JSON.stringify(tabs.content)).toBe(false)
+    expect(JSON.stringify(tabs.content)).toContain(url)
+    expect(JSON.stringify(tabs.content)).toContain('Retained browser')
+    await owner.dispose()
+  } finally {
+    release.resolve()
+    await ctx.fiber.dispose()
+    server.closeAllConnections()
     await new Promise<void>((resolve, reject) => { server.close((error) => { if (error) reject(error); else resolve() }) })
   }
 })

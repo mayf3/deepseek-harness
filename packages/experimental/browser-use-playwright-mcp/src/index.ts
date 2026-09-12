@@ -1,7 +1,7 @@
 /** Chromium browser tools from the pinned Playwright MCP server. @module */
 
-import { createRequire } from 'node:module'
 import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import type { Context } from '@deepseek-ai/cordis'
 import { BrowserMcpConfig, mountSessionMcp, validateBrowserMcpConfig } from '@deepseek-ai/dsh-experimental-browser-use-runtime/mcp'
 
@@ -25,8 +25,7 @@ export const Config: typeof BrowserMcpConfig = BrowserMcpConfig
  */
 export function apply(ctx: Context, config: Config): void {
   validateBrowserMcpConfig(config)
-  const require = createRequire(import.meta.url)
-  const cli = join(dirname(require.resolve('@playwright/mcp/package.json')), 'cli.js')
+  const cli = join(dirname(fileURLToPath(import.meta.resolve('@playwright/mcp/package.json'))), 'cli.js')
   // Upstream environment options can otherwise replace the configured browser
   // mode or import an unrelated profile. Empty values mean absent to its parser.
   const env = Object.fromEntries(Object.keys(process.env)

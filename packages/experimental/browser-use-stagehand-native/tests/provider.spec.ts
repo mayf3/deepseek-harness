@@ -8,21 +8,36 @@ import type { Agent } from '@deepseek-ai/dsh-agent'
 import { mountAgentLoopTestDependencies, mountAgentLoopTestHarness } from '@deepseek-ai/dsh-agent-loop-testkit'
 import BrowserUseRegistry from '@deepseek-ai/dsh-browser-use'
 import { BrowserUseProviderName } from '@deepseek-ai/dsh-browser-use/brand'
-import { LlmAdapter, ToolCallId } from '@deepseek-ai/dsh-llm'
+import { LlmAdapter, ToolCallId, createUserMessage } from '@deepseek-ai/dsh-llm'
 import type { GenerateOptions, StreamChunk } from '@deepseek-ai/dsh-llm'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import * as Provider from '../src/index.ts'
 import { fixture, resetFixture } from './fixtures/stagehand.ts'
 
-const acquisition = vi.hoisted(() => ({ signal: undefined as AbortSignal | undefined }))
+const acquisition = vi.hoisted(() => ({
+  signal: undefined as AbortSignal | undefined, warning: undefined as string | undefined, closeError: undefined as Error | undefined,
+}))
 
 vi.mock('@browserbasehq/stagehand', async () => import('./fixtures/stagehand.ts'))
+vi.mock('@puppeteer/browsers', async () => import('./fixtures/chromium.ts'))
 vi.mock('../src/worker-client.ts', async () => {
   const { openNativeBrowser } = await import('../src/native.ts')
   return {
-    openAttachedBrowser(config: NativeBrowserConfig, generate: ClientLLM['generate'], signal: AbortSignal) {
+    async openBrowserWorker(config: NativeBrowserConfig, generate: ClientLLM['generate'], signal: AbortSignal, warn: (message: string) => void) {
       acquisition.signal = signal
-      return openNativeBrowser(config, generate)
+      const native = await openNativeBrowser(config, generate)
+      return {
+        async execute(method: import('../src/native.ts').BrowserMethod, args: unknown, signal?: AbortSignal) {
+          const cancel = () => { void native.close() }
+          signal?.addEventListener('abort', cancel, { once: true })
+          try { return await native.execute(method, args) } finally { signal?.removeEventListener('abort', cancel) }
+        },
+        async close() {
+          if (acquisition.warning !== undefined) warn(acquisition.warning)
+          if (acquisition.closeError !== undefined) throw acquisition.closeError
+          await native.close()
+        },
+      }
     },
   }
 })
@@ -45,6 +60,8 @@ class StructuredModel extends LlmAdapter {
 beforeEach(async () => {
   resetFixture()
   acquisition.signal = undefined
+  acquisition.warning = undefined
+  acquisition.closeError = undefined
   ctx = new Context()
   await mountAgentLoopTestDependencies(ctx)
   await ctx.plugin(BrowserUseRegistry)
@@ -65,7 +82,9 @@ it('lazily launches distinct browsers and preserves each Session tab state', asy
   const provider = ctx.plugin(Provider, { mode: 'launch', executablePath: '/fixture/chromium', headless: false })
   await provider
   expect(fixture.browsers).toEqual([])
-  expect(ctx.tools.schemas()).toHaveLength(6)
+  const schemas = ctx.tools.schemas()
+  expect(schemas).toHaveLength(6)
+  for (const tool of schemas) expect(tool.parameters).toMatchObject({ type: 'object' })
   expect((await execute(first, 'navigate', { url: 'https://first.example' })).isError).toBe(false)
   expect((await execute(second, 'navigate', { url: 'https://second.example' })).isError).toBe(false)
   expect(fixture.browsers).toHaveLength(2)
@@ -257,5 +276,80 @@ it('releases an attachment whose initialization completes after provider disposa
   } finally {
     release.resolve()
     await closing
+  }
+})
+
+
+it.each([false, true])('disposes a real AgentHandle while its screenshot waits, with prior user cancel %s', async (cancelFirst) => {
+  const entered: PromiseWithResolvers<void> = Promise.withResolvers()
+  const stopped: PromiseWithResolvers<void> = Promise.withResolvers()
+  fixture.screenshot = async () => { entered.resolve(); await stopped.promise }
+  fixture.browserClose = async () => { stopped.resolve() }
+  class ScreenshotModel extends LlmAdapter {
+    async * stream(): AsyncIterable<StreamChunk> {
+      yield { type: 'block-end', index: 0, block: { type: 'tool-call', id: ToolCallId('blocked-screenshot'), name: 'stagehand_screenshot', arguments: '{}' } }
+      yield { type: 'finish', reason: { kind: 'tool-calls' } }
+    }
+  }
+  ctx.llm.registerAdapter(['screenshot'], new ScreenshotModel())
+  await ctx.plugin(Provider, { mode: 'launch' })
+  const owner = await ctx.agents.create({ sessionId: SessionId('screenshot-disposal'), agentOptions: { provider: 'screenshot', model: 'fixture' } })
+  try {
+    owner.agent.followup(createUserMessage({ content: [{ type: 'text', text: 'Take a screenshot.' }], source: { kind: 'user' } }))
+    await entered.promise
+    if (cancelFirst) owner.agent.cancel({ kind: 'user' })
+    await owner.dispose()
+    expect(fixture.browsers[0]?.closed).toBe(true)
+    expect(ctx.agents.get(owner.agent.id)).toBeUndefined()
+  } finally {
+    stopped.resolve()
+    await owner.dispose()
+  }
+})
+
+
+it('releases the provider after a terminated connection reports an SDK cleanup warning', async () => {
+  const warning = vi.spyOn(ctx.logger, 'warn')
+  acquisition.warning = 'Stagehand SDK cleanup did not finish: deadline'
+  const provider = ctx.plugin(Provider, { mode: 'launch' })
+  await provider
+  await execute(first, 'tabs', { action: 'list' })
+  await provider.dispose()
+  expect(warning).toHaveBeenCalledWith(acquisition.warning)
+  expect(ctx.browserUse.providerName).toBeUndefined()
+  expect(fixture.browsers[0]?.closed).toBe(true)
+})
+
+it('closes owned Chromium but retains the reservation if the connection Worker fails to terminate', async () => {
+  acquisition.closeError = new Error('Worker failed to terminate')
+  const provider = ctx.plugin(Provider, { mode: 'launch' })
+  await provider
+  await execute(first, 'tabs', { action: 'list' })
+  await provider.dispose()
+  expect(fixture.browsers[0]?.closed).toBe(true)
+  expect(ctx.browserUse.providerName).toBe('stagehand-native')
+})
+
+
+it('reconnects after cancellation while preserving the owned browser and its tabs', async () => {
+  const entered: PromiseWithResolvers<void> = Promise.withResolvers()
+  const stopped: PromiseWithResolvers<void> = Promise.withResolvers()
+  fixture.screenshot = async () => { entered.resolve(); await stopped.promise }
+  await ctx.plugin(Provider, { mode: 'launch' })
+  await execute(first, 'navigate', { url: 'https://kept.example/' })
+  const controller = new AbortController()
+  const screenshot = execute(first, 'screenshot', {}, controller.signal)
+  await entered.promise
+  controller.abort({ kind: 'user' })
+  try {
+    expect((await screenshot).isError).toBe(true)
+    expect(fixture.browsers).toHaveLength(1)
+    expect(fixture.browsers[0]?.closed).toBe(false)
+    const tabs = await execute(first, 'tabs', { action: 'list' })
+    expect(tabs.isError).toBe(false)
+    expect(JSON.stringify(tabs.content)).toContain('https://kept.example/')
+    expect(fixture.browsers).toHaveLength(1)
+  } finally {
+    stopped.resolve()
   }
 })

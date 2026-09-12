@@ -5,7 +5,7 @@ import { connect } from 'node:net'
 import type { Worker } from 'node:worker_threads'
 import type { ClientLLM } from '@browserbasehq/stagehand'
 import { afterEach, expect, it, vi } from 'vitest'
-import { openAttachedBrowser } from '../src/worker-client.ts'
+import { openBrowserWorker } from '../src/worker-client.ts'
 import type { NativeBrowserConfig, NativeBrowserRuntime } from '../src/native.ts'
 
 const state = vi.hoisted(() => ({ workers: [] as Worker[], entries: [] as string[] }))
@@ -32,11 +32,13 @@ const generation: Parameters<ClientLLM['generate']>[0] = {
   responseFormat: { type: 'json_schema', name: 'heading', schema: { type: 'object' } },
 }
 const runtimes: NativeBrowserRuntime[] = []
+const warn = vi.fn()
 afterEach(async () => {
   await Promise.allSettled(runtimes.splice(0).map(runtime => runtime.close()))
   await Promise.all(state.workers.splice(0).map(worker => worker.terminate()))
   state.entries = []
   vi.unstubAllEnvs()
+  warn.mockClear()
 })
 
 function config(scenario = 'ready'): NativeBrowserConfig {
@@ -44,7 +46,7 @@ function config(scenario = 'ready'): NativeBrowserConfig {
 }
 
 async function open(scenario = 'ready', generate: ClientLLM['generate'] = async () => result) {
-  const runtime = await openAttachedBrowser(config(scenario), generate, new AbortController().signal)
+  const runtime = await openBrowserWorker(config(scenario), generate, new AbortController().signal, warn)
   runtimes.push(runtime)
   return runtime
 }
@@ -78,7 +80,7 @@ it('preserves initialization failures while terminating the failed Worker', asyn
 
 it('terminates a Worker whose initialization overlaps acquisition cancellation', async () => {
   const controller = new AbortController()
-  const opening = openAttachedBrowser(config('opening'), async () => result, controller.signal)
+  const opening = openBrowserWorker(config('opening'), async () => result, controller.signal, warn)
   const observed = expect(opening).rejects.toThrow('Acquisition canceled')
   await vi.waitFor(() => { expect(state.workers).toHaveLength(1) })
 
@@ -95,12 +97,13 @@ it('fails active and later operations when the Worker exits', async () => {
   await expect(runtime.execute('tabs', { action: 'list' })).rejects.toThrow('Worker exited (23)')
 })
 
-it('terminates stalled SDK cleanup and reports the failed cleanup', async () => {
-  const runtime = await openAttachedBrowser({ ...config('closing'), shutdownGraceMs: 20 }, async () => result, new AbortController().signal)
+it('releases a connection after stalled SDK cleanup and reports a warning', async () => {
+  const runtime = await openBrowserWorker({ ...config('closing'), shutdownGraceMs: 20 }, async () => result, new AbortController().signal, warn)
   runtimes.push(runtime)
   const closing = runtime.close()
-  await expect(runtime.execute('tabs', { action: 'list' })).rejects.toThrow('attachment is closed')
-  await expect(closing).rejects.toThrow('attachment cleanup timed out')
+  await expect(runtime.execute('tabs', { action: 'list' })).rejects.toThrow('Worker is closed')
+  await closing
+  expect(warn).toHaveBeenCalledWith(expect.stringContaining('connection cleanup timed out'))
   expect(state.workers[0]?.threadId).toBe(-1)
 })
 
@@ -108,7 +111,7 @@ it('terminates stalled SDK cleanup and reports the failed cleanup', async () => 
 it.each(['error', 'malformed'] as const)('terminates pending operations after a Worker %s', async (scenario) => {
   const runtime = await open(scenario)
   await expect(runtime.execute('tabs', { action: 'list' })).rejects.toThrow()
-  await expect(runtime.close()).rejects.toThrow()
+  await runtime.close()
   expect(state.workers[0]?.threadId).toBe(-1)
 })
 
@@ -123,4 +126,61 @@ it('preserves the explicit source tsconfig for its Worker', async () => {
   vi.stubEnv('TSX_TSCONFIG_PATH', '/fixture/tsconfig.json')
   const runtime = await open()
   expect(await runtime.execute('tabs', { action: 'list' })).toHaveProperty('port')
+})
+
+
+it('reports a failed Worker termination while handling malformed peer messages', async () => {
+  const runtime = await open('malformed')
+  const worker = state.workers[0]!
+  const terminate = worker.terminate.bind(worker)
+  const refused = vi.spyOn(worker, 'terminate').mockRejectedValueOnce(new Error('Worker shutdown refused'))
+  try {
+    await expect(runtime.execute('tabs', { action: 'list' })).rejects.toThrow('Worker shutdown refused')
+    await expect(runtime.close()).rejects.toThrow('Worker shutdown refused')
+  } finally {
+    refused.mockRestore()
+    await terminate()
+  }
+})
+
+
+it('closes the Worker connection when an active browser operation is canceled', async () => {
+  const started: PromiseWithResolvers<void> = Promise.withResolvers()
+  const release: PromiseWithResolvers<void> = Promise.withResolvers()
+  const runtime = await open('ready', async () => { started.resolve(); await release.promise; return result })
+  const controller = new AbortController()
+  const operation = runtime.execute('act', generation, controller.signal)
+  const canceled = expect(operation).rejects.toThrow('Cancel browser call')
+  await started.promise
+  controller.abort(new Error('Cancel browser call'))
+  try {
+    await canceled
+    await runtime.close()
+    expect(state.workers[0]?.threadId).toBe(-1)
+  } finally {
+    release.resolve()
+  }
+})
+
+
+it('reports failed termination when cancellation closes an active Worker', async () => {
+  const started: PromiseWithResolvers<void> = Promise.withResolvers()
+  const release: PromiseWithResolvers<void> = Promise.withResolvers()
+  const runtime = await open('ready', async () => { started.resolve(); await release.promise; return result })
+  const worker = state.workers[0]!
+  const terminate = worker.terminate.bind(worker)
+  const refused = vi.spyOn(worker, 'terminate').mockRejectedValueOnce(new Error('Worker shutdown refused'))
+  const controller = new AbortController()
+  const operation = runtime.execute('act', generation, controller.signal)
+  const canceled = expect(operation).rejects.toThrow('Cancel active call')
+  try {
+    await started.promise
+    controller.abort(new Error('Cancel active call'))
+    await canceled
+    await expect(runtime.close()).rejects.toThrow('Worker shutdown refused')
+  } finally {
+    release.resolve()
+    refused.mockRestore()
+    await terminate()
+  }
 })

@@ -1,4 +1,4 @@
-/** Attachment cleanup releases Stagehand before terminating its owned sockets. */
+/** Isolated Stagehand Workers own CDP connections; the host owns browser processes. */
 
 import { Worker } from 'node:worker_threads'
 import type { ClientLLM } from '@browserbasehq/stagehand'
@@ -6,18 +6,23 @@ import type { NativeBrowserConfig, NativeBrowserRuntime } from './native.ts'
 import { answer, request } from './worker-rpc.ts'
 
 /**
- * Attach through a dedicated Worker; disposal never sends Browser.close.
- * @param config - resolved browser options with an explicit attachment endpoint.
+ * Connect Stagehand through an isolated Worker that receives no ambient environment.
+ * @param config - resolved CDP connection and operation options.
  * @param generate - host-owned, logged inference callback.
  * @param signal - cancellation of lazy browser acquisition.
- * @returns an initialized runtime whose close awaits Worker termination.
+ * @param warn - report SDK cleanup failures after connection termination.
+ * @returns an initialized runtime whose close awaits connection release.
  */
-export async function openAttachedBrowser(config: NativeBrowserConfig, generate: ClientLLM['generate'], signal: AbortSignal): Promise<NativeBrowserRuntime> {
+export async function openBrowserWorker(
+  config: NativeBrowserConfig, generate: ClientLLM['generate'], signal: AbortSignal, warn: (message: string) => void,
+): Promise<NativeBrowserRuntime> {
   signal.throwIfAborted()
   const { ClientLLMSchema } = await import('@browserbasehq/stagehand')
   signal.throwIfAborted()
   const entry = new URL('./worker.js', import.meta.url)
-  const env = process.env.TSX_TSCONFIG_PATH === undefined ? {} : { TSX_TSCONFIG_PATH: process.env.TSX_TSCONFIG_PATH }
+  // The SDK Worker only connects over CDP; host paths, credentials, and proxy variables stay outside it.
+  const env: NodeJS.ProcessEnv = {}
+  if (process.env.TSX_TSCONFIG_PATH !== undefined) env.TSX_TSCONFIG_PATH = process.env.TSX_TSCONFIG_PATH
   let worker: Worker
   /* v8 ignore next 3 -- native.e2e.ts starts the bundled Worker through a plain-Node provider fixture. */
   if (!import.meta.url.endsWith('.ts')) {
@@ -31,13 +36,34 @@ export async function openAttachedBrowser(config: NativeBrowserConfig, generate:
   const terminate = () => termination ??= worker.terminate()
   const lifetime = new AbortController()
   worker.once('error', (error) => { lifetime.abort(error) })
-  worker.once('exit', (code) => { lifetime.abort(new Error(`Stagehand attachment Worker exited (${code})`)) })
+  worker.once('exit', (code) => { lifetime.abort(new Error(`Stagehand browser Worker exited (${code})`)) })
+  let closing: Promise<void> | undefined
+  const close = () => closing ??= (async () => {
+    let timeout: ReturnType<typeof setTimeout> | undefined
+    try {
+      await Promise.race([
+        request(worker, 'close', undefined, lifetime.signal),
+        new Promise<never>((_resolve, reject) => {
+          timeout = setTimeout(() => { reject(new Error('Stagehand connection cleanup timed out')) }, config.shutdownGraceMs)
+        }),
+      ])
+    } catch (error) {
+      warn(`Stagehand SDK cleanup did not finish: ${String(error)}`)
+    } finally {
+      clearTimeout(timeout)
+      await terminate()
+    }
+    worker.removeAllListeners()
+  })()
   const validatedGenerate = ClientLLMSchema.shape.generate.implementAsync(generate)
   worker.on('message', (raw: unknown) => {
     void answer(raw, async (method, args) => {
       if (method !== 'generate') throw new Error(`Unsupported Stagehand Worker request: ${method}`)
       return validatedGenerate(args as Parameters<ClientLLM['generate']>[0])
-    }).catch((error: unknown) => { lifetime.abort(error); void terminate() })
+    }).catch((error: unknown) => {
+      warn(`Stagehand Worker protocol failed: ${String(error)}`)
+      void close().catch((cleanupError: unknown) => { lifetime.abort(cleanupError) })
+    })
   })
   const abortOpening = () => { void terminate() }
   signal.addEventListener('abort', abortOpening, { once: true })
@@ -53,30 +79,22 @@ export async function openAttachedBrowser(config: NativeBrowserConfig, generate:
   } finally {
     signal.removeEventListener('abort', abortOpening)
   }
-  let closing: Promise<void> | undefined
   return {
-    async execute(method, args) {
+    async execute(method, args, signal) {
+      signal?.throwIfAborted()
       lifetime.signal.throwIfAborted()
-      if (closing !== undefined) throw new Error('Stagehand attachment is closed')
-      return request(worker, method, args, lifetime.signal)
+      if (closing !== undefined) throw new Error('Stagehand browser Worker is closed')
+      const canceled = () => { void close().catch((error: unknown) => { lifetime.abort(error) }) }
+      signal?.addEventListener('abort', canceled, { once: true })
+      try {
+        return await request(worker, method, args, lifetime.signal)
+      } catch (error) {
+        signal?.throwIfAborted()
+        throw error
+      } finally {
+        signal?.removeEventListener('abort', canceled)
+      }
     },
-    close() {
-      closing ??= (async () => {
-        let timeout: ReturnType<typeof setTimeout> | undefined
-        try {
-          await Promise.race([
-            request(worker, 'close', undefined, lifetime.signal),
-            new Promise<never>((_resolve, reject) => {
-              timeout = setTimeout(() => { reject(new Error('Stagehand attachment cleanup timed out')) }, config.shutdownGraceMs)
-            }),
-          ])
-        } finally {
-          clearTimeout(timeout)
-          await terminate()
-          worker.removeAllListeners()
-        }
-      })()
-      return closing
-    },
+    close,
   }
 }

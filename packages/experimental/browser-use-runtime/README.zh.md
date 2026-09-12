@@ -27,9 +27,9 @@ kind: "package-library"
 
 此公共实验性库是浏览器提供方的依赖。它没有插件入口或挂载配置。[浏览器操作服务](../../browser-use/browser-use/README.zh.md)保持独立于此库。
 
-原生提供方从包根入口构造 `SessionResources`，提供资源获取与清理回调。调用向 `run()` 传递确切的实时 Agent；失效的所有者与独占附加的第二个所有者在获取资源前失败。提供方将注册保留到 `dispose()` 完成。
+原生提供方从包根入口构造 `SessionResources`，提供资源获取与清理回调。调用向 `run()` 传递确切的实时 Agent；失效的所有者与独占附加的第二个所有者在获取资源前失败。取消资源获取等待不会终止初始化，同一 Session 的其他调用方仍可继续等待；释放 Session 会中止并等待该初始化结束。提供方将注册保留到 `dispose()` 完成。
 
-MCP 提供方使用 `@deepseek-ai/dsh-experimental-browser-use-runtime/mcp` 中的 `mountSessionMcp`。它们提供固定服务器名称、可执行文件、参数与所有权策略。辅助库为每个实时 Session 挂载一个有作用域的 MCP 客户端，并在 `system-prompt/prepare` 期间发现工具，先于其首次模型请求的常规工具 schema 收集。启动或发现失败会在清理后拒绝该步骤。重连已禁用；已关闭的客户端不会静默替换 Session 的浏览器状态。
+MCP 提供方使用 `@deepseek-ai/dsh-experimental-browser-use-runtime/mcp` 中的 `mountSessionMcp`。它们提供固定服务器名称、可执行文件、参数与所有权策略。辅助库为每个实时 Session 挂载一个有作用域的 MCP 客户端，并在 `system-prompt/prepare` 期间发现工具，先于其首次模型请求的常规工具 schema 收集。附加连接被占用时，其他 Session 不获得此提供方的工具，但可继续各自的轮次；清理完成后，后续请求可以获取该连接。启动或发现失败会在清理后拒绝该步骤。重连已禁用；已关闭的客户端不会静默替换 Session 的浏览器状态。
 
 -----
 
@@ -41,7 +41,7 @@ MCP 提供方使用 `@deepseek-ai/dsh-experimental-browser-use-runtime/mcp` 中�
 
 [资源管理器](src/index.ts)以实时 Agent 身份为所有权键，并将操作取消与所有者释放关联起来。每个资源只有一个获取 promise 和一个操作队列。获取失败时，仅在提供方回调回滚已获取资源后释放保留。
 
-释放先关闭资源再等待运行中的操作，使连接清理能够中断不支持 abort 的上游 API。关闭失败会拒绝释放并保留所有权。Agent 作用域清理防止使用同一持久 id 恢复的 Session 继承之前的浏览器。
+因释放而取消时，在 AgentHandle 等待空闲前开始资源清理。清理先关闭资源再等待运行中的操作，使连接清理能够中断不支持 abort 的上游 API。关闭失败会拒绝释放并保留所有权。Agent 作用域清理防止使用同一持久 id 恢复的 Session 继承之前的浏览器。
 
 [MCP 辅助库](src/mcp.ts)将发现与执行放入各 Agent 的作用域。它在资源清理期间保留提供方注册，并通过 [MCP 客户端](../../mcp/mcp-client/README.zh.md)处理传输、schema 发现、结果转换与持久图像接纳。
 

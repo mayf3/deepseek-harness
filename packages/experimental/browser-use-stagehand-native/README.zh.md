@@ -37,16 +37,16 @@ kind: "package-reference"
     headless: true
 ```
 
-安装与固定版本 Stagehand SDK 兼容的 Chrome 或 Chromium 可执行程序。首次浏览器工具调用时才启动原生运行时。Stagehand 管理其运行时扩展；运行时不兼容或不可用时，启动会失败。
+安装与固定版本 Stagehand SDK 兼容的 Chrome 或 Chromium 可执行程序。首次浏览器工具调用时才启动原生运行时。默认查找稳定版 Chrome 的标准安装路径；其他 Chrome 或 Chromium 安装位置通过 `executablePath` 指定。Stagehand 管理其运行时扩展；运行时不兼容或不可用时，启动会失败。
 
 | 字段 | 默认值 | 含义 |
 |---|---|---|
 | `mode` | `launch` | 启动独立浏览器，或以 `attach` 连接现有浏览器。 |
 | `cdpEndpoint` | `attach` 必填 | 由 profile 选择的 HTTP 或 WebSocket 调试端点。 |
 | `extensionId` | 加载内置扩展 | 在现有浏览器中使用的已安装 Stagehand 扩展。 |
-| `executablePath` | 上游发现 | 已安装的浏览器可执行程序，仅适用于 `launch`。 |
+| `executablePath` | 已安装的稳定版 Chrome | Chrome 或 Chromium 可执行程序，仅适用于 `launch`。 |
 | `headless` | `true` | 隐藏启动的浏览器窗口。 |
-| `operationTimeoutMs` | `30000` | 传给导航和自然语言操作的超时时间。 |
+| `operationTimeoutMs` | `30000` | Chromium 启动、导航和自然语言操作的超时时间。 |
 | `maxOutputTokens` | `4096` | 每次辅助模型请求的输出 token 上限。 |
 | `shutdownGraceMs` | `5000` | 终止连接 Worker 前，允许 SDK 完成清理的宽限时间。 |
 
@@ -79,9 +79,9 @@ env -u NODE_USE_ENV_PROXY DSH_STAGEHAND_E2E=1 pnpm exec vitest run --config vite
 
 [SessionResources](../browser-use-runtime/README.zh.md) 为每个确切的活动 Agent 管理延迟获取、串行执行和资源释放。Provider 保留浏览器使用注册，直到清理完成。[原生 Provider](src/index.ts) 通过现有 MCP 结果适配器注册工具，由该适配器把截图保存为持久附件。
 
-启动模式直接嵌入 SDK。连接模式在独立 Worker 中运行 SDK，因为固定版本 SDK 的浏览器关闭操作也会关闭已连接的浏览器。清理释放 Stagehand 状态并终止该 Worker，从而关闭其套接字而保留外部浏览器。宿主继续负责模型选择、凭据和推理日志。工具完成与资源释放会取消辅助推理，并等待其日志写入和清理结束。
+宿主在等待 CDP 就绪前即拥有启动的 Chromium 进程及其临时配置目录。Chromium 接收标准清理后的子进程环境，保留路径、区域设置和代理配置，排除凭据形式的变量及 DSH 身份信息。两种模式都在独立 Worker 中连接 SDK。Worker 除显式的源码 TypeScript 配置路径外不接收宿主环境，因此其 CDP 连接不继承宿主代理设置。清理在配置的 SDK 宽限时间后终止连接 Worker；启动模式还会终止并等待自有 Chromium 进程退出，再移除配置目录。外部连接的浏览器保持运行。宿主负责模型选择、凭据和推理日志，释放时等待未完成推理结束。
 
-[模型适配器](src/model.ts) 实现 Stagehand 的公开自定义生成回调。它准备所选 DSH 模型路由，并要求模型调用一个结果工具，其参数 schema 包含 Stagehand 要求的 JSON schema。适配器在分派前记录并刷盘完整辅助请求，在向 Stagehand 返回验证后的数据之前记录并刷盘已组装的响应。纯文本回答、其他工具、多次调用、截断和 schema 不匹配都会使操作失败。辅助记录不进入主对话的模型历史。
+[模型适配器](src/model.ts) 实现 Stagehand 的公开自定义生成回调。它准备所选 DSH 模型路由，并要求模型调用一个结果工具，其参数 schema 包含 Stagehand 要求的 JSON schema。适配器在分派前记录并刷盘完整辅助请求，在向 Stagehand 返回验证后的数据之前记录并刷盘已组装的响应。纯文本回答、其他工具、多次调用、截断和 schema 不匹配都会使操作失败。辅助记录不进入主对话的模型历史。没有对应结果的请求只表示未持久化已结束的输出；它可能仍在运行，也可能已被中断，单凭请求记录不能证明模型请求已发出。
 
 此包不发布不变量配套模块：每次浏览器操作都使用资源所有者获取的唯一句柄，没有独立维护、需要比较的浏览器关系。
 
@@ -166,9 +166,9 @@ Return the requested structured result by calling stagehand_result exactly once.
 - **仅 Chromium**——Firefox 和 WebKit 不在此 Provider 的支持范围内。
 - **活动浏览器状态**——Session 回放恢复记录的对话数据，不恢复浏览器进程、Cookie 或标签页句柄。
 - **结构化推理**——所选模型必须生成符合 schema 的结果工具调用。此 Provider 为 Stagehand 的三个 AI 原语支持文本输入；不开放 Stagehand 自主 Agent 或单次调用的模型覆盖。
-- **取消**——DSH 取消辅助推理并等待活动工作结束。Stagehand 浏览器方法没有端到端统一取消 API，已传递的输入不会回滚。
+- **取消**——DSH 关闭 SDK 连接 Worker 并等待辅助推理结束。活动 Session 保留已启动的 Chromium，在下次工具调用时重新连接。已传递的输入不会回滚。
 - **现有浏览器访问**——用户也可修改已连接的浏览器；占用机制只协调 DSH Session。
-- **清理失败**——原生清理失败时保留 Provider 占用；选择其他 Provider 前应重启宿主。
+- **清理失败**——SDK 清理超过宽限时间时记录警告并释放 Worker。自有进程或配置目录清理失败时保留 Provider 占用；选择其他 Provider 前应重启宿主。
 
 <a id="dev-note"></a>
 ### 开发备注

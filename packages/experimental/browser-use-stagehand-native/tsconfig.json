@@ -12,6 +12,7 @@
     { "path": "../../core/system-prompt" },
     { "path": "../../llm/llm" },
     { "path": "../../mcp/mcp-client" },
+    { "path": "../../subprocess/subprocess" },
     { "path": "../../util/values" },
     { "path": "../browser-use-runtime" }
   ]
