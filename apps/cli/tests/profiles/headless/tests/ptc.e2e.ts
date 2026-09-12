@@ -61,7 +61,7 @@ async function ptcModeHarness(cwd: string): Promise<Context> {
   await harness.plugin(ToolRuntime, { mode: 'ptc' })
   await harness.plugin(AgentRegistry)
   await harness.plugin(AgentLoop, { agents: [] })
-  await harness.plugin(LlmDeepSeek, { protocol: 'messages' })
+  await harness.plugin(LlmDeepSeek)
   if (harness.get('subprocess') === undefined) await harness.plugin(LocalSubprocessRuntime)
   await harness.plugin(BashEnvPlugin)
   await harness.plugin(LocalBashExecutor, { cwd, timeoutMs: 30_000 })
@@ -82,7 +82,7 @@ async function workspacePtcModeHarness(): Promise<Context> {
   await harness.plugin(ToolFs)
   await harness.plugin(AgentInstructions, { maxBytes: 65536 })
   await harness.plugin(AgentLoop, { agents: [] })
-  await harness.plugin(LlmDeepSeek, { protocol: 'messages', models: [{ id: 'deepseek-v4-flash' }] })
+  await harness.plugin(LlmDeepSeek, { models: [{ id: 'deepseek-v4-flash' }] })
   await mountRuntime(harness)
   return harness
 }

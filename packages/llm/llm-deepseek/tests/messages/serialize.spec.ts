@@ -12,14 +12,14 @@ import { readReplay, replayState } from '../../src/protocols/messages/replay.ts'
 import { serialize } from '../../src/protocols/messages/serialize.ts'
 import { MODEL, options, user } from './helpers.ts'
 
-const connection = resolveAdapterOptions({ protocol: 'messages' })
+const connection = resolveAdapterOptions({})
 const call = (id = 'a'): ContentBlock => ({ type: 'tool-call', id: ToolCallId(id), name: 'read', arguments: '{"path":"a"}' })
 const assistant = (content: ContentBlock[]) => createAssistantMessage({ content, source: { provider: 'deepseek-official', model: MODEL } })
 const result = (id = 'a', content: ContentBlock[] = [{ type: 'text', text: 'result' }]) => createToolResultMessage({ callId: ToolCallId(id), content, isError: false })
 const body = (messages: Message[] = [user()], overrides: Partial<GenerateOptions> = {}) => serialize(
   options({ messages, ...overrides }), connection, messages, new Map(), () => undefined,
 )
-const capable = resolveAdapterOptions({ protocol: 'messages', models: [{ id: MODEL, systemPromptUpdate: 'in-history' }] })
+const capable = resolveAdapterOptions({ models: [{ id: MODEL, systemPromptUpdate: 'in-history' }] })
 const nativeBody = (messages: Message[]) => serialize(options({ messages }), capable, messages, new Map(), () => undefined)
 
 describe('Messages request conversion', () => {
@@ -134,10 +134,10 @@ describe('Messages request conversion', () => {
     expect(body([user()], { purpose: 'session-title', temperature: 0 })).toMatchObject({ thinking: { type: 'disabled' }, temperature: 0 })
     expect(body([user()], { temperature: 0 })).toMatchObject({ thinking: { type: 'enabled' }, temperature: 0 })
     expect(() => body([user()], { reasoningEffort: ReasoningEffortId('medium') })).toThrow(/effort/)
-    const disabled = resolveAdapterOptions({ protocol: 'messages', thinking: 'disabled' })
+    const disabled = resolveAdapterOptions({ thinking: 'disabled' })
     expect(serialize(options(), disabled, [user()], new Map(), () => undefined).thinking).toEqual({ type: 'disabled' })
     expect(() => serialize(options({ reasoningEffort: ReasoningEffortId('high') }), disabled, [user()], new Map(), () => undefined)).toThrow(/effort/)
-    const capped = resolveAdapterOptions({ protocol: 'messages', models: [{ id: MODEL, maxTokens: 321 }] })
+    const capped = resolveAdapterOptions({ models: [{ id: MODEL, maxTokens: 321 }] })
     expect(serialize(options(), capped, [user()], new Map(), () => undefined).max_tokens).toBe(321)
   })
 
@@ -230,8 +230,8 @@ describe('validated configuration', () => {
     expect(modelInfo(connection, 'deepseek-official', 'custom').systemPromptUpdate).toBeUndefined()
     expect(modelInfo(capable, 'deepseek-official', MODEL).systemPromptUpdate).toBe('in-history')
     expect(modelInfo(capable, 'deepseek-official', 'custom').systemPromptUpdate).toBeUndefined()
-    expect(modelInfo(resolveAdapterOptions({ protocol: 'messages', thinking: 'disabled' }), 'deepseek-official', MODEL).reasoning?.efforts).toMatchObject([{ id: 'off', name: 'Off' }])
-    expect(resolveAdapterOptions({ protocol: 'messages', baseURL: 'https://example.com/anthropic///' }).baseURL).toBe('https://example.com/anthropic///')
+    expect(modelInfo(resolveAdapterOptions({ thinking: 'disabled' }), 'deepseek-official', MODEL).reasoning?.efforts).toMatchObject([{ id: 'off', name: 'Off' }])
+    expect(resolveAdapterOptions({ baseURL: 'https://example.com/anthropic///' }).baseURL).toBe('https://example.com/anthropic///')
   })
   it.each([
     { thinking: 'disabled', reasoningEffort: 'high' }, { models: [{ id: '' }] },
@@ -242,7 +242,7 @@ describe('validated configuration', () => {
     { maxTokens: 0 }, { streamIdleTimeoutMs: 0 },
     { models: [{ id: MODEL, systemPromptUpdate: 'unsupported' }] },
   ])('rejects invalid composition input %#', (value) => {
-    expect(() => resolveAdapterOptions({ ...value, protocol: 'messages' } as Config)).toThrow()
+    expect(() => resolveAdapterOptions(value as Config)).toThrow()
   })
 })
 
@@ -268,7 +268,7 @@ describe('Messages images', () => {
     expect(imagePricing(connection, MODEL, access).priceImages([ref])[0]?.visualTokens).toBe(0)
   })
   it('offloads an oldest prefix using exact encoded bytes and preserves durable references', async () => {
-    const config = resolveAdapterOptions({ protocol: 'messages',
+    const config = resolveAdapterOptions({
       maxInlineRequestImageBytes: 4, inlineImageOffloadByteQuantum: 1, maxImagesPerRequest: 2, imageOffloadCountQuantum: 1,
     })
     const history = [result('a', [image, image])]

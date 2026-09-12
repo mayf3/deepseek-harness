@@ -133,7 +133,7 @@ async function mount(ctx: Context, workspace: string, dshHome: string): Promise<
     systemPrompt: {}, tools: { mode: 'both' },
   })
   // No reasoning or output-budget override: use each shipped model's defaults.
-  await ctx.plugin(LlmDeepSeek, { protocol: 'messages', retryPolicy: { mode: 'normal', maxRetries: 0 } })
+  await ctx.plugin(LlmDeepSeek, { retryPolicy: { mode: 'normal', maxRetries: 0 } })
   await ctx.plugin(SandboxPolicyService, { mode: 'workspace-write', workspaceRoot: workspace })
   await ctx.plugin(UnusedSandbox)
   await ctx.plugin(SandboxedFileSystem, { cwd: workspace })

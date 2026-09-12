@@ -28,7 +28,7 @@ export async function spawnHarness(workdir: string): Promise<Context> {
     systemPrompt: { personaPrefix: 'You are a coding agent. Report only when the requested work is done.' },
   })
   await ctx.plugin(AgentLoop, { agents: [] })
-  await ctx.plugin(LlmDeepSeek, { protocol: 'messages' })
+  await ctx.plugin(LlmDeepSeek)
   await ctx.plugin(LocalSubprocessRuntime)
   await ctx.plugin(BashEnvPlugin)
   await ctx.plugin(LocalBashExecutor, { cwd: workdir, timeoutMs: 30_000 })

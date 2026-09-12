@@ -60,7 +60,6 @@ export async function codingHarness(workdir: string, options: CodingHarnessOptio
   })
   await ctx.plugin(AgentLoop, { agents: [] })
   await ctx.plugin(LlmDeepSeek, {
-    protocol: 'messages',
     ...options.modelContextWindow === undefined ? {} : {
       models: [{ id: 'deepseek-v4-flash', contextWindow: options.modelContextWindow }],
     },

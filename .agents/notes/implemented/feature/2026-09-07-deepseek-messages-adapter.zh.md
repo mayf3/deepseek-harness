@@ -10,7 +10,7 @@ Status: implemented
 
 ## 决策
 
-[DeepSeek 适配器](../../../../packages/llm/llm-deepseek/README.zh.md)通过一个 `deepseek-official` 路由和 `llm-deepseek` 设置命名空间支持多个协议。`common/` 共享配置、模型目录、能力解析和 Files 生命周期；`protocols/chat-completions/` 与 `protocols/messages/` 分别负责协议序列化、流转换和传输。`protocol` 配置在 Cordis YAML 中选择实现，默认 `messages`；随产品交付的官方组合也显式声明该选择。已有 `PreparedAdapterCall` 冻结协议、端点、凭据引用与模型能力，重试保持同一代配置，后续调用读取新配置。
+[DeepSeek 适配器](../../../../packages/llm/llm-deepseek/README.zh.md)通过一个 `deepseek-official` 路由和 `llm-deepseek` 设置命名空间支持多个协议。`common/` 共享配置、模型目录、能力解析和 Files 生命周期；`protocols/chat-completions/` 与 `protocols/messages/` 分别负责协议序列化、流转换和传输。`protocol` 配置在 Cordis YAML 中选择实现，默认 `messages`；随产品交付的官方组合继承该默认值。已有 `PreparedAdapterCall` 冻结协议、端点、凭据引用与模型能力，重试保持同一代配置，后续调用读取新配置。
 
 适配器遵循 [DeepSeek 兼容文档](https://api-docs.deepseek.com/zh-cn/guides/anthropic_api) 和 [Anthropic 流协议](https://platform.claude.com/docs/en/build-with-claude/streaming)。pi-ai 的 Anthropic 实现为相邻用户消息、累计用量、工具参数分片和可选思考签名的处理提供参考。DeepSeek 通过 `output_config.effort` 设置思考强度；Anthropic 思考 token 预算不控制 DeepSeek 思考强度。两种协议都转发显式 `temperature` 值；DeepSeek 在启用思考时接受该参数但忽略其值，因此调用方可以保留已有思考配置。
 

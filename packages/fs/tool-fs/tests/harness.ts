@@ -16,7 +16,7 @@ export async function fsHarness(fsCwd: string, persona = ''): Promise<Context> {
   const ctx = new Context()
   await mountAgentLoopTestDependencies(ctx, { systemPrompt: { personaPrefix: persona } })
   await ctx.plugin(AgentLoop, { agents: [] })
-  await ctx.plugin(LlmDeepSeek, { protocol: 'messages' })
+  await ctx.plugin(LlmDeepSeek)
   await ctx.plugin(LocalFileSystem, { cwd: fsCwd })
   await ctx.plugin(FsPolicy)
   await ctx.plugin(ToolFs)
