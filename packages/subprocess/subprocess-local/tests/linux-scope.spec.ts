@@ -1,4 +1,3 @@
-import type { SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
 import { EventEmitter } from 'node:events'
 import { existsSync, rmSync, unlinkSync, writeFileSync } from 'node:fs'
 import { PassThrough } from 'node:stream'
