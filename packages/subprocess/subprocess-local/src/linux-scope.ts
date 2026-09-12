@@ -157,7 +157,7 @@ export function probeLinuxNative(internals: LinuxScopeInternals = {}): boolean {
 
 interface DirectRange {
   running(): boolean
-  /** Report successful delivery or proven direct-process absence. */
+  /** Acknowledge TERM delivery; KILL must confirm direct-PID delivery or absence. */
   signal(signal: 'SIGTERM' | 'SIGKILL'): boolean
   /** Direct exit/error settlement, independent of output drain and managed-range completion. */
   settled: Promise<unknown>
@@ -493,7 +493,7 @@ function signalChildGroup(child: ReturnType<typeof spawn>, signal: 'SIGTERM' | '
   } catch { /* A missing or inaccessible group still permits a direct-process attempt. */ }
   if (groupSignalled && signal === 'SIGTERM') return true
   // Group success can reflect another member; joining direct exit requires its own SIGKILL submission.
-  return signalLinuxDirectProcess(child.pid as number, () => child.kill(signal))
+  return signalLinuxDirectProcess(child.pid as number, () => process.kill(child.pid as number, signal))
 }
 
 /** Linux PTY invocation and owner for the exact one-shot scope/bootstrap. */
