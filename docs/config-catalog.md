@@ -540,24 +540,6 @@ export interface Config {
 
 Source: [`packages/credentials/credentials-local/src/index.ts:64`](../packages/credentials/credentials-local/src/index.ts)
 
-<a id="deepseek-aidsh-e2b"></a>
-
-## `@deepseek-ai/dsh-e2b`
-
-```ts config-catalog
-/** Configuration for the shared E2B sandbox owner. */
-export interface Config {
-  /** API key; omission reads `E2B_API_KEY`. It is never forwarded into the sandbox. */
-  apiKey?: string
-  /** Shared remote working directory, created before adapters receive the sandbox. */
-  cwd?: string
-  /** E2B sandbox lifetime in milliseconds; expiry always deletes the sandbox. */
-  timeoutMs?: number
-}
-```
-
-Source: [`packages/e2b/e2b/src/index.ts:45`](../packages/e2b/e2b/src/index.ts)
-
 <a id="deepseek-aidsh-experimental-agent-team"></a>
 
 ## `@deepseek-ai/dsh-experimental-agent-team`
@@ -817,14 +799,18 @@ Source: [`packages/goal/goal/src/index.ts:172`](../packages/goal/goal/src/index.
 Requires: `agentDefaultModel` · `agents` · `sessions`
 
 ```ts config-catalog
-/** Plugin config: the task resolved from this app's injected provider service. */
+/** Plugin config: the task and run options resolved from this app's injected provider service. */
 export interface Config {
-  /** The prompt text for the single run. */
-  task: string
+  /** The prompt text for the single run; absent when the task arrives on stdin. */
+  task?: string
+  /** Exact Session identity to adopt; absent for a fresh random identity. An id with no stored Session fails. */
+  sessionId?: string
+  /** Whether stdout carries the machine-readable event stream instead of final text. */
+  json?: boolean
 }
 ```
 
-Source: [`packages/bundle/headless/src/index.ts:34`](../packages/bundle/headless/src/index.ts)
+Source: [`packages/bundle/headless/src/index.ts:41`](../packages/bundle/headless/src/index.ts)
 
 <a id="deepseek-aidsh-hooks-claude-code"></a>
 
@@ -2571,22 +2557,6 @@ export interface Config {
 
 Source: [`packages/subagent/subagent-spawn-in-process/src/index.ts:25`](../packages/subagent/subagent-spawn-in-process/src/index.ts)
 
-<a id="deepseek-aidsh-subprocess-e2b"></a>
-
-## `@deepseek-ai/dsh-subprocess-e2b`
-
-Requires: `e2b`
-
-```ts config-catalog
-/** Configuration for the E2B subprocess adapter. */
-export interface Config {
-  /** Remote status/liveness poll cadence in milliseconds; each tick is one control-plane request. */
-  pollMs?: number
-}
-```
-
-Source: [`packages/e2b/subprocess-e2b/src/index.ts:26`](../packages/e2b/subprocess-e2b/src/index.ts)
-
 <a id="deepseek-aidsh-system-prompt"></a>
 
 ## `@deepseek-ai/dsh-system-prompt`
@@ -3510,7 +3480,6 @@ These load from a `cordis.yml` entry with no `config:` block; they declare no co
 - `@deepseek-ai/dsh-deepseek-llm-api-extensions` ([`packages/llm/deepseek-llm-api-extensions/src/index.ts`](../packages/llm/deepseek-llm-api-extensions/src/index.ts))
 - `@deepseek-ai/dsh-experimental-auto-review` — requires `llm` · `permissionPresets` · `sessions` · `tools` ([`packages/experimental/auto-review/src/index.ts`](../packages/experimental/auto-review/src/index.ts))
 - `@deepseek-ai/dsh-experimental-client-ui-agent-team` ([`packages/experimental/client-ui-agent-team/src/index.ts`](../packages/experimental/client-ui-agent-team/src/index.ts))
-- `@deepseek-ai/dsh-fs-e2b` — requires `e2b` ([`packages/e2b/fs-e2b/src/index.ts`](../packages/e2b/fs-e2b/src/index.ts))
 - `@deepseek-ai/dsh-fs-observation-policy` ([`packages/fs/fs-observation-policy/src/index.ts`](../packages/fs/fs-observation-policy/src/index.ts))
 - `@deepseek-ai/dsh-goal-round-driver` — requires `agents` · `goals` · `sessions` ([`packages/goal/goal-round-driver/src/index.ts`](../packages/goal/goal-round-driver/src/index.ts))
 - `@deepseek-ai/dsh-host-directory-picker-auto` — requires `webServer` · `loader` ([`packages/host/directory-picker-auto/src/index.ts`](../packages/host/directory-picker-auto/src/index.ts))
