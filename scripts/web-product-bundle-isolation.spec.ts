@@ -25,7 +25,8 @@ const vite = createRequire(new URL('../apps/web/package.json', import.meta.url))
 }
 
 function fixture() {
-  const root = realpathSync(mkdtempSync(join(tmpdir(), 'dsh-web-bundle-isolation-')))
+  // Vite resolves inputs with native realpath, which expands Windows short names.
+  const root = realpathSync.native(mkdtempSync(join(tmpdir(), 'dsh-web-bundle-isolation-')))
   const web = join(root, 'apps/web')
   const links: string[] = []
   onTestFinished(() => {
@@ -89,7 +90,12 @@ describe('default Web bundle input isolation', () => {
   })
 
   it('allows experimental code in the separately emitted preview entry', async () => {
-    await expect(fixture().run()).resolves.toBeDefined()
+    await expect(fixture().run()).resolves.toMatchObject({
+      output: expect.arrayContaining([
+        expect.objectContaining({ type: 'asset', fileName: 'index.html' }),
+        expect.objectContaining({ type: 'chunk', name: 'bootstrap' }),
+      ]) as unknown,
+    })
   })
 
   it.each([
