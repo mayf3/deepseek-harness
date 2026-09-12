@@ -33,7 +33,12 @@ export function productWebBundleIsolation(repository: string, webRoot: string): 
   return [{
     name: 'dsh-product-web-chunk-inputs',
     apply: 'build',
-    generateBundle: { order: 'pre', handler(_options, bundle) { inputs.captureChunks(bundle) } },
+    generateBundle: {
+      order: 'pre',
+      handler(_options, bundle) {
+        if (!dependencyAnalysis) inputs.captureChunks(bundle)
+      },
+    },
   }, {
     name: 'dsh-product-web-bundle-isolation',
     apply: 'build',
