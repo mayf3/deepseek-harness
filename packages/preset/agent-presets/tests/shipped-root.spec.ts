@@ -157,5 +157,6 @@ describe('the shipped preset root', () => {
     for (const id of ['cordis', 'ptc', 'standard']) {
       expect(findEntry(await shippedEntries(id), 'tool-ralph')?.disabled, id).toBe(true)
     }
+    expect(findEntry(await shippedEntries('minimal'), 'tool-ralph')).toBeUndefined()
   })
 })
