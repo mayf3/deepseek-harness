@@ -33,7 +33,7 @@ This approximate backfill supports reading and format validation; it is not a co
 | Release record | Release object present. |
 | Previous release | [dsh-v0.1.2-alpha.3](dsh-v0.1.2-alpha.3.md) |
 | Session writer version | 0 |
-| Reconstructed inventory | 54 roots / 415 types |
+| Reconstructed inventory | <!-- persistence-release-inventory:start -->54 roots / 415 types<!-- persistence-release-inventory:end --> |
 | This snapshot | [dsh-v0.1.2-alpha.4.schema.json](dsh-v0.1.2-alpha.4.schema.json) |
 
 Source evidence for the writer version constant at this tag:
@@ -66,6 +66,8 @@ changes:
 <a id="changes"></a>
 ## Structural changes
 
+<!-- persistence-release-changes:start -->
+
 Detected 4 changed roots and 5 structural differences. The minimum below is calculated using current rules for comparison only; it does not assert historical compliance, migration correctness, or runtime compatibility.
 
 | Path | Change | Current minimum |
@@ -75,6 +77,8 @@ Detected 4 changed roots and 5 structural differences. The minimum below is calc
 | `event:agent/inbox/spliced.data.inserted[].source` | `union-variants-changed` | `version-bump` |
 | `event:session/title-llm-request.data.messages[].source` | `union-variants-changed` | `version-bump` |
 | `event:user/message.data.source` | `union-variants-changed` | `version-bump` |
+
+<!-- persistence-release-changes:end -->
 
 <a id="verification"></a>
 ## Verification

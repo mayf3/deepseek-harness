@@ -33,7 +33,7 @@ This approximate backfill supports reading and format validation; it is not a co
 | Release record | Release object present. |
 | Previous release | [dsh-v0.1.1-rc.1](dsh-v0.1.1-rc.1.md) |
 | Session writer version | 0 |
-| Reconstructed inventory | 51 roots / 404 types |
+| Reconstructed inventory | <!-- persistence-release-inventory:start -->51 roots / 404 types<!-- persistence-release-inventory:end --> |
 | This snapshot | [dsh-v0.1.1-rc.2.schema.json](dsh-v0.1.1-rc.2.schema.json) |
 
 Source evidence for the writer version constant at this tag:
@@ -84,6 +84,8 @@ changes:
 <a id="changes"></a>
 ## Structural changes
 
+<!-- persistence-release-changes:start -->
+
 Detected 10 changed roots and 11 structural differences. The minimum below is calculated using current rules for comparison only; it does not assert historical compliance, migration correctness, or runtime compatibility.
 
 | Path | Change | Current minimum |
@@ -99,6 +101,8 @@ Detected 10 changed roots and 11 structural differences. The minimum below is ca
 | `event:tool/code-dispatch.data.content[].attachment.originalDimensions` | `optional-property-added` | `same-version` |
 | `event:tool/result.data.message.content[0].content[].attachment.originalDimensions` | `optional-property-added` | `same-version` |
 | `event:user/message.data.content[].attachment.originalDimensions` | `optional-property-added` | `same-version` |
+
+<!-- persistence-release-changes:end -->
 
 <a id="verification"></a>
 ## Verification

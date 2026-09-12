@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write docs/persistence-changes/releases/dsh-v0.1.0-rc.8.md
-dsh-v0.1.0-rc.8.md: a66324d47940b39107f40c10b40b3de0a79ec4b1
-dsh-v0.1.0-rc.8.zh.md: bc7c1e06169605c7a7e3b8e5bc4632d958c48705
+dsh-v0.1.0-rc.8.md: a8725d448a971d94d0d8be0d170ec22a5d478c94
+dsh-v0.1.0-rc.8.zh.md: 3acadf86de7dd5f84107023a03bd7c7979494623

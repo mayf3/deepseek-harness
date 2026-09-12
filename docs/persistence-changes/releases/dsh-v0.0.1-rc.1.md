@@ -33,7 +33,7 @@ This approximate backfill supports reading and format validation; it is not a co
 | Release record | Tag only; no release object. |
 | Previous release | Earliest available prerelease tag; no earlier comparison input. |
 | Session writer version | 0 |
-| Reconstructed inventory | 42 roots / 341 types |
+| Reconstructed inventory | <!-- persistence-release-inventory:start -->42 roots / 341 types<!-- persistence-release-inventory:end --> |
 | This snapshot | [dsh-v0.0.1-rc.1.schema.json](dsh-v0.0.1-rc.1.schema.json) |
 
 Source evidence for the writer version constant at this tag:
@@ -180,7 +180,11 @@ changes:
 <a id="changes"></a>
 ## Structural changes
 
+<!-- persistence-release-changes:start -->
+
 This entry establishes the historical comparison starting point. Its declaration lists every extracted root; it makes no compatibility judgment about earlier versions.
+
+<!-- persistence-release-changes:end -->
 
 <a id="verification"></a>
 ## Verification

@@ -1,6 +1,6 @@
 /** Verify the pinned prerelease archive without Git, network access, or source extraction. */
 
-import { readFileSync, readdirSync } from 'node:fs'
+import { readFileSync, readdirSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { parseArgs } from 'node:util'
 import { JSON_SCHEMA, load } from 'js-yaml'
@@ -8,6 +8,7 @@ import { classifyPersistenceChange, parseHistoricalPersistenceSnapshot } from '.
 import type { PersistenceTypeChange } from './persistence-changes.ts'
 import { canonicalizeSchema, schemaDigest } from './persistence-schema-model.ts'
 import type { PersistenceRoot, PersistenceSchemaInventory } from './persistence-schema-model.ts'
+import { persistenceReleaseFactArtifacts } from './persistence-release-facts.ts'
 
 const ARCHIVE_DIRECTORY = 'docs/persistence-changes/releases'
 const TAG_PATTERN = /^dsh-v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)-(alpha|rc)\.(0|[1-9]\d*)$/u
@@ -185,6 +186,7 @@ export function loadPersistenceReleases(root: string): PersistenceReleases {
   const manifest = parseManifest(JSON.parse(readFileSync(join(directory, 'manifest.json'), 'utf8')))
   const files = new Set(readdirSync(directory))
   const expected = new Set(['manifest.json', 'README.md', 'README.zh.md', 'README.i18n.yaml'])
+  for (const filename of expected) if (!files.has(filename)) throw new Error(`missing release artifact ${filename}`)
   for (const release of manifest.releases) {
     for (const suffix of ['.md', '.zh.md', '.i18n.yaml', '.schema.json']) {
       const filename = release.tag + suffix
@@ -224,11 +226,27 @@ export function loadPersistenceReleases(root: string): PersistenceReleases {
   return { manifest, entries }
 }
 
+/** Validate the archive and check or refresh its bounded factual Markdown regions.
+ * @param args - CLI arguments; --write refreshes facts and pairing sidecars after complete validation.
+ * @param root - default repository directory, overridden by --root when provided.
+ * @returns the verified release counts and optional number of refreshed artifacts.
+ */
+export function runPersistenceReleases(args: readonly string[], root = resolve(import.meta.dirname, '..')): string {
+  const { values } = parseArgs({ args: [...args], options: { root: { type: 'string' }, write: { type: 'boolean' } } })
+  root = resolve(values.root ?? root)
+  const archive = loadPersistenceReleases(root)
+  const artifacts = persistenceReleaseFactArtifacts(root, archive)
+  const changed = artifacts.filter(artifact => readFileSync(join(root, artifact.path), 'utf8') !== artifact.content)
+  const stale = changed.filter(artifact => artifact.path.endsWith('.md'))
+  if (!values.write && stale.length > 0) throw new Error(`Stale persistence release facts: ${stale.map(file => file.path).join(', ')}. Run pnpm run verify-persistence-releases --write.`)
+  if (values.write) for (const artifact of changed) writeFileSync(join(root, artifact.path), artifact.content)
+  return `Persistence release archive: ${archive.entries.length} records, ${archive.entries.length - 1} adjacent transitions verified.`
+    + (values.write ? ` Refreshed ${changed.length} file${changed.length === 1 ? '' : 's'}.` : '')
+}
+
 if (process.argv[1] !== undefined && resolve(process.argv[1]) === import.meta.filename) {
   try {
-    const { values } = parseArgs({ options: { root: { type: 'string' } } })
-    const archive = loadPersistenceReleases(resolve(values.root ?? resolve(import.meta.dirname, '..')))
-    console.log(`Persistence release archive: ${archive.entries.length} records, ${archive.entries.length - 1} adjacent transitions verified.`)
+    console.log(runPersistenceReleases(process.argv.slice(2)))
   } catch (error: unknown) {
     console.error(error instanceof Error ? error.message : String(error))
     process.exitCode = 1

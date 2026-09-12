@@ -33,7 +33,7 @@ This approximate backfill supports reading and format validation; it is not a co
 | Release record | Release object present. |
 | Previous release | [dsh-v0.1.0-rc.6](dsh-v0.1.0-rc.6.md) |
 | Session writer version | 0 |
-| Reconstructed inventory | 47 roots / 376 types |
+| Reconstructed inventory | <!-- persistence-release-inventory:start -->47 roots / 376 types<!-- persistence-release-inventory:end --> |
 | This snapshot | [dsh-v0.1.0-rc.7.schema.json](dsh-v0.1.0-rc.7.schema.json) |
 
 Source evidence for the writer version constant at this tag:
@@ -57,11 +57,15 @@ changes:
 <a id="changes"></a>
 ## Structural changes
 
-Detected 1 changed roots and 1 structural differences. The minimum below is calculated using current rules for comparison only; it does not assert historical compliance, migration correctness, or runtime compatibility.
+<!-- persistence-release-changes:start -->
+
+Detected 1 changed root and 1 structural difference. The minimum below is calculated using current rules for comparison only; it does not assert historical compliance, migration correctness, or runtime compatibility.
 
 | Path | Change | Current minimum |
 |---|---|---|
 | `event:assistant/chunk.data.chunk.replayState` | `type-changed` | `version-bump` |
+
+<!-- persistence-release-changes:end -->
 
 <a id="verification"></a>
 ## Verification

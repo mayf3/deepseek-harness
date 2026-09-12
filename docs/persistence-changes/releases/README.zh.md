@@ -25,6 +25,8 @@ description: "浏览全部已捕获 DSH alpha/RC tag 之间的 Session 持久化
 
 [清单](manifest.json)记录了 2026-09-12 捕获的全部 DSH alpha/RC tag：16 个有发行记录，最早的 10 个只有 tag。版本按语义版本顺序排列；不存在的 tag 不补造。首条记录是历史起点，变化数包含其所有根。
 
+<!-- persistence-release-index:start -->
+
 | Tag | 源码日期（UTC） | Session 版本 | 根 / 类型 | 变化根 |
 |---|---|---|---|---|
 | [dsh-v0.0.1-rc.1](dsh-v0.0.1-rc.1.zh.md) | 2026-08-10 | 0 | 42 / 341 | 42 |
@@ -53,6 +55,8 @@ description: "浏览全部已捕获 DSH alpha/RC tag 之间的 Session 持久化
 | [dsh-v0.1.5-alpha.2](dsh-v0.1.5-alpha.2.zh.md) | 2026-09-09 | 3 | 59 / 462 | 4 |
 | [dsh-v0.1.5-rc.1](dsh-v0.1.5-rc.1.zh.md) | 2026-09-10 | 3 | 59 / 462 | 0 |
 | [dsh-v0.1.5-rc.2](dsh-v0.1.5-rc.2.zh.md) | 2026-09-10 | 3 | 59 / 462 | 0 |
+
+<!-- persistence-release-index:end -->
 
 <a id="files"></a>
 ## 文件与范围
@@ -83,6 +87,8 @@ description: "浏览全部已捕获 DSH alpha/RC tag 之间的 Session 持久化
 pnpm run verify-persistence-releases
 pnpm run doc-sync
 ```
+
+标记区间内的索引、清单单元格和结构变化事实由快照生成。默认校验会拒绝陈旧事实。运行 `pnpm run verify-persistence-releases --write` 可在全部机器数据校验通过后刷新这些区间和配对记录；人工概述、源码证据、机器声明和 schema 文件保持不变。
 
 tag 的完整性以清单的捕获范围为准；离线检查不会自动发现后续新 tag。配对记录及 Markdown 链接由常规文档检查校验。[格式模板](../../../.agents/skills/dsh-doc/templates/persistence-release.md)规定单条记录的字段。
 

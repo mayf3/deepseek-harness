@@ -33,7 +33,7 @@ This approximate backfill supports reading and format validation; it is not a co
 | Release record | Release object present. |
 | Previous release | [dsh-v0.1.2-alpha.4](dsh-v0.1.2-alpha.4.md) |
 | Session writer version | 0 |
-| Reconstructed inventory | 54 roots / 415 types |
+| Reconstructed inventory | <!-- persistence-release-inventory:start -->54 roots / 415 types<!-- persistence-release-inventory:end --> |
 | This snapshot | [dsh-v0.1.2-alpha.5.schema.json](dsh-v0.1.2-alpha.5.schema.json) |
 
 Source evidence for the writer version constant at this tag:
@@ -54,7 +54,11 @@ changes: []
 <a id="changes"></a>
 ## Structural changes
 
+<!-- persistence-release-changes:start -->
+
 Normalized root types and their transitive digests are unchanged from the preceding tag.
+
+<!-- persistence-release-changes:end -->
 
 <a id="verification"></a>
 ## Verification

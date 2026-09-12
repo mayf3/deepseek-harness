@@ -33,7 +33,7 @@ kind: persistence-release
 | 发行记录 | 有 release 对象。 |
 | 前一版本 | [dsh-v0.1.5-alpha.1](dsh-v0.1.5-alpha.1.zh.md) |
 | Session 写入版本 | 3 |
-| 完整重建清单 | 59 roots / 462 types |
+| 完整重建清单 | <!-- persistence-release-inventory:start -->59 个根类型 / 462 种类型<!-- persistence-release-inventory:end --> |
 | 本条快照 | [dsh-v0.1.5-alpha.2.schema.json](dsh-v0.1.5-alpha.2.schema.json) |
 
 写入版本常量在该 tag 中的源码证据：
@@ -66,6 +66,8 @@ changes:
 <a id="changes"></a>
 ## 结构变化
 
+<!-- persistence-release-changes:start -->
+
 检测到 4 个根类型变化、5 项结构差异。下表的最低要求按当前规则计算，只用于比较；不表示旧版本曾遵守这些规则，也不证明迁移或运行时兼容性。
 
 | 路径 | 变化 | 当前最低要求 |
@@ -75,6 +77,8 @@ changes:
 | `event:feedback/record.data.text` | `property-made-optional` | `same-version` |
 | `event:feedback/record.data.category` | `optional-property-added` | `same-version` |
 | `event:subagent/catalog` | `root-added` | `same-version` |
+
+<!-- persistence-release-changes:end -->
 
 <a id="verification"></a>
 ## 校验

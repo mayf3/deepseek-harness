@@ -33,7 +33,7 @@ kind: persistence-release
 | 发行记录 | 有 release 对象。 |
 | 前一版本 | [dsh-v0.1.0-rc.7](dsh-v0.1.0-rc.7.zh.md) |
 | Session 写入版本 | 0 |
-| 完整重建清单 | 51 roots / 403 types |
+| 完整重建清单 | <!-- persistence-release-inventory:start -->51 个根类型 / 403 种类型<!-- persistence-release-inventory:end --> |
 | 本条快照 | [dsh-v0.1.0-rc.8.schema.json](dsh-v0.1.0-rc.8.schema.json) |
 
 写入版本常量在该 tag 中的源码证据：
@@ -78,6 +78,8 @@ changes:
 <a id="changes"></a>
 ## 结构变化
 
+<!-- persistence-release-changes:start -->
+
 检测到 8 个根类型变化、8 项结构差异。下表的最低要求按当前规则计算，只用于比较；不表示旧版本曾遵守这些规则，也不证明迁移或运行时兼容性。
 
 | 路径 | 变化 | 当前最低要求 |
@@ -90,6 +92,8 @@ changes:
 | `event:team/message/queued` | `root-added` | `same-version` |
 | `event:team/task` | `root-added` | `same-version` |
 | `event:user/message.data.source` | `union-variants-changed` | `version-bump` |
+
+<!-- persistence-release-changes:end -->
 
 <a id="verification"></a>
 ## 校验

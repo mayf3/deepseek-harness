@@ -33,7 +33,7 @@ This approximate backfill supports reading and format validation; it is not a co
 | Release record | Tag only; no release object. |
 | Previous release | [dsh-v0.0.1-rc.1](dsh-v0.0.1-rc.1.md) |
 | Session writer version | 0 |
-| Reconstructed inventory | 47 roots / 374 types |
+| Reconstructed inventory | <!-- persistence-release-inventory:start -->47 roots / 374 types<!-- persistence-release-inventory:end --> |
 | This snapshot | [dsh-v0.0.1-rc.2.schema.json](dsh-v0.0.1-rc.2.schema.json) |
 
 Source evidence for the writer version constant at this tag:
@@ -189,6 +189,8 @@ changes:
 <a id="changes"></a>
 ## Structural changes
 
+<!-- persistence-release-changes:start -->
+
 Detected 45 changed roots and 48 structural differences. The minimum below is calculated using current rules for comparison only; it does not assert historical compliance, migration correctness, or runtime compatibility.
 
 | Path | Change | Current minimum |
@@ -241,6 +243,8 @@ Detected 45 changed roots and 48 structural differences. The minimum below is ca
 | `event:user/message.data.source` | `union-variants-changed` | `version-bump` |
 | `event:user/message.ignorable` | `optional-property-added` | `version-bump` |
 | `event:web/deepseek-search-llm-request.ignorable` | `optional-property-added` | `version-bump` |
+
+<!-- persistence-release-changes:end -->
 
 <a id="verification"></a>
 ## Verification

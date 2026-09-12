@@ -33,7 +33,7 @@ kind: persistence-release
 | 发行记录 | 有 release 对象。 |
 | 前一版本 | [dsh-v0.1.5-rc.1](dsh-v0.1.5-rc.1.zh.md) |
 | Session 写入版本 | 3 |
-| 完整重建清单 | 59 roots / 462 types |
+| 完整重建清单 | <!-- persistence-release-inventory:start -->59 个根类型 / 462 种类型<!-- persistence-release-inventory:end --> |
 | 本条快照 | [dsh-v0.1.5-rc.2.schema.json](dsh-v0.1.5-rc.2.schema.json) |
 
 写入版本常量在该 tag 中的源码证据：
@@ -54,7 +54,11 @@ changes: []
 <a id="changes"></a>
 ## 结构变化
 
-相较前一 tag，规范化的根类型及其传递引用摘要没有变化。
+<!-- persistence-release-changes:start -->
+
+规范化后的根类型及其传递引用摘要与前一 tag 相同。
+
+<!-- persistence-release-changes:end -->
 
 <a id="verification"></a>
 ## 校验
