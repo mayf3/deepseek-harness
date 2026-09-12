@@ -102,7 +102,7 @@ This server-qualified shape is the de-facto standard among multi-server agent cl
 4. No `presentCall`/`presentResult` — UI consumers use the provider-neutral generic-card fallback.
 5. Tools are transparent in the system prompt — no "[via MCP]" annotation beyond the name itself.
 
-Each synchronization rejects a repeated non-empty continuation cursor before requesting another page, retaining the previous tool generation. Empty pages cannot establish progress through tool-name uniqueness, so cursor history also detects cycles spanning several pages ([reported failure](https://github.com/deepseek-ai/deepseek-harness/discussions/3660)). Cursor history belongs to one synchronization: a later update may reuse the same cursors. Focused bridge and lifecycle tests cover cycle rejection, retained callable tools, strict startup failure, and notification recovery. This detects repeated cursors; it does not bound a server that continually returns distinct cursors.
+The [protocol adoption note](2026-09-12-mcp-sdk-protocol-negotiation.md) owns SDK pagination and its page limit. Synchronization preserves the previous tool generation when discovery fails.
 
 ### Public name normalization
 

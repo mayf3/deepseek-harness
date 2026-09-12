@@ -22,6 +22,7 @@ const { mockConnect, mockClose, mockListTools, mockCallTool, mockSetNotification
   ) => Promise<unknown>>()
   const mockSetNotificationHandler = vi.fn()
   class MockClient {
+    transport = {}
     connect = mockConnect
     close = mockClose
     listTools = mockListTools

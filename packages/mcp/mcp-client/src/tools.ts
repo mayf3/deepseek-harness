@@ -328,7 +328,7 @@ function isImageMediaType(value: string): value is ImageMediaType {
   return IMAGE_MEDIA_TYPES.includes(value as ImageMediaType)
 }
 
-/** Decode one SDK-admitted image without accepting base64 aliases. */
+/** Decode one projected image without accepting base64 aliases. */
 function decodeImage(block: ImageContent): SaveImageAttachment {
   if (!isImageMediaType(block.mimeType)) {
     throw new Error('the declared media type is not PNG, JPEG, WebP, or GIF')

@@ -15,7 +15,7 @@
  * @module
  */
 
-import { Client } from '@modelcontextprotocol/client'
+import { Client, type Transport } from '@modelcontextprotocol/client'
 import type { Context } from '@deepseek-ai/cordis'
 import { MAX_TIMER_DELAY_MS } from '@deepseek-ai/dsh-timeout'
 import { createTransport } from './transport.ts'
@@ -103,9 +103,9 @@ export interface ConnectionHandle {
    */
   ready: Promise<ConnectionOutcome>
   /**
-   * Stop reconnection, close the live client, wait for the in-flight attempt
-   * and queued tool syncs to quiesce, then unregister every tool this server
-   * still owns.
+   * Stop reconnection, close the negotiating transport or live client, wait
+   * for the in-flight attempt and queued tool syncs to quiesce, then
+   * unregister every tool this server still owns.
    */
   dispose(): Promise<void>
 }
@@ -121,6 +121,7 @@ export interface ConnectionHandle {
  */
 export function startConnection(ctx: Context, config: Config, policy: ResolvedReconnectPolicy): ConnectionHandle {
   const label = `mcp-client(${config.serverName})`
+  const incompleteDisposalMessage = `${label}: transport closure could not be confirmed during disposal — server shutdown may be incomplete`
   const opts: ToolBridgeOptions = {
     registrationFailure: 'contain',
     serverName: config.serverName,
@@ -136,8 +137,8 @@ export function startConnection(ctx: Context, config: Config, policy: ResolvedRe
   let disposed = false
   /** Current generation: the connecting or connected client; undefined during backoff waits and after final failure. */
   let client: Client | undefined
-  /** Close signal paired with {@link client}; captured by dispose before current ownership is cleared. */
-  let clientClosed: Promise<void> | undefined
+  /** Transport-aware close operation paired with {@link client}. */
+  let closeClient: (() => Promise<boolean>) | undefined
   /** Live tool registrations owned by this server; only {@link enqueueSync} and dispose swap it. */
   let disposers: ToolDisposers = new Map()
   let reconnectTimer: NodeJS.Timeout | undefined
@@ -172,7 +173,7 @@ export function startConnection(ctx: Context, config: Config, policy: ResolvedRe
   function generationDown(generation: Client): void {
     if (!isCurrent(generation)) return
     client = undefined
-    clientClosed = undefined
+    closeClient = undefined
     scheduleReconnect()
   }
 
@@ -251,15 +252,26 @@ export function startConnection(ctx: Context, config: Config, policy: ResolvedRe
     const closed: PromiseWithResolvers<void> = Promise.withResolvers()
     let attemptSettled = false
     let closeObserved = false
+    let transport: Transport | undefined
     const hasClosed = (): boolean => closeObserved
     client = generation
-    clientClosed = closed.promise
+    closeClient = closeGeneration
     generation.onclose = () => {
       closeObserved = true
       closed.resolve()
       // A failed connect owns its close barrier in the catch path below. An
       // established generation can transition down directly from this signal.
       if (attemptSettled) generationDown(generation)
+    }
+    /** Unattached probes close through their transport; attached clients must also report transport closure. */
+    async function closeGeneration(): Promise<boolean> {
+      const attached = generation.transport !== undefined
+      try {
+        await (attached ? generation.close() : transport?.close())
+      } catch (_error) {
+        if (!attached) return hasClosed()
+      }
+      return !attached || hasClosed() || await waitForClose(closed.promise)
     }
     async function refreshTools(): Promise<void> {
       if (!isCurrent(generation)) return
@@ -271,10 +283,15 @@ export function startConnection(ctx: Context, config: Config, policy: ResolvedRe
       }
     }
     try {
-      await generation.connect(createTransport(config))
+      transport = createTransport(config)
+      await generation.connect(transport)
       if (hasClosed()) {
         attemptSettled = true
         generationDown(generation)
+        return
+      }
+      if (!isCurrent(generation)) {
+        if (!await closeGeneration()) ctx.logger.error(incompleteDisposalMessage)
         return
       }
       await enqueueSync(generation, startup ? startupOpts : opts)
@@ -283,14 +300,13 @@ export function startConnection(ctx: Context, config: Config, policy: ResolvedRe
       // Disposal clears current ownership before it closes the generation, so
       // only a live supervisor reports an attempt failure.
       if (isCurrent(generation)) ctx.logger.warn(`${label}: connection attempt failed: ${String(error)}`)
-      try { await generation.close() } catch { /* transport already gone */ }
-      const quiesced = hasClosed() || await waitForClose(closed.promise)
+      const quiesced = await closeGeneration()
       attemptSettled = true
       if (!isCurrent(generation)) return
       if (!quiesced) {
         client = undefined
-        clientClosed = undefined
-        ctx.logger.error(`${label}: failed generation did not close within ${GENERATION_CLOSE_TIMEOUT_MS}ms — reconnect stopped to avoid overlapping server processes; reload the plugin or restart the Host to retry`)
+        closeClient = undefined
+        ctx.logger.error(`${label}: failed generation could not confirm transport closure — reconnect stopped to avoid overlapping server processes; reload the plugin or restart the Host to retry`)
         return
       }
       generationDown(generation)
@@ -332,15 +348,11 @@ export function startConnection(ctx: Context, config: Config, policy: ResolvedRe
         clearTimeout(reconnectTimer)
         reconnectTimer = undefined
       }
-      const current = client
-      const currentClosed = clientClosed
+      const close = closeClient
       client = undefined
-      clientClosed = undefined
-      if (current !== undefined) {
-        try { await current.close() } catch { /* transport already gone */ }
-        if (currentClosed !== undefined && !await waitForClose(currentClosed)) {
-          ctx.logger.error(`${label}: generation did not close within ${GENERATION_CLOSE_TIMEOUT_MS}ms during disposal — server shutdown may be incomplete`)
-        }
+      closeClient = undefined
+      if (close !== undefined && !await close()) {
+        ctx.logger.error(incompleteDisposalMessage)
       }
       // Quiesce, don't just request it: the in-flight attempt enqueues its
       // sync before settling, so awaiting both leaves `disposers` final.

@@ -24,6 +24,7 @@ const { mockConnect, mockClose, mockListTools, mockCallTool, mockSetNotification
   ) => Promise<unknown>>()
   const mockSetNotificationHandler = vi.fn()
   class MockClient {
+    transport: object | undefined = {}
     onclose: (() => void) | undefined
     connect = mockConnect
     close = mockClose
@@ -46,7 +47,7 @@ vi.mock('@modelcontextprotocol/client', async importOriginal => ({
 }))
 
 vi.mock('@modelcontextprotocol/client/stdio', () => ({
-  StdioClientTransport: vi.fn(),
+  StdioClientTransport: vi.fn(function () { return { close: () => Promise.resolve() } }),
 }))
 
 // vi.mock is hoisted above static imports, so the modules under test see the
@@ -266,12 +267,13 @@ describe('reconnect supervisor', () => {
     expect(instances).toHaveLength(1)
   })
 
-  it('bounds disposal while a resolving generation never reports that it closed', async () => {
+  it.each(['connect', 'discovery'] as const)('bounds disposal during %s when the transport never reports closure', async (phase) => {
     vi.useFakeTimers()
     try {
       const { errors } = captureLogs(ctx)
       const gate: PromiseWithResolvers<void> = Promise.withResolvers()
-      mockConnect.mockImplementation(() => gate.promise)
+      if (phase === 'connect') mockConnect.mockImplementation(() => gate.promise)
+      else mockListTools.mockImplementation(() => gate.promise.then(() => listing('late')))
       mockClose.mockResolvedValue(undefined)
       const handle = startConnection(ctx, stdioConfig(), resolveReconnectPolicy(undefined, 'reconnect'))
       await vi.advanceTimersByTimeAsync(0)
@@ -279,13 +281,39 @@ describe('reconnect supervisor', () => {
       const disposing = handle.dispose()
       await vi.advanceTimersByTimeAsync(5_000)
       gate.resolve()
+      await vi.advanceTimersByTimeAsync(5_000)
       await disposing
 
-      expect(mockListTools).not.toHaveBeenCalled()
+      expect(mockListTools).toHaveBeenCalledTimes(phase === 'connect' ? 0 : 1)
+      expect(ctx.tools.get('mcp__srv__late')).toBeUndefined()
       expect(errors.some(line => line.includes('server shutdown may be incomplete'))).toBe(true)
     } finally {
       vi.useRealTimers()
     }
+  })
+
+  it('closes a transport that attaches after disposal starts', async () => {
+    const gate: PromiseWithResolvers<void> = Promise.withResolvers()
+    mockConnect.mockImplementation(function (this: { transport: object | undefined }) {
+      this.transport = undefined
+      return gate.promise.then(() => { this.transport = {} })
+    })
+    const handle = startConnection(ctx, stdioConfig(), resolveReconnectPolicy(undefined, 'reconnect'))
+    const disposing = handle.dispose()
+    gate.resolve()
+    await disposing
+    expect(mockClose).toHaveBeenCalledTimes(1)
+    expect(mockListTools).not.toHaveBeenCalled()
+  })
+
+  it('discards a queued tool refresh when disposal starts before it runs', async () => {
+    const handle = startConnection(ctx, stdioConfig(), resolveReconnectPolicy(undefined, 'reconnect'))
+    await handle.ready
+    const notify = mockSetNotificationHandler.mock.calls[0]![1] as () => void
+    notify()
+    await handle.dispose()
+    expect(mockListTools).toHaveBeenCalledTimes(1)
+    expect(ctx.tools.get('mcp__srv__remote')).toBeUndefined()
   })
 
   it('dispose during the backoff wait cancels the pending reconnect', async () => {
