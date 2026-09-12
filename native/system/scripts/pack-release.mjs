@@ -71,6 +71,8 @@ function stagePackages(staging, repositoryUrl) {
     });
   }
   fs.copyFileSync(path.join(root, 'package.json'), path.join(staging, 'package.json'));
+  // pnpm includes the repository workspace license when an entry has no package-local license.
+  fs.copyFileSync(path.resolve(root, '../../LICENSE'), path.join(staging, 'LICENSE'));
   fs.writeFileSync(path.join(staging, 'pnpm-workspace.yaml'), 'packages:\n  - packages/*\n');
   for (const dir of [...platformDirs(), ...entryDirs()]) {
     const manifestPath = path.join(staging, dir, 'package.json');

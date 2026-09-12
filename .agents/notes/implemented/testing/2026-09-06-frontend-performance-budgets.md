@@ -40,7 +40,7 @@ Draft typing spans 124.97–504.96 ms across the three isolated samples; the ref
 
 ### Actual CI runs
 
-Run 34020120425, benchmark job 101451135853 passes the complete benchmark inventory at `6d1ba089e5052680961825c08aa4de19b4fe137a`. The runner is `VM-7-113-ubuntu-ci-19` in `dsh-selfhosted-ci`, using x64 Node 24.19.0 and Chromium 149.0.7827.55. Attempt 2, benchmark job 101453296071 (run 34020120425) also passes the complete inventory at the same commit, on `VM-7-113-ubuntu-ci-25` with the same Node and Chromium versions. The following medians use three fresh samples per scenario in each run and leave the local reference table and source budgets unchanged.
+Run 34020120425, benchmark job 101451135853 passes the complete benchmark inventory. The runner is `VM-7-113-ubuntu-ci-19` in `dsh-selfhosted-ci`, using x64 Node 24.19.0 and Chromium 149.0.7827.55. Attempt 2, benchmark job 101453296071 (run 34020120425) also passes the complete inventory at the same commit, on `VM-7-113-ubuntu-ci-25` with the same Node and Chromium versions. The following medians use three fresh samples per scenario in each run and leave the local reference table and source budgets unchanged.
 
 | Endpoint | First CI median | Second CI median |
 |---|---:|---:|

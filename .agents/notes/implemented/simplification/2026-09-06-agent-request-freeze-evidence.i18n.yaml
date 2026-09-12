@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/simplification/2026-09-06-agent-request-freeze-evidence.md
-2026-09-06-agent-request-freeze-evidence.md: e370b2556f212455239bceca70ec2661ce7787e0
-2026-09-06-agent-request-freeze-evidence.zh.md: 970e5f84f2593be738388aad828a2a83146a3a34
+2026-09-06-agent-request-freeze-evidence.md: 6603a728c3dd2acc87902169bb07a67bde0be2a4
+2026-09-06-agent-request-freeze-evidence.zh.md: a5ba15ac139d647755f9c039847acbb642d214d3

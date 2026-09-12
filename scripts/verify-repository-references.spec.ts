@@ -69,6 +69,24 @@ describe('maintained repository reference policy', () => {
     ])
   })
 
+  it('does not fetch missing commits from a partial clone\'s promisor remote', (test) => {
+    const remote = repository(test)
+    remote.git(['config', 'uploadpack.allowFilter', 'true'])
+    const clone = join(remote.root, 'partial-clone')
+    remote.git(['clone', '--filter=blob:none', '--no-local', remote.root, clone])
+    const missing = remote.git(['commit-tree', remote.tree, '-p', remote.commit, '-m', 'remote-only fixture'])
+    remote.git(['update-ref', 'HEAD', missing])
+    remote.write('partial-clone/new.md', missing)
+
+    expect(scanRepositoryReferences(clone)).toEqual([])
+    expect(execFileSync('git', ['cat-file', '--batch-check'], {
+      cwd: clone,
+      encoding: 'utf8',
+      env: { ...process.env, GIT_NO_LAZY_FETCH: '1' },
+      input: `${missing}\n`,
+    }).trim()).toBe(`${missing} missing`)
+  })
+
   it('accepts blobs, trees, unknown hex, long digests, and identifiers embedded in alphanumeric words', (test) => {
     const fixture = repository(test)
     const blob = fixture.git(['hash-object', '-w', '--stdin'], 'blob fixture')

@@ -74,6 +74,7 @@ function repositoryCommits(repoRoot: string, sources: Iterable<string>): Set<str
   if (candidates.length === 0) return new Set()
   const results = execFileSync('git', ['cat-file', '--batch-check=%(objectname) %(objecttype)'], {
     cwd: repoRoot,
+    env: { ...process.env, GIT_NO_LAZY_FETCH: '1' },
     encoding: 'utf8',
     input: `${candidates.join('\n')}\n`,
     maxBuffer: gitOutputLimit,

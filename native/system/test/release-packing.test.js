@@ -7,12 +7,18 @@ import { fileURLToPath } from 'node:url';
 import { test } from 'node:test';
 
 const publicRepository = 'git+https://github.com/deepseek-ai/deepseek-harness.git';
+const workspaceLicense = 'Fixture workspace license.\n';
 
-/** The real packer and prepack scripts operate on isolated, format-valid pack inputs. */
+/** Real packing uses the repository's nested workspace layout and isolated, format-valid payloads. */
 function fixture(t) {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'native-packing-test-'));
-  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
-  const scratch = path.join(dir, 'scratch');
+  const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'native-packing-test-'));
+  t.after(() => fs.rmSync(workspace, { recursive: true, force: true }));
+  const dir = path.join(workspace, 'native/system');
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(workspace, 'package.json'), `${JSON.stringify({ private: true, packageManager: 'pnpm@11.7.0' })}\n`);
+  fs.writeFileSync(path.join(workspace, 'pnpm-workspace.yaml'), 'packages:\n  - native/system\n  - native/system/packages/*\n');
+  fs.writeFileSync(path.join(workspace, 'LICENSE'), workspaceLicense);
+  const scratch = path.join(workspace, 'scratch');
   fs.mkdirSync(scratch);
   fs.cpSync(fileURLToPath(new URL('../scripts/', import.meta.url)), path.join(dir, 'scripts'), { recursive: true });
   const writeJson = (file, value) => {
@@ -21,7 +27,6 @@ function fixture(t) {
   };
   const repository = (name) => ({ type: 'git', url: publicRepository, directory: `native/system/packages/${name}` });
   writeJson('package.json', { name: 'native-packing-fixture', private: true, version: '1.2.3', packageManager: 'pnpm@11.7.0' });
-  fs.writeFileSync(path.join(dir, 'pnpm-workspace.yaml'), 'packages:\n  - packages/*\n');
   writeJson('packages/linux-x64/package.json', {
     name: '@fixture/native-linux-x64', version: '1.2.3', repository: repository('linux-x64'),
     os: ['linux'], cpu: ['x64'], files: ['bin/', 'prebuilds.json'],
@@ -60,6 +65,7 @@ function fixture(t) {
     }),
     unchanged() {
       assert.deepEqual(manifests.map(file => fs.readFileSync(path.join(dir, file), 'utf8')), original);
+      assert.equal(fs.readFileSync(path.join(workspace, 'LICENSE'), 'utf8'), workspaceLicense);
       assert.deepEqual(fs.readdirSync(scratch).filter(name => name.startsWith('native-system-pack-')), []);
     },
   };
@@ -97,6 +103,7 @@ for (const workflow of [false, true]) {
     assert.equal(manifests[0].repository.directory, 'native/system/packages/linux-x64');
     assert.equal(manifests[1].repository.directory, 'native/system/packages/entry');
     assert.equal(manifests[1].optionalDependencies['@fixture/native-linux-x64'], '1.2.3');
+    assert.equal(tarFile(f.dir, files[1], 'LICENSE').toString(), workspaceLicense);
     assert.deepEqual(tarFile(f.dir, files[0], 'bin/landlock-run'), f.binary);
     const extracted = path.join(f.dir, 'extracted');
     fs.mkdirSync(extracted);
@@ -104,6 +111,16 @@ for (const workflow of [false, true]) {
     if (process.platform !== 'win32') assert.notEqual(fs.statSync(path.join(extracted, 'package/bin/landlock-run')).mode & 0o111, 0);
   });
 }
+
+test('a package-local license takes precedence over the workspace license during workflow packing', { timeout: 180_000 }, (t) => {
+  const f = fixture(t);
+  const entryLicense = 'Fixture entry license.\n';
+  fs.writeFileSync(path.join(f.dir, 'packages/entry/LICENSE'), entryLicense);
+  completed(f.pack({ GITHUB_REPOSITORY: 'fixture-owner/native-runtime' }));
+  assert.equal(tarFile(f.dir, 'fixture-native-1.2.3.tgz', 'LICENSE').toString(), entryLicense);
+  assert.equal(fs.readFileSync(path.join(f.dir, 'packages/entry/LICENSE'), 'utf8'), entryLicense);
+  f.unchanged();
+});
 
 test('invalid workflow identity fails before deleting existing pack output', (t) => {
   const f = fixture(t);

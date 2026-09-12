@@ -18,7 +18,7 @@ This specializes request construction, not Session ownership or general `deepFre
 
 ## Measurement evidence
 
-Apple M4 Pro, macOS arm64, Node 24.19.0; independent worktree dependencies and built artifacts. The exact parent Agent source at 1dc3296eba is rebuilt for the negative control, then the optimized source is restored and rebuilt. Each row retains all five fresh-process totals in sampling order; all timings are milliseconds. Exclusive slots do not overlap repository builds or sibling benchmarks.
+Apple M4 Pro, macOS arm64, Node 24.19.0; independent worktree dependencies and built artifacts. The exact parent Agent source from run 34017868081 is rebuilt for the negative control, then the optimized source is restored and rebuilt. Each row retains all five fresh-process totals in sampling order; all timings are milliseconds. Exclusive slots do not overlap repository builds or sibling benchmarks.
 
 | Implementation and UTC interval (2026-09-06) | Request-history raw totals | Median | 175 ms verdict |
 |---|---|---:|---|
@@ -36,9 +36,9 @@ An earlier original-code run at 06:58:28 UTC overlaps a sibling build because of
 
 ### Standard hosted CI calibration
 
-The standard two-CPU `ubuntu-24.04` lane runs Node 24.20.0. Run 34033336380, job 101487280801 measures the optimized request path at merge commit `8fba64d9ae06d1a9a778a95487bb915d24cb0644` in Azure eastus: 183.355397, 184.468253, 185.042397, 182.160790, 182.924728 ms; median 183.355397 ms. Every sample completes the same 40 requests and 13,923 events. All five exceed the historical 175 ms budget without changing the WeakSet implementation or workload.
+The standard two-CPU `ubuntu-24.04` lane runs Node 24.20.0. Run 34033336380, job 101487280801 measures the optimized request path in Azure eastus: 183.355397, 184.468253, 185.042397, 182.160790, 182.924728 ms; median 183.355397 ms. Every sample completes the same 40 requests and 13,923 events. All five exceed the historical 175 ms budget without changing the WeakSet implementation or workload.
 
-A second hosted run of the same request implementation, run 34033336246, job 101487216170, records 145.644577, 144.204300, 143.072572, 145.985903, 146.834474 ms; median 145.644577 ms. It uses the same Ubuntu image and Node version but a different worker in Azure westus3 at merge commit `c366e49`. This faster run does not replace the eastus evidence or establish why the workers differ. The older self-hosted `VM-7-113-ubuntu-ci-9` run with Node 24.18.1 (run 34021903421, job 101456015028) records 110.025154, 119.958978, 108.266860, 107.557950, 108.538902 ms; median 108.538902 ms. Its runner and Node version do not calibrate the standard hosted lane.
+A second hosted run of the same request implementation, run 34033336246, job 101487216170, records 145.644577, 144.204300, 143.072572, 145.985903, 146.834474 ms; median 145.644577 ms. It uses the same Ubuntu image and Node version but a different worker in Azure westus3. This faster run does not replace the eastus evidence or establish why the workers differ. The older self-hosted `VM-7-113-ubuntu-ci-9` run with Node 24.18.1 (run 34021903421, job 101456015028) records 110.025154, 119.958978, 108.266860, 107.557950, 108.538902 ms; median 108.538902 ms. Its runner and Node version do not calibrate the standard hosted lane.
 
 The current request-history median limit is 297 ms. It is the largest integer within a 25% increase from the initial 238 ms limit: `floor(238 × 1.25) = 297`, an increase of 24.79%. This allowance belongs only to `agent-continuation/request-history`; the shared time scale, variance headroom, other time limits, memory limits, sample count, and workload remain unchanged.
 

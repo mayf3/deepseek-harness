@@ -26,6 +26,6 @@ Native source manifests identify the public source home. During workflow packing
 
 ## Consequences
 
-The gate performs no network fetch. Local shallow checkouts can identify only objects they contain; CI static checks use full history. Reference validation establishes the maintained-file policy, not remote tag immutability or historical compatibility.
+The gate disables network fetching, including Git partial-clone lazy fetching. It checks all locally available commit objects, including unreachable historical PR heads; absent objects cannot match. A checkout with extra PR objects can therefore detect references absent from CI’s full-history clone. Reference validation establishes the maintained-file policy, not remote tag immutability or historical compatibility. Published native tarballs expose the workflow repository in npm’s Repository metadata; source manifests retain the public source home.
 
 Vendored notices link checked-in source locations while retaining upstream names, licenses, and the unchanged vendor manifest.
