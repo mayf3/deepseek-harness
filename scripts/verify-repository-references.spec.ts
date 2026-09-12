@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process'
 import { mkdirSync, mkdtempSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs'
-import { devNull, tmpdir } from 'node:os'
+import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { describe, expect, it, type TestContext } from 'vitest'
 import { findRepositoryReferences, scanRepositoryReferences } from './verify-repository-references.ts'
@@ -18,7 +18,7 @@ function repository(test: TestContext) {
       encoding: 'utf8',
       env: {
         ...process.env,
-        GIT_CONFIG_GLOBAL: devNull,
+        GIT_CONFIG_GLOBAL: join(root, 'global.gitconfig'),
         GIT_CONFIG_NOSYSTEM: '1',
         GIT_AUTHOR_NAME: 'Repository reference test',
         GIT_AUTHOR_EMAIL: 'repository-reference@example.invalid',
