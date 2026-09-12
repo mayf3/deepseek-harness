@@ -12,7 +12,7 @@ Status: implemented
 
 `packages/experimental/` 下的所有当前包都通过 dsh 发布系列与本地 npm baseline 发布。各 manifest（元数据清单）省略 `private`，并设置 `publishConfig.access: public`。[发布拒绝列表](2026-09-12-experimental-publication-denylist.zh.md)仍可用于未来的私有例外，但不包含任何目录。实验性 npm 名称、显式启用组合、依赖隔离、兼容性预期与支持限制保持不变。
 
-Inspector tarball 包含 `lib/worker.js`，Host 入口通过相邻 URL 启动它。其构建产物测试先打包并解压包，再启动该 Worker。WebWorker 打包器通过运行时的公开库入口导入模块代理与替换包表；编译后的 repository 分片不需要运行时 TypeScript 源码。
+Inspector tarball 包含 `lib/worker.js`，Host 入口通过相邻 URL 启动它。其构建产物测试先打包并解压包，再启动该 Worker。WebWorker 打包器通过运行时的公开库入口导入模块代理与替换包表；编译后的 repository 分片不需要运行时 TypeScript 源码。其已打包消费方测试在普通 Node 下导入两个解压后的 tarball，并在不使用这两个包源码目录的情况下挂载生成的基础镜像与数据叠加层。
 
 CPython PTC 后端携带 Python 脚本，在 Unix 上仍需要受支持的外部解释器。浏览器 worker 包提供已安装库 API；打包器的仓库 CLI（命令行界面）仍需要文档要求的已构建 checkout。发布不会把这些包加入任何随附 profile，也不会让浏览器预览成为产品启动入口。
 
