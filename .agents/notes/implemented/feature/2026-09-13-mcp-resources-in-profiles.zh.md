@@ -24,12 +24,14 @@ Status: implemented
 
 **没有服务器时仍显示资源工具。** 这会向普通会话增加不可用操作与提示词 token，包括默认仅有一个 shell 的极简 SDK。
 
+**按协商出的资源能力过滤提供方。** 这能省略未声明资源的服务器对应的资源指引，但会让可见性取决于成功的能力交换。已配置客户端策略对直接配置和由提供方挂载的客户端使用同一标准，包括首次成功连接前与恢复期间。
+
 **由首台服务器插件拥有共享工具。** 释放该服务器可能移除其他已配置服务器仍需要的工具，因此由服务拥有这些工具的生命周期。
 
 ## 验证
 
-[资源测试](../../../../packages/mcp/mcp-resources/tests/resources.spec.ts)覆盖空 native 与 PTC 视图、作用域继承、首个与最后一个提供方的变化、释放，以及已配置提供方调用失败。[Profile 组合测试](../../../../apps/cli/tests/profile-mcp.spec.ts)解析每个随附 CLI 模板。空 native 与 PTC 录制会话使用随附 headless 组合，不添加资源条目。
+[资源测试](../../../../packages/mcp/mcp-resources/tests/resources.spec.ts)覆盖空 native 与 PTC 视图、作用域继承、首个与最后一个提供方的变化、释放，以及已配置提供方调用失败。[真实 SDK 测试](../../../../packages/mcp/mcp-client/tests/protocol.spec.ts)固定了只提供工具的服务器返回空发现结果，以及不受支持的读取报错。[Profile 组合测试](../../../../apps/cli/tests/profile-mcp.spec.ts)解析每个随附 CLI 模板；[Desktop 组合测试](../../../../apps/desktop/tests/profile-mcp.spec.ts)包含其 profile 与 Host overlay。空 native 与 PTC 录制会话使用随附 headless 组合，不添加资源条目。
 
 ## 后果
 
-空 MCP 配置不增加 MCP 提示词或工具 token。添加首个可见服务器或移除最后一个服务器，会改变后续提示词与工具组装。极简 SDK 在用户添加 MCP 服务器前只公布一个 shell。资源读取仍按需进行，无需更改连接或持久 Session 格式。
+空 MCP 配置不增加 MCP 提示词或工具 token。不具备资源能力的已配置服务器仍贡献名称与共享资源 schema。SDK 返回空的发现列表；不受支持的读取会失败。添加首个可见服务器或移除最后一个服务器，会改变后续提示词与工具组装。极简 SDK 在用户添加 MCP 服务器前只公布一个 shell。资源读取仍按需进行，无需更改连接或持久 Session 格式。

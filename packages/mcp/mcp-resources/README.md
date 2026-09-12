@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-`dsh-mcp-resources` lets the model discover and read documents from configured MCP servers. Choose it when an MCP server exposes resources or URI templates, including servers with no tools. Three shared tools require an explicit server name and read content only when called. Resource text enters conversation history; binary payloads remain available to programmatic callers and appear as descriptions to the model.
+`dsh-mcp-resources` lets the model discover and read documents from configured MCP servers. Shipped profiles make its three shared tools available automatically when a server is configured in the caller's scope. Each tool requires an explicit server name and reads content only when called. Resource text enters conversation history; binary payloads remain available to programmatic callers and appear as descriptions to the model.
 
 ## Table of Contents
 
@@ -77,6 +77,7 @@ These pages cover server configuration, execution, and the decisions behind reso
 
 - [MCP client](../mcp-client/README.md) — server transports, instructions, and connection lifecycle.
 - [Tools subsystem](../../../docs/subsystems/tools.md) — canonical values and model-visible results.
+- [Resource visibility decision](../../../.agents/notes/implemented/feature/2026-09-13-mcp-resources-in-profiles.md) — shared profile mounting and visibility from configured servers.
 - [Resources and instructions decision](../../../.agents/notes/implemented/feature/2026-09-12-mcp-resources-and-instructions.md) — scope, on-demand access, and excluded mechanisms.
 
 -----
@@ -118,6 +119,8 @@ Each result appends to history without rewriting earlier results. Later reads ca
 
 Resource access is explicit and on demand.
 
+- A configured server without the MCP `resources` capability still appears in the server-name prompt and keeps shared resource tools available. The SDK returns empty resource and template lists; unsupported reads fail.
+- `tools.restrict()` checks names supplied by global or ancestor scopes when the filter is registered. Naming a resource tool absent from those scopes fails as an unknown tool. Resource tools registered in the caller's own scope are outside allow/deny masks.
 - Resource subscriptions and update notifications are unsupported; call the list or read tools again to obtain current content.
 - Binary resources are not projected as native images or audio. Programmatic callers retain their canonical base64 values.
 - The caller must supply a server name. The shared tools do not aggregate different servers; pagination follows the MCP SDK.

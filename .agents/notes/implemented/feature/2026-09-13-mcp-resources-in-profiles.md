@@ -24,12 +24,14 @@ This decision partially supersedes the separate opt-in mount in the [resource an
 
 **Keep resource tools visible without servers.** It adds unusable operations and prompt tokens to ordinary sessions, including the minimal SDK's single-shell default.
 
+**Filter providers by negotiated resource capability.** This omits resource guidance for servers that declare no resources, but visibility then requires a successful capability exchange. The configured-client policy uses one criterion for direct and provider-mounted clients, including before the first successful connection and during recovery.
+
 **Own shared tools under the first server plugin.** Disposing that server can remove tools still needed by another configured server. The service owns their lifetime instead.
 
 ## Verification
 
-[Resource tests](../../../../packages/mcp/mcp-resources/tests/resources.spec.ts) cover empty native and PTC views, scoped inheritance, first/last-provider transitions, disposal, and failing configured providers. [Profile composition tests](../../../../apps/cli/tests/profile-mcp.spec.ts) resolve every shipped CLI template. The empty native and PTC recorded Sessions exercise the shipped headless composition without adding a resource entry.
+[Resource tests](../../../../packages/mcp/mcp-resources/tests/resources.spec.ts) cover empty native and PTC views, scoped inheritance, first/last-provider transitions, disposal, and failing configured providers. [Real SDK tests](../../../../packages/mcp/mcp-client/tests/protocol.spec.ts) pin empty discovery and unsupported read errors for a tools-only server. [Profile composition tests](../../../../apps/cli/tests/profile-mcp.spec.ts) resolve every shipped CLI template; [Desktop composition tests](../../../../apps/desktop/tests/profile-mcp.spec.ts) include its profile and Host overlay. The empty native and PTC recorded Sessions exercise the shipped headless composition without adding a resource entry.
 
 ## Consequences
 
-An empty MCP configuration adds no MCP prompt or tool tokens. Adding the first visible server or removing the last changes subsequent prompt and tool assembly. The minimal SDK advertises its single shell until the user adds MCP servers. Resource reads remain on demand, and no connection or durable Session format changes are required.
+An empty MCP configuration adds no MCP prompt or tool tokens. A configured server without resource capability still contributes its name and shared resource schemas. The SDK returns empty discovery lists; unsupported reads fail. Adding the first visible server or removing the last changes subsequent prompt and tool assembly. The minimal SDK advertises its single shell until the user adds MCP servers. Resource reads remain on demand, and no connection or durable Session format changes are required.
