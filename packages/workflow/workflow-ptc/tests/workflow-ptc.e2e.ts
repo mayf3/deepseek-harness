@@ -22,7 +22,7 @@ async function harness(): Promise<Context> {
   await mountAgentLoopTestDependencies(built)
   await mountPtcRuntime(built)
   await built.plugin(AgentLoop, { agents: [] })
-  await built.plugin(LlmDeepSeek)
+  await built.plugin(LlmDeepSeek, { protocol: 'messages' })
   await built.plugin(SubagentRuntime)
   await built.plugin(Spawn, { providerName: 'spawn' })
   await built.plugin(PtcWorkflowEngine, { provider: 'spawn' })

@@ -6,6 +6,7 @@ import { DeepSeekFilesClient, isFilesQuotaError } from './files-api.ts'
 import type { DeepSeekFileId } from './file-id.ts'
 import { deepSeekFileScope, DeepSeekUploadIndex } from './upload-index.ts'
 import type { DeepSeekUploadRecord } from './upload-index.ts'
+import type { DeepSeekProtocol } from './types.ts'
 
 /** DeepSeek chat accepts at most 32 MiB per image even when it is referenced by file id. */
 export const MAX_CHAT_IMAGE_BYTES = 32 * 1024 * 1024
@@ -22,6 +23,8 @@ export interface DeepSeekFilePolicy {
 export interface DeepSeekFileConnection {
   baseURL: string
   apiKey: string
+  /** Files wire protocol selected by the resolved connection. */
+  protocol: DeepSeekProtocol
 }
 
 /** Result of one file-id resolution. */
@@ -41,6 +44,12 @@ interface SharedUpload {
   promise: Promise<DeepSeekFileReference>
   settled: boolean
   waiters: number
+}
+
+/** The Files resource's parent URL distinguishes custom protocol namespaces. */
+function fileScope(connection: DeepSeekFileConnection) {
+  const root = connection.baseURL.replace(/\/+$/u, '')
+  return deepSeekFileScope(connection.protocol === 'messages' ? `${root}/v1` : root, connection.apiKey)
 }
 
 function abortReason(signal: AbortSignal): Error {
@@ -127,6 +136,7 @@ export class DeepSeekFileStore {
     return new DeepSeekFilesClient({
       baseURL: connection.baseURL,
       apiKey: connection.apiKey,
+      protocol: connection.protocol,
       ...this.fetchImpl === undefined ? {} : { fetch: this.fetchImpl },
     })
   }
@@ -146,7 +156,7 @@ export class DeepSeekFileStore {
     signal?: AbortSignal,
   ): Promise<DeepSeekFileReference> {
     signal?.throwIfAborted()
-    const scope = deepSeekFileScope(connection.baseURL, connection.apiKey)
+    const scope = fileScope(connection)
     const key = `${scope}\0${version.variantId}`
     let active = this.inflight.get(key)
     if (active?.controller.signal.aborted) {
@@ -184,7 +194,7 @@ export class DeepSeekFileStore {
     if (version.bytes > MAX_CHAT_IMAGE_BYTES) {
       throw new LlmError('DeepSeek chat image exceeds the 32 MiB per-image limit.', 'INVALID_REQUEST')
     }
-    const scope = deepSeekFileScope(connection.baseURL, connection.apiKey)
+    const scope = fileScope(connection)
     const now = this.now()
     const marginMs = policy.refreshMarginSeconds * 1_000
     const cached = await this.index.get(scope, version.variantId, now, marginMs)
@@ -245,7 +255,7 @@ export class DeepSeekFileStore {
     connection: DeepSeekFileConnection,
   ): Promise<void> {
     await this.index.remove(
-      deepSeekFileScope(connection.baseURL, connection.apiKey),
+      fileScope(connection),
       version.variantId,
       fileId,
     )
@@ -265,7 +275,7 @@ export class DeepSeekFileStore {
     policy: DeepSeekFilePolicy,
     signal?: AbortSignal,
   ): Promise<boolean> {
-    const scope = deepSeekFileScope(connection.baseURL, connection.apiKey)
+    const scope = fileScope(connection)
     const record = await this.index.get(
       scope,
       version.variantId,
@@ -292,8 +302,8 @@ export class DeepSeekFileStore {
   ): Promise<number> {
     const client = this.client(connection)
     let after: DeepSeekFileId | undefined
-    const owned: DeepSeekFileId[] = []
-    while (owned.length < count) {
+    const owned: { id: DeepSeekFileId; createdAt: number }[] = []
+    while (connection.protocol === 'messages' || owned.length < count) {
       const page = await client.list({
         ...after === undefined ? {} : { after },
         limit: 1_000,
@@ -302,13 +312,17 @@ export class DeepSeekFileStore {
       })
       for (const file of page.data) {
         if (!file.filename.startsWith(OWNED_FILE_PREFIX)) continue
-        owned.push(file.id)
-        if (owned.length === count) break
+        owned.push({ id: file.id, createdAt: file.createdAt })
+        if (connection.protocol === 'messages') {
+          // Messages offers no ascending-order query; retain the oldest candidates across every page.
+          owned.sort((left, right) => left.createdAt - right.createdAt)
+          if (owned.length > count) owned.pop()
+        } else if (owned.length === count) break
       }
       if (!page.hasMore || page.lastId === undefined || page.lastId === after) break
       after = page.lastId
     }
-    for (const fileId of owned) await client.delete(fileId, signal)
+    for (const file of owned) await client.delete(file.id, signal)
     return owned.length
   }
 
@@ -325,7 +339,7 @@ export class DeepSeekFileStore {
       total += deleted
       if (deleted < 1_000) break
     }
-    await this.index.clear(deepSeekFileScope(connection.baseURL, connection.apiKey))
+    await this.index.clear(fileScope(connection))
     return total
   }
 }

@@ -22,8 +22,9 @@ import LocalCredentials from '@deepseek-ai/dsh-credentials-local'
 import FileSettings from '@deepseek-ai/dsh-settings-file'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import { DeepSeekMessagesAdapter } from '../../src/protocols/messages/adapter.ts'
+import { DeepSeekFileStore } from '../../src/common/file-store.ts'
 import * as Messages from '../../src/index.ts'
-import { adapter, assemble, chunks, MODEL, options, server, sse, textEvents, user } from './helpers.ts'
+import { adapter, assemble, chunks, MODEL, options, prepareExtensions, server, sse, textEvents, user } from './helpers.ts'
 
 const cleanup: (() => Promise<unknown>)[] = []
 afterEach(async () => {
@@ -98,7 +99,8 @@ describe('direct Messages HTTP', () => {
   it('freezes endpoint and defaults for a prepared call while the next call sees new settings', async () => {
     const first = await endpoint(), second = await endpoint()
     let config = Messages.resolveAdapterOptions({ protocol: 'messages', baseURL: first.url, maxTokens: 10, models: [{ id: MODEL, systemPromptUpdate: 'in-history' }] })
-    const llm = new DeepSeekMessagesAdapter({ connection: () => config, apiKey: snapshot => Promise.resolve(snapshot.maxTokens === 10 ? 'first' : 'second'), userId: () => 'user', attachments: () => undefined, imageAccess: () => undefined })
+    const files = new DeepSeekFileStore()
+    const llm = new DeepSeekMessagesAdapter({ connection: () => config, apiKey: snapshot => Promise.resolve(snapshot.maxTokens === 10 ? 'first' : 'second'), userId: () => 'user', attachments: () => undefined, imageAccess: () => undefined, files: () => files, prepareExtensions })
     const prepared = await llm.prepareCall('deepseek-official', MODEL)
     config = Messages.resolveAdapterOptions({ protocol: 'messages', baseURL: second.url, maxTokens: 20 })
     expect(prepared.model.systemPromptUpdate).toBe('in-history')

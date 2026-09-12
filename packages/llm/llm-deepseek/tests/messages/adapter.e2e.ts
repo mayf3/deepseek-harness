@@ -11,6 +11,7 @@ import LocalAttachments from '@deepseek-ai/dsh-attachment-local'
 import LlmRuntime, { createSystemMessage, createToolResultMessage, ReasoningEffortId } from '@deepseek-ai/dsh-llm'
 import type { Message } from '@deepseek-ai/dsh-llm'
 import * as Messages from '../../src/index.ts'
+import { DeepSeekFilesClient, MESSAGES_FILES_BETA } from '../../src/common/files-api.ts'
 import { assemble, options, user } from './helpers.ts'
 
 const IN_HISTORY_MODEL = process.env.DEEPSEEK_IN_HISTORY_MODEL
@@ -18,6 +19,7 @@ const cleanups: (() => Promise<unknown>)[] = []
 afterEach(async () => {
   while (cleanups.length) await cleanups.pop()!()
   vi.unstubAllEnvs()
+  vi.unstubAllGlobals()
 })
 async function boot(models?: Messages.Config['models']) {
   const home = await mkdtemp(join(tmpdir(), 'dsh-messages-e2e-'))
@@ -58,22 +60,47 @@ describe.skipIf(!process.env.DEEPSEEK_API_KEY)('DeepSeek Messages real API', () 
     await reply('PROMPT_CLEARED')
   })
 
-  it('describes a durable image sent as inline Messages content', async () => {
+  it('uploads and reuses a Files image across Messages requests', async () => {
     const ctx = await boot()
     await ctx.plugin(LocalAttachments)
+    const fetchImpl = globalThis.fetch
+    const uploads: string[] = []
+    const bodies: string[] = []
+    const files = new DeepSeekFilesClient({ baseURL: Messages.MESSAGES_BASE_URL, protocol: 'messages', apiKey: process.env.DEEPSEEK_API_KEY as string, fetch: fetchImpl })
+    vi.stubGlobal('fetch', async (input: string | URL | Request, init?: RequestInit) => {
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
+      const response = await fetchImpl(input, init)
+      if (url === `${Messages.MESSAGES_BASE_URL}/v1/files` && init?.method === 'POST' && response.ok) {
+        const file = await response.clone().json() as { id: string }
+        uploads.push(file.id)
+        cleanups.push(() => files.delete(Messages.DeepSeekFileId(file.id)))
+      }
+      if (url === `${Messages.MESSAGES_BASE_URL}/v1/messages`) {
+        expect(new Headers(init?.headers).get('anthropic-beta')).toBe(MESSAGES_FILES_BETA)
+        if (typeof init?.body !== 'string') throw new Error('expected a JSON Messages request')
+        bodies.push(init.body)
+      }
+      return response
+    })
     const attachment = await ctx.attachments.saveImage({ data: await readFile(new URL('fixtures/red.png', import.meta.url)), mediaType: 'image/png' })
     const message = user('What is the dominant color of this image? Reply with one English color word.')
-    const result = await assemble(ctx.llm.stream(options({
-      model: 'deepseek-v4-flash-vision-exp', reasoningEffort: ReasoningEffortId('off'),
+    const request = options({
+      model: 'deepseek-flash', reasoningEffort: ReasoningEffortId('off'),
       messages: [{ ...message, content: [...message.content, { type: 'image', attachment }] }],
-    })))
-    expect(result.assembler.finish.kind).toBe('stop')
-    expect(result.message.content.filter(block => block.type === 'text').map(block => block.text).join('').toLowerCase()).toContain('red')
+    })
+    for (let run = 0; run < 2; run++) {
+      const result = await assemble(ctx.llm.stream(request), request.model)
+      expect(result.assembler.finish.kind).toBe('stop')
+      expect(result.message.content.filter(block => block.type === 'text').map(block => block.text).join('').toLowerCase()).toContain('red')
+    }
+    expect(uploads).toHaveLength(1)
+    expect(bodies).toHaveLength(2)
+    expect(bodies.every(body => body.includes(`"file_id":"${uploads[0]}"`) && !body.includes('"type":"base64"'))).toBe(true)
   })
 
   it.each(['off', 'low', 'high', 'max'])('streams text with %s effort', async (effort) => {
     const ctx = await boot()
-    const result = await assemble(ctx.llm.stream(options({ reasoningEffort: ReasoningEffortId(effort), messages: [user('Reply with exactly PONG.')] })))
+    const result = await assemble(ctx.llm.stream(options({ reasoningEffort: ReasoningEffortId(effort), temperature: 0, messages: [user('Reply with exactly PONG.')] })))
     expect(result.assembler.finish).toEqual({ kind: 'stop' })
     expect(result.message.content.filter(block => block.type === 'text').map(block => block.text).join('')).toContain('PONG')
     expect(result.assembler.usage?.outputTokens).toBeGreaterThan(0)

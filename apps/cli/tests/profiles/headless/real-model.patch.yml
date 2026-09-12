@@ -8,6 +8,7 @@
 
 - id: llm-deepseek
   config:
+    protocol: messages
     thinking: enabled
     reasoningEffort: max
     models:

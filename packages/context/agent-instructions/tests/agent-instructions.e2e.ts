@@ -41,7 +41,7 @@ async function harness(): Promise<{ ctx: Context; agent: Agent }> {
   await ctx.plugin(ToolFs)
   await ctx.plugin(AgentInstructions, { maxBytes: 65536 })
   await ctx.plugin(AgentLoop, { agents: [] })
-  await ctx.plugin(LlmDeepSeek, { models: [{ id: 'deepseek-v4-flash' }] })
+  await ctx.plugin(LlmDeepSeek, { protocol: 'messages', models: [{ id: 'deepseek-v4-flash' }] })
   const handle = await ctx.agents.create({
     sessionId: SessionId('workspace-context-e2e-session'),
     meta: { cwd: workdir },

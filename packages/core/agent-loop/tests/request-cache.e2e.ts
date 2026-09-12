@@ -47,7 +47,7 @@ async function loopHarness(): Promise<Context> {
   await created.plugin(ToolRuntime)
   await created.plugin(AgentRegistry)
   await created.plugin(AgentLoop, { agents: [] })
-  await created.plugin(LlmDeepSeek)
+  await created.plugin(LlmDeepSeek, { protocol: 'messages' })
   created.tools.register(defineContentToolFixture({
     name: 'lookup',
     description: 'Look up the stored value for a key.',

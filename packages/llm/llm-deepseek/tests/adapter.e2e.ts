@@ -110,6 +110,7 @@ async function harness(model: string, config: Partial<Config> = {}) {
   await ctx.plugin(LlmRuntime)
   await ctx.plugin(E2eAttachmentStore)
   await ctx.plugin(LlmDeepSeek, {
+    protocol: 'chat-completions',
     ...model === VISION ? { models: [{ id: VISION, inputModalities: ['text', 'image'] }] } : {},
     ...config,
   })
@@ -153,7 +154,7 @@ describe.skipIf(!process.env.DEEPSEEK_API_KEY)('llm-deepseek e2e (real API)', ()
     contexts.push(ctx)
     await ctx.plugin(LlmRuntime)
     await ctx.plugin(LocalAttachments)
-    await ctx.plugin(LlmDeepSeek, { maxTokens: 4096 })
+    await ctx.plugin(LlmDeepSeek, { protocol: 'chat-completions', maxTokens: 4096 })
     const model = 'deepseek-flash'
     await expect(ctx.llm.resolveModelInfo('deepseek-official', model)).resolves.toMatchObject({
       inputModalities: ['text', 'image'], systemPromptUpdate: 'in-history',
@@ -197,7 +198,7 @@ describe.skipIf(!process.env.DEEPSEEK_API_KEY)('llm-deepseek e2e (real API)', ()
       return response
     }
     vi.stubGlobal('fetch', observedFetch)
-    const files = new LlmDeepSeek.DeepSeekFilesClient({ baseURL, apiKey: key })
+    const files = new LlmDeepSeek.DeepSeekFilesClient({ protocol: 'chat-completions', baseURL, apiKey: key })
 
     try {
       const result = await assemble(ctx, {
@@ -232,7 +233,7 @@ describe.skipIf(!process.env.DEEPSEEK_API_KEY)('llm-deepseek e2e (real API)', ()
     await ctx.plugin(DeepSeekLlmApiExtensionRegistry)
     await ctx.plugin(SessionLogDeepSeek, { enabled: true })
     await ctx.plugin(PluginPackageInventoryDeepSeek)
-    await ctx.plugin(LlmDeepSeek, { thinking: 'disabled' })
+    await ctx.plugin(LlmDeepSeek, { protocol: 'chat-completions', thinking: 'disabled' })
     const session = ctx.sessions.create(SessionId('real-extension-fields'))
     session.append('turn/start', { turn: 1 })
 
@@ -262,7 +263,7 @@ describe.skipIf(!process.env.DEEPSEEK_API_KEY)('llm-deepseek e2e (real API)', ()
       contexts.push(ctx)
       await ctx.plugin(LlmRuntime)
       await ctx.plugin(LocalCredentialProvider, { path: join(dir, '.credentials.yaml'), watch: false })
-      await ctx.plugin(LlmDeepSeek, {})
+      await ctx.plugin(LlmDeepSeek, { protocol: 'chat-completions' })
 
       const result = await assemble(ctx, {
         model: FLASH,
