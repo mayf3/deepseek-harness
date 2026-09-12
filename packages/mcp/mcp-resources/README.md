@@ -25,18 +25,13 @@ English | [中文](README.zh.md)
 <a id="use-this-package"></a>
 ## Use this package
 
-Mount this package once beside the [MCP client](../mcp-client/README.md) entries whose resources the model needs.
+Shipped profiles already mount this package once. Configure only the [MCP client](../mcp-client/README.md) entries for the servers you need.
 
-### Minimal configuration
+### Server configuration
 
-The composition must already provide the tool registry. Add this service row; each MCP client entry supplies its own server configuration.
+Use the [client configuration](../mcp-client/README.md#use-this-package) to add a server in the intended scope. This package has no configuration fields.
 
-```yaml
-- id: mcp-resources
-  name: '@deepseek-ai/dsh-mcp-resources'
-```
-
-This package has no configuration fields. Mounting it adds the three shared tools; each MCP client supplies access to its configured server. Leaving this package unmounted keeps resource tools unavailable.
+A caller with no configured MCP server sees no MCP prompt text or resource tools in native or PTC mode. A configured server enables the three shared resource tools, including when another provider mounts its client or the server has no tools or instructions. Connection failures do not remove the shared tools while the client entry remains active; resource calls report the connection error.
 
 ### Discover and read
 
@@ -52,7 +47,14 @@ Every operation resolves the server in the calling agent's scope. A missing serv
 <details>
 <summary>Implementation internals — click to expand</summary>
 
-The scoped registry joins connection-owned providers to one shared set of tools and supplies their caller-visible server names to optional system-prompt assembly. Registrations follow Cordis effects, so disposing a provider removes that registration and exposes any inherited provider with the same name. Scope resolution happens during execution, before the provider receives the request.
+The [base](../../bundle/base/README.md) and standalone [sdk-minimal](../../bundle/sdk-minimal/README.md) bundles each own this row:
+
+```yaml
+- id: mcp-resources
+  name: '@deepseek-ai/dsh-mcp-resources'
+```
+
+The first provider in a scope registers its shared tools; removing the last removes those local registrations, while inherited providers and tools remain visible. The resource service owns the shared tool effects independently of the first provider's plugin, so unloading that provider cannot remove tools needed by another server. Provider selection and the server-name prompt use the same scoped registry. Each call resolves its server before dispatch.
 
 Canonical results retain the complete JSON for programmatic callers. The pure text renderer adds server attribution and replaces string-valued `blob` fields with a description of their base64 length; URI, MIME type, and text fields remain in the rendered JSON. The tool pipeline owns recorded results. Server instructions belong to the MCP client and its logged system-prompt section.
 
@@ -62,7 +64,7 @@ Canonical results retain the complete JSON for programmatic callers. The pure te
 | [`src/tools.ts`](src/tools.ts) | Shared resource operations and argument schemas |
 | [`src/render.ts`](src/render.ts) | Attributed text projection without inline binary payloads |
 
-No runtime invariant companion is published: the registry exposes no independent observation that can disagree with provider selection.
+No runtime invariant companion is published: tools, prompt names, and dispatch derive from the same effect-owned provider registrations. They supply no independent observation to reconcile; registry-effect checks are not runtime invariants.
 
 </details>
 
@@ -86,15 +88,15 @@ These pages cover server configuration, execution, and the decisions behind reso
 
 #### What the model sees
 
-The [generated tool schemas](../../../docs/tool-catalog.md#deepseek-aidsh-mcp-resources) define three tools shared by all configured servers. Their names and schemas do not change when a server connects or disconnects; execution still requires a caller-visible provider. When system-prompt assembly is mounted and providers are visible, the `MCP resource servers` section says `Use list_mcp_resources, list_mcp_resource_templates, or read_mcp_resource with one of these names as the server argument: <JSON array>.` The names come from the same scoped registry, including servers with neither tools nor instructions. An empty registry contributes no section.
+The [generated tool schemas](../../../docs/tool-catalog.md#deepseek-aidsh-mcp-resources) define three tools shared by all caller-visible configured servers. With none, native schemas, PTC declarations and bindings, and the server-name prompt are absent. Connecting, disconnecting, or retrying an active client leaves these shared tool definitions unchanged. When system-prompt assembly is mounted and providers are visible, the `MCP resource servers` section says `Use list_mcp_resources, list_mcp_resource_templates, or read_mcp_resource with one of these names as the server argument: <JSON array>.` The names come from the same scoped registry, including servers with neither tools nor instructions. An empty registry contributes no section.
 
 #### Token effect
 
-The three definitions contribute a fixed schema cost while mounted. When present, the server-name section adds a sorted JSON list of caller-visible names; resource listings and documents add no content until an operation returns them.
+With no caller-visible configured servers, this package adds no tool or prompt tokens. Otherwise, three shared definitions contribute a fixed schema cost and the server-name section adds a sorted JSON list of visible names. Resource listings and documents add content only when an operation returns them.
 
 #### KV Cache effect
 
-The definitions form a stable repeated prefix. Mounting, unmounting, or changing these tools can replace earlier request tokens. Changes to the caller-visible name set update the server-name section and its reusable prompt prefix; replacing a provider under the same name leaves that text unchanged.
+Adding the first caller-visible server or removing the last changes the next tool schema or PTC declaration prefix. Changes to visible names update the server-name section; replacing a provider under the same name leaves that text unchanged. Connection failures alone do not change the shared definitions or names.
 
 ### Resource results
 
