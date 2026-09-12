@@ -215,8 +215,14 @@
     - id: tool-workflow
       name: '@deepseek-ai/dsh-tool-workflow'
 
+    # Off by default with the base row it mirrors: the tool description
+    # restricts `ralph` to runs the human explicitly asked for, and completion
+    # is a worker self-report, not an independent evaluation. Preset files take
+    # no patches, so a session that wants it duplicates this preset and drops
+    # `disabled`.
     - id: tool-ralph
       name: '@deepseek-ai/dsh-tool-ralph'
+      disabled: true
       config:
         subagentProvider: spawn
         maxRounds: 64

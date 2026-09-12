@@ -458,6 +458,9 @@
 - id: tool-workflow
   disabled: true
 
+# Kept as an explicit disable even though `base` now ships this row off: the
+# preset-plane gate reads declared row ids without regard to `disabled`, so
+# deleting this row would collide every preset's `tool-ralph` with this plane.
 - id: tool-ralph
   disabled: true
 
