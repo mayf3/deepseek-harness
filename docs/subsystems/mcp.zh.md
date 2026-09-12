@@ -12,6 +12,7 @@
 - [职责与作用域](#responsibilities-and-scope)
 - [协议与结果](#protocol-and-results)
 - [资源与指令](#resources-and-instructions)
+- [资源提供方类型](#resource-provider-types)
 - [限制](#limits)
 - [延伸阅读](#further-reading)
 
@@ -25,7 +26,7 @@ MCP 需要显式启用。在目标 Cordis 作用域中，为每个服务器挂�
 | 选择 | 配置维护位置 |
 |---|---|
 | 服务器身份、本地进程或 HTTP 端点、凭据和进程环境 | [客户端配置](../../packages/mcp/mcp-client/README.zh.md#use-this-package) |
-| 工具调用超时、启动失败策略和重连 | [客户端配置](../../packages/mcp/mcp-client/README.zh.md#use-this-package) |
+| 工具与资源请求超时、启动失败策略和重连 | [客户端配置](../../packages/mcp/mcp-client/README.zh.md#use-this-package) |
 | 资源发现与读取 | 挂载 [MCP 资源服务](../../packages/mcp/mcp-resources/README.zh.md#use-this-package)；该服务没有配置字段 |
 | 服务器指令大小限制 | 客户端 `maxInstructionBytes`；组合提供[系统提示词装配](system-prompt.zh.md) |
 | 权限决策和受支持的图像输出 | [工具执行](tools.zh.md)和[附件](attachment.zh.md) |
@@ -59,11 +60,38 @@ stdio 和 Streamable HTTP 都使用官方 SDK 的协商、发现、协议校验�
 <a id="resources-and-instructions"></a>
 ## 资源与指令
 
-资源调用必须显式指定配置的服务器名称。共享注册表在分发前，于调用 Agent 的作用域中解析该名称；不可用的服务器会在发出网络请求前失败。发现和读取均按需执行，也支持只提供资源而不提供工具的服务器。[资源包](../../packages/mcp/mcp-resources/README.zh.md) 维护分页和内容渲染规则；其生成的工具 schema 位于[工具目录](../tool-catalog.zh.md#deepseek-aidsh-mcp-resources)。
+资源调用必须显式指定配置的服务器名称。系统提示词组装服务可用时，资源服务从派发所用的同一注册表列出调用方可见的名称，包括没有工具或指令的服务器。共享注册表在分发前，于调用 Agent 的作用域中解析该名称；不可用的服务器会在发出网络请求前失败。发现和读取均按需执行，也支持只提供资源而不提供工具的服务器。[资源包](../../packages/mcp/mcp-resources/README.zh.md) 维护分页和内容渲染规则；其生成的工具 schema 位于[工具目录](../tool-catalog.zh.md#deepseek-aidsh-mcp-resources)。
 
 资源提供方仍由连接拥有。作用域释放时移除注册；MCP 客户端控制取消和恢复。规范结果为程序化调用方保留完整 JSON，文本投影则以描述替换二进制 blob。返回的文本进入普通工具历史；服务器连接本身不会触发内容读取。
 
 组合包含系统提示词装配时，客户端将非空白的服务器指令发布为带服务器归属的作用域章节。指令保持字面文本，并在发布前通过配置的大小限制。替换连接仅在发现成功后发布指令；缺少指令时不添加章节。[系统提示词子系统](system-prompt.zh.md) 维护装配与记录规则。
+
+-----
+
+<a id="resource-provider-types"></a>
+## 资源提供方类型
+
+连接提供方接收一个操作与原始工具执行对象，其中包含调用方和取消信号。
+
+```ts type-equiv
+/** One supported resource operation, with server-owned cursors and URIs. */
+type McpResourceRequest =
+  | { method: 'resources/list' | 'resources/templates/list'; cursor?: string }
+  | { method: 'resources/read'; uri: string }
+```
+
+```ts type-equiv
+/** One configured server's resource access, owned by its MCP connection plugin. */
+interface McpResourceProvider {
+  /**
+   * Run an operation against one live connection generation.
+   * @param request - MCP resource method and parameters.
+   * @param exec - caller identity and cancellation for this invocation.
+   * @returns the protocol result as lossless JSON.
+   */
+  request(request: McpResourceRequest, exec: ToolExecution): Promise<JsonValue>
+}
+```
 
 -----
 

@@ -33,6 +33,10 @@ Use the ralph tool ONLY when the direct human explicitly asks for a Ralph loop o
 
 Use subagent in the background by default. Start independent delegations together in one assistant message and continue useful work while they run. Set `run_in_background: false` only when your next action depends on that subagent's result. When a background run settles, the runtime sends you a notice containing its outcome and any final assistant message.
 
+## MCP resource servers
+
+Use list_mcp_resources, list_mcp_resource_templates, or read_mcp_resource with one of these names as the server argument: ["catalog"].
+
 ### MCP server: catalog
 
 MCP_RESOURCE_INSTRUCTION: keep {{braces}} literal. Read resources from the catalog server.

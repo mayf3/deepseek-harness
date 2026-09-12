@@ -605,6 +605,8 @@ function verifyMcpResources(log: string, ptc: boolean): void {
   expect(log).not.toContain('bWNwLXJlc291cmNlLWJpbmFyeQ==')
   expect(normalizedSystemPrompts(log, contextOf([log])).join('\n'))
     .toContain('MCP_RESOURCE_INSTRUCTION: keep {{braces}} literal.')
+  expect(normalizedSystemPrompts(log, contextOf([log])).join('\n'))
+    .toContain('server argument: ["catalog"]')
 }
 
 /** Require an admitted failed job and zero process allocations before updating its recorded oracle. */

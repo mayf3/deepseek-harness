@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
-import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
+import SystemPrompt, { renderPrompt } from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime from '@deepseek-ai/dsh-tools'
 import { ToolCallId } from '@deepseek-ai/dsh-llm'
 import type { Agent } from '@deepseek-ai/dsh-agent'
@@ -30,6 +30,55 @@ function call(ctx: Context, name: string, args: unknown, agent?: Agent) {
 }
 
 describe('MCP resource tools', () => {
+  it('publishes explicit server names without requiring server tools or instructions', async () => {
+    const ctx = await setup()
+    expect(renderPrompt(await ctx.systemPrompt.assemble())).not.toContain('MCP resource servers')
+    ctx.mcpResources.register('docs{{literal}}', { request: async () => ({ resources: [] }) })
+
+    const prompt = renderPrompt(await ctx.systemPrompt.assemble())
+    expect(prompt).toContain('MCP resource servers')
+    expect(prompt).toContain('server argument: ["docs{{literal}}"]')
+  })
+
+  it('lists only caller-visible names and withdraws disposed providers from the prompt', async () => {
+    const ctx = await setup()
+    const owner = {} as Agent
+    const other = {} as Agent
+    const provider = { request: async () => ({ resources: [] }) }
+    const disposeGlobal = ctx.mcpResources.register('docs', provider)
+    const fiber = await ctx.plugin({ inject: ['mcpResources'], apply(inner: Context) {
+      const scope = createScope(inner, owner)
+      scope.ctx.mcpResources.register('docs', provider)
+      scope.ctx.mcpResources.register('private', provider)
+    } })
+
+    expect(renderPrompt(await ctx.systemPrompt.assemble({ scope: owner })))
+      .toContain('server argument: ["docs","private"]')
+    expect(renderPrompt(await ctx.systemPrompt.assemble({ scope: other })))
+      .toContain('server argument: ["docs"]')
+    await fiber.dispose()
+    expect(renderPrompt(await ctx.systemPrompt.assemble({ scope: owner })))
+      .toContain('server argument: ["docs"]')
+    disposeGlobal()
+    expect(renderPrompt(await ctx.systemPrompt.assemble())).not.toContain('MCP resource servers')
+  })
+
+  it('withdraws all shared tools and server-name context when its plugin unloads', async () => {
+    const ctx = new Context()
+    roots.push(ctx)
+    await ctx.plugin(SystemPrompt)
+    await ctx.plugin(ToolRuntime)
+    const fiber = await ctx.plugin(McpResources)
+    ctx.mcpResources.register('docs', { request: async () => ({ resources: [] }) })
+    expect(renderPrompt(await ctx.systemPrompt.assemble())).toContain('MCP resource servers')
+
+    await fiber.dispose()
+    for (const name of ['list_mcp_resources', 'list_mcp_resource_templates', 'read_mcp_resource']) {
+      expect(ctx.tools.get(name)).toBeUndefined()
+    }
+    expect(renderPrompt(await ctx.systemPrompt.assemble())).not.toContain('MCP resource servers')
+  })
+
   it('routes all three operations with the explicit server and opaque parameters', async () => {
     const ctx = await setup()
     const request = vi.fn<McpResourceProvider['request']>().mockResolvedValue({ resources: [], nextCursor: 'next-page' })
@@ -42,6 +91,9 @@ describe('MCP resource tools', () => {
     expect((await call(ctx, 'read_mcp_resource', { server: 'docs', uri: 'docs://guide' })).isError).toBe(false)
     expect(request.mock.calls[2]?.[0]).toEqual({ method: 'resources/read', uri: 'docs://guide' })
     expect(request.mock.calls[2]?.[1].signal).toBeInstanceOf(AbortSignal)
+    expect((await call(ctx, 'list_mcp_resource_templates', { server: 'docs', cursor: 'template-page' })).isError)
+      .toBe(false)
+    expect(request.mock.calls[3]?.[0]).toEqual({ method: 'resources/templates/list', cursor: 'template-page' })
   })
 
   it('keeps binary bytes programmatic while projecting text, URI and server attribution', async () => {

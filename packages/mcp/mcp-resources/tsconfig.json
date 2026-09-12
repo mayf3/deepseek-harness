@@ -21,6 +21,9 @@
       "path": "../../core/tools"
     },
     {
+      "path": "../../core/system-prompt"
+    },
+    {
       "path": "../../util/values"
     }
   ]

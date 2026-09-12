@@ -40,7 +40,7 @@ kind: "package-reference"
 
 ### 发现与读取
 
-使用已配置的 `server` 名称调用 `list_mcp_resources` 或 `list_mcp_resource_templates`。未提供游标时，MCP SDK 收集服务器的全部分页；显式提供游标时返回一页；将其中的 `nextCursor` 原样作为 `cursor` 传入，以请求下一页。使用相同的 `server` 名称和显式 `uri`，通过 `read_mcp_resource` 读取已列出的 URI 或展开后的模板。
+挂载系统提示词组装服务时，提示词列出调用 agent 可见的服务器名称。将其中一个名称作为 `server` 调用 `list_mcp_resources` 或 `list_mcp_resource_templates`。未提供游标时，MCP SDK 收集服务器的全部分页；显式提供游标时返回一页；将其中的 `nextCursor` 原样作为 `cursor` 传入，以请求下一页。使用相同的 `server` 名称和显式 `uri`，通过 `read_mcp_resource` 读取已列出的 URI 或展开后的模板。
 
 每个操作都在调用 agent 的作用域中解析服务器。缺少服务器参数或服务器不可用时，会在派发前失败。连接所有者负责请求取消、超时与恢复；失败的请求仍表现为失败的工具调用。
 
@@ -52,13 +52,13 @@ kind: "package-reference"
 <details>
 <summary>实现内部细节——点击展开</summary>
 
-作用域注册表将连接所有者提供的操作接入一组共享工具。注册遵循 Cordis effect 生命周期，因此释放提供方会移除该注册，并显露任何同名的继承提供方。作用域解析发生在执行期间，早于提供方收到请求。
+作用域注册表将连接所有者提供的操作接入一组共享工具，并向可选的系统提示词装配提供调用方可见的服务器名称。注册遵循 Cordis effect 生命周期，因此释放提供方会移除该注册，并显露任何同名的继承提供方。作用域解析发生在执行期间，早于提供方收到请求。
 
 规范结果为程序化调用方保留完整 JSON。纯文本渲染器添加服务器归属信息，并将字符串值的 `blob` 字段替换为说明其 base64 长度的文字；URI、MIME 类型与文本字段仍保留在渲染后的 JSON 中。工具流水线负责记录结果。服务器指令归 MCP 客户端及其已记录的系统提示词段落所有。
 
 | 源码 | 职责 |
 |---|---|
-| [`src/index.ts`](src/index.ts) | 作用域提供方注册及按调用方选择 |
+| [`src/index.ts`](src/index.ts) | 作用域提供方选择与服务器名称提示词上下文 |
 | [`src/tools.ts`](src/tools.ts) | 共享资源操作与参数 schema |
 | [`src/render.ts`](src/render.ts) | 带归属信息且不内联二进制载荷的文本投影 |
 
@@ -86,15 +86,15 @@ kind: "package-reference"
 
 #### 模型看到什么
 
-[生成的工具 schema](../../../docs/tool-catalog.zh.md#deepseek-aidsh-mcp-resources)定义了所有已配置服务器共享的三个工具。服务器连接或断开时，工具名称和 schema 不变；执行仍要求存在调用方可见的提供方。
+[生成的工具 schema](../../../docs/tool-catalog.zh.md#deepseek-aidsh-mcp-resources)定义了所有已配置服务器共享的三个工具。服务器连接或断开时，工具名称和 schema 不变；执行仍要求存在调用方可见的提供方。挂载系统提示词装配且存在可见提供方时，`MCP resource servers` 段落显示 `Use list_mcp_resources, list_mcp_resource_templates, or read_mcp_resource with one of these names as the server argument: <JSON array>.` 名称来自同一作用域注册表，包括既没有工具也没有指令的服务器。注册表为空时不贡献该段落。
 
 #### Token 影响
 
-挂载期间，三个定义带来固定的 schema 开销。资源列表和文档仅在操作返回后增加内容。
+挂载期间，三个定义带来固定的 schema 开销。服务器名称段落存在时，会添加按序排列的调用方可见名称 JSON 列表；资源列表和文档仅在操作返回后增加内容。
 
 #### KV Cache 影响
 
-定义形成稳定的重复前缀。挂载、卸载或更改这些工具可能替换请求中较早的 token；仅改变提供方可用性不会改变其定义。
+定义形成稳定的重复前缀。挂载、卸载或更改这些工具可能替换请求中较早的 token。调用方可见的名称集合变化时，会更新服务器名称段及其可复用的提示词前缀；替换同名提供方不会改变该文本。
 
 ### 资源结果
 

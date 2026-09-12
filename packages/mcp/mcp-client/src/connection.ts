@@ -45,6 +45,9 @@ export const RECONNECT_DEFAULTS: Required<ReconnectConfig> = Object.freeze({
   maxAttempts: 10,
 })
 
+/** Default UTF-8 byte limit for attributed server instructions. */
+export const DEFAULT_MAX_INSTRUCTION_BYTES = 32_768
+
 // The SDK's stdio transport owns two two-second termination grace periods.
 // Keep one additional second for the process-close event that proves the old
 // generation is gone; timing out fails closed instead of overlapping children.
@@ -137,7 +140,7 @@ export function startConnection(ctx: Context, config: Config, policy: ResolvedRe
     : opts
 
   let disposed = false
-  const maxInstructionBytes = config.maxInstructionBytes ?? 32768
+  const maxInstructionBytes = config.maxInstructionBytes ?? DEFAULT_MAX_INSTRUCTION_BYTES
   let serverInstructions = ''
   /** Current generation: the connecting or connected client; undefined during backoff waits and after final failure. */
   let client: Client | undefined

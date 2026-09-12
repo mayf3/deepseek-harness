@@ -8,6 +8,7 @@ import { Service, type Context } from '@deepseek-ai/cordis'
 import { NamedEntries, ScopedLayers, type ScopeLayer } from '@deepseek-ai/dsh-scope'
 import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 import type { ToolExecution } from '@deepseek-ai/dsh-tools'
+import type {} from '@deepseek-ai/dsh-system-prompt'
 import { registerResourceTools } from './tools.ts'
 
 declare module '@deepseek-ai/cordis' {
@@ -52,6 +53,19 @@ export class McpResourceRuntime extends Service {
     super(ctx, 'mcpResources')
 
     registerResourceTools(ctx, (server, request, exec) => this.request(server, request, exec))
+    ctx.inject(['systemPrompt'], (inner) => {
+      inner.systemPrompt.section({
+        name: 'mcp-resource-servers',
+        order: inner.systemPrompt.getSectionOrder('MCP_SERVERS'),
+        interpolate: false,
+        text: ({ scope }) => {
+          const names = [...this.layers.merge(scope, layer => layer.servers).keys()].sort()
+          return names.length === 0 ? '' : '## MCP resource servers\n\n'
+            + 'Use list_mcp_resources, list_mcp_resource_templates, or read_mcp_resource with one of these names '
+            + `as the server argument: ${JSON.stringify(names)}.`
+        },
+      })
+    })
   }
 
   /**

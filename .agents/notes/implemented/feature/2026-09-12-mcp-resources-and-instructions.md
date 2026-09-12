@@ -10,7 +10,7 @@ MCP servers expose documents and URI templates separately from tools. A tools-on
 
 ## Decision
 
-[`mcp-resources`](../../../../packages/mcp/mcp-resources/README.md) provides three shared tools for listing resources, listing templates, and reading a URI. Each requires an explicit configured server name. The execution path resolves that server in the calling agent's scope before dispatch; provider registrations use reversible Cordis effects.
+[`mcp-resources`](../../../../packages/mcp/mcp-resources/README.md) provides three shared tools for listing resources, listing templates, and reading a URI. Each requires an explicit configured server name. When system-prompt assembly is composed, a literal section derives the caller-visible names from the dispatch registry, so resource-only servers remain discoverable without server instructions. The existing system-message log records those names; provider disposal removes them from later assemblies. The execution path resolves that server in the calling agent's scope before dispatch; provider registrations use reversible Cordis effects.
 
 One opt-in service mount installs the shared tools. Each [`mcp-client`](../../../../packages/mcp/mcp-client/README.md) instance owns its connection and registers a resource provider when the service is mounted. Resource operations require the server's resource capability; servers need not advertise tools. The official SDK owns protocol operations; list cursors and resource URIs remain opaque, and an explicit cursor requests one page while an omitted cursor lets the SDK collect pages.
 
@@ -32,8 +32,8 @@ This decision supersedes only the resource deferral in the [original MCP client 
 
 ## Verification
 
-The [resource tests](../../../../packages/mcp/mcp-resources/tests/resources.spec.ts) pin all three operations, unchanged cursors, required server arguments, unavailable-server rejection, scoped provider selection, duplicate rejection, disposal, and lossless canonical results with binary-free model text. The [tool-result contract](../architecture/2026-07-20-canonical-tool-output-contract.md) owns the distinction between execution-time values and recorded model content.
+The [resource tests](../../../../packages/mcp/mcp-resources/tests/resources.spec.ts) pin all three operations, unchanged cursors, required server arguments, unavailable-server rejection, scoped provider selection, duplicate rejection, disposal, and lossless canonical results with binary-free model text. They also verify caller-visible server names without server instructions, literal names, and removal of prompt context when providers or the resource service are disposed. The [tool-result contract](../architecture/2026-07-20-canonical-tool-output-contract.md) owns the distinction between execution-time values and recorded model content.
 
 ## Consequences
 
-Resource-only servers become useful without adding per-server model tools. Server instructions add prompt tokens; resource documents add tokens only when read. Shared schemas stay stable as provider availability changes, but a call still fails when its selected server is unavailable. Binary resources remain programmatic values, and pagination follows the SDK.
+Resource-only servers become useful without adding per-server model tools. Caller-visible server names and server instructions add prompt tokens; resource documents add tokens only when read. Shared schemas stay stable as provider availability changes, but a call still fails when its selected server is unavailable. Binary resources remain programmatic values, and pagination follows the SDK.

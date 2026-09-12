@@ -40,7 +40,7 @@ This package has no configuration fields. Mounting it adds the three shared tool
 
 ### Discover and read
 
-Call `list_mcp_resources` or `list_mcp_resource_templates` with the configured `server` name. Without a cursor, the MCP SDK collects the server’s pages. An explicit `cursor` requests that page; pass a returned `nextCursor` unchanged. Read a listed URI or an expanded template with `read_mcp_resource`, using the same `server` name and an explicit `uri`.
+When system-prompt assembly is mounted, the prompt lists server names visible to the calling agent. Call `list_mcp_resources` or `list_mcp_resource_templates` with one of those names as `server`. Without a cursor, the MCP SDK collects the server’s pages. An explicit `cursor` requests that page; pass a returned `nextCursor` unchanged. Read a listed URI or an expanded template with `read_mcp_resource`, using the same `server` name and an explicit `uri`.
 
 Every operation resolves the server in the calling agent's scope. A missing server argument or unavailable server fails before dispatch. The connection owner handles request cancellation, timeouts, and recovery; a failed request remains a failed tool call.
 
@@ -52,13 +52,13 @@ Every operation resolves the server in the calling agent's scope. A missing serv
 <details>
 <summary>Implementation internals — click to expand</summary>
 
-The scoped registry joins connection-owned providers to one shared set of tools. Registrations follow Cordis effects, so disposing a provider removes that registration and exposes any inherited provider with the same name. Scope resolution happens during execution, before the provider receives the request.
+The scoped registry joins connection-owned providers to one shared set of tools and supplies their caller-visible server names to optional system-prompt assembly. Registrations follow Cordis effects, so disposing a provider removes that registration and exposes any inherited provider with the same name. Scope resolution happens during execution, before the provider receives the request.
 
 Canonical results retain the complete JSON for programmatic callers. The pure text renderer adds server attribution and replaces string-valued `blob` fields with a description of their base64 length; URI, MIME type, and text fields remain in the rendered JSON. The tool pipeline owns recorded results. Server instructions belong to the MCP client and its logged system-prompt section.
 
 | Source | Responsibility |
 |---|---|
-| [`src/index.ts`](src/index.ts) | Scoped provider registration and caller-aware selection |
+| [`src/index.ts`](src/index.ts) | Scoped provider selection and server-name prompt context |
 | [`src/tools.ts`](src/tools.ts) | Shared resource operations and argument schemas |
 | [`src/render.ts`](src/render.ts) | Attributed text projection without inline binary payloads |
 
@@ -86,15 +86,15 @@ These pages cover server configuration, execution, and the decisions behind reso
 
 #### What the model sees
 
-The [generated tool schemas](../../../docs/tool-catalog.md#deepseek-aidsh-mcp-resources) define three tools shared by all configured servers. Their names and schemas do not change when a server connects or disconnects; execution still requires a caller-visible provider.
+The [generated tool schemas](../../../docs/tool-catalog.md#deepseek-aidsh-mcp-resources) define three tools shared by all configured servers. Their names and schemas do not change when a server connects or disconnects; execution still requires a caller-visible provider. When system-prompt assembly is mounted and providers are visible, the `MCP resource servers` section says `Use list_mcp_resources, list_mcp_resource_templates, or read_mcp_resource with one of these names as the server argument: <JSON array>.` The names come from the same scoped registry, including servers with neither tools nor instructions. An empty registry contributes no section.
 
 #### Token effect
 
-The three definitions contribute a fixed schema cost while mounted. Resource listings and documents add no content until an operation returns them.
+The three definitions contribute a fixed schema cost while mounted. When present, the server-name section adds a sorted JSON list of caller-visible names; resource listings and documents add no content until an operation returns them.
 
 #### KV Cache effect
 
-The definitions form a stable repeated prefix. Mounting, unmounting, or changing these tools can replace earlier request tokens; changing provider availability alone leaves their definitions unchanged.
+The definitions form a stable repeated prefix. Mounting, unmounting, or changing these tools can replace earlier request tokens. Changes to the caller-visible name set update the server-name section and its reusable prompt prefix; replacing a provider under the same name leaves that text unchanged.
 
 ### Resource results
 
