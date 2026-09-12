@@ -4,7 +4,7 @@
  * box, with one Unarchive action per row. An archive entry whose Session is
  * gone has no row and no action; the set itself stays host-owned.
  */
-import { useState, type ReactNode } from 'react'
+import { useMemo, useState, type ReactNode } from 'react'
 import { Button, IconSearchOutline16, relativeTime } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
@@ -45,8 +45,8 @@ function timeLabel(updatedAt: number, now: number, t: Translate): string {
 /** Whether one row matches the normalized query in its title or Workspace label. */
 function matches(row: ArchivedRow, normalizedQuery: string): boolean {
   return normalizedQuery.length === 0
-    || row.title.toLocaleLowerCase().includes(normalizedQuery)
-    || row.workspace.toLocaleLowerCase().includes(normalizedQuery)
+    || row.title.toLowerCase().includes(normalizedQuery)
+    || row.workspace.toLowerCase().includes(normalizedQuery)
 }
 
 /**
@@ -60,35 +60,38 @@ export function ArchivedSessionsSection(props: ArchivedSessionsSectionProps): Re
   const workspaces = useWorkspaces(state => state.items)
   const archivedSessionIds = useWorkspaces(state => state.archivedSessionIds)
   const [query, setQuery] = useState('')
-
-  const owners = new Map<string, string>()
-  for (const workspace of workspaces) {
-    for (const id of workspace.sessionIds) owners.set(id, workspace.title)
-  }
   const ungrouped = t('ungrouped')
+  const summaries = sessions.byId
+
   // Archive order is oldest first; the page lists the most recently archived
   // Session first. A member with no loaded summary is not addressable here.
-  const rows: ArchivedRow[] = [...archivedSessionIds].reverse().flatMap((id) => {
-    const summary = sessions.byId[id]
-    if (summary === undefined) return []
-    return [{
-      id,
-      title: summary.displayTitle,
-      workspace: owners.get(id) ?? ungrouped,
-      updatedAt: summary.updatedAt,
-    }]
-  })
+  const rows = useMemo<ArchivedRow[]>(() => {
+    const owners = new Map<string, string>()
+    for (const workspace of workspaces) {
+      for (const id of workspace.sessionIds) owners.set(id, workspace.title)
+    }
+    return [...archivedSessionIds].reverse().flatMap((id) => {
+      const summary = summaries[id]
+      if (summary === undefined) return []
+      return [{
+        id,
+        title: summary.displayTitle,
+        workspace: owners.get(id) ?? ungrouped,
+        updatedAt: summary.updatedAt,
+      }]
+    })
+  }, [archivedSessionIds, workspaces, summaries, ungrouped])
 
   if (sessions.phase !== 'ready') return <p className={css.status}>{t('loading')}</p>
 
   const now = Date.now()
-  const visible = rows.filter(row => matches(row, query.trim().toLocaleLowerCase()))
+  const visible = rows.filter(row => matches(row, query.trim().toLowerCase()))
+  const archived = archivedSessionIds.length > 0
 
   return (
     <div className={css.section}>
-      <label className={css.search}>
+      <div className={css.search}>
         <IconSearchOutline16 aria-hidden="true" />
-        <span className={css.visuallyHidden}>{t('search')}</span>
         <input
           type="search"
           value={query}
@@ -96,8 +99,9 @@ export function ArchivedSessionsSection(props: ArchivedSessionsSectionProps): Re
           aria-label={t('search')}
           onChange={(event) => { setQuery(event.currentTarget.value) }}
         />
-      </label>
-      {rows.length === 0 ? <p className={css.status}>{t('empty')}</p> : null}
+      </div>
+      {!archived ? <p className={css.status}>{t('empty')}</p> : null}
+      {archived && rows.length === 0 ? <p className={css.status}>{t('unavailable')}</p> : null}
       {rows.length > 0 && visible.length === 0 ? <p className={css.status}>{t('emptySearch')}</p> : null}
       {visible.length > 0 ? (
         <ul className={css.list}>

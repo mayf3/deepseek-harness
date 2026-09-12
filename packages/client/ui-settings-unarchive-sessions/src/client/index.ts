@@ -24,7 +24,7 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 }
 
 /** Dictionary namespace owned by this plugin. */
-export const NS = 'settings.archivedSessions'
+const NS = 'settings.archivedSessions'
 
 /** Services required by the Settings registration and the archive write. */
 export const inject = ['slots', 'locale', 'uiWorkspace']

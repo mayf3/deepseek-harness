@@ -111,6 +111,17 @@ describe('ArchivedSessionsSection', () => {
     expect(screen.queryByRole('listitem')).toBeNull()
   })
 
+  it('does not report an empty archive while every entry lacks a Session summary', () => {
+    render(<ArchivedSessionsSection {...props({
+      sessions: sessionState([]),
+      workspaces: snapshot(['gone', 'vanished']),
+    })} />)
+
+    expect(screen.getByText(en.unavailable)).toBeTruthy()
+    expect(screen.queryByText(en.empty)).toBeNull()
+    expect(screen.queryByText(en.emptySearch)).toBeNull()
+  })
+
   it('filters by title and Workspace and reports a query with no match', () => {
     render(<ArchivedSessionsSection {...twoRows()} />)
     const search = screen.getByRole('searchbox', { name: en.search })

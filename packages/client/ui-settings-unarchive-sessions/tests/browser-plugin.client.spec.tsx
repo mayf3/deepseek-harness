@@ -7,7 +7,7 @@ import { SlotRegistry } from '@deepseek-ai/dsh-client-ui-renderer/client'
 import { resolveSlotLabel } from '@deepseek-ai/dsh-client-ui-slots'
 import { usePinnedBrowserLanguages } from '@deepseek-ai/dsh-client-test-runtime'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
-import { apply, inject, NS } from '../src/client/index.ts'
+import { apply, inject } from '../src/client/index.ts'
 import { ArchivedSessionsSection } from '../src/client/ArchivedSessionsSection.tsx'
 import type { ArchivedSessionsSectionInjected } from '../src/client/ArchivedSessionsSection.tsx'
 import { apply as hostApply } from '../src/index.ts'
@@ -49,7 +49,7 @@ describe('ui-settings-unarchive-sessions browser plugin', () => {
     const entry = b.slots.entries('settings.section')[0]!
     expect(entry.component).toBe(ArchivedSessionsSection)
     expect(entry.options).toMatchObject({ id: 'archived-sessions', order: 25 })
-    expect(entry.locale).toBe(NS)
+    expect(entry.locale).toBe('settings.archivedSessions')
     expect(resolveSlotLabel(entry.options.label)).toBe('已归档会话')
 
     b.locale.setLocale('en')
@@ -79,7 +79,7 @@ describe('ui-settings-unarchive-sessions browser plugin', () => {
 
     await fiber.dispose()
     expect(b.slots.entries('settings.section')).toHaveLength(0)
-    expect(() => b.locale.register(NS, 'zh', {})).not.toThrow()
+    expect(() => b.locale.register('settings.archivedSessions', 'zh', {})).not.toThrow()
     await b.ctx.fiber.dispose()
   })
 })

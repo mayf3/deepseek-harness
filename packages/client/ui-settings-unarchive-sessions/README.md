@@ -29,7 +29,7 @@ Open Settings and select **Archived sessions** to see the sessions currently hid
 
 ### Reading a row
 
-Each row shows the session's display title, the title of the Workspace that accounts for it or the ungrouped label, and its last activity as a compact relative time. The page lists the most recently archived session first, the reverse of the durable archive order. The page waits for the Session list before rendering rows; while that list loads it shows a reading status instead of an empty archive. An empty archive and a query matching no row report different messages, so a search never looks like a missing archive.
+Each row shows the session's display title, the title of the Workspace that accounts for it or the ungrouped label, and its last activity as a compact relative time. The page lists the most recently archived session first, the reverse of the durable archive order. The page waits for the Session list before rendering rows; while that list loads it shows a reading status instead of an empty archive. An empty archive, an archive whose entries have no loaded Session to restore, and a query matching no row report three different messages, so neither a search nor an unaddressable entry ever looks like an empty archive.
 
 ### Restoring a session
 
@@ -96,7 +96,7 @@ None; this package neither assembles nor sends a provider request.
 
 These limits define which archived sessions this page can restore; they are current package constraints.
 
-- **Archived sessions without a loaded summary are unaddressable** — the page derives its rows by joining the archive set with the Session list, so a member the list does not carry has no row and no Unarchive action even though the archive set still holds it.
+- **Archived sessions without a loaded summary are unaddressable** — the page derives its rows by joining the archive set with the Session list, so a member the list does not carry has no row and no Unarchive action even though the archive set still holds it; a set whose members are all in that state reports itself as unrestorable rather than empty.
 - **The page lists sessions only; it offers no session deletion** — archives are reversible through this page, while deleting a session record remains a separate capability.
 
 <a id="dev-note"></a>

@@ -1,14 +1,8 @@
 // Web e2e scenario: the archived-session Settings page restores a Session
-// through the real wire. One cold Session seeded from another scenario's
-// committed fixture (seeded-history, reused read-only — no new recording) is
-// archived from its sidebar row menu, which hides the row and writes the id
-// into the registry-global archive set; the Settings section lists that id,
-// and its own Unarchive button drops the id again, so the durable set empties,
-// the page row disappears, and the Session row returns to the sidebar — still
-// there after a reload that rebuilds the archive set from the host baseline.
-// Zero model calls: workspace.archiveSession and workspace.unarchiveSession
-// are host RPCs and the page reads already-loaded Session summaries, so no
-// replay fixture mounts and a stray model stream fails loud.
+// through the real wire, from its row menu through the archive set, the page,
+// and the reload that rebuilds state from the host baseline. Zero model calls:
+// both verbs are host RPCs and the page reads already-loaded Session summaries,
+// so no replay fixture mounts and a stray model stream fails loud.
 import { readFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import type { Browser, Locator, Page } from 'playwright'
