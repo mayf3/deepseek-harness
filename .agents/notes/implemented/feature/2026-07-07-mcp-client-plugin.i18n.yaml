@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-07-07-mcp-client-plugin.md
-2026-07-07-mcp-client-plugin.md: 00d815c8d0d6251966e8979f87599f5d96af9e74
-2026-07-07-mcp-client-plugin.zh.md: b8d2e0457d27dc03f8b1e2267039e09ab4210795
+2026-07-07-mcp-client-plugin.md: 7c7302b776065e849e70d5ae60ddce1fa82be037
+2026-07-07-mcp-client-plugin.zh.md: d92841f2e9433ac2b79b7678af42635aa31c1cf7
