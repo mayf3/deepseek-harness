@@ -162,7 +162,7 @@ tools(provider: (context: AssembleContext) => ToolProviderResult): () => void
 variable(name: string, provider: (context: AssembleContext) => string | undefined): () => void
 
 /**
- * Assemble global and scoped providers, detach tool parameters, apply
+ * Await scoped preparation, assemble providers, detach tool parameters, apply
  * canonical ordering, then run the assembly waterfall. Scoped sections and
  * variables shadow globals. The returned waterfall value is authoritative
  * except that an effective complete section is restored afterwards as the
@@ -219,6 +219,29 @@ Emitted when any prompt provider changes. This registry notification is unfilter
  */
 'system-prompt/change'(): void
 ```
+
+Source: [`packages/core/system-prompt/src/index.ts`](../../packages/core/system-prompt/src/index.ts)
+
+<a id="system-promptprepare--serial"></a>
+
+#### `system-prompt/prepare` — serial
+
+Await scope-owned resource and catalog preparation before reading providers. Scope-filtered dispatch: scoped listeners prepare only their scope's assemblies. A rejected listener rejects this assembly; subsequent collection applies the normal visibility, presentation, and ordering rules to new registrations. The signal belongs to this assembly and must not control later turns.
+
+```ts cordis-catalog
+/**
+ * Await scope-owned resource and catalog preparation before reading providers.
+ * Scope-filtered dispatch: scoped listeners prepare only their scope's assemblies.
+ * A rejected listener rejects this assembly; subsequent collection applies
+ * the normal visibility, presentation, and ordering rules to new registrations.
+ * The signal belongs to this assembly and must not control later turns.
+ * @param context - the caller's per-assembly context and optional cancellation.
+ * @mode serial
+ */
+'system-prompt/prepare'(this: Scoped<SystemPrompt>, context: AssembleContext): Promise<void>
+```
+
+Types: [Scoped](scope.zh.md)
 
 Source: [`packages/core/system-prompt/src/index.ts`](../../packages/core/system-prompt/src/index.ts)
 <!-- END GENERATED cordis-surface -->

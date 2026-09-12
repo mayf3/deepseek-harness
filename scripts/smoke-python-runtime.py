@@ -1340,6 +1340,9 @@ def smoke_sdk_snapshot(base_url: str, executable: Path, update_snapshots: bool) 
             {"id": "snapshot-feedback-producer", "name": (
                 Path(__file__).resolve().parent.parent / "snapshots/sdk/text-turn/feedback-producer.mjs"
             ).as_uri()},
+            {"id": "snapshot-browser-use-events", "name": (
+                Path(__file__).resolve().parent / "fixtures/python-browser-use-events.mjs"
+            ).as_uri()},
         ]}])
         with DeepSeekHarness(
             provider="deepseek-official",
@@ -1385,6 +1388,21 @@ def smoke_sdk_snapshot(base_url: str, executable: Path, update_snapshots: bool) 
         }] * 2, errors
 
         logs = read_session_logs(sessions)
+        auxiliary = [event for event in result.events
+                     if str(event.get("type")).startswith("browser-use/stagehand-llm-")]
+        assert [event["type"] for event in auxiliary] == [
+            "browser-use/stagehand-llm-request", "browser-use/stagehand-llm-result",
+        ], auxiliary
+        request, response = auxiliary
+        assert request["data"]["request"]["sessionId"] == result.session_id
+        assert response["data"]["requestSeq"] == request["seq"]
+        assert all("surfaceOp" not in event and "ignorable" not in event for event in auxiliary)
+        subscribed = [notification.payload["event"] for notification in result.notifications
+                      if notification.method == "session.event"
+                      and str(notification.payload.get("event", {}).get("type")).startswith("browser-use/stagehand-llm-")]
+        persisted = [event for event in logs[SNAPSHOT_SESSION_ID]
+                     if str(event.get("type")).startswith("browser-use/stagehand-llm-")]
+        assert subscribed == auxiliary == persisted
         child_ids = snapshot_child_ids(result)
         expected_ids = {SNAPSHOT_SESSION_ID, *child_ids}
         if set(logs) != expected_ids:
