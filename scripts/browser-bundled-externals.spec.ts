@@ -99,9 +99,16 @@ describe('browser dependency discovery', () => {
     symlinkSync(resolve(repositoryRoot, 'apps/web/node_modules'), join(app, 'node_modules'), 'junction')
     write(root, 'apps/web/index.html', '<script type="module" src="./main.ts"></script>')
     write(root, 'apps/web/main.ts', 'import { output, lazy } from "@fixture/static"; console.log(output); void lazy()')
-    write(root, 'apps/web/vite.config.ts', `export default {
-      build: { rollupOptions: { input: { index: ${JSON.stringify(join(app, 'index.html'))}, preview: "missing-preview.ts" } } }
-    }`)
+    write(root, 'apps/web/vite.config.ts', `
+      import { productWebBundleIsolation } from ${JSON.stringify(resolve(repositoryRoot, 'apps/web/product-isolation.ts').replaceAll('\\', '/'))}
+      export default ({ mode }) => {
+        if (mode !== 'production') throw new Error('notice discovery must use the production build mode')
+        return {
+          plugins: productWebBundleIsolation(${JSON.stringify(root)}, ${JSON.stringify(app)}),
+          build: { rollupOptions: { input: { index: ${JSON.stringify(join(app, 'index.html'))}, preview: "missing-preview.ts" } } }
+        }
+      }
+    `)
     write(root, 'apps/web/dist/sentinel.txt', 'untouched')
 
     const scanRoot = linked ? join(fixture(), 'linked') : root

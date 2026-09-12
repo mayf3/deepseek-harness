@@ -3,6 +3,7 @@
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { afterEach, describe, expect, it } from 'vitest'
 import { verifyDefaultProductIsolation } from './verify-default-product-isolation.ts'
 
@@ -39,7 +40,7 @@ function fixture(): string {
   write(root, 'packages/bundle/base/package.json', { name: base, dsh: { bundle: { patch: './cordis.patch.yml' } } })
   write(root, patch, [{ insert: [{ name: core }] }])
   write(root, preset, [{ name: core }])
-  write(root, profile, `export const PROFILE_TEMPLATES = { headless: { bundles: ['${base}'], patchReload: 'startup' } }\n`
+  write(root, profile, `export const PROFILE_TEMPLATES = { web: { bundles: ['${base}'], patchReload: 'live' } }\n`
     + `export const DEFAULT_PROFILE_BUNDLES = ['${base}']\n`)
   write(root, 'packages/experimental/prototype/package.json', { name: experimental })
   return root
@@ -140,7 +141,7 @@ describe('default product isolation', () => {
 
   it('follows Include files while ignoring ordinary plugin config data', () => {
     const root = fixture()
-    write(root, patch, [{ name: core, config: { name: experimental, insert: [{ name: experimental }] } }])
+    write(root, patch, [{ insert: [{ name: core, config: { name: experimental, insert: [{ name: experimental }] } }] }])
     expect(verifyDefaultProductIsolation(root).failures).toEqual([])
     write(root, patch, [{ name: '@deepseek-ai/cordis-plugin-include', config: { path: './nested.yml' } }])
     write(root, 'packages/bundle/base/nested.yml', [{ name: experimental }])
@@ -149,7 +150,7 @@ describe('default product isolation', () => {
 
   it('checks default profile bundle names and declared config trees', () => {
     const root = fixture()
-    write(root, profile, `export const PROFILE_TEMPLATES = { test: { bundles: ['${experimental}'] } }\n`
+    write(root, profile, `export const PROFILE_TEMPLATES = { web: { bundles: ['${experimental}'] } }\n`
       + `export const DEFAULT_PROFILE_BUNDLES = ['${base}']\n`)
     manifest(root, 'apps/cli/package.json', { dsh: { configTrees: [{ path: './config' }] } })
     write(root, 'apps/cli/config/extra.cordis.yml', [{ name: experimental }])
@@ -165,6 +166,47 @@ describe('default product isolation', () => {
     write(root, 'apps/desktop-host/config/desktop.cordis.patch.yml', [{ insert: [{ name: experimental }] }])
 
     expect(verifyDefaultProductIsolation(root).failures.join('\n')).toContain(experimental)
+  })
+
+  it('checks group contents after an id-only patch changes the composed Web tree', () => {
+    const root = fixture()
+    const web = '@deepseek-ai/dsh-web-app'
+    write(root, 'packages/bundle/web-app/package.json', { name: web, dsh: { bundle: { patch: './cordis.patch.yml' } } })
+    write(root, patch, [{ insert: [{ id: 'feature-group', group: true, config: [{ name: core }] }] }])
+    write(root, 'packages/bundle/web-app/cordis.patch.yml', [
+      { id: 'feature-group', config: [{ name: experimental }] },
+    ])
+    write(root, profile, `export const PROFILE_TEMPLATES = { web: { bundles: ['${base}', '${web}'] } }\n`
+      + `export const DEFAULT_PROFILE_BUNDLES = ['${base}']\n`)
+
+    expect(verifyDefaultProductIsolation(root).failures.join('\n')).toContain(`${profile} -> ${experimental}`)
+  })
+
+  it('composes Include patches before checking their effective plugin rows', () => {
+    const root = fixture()
+    const included = join(root, 'included tree', 'cordis.yml')
+    write(root, 'included tree/cordis.yml', [{ id: 'feature-group', group: true, config: [{ name: core }] }])
+    write(root, patch, [{ insert: [{ name: 'cordis:include', config: {
+      path: pathToFileURL(included).href,
+      patches: [{ id: 'feature-group', config: [{ name: experimental }] }],
+    } }] }])
+
+    expect(verifyDefaultProductIsolation(root).failures.join('\n')).toContain(`included tree/cordis.yml -> ${experimental}`)
+  })
+
+  it('reports an empty effective Web tree even when the raw patch names a package', () => {
+    const root = fixture()
+    write(root, patch, [{ id: 'missing-target', name: core }])
+
+    expect(verifyDefaultProductIsolation(root).failures).toContain(`${profile}: composed Web profile contains no plugins`)
+  })
+
+  it('rejects a file-URL plugin name anchored by the real patch loader', () => {
+    const root = fixture()
+    write(root, patch, [{ insert: [{ name: '../../experimental/prototype/src/index.ts' }] }])
+    write(root, 'packages/experimental/prototype/src/index.ts', 'export {}\n')
+
+    expect(verifyDefaultProductIsolation(root).failures.join('\n')).toContain(`${profile} -> ${experimental}`)
   })
 
   it('checks installation-owned profile tuples as well as new-profile defaults', () => {
