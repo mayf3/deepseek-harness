@@ -58,7 +58,7 @@ env -u NODE_USE_ENV_PROXY DSH_COMPUTER_USE_NATIVE_E2E=1 node node_modules/vitest
 <details>
 <summary>Implementation internals — click to expand</summary>
 
-The provider reserves the shared computer-use registration before loading native code. A child plugin owns discovery, model tools, guidance, and the native runtime. The parent retains the registration until child teardown has removed tools, interrupted work, awaited call settlement, and completed native shutdown. Cancellation does not undo input already delivered to an application.
+The provider reserves the shared computer-use registration before loading native code. A child plugin owns discovery, model tools, guidance, and the native runtime. The parent retains the registration until child teardown has removed tools, interrupted native calls and image-capability admission, awaited settlement, and completed native shutdown. Cancellation does not undo input already delivered to an application.
 
 | File | Role |
 |---|---|
@@ -96,7 +96,7 @@ Cua Driver native computer-use tools operate the host desktop. Discover the exac
 
 Prefer background delivery. A refusal does not authorize a foreground retry. Verify the requested outcome from fresh state after an action; a delivered click alone does not prove the outcome. After cancellation, inspect current state before retrying because completed input is not rolled back. Other sessions and applications may change the same desktop.
 
-The native runtime inherits the launching host's desktop permissions. On macOS, cursor-overlay operations can be unavailable in a headless Node host even when screenshots and input work.
+On macOS, cursor-overlay operations may return facility_unavailable even when screenshots and input work.
 ```
 
 #### Token effect

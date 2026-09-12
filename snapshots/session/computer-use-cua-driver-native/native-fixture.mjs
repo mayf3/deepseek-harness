@@ -1,4 +1,4 @@
-/** Replace only the external native SDK while booting the real provider artifact. */
+/** Replace only the external SDK; the harness selects source or built provider code. */
 import { registerHooks } from 'node:module'
 
 export const name = 'computer-use-native-fixture'
@@ -16,6 +16,6 @@ export async function apply(ctx) {
     })
     return () => hooks.deregister()
   }, 'computer-use-native-fixture.module')
-  const provider = await import('../../../packages/experimental/computer-use-cua-driver-native/lib/index.js')
+  const provider = await import('@deepseek-ai/dsh-experimental-computer-use-cua-driver-native')
   await ctx.plugin(provider)
 }

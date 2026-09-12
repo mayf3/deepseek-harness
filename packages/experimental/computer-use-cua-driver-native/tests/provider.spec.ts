@@ -95,6 +95,38 @@ describe('Cua Driver native provider', () => {
     expect(result.content).toEqual([{ type: 'text', text: 'Error: background_unavailable' }])
   })
 
+  it('leaves an unrelated tool running when the native provider unloads', async () => {
+    const started = Promise.withResolvers<AbortSignal>()
+    const settled = Promise.withResolvers<boolean>()
+    const controller = new AbortController()
+    const fiber = ctx.plugin(NativeProvider)
+    await fiber
+    ctx.tools.register({
+      name: 'unrelated', description: 'Independent tool.', parameters: { type: 'object' },
+      output: { schema: { type: 'boolean' }, render: () => [{ type: 'text', text: 'Done.' }] },
+      execute(_args, exec) {
+        started.resolve(exec.signal)
+        return settled.promise
+      },
+    })
+    const result = ctx.tools.execute({
+      name: 'unrelated', callId: ToolCallId('unrelated'), arguments: {}, signal: controller.signal,
+    })
+    try {
+      const signal = await started.promise
+      await fiber.dispose()
+      expect(signal).toBe(controller.signal)
+      expect(signal.aborted).toBe(false)
+      expect(fixture.shutdowns).toBe(1)
+      expect(fixture.destroys).toBe(1)
+      expect(ctx.tools.schemas().map(tool => tool.name)).toEqual(['unrelated'])
+    } finally {
+      settled.resolve(true)
+      await result
+    }
+    expect((await result).isError).toBe(false)
+  })
+
   it('retains the reservation until aborted calls and native shutdown settle', async () => {
     const called: PromiseWithResolvers<void> = Promise.withResolvers()
     const callSettled = Promise.withResolvers<unknown>()
@@ -132,6 +164,36 @@ describe('Cua Driver native provider', () => {
     expect((await result).isError).toBe(true)
     expect(ctx.computerUse.providerName).toBeUndefined()
     expect(fixture.destroys).toBe(1)
+  })
+
+  it.each([['tools', ToolRuntime], ['systemPrompt', SystemPrompt]] as const)('closes the old native runtime before %s restarts it', async (_name, service) => {
+    const shutdownStarted: PromiseWithResolvers<void> = Promise.withResolvers()
+    const shutdownSettled: PromiseWithResolvers<void> = Promise.withResolvers()
+    fixture.shutdown = async () => {
+      shutdownStarted.resolve()
+      await shutdownSettled.promise
+    }
+    const fiber = ctx.plugin(NativeProvider)
+    await fiber
+    const dependency = [...ctx.registry.get(service)!.fibers][0]!
+    const restart = dependency.restart()
+    try {
+      await shutdownStarted.promise
+      expect(fixture.creates).toBe(1)
+      expect(fixture.destroys).toBe(0)
+      expect(ctx.computerUse.providerName).toBe('cua-driver-native')
+    } finally {
+      shutdownSettled.resolve()
+      await restart
+      await fiber
+    }
+    await vi.waitFor(() => { expect(fixture.creates).toBe(2) })
+    expect(fixture.shutdowns).toBe(1)
+    expect(fixture.destroys).toBe(1)
+    expect((await execute('check_permissions')).isError).toBe(false)
+    await fiber.dispose()
+    expect(fixture.shutdowns).toBe(2)
+    expect(fixture.destroys).toBe(2)
   })
 
   it('interrupts discovery when unloaded during startup', async () => {

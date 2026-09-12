@@ -38,12 +38,12 @@ const GUIDANCE = `Cua Driver native computer-use tools operate the host desktop.
 
 Prefer background delivery. A refusal does not authorize a foreground retry. Verify the requested outcome from fresh state after an action; a delivered click alone does not prove the outcome. After cancellation, inspect current state before retrying because completed input is not rolled back. Other sessions and applications may change the same desktop.
 
-The native runtime inherits the launching host's desktop permissions. On macOS, cursor-overlay operations can be unavailable in a headless Node host even when screenshots and input work.`
+On macOS, cursor-overlay operations may return facility_unavailable even when screenshots and input work.`
 
 /**
  * Own one native runtime and expose its catalog through the MCP result adapter.
  * Startup failures roll back every registration. Unload removes tools, aborts
- * calls, awaits their settlement and SDK shutdown, then releases computer use.
+ * calls and image admission, awaits settlement and SDK shutdown, then releases computer use.
  * @param ctx - context providing the exclusive registration and tool services.
  * @returns after native import, runtime creation, and tool discovery complete.
  */
@@ -114,19 +114,21 @@ export async function apply(ctx: Context): Promise<void> {
           return JSON.parse(result.rawJson) as unknown
         },
       })
-      const execute = definition.execute.bind(definition)
-      definition.execute = async (args, exec) => {
-        lifetime.signal.throwIfAborted()
-        const operation = Promise.resolve().then(() => execute(args, exec))
-        pending.add(operation)
-        try {
-          return await operation
-        } finally {
-          pending.delete(operation)
-        }
-      }
       inner.tools.register(definition)
     }
+    inner.on('tools/execute', async (exec, next) => {
+      if (!names.has(exec.name)) return next()
+      const upstream = exec.signal
+      exec.signal = AbortSignal.any([upstream, lifetime.signal])
+      const operation = Promise.resolve().then(next)
+      pending.add(operation)
+      try {
+        return await operation
+      } finally {
+        pending.delete(operation)
+        exec.signal = upstream
+      }
+    })
     inner.systemPrompt.section({
       name: 'computer-use:cua-driver-native',
       order: inner.systemPrompt.getSectionOrder('TOOL_COMPUTER_USE'),

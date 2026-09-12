@@ -58,7 +58,7 @@ env -u NODE_USE_ENV_PROXY DSH_COMPUTER_USE_NATIVE_E2E=1 node node_modules/vitest
 <details>
 <summary>实现内部——点击展开</summary>
 
-此提供者在加载原生代码前占用共享电脑操作注册名额。子插件拥有目录发现、模型工具、指导文本和原生运行时。父插件保留注册名额，直到子插件卸载完成工具移除、工作中断、调用结束等待和原生关闭。取消不会撤销已经传给应用的输入。
+此提供者在加载原生代码前占用共享电脑操作注册名额。子插件拥有目录发现、模型工具、指导文本和原生运行时。父插件保留注册名额，直到子插件卸载完成工具移除、中断原生调用和图像能力准入、等待调用结束及原生关闭。取消不会撤销已经传给应用的输入。
 
 | 文件 | 职责 |
 |---|---|
@@ -96,7 +96,7 @@ Cua Driver native computer-use tools operate the host desktop. Discover the exac
 
 Prefer background delivery. A refusal does not authorize a foreground retry. Verify the requested outcome from fresh state after an action; a delivered click alone does not prove the outcome. After cancellation, inspect current state before retrying because completed input is not rolled back. Other sessions and applications may change the same desktop.
 
-The native runtime inherits the launching host's desktop permissions. On macOS, cursor-overlay operations can be unavailable in a headless Node host even when screenshots and input work.
+On macOS, cursor-overlay operations may return facility_unavailable even when screenshots and input work.
 ```
 
 #### Token 影响

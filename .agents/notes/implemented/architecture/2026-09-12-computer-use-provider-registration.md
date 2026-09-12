@@ -16,7 +16,7 @@ The DSH capability is named **computer use**. [`dsh-computer-use`](../../../../p
 
 Each integration exposes the upstream tool catalog. MCP result conversion stays in `dsh-mcp-client`, whose callback-based tool adapter also converts native Cua Driver results. The computer-use service has no dependency on that adapter or either provider.
 
-Provider teardown retains the registration until tool admission stops and owned work and resources close. A grouped Cordis effect orders that cleanup; separate effects may dispose concurrently. Concurrent Sessions remain caller-coordinated because a provider registration does not own an observe, act, and verify workflow.
+Provider teardown retains the registration until tool admission stops and owned work and resources close. A grouped Cordis effect orders that cleanup; separate effects may dispose concurrently. The native provider uses `tools/execute` to share cancellation across native calls and screenshot admission while preserving execution identity. Concurrent Sessions remain caller-coordinated because a provider registration does not own an observe, act, and verify workflow.
 
 ## Alternatives considered
 

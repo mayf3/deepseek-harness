@@ -16,7 +16,7 @@ DSH 能力称为 **computer use（计算机操作）**。[`dsh-computer-use`](..
 
 各集成暴露上游工具目录。MCP 结果转换保留在 `dsh-mcp-client` 中，其基于回调的工具适配函数也转换原生 Cua Driver 结果。计算机操作服务不依赖该适配函数或任一提供方。
 
-提供方卸载时保留注册，直到停止接收工具调用且自有工作和资源关闭。分组 Cordis effect 为此清理排序；独立 effect 可能并发清理。并发 Session 由调用方协调，因为提供方注册不拥有观察、操作和验证流程。
+提供方卸载时保留注册，直到停止接收工具调用且自有工作和资源关闭。分组 Cordis effect 为此清理排序；独立 effect 可能并发清理。原生提供方通过 `tools/execute` 在原生调用和截图准入之间共享取消信号，同时保留执行标识。并发 Session 由调用方协调，因为提供方注册不拥有观察、操作和验证流程。
 
 ## Alternatives considered
 
