@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/testing/2026-09-10-hosted-image-test-assumptions.md
-2026-09-10-hosted-image-test-assumptions.md: facff4fe2067cfec600f75a93b05372795bfeabd
-2026-09-10-hosted-image-test-assumptions.zh.md: 6b65c68f363121ff009bd1fb75a514b69d1f9993
+2026-09-10-hosted-image-test-assumptions.md: b43f85c5b4f78ef0799290fe51a614cf021ab28a
+2026-09-10-hosted-image-test-assumptions.zh.md: fcee22046faabe97da85d57a4c695fb6a47eebba
