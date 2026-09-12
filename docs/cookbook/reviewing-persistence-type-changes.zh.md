@@ -31,7 +31,7 @@ pnpm --silent run verify-persistence-changes --json
 
 消费 JSON 时使用 `--silent`：否则 pnpm 会把生命周期失败文本追加到标准输出。失败命令仍以退出码 1 结束。
 
-阅读报告中的根、路径、变更种类和版本要求。被引用类型可能影响多个事件摘要；检查每个受影响的根。在历史覆盖新 schema 之前，验证会失败。陈旧生成清单也会导致验证失败；记录命令会刷新它。若只改变展示细节且 `changes` 为空，运行 `pnpm run gen-persistence-catalog`；无需新增确认记录。
+阅读报告中的根、路径、变更种类和版本要求。被引用类型可能影响多个事件摘要；检查每个受影响的根。在历史覆盖新 schema 之前，验证会失败。陈旧生成清单也会导致验证失败；记录命令会刷新它。若重排字段或联合类型分支后 `changes` 为空，运行 `pnpm run gen-persistence-catalog` 并重新检查。即使复制的声明或源码位置产生目录 diff，未变的摘要也无需新增确认记录。
 
 <a id="acknowledge"></a>
 ## 1. 记录变更

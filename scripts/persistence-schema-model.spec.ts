@@ -40,6 +40,26 @@ describe('canonical persisted type graphs', () => {
       .toEqual(canonicalizeSchema([{ kind: 'primitive', type: 'boolean' }], 0))
   })
 
+  it('ignores recursive union, field, index signature and graph numbering order together', () => {
+    const original: SchemaNode[] = [
+      { kind: 'union', types: [1, 2, 3] },
+      { kind: 'object', properties: [{ name: 'label', type: 5, optional: false }, { name: 'next', type: 0, optional: true }], indices: [] },
+      { kind: 'array', element: 0 },
+      { kind: 'object', properties: [], indices: [{ key: 5, value: 0 }, { key: 4, value: 1 }] },
+      number,
+      string,
+    ]
+    const reordered: SchemaNode[] = [
+      string,
+      { kind: 'object', properties: [], indices: [{ key: 3, value: 5 }, { key: 0, value: 4 }] },
+      { kind: 'array', element: 4 },
+      number,
+      { kind: 'union', types: [1, 2, 5] },
+      { kind: 'object', properties: [{ name: 'next', type: 4, optional: true }, { name: 'label', type: 0, optional: false }], indices: [] },
+    ]
+    expect(canonicalizeSchema(reordered, 4)).toEqual(canonicalizeSchema(original, 0))
+  })
+
   it('preserves tuple positions, element absence, and rest elements', () => {
     const baseline: SchemaNode[] = [{ kind: 'tuple', elements: [{ type: 1, optional: false, rest: false }, { type: 2, optional: true, rest: false }] }, string, number]
     const reversed: SchemaNode[] = [{ kind: 'tuple', elements: [{ type: 2, optional: false, rest: false }, { type: 1, optional: true, rest: false }] }, string, number]

@@ -31,7 +31,7 @@ pnpm --silent run verify-persistence-changes --json
 
 Use `--silent` when consuming JSON: pnpm otherwise appends lifecycle failure text to stdout. Failed commands still exit with code 1.
 
-Read the reported root, path, change kind, and version requirement. A referenced type can affect several event digests; inspect every affected root. Until the history covers the new schemas, verification fails. A stale generated inventory also fails verification; the recording command refreshes it. If only presentation details changed and `changes` is empty, run `pnpm run gen-persistence-catalog`; no new acknowledgement is needed.
+Read the reported root, path, change kind, and version requirement. A referenced type can affect several event digests; inspect every affected root. Until the history covers the new schemas, verification fails. A stale generated inventory also fails verification; the recording command refreshes it. If `changes` is empty after reordering fields or union alternatives, run `pnpm run gen-persistence-catalog` and repeat the check. An unchanged digest needs no new acknowledgement even when copied declarations or source locations produce a catalog diff.
 
 <a id="acknowledge"></a>
 ## 1. Record the change
