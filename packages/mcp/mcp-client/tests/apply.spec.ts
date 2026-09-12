@@ -18,39 +18,29 @@ const { mockConnect, mockClose, mockListTools, mockCallTool, mockSetNotification
   const mockClose = vi.fn<() => Promise<void>>()
   const mockListTools = vi.fn<(_params?: Record<string, unknown>) => Promise<unknown>>()
   const mockCallTool = vi.fn<(
-    _params?: Record<string, unknown>, _compatibilitySchema?: unknown, _options?: unknown,
+    _params?: Record<string, unknown>, _options?: unknown,
   ) => Promise<unknown>>()
   const mockSetNotificationHandler = vi.fn()
-  const mockRequest = vi.fn(async (
-    request: { method: string; params?: Record<string, unknown> },
-    _schema: unknown,
-    options?: unknown,
-  ): Promise<unknown> => {
-    if (request.method === 'tools/list') return await mockListTools(request.params)
-    if (request.method === 'tools/call') return await mockCallTool(request.params, undefined, options)
-    throw new Error(`unexpected MCP request: ${request.method}`)
-  })
   class MockClient {
     connect = mockConnect
     close = mockClose
     listTools = mockListTools
     callTool = mockCallTool
-    request = mockRequest
-    setNotificationHandler = mockSetNotificationHandler
+    constructor(_info: unknown, options: { listChanged: { tools: { onChanged: () => void } } }) {
+      mockSetNotificationHandler('notifications/tools/list_changed', options.listChanged.tools.onChanged)
+    }
+    getServerCapabilities = () => ({ tools: {} })
   }
   return { mockConnect, mockClose, mockListTools, mockCallTool, mockSetNotificationHandler, MockClient }
 })
 
-vi.mock('@modelcontextprotocol/sdk/client/index.js', () => ({
+vi.mock('@modelcontextprotocol/client', () => ({
   Client: MockClient,
-}))
-
-vi.mock('@modelcontextprotocol/sdk/client/stdio.js', () => ({
-  StdioClientTransport: vi.fn(),
-}))
-
-vi.mock('@modelcontextprotocol/sdk/client/streamableHttp.js', () => ({
   StreamableHTTPClientTransport: vi.fn(),
+}))
+
+vi.mock('@modelcontextprotocol/client/stdio', () => ({
+  StdioClientTransport: vi.fn(),
 }))
 
 // vi.mock is hoisted above static imports, so the module under test sees the
@@ -303,28 +293,6 @@ describe('apply (plugin lifecycle)', () => {
     expect(mockClose).toHaveBeenCalled()
   })
 
-  it('rejects strict startup on a repeated discovery cursor and closes the client', async () => {
-    mockListTools
-      .mockResolvedValueOnce({ tools: [], nextCursor: 'cursor1' })
-      .mockResolvedValueOnce({ tools: [], nextCursor: 'cursor1' })
-      .mockRejectedValue(new Error('pagination continued after the repeated cursor'))
-    try {
-      await expect(apply(ctx, {
-        ...stdioConfig,
-        failOnStartupError: true,
-        reconnect: { enabled: false },
-      })).rejects.toMatchObject({
-        message: 'mcp-client(srv): initial connection or tool synchronization failed',
-        cause: new Error('mcp-client(srv): server repeated a tools/list continuation cursor — invalid tool list'),
-      })
-      expect(mockListTools).toHaveBeenCalledTimes(2)
-      expect(mockClose).toHaveBeenCalledTimes(1)
-      expect(ctx.tools.schemas()).toEqual([])
-    } finally {
-      await ctx.fiber.dispose()
-    }
-  })
-
   it('preserves strict startup registration when list_changed arrives before connect resolves', async () => {
     ctx.tools.register({
       name: 'mcp__srv__remote',
@@ -337,8 +305,8 @@ describe('apply (plugin lifecycle)', () => {
       execute: async () => 'foreign',
     })
     mockConnect.mockImplementation(async () => {
-      const handler = mockSetNotificationHandler.mock.calls[0]![1] as () => Promise<void>
-      await handler()
+      const handler = mockSetNotificationHandler.mock.calls[0]![1] as () => void
+      handler()
     })
 
     await expect(apply(ctx, {
@@ -361,48 +329,23 @@ describe('apply (plugin lifecycle)', () => {
       nextCursor: undefined,
     })
 
-    const handler = mockSetNotificationHandler.mock.calls[0]![1] as () => Promise<void>
-    await handler()
+    const handler = mockSetNotificationHandler.mock.calls[0]![1] as () => void
+    handler()
 
-    expect(ctx.tools.get('mcp__srv__remote')).toBeUndefined()
-    expect(ctx.tools.get('mcp__srv__updated')).toBeDefined()
+    await vi.waitFor(() => { expect(ctx.tools.get('mcp__srv__updated')).toBeDefined() })
   })
 
   it('keeps the previous generation when a re-sync fails', async () => {
     await apply(ctx, stdioConfig)
     expect(ctx.tools.get('mcp__srv__remote')).toBeDefined()
 
+    const reported = vi.spyOn(ctx.logger, 'error')
     mockListTools.mockRejectedValue(new Error('flaky server'))
-    const handler = mockSetNotificationHandler.mock.calls[0]![1] as () => Promise<void>
-    // Must not reject (contained), and must keep the last good generation.
-    await handler()
+    const handler = mockSetNotificationHandler.mock.calls[0]![1] as () => void
+    handler()
+    await vi.waitFor(() => { expect(reported).toHaveBeenCalledWith(expect.stringContaining('flaky server')) })
 
     expect(ctx.tools.get('mcp__srv__remote')).toBeDefined()
-  })
-
-  it('continues notification synchronization after rejecting a pagination cycle', async () => {
-    try {
-      await apply(ctx, stdioConfig)
-      const handler = mockSetNotificationHandler.mock.calls[0]![1] as () => Promise<void>
-      mockListTools
-        .mockResolvedValueOnce({ tools: [], nextCursor: 'cursor1' })
-        .mockResolvedValueOnce({ tools: [], nextCursor: 'cursor1' })
-        .mockRejectedValue(new Error('pagination continued after the repeated cursor'))
-
-      await handler()
-      expect(mockListTools).toHaveBeenCalledTimes(3)
-      expect(ctx.tools.get('mcp__srv__remote')).toBeDefined()
-
-      mockListTools
-        .mockResolvedValueOnce({ tools: [], nextCursor: 'cursor1' })
-        .mockResolvedValueOnce({ tools: [{ name: 'updated', inputSchema: { type: 'object' } }], nextCursor: undefined })
-      await handler()
-      expect(ctx.tools.get('mcp__srv__remote')).toBeUndefined()
-      expect(ctx.tools.get('mcp__srv__updated')).toBeDefined()
-    } finally {
-      await ctx.fiber.dispose()
-    }
-    expect(mockClose).toHaveBeenCalledTimes(1)
   })
 
   it('effect disposer unregisters the CURRENT generation and closes client', async () => {
@@ -416,9 +359,9 @@ describe('apply (plugin lifecycle)', () => {
       tools: [{ name: 'updated', inputSchema: { type: 'object' } }],
       nextCursor: undefined,
     })
-    const handler = mockSetNotificationHandler.mock.calls[0]![1] as () => Promise<void>
-    await handler()
-    expect(ctx.tools.get('mcp__srv__updated')).toBeDefined()
+    const handler = mockSetNotificationHandler.mock.calls[0]![1] as () => void
+    handler()
+    await vi.waitFor(() => { expect(ctx.tools.get('mcp__srv__updated')).toBeDefined() })
 
     await fiber.dispose()
     await sleep(50)

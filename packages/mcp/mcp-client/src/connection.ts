@@ -15,8 +15,7 @@
  * @module
  */
 
-import { Client } from '@modelcontextprotocol/sdk/client/index.js'
-import { ToolListChangedNotificationSchema } from '@modelcontextprotocol/sdk/types.js'
+import { Client } from '@modelcontextprotocol/client'
 import type { Context } from '@deepseek-ai/cordis'
 import { MAX_TIMER_DELAY_MS } from '@deepseek-ai/dsh-timeout'
 import { createTransport } from './transport.ts'
@@ -237,7 +236,17 @@ export function startConnection(ctx: Context, config: Config, policy: ResolvedRe
   async function connectGeneration(startup: boolean): Promise<void> {
     const generation = new Client(
       { name: 'dsh-mcp-client', version: '0.0.1' },
-      { capabilities: {} },
+      {
+        capabilities: {},
+        versionNegotiation: { mode: 'auto' },
+        listChanged: {
+          tools: {
+            autoRefresh: false,
+            debounceMs: 0,
+            onChanged: () => { void refreshTools() },
+          },
+        },
+      },
     )
     const closed: PromiseWithResolvers<void> = Promise.withResolvers()
     let attemptSettled = false
@@ -252,22 +261,15 @@ export function startConnection(ctx: Context, config: Config, policy: ResolvedRe
       // established generation can transition down directly from this signal.
       if (attemptSettled) generationDown(generation)
     }
-    // Registered before connect so a list change during the initial sync is
-    // queued behind it rather than dropped.
-    generation.setNotificationHandler(
-      ToolListChangedNotificationSchema,
-      async () => {
-        if (!isCurrent(generation)) return
-        ctx.logger.info(`${label}: tool list changed, re-syncing`)
-        try {
-          await enqueueSync(generation)
-        } catch (error) {
-          // Fetch-phase failure: the previous generation is still registered
-          // and `disposers` still owns it — keep serving the last good list.
-          if (!disposed) ctx.logger.error(`${label}: tool re-sync failed: ${String(error)}`)
-        }
-      },
-    )
+    async function refreshTools(): Promise<void> {
+      if (!isCurrent(generation)) return
+      ctx.logger.info(`${label}: tool list changed, re-syncing`)
+      try {
+        await enqueueSync(generation)
+      } catch (error) {
+        if (!disposed) ctx.logger.error(`${label}: tool re-sync failed: ${String(error)}`)
+      }
+    }
     try {
       await generation.connect(createTransport(config))
       if (hasClosed()) {

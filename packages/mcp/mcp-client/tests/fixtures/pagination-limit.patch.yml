@@ -1,9 +1,9 @@
 - insert:
-    - id: mcp-pagination-cycle
+    - id: mcp-pagination-limit
       name: '@deepseek-ai/dsh-mcp-client'
       config:
         transport: stdio
-        serverName: pagination-cycle
+        serverName: pagination-limit
         command: !!js process.execPath
         args: !!js '[process.env.DSH_MCP_PAGINATION_FIXTURE]'
         failOnStartupError: true

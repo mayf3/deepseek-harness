@@ -18,7 +18,7 @@ A single package `@deepseek-ai/dsh-mcp-client` at `packages/mcp/mcp-client/`. No
 
 ### SDK
 
-Use the official [`@modelcontextprotocol/sdk`](https://github.com/modelcontextprotocol/typescript-sdk) (`Client`, `StdioClientTransport`, `StreamableHTTPClientTransport`). The harness does not implement its own JSON-RPC — consistent with how ACP delegates to `@agentclientprotocol/sdk`.
+Use the official [`@modelcontextprotocol/client`](https://github.com/modelcontextprotocol/typescript-sdk) (`Client`, `StdioClientTransport`, `StreamableHTTPClientTransport`). The [protocol adoption note](2026-09-12-mcp-sdk-protocol-negotiation.md) owns negotiation and SDK validation. The harness does not implement JSON-RPC framing.
 
 ### Scope
 
@@ -128,7 +128,7 @@ MCP guarantees tool-name uniqueness only [within one server](https://modelcontex
 - A server listing the same tool name twice is an invalid tool list: the sync throws and the previous generation stays registered.
 - A registry conflict during the swap can only mean a foreign tool squats on this server's `mcp__<serverName>__` namespace: the partial generation is rolled back (zero tools from this server) and the error is logged loudly.
 
-Tools are never silently skipped; which tools are available never depends on plugin load order.
+The SDK admits protocol-valid tools, including its modern HTTP header-declaration checks. Registration order does not decide ownership of an admitted name.
 
 ### Naming invariants
 
@@ -144,7 +144,7 @@ A unified `execute` handler for all tools from one MCP server:
 
 1. Resolve `rawName` (the executor closes over it) and call `client.callTool({ name: rawName, arguments }, { signal: exec.signal })` with the configured timeout — the public name is never sent to the server.
 2. Preserve canonical success as `{ content: JsonValue[], structuredContent? }`; complete MCP JSON blocks remain the programmatic/PTC mode value. `isError: true` throws before any image persistence so the registry owns the failure path.
-3. Prepare a separate ordered Native projection. Text runs join with `'\n'`; resource links preserve name and URI as text; audio, embedded resources, malformed blocks, and unknown types become explicit diagnostics. If any image exists, the bridge strictly decodes the complete batch, resolves the calling agent's latest exact route, requires an attachment store plus explicit model image input, and delegates all-member validation and ordered persistence to `AttachmentStore.saveImages()`. Any decode, capability, or storage refusal renders every image as diagnostic text and returns no partial references.
+3. Prepare a separate ordered Native projection. Text runs join with `'\n'`; resource links preserve name and URI as text; audio and embedded resources become explicit diagnostics. The SDK rejects malformed wire results. If any image exists, the bridge strictly decodes the complete batch, resolves the calling agent's latest exact route, requires an attachment store plus explicit model image input, and delegates all-member validation and ordered persistence to `AttachmentStore.saveImages()`. Any decode, capability, or storage refusal renders every image as diagnostic text and returns no partial references.
 4. Keep `output.render` synchronous and pure. The executor stages its richer projection in a generation-local `WeakMap` keyed by the exact execution; `finalizeContent` installs it only when the registry's post-execute result still has the original canonical value and fallback content. A policy block, value replacement, or content replacement remains authoritative, and a re-sync cannot let an older generation consume new execution state.
 5. PTC mode receives the untouched canonical value. Its generic dispatch bridge defers a successful final content sequence containing an image through the outer `run_code` result, so MCP requires no private parent-token special case.
 6. Cancellation: `exec.signal` (from the agent loop's cancel) is passed through to the MCP SDK's `callTool`, exact-model lookup, and the pre-storage gate.
@@ -216,7 +216,7 @@ Coverage is named per tier; each behavior lives at the cheapest tier that can ex
 - A `cordis.yml` entry per MCP server is the entire integration cost: `serverName: filesystem` + a stdio command (or a Streamable HTTP URL) puts `mcp__filesystem__read_file` in the model's tool list, callable, with the raw `read_file` on the wire.
 - Public names are part of session history and permission/configuration APIs; tests pin the naming algorithm, and changing it after release is a breaking change.
 - The `mcp__<serverName>__` qualifier costs tokens on every name. Accepted: descriptions and JSON schemas dominate tool-definition tokens, and the qualifier buys stable identity, collision isolation, and MCP-wide policy shapes (`mcp__*`, `mcp__github__*`).
-- **MCP SDK stability**: the `@modelcontextprotocol/sdk` is still evolving; breaking changes require updating the bridge. The version is pinned, and the SDK is widely adopted (Claude Desktop, Cursor, VS Code) so breaking changes are unlikely to be silent.
+- **MCP SDK stability**: the `@modelcontextprotocol/client` is still evolving; breaking changes require updating the bridge. The version is pinned, and the SDK is widely adopted (Claude Desktop, Cursor, VS Code) so breaking changes are unlikely to be silent.
 - **Tool schema quality**: MCP servers may expose poorly-described tools (vague descriptions, incomplete JSON schemas). The harness passes them through as-is — garbage-in-garbage-out; that is the server author's responsibility, not the bridge's.
 - **Stdio process management**: a misbehaving MCP server that ignores signals could wedge dispose. The Cordis fiber disposal has bounded quiescence; a stuck transport eventually times out at the framework level.
 - Crash recovery is automatic within the [reconnect budget](../../archived/feature/2026-08-06-mcp-client-auto-reconnect.md); manual reload remains the path after exhaustion or with `reconnect.enabled: false`.

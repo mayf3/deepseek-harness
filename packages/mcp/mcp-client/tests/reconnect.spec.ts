@@ -20,40 +20,33 @@ const { mockConnect, mockClose, mockListTools, mockCallTool, mockSetNotification
   const mockClose = vi.fn<() => Promise<void>>()
   const mockListTools = vi.fn<(_params?: Record<string, unknown>) => Promise<unknown>>()
   const mockCallTool = vi.fn<(
-    _params?: Record<string, unknown>, _compatibilitySchema?: unknown, _options?: unknown,
+    _params?: Record<string, unknown>, _options?: unknown,
   ) => Promise<unknown>>()
   const mockSetNotificationHandler = vi.fn()
-  const mockRequest = vi.fn(async (
-    request: { method: string; params?: Record<string, unknown> },
-    _schema: unknown,
-    options?: unknown,
-  ): Promise<unknown> => {
-    if (request.method === 'tools/list') return await mockListTools(request.params)
-    if (request.method === 'tools/call') return await mockCallTool(request.params, undefined, options)
-    throw new Error(`unexpected MCP request: ${request.method}`)
-  })
   class MockClient {
     onclose: (() => void) | undefined
     connect = mockConnect
     close = mockClose
-    request = mockRequest
-    setNotificationHandler = mockSetNotificationHandler
-    constructor() { instances.push(this) }
+    getServerCapabilities = () => ({ tools: {} })
+    listTools = mockListTools
+    callTool = mockCallTool
+    constructor(_info: unknown, options: { listChanged: { tools: { onChanged: () => void } } }) {
+      instances.push(this)
+      mockSetNotificationHandler('notifications/tools/list_changed', options.listChanged.tools.onChanged)
+    }
   }
   const instances: MockClient[] = []
   return { mockConnect, mockClose, mockListTools, mockCallTool, mockSetNotificationHandler, MockClient, instances }
 })
 
-vi.mock('@modelcontextprotocol/sdk/client/index.js', () => ({
+vi.mock('@modelcontextprotocol/client', async importOriginal => ({
+  ...await importOriginal<typeof import('@modelcontextprotocol/client')>(),
   Client: MockClient,
-}))
-
-vi.mock('@modelcontextprotocol/sdk/client/stdio.js', () => ({
-  StdioClientTransport: vi.fn(),
-}))
-
-vi.mock('@modelcontextprotocol/sdk/client/streamableHttp.js', () => ({
   StreamableHTTPClientTransport: vi.fn(),
+}))
+
+vi.mock('@modelcontextprotocol/client/stdio', () => ({
+  StdioClientTransport: vi.fn(),
 }))
 
 // vi.mock is hoisted above static imports, so the modules under test see the
@@ -203,8 +196,8 @@ describe('reconnect supervisor', () => {
 
     const gate: PromiseWithResolvers<unknown> = Promise.withResolvers()
     mockListTools.mockImplementation(() => gate.promise)
-    const handler = mockSetNotificationHandler.mock.calls[0]![1] as () => Promise<void>
-    const resync = handler()
+    const handler = mockSetNotificationHandler.mock.calls[0]![1] as () => void
+    handler()
     await vi.waitFor(() => { expect(mockListTools).toHaveBeenCalledTimes(2) })
 
     mockConnect.mockRejectedValue(new Error('server gone'))
@@ -214,7 +207,6 @@ describe('reconnect supervisor', () => {
     })
 
     gate.resolve(listing('late'))
-    await resync
     await vi.waitFor(() => {
       expect(ctx.tools.get('mcp__srv__remote')).toBeUndefined()
       expect(ctx.tools.get('mcp__srv__late')).toBeUndefined()
@@ -446,15 +438,14 @@ describe('reconnect supervisor', () => {
 
     const gate: PromiseWithResolvers<unknown> = Promise.withResolvers()
     mockListTools.mockImplementation(() => gate.promise)
-    const handler = mockSetNotificationHandler.mock.calls[0]![1] as () => Promise<void>
-    const resync = handler()
+    const handler = mockSetNotificationHandler.mock.calls[0]![1] as () => void
+    handler()
     await vi.waitFor(() => { expect(mockListTools).toHaveBeenCalledTimes(2) })
 
     const disposing = fiber.dispose()
     await sleep(10)
     gate.reject(new Error('Connection closed'))
     await disposing
-    await resync
 
     expect(errors.some(line => line.includes('tool re-sync failed'))).toBe(false)
   })
@@ -468,8 +459,8 @@ describe('reconnect supervisor', () => {
     await vi.waitFor(() => { expect(ctx.tools.get('mcp__srv__remote')).toBeDefined() })
     const listCalls = mockListTools.mock.calls.length
 
-    const staleHandler = mockSetNotificationHandler.mock.calls[0]![1] as () => Promise<void>
-    await staleHandler()
+    const staleHandler = mockSetNotificationHandler.mock.calls[0]![1] as () => void
+    staleHandler()
     expect(mockListTools).toHaveBeenCalledTimes(listCalls)
   })
 })
