@@ -37,9 +37,11 @@ Every package lives in exactly one group; new packages join existing groups, and
 | [`identity/`](identity/README.md) | Shared anonymous identity |
 | [`llm/`](llm/README.md) | LLM capability family: abstract service + provider adapters |
 | [`subprocess/`](subprocess/README.md) | Subprocess capability family: Service Definition + local process-tree provider |
+| [`ssh/`](ssh/README.md) | POSIX remote connection with paired filesystem, subprocess and sandbox providers |
 | [`shell/`](shell/README.md) | Bash capability family: executor seam, local impl, model-facing tools |
 | [`terminal/`](terminal/README.md) | Persistent PTY capability family: owner-scoped sessions, local implementation, model-facing tools |
-| [`code-runtime/`](code-runtime/README.md) | Code-execution capability family: Service Definition + worker-thread provider + PTC mode Consumer |
+| [`ptc-runtime/`](ptc-runtime/README.md) | PTC execution capability family: Service Definition + sandboxed Node provider + PTC mode Consumer |
+| [`computer-use/`](computer-use/README.md) | Exclusive named desktop-provider registration |
 | [`sandbox/`](sandbox/README.md) | Process-confinement seam; bwrap/Landlock/Seatbelt backends |
 | [`fs/`](fs/README.md) | Filesystem capability family: seam, local impl, model-facing file tools, discovery tools |
 | [`lsp/`](lsp/README.md) | LSP capability family: seam, generic stdio provider, and the `lsp` tool |
@@ -48,7 +50,7 @@ Every package lives in exactly one group; new packages join existing groups, and
 | [`context/`](context/README.md) | Model-visible request context: workspace instructions, time context, references |
 | [`subagent/`](subagent/README.md) | Subagent capability family: provider-registry contract and model-facing delegation tools |
 | [`jobs/`](jobs/README.md) | Generic background-job runtime and model-facing job control tools |
-| [`experimental/`](experimental/README.md) | Private prototypes and internal-only plugins |
+| [`experimental/`](experimental/README.md) | Experimental prototypes with explicit public npm exceptions |
 | [`workflow/`](workflow/README.md) | Workflow seam, worker-thread engine, and model-facing `workflow`/`ralph` tools |
 | [`webhook/`](webhook/README.md) | Verified external events, trusted rules, and fire-and-forget Workspace Sessions |
 | [`web/`](web/README.md) | Web capability family: seam, search/fetch providers, model-facing web tools |
@@ -82,7 +84,7 @@ Every package lives in exactly one group; new packages join existing groups, and
 <a id="release-expectations"></a>
 ## Release expectations
 
-Most groups are product — stable API. The exceptions: `experimental/` is unreleased, and `test-support/`, `runtime-diagnostics/`, and `util/` are support with lower compatibility expectations.
+Most groups are product — stable API. The exceptions: `experimental/` publishes only explicitly allowlisted packages, and `test-support/`, `runtime-diagnostics/`, and `util/` are support with lower compatibility expectations.
 
 -----
 

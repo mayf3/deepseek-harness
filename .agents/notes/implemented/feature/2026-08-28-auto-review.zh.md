@@ -12,7 +12,7 @@ Full access 让有用的项目工作无需反复审批即可继续，但也允�
 
 [`dsh-experimental-auto-review`](../../../../packages/experimental/auto-review/README.zh.md)是显式安装的私有源码 Web 层。默认 Web 保持 Read Only、Workspace Write 与 Full access。此层贡献仅限当前会话的 `auto`，唯一持久身份为 `permission/preset:auto`；它共用 Full access 未改变的 `danger-full-access + never` 旋钮与工具定义。正式 payload、Headless、通用设置与新会话默认值都排除此 integration。
 
-每个原生调用与已开始的 PTC `tools.*` inner call 都在 body 前接受一次审查。外层 `run_code` transport 与 worker 内直接 Node 效果不在保证范围内。不提供按工具名豁免、缓存 grant、重试、可配置策略、第二授权检查或人工 fallback。重复调用也重新审查。
+每个原生调用与已开始的 PTC `tools.*` inner call 都在 body 前接受一次审查。外层 `run_code` transport 与 PTC 程序内直接 Node 效果不在保证范围内。不提供按工具名豁免、缓存 grant、重试、可配置策略、第二授权检查或人工 fallback。重复调用也重新审查。
 
 ### 效果与权威
 
@@ -76,6 +76,6 @@ Auto 带右上标 `EXP`。两个可见当前会话选择器都要求实验确认
 
 ## 后果
 
-Auto 增加模型延迟和 token 成本，并可能误判效果。Full access 执行与 worker Node 限制使实验确认成为必要。过滤限制不可信指令角色，但不会把 LLM 分类器变成确定性安全边界。
+Auto 增加模型延迟和 token 成本，并可能误判效果。Full access 执行与 PTC 程序限制使实验确认成为必要。过滤限制不可信指令角色，但不会把 LLM 分类器变成确定性安全边界。
 
 聚焦 owner 测试固定请求过滤、严格响应解析、拒绝传播、目录顺序、取消与 seed 后 child 身份。真实 Web composition 测试覆盖默认／实验菜单、确认、拒绝卡片、live 移除／重装、持久恢复和终端存活。认证 runner 在隔离目标上使用 shipped tools，严格发起八次真实 reviewer 调用：Flash 覆盖精确清理本会话创建对象、未授权／已授权删除既有对象，以及显式请求的合成敏感信息外泄；Pro 与 Vision 各只重复 medium pair。它记录脱敏决定与外部效果，不重试、不跳过 case；确定性测试在无凭据时提供同形策略用例。

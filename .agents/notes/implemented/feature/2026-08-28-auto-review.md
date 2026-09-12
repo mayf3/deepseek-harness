@@ -12,7 +12,7 @@ Full access lets useful project work proceed without repeated approvals, but it 
 
 [`dsh-experimental-auto-review`](../../../../packages/experimental/auto-review/README.md) is a private, explicitly installed source Web layer. Default Web retains Read Only, Workspace Write, and Full access. The layer contributes current-session `auto`, whose only durable identity is `permission/preset:auto`; it shares Full access's unchanged `danger-full-access + never` knobs and tool definitions. Official payloads, Headless, General settings, and new-session defaults exclude the integration.
 
-Every native call and started PTC `tools.*` inner call receives one review before its body. The outer `run_code` transport and direct Node effects in its worker remain outside this guarantee. There are no tool-name exemptions, cached grants, retries, configurable policy, second authorization check, or manual fallback. A repeated call receives a fresh review.
+Every native call and started PTC `tools.*` inner call receives one review before its body. The outer `run_code` transport and direct Node effects in a PTC program remain outside this guarantee. There are no tool-name exemptions, cached grants, retries, configurable policy, second authorization check, or manual fallback. A repeated call receives a fresh review.
 
 ### Effects and authority
 
@@ -76,6 +76,6 @@ The [delegation-time policy capture](2026-07-25-subagent-policy-inheritance.md) 
 
 ## Consequences
 
-Auto adds model latency and token cost and can misclassify effects. Its full-access execution and worker Node limitation make the experimental confirmation necessary. Filtering limits untrusted instruction roles but does not make an LLM classifier a deterministic security boundary.
+Auto adds model latency and token cost and can misclassify effects. Its full-access execution and PTC program limitation make the experimental confirmation necessary. Filtering limits untrusted instruction roles but does not make an LLM classifier a deterministic security boundary.
 
 Focused owner tests pin request filtering, strict response parsing, denial propagation, catalog ordering, cancellation, and post-seed child identity. Real Web composition tests exercise default/experimental menus, confirmation, denial cards, live removal/reinstallation, persisted restoration, and terminal survival. The certification runner uses shipped tools on isolated targets and exactly eight real reviewer calls: Flash covers exact session-created cleanup, unauthorized/authorized pre-existing deletion, and explicitly requested synthetic exfiltration; Pro and Vision each repeat only the medium pair. It records redacted decisions and external effects without retries or skipped cases; deterministic tests provide the same policy cases without credentials.

@@ -7,7 +7,7 @@ import type { Agent } from '@deepseek-ai/dsh-agent'
 import AgentLoop from '@deepseek-ai/dsh-agent-loop'
 import { mountAgentLoopTestDependencies } from '@deepseek-ai/dsh-agent-loop-testkit'
 import { SandboxBashExecutor } from '@deepseek-ai/dsh-bash-sandbox'
-import { WorkerThreadCodeRuntime } from '@deepseek-ai/dsh-code-runtime-worker-thread'
+import { NodePtcRuntime } from '@deepseek-ai/dsh-ptc-runtime-node'
 import * as FsObservationPolicy from '@deepseek-ai/dsh-fs-observation-policy'
 import { SandboxedFileSystem } from '@deepseek-ai/dsh-fs-sandbox'
 import {
@@ -54,7 +54,7 @@ interface CaseResult {
 
 /** Full access must never ask this fixture to confine a command. */
 class UnusedSandbox extends SandboxProvider {
-  override confine(_argv: readonly string[], _policy: SandboxPolicy): ConfinedArgv {
+  override async confine(_argv: readonly string[], _policy: SandboxPolicy): Promise<ConfinedArgv> {
     throw new Error('Auto certification unexpectedly requested a confining sandbox')
   }
 }
@@ -152,7 +152,7 @@ async function mount(ctx: Context, workspace: string, dshHome: string): Promise<
   })
   await ctx.plugin(ToolFs)
   await ctx.plugin(ToolBash)
-  await ctx.plugin(WorkerThreadCodeRuntime, {})
+  await ctx.plugin(NodePtcRuntime, {})
   await ctx.plugin(AutoReview)
   await ctx.plugin(AgentLoop, { agents: [] })
 }

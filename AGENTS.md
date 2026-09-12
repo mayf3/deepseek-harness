@@ -21,6 +21,7 @@ packages/    @deepseek-ai/dsh-<pkg> workspaces at packages/<group>/<pkg>/
   llm/         LLM capability: Service Definition/Consumer + DeepSeek providers
   shell/        bash capability: Service Definition + local/pwsh providers + shell Consumers
   subprocess/  subprocess capability + local process-tree provider + shared Win32 library
+  ssh/         SSH connection + remote filesystem/subprocess/sandbox providers
   terminal/         persistent sessions
   fs/          filesystem capability + policy
   lsp/         language-server capability
@@ -77,7 +78,7 @@ pnpm run duplication    # cross-file TypeScript clone detection
 pnpm run build          # tsc emits lib/types, tsdown bundles runtime
 pnpm run hygiene        # publint + workspace/package/dependency checks + NodeNext consumer check
 pnpm run check:windows-wine  # ONLY when diagnosing a known Windows failure (needs wine); CI owns this signal
-pnpm run doc-sync       # all documentation gates; leaf list in scripts/run-gates.ts
+pnpm run doc-sync       # documentation gates (scripts/run-gates.ts)
 pnpm run test:docs      # quick documentation checks (no build; doc-quick aggregate)
 pnpm run website:build  # VitePress build (doubles as dead-link check)
 pnpm dsh --profile headless "task"  # run one task from source (needs DEEPSEEK_API_KEY)

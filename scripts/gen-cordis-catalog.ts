@@ -63,7 +63,8 @@ export const SERVICE_PAGE: Record<string, string> = {
   shell: 'shell.md',
   shellEnv: 'shell.md',
   clientModules: 'client-modules.md',
-  codeRuntime: 'code-runtime.md',
+  ptcRuntime: 'ptc-runtime.md',
+  computerUse: 'computer-use.md',
   commands: 'commands.md',
   compaction: 'compaction.md',
   cordisInspect: 'extensions.md',
@@ -90,6 +91,7 @@ export const SERVICE_PAGE: Record<string, string> = {
   terminals: 'terminal.md',
   sandbox: 'sandbox.md',
   sandboxPolicy: 'sandbox.md',
+  ssh: 'ssh.md',
   sessionPersistence: 'persistence.md',
   sessionQuery: 'session-query.md',
   sessionFileReferences: 'session-reference.md',
@@ -245,6 +247,7 @@ export const EVENT_WALK_EXEMPTIONS: Record<string, string> = {
  * appear on more than one page.
  */
 export const LINK_MAP: Readonly<Record<string, string>> = {
+  ComputerUseProviderName: 'computer-use.md',
   Agent: 'core.md',
   AgentCancelCause: 'core.md',
   AgentFactory: 'core.md',
@@ -396,8 +399,10 @@ export const LINK_MAP: Readonly<Record<string, string>> = {
   SubprocessSpawnSpec: 'subprocess.md',
   SubprocessTerminalHandle: 'subprocess.md',
   SubprocessTerminalSpawnSpec: 'subprocess.md',
-  CodeRunRequest: 'code-runtime.md',
-  CodeRunResult: 'code-runtime.md',
+  PtcRunRequest: 'ptc-runtime.md',
+  PtcRunSpec: 'ptc-runtime.md',
+  PtcRunSandbox: 'ptc-runtime.md',
+  PtcRunResult: 'ptc-runtime.md',
   CompactionResult: 'compaction.md',
   CompactionTrigger: 'compaction.md',
   PruneResult: 'compaction.md',
@@ -467,6 +472,8 @@ export const LINK_MAP: Readonly<Record<string, string>> = {
   TerminalSpawnRequest: 'terminal.md',
   TerminalSpawnResult: 'terminal.md',
   SandboxPolicyRequest: 'sandbox.md',
+  SshConnection: 'ssh.md',
+  SshStreamEndpoint: 'ssh.md',
   ScopeKey: 'scope.md',
   Scoped: 'scope.md',
   EpochHeader: 'session.md',
@@ -689,6 +696,8 @@ export const FOUNDATION_TYPE_NAMES: ReadonlySet<string> = new Set([
 
 /** Project types deliberately documented outside the subsystems catalog. */
 export const TYPE_LINK_EXEMPTIONS: Readonly<Record<string, string>> = {
+  'z.ZodType': 'Zod response validation API is owned by https://zod.dev/packages/zod',
+  Socket: 'Node.js byte stream API is owned by https://nodejs.org/api/net.html#class-netsocket',
   z: 'schemastery schema constructor is owned by vendor/schemastery (vendored upstream)',
   BeginCommandRequest: 'event-local request contract is owned by packages/client/ui-input-trigger/src/types.ts',
   InsertReferenceRequest: 'event-local request contract is owned by packages/client/ui-input-trigger/src/types.ts',
