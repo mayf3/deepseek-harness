@@ -28,19 +28,17 @@ This approximate backfill supports reading and format validation; it is not a co
 
 | Item | Recorded value |
 |---|---|
-| Source commit | [c091949735ca40f5267bff6c5aa14cd55d4ea8b2](https://github.com/deepseek-harness/deepseek-harness/tree/c091949735ca40f5267bff6c5aa14cd55d4ea8b2) |
-| Commit date | 2026-08-17T11:03:17.000Z |
-| Release page | [dsh-v0.1.0-rc.7](https://github.com/deepseek-harness/deepseek-harness/releases/tag/dsh-v0.1.0-rc.7) |
-| Previous release | [dsh-v0.1.0-rc.6](dsh-v0.1.0-rc.6.md) · [source comparison](https://github.com/deepseek-harness/deepseek-harness/compare/650a3960d7494f180fd596fc32e2bfaedf2cbca8...c091949735ca40f5267bff6c5aa14cd55d4ea8b2) |
+| Source tag | `dsh-v0.1.0-rc.7` |
+| Source date | 2026-08-17T11:03:17.000Z |
+| Release record | Release object present. |
+| Previous release | [dsh-v0.1.0-rc.6](dsh-v0.1.0-rc.6.md) |
 | Session writer version | 0 |
-| Session SQLite schema | 15 |
 | Reconstructed inventory | 47 roots / 376 types |
 | This snapshot | [dsh-v0.1.0-rc.7.schema.json](dsh-v0.1.0-rc.7.schema.json) |
 
-Source evidence for the version constants:
+Source evidence for the writer version constant at this tag:
 
-- [`packages/core/session/src/types.ts:56`](https://github.com/deepseek-harness/deepseek-harness/blob/c091949735ca40f5267bff6c5aa14cd55d4ea8b2/packages/core/session/src/types.ts#L56): `export const SESSION_FORMAT_VERSION = 0`
-- [`packages/session/session-persistence-sqlite/src/schema.ts:20`](https://github.com/deepseek-harness/deepseek-harness/blob/c091949735ca40f5267bff6c5aa14cd55d4ea8b2/packages/session/session-persistence-sqlite/src/schema.ts#L20): `export const SCHEMA_VERSION = 15`
+- `packages/core/session/src/types.ts:56`: `export const SESSION_FORMAT_VERSION = 0`
 
 <a id="declaration"></a>
 ## Declaration
@@ -48,10 +46,8 @@ Source evidence for the version constants:
 ```yaml persistence-release
 schemaVersion: 1
 tag: dsh-v0.1.0-rc.7
-commit: c091949735ca40f5267bff6c5aa14cd55d4ea8b2
 previous: dsh-v0.1.0-rc.6
 sessionFormatVersion: 0
-sqliteSchemaVersion: 15
 changes:
   - root: event:assistant/chunk
     before: 7fd942b2189b8dbf6e1a2c7b026e9ddd1e7dba3fbe5645708a76f4cddabb281d

@@ -3,13 +3,13 @@ description: "回溯 dsh-v0.1.0-rc.8 的已声明 Session 持久化类型及相�
 kind: persistence-release
 ---
 
-# 持久化版本回溯：dsh-v0.1.0-rc.8
+# 持久化版本回溯: dsh-v0.1.0-rc.8
 
 [English](dsh-v0.1.0-rc.8.md) | 中文
 
 ## 概述
 
-新增四种 team/* 事件及用户消息来源变体 team-message；assistant/message 新增可选字段 interrupted。Session SQLite 模式从 15 升至 17，事件数据可使用二进制表示，来源事件序列改用二进制表示；写入格式仍为 0。
+新增四种 team/* 事件及用户消息来源变体 team-message；assistant/message 新增可选字段 interrupted。写入格式仍为 0。
 
 ## 目录
 
@@ -28,19 +28,17 @@ kind: persistence-release
 
 | 项目 | 记录值 |
 |---|---|
-| 源码提交 | [fcbad141407d3a9dc9e382768eb24187953f4f46](https://github.com/deepseek-harness/deepseek-harness/tree/fcbad141407d3a9dc9e382768eb24187953f4f46) |
-| 提交日期 | 2026-08-19T15:11:50.000Z |
-| 发行页面 | [dsh-v0.1.0-rc.8](https://github.com/deepseek-harness/deepseek-harness/releases/tag/dsh-v0.1.0-rc.8) |
-| 前一版本 | [dsh-v0.1.0-rc.7](dsh-v0.1.0-rc.7.zh.md) · [源码比较](https://github.com/deepseek-harness/deepseek-harness/compare/c091949735ca40f5267bff6c5aa14cd55d4ea8b2...fcbad141407d3a9dc9e382768eb24187953f4f46) |
+| 源码 tag | `dsh-v0.1.0-rc.8` |
+| 源码日期 | 2026-08-19T15:11:50.000Z |
+| 发行记录 | 有 release 对象。 |
+| 前一版本 | [dsh-v0.1.0-rc.7](dsh-v0.1.0-rc.7.zh.md) |
 | Session 写入版本 | 0 |
-| Session SQLite schema | 17 |
 | 完整重建清单 | 51 roots / 403 types |
 | 本条快照 | [dsh-v0.1.0-rc.8.schema.json](dsh-v0.1.0-rc.8.schema.json) |
 
-版本常量的源码证据：
+写入版本常量在该 tag 中的源码证据：
 
-- [`packages/core/session/src/types.ts:56`](https://github.com/deepseek-harness/deepseek-harness/blob/fcbad141407d3a9dc9e382768eb24187953f4f46/packages/core/session/src/types.ts#L56): `export const SESSION_FORMAT_VERSION = 0`
-- [`packages/session/session-persistence-sqlite/src/schema.ts:18`](https://github.com/deepseek-harness/deepseek-harness/blob/fcbad141407d3a9dc9e382768eb24187953f4f46/packages/session/session-persistence-sqlite/src/schema.ts#L18): `export const SCHEMA_VERSION = 17`
+- `packages/core/session/src/types.ts:56`: `export const SESSION_FORMAT_VERSION = 0`
 
 <a id="declaration"></a>
 ## 声明
@@ -48,10 +46,8 @@ kind: persistence-release
 ```yaml persistence-release
 schemaVersion: 1
 tag: dsh-v0.1.0-rc.8
-commit: fcbad141407d3a9dc9e382768eb24187953f4f46
 previous: dsh-v0.1.0-rc.7
 sessionFormatVersion: 0
-sqliteSchemaVersion: 17
 changes:
   - root: event:agent/inbox/spliced
     before: dea3a1d5640e0306a486f92b725a01b57e69439277978ca09dc246fb40016b90

@@ -28,18 +28,17 @@ This approximate backfill supports reading and format validation; it is not a co
 
 | Item | Recorded value |
 |---|---|
-| Source commit | [9ddbf04dd310d9c29f9ab607410132e02dc5842e](https://github.com/deepseek-harness/deepseek-harness/tree/9ddbf04dd310d9c29f9ab607410132e02dc5842e) |
-| Commit date | 2026-09-09T14:13:03.000Z |
-| Release page | [dsh-v0.1.5-alpha.2](https://github.com/deepseek-harness/deepseek-harness/releases/tag/dsh-v0.1.5-alpha.2) |
-| Previous release | [dsh-v0.1.5-alpha.1](dsh-v0.1.5-alpha.1.md) · [source comparison](https://github.com/deepseek-harness/deepseek-harness/compare/f0b1dec24df370c7773953dd06ad1b5158bc3094...9ddbf04dd310d9c29f9ab607410132e02dc5842e) |
+| Source tag | `dsh-v0.1.5-alpha.2` |
+| Source date | 2026-09-09T14:13:03.000Z |
+| Release record | Release object present. |
+| Previous release | [dsh-v0.1.5-alpha.1](dsh-v0.1.5-alpha.1.md) |
 | Session writer version | 3 |
-| Session SQLite schema | Backend absent at this tag. |
 | Reconstructed inventory | 59 roots / 462 types |
 | This snapshot | [dsh-v0.1.5-alpha.2.schema.json](dsh-v0.1.5-alpha.2.schema.json) |
 
-Source evidence for the version constants:
+Source evidence for the writer version constant at this tag:
 
-- [`packages/core/session/src/types.ts:88`](https://github.com/deepseek-harness/deepseek-harness/blob/9ddbf04dd310d9c29f9ab607410132e02dc5842e/packages/core/session/src/types.ts#L88): `export const SESSION_FORMAT_VERSION = 3`
+- `packages/core/session/src/types.ts:88`: `export const SESSION_FORMAT_VERSION = 3`
 
 <a id="declaration"></a>
 ## Declaration
@@ -47,10 +46,8 @@ Source evidence for the version constants:
 ```yaml persistence-release
 schemaVersion: 1
 tag: dsh-v0.1.5-alpha.2
-commit: 9ddbf04dd310d9c29f9ab607410132e02dc5842e
 previous: dsh-v0.1.5-alpha.1
 sessionFormatVersion: 3
-sqliteSchemaVersion: null
 changes:
   - root: event:deliverables/presented
     before: null

@@ -9,7 +9,7 @@ English | [中文](dsh-v0.0.1-rc.1.zh.md)
 
 ## Summary
 
-This is the earliest available DSH alpha/rc tag and establishes the historical baseline: 42 persistence roots, writer format 0, and Session SQLite schema 14.
+This is the earliest available DSH alpha/rc tag and establishes the historical baseline: 42 persistence roots and writer format 0.
 
 ## Table of Contents
 
@@ -28,19 +28,17 @@ This approximate backfill supports reading and format validation; it is not a co
 
 | Item | Recorded value |
 |---|---|
-| Source commit | [c9ed8a6634550065ccba7120b45787af8f8ae085](https://github.com/deepseek-harness/deepseek-harness/tree/c9ed8a6634550065ccba7120b45787af8f8ae085) |
-| Commit date | 2026-08-10T19:25:09.000Z |
-| Release page | Tag only; no release object. |
+| Source tag | `dsh-v0.0.1-rc.1` |
+| Source date | 2026-08-10T19:25:09.000Z |
+| Release record | Tag only; no release object. |
 | Previous release | Earliest available prerelease tag; no earlier comparison input. |
 | Session writer version | 0 |
-| Session SQLite schema | 14 |
 | Reconstructed inventory | 42 roots / 341 types |
 | This snapshot | [dsh-v0.0.1-rc.1.schema.json](dsh-v0.0.1-rc.1.schema.json) |
 
-Source evidence for the version constants:
+Source evidence for the writer version constant at this tag:
 
-- [`packages/core/session/src/types.ts:36`](https://github.com/deepseek-harness/deepseek-harness/blob/c9ed8a6634550065ccba7120b45787af8f8ae085/packages/core/session/src/types.ts#L36): `export const SESSION_FORMAT_VERSION = 0`
-- [`packages/session/session-persistence-sqlite/src/schema.ts:20`](https://github.com/deepseek-harness/deepseek-harness/blob/c9ed8a6634550065ccba7120b45787af8f8ae085/packages/session/session-persistence-sqlite/src/schema.ts#L20): `export const SCHEMA_VERSION = 14`
+- `packages/core/session/src/types.ts:36`: `export const SESSION_FORMAT_VERSION = 0`
 
 <a id="declaration"></a>
 ## Declaration
@@ -48,10 +46,8 @@ Source evidence for the version constants:
 ```yaml persistence-release
 schemaVersion: 1
 tag: dsh-v0.0.1-rc.1
-commit: c9ed8a6634550065ccba7120b45787af8f8ae085
 previous: null
 sessionFormatVersion: 0
-sqliteSchemaVersion: 14
 changes:
   - root: JsonlHeaderLine
     before: null

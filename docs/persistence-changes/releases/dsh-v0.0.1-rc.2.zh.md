@@ -3,13 +3,13 @@ description: "回溯 dsh-v0.0.1-rc.2 的已声明 Session 持久化类型及相�
 kind: persistence-release
 ---
 
-# 持久化版本回溯：dsh-v0.0.1-rc.2
+# 持久化版本回溯: dsh-v0.0.1-rc.2
 
 [English](dsh-v0.0.1-rc.2.md) | 中文
 
 ## 概述
 
-事件信封新增可选字段 ignorable，并新增 schedule/change 及四种 tool-workflow 事件。Session SQLite 模式从 14 升至 15，增加 ignorable 列；写入格式仍为 0。
+事件信封新增可选字段 ignorable，并新增 schedule/change 及四种 tool-workflow 事件。写入格式仍为 0。
 
 ## 目录
 
@@ -28,19 +28,17 @@ kind: persistence-release
 
 | 项目 | 记录值 |
 |---|---|
-| 源码提交 | [75171f606abdde9c00dace78907051424071aa55](https://github.com/deepseek-harness/deepseek-harness/tree/75171f606abdde9c00dace78907051424071aa55) |
-| 提交日期 | 2026-08-11T15:04:55.000Z |
-| 发行页面 | 只有 tag，没有 release 对象。 |
-| 前一版本 | [dsh-v0.0.1-rc.1](dsh-v0.0.1-rc.1.zh.md) · [源码比较](https://github.com/deepseek-harness/deepseek-harness/compare/c9ed8a6634550065ccba7120b45787af8f8ae085...75171f606abdde9c00dace78907051424071aa55) |
+| 源码 tag | `dsh-v0.0.1-rc.2` |
+| 源码日期 | 2026-08-11T15:04:55.000Z |
+| 发行记录 | 只有 tag，没有 release 对象。 |
+| 前一版本 | [dsh-v0.0.1-rc.1](dsh-v0.0.1-rc.1.zh.md) |
 | Session 写入版本 | 0 |
-| Session SQLite schema | 15 |
 | 完整重建清单 | 47 roots / 374 types |
 | 本条快照 | [dsh-v0.0.1-rc.2.schema.json](dsh-v0.0.1-rc.2.schema.json) |
 
-版本常量的源码证据：
+写入版本常量在该 tag 中的源码证据：
 
-- [`packages/core/session/src/types.ts:56`](https://github.com/deepseek-harness/deepseek-harness/blob/75171f606abdde9c00dace78907051424071aa55/packages/core/session/src/types.ts#L56): `export const SESSION_FORMAT_VERSION = 0`
-- [`packages/session/session-persistence-sqlite/src/schema.ts:20`](https://github.com/deepseek-harness/deepseek-harness/blob/75171f606abdde9c00dace78907051424071aa55/packages/session/session-persistence-sqlite/src/schema.ts#L20): `export const SCHEMA_VERSION = 15`
+- `packages/core/session/src/types.ts:56`: `export const SESSION_FORMAT_VERSION = 0`
 
 <a id="declaration"></a>
 ## 声明
@@ -48,10 +46,8 @@ kind: persistence-release
 ```yaml persistence-release
 schemaVersion: 1
 tag: dsh-v0.0.1-rc.2
-commit: 75171f606abdde9c00dace78907051424071aa55
 previous: dsh-v0.0.1-rc.1
 sessionFormatVersion: 0
-sqliteSchemaVersion: 15
 changes:
   - root: SessionEventEnvelope
     before: 75af2f6612424c13f0e4e215925c3520923c85f2774c1c505490cff6c4747bc2

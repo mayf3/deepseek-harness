@@ -9,7 +9,7 @@ English | [中文](dsh-v0.1.2-alpha.2.zh.md)
 
 ## Summary
 
-The envelope restores optional ignorable. Session SQLite schema advances from 19 to 20, replacing is_packed with ignorable; the writer format remains 0.
+The envelope restores optional ignorable. The writer format remains 0.
 
 ## Table of Contents
 
@@ -28,19 +28,17 @@ This approximate backfill supports reading and format validation; it is not a co
 
 | Item | Recorded value |
 |---|---|
-| Source commit | [76ae850c165f8561232bf7ff212773ab248043b5](https://github.com/deepseek-harness/deepseek-harness/tree/76ae850c165f8561232bf7ff212773ab248043b5) |
-| Commit date | 2026-08-30T13:37:53.000Z |
-| Release page | [dsh-v0.1.2-alpha.2](https://github.com/deepseek-harness/deepseek-harness/releases/tag/dsh-v0.1.2-alpha.2) |
-| Previous release | [dsh-v0.1.2-alpha.1](dsh-v0.1.2-alpha.1.md) · [source comparison](https://github.com/deepseek-harness/deepseek-harness/compare/bc954280ae67e349291e51e5787c6987e767fa40...76ae850c165f8561232bf7ff212773ab248043b5) |
+| Source tag | `dsh-v0.1.2-alpha.2` |
+| Source date | 2026-08-30T13:37:53.000Z |
+| Release record | Release object present. |
+| Previous release | [dsh-v0.1.2-alpha.1](dsh-v0.1.2-alpha.1.md) |
 | Session writer version | 0 |
-| Session SQLite schema | 20 |
 | Reconstructed inventory | 54 roots / 417 types |
 | This snapshot | [dsh-v0.1.2-alpha.2.schema.json](dsh-v0.1.2-alpha.2.schema.json) |
 
-Source evidence for the version constants:
+Source evidence for the writer version constant at this tag:
 
-- [`packages/core/session/src/types.ts:51`](https://github.com/deepseek-harness/deepseek-harness/blob/76ae850c165f8561232bf7ff212773ab248043b5/packages/core/session/src/types.ts#L51): `export const SESSION_FORMAT_VERSION = 0`
-- [`packages/session/session-persistence-sqlite/src/schema.ts:19`](https://github.com/deepseek-harness/deepseek-harness/blob/76ae850c165f8561232bf7ff212773ab248043b5/packages/session/session-persistence-sqlite/src/schema.ts#L19): `export const SCHEMA_VERSION = 20`
+- `packages/core/session/src/types.ts:51`: `export const SESSION_FORMAT_VERSION = 0`
 
 <a id="declaration"></a>
 ## Declaration
@@ -48,10 +46,8 @@ Source evidence for the version constants:
 ```yaml persistence-release
 schemaVersion: 1
 tag: dsh-v0.1.2-alpha.2
-commit: 76ae850c165f8561232bf7ff212773ab248043b5
 previous: dsh-v0.1.2-alpha.1
 sessionFormatVersion: 0
-sqliteSchemaVersion: 20
 changes:
   - root: SessionEventEnvelope
     before: 75af2f6612424c13f0e4e215925c3520923c85f2774c1c505490cff6c4747bc2

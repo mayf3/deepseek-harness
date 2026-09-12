@@ -9,7 +9,7 @@ English | [中文](dsh-v0.0.1-rc.2.zh.md)
 
 ## Summary
 
-The event envelope gains optional ignorable, and schedule/change plus four tool-workflow events are added. Session SQLite schema advances from 14 to 15 with an ignorable column; the writer format remains 0.
+The event envelope gains optional ignorable, and schedule/change plus four tool-workflow events are added. The writer format remains 0.
 
 ## Table of Contents
 
@@ -28,19 +28,17 @@ This approximate backfill supports reading and format validation; it is not a co
 
 | Item | Recorded value |
 |---|---|
-| Source commit | [75171f606abdde9c00dace78907051424071aa55](https://github.com/deepseek-harness/deepseek-harness/tree/75171f606abdde9c00dace78907051424071aa55) |
-| Commit date | 2026-08-11T15:04:55.000Z |
-| Release page | Tag only; no release object. |
-| Previous release | [dsh-v0.0.1-rc.1](dsh-v0.0.1-rc.1.md) · [source comparison](https://github.com/deepseek-harness/deepseek-harness/compare/c9ed8a6634550065ccba7120b45787af8f8ae085...75171f606abdde9c00dace78907051424071aa55) |
+| Source tag | `dsh-v0.0.1-rc.2` |
+| Source date | 2026-08-11T15:04:55.000Z |
+| Release record | Tag only; no release object. |
+| Previous release | [dsh-v0.0.1-rc.1](dsh-v0.0.1-rc.1.md) |
 | Session writer version | 0 |
-| Session SQLite schema | 15 |
 | Reconstructed inventory | 47 roots / 374 types |
 | This snapshot | [dsh-v0.0.1-rc.2.schema.json](dsh-v0.0.1-rc.2.schema.json) |
 
-Source evidence for the version constants:
+Source evidence for the writer version constant at this tag:
 
-- [`packages/core/session/src/types.ts:56`](https://github.com/deepseek-harness/deepseek-harness/blob/75171f606abdde9c00dace78907051424071aa55/packages/core/session/src/types.ts#L56): `export const SESSION_FORMAT_VERSION = 0`
-- [`packages/session/session-persistence-sqlite/src/schema.ts:20`](https://github.com/deepseek-harness/deepseek-harness/blob/75171f606abdde9c00dace78907051424071aa55/packages/session/session-persistence-sqlite/src/schema.ts#L20): `export const SCHEMA_VERSION = 15`
+- `packages/core/session/src/types.ts:56`: `export const SESSION_FORMAT_VERSION = 0`
 
 <a id="declaration"></a>
 ## Declaration
@@ -48,10 +46,8 @@ Source evidence for the version constants:
 ```yaml persistence-release
 schemaVersion: 1
 tag: dsh-v0.0.1-rc.2
-commit: 75171f606abdde9c00dace78907051424071aa55
 previous: dsh-v0.0.1-rc.1
 sessionFormatVersion: 0
-sqliteSchemaVersion: 15
 changes:
   - root: SessionEventEnvelope
     before: 75af2f6612424c13f0e4e215925c3520923c85f2774c1c505490cff6c4747bc2

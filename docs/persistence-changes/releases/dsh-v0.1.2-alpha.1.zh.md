@@ -3,13 +3,13 @@ description: "回溯 dsh-v0.1.2-alpha.1 的已声明 Session 持久化类型及�
 kind: persistence-release
 ---
 
-# 持久化版本回溯：dsh-v0.1.2-alpha.1
+# 持久化版本回溯: dsh-v0.1.2-alpha.1
 
 [English](dsh-v0.1.2-alpha.1.md) | 中文
 
 ## 概述
 
-事件信封删除 ignorable，request/header 新增可选字段 startsSeries 及原因值 series，并新增模型选择、子 Agent 模型策略和投递确认事件。Session SQLite 模式从 17 升至 19，行字段 ignorable 被 is_packed 替代。尽管存在这些结构变化，写入格式仍为 0。
+事件信封删除 ignorable，request/header 新增可选字段 startsSeries 及原因值 series，并新增模型选择、子 Agent 模型策略和投递确认事件。尽管存在这些结构变化，写入格式仍为 0。
 
 ## 目录
 
@@ -28,19 +28,17 @@ kind: persistence-release
 
 | 项目 | 记录值 |
 |---|---|
-| 源码提交 | [bc954280ae67e349291e51e5787c6987e767fa40](https://github.com/deepseek-harness/deepseek-harness/tree/bc954280ae67e349291e51e5787c6987e767fa40) |
-| 提交日期 | 2026-08-27T16:57:43.000Z |
-| 发行页面 | [dsh-v0.1.2-alpha.1](https://github.com/deepseek-harness/deepseek-harness/releases/tag/dsh-v0.1.2-alpha.1) |
-| 前一版本 | [dsh-v0.1.1-rc.2](dsh-v0.1.1-rc.2.zh.md) · [源码比较](https://github.com/deepseek-harness/deepseek-harness/compare/29b22c53218d503f45169427fec445220db8ee1e...bc954280ae67e349291e51e5787c6987e767fa40) |
+| 源码 tag | `dsh-v0.1.2-alpha.1` |
+| 源码日期 | 2026-08-27T16:57:43.000Z |
+| 发行记录 | 有 release 对象。 |
+| 前一版本 | [dsh-v0.1.1-rc.2](dsh-v0.1.1-rc.2.zh.md) |
 | Session 写入版本 | 0 |
-| Session SQLite schema | 19 |
 | 完整重建清单 | 54 roots / 417 types |
 | 本条快照 | [dsh-v0.1.2-alpha.1.schema.json](dsh-v0.1.2-alpha.1.schema.json) |
 
-版本常量的源码证据：
+写入版本常量在该 tag 中的源码证据：
 
-- [`packages/core/session/src/types.ts:56`](https://github.com/deepseek-harness/deepseek-harness/blob/bc954280ae67e349291e51e5787c6987e767fa40/packages/core/session/src/types.ts#L56): `export const SESSION_FORMAT_VERSION = 0`
-- [`packages/session/session-persistence-sqlite/src/schema.ts:18`](https://github.com/deepseek-harness/deepseek-harness/blob/bc954280ae67e349291e51e5787c6987e767fa40/packages/session/session-persistence-sqlite/src/schema.ts#L18): `export const SCHEMA_VERSION = 19`
+- `packages/core/session/src/types.ts:56`: `export const SESSION_FORMAT_VERSION = 0`
 
 <a id="declaration"></a>
 ## 声明
@@ -48,10 +46,8 @@ kind: persistence-release
 ```yaml persistence-release
 schemaVersion: 1
 tag: dsh-v0.1.2-alpha.1
-commit: bc954280ae67e349291e51e5787c6987e767fa40
 previous: dsh-v0.1.1-rc.2
 sessionFormatVersion: 0
-sqliteSchemaVersion: 19
 changes:
   - root: SessionEventEnvelope
     before: 04184edc061905410cc7e3db8d5c7cf393d739c89eb523ba8bad3831fb23ba95

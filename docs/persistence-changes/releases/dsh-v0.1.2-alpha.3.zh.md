@@ -3,13 +3,13 @@ description: "回溯 dsh-v0.1.2-alpha.3 的已声明 Session 持久化类型及�
 kind: persistence-release
 ---
 
-# 持久化版本回溯：dsh-v0.1.2-alpha.3
+# 持久化版本回溯: dsh-v0.1.2-alpha.3
 
 [English](dsh-v0.1.2-alpha.3.md) | 中文
 
 ## 概述
 
-重建的所有持久化根类型摘要均与上一个 alpha 标签一致，但该标签的源码树删除了 Session SQLite 持久化包及其模式声明。写入格式仍为 0。
+重建的所有持久化根类型摘要均与上一个 alpha 标签一致。写入格式仍为 0。
 
 ## 目录
 
@@ -28,18 +28,17 @@ kind: persistence-release
 
 | 项目 | 记录值 |
 |---|---|
-| 源码提交 | [509785f6aca108d4720325a838d54bc8ac5d841b](https://github.com/deepseek-harness/deepseek-harness/tree/509785f6aca108d4720325a838d54bc8ac5d841b) |
-| 提交日期 | 2026-08-31T15:53:17.000Z |
-| 发行页面 | [dsh-v0.1.2-alpha.3](https://github.com/deepseek-harness/deepseek-harness/releases/tag/dsh-v0.1.2-alpha.3) |
-| 前一版本 | [dsh-v0.1.2-alpha.2](dsh-v0.1.2-alpha.2.zh.md) · [源码比较](https://github.com/deepseek-harness/deepseek-harness/compare/76ae850c165f8561232bf7ff212773ab248043b5...509785f6aca108d4720325a838d54bc8ac5d841b) |
+| 源码 tag | `dsh-v0.1.2-alpha.3` |
+| 源码日期 | 2026-08-31T15:53:17.000Z |
+| 发行记录 | 有 release 对象。 |
+| 前一版本 | [dsh-v0.1.2-alpha.2](dsh-v0.1.2-alpha.2.zh.md) |
 | Session 写入版本 | 0 |
-| Session SQLite schema | 此 tag 没有该后端。 |
 | 完整重建清单 | 54 roots / 417 types |
 | 本条快照 | [dsh-v0.1.2-alpha.3.schema.json](dsh-v0.1.2-alpha.3.schema.json) |
 
-版本常量的源码证据：
+写入版本常量在该 tag 中的源码证据：
 
-- [`packages/core/session/src/types.ts:51`](https://github.com/deepseek-harness/deepseek-harness/blob/509785f6aca108d4720325a838d54bc8ac5d841b/packages/core/session/src/types.ts#L51): `export const SESSION_FORMAT_VERSION = 0`
+- `packages/core/session/src/types.ts:51`: `export const SESSION_FORMAT_VERSION = 0`
 
 <a id="declaration"></a>
 ## 声明
@@ -47,17 +46,15 @@ kind: persistence-release
 ```yaml persistence-release
 schemaVersion: 1
 tag: dsh-v0.1.2-alpha.3
-commit: 509785f6aca108d4720325a838d54bc8ac5d841b
 previous: dsh-v0.1.2-alpha.2
 sessionFormatVersion: 0
-sqliteSchemaVersion: null
 changes: []
 ```
 
 <a id="changes"></a>
 ## 结构变化
 
-相较前一 tag，规范化的根类型及其传递引用摘要没有变化。SQLite schema 版本或后端可用性的变化仍单独记录在上方，不由这些类型摘要覆盖。
+相较前一 tag，规范化的根类型及其传递引用摘要没有变化。
 
 <a id="verification"></a>
 ## 校验

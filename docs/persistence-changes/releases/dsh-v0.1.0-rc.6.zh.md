@@ -3,7 +3,7 @@ description: "回溯 dsh-v0.1.0-rc.6 的已声明 Session 持久化类型及相�
 kind: persistence-release
 ---
 
-# 持久化版本回溯：dsh-v0.1.0-rc.6
+# 持久化版本回溯: dsh-v0.1.0-rc.6
 
 [English](dsh-v0.1.0-rc.6.md) | 中文
 
@@ -28,19 +28,17 @@ kind: persistence-release
 
 | 项目 | 记录值 |
 |---|---|
-| 源码提交 | [650a3960d7494f180fd596fc32e2bfaedf2cbca8](https://github.com/deepseek-harness/deepseek-harness/tree/650a3960d7494f180fd596fc32e2bfaedf2cbca8) |
-| 提交日期 | 2026-08-13T11:56:40.000Z |
-| 发行页面 | 只有 tag，没有 release 对象。 |
-| 前一版本 | [dsh-v0.1.0-rc.5](dsh-v0.1.0-rc.5.zh.md) · [源码比较](https://github.com/deepseek-harness/deepseek-harness/compare/2b1e3ea9d36302d3df501cfafe289c77147f9a43...650a3960d7494f180fd596fc32e2bfaedf2cbca8) |
+| 源码 tag | `dsh-v0.1.0-rc.6` |
+| 源码日期 | 2026-08-13T11:56:40.000Z |
+| 发行记录 | 只有 tag，没有 release 对象。 |
+| 前一版本 | [dsh-v0.1.0-rc.5](dsh-v0.1.0-rc.5.zh.md) |
 | Session 写入版本 | 0 |
-| Session SQLite schema | 15 |
 | 完整重建清单 | 47 roots / 374 types |
 | 本条快照 | [dsh-v0.1.0-rc.6.schema.json](dsh-v0.1.0-rc.6.schema.json) |
 
-版本常量的源码证据：
+写入版本常量在该 tag 中的源码证据：
 
-- [`packages/core/session/src/types.ts:56`](https://github.com/deepseek-harness/deepseek-harness/blob/650a3960d7494f180fd596fc32e2bfaedf2cbca8/packages/core/session/src/types.ts#L56): `export const SESSION_FORMAT_VERSION = 0`
-- [`packages/session/session-persistence-sqlite/src/schema.ts:20`](https://github.com/deepseek-harness/deepseek-harness/blob/650a3960d7494f180fd596fc32e2bfaedf2cbca8/packages/session/session-persistence-sqlite/src/schema.ts#L20): `export const SCHEMA_VERSION = 15`
+- `packages/core/session/src/types.ts:56`: `export const SESSION_FORMAT_VERSION = 0`
 
 <a id="declaration"></a>
 ## 声明
@@ -48,17 +46,15 @@ kind: persistence-release
 ```yaml persistence-release
 schemaVersion: 1
 tag: dsh-v0.1.0-rc.6
-commit: 650a3960d7494f180fd596fc32e2bfaedf2cbca8
 previous: dsh-v0.1.0-rc.5
 sessionFormatVersion: 0
-sqliteSchemaVersion: 15
 changes: []
 ```
 
 <a id="changes"></a>
 ## 结构变化
 
-相较前一 tag，规范化的根类型及其传递引用摘要没有变化。SQLite schema 版本或后端可用性的变化仍单独记录在上方，不由这些类型摘要覆盖。
+相较前一 tag，规范化的根类型及其传递引用摘要没有变化。
 
 <a id="verification"></a>
 ## 校验

@@ -28,19 +28,17 @@ This approximate backfill supports reading and format validation; it is not a co
 
 | Item | Recorded value |
 |---|---|
-| Source commit | [a2e8739f4b1a508133af371e55a2827fec862cd5](https://github.com/deepseek-harness/deepseek-harness/tree/a2e8739f4b1a508133af371e55a2827fec862cd5) |
-| Commit date | 2026-08-12T22:18:58.000Z |
-| Release page | Tag only; no release object. |
-| Previous release | [dsh-v0.0.1-rc.4](dsh-v0.0.1-rc.4.md) · [source comparison](https://github.com/deepseek-harness/deepseek-harness/compare/af88f0e21a315c3f134fc5da41caa1610acf02ac...a2e8739f4b1a508133af371e55a2827fec862cd5) |
+| Source tag | `dsh-v0.0.1-rc.5` |
+| Source date | 2026-08-12T22:18:58.000Z |
+| Release record | Tag only; no release object. |
+| Previous release | [dsh-v0.0.1-rc.4](dsh-v0.0.1-rc.4.md) |
 | Session writer version | 0 |
-| Session SQLite schema | 15 |
 | Reconstructed inventory | 47 roots / 374 types |
 | This snapshot | [dsh-v0.0.1-rc.5.schema.json](dsh-v0.0.1-rc.5.schema.json) |
 
-Source evidence for the version constants:
+Source evidence for the writer version constant at this tag:
 
-- [`packages/core/session/src/types.ts:56`](https://github.com/deepseek-harness/deepseek-harness/blob/a2e8739f4b1a508133af371e55a2827fec862cd5/packages/core/session/src/types.ts#L56): `export const SESSION_FORMAT_VERSION = 0`
-- [`packages/session/session-persistence-sqlite/src/schema.ts:20`](https://github.com/deepseek-harness/deepseek-harness/blob/a2e8739f4b1a508133af371e55a2827fec862cd5/packages/session/session-persistence-sqlite/src/schema.ts#L20): `export const SCHEMA_VERSION = 15`
+- `packages/core/session/src/types.ts:56`: `export const SESSION_FORMAT_VERSION = 0`
 
 <a id="declaration"></a>
 ## Declaration
@@ -48,17 +46,15 @@ Source evidence for the version constants:
 ```yaml persistence-release
 schemaVersion: 1
 tag: dsh-v0.0.1-rc.5
-commit: a2e8739f4b1a508133af371e55a2827fec862cd5
 previous: dsh-v0.0.1-rc.4
 sessionFormatVersion: 0
-sqliteSchemaVersion: 15
 changes: []
 ```
 
 <a id="changes"></a>
 ## Structural changes
 
-Normalized root types and their transitive digests are unchanged from the preceding tag. SQLite schema-version or backend-availability changes remain separately recorded above and are not covered by these type digests.
+Normalized root types and their transitive digests are unchanged from the preceding tag.
 
 <a id="verification"></a>
 ## Verification

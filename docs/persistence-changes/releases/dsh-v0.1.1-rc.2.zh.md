@@ -3,7 +3,7 @@ description: "回溯 dsh-v0.1.1-rc.2 的已声明 Session 持久化类型及相�
 kind: persistence-release
 ---
 
-# 持久化版本回溯：dsh-v0.1.1-rc.2
+# 持久化版本回溯: dsh-v0.1.1-rc.2
 
 [English](dsh-v0.1.1-rc.2.md) | 中文
 
@@ -28,19 +28,17 @@ permission/preset 删除 origin；附件记录新增可选字段 originalDimensi
 
 | 项目 | 记录值 |
 |---|---|
-| 源码提交 | [29b22c53218d503f45169427fec445220db8ee1e](https://github.com/deepseek-harness/deepseek-harness/tree/29b22c53218d503f45169427fec445220db8ee1e) |
-| 提交日期 | 2026-08-21T12:03:37.000Z |
-| 发行页面 | [dsh-v0.1.1-rc.2](https://github.com/deepseek-harness/deepseek-harness/releases/tag/dsh-v0.1.1-rc.2) |
-| 前一版本 | [dsh-v0.1.1-rc.1](dsh-v0.1.1-rc.1.zh.md) · [源码比较](https://github.com/deepseek-harness/deepseek-harness/compare/9a439af233a1d2e346cf9430a815b371782964e0...29b22c53218d503f45169427fec445220db8ee1e) |
+| 源码 tag | `dsh-v0.1.1-rc.2` |
+| 源码日期 | 2026-08-21T12:03:37.000Z |
+| 发行记录 | 有 release 对象。 |
+| 前一版本 | [dsh-v0.1.1-rc.1](dsh-v0.1.1-rc.1.zh.md) |
 | Session 写入版本 | 0 |
-| Session SQLite schema | 17 |
 | 完整重建清单 | 51 roots / 404 types |
 | 本条快照 | [dsh-v0.1.1-rc.2.schema.json](dsh-v0.1.1-rc.2.schema.json) |
 
-版本常量的源码证据：
+写入版本常量在该 tag 中的源码证据：
 
-- [`packages/core/session/src/types.ts:56`](https://github.com/deepseek-harness/deepseek-harness/blob/29b22c53218d503f45169427fec445220db8ee1e/packages/core/session/src/types.ts#L56): `export const SESSION_FORMAT_VERSION = 0`
-- [`packages/session/session-persistence-sqlite/src/schema.ts:18`](https://github.com/deepseek-harness/deepseek-harness/blob/29b22c53218d503f45169427fec445220db8ee1e/packages/session/session-persistence-sqlite/src/schema.ts#L18): `export const SCHEMA_VERSION = 17`
+- `packages/core/session/src/types.ts:56`: `export const SESSION_FORMAT_VERSION = 0`
 
 <a id="declaration"></a>
 ## 声明
@@ -48,10 +46,8 @@ permission/preset 删除 origin；附件记录新增可选字段 originalDimensi
 ```yaml persistence-release
 schemaVersion: 1
 tag: dsh-v0.1.1-rc.2
-commit: 29b22c53218d503f45169427fec445220db8ee1e
 previous: dsh-v0.1.1-rc.1
 sessionFormatVersion: 0
-sqliteSchemaVersion: 17
 changes:
   - root: event:agent/inbox/spliced
     before: 7a0b347ba6a465a7813490036bde98bdc658609c6de9545ba58be26c372c5030

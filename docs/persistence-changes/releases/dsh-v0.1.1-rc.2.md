@@ -28,19 +28,17 @@ This approximate backfill supports reading and format validation; it is not a co
 
 | Item | Recorded value |
 |---|---|
-| Source commit | [29b22c53218d503f45169427fec445220db8ee1e](https://github.com/deepseek-harness/deepseek-harness/tree/29b22c53218d503f45169427fec445220db8ee1e) |
-| Commit date | 2026-08-21T12:03:37.000Z |
-| Release page | [dsh-v0.1.1-rc.2](https://github.com/deepseek-harness/deepseek-harness/releases/tag/dsh-v0.1.1-rc.2) |
-| Previous release | [dsh-v0.1.1-rc.1](dsh-v0.1.1-rc.1.md) · [source comparison](https://github.com/deepseek-harness/deepseek-harness/compare/9a439af233a1d2e346cf9430a815b371782964e0...29b22c53218d503f45169427fec445220db8ee1e) |
+| Source tag | `dsh-v0.1.1-rc.2` |
+| Source date | 2026-08-21T12:03:37.000Z |
+| Release record | Release object present. |
+| Previous release | [dsh-v0.1.1-rc.1](dsh-v0.1.1-rc.1.md) |
 | Session writer version | 0 |
-| Session SQLite schema | 17 |
 | Reconstructed inventory | 51 roots / 404 types |
 | This snapshot | [dsh-v0.1.1-rc.2.schema.json](dsh-v0.1.1-rc.2.schema.json) |
 
-Source evidence for the version constants:
+Source evidence for the writer version constant at this tag:
 
-- [`packages/core/session/src/types.ts:56`](https://github.com/deepseek-harness/deepseek-harness/blob/29b22c53218d503f45169427fec445220db8ee1e/packages/core/session/src/types.ts#L56): `export const SESSION_FORMAT_VERSION = 0`
-- [`packages/session/session-persistence-sqlite/src/schema.ts:18`](https://github.com/deepseek-harness/deepseek-harness/blob/29b22c53218d503f45169427fec445220db8ee1e/packages/session/session-persistence-sqlite/src/schema.ts#L18): `export const SCHEMA_VERSION = 17`
+- `packages/core/session/src/types.ts:56`: `export const SESSION_FORMAT_VERSION = 0`
 
 <a id="declaration"></a>
 ## Declaration
@@ -48,10 +46,8 @@ Source evidence for the version constants:
 ```yaml persistence-release
 schemaVersion: 1
 tag: dsh-v0.1.1-rc.2
-commit: 29b22c53218d503f45169427fec445220db8ee1e
 previous: dsh-v0.1.1-rc.1
 sessionFormatVersion: 0
-sqliteSchemaVersion: 17
 changes:
   - root: event:agent/inbox/spliced
     before: 7a0b347ba6a465a7813490036bde98bdc658609c6de9545ba58be26c372c5030

@@ -12,22 +12,18 @@ import type { PersistenceRoot, PersistenceSchemaInventory } from './persistence-
 const ARCHIVE_DIRECTORY = 'docs/persistence-changes/releases'
 const TAG_PATTERN = /^dsh-v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)-(alpha|rc)\.(0|[1-9]\d*)$/u
 const DIGEST_PATTERN = /^[a-f0-9]{64}$/u
-const COMMIT_PATTERN = /^[a-f0-9]{40}$/u
 
 /** Published identity and version constants observed in one pinned tag. */
 export interface PersistenceRelease {
   readonly tag: string
-  readonly commit: string
-  readonly committedAt: string
+  readonly sourceDate: string
   readonly publishedAt: string | null
   readonly sessionFormatVersion: number
-  readonly sqliteSchemaVersion: number | null
 }
 
 /** Offline corpus captured from the repository's alpha and release-candidate tags. */
 export interface PersistenceReleaseManifest {
   readonly schemaVersion: 1
-  readonly repository: 'deepseek-harness/deepseek-harness'
   readonly capturedAt: string
   readonly releases: readonly PersistenceRelease[]
 }
@@ -43,10 +39,8 @@ export interface PersistenceReleaseChange {
 export interface PersistenceReleaseRecord {
   readonly schemaVersion: 1
   readonly tag: string
-  readonly commit: string
   readonly previous: string | null
   readonly sessionFormatVersion: number
-  readonly sqliteSchemaVersion: number | null
   readonly changes: readonly PersistenceReleaseChange[]
 }
 
@@ -106,24 +100,21 @@ function compareTags(left: string, right: string): number {
 }
 
 function parseManifest(value: unknown): PersistenceReleaseManifest {
-  const input = object(value, ['schemaVersion', 'repository', 'capturedAt', 'releases'], 'release manifest')
+  const input = object(value, ['schemaVersion', 'capturedAt', 'releases'], 'release manifest')
   if (input.schemaVersion !== 1) throw new Error('unsupported persistence release manifest schema version')
-  if (input.repository !== 'deepseek-harness/deepseek-harness') throw new Error('release manifest: unexpected repository')
   const date = string(input.capturedAt, /^\d{4}-\d{2}-\d{2}$/u, 'capture date')
   if (!Number.isFinite(Date.parse(date)) || new Date(date).toISOString().slice(0, 10) !== date) throw new Error('release manifest: invalid capture date')
   let previous: string | undefined
   const releases = array(input.releases, 'releases')
   if (releases.length === 0) throw new Error('release manifest: releases must not be empty')
   for (const raw of releases) {
-    const release = object(raw, ['tag', 'commit', 'committedAt', 'publishedAt', 'sessionFormatVersion', 'sqliteSchemaVersion'], 'release')
+    const release = object(raw, ['tag', 'sourceDate', 'publishedAt', 'sessionFormatVersion'], 'release')
     const tag = string(release.tag, TAG_PATTERN, 'release tag')
     if (previous !== undefined && compareTags(previous, tag) >= 0) throw new Error(`${tag}: release tags must be unique and in semantic-version order`)
     previous = tag
-    string(release.commit, COMMIT_PATTERN, `${tag} commit`)
-    timestamp(release.committedAt, `${tag} commit date`)
+    timestamp(release.sourceDate, `${tag} source date`)
     if (release.publishedAt !== null) timestamp(release.publishedAt, `${tag} publication date`)
     version(release.sessionFormatVersion, `${tag} Session format version`)
-    if (release.sqliteSchemaVersion !== null) version(release.sqliteSchemaVersion, `${tag} SQLite schema version`)
   }
   return input as unknown as PersistenceReleaseManifest
 }
@@ -140,9 +131,9 @@ function machineBlock(source: string, label: string): string {
 }
 
 function parseRecord(source: string, release: PersistenceRelease, previous: string | null): PersistenceReleaseRecord {
-  const input = object(load(source, { schema: JSON_SCHEMA }), ['schemaVersion', 'tag', 'commit', 'previous', 'sessionFormatVersion', 'sqliteSchemaVersion', 'changes'], release.tag)
+  const input = object(load(source, { schema: JSON_SCHEMA }), ['schemaVersion', 'tag', 'previous', 'sessionFormatVersion', 'changes'], release.tag)
   if (input.schemaVersion !== 1) throw new Error(`${release.tag}: unsupported persistence release record schema version`)
-  for (const field of ['tag', 'commit', 'sessionFormatVersion', 'sqliteSchemaVersion'] as const) {
+  for (const field of ['tag', 'sessionFormatVersion'] as const) {
     if (input[field] !== release[field]) throw new Error(`${release.tag}: record ${field} does not match manifest`)
   }
   if (input.previous !== previous) throw new Error(`${release.tag}: predecessor must be ${String(previous)}`)

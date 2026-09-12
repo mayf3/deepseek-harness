@@ -3,7 +3,7 @@ description: "回溯 dsh-v0.1.1-rc.1 的已声明 Session 持久化类型及相�
 kind: persistence-release
 ---
 
-# 持久化版本回溯：dsh-v0.1.1-rc.1
+# 持久化版本回溯: dsh-v0.1.1-rc.1
 
 [English](dsh-v0.1.1-rc.1.md) | 中文
 
@@ -28,19 +28,17 @@ permission/preset 新增可选字段 origin，可取 default、selection 或 inf
 
 | 项目 | 记录值 |
 |---|---|
-| 源码提交 | [9a439af233a1d2e346cf9430a815b371782964e0](https://github.com/deepseek-harness/deepseek-harness/tree/9a439af233a1d2e346cf9430a815b371782964e0) |
-| 提交日期 | 2026-08-21T06:21:44.000Z |
-| 发行页面 | [dsh-v0.1.1-rc.1](https://github.com/deepseek-harness/deepseek-harness/releases/tag/dsh-v0.1.1-rc.1) |
-| 前一版本 | [dsh-v0.1.0-rc.8](dsh-v0.1.0-rc.8.zh.md) · [源码比较](https://github.com/deepseek-harness/deepseek-harness/compare/fcbad141407d3a9dc9e382768eb24187953f4f46...9a439af233a1d2e346cf9430a815b371782964e0) |
+| 源码 tag | `dsh-v0.1.1-rc.1` |
+| 源码日期 | 2026-08-21T06:21:44.000Z |
+| 发行记录 | 有 release 对象。 |
+| 前一版本 | [dsh-v0.1.0-rc.8](dsh-v0.1.0-rc.8.zh.md) |
 | Session 写入版本 | 0 |
-| Session SQLite schema | 17 |
 | 完整重建清单 | 51 roots / 407 types |
 | 本条快照 | [dsh-v0.1.1-rc.1.schema.json](dsh-v0.1.1-rc.1.schema.json) |
 
-版本常量的源码证据：
+写入版本常量在该 tag 中的源码证据：
 
-- [`packages/core/session/src/types.ts:56`](https://github.com/deepseek-harness/deepseek-harness/blob/9a439af233a1d2e346cf9430a815b371782964e0/packages/core/session/src/types.ts#L56): `export const SESSION_FORMAT_VERSION = 0`
-- [`packages/session/session-persistence-sqlite/src/schema.ts:18`](https://github.com/deepseek-harness/deepseek-harness/blob/9a439af233a1d2e346cf9430a815b371782964e0/packages/session/session-persistence-sqlite/src/schema.ts#L18): `export const SCHEMA_VERSION = 17`
+- `packages/core/session/src/types.ts:56`: `export const SESSION_FORMAT_VERSION = 0`
 
 <a id="declaration"></a>
 ## 声明
@@ -48,10 +46,8 @@ permission/preset 新增可选字段 origin，可取 default、selection 或 inf
 ```yaml persistence-release
 schemaVersion: 1
 tag: dsh-v0.1.1-rc.1
-commit: 9a439af233a1d2e346cf9430a815b371782964e0
 previous: dsh-v0.1.0-rc.8
 sessionFormatVersion: 0
-sqliteSchemaVersion: 17
 changes:
   - root: event:permission/preset
     before: 5c45bf4c544a7211dcd8ba6ba7e5f1bc39b49e7a9df9d5cbdc8e87c22771b37b

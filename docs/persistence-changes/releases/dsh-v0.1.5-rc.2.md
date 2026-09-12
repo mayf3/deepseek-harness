@@ -28,18 +28,17 @@ This approximate backfill supports reading and format validation; it is not a co
 
 | Item | Recorded value |
 |---|---|
-| Source commit | [449af19993fdb11e2e5e4565f7fc7abe921c24be](https://github.com/deepseek-harness/deepseek-harness/tree/449af19993fdb11e2e5e4565f7fc7abe921c24be) |
-| Commit date | 2026-09-10T13:50:19.000Z |
-| Release page | [dsh-v0.1.5-rc.2](https://github.com/deepseek-harness/deepseek-harness/releases/tag/dsh-v0.1.5-rc.2) |
-| Previous release | [dsh-v0.1.5-rc.1](dsh-v0.1.5-rc.1.md) · [source comparison](https://github.com/deepseek-harness/deepseek-harness/compare/18a8c507f9f0516d835a3747582937349dd7c6e3...449af19993fdb11e2e5e4565f7fc7abe921c24be) |
+| Source tag | `dsh-v0.1.5-rc.2` |
+| Source date | 2026-09-10T13:50:19.000Z |
+| Release record | Release object present. |
+| Previous release | [dsh-v0.1.5-rc.1](dsh-v0.1.5-rc.1.md) |
 | Session writer version | 3 |
-| Session SQLite schema | Backend absent at this tag. |
 | Reconstructed inventory | 59 roots / 462 types |
 | This snapshot | [dsh-v0.1.5-rc.2.schema.json](dsh-v0.1.5-rc.2.schema.json) |
 
-Source evidence for the version constants:
+Source evidence for the writer version constant at this tag:
 
-- [`packages/core/session/src/types.ts:88`](https://github.com/deepseek-harness/deepseek-harness/blob/449af19993fdb11e2e5e4565f7fc7abe921c24be/packages/core/session/src/types.ts#L88): `export const SESSION_FORMAT_VERSION = 3`
+- `packages/core/session/src/types.ts:88`: `export const SESSION_FORMAT_VERSION = 3`
 
 <a id="declaration"></a>
 ## Declaration
@@ -47,17 +46,15 @@ Source evidence for the version constants:
 ```yaml persistence-release
 schemaVersion: 1
 tag: dsh-v0.1.5-rc.2
-commit: 449af19993fdb11e2e5e4565f7fc7abe921c24be
 previous: dsh-v0.1.5-rc.1
 sessionFormatVersion: 3
-sqliteSchemaVersion: null
 changes: []
 ```
 
 <a id="changes"></a>
 ## Structural changes
 
-Normalized root types and their transitive digests are unchanged from the preceding tag. SQLite schema-version or backend-availability changes remain separately recorded above and are not covered by these type digests.
+Normalized root types and their transitive digests are unchanged from the preceding tag.
 
 <a id="verification"></a>
 ## Verification

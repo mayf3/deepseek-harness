@@ -9,7 +9,7 @@ English | [中文](dsh-v0.1.0-rc.8.zh.md)
 
 ## Summary
 
-Four team/* events and the team-message user-message source variant are added; assistant/message gains optional interrupted. Session SQLite schema advances from 15 to 17, with binary-capable event data and binary source-event sequences; the writer format remains 0.
+Four team/* events and the team-message user-message source variant are added; assistant/message gains optional interrupted. The writer format remains 0.
 
 ## Table of Contents
 
@@ -28,19 +28,17 @@ This approximate backfill supports reading and format validation; it is not a co
 
 | Item | Recorded value |
 |---|---|
-| Source commit | [fcbad141407d3a9dc9e382768eb24187953f4f46](https://github.com/deepseek-harness/deepseek-harness/tree/fcbad141407d3a9dc9e382768eb24187953f4f46) |
-| Commit date | 2026-08-19T15:11:50.000Z |
-| Release page | [dsh-v0.1.0-rc.8](https://github.com/deepseek-harness/deepseek-harness/releases/tag/dsh-v0.1.0-rc.8) |
-| Previous release | [dsh-v0.1.0-rc.7](dsh-v0.1.0-rc.7.md) · [source comparison](https://github.com/deepseek-harness/deepseek-harness/compare/c091949735ca40f5267bff6c5aa14cd55d4ea8b2...fcbad141407d3a9dc9e382768eb24187953f4f46) |
+| Source tag | `dsh-v0.1.0-rc.8` |
+| Source date | 2026-08-19T15:11:50.000Z |
+| Release record | Release object present. |
+| Previous release | [dsh-v0.1.0-rc.7](dsh-v0.1.0-rc.7.md) |
 | Session writer version | 0 |
-| Session SQLite schema | 17 |
 | Reconstructed inventory | 51 roots / 403 types |
 | This snapshot | [dsh-v0.1.0-rc.8.schema.json](dsh-v0.1.0-rc.8.schema.json) |
 
-Source evidence for the version constants:
+Source evidence for the writer version constant at this tag:
 
-- [`packages/core/session/src/types.ts:56`](https://github.com/deepseek-harness/deepseek-harness/blob/fcbad141407d3a9dc9e382768eb24187953f4f46/packages/core/session/src/types.ts#L56): `export const SESSION_FORMAT_VERSION = 0`
-- [`packages/session/session-persistence-sqlite/src/schema.ts:18`](https://github.com/deepseek-harness/deepseek-harness/blob/fcbad141407d3a9dc9e382768eb24187953f4f46/packages/session/session-persistence-sqlite/src/schema.ts#L18): `export const SCHEMA_VERSION = 17`
+- `packages/core/session/src/types.ts:56`: `export const SESSION_FORMAT_VERSION = 0`
 
 <a id="declaration"></a>
 ## Declaration
@@ -48,10 +46,8 @@ Source evidence for the version constants:
 ```yaml persistence-release
 schemaVersion: 1
 tag: dsh-v0.1.0-rc.8
-commit: fcbad141407d3a9dc9e382768eb24187953f4f46
 previous: dsh-v0.1.0-rc.7
 sessionFormatVersion: 0
-sqliteSchemaVersion: 17
 changes:
   - root: event:agent/inbox/spliced
     before: dea3a1d5640e0306a486f92b725a01b57e69439277978ca09dc246fb40016b90

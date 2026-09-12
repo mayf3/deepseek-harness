@@ -69,10 +69,10 @@ function fixture(): Fixture {
   const directory = join(root, 'docs/persistence-changes/releases')
   mkdirSync(directory, { recursive: true })
   const manifest: PersistenceReleaseManifest = {
-    schemaVersion: 1, repository: 'deepseek-harness/deepseek-harness', capturedAt: '2026-09-12',
+    schemaVersion: 1, capturedAt: '2026-09-12',
     releases: TAGS.map((tag, index) => ({
-      tag, commit: String(index + 1).repeat(40), committedAt: '2026-09-01T10:00:00+08:00', publishedAt: index === 0 ? null : '2026-09-01T03:00:00Z',
-      sessionFormatVersion: 0, sqliteSchemaVersion: index === 0 ? null : 2,
+      tag, sourceDate: '2026-09-01T10:00:00+08:00', publishedAt: index === 0 ? null : '2026-09-01T03:00:00Z',
+      sessionFormatVersion: 0,
     })),
   }
   const before = event('string')
@@ -85,8 +85,8 @@ function fixture(): Fixture {
     rootSchema('SessionEventEnvelope', [{ kind: 'object', indices: [], properties: [] }]), before,
   ]), inventory([after]), inventory([])]
   const records = manifest.releases.map((release, index): PersistenceReleaseRecord => ({
-    schemaVersion: 1, tag: release.tag, commit: release.commit, previous: TAGS[index - 1] ?? null,
-    sessionFormatVersion: release.sessionFormatVersion, sqliteSchemaVersion: release.sqliteSchemaVersion,
+    schemaVersion: 1, tag: release.tag, previous: TAGS[index - 1] ?? null,
+    sessionFormatVersion: release.sessionFormatVersion,
     changes: snapshots[index]!.roots.map(root => ({ root: root.key, before: index === 0 ? null : before.digest, after: root.digest })),
   }))
   writeFileSync(join(directory, 'manifest.json'), JSON.stringify(manifest))
@@ -140,25 +140,42 @@ describe('pinned persistence releases', () => {
   it('rejects malformed manifest identities and version metadata', () => {
     const data = fixture()
     for (const changes of [
-      { tag: 'dsh-v0.1.0-beta.1' }, { commit: '1234' }, { committedAt: '2026-09-01' },
-      { publishedAt: 'yesterday' }, { sessionFormatVersion: -1 }, { sqliteSchemaVersion: 1.5 },
+      { tag: 'dsh-v0.1.0-beta.1' }, { sourceDate: '2026-09-01' },
+      { publishedAt: 'yesterday' }, { sessionFormatVersion: -1 }, { sessionFormatVersion: 1.5 },
     ]) {
       writeFileSync(join(data.directory, 'manifest.json'), JSON.stringify({ ...data.manifest,
         releases: data.manifest.releases.map((release, index) => index === 0 ? { ...release, ...changes } : release),
       }))
       expect(() => loadPersistenceReleases(data.root)).toThrow(/invalid value|nonnegative integer/u)
     }
-    for (const changes of [{ schemaVersion: 2 }, { repository: 'another/repository' }, { capturedAt: '2026-02-30' }, { releases: [] }]) {
+    for (const changes of [{ schemaVersion: 2 }, { capturedAt: '2026-02-30' }, { releases: [] }]) {
       writeFileSync(join(data.directory, 'manifest.json'), JSON.stringify({ ...data.manifest, ...changes }))
-      expect(() => loadPersistenceReleases(data.root)).toThrow(/schema version|unexpected repository|capture date|must not be empty/u)
+      expect(() => loadPersistenceReleases(data.root)).toThrow(/schema version|capture date|must not be empty/u)
     }
   })
 
-  it('rejects wrong predecessor, commit, format version, schema version, and duplicate roots', () => {
+  it('rejects removed manifest and record fields as unknown metadata', () => {
+    const data = fixture()
+    writeFileSync(join(data.directory, 'manifest.json'), JSON.stringify({ ...data.manifest, repository: 'example' }))
+    expect(() => loadPersistenceReleases(data.root)).toThrow('unknown field repository')
+    for (const field of ['commit', 'committedAt', 'sqliteSchemaVersion']) {
+      writeFileSync(join(data.directory, 'manifest.json'), JSON.stringify({ ...data.manifest,
+        releases: data.manifest.releases.map((release, index) => index === 0 ? { ...release, [field]: null } : release),
+      }))
+      expect(() => loadPersistenceReleases(data.root)).toThrow(`unknown field ${field}`)
+    }
+    writeFileSync(join(data.directory, 'manifest.json'), JSON.stringify(data.manifest))
+    for (const field of ['commit', 'sqliteSchemaVersion']) {
+      saveRecord(data.directory, { ...data.records[1]!, [field]: null })
+      expect(() => loadPersistenceReleases(data.root)).toThrow(`unknown field ${field}`)
+    }
+  })
+
+  it('rejects wrong predecessor, format version, schema version, and duplicate roots', () => {
     const data = fixture()
     const original = data.records[1]!
     for (const changed of [
-      { ...original, previous: null }, { ...original, commit: 'a'.repeat(40) },
+      { ...original, previous: null },
       { ...original, sessionFormatVersion: 2 }, { ...original, schemaVersion: 2 },
       { ...original, changes: [...original.changes, ...original.changes] },
     ]) {

@@ -9,7 +9,7 @@ English | [中文](dsh-v0.1.2-alpha.1.zh.md)
 
 ## Summary
 
-The envelope removes ignorable, request/header gains optional startsSeries and the series reason, and model-selection, subagent model-policy, and delivery-acceptance events are added. Session SQLite schema advances from 17 to 19, replacing the ignorable row field with is_packed. The writer format remains 0 despite these structural changes.
+The envelope removes ignorable, request/header gains optional startsSeries and the series reason, and model-selection, subagent model-policy, and delivery-acceptance events are added. The writer format remains 0 despite these structural changes.
 
 ## Table of Contents
 
@@ -28,19 +28,17 @@ This approximate backfill supports reading and format validation; it is not a co
 
 | Item | Recorded value |
 |---|---|
-| Source commit | [bc954280ae67e349291e51e5787c6987e767fa40](https://github.com/deepseek-harness/deepseek-harness/tree/bc954280ae67e349291e51e5787c6987e767fa40) |
-| Commit date | 2026-08-27T16:57:43.000Z |
-| Release page | [dsh-v0.1.2-alpha.1](https://github.com/deepseek-harness/deepseek-harness/releases/tag/dsh-v0.1.2-alpha.1) |
-| Previous release | [dsh-v0.1.1-rc.2](dsh-v0.1.1-rc.2.md) · [source comparison](https://github.com/deepseek-harness/deepseek-harness/compare/29b22c53218d503f45169427fec445220db8ee1e...bc954280ae67e349291e51e5787c6987e767fa40) |
+| Source tag | `dsh-v0.1.2-alpha.1` |
+| Source date | 2026-08-27T16:57:43.000Z |
+| Release record | Release object present. |
+| Previous release | [dsh-v0.1.1-rc.2](dsh-v0.1.1-rc.2.md) |
 | Session writer version | 0 |
-| Session SQLite schema | 19 |
 | Reconstructed inventory | 54 roots / 417 types |
 | This snapshot | [dsh-v0.1.2-alpha.1.schema.json](dsh-v0.1.2-alpha.1.schema.json) |
 
-Source evidence for the version constants:
+Source evidence for the writer version constant at this tag:
 
-- [`packages/core/session/src/types.ts:56`](https://github.com/deepseek-harness/deepseek-harness/blob/bc954280ae67e349291e51e5787c6987e767fa40/packages/core/session/src/types.ts#L56): `export const SESSION_FORMAT_VERSION = 0`
-- [`packages/session/session-persistence-sqlite/src/schema.ts:18`](https://github.com/deepseek-harness/deepseek-harness/blob/bc954280ae67e349291e51e5787c6987e767fa40/packages/session/session-persistence-sqlite/src/schema.ts#L18): `export const SCHEMA_VERSION = 19`
+- `packages/core/session/src/types.ts:56`: `export const SESSION_FORMAT_VERSION = 0`
 
 <a id="declaration"></a>
 ## Declaration
@@ -48,10 +46,8 @@ Source evidence for the version constants:
 ```yaml persistence-release
 schemaVersion: 1
 tag: dsh-v0.1.2-alpha.1
-commit: bc954280ae67e349291e51e5787c6987e767fa40
 previous: dsh-v0.1.1-rc.2
 sessionFormatVersion: 0
-sqliteSchemaVersion: 19
 changes:
   - root: SessionEventEnvelope
     before: 04184edc061905410cc7e3db8d5c7cf393d739c89eb523ba8bad3831fb23ba95

@@ -3,7 +3,7 @@ description: "回溯 dsh-v0.1.5-rc.2 的已声明 Session 持久化类型及相�
 kind: persistence-release
 ---
 
-# 持久化版本回溯：dsh-v0.1.5-rc.2
+# 持久化版本回溯: dsh-v0.1.5-rc.2
 
 [English](dsh-v0.1.5-rc.2.md) | 中文
 
@@ -28,18 +28,17 @@ kind: persistence-release
 
 | 项目 | 记录值 |
 |---|---|
-| 源码提交 | [449af19993fdb11e2e5e4565f7fc7abe921c24be](https://github.com/deepseek-harness/deepseek-harness/tree/449af19993fdb11e2e5e4565f7fc7abe921c24be) |
-| 提交日期 | 2026-09-10T13:50:19.000Z |
-| 发行页面 | [dsh-v0.1.5-rc.2](https://github.com/deepseek-harness/deepseek-harness/releases/tag/dsh-v0.1.5-rc.2) |
-| 前一版本 | [dsh-v0.1.5-rc.1](dsh-v0.1.5-rc.1.zh.md) · [源码比较](https://github.com/deepseek-harness/deepseek-harness/compare/18a8c507f9f0516d835a3747582937349dd7c6e3...449af19993fdb11e2e5e4565f7fc7abe921c24be) |
+| 源码 tag | `dsh-v0.1.5-rc.2` |
+| 源码日期 | 2026-09-10T13:50:19.000Z |
+| 发行记录 | 有 release 对象。 |
+| 前一版本 | [dsh-v0.1.5-rc.1](dsh-v0.1.5-rc.1.zh.md) |
 | Session 写入版本 | 3 |
-| Session SQLite schema | 此 tag 没有该后端。 |
 | 完整重建清单 | 59 roots / 462 types |
 | 本条快照 | [dsh-v0.1.5-rc.2.schema.json](dsh-v0.1.5-rc.2.schema.json) |
 
-版本常量的源码证据：
+写入版本常量在该 tag 中的源码证据：
 
-- [`packages/core/session/src/types.ts:88`](https://github.com/deepseek-harness/deepseek-harness/blob/449af19993fdb11e2e5e4565f7fc7abe921c24be/packages/core/session/src/types.ts#L88): `export const SESSION_FORMAT_VERSION = 3`
+- `packages/core/session/src/types.ts:88`: `export const SESSION_FORMAT_VERSION = 3`
 
 <a id="declaration"></a>
 ## 声明
@@ -47,17 +46,15 @@ kind: persistence-release
 ```yaml persistence-release
 schemaVersion: 1
 tag: dsh-v0.1.5-rc.2
-commit: 449af19993fdb11e2e5e4565f7fc7abe921c24be
 previous: dsh-v0.1.5-rc.1
 sessionFormatVersion: 3
-sqliteSchemaVersion: null
 changes: []
 ```
 
 <a id="changes"></a>
 ## 结构变化
 
-相较前一 tag，规范化的根类型及其传递引用摘要没有变化。SQLite schema 版本或后端可用性的变化仍单独记录在上方，不由这些类型摘要覆盖。
+相较前一 tag，规范化的根类型及其传递引用摘要没有变化。
 
 <a id="verification"></a>
 ## 校验
