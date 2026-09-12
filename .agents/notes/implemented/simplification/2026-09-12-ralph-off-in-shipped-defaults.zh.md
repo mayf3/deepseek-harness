@@ -18,7 +18,7 @@ Status: implemented
 
 每个被禁用的行都在本地注释里带上恢复方法。对基于 base 的档位，用一行 overlay 即可从 `$DSH_HOME/cordis.patch.yml` 或 `--patch` 文件重新启用。preset 文件不接受补丁（`packages/preset/agent-presets/README.md`），因此想要 `ralph` 的 Web 会话要以**新 id** 把 preset 复制到 `$DSH_HOME/.agent-presets` 并删掉 `disabled`；沿用随附 id 的副本会被随附 root 遮蔽，因为重复 id 由更靠前的 root 胜出（`packages/preset/agent-presets/src/index.ts`），而 `copy()` 也拒绝任何 root 已提供的 id。在 `ptc` 中，副本要同时删掉工具行和引擎行的 `disabled`，因为 `tool-ralph` 注入 `ctx.workflowEngine`。
 
-`packages/bundle/web-app/cordis.patch.yml` 保留了自己那条 `tool-ralph` 禁用声明，尽管 `base` 现在已把该行默认关闭。`scripts/verify-cordis-config.ts` 中的 `validatePresetPlaneSeparation` 在收集已声明的行 id 时不看 `disabled`，所以删掉这一行会让 `tool-ralph` 回到 Web 宿主平面，并与每个 preset 中的同名行冲突。
+`packages/bundle/web-app/cordis.patch.yml` 在自己的层里重述这条禁用声明。`scripts/verify-cordis-config.ts` 中的 `validatePresetPlaneSeparation` 在收集已声明的行 id 时不看 `disabled`，所以删掉这一行会让 `tool-ralph` 回到 Web 宿主平面，并与每个 preset 中的同名行冲突。
 
 `snapshots/session/ralph-loop` 成为 `ralph` 组合的所有者，它的 `cordis.yml` 与 `cordis.snapshot.yml` 重新启用该行，于是唯一演练该工具的录制场景保住了自己的证据。兄弟组合不会继承 `text-turn/cordis.snapshot.yml`，因此新的回放补丁在 `ralph` 行之外重述了那些替换项。
 
