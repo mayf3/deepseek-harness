@@ -2,14 +2,28 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, 
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { browserBundledExternals, browserPackageOfFile, browserSourceAliases } from './browser-bundled-externals.ts'
+
+const filesystem = vi.hoisted(() => ({ preservedAlias: undefined as string | undefined }))
+vi.mock('node:fs', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:fs')>()
+  return {
+    ...actual,
+    realpathSync: Object.assign((...args: Parameters<typeof actual.realpathSync>) => {
+      // Windows' JavaScript realpath can retain an 8.3 alias that Vite's native resolution expands.
+      if (typeof args[0] === 'string' && args[0] === filesystem.preservedAlias) return args[0]
+      return actual.realpathSync(...args)
+    }, { native: actual.realpathSync.native }),
+  }
+})
 
 const roots: string[] = []
 const dependencyLinks: string[] = []
 const repositoryRoot = resolve(import.meta.dirname, '..')
 
 afterEach(() => {
+  filesystem.preservedAlias = undefined
   for (const link of dependencyLinks.splice(0)) unlinkSync(link)
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true })
 })
@@ -82,8 +96,9 @@ describe('browser dependency discovery', () => {
   })
 
   it.each([
-    ['Rollup', false], ['Rollup', true], ['Rolldown', false], ['Rolldown', true],
-  ] as const)('follows shell aliases, CSS and lazy imports without writing output (%s, symlinked root: %s)', async (bundler, linked) => {
+    ['Rollup', false, false], ['Rollup', true, false], ['Rollup', true, true],
+    ['Rolldown', false, false], ['Rolldown', true, false], ['Rolldown', true, true],
+  ] as const)('follows shell aliases, CSS and lazy imports without writing output (%s, symlinked root: %s, retained alias: %s)', async (bundler, linked, preserveAlias) => {
     const root = fixture()
     library(root, 'shell-lib')
     library(root, 'lazy-lib')
@@ -130,9 +145,11 @@ describe('browser dependency discovery', () => {
 
     const scanRoot = linked ? join(fixture(), 'linked') : root
     if (linked) symlinkSync(root, scanRoot, 'junction')
+    if (preserveAlias) filesystem.preservedAlias = scanRoot
     try {
       expect(await browserBundledExternals(scanRoot)).toEqual(new Set(['shell-lib', 'lazy-lib', 'asset-lib']))
     } finally {
+      filesystem.preservedAlias = undefined
       if (linked) unlinkSync(scanRoot)
     }
     expect(readFileSync(join(app, 'dist/sentinel.txt'), 'utf8')).toBe('untouched')
