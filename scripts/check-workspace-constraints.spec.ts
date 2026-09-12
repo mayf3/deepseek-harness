@@ -42,20 +42,20 @@ describe('experimental workspace constraints', () => {
     ])
   })
 
-  it.each(PRIVATE_EXPERIMENTAL_PACKAGE_DIRECTORIES)(
-    'requires private metadata for denylisted %s',
-    (dir) => {
-      const name = `@deepseek-ai/dsh-experimental-${dir.split('/').at(-1)}`
-      expect(checkExperimentalManifest({ dir, manifest: { name, private: true } })).toEqual([])
-      expect(checkExperimentalManifest({
-        dir,
-        manifest: { name, publishConfig: { access: 'public' } },
-      })).toEqual([
-        `${name}: experimental package must set "private": true`,
-        `${name}: experimental package must omit publishConfig`,
-      ])
-    },
-  )
+  it('requires private metadata for an explicitly excluded prototype', () => {
+    const { dir, manifest: { name } } = experimental
+    const privateDirectories = [dir]
+    expect(isPublicExperimentalPackageDirectory(dir, privateDirectories)).toBe(false)
+    expect(checkExperimentalManifest({ dir, manifest: { name, private: true } }, privateDirectories)).toEqual([])
+    expect(checkExperimentalManifest(experimental, privateDirectories)).toEqual([
+      `${name}: experimental package must set "private": true`,
+      `${name}: experimental package must omit publishConfig`,
+    ])
+  })
+
+  it('keeps the current experimental publication set unrestricted', () => {
+    expect(PRIVATE_EXPERIMENTAL_PACKAGE_DIRECTORIES).toEqual([])
+  })
 
   it('limits the public default to experimental package directories', () => {
     expect(isPublicExperimentalPackageDirectory(experimental.dir)).toBe(true)

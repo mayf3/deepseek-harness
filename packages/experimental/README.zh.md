@@ -1,5 +1,5 @@
 ---
-description: "实验组地图：默认发布的预稳定原型，以及显式私有例外。"
+description: "实验组地图：可公开安装的预稳定原型。"
 kind: "package-group"
 ---
 
@@ -9,7 +9,7 @@ kind: "package-group"
 
 ## 概述
 
-实验组包含约定可能变更且不提供支持承诺的原型能力。包默认以 `@deepseek-ai/dsh-experimental-*` 名称发布；Agent Teams 组合和 Cua Driver 提供方可安装并显式启用。Auto review、跨 realm Inspector、CPython 子进程后端与浏览器 worker 预览包仍是显式私有例外。组外已发布产品不得依赖实验性包。
+实验组包含约定可能变更且不提供支持承诺的原型能力。所有当前包都以 `@deepseek-ai/dsh-experimental-*` 名称发布，包括显式启用的 Agent Teams 组合、Auto review、Cua Driver 提供方、跨 realm Inspector、CPython PTC 后端与浏览器 worker 预览库。组外已发布产品不得依赖实验性包。
 
 ## 目录
 

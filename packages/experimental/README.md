@@ -1,5 +1,5 @@
 ---
-description: "The experimental group map: pre-stable prototypes that publish by default, with explicit private exceptions."
+description: "The experimental group map: publicly installable pre-stable prototypes."
 kind: "package-group"
 ---
 
@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-The experimental group contains prototype capabilities whose contracts can change and carry no support promise. Packages publish by default under their `@deepseek-ai/dsh-experimental-*` names; the Agent Teams composition and Cua Driver providers are installable opt-ins. Auto review, the cross-realm Inspector, the CPython subprocess backend, and the browser-worker preview packages remain explicit private exceptions. Released products outside this group must not depend on experimental packages.
+The experimental group contains prototype capabilities whose contracts can change and carry no support promise. All current packages publish under their `@deepseek-ai/dsh-experimental-*` names, including the opt-in Agent Teams composition, Auto review, Cua Driver providers, cross-realm Inspector, CPython PTC backend, and browser-worker preview libraries. Released products outside this group must not depend on experimental packages.
 
 ## Table of Contents
 

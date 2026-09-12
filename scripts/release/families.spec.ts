@@ -42,7 +42,7 @@ afterEach(() => {
 })
 
 describe('release families', () => {
-  it('retains public experimental packages while excluding private prototypes', () => {
+  it('publishes all current experimental packages', () => {
     const members = releaseFamily('dsh').members(resolve(import.meta.dirname, '../..'))
 
     expect(members
@@ -51,12 +51,16 @@ describe('release families', () => {
       '@deepseek-ai/dsh-experimental-agent-team-profile',
       '@deepseek-ai/dsh-experimental-agent-team-web-profile',
       '@deepseek-ai/dsh-experimental-agent-team',
+      '@deepseek-ai/dsh-experimental-auto-review',
       '@deepseek-ai/dsh-experimental-client-ui-agent-team',
       '@deepseek-ai/dsh-experimental-computer-use-cua-driver-mcp',
       '@deepseek-ai/dsh-experimental-computer-use-cua-driver-native',
+      '@deepseek-ai/dsh-experimental-inspector',
+      '@deepseek-ai/dsh-experimental-ptc-runtime-python',
       '@deepseek-ai/dsh-experimental-tool-agent-team',
+      '@deepseek-ai/dsh-experimental-webworker-packer',
+      '@deepseek-ai/dsh-experimental-webworker-runtime',
     ])
-    expect(members.map(member => member.name)).not.toContain('@deepseek-ai/dsh-experimental-inspector')
   })
 
   it('excludes private applications from the publish set', () => {
