@@ -54,6 +54,7 @@ export const Config: Schema<Config, ResolvedConfig> = Schema.object({
   extensionId: Schema.string(),
   executablePath: Schema.string(),
   headless: Schema.boolean().default(true),
+  // Stagehand adds ten seconds to the action RPC timeout before arming its timer.
   operationTimeoutMs: Schema.number().step(1).min(1).max(2 ** 31 - 1 - 10_000).default(30_000),
   maxOutputTokens: Schema.number().step(1).min(1).max(Number.MAX_SAFE_INTEGER).default(4_096),
   shutdownGraceMs: Schema.number().step(1).min(1).max(2 ** 31 - 1).default(5_000),
