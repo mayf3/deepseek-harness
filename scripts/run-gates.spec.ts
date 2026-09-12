@@ -182,18 +182,6 @@ describe('gate graph validation', () => {
     expect(scripts['test:bench:built']).toBe('vitest run --config vitest.bench.config.ts')
   })
 
-  it('keeps the public repository link policy in the documentation gate', () => {
-    const ids = withPnpmEntrypoint(() => gatesForMode('doc-sync').map(subject => subject.id))
-
-    expect(ids).toContain('public-repository-links')
-  })
-
-  it('keeps the concrete terminology policy in the documentation gate', () => {
-    const ids = withPnpmEntrypoint(() => gatesForMode('doc-sync').map(subject => subject.id))
-
-    expect(ids).toContain('concrete-terms')
-  })
-
   it('checks all maintained repository references locally and in CI', () => {
     const { scripts } = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as {
       scripts: Record<string, string>
@@ -206,6 +194,18 @@ describe('gate graph validation', () => {
       }))
     }
     expect(scripts['verify-repository-references']).toBe('tsx scripts/verify-repository-references.ts')
+  })
+
+  it('keeps the public repository link policy in the documentation gate', () => {
+    const ids = withPnpmEntrypoint(() => gatesForMode('doc-sync').map(subject => subject.id))
+
+    expect(ids).toContain('public-repository-links')
+  })
+
+  it('keeps the concrete terminology policy in the documentation gate', () => {
+    const ids = withPnpmEntrypoint(() => gatesForMode('doc-sync').map(subject => subject.id))
+
+    expect(ids).toContain('concrete-terms')
   })
 
   it('keeps package-group subsystem ownership in the documentation gate', () => {
