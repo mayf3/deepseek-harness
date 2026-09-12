@@ -1,3 +1,4 @@
+import type { SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
 import { EventEmitter } from 'node:events'
 import { existsSync, rmSync, unlinkSync, writeFileSync } from 'node:fs'
 import { PassThrough } from 'node:stream'
@@ -42,6 +43,8 @@ class FakeChild extends EventEmitter {
   stdin = new PassThrough()
   stdout = new PassThrough()
   stderr = new PassThrough()
+  control = new PassThrough()
+  stdio = [this.stdin, this.stdout, this.stderr, null, null, null, null, this.control]
   kills: NodeJS.Signals[] = []
 
   kill(signal: NodeJS.Signals): boolean {
@@ -111,6 +114,7 @@ function spec() {
 function launch(
   query: LinuxScopeInternals['systemctlQuery'],
   overrides: LinuxScopeInternals = {},
+  request: SubprocessSpawnSpec = spec(),
 ) {
   const child = new FakeChild()
   let options: { env?: NodeJS.ProcessEnv; cwd?: string; detached?: boolean } | undefined
@@ -120,7 +124,7 @@ function launch(
   })
   const spawnSync = vi.fn(() => ({ status: 0, stdout: '', stderr: '' }))
   const systemctlQuery = overrides.systemctlQuery ?? query
-  const result = launchLinuxScope(spec(), { TARGET: 'yes' }, {
+  const result = launchLinuxScope(request, { TARGET: 'yes' }, {
     spawn: overrides.spawn ?? spawn as never,
     spawnSync: overrides.spawnSync ?? spawnSync as never,
     ...systemctlQuery === undefined ? {} : { systemctlQuery },
@@ -255,10 +259,14 @@ describe('Linux scope establishment and quiescence', () => {
     result.owner.cleanup?.()
   })
 
-  it('accepts request consumption followed by rapid --collect unload as stopped', async () => {
+  it.each([undefined, 'pipe'] as const)('accepts request consumption and rapid --collect unload with control %s', async (control) => {
     const states = [activeUnit(), unloadedUnit()]
-    const { child, result, requestPath } = launch(async () => states.shift() ?? missingUnit())
-    expect(consumeLinuxLaunchRequest(requestPath)).toEqual({ cwd: '/target', env: { TARGET: 'yes' } })
+    const controlOptions = control === undefined ? {} : { control }
+    const { child, result, requestPath } = launch(async () => states.shift() ?? missingUnit(), {}, {
+      ...spec(), stdio: { ...spec().stdio, ...controlOptions },
+    })
+    expect(consumeLinuxLaunchRequest(requestPath)).toEqual({ cwd: '/target', env: { TARGET: 'yes' }, ...controlOptions })
+    expect(result.control).toBe(control === undefined ? undefined : child.control)
     const waiting = result.owner.waitForExit()
     child.exit(0, null)
     await expect(result.direct).resolves.toEqual({ exitCode: 0, signal: null })
