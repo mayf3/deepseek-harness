@@ -7,8 +7,8 @@ import { BrowserMcpConfig, mountSessionMcp, validateBrowserMcpConfig } from '@de
 /** Cordis identity for the Chrome DevTools MCP browser provider. */
 export const name = 'experimental-browser-use-chrome-devtools-mcp'
 
-/** Services needed for provider registration and Session-owned tool discovery. */
-export const inject = ['browserUse', 'agents', 'tools']
+/** Services required for scoped MCP startup and prompt readiness checks. */
+export const inject = ['browserUse', 'agents', 'tools', 'systemPrompt']
 
 /** Fixed Chromium launch or existing-browser attachment settings. */
 export type Config = BrowserMcpConfig

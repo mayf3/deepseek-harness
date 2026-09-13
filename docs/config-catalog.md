@@ -531,7 +531,7 @@ Source: [`packages/experimental/agent-team/src/types.ts:130`](../packages/experi
 
 ## `@deepseek-ai/dsh-experimental-browser-use-chrome-devtools-mcp`
 
-Requires: `browserUse` · `agents` · `tools`
+Requires: `browserUse` · `agents` · `tools` · `systemPrompt`
 
 ```ts config-catalog
 /** Fixed Chromium launch or existing-browser attachment settings. */
@@ -546,7 +546,7 @@ Source: [`packages/experimental/browser-use-chrome-devtools-mcp/src/index.ts:14`
 
 ## `@deepseek-ai/dsh-experimental-browser-use-playwright-mcp`
 
-Requires: `browserUse` · `agents` · `tools`
+Requires: `browserUse` · `agents` · `tools` · `systemPrompt`
 
 ```ts config-catalog
 /** Fixed Chromium launch or existing-browser attachment settings. */
@@ -2707,7 +2707,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/core/system-prompt/src/index.ts:258`](../packages/core/system-prompt/src/index.ts)
+Source: [`packages/core/system-prompt/src/index.ts:248`](../packages/core/system-prompt/src/index.ts)
 
 <a id="deepseek-aidsh-terminal-bash"></a>
 

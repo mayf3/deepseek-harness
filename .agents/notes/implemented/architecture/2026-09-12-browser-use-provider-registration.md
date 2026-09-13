@@ -22,11 +22,17 @@ Stagehand's launcher inherits its process environment, and SDK initialization ca
 
 Stagehand uses its supported custom-model callback to request structured results through the Session's selected DSH model. A provider-local adapter requests one result tool call and validates its arguments against Stagehand's requested JSON Schema; it does not execute additional model tool calls. Auxiliary requests are logged and flushed before model dispatch, and settled responses are logged and flushed before automation continues. These events remain separate from the main conversation, preserving the browser operation's model input without altering the agent loop.
 
-Per-Session MCP discovery runs in the awaited serial `system-prompt/prepare` event, before prompt assembly collects its scoped registrations and tool providers. The discovered catalog therefore enters the normal tool-mode, restriction, and ordering pipeline on the first request. Discovery at `agent/pre-step` is too late because prompt assembly has already collected the catalog; the preparation event keeps this ownership in system-prompt assembly without changing the agent loop. The same Session queue guards shared resource requests addressed to that browser server; nonowners cannot execute them or receive its server-instruction section.
+MCP client activation waits for connection and tool discovery, but provider activation can finish before any Session exists. That activation promise cannot represent the clients owned by future Sessions. Each MCP browser provider observes future `agent/created` publications and immediately claims the Agent's existing `runMaintenance` phase for one client startup attempt. Maintenance runs outside a turn and holds queued input until discovery settles, so ordinary prompt assembly sees the completed catalog. Direct callers await `agent.whenIdle()` before inspecting prompt assembly or scoped tools.
+
+Startup failure remains failed for that live activation and rejects prompt assembly and model requests. A busy attachment skips startup permanently for the activation while its other work continues; a newly created or resumed Agent can acquire the attachment after release. Late installation and reload apply only to future activations, following the [Schedule mounting policy](../../../../packages/schedule/schedule/README.md#use-this-package). Browser tools and resource requests for a successful client share the Session queue; other Sessions cannot execute those requests or receive that server's instructions.
 
 ## Alternatives considered
 
 **Unified browser action API.** Playwright, Chrome DevTools, and Stagehand have different native semantics. No current consumer requires interchangeable action methods, so provider-owned tools retain those semantics.
+
+**A new core startup API.** Existing Agent maintenance already prevents turns during Session-owned setup; another initialization API would duplicate that ownership.
+
+**Discovery during prompt assembly.** Prompt and tool collection need ready registrations. Starting discovery there either exposes an incomplete catalog or requires another collection pass; maintenance completes discovery before a turn begins.
 
 **One shared browser across Sessions.** Browser tabs, navigation, and login state can be isolated per Session. Sharing them would introduce cross-Session interference that the desktop integrations cannot generally avoid.
 

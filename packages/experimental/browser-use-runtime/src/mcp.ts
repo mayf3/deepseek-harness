@@ -85,19 +85,42 @@ export interface SessionMcpOptions {
   toolCallTimeoutMs?: number
 }
 
+interface ClientState {
+  status: { kind: 'pending' | 'ready' | 'blocked' } | { kind: 'failed'; error: unknown }
+  mask?: Scope
+}
+
 /**
- * Reserve browser use and discover one MCP catalog before each Session's first request.
- * A busy attachment contributes no browser tools to other Sessions, which can continue their turns.
+ * Initialize one MCP client during each future Agent's first maintenance task.
+ * A busy attachment leaves that activation without browser tools; its other turns continue.
  * Calls are serialized per Session; unload closes every server before releasing registration.
- * @param ctx - provider context supplying browser use, Agents, and tools.
+ * @param ctx - provider context supplying browser use, Agents, tools, and prompt assembly.
  * @param options - provider identity, attachment exclusivity, and executable configuration.
  */
 export function mountSessionMcp(ctx: Context, options: SessionMcpOptions): void {
   let resources!: SessionResources<Scope>
-  const readyAgents = new WeakSet<Agent>()
-  const inheritedMasks = new WeakMap<Agent, Scope>()
+  const clients = new Map<Agent, ClientState>()
   const toolPrefix = `mcp__${options.name}__`
   const resourceTools = new Set(['list_mcp_resources', 'list_mcp_resource_templates', 'read_mcp_resource'])
+  let stopping = false
+  let refreshingMasks = false
+
+  const refreshBlockedMasks = (): void => {
+    if (stopping || refreshingMasks) return
+    refreshingMasks = true
+    try {
+      for (const [agent, state] of clients) {
+        if (state.status.kind !== 'blocked') continue
+        const inherited = ctx.tools.schemas(agent).filter(tool => tool.name.startsWith(toolPrefix))
+        if (inherited.length === 0) continue
+        state.mask ??= createScope(ctx, agent)
+        state.mask.ctx.tools.restrict({ deny: inherited.map(tool => tool.name) })
+      }
+    } finally {
+      refreshingMasks = false
+    }
+  }
+
   ctx.effect(function* () {
     yield ctx.browserUse.register(BrowserUseProviderName(options.name))
     resources = new SessionResources(ctx, {
@@ -130,11 +153,10 @@ export function mountSessionMcp(ctx: Context, options: SessionMcpOptions): void 
             reconnect: { enabled: false },
           }))
           signal.throwIfAborted()
-          readyAgents.add(agent)
           return {
             value: scope,
             close() {
-              readyAgents.delete(agent)
+              clients.delete(agent)
               return scope.dispose()
             },
           }
@@ -146,15 +168,53 @@ export function mountSessionMcp(ctx: Context, options: SessionMcpOptions): void 
         }
       },
     })
-    yield () => resources.dispose()
+    yield async () => {
+      stopping = true
+      await resources.dispose()
+      clients.clear()
+    }
   }, `${options.name}.sessions`)
+  ctx.systemPrompt.tools(({ agent, scope }) => {
+    const status = clients.get((agent ?? scope) as Agent)?.status
+    if (status?.kind === 'pending') throw new Error(`${options.name}: browser initialization is pending`)
+    if (status?.kind === 'failed') throw status.error
+    return { schemas: [] }
+  })
+  ctx.on('agent/created', ({ agent }) => {
+    const state: ClientState = { status: { kind: resources.available(agent) ? 'pending' : 'blocked' } }
+    clients.set(agent, state)
+    agent.ctx.effect(() => async () => {
+      clients.delete(agent)
+      await state.mask?.dispose()
+    }, `${options.name}.activation`)
+    if (state.status.kind === 'blocked') {
+      refreshBlockedMasks()
+      return
+    }
+    try {
+      const startup = agent.runMaintenance(async (signal) => {
+        try {
+          await resources.run(agent, signal, async () => {})
+          state.status = { kind: 'ready' }
+        } catch (error) {
+          state.status = { kind: 'failed', error }
+          throw error
+        }
+      })
+      // The synchronous prompt guard reports the captured failure before model dispatch.
+      void startup.catch(() => {})
+    } catch (error) {
+      state.status = { kind: 'failed', error }
+    }
+  }, { prepend: true })
+  ctx.on('tools/change', refreshBlockedMasks)
   ctx.on('tools/execute', async (exec, next) => {
     const ownResource = resourceTools.has(exec.name)
       && typeof exec.arguments === 'object' && exec.arguments !== null
       && (exec.arguments as { server?: unknown }).server === options.name
     if (!exec.name.startsWith(toolPrefix) && !ownResource) return next()
     const agent = exec.agent
-    if (agent === undefined || !readyAgents.has(agent)) {
+    if (agent === undefined || clients.get(agent)?.status.kind !== 'ready') {
       throw new Error(`${options.name}: browser tool belongs to another Session`)
     }
     return resources.run(agent, exec.signal, async (_scope, combined) => {
@@ -167,30 +227,9 @@ export function mountSessionMcp(ctx: Context, options: SessionMcpOptions): void 
       }
     })
   })
-  ctx.on('system-prompt/prepare', async ({ agent, signal }) => {
-    if (agent === undefined) return
-    signal?.throwIfAborted()
-    if (!resources.available(agent)) {
-      const inherited = ctx.tools.schemas(agent).filter(tool => tool.name.startsWith(toolPrefix))
-      if (inherited.length > 0) {
-        let scope = inheritedMasks.get(agent)
-        if (scope === undefined) {
-          scope = createScope(ctx, agent)
-          const owned = scope
-          agent.ctx.effect(() => () => owned.dispose(), `${options.name}.inherited-tools`)
-          inheritedMasks.set(agent, scope)
-        }
-        // Restrictions hide inherited tools; this Agent's later own registrations remain visible.
-        scope.ctx.tools.restrict({ deny: inherited.map(tool => tool.name) })
-      }
-      return
-    }
-    await resources.get(agent, signal)
-    signal?.throwIfAborted()
-  })
   ctx.on('system-prompt/assemble', async (_assembly, { agent }, next) => {
     const assembly = await next()
-    if (agent === undefined || readyAgents.has(agent)) return assembly
+    if (agent === undefined || clients.get(agent)?.status.kind === 'ready') return assembly
     return { ...assembly, sections: assembly.sections.filter(section => section.name !== `mcp:${options.name}`) }
   })
 }

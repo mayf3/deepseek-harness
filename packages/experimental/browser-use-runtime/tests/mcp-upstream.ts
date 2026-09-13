@@ -74,6 +74,7 @@ export async function verifyMcpBrowser(
     await ctx.loader.create({ name: 'cordis:include', config: { path: pathToFileURL(configPath).href } })
     await ctx.loader.await()
     const owner = await ctx.agents.create({ sessionId: SessionId('browser-upstream'), meta: { cwd: root } })
+    await owner.agent.whenIdle()
     await ctx.systemPrompt.assemble({ agent: owner.agent, scope: owner.agent, signal: new AbortController().signal })
     const schemas = ctx.tools.schemas(owner.agent)
     expect(schemas.length).toBeGreaterThan(5)

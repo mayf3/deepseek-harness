@@ -24,6 +24,12 @@ An attached browser remains externally owned. The provider reserves it for one S
 
 Provider shutdown stops tool admission and waits for owned work and resource cleanup before releasing the shared provider registration. Cancellation cannot undo a browser action already delivered.
 
+## MCP initialization
+
+An MCP provider initializes one client for each live Agent created after the provider loads. Existing Agent maintenance holds queued input until connection and discovery settle; the client then remains with the Session across turns. Direct callers inspecting prompt assembly or scoped tools first await `agent.whenIdle()`. A failed startup remains failed for that activation and rejects prompt assembly and model requests.
+
+If an attachment is busy, that activation continues without the browser and does not retry on later turns. After release, a newly created or resumed activation can acquire it. Loading or reloading the provider does not adopt already active Sessions; the [shared runtime](../../packages/experimental/browser-use-runtime/README.md) owns these initialization rules.
+
 ## Tools and recorded results
 
 Provider tools use the normal DSH execution pipeline and Session log. The providers own their tool schemas, result rendering, image support, configuration, and upstream limitations; the shared service adds no model-visible content. Stagehand's AI-assisted operations use the Session's selected DSH model and record their auxiliary requests and settled results separately from the main conversation; they do not delegate the DSH task loop to another agent.

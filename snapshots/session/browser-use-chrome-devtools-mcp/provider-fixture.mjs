@@ -22,10 +22,10 @@ export async function apply(ctx) {
   const provider = await import('@deepseek-ai/dsh-experimental-browser-use-chrome-devtools-mcp')
   await ctx.plugin(provider, { mode: 'launch' })
   if (!replaced) throw new Error('Chrome DevTools snapshot did not replace the upstream executable')
-  ctx.on('system-prompt/prepare', async ({ agent }) => {
-    if (agent === undefined) return
+  ctx.on('agent/pre-step', async (_payload, next) => {
     if (await readFile(resolve('.dsh/browser-fixture.started'), 'utf8') !== 'chrome-devtools-mcp\n') {
       throw new Error('Chrome DevTools snapshot did not start its fixture process')
     }
+    return next()
   })
 }

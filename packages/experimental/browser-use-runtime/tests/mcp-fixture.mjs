@@ -1,5 +1,5 @@
 /** Private stdio browser fixture; each process owns independent state. */
-import { appendFileSync } from 'node:fs'
+import { appendFileSync, existsSync, watch } from 'node:fs'
 import { join } from 'node:path'
 import { createInterface } from 'node:readline'
 
@@ -19,7 +19,17 @@ lines.on('line', line => {
       record('probe')
       if (mode === 'fail') process.exit(1)
       if (mode === 'hold') return
-      process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id: request.id, error: { code: -32601, message: 'Legacy browser fixture' } }) + '\n')
+      {
+        const respond = () => process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id: request.id, error: { code: -32601, message: 'Legacy browser fixture' } }) + '\n')
+        if (mode === 'gate' && !existsSync(join(root, 'release'))) {
+          const watcher = watch(root, () => {
+            if (!existsSync(join(root, 'release'))) return
+            watcher.close()
+            respond()
+          })
+          if (existsSync(join(root, 'release'))) { watcher.close(); respond() }
+        } else respond()
+      }
       break
     case 'initialize':
       record('initialize')

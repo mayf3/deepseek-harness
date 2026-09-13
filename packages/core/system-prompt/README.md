@@ -77,8 +77,6 @@ ctx.systemPrompt.variable('cwd', ({ agent }) => agent?.session.header.cwd)
 
 Tool-schema providers are evaluated per assembly and contribute the model-visible `ToolSchema` set; `ToolRuntime` registers itself automatically, so most tools need no manual wiring here. A provider returns the post-restriction visible set plus the pre-restriction name universe used by `toolOrder`.
 
-Asynchronous contributors use `system-prompt/prepare` to complete registrations before assembly collects sections, variables, runtime context, or tool schemas. Assembly awaits its serial listeners with the assembly context; preparation failure rejects assembly. Discovered tools then pass through the ordinary tool-mode, restriction, and ordering rules, including on the first model request.
-
 ### Suppress runtime context
 
 `suppressRuntimeContext()` removes every dynamic runtime-context contribution for the calling scope without disabling the services that own the underlying facts; multiple suppressors compose and the effect restores context when none remains.
@@ -110,7 +108,7 @@ Assembly resolves and renders in two stages: `assemble()` returns sections with 
 
 ### Scoping
 
-Scoped sections, variables, and tool providers shadow globals for one agent; both preparation and the assembly waterfall dispatch scope-filtered. Registry-change notifications (`system-prompt/change`) are deliberately unfiltered because a global change affects every scope.
+Scoped sections, variables, and tool providers shadow globals for one agent, and the assembly waterfall dispatches scope-filtered. Registry-change notifications (`system-prompt/change`) are deliberately unfiltered because a global change affects every scope.
 
 </details>
 

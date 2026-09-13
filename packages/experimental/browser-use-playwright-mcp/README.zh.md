@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-通过 Playwright MCP 的上游工具检查网页并操作 Chromium。每个活动 Session 使用独立 MCP 连接。可以启动独立浏览器，也可以让一个 Session 接入已有浏览器，使用其现有标签页和登录状态。本包以实验状态发布，仅在显式挂载后启用。
+通过 Playwright MCP 的上游工具检查网页并操作 Chromium。提供方在处理排队输入前初始化 Session 的 MCP 连接，并跨轮次保留连接。可以启动独立浏览器，也可以让一个 Session 接入已有浏览器，使用其现有标签页和登录状态。本包以实验状态发布，仅在显式挂载后启用。
 
 ## 目录
 
@@ -25,7 +25,7 @@ kind: "package-reference"
 <a id="use-this-package"></a>
 ## 使用此包
 
-在已提供 Agent、工具和系统提示词的 profile 组合中挂载以下条目。浏览器安装遵循上游运行时；使用 `executablePath` 选择已有 Chromium 安装。
+在创建或恢复 Session 前，将以下条目挂载到已提供 Agent、工具和系统提示词的 profile 组合中。加载或重新加载此提供方不会接管已经活动的 Session。浏览器安装遵循上游运行时；使用 `executablePath` 选择已有 Chromium 安装。
 
 ```yaml
 - name: '@deepseek-ai/dsh-browser-use'
@@ -35,7 +35,7 @@ kind: "package-reference"
     headless: true
 ```
 
-使用 `mode: attach`，并在 `endpoint` 中设置 HTTP(S) 调试 URL 或 WS(S) 浏览器端点，即可操作已有浏览器。Session 在加载浏览器工具时占用附加连接，并持续保留直到卸载。其他 Session 和子 Agent 可继续各自的轮次，但不获得这些工具；清理完成后，后续轮次可以获取附加连接。其他 Session 的直接调用会失败。清理只断开连接，保留外部浏览器及其页面。
+使用 `mode: attach`，并在 `endpoint` 中设置 HTTP(S) 调试 URL 或 WS(S) 浏览器端点，即可操作已有浏览器。新的活动 Session 在初始化时占用附加连接，并持续保留直到卸载。如果连接已被占用，本次激活不使用该浏览器，但继续运行，后续轮次不会重试。连接释放后，新创建或恢复的激活可以获取它。其他 Session 的直接调用会失败。清理只断开连接，保留外部浏览器及其页面。
 
 | 字段 | 默认值 | 含义 |
 |---|---|---|
@@ -55,7 +55,7 @@ kind: "package-reference"
 <details>
 <summary>实现细节 — 点击展开</summary>
 
-提供方解析固定版本 npm 包的可执行入口，并使用当前 Node 启动。协议协商可能先启动临时探测进程；每个 Session 的浏览器状态由一个服务进程保留。[共享运行时](../browser-use-runtime/README.zh.md)在模型 schema 收集前发现工具，并串行执行同一 Session 的浏览器工具与资源调用。[MCP 客户端](../../mcp/mcp-client/README.zh.md)负责标准输入输出、注册、取消和结果投影。提供方不另行维护共享运行时或 MCP 连接的状态观测，因此不发布运行时不变量配套入口。
+提供方解析固定版本 npm 包的可执行入口，并使用当前 Node 启动。服务进程之前可能运行临时协议探测进程。[共享运行时](../browser-use-runtime/README.zh.md)负责 Agent 维护阶段的初始化、逐 Session 串行执行与清理；[MCP 客户端](../../mcp/mcp-client/README.zh.md)负责传输、发现和结果投影。提供方不维护独立的连接观测，因此不发布运行时不变量配套入口。
 
 只要活动 Session 保持连接，浏览器状态就会跨轮次保留。销毁会等待服务器关闭，再释放资源。重新加载后恢复 Session 会创建新的浏览器运行状态；已保存的对话历史不会还原 Cookie 或页面。
 
@@ -96,7 +96,7 @@ kind: "package-reference"
 本集成保留固定版本服务器的浏览器与工具限制。
 
 - 仅支持 Chromium；不可选择 Firefox 或 WebKit。
-- 服务器连接丢失后，调用持续失败，直到重新加载提供方或重启主机。重连已禁用，避免静默替换浏览器状态。
+- 启动失败会保留为本次激活的失败状态，并拒绝提示词组装和模型请求。失败或断开的客户端不会重试；修复原因后，创建新 Session，或卸载并恢复已有 Session。
 - 连接独占仅在此提供方实例内有效。其他进程与浏览器用户仍可修改相同页面。
 - 共享资源服务器目录可以显示继承的服务器名称，但不会授予对其他 Session 浏览器的访问权限。
 - 取消不会撤销已发送给浏览器的导航、点击或其他操作。

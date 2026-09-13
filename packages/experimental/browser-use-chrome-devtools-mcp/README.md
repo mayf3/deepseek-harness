@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-Use Chrome DevTools MCP to inspect pages and operate Chromium through its upstream tools. Each live Session receives its own MCP connection. Launch a separate browser or attach one Session to an existing browser with its current tabs and login state. This published experimental package activates only when explicitly mounted.
+Use Chrome DevTools MCP to inspect pages and operate Chromium through its upstream tools. The provider initializes a Session's MCP connection before queued input runs and retains it across turns. Launch a separate browser or attach one Session to an existing browser with its current tabs and login state. This published experimental package activates only when explicitly mounted.
 
 ## Table of Contents
 
@@ -25,7 +25,7 @@ Use Chrome DevTools MCP to inspect pages and operate Chromium through its upstre
 <a id="use-this-package"></a>
 ## Use this package
 
-Mount both entries in a profile composition that supplies Agents, tools, and system prompts. Browser installation follows the upstream runtime; select an existing Chromium installation with `executablePath`.
+Mount both entries before creating or resuming a Session, in a profile composition that supplies Agents, tools, and system prompts. Loading or reloading this provider does not adopt Sessions that are already active. Browser installation follows the upstream runtime; select an existing Chromium installation with `executablePath`.
 
 ```yaml
 - name: '@deepseek-ai/dsh-browser-use'
@@ -35,7 +35,7 @@ Mount both entries in a profile composition that supplies Agents, tools, and sys
     headless: true
 ```
 
-Use `mode: attach` and set `endpoint` to an HTTP(S) debugging URL or WS(S) browser endpoint to operate an existing browser. A Session claims the attachment while loading its browser tools and retains it until unloading. Other Sessions and subagents continue their turns without these tools; a later turn can acquire the attachment after cleanup. Direct calls from another Session fail. Cleanup disconnects and leaves the external browser and its pages running.
+Use `mode: attach` and set `endpoint` to an HTTP(S) debugging URL or WS(S) browser endpoint to operate an existing browser. The new live Session claims the attachment during initialization and retains it until unloading. If the attachment is busy, that activation continues without this browser and does not retry on later turns. After release, a newly created or resumed activation can acquire it. Direct calls from another Session fail. Cleanup disconnects and leaves the external browser and its pages running.
 
 | Field | Default | Meaning |
 |---|---|---|
@@ -55,7 +55,7 @@ The [configuration catalog](../../../docs/config-catalog.md#deepseek-aidsh-exper
 <details>
 <summary>Implementation internals — click to expand</summary>
 
-The provider resolves its pinned npm executable and starts it under the current Node executable. Protocol negotiation may start a temporary probe; one serving process retains each Session's browser state. The [shared runtime](../browser-use-runtime/README.md) discovers tools before model schema collection and serializes browser tools and resource calls within each Session. The [MCP client](../../mcp/mcp-client/README.md) owns stdio, registration, cancellation, and result projection. No runtime invariant companion is published because the provider maintains no separate observation of the shared runtime or MCP connection.
+The provider resolves its pinned npm entry and starts it under the current Node executable. A temporary protocol probe may precede the serving process. The [shared runtime](../browser-use-runtime/README.md) owns initialization during Agent maintenance, per-Session serialization, and cleanup; the [MCP client](../../mcp/mcp-client/README.md) owns transport, discovery, and result projection. No runtime invariant companion is published because the provider maintains no independent connection observation.
 
 Browser state survives turns while its live Session remains attached. Disposal waits for server shutdown before releasing resources. Resume after reload starts fresh browser runtime state; stored conversation history does not restore cookies or pages.
 
@@ -96,7 +96,7 @@ An unchanged catalog preserves its tool-definition prefix. Results append to his
 The integration retains the pinned server's browser and tool restrictions.
 
 - Chromium only; Firefox and WebKit are not selectable.
-- A lost server connection leaves calls failing until provider reload or host restart. Reconnection is disabled to avoid silently replacing browser state.
+- Startup failure remains a failure for that live activation and rejects prompt assembly and model requests. A failed or disconnected client is not retried; after fixing the cause, create a new Session or unload and resume the existing one.
 - Attachment exclusivity is local to this provider instance. Other processes and browser users can still modify the same pages.
 - The shared resource-server inventory can show inherited server names; it does not grant access to another Session's browser.
 - Cancellation does not undo navigation, clicks, or other actions already delivered to the browser.

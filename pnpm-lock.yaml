@@ -5707,6 +5707,9 @@ importers:
       '@deepseek-ai/dsh-mcp-resources':
         specifier: workspace:^
         version: link:../../mcp/mcp-resources
+      '@deepseek-ai/dsh-ptc-runtime':
+        specifier: workspace:^
+        version: link:../../ptc-runtime/ptc-runtime
       '@deepseek-ai/dsh-session':
         specifier: workspace:^
         version: link:../../core/session
