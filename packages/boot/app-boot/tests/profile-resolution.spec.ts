@@ -486,6 +486,12 @@ describe('profile resolution generation', { concurrent: false }, () => {
     })).toBe(join(bundleOnly, 'index.cjs'))
     expect(() => createRequire(other).resolve('bundle-only', { paths: [dirname(other)] }))
       .toThrow(/Cannot find module/u)
+    expect(() => createRequire(other).resolve('missing-explicit', { paths: [dirname(other)] }))
+      .toThrow(/Cannot find module/u)
+    file(join(f.root, 'node_modules', 'invalid-after-fallback', 'package.json'), '{')
+    expect(() => createRequire(other).resolve('invalid-after-fallback', {
+      paths: [dirname(other), f.profile.dir],
+    })).toThrow(/Invalid package config/u)
     file(join(f.root, 'node_modules', 'invalid-explicit', 'package.json'), '{')
     expect(() => createRequire(other).resolve('invalid-explicit', {
       paths: [dirname(other), f.profile.dir],
