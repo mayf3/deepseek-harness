@@ -438,8 +438,11 @@ describe('Session-addressed file upload', () => {
     const { fiber, service } = await scopedService({ remote })
     await expect(service.upload(SESSION_ID, Uint8Array.of(0, 0, 0), 'bytes.bin'))
       .resolves.toMatchObject({ ok: true })
+    await expect(service.upload(SESSION_ID, Uint8Array.of(1)))
+      .resolves.toMatchObject({ ok: true })
     expect(remote.mock.calls).toEqual([
       [SESSION_ID, { data: 'AAAA', name: 'bytes.bin' }, undefined],
+      [SESSION_ID, { data: 'AQ==' }, undefined],
     ])
     await fiber.dispose()
   })
