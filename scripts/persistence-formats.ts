@@ -1,6 +1,6 @@
-/** Verify complete Session format references from version zero through the current writer. */
+/** Archive and verify complete Session format references through the current writer. */
 
-import { existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { parseArgs } from 'node:util'
 import { JSON_SCHEMA, load } from 'js-yaml'
@@ -9,6 +9,7 @@ import { parseHistoricalPersistenceSnapshot, parsePersistenceSnapshot } from './
 import { persistenceFormatFactArtifacts } from './persistence-format-facts.ts'
 import { canonicalizeSchema, schemaDigest } from './persistence-schema-model.ts'
 import type { PersistenceSchemaInventory } from './persistence-schema-model.ts'
+import { withoutPersistenceSourceLines } from './persistence-source-metadata.ts'
 
 const DIRECTORY = 'docs/persistence-formats'
 const CURRENT_DOCUMENT = 'docs/persistence-catalog.md'
@@ -47,6 +48,9 @@ function fields(value: unknown, expected: readonly string[], label: string): Rec
 }
 
 function machineBlock(document: string, label: string): string {
+  if (/\.[cm]?[jt]sx?(?::\d+(?::\d+)?|#L\d+(?:-L\d+)?)/u.test(document)) {
+    throw new Error(`${label}: historical source references must omit line numbers`)
+  }
   const frontmatter = /^---\n([\s\S]*?)\n---(?:\n|$)/u.exec(document)?.[1]
   const metadata: unknown = frontmatter === undefined ? undefined : load(frontmatter, { schema: JSON_SCHEMA })
   if (metadata === null || typeof metadata !== 'object' || !('kind' in metadata) || metadata.kind !== 'persistence-format') {
@@ -83,7 +87,7 @@ function parseRecord(block: string, version: number): PersistenceFormatRecord {
   return { source: parseSource(record.source, label), roots }
 }
 
-function validateInventory(inventory: PersistenceSchemaInventory, version: number, current: boolean): void {
+function validateInventory(inventory: PersistenceSchemaInventory, version: number, current: boolean): ReadonlySet<string> {
   const label = `v${version}`
   for (const key of ['SessionHeader', 'JsonlHeaderLine', 'SessionEventEnvelope']) {
     const root = inventory.roots.find(root => root.key === key)
@@ -110,6 +114,7 @@ function validateInventory(inventory: PersistenceSchemaInventory, version: numbe
     remaining.delete(type.digest)
   }
   if (remaining.size > 0) throw new Error(`${label}: schema types must cover every reachable type`)
+  return reachable
 }
 
 function validateDocument(
@@ -176,21 +181,42 @@ export function loadPersistenceFormats(root: string): PersistenceFormats {
   return { currentVersion, entries }
 }
 
+function archiveCurrentInventory(root: string, requestedVersion: string): string {
+  const version = Number(requestedVersion)
+  if (!/^(?:0|[1-9]\d*)$/u.test(requestedVersion) || !Number.isSafeInteger(version)) {
+    throw new Error('--archive must be a non-negative safe integer')
+  }
+  const currentVersion = readCurrentSessionFormatVersion(root)
+  if (version !== currentVersion) throw new Error(`Cannot archive v${version}: current writer is v${currentVersion}`)
+  const path = `${DIRECTORY}/v${version}.schema.json`
+  if (existsSync(join(root, path))) throw new Error(`Cannot archive v${version}: ${path} already exists`)
+  const inventory = parsePersistenceSnapshot(JSON.parse(readFileSync(join(root, CURRENT_SCHEMA), 'utf8')))
+  const reachable = validateInventory(inventory, version, true)
+  const archive = withoutPersistenceSourceLines({ ...inventory, types: inventory.types.filter(type => reachable.has(type.digest)) })
+  mkdirSync(join(root, DIRECTORY), { recursive: true })
+  writeFileSync(join(root, path), JSON.stringify(archive, null, 2) + '\n', { flag: 'wx' })
+  return `Archived Session format v${version} to ${path}.`
+}
+
 /**
- * Validate format coverage and check or refresh the historical schema and index regions.
- * @param args - CLI arguments; --write refreshes generated facts after complete validation.
+ * Archive the current schema or validate and optionally refresh format references.
+ * @param args - --archive N creates the current version's schema once; --write refreshes validated facts.
  * @param root - default checkout directory, overridden by --root when provided.
- * @returns the verified format count and optional number of refreshed artifacts.
+ * @returns the created schema path or verified format count and refreshed artifact count.
  */
 export function runPersistenceFormats(args: readonly string[], root = resolve(import.meta.dirname, '..')): string {
-  const { values } = parseArgs({ args: [...args], options: { root: { type: 'string' }, write: { type: 'boolean' } } })
+  const { values } = parseArgs({ args: [...args], options: { root: { type: 'string' }, write: { type: 'boolean' }, archive: { type: 'string' } } })
   root = resolve(values.root ?? root)
+  if (values.archive !== undefined) {
+    if (values.write) throw new Error('--archive and --write cannot be combined')
+    return archiveCurrentInventory(root, values.archive)
+  }
   const formats = loadPersistenceFormats(root)
   const changed = persistenceFormatFactArtifacts(root, formats).filter(artifact => !existsSync(join(root, artifact.path))
     || readFileSync(join(root, artifact.path), 'utf8') !== artifact.content)
   if (!values.write && changed.length > 0) throw new Error(`Stale persistence format facts: ${changed.map(artifact => artifact.path).join(', ')}. Run pnpm run verify-persistence-formats --write.`)
   if (values.write) for (const artifact of changed) writeFileSync(join(root, artifact.path), artifact.content)
-  return `Persistence formats: v0 through v${formats.currentVersion} verified (${formats.entries.length} complete references).`
+  return `Persistence formats: v0 through v${formats.currentVersion} verified (${formats.entries.length} complete reference${formats.entries.length === 1 ? '' : 's'}).`
     + (values.write ? ` Refreshed ${changed.length} file${changed.length === 1 ? '' : 's'}.` : '')
 }
 

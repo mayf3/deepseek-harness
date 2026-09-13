@@ -21,15 +21,19 @@ function replaceRegion(source: string, name: string, content: string, path: stri
 function historicalSchema(entry: PersistenceFormatEntry, language: Language): string {
   const schema = basename(entry.schemaPath)
   const introduction = language === 'en'
-    ? `The [complete machine inventory](${schema}) contains ${entry.inventory.roots.length} roots and ${entry.inventory.types.length} reachable types. Digests include all referenced fields; source names and locations describe the selected historical tree.`
-    : `[完整机器目录](${schema})包含 ${entry.inventory.roots.length} 个根类型和 ${entry.inventory.types.length} 种可达类型。摘要包含所有引用字段；源码名称和位置描述所选的历史源码树。`
+    ? `The [complete machine inventory](${schema}) contains ${entry.inventory.roots.length} roots and ${entry.inventory.types.length} reachable types. Digests include all referenced fields; source names and paths describe the selected historical tree.`
+    : `[完整机器目录](${schema})包含 ${entry.inventory.roots.length} 个根类型和 ${entry.inventory.types.length} 种可达类型。摘要包含所有引用字段；源码名称和路径描述所选的历史源码树。`
   return [
     '<a id="schema"></a>',
-    renderPersistenceSchemaIndex(entry.inventory, language, [introduction]),
+    language === 'en' ? '## Complete schemas' : '## 完整 schema',
+    '',
+    introduction,
+    '',
+    renderPersistenceSchemaIndex(entry.inventory, language, [], 3),
     '<details>',
     language === 'en' ? '<summary>Complete resolved types</summary>' : '<summary>完整解析类型</summary>',
     '',
-    renderPersistenceSchemaDefinitions(entry.inventory, language, () => undefined),
+    renderPersistenceSchemaDefinitions(entry.inventory, language, () => undefined, 3),
     '</details>',
   ].join('\n')
 }

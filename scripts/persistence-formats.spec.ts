@@ -1,11 +1,12 @@
 /** Format reference coverage follows the writer version and retains complete historical schemas. */
 
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { dump } from 'js-yaml'
 import { afterEach, describe, expect, it } from 'vitest'
 import { loadPersistenceFormats, runPersistenceFormats } from './persistence-formats.ts'
+import { parseHistoricalPersistenceSnapshot } from './persistence-changes.ts'
 import { canonicalizeSchema, schemaDigest } from './persistence-schema-model.ts'
 import type { PersistenceRoot, PersistenceSchemaInventory, PersistenceType, SchemaNode } from './persistence-schema-model.ts'
 
@@ -109,7 +110,98 @@ function prepareFacts(root: string, currentVersion = 3): void {
   }
 }
 
+describe('archive current persistence format', () => {
+  it('keeps every reachable type and drops extractor-retained types and source line numbers', () => {
+    const root = fixture()
+    const original = inventory(3)
+    const sources = [
+      'packages/example/src/types.ts:12', 'packages/other/src/types.ts:8:2', 'packages/example/src/types.ts:34:5',
+      'packages/plain/src/types.ts', 'packages/fragment/src/types.ts#L8', 'packages/fragment/src/types.ts#L8-L12',
+    ]
+    const types = original.types.map(type => ({ ...type, names: ['Example'], sources }))
+    const schema = canonicalizeSchema([{ kind: 'literal', value: 'unreferenced' }], 0)
+    replaceSnapshot(root, 3, 3, { ...original, types: [...types, { schema, digest: schemaDigest(schema), names: [], sources: [] }] })
+    const before = readFileSync(join(root, 'docs/persistence-schema.json'), 'utf8')
+
+    expect(runPersistenceFormats(['--archive', '3'], root)).toBe('Archived Session format v3 to docs/persistence-formats/v3.schema.json.')
+    const serialized = readFileSync(join(root, 'docs/persistence-formats/v3.schema.json'), 'utf8')
+    const archived = parseHistoricalPersistenceSnapshot(JSON.parse(serialized))
+    expect(archived).toEqual({
+      ...original,
+      types: types.map(type => ({ ...type, sources: [
+        'packages/example/src/types.ts', 'packages/other/src/types.ts', 'packages/plain/src/types.ts', 'packages/fragment/src/types.ts',
+      ] })),
+    })
+    expect(serialized).toBe(JSON.stringify(archived, null, 2) + '\n')
+    expect(readFileSync(join(root, 'docs/persistence-schema.json'), 'utf8')).toBe(before)
+    expect(existsSync(join(root, 'docs/persistence-formats/v3.md'))).toBe(false)
+
+    saveReference(root, 3, 4, archived)
+    write(root, 'packages/core/session/src/types.ts', 'export const SESSION_FORMAT_VERSION = 4 as const\n')
+    saveReference(root, 4, 4)
+    expect(loadPersistenceFormats(root).entries[3]?.inventory).toEqual(archived)
+  })
+
+  it('creates the first archive directory and honors --root', () => {
+    const root = fixture(0)
+    rmSync(join(root, 'docs/persistence-formats'), { recursive: true })
+    expect(runPersistenceFormats(['--root', root, '--archive', '0'])).toBe('Archived Session format v0 to docs/persistence-formats/v0.schema.json.')
+    expect(JSON.parse(readFileSync(join(root, 'docs/persistence-formats/v0.schema.json'), 'utf8'))).toEqual(inventory(0))
+  })
+
+  it.each(['-1', '1.5', '01', '3junk', '9007199254740992'])('rejects an invalid archive version %s', (version) => {
+    const root = fixture()
+    expect(() => runPersistenceFormats([`--archive=${version}`], root)).toThrow('--archive must be a non-negative safe integer')
+    expect(existsSync(join(root, 'docs/persistence-formats/v3.schema.json'))).toBe(false)
+  })
+
+  it.each(['2', '4'])('rejects archive v%s when the current writer is v3', (version) => {
+    const root = fixture()
+    expect(() => runPersistenceFormats(['--archive', version], root)).toThrow(`Cannot archive v${version}: current writer is v3`)
+    expect(existsSync(join(root, 'docs/persistence-formats/v3.schema.json'))).toBe(false)
+  })
+
+  it('refuses to overwrite an existing archive', () => {
+    const root = fixture()
+    write(root, 'docs/persistence-formats/v3.schema.json', 'Retained history.\n')
+    expect(() => runPersistenceFormats(['--archive', '3'], root)).toThrow('docs/persistence-formats/v3.schema.json already exists')
+    expect(readFileSync(join(root, 'docs/persistence-formats/v3.schema.json'), 'utf8')).toBe('Retained history.\n')
+  })
+
+  it('rejects --archive with --write before writing', () => {
+    const root = fixture()
+    expect(() => runPersistenceFormats(['--archive', '3', '--write'], root)).toThrow('--archive and --write cannot be combined')
+    expect(existsSync(join(root, 'docs/persistence-formats/v3.schema.json'))).toBe(false)
+  })
+
+  it.each(['invalid-json', 'digest-drift', 'missing-type', 'missing-source-metadata', 'outdated-header'])('rejects %s before creating an archive', (variant) => {
+    const root = fixture()
+    const original = inventory(3)
+    if (variant === 'invalid-json') write(root, 'docs/persistence-schema.json', '{')
+    else if (variant === 'digest-drift') replaceSnapshot(root, 3, 3, { ...original, roots: [{ ...original.roots[0]!, digest: '0'.repeat(64) }, ...original.roots.slice(1)] })
+    else if (variant === 'missing-type') replaceSnapshot(root, 3, 3, { ...original, types: original.types.slice(1) })
+    else if (variant === 'missing-source-metadata') edit(root, 'docs/persistence-schema.json', ',"sources":[]', '')
+    else replaceSnapshot(root, 3, 3, inventory(2))
+    expect(() => runPersistenceFormats(['--archive', '3'], root)).toThrow(variant === 'invalid-json' ? SyntaxError
+      : variant === 'digest-drift' ? 'schema digest mismatch' : variant === 'missing-type' ? 'cover every reachable type'
+        : variant === 'missing-source-metadata' ? 'missing field sources' : 'SessionHeader.version must match')
+    expect(existsSync(join(root, 'docs/persistence-formats/v3.schema.json'))).toBe(false)
+  })
+})
+
 describe('complete persistence format references', () => {
+  it.each(['.md', '.zh.md'])('rejects source coordinates in authored format evidence in %s', (suffix) => {
+    const root = fixture()
+    const path = `docs/persistence-formats/v1${suffix}`
+    const original = readFileSync(join(root, path), 'utf8')
+    for (const position of [':36', ':36:2', '#L36', '#L36-L38']) {
+      write(root, path, original + `\nSource: \`packages/core/session/src/types.ts${position}\`.\n`)
+      expect(() => loadPersistenceFormats(root)).toThrow('historical source references must omit line numbers')
+    }
+    write(root, path, original + '\nSource: `packages/core/session/src/types.ts`.\n')
+    expect(loadPersistenceFormats(root).entries).toHaveLength(4)
+  })
+
   it('loads a contiguous archive and the current catalog without Git or historical package sources', () => {
     const formats = loadPersistenceFormats(fixture())
     expect(formats.currentVersion).toBe(3)
@@ -317,7 +409,16 @@ describe('complete persistence format references', () => {
     expect(runPersistenceFormats([], root)).toBe('Persistence formats: v0 through v3 verified (4 complete references).')
     expect(paths.map(path => readFileSync(join(root, path), 'utf8'))).toEqual(before)
     expect(readFileSync(join(root, 'docs/persistence-formats/README.md'), 'utf8')).toContain('Authored context.')
-    expect(readFileSync(join(root, 'docs/persistence-formats/v1.md'), 'utf8')).toContain('pullRequest: 3349')
+    const english = readFileSync(join(root, 'docs/persistence-formats/v1.md'), 'utf8')
+    expect(english).toContain('pullRequest: 3349')
+    const [visible, collapsed] = english.split('<details>')
+    expect(visible).toContain('\n## Complete schemas\n')
+    expect(visible).toContain('\n### Persistence type fingerprints\n')
+    expect(collapsed).toContain('\n### Resolved persistence types\n')
+    expect(collapsed).toContain('\n#### `SessionHeader`\n')
+    expect(english.match(/^## /gmu)).toHaveLength(1)
+    expect(english.match(/^### /gmu)).toHaveLength(2)
+    expect(english.match(/^#### /gmu)).toHaveLength(inventory(1).types.length)
     edit(root, 'docs/persistence-formats/v1.md', '<summary>Complete resolved types</summary>', '<summary>Missing definitions</summary>')
     expect(() => runPersistenceFormats([], root)).toThrow('Stale persistence format facts')
   })
@@ -326,7 +427,7 @@ describe('complete persistence format references', () => {
     const root = fixture(0)
     prepareFacts(root, 0)
     runPersistenceFormats(['--write'], root)
-    expect(runPersistenceFormats([], root)).toBe('Persistence formats: v0 through v0 verified (1 complete references).')
+    expect(runPersistenceFormats([], root)).toBe('Persistence formats: v0 through v0 verified (1 complete reference).')
   })
 
   it.each(['missing', 'stale'])('rejects a %s format pairing record and refreshes it with --write', (variant) => {

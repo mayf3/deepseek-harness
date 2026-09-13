@@ -40,7 +40,7 @@ The index is generated from validated snapshots and the current writer constant.
 
 Each `vN.md` / `vN.zh.md` pair has `kind: persistence-format`, an identical `yaml persistence-format` declaration binding every root key to its captured digest, a pairing sidecar, and a complete `vN.schema.json`. The [template](../../.agents/skills/dsh-doc/templates/persistence-format.md) defines these records. Roots cover the logical Session header, physical JSONL header, event envelope, and all first-party events at the selected checkpoint; each root includes every reachable declared type. Packed physical body records have separate codec owners linked from each page.
 
-V0 and V2 use the latest matching tags in the [captured prerelease archive](../persistence-changes/releases/README.md). V1 uses an intermediate source tree identified in its reference because the captured tags contain no V1 writer. Source locations belong to those historical trees. Snapshots preserve historical optional fields and opaque values; they do not substitute current types into older formats. Historical identifiers remain intact only in schema JSON and the verified generated schema regions; authored prose follows current terminology rules.
+V0 and V2 use the latest matching tags in the [captured prerelease archive](../persistence-changes/releases/README.md). V1 uses an intermediate source tree identified in its reference because the captured tags contain no V1 writer. Historical sources retain file paths without line numbers. Snapshots preserve historical optional fields and opaque values; they do not substitute current types into older formats. Historical identifiers remain intact only in schema JSON and the verified generated schema regions; authored prose follows current terminology rules.
 
 These references describe selected schemas, not historical application replay or migration safety. Same-version event additions and optional payload changes can produce other valid inventories. The prerelease archive retains tag-by-tag differences; [change records](../persistence-changes/README.md) retain current compatibility acknowledgements. Neither history is replaced by these format snapshots.
 
@@ -49,9 +49,16 @@ These references describe selected schemas, not historical application replay or
 
 `verify-persistence-formats` derives the required integer range from `SESSION_FORMAT_VERSION`. Every older integer needs its own complete record. The current catalog and schema must exist and match the writer version. The check rejects missing, extra, misnumbered, incomplete, or inconsistent records and stale generated regions without fetching Git history or querying a service.
 
-Before advancing the writer, preserve the outgoing current format as `vN.schema.json` with its own bilingual record and source evidence. Keep exactly the type definitions reachable from its captured roots; discard any unused definitions retained by the current extractor after normalization. Retain all earlier records. The successor continues to use the current catalog; copying a new current catalog cannot satisfy the archived predecessor requirement. Follow the [format-version cookbook](../cookbook/adding-a-session-format-version.md) for runtime changes.
+Before advancing the writer, verify the current catalog and archive the outgoing format. For a V3-to-V4 change, run these commands while the writer and current schema still describe V3:
 
-The schema definitions and index inside comment markers are generated. After completing the machine data and authored evidence, refresh their tables and pairing records, then verify:
+```sh
+pnpm run verify-persistence-catalog
+pnpm run verify-persistence-formats --archive 3
+```
+
+Replace `3` with the outgoing writer version for other transitions. `--archive N` creates `vN.schema.json` from the current inventory, retains exactly the types reachable from its roots, and removes source line numbers. It refuses an existing destination, a version other than the current writer, invalid or incomplete schemas, and combination with `--write`. Add the snapshot’s bilingual record and source evidence using the [template](../../.agents/skills/dsh-doc/templates/persistence-format.md). Retain all earlier records. The successor uses the current catalog; copying a new current catalog cannot satisfy the archived predecessor requirement. Follow the [format-version cookbook](../cookbook/adding-a-session-format-version.md) for runtime changes.
+
+The schema definitions and index inside comment markers are generated. After advancing the writer and completing the machine data and authored evidence, refresh their tables and pairing records, then verify:
 
 ```sh
 pnpm run verify-persistence-formats --write
@@ -59,7 +66,7 @@ pnpm run verify-persistence-formats
 pnpm run doc-sync
 ```
 
-The write command validates the machine data before updating generated Markdown and pairing records. It preserves authored explanations, machine declarations, and schemas. Default verification also rejects stale pairing records; the standard documentation checks validate translations and local links. Current catalog freshness remains owned by `verify-persistence-catalog`.
+`--write` validates the machine data before updating generated Markdown and pairing records. It preserves authored explanations, machine declarations, and schemas. Default verification also rejects stale pairing records; the standard documentation checks validate translations and local links. Current catalog freshness remains owned by `verify-persistence-catalog`.
 
 <a id="dev-note"></a>
 ## Dev Note

@@ -27,7 +27,7 @@ Released codecs and migration semantics remain frozen. Do not amend a released e
 
 Use disposable, isolated Harness homes for unreleased N+1 integration testing. An interim N+1 file already has the target writer version, so a later edit to N→N+1 will not migrate that file again. Re-run from unchanged historical input in a fresh test home; never repair this by rewriting a committed generation or reusing a real user's home.
 
-Before changing the writer, archive its complete persistence schema and bilingual format reference under `docs/persistence-formats/vN.*`, preserving all earlier records. The [format coverage check](../persistence-formats/README.md#maintenance) requires every integer below the new writer to have its own document; the current generated catalog covers only the new writer.
+Before changing the writer, use the [archive command](../persistence-formats/README.md#maintenance) to preserve its complete persistence schema, then add the bilingual format reference under `docs/persistence-formats/vN.*`. Preserve all earlier records. The format coverage check requires every integer below the new writer to have its own document; the current generated catalog covers only the new writer.
 
 <a id="add-an-identity-edge"></a>
 ## 2. Add an identity edge

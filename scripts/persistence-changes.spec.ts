@@ -120,6 +120,23 @@ function historicalSurface(operation: 'required' | 'optional' | 'absent', event 
 }
 
 describe('historical persistence snapshot parsing', () => {
+  it('preserves source paths and fingerprints in historical inventories', () => {
+    const snapshot = historicalSurface('required')
+    const root = snapshot.roots[0]!
+    const sources = ['packages/core/example/src/types.ts']
+    const complete = { ...snapshot, types: [{ schema: root.schema, digest: root.digest, names: ['Example'], sources }] }
+    expect(parseHistoricalPersistenceSnapshot(complete)).toEqual(complete)
+  })
+
+  it.each([':8', ':8:3', '#L8', '#L8-L12'])('rejects source coordinates %s only in historical inventories', (suffix) => {
+    const snapshot = historicalSurface('required')
+    const root = snapshot.roots[0]!
+    const sources = [`packages/core/example/src/types.ts${suffix}`]
+    const complete = { ...snapshot, types: [{ schema: root.schema, digest: root.digest, names: [], sources }] }
+    expect(() => parseHistoricalPersistenceSnapshot(complete)).toThrow('historical schema sources must omit line numbers')
+    expect(parsePersistenceSnapshot(complete)).toEqual(complete)
+  })
+
   it('admits optional surface operations only through the historical parser', () => {
     const snapshot = historicalSurface('optional')
     expect(() => parsePersistenceSnapshot(snapshot)).toThrow('surface metadata')
