@@ -33,6 +33,8 @@ const SID = 'fk-s1' as SessionId
 /** A Session talks through the Gateway client; its dependency cone is the Typert registry and the Connection. */
 const API_ROSTER = webApp.closure(['@deepseek-ai/dsh-api-gateway'])
 const it = createClientTest({ roster: API_ROSTER })
+/** The first client boot pays the cold module transform of the api cone. */
+const COLD_BOOT_TIMEOUT_MS = 60_000
 
 function makeManager(mock: RemoteMock, remote: ClientTestFixtures['remote']): SessionManager {
   mock.load(sessionWorld)
@@ -124,7 +126,7 @@ describe('Session tail-page seeding', () => {
     } as never)))
     await session.open()
     expect(session.projections.get('test/marks')).toEqual({ marks: ['from-baseline'] })
-  })
+  }, COLD_BOOT_TIMEOUT_MS)
 
   it('a resync serving a stale block keeps the newer pushed value (seq rule end to end)', async ({ mock, start }) => {
     const session = await sessionBench(mock, start, SID)

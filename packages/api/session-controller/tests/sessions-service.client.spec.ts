@@ -25,6 +25,8 @@ import { FOLLOW, err, followScript, sessionWorld } from './remote/session.client
 const sid = (s: string): SessionId => s as SessionId
 /** ClientSessions uses the Gateway client for stream supervision and the native Remote mocks for responses. */
 const API_ROSTER = webApp.closure(['@deepseek-ai/dsh-api-gateway'])
+/** The first client boot pays the cold module transform of the api cone. */
+const COLD_BOOT_TIMEOUT_MS = 60_000
 
 interface Bench {
   ctx: Context
@@ -96,7 +98,7 @@ describe('list store projection', () => {
       displayTitle: 's2', parentId: 's1', origin: 'subagent', running: true,
     })
     expect(state.byId[sid('s2')]?.title).toBeUndefined()
-  })
+  }, COLD_BOOT_TIMEOUT_MS)
 
   it('reprojects a blank session from the generic agent-preset projection', async ({ bench }) => {
     const b = bench()
@@ -920,7 +922,7 @@ describe('create', () => {
     const b = bench()
     b.mock.remote.session.create.mockResolvedValue(ok({ sessionId: sid('fresh') }))
     await expect(b.svc.create({ cwd: '/w', sessionId: sid('fresh') })).resolves.toBe('fresh')
-    expect(b.mock.remote.session.create).toHaveBeenCalledWith({ cwd: '/w', sessionId: 'fresh' })
+    expect(b.mock.remote.session.create).toHaveBeenCalledExactlyOnceWith({ cwd: '/w', sessionId: 'fresh' })
     b.mock.remote.session.create.mockResolvedValue(err(new RemoteError('gateway/internal', '爆了', {})))
     const failure = await b.svc.create({ sessionId: sid('candidate') }).catch((error: unknown) => error)
     expect(failure).toBeInstanceOf(SessionCreateError)
@@ -985,8 +987,8 @@ describe('fork', () => {
       sessionId: sid('source'), atSeq: 7, increaseTitle: true,
     })).resolves.toBe('child')
 
-    expect(b.mock.remote.session.fork).toHaveBeenCalledWith({ sessionId: 'source', atSeq: 7 })
-    expect(b.mock.remote.session.rename).toHaveBeenCalledWith({ sessionId: 'child', title: childTitle })
+    expect(b.mock.remote.session.fork).toHaveBeenCalledExactlyOnceWith({ sessionId: 'source', atSeq: 7 })
+    expect(b.mock.remote.session.rename).toHaveBeenCalledExactlyOnceWith({ sessionId: 'child', title: childTitle })
     await Promise.resolve()
     expect(b.svc.list.getSnapshot().byId[sid('child')]).toMatchObject({
       title: childTitle,
@@ -1003,7 +1005,7 @@ describe('fork', () => {
     // The frozen node of an interrupted turn carries turnEnd.seq - 0.9.
     await expect(b.svc.fork({ sessionId: sid('source'), atSeq: 41.1 })).resolves.toBe('child')
 
-    expect(b.mock.remote.session.fork).toHaveBeenCalledWith({ sessionId: 'source', atSeq: 41 })
+    expect(b.mock.remote.session.fork).toHaveBeenCalledExactlyOnceWith({ sessionId: 'source', atSeq: 41 })
   })
 
   it('does not rename without the title policy or a durable source title', async ({ bench }) => {

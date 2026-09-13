@@ -21,9 +21,11 @@ import { FOLLOW, err, followScript, sessionWorld } from './remote/session.client
 
 const S1 = 'fk-m1' as SessionId
 const S2 = 'fk-m2' as SessionId
-/** A SessionManager's Remote methods use the same native mocks as an assembled client. */
+/** Gateway Client cone used by the subagent-catalog and connected-generation cases. */
 const API_ROSTER = webApp.closure(['@deepseek-ai/dsh-api-gateway'])
 const it = createClientTest({ roster: API_ROSTER })
+/** The first client boot pays the cold module transform of the api cone. */
+const COLD_BOOT_TIMEOUT_MS = 60_000
 
 type SummaryOver = Partial<{
   updatedAt: number
@@ -229,7 +231,7 @@ describe('search', () => {
         hasMore: true,
       },
     })
-    expect(remote.session.search).toHaveBeenCalledWith({ query: 'exact phrase' }, signal)
+    expect(remote.session.search).toHaveBeenCalledExactlyOnceWith({ query: 'exact phrase' }, signal)
   })
 
   it('preserves business errors and propagates a non-Remote throw', async ({ mock, remote }) => {
@@ -345,7 +347,7 @@ describe('subagent catalogs', () => {
         address: { parentSessionId: S1, childSessionId: S2, mode: 'continuable' },
       },
     })
-  })
+  }, COLD_BOOT_TIMEOUT_MS)
 
   it('refetches debounced membership only while the parent catalog is open', async ({ mock, remote }) => {
     vi.useFakeTimers()
@@ -632,7 +634,7 @@ describe('remaining branches', () => {
     remote.session.create.mockResolvedValue(ok({ sessionId: S1 }))
     const manager = makeManager(mock, remote)
     await manager.create({ cwd: '/tmp/w', sessionId: S1 })
-    expect(remote.session.create).toHaveBeenCalledWith({ cwd: '/tmp/w', sessionId: S1 })
+    expect(remote.session.create).toHaveBeenCalledExactlyOnceWith({ cwd: '/tmp/w', sessionId: S1 })
     expect(manager.getListSnapshot().items[0]).toMatchObject({ sessionId: S1, cwd: '/tmp/w' })
     await manager.create({ cwd: '/tmp/w' }) // same id returned: no duplicate row
     expect(manager.getListSnapshot().items).toHaveLength(1)

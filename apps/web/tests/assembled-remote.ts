@@ -1,4 +1,8 @@
-/** RemoteMock scenario for built-client tests that do not own a Host. */
+/**
+ * RemoteMock scenario for built-client tests that do not own a Host.
+ * The adjacent JSON is maintained with this module when Remote responses or
+ * the current Session header version change.
+ */
 
 import { readFileSync } from 'node:fs'
 import { randomUUID } from 'node:crypto'
@@ -107,10 +111,23 @@ export function createAssembledRemote(options: AssembledRemoteOptions = {}): Ass
     'fx-alpha',
     structuredClone(fixture.follow.records) as EventRecord[],
   ]])
+  const nextTurns = new Map([...records].map(([sessionId, sessionRecords]) => {
+    let next = 0
+    for (const { event } of sessionRecords) {
+      if (event.type !== 'turn/start' || !isRecord(event.data)) continue
+      const turn = event.data['turn']
+      if (typeof turn === 'number') next = Math.max(next, turn + 1)
+    }
+    return [sessionId, next] as const
+  }))
   const attachments = new Map<string, unknown>([['fixture:image', structuredClone(fixture.attachment)]])
+  const blankSessionProjections = fixture.control.value.projections['fx-gamma']
+  if (blankSessionProjections === undefined) {
+    throw new Error('assembled fixture: blank Session projections missing')
+  }
   let nextSession = 1
 
-  const mock = RemoteMock.create({ host: { home: '/home/fixture' } }).load(remoteDefaultResponses)
+  const mock = RemoteMock.create().load(remoteDefaultResponses)
   mock.load({
     unary: {
       'settings/describe': structuredClone(fixture.settingsDescribe),
@@ -174,10 +191,7 @@ export function createAssembledRemote(options: AssembledRemoteOptions = {}): Ass
       cursor: sessionRecords.at(-1)?.event.seq ?? -1,
       records: structuredClone(sessionRecords),
       hasMore: false,
-      projections: structuredClone(fixture.control.value.projections['fx-gamma'] ?? {
-        asOfSeq: -1,
-        values: {},
-      }),
+      projections: structuredClone(blankSessionProjections),
       ...isAssistantStreamRequested(request) ? { assistantStream: { revision: 0 } } : {},
     })
   })
@@ -220,13 +234,11 @@ export function createAssembledRemote(options: AssembledRemoteOptions = {}): Ass
       running: false,
       blank: true,
       cwd,
-      projections: structuredClone(fixture.control.value.projections['fx-gamma'] ?? {
-        asOfSeq: -1,
-        values: {},
-      }),
+      projections: structuredClone(blankSessionProjections),
     }
     sessions.push(summary)
     records.set(sessionId, [])
+    nextTurns.set(sessionId, 0)
     if (workspace !== undefined && !workspace.sessionIds.includes(sessionId)) {
       workspace.sessionIds = [sessionId, ...workspace.sessionIds]
       workspace.updatedAt = new Date().toISOString()
@@ -265,6 +277,8 @@ export function createAssembledRemote(options: AssembledRemoteOptions = {}): Ass
     const sessionId = recordString(request, 'sessionId')
     const requestId = recordString(request, 'requestId')
     const sessionRecords = records.get(sessionId) ?? []
+    const summary = sessions.find(candidate => candidate.sessionId === sessionId)
+    if (summary === undefined) throw new Error(`assembled fixture: no Session ${sessionId}`)
     const content = recordArray(request, 'content').map((part) => {
       if (!isRecord(part) || part.type !== 'image') return part
       const attachmentId = `assembled:${randomUUID()}`
@@ -282,7 +296,14 @@ export function createAssembledRemote(options: AssembledRemoteOptions = {}): Ass
       attachments.set(attachmentId, ok({ attachment, data }))
       return { type: 'image', attachment }
     })
-    const turn = sessionRecords.length
+    const turn = nextTurns.get(sessionId) ?? 0
+    nextTurns.set(sessionId, turn + 1)
+    summary.updatedAt = Date.now()
+    summary.blank = false
+    if (!summary.running) {
+      summary.running = true
+      mock.streams.push('$events', { type: 'emit', event: 'api-session/status', args: [sessionId, true] })
+    }
     const turnEvent = eventOf(sessionRecords.length, 'turn/start', { turn })
     const userEvent = eventOf(sessionRecords.length + 1, 'user/message', {
       content,
