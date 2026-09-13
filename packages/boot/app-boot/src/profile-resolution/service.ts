@@ -1,6 +1,7 @@
 /** Package metadata resolved through one profile resolution registration. */
 
 import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { rm } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -88,12 +89,20 @@ export class PluginPackages extends Service {
       config.generation, this.behavior, this.nativeCacheDir,
     )
     this.resolver = resolver
-    ctx.effect(() => () => {
+    ctx.effect(() => async () => {
       this.disposeWorkerResolution?.()
       resolver.dispose()
       /* v8 ignore start -- Linux coverage cannot enter the Windows native-cache lifecycle. */
       if (this.nativeCacheDir !== undefined) {
-        rmSync(this.nativeCacheDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 20 })
+        try {
+          await rm(this.nativeCacheDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 20 })
+        } catch (error) {
+          const code = (error as NodeJS.ErrnoException).code
+          if (code !== 'EBUSY' && code !== 'EPERM' && code !== 'ENOTEMPTY') throw error
+          ctx.logger.warn(
+            `profile package resolution: native cache ${this.nativeCacheDir} remains locked after Worker teardown`,
+          )
+        }
       }
       /* v8 ignore stop */
     }, 'profile package resolution')

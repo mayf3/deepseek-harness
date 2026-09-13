@@ -1,6 +1,6 @@
 /** Package metadata queries share the active profile resolution generation. */
 
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
@@ -163,7 +163,18 @@ describe('profile package metadata service', () => {
     const ctx = new Context()
     contexts.push(ctx)
     await ctx.plugin(PluginPackages, { generation: initial, behavior: 'verify' })
-    expect(getEnvironmentData(key)).toEqual({ generation: initial, behavior: 'verify' })
+    const initialWorkerData = getEnvironmentData(key) as {
+      generation: ProfileResolutionGeneration
+      behavior: string
+      nativeCacheDir?: string
+    }
+    expect(initialWorkerData).toMatchObject({ generation: initial, behavior: 'verify' })
+    if (process.platform === 'win32') {
+      expect(initialWorkerData.nativeCacheDir).toEqual(expect.any(String))
+      expect(existsSync(initialWorkerData.nativeCacheDir as string)).toBe(true)
+    } else {
+      expect(initialWorkerData).not.toHaveProperty('nativeCacheDir')
+    }
 
     const added = join(root, 'added')
     const addedAnchor = pkg(added, '2.0.0', 'added-metadata')
@@ -175,7 +186,11 @@ describe('profile package metadata service', () => {
       }],
     }
     ctx.pluginPackages.replace(next)
-    expect(getEnvironmentData(key)).toEqual({ generation: next, behavior: 'verify' })
+    expect(getEnvironmentData(key)).toEqual({
+      generation: next,
+      behavior: 'verify',
+      ...(initialWorkerData.nativeCacheDir === undefined ? {} : { nativeCacheDir: initialWorkerData.nativeCacheDir }),
+    })
     expect(ctx.pluginPackages.packageOf(
       'added-metadata', pathToFileURL(join(profileDir, 'entry.mjs')).href,
     )).toMatchObject({ name: 'added-metadata', version: '2.0.0', dir: added })
@@ -183,5 +198,8 @@ describe('profile package metadata service', () => {
     await ctx.fiber.dispose()
     contexts.pop()
     expect(getEnvironmentData(key)).toBe(previous)
+    if (initialWorkerData.nativeCacheDir !== undefined) {
+      expect(existsSync(initialWorkerData.nativeCacheDir)).toBe(false)
+    }
   })
 })

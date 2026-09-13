@@ -304,8 +304,8 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
   // In-flight import/register tasks by entry name.
   const pending = new Map<string, Promise<void>>()
   // Artifact paths by package name. Negative verdicts (unresolvable specifier —
-  // loader builtins, subpath rows — or no typert export) are cached as null and
-  // never expire: plugin-set changes take effect on restart.
+  // unconfigured loader builtins and subpath rows — or no typert export) are
+  // cached as null and never expire: plugin-set changes take effect on restart.
   const artifactPath = new Map<string, TypertArtifact | null>()
   // Imported+validated manifests by package name (one import per package per process).
   const manifests = new Map<string, Promise<TypertContribution>>()
@@ -324,6 +324,11 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
     if (cached !== undefined) return cached
     const firstSlash = pkgName.indexOf('/')
     if (firstSlash >= 0 && (pkgName[0] !== '@' || pkgName.indexOf('/', firstSlash + 1) >= 0)) {
+      if (configured.has(pkgName)) {
+        throw new Error(
+          `typert-loader: configured package "${pkgName}" cannot be resolved from the config tree — add it to the composition package dependencies or remove it from packages`,
+        )
+      }
       artifactPath.set(pkgName, null)
       return null
     }

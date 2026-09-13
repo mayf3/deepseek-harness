@@ -229,7 +229,7 @@ describe('profile resolution generation', { concurrent: false }, () => {
       scope: 'installation',
     })
     expect(generation.entries.find(entry => entry.name === 'bundle-choice')).toMatchObject({
-      packageDir: firstBundleChoice,
+      packageDir: realpathSync(firstBundleChoice),
       scope: 'profile',
     })
     expect(generation.entries.find(entry => entry.name === 'peer-choice')).toMatchObject({
@@ -303,7 +303,8 @@ describe('profile resolution generation', { concurrent: false }, () => {
       private: true,
       dependencies: { 'resolution-lib': '*', 'linked-local': '*' },
     }))
-    pkg(join(f.profile.dir, 'node_modules', 'resolution-lib'), 'resolution-lib', 2)
+    const localResolution = join(f.profile.dir, 'node_modules', 'resolution-lib')
+    pkg(localResolution, 'resolution-lib', 2)
     const linkedLocal = join(f.root, 'linked-local')
     pkg(linkedLocal, 'linked-local', 3)
     symlinkSync(
@@ -317,10 +318,85 @@ describe('profile resolution generation', { concurrent: false }, () => {
     registrations.push(registration)
     const require = createRequire(join(f.profile.dir, 'entry.cjs'))
     expect(require('resolution-lib')).toEqual({ marker: 2 })
+    expect(require.resolve('resolution-lib', { paths: [f.profile.dir] }))
+      .toBe(join(localResolution, 'index.cjs'))
     const parent = pathToFileURL(join(f.profile.dir, 'entry.mjs')).href
     expect(resolveFrom('resolution-lib', parent)).toBe(
       pathToFileURL(join(f.profile.dir, 'node_modules', 'resolution-lib', 'index.js')).href,
     )
+  })
+
+  it('preserves an npm alias package self-reference', async () => {
+    const f = fixture()
+    file(join(f.profile.dir, 'package.json'), JSON.stringify({
+      name: 'test-profile',
+      private: true,
+      dependencies: { alias: 'npm:real-name' },
+    }))
+    const alias = join(f.profile.dir, 'node_modules', 'alias')
+    pkg(alias, 'real-name', 6)
+    const generation = await generationOf(f)
+    expect(generation.localPackageNames).toEqual(['alias'])
+    const registration = installProfileResolution(generation)
+    registrations.push(registration)
+
+    const require = createRequire(join(alias, 'inside.cjs'))
+    expect(require.resolve('real-name')).toBe(join(alias, 'index.cjs'))
+    expect(resolveFrom('real-name', pathToFileURL(join(alias, 'inside.mjs')).href)).toBe(
+      pathToFileURL(join(alias, 'index.js')).href,
+    )
+    const invalidScope = join(f.profile.dir, 'node_modules', 'invalid-scope')
+    file(join(invalidScope, 'package.json'), '{')
+    expect(createRequire(join(invalidScope, 'inside.cjs')).resolve('resolution-lib'))
+      .toBe(join(f.installed, 'index.cjs'))
+    expect(() => resolveFrom('resolution-lib', pathToFileURL(join(invalidScope, 'inside.mjs')).href))
+      .toThrow(/Invalid package config/u)
+  })
+
+  it('falls through a missing local CommonJS subpath to the generation', async () => {
+    const f = fixture()
+    file(join(f.profile.dir, 'package.json'), JSON.stringify({
+      name: 'test-profile',
+      private: true,
+      dependencies: { 'resolution-lib': '*' },
+    }))
+    file(join(f.installed, 'package.json'), JSON.stringify({
+      name: 'resolution-lib', version: '1.0.0', type: 'module', main: './index.cjs',
+    }))
+    file(join(f.installed, 'only-install.cjs'), 'module.exports = { marker: 8 }\n')
+    file(join(f.installed, 'legacy-install.cjs'), 'module.exports = { marker: 9 }\n')
+    const local = join(f.profile.dir, 'node_modules', 'resolution-lib')
+    file(join(local, 'package.json'), JSON.stringify({
+      name: 'resolution-lib', version: '2.0.0', type: 'module', main: './index.cjs',
+    }))
+    file(join(local, 'index.cjs'), 'module.exports = { marker: 2 }\n')
+    const generation = await generationOf(f)
+    expect(generation.localPackageNames).toEqual(['resolution-lib'])
+    const registration = installProfileResolution(generation)
+    registrations.push(registration)
+
+    expect(createRequire(join(f.profile.dir, 'entry.cjs')).resolve('resolution-lib/only-install.cjs'))
+      .toBe(join(f.installed, 'only-install.cjs'))
+    rmSync(join(local, 'package.json'))
+    expect(createRequire(join(f.profile.dir, 'entry.cjs')).resolve('resolution-lib/legacy-install.cjs'))
+      .toBe(join(f.installed, 'legacy-install.cjs'))
+  })
+
+  it('observes a profile-local package installed after an earlier miss', async () => {
+    const f = fixture()
+    const registration = installProfileResolution(await generationOf(f))
+    registrations.push(registration)
+    const require = createRequire(join(f.profile.dir, 'entry.cjs'))
+    const parent = pathToFileURL(join(f.profile.dir, 'entry.mjs')).href
+    expect(() => { require.resolve('missing-local') }).toThrow(/Cannot find module/u)
+    expect(() => resolveFrom('missing-local', parent)).toThrow(/Cannot find/u)
+    file(join(f.profile.dir, 'node_modules', 'legacy-missing', 'index.js'), 'module.exports = {}\n')
+    expect(() => { require.resolve('legacy-missing/subpath') }).toThrow(/Cannot find module/u)
+
+    const local = join(f.profile.dir, 'node_modules', 'missing-local')
+    pkg(local, 'missing-local', 7)
+    expect(require.resolve('missing-local')).toBe(join(local, 'index.cjs'))
+    expect(resolveFrom('missing-local', parent)).toBe(pathToFileURL(join(local, 'index.js')).href)
   })
 
   it('delegates undeclared local packages and non-package specifiers to Node', async () => {
@@ -405,6 +481,15 @@ describe('profile resolution generation', { concurrent: false }, () => {
     expect(createRequire(join(f.profile.dir, 'entry.cjs'))('bundle-only')).toEqual({ marker: 4 })
     const other = join(f.root, 'profiles', 'other', 'entry.cjs')
     expect(() => { createRequire(other)('bundle-only') }).toThrow(/Cannot find module/u)
+    expect(createRequire(other).resolve('bundle-only', {
+      paths: [dirname(other), f.profile.dir],
+    })).toBe(join(bundleOnly, 'index.cjs'))
+    expect(() => createRequire(other).resolve('bundle-only', { paths: [dirname(other)] }))
+      .toThrow(/Cannot find module/u)
+    file(join(f.root, 'node_modules', 'invalid-explicit', 'package.json'), '{')
+    expect(() => createRequire(other).resolve('invalid-explicit', {
+      paths: [dirname(other), f.profile.dir],
+    })).toThrow(/Invalid package config/u)
   })
 
   it('keeps the generation ahead of packages above the shared fallback position', async () => {

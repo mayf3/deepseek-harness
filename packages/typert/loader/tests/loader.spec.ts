@@ -182,13 +182,16 @@ describe('typert loader', () => {
 
     let failure: unknown
     try {
-      await mountTypertLoader(ctx, { packages: ['@fixture/missing', '@fixture/plain'] })
+      await mountTypertLoader(ctx, {
+        packages: ['@fixture/missing', '@fixture/plain', '@fixture/subpath/plugin'],
+      })
     } catch (error) {
       failure = error
     }
     expect(failure).toBeInstanceOf(AggregateError)
     expect((failure as Error).message).toContain('configured package "@fixture/missing" cannot be resolved')
     expect((failure as Error).message).toContain('configured package "@fixture/plain" does not export "./typert"')
+    expect((failure as Error).message).toContain('configured package "@fixture/subpath/plugin" cannot be resolved')
   })
 
   it('auto-registers a mounted package exporting ./typert and withdraws it on unmount', LOADER_TEST_TIMEOUT, async () => {

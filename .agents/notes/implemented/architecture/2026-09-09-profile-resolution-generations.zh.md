@@ -28,7 +28,7 @@ profile 本地和插件私有 `node_modules` 不进入 fallback entries，由 No
 
 一个解析器 registration 持有一个 `current` generation。每个同步 resolve 在入口只捕获一次该引用，完整调用只读该引用。generation 构造在发布前读取所有必需 manifest；失败时当前 generation 不变。发布成功只替换一个引用，执行中的调用可以继续使用它已捕获的 generation。
 
-选包缓存和包元数据缓存归 generation 所有。发布下一代后，旧 generation 在调用方退出后自然不可达，不逐项清理缓存。显式 CommonJS paths 或非默认 conditions 不得复用默认解析缓存。
+选包缓存和包元数据缓存归 generation 所有。发布下一代后，旧 generation 在调用方退出后自然不可达，不逐项清理缓存。generation 命中和原生解析成功结果可以缓存，但 generation 未命中会重新扫描，因此未命中后安装的 profile 本地包会像 link 模式一样变为可见。显式 CommonJS paths 或非默认 conditions 不得复用默认解析缓存。
 
 launcher 只构造启动 generation。服务接受新增型后继 generation，但本实现没有包管理器事务调用替换操作。
 
@@ -36,7 +36,7 @@ launcher 只构造启动 generation。服务接受新增型后继 generation，�
 
 resolver 使用 `node-addon-require-builtin` 读取 `internal/modules/esm/loader` 和 `internal/modules/cjs/loader`。ESM 适配器包装每线程单例 `CascadedLoader` 的 resolve 方法。CommonJS 适配器包装内部 builtin 导出的 `Module._resolveFilename`；该 `Module` 与 `node:module` 导出的对象相同。
 
-两个适配器调用同一个路由函数。builtin、相对或绝对路径、URL、`#imports`、profile 作用域外 parent 和支持的默认查找以外的显式调用都直接委托原生实现。对于作用域内的 bare request，如果 Node 查找顺序在虚拟共享 fallback 之前存在 profile 本地包或插件私有包，则保留原 parent；否则 generation 命中时返回该条目的声明锚点作为 routed parent，未命中时保留原 parent。
+两个适配器调用同一个路由函数。builtin、相对或绝对路径、URL、`#imports`、profile 作用域外 parent 和支持的查找以外的显式调用都直接委托原生实现。对于作用域内的 bare request，package self-reference 保留原 parent，即使 npm alias 使安装目录使用另一个名称。Node 能在虚拟共享 fallback 之前从 profile 本地包或插件私有包解析到所请求入口时，也保留原 parent；没有 `exports` 的 CommonJS 包目录仅缺少所请求 subpath 时，不会压过 fallback。其他请求在 generation 命中时通过该条目的声明锚点解析，未命中时从虚拟 fallback 之后继续原生查找。显式 CommonJS path 列表按调用方顺序，对每个 path 独立应用相同的插入规则。
 
 适配器完成路由后调用捕获的原生 resolver。exports、import/require conditions、main、subpath、扩展名、原生缓存和最终错误仍归 Node 处理。选中包的无效 export 或缺失目标不会触发另一个同名候选。CommonJS 不替换 `_findPath`，也不复制 `_resolveFilename`。
 
@@ -54,7 +54,7 @@ resolution generation 列出可用 fallback 包；Loader entries 组成活动插
 
 ### Worker 与 generation 更新
 
-主线程通过 Worker environment data 发布当前 generation 的可结构化克隆表示和 profile scope。每个 Harness 自有 Worker 构建产物通过构建 banner 获取自己的 ESM/CJS Internal 并安装同一适配器，不重新遍历 manifest。bootstrap bundle 不静态导入任何包；在 Windows 上，它会临时暴露一个服务私有的 native cache 目录，并在业务代码启动前恢复环境。源码 Worker 入口保持原有自包含依赖；第三方 Worker 保持不变。
+主线程通过 Worker environment data 发布当前 generation 的可结构化克隆表示和 profile scope。每个 Harness 自有 Worker 构建产物通过构建 banner 获取自己的 ESM/CJS Internal 并安装同一适配器，不重新遍历 manifest。bootstrap bundle 不静态导入任何包；在 Windows 上，它会临时暴露一个服务私有的 native cache 目录，并在业务代码启动前恢复环境。服务释放时先恢复 Worker environment data 和进程 resolver，再异步回收该目录，使并发终止的 Worker 能够释放 native handle；若经过有界重试仍被锁定，则输出警告并把这个私有临时目录留给操作系统清理。源码 Worker 入口保持原有自包含依赖；第三方 Worker 保持不变。
 
 新 Worker 继承最新发布的 generation。已运行的 Worker 保留启动时继承的 generation，因此发布后继 generation 的调用方必须重启它们。ESM bootstrap 无法影响其执行前已链接的静态依赖，因此 Worker bundle 必须保证 bootstrap 之前的静态 import 可由原生 Node 解析，需要 profile resolver 的业务入口在 bootstrap 后通过 dynamic import 启动。
 
@@ -82,7 +82,7 @@ runtime 模式要求受支持的 Node Internal loader 接口，并且不会创�
 
 ### 性能与验证
 
-generation 构造发生在启动或显式更新阶段，不属于单次 resolve，但需要单独报告绝对延迟。热路径只包括 scope 分类、bare name 提取、本地优先判断、Map 查询和至多一次原生解析；缓存命中直接返回 generation 级结果。作用域外调用不读取 manifest，只缓存 parent 是否位于 profile scope。
+generation 构造发生在启动或显式更新阶段，不属于单次 resolve，但需要单独报告绝对延迟。普通热路径只包括 scope 分类、bare name 提取、本地优先判断、Map 查询和一次原生解析；缓存命中直接返回 generation 级结果。当本地 CommonJS 包目录没有 `exports` 且仅缺少所请求 subpath 时，一次请求可能先执行一次原生探测，再执行一次路由解析。作用域外调用不读取 manifest，只缓存 parent 是否位于 profile scope。
 
 实现期间的一次性本地测量用 plain Node 在全新进程中执行构建后的 JavaScript，并与完全没有安装 hook 的进程比较。测量脚本和结果未提交，这些数据不是 benchmark 或 CI 预算。七轮交替顺序覆盖 outside、profile-local 和 fallback 的 dynamic import、`import.meta.resolve`、require、`require.resolve`。Node 22.19、24.18 和 26.8 的热路径中位数最大正向回退为 4.5%。Node 24.18 的 256 包 cold workload 最大回退为 11.2%，generation 构造中位数为 16.027 ms；32 包本地 `require.resolve` 因固定启动成本在整批增加 1.033 ms（+34.7%）。
 

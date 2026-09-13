@@ -1,8 +1,8 @@
 /** In-memory profile package routing for Node's default ESM and CommonJS loaders. */
 
-import { existsSync, realpathSync, statSync } from 'node:fs'
+import { existsSync, readFileSync, realpathSync, statSync } from 'node:fs'
 import { createRequire, isBuiltin } from 'node:module'
-import { dirname, join, resolve, sep } from 'node:path'
+import { basename, dirname, join, resolve, sep } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { getEnvironmentData, setEnvironmentData } from 'node:worker_threads'
 import type { ModuleLoaderV1, ModuleLoaderV2, ResolveResult } from '@deepseek-ai/cordis-plugin-loader'
@@ -57,6 +57,7 @@ interface ParentRoutes {
   readonly profilesDir: string
   readonly activeProfile: boolean
   readonly requests: Map<string, ResolutionRouteState>
+  selfReferenceName?: string | false | null
 }
 
 type ResolutionRoutes = Map<string, ParentRoutes | false>
@@ -174,6 +175,42 @@ function localPackageCandidate(
   return found ? { packageDir: candidate, canBeManagedLink: stat !== undefined } : undefined
 }
 
+function selfReferenceName(parent: string): string | false | null {
+  let current = dirname(parent)
+  while (true) {
+    const manifestPath = join(current, 'package.json')
+    if (existsSync(manifestPath)) {
+      let manifest: Record<string, unknown>
+      try {
+        manifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as Record<string, unknown>
+      } catch (_error) {
+        // Only Node decides whether this request consumes an invalid package manifest.
+        return null
+      }
+      return typeof manifest.name === 'string' && Object.hasOwn(manifest, 'exports')
+        ? manifest.name
+        : false
+    }
+    /* v8 ignore next -- scoped module requests normally find an owning manifest before node_modules. */
+    if (basename(current) === 'node_modules') return false
+    const next = dirname(current)
+    if (next === current) return false
+    current = next
+  }
+}
+
+function localCandidateOwnsResolution(candidate: string, resolved: string): boolean {
+  if (startsWithin(resolved, prefixes(candidate))) return true
+  return ['.js', '.json', '.node'].some(extension => sameResolution(candidate + extension, resolved))
+}
+
+function packageHasExports(packageDir: string): boolean {
+  const manifestPath = join(packageDir, 'package.json')
+  if (!existsSync(manifestPath)) return false
+  const manifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as Record<string, unknown>
+  return Object.hasOwn(manifest, 'exports')
+}
+
 function sameResolution(left: string, right: string): boolean {
   if (left === right) return true
   const leftPath = left.startsWith('file:') ? fileURLToPath(left) : left
@@ -224,12 +261,24 @@ class ResolutionRouter {
     parentRoutes: ParentRoutes,
     generation: CompiledGeneration,
     flavor: 'esm' | 'cjs',
+    nativeResolve?: () => string,
   ): ResolutionRouteState | undefined {
     const { parent, profilesDir, requests } = parentRoutes
     const name = barePackageName(request)
     if (name === undefined) return undefined
 
+    if (parentRoutes.selfReferenceName === undefined) {
+      parentRoutes.selfReferenceName = selfReferenceName(parent)
+    }
+    if (parentRoutes.selfReferenceName === name
+      || (parentRoutes.selfReferenceName === null && flavor === 'esm')) {
+      const state = { route: { kind: 'native' as const } }
+      requests.set(request, state)
+      return state
+    }
+
     const target = generation.entries.get(name)
+    const candidates: Array<{ packageDir: string; canBeManagedLink: boolean }> = []
     for (const searchPath of createRequire(parent).resolve.paths(name) as string[]) {
       if (generation.shared.has(resolve(searchPath))) break
       const candidate = localPackageCandidate(searchPath, name, flavor)
@@ -238,14 +287,35 @@ class ResolutionRouter {
           candidate.packageDir === join(prefix, 'node_modules', name)
           && isProfileModuleFallbackLink(prefix.slice(0, -1), name)
         ))
-        if (!legacy) {
-          const state = {
-            route: { kind: 'native' as const, packageDir: candidate.packageDir },
-            packageDir: candidate.packageDir,
+        if (!legacy) candidates.push(candidate)
+      }
+    }
+    if (candidates.length > 0) {
+      if (flavor === 'cjs' && nativeResolve !== undefined) {
+        try {
+          const resolved = nativeResolve()
+          const selected = candidates.find(candidate => localCandidateOwnsResolution(candidate.packageDir, resolved))
+          if (selected !== undefined) {
+            const state = {
+              route: { kind: 'native' as const, packageDir: selected.packageDir },
+              packageDir: selected.packageDir,
+              cjs: resolved,
+            }
+            requests.set(request, state)
+            return state
           }
-          requests.set(request, state)
-          return state
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code !== 'MODULE_NOT_FOUND'
+            || candidates.some(candidate => packageHasExports(candidate.packageDir))) throw error
         }
+      } else {
+        const selected = candidates[0] as { packageDir: string }
+        const state = {
+          route: { kind: 'native' as const, packageDir: selected.packageDir },
+          packageDir: selected.packageDir,
+        }
+        requests.set(request, state)
+        return state
       }
     }
 
@@ -255,7 +325,7 @@ class ResolutionRouter {
       ? { kind: 'fallback', entry: target }
       : { kind: 'after-fallback', parent: join(dirname(profilesDir), 'package.json') }
     const state: ResolutionRouteState = { route }
-    requests.set(request, state)
+    if (route.kind === 'fallback') requests.set(request, state)
     return state
   }
 
@@ -307,7 +377,7 @@ class ResolutionRouter {
     return this.routeScoped(request, parentRoutes, generation, 'esm')
   }
 
-  routePath(request: string, parent: string): ResolutionRouteState | undefined {
+  routePath(request: string, parent: string, nativeResolve?: () => string): ResolutionRouteState | undefined {
     const generation = this.current
     let parentRoutes = generation.cjsRoutes.get(parent)
     if (parentRoutes === false) return undefined
@@ -333,17 +403,15 @@ class ResolutionRouter {
       generation.cjsRoutes.set(parent, false)
       return undefined
     }
-    const local = this.routeLocalPackage(request, parentRoutes, generation)
-    if (local !== undefined) return local
-    return this.routeScoped(request, parentRoutes, generation, 'cjs')
+    return this.routeScoped(request, parentRoutes, generation, 'cjs', nativeResolve)
   }
 
   explicitRoute(
-    request: string, paths: readonly string[],
+    request: string, paths: readonly string[], nativeResolve: (path: string) => () => string,
   ): { index: number; state: ResolutionRouteState } | undefined {
     for (const [index, path] of paths.entries()) {
       const parent = join(resolve(path), '.dsh-profile-resolution.cjs')
-      const state = this.routePath(request, parent)
+      const state = this.routePath(request, parent, nativeResolve(path))
       if (state !== undefined) return { index, state }
     }
     return undefined
@@ -534,7 +602,11 @@ export function installProfileResolution(
       return originalFilename.call(cjs, request, parent, main, options)
     }
     const explicitPaths = Array.isArray(options?.paths) ? options.paths : undefined
-    const explicit = explicitPaths === undefined ? undefined : router.explicitRoute(request, explicitPaths)
+    const explicit = explicitPaths === undefined
+      ? undefined
+      : router.explicitRoute(request, explicitPaths, path => () => originalFilename.call(
+        cjs, request, parent, main, { ...options, paths: [path] },
+      ))
     if (options?.paths !== undefined && explicit === undefined) {
       return originalFilename.call(cjs, request, parent, main, options)
     }
@@ -548,7 +620,11 @@ export function installProfileResolution(
         if ((error as NodeJS.ErrnoException).code !== 'MODULE_NOT_FOUND') throw error
       }
     }
-    const state = explicit?.state ?? router.routePath(request, parent.filename)
+    const state = explicit?.state ?? router.routePath(
+      request,
+      parent.filename,
+      () => originalFilename.call(cjs, request, parent, main, options),
+    )
     if (state === undefined) return originalFilename.call(cjs, request, parent, main, options)
     const cacheable = options?.paths === undefined && options?.conditions === undefined
     if (cacheable && state.cjs !== undefined) return state.cjs
@@ -559,9 +635,17 @@ export function installProfileResolution(
       return result
     }
     if (route.kind === 'after-fallback' && explicit !== undefined && explicitPaths !== undefined) {
-      const paths = [...explicitPaths]
-      paths[explicit.index] = dirname(route.parent)
-      return originalFilename.call(cjs, request, parent, main, { ...options, paths })
+      try {
+        return originalFilename.call(cjs, request, parent, main, {
+          ...options,
+          paths: [dirname(route.parent)],
+        })
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'MODULE_NOT_FOUND') throw error
+        const remaining = explicitPaths.slice(explicit.index + 1)
+        if (remaining.length === 0) throw error
+        return wrappedFilename(request, parent, main, { ...options, paths: remaining })
+      }
     }
     delegatedCjs++
     try {
