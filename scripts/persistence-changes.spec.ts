@@ -410,6 +410,16 @@ describe('persistence changes current-tree commands', () => {
     expect(() => loadPersistenceHistory(root)).toThrow('unreferenced')
   })
 
+  it('excludes nested historical format documents and schemas from acknowledgements', () => {
+    const root = fixture()
+    baseline(root)
+    const directory = join(root, 'docs/persistence-changes/historical-formats')
+    mkdirSync(directory)
+    writeFileSync(join(directory, 'v0.md'), '---\nkind: persistence-format\n---\n')
+    writeFileSync(join(directory, 'v0.schema.json'), '{}\n')
+    expect(loadPersistenceHistory(root).entries.map(entry => entry.record.id)).toEqual([BASE_ID])
+  })
+
   it.each([
     ['optional field', inventory({ value: 'string', 'label?': 'string' })],
     ['required-to-optional field', inventory({ 'value?': 'string' })],

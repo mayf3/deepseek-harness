@@ -21,7 +21,7 @@ function isExcluded(file: string): boolean {
   return excludedPrefixes.some(prefix => file.startsWith(prefix))
     // Release snapshots retain the identifiers present in their pinned source.
     || /^docs\/persistence-changes\/releases\/dsh-v\d+\.\d+\.\d+-(?:alpha|rc)\.\d+\.schema\.json$/u.test(file)
-    || /^docs\/persistence-formats\/v(?:0|[1-9]\d*)\.schema\.json$/u.test(file)
+    || /^docs\/persistence-changes\/historical-formats\/v(?:0|[1-9]\d*)\.schema\.json$/u.test(file)
 }
 
 function containsBlockedTerm(value: string): boolean {
@@ -29,7 +29,7 @@ function containsBlockedTerm(value: string): boolean {
 }
 
 function historicalSchemaRegion(file: string, source: string, lines: readonly string[]): readonly [number, number] | undefined {
-  if (!/^docs\/persistence-formats\/v(?:0|[1-9]\d*)(?:\.zh)?\.md$/u.test(file)) return undefined
+  if (!/^docs\/persistence-changes\/historical-formats\/v(?:0|[1-9]\d*)(?:\.zh)?\.md$/u.test(file)) return undefined
   if (source.match(/<!--\s*persistence-format-schema\b/giu)?.length !== 2) return undefined
   const start = lines.indexOf('<!-- persistence-format-schema:start -->')
   const end = lines.indexOf('<!-- persistence-format-schema:end -->')

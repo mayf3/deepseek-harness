@@ -56,7 +56,7 @@ The `kind` frontmatter field selects exactly one README template. Every kind in 
 - `package-bundle` → [templates/package-bundle.md](templates/package-bundle.md): a package declaring `dsh.bundle.patch` — the verified `dsh plugin` install path, layer semantics, patch document.
 - `persistence-change` → [templates/persistence-change.md](templates/persistence-change.md): a dated record in `docs/persistence-changes/` — acknowledge a detected type transition with per-root predecessors and generated after schemas.
 - `persistence-release` → [templates/persistence-release.md](templates/persistence-release.md): a pinned tag in `docs/persistence-changes/releases/` — compare reconstructed historical types without claiming compatibility acknowledgement.
-- `persistence-format` → [templates/persistence-format.md](templates/persistence-format.md): a historical Session format checkpoint in `docs/persistence-formats/`, with complete schemas; the current writer uses the existing catalog.
+- `persistence-format` → [templates/persistence-format.md](templates/persistence-format.md): a historical Session format checkpoint in `docs/persistence-changes/historical-formats/`, with complete schemas; the current writer uses the existing catalog.
 
 Open the template before writing and follow its skeleton and rules; it states what the kind is, how the page is structured, and the fact checks each section owes. Add a new kind only together with a distinct template file, a documented repository position or declared owner, and a focused check that maps documents to it.
 

@@ -11,7 +11,7 @@ import { canonicalizeSchema, schemaDigest } from './persistence-schema-model.ts'
 import type { PersistenceSchemaInventory } from './persistence-schema-model.ts'
 import { withoutPersistenceSourceLines } from './persistence-source-metadata.ts'
 
-const DIRECTORY = 'docs/persistence-formats'
+const DIRECTORY = 'docs/persistence-changes/historical-formats'
 const CURRENT_DOCUMENT = 'docs/persistence-catalog.md'
 const CURRENT_SCHEMA = 'docs/persistence-schema.json'
 

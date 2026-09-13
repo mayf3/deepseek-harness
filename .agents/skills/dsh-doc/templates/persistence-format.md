@@ -1,6 +1,6 @@
 # Template: persistence-format
 
-Use this kind for `docs/persistence-formats/vN.md` and its Chinese sibling. Each record describes one explicitly selected historical Session format checkpoint with complete declared types. It is a format reference, not a release record or compatibility acknowledgement. The checkout writer uses the existing current catalog.
+Use this kind for `docs/persistence-changes/historical-formats/vN.md` and its Chinese sibling. Each record describes one explicitly selected historical Session format checkpoint with complete declared types. It is a format reference, not a release record or compatibility acknowledgement. The checkout writer uses the existing current catalog.
 
 ## Frontmatter
 
@@ -22,4 +22,4 @@ kind: persistence-format
 7. **Verification and limitations:** state actual extraction evidence, coverage limits, and the offline verifier. Preserve historical optional fields and opaque declarations without claiming codec admission or migration safety.
 8. **Dev Note:** reserve non-authoritative working context, or write `None.`.
 
-The [format index](../../../../docs/persistence-formats/README.md) owns coverage and maintenance. `pnpm run verify-persistence-formats --write` validates schemas before refreshing generated regions and pairing records. It cannot create historical evidence or repair machine data. Keep every older integer documented when the current writer advances; do not duplicate the current catalog under a historical filename.
+The [format index](../../../../docs/persistence-changes/historical-formats/README.md) owns coverage and maintenance. `pnpm run verify-persistence-formats --write` validates schemas before refreshing generated regions and pairing records. It cannot create historical evidence or repair machine data. Keep every older integer documented when the current writer advances; do not duplicate the current catalog under a historical filename.

@@ -18,7 +18,7 @@ Status: implemented
 
 `verify-concrete-terms` 会在 NFKC 规范化后，不区分大小写地扫描已跟踪文件名、符号链接目标和文本。它作为 `doc-sync` 的快速叶子门禁运行；对应测试证明行文、标识符和路径中的违规都会被拒绝。vendored 源码与冻结的 archived Agent Note 仍被排除，因为各自的仓库规则禁止直接编辑这些内容。
 
-历史持久化证据保留选定源码树中的标识符。检查排除 `docs/persistence-changes/releases/` 下的发行版 schema JSON 和 `docs/persistence-formats/vN.schema.json`。在 `vN.md` 与 `vN.zh.md` 中，只有一组有效 `persistence-format-schema` 标记内的 schema 内容获得豁免；`verify-persistence-formats` 要求该内容匹配生成的历史 schema。人工说明、当前目录和当前 schema 仍接受检查。重命名已记录的标识符会歪曲历史声明；[持久化历史决策](2026-09-11-persistence-type-history.zh.md)负责这类证据。
+历史持久化证据保留选定源码树中的标识符。检查排除 `docs/persistence-changes/releases/` 下的发行版 schema JSON 和 `docs/persistence-changes/historical-formats/vN.schema.json`。在 `vN.md` 与 `vN.zh.md` 中，只有一组有效 `persistence-format-schema` 标记内的 schema 内容获得豁免；`verify-persistence-formats` 要求该内容匹配生成的历史 schema。人工说明、当前目录和当前 schema 仍接受检查。重命名已记录的标识符会歪曲历史声明；[持久化历史决策](2026-09-11-persistence-type-history.zh.md)负责这类证据。
 
 本决策针对这一个术语，部分取代了旧决策中不采用固定禁词和标识符重命名的选择。旧决策仍适用于其他抽象语言，也仍负责要求根据每处使用的具体含义选择替代名称。
 

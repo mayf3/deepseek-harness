@@ -370,7 +370,7 @@ describe('dsh-doc skill consolidation', () => {
   })
 
   it('maps historical Session format references to their dedicated document kind', () => {
-    const files = globSync('docs/persistence-formats/v*.md', { cwd: root })
+    const files = globSync('docs/persistence-changes/historical-formats/v*.md', { cwd: root })
     expect(files.length).toBe(readCurrentSessionFormatVersion(root) * 2)
     for (const file of files) {
       const metadata = readFrontmatter(file)

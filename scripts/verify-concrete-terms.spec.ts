@@ -86,26 +86,26 @@ describe('concrete terminology policy', () => {
   })
 
   it.each(['0', '1', '2', '10'])('preserves historical identifiers in the canonical v%s machine schema', (version) => {
-    expect(findConcreteTermViolations(`docs/persistence-formats/v${version}.schema.json`, blockedTerm)).toEqual([])
+    expect(findConcreteTermViolations(`docs/persistence-changes/historical-formats/v${version}.schema.json`, blockedTerm)).toEqual([])
   })
 
   it.each([
-    'docs/persistence-formats/v00.schema.json',
-    'docs/persistence-formats/v01.schema.json',
-    'docs/persistence-formats/v-1.schema.json',
-    'docs/persistence-formats/v1.zh.schema.json',
-    'docs/persistence-formats/v1.schema.json.backup',
-    'docs/persistence-formats/V1.schema.json',
-    'docs/persistence-formats/versions/v1.schema.json',
-    'docs/persistence-formats-extra/v1.schema.json',
-    'docs/other/persistence-formats/v1.schema.json',
+    'docs/persistence-changes/historical-formats/v00.schema.json',
+    'docs/persistence-changes/historical-formats/v01.schema.json',
+    'docs/persistence-changes/historical-formats/v-1.schema.json',
+    'docs/persistence-changes/historical-formats/v1.zh.schema.json',
+    'docs/persistence-changes/historical-formats/v1.schema.json.backup',
+    'docs/persistence-changes/historical-formats/V1.schema.json',
+    'docs/persistence-changes/historical-formats/versions/v1.schema.json',
+    'docs/persistence-changes/historical-formats-extra/v1.schema.json',
+    'docs/other/persistence-changes/historical-formats/v1.schema.json',
     'docs/persistence-schema.json',
   ])('keeps machine content strict outside canonical historical schema path %s', (file) => {
     expect(findConcreteTermViolations(file, blockedTerm)).toEqual([{ file, line: 1 }])
   })
 
   it.each(['md', 'zh.md'])('exempts only generated historical schema lines in %s references', (suffix) => {
-    const file = `docs/persistence-formats/v2.${suffix}`
+    const file = `docs/persistence-changes/historical-formats/v2.${suffix}`
     for (const newline of ['\n', '\r\n']) {
       expect(findConcreteTermViolations(file, [
         `Authored ${blockedTerm}.`,
@@ -119,15 +119,15 @@ describe('concrete terminology policy', () => {
   })
 
   it.each([
-    'docs/persistence-formats/v00.md',
-    'docs/persistence-formats/v01.zh.md',
-    'docs/persistence-formats/v-1.md',
-    'docs/persistence-formats/v1.zh.zh.md',
-    'docs/persistence-formats/v1.md.backup',
-    'docs/persistence-formats/V1.md',
-    'docs/persistence-formats/README.md',
-    'docs/persistence-formats-extra/v1.md',
-    'docs/other/persistence-formats/v1.zh.md',
+    'docs/persistence-changes/historical-formats/v00.md',
+    'docs/persistence-changes/historical-formats/v01.zh.md',
+    'docs/persistence-changes/historical-formats/v-1.md',
+    'docs/persistence-changes/historical-formats/v1.zh.zh.md',
+    'docs/persistence-changes/historical-formats/v1.md.backup',
+    'docs/persistence-changes/historical-formats/V1.md',
+    'docs/persistence-changes/historical-formats/README.md',
+    'docs/persistence-changes/historical-formats-extra/v1.md',
+    'docs/other/persistence-changes/historical-formats/v1.zh.md',
     'docs/persistence-catalog.md',
     'docs/persistence-catalog.zh.md',
     'docs/persistence-schema.json',
@@ -157,14 +157,14 @@ describe('concrete terminology policy', () => {
     ['other marker prefix', ['<!-- persistence-release-schema:start -->', '<!-- persistence-release-schema:end -->']],
     ['index marker', ['<!-- persistence-format-index:start -->', '<!-- persistence-format-index:end -->']],
   ])('exempts no lines with %s', (_label, markers) => {
-    const file = 'docs/persistence-formats/v1.md'
+    const file = 'docs/persistence-changes/historical-formats/v1.md'
     const lines = [blockedTerm, ...markers.flatMap(marker => [marker, blockedTerm])].join('\n').split('\n')
     const expected = lines.flatMap((line, index) => line === blockedTerm ? [{ file, line: index + 1 }] : [])
     expect(findConcreteTermViolations(file, lines.join('\n'))).toEqual(expected)
   })
 
   it('keeps marker lines strict when they contain authored text', () => {
-    const file = 'docs/persistence-formats/v1.md'
+    const file = 'docs/persistence-changes/historical-formats/v1.md'
     expect(findConcreteTermViolations(file, [
       `<!-- persistence-format-schema:start --> ${blockedTerm}`,
       blockedTerm,

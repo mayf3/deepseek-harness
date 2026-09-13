@@ -39,7 +39,7 @@ function historicalSchema(entry: PersistenceFormatEntry, language: Language): st
 }
 
 function formatIndex(formats: PersistenceFormats, language: Language): string {
-  const path = (target: string): string => posix.relative('docs/persistence-formats',
+  const path = (target: string): string => posix.relative('docs/persistence-changes/historical-formats',
     language === 'zh' && target.endsWith('.md') ? target.replace(/\.md$/u, '.zh.md') : target)
   return [
     language === 'en' ? '| Format | Source | Reference | Machine schema | Roots / types |' : '| 格式 | 来源 | 参考文档 | 机器 schema | 根类型 / 类型 |',
@@ -68,7 +68,7 @@ export function persistenceFormatFactArtifacts(root: string, formats: Persistenc
     }
     artifacts.push(...renderPersistencePair(root, entry.document, render('en'), render('zh')))
   }
-  const index = 'docs/persistence-formats/README.md'
+  const index = 'docs/persistence-changes/historical-formats/README.md'
   const renderIndex = (language: Language): string => {
     const path = language === 'en' ? index : index.replace(/\.md$/u, '.zh.md')
     return replaceRegion(readFileSync(join(root, path), 'utf8'), 'index', formatIndex(formats, language), path)
