@@ -86,6 +86,11 @@ function progress(value: unknown): WorkflowProgress {
   }
 }
 
+function progressBatch(value: unknown): WorkflowProgress[] {
+  if (!Array.isArray(value)) throw new Error('workflow progress requires an array of events')
+  return value.map(progress)
+}
+
 function workflowResult(value: unknown): WorkflowResult {
   const result = object(value)
   if (result.stopReason !== 'completed' && result.stopReason !== 'error' && result.stopReason !== 'cancelled') throw new Error('invalid workflow stop reason')
@@ -173,7 +178,10 @@ export class PtcWorkflowRun implements WorkflowRun {
       startChild: value => this.track(this.startChild(childRequest(value))),
       childResult: value => this.track(this.childResult(this.child(value))),
       disposeChild: async (value) => { await this.disposeChild(this.child(value)); return null },
-      progress: (value) => { this.onProgress(progress(value)); return Promise.resolve(null) },
+      progress: (value) => {
+        for (const event of progressBatch(value)) this.onProgress(event)
+        return Promise.resolve(null)
+      },
     }
   }
 
@@ -212,12 +220,21 @@ export class PtcWorkflowRun implements WorkflowRun {
   }
 
   private async childResult(record: ChildRecord): Promise<PtcJsonValue> {
-    const result = await record.run.result
-    return json({
-      output: result.output,
-      stopReason: result.stopReason,
-      ...result.structured === undefined ? {} : { structured: result.structured },
-    })
+    const signal = this.controller.signal
+    signal.throwIfAborted()
+    const aborted = Promise.withResolvers<never>()
+    const onAbort = (): void => { aborted.reject(signal.reason) }
+    signal.addEventListener('abort', onAbort, { once: true })
+    try {
+      const result = await Promise.race([record.run.result, aborted.promise])
+      return json({
+        output: result.output,
+        stopReason: result.stopReason,
+        ...result.structured === undefined ? {} : { structured: result.structured },
+      })
+    } finally {
+      signal.removeEventListener('abort', onAbort)
+    }
   }
 
   private disposeChild(record: ChildRecord): Promise<void> {

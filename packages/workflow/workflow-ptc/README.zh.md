@@ -25,7 +25,7 @@ kind: "package-reference"
 <a id="use-this-package"></a>
 ## 使用本包
 
-在提供 subagent、沙箱策略和 [Node PTC 运行时](../../ptc-runtime/ptc-runtime-node/README.zh.md)的组合中挂载本引擎。它为 `dsh-tool-workflow` 及显式启用时的 `dsh-tool-ralph` 提供工作流执行。Ralph 在已发布默认组合中保持禁用。
+在提供 subagent、沙箱策略和 [Node PTC 运行时](../../ptc-runtime/ptc-runtime-node/README.zh.md)的组合中挂载本引擎。它为 `dsh-tool-workflow` 及显式启用时的 `dsh-tool-ralph` 提供工作流执行。Ralph 在已发布默认组合中保持禁用。引擎在加载时拒绝非 TypeScript 的 PTC 提供方。Python PTC 组合必须禁用 `workflow-ptc`、`tool-workflow` 以及任何已启用的 `tool-ralph` 条目。
 
 ### 最小配置
 
@@ -45,6 +45,8 @@ kind: "package-reference"
 | `syncTimeoutMs` | `5000` | 脚本最初同步片段的 VM 超时时间，单位为毫秒。 |
 
 负责运行的消费方可以为一次运行设置 `WorkflowStartRequest.subagentProvider` 并降低 `WorkflowStartRequest.maxTotalAgents`。脚本钩子不能更改这两项选择。进程堆、输出、控制通信和终止限制由 Node PTC 提供方负责；引擎不增加整体经过时间定时器。生成的[配置目录](../../../docs/config-catalog.zh.md#deepseek-aidsh-workflow-ptc)定义可接受的引擎字段。
+
+Node PTC 提供方的 `maxPendingCalls` 也限制工作流并发：子 agent 启动、结果等待与资源释放会占用这些名额。进度批次至多再占用一个名额。设置 `maxConcurrentAgents` 时应预留余量。
 
 ### 结果与失败
 

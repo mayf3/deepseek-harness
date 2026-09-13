@@ -791,7 +791,7 @@ describe('dsh-workflow-ptc', { timeout: 120_000 }, () => {
         parent: fakeParent(ctx),
       })
       const result = await handle.result
-      expect(result.stopReason).toBe('completed')
+      expect(result.stopReason, result.error).toBe('completed')
       // BEFORE dispose(): the settlement itself must have aborted the signal —
       // without it this child would stay live until dispose's terminate. This
       // is a HOST-PROMPTNESS claim, not a cold-start race — a tight explicit

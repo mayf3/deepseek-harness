@@ -8,23 +8,37 @@ import type { ExecutionObserver } from './runtime.ts'
 import type { ChildPort } from './types.ts'
 
 /**
- * Run a workflow and await every progress callback before returning its result.
- * Cancellation belongs to the PTC runtime and the host's child cleanup.
+ * Run a workflow with one progress batch in flight. Drain progress before child
+ * disposal and the terminal result; PTC and the host own cancellation and cleanup.
  * @param host - JSON callbacks owned by this workflow run.
  * @returns The script result after progress delivery; initialization failures reject.
  */
 export async function runWorkflowGuest(host: WorkflowGuestHost): Promise<WorkflowResult> {
   const init = await host.begin({})
-  const progress = new Set<Promise<void>>()
+  let queued: WorkflowProgress[] = []
+  let inFlight: Promise<void> | undefined
   let progressError: string | undefined
-  const send = (event: WorkflowProgress): void => {
-    // Start the callback synchronously so narration reaches the host before a hot loop.
-    const task = host.progress(event).then(
-      () => {},
-      (error: unknown) => { progressError ??= renderThrown(error) },
+  const flush = (): void => {
+    if (inFlight !== undefined || queued.length === 0) return
+    const batch = queued
+    queued = []
+    inFlight = host.progress(batch).then(
+      () => { inFlight = undefined; flush() },
+      (error: unknown) => {
+        progressError = renderThrown(error)
+        queued = []
+        inFlight = undefined
+      },
     )
-    progress.add(task)
-    void task.then(() => { progress.delete(task) })
+  }
+  const send = (event: WorkflowProgress): void => {
+    if (progressError !== undefined) return
+    queued.push(event)
+    // The first batch reaches the host before a synchronous script can seize its loop.
+    flush()
+  }
+  const drain = async (): Promise<void> => {
+    while (inFlight !== undefined) await inFlight
   }
   const observer: ExecutionObserver = {
     phase: (title) => { send({ type: 'phase', title }) },
@@ -41,13 +55,17 @@ export async function runWorkflowGuest(host: WorkflowGuestHost): Promise<Workflo
       return {
         id: childId,
         result,
-        async dispose() { await host.disposeChild({ callId }) },
+        async dispose() {
+          // Start observers must receive the child while its host registration is still live.
+          await drain()
+          await host.disposeChild({ callId })
+        },
       }
     },
   }
   const execution = new WorkflowExecution(init.meta, init.body, init.args, init.limits, observer, children)
   const result = await execution.drive()
-  await Promise.all(progress)
+  await drain()
   return progressError === undefined ? result : {
     value: null,
     stopReason: 'error',

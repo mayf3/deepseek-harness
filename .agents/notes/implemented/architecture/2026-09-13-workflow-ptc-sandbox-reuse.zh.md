@@ -18,6 +18,10 @@ VM 定义辅助 API，以及协作式并发、agent 总数和条目上限。它�
 
 取消立即中止 PTC 进程，以及待启动和活跃子 agent 共享的信号。适配器等待待完成启动与子 agent 资源释放，包括取消后才发布的子 agent。PTC 停止程序；已经进行中的 Host 绑定仍由其调用方负责。不增加工作流清理定时器，也不等待 guest 取消确认。
 
+进度同时只使用一个绑定调用。首批同步发起，后续事件按序排队，并在子 agent 资源释放及最终结果之前完成传递。这避免普通日志突发耗尽 PTC 的待完成调用上限。取消会停止对子 agent 结果的等待，但仍等待子 agent 资源释放。
+
+Node 引导程序发送终态帧后保持控制管道打开，直到 Host 将其关闭。未被等待的绑定回复可能仍在传输，因此子进程提前关闭会让 `EPIPE` 与已经完成的程序结果发生竞争。
+
 [动态工作流决策](../feature/2026-07-05-dynamic-workflows.zh.md)保留脚本、结构化输出、事件与工具语义；本文只取代其执行基底与信任实现。[沙箱化 Node PTC 决策](2026-09-11-sandboxed-node-ptc-runtime.zh.md)保留执行与控制保证；显式 null 截止扩展其服务选项。[agent 作用域运行时设计](2026-07-12-agent-scope-runtime-design.zh.md#workflow-children-are-pending-starts-or-published-records)保留待启动与子 agent 清理的归属规则。
 
 ## 曾考虑的替代方案

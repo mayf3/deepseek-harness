@@ -90,4 +90,24 @@ return { got: judged === null ? 'null' : 'value' }`,
     expect(result.value).toEqual({ got: 'null' })
     await run.dispose()
   })
+
+  it('keeps real children visible to start observers after a progress burst', async () => {
+    const { ctx, parent } = await setup([textResponse('child complete')])
+    const logs: string[] = []
+    const visible: boolean[] = []
+    ctx.on('workflow/log', (_info, message) => { logs.push(message) })
+    ctx.on('workflow/agent-start', (_info, child) => { visible.push(ctx.agents.get(child.childId) !== undefined) })
+    const run = ctx.workflowEngine.start({
+      meta: { name: 'progress-burst', description: 'ordered progress and child visibility' },
+      script: 'for (let index = 0; index < 200; index++) log(String(index)); return await agent("finish")',
+      parent,
+    })
+    try {
+      await expect(run.result).resolves.toMatchObject({ value: 'child complete', stopReason: 'completed', agentsStarted: 1 })
+      expect(logs).toEqual(Array.from({ length: 200 }, (_, index) => String(index)))
+      expect(visible).toEqual([true])
+    } finally {
+      await run.dispose()
+    }
+  })
 })

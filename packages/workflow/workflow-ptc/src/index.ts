@@ -114,6 +114,7 @@ class PtcWorkflowEngine extends WorkflowEngine {
 
   constructor(ctx: Context, config: Config) {
     super(ctx)
+    if (ctx.ptcRuntime.language !== 'typescript') throw new Error('workflow-ptc requires the Node TypeScript PTC runtime')
     // schemastery (static Config) has already filled the defaulted fields;
     // the assertion records that resolution, not a hidden fallback.
     this.config = config as ResolvedConfig
@@ -130,7 +131,6 @@ class PtcWorkflowEngine extends WorkflowEngine {
    * @returns the live run (its `result` resolves when the script settles).
    */
   start(request: WorkflowStartRequest): WorkflowRun {
-    if (this.ctx.ptcRuntime.language !== 'typescript') throw new Error('workflow-ptc requires the Node TypeScript PTC runtime')
     const meta = validateMeta(request.meta)
     assertBodyParses(request.script, meta.name)
     const subagentProvider = resolveSubagentProvider(this.ctx, this.config.provider, request.subagentProvider)

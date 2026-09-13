@@ -18,6 +18,10 @@ Workflow execution passes `timeoutMs: null`, which explicitly disables the elaps
 
 Cancellation immediately aborts the PTC process and the signal shared by pending and active child agents. The adapter awaits pending starts and child disposal, including a child that publishes after cancellation. PTC stops the program; its caller remains responsible for host bindings already in flight. There is no additional workflow cleanup timer or guest cancellation acknowledgement.
 
+Progress uses one binding call at a time. The first batch starts synchronously; later events queue in order and drain before child disposal and the final result. This prevents ordinary log bursts from exhausting PTC's pending-call limit. Child-result waits stop on cancellation while child disposal remains awaited.
+
+The Node bootstrap keeps its control pipe open after sending the terminal frame until the host closes it. Unawaited binding replies may still be in flight, so eager child-side close would let an `EPIPE` race an already completed program.
+
 The [dynamic-workflows decision](../feature/2026-07-05-dynamic-workflows.md) retains the script, structured-output, event and tool semantics; this note supersedes only its execution substrate and trust realization. The [sandboxed Node PTC decision](2026-09-11-sandboxed-node-ptc-runtime.md) retains execution and control guarantees; the explicit null deadline extends its service options. The [agent-scope runtime design](2026-07-12-agent-scope-runtime-design.md#workflow-children-are-pending-starts-or-published-records) retains pending-start and child-cleanup ownership.
 
 ## Alternatives considered

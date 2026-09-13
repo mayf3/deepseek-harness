@@ -1,4 +1,5 @@
 import { execFile } from 'node:child_process'
+import { setImmediate } from 'node:timers/promises'
 import { promisify } from 'node:util'
 import { describe, expect, it, onTestFinished } from 'vitest'
 import { runWorkflowGuest } from '../src/guest.ts'
@@ -24,7 +25,7 @@ function fixture(body: string, overrides: Partial<WorkflowGuestHost> = {}, limit
     },
     childResult: async ({ callId }) => ({ output: [{ type: 'text', text: requests[callId - 1]!.prompt }], stopReason: 'completed' }),
     async disposeChild({ callId }) { disposed.push(callId); return null },
-    async progress(event) { events.push(event); return null },
+    async progress(batch) { events.push(...batch); return null },
     ...overrides,
   }
   return { host, init, requests, events, disposed }
@@ -86,6 +87,88 @@ describe('workflow guest callbacks', () => {
     const result = await runWorkflowGuest(host)
     expect(result).toMatchObject({ value: null, stopReason: 'error', agentsStarted: 1 })
     expect(result.error).toContain('progress delivery failed')
+  })
+
+  it('coalesces a synchronous progress burst while one acknowledgement is pending', async () => {
+    const first = Promise.withResolvers<undefined>()
+    const second = Promise.withResolvers<undefined>()
+    const firstAck = Promise.withResolvers<null>()
+    const secondAck = Promise.withResolvers<null>()
+    const batches: WorkflowProgress[][] = []
+    let pending = 0
+    let peak = 0
+    const test = fixture('for (let index = 0; index < 200; index++) log(String(index)); return "done"', {
+      async progress(events) {
+        batches.push(events)
+        peak = Math.max(peak, ++pending)
+        const firstBatch = batches.length === 1
+        if (firstBatch) first.resolve(undefined)
+        else second.resolve(undefined)
+        await (firstBatch ? firstAck.promise : secondAck.promise)
+        pending -= 1
+        return null
+      },
+    })
+    let settled = false
+    const active = runWorkflowGuest(test.host).then((result) => { settled = true; return result })
+    onTestFinished(async () => { firstAck.resolve(null); secondAck.resolve(null); await active })
+    await first.promise
+    expect(batches).toHaveLength(1)
+    expect(batches[0]).toEqual([{ type: 'log', message: '0' }])
+    firstAck.resolve(null)
+    await second.promise
+    expect(batches).toHaveLength(2)
+    expect(batches[1]).toEqual(Array.from({ length: 199 }, (_, index) => ({ type: 'log', message: String(index + 1) })))
+    expect(peak).toBe(1)
+    await setImmediate()
+    expect(settled).toBe(false)
+    secondAck.resolve(null)
+    await expect(active).resolves.toMatchObject({ value: 'done', stopReason: 'completed' })
+  })
+
+  it('reports a rejected batch and stops dispatching its queued progress', async () => {
+    const entered = Promise.withResolvers<undefined>()
+    const acknowledgement = Promise.withResolvers<null>()
+    const batches: WorkflowProgress[][] = []
+    const test = fixture('for (let index = 0; index < 200; index++) log(String(index)); return "done"', {
+      progress(events) {
+        batches.push(events)
+        entered.resolve(undefined)
+        return acknowledgement.promise
+      },
+    })
+    const active = runWorkflowGuest(test.host)
+    onTestFinished(async () => { acknowledgement.resolve(null); await active })
+    await entered.promise
+    acknowledgement.reject(new Error('progress batch rejected'))
+    const result = await active
+    expect(result).toMatchObject({ value: null, stopReason: 'error' })
+    expect(result.error).toContain('progress batch rejected')
+    expect(batches).toEqual([[{ type: 'log', message: '0' }]])
+  })
+
+  it('delivers queued child lifecycle events before disposing the published child', async () => {
+    const firstAck = Promise.withResolvers<null>()
+    const events: WorkflowProgress[] = []
+    let batches = 0
+    const test = fixture('log("hold"); return await agent("work")', {
+      async progress(batch) {
+        events.push(...batch)
+        if (++batches === 1) await firstAck.promise
+        return null
+      },
+    })
+    const active = runWorkflowGuest(test.host)
+    onTestFinished(async () => { firstAck.resolve(null); await active })
+    // All child callbacks are fulfilled promises; the next turn drains their microtasks.
+    await setImmediate()
+    expect(test.requests).toHaveLength(1)
+    expect(test.disposed).toEqual([])
+    expect(events).toEqual([{ type: 'log', message: 'hold' }])
+    firstAck.resolve(null)
+    await expect(active).resolves.toMatchObject({ value: 'work', stopReason: 'completed' })
+    expect(events.map(event => event.type)).toEqual(['log', 'agent-start', 'agent-end'])
+    expect(test.disposed).toEqual([1])
   })
 
   it('reports initialization failure before any child or progress call', async () => {

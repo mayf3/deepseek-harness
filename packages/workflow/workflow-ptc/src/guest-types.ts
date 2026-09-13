@@ -51,9 +51,9 @@ export interface WorkflowGuestHost {
    */
   disposeChild(request: WorkflowChildRequest): Promise<null>
   /**
-   * Publish progress for this workflow run.
-   * @param event - Script narration or child lifecycle data.
-   * @returns Null after the host accepts the event.
+   * Publish an ordered batch of progress for this workflow run.
+   * @param events - Script narration and child lifecycle data in emission order.
+   * @returns Null after the host accepts every event.
    */
-  progress(event: WorkflowProgress): Promise<null>
+  progress(events: WorkflowProgress[]): Promise<null>
 }

@@ -31,7 +31,8 @@ it('runs the default workflow config through the source PTC runtime', async () =
     parent,
   })
   try {
-    await expect(run.result).resolves.toMatchObject({ value: 42, stopReason: 'completed', agentsStarted: 0 })
+    const result = await run.result
+    expect(result, result.error).toMatchObject({ value: 42, stopReason: 'completed', agentsStarted: 0 })
   } finally { await run.dispose() }
 })
 
@@ -51,7 +52,8 @@ return 42`,
     parent,
   })
   try {
-    expect((await run.result).stopReason).toBe('completed')
+    const result = await run.result
+    expect(result.stopReason, result.error).toBe('completed')
     expect(await readFile(outside, 'utf8')).toBe('unchanged')
     if (mode === 'workspace-write') expect(await readFile(inside, 'utf8')).toBe('inside')
     else await expect(readFile(inside, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' })
