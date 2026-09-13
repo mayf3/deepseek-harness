@@ -228,10 +228,10 @@ describe('profile resolution generation', { concurrent: false }, () => {
       packageDir: installationChoice,
       scope: 'installation',
     })
-    expect(generation.entries.find(entry => entry.name === 'bundle-choice')).toMatchObject({
-      packageDir: realpathSync(firstBundleChoice),
-      scope: 'profile',
-    })
+    const bundleChoice = generation.entries.find(entry => entry.name === 'bundle-choice')
+    if (bundleChoice === undefined) throw new Error('generation omitted bundle-choice')
+    expect(bundleChoice).toMatchObject({ scope: 'profile' })
+    expect(realpathSync(bundleChoice.packageDir)).toBe(realpathSync(firstBundleChoice))
     expect(generation.entries.find(entry => entry.name === 'peer-choice')).toMatchObject({
       packageDir: peerChoice,
       scope: 'installation',
@@ -481,9 +481,10 @@ describe('profile resolution generation', { concurrent: false }, () => {
     expect(createRequire(join(f.profile.dir, 'entry.cjs'))('bundle-only')).toEqual({ marker: 4 })
     const other = join(f.root, 'profiles', 'other', 'entry.cjs')
     expect(() => { createRequire(other)('bundle-only') }).toThrow(/Cannot find module/u)
-    expect(createRequire(other).resolve('bundle-only', {
+    const resolvedBundleOnly = createRequire(other).resolve('bundle-only', {
       paths: [dirname(other), f.profile.dir],
-    })).toBe(join(bundleOnly, 'index.cjs'))
+    })
+    expect(realpathSync(resolvedBundleOnly)).toBe(realpathSync(join(bundleOnly, 'index.cjs')))
     expect(() => createRequire(other).resolve('bundle-only', { paths: [dirname(other)] }))
       .toThrow(/Cannot find module/u)
     expect(() => createRequire(other).resolve('missing-explicit', { paths: [dirname(other)] }))
