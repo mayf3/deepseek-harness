@@ -297,6 +297,7 @@ export function gatesForMode(selected: Mode): Gate[] {
 function ciSharedStaticGates(): Gate[] {
   return [
     pnpmScript('runtime-closure', 'verify-runtime-closure', { label: 'runtime closure' }),
+    pnpmScript('default-product-isolation', 'verify-default-product-isolation', { label: 'default product isolation' }),
     pnpmScript('application-entrypoints', 'verify-application-entrypoints', { label: 'application entrypoints' }),
     pnpmScript('constraints', 'constraints'),
     pnpmScript('package-dependencies', 'verify-package-dependencies', { label: 'package dependencies' }),
@@ -693,6 +694,7 @@ function hygieneLeafGates(options: { artifactNeeds?: string[] } = {}): Gate[] {
     pnpmScript('rescope-vendor', 'rescope-vendor:check', { label: 'vendor rescope' }),
     pnpmScript('publint', 'publint', artifactOptions),
     pnpmScript('constraints', 'constraints'),
+    pnpmScript('default-product-isolation', 'verify-default-product-isolation', { label: 'default product isolation' }),
     pnpmScript('package-dependencies', 'verify-package-dependencies', { label: 'package dependencies' }),
     pnpmScript('application-entrypoints', 'verify-application-entrypoints', { label: 'application entrypoints' }),
     pnpmScript('dsh-package-licenses', 'verify-dsh-package-licenses', { label: 'DSH package licenses' }),
@@ -740,9 +742,13 @@ function docSyncLeafGates(options: {
     pnpmScript('export-jsdoc', 'verify-export-jsdoc', { label: 'export jsdoc' }),
     pnpmScript('tool-catalog', 'verify-tool-catalog', { label: 'tool catalog' }),
     pnpmScript('config-catalog', 'verify-config-catalog', { label: 'config catalog' }),
+    pnpmScript('dependency-catalog', 'verify-dependency-catalog', { label: 'npm dependency catalog', quick: true }),
     pnpmScript('persistence-catalog', 'verify-persistence-catalog', { label: 'persistence catalog' }),
+    pnpmScript('persistence-changes', 'verify-persistence-changes', { label: 'persistence type history' }),
+    pnpmScript('persistence-releases', 'verify-persistence-releases', { label: 'released persistence history' }),
     pnpmScript('session-format-catalog', 'verify-session-format-catalog', { label: 'Session format catalog' }),
     pnpmScript('public-repository-links', 'verify-public-repository-links', { label: 'public repository links', quick: true }),
+    pnpmScript('repository-references', 'verify-repository-references', { label: 'repository references', quick: true }),
     pnpmScript('concrete-terms', 'verify-concrete-terms', { label: 'concrete terms', quick: true }),
     pnpmScript('doc-refs', 'verify-doc-refs', { label: 'doc refs', quick: true }),
     pnpmScript('subsystem-pages', 'verify-subsystem-pages', { label: 'subsystem pages' }),
@@ -797,7 +803,7 @@ function builtBinSmokeGate(needs: string[] = ['build']): Gate {
     // imports reach their lib/ entrypoints under plain Node. The e2e lane runs
     // unbuilt, so these files self-skip there.
     'packages/workflow/workflow-worker-thread/tests/built-worker.e2e.ts',
-    'packages/code-runtime/code-runtime-worker-thread/tests/built-lib.e2e.ts',
+    'packages/ptc-runtime/ptc-runtime-node/tests/built-lib.e2e.ts',
     'packages/session/session-persistence-jsonl/tests/built-migration-worker.e2e.ts',
     'packages/lsp/lsp-stdio/tests/built-lib.e2e.ts',
   ], {

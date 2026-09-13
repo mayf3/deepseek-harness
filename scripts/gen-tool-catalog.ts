@@ -58,10 +58,11 @@ import Lsp from '@deepseek-ai/dsh-lsp'
 import * as ToolLsp from '@deepseek-ai/dsh-tool-lsp'
 import * as ToolSkill from '@deepseek-ai/dsh-tool-skill'
 import * as ToolSessionQuery from '@deepseek-ai/dsh-tool-session-query'
-import * as ToolTasks from '@deepseek-ai/dsh-tool-jobs'
+import * as ToolJobs from '@deepseek-ai/dsh-tool-jobs'
 import type TeamService from '@deepseek-ai/dsh-experimental-agent-team'
 import * as ToolTeam from '@deepseek-ai/dsh-experimental-tool-agent-team'
 import * as ToolTodo from '@deepseek-ai/dsh-tool-todo'
+import McpResources from '@deepseek-ai/dsh-mcp-resources'
 import * as ToolSubagent from '@deepseek-ai/dsh-tool-subagent'
 import { registerListSubagentModels } from '../packages/subagent/tool-subagent/src/list-models.ts'
 import * as ToolWeb from '@deepseek-ai/dsh-tool-web'
@@ -189,6 +190,14 @@ export interface ToolPackage {
  */
 const TOOL_PACKAGES: ToolPackage[] = [
   {
+    pkg: '@deepseek-ai/dsh-mcp-resources',
+    dir: 'mcp-resources',
+    source: 'packages/mcp/mcp-resources/src/tools.ts',
+    requires: ['ctx.tools', 'ctx.mcpResources'],
+    writes: ['tool/call', 'tool/result'],
+    async mount(ctx) { await ctx.plugin(McpResources) },
+  },
+  {
     pkg: '@deepseek-ai/dsh-tool-ask-user',
     dir: 'tool-ask-user',
     source: 'packages/interaction/tool-ask-user/src/index.ts',
@@ -205,10 +214,10 @@ const TOOL_PACKAGES: ToolPackage[] = [
     pkg: '@deepseek-ai/dsh-tools',
     dir: 'tools',
     source: 'packages/core/tools/src/ptc.ts',
-    requires: ['ctx.tools', 'ctx.codeRuntime (execution time)', 'ctx.systemPrompt'],
+    requires: ['ctx.tools', 'ctx.ptcRuntime (execution time)', 'ctx.systemPrompt'],
     writes: ['tool/call', 'one tool/ptc-dispatch-start + tool/ptc-dispatch pair per bridged sub-call', 'tool/result'],
     // The registry's OWN tool: run_code exists only under a non-native mode
-    // (the registry registers it in its constructor; the code runtime is read
+    // (the registry registers it in its constructor; the PTC runtime is read
     // at assembly/execution time, so the schema harvest needs none mounted).
     toolsConfig: { mode: 'ptc' },
     async mount() {},
@@ -515,7 +524,7 @@ const TOOL_PACKAGES: ToolPackage[] = [
     writes: ['tool/call', 'tool/result', 'user/message via agent.inject() for background completion notices'],
     async mount(ctx) {
       await ctx.plugin(LocalJobRegistry)
-      await ctx.plugin(ToolTasks)
+      await ctx.plugin(ToolJobs)
     },
     note:
       'The kind-agnostic background-job controller: background bash commands, PTY sends, and subagents are read, listed, and killed through the same three tools. Loading the plugin attaches the controller that arms producers\' `ctx.jobs.start()`.',
