@@ -13,8 +13,6 @@ export interface FileUploadProgress {
 
 /** Browser upload service addressed by one Session identity. */
 export interface FileUploadService {
-  /** Whether this page has a Host-backed background upload carrier. */
-  readonly available: boolean
   /**
    * Store one file for a Session. Blob and stream bodies use
    * the background carrier; exact bytes use Remote.

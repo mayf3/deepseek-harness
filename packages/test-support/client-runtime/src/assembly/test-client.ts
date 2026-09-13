@@ -164,7 +164,7 @@ export class TestClient {
    * boot graph; afterwards optionally mount and wait for the connection. The
    * bound row replaces only the page-global input adapter: both paths call
    * `installConnection`, while this path supplies the mock carrier, uses
-   * default recovery timings, and captures the current page location once for
+   * default recovery timings, and captures the current page hostname once for
    * later reloads. A caller-provided Connection row remains unchanged and owns
    * its readiness behavior. The `@deepseek-ai/dsh-api-remotes` row is
    * dropped from the roster: its generated Remote clients exist only in built
@@ -194,7 +194,7 @@ export class TestClient {
     const ctx = new Context()
     const pageLocation = typeof location === 'undefined'
       ? undefined
-      : { hostname: location.hostname, search: location.search }
+      : { hostname: location.hostname }
     let mountPoint: MountPoint = { element: undefined, owned: false }
     let release: (() => void) | undefined
     const restore = (): void => {

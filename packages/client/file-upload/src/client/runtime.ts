@@ -160,7 +160,6 @@ interface FileUploadTransport {
 
 /** Cordis service that owns one background carrier per upload operation. */
 export class FileUploadRuntime extends Service implements FileUploadService {
-  readonly available = true
   private readonly transport: FileUploadTransport
 
   /** @param ctx - providing Client context. */
