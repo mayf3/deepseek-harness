@@ -54,6 +54,7 @@ export { REGION_BEGIN, REGION_END }
  * errors, so the partition can never silently drift from the service API.
  */
 export const SERVICE_PAGE: Record<string, string> = {
+  mcpResources: 'mcp.md',
   agentLoop: 'core.md',
   agentDefaultModel: 'core.md',
   agentPresets: 'core.md',
@@ -696,6 +697,7 @@ export const FOUNDATION_TYPE_NAMES: ReadonlySet<string> = new Set([
 
 /** Project types deliberately documented outside the subsystems catalog. */
 export const TYPE_LINK_EXEMPTIONS: Readonly<Record<string, string>> = {
+  McpResourceProvider: 'scoped resource provider is owned by packages/mcp/mcp-resources/README.md',
   'z.ZodType': 'Zod response validation API is owned by https://zod.dev/packages/zod',
   Socket: 'Node.js byte stream API is owned by https://nodejs.org/api/net.html#class-netsocket',
   z: 'schemastery schema constructor is owned by vendor/schemastery (vendored upstream)',
