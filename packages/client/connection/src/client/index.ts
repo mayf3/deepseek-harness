@@ -8,7 +8,6 @@ import {
   type ConnectionSinks,
   type ConnectionState,
 } from './connection.ts'
-import { createFixtureConnectionRpc } from './fixture.ts'
 import { createWebConnectionRpc, type RpcFetch, type RpcStreamOpen } from './rpc.ts'
 import { isLoopbackHostname } from '../loopback-hostname.ts'
 import type { ClientConnectionRpc } from '../rpc.ts'
@@ -111,10 +110,9 @@ interface ClientTransportGlobal {
   __DSH_CONNECTION_RECOVERY__?: unknown
 }
 
-/** Browser location fields used to select fixture mode and loopback authority. */
+/** Browser location fields used to classify loopback authority. */
 export interface ConnectionLocation {
   readonly hostname: string
-  readonly search: string
 }
 
 /** Instance-local inputs for installing a Connection service. */
@@ -204,11 +202,9 @@ function watchBrowserNetwork(controller: ConnectionController): () => void {
  */
 export function installConnection(ctx: Context, options: ConnectionInstallOptions = {}): void {
   const pageLocation = options.location
-  const fixture = pageLocation !== undefined && new URLSearchParams(pageLocation.search).has('fixture')
-  const fixtureRpc = fixture ? createFixtureConnectionRpc() : undefined
   const transport = options.transport
   const recovery = options.recovery ?? {}
-  const rpc = fixtureRpc ?? transport?.rpc ?? createWebConnectionRpc(transport?.fetch, transport?.openStream)
+  const rpc = transport?.rpc ?? createWebConnectionRpc(transport?.fetch, transport?.openStream)
   let generationSource: ConnectionGenerationSource | undefined
   let owner: ConnectionOwner | undefined
   let generationId = 0

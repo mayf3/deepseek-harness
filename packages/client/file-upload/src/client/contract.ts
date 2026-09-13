@@ -17,7 +17,7 @@ export interface FileUploadService {
   readonly available: boolean
   /**
    * Store one file for a Session. Blob and stream bodies use
-   * the background carrier; exact bytes and fixture fallbacks use Remote.
+   * the background carrier; exact bytes use Remote.
    * @param sessionId - Session that owns the staged receipt.
    * @param data - browser Blob, exact bytes, or a one-shot byte stream.
    * @param name - optional display name.
