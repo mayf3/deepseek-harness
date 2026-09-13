@@ -246,7 +246,7 @@ describe('CI workflow', () => {
     expect(nativeTestCommand).toContain('--no-file-parallelism')
     expect(nativeTestCommand).toContain('--testTimeout 90000')
     expect(nativeTestCommand).toContain('tool-pwsh/tests/loader.spec.ts')
-    expect(nativeTestCommand).toContain('workflow-worker-thread.spec.ts')
+    expect(nativeTestCommand).toContain('workflow-ptc.spec.ts')
 
     // windows-observational is non-blocking.
     expect(windowsObservational.name).toBe('windows node 24 / observational')
