@@ -413,6 +413,18 @@ describe('coverage location canonicalization', () => {
     expect(file.branchMap[0]?.locations[0]?.end.column).toBe(END_OF_LINE_COLUMN)
     expect(file.branchMap[0]?.locations[1]?.end.column).toBe(END_OF_LINE_COLUMN)
   })
+
+  it('rejects a payload that carries no istanbul coverage data', () => {
+    // Vitest types the reporter hook as `unknown`, so a payload without the
+    // istanbul `data` record must fail the partition loudly rather than leave
+    // every location uncanonicalized.
+    expect(() => {
+      canonicalizeEndOfLineColumns(undefined)
+    }).toThrow(/not an istanbul CoverageMap/)
+    expect(() => {
+      canonicalizeEndOfLineColumns({})
+    }).toThrow(/not an istanbul CoverageMap/)
+  })
 })
 
 describe('coverage partition coordinator', () => {
@@ -427,7 +439,7 @@ describe('coverage partition coordinator', () => {
     ['b.spec.ts', 'process-bound'],
     ['c.spec.ts', 'process-bound'],
   ])
-  it('canonicalizes each partition before its blob is written', async () => {
+  it('passes the canonicalizing reporter to every partition', async () => {
     const root = await temporaryRoot()
     const commands: CoverageCommand[] = []
     const runCommand = successfulCommandRecorder(commands)
@@ -441,14 +453,17 @@ describe('coverage partition coordinator', () => {
 
     await expect(coordinator.run()).resolves.toBe(0)
 
-    // Every partition serializes its coverage map into a blob, so every
-    // partition must name the reporter that canonicalizes it first.
-    const reporterPath = join(dirname(fileURLToPath(import.meta.url)), 'coverage-canonical-locations.ts')
+    // The coordinator passes a root-relative argument and runs every child with
+    // the repository root as its working directory, so the argument must name
+    // the reporter that sits beside this spec. Whether that reporter runs
+    // before the blob write is Vitest's reporter ordering, not a command the
+    // coordinator builds.
+    const specDirectory = dirname(fileURLToPath(import.meta.url))
+    const reporterPath = join(specDirectory, 'coverage-canonical-locations.ts')
     for (const command of commands.slice(0, 2)) {
       const argument = command.args.find(candidate => candidate.startsWith('--reporter=') && candidate.endsWith('coverage-canonical-locations.ts'))
       if (argument === undefined) throw new Error(`${command.label} does not wire the coverage canonicalizer`)
-      // The child runs from the repository root, so the reporter resolves there.
-      expect(resolve(argument.slice('--reporter='.length))).toBe(reporterPath)
+      expect(resolve(specDirectory, '..', argument.slice('--reporter='.length))).toBe(reporterPath)
     }
   })
 

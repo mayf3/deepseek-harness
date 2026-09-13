@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-09-13-partitioned-coverage-location-canonicalization.md
-2026-09-13-partitioned-coverage-location-canonicalization.md: 69afaa5244f3d810bad01079e59a9ce64dfe9f93
-2026-09-13-partitioned-coverage-location-canonicalization.zh.md: 4f32c229af1db01bdc29ea800494610138d1b5d6
+2026-09-13-partitioned-coverage-location-canonicalization.md: 54e5aaefe9551d1357f1c60201212873a1c7aef7
+2026-09-13-partitioned-coverage-location-canonicalization.zh.md: 1aa4b8de844a1f0e544d2bbb223641dbbfeff3da

@@ -12,7 +12,7 @@ Status: implemented
 
 ## 决策
 
-[scripts/coverage-partitions.ts](../../../../scripts/coverage-partitions.ts) 为每个分区传入 `--reporter=./scripts/coverage-canonical-locations.ts`；该报告器的 `onCoverage` 钩子把当次运行覆盖率映射中所有非有限的结束列改写为 `Number.MAX_SAFE_INTEGER`。该列保留“位置结束于所在行行尾”的含义，序列化后仍是数字，并且在每个 blob 中生成相同的键，因此合并命令会像进程内合并那样调和各环境特有的写法。逐文件 100% 门禁对 `coverage.include` 命中的每个文件保持完整强度：规范化只会通过 istanbul 的包含规则增加命中，绝不会把语句移出报告。
+[scripts/coverage-partitions.ts](../../../../scripts/coverage-partitions.ts) 为每个分区传入 `--reporter=./scripts/coverage-canonical-locations.ts`；该报告器的 `onCoverage` 钩子把当次运行覆盖率映射中所有非有限的结束列改写为 `Number.MAX_SAFE_INTEGER`。该列保留“位置结束于所在行行尾”的含义，序列化后仍是数字，并且在每个 blob 中生成相同的键，因此合并命令会像进程内合并那样调和各环境特有的写法。逐文件 100% 门禁对 `coverage.include` 命中的每个文件保持完整强度：规范化只会通过 istanbul 的包含规则增加命中，绝不会把语句移出报告。载荷若不含 istanbul 的 `data` 记录，分区会直接失败，而不是让所有位置保持未规范化。
 
 [scripts/coverage-uncovered-locations.cjs](../../../../scripts/coverage-uncovered-locations.cjs) 把同一列读作行尾，因此无论是否经过规范化，未覆盖记录打印的 `path:line:col` 都相同。[单 job 分区覆盖率](../process/2026-08-18-in-job-partitioned-coverage.zh.md)协调器拥有该报告器所加入的分区与合并命令，并保留其唯一一次合并阈值判定。
 
@@ -20,11 +20,11 @@ Status: implemented
 
 节点侧套件把源文件映射到 `ssr` 环境，`@vitest-environment jsdom` 套件把它映射到 `client` 环境。基于 AST 的 V8 重映射器按它在转换后代码中找到的节点定位语句，因此同一条声明会以两种写法进入合并映射：ssr 转换给出其声明标识符的位置，client 转换给出其嵌套调用表达式的位置。istanbul-lib-coverage 会把最窄包含范围的命中计入其他记录都未命名的条目，从而覆盖 client 记录引入的那种写法。
 
-该调和只作用于 `getLoc()` 接受的位置，这要求行列值都是数字。V8 把整行语句的结束列标为 `Infinity`；分区 blob 会把 `Infinity` 序列化为 `null`，于是合并命令拿到无法比较的位置，并把仅存在于 client 的写法保留为额外的未命中语句。同样的记录在单个进程内合并时 `Infinity` 得以保留，因此不会报出该语句。
+该调和只作用于 `getLoc()` 接受的位置，这要求行列值都是数字。ast-v8-to-istanbul 把整行语句的结束列标为 `Infinity`；分区 blob 会把 `Infinity` 序列化为 `null`，于是合并命令拿到无法比较的位置，并把仅存在于 client 的写法保留为额外的未命中语句。同样的记录在单个进程内合并时 `Infinity` 得以保留，因此不会报出该语句。
 
 ## 验证
 
-`scripts/coverage-partitions.spec.ts` 让两条以两种写法表示同一语句的记录经过 blob 实际执行的 JSON 跳转后再合并，断言规范化后的合并没有未覆盖语句，而未经规范化的合并会报出该幻影语句。第二个用例固定语句、函数与分支位置的规范化，第三个用例固定每个分区命令都带上该规范化报告器。
+`scripts/coverage-partitions.spec.ts` 让两条以两种写法表示同一语句的记录经过 blob 实际执行的 JSON 跳转后再合并，断言规范化后的合并没有未覆盖语句，而未经规范化的合并会报出该幻影语句。第二个用例固定语句、函数与分支位置的规范化，第三个用例固定每个分区命令都带上该规范化报告器，第四个用例固定对不含覆盖率数据的载荷的显式拒绝。
 
 ## 曾考虑的替代方案
 
@@ -40,4 +40,4 @@ Status: implemented
 
 ## 后果
 
-分区运行对跨环境文件给出与单进程相同的归因，因此门禁在不豁免任何文件的前提下保持逐文件 100%。规范化只在分区内部运行，未分区运行及其报告保持原样。blob 在行尾位置携带一个有限哨兵列，分区报告器与未覆盖位置报告器都把该哨兵命名为行尾约定。
+分区运行对跨环境文件给出与单进程相同的归因，因此门禁在不豁免任何文件的前提下保持逐文件 100%。规范化只在分区内部运行，未分区运行及其报告保持原样。blob 在行尾位置携带一个有限哨兵列，分区报告器与未覆盖位置报告器都把该哨兵命名为行尾约定。该规范化还依赖 Vitest 的报告器次序：blob 报告器在自己的 `onCoverage` 中保存该映射，在 `onTestRunEnd` 中序列化它，因此升级 Vitest 后若次序改变，最先表现为幻影语句复现。

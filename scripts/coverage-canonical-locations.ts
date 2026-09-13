@@ -2,24 +2,18 @@
  * Canonicalize coverage locations inside a coverage partition, before its
  * blob is written.
  *
- * Vitest remaps V8 coverage separately per Vite environment, so one source file
- * can carry two statement maps in a single run: a node suite maps it through the
- * ssr environment, a `@vitest-environment jsdom` suite maps it through the
- * client environment, and ast-v8-to-istanbul spells the same statement
- * differently in each map (a whole-line statement ends at column `Infinity` in
- * the ssr map, at a nested expression column in the client map).
+ * Vitest reaches every reporter's `onCoverage` with the finished run's coverage
+ * map and lets the blob reporter serialize that same map later, in
+ * `onTestRunEnd`, so this reporter sees the locations while they are numeric.
+ * ast-v8-to-istanbul ends a whole-line statement at column `Infinity`, which the
+ * blob's JSON hop turns into `null`; istanbul-lib-coverage reconciles the
+ * per-environment spellings of one statement only through numeric columns, so a
+ * `null` column leaves a client-only spelling behind as a phantom uncovered
+ * statement. Replacing each non-finite end column with
+ * {@link END_OF_LINE_COLUMN} keeps the line-end meaning and keys identically in
+ * every blob, so the merge attributes the coverage one process would have.
  *
- * istanbul-lib-coverage reconciles such overlapping ranges while merging, but
- * only while a location carries numeric line and column values: `Infinity`
- * survives an in-process merge, not the JSON serialization of a partition blob,
- * which turns it into `null`. Without that reconciliation the merge keeps the
- * client-only spelling as an extra, unhit statement, so a file whose every
- * statement ran still fails the per-file 100% gate.
- *
- * Replacing the non-finite end column with {@link END_OF_LINE_COLUMN} keeps the
- * line-end meaning, survives serialization, and keys identically in every blob,
- * so the merged report attributes the coverage one process would have reported.
- *
+ * @see ../.agents/notes/implemented/bug-fix/2026-09-13-partitioned-coverage-location-canonicalization.md
  * @module
  */
 
@@ -61,13 +55,17 @@ function canonicalizeEntry(entry: unknown): void {
 
 /**
  * Replace every non-finite end column of an istanbul coverage map in place.
- * @param coverageMap - istanbul `CoverageMap` whose `data` holds per-file coverage;
- * any value without that structure is left untouched.
+ * @param coverageMap - istanbul `CoverageMap` whose `data` holds per-file coverage.
+ * @throws Error when the payload carries no istanbul `data` record, so a Vitest
+ * change that stops handing reporters that map fails the partition instead of
+ * leaving every location uncanonicalized. Inner structure a `CoverageMap`
+ * always carries is read without further checks.
  */
 export function canonicalizeEndOfLineColumns(coverageMap: unknown): void {
-  if (!isRecord(coverageMap)) return
-  const files = coverageMap['data']
-  if (!isRecord(files)) return
+  const files = isRecord(coverageMap) ? coverageMap['data'] : undefined
+  if (!isRecord(files)) {
+    throw new Error('coverage-canonical-locations: onCoverage payload is not an istanbul CoverageMap')
+  }
   for (const file of Object.values(files)) {
     if (!isRecord(file)) continue
     // FileCoverage keeps its maps on `data` and mirrors them as getters.
