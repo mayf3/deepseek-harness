@@ -7,8 +7,9 @@ import { Context } from '@deepseek-ai/cordis'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
 import Include from '@deepseek-ai/cordis-plugin-include'
 import BrowserUse from '@deepseek-ai/dsh-browser-use'
-import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
+import SystemPrompt, { renderPrompt } from '@deepseek-ai/dsh-system-prompt'
 import Tools from '@deepseek-ai/dsh-tools'
+import McpResources from '@deepseek-ai/dsh-mcp-resources'
 import Llm, { LlmAdapter, ToolCallId, createUserMessage } from '@deepseek-ai/dsh-llm'
 import type { GenerateOptions, LlmResolvedModelInfo, StreamChunk } from '@deepseek-ai/dsh-llm'
 import Sessions, { SessionId } from '@deepseek-ai/dsh-session'
@@ -91,6 +92,20 @@ function execute(ctx: Context, agent: Agent, name = TOOL) {
   return ctx.tools.execute({ agent, name, arguments: name === TOOL ? { label: 'direct' } : {}, callId: ToolCallId('direct'), signal: new AbortController().signal })
 }
 
+function resource(ctx: Context, agent: Agent | undefined, name = 'read_mcp_resource', server = 'browser-fixture', callId = name) {
+  return ctx.tools.execute({
+    ...agent === undefined ? {} : { agent }, name,
+    arguments: { server, ...name === 'read_mcp_resource' ? { uri: 'browser-fixture://state' } : {} },
+    callId: ToolCallId(callId), signal: new AbortController().signal,
+  })
+}
+
+function browserState(result: Awaited<ReturnType<typeof resource>>): { counter: number; pid: number } {
+  expect(result.isError).toBe(false)
+  const value = result.value as { contents: { text: string }[] }
+  return JSON.parse(value.contents[0]!.text) as { counter: number; pid: number }
+}
+
 function registerIndependentTool(ctx: Context) {
   ctx.tools.register({
     name: 'unrelated', description: 'An independent capability.', parameters: { type: 'object' },
@@ -156,7 +171,9 @@ describe('Session MCP Loader composition', () => {
     expect(ctx.tools.schemas()).toEqual([])
     expect(ctx.tools.schemas(first.agent)).toHaveLength(2)
     const initial = await events(root)
-    expect(initial.filter(event => event.event === 'start')).toHaveLength(2)
+    expect(initial.filter(event => event.event === 'start')).toHaveLength(4)
+    expect(initial.filter(event => event.event === 'probe')).toHaveLength(2)
+    expect(initial.filter(event => event.event === 'initialize')).toHaveLength(2)
     await first.dispose()
     expect(ctx.tools.schemas(first.agent)).toEqual([])
     const resumed = await ctx.agents.create({ sessionId: SessionId('first') })
@@ -165,7 +182,9 @@ describe('Session MCP Loader composition', () => {
     await browser.dispose()
     expect(ctx.browserUse.providerName).toBeUndefined()
     const closed = await events(root)
-    expect(closed.filter(event => event.event === 'exit').map(event => event.pid).sort()).toEqual(closed.filter(event => event.event === 'start').map(event => event.pid).sort())
+    for (const { pid } of closed.filter(event => event.event === 'start')) {
+      expect(() => process.kill(pid, 0)).toThrow(expect.objectContaining({ code: 'ESRCH' }))
+    }
   })
 
   it('keeps unrelated and child Sessions running without a busy attachment and admits a later owner', async () => {
@@ -197,7 +216,7 @@ describe('Session MCP Loader composition', () => {
     expect(ctx.tools.schemas(child.agent).filter(tool => tool.name.startsWith('mcp__browser-fixture__')).map(tool => tool.name)).toEqual(['mcp__browser-fixture__late'])
     expect((await warm(ctx, child.agent)).tools.map(tool => tool.name)).toEqual(['unrelated'])
     expect((await execute(ctx, child.agent, 'mcp__browser-fixture__late')).isError).toBe(true)
-    expect((await events(root)).filter(event => event.event === 'start')).toHaveLength(1)
+    expect((await events(root)).filter(event => event.event === 'initialize')).toHaveLength(1)
     expect((await events(root)).filter(event => event.event === 'call')).toEqual([])
     expect((await execute(ctx, first.agent)).isError).toBe(false)
     await first.dispose()
@@ -214,7 +233,7 @@ describe('Session MCP Loader composition', () => {
     const first = await ctx.agents.create({ sessionId: SessionId('first') })
     const second = await ctx.agents.create({ sessionId: SessionId('second'), agentOptions: { provider: 'fixture', model: 'fixture' } })
     const preparing = warm(ctx, first.agent).catch((error: unknown) => error)
-    await vi.waitFor(async () => { expect((await events(root))[0]?.event).toBe('start') })
+    await vi.waitFor(async () => { expect((await events(root)).some(event => event.event === 'probe')).toBe(true) })
     second.agent.followup(createUserMessage({ content: [{ type: 'text', text: 'Answer without using the browser.' }], source: { kind: 'user' } }))
     await second.agent.whenIdle()
     expect(model.requests).toHaveLength(1)
@@ -229,24 +248,31 @@ describe('Session MCP Loader composition', () => {
     const owner = await failed.ctx.agents.create({ sessionId: SessionId('failure') })
     await expect(warm(failed.ctx, owner.agent)).rejects.toThrow('initial connection')
     expect(failed.ctx.tools.schemas(owner.agent)).toEqual([])
-    expect((await events(failed.root)).map(event => event.event)).toEqual(['start', 'exit'])
+    const failedEvents = await events(failed.root)
+    expect(failedEvents.filter(event => event.event === 'initialize')).toHaveLength(1)
+    for (const { pid } of failedEvents.filter(event => event.event === 'start')) {
+      expect(() => process.kill(pid, 0)).toThrow(expect.objectContaining({ code: 'ESRCH' }))
+    }
     const held = await load(false, 'hold')
     const pendingOwner = await held.ctx.agents.create({ sessionId: SessionId('pending') })
     const pending = warm(held.ctx, pendingOwner.agent).catch((error: unknown) => error)
-    await vi.waitFor(async () => { expect((await events(held.root))[0]?.event).toBe('start') })
+    await vi.waitFor(async () => { expect((await events(held.root)).some(event => event.event === 'probe')).toBe(true) })
     await held.browser.dispose()
     expect(await pending).toBeInstanceOf(Error)
-    expect((await events(held.root)).map(event => event.event)).toEqual(['start', 'exit'])
+    for (const { pid } of (await events(held.root)).filter(event => event.event === 'start')) {
+      expect(() => process.kill(pid, 0)).toThrow(expect.objectContaining({ code: 'ESRCH' }))
+    }
   })
 
   it('does not reconnect and silently replace browser state after a process exits', async () => {
     const { ctx, root } = await load()
     const owner = await ctx.agents.create({ sessionId: SessionId('disconnect') })
     await warm(ctx, owner.agent)
+    const servingPid = (await events(root)).find(event => event.event === 'initialize')!.pid
     await execute(ctx, owner.agent, 'mcp__browser-fixture__disconnect')
-    await vi.waitFor(async () => { expect((await events(root)).some(event => event.event === 'exit')).toBe(true) })
+    await vi.waitFor(() => { expect(() => process.kill(servingPid, 0)).toThrow(expect.objectContaining({ code: 'ESRCH' })) })
     await warm(ctx, owner.agent)
-    expect((await events(root)).filter(event => event.event === 'start')).toHaveLength(1)
+    expect((await events(root)).filter(event => event.event === 'initialize')).toHaveLength(1)
     expect((await execute(ctx, owner.agent)).isError).toBe(true)
   })
 
@@ -263,5 +289,84 @@ describe('Session MCP Loader composition', () => {
     expect((await events(root)).filter(event => event.event === 'call')).toEqual([])
     await warm(ctx, child.agent)
     expect((await execute(ctx, child.agent)).content).toEqual([{ type: 'text', text: 'Visit 1: direct' }])
+  })
+
+  it('denies inherited browser resources and instructions while keeping unrelated MCP servers usable', async () => {
+    const { ctx, root } = await load(true)
+    await ctx.plugin(McpResources)
+    ctx.mcpResources.register('docs', { request: async () => ({ contents: [{ uri: 'docs://memo', text: 'Independent document.' }] }) })
+    const parent = await ctx.agents.create({ sessionId: SessionId('resource-parent') })
+    const child = await ctx.agents.create({ sessionId: SessionId('resource-child') })
+    bindScopeParent(child.agent, parent.agent)
+    expect(renderPrompt(await warm(ctx, parent.agent))).toContain('BROWSER_FIXTURE_INSTRUCTION')
+    const blocked = await warm(ctx, child.agent)
+    expect(blocked.tools.some(tool => tool.name === TOOL)).toBe(false)
+    expect(renderPrompt(blocked)).not.toContain('BROWSER_FIXTURE_INSTRUCTION')
+    expect(renderPrompt(blocked)).toContain('browser-fixture')
+    for (const name of ['list_mcp_resources', 'list_mcp_resource_templates', 'read_mcp_resource']) {
+      expect((await resource(ctx, child.agent, name)).isError).toBe(true)
+    }
+    expect((await resource(ctx, undefined)).isError).toBe(true)
+    expect((await events(root)).filter(event => event.event === 'resource')).toEqual([])
+    expect((await resource(ctx, child.agent, 'read_mcp_resource', 'docs')).value)
+      .toEqual({ contents: [{ uri: 'docs://memo', text: 'Independent document.' }] })
+    for (const args of [null, 'invalid arguments']) {
+      expect((await ctx.tools.execute({ agent: child.agent, name: 'read_mcp_resource', arguments: args, callId: ToolCallId('invalid-resource'), signal: new AbortController().signal })).isError).toBe(true)
+    }
+    expect(browserState(await resource(ctx, parent.agent)).counter).toBe(0)
+    await parent.dispose()
+    expect(renderPrompt(await warm(ctx, child.agent))).toContain('BROWSER_FIXTURE_INSTRUCTION')
+    expect(browserState(await resource(ctx, child.agent)).counter).toBe(0)
+  })
+
+  it('uses the child connection for resources and serializes them with browser tools exactly once', async () => {
+    const { ctx } = await load()
+    await ctx.plugin(McpResources)
+    const parent = await ctx.agents.create({ sessionId: SessionId('parent') })
+    const child = await ctx.agents.create({ sessionId: SessionId('child') })
+    bindScopeParent(child.agent, parent.agent)
+    await warm(ctx, parent.agent)
+    await execute(ctx, parent.agent)
+    await warm(ctx, child.agent)
+    const parentOnly = vi.fn(async () => true)
+    parent.agent.ctx.tools.register({
+      name: 'mcp__browser-fixture__parent_only', description: 'A browser operation available only in the parent.', parameters: { type: 'object' },
+      output: { schema: { type: 'boolean' }, render: () => [] }, execute: parentOnly,
+    })
+    expect((await execute(ctx, child.agent, 'mcp__browser-fixture__parent_only')).isError).toBe(true)
+    expect(parentOnly).not.toHaveBeenCalled()
+    const parentState = browserState(await resource(ctx, parent.agent))
+    const childState = browserState(await resource(ctx, child.agent))
+    expect(parentState.counter).toBe(1)
+    expect(childState.counter).toBe(0)
+    expect(childState.pid).not.toBe(parentState.pid)
+    const entered = Promise.withResolvers<undefined>()
+    const release = Promise.withResolvers<undefined>()
+    const started: string[] = []
+    const stop = ctx.on('tools/execute', async (exec, next) => {
+      if (exec.agent === child.agent) {
+        started.push(exec.name)
+        if (exec.callId === ToolCallId('held-resource')) {
+          entered.resolve(undefined)
+          await release.promise
+        }
+      }
+      return next()
+    })
+    try {
+      const reading = resource(ctx, child.agent, 'read_mcp_resource', 'browser-fixture', 'held-resource')
+      await entered.promise
+      const visiting = execute(ctx, child.agent)
+      expect((await execute(ctx, parent.agent)).isError).toBe(false)
+      expect(started).toEqual(['read_mcp_resource'])
+      release.resolve(undefined)
+      expect(browserState(await reading).counter).toBe(0)
+      expect((await visiting).isError).toBe(false)
+      expect(started).toEqual(['read_mcp_resource', TOOL])
+      expect(browserState(await resource(ctx, child.agent)).counter).toBe(1)
+    } finally {
+      release.resolve(undefined)
+      stop()
+    }
   })
 })

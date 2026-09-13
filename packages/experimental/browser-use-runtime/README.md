@@ -31,6 +31,8 @@ Native providers construct `SessionResources` from the package root, supplying r
 
 MCP providers use `mountSessionMcp` from `@deepseek-ai/dsh-experimental-browser-use-runtime/mcp`. They supply their fixed server name, executable, arguments, and ownership policy. The helper mounts one scoped MCP client per live Session and discovers tools during `system-prompt/prepare`, before ordinary tool-schema collection for its first model request. A busy attachment leaves other Sessions without this provider's tools while their turns continue; after cleanup, a later request can acquire it. Startup or discovery failure rejects that step after cleanup. Reconnection is disabled; a closed client does not silently replace the Session's browser state.
 
+Browser tools and resource requests targeting this server use the same queue and require the calling Session's own connection. Other MCP servers remain usable. Inherited server instructions are omitted without ownership; the shared server-name inventory keeps its normal scope behavior.
+
 -----
 
 <a id="understand-the-implementation"></a>

@@ -6,6 +6,5 @@ recording: authored
 header:
   class: browser-use-playwright-mcp
   pin: true
-  systemPromptSource: read-image
 replay:
   override: true

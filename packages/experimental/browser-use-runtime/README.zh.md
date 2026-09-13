@@ -31,6 +31,8 @@ kind: "package-library"
 
 MCP 提供方使用 `@deepseek-ai/dsh-experimental-browser-use-runtime/mcp` 中的 `mountSessionMcp`。它们提供固定服务器名称、可执行文件、参数与所有权策略。辅助库为每个实时 Session 挂载一个有作用域的 MCP 客户端，并在 `system-prompt/prepare` 期间发现工具，先于其首次模型请求的常规工具 schema 收集。附加连接被占用时，其他 Session 不获得此提供方的工具，但可继续各自的轮次；清理完成后，后续请求可以获取该连接。启动或发现失败会在清理后拒绝该步骤。重连已禁用；已关闭的客户端不会静默替换 Session 的浏览器状态。
 
+指向此服务器的浏览器工具调用与资源请求使用同一队列，且要求调用 Session 自己拥有连接。其他 MCP 服务器仍可使用。没有所有权时会省略继承的服务器指导；共享服务器名称目录保留常规作用域行为。
+
 -----
 
 <a id="understand-the-implementation"></a>

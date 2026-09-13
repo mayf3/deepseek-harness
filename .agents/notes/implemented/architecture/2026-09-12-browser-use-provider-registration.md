@@ -22,7 +22,7 @@ Stagehand's launcher inherits its process environment, and SDK initialization ca
 
 Stagehand uses its supported custom-model callback to request structured results through the Session's selected DSH model. A provider-local adapter requests one result tool call and validates its arguments against Stagehand's requested JSON Schema; it does not execute additional model tool calls. Auxiliary requests are logged and flushed before model dispatch, and settled responses are logged and flushed before automation continues. These events remain separate from the main conversation, preserving the browser operation's model input without altering the agent loop.
 
-Per-Session MCP discovery runs in the awaited serial `system-prompt/prepare` event, before prompt assembly collects its scoped registrations and tool providers. The discovered catalog therefore enters the normal tool-mode, restriction, and ordering pipeline on the first request. Discovery at `agent/pre-step` is too late because prompt assembly has already collected the catalog; the preparation event keeps this ownership in system-prompt assembly without changing the agent loop.
+Per-Session MCP discovery runs in the awaited serial `system-prompt/prepare` event, before prompt assembly collects its scoped registrations and tool providers. The discovered catalog therefore enters the normal tool-mode, restriction, and ordering pipeline on the first request. Discovery at `agent/pre-step` is too late because prompt assembly has already collected the catalog; the preparation event keeps this ownership in system-prompt assembly without changing the agent loop. The same Session queue guards shared resource requests addressed to that browser server; nonowners cannot execute them or receive its server-instruction section.
 
 ## Alternatives considered
 
@@ -40,6 +40,6 @@ Per-Session MCP discovery runs in the awaited serial `system-prompt/prepare` eve
 
 ## Consequences
 
-Providers evolve their tools independently while the shared service remains a name-only registry. Public release exceptions make the three providers and their runtime helper installable without enabling them in shipped defaults. The browser package group has no dependency on experimental runtime code.
+Providers evolve their tools independently while the shared service remains a name-only registry. The three providers and their runtime helper publish as experimental packages without enabling them in shipped defaults. The browser package group has no dependency on experimental runtime code.
 
 Attachment reservations apply within one provider instance; they do not coordinate separate DSH processes or external browser clients. Browser state is absent from Session replay, and cancellation does not undo delivered browser actions. Provider READMEs own engine support, model requirements, and upstream restrictions.

@@ -94,7 +94,10 @@ export interface SessionMcpOptions {
  */
 export function mountSessionMcp(ctx: Context, options: SessionMcpOptions): void {
   let resources!: SessionResources<Scope>
+  const readyAgents = new WeakSet<Agent>()
   const inheritedMasks = new WeakMap<Agent, Scope>()
+  const toolPrefix = `mcp__${options.name}__`
+  const resourceTools = new Set(['list_mcp_resources', 'list_mcp_resource_templates', 'read_mcp_resource'])
   ctx.effect(function* () {
     yield ctx.browserUse.register(BrowserUseProviderName(options.name))
     resources = new SessionResources(ctx, {
@@ -108,20 +111,12 @@ export function mountSessionMcp(ctx: Context, options: SessionMcpOptions): void 
         try {
           signal.throwIfAborted()
           scope.ctx.on('tools/execute', async (exec, next) => {
-            if (!exec.name.startsWith(`mcp__${options.name}__`)) return next()
+            if (!exec.name.startsWith(toolPrefix)) return next()
             if (exec.agent !== agent) {
               if (ctx.tools.get(exec.name, exec.agent) !== ctx.tools.get(exec.name, agent)) return next()
               throw new Error(`${options.name}: browser tool belongs to another Session`)
             }
-            return resources.run(agent, exec.signal, async (_scope, combined) => {
-              const original = exec.signal
-              exec.signal = combined
-              try {
-                return await next()
-              } finally {
-                exec.signal = original
-              }
-            })
+            return next()
           })
           await scope.ctx.plugin(McpClient, McpClient.Config({
             transport: 'stdio',
@@ -135,7 +130,14 @@ export function mountSessionMcp(ctx: Context, options: SessionMcpOptions): void 
             reconnect: { enabled: false },
           }))
           signal.throwIfAborted()
-          return { value: scope, close: () => scope.dispose() }
+          readyAgents.add(agent)
+          return {
+            value: scope,
+            close() {
+              readyAgents.delete(agent)
+              return scope.dispose()
+            },
+          }
         } catch (error) {
           await (cancellation ?? scope.dispose())
           throw error
@@ -146,11 +148,30 @@ export function mountSessionMcp(ctx: Context, options: SessionMcpOptions): void 
     })
     yield () => resources.dispose()
   }, `${options.name}.sessions`)
+  ctx.on('tools/execute', async (exec, next) => {
+    const ownResource = resourceTools.has(exec.name)
+      && typeof exec.arguments === 'object' && exec.arguments !== null
+      && (exec.arguments as { server?: unknown }).server === options.name
+    if (!exec.name.startsWith(toolPrefix) && !ownResource) return next()
+    const agent = exec.agent
+    if (agent === undefined || !readyAgents.has(agent)) {
+      throw new Error(`${options.name}: browser tool belongs to another Session`)
+    }
+    return resources.run(agent, exec.signal, async (_scope, combined) => {
+      const original = exec.signal
+      exec.signal = combined
+      try {
+        return await next()
+      } finally {
+        exec.signal = original
+      }
+    })
+  })
   ctx.on('system-prompt/prepare', async ({ agent, signal }) => {
     if (agent === undefined) return
     signal?.throwIfAborted()
     if (!resources.available(agent)) {
-      const inherited = ctx.tools.schemas(agent).filter(tool => tool.name.startsWith(`mcp__${options.name}__`))
+      const inherited = ctx.tools.schemas(agent).filter(tool => tool.name.startsWith(toolPrefix))
       if (inherited.length > 0) {
         let scope = inheritedMasks.get(agent)
         if (scope === undefined) {
@@ -166,5 +187,10 @@ export function mountSessionMcp(ctx: Context, options: SessionMcpOptions): void 
     }
     await resources.get(agent, signal)
     signal?.throwIfAborted()
+  })
+  ctx.on('system-prompt/assemble', async (_assembly, { agent }, next) => {
+    const assembly = await next()
+    if (agent === undefined || readyAgents.has(agent)) return assembly
+    return { ...assembly, sections: assembly.sections.filter(section => section.name !== `mcp:${options.name}`) }
   })
 }

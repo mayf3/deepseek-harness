@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-Use Playwright MCP to inspect pages and operate Chromium through its upstream tools. Each live Session receives its own server process. Launch a separate browser or attach one Session to an existing browser with its current tabs and login state. This published experimental package activates only when explicitly mounted.
+Use Playwright MCP to inspect pages and operate Chromium through its upstream tools. Each live Session receives its own MCP connection. Launch a separate browser or attach one Session to an existing browser with its current tabs and login state. This published experimental package activates only when explicitly mounted.
 
 ## Table of Contents
 
@@ -55,7 +55,7 @@ The [configuration catalog](../../../docs/config-catalog.md#deepseek-aidsh-exper
 <details>
 <summary>Implementation internals — click to expand</summary>
 
-The provider resolves its pinned npm executable and starts it under the current Node executable. The [shared runtime](../browser-use-runtime/README.md) discovers tools before model schema collection and serializes calls within each Session. The [MCP client](../../mcp/mcp-client/README.md) owns stdio, registration, cancellation, and result projection. No runtime invariant companion is published because the provider maintains no separate observation of the shared runtime or MCP connection.
+The provider resolves its pinned npm executable and starts it under the current Node executable. Protocol negotiation may start a temporary probe; one serving process retains each Session's browser state. The [shared runtime](../browser-use-runtime/README.md) discovers tools before model schema collection and serializes browser tools and resource calls within each Session. The [MCP client](../../mcp/mcp-client/README.md) owns stdio, registration, cancellation, and result projection. No runtime invariant companion is published because the provider maintains no separate observation of the shared runtime or MCP connection.
 
 Browser state survives turns while its live Session remains attached. Disposal waits for server shutdown before releasing resources. Resume after reload starts fresh browser runtime state; stored conversation history does not restore cookies or pages.
 
@@ -79,11 +79,11 @@ Browser state survives turns while its live Session remains attached. Disposal w
 
 #### What the model sees
 
-Tools retain upstream descriptions and JSON schemas under `mcp__playwright-mcp__<tool>` names. Text and screenshots use the normal tool-result pipeline and Session log. Screenshots require an attachment store and an image-capable model route; other routes receive the MCP image diagnostic. This provider adds no system-prompt guidance.
+Tools retain upstream descriptions and JSON schemas under `mcp__playwright-mcp__<tool>` names. Text and screenshots use the normal tool-result pipeline and Session log. Screenshots require an attachment store and an image-capable model route; other routes receive the MCP image diagnostic. The MCP client also exposes resource helpers and attributed server instructions. Browser instructions are shown only after this Session owns a connection; targeted resource requests enforce the same ownership.
 
 #### Token effect
 
-The catalog adds tool definitions. Calls add arguments, text, and admitted images to Session history. Inline image bytes stay outside model-visible history.
+The catalog, resource helpers, and server instructions add tool definitions and prompt text. Calls add arguments, text, and admitted images to Session history. Inline image bytes stay outside model-visible history.
 
 #### KV Cache effect
 
@@ -98,6 +98,7 @@ The integration retains the pinned server's browser and tool restrictions.
 - Chromium only; Firefox and WebKit are not selectable.
 - A lost server connection leaves calls failing until provider reload or host restart. Reconnection is disabled to avoid silently replacing browser state.
 - Attachment exclusivity is local to this provider instance. Other processes and browser users can still modify the same pages.
+- The shared resource-server inventory can show inherited server names; it does not grant access to another Session's browser.
 - Cancellation does not undo navigation, clicks, or other actions already delivered to the browser.
 - Tool schemas follow the pinned experimental dependency and carry no DSH stability promise.
 

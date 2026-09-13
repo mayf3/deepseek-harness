@@ -15,10 +15,20 @@ lines.on('line', line => {
   const request = JSON.parse(line)
   if (request.id === undefined) return
   switch (request.method) {
-    case 'initialize':
+    case 'server/discover':
+      record('probe')
       if (mode === 'fail') process.exit(1)
       if (mode === 'hold') return
-      reply(request.id, { protocolVersion: request.params.protocolVersion, capabilities: { tools: {} }, serverInfo: { name: 'browser-fixture', version: '1' } })
+      process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id: request.id, error: { code: -32601, message: 'Legacy browser fixture' } }) + '\n')
+      break
+    case 'initialize':
+      record('initialize')
+      if (mode === 'fail') process.exit(1)
+      if (mode === 'hold') return
+      reply(request.id, {
+        protocolVersion: request.params.protocolVersion, capabilities: { tools: {}, resources: {} },
+        serverInfo: { name: 'browser-fixture', version: '1' }, instructions: 'BROWSER_FIXTURE_INSTRUCTION: use this Session browser.',
+      })
       break
     case 'tools/list':
       reply(request.id, { tools: [
@@ -31,6 +41,18 @@ lines.on('line', line => {
       if (request.params.name === 'disconnect') process.exit(0)
       counter += 1
       reply(request.id, { content: [{ type: 'text', text: `Visit ${counter}: ${request.params.arguments.label}` }], structuredContent: { counter, pid: process.pid } })
+      break
+    case 'resources/list':
+      record('resource', { name: request.method })
+      reply(request.id, { resources: [{ uri: 'browser-fixture://state', name: 'Browser state' }] })
+      break
+    case 'resources/templates/list':
+      record('resource', { name: request.method })
+      reply(request.id, { resourceTemplates: [] })
+      break
+    case 'resources/read':
+      record('resource', { name: request.method })
+      reply(request.id, { contents: [{ uri: request.params.uri, text: JSON.stringify({ counter, pid: process.pid }) }] })
       break
     default:
       throw new Error(`Unexpected method ${request.method}`)

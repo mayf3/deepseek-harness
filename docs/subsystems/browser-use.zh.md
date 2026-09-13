@@ -28,6 +28,8 @@
 
 提供方工具使用常规 DSH 执行管线与 Session 日志。提供方拥有自己的工具 schema、结果渲染、图像支持、配置和上游限制；共享服务不添加模型可见内容。Stagehand 的 AI 辅助操作使用 Session 选定的 DSH 模型，并将辅助请求与已结算结果独立于主对话记录；它们不会将 DSH 任务循环委托给另一个 agent（智能体）。
 
+浏览器 MCP 连接还提供[资源和服务器指令](mcp.zh.md)。发往浏览器服务器的资源调用使用其 Session 队列，并拒绝其他 Session 的请求；服务器指令只会组装到所属 Session 的提示词中。
+
 [决策记录](../../.agents/notes/implemented/architecture/2026-09-12-browser-use-provider-registration.zh.md)解释只注册名称的服务与按 Session 管理的所有权。
 
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->

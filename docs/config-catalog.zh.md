@@ -529,6 +529,66 @@ export interface Config {
 
 来源：[`packages/experimental/agent-team/src/types.ts:130`](../packages/experimental/agent-team/src/types.ts)
 
+<a id="deepseek-aidsh-experimental-browser-use-chrome-devtools-mcp"></a>
+
+## `@deepseek-ai/dsh-experimental-browser-use-chrome-devtools-mcp`
+
+需要：`browserUse` · `agents` · `tools`
+
+```ts config-catalog
+/** Fixed Chromium launch or existing-browser attachment settings. */
+export type Config = BrowserMcpConfig
+```
+
+依赖：`BrowserMcpConfig` (`@deepseek-ai/dsh-experimental-browser-use-runtime/mcp`)
+
+来源：[`packages/experimental/browser-use-chrome-devtools-mcp/src/index.ts:14`](../packages/experimental/browser-use-chrome-devtools-mcp/src/index.ts)
+
+<a id="deepseek-aidsh-experimental-browser-use-playwright-mcp"></a>
+
+## `@deepseek-ai/dsh-experimental-browser-use-playwright-mcp`
+
+需要：`browserUse` · `agents` · `tools`
+
+```ts config-catalog
+/** Fixed Chromium launch or existing-browser attachment settings. */
+export type Config = BrowserMcpConfig
+```
+
+依赖：`BrowserMcpConfig` (`@deepseek-ai/dsh-experimental-browser-use-runtime/mcp`)
+
+来源：[`packages/experimental/browser-use-playwright-mcp/src/index.ts:15`](../packages/experimental/browser-use-playwright-mcp/src/index.ts)
+
+<a id="deepseek-aidsh-experimental-browser-use-stagehand-native"></a>
+
+## `@deepseek-ai/dsh-experimental-browser-use-stagehand-native`
+
+需要：`browserUse` · `agents` · `sessions` · `llm` · `tools` · `systemPrompt`
+
+```ts config-catalog
+/** Profile-owned browser connection and auxiliary inference policy. */
+export interface Config {
+  /** Launch a fresh browser or attach to the configured existing endpoint. */
+  mode: 'launch' | 'attach'
+  /** CDP HTTP or WebSocket endpoint, required only for attach mode. */
+  cdpEndpoint?: string
+  /** Optional Stagehand extension id for an existing browser. */
+  extensionId?: string
+  /** Installed Chrome/Chromium executable used in launch mode. */
+  executablePath?: string
+  /** Hide an owned browser's window. */
+  headless?: boolean
+  /** Deadline for Chromium startup and Stagehand navigation/action operations. */
+  operationTimeoutMs?: number
+  /** Maximum output tokens for each auxiliary Session-model generation. */
+  maxOutputTokens?: number
+  /** Grace for native SDK cleanup before its connection Worker is terminated. */
+  shutdownGraceMs?: number
+}
+```
+
+来源：[`packages/experimental/browser-use-stagehand-native/src/index.ts:30`](../packages/experimental/browser-use-stagehand-native/src/index.ts)
+
 <a id="deepseek-aidsh-experimental-computer-use-cua-driver-mcp"></a>
 
 ## `@deepseek-ai/dsh-experimental-computer-use-cua-driver-mcp`
@@ -2649,7 +2709,7 @@ export interface Config {
 }
 ```
 
-来源：[`packages/core/system-prompt/src/index.ts:248`](../packages/core/system-prompt/src/index.ts)
+来源：[`packages/core/system-prompt/src/index.ts:258`](../packages/core/system-prompt/src/index.ts)
 
 <a id="deepseek-aidsh-terminal-bash"></a>
 
@@ -3483,6 +3543,7 @@ export interface Config {
 - `@deepseek-ai/dsh-api-remotes` — 需要 `typertGateway`（[`packages/api/remotes/src/index.ts`](../packages/api/remotes/src/index.ts)）
 - `@deepseek-ai/dsh-api-workspace-controller` — 需要 `typert` · `workspaceRegistry`（[`packages/api/workspace-controller/src/index.ts`](../packages/api/workspace-controller/src/index.ts)）
 - `@deepseek-ai/dsh-authorization` — 需要 `credentials`（[`packages/credentials/authorization/src/index.ts`](../packages/credentials/authorization/src/index.ts)）
+- `@deepseek-ai/dsh-browser-use` ([`packages/browser-use/browser-use/src/index.ts`](../packages/browser-use/browser-use/src/index.ts))
 - `@deepseek-ai/dsh-client-file-upload` — 需要 `agents` · `attachments` · `commands` · `connection`（[`packages/client/file-upload/src/index.ts`](../packages/client/file-upload/src/index.ts)）
 - `@deepseek-ai/dsh-client-locale`（[`packages/client/locale/src/index.ts`](../packages/client/locale/src/index.ts)）
 - `@deepseek-ai/dsh-client-modules` — 需要 `loader`（[`packages/client/modules/src/index.ts`](../packages/client/modules/src/index.ts)）
@@ -3610,6 +3671,7 @@ export interface Config {
 - `@deepseek-ai/dsh-deque`（[`packages/util/deque/src/index.ts`](../packages/util/deque/src/index.ts)）
 - `@deepseek-ai/dsh-experimental-agent-team-profile`（[`packages/experimental/agent-team-profile/src/index.ts`](../packages/experimental/agent-team-profile/src/index.ts)）
 - `@deepseek-ai/dsh-experimental-agent-team-web-profile`（[`packages/experimental/agent-team-web-profile/src/index.ts`](../packages/experimental/agent-team-web-profile/src/index.ts)）
+- `@deepseek-ai/dsh-experimental-browser-use-runtime` ([`packages/experimental/browser-use-runtime/src/index.ts`](../packages/experimental/browser-use-runtime/src/index.ts))
 - `@deepseek-ai/dsh-experimental-webworker-packer`（[`packages/experimental/webworker-packer/src/index.ts`](../packages/experimental/webworker-packer/src/index.ts)）
 - `@deepseek-ai/dsh-experimental-webworker-runtime`（[`packages/experimental/webworker-runtime/src/index.ts`](../packages/experimental/webworker-runtime/src/index.ts)）
 - `@deepseek-ai/dsh-home-paths`（[`packages/util/home-paths/src/index.ts`](../packages/util/home-paths/src/index.ts)）
