@@ -485,6 +485,8 @@ export function installProfileResolution(
     const resolveRequest = adaptEsm((request, parent, attributes) => original.call(
       loader, parent as string, { specifier: request, attributes },
     ))
+    // Node 24.12+ adds skipSyncHooks after request. Its presence marks hook
+    // delegation whose outer call already selected a route.
     const wrapped = (parent: string, request: { specifier: string; attributes?: ImportAttributes }, ...rest: unknown[]): ResolveResult => (
       rest.length
         ? Reflect.apply(original, loader, [parent, request, ...rest]) as ResolveResult

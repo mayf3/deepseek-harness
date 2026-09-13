@@ -97,14 +97,18 @@ export function entryListProblem(rows: unknown, at = ''): string | undefined {
   return undefined
 }
 
-/**
- * Whether a package specifier resolves from `base` without importing it.
- * @param specifier - the package specifier, possibly carrying a subpath.
- * @param base - the URL to walk up from.
- * @returns true when the package is installed, including an unexported subpath.
- */
+/** Package lookup injected into preset discovery. */
 type PackageResolves = (specifier: string, base: string) => boolean
 
+/**
+ * Whether a package specifier is installed above `base` without importing it.
+ *
+ * The direct disk walk accepts unexported subpaths and rejects stale links
+ * whose package directory no longer exists.
+ * @param name - package specifier, possibly carrying a subpath.
+ * @param base - directory URL whose ancestors contain candidate `node_modules` directories.
+ * @returns true when the package is installed.
+ */
 function packageInstalled(name: string, base: string): boolean {
   const pkg = name.split('/').slice(0, name.startsWith('@') ? 2 : 1).join('/')
   let dir = fileURLToPath(base)
@@ -119,30 +123,12 @@ function packageInstalled(name: string, base: string): boolean {
 /**
  * Whether one classified row names a module that exists, importing nothing.
  *
- * Each kind is checked by what actually answers it. A package name is looked
- * up on disk — the same upward walk Node's own resolver starts with — and a
- * relative or `file:` specifier is statted, because both name one file.
- * Nothing is evaluated either way, so a row is judged without its plugin
- * observing that discovery looked.
- *
- * `import.meta.resolve` is deliberately not the fallback for a name the disk
- * lookup misses. Its `parentURL` argument only takes effect under
- * `--experimental-import-meta-resolve`, which no launch passes, so it would
- * resolve from THIS module rather than from the harness — reporting a
- * dependency visible only to this package as healthy, and a plugin the mount
- * can import as broken. The resolver that does honour an explicit parent is
- * the Loader's internal one, whose `resolveSync` signature differs between
- * Node 22 and 24 (`ModuleLoader.fromInternal` tags the raw object rather than
- * normalising it); reaching into that for a case the walk already covers buys
- * nothing a supported deployment needs, because every plugin a preset names
- * is installed beside the roster.
- *
- * What that gives up: a package resolvable ONLY through a loader hook — an
- * import map, or a tree with no `node_modules` at all — is reported broken.
- * No supported install produces one.
+ * Package rows delegate to the injected lookup. Relative and `file:` rows use
+ * file metadata. No check evaluates the named module.
  * @param row - the classified specifier, from {@link classifyRowSpecifier}.
  * @param presetBase - directory URL a preset-relative specifier resolves against.
  * @param harnessBase - base URL a package name resolves against.
+ * @param resolves - package lookup selected by the owning caller.
  * @returns true when the row names something that can be imported.
  */
 async function rowResolves(

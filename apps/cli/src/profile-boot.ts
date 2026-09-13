@@ -265,7 +265,7 @@ export interface RunProfileOptions {
   patchFiles: readonly string[]
   /** The invocation's inner arguments, handed to the tree through `ctx.cmdlineArgs`. */
   args: readonly string[]
-  /** Module fallback backend; defaults to retained link materialization. */
+  /** Module fallback backend; production launchers omit it and retain link materialization. */
   resolutionMode?: ProfileResolutionMode
 }
 

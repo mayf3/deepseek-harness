@@ -8,7 +8,7 @@ Status: implemented
 
 profile 从自己的包项目加载插件配置项，而 Harness 包和所选 bundle 携带的包可能位于该项目普通依赖树之外。当前启动器在启动时计算包优先级，再将结果物化为共享 symlink、profile 自有链接或打包可执行文件的代理包。文件跨进程和安装版本持续存在，需要协调和锁来维护，并向元数据读取方暴露生成的代理 manifest，也无法原子表示进程内变更。
 
-运行时设计保留现有选包规则，不另建一套包策略。它覆盖插件模块内部的 import 以及 Loader 配置项的 import，在主线程和 Harness 自有 Worker 中工作，并将热 resolve 相对无 hook Node 的开销控制在 15% 以内。generation 替换只接受新增包的集合，不会逐项修改正在使用的表。
+运行时设计保留现有选包规则，不另建一套包策略。它覆盖插件模块内部的 import 以及 Loader 配置项的 import，并在主线程和 Harness 自有 Worker 中工作。generation 替换只接受新增包的集合，不会逐项修改正在使用的表。
 
 ## Decision
 
@@ -50,6 +50,8 @@ resolution generation 列出可用 fallback 包；Loader entries 组成活动插
 
 实现集中在 `app-boot/src/profile-resolution/`。`service.ts` 提供长期存在的 `ctx.pluginPackages`，并拥有主线程 resolver 与 Worker generation 的生命周期；`resolver.ts` 实现 generation 查询和 Node Internal 适配器；`worker-bootstrap.ts` 在线程内安装继承的 generation。旧 profile 选包和磁盘 materialize 逻辑留在 `profile.ts`。Worker 只通过 `@deepseek-ai/dsh-app-boot/worker/profile-resolution-bootstrap` 公开入口引用 bootstrap。
 
+服务定义与提供方继续放在 `app-boot`，因为 profile boot 拥有 resolver 生命周期。出现与 launcher 无关的提供方或需要独立演进的消费方时，再抽出单独的能力 seam。
+
 ### Worker 与 generation 更新
 
 主线程通过 Worker environment data 发布当前 generation 的可结构化克隆表示和 profile scope。每个 Harness 自有 Worker 构建产物通过构建 banner 获取自己的 ESM/CJS Internal 并安装同一适配器，不重新遍历 manifest。bootstrap bundle 不静态导入任何包；在 Windows 上，它会临时暴露一个服务私有的 native cache 目录，并在业务代码启动前恢复环境。源码 Worker 入口保持原有自包含依赖；第三方 Worker 保持不变。
@@ -82,7 +84,7 @@ runtime 模式要求受支持的 Node Internal loader 接口，并且不会创�
 
 generation 构造发生在启动或显式更新阶段，不属于单次 resolve，但需要单独报告绝对延迟。热路径只包括 scope 分类、bare name 提取、本地优先判断、Map 查询和至多一次原生解析；缓存命中直接返回 generation 级结果。作用域外调用不读取 manifest，只缓存 parent 是否位于 profile scope。
 
-性能测量用 plain Node 在全新进程中执行构建后的 JavaScript，并以完全没有安装 hook 的进程为基线。七轮交替顺序覆盖 outside、profile-local 和 fallback 的 dynamic import、`import.meta.resolve`、require、`require.resolve`。Node 22.19、24.18 和 26.8 的热路径中位数最大正向回退为 4.5%。Node 24.18 的 256 包 cold workload 最大回退为 11.2%，generation 构造中位数为 16.027 ms；32 包本地 `require.resolve` 因固定启动成本在整批增加 1.033 ms（+34.7%）。
+实现期间的一次性本地测量用 plain Node 在全新进程中执行构建后的 JavaScript，并与完全没有安装 hook 的进程比较。测量脚本和结果未提交，这些数据不是 benchmark 或 CI 预算。七轮交替顺序覆盖 outside、profile-local 和 fallback 的 dynamic import、`import.meta.resolve`、require、`require.resolve`。Node 22.19、24.18 和 26.8 的热路径中位数最大正向回退为 4.5%。Node 24.18 的 256 包 cold workload 最大回退为 11.2%，generation 构造中位数为 16.027 ms；32 包本地 `require.resolve` 因固定启动成本在整批增加 1.033 ms（+34.7%）。
 
 行为测试在同一包树上比较运行时 generation 与磁盘 materializer，再覆盖根顺序、传递依赖和 peer、本地与外层优先级、exports 与 subpath 错误、conditions、显式 CommonJS options、源码和构建 Worker及支持的 Node 版本。generation 测试证明构造失败不发布部分状态，成功换代只做原子引用替换。
 

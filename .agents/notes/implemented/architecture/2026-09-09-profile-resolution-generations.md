@@ -8,7 +8,7 @@ English | [中文](2026-09-09-profile-resolution-generations.zh.md)
 
 A profile loads plugin rows from its own package project, while Harness packages and packages carried by selected bundles can live outside that project's ordinary dependency tree. The current launcher bridges the trees by calculating package precedence at startup and materializing that result as shared symlinks, profile-owned links, or packaged-executable proxy packages. The files persist across processes and installations, require reconciliation and locking, expose generated proxy manifests to metadata readers, and cannot represent a process-local change atomically.
 
-The runtime design preserves the existing selection rules rather than introducing a second package policy. It covers imports performed by plugin modules as well as Loader row imports, works in the main thread and Harness-owned Workers, and keeps hot per-resolution overhead within 15% of Node without hooks. Generation replacement accepts only additive package sets and never mutates a live table entry by entry.
+The runtime design preserves the existing selection rules rather than introducing a second package policy. It covers imports performed by plugin modules as well as Loader row imports and works in the main thread and Harness-owned Workers. Generation replacement accepts only additive package sets and never mutates a live table entry by entry.
 
 ## Decision
 
@@ -50,6 +50,8 @@ The resolver does not expose `imported(entry)` and does not observe ModuleJobs, 
 
 The implementation lives under `app-boot/src/profile-resolution/`. `service.ts` provides the long-lived `ctx.pluginPackages` and owns the main-thread resolver and Worker-generation lifetimes; `resolver.ts` implements generation lookup and the Node Internal adapters; `worker-bootstrap.ts` installs an inherited generation in one thread. Existing profile selection and disk materialization remain in `profile.ts`. Workers reference the bootstrap only through the public `@deepseek-ai/dsh-app-boot/worker/profile-resolution-bootstrap` export.
 
+The service definition and provider remain together in `app-boot` because profile boot owns the resolver lifetime. Extracting a separate capability seam becomes warranted when a launcher-independent provider or independently evolving consumers require it.
+
 ### Workers and generation updates
 
 The main thread publishes a structured-clone representation of the current generation through Worker environment data. Each built Harness-owned Worker uses its build banner to obtain its own ESM and CommonJS internal objects and install the same adapters without traversing manifests. The bootstrap bundle has no static package imports; on Windows it temporarily exposes a service-private native cache directory and restores the environment before business code starts. Source Worker entries retain their existing self-contained dependencies. Third-party Workers remain unchanged.
@@ -82,7 +84,7 @@ Packaged-carrier selection, virtual-filesystem adaptation, and Electron ASAR lau
 
 Generation construction is startup or update work, not resolve work, and its absolute latency is reported separately. The hot path consists of scope classification, bare-name extraction, local-before-fallback selection, a Map lookup, and at most one native resolution; a cache hit returns the generation-owned result directly. Out-of-scope calls do not read manifests and cache only whether each parent belongs to the profile scope.
 
-Performance measurements run built JavaScript under plain Node in fresh processes and compare against a process that installs no hook. Seven alternating rounds cover outside, profile-local, and fallback imports through dynamic import, `import.meta.resolve`, require, and `require.resolve`. Across Node 22.19, 24.18, and 26.8, the largest positive hot-path median is 4.5%. On Node 24.18, a 256-package cold workload regresses by at most 11.2% and generation construction takes 16.027 ms median; the 32-package local `require.resolve` case adds 1.033 ms across the batch (+34.7%) from fixed startup cost.
+One-off local measurements taken during implementation ran built JavaScript under plain Node in fresh processes and compared it with a process that installed no hook. The measurement script and results are not committed, and these figures are not a benchmark or CI budget. Seven alternating rounds covered outside, profile-local, and fallback imports through dynamic import, `import.meta.resolve`, require, and `require.resolve`. Across Node 22.19, 24.18, and 26.8, the largest positive hot-path median was 4.5%. On Node 24.18, a 256-package cold workload regressed by at most 11.2% and generation construction took 16.027 ms median; the 32-package local `require.resolve` case added 1.033 ms across the batch (+34.7%) from fixed startup cost.
 
 Behavior tests compare the runtime generation with the disk materializer over the same package trees, then exercise root order, transitive and peer dependencies, local and external precedence, exports and subpath errors, conditions, explicit CommonJS options, source and built Workers, and supported Node versions. Generation tests prove failed construction does not publish partial state and successful replacement is atomic.
 
