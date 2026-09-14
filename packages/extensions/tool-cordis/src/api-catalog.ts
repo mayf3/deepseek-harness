@@ -595,6 +595,19 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'browserUse',
+    summary: 'Owns one optional provider registration in the shared browser-use service.',
+    description: 'Owns one optional provider registration in the shared browser-use service.',
+    methods: [
+      {
+        signature: 'register(name: BrowserUseProviderName): () => Promise<void>',
+        description: 'Reserve the sole provider slot until the contribution is disposed. A second registration fails even when it repeats the current name. Providers must stop their tools and await owned work before releasing this registration.',
+        parameters: [{ name: 'name', description: 'provider-owned name used in registration diagnostics.' }],
+        returns: 'the effect disposer for this exact registration.',
+      },
+    ],
+  },
+  {
     key: 'clientModules',
     summary: 'The web plugin table service: incremental `dsh.client` scan + wire composition + bundle route + index injection rows.',
     description: 'The web plugin table service: incremental `dsh.client` scan + wire composition + bundle route + index injection rows. Construction runs the activation scan synchronously — a malformed declaration or missing bundle among the already-loaded entries aggregates into one loud throw (FAILED fiber; the boot activation audit reports it).',
@@ -3948,6 +3961,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'BrandedNumber',
     declaration: 'export type BrandedNumber<B extends string> = number & {\n    readonly [BRAND]: B;\n};',
+  },
+  {
+    name: 'BrowserUseProviderName',
+    declaration: 'export type BrowserUseProviderName = Branded<\'BrowserUseProviderName\'>;',
   },
   {
     name: 'ClientArtifactBaseline',
