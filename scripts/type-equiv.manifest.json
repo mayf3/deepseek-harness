@@ -13,7 +13,7 @@
     },
     {
       "doc": "docs/subsystems/llm-streaming.md",
-      "symbol": "AssistantProvenance",
+      "symbol": "AssistantProviderMetadata",
       "source": "packages/llm/llm/src/message.ts"
     },
     {
@@ -693,7 +693,7 @@
     },
     {
       "doc": "docs/subsystems/session-title.md",
-      "symbol": "SessionTitleModelProvenance",
+      "symbol": "SessionTitleModelIdentity",
       "source": "packages/session/session-title/src/types.ts"
     },
     {
@@ -849,6 +849,11 @@
     {
       "doc": "docs/subsystems/tools.md",
       "symbol": "ToolGuard",
+      "source": "packages/core/tools/src/index.ts"
+    },
+    {
+      "doc": "docs/subsystems/tools.md",
+      "symbol": "ToolErrorInfo",
       "source": "packages/core/tools/src/index.ts"
     },
     {
@@ -1152,39 +1157,39 @@
       "source": "packages/sandbox/sandbox/src/index.ts"
     },
     {
-      "doc": "docs/subsystems/code-runtime.md",
-      "symbol": "CodeJsonValue",
-      "source": "packages/code-runtime/code-runtime/src/types.ts"
+      "doc": "docs/subsystems/ptc-runtime.md",
+      "symbol": "PtcJsonValue",
+      "source": "packages/ptc-runtime/ptc-runtime/src/types.ts"
     },
     {
-      "doc": "docs/subsystems/code-runtime.md",
-      "symbol": "CodeRunRequest",
-      "source": "packages/code-runtime/code-runtime/src/types.ts"
+      "doc": "docs/subsystems/ptc-runtime.md",
+      "symbol": "PtcRunRequest",
+      "source": "packages/ptc-runtime/ptc-runtime/src/types.ts"
     },
     {
-      "doc": "docs/subsystems/code-runtime.md",
-      "symbol": "CodeRunResult",
-      "source": "packages/code-runtime/code-runtime/src/types.ts"
+      "doc": "docs/subsystems/ptc-runtime.md",
+      "symbol": "PtcRunResult",
+      "source": "packages/ptc-runtime/ptc-runtime/src/types.ts"
     },
     {
-      "doc": "docs/subsystems/code-runtime.md",
-      "symbol": "CodeBindingNamespace",
-      "source": "packages/code-runtime/code-runtime/src/types.ts"
+      "doc": "docs/subsystems/ptc-runtime.md",
+      "symbol": "PtcBindingNamespace",
+      "source": "packages/ptc-runtime/ptc-runtime/src/types.ts"
     },
     {
-      "doc": "docs/subsystems/code-runtime.md",
-      "symbol": "CodeBindingErrorClass",
-      "source": "packages/code-runtime/code-runtime/src/types.ts"
+      "doc": "docs/subsystems/ptc-runtime.md",
+      "symbol": "PtcBindingErrorClass",
+      "source": "packages/ptc-runtime/ptc-runtime/src/types.ts"
     },
     {
-      "doc": "docs/subsystems/code-runtime.md",
-      "symbol": "CodeBindingFunction",
-      "source": "packages/code-runtime/code-runtime/src/types.ts"
+      "doc": "docs/subsystems/ptc-runtime.md",
+      "symbol": "PtcBindingFunction",
+      "source": "packages/ptc-runtime/ptc-runtime/src/types.ts"
     },
     {
-      "doc": "docs/subsystems/code-runtime.md",
-      "symbol": "CodeRunFailure",
-      "source": "packages/code-runtime/code-runtime/src/types.ts"
+      "doc": "docs/subsystems/ptc-runtime.md",
+      "symbol": "PtcRunFailure",
+      "source": "packages/ptc-runtime/ptc-runtime/src/types.ts"
     },
     {
       "doc": "docs/subsystems/filesystem.md",
@@ -2125,6 +2130,37 @@
       "doc": "docs/subsystems/session.md",
       "symbol": "SessionMessageProjectionContext",
       "source": "packages/core/session/src/surface.ts"
+    },
+    {
+      "doc": "docs/subsystems/ptc-runtime.md",
+      "symbol": "PtcRunSpec",
+      "source": "packages/ptc-runtime/ptc-runtime/src/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/ptc-runtime.md",
+      "symbol": "PtcRunSandbox",
+      "source": "packages/ptc-runtime/ptc-runtime/src/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/ssh.md",
+      "symbol": "Config",
+      "source": "packages/ssh/ssh/src/index.ts"
+    },
+    {
+      "doc": "docs/subsystems/ssh.md",
+      "symbol": "SshConnection",
+      "source": "packages/ssh/ssh/src/index.ts",
+      "projection": "public-api"
+    },
+    {
+      "doc": "docs/subsystems/mcp.md",
+      "symbol": "McpResourceRequest",
+      "source": "packages/mcp/mcp-resources/src/index.ts"
+    },
+    {
+      "doc": "docs/subsystems/mcp.md",
+      "symbol": "McpResourceProvider",
+      "source": "packages/mcp/mcp-resources/src/index.ts"
     }
   ]
 }

@@ -16,7 +16,7 @@ The `@messageProjection` tag on the owning `SessionEventMap` member generates th
 
 The compaction-image-offload plugin registers its definition through a fiber-owned `ctx.sessions.registerMessageProjection()` effect. Each event has one registered owner. Removing a definition invalidates pending committed decisions and cached reads that used it; a replacement definition requires restoring the session. Rejected, uncommitted candidates retain no interpreter dependency.
 
-Detached readers pass definitions explicitly. The current Session format catalog assembles the same browser-safe plugin exports for persistence validation, offline queries, and browser fixture replay. This static assembly does not mount recovery listeners. Live sessions use the registered composition, while compaction invariants borrow that composition's definitions. No process-global registry or import-time registration is involved.
+Detached readers pass definitions explicitly. The current Session format catalog assembles the same browser-safe plugin exports for persistence validation and offline queries. This static assembly does not mount recovery listeners. Live sessions use the registered composition, while compaction invariants borrow that composition's definitions. No process-global registry or import-time registration is involved.
 
 The image event payload and required-on-read semantics remain owned by the image-offload note. Its indexes, selection policy, retry behavior, and SDK recordings are unchanged; this decision partially supersedes that note's core-owned interpretation.
 
