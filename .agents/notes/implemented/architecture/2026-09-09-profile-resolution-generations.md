@@ -16,7 +16,7 @@ Profile startup computes one immutable `ResolutionGeneration` from the same depe
 
 ### One selection algorithm
 
-The package traversal remains in `@deepseek-ai/dsh-app-boot` beside profile loading. The disk materializer and the runtime resolver consume one pure plan; neither owns a copy of the precedence algorithm. Direct callers can select link, dual, or runtime mode, while an omitted mode selects link. Runtime and dual remain internal migration and verification paths rather than user-facing launcher behavior.
+The package traversal remains in `@deepseek-ai/dsh-app-boot` beside profile loading. The disk materializer and the runtime resolver consume one pure plan; neither owns a copy of the precedence algorithm. Ordinary Node callers can select link, dual, or runtime mode, while an omitted mode selects link. Packaged executables and the Electron Host select runtime mode because their dependency trees may live in a virtual filesystem; dual remains an internal comparison path.
 
 The installation manifest is the first root. Its graph traverses `dependencies` followed by `peerDependencies` breadth-first, resolving each edge from the manifest that declares it. The first installed package reached under a name owns that name. Selected bundle roots then run in profile order, with each earlier root's complete graph taking precedence over every later root. Names supplied by the installation are reserved, and bundle package roots themselves do not become plugin fallbacks. Missing declared packages are skipped as before.
 
@@ -74,11 +74,11 @@ Legacy disk state remains available to link-only launches, old processes, and ro
 
 Link, dual, and runtime modes use the same generation schema and dependency-selection policy. Link mode persists the computed result, runtime mode installs it only in the process, and dual mode requires Node's materialized result to equal the generation route.
 
-The `dsh` launcher selects link mode when its caller omits `resolutionMode`, so supported profile startup keeps its existing filesystem behavior. Tests and low-level embedders select runtime or dual explicitly before any profile row mounts.
+The `dsh` launcher selects link mode when an ordinary Node caller omits `resolutionMode`, so existing npm-installed profile startup keeps its filesystem behavior. A pkg executable always selects runtime mode, and the Electron Host installs its runtime generation before any profile row mounts. Tests and low-level embedders can still select runtime or dual explicitly.
 
 Runtime mode requires a supported Node Internal loader interface and does not create, update, or retire fallback links. Dual mode retains link writes and fails when Node's disk result differs from the generation. Writable profile state and package-manager transactions remain outside the resolver.
 
-Packaged-carrier selection, virtual-filesystem adaptation, and Electron ASAR launch behavior are separate decisions layered on this mode-neutral architecture.
+Pkg and packaged Electron carriers force runtime resolution. The Electron Host runs through the Electron executable with `ELECTRON_RUN_AS_NODE=1`, reads its dsh tree from ASAR, and maps executable ASAR entries to electron-builder's unpacked tree. Neither carrier creates, updates, or removes legacy resolution links.
 
 ### Performance and verification
 
@@ -106,6 +106,7 @@ Behavior tests compare the runtime generation with the disk materializer over th
 
 - One eager computation supplies the retained disk materializer and runtime generation.
 - Link-only, dual, and runtime-only tests consume the same generation; runtime startup neither writes nor retires module-resolution data.
+- Pkg and Electron carriers select runtime resolution; Electron executes its Host in Node mode from the ASAR-backed dsh tree while native executable entries remain unpacked.
 - ESM and CommonJS adapters share one router and delegate final resolution to Node without `module.registerHooks` or `_findPath` replacement.
 - Production metadata lookup does not record Loader import results or wrap Entry, registry, tree, or HMR methods.
 - The Node compatibility matrix runs main-thread resolver specifications across supported loader interfaces; service and bootstrap specifications cover Worker environment-data and installation interfaces without launching a built Worker.
@@ -114,4 +115,4 @@ Behavior tests compare the runtime generation with the disk materializer over th
 
 ## Consequences
 
-Runtime startup avoids disk mutation and proxy manifests while preserving the existing package-selection algorithm. It accepts the maintenance cost of Node Internal compatibility tests and an early, self-contained bootstrap in each owned Worker. Link remains the launcher default, and dual keeps a migration comparison path. Generation replacement remains additive until the product owns module-cache invalidation and Worker restart. Carrier-specific selection and virtual-filesystem launch integration remain separate work.
+Runtime startup avoids disk mutation and proxy manifests while preserving the existing package-selection algorithm. It accepts the maintenance cost of Node Internal compatibility tests and an early, self-contained bootstrap in each owned Worker. Link remains the ordinary Node launcher default, dual keeps a migration comparison path, and pkg plus Electron carriers force runtime resolution without retiring old links. Generation replacement remains additive until the product owns module-cache invalidation and Worker restart.

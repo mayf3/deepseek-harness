@@ -36,7 +36,7 @@
     "@deepseek-ai/dsh-package-manifest": "workspace:^",
     "chokidar": "4.0.3",
     "js-yaml": "^4.2.0",
-    "node-addon-require-builtin": "^0.1.4",
+    "node-addon-require-builtin": "^0.1.6",
     "resolve.exports": "^2.0.3"
   },
   "peerDependencies": {
