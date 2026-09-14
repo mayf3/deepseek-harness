@@ -14,7 +14,7 @@ Web and agent controls need to change a running profile without creating an inde
 
 Profile files remain the persisted state: entry toggles edit only `disabled` in the YAML document, and bundle toggles edit the ordered string list. Dependency updates do not reactivate retained disabled bundles. A service removal first applies the composition without the bundle and waits for old fibers to finish before deleting the dependency. Saved configuration, pnpm completion and runtime activation have separate outcomes; failure preserves the actual partial state and a diagnostic path.
 
-This extends the [profile bundle composition decision](2026-08-05-profile-plugin-bundles.md). Startup profiles keep their process composition, and Desktop package management remains shell-owned. Web controls and explicitly enabled agent tools call the same service, whose batched durable notices inform live Agents without waking them. The agent tool is disabled by default in the base bundle and shipped presets.
+This extends the [profile bundle composition decision](2026-08-05-profile-plugin-bundles.md). Startup profiles keep their process composition, and Desktop package management remains shell-owned. Web controls and explicitly enabled agent tools call the same service, whose batched durable notices inform live Agents without waking them. The agent tool is disabled by default in the base bundle and shipped presets. The browser-only worker preview has no host package installer; its module-proxy table refuses `execa` calls explicitly while retaining the management module for inventory discovery.
 
 ## Alternatives considered
 

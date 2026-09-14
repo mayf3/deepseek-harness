@@ -8,6 +8,7 @@ import { resolveSlotLabel } from '@deepseek-ai/dsh-client-ui-slots'
 import { usePinnedBrowserLanguages } from '@deepseek-ai/dsh-client-test-runtime'
 import { apply, inject, NS } from '../src/client/index.ts'
 import { PluginInventorySettingsTab } from '../src/client/PluginInventorySettingsTab.tsx'
+import type { PluginEntryId } from '@deepseek-ai/dsh-api-remotes/client'
 import type { PluginInventorySettingsTabInjected } from '../src/client/PluginInventorySettingsTab.tsx'
 import { apply as hostApply } from '../src/index.ts'
 
@@ -34,8 +35,15 @@ async function bench() {
     .mockResolvedValue({ ok: true, value: EMPTY })
   ctx.provide('remote.pluginInventory', { list })
   const listBundles = vi.fn().mockResolvedValue({ ok: true, value: [] })
-  ctx.provide('remote.pluginManager', { listBundles })
-  return { ctx, slots: ctx.get('slots') as SlotRegistry, locale, list, listBundles }
+  const managed = {
+    listBundles, listPlugins: vi.fn().mockResolvedValue({ ok: true, value: [] }),
+    setPluginEnabled: vi.fn().mockResolvedValue({ ok: true, value: { changed: true, application: 'applied', message: 'plugin' } }),
+    setBundleEnabled: vi.fn().mockResolvedValue({ ok: true, value: { changed: true, application: 'applied', message: 'bundle' } }),
+    installBundle: vi.fn().mockResolvedValue({ ok: true, value: { changed: true, application: 'restart-required', message: 'install' } }),
+    removeBundle: vi.fn().mockResolvedValue({ ok: true, value: { changed: true, application: 'applied', message: 'remove' } }),
+  }
+  ctx.provide('remote.pluginManager', managed)
+  return { ctx, slots: ctx.get('slots') as SlotRegistry, locale, list, listBundles, managed }
 }
 
 function declare(slots: SlotRegistry): () => void {
@@ -71,6 +79,18 @@ describe('ui-settings-plugin-inventory browser plugin', () => {
     expect(b.list).toHaveBeenCalledOnce()
     await expect(injected.management?.listBundles()).resolves.toEqual([])
     expect(b.listBundles).toHaveBeenCalledOnce()
+    const manager = injected.management!
+    await expect(manager.listPlugins()).resolves.toEqual([])
+    await expect(manager.setPluginEnabled('include:plugin' as PluginEntryId, false)).resolves.toMatchObject({ message: 'plugin' })
+    expect(b.managed.setPluginEnabled).toHaveBeenCalledWith('include:plugin', false)
+    await expect(manager.setBundleEnabled('extra', false)).resolves.toMatchObject({ message: 'bundle' })
+    expect(b.managed.setBundleEnabled).toHaveBeenCalledWith('extra', false)
+    await expect(manager.installBundle('extra@1', { enabled: false })).resolves.toMatchObject({ application: 'restart-required' })
+    expect(b.managed.installBundle).toHaveBeenCalledWith('extra@1', { enabled: false })
+    await expect(manager.removeBundle('extra')).resolves.toMatchObject({ message: 'remove' })
+    expect(b.managed.removeBundle).toHaveBeenCalledWith('extra')
+    b.listBundles.mockResolvedValueOnce({ ok: false, error: new Error('manager unavailable') })
+    await expect(manager.listBundles()).rejects.toThrow('manager unavailable')
     b.list.mockResolvedValueOnce({ ok: false, error: { code: 'REMOTE_ERROR', message: 'unavailable' } })
     await expect(injected.list()).rejects.toThrow('pluginInventory.list failed: REMOTE_ERROR: unavailable')
 

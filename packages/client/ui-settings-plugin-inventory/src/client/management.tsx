@@ -27,6 +27,7 @@ export function usePluginManagement(manager: PluginManagement | undefined, avail
   const submitting = useRef(false)
   const [result, setResult] = useState<ChangeResult>()
   const [error, setError] = useState<string>()
+  const [readError, setReadError] = useState<string>()
   const [refresh, setRefresh] = useState(0)
   useEffect(() => {
     if (!available || manager === undefined) return
@@ -35,8 +36,8 @@ export function usePluginManagement(manager: PluginManagement | undefined, avail
       if (!current) return
       setPlugins(plugins)
       setBundles(bundles)
-      setError(undefined)
-    }, (error: unknown) => { if (current) setError(error instanceof Error ? error.message : String(error)) })
+      setReadError(undefined)
+    }, (error: unknown) => { if (current) setReadError(error instanceof Error ? error.message : String(error)) })
     return () => { current = false }
   }, [manager, available, revision, refresh])
   const run = async (operation: () => Promise<ChangeResult>): Promise<void> => {
@@ -48,7 +49,7 @@ export function usePluginManagement(manager: PluginManagement | undefined, avail
     catch (error) { setError(error instanceof Error ? error.message : String(error)) }
     finally { submitting.current = false; setBusy(false); setRefresh(value => value + 1) }
   }
-  return { plugins, bundles, busy, result, error, run, refresh }
+  return { plugins, bundles, busy, result, error: error ?? readError, run, refresh }
 }
 
 /** Minimal bundle installation and enablement form. */

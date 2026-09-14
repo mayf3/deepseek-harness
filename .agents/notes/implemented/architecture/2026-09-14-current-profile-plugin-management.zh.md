@@ -14,7 +14,7 @@ Web 和 Agent 控件需要修改运行中的 profile，同时避免另建包安�
 
 profile 文件保持为持久状态：条目开关只修改 YAML 文档中的 `disabled`，组合包开关修改有序字符串列表。更新依赖不会重新激活保留的已停用组合包。service 删除组合包时，先应用去掉该组合包的配置，等待旧 fiber 完成卸载后再删除依赖。已保存配置、pnpm 完成状态与运行时激活分别报告；失败保留实际的部分状态与诊断路径。
 
-这扩展了[profile 组合包决策](2026-08-05-profile-plugin-bundles.zh.md)。startup profile 保留进程组合，Desktop 包管理仍由 shell 持有。Web 控件与显式启用的 Agent 工具调用同一 service；service 合并持久通知，告知存活 Agent 而不唤醒它们。base 组合包和内置预设默认禁用该 Agent 工具。
+这扩展了[profile 组合包决策](2026-08-05-profile-plugin-bundles.zh.md)。startup profile 保留进程组合，Desktop 包管理仍由 shell 持有。Web 控件与显式启用的 Agent 工具调用同一 service；service 合并持久通知，告知存活 Agent 而不唤醒它们。base 组合包和内置预设默认禁用该 Agent 工具。纯浏览器 worker 预览没有宿主包安装器；其模块代理表明确拒绝 `execa` 调用，同时保留管理模块用于清单发现。
 
 ## 考虑过的替代方案
 

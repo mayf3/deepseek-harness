@@ -47,7 +47,7 @@ A failed read renders a generic failure state inside the tab; retrying re-runs t
 <details>
 <summary>Implementation internals — click to expand</summary>
 
-The tab reads the Host inventory on first selection, without Remote calls during plugin activation. Hosts exposing [Plugin Manager](../../boot/plugin-manager/README.md) also provide bundle installation, removal and switches for uniquely addressable global entries. Operations refresh observed state and show failures, overrides and pending restarts; preset compositions remain read-only.
+The tab reads the Host inventory on first selection, without Remote calls during plugin activation. Hosts exposing [Plugin Manager](../../boot/plugin-manager/README.md) also provide bundle installation, removal and switches for uniquely addressable global entries. Operations refresh observed state and show failures, overrides and pending restarts; a successful inventory refresh preserves the last operation error; preset compositions remain read-only.
 
 ### Registration
 
