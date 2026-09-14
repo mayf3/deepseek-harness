@@ -98,7 +98,7 @@
     "@deepseek-ai/schemastery": "workspace:^",
     "commander": "^15.0.0",
     "js-yaml": "^4.2.0",
-    "node-addon-require-builtin": "^0.1.4",
+    "node-addon-require-builtin": "^0.1.6",
     "@deepseek-ai/dsh-http-proxy": "workspace:^",
     "@deepseek-ai/dsh-mcp-resources": "workspace:^"
   },
