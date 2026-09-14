@@ -1,0 +1,142 @@
+{
+  "formatVersion": 1,
+  "roots": [
+    {
+      "key": "event:workspace/changes",
+      "kind": "event",
+      "event": "workspace/changes",
+      "surface": false,
+      "digest": "0a176529351301e438fc4d94ea0c80f0f105e33fd85a256d76178b0a6dda3061",
+      "schema": {
+        "root": 0,
+        "nodes": [
+          {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "data",
+                "type": 1,
+                "optional": false
+              },
+              {
+                "name": "ignorable",
+                "type": 5,
+                "optional": true
+              },
+              {
+                "name": "seq",
+                "type": 4,
+                "optional": false
+              },
+              {
+                "name": "time",
+                "type": 4,
+                "optional": false
+              },
+              {
+                "name": "type",
+                "type": 8,
+                "optional": false
+              }
+            ],
+            "indices": []
+          },
+          {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "files",
+                "type": 2,
+                "optional": false
+              },
+              {
+                "name": "snapshot",
+                "type": 7,
+                "optional": false
+              },
+              {
+                "name": "total",
+                "type": 4,
+                "optional": false
+              },
+              {
+                "name": "turn",
+                "type": 4,
+                "optional": false
+              }
+            ],
+            "indices": []
+          },
+          {
+            "kind": "array",
+            "element": 3
+          },
+          {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "added",
+                "type": 4,
+                "optional": false
+              },
+              {
+                "name": "binary",
+                "type": 5,
+                "optional": true
+              },
+              {
+                "name": "deleted",
+                "type": 4,
+                "optional": false
+              },
+              {
+                "name": "display",
+                "type": 6,
+                "optional": false
+              },
+              {
+                "name": "path",
+                "type": 6,
+                "optional": false
+              }
+            ],
+            "indices": []
+          },
+          {
+            "kind": "primitive",
+            "type": "number"
+          },
+          {
+            "kind": "literal",
+            "value": true
+          },
+          {
+            "kind": "primitive",
+            "type": "string"
+          },
+          {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "after",
+                "type": 6,
+                "optional": false
+              },
+              {
+                "name": "before",
+                "type": 6,
+                "optional": false
+              }
+            ],
+            "indices": []
+          },
+          {
+            "kind": "literal",
+            "value": "workspace/changes"
+          }
+        ]
+      }
+    }
+  ],
+  "types": []
+}
