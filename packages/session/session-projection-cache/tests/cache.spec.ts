@@ -148,6 +148,18 @@ const mark = (session: Session, marks: string[]): SessionEvent =>
 const endTurn = (session: Session): SessionEvent =>
   session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
 
+/** Resolve after this Session's next durable cache replacement. */
+function whenWritten(ctx: Context, id: SessionId): Promise<void> {
+  return new Promise((resolve) => {
+    const dispose = ctx.on('domain/changed', (change) => {
+      if (change.domain !== projectionCacheDomainSpec.name
+        || change.table !== 'sessions' || change.key !== id || change.operation !== 'put') return
+      dispose()
+      resolve()
+    })
+  })
+}
+
 /** The stored record for one session id (undefined = absent or unreadable). */
 async function storedRecord(root: string, id: Session['id']): Promise<CheckpointRecord | undefined> {
   try {
@@ -189,18 +201,18 @@ afterEach(async () => {
 describe('SessionProjectionCache write policy', () => {
   it('writes a durable checkpoint at turn/end (mandatory point)', async () => {
     const { ctx, root } = await harness()
-    const session = ctx.sessions.create(SessionId('turn-end'))
+    const id = SessionId('turn-end')
+    const created = whenWritten(ctx, id)
+    const session = ctx.sessions.create(id)
     mark(session, ['a'])
-    // Creation already wrote the init cut; the mark is throttled, so the
-    // stored row is still the creation-time cut (no marks folded).
-    await vi.waitFor(async () => {
-      expect((await storedRows(root, session.id))?.['cache-test/marks']?.seq).toBe(-1)
-    }, { timeout: 5_000 })
+    // The mark is throttled, so the creation cut has no marks folded.
+    await created
+    expect((await storedRows(root, session.id))?.['cache-test/marks']?.seq).toBe(-1)
+    const written = whenWritten(ctx, session.id)
     const end = endTurn(session)
-    await vi.waitFor(async () => {
-      expect((await storedRows(root, session.id))?.['cache-test/marks'])
-        .toEqual({ ver: 1, seq: end.seq, val: { marks: ['a'] } })
-    }, { timeout: 5_000 })
+    await written
+    expect((await storedRows(root, session.id))?.['cache-test/marks'])
+      .toEqual({ ver: 1, seq: end.seq, val: { marks: ['a'] } })
   })
 
   it('writes a checkpoint at session creation, capturing the seed-derived cut', async () => {
@@ -665,14 +677,6 @@ describe('SessionProjectionCache cold-read seeding', () => {
     })
     const { cache, ctx } = await harness({ root })
     const apply = vi.fn((_state: number, _event: SessionEvent) => 1)
-    const whenWritten = (id: SessionId): Promise<void> => new Promise((resolve) => {
-      const dispose = ctx.on('domain/changed', (change) => {
-        if (change.domain !== projectionCacheDomainSpec.name
-          || change.table !== 'sessions' || change.key !== id || change.operation !== 'put') return
-        dispose()
-        resolve()
-      })
-    })
     ctx.sessionProjections.register({
       key: 'cache-test/count',
       stateSchema: z.number().int().nonnegative(),
@@ -684,7 +688,7 @@ describe('SessionProjectionCache cold-read seeding', () => {
     const events = Array.from({ length: 5 }, (_, seq) => ({
       type: 'cache-test/mark', seq: SessionSeq(seq), time: seq, data: { marks: [`m${seq}`] },
     })) as SessionEvent[]
-    const refreshed = whenWritten(meta.id)
+    const refreshed = whenWritten(ctx, meta.id)
     const snapshot = cache.coldSnapshot(meta, SessionLogOffset(0), events)
     // The full log was traversed, but the fold applied only seqs 3 and 4.
     expect(apply).toHaveBeenCalledTimes(2)
@@ -698,7 +702,7 @@ describe('SessionProjectionCache cold-read seeding', () => {
     // No cached row yet: the first cold read folds from init over the full
     // log and creates the cache row (the `?? {}` seed path).
     const fresh = headerOf(SessionId('cold-fresh'), 10)
-    const created = whenWritten(fresh.id)
+    const created = whenWritten(ctx, fresh.id)
     cache.coldSnapshot(fresh, SessionLogOffset(0), events)
     expect(apply).toHaveBeenCalledTimes(7) // 2 tail + 5 full
     await created
