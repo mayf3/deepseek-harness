@@ -81,7 +81,7 @@ The host contributes structured index rows that inject, into `<head>`: the `wind
 
 ### Entry ownership
 
-`ClientEntries` records the entries created during boot and serializes full-graph updates, retries and code reloads over the same Loader. A local generation prevents an older download from mounting after a newer graph arrives. New arrivals use single-resource URLs, never startup batches that could register existing factories twice. Cleanup retains declared and observed transitive module requests from every remaining Loader entry. Its observable status has no runtime library import because the modules bootstrap materializes before platform seeds are available.
+`ClientEntries` records the entries created during boot and serializes full-graph updates, retries and code reloads over the same Loader. A local generation prevents an older download from mounting after its desired entry or code changes; snapshots of the same targets share the pending load. New arrivals use single-resource URLs, never startup batches that could register existing factories twice. Cleanup retains declared and observed transitive module requests from every remaining Loader entry. Its observable status has no runtime library import because the modules bootstrap materializes before platform seeds are available.
 
 ### Source map
 

@@ -24,6 +24,11 @@ interface ModuleIndex {
 const ACTIVE = 2 as FiberState.ACTIVE
 const FAILED = 3 as FiberState.FAILED
 
+/** Revisions and requests identify desired code; URLs only select its immutable delivery resource. */
+function entryTargets(manifest: BootManifest): string {
+  return JSON.stringify(manifest.modules.map(row => [row.id, row.rev, row.inject, row.external]))
+}
+
 /** Manages only entries created from the Host manifest; other Loader contributors retain ownership. */
 export class ClientEntries {
   /** Stable observable consumed by page diagnostics through the renderer's injected hook. */
@@ -79,13 +84,15 @@ export class ClientEntries {
   }
 
   /**
-   * Validate and apply the latest full Host graph. A later snapshot prevents an older download from mounting.
+   * Validate and apply the latest full Host graph. Changed targets cancel obsolete mounts; identical targets share pending loads.
    * @param graph - JSON-decoded graph received from the Host.
    * @returns after the queued reconciliation; per-package failures remain available in {@link state}.
    */
   sync(graph: unknown): Promise<void> {
-    this.desired = parseBootManifest(graph)
-    const generation = ++this.generation
+    const manifest = parseBootManifest(graph)
+    if (entryTargets(manifest) !== entryTargets(this.desired)) this.generation++
+    this.desired = manifest
+    const generation = this.generation
     return this.enqueue(() => this.reconcile(generation))
   }
 

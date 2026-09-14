@@ -391,3 +391,18 @@ it.each([false, true])('does not mount a materialized factory after a newer remo
   expect(mounted).toBe(rebuild ? 1 : 0)
   expect([...b.ctx.loader.entries()]).toHaveLength(0)
 })
+
+it('coalesces an overlapping graph snapshot with the same rebuilt artifact', async () => {
+  const effects = { mounted: 0, disposed: 0, hits: 0 }
+  const b = await bench(graph(row('a')), { a: visible('a', effects) })
+  const download = deferred()
+  const started = deferred()
+  b.arrival(async () => { started.resolve(); await download.promise })
+  const rebuilding = b.modules.entries.reload('a', 'r1')
+  await started.promise
+  const syncing = b.modules.entries.sync(graph(row('a', 'r1')))
+  download.resolve()
+  await Promise.all([rebuilding, syncing])
+  expect(b.fetched).toEqual(['/batch', row('a', 'r1').url])
+  expect(effects).toEqual({ mounted: 2, disposed: 1, hits: 0 })
+})
