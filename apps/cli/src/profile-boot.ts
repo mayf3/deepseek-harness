@@ -359,7 +359,12 @@ export async function runProfile(options: RunProfileOptions): Promise<{ ctx: Con
       })
       await watching.await()
       // Include writes that finished while the file watchers were registering.
-      await ctx.hmr.runExclusive(() => withFileLock(manifestPath, refresh))
+      try {
+        await ctx.hmr.runExclusive(() => withFileLock(manifestPath, refresh))
+      } catch (error) {
+        ctx.logger.warn('profile reload failed')
+        ctx.logger.warn(error)
+      }
     } catch (error) {
       suppressShutdownError(ctx, signalShutdown.signal, error)
     }

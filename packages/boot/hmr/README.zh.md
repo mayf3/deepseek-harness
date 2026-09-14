@@ -58,6 +58,8 @@ Chokidar 选项（包括轮询）保持原有含义。精确配置监听同时�
 
 启动器保留 profile 解析和 patch 优先级规则。HMR 负责监听器、模块缓存替换和重载调度。未知文件通知不获取重载锁，因此锁文件事件不会触发下一次取锁。不发布 invariant 伴生入口，因为队列和监听注册没有独立的持久投影。
 
+被监听模块的路径沿用 Node ESM 解析所用的 `realpathSync()` 表示，包括 Windows 短目录名，使文件事件与模块缓存匹配。
+
 模块替换实现源自 `@cordisjs/plugin-hmr` 1.0.15，包含 Harness 的 Node loader 和惰性配置修改。保留其 [MIT 许可证](LICENSE)。
 
 </details>

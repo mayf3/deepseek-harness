@@ -1,6 +1,6 @@
 /** The CLI and manager share package reconciliation, path anchoring and diagnostics. */
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 import { tmpdir } from 'node:os'
 import { PassThrough } from 'node:stream'
 import { expect, it, onTestFinished, vi } from 'vitest'
@@ -46,8 +46,8 @@ function install(dir: string, name: string) {
 }
 
 it('anchors relative package specs without rewriting registry specs', () => {
-  expect(anchorPathSpec('.', '/workspace')).toBe('/workspace')
-  expect(anchorPathSpec('file:../plugin', '/workspace/project')).toBe('file:/workspace/plugin')
+  expect(anchorPathSpec('.', '/workspace')).toBe(resolve('/workspace'))
+  expect(anchorPathSpec('file:../plugin', '/workspace/project')).toBe(`file:${resolve('/workspace/plugin')}`)
   expect(anchorPathSpec('package@1', '/workspace')).toBe('package@1')
 })
 

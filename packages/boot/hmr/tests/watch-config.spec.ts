@@ -1,4 +1,5 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs'
+import * as fs from 'node:fs'
 import { realpath } from 'node:fs/promises'
 import * as fsPromises from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -13,6 +14,10 @@ import { afterEach, describe, expect, it, onTestFinished, vi } from 'vitest'
 import { FSWatcher, type ChokidarOptions } from 'chokidar'
 
 const configWatch = vi.hoisted(() => ({ create: undefined as ((options?: ChokidarOptions) => FSWatcher) | undefined }))
+vi.mock('node:fs', async (importOriginal) => {
+  const native = await importOriginal<typeof import('node:fs')>()
+  return { ...native, realpathSync: vi.fn(native.realpathSync) }
+})
 vi.mock('node:fs/promises', async (importOriginal) => {
   const native = await importOriginal<typeof import('node:fs/promises')>()
   return { ...native, stat: vi.fn(native.stat), realpath: vi.fn(native.realpath) }
@@ -62,7 +67,7 @@ describe('HMR exact config paths', () => {
     // This acceptance owns alias-to-cache identity. Other cases below exercise
     // native events; polling keeps Windows fs.watch queue pressure out of it.
     const ctx = await bootHmr(alias, [rootKind === 'relative' ? '.' : alias], true)
-    const filename = join(await realpath(target), 'module.ts')
+    const filename = join(realpathSync(target), 'module.ts')
     const expected = pathToFileURL(filename).href
     const cacheHas = vi.spyOn(ctx.loader.internal!.loadCache, 'has').mockReturnValue(false)
     const observed: string[] = []
@@ -215,7 +220,7 @@ describe('HMR exact config paths', () => {
   it.each(['creation', 'ready'] as const)('releases registration after watcher %s fails', async (phase) => {
     const dir = mkdtempSync(join(tmpdir(), 'dsh-patch-watch-failure-'))
     hmrRoots.push(dir)
-    const ctx = new Context()
+    const ctx = await bootHmr(dir)
     onTestFinished(() => ctx.fiber.dispose())
     const filename = join(dir, 'plugins.yml')
     const previousFactory = configWatch.create
@@ -228,11 +233,11 @@ describe('HMR exact config paths', () => {
       queueMicrotask(() => { failed.emit('error', failure) })
       return failed
     }
-    await expect(watchConfig(ctx, filename, {}, () => {})).rejects.toBe(failure)
+    await expect(ctx.hmr.watchConfig(filename, async () => {})).rejects.toBe(failure)
     if (phase === 'ready') expect(closed).toHaveBeenCalledOnce()
     const watcher = new FSWatcher()
     configWatch.create = () => { queueMicrotask(() => { watcher.emit('ready') }); return watcher }
-    await watchConfig(ctx, filename, {}, () => {})
+    await ctx.hmr.watchConfig(filename, async () => {})
     const warn = vi.spyOn(ctx.logger, 'warn').mockImplementation(() => {})
     onTestFinished(() => { warn.mockRestore() })
     watcher.emit('error', failure)
@@ -257,7 +262,7 @@ describe('HMR exact config paths', () => {
     expect(close).toHaveBeenCalledOnce()
   })
 
-  it('logs a normalized refresh failure and continues processing later events', async () => {
+  it.each([42, new Error('42')])('logs refresh failure %s and continues processing later events', async (failure) => {
     const dir = mkdtempSync(join(tmpdir(), 'dsh-patch-failure-'))
     hmrRoots.push(dir)
     const filename = join(dir, 'plugins.yml')
@@ -272,7 +277,7 @@ describe('HMR exact config paths', () => {
     let calls = 0
     const recovered = Promise.withResolvers<undefined>()
     await watchConfig(ctx, filename, {}, () => {
-      if (++calls === 1) throw 42
+      if (++calls === 1) throw failure
       recovered.resolve(undefined)
     })
     watcher.emit('change', filename)
@@ -290,13 +295,13 @@ it('reports inaccessible configuration paths and missing filesystem roots', asyn
   const dir = mkdtempSync(join(tmpdir(), 'dsh-hmr-path-error-'))
   const ctx = await bootHmr(dir)
   onTestFinished(async () => { await ctx.fiber.dispose(); rmSync(dir, { recursive: true, force: true }) })
-  const native = fsPromises.realpath
+  const native = await vi.importActual<typeof import('node:fs')>('node:fs')
   const target = join(dir, 'denied.yml')
   const root = parse(dir).root
-  const mocked = vi.spyOn(fsPromises, 'realpath').mockImplementation(async (path, options) => {
+  const mocked = vi.spyOn(fs, 'realpathSync').mockImplementation((path, options) => {
     if (path === target) throw Object.assign(new Error('denied'), { code: 'EACCES' })
     if (path === root) throw Object.assign(new Error('root missing'), { code: 'ENOENT' })
-    return native(path, options)
+    return native.realpathSync(path, options)
   })
   onTestFinished(() => { mocked.mockRestore() })
   await expect(ctx.hmr.watchConfig(target, async () => {})).rejects.toThrow('denied')

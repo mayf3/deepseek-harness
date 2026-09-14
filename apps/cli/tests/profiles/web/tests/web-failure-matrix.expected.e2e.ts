@@ -336,6 +336,37 @@ describe.skipIf(!built)('Web process failure matrix', () => {
     }
   })
 
+  it('reports a patch failure during watcher registration and accepts a correction', async () => {
+    const f = fixture()
+    const observerPath = fileURLToPath(f.observer.name)
+    // Write after the last native watch is ready, before the launcher's catch-up
+    // reconciliation. No filesystem callback can run inside this synchronous write.
+    writeFileSync(observerPath, readFileSync(observerPath, 'utf8').replace(
+      'export function apply(ctx, config) {',
+      `export const inject = ['hmr']
+export function apply(ctx, config) {
+  const hmr = ctx.hmr
+  const watch = hmr.watchConfig
+  hmr.watchConfig = async function (filename, refresh) {
+    const dispose = await watch.call(this, filename, refresh)
+    if (filename.endsWith('package.json')) {
+      await this.runExclusive(async () => {})
+      writeFileSync(${JSON.stringify(f.patch)}, ${JSON.stringify(f.render('matrix-optional', 'import'))})
+    }
+    return dispose
+  }
+  ctx.effect(() => () => { hmr.watchConfig = watch })`,
+    ))
+    const app = start(f)
+    try {
+      await app.wait(() => app.logs().includes('profile reload failed') && app.logs().includes('missing.mjs'))
+      await app.serves()
+      writeFileSync(f.patch, f.render('matrix-optional', undefined, 2))
+      await app.wait(() => app.events().includes('target apply 2\n'))
+      await app.serves()
+    } finally { exit(await app.close(), 0) }
+  })
+
   it.each(['startup', 'HMR'])('optional HTTP bind failure at %s leaves Web serving', async (phase) => {
     const f = fixture()
     const blocker = createServer()

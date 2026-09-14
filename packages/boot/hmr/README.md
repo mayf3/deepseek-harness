@@ -58,6 +58,8 @@ Chokidar options, including polling, retain their existing meaning. Exact config
 
 The launcher retains profile parsing and patch precedence. HMR owns watchers, module-cache replacement and reload scheduling. Unknown-file notifications do not acquire reload locks, so lock-file events cannot trigger another lock acquisition. No invariant companion is published because the queue and watcher registrations have no independent persisted projection.
 
+Watched module paths use Node ESM resolution's `realpathSync()` spelling, including Windows short directory names, so file events match the module cache.
+
 The module replacement implementation derives from `@cordisjs/plugin-hmr` 1.0.15, with Harness Node-loader and lazy-config changes. Its [MIT license](LICENSE) is retained.
 
 </details>

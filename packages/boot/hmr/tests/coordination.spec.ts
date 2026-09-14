@@ -118,7 +118,7 @@ it('refreshes an Include under the application lock and skips registered exact p
   writeFileSync(file, '[]\n')
   const imported = vi.spyOn(ctx.loader, 'import').mockResolvedValue(Include)
   onTestFinished(() => { imported.mockRestore() })
-  const id = await ctx.loader.create({ name: 'include', config: { path: file } })
+  const id = await ctx.loader.create({ name: 'include', config: { path: pathToFileURL(file).href } })
   await ctx.loader.await()
   const include = ctx.loader.resolve(id).subtree as Include
   const refresh = vi.spyOn(include, 'refresh')
