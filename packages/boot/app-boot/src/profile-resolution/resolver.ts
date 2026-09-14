@@ -551,7 +551,7 @@ function internalModules(): InternalModules {
   /* v8 ignore stop */
   return {
     esm,
-    esmDefaultResolve: esmResolve.defaultResolve,
+    esmDefaultResolve: (specifier, context) => esmResolve.defaultResolve(specifier, context),
     esmConditions: esmUtils.getDefaultConditions(),
     cjs: cjsModule.Module,
     cjsConditions: cjsHelpers.getCjsConditions(),
