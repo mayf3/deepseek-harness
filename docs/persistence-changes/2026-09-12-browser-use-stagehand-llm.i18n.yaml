@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write docs/persistence-changes/2026-09-12-browser-use-stagehand-llm.md
-2026-09-12-browser-use-stagehand-llm.md: 6e705f901f08992bac022a4f8befd878a421de1d
-2026-09-12-browser-use-stagehand-llm.zh.md: d196328702a6776915d004b93aac47ff0906d4fa
+2026-09-12-browser-use-stagehand-llm.md: 878f2cf9e78ce6fd7fc1b0d5acf885eec444624e
+2026-09-12-browser-use-stagehand-llm.zh.md: 1f9ee108520a687d601b52049f8a8a8c395f326b

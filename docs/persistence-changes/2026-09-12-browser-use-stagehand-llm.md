@@ -28,11 +28,11 @@ baseline: false
 changes:
   - root: "event:browser-use/stagehand-llm-request"
     previous: null
-    after: "7cf11fcc829f21289bb7311562c6601499368464cce8ee678f80500e6a448b01"
+    after: "92cda1e2c0e9f57fdcd167a861b1296ec4cb5ac3ae127733c375e108335b32ac"
     decision: same-version
   - root: "event:browser-use/stagehand-llm-result"
     previous: null
-    after: "05d3b279f065b23cfb5d192a9a95016fe23642d47dbd90378c81be939e8e1b09"
+    after: "0e0e81784bc85e1e6554b7ff50ab341169a1a3d32149ae49abe8dddca5ce6efe"
     decision: same-version
 ```
 

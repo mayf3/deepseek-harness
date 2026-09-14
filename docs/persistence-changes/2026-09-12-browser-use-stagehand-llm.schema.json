@@ -6,7 +6,7 @@
       "kind": "event",
       "event": "browser-use/stagehand-llm-request",
       "surface": false,
-      "digest": "7cf11fcc829f21289bb7311562c6601499368464cce8ee678f80500e6a448b01",
+      "digest": "92cda1e2c0e9f57fdcd167a861b1296ec4cb5ac3ae127733c375e108335b32ac",
       "schema": {
         "root": 0,
         "nodes": [
@@ -20,7 +20,7 @@
               },
               {
                 "name": "ignorable",
-                "type": 36,
+                "type": 19,
                 "optional": true
               },
               {
@@ -141,12 +141,12 @@
               },
               {
                 "name": "role",
-                "type": 30,
+                "type": 31,
                 "optional": false
               },
               {
                 "name": "source",
-                "type": 34,
+                "type": 35,
                 "optional": false
               }
             ],
@@ -161,10 +161,10 @@
             "types": [
               8,
               11,
-              20,
-              23,
-              26,
-              28
+              21,
+              24,
+              27,
+              29
             ]
           },
           {
@@ -210,8 +210,13 @@
                 "optional": false
               },
               {
-                "name": "type",
+                "name": "offloaded",
                 "type": 19,
+                "optional": true
+              },
+              {
+                "name": "type",
+                "type": 20,
                 "optional": false
               }
             ],
@@ -301,6 +306,10 @@
           },
           {
             "kind": "literal",
+            "value": true
+          },
+          {
+            "kind": "literal",
             "value": "image"
           },
           {
@@ -308,12 +317,12 @@
             "properties": [
               {
                 "name": "attachment",
-                "type": 21,
+                "type": 22,
                 "optional": false
               },
               {
                 "name": "type",
-                "type": 22,
+                "type": 23,
                 "optional": false
               }
             ],
@@ -354,7 +363,7 @@
               },
               {
                 "name": "isError",
-                "type": 24,
+                "type": 25,
                 "optional": true
               },
               {
@@ -364,7 +373,7 @@
               },
               {
                 "name": "type",
-                "type": 25,
+                "type": 26,
                 "optional": false
               }
             ],
@@ -388,7 +397,7 @@
               },
               {
                 "name": "type",
-                "type": 27,
+                "type": 28,
                 "optional": false
               }
             ],
@@ -408,7 +417,7 @@
               },
               {
                 "name": "type",
-                "type": 29,
+                "type": 30,
                 "optional": false
               }
             ],
@@ -421,9 +430,9 @@
           {
             "kind": "union",
             "types": [
-              31,
               32,
-              33
+              33,
+              34
             ]
           },
           {
@@ -441,7 +450,7 @@
           {
             "kind": "union",
             "types": [
-              35,
+              36,
               45,
               47,
               48,
@@ -468,7 +477,7 @@
             "properties": [
               {
                 "name": "baseline",
-                "type": 36,
+                "type": 19,
                 "optional": true
               },
               {
@@ -493,10 +502,6 @@
               }
             ],
             "indices": []
-          },
-          {
-            "kind": "literal",
-            "value": true
           },
           {
             "kind": "array",
@@ -586,7 +591,7 @@
               },
               {
                 "name": "kind",
-                "type": 33,
+                "type": 34,
                 "optional": false
               },
               {
@@ -666,7 +671,7 @@
               },
               {
                 "name": "update",
-                "type": 36,
+                "type": 19,
                 "optional": true
               }
             ],
@@ -946,7 +951,7 @@
               },
               {
                 "name": "compacted",
-                "type": 24,
+                "type": 25,
                 "optional": false
               },
               {
@@ -986,7 +991,7 @@
               },
               {
                 "name": "truncated",
-                "type": 24,
+                "type": 25,
                 "optional": false
               }
             ],
@@ -1182,7 +1187,7 @@
             "properties": [
               {
                 "name": "kind",
-                "type": 33,
+                "type": 34,
                 "optional": false
               }
             ],
@@ -1273,7 +1278,7 @@
             "types": [
               3,
               9,
-              24,
+              25,
               75,
               99,
               100
@@ -1309,7 +1314,7 @@
       "kind": "event",
       "event": "browser-use/stagehand-llm-result",
       "surface": false,
-      "digest": "05d3b279f065b23cfb5d192a9a95016fe23642d47dbd90378c81be939e8e1b09",
+      "digest": "0e0e81784bc85e1e6554b7ff50ab341169a1a3d32149ae49abe8dddca5ce6efe",
       "schema": {
         "root": 0,
         "nodes": [
@@ -1323,7 +1328,7 @@
               },
               {
                 "name": "ignorable",
-                "type": 40,
+                "type": 16,
                 "optional": true
               },
               {
@@ -1354,7 +1359,7 @@
               },
               {
                 "name": "finish",
-                "type": 27,
+                "type": 28,
                 "optional": false
               },
               {
@@ -1364,7 +1369,7 @@
               },
               {
                 "name": "usage",
-                "type": 39,
+                "type": 40,
                 "optional": true
               }
             ],
@@ -1379,10 +1384,10 @@
             "types": [
               4,
               7,
-              17,
-              20,
-              23,
-              25
+              18,
+              21,
+              24,
+              26
             ]
           },
           {
@@ -1428,8 +1433,13 @@
                 "optional": false
               },
               {
-                "name": "type",
+                "name": "offloaded",
                 "type": 16,
+                "optional": true
+              },
+              {
+                "name": "type",
+                "type": 17,
                 "optional": false
               }
             ],
@@ -1523,6 +1533,10 @@
           },
           {
             "kind": "literal",
+            "value": true
+          },
+          {
+            "kind": "literal",
             "value": "image"
           },
           {
@@ -1530,12 +1544,12 @@
             "properties": [
               {
                 "name": "attachment",
-                "type": 18,
+                "type": 19,
                 "optional": false
               },
               {
                 "name": "type",
-                "type": 19,
+                "type": 20,
                 "optional": false
               }
             ],
@@ -1576,7 +1590,7 @@
               },
               {
                 "name": "isError",
-                "type": 21,
+                "type": 22,
                 "optional": true
               },
               {
@@ -1586,7 +1600,7 @@
               },
               {
                 "name": "type",
-                "type": 22,
+                "type": 23,
                 "optional": false
               }
             ],
@@ -1610,7 +1624,7 @@
               },
               {
                 "name": "type",
-                "type": 24,
+                "type": 25,
                 "optional": false
               }
             ],
@@ -1630,7 +1644,7 @@
               },
               {
                 "name": "type",
-                "type": 26,
+                "type": 27,
                 "optional": false
               }
             ],
@@ -1643,11 +1657,11 @@
           {
             "kind": "union",
             "types": [
-              28,
-              31,
-              33,
-              35,
-              37
+              29,
+              32,
+              34,
+              36,
+              38
             ]
           },
           {
@@ -1655,12 +1669,12 @@
             "properties": [
               {
                 "name": "failure",
-                "type": 29,
+                "type": 30,
                 "optional": false
               },
               {
                 "name": "kind",
-                "type": 30,
+                "type": 31,
                 "optional": false
               }
             ],
@@ -1678,6 +1692,11 @@
                 "name": "message",
                 "type": 5,
                 "optional": false
+              },
+              {
+                "name": "offloadImages",
+                "type": 9,
+                "optional": true
               },
               {
                 "name": "providerRetryAfterMs",
@@ -1706,12 +1725,12 @@
             "properties": [
               {
                 "name": "failure",
-                "type": 29,
+                "type": 30,
                 "optional": false
               },
               {
                 "name": "kind",
-                "type": 32,
+                "type": 33,
                 "optional": false
               }
             ],
@@ -1726,7 +1745,7 @@
             "properties": [
               {
                 "name": "kind",
-                "type": 34,
+                "type": 35,
                 "optional": false
               }
             ],
@@ -1741,7 +1760,7 @@
             "properties": [
               {
                 "name": "kind",
-                "type": 36,
+                "type": 37,
                 "optional": false
               }
             ],
@@ -1756,7 +1775,7 @@
             "properties": [
               {
                 "name": "kind",
-                "type": 38,
+                "type": 39,
                 "optional": false
               }
             ],
@@ -1801,10 +1820,6 @@
               }
             ],
             "indices": []
-          },
-          {
-            "kind": "literal",
-            "value": true
           },
           {
             "kind": "literal",
