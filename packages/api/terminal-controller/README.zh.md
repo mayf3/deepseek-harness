@@ -32,7 +32,7 @@ Shell 探测结果首先列出执行环境声明的默认 shell。仅当 provide
 | 配置 | 默认值 | 含义 |
 |---|---|---|
 | `shell` | 省略 | 使用执行环境默认 shell，或指定一个 profile |
-| `shellCandidates` | `zsh`、`bash`、`fish`、`sh`、`ksh`、`tcsh`、`csh`、`pwsh`、`powershell`、`cmd`、`nu` | 已安装时供用户选择的额外可执行名称或路径 |
+| `shellCandidates` | `zsh`、`bash`、`fish`、`pwsh`、`powershell`、`cmd` | 已安装时供用户选择的额外可执行名称或路径 |
 | `maxTerminals` | `8` | 每个 Session 保留的终端和创建请求上限 |
 | `maxCols`、`maxRows` | `500`、`200` | PTY 最大尺寸 |
 | `scrollback` | `1000` | 屏幕历史行数 |

@@ -32,7 +32,7 @@ Shell discovery lists the execution environment's declared default shell first. 
 | Configuration | Default | Meaning |
 |---|---|---|
 | `shell` | omitted | Use the execution environment's default shell, or one explicit profile |
-| `shellCandidates` | `zsh`, `bash`, `fish`, `sh`, `ksh`, `tcsh`, `csh`, `pwsh`, `powershell`, `cmd`, `nu` | Additional executable names or paths offered when installed |
+| `shellCandidates` | `zsh`, `bash`, `fish`, `pwsh`, `powershell`, `cmd` | Additional executable names or paths offered when installed |
 | `maxTerminals` | `8` | Retained terminals and pending allocations per Session |
 | `maxCols`, `maxRows` | `500`, `200` | Maximum PTY dimensions |
 | `scrollback` | `1000` | Retained screen history rows |
