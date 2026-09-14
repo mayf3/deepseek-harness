@@ -8,16 +8,17 @@ import type {} from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-session/client'
+import type {} from '@deepseek-ai/dsh-client-ui-theme/client'
 import { TerminalGuideIcon } from './TerminalIcon.tsx'
 import { TerminalBody } from './TerminalBody.tsx'
 import { TerminalTitle } from './TerminalTitle.tsx'
 import { TerminalRecovery, type TerminalRecoveryInjected } from './TerminalRecovery.tsx'
 import { TerminalCleanup, type TerminalCleanupInjected } from './TerminalCleanup.tsx'
-import type { TerminalInjected } from './face.ts'
+import type { TerminalBodyInjected, TerminalInjected } from './face.ts'
 import { en, zh } from './locales.ts'
 
 /** Services needed by the terminal's two sidebar seats. */
-export const inject = ['slots', 'locale', 'sidebarRight', 'sidebarRightTabs', 'webTerminals']
+export const inject = ['slots', 'locale', 'sidebarRight', 'sidebarRightTabs', 'webTerminals', 'theme']
 
 /**
  * Register the terminal type, observable views and background process cleanup.
@@ -47,8 +48,14 @@ export function apply(ctx: Context): void {
     view: key => view(sessionId, key),
     keyedHooks: { terminal: key => view(sessionId, key).state },
   })
+  const theme: TerminalBodyInjected['hooks']['theme'] = {
+    getSnapshot: () => ctx.theme.getTheme(),
+    subscribe: listener => ctx.on('theme/change', listener),
+  }
   ctx.effect(() => ctx.slots.inject('sidebar.right.pane.tab', () => ctx.slots.register(
-    { name: 'sidebar.right.pane.tab', key: id, locale: namespace, inject }, TerminalBody,
+    { name: 'sidebar.right.pane.tab', key: id, locale: namespace,
+      inject: (sessionId): TerminalBodyInjected => ({ ...inject(sessionId), hooks: { theme } }),
+    }, TerminalBody,
   )), 'ui-sidebar-terminal.body')
   ctx.effect(() => ctx.slots.inject('sidebar.right.pane.tab.title', () => ctx.slots.register(
     { name: 'sidebar.right.pane.tab.title', key: id, locale: namespace, inject }, TerminalTitle,

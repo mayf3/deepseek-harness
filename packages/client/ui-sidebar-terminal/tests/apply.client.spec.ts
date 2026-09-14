@@ -14,7 +14,7 @@ import { TerminalBody } from '../src/client/TerminalBody.tsx'
 import { TerminalTitle } from '../src/client/TerminalTitle.tsx'
 import { TerminalRecovery, type TerminalRecoveryInjected } from '../src/client/TerminalRecovery.tsx'
 import { TerminalCleanup, type TerminalCleanupInjected } from '../src/client/TerminalCleanup.tsx'
-import type { TerminalInjected } from '../src/client/face.ts'
+import type { TerminalBodyInjected } from '../src/client/face.ts'
 import { en, zh } from '../src/client/locales.ts'
 
 vi.mock('@xterm/xterm', () => ({ Terminal: vi.fn() }))
@@ -56,9 +56,12 @@ async function mountPlugin() {
     bind: () => (key: string) => key,
     register: (name: string, values: unknown) => { dictionaries.set(name, values); return () => { dictionaries.delete(name) } },
   } as never)
+  const theme = { preference: 'light' as const, fontSize: 14, active: { id: 'light', colorScheme: 'light' as const, tokens: {} }, themes: [], revision: 0 }
+  ctx.provide('theme', { getTheme: () => theme } as never)
   const fiber = await ctx.plugin({ inject, apply })
   return {
-    tabs, entries, dictionaries, terminals, model, occurrence, openTabIn,
+    tabs, entries, dictionaries, terminals, model, occurrence, openTabIn, theme,
+    emitTheme() { ctx.emit('theme/change', theme) },
     get closeHandler() { return closeHandler },
     setParams(next: typeof params) { params = next },
     async dispose() { await fiber.dispose(); await ctx.fiber.dispose() },
@@ -85,7 +88,15 @@ it('registers terminal views, recovery and cleanup, then releases every contribu
       ['shell.overlay', TerminalCleanup, 'sidebarTerminal'],
     ])
     const sessionId = 'session' as SessionId
-    const face = h.entries[0]!.inject(sessionId) as TerminalInjected
+    const face = h.entries[0]!.inject(sessionId) as TerminalBodyInjected
+    expect(face.hooks.theme.getSnapshot()).toBe(h.theme)
+    const changed = vi.fn()
+    const unsubscribe = face.hooks.theme.subscribe(changed)
+    h.emitTheme()
+    expect(changed).toHaveBeenCalledOnce()
+    unsubscribe()
+    h.emitTheme()
+    expect(changed).toHaveBeenCalledOnce()
     expect(face.view('tab')).toBe(h.model)
     expect(h.terminals.view).toHaveBeenLastCalledWith(sessionId, 'tab', undefined)
     const terminalId = 'retained' as WebTerminalId
