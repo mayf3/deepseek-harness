@@ -43,12 +43,14 @@ describe('desktop macOS release signature', () => {
     expect(config.extraResources).toHaveLength(1)
     expect(config.extraResources[0]?.to).toBe('runtime')
     expect(portablePath(config.extraResources[0]?.from ?? '')).toContain('/.desktop-build/targets/mac-arm64/runtime')
-    expect(config.files.slice(-2).map(entry => typeof entry === 'string' ? entry : {
-      ...entry, from: portablePath(entry.from),
-    })).toEqual([
-      expect.objectContaining({ from: expect.stringContaining('/.desktop-build/targets/mac-arm64/dsh'), to: 'dsh' }),
-      expect.objectContaining({ from: expect.stringContaining('/.desktop-build/targets/mac-arm64/dsh/node_modules'), to: 'dsh/node_modules' }),
-    ])
+    const [dshFiles, dshNodeModules] = config.files.slice(-2)
+    if (!dshFiles || !dshNodeModules || typeof dshFiles === 'string' || typeof dshNodeModules === 'string') {
+      throw new Error('desktop DSH resources must use electron-builder file mappings')
+    }
+    expect(portablePath(dshFiles.from)).toContain('/.desktop-build/targets/mac-arm64/dsh')
+    expect(dshFiles.to).toBe('dsh')
+    expect(portablePath(dshNodeModules.from)).toContain('/.desktop-build/targets/mac-arm64/dsh/node_modules')
+    expect(dshNodeModules.to).toBe('dsh/node_modules')
     expect(config.asarUnpack).toEqual(expect.arrayContaining([
       '**/*.{node,dylib,dll,so,exe}',
       '**/@vscode/ripgrep/bin/rg',
