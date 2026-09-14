@@ -49,7 +49,6 @@ export const zh = {
   'changes.collapse': '收起',
   'changes.collapseAria': '收起改动文件列表',
   'changes.folderOpening': '正在打开文件夹…',
-  'changes.folderOpened': '已请求打开文件夹',
   'changes.folderError': '无法打开文件夹，点击重试',
 }
 
@@ -99,7 +98,6 @@ export const en: Record<DeliverablesKey, string> = {
   'changes.collapse': 'Collapse',
   'changes.collapseAria': 'Collapse changed files',
   'changes.folderOpening': 'Opening folder…',
-  'changes.folderOpened': 'Requested opening folder',
   'changes.folderError': 'Could not open folder. Click to retry.',
 }
 

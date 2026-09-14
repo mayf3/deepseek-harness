@@ -534,7 +534,8 @@ describe('ChangedFiles card', () => {
     expect((view.getByRole('button', { name: 'Open config/design-token in default app' }) as HTMLButtonElement).disabled).toBe(true)
     expect(view.getByText(en['presented.error']).closest('[data-error]')).toBeTruthy()
     expect(view.getByText(en['presented.nativeUnavailable'])).toBeTruthy()
-    expect(view.getByText(en['changes.folderOpened'])).toBeTruthy()
+    // A completed folder open leaves the summed counts in place.
+    expect(view.getByText('+1,232')).toBeTruthy()
     // A row without a verified Host path previews in the Sidebar instead of retrying the native open.
     fireEvent.click(view.getByRole('button', { name: 'Open config/launch-plan.yaml in sidebar' }))
     expect(openFile).toHaveBeenCalledWith('config/launch-plan.yaml')
@@ -544,7 +545,9 @@ describe('ChangedFiles card', () => {
     const { view: pending } = renderCard(controller)
     expect(pending.getByText(en['changes.folderOpening'])).toBeTruthy()
     expect((pending.getByRole('button', { name: 'Open the folder containing the changed files' }) as HTMLButtonElement).disabled).toBe(true)
-    expect(pending.getByText(en['presented.opened'])).toBeTruthy()
+    // A completed row open shows its counts again rather than a lasting acknowledgement.
+    expect(pending.queryByText(en['presented.opened'])).toBeNull()
+    expect(pending.getByText('+42')).toBeTruthy()
     pending.unmount()
     controller.state.set({ '/api/changes.open?sessionId=child-session&seq=5': 'error' })
     const { view: failed } = renderCard(controller)

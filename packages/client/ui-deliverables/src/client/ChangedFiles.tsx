@@ -18,14 +18,17 @@ const COLLAPSED_ROWS = 3
 
 const GROUPED = new Intl.NumberFormat('en-US')
 
-/** Row copy for an open gesture; the changed-files card never reveals, so only open phases occur. */
-function rowStatus(phase: PresentedOpenPhase | undefined): { key: 'presented.opening' | 'presented.opened' | 'presented.error' | 'presented.nativeUnavailable'; error: boolean } | undefined {
+/**
+ * Row copy for an open gesture while it is pending or failed; a completed open
+ * shows the line counts again, which are the row's primary information. The
+ * changed-files card never reveals, so only open phases occur.
+ */
+function rowStatus(phase: PresentedOpenPhase | undefined): { key: 'presented.opening' | 'presented.error' | 'presented.nativeUnavailable'; error: boolean } | undefined {
   switch (phase) {
-    case undefined: return undefined
     case 'opening': return { key: 'presented.opening', error: false }
     case 'error': return { key: 'presented.error', error: true }
     case 'nativeUnavailable': return { key: 'presented.nativeUnavailable', error: true }
-    default: return { key: 'presented.opened', error: false }
+    default: return undefined
   }
 }
 
@@ -62,8 +65,7 @@ export function ChangedFiles({ changes, cwd, sessionId, host, phases, onOpen, op
   const sum = totals(changes.files)
   const folderPhase = phases[changedFileUrl(sessionId, changes.seq, null)]
   const folderStatus = folderPhase === 'opening' ? t('changes.folderOpening')
-    : folderPhase === 'opened' ? t('changes.folderOpened')
-      : folderPhase === undefined ? undefined : t('changes.folderError')
+    : folderPhase === 'error' || folderPhase === 'nativeUnavailable' ? t('changes.folderError') : undefined
   const summary = <>
     <span className={css.tile}><IconCodeBracketsOutline16 size={18} /></span>
     <span className={css.titles}>
