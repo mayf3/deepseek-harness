@@ -23,6 +23,7 @@
   // cannot see both sides of the cordis Context merges).
   "exclude": [
     "tests/default-product-isolation.e2e.ts",
+    "tests/diff-context.e2e.ts",
     "tests/scaffold.ts",
     "tests/auto-review-fixture.ts",
     "tests/scaffold-generation.spec.ts",

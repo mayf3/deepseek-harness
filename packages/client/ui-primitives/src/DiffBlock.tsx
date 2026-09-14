@@ -1,5 +1,6 @@
 import { useCallback, useMemo, useState } from 'react'
 import clsx from 'clsx'
+import { structuredPatch } from 'diff'
 import { FoldToggle } from './FoldToggle.tsx'
 import { writeClipboard } from './clipboard.ts'
 import css from './DiffBlock.module.css'
@@ -14,9 +15,9 @@ export const DEFAULT_DIFF_MAX_LINES = 16
 export interface DiffHunk {
   /** The changed file's path, drawn verbatim as the hunk's header (the tool's model-facing path). */
   path: string
-  /** Prior content, or `null` for a new file / an overwrite (nothing on the removed side). */
+  /** Prior content including context, or `null` when no prior content is available. */
   oldText: string | null
-  /** Content after the change (the added side). */
+  /** Content after the change, including any shared context. */
   newText: string
 }
 
@@ -44,7 +45,7 @@ export interface DiffBlockLabels {
 
 /** A single rendered body line and its role, so the height cap slices a flat list. */
 interface DiffRow {
-  kind: 'path' | 'del' | 'add' | 'gap'
+  kind: 'path' | 'del' | 'add' | 'context' | 'gap'
   text: string
 }
 
@@ -59,23 +60,33 @@ const ROW_CLASS: Record<DiffRow['kind'], string | undefined> = {
   path: css.path,
   del: css.del,
   add: css.add,
+  context: css.context,
   gap: css.gap,
 }
 
+/** Derive local patches with three context lines, using the card's terminator rule. */
+function localHunks(diff: DiffHunk) {
+  const normalize = (text: string): string => contentLines(text).map(line => `${line}\n`).join('')
+  return structuredPatch('', '', normalize(diff.oldText ?? ''), normalize(diff.newText),
+    undefined, undefined, { context: 3 }).hunks
+}
+
 /**
- * Total added/removed line counts across hunks — the same numbers the footer
- * prints, exported so a summary row can show them without rebuilding the body.
- * Every old-side line counts toward `removed` and every new-side line toward
- * `added`, under {@link contentLines}'s terminator rule.
+ * Count actual added and removed lines; shared context contributes to neither total.
+ * Text follows {@link contentLines}'s terminator rule.
  * @param diffs - the hunks to count.
- * @returns the +/- totals.
+ * @returns the +/- totals for summaries and the card footer.
  */
 export function diffTotals(diffs: DiffHunk[]): { added: number; removed: number } {
   let added = 0
   let removed = 0
   for (const diff of diffs) {
-    if (diff.oldText !== null) removed += contentLines(diff.oldText).length
-    added += contentLines(diff.newText).length
+    for (const hunk of localHunks(diff)) {
+      for (const line of hunk.lines) {
+        if (line.startsWith('+')) added++
+        if (line.startsWith('-')) removed++
+      }
+    }
   }
   return { added, removed }
 }
@@ -99,16 +110,20 @@ function buildRows(diffs: DiffHunk[]): { rows: DiffRow[]; added: number; removed
     if (diff.path !== prevPath) rows.push({ kind: 'path', text: diff.path })
     else rows.push({ kind: 'gap', text: '⋯' })
     prevPath = diff.path
-    if (diff.oldText !== null) {
-      for (const line of contentLines(diff.oldText)) {
-        rows.push({ kind: 'del', text: line })
+    for (const [index, hunk] of localHunks(diff).entries()) {
+      if (index > 0) rows.push({ kind: 'gap', text: '⋯' })
+      for (const line of hunk.lines) {
+        const kind = line.startsWith('-') ? 'del' : line.startsWith('+') ? 'add' : 'context'
+        rows.push({ kind, text: line.slice(1) })
       }
     }
-    for (const line of contentLines(diff.newText)) {
-      rows.push({ kind: 'add', text: line })
-    }
   }
-  return { rows, ...diffTotals(diffs), files: paths.size }
+  return {
+    rows,
+    added: rows.filter(row => row.kind === 'add').length,
+    removed: rows.filter(row => row.kind === 'del').length,
+    files: paths.size,
+  }
 }
 
 /**
@@ -138,6 +153,7 @@ function copyText(rows: DiffRow[]): string {
     switch (row.kind) {
       case 'del': return `- ${row.text}`
       case 'add': return `+ ${row.text}`
+      case 'context': return `  ${row.text}`
       case 'path': return row.text
       case 'gap': return row.text
       /* v8 ignore next -- closed-union backstop; only reached if a row kind is forged */
