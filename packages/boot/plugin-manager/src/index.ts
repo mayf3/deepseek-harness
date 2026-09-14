@@ -218,8 +218,10 @@ export class PluginManager extends TypertRemoteService {
       if (this.profile.patchReload === 'startup' && this.profile.startedBundles.includes(name)) {
         throw new Error('Stop this startup-only profile and remove the bundle with dsh plugin')
       }
-      await this.selectBundle(name, false)
-      await this.reload()
+      if (bundle.enabled) {
+        await this.selectBundle(name, false)
+        await this.reload()
+      }
       packageResult = await this.runPnpm(['remove', name])
       if (packageResult.exitCode !== 0) throw new Error(packageResult.output)
       await this.reload()

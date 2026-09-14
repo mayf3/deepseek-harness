@@ -129,7 +129,7 @@ it('installs only valid bundle declarations and honors installation without acti
   expect((await manager.listBundles()).find(row => row.name === 'another-bundle')?.enabled).toBe(true)
 })
 
-it('unloads bundle contributions before pnpm removes files and retains failed removal state', async () => {
+it('unloads before removing packages and retries inactive dependencies whose files are missing', async () => {
   const { manager, dir, ctx } = await fixture()
   const remove = vi.spyOn(operations, 'runProfilePnpm').mockImplementation(async () => {
     expect([...ctx.loader.entries()].some(row => row.id === 'include:managed')).toBe(false)
@@ -139,11 +139,11 @@ it('unloads bundle contributions before pnpm removes files and retains failed re
   expect(await manager.removeBundle('extra')).toMatchObject({ changed: true, application: 'failed', packageResult: { exitCode: 1 } })
   expect(readProfileManifest('test', dir).dependencies).toEqual({ extra: '1.0.0' })
   expect((await manager.listBundles()).find(row => row.name === 'extra')?.enabled).toBe(false)
+  rmSync(join(dir, 'node_modules', 'extra'), { recursive: true })
   remove.mockImplementationOnce(async () => {
     const manifest = readProfileManifest('test', dir)
     delete manifest.dependencies?.extra
     writeFileSync(join(dir, 'package.json'), JSON.stringify(manifest))
-    rmSync(join(dir, 'node_modules', 'extra'), { recursive: true })
     return { exitCode: 0, output: 'removed', truncated: false, logPath: join(dir, 'pnpm.log') }
   })
   expect(await manager.removeBundle('extra')).toMatchObject({ changed: true, application: 'applied' })
