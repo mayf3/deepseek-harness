@@ -1,6 +1,0 @@
-# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
-# side as of the last confirmed-consistent state. Both languages carry equal authority;
-# after editing either side, bring the other along and re-record with:
-#   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-09-11-native-entry-diagnostics-and-static-plugin-declarations.md
-2026-09-11-native-entry-diagnostics-and-static-plugin-declarations.md: 0c83dc5e23515708d78747b1489847ac4f229705
-2026-09-11-native-entry-diagnostics-and-static-plugin-declarations.zh.md: badb759753229def9e29c8b706b1dab03a798bb5

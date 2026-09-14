@@ -16,9 +16,9 @@ CLI 与 Web 需要相同的安装检查，而只有运行中的应用才能应�
 
 **pnpm 保留正常的启动环境。** 安装器使用 `node:child_process`，并在 Windows 上通过 shell 处理 `.cmd` 垫片。Registry 凭据与代理配置保持可用。输出以 job id 下的 `plugins/install-log` 流式发送，按请求保留终端颜色；启动失败、超时与非零退出以 `plugins/install-failed` 和有界日志尾部报告。add 失败时恢复保存的清单。安装后进行静态声明和组合包冲突检查；未知包保留安装，新组合包保持禁用，除非调用方请求启用。没有需要维护的发现缓存目录。
 
-**启用选择层，诊断描述实际行。** 组合包启用、非事务重组和显式 `dsh.plugins` 发现遵循[原生条目诊断与静态声明](2026-09-11-native-entry-diagnostics-and-static-plugin-declarations.zh.md)。管理器区分逐行问题与启用选择。`retry` 移除完整层，等待清理，再将其加入；仅保留不变的行选项不会重启失败插件。`list` 从清单、静态声明和当前 Loader 状态派生每个包的视图。
+**启用选择层，诊断描述实际行。** 组合包启用和非事务重组遵循[原生条目诊断](2026-09-11-native-entry-diagnostics.zh.md)。管理器区分逐行问题与启用选择。`retry` 移除完整层，等待清理，再将其加入；仅保留不变的行选项不会重启失败插件。`list` 从清单、静态声明和当前 Loader 状态派生每个包的视图。
 
-**行通过 patch-file 写入器修改。** `addRow` 将声明的模块与配置插入 profile 用户 patch。`setRowDisabled` 写入或移除 `disabled: true`，用户撤销禁用时恢复作者原来的条件。全局修改重组运行中的树。
+**行通过 patch-file 写入器修改。** `setRowDisabled` 写入或移除 `disabled: true`，用户撤销禁用时恢复作者原来的条件。全局修改重组运行中的树。
 
 **运行时通知跟随诊断。** 原生条目与 fiber 事件共用一次待完成的读取。读取等待 Loader 和 profile 重组完成，再比较行身份、模块、fiber 阶段、失败阶段与消息。只有诊断集合变化才发送原因是 `runtime` 的 `plugins/changed`；健康状态波动和重复的相同失败保持安静。管理操作仍保留自己的完成通知。读取期间到来的事件请求再次读取，适配器销毁时取消发布。
 

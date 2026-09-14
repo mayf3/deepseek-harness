@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-`dsh-host-plugin-manager` 把 `pluginManager` 挂载为 Typert 服务并暴露 `plugins` Remote——`list`、`add`、`uninstall`、`enable`、`disable`、`retry`、`addRow`、`removeRow`、`setRowDisabled`、`dependents`——每个方法都转给建立在本上下文之上的 [`dsh-plugin-manager`](../../boot/plugin-manager/README.zh.md) `PluginManager`，每个 `plugins/*` 失败以同码的 `RemoteError` 过线。操作做什么、以及随之而来的 `plugins/changed` 与 `plugins/install-log` 事件属于那个包；本包只是从上下文读取 profile runtime 与 agent 注册表并交给它。客户端经 [`api-remotes`](../../api/remotes/README.zh.md) 装配消费该 Remote。
+`dsh-host-plugin-manager` 把 `pluginManager` 挂载为 Typert 服务并暴露 `plugins` Remote——`list`、`add`、`uninstall`、`enable`、`disable`、`retry`、`setRowDisabled`、`dependents`——每个方法都转给建立在本上下文之上的 [`dsh-plugin-manager`](../../boot/plugin-manager/README.zh.md) `PluginManager`，每个 `plugins/*` 失败以同码的 `RemoteError` 过线。操作做什么、以及随之而来的 `plugins/changed` 与 `plugins/install-log` 事件属于那个包；本包只是从上下文读取 profile runtime 与 agent 注册表并交给它。客户端经 [`api-remotes`](../../api/remotes/README.zh.md) 装配消费该 Remote。
 
 ## 目录
 
@@ -29,11 +29,11 @@ kind: "package-reference"
 
 ### Remote
 
-`plugins/list`、`plugins/add`、`plugins/uninstall`、`plugins/enable`、`plugins/disable`、`plugins/retry`、`plugins/addRow`、`plugins/removeRow`、`plugins/setRowDisabled` 与 `plugins/dependents` 携带管理器同名方法定义的参数与答复；[管理器 README](../../boot/plugin-manager/README.zh.md#use-this-package) 逐一说明。`./types` 导出原样 re-export 管理器的载荷类型，客户端只需导入一套词汇。
+`plugins/list`、`plugins/add`、`plugins/uninstall`、`plugins/enable`、`plugins/disable`、`plugins/retry`、`plugins/setRowDisabled` 与 `plugins/dependents` 携带管理器同名方法定义的参数与答复；[管理器 README](../../boot/plugin-manager/README.zh.md#use-this-package) 逐一说明。`./types` 导出原样 re-export 管理器的载荷类型，客户端只需导入一套词汇。
 
 ### 失败码
 
-管理器的失败以同样的 `code` 与 `details` 作为 `RemoteError` 到达客户端：`plugins/unavailable`、`plugins/not-installed`、`plugins/not-enableable`、`plugins/enable-failed`、`plugins/install-failed`、`plugins/row-conflict`、`plugins/busy` 与 `plugins/agents-running`，各自以管理器的 details 类型声明在 Remote 失败表里。管理器的通用拒绝 `plugins/bad-request` 以 Gateway 的 `gateway/bad-request` 过线。管理器抛出的其他错误原样传播，由 Gateway 报为 `gateway/internal`。
+管理器的失败以同样的 `code` 与 `details` 作为 `RemoteError` 到达客户端：`plugins/unavailable`、`plugins/not-installed`、`plugins/not-enableable`、`plugins/enable-failed`、`plugins/install-failed`、`plugins/busy` 与 `plugins/agents-running`，各自以管理器的 details 类型声明在 Remote 失败表里。管理器的通用拒绝 `plugins/bad-request` 以 Gateway 的 `gateway/bad-request` 过线。管理器抛出的其他错误原样传播，由 Gateway 报为 `gateway/internal`。
 
 ### 配置
 
@@ -59,7 +59,7 @@ kind: "package-reference"
 
 | 文件 | 职责 |
 |---|---|
-| [`src/index.ts`](src/index.ts) | `PluginManagerRemote`：`pluginManager` 服务、十个 `plugins` Remote 方法与 `remoteErrorOf` |
+| [`src/index.ts`](src/index.ts) | `PluginManagerRemote`：`pluginManager` 服务、八个 `plugins` Remote 方法与 `remoteErrorOf` |
 | [`src/types.ts`](src/types.ts) | re-export 管理器的类型，并把 `plugins/*` 码声明进 Remote 失败表 |
 | — | 不发布运行时不变量伴随件；该行不持有自己的状态。 |
 

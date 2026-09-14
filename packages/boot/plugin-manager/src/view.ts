@@ -10,7 +10,6 @@ import type { Entry } from '@deepseek-ai/cordis-plugin-loader'
 import { rootIncludeEntry, type EntryIssue, type PackageMetadata, type ProfileManifest, type ProfileRuntime } from '@deepseek-ai/dsh-app-boot'
 import { bundlesOf, dependenciesOf, messageOf, optional } from './helpers.ts'
 import type { PluginInstaller } from './installer.ts'
-import { addableView } from './modules.ts'
 import type { PluginPackageRowView, PluginPackageStatus, PluginPackageView, PluginRowPhase } from './types.ts'
 
 /** Runtime mirror: FiberState is a cross-package const enum. */
@@ -104,7 +103,6 @@ export function packageView(
     cordisSameCopy: metadata?.cordisSameCopy ?? null,
     rows,
     overrides: metadata?.overrides ?? [],
-    addable: (metadata?.addable ?? []).map(entry => addableView(name, entry)),
     ...affected.length === 0 ? {} : { issues: affected.map(issue => ({
       entryId: issue.entry.id, moduleName: issue.entry.options.name, stage: issue.stage, message: issue.message,
     })) },

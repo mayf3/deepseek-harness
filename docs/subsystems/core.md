@@ -949,21 +949,6 @@ The row injects only the Loader; the profile runtime and the agent registry are 
 @Remote('retry') async retry(packageName: string): Promise<PluginEnableResult>
 
 /**
- * Add a row naming one of the package's modules to the profile user layer.
- * @param packageName - the installed package.
- * @param options - `module` selects a declared `dsh.plugins[]` name (default `.`),
- * `id` overrides the derived row id, `config` overrides the declared default.
- * @returns where the row landed.
- */
-@Remote('addRow') async addRow( packageName: string, options?: { module?: string; id?: string; config?: JsonValue }, ): Promise<PluginRowAddition>
-
-/**
- * Remove a row a user layer inserted.
- * @param rowId - the inserted row's id.
- */
-@Remote('removeRow') async removeRow(rowId: string): Promise<void>
-
-/**
  * Switch one row off or on in a user layer; deny-only.
  * @param rowId - the row's id as the composition declares it.
  * @param disabled - whether the layer should switch the row off.

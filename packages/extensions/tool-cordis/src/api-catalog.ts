@@ -1424,17 +1424,6 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the enable outcome of the second step.',
       },
       {
-        signature: '@Remote(\'addRow\') async addRow( packageName: string, options?: { module?: string; id?: string; config?: JsonValue }, ): Promise<PluginRowAddition>',
-        description: 'Add a row naming one of the package\'s modules to the profile user layer.',
-        parameters: [{ name: 'packageName', description: 'the installed package.' }, { name: 'options', description: '`module` selects a declared `dsh.plugins[]` name (default `.`), `id` overrides the derived row id, `config` overrides the declared default.' }],
-        returns: 'where the row landed.',
-      },
-      {
-        signature: '@Remote(\'removeRow\') async removeRow(rowId: string): Promise<void>',
-        description: 'Remove a row a user layer inserted.',
-        parameters: [{ name: 'rowId', description: 'the inserted row\'s id.' }],
-      },
-      {
         signature: '@Remote(\'setRowDisabled\') async setRowDisabled(rowId: string, disabled: boolean): Promise<void>',
         description: 'Switch one row off or on in a user layer; deny-only.',
         parameters: [{ name: 'rowId', description: 'the row\'s id as the composition declares it.' }, { name: 'disabled', description: 'whether the layer should switch the row off.' }],
@@ -4952,12 +4941,8 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface PluginInstallResult {\n    readonly installed: readonly string[];\n    readonly removed: readonly PluginInstallRejection[];\n    readonly enabled: readonly string[];\n    readonly installedOnly: readonly string[];\n    readonly plain: readonly string[];\n    readonly jobId: string;\n}',
   },
   {
-    name: 'PluginPackageAddableView',
-    declaration: 'export interface PluginPackageAddableView {\n    readonly moduleName: string;\n    readonly declaredName: string;\n    readonly title?: string;\n    readonly config?: JsonValue;\n}',
-  },
-  {
     name: 'PluginPackageKind',
-    declaration: 'export type PluginPackageKind = \'bundle\' | \'plugin\' | \'unknown\';',
+    declaration: 'export type PluginPackageKind = \'bundle\' | \'unknown\';',
   },
   {
     name: 'PluginPackageRowView',
@@ -4969,11 +4954,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'PluginPackageView',
-    declaration: 'export interface PluginPackageView {\n    readonly name: string;\n    readonly version?: string;\n    readonly title?: string;\n    readonly description?: string;\n    readonly kind: PluginPackageKind;\n    readonly installed: boolean;\n    readonly enabled: boolean;\n    readonly status: PluginPackageStatus;\n    readonly reason?: string;\n    readonly enginesDsh?: string;\n    readonly cordisSameCopy: boolean | null;\n    readonly rows: readonly PluginPackageRowView[];\n    readonly issues?: readonly PluginRowIssue[];\n    readonly overrides: readonly string[];\n    readonly addable: readonly PluginPackageAddableView[];\n    readonly liveReload: boolean;\n}',
-  },
-  {
-    name: 'PluginRowAddition',
-    declaration: 'export interface PluginRowAddition {\n    readonly rowId: string;\n    readonly file: string;\n}',
+    declaration: 'export interface PluginPackageView {\n    readonly name: string;\n    readonly version?: string;\n    readonly title?: string;\n    readonly description?: string;\n    readonly kind: PluginPackageKind;\n    readonly installed: boolean;\n    readonly enabled: boolean;\n    readonly status: PluginPackageStatus;\n    readonly reason?: string;\n    readonly enginesDsh?: string;\n    readonly cordisSameCopy: boolean | null;\n    readonly rows: readonly PluginPackageRowView[];\n    readonly issues?: readonly PluginRowIssue[];\n    readonly overrides: readonly string[];\n    readonly liveReload: boolean;\n}',
   },
   {
     name: 'PluginRowIssue',

@@ -16,14 +16,12 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
     'plugins/unavailable': PluginOperationDetailsMap['plugins/unavailable']
     /** The package is not a profile dependency. */
     'plugins/not-installed': PluginOperationDetailsMap['plugins/not-installed']
-    /** The package cannot be enabled or added, with the declaration or request error. */
+    /** The package cannot be enabled, with the declaration or request error. */
     'plugins/not-enableable': PluginOperationDetailsMap['plugins/not-enableable']
     /** Preparation or the root Include rejected enablement; the layer selection was reverted. */
     'plugins/enable-failed': PluginOperationDetailsMap['plugins/enable-failed']
     /** pnpm exited non-zero, could not be spawned, or timed out. */
     'plugins/install-failed': PluginOperationDetailsMap['plugins/install-failed']
-    /** The row id is already taken in the target user layer. */
-    'plugins/row-conflict': PluginOperationDetailsMap['plugins/row-conflict']
     /** Another mutation is still running; the manager runs one at a time and refuses rather than queues. */
     'plugins/busy': PluginOperationDetailsMap['plugins/busy']
     /** `node_modules` cannot change while a session runs; `running` counts the agents in `running` status. */
