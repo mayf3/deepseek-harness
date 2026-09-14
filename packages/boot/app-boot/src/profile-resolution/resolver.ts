@@ -265,11 +265,9 @@ function localCandidateOwnsResolution(candidate: string, resolved: string, reque
   }
 }
 
-function packageHasExports(packageDir: string): boolean {
-  const manifestPath = join(packageDir, 'package.json')
-  if (!existsSync(manifestPath)) return false
-  const manifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as Record<string, unknown>
-  return Object.hasOwn(manifest, 'exports')
+function isUnselectedPackageMiss(error: unknown): boolean {
+  const failure = error as NodeJS.ErrnoException & { path?: unknown }
+  return failure.code === 'MODULE_NOT_FOUND' && failure.path === undefined
 }
 
 function sameResolution(left: string, right: string): boolean {
@@ -368,8 +366,7 @@ class ResolutionRouter {
             return state
           }
         } catch (error) {
-          if ((error as NodeJS.ErrnoException).code !== 'MODULE_NOT_FOUND'
-            || candidates.some(candidate => packageHasExports(candidate.packageDir))) throw error
+          if (!isUnselectedPackageMiss(error)) throw error
         }
       } else {
         const selected = candidates[0] as { packageDir: string }
@@ -858,9 +855,7 @@ export function installProfileResolution(
       try {
         expected = resolveRoutedCjs(request, route, parent, main, routedOptions)
       } catch (error) {
-        if (route.kind !== 'fallback'
-          || (error as NodeJS.ErrnoException).code !== 'MODULE_NOT_FOUND'
-          || packageHasExports(route.entry.packageDir)) throw error
+        if (route.kind !== 'fallback' || !isUnselectedPackageMiss(error)) throw error
         try {
           expected = resolveRoutedCjs(
             request, { kind: 'after-fallback', parent: route.after }, parent, main, routedOptions,

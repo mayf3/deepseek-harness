@@ -118,7 +118,12 @@ function thrownMessage(callback: () => unknown): string {
   throw new Error('expected callback to throw')
 }
 
-function thrownError(callback: () => unknown): Error & { code?: string; requireStack?: string[] } {
+function thrownError(callback: () => unknown): Error & {
+  code?: string
+  path?: string
+  requestPath?: string
+  requireStack?: string[]
+} {
   try {
     callback()
   } catch (error) {
@@ -660,20 +665,22 @@ describe('profile resolution generation', { concurrent: false }, () => {
     expect(require.resolve('resolution-lib')).toBe(outside)
   })
 
-  it('falls through a missing local legacy main to the generation', async () => {
+  it('keeps a missing local legacy main error ahead of the generation', async () => {
     const f = fixture()
     const local = join(f.profile.dir, 'node_modules', 'resolution-lib')
     file(join(local, 'package.json'), JSON.stringify({ name: 'resolution-lib', main: './missing.cjs' }))
-    const generation = await healProfilesModuleFallback({
-      installAnchor: f.installAnchor,
-      profile: f.profile,
-      home: f.root,
-    })
-    const registration = installProfileResolution(generation)
+    const require = createRequire(join(f.profile.dir, 'entry.cjs'))
+    const linkError = thrownError(() => require.resolve('resolution-lib'))
+    const registration = installProfileResolution(await generationOf(f))
     registrations.push(registration)
+    const runtimeError = thrownError(() => require.resolve('resolution-lib'))
 
-    expect(createRequire(join(f.profile.dir, 'entry.cjs')).resolve('resolution-lib'))
-      .toBe(join(f.installed, 'index.cjs'))
+    expect(runtimeError).toMatchObject({
+      code: linkError.code,
+      path: linkError.path,
+      requestPath: linkError.requestPath,
+    })
+    expect(runtimeError.message).toBe(linkError.message)
   })
 
   it('keeps a profile-local CommonJS package file ahead of the generation', async () => {
@@ -1015,6 +1022,21 @@ describe('profile resolution generation', { concurrent: false }, () => {
 
     expect(() => createRequire(join(f.profile.dir, 'entry.cjs')).resolve('resolution-lib'))
       .toThrow(/Cannot find module/u)
+  })
+
+  it('does not fall back after the generation selects a missing legacy main', async () => {
+    const f = fixture()
+    file(join(f.installed, 'package.json'), JSON.stringify({
+      name: 'resolution-lib', version: '1.0.0', type: 'module', main: './missing.cjs',
+    }))
+    unlinkSync(join(f.installed, 'index.cjs'))
+    unlinkSync(join(f.installed, 'index.js'))
+    pkg(join(f.root, 'node_modules', 'resolution-lib'), 'resolution-lib', 2)
+    const registration = installProfileResolution(await generationOf(f))
+    registrations.push(registration)
+
+    expect(() => createRequire(join(f.profile.dir, 'entry.cjs')).resolve('resolution-lib'))
+      .toThrow(/valid "main" entry/u)
   })
 
   it('detects a dual-mode mismatch instead of accepting another package', async () => {
