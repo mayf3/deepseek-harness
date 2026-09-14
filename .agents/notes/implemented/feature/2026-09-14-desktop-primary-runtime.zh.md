@@ -14,6 +14,10 @@ Desktop 将 Python、Node.js、pnpm、numpy 和 pandas 作为绑定应用版本�
 
 应用版本和组件版本记录在 `runtime.json` 中，不放在目录名里。安装发布完整的暂存副本，并在替换成功前保留之前的目录。同版本复用已安装文件；升级替换受管目录内用户添加的 Python 依赖。Desktop 单实例所有者和工具共享的安装 Promise 串行处理正常安装请求。
 
+Node 下载并校验完整锁定 wheel 集的哈希，将这些仅含库的压缩包解压到 site-packages。这避免选择构建主机的 Python 和 pip 版本，也无需实现依赖解析或通用 wheel 安装。含 `.data` 安装目录的 wheel 会被拒绝；命令行入口包装器不属于该库产物。本机 smoke 在临时文件删除后执行最终产物，因此解释器链接必须在迁移后仍有效。
+
+macOS 仅向独立 Node 可执行文件授予 `com.apple.security.cs.allow-jit`。缺少此权限的强化运行时签名会阻止 V8 分配代码区域。解释器和库的 smoke 检查在签名后以及暂存清理后执行；签名有效本身不能证明程序可运行。
+
 ## Alternatives considered
 
 **只使用系统解释器。** 无法保证可用性或预装 numpy 和 pandas。

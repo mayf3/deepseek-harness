@@ -20,7 +20,7 @@ Desktop 携带独立的 Python、Node.js 和 pnpm 分发包，并在 Python 的 
 
 该工具不修改 PATH、环境变量或用户包管理器配置。pnpm 的全局包、命令入口和 store 保留自身默认值及用户设置，包括环境不支持全局安装时的原生错误。不提供独立依赖更新器。[第一方 Runtime 决策](../../.agents/notes/implemented/feature/2026-09-14-desktop-primary-runtime.zh.md)记录这些选择。
 
-构建准备使用带 pip 的系统 Python（Windows 为 `python`，macOS 为 `python3`）安装目标 wheel，该构建解释器不随包交付。它通过[下载锁](scripts/primary-runtime-lock.json)固定解释器压缩包哈希，通过[依赖锁](scripts/primary-runtime-requirements.txt)固定 Python wheel 哈希；pnpm 使用 Desktop 构建依赖锁。本机目标的准备流程检查解释器执行及 numpy/pandas 运算。跨目标执行和签名安装需要对应的发布主机。`dev:desktop` 和 `start:desktop` 都会在启动 Electron 前准备 `.desktop-build/targets/<target>/runtime/primary-runtime`；首次准备可能需要下载锁定的依赖。
+Node 准备内置解释器和 Python 库，无需系统 Python 或 pip。[下载锁](scripts/primary-runtime-lock.json)固定解释器压缩包及目标平台 wheel 的 URL 和哈希；pnpm 使用 Desktop 构建依赖锁。支持的库 wheel 直接解压到 site-packages；需要其他安装目录的 wheel 会被拒绝，不生成包的命令行包装器。本机目标检查在清理暂存目录后以及 macOS 签名后执行内置解释器及 numpy/pandas 运算。独立 Node 可执行文件获得 V8 所需的 JIT 权限。跨目标执行和签名安装需要对应的发布主机。`dev:desktop` 和 `start:desktop` 都会在启动 Electron 前准备 `.desktop-build/targets/<target>/runtime/primary-runtime`；首次准备可能需要下载锁定的依赖。
 
 | 决策 | 原因 | 直接结果 |
 |---|---|---|

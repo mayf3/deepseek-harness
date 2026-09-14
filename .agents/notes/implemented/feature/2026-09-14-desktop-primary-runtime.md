@@ -14,6 +14,10 @@ Desktop ships Python, Node.js, pnpm, numpy and pandas as one release-bound paylo
 
 The application version and component versions live in `runtime.json`, not the directory name. Installation publishes a completed staged copy and retains the previous directory until replacement succeeds. Matching releases reuse installed files; upgrades replace user-added Python dependencies inside the managed tree. The Desktop single-instance owner and the tool's shared installation promise serialize normal installation requests.
 
+Node downloads and hash-verifies the complete locked wheel set and unpacks these library-only archives into site-packages. This avoids build-host Python and pip version selection without implementing dependency resolution or general wheel installation. Wheels with `.data` installation directories are rejected; command-line entry-point wrappers are outside this library payload. Native smoke executes the final payload after temporary files are removed, so interpreter links must survive relocation.
+
+macOS grants `com.apple.security.cs.allow-jit` only to the standalone Node executable. Hardened-runtime signing without that entitlement prevents V8 from allocating its code region. Interpreter and library smoke checks run after signing as well as after staging cleanup; a valid signature alone does not establish executable behavior.
+
 ## Alternatives considered
 
 **System interpreters only.** They do not provide predictable availability or preinstalled numpy and pandas.
