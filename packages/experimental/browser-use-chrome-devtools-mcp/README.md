@@ -47,6 +47,8 @@ Use `mode: attach` and set `endpoint` to an HTTP(S) debugging URL or WS(S) brows
 
 The [configuration catalog](../../../docs/config-catalog.md#deepseek-aidsh-experimental-browser-use-chrome-devtools-mcp) lists accepted fields. The profile or preset selects the browser mode.
 
+When configuring the system prompt's `toolOrder` for the whole process, leave browser tools under `<unlisted-tools>`. Explicitly listing browser tool names can make prompt assembly fail for Sessions without a browser connection.
+
 -----
 
 <a id="understand-the-implementation"></a>
