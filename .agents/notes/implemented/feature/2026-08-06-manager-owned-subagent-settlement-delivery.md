@@ -16,7 +16,11 @@ The signal already existed. `subagent/end` has carried `stopReason` and `lastAss
 
 The continuation manager delivers the account itself, from inside the disposal transaction that ends the Activation.
 
-When a resident Activation settles, `notifySettlement()` resolves the child's durable direct parent and sends it one user-role message: the epoch's outcome as a sentence the parent can act on, then the child's final assistant content, or a statement that it produced none. Delivery is unconditional for every child whose id a caller actually received. It does not consult whether the child reported, and it keeps no bookkeeping that could make the promise conditional — that unconditionality is what lets `tool-subagent` promise a runtime notice containing the outcome and any final assistant message. A materialization rolled back before its first accepted message stays silent, because the caller was told that child was not established.
+When a resident Activation settles, `notifySettlement()` resolves the child's durable direct parent and sends it one user-role message: the epoch's outcome as a sentence the parent can act on, then the text from the child's final assistant output, or a statement that it produced no closing text. Delivery is unconditional for every child whose id a caller actually received. It does not consult whether the child reported, and it keeps no bookkeeping that could make the promise conditional — that unconditionality is what lets `tool-subagent` promise a runtime notice containing the outcome and any final assistant text. A materialization rolled back before its first accepted message stays silent, because the caller was told that child was not established.
+
+### Closing text
+
+[`createSettlementMessage()`](../../../../packages/subagent/subagent/src/continuation-messages.ts) projects the selected assistant output to nonempty text blocks before creating the user-role notice. It preserves text bytes and block order, excludes every nontext block, and uses `It left no closing message.` when no nonempty text remains. Reasoning and tool calls are assistant content that DeepSeek Messages cannot represent in a user message. The conversion belongs to notice construction; `AssistantOutputFold`, `SubagentResult.output`, and `subagent/end.lastAssistantMessage` retain complete child output for SDK and UI consumers.
 
 ### Runtime source
 
@@ -83,6 +87,10 @@ The refusal and interruption wordings are pinned verbatim in unit tests rather t
 **Change `subagent/end` to carry the parent, and let a plugin deliver.** That widens a published payload for one in-package consumer, keeps every ordering hazard, and makes the return channel an optional plugin again. Extending the package-private `ActivationObserver` with `terminal(failure)` keeps one computation of the terminal facts and no public surface change.
 
 **Always use `followup`.** Simpler and uniform, but a fan-out of children settling together would cost one parent turn each. The step-boundary batch already exists; using it is free.
+
+**Filter the canonical child output.** Removing nontext blocks in `AssistantOutputFold` would discard assistant content needed by SDK and UI consumers. Only the parent notice requires a text projection.
+
+**Relax the Messages serializer.** Accepting or silently discarding invalid user-role blocks would conceal the producer's role conversion error. Notice construction supplies content that every parent provider can represent while protocol validation remains strict.
 
 ## Consequences
 
