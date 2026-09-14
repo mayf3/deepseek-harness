@@ -539,7 +539,7 @@ function applySurfacePlan(
  * @param events - session events in contiguous seq order.
  * @param projections - pure interpreters for plugin-owned message changes; required definitions must be supplied.
  * @returns detached current sequences and replacement history.
- * @throws when an interpreter is missing or an event violates its projection, surface metadata, provenance, or replacement rules.
+ * @throws when an interpreter is missing or an event violates its projection, surface metadata, source attribution, or replacement rules.
  */
 export function foldSurface(events: readonly SessionEvent[], projections: readonly SessionMessageProjection[] = []): SurfaceFoldResult {
   const state = createFoldState()
