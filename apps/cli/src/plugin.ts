@@ -137,7 +137,7 @@ async function runManaged(
   let interrupted = 0
   const interrupt = (): void => { interrupted = 130; controller.abort() }
   const terminate = (): void => { interrupted = 143; controller.abort() }
-  const control = { requestId: randomUUID() as PluginInstallRequestId, signal: controller.signal, prepared() {} }
+  const control = { requestId: randomUUID() as PluginInstallRequestId, signal: controller.signal }
   process.on('SIGINT', interrupt)
   process.on('SIGTERM', terminate)
   try {

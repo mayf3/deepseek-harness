@@ -84,7 +84,7 @@ Every refusal or failure is a `PluginOperationError` with a stable `code` and `d
 
 -----
 
-Installation callers may supply a UUID `requestId` in `add` options and call `cancelInstall(requestId)`. `plugins/install-state` announces installation, cancellation, and the non-cancellable application phase. Cancellation waits for pnpm's process range to exit, restores the manifest and lockfile, and releases the mutation lock before returning `cancelled`; the original add reports `plugins/install-cancelled`. A request for another operation returns `not-running`, and application returns `too-late`. Plugin disposal stops an installation still preparing packages without waiting recursively on runtime application.
+Installation callers may supply a UUID `requestId` in `add` options and call `cancelInstall(requestId)`. `plugins/install-state` announces installation, cancellation, and the non-cancellable application phase. Cancellation waits for pnpm's process range to exit, restores the manifest and lockfile, and releases the mutation lock before returning `cancelled`; the original add reports `plugins/install-cancelled`. A request for another operation returns `not-running`, and application returns `too-late`. Manager disposal waits for package preparation or removal to stop, without waiting recursively on runtime application.
 
 <a id="understand-the-implementation"></a>
 ## Understand the implementation

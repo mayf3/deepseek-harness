@@ -13,7 +13,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PassThrough } from 'node:stream'
 import { execFileSync } from 'node:child_process'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context, type Plugin } from '@deepseek-ai/cordis'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
 import {
@@ -21,7 +21,7 @@ import {
   type ComposedStack, type Profile, readPackageMetadata,
 } from '@deepseek-ai/dsh-app-boot'
 import {
-  PluginManager, type PluginInstallLogChunk,
+  PluginManager, PluginInstaller, type PluginInstallLogChunk,
   type PluginInstallRequestId, type PluginInstallProgress, type PluginToolingConfig, type SpawnLike,
 } from '@deepseek-ai/dsh-plugin-manager'
 import type {} from '@deepseek-ai/dsh-agent'
@@ -754,6 +754,55 @@ describe('PluginManager', () => {
       await started.promise
       await ctx.fiber.dispose()
       expect(await answer).toMatchObject({ code: 'plugins/install-cancelled' })
+    })
+
+    it('uses the standalone installer without a runtime or cancellation controller', async () => {
+      const staged = await stageHome()
+      stagePackage(staged.profileDir, 'ext-plain', {})
+      const log: PluginInstallLogChunk[] = []
+      const installer = new PluginInstaller({
+        profileDir: staged.profileDir, profileName: 'web', installAnchor: staged.anchor,
+        loadProfile: () => loadProfile(NAME, 'web', staged.anchor, staged.home),
+        config: managerConfig(), color: false, spawn: recordingPnpm(staged.profileDir), installLog: (chunk) => { log.push(chunk) },
+      })
+      expect(await installer.add('ext-plain')).toMatchObject({ installed: ['ext-plain'] })
+      expect(manifestOf(staged.profileDir).dependencies).toHaveProperty('ext-plain')
+      expect(log.every(chunk => chunk.requestId === undefined)).toBe(true)
+      await installer.remove('ext-plain')
+      expect(manifestOf(staged.profileDir).dependencies).not.toHaveProperty('ext-plain')
+    })
+
+    it('does not start package removal after removing its user row disposes the manager', async () => {
+      const staged = await stageHome()
+      stagePackage(staged.profileDir, 'ext-old', { main: 'export function apply() {}' })
+      writeFileSync(join(staged.profileDir, 'cordis.patch.yml'), '- insert:\n    - id: old-row\n      name: ext-old\n')
+      addDependency(staged.profileDir, 'ext-old')
+      const calls: string[][] = []
+      const { ctx, manager, runtime } = await bootProfile(staged, { spawn: recordingPnpm(staged.profileDir, calls) })
+      const recompose = runtime.recompose.bind(runtime)
+      vi.spyOn(runtime, 'recompose').mockImplementationOnce(async (options) => {
+        const result = await recompose(options)
+        await ctx.fiber.dispose()
+        return result
+      })
+      await expect(manager.uninstall('ext-old')).rejects.toMatchObject({ code: 'plugins/unavailable', details: { reason: 'manager disposed' } })
+      expect(calls).toEqual([])
+    })
+
+    it('joins a package removal process during host disposal without exposing installation cancellation for it', async () => {
+      const staged = await stageHome()
+      stagePackage(staged.profileDir, 'ext-old', {})
+      addDependency(staged.profileDir, 'ext-old')
+      const started = Promise.withResolvers<undefined>()
+      const { ctx, manager, log } = await bootProfile(staged, { spawn: fakePnpm(staged.profileDir, () => {
+        started.resolve(undefined)
+        return { code: null, hang: true, stdout: 'removing' }
+      }) })
+      const result = manager.uninstall('ext-old').catch((error: unknown) => error)
+      await started.promise
+      expect(await manager.cancelInstall(log[0]?.requestId as PluginInstallRequestId)).toEqual({ status: 'not-running' })
+      await ctx.fiber.dispose()
+      expect(await result).toMatchObject({ code: 'plugins/install-cancelled' })
     })
 
     it('refuses a second mutation while one is still running', async () => {

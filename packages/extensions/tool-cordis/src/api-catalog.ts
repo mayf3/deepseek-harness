@@ -1411,7 +1411,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       {
         signature: '@Remote(\'add\') async add(spec: string, options?: PluginInstallOptions): Promise<PluginInstallResult>',
         description: 'Install a package with pnpm, read its declarations, and leave it disabled unless asked otherwise.',
-        parameters: [{ name: 'spec', description: 'what to install, in pnpm\'s own vocabulary.' }, { name: 'options', description: '`enable` puts every newly installed bundle into the layer list at once.' }],
+        parameters: [{ name: 'spec', description: 'what to install, in pnpm\'s own vocabulary.' }, { name: 'options', description: '`enable` selects new bundles; `requestId` identifies the install for progress and cancellation.' }],
         returns: 'what the run installed and enabled.',
       },
       {
