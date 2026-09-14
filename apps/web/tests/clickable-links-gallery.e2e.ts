@@ -41,7 +41,7 @@ const UI_EXPECTED = fileURLToPath(new URL('./expected/clickable-links-gallery/ui
 // The golden holds the show-in-folder affordance; pin the native-opener
 // capability so headless Linux CI and desktop developer hosts expose the same
 // UI branch (same pin as produced-files.e2e.ts, whose overlay this shares).
-const OVERLAY = fileURLToPath(new URL('./changed-files.overlay.yml', import.meta.url))
+const OVERLAY = fileURLToPath(new URL('./clickable-links-gallery.overlay.yml', import.meta.url))
 const MODE = webSnapshotMode()
 const SEED_ID = 'clickable-links-gallery-web-e2e'
 const DONE = 'LINK_GALLERY_DONE'
