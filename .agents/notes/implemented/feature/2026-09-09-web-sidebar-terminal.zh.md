@@ -10,9 +10,11 @@ Web 用户需要在 Session 旁使用交互式 shell 检查工作区和运行命
 
 ## 决定
 
+开始页入口声明 provider 内稳定的 id。keyed `sidebar.right.tab.guide.entry` slot 按当前生效的 provider id 分发，因此替代 builtin 的 extension 也控制对应入口的渲染。侧栏负责卡片排列和默认回退，provider 组件负责自己的控件，并通过框架 hook 读取所在标签页。入口 slot 可以承载 shell 菜单，无需替换整个开始页或把交互按钮嵌套在另一个按钮内。
+
 应用主题负责终端背景、默认文字、光标和选区颜色。终端正文在收到框架传递的主题变化后读取 DSH 渲染配色，使 CSS token 覆盖继续生效。更新现有 xterm 实例会保留输出和 PTY 连接；shell 输出的 ANSI 颜色独立生效。
 
-`api-terminal-controller` 按 Session 管理用户终端并提供 `terminal` Remote namespace。`ui-sidebar-terminal` 注册原生右侧栏标签页，使用 xterm.js 渲染和 FitAddon 测量尺寸。新终端提供已安装 shell 的选择并等待用户启动。Host 探测会验证配置的候选，并把执行环境默认项放在首位；创建只接受当前探测返回的路径。浏览器在当前站点 localStorage 中记住上次选择的 shell 路径，该路径不可用时回到当前默认项。终端类型声明独立实例，因此打开或停靠标签页时，普通页面的去重规则不会合并不同进程。已有侧栏控件负责打开更多标签页，双击标签页标题可重命名终端。终端进程使用组合的 subprocess provider 和 Session sandbox policy。shell 在探测和创建时解析；读取限制和重新连接已有进程不依赖默认可执行文件仍然可用。交互式 shell 配置提供 Tab 补全和可选的内联建议。
+`api-terminal-controller` 按 Session 管理用户终端并提供 `terminal` Remote namespace。`ui-sidebar-terminal` 注册原生右侧栏标签页，使用 xterm.js 渲染和 FitAddon 测量尺寸。终端开始页卡片的主操作打开上次选择且仍可用的 shell，独立菜单提供已安装 shell。选择菜单项会记录路径并立即打开新终端；仅探测 shell 不分配进程。每个标签页拥有自己的启动和关闭生命周期。Host 探测会验证配置的候选，并把执行环境默认项放在首位；创建只接受当前探测返回的路径。浏览器在当前站点 localStorage 中记住上次选择的 shell 路径，该路径不可用时回到当前默认项。终端类型声明独立实例，因此打开或停靠标签页时，普通页面的去重规则不会合并不同进程。已有侧栏控件负责打开更多标签页，双击标签页标题可重命名终端。终端进程使用组合的 subprocess provider 和 Session sandbox policy。shell 在探测和创建时解析；读取限制和重新连接已有进程不依赖默认可执行文件仍然可用。交互式 shell 配置提供 Tab 补全和可选的内联建议。
 
 关闭和替换会同步移除标签页，并在后台清理进程。Client 先以终端独立的 localStorage key 保存未完成的关闭请求；成功后删除，启动时重试剩余请求。清理失败时显示带重试操作的轻量通知，不重新打开标签页。独立 key 避免其他窗口覆盖无关的清理请求。折叠、切换标签页或 Session、浮动、全屏和浏览器断线均保留进程。组件清理和 `TabDomain.signal` 只停止浏览器工作，因为插件重新加载也会结束这些生命周期。进程清理失败时保留所有权，包括分配完成但 create 尚未发布时的失败。Session owner 和 Host 插件卸载也会清理终端。 明确的 Session 不存在响应会清除已保存的关闭请求，因为进程清理由 Session 负责；传输失败仍可重试。Client 插件卸载等待所有断开的流结束，避免替换插件继承未完成的 Client 清理。
 
