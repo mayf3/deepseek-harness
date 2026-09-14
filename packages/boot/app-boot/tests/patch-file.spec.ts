@@ -1,9 +1,9 @@
-import { mkdtemp, readFile, stat, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, stat, writeFile } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { isJsExpr } from '@deepseek-ai/cordis-plugin-loader'
 import {
   anchorInsertedPluginNames,
@@ -228,6 +228,18 @@ describe('mutatePatchFile', () => {
     const file = join(dir, 'cordis.patch.yml')
     expect(await mutatePatchFile(file, () => {}, { binName: 'spec', mode: 0o600 })).toEqual([])
     expect(existsSync(file)).toBe(false)
+  })
+
+  it('rejects a directory as the patch file before editing and releases its lock', async () => {
+    const dir = await tempDir()
+    const file = join(dir, 'cordis.patch.yml')
+    await mkdir(file)
+    const mutate = vi.fn()
+    await expect(mutatePatchFile(file, mutate, { binName: 'spec', mode: 0o600 }))
+      .rejects.toThrow(`spec: failed to read patches ${file}`)
+    expect(mutate).not.toHaveBeenCalled()
+    expect((await stat(file)).isDirectory()).toBe(true)
+    expect(existsSync(`${file}.lock`)).toBe(false)
   })
 
   it.skipIf(process.platform === 'win32' || process.getuid?.() === 0)('reports a file that exists but cannot be read', async () => {
