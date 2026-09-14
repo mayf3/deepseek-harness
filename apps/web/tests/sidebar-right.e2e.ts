@@ -293,7 +293,7 @@ describe('web e2e: shipped right Sidebar', () => {
         step: 1,
         message: createMessage({
           role: 'assistant',
-          content: [{ type: 'text', text: `Ready: wrote \`${SAMPLE_NAME}\`.` }],
+          content: [{ type: 'text', text: `Ready. Wrote \`${SAMPLE_NAME}\`.` }],
           source: { kind: 'model', provider: 'fixture', model: 'fixture' },
         }),
       }, { surfaceOp: 'append' })
