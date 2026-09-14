@@ -201,6 +201,8 @@ afterEach(async () => {
 describe('SessionProjectionCache write policy', () => {
   it('writes a durable checkpoint at turn/end (mandatory point)', async () => {
     const { ctx, root } = await harness()
+    // The interval cannot substitute for the mandatory turn/end trigger.
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
     const id = SessionId('turn-end')
     const created = whenWritten(ctx, id)
     const session = ctx.sessions.create(id)
