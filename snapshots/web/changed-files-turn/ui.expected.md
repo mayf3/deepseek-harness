@@ -91,7 +91,6 @@
   - code:
     - button "在侧边栏打开 notes.txt": notes.txt
   - text: 。
-- img
 - text: 已编辑 3 个文件 +8 -1
 - list:
   - listitem:
