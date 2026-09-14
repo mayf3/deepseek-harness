@@ -1,0 +1,91 @@
+.vp-doc .dsh-diagram-open,
+.dsh-diagram-toolbar button {
+  min-height: 44px;
+  padding: 6px 14px;
+  border: 1px solid var(--vp-c-divider);
+  border-radius: 8px;
+  color: var(--vp-c-text-1);
+  background: var(--vp-c-bg-soft);
+  font: inherit;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.vp-doc .dsh-diagram-open {
+  display: block;
+  margin: 8px 0 16px auto;
+}
+
+.dsh-diagram-open:hover,
+.dsh-diagram-toolbar button:hover {
+  border-color: var(--vp-c-brand-1);
+  color: var(--vp-c-brand-1);
+}
+
+.dsh-diagram-open:focus-visible,
+.dsh-diagram-toolbar button:focus-visible {
+  outline: 2px solid var(--vp-c-brand-1);
+  outline-offset: 2px;
+}
+
+.dsh-diagram-viewer {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100dvh;
+  max-width: none;
+  max-height: none;
+  margin: 0;
+  padding: 16px;
+  border: 0;
+  color: var(--vp-c-text-1);
+  background: var(--vp-c-bg);
+  box-sizing: border-box;
+}
+
+.dsh-diagram-viewer[open] {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.dsh-diagram-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+}
+
+.dsh-diagram-toolbar strong {
+  margin-right: auto;
+}
+
+.dsh-diagram-help {
+  margin: 0;
+  color: var(--vp-c-text-2);
+  font-size: 13px;
+}
+
+.dsh-diagram-viewport {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  border: 1px solid var(--vp-c-divider);
+  border-radius: 8px;
+  overscroll-behavior: contain;
+}
+
+.dsh-diagram-paper {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+}
+
+@media (max-width: 600px) {
+  .dsh-diagram-viewer { padding: 8px; }
+  .dsh-diagram-toolbar { align-items: stretch; }
+  .dsh-diagram-toolbar strong { width: 100%; }
+  .dsh-diagram-toolbar button { flex: 1; padding-inline: 8px; }
+}
