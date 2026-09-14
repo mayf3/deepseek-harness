@@ -148,6 +148,18 @@ export function verifyMacOSSignature(appPath, expected) {
 }
 
 /**
+ * Verify an independently distributed application's signature, ticket, and Gatekeeper acceptance.
+ * @param {string} appPath - Path to the stapled `.app` directory.
+ * @param {{ signingIdentity: string, teamId: string }} expected - Public release identity.
+ * @returns {void}
+ */
+export function verifyMacOSNotarizedApplication(appPath, expected) {
+  verifyMacOSSignature(appPath, expected)
+  runAppleCommand('/usr/bin/xcrun', ['stapler', 'validate', appPath], 'stapler validate')
+  runAppleCommand('/usr/sbin/spctl', ['--assess', '--type', 'execute', '--verbose=4', appPath], 'spctl')
+}
+
+/**
  * Verify the release identity, stapled ticket, and Gatekeeper acceptance of one disk image.
  * @param {string} diskImagePath - Path to the packaged `.dmg` file.
  * @param {{ signingIdentity: string, teamId: string }} expected - Public release identity.

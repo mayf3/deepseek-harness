@@ -160,8 +160,34 @@
       "surfaceOp": "append"
     },
     {
-      "type": "request/header",
+      "type": "user/message",
       "seq": 13,
+      "time": 0,
+      "data": {
+        "id": "{{messageId}}",
+        "role": "user",
+        "content": [
+          {
+            "type": "image",
+            "attachment": {
+              "attachmentId": "sha256:b1ff9c8ea3a780bad09b346c423d2d0e46815926879b18e841d928376a946640",
+              "mediaType": "image/png",
+              "width": 1,
+              "height": 1,
+              "bytes": 69
+            }
+          }
+        ],
+        "source": {
+          "kind": "plugin",
+          "plugin": "python-snapshot-image-offload"
+        }
+      },
+      "surfaceOp": "append"
+    },
+    {
+      "type": "request/header",
+      "seq": 14,
       "time": 0,
       "data": {
         "header": {
@@ -196,7 +222,7 @@
     },
     {
       "type": "request/context",
-      "seq": 14,
+      "seq": 15,
       "time": 0,
       "data": {
         "provider": "deepseek-official",
@@ -206,7 +232,7 @@
     },
     {
       "type": "session/title",
-      "seq": 15,
+      "seq": 16,
       "time": 0,
       "data": {
         "title": "Run the advanced packaged-runtime snapsh",
@@ -219,18 +245,94 @@
       }
     },
     {
+      "type": "assistant/attempt",
+      "seq": 17,
+      "time": 0,
+      "data": {
+        "turn": 1,
+        "step": 1,
+        "stream": [
+          {
+            "type": "chunk",
+            "time": 0,
+            "chunk": {
+              "type": "finish",
+              "reason": {
+                "kind": "error",
+                "failure": {
+                  "code": "IMAGE_OFFLOAD_REQUIRED",
+                  "message": "authored image budget failure",
+                  "offloadImages": 1
+                }
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "type": "image/offload",
+      "seq": 18,
+      "time": 0,
+      "data": {
+        "targets": [
+          {
+            "seq": 13,
+            "imageIndexes": [
+              0
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "type": "request/header",
+      "seq": 19,
+      "time": 0,
+      "data": {
+        "header": {
+          "config": {
+            "provider": "deepseek-official",
+            "model": "smoke-model",
+            "maxTokens": 256000,
+            "reasoningEffort": "high"
+          },
+          "adapterDefaults": {
+            "reasoningEffort": true,
+            "maxTokens": true
+          },
+          "tools": [
+            "cordis_define",
+            "cordis_inspect_list",
+            "cordis_inspect_query",
+            "cordis_inspect_self",
+            "cordis_run",
+            "cordis_stop",
+            "cordis_undefine",
+            "job_kill",
+            "job_list",
+            "job_output",
+            "run_code",
+            "subagent",
+            "workflow"
+          ]
+        },
+        "reason": "series"
+      }
+    },
+    {
       "type": "session-log-deepseek/delivery-accepted",
-      "seq": 16,
+      "seq": 20,
       "time": 0,
       "data": {
         "sessionId": "{{parent}}",
         "sessionFormatVersion": 3,
-        "throughSeq": 15
+        "throughSeq": 19
       }
     },
     {
       "type": "assistant/message",
-      "seq": 17,
+      "seq": 21,
       "time": 0,
       "data": {
         "turn": 1,
@@ -242,13 +344,25 @@
               "type": "tool-call",
               "id": "advanced-define",
               "name": "cordis_define",
-              "arguments": "{\"plugin\": {\"kind\": \"new\", \"idPrefix\": \"snap\"}, \"name\": \"Snapshot Double\", \"purpose\": \"Expose a deterministic doubling tool for executable snapshot verification.\", \"code\": {\"host\": \"return (ctx) => {\\n  harness.registerTool(ctx, harness.defineTool({\\n    name: 'snapshot_double',\\n    description: 'Double a number for executable snapshot verification.',\\n    parameters: { value: { type: 'number', required: true } },\\n    output: {\\n      schema: { type: 'number' },\\n      render(_args, value) {\\n        return [{ type: 'text', text: String(value) }]\\n      }\\n    },\\n    async execute(args) {\\n      return args.value * 2\\n    }\\n  }))\\n}\\n\"}}"
+              "arguments": "{\"plugin\": {\"kind\": \"new\", \"idPrefix\": \"snap\"}, \"name\": \"Snapshot Double\", \"purpose\": \"Expose a deterministic doubling tool for executable snapshot verification.\", \"code\": {\"host\": \"return (ctx) => {\\n  ctx.on('tools/pre-execute', (exec, next) => {\\n    if (exec.name !== 'snapshot_double' || exec.arguments.value !== -1) return next()\\n    return {\\n      kind: 'deny',\\n      reason: 'Auto review rejected tool \\\"snapshot_double\\\"; its body was not executed',\\n      info: {\\n        name: 'AutoReviewDeniedError', code: 'AUTO_REVIEW_DENIED',\\n        reason: '  transport raw\\\\r\\\\nreason  ',\\n      },\\n    }\\n  })\\n  harness.registerTool(ctx, harness.defineTool({\\n    name: 'snapshot_double',\\n    description: 'Double a number for executable snapshot verification.',\\n    parameters: { value: { type: 'number', required: true } },\\n    output: {\\n      schema: { type: 'number' },\\n      render(_args, value) {\\n        return [{ type: 'text', text: String(value) }]\\n      }\\n    },\\n    async execute(args) {\\n      return args.value * 2\\n    }\\n  }))\\n}\\n\"}}"
             }
           ],
           "source": {
             "kind": "model",
             "provider": "deepseek-official",
-            "model": "smoke-model"
+            "model": "smoke-model",
+            "replayState": {
+              "response": {
+                "kind": "deepseek-messages",
+                "version": 1,
+                "model": "smoke-model"
+              },
+              "blocks": [
+                {
+                  "type": "tool-call"
+                }
+              ]
+            }
           },
           "id": "{{messageId}}"
         },
@@ -275,7 +389,17 @@
             "id": "advanced-define",
             "name": "cordis_define",
             "args": [
-              "{\"plugin\": {\"kind\": \"new\", \"idPrefix\": \"snap\"}, \"name\": \"Snapshot Double\", \"purpose\": \"Expose a deterministic doubling tool for executable snapshot verification.\", \"code\": {\"host\": \"return (ctx) => {\\n  harness.registerTool(ctx, harness.defineTool({\\n    name: 'snapshot_double',\\n    description: 'Double a number for executable snapshot verification.',\\n    parameters: { value: { type: 'number', required: true } },\\n    output: {\\n      schema: { type: 'number' },\\n      render(_args, value) {\\n        return [{ type: 'text', text: String(value) }]\\n      }\\n    },\\n    async execute(args) {\\n      return args.value * 2\\n    }\\n  }))\\n}\\n\"}}"
+              ""
+            ]
+          },
+          {
+            "type": "tool-call-chunks",
+            "time0": 0,
+            "index": 0,
+            "dt": [],
+            "id": "advanced-define",
+            "args": [
+              "{\"plugin\": {\"kind\": \"new\", \"idPrefix\": \"snap\"}, \"name\": \"Snapshot Double\", \"purpose\": \"Expose a deterministic doubling tool for executable snapshot verification.\", \"code\": {\"host\": \"return (ctx) => {\\n  ctx.on('tools/pre-execute', (exec, next) => {\\n    if (exec.name !== 'snapshot_double' || exec.arguments.value !== -1) return next()\\n    return {\\n      kind: 'deny',\\n      reason: 'Auto review rejected tool \\\"snapshot_double\\\"; its body was not executed',\\n      info: {\\n        name: 'AutoReviewDeniedError', code: 'AUTO_REVIEW_DENIED',\\n        reason: '  transport raw\\\\r\\\\nreason  ',\\n      },\\n    }\\n  })\\n  harness.registerTool(ctx, harness.defineTool({\\n    name: 'snapshot_double',\\n    description: 'Double a number for executable snapshot verification.',\\n    parameters: { value: { type: 'number', required: true } },\\n    output: {\\n      schema: { type: 'number' },\\n      render(_args, value) {\\n        return [{ type: 'text', text: String(value) }]\\n      }\\n    },\\n    async execute(args) {\\n      return args.value * 2\\n    }\\n  }))\\n}\\n\"}}"
             ]
           },
           {
@@ -288,7 +412,7 @@
                 "type": "tool-call",
                 "id": "advanced-define",
                 "name": "cordis_define",
-                "arguments": "{\"plugin\": {\"kind\": \"new\", \"idPrefix\": \"snap\"}, \"name\": \"Snapshot Double\", \"purpose\": \"Expose a deterministic doubling tool for executable snapshot verification.\", \"code\": {\"host\": \"return (ctx) => {\\n  harness.registerTool(ctx, harness.defineTool({\\n    name: 'snapshot_double',\\n    description: 'Double a number for executable snapshot verification.',\\n    parameters: { value: { type: 'number', required: true } },\\n    output: {\\n      schema: { type: 'number' },\\n      render(_args, value) {\\n        return [{ type: 'text', text: String(value) }]\\n      }\\n    },\\n    async execute(args) {\\n      return args.value * 2\\n    }\\n  }))\\n}\\n\"}}"
+                "arguments": "{\"plugin\": {\"kind\": \"new\", \"idPrefix\": \"snap\"}, \"name\": \"Snapshot Double\", \"purpose\": \"Expose a deterministic doubling tool for executable snapshot verification.\", \"code\": {\"host\": \"return (ctx) => {\\n  ctx.on('tools/pre-execute', (exec, next) => {\\n    if (exec.name !== 'snapshot_double' || exec.arguments.value !== -1) return next()\\n    return {\\n      kind: 'deny',\\n      reason: 'Auto review rejected tool \\\"snapshot_double\\\"; its body was not executed',\\n      info: {\\n        name: 'AutoReviewDeniedError', code: 'AUTO_REVIEW_DENIED',\\n        reason: '  transport raw\\\\r\\\\nreason  ',\\n      },\\n    }\\n  })\\n  harness.registerTool(ctx, harness.defineTool({\\n    name: 'snapshot_double',\\n    description: 'Double a number for executable snapshot verification.',\\n    parameters: { value: { type: 'number', required: true } },\\n    output: {\\n      schema: { type: 'number' },\\n      render(_args, value) {\\n        return [{ type: 'text', text: String(value) }]\\n      }\\n    },\\n    async execute(args) {\\n      return args.value * 2\\n    }\\n  }))\\n}\\n\"}}"
               }
             }
           },
@@ -311,6 +435,18 @@
               "type": "finish",
               "reason": {
                 "kind": "tool-calls"
+              },
+              "replayState": {
+                "response": {
+                  "kind": "deepseek-messages",
+                  "version": 1,
+                  "model": "smoke-model"
+                },
+                "blocks": [
+                  {
+                    "type": "tool-call"
+                  }
+                ]
               }
             }
           }
@@ -320,19 +456,19 @@
     },
     {
       "type": "tool/call",
-      "seq": 18,
+      "seq": 22,
       "time": 0,
       "data": {
         "turn": 1,
         "step": 1,
         "callId": "advanced-define",
         "name": "cordis_define",
-        "arguments": "{\"plugin\": {\"kind\": \"new\", \"idPrefix\": \"snap\"}, \"name\": \"Snapshot Double\", \"purpose\": \"Expose a deterministic doubling tool for executable snapshot verification.\", \"code\": {\"host\": \"return (ctx) => {\\n  harness.registerTool(ctx, harness.defineTool({\\n    name: 'snapshot_double',\\n    description: 'Double a number for executable snapshot verification.',\\n    parameters: { value: { type: 'number', required: true } },\\n    output: {\\n      schema: { type: 'number' },\\n      render(_args, value) {\\n        return [{ type: 'text', text: String(value) }]\\n      }\\n    },\\n    async execute(args) {\\n      return args.value * 2\\n    }\\n  }))\\n}\\n\"}}"
+        "arguments": "{\"plugin\": {\"kind\": \"new\", \"idPrefix\": \"snap\"}, \"name\": \"Snapshot Double\", \"purpose\": \"Expose a deterministic doubling tool for executable snapshot verification.\", \"code\": {\"host\": \"return (ctx) => {\\n  ctx.on('tools/pre-execute', (exec, next) => {\\n    if (exec.name !== 'snapshot_double' || exec.arguments.value !== -1) return next()\\n    return {\\n      kind: 'deny',\\n      reason: 'Auto review rejected tool \\\"snapshot_double\\\"; its body was not executed',\\n      info: {\\n        name: 'AutoReviewDeniedError', code: 'AUTO_REVIEW_DENIED',\\n        reason: '  transport raw\\\\r\\\\nreason  ',\\n      },\\n    }\\n  })\\n  harness.registerTool(ctx, harness.defineTool({\\n    name: 'snapshot_double',\\n    description: 'Double a number for executable snapshot verification.',\\n    parameters: { value: { type: 'number', required: true } },\\n    output: {\\n      schema: { type: 'number' },\\n      render(_args, value) {\\n        return [{ type: 'text', text: String(value) }]\\n      }\\n    },\\n    async execute(args) {\\n      return args.value * 2\\n    }\\n  }))\\n}\\n\"}}"
       }
     },
     {
       "type": "tool/result",
-      "seq": 19,
+      "seq": 23,
       "time": 0,
       "data": {
         "turn": 1,
@@ -364,13 +500,13 @@
         }
       },
       "sourceEventSeqs": [
-        18
+        22
       ],
       "surfaceOp": "append"
     },
     {
       "type": "step/end",
-      "seq": 20,
+      "seq": 24,
       "time": 0,
       "data": {
         "turn": 1,
@@ -379,7 +515,7 @@
     },
     {
       "type": "step/start",
-      "seq": 21,
+      "seq": 25,
       "time": 0,
       "data": {
         "turn": 1,
@@ -388,17 +524,17 @@
     },
     {
       "type": "session-log-deepseek/delivery-accepted",
-      "seq": 22,
+      "seq": 26,
       "time": 0,
       "data": {
         "sessionId": "{{parent}}",
         "sessionFormatVersion": 3,
-        "throughSeq": 21
+        "throughSeq": 25
       }
     },
     {
       "type": "assistant/message",
-      "seq": 23,
+      "seq": 27,
       "time": 0,
       "data": {
         "turn": 1,
@@ -416,7 +552,19 @@
           "source": {
             "kind": "model",
             "provider": "deepseek-official",
-            "model": "smoke-model"
+            "model": "smoke-model",
+            "replayState": {
+              "response": {
+                "kind": "deepseek-messages",
+                "version": 1,
+                "model": "smoke-model"
+              },
+              "blocks": [
+                {
+                  "type": "tool-call"
+                }
+              ]
+            }
           },
           "id": "{{messageId}}"
         },
@@ -442,6 +590,16 @@
             "dt": [],
             "id": "advanced-run",
             "name": "cordis_run",
+            "args": [
+              ""
+            ]
+          },
+          {
+            "type": "tool-call-chunks",
+            "time0": 0,
+            "index": 0,
+            "dt": [],
+            "id": "advanced-run",
             "args": [
               "{\"pluginId\": \"snap-1\", \"packageId\": \"pkg-1\", \"mode\": \"run\"}"
             ]
@@ -479,6 +637,18 @@
               "type": "finish",
               "reason": {
                 "kind": "tool-calls"
+              },
+              "replayState": {
+                "response": {
+                  "kind": "deepseek-messages",
+                  "version": 1,
+                  "model": "smoke-model"
+                },
+                "blocks": [
+                  {
+                    "type": "tool-call"
+                  }
+                ]
               }
             }
           }
@@ -488,7 +658,7 @@
     },
     {
       "type": "tool/call",
-      "seq": 24,
+      "seq": 28,
       "time": 0,
       "data": {
         "turn": 1,
@@ -500,7 +670,7 @@
     },
     {
       "type": "tool/result",
-      "seq": 25,
+      "seq": 29,
       "time": 0,
       "data": {
         "turn": 1,
@@ -533,13 +703,13 @@
         }
       },
       "sourceEventSeqs": [
-        24
+        28
       ],
       "surfaceOp": "append"
     },
     {
       "type": "step/end",
-      "seq": 26,
+      "seq": 30,
       "time": 0,
       "data": {
         "turn": 1,
@@ -548,7 +718,7 @@
     },
     {
       "type": "step/start",
-      "seq": 27,
+      "seq": 31,
       "time": 0,
       "data": {
         "turn": 1,
@@ -557,7 +727,7 @@
     },
     {
       "type": "system/message",
-      "seq": 28,
+      "seq": 32,
       "time": 0,
       "data": {
         "turn": 1,
@@ -588,7 +758,7 @@
     },
     {
       "type": "request/header",
-      "seq": 29,
+      "seq": 33,
       "time": 0,
       "data": {
         "header": {
@@ -625,17 +795,17 @@
     },
     {
       "type": "session-log-deepseek/delivery-accepted",
-      "seq": 30,
+      "seq": 34,
       "time": 0,
       "data": {
         "sessionId": "{{parent}}",
         "sessionFormatVersion": 3,
-        "throughSeq": 29
+        "throughSeq": 33
       }
     },
     {
       "type": "assistant/message",
-      "seq": 31,
+      "seq": 35,
       "time": 0,
       "data": {
         "turn": 1,
@@ -653,7 +823,19 @@
           "source": {
             "kind": "model",
             "provider": "deepseek-official",
-            "model": "smoke-model"
+            "model": "smoke-model",
+            "replayState": {
+              "response": {
+                "kind": "deepseek-messages",
+                "version": 1,
+                "model": "smoke-model"
+              },
+              "blocks": [
+                {
+                  "type": "tool-call"
+                }
+              ]
+            }
           },
           "id": "{{messageId}}"
         },
@@ -679,6 +861,16 @@
             "dt": [],
             "id": "advanced-code",
             "name": "run_code",
+            "args": [
+              ""
+            ]
+          },
+          {
+            "type": "tool-call-chunks",
+            "time0": 0,
+            "index": 0,
+            "dt": [],
+            "id": "advanced-code",
             "args": [
               "{\"code\": \"return await tools.snapshot_double({ value: 21 })\", \"description\": \"Run the temporary Plugin tool\"}"
             ]
@@ -716,6 +908,18 @@
               "type": "finish",
               "reason": {
                 "kind": "tool-calls"
+              },
+              "replayState": {
+                "response": {
+                  "kind": "deepseek-messages",
+                  "version": 1,
+                  "model": "smoke-model"
+                },
+                "blocks": [
+                  {
+                    "type": "tool-call"
+                  }
+                ]
               }
             }
           }
@@ -725,7 +929,7 @@
     },
     {
       "type": "tool/call",
-      "seq": 32,
+      "seq": 36,
       "time": 0,
       "data": {
         "turn": 1,
@@ -737,7 +941,7 @@
     },
     {
       "type": "tool/ptc-dispatch-start",
-      "seq": 33,
+      "seq": 37,
       "time": 0,
       "data": {
         "rootCallId": "advanced-code",
@@ -751,7 +955,7 @@
     },
     {
       "type": "tool/ptc-dispatch",
-      "seq": 34,
+      "seq": 38,
       "time": 0,
       "data": {
         "rootCallId": "advanced-code",
@@ -772,7 +976,7 @@
     },
     {
       "type": "tool/result",
-      "seq": 35,
+      "seq": 39,
       "time": 0,
       "data": {
         "turn": 1,
@@ -800,13 +1004,13 @@
         }
       },
       "sourceEventSeqs": [
-        32
+        36
       ],
       "surfaceOp": "append"
     },
     {
       "type": "step/end",
-      "seq": 36,
+      "seq": 40,
       "time": 0,
       "data": {
         "turn": 1,
@@ -815,7 +1019,7 @@
     },
     {
       "type": "step/start",
-      "seq": 37,
+      "seq": 41,
       "time": 0,
       "data": {
         "turn": 1,
@@ -824,17 +1028,17 @@
     },
     {
       "type": "session-log-deepseek/delivery-accepted",
-      "seq": 38,
+      "seq": 42,
       "time": 0,
       "data": {
         "sessionId": "{{parent}}",
         "sessionFormatVersion": 3,
-        "throughSeq": 37
+        "throughSeq": 41
       }
     },
     {
       "type": "assistant/message",
-      "seq": 39,
+      "seq": 43,
       "time": 0,
       "data": {
         "turn": 1,
@@ -844,15 +1048,27 @@
           "content": [
             {
               "type": "tool-call",
-              "id": "advanced-direct-child",
-              "name": "subagent",
-              "arguments": "{\"description\": \"Check direct child\", \"prompt\": \"Reply with exactly DIRECT_CHILD_OK and nothing else.\"}"
+              "id": "advanced-denied-native",
+              "name": "snapshot_double",
+              "arguments": "{\"value\": -1}"
             }
           ],
           "source": {
             "kind": "model",
             "provider": "deepseek-official",
-            "model": "smoke-model"
+            "model": "smoke-model",
+            "replayState": {
+              "response": {
+                "kind": "deepseek-messages",
+                "version": 1,
+                "model": "smoke-model"
+              },
+              "blocks": [
+                {
+                  "type": "tool-call"
+                }
+              ]
+            }
           },
           "id": "{{messageId}}"
         },
@@ -876,10 +1092,20 @@
             "time0": 0,
             "index": 0,
             "dt": [],
-            "id": "advanced-direct-child",
-            "name": "subagent",
+            "id": "advanced-denied-native",
+            "name": "snapshot_double",
             "args": [
-              "{\"description\": \"Check direct child\", \"prompt\": \"Reply with exactly DIRECT_CHILD_OK and nothing else.\"}"
+              ""
+            ]
+          },
+          {
+            "type": "tool-call-chunks",
+            "time0": 0,
+            "index": 0,
+            "dt": [],
+            "id": "advanced-denied-native",
+            "args": [
+              "{\"value\": -1}"
             ]
           },
           {
@@ -890,9 +1116,9 @@
               "index": 0,
               "block": {
                 "type": "tool-call",
-                "id": "advanced-direct-child",
-                "name": "subagent",
-                "arguments": "{\"description\": \"Check direct child\", \"prompt\": \"Reply with exactly DIRECT_CHILD_OK and nothing else.\"}"
+                "id": "advanced-denied-native",
+                "name": "snapshot_double",
+                "arguments": "{\"value\": -1}"
               }
             }
           },
@@ -915,6 +1141,18 @@
               "type": "finish",
               "reason": {
                 "kind": "tool-calls"
+              },
+              "replayState": {
+                "response": {
+                  "kind": "deepseek-messages",
+                  "version": 1,
+                  "model": "smoke-model"
+                },
+                "blocks": [
+                  {
+                    "type": "tool-call"
+                  }
+                ]
               }
             }
           }
@@ -924,31 +1162,19 @@
     },
     {
       "type": "tool/call",
-      "seq": 40,
+      "seq": 44,
       "time": 0,
       "data": {
         "turn": 1,
         "step": 4,
-        "callId": "advanced-direct-child",
-        "name": "subagent",
-        "arguments": "{\"description\": \"Check direct child\", \"prompt\": \"Reply with exactly DIRECT_CHILD_OK and nothing else.\"}"
-      }
-    },
-    {
-      "type": "subagent/catalog",
-      "seq": 41,
-      "time": 0,
-      "data": {
-        "version": 0,
-        "childId": "{{child-1}}",
-        "childCreatedAt": 0,
-        "mode": "one-shot",
-        "label": "Check direct child"
+        "callId": "advanced-denied-native",
+        "name": "snapshot_double",
+        "arguments": "{\"value\": -1}"
       }
     },
     {
       "type": "tool/result",
-      "seq": 42,
+      "seq": 45,
       "time": 0,
       "data": {
         "turn": 1,
@@ -956,33 +1182,38 @@
         "message": {
           "source": {
             "kind": "tool",
-            "callId": "advanced-direct-child"
+            "callId": "advanced-denied-native"
           },
           "content": [
             {
               "type": "tool-result",
-              "toolCallId": "advanced-direct-child",
+              "toolCallId": "advanced-denied-native",
               "content": [
                 {
                   "type": "text",
-                  "text": "DIRECT_CHILD_OK"
+                  "text": "Error: Auto review rejected tool \"snapshot_double\"; its body was not executed"
                 }
               ],
-              "isError": false
+              "isError": true
             }
           ],
           "role": "user",
           "id": "{{messageId}}"
+        },
+        "error": {
+          "name": "AutoReviewDeniedError",
+          "code": "AUTO_REVIEW_DENIED",
+          "reason": "  transport raw\r\nreason  "
         }
       },
       "sourceEventSeqs": [
-        40
+        44
       ],
       "surfaceOp": "append"
     },
     {
       "type": "step/end",
-      "seq": 43,
+      "seq": 46,
       "time": 0,
       "data": {
         "turn": 1,
@@ -991,7 +1222,7 @@
     },
     {
       "type": "step/start",
-      "seq": 44,
+      "seq": 47,
       "time": 0,
       "data": {
         "turn": 1,
@@ -1000,17 +1231,17 @@
     },
     {
       "type": "session-log-deepseek/delivery-accepted",
-      "seq": 45,
+      "seq": 48,
       "time": 0,
       "data": {
         "sessionId": "{{parent}}",
         "sessionFormatVersion": 3,
-        "throughSeq": 44
+        "throughSeq": 47
       }
     },
     {
       "type": "assistant/message",
-      "seq": 46,
+      "seq": 49,
       "time": 0,
       "data": {
         "turn": 1,
@@ -1020,15 +1251,27 @@
           "content": [
             {
               "type": "tool-call",
-              "id": "advanced-workflow",
-              "name": "workflow",
-              "arguments": "{\"script\": \"phase('Delegate')\\nconst reply = await agent('Reply with exactly WORKFLOW_CHILD_OK and nothing else.', { label: 'workflow-child' })\\nreturn { reply }\", \"meta\": {\"name\": \"advanced-exe-snapshot\", \"description\": \"exercise one packaged workflow child\"}}"
+              "id": "advanced-denied-ptc",
+              "name": "run_code",
+              "arguments": "{\"code\": \"try { await tools.snapshot_double({ value: -1 }) } catch (error) { return error.message }\", \"description\": \"Catch a structured inner tool denial\"}"
             }
           ],
           "source": {
             "kind": "model",
             "provider": "deepseek-official",
-            "model": "smoke-model"
+            "model": "smoke-model",
+            "replayState": {
+              "response": {
+                "kind": "deepseek-messages",
+                "version": 1,
+                "model": "smoke-model"
+              },
+              "blocks": [
+                {
+                  "type": "tool-call"
+                }
+              ]
+            }
           },
           "id": "{{messageId}}"
         },
@@ -1052,10 +1295,20 @@
             "time0": 0,
             "index": 0,
             "dt": [],
-            "id": "advanced-workflow",
-            "name": "workflow",
+            "id": "advanced-denied-ptc",
+            "name": "run_code",
             "args": [
-              "{\"script\": \"phase('Delegate')\\nconst reply = await agent('Reply with exactly WORKFLOW_CHILD_OK and nothing else.', { label: 'workflow-child' })\\nreturn { reply }\", \"meta\": {\"name\": \"advanced-exe-snapshot\", \"description\": \"exercise one packaged workflow child\"}}"
+              ""
+            ]
+          },
+          {
+            "type": "tool-call-chunks",
+            "time0": 0,
+            "index": 0,
+            "dt": [],
+            "id": "advanced-denied-ptc",
+            "args": [
+              "{\"code\": \"try { await tools.snapshot_double({ value: -1 }) } catch (error) { return error.message }\", \"description\": \"Catch a structured inner tool denial\"}"
             ]
           },
           {
@@ -1066,9 +1319,9 @@
               "index": 0,
               "block": {
                 "type": "tool-call",
-                "id": "advanced-workflow",
-                "name": "workflow",
-                "arguments": "{\"script\": \"phase('Delegate')\\nconst reply = await agent('Reply with exactly WORKFLOW_CHILD_OK and nothing else.', { label: 'workflow-child' })\\nreturn { reply }\", \"meta\": {\"name\": \"advanced-exe-snapshot\", \"description\": \"exercise one packaged workflow child\"}}"
+                "id": "advanced-denied-ptc",
+                "name": "run_code",
+                "arguments": "{\"code\": \"try { await tools.snapshot_double({ value: -1 }) } catch (error) { return error.message }\", \"description\": \"Catch a structured inner tool denial\"}"
               }
             }
           },
@@ -1091,6 +1344,18 @@
               "type": "finish",
               "reason": {
                 "kind": "tool-calls"
+              },
+              "replayState": {
+                "response": {
+                  "kind": "deepseek-messages",
+                  "version": 1,
+                  "model": "smoke-model"
+                },
+                "blocks": [
+                  {
+                    "type": "tool-call"
+                  }
+                ]
               }
             }
           }
@@ -1100,65 +1365,54 @@
     },
     {
       "type": "tool/call",
-      "seq": 47,
+      "seq": 50,
       "time": 0,
       "data": {
         "turn": 1,
         "step": 5,
-        "callId": "advanced-workflow",
-        "name": "workflow",
-        "arguments": "{\"script\": \"phase('Delegate')\\nconst reply = await agent('Reply with exactly WORKFLOW_CHILD_OK and nothing else.', { label: 'workflow-child' })\\nreturn { reply }\", \"meta\": {\"name\": \"advanced-exe-snapshot\", \"description\": \"exercise one packaged workflow child\"}}"
+        "callId": "advanced-denied-ptc",
+        "name": "run_code",
+        "arguments": "{\"code\": \"try { await tools.snapshot_double({ value: -1 }) } catch (error) { return error.message }\", \"description\": \"Catch a structured inner tool denial\"}"
       }
     },
     {
-      "type": "tool-workflow/run-start",
-      "seq": 48,
-      "time": 0,
-      "data": {
-        "runId": "{{workflow-run}}",
-        "name": "advanced-exe-snapshot"
-      }
-    },
-    {
-      "type": "subagent/catalog",
-      "seq": 49,
-      "time": 0,
-      "data": {
-        "version": 0,
-        "childId": "{{child-2}}",
-        "childCreatedAt": 0,
-        "mode": "one-shot"
-      }
-    },
-    {
-      "type": "tool-workflow/agent-start",
-      "seq": 50,
-      "time": 0,
-      "data": {
-        "runId": "{{workflow-run}}",
-        "seq": 1,
-        "label": "workflow-child",
-        "phase": "Delegate",
-        "childId": "{{child-2}}"
-      }
-    },
-    {
-      "type": "tool-workflow/agent-end",
+      "type": "tool/ptc-dispatch-start",
       "seq": 51,
       "time": 0,
       "data": {
-        "runId": "{{workflow-run}}",
-        "seq": 1,
-        "outcome": "completed"
+        "rootCallId": "advanced-denied-ptc",
+        "parentCallId": "advanced-denied-ptc",
+        "subCallId": "advanced-denied-ptc:ptc:1",
+        "name": "snapshot_double",
+        "arguments": {
+          "value": -1
+        }
       }
     },
     {
-      "type": "tool-workflow/run-end",
+      "type": "tool/ptc-dispatch",
       "seq": 52,
       "time": 0,
       "data": {
-        "runId": "{{workflow-run}}",
-        "stopReason": "completed"
+        "rootCallId": "advanced-denied-ptc",
+        "parentCallId": "advanced-denied-ptc",
+        "subCallId": "advanced-denied-ptc:ptc:1",
+        "name": "snapshot_double",
+        "arguments": {
+          "value": -1
+        },
+        "isError": true,
+        "error": {
+          "name": "AutoReviewDeniedError",
+          "code": "AUTO_REVIEW_DENIED",
+          "reason": "  transport raw\r\nreason  "
+        },
+        "content": [
+          {
+            "type": "text",
+            "text": "Error: Auto review rejected tool \"snapshot_double\"; its body was not executed"
+          }
+        ]
       }
     },
     {
@@ -1171,16 +1425,16 @@
         "message": {
           "source": {
             "kind": "tool",
-            "callId": "advanced-workflow"
+            "callId": "advanced-denied-ptc"
           },
           "content": [
             {
               "type": "tool-result",
-              "toolCallId": "advanced-workflow",
+              "toolCallId": "advanced-denied-ptc",
               "content": [
                 {
                   "type": "text",
-                  "text": "workflow \"advanced-exe-snapshot\" completed (1 agent).\nReturn value:\n{\n  \"reply\": \"WORKFLOW_CHILD_OK\"\n}"
+                  "text": "Auto review rejected tool \"snapshot_double\"; its body was not executed"
                 }
               ],
               "isError": false
@@ -1191,7 +1445,7 @@
         }
       },
       "sourceEventSeqs": [
-        47
+        50
       ],
       "surfaceOp": "append"
     },
@@ -1235,6 +1489,465 @@
           "content": [
             {
               "type": "tool-call",
+              "id": "advanced-direct-child",
+              "name": "subagent",
+              "arguments": "{\"description\": \"Check direct child\", \"prompt\": \"Reply with exactly DIRECT_CHILD_OK and nothing else.\"}"
+            }
+          ],
+          "source": {
+            "kind": "model",
+            "provider": "deepseek-official",
+            "model": "smoke-model",
+            "replayState": {
+              "response": {
+                "kind": "deepseek-messages",
+                "version": 1,
+                "model": "smoke-model"
+              },
+              "blocks": [
+                {
+                  "type": "tool-call"
+                }
+              ]
+            }
+          },
+          "id": "{{messageId}}"
+        },
+        "usage": {
+          "inputTokens": 3,
+          "outputTokens": 3,
+          "totalTokens": 6
+        },
+        "stream": [
+          {
+            "type": "chunk",
+            "time": 0,
+            "chunk": {
+              "type": "block-start",
+              "index": 0,
+              "blockType": "tool-call"
+            }
+          },
+          {
+            "type": "tool-call-chunks",
+            "time0": 0,
+            "index": 0,
+            "dt": [],
+            "id": "advanced-direct-child",
+            "name": "subagent",
+            "args": [
+              ""
+            ]
+          },
+          {
+            "type": "tool-call-chunks",
+            "time0": 0,
+            "index": 0,
+            "dt": [],
+            "id": "advanced-direct-child",
+            "args": [
+              "{\"description\": \"Check direct child\", \"prompt\": \"Reply with exactly DIRECT_CHILD_OK and nothing else.\"}"
+            ]
+          },
+          {
+            "type": "chunk",
+            "time": 0,
+            "chunk": {
+              "type": "block-end",
+              "index": 0,
+              "block": {
+                "type": "tool-call",
+                "id": "advanced-direct-child",
+                "name": "subagent",
+                "arguments": "{\"description\": \"Check direct child\", \"prompt\": \"Reply with exactly DIRECT_CHILD_OK and nothing else.\"}"
+              }
+            }
+          },
+          {
+            "type": "chunk",
+            "time": 0,
+            "chunk": {
+              "type": "usage",
+              "usage": {
+                "inputTokens": 3,
+                "outputTokens": 3,
+                "totalTokens": 6
+              }
+            }
+          },
+          {
+            "type": "chunk",
+            "time": 0,
+            "chunk": {
+              "type": "finish",
+              "reason": {
+                "kind": "tool-calls"
+              },
+              "replayState": {
+                "response": {
+                  "kind": "deepseek-messages",
+                  "version": 1,
+                  "model": "smoke-model"
+                },
+                "blocks": [
+                  {
+                    "type": "tool-call"
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "surfaceOp": "append"
+    },
+    {
+      "type": "tool/call",
+      "seq": 58,
+      "time": 0,
+      "data": {
+        "turn": 1,
+        "step": 6,
+        "callId": "advanced-direct-child",
+        "name": "subagent",
+        "arguments": "{\"description\": \"Check direct child\", \"prompt\": \"Reply with exactly DIRECT_CHILD_OK and nothing else.\"}"
+      }
+    },
+    {
+      "type": "subagent/catalog",
+      "seq": 59,
+      "time": 0,
+      "data": {
+        "version": 0,
+        "childId": "{{child-1}}",
+        "childCreatedAt": 0,
+        "mode": "one-shot",
+        "label": "Check direct child"
+      }
+    },
+    {
+      "type": "tool/result",
+      "seq": 60,
+      "time": 0,
+      "data": {
+        "turn": 1,
+        "step": 6,
+        "message": {
+          "source": {
+            "kind": "tool",
+            "callId": "advanced-direct-child"
+          },
+          "content": [
+            {
+              "type": "tool-result",
+              "toolCallId": "advanced-direct-child",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "DIRECT_CHILD_OK"
+                }
+              ],
+              "isError": false
+            }
+          ],
+          "role": "user",
+          "id": "{{messageId}}"
+        }
+      },
+      "sourceEventSeqs": [
+        58
+      ],
+      "surfaceOp": "append"
+    },
+    {
+      "type": "step/end",
+      "seq": 61,
+      "time": 0,
+      "data": {
+        "turn": 1,
+        "step": 6
+      }
+    },
+    {
+      "type": "step/start",
+      "seq": 62,
+      "time": 0,
+      "data": {
+        "turn": 1,
+        "step": 7
+      }
+    },
+    {
+      "type": "session-log-deepseek/delivery-accepted",
+      "seq": 63,
+      "time": 0,
+      "data": {
+        "sessionId": "{{parent}}",
+        "sessionFormatVersion": 3,
+        "throughSeq": 62
+      }
+    },
+    {
+      "type": "assistant/message",
+      "seq": 64,
+      "time": 0,
+      "data": {
+        "turn": 1,
+        "step": 7,
+        "message": {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "tool-call",
+              "id": "advanced-workflow",
+              "name": "workflow",
+              "arguments": "{\"script\": \"phase('Delegate')\\nconst reply = await agent('Reply with exactly WORKFLOW_CHILD_OK and nothing else.', { label: 'workflow-child' })\\nreturn { reply }\", \"meta\": {\"name\": \"advanced-exe-snapshot\", \"description\": \"exercise one packaged workflow child\"}}"
+            }
+          ],
+          "source": {
+            "kind": "model",
+            "provider": "deepseek-official",
+            "model": "smoke-model",
+            "replayState": {
+              "response": {
+                "kind": "deepseek-messages",
+                "version": 1,
+                "model": "smoke-model"
+              },
+              "blocks": [
+                {
+                  "type": "tool-call"
+                }
+              ]
+            }
+          },
+          "id": "{{messageId}}"
+        },
+        "usage": {
+          "inputTokens": 3,
+          "outputTokens": 3,
+          "totalTokens": 6
+        },
+        "stream": [
+          {
+            "type": "chunk",
+            "time": 0,
+            "chunk": {
+              "type": "block-start",
+              "index": 0,
+              "blockType": "tool-call"
+            }
+          },
+          {
+            "type": "tool-call-chunks",
+            "time0": 0,
+            "index": 0,
+            "dt": [],
+            "id": "advanced-workflow",
+            "name": "workflow",
+            "args": [
+              ""
+            ]
+          },
+          {
+            "type": "tool-call-chunks",
+            "time0": 0,
+            "index": 0,
+            "dt": [],
+            "id": "advanced-workflow",
+            "args": [
+              "{\"script\": \"phase('Delegate')\\nconst reply = await agent('Reply with exactly WORKFLOW_CHILD_OK and nothing else.', { label: 'workflow-child' })\\nreturn { reply }\", \"meta\": {\"name\": \"advanced-exe-snapshot\", \"description\": \"exercise one packaged workflow child\"}}"
+            ]
+          },
+          {
+            "type": "chunk",
+            "time": 0,
+            "chunk": {
+              "type": "block-end",
+              "index": 0,
+              "block": {
+                "type": "tool-call",
+                "id": "advanced-workflow",
+                "name": "workflow",
+                "arguments": "{\"script\": \"phase('Delegate')\\nconst reply = await agent('Reply with exactly WORKFLOW_CHILD_OK and nothing else.', { label: 'workflow-child' })\\nreturn { reply }\", \"meta\": {\"name\": \"advanced-exe-snapshot\", \"description\": \"exercise one packaged workflow child\"}}"
+              }
+            }
+          },
+          {
+            "type": "chunk",
+            "time": 0,
+            "chunk": {
+              "type": "usage",
+              "usage": {
+                "inputTokens": 3,
+                "outputTokens": 3,
+                "totalTokens": 6
+              }
+            }
+          },
+          {
+            "type": "chunk",
+            "time": 0,
+            "chunk": {
+              "type": "finish",
+              "reason": {
+                "kind": "tool-calls"
+              },
+              "replayState": {
+                "response": {
+                  "kind": "deepseek-messages",
+                  "version": 1,
+                  "model": "smoke-model"
+                },
+                "blocks": [
+                  {
+                    "type": "tool-call"
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "surfaceOp": "append"
+    },
+    {
+      "type": "tool/call",
+      "seq": 65,
+      "time": 0,
+      "data": {
+        "turn": 1,
+        "step": 7,
+        "callId": "advanced-workflow",
+        "name": "workflow",
+        "arguments": "{\"script\": \"phase('Delegate')\\nconst reply = await agent('Reply with exactly WORKFLOW_CHILD_OK and nothing else.', { label: 'workflow-child' })\\nreturn { reply }\", \"meta\": {\"name\": \"advanced-exe-snapshot\", \"description\": \"exercise one packaged workflow child\"}}"
+      }
+    },
+    {
+      "type": "tool-workflow/run-start",
+      "seq": 66,
+      "time": 0,
+      "data": {
+        "runId": "{{workflow-run}}",
+        "name": "advanced-exe-snapshot"
+      }
+    },
+    {
+      "type": "subagent/catalog",
+      "seq": 67,
+      "time": 0,
+      "data": {
+        "version": 0,
+        "childId": "{{child-2}}",
+        "childCreatedAt": 0,
+        "mode": "one-shot"
+      }
+    },
+    {
+      "type": "tool-workflow/agent-start",
+      "seq": 68,
+      "time": 0,
+      "data": {
+        "runId": "{{workflow-run}}",
+        "seq": 1,
+        "label": "workflow-child",
+        "phase": "Delegate",
+        "childId": "{{child-2}}"
+      }
+    },
+    {
+      "type": "tool-workflow/agent-end",
+      "seq": 69,
+      "time": 0,
+      "data": {
+        "runId": "{{workflow-run}}",
+        "seq": 1,
+        "outcome": "completed"
+      }
+    },
+    {
+      "type": "tool-workflow/run-end",
+      "seq": 70,
+      "time": 0,
+      "data": {
+        "runId": "{{workflow-run}}",
+        "stopReason": "completed"
+      }
+    },
+    {
+      "type": "tool/result",
+      "seq": 71,
+      "time": 0,
+      "data": {
+        "turn": 1,
+        "step": 7,
+        "message": {
+          "source": {
+            "kind": "tool",
+            "callId": "advanced-workflow"
+          },
+          "content": [
+            {
+              "type": "tool-result",
+              "toolCallId": "advanced-workflow",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "workflow \"advanced-exe-snapshot\" completed (1 agent).\nReturn value:\n{\n  \"reply\": \"WORKFLOW_CHILD_OK\"\n}"
+                }
+              ],
+              "isError": false
+            }
+          ],
+          "role": "user",
+          "id": "{{messageId}}"
+        }
+      },
+      "sourceEventSeqs": [
+        65
+      ],
+      "surfaceOp": "append"
+    },
+    {
+      "type": "step/end",
+      "seq": 72,
+      "time": 0,
+      "data": {
+        "turn": 1,
+        "step": 7
+      }
+    },
+    {
+      "type": "step/start",
+      "seq": 73,
+      "time": 0,
+      "data": {
+        "turn": 1,
+        "step": 8
+      }
+    },
+    {
+      "type": "session-log-deepseek/delivery-accepted",
+      "seq": 74,
+      "time": 0,
+      "data": {
+        "sessionId": "{{parent}}",
+        "sessionFormatVersion": 3,
+        "throughSeq": 73
+      }
+    },
+    {
+      "type": "assistant/message",
+      "seq": 75,
+      "time": 0,
+      "data": {
+        "turn": 1,
+        "step": 8,
+        "message": {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "tool-call",
               "id": "advanced-undefine",
               "name": "cordis_undefine",
               "arguments": "{\"pluginId\": \"snap-1\"}"
@@ -1243,7 +1956,19 @@
           "source": {
             "kind": "model",
             "provider": "deepseek-official",
-            "model": "smoke-model"
+            "model": "smoke-model",
+            "replayState": {
+              "response": {
+                "kind": "deepseek-messages",
+                "version": 1,
+                "model": "smoke-model"
+              },
+              "blocks": [
+                {
+                  "type": "tool-call"
+                }
+              ]
+            }
           },
           "id": "{{messageId}}"
         },
@@ -1269,6 +1994,16 @@
             "dt": [],
             "id": "advanced-undefine",
             "name": "cordis_undefine",
+            "args": [
+              ""
+            ]
+          },
+          {
+            "type": "tool-call-chunks",
+            "time0": 0,
+            "index": 0,
+            "dt": [],
+            "id": "advanced-undefine",
             "args": [
               "{\"pluginId\": \"snap-1\"}"
             ]
@@ -1306,6 +2041,18 @@
               "type": "finish",
               "reason": {
                 "kind": "tool-calls"
+              },
+              "replayState": {
+                "response": {
+                  "kind": "deepseek-messages",
+                  "version": 1,
+                  "model": "smoke-model"
+                },
+                "blocks": [
+                  {
+                    "type": "tool-call"
+                  }
+                ]
               }
             }
           }
@@ -1315,11 +2062,11 @@
     },
     {
       "type": "tool/call",
-      "seq": 58,
+      "seq": 76,
       "time": 0,
       "data": {
         "turn": 1,
-        "step": 6,
+        "step": 8,
         "callId": "advanced-undefine",
         "name": "cordis_undefine",
         "arguments": "{\"pluginId\": \"snap-1\"}"
@@ -1327,11 +2074,11 @@
     },
     {
       "type": "tool/result",
-      "seq": 59,
+      "seq": 77,
       "time": 0,
       "data": {
         "turn": 1,
-        "step": 6,
+        "step": 8,
         "message": {
           "source": {
             "kind": "tool",
@@ -1355,35 +2102,35 @@
         }
       },
       "sourceEventSeqs": [
-        58
+        76
       ],
       "surfaceOp": "append"
     },
     {
       "type": "step/end",
-      "seq": 60,
+      "seq": 78,
       "time": 0,
       "data": {
         "turn": 1,
-        "step": 6
+        "step": 8
       }
     },
     {
       "type": "step/start",
-      "seq": 61,
+      "seq": 79,
       "time": 0,
       "data": {
         "turn": 1,
-        "step": 7
+        "step": 9
       }
     },
     {
       "type": "system/message",
-      "seq": 62,
+      "seq": 80,
       "time": 0,
       "data": {
         "turn": 1,
-        "step": 7,
+        "step": 9,
         "message": {
           "role": "system",
           "content": [
@@ -1400,17 +2147,17 @@
         }
       },
       "sourceEventSeqs": [
-        28
+        32
       ],
       "surfaceOp": {
         "op": "replace",
-        "startSeq": 28,
-        "endSeq": 28
+        "startSeq": 32,
+        "endSeq": 32
       }
     },
     {
       "type": "request/header",
-      "seq": 63,
+      "seq": 81,
       "time": 0,
       "data": {
         "header": {
@@ -1446,21 +2193,21 @@
     },
     {
       "type": "session-log-deepseek/delivery-accepted",
-      "seq": 64,
+      "seq": 82,
       "time": 0,
       "data": {
         "sessionId": "{{parent}}",
         "sessionFormatVersion": 3,
-        "throughSeq": 63
+        "throughSeq": 81
       }
     },
     {
       "type": "assistant/message",
-      "seq": 65,
+      "seq": 83,
       "time": 0,
       "data": {
         "turn": 1,
-        "step": 7,
+        "step": 9,
         "message": {
           "role": "assistant",
           "content": [
@@ -1472,7 +2219,19 @@
           "source": {
             "kind": "model",
             "provider": "deepseek-official",
-            "model": "smoke-model"
+            "model": "smoke-model",
+            "replayState": {
+              "response": {
+                "kind": "deepseek-messages",
+                "version": 1,
+                "model": "smoke-model"
+              },
+              "blocks": [
+                {
+                  "type": "text"
+                }
+              ]
+            }
           },
           "id": "{{message:1}}"
         },
@@ -1531,6 +2290,18 @@
               "type": "finish",
               "reason": {
                 "kind": "stop"
+              },
+              "replayState": {
+                "response": {
+                  "kind": "deepseek-messages",
+                  "version": 1,
+                  "model": "smoke-model"
+                },
+                "blocks": [
+                  {
+                    "type": "text"
+                  }
+                ]
               }
             }
           }
@@ -1540,16 +2311,16 @@
     },
     {
       "type": "step/end",
-      "seq": 66,
+      "seq": 84,
       "time": 0,
       "data": {
         "turn": 1,
-        "step": 7
+        "step": 9
       }
     },
     {
       "type": "command/run",
-      "seq": 67,
+      "seq": 85,
       "time": 0,
       "data": {
         "commandId": "{{command:1}}",
@@ -1561,7 +2332,7 @@
     },
     {
       "type": "feedback/record",
-      "seq": 68,
+      "seq": 86,
       "time": 0,
       "data": {
         "text": "The session needs a clearer explanation."
@@ -1569,7 +2340,7 @@
     },
     {
       "type": "command/done",
-      "seq": 69,
+      "seq": 87,
       "time": 0,
       "data": {
         "commandId": "{{command:1}}",
@@ -1579,7 +2350,7 @@
     },
     {
       "type": "feedback/record",
-      "seq": 70,
+      "seq": 88,
       "time": 0,
       "data": {
         "category": "other"
@@ -1587,7 +2358,7 @@
     },
     {
       "type": "feedback/message-put",
-      "seq": 71,
+      "seq": 89,
       "time": 0,
       "data": {
         "sessionId": "{{parent}}",
@@ -1604,7 +2375,7 @@
     },
     {
       "type": "feedback/message-put",
-      "seq": 72,
+      "seq": 90,
       "time": 0,
       "data": {
         "sessionId": "{{parent}}",
@@ -1620,7 +2391,7 @@
     },
     {
       "type": "feedback/message-delete",
-      "seq": 73,
+      "seq": 91,
       "time": 0,
       "data": {
         "sessionId": "{{parent}}",
@@ -1629,7 +2400,7 @@
     },
     {
       "type": "turn/end",
-      "seq": 74,
+      "seq": 92,
       "time": 0,
       "data": {
         "turn": 1,
@@ -1863,8 +2634,40 @@
       "payload": {
         "sessionId": "{{parent}}",
         "event": {
-          "type": "request/header",
+          "type": "user/message",
           "seq": 13,
+          "time": 0,
+          "data": {
+            "id": "{{messageId}}",
+            "role": "user",
+            "content": [
+              {
+                "type": "image",
+                "attachment": {
+                  "attachmentId": "sha256:b1ff9c8ea3a780bad09b346c423d2d0e46815926879b18e841d928376a946640",
+                  "mediaType": "image/png",
+                  "width": 1,
+                  "height": 1,
+                  "bytes": 69
+                }
+              }
+            ],
+            "source": {
+              "kind": "plugin",
+              "plugin": "python-snapshot-image-offload"
+            }
+          },
+          "surfaceOp": "append"
+        }
+      }
+    },
+    {
+      "method": "session.event",
+      "payload": {
+        "sessionId": "{{parent}}",
+        "event": {
+          "type": "request/header",
+          "seq": 14,
           "time": 0,
           "data": {
             "header": {
@@ -1905,7 +2708,7 @@
         "sessionId": "{{parent}}",
         "event": {
           "type": "request/context",
-          "seq": 14,
+          "seq": 15,
           "time": 0,
           "data": {
             "provider": "deepseek-official",
@@ -1921,7 +2724,7 @@
         "sessionId": "{{parent}}",
         "event": {
           "type": "session/title",
-          "seq": 15,
+          "seq": 16,
           "time": 0,
           "data": {
             "title": "Run the advanced packaged-runtime snapsh",
@@ -1940,13 +2743,107 @@
       "payload": {
         "sessionId": "{{parent}}",
         "event": {
+          "type": "assistant/attempt",
+          "seq": 17,
+          "time": 0,
+          "data": {
+            "turn": 1,
+            "step": 1,
+            "stream": [
+              {
+                "type": "chunk",
+                "time": 0,
+                "chunk": {
+                  "type": "finish",
+                  "reason": {
+                    "kind": "error",
+                    "failure": {
+                      "code": "IMAGE_OFFLOAD_REQUIRED",
+                      "message": "authored image budget failure",
+                      "offloadImages": 1
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "method": "session.event",
+      "payload": {
+        "sessionId": "{{parent}}",
+        "event": {
+          "type": "image/offload",
+          "seq": 18,
+          "time": 0,
+          "data": {
+            "targets": [
+              {
+                "seq": 13,
+                "imageIndexes": [
+                  0
+                ]
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "method": "session.event",
+      "payload": {
+        "sessionId": "{{parent}}",
+        "event": {
+          "type": "request/header",
+          "seq": 19,
+          "time": 0,
+          "data": {
+            "header": {
+              "config": {
+                "provider": "deepseek-official",
+                "model": "smoke-model",
+                "maxTokens": 256000,
+                "reasoningEffort": "high"
+              },
+              "adapterDefaults": {
+                "reasoningEffort": true,
+                "maxTokens": true
+              },
+              "tools": [
+                "cordis_define",
+                "cordis_inspect_list",
+                "cordis_inspect_query",
+                "cordis_inspect_self",
+                "cordis_run",
+                "cordis_stop",
+                "cordis_undefine",
+                "job_kill",
+                "job_list",
+                "job_output",
+                "run_code",
+                "subagent",
+                "workflow"
+              ]
+            },
+            "reason": "series"
+          }
+        }
+      }
+    },
+    {
+      "method": "session.event",
+      "payload": {
+        "sessionId": "{{parent}}",
+        "event": {
           "type": "session-log-deepseek/delivery-accepted",
-          "seq": 16,
+          "seq": 20,
           "time": 0,
           "data": {
             "sessionId": "{{parent}}",
             "sessionFormatVersion": 3,
-            "throughSeq": 15
+            "throughSeq": 19
           }
         }
       }
@@ -1957,7 +2854,7 @@
         "sessionId": "{{parent}}",
         "event": {
           "type": "assistant/message",
-          "seq": 17,
+          "seq": 21,
           "time": 0,
           "data": {
             "turn": 1,
@@ -1969,13 +2866,25 @@
                   "type": "tool-call",
                   "id": "advanced-define",
                   "name": "cordis_define",
-                  "arguments": "{\"plugin\": {\"kind\": \"new\", \"idPrefix\": \"snap\"}, \"name\": \"Snapshot Double\", \"purpose\": \"Expose a deterministic doubling tool for executable snapshot verification.\", \"code\": {\"host\": \"return (ctx) => {\\n  harness.registerTool(ctx, harness.defineTool({\\n    name: 'snapshot_double',\\n    description: 'Double a number for executable snapshot verification.',\\n    parameters: { value: { type: 'number', required: true } },\\n    output: {\\n      schema: { type: 'number' },\\n      render(_args, value) {\\n        return [{ type: 'text', text: String(value) }]\\n      }\\n    },\\n    async execute(args) {\\n      return args.value * 2\\n    }\\n  }))\\n}\\n\"}}"
+                  "arguments": "{\"plugin\": {\"kind\": \"new\", \"idPrefix\": \"snap\"}, \"name\": \"Snapshot Double\", \"purpose\": \"Expose a deterministic doubling tool for executable snapshot verification.\", \"code\": {\"host\": \"return (ctx) => {\\n  ctx.on('tools/pre-execute', (exec, next) => {\\n    if (exec.name !== 'snapshot_double' || exec.arguments.value !== -1) return next()\\n    return {\\n      kind: 'deny',\\n      reason: 'Auto review rejected tool \\\"snapshot_double\\\"; its body was not executed',\\n      info: {\\n        name: 'AutoReviewDeniedError', code: 'AUTO_REVIEW_DENIED',\\n        reason: '  transport raw\\\\r\\\\nreason  ',\\n      },\\n    }\\n  })\\n  harness.registerTool(ctx, harness.defineTool({\\n    name: 'snapshot_double',\\n    description: 'Double a number for executable snapshot verification.',\\n    parameters: { value: { type: 'number', required: true } },\\n    output: {\\n      schema: { type: 'number' },\\n      render(_args, value) {\\n        return [{ type: 'text', text: String(value) }]\\n      }\\n    },\\n    async execute(args) {\\n      return args.value * 2\\n    }\\n  }))\\n}\\n\"}}"
                 }
               ],
               "source": {
                 "kind": "model",
                 "provider": "deepseek-official",
-                "model": "smoke-model"
+                "model": "smoke-model",
+                "replayState": {
+                  "response": {
+                    "kind": "deepseek-messages",
+                    "version": 1,
+                    "model": "smoke-model"
+                  },
+                  "blocks": [
+                    {
+                      "type": "tool-call"
+                    }
+                  ]
+                }
               },
               "id": "{{messageId}}"
             },
@@ -2002,7 +2911,17 @@
                 "id": "advanced-define",
                 "name": "cordis_define",
                 "args": [
-                  "{\"plugin\": {\"kind\": \"new\", \"idPrefix\": \"snap\"}, \"name\": \"Snapshot Double\", \"purpose\": \"Expose a deterministic doubling tool for executable snapshot verification.\", \"code\": {\"host\": \"return (ctx) => {\\n  harness.registerTool(ctx, harness.defineTool({\\n    name: 'snapshot_double',\\n    description: 'Double a number for executable snapshot verification.',\\n    parameters: { value: { type: 'number', required: true } },\\n    output: {\\n      schema: { type: 'number' },\\n      render(_args, value) {\\n        return [{ type: 'text', text: String(value) }]\\n      }\\n    },\\n    async execute(args) {\\n      return args.value * 2\\n    }\\n  }))\\n}\\n\"}}"
+                  ""
+                ]
+              },
+              {
+                "type": "tool-call-chunks",
+                "time0": 0,
+                "index": 0,
+                "dt": [],
+                "id": "advanced-define",
+                "args": [
+                  "{\"plugin\": {\"kind\": \"new\", \"idPrefix\": \"snap\"}, \"name\": \"Snapshot Double\", \"purpose\": \"Expose a deterministic doubling tool for executable snapshot verification.\", \"code\": {\"host\": \"return (ctx) => {\\n  ctx.on('tools/pre-execute', (exec, next) => {\\n    if (exec.name !== 'snapshot_double' || exec.arguments.value !== -1) return next()\\n    return {\\n      kind: 'deny',\\n      reason: 'Auto review rejected tool \\\"snapshot_double\\\"; its body was not executed',\\n      info: {\\n        name: 'AutoReviewDeniedError', code: 'AUTO_REVIEW_DENIED',\\n        reason: '  transport raw\\\\r\\\\nreason  ',\\n      },\\n    }\\n  })\\n  harness.registerTool(ctx, harness.defineTool({\\n    name: 'snapshot_double',\\n    description: 'Double a number for executable snapshot verification.',\\n    parameters: { value: { type: 'number', required: true } },\\n    output: {\\n      schema: { type: 'number' },\\n      render(_args, value) {\\n        return [{ type: 'text', text: String(value) }]\\n      }\\n    },\\n    async execute(args) {\\n      return args.value * 2\\n    }\\n  }))\\n}\\n\"}}"
                 ]
               },
               {
@@ -2015,7 +2934,7 @@
                     "type": "tool-call",
                     "id": "advanced-define",
                     "name": "cordis_define",
-                    "arguments": "{\"plugin\": {\"kind\": \"new\", \"idPrefix\": \"snap\"}, \"name\": \"Snapshot Double\", \"purpose\": \"Expose a deterministic doubling tool for executable snapshot verification.\", \"code\": {\"host\": \"return (ctx) => {\\n  harness.registerTool(ctx, harness.defineTool({\\n    name: 'snapshot_double',\\n    description: 'Double a number for executable snapshot verification.',\\n    parameters: { value: { type: 'number', required: true } },\\n    output: {\\n      schema: { type: 'number' },\\n      render(_args, value) {\\n        return [{ type: 'text', text: String(value) }]\\n      }\\n    },\\n    async execute(args) {\\n      return args.value * 2\\n    }\\n  }))\\n}\\n\"}}"
+                    "arguments": "{\"plugin\": {\"kind\": \"new\", \"idPrefix\": \"snap\"}, \"name\": \"Snapshot Double\", \"purpose\": \"Expose a deterministic doubling tool for executable snapshot verification.\", \"code\": {\"host\": \"return (ctx) => {\\n  ctx.on('tools/pre-execute', (exec, next) => {\\n    if (exec.name !== 'snapshot_double' || exec.arguments.value !== -1) return next()\\n    return {\\n      kind: 'deny',\\n      reason: 'Auto review rejected tool \\\"snapshot_double\\\"; its body was not executed',\\n      info: {\\n        name: 'AutoReviewDeniedError', code: 'AUTO_REVIEW_DENIED',\\n        reason: '  transport raw\\\\r\\\\nreason  ',\\n      },\\n    }\\n  })\\n  harness.registerTool(ctx, harness.defineTool({\\n    name: 'snapshot_double',\\n    description: 'Double a number for executable snapshot verification.',\\n    parameters: { value: { type: 'number', required: true } },\\n    output: {\\n      schema: { type: 'number' },\\n      render(_args, value) {\\n        return [{ type: 'text', text: String(value) }]\\n      }\\n    },\\n    async execute(args) {\\n      return args.value * 2\\n    }\\n  }))\\n}\\n\"}}"
                   }
                 }
               },
@@ -2038,6 +2957,18 @@
                   "type": "finish",
                   "reason": {
                     "kind": "tool-calls"
+                  },
+                  "replayState": {
+                    "response": {
+                      "kind": "deepseek-messages",
+                      "version": 1,
+                      "model": "smoke-model"
+                    },
+                    "blocks": [
+                      {
+                        "type": "tool-call"
+                      }
+                    ]
                   }
                 }
               }
@@ -2053,14 +2984,14 @@
         "sessionId": "{{parent}}",
         "event": {
           "type": "tool/call",
-          "seq": 18,
+          "seq": 22,
           "time": 0,
           "data": {
             "turn": 1,
             "step": 1,
             "callId": "advanced-define",
             "name": "cordis_define",
-            "arguments": "{\"plugin\": {\"kind\": \"new\", \"idPrefix\": \"snap\"}, \"name\": \"Snapshot Double\", \"purpose\": \"Expose a deterministic doubling tool for executable snapshot verification.\", \"code\": {\"host\": \"return (ctx) => {\\n  harness.registerTool(ctx, harness.defineTool({\\n    name: 'snapshot_double',\\n    description: 'Double a number for executable snapshot verification.',\\n    parameters: { value: { type: 'number', required: true } },\\n    output: {\\n      schema: { type: 'number' },\\n      render(_args, value) {\\n        return [{ type: 'text', text: String(value) }]\\n      }\\n    },\\n    async execute(args) {\\n      return args.value * 2\\n    }\\n  }))\\n}\\n\"}}"
+            "arguments": "{\"plugin\": {\"kind\": \"new\", \"idPrefix\": \"snap\"}, \"name\": \"Snapshot Double\", \"purpose\": \"Expose a deterministic doubling tool for executable snapshot verification.\", \"code\": {\"host\": \"return (ctx) => {\\n  ctx.on('tools/pre-execute', (exec, next) => {\\n    if (exec.name !== 'snapshot_double' || exec.arguments.value !== -1) return next()\\n    return {\\n      kind: 'deny',\\n      reason: 'Auto review rejected tool \\\"snapshot_double\\\"; its body was not executed',\\n      info: {\\n        name: 'AutoReviewDeniedError', code: 'AUTO_REVIEW_DENIED',\\n        reason: '  transport raw\\\\r\\\\nreason  ',\\n      },\\n    }\\n  })\\n  harness.registerTool(ctx, harness.defineTool({\\n    name: 'snapshot_double',\\n    description: 'Double a number for executable snapshot verification.',\\n    parameters: { value: { type: 'number', required: true } },\\n    output: {\\n      schema: { type: 'number' },\\n      render(_args, value) {\\n        return [{ type: 'text', text: String(value) }]\\n      }\\n    },\\n    async execute(args) {\\n      return args.value * 2\\n    }\\n  }))\\n}\\n\"}}"
           }
         }
       }
@@ -2071,7 +3002,7 @@
         "sessionId": "{{parent}}",
         "event": {
           "type": "tool/result",
-          "seq": 19,
+          "seq": 23,
           "time": 0,
           "data": {
             "turn": 1,
@@ -2103,7 +3034,7 @@
             }
           },
           "sourceEventSeqs": [
-            18
+            22
           ],
           "surfaceOp": "append"
         }
@@ -2115,7 +3046,7 @@
         "sessionId": "{{parent}}",
         "event": {
           "type": "step/end",
-          "seq": 20,
+          "seq": 24,
           "time": 0,
           "data": {
             "turn": 1,
@@ -2130,7 +3061,7 @@
         "sessionId": "{{parent}}",
         "event": {
           "type": "step/start",
-          "seq": 21,
+          "seq": 25,
           "time": 0,
           "data": {
             "turn": 1,
@@ -2145,12 +3076,12 @@
         "sessionId": "{{parent}}",
         "event": {
           "type": "session-log-deepseek/delivery-accepted",
-          "seq": 22,
+          "seq": 26,
           "time": 0,
           "data": {
             "sessionId": "{{parent}}",
             "sessionFormatVersion": 3,
-            "throughSeq": 21
+            "throughSeq": 25
           }
         }
       }
@@ -2161,7 +3092,7 @@
         "sessionId": "{{parent}}",
         "event": {
           "type": "assistant/message",
-          "seq": 23,
+          "seq": 27,
           "time": 0,
           "data": {
             "turn": 1,
@@ -2179,7 +3110,19 @@
               "source": {
                 "kind": "model",
                 "provider": "deepseek-official",
-                "model": "smoke-model"
+                "model": "smoke-model",
+                "replayState": {
+                  "response": {
+                    "kind": "deepseek-messages",
+                    "version": 1,
+                    "model": "smoke-model"
+                  },
+                  "blocks": [
+                    {
+                      "type": "tool-call"
+                    }
+                  ]
+                }
               },
               "id": "{{messageId}}"
             },
@@ -2205,6 +3148,16 @@
                 "dt": [],
                 "id": "advanced-run",
                 "name": "cordis_run",
+                "args": [
+                  ""
+                ]
+              },
+              {
+                "type": "tool-call-chunks",
+                "time0": 0,
+                "index": 0,
+                "dt": [],
+                "id": "advanced-run",
                 "args": [
                   "{\"pluginId\": \"snap-1\", \"packageId\": \"pkg-1\", \"mode\": \"run\"}"
                 ]
@@ -2242,6 +3195,18 @@
                   "type": "finish",
                   "reason": {
                     "kind": "tool-calls"
+                  },
+                  "replayState": {
+                    "response": {
+                      "kind": "deepseek-messages",
+                      "version": 1,
+                      "model": "smoke-model"
+                    },
+                    "blocks": [
+                      {
+                        "type": "tool-call"
+                      }
+                    ]
                   }
                 }
               }
@@ -2257,7 +3222,7 @@
         "sessionId": "{{parent}}",
         "event": {
           "type": "tool/call",
-          "seq": 24,
+          "seq": 28,
           "time": 0,
           "data": {
             "turn": 1,
@@ -2275,7 +3240,7 @@
         "sessionId": "{{parent}}",
         "event": {
           "type": "tool/result",
-          "seq": 25,
+          "seq": 29,
           "time": 0,
           "data": {
             "turn": 1,
@@ -2308,7 +3273,7 @@
             }
           },
           "sourceEventSeqs": [
-            24
+            28
           ],
           "surfaceOp": "append"
         }
@@ -2320,7 +3285,7 @@
         "sessionId": "{{parent}}",
         "event": {
           "type": "step/end",
-          "seq": 26,
+          "seq": 30,
           "time": 0,
           "data": {
             "turn": 1,
@@ -2335,7 +3300,7 @@
         "sessionId": "{{parent}}",
         "event": {
           "type": "step/start",
-          "seq": 27,
+          "seq": 31,
           "time": 0,
           "data": {
             "turn": 1,
@@ -2350,7 +3315,7 @@
         "sessionId": "{{parent}}",
         "event": {
           "type": "system/message",
-          "seq": 28,
+          "seq": 32,
           "time": 0,
           "data": {
             "turn": 1,
@@ -2387,7 +3352,7 @@
         "sessionId": "{{parent}}",
         "event": {
           "type": "request/header",
-          "seq": 29,
+          "seq": 33,
           "time": 0,
           "data": {
             "header": {
@@ -2430,12 +3395,12 @@
         "sessionId": "{{parent}}",
         "event": {
           "type": "session-log-deepseek/delivery-accepted",
-          "seq": 30,
+          "seq": 34,
           "time": 0,
           "data": {
             "sessionId": "{{parent}}",
             "sessionFormatVersion": 3,
-            "throughSeq": 29
+            "throughSeq": 33
           }
         }
       }
@@ -2446,7 +3411,7 @@
         "sessionId": "{{parent}}",
         "event": {
           "type": "assistant/message",
-          "seq": 31,
+          "seq": 35,
           "time": 0,
           "data": {
             "turn": 1,
@@ -2464,7 +3429,19 @@
               "source": {
                 "kind": "model",
                 "provider": "deepseek-official",
-                "model": "smoke-model"
+                "model": "smoke-model",
+                "replayState": {
+                  "response": {
+                    "kind": "deepseek-messages",
+                    "version": 1,
+                    "model": "smoke-model"
+                  },
+                  "blocks": [
+                    {
+                      "type": "tool-call"
+                    }
+                  ]
+                }
               },
               "id": "{{messageId}}"
             },
@@ -2490,6 +3467,16 @@
                 "dt": [],
                 "id": "advanced-code",
                 "name": "run_code",
+                "args": [
+                  ""
+                ]
+              },
+              {
+                "type": "tool-call-chunks",
+                "time0": 0,
+                "index": 0,
+                "dt": [],
+                "id": "advanced-code",
                 "args": [
                   "{\"code\": \"return await tools.snapshot_double({ value: 21 })\", \"description\": \"Run the temporary Plugin tool\"}"
                 ]
@@ -2527,6 +3514,18 @@
                   "type": "finish",
                   "reason": {
                     "kind": "tool-calls"
+                  },
+                  "replayState": {
+                    "response": {
+                      "kind": "deepseek-messages",
+                      "version": 1,
+                      "model": "smoke-model"
+                    },
+                    "blocks": [
+                      {
+                        "type": "tool-call"
+                      }
+                    ]
                   }
                 }
               }
@@ -2542,7 +3541,7 @@
         "sessionId": "{{parent}}",
         "event": {
           "type": "tool/call",
-          "seq": 32,
+          "seq": 36,
           "time": 0,
           "data": {
             "turn": 1,
@@ -2560,7 +3559,7 @@
         "sessionId": "{{parent}}",
         "event": {
           "type": "tool/ptc-dispatch-start",
-          "seq": 33,
+          "seq": 37,
           "time": 0,
           "data": {
             "rootCallId": "advanced-code",
@@ -2580,7 +3579,7 @@
         "sessionId": "{{parent}}",
         "event": {
           "type": "tool/ptc-dispatch",
-          "seq": 34,
+          "seq": 38,
           "time": 0,
           "data": {
             "rootCallId": "advanced-code",
@@ -2607,7 +3606,7 @@
         "sessionId": "{{parent}}",
         "event": {
           "type": "tool/result",
-          "seq": 35,
+          "seq": 39,
           "time": 0,
           "data": {
             "turn": 1,
@@ -2635,7 +3634,7 @@
             }
           },
           "sourceEventSeqs": [
-            32
+            36
           ],
           "surfaceOp": "append"
         }
@@ -2647,7 +3646,7 @@
         "sessionId": "{{parent}}",
         "event": {
           "type": "step/end",
-          "seq": 36,
+          "seq": 40,
           "time": 0,
           "data": {
             "turn": 1,
@@ -2662,7 +3661,7 @@
         "sessionId": "{{parent}}",
         "event": {
           "type": "step/start",
-          "seq": 37,
+          "seq": 41,
           "time": 0,
           "data": {
             "turn": 1,
@@ -2677,12 +3676,12 @@
         "sessionId": "{{parent}}",
         "event": {
           "type": "session-log-deepseek/delivery-accepted",
-          "seq": 38,
+          "seq": 42,
           "time": 0,
           "data": {
             "sessionId": "{{parent}}",
             "sessionFormatVersion": 3,
-            "throughSeq": 37
+            "throughSeq": 41
           }
         }
       }
@@ -2693,11 +3692,536 @@
         "sessionId": "{{parent}}",
         "event": {
           "type": "assistant/message",
-          "seq": 39,
+          "seq": 43,
           "time": 0,
           "data": {
             "turn": 1,
             "step": 4,
+            "message": {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "tool-call",
+                  "id": "advanced-denied-native",
+                  "name": "snapshot_double",
+                  "arguments": "{\"value\": -1}"
+                }
+              ],
+              "source": {
+                "kind": "model",
+                "provider": "deepseek-official",
+                "model": "smoke-model",
+                "replayState": {
+                  "response": {
+                    "kind": "deepseek-messages",
+                    "version": 1,
+                    "model": "smoke-model"
+                  },
+                  "blocks": [
+                    {
+                      "type": "tool-call"
+                    }
+                  ]
+                }
+              },
+              "id": "{{messageId}}"
+            },
+            "usage": {
+              "inputTokens": 3,
+              "outputTokens": 3,
+              "totalTokens": 6
+            },
+            "stream": [
+              {
+                "type": "chunk",
+                "time": 0,
+                "chunk": {
+                  "type": "block-start",
+                  "index": 0,
+                  "blockType": "tool-call"
+                }
+              },
+              {
+                "type": "tool-call-chunks",
+                "time0": 0,
+                "index": 0,
+                "dt": [],
+                "id": "advanced-denied-native",
+                "name": "snapshot_double",
+                "args": [
+                  ""
+                ]
+              },
+              {
+                "type": "tool-call-chunks",
+                "time0": 0,
+                "index": 0,
+                "dt": [],
+                "id": "advanced-denied-native",
+                "args": [
+                  "{\"value\": -1}"
+                ]
+              },
+              {
+                "type": "chunk",
+                "time": 0,
+                "chunk": {
+                  "type": "block-end",
+                  "index": 0,
+                  "block": {
+                    "type": "tool-call",
+                    "id": "advanced-denied-native",
+                    "name": "snapshot_double",
+                    "arguments": "{\"value\": -1}"
+                  }
+                }
+              },
+              {
+                "type": "chunk",
+                "time": 0,
+                "chunk": {
+                  "type": "usage",
+                  "usage": {
+                    "inputTokens": 3,
+                    "outputTokens": 3,
+                    "totalTokens": 6
+                  }
+                }
+              },
+              {
+                "type": "chunk",
+                "time": 0,
+                "chunk": {
+                  "type": "finish",
+                  "reason": {
+                    "kind": "tool-calls"
+                  },
+                  "replayState": {
+                    "response": {
+                      "kind": "deepseek-messages",
+                      "version": 1,
+                      "model": "smoke-model"
+                    },
+                    "blocks": [
+                      {
+                        "type": "tool-call"
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          },
+          "surfaceOp": "append"
+        }
+      }
+    },
+    {
+      "method": "session.event",
+      "payload": {
+        "sessionId": "{{parent}}",
+        "event": {
+          "type": "tool/call",
+          "seq": 44,
+          "time": 0,
+          "data": {
+            "turn": 1,
+            "step": 4,
+            "callId": "advanced-denied-native",
+            "name": "snapshot_double",
+            "arguments": "{\"value\": -1}"
+          }
+        }
+      }
+    },
+    {
+      "method": "session.event",
+      "payload": {
+        "sessionId": "{{parent}}",
+        "event": {
+          "type": "tool/result",
+          "seq": 45,
+          "time": 0,
+          "data": {
+            "turn": 1,
+            "step": 4,
+            "message": {
+              "source": {
+                "kind": "tool",
+                "callId": "advanced-denied-native"
+              },
+              "content": [
+                {
+                  "type": "tool-result",
+                  "toolCallId": "advanced-denied-native",
+                  "content": [
+                    {
+                      "type": "text",
+                      "text": "Error: Auto review rejected tool \"snapshot_double\"; its body was not executed"
+                    }
+                  ],
+                  "isError": true
+                }
+              ],
+              "role": "user",
+              "id": "{{messageId}}"
+            },
+            "error": {
+              "name": "AutoReviewDeniedError",
+              "code": "AUTO_REVIEW_DENIED",
+              "reason": "  transport raw\r\nreason  "
+            }
+          },
+          "sourceEventSeqs": [
+            44
+          ],
+          "surfaceOp": "append"
+        }
+      }
+    },
+    {
+      "method": "session.event",
+      "payload": {
+        "sessionId": "{{parent}}",
+        "event": {
+          "type": "step/end",
+          "seq": 46,
+          "time": 0,
+          "data": {
+            "turn": 1,
+            "step": 4
+          }
+        }
+      }
+    },
+    {
+      "method": "session.event",
+      "payload": {
+        "sessionId": "{{parent}}",
+        "event": {
+          "type": "step/start",
+          "seq": 47,
+          "time": 0,
+          "data": {
+            "turn": 1,
+            "step": 5
+          }
+        }
+      }
+    },
+    {
+      "method": "session.event",
+      "payload": {
+        "sessionId": "{{parent}}",
+        "event": {
+          "type": "session-log-deepseek/delivery-accepted",
+          "seq": 48,
+          "time": 0,
+          "data": {
+            "sessionId": "{{parent}}",
+            "sessionFormatVersion": 3,
+            "throughSeq": 47
+          }
+        }
+      }
+    },
+    {
+      "method": "session.event",
+      "payload": {
+        "sessionId": "{{parent}}",
+        "event": {
+          "type": "assistant/message",
+          "seq": 49,
+          "time": 0,
+          "data": {
+            "turn": 1,
+            "step": 5,
+            "message": {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "tool-call",
+                  "id": "advanced-denied-ptc",
+                  "name": "run_code",
+                  "arguments": "{\"code\": \"try { await tools.snapshot_double({ value: -1 }) } catch (error) { return error.message }\", \"description\": \"Catch a structured inner tool denial\"}"
+                }
+              ],
+              "source": {
+                "kind": "model",
+                "provider": "deepseek-official",
+                "model": "smoke-model",
+                "replayState": {
+                  "response": {
+                    "kind": "deepseek-messages",
+                    "version": 1,
+                    "model": "smoke-model"
+                  },
+                  "blocks": [
+                    {
+                      "type": "tool-call"
+                    }
+                  ]
+                }
+              },
+              "id": "{{messageId}}"
+            },
+            "usage": {
+              "inputTokens": 3,
+              "outputTokens": 3,
+              "totalTokens": 6
+            },
+            "stream": [
+              {
+                "type": "chunk",
+                "time": 0,
+                "chunk": {
+                  "type": "block-start",
+                  "index": 0,
+                  "blockType": "tool-call"
+                }
+              },
+              {
+                "type": "tool-call-chunks",
+                "time0": 0,
+                "index": 0,
+                "dt": [],
+                "id": "advanced-denied-ptc",
+                "name": "run_code",
+                "args": [
+                  ""
+                ]
+              },
+              {
+                "type": "tool-call-chunks",
+                "time0": 0,
+                "index": 0,
+                "dt": [],
+                "id": "advanced-denied-ptc",
+                "args": [
+                  "{\"code\": \"try { await tools.snapshot_double({ value: -1 }) } catch (error) { return error.message }\", \"description\": \"Catch a structured inner tool denial\"}"
+                ]
+              },
+              {
+                "type": "chunk",
+                "time": 0,
+                "chunk": {
+                  "type": "block-end",
+                  "index": 0,
+                  "block": {
+                    "type": "tool-call",
+                    "id": "advanced-denied-ptc",
+                    "name": "run_code",
+                    "arguments": "{\"code\": \"try { await tools.snapshot_double({ value: -1 }) } catch (error) { return error.message }\", \"description\": \"Catch a structured inner tool denial\"}"
+                  }
+                }
+              },
+              {
+                "type": "chunk",
+                "time": 0,
+                "chunk": {
+                  "type": "usage",
+                  "usage": {
+                    "inputTokens": 3,
+                    "outputTokens": 3,
+                    "totalTokens": 6
+                  }
+                }
+              },
+              {
+                "type": "chunk",
+                "time": 0,
+                "chunk": {
+                  "type": "finish",
+                  "reason": {
+                    "kind": "tool-calls"
+                  },
+                  "replayState": {
+                    "response": {
+                      "kind": "deepseek-messages",
+                      "version": 1,
+                      "model": "smoke-model"
+                    },
+                    "blocks": [
+                      {
+                        "type": "tool-call"
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          },
+          "surfaceOp": "append"
+        }
+      }
+    },
+    {
+      "method": "session.event",
+      "payload": {
+        "sessionId": "{{parent}}",
+        "event": {
+          "type": "tool/call",
+          "seq": 50,
+          "time": 0,
+          "data": {
+            "turn": 1,
+            "step": 5,
+            "callId": "advanced-denied-ptc",
+            "name": "run_code",
+            "arguments": "{\"code\": \"try { await tools.snapshot_double({ value: -1 }) } catch (error) { return error.message }\", \"description\": \"Catch a structured inner tool denial\"}"
+          }
+        }
+      }
+    },
+    {
+      "method": "session.event",
+      "payload": {
+        "sessionId": "{{parent}}",
+        "event": {
+          "type": "tool/ptc-dispatch-start",
+          "seq": 51,
+          "time": 0,
+          "data": {
+            "rootCallId": "advanced-denied-ptc",
+            "parentCallId": "advanced-denied-ptc",
+            "subCallId": "advanced-denied-ptc:ptc:1",
+            "name": "snapshot_double",
+            "arguments": {
+              "value": -1
+            }
+          }
+        }
+      }
+    },
+    {
+      "method": "session.event",
+      "payload": {
+        "sessionId": "{{parent}}",
+        "event": {
+          "type": "tool/ptc-dispatch",
+          "seq": 52,
+          "time": 0,
+          "data": {
+            "rootCallId": "advanced-denied-ptc",
+            "parentCallId": "advanced-denied-ptc",
+            "subCallId": "advanced-denied-ptc:ptc:1",
+            "name": "snapshot_double",
+            "arguments": {
+              "value": -1
+            },
+            "isError": true,
+            "error": {
+              "name": "AutoReviewDeniedError",
+              "code": "AUTO_REVIEW_DENIED",
+              "reason": "  transport raw\r\nreason  "
+            },
+            "content": [
+              {
+                "type": "text",
+                "text": "Error: Auto review rejected tool \"snapshot_double\"; its body was not executed"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "method": "session.event",
+      "payload": {
+        "sessionId": "{{parent}}",
+        "event": {
+          "type": "tool/result",
+          "seq": 53,
+          "time": 0,
+          "data": {
+            "turn": 1,
+            "step": 5,
+            "message": {
+              "source": {
+                "kind": "tool",
+                "callId": "advanced-denied-ptc"
+              },
+              "content": [
+                {
+                  "type": "tool-result",
+                  "toolCallId": "advanced-denied-ptc",
+                  "content": [
+                    {
+                      "type": "text",
+                      "text": "Auto review rejected tool \"snapshot_double\"; its body was not executed"
+                    }
+                  ],
+                  "isError": false
+                }
+              ],
+              "role": "user",
+              "id": "{{messageId}}"
+            }
+          },
+          "sourceEventSeqs": [
+            50
+          ],
+          "surfaceOp": "append"
+        }
+      }
+    },
+    {
+      "method": "session.event",
+      "payload": {
+        "sessionId": "{{parent}}",
+        "event": {
+          "type": "step/end",
+          "seq": 54,
+          "time": 0,
+          "data": {
+            "turn": 1,
+            "step": 5
+          }
+        }
+      }
+    },
+    {
+      "method": "session.event",
+      "payload": {
+        "sessionId": "{{parent}}",
+        "event": {
+          "type": "step/start",
+          "seq": 55,
+          "time": 0,
+          "data": {
+            "turn": 1,
+            "step": 6
+          }
+        }
+      }
+    },
+    {
+      "method": "session.event",
+      "payload": {
+        "sessionId": "{{parent}}",
+        "event": {
+          "type": "session-log-deepseek/delivery-accepted",
+          "seq": 56,
+          "time": 0,
+          "data": {
+            "sessionId": "{{parent}}",
+            "sessionFormatVersion": 3,
+            "throughSeq": 55
+          }
+        }
+      }
+    },
+    {
+      "method": "session.event",
+      "payload": {
+        "sessionId": "{{parent}}",
+        "event": {
+          "type": "assistant/message",
+          "seq": 57,
+          "time": 0,
+          "data": {
+            "turn": 1,
+            "step": 6,
             "message": {
               "role": "assistant",
               "content": [
@@ -2711,7 +4235,19 @@
               "source": {
                 "kind": "model",
                 "provider": "deepseek-official",
-                "model": "smoke-model"
+                "model": "smoke-model",
+                "replayState": {
+                  "response": {
+                    "kind": "deepseek-messages",
+                    "version": 1,
+                    "model": "smoke-model"
+                  },
+                  "blocks": [
+                    {
+                      "type": "tool-call"
+                    }
+                  ]
+                }
               },
               "id": "{{messageId}}"
             },
@@ -2737,6 +4273,16 @@
                 "dt": [],
                 "id": "advanced-direct-child",
                 "name": "subagent",
+                "args": [
+                  ""
+                ]
+              },
+              {
+                "type": "tool-call-chunks",
+                "time0": 0,
+                "index": 0,
+                "dt": [],
+                "id": "advanced-direct-child",
                 "args": [
                   "{\"description\": \"Check direct child\", \"prompt\": \"Reply with exactly DIRECT_CHILD_OK and nothing else.\"}"
                 ]
@@ -2774,6 +4320,18 @@
                   "type": "finish",
                   "reason": {
                     "kind": "tool-calls"
+                  },
+                  "replayState": {
+                    "response": {
+                      "kind": "deepseek-messages",
+                      "version": 1,
+                      "model": "smoke-model"
+                    },
+                    "blocks": [
+                      {
+                        "type": "tool-call"
+                      }
+                    ]
                   }
                 }
               }
@@ -2789,11 +4347,11 @@
         "sessionId": "{{parent}}",
         "event": {
           "type": "tool/call",
-          "seq": 40,
+          "seq": 58,
           "time": 0,
           "data": {
             "turn": 1,
-            "step": 4,
+            "step": 6,
             "callId": "advanced-direct-child",
             "name": "subagent",
             "arguments": "{\"description\": \"Check direct child\", \"prompt\": \"Reply with exactly DIRECT_CHILD_OK and nothing else.\"}"
@@ -2806,20 +4364,6 @@
       "payload": {
         "parentSessionId": "{{parent}}",
         "childSessionId": "{{child-1}}"
-      }
-    },
-    {
-      "method": "session.event",
-      "payload": {
-        "sessionId": "{{child-1}}",
-        "event": {
-          "type": "permission/preset",
-          "seq": 2,
-          "time": 0,
-          "data": {
-            "preset": "danger-full-access"
-          }
-        }
       }
     },
     {
@@ -2944,7 +4488,7 @@
         "sessionId": "{{parent}}",
         "event": {
           "type": "subagent/catalog",
-          "seq": 41,
+          "seq": 59,
           "time": 0,
           "data": {
             "version": 0,
@@ -3225,7 +4769,19 @@
               "source": {
                 "kind": "model",
                 "provider": "deepseek-official",
-                "model": "smoke-model"
+                "model": "smoke-model",
+                "replayState": {
+                  "response": {
+                    "kind": "deepseek-messages",
+                    "version": 1,
+                    "model": "smoke-model"
+                  },
+                  "blocks": [
+                    {
+                      "type": "text"
+                    }
+                  ]
+                }
               },
               "id": "{{messageId}}"
             },
@@ -3284,6 +4840,18 @@
                   "type": "finish",
                   "reason": {
                     "kind": "stop"
+                  },
+                  "replayState": {
+                    "response": {
+                      "kind": "deepseek-messages",
+                      "version": 1,
+                      "model": "smoke-model"
+                    },
+                    "blocks": [
+                      {
+                        "type": "text"
+                      }
+                    ]
                   }
                 }
               }
@@ -3355,11 +4923,11 @@
         "sessionId": "{{parent}}",
         "event": {
           "type": "tool/result",
-          "seq": 42,
+          "seq": 60,
           "time": 0,
           "data": {
             "turn": 1,
-            "step": 4,
+            "step": 6,
             "message": {
               "source": {
                 "kind": "tool",
@@ -3383,7 +4951,7 @@
             }
           },
           "sourceEventSeqs": [
-            40
+            58
           ],
           "surfaceOp": "append"
         }
@@ -3395,11 +4963,11 @@
         "sessionId": "{{parent}}",
         "event": {
           "type": "step/end",
-          "seq": 43,
+          "seq": 61,
           "time": 0,
           "data": {
             "turn": 1,
-            "step": 4
+            "step": 6
           }
         }
       }
@@ -3410,11 +4978,11 @@
         "sessionId": "{{parent}}",
         "event": {
           "type": "step/start",
-          "seq": 44,
+          "seq": 62,
           "time": 0,
           "data": {
             "turn": 1,
-            "step": 5
+            "step": 7
           }
         }
       }
@@ -3425,12 +4993,12 @@
         "sessionId": "{{parent}}",
         "event": {
           "type": "session-log-deepseek/delivery-accepted",
-          "seq": 45,
+          "seq": 63,
           "time": 0,
           "data": {
             "sessionId": "{{parent}}",
             "sessionFormatVersion": 3,
-            "throughSeq": 44
+            "throughSeq": 62
           }
         }
       }
@@ -3441,11 +5009,11 @@
         "sessionId": "{{parent}}",
         "event": {
           "type": "assistant/message",
-          "seq": 46,
+          "seq": 64,
           "time": 0,
           "data": {
             "turn": 1,
-            "step": 5,
+            "step": 7,
             "message": {
               "role": "assistant",
               "content": [
@@ -3459,7 +5027,19 @@
               "source": {
                 "kind": "model",
                 "provider": "deepseek-official",
-                "model": "smoke-model"
+                "model": "smoke-model",
+                "replayState": {
+                  "response": {
+                    "kind": "deepseek-messages",
+                    "version": 1,
+                    "model": "smoke-model"
+                  },
+                  "blocks": [
+                    {
+                      "type": "tool-call"
+                    }
+                  ]
+                }
               },
               "id": "{{messageId}}"
             },
@@ -3485,6 +5065,16 @@
                 "dt": [],
                 "id": "advanced-workflow",
                 "name": "workflow",
+                "args": [
+                  ""
+                ]
+              },
+              {
+                "type": "tool-call-chunks",
+                "time0": 0,
+                "index": 0,
+                "dt": [],
+                "id": "advanced-workflow",
                 "args": [
                   "{\"script\": \"phase('Delegate')\\nconst reply = await agent('Reply with exactly WORKFLOW_CHILD_OK and nothing else.', { label: 'workflow-child' })\\nreturn { reply }\", \"meta\": {\"name\": \"advanced-exe-snapshot\", \"description\": \"exercise one packaged workflow child\"}}"
                 ]
@@ -3522,6 +5112,18 @@
                   "type": "finish",
                   "reason": {
                     "kind": "tool-calls"
+                  },
+                  "replayState": {
+                    "response": {
+                      "kind": "deepseek-messages",
+                      "version": 1,
+                      "model": "smoke-model"
+                    },
+                    "blocks": [
+                      {
+                        "type": "tool-call"
+                      }
+                    ]
                   }
                 }
               }
@@ -3537,11 +5139,11 @@
         "sessionId": "{{parent}}",
         "event": {
           "type": "tool/call",
-          "seq": 47,
+          "seq": 65,
           "time": 0,
           "data": {
             "turn": 1,
-            "step": 5,
+            "step": 7,
             "callId": "advanced-workflow",
             "name": "workflow",
             "arguments": "{\"script\": \"phase('Delegate')\\nconst reply = await agent('Reply with exactly WORKFLOW_CHILD_OK and nothing else.', { label: 'workflow-child' })\\nreturn { reply }\", \"meta\": {\"name\": \"advanced-exe-snapshot\", \"description\": \"exercise one packaged workflow child\"}}"
@@ -3555,7 +5157,7 @@
         "sessionId": "{{parent}}",
         "event": {
           "type": "tool-workflow/run-start",
-          "seq": 48,
+          "seq": 66,
           "time": 0,
           "data": {
             "runId": "{{workflow-run}}",
@@ -3569,20 +5171,6 @@
       "payload": {
         "parentSessionId": "{{parent}}",
         "childSessionId": "{{child-2}}"
-      }
-    },
-    {
-      "method": "session.event",
-      "payload": {
-        "sessionId": "{{child-2}}",
-        "event": {
-          "type": "permission/preset",
-          "seq": 2,
-          "time": 0,
-          "data": {
-            "preset": "danger-full-access"
-          }
-        }
       }
     },
     {
@@ -3707,7 +5295,7 @@
         "sessionId": "{{parent}}",
         "event": {
           "type": "subagent/catalog",
-          "seq": 49,
+          "seq": 67,
           "time": 0,
           "data": {
             "version": 0,
@@ -3724,7 +5312,7 @@
         "sessionId": "{{parent}}",
         "event": {
           "type": "tool-workflow/agent-start",
-          "seq": 50,
+          "seq": 68,
           "time": 0,
           "data": {
             "runId": "{{workflow-run}}",
@@ -4004,7 +5592,19 @@
               "source": {
                 "kind": "model",
                 "provider": "deepseek-official",
-                "model": "smoke-model"
+                "model": "smoke-model",
+                "replayState": {
+                  "response": {
+                    "kind": "deepseek-messages",
+                    "version": 1,
+                    "model": "smoke-model"
+                  },
+                  "blocks": [
+                    {
+                      "type": "text"
+                    }
+                  ]
+                }
               },
               "id": "{{messageId}}"
             },
@@ -4063,6 +5663,18 @@
                   "type": "finish",
                   "reason": {
                     "kind": "stop"
+                  },
+                  "replayState": {
+                    "response": {
+                      "kind": "deepseek-messages",
+                      "version": 1,
+                      "model": "smoke-model"
+                    },
+                    "blocks": [
+                      {
+                        "type": "text"
+                      }
+                    ]
                   }
                 }
               }
@@ -4134,7 +5746,7 @@
         "sessionId": "{{parent}}",
         "event": {
           "type": "tool-workflow/agent-end",
-          "seq": 51,
+          "seq": 69,
           "time": 0,
           "data": {
             "runId": "{{workflow-run}}",
@@ -4150,7 +5762,7 @@
         "sessionId": "{{parent}}",
         "event": {
           "type": "tool-workflow/run-end",
-          "seq": 52,
+          "seq": 70,
           "time": 0,
           "data": {
             "runId": "{{workflow-run}}",
@@ -4165,11 +5777,11 @@
         "sessionId": "{{parent}}",
         "event": {
           "type": "tool/result",
-          "seq": 53,
+          "seq": 71,
           "time": 0,
           "data": {
             "turn": 1,
-            "step": 5,
+            "step": 7,
             "message": {
               "source": {
                 "kind": "tool",
@@ -4193,7 +5805,7 @@
             }
           },
           "sourceEventSeqs": [
-            47
+            65
           ],
           "surfaceOp": "append"
         }
@@ -4205,11 +5817,11 @@
         "sessionId": "{{parent}}",
         "event": {
           "type": "step/end",
-          "seq": 54,
+          "seq": 72,
           "time": 0,
           "data": {
             "turn": 1,
-            "step": 5
+            "step": 7
           }
         }
       }
@@ -4220,11 +5832,11 @@
         "sessionId": "{{parent}}",
         "event": {
           "type": "step/start",
-          "seq": 55,
+          "seq": 73,
           "time": 0,
           "data": {
             "turn": 1,
-            "step": 6
+            "step": 8
           }
         }
       }
@@ -4235,12 +5847,12 @@
         "sessionId": "{{parent}}",
         "event": {
           "type": "session-log-deepseek/delivery-accepted",
-          "seq": 56,
+          "seq": 74,
           "time": 0,
           "data": {
             "sessionId": "{{parent}}",
             "sessionFormatVersion": 3,
-            "throughSeq": 55
+            "throughSeq": 73
           }
         }
       }
@@ -4251,11 +5863,11 @@
         "sessionId": "{{parent}}",
         "event": {
           "type": "assistant/message",
-          "seq": 57,
+          "seq": 75,
           "time": 0,
           "data": {
             "turn": 1,
-            "step": 6,
+            "step": 8,
             "message": {
               "role": "assistant",
               "content": [
@@ -4269,7 +5881,19 @@
               "source": {
                 "kind": "model",
                 "provider": "deepseek-official",
-                "model": "smoke-model"
+                "model": "smoke-model",
+                "replayState": {
+                  "response": {
+                    "kind": "deepseek-messages",
+                    "version": 1,
+                    "model": "smoke-model"
+                  },
+                  "blocks": [
+                    {
+                      "type": "tool-call"
+                    }
+                  ]
+                }
               },
               "id": "{{messageId}}"
             },
@@ -4295,6 +5919,16 @@
                 "dt": [],
                 "id": "advanced-undefine",
                 "name": "cordis_undefine",
+                "args": [
+                  ""
+                ]
+              },
+              {
+                "type": "tool-call-chunks",
+                "time0": 0,
+                "index": 0,
+                "dt": [],
+                "id": "advanced-undefine",
                 "args": [
                   "{\"pluginId\": \"snap-1\"}"
                 ]
@@ -4332,6 +5966,18 @@
                   "type": "finish",
                   "reason": {
                     "kind": "tool-calls"
+                  },
+                  "replayState": {
+                    "response": {
+                      "kind": "deepseek-messages",
+                      "version": 1,
+                      "model": "smoke-model"
+                    },
+                    "blocks": [
+                      {
+                        "type": "tool-call"
+                      }
+                    ]
                   }
                 }
               }
@@ -4347,11 +5993,11 @@
         "sessionId": "{{parent}}",
         "event": {
           "type": "tool/call",
-          "seq": 58,
+          "seq": 76,
           "time": 0,
           "data": {
             "turn": 1,
-            "step": 6,
+            "step": 8,
             "callId": "advanced-undefine",
             "name": "cordis_undefine",
             "arguments": "{\"pluginId\": \"snap-1\"}"
@@ -4365,11 +6011,11 @@
         "sessionId": "{{parent}}",
         "event": {
           "type": "tool/result",
-          "seq": 59,
+          "seq": 77,
           "time": 0,
           "data": {
             "turn": 1,
-            "step": 6,
+            "step": 8,
             "message": {
               "source": {
                 "kind": "tool",
@@ -4393,7 +6039,7 @@
             }
           },
           "sourceEventSeqs": [
-            58
+            76
           ],
           "surfaceOp": "append"
         }
@@ -4405,11 +6051,11 @@
         "sessionId": "{{parent}}",
         "event": {
           "type": "step/end",
-          "seq": 60,
+          "seq": 78,
           "time": 0,
           "data": {
             "turn": 1,
-            "step": 6
+            "step": 8
           }
         }
       }
@@ -4420,11 +6066,11 @@
         "sessionId": "{{parent}}",
         "event": {
           "type": "step/start",
-          "seq": 61,
+          "seq": 79,
           "time": 0,
           "data": {
             "turn": 1,
-            "step": 7
+            "step": 9
           }
         }
       }
@@ -4435,11 +6081,11 @@
         "sessionId": "{{parent}}",
         "event": {
           "type": "system/message",
-          "seq": 62,
+          "seq": 80,
           "time": 0,
           "data": {
             "turn": 1,
-            "step": 7,
+            "step": 9,
             "message": {
               "role": "system",
               "content": [
@@ -4456,12 +6102,12 @@
             }
           },
           "sourceEventSeqs": [
-            28
+            32
           ],
           "surfaceOp": {
             "op": "replace",
-            "startSeq": 28,
-            "endSeq": 28
+            "startSeq": 32,
+            "endSeq": 32
           }
         }
       }
@@ -4472,7 +6118,7 @@
         "sessionId": "{{parent}}",
         "event": {
           "type": "request/header",
-          "seq": 63,
+          "seq": 81,
           "time": 0,
           "data": {
             "header": {
@@ -4514,12 +6160,12 @@
         "sessionId": "{{parent}}",
         "event": {
           "type": "session-log-deepseek/delivery-accepted",
-          "seq": 64,
+          "seq": 82,
           "time": 0,
           "data": {
             "sessionId": "{{parent}}",
             "sessionFormatVersion": 3,
-            "throughSeq": 63
+            "throughSeq": 81
           }
         }
       }
@@ -4530,11 +6176,11 @@
         "sessionId": "{{parent}}",
         "event": {
           "type": "assistant/message",
-          "seq": 65,
+          "seq": 83,
           "time": 0,
           "data": {
             "turn": 1,
-            "step": 7,
+            "step": 9,
             "message": {
               "role": "assistant",
               "content": [
@@ -4546,7 +6192,19 @@
               "source": {
                 "kind": "model",
                 "provider": "deepseek-official",
-                "model": "smoke-model"
+                "model": "smoke-model",
+                "replayState": {
+                  "response": {
+                    "kind": "deepseek-messages",
+                    "version": 1,
+                    "model": "smoke-model"
+                  },
+                  "blocks": [
+                    {
+                      "type": "text"
+                    }
+                  ]
+                }
               },
               "id": "{{message:1}}"
             },
@@ -4605,6 +6263,18 @@
                   "type": "finish",
                   "reason": {
                     "kind": "stop"
+                  },
+                  "replayState": {
+                    "response": {
+                      "kind": "deepseek-messages",
+                      "version": 1,
+                      "model": "smoke-model"
+                    },
+                    "blocks": [
+                      {
+                        "type": "text"
+                      }
+                    ]
                   }
                 }
               }
@@ -4620,11 +6290,11 @@
         "sessionId": "{{parent}}",
         "event": {
           "type": "step/end",
-          "seq": 66,
+          "seq": 84,
           "time": 0,
           "data": {
             "turn": 1,
-            "step": 7
+            "step": 9
           }
         }
       }
@@ -4635,7 +6305,7 @@
         "sessionId": "{{parent}}",
         "event": {
           "type": "command/run",
-          "seq": 67,
+          "seq": 85,
           "time": 0,
           "data": {
             "commandId": "{{command:1}}",
@@ -4653,7 +6323,7 @@
         "sessionId": "{{parent}}",
         "event": {
           "type": "feedback/record",
-          "seq": 68,
+          "seq": 86,
           "time": 0,
           "data": {
             "text": "The session needs a clearer explanation."
@@ -4667,7 +6337,7 @@
         "sessionId": "{{parent}}",
         "event": {
           "type": "command/done",
-          "seq": 69,
+          "seq": 87,
           "time": 0,
           "data": {
             "commandId": "{{command:1}}",
@@ -4683,7 +6353,7 @@
         "sessionId": "{{parent}}",
         "event": {
           "type": "feedback/record",
-          "seq": 70,
+          "seq": 88,
           "time": 0,
           "data": {
             "category": "other"
@@ -4697,7 +6367,7 @@
         "sessionId": "{{parent}}",
         "event": {
           "type": "feedback/message-put",
-          "seq": 71,
+          "seq": 89,
           "time": 0,
           "data": {
             "sessionId": "{{parent}}",
@@ -4720,7 +6390,7 @@
         "sessionId": "{{parent}}",
         "event": {
           "type": "feedback/message-put",
-          "seq": 72,
+          "seq": 90,
           "time": 0,
           "data": {
             "sessionId": "{{parent}}",
@@ -4742,7 +6412,7 @@
         "sessionId": "{{parent}}",
         "event": {
           "type": "feedback/message-delete",
-          "seq": 73,
+          "seq": 91,
           "time": 0,
           "data": {
             "sessionId": "{{parent}}",
@@ -4757,7 +6427,7 @@
         "sessionId": "{{parent}}",
         "event": {
           "type": "turn/end",
-          "seq": 74,
+          "seq": 92,
           "time": 0,
           "data": {
             "turn": 1,

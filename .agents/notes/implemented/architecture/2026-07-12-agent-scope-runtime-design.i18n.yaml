@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-07-12-agent-scope-runtime-design.md
-2026-07-12-agent-scope-runtime-design.md: baf9a5c6d153b90e318e2bc3d42057000121bd0a
-2026-07-12-agent-scope-runtime-design.zh.md: 3361dd3b546340abe232dd54c09150dc7821949e
+2026-07-12-agent-scope-runtime-design.md: b9b2c837f560c2b8b98da37e3656caf298b705e2
+2026-07-12-agent-scope-runtime-design.zh.md: 4b94d1b8449bd619c47f6bee0712ec8ed0b39593

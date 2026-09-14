@@ -237,7 +237,7 @@ describe('Session file uploads', () => {
     const { ctx, uploads, agent, disposeAgent } = await uploadHarness()
     await disposeAgent()
     const resolveAgent = vi.fn(async () => {
-      ctx.agents.register(agent)
+      await ctx.agents.register(agent)
       return agent
     })
     const disposeResolver = uploads.registerAgentResolver(resolveAgent)

@@ -686,7 +686,7 @@ describe('sessions.prompt synchronous rejection', () => {
     const session = ctx.sessions.create(sid('session-empty-prompt'))
     const followup = vi.fn()
     const steer = vi.fn()
-    ctx.agents.register({
+    await ctx.agents.register({
       id: session.id,
       session,
       inbox: inboxFor(),
