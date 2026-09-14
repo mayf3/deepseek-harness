@@ -1,6 +1,6 @@
 /** Package metadata queries share the active profile resolution generation. */
 
-import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
@@ -172,15 +172,8 @@ describe('profile package metadata service', () => {
     const initialWorkerData = getEnvironmentData(key) as {
       generation: ProfileResolutionGeneration
       behavior: string
-      nativeCacheDir?: string
     }
-    expect(initialWorkerData).toMatchObject({ generation: initial, behavior: 'verify' })
-    if (process.platform === 'win32') {
-      expect(initialWorkerData.nativeCacheDir).toEqual(expect.any(String))
-      expect(existsSync(initialWorkerData.nativeCacheDir as string)).toBe(true)
-    } else {
-      expect(initialWorkerData).not.toHaveProperty('nativeCacheDir')
-    }
+    expect(initialWorkerData).toEqual({ generation: initial, behavior: 'verify' })
 
     const added = join(root, 'added')
     const addedAnchor = pkg(added, '2.0.0', 'added-metadata')
@@ -200,7 +193,6 @@ describe('profile package metadata service', () => {
     expect(getEnvironmentData(key)).toEqual({
       generation: next,
       behavior: 'verify',
-      ...(initialWorkerData.nativeCacheDir === undefined ? {} : { nativeCacheDir: initialWorkerData.nativeCacheDir }),
     })
     expect(ctx.pluginPackages.packageOf(
       'added-metadata', pathToFileURL(join(profileDir, 'entry.mjs')).href,
@@ -209,8 +201,5 @@ describe('profile package metadata service', () => {
     await ctx.fiber.dispose()
     contexts.pop()
     expect(getEnvironmentData(key)).toBe(previous)
-    if (initialWorkerData.nativeCacheDir !== undefined) {
-      expect(existsSync(initialWorkerData.nativeCacheDir)).toBe(false)
-    }
   })
 })

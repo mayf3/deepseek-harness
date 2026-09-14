@@ -9,15 +9,5 @@ const registration = getEnvironmentData(
 ) as {
   generation: ProfileResolutionGeneration
   behavior: ProfileResolutionBehavior
-  nativeCacheDir?: string
 } | undefined
-if (registration !== undefined) {
-  const previous = process.env.NARB_NATIVE_CACHE_DIR
-  if (registration.nativeCacheDir !== undefined) process.env.NARB_NATIVE_CACHE_DIR = registration.nativeCacheDir
-  try {
-    installProfileResolution(registration.generation, registration.behavior)
-  } finally {
-    if (previous === undefined) delete process.env.NARB_NATIVE_CACHE_DIR
-    else process.env.NARB_NATIVE_CACHE_DIR = previous
-  }
-}
+if (registration !== undefined) installProfileResolution(registration.generation, registration.behavior)

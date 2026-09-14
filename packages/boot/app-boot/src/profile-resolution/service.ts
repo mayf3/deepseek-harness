@@ -1,9 +1,7 @@
 /** Package metadata resolved through one profile resolution registration. */
 
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
-import { rm } from 'node:fs/promises'
+import { existsSync, readFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
-import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Service, type Context } from '@deepseek-ai/cordis'
 import {
@@ -64,47 +62,18 @@ export class PluginPackages extends Service {
   private packages = new Map<string, PluginPackage | undefined>()
   private readonly resolver: ProfileResolutionRegistration | undefined
   private readonly behavior: ProfileResolutionBehavior
-  private readonly nativeCacheDir: string | undefined
   private disposeWorkerResolution: (() => void) | undefined
 
   constructor(ctx: Context, config: PluginPackagesConfig = {}) {
     super(ctx, 'pluginPackages')
     this.behavior = config.behavior ?? 'enforce'
-    /* v8 ignore start -- Linux coverage cannot enter the Windows native-cache lifecycle. */
-    this.nativeCacheDir = config.generation !== undefined && process.platform === 'win32'
-      ? mkdtempSync(join(tmpdir(), 'dsh-profile-resolution-native-'))
-      : undefined
-    /* v8 ignore stop */
     if (config.generation === undefined) return
-    let resolver: ProfileResolutionRegistration
-    try {
-      resolver = installProfileResolution(config.generation, this.behavior)
-    } catch (error) {
-      /* v8 ignore next -- only an unsupported Node Internal can fail before service publication. */
-      if (this.nativeCacheDir !== undefined) rmSync(this.nativeCacheDir, { recursive: true, force: true })
-      /* v8 ignore next -- the unsupported-Node failure is covered by the external version matrix. */
-      throw error
-    }
-    this.disposeWorkerResolution = registerWorkerResolution(
-      config.generation, this.behavior, this.nativeCacheDir,
-    )
+    const resolver = installProfileResolution(config.generation, this.behavior)
+    this.disposeWorkerResolution = registerWorkerResolution(config.generation, this.behavior)
     this.resolver = resolver
-    ctx.effect(() => async () => {
+    ctx.effect(() => () => {
       this.disposeWorkerResolution?.()
       resolver.dispose()
-      /* v8 ignore start -- Linux coverage cannot enter the Windows native-cache lifecycle. */
-      if (this.nativeCacheDir !== undefined) {
-        try {
-          await rm(this.nativeCacheDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 20 })
-        } catch (error) {
-          const code = (error as NodeJS.ErrnoException).code
-          if (code !== 'EBUSY' && code !== 'EPERM' && code !== 'ENOTEMPTY') throw error
-          ctx.logger.warn(
-            `profile package resolution: native cache ${this.nativeCacheDir} remains locked after Worker teardown`,
-          )
-        }
-      }
-      /* v8 ignore stop */
     }, 'profile package resolution')
   }
 
@@ -117,7 +86,7 @@ export class PluginPackages extends Service {
     this.resolver.replace(generation)
     this.packages = new Map()
     this.disposeWorkerResolution?.()
-    this.disposeWorkerResolution = registerWorkerResolution(generation, this.behavior, this.nativeCacheDir)
+    this.disposeWorkerResolution = registerWorkerResolution(generation, this.behavior)
   }
 
   /**

@@ -1505,16 +1505,6 @@ describe('profile resolution generation', { concurrent: false }, () => {
       dispose()
     }
     expect(getEnvironmentData(key)).toBe(previous)
-
-    const disposeWithCache = registerWorkerResolution(generation, 'enforce', '/private/native-cache')
-    try {
-      expect(getEnvironmentData(key)).toEqual({
-        generation, behavior: 'enforce', nativeCacheDir: '/private/native-cache',
-      })
-    } finally {
-      disposeWithCache()
-    }
-    expect(getEnvironmentData(key)).toBe(previous)
   })
 
   it('restores CommonJS resolution when the registration is disposed', async () => {

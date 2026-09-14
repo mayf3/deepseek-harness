@@ -963,19 +963,13 @@ export function installProfileResolution(
  * Publish one generation for Harness-owned Workers.
  * @param generation - complete package table and profile scope.
  * @param behavior - enforce or verify the generation in newly created Workers.
- * @param nativeCacheDir - private physical directory used to load the native adapter in a Worker.
  * @returns a disposer restoring the previous thread environment data.
  */
 export function registerWorkerResolution(
   generation: ProfileResolutionGeneration,
   behavior: ProfileResolutionBehavior = 'enforce',
-  nativeCacheDir?: string,
 ): () => void {
   const previous = getEnvironmentData(WORKER_RESOLUTION_KEY)
-  setEnvironmentData(WORKER_RESOLUTION_KEY, {
-    generation,
-    behavior,
-    ...(nativeCacheDir === undefined ? {} : { nativeCacheDir }),
-  })
+  setEnvironmentData(WORKER_RESOLUTION_KEY, { generation, behavior })
   return () => { setEnvironmentData(WORKER_RESOLUTION_KEY, previous) }
 }
