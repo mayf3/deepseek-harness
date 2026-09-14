@@ -12,6 +12,7 @@
     "dev": "tsx scripts/dev.ts",
     "start": "tsx scripts/dev.ts --skip-build",
     "prepare:runtime": "tsx scripts/prepare-runtime.ts",
+    "prepare:primary-runtime": "tsx scripts/prepare-primary-runtime.ts",
     "prepare:packages": "tsx scripts/prepare-package-set.ts",
     "prepare:dsh": "tsx scripts/prepare-dsh.ts",
     "prepare:package": "tsx scripts/package-target.ts --prepare-only",

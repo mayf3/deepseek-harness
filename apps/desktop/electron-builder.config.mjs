@@ -97,7 +97,7 @@ export function createElectronBuilderConfig(
       forceCodeSigning: true,
       hardenedRuntime: true,
       // Native runtime files are pre-signed; PAK resources are sealed by their enclosing bundle.
-      signIgnore: ['/Contents/Resources/dsh(?:/|$)', '\\.pak$'],
+      signIgnore: ['/Contents/Resources/dsh(?:/|$)', '/Contents/Resources/runtime/primary-runtime(?:/|$)', '\\.pak$'],
       notarize: true,
       target: ['dmg', 'zip'],
     },

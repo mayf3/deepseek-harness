@@ -586,9 +586,15 @@ importers:
       '@deepseek-ai/dsh-client-connection':
         specifier: workspace:^
         version: link:../../packages/client/connection
+      '@deepseek-ai/dsh-home-paths':
+        specifier: workspace:^
+        version: link:../../packages/util/home-paths
       '@deepseek-ai/dsh-host-webserver':
         specifier: workspace:^
         version: link:../../packages/host/webserver
+      '@deepseek-ai/dsh-tools':
+        specifier: workspace:^
+        version: link:../../packages/core/tools
 
   apps/web:
     devDependencies:

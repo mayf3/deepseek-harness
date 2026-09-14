@@ -237,7 +237,8 @@ async function main(): Promise<void> {
   const backend = new DesktopBackendController((onFailure) => {
     const hostInspectPort = developmentHostInspectPort(development)
     const host = new DesktopHostProcess(resources.node, resources.dsh, activeProject,
-      hostInspectPort, desktopNodeEnvironment(resources.node, resources.nodeBin, process.env), onFailure)
+      hostInspectPort, desktopNodeEnvironment(resources.node, resources.nodeBin, process.env), onFailure,
+      development ? join(app.getAppPath(), '.desktop-build', 'targets', `${process.platform === 'darwin' ? 'mac' : 'win'}-${process.arch}`, 'runtime', 'primary-runtime') : undefined)
     return {
       start: async () => {
         const ready = await host.start()

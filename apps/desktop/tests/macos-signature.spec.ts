@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, relative } from 'node:path'
 import { createRequire } from 'node:module'
@@ -63,7 +63,7 @@ describe('desktop macOS release signature', () => {
         identity: RELEASE_ENVIRONMENT.DSH_DESKTOP_MACOS_SIGNING_IDENTITY,
         forceCodeSigning: true,
         notarize: true,
-        signIgnore: ['/Contents/Resources/dsh(?:/|$)', '\\.pak$'],
+        signIgnore: ['/Contents/Resources/dsh(?:/|$)', '/Contents/Resources/runtime/primary-runtime(?:/|$)', '\\.pak$'],
       },
       dmg: {
         sign: true,
@@ -83,6 +83,7 @@ describe('desktop macOS release signature', () => {
     const ignored = (path: string): boolean => config.mac.signIgnore.some(pattern => new RegExp(pattern).test(path))
     expect(ignored('/App.app/Contents/Frameworks/Electron.framework/Versions/A/Resources/en.lproj/locale.pak')).toBe(true)
     expect(ignored('/App.app/Contents/Frameworks/Electron.framework/Versions/A/Resources/resources.pak')).toBe(true)
+    expect(ignored('/App.app/Contents/Resources/runtime/primary-runtime/dependencies/python/bin/python3')).toBe(true)
     for (const path of [
       '/App.app/Contents/MacOS/DeepSeek Harness',
       '/App.app/Contents/Resources/runtime/pnpm/addon.node',
@@ -118,6 +119,24 @@ describe('desktop macOS release signature', () => {
       DSH_DESKTOP_APP_ID: RELEASE_ENVIRONMENT.DSH_DESKTOP_APP_ID,
       DSH_DESKTOP_TARGET_PLATFORM: 'win32',
     }, 'win32')).toThrow(/DSH_DESKTOP_WINDOWS_CER_FILE/u)
+  })
+
+  it('copies primary interpreter files and nested pnpm modules through the runtime resource mapping', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'desktop-primary-copy-'))
+    try {
+      const source = join(root, 'source')
+      const destination = join(root, 'runtime')
+      const files = ['primary-runtime/runtime.json', 'primary-runtime/dependencies/python/Lib/site-packages/numpy/native.pyd',
+        'primary-runtime/dependencies/pnpm/dist/node_modules/helper/index.js', 'primary-runtime/dependencies/node/node_modules/README.txt']
+      for (const file of files) {
+        mkdirSync(join(source, file, '..'), { recursive: true })
+        writeFileSync(join(source, file), 'payload')
+      }
+      mkdirSync(join(source, 'primary-runtime/dependencies/node/node_modules'), { recursive: true })
+      await copyFiles([new FileMatcher(source, destination, value => value)])
+      for (const file of files) expect(existsSync(join(destination, file))).toBe(true)
+      expect(existsSync(join(destination, 'primary-runtime/dependencies/node/node_modules'))).toBe(true)
+    } finally { rmSync(root, { recursive: true, force: true }) }
   })
 
   it('isolates unsigned Windows artifacts and omits updater metadata without release credentials', async () => {

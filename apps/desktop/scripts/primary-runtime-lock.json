@@ -1,0 +1,30 @@
+{
+  "nodeVersion": "24.21.0",
+  "pythonVersion": "3.12.14",
+  "pythonRelease": "20260901",
+  "numpyVersion": "2.3.5",
+  "pandasVersion": "3.0.1",
+  "targets": {
+    "win-x64": {
+      "nodeArchive": "win-x64.zip",
+      "nodeSha256": "158f7685b44de51f6c0df1d153526cbcd3e1bc739a8dfc607721cef75de9e541",
+      "pythonTarget": "x86_64-pc-windows-msvc",
+      "pythonSha256": "7c45c9622400d578709a9b2cddbe8124cc21d382409d9f13406d706d28e31b14",
+      "wheelPlatform": "win_amd64"
+    },
+    "mac-arm64": {
+      "nodeArchive": "darwin-arm64.tar.gz",
+      "nodeSha256": "bed7eea5325e1108f32ce5228ddd6a5f0f08a499ee42aa7442aea583702f6057",
+      "pythonTarget": "aarch64-apple-darwin",
+      "pythonSha256": "81a359f1cfadd4da11766534c5913791cea55f26e1bb902cacd2a531bb1e4b2b",
+      "wheelPlatform": "macosx_11_0_arm64"
+    },
+    "mac-x64": {
+      "nodeArchive": "darwin-x64.tar.gz",
+      "nodeSha256": "1462cb3b3046b815cf8ea436d3da450ec1a9f11dac7e5a46b0ada5305d7e8097",
+      "pythonTarget": "x86_64-apple-darwin",
+      "pythonSha256": "65b195c9cedc1fef6767f044f9822069adbd1bd9204d424ece4628776fdc04bb",
+      "wheelPlatform": "macosx_10_13_x86_64"
+    }
+  }
+}

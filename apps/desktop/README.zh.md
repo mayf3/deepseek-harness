@@ -10,6 +10,18 @@
 
 macOS PNG 使用带留白的圆角底板，供传统 ICNS 打包使用，包含最高 1024 像素的表示。它是扁平图标，并非 Icon Composer 文档。Apple 的[应用图标指南](https://developer.apple.com/design/human-interface-guidelines/app-icons)要求向 Icon Composer 提供未遮罩的图层；这些输入需要在 macOS 上单独导出，不能复用已做圆角的 ICNS 图案。发布前须在支持的 macOS 版本中验收 Finder 和 Dock 的显示效果。
 
+### 内置工作区依赖
+
+当前 Windows Python 产物包含未签名的原生扩展。本机验证中，Smart App Control 阻止了 `_decimal`、`pyexpat`、`_lzma` 和 `_uuid`；该主机上的 XML 和 LZMA 操作失败。numpy/pandas 冒烟检查通过，不代表所有扩展都兼容。
+
+Desktop 携带独立的 Python、Node.js 和 pnpm 分发包，并在 Python 的 `site-packages` 中预装 numpy 和 pandas。`load_workspace_dependencies` 工具首次使用时，将该产物离线安装到 `$DSH_HOME/dsh-runtimes/dsh-primary-runtime`（通常为 `~/.dsh/dsh-runtimes/dsh-primary-runtime`），并返回解释器、pnpm 脚本和库目录的绝对路径。pnpm 脚本通过返回的 Node 可执行文件运行。返回的 Node 库目录为随包交付的库预留，不是 pnpm 的全局安装目录。
+
+该产物随 Desktop 版本发布。`runtime.json` 记录 Desktop 版本、目标平台和组件版本；匹配的安装会被复用，版本不同时在完整暂存副本完成后替换目录。添加到该目录的 Python 包在同一版本内保留，升级时随应用基线一起替换。目录替换失败时保留之前的安装；解释器仍在运行时，Windows 可能拒绝替换。
+
+该工具不修改 PATH、环境变量或用户包管理器配置。pnpm 的全局包、命令入口和 store 保留自身默认值及用户设置，包括环境不支持全局安装时的原生错误。不提供独立依赖更新器。[第一方 Runtime 决策](../../.agents/notes/implemented/feature/2026-09-14-desktop-primary-runtime.zh.md)记录这些选择。
+
+构建准备使用带 pip 的系统 Python（Windows 为 `python`，macOS 为 `python3`）安装目标 wheel，该构建解释器不随包交付。它通过[下载锁](scripts/primary-runtime-lock.json)固定解释器压缩包哈希，通过[依赖锁](scripts/primary-runtime-requirements.txt)固定 Python wheel 哈希；pnpm 使用 Desktop 构建依赖锁。本机目标的准备流程检查解释器执行及 numpy/pandas 运算。跨目标执行和签名安装需要对应的发布主机。`dev:desktop` 和 `start:desktop` 都会在启动 Electron 前准备 `.desktop-build/targets/<target>/runtime/primary-runtime`；首次准备可能需要下载锁定的依赖。
+
 | 决策 | 原因 | 直接结果 |
 |---|---|---|
 | 发布身份 | 桌面壳 API、Web 客户端、后端与插件依赖图作为一个组合完成验证；独立版本会产生未经验证的组合，并让更新可用性含糊不清。 | Electron 与 `@deepseek-ai/dsh` 始终使用同一精确版本。即使桌面壳代码不变，升级 dsh 也必须发布新 Desktop 版本。 |

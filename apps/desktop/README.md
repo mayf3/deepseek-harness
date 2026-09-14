@@ -10,6 +10,18 @@ The original artwork lives in `resources/icon.png` and `resources/icon.svg`; pla
 
 The macOS PNG uses an inset rounded background for legacy ICNS packaging, with representations up to 1024 pixels. It is a flattened icon, not an Icon Composer document. Apple's [app icon guidance](https://developer.apple.com/design/human-interface-guidelines/app-icons) describes unmasked layers for Icon Composer; those inputs require a separate macOS export and must not reuse the rounded ICNS artwork. Verify Finder and Dock appearance on supported macOS versions before release.
 
+### Bundled workspace dependencies
+
+The current Windows Python payload contains unsigned native extensions. Smart App Control blocked `_decimal`, `pyexpat`, `_lzma` and `_uuid` during local validation; XML and LZMA operations fail on that host. Successful numpy/pandas smoke checks do not establish compatibility for every extension.
+
+Desktop carries independent Python, Node.js and pnpm distributions, with numpy and pandas in Python's `site-packages`. The `load_workspace_dependencies` tool installs this payload offline on first use under `$DSH_HOME/dsh-runtimes/dsh-primary-runtime` (normally `~/.dsh/dsh-runtimes/dsh-primary-runtime`) and returns absolute interpreter, pnpm script and library paths. Execute the pnpm script with the returned Node executable. The returned Node library directory is reserved for bundled libraries, not pnpm's global installation directory.
+
+The payload follows the Desktop release. `runtime.json` records the Desktop version, target and component versions; a matching installation is reused, and a different release replaces the directory after a complete staged copy. Python packages added to that directory are retained within the same release and replaced with the application baseline on upgrade. A failed directory replacement retains the previous installation; Windows may refuse replacement while an interpreter is still running.
+
+This tool does not change PATH, environment variables or user package-manager configuration. pnpm retains its own defaults and user settings for global packages, executable entries and its store, including native errors when the environment does not support global installation. There is no separate dependency updater. [The primary-runtime decision](../../.agents/notes/implemented/feature/2026-09-14-desktop-primary-runtime.md) records these choices.
+
+Build preparation uses system Python with pip (`python` on Windows, `python3` on macOS) to install target wheels; that build interpreter is not shipped. It pins interpreter archive hashes in [the download lock](scripts/primary-runtime-lock.json) and Python wheel hashes in [the requirements lock](scripts/primary-runtime-requirements.txt); pnpm follows the Desktop build dependency lock. Native-target preparation checks interpreter execution and numpy/pandas operations. Cross-target execution and signed installation require the target release host. Both `dev:desktop` and `start:desktop` prepare `.desktop-build/targets/<target>/runtime/primary-runtime` before launching Electron; first use may download locked dependencies.
+
 | Decision | Why | Direct consequence |
 |---|---|---|
 | Release identity | The shell API, Web client, backend, and plugin graph are qualified as one combination; independent versions would create untested combinations and ambiguous update availability. | Electron and `@deepseek-ai/dsh` always have the same exact version. A dsh upgrade is a Desktop release, even when the shell code is unchanged. |
