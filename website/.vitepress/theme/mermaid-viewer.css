@@ -79,8 +79,7 @@
 
 .dsh-diagram-paper {
   position: absolute;
-  left: 50%;
-  top: 50%;
+  inset: 0;
 }
 
 @media (max-width: 600px) {

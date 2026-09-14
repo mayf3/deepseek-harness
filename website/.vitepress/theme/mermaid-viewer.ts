@@ -63,15 +63,14 @@ function openDiagram(
   viewport.className = 'dsh-diagram-viewport'
   const paper = doc.createElement('div')
   paper.className = 'dsh-diagram-paper'
-  Object.assign(paper.style, {
-    width: `${size.width}px`, height: `${size.height}px`,
-    marginLeft: `${-size.width / 2}px`, marginTop: `${-size.height / 2}px`,
-  })
   // Each Mermaid SVG embeds ID-scoped styles and fragment references. A shadow root
   // keeps the enlarged copy's IDs and styles separate from the original diagram.
   const shadow = paper.attachShadow({ mode: 'open' })
   const clone = svg.cloneNode(true) as SVGSVGElement
-  Object.assign(clone.style, { width: '100%', height: '100%', maxWidth: 'none', display: 'block' })
+  Object.assign(clone.style, {
+    position: 'absolute', left: '50%', top: '50%', transform: 'translate(-50%, -50%)',
+    width: `${size.width}px`, height: `${size.height}px`, maxWidth: 'none', display: 'block',
+  })
   shadow.append(clone)
   viewport.append(paper)
   dialog.append(toolbar, help, viewport)
