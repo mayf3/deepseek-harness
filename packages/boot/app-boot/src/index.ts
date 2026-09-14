@@ -51,10 +51,10 @@ export {
   type ProfileModuleFallbackOptions,
   type ProfileTemplate,
 } from './profile.ts'
-export { entryIssue, inspectEntryIssues, type EntryIssue } from './entry-issues.ts'
+export { inspectEntryIssues, type EntryIssue } from './entry-issues.ts'
 export {
   disableBundle, enableBundle, reconcileInstalledBundles,
-  type BundleReconciliation, type AnalyzedBundleLayer, type DuplicateRow,
+  type BundleReconciliation,
 } from './external-bundles.ts'
 export {
   claimLayerIds, composeProfileStack, formatRowConflict,

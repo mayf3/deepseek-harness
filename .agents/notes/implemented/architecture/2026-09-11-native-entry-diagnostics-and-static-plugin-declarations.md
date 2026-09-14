@@ -22,6 +22,8 @@ Third-party plugin failures must leave the application’s management endpoints 
 
 **Unhandled process failures stay fatal.** `installFailLoud` remains until shutdown. Only duplicate rejections already observed by an entry audit are coalesced through its process checkpoint. Unrelated detached rejections retain master’s teardown-and-exit policy. No in-process group protects against `process.exit`, a blocked event loop, native crashes or OOM. Preset generation owners retain their own strict mount-and-cleanup behavior.
 
+**Public helpers serve launcher and management operations.** Composition, conflict checks, diagnostics and package management expose their inputs and results. Per-row diagnostic helpers and intermediate bundle analysis stay package-private so callers depend on operation results rather than analysis steps. Ownership analysis returns row owners and conflicts without retaining unused per-bundle results.
+
 ## Alternatives considered
 
 **Keep contained groups and child probes.** Contained groups protected against transactional Loader rollback and supplied failure records for removed rows. Native entries retain both siblings and failed rows, so wrapping adds identities without supplying bundle-wide enablement that layer composition lacks. Child probes bounded discovery-time execution and discovered undeclared exports and schemas. Static declarations avoid that execution; automatic main-export detection and pre-mount schemas are given up. A future execution sandbox needs its own process ownership and teardown design, not a discovery probe presented as runtime isolation.

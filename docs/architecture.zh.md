@@ -26,7 +26,7 @@
 
 各层按此顺序应用在空条目列表之上：先按 profile 列出的顺序应用每个组合包，然后是 profile 的 `cordis.patch.yml`，然后是 home 级的那份，最后是任意 `--patch` overlay。一条 patch 按 id 定位某个条目并替换其整个 config，或插入新条目。
 
-已安装的组合包是外部的：它的行挂在一个受控组下，启动失败的行被隔离并报告，而内置行仍然让启动失败（[app-boot](../packages/boot/app-boot/README.zh.md)）。
+组合包的行保留声明的 id 和组层级。启用组合包会应用它的整个 patch 层；启动要求应用的必需条目激活，其他行的失败则作为警告报告（[app-boot](../packages/boot/app-boot/README.zh.md)）。
 
 自定义 profile 默认实时重载 patch。随附的 `web` profile 使用实时重载；`headless`、`sdk`、`sdk-minimal` 和 `acp` 则只在启动时应用一次所有配置层，因为一次性应用或 stdio 应用拥有工作之后，替换其依赖会破坏该生命周期。
 

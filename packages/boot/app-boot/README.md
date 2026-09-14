@@ -116,7 +116,7 @@ This section explains how the outcomes above are realized and points at the code
 
 ### Helper behavior
 
-The exports each own one stage of the boot: config resolution and snapshot replay, layered environment loading, fail-loud reporting, activation auditing, patch parsing, root-include mounting, config dump rendering, live patch watching, profile composition, and the harness-source section. Per-export contracts live in the code, not this README — see [`src/index.ts`](src/index.ts) and [`src/profile.ts`](src/profile.ts).
+The package root exports boot, composition, diagnostics and package-management operations with their input and result types. Per-row diagnostic helpers and intermediate bundle analysis stay internal. Per-export contracts live in [`src/index.ts`](src/index.ts) and [`src/profile.ts`](src/profile.ts).
 
 ### Source map
 
