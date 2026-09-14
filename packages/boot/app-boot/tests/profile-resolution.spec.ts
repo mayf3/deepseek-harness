@@ -361,10 +361,37 @@ describe('profile resolution generation', { concurrent: false }, () => {
     expect(require.resolve('resolution-lib', { paths: [f.profile.dir] })).toBe(join(f.installed, 'index.cjs'))
     expect(require.resolve('resolution-lib', { paths: [join(f.root, 'missing'), f.profile.dir] }))
       .toBe(join(f.installed, 'index.cjs'))
+    const relative = join(f.profile.dir, 'relative.cjs')
+    file(relative, '')
+    expect(require.resolve('./relative.cjs', { paths: [f.profile.dir] })).toBe(relative)
     const invalid = join(f.root, 'invalid')
     file(join(invalid, 'node_modules', 'resolution-lib', 'package.json'), '{')
     expect(() => { require.resolve('resolution-lib', { paths: [invalid, f.profile.dir] }) })
       .toThrow(/Invalid package config/u)
+  })
+
+  it('keeps earlier explicit CommonJS paths ahead of a managed local failure', async () => {
+    const f = fixture()
+    const generation = await healProfilesModuleFallback({
+      installAnchor: f.installAnchor,
+      profile: f.profile,
+      home: f.root,
+    })
+    const local = join(f.profile.dir, 'node_modules', 'resolution-lib')
+    file(join(local, 'package.json'), JSON.stringify({
+      name: 'resolution-lib', version: '2.0.0', exports: './missing.cjs',
+    }))
+    const alternative = join(f.root, 'alternative')
+    const selected = join(alternative, 'node_modules', 'resolution-lib', 'index.cjs')
+    pkg(dirname(selected), 'resolution-lib', 3)
+    const require = createRequire(join(f.profile.dir, 'entry.cjs'))
+    const paths = [alternative, f.profile.dir]
+    expect(require.resolve('resolution-lib', { paths })).toBe(selected)
+    unlinkSync(join(generation.profilesDir, 'node_modules', 'resolution-lib'))
+
+    const registration = installProfileResolution(generation)
+    registrations.push(registration)
+    expect(require.resolve('resolution-lib', { paths })).toBe(selected)
   })
 
   it('keeps a missing legacy main before a managed explicit CommonJS path', async () => {
@@ -464,6 +491,15 @@ describe('profile resolution generation', { concurrent: false }, () => {
 
   it('preserves an npm alias package self-reference', async () => {
     const f = fixture()
+    file(f.installAnchor, JSON.stringify({
+      name: 'test-app',
+      version: '0.0.0',
+      type: 'module',
+      exports: { import: './index.js', require: './index.cjs' },
+      dependencies: { 'resolution-lib': '*', 'real-name': '*' },
+    }))
+    const installedRealName = join(dirname(f.installAnchor), 'node_modules', 'real-name')
+    pkg(installedRealName, 'real-name', 7)
     file(join(f.profile.dir, 'package.json'), JSON.stringify({
       name: 'test-profile',
       private: true,
@@ -479,6 +515,7 @@ describe('profile resolution generation', { concurrent: false }, () => {
     expect(generation.localPackageNames).toEqual(['alias'])
     const require = createRequire(join(alias, 'inside.cjs'))
     expect(require.resolve('real-name')).toBe(join(alias, 'index.cjs'))
+    expect(require.resolve('real-name', { paths: [f.profile.dir] })).toBe(join(alias, 'index.cjs'))
     expect(resolveFrom('real-name', pathToFileURL(join(alias, 'inside-link.mjs')).href)).toBe(
       pathToFileURL(join(alias, 'index.js')).href,
     )
@@ -489,10 +526,12 @@ describe('profile resolution generation', { concurrent: false }, () => {
     expect(() => resolveFrom('resolution-lib', pathToFileURL(join(invalidScope, 'inside.mjs')).href))
       .toThrow(/Invalid package config/u)
     unlinkSync(join(generation.profilesDir, 'node_modules', 'resolution-lib'))
+    unlinkSync(join(generation.profilesDir, 'node_modules', 'real-name'))
 
     const registration = installProfileResolution(generation)
     registrations.push(registration)
     expect(require.resolve('real-name')).toBe(join(alias, 'index.cjs'))
+    expect(require.resolve('real-name', { paths: [f.profile.dir] })).toBe(join(alias, 'index.cjs'))
     expect(resolveFrom('real-name', pathToFileURL(join(alias, 'inside-runtime.mjs')).href)).toBe(
       pathToFileURL(join(alias, 'index.js')).href,
     )
@@ -550,6 +589,41 @@ describe('profile resolution generation', { concurrent: false }, () => {
     )).toBe(pathToFileURL(realpathSync(join(f.installed, 'index.js'))).href)
   })
 
+  it('ignores a stale package imports projection and detects it in dual mode', async () => {
+    const f = fixture()
+    file(join(f.profile.dir, 'package.json'), JSON.stringify({
+      name: 'test-profile',
+      private: true,
+      imports: { '#resolution-lib': 'resolution-lib' },
+    }))
+    const generation = await healProfilesModuleFallback({
+      installAnchor: f.installAnchor,
+      profile: f.profile,
+      home: f.root,
+    })
+    const projection = join(generation.profilesDir, 'node_modules', 'resolution-lib')
+    unlinkSync(projection)
+    const stale = join(f.root, 'stale', 'resolution-lib')
+    pkg(stale, 'resolution-lib', 9)
+    symlinkSync(stale, projection, process.platform === 'win32' ? 'junction' : 'dir')
+    const require = createRequire(join(f.profile.dir, 'entry.cjs'))
+
+    const runtime = installProfileResolution(generation)
+    expect(require.resolve('#resolution-lib')).toBe(join(f.installed, 'index.cjs'))
+    expect(require.resolve('resolution-lib')).toBe(join(f.installed, 'index.cjs'))
+    expect(resolveFrom(
+      '#resolution-lib', pathToFileURL(join(f.profile.dir, 'runtime.mjs')).href,
+    )).toBe(pathToFileURL(join(f.installed, 'index.js')).href)
+    runtime.dispose()
+
+    const dual = installProfileResolution(generation, 'verify')
+    registrations.push(dual)
+    expect(() => require.resolve('#resolution-lib')).toThrow(/profile resolution mismatch/u)
+    expect(() => resolveFrom(
+      '#resolution-lib', pathToFileURL(join(f.profile.dir, 'dual-stale.mjs')).href,
+    )).toThrow(/profile resolution mismatch/u)
+  })
+
   it('leaves relative package imports targets and their diagnostics to Node', async () => {
     const f = fixture()
     file(join(f.profile.dir, 'package.json'), JSON.stringify({
@@ -572,6 +646,27 @@ describe('profile resolution generation', { concurrent: false }, () => {
     registrations.push(registration)
     expect(thrownMessage(() => require.resolve('#missing-relative'))).toBe(cjsMessage)
     expect(thrownMessage(() => resolveFrom('#missing-relative', parent))).toBe(esmMessage)
+  })
+
+  it('keeps local and after-fallback package imports targets in native order', async () => {
+    const f = fixture()
+    file(join(f.profile.dir, 'package.json'), JSON.stringify({
+      name: 'test-profile',
+      private: true,
+      imports: { '#local': 'local-import', '#ancestor': 'ancestor-import' },
+    }))
+    const local = join(f.profile.dir, 'node_modules', 'local-import')
+    const ancestor = join(f.root, 'node_modules', 'ancestor-import')
+    pkg(local, 'local-import', 4)
+    pkg(ancestor, 'ancestor-import', 5)
+    const require = createRequire(join(f.profile.dir, 'entry.cjs'))
+    expect(require.resolve('#local')).toBe(join(local, 'index.cjs'))
+    expect(require.resolve('#ancestor')).toBe(join(ancestor, 'index.cjs'))
+
+    const registration = installProfileResolution(await generationOf(f))
+    registrations.push(registration)
+    expect(require.resolve('#local')).toBe(join(local, 'index.cjs'))
+    expect(require.resolve('#ancestor')).toBe(join(ancestor, 'index.cjs'))
   })
 
   it('leaves package imports outside the profile scope to Node', async () => {
@@ -630,6 +725,35 @@ describe('profile resolution generation', { concurrent: false }, () => {
     rmSync(join(local, 'package.json'))
     expect(createRequire(join(f.profile.dir, 'entry.cjs')).resolve('resolution-lib/legacy-install.cjs'))
       .toBe(join(f.installed, 'legacy-install.cjs'))
+  })
+
+  it('stops a local CommonJS probe before the generation fallback position', async () => {
+    const f = fixture()
+    file(join(f.installed, 'package.json'), JSON.stringify({
+      name: 'resolution-lib', version: '1.0.0', type: 'module', main: './index.cjs',
+    }))
+    const installedSubpath = join(f.installed, 'only-install.cjs')
+    file(installedSubpath, 'module.exports = { marker: 8 }\n')
+    const generation = await healProfilesModuleFallback({
+      installAnchor: f.installAnchor,
+      profile: f.profile,
+      home: f.root,
+    })
+    file(join(f.profile.dir, 'node_modules', 'resolution-lib', 'package.json'), JSON.stringify({
+      name: 'resolution-lib', version: '2.0.0', main: './index.cjs',
+    }))
+    file(join(f.profile.dir, 'node_modules', 'resolution-lib', 'index.cjs'), 'module.exports = {}\n')
+    file(join(f.root, 'node_modules', 'resolution-lib', 'package.json'), JSON.stringify({
+      name: 'resolution-lib', version: '3.0.0', exports: './index.cjs',
+    }))
+    file(join(f.root, 'node_modules', 'resolution-lib', 'index.cjs'), 'module.exports = {}\n')
+    const require = createRequire(join(f.profile.dir, 'entry.cjs'))
+    expect(require.resolve('resolution-lib/only-install.cjs')).toBe(installedSubpath)
+    unlinkSync(join(generation.profilesDir, 'node_modules', 'resolution-lib'))
+
+    const registration = installProfileResolution(generation)
+    registrations.push(registration)
+    expect(require.resolve('resolution-lib/only-install.cjs')).toBe(installedSubpath)
   })
 
   it('observes a profile-local package installed after an earlier miss', async () => {

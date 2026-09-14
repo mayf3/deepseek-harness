@@ -34,6 +34,10 @@ interface CommonJsModule {
 
 interface InternalModules {
   esm: ModuleLoaderV1 | ModuleLoaderV2
+  esmDefaultResolve: (
+    specifier: string,
+    context: { parentURL?: string; conditions?: readonly string[] },
+  ) => ResolveResult
   esmConditions: readonly string[]
   cjs: CommonJsModule
   cjsConditions: ReadonlySet<string>
@@ -203,7 +207,7 @@ function selfReferenceName(parent: string): string | false | null {
 
 function packageImportsTarget(
   parent: string, request: string, conditions: Iterable<string>,
-): string | undefined {
+): { specifier: string; parentURL: string } | undefined {
   let current = dirname(parent)
   while (true) {
     const manifestPath = join(current, 'package.json')
@@ -221,7 +225,9 @@ function packageImportsTarget(
           conditions: [...conditions],
           unsafe: true,
         })?.[0]
-        return target !== undefined && barePackageName(target) !== undefined ? target : undefined
+        return target !== undefined && barePackageName(target) !== undefined
+          ? { specifier: target, parentURL: pathToFileURL(manifestPath).href }
+          : undefined
       } catch (_error) {
         // The native resolver retains missing mappings and unmatched-condition diagnostics.
         /* v8 ignore next -- native resolution cannot report MODULE_NOT_FOUND before selecting a valid mapping */
@@ -252,9 +258,11 @@ function localCandidateOwnsResolution(candidate: string, resolved: string, reque
   if (startsWithin(resolved, prefixes(candidate))) return true
   if (sameResolution(candidate, resolved)) return true
   if (['.js', '.json', '.node'].some(extension => sameResolution(candidate + extension, resolved))) return true
+  /* v8 ignore next -- a bounded native lookup can escape a candidate only through its root legacy main */
   if (request !== name) return false
   try {
     const manifest = JSON.parse(readFileSync(join(candidate, 'package.json'), 'utf8')) as Record<string, unknown>
+    /* v8 ignore next -- a bounded native lookup outside the package directory requires a legacy main */
     if (typeof manifest.main !== 'string') return false
     const main = createRequire(join(candidate, 'package.json')).resolve(resolve(candidate, manifest.main))
     return sameResolution(main, resolved)
@@ -320,7 +328,7 @@ class ResolutionRouter {
     parentRoutes: ParentRoutes,
     generation: CompiledGeneration,
     flavor: 'esm' | 'cjs',
-    nativeResolve?: () => string,
+    nativeResolve?: (searchPaths: readonly string[]) => string,
     cacheable = false,
   ): ResolutionRouteState | undefined {
     const { parent, profilesDir, requests } = parentRoutes
@@ -338,8 +346,10 @@ class ResolutionRouter {
 
     const target = generation.entries.get(name)
     const candidates: Array<{ packageDir: string; canBeManagedLink: boolean }> = []
+    const localSearchPaths: string[] = []
     for (const searchPath of createRequire(parent).resolve.paths(name) as string[]) {
       if (generation.shared.has(resolve(searchPath))) break
+      localSearchPaths.push(searchPath)
       const candidate = localPackageCandidate(searchPath, name, flavor)
       if (candidate !== undefined) {
         const legacy = candidate.canBeManagedLink && generation.profile.some(prefix => (
@@ -352,7 +362,7 @@ class ResolutionRouter {
     if (candidates.length > 0) {
       if (flavor === 'cjs' && nativeResolve !== undefined) {
         try {
-          const resolved = nativeResolve()
+          const resolved = nativeResolve(localSearchPaths)
           const selected = candidates.find(candidate => (
             localCandidateOwnsResolution(candidate.packageDir, resolved, request, name)
           ))
@@ -439,7 +449,7 @@ class ResolutionRouter {
   }
 
   routePath(
-    request: string, parent: string, nativeResolve?: () => string, cacheable = false,
+    request: string, parent: string, nativeResolve?: (searchPaths: readonly string[]) => string, cacheable = false,
   ): ResolutionRouteState | undefined {
     const generation = this.current
     let parentRoutes = generation.cjsRoutes.get(parent)
@@ -470,14 +480,23 @@ class ResolutionRouter {
   }
 
   explicitRoute(
-    request: string, paths: readonly string[], nativeResolve: (path: string) => () => string,
-  ): { index: number; state: ResolutionRouteState } | undefined {
+    request: string, paths: readonly string[],
+  ): { index: number; parent: string } | undefined {
+    if (barePackageName(request) === undefined) return undefined
     for (const [index, path] of paths.entries()) {
       const parent = join(resolve(path), '.dsh-profile-resolution.cjs')
-      const state = this.routePath(request, parent, nativeResolve(path), false)
-      if (state !== undefined) return { index, state }
+      if (startsWithin(parent, this.current.profilePaths) || startsWithin(parent, this.current.profile)) {
+        return { index, parent }
+      }
     }
     return undefined
+  }
+
+  nativeSelfReference(request: string, parent: string): boolean {
+    const name = barePackageName(request)
+    if (name === undefined) return false
+    const self = selfReferenceName(parent)
+    return self === name || self === null
   }
 
   packageDir(specifier: string, parentURL: string): string | undefined {
@@ -511,6 +530,12 @@ function internalModules(): InternalModules {
   const esmUtils = addon.requireBuiltin('internal/modules/esm/utils') as {
     getDefaultConditions(): readonly string[]
   }
+  const esmResolve = addon.requireBuiltin('internal/modules/esm/resolve') as {
+    defaultResolve(
+      specifier: string,
+      context: { parentURL?: string; conditions?: readonly string[] },
+    ): ResolveResult
+  }
   const esm = esmModule.getOrInitializeCascadedLoader()
   const modern = 'getOrCreateModuleJob' in esm
   /* v8 ignore start -- the supported Node 22/24/26 matrix validates each available Internal interface */
@@ -519,12 +544,14 @@ function internalModules(): InternalModules {
     || (!modern && typeof Reflect.get(esm, 'resolve') !== 'function')
     || typeof cjsModule.Module._resolveFilename !== 'function'
     || typeof cjsHelpers.getCjsConditions !== 'function'
-    || typeof esmUtils.getDefaultConditions !== 'function') {
+    || typeof esmUtils.getDefaultConditions !== 'function'
+    || typeof esmResolve.defaultResolve !== 'function') {
     throw new Error('profile resolution: unsupported Node module loader')
   }
   /* v8 ignore stop */
   return {
     esm,
+    esmDefaultResolve: esmResolve.defaultResolve,
     esmConditions: esmUtils.getDefaultConditions(),
     cjs: cjsModule.Module,
     cjsConditions: cjsHelpers.getCjsConditions(),
@@ -598,7 +625,7 @@ export function installProfileResolution(
   behavior: ProfileResolutionBehavior = 'enforce',
 ): ProfileResolutionRegistration {
   const router = new ResolutionRouter(generation)
-  const { esm, esmConditions, cjs, cjsConditions, modern } = internalModules()
+  const { esm, esmDefaultResolve, esmConditions, cjs, cjsConditions, modern } = internalModules()
   const esmScope = new Map<string, boolean>()
   const profilePaths = [
     ...prefixes(generation.profilesDir),
@@ -632,33 +659,28 @@ export function installProfileResolution(
         const target = request[0] === '#'
           ? packageImportsTarget(fileURLToPath(parent), request, esmConditions)
           : undefined
-        const recoverPackageImport = (error: unknown): ResolveResult | Promise<ResolveResult> => {
-          if ((error as NodeJS.ErrnoException).code !== 'ERR_MODULE_NOT_FOUND' || target === undefined) throw error
-          return adapted(target, parent, attributes)
-        }
-        const verifyPackageImport = (resolved: ResolveResult): ResolveResult | Promise<ResolveResult> => {
-          if (behavior !== 'verify' || target === undefined) return resolved
-          const expected = adapted(target, parent, attributes)
-          /* v8 ignore start -- Node 22 is the asynchronous adapter and is covered by the external version matrix */
-          if (expected instanceof Promise) {
-            return expected.then((wanted) => {
-              assertEquivalent(resolved.url, wanted.url, request, parent)
-              return resolved
-            })
-          }
-          /* v8 ignore stop */
-          assertEquivalent(resolved.url, expected.url, request, parent)
-          return resolved
-        }
+        if (target === undefined) return native(request, parent, attributes)
+        const restoreImporter = (error: unknown): never => throwWithImporter(error, target.parentURL, parent)
+        let expected: ResolveResult | Promise<ResolveResult>
         try {
-          const result = native(request, parent, attributes)
-          /* v8 ignore next -- Node 22 is the asynchronous adapter and is covered by the external version matrix */
-          return result instanceof Promise
-            ? result.then(verifyPackageImport, recoverPackageImport)
-            : verifyPackageImport(result)
+          expected = adapted(target.specifier, target.parentURL, attributes)
+          /* v8 ignore next -- Node 24+ resolves synchronously; the Node 22 matrix covers its Promise result */
+          if (expected instanceof Promise) expected = expected.catch(restoreImporter)
         } catch (error) {
-          return recoverPackageImport(error)
+          return restoreImporter(error)
         }
+        if (behavior === 'enforce') return expected
+        const actual = native(request, parent, attributes)
+        /* v8 ignore start -- Node 22 is the asynchronous adapter and is covered by the external version matrix */
+        if (expected instanceof Promise || actual instanceof Promise) {
+          return Promise.all([actual, expected]).then(([resolved, wanted]) => {
+            assertEquivalent(resolved.url, wanted.url, request, parent)
+            return resolved
+          })
+        }
+        /* v8 ignore stop */
+        assertEquivalent(actual.url, expected.url, request, parent)
+        return actual
       }
       const cacheable = attributes === EMPTY_ATTRIBUTES || Object.keys(attributes).length === 0
       if (cacheable && state.esm !== undefined) return state.esm
@@ -781,17 +803,44 @@ export function installProfileResolution(
       return throwWithoutCjsAnchor(error, anchor)
     }
   }
+  const resolveNativeCjs = (
+    request: string, searchPaths: readonly string[], parent: CommonJsParent,
+    parentFilename: string, main: boolean, conditions: ReadonlySet<string> | undefined,
+  ): string => {
+    const synthetic = new cjs(parentFilename)
+    synthetic.parent = parent
+    synthetic.filename = parentFilename
+    synthetic.paths = [...searchPaths]
+    const options = conditions === undefined ? undefined : { conditions }
+    return originalFilename.call(cjs, request, synthetic, main, options)
+  }
+  const resolvePackageImportCjs = (
+    target: { specifier: string; parentURL: string }, conditions: Iterable<string>,
+  ): string => {
+    const state = router.routeUrl(target.specifier, target.parentURL)
+    const resolveFrom = (parentURL: string): string => fileURLToPath(esmDefaultResolve(
+      target.specifier, { parentURL, conditions: [...conditions] },
+    ).url)
+    /* v8 ignore next -- the target manifest was found inside the established profile scope */
+    if (state === undefined) return resolveFrom(target.parentURL)
+    if (state.route.kind === 'native') return resolveFrom(target.parentURL)
+    const route = state.route
+    if (route.kind === 'after-fallback') return resolveFrom(pathToFileURL(route.parent).href)
+    return resolveFrom(pathToFileURL(route.entry.declarer).href)
+  }
   const wrappedFilename: CommonJsModule['_resolveFilename'] = (request, parent, main, options) => {
     if (delegatedCjs || !parent?.filename) {
       return originalFilename.call(cjs, request, parent, main, options)
     }
+    const parentFilename = parent.filename
     const cacheable = options?.paths === undefined && options?.conditions === undefined
     const explicitPaths = Array.isArray(options?.paths) ? options.paths : undefined
+    if (explicitPaths !== undefined && router.nativeSelfReference(request, parentFilename)) {
+      return originalFilename.call(cjs, request, parent, main, options)
+    }
     const explicit = explicitPaths === undefined
       ? undefined
-      : router.explicitRoute(request, explicitPaths, path => () => originalFilename.call(
-        cjs, request, parent, main, { ...options, paths: [path] },
-      ))
+      : router.explicitRoute(request, explicitPaths)
     if (options?.paths !== undefined && explicit === undefined) {
       return originalFilename.call(cjs, request, parent, main, options)
     }
@@ -805,28 +854,24 @@ export function installProfileResolution(
         if (!isUnselectedPackageMiss(error)) throw error
       }
     }
-    const state = explicit?.state ?? router.routePath(
+    const state = router.routePath(
       request,
-      parent.filename,
-      () => originalFilename.call(cjs, request, parent, main, options),
-      cacheable,
+      explicit?.parent ?? parentFilename,
+      searchPaths => resolveNativeCjs(request, searchPaths, parent, parentFilename, main, options?.conditions),
+      explicit === undefined && cacheable,
     )
     if (state === undefined) {
-      const scoped = startsWithin(parent.filename, profilePaths)
+      const scoped = startsWithin(parentFilename, profilePaths)
       const conditions = options?.conditions ?? cjsConditions
       const target = request[0] === '#' && scoped
-        ? packageImportsTarget(parent.filename, request, conditions)
+        ? packageImportsTarget(parentFilename, request, conditions)
         : undefined
-      try {
-        const result = originalFilename.call(cjs, request, parent, main, options)
-        if (behavior === 'verify' && target !== undefined) {
-          assertEquivalent(result, wrappedFilename(target, parent, main, options), request, parent.filename)
-        }
-        return result
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== 'MODULE_NOT_FOUND' || target === undefined) throw error
-        return wrappedFilename(target, parent, main, options)
-      }
+      if (target === undefined) return originalFilename.call(cjs, request, parent, main, options)
+      const expected = resolvePackageImportCjs(target, conditions)
+      if (behavior === 'enforce') return expected
+      const actual = originalFilename.call(cjs, request, parent, main, options)
+      assertEquivalent(actual, expected, request, parentFilename)
+      return actual
     }
     if (cacheable && state.cjs !== undefined) return state.cjs
     const route = state.route
@@ -880,7 +925,7 @@ export function installProfileResolution(
         return expected
       }
       const actual = originalFilename.call(cjs, request, parent, main, options)
-      assertEquivalent(actual, expected, request, parent.filename)
+      assertEquivalent(actual, expected, request, parentFilename)
       if (cacheable) state.cjs = actual
       return actual
     } finally {

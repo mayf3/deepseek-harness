@@ -36,7 +36,7 @@ launcher 只构造启动 generation。服务接受新增型后继 generation，�
 
 resolver 使用 `node-addon-require-builtin` 读取 `internal/modules/esm/loader` 和 `internal/modules/cjs/loader`。ESM 适配器包装每线程单例 `CascadedLoader` 的 resolve 方法。CommonJS 适配器包装内部 builtin 导出的 `Module._resolveFilename`；该 `Module` 与 `node:module` 导出的对象相同。
 
-两个适配器调用同一个路由函数。builtin、相对或绝对路径、URL、profile 作用域外 parent 和支持的查找以外的显式调用都直接委托原生实现。`#imports` 请求会先使用 Node 的映射；当映射到的外部 bare target 不在磁盘上时，解析器使用相同 conditions 让该 target 经过 generation。对于作用域内的 bare request，package self-reference 保留原 parent，即使 npm alias 使安装目录使用另一个名称。Node 能在虚拟共享 fallback 之前从 profile 本地包或插件私有包解析到所请求入口时，也保留原 parent；没有 `exports` 的 CommonJS 包目录仅缺少所请求 subpath 时，不会压过 fallback。其他请求在 generation 命中时通过该条目的声明锚点解析，未命中时从虚拟 fallback 之后继续原生查找。显式 CommonJS path 列表按调用方顺序，对每个 path 独立应用相同的插入规则。
+两个适配器调用同一个路由函数。builtin、相对或绝对路径、URL、profile 作用域外 parent 和支持的查找以外的显式调用都直接委托原生实现。`#imports` 请求使用所属 manifest 中的 Node 映射；外部 bare target 按相同 conditions 遵循本地包、generation 和 after-fallback 的选包顺序，精确 target 解析仍由 Node 负责。对于作用域内的 bare request，package self-reference 保留原 parent，即使 npm alias 使安装目录使用另一个名称。Node 能在虚拟共享 fallback 之前从 profile 本地包或插件私有包解析到所请求入口时，也保留原 parent；没有 `exports` 的 CommonJS 包目录仅缺少所请求 subpath 时，不会压过 fallback。其他请求在 generation 命中时通过该条目的声明锚点解析，未命中时从虚拟 fallback 之后继续原生查找。显式 CommonJS path 列表按调用方顺序，对每个 path 独立应用相同的插入规则。
 
 适配器完成路由后调用捕获的原生 resolver。exports、import/require conditions、main、subpath、扩展名、原生缓存和错误码仍归 Node 处理。路由后的 ESM 失败会把 Node 诊断中的内部查找锚点替换为原始 importer。选中包的无效 export 或缺失目标不会触发另一个同名候选。CommonJS 不替换 `_findPath`，也不复制 `_resolveFilename`。
 
