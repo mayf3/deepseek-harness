@@ -3494,7 +3494,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/fs/workspace-changes/src/index.ts:30`](../packages/fs/workspace-changes/src/index.ts)
+Source: [`packages/fs/workspace-changes/src/index.ts:28`](../packages/fs/workspace-changes/src/index.ts)
 
 ## Loadable plugins with no config
 

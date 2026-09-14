@@ -3496,7 +3496,7 @@ export interface Config {
 }
 ```
 
-来源： [`packages/fs/workspace-changes/src/index.ts:30`](../packages/fs/workspace-changes/src/index.ts)
+来源： [`packages/fs/workspace-changes/src/index.ts:28`](../packages/fs/workspace-changes/src/index.ts)
 
 ## 无配置的可加载插件
 
