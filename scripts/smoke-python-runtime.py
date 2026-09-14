@@ -1347,13 +1347,19 @@ def smoke_sdk_snapshot(base_url: str, executable: Path, update_snapshots: bool) 
                 Path(__file__).resolve().parent / "fixtures/python-browser-use-events.mjs"
             ).as_uri()},
         ]}])
+        creation_patch = write_profile_patch(root, "creation.patch.yml", sessions, [
+            {"insert": [{
+                "id": "serial-created-fixture",
+                "name": str(Path(__file__).resolve().parents[1] / "packages/core/agent-loop/tests/fixtures/serial-created.mjs"),
+            }]},
+        ])
         with DeepSeekHarness(
             provider="deepseek-official",
             model="smoke-model",
             cwd=str(root),
             dsh_bin=str(executable),
             dsh_home=str(dsh_home),
-            patches=(str(patch), str(feedback_patch)),
+            patches=(str(patch), str(feedback_patch), str(creation_patch)),
             env={
                 "DSH_PERMISSION_MODE": "danger-full-access",
                 "DSH_TELEMETRY_DISABLED": "1",
