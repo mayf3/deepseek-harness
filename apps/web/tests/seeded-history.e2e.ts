@@ -146,11 +146,13 @@ function withCompaction(raw: string, meter: TokenMeter): string {
         type: 'text',
         text: '## Cold resume compact summary\n\n- The exact summary remains available.\n\n'
           // A fenced code block gives the summary body a sticky-bannered
-          // descendant (CodeBlock pins its banner at z-index 6); the pinned
-          // compaction header must outrank it, so the summary carries one to
-          // give the hit-test below a real target. The list makes the body
-          // overflow the shrunk viewport.
-          + '```ts\nfunction resume() { return true }\n```\n\n'
+          // descendant (CodeBlock pins its banner at z-index 6). The block is
+          // long enough that its banner has room to hold below the pinned
+          // header, which is where its Copy control must stay clickable; the
+          // list makes the body overflow the shrunk viewport.
+          + '```ts\nfunction resume(): boolean {\n'
+          + Array.from({ length: 26 }, (_, index) => `  const step${index + 1} = read(${index + 1})`).join('\n')
+          + '\n  return true\n}\n```\n\n'
           + Array.from({ length: 40 }, (_, index) => `- Retained fact ${index + 1}: the reader still sees the pre-compaction surface.`).join('\n'),
       }],
       shadowedRange: { start: first, end: last },
@@ -462,6 +464,9 @@ describe('web e2e: seeded history renders through cold resume', () => {
     const collapsedPosition = await marker.evaluate(element => getComputedStyle(element).position)
     expect(collapsedPosition).not.toBe('sticky')
     const originalViewport = page.viewportSize() ?? { width: 1680, height: 1000 }
+    // Captured so a failure in the cleanup below cannot replace the assertion
+    // that actually failed.
+    let bodyError: unknown
     try {
       await marker.click()
       await expect.poll(() => marker.getAttribute('aria-expanded'), { timeout: 5_000 }).toBe('true')
@@ -505,20 +510,20 @@ describe('web e2e: seeded history renders through cold resume', () => {
         return -1
       })
       expect(hoverAlpha).toBe(1)
-      // Scroll the code block up until its banner covers the pinned header's
-      // own CENTER point, then prove the header (not the banner) is the topmost
-      // element there. A shallower scroll that lands the banner merely tangent
-      // to the header's bottom edge leaves the center clear, so the hit-test
-      // could not tell a correct z-rank from a broken one. Shrinking the
-      // viewport first forces overflow regardless of summary length.
+      // Scroll so the summary's code banner reaches its own stuck position.
+      // The banner's sticky offset holds it below the pinned header's band, so
+      // the point this case samples is the banner's Copy control: the header
+      // must not cover it. Shrinking the viewport first forces overflow
+      // regardless of summary length.
       await page.setViewportSize({ width: originalViewport.width, height: 360 })
       const geom = await marker.evaluate((button) => {
         const container = button.closest('[data-conversation-scroll]') as HTMLElement
         const banner = container.querySelector('[class*="compactionBody"] [class*="bannerWrap"]') as HTMLElement
-        // Both the toggle and the code banner are sticky at top 0, so a rect
-        // taken while either is stuck reports the stuck position rather than its
-        // content offset. Measure both unstuck, so the target below does not
-        // depend on where the scrollport happened to be when this case started.
+        const copy = banner.querySelector('button') as HTMLElement
+        // Both the toggle and the code banner are sticky, so a rect taken while
+        // either is stuck reports the stuck position rather than its content
+        // offset. Measure both unstuck, so the target below does not depend on
+        // where the scrollport happened to be when this case started.
         const markerInline = button.style.position
         const bannerInline = banner.style.position
         const bannerTopInline = banner.style.top
@@ -532,15 +537,25 @@ describe('web e2e: seeded history renders through cold resume', () => {
         button.style.position = markerInline
         banner.style.position = bannerInline
         banner.style.top = bannerTopInline
-        // Pinned, the header's center sits at containerTop + headerHeight/2.
-        // Scroll the banner's static top a few px above that center line, so
-        // the banner spans the point the hit-test samples.
-        container.scrollTop = Math.max(0, bannerStaticTop - headerHeight / 2 + 4)
+        // The banner sticks once its static top passes the band the toggle
+        // occupies. Land the static top 8px above the scrollport top: if the
+        // banner still pinned at top 0, 8px of it would sit under the toggle,
+        // so this position distinguishes the offset from the uncovered case.
+        // The banner must hold at the band's bottom edge, and its Copy control
+        // must stay the topmost element at its own center.
+        container.scrollTop = Math.max(0, bannerStaticTop + 8)
         const markerRect = button.getBoundingClientRect()
         const bannerRect = banner.getBoundingClientRect()
-        const centerX = markerRect.left + markerRect.width / 2
-        const centerY = markerRect.top + markerRect.height / 2
-        const probe = document.elementFromPoint(centerX, centerY)
+        const copyRect = copy.getBoundingClientRect()
+        const currentContainerTop = container.getBoundingClientRect().top
+        const markerProbe = document.elementFromPoint(
+          markerRect.left + markerRect.width / 2,
+          markerRect.top + markerRect.height / 2,
+        )
+        const copyProbe = document.elementFromPoint(
+          copyRect.left + copyRect.width / 2,
+          copyRect.top + copyRect.height / 2,
+        )
         return {
           scrollTop: container.scrollTop,
           // The header's own content offset now lies above the scrollport top,
@@ -549,19 +564,21 @@ describe('web e2e: seeded history renders through cold resume', () => {
           // something.
           staticAboveViewport: container.scrollTop > markerStaticTop,
           markerTop: markerRect.top,
-          containerTop: container.getBoundingClientRect().top,
-          // The banner must span the sampled point on BOTH axes, or the
-          // hit-test there proves nothing about the z-rank.
-          bannerCoversCenter: bannerRect.top <= centerY && bannerRect.bottom >= centerY
-            && bannerRect.left <= centerX && bannerRect.right >= centerX,
-          markerOwnsCenter: button.contains(probe),
+          containerTop: currentContainerTop,
+          bannerTop: bannerRect.top,
+          bannerStuck: Math.abs(bannerRect.top - (currentContainerTop + headerHeight)) <= 1,
+          bannerBelowHeader: bannerRect.top >= markerRect.bottom - 1,
+          markerOwnsCenter: button.contains(markerProbe),
+          copyOwnsCenter: copy.contains(copyProbe),
         }
       })
       expect(geom.scrollTop).toBeGreaterThan(0)
       expect(geom.staticAboveViewport).toBe(true)
       expect(Math.abs(geom.markerTop - geom.containerTop)).toBeLessThanOrEqual(1)
-      expect(geom.bannerCoversCenter).toBe(true)
+      expect(geom.bannerStuck).toBe(true)
+      expect(geom.bannerBelowHeader).toBe(true)
       expect(geom.markerOwnsCenter).toBe(true)
+      expect(geom.copyOwnsCenter).toBe(true)
       // Keyless geometry golden for this user-visible, DOM-invariant CSS
       // behavior: platform-independent semantic facts, no absolute pixels.
       // Every line is a value asserted just above, so a regression reddens the
@@ -581,29 +598,48 @@ describe('web e2e: seeded history renders through cold resume', () => {
         `- header outranks the summary code-block banner: ${String(openStyle.zIndex > bannerZ)}`,
         `- hover fill stays fully opaque: ${String(hoverAlpha === 1)}`,
         '',
-        '## Scrolled so the code-block banner overlaps the header center',
+        '## Scrolled so the summary code banner reaches its sticky offset',
         '',
         `- container is scrolled off its top: ${String(geom.scrollTop > 0)}`,
         `- header's static position sits above the scrollport: ${String(geom.staticAboveViewport)}`,
         `- header holds at the scrollport top: ${String(Math.abs(geom.markerTop - geom.containerTop) <= 1)}`,
-        `- banner spans the sampled center point: ${String(geom.bannerCoversCenter)}`,
         `- header owns the center point (toggle stays clickable): ${String(geom.markerOwnsCenter)}`,
+        `- summary code banner holds below the header band: ${String(geom.bannerStuck)}`,
+        `- summary code banner stays clear of the header: ${String(geom.bannerBelowHeader)}`,
+        `- banner Copy control owns its own center: ${String(geom.copyOwnsCenter)}`,
       ].join('\n').trimEnd()
       await compareOrRefreshGolden(STICKY_GEOMETRY_EXPECTED, stickyGolden, MODE)
-    } finally {
-      // Restore the shared page state even if an assertion above threw. Order
-      // matters: collapse the marker, restore the viewport, then re-enter
-      // follow-bottom through the control's own handler. Assigning scrollTop
-      // does not restore ownership: reader movement stays pending until the
-      // sampling interval or `scrollend`, so the control would leak into later
-      // aria goldens.
+    } catch (error) {
+      bodyError = error
+    }
+    // Restore the shared page state whether or not the body failed. Order
+    // matters: collapse the marker, restore the viewport, then re-enter
+    // follow-bottom. The control is what clears the off-floor ownership a
+    // programmatic `scrollTop` assignment leaves in ChatView's reader-movement
+    // ledger, so click it when it is there. It appears only after that ledger
+    // settles (`scrollend` or the sampling interval), and it never renders at
+    // all when the collapse's shrink clamp already re-entered follow, so the
+    // assertion is the restored state — no control, and the scrollport on its
+    // floor — rather than the control's presence.
+    try {
       if (await marker.getAttribute('aria-expanded') === 'true') await marker.click()
       await expect.poll(() => marker.getAttribute('aria-expanded'), { timeout: 5_000 }).toBe('false')
       await page.setViewportSize(originalViewport)
+      const scrollport = page.locator('[data-conversation-scroll]')
       const backToBottom = page.getByRole('button', { name: 'Back to bottom', exact: true })
-      if (await backToBottom.count() > 0) await backToBottom.click()
-      await expect.poll(() => backToBottom.count(), { timeout: 10_000 }).toBe(0)
+      await expect.poll(async () => {
+        if (await backToBottom.count() > 0) await backToBottom.click()
+        const atFloor = await scrollport.evaluate((host: HTMLElement) =>
+          Math.abs(host.scrollHeight - host.clientHeight - host.scrollTop) <= 1)
+        return await backToBottom.count() === 0 && atFloor
+      }, { timeout: 15_000 }).toBe(true)
+    } catch (cleanupError) {
+      // The body's own assertion is the diagnosis; a cleanup failure would
+      // replace it, and the state it failed to restore shows up in the next
+      // case's golden.
+      if (bodyError === undefined) throw cleanupError
     }
+    if (bodyError !== undefined) throw bodyError
   })
 
   it.skipIf(MODE === 'record')('an Access-chip switch lands one command row: bare name, non-repeating settlement text', async () => {
