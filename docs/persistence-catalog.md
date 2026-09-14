@@ -477,7 +477,7 @@ Source: [`packages/compaction/compaction/src/types.ts:34`](../packages/compactio
 'deliverables/presented': { turn: number; callId: ToolCallId; files: PresentedFile[] }
 ```
 
-Types: [ToolCallId](subsystems/core.md)
+Types: [PresentedFile](subsystems/deliverables.md) · [ToolCallId](subsystems/core.md)
 
 Source: [`packages/deliverables/tool-present/src/types.ts:15`](../packages/deliverables/tool-present/src/types.ts)
 
@@ -1251,6 +1251,8 @@ Source: [`packages/web/web-search-deepseek/src/provider.ts:82`](../packages/web/
 /** Files changed by a completed top-level turn; the latest event for one turn replaces earlier ones. */
 'workspace/changes': WorkspaceChangesData
 ```
+
+Types: [WorkspaceChangesData](subsystems/deliverables.md)
 
 Source: [`packages/deliverables/workspace-changes/src/types.ts:36`](../packages/deliverables/workspace-changes/src/types.ts)
 

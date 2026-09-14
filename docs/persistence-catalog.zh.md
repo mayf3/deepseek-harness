@@ -479,7 +479,7 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 'deliverables/presented': { turn: number; callId: ToolCallId; files: PresentedFile[] }
 ```
 
-类型：[ToolCallId](subsystems/core.zh.md)
+类型：[PresentedFile](subsystems/deliverables.zh.md) · [ToolCallId](subsystems/core.zh.md)
 
 来源：[`packages/deliverables/tool-present/src/types.ts:15`](../packages/deliverables/tool-present/src/types.ts)
 
@@ -1253,6 +1253,8 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 /** Files changed by a completed top-level turn; the latest event for one turn replaces earlier ones. */
 'workspace/changes': WorkspaceChangesData
 ```
+
+类型：[WorkspaceChangesData](subsystems/deliverables.zh.md)
 
 来源：[`packages/deliverables/workspace-changes/src/types.ts:36`](../packages/deliverables/workspace-changes/src/types.ts)
 
