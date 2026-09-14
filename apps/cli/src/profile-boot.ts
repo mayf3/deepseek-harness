@@ -21,17 +21,21 @@ import type { PatchOptions } from '@deepseek-ai/cordis-plugin-include'
 import {
   boot,
   readProfilePatches,
+  createProfileResolutionGeneration,
   healProfilesModuleFallback,
   initProfile,
   installFailLoud,
   loadOverlayPatches,
   loadProfile,
+  PluginPackages,
   PROFILE_PATCH_FILENAME,
   PROFILE_TEMPLATES,
   resolveProfileDir,
   reconcileProfilePatches,
   type ProfileContext,
   type Profile,
+  type ProfileResolutionGeneration,
+  type ProfileResolutionMode,
 } from '@deepseek-ai/dsh-app-boot'
 import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
 import { installProxyFromEnvironment } from '@deepseek-ai/dsh-http-proxy'
@@ -175,6 +179,8 @@ export function prepareProfile(name: string, userLayer = true, fromDefaultProfil
 /** One profile's patch layers, in application order. */
 interface ComposedProfile {
   profile: Profile
+  /** Immutable package fallback selected before any plugin imports. */
+  resolution: ProfileResolutionGeneration
   /** Command-line overlay contents, frozen for this invocation. */
   overlays: PatchOptions[]
 }
@@ -193,12 +199,16 @@ interface ComposedProfile {
 async function composeProfile(
   name: string,
   patchFiles: readonly string[],
+  resolutionMode: ProfileResolutionMode,
   fromDefaultProfile?: string,
 ): Promise<ComposedProfile> {
   const profile = prepareProfile(name, true, fromDefaultProfile)
-  await healProfilesModuleFallback({ installAnchor: INSTALL_ANCHOR, profile })
+  const resolutionOptions = { installAnchor: INSTALL_ANCHOR, profile }
+  const resolution = resolutionMode === 'runtime'
+    ? await createProfileResolutionGeneration(resolutionOptions)
+    : await healProfilesModuleFallback(resolutionOptions)
   const overlays = patchFiles.flatMap(file => loadOverlayPatches(NAME, resolve(file)))
-  return { profile, overlays }
+  return { profile, resolution, overlays }
 }
 
 /** Options for {@link runProfile}. */
@@ -213,6 +223,8 @@ export interface RunProfileOptions {
   patchFiles: readonly string[]
   /** The invocation's inner arguments, handed to the tree through `ctx.cmdlineArgs`. */
   args: readonly string[]
+  /** Module fallback backend; production launchers omit it and retain link materialization. */
+  resolutionMode?: ProfileResolutionMode
 }
 
 /**
@@ -247,7 +259,10 @@ export async function runProfile(options: RunProfileOptions): Promise<{ ctx: Con
     (message) => { process.stderr.write(`${NAME}: ${message}\n`) },
   )
 
-  const composed = await composeProfile(options.profile, options.patchFiles, options.fromDefaultProfile)
+  const resolutionMode = options.resolutionMode ?? 'link'
+  const composed = await composeProfile(
+    options.profile, options.patchFiles, resolutionMode, options.fromDefaultProfile,
+  )
   const app: { current?: Context } = {}
   const appReady = createAppReady()
   const shutdown = createProcessShutdown(async () => {
@@ -289,13 +304,17 @@ export async function runProfile(options: RunProfileOptions): Promise<{ ctx: Con
     cwd: process.cwd(), home: resolveDshHome(), patchReload: composed.profile.patchReload,
     overlays: composed.overlays, telemetryDisabledEnv: process.env.DSH_TELEMETRY_DISABLED,
   }
-  const ctx = await boot(NAME, rootConfig, readProfilePatches(NAME, profileContext), (hostCtx) => {
+  const ctx = await boot(NAME, rootConfig, readProfilePatches(NAME, profileContext), async (hostCtx) => {
     app.current = hostCtx
     hostCtx.provide('profileContext', profileContext)
     hostCtx.on('hmr/before-reload', next => withFileLock(manifestPath, next))
     // Before any config-tree entry mounts, so plugins resolve all launch-time
     // environment values from the same immutable launch snapshot.
     hostCtx.provide(DSH_LAUNCH_ENVIRONMENT_KEY, options.environment)
+    await hostCtx.plugin(PluginPackages, resolutionMode === 'link' ? {} : {
+      generation: composed.resolution,
+      behavior: resolutionMode === 'dual' ? 'verify' : 'enforce',
+    })
     // The command line and bounded exit request are launcher facts available
     // to every app plugin that injects the argument snapshot.
     provideCmdline(hostCtx, {

@@ -58,6 +58,8 @@ Profiles with `patchReload: live` watch the profile manifest and both user patch
 
 Inserted plugin names may be absolute filesystem paths, file URLs, or package specifiers. Patch loading converts absolute paths and patch-relative `./` or `../` paths to file URLs within `insert` rows and their nested groups; existing-entry name assertions and replacement `config` values remain literal.
 
+Before mounting profile rows, the `dsh` launcher computes one immutable package-resolution generation from the installation and ordered bundle dependency graphs. The default link mode materializes the existing shared and profile-owned fallback links, so supported launch behavior stays unchanged. Internal callers and test harnesses can instead install the generation through Node's ESM and CommonJS resolvers in runtime mode, or materialize and verify the same generation in dual mode.
+
 ### Previewing the effective configuration
 
 Before you boot, you can print the exact configuration the app will mount: the dump shows the composed entry list with `!!js` expressions verbatim, grouped under comments naming each source file and the patch layers that changed it, as one loadable YAML document. Patches that match no row are reported with their layer label; a missing, unparsable, or invalid config fails the dump.
@@ -104,12 +106,14 @@ This section explains how the outcomes above are realized and points at the code
 ### Design notes
 
 - **Profile launch data.** `ctx.profileContext` contains only profile locations, reload policy, startup bundle names, parsed invocation overlays and the telemetry opt-out value. `readProfilePatches()` reads and composes current files from those inputs; callers schedule and apply the result.
-- **Channel-neutral library.** The package carries no loader hooks and no dev-mode surface; the [`dsh` app](../../../apps/cli/README.md) owns its Node source-launch hook and consumes these helpers for the boot sequence, and built consumers use plain Node package resolution.
+- **Process-local module resolution.** Runtime and dual modes install one generation on Node's internal ESM and CommonJS resolvers before profile rows mount; link mode leaves both resolvers unchanged. Node still owns exports, conditions, subpaths, module caches, and error codes; routed ESM failures report the original importer instead of the internal lookup anchor. `ctx.pluginPackages` exposes package metadata from the same generation without recording Entry imports; an installed generation is authoritative even for a miss, while low-level embedders that install the service without one retain native lookup.
 - **Two Loader builtins.** `mountRootInclude` registers `cordis:include` and `cordis:group` as Loader builtins: a group row gives one `isolate` realm to a provider and its consumers together, and an agent preset outside this workspace cannot resolve `@deepseek-ai/cordis-plugin-group` by name. Both load through the ambient module pipeline rather than the included tree's own specifier resolution.
 - **Consumer-owned strictness.** Ordinary Loader groups keep successful siblings. App-boot applies the global required-entry policy after initial settlement; agent presets and dynamic multi-entry compositions own and dispose their separate generation when they require all-or-nothing setup. App-boot reads failed fibers to report their recorded errors and coalesces duplicate Loader rejection notifications through one process checkpoint.
-- **Profile module fallback.** Bare plugin specifiers resolve through the Loader from the config directory. Plain Node maintains one symlink per package in the installation dependency closure. A packaged executable instead reads each installed export map with Node ESM conditions and writes real proxy packages that re-export virtual module URLs, because an operating-system symlink cannot enter pkg's `/snapshot` tree. Missing exports stay unavailable, malformed maps fail startup, and a cross-process writer lock replaces stale entries without exposing partial proxies. A selected external bundle absent from the installation closure receives a profile-local `.dsh-module-fallback` link; existing pnpm entries win, projected links are excluded from later closure discovery, and cleanup removes only dsh-owned links.
+- **One fallback generation.** The installation-first and ordered-bundle breadth-first traversal produces both the runtime table and the retained disk materializer. Runtime mode creates no resolution links and ignores stale projections at their former lookup positions. External bare targets selected by package `imports` use the same package order, while Node retains mapping, conditions, and exact target resolution. Link mode materializes the same table; dual mode also compares Node's disk result with the table. A complete successor may add package names atomically, while changing or removing an existing mapping requires restart.
+- **Owned Workers.** Worker build banners import `@deepseek-ai/dsh-app-boot/worker/profile-resolution-bootstrap` before bundled business code. Each Worker installs the structured-cloned generation in its own isolate. The bootstrap bundle has no static package imports. Source Worker entries retain their self-contained dependency closure, and third-party Workers receive no injection.
 - **Update completion.** App boot observes restart failures through the `internal/update` waterfall. Live patch reloads wait for the tree's fibers before auditing activation; `Fiber.update()` and `Entry.update()` alone do not establish restart success.
-- **Two-stage failure labels.** `boot()` distinguishes `host preparation failed` — `prepare` threw before any config-tree entry mounted — from `plugin tree failed to load`. Plugin diagnostics include original stacks, nested causes, and aggregate member failures. Cyclic causes terminate diagnostic traversal without replacing the original cause.
+- **One rejection checkpoint.** `assertEntriesActivated` keeps the exact reasons it folds into the boot diagnostic visible through the next process rejection checkpoint, so `installFailLoud` coalesces Loader's duplicate notification while unrelated unhandled rejections remain fatal.
+- **Two-stage failure labels.** `boot()` distinguishes `host preparation failed` — `prepare` threw before any config-tree entry mounted — from `plugin tree failed to load`, and appends the deepest plugin error's stack. Plugin diagnostics retain nested causes and aggregate member failures; cyclic causes stop traversal without replacing the original error.
 
 ### Helper behavior
 
@@ -121,7 +125,8 @@ The exports each own one stage of the boot: config resolution and snapshot repla
 |---|---|
 | [`src/index.ts`](src/index.ts) | Boot helpers: config resolution, environment loading, fail-loud guard, activation audit, patch parsing, config dump, harness-source section |
 | [`src/profile.ts`](src/profile.ts) | Profile discovery, initialization, bundle resolution, module fallback |
-| — | No runtime invariant companion is published; this presentation adapter owns no durable package-local event stream; boundary and replay tests cover its protocol mapping. |
+| [`src/profile-resolution/`](src/profile-resolution/) | Runtime resolver, package-metadata service, and built Worker bootstrap |
+| — | No runtime invariant companion is published; one registration owns each resolver generation, and dual mode compares the independently materialized result at resolution time. |
 
 </details>
 
@@ -159,7 +164,7 @@ Boot itself changes no request prefix. `addHarnessSourceSection` places its sour
 
 These limits describe when this boot library is a poor fit or needs special care. They are current package constraints, not a task backlog.
 
-- **Bare package specifiers depend on Loader internals** — production bins need Loader's optional native helper; an in-process caller without it must use resolvable relative/file specifiers or provide its own module-resolution hook.
+- **Runtime resolution depends on Node internals** — supported Node versions require the native builtin-access addon and executable compatibility coverage. Only built Harness-owned Workers receive the generation bootstrap; third-party Workers and custom `vm` linkers keep native resolution.
 - **Snapshot replay swapping is basename-specific** — only a config ending in `cordis.yml` or `cordis.yaml` maps to the sibling `cordis.snapshot.yml`; custom config names require caller-managed selection.
 - **Environment discovery is launch-scoped** — `loadLayeredEnv` reads only the invocation directory and Harness home once; it does not search parents or follow a workspace selected later. `loadEnv` remains the one-directory helper for non-product bins.
 - **A user patch replaces the whole matched config** — an id-targeted patch does not deep-merge, so a profile override restates the bundle fields it keeps.
