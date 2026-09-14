@@ -11,7 +11,14 @@ import { expect, it, onTestFinished } from 'vitest'
 it.each([false, true])('settles startup after parent IPC disconnect (boot failure: %s)', async (fail) => {
   const root = mkdtempSync(join(tmpdir(), 'desktop-disconnect-'))
   const modules = join(root, 'node_modules', '@deepseek-ai')
-  for (const name of ['dsh-app-boot', 'dsh']) mkdirSync(join(modules, name), { recursive: true })
+  for (const name of ['dsh-app-boot', 'dsh', 'dsh-home-paths', 'dsh-tools']) mkdirSync(join(modules, name), { recursive: true })
+  for (const [name, source] of [
+    ['dsh-home-paths', `export const resolveDshHome = () => ${JSON.stringify(root)}`],
+    ['dsh-tools', 'export const defineTool = value => value'],
+  ] as const) {
+    writeFileSync(join(modules, name, 'package.json'), '{"type":"module","exports":"./index.js"}')
+    writeFileSync(join(modules, name, 'index.js'), source)
+  }
   writeFileSync(join(root, 'package.json'), '{"type":"module"}')
   writeFileSync(join(modules, 'dsh-app-boot', 'package.json'), '{"type":"module","exports":"./index.js"}')
   writeFileSync(join(modules, 'dsh-app-boot', 'index.js'), 'export const loadProfileDirectory = () => ({}); export const loadLayeredEnv = () => ({})')
@@ -22,7 +29,7 @@ it.each([false, true])('settles startup after parent IPC disconnect (boot failur
       process.send({ type: 'booting' });
       return new Promise((resolve, reject) => process.once('disconnect', () => {
         if (${String(fail)}) { reject(new Error('fixture boot failure')); return; }
-        resolve({ ctx: { connection: { authenticatedUrl: value => value }, webServer: { port: 19387 } },
+        resolve({ ctx: { plugin: async () => {}, connection: { authenticatedUrl: value => value }, webServer: { port: 19387 } },
           shutdown: { shutdown: async () => writeFileSync(${JSON.stringify(join(root, 'stopped'))}, 'stopped') } });
       }));
     }
