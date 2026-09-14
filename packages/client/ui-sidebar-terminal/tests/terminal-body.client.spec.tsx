@@ -218,6 +218,7 @@ it.each(titleSurfaces)('shows saved and attached terminal names in the $name', (
   title.rerender(chip())
   expect(title.container.textContent).toBe('bash')
   expect(title.container.querySelector('svg')?.getAttribute('aria-hidden')).toBe('true')
+  expect(title.container.querySelector('svg rect')).toBeNull()
 })
 
 it.each(titleSurfaces)('renames from the $name pointer target, preserving dragging and isolating editor shortcuts', (surface) => {
@@ -314,9 +315,16 @@ it.each([en, zh])('translates known terminal failures while retaining unknown Ho
 it('lets the user select an installed shell and start it before rendering a screen', () => {
   const other = { path: '/bin/zsh', name: 'zsh', args: ['-i'] }
   const h = mount({ phase: 'selecting', writable: false, environment, shells: [info.shell, other], selectedShell: other.path })
-  expect(h.view.getByRole('combobox', { name: 'Shell' })).toHaveProperty('value', other.path)
+  const selector = h.view.getByRole('button', { name: 'Shell' })
+  expect(selector.textContent).toContain(other.path)
   expect(fake.terminals).toHaveLength(0)
-  fireEvent.change(h.view.getByRole('combobox'), { target: { value: info.shell.path } })
+  fireEvent.click(selector)
+  expect(h.view.getByRole('menu')).toBeTruthy()
+  fireEvent.keyDown(document, { key: 'Escape' })
+  expect(h.view.queryByRole('menu')).toBeNull()
+  fireEvent.click(selector)
+  fireEvent.click(h.view.getByRole('menuitem', { name: `bash — ${info.shell.path}` }))
+  expect(h.view.queryByRole('menu')).toBeNull()
   expect(h.model.selectShell).toHaveBeenCalledWith(info.shell.path)
   fireEvent.click(h.view.getByRole('button', { name: 'Start terminal' }))
   expect(h.model.start).toHaveBeenCalledOnce()

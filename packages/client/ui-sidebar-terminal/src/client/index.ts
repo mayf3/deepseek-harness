@@ -8,7 +8,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-session/client'
-import { TerminalIcon } from './TerminalIcon.tsx'
+import { TerminalGuideIcon } from './TerminalIcon.tsx'
 import { TerminalBody } from './TerminalBody.tsx'
 import { TerminalTitle } from './TerminalTitle.tsx'
 import { TerminalRecovery, type TerminalRecoveryInjected } from './TerminalRecovery.tsx'
@@ -38,7 +38,7 @@ export function apply(ctx: Context): void {
   ctx.effect(() => ctx.locale.register(namespace, { zh, en }), 'ui-sidebar-terminal.copy')
   ctx.effect(() => ctx.sidebarRightTabs.register({
     id, kind: 'terminal', multiple: true, priority: 'builtin', title: () => t('title'),
-    guide: [{ order: 20, title: () => t('new'), icon: TerminalIcon }],
+    guide: [{ order: 20, title: () => t('new'), description: () => t('description'), icon: TerminalGuideIcon }],
   }), 'ui-sidebar-terminal.type')
   ctx.effect(() => ctx.sidebarRight.registerCloseHandler('terminal', (sessionId, tab) => {
     ctx.webTerminals.close(sessionId, tab.id, terminalId(sessionId, tab.id))

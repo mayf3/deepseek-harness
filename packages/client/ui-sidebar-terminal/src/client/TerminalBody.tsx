@@ -1,5 +1,6 @@
 /** Sidebar terminal screen and connection recovery. */
-import { useEffect, useLayoutEffect, useRef, type ReactNode } from 'react'
+import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
+import { Button, Menu, IconChevronDownOutline14 } from '@deepseek-ai/dsh-client-ui-primitives'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import type { TerminalViewState, TerminalView } from '@deepseek-ai/dsh-api-terminal-controller/client'
@@ -34,15 +35,7 @@ export function TerminalBody({ useTabInfo, useTerminal, view, t }: TerminalBodyP
   const readOnly = state.phase === 'connected' && state.info?.state === 'running' && !state.writable
   return (
     <section className={css.root} data-sidebar-terminal>
-      {state.phase === 'selecting' && <form className={css.launch} onSubmit={(event) => { event.preventDefault(); void model.start() }}>
-        <label className={css.shellLabel}>
-          {t('shell')}
-          <select aria-label={t('shell')} value={state.selectedShell ?? ''} onChange={(event) => { model.selectShell(event.currentTarget.value) }}>
-            {state.shells?.map(shell => <option key={shell.path} value={shell.path}>{shell.name} — {shell.path}</option>)}
-          </select>
-        </label>
-        <button type="submit" disabled={state.selectedShell === undefined}>{t('start')}</button>
-      </form>}
+      {state.phase === 'selecting' && <TerminalLauncher state={state} model={model} t={t} />}
       {(status !== undefined || retry || readOnly) && <div className={css.status} role="status">
         {status}
         {readOnly && <>{t('readonly')} <button type="button" onClick={() => { model.connect() }}>{t('control')}</button></>}
@@ -54,6 +47,37 @@ export function TerminalBody({ useTabInfo, useTerminal, view, t }: TerminalBodyP
       {error !== undefined && <p className={css.error} role="alert">{t('failed', { message: error })}</p>}
     </section>
   )
+}
+
+function TerminalLauncher({ state, model, t }: {
+  state: TerminalViewState
+  model: TerminalView
+  t: TerminalBodyProps['t']
+}): ReactNode {
+  const [open, setOpen] = useState(false)
+  const selectionId = useId()
+  const selected = state.shells?.find(shell => shell.path === state.selectedShell)
+  return <form className={css.launch} onSubmit={(event) => { event.preventDefault(); void model.start() }}>
+    <div className={css.shellField}>
+      <span>{t('shell')}</span>
+      <Menu
+        open={open} autoFocus portal className={css.shellMenu}
+        items={state.shells?.map(shell => ({ id: shell.path, label: `${shell.name} — ${shell.path}` })) ?? []}
+        selectedId={state.selectedShell}
+        onClose={() => { setOpen(false) }}
+        onSelect={(path) => { model.selectShell(path); setOpen(false) }}
+        anchor={<Button
+          variant="outline" className={css.shellTrigger}
+          aria-label={t('shell')} aria-describedby={selectionId} aria-haspopup="menu" aria-expanded={open}
+          disabled={selected === undefined} onClick={() => { setOpen(value => !value) }}
+        >
+          <span id={selectionId} className={css.shellValue}>{selected === undefined ? t('shell') : `${selected.name} — ${selected.path}`}</span>
+          <span aria-hidden="true"><IconChevronDownOutline14 /></span>
+        </Button>}
+      />
+    </div>
+    <Button type="submit" variant="outline" disabled={selected === undefined}>{t('start')}</Button>
+  </form>
 }
 
 /* oxlint-disable typescript/no-non-null-assertion -- React sets the DOM ref, then these effects initialize and use the emulator. */

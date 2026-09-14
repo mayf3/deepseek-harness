@@ -1,5 +1,7 @@
 // @vitest-environment jsdom
 /** Terminal type, copy, seats and explicit cleanup follow the plugin lifetime. */
+import { createElement } from 'react'
+import { renderToStaticMarkup } from 'react-dom/server'
 import { Context } from '@deepseek-ai/cordis'
 import { expect, it, vi } from 'vitest'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
@@ -69,7 +71,11 @@ it('registers terminal views, recovery and cleanup, then releases every contribu
   try {
     const definition = h.tabs.get('terminal')!
     expect(definition.title('sidebar://terminal')).toBe('title')
-    expect(definition.guide?.map(entry => [entry.order, entry.title()])).toEqual([[20, 'new']])
+    expect(definition.guide?.map(entry => [entry.order, entry.title(), entry.description?.()])).toEqual([[20, 'new', 'description']])
+    const Icon = definition.guide?.[0]?.icon
+    if (Icon === undefined) throw new Error('Terminal guide icon was not registered')
+    expect(renderToStaticMarkup(createElement(Icon, { size: 22 }))).toContain('width="22"')
+    expect(renderToStaticMarkup(createElement(Icon))).toContain('width="26"')
     expect(definition.multiple).toBe(true)
     expect(h.dictionaries.get('sidebarTerminal')).toEqual({ en, zh })
     expect(h.entries.map(entry => [entry.name, entry.component, entry.locale])).toEqual([

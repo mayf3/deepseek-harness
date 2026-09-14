@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-Choose an installed shell beside a conversation without leaving the Web app. Rename terminals in their tabs and recover retained processes after reloading the page. Collapse the sidebar to keep commands running; close a terminal tab to request process termination. Tab completion follows the shell configuration.
+Choose an installed shell from the right sidebar's Start page to run commands in the Session workspace. Rename terminals in their tabs and recover retained processes after reloading the page. Collapse the sidebar to keep commands running; close a terminal tab to request process termination. Tab completion follows the shell configuration.
 
 ## Table of Contents
 
@@ -39,7 +39,7 @@ Displaying a Session after a page reload reopens its retained Host terminals as 
 <details>
 <summary>Implementation internals — click to expand</summary>
 
-This plugin registers the `terminal` type and body/title seats with the right sidebar. The React-free terminal model belongs to `api-terminal-controller`; keyed framework hooks expose its state. xterm.js and FitAddon render the screen and measure the viewport. The body reserves an 8px gap below the tab strip within the pane height. Input, including Tab and control characters, travels unchanged to the PTY.
+This plugin registers the `terminal` type and body/title seats with the right sidebar. The guide uses a compact dark terminal card, while tab titles retain the line glyph. The React-free terminal model belongs to `api-terminal-controller`; keyed framework hooks expose its state. `ui-primitives` Menu and Button provide the shell picker and startup controls, including keyboard navigation and the selected-item marker. xterm.js and FitAddon render the screen and measure the viewport. The body reserves an 8px gap below the tab strip within the pane height. Input, including Tab and control characters, travels unchanged to the PTY.
 
 A Session header contribution queries Host terminals and opens recovery tabs. Their navigation parameters carry `terminalId` only within the current page; a recovered view cannot allocate a replacement process. The sidebar's close handler schedules cleanup through the [terminal controller](../../api/terminal-controller/README.md#understand-the-implementation) and returns synchronously. Browser component cleanup and the tab's abort signal only detach browser work.
 

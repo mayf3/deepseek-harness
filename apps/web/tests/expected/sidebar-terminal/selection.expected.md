@@ -1,5 +1,3 @@
 - text: Shell
-- combobox "Shell":
-  - option "bash — /bin/bash" [selected]
-  - option "sh — /bin/sh"
+- button "Shell": bash — /bin/bash
 - button "Start terminal"
