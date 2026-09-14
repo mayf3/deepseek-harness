@@ -36,9 +36,9 @@ launcher 只构造启动 generation。服务接受新增型后继 generation，�
 
 resolver 使用 `node-addon-require-builtin` 读取 `internal/modules/esm/loader` 和 `internal/modules/cjs/loader`。ESM 适配器包装每线程单例 `CascadedLoader` 的 resolve 方法。CommonJS 适配器包装内部 builtin 导出的 `Module._resolveFilename`；该 `Module` 与 `node:module` 导出的对象相同。
 
-两个适配器调用同一个路由函数。builtin、相对或绝对路径、URL、`#imports`、profile 作用域外 parent 和支持的查找以外的显式调用都直接委托原生实现。对于作用域内的 bare request，package self-reference 保留原 parent，即使 npm alias 使安装目录使用另一个名称。Node 能在虚拟共享 fallback 之前从 profile 本地包或插件私有包解析到所请求入口时，也保留原 parent；没有 `exports` 的 CommonJS 包目录仅缺少所请求 subpath 时，不会压过 fallback。其他请求在 generation 命中时通过该条目的声明锚点解析，未命中时从虚拟 fallback 之后继续原生查找。显式 CommonJS path 列表按调用方顺序，对每个 path 独立应用相同的插入规则。
+两个适配器调用同一个路由函数。builtin、相对或绝对路径、URL、profile 作用域外 parent 和支持的查找以外的显式调用都直接委托原生实现。`#imports` 请求会先使用 Node 的映射；当映射到的外部 bare target 不在磁盘上时，解析器使用相同 conditions 让该 target 经过 generation。对于作用域内的 bare request，package self-reference 保留原 parent，即使 npm alias 使安装目录使用另一个名称。Node 能在虚拟共享 fallback 之前从 profile 本地包或插件私有包解析到所请求入口时，也保留原 parent；没有 `exports` 的 CommonJS 包目录仅缺少所请求 subpath 时，不会压过 fallback。其他请求在 generation 命中时通过该条目的声明锚点解析，未命中时从虚拟 fallback 之后继续原生查找。显式 CommonJS path 列表按调用方顺序，对每个 path 独立应用相同的插入规则。
 
-适配器完成路由后调用捕获的原生 resolver。exports、import/require conditions、main、subpath、扩展名、原生缓存和最终错误仍归 Node 处理。选中包的无效 export 或缺失目标不会触发另一个同名候选。CommonJS 不替换 `_findPath`，也不复制 `_resolveFilename`。
+适配器完成路由后调用捕获的原生 resolver。exports、import/require conditions、main、subpath、扩展名、原生缓存和错误码仍归 Node 处理。路由后的 ESM 失败会把 Node 诊断中的内部查找锚点替换为原始 importer。选中包的无效 export 或缺失目标不会触发另一个同名候选。CommonJS 不替换 `_findPath`，也不复制 `_resolveFilename`。
 
 保证范围是当前线程安装后发生的 Node 默认 `import`、`import()`、`import.meta.resolve`、`require` 和 `require.resolve`。已经链接的模块、自定义 `vm` linker、不透明的非 Node importer 和第三方 Worker 不在透明保证范围。
 
@@ -86,7 +86,7 @@ generation 构造发生在启动或显式更新阶段，不属于单次 resolve�
 
 实现期间的一次性本地测量用 plain Node 在全新进程中执行构建后的 JavaScript，并与完全没有安装 hook 的进程比较。测量脚本和结果未提交，这些数据不是 benchmark 或 CI 预算。七轮交替顺序覆盖 outside、profile-local 和 fallback 的 dynamic import、`import.meta.resolve`、require、`require.resolve`。Node 22.19、24.18 和 26.8 的热路径中位数最大正向回退为 4.5%。Node 24.18 的 256 包 cold workload 最大回退为 11.2%，generation 构造中位数为 16.027 ms；32 包本地 `require.resolve` 因固定启动成本在整批增加 1.033 ms（+34.7%）。
 
-行为测试在同一包树上比较运行时 generation 与磁盘 materializer，再覆盖根顺序、传递依赖和 peer、本地与外层优先级、exports 与 subpath 错误、conditions、显式 CommonJS options、源码和构建 Worker及支持的 Node 版本。generation 测试证明构造失败不发布部分状态，成功换代只做原子引用替换。
+行为测试在同一包树上比较运行时 generation 与磁盘 materializer，再覆盖根顺序、传递依赖和 peer、本地与外层优先级、exports 与 subpath 错误、conditions 和显式 CommonJS options。Node 兼容矩阵会在受支持的内部 loader 变体上运行 resolver、service 和 bootstrap 规格。Worker 测试通过 mock 线程与 native loader 接口验证 environment data 发布和 bootstrap 安装，但不会启动构建后的 Worker。generation 测试证明构造失败不发布部分状态，成功换代只做原子引用替换。
 
 ## Alternatives considered
 
@@ -108,8 +108,8 @@ generation 构造发生在启动或显式更新阶段，不属于单次 resolve�
 - link-only、dual 和 runtime-only 测试消费同一个 generation；runtime 启动既不写入也不退休模块解析数据。
 - ESM 与 CommonJS 适配器共享同一个路由器，并把最终解析委托给 Node，不使用 `module.registerHooks` 或替换 `_findPath`。
 - 生产 package metadata 查询不记录 Loader import 结果，也不包装 Entry、registry、tree 或 HMR 方法。
-- 主线程和构建后的自有 Worker 测试覆盖受支持的 Node 版本。
-- plain Node 构建产物测量记录上述相对无 hook Node 的热路径和 cold 结果。
+- Node 兼容矩阵会在受支持的 loader 接口上运行主线程 resolver 规格；service 和 bootstrap 规格覆盖 Worker environment data 与安装接口，但不会启动构建后的 Worker。
+- 一次性 plain Node 构建产物测量得到上述相对无 hook Node 的热路径和 cold 观察结果；脚本与结果并未提交为证据。
 - package README、架构引用、生成目录和双语文档对描述已交付实现。
 
 ## Consequences
