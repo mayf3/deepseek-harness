@@ -28,7 +28,7 @@ Third-party plugin failures must leave the application’s management endpoints 
 
 **Import inside the Host with try/catch.** Rejected because discovery could execute irreversible side effects, exit the Host or block its event loop. Catching exceptions cannot restore that isolation. Parsing source to infer plugin exports would add another JavaScript interpreter with incomplete results.
 
-**Select startup strictness from package provenance.** Rejected because installation source does not establish whether an application endpoint can work. The consumer-owned required-id list already captures that requirement, including providers whose failure leaves a required consumer pending.
+**Select startup strictness from package origin.** Rejected because installation source does not establish whether an application endpoint can work. The consumer-owned required-id list already captures that requirement, including providers whose failure leaves a required consumer pending.
 
 **Recover by rolling back every live update or ignoring all post-boot rejections.** Neither can establish a safe restored state after plugin effects run. Per-row outcomes and retained user choices are observable; process-level detached failures cannot be attributed reliably to a row and remain fatal.
 
@@ -38,4 +38,4 @@ Installed metadata, enabled layer selection and current runtime health are indep
 
 ## Verification
 
-`packages/boot/app-boot/tests/entry-issues.spec.ts` covers required-id policy, import/config/apply/disabled/pending failures, nested and anonymous provenance, active old config after failed updates, recovery, and awaited removed-fiber teardown. Composition tests cover duplicate ownership and unchanged parents. Static metadata tests use an import-time file-writing fixture and assert no execution, retain unknown packages, and reject malformed declarations. Inventory tests verify actual Loader failures and composition conflicts without a historical failure registry. Process-guard and user-patch tests retain fatal detached failures and best-effort live reload diagnostics.
+`packages/boot/app-boot/tests/entry-issues.spec.ts` covers required-id policy, import/config/apply/disabled/pending failures, nested-entry and anonymous-row bundle ownership, active old config after failed updates, recovery, and awaited removed-fiber teardown. Composition tests cover duplicate ownership and unchanged parents. Static metadata tests use an import-time file-writing fixture and assert no execution, retain unknown packages, and reject malformed declarations. Inventory tests verify actual Loader failures and composition conflicts without a historical failure registry. Process-guard and user-patch tests retain fatal detached failures and best-effort live reload diagnostics.

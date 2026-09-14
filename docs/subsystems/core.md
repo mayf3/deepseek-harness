@@ -913,7 +913,7 @@ Facts and recomposition of the booted profile.
 originOf(rowId: string): RowOrigin | undefined
 
 /**
- * Resolve provenance within its Loader tree; nested includes inherit their owning entry.
+ * Resolve the supplying bundle within its Loader tree; nested includes inherit their owning entry.
  * @param entry - the live entry, including an entry inside another Include.
  * @returns its supplying bundle, or undefined for a user-owned entry.
  */
