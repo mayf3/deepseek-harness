@@ -12,7 +12,7 @@ async function fixture() {
   const ctx = new Context()
   contexts.push(ctx)
   await ctx.plugin(AgentRegistry)
-  function owner(id: string) {
+  async function owner(id: string) {
     const fiber = ctx.plugin(() => {})
     const session = Session.create(SessionId(id))
     const agent: Agent = {
@@ -23,7 +23,8 @@ async function fixture() {
       whenIdle: () => Promise.resolve(undefined),
     }
     const unregister = ctx.agents.register(agent)
-    return { agent, async dispose() { await fiber.dispose(); unregister() } }
+    await unregister
+    return { agent, async dispose() { await fiber.dispose(); await unregister() } }
   }
   return { ctx, owner }
 }
@@ -35,8 +36,8 @@ afterEach(async () => {
 describe('Session browser resource ownership', () => {
   it('acquires once across concurrent requests and gives another Session a different resource', async () => {
     const { ctx, owner } = await fixture()
-    const a = owner('a')
-    const b = owner('b')
+    const a = await owner('a')
+    const b = await owner('b')
     const close = vi.fn(async () => {})
     const open = vi.fn(async (agent: Agent) => ({ value: { id: agent.id }, close }))
     const resources = new SessionResources(ctx, { label: 'test', exclusive: false, open })
@@ -47,7 +48,7 @@ describe('Session browser resource ownership', () => {
     await a.dispose()
     expect(close).toHaveBeenCalledTimes(1)
     await expect(resources.get(a.agent)).rejects.toThrow('not a live browser owner')
-    const resumed = owner('a')
+    const resumed = await owner('a')
     expect(await resources.get(resumed.agent)).not.toBe(first)
     await resources.dispose()
     expect(close).toHaveBeenCalledTimes(3)
@@ -57,8 +58,8 @@ describe('Session browser resource ownership', () => {
 
   it('reserves an attached browser while acquisition or cleanup is pending', async () => {
     const { ctx, owner } = await fixture()
-    const a = owner('a')
-    const b = owner('b')
+    const a = await owner('a')
+    const b = await owner('b')
     const opened = Promise.withResolvers<undefined>()
     const released = Promise.withResolvers<undefined>()
     const closing = Promise.withResolvers<undefined>()
@@ -91,8 +92,8 @@ describe('Session browser resource ownership', () => {
 
   it('releases a failed acquisition and can acquire for another Session', async () => {
     const { ctx, owner } = await fixture()
-    const a = owner('a')
-    const b = owner('b')
+    const a = await owner('a')
+    const b = await owner('b')
     const open = vi.fn().mockRejectedValueOnce(new Error('browser unavailable')).mockResolvedValue({ value: 1, close: async () => {} })
     const resources = new SessionResources<number>(ctx, { label: 'test', exclusive: true, open })
     await expect(resources.get(a.agent, new AbortController().signal)).rejects.toThrow('browser unavailable')
@@ -102,7 +103,7 @@ describe('Session browser resource ownership', () => {
 
   it('retries failed acquisition for the same live owner without duplicating cleanup', async () => {
     const { ctx, owner } = await fixture()
-    const a = owner('a')
+    const a = await owner('a')
     const close = vi.fn(async () => {})
     const open = vi.fn().mockRejectedValueOnce(new Error('launch failed')).mockResolvedValue({ value: 1, close })
     const resources = new SessionResources<number>(ctx, { label: 'test', exclusive: false, open })
@@ -115,7 +116,7 @@ describe('Session browser resource ownership', () => {
 
   it('quiesces disposal when an in-flight acquisition fails during rollback', async () => {
     const { ctx, owner } = await fixture()
-    const a = owner('a')
+    const a = await owner('a')
     const entered = Promise.withResolvers<undefined>()
     const failed = Promise.withResolvers<never>()
     const resources = new SessionResources(ctx, {
@@ -132,8 +133,8 @@ describe('Session browser resource ownership', () => {
 
   it('serializes one Session while another proceeds and skips cancelled queued work', async () => {
     const { ctx, owner } = await fixture()
-    const a = owner('a')
-    const b = owner('b')
+    const a = await owner('a')
+    const b = await owner('b')
     const resources = new SessionResources(ctx, {
       label: 'test', exclusive: false,
       open: async () => ({ value: {}, close: async () => {} }),
@@ -162,8 +163,8 @@ describe('Session browser resource ownership', () => {
 
   it.each(['get', 'run'] as const)('cancels one %s caller while another waiter retains the same acquisition', async (kind) => {
     const { ctx, owner } = await fixture()
-    const a = owner('a')
-    const b = owner('b')
+    const a = await owner('a')
+    const b = await owner('b')
     const entered = Promise.withResolvers<undefined>()
     const release = Promise.withResolvers<undefined>()
     const close = vi.fn(async () => {})
@@ -202,7 +203,7 @@ describe('Session browser resource ownership', () => {
 
   it('honors caller cancellation between shared readiness and the waiting continuation', async () => {
     const { ctx, owner } = await fixture()
-    const a = owner('a')
+    const a = await owner('a')
     const ready = Promise.withResolvers<undefined>()
     const resources = new SessionResources(ctx, {
       label: 'test', exclusive: false,
@@ -227,8 +228,8 @@ describe('Session browser resource ownership', () => {
 
   it('retains a late initialization failure after its only caller canceled before waiting', async () => {
     const { ctx, owner } = await fixture()
-    const a = owner('a')
-    const b = owner('b')
+    const a = await owner('a')
+    const b = await owner('b')
     const ready = Promise.withResolvers<never>()
     const open = vi.fn().mockImplementationOnce(() => ready.promise).mockResolvedValue({ value: 1, close: async () => {} })
     const resources = new SessionResources<number>(ctx, { label: 'test', exclusive: true, open })
@@ -244,7 +245,7 @@ describe('Session browser resource ownership', () => {
 
   it('reports non-Error cancellation and acquisition failures through cancellable waits', async () => {
     const { ctx, owner } = await fixture()
-    const a = owner('a')
+    const a = await owner('a')
     const entered = Promise.withResolvers<undefined>()
     const ready = Promise.withResolvers<undefined>()
     const open = vi.fn().mockImplementationOnce(async () => {
@@ -262,7 +263,7 @@ describe('Session browser resource ownership', () => {
     ready.resolve(undefined)
     await resources.dispose()
 
-    const b = owner('b')
+    const b = await owner('b')
     const failed = new SessionResources<number>(ctx, { label: 'test', exclusive: false, open: vi.fn().mockRejectedValue('failed to connect') })
     await expect(failed.get(b.agent, new AbortController().signal)).rejects.toThrow('failed to connect')
     await failed.dispose()
@@ -270,7 +271,7 @@ describe('Session browser resource ownership', () => {
 
   it('closes a late acquisition and waits for its shutdown during racing disposals', async () => {
     const { ctx, owner } = await fixture()
-    const a = owner('a')
+    const a = await owner('a')
     const entered = Promise.withResolvers<undefined>()
     const release = Promise.withResolvers<undefined>()
     const closeEntered = Promise.withResolvers<undefined>()
@@ -298,7 +299,7 @@ describe('Session browser resource ownership', () => {
 
   it('interrupts resources before awaiting an operation that needs close to settle', async () => {
     const { ctx, owner } = await fixture()
-    const a = owner('a')
+    const a = await owner('a')
     const running = Promise.withResolvers<undefined>()
     const stopped = Promise.withResolvers<undefined>()
     const resources = new SessionResources(ctx, {
@@ -318,8 +319,8 @@ describe('Session browser resource ownership', () => {
 
   it('retains exclusive ownership when resource shutdown fails', async () => {
     const { ctx, owner } = await fixture()
-    const a = owner('a')
-    const b = owner('b')
+    const a = await owner('a')
+    const b = await owner('b')
     const resources = new SessionResources(ctx, {
       label: 'test', exclusive: true,
       open: async () => ({ value: {}, close: async () => { throw new Error('close failed') } }),
@@ -335,7 +336,7 @@ describe('Session browser resource ownership', () => {
 
 it('reports early disposal cleanup failure while retaining the owned resource', async () => {
   const { ctx, owner } = await fixture()
-  const a = owner('early-close-failure')
+  const a = await owner('early-close-failure')
   const entered = Promise.withResolvers<undefined>()
   const stopped = Promise.withResolvers<undefined>()
   const warning = vi.spyOn(ctx.logger, 'warn')

@@ -86,12 +86,12 @@ export interface SessionMcpOptions {
 }
 
 interface ClientState {
-  status: { kind: 'pending' | 'ready' | 'blocked' } | { kind: 'failed'; error: unknown }
+  status: 'ready' | 'blocked'
   mask?: Scope
 }
 
 /**
- * Initialize one MCP client during each future Agent's first maintenance task.
+ * Await one MCP client during each future Agent's creation.
  * A busy attachment leaves that activation without browser tools; its other turns continue.
  * Calls are serialized per Session; unload closes every server before releasing registration.
  * @param ctx - provider context supplying browser use, Agents, tools, and prompt assembly.
@@ -110,7 +110,7 @@ export function mountSessionMcp(ctx: Context, options: SessionMcpOptions): void 
     refreshingMasks = true
     try {
       for (const [agent, state] of clients) {
-        if (state.status.kind !== 'blocked') continue
+        if (state.status !== 'blocked') continue
         const inherited = ctx.tools.schemas(agent).filter(tool => tool.name.startsWith(toolPrefix))
         if (inherited.length === 0) continue
         state.mask ??= createScope(ctx, agent)
@@ -174,38 +174,19 @@ export function mountSessionMcp(ctx: Context, options: SessionMcpOptions): void 
       clients.clear()
     }
   }, `${options.name}.sessions`)
-  ctx.systemPrompt.tools(({ agent, scope }) => {
-    const status = clients.get((agent ?? scope) as Agent)?.status
-    if (status?.kind === 'pending') throw new Error(`${options.name}: browser initialization is pending`)
-    if (status?.kind === 'failed') throw status.error
-    return { schemas: [] }
-  })
-  ctx.on('agent/created', ({ agent }) => {
-    const state: ClientState = { status: { kind: resources.available(agent) ? 'pending' : 'blocked' } }
-    clients.set(agent, state)
+  ctx.on('agent/created', async ({ agent, signal }) => {
+    const state: ClientState = { status: resources.available(agent) ? 'ready' : 'blocked' }
     agent.ctx.effect(() => async () => {
       clients.delete(agent)
       await state.mask?.dispose()
     }, `${options.name}.activation`)
-    if (state.status.kind === 'blocked') {
+    if (state.status === 'blocked') {
+      clients.set(agent, state)
       refreshBlockedMasks()
       return
     }
-    try {
-      const startup = agent.runMaintenance(async (signal) => {
-        try {
-          await resources.run(agent, signal, async () => {})
-          state.status = { kind: 'ready' }
-        } catch (error) {
-          state.status = { kind: 'failed', error }
-          throw error
-        }
-      })
-      // The synchronous prompt guard reports the captured failure before model dispatch.
-      void startup.catch(() => {})
-    } catch (error) {
-      state.status = { kind: 'failed', error }
-    }
+    await resources.get(agent, signal)
+    clients.set(agent, state)
   }, { prepend: true })
   ctx.on('tools/change', refreshBlockedMasks)
   ctx.on('tools/execute', async (exec, next) => {
@@ -214,7 +195,7 @@ export function mountSessionMcp(ctx: Context, options: SessionMcpOptions): void 
       && (exec.arguments as { server?: unknown }).server === options.name
     if (!exec.name.startsWith(toolPrefix) && !ownResource) return next()
     const agent = exec.agent
-    if (agent === undefined || clients.get(agent)?.status.kind !== 'ready') {
+    if (agent === undefined || clients.get(agent)?.status !== 'ready') {
       throw new Error(`${options.name}: browser tool belongs to another Session`)
     }
     return resources.run(agent, exec.signal, async (_scope, combined) => {
@@ -229,7 +210,7 @@ export function mountSessionMcp(ctx: Context, options: SessionMcpOptions): void 
   })
   ctx.on('system-prompt/assemble', async (_assembly, { agent }, next) => {
     const assembly = await next()
-    if (agent === undefined || clients.get(agent)?.status.kind === 'ready') return assembly
+    if (agent === undefined || clients.get(agent)?.status === 'ready') return assembly
     return { ...assembly, sections: assembly.sections.filter(section => section.name !== `mcp:${options.name}`) }
   })
 }

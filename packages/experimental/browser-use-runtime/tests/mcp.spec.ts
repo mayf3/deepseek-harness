@@ -14,6 +14,7 @@ import { PtcRuntime } from '@deepseek-ai/dsh-ptc-runtime'
 import Llm, { LlmAdapter, ToolCallId, createUserMessage } from '@deepseek-ai/dsh-llm'
 import type { GenerateOptions, LlmResolvedModelInfo, StreamChunk } from '@deepseek-ai/dsh-llm'
 import Sessions, { SessionId } from '@deepseek-ai/dsh-session'
+import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
 import Agents from '@deepseek-ai/dsh-agent'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import AgentLoop from '@deepseek-ai/dsh-agent-loop'
@@ -197,7 +198,7 @@ describe('Session MCP Loader composition', () => {
   })
 
   it('keeps unrelated and child Sessions running without a busy attachment and admits a later owner', async () => {
-    const { ctx, root, model } = await load(true, 'gate')
+    const { ctx, root, model } = await load(true)
     registerIndependentTool(ctx)
     const first = await ctx.agents.create({ sessionId: SessionId('first') })
     const second = await ctx.agents.create({ sessionId: SessionId('second'), agentOptions: { provider: 'fixture', model: 'fixture' } })
@@ -205,7 +206,6 @@ describe('Session MCP Loader composition', () => {
       sessionId: SessionId('child'), parentAgent: first.agent, agentOptions: { provider: 'fixture', model: 'fixture' },
       setup: (_inner, agent) => { bindScopeParent(agent, first.agent) },
     })
-    await writeFile(join(root, 'release'), '')
     await warm(ctx, first.agent)
     expect(ctx.tools.schemas(child.agent).some(tool => tool.name === TOOL)).toBe(false)
     for (const { agent } of [second, child]) {
@@ -247,36 +247,50 @@ describe('Session MCP Loader composition', () => {
 
   it('allows another Session to answer while attached-browser discovery is pending', async () => {
     const { ctx, root, model, browser } = await load(true, 'hold')
-    const first = await ctx.agents.create({ sessionId: SessionId('first') })
-    const second = await ctx.agents.create({ sessionId: SessionId('second'), agentOptions: { provider: 'fixture', model: 'fixture' } })
+    const first = ctx.agents.create({ sessionId: SessionId('first') })
+    const rejected = expect(first).rejects.toThrow()
     await vi.waitFor(async () => { expect((await events(root)).some(event => event.event === 'probe')).toBe(true) })
-    await expect(ctx.systemPrompt.assemble({ agent: first.agent, scope: first.agent })).rejects.toThrow('initialization is pending')
+    const second = await ctx.agents.create({ sessionId: SessionId('second'), agentOptions: { provider: 'fixture', model: 'fixture' } })
     second.agent.followup(createUserMessage({ content: [{ type: 'text', text: 'Answer without using the browser.' }], source: { kind: 'user' } }))
     await second.agent.whenIdle()
     expect(model.requests).toHaveLength(1)
     expect(model.requests[0]?.tools ?? []).toEqual([])
     expect((await events(root)).filter(event => event.event === 'start')).toHaveLength(1)
     await browser.dispose()
-    await first.agent.whenIdle()
+    await rejected
+    expect(ctx.agents.get(SessionId('first'))).toBeUndefined()
+    expect(ctx.sessions.get(SessionId('first'))).toBeUndefined()
   })
 
   it('rolls back failed discovery and stops a child when unload interrupts discovery', async () => {
     const failed = await load(false, 'fail', undefined, [TOOL, '<unlisted-tools>'])
-    const owner = await failed.ctx.agents.create({ sessionId: SessionId('failure'), agentOptions: { provider: 'fixture', model: 'fixture' } })
-    owner.agent.followup(createUserMessage({ content: [{ type: 'text', text: 'Visit the fixture.' }], source: { kind: 'user' } }))
-    await expect(warm(failed.ctx, owner.agent)).rejects.toThrow('initial connection')
+    let failedAgent!: Agent
+    const laterListener = vi.fn()
+    await expect(failed.ctx.agents.create({
+      sessionId: SessionId('failure'), agentOptions: { provider: 'fixture', model: 'fixture' },
+      setup: (inner, agent) => {
+        failedAgent = agent
+        inner.on('agent/created', () => { agent.followup(createUserMessage({ content: [{ type: 'text', text: 'Visit the fixture.' }], source: { kind: 'user' } })) }, { prepend: true })
+        inner.on('agent/created', laterListener)
+      },
+    })).rejects.toThrow('initial connection')
     expect(failed.model.requests).toEqual([])
-    expect(failed.ctx.tools.schemas(owner.agent)).toEqual([])
+    expect(laterListener).not.toHaveBeenCalled()
+    expect(failed.ctx.agents.get(failedAgent.id)).toBeUndefined()
+    expect(failed.ctx.sessions.get(failedAgent.id)).toBeUndefined()
+    expect(failed.ctx.tools.schemas(failedAgent)).toEqual([])
     const failedEvents = await events(failed.root)
     expect(failedEvents.filter(event => event.event === 'initialize')).toHaveLength(1)
     for (const { pid } of failedEvents.filter(event => event.event === 'start')) {
       expect(() => process.kill(pid, 0)).toThrow(expect.objectContaining({ code: 'ESRCH' }))
     }
     const held = await load(false, 'hold')
-    const pendingOwner = await held.ctx.agents.create({ sessionId: SessionId('pending') })
+    const pendingOwner = held.ctx.agents.create({ sessionId: SessionId('pending') })
+    const interrupted = expect(pendingOwner).rejects.toThrow()
     await vi.waitFor(async () => { expect((await events(held.root)).some(event => event.event === 'probe')).toBe(true) })
     await held.browser.dispose()
-    await pendingOwner.agent.whenIdle()
+    await interrupted
+    expect(held.ctx.agents.get(SessionId('pending'))).toBeUndefined()
     for (const { pid } of (await events(held.root)).filter(event => event.event === 'start')) {
       expect(() => process.kill(pid, 0)).toThrow(expect.objectContaining({ code: 'ESRCH' }))
     }
@@ -398,82 +412,149 @@ describe('Session MCP Loader composition', () => {
   it('holds an immediate PTC turn until the first SDK includes browser tools', async () => {
     const { ctx, root, model } = await load(false, 'gate', undefined, ['run_code', '<unlisted-tools>'])
     await ctx.plugin(PresentationRuntime)
-    const owner = await ctx.agents.create({
+    let created = false
+    let initializing!: Agent
+    const creation = ctx.agents.create({
       sessionId: SessionId('ptc-first-request'), agentOptions: { provider: 'fixture', model: 'fixture' },
-      setup: (inner) => { inner.tools.presentAs('ptc') },
+      setup: (inner, agent) => {
+        initializing = agent
+        inner.tools.presentAs('ptc')
+        inner.on('agent/created', () => {
+          agent.followup(createUserMessage({ content: [{ type: 'text', text: 'Describe the available browser tools.' }], source: { kind: 'user' } }))
+        }, { prepend: true })
+      },
+    }).then((handle) => {
+      created = true
+      return handle
     })
-    owner.agent.followup(createUserMessage({ content: [{ type: 'text', text: 'Describe the available browser tools.' }], source: { kind: 'user' } }))
     await vi.waitFor(async () => { expect((await events(root)).some(event => event.event === 'probe')).toBe(true) })
+    expect(created).toBe(false)
     expect(model.requests).toEqual([])
+    expect((await execute(ctx, initializing)).isError).toBe(true)
     await writeFile(join(root, 'release'), '')
+    const owner = await creation
     await owner.agent.whenIdle()
     expect(model.requests).toHaveLength(1)
     expect(model.requests[0]?.tools?.map(tool => tool.name)).toEqual(['run_code'])
     expect(JSON.stringify(model.requests[0]?.messages)).toContain(TOOL)
   })
 
-  it('keeps a canceled startup failed and disposes its later-completing owned client', async () => {
-    const { ctx, root, model } = await load(false, 'gate')
-    const owner = await ctx.agents.create({ sessionId: SessionId('canceled-startup'), agentOptions: { provider: 'fixture', model: 'fixture' } })
-    await vi.waitFor(async () => { expect((await events(root)).some(event => event.event === 'probe')).toBe(true) })
-    owner.agent.cancel({ kind: 'user' })
-    await owner.agent.whenIdle()
-    await expect(warm(ctx, owner.agent)).rejects.toThrow('browser operation canceled')
-    await writeFile(join(root, 'release'), '')
-    await vi.waitFor(() => { expect(ctx.tools.schemas(owner.agent).some(tool => tool.name === TOOL)).toBe(true) })
-    owner.agent.followup(createUserMessage({ content: [{ type: 'text', text: 'Visit the fixture.' }], source: { kind: 'user' } }))
-    await owner.agent.whenIdle()
-    expect(model.requests).toEqual([])
-    expect((await execute(ctx, owner.agent)).isError).toBe(true)
-    await owner.dispose()
-    for (const { pid } of (await events(root)).filter(event => event.event === 'start')) {
-      expect(() => process.kill(pid, 0)).toThrow(expect.objectContaining({ code: 'ESRCH' }))
-    }
-  })
-
-  it('retains a maintenance claim failure before dispatching queued model work', async () => {
-    const { ctx, model } = await load(false, undefined, undefined, [TOOL, '<unlisted-tools>'])
-    const release = Promise.withResolvers<undefined>()
-    try {
-      const owner = await ctx.agents.create({
-        sessionId: SessionId('claimed-maintenance'), agentOptions: { provider: 'fixture', model: 'fixture' },
-        setup: (inner) => {
-          inner.on('agent/created', ({ agent }) => { void agent.runMaintenance(() => release.promise) }, { prepend: true })
-        },
-      })
-      owner.agent.followup(createUserMessage({ content: [{ type: 'text', text: 'Visit the fixture.' }], source: { kind: 'user' } }))
-      release.resolve(undefined)
-      await owner.agent.whenIdle()
-      await expect(warm(ctx, owner.agent)).rejects.toThrow('already has active work')
-      expect(model.requests).toEqual([])
-      expect(ctx.tools.schemas(owner.agent)).toEqual([])
-      expect((await execute(ctx, owner.agent)).isError).toBe(true)
-    } finally {
-      release.resolve(undefined)
-    }
-  })
-
-  it('retains cancellation from a later creation listener before the startup operation runs', async () => {
-    const { ctx, root, model } = await load(false, 'gate')
-    const cause = { kind: 'user' as const }
-    const owner = await ctx.agents.create({
-      sessionId: SessionId('canceled-at-creation'), agentOptions: { provider: 'fixture', model: 'fixture' },
-      setup: (inner) => {
-        inner.on('agent/created', ({ agent }) => { agent.cancel(cause) })
+  it('cancels creation during discovery, closes its process, and releases the attachment', async () => {
+    const { ctx, root, model } = await load(true, 'gate')
+    const controller = new AbortController()
+    let initializing!: Agent
+    const creation = ctx.agents.create({
+      sessionId: SessionId('canceled-startup'), signal: controller.signal,
+      agentOptions: { provider: 'fixture', model: 'fixture' },
+      setup: (inner, agent) => {
+        initializing = agent
+        inner.on('agent/created', () => {
+          agent.followup(createUserMessage({ content: [{ type: 'text', text: 'Visit the fixture.' }], source: { kind: 'user' } }))
+        }, { prepend: true })
       },
     })
-    await owner.agent.whenIdle()
-    await expect(warm(ctx, owner.agent)).rejects.toBe(cause)
-    owner.agent.followup(createUserMessage({ content: [{ type: 'text', text: 'Visit the fixture.' }], source: { kind: 'user' } }))
-    await owner.agent.whenIdle()
+    const rejected = expect(creation).rejects.toThrow('cancel browser startup')
+    await vi.waitFor(async () => { expect((await events(root)).some(event => event.event === 'probe')).toBe(true) })
+    controller.abort(new Error('cancel browser startup'))
+    await rejected
     expect(model.requests).toEqual([])
-    await writeFile(join(root, 'release'), '')
-    await vi.waitFor(() => { expect(ctx.tools.schemas(owner.agent).some(tool => tool.name === TOOL)).toBe(true) })
-    expect((await execute(ctx, owner.agent)).isError).toBe(true)
-    await owner.dispose()
+    expect(ctx.agents.get(initializing.id)).toBeUndefined()
+    expect(ctx.sessions.get(initializing.id)).toBeUndefined()
+    expect(ctx.tools.schemas(initializing)).toEqual([])
+    expect((await execute(ctx, initializing)).isError).toBe(true)
     for (const { pid } of (await events(root)).filter(event => event.event === 'start')) {
       expect(() => process.kill(pid, 0)).toThrow(expect.objectContaining({ code: 'ESRCH' }))
     }
+    await writeFile(join(root, 'release'), '')
+    const successor = await ctx.agents.create({ sessionId: initializing.id })
+    expect((await execute(ctx, successor.agent)).isError).toBe(false)
+  })
+
+  it('closes the discovered client when a later creation listener rejects', async () => {
+    const { ctx, root, model } = await load(false, undefined, undefined, [TOOL, '<unlisted-tools>'])
+    let initializing!: Agent
+    await expect(ctx.agents.create({
+      sessionId: SessionId('later-listener-failure'), agentOptions: { provider: 'fixture', model: 'fixture' },
+      setup: (inner, agent) => {
+        initializing = agent
+        inner.on('agent/created', () => {
+          expect(ctx.tools.schemas(agent).some(tool => tool.name === TOOL)).toBe(true)
+          agent.followup(createUserMessage({ content: [{ type: 'text', text: 'Visit the fixture.' }], source: { kind: 'user' } }))
+          throw new Error('later initialization failed')
+        })
+      },
+    })).rejects.toThrow('later initialization failed')
+    expect(model.requests).toEqual([])
+    expect(ctx.agents.get(initializing.id)).toBeUndefined()
+    expect(ctx.sessions.get(initializing.id)).toBeUndefined()
+    expect(ctx.tools.schemas(initializing)).toEqual([])
+    expect((await execute(ctx, initializing)).isError).toBe(true)
+    for (const { pid } of (await events(root)).filter(event => event.event === 'start')) {
+      expect(() => process.kill(pid, 0)).toThrow(expect.objectContaining({ code: 'ESRCH' }))
+    }
+  })
+
+  it('cancels before browser discovery without starting a process', async () => {
+    const { ctx, root, model } = await load(false, 'gate')
+    const controller = new AbortController()
+    await expect(ctx.agents.create({
+      sessionId: SessionId('canceled-at-creation'), signal: controller.signal,
+      agentOptions: { provider: 'fixture', model: 'fixture' },
+      setup: (inner) => {
+        inner.on('agent/created', () => { controller.abort(new Error('cancel before discovery')) }, { prepend: true })
+      },
+    })).rejects.toThrow('cancel before discovery')
+    expect(model.requests).toEqual([])
+    expect(ctx.agents.get(SessionId('canceled-at-creation'))).toBeUndefined()
+    await expect(readFile(join(root, 'events.ndjson'))).rejects.toMatchObject({ code: 'ENOENT' })
+  })
+
+  it('awaits discovery on persisted resume and releases a canceled resume before retry', async () => {
+    const { ctx, root, model } = await load(true, 'gate')
+    await ctx.plugin(JsonlSessionPersistence, { root: join(root, 'sessions') })
+    await writeFile(join(root, 'release'), '')
+    const sessionId = SessionId('persisted-browser')
+    const first = await ctx.agents.create({ sessionId, agentOptions: { provider: 'fixture', model: 'fixture' } })
+    first.agent.followup(createUserMessage({ content: [{ type: 'text', text: 'Visit the fixture.' }], source: { kind: 'user' } }))
+    await first.agent.whenIdle()
+    expect(model.requests).toHaveLength(2)
+    await first.dispose()
+    await rm(join(root, 'release'))
+
+    const controller = new AbortController()
+    const canceledResume = ctx.agents.resume({
+      resumeSessionId: sessionId, signal: controller.signal,
+      agentOptions: { provider: 'fixture', model: 'fixture' },
+      setup: (inner, agent) => {
+        inner.on('agent/created', () => {
+          agent.followup(createUserMessage({ content: [{ type: 'text', text: 'Visit again.' }], source: { kind: 'user' } }))
+        }, { prepend: true })
+      },
+    })
+    const rejected = expect(canceledResume).rejects.toThrow('cancel browser resume')
+    await vi.waitFor(async () => { expect((await events(root)).filter(event => event.event === 'probe')).toHaveLength(2) })
+    expect(model.requests).toHaveLength(2)
+    controller.abort(new Error('cancel browser resume'))
+    await rejected
+    expect(ctx.agents.get(sessionId)).toBeUndefined()
+    expect(ctx.sessions.get(sessionId)).toBeUndefined()
+    for (const { pid } of (await events(root)).filter(event => event.event === 'start')) {
+      expect(() => process.kill(pid, 0)).toThrow(expect.objectContaining({ code: 'ESRCH' }))
+    }
+
+    let resumed = false
+    const resuming = ctx.agents.resume({ resumeSessionId: sessionId }).then((handle) => {
+      resumed = true
+      return handle
+    })
+    await vi.waitFor(async () => { expect((await events(root)).filter(event => event.event === 'probe')).toHaveLength(3) })
+    expect(resumed).toBe(false)
+    expect(model.requests).toHaveLength(2)
+    await writeFile(join(root, 'release'), '')
+    const owner = await resuming
+    expect(ctx.tools.schemas(owner.agent).some(tool => tool.name === TOOL)).toBe(true)
+    expect((await execute(ctx, owner.agent)).content).toEqual([{ type: 'text', text: 'Visit 1: direct' }])
+    await owner.dispose()
   })
 
   it('initializes only future activations after provider reload', async () => {

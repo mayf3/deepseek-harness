@@ -26,7 +26,7 @@ Provider shutdown stops tool admission and waits for owned work and resource cle
 
 ## MCP initialization
 
-An MCP provider initializes one client for each live Agent created after the provider loads. Existing Agent maintenance holds queued input until connection and discovery settle; the client then remains with the Session across turns. Direct callers inspecting prompt assembly or scoped tools first await `agent.whenIdle()`. A failed startup remains failed for that activation and rejects prompt assembly and model requests.
+An MCP provider initializes one client for each live Agent created after the provider loads. The existing serial `agent/created` event awaits connection and discovery before creation or resume completes and queued input runs. The client remains with the Session across turns. Startup failure or cancellation rejects creation or resume and triggers client cleanup.
 
 If an attachment is busy, that activation continues without the browser and does not retry on later turns. After release, a newly created or resumed activation can acquire it. Loading or reloading the provider does not adopt already active Sessions; the [shared runtime](../../packages/experimental/browser-use-runtime/README.md) owns these initialization rules.
 
