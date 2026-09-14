@@ -4,12 +4,10 @@
  * way the real one does, and a static metadata reader. Nothing boots.
  */
 
-import { EventEmitter } from 'node:events'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PassThrough } from 'node:stream'
-import type { ChildProcess } from 'node:child_process'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { readProfileManifest, resolveProfileDir, type readPackageMetadata } from '@deepseek-ai/dsh-app-boot'
 import type { SpawnLike } from '@deepseek-ai/dsh-plugin-manager'
@@ -65,31 +63,30 @@ function uninstall(profileDir: string, name: string): void {
 
 /** A pnpm that installs `ext-bundle` as a bundle and everything else as a plain library, or fails as told. */
 function fakePnpm(calls: string[][], failWith?: { code: number } | { error: NodeJS.ErrnoException }): SpawnLike {
-  return (_command, args, options) => {
+  return (spec) => {
+    const [, ...args] = spec.argv
     calls.push([...args])
-    spawnEnvs.push(options.env?.FORCE_COLOR)
-    const child = new EventEmitter() as EventEmitter & { stdout: PassThrough; stderr: PassThrough }
-    child.stdout = new PassThrough()
-    child.stderr = new PassThrough()
-    setTimeout(() => {
-      if (failWith !== undefined && 'error' in failWith) {
-        child.emit('error', failWith.error)
-        return
-      }
-      if (failWith !== undefined) {
-        child.stderr.write('ERR_PNPM_FETCH\n')
-        child.emit('close', failWith.code)
-        return
-      }
-      const [verb, target] = args
-      const profileDir = options.cwd as string
-      if (verb === 'add' && target !== undefined) install(profileDir, target, target === 'ext-bundle')
-      if (verb === 'remove' && target !== undefined) uninstall(profileDir, target)
-      // A coloured line, as a pnpm told to colour anyway would print one.
-      child.stdout.write(`\u001b[32m${verb === 'add' ? '+' : '-'}\u001b[39m ${String(target)}\n`)
-      child.emit('close', 0)
-    }, 5)
-    return child as unknown as ChildProcess
+    spawnEnvs.push(spec.env?.FORCE_COLOR)
+    const stdout = new PassThrough()
+    const stderr = new PassThrough()
+    const done = Promise.resolve().then(() => {
+      try {
+        if (failWith !== undefined && 'error' in failWith) throw failWith.error
+        if (failWith !== undefined) {
+          stderr.write('ERR_PNPM_FETCH\n')
+          return { exitCode: failWith.code, signal: null }
+        }
+        const [verb, target] = args
+        if (verb === 'add' && target !== undefined) install(spec.cwd, target, target === 'ext-bundle')
+        if (verb === 'remove' && target !== undefined) uninstall(spec.cwd, target)
+        stdout.write(`\u001b[32m${verb === 'add' ? '+' : '-'}\u001b[39m ${String(target)}\n`)
+        return { exitCode: 0, signal: null }
+      } finally { stdout.end(); stderr.end() }
+    })
+    return {
+      stdin: undefined, stdout, stderr, control: undefined, collected: {}, done, terminate() {},
+      waitForExit: () => done.then(() => true, () => true),
+    }
   }
 }
 
@@ -107,6 +104,29 @@ const fakeMetadata: typeof readPackageMetadata = (options) => {
 }
 
 describe('dsh plugin', () => {
+  it('waits for its interrupted install and removes its signal listeners', async () => {
+    const before = process.listeners('SIGINT')
+    const done = Promise.withResolvers<{ exitCode: null; signal: 'SIGTERM' }>()
+    const started = Promise.withResolvers<undefined>()
+    const stdout = new PassThrough()
+    const stderr = new PassThrough()
+    const run = runPlugin('web', ['add', 'slow'], { spawn: (spec) => {
+      spec.signal?.addEventListener('abort', () => { stdout.end(); stderr.end(); done.resolve({ exitCode: null, signal: 'SIGTERM' }) }, { once: true })
+      started.resolve(undefined)
+      return {
+        stdin: undefined, stdout, stderr, control: undefined, collected: {}, done: done.promise,
+        terminate() {}, waitForExit: () => done.promise.then(() => true),
+      }
+    } })
+    await started.promise
+    const owned = process.listeners('SIGINT').find(listener => !before.includes(listener))
+    expect(owned).toBeDefined()
+    // Invoke only this command's listener; do not signal the test runner or other listeners.
+    owned?.('SIGINT')
+    expect(await run).toBe(130)
+    expect(process.listeners('SIGINT')).toEqual(before)
+  })
+
   it('lets pnpm colour its output when stdout is a terminal', async () => {
     const calls: string[][] = []
     const descriptor = Object.getOwnPropertyDescriptor(process.stdout, 'isTTY')

@@ -15,13 +15,13 @@ import Loader from '@deepseek-ai/cordis-plugin-loader'
 import type { readPackageMetadata } from '@deepseek-ai/dsh-app-boot'
 import { remoteMethods, RemoteError } from '@deepseek-ai/dsh-typert-protocol'
 import {
-  PluginOperationError, type PluginManager, type PluginOperationFailure, type SpawnLike,
+  PluginOperationError, type PluginManager, type PluginOperationFailure, type SpawnLike, type PluginInstallRequestId,
 } from '@deepseek-ai/dsh-plugin-manager'
 import PluginManagerRemote, { remoteErrorOf, type Config } from '@deepseek-ai/dsh-host-plugin-manager'
 import type {} from '@deepseek-ai/dsh-host-plugin-manager/types'
 
 /** A complete config: the schema fills defaults at load, the type does not. */
-const CONFIG: Config = { pnpmCommand: 'pnpm', installTimeoutMs: 1_000, installLogTailBytes: 16_384 }
+const CONFIG: Config = { pnpmCommand: 'pnpm', installTimeoutMs: 1_000, installKillGraceMs: 50, installLogTailBytes: 16_384 }
 
 const contexts: Context[] = []
 afterEach(async () => {
@@ -249,8 +249,15 @@ describe('PluginManagerRemote', () => {
     const remote = await mount()
     expect(remote.typertRemote).toMatchObject({ serviceKey: 'pluginManager', namespace: 'plugins' })
     expect(remoteMethods(remote).map(marker => marker.method)).toEqual([
-      'list', 'add', 'uninstall', 'enable', 'disable', 'retry', 'setRowDisabled', 'dependents',
+      'list', 'add', 'cancelInstall', 'uninstall', 'enable', 'disable', 'retry', 'setRowDisabled', 'dependents',
     ])
+  })
+
+  it('rejects malformed cancellation ids without running a manager operation', async () => {
+    const remote = await mount()
+    await expect(remote.cancelInstall('not-an-id' as PluginInstallRequestId)).rejects.toMatchObject({ code: 'gateway/bad-request' })
+    await expect(remote.add('pkg', { requestId: 'not-an-id' as PluginInstallRequestId })).rejects.toMatchObject({ code: 'gateway/bad-request' })
+    await expect(remote.cancelInstall('f2340b6d-40bb-46b7-8b94-217bdf5010bd' as PluginInstallRequestId)).resolves.toEqual({ status: 'not-running' })
   })
 
   it('mounts without a profile runtime and reports plugins/unavailable as a Remote error', async () => {
@@ -270,6 +277,7 @@ describe('PluginManagerRemote', () => {
 
     await expect(remote.list()).resolves.toEqual({ method: 'list' })
     await remote.add('spec', { enable: true })
+    await remote.cancelInstall('f2340b6d-40bb-46b7-8b94-217bdf5010bd' as PluginInstallRequestId)
     await remote.uninstall('pkg')
     await remote.enable('pkg')
     await remote.disable('pkg')
@@ -280,6 +288,7 @@ describe('PluginManagerRemote', () => {
     expect(calls).toEqual([
       ['list'],
       ['add', 'spec', { enable: true }],
+      ['cancelInstall', 'f2340b6d-40bb-46b7-8b94-217bdf5010bd'],
       ['uninstall', 'pkg'],
       ['enable', 'pkg'],
       ['disable', 'pkg'],
@@ -347,6 +356,7 @@ describe('remoteErrorOf', () => {
       new PluginOperationError('plugins/not-installed', 'm', { packageName: 'p' }),
       new PluginOperationError('plugins/not-enableable', 'm', { packageName: 'p', reason: 'r' }),
       new PluginOperationError('plugins/enable-failed', 'm', { packageName: 'p', reason: 'r' }),
+      new PluginOperationError('plugins/install-cancelled', 'm', { requestId: 'f2340b6d-40bb-46b7-8b94-217bdf5010bd' as PluginInstallRequestId }),
       new PluginOperationError('plugins/install-failed', 'm', { spec: 's', exitCode: 1, log: 'l' }),
       new PluginOperationError('plugins/busy', 'm', { operation: 'add', subject: 'y', active: { operation: 'add', subject: 'x' } }),
       new PluginOperationError('plugins/agents-running', 'm', { operation: 'add', running: 1 }),

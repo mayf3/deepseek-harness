@@ -5,6 +5,7 @@ export default defineConfig({
     index: 'lib/types/index.js',
     runner: 'lib/types/bin.js',
     output: 'lib/types/output.js',
+    spawn: 'lib/types/spawn.js',
   },
   outDir: 'lib',
   format: ['esm'],

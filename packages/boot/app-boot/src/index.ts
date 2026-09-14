@@ -62,7 +62,6 @@ export {
   type ComposedStack, type LayerOwnership, type RowConflict, type StackUserLayer,
 } from './compose-stack.ts'
 export { ProfileRuntime, type RowOrigin } from './profile-runtime.ts'
-export { awaitChildClose } from './child-close.ts'
 export { readPackageMetadata, type PackageMetadata, type PackageMetadataOptions, type PackageMetadataRow } from './package-metadata.ts'
 
 /**

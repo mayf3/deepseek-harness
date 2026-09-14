@@ -5,6 +5,28 @@
  * @module @deepseek-ai/dsh-plugin-manager/types
  */
 
+import type { Branded } from '@deepseek-ai/dsh-brand'
+
+/** Identifies one installation across pnpm commands and cancellation requests. */
+export type PluginInstallRequestId = Branded<'PluginInstallRequestId'>
+
+/** Installation choices; callers that offer cancellation supply their request id. */
+export interface PluginInstallOptions {
+  readonly enable?: boolean
+  readonly requestId?: PluginInstallRequestId
+}
+
+/** The Host phase of one installation, before its add call settles. */
+export interface PluginInstallProgress {
+  readonly requestId: PluginInstallRequestId
+  readonly phase: 'installing' | 'cancelling' | 'applying'
+}
+
+/** Cancellation is confirmed only after process exit, file restoration and lock release. */
+export interface PluginInstallCancellation {
+  readonly status: 'cancelled' | 'too-late' | 'not-running'
+}
+
 /** What an installed package is: a bundle layer or an unknown package. */
 export type PluginPackageKind = 'bundle' | 'unknown'
 
@@ -150,6 +172,8 @@ export type PluginChangeReason = 'install' | 'uninstall' | 'enable' | 'disable' 
 
 /** One chunk of an install run's output. */
 export interface PluginInstallLogChunk {
+  /** The enclosing installation; absent for standalone package removal. */
+  readonly requestId?: PluginInstallRequestId
   /** The run the chunk belongs to. */
   readonly jobId: string
   /** The command line the run executes: pnpm's command name, then its arguments. */
@@ -181,6 +205,8 @@ export interface PluginOperationDetailsMap {
   'plugins/enable-failed': { readonly packageName: string; readonly reason: string }
   /** pnpm exited non-zero, could not be spawned, or timed out. */
   'plugins/install-failed': { readonly spec: string; readonly exitCode: number | null; readonly log: string }
+  /** The user cancelled, and the installer restored its manifest and lockfile. */
+  'plugins/install-cancelled': { readonly requestId: PluginInstallRequestId }
   /** Another mutation is still running; the manager runs one at a time and refuses rather than queues. */
   'plugins/busy': {
     readonly operation: string
@@ -210,6 +236,12 @@ declare module '@deepseek-ai/cordis' {
      * @param chunk - the chunk.
      */
     'plugins/install-log'(chunk: PluginInstallLogChunk): void
+    /**
+     * The installation started, is stopping, or crossed into non-cancellable application.
+     * @mode emit
+     * @param progress - the request and its current phase.
+     */
+    'plugins/install-state'(progress: PluginInstallProgress): void
   }
 }
 

@@ -66,6 +66,8 @@ Linux 普通进程和终端进程即使在 bootstrap 消费启动请求前被取
 
 -----
 
+`./spawn` 导出 `spawnSubprocess`，供 profile 启动前的包安装使用，无需挂载 Cordis 服务。它使用独立 POSIX 进程组／Windows taskkill 回退方式，不使用服务提供的更强平台容器。调用方拥有取消操作，并在报告清理完成前等待 `waitForExit()`；主动脱离进程组的后代仍受已说明的回退限制约束。
+
 <a id="understand-the-implementation"></a>
 ## 理解实现
 

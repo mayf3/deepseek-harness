@@ -22,6 +22,15 @@
     },
     {
       "path": "../../util/package-manifest"
+    },
+    {
+      "path": "../../util/brand"
+    },
+    {
+      "path": "../../subprocess/subprocess-local"
+    },
+    {
+      "path": "../../subprocess/subprocess"
     }
   ]
 }

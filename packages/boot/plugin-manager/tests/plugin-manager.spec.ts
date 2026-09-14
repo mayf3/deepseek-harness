@@ -7,13 +7,12 @@
  * the agent registry off the context per call.
  */
 
-import { EventEmitter } from 'node:events'
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { mkdtemp } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PassThrough } from 'node:stream'
-import type { ChildProcess } from 'node:child_process'
+import { execFileSync } from 'node:child_process'
 import { afterEach, describe, expect, it } from 'vitest'
 import { Context, type Plugin } from '@deepseek-ai/cordis'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
@@ -23,7 +22,8 @@ import {
 } from '@deepseek-ai/dsh-app-boot'
 import {
   PluginManager, PluginOperationError, pluginOperationFailureOf,
-  type PluginInstallLogChunk, type PluginToolingConfig, type SpawnLike,
+  type PluginInstallLogChunk, type PluginInstallRequestId, type PluginInstallProgress,
+  type PluginToolingConfig, type SpawnLike,
 } from '@deepseek-ai/dsh-plugin-manager'
 import type {} from '@deepseek-ai/dsh-agent'
 
@@ -31,7 +31,7 @@ const NAME = 'dsh-test'
 
 /** A complete tooling config: the host's schema fills these defaults at load, the type does not. */
 function managerConfig(overrides: Partial<PluginToolingConfig> = {}): PluginToolingConfig {
-  return { pnpmCommand: 'pnpm', installTimeoutMs: 1_000, installLogTailBytes: 16_384, ...overrides }
+  return { pnpmCommand: 'pnpm', installTimeoutMs: 1_000, installKillGraceMs: 50, installLogTailBytes: 16_384, ...overrides }
 }
 
 /** Test seams: the child spawner and the static metadata reader. */
@@ -142,35 +142,36 @@ function manifestOf(profileDir: string): { dependencies: Record<string, string>;
 type PnpmBehavior = (args: readonly string[]) => { code: number | null; stdout?: string; stderr?: string; hang?: boolean; error?: unknown }
 
 /** A fake `spawn` that runs `behavior` on the next tick and reports through a child-like emitter. */
-function fakePnpm(profileDir: string, behavior: PnpmBehavior, calls: string[][] = []): SpawnLike {
-  return (command, args, options) => {
-    calls.push([command, ...args])
-    expect(options.cwd).toBe(profileDir)
-    const child = new EventEmitter() as EventEmitter & { stdout: PassThrough; stderr: PassThrough; kill: (signal?: string) => boolean }
-    child.stdout = new PassThrough()
-    child.stderr = new PassThrough()
-    let killed = false
-    child.kill = () => { killed = true; return true }
-    setTimeout(() => {
+function fakePnpm(profileDir: string, behavior: PnpmBehavior, calls: string[][] = [], gate = Promise.resolve()): SpawnLike {
+  return (spec) => {
+    const [, ...args] = spec.argv
+    calls.push([...spec.argv])
+    expect(spec.cwd).toBe(profileDir)
+    const stdout = new PassThrough()
+    const stderr = new PassThrough()
+    const exit = Promise.withResolvers<{ exitCode: number | null; signal: NodeJS.Signals | null }>()
+    const finish = (exitCode: number | null, signal: NodeJS.Signals | null = null): void => {
+      stdout.end(); stderr.end(); exit.resolve({ exitCode, signal })
+    }
+    const terminate = (): void => { finish(null, 'SIGTERM') }
+    spec.signal?.addEventListener('abort', terminate, { once: true })
+    const clean = (): void => { spec.signal?.removeEventListener('abort', terminate) }
+    void exit.promise.then(clean, clean)
+    void gate.then(() => {
+      if (spec.signal?.aborted) { terminate(); return }
       const outcome = behavior(args)
       if (outcome.error !== undefined) {
-        child.emit('error', outcome.error)
+        stdout.end(); stderr.end(); exit.reject(outcome.error)
         return
       }
-      if (outcome.stdout !== undefined) child.stdout.write(outcome.stdout)
-      if (outcome.stderr !== undefined) child.stderr.write(outcome.stderr)
-      if (outcome.hang === true) {
-        // Report the kill the timeout sends, as a real child would.
-        const poll = setInterval(() => {
-          if (!killed) return
-          clearInterval(poll)
-          child.emit('close', null)
-        }, 10)
-        return
-      }
-      setTimeout(() => { child.emit('close', outcome.code) }, 5)
-    }, 5)
-    return child as unknown as ChildProcess
+      if (outcome.stdout !== undefined) stdout.write(outcome.stdout)
+      if (outcome.stderr !== undefined) stderr.write(outcome.stderr)
+      if (!outcome.hang) finish(outcome.code)
+    })
+    return {
+      stdin: undefined, stdout, stderr, control: undefined, collected: {}, done: exit.promise, terminate,
+      waitForExit: () => exit.promise.then(() => true, () => true),
+    }
   }
 }
 
@@ -631,22 +632,139 @@ describe('PluginManager', () => {
       expect(readFileSync(manifestPath, 'utf8')).toBe(before)
     })
 
+    it.each([undefined, 'original lockfile\n'])('cancels a silent install, waits for its process range and restores lockfile %s', async (lockfile) => {
+      const staged = await stageHome()
+      const requestId = 'f2340b6d-40bb-46b7-8b94-217bdf5010bd' as PluginInstallRequestId
+      const manifestPath = join(staged.profileDir, 'package.json')
+      const lockPath = join(staged.profileDir, 'pnpm-lock.yaml')
+      const manifest = readFileSync(manifestPath, 'utf8')
+      if (lockfile !== undefined) writeFileSync(lockPath, lockfile)
+      const started = Promise.withResolvers<undefined>()
+      const gone = Promise.withResolvers<undefined>()
+      const pnpm = fakePnpm(staged.profileDir, () => {
+        addDependency(staged.profileDir, 'partial')
+        writeFileSync(lockPath, 'partially written lockfile')
+        started.resolve(undefined)
+        return { code: null, hang: true }
+      })
+      const { ctx, manager, log } = await bootProfile(staged, {
+        spawn: spec => ({ ...pnpm(spec), waitForExit: () => gone.promise.then(() => true) }),
+      })
+      const states: PluginInstallProgress[] = []
+      ctx.on('plugins/install-state', (progress) => { states.push(progress) })
+      const answer = manager.add('partial', { enable: true, requestId }).catch((error: unknown) => error)
+      await started.promise
+      expect(states).toEqual([{ requestId, phase: 'installing' }])
+      expect(log).toEqual([])
+      expect(await manager.cancelInstall('other' as PluginInstallRequestId)).toEqual({ status: 'not-running' })
+      const cancel = manager.cancelInstall(requestId)
+      const repeated = manager.cancelInstall(requestId)
+      try {
+        expect(states.at(-1)).toEqual({ requestId, phase: 'cancelling' })
+        await expect(manager.add('another')).rejects.toMatchObject({ code: 'plugins/busy' })
+        expect(readFileSync(lockPath, 'utf8')).toBe('partially written lockfile')
+      } finally { gone.resolve(undefined) }
+      expect(await cancel).toEqual({ status: 'cancelled' })
+      expect(await repeated).toEqual({ status: 'cancelled' })
+      expect(await answer).toMatchObject({ code: 'plugins/install-cancelled', details: { requestId } })
+      expect(readFileSync(manifestPath, 'utf8')).toBe(manifest)
+      expect(existsSync(lockPath) ? readFileSync(lockPath, 'utf8') : undefined).toBe(lockfile)
+      expect(states.some(state => state.phase === 'applying')).toBe(false)
+      expect(log.every(chunk => chunk.requestId === requestId)).toBe(true)
+      expect(await manager.cancelInstall(requestId)).toEqual({ status: 'not-running' })
+      await expect(manager.add('')).rejects.toMatchObject({ code: 'plugins/bad-request' })
+    })
+
+    it.skipIf(process.platform === 'win32')('terminates a real process group even when its parent exits zero and its child ignores TERM', async () => {
+      // POSIX process groups and SIGTERM are the behavior under test; Windows owns taskkill semantics.
+      const staged = await stageHome()
+      const requestId = 'f2340b6d-40bb-46b7-8b94-217bdf5010bd' as PluginInstallRequestId
+      const script = join(staged.profileDir, 'add')
+      writeFileSync(script, `
+        import { spawn } from 'node:child_process';
+        import { writeFileSync } from 'node:fs';
+        const child = spawn(process.execPath, ['-e', 'process.on("SIGTERM", () => {}); console.log(String(process.pid)); setInterval(() => {}, 1000)'], { stdio: ['ignore', 'pipe', 'inherit'] });
+        child.stdout.once('data', bytes => {
+          writeFileSync('pnpm-lock.yaml', 'partial');
+          console.log(String(bytes).trim());
+        });
+        process.on('SIGTERM', () => process.exit(0));
+        setInterval(() => {}, 1000);
+      `)
+      const ready = Promise.withResolvers<number>()
+      const { ctx, manager } = await bootProfile(staged, {}, {
+        pnpmCommand: process.execPath, installTimeoutMs: 30_000, installKillGraceMs: 50,
+      })
+      ctx.on('plugins/install-log', (chunk) => {
+        if (chunk.stream === 'stdout' && chunk.text.trim()) ready.resolve(Number(chunk.text.trim()))
+      })
+      const result = manager.add('slow', { requestId, enable: true }).catch((error: unknown) => error)
+      try {
+        const pid = await ready.promise
+        expect(pid).toBeGreaterThan(0)
+        expect(await manager.cancelInstall(requestId)).toEqual({ status: 'cancelled' })
+        expect(await result).toMatchObject({ code: 'plugins/install-cancelled' })
+        // A reparented Linux child may remain a zombie until init reaps it; it cannot execute or write.
+        let status = ''
+        try { status = execFileSync('ps', ['-p', String(pid), '-o', 'stat='], { encoding: 'utf8' }).trim() } catch (error) {
+          if ((error as { status?: number }).status !== 1) throw error
+        }
+        expect(status === '' || status.startsWith('Z')).toBe(true)
+        expect(existsSync(join(staged.profileDir, 'pnpm-lock.yaml'))).toBe(false)
+      } finally { await manager.cancelInstall(requestId) }
+    })
+
+    it('reports a preparation failure instead of claiming cancellation completed', async () => {
+      const staged = await stageHome()
+      mkdirSync(join(staged.profileDir, 'pnpm-lock.yaml'))
+      const { ctx, manager } = await bootProfile(staged, { spawn: recordingPnpm(staged.profileDir) })
+      const requestId = 'f2340b6d-40bb-46b7-8b94-217bdf5010bd' as PluginInstallRequestId
+      let cancelled: Promise<unknown> | undefined
+      ctx.on('plugins/install-state', (progress) => {
+        if (progress.phase === 'installing') cancelled = manager.cancelInstall(requestId).catch((error: unknown) => error)
+      })
+      const failed = await manager.add('pkg', { requestId }).catch((error: unknown) => error)
+      expect(failed).toBeInstanceOf(Error)
+      expect(await cancelled).toBe(failed)
+      expect(failed).not.toMatchObject({ code: 'plugins/install-cancelled' })
+    })
+
+    it('keeps application authoritative when cancellation arrives after preparation', async () => {
+      const staged = await stageHome()
+      stagePackage(staged.profileDir, 'ext-new', { patch: BUNDLE_ONE_ROW })
+      const { ctx, manager } = await bootProfile(staged, { spawn: recordingPnpm(staged.profileDir) })
+      const requestId = 'f2340b6d-40bb-46b7-8b94-217bdf5010bd' as PluginInstallRequestId
+      let cancel: ReturnType<PluginManager['cancelInstall']> | undefined
+      ctx.on('plugins/install-state', (progress) => {
+        if (progress.phase === 'applying') cancel = manager.cancelInstall(requestId)
+      })
+      const answer = await manager.add('ext-new', { requestId, enable: true })
+      expect(await cancel).toEqual({ status: 'too-late' })
+      expect(answer.enabled).toEqual(['ext-new'])
+    })
+
+    it('stops an in-flight installer when its owning plugin is disposed', async () => {
+      const staged = await stageHome()
+      const started = Promise.withResolvers<undefined>()
+      const { ctx, manager } = await bootProfile(staged, { spawn: fakePnpm(staged.profileDir, () => {
+        started.resolve(undefined)
+        return { code: null, hang: true }
+      }) })
+      const answer = manager.add('slow').catch((error: unknown) => error)
+      await started.promise
+      await ctx.fiber.dispose()
+      expect(await answer).toMatchObject({ code: 'plugins/install-cancelled' })
+    })
+
     it('refuses a second mutation while one is still running', async () => {
       const staged = await stageHome()
       stagePackage(staged.profileDir, 'ext-slow', { patch: BUNDLE_ONE_ROW })
       let release = (): void => {}
       const gate = new Promise<void>((resolve) => { release = resolve })
-      const spawn: SpawnLike = (_command, args) => {
-        const child = new EventEmitter() as EventEmitter & { stdout: PassThrough; stderr: PassThrough; kill: () => boolean }
-        child.stdout = new PassThrough()
-        child.stderr = new PassThrough()
-        child.kill = () => true
-        void gate.then(() => {
-          addDependency(staged.profileDir, args[1] ?? 'ext-slow')
-          child.emit('close', 0)
-        })
-        return child as unknown as ChildProcess
-      }
+      const spawn = fakePnpm(staged.profileDir, (args) => {
+        addDependency(staged.profileDir, args[1] ?? 'ext-slow')
+        return { code: 0 }
+      }, [], gate)
       const { manager } = await bootProfile(staged, { spawn })
 
       const first = manager.add('ext-slow')
@@ -702,9 +820,9 @@ describe('PluginManager', () => {
         return { code: 0, stdout: '\u001b[32m+\u001b[39m ext-new \u001b[90m1.0.0\u001b[39m\n' }
       })
       const { manager, log } = await bootProfile(staged, {
-        spawn: (command, args, options) => {
-          colours.push(options.env?.FORCE_COLOR)
-          return pnpm(command, args, options)
+        spawn: (spec) => {
+          colours.push(spec.env?.FORCE_COLOR)
+          return pnpm(spec)
         },
       })
       await manager.add('ext-new')

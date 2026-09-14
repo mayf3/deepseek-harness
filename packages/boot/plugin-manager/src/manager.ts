@@ -6,6 +6,7 @@
  * @module @deepseek-ai/dsh-plugin-manager/manager
  */
 
+import { randomUUID } from 'node:crypto'
 import type { Context, Fiber } from '@deepseek-ai/cordis'
 import {
   disableBundle,
@@ -21,18 +22,39 @@ import {
 import { mutatePatchFile, readPatchListFile, type PatchRow } from '@deepseek-ai/dsh-app-boot/patch-file'
 import { PluginOperationError } from './errors.ts'
 import { bundlesOf, dependenciesOf, messageOf, NAME, optional, type PluginToolingConfig, type SpawnLike } from './helpers.ts'
-import { PluginInstaller } from './installer.ts'
+import { PluginInstaller, type PluginInstallControl } from './installer.ts'
 import type {
   PluginChangeReason,
   PluginDependents,
   PluginEnableResult,
   PluginInstallResult,
+  PluginInstallOptions,
+  PluginInstallRequestId,
+  PluginInstallProgress,
+  PluginInstallCancellation,
   PluginPackageView,
   PluginRowIssue,
   PluginRowReference,
   PluginServiceDependent,
 } from './types.ts'
 import { ownedEntries, packageView } from './view.ts'
+
+/** The manager retains only its current installation, not a task history. */
+interface ActiveInstall {
+  readonly requestId: PluginInstallRequestId
+  readonly controller: AbortController
+  readonly settled: Promise<void>
+  readonly finish: () => void
+  phase: PluginInstallProgress['phase']
+  failure?: unknown
+}
+
+/** One manifest or runtime mutation, with cancellation only for installation. */
+interface ActiveMutation {
+  readonly operation: string
+  readonly subject: string
+  install?: ActiveInstall
+}
 
 /** What {@link PluginManager} needs beyond the Cordis context it reads the tree through. */
 export interface PluginManagerOptions {
@@ -60,31 +82,41 @@ export interface PluginManagerOptions {
  */
 export class PluginManager {
   /** The mutation in flight, while one is; a second caller is refused rather than queued. */
-  private active: { operation: string; subject: string } | undefined
+  private active: ActiveMutation | undefined
+  private disposed = false
 
   /**
    * @param ctx - the context whose Loader tree and services the operations read.
    * @param options - the profile runtime, the agent count, and the tooling bounds.
    */
-  constructor(private readonly ctx: Context, private readonly options: PluginManagerOptions) {}
+  constructor(private readonly ctx: Context, private readonly options: PluginManagerOptions) {
+    ctx.effect(() => async () => {
+      this.disposed = true
+      const install = this.active?.install
+      // Runtime application may itself unload this plugin; never join that recompose from its disposer.
+      if (install !== undefined && install.phase !== 'applying') await this.cancelInstall(install.requestId)
+    })
+  }
 
   /**
    * Run one mutation with the manager to itself.
    * @throws {PluginOperationError} `plugins/busy` naming the operation in flight.
    */
-  private async exclusive<T>(operation: string, subject: string, run: () => Promise<T>): Promise<T> {
+  private async exclusive<T>(operation: string, subject: string, run: (active: ActiveMutation) => Promise<T>): Promise<T> {
     if (this.active !== undefined) {
       throw new PluginOperationError(
         'plugins/busy',
         `${NAME}: ${operation} ${subject} refused while ${this.active.operation} ${this.active.subject} is still running`,
-        { operation, subject, active: this.active },
+        { operation, subject, active: { operation: this.active.operation, subject: this.active.subject } },
       )
     }
-    this.active = { operation, subject }
+    const active: ActiveMutation = { operation, subject }
+    this.active = active
     try {
-      return await run()
+      return await run(active)
     } finally {
       this.active = undefined
+      active.install?.finish()
     }
   }
 
@@ -162,14 +194,60 @@ export class PluginManager {
    * out, `plugins/enable-failed` when enabling was asked for and the tree
    * rejected the bundle.
    */
-  async add(spec: string, options?: { enable?: boolean }): Promise<PluginInstallResult> {
-    return this.exclusive('add', spec, () => this.addNow(spec, options))
+  async add(spec: string, options?: PluginInstallOptions): Promise<PluginInstallResult> {
+    return this.exclusive('add', spec, async (active) => {
+      const { promise, resolve } = Promise.withResolvers<void>()
+      const install: ActiveInstall = {
+        requestId: options?.requestId ?? randomUUID() as PluginInstallRequestId,
+        controller: new AbortController(), settled: promise, finish: resolve, phase: 'installing',
+      }
+      active.install = install
+      this.installProgress(install)
+      try {
+        return await this.addNow(spec, options, {
+          requestId: install.requestId, signal: install.controller.signal,
+          prepared: () => { install.phase = 'applying'; this.installProgress(install) },
+        })
+      } catch (error) {
+        install.failure = error
+        throw error
+      }
+    })
   }
 
-  private async addNow(spec: string, options?: { enable?: boolean }): Promise<PluginInstallResult> {
+  /**
+   * Stop the matching installation and wait for its file recovery and mutation lock release.
+   * @param requestId - the installation the caller started; never selects another active operation.
+   * @returns cancelled after cleanup, too-late during application, or not-running for an unmatched request.
+   * @throws {PluginOperationError} when the installation fails instead of completing cancellation.
+   */
+  async cancelInstall(requestId: PluginInstallRequestId): Promise<PluginInstallCancellation> {
+    const install = this.active?.install
+    if (install?.requestId !== requestId) return { status: 'not-running' }
+    if (install.phase === 'applying') return { status: 'too-late' }
+    if (install.phase !== 'cancelling') {
+      install.phase = 'cancelling'
+      this.installProgress(install)
+      install.controller.abort()
+    }
+    await install.settled
+    if (install.failure instanceof PluginOperationError && install.failure.code === 'plugins/install-cancelled') {
+      return { status: 'cancelled' }
+    }
+    throw install.failure
+  }
+
+  private installProgress(install: ActiveInstall): void {
+    if (this.disposed) return
+    this.ctx.emit('plugins/install-state', { requestId: install.requestId, phase: install.phase })
+  }
+
+  private async addNow(
+    spec: string, options: PluginInstallOptions | undefined, control: PluginInstallControl,
+  ): Promise<PluginInstallResult> {
     const runtime = this.runtime()
     this.assertNoRunningAgents('add')
-    const outcome = await this.installer(runtime).add(spec)
+    const outcome = await this.installer(runtime).add(spec, control)
     const enabled: string[] = []
     if (options?.enable === true) {
       for (const name of outcome.installedOnly) {

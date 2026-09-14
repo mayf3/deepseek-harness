@@ -7,6 +7,7 @@
  * @module @deepseek-ai/dsh/plugin
  */
 
+import { randomUUID } from 'node:crypto'
 import { spawnSync } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { join, resolve } from 'node:path'
@@ -23,14 +24,15 @@ import {
   type ProfileManifest,
 } from '@deepseek-ai/dsh-app-boot'
 import {
-  PluginInstaller, pluginOperationFailureOf, type PluginInstallOutcome, type PluginToolingConfig, type SpawnLike,
+  PluginInstaller, pluginOperationFailureOf, type PluginInstallOutcome,
+  type PluginToolingConfig, type SpawnLike, type PluginInstallRequestId,
 } from '@deepseek-ai/dsh-plugin-manager'
 import { INSTALL_ANCHOR } from './profile-boot.ts'
 
 const NAME = 'dsh'
 
 /** The tooling bounds the command runs with; the Web host reads the same values from its config. */
-const TOOLING: PluginToolingConfig = { pnpmCommand: 'pnpm', installTimeoutMs: 600_000, installLogTailBytes: 16_384 }
+const TOOLING: PluginToolingConfig = { pnpmCommand: 'pnpm', installTimeoutMs: 600_000, installKillGraceMs: 5_000, installLogTailBytes: 16_384 }
 
 /** Test seams: the child spawner and the static metadata reader. */
 export interface PluginCommandInternals {
@@ -131,21 +133,35 @@ async function runManaged(
     color: process.stdout.isTTY,
     ...internals,
   })
-  for (const argument of specs) {
-    const spec = anchorPathSpec(argument, process.cwd())
-    try {
-      if (verb === 'remove') {
-        await installer.remove(spec)
-        continue
+  const controller = new AbortController()
+  let interrupted = 0
+  const interrupt = (): void => { interrupted = 130; controller.abort() }
+  const terminate = (): void => { interrupted = 143; controller.abort() }
+  const control = { requestId: randomUUID() as PluginInstallRequestId, signal: controller.signal, prepared() {} }
+  process.on('SIGINT', interrupt)
+  process.on('SIGTERM', terminate)
+  try {
+    for (const argument of specs) {
+      const spec = anchorPathSpec(argument, process.cwd())
+      try {
+        if (verb === 'remove') {
+          await installer.remove(spec, control)
+          continue
+        }
+        report(dir, await installer.add(spec, control))
+      } catch (error) {
+        const failure = pluginOperationFailureOf(error)
+        if (failure?.code === 'plugins/install-cancelled') return interrupted
+        if (failure?.code !== 'plugins/install-failed') throw error
+        return explainFailure(dir, spec, failure.details.exitCode, failure.cause)
       }
-      report(dir, await installer.add(spec))
-    } catch (error) {
-      const failure = pluginOperationFailureOf(error)
-      if (failure?.code !== 'plugins/install-failed') throw error
-      return explainFailure(dir, spec, failure.details.exitCode, failure.cause)
     }
+    return 0
+  } finally {
+    process.off('SIGINT', interrupt)
+    process.off('SIGTERM', terminate)
   }
-  return 0
+
 }
 
 /** Enable what the run installed, and say what it removed again and what it left as a plain dependency. */
