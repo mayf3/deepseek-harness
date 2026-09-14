@@ -11,10 +11,12 @@
 - header outranks the summary code-block banner: true
 - hover fill stays fully opaque: true
 
-## Scrolled so the code-block banner overlaps the header center
+## Scrolled so the summary code banner reaches its sticky offset
 
 - container is scrolled off its top: true
 - header's static position sits above the scrollport: true
 - header holds at the scrollport top: true
-- banner spans the sampled center point: true
 - header owns the center point (toggle stays clickable): true
+- summary code banner holds below the header band: true
+- summary code banner stays clear of the header: true
+- banner Copy control owns its own center: true
