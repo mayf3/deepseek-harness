@@ -29,7 +29,7 @@ The product UI retains Web actions, including "Open In..." through the shared au
 
 Electron chooses typed English or Chinese shell copy from its application locale and falls back to English. Menus, native dialogs, the startup page, and the plugin-management renderer use the same locale payload; the repository Client UI i18n gate checks these desktop sources.
 
-Electron's native Edit menu supplies undo, redo, cut, copy, paste, and select-all commands and platform shortcuts for the focused window. Right-clicking an editable field opens these commands with availability supplied by Chromium; selected read-only text offers Copy.
+Electron's native Edit menu supplies undo, redo, cut, copy, paste, and select-all commands and platform shortcuts for the focused window. Right-clicking an editable field opens these commands without shortcut labels, with availability supplied by Chromium; selected read-only text offers Copy.
 
 ### Runtime and plugin activation
 

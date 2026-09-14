@@ -170,14 +170,16 @@ describe('desktop main startup', () => {
 
     window.webContents.emit('context-menu', {}, { isEditable: true, selectionText: 'text', editFlags })
     expect(harness.menu.buildFromTemplate).toHaveBeenLastCalledWith([
-      { role: 'undo', enabled: true }, { role: 'redo', enabled: false }, { type: 'separator' },
-      { role: 'cut', enabled: true }, { role: 'copy', enabled: true }, { role: 'paste', enabled: true },
-      { type: 'separator' }, { role: 'selectAll', enabled: true },
+      { role: 'undo', enabled: true, accelerator: '' }, { role: 'redo', enabled: false, accelerator: '' },
+      { type: 'separator', accelerator: '' },
+      { role: 'cut', enabled: true, accelerator: '' }, { role: 'copy', enabled: true, accelerator: '' },
+      { role: 'paste', enabled: true, accelerator: '' }, { type: 'separator', accelerator: '' },
+      { role: 'selectAll', enabled: true, accelerator: '' },
     ])
     expect(harness.popup).toHaveBeenCalledWith({ window })
 
     window.webContents.emit('context-menu', {}, { isEditable: false, selectionText: 'text', editFlags })
-    expect(harness.menu.buildFromTemplate).toHaveBeenLastCalledWith([{ role: 'copy', enabled: true }])
+    expect(harness.menu.buildFromTemplate).toHaveBeenLastCalledWith([{ role: 'copy', enabled: true, accelerator: '' }])
 
     harness.menu.buildFromTemplate.mockClear()
     window.webContents.emit('context-menu', {}, { isEditable: false, selectionText: '', editFlags })

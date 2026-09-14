@@ -128,7 +128,8 @@ function createWindow(preload: string, show = false): BrowserWindow {
     } else if (selectionText.length > 0) {
       items.push({ role: 'copy', enabled: editFlags.canCopy })
     }
-    if (items.length > 0) Menu.buildFromTemplate(items).popup({ window })
+    // Empty accelerators suppress Electron's default shortcut labels for native roles.
+    if (items.length > 0) Menu.buildFromTemplate(items.map(item => ({ ...item, accelerator: '' }))).popup({ window })
   })
   window.webContents.on('will-navigate', (event, url) => {
     const destination = new URL(url)
