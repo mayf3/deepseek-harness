@@ -27,5 +27,8 @@ export default defineConfig([
     fixedExtension: false,
     dts: false,
     clean: false,
+    deps: {
+      alwaysBundle: ['resolve.exports'],
+    },
   },
 ])

@@ -1,6 +1,6 @@
 /** Package metadata queries share the active profile resolution generation. */
 
-import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
@@ -158,6 +158,12 @@ describe('profile package metadata service', () => {
     const first = join(root, 'first')
     const firstAnchor = pkg(first, '1.0.0')
     const initial = generation(profilesDir, profileDir, first, firstAnchor, '1.0.0')
+    mkdirSync(join(profilesDir, 'node_modules'), { recursive: true })
+    symlinkSync(
+      first,
+      join(profilesDir, 'node_modules', 'metadata-lib'),
+      process.platform === 'win32' ? 'junction' : 'dir',
+    )
     const key = '@deepseek-ai/dsh-app-boot/profile-resolution'
     const previous = getEnvironmentData(key)
     const ctx = new Context()
@@ -178,6 +184,11 @@ describe('profile package metadata service', () => {
 
     const added = join(root, 'added')
     const addedAnchor = pkg(added, '2.0.0', 'added-metadata')
+    symlinkSync(
+      added,
+      join(profilesDir, 'node_modules', 'added-metadata'),
+      process.platform === 'win32' ? 'junction' : 'dir',
+    )
     const next = {
       ...initial,
       entries: [...initial.entries, {

@@ -34,6 +34,7 @@ interface CommonJsModule {
 
 interface InternalModules {
   esm: ModuleLoaderV1 | ModuleLoaderV2
+  esmConditions: readonly string[]
   cjs: CommonJsModule
   cjsConditions: ReadonlySet<string>
   modern: boolean
@@ -227,11 +228,24 @@ function packageImportsTarget(
         return undefined
       }
     }
+    if (basename(current) === 'node_modules') return undefined
     const next = dirname(current)
     /* v8 ignore next -- a MODULE_NOT_FOUND package-import target always has an owning package scope */
     if (next === current) return undefined
     current = next
   }
+}
+
+function packageSearchPaths(
+  entry: ProfileResolutionEntry, request: string, cjs: CommonJsModule,
+): string[] {
+  const name = barePackageName(request)
+  /* v8 ignore next -- fallback routes are created only for bare package requests */
+  if (name === undefined) return cjs._nodeModulePaths(dirname(entry.declarer))
+  const suffix = sep + name.split('/').join(sep)
+  return entry.packageDir.endsWith(suffix)
+    ? [entry.packageDir.slice(0, -suffix.length)]
+    : cjs._nodeModulePaths(dirname(entry.declarer))
 }
 
 function localCandidateOwnsResolution(candidate: string, resolved: string, request: string, name: string): boolean {
@@ -497,6 +511,9 @@ function internalModules(): InternalModules {
   const cjsHelpers = addon.requireBuiltin('internal/modules/helpers') as {
     getCjsConditions(): ReadonlySet<string>
   }
+  const esmUtils = addon.requireBuiltin('internal/modules/esm/utils') as {
+    getDefaultConditions(): readonly string[]
+  }
   const esm = esmModule.getOrInitializeCascadedLoader()
   const modern = 'getOrCreateModuleJob' in esm
   /* v8 ignore start -- the supported Node 22/24/26 matrix validates each available Internal interface */
@@ -504,12 +521,14 @@ function internalModules(): InternalModules {
     || typeof Reflect.get(esm, modern ? 'getOrCreateModuleJob' : 'getModuleJobForImport') !== 'function'
     || (!modern && typeof Reflect.get(esm, 'resolve') !== 'function')
     || typeof cjsModule.Module._resolveFilename !== 'function'
-    || typeof cjsHelpers.getCjsConditions !== 'function') {
+    || typeof cjsHelpers.getCjsConditions !== 'function'
+    || typeof esmUtils.getDefaultConditions !== 'function') {
     throw new Error('profile resolution: unsupported Node module loader')
   }
   /* v8 ignore stop */
   return {
     esm,
+    esmConditions: esmUtils.getDefaultConditions(),
     cjs: cjsModule.Module,
     cjsConditions: cjsHelpers.getCjsConditions(),
     modern,
@@ -531,10 +550,43 @@ function throwWithImporter(error: unknown, routedParent: string, parent: string)
   throw error
 }
 
+function throwWithoutCjsAnchor(error: unknown, anchor: string): never {
+  const resolved = error as NodeJS.ErrnoException & { requireStack?: string[] }
+  const requireStack = resolved.requireStack
+  if (error instanceof Error
+    && resolved.code === 'MODULE_NOT_FOUND'
+    && requireStack?.[0] !== undefined
+    && sameResolution(requireStack[0], anchor)) {
+    const originalMessage = error.message
+    const originalBlock = `\nRequire stack:\n${requireStack.map(path => `- ${path}`).join('\n')}`
+    const remaining = requireStack.slice(1)
+    /* v8 ignore next -- routed calls always retain the original importing module */
+    const replacement = remaining.length === 0
+      ? ''
+      : `\nRequire stack:\n${remaining.map(path => `- ${path}`).join('\n')}`
+    error.message = originalMessage.replace(originalBlock, replacement)
+    resolved.requireStack = remaining
+    const stack = error.stack
+    /* v8 ignore next -- Node's resolver errors always carry a stack */
+    if (stack !== undefined) error.stack = stack.replace(originalMessage, error.message)
+  }
+  throw error
+}
+
 function assertEquivalent(actual: string, expected: string, request: string, parent: string): void {
   if (sameResolution(actual, expected)) return
   throw new Error(
     `profile resolution mismatch for ${JSON.stringify(request)} from ${parent}: disk resolved ${actual}, generation resolved ${expected}`,
+  )
+}
+
+function assertOptionalEquivalent(
+  actual: string | undefined, expected: string | undefined, request: string, parent: string,
+): void {
+  if (actual === undefined && expected === undefined) return
+  if (actual !== undefined && expected !== undefined && sameResolution(actual, expected)) return
+  throw new Error(
+    `profile resolution mismatch for ${JSON.stringify(request)} from ${parent}: disk selected ${actual ?? 'nothing'}, generation selected ${expected ?? 'nothing'}`,
   )
 }
 
@@ -549,12 +601,13 @@ export function installProfileResolution(
   behavior: ProfileResolutionBehavior = 'enforce',
 ): ProfileResolutionRegistration {
   const router = new ResolutionRouter(generation)
-  const { esm, cjs, cjsConditions, modern } = internalModules()
+  const { esm, esmConditions, cjs, cjsConditions, modern } = internalModules()
   const esmScope = new Map<string, boolean>()
-  const profileUrls = [
+  const profilePaths = [
     ...prefixes(generation.profilesDir),
     ...(generation.profileDir === undefined ? [] : prefixes(generation.profileDir)),
-  ].map(path => pathToFileURL(path).href)
+  ]
+  const profileUrls = profilePaths.map(path => pathToFileURL(path).href)
   let recentEsmParent: string | undefined
   let recentEsmScoped = false
   let delegatedEsm: { parent: string | undefined; request: string } | undefined
@@ -578,7 +631,38 @@ export function installProfileResolution(
       }
       if (!scoped) return native(request, parent, attributes)
       const state = router.routeUrl(request, parent)
-      if (state === undefined) return native(request, parent, attributes)
+      if (state === undefined) {
+        const target = request[0] === '#'
+          ? packageImportsTarget(fileURLToPath(parent), request, esmConditions)
+          : undefined
+        const recoverPackageImport = (error: unknown): ResolveResult | Promise<ResolveResult> => {
+          if ((error as NodeJS.ErrnoException).code !== 'ERR_MODULE_NOT_FOUND' || target === undefined) throw error
+          return adapted(target, parent, attributes)
+        }
+        const verifyPackageImport = (resolved: ResolveResult): ResolveResult | Promise<ResolveResult> => {
+          if (behavior !== 'verify' || target === undefined) return resolved
+          const expected = adapted(target, parent, attributes)
+          /* v8 ignore start -- Node 22 is the asynchronous adapter and is covered by the external version matrix */
+          if (expected instanceof Promise) {
+            return expected.then((wanted) => {
+              assertEquivalent(resolved.url, wanted.url, request, parent)
+              return resolved
+            })
+          }
+          /* v8 ignore stop */
+          assertEquivalent(resolved.url, expected.url, request, parent)
+          return resolved
+        }
+        try {
+          const result = native(request, parent, attributes)
+          /* v8 ignore next -- Node 22 is the asynchronous adapter and is covered by the external version matrix */
+          return result instanceof Promise
+            ? result.then(verifyPackageImport, recoverPackageImport)
+            : verifyPackageImport(result)
+        } catch (error) {
+          return recoverPackageImport(error)
+        }
+      }
       const cacheable = attributes === EMPTY_ATTRIBUTES || Object.keys(attributes).length === 0
       if (cacheable && state.esm !== undefined) return state.esm
       const route = state.route
@@ -692,9 +776,13 @@ export function installProfileResolution(
     synthetic.parent = parent
     synthetic.filename = anchor
     synthetic.paths = routed.kind === 'fallback'
-      ? [dirname(routed.entry.packageDir)]
+      ? packageSearchPaths(routed.entry, request, cjs)
       : cjs._nodeModulePaths(dirname(anchor))
-    return originalFilename.call(cjs, request, synthetic, main, options)
+    try {
+      return originalFilename.call(cjs, request, synthetic, main, options)
+    } catch (error) {
+      return throwWithoutCjsAnchor(error, anchor)
+    }
   }
   const wrappedFilename: CommonJsModule['_resolveFilename'] = (request, parent, main, options) => {
     if (delegatedCjs || !parent?.filename) {
@@ -727,13 +815,19 @@ export function installProfileResolution(
       cacheable,
     )
     if (state === undefined) {
+      const scoped = startsWithin(parent.filename, profilePaths)
+      const conditions = options?.conditions ?? cjsConditions
+      const target = request[0] === '#' && scoped
+        ? packageImportsTarget(parent.filename, request, conditions)
+        : undefined
       try {
-        return originalFilename.call(cjs, request, parent, main, options)
+        const result = originalFilename.call(cjs, request, parent, main, options)
+        if (behavior === 'verify' && target !== undefined) {
+          assertEquivalent(result, wrappedFilename(target, parent, main, options), request, parent.filename)
+        }
+        return result
       } catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== 'MODULE_NOT_FOUND' || request[0] !== '#') throw error
-        const conditions = options?.conditions ?? cjsConditions
-        const target = packageImportsTarget(parent.filename, request, conditions)
-        if (target === undefined) throw error
+        if ((error as NodeJS.ErrnoException).code !== 'MODULE_NOT_FOUND' || target === undefined) throw error
         return wrappedFilename(target, parent, main, options)
       }
     }
@@ -764,10 +858,27 @@ export function installProfileResolution(
       try {
         expected = resolveRoutedCjs(request, route, parent, main, routedOptions)
       } catch (error) {
-        if (route.kind !== 'fallback' || (error as NodeJS.ErrnoException).code !== 'MODULE_NOT_FOUND') throw error
-        expected = resolveRoutedCjs(
-          request, { kind: 'after-fallback', parent: route.after }, parent, main, routedOptions,
-        )
+        if (route.kind !== 'fallback'
+          || (error as NodeJS.ErrnoException).code !== 'MODULE_NOT_FOUND'
+          || packageHasExports(route.entry.packageDir)) throw error
+        try {
+          expected = resolveRoutedCjs(
+            request, { kind: 'after-fallback', parent: route.after }, parent, main, routedOptions,
+          )
+        } catch (afterError) {
+          const remaining = explicit === undefined || explicitPaths === undefined
+            ? []
+            : explicitPaths.slice(explicit.index + 1)
+          if ((afterError as NodeJS.ErrnoException).code !== 'MODULE_NOT_FOUND' || remaining.length === 0) {
+            throw afterError
+          }
+          delegatedCjs--
+          try {
+            return wrappedFilename(request, parent, main, { ...options, paths: remaining })
+          } finally {
+            delegatedCjs++
+          }
+        }
       }
       if (behavior === 'enforce') {
         if (cacheable) state.cjs = expected
@@ -784,7 +895,21 @@ export function installProfileResolution(
   cjs._resolveFilename = wrappedFilename
 
   return {
-    packageDir(specifier, parentURL) { return router.packageDir(specifier, parentURL) },
+    packageDir(specifier, parentURL) {
+      const expected = router.packageDir(specifier, parentURL)
+      if (behavior !== 'verify' || !startsWithin(parentURL, profileUrls)) return expected
+      const name = barePackageName(specifier)
+      if (name === undefined) return expected
+      let parent: string
+      try {
+        parent = fileURLToPath(parentURL)
+      } catch {
+        return expected
+      }
+      const actual = nativePackageDir(parent, name)
+      assertOptionalEquivalent(actual, expected, specifier, parentURL)
+      return expected
+    },
     replace(next) { router.replace(next) },
     dispose() {
       /* v8 ignore else -- registrations are disposed in reverse installation order */
