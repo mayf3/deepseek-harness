@@ -19,6 +19,8 @@ import { dshHomePath, resolveDshHome } from '@deepseek-ai/dsh-home-paths'
 import { createLaunchEnvironmentSnapshot, type LaunchEnvironmentSnapshot } from '@deepseek-ai/dsh-launch-environment'
 import type {} from '@deepseek-ai/cordis-plugin-hmr'
 import { watchConfig } from './watch-config.ts'
+export { watchConfig } from './watch-config.ts'
+export type { ProfileRuntime } from './profile-runtime.ts'
 import type {} from '@deepseek-ai/dsh-system-prompt'
 
 declare module '@deepseek-ai/cordis' {
@@ -258,21 +260,7 @@ export async function watchUserPatches(
   const entry = bootstrapIncludes.get(ctx)
   if (entry === undefined) throw new Error(`${binName}: user patch-layer watching requires the root Include entry`)
   const register = watchConfig(ctx, filename, hmr.config, async () => {
-    // Re-read the include's non-patch options per refresh so a writer that
-    // updates another option between refreshes is not silently reverted.
-    const { patches: _previousPatches, ...includeConfig } = entry.options.config as Include.Config
-    const userPatches = loadOptionalPatches(binName, filename) ?? []
-    const patches = compose(userPatches)
-    await entry.update({
-      config: {
-        ...includeConfig,
-        patches,
-      },
-    })
-    await ctx.loader.await()
-    await Promise.allSettled([...ctx.loader.entries()].map(entry => Promise.resolve(entry.fiber?.await())))
-    const failures = await inactiveEntries(ctx)
-    if (failures.length > 0) throw new Error(activationDiagnostic(binName, 'warning', failures).trimEnd())
+    await reconcileProfilePatches(ctx, compose(loadOptionalPatches(binName, filename) ?? []), binName)
   })
   try {
     return await register
@@ -284,6 +272,25 @@ export async function watchUserPatches(
     if ((error as { code?: string } | null)?.code === 'INACTIVE_EFFECT') return async () => {}
     throw error
   }
+}
+
+/** Apply one complete patch generation and wait for Loader activation diagnostics.
+ * @param ctx Booted root context.
+ * @param patches Complete ordered patch list.
+ * @param binName Diagnostic prefix.
+ */
+export async function reconcileProfilePatches(ctx: Context, patches: PatchOptions[], binName: string): Promise<void> {
+  const entry = bootstrapIncludes.get(ctx)
+  if (entry === undefined) throw new Error(`${binName}: profile reload requires the root Include entry`)
+  // Removed entries leave the Loader store before their async disposers finish.
+  const previousFibers = [...ctx.loader.entries()].flatMap(row => row.fiber === undefined ? [] : [row.fiber])
+  const { patches: _previous, ...includeConfig } = entry.options.config as Include.Config
+  await entry.update({ config: { ...includeConfig, patches } })
+  const results = await Promise.allSettled(previousFibers.map(fiber => fiber.await()))
+  await ctx.loader.await()
+  const failures = await inactiveEntries(ctx)
+  if (failures.length > 0) throw new Error(activationDiagnostic(binName, 'warning', failures).trimEnd())
+  for (const result of results) if (result.status === 'rejected') throw result.reason
 }
 
 /**

@@ -20,6 +20,7 @@ import {
   loadOptionalPatches,
   loadOverlayPatches,
   PROFILE_PATCH_FILENAME,
+  reconcileProfilePatches,
   watchUserPatches,
 } from '../src/index.ts'
 
@@ -352,6 +353,36 @@ describe('Loader entry disabled interpolation', () => {
     } finally {
       await ctx.fiber.dispose()
     }
+  })
+})
+
+describe('profile reconciliation settlement', () => {
+  it('waits for a removed plugin to release its resources', async () => {
+    const dir = tmp()
+    const started = Promise.withResolvers<undefined>()
+    const release = Promise.withResolvers<undefined>()
+    writeFileSync(join(dir, 'cordis.yml'), '[]\n')
+    writeFileSync(join(dir, 'held.mjs'), [
+      'export function apply(ctx) {',
+      '  ctx.effect(() => async () => {',
+      '    ctx.get("reloadProbe").started()',
+      '    await ctx.get("reloadProbe").release',
+      '  })',
+      '}',
+      '',
+    ].join('\n'))
+    const ctx = await boot(NAME, join(dir, 'cordis.yml'), [{ insert: [{ id: 'held', name: './held.mjs' }] }], (host) => {
+      host.provide('reloadProbe', { started: () => started.resolve(undefined), release: release.promise })
+    })
+    onTestFinished(async () => { release.resolve(undefined); await ctx.fiber.dispose() })
+    let settled = false
+    const operation = reconcileProfilePatches(ctx, [], NAME).then(() => { settled = true })
+    await started.promise
+    expect([...ctx.loader.entries()].some(entry => entry.options.id === 'held')).toBe(false)
+    expect(settled).toBe(false)
+    release.resolve(undefined)
+    await operation
+    expect(settled).toBe(true)
   })
 })
 

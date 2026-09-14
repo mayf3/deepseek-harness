@@ -369,6 +369,9 @@
 # exists, so there is no agent to key by. Behind a preset realm those variables
 # would never reach the model's shell at all.
 
+- id: tool-plugin-manager
+  disabled: true
+
 - id: tool-bash
   disabled: true
 

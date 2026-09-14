@@ -1775,6 +1775,26 @@ export interface PlanModeConfig {
 
 Source: [`packages/plan/plan-mode/src/index.ts:64`](../packages/plan/plan-mode/src/index.ts)
 
+<a id="deepseek-aidsh-plugin-manager"></a>
+
+## `@deepseek-ai/dsh-plugin-manager`
+
+Requires: `loader` · `profileRuntime`
+
+```ts config-catalog
+/** Limits for package diagnostics and change notifications. */
+export interface Config {
+  /** Maximum retained pnpm diagnostic bytes per operation. */
+  outputBytes?: number
+  /** Delay for combining consecutive management notices in one durable injection. */
+  notificationDelayMs?: number
+  /** Maximum time to wait for another process's profile package operation. */
+  lockWaitMs?: number
+}
+```
+
+Source: [`packages/boot/plugin-manager/src/index.ts:19`](../packages/boot/plugin-manager/src/index.ts)
+
 <a id="deepseek-aidsh-plugin-package-inventory-deepseek"></a>
 
 ## `@deepseek-ai/dsh-plugin-package-inventory-deepseek`

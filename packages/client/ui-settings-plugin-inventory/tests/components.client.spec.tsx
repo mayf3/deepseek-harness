@@ -378,3 +378,47 @@ describe('PluginInventorySettingsTab', () => {
     await act(async () => { deferredFailure.reject(new Error('late failure')) })
   })
 })
+
+describe('persistent profile management', () => {
+  it('runs bundle and plugin controls through the same manager and shows failed results', async () => {
+    let enabled = true
+    let selected = true
+    let installed = true
+    const list: PluginInventorySettingsTabInjected['list'] = async () => ({
+      managementAvailable: true,
+      entries: [{ entryId: 'managed' as Snapshot['entries'][number]['entryId'], moduleName: '@fixture/managed', enabled, fiberPhase: enabled ? 'active' : null }],
+    })
+    const management = {
+      listPlugins: async () => [{ ...(await list()).entries[0]!, patchId: 'managed' }],
+      listBundles: async () => installed ? [{ name: 'extra', version: '1', enabled: selected, removable: true }] : [],
+      setPluginEnabled: vi.fn(async (_id: Snapshot['entries'][number]['entryId'], next: boolean) => {
+        enabled = next
+        return { changed: true, application: 'applied' as const, message: 'Plugin changed.' }
+      }),
+      setBundleEnabled: vi.fn(async (_name: string, next: boolean) => {
+        selected = next
+        return { changed: true, application: 'applied' as const, message: 'Bundle changed.' }
+      }),
+      installBundle: vi.fn(async () => ({ changed: false, application: 'failed' as const, message: 'Registry unavailable.' })),
+      removeBundle: vi.fn(async () => {
+        installed = false
+        return { changed: true, application: 'applied' as const, message: 'Bundle removed.' }
+      }),
+    } satisfies NonNullable<PluginInventorySettingsTabInjected['management']>
+    render(<PluginInventorySettingsTab {...props(list)} management={management} />)
+    fireEvent.click(await screen.findByRole('switch', { name: 'Toggle bundle extra' }))
+    await waitFor(() => { expect(management.setBundleEnabled).toHaveBeenCalledWith('extra', false) })
+    await waitFor(() => { expect(screen.getByRole<HTMLInputElement>('switch', { name: 'Toggle bundle extra' }).checked).toBe(false) })
+    fireEvent.click(screen.getByRole('button', { name: /managed, managed/ }))
+    fireEvent.click(await screen.findByRole('switch', { name: 'Toggle plugin managed' }))
+    await waitFor(() => { expect(management.setPluginEnabled).toHaveBeenCalledWith('managed', false) })
+    await waitFor(() => { expect(screen.getByRole<HTMLInputElement>('switch', { name: 'Toggle plugin managed' }).checked).toBe(false) })
+    fireEvent.change(screen.getByRole('textbox', { name: 'npm package name or local path' }), { target: { value: 'new-bundle' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Install' }))
+    await waitFor(() => { expect(management.installBundle).toHaveBeenCalledWith('new-bundle', { enabled: true }) })
+    expect((await screen.findByRole('alert')).textContent).toContain('Registry unavailable.')
+    fireEvent.click(screen.getByRole('button', { name: 'Remove' }))
+    await waitFor(() => { expect(management.removeBundle).toHaveBeenCalledWith('extra') })
+    await waitFor(() => { expect(screen.queryByRole('switch', { name: 'Toggle bundle extra' })).toBeNull() })
+  })
+})

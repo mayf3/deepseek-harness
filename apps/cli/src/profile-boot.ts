@@ -11,12 +11,12 @@
  * @module @deepseek-ai/dsh/profile-boot
  */
 
-import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { withFileLock } from '@deepseek-ai/dsh-atomic-write'
 import { FiberState, type Context } from '@deepseek-ai/cordis'
 import type { PatchOptions } from '@deepseek-ai/cordis-plugin-include'
-import type { EntryOptions } from '@deepseek-ai/cordis-plugin-loader'
 import {
   boot,
   composeEntries,
@@ -29,7 +29,10 @@ import {
   PROFILE_PATCH_FILENAME,
   PROFILE_TEMPLATES,
   resolveProfileDir,
-  watchUserPatches,
+  watchConfig,
+  loadProfileDirectory,
+  reconcileProfilePatches,
+  type ProfileRuntime,
   type Profile,
 } from '@deepseek-ai/dsh-app-boot'
 import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
@@ -194,22 +197,8 @@ export function prepareProfile(name: string, userLayer = true, fromDefaultProfil
 /** One profile's patch layers, in application order. */
 interface ComposedProfile {
   profile: Profile
-  /** Bundle layers concatenated — the part below the user layers on a live reload. */
-  bundlePatches: PatchOptions[]
-  /** The home-level user layer (`$DSH_HOME/cordis.patch.yml`), applied after the profile's own. */
-  homePatches: PatchOptions[]
-  /** Layers above the user layers on a live reload: `--patch` overlays and the telemetry switch. */
+  /** Command-line overlay contents, frozen for this invocation. */
   overlays: PatchOptions[]
-}
-
-/** The full patch stack of one composed profile, in application order. */
-function allPatches(composed: ComposedProfile): PatchOptions[] {
-  return [
-    ...composed.bundlePatches,
-    ...composed.profile.patches,
-    ...composed.homePatches,
-    ...composed.overlays,
-  ]
 }
 
 /**
@@ -230,17 +219,8 @@ async function composeProfile(
 ): Promise<ComposedProfile> {
   const profile = prepareProfile(name, true, fromDefaultProfile)
   await healProfilesModuleFallback({ installAnchor: INSTALL_ANCHOR, profile })
-  const homePatches = loadOptionalPatches(NAME, homePatchPath()) ?? []
   const overlays = patchFiles.flatMap(file => loadOverlayPatches(NAME, resolve(file)))
-  const bundlePatches = profile.layers.flatMap(layer => layer.patches)
-  const rows = new Map<string, EntryOptions>()
-  for (const row of composeEntries([bundlePatches, profile.patches, homePatches, overlays])) {
-    if (typeof row.id === 'string') rows.set(row.id, row)
-  }
-  const composedOverlays = [...overlays]
-  const telemetryPatch = resolveTelemetryPatch(process.env.DSH_TELEMETRY_DISABLED, rows.has(TELEMETRY_ROW_ID))
-  if (telemetryPatch !== undefined) composedOverlays.push(telemetryPatch)
-  return { profile, bundlePatches, homePatches, overlays: composedOverlays }
+  return { profile, overlays }
 }
 
 /** Options for {@link runProfile}. */
@@ -313,28 +293,55 @@ export async function runProfile(options: RunProfileOptions): Promise<{ ctx: Con
   })
 
   const rootConfig = join(composed.profile.dir, PROFILE_ROOT_FILENAME)
-  // Recomposition for the live user layers: bundle layers below, overlays
-  // above, so a user edit can never displace them. Parsed app arguments are
-  // not in here at all — they live in app-provided services that survive a
-  // recomposition. BOTH
-  // user files are re-read per generation (the HMR watcher hands us only the
-  // changed file's patches, which one of the reads duplicates — fresh reads
-  // keep the two watchers from stitching in each other's stale copy).
-  // Fresh clones per generation: the include pushes `insert` rows into the
-  // mounted tree BY REFERENCE and later id-targeted patches mutate those
-  // objects in place. Reusing one parsed patch object across applications
-  // would bake a user override into the bundle's in-memory insert row, so
-  // removing the override could never revert the row to the bundle default.
-  const composeLive = (): PatchOptions[] => structuredClone([
-    ...composed.bundlePatches,
-    ...loadOptionalPatches(NAME, composed.profile.patchPath) ?? [],
-    ...loadOptionalPatches(NAME, homePatchPath()) ?? [],
-    ...composed.overlays,
-  ])
+  let operations: Promise<unknown> = Promise.resolve()
+  const manifestPath = join(composed.profile.dir, 'package.json')
+  const watchedFiles = [composed.profile.patchPath, homePatchPath(), manifestPath]
+  const readInputs = (): string => JSON.stringify(watchedFiles.map((filename) => {
+    try {
+      return readFileSync(filename, 'utf8')
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null
+      throw error
+    }
+  }))
+  let lastInputs = readInputs()
+  const enqueue = <T>(operation: () => Promise<T>): Promise<T> => {
+    const task = operations.then(operation)
+    operations = task.catch(() => {})
+    return task
+  }
+  const composeLive = (): PatchOptions[] => {
+    const profile = loadProfileDirectory(NAME, composed.profile.dir, INSTALL_ANCHOR)
+    const patches = structuredClone([
+      ...profile.layers.flatMap(layer => layer.patches),
+      ...profile.patches,
+      ...loadOptionalPatches(NAME, homePatchPath()) ?? [],
+      ...composed.overlays,
+    ])
+    const telemetryPatch = resolveTelemetryPatch(process.env.DSH_TELEMETRY_DISABLED,
+      composeEntries([patches]).some(row => row.id === TELEMETRY_ROW_ID))
+    if (telemetryPatch !== undefined) patches.push(telemetryPatch)
+    return patches
+  }
+  const runtime: ProfileRuntime = {
+    name: options.profile, dir: composed.profile.dir, installAnchor: INSTALL_ANCHOR,
+    startedBundles: composed.profile.layers.map(layer => layer.packageName),
+    cwd: process.cwd(), home: resolveDshHome(), patchReload: composed.profile.patchReload,
+    read: () => loadProfileDirectory(NAME, composed.profile.dir, INSTALL_ANCHOR),
+    entries: () => composeEntries([composeLive()]),
+    mutate: (operation, waitMs) => enqueue(() => withFileLock(manifestPath, operation, waitMs === undefined ? undefined : { waitMs })),
+    async reload() {
+      if (composed.profile.patchReload === 'startup') return
+      if (app.current === undefined) throw new Error('dsh: profile is not running')
+      lastInputs = readInputs()
+      await reconcileProfilePatches(app.current, composeLive(), NAME)
+    },
+  }
   // Cloned for the same insert-aliasing reason as composeLive: the boot
   // application must not mutate the objects later reloads recompose from.
-  const ctx = await boot(NAME, rootConfig, structuredClone(allPatches(composed)), (hostCtx) => {
+  const ctx = await boot(NAME, rootConfig, composeLive(), (hostCtx) => {
     app.current = hostCtx
+    hostCtx.provide('profileRuntime', runtime)
     // Before any config-tree entry mounts, so plugins resolve all launch-time
     // environment values from the same immutable launch snapshot.
     hostCtx.provide(DSH_LAUNCH_ENVIRONMENT_KEY, options.environment)
@@ -370,16 +377,19 @@ export async function runProfile(options: RunProfileOptions): Promise<{ ctx: Con
         await ctx.loader.create({ name: '@deepseek-ai/cordis-plugin-hmr', config: { root: [] } })
         await ctx.loader.await()
       }
-      await watchUserPatches(ctx, {
-        binName: NAME,
-        filename: composed.profile.patchPath,
-        compose: composeLive,
-      })
-      await watchUserPatches(ctx, {
-        binName: NAME,
-        filename: homePatchPath(),
-        compose: composeLive,
-      })
+      const hmr = ctx.get('hmr')
+      if (hmr === undefined) throw new Error('dsh: configuration watcher did not start')
+      const refresh = async (): Promise<void> => {
+        // Package writers hold this file across pnpm and manifest reconciliation.
+        // Its removal triggers another refresh after the complete write finishes.
+        if (existsSync(`${manifestPath}.lock`) || readInputs() === lastInputs) return
+        await runtime.mutate(async () => {
+          if (readInputs() !== lastInputs) await runtime.reload()
+        })
+      }
+      for (const filename of [...watchedFiles, `${manifestPath}.lock`]) {
+        await watchConfig(ctx, filename, hmr.config, refresh)
+      }
     } catch (error) {
       suppressShutdownError(ctx, signalShutdown.signal, error)
     }

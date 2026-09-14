@@ -11,6 +11,7 @@ import {
   PROTOCOL_VERSION,
   type SessionNotification,
 } from '@agentclientprotocol/sdk'
+import { withFileLock, writeFileAtomic } from '@deepseek-ai/dsh-atomic-write'
 import { startMockLlmServer } from '@deepseek-ai/dsh-llm-mock-server'
 import { entryListSchema } from '@deepseek-ai/cordis-plugin-include'
 import { execa } from 'execa'
@@ -839,6 +840,53 @@ describe.skipIf(!existsSync(dshBin))('dsh BUILT bin (node lib/bin.js, no tsx)', 
       expect(result.exitCode, `${result.stderr}\nstdout:\n${result.stdout}\nsignal: ${String(result.signal)}`).toBe(0)
       expect(result.signal).toBeUndefined()
       expect(existsSync(fixture.disposed)).toBe(true)
+    } catch (error) {
+      child.kill('SIGKILL')
+      const result = await child
+      throw new Error(`${String(error)}\n${result.stderr}`, { cause: error })
+    } finally {
+      child.kill('SIGKILL')
+      await child
+      rmSync(fixture.home, { recursive: true, force: true })
+    }
+  }, SPAWN_TIMEOUT_MS + 30_000)
+
+  it('recomposes bundle selections after a shared profile transaction releases its lock', async () => {
+    const fixture = createProfileLifecycleFixture()
+    const dir = join(fixture.home, 'profiles', 'lifecycle')
+    const manifestPath = join(dir, 'package.json')
+    const bundleDir = join(dir, 'node_modules', 'extra-bundle')
+    const mounted = join(fixture.home, 'extra-mounted')
+    const unmounted = join(fixture.home, 'extra-unmounted')
+    mkdirSync(bundleDir, { recursive: true })
+    writeFileSync(join(bundleDir, 'package.json'), JSON.stringify({
+      name: 'extra-bundle', version: '1.0.0', dsh: { bundle: { patch: './cordis.patch.yml' } },
+    }))
+    writeFileSync(join(bundleDir, 'cordis.patch.yml'), '- insert:\n    - id: extra\n      name: ./plugin.mjs\n')
+    writeFileSync(join(bundleDir, 'plugin.mjs'), `
+      import { writeFileSync } from 'node:fs'
+      export function apply(ctx) {
+        writeFileSync(${JSON.stringify(mounted)}, 'mounted')
+        ctx.effect(() => () => { writeFileSync(${JSON.stringify(unmounted)}, 'unmounted') })
+      }
+    `)
+    const child = startProfileLifecycle(fixture)
+    try {
+      await waitForFile(fixture.settled)
+      await withFileLock(manifestPath, async () => {
+        const manifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as { dsh: { profile: { bundles: string[] } } }
+        manifest.dsh.profile.bundles.push('extra-bundle')
+        await writeFileAtomic(manifestPath, JSON.stringify(manifest), { mode: 0o600 })
+      })
+      await waitForFile(mounted)
+      await withFileLock(manifestPath, async () => {
+        const manifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as { dsh: { profile: { bundles: string[] } } }
+        manifest.dsh.profile.bundles = manifest.dsh.profile.bundles.filter(name => name !== 'extra-bundle')
+        await writeFileAtomic(manifestPath, JSON.stringify(manifest), { mode: 0o600 })
+      })
+      await waitForFile(unmounted)
+      requestProfileShutdown(child, fixture)
+      expect((await child).exitCode).toBe(0)
     } finally {
       child.kill('SIGKILL')
       await child
@@ -972,11 +1020,7 @@ describe.skipIf(!existsSync(dshBin))('dsh BUILT bin (node lib/bin.js, no tsx)', 
     }
   }, SPAWN_TIMEOUT_MS * 2 + 30_000)
 
-  it('activates a dependency that gained dsh.bundle in a later update', async () => {
-    // Reconcile runs against the INSTALLED state on every successful pnpm
-    // run, so `update` (not only `add`) activates a package whose newer
-    // version declares dsh.bundle. Simulated without a registry: hand-place
-    // the installed package, flip its manifest, and run a benign pnpm verb.
+  it('keeps existing dependencies inactive when package metadata gains a bundle declaration', async () => {
     const home = mkdtempSync(join(tmpdir(), 'dsh-plugin-update-'))
     try {
       const profileDir = join(home, 'profiles', 'up')
@@ -1003,7 +1047,7 @@ describe.skipIf(!existsSync(dshBin))('dsh BUILT bin (node lib/bin.js, no tsx)', 
       const second = await runBuiltBin(['plugin', '--profile', 'up', 'root'], { DSH_HOME: home })
       expect(second.code).toBe(0)
       manifest = JSON.parse(readFileSync(join(profileDir, 'package.json'), 'utf8')) as { dsh: { profile: { bundles: string[] } } }
-      expect(manifest.dsh.profile.bundles).toEqual(['@deepseek-ai/dsh-base', 'late-bundle'])
+      expect(manifest.dsh.profile.bundles).toEqual(['@deepseek-ai/dsh-base'])
     } finally {
       rmSync(home, { recursive: true, force: true })
     }

@@ -1398,6 +1398,84 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'pluginManager',
+    summary: 'Manage profile files and apply their declared reload lifecycle.',
+    description: 'Manage profile files and apply their declared reload lifecycle.',
+    methods: [
+      {
+        signature: '@Remote async listPlugins(): Promise<PluginInfo[]>',
+        description: 'Read current plugins, including why a row cannot be changed through the profile patch.',
+        parameters: [],
+        returns: 'Current runtime entries with persistent patch targets.',
+      },
+      {
+        signature: '@Remote listBundles(): Promise<BundleInfo[]>',
+        description: 'Read installed bundles and bundles supplied by this dsh installation.',
+        parameters: [],
+        returns: 'Package versions, activation selections and removal availability.',
+      },
+      {
+        signature: '@Remote setPluginEnabled(id: PluginEntryId, enabled: boolean): Promise<ChangeResult>',
+        description: 'Persist a plugin entry\'s desired enablement and apply it on live profiles.',
+        parameters: [{ name: 'id', description: 'Loader entry identity returned by listPlugins.' }, { name: 'enabled', description: 'Whether the plugin should run.' }],
+        returns: 'Saved and runtime outcomes, including higher-priority overrides.',
+      },
+      {
+        signature: '@Remote setBundleEnabled(name: string, enabled: boolean): Promise<ChangeResult>',
+        description: 'Select or remove a bundle layer while retaining installed dependencies.',
+        parameters: [{ name: 'name', description: 'Bundle package name.' }, { name: 'enabled', description: 'Whether the bundle contributes its patch layer.' }],
+        returns: 'Persisted and runtime outcomes.',
+      },
+      {
+        signature: '@Remote installBundle(spec: string, options?: InstallBundleOptions): Promise<ChangeResult>',
+        description: 'Install a package using the same pnpm implementation as dsh plugin.',
+        parameters: [{ name: 'spec', description: 'One package spec, including local paths relative to the invocation directory.' }, { name: 'options', description: 'Whether to activate the installed bundle; defaults to true.' }],
+        returns: 'Package-manager diagnostics and observed activation outcome.',
+      },
+      {
+        signature: '@Remote removeBundle(name: string): Promise<ChangeResult>',
+        description: 'Unload and remove a profile-owned bundle dependency through dsh plugin\'s pnpm path.',
+        parameters: [{ name: 'name', description: 'Installed dependency name.' }],
+        returns: 'Removal diagnostics and the remaining profile state.',
+      },
+    ],
+  },
+  {
+    key: 'profileRuntime',
+    summary: 'Current-process profile operations; callbacks run under the shared profile write lock.',
+    description: 'Current-process profile operations; callbacks run under the shared profile write lock.',
+    methods: [
+      {
+        signature: 'readonly startedBundles: readonly string[]',
+        description: 'Bundle packages used to start this process, before any persisted edits.',
+        parameters: [],
+      },
+      {
+        signature: 'read(): Profile',
+        description: 'Read the current manifest and bundle patch layers without initializing a profile.',
+        parameters: [],
+        returns: 'Resolved disk configuration.',
+      },
+      {
+        signature: 'entries(): EntryOptions[]',
+        description: 'Compose disk configuration with the invocation\'s higher-priority layers.',
+        parameters: [],
+        returns: 'Effective entry options in composition order.',
+      },
+      {
+        signature: 'mutate<T>(operation: () => Promise<T>, waitMs?: number): Promise<T>',
+        description: 'Serialize a mutation with file watching and other profile writers.',
+        parameters: [{ name: 'operation', description: 'Work performed while holding the profile manifest lock.' }, { name: 'waitMs', description: 'Maximum lock acquisition time; omission uses the file writer default.' }],
+        returns: 'The operation\'s result.',
+      },
+      {
+        signature: 'reload(): Promise<void>',
+        description: 'Apply the current disk configuration; call only inside mutate.',
+        parameters: [],
+      },
+    ],
+  },
+  {
     key: 'ptcRuntime',
     summary: 'Registers one `ctx.ptcRuntime` implementation.',
     description: 'Registers one `ctx.ptcRuntime` implementation. Program, budget, abort, and substrate failures resolve in PtcRunResult; only Service Definition contract misuse rejects. Implementations bridge structured-cloneable bindings, materialize each declared namespace rejection class, treat programs as hostile peers, isolate runs from one another, and terminate and await in-flight runs during disposal.',
@@ -3967,6 +4045,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type BrowserUseProviderName = Branded<\'BrowserUseProviderName\'>;',
   },
   {
+    name: 'BundleInfo',
+    declaration: 'export interface BundleInfo {\n    name: string;\n    version?: string;\n    enabled: boolean;\n    removable: boolean;\n    error?: string;\n}',
+  },
+  {
+    name: 'ChangeResult',
+    declaration: 'export interface ChangeResult {\n    changed: boolean;\n    application: \'applied\' | \'restart-required\' | \'overridden\' | \'failed\';\n    message: string;\n    packageResult?: PackageResult;\n}',
+  },
+  {
     name: 'ClientArtifactBaseline',
     declaration: 'export interface ClientArtifactBaseline {\n    readonly path: string;\n    readonly mtimeMs: number;\n    readonly size: number;\n}',
   },
@@ -4527,6 +4613,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type InspectorJsonValue = InspectorJsonPrimitive | readonly InspectorJsonValue[] | InspectorJsonObject;',
   },
   {
+    name: 'InstallBundleOptions',
+    declaration: 'export interface InstallBundleOptions {\n    enabled?: boolean;\n}',
+  },
+  {
     name: 'InvariantFailure',
     declaration: 'export type InvariantFailure = (message: string) => never;',
   },
@@ -4887,8 +4977,28 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type OptionalSessionSeq = SessionSeq | null;',
   },
   {
+    name: 'PackageResult',
+    declaration: 'export interface PackageResult {\n    exitCode: number;\n    output: string;\n    truncated: boolean;\n    logPath: string;\n}',
+  },
+  {
     name: 'PermissionCatalog',
     declaration: 'export interface PermissionCatalog {\n    options: PresetOption[];\n}',
+  },
+  {
+    name: 'PluginEntryId',
+    declaration: 'export type PluginEntryId = Branded<\'PluginEntryId\'>;',
+  },
+  {
+    name: 'PluginFiberPhase',
+    declaration: 'export type PluginFiberPhase = \'pending\' | \'loading\' | \'active\' | \'failed\' | \'unloading\' | null;',
+  },
+  {
+    name: 'PluginInfo',
+    declaration: 'export interface PluginInfo extends PluginInventoryEntry {\n    patchId?: string;\n    readOnlyReason?: string;\n}',
+  },
+  {
+    name: 'PluginInventoryEntry',
+    declaration: 'export interface PluginInventoryEntry {\n    readonly entryId: PluginEntryId;\n    readonly moduleName: string;\n    readonly enabled: boolean;\n    readonly fiberPhase: PluginFiberPhase;\n}',
   },
   {
     name: 'PostToolDecision',
@@ -4937,6 +5047,18 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'PreToolDecision',
     declaration: 'export type PreToolDecision = {\n    kind: \'allow\';\n} | {\n    kind: \'deny\';\n    reason: string;\n    info?: ToolErrorInfo;\n} | {\n    kind: \'cancel\';\n} | {\n    kind: \'ask\';\n    reason?: string;\n};',
+  },
+  {
+    name: 'Profile',
+    declaration: 'export interface Profile {\n    name: string;\n    dir: string;\n    layers: ProfileLayer[];\n    patchPath: string;\n    patches: PatchOptions[];\n    patchReload: ProfilePatchReload;\n}',
+  },
+  {
+    name: 'ProfileLayer',
+    declaration: 'export interface ProfileLayer {\n    packageName: string;\n    packageDir: string;\n    patchPath: string;\n    patches: PatchOptions[];\n}',
+  },
+  {
+    name: 'ProfilePatchReload',
+    declaration: 'export type ProfilePatchReload = \'live\' | \'startup\';',
   },
   {
     name: 'ProjectionChangeListener',
