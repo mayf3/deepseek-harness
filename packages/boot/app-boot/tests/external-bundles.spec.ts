@@ -85,25 +85,35 @@ describe('reconcileInstalledBundles', () => {
     expect(exportsBundlePatch(NAME, 'missing', installAnchor, profileDir)).toBe(false)
   })
 
-  it('keeps a bundle the user disabled out of the list through later runs, and enables one an update turned into a bundle', () => {
-    const { profileDir, installAnchor } = stageProfile({ 'ext-bundle': { bundle: true }, 'late-bundle': {} })
+  it('preserves disabled and never-enabled bundles while adding another dependency', () => {
+    const { profileDir, installAnchor } = stageProfile({
+      'off-bundle': { bundle: true }, 'unused-bundle': { bundle: true }, 'new-bundle': { bundle: true },
+    })
+    enableBundle(NAME, profileDir, installAnchor, 'off-bundle')
+    disableBundle(NAME, profileDir, 'off-bundle')
+    const manifest = readProfileManifest(NAME, profileDir)
+    expect(manifest.dsh?.profile).toEqual({ bundles: ['@deepseek-ai/dsh-base'] })
+    const before = { ...manifest, dependencies: { 'off-bundle': '1.2.3', 'unused-bundle': '1.2.3' } }
+
+    expect(reconcileInstalledBundles(NAME, profileDir, installAnchor, before, { autoEnable: true }))
+      .toEqual({ enabled: ['new-bundle'], removed: [], plain: [], installedOnly: [] })
+    expect(readProfileManifest(NAME, profileDir).dsh?.profile)
+      .toEqual({ bundles: ['@deepseek-ai/dsh-base', 'new-bundle'] })
+    expect(enableBundle(NAME, profileDir, installAnchor, 'off-bundle')).toBe(true)
+    expect(readProfileManifest(NAME, profileDir).dsh?.profile)
+      .toEqual({ bundles: ['@deepseek-ai/dsh-base', 'new-bundle', 'off-bundle'] })
+  })
+
+  it('leaves an existing dependency unenabled when an update adds a bundle patch', () => {
+    const { profileDir, installAnchor } = stageProfile({ 'late-bundle': {} })
     const installed = readProfileManifest(NAME, profileDir)
-    expect(reconcileInstalledBundles(NAME, profileDir, installAnchor, { dependencies: {} }, { autoEnable: true }))
-      .toEqual({ enabled: ['ext-bundle'], removed: [], plain: ['late-bundle'], installedOnly: [] })
-    expect(disableBundle(NAME, profileDir, 'ext-bundle')).toBe(true)
-    expect(readProfileManifest(NAME, profileDir).dsh?.profile).toEqual({ bundles: ['@deepseek-ai/dsh-base'], disabledBundles: ['ext-bundle'] })
-    // An update made late-bundle a bundle; ext-bundle is still installed and still disabled.
     const late = join(profileDir, 'node_modules', 'late-bundle')
     writeFileSync(join(late, 'package.json'), JSON.stringify({ name: 'late-bundle', version: '2.0.0', dsh: { bundle: { patch: './cordis.patch.yml' } } }))
     writeFileSync(join(late, 'cordis.patch.yml'), '[]\n')
-    expect(reconcileInstalledBundles(NAME, profileDir, installAnchor, installed, { autoEnable: false }))
-      .toEqual({ enabled: [], removed: [], plain: [], installedOnly: ['late-bundle'] })
+
     expect(reconcileInstalledBundles(NAME, profileDir, installAnchor, installed, { autoEnable: true }))
-      .toEqual({ enabled: ['late-bundle'], removed: [], plain: [], installedOnly: [] })
-    expect(readProfileManifest(NAME, profileDir).dsh?.profile).toEqual({ bundles: ['@deepseek-ai/dsh-base', 'late-bundle'], disabledBundles: ['ext-bundle'] })
-    // Enabling again drops the record.
-    expect(enableBundle(NAME, profileDir, installAnchor, 'ext-bundle')).toBe(true)
-    expect(readProfileManifest(NAME, profileDir).dsh?.profile).toEqual({ bundles: ['@deepseek-ai/dsh-base', 'late-bundle', 'ext-bundle'] })
+      .toEqual({ enabled: [], removed: [], plain: [], installedOnly: [] })
+    expect(readProfileManifest(NAME, profileDir).dsh?.profile).toEqual({ bundles: ['@deepseek-ai/dsh-base'] })
   })
 
   it('keeps a listed bundle listed once when the run brings its dependency back', () => {
@@ -115,13 +125,13 @@ describe('reconcileInstalledBundles', () => {
     expect(readProfileManifest(NAME, profileDir).dsh?.profile?.bundles).toEqual(['@deepseek-ai/dsh-base', 'ext-bundle'])
   })
 
-  it('drops a layer whose dependency was removed, and the disabled record of one, keeping template bundles', () => {
+  it('drops removed dependency layers while keeping template bundles', () => {
     const { profileDir, installAnchor } = stageProfile({ 'ext-bundle': { bundle: true }, 'off-bundle': { bundle: true } })
     enableBundle(NAME, profileDir, installAnchor, 'ext-bundle')
     enableBundle(NAME, profileDir, installAnchor, 'off-bundle')
     disableBundle(NAME, profileDir, 'off-bundle')
     const manifest = readProfileManifest(NAME, profileDir)
-    // pnpm removed both dependencies; the lists still name them.
+    // pnpm removed both dependencies; the enabled layer still names ext-bundle.
     writeFileSync(join(profileDir, 'package.json'), JSON.stringify({ ...manifest, dependencies: {} }))
 
     const outcome = reconcileInstalledBundles(NAME, profileDir, installAnchor, manifest, { autoEnable: true })

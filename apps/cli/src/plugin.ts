@@ -1,15 +1,9 @@
 /**
- * `dsh plugin --profile <name> <args...>` — profile plugin management from
- * the terminal. `add <spec...>` and `remove <name...>` go through the plugin
- * installer the Web host shares: pnpm runs in the profile directory, every
- * new package is read statically, a conflicting bundle is removed with its
- * reason printed, undeclared packages remain installed, and every new bundle joins the
- * layer list — the CLI's install-and-enable semantics. Every other pnpm verb
- * is forwarded verbatim and followed by a reconcile of the
- * `dsh.profile.bundles` layer list against the installed state, so `update`
- * activates a package that gained its `dsh.bundle` declaration in a newer
- * version. Nothing here boots the profile: the plugins being managed never
- * start.
+ * `dsh plugin --profile <name> <args...>` installs and removes packages
+ * through the shared installer without booting the profile. New bundles
+ * join the enabled layer list; conflicting bundles are removed with a
+ * diagnostic. Other pnpm verbs pass through unchanged. Reconciliation
+ * preserves existing enablement choices through package updates.
  * @module @deepseek-ai/dsh/plugin
  */
 
@@ -61,7 +55,7 @@ function warnPlain(plain: readonly string[]): void {
   for (const packageName of plain) {
     process.stderr.write(
       `${NAME}: warning: ${packageName} declares no dsh.bundle — installed as a plain dependency, not a profile layer `
-      + '(a later update that gains one activates it automatically)\n',
+      + '(enable its bundle explicitly if a later update adds one)\n',
     )
   }
 }

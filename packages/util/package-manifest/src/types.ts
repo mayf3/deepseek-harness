@@ -60,12 +60,6 @@ export interface DshBundleManifest {
 export interface DshProfileManifest {
   /** Ordered bundle layer list, using installed package names. */
   bundles?: string[]
-  /**
-   * Installed bundles the user disabled: dependencies that declare
-   * `dsh.bundle` and stay out of `bundles`, through every later pnpm run,
-   * until enabled again.
-   */
-  disabledBundles?: string[]
   /** User patch lifecycle; omitted means `live` for custom profiles. */
   patchReload?: ProfilePatchReload
 }

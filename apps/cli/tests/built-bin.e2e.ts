@@ -972,11 +972,9 @@ describe.skipIf(!existsSync(dshBin))('dsh BUILT bin (node lib/bin.js, no tsx)', 
     }
   }, SPAWN_TIMEOUT_MS * 2 + 30_000)
 
-  it('activates a dependency that gained dsh.bundle in a later update', async () => {
-    // Reconcile runs against the INSTALLED state on every successful pnpm
-    // run, so `update` (not only `add`) activates a package whose newer
-    // version declares dsh.bundle. Simulated without a registry: hand-place
-    // the installed package, flip its manifest, and run a benign pnpm verb.
+  it('keeps an existing dependency off when an update adds dsh.bundle', async () => {
+    // Materialize both package versions locally; pnpm root exercises the
+    // forwarded-command reconciliation without contacting a registry.
     const home = mkdtempSync(join(tmpdir(), 'dsh-plugin-update-'))
     try {
       const profileDir = join(home, 'profiles', 'up')
@@ -1003,7 +1001,7 @@ describe.skipIf(!existsSync(dshBin))('dsh BUILT bin (node lib/bin.js, no tsx)', 
       const second = await runBuiltBin(['plugin', '--profile', 'up', 'root'], { DSH_HOME: home })
       expect(second.code).toBe(0)
       manifest = JSON.parse(readFileSync(join(profileDir, 'package.json'), 'utf8')) as { dsh: { profile: { bundles: string[] } } }
-      expect(manifest.dsh.profile.bundles).toEqual(['@deepseek-ai/dsh-base', 'late-bundle'])
+      expect(manifest.dsh.profile.bundles).toEqual(['@deepseek-ai/dsh-base'])
     } finally {
       rmSync(home, { recursive: true, force: true })
     }
