@@ -137,6 +137,9 @@ export function createSettlementMessage(
   terminal: ActivationTerminal,
 ): ReturnType<typeof createUserMessage> {
   const summary = settlementSummary(childId, terminal.stopReason)
+  // Parent providers receive this notice as a user message and may reject
+  // nontext assistant blocks. Keep this conversion local so SDK/UI consumers
+  // retain the complete child output.
   const closingText = (terminal.output ?? []).flatMap(block =>
     block.type === 'text' && block.text.length > 0 ? [block] : [],
   )

@@ -1,4 +1,3 @@
-import { createServer } from 'node:http'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -12,46 +11,30 @@ import { DeepSeekAdapter, resolveAdapterOptions } from '@deepseek-ai/dsh-llm-dee
 import { SessionId } from '@deepseek-ai/dsh-session'
 import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
 import * as SubagentSpawn from '@deepseek-ai/dsh-subagent-spawn-in-process'
+import { end, MODEL, server, sse, start } from '../../../llm/llm-deepseek/tests/messages/helpers.ts'
 import SubagentRuntime, { type SubagentRunEndInfo } from '../src/index.ts'
 import { loadStoredSession } from './persistence-helpers.ts'
 
 it('continues the parent through default Messages after a reasoning-bearing continuable child settles', async () => {
   const root = mkdtempSync(join(tmpdir(), 'dsh-settlement-messages-'))
   const ctx = new Context()
-  const requests: { path: string | undefined; body: unknown }[] = []
-  const model = 'deepseek-v4-flash'
-  const http = createServer((request, response) => {
-    void (async () => {
-      const parts: Buffer[] = []
-      for await (const part of request as AsyncIterable<Buffer>) parts.push(part)
-      const body: unknown = JSON.parse(Buffer.concat(parts).toString())
-      requests.push({ path: request.url, body })
-      const blocks = requests.length === 1
+  let http: Awaited<ReturnType<typeof server>> | undefined
+  try {
+    http = await server((response, count) => {
+      const blocks = count === 1
         ? [{ type: 'thinking', thinking: 'child reasoning' }, { type: 'text', text: 'child answer' }]
         : [{ type: 'text', text: 'parent answer' }]
-      const events = [
-        { type: 'message_start', message: { id: `reply-${requests.length}`, model, usage: { input_tokens: 10, output_tokens: 1 } } },
+      response.end(sse([
+        start,
         ...blocks.flatMap((content_block, index) => [
           { type: 'content_block_start', index, content_block },
           { type: 'content_block_stop', index },
         ]),
-        { type: 'message_delta', delta: { stop_reason: 'end_turn' }, usage: { output_tokens: 5 } },
-        { type: 'message_stop' },
-      ]
-      response.writeHead(200, { 'content-type': 'text/event-stream' })
-      response.end(events.map(event => `event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`).join(''))
-    })().catch((error: unknown) => { response.destroy(error as Error) })
-  })
-  let listening = false
-  try {
-    await new Promise<void>((resolve, reject) => {
-      http.once('error', reject)
-      http.listen(0, '127.0.0.1', resolve)
+        ...end(),
+      ]))
     })
-    listening = true
-    const address = http.address()
-    if (address === null || typeof address === 'string') throw new Error('missing Messages fixture address')
-    const connection = resolveAdapterOptions({ baseURL: `http://127.0.0.1:${address.port}/anthropic` })
+    const { requests } = http
+    const connection = resolveAdapterOptions({ baseURL: http.url })
     const adapter = new DeepSeekAdapter({
       options: () => connection,
       resolveApiKey: () => Promise.resolve('test-key'),
@@ -64,7 +47,7 @@ it('continues the parent through default Messages after a reasoning-bearing cont
     await ctx.plugin(SubagentRuntime)
     await ctx.plugin(SubagentSpawn, { providerName: 'spawn' })
     ctx.llm.registerAdapter(['deepseek-official'], adapter)
-    const parent = await ctx.agentLoop.create(SessionId('parent'), { provider: 'deepseek-official', model })
+    const parent = await ctx.agentLoop.create(SessionId('parent'), { provider: 'deepseek-official', model: MODEL })
     const ends: SubagentRunEndInfo[] = []
     const settled = Promise.withResolvers<undefined>()
     ctx.on('subagent/end', (info) => {
@@ -114,13 +97,7 @@ it('continues the parent through default Messages after a reasoning-bearing cont
       await ctx.fiber.dispose()
     } finally {
       try {
-        if (listening) await new Promise<void>((resolve, reject) => {
-          http.close((error) => {
-            if (error === undefined) resolve()
-            else reject(error)
-          })
-          http.closeAllConnections()
-        })
+        await http?.close()
       } finally {
         rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
       }
