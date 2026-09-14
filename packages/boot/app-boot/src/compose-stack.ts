@@ -7,7 +7,7 @@
 
 import type { EntryOptions } from '@deepseek-ai/cordis-plugin-loader'
 import type { PatchOptions } from '@deepseek-ai/cordis-plugin-include'
-import { analyzeBundleLayer, type AnalyzedBundleLayer } from './external-bundles.ts'
+import { analyzeBundleLayer } from './external-bundles.ts'
 import { visitPatchRows, visitRowTree } from './patch-rows.ts'
 import type { ProfileLayer } from './profile.ts'
 
@@ -58,14 +58,12 @@ export interface ComposedStack {
   readonly userDisabledRowIds: ReadonlySet<string>
 }
 
-/** Row-id ownership across the bundle layers: who owns each id, which bundles lost, and how the rest mount. */
+/** Row-id ownership and conflicts across the bundle layers. */
 export interface LayerOwnership {
   /** The layer that owns each id a bundle layer introduces. */
   readonly owners: Map<string, ProfileLayer>
   /** The conflicts of each bundle left out, by package name. */
   readonly skipped: Map<string, RowConflict[]>
-  /** The analysis of each bundle layer that owns its ids, by package name; rendered once and mounted as is. */
-  readonly composed: Map<string, AnalyzedBundleLayer>
 }
 
 /** One conflict with its message: the id's other declarer, or the losing layer itself declaring it twice. */
@@ -91,12 +89,11 @@ function rowIds(row: EntryOptions): string[] {
  * an earlier layer's id is omitted whole. Restating a child in the same group
  * preserves its ownership; moving it to another group is a duplicate.
  * @param layers - the profile's bundle layers, in manifest order.
- * @returns row owners, rejected-bundle conflicts, and each accepted layer's analysis.
+ * @returns row owners and rejected-bundle conflicts.
  */
 export function claimLayerIds(layers: readonly ProfileLayer[]): LayerOwnership {
   const owners = new Map<string, ProfileLayer>()
   const skipped = new Map<string, RowConflict[]>()
-  const composed = new Map<string, AnalyzedBundleLayer>()
   for (const layer of layers) {
     const { packageName } = layer
     const composition = analyzeBundleLayer(layer)
@@ -114,9 +111,8 @@ export function claimLayerIds(layers: readonly ProfileLayer[]): LayerOwnership {
       continue
     }
     for (const id of composition.rows.keys()) owners.set(id, layer)
-    composed.set(packageName, composition)
   }
-  return { owners, skipped, composed }
+  return { owners, skipped }
 }
 
 /**

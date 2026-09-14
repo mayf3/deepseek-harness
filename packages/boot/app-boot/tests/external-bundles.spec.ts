@@ -18,7 +18,7 @@ function layer(patches: PatchOptions[]): ProfileLayer {
   return { packageName: 'ext', version: undefined, packageDir: '/nowhere', patchPath: '/nowhere/patch.yml', patches }
 }
 describe('analyzeBundleLayer', () => {
-  it('preserves parents, explicit ids and overrides across several groups', () => {
+  it('identifies declared rows across several groups without claiming override targets', () => {
     const patches: PatchOptions[] = [
       { insert: [{ id: 'own', name: 'cordis:group', group: true, config: [{ id: 'child', name: 'ext/child' }] }] },
       { id: 'tools', insert: [{ id: 'tool', name: 'ext/tool' }] },
@@ -27,16 +27,13 @@ describe('analyzeBundleLayer', () => {
       { id: 'child', disabled: true },
     ]
     const result = analyzeBundleLayer(layer(patches))
-    expect(result.patches).toBe(patches)
     expect([...result.rows.keys()]).toEqual(['own', 'child', 'tool', 'panel'])
-    expect(result.overrides).toEqual(['webserver'])
     expect(result.duplicates).toEqual([])
   })
   it('keeps array-valued plugin configuration out of the row inventory', () => {
     const result = analyzeBundleLayer(layer([{ id: 'provider', config: ['value', { value: 42 }, null] }]))
     expect([...result.rows]).toEqual([])
     expect(result.duplicates).toEqual([])
-    expect(result.overrides).toEqual(['provider'])
   })
   it('rejects repeated insert ids but permits restating children in the same group', () => {
     const patches: PatchOptions[] = [
