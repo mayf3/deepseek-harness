@@ -1,5 +1,5 @@
 /** Path classification and display forms for changed files. */
-import { realpathSync } from 'node:fs'
+import { realpath } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { isAbsolute, relative, resolve, sep } from 'node:path'
 
@@ -30,17 +30,27 @@ export function isInside(root: string, path: string): boolean {
  * @param candidates - directories to canonicalize.
  * @returns absolute directory paths.
  */
-export function temporaryRoots(candidates: readonly string[] = ['/tmp', tmpdir()]): string[] {
+export async function temporaryRoots(candidates: readonly string[] = ['/tmp', tmpdir()]): Promise<string[]> {
   const roots = new Set<string>()
   for (const root of candidates) {
     roots.add(root)
-    try {
-      roots.add(realpathSync.native(root))
-    } catch {
-      // A missing temporary root matches nothing.
-    }
+    roots.add(await canonicalPath(root))
   }
   return [...roots]
+}
+
+/**
+ * Symlink-resolved path when the target exists, otherwise the lexical path.
+ * @param path - absolute path.
+ * @returns the canonical spelling git reports for an existing path.
+ */
+export async function canonicalPath(path: string): Promise<string> {
+  try {
+    return await realpath(path)
+  } catch {
+    // A missing or unreadable target keeps its lexical spelling.
+    return path
+  }
 }
 
 /**

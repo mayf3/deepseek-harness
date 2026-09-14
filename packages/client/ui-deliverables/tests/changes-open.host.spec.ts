@@ -1,7 +1,7 @@
 /** Changed-file and common-folder native opens resolve the viewed Session's current workspace. */
 import { mkdtemp, rm, writeFile, mkdir, realpath, unlink } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 import { LocalFileSystem } from '@deepseek-ai/dsh-fs-local'
 import { WorkspaceFiles } from '@deepseek-ai/dsh-api-workspace-files'
 import { Context } from '@deepseek-ai/cordis'
@@ -79,9 +79,10 @@ describe('changed files native open route', () => {
     data.files = [changed('../escaped.ts', '../escaped.ts'), changed('/etc/hosts', '/etc/hosts')]
     expect((await open('?sessionId=owner&seq=9')).status).toBe(204)
     expect(opener.mock.lastCall?.[0].path).toBe(await realpath(cwd))
-    expect(commonChangedFolder('/w', [changed('a/b/c.ts'), changed('a/d.ts'), changed('/x/y.ts')])).toBe('/w/a')
-    expect(commonChangedFolder('/w', [changed('/x/y.ts')])).toBe('/w')
-    expect(commonChangedFolder('/w', [changed('../up.ts')])).toBe('/w')
+    const w = resolve('/w')
+    expect(commonChangedFolder(w, [changed('a/b/c.ts'), changed('a/d.ts'), changed(resolve('/x/y.ts'))])).toBe(resolve(w, 'a'))
+    expect(commonChangedFolder(w, [changed(resolve('/x/y.ts'))])).toBe(w)
+    expect(commonChangedFolder(w, [changed('../up.ts')])).toBe(w)
   })
 
   it.each(['', '?seq=9', '?sessionId=owner', '?sessionId=owner&seq=9&index=-1', '?sessionId=owner&seq=9&index=1.5', '?sessionId=owner&seq=x'])(

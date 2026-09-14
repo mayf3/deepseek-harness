@@ -1,11 +1,12 @@
 /** Per-Session turn recorder: snapshot at turn start, diff and append at turn end. */
 import { realpath } from 'node:fs/promises'
+import { homedir } from 'node:os'
 import { relative } from 'node:path'
 import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
 import type { FileDiff } from '@deepseek-ai/dsh-tools'
 import { diffTrees, ignoredPaths, locateGitWorkspace, snapshotTree, type GitRunner, type GitWorkspace, type ObjectStoreOptions } from './git.ts'
 import { argumentHunks, fileDiffsOf, hunkLineCounts } from './numstat.ts'
-import { absolutePathOf, compareDisplay, displayPathOf, durablePathOf, isInside, isTemporaryPath, toPosix } from './paths.ts'
+import { absolutePathOf, canonicalPath, compareDisplay, displayPathOf, durablePathOf, isInside, isTemporaryPath, temporaryRoots, toPosix } from './paths.ts'
 import type { WorkspaceChangedFile } from './types.ts'
 
 /** Facts shared by every recorder of one plugin instance. */
@@ -14,17 +15,25 @@ export interface RecorderEnvironment {
   git: Promise<GitRunner | null>
   /** Where snapshot objects live and how large one repository's store may grow. */
   objects: ObjectStoreOptions
-  /** Canonical absolute home directory abbreviated as `~` in display paths. */
-  home: string
-  /** Temporary roots whose files never enter a summary. */
-  temporaryRoots: readonly string[]
   /** Maximum files carried by one event. */
   maxFiles: number
   /** Failure reporter; a failed turn records nothing and the next turn retries. */
   warn: (message: string) => void
 }
 
-interface Baseline { git: GitRunner; workspace: GitWorkspace; tree: string; cwd: string }
+/** Everything a located repository needs, resolved once per Session. */
+interface Located {
+  git: GitRunner
+  workspace: GitWorkspace
+  /** Canonical working directory; git reports symlink-resolved paths, so every comparison uses that form. */
+  cwd: string
+  /** Canonical home directory abbreviated as `~` in display paths. */
+  home: string
+  /** Temporary roots whose files never enter a summary. */
+  temporaryRoots: readonly string[]
+}
+
+interface Baseline extends Located { tree: string }
 
 /** Everything one turn accumulates; a new turn gets a new object so queued work for an older turn keeps its own. */
 interface TurnState {
@@ -45,16 +54,6 @@ function freshState(turn: number): TurnState {
   return { turn, baseline: null, calls: new Map(), hunks: new Map(), lastToolResultSeq: -1, attemptedAfterSeq: -1, recordedAfterSeq: -1 }
 }
 
-/** Symlink-resolved path when the target exists, otherwise the lexical path. */
-async function canonicalPath(path: string): Promise<string> {
-  try {
-    return await realpath(path)
-  } catch {
-    // A deleted or unreadable target keeps its lexical spelling.
-    return path
-  }
-}
-
 /**
  * Serializes one Session's git work: the turn-start snapshot, the turn-end
  * snapshot with its diff, and the appended `workspace/changes` event. Tool
@@ -66,7 +65,7 @@ export class TurnRecorder {
   /** The open turn; before the first `turn/start` it is an empty placeholder no event can match. */
   private state = freshState(0)
   /** The located repository, reused across turns once found; null keeps retrying each turn. */
-  private workspace: { git: GitRunner; cwd: string; workspace: GitWorkspace } | null = null
+  private located: Located | null = null
   private readonly lifetime = new AbortController()
 
   constructor(
@@ -166,27 +165,27 @@ export class TurnRecorder {
     if (!this.lifetime.signal.aborted) this.env.warn(`workspace-changes: ${String(error)}`)
   }
 
-  /** The repository for this Session, located once; git reports symlink-resolved paths, so every comparison uses that form. */
-  private async locate(signal: AbortSignal): Promise<{ git: GitRunner; cwd: string; workspace: GitWorkspace } | null> {
-    if (this.workspace !== null) return this.workspace
+  /** The repository for this Session together with the canonical paths every comparison uses, located once. */
+  private async locate(signal: AbortSignal): Promise<Located | null> {
+    if (this.located !== null) return this.located
     const git = await this.env.git
     if (git === null) return null
     const cwd = await realpath(this.cwd)
     const workspace = await locateGitWorkspace(git, cwd, this.env.objects, signal)
     if (workspace === null) return null
-    this.workspace = { git, cwd, workspace }
-    return this.workspace
+    this.located = { git, workspace, cwd, home: await canonicalPath(homedir()), temporaryRoots: await temporaryRoots() }
+    return this.located
   }
 
   private async record(state: TurnState, signal: AbortSignal): Promise<void> {
     if (state.baseline === null || state.lastToolResultSeq < 0) return
     state.attemptedAfterSeq = state.lastToolResultSeq
-    const { git, workspace, tree: before, cwd } = state.baseline
+    const { git, workspace, tree: before, cwd, home, temporaryRoots: roots } = state.baseline
     const after = await snapshotTree(git, workspace, signal)
     const files = new Map<string, WorkspaceChangedFile>()
     for (const entry of await diffTrees(git, workspace, before, after, signal)) {
       const absolute = absolutePathOf(workspace.root, entry.path)
-      files.set(absolute, this.changedFile(absolute, cwd, workspace, entry))
+      files.set(absolute, changedFile(absolute, cwd, home, workspace, entry))
     }
     const hunks = new Map<string, FileDiff[]>()
     for (const [path, list] of state.hunks) {
@@ -198,7 +197,7 @@ export class TurnRecorder {
     for (const absolute of hunks.keys()) {
       if (files.has(absolute)) continue
       // The repository is the user's workspace even when it lives under a temporary root.
-      if (!isInside(workspace.root, absolute) && isTemporaryPath(absolute, this.env.temporaryRoots)) continue
+      if (!isInside(workspace.root, absolute) && isTemporaryPath(absolute, roots)) continue
       if (isInside(workspace.root, absolute)) inside.push(absolute)
       else outside.push(absolute)
     }
@@ -207,7 +206,7 @@ export class TurnRecorder {
     const toolOnly = new Set([...outside, ...inside.filter(absolute => ignored.has(workTreePath(absolute)))])
     for (const [absolute, list] of hunks) {
       if (!toolOnly.has(absolute)) continue
-      files.set(absolute, this.changedFile(absolute, cwd, workspace, { ...hunkLineCounts(list), binary: false }))
+      files.set(absolute, changedFile(absolute, cwd, home, workspace, { ...hunkLineCounts(list), binary: false }))
     }
     const sorted = [...files.values()].sort(compareDisplay)
     // An empty list after an earlier in-turn record supersedes that record.
@@ -221,15 +220,16 @@ export class TurnRecorder {
     state.recordedAfterSeq = event.seq
   }
 
-  private changedFile(
-    absolute: string, cwd: string, workspace: GitWorkspace, counts: { added: number; deleted: number; binary: boolean },
-  ): WorkspaceChangedFile {
-    return {
-      path: durablePathOf(absolute, cwd),
-      display: displayPathOf(absolute, cwd, workspace.root, this.env.home),
-      added: counts.added,
-      deleted: counts.deleted,
-      ...counts.binary ? { binary: true as const } : {},
-    }
+}
+
+function changedFile(
+  absolute: string, cwd: string, home: string, workspace: GitWorkspace, counts: { added: number; deleted: number; binary: boolean },
+): WorkspaceChangedFile {
+  return {
+    path: durablePathOf(absolute, cwd),
+    display: displayPathOf(absolute, cwd, workspace.root, home),
+    added: counts.added,
+    deleted: counts.deleted,
+    ...counts.binary ? { binary: true as const } : {},
   }
 }

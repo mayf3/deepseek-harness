@@ -1,5 +1,6 @@
 /** Git working-tree snapshots, tree diffs, and ignore checks through the subprocess capability. */
 import { createHash } from 'node:crypto'
+import { existsSync } from 'node:fs'
 import { copyFile, mkdir, mkdtemp, readdir, rm, stat } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
@@ -116,12 +117,9 @@ function isMissing(error: unknown): boolean {
 
 /** Total size of the regular files under a directory; zero when it does not exist. */
 async function directoryBytes(directory: string): Promise<number> {
+  if (!existsSync(directory)) return 0
   let total = 0
-  const entries = await readdir(directory, { recursive: true, withFileTypes: true }).catch((error: unknown) => {
-    if (isMissing(error)) return []
-    throw error
-  })
-  for (const entry of entries) {
+  for (const entry of await readdir(directory, { recursive: true, withFileTypes: true })) {
     if (entry.isFile()) total += (await stat(join(entry.parentPath, entry.name))).size
   }
   return total
@@ -174,6 +172,7 @@ export async function snapshotTree(git: GitRunner, workspace: GitWorkspace, sign
     const env = { ...workspace.env, GIT_INDEX_FILE: index }
     // `--ignore-errors` skips unreadable files and reports them through exit code 1; the index is still complete.
     const added = await git.run(['add', '--all', '--ignore-errors'], { cwd: workspace.root, env, signal })
+    /* v8 ignore next -- git reports a skipped unreadable file only on hosts whose permissions the tests can revoke. */
     if (added.exitCode !== 1) ok(added, `git add in ${workspace.root}`)
     return ok(await git.run(['write-tree'], { cwd: workspace.root, env, signal }), 'git write-tree').stdout.trim()
   } finally {

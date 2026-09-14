@@ -26,14 +26,14 @@ describe('durablePathOf', () => {
 })
 
 describe('temporary paths', () => {
-  it('matches the platform temp roots in raw and canonical form and skips missing candidates', () => {
-    const roots = temporaryRoots()
+  it('matches the platform temp roots in raw and canonical form and keeps missing candidates lexical', async () => {
+    const roots = await temporaryRoots()
     expect(roots).toContain('/tmp')
     expect(isTemporaryPath(join(tmpdir(), 'scratch.txt'), roots)).toBe(true)
     expect(isTemporaryPath('/tmp/x', roots)).toBe(true)
     expect(isTemporaryPath('/tmpfoo/x', roots)).toBe(false)
     expect(isTemporaryPath('/home/u/x', roots)).toBe(false)
-    expect(temporaryRoots(['/definitely/missing/root'])).toEqual(['/definitely/missing/root'])
+    expect(await temporaryRoots(['/definitely/missing/root'])).toEqual(['/definitely/missing/root'])
   })
 })
 

@@ -4,7 +4,6 @@
  * and turn end plus the hunks file tools persist for paths git does not cover.
  * Only a working directory inside a git repository is recorded.
  */
-import { realpathSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
@@ -15,7 +14,6 @@ import type { Session } from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-subprocess'
 import type {} from '@deepseek-ai/dsh-tools'
 import { GitRunner } from './git.ts'
-import { temporaryRoots } from './paths.ts'
 import { TurnRecorder } from './recorder.ts'
 
 export type { WorkspaceChangedFile, WorkspaceChangesData } from './types.ts'
@@ -98,8 +96,6 @@ export function apply(ctx: Context, config: Config): void {
     for (const recorder of recorders.values()) recorder.dispose()
     recorders.clear()
   })
-  const roots = temporaryRoots()
-  const home = realpathSync.native(homedir())
   const objects = { home: join(resolveDshHome(config.dshHome), 'workspace-changes'), maxBytes: config.objectStoreMaxBytes }
   let runner: Promise<GitRunner | null> | undefined
   const gitRunner = (): Promise<GitRunner | null> => {
@@ -116,7 +112,7 @@ export function apply(ctx: Context, config: Config): void {
     let recorder = recorders.get(session)
     if (recorder === undefined) {
       recorder = new TurnRecorder(session, cwd, {
-        git: gitRunner(), objects, home, temporaryRoots: roots, maxFiles: config.maxFiles,
+        git: gitRunner(), objects, maxFiles: config.maxFiles,
         warn: (message) => { ctx.logger.warn(message) },
       })
       recorders.set(session, recorder)

@@ -100,7 +100,7 @@ describe('workspace-changes in a repository', () => {
     const stores = await readdir(join(dshHome, 'workspace-changes'))
     expect(stores).toHaveLength(1)
     const objects = await readdir(join(dshHome, 'workspace-changes', stores[0]!), { recursive: true })
-    expect(objects.some(entry => /^[0-9a-f]{2}\/[0-9a-f]{38,}$/.test(entry))).toBe(true)
+    expect(objects.some(entry => /^[0-9a-f]{2}\/[0-9a-f]{38,}$/.test(entry.replaceAll('\\', '/')))).toBe(true)
   })
 
   it('discards a snapshot object store that outgrew its bound when the next Session locates the repository', async () => {

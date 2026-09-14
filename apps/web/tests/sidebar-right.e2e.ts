@@ -260,9 +260,10 @@ describe('web e2e: shipped right Sidebar', () => {
         source: { kind: 'user' },
       }), { surfaceOp: 'append' })
       agent.session.append('step/start', { turn: 1, step: 1 })
-      // A successful mutation is what makes the turn tail offer a produced-file
-      // chip — the product's own way into the Sidebar. The file is written for
-      // real because the preview reads it through the workspace endpoint.
+      // A successful mutation is what lets the closing prose link the file's
+      // inline-code mention — the product's own way into the Sidebar. The file
+      // is written for real because the preview reads it through the workspace
+      // endpoint.
       //
       // It goes in the SESSION's cwd, not the scaffold's: the endpoint resolves
       // relative paths against the header-derived workspace root. Writing
@@ -292,7 +293,7 @@ describe('web e2e: shipped right Sidebar', () => {
         step: 1,
         message: createMessage({
           role: 'assistant',
-          content: [{ type: 'text', text: 'Ready.' }],
+          content: [{ type: 'text', text: `Ready: wrote \`${SAMPLE_NAME}\`.` }],
           source: { kind: 'model', provider: 'fixture', model: 'fixture' },
         }),
       }, { surfaceOp: 'append' })
@@ -720,10 +721,10 @@ describe('web e2e: shipped right Sidebar', () => {
         if (request.url().includes('workspaceFiles')) wire.sent += 1
       })
 
-      // The product's own entry point: the turn tail's produced-file chip. It
+      // The product's own entry point: the closing prose's file mention. It
       // reaches the Sidebar through openFile → ctx.sidebarRight.openResource, and the
       // text type claims the address.
-      const chip = page.getByRole('button', { name: `Open ${SAMPLE_NAME}` })
+      const chip = page.getByRole('button', { name: `Open ${SAMPLE_NAME} in sidebar` })
       await chip.click()
       await expect.poll(async () => await tabTitles(column)).toEqual(['Files', SAMPLE_NAME])
 
@@ -739,7 +740,7 @@ describe('web e2e: shipped right Sidebar', () => {
         .waitFor({ timeout: 15_000 })
         .catch(() => { throw new Error(`preview never settled; wire=${JSON.stringify(wire)}`) })
       expect(await column.locator('pre').first().innerText()).toContain('produced by the seeded turn')
-      // The whole batch-E chain in one frame: a produced-file chip in the
+      // The whole batch-E chain in one frame: a file mention in the
       // conversation, the tab it opened, and the file's real content read over
       // the workspace endpoint.
       await shot(page, '06-produced-chip-to-preview')
