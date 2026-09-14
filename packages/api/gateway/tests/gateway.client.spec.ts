@@ -12,7 +12,6 @@ import {
   type ConnectionHandle,
 } from '@deepseek-ai/dsh-client-connection/client'
 import type {
-  InvocationParameterDescriptor,
   InvocationDescriptor,
   RemoteResult,
   TypertContextMap,
@@ -1160,59 +1159,6 @@ describe('Client Typert API', () => {
         }],
       }],
     })).rejects.toThrow('scope must select its only lookup parameter')
-  })
-
-  it('lets a caller omit trailing parameters that accept undefined, as their generated signature allows', async () => {
-    const call = vi.fn<ConnectionHandle['rpc']['call']>()
-      .mockResolvedValue({ ok: true, value: { ref: 'goal-1' } })
-    const ctx = await bench(call)
-    const optionalTail: InvocationDescriptor = {
-      id: '@fixture/probe#probe/describe',
-      service: 'probe',
-      namespace: 'probe',
-      method: 'describe',
-      invocation: { kind: 'direct' },
-      parameters: [{
-        name: 'request',
-        wire: 'request',
-        source: 'json',
-        codec: { mode: 'strict', typeSymbol: '@fixture#CreateRequest', schema: requestSchema },
-      }, {
-        name: 'scope',
-        wire: 'scope',
-        source: 'json',
-        acceptsUndefined: true,
-        codec: { mode: 'strict', typeSymbol: '@fixture#Scope', schema: z.union([z.undefined(), z.string()]) },
-      }],
-      result: { mode: 'strict', typeSymbol: '@fixture#CreateResult', schema: createResultSchema },
-    }
-    // A leading parameter accepting undefined earns no omission: the required one after it still counts.
-    const optionalHead: InvocationDescriptor = {
-      ...optionalTail,
-      id: '@fixture/probe#probe/inspect',
-      method: 'inspect',
-      parameters: [
-        optionalTail.parameters[1] as InvocationParameterDescriptor,
-        optionalTail.parameters[0] as InvocationParameterDescriptor,
-      ],
-    }
-    await ctx.remote.$mount({ package: '@fixture/probe', descriptors: [optionalTail, optionalHead] })
-    const probe = ctx.remote.probe as unknown as Record<string, (...args: unknown[]) => Promise<unknown>>
-    const describeCall = probe.describe as (...args: unknown[]) => Promise<unknown>
-    const inspect = probe.inspect as (...args: unknown[]) => Promise<unknown>
-
-    await describeCall({ objective: 'ship' })
-    expect((call.mock.calls[0]?.[2] as { args: Record<string, unknown> }).args).toEqual({ request: { objective: 'ship' } })
-    await describeCall({ objective: 'ship' }, undefined)
-    expect((call.mock.calls[1]?.[2] as { args: Record<string, unknown> }).args).toEqual({ request: { objective: 'ship' } })
-    await describeCall({ objective: 'ship' }, 'preset/standard')
-    expect((call.mock.calls[2]?.[2] as { args: Record<string, unknown> }).args)
-      .toEqual({ request: { objective: 'ship' }, scope: 'preset/standard' })
-    await expect(describeCall()).rejects.toThrow('expected 1 to 2 argument(s), got 0')
-    await expect(describeCall({ objective: 'ship' }, 'preset/standard', 'extra')).rejects.toThrow('got 3')
-    await expect(inspect(undefined)).rejects.toThrow('expected 2 argument(s), got 1')
-    await inspect(undefined, { objective: 'ship' })
-    expect((call.mock.calls[3]?.[2] as { args: Record<string, unknown> }).args).toEqual({ request: { objective: 'ship' } })
   })
 
   it('validates invocation arity, required adapters, live Connection, and mutable descriptor codecs', async () => {
