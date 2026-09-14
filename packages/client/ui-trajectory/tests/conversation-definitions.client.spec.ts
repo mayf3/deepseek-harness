@@ -335,12 +335,19 @@ describe('Trajectory conversation Definitions', () => {
     const finalizedPacked = snapshot(assembler(finalizedInputs))
     expect(finalizedPacked.eventNodes.find(node => node.kind === 'assistant')).toMatchObject({
       blocks: [{ kind: 'text', text: 'done' }],
-      timing: { firstTokenTime: null },
+      timing: { firstTokenTime: 3_000 },
     })
     expect(finalizedPacked.requests).toMatchObject([{
       purpose: 'assistant',
       retry: 1,
     }])
+
+    const windowed = assembler(finalizedInputs.slice(2), true)
+    const assistant = () => snapshot(windowed).eventNodes.find(node => node.kind === 'assistant')
+    expect(assistant()).toMatchObject({ timing: { stepStartTime: null, firstTokenTime: 3_000 } })
+    windowed.prepend(finalizedInputs.slice(0, 2), false)
+    windowed.flush()
+    expect(assistant()).toEqual(finalizedPacked.eventNodes.find(node => node.kind === 'assistant'))
 
     const namedToolHistory = [
       at(40, 'turn/start', { turn: 3 }),
@@ -365,7 +372,7 @@ describe('Trajectory conversation Definitions', () => {
     const namedToolPacked = snapshot(assembler(namedToolInputs))
     expect(namedToolPacked.eventNodes.find(node => node.kind === 'assistant')).toMatchObject({
       blocks: [{ kind: 'tool-call', callId: 'call-2', name: 'read', argsRaw: '' }],
-      timing: { firstTokenTime: null },
+      timing: { firstTokenTime: 4_000 },
     })
   })
 

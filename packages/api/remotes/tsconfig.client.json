@@ -85,6 +85,9 @@
     },
     {
       "path": "../../feedback/command-feedback"
+    },
+    {
+      "path": "../terminal-controller/tsconfig.client.json"
     }
   ]
 }

@@ -2,6 +2,7 @@
  * RemoteMock scenario for built-client tests that do not own a Host.
  * The adjacent JSON is maintained with this module when Remote responses or
  * the current Session header version change.
+ * Fixture Sessions have no retained Host terminals to restore.
  */
 
 import { readFileSync } from 'node:fs'
@@ -139,6 +140,7 @@ export function createAssembledRemote(options: AssembledRemoteOptions = {}): Ass
       'settings/openSettingsDocument': ok({ opened: true }),
       'settings/openAgentPresetDirectory': ok({ opened: true }),
       'subagents/list': ok({ entries: [], parentAvailable: true }),
+      'terminal/list': ok([]),
       'skills/list': ok({ skills: [] }),
       'session/canOpenWorkspacePath': ok(true),
       'session/openWorkspacePath': ok({ opened: true }),
