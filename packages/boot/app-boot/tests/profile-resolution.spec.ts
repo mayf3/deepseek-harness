@@ -727,6 +727,36 @@ describe('profile resolution generation', { concurrent: false }, () => {
       .toBe(join(f.installed, 'legacy-install.cjs'))
   })
 
+  it('treats null exports as legacy CommonJS package resolution', async () => {
+    const f = fixture()
+    file(join(f.profile.dir, 'package.json'), JSON.stringify({
+      name: 'test-profile',
+      private: true,
+      dependencies: { 'resolution-lib': '*' },
+    }))
+    file(join(f.installed, 'package.json'), JSON.stringify({
+      name: 'resolution-lib', version: '1.0.0', type: 'module', exports: null,
+    }))
+    const installedSubpath = join(f.installed, 'only-install.cjs')
+    file(installedSubpath, 'module.exports = { marker: 8 }\n')
+    const local = join(f.profile.dir, 'node_modules', 'resolution-lib')
+    file(join(local, 'package.json'), JSON.stringify({
+      name: 'resolution-lib', version: '2.0.0', type: 'module', exports: null,
+    }))
+    const generation = await healProfilesModuleFallback({
+      installAnchor: f.installAnchor,
+      profile: f.profile,
+      home: f.root,
+    })
+    const require = createRequire(join(local, 'entry.cjs'))
+    expect(require.resolve('resolution-lib/only-install.cjs')).toBe(installedSubpath)
+    unlinkSync(join(generation.profilesDir, 'node_modules', 'resolution-lib'))
+
+    const registration = installProfileResolution(generation)
+    registrations.push(registration)
+    expect(require.resolve('resolution-lib/only-install.cjs')).toBe(installedSubpath)
+  })
+
   it('stops a local CommonJS probe before the generation fallback position', async () => {
     const f = fixture()
     file(join(f.installed, 'package.json'), JSON.stringify({

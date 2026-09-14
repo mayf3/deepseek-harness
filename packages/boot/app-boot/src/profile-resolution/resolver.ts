@@ -193,7 +193,7 @@ function selfReferenceName(parent: string): string | false | null {
         // Only Node decides whether this request consumes an invalid package manifest.
         return null
       }
-      return typeof manifest.name === 'string' && Object.hasOwn(manifest, 'exports')
+      return typeof manifest.name === 'string' && manifest.exports != null
         ? manifest.name
         : false
     }
