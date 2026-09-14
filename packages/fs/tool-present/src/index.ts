@@ -1,4 +1,4 @@
-/** Scoped tool that declares workspace file deliveries in their owning Session. */
+/** Scoped tool that declares filesystem deliveries in their owning Session. */
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { FsError } from '@deepseek-ai/dsh-fs'
@@ -37,7 +37,7 @@ export function apply(ctx: Context, config: Config): void {
   const pending = new WeakMap<ToolExecution, { session: Session; turn: number; files: PresentedFile[] }>()
   ctx.tools.register(defineTool({
     name: 'present',
-    description: 'Declare existing workspace files as final deliverables. '
+    description: 'Declare existing files accessible through the Session filesystem as final deliverables. '
       + 'When a file you create or update is an output the user asked to receive, you must call present after writing it and before your final response, including files created through Bash or code execution. '
       + 'Mentioning its path in your reply does not replace this call. The files must already exist. '
       + 'The user opens the current source files; their contents are not copied or preserved.',
@@ -47,7 +47,7 @@ export function apply(ctx: Context, config: Config): void {
         items: {
           type: 'object', additionalProperties: false,
           properties: {
-            path: { type: 'string', required: true, description: 'Path of an existing file inside the workspace.' },
+            path: { type: 'string', required: true, description: 'Path of an existing regular file. Relative paths use the Session working directory.' },
             description: { type: 'string', description: 'Brief description for the user.' },
           },
         },
@@ -80,12 +80,12 @@ export function apply(ctx: Context, config: Config): void {
       const cwd = exec.agent.session.header.cwd
       if (cwd === undefined) throw new Error('present requires a workspace')
       const options = { cwd, signal: exec.signal }
-      const root = await ctx.fs.resolve('.', options)
       const files: PresentedFile[] = []
       for (const file of args.files) {
         if (file.path.trim().length === 0) throw new Error('present requires a non-empty file path')
+        const entry = await ctx.fs.lstat(file.path, { cwd }, exec.signal)
+        if (entry !== undefined && entry.type !== 'file') throw new Error(`Cannot present ${file.path}: not a regular file`)
         const target = await ctx.fs.resolve(file.path, options)
-        if (!ctx.fs.contains(root, target)) throw new Error(`Cannot present ${file.path}: outside the workspace`)
         const info = await ctx.fs.stat(target, exec.signal)
         if (info === undefined) throw new FsError(`Cannot present ${file.path}: file not found. Check the path, create the file if needed, and retry.`, 'FS_NOT_FOUND')
         if (info.type !== 'file') throw new Error(`Cannot present ${file.path}: not a regular file`)

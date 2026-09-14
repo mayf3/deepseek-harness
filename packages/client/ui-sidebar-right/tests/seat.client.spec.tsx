@@ -148,10 +148,12 @@ describe('RightbarSeat presentation', () => {
     expect(h.view.container.querySelector(`[data-dockkit-tab-close="${initial.id}"]`)).not.toBeNull()
     act(() => { h.controller.close(initial.id) })
     expect(h.layout().expanded).toBe(false)
+    // The close leaves the layout empty; the next expansion reseeds.
+    expect(Object.keys(h.layout().tabs)).toHaveLength(0)
+    act(() => { h.controller.toggleExpanded() })
     const reseeded = Object.values(h.layout().tabs)[0]!
     expect(reseeded.kind).toBe('text')
     expect(reseeded.id).not.toBe(initial.id)
-    act(() => { h.controller.toggleExpanded() })
     fireEvent.click(element(h.view.container, '[data-dockkit-add-tab]'))
     const guide = Object.values(h.layout().tabs).find(tab => tab.kind === 'guide')!
     expect(h.view.container.querySelector('[data-dockkit-add-tab]')).toBeNull()
@@ -451,6 +453,8 @@ describe('slot-owned useTabInfo', () => {
 
   it('updates guide replacements through the same hook and guide boxes through framework injection', async () => {
     const h = await mountSeat()
+    // The first expansion seeds the guide the replacement renders over.
+    act(() => { h.controller.toggleExpanded() })
     let captured: SidebarRightTabInfo | undefined
     await act(async () => {
       h.runtime.ctx.sidebarRightTabs.register({
@@ -511,6 +515,8 @@ describe('slot-owned useTabInfo', () => {
 
   it('hides split controls at two panes and adds a guide only to a pane without one', async () => {
     const h = await mountSeat()
+    // Expanding first seeds the left pane's guide; only the right pane will lack one.
+    act(() => { h.controller.toggleExpanded() })
     h.open()
     const splitButtons = () => h.view.container.querySelectorAll<HTMLButtonElement>('[data-dockkit-split-button]')
     expect(splitButtons()).toHaveLength(1)
@@ -578,4 +584,23 @@ describe('intentsFor — the kit\'s gestures as one session\'s store actions', (
     intents.addTab(PANE_1)
     expect(openTab).toHaveBeenCalledWith('guide', { paneId: PANE_1, revealIfOpened: false })
   })
+})
+
+it('keeps a resource tab and reports a synchronous cleanup failure from its close button', async () => {
+  const h = await mountSeat()
+  const tab = h.open('terminal')
+  const failure = new Error('process still running')
+  const release = h.controller.registerCloseHandler('text', () => { throw failure })
+  const logged = vi.spyOn(console, 'error').mockImplementation(() => {})
+  try {
+    fireEvent.click(element(h.view.container, `[data-dockkit-tab-close="${tab.id}"]`))
+    await expect.poll(() => logged.mock.calls).toEqual([['Sidebar tab close failed:', failure]])
+    expect(h.layout().tabs[tab.id]).toBeDefined()
+    release()
+    fireEvent.click(element(h.view.container, `[data-dockkit-tab-close="${tab.id}"]`))
+    expect(h.layout().tabs[tab.id]).toBeUndefined()
+  } finally {
+    logged.mockRestore()
+    release()
+  }
 })

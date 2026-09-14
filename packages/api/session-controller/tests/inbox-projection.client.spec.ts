@@ -1,16 +1,25 @@
 /** Inbox projection delivery and queue-operation transport. */
 
-import { describe, expect, it } from 'vitest'
+import { describe, expect, onTestFinished } from 'vitest'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import type { InboxState } from '@deepseek-ai/dsh-agent/types'
-import type { ContentBlock } from '@deepseek-ai/dsh-llm/types'
 import type { SessionControlFrame } from '@deepseek-ai/dsh-api-session-controller/types'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { SessionManager } from '../src/client/sessions/manager.ts'
-import { deferred, FakeApiClient, fakeRemote, ok } from './fake-api.client.ts'
+import { ok } from '@deepseek-ai/dsh-remote-mock'
+import { createClientTest, type ClientTestFixtures, webApp } from '@deepseek-ai/dsh-client-test-runtime/src/assembly/index.ts'
+import type { SessionRemotes } from '../src/client/sessions/remotes.ts'
+
+const it = createClientTest({ roster: webApp.closure(['@deepseek-ai/dsh-api-gateway']) })
+
+function makeManager(remote: ClientTestFixtures['remote']): SessionManager {
+  const manager = new SessionManager(remote as unknown as SessionRemotes)
+  onTestFinished(() => manager.dispose())
+  return manager
+}
 
 const SID = 'fk-q1' as SessionId
-const text = (value: string): ContentBlock[] => [{ type: 'text', text: value }]
+const text = (value: string) => [{ type: 'text' as const, text: value }]
 
 let nextSeq = 1
 
@@ -32,8 +41,8 @@ function inboxFrame(value: InboxState): Extract<SessionControlFrame, { type: 'pr
 }
 
 describe('Inbox projection intake', () => {
-  it('stores the complete Agent-owned value without adding queue state to the Session snapshot', () => {
-    const manager = new SessionManager(fakeRemote(new FakeApiClient()))
+  it('stores the complete Agent-owned value without adding queue state to the Session snapshot', ({ remote }) => {
+    const manager = makeManager(remote)
     const queued = message('queued', 'later')
     const steering = message('steering', 'now')
     const value = { 'next-turn': [queued], 'next-step': [steering] }
@@ -45,19 +54,18 @@ describe('Inbox projection intake', () => {
     expect(session.getSnapshot()).not.toHaveProperty('queue')
   })
 
-  it.each(['included', 'omitted'] as const)(
+  it.for(['included', 'omitted'] as const)(
     'keeps a newer list Inbox when a delayed control baseline has the key %s',
-    async (key) => {
-      const api = new FakeApiClient()
-      const list = deferred<Awaited<ReturnType<FakeApiClient['onList']>>>()
-      api.onList = () => list.promise
-      const manager = new SessionManager(fakeRemote(api))
+    async (key, { remote }) => {
+      const list = Promise.withResolvers<Awaited<ReturnType<typeof remote.session.list>>>()
+      remote.session.list.mockReturnValue(list.promise)
+      const manager = makeManager(remote)
       const empty = { 'next-turn': [], 'next-step': [] }
       const stale = { ...empty, 'next-turn': [message('removed', 'already removed')] }
       const result = ok({ items: [{
         sessionId: SID, updatedAt: 1, running: false, blank: false,
         projections: { asOfSeq: 21, values: { inbox: empty } },
-      }] }) as Awaited<ReturnType<FakeApiClient['onList']>>
+      }] })
       let refreshed: Promise<void> | undefined
 
       try {
@@ -73,7 +81,7 @@ describe('Inbox projection intake', () => {
           value: { jobs: {}, projections: { [SID]: {
             asOfSeq: 20, values: key === 'included' ? { inbox: stale } : {},
           } } },
-        } as SessionControlFrame)
+        })
 
         expect(face.getSnapshot()).toEqual(empty)
       } finally {
@@ -84,13 +92,12 @@ describe('Inbox projection intake', () => {
     },
   )
 
-  it.each(['control-first', 'list-first'] as const)(
+  it.for(['control-first', 'list-first'] as const)(
     'replaces cold Session Inbox values across Host generations (%s)',
-    async (order) => {
-      const api = new FakeApiClient()
-      const list = deferred<Awaited<ReturnType<FakeApiClient['onList']>>>()
-      api.onList = () => list.promise
-      const manager = new SessionManager(fakeRemote(api))
+    async (order, { remote }) => {
+      const list = Promise.withResolvers<Awaited<ReturnType<typeof remote.session.list>>>()
+      remote.session.list.mockReturnValue(list.promise)
+      const manager = makeManager(remote)
       const hiddenSessionId = 'cold-hidden-inbox' as SessionId
       const ghost = message('ghost', 'acceptance was not persisted')
       const pending = message('pending', 'claim was not persisted')
@@ -105,7 +112,7 @@ describe('Inbox projection intake', () => {
           projections: { asOfSeq: 1, values: { inbox: empty } } },
         { sessionId: hiddenSessionId, updatedAt: 1, running: false, blank: false,
           projections: { asOfSeq: 1, values: { inbox: restored } } },
-      ] }) as Awaited<ReturnType<FakeApiClient['onList']>>
+      ] })
       let refreshed: Promise<void> | undefined
 
       try {
@@ -128,8 +135,8 @@ describe('Inbox projection intake', () => {
     },
   )
 
-  it('retains only the highest-seq value received before Session materialization', () => {
-    const manager = new SessionManager(fakeRemote(new FakeApiClient()))
+  it('retains only the highest-seq value received before Session materialization', ({ remote }) => {
+    const manager = makeManager(remote)
     manager.handleControlFrame(inboxFrame({
       'next-turn': [message('old', 'old')],
       'next-step': [],
@@ -145,9 +152,9 @@ describe('Inbox projection intake', () => {
 })
 
 describe('queue operation transport', () => {
-  it('does not mutate the Inbox projection before the Host publishes its committed value', async () => {
-    const api = new FakeApiClient()
-    const manager = new SessionManager(fakeRemote(api))
+  it('does not mutate the Inbox projection before the Host publishes its committed value', async ({ remote }) => {
+    remote.session.updateQueue.mockResolvedValue(ok({ accepted: true }))
+    const manager = makeManager(remote)
     const pending = message('pending', 'before')
     const initial = { 'next-turn': [pending], 'next-step': [] }
     manager.handleControlFrame(inboxFrame(initial))
@@ -155,11 +162,11 @@ describe('queue operation transport', () => {
 
     await expect(session.updateQueue(pending.id, { kind: 'edit', content: text('after') }))
       .resolves.toEqual({ ok: true, value: { accepted: true } })
-    expect(api.callsOf('session.updateQueue')).toEqual([{
+    expect(remote.session.updateQueue).toHaveBeenCalledExactlyOnceWith({
       sessionId: SID,
       itemId: pending.id,
       action: { kind: 'edit', content: text('after') },
-    }])
+    })
     expect(session.projections.faceOf('inbox').getSnapshot()).toBe(initial)
   })
 })

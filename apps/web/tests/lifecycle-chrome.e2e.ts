@@ -78,13 +78,14 @@ describe('web e2e: lifecycle & chrome (workspace flow / reload / dark mode)', ()
       await writeComposerDraft(page, input, '')
       await page.getByRole('listbox', { name: 'Trigger suggestions' }).waitFor({ state: 'hidden' })
     })
-    const launcher = page.getByRole('button', { name: 'Commands' })
+    const launcher = page.getByRole('button', { name: 'Add files or run commands' })
     await launcher.click()
     const menu = page.getByRole('listbox', { name: 'Trigger suggestions' })
     await menu.getByRole('option').first().waitFor({ timeout: 10_000 })
     await menu.getByRole('status').waitFor({ state: 'hidden', timeout: 10_000 })
     const snapshot = await captureStableAria(page, '[role="listbox"]', scaffold.workspaceCwd)
     await compareOrRefreshGolden(COMMAND_MENU_EXPECTED, snapshot, MODE)
+    expect(snapshot).toContain('text: Add')
     expect(snapshot).toContain('text: Commands')
     expect(snapshot).not.toContain('text: Skills')
     expect(snapshot).not.toContain('text: Subagents')
@@ -103,7 +104,7 @@ describe('web e2e: lifecycle & chrome (workspace flow / reload / dark mode)', ()
     )).toBeLessThan(1)
     await writeComposerDraft(page, input, '/cpt')
     await expect.poll(() => menu.getByRole('option').allTextContents()).toEqual([
-      'compactCompact older conversation history',
+      'CompactCompact older conversation history',
     ])
     const fuzzySnapshot = await captureStableAria(page, '[role="listbox"]', scaffold.workspaceCwd)
     await compareOrRefreshGolden(FUZZY_COMMAND_MENU_EXPECTED, fuzzySnapshot, MODE)
@@ -118,7 +119,7 @@ describe('web e2e: lifecycle & chrome (workspace flow / reload / dark mode)', ()
     try {
       await zhPage.goto(scaffold.authenticatedUrl, { waitUntil: 'load' })
       await zhPage.waitForSelector('[class*="frame"]', { timeout: 30_000 })
-      const launcher = zhPage.getByRole('button', { name: '指令' })
+      const launcher = zhPage.getByRole('button', { name: '添加文件或调用指令' })
       await launcher.click()
       const menu = zhPage.getByRole('listbox', { name: '触发候选建议' })
       await menu.getByRole('option').first().waitFor({ timeout: 10_000 })
@@ -132,6 +133,68 @@ describe('web e2e: lifecycle & chrome (workspace flow / reload / dark mode)', ()
     }
   })
 
+  it.skipIf(MODE === 'record').each([
+    { locale: 'en-US', token: '/goal', row: 'Goal Set or view the goal for a long-running task', hint: 'describe the objective for a long-running task' },
+    { locale: 'en-US', token: '/plan', row: 'Plan Enter or leave plan mode', hint: 'describe your task to generate plan' },
+    { locale: ZH_BROWSER_LOCALE, token: '/目标', row: '目标 goal 设置或查看长期任务目标', hint: '输入目标，智能体将持续执行' },
+    { locale: ZH_BROWSER_LOCALE, token: '/计划', row: '计划 plan 进入或退出计划模式', hint: '描述你的任务以生成计划' },
+  ])('keeps $token claimed across separator edits and hides hints during IME composition', async ({ locale, token, row, hint }) => {
+    const inputPage = await browser.newPage({ viewport: { width: 1680, height: 1000 }, locale })
+    const inputTripwire = watchConsole(inputPage)
+    onTestFailed(() => saveFailureShot(inputPage, `web-e2e-command-input-${locale}-${token.slice(1)}`))
+    try {
+      await inputPage.goto(scaffold.authenticatedUrl, { waitUntil: 'load' })
+      await inputPage.waitForSelector('[class*="frame"]', { timeout: 30_000 })
+      const input = inputPage.locator('[data-composer-input]').first()
+      await writeComposerDraft(inputPage, input, '/')
+      await inputPage.getByRole('listbox').getByRole('option', { name: row, exact: true }).click()
+      await expect.poll(() => input.textContent()).toBe(`${token} `)
+      await input.press('End')
+      await inputPage.keyboard.insertText('这是任务')
+      await expect.poll(() => input.textContent()).toBe(`${token} 这是任务`)
+      for (let i = 0; i < 5; i++) await input.press('Backspace')
+      const tokenText = () => input.locator('[data-lexical-text][style*="warn-label"]').textContent()
+      await expect.poll(() => input.textContent()).toBe(token)
+      await expect.poll(() => input.getAttribute('data-phase')).toBe('claimed')
+      await expect.poll(tokenText).toBe(token)
+      await input.press('Space')
+      await expect.poll(() => input.getAttribute('data-phase')).toBe('claimed')
+      await expect.poll(() => input.textContent()).toBe(`${token} `)
+      await expect.poll(async () => (await tokenText())?.trimEnd()).toBe(token)
+      const shownHint = () => input.locator('p').last().evaluate(element => getComputedStyle(element, '::after').content)
+      await expect.poll(shownHint).toBe(JSON.stringify(hint))
+      const cdp = await inputPage.context().newCDPSession(inputPage)
+      await cdp.send('Input.imeSetComposition', { text: 'z', selectionStart: 1, selectionEnd: 1 })
+      await expect.poll(shownHint).toBe('none')
+      await cdp.send('Input.imeSetComposition', { text: 'zh', selectionStart: 2, selectionEnd: 2 })
+      await expect.poll(shownHint).toBe('none')
+      await cdp.send('Input.insertText', { text: '这' })
+      await expect.poll(() => input.textContent()).toBe(`${token} 这`)
+      await expect.poll(shownHint).toBe('none')
+      await input.press('Backspace')
+      await expect.poll(shownHint).toBe(JSON.stringify(hint))
+      await cdp.send('Input.imeSetComposition', { text: 'z', selectionStart: 1, selectionEnd: 1 })
+      await expect.poll(shownHint).toBe('none')
+      await cdp.send('Input.imeSetComposition', { text: '', selectionStart: 0, selectionEnd: 0 })
+      await expect.poll(shownHint).toBe(JSON.stringify(hint))
+      await input.press('Backspace')
+      await input.press('Backspace')
+      await expect.poll(() => input.getAttribute('data-phase')).toBe('plain')
+      await writeComposerDraft(inputPage, input, '')
+      const placeholder = inputPage.locator('[data-composer-placeholder]').first()
+      await expect.poll(() => placeholder.isVisible()).toBe(true)
+      await cdp.send('Input.imeSetComposition', { text: 'z', selectionStart: 1, selectionEnd: 1 })
+      await expect.poll(() => placeholder.isVisible()).toBe(false)
+      await cdp.send('Input.imeSetComposition', { text: '', selectionStart: 0, selectionEnd: 0 })
+      await expect.poll(() => placeholder.isVisible()).toBe(true)
+      await cdp.detach()
+      expect(inputTripwire.pageErrors).toEqual([])
+      expect(inputTripwire.warnings).toEqual([])
+    } finally {
+      await inputPage.close()
+    }
+  })
+
   it.skipIf(MODE === 'record')('shows active Plan as the warn-state status action', async () => {
     const activeScaffold = await launchWebScaffold()
     const activePage = await newEnglishPage(browser)
@@ -141,10 +204,10 @@ describe('web e2e: lifecycle & chrome (workspace flow / reload / dark mode)', ()
       await activePage.waitForSelector('[class*="frame"]', { timeout: 30_000 })
       await connectFreshWorkspace(activePage, activeScaffold.workspaceCwd)
       const input = activePage.locator('[data-composer-input]').first()
-      await activePage.getByRole('button', { name: 'Commands' }).click()
+      await activePage.getByRole('button', { name: 'Add files or run commands' }).click()
       const menu = activePage.getByRole('listbox', { name: 'Trigger suggestions' })
       await menu.waitFor({ timeout: 10_000 })
-      await menu.getByRole('option', { name: 'plan Enter or leave plan mode' }).click()
+      await menu.getByRole('option', { name: 'Plan Enter or leave plan mode' }).click()
       await expect.poll(() => input.textContent()).toBe('/plan ')
       await input.press('Enter')
       const planButton = activePage.getByRole('button', { name: 'Plan mode on, press to turn off' })
@@ -227,7 +290,12 @@ describe('web e2e: lifecycle & chrome (workspace flow / reload / dark mode)', ()
       try {
         await input.press('Enter')
         if (MODE !== 'record') {
-          const liveTail = page.locator('[data-variant="think"][data-state="running"] [data-follow-end]')
+          const thinking = page.locator('[data-variant="think"][data-state="running"]')
+          const disclosure = thinking.getByRole('button')
+          await expect.poll(() => disclosure.getAttribute('aria-expanded')).toBe('true')
+          await disclosure.click()
+          await expect.poll(() => disclosure.getAttribute('aria-expanded')).toBe('false')
+          const liveTail = thinking.locator('[data-follow-end]')
           await expect.poll(async () => {
             if (await liveTail.count() !== 1) return false
             return await liveTail.evaluate((element) => {
@@ -365,22 +433,15 @@ describe('web e2e: lifecycle & chrome (workspace flow / reload / dark mode)', ()
       await recoveryPage.context().setOffline(false)
       await expect.poll(() => recoveryPage.evaluate(() => navigator.onLine)).toBe(true)
       const connecting = recoveryPage.getByRole('button', {
-        name: 'Reconnecting automatically, reconnect now', exact: true,
+        name: 'Reconnecting, reconnect now', exact: true,
       })
       await connecting.waitFor({ timeout: 10_000 })
       expect(await connecting.innerText()).toMatch(/^Reconnecting\.{1,3}$/)
       const connectingGeometry = await connectionIndicatorGeometry(connecting)
       expect(await connectionIndicatorTextAlignment(connecting)).toBe('left')
-      // Animated dots must remain hidden with their state label during hover.
-      await connecting.evaluate((element) => {
-        for (const animation of element.getAnimations({ subtree: true })) {
-          if (!(animation instanceof CSSAnimation)) continue
-          animation.pause()
-          animation.currentTime = 1_250
-        }
-      })
+      // Hover keeps the state label; the pill never swaps copy or resizes.
       await connecting.hover()
-      expect(await connecting.innerText()).toBe('Reconnect now')
+      expect(await connecting.innerText()).toMatch(/^Reconnecting\.{1,3}$/)
       expect(await connectionIndicatorGeometry(connecting)).toEqual(connectingGeometry)
       await recoveryPage.mouse.move(0, 0)
 
@@ -398,27 +459,26 @@ describe('web e2e: lifecycle & chrome (workspace flow / reload / dark mode)', ()
       const indicator = connecting
       expect(await connectionIndicatorGeometry(indicator)).toEqual(connectingGeometry)
       expect(await connectionIndicatorTextAlignment(indicator)).toBe('left')
-      await indicator.hover()
       const snapshot = await captureStableAria(recoveryPage, '[class*="footArea"]', scaffold.workspaceCwd)
       await compareOrRefreshGolden(CONNECTION_ERROR_EXPECTED, snapshot, MODE)
-      const style = await indicator.evaluate((element) => {
+      const expectedColors = await recoveryPage.evaluate(() => {
         const probe = document.createElement('span')
         probe.style.color = 'var(--dsw-alias-state-warn-label)'
         probe.style.backgroundColor = 'var(--dsw-alias-state-warn-tertiary)'
         document.body.append(probe)
-        const actual = getComputedStyle(element)
         const reference = getComputedStyle(probe)
         const result = {
-          background: actual.backgroundColor,
-          color: actual.color,
-          referenceBackground: reference.backgroundColor,
-          referenceColor: reference.color,
+          background: reference.backgroundColor,
+          color: reference.color,
         }
         probe.remove()
         return result
       })
-      expect(style.background).toBe(style.referenceBackground)
-      expect(style.color).toBe(style.referenceColor)
+      // CSS transitions use the browser's animation clock independently of the mocked retry timers.
+      await expect.poll(() => indicator.evaluate((element) => {
+        const actual = getComputedStyle(element)
+        return { background: actual.backgroundColor, color: actual.color }
+      })).toEqual(expectedColors)
       expect(await indicator.locator('svg').count()).toBe(1)
       expect(await indicator.getAttribute('title')).toBeNull()
       rejectConnections = false
@@ -435,11 +495,9 @@ describe('web e2e: lifecycle & chrome (workspace flow / reload / dark mode)', ()
       await connecting.waitFor()
       await recoveryPage.clock.fastForward(500)
       await expect.poll(() => sockets.length).toBe(11)
-      const idleBackground = await indicator.evaluate(element => getComputedStyle(element).backgroundColor)
       await indicator.hover()
-      expect(await indicator.innerText()).toBe('Reconnect now')
+      expect(await indicator.innerText()).toMatch(/^Reconnecting\.{1,3}$/)
       const hoverBackground = await indicator.evaluate(element => getComputedStyle(element).backgroundColor)
-      expect(hoverBackground).toBe(idleBackground)
       await recoveryPage.mouse.down()
       await expect.poll(() => indicator.evaluate(element => getComputedStyle(element).backgroundColor))
         .not.toBe(hoverBackground)
@@ -450,7 +508,10 @@ describe('web e2e: lifecycle & chrome (workspace flow / reload / dark mode)', ()
       const recovered = recoveryPage.getByRole('status')
       await recovered.waitFor({ timeout: 10_000 })
       expect(await recovered.innerText()).toBe('Connected')
-      expect(await connectionIndicatorGeometry(recovered)).toEqual(connectingGeometry)
+      // The pill sizes to its current label; chrome height and icon box stay fixed.
+      const recoveredGeometry = await connectionIndicatorGeometry(recovered)
+      expect(recoveredGeometry.outer[3]).toBe(connectingGeometry.outer[3])
+      expect(recoveredGeometry.icon).toEqual(connectingGeometry.icon)
       expect(await connectionIndicatorTextAlignment(recovered)).toBe('left')
       await recoveryPage.clock.fastForward(2_000)
       await recovered.waitFor({ state: 'detached', timeout: 5_000 })

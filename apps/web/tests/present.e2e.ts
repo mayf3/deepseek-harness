@@ -35,7 +35,7 @@ describe.skipIf(process.platform === 'win32' || release().toLowerCase().includes
   const events: SessionEvent[] = []
   let nativeRoot: string | undefined
   let openLog: string
-  const opened = async (): Promise<Array<{ path: string; content: string }>> => (await readFile(openLog, 'utf8')).split('\n').filter(Boolean).map(line => JSON.parse(line) as { path: string; content: string })
+  const opened = async (): Promise<Array<{ path: string; content: string | null; action: 'open' | 'reveal' }>> => (await readFile(openLog, 'utf8')).split('\n').filter(Boolean).map(line => JSON.parse(line) as { path: string; content: string | null; action: 'open' | 'reveal' })
   const downloads: string[] = []
 
   beforeAll(async () => {
@@ -46,11 +46,14 @@ describe.skipIf(process.platform === 'win32' || release().toLowerCase().includes
     const command = process.platform === 'darwin' ? 'open' : 'xdg-open'
     await writeFile(join(nativeRoot, command), `#!${process.execPath}
 const fs = require('node:fs');
-fs.appendFileSync(${JSON.stringify(openLog)}, JSON.stringify({ path: process.argv[2], content: fs.readFileSync(process.argv[2], 'utf8') }) + '\\n');
+const path = process.argv[2] === '-R' ? process.argv[3] : process.argv[2];
+const action = process.argv[2] === '-R' || fs.statSync(path).isDirectory() ? 'reveal' : 'open';
+fs.appendFileSync(${JSON.stringify(openLog)}, JSON.stringify({ path, action, content: action === 'open' ? fs.readFileSync(path, 'utf8') : null }) + '\\n');
 `, { mode: 0o700 })
     vi.stubEnv('PATH', `${nativeRoot}${delimiter}${process.env.PATH ?? ''}`)
     await mkdir(DIR, { recursive: true })
     scaffold = await launchWebScaffold({
+      extraOverlayPath: fileURLToPath(new URL('./present.overlay.yml', import.meta.url)),
       agentPresets: { roots: [], default: 'ptc' }, compareReplaySession: true,
       ...(MODE === 'record' ? {} : { replayFixture: FIXTURE }),
     })
@@ -118,24 +121,43 @@ fs.appendFileSync(${JSON.stringify(openLog)}, JSON.stringify({ path: process.arg
       }
       const row = page.locator('[data-presented-files-row]')
       await row.waitFor()
-      expect(await row.getByRole('button').count()).toBe(2)
+      expect(await row.getByRole('button', { name: /More file actions/ }).count()).toBe(2)
+      expect(await row.getByText('report.txt', { exact: true }).innerText()).toBe('report.txt')
+      const beforePreview = (await opened()).length
+      const column = page.locator('[data-rightbar-col]')
+      for (const [name, content] of [['report.txt', 'EDITED_REPORT'], ['说明.txt', 'EDITED_NOTE']] as const) {
+        const mention = page.locator('code').getByRole('button', { name: `Open ${name} in sidebar`, exact: true })
+        await mention.click()
+        const preview = column.locator('[data-document-preview]')
+        await expect.poll(() => preview.getAttribute('data-textpreview-url'))
+          .toBe(`dsh-resource://file/session/${sessionId}/${encodeURIComponent(name)}`)
+        await preview.getByText(content, { exact: true }).waitFor()
+        await mention.click()
+        expect(await column.locator('[data-dockkit-tab]').filter({ hasText: name }).count()).toBe(1)
+      }
+      expect(await opened()).toHaveLength(beforePreview)
+      expect(downloads).toEqual([])
+      await page.getByRole('button', { name: 'Collapse right sidebar', exact: true }).click()
+      const beforeReveal = (await opened()).length
+      await row.getByRole('button', { name: 'More file actions for report.txt', exact: true }).click()
+      const revealResponse = page.waitForResponse(response => response.url().includes('action=reveal') && response.request().method() === 'POST')
+      await page.getByRole('menuitem', { name: process.platform === 'darwin' ? /Show in Finder/ : /Open containing folder/ }).click()
+      expect((await revealResponse).status()).toBe(204)
+      expect(await row.getByRole('button', { name: 'Open report.txt in sidebar', exact: true })
+        .evaluate(button => button === document.activeElement)).toBe(true)
+      await expect.poll(opened).toHaveLength(beforeReveal + 1)
+      expect((await opened()).at(-1)).toEqual({ action: 'reveal', content: null, path: await realpath(process.platform === 'darwin' ? join(cwd, 'report.txt') : cwd) })
       for (const [name, bytes] of [['report.txt', 'EDITED_REPORT\n'], ['说明.txt', 'EDITED_NOTE\n']] as const) {
         const count = (await opened()).length
         const response = page.waitForResponse(response => response.url().includes('/api/present.open?') && response.request().method() === 'POST')
-        await row.getByRole('button', { name: `Open ${name} in default app`, exact: true }).click()
+        await row.getByRole('button', { name: `More file actions for ${name}`, exact: true }).click()
+        await page.getByRole('menuitem', { name: 'Open in default app', exact: true }).click()
         expect((await response).status()).toBe(204)
         await page.waitForFunction(() => document.querySelector('[data-presented-files-row] button:disabled') === null)
         expect(await opened()).toHaveLength(count + 1)
-        expect((await opened()).at(-1)).toEqual({ path: await realpath(join(cwd, name)), content: bytes })
+        expect((await opened()).at(-1)).toEqual({ action: 'open', path: await realpath(join(cwd, name)), content: bytes })
       }
     }
-    const count = (await opened()).length
-    const openedResponse = page.waitForResponse(response => response.url().includes('/api/present.open?') && response.request().method() === 'POST')
-    await page.locator('code').getByRole('button', { name: 'Open report.txt in default app', exact: true }).click()
-    await page.waitForFunction(() => document.querySelector('[data-presented-files-row] button:disabled') === null)
-    expect((await openedResponse).status()).toBe(204)
-    expect(await opened()).toHaveLength(count + 1)
-    expect((await opened()).at(-1)).toEqual({ path: await realpath(join(cwd, 'report.txt')), content: 'EDITED_REPORT\n' })
     expect(downloads).toEqual([])
     const response = await page.request.get(new URL(`/api/session.export?sessionId=${sessionId}`, scaffold.authenticatedUrl).href)
     expect(response.status()).toBe(200)
@@ -162,6 +184,73 @@ fs.appendFileSync(${JSON.stringify(openLog)}, JSON.stringify({ path: process.arg
       expect(await failed.innerText()).toContain('Delivery failed')
       expect(await delivered.innerText()).toContain('Delivered')
       await page.locator('[data-turn-process]').click()
+      const geometry = await page.evaluate(() => {
+        const requiredElement = <T extends Element>(value: T | null | undefined, name: string): T => {
+          if (value === null || value === undefined) throw new Error(`present layout is missing ${name}`)
+          return value
+        }
+        const answer = requiredElement(
+          [...document.querySelectorAll<HTMLElement>('[data-chat-flow-kind="assistant-step"]')]
+            .find(element => element.textContent?.includes('PRESENT_DONE')),
+          'final answer',
+        )
+        const presentedGrid = requiredElement(
+          document.querySelector<HTMLElement>('[data-presented-files-row]'),
+          'presented grid',
+        )
+        const presentedRoot = requiredElement(presentedGrid.parentElement, 'presented root')
+        const turnTail = requiredElement(presentedRoot.closest<HTMLElement>('[data-turn-tail]'), 'turn tail')
+        const actions = requiredElement(
+          turnTail.querySelector<HTMLButtonElement>('button[aria-label="Copy"]')?.parentElement,
+          'action row',
+        )
+        const cards = [...presentedGrid.querySelectorAll<HTMLElement>('[data-presented-file]')]
+        const report = requiredElement(
+          cards.find(card => card.textContent?.includes('report.txt')),
+          'report card',
+        )
+        const title = requiredElement(
+          report.querySelector<HTMLElement>('span[title="report.txt"]')
+            ?? [...report.querySelectorAll<HTMLElement>('span')]
+              .find(element => element.textContent === 'report.txt'),
+          'report title',
+        )
+        const description = requiredElement(report.querySelector<HTMLElement>('span[role="status"]'), 'report status')
+        const open = requiredElement(
+          report.querySelector<HTMLButtonElement>('button[aria-label="Open report.txt in sidebar"]'),
+          'report open action',
+        )
+        const icon = requiredElement(report.querySelector<SVGElement>('svg'), 'report icon')
+        const secondCard = requiredElement(cards[1], 'second card')
+        const answerRect = answer.getBoundingClientRect()
+        const presentedRect = presentedRoot.getBoundingClientRect()
+        const actionsRect = actions.getBoundingClientRect()
+        const firstCard = report.getBoundingClientRect()
+        const secondCardRect = secondCard.getBoundingClientRect()
+        const gridStyle = getComputedStyle(presentedGrid)
+        return {
+          answerToPresented: presentedRect.top - answerRect.bottom,
+          presentedToActions: actionsRect.top - presentedRect.bottom,
+          cardHeight: firstCard.height,
+          cardColumnGap: secondCardRect.left - firstCard.right,
+          gridColumnGap: gridStyle.columnGap,
+          gridRowGap: gridStyle.rowGap,
+          iconWidth: icon.getAttribute('width'),
+          titleFontSize: getComputedStyle(title).fontSize,
+          descriptionFontSize: getComputedStyle(description).fontSize,
+          openFontSize: getComputedStyle(open).fontSize,
+        }
+      })
+      expect(geometry.answerToPresented).toBeCloseTo(20, 1)
+      expect(geometry.presentedToActions).toBeCloseTo(20, 1)
+      expect(geometry.cardHeight).toBeCloseTo(60, 1)
+      expect(geometry.cardColumnGap).toBeCloseTo(10, 1)
+      expect(geometry.gridColumnGap).toBe('10px')
+      expect(geometry.gridRowGap).toBe('10px')
+      expect(geometry.iconWidth).toBe('20')
+      expect(geometry.titleFontSize).toBe('13px')
+      expect(geometry.descriptionFontSize).toBe('10px')
+      expect(geometry.openFontSize).toBe('12px')
       await page.setViewportSize({ width: 480, height: 900 })
       const row = page.locator('[data-presented-files-row]')
       await row.scrollIntoViewIfNeeded()
@@ -175,7 +264,8 @@ fs.appendFileSync(${JSON.stringify(openLog)}, JSON.stringify({ path: process.arg
     const beforeDelete = (await opened()).length
     await unlink(join(cwd, 'report.txt'))
     const missing = page.waitForResponse(response => response.url().includes('/api/present.open?'))
-    await page.locator('[data-presented-files-row]').getByRole('button', { name: 'Open report.txt in default app', exact: true }).click()
+    await page.locator('[data-presented-files-row]').getByRole('button', { name: 'More file actions for report.txt', exact: true }).click()
+    await page.getByRole('menuitem', { name: 'Open in default app', exact: true }).click()
     expect((await missing).status()).toBe(404)
     await page.getByText('Could not open. Click to retry.', { exact: true }).waitFor()
     expect(await opened()).toHaveLength(beforeDelete)
