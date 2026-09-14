@@ -7,7 +7,7 @@ import { RemoteError, remoteErrorOf, type RemoteResult } from '@deepseek-ai/dsh-
 import type {} from '@deepseek-ai/dsh-api-terminal-controller/remote'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type {
-  TerminalShell, TerminalAttachmentId, TerminalEnvironment, TerminalFrame,
+  TerminalAttachmentId, TerminalEnvironment, TerminalFrame,
   WebTerminalId, WebTerminalInfo,
 } from '../types.ts'
 
@@ -36,9 +36,7 @@ export interface TerminalRenderFrame {
 
 /** Observable state of one sidebar occurrence. */
 export interface TerminalViewState {
-  readonly phase: 'idle' | 'loading' | 'selecting' | 'creating' | 'connecting' | 'connected' | 'disconnected' | 'closing' | 'closed' | 'failed'
-  readonly shells?: readonly TerminalShell[] | undefined
-  readonly selectedShell?: string | undefined
+  readonly phase: 'idle' | 'loading' | 'creating' | 'connecting' | 'connected' | 'disconnected' | 'closing' | 'closed' | 'failed'
   readonly environment?: TerminalEnvironment | undefined
   readonly title?: string | undefined
   readonly info?: WebTerminalInfo | undefined
@@ -71,6 +69,7 @@ export class TerminalView {
    * @param gateway - reconnecting stream factory.
    * @param id - Host terminal identity, reused when recovering an item from its Session list.
    * @param createWhenMissing - allow allocation only for a new tab, never a listed terminal.
+   * @param shellPath - explicit shell chosen at the guide; omission uses the remembered available shell.
    */
   constructor(
     private readonly sessionId: SessionId,
@@ -78,10 +77,11 @@ export class TerminalView {
     private readonly gateway: Pick<ClientRemote, '$stream'>,
     readonly id: WebTerminalId,
     private readonly createWhenMissing = true,
+    private readonly shellPath?: string,
   ) {}
 
   /**
-   * Attach the DOM lifetime, loading shell choices or reconnecting the saved process.
+   * Attach the DOM lifetime, starting the chosen shell or reconnecting the saved process.
    * @returns a detach callback that leaves the terminal process alive.
    */
   mount(): () => void {
@@ -113,49 +113,29 @@ export class TerminalView {
       const info = valueOf(available).find(item => item.id === this.id)
       if (info !== undefined) this.adopt(info)
       else if (this.createWhenMissing) {
-        const shells = valueOf(await this.remote.shells(this.sessionId, this.lifetime.signal))
+        let path = this.shellPath
+        if (path === undefined) {
+          const shells = valueOf(await this.remote.shells(this.sessionId, this.lifetime.signal))
+          const previous = preferredShell()
+          path = shells.find(shell => shell.path === previous)?.path ?? shells[0]?.path
+        }
         if (this.stopped()) return
-        const previous = this.state.getSnapshot().selectedShell ?? preferredShell()
-        const selectedShell = shells.find(shell => shell.path === previous)?.path ?? shells[0]?.path
-        this.patch({ phase: 'selecting', shells, selectedShell })
+        if (path !== undefined) rememberShell(path)
+        await this.create(valueOf(environment), path)
       }
       else throw new TerminalViewError('missingTerminal')
     })().catch((error: unknown) => { this.fail(error) }).finally(() => { this.loading = undefined })
     return this.loading
   }
 
-  /**
-   * Select and remember one verified shell before starting the terminal.
-   * @param path - executable path offered by Host discovery.
-   */
-  selectShell(path: string): void {
-    const state = this.state.getSnapshot()
-    if (state.phase === 'selecting' && state.shells?.some(shell => shell.path === path)) {
-      this.patch({ selectedShell: path })
-      rememberShell(path)
-    }
-  }
-
-  /**
-   * Start the selected shell once; failed attempts retain their selection for retry.
-   * @returns after allocation settles; failures are exposed in observable state.
-   */
-  start(): Promise<void> {
-    if (this.creation !== undefined) return this.creation
-    const state = this.state.getSnapshot()
-    if (state.phase !== 'selecting' || state.environment === undefined || state.selectedShell === undefined
-      || this.closing !== undefined || this.lifetime.signal.aborted) return Promise.resolve()
-    rememberShell(state.selectedShell)
-    return this.create(state.environment, state.selectedShell)
-  }
-
   private stopped(): boolean { return this.lifetime.signal.aborted || this.closing !== undefined }
 
-  private async create(environment: TerminalEnvironment, shellPath: string): Promise<void> {
+  private async create(environment: TerminalEnvironment, shellPath?: string): Promise<void> {
     this.patch({ phase: 'creating', error: undefined, issue: undefined })
     this.creation = (async () => {
       const info = valueOf(await this.remote.create(this.sessionId, {
-        id: this.id, shellPath, cols: Math.min(80, environment.maxCols), rows: Math.min(24, environment.maxRows),
+        id: this.id, ...shellPath === undefined ? {} : { shellPath },
+        cols: Math.min(80, environment.maxCols), rows: Math.min(24, environment.maxRows),
       }, this.lifetime.signal))
       if (!this.lifetime.signal.aborted) {
         this.adopt(info)

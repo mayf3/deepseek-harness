@@ -10,6 +10,7 @@ import { SidebarRightTabRegistry } from '@deepseek-ai/dsh-client-ui-sidebar-righ
 import type { SidebarRightCloseHandler } from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
 import { apply, inject } from '../src/client/index.ts'
 import { apply as hostApply } from '../src/index.ts'
+import { TerminalGuide, type TerminalGuideInjected } from '../src/client/TerminalGuide.tsx'
 import { TerminalBody } from '../src/client/TerminalBody.tsx'
 import { TerminalTitle } from '../src/client/TerminalTitle.tsx'
 import { TerminalRecovery, type TerminalRecoveryInjected } from '../src/client/TerminalRecovery.tsx'
@@ -38,9 +39,10 @@ async function mountPlugin() {
   const model = { state: {} }
   const terminals = {
     view: vi.fn(() => model), close: vi.fn(), closeFailures: {}, retryClose: vi.fn(),
+    launchShells: vi.fn(async () => ({ shells: [], selectedShell: undefined })), selectShell: vi.fn(),
     recover: vi.fn(async (_sessionId: SessionId): Promise<WebTerminalInfo[]> => []),
   }
-  let params: { terminalId: WebTerminalId } | undefined
+  let params: { terminalId: WebTerminalId } | { shellPath: string } | undefined
   const occurrence = vi.fn(() => ({ navigation: { getSnapshot: () => ({ params }) } }))
   const openTabIn = vi.fn()
   ctx.provide('webTerminals', terminals as never)
@@ -82,13 +84,20 @@ it('registers terminal views, recovery and cleanup, then releases every contribu
     expect(definition.multiple).toBe(true)
     expect(h.dictionaries.get('sidebarTerminal')).toEqual({ en, zh })
     expect(h.entries.map(entry => [entry.name, entry.component, entry.locale])).toEqual([
+      ['sidebar.right.tab.guide.entry', TerminalGuide, 'sidebarTerminal'],
       ['sidebar.right.pane.tab', TerminalBody, 'sidebarTerminal'],
       ['sidebar.right.pane.tab.title', TerminalTitle, 'sidebarTerminal'],
       ['conversation.session.header.actions', TerminalRecovery, 'sidebarTerminal'],
       ['shell.overlay', TerminalCleanup, 'sidebarTerminal'],
     ])
     const sessionId = 'session' as SessionId
-    const face = h.entries[0]!.inject(sessionId) as TerminalBodyInjected
+    const launcher = h.entries[0]!.inject(sessionId) as TerminalGuideInjected
+    const signal = new AbortController().signal
+    await launcher.loadShells(signal)
+    expect(h.terminals.launchShells).toHaveBeenCalledWith(sessionId, signal)
+    launcher.selectShell('/bin/bash')
+    expect(h.terminals.selectShell).toHaveBeenCalledWith('/bin/bash')
+    const face = h.entries[1]!.inject(sessionId) as TerminalBodyInjected
     expect(face.hooks.theme.getSnapshot()).toBe(h.theme)
     const changed = vi.fn()
     const unsubscribe = face.hooks.theme.subscribe(changed)
@@ -98,11 +107,15 @@ it('registers terminal views, recovery and cleanup, then releases every contribu
     h.emitTheme()
     expect(changed).toHaveBeenCalledOnce()
     expect(face.view('tab')).toBe(h.model)
-    expect(h.terminals.view).toHaveBeenLastCalledWith(sessionId, 'tab', undefined)
+    expect(h.terminals.view).toHaveBeenLastCalledWith(sessionId, 'tab', undefined, undefined)
     const terminalId = 'retained' as WebTerminalId
     h.setParams({ terminalId })
+    h.setParams({ shellPath: '/bin/bash' })
+    face.view('tab')
+    expect(h.terminals.view).toHaveBeenLastCalledWith(sessionId, 'tab', undefined, '/bin/bash')
+    h.setParams({ terminalId })
     expect(face.keyedHooks.terminal('tab')).toBe(h.model.state)
-    expect(h.terminals.view).toHaveBeenLastCalledWith(sessionId, 'tab', terminalId)
+    expect(h.terminals.view).toHaveBeenLastCalledWith(sessionId, 'tab', terminalId, undefined)
     expect(h.occurrence).toHaveBeenLastCalledWith(sessionId, { id: 'tab' })
     if (h.closeHandler === undefined) throw new Error('Terminal close handler was not registered')
     h.closeHandler(sessionId, { id: 'tab' } as Parameters<SidebarRightCloseHandler>[1])
@@ -110,7 +123,7 @@ it('registers terminal views, recovery and cleanup, then releases every contribu
     h.setParams(undefined)
     h.closeHandler(sessionId, { id: 'new-tab' } as Parameters<SidebarRightCloseHandler>[1])
     expect(h.terminals.close).toHaveBeenLastCalledWith(sessionId, 'new-tab', undefined)
-    const cleanupFace = h.entries[3]!.inject(sessionId) as TerminalCleanupInjected
+    const cleanupFace = h.entries[4]!.inject(sessionId) as TerminalCleanupInjected
     expect(cleanupFace.hooks.closeFailures).toBe(h.terminals.closeFailures)
     cleanupFace.retryClose('terminal' as Parameters<TerminalCleanupInjected['retryClose']>[0])
     expect(h.terminals.retryClose).toHaveBeenCalledWith('terminal')
@@ -128,8 +141,8 @@ it('shares pending and completed recovery across Session headers and opens each 
   const pending = Promise.withResolvers<WebTerminalInfo[]>()
   h.terminals.recover.mockImplementationOnce(() => pending.promise)
   const sessionId = 'session' as SessionId
-  const recovery = h.entries[2]!.inject(sessionId) as TerminalRecoveryInjected
-  const remounted = h.entries[2]!.inject(sessionId) as TerminalRecoveryInjected
+  const recovery = h.entries[3]!.inject(sessionId) as TerminalRecoveryInjected
+  const remounted = h.entries[3]!.inject(sessionId) as TerminalRecoveryInjected
   const completion = recovery.restore()
   try {
     expect(remounted.restore()).toBe(completion)
@@ -145,7 +158,7 @@ it('shares pending and completed recovery across Session headers and opens each 
     expect(h.terminals.recover).toHaveBeenCalledTimes(1)
     expect(h.openTabIn).toHaveBeenCalledTimes(2)
     const otherSession = 'other-session' as SessionId
-    await (h.entries[2]!.inject(otherSession) as TerminalRecoveryInjected).restore()
+    await (h.entries[3]!.inject(otherSession) as TerminalRecoveryInjected).restore()
     expect(h.terminals.recover).toHaveBeenLastCalledWith(otherSession)
     expect(h.terminals.recover).toHaveBeenCalledTimes(2)
     expect(h.openTabIn).toHaveBeenCalledTimes(2)
@@ -161,7 +174,7 @@ it('allows a failed Host lookup to be retried without marking the Session recove
   const unavailable = new Error('Host unavailable')
   h.terminals.recover.mockRejectedValueOnce(unavailable)
   const sessionId = 'session' as SessionId
-  const recovery = h.entries[2]!.inject(sessionId) as TerminalRecoveryInjected
+  const recovery = h.entries[3]!.inject(sessionId) as TerminalRecoveryInjected
   try {
     await expect(recovery.restore()).rejects.toBe(unavailable)
     expect(h.openTabIn).not.toHaveBeenCalled()
@@ -177,7 +190,7 @@ it('does not open retained terminals when their lookup completes after plugin un
   const h = await mountPlugin()
   const pending = Promise.withResolvers<WebTerminalInfo[]>()
   h.terminals.recover.mockImplementationOnce(() => pending.promise)
-  const recovery = h.entries[2]!.inject('session' as SessionId) as TerminalRecoveryInjected
+  const recovery = h.entries[3]!.inject('session' as SessionId) as TerminalRecoveryInjected
   const completion = recovery.restore()
   try {
     expect(h.terminals.recover).toHaveBeenCalledOnce()

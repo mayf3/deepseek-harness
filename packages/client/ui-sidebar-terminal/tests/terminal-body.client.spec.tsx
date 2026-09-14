@@ -68,7 +68,6 @@ function mount(initial: TerminalViewState | undefined = idle, dictionary = en) {
   let theme: ThemeSnapshot = { preference: 'light', fontSize: 14, active: { id: 'light', colorScheme: 'light', tokens: {} }, themes: [], revision: 0 }
   const detach = vi.fn()
   const model = {
-    start: vi.fn(async () => {}), selectShell: vi.fn(),
     mount: vi.fn(() => detach), refresh: vi.fn(async () => {}),
     rename: vi.fn(async () => {}), connect: vi.fn(), write: vi.fn(), resize: vi.fn(), acknowledge: vi.fn(),
   }
@@ -337,24 +336,4 @@ it.each([en, zh])('translates known terminal failures while retaining unknown Ho
   }
   h.update({ ...idle, phase: 'failed', error: 'Host permission denied' })
   expect(h.view.getByRole('alert').textContent).toContain('Host permission denied')
-})
-
-it('lets the user select an installed shell and start it before rendering a screen', () => {
-  const other = { path: '/bin/zsh', name: 'zsh', args: ['-i'] }
-  const h = mount({ phase: 'selecting', writable: false, environment, shells: [info.shell, other], selectedShell: other.path })
-  const selector = h.view.getByRole('button', { name: 'Shell' })
-  expect(selector.textContent).toContain(other.path)
-  expect(fake.terminals).toHaveLength(0)
-  fireEvent.click(selector)
-  expect(h.view.getByRole('menu')).toBeTruthy()
-  fireEvent.keyDown(document, { key: 'Escape' })
-  expect(h.view.queryByRole('menu')).toBeNull()
-  fireEvent.click(selector)
-  fireEvent.click(h.view.getByRole('menuitem', { name: `bash — ${info.shell.path}` }))
-  expect(h.view.queryByRole('menu')).toBeNull()
-  expect(h.model.selectShell).toHaveBeenCalledWith(info.shell.path)
-  fireEvent.click(h.view.getByRole('button', { name: 'Start terminal' }))
-  expect(h.model.start).toHaveBeenCalledOnce()
-  h.update({ phase: 'selecting', writable: false, environment })
-  expect(h.view.getByRole('button', { name: 'Start terminal' })).toHaveProperty('disabled', true)
 })
