@@ -123,7 +123,7 @@ describe('Messages Files requests', () => {
     await chunks(h.adapter.stream(original))
     expect(body(fetchImpl.mock.calls[0]?.[1]).match(/"file_id"/gu)).toHaveLength(2)
     h.ensureUploaded.mockRejectedValueOnce(new Error('offline'))
-    await expect(chunks(h.adapter.stream(original))).rejects.toMatchObject({ code: 'IMAGE_OFFLOAD_REQUIRED', offloadImages: 1 })
+    await expect(chunks(h.adapter.stream(original))).rejects.toMatchObject({ failure: { code: 'IMAGE_OFFLOAD_REQUIRED', offloadImages: 1 } })
     expect(fetchImpl).toHaveBeenCalledTimes(1)
     h.ensureUploaded.mockRejectedValueOnce(new Error('offline'))
     await chunks(h.adapter.stream(options({ model, messages: [{ ...user(), content: [
@@ -138,7 +138,7 @@ describe('Messages Files requests', () => {
   it('reads and prices only the retained occurrences selected by the logged offload', async () => {
     vi.stubGlobal('fetch', async () => success())
     const h = harness({ maxRequestFilesBytes: 3, imageOffloadByteQuantum: 1, maxImagesPerRequest: 2, imageOffloadCountQuantum: 1 })
-    const images = [{ type: 'image' as const, attachment: ref, offloaded: true }, { type: 'image' as const, attachment: second }]
+    const images = [{ type: 'image' as const, attachment: ref, offloaded: true as const }, { type: 'image' as const, attachment: second }]
     await chunks(h.adapter.stream(options({ model, messages: [{ ...user(), content: images }] })))
     expect(h.readImageRequest).toHaveBeenCalledExactlyOnceWith(second, expect.anything(), expect.any(AbortSignal))
     expect(h.adapter.imageRequestPricing('deepseek-official', model).priceImages(images).map(image => image.visualTokens)).toEqual([0, expect.any(Number)])
@@ -153,7 +153,7 @@ describe('Messages Files requests', () => {
     const h = harness(config)
     const original = request([ref, ref])
     const saved = JSON.stringify(original.messages)
-    await expect(chunks(h.adapter.stream(original))).rejects.toMatchObject({ code: 'IMAGE_OFFLOAD_REQUIRED', offloadImages: 1 })
+    await expect(chunks(h.adapter.stream(original))).rejects.toMatchObject({ failure: { code: 'IMAGE_OFFLOAD_REQUIRED', offloadImages: 1 } })
     expect(h.readImageRequest).toHaveBeenCalledTimes(1)
     expect(h.ensureUploaded).not.toHaveBeenCalled()
     expect(fetchImpl).not.toHaveBeenCalled()
@@ -163,7 +163,7 @@ describe('Messages Files requests', () => {
   it('uses exact prepared bytes when the durable reference fits the Files budget', async () => {
     const h = harness({ maxRequestFilesBytes: 3, imageOffloadByteQuantum: 1, imageOffloadCountQuantum: 1 })
     h.readImageRequest.mockResolvedValue({ ...version(ref), bytes: 4, data: Uint8Array.of(1, 2, 3, 4) })
-    await expect(chunks(h.adapter.stream(request()))).rejects.toMatchObject({ code: 'IMAGE_OFFLOAD_REQUIRED', offloadImages: 1 })
+    await expect(chunks(h.adapter.stream(request()))).rejects.toMatchObject({ failure: { code: 'IMAGE_OFFLOAD_REQUIRED', offloadImages: 1 } })
     expect(h.ensureUploaded).not.toHaveBeenCalled()
   })
 
