@@ -192,13 +192,13 @@ function flattenRows(
       moduleName: row.name,
       enabled: disabled === true ? false : disabled === 'conditional' ? 'conditional' : true,
       ...isJsExpr(row.disabled) ? { condition: row.disabled.__jsExpr } : {},
-      ...rowProvenance(id, disabled === true, overlay),
+      ...rowOverlayFields(id, disabled === true, overlay),
     })
   }
 }
 
 /** The `source` and `disabledBy` fields of one row, from the layer's decisions. */
-function rowProvenance(
+function rowOverlayFields(
   id: string | null, disabled: boolean, overlay: OverlayFacts,
 ): Pick<AgentPresetCompositionRow, 'source' | 'disabledBy'> {
   const userRow = id !== null && overlay.inserted.has(id)
@@ -261,9 +261,9 @@ export function mountedCompositionRows(tree: EntryTree, overlay: readonly PatchO
       enabled: !entry.disabled,
       ...isJsExpr(entry.options.disabled) ? { condition: entry.options.disabled.__jsExpr } : {},
       ...entry.fiber === undefined ? {} : { fiberState: entry.fiber.state },
-      // Provenance and user patches address rows by the id the composition
+      // Layer decisions and user patches address rows by the id the composition
       // declares; the tree-wide `entry.id` carries the include's prefix.
-      ...rowProvenance(entry.options.id, entry.disabled, facts),
+      ...rowOverlayFields(entry.options.id, entry.disabled, facts),
     })
   }
   return found
